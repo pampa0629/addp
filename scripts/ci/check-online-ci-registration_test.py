@@ -656,6 +656,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/online-hosted-raster-gate.sh", "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "true"),
             ("Makefile", "scripts/test/online-raster-minio-fixture_test.py", ""),
             ("console/frontend/e2e/online/raster-workflow.spec.js", "auth.principalID", "other"),
+            ("scripts/test/raster-workflow-online.py", "spatial_workflow", "incomplete_case"),
+            ("business/scripts/online-raster-minio-fixture.py", "verify-mosaic-last", "omitted"),
+            ("console/frontend/e2e/online/raster-workflow.spec.js", "evidence.target_name", "omitted"),
         )
         for relative, old, new in faults:
             with self.subTest(relative=relative, fragment=old):

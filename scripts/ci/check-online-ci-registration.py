@@ -1491,12 +1491,15 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
         ),
         "business/scripts/online-raster-minio-fixture.py": (
             "full_check=True", "type=tmpfs,destination=/data", "source_unchanged", "com.addp.online-fixture",
+            "verify-mosaic-first", "verify-mosaic-last", "baseline_sha256", "first_sha256",
         ),
         "scripts/test/raster-workflow-online.py": (
             "meta_scan_runs", "wait_lineage", "verify-replace", "failed create modified", "browser_runner",
+            "spatial_workflow", "raster_reproject", "raster_clip", "raster_mosaic", "spatial_cases",
         ),
         "console/frontend/e2e/online/raster-workflow.spec.js": (
             "login(", ".execution-lineage", "auth.principalID", "edge.evidence?.execution_id",
+            "evidence.source_name", "evidence.target_name", "evidence.case_name",
         ),
         "Makefile": ("test-raster-online-runner", "scripts/test/raster-workflow-online_test.py",
                      "scripts/test/online-raster-minio-fixture_test.py", "scripts/test/online-hosted-raster-gate_test.py"),

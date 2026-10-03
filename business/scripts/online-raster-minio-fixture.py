@@ -22,6 +22,24 @@ IMAGE = 'addp-geopython-workflow-engine:dev'
 MINIO_IMAGE = 'addp-minio:RELEASE.2025-10-15T17-29-55Z'
 TRANSFORM = (110, .01, 0, 20.32, 0, -.01)
 SIZE = 256
+ANGULAR_METRE = math.degrees(1 / 6378137)
+SPATIAL_SOURCE_TRANSFORM = (0, ANGULAR_METRE, 0, SIZE * ANGULAR_METRE, 0, -ANGULAR_METRE)
+SPATIAL_TRANSFORM = (0, 1, 0, SIZE, 0, -1)
+SPATIAL_NODATA = {0, 127 * SIZE + 127}
+ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last')
+
+
+def source_values(band, spatial=False):
+    invalid = SPATIAL_NODATA if spatial else {0}
+    return tuple(-9999. if position in invalid else float(band * (position + 1)) for position in range(SIZE * SIZE))
+
+
+def artifact_expectation(spatial=False):
+    transform = SPATIAL_TRANSFORM if spatial else TRANSFORM
+    return {'width': SIZE, 'height': SIZE, 'band_count': 1, 'source_crs': 'EPSG:3857' if spatial else 'EPSG:4326',
+            'extent_srid': 3857 if spatial else 4326, 'transform': list(transform),
+            'extent': [transform[0], transform[3] + SIZE * transform[5], transform[0] + SIZE * transform[1], transform[3]],
+            'valid_pixels': SIZE * SIZE - (len(SPATIAL_NODATA) if spatial else 1)}
 
 
 class FixtureError(RuntimeError):
@@ -125,85 +143,127 @@ def start(root):
 
 
 def physical_worker(action, root):
-    return json.loads(command([
+    result = json.loads(command([
         'docker', 'run', '--rm', '--name', CONTAINERS[2], '--label', f'com.addp.online-fixture={SUITE}',
         '--network', 'host', '--entrypoint', 'python',
         '-v', f'{Path(__file__).resolve()}:/fixture.py:ro', '-v', f'{root}:/secrets:ro',
         IMAGE, '/fixture.py', 'worker-' + action, '/secrets/raster-fixture.json',
     ]))
+    if action == 'seed':
+        private_json(root / 'raster-source-sha256.json', result['source_sha256'])
+    return result
 
 
 def worker(action, path):
-    # GDAL is confined to the standard Runtime image. No production operator is
-    # imported, so this verifies persisted bytes independently of raster_save.
+    # GDAL stays in the Runtime image; the verifier never imports production operators.
     from minio import Minio
     from osgeo import gdal, osr
     from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    if action not in ACTIONS:
+        raise FixtureError('unknown worker action')
     gdal.UseExceptions()
     config = json.loads(Path(path).read_text())
+    fingerprint_path = Path(path).with_name('raster-source-sha256.json')
     clients = {role: Minio(entry['endpoint'], access_key=entry['access_key'], secret_key=entry['secret_key'], secure=False)
                for role, entry in config.items()}
     with tempfile.TemporaryDirectory(prefix='raster-physical-') as directory:
-        source_path = Path(directory) / 'source.tif'
+        root = Path(directory)
         if action == 'seed':
             for role, client in clients.items():
                 client.make_bucket(config[role]['bucket'])
-            dataset = gdal.GetDriverByName('GTiff').Create(str(source_path), SIZE, SIZE, 2, gdal.GDT_Float64)
-            dataset.SetGeoTransform(TRANSFORM)
-            crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
-            dataset.SetProjection(crs.ExportToWkt())
+            fingerprints = {}
+            for name, spatial in [('source.tif', False), ('spatial.tif', True)]:
+                path = root / name
+                dataset = gdal.GetDriverByName('GTiff').Create(str(path), SIZE, SIZE, 2, gdal.GDT_Float64)
+                dataset.SetGeoTransform(SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
+                crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
+                dataset.SetProjection(crs.ExportToWkt())
+                for index in (1, 2):
+                    values = source_values(index, spatial)
+                    band = dataset.GetRasterBand(index)
+                    band.SetNoDataValue(-9999)
+                    band.WriteRaster(0, 0, SIZE, SIZE, struct.pack(f'<{len(values)}d', *values), buf_type=gdal.GDT_Float64)
+                    band = None
+                dataset = None
+                clients['source'].fput_object(config['source']['bucket'], name, str(path), content_type='image/tiff')
+                fingerprints[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            return {'seeded': True, 'source_pixels': SIZE * SIZE, 'spatial_source_pixels': SIZE * SIZE, 'target_objects': 0, 'source_sha256': fingerprints}
+        if not fingerprint_path.is_file():
+            raise FixtureError('source fingerprints are missing')
+        fingerprints = json.loads(fingerprint_path.read_text())
+        for name, spatial in [('source.tif', False), ('spatial.tif', True)]:
+            path = root / name
+            clients['source'].fget_object(config['source']['bucket'], name, str(path))
+            if hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get(name):
+                raise FixtureError('workflow modified source bytes')
+            source = gdal.Open(str(path))
             for index in (1, 2):
-                values = [-9999.] + [float(index * value) for value in range(2, SIZE * SIZE + 1)]
-                band = dataset.GetRasterBand(index)
-                band.SetNoDataValue(-9999)
-                band.WriteRaster(0, 0, SIZE, SIZE, struct.pack(f'<{len(values)}d', *values), buf_type=gdal.GDT_Float64)
-            dataset = None
-            clients['source'].fput_object(config['source']['bucket'], 'source.tif', str(source_path), content_type='image/tiff')
-            return {'seeded': True, 'source_pixels': SIZE * SIZE, 'target_objects': 0}
-        clients['source'].fget_object(config['source']['bucket'], 'source.tif', str(source_path))
-        source = gdal.Open(str(source_path))
-        for index in (1, 2):
-            band = source.GetRasterBand(index)
-            if band.GetNoDataValue() != -9999:
-                raise FixtureError('workflow modified source NoData')
+                band = source.GetRasterBand(index)
+                values = struct.unpack(f'<{SIZE * SIZE}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+                if band.GetNoDataValue() != -9999 or values != source_values(index, spatial):
+                    raise FixtureError('workflow modified its source pixels/NoData')
+            reference = osr.SpatialReference(); reference.ImportFromEPSG(4326)
+            if (source.GetGeoTransform() != (SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
+                or source.RasterCount != 2 or not osr.SpatialReference(source.GetProjection()).IsSame(reference)):
+                raise FixtureError('workflow modified source georeferencing/bands')
+        spatial = action.startswith('verify-mosaic-')
+        overlap = action.removeprefix('verify-mosaic-') if spatial else None
+        target_name = f'mosaic-{overlap}.cog.tif' if spatial else 'result.cog.tif'
+
+        def verify(name, spatial=False, overlap=None, factor=1):
+            path = root / name
+            clients['target'].fget_object(config['target']['bucket'], name, str(path))
+            dataset = gdal.Open(str(path))
+            warnings, errors, _ = validate(dataset, full_check=True)
+            if errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG':
+                raise FixtureError('persisted target is not a valid COG')
+            expectation = artifact_expectation(spatial)
+            reference = osr.SpatialReference(); reference.ImportFromEPSG(expectation['extent_srid'])
+            if (not osr.SpatialReference(dataset.GetProjection()).IsSame(reference)
+                or dataset.GetGeoTransform() != tuple(expectation['transform'])):
+                raise FixtureError('persisted target changed CRS/transform')
+            if (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (SIZE, SIZE, 1):
+                raise FixtureError('persisted target has invalid dimensions/bands')
+            band = dataset.GetRasterBand(1)
+            if band.DataType != gdal.GDT_Float64 or not math.isnan(band.GetNoDataValue()):
+                raise FixtureError('persisted target did not propagate NoData')
             values = struct.unpack(f'<{SIZE * SIZE}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
-            if values != tuple([-9999.] + [float(index * value) for value in range(2, SIZE * SIZE + 1)]):
-                raise FixtureError('workflow modified its source pixels')
-        if source.GetGeoTransform() != TRANSFORM or source.RasterCount != 2:
-            raise FixtureError('workflow modified source georeferencing/bands')
-        original_crs = osr.SpatialReference(); original_crs.ImportFromEPSG(4326)
-        if not osr.SpatialReference(source.GetProjection()).IsSame(original_crs):
-            raise FixtureError('workflow modified source CRS')
-        target_path = Path(directory) / 'result.cog.tif'
-        clients['target'].fget_object(config['target']['bucket'], 'result.cog.tif', str(target_path))
-        dataset = gdal.Open(str(target_path))
-        warnings, errors, _ = validate(dataset, full_check=True)
-        if errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG':
-            raise FixtureError('persisted target is not a valid COG')
-        crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
-        actual_crs = osr.SpatialReference(dataset.GetProjection())
-        if not actual_crs.IsSame(crs) or dataset.GetGeoTransform() != TRANSFORM:
-            raise FixtureError('persisted target changed CRS/transform')
-        if (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (SIZE, SIZE, 1):
-            raise FixtureError('persisted target has invalid dimensions/bands')
-        band = dataset.GetRasterBand(1)
-        values = struct.unpack(f'<{SIZE * SIZE}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
-        factor = 3 if action == 'verify-replace' else 1
-        if not math.isnan(band.GetNoDataValue()) or not math.isnan(values[0]):
-            raise FixtureError('persisted target did not propagate NoData')
-        if values[1:] != tuple(float(factor * value) for value in range(2, SIZE * SIZE + 1)):
-            raise FixtureError('persisted target pixels do not match the band expression')
-        if [item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)] != ['result.cog.tif']:
+            invalid = SPATIAL_NODATA if spatial else {0}
+            # Near the equator, the projected pixel centres map strictly inside
+            # the same source cells. No Warp/production math is used as an oracle.
+            seam = 160 if overlap == 'first' else 96
+            for position, value in enumerate(values):
+                if position in invalid:
+                    if not math.isnan(value):
+                        raise FixtureError('persisted target did not propagate NoData')
+                else:
+                    scale = (3 if position % SIZE >= seam else 1) if spatial else factor
+                    if value != float(scale * (position + 1)):
+                        raise FixtureError('persisted target pixels do not match the expected expression/mosaic seam')
+            return {'cog_valid': True, 'cog_warnings': len(warnings), 'valid_pixels': expectation['valid_pixels'],
+                    'invalid_pixels': len(invalid), 'source_unchanged': True,
+                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+
+        evidence = verify(target_name, spatial, overlap, 3 if action == 'verify-replace' else 1)
+        names = ['result.cog.tif']
+        if spatial:
+            names.append('mosaic-first.cog.tif')
+            evidence['baseline_sha256'] = verify('result.cog.tif', factor=3)['sha256']
+            evidence['overlap'] = overlap
+            if overlap == 'last':
+                names.append('mosaic-last.cog.tif')
+                evidence['first_sha256'] = verify('mosaic-first.cog.tif', True, 'first')['sha256']
+        else:
+            evidence['factor'] = 3 if action == 'verify-replace' else 1
+        if sorted(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != sorted(names):
             raise FixtureError('target contains unexpected or partial artifacts')
-        return {'cog_valid': True, 'cog_warnings': len(warnings), 'valid_pixels': SIZE * SIZE - 1,
-                'invalid_pixels': 1, 'factor': factor, 'source_unchanged': True,
-                'sha256': hashlib.sha256(target_path.read_bytes()).hexdigest()}
+        return evidence
 
 
 def main():
     action = sys.argv[1]
     if action.startswith('worker-'):
-        if action not in ('worker-seed', 'worker-verify-create', 'worker-verify-replace'):
+        if action.removeprefix('worker-') not in ACTIONS:
             raise FixtureError('unknown worker action')
         result = worker(action.removeprefix('worker-'), sys.argv[2])
     else:
@@ -212,10 +272,10 @@ def main():
             start(root); result = {'started': True}
         elif action == 'stop':
             stop(); result = {'containers': 0}
-        elif action in ('seed', 'verify-create', 'verify-replace'):
+        elif action in ACTIONS:
             result = physical_worker(action, root)
         else:
-            raise FixtureError('usage: fixture start|seed|verify-create|verify-replace|stop')
+            raise FixtureError('usage: fixture start|seed|verify-create|verify-replace|verify-mosaic-first|verify-mosaic-last|stop')
     print(json.dumps(result, sort_keys=True))
 
 

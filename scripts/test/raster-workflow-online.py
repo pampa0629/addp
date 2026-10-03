@@ -13,6 +13,7 @@ import time
 import urllib.parse
 
 support = importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
+fixture = importlib.import_module('business.scripts.online-raster-minio-fixture')
 GatewayClient, SuiteError = support.GatewayClient, support.SuiteError
 obj, array, positive = support._object, support._array, support.positive_int
 PERMISSIONS = {'develop.task.read', 'develop.task.execute', 'develop.data_read.execute',
@@ -65,6 +66,30 @@ def workflow(source_locator, target_engine_id, expression, mode):
     ]}
 
 
+def spatial_workflow(source_locator, target_engine_id, overlap):
+    def reference(task): return {'$ref': task, 'port': 'default'}
+    return {'tasks': [
+        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
+        {'id': 'project', 'operator': 'raster_reproject', 'depends_on': ['load'], 'params': {
+            'input_raster': reference('load'), 'target_crs': 'EPSG:3857', 'resolution': [1, 1], 'resampling': 'nearest'}},
+        {'id': 'left_math', 'operator': 'raster_band_math', 'depends_on': ['project'], 'params': {
+            'input_raster': reference('project'), 'expression': 'b2-b1'}},
+        {'id': 'right_math', 'operator': 'raster_band_math', 'depends_on': ['project'], 'params': {
+            'input_raster': reference('project'), 'expression': 'b2+b1'}},
+        {'id': 'left_clip', 'operator': 'raster_clip', 'depends_on': ['left_math'], 'params': {
+            'input_raster': reference('left_math'), 'boundary_crs': 'EPSG:3857', 'bbox': [0, 0, 160, 256]}},
+        {'id': 'right_clip', 'operator': 'raster_clip', 'depends_on': ['right_math'], 'params': {
+            'input_raster': reference('right_math'), 'boundary_crs': 'EPSG:3857', 'bbox': [96, 0, 256, 256]}},
+        {'id': 'mosaic', 'operator': 'raster_mosaic', 'depends_on': ['left_clip', 'right_clip'], 'params': {
+            'input_raster': reference('left_clip'), 'other_raster': reference('right_clip'),
+            'target_crs': 'EPSG:3857', 'resolution': [1, 1], 'overlap': overlap, 'resampling': 'nearest'}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['mosaic'], 'params': {
+            'input_raster': reference('mosaic'),
+            'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+            'target_name': f'mosaic-{overlap}.cog.tif', 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}},
+    ]}
+
+
 def submit(client, engine_id, definition):
     response = obj(client.request('POST', '/api/v1/develop/executions', (200,), {
         'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 180,
@@ -76,7 +101,8 @@ def submit(client, engine_id, definition):
     return value
 
 
-def validate_success(execution, source_locator, target_locator, mode):
+def validate_success(execution, source_locator, target_locator, mode, expectation=None):
+    expectation = expectation or fixture.artifact_expectation()
     metadata = obj(execution.get('metadata'), 'Develop metadata')
     resource = obj(obj(obj(execution.get('outputs'), 'outputs').get('save'), 'save output').get('resource'), 'resource')
     if resource != {'locator': target_locator, 'type': 'object', 'write_mode': mode}:
@@ -93,13 +119,13 @@ def validate_success(execution, source_locator, target_locator, mode):
     artifact = obj(result.get('final_result'), 'raster artifact')
     if (artifact.get('artifact_type'), artifact.get('format'), artifact.get('profile')) != ('raster', 'tiff', 'cog'):
         raise SuiteError('Develop result is not a public raster COG artifact')
-    if (artifact.get('width'), artifact.get('height'), artifact.get('band_count')) != (256, 256, 1):
+    if (artifact.get('width'), artifact.get('height'), artifact.get('band_count')) != (expectation['width'], expectation['height'], expectation['band_count']):
         raise SuiteError('Develop raster artifact dimensions are invalid')
-    if artifact.get('source_crs') != 'EPSG:4326' or artifact.get('extent_srid') != 4326:
+    if artifact.get('source_crs') != expectation['source_crs'] or artifact.get('extent_srid') != expectation['extent_srid']:
         raise SuiteError('Develop raster artifact CRS is invalid')
     transform = array(artifact.get('transform'), 'artifact transform')
     if len(transform) != 6 or any(not math.isclose(actual, expected, abs_tol=1e-10) for actual, expected in
-                                 zip(transform, (110, .01, 0, 20.32, 0, -.01))):
+                                 zip(transform, expectation['transform'])):
         raise SuiteError('Develop raster artifact transform is invalid')
     bands = array(artifact.get('bands'), 'artifact bands')
     if len(bands) != 1 or bands[0].get('dtype') != 'Float64' or bands[0].get('nodata_is_nan') is not True:
@@ -122,20 +148,21 @@ def validate_success(execution, source_locator, target_locator, mode):
     return facts, scan_id
 
 
-def validate_target_item(item):
+def validate_target_item(item, expectation=None):
+    expectation = expectation or fixture.artifact_expectation()
     attributes = obj(item.get('attributes'), 'target attributes')
     if obj(attributes.get('item'), 'item facts').get('format') != 'tiff':
         raise SuiteError('Meta did not identify the target TIFF')
     media = obj(obj(attributes.get('type_info'), 'type info').get('media'), 'media facts')
-    if (media.get('width'), media.get('height')) != (256, 256):
+    if (media.get('width'), media.get('height')) != (expectation['width'], expectation['height']):
         raise SuiteError('Meta target dimensions are invalid')
     tiff = obj(obj(attributes.get('format_info'), 'format info').get('tiff'), 'TIFF facts')
     if tiff.get('profile') != 'cog' or tiff.get('is_tiled') is not True:
         raise SuiteError('Meta did not identify the COG profile hint')
     spatial = obj(obj(attributes.get('capabilities'), 'capabilities').get('spatial'), 'spatial facts')
     extent = array(spatial.get('extent'), 'spatial extent')
-    if spatial.get('srid') != 4326 or len(extent) != 4 or any(
-        not math.isclose(actual, expected, abs_tol=1e-10) for actual, expected in zip(extent, (110, 17.76, 112.56, 20.32))
+    if spatial.get('srid') != expectation['extent_srid'] or len(extent) != 4 or any(
+        not math.isclose(actual, expected, abs_tol=1e-10) for actual, expected in zip(extent, expectation['extent'])
     ):
         raise SuiteError('Meta target CRS/extent are invalid')
 
@@ -189,13 +216,13 @@ def physical(repository, env, action):
     if result.returncode:
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
-    if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != 65535:
+    if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != fixture.artifact_expectation(action.startswith('verify-mosaic-'))['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload
 
 
 def browser(repository, env, evidence):
-    report_path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'raster-workflow-browser.json'
+    report_path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / f'raster-workflow-{evidence["case_name"]}-browser.json'
     report_path.unlink(missing_ok=True)
     browser_env = dict(env, ADDP_ONLINE_RASTER_EVIDENCE=json.dumps(evidence))
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/raster-workflow.spec.js',
@@ -208,6 +235,24 @@ def browser(repository, env, evidence):
     if report != expected:
         raise SuiteError('raster Console report does not bind the exact run/User/execution/items')
     return report
+
+
+def inspect_output(repository, env, client, source, source_locator, target_engine, target_name,
+                   execution_id, case_name, identity, timeout, browser_runner, expectation):
+    target = support.find_fixture_item(client, target_engine, 'raster-target/' + target_name, 'COG target')
+    # No manual target scan or collect: both facts must converge automatically.
+    target = obj(client.request('GET', f'/api/v1/meta/items/{target["id"]}', (200,)).payload, 'target DataItem')
+    validate_target_item(target, expectation)
+    lineage = wait_lineage(client, source['id'], target['id'], execution_id, timeout)
+    target_locator = f'addp://engine/{target_engine}/path/raster-target/{target_name}?type=object'
+    evidence = browser_runner(repository, env, {
+        'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'principal_id': identity['principal_id'],
+        'tenant_id': identity['tenant_id'], 'execution_id': execution_id,
+        'source_item_id': source['id'], 'target_item_id': target['id'],
+        'source_locator': source_locator, 'target_locator': target_locator,
+        'case_name': case_name, 'source_name': source['full_name'].rsplit('/', 1)[-1], 'target_name': target_name,
+    })
+    return lineage, evidence
 
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser, diagnostic_runner=duplicate_create_diagnostic):
@@ -259,21 +304,39 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('replace did not change the target pixels')
         physical_evidence.append(native)
         executions.append({'execution_id': identifier, 'write_mode': mode, 'status': status})
-    target = support.find_fixture_item(client, target_engine, 'raster-target/result.cog.tif', 'COG target')
-    # This DataItem must already exist after the automatic scan; no manual scan here.
-    target = obj(client.request('GET', f'/api/v1/meta/items/{target["id"]}', (200,)).payload, 'target DataItem')
-    validate_target_item(target)
-    lineage = wait_lineage(client, source['id'], target['id'], executions[-1]['execution_id'], timeout)
-    browser_evidence = browser_runner(repository, env, {
-        'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'principal_id': identity['principal_id'],
-        'tenant_id': str(tenant), 'execution_id': executions[-1]['execution_id'],
-        'source_item_id': source['id'], 'target_item_id': target['id'],
-        'source_locator': source_locator, 'target_locator': target_locator,
-    })
+    lineage, browser_evidence = inspect_output(repository, env, client, source, source_locator,
+        target_engine, 'result.cog.tif', executions[-1]['execution_id'], 'band-math', identity,
+        timeout, browser_runner, fixture.artifact_expectation())
+    spatial_source = support.find_fixture_item(client, source_engine, 'raster-source/spatial.tif', 'spatial source')
+    spatial_locator = support.build_item_locator(source_engine, spatial_source)
+    spatial_cases = []
+    for overlap in ('first', 'last'):
+        name = f'mosaic-{overlap}.cog.tif'
+        locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
+        identifier = submit(client, engine_id, spatial_workflow(spatial_locator, target_engine, overlap))
+        execution = wait_execution(client, 'develop', identifier, timeout)
+        facts, scan_id = validate_success(execution, spatial_locator, locator, 'create', fixture.artifact_expectation(True))
+        wait_execution(client, 'meta', scan_id, timeout)
+        monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor spatial execution')
+        if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
+            or obj(monitor.get('metadata'), 'Monitor metadata').get('lineage_facts') != facts):
+            raise SuiteError('Monitor spatial execution differs from Develop status/lineage')
+        native = physical_runner(repository, env, 'verify-mosaic-' + overlap)
+        if native.get('overlap') != overlap or native.get('baseline_sha256') != physical_evidence[-1]['sha256']:
+            raise SuiteError('spatial execution modified the baseline or has the wrong overlap evidence')
+        if overlap == 'last' and (native.get('first_sha256') != spatial_cases[0]['physical']['sha256']
+                                  or native.get('sha256') == spatial_cases[0]['physical']['sha256']):
+            raise SuiteError('last mosaic modified the first artifact or did not change overlap pixels')
+        graph, browser_report = inspect_output(repository, env, client, spatial_source, spatial_locator,
+            target_engine, name, identifier, 'mosaic-' + overlap, identity, timeout,
+            browser_runner, fixture.artifact_expectation(True))
+        spatial_cases.append({'case_name': 'mosaic-' + overlap, 'execution_id': identifier,
+            'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
+            'spatial_cases': spatial_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

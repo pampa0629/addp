@@ -42,6 +42,7 @@ const (
 	tagGDALMetadata        = 42112
 	tagGDALNoData          = 42113
 
+	geoKeyModelType       = 1024
 	geoKeyProjectedCSType = 3072
 	geoKeyGeographicType  = 2048
 	geoKeyGTCitation      = 1026
@@ -423,6 +424,8 @@ func geoTIFFCRS(ifd *tiffIFD) (int, string) {
 	ascii := ifd.ascii(tagGeoAsciiParams)
 	entryCount := int(keys[3])
 	crsParts := []string{}
+	projected, geographic := 0, 0
+	hasProjectedModel := false
 	for i := 0; i < entryCount; i++ {
 		pos := 4 + i*4
 		if pos+3 >= len(keys) {
@@ -433,17 +436,43 @@ func geoTIFFCRS(ifd *tiffIFD) (int, string) {
 		count := keys[pos+2]
 		value := keys[pos+3]
 		switch keyID {
-		case geoKeyProjectedCSType, geoKeyGeographicType:
-			if location == 0 && value > 0 && value != 32767 {
-				return int(value), ""
+		case geoKeyModelType:
+			if location == 0 && count == 1 && value == 1 {
+				hasProjectedModel = true
 			}
-		case geoKeyGTCitation, geoKeyGeogCitation, geoKeyProjectedCS:
+		case geoKeyProjectedCSType:
+			hasProjectedModel = true
+			if location == 0 && count == 1 {
+				projected = int(value)
+			}
+		case geoKeyGeographicType:
+			if location == 0 && count == 1 {
+				geographic = int(value)
+			}
+		case geoKeyGTCitation, geoKeyProjectedCS:
+			if location == tagGeoAsciiParams {
+				if text := geoASCIIValue(ascii, int(value), int(count)); text != "" {
+					crsParts = append(crsParts, text)
+				}
+			}
+		case geoKeyGeogCitation:
 			if location == tagGeoAsciiParams {
 				if text := geoASCIIValue(ascii, int(value), int(count)); text != "" {
 					crsParts = append(crsParts, text)
 				}
 			}
 		}
+	}
+	// The geographic code of a projected model denotes its base CRS, not
+	// the CRS of its pixel coordinates. GeoKey order must not change identity.
+	if hasProjectedModel {
+		if projected >= 1024 && projected <= 32766 {
+			return projected, ""
+		}
+		return 0, ""
+	}
+	if geographic >= 1024 && geographic <= 32766 {
+		return geographic, ""
 	}
 	crsText := strings.TrimSpace(strings.Join(crsParts, " "))
 	if srid := spatial.ParseSRID(crsText); srid > 0 {

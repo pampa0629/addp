@@ -58,6 +58,15 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
             self.assertIn('--env-file', args)
             for entry in config.values(): self.assertNotIn(entry['secret_key'], ' '.join(args))
 
+    def test_seed_retains_source_fingerprints_in_private_directory(self):
+        evidence = {'seeded': True, 'source_sha256': {'source.tif': 'source-hash', 'spatial.tif': 'spatial-hash'}}
+        with patch.object(m, 'command', return_value=json.dumps(evidence)) as command:
+            self.assertEqual(m.physical_worker('seed', self.root), evidence)
+        path = self.root / 'raster-source-sha256.json'
+        self.assertEqual(json.loads(path.read_text()), evidence['source_sha256'])
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertIn(str(self.root) + ':/secrets:ro', command.call_args.args[0])
+
     def test_partial_start_failure_cleans_both_owned_containers(self):
         def fail(args, **kwargs): raise m.FixtureError('run failed')
         with patch.dict(os.environ, self.env), patch.object(m, 'owned', return_value=False), patch.object(m, 'command', fail), \

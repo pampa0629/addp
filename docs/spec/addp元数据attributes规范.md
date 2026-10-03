@@ -470,6 +470,8 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 }
 ```
 
+GeoTIFF 的整体 CRS 必须与其像元坐标对应。[OGC GeoTIFF 1.1 的模型 CRS 规则](https://docs.ogc.org/is/19-008r4/19-008r4.html#_requirements_for_definition_of_model_crs_when_model_is_from_geotiff_crs_register)规定：投影模型由 `ProjectedCRSGeoKey`（3072）标识，地理基准由 `GeodeticCRSGeoKey`（2048）标识。投影文件同时包含两个编号时，整体 `srid` 应取投影 CRS，不得因标签顺序取其基底地理 CRS；投影 CRS 为 user-defined 时，也不得把基底地理编号当作整体 CRS。无法确定完整投影 CRS 时保留未知状态，不能猜成 EPSG:4326。
+
 字段规则：
 
 | 字段 | 规则 |

@@ -3,6 +3,7 @@ import importlib
 from pathlib import Path
 import unittest
 import tempfile
+import urllib.parse
 
 m = importlib.import_module('scripts.test.raster-workflow-online')
 
@@ -16,12 +17,20 @@ class Client:
                        'attributes': {'item': {'format': 'tiff'}, 'type_info': {'media': {'width': 256, 'height': 256}},
                                       'format_info': {'tiff': {'profile': 'cog', 'is_tiled': True}},
                                       'capabilities': {'spatial': {'srid': 4326, 'extent': [110, 17.76, 112.56, 20.32]}}}}
+        self.spatial_source = {'id': 11, 'item_type': 'object', 'full_name': 'raster-source/spatial.tif', 'fingerprint': 'spatial-fp'}
+        self.targets = {20: self.target}
+        for item_id, overlap in [(21, 'first'), (22, 'last')]:
+            item = copy.deepcopy(self.target)
+            item.update(id=item_id, full_name=f'raster-target/mosaic-{overlap}.cog.tif', fingerprint='mosaic-' + overlap)
+            item['attributes']['capabilities']['spatial'] = {'srid': 3857, 'extent': [0, 0, 256, 256]}
+            self.targets[item_id] = item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
                             {'role_key': 'online.raster_workflow', 'permissions': sorted(m.PERMISSIONS)}]}}
         self.mutate = lambda execution: execution
         self.monitor_mismatch = False
         self.no_graph = False
+        self.relation_kind = 'derive'
 
     @staticmethod
     def project(execution, professional):
@@ -50,24 +59,25 @@ class Client:
             result = {'execution_id': 'source-scan'}
         elif path.startswith('/api/v1/meta/executions/'):
             result = {'status': 'success'}
-        elif path == '/api/v1/meta/engines/1/items': result = [self.source]
-        elif path == '/api/v1/meta/engines/2/items': result = [self.target]
-        elif path == '/api/v1/meta/items/20': result = self.target
+        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source]
+        elif path == '/api/v1/meta/engines/2/items': result = list(self.targets.values())
+        elif path.startswith('/api/v1/meta/items/'): result = self.targets[int(path.rsplit('/', 1)[1])]
         elif method == 'POST' and path == '/api/v1/develop/executions':
             definition = body['content']['workflow_definition']
             mode = definition['tasks'][-1]['params']['write_mode']
             identifier = f'run-{len(self.executions) + 1}'
             status = 'failed' if identifier == 'run-2' else 'success'
             source = definition['tasks'][0]['params']['locator']
-            target = 'addp://engine/2/path/raster-target/result.cog.tif?type=object'
+            target = f'addp://engine/2/path/raster-target/{definition["tasks"][-1]["params"]["target_name"]}?type=object'
+            spatial = 'mosaic' in definition['tasks'][-1]['depends_on']
+            expectation = m.fixture.artifact_expectation(spatial)
             metadata = {} if status == 'failed' else {
                 'outputs': {'save': {'resource': {'locator': target, 'type': 'object', 'write_mode': mode}}},
                 'lineage_facts': {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source}],
                                   'outputs': [{'locator': target, 'write_mode': mode}],
                                   'operations': [{'kind': 'derive', 'operator': 'develop', 'input_ports': ['input'], 'output_ports': ['output']}]},
                 'result': {'final_result': {'artifact_type': 'raster', 'format': 'tiff', 'profile': 'cog',
-                                          'width': 256, 'height': 256, 'band_count': 1, 'source_crs': 'EPSG:4326',
-                                          'extent_srid': 4326, 'transform': [110, .01, 0, 20.32, 0, -.01],
+                                          **{key: value for key, value in expectation.items() if key != 'valid_pixels'},
                                           'bands': [{'dtype': 'Float64', 'nodata_is_nan': True}]},
                            'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'auto-' + identifier}]},
             }
@@ -80,8 +90,10 @@ class Client:
             result = self.project(self.executions[path.rsplit('/', 1)[1]], professional=False)
             if self.monitor_mismatch: result['status'] = 'running'
         elif path.startswith('/api/v1/meta/lineage/graph?'):
-            result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': 10}, 'target': {'item_id': 20},
-                      'status': 'active', 'relation_kind': 'derive', 'evidence': {'execution_id': 'run-3'}}]}
+            target_id = int(urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)['item_id'][0])
+            source_id, identifier = (10, 'run-3') if target_id == 20 else (11, 'run-' + str(target_id - 17))
+            result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
+                      'status': 'active', 'relation_kind': self.relation_kind, 'evidence': {'execution_id': identifier}}]}
         else:
             raise AssertionError(f'unexpected API: {method} {path}')
         return m.support.Response(200, result, {})
@@ -96,6 +108,11 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
 
     def physical(self, repo, env, action):
         self.physical_actions.append(action)
+        if action.startswith('verify-mosaic-'):
+            overlap = action.removeprefix('verify-mosaic-')
+            return {'sha256': 'spatial-' + overlap, 'cog_valid': True, 'source_unchanged': True,
+                    'valid_pixels': 65534, 'invalid_pixels': 2, 'overlap': overlap,
+                    'baseline_sha256': 'new', 'first_sha256': 'spatial-first'}
         return {'sha256': 'new' if action == 'verify-replace' else 'original', 'cog_valid': True,
                 'source_unchanged': True, 'valid_pixels': 65535}
 
@@ -108,8 +125,13 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_complete_chain_only_uses_source_manual_scan_and_owner_automatic_target_scan(self):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
-        self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace'])
+        self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last'])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
+        self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
+        self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
+        self.assertEqual([item['lineage']['target_item_id'] for item in report['spatial_cases']], [21, 22])
+        self.assertEqual([item['browser']['target_name'] for item in report['spatial_cases']],
+                         ['mosaic-first.cog.tif', 'mosaic-last.cog.tif'])
         manual = [body for method, path, body in self.client.calls if method == 'POST' and 'scan/run' in path]
         self.assertEqual(len(manual), 1)
         self.assertEqual(manual[0]['engine_id'], 1)
@@ -193,6 +215,49 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                             m.duplicate_create_diagnostic(root, {}, 'run-2', .001)
                     else:
                         self.assertEqual(m.duplicate_create_diagnostic(root, {}, 'run-2', 1)['cause'], 'target_already_exists')
+
+    def test_spatial_cases_preserve_operator_dependencies_and_exact_grid(self):
+        self.run_scene()
+        submitted = [body['content']['workflow_definition']['tasks'] for method, path, body in self.client.calls
+                     if method == 'POST' and path == '/api/v1/develop/executions']
+        for tasks, overlap in zip(submitted[-2:], ('first', 'last')):
+            self.assertEqual([task['operator'] for task in tasks], ['raster_load', 'raster_reproject',
+                'raster_band_math', 'raster_band_math', 'raster_clip', 'raster_clip', 'raster_mosaic', 'raster_save'])
+            self.assertEqual(tasks[1]['params']['target_crs'], 'EPSG:3857')
+            self.assertEqual(tasks[1]['params']['resolution'], [1, 1])
+            self.assertEqual(tasks[6]['depends_on'], ['left_clip', 'right_clip'])
+            self.assertEqual(tasks[6]['params']['other_raster'], {'$ref': 'right_clip', 'port': 'default'})
+            self.assertEqual(tasks[6]['params']['overlap'], overlap)
+
+    def test_spatial_cases_reject_wrong_artifact_scan_lineage_and_prior_hashes(self):
+        for fault in ('crs', 'grid', 'scan', 'locator', 'lineage', 'baseline', 'first', 'unchanged_last'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-4':
+                        metadata = execution['metadata']
+                        if fault == 'crs': metadata['result']['final_result']['source_crs'] = 'EPSG:4326'
+                        if fault == 'grid': metadata['result']['final_result']['transform'][1] = 2
+                        if fault == 'scan': metadata['result']['meta_scan_runs'][0]['target_locator'] = 'wrong-target'
+                        if fault == 'locator': metadata['outputs']['save']['resource']['locator'] = 'wrong-target'
+                        if fault == 'lineage': metadata['lineage_facts']['inputs'][0]['locator'] = 'wrong-source'
+                    return execution
+                self.client.mutate = mutate
+                def physical(repo, env, action):
+                    payload = self.physical(repo, env, action)
+                    if action == 'verify-mosaic-first' and fault == 'baseline': payload['baseline_sha256'] = 'modified'
+                    if action == 'verify-mosaic-last':
+                        if fault == 'first': payload['first_sha256'] = 'modified'
+                        if fault == 'unchanged_last': payload['sha256'] = 'spatial-first'
+                    return payload
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
+    def test_graph_rejects_reference_relationship_for_spatial_derivation(self):
+        from unittest.mock import patch
+        self.client.relation_kind = 'reference'
+        with patch.object(m.time, 'monotonic', side_effect=[0, 0, 2]), patch.object(m.time, 'sleep'):
+            with self.assertRaises(m.SuiteError):
+                m.wait_lineage(self.client, 11, 21, 'run-4', .1)
 
     def test_rejects_incorrect_target_metadata(self):
         self.client.target['attributes']['type_info']['media']['width'] = 1

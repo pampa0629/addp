@@ -5,7 +5,7 @@ import { identity, json, login } from './transfer-browser-support.js'
 
 test('栅格业务成果的 Console 执行状态、身份和源目标血缘一致', async ({ page }) => {
   const evidence = JSON.parse(process.env.ADDP_ONLINE_RASTER_EVIDENCE || '{}')
-  for (const field of ['run_id', 'principal_id', 'tenant_id', 'execution_id', 'source_item_id', 'target_item_id', 'source_locator', 'target_locator']) {
+  for (const field of ['run_id', 'principal_id', 'tenant_id', 'execution_id', 'source_item_id', 'target_item_id', 'source_locator', 'target_locator', 'case_name', 'source_name', 'target_name']) {
     expect(evidence[field], `missing raster evidence ${field}`).toBeTruthy()
   }
   const path = `/monitor/executions?execution_id=${encodeURIComponent(evidence.execution_id)}`
@@ -37,8 +37,8 @@ test('栅格业务成果的 Console 执行状态、身份和源目标血缘一�
     await expect(groups).toHaveCount(2)
     await expect(groups.nth(0).locator('.execution-lineage__card')).toHaveCount(1)
     await expect(groups.nth(1).locator('.execution-lineage__card')).toHaveCount(1)
-    await expect(groups.nth(0)).toContainText('source.tif')
-    await expect(groups.nth(1)).toContainText('result.cog.tif')
+    await expect(groups.nth(0)).toContainText(evidence.source_name)
+    await expect(groups.nth(1)).toContainText(evidence.target_name)
     await expect(groups.nth(0).locator('.execution-lineage__resource-action')).toHaveCount(1)
     await expect(groups.nth(1).locator('.execution-lineage__resource-action')).toHaveCount(0)
 
@@ -46,10 +46,10 @@ test('栅格业务成果的 Console 执行状态、身份和源目标血缘一�
     const graph = await json(await api.get(`/api/v1/meta/lineage/graph?${query}`), 'browser raster lineage graph')
     expect(graph.truncated).toBe(false)
     expect(graph.edges.some(edge => edge.source.item_id === evidence.source_item_id &&
-      edge.target.item_id === evidence.target_item_id && edge.status === 'active' &&
+      edge.target.item_id === evidence.target_item_id && edge.status === 'active' && edge.relation_kind === 'derive' &&
       edge.evidence?.execution_id === evidence.execution_id)).toBe(true)
-    await detail.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'raster-workflow-monitor.png') })
-    writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'raster-workflow-browser.json'), JSON.stringify({
+    await detail.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `raster-workflow-${evidence.case_name}-monitor.png`) })
+    writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `raster-workflow-${evidence.case_name}-browser.json`), JSON.stringify({
       ...evidence, schema_version: 'addp.raster-workflow-browser/v1', result: 'passed'
     }, null, 2))
   } finally {

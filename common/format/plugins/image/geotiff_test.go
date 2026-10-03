@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	stdimage "image"
 	"image/color"
 	"testing"
@@ -40,6 +41,52 @@ func TestExtractGeoTIFFSpatial(t *testing.T) {
 	}
 	if spatial.HasSpatialIndex == nil || *spatial.HasSpatialIndex {
 		t.Fatalf("has_spatial_index = %#v, want false", spatial.HasSpatialIndex)
+	}
+}
+
+func TestGeoTIFFModelCRSUsesProjectedCodeRatherThanBaseGeographicCode(t *testing.T) {
+	for _, projected := range []uint16{3857, 32650, 32767, 0, 32768, 65535} {
+		for _, projectedFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("projected_%d_first_%t", projected, projectedFirst), func(t *testing.T) {
+				geographic := []uint16{geoKeyGeographicType, 0, 1, 4326}
+				projection := []uint16{geoKeyProjectedCSType, 0, 1, projected}
+				entries := append(append([]uint16{}, geographic...), projection...)
+				if projectedFirst {
+					entries = append(append([]uint16{}, projection...), geographic...)
+				}
+				keys := append([]uint16{1, 1, 0, 2}, entries...)
+				data := newTIFFMetadata(testTIFFWithTags(t, []tiffTestTag{
+					{tag: tagModelPixelScale, typ: tiffTypeDouble, data: doublesBytes([]float64{1, 1, 0})},
+					{tag: tagModelTiepoint, typ: tiffTypeDouble, data: doublesBytes([]float64{0, 0, 0, 0, 2, 0})},
+					{tag: tagGeoKeyDirectory, typ: tiffTypeShort, data: shortsBytes(keys)},
+				}, 0), nil)
+				spatial := extractGeoTIFFSpatial(data, 2, 2)
+				if spatial == nil {
+					t.Fatal("missing spatial facts")
+				}
+				if projected == 0 || projected >= 32767 {
+					if spatial.SRID != nil {
+						t.Fatalf("user-defined projection was mislabeled as base CRS: %d", *spatial.SRID)
+					}
+				} else if spatial.SRID == nil || *spatial.SRID != int(projected) {
+					t.Fatalf("spatial SRID = %v, want projected CRS %d", spatial.SRID, projected)
+				}
+			})
+		}
+	}
+}
+
+func TestProjectedGeoTIFFWithoutModelCodeDoesNotUseBaseGeographicCode(t *testing.T) {
+	data := newTIFFMetadata(testTIFFWithTags(t, []tiffTestTag{
+		{tag: tagModelPixelScale, typ: tiffTypeDouble, data: doublesBytes([]float64{1, 1, 0})},
+		{tag: tagModelTiepoint, typ: tiffTypeDouble, data: doublesBytes([]float64{0, 0, 0, 0, 2, 0})},
+		{tag: tagGeoKeyDirectory, typ: tiffTypeShort, data: shortsBytes([]uint16{
+			1, 1, 0, 2, geoKeyModelType, 0, 1, 1, geoKeyGeographicType, 0, 1, 4326,
+		})},
+	}, 0), nil)
+	spatial := extractGeoTIFFSpatial(data, 2, 2)
+	if spatial == nil || spatial.SRID != nil || spatial.CRSRef != "" {
+		t.Fatalf("unknown projected model was assigned a CRS: %#v", spatial)
 	}
 }
 
