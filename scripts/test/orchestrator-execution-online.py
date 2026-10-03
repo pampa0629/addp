@@ -200,7 +200,155 @@ def run_fault_case(client, launch, task_id, scan_id, case_id, mode, faults, repo
         faults.release()
 
 
-def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, control=source_action, checkpoint=lambda: None, faults=None):
+OWNER_READER_ROLE = "online.external_online_parent_reader"
+IAM_ASSIGNMENTS = "/api/v1/system/tenant/role_assignments"
+AUTH_CONTEXT = "/api/v1/system/auth/context"
+
+
+def decimal_id(value):
+    require(isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value), "invalid IAM fixture identity")
+    return value
+
+
+def user_binding(payload, tenant):
+    principal, context = payload.get("principal", {}), payload.get("context", {})
+    require(isinstance(principal, dict) and isinstance(context, dict)
+            and principal.get("type") == "user" and context.get("type") == "tenant"
+            and context.get("tenant_id") == str(tenant), "IAM fixture User/Tenant binding changed")
+    return decimal_id(principal.get("id")), decimal_id(context.get("tenant_membership_id"))
+
+
+def role_permissions(payload):
+    authorization = payload.get("authorization")
+    require(isinstance(authorization, dict), "IAM fixture authorization must be an object")
+    assignments = authorization.get("role_assignments")
+    require(isinstance(assignments, list), "IAM fixture role assignments must be an array")
+    roles, permissions = set(), set()
+    for assignment in assignments:
+        require(isinstance(assignment, dict) and isinstance(assignment.get("role_key"), str)
+                and isinstance(assignment.get("permissions"), list)
+                and all(isinstance(p, str) for p in assignment["permissions"]), "invalid IAM fixture role assignment")
+        roles.add(assignment["role_key"])
+        permissions.update(assignment["permissions"])
+    return roles, permissions
+
+
+def invisible_projection(client, execution_id, status):
+    for suffix in ("", "/tree", "/events"):
+        payload = client.request("GET", f"{MONITOR}/{execution_id}{suffix}", (status,)).payload
+        require(set(payload) <= {"error", "error_code"}, "invisible execution returned diagnostic data")
+
+
+class PermissionCases:
+    """IAM controller is used only for revocation; every diagnostic read uses a normal User."""
+
+    def __init__(self, reader, administrator, login, tenant, assignment_id, username, password):
+        self.reader, self.administrator, self.login, self.tenant = reader, administrator, login, tenant
+        self.assignment_id = decimal_id(assignment_id)
+        self.username, self.password = username, password
+        require(username == "external-online-parent-reader" and bool(password), "dedicated reader login required")
+        API.validate_user_identity(reader, tenant, {"monitor.execution.read", "orchestrator.workflow.read"})
+        original = reader.request("GET", AUTH_CONTEXT, (200,)).payload
+        self.binding = user_binding(original, tenant)
+        _, permissions = role_permissions(original)
+        require("meta.scan_task.read" not in permissions, "parent reader must not read Meta executions")
+        admin = administrator.request("GET", AUTH_CONTEXT, (200,)).payload
+        user_binding(admin, tenant)
+        require(admin.get("token", {}).get("type") == "first_party_access_token", "dedicated IAM controller token required")
+        roles, permissions = role_permissions(admin)
+        require("tenant.administrator" in roles and not (roles & (API.FORBIDDEN_ADMIN_ROLES - {"tenant.administrator"}))
+                and {"iam.tenant_role_assignment.read", "iam.tenant_role_assignment.revoke"} <= permissions,
+                "IAM controller must be the fixture Tenant administrator")
+        require(user_binding(admin, tenant)[0] != self.binding[0], "IAM controller and reader must be different Users")
+        target = self.iam_request("GET", (200,)).payload
+        self.assert_assignment(target, "active")
+
+    def iam_request(self, method, expected, body=None):
+        path = f"{IAM_ASSIGNMENTS}/{self.assignment_id}" + ("/revoke" if method == "POST" else "")
+        try:
+            return self.administrator.request(method, path, expected, body)
+        except SuiteError:
+            raise SuiteError("fixture IAM assignment request failed") from None
+
+    def assert_assignment(self, target, status):
+        require(target.get("id") == self.assignment_id and target.get("principal_type") == "user"
+                and (target.get("principal_id"), target.get("membership_id")) == self.binding
+                and target.get("username") == self.username and target.get("role_key") == OWNER_READER_ROLE
+                and target.get("scope_type") == "tenant" and target.get("status") == status,
+                "revocation target does not match the dedicated reader Owner assignment")
+
+    def parent_read_child_hidden(self, execution_id, visible, report):
+        detail = self.reader.request("GET", f"{MONITOR}/{execution_id}", (200,)).payload
+        assert_safe(detail)
+        require(detail.get("execution_id") == execution_id, "readable parent detail identity changed")
+        projected = self.reader.request("GET", f"{MONITOR}/{execution_id}/tree", (200,)).payload
+        assert_safe(projected)
+        allowed = {i for i, item in visible.items() if item["module"] == "orchestrator"}
+        filtered = tree_ids(projected)
+        require(len(allowed) == 2 and set(filtered) == allowed
+                and all(item.get("module") == "orchestrator" and item.get("status") == "success"
+                        for item in filtered.values()), "parent read leaked or lost child owners")
+        assert_events(self.reader, execution_id, "completed")
+        for identity, item in visible.items():
+            if item["module"] == "meta":
+                invisible_projection(self.reader, identity, 404)
+        report["checks"].append("parent_read_child_hidden")
+
+    def revoke_owner_read(self, execution_id, report, checkpoint):
+        # A missing response must never cause a second revoke command or a clean report.
+        report["uncertain_mutation"] = True
+        checkpoint()
+        target = self.iam_request("POST", (200,),
+            {"reason": "Disposable Online Owner execution-read revocation acceptance"}).payload
+        self.assert_assignment(target, "revoked")
+        report["uncertain_mutation"] = False
+        checkpoint()
+        invisible_projection(self.reader, execution_id, 401)
+        report["checks"].append("revoked_token_invalid")
+        report["uncertain_mutation"] = True
+        checkpoint()
+        issued = self.login.request("POST", "/api/v1/system/login", (200,),
+                                    {"username": self.username, "password": self.password}).payload
+        token = (issued.get("session") or {}).get("access_token")
+        require(issued.get("next_action") == "session_issued" and isinstance(token, str) and bool(token)
+                and token != self.reader.token, "formal reader re-login did not issue a fresh session")
+        fresh = API.GatewayClient(self.reader.base_url, token, self.reader.timeout)
+        API.validate_user_identity(fresh, self.tenant, {"monitor.execution.read"})
+        context = fresh.request("GET", AUTH_CONTEXT, (200,)).payload
+        require(user_binding(context, self.tenant) == self.binding, "re-login changed the reader identity")
+        _, permissions = role_permissions(context)
+        require("orchestrator.workflow.read" not in permissions and "meta.scan_task.read" not in permissions,
+                "fresh reader retained revoked Owner access")
+        report["uncertain_mutation"] = False
+        checkpoint()
+        invisible_projection(fresh, execution_id, 404)
+        fresh.request("GET", f"{ORCH}/executions/{execution_id}", (403,))
+        report["checks"].append("revoked_owner_read_invisible")
+
+
+def owner_unavailable(client, execution_id, visible, scan, faults, report):
+    require(faults is not None, "Owner unavailable acceptance requires the real external proxy")
+    try:
+        faults.arm("owner_unavailable", scan, "drop_scope")
+        for suffix in ("", "/tree", "/events"):
+            payload = client.request("GET", f"{MONITOR}/{execution_id}{suffix}", (503,)).payload
+            require(set(payload) == {"error", "error_code"}
+                    and payload["error_code"] == "execution_owner_unavailable" and isinstance(payload["error"], str),
+                    "unavailable Owner exposed diagnostic data or the wrong failure category")
+        witness = faults.witness()
+        require(witness.get("scope_drops", 0) >= 3 and witness.get("posts") == 0
+                and witness.get("child_execution_ids") == [] and not witness.get("error"),
+                "real Owner scope transport failure was not proven")
+        report["checks"].append("owner_unavailable_fail_closed")
+    finally:
+        faults.release()
+    recovered = client.request("GET", f"{MONITOR}/{execution_id}/tree", (200,)).payload
+    assert_safe(recovered)
+    require(tree_ids(recovered) == visible, "Owner recovery changed the full authorized execution tree")
+    report["checks"].append("owner_recovery_restores_access")
+
+
+def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, control=source_action, checkpoint=lambda: None, faults=None, permissions=None):
     report.update(schema_version="addp.online-suite/v1", suite=SUITE, run_id=run_id,
                   tenant_id=str(tenant), result="failed", checks=[], resources=[], executions=[],
                   cleanup="not_started", history_cleanup="pending_deployment_destruction", uncertain_mutation=False)
@@ -290,6 +438,11 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
             for case_id, mode in (("response_lost", "lose_response"), ("process_crash", "hold_status")):
                 run_fault_case(client, launch, fault_root, scan, case_id, mode, faults, report)
                 checkpoint()
+        if permissions is not None:
+            permissions.parent_read_child_hidden(success_id, visible, report)
+            owner_unavailable(client, success_id, visible, scan, faults, report)
+            permissions.revoke_owner_read(success_id, report, checkpoint)
+            checkpoint()
         report["result"] = "passed"
     finally:
         failures = []
@@ -372,13 +525,23 @@ def main():
         require(foreign_tenant > 1 and foreign_tenant != tenant, "foreign reader must belong to a different nondefault Tenant")
         report["foreign_identity"] = API.validate_user_identity(foreign_system, foreign_tenant,
             {"monitor.execution.read", "orchestrator.workflow.read", "meta.scan_task.read"})
+        parent_token = os.environ["ADDP_ONLINE_PARENT_USER_ACCESS_TOKEN"]
+        admin_token = os.environ["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"]
+        require(bool(parent_token) and bool(admin_token)
+                and len({token, denied_token, foreign_token, parent_token, admin_token}) == 5,
+                "five distinct fixture User credentials are required")
+        gateway = os.environ["GATEWAY_URL"]
+        permissions = PermissionCases(API.GatewayClient(gateway, parent_token, timeout),
+            API.GatewayClient(gateway, admin_token, timeout), API.GatewayClient(gateway, "", timeout),
+            tenant, os.environ["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"],
+            os.environ["ADDP_ONLINE_PARENT_USER_USERNAME"], os.environ["ADDP_ONLINE_PARENT_USER_PASSWORD"])
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
             signal.signal(signum, interrupted)
         signal.alarm(600)
         run_suite(API.GatewayClient(os.environ["GATEWAY_URL"], token, timeout),
                   API.GatewayClient(os.environ["GATEWAY_URL"], denied_token, timeout),
                   API.GatewayClient(os.environ["GATEWAY_URL"], foreign_token, timeout),
-                  tenant, run_id, engine, report, checkpoint=checkpoint, faults=FAULTS.HostedFaults())
+                  tenant, run_id, engine, report, checkpoint=checkpoint, faults=FAULTS.HostedFaults(), permissions=permissions)
     except (KeyError, ValueError, SuiteError, subprocess.SubprocessError) as error:
         report["result"] = "failed"
         # Raw transport/process exceptions can contain secrets; evidence stores no response body.

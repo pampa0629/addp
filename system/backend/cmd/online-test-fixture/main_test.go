@@ -350,3 +350,109 @@ func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
 		}
 	}
 }
+
+type fakeOrchestratorReaderRoles struct {
+	fault string
+	calls []string
+}
+
+func (r *fakeOrchestratorReaderRoles) GetAssignment(ctx context.Context, tenantID, assignmentID int64) (*iam.ManagedTenantRoleAssignment, error) {
+	r.calls = append(r.calls, "get")
+	membershipID := int64(8)
+	if r.fault == "foreign_membership" {
+		membershipID = 99
+	}
+	return &iam.ManagedTenantRoleAssignment{RoleAssignment: iam.RoleAssignment{ID: assignmentID, PrincipalID: 7},
+		MembershipID: membershipID, PrincipalType: iam.PrincipalTypeUser, RoleKey: "online.external_online_parent_reader"}, nil
+}
+
+func (r *fakeOrchestratorReaderRoles) CreateRole(ctx context.Context, input iam.CreateTenantRoleInput) (*iam.TenantRole, error) {
+	r.calls = append(r.calls, "role")
+	if input.TenantID != 42 || input.RoleKey != "online.orchestrator_monitor_reader" || len(input.PermissionKeys) != 1 || input.PermissionKeys[0] != "monitor.execution.read" {
+		return nil, errors.New("Monitor role is not independent and minimal")
+	}
+	return &iam.TenantRole{Role: iam.Role{ID: 12}}, nil
+}
+
+func (r *fakeOrchestratorReaderRoles) CreateAssignments(ctx context.Context, input iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error) {
+	r.calls = append(r.calls, "assign")
+	if input.TenantID != 42 || input.MembershipID != 8 || input.ScopeType != "tenant" || len(input.RoleIDs) != 1 || input.RoleIDs[0] != 12 {
+		return nil, errors.New("Monitor assignment is not bound to the reader")
+	}
+	if r.fault == "assignment_failure" {
+		return nil, errors.New("assignment failed")
+	}
+	assignmentID := int64(13)
+	if r.fault == "same_assignment" {
+		assignmentID = 11
+	}
+	return []iam.ManagedTenantRoleAssignment{{RoleAssignment: iam.RoleAssignment{ID: assignmentID, PrincipalID: 7}, MembershipID: 8}}, nil
+}
+
+func TestOrchestratorParentReaderKeepsMonitorAssignmentIndependentAndIssuesCurrentSession(t *testing.T) {
+	for _, fault := range []string{"", "invalid_tenant", "foreign_membership", "same_assignment", "assignment_failure"} {
+		t.Run(fault, func(t *testing.T) {
+			tenantID, membershipID := int64(42), int64(8)
+			if fault == "invalid_tenant" {
+				tenantID = 99
+			}
+			original := &iam.IssuedBrowserSession{AccessToken: "stale-token", Context: iam.ResolvedSessionContext{
+				Type: iam.ContextTypeTenant, TenantID: &tenantID, TenantMembershipID: &membershipID,
+			}}
+			roles := &fakeOrchestratorReaderRoles{fault: fault}
+			issued := 0
+			current := &iam.IssuedBrowserSession{AccessToken: "current-token"}
+			session, err := grantOrchestratorMonitorReader(t.Context(), roles, func(principalID int64) (*iam.IssuedBrowserSession, error) {
+				issued++
+				if principalID != 7 || strings.Join(roles.calls, ",") != "get,role,assign" {
+					t.Fatal("session issued before the independent grant completed for this reader")
+				}
+				return current, nil
+			}, original, 42, 9, 11)
+			if fault == "" {
+				if err != nil || session != current || issued != 1 {
+					t.Fatalf("current reader session was not issued: %v", err)
+				}
+			} else if err == nil || session != nil || issued != 0 {
+				t.Fatal("invalid or unfinished grant was accepted as a usable reader session")
+			}
+			if fault == "invalid_tenant" && len(roles.calls) != 0 {
+				t.Fatal("invalid session caused IAM mutation")
+			}
+			if fault == "foreign_membership" && len(roles.calls) != 1 {
+				t.Fatal("foreign assignment caused IAM mutation")
+			}
+		})
+	}
+}
+
+func TestOrchestratorReloginCredentialsRemainInOwnerOnlyEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials", "fixture.env")
+	values := map[string]string{
+		"ADDP_ONLINE_PARENT_ASSIGNMENT_ID":     "11",
+		"ADDP_ONLINE_PARENT_USER_ACCESS_TOKEN": "private-reader-token",
+		"ADDP_ONLINE_PARENT_USER_USERNAME":     "external-online-parent-reader",
+		"ADDP_ONLINE_PARENT_USER_PASSWORD":     "private'password",
+	}
+	if err := writeEnvironmentFile(path, values); err != nil {
+		t.Fatal(err)
+	}
+	for target, want := range map[string]os.FileMode{path: 0o600, filepath.Dir(path): 0o700} {
+		info, err := os.Stat(target)
+		if err != nil || info.Mode().Perm() != want {
+			t.Fatal("reader login material is not owner-only")
+		}
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range values {
+		if !strings.Contains(string(content), "export "+key+"=") {
+			t.Fatal("reader login material was not exported")
+		}
+	}
+	if !strings.Contains(string(content), "private'\"'\"'password") {
+		t.Fatal("reader password was not shell quoted")
+	}
+}

@@ -29,6 +29,7 @@ class OwnerHandler(BaseHTTPRequestHandler):
         self.respond(202, {"execution_id": CHILD})
 
     def do_GET(self):
+        self.server.gets += 1
         self.respond(200, {"execution_id": CHILD, "status": "success"})
 
     def respond(self, status, value):
@@ -46,6 +47,7 @@ class FaultProxyTest(unittest.TestCase):
         self.directory = Path(self.temporary.name)
         self.owner = ThreadingHTTPServer(("127.0.0.1", 0), OwnerHandler)
         self.owner.posts = 0
+        self.owner.gets = 0
         self.proxy = FAULTS.FaultProxy(self.directory, self.owner.server_port)
         for server in (self.owner, self.proxy):
             threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -108,6 +110,25 @@ class FaultProxyTest(unittest.TestCase):
     def test_proxy_refuses_foreign_target_before_forwarding_authorization(self):
         self.assertEqual(self.request(host="unowned.example")[0], 403)
         self.assertEqual(self.owner.posts, 0)
+
+    def test_scope_connection_fault_does_not_forge_response_or_interrupt_mutations(self):
+        path = "/api/v1/meta/execution-read-scope"
+        self.assertEqual(self.request("GET", path)[0], 200)
+        self.arm("drop_scope")
+        for _ in range(3):
+            with self.assertRaises(http.client.RemoteDisconnected):
+                self.request("GET", path)
+        self.assertEqual(self.owner.gets, 1)
+        self.assertEqual(self.proxy.witness["scope_drops"], 3)
+        self.assertEqual(self.proxy.witness["posts"], 0)
+        self.assertEqual(self.proxy.witness["child_execution_ids"], [])
+        self.assertNotIn("error", self.proxy.witness)
+        self.assertEqual(self.request("GET", "/api/v1/meta/task-provider/executions/" + CHILD)[0], 200)
+        self.assertEqual(self.request()[0], 202)
+        self.assertEqual(self.owner.posts, 1)
+        self.arm("pass")
+        self.assertEqual(self.request("GET", path)[0], 200)
+        self.assertNotIn(self.secret, (self.directory / "witness.json").read_text())
 
     def test_invalid_parent_does_not_send_the_mutation(self):
         self.arm("lose_response")

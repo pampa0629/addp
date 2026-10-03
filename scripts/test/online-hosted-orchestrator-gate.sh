@@ -48,11 +48,8 @@ for start_target in -meta -orchestrator -monitor; do
     -meta)
       run_daemon_launcher_logged env SERVICE_HOST=addp-orchestrator-meta.test SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
       ;;
-    -orchestrator)
+    -orchestrator|-monitor)
       run_daemon_launcher_logged env HTTP_PROXY="$ADDP_ONLINE_ORCHESTRATOR_PROXY_URL" NO_PROXY=127.0.0.1,localhost SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-      ;;
-    -monitor)
-      run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
       ;;
   esac
 done

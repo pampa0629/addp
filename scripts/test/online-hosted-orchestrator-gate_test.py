@@ -43,7 +43,7 @@ class HostedOrchestratorGateTest(unittest.TestCase):
             echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
             if [ "$1" = -meta ]; then
               [ "$SERVICE_HOST" = addp-orchestrator-meta.test ] || exit 1
-            elif [ "$1" = -orchestrator ]; then
+            elif [ "$1" = -orchestrator ] || [ "$1" = -monitor ]; then
               [ "$HTTP_PROXY" = "$ADDP_ONLINE_ORCHESTRATOR_PROXY_URL" ] || exit 1
               [ "$NO_PROXY" = 127.0.0.1,localhost ] || exit 1
             fi

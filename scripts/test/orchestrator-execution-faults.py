@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 HOST = "addp-orchestrator-meta.test"
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-MODES = {"pass", "lose_response", "hold_status"}
+MODES = {"pass", "lose_response", "hold_status", "drop_scope"}
 HOP_HEADERS = {"connection", "proxy-connection", "proxy-authorization", "keep-alive", "transfer-encoding", "upgrade"}
 
 
@@ -88,11 +88,11 @@ class FaultProxy(ThreadingHTTPServer):
             raise ValueError("invalid fault command")
         return command
 
-    def record(self, command, parent=None, child=None, error=None, held=False):
+    def record(self, command, parent=None, child=None, error=None, held=False, scope_dropped=False):
         with self.lock:
             if self.witness.get("case_id") != command["case_id"]:
                 self.witness = {"case_id": command["case_id"], "posts": 0, "child_execution_ids": [],
-                                "held_status_requests": 0}
+                                "held_status_requests": 0, "scope_drops": 0}
             if parent is not None:
                 self.witness["posts"] += 1
                 if self.witness.get("parent_execution_id", parent) != parent:
@@ -104,6 +104,8 @@ class FaultProxy(ThreadingHTTPServer):
                 self.witness["error"] = error
             if held:
                 self.witness["held_status_requests"] += 1
+            if scope_dropped:
+                self.witness["scope_drops"] += 1
             write_json(self.directory / "witness.json", self.witness)
 
 
@@ -136,6 +138,14 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if len(body) != length:
                 raise ValueError("incomplete body")
             command = server.command()
+            if (command and command["mode"] == "drop_scope" and self.command == "GET"
+                    and parsed.path == "/api/v1/meta/execution-read-scope"):
+                # Refuse the connection before forwarding. Monitor must produce its own
+                # unavailable response from a real transport failure, never a fake scope.
+                server.record(command, scope_dropped=True)
+                self.close_connection = True
+                self.connection.shutdown(socket.SHUT_RDWR)
+                return
             target_post = bool(command and self.command == "POST" and
                 parsed.path == f'/api/v1/meta/task-provider/tasks/scan/{command["task_id"]}/execute')
             if target_post:

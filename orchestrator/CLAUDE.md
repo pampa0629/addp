@@ -2,6 +2,8 @@
 
 执行可靠性 T4 的外部故障工具位于 `scripts/test/orchestrator-execution-faults.py`，只允许本轮 Hosted 隔离部署使用。代理转交真实 Meta 请求后丢弃响应，或在步骤已记录 waiting 后暂缓状态读取；SIGKILL 必须用 pidfd 并核验 Backend 的 UID、可执行文件和部署 Secret 目录。替代进程由标准 `scripts/dev/start.sh -orchestrator` 启动。确定性入口 `make test-orchestrator-online-runner` 唯一聚合到 `make test-online-runner` / 平台 T0 / CI；两类故障已由提交 `f3d676f5a` 的 [Hosted T4 37122385397](https://github.com/pampa0629/addp/actions/runs/37122385397) 真实通过，确认单次派发、真实子执行、父失败后子执行正常完成、步骤最后记录及清理零残留。后续故障实现变更仍须在更新提交重新运行真实手动 T4；续租故障尚未包含。
 
+权限边界 T4 沿用同一套件：普通读者仅持有 Monitor 与 Orchestrator 读取的独立分配，验证父可读而 Meta 子不可读；正式 IAM 撤销 Owner 分配后旧令牌为 401，重新登录仍有 Monitor 权限时执行详情、树和事件为 404。独立管理员凭据只控制 IAM 生命周期。Monitor 与 Orchestrator 均经当次外部代理访问 Meta，代理仅断开读取范围 GET，真实 Monitor 必须返回无执行数据的 503 execution_owner_unavailable，恢复后完整树不变。扩展待更新提交的真实手动 T4，不以本地夹具测试替代。
+
 ## 模块定位
 
 Orchestrator 模块负责任务编排、DAG 执行、定时调度、跨模块任务调用和任务提供者发现。它不直接处理业务数据，而是编排 Meta、Transfer、Manager、Develop 等模块通过 TaskProvider 声明的任务能力。

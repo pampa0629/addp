@@ -99,6 +99,42 @@ class OrchestratorOnlineTest(unittest.TestCase):
         return ONLINE.run_suite(owner, self.denied, self.foreign, 42, "run-test", 9, self.report,
                                 control=control or self.controls.append)
 
+    def test_permission_extension_is_required_before_definition_cleanup_and_failure_defers_teardown(self):
+        for failed in (False, True):
+            owner, report, order = FakeOwner(), {}, []
+
+            class Permissions:
+                def parent_read_child_hidden(self, identity, visible, evidence):
+                    order.append("partial")
+                    self_check = len(visible) == 4 and len(evidence["checks"]) == 15
+                    if not self_check:
+                        raise API.SuiteError("permissions ran before the existing faults and full tree")
+
+                def revoke_owner_read(self, *args):
+                    order.append("revoke")
+                    if failed:
+                        raise API.SuiteError("permission assertion failed")
+
+            def fault_case(*args):
+                args[-1]["checks"].extend(["fault", "no_replay"])
+
+            def unavailable(*args):
+                order.append("unavailable")
+
+            with patch.object(ONLINE, "run_fault_case", side_effect=fault_case), patch.object(ONLINE, "owner_unavailable", side_effect=unavailable):
+                def run():
+                    return ONLINE.run_suite(owner, DeniedReader(), DeniedReader(), 42, "run-test", 9, report,
+                        control=lambda _: None, faults=object(), permissions=Permissions())
+                if failed:
+                    with self.assertRaisesRegex(API.SuiteError, "permission assertion"):
+                        run()
+                    self.assertEqual(report["cleanup"], "deferred_to_deployment_destruction")
+                    self.assertFalse(any(method == "DELETE" for method, _, _ in owner.calls))
+                else:
+                    run()
+                    self.assertEqual(report["cleanup"], "definitions_deleted")
+                self.assertEqual(order, ["partial", "unavailable", "revoke"])
+
     def test_real_owner_contract_and_closed_report(self):
         owner = FakeOwner()
         report = self.run_owner(owner)
@@ -195,6 +231,167 @@ class OrchestratorOnlineTest(unittest.TestCase):
     def test_pending_execution_has_a_bounded_wait(self, clock):
         with self.assertRaisesRegex(API.SuiteError, "convergence"):
             ONLINE.wait_execution(FakeOwner(), execution_id(1))
+
+
+
+class PermissionGateway:
+    def __init__(self, state, identity):
+        self.state, self.identity = state, identity
+        self.token, self.base_url, self.timeout = identity, "http://owned.test", 2
+
+    def context(self):
+        admin = self.identity == "admin"
+        revoked = self.identity == "fresh"
+        owner_access = not revoked or self.state.get("retained_permission")
+        permissions = (["iam.tenant_role_assignment.read", "iam.tenant_role_assignment.revoke"] if admin
+                       else ["monitor.execution.read"] + (["orchestrator.workflow.read"] if owner_access else []))
+        return {"principal": {"type": "user", "id": "9" if admin else "7"},
+                "context": {"type": "tenant", "tenant_id": self.state.get("admin_tenant", "42") if admin else "42", "tenant_membership_id": "8"},
+                "token": {"type": "first_party_access_token"},
+                "authorization": {"role_assignments": [{"role_key": self.state.get("admin_role", "tenant.administrator") if admin else ONLINE.OWNER_READER_ROLE,
+                                                         "permissions": permissions}]}}
+
+    def request(self, method, path, expected, body=None):
+        self.state.setdefault("calls", []).append((self.identity, method, path))
+        status, payload = 200, {}
+        if path == ONLINE.AUTH_CONTEXT:
+            payload = self.context()
+        elif path.startswith(ONLINE.IAM_ASSIGNMENTS):
+            if method == "POST":
+                self.state["revoked"] = True
+                if self.state.get("lost_revoke"):
+                    raise API.SuiteError("revocation response unavailable")
+            payload = {"id": "11", "principal_type": "user", "principal_id": "7",
+                       "membership_id": "8", "username": "external-online-parent-reader",
+                       "role_key": ONLINE.OWNER_READER_ROLE, "scope_type": "tenant",
+                       "status": "revoked" if self.state.get("revoked") else "active"}
+            if self.state.get("foreign_assignment"):
+                payload["principal_id"] = "99"
+        elif path == "/api/v1/system/login":
+            payload = {"next_action": "session_issued", "session": {"access_token": "fresh"}}
+        elif self.identity == "reader" and self.state.get("revoked"):
+            status = 200 if self.state.get("old_token_valid") else 401
+        elif self.identity == "fresh":
+            status = 403 if path.startswith(ONLINE.ORCH) else 404
+        elif any(execution_id(n) in path for n in (3, 4)):
+            status = 404
+        elif path.endswith("/tree"):
+            payload = FakeOwner().tree(False)
+            if not self.state.get("leak_child"):
+                payload["children"] = payload["children"][:1]
+                payload["children"][0]["children"] = []
+        elif "/events?" in path:
+            payload = FakeOwner().request(method, path, expected).payload
+        elif path.startswith(ONLINE.MONITOR):
+            payload = {"execution_id": execution_id(1)}
+        if status == 404 and self.state.get("leak_denial"):
+            payload = {"execution_id": execution_id(1)}
+        require_status = status in expected
+        if not require_status:
+            raise API.SuiteError("real response status rejected by permission assertion")
+        return API.Response(status, payload)
+
+
+class PermissionCasesTest(unittest.TestCase):
+    def cases(self, state):
+        return ONLINE.PermissionCases(PermissionGateway(state, "reader"), PermissionGateway(state, "admin"),
+            PermissionGateway(state, "login"), 42, "11", "external-online-parent-reader", "private-password")
+
+    def test_parent_projection_and_formal_revocation_relogin_preserve_monitor_access(self):
+        state, report = {}, {"checks": []}
+        cases = self.cases(state)
+        visible = ONLINE.tree_ids(FakeOwner().tree(False))
+        cases.parent_read_child_hidden(execution_id(1), visible, report)
+        with patch.object(API, "GatewayClient", side_effect=lambda *_: PermissionGateway(state, "fresh")):
+            cases.revoke_owner_read(execution_id(1), report, lambda: None)
+        self.assertEqual(report["checks"], ["parent_read_child_hidden", "revoked_token_invalid", "revoked_owner_read_invisible"])
+        self.assertFalse(report["uncertain_mutation"])
+        self.assertEqual(sum(m == "POST" and p.endswith("/revoke") for _, m, p in state["calls"]), 1)
+        self.assertEqual(sum(who == "admin" and p.startswith(ONLINE.MONITOR) for who, _, p in state["calls"]), 0)
+        for private in ("private-password", "membership_id", "assignment_id", "access_token"):
+            self.assertNotIn(private, str(report))
+
+    def test_foreign_assignment_is_refused_before_revocation(self):
+        state = {"foreign_assignment": True}
+        with self.assertRaisesRegex(API.SuiteError, "revocation target"):
+            self.cases(state)
+        self.assertFalse(any(method == "POST" for _, method, _ in state["calls"]))
+
+    def test_wrong_tenant_or_platform_controller_is_rejected_before_target_lookup(self):
+        for state in ({"admin_tenant": "99"}, {"admin_role": "platform.system_administrator"}):
+            with self.subTest(state=state), self.assertRaises(API.SuiteError):
+                self.cases(state)
+            self.assertFalse(any(p.startswith(ONLINE.IAM_ASSIGNMENTS) for _, _, p in state["calls"]))
+
+    def test_denied_child_response_cannot_carry_diagnostics(self):
+        cases = self.cases({"leak_denial": True})
+        with self.assertRaisesRegex(API.SuiteError, "diagnostic data"):
+            cases.parent_read_child_hidden(execution_id(1), ONLINE.tree_ids(FakeOwner().tree(False)), {"checks": []})
+
+    def test_child_leak_is_rejected(self):
+        cases = self.cases({"leak_child": True})
+        with self.assertRaisesRegex(API.SuiteError, "child owners"):
+            cases.parent_read_child_hidden(execution_id(1), ONLINE.tree_ids(FakeOwner().tree(False)), {"checks": []})
+
+    def test_unknown_revoke_is_not_retried_and_old_token_or_retained_owner_is_not_accepted(self):
+        for fault in ("lost_revoke", "old_token_valid", "retained_permission"):
+            state, report = {fault: True}, {"checks": []}
+            cases = self.cases(state)
+            with patch.object(API, "GatewayClient", side_effect=lambda *_: PermissionGateway(state, "fresh")):
+                with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
+                    cases.revoke_owner_read(execution_id(1), report, lambda: None)
+            self.assertNotIn("revoked_owner_read_invisible", report["checks"])
+            self.assertEqual(sum(m == "POST" and p.endswith("/revoke") for _, m, p in state["calls"]), 1)
+            if fault == "lost_revoke":
+                self.assertTrue(report["uncertain_mutation"])
+                self.assertFalse(any(p.endswith("/login") for _, _, p in state["calls"]))
+
+
+class ScopeFault:
+    def __init__(self):
+        self.active, self.released = False, False
+
+    def arm(self, *args):
+        self.active = True
+
+    def release(self):
+        self.active, self.released = False, True
+
+    def witness(self):
+        return {"scope_drops": 3, "posts": 0, "child_execution_ids": []}
+
+
+class OwnerUnavailableTest(unittest.TestCase):
+    def test_real_unavailable_contract_and_restoration_are_required(self):
+        for fault in (None, "leaked_data", "wrong_code", "changed_tree", "transport_unproven"):
+            faults, report = ScopeFault(), {"checks": []}
+            visible = ONLINE.tree_ids(FakeOwner().tree(False))
+
+            class Reader:
+                def request(self, method, path, expected):
+                    if faults.active:
+                        payload = {"error": "owner unavailable", "error_code": "execution_owner_unavailable"}
+                        if fault == "leaked_data":
+                            payload["execution"] = visible[execution_id(1)]
+                        if fault == "wrong_code":
+                            payload["error_code"] = "other_error"
+                        return API.Response(503, payload)
+                    tree = FakeOwner().tree(False)
+                    if fault == "changed_tree":
+                        tree["children"] = []
+                    return API.Response(200, tree)
+
+            if fault == "transport_unproven":
+                faults.witness = lambda: {}
+            with self.subTest(fault=fault):
+                if fault is None:
+                    ONLINE.owner_unavailable(Reader(), execution_id(1), visible, 7, faults, report)
+                    self.assertEqual(len(report["checks"]), 2)
+                else:
+                    with self.assertRaises(API.SuiteError):
+                        ONLINE.owner_unavailable(Reader(), execution_id(1), visible, 7, faults, report)
+                    self.assertNotIn("owner_recovery_restores_access", report["checks"])
+                self.assertTrue(faults.released)
 
 
 if __name__ == "__main__":

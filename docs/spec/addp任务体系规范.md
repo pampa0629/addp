@@ -933,6 +933,8 @@ Orchestrator 保留 v1 串行 DAG、任务引用、Owner 授权和输出绑定�
 
 故障扩展已在提交 `f3d676f5a` 的 [Hosted T4 37122385397](https://github.com/pampa0629/addp/actions/runs/37122385397) 通过，共 15 项真实检查。响应丢失与 Backend 强制退出两类场景均证明只有一次派发、一个真实 Meta 子执行、一个父终态事件；父编排分别以 `dispatch_uncertain` 和 `lease_expired` 失败，进度为 0、依赖未派发，已接受的子执行正常完成，等待步骤保留最后记录。System、Gateway、Meta、Orchestrator、Monitor 的构建身份均匹配该提交，四个临时任务定义通过正式 API 删除；生命周期清理通过，Infra 容器、网络、数据卷零残留，身份凭据和故障控制文件未归档。此结果不包含续租故障，也不替代父可读子不可读、动态撤权、Owner 不可用及已删除任务历史的后续真实权限验收。
 
+权限边界扩展沿用同一手动 Hosted T4，不新增认证旁路或生产故障开关。System IAM 夹具提供同 Tenant 的普通读者，其 Orchestrator 读取与 Monitor 读取分别赋权；父执行及嵌套编排可读，Meta 子执行不授予读取权，树仅显示两层编排，子执行详情、树和事件返回 404。独立 Tenant 管理员仅通过正式 IAM 接口撤销该读者的 Orchestrator 角色分配；先验证旧令牌失效为 401，再经正式登录取得同 User、Membership 和 Tenant 的新令牌，确认 Monitor 权限仍在、父执行详情、树及事件均为 404。外部代理只中断本轮 Meta 的 execution-read-scope GET 连接，由真实 Monitor 返回 503 execution_owner_unavailable 且不含执行数据；恢复连接后核对完整执行树不变。凭据与代理控制只存于不归档的 owner-only 临时目录，业务报告不保存角色分配编号，未知撤权结果不重试，失败路径释放故障并由标准生命周期销毁部署。确定性验证归入现有 make test-orchestrator-online-runner 与 make test-online-runner / 平台 CI；扩展首次真实通过前不计为 T4 已通过。
+
 ### 编排调度与子任务自身调度
 
 Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，也不是覆盖关系。
