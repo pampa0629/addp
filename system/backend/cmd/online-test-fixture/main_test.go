@@ -159,15 +159,16 @@ func TestValidateExternalEnvironment(t *testing.T) {
 func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fixture.env")
 	values := map[string]string{
-		"ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN":     "addp_at_admin",
-		"ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN":    "addp_at_creator",
-		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID":  "86",
-		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN": "addp_at_engine",
-		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":   "addp_at_foreign",
-		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":           "84",
-		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN":      "addp_at_reader",
-		"ADDP_ONLINE_TEST_TENANT_ID":              "42",
-		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":      "addp_at_user'quoted",
+		"ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN":       "addp_at_admin",
+		"ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN":      "addp_at_creator",
+		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID":    "86",
+		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN":   "addp_at_engine",
+		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN": "addp_at_security_initializer",
+		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":     "addp_at_foreign",
+		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":             "84",
+		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN":        "addp_at_reader",
+		"ADDP_ONLINE_TEST_TENANT_ID":                "42",
+		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":        "addp_at_user'quoted",
 	}
 	if err := writeEnvironmentFile(path, values); err != nil {
 		t.Fatal(err)
@@ -185,6 +186,9 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	}
 	if !strings.Contains(string(content), "addp_at_user'\"'\"'quoted") {
 		t.Fatalf("fixture environment is not shell quoted: %s", content)
+	}
+	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN='addp_at_security_initializer'\n") {
+		t.Fatal("fixture environment omitted the exported Security initialization token")
 	}
 	for _, value := range []string{"addp_at_admin", "addp_at_creator", "addp_at_reader", "addp_at_foreign", "84", "86"} {
 		if !strings.Contains(string(content), value) {
