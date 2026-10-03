@@ -570,6 +570,60 @@ PY
 }
 
 
+test_start_loads_runtime_ownership_in_all_profiles() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+root, temporary = map(Path, sys.argv[1:])
+source = (root / 'scripts/dev/start.sh').read_text()
+start = source.index('\naddp_infra_read_actual_ports\n')
+end = source.index('\n# 2. 启动 System Backend', start)
+phase = source[start:end]
+for online, hosted in [('0', '0'), ('1', '0'), ('1', '1')]:
+    workspace = temporary / f'start-ownership-{online}-{hosted}'
+    workspace.mkdir()
+    environment = {**os.environ, 'ROOT_DIR': str(workspace), 'SCRIPT_DIR': str(root / 'scripts/dev'),
+                   'ADDP_ONLINE_HOST': online, 'ADDP_ONLINE_HOSTED': hosted,
+                   'POINTCLOUD_WORKFLOW_PORT': '18102', 'ADDP_DEV_PORTS_RESOLVED': ''}
+    script = '''
+set -euo pipefail
+addp_infra_read_actual_ports() { POSTGRES_PORT=25432 REDIS_PORT=26379 MINIO_API_PORT=29000; }
+generate_service_urls() { :; }
+lsof() { return 1; }
+docker() { return 1; }
+'''
+    script += phase + '''
+for helper in addp_dev_remove_owned_container addp_dev_owned_listener addp_dev_resolve_ports; do
+  declare -F "$helper" >/dev/null || { echo "missing lifecycle helper: $helper" >&2; exit 1; }
+done
+addp_dev_remove_owned_container pointcloud-workflow-engine
+docker() {
+  case "$1" in
+    inspect) printf 'addp-runtimes|pointcloud-workflow-engine|%s\\n' "$ROOT_DIR" ;;
+    rm) touch "$ROOT_DIR/removed-container" ;;
+    *) return 2 ;;
+  esac
+}
+addp_dev_remove_owned_container pointcloud-workflow-engine
+[ -f "$ROOT_DIR/removed-container" ]
+if [ "$ADDP_ONLINE_HOST" = 1 ]; then
+  [ "$POINTCLOUD_WORKFLOW_PORT" = 18102 ]
+  [ ! -e "$ROOT_DIR/.dev-state/ports.env" ]
+else
+  [ "$ADDP_DEV_PORTS_RESOLVED" = 1 ]
+  [ -f "$ROOT_DIR/.dev-state/ports.env" ]
+fi
+'''
+    result = subprocess.run(['bash', '-c', script], env=environment, cwd=workspace,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, (online, hosted, result.stdout, result.stderr)
+print('PASS: startup loads Runtime ownership helpers in local and Online profiles without resolving Online ports')
+PY
+}
+
 test_dev_port_resolution() {
   local workspace="${TEST_ROOT}/dev-ports"
   mkdir -p "$workspace"
@@ -1519,6 +1573,7 @@ test_start_batches_listening_ports
 test_parallel_runtime_startup
 test_python_dependency_install_lock
 test_model3d_python_dependency_sync
+test_start_loads_runtime_ownership_in_all_profiles
 test_dev_port_resolution
 test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid

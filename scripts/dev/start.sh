@@ -973,8 +973,9 @@ fi
 addp_infra_read_actual_ports
 echo "  PostgreSQL: localhost:${POSTGRES_PORT}  Redis: localhost:${REDIS_PORT}  MinIO: localhost:${MINIO_API_PORT}"
 
+# Runtime 容器归属与清理在所有部署模式都需要；仅本地模式解析开发端口。
+source "${SCRIPT_DIR}/ports.sh"
 if [ "${ADDP_ONLINE_HOST:-0}" != 1 ]; then
-  source "${SCRIPT_DIR}/ports.sh"
   addp_dev_resolve_ports
   generate_service_urls
   export RASTER_MOSAIC_RUNTIME_URL="http://${SERVICE_HOST:-localhost}:${RASTER_MOSAIC_RUNTIME_PORT}"

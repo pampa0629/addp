@@ -139,7 +139,8 @@ bash() {
 '''
             return subprocess.run(
                 ["bash"], input=harness + block, capture_output=True, text=True, timeout=5,
-                env=dict(os.environ, TEST_INFRA_READY=str(int(ready)), TEST_UP_EXIT=str(up_exit)),
+                env=dict(os.environ, SCRIPT_DIR=str(REPOSITORY / "scripts/dev"),
+                         TEST_INFRA_READY=str(int(ready)), TEST_UP_EXIT=str(up_exit)),
             )
 
     def test_existing_infra_without_falkordb_invokes_owner_startup(self):
