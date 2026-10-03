@@ -249,9 +249,12 @@ class FaultScenarioTest(unittest.TestCase):
 
         controller = Controller()
         code = "orchestrator.execution.lease_expired" if mode == "hold_status" else "orchestrator.execution.dispatch_uncertain"
-        steps = {"probe": {"status": "running" if mode == "hold_status" else "failed", "phase": "waiting" if mode == "hold_status" else "terminal"}}
+        # An unknown dispatch outcome leaves Go StepResult.Result nil, serialized as JSON null.
+        steps = {"probe": {"status": "running" if mode == "hold_status" else "failed", "phase": "waiting" if mode == "hold_status" else "terminal", "result": None}}
         if mode == "hold_status" or corrupt == "invented_child":
             steps["probe"]["result"] = {"execution_id": CHILD}
+        if corrupt == "malformed_result":
+            steps["probe"]["result"] = []
         terminal = {"execution_id": PARENT, "status": "failed", "progress": 0, "attempt": 1,
                     "error_details": {"code": code}, "metadata": {"step_results": steps}}
         safe_step = {"id": "probe", "status": steps["probe"]["status"], "phase": steps["probe"]["phase"]}
@@ -291,7 +294,7 @@ class FaultScenarioTest(unittest.TestCase):
                 self.assertEqual(report["faults"][0]["posts"], 1)
 
     def test_fault_checks_reject_replay_private_data_fake_cancellation_and_invented_identity(self):
-        for corrupt in ("replay", "private", "fake_cancel", "invented_child", "stale_parent"):
+        for corrupt in ("replay", "private", "fake_cancel", "invented_child", "stale_parent", "malformed_result"):
             with self.subTest(corrupt=corrupt):
                 with self.assertRaises(ONLINE.SuiteError):
                     self.scenario("lose_response", corrupt)

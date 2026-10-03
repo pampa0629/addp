@@ -163,7 +163,9 @@ def run_fault_case(client, launch, task_id, scan_id, case_id, mode, faults, repo
             require(steps["probe"].get("status") == "running" and steps["probe"].get("phase") == "waiting",
                     "recovery replaced the last recorded step with an invented terminal state")
         else:
-            require(not steps["probe"].get("result", {}).get("execution_id"), "lost response invented a known child identity")
+            result = steps["probe"].get("result")
+            require(result is None or isinstance(result, dict), "lost response step result is invalid")
+            require(result is None or not result.get("execution_id"), "lost response invented a known child identity")
         # Check beyond one supervisor pass; the real child must remain visible and finish normally.
         deadline = time.monotonic() + 120
         stable_after = time.monotonic() + 5
