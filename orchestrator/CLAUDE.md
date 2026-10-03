@@ -1,6 +1,6 @@
 # Orchestrator 模块说明
 
-执行可靠性 T4 的外部故障工具位于 `scripts/test/orchestrator-execution-faults.py`，只允许本轮 Hosted 隔离部署使用。代理转交真实 Meta 请求后丢弃响应，或在步骤已记录 waiting 后暂缓状态读取；SIGKILL 必须用 pidfd 并核验 Backend 的 UID、可执行文件和部署 Secret 目录。替代进程由标准 `scripts/dev/start.sh -orchestrator` 启动。确定性入口 `make test-orchestrator-online-runner` 唯一聚合到 `make test-online-runner` / 平台 T0 / CI；新增故障仍须更新提交的真实手动 T4 通过，不能沿用首轮成功结果。
+执行可靠性 T4 的外部故障工具位于 `scripts/test/orchestrator-execution-faults.py`，只允许本轮 Hosted 隔离部署使用。代理转交真实 Meta 请求后丢弃响应，或在步骤已记录 waiting 后暂缓状态读取；SIGKILL 必须用 pidfd 并核验 Backend 的 UID、可执行文件和部署 Secret 目录。替代进程由标准 `scripts/dev/start.sh -orchestrator` 启动。确定性入口 `make test-orchestrator-online-runner` 唯一聚合到 `make test-online-runner` / 平台 T0 / CI；两类故障已由提交 `f3d676f5a` 的 [Hosted T4 37122385397](https://github.com/pampa0629/addp/actions/runs/37122385397) 真实通过，确认单次派发、真实子执行、父失败后子执行正常完成、步骤最后记录及清理零残留。后续故障实现变更仍须在更新提交重新运行真实手动 T4；续租故障尚未包含。
 
 ## 模块定位
 
