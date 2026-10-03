@@ -197,6 +197,7 @@ class ModuleGateTest(unittest.TestCase):
         result, calls = self._run_common_postgres_group([])
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(4, len(calls))
+        self.assertIn("TestIntegrationPostgresCatalogReadOnlyPrimaryKey", calls[0])
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
         self.assertIn("./execution", calls[1])

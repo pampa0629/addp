@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	commonexecution "github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/security/internal/models"
@@ -38,6 +39,10 @@ func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
 	if err := repository.Migrate(tx); err != nil {
 		t.Fatal(err)
 	}
+	if err := commonexecution.EnsureStore(tx); err != nil {
+		t.Fatal(err)
+	}
+	assertEnrollmentEffectiveProjectionActivation(t, tx)
 
 	service := NewEnrollmentService(tx)
 	created, err := service.Create(context.Background(), 7, 11, testDataItemEnrollmentRequest(2, resourcetree.TypeTable, "business.customers"))

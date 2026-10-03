@@ -36,6 +36,8 @@ common/
 
 ## 开发规则
 
+- PostgreSQL Catalog 的主键事实必须在仅有表 `SELECT` 权限时仍可完整识别。字段可见性沿用 `information_schema.columns`，主键成员按当前关系 OID 和字段编号从 `pg_catalog.pg_constraint` 读取；不得依赖会隐藏只读账号约束的 `information_schema.table_constraints`，也不得要求补授写权限。只读主键识别和未授权表不可见性由既有 `make test-common-postgres` 门禁验证。
+
 - 新增共享能力必须保持模块边界清晰，避免把某个业务模块的私有逻辑沉淀到 `common/`。
 - `common/authorization` 只提供 Permission/内置 Role Manifest Schema、解析/校验、确定性 Catalog Report、发布期聚合 CLI 和共享授权类型；业务 Permission 内容必须留在各 owner 的 `authorization/permissions.yaml`，产品内置 Role 内容必须留在 `system/authorization/builtin_roles.yaml`，不得建立 common 中央业务清单。
 - 普通只读共享的有效期模式、UTC 微秒规范化及同参比较由 `common/authorization` 唯一提供纯值契约；它不持有决定、回执或 Grant，不处理当前责任，也不能用于放宽临时接入、管理委派或 Token 期限。

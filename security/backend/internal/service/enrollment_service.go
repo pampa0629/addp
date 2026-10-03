@@ -486,7 +486,7 @@ func (s *EnrollmentService) Acknowledge(ctx context.Context, tenantID int64, con
 
 func (s *EnrollmentService) advanceEnrollmentStates(tx *gorm.DB, tenantID int64, now time.Time) error {
 	var enrollments []models.ProtectionEnrollment
-	if err := tx.Where("tenant_id = ? AND state IN ?", tenantID, []string{models.EnrollmentStateActivating, models.EnrollmentStateReleasing}).Find(&enrollments).Error; err != nil {
+	if err := tx.Where("tenant_id = ? AND state IN ?", tenantID, []string{models.EnrollmentStateActivating, models.EnrollmentStateEnrolling, models.EnrollmentStateReleasing}).Find(&enrollments).Error; err != nil {
 		return err
 	}
 	for _, enrollment := range enrollments {
@@ -496,6 +496,10 @@ func (s *EnrollmentService) advanceEnrollmentStates(tx *gorm.DB, tenantID int64,
 		}
 		covered := len(projections) == len(requiredProtectionOwnerContracts)
 		for _, projection := range projections {
+			if enrollment.State == models.EnrollmentStateEnrolling && projection.State != dataprotection.ProjectionStateActive {
+				covered = false
+				break
+			}
 			requiredSequence := projection.PublishedSequence
 			if enrollment.State == models.EnrollmentStateReleasing {
 				if projection.ReleaseSequence == nil {
@@ -517,12 +521,18 @@ func (s *EnrollmentService) advanceEnrollmentStates(tx *gorm.DB, tenantID int64,
 		values := map[string]any{"version": gorm.Expr("version + 1"), "updated_at": now}
 		if wasActivating {
 			values["state"] = models.EnrollmentStateEnrolling
+		} else if enrollment.State == models.EnrollmentStateEnrolling {
+			values["state"] = models.EnrollmentStateActive
 		} else {
 			values["state"] = models.EnrollmentStateReleased
 			values["released_at"] = now
 		}
-		if err := tx.Model(&enrollment).Updates(values).Error; err != nil {
-			return err
+		update := tx.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ? AND state = ?", tenantID, enrollment.ID, enrollment.State).Updates(values)
+		if update.Error != nil {
+			return update.Error
+		}
+		if update.RowsAffected == 0 {
+			continue
 		}
 		if wasActivating {
 			execution := newDiscoveryExecution(enrollment, int(enrollment.CreatedBy), commonexecution.TriggerTypeEvent, now)

@@ -450,7 +450,11 @@ func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema,
 			c.numeric_precision as numeric_precision,
 			c.numeric_scale as numeric_scale,
 			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END as nullable,
-			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as primary_key,
+			EXISTS (
+				SELECT 1 FROM pg_catalog.pg_constraint pk
+				WHERE pk.conrelid = cls.oid AND pk.contype = 'p'
+				  AND a.attnum = ANY(pk.conkey)
+			) as primary_key,
 			COALESCE(col_description(cls.oid, a.attnum), '') as comment
 		FROM information_schema.columns c
 		JOIN pg_catalog.pg_namespace n
@@ -463,16 +467,6 @@ func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema,
 			AND a.attname = c.column_name
 			AND a.attnum > 0
 			AND NOT a.attisdropped
-		LEFT JOIN (
-			SELECT kcu.column_name
-			FROM information_schema.table_constraints tc
-			JOIN information_schema.key_column_usage kcu
-				ON tc.constraint_name = kcu.constraint_name
-				AND tc.table_schema = kcu.table_schema
-			WHERE tc.table_schema = $1
-			  AND tc.table_name = $2
-			  AND tc.constraint_type = 'PRIMARY KEY'
-		) pk ON c.column_name = pk.column_name
 		WHERE c.table_schema = $1
 		  AND c.table_name = $2
 		ORDER BY c.ordinal_position

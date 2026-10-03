@@ -62,6 +62,8 @@ ProtectionAccessRequest 是原值访问的唯一入口，只能由当前可信 U
 
 Owner 变化流是唯一投影交付路线。Manager、Transfer、Develop、Service 只能使用各自固定 Tenant Service Access Token 拉取自身变化并确认本地原子安装的 cursor；不能提交 consumer owner 或资源清单。
 
+Enrollment 从 `enrolling` 进入 `active` 必须同时满足四个必要 Owner 的当前投影均为 `active`，且各自 acknowledgement 已覆盖当前 `published_sequence`。旧修订的确认不能激活新修订；重复确认不递增 Enrollment 版本，也不重复创建发现执行。激活与退出都沿同一 acknowledgement 状态推进路径，SQLite T1 和 `make test-security-postgres` 的生命周期回归共同验证该屏障。
+
 Standard 的旧分类分级 ID 和数据不迁移、不映射，也不提供兼容 API。
 
 ## 前端验证与失败取证

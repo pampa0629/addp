@@ -9,6 +9,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
+	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/security/internal/models"
 	"github.com/addp/security/internal/repository"
@@ -59,6 +60,85 @@ func TestEnrollmentRequiresEveryOwnerAcknowledgementBeforeEnrolling(t *testing.T
 		if current.State != want {
 			t.Fatalf("after owner %s state = %s, want %s", owner, current.State, want)
 		}
+	}
+	current, err := svc.Get(context.Background(), 7, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range allRequiredProtectionOwners() {
+		changes, err := svc.ListChanges(context.Background(), 7, owner, "", 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.Acknowledge(context.Background(), 7, owner, changes.NextCursor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after, err := svc.Get(context.Background(), 7, created.ID)
+	if err != nil || after.State != models.EnrollmentStateEnrolling || after.Version != current.Version {
+		t.Fatalf("gate-only acknowledgements must not activate: enrollment=%#v error=%v", after, err)
+	}
+}
+
+func TestEnrollmentRequiresLatestEffectiveProjectionAcknowledgementsBeforeActive(t *testing.T) {
+	assertEnrollmentEffectiveProjectionActivation(t, openSecurityTestDB(t))
+}
+
+func assertEnrollmentEffectiveProjectionActivation(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	_, svc, finding, _, _ := prepareReviewablePhoneFindingOnDB(t, db)
+	ctx := context.Background()
+	initial, err := svc.Get(ctx, 7, finding.EnrollmentID)
+	if err != nil || initial.State != models.EnrollmentStateEnrolling {
+		t.Fatalf("before effective acknowledgements: enrollment=%#v error=%v", initial, err)
+	}
+	owners := allRequiredProtectionOwners()
+	acknowledge := func(owner string) {
+		t.Helper()
+		changes, err := svc.ListChanges(ctx, 7, owner, "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.Acknowledge(ctx, 7, owner, changes.NextCursor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, owner := range owners[:len(owners)-1] {
+		acknowledge(owner)
+	}
+	// Replace the effective revision after three owners have acknowledged it.
+	if _, err := NewAssessmentService(db, nil).ReviewFinding(ctx, 7, 21, finding.ID, models.FindingReviewRequest{
+		Decision: models.FindingReviewDecisionConfirm, Rationale: "确认有效投影激活屏障",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	acknowledge(owners[len(owners)-1])
+	current, err := svc.Get(ctx, 7, initial.ID)
+	if err != nil || current.State != models.EnrollmentStateEnrolling || current.Version != initial.Version {
+		t.Fatalf("stale acknowledgements must not activate: enrollment=%#v error=%v", current, err)
+	}
+	for index, owner := range owners[:len(owners)-1] {
+		acknowledge(owner)
+		current, err = svc.Get(ctx, 7, initial.ID)
+		wantState := models.EnrollmentStateEnrolling
+		wantVersion := initial.Version
+		if index == len(owners)-2 {
+			wantState, wantVersion = models.EnrollmentStateActive, initial.Version+1
+		}
+		if err != nil || current.State != wantState || current.Version != wantVersion {
+			t.Fatalf("after %s effective acknowledgement: state/version=%s/%d want=%s/%d error=%v", owner, current.State, current.Version, wantState, wantVersion, err)
+		}
+	}
+	for _, owner := range owners {
+		acknowledge(owner)
+	}
+	current, err = svc.Get(ctx, 7, initial.ID)
+	if err != nil || current.Version != initial.Version+1 {
+		t.Fatalf("repeated acknowledgements changed version: enrollment=%#v error=%v", current, err)
+	}
+	var discoveries int64
+	if err := db.Model(&commonexecution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND source_task_id = ?", 7, commonexecution.ModuleSecurity, initial.ID).Count(&discoveries).Error; err != nil || discoveries != 1 {
+		t.Fatalf("effective activation must not enqueue discovery again: count=%d error=%v", discoveries, err)
 	}
 }
 
