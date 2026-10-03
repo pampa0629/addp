@@ -553,71 +553,37 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             CHECK.check_registration(self.repository)
 
     def test_requires_mysql_four_owner_protection_fixtures_and_contract(self) -> None:
-        gate = self.repository / "scripts/test/online-gate.py"
-        gate.write_text(
-            gate.read_text(encoding="utf-8").replace(
-                '"first-suite"', '"security-mysql-owner-protection"'
-            ),
-            encoding="utf-8",
-        )
+        root = SCRIPT.parents[2]
+        for relative in (
+            "scripts/test/online-hosted-security-gate.sh", "scripts/test/online-host-gate.sh",
+            ".github/workflows/online-t4-gates.yml", "Makefile",
+            "business/scripts/online-security-owner-fixture.sh",
+            "scripts/test/security-mysql-owner-protection-online.py",
+            "scripts/test/security-transfer-protection-online.py",
+        ):
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(root / relative, target)
+        registered = {"security-mysql-owner-protection"}
+        CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
+        for relative, fragment, message in (
+            ("scripts/test/security-mysql-owner-protection-online.py", '"rollback_verified"', "owner contract is missing"),
+            ("business/scripts/online-security-owner-fixture.sh", "container ownership mismatch", "fixture contract is missing"),
+            ("scripts/test/online-hosted-security-gate.sh", "ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN", "Hosted profile is missing"),
+            (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'security-mysql-owner-protection'", "must not also dispatch"),
+            ("Makefile", "online-hosted-security-gate_test.py", "regression must enter"),
+        ):
+            with self.subTest(fragment=fragment):
+                path = self.repository / relative
+                original = path.read_text()
+                path.write_text(original.replace(fragment, ""))
+                with self.assertRaisesRegex(CHECK.RegistrationError, message):
+                    CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
+                path.write_text(original)
         host = self.repository / "scripts/test/online-host-gate.sh"
-        host.write_text(
-            host.read_text(encoding="utf-8").replace(
-                "first-suite)\n    START_TARGET=-system",
-                "security-mysql-owner-protection)\n    START_TARGET=-all",
-            )
-            + "\nSYSTEM_URL GATEWAY_URL META_URL SECURITY_URL MANAGER_URL DEVELOP_URL\n"
-            + "SERVICE_URL TRANSFER_URL ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID\n"
-            + "bash business/scripts/online-engine-fixture.sh start\n"
-            + "bash business/scripts/online-engine-fixture.sh stop\n"
-            + "bash business/scripts/online-workbench-mysql-fixture.sh start\n"
-            + "bash business/scripts/online-workbench-mysql-fixture.sh stop\n"
-            + 'bash scripts/dev/start.sh "$START_TARGET"\n',
-            encoding="utf-8",
-        )
-        self.workflow.write_text(
-            self.workflow.read_text(encoding="utf-8").replace(
-                "first-suite", "security-mysql-owner-protection"
-            ),
-            encoding="utf-8",
-        )
-        postgres_fixture = self.repository / "business/scripts/online-engine-fixture.sh"
-        postgres_fixture.parent.mkdir(parents=True, exist_ok=True)
-        postgres_fixture.write_text(
-            "addp_online_security.mysql_email_transfer "
-            "DROP TABLE IF EXISTS addp_online_security.mysql_email_transfer\n",
-            encoding="utf-8",
-        )
-        mysql_fixture = (
-            self.repository / "business/scripts/online-workbench-mysql-fixture.sh"
-        )
-        mysql_fixture.write_text("fixture\n", encoding="utf-8")
-        owner = (
-            self.repository
-            / "scripts/test/security-mysql-owner-protection-online.py"
-        )
-        owner.write_text(
-            "/api/v1/meta/scan/run/manual "
-            "/api/v1/security/sensitive-data-types "
-            "security.sensitive_data_type.create security.sensitive_data_type.delete "
-            '"default_protection" "invalid_request_status" '
-            '"rollback_verified" "cleanup_verified" '
-            "addp.detector.email_metadata/v1 "
-            "/api/v1/security/protection-baselines "
-            "/api/v1/security/protection-enrollments "
-            "/api/v1/develop/executions /api/query/ "
-            '"effect": "suppress" "residual_resources": 0\n',
-            encoding="utf-8",
-        )
-        support = (
-            self.repository / "scripts/test/security-transfer-protection-online.py"
-        )
-        support.write_text("/api/v1/transfer/task-definitions\n", encoding="utf-8")
-
-        CHECK.check_registration(self.repository)
-        owner.unlink()
-        with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
-            CHECK.check_registration(self.repository)
+        host.write_text(host.read_text() + "\nsecurity-mysql-owner-protection)\n")
+        with self.assertRaisesRegex(CHECK.RegistrationError, "self-hosted route"):
+            CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
 
     def test_requires_transfer_field_lineage_services_proofs_and_cleanup(self) -> None:
         root = SCRIPT.parents[2]

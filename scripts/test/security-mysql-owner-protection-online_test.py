@@ -421,5 +421,46 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.assertNotIn("stable_key", payload["data_config"])
 
 
+class HostedGovernanceInitializationTest(unittest.TestCase):
+    def test_initialization_rejects_personal_environment(self):
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.require_hosted_initialization({})
+        valid = dict(GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1", ADDP_ONLINE_HOST="1", ADDP_ONLINE_TEST="1", POSTGRES_DB="addp_online")
+        ONLINE.require_hosted_initialization(valid)
+        for key in valid:
+            with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.require_hosted_initialization(dict(valid, **{key: "wrong"}))
+
+    def test_refuses_foreign_tenant_or_existing_governance_before_writing(self):
+        for tenant, definitions in (("9", []), ("2", [{"id": "1"}])):
+            client = Mock()
+            client.request.side_effect = [
+                ONLINE.SUPPORT.Response(200, {"principal": {"type": "user"}, "context": {"type": "tenant", "tenant_id": tenant}}),
+                ONLINE.SUPPORT.Response(200, definitions),
+            ]
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.initialize_governance(client, 2)
+            self.assertTrue(all(call.args[0] == "GET" for call in client.request.call_args_list))
+
+    def test_creates_fresh_email_and_phone_with_atomic_defaults_through_api(self):
+        client = Mock()
+        client.request.side_effect = [
+            ONLINE.SUPPORT.Response(200, {"principal": {"type": "user"}, "context": {"type": "tenant", "tenant_id": "2"}}),
+            *[ONLINE.SUPPORT.Response(200, []) for _ in range(4)],
+            ONLINE.SUPPORT.Response(201, {"id": "11"}), ONLINE.SUPPORT.Response(201, {"id": "12"}),
+            ONLINE.SUPPORT.Response(201, {"id": "13"}), ONLINE.SUPPORT.Response(201, {"id": "14"}),
+            ONLINE.SUPPORT.Response(201, {"id": "15"}),
+        ]
+        ONLINE.initialize_governance(client, 2)
+        writes = [call for call in client.request.call_args_list if call.args[0] == "POST"]
+        email, detector, phone = [call.args[3] for call in writes[2:]]
+        self.assertEqual(email["default_protection"]["effect"], "suppress")
+        self.assertEqual(detector["sensitive_data_type_id"], 13)
+        self.assertEqual(detector["capability_key"], ONLINE.EMAIL_DETECTOR)
+        self.assertEqual(phone["default_protection"]["allowed_algorithms"], [case[0] for case in ONLINE.ALGORITHM_CASES])
+        self.assertEqual(phone["security_classification_id"], 11)
+        self.assertEqual(phone["default_security_grade_id"], 12)
+
+
 if __name__ == "__main__":
     unittest.main()

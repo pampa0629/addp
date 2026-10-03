@@ -15,6 +15,7 @@
 - OceanBase 跨模块 T4 只由 `scripts/online-oceanbase-consumer-fixture.sh` 管理固定源/目标表；Fixture 不创建 Engine Instance，并必须在退出路径恢复 5 行源基线和空目标表。
 - TiDB 跨模块 T4 只由 `scripts/online-tidb-consumer-fixture.sh` 管理无卷三组件集群和固定源/目标表；Fixture 不创建 Engine Instance，退出路径必须删除本次 Compose project、volumes 与 orphans 并验证容器零残留。
 - openGauss 跨模块 T4 的数据库生命周期只由 `scripts/online-opengauss-consumer-fixture.sh` 在 GitHub Hosted Linux x86_64 管理；Fixture 复用固定官方介质，创建当次 disposable database 和源/目标表，并输出 owner-only Engine 描述。System IAM 身份和 Engine API 注册分别由 `system/backend/cmd/online-test-fixture` 与 `scripts/test/online-engine-registration.py` 负责；Business 不调用 System API。退出时删除 owner 容器，不读取根 `.env` 或 Business `.env`。
+- Security 四出口 T4 的物理夹具只由 `scripts/online-security-owner-fixture.sh` 在 GitHub Hosted Linux x86_64 管理：每轮建立独立 MySQL/PostGIS 容器，复用 MySQL 样例生成器，输出 owner-only Engine 描述，并核对容器归属与退出零残留。Business 不调用 System/Security API；身份、引擎登记、治理初始化由各 owner 正式服务负责。
 - KingbaseES 跨模块 T4 的数据库生命周期只由 `scripts/online-kingbase-consumer-fixture.sh` 在受保护 owner-managed Linux x86_64 Runner 管理；Fixture 使用固定官方介质与 owner License 创建当次无卷容器、源/目标表和 owner-only Engine 描述，增量使用 `ON CONFLICT`。System IAM 身份和 Engine API 注册继续由通用 owner 负责；Business 不调用 System API。退出时删除容器、镜像缓存与凭据目录，并验证零残留。
 - Oracle Free 23ai：普通表、Schema、Oracle Spatial、只读快照、普通表 CDC 与 Oracle Spatial CDC 测试源；ArcGIS SDE 作为后续独立能力路线预留。
 - Redpanda：独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka topic。

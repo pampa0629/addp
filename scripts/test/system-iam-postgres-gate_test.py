@@ -10,6 +10,11 @@ import time
 import unittest
 
 
+# Platform T0 can run alongside builds and browser gates. Process startup is
+# bounded, but is not a five-second performance requirement of the lock contract.
+PROCESS_TIMEOUT_SECONDS = 30
+
+
 class SystemIAMGateLockTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -33,14 +38,14 @@ class SystemIAMGateLockTest(unittest.TestCase):
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
         go = bin_dir / "go"
-        go.write_text('''#!/usr/bin/env python3
+        go.write_text(f'''#!/usr/bin/env python3
 import os, sys, time
 from pathlib import Path
 with open(os.environ["TEST_GO_TRACE"], "a") as trace:
     trace.write(" ".join(sys.argv[1:]) + "\\n")
 if os.environ.get("TEST_GO_HOLD") == "1" and "./internal/testsupport" in sys.argv:
     Path(os.environ["TEST_STARTED"]).touch()
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + {2 * PROCESS_TIMEOUT_SECONDS}
     while not Path(os.environ["TEST_RELEASE"]).exists():
         if time.monotonic() >= deadline:
             sys.exit("test holder timed out")
@@ -57,14 +62,14 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         for process in self.processes:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)
-            process.communicate(timeout=5)
+            process.communicate(timeout=PROCESS_TIMEOUT_SECONDS)
         self.temporary.cleanup()
 
     def run_gate(self, index=1, arguments=(), **overrides):
         environment = dict(self.environment, TEST_GO_TRACE=str(self.root / f"trace-{index}"))
         environment.update(overrides)
         return subprocess.run(["bash", str(self.scripts[index]), "--package", "migration", *arguments],
-                              env=environment, capture_output=True, text=True, timeout=5)
+                              env=environment, capture_output=True, text=True, timeout=PROCESS_TIMEOUT_SECONDS)
 
     def start_holder(self):
         environment = dict(self.environment, TEST_GO_TRACE=str(self.root / "trace-0"), TEST_GO_HOLD="1")
@@ -72,7 +77,7 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
                                    env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    text=True, start_new_session=True)
         self.processes.append(process)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_TIMEOUT_SECONDS
         while not self.started.exists() and time.monotonic() < deadline and process.poll() is None:
             time.sleep(0.02)
         self.assertTrue(self.started.exists(), "holder did not reach its first database command")
@@ -85,7 +90,7 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertIn("already running", second.stderr)
         self.assertFalse((self.root / "trace-1").exists())
         self.release.touch()
-        stdout, stderr = first.communicate(timeout=5)
+        stdout, stderr = first.communicate(timeout=PROCESS_TIMEOUT_SECONDS)
         self.assertEqual(first.returncode, 0, stdout + stderr)
         self.assertTrue(self.lock.exists())
         result = self.run_gate()
@@ -116,7 +121,7 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
     def test_terminated_gate_releases_lock(self):
         first = self.start_holder()
         os.killpg(first.pid, signal.SIGTERM)
-        first.communicate(timeout=5)
+        first.communicate(timeout=PROCESS_TIMEOUT_SECONDS)
         self.assertNotEqual(first.returncode, 0)
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)

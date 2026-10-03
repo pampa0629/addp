@@ -571,48 +571,54 @@ def validate_security_mysql_owner_protection_profile(
 ) -> None:
     if "security-mysql-owner-protection" not in registered:
         return
-    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(
-        encoding="utf-8"
-    )
-    required_fragments = (
-        "security-mysql-owner-protection)",
-        "SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL MANAGER_URL DEVELOP_URL",
-        "SERVICE_URL TRANSFER_URL",
-        "ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID",
-        "bash business/scripts/online-engine-fixture.sh start",
-        "bash business/scripts/online-engine-fixture.sh stop",
-        "bash business/scripts/online-workbench-mysql-fixture.sh start",
-        "bash business/scripts/online-workbench-mysql-fixture.sh stop",
-        'bash scripts/dev/start.sh "$START_TARGET"',
-    )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
-    if missing:
-        raise RegistrationError(
-            "security-mysql-owner-protection profile is missing: "
-            + ", ".join(missing)
-        )
+    hosted_path = repository / "scripts/test/online-hosted-security-gate.sh"
+    if not hosted_path.is_file():
+        raise RegistrationError("security-mysql-owner-protection requires Hosted lifecycle")
+    hosted = hosted_path.read_text(encoding="utf-8")
+    for fragment in (
+        'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+        'for start_target in -meta -security -manager -develop -service -transfer',
+        'bash business/scripts/online-security-owner-fixture.sh start',
+        'bash business/scripts/online-security-owner-fixture.sh stop',
+        '--suite security-mysql-owner-protection', 'scripts/test/online-engine-registration.py',
+        'scripts/test/security-mysql-owner-protection-online.py --initialize',
+        'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN',
+        'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
+    ):
+        if fragment not in hosted:
+            raise RegistrationError(f"security-mysql-owner-protection Hosted profile is missing {fragment}")
+    host = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    if "security-mysql-owner-protection" in host:
+        raise RegistrationError("security-mysql-owner-protection must not keep a self-hosted route")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
+    job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
+            or "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'security-mysql-owner-protection'\n" not in job.group("body")):
+        raise RegistrationError("security-mysql-owner-protection requires a manual Ubuntu Hosted job")
+    if "&& inputs.suite != 'security-mysql-owner-protection'" not in workflow:
+        raise RegistrationError("security-mysql-owner-protection must not also dispatch on self-hosted")
+    makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    for test in ("online-hosted-security-gate_test.py", "online-security-owner-fixture_test.py"):
+        if aggregate is None or test not in aggregate.group("body"):
+            raise RegistrationError("security-mysql-owner-protection regression must enter test-online-runner")
     for relative in (
-        "business/scripts/online-engine-fixture.sh",
-        "business/scripts/online-workbench-mysql-fixture.sh",
+        "business/scripts/online-security-owner-fixture.sh",
         "scripts/test/security-mysql-owner-protection-online.py",
         "scripts/test/security-transfer-protection-online.py",
     ):
         if not (repository / relative).is_file():
-            raise RegistrationError(
-                f"security-mysql-owner-protection requires {relative}"
-            )
-    postgres_fixture = (
-        repository / "business/scripts/online-engine-fixture.sh"
-    ).read_text(encoding="utf-8")
+            raise RegistrationError(f"security-mysql-owner-protection requires {relative}")
+    fixture = (repository / "business/scripts/online-security-owner-fixture.sh").read_text(encoding="utf-8")
     for fragment in (
-        "addp_online_security.mysql_email_transfer",
-        "DROP TABLE IF EXISTS addp_online_security.mysql_email_transfer",
+        "ADDP_ONLINE_HOSTED", "GITHUB_ACTIONS", "container ownership mismatch", "container remains after cleanup",
+        "--tmpfs /var/lib/postgresql/data", "--tmpfs /var/lib/mysql", "CREATE EXTENSION postgis",
+        "location_point geometry(Point, 4326)", "addp_online_security.mysql_email_transfer",
+        "addp_online_security.spatial_algorithm_source", "addp_online_security.spatial_algorithm_transfer",
+        "business/mysql/test-data.sh", "security_reader", "security_writer",
     ):
-        if fragment not in postgres_fixture:
-            raise RegistrationError(
-                "security-mysql-owner-protection PostgreSQL fixture is missing "
-                + fragment
-            )
+        if fragment not in fixture:
+            raise RegistrationError("security-mysql-owner-protection fixture contract is missing " + fragment)
     owner = (
         repository / "scripts/test/security-mysql-owner-protection-online.py"
     ).read_text(encoding="utf-8")

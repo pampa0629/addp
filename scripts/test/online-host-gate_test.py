@@ -631,26 +631,10 @@ class OnlineHostGateTest(unittest.TestCase):
             ],
         )
 
-    def test_runs_mysql_owner_protection_with_both_engine_fixtures(self) -> None:
+    def test_rejects_security_hosted_suite_before_lifecycle(self) -> None:
         result = self._run("security-mysql-owner-protection")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.command_log.read_text(encoding="utf-8").splitlines(),
-            [
-                "stop",
-                "infra-up",
-                "fixture:stop",
-                "mysql-fixture:stop",
-                "fixture:start",
-                "mysql-fixture:start",
-                "start:-all",
-                "make:test-online:ONLINE_SUITE=security-mysql-owner-protection",
-                "fixture:stop",
-                "mysql-fixture:stop",
-                "stop",
-            ],
-        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.command_log.exists())
 
     def test_check_only_writes_readiness_without_lifecycle_action(self) -> None:
         result = self._run("module-registry-recovery", "--check-only")

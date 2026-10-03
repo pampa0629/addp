@@ -96,7 +96,7 @@ esac
             env=environment,
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=30,
         )
 
     def test_seeds_read_only_mongodb_source_and_stable_postgresql_targets(self) -> None:

@@ -45,6 +45,19 @@ var consumerPermissions = []string{
 	"transfer.task.read",
 }
 
+var securityPermissions = []string{
+	"security.assessment.read", "security.assessment.create", "security.detector.read",
+	"security.enrollment.create", "security.enrollment.read", "security.finding.read", "security.finding.update",
+	"security.protection_baseline.read", "security.protection_baseline.update",
+	"security.policy.read", "security.policy.create", "security.policy.update", "security.policy.delete",
+	"security.sensitive_data_type.create", "security.sensitive_data_type.delete", "security.sensitive_data_type.read",
+}
+
+var securityInitializerPermissions = []string{
+	"security.classification.read", "security.classification.create", "security.grade.read", "security.grade.create",
+	"security.sensitive_data_type.read", "security.sensitive_data_type.create", "security.detector.read", "security.detector.create",
+}
+
 var metricPermissions = []string{
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"standard.metric.create", "standard.metric.read", "standard.metric.update", "standard.metric.publish",
@@ -88,6 +101,8 @@ var publicOriginCreatePermissions = []string{
 
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
+	case "security-mysql-owner-protection":
+		return append(append([]string{}, consumerPermissions...), securityPermissions...), nil
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
 		return consumerPermissions, nil
 	case "redis-consumer-flow":
@@ -108,7 +123,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	return suite == "redis-consumer-flow" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "security-mysql-owner-protection" || suite == "redis-consumer-flow" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func main() {
@@ -324,6 +339,14 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
 		values["ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN"] = foreign.AccessToken
 	}
+	if *suite == "security-mysql-owner-protection" {
+		initializer, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-security-initializer", securityInitializerPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"] = initializer.AccessToken
+	}
 	if needsEngineProvisioner(*suite) {
 		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
 		if err != nil {
@@ -459,7 +482,7 @@ func createPermissionFixture(
 	}
 	assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenantID, MembershipID: membership.Membership.ID,
-		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Disposable public origin permission acceptance",
+		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Disposable Online permission acceptance",
 		ActorPrincipalID: actorPrincipalID,
 		Audit:            audit(username + "-assignment"),
 	})

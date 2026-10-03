@@ -71,6 +71,8 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	}
 	allPermissions := append(append(append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...), publicOriginReadPermissions...), publicOriginCreatePermissions...)
 	allPermissions = append(allPermissions, orchestratorPermissions...)
+	allPermissions = append(allPermissions, securityPermissions...)
+	allPermissions = append(allPermissions, securityInitializerPermissions...)
 	allPermissions = append(allPermissions, redisConsumerPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
@@ -305,5 +307,25 @@ func TestRedisFixtureUsesCatalogPermissionWithoutInfrastructureAdministration(t 
 	}
 	if !needsEngineProvisioner("redis-consumer-flow") {
 		t.Fatal("fixture must register through the separate infrastructure identity")
+	}
+}
+
+func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
+	permissions, err := suitePermissions("security-mysql-owner-protection")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !needsEngineProvisioner("security-mysql-owner-protection") {
+		t.Fatal("missing provisioner")
+	}
+	for _, key := range []string{"security.protection_baseline.update", "security.policy.create", "system.execution_authorization.create"} {
+		if !contains(permissions, key) {
+			t.Fatalf("missing owner permission %s", key)
+		}
+	}
+	for _, key := range []string{"security.classification.create", "security.grade.create", "security.detector.create", "system.engine.create"} {
+		if contains(permissions, key) {
+			t.Fatalf("preparation permission leaked into consumer: %s", key)
+		}
 	}
 }
