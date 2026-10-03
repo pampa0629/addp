@@ -49,9 +49,16 @@ def validate_rows(rows, expected_count, projected=False, ordered=False):
 
 
 def execute_query(client, engine_id, target, query, deadline):
+    content = {'query_type': 'es_dsl', 'query': json.dumps(query), 'target_locator': target, 'query_parameters': []}
+    preflight = SUPPORT._object(client.request('POST', '/api/v1/develop/query-preflight', (200,),
+        dict(content, engine_id=engine_id, parameters={})).payload, 'Develop query preflight')
+    if preflight.get('allowed') is not True or preflight.get('effect') != 'read' or preflight.get('requires_confirmation') is not False:
+        raise SuiteError('Develop Elasticsearch preflight must allow the read-only sample query')
+    if any(diagnostic.get('severity') == 'error' for diagnostic in SUPPORT._array(preflight.get('diagnostics'), 'query diagnostics')):
+        raise SuiteError('Develop Elasticsearch preflight returned query errors')
     started = SUPPORT._object(client.request('POST', '/api/v1/develop/executions', (200,), {
         'dev_type': 'query', 'trigger_type': 'manual',
-        'content': {'query_type': 'es_dsl', 'query': json.dumps(query), 'target_locator': target, 'query_parameters': []},
+        'content': content,
         'execution_config': {'engine_id': engine_id}, 'parameters': {}, 'timeout': 120,
     }).payload, 'Develop execution')
     execution_id = started.get('execution_id')

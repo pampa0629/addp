@@ -188,6 +188,62 @@ func TestPreflightQueryReturnsPermissionAndConfirmationFacts(t *testing.T) {
 	}
 }
 
+func TestPreflightElasticsearchUsesProviderReadOnlyDiagnostics(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/system/runtime/engine-descriptors/12" {
+			t.Fatalf("unexpected System path: %s", request.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(models.EngineRuntimeDescriptor{
+			ID: 12, Name: "Elasticsearch", EngineType: "elasticsearch", LifecycleState: "active",
+		})
+	}))
+	defer server.Close()
+	for _, test := range []struct {
+		name, language, query string
+		status                int
+		allowed               bool
+	}{
+		{"read-only DSL", "es_dsl", `{"query":{"term":{"tags":"sample"}},"size":25,"sort":[{"order_id":"asc"}],"_source":["order_id","customer"]}`, http.StatusOK, true},
+		{"forbidden script", "es_dsl", `{"query":{"script":{"script":"true"}}}`, http.StatusOK, false},
+		{"unknown language", "unknown", `{"query":{"match_all":{}}}`, http.StatusBadRequest, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload, err := json.Marshal(developmodels.QueryPreflightRequest{
+				QueryType: test.language, Query: test.query, EngineID: 12,
+				TargetLocator: "addp://engine/12/path/addp_orders.v1?type=index",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/develop/query-preflight", bytes.NewReader(payload))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(response)
+			ctx.Request = request
+			setTenantAuthContextWithPermissionsForTest(ctx, 7, 1, []string{developauthorization.PermissionDevelopDataReadExecute})
+			newAuthorizedQueryHandlerForTest(server.URL).PreflightQuery(ctx)
+			if response.Code != test.status {
+				t.Fatalf("status=%d, body=%s", response.Code, response.Body.String())
+			}
+			if test.status != http.StatusOK {
+				return
+			}
+			var body developmodels.QueryPreflightResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Allowed != test.allowed || body.Effect != "read" || body.RequiresConfirmation ||
+				body.RequiredPermission != developauthorization.PermissionDevelopDataReadExecute || body.SchemaCoverage != plugin.QuerySchemaCoverageUnknown {
+				t.Fatalf("preflight=%#v", body)
+			}
+			if test.allowed && len(body.Diagnostics) != 0 || !test.allowed && len(body.Diagnostics) == 0 {
+				t.Fatalf("Provider diagnostics=%#v", body.Diagnostics)
+			}
+		})
+	}
+}
+
 func TestConnectionRejectsMissingUserAccessTokenBeforeSystemCall(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))

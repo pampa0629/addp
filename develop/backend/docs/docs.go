@@ -4723,8 +4723,10 @@ const docTemplate = `{
                     "enum": [
                         "sql",
                         "mql",
-                        "cypher"
-                    ]
+                        "cypher",
+                        "es_dsl"
+                    ],
+                    "example": "sql"
                 },
                 "target_locator": {
                     "type": "string"

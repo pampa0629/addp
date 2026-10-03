@@ -734,7 +734,7 @@ test-common-elasticsearch-unit: ## ES 插件、通用文档预览和单层目录
 	@cd common && GOWORK=off go test ./engine/plugins/elasticsearch ./resourcetree ./query -count=1
 	@cd manager/backend && GOWORK=off go test ./internal/preview -count=1
 	@cd meta/backend && GOWORK=off go test ./internal/scanruntime -count=1
-	@cd develop/backend && GOWORK=off go test ./internal/service -count=1
+	@cd develop/backend && GOWORK=off go test ./internal/api ./internal/service -count=1
 
 test-common-elasticsearch: ## 使用独占 ES 容器验证插件、Manager 预览与 Meta 扫描并清理资源
 	@bash scripts/test/common-elasticsearch-gate.sh

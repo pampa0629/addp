@@ -44,6 +44,32 @@ class ElasticsearchConsumerContractTest(unittest.TestCase):
                 MODULE.validate_rows([dict(row, items=items)], 1)
 
 
+class ElasticsearchPreflightTest(unittest.TestCase):
+    def test_query_execution_requires_allowed_read_only_preflight(self):
+        for allowed in (True, False):
+            with self.subTest(allowed=allowed):
+                calls = []
+                def request(method, path, statuses, body=None):
+                    calls.append(path)
+                    if len(calls) == 1:
+                        self.assertEqual(path, '/api/v1/develop/query-preflight')
+                        self.assertEqual(body['query_type'], 'es_dsl')
+                        self.assertEqual(body['target_locator'], 'target')
+                        return SimpleNamespace(payload={'allowed': allowed, 'effect': 'read',
+                            'requires_confirmation': False, 'diagnostics': []})
+                    self.assertTrue(allowed, 'denied preflight must not create an execution')
+                    if method == 'POST': return SimpleNamespace(payload={'execution_id': 'es-execution'})
+                    return SimpleNamespace(payload={'status': 'success', 'metadata': {'result': {'summary': {'preview_rows': []}}}})
+                client = SimpleNamespace(request=request)
+                if allowed:
+                    self.assertEqual(MODULE.execute_query(client, 7, 'target', {'query': {'match_all': {}}}, MODULE.time.monotonic() + 10), ('es-execution', []))
+                    self.assertEqual(calls, ['/api/v1/develop/query-preflight', '/api/v1/develop/executions', '/api/v1/develop/executions/es-execution'])
+                else:
+                    with self.assertRaises(MODULE.SuiteError):
+                        MODULE.execute_query(client, 7, 'target', {'query': {'match_all': {}}}, MODULE.time.monotonic() + 10)
+                    self.assertEqual(calls, ['/api/v1/develop/query-preflight'])
+
+
 class ElasticsearchBrowserEvidenceTest(unittest.TestCase):
     def test_browser_requires_success_matching_identity_and_all_screenshots(self):
         report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42'}

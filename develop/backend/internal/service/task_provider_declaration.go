@@ -129,7 +129,7 @@ func queryTaskDefinitionSchema() map[string]interface{} {
 			"query_type": map[string]interface{}{
 				"type":        "string",
 				"title":       "查询类型",
-				"description": "查询语言：sql、mql 或 cypher。",
+				"description": "sql, mql, cypher, es_dsl",
 				"enum":        []interface{}{"sql", "mql", "cypher", "es_dsl"},
 			},
 		},

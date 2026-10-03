@@ -7,7 +7,7 @@ import (
 )
 
 type QueryPreflightRequest struct {
-	QueryType       string                     `json:"query_type" binding:"omitempty,oneof=sql mql cypher"`
+	QueryType       string                     `json:"query_type" binding:"omitempty,oneof=sql mql cypher es_dsl" enums:"sql,mql,cypher,es_dsl" example:"sql"`
 	Query           string                     `json:"query" binding:"required"`
 	EngineID        uint                       `json:"engine_id" binding:"required"`
 	TargetLocator   string                     `json:"target_locator,omitempty"`

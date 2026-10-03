@@ -903,6 +903,8 @@ definitions:
         - sql
         - mql
         - cypher
+        - es_dsl
+        example: sql
         type: string
       target_locator:
         type: string
