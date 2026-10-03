@@ -34,10 +34,14 @@ func (s *LineageSchemaSnapshot) HasField(name string) bool {
 	if s == nil {
 		return false
 	}
+	found := false
 	for _, field := range s.Fields {
-		if field.Name == name && (len(field.Path) == 0 || (len(field.Path) == 1 && field.Path[0] == name)) {
-			return true
+		if field.Name == name {
+			if found {
+				return false
+			}
+			found = true
 		}
 	}
-	return false
+	return found
 }

@@ -144,12 +144,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "target_row_count": 2,
             "task_deleted": True,
             "manager_field_graph_verified": True,
-            "query_field_unavailable_verified": True,
+            "query_field_lineage_verified": True,
         }
 
     def test_browser_proofs_and_current_report_version_are_required(self):
         name = ONLINE.task_name("run-123")
-        for key in ("manager_field_graph_verified", "query_field_unavailable_verified"):
+        for key in ("manager_field_graph_verified", "query_field_lineage_verified"):
             with self.subTest(key=key):
                 report = self.browser_report(name)
                 report[key] = False

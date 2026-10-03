@@ -16,30 +16,104 @@ type TableFieldLineage struct {
 	Mappings []execution.LineageFieldMapping
 }
 
-// Observe the native schemas inside the pipeline, after target preparation and
-// before writing. Query-result columns cannot stand in for source fields.
-func (e *TableTransferExecutor) observeFieldLineage(ctx context.Context, plan TableTransferPlan, read, written *datatype.TableInfo) *TableFieldLineage {
-	if plan.Source.Kind != TableEndpointNative || strings.TrimSpace(plan.Source.Query) != "" || plan.Target.Kind != TableEndpointNative || e.SourceCatalogFacts == nil || e.TargetCatalogFacts == nil {
+// Observe the provider-owned schemas after target preparation and before writing.
+func (e *TableTransferExecutor) observeFieldLineage(ctx context.Context, plan TableTransferPlan, reader TableBatchSource, read, written *datatype.TableInfo, derived []string) *TableFieldLineage {
+	if plan.Target.Kind != TableEndpointNative || e.TargetCatalogFacts == nil {
 		return nil
 	}
-	source, err := e.SourceCatalogFacts.DescribeEngineCatalogFacts(ctx, plan.Source.ConnInfo, plan.Source.Path, plugin.EngineCatalogFactsOptions{})
-	if err != nil || source == nil || source.Table == nil {
+	query, isQuery := reader.(*queryTableBatchSource)
+	if isQuery {
+		if query.lineage == nil || len(query.lineage.Sources) != 1 || query.lineage.Sources[0].OpaqueOutput {
+			return nil
+		}
+	} else if plan.Source.Kind != TableEndpointNative || strings.TrimSpace(plan.Source.Query) != "" || e.SourceCatalogFacts == nil {
 		return nil
 	}
 	target, err := e.TargetCatalogFacts.DescribeEngineCatalogFacts(ctx, plan.Target.ConnInfo, plan.Target.Path, plugin.EngineCatalogFactsOptions{})
 	if err != nil || target == nil || target.Table == nil {
 		return nil
 	}
-	return buildTableFieldLineage(source.Table.Fields, target.Table.Fields, read, written, plan.Transforms)
-}
-
-func buildTableFieldLineage(sourceFields, targetFields []datatype.FieldInfo, read, written *datatype.TableInfo, plans []TableTransformPlan) *TableFieldLineage {
-	source, err := execution.NewLineageSchemaSnapshot(sourceFields)
-	if err != nil {
+	if isQuery {
+		return buildQueryTableFieldLineage(query.lineage, target.Table.Fields, read, written, plan.Transforms, derived)
+	}
+	source, err := e.SourceCatalogFacts.DescribeEngineCatalogFacts(ctx, plan.Source.ConnInfo, plan.Source.Path, plugin.EngineCatalogFactsOptions{})
+	if err != nil || source == nil || source.Table == nil {
 		return nil
 	}
-	target, err := execution.NewLineageSchemaSnapshot(targetFields)
-	if err != nil || read == nil || written == nil {
+	return buildTableFieldLineage(source.Table.Fields, target.Table.Fields, read, written, plan.Transforms, derived...)
+}
+
+func buildQueryTableFieldLineage(lineage *plugin.QueryOutputLineage, targetFields []datatype.FieldInfo, read, written *datatype.TableInfo, plans []TableTransformPlan, derived []string) *TableFieldLineage {
+	if lineage == nil || len(lineage.Sources) != 1 || read == nil {
+		return nil
+	}
+	source := lineage.Sources[0]
+	if source.OpaqueOutput {
+		return nil
+	}
+	origins := map[string]execution.LineageFieldMapping{}
+	for _, field := range read.Fields {
+		var candidates []plugin.QueryOutputBinding
+		if source.IdentityOutput {
+			candidates = append(candidates, plugin.QueryOutputBinding{SourcePath: []string{field.Name}, Transformation: "direct"})
+		}
+		for _, binding := range source.Bindings {
+			if len(binding.OutputPath) == 1 && binding.OutputPath[0] == field.Name {
+				candidates = append(candidates, binding)
+			}
+		}
+		if len(candidates) != 1 {
+			return nil
+		}
+		binding := candidates[0]
+		name := ""
+		for _, original := range source.Fields {
+			path := original.Path
+			if len(path) == 0 {
+				path = []string{original.Name}
+			}
+			if sameFieldPath(path, binding.SourcePath) {
+				if name != "" {
+					return nil
+				}
+				name = original.Name
+			}
+		}
+		if name == "" {
+			return nil
+		}
+		transformation := binding.Transformation
+		for _, protected := range derived {
+			if protected == field.Name {
+				transformation = "derived"
+			}
+		}
+		if _, exists := origins[field.Name]; exists {
+			return nil
+		}
+		origins[field.Name] = execution.LineageFieldMapping{SourceField: name, Transformation: transformation}
+	}
+	return composeTableFieldLineage(source.Fields, targetFields, origins, written, plans)
+}
+
+func sameFieldPath(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func buildTableFieldLineage(sourceFields, targetFields []datatype.FieldInfo, read, written *datatype.TableInfo, plans []TableTransformPlan, derived ...string) *TableFieldLineage {
+	if read == nil {
+		return nil
+	}
+	source, err := execution.NewLineageSchemaSnapshot(sourceFields)
+	if err != nil {
 		return nil
 	}
 	origins := map[string]execution.LineageFieldMapping{}
@@ -47,7 +121,30 @@ func buildTableFieldLineage(sourceFields, targetFields []datatype.FieldInfo, rea
 		if !source.HasField(field.Name) {
 			return nil
 		}
-		origins[field.Name] = execution.LineageFieldMapping{SourceField: field.Name, Transformation: "direct"}
+		transformation := "direct"
+		for _, protected := range derived {
+			if protected == field.Name {
+				transformation = "derived"
+			}
+		}
+		origins[field.Name] = execution.LineageFieldMapping{SourceField: field.Name, Transformation: transformation}
+	}
+	return composeTableFieldLineage(sourceFields, targetFields, origins, written, plans)
+}
+
+func composeTableFieldLineage(sourceFields, targetFields []datatype.FieldInfo, origins map[string]execution.LineageFieldMapping, written *datatype.TableInfo, plans []TableTransformPlan) *TableFieldLineage {
+	source, err := execution.NewLineageSchemaSnapshot(sourceFields)
+	if err != nil {
+		return nil
+	}
+	target, err := execution.NewLineageSchemaSnapshot(targetFields)
+	if err != nil || written == nil || len(written.Fields) == 0 {
+		return nil
+	}
+	for _, origin := range origins {
+		if !source.HasField(origin.SourceField) {
+			return nil
+		}
 	}
 	for _, plan := range plans {
 		switch strings.TrimSpace(plan.Type) {

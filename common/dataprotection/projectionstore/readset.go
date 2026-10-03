@@ -22,7 +22,7 @@ func (s *Store) PrepareQueryProtection(
 	prepared plugin.PreparedQuery,
 	action string,
 	now time.Time,
-) (func(*plugin.QueryResult) error, error) {
+) (*dataprotection.PreparedTableProtection, error) {
 	if prepared == nil {
 		return nil, errors.New("protection query gate requires a prepared query")
 	}
@@ -33,7 +33,7 @@ func (s *Store) PrepareQueryProtection(
 		return nil, err
 	}
 	if !s.HasManagedTargets(tenantID) {
-		return noQueryProtection, nil
+		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
 	}
 	readSet, err := prepared.ReadSet(ctx)
 	if err != nil {
@@ -55,7 +55,7 @@ func (s *Store) PrepareQueryProtection(
 		managed[target.ResourceIdentity] = gate
 	}
 	if len(managed) == 0 {
-		return noQueryProtection, nil
+		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
 	}
 
 	lineage, err := prepared.OutputLineage(ctx)
@@ -67,6 +67,7 @@ func (s *Store) PrepareQueryProtection(
 		rules  []dataprotection.Rule
 	}
 	plans := make([]sourceProtection, 0, len(managed))
+	derived := []string{}
 	matched := make(map[string]struct{}, len(managed))
 	for _, source := range lineage.Sources {
 		target, targetErr := dataprotection.DataItemTargetFromCatalogPath(model, source.Path)
@@ -85,20 +86,22 @@ func (s *Store) PrepareQueryProtection(
 			}
 			rules = append(rules, projectionRules...)
 		}
+		fields := dataprotection.QueryOutputDerivedFields(source, action, rules, dataprotection.SubjectReference{}, now)
+		derived = append(derived, fields...)
 		plans = append(plans, sourceProtection{source: source, rules: rules})
 		matched[target.ResourceIdentity] = struct{}{}
 	}
 	if len(matched) != len(managed) {
 		return nil, errors.New("protected query lineage is incomplete")
 	}
-	return func(result *plugin.QueryResult) error {
+	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: func(result *plugin.QueryResult) error {
 		for _, plan := range plans {
 			if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules, dataprotection.SubjectReference{}); err != nil {
 				return fmt.Errorf("protect query result: %w", err)
 			}
 		}
 		return nil
-	}, nil
+	}}, nil
 }
 
 func noQueryProtection(*plugin.QueryResult) error { return nil }
@@ -146,17 +149,8 @@ func (s *Store) PrepareTableProtection(
 	source := plugin.QueryOutputSource{
 		Path: path, Fields: append([]datatype.FieldInfo(nil), fields...), IdentityOutput: true,
 	}
-	derived := []string{}
-	seen := map[string]bool{}
-	for _, rule := range rules {
-		if rule.Action == action && len(rule.Component.Path) > 0 && rule.EffectiveDecision(dataprotection.SubjectReference{}, now).Effect != dataprotection.EffectAllow {
-			name := rule.Component.Path[0].Name
-			if !seen[name] {
-				derived = append(derived, name)
-				seen[name] = true
-			}
-		}
-	}
+	derived := dataprotection.QueryOutputDerivedFields(source, action, rules, dataprotection.SubjectReference{}, now)
+
 	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: func(result *plugin.QueryResult) error {
 		if err := dataprotection.ProtectQueryResultSource(result, source, action, rules, dataprotection.SubjectReference{}); err != nil {
 			return fmt.Errorf("protect table result: %w", err)

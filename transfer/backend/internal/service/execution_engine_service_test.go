@@ -888,3 +888,32 @@ func TestAttachSourceMetaAttributesRejectsEngineMismatch(t *testing.T) {
 		t.Fatal("attachSourceMetaAttributes() succeeded, want engine mismatch error")
 	}
 }
+
+func TestTransferQueryLineagePreservesDeclaredInputPort(t *testing.T) {
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	run := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	svc := &ExecutionEngineService{executionService: NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))}
+	source, err := commonExecution.NewLineageSchemaSnapshot([]datatype.FieldInfo{{Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := commonExecution.NewLineageSchemaSnapshot([]datatype.FieldInfo{{Name: "person_nickname", Type: datatype.FieldTypeString}, {Name: "label", Type: datatype.FieldTypeString}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldLineage := &executor.TableFieldLineage{Source: source, Target: target, Mappings: []commonExecution.LineageFieldMapping{{InputPort: "source", OutputPort: "target", SourceField: "userInfo.nickName", TargetField: "person_nickname", Transformation: "direct"}, {OutputPort: "target", TargetField: "label", Transformation: "generated"}}}
+	endpoint := planner.EndpointSpec{Query: &planner.QuerySourceSpec{Inputs: []planner.QueryInputSpec{{Name: "persons", Locator: "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=106"}}}}
+	metadata := svc.transferLineageMetadata(t.Context(), &task, uint(run.ID), endpoint, "addp://engine/2/path/outdoor/ods_outdoor_persons?type=table&item_id=10", "", "", map[string]interface{}{"apply_mode": "replace"}, fieldLineage)
+	payload, err := json.Marshal(metadata["lineage_facts"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var facts commonExecution.LineageFacts
+	if err := json.Unmarshal(payload, &facts); err != nil {
+		t.Fatal(err)
+	}
+	if facts.Operations[0].FieldLineageStatus != "complete" || facts.Operations[0].FieldMappings[0].InputPort != "persons" || facts.Operations[0].FieldMappings[1].InputPort != "" || fieldLineage.Mappings[0].InputPort != "source" {
+		t.Fatalf("single-source query port or immutable mappings lost: %+v", facts)
+	}
+}

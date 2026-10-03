@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -95,7 +96,7 @@ func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 }
 
 type TablePipeline struct {
-	ObserveFieldLineage      func(context.Context, *datatype.TableInfo, *datatype.TableInfo) *TableFieldLineage
+	ObserveFieldLineage      func(context.Context, *datatype.TableInfo, *datatype.TableInfo, []string) *TableFieldLineage
 	Source                   TableBatchSource
 	Target                   TableBatchTarget
 	Transforms               []TableTransformPlan
@@ -165,16 +166,11 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 
 	metrics := &TablePipelineMetrics{}
 	if p.ObserveFieldLineage != nil {
-		metrics.FieldLineage = p.ObserveFieldLineage(ctx, sourceInfo, tableInfo)
-		if protected, ok := reader.(*protectedTableBatchReader); ok && metrics.FieldLineage != nil {
-			for i := range metrics.FieldLineage.Mappings {
-				for _, name := range protected.derivedFields {
-					if metrics.FieldLineage.Mappings[i].SourceField == name {
-						metrics.FieldLineage.Mappings[i].Transformation = "derived"
-					}
-				}
-			}
+		var derived []string
+		if protected, ok := reader.(*protectedTableBatchReader); ok {
+			derived = protected.derivedFields
 		}
+		metrics.FieldLineage = p.ObserveFieldLineage(ctx, sourceInfo, tableInfo, derived)
 	}
 	var lastSourceOffset int64
 	for {
@@ -259,6 +255,7 @@ type nativeTableBatchSource struct {
 }
 
 type queryTableBatchSource struct {
+	lineage         *engineplugin.QueryOutputLineage
 	provider        engineplugin.QueryReadSessionProvider
 	protector       TableSourceProtector
 	connInfo        engineplugin.ConnectionInfo
@@ -279,7 +276,12 @@ func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, err
 	if err := validateExpectedQueryReadSet(s.expectedReadSet, readSet); err != nil {
 		return nil, err
 	}
-	var protect func(*engineplugin.QueryResult) error
+	// Evidence failure leaves field lineage unavailable, without changing the read.
+	lineage, lineageErr := prepared.OutputLineage(ctx)
+	if lineageErr == nil && engineplugin.ValidateQueryOutputLineage(readSet, lineage) == nil && len(lineage.Sources) == 1 {
+		s.lineage = lineage.Clone()
+	}
+	var protect *dataprotection.PreparedTableProtection
 	if s.protector != nil {
 		protect, err = s.protector.PrepareQueryProtection(ctx, prepared)
 		if err != nil {
@@ -291,7 +293,10 @@ func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, err
 		return nil, fmt.Errorf("open query read session: %w", err)
 	}
 	reader := TableBatchReader(&queryTableBatchReader{session: session, tableInfo: s.tableInfo})
-	return protectTableBatchReader(reader, protect, nil)
+	if protect == nil {
+		return reader, nil
+	}
+	return protectTableBatchReader(reader, protect.Apply, protect.DerivedFields)
 }
 
 func validateExpectedQueryReadSet(expected, actual *engineplugin.QueryReadSet) error {

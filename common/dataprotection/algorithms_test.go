@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/common/engine/plugin"
 )
@@ -62,6 +63,10 @@ func TestAlgorithmsProtectAliasedQueryResultsForEachOwnerAction(t *testing.T) {
 				{SourcePath: []string{"phone"}, OutputPath: []string{"contact"}, Transformation: plugin.QueryOutputTransformationDirect},
 				{SourcePath: []string{"email"}, OutputPath: []string{"mail"}, Transformation: plugin.QueryOutputTransformationDirect},
 			}}
+			derived := QueryOutputDerivedFields(source, action, rules, SubjectReference{}, time.Now().UTC())
+			if !reflect.DeepEqual(derived, []string{"contact", "mail"}) {
+				t.Fatalf("aliased transformation metadata: %v", derived)
+			}
 			result := &plugin.QueryResult{Columns: []string{"contact", "mail", "shape"}, Rows: []map[string]any{{"contact": "abc", "mail": "original", "shape": "geometry"}}}
 			if err := ProtectQueryResultSource(result, source, action, rules, SubjectReference{}); err != nil {
 				t.Fatal(err)

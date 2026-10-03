@@ -347,3 +347,23 @@ func TestFieldLineageKeepsPathsAndSnapshotsSeparate(t *testing.T) {
 		t.Fatalf("old schema activated: %d %v", count, err)
 	}
 }
+
+func TestFieldLineageCollectsExactNestedMongoField(t *testing.T) {
+	db := openLineageTestDB(t)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	sourceSchema, err := commonExecution.NewLineageSchemaSnapshot([]datatype.FieldInfo{{Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetSchema := fieldTestSchema(t, "person_nickname")
+	source := fieldTestItem(t, db, 7, "mongo-persons", sourceSchema)
+	target := fieldTestItem(t, db, 7, "ods-persons", targetSchema)
+	fieldTestExecution(t, db, "mongo-to-pg-nested", source, target, sourceSchema, targetSchema, "replace", time.Now().UTC(), commonExecution.LineageFieldMapping{SourceField: "userInfo.nickName", TargetField: "person_nickname", Transformation: "direct"})
+	if _, err := svc.CollectExecution(t.Context(), 7, "mongo-to-pg-nested"); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := svc.GetGraph(t.Context(), 7, models.LineageGraphRequest{SubjectKind: "field_ref", ItemID: &target.ID, FieldName: "person_nickname", Direction: "upstream", Depth: 1, Limit: 20})
+	if err != nil || graph.FieldLineageStatus != "complete" || len(graph.Edges) != 1 || graph.Edges[0].Source.FieldName != "userInfo.nickName" || graph.Edges[0].Source.SchemaSnapshotHash != sourceSchema.Hash {
+		t.Fatalf("nested field evidence missing: %+v %v", graph, err)
+	}
+}

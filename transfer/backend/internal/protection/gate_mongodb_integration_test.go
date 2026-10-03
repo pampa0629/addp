@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/engine/plugins/mongodb"
 	"github.com/addp/common/format"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/transfer/internal/executor"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -141,6 +142,9 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 	if err != nil {
 		t.Fatalf("prepare protection for projection without phone: %v", err)
 	}
+	if len(protectWithoutPhone.DerivedFields) != 0 {
+		t.Fatalf("unprojected phone marked derived: %v", protectWithoutPhone.DerivedFields)
+	}
 	withoutPhoneSession, err := provider.OpenQueryReadSession(t.Context(), withoutPhone)
 	if err != nil {
 		t.Fatalf("open projection without phone: %v", err)
@@ -153,12 +157,33 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 		t.Fatalf("read projection without phone: %v", err)
 	}
 	withoutPhoneResult := &plugin.QueryResult{Rows: withoutPhoneBatch.Rows}
-	if err := protectWithoutPhone(withoutPhoneResult); err != nil {
+	if err := protectWithoutPhone.Apply(withoutPhoneResult); err != nil {
 		t.Fatalf("protect projection without phone: %v", err)
 	}
 	for _, row := range withoutPhoneResult.Rows {
 		if _, exists := row["userInfo__phone"]; exists {
 			t.Fatal("projection without phone unexpectedly returned the protected field")
+		}
+	}
+
+	// Exercise the actual provider and Transfer pipeline; the target captures no business writes.
+	target := &mongoLineageTarget{fields: []datatype.FieldInfo{{Name: "person_id", Type: datatype.FieldTypeString}, {Name: "person_openid", Type: datatype.FieldTypeString}, {Name: "person_nickname", Type: datatype.FieldTypeString}}}
+	readSet, err := withoutPhone.ReadSet(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	transfer := &executor.TableTransferExecutor{SourceQuerySessionProvider: provider, SourceProtector: protector, TargetNativeWriter: target, TargetNativePreparer: target, TargetCatalogFacts: target}
+	metrics, err := transfer.Execute(t.Context(), executor.TableTransferPlan{
+		Source:     executor.TableSourcePlan{Kind: executor.TableEndpointQuery, ConnInfo: connection, ExpectedQueryReadSet: readSet, RuntimeQuery: &plugin.QueryRequest{EngineID: 11, Language: "mql", TargetPath: &targetPath, Options: plugin.QueryOptions{ReadOnly: true}, Query: `{"aggregate":"Persons","pipeline":[{"$project":{"_id":"$_id","_openid":{"$ifNull":["$_openid",null]},"userInfo__nickName":{"$ifNull":["$userInfo.nickName",null]}}}]}`}},
+		Target:     executor.TableTargetPlan{Kind: executor.TableEndpointNative, Path: plugin.TabularItemPath(2, plugin.EngineCatalogTermSchema, "outdoor", "ods_outdoor_persons")},
+		Transforms: []executor.TableTransformPlan{{Type: "field_mapping", FieldMapping: &executor.FieldMappingTransformPlan{Mode: executor.FieldMappingModeProject, Fields: []executor.FieldMappingFieldPlan{{Source: "_id", Target: "person_id"}, {Source: "_openid", Target: "person_openid"}, {Source: "userInfo__nickName", Target: "person_nickname"}}}}},
+	})
+	if err != nil || metrics.FieldLineage == nil || len(metrics.FieldLineage.Mappings) != 3 || metrics.RecordsWritten == 0 {
+		t.Fatalf("Mongo aggregate Transfer lost field evidence: %+v %v", metrics, err)
+	}
+	for _, mapping := range metrics.FieldLineage.Mappings {
+		if mapping.TargetField == "person_nickname" && (mapping.SourceField != "userInfo.nickName" || mapping.Transformation != "direct") {
+			t.Fatalf("Mongo nested origin lost: %+v", mapping)
 		}
 	}
 
@@ -172,6 +197,9 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 	protectWithPhone, err := protector.PrepareQueryProtection(t.Context(), withPhone)
 	if err != nil {
 		t.Fatalf("prepare protection for projection with phone: %v", err)
+	}
+	if len(protectWithPhone.DerivedFields) != 1 || protectWithPhone.DerivedFields[0] != "phone" {
+		t.Fatalf("masked alias metadata: %v", protectWithPhone.DerivedFields)
 	}
 	withPhoneSession, err := provider.OpenQueryReadSession(t.Context(), withPhone)
 	if err != nil {
@@ -188,7 +216,7 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 			break
 		}
 		result := &plugin.QueryResult{Columns: []string{"phone"}, Rows: batch.Rows}
-		if err := protectWithPhone(result); err != nil {
+		if err := protectWithPhone.Apply(result); err != nil {
 			t.Fatalf("protect projection with phone: %v", err)
 		}
 		for _, row := range result.Rows {
@@ -311,3 +339,20 @@ func isTransferKeepPrefixSuffixMask(value string) bool {
 	}
 	return true
 }
+
+type mongoLineageTarget struct {
+	plugin.EnginePlugin
+	fields []datatype.FieldInfo
+}
+
+func (p *mongoLineageTarget) PrepareTableWrite(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.TableWriteOptions) error {
+	return nil
+}
+func (p *mongoLineageTarget) WriteBatch(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, *plugin.BatchData, plugin.BatchWriteOptions) error {
+	return nil
+}
+func (p *mongoLineageTarget) DescribeEngineCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	return &plugin.EngineCatalogFacts{Table: &datatype.TableInfo{Fields: p.fields}}, nil
+}
+
+func (p *mongoLineageTarget) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }

@@ -6,6 +6,19 @@ import (
 	"github.com/addp/common/datatype"
 )
 
+func TestLineageSchemaSnapshotResolvesUniqueNestedFieldNames(t *testing.T) {
+	fields := []datatype.FieldInfo{{Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString}}
+	snapshot, err := NewLineageSchemaSnapshot(fields)
+	if err != nil || !snapshot.HasField("userInfo.nickName") || snapshot.HasField("userInfo") {
+		t.Fatalf("nested field identity: %+v, %v", snapshot, err)
+	}
+	fields = append(fields, datatype.FieldInfo{Name: "userInfo.nickName", Path: []string{"userInfo.nickName"}, Type: datatype.FieldTypeString})
+	snapshot, err = NewLineageSchemaSnapshot(fields)
+	if err != nil || snapshot.HasField("userInfo.nickName") {
+		t.Fatalf("ambiguous name accepted: %+v, %v", snapshot, err)
+	}
+}
+
 func TestLineageSchemaSnapshotValidatesStructureAndExactNames(t *testing.T) {
 	fields := []datatype.FieldInfo{{Name: "a.b", Type: datatype.FieldTypeString, Nullable: true}}
 	snapshot, err := NewLineageSchemaSnapshot(fields)

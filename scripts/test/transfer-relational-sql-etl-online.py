@@ -314,7 +314,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
         "target_row_count": 2,
         "task_deleted": True,
         "manager_field_graph_verified": True,
-        "query_field_unavailable_verified": True,
+        "query_field_lineage_verified": True,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:

@@ -106,7 +106,7 @@ func TestGatePreparesBoundedNativeAndQueryExportProtection(t *testing.T) {
 		t.Fatal(err)
 	}
 	query := &plugin.QueryResult{Columns: []string{"contact_phone"}, Rows: []map[string]interface{}{{"contact_phone": "13501206490"}}}
-	if err := queryProtect(query); err != nil {
+	if err := queryProtect.Apply(query); err != nil {
 		t.Fatal(err)
 	}
 	if got := query.Rows[0]["contact_phone"]; got != "135****6490" {

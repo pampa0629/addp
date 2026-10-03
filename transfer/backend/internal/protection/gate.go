@@ -143,7 +143,7 @@ func (p *boundedTableProtection) PrepareCatalogTableProtection(ctx context.Conte
 	return p.store.PrepareTableProtection(ctx, p.tenantID, p.model, path, fields, exportAction, time.Now().UTC())
 }
 
-func (p *boundedTableProtection) PrepareQueryProtection(ctx context.Context, prepared engineplugin.PreparedQuery) (func(*engineplugin.QueryResult) error, error) {
+func (p *boundedTableProtection) PrepareQueryProtection(ctx context.Context, prepared engineplugin.PreparedQuery) (*dataprotection.PreparedTableProtection, error) {
 	if p == nil {
 		return nil, ErrSourceRequired
 	}

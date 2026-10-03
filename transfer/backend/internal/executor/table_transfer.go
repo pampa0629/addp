@@ -77,7 +77,7 @@ type TableProgressCallback func(context.Context, TableProgressEvent) error
 // target writes; Security policy state never enters this package.
 type TableSourceProtector interface {
 	PrepareCatalogTableProtection(context.Context, engineplugin.EngineCatalogPath, []datatype.FieldInfo) (*dataprotection.PreparedTableProtection, error)
-	PrepareQueryProtection(context.Context, engineplugin.PreparedQuery) (func(*engineplugin.QueryResult) error, error)
+	PrepareQueryProtection(context.Context, engineplugin.PreparedQuery) (*dataprotection.PreparedTableProtection, error)
 }
 
 type TableProgressEvent struct {
@@ -218,8 +218,8 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 		return nil, err
 	}
 	return (&TablePipeline{
-		ObserveFieldLineage: func(ctx context.Context, read, written *datatype.TableInfo) *TableFieldLineage {
-			return e.observeFieldLineage(ctx, plan, read, written)
+		ObserveFieldLineage: func(ctx context.Context, read, written *datatype.TableInfo, derived []string) *TableFieldLineage {
+			return e.observeFieldLineage(ctx, plan, source, read, written, derived)
 		},
 		Source:                   source,
 		Target:                   target,

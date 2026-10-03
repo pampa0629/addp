@@ -225,7 +225,7 @@
 | query service contract version | 查询服务计算契约版本 | Service 由有效发布依赖、稳定键与参数契约派生的 `service_version`。 | 用于查询、游标和消费契约；缺少执行契约时为空，不能用作管理端重新绑定的并发标识。 |
 | service dependency | 服务依赖 | 已发布服务读取、发布或暴露某个 data item 的来源事实。 | 在血缘中表现为 `data item --serve--> published service`；`dependency_hash` 只是快照版本摘要，不是具体血缘边。 |
 | reusable development artifact | 可复用开发成果 | Develop 中已持久化、可被重复编辑或稳定引用的 `query` 或 `workflow` DevTask。 | 可作为 `development_artifact` CatalogEntry 的专业来源；不包含 `script` / Notebook、即时查询、execution、运行结果或 ToolApproval。 |
-| field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 身份为 data item、精确字段名与执行结构快照 hash；字段默认不是独立 data item。字段值来源关系与过滤、连接等影响依赖语义分开。 |
+| field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 身份为 data item、精确字段名与执行结构快照 hash；字段默认不是独立 data item。嵌套字段按 Provider 冻结结构中的唯一字段名定位，结构化 path 保存在快照中，不从名称中的点号反推路径；同名字段无法唯一定位时不得声明完整字段血缘。字段值来源关系与过滤、连接等影响依赖语义分开。 |
 | queryable field path | 可查询字段路径 | 从记录根到具体值字段的结构化路径事实，用于动态 schema 记录集合的字段发现、查询生成和校验。 | MongoDB 示例为 `path=["members","userInfo","nickName"]`，MQL 投影为 `members.userInfo.nickName`；路径各层的 object / array 类型由同一组字段事实表达，不传递原始样本值。 |
 | output contract snapshot | 输出契约快照 | 对没有单一 Meta item 身份的查询或计算结果，保存其已检测输出字段、主键、空间信息等契约事实。 | SQL 查询服务使用该快照；查询结果未物化并经 Meta 扫描前，不创建或伪造 Meta item。 |
 | query service | 查询服务 | Service 将一个受治理的数据源或固定查询发布为稳定数据 API 的业务定义。 | 表、固定 SQL 和联邦 SQL 是来源表达；REST Query、OGC API Features、WFS 是协议投影，不是不同的查询执行路径。 |

@@ -606,7 +606,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/transfer-relational-sql-etl-online.py", '"meta.lineage.read"'),
             ("scripts/test/transfer-relational-sql-etl-online.py", "cleanup_tasks(client"),
             ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}"),
-            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "query_field_unavailable_verified: true"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "query_field_lineage_verified: true"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "expect(query.graph.field_lineage_status).toBe('complete')"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "expect(query.graph.edges).toHaveLength(1)"),
             ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "schema_snapshot_hash"),
         ):
             with self.subTest(fragment=fragment):

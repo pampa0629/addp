@@ -22,7 +22,7 @@ func TestPrepareQueryProtectionKeepsUnmanagedTenantOffReadSetPath(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := protect(&plugin.QueryResult{}); err != nil {
+	if err := protect.Apply(&plugin.QueryResult{}); err != nil {
 		t.Fatal(err)
 	}
 	if *calls != 0 {

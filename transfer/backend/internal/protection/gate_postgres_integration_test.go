@@ -131,8 +131,13 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
 		t.Fatalf("query metrics = %#v", metrics)
 	}
-	if metrics.FieldLineage != nil {
-		t.Fatal("query source declared complete field lineage")
+	if metrics.FieldLineage == nil || len(metrics.FieldLineage.Mappings) != 2 {
+		t.Fatalf("query field lineage missing: %+v", metrics.FieldLineage)
+	}
+	for _, mapping := range metrics.FieldLineage.Mappings {
+		if mapping.TargetField == "contact_phone" && (mapping.SourceField != "phone" || mapping.Transformation != "derived") {
+			t.Fatalf("masked query alias lost provenance: %+v", mapping)
+		}
 	}
 	if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT contact_phone FROM "%s"."%s" WHERE id = 1`, schema, queryTargetTable)).Scan(&phone); err != nil {
 		t.Fatal(err)

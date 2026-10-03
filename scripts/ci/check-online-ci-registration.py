@@ -1207,7 +1207,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         ),
         "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js": (
             "/manager/data-explorer", "field_ref", "schema_snapshot_hash", "lineage-field", "lineage-canvas",
-            "manager_field_graph_verified: true", "query_field_unavailable_verified: true", "toBe('unavailable')",
+            "manager_field_graph_verified: true", "query_field_lineage_verified: true", "expect(query.graph.field_lineage_status).toBe('complete')", "expect(query.graph.edges).toHaveLength(1)",
             "addp.transfer-relational-sql-etl-browser/v2",
         ),
         "scripts/test/transfer-relational-sql-etl-online_test.py": ("test_rejects_wrong_fields_versions_and_execution_proofs",),

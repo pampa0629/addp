@@ -38,7 +38,7 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 		end()
 		return nil, nil, fmt.Errorf("%w: %w", ErrRequired, err)
 	}
-	return protect, end, nil
+	return protect.Apply, end, nil
 }
 
 func (g *Gate) BeginCatalogPath(ctx context.Context, tenantID uint, enginePlugin plugin.EnginePlugin, path plugin.EngineCatalogPath) (func(), error) {

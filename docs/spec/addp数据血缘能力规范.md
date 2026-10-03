@@ -249,9 +249,10 @@ Develop Query Execution Supervisor 必须在业务写入事务成功提交后，
 
 ### 6.1 字段级首期契约
 
-首期支持 Transfer bounded native table -> native table 的实际字段映射。字段血缘回答目标字段值来自哪些源字段；过滤、JOIN 条件、排序及行数影响不混入值来源关系。SQL query source、continuous/CDC、encoded 输出及空间重投影暂不声明完整字段血缘，继续记录数据项级事实，字段视图明确显示证据不可用。
+首期支持 Transfer bounded native table -> native table，以及同一 PreparedQuery 能证明单一源数据项完整输出映射的 query source -> native table。字段血缘回答目标字段值来自哪些源字段；过滤、JOIN 条件、排序及行数影响不混入值来源关系。查询源只消费 Provider 的 ReadSet / OutputLineage，不在 Transfer 解析 SQL/MQL；MongoDB 透明 aggregate 的嵌套字段别名、`$ifNull: [field, null]` 和 `$unwind.includeArrayIndex` 按 Provider 证据与实际 field mapping 组合，数组索引保留 derived 语义。多来源查询、opaque / unresolved 或缺少精确输出绑定的查询、continuous/CDC、encoded 输出及空间重投影暂不声明完整字段血缘，继续记录数据项级事实，字段视图明确显示证据不可用。
 
 - `lineage_facts` 保持 `addp.lineage-facts/v1`；资源引用的 `schema_snapshot` 使用 `{hash, fields}`，fields 来自同一次真实读取和目标写入结构，hash 复用 Common 的 `TableSchemaSnapshotHash`。不回查当前结构补造执行快照。
+- 查询源冻结 Provider 的原始来源结构及精确路径绑定，查询结果列不能充当原始来源快照。嵌套字段只按快照中的唯一字段名引用，完整 path 参与结构哈希；点号不会被 collector 或查询 API 再次拆分。查询保护准备同时返回实际受转换影响的结果字段名，与同次保护规则绑定；这些字段经过别名及后续 field mapping 后仍须记为 derived，抑制列不产生映射。
 - operation 增加 `field_lineage_status=complete|unavailable` 和 `field_mappings`。每条映射明确 `input_port`、`output_port`、`source_field`、`target_field` 和 `transformation=direct|derived|generated`。generated 没有输入端口或源字段，只证明常量/默认值生成，不生成虚假的字段来源边。非空默认值会改变源值语义，记为 derived；数据保护准备阶段同时返回实际受转换影响的字段名，脱敏字段记为 derived，受抑制字段不产生目标映射；按运行时顺序组合多步映射与覆盖，透传字段来自实际源结构。
 - 成功执行才采集；字段快照与映射必须校验哈希、端口和字段存在性。无法证明时记录 unavailable，不按同名字段猜测。缺少字段契约的其他 owner 事实也属于 unavailable，而不是 complete 或无依赖。
 - `lineage_item_relations` 统一存储 item 和 field 两种粒度，field 行保存两端字段名与结构快照 hash；唯一键包含两端字段身份。observation 保存对应快照和转换语义。字段不是新增 DataItem，不新增第二套 collector。
@@ -259,7 +260,7 @@ Develop Query Execution Supervisor 必须在业务写入事务成功提交后，
 - 统一 `GET /lineage/graph` 增加 `subject_kind=field_ref`、`field_name` 和可选 `schema_snapshot_hash`；省略 hash 时依据 Meta 当前结构定位，指定 hash 时使用对应执行证据。字段图按字段身份沿固定方向遍历，保留租户、深度、数量和端点完整性约束；as_of 沿冻结快照查询已观察的写入事实，stale 标记仍保留在历史关系上，不因当前结构变化删除历史来源，也不反推未观察的外部变更时间；首期字段视图不接受数据项 ID 的局部展开参数。字段视图返回 `field_lineage_status=complete|unavailable`，complete 且无入边可表示已证明的 generated 字段；unavailable 不等于没有来源。
 - `common-frontend/graph` 统一管理字段选择与字段节点展示。宿主传入根数据项的字段名并请求同一 API，字段名称作为精确标识传递，不拆分点号。节点详情提供字段名、所属数据项及结构快照 hash，关系详情提供转换语义和执行证据。
 
-首期跨模块验收复用 `transfer-relational-sql-etl` Online suite，唯一运行于 GitHub Hosted Ubuntu x86_64 临时部署，覆盖真实 Transfer 原生表字段映射、replace 与两跳自动采集，以及 Console 中 Manager 共享字段视图；同一 suite 的 SQL 查询源验证 unavailable。每轮创建隔离身份与 PostgreSQL Engine Instance，退出时随整套部署销毁，不依赖永久账号或自托管 Runner。确定性脚本通过不等于真实 T4 通过，具体身份、夹具、报告和清理契约见《ADDP 测试与验收规范》5.2。
+首期跨模块验收复用 `transfer-relational-sql-etl` Online suite，唯一运行于 GitHub Hosted Ubuntu x86_64 临时部署，覆盖真实 Transfer 原生表字段映射、replace 与两跳自动采集，以及 Console 中 Manager 共享字段视图；同一 suite 验证 Provider 能证明的单来源 SQL 查询字段映射。每轮创建隔离身份与 PostgreSQL Engine Instance，退出时随整套部署销毁，不依赖永久账号或自托管 Runner。确定性脚本通过不等于真实 T4 通过，具体身份、夹具、报告和清理契约见《ADDP 测试与验收规范》5.2。
 
 ### 6.2 图数据库评估边界
 

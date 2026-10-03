@@ -115,10 +115,14 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   }, { timeout: 120_000, intervals: [500, 1000, 2000] }).toBe(true)
   const locator = `addp://engine/${env.ADDP_ONLINE_TEST_ENGINE_ID}/path/public/${env.ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE}?type=table&item_id=${target.id}`
   const query = await managerFieldGraph(page, locator, target.id, 'amount')
-  expect(query.graph.field_lineage_status).toBe('unavailable')
-  expect(query.graph.edges).toEqual([])
-  await expect(query.frame.locator('.lineage-truncated')).toHaveText('当前字段尚无可用血缘证据')
-  await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-query-field-unavailable.png'), fullPage: true })
+  expect(query.graph.field_lineage_status).toBe('complete')
+  expect(query.graph.edges).toHaveLength(1)
+  expect(query.graph.edges[0].source.field_name).toBe('amount')
+  expect(query.graph.edges[0].target.field_name).toBe('amount')
+  expect(query.graph.edges[0].evidence.execution_id).toBe(sqlExecution.execution_id)
+  expect(query.graph.edges[0].transformation).toBe('direct')
+  await expect(query.frame.locator('.lineage-summary')).toContainText('2 个节点 · 1 条关系')
+  await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-query-field-lineage.png'), fullPage: true })
 }
 
 test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page }) => {
@@ -289,7 +293,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
         target_row_count: 2,
         task_deleted: true,
         manager_field_graph_verified: true,
-        query_field_unavailable_verified: true
+        query_field_lineage_verified: true
       })}\n`,
       'utf8'
     )

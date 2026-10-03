@@ -1008,11 +1008,16 @@ func (s *ExecutionEngineService) transferLineageMetadata(ctx context.Context, ta
 		RuntimeExecutionID: executionIDString(s, ctx, executionID),
 	}
 	facts.Operations[0].FieldLineageStatus = "unavailable"
-	if fieldLineage != nil && len(inputs) == 1 && inputs[0].Port == "source" {
+	if fieldLineage != nil && len(inputs) == 1 {
 		facts.Inputs[0].SchemaSnapshot = fieldLineage.Source
 		facts.Outputs[0].SchemaSnapshot = fieldLineage.Target
 		facts.Operations[0].FieldLineageStatus = "complete"
-		facts.Operations[0].FieldMappings = fieldLineage.Mappings
+		facts.Operations[0].FieldMappings = append([]commonExecution.LineageFieldMapping(nil), fieldLineage.Mappings...)
+		for i := range facts.Operations[0].FieldMappings {
+			if facts.Operations[0].FieldMappings[i].InputPort != "" {
+				facts.Operations[0].FieldMappings[i].InputPort = inputs[0].Port
+			}
+		}
 	}
 	return commonModels.JSONMap{"lineage_facts": facts}
 }
