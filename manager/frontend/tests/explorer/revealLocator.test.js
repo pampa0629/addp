@@ -107,10 +107,9 @@ describe('explorer revealLocator', () => {
       target_locator: targetLocator,
       ancestors: chain
     })
-    mocks.getNodeChildren.mockResolvedValue({
-      parent_locator: schemaLocator,
-      children: schemaChildren
-    })
+    mocks.getNodeChildren.mockImplementation(async (_engineId, locator) => locator === rootLocator
+      ? { ...root, children: [...root.children] }
+      : { parent_locator: schemaLocator, children: schemaChildren })
 
     const store = useExplorerStore()
     store.engines = [{ id: 2, name: 'Business PostgreSQL', engine_type: 'postgresql', connection_status: 'online' }]
@@ -118,7 +117,8 @@ describe('explorer revealLocator', () => {
     const revealed = await store.revealLocator(targetLocator)
 
     expect(mocks.getTree).toHaveBeenCalledWith(2, 1)
-    expect(mocks.getNodeChildren).toHaveBeenCalledTimes(1)
+    expect(mocks.getNodeChildren).toHaveBeenCalledTimes(2)
+    expect(mocks.getNodeChildren).toHaveBeenCalledWith(2, rootLocator)
     expect(mocks.getNodeChildren).toHaveBeenCalledWith(2, schemaLocator)
     expect(store.engineTrees[2].children[0].children.map(node => node.locator)).toEqual([
       siblingLocator,
@@ -126,5 +126,32 @@ describe('explorer revealLocator', () => {
     ])
     expect(revealed.node.locator).toBe(targetLocator)
     expect(store.selectedLocator).toBe(targetLocator)
+  })
+
+  it('loads all root-level Redis keys when restoring a key deep link', async () => {
+    const rootLocator = 'addp://engine/24/path/?type=server&node_id=10'
+    const keys = ['string', 'counter', 'hash', 'list', 'set', 'zset', 'stream', 'ttl', 'binary']
+      .map((label, index) => {
+        const token = `k:${Buffer.from(`addp:sample:${label}`).toString('base64url')}`
+        const locator = `addp://engine/24/path/${token}?type=key&item_id=${900 + index}`
+        return { id: locator, locator, label, type: 'key', hasChildren: false, children: [] }
+      })
+    const root = { id: rootLocator, locator: rootLocator, label: 'Redis', type: 'server',
+      hasChildren: true, children: [] }
+    const target = keys.at(-1)
+    mocks.getTree.mockResolvedValue(root)
+    mocks.getTreeAncestors.mockResolvedValue({ target_locator: target.locator, ancestors: [root, target] })
+    mocks.getNodeChildren.mockResolvedValue({ ...root, children: keys })
+    const store = useExplorerStore()
+    store.engines = [{ id: 24, name: 'Redis', engine_type: 'redis', connection_status: 'online' }]
+
+    const revealed = await store.revealLocator(target.locator)
+
+    expect(store.engineTrees[24].children.map(node => node.locator)).toEqual(keys.map(node => node.locator))
+    expect(mocks.getNodeChildren).toHaveBeenCalledWith(24, rootLocator)
+    expect([...store.expandedLocators]).toContain(rootLocator)
+    expect(revealed.node.locator).toBe(target.locator)
+    expect(store.selectedLocator).toBe(target.locator)
+    expect(mocks.refreshNode).not.toHaveBeenCalled()
   })
 })
