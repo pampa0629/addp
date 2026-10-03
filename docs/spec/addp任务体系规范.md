@@ -935,6 +935,8 @@ Orchestrator 保留 v1 串行 DAG、任务引用、Owner 授权和输出绑定�
 
 权限边界扩展沿用同一手动 Hosted T4，不新增认证旁路或生产故障开关。System IAM 夹具提供同 Tenant 的普通读者，其 Orchestrator 读取与 Monitor 读取分别赋权；父执行及嵌套编排可读，Meta 子执行不授予读取权，树仅显示两层编排，子执行详情、树和事件返回 404。独立 Tenant 管理员仅通过正式 IAM 接口撤销该读者的 Orchestrator 角色分配；先验证旧令牌失效为 401，再经正式登录取得同 User、Membership 和 Tenant 的新令牌，确认 Monitor 权限仍在、父执行详情、树及事件均为 404。外部代理只中断本轮 Meta 的 execution-read-scope GET 连接，由真实 Monitor 返回 503 execution_owner_unavailable 且不含执行数据；恢复连接后核对完整执行树不变。凭据与代理控制只存于不归档的 owner-only 临时目录，业务报告不保存角色分配编号，未知撤权结果不重试，失败路径释放故障并由标准生命周期销毁部署。确定性验证归入现有 make test-orchestrator-online-runner 与 make test-online-runner / 平台 CI；扩展首次真实通过前不计为 T4 已通过。
 
+权限扩展已在提交 `759ca7736` 的 [Hosted T4 37126213434](https://github.com/pampa0629/addp/actions/runs/37126213434) 真实通过，本轮共 20 项检查。普通读者可读取父执行与嵌套编排，Meta 子执行的详情、树和事件均不可见；正式撤销 Owner 角色分配后，旧令牌返回 401，重新登录仍保留 Monitor 权限时父执行详情、树和事件返回 404。中断 Meta 读取范围连接时，真实 Monitor 返回无执行数据的 503 `execution_owner_unavailable`，恢复后完整执行树一致。此前的业务源中断、响应丢失与 Backend 崩溃检查同时通过，两类派发故障均无重放。System、Gateway、Meta、Orchestrator、Monitor 的构建身份均匹配该提交；四个临时任务定义经正式 API 删除，生命周期清理通过，Infra 容器、网络及数据卷零残留。61 个归档文件未包含身份凭据及代理控制文件，也未检出标准令牌或夹具密码。此结果不包含续租故障、一次性执行及已删除任务历史的真实验收。
+
 ### 编排调度与子任务自身调度
 
 Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，也不是覆盖关系。
