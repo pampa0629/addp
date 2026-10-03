@@ -205,7 +205,8 @@ def test_conversion_source_target_credentials_are_separate(monkeypatch, raster_f
     assert 'secret' not in json.dumps(result)
 
 
-def test_async_api_runs_authorized_raster_dag(raster_file):
+@pytest.mark.parametrize('input_data', ['omitted', {}, None], ids=['omitted', 'empty-object', 'reject-null'])
+def test_async_api_runs_authorized_raster_dag(raster_file, input_data):
     import api_server
     workflow = {'tasks':[
         {'id':'load','operator':'raster_load','params':{'access_plan':source_plan(raster_file)},'depends_on':[]},
@@ -213,8 +214,15 @@ def test_async_api_runs_authorized_raster_dag(raster_file):
     ]}
     client = api_server.app.test_client()
     assert client.post('/api/workflow',json={'workflow_def':workflow}).status_code == 400
-    response = client.post('/api/workflow',json={'workflow_def':workflow,'runtime':{
-        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+    payload = {'workflow_def':workflow,'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}}
+    if input_data != 'omitted':
+        payload['input_data'] = input_data
+    response = client.post('/api/workflow',json=payload)
+    if input_data is None:
+        assert response.status_code == 400
+        assert response.json['error_code'] == 'INVALID_PARAMS'
+        return
     assert response.status_code == 202
     execution_id = response.json['execution_id']
     deadline = time.monotonic() + 5

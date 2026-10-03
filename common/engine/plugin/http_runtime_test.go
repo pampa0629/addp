@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +99,45 @@ func TestHTTPExecuteWorkflowUsesCanonicalRequestShape(t *testing.T) {
 	}
 	if inputData := got["input_data"].(map[string]interface{}); inputData["engine_id"] != float64(99) {
 		t.Fatalf("input_data engine_id should remain input-only: %#v", got)
+	}
+}
+
+func TestHTTPExecuteWorkflowEmptyInputData(t *testing.T) {
+	for _, input := range []struct {
+		name string
+		data map[string]interface{}
+	}{
+		{name: "nil"},
+		{name: "empty", data: map[string]interface{}{}},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload map[string]interface{}
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				data, ok := payload["input_data"].(map[string]interface{})
+				if !ok || len(data) != 0 {
+					t.Errorf("input_data must be an empty JSON object, got %#v", payload["input_data"])
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"status":"failed","error":"input_data must be an object"}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"status":"success","execution_id":"empty-input"}`))
+			}))
+			defer server.Close()
+			host, port, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := HTTPExecuteWorkflow(context.Background(), ConnectionInfo{
+				"protocol": "http", "host": host, "port": port,
+			}, WorkflowExecuteRequest{WorkflowDef: map[string]interface{}{"tasks": []interface{}{}}, InputData: input.data})
+			if err != nil || result.Status != "success" {
+				t.Fatalf("empty-input workflow rejected: result=%+v err=%v", result, err)
+			}
+		})
 	}
 }
 

@@ -560,7 +560,7 @@ components:
         input_data:
           type: object
           additionalProperties: true
-          description: 输入数据(可选)
+          description: 外部输入对象（可选）；无输入时使用空对象，不能为 null。
         engine_id:
           type: integer
           description: 条件运行时资源 ID。Spark Workflow 必填，指向已启用的 Apache Spark 通用引擎资源；普通工作流运行时不需要。

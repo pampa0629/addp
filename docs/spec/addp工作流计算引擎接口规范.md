@@ -240,6 +240,8 @@ Content-Type: application/json
 }
 ```
 
+`input_data` 是可选的外部输入对象；提供时必须为 JSON object，不能为 `null`。共享 Go 客户端在没有外部输入时发送 `{}`，不改变 Runtime 的对象校验契约。
+
 `runtime.tenant_id` 是 Workflow Runtime 的必填租户上下文。它必须由拥有工作流执行入口的 ADDP 后端模块从已验证的 AuthContext 派生并注入；浏览器、前端模块和外部客户端不得直接提交或覆盖该值。Runtime 使用该租户上下文获取 Tenant Service Access Token、访问租户资源，并隔离租户级运行时状态。
 
 `runtime.execution_authorization` 是 Workflow Runtime 的必填执行期授权摘要。`id` 必须为正整数；`effects` 必须是非空、无重复的 `read | write | ddl | external_effect` 集合，并覆盖本次 DAG 全部算子声明的 `effects`。Runtime 必须在执行前重新聚合 DAG effects 并拒绝缺失授权、未知效果或授权不足的请求。该摘要不是 Access Token；Runtime 不接收 User Token、Service Token 或明文 Engine 连接作为授权事实。

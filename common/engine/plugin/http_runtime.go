@@ -62,9 +62,13 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 	if err != nil {
 		return nil, err
 	}
+	inputData := req.InputData
+	if inputData == nil {
+		inputData = map[string]interface{}{}
+	}
 	payload := map[string]interface{}{
 		"workflow_def": req.WorkflowDef,
-		"input_data":   req.InputData,
+		"input_data":   inputData,
 	}
 	if req.EngineID > 0 {
 		payload["engine_id"] = req.EngineID
