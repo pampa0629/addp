@@ -227,6 +227,7 @@ def test_async_grid_outputs_pass_independent_pixel_and_alpha_oracle(physical, tm
     result, output = grid_target(tmp_path, scene, api_server, case_name)
     evidence = fixture.worker('verify-' + case_name, physical)
     expected = fixture.grid_expectation(case_name)
+    assert evidence['has_overviews'] is (case_name=='clip-polygon')
     assert evidence['valid_pixels'] == expected['valid_pixels']
     assert evidence['invalid_pixels'] == expected['width'] * expected['height'] - expected['valid_pixels']
     assert result['band_count'] == expected['band_count']

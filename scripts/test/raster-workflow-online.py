@@ -223,8 +223,9 @@ def validate_success(execution, source_locator, target_locator, mode, expectatio
     return facts, scan_id
 
 
-def validate_target_item(item, expectation=None):
-    expectation = expectation or fixture.artifact_expectation()
+def validate_target_item(item, expectation, physical_evidence):
+    if physical_evidence.get('cog_valid') is not True or not isinstance(physical_evidence.get('has_overviews'),bool):
+        raise SuiteError('physical COG layout or overview evidence is incomplete')
     attributes = obj(item.get('attributes'), 'target attributes')
     if obj(attributes.get('item'), 'item facts').get('format') != 'tiff':
         raise SuiteError('Meta did not identify the target TIFF')
@@ -232,8 +233,12 @@ def validate_target_item(item, expectation=None):
     if (media.get('width'), media.get('height')) != (expectation['width'], expectation['height']):
         raise SuiteError('Meta target dimensions are invalid')
     tiff = obj(obj(attributes.get('format_info'), 'format info').get('tiff'), 'TIFF facts')
-    if tiff.get('profile') != 'cog' or tiff.get('is_tiled') is not True:
-        raise SuiteError('Meta did not identify the COG profile hint')
+    has_overviews = physical_evidence['has_overviews']
+    # Meta exposes a lightweight hint; GDAL validates the actual COG layout.
+    profile_hint = 'cog' if has_overviews else 'geotiff'
+    if (tiff.get('profile') != profile_hint or tiff.get('is_tiled') is not True
+        or tiff.get('has_overviews') is not has_overviews):
+        raise SuiteError('Meta TIFF structure/profile hint differs from the physical COG')
     spatial = obj(obj(attributes.get('capabilities'), 'capabilities').get('spatial'), 'spatial facts')
     extent = array(spatial.get('extent'), 'spatial extent')
     if spatial.get('srid') != expectation['extent_srid'] or len(extent) != 4 or any(
@@ -315,11 +320,11 @@ def browser(repository, env, evidence):
 
 
 def inspect_output(repository, env, client, source, source_locator, target_engine, target_name,
-                   execution_id, case_name, identity, timeout, browser_runner, expectation):
+                   execution_id, case_name, identity, timeout, browser_runner, expectation, physical_evidence):
     target = support.find_fixture_item(client, target_engine, 'raster-target/' + target_name, 'COG target')
     # No manual target scan or collect: both facts must converge automatically.
     target = obj(client.request('GET', f'/api/v1/meta/items/{target["id"]}', (200,)).payload, 'target DataItem')
-    validate_target_item(target, expectation)
+    validate_target_item(target, expectation, physical_evidence)
     lineage = wait_lineage(client, source['id'], target['id'], execution_id, timeout)
     target_locator = f'addp://engine/{target_engine}/path/raster-target/{target_name}?type=object'
     evidence = browser_runner(repository, env, {
@@ -383,7 +388,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         executions.append({'execution_id': identifier, 'write_mode': mode, 'status': status})
     lineage, browser_evidence = inspect_output(repository, env, client, source, source_locator,
         target_engine, 'result.cog.tif', executions[-1]['execution_id'], 'band-math', identity,
-        timeout, browser_runner, fixture.artifact_expectation())
+        timeout, browser_runner, fixture.artifact_expectation(), physical_evidence[-1])
     spatial_source = support.find_fixture_item(client, source_engine, 'raster-source/spatial.tif', 'spatial source')
     spatial_locator = support.build_item_locator(source_engine, spatial_source)
     spatial_cases = []
@@ -406,7 +411,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('last mosaic modified the first artifact or did not change overlap pixels')
         graph, browser_report = inspect_output(repository, env, client, spatial_source, spatial_locator,
             target_engine, name, identifier, 'mosaic-' + overlap, identity, timeout,
-            browser_runner, fixture.artifact_expectation(True))
+            browser_runner, fixture.artifact_expectation(True), native)
         spatial_cases.append({'case_name': 'mosaic-' + overlap, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
     analysis_cases = []
@@ -451,7 +456,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if native.get('case_name') != case_name or native.get('preserved_sha256') != preserved:
             raise SuiteError('grid execution changed an existing artifact or omitted preservation evidence')
         graph, browser_report = inspect_output(repository, env, client, spatial_source, spatial_locator,
-            target_engine, name, identifier, case_name, identity, timeout, browser_runner, expectation)
+            target_engine, name, identifier, case_name, identity, timeout, browser_runner, expectation, native)
         grid_cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
         preserved[name] = native['sha256']

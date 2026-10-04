@@ -15,7 +15,7 @@ class Client:
         self.source = {'id': 10, 'item_type': 'object', 'full_name': 'raster-source/source.tif', 'fingerprint': 'source-fp'}
         self.target = {'id': 20, 'item_type': 'object', 'full_name': 'raster-target/result.cog.tif', 'fingerprint': 'target-fp',
                        'attributes': {'item': {'format': 'tiff'}, 'type_info': {'media': {'width': 256, 'height': 256}},
-                                      'format_info': {'tiff': {'profile': 'cog', 'is_tiled': True}},
+                                      'format_info': {'tiff': {'profile': 'cog', 'is_tiled': True, 'has_overviews': True}},
                                       'capabilities': {'spatial': {'srid': 4326, 'extent': [110, 17.76, 112.56, 20.32]}}}}
         self.spatial_source = {'id': 11, 'item_type': 'object', 'full_name': 'raster-source/spatial.tif', 'fingerprint': 'spatial-fp'}
         self.targets = {20: self.target}
@@ -30,6 +30,8 @@ class Client:
             item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name)
             item['attributes']['type_info']['media'] = {'width': expectation['width'], 'height': expectation['height']}
             item['attributes']['capabilities']['spatial'] = {'srid': 4326, 'extent': expectation['extent']}
+            item['attributes']['format_info']['tiff'] = {'profile': 'cog' if name=='clip-polygon' else 'geotiff',
+                'is_tiled': True, 'has_overviews': name=='clip-polygon'}
             self.targets[item_id] = item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
@@ -126,7 +128,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.physical_actions.append(action)
         if action.startswith('verify-mosaic-'):
             overlap = action.removeprefix('verify-mosaic-')
-            return {'sha256': 'spatial-' + overlap, 'cog_valid': True, 'source_unchanged': True,
+            return {'sha256': 'spatial-' + overlap, 'cog_valid': True, 'has_overviews': True, 'source_unchanged': True,
                     'valid_pixels': 65534, 'invalid_pixels': 2, 'overlap': overlap,
                     'baseline_sha256': 'new', 'first_sha256': 'spatial-first'}
         case_name = action.removeprefix('verify-')
@@ -135,11 +137,12 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             for prior in m.fixture.GRID_CASES[:m.fixture.GRID_CASES.index(case_name)]:
                 preserved[prior + '.cog.tif'] = prior
             return {'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
-                    'cog_valid': True, 'source_unchanged': True, 'valid_pixels': m.fixture.grid_expectation(case_name)['valid_pixels']}
+                    'cog_valid': True, 'has_overviews': case_name=='clip-polygon',
+                    'source_unchanged': True, 'valid_pixels': m.fixture.grid_expectation(case_name)['valid_pixels']}
         if action == 'verify-analysis':
             return {'sha256': 'new', 'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 65535,
                     'first_sha256': 'spatial-first', 'last_sha256': 'spatial-last'}
-        return {'sha256': 'new' if action == 'verify-replace' else 'original', 'cog_valid': True,
+        return {'sha256': 'new' if action == 'verify-replace' else 'original', 'cog_valid': True, 'has_overviews': True,
                 'source_unchanged': True, 'valid_pixels': 65535}
 
     def run_scene(self, physical=None):
@@ -292,6 +295,27 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_rejects_incorrect_target_metadata(self):
         self.client.target['attributes']['type_info']['media']['width'] = 1
         with self.assertRaises(m.SuiteError): self.run_scene()
+
+    def test_small_cog_keeps_physical_validity_separate_from_metadata_hint(self):
+        report = self.run_scene()
+        self.assertEqual(len(report['grid_cases']),3)
+        self.assertEqual(self.client.targets[23]['attributes']['format_info']['tiff']['profile'],'geotiff')
+
+    def test_rejects_invalid_physical_cog_missing_or_inconsistent_overview_and_profile_facts(self):
+        for fault in ('invalid-cog','missing-overviews','overviews','profile','tiled'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                tiff = self.client.targets[23]['attributes']['format_info']['tiff']
+                if fault=='overviews': tiff['has_overviews']=True
+                if fault=='profile': tiff['profile']='cog'
+                if fault=='tiled': tiff['is_tiled']=False
+                def physical(repo,env,action):
+                    result = self.physical(repo,env,action)
+                    if action=='verify-resample-size':
+                        if fault=='invalid-cog': result['cog_valid']=False
+                        if fault=='missing-overviews': result.pop('has_overviews',None)
+                    return result
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
 
     def test_analysis_rejects_incorrect_numeric_values_nulls_and_private_fields(self):
         faults = {

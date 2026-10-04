@@ -317,7 +317,8 @@ def worker(action, path):
                     alpha_values = struct.unpack(f'<{count}d', alpha.ReadRaster(buf_type=gdal.GDT_Float64))
                     if any(actual != (0 if expected is None else 255) for actual, expected in zip(alpha_values, expected_values)):
                         raise FixtureError('polygon alpha differs from boundary/hole/source NoData')
-                return {'cog_valid': True, 'cog_warnings': len(warnings), 'valid_pixels': expectation['valid_pixels'],
+                return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': band.GetOverviewCount()>0,
+                        'valid_pixels': expectation['valid_pixels'],
                         'invalid_pixels': count - expectation['valid_pixels'], 'source_unchanged': True,
                         'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
             invalid = SPATIAL_NODATA if spatial else {0}
@@ -332,7 +333,8 @@ def worker(action, path):
                     scale = (3 if position % SIZE >= seam else 1) if spatial else factor
                     if value != float(scale * (position + 1)):
                         raise FixtureError('persisted target pixels do not match the expected expression/mosaic seam')
-            return {'cog_valid': True, 'cog_warnings': len(warnings), 'valid_pixels': expectation['valid_pixels'],
+            return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': band.GetOverviewCount()>0,
+                    'valid_pixels': expectation['valid_pixels'],
                     'invalid_pixels': len(invalid), 'source_unchanged': True,
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
