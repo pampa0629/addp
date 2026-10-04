@@ -29,7 +29,7 @@ SPATIAL_SOURCE_TRANSFORM = (0, ANGULAR_METRE, 0, SIZE * ANGULAR_METRE, 0, -ANGUL
 SPATIAL_TRANSFORM = (0, 1, 0, SIZE, 0, -1)
 SPATIAL_NODATA = {0, 127 * SIZE + 127}
 GRID_CASES = ('resample-size', 'resample-resolution', 'clip-polygon')
-MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'multiband-average-joint')
+MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'multiband-average-joint', 'multiband-bilinear', 'multiband-bilinear-joint')
 SOURCE_FILES = (('source.tif', False), ('spatial.tif', True), ('multiband.tif', False), ('multiband-average.tif', False))
 ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
@@ -176,11 +176,42 @@ def average_pixels(band, *, source=False, joint=False):
                 yield area_average(band, row, column)
 
 
+def bilinear_value(band, row, column):
+    """Independent four-centre distance weights, excluding this band's invalid neighbours."""
+    center_x, center_y = (column + .5) / 2, (row + .5) / 2
+    if (average_source_pixel(band, int(center_y), int(center_x)) is None
+        or average_source_pixel(3, int(center_y), int(center_x)) <= 0):
+        return None
+    left, top = math.floor(center_x - .5), math.floor(center_y - .5)
+    contributions = []
+    for y in range(max(0, top), min(SIZE, top + 2)):
+        for x in range(max(0, left), min(SIZE, left + 2)):
+            value = average_source_pixel(band, y, x)
+            weight = max(0, 1 - abs(x + .5 - center_x)) * max(0, 1 - abs(y + .5 - center_y))
+            if value is not None and average_source_pixel(3, y, x) > 0 and weight > 0:
+                contributions.append((value, weight))
+    return math.fsum(value * weight for value, weight in contributions) / math.fsum(weight for _, weight in contributions)
+
+
+def bilinear_pixels(band, *, joint=False):
+    for row in range(SIZE * 2):
+        for column in range(SIZE * 2):
+            if band == 3:
+                # This Warp kernel generates alpha from the covered containing source cell.
+                yield average_source_pixel(3, row // 2, column // 2)
+            elif joint:
+                first, second = bilinear_value(1, row, column), bilinear_value(2, row, column)
+                yield first + second if first is not None and second is not None else None
+            else:
+                yield bilinear_value(band, row, column)
+
+
 def multiband_source_name(case_name):
     if case_name not in MULTIBAND_CASES:
         raise ValueError('unknown raster multiband case')
     joint = case_name.endswith('-joint')
-    prefix = 'multiband-average' if 'average' in case_name else 'multiband-alpha' if joint else 'multiband'
+    prefix = ('multiband-bilinear' if joint else 'multiband-average') if 'bilinear' in case_name else (
+        'multiband-average' if 'average' in case_name else 'multiband-alpha' if joint else 'multiband')
     return prefix + ('.cog.tif' if joint else '.tif')
 
 
@@ -188,9 +219,12 @@ def multiband_expectation(case_name):
     if case_name not in MULTIBAND_CASES:
         raise ValueError('unknown raster multiband case')
     result = artifact_expectation()
-    result.update(width=128, height=128, band_count=1 if case_name.endswith('-joint') else 3,
-                  transform=[110, .02, 0, 20.32, 0, -.02],
-                  valid_pixels=128 * 128 - (3 if case_name.endswith('-joint') else 2))
+    bilinear, joint = 'bilinear' in case_name, case_name.endswith('-joint')
+    width, resolution = (512, .005) if bilinear else (128, .02)
+    invalid = (64 if joint else 40) if bilinear else (3 if joint else 2)
+    result.update(width=width, height=width, band_count=1 if joint else 3,
+                  transform=[110, resolution, 0, 20.32, 0, -resolution],
+                  valid_pixels=width * width - invalid)
     return result
 
 
@@ -400,7 +434,8 @@ def worker(action, path):
             if grid_case in MULTIBAND_CASES:
                 joint = grid_case.endswith('-joint')
                 average = 'average' in grid_case
-                pixel_formula = average_pixels if average else multiband_pixels
+                bilinear = 'bilinear' in grid_case
+                pixel_formula = bilinear_pixels if bilinear else average_pixels if average else multiband_pixels
                 valid_counts = []
                 partial_alpha_pixels = 0
                 for index in range(1, dataset.RasterCount + 1):
@@ -411,7 +446,7 @@ def worker(action, path):
                     actual_values = struct.unpack(f'<{count}d', current.ReadRaster(buf_type=gdal.GDT_Float64))
                     expected_values = list(pixel_formula(index, joint=joint))
                     if any(not math.isnan(actual) if expected is None else
-                           not math.isclose(actual, expected, rel_tol=1e-10, abs_tol=1e-8) if average and index != 3 else actual != expected
+                           not math.isclose(actual, expected, rel_tol=1e-10, abs_tol=1e-8) if (average or bilinear) and index != 3 else actual != expected
                            for actual, expected in zip(actual_values, expected_values)):
                         raise FixtureError('multiband target pixels/NoData/alpha differ from independent oracle')
                     if index == 3:

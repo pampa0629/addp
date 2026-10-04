@@ -143,7 +143,8 @@ def multiband_workflow(source_locator, target_engine_id, case_name):
         {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
         {'id': 'grid', 'operator': 'raster_band_math' if joint else 'raster_resample', 'depends_on': ['load'],
          'params': {'input_raster': {'$ref': 'load', 'port': 'default'},
-                    **({'expression': 'b1+b2'} if joint else {'size': [128, 128], 'resampling': 'average' if 'average' in case_name else 'nearest'})}},
+                    **({'expression': 'b1+b2'} if joint else {'size': [512, 512] if 'bilinear' in case_name else [128, 128],
+                        'resampling': 'bilinear' if 'bilinear' in case_name else 'average' if 'average' in case_name else 'nearest'})}},
         {'id': 'save', 'operator': 'raster_save', 'depends_on': ['grid'], 'params': {
             'input_raster': {'$ref': 'grid', 'port': 'default'},
             'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
@@ -481,9 +482,11 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if native.get('case_name') != case_name or native.get('preserved_sha256') != preserved:
             raise SuiteError('grid execution changed an existing artifact or omitted preservation evidence')
         if case_name in fixture.MULTIBAND_CASES:
-            counts = [16381] if case_name.endswith('-joint') else [16382, 16382]
-            if (native.get('band_valid_pixels') != counts or native.get('invalid_pixels') != 16384 - counts[0]
-                or native.get('partial_alpha_pixels') != (3 if case_name == 'multiband-alpha' else 0)):
+            counts = [expectation['valid_pixels']] * (1 if case_name.endswith('-joint') else 2)
+            partial = 64 if case_name == 'multiband-bilinear' else 3 if case_name == 'multiband-alpha' else 0
+            if (native.get('band_valid_pixels') != counts
+                or native.get('invalid_pixels') != expectation['width'] * expectation['height'] - counts[0]
+                or native.get('partial_alpha_pixels') != partial):
                 raise SuiteError('multiband independent validity/partial alpha evidence is incomplete')
         graph, browser_report = inspect_output(repository, env, client, case_source, case_locator,
             target_engine, name, identifier, case_name, identity, timeout, browser_runner, expectation, native)

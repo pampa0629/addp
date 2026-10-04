@@ -300,14 +300,14 @@ def test_grid_oracle_rejects_corrupt_pixels_masks_georeferencing_and_extra_objec
     with pytest.raises(fixture.FixtureError): fixture.worker('verify-clip-polygon', physical)
 
 
-def multiband_targets(tmp_path, scene, api_server):
+def multiband_targets(tmp_path, scene, api_server, until='multiband-average-joint'):
     target(tmp_path, factor=3)
     spatial_target(tmp_path, 'first')
     spatial_target(tmp_path, 'last')
     for case in fixture.GRID_CASES:
         grid_target(tmp_path, scene, api_server, case)
     evidence = []
-    for case in fixture.MULTIBAND_CASES:
+    for case in fixture.MULTIBAND_CASES[:fixture.MULTIBAND_CASES.index(until)+1]:
         _, output = grid_target(tmp_path, scene, api_server, case)
         evidence.append(fixture.worker('verify-' + case, tmp_path / 'fixture.json'))
     return evidence, tmp_path / 'multiband-joint.cog.tif'
@@ -396,3 +396,50 @@ def test_average_oracle_rejects_wrong_kernel_early_joint_mask_and_saved_band_fac
     LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     with pytest.raises(fixture.FixtureError, match='multiband|NoData'):
         fixture.worker('verify-multiband-average-joint', physical)
+
+
+def test_async_bilinear_saved_then_reloaded_math_passes_independent_neighbour_oracle(physical, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    evidence, _ = multiband_targets(tmp_path, scene, api_server, until='multiband-bilinear-joint')
+    bilinear, joint = evidence[4:]
+    assert bilinear['band_valid_pixels'] == [262104, 262104]
+    assert bilinear['partial_alpha_pixels'] == 64
+    assert joint['band_valid_pixels'] == [262080]
+    assert bilinear['has_overviews'] and joint['has_overviews']
+    assert joint['preserved_sha256']['multiband-bilinear.cog.tif'] == bilinear['sha256']
+    dataset = gdal.Open(str(tmp_path / 'multiband-bilinear.cog.tif'))
+    for band, expected in ((1, 1120/13), (2, 2168/13)):
+        actual = struct.unpack('<d', dataset.GetRasterBand(band).ReadRaster(22, 1, 1, 1, buf_type=gdal.GDT_Float64))[0]
+        assert actual == pytest.approx(expected, rel=1e-10, abs=1e-8)
+    dataset = None
+    dataset = gdal.Open(str(tmp_path / 'multiband-bilinear-joint.cog.tif'))
+    actual = struct.unpack('<d', dataset.GetRasterBand(1).ReadRaster(22, 1, 1, 1, buf_type=gdal.GDT_Float64))[0]
+    assert actual == pytest.approx(3288/13, rel=1e-10, abs=1e-8)
+
+
+@pytest.mark.parametrize('fault', ['nearest', 'early-math', 'central-hole', 'band-hole', 'transparent', 'alpha', 'zero', 'nodata'])
+def test_bilinear_oracle_rejects_wrong_kernel_central_fill_joint_mask_and_saved_facts(physical, tmp_path, monkeypatch, fault):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    multiband_targets(tmp_path, scene, api_server, until='multiband-bilinear-joint')
+    output = tmp_path / ('multiband-bilinear-joint.cog.tif' if fault == 'early-math' else 'multiband-bilinear.cog.tif')
+    edited = tmp_path / 'corrupt-bilinear.tif'
+    dataset = gdal.Translate(str(edited), str(output), format='GTiff')
+    band, column, value = 1, 13, 48.
+    if fault == 'early-math': column, value = 22, 253.2
+    if fault == 'central-hole': column, value = 20, 123.
+    if fault == 'band-hole': column, value = 22, 70.
+    if fault == 'transparent': column, value = 8, 1e6
+    if fault == 'alpha': band, value = 3, 255.
+    if fault == 'zero': column, value = 17, float('nan')
+    if fault == 'nodata': dataset.GetRasterBand(2).DeleteNoDataValue()
+    else: dataset.GetRasterBand(band).WriteRaster(column, 1, 1, 1, struct.pack('<d', value), buf_type=gdal.GDT_Float64)
+    dataset = None
+    dataset = gdal.Translate(str(output), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+    dataset = None
+    LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    with pytest.raises(fixture.FixtureError, match='multiband|NoData'):
+        fixture.worker('verify-multiband-bilinear-joint', physical)

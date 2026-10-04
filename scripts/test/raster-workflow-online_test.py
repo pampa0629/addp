@@ -32,8 +32,8 @@ class Client:
             item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name)
             item['attributes']['type_info']['media'] = {'width': expectation['width'], 'height': expectation['height']}
             item['attributes']['capabilities']['spatial'] = {'srid': 4326, 'extent': expectation['extent']}
-            item['attributes']['format_info']['tiff'] = {'profile': 'cog' if name=='clip-polygon' else 'geotiff',
-                'is_tiled': True, 'has_overviews': name=='clip-polygon'}
+            item['attributes']['format_info']['tiff'] = {'profile': 'cog' if name=='clip-polygon' or 'bilinear' in name else 'geotiff',
+                'is_tiled': True, 'has_overviews': name=='clip-polygon' or 'bilinear' in name}
             self.targets[item_id] = item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
@@ -116,6 +116,8 @@ class Client:
             if target_id == 27: source_id = 26
             if target_id == 28: source_id = 13
             if target_id == 29: source_id = 28
+            if target_id == 30: source_id = 13
+            if target_id == 31: source_id = 30
             result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
                       'status': 'active', 'relation_kind': self.relation_kind, 'evidence': {'execution_id': identifier}}]}
         else:
@@ -146,10 +148,12 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             extra = {}
             if case_name in m.fixture.MULTIBAND_CASES:
                 joint = case_name.endswith('-joint')
-                extra = {'band_valid_pixels': [16381] if joint else [16382, 16382],
-                    'invalid_pixels': 3 if joint else 2, 'partial_alpha_pixels': 3 if case_name == 'multiband-alpha' else 0}
+                expectation = m.fixture.computed_expectation(case_name)
+                extra = {'band_valid_pixels': [expectation['valid_pixels']] * (1 if joint else 2),
+                    'invalid_pixels': expectation['width'] * expectation['height'] - expectation['valid_pixels'],
+                    'partial_alpha_pixels': 64 if case_name == 'multiband-bilinear' else 3 if case_name == 'multiband-alpha' else 0}
             return {**extra, 'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
-                    'cog_valid': True, 'has_overviews': case_name=='clip-polygon',
+                    'cog_valid': True, 'has_overviews': case_name=='clip-polygon' or 'bilinear' in case_name,
                     'source_unchanged': True, 'valid_pixels': m.fixture.computed_expectation(case_name)['valid_pixels']}
         if action == 'verify-analysis':
             return {'sha256': 'new', 'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 65535,
@@ -182,8 +186,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([case['case_name'] for case in report['grid_cases']], list(m.fixture.GRID_CASES))
         self.assertEqual([case['lineage']['target_item_id'] for case in report['grid_cases']], [23, 24, 25])
         self.assertEqual([case['case_name'] for case in report['multiband_cases']], list(m.fixture.MULTIBAND_CASES))
-        self.assertEqual([case['lineage']['source_item_id'] for case in report['multiband_cases']], [12, 26, 13, 28])
-        self.assertEqual([case['lineage']['target_item_id'] for case in report['multiband_cases']], [26, 27, 28, 29])
+        self.assertEqual([case['lineage']['source_item_id'] for case in report['multiband_cases']], [12, 26, 13, 28, 13, 30])
+        self.assertEqual([case['lineage']['target_item_id'] for case in report['multiband_cases']], [26, 27, 28, 29, 30, 31])
         self.assertEqual(report['multiband_cases'][1]['browser']['source_name'], 'multiband-alpha.cog.tif')
 
     def test_multiband_cases_reject_missing_per_band_counts_partial_alpha_and_reloaded_source(self):
@@ -228,6 +232,42 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual(joint[0]['params']['locator'], report['multiband_cases'][3]['browser']['source_locator'])
         self.assertEqual(report['multiband_cases'][3]['browser']['source_name'], 'multiband-average.cog.tif')
         self.assertEqual(report['multiband_cases'][2]['physical']['partial_alpha_pixels'], 0)
+
+    def test_bilinear_workflow_keeps_the_kernel_overviews_and_persisted_source(self):
+        report = self.run_scene()
+        submitted = {body['content']['workflow_definition']['tasks'][-1]['params']['target_name']:
+                     body['content']['workflow_definition']['tasks']
+                     for method, path, body in self.client.calls
+                     if method == 'POST' and path == '/api/v1/develop/executions'
+                     and body['content']['workflow_definition']['tasks'][-1]['id'] == 'save'}
+        tasks = submitted['multiband-bilinear.cog.tif']
+        joint = submitted['multiband-bilinear-joint.cog.tif']
+        self.assertEqual(tasks[1]['params']['size'], [512, 512])
+        self.assertEqual(tasks[1]['params']['resampling'], 'bilinear')
+        self.assertEqual(joint[1]['params']['expression'], 'b1+b2')
+        self.assertEqual(joint[0]['params']['locator'], report['multiband_cases'][5]['browser']['source_locator'])
+        self.assertEqual(report['multiband_cases'][5]['browser']['source_name'], 'multiband-bilinear.cog.tif')
+        self.assertEqual(report['multiband_cases'][4]['physical']['partial_alpha_pixels'], 64)
+        self.assertTrue(report['multiband_cases'][4]['physical']['has_overviews'])
+
+    def test_bilinear_cases_reject_wrong_validity_alpha_overviews_reloaded_source_and_size(self):
+        for fault in ('counts', 'alpha', 'overview', 'source', 'size'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def physical(repo, env, action):
+                    result = self.physical(repo, env, action)
+                    if action == 'verify-multiband-bilinear':
+                        if fault == 'counts': result['band_valid_pixels'] = [262144, 262144]
+                        if fault == 'alpha': result['partial_alpha_pixels'] = 0
+                    return result
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-18' and fault == 'source':
+                        execution['metadata']['lineage_facts']['inputs'][0]['locator'] = 'wrong-source'
+                    return execution
+                self.client.mutate = mutate
+                if fault == 'overview': self.client.targets[30]['attributes']['format_info']['tiff']['has_overviews'] = False
+                if fault == 'size': self.client.targets[30]['size_bytes'] = 0
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
 
     def test_rejects_admin_extra_permissions_default_tenant_and_shared_engine_before_writes(self):
         for fault in ('admin', 'permission', 'tenant', 'engine'):

@@ -56,6 +56,22 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
         self.assertNotEqual(first[5]+second[5], early_math)
         self.assertEqual([sum(value is not None for value in values) for values in (first, second)], [16382, 16382])
 
+    def test_bilinear_oracle_keeps_invalid_centres_and_independent_neighbour_weights(self):
+        self.assertEqual(m.bilinear_value(1, 1, 13), 51.)
+        self.assertNotEqual(m.bilinear_value(1, 1, 13), m.average_source_pixel(1, 0, 6))
+        self.assertEqual(m.bilinear_value(2, 1, 13), 102.)
+        self.assertIsNone(m.bilinear_value(1, 1, 20))
+        self.assertEqual(m.bilinear_value(2, 1, 20), 123.)
+        self.assertAlmostEqual(m.bilinear_value(1, 1, 22), 1120/13)
+        self.assertAlmostEqual(m.bilinear_value(2, 1, 22), 2168/13)
+        self.assertNotAlmostEqual(m.bilinear_value(1, 1, 22)+m.bilinear_value(2, 1, 22), 253.2)
+        self.assertEqual(m.bilinear_value(1, 1, 17), 0.)
+        self.assertIsNone(m.bilinear_value(1, 1, 8))
+        for band in (1, 2):
+            self.assertEqual(sum(value is not None for value in m.bilinear_pixels(band)), 262104)
+        self.assertEqual(sum(value is not None for value in m.bilinear_pixels(1, joint=True)), 262080)
+        self.assertEqual(sum(0 < value < 255 for value in m.bilinear_pixels(3)), 64)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-raster-fixture-test-')
         self.addCleanup(self.temp.cleanup)
