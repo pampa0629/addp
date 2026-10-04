@@ -37,6 +37,13 @@ SOURCE_TABLE = "addp_online_transfer_sql_etl_source"
 TARGET_TABLE = "addp_online_transfer_sql_etl_target"
 NATIVE_TARGET = "addp_online_transfer_field_lineage_target"
 NATIVE_DOWNSTREAM = "addp_online_transfer_field_lineage_downstream"
+MONGODB_SOURCE = "transfer_fixture.activities"
+MONGODB_TARGET = "addp_online_transfer_mongodb_ods"
+MONGODB_FIELDS = (
+    ("_id", "activity_id"), ("status", "activity_status"),
+    ("title.date", "activity_date_raw"), ("title.level", "activity_level_raw"),
+    ("leader.personid", "leader_person_id"), ("leader.userInfo.nickName", "leader_nickname_snapshot"),
+)
 TASK_PREFIX = "addp_online_sql_etl_"
 FORBIDDEN_ADMIN_ROLES = SUPPORT.FORBIDDEN_ADMIN_ROLES
 REQUIRED_PERMISSIONS = {
@@ -58,7 +65,7 @@ def task_name(run_id: str) -> str:
 
 
 def owned_task_names(name: str) -> set[str]:
-    return {name, name + "_native", name + "_replace", name + "_hop"}
+    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb"}
 
 
 def native_task(name: str, source_locator: str, parent_locator: str, target: str, region_source: str, region_target: str) -> dict[str, object]:
@@ -201,6 +208,102 @@ def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, 
             "generated_verified": True, "replace_verified": True, "two_hop_verified": True, "expected_edges": sorted(expected_edges)}
 
 
+def mongodb_task(name: str, source_locator: str, parent_locator: str) -> dict[str, object]:
+    payload = native_task(name + "_mongodb", source_locator, parent_locator, MONGODB_TARGET, "", "")
+    payload["config"]["transforms"][0]["fields"] = [
+        {"source": source, "target": target, "target_type": "string", "nullable": False}
+        for source, target in MONGODB_FIELDS
+    ]
+    return payload
+
+
+def validate_mongodb_execution(execution: dict[str, object], source_locator: str, target_engine_id: int) -> tuple[str, str]:
+    if execution.get("records_read") != 3 or execution.get("records_written") != 3:
+        raise SuiteError("MongoDB ODS execution must read/write exactly three rows")
+    hashes = execution_schema_hashes(execution)
+    facts = execution["metadata"]["lineage_facts"]
+    if facts["inputs"][0].get("locator") != source_locator:
+        raise SuiteError("MongoDB execution source locator differs from the selected collection")
+    target_locator = facts["outputs"][0].get("locator", "")
+    parsed = urllib.parse.urlparse(target_locator)
+    if parsed.netloc != "engine" or parsed.path != f"/{target_engine_id}/path/public/{MONGODB_TARGET}":
+        raise SuiteError("MongoDB execution target locator differs from the PostgreSQL ODS")
+    source_fields = [field.get("name") for field in facts["inputs"][0]["schema_snapshot"]["fields"]]
+    target_fields = [field.get("name") for field in facts["outputs"][0]["schema_snapshot"]["fields"]]
+    if not {source for source, _ in MONGODB_FIELDS}.issubset(source_fields) or target_fields != [target for _, target in MONGODB_FIELDS]:
+        raise SuiteError("MongoDB frozen schemas must retain exact nested source names and mapped ODS columns")
+    for source_name, _ in MONGODB_FIELDS:
+        fields = [field for field in facts["inputs"][0]["schema_snapshot"]["fields"] if field.get("name") == source_name]
+        if len(fields) != 1 or fields[0].get("path") != source_name.split("."):
+            raise SuiteError("MongoDB frozen source schema must preserve the exact structured nested path")
+    mappings = facts["operations"][0].get("field_mappings", [])
+    observed = {(value.get("source_field"), value.get("target_field"), value.get("transformation"), value.get("input_port"), value.get("output_port")) for value in mappings}
+    expected = {(source, target, "direct", "source", "target") for source, target in MONGODB_FIELDS}
+    if observed != expected or len(mappings) != len(expected):
+        raise SuiteError("MongoDB execution must prove all six exact direct field mappings")
+    return hashes
+
+
+def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_engine_id: int, source: dict[str, object], pg_source: dict[str, object], name: str, timeout: float, owned_ids: list[int]) -> dict[str, object]:
+    if source_engine_id == target_engine_id:
+        raise SuiteError("MongoDB source and PostgreSQL target must use distinct Engine Instances")
+    source_id = positive_int(source.get("id"), "MongoDB source item id")
+    source_locator = SUPPORT.build_item_locator(source_engine_id, source)
+    parent = f"addp://engine/{target_engine_id}/path/public?type=schema&node_id={positive_int(pg_source.get('node_id'), 'PostgreSQL schema node id')}"
+    payload = mongodb_task(name, source_locator, parent)
+    created = _object(client.request("POST", "/api/v1/transfer/task-definitions", (201,), payload).payload, "MongoDB Transfer task")
+    task_id = positive_int(created.get("id"), "MongoDB Transfer task id")
+    owned_ids.append(task_id)
+    execution_ids = []
+    target_id = None
+    for _ in range(2):
+        deadline = time.monotonic() + timeout
+        started = _object(client.request("POST", f"/api/v1/transfer/task-definitions/{task_id}/start", (200,)).payload, "MongoDB execution")
+        identifier = started.get("execution_id")
+        if not isinstance(identifier, str) or not identifier or identifier in execution_ids:
+            raise SuiteError("MongoDB rerun must produce a distinct execution_id")
+        while time.monotonic() < deadline:
+            execution = _object(client.request("GET", f"/api/v1/transfer/executions/{urllib.parse.quote(identifier)}", (200,)).payload, "MongoDB execution")
+            if execution.get("status") == "success":
+                break
+            if execution.get("status") in SUPPORT.TERMINAL_STATUSES:
+                raise SuiteError("MongoDB ODS execution failed: " + str(execution.get("status")))
+            time.sleep(1)
+        else:
+            raise SuiteError("MongoDB ODS execution did not finish before timeout")
+        if execution.get("execution_id") != identifier:
+            raise SuiteError("MongoDB execution response identity mismatch")
+        source_hash, target_hash = validate_mongodb_execution(execution, source_locator, target_engine_id)
+        # Observe owner-triggered metadata scanning. Never manually scan the target or collect lineage.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                target = find_item(client, target_engine_id, f"public.{MONGODB_TARGET}", "table")
+                break
+            except SuiteError:
+                time.sleep(1)
+        else:
+            raise SuiteError("MongoDB ODS target did not appear through automatic metadata scanning")
+        current_id = positive_int(target.get("id"), "MongoDB ODS target id")
+        if target_id is not None and current_id != target_id:
+            raise SuiteError("MongoDB rerun must preserve the target DataItem identity")
+        target_id = current_id
+        expected_edges = set()
+        for source_field, target_field in MONGODB_FIELDS:
+            expected = {(source_id, source_field, target_id, target_field, "direct", identifier)}
+            graph = wait_field_graph(client, target_id, target_field, expected, timeout)
+            validate_graph_snapshots(graph, {source_id: source_hash, target_id: target_hash})
+            for node in graph["nodes"]:
+                if node.get("engine_id") != (source_engine_id if node["item_id"] == source_id else target_engine_id):
+                    raise SuiteError("MongoDB field graph crosses the wrong Engine Instance")
+            expected_edges.update(expected)
+        execution_ids.append(identifier)
+    return {"execution_ids": execution_ids, "task_id": task_id, "target_locator": SUPPORT.build_item_locator(target_engine_id, target),
+            "source_item_id": source_id, "target_item_id": target_id, "source_engine_id": source_engine_id, "target_engine_id": target_engine_id,
+            "source_schema_snapshot_hash": source_hash, "schema_snapshot_hash": target_hash, "records_read": 3, "records_written": 3,
+            "nested_fields_verified": True, "automatic_collection_verified": True, "rerun_verified": True, "expected_edges": sorted(expected_edges)}
+
+
 def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, object]:
     context = _object(client.request("GET", "/api/v1/system/auth/context", (200,)).payload, "AuthContext")
     principal = _object(context.get("principal"), "AuthContext principal")
@@ -243,7 +346,7 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     }
 
 
-def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, deadline: float) -> dict[str, object]:
+def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, engine_type: str, deadline: float) -> dict[str, object]:
     # Engine registration and connection testing belong to the Hosted Provisioner.
     # The consumer verifies the same tenant-visible Meta projection used by the UI.
     while time.monotonic() < deadline:
@@ -255,8 +358,8 @@ def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, d
             time.sleep(1)
             continue
         engine = matches[0]
-        if engine.get("resource_type") != "postgresql":
-            raise SuiteError(f"configured Engine Instance {engine_id} must use resource_type=postgresql")
+        if engine.get("resource_type") != engine_type:
+            raise SuiteError(f"configured Engine Instance {engine_id} must use resource_type={engine_type}")
         if engine.get("name") != expected_name:
             raise SuiteError(f"configured Engine Instance {engine_id} has an unexpected name")
         if engine.get("lifecycle_state") != "active":
@@ -264,7 +367,7 @@ def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, d
         if engine.get("connection_status") == "online":
             return {
                 "engine_id": str(engine_id),
-                "engine_type": "postgresql",
+                "engine_type": engine_type,
                 "engine_name": expected_name,
                 "connection_status": "online",
                 "verification_owner": "deployment_profile",
@@ -299,7 +402,7 @@ def suite_task_ids(client: GatewayClient, exact_name: str | None = None) -> list
 def validate_browser_report(report: object, run_id: str, tenant_id: str, expected_task_name: str) -> dict[str, object]:
     payload = _object(report, "Transfer relational SQL ETL browser report")
     expected = {
-        "schema_version": "addp.transfer-relational-sql-etl-browser/v2",
+        "schema_version": "addp.transfer-relational-sql-etl-browser/v3",
         "suite": "transfer-relational-sql-etl",
         "run_id": run_id,
         "result": "passed",
@@ -315,6 +418,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
         "task_deleted": True,
         "manager_field_graph_verified": True,
         "query_field_lineage_verified": True,
+        "manager_mongodb_field_graph_verified": True,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
@@ -322,7 +426,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
     return payload
 
 
-def run_browser(repository: Path, environment: Mapping[str, str], expected_task_name: str, lineage: dict[str, object]) -> dict[str, object]:
+def run_browser(repository: Path, environment: Mapping[str, str], expected_task_name: str, lineage: dict[str, object], mongodb_lineage: dict[str, object]) -> dict[str, object]:
     artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     report_path = artifact_dir / "transfer-relational-sql-etl-browser.json"
     report_path.unlink(missing_ok=True)
@@ -334,6 +438,7 @@ def run_browser(repository: Path, environment: Mapping[str, str], expected_task_
             "ADDP_ONLINE_TRANSFER_SQL_ETL_SOURCE_TABLE": SOURCE_TABLE,
             "ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE": TARGET_TABLE,
             "ADDP_ONLINE_TRANSFER_FIELD_LINEAGE": json.dumps(lineage),
+            "ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE": json.dumps(mongodb_lineage),
         }
     )
     result = subprocess.run(
@@ -382,6 +487,9 @@ def main() -> int:
             raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")
         tenant_id = positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "ADDP_ONLINE_TEST_TENANT_ID")
         engine_id = positive_int(required_environment("ADDP_ONLINE_TEST_ENGINE_ID"), "ADDP_ONLINE_TEST_ENGINE_ID")
+        mongodb_engine_id = positive_int(required_environment("ADDP_ONLINE_TEST_MONGODB_ENGINE_ID"), "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID")
+        if mongodb_engine_id == engine_id:
+            raise SuiteError("MongoDB source and PostgreSQL target must use distinct Engine Instances")
         timeout = float(os.environ.get("ADDP_ONLINE_REQUEST_TIMEOUT_SECONDS", "30"))
         if timeout <= 0:
             raise SuiteError("ADDP_ONLINE_REQUEST_TIMEOUT_SECONDS must be greater than zero")
@@ -395,7 +503,8 @@ def main() -> int:
 
         identity_report = validate_user_identity(client, tenant_id)
         deadline = time.monotonic() + float(os.environ.get("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS", "180"))
-        engine = validate_engine(client, engine_id, required_environment("ADDP_ONLINE_TEST_ENGINE_NAME"), deadline)
+        engine = validate_engine(client, engine_id, required_environment("ADDP_ONLINE_TEST_ENGINE_NAME"), "postgresql", deadline)
+        mongodb_engine = validate_engine(client, mongodb_engine_id, required_environment("ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME"), "mongodb", deadline)
         stale = suite_task_ids(client)
         if stale:
             raise SuiteError("stale Transfer relational SQL ETL Online tasks exist before the run")
@@ -406,15 +515,19 @@ def main() -> int:
             raise SuiteError("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS must be greater than zero")
         lineage = run_native_lineage(client, engine_id, source, owned_name, convergence_timeout, owned_ids)
 
+        mongodb_scan = wait_for_scan(client, mongodb_engine_id, time.monotonic() + convergence_timeout)
+        mongodb_source = find_item(client, mongodb_engine_id, MONGODB_SOURCE, "table")
+        mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids)
+
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
-        browser = run_browser(repository, dict(os.environ), owned_name, lineage)
+        browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
         residual = suite_task_ids(client, exact_name=owned_name)
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v2",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v3",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -423,8 +536,11 @@ def main() -> int:
             "source_scan_execution_id": scan_execution_id,
             "browser": browser,
             "field_lineage": lineage,
-            "created_resources": 4,
-            "deleted_resources": 4,
+            "mongodb_engine": mongodb_engine,
+            "mongodb_source_scan_execution_id": mongodb_scan,
+            "mongodb_field_lineage": mongodb_lineage,
+            "created_resources": 5,
+            "deleted_resources": 5,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))

@@ -26,6 +26,7 @@ const requiredNames = [
   'ADDP_ONLINE_TRANSFER_SQL_ETL_SOURCE_TABLE',
   'ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE',
   'ADDP_ONLINE_TRANSFER_FIELD_LINEAGE',
+  'ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE',
   'GATEWAY_URL'
 ]
 
@@ -132,6 +133,44 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   expect(query.focused.edges[0].transformation).toBe('direct')
   await expect(query.frame.locator('.lineage-inspector strong')).toHaveText('amount')
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-query-field-lineage.png'), fullPage: true })
+
+  const mongodb = JSON.parse(env.ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE)
+  expect(mongodb.execution_ids).toHaveLength(2)
+  expect(mongodb.execution_ids[0]).not.toBe(mongodb.execution_ids[1])
+  let mongodbGraphRequests = 0
+  const countGraphRequest = req => {
+    const url = new URL(req.url())
+    if (url.pathname === '/api/v1/meta/lineage/graph' && url.searchParams.get('granularity') === 'field' && url.searchParams.get('item_id') === String(mongodb.target_item_id)) mongodbGraphRequests++
+  }
+  page.on('request', countGraphRequest)
+  try {
+    const ods = await managerFieldGraph(page, mongodb.target_locator, mongodb.target_item_id, 'activity_date_raw')
+    expect(ods.graph.field_lineage_status).toBe('complete')
+    expect(ods.graph.subject.schema_snapshot_hash).toBe(mongodb.schema_snapshot_hash)
+    expect(ods.graph.nodes).toHaveLength(12)
+    expect(ods.graph.edges.map(edgeIdentity).sort()).toEqual(mongodb.expected_edges.sort())
+    expect(ods.focused.edges).toHaveLength(1)
+    expect(ods.focused.edges[0].source.field_name).toBe('title.date')
+    for (const node of ods.graph.nodes) {
+      const isSource = node.item_id === mongodb.source_item_id
+      expect(node.engine_id).toBe(isSource ? mongodb.source_engine_id : mongodb.target_engine_id)
+      expect(node.schema_snapshot_hash).toBe(isSource ? mongodb.source_schema_snapshot_hash : mongodb.schema_snapshot_hash)
+      if (!isSource) expect(node.field_lineage_status).toBe('complete')
+    }
+    await ods.frame.getByRole('button', { name: 'leader_nickname_snapshot', exact: true }).click()
+    await expect(ods.frame.locator('.lineage-inspector strong')).toHaveText('leader_nickname_snapshot')
+    const nickname = ods.graph.nodes.find(node => node.item_id === mongodb.target_item_id && node.field_name === 'leader_nickname_snapshot')
+    const focused = lineageFieldConnections(ods.graph.edges, lineageNodeId(nickname))
+    const edges = ods.graph.edges.filter((_, index) => focused.connections.has(`lineage-edge:${index}`))
+    expect(edges).toHaveLength(1)
+    expect(edges[0].source.field_name).toBe('leader.userInfo.nickName')
+    expect(edges[0].evidence.execution_id).toBe(mongodb.execution_ids[1])
+    await expect(ods.frame.getByRole('button', { name: '全部字段', exact: true })).toBeVisible()
+    expect(mongodbGraphRequests).toBe(1)
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-mongodb-ods-field-lineage.png'), fullPage: true })
+  } finally {
+    page.off('request', countGraphRequest)
+  }
 }
 
 test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page }) => {
@@ -291,7 +330,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-relational-sql-etl-browser.json'),
       `${JSON.stringify({
-        schema_version: 'addp.transfer-relational-sql-etl-browser/v2',
+        schema_version: 'addp.transfer-relational-sql-etl-browser/v3',
         suite: 'transfer-relational-sql-etl',
         run_id: env.ADDP_ONLINE_TEST_RUN_ID,
         result: 'passed',
@@ -306,7 +345,8 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
         target_row_count: 2,
         task_deleted: true,
         manager_field_graph_verified: true,
-        query_field_lineage_verified: true
+        query_field_lineage_verified: true,
+        manager_mongodb_field_graph_verified: true
       })}\n`,
       'utf8'
     )

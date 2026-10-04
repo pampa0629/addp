@@ -16,6 +16,7 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.bin = self.root / 'bin'
         self.postgres_state = self.root / 'postgres-running'
+        self.mongodb_state = self.root / 'mongodb-running'
         self.log = self.root / 'fixture.log'
         self.secrets = self.root / 'addp-online-secret-test'
         (self.root / 'business/scripts').mkdir(parents=True)
@@ -25,32 +26,42 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self._executable('uname', '#!/bin/bash\n[ "$1" != -s ] || { echo "${ADDP_TEST_OS:-Linux}"; exit; }\necho x86_64\n')
         self._executable('docker', '''#!/bin/bash
 printf 'docker:%s:%s\n' "$1" "${2:-}" >> "$ADDP_TEST_FIXTURE_LOG"
+state=$ADDP_TEST_POSTGRES_STATE
+case "$*" in *addp-transfer-mongodb-online-disposable*) state=$ADDP_TEST_MONGODB_STATE ;; esac
 case "$1" in
   container)
-    [ -f "$ADDP_TEST_POSTGRES_STATE" ]
+    [ -f "$state" ]
     ;;
   inspect)
-    [ -f "$ADDP_TEST_POSTGRES_STATE" ] || exit 1
+    [ -f "$state" ] || exit 1
     case "$*" in
-      *com.addp.online-fixture*) cat "$ADDP_TEST_POSTGRES_STATE" ;;
+      *com.addp.online-fixture*) cat "$state" ;;
       *) echo true ;;
     esac
     ;;
   run)
     printf '%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG"
-    echo transfer-relational-sql-etl > "$ADDP_TEST_POSTGRES_STATE"
+    echo transfer-relational-sql-etl > "$state"
     ;;
   ps)
     [ "${ADDP_TEST_VERIFY_FAIL:-0}" != 1 ] || exit 1
-    [ ! -f "$ADDP_TEST_POSTGRES_STATE" ] || echo fixture-container
+    [ ! -f "$state" ] || echo fixture-container
     ;;
   rm)
-    [ "${ADDP_TEST_REMOVE_FAIL:-0}" = 1 ] || rm -f "$ADDP_TEST_POSTGRES_STATE"
+    if [ "$state" = "$ADDP_TEST_MONGODB_STATE" ] && [ "${ADDP_TEST_MONGODB_REMOVE_FAIL:-0}" = 1 ]; then exit 0; fi
+    [ "${ADDP_TEST_REMOVE_FAIL:-0}" = 1 ] || rm -f "$state"
     ;;
   exec)
-    [ -f "$ADDP_TEST_POSTGRES_STATE" ] || exit 1
+    [ -f "$state" ] || exit 1
     case " $* " in
       *pg_isready*) exit 0 ;;
+      *mongosh*) input=$(cat)
+        printf 'mongodb-stdin:%s\n' "$input" >> "$ADDP_TEST_FIXTURE_LOG"
+        if [[ "$input" == *"createUser"* ]] && [ "${ADDP_TEST_MONGODB_SEED_FAIL:-0}" = 1 ]; then
+          echo SECRET_MARKER >&2; exit 1
+        fi
+        [[ "$input" != *"countDocuments"* ]] || echo 3
+        exit 0 ;;
       *" -Atc "*|*" -c "*) ;;
       *) input=$(cat)
          printf 'stdin:%s\n' "$input" >> "$ADDP_TEST_FIXTURE_LOG"
@@ -60,6 +71,8 @@ case "$1" in
          fi ;;
     esac
     case " $* " in
+      *"string_agg(column_name"*"addp_online_transfer_mongodb_ods"*) echo 'activity_id,activity_status,activity_date_raw,activity_level_raw,leader_person_id,leader_nickname_snapshot' ;;
+      *"addp_online_transfer_mongodb_ods"*) echo "${ADDP_TEST_MONGODB_VALUES:-activity-1|active|2026-01-01|easy|person-1|Alice;activity-2|inactive|2026-01-02|moderate|person-2|Bob;activity-3|active|2026-01-03|hard|person-3|Carol}" ;;
       *"numeric_precision"*) echo '8|2' ;;
       *"generated_label"*) echo "${ADDP_TEST_NATIVE_VALUES:-5|1411.50|3|2|5}" ;;
       *"WHERE area"*) echo '5|1411.50|3|2' ;;
@@ -75,6 +88,8 @@ esac
                                 ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1',
                                 ADDP_ONLINE_SECRET_DIR=str(self.secrets),
                                 ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-engine.json'),
+                                ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-mongodb-engine.json'),
+                                ADDP_TEST_MONGODB_STATE=str(self.mongodb_state),
                                 ADDP_TEST_POSTGRES_STATE=str(self.postgres_state), ADDP_TEST_FIXTURE_LOG=str(self.log))
 
     def tearDown(self):
@@ -104,6 +119,18 @@ esac
         self.assertIn('--tmpfs /var/lib/postgresql/data', commands)
         self.assertNotIn('business-postgres', commands)
         self.assertFalse(self.postgres_state.exists())
+        self.assertFalse(self.mongodb_state.exists())
+        self.assertIn('--tmpfs /data/db --tmpfs /data/configdb', commands)
+        self.assertIn('mongo:7.0', commands)
+        self.assertIn("roles: [{role: 'read', db: 'transfer_fixture'}]", commands)
+        self.assertIn("nickName: 'Alice'", commands)
+        mongo_descriptor = self.secrets / 'transfer-mongodb-engine.json'
+        self.assertEqual(stat.S_IMODE(mongo_descriptor.stat().st_mode), 0o600)
+        mongo = json.loads(mongo_descriptor.read_text())
+        self.assertEqual(mongo['engine_type'], 'mongodb')
+        self.assertEqual(mongo['connection_info']['user'], 'transfer_reader')
+        self.assertEqual(mongo['connection_info']['auth_source'], 'transfer_fixture')
+        self.assertNotIn(mongo['connection_info']['password'], commands)
         descriptor = self.secrets / 'transfer-engine.json'
         self.assertEqual(stat.S_IMODE(descriptor.stat().st_mode), 0o600)
         engine = json.loads(descriptor.read_text())
@@ -135,6 +162,39 @@ esac
         result = self.run_fixture('verify', ADDP_TEST_NATIVE_VALUES='5|1411.50|5|0|5')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('native target does not prove', result.stderr)
+
+    def test_refuses_foreign_mongodb_before_creating_or_removing_any_fixture(self):
+        self.mongodb_state.write_text('foreign-owner')
+        self.assertNotEqual(self.run_fixture('start').returncode, 0)
+        self.assertFalse(self.postgres_state.exists())
+        self.postgres_state.write_text('transfer-relational-sql-etl')
+        result = self.run_fixture('stop')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('ownership mismatch', result.stderr)
+        self.assertTrue(self.postgres_state.exists())
+        self.assertTrue(self.mongodb_state.exists())
+
+    def test_rejects_incorrect_nested_ods_values(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        result = self.run_fixture('verify', ADDP_TEST_MONGODB_VALUES='activity-1|active|wrong-date|easy|person-1|Alice')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('exact nested mapping', result.stderr)
+
+    def test_partial_mongodb_initialization_is_redacted_and_cleans_both_containers(self):
+        result = self.run_fixture('start', ADDP_TEST_MONGODB_SEED_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('SECRET_MARKER', result.stdout + result.stderr)
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+        self.assertFalse(self.postgres_state.exists())
+        self.assertFalse(self.mongodb_state.exists())
+
+    def test_mongodb_residual_cannot_be_hidden_by_successful_postgresql_cleanup(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        result = self.run_fixture('stop', ADDP_TEST_MONGODB_REMOVE_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('container remains after cleanup: addp-transfer-mongodb-online-disposable', result.stderr)
+        self.assertFalse(self.postgres_state.exists())
+        self.assertTrue(self.mongodb_state.exists())
 
     def test_cleanup_fails_if_container_remains(self):
         self.assertEqual(self.run_fixture('start').returncode, 0)

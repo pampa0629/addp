@@ -268,6 +268,8 @@ PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派�
 
 2026-10-04，首期 Hosted T4 [运行 37206323194](https://github.com/pampa0629/addp/actions/runs/37206323194) 首次完整通过，验证源码为 `8c0a1cc142f2bbbd8880745527c224fae7bd2b2c`。归档报告确认同一非管理员 User / Tenant 下的 direct、derived、generated 字段证据，replace 后旧入边关闭、结构快照一致的两跳查询，以及 Console 的整表字段图、字段聚焦和可证明单来源 SQL 查询字段血缘。四个临时任务全部删除并确认 404，物理夹具与隔离部署清理通过，Infra 零残留。该验收不扩大为任意 SQL/MQL、多来源 Transfer 查询或 opaque 输出的来源推断。
 
+MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：六个原生字段显式映射（含嵌套点号字段），连续执行同一个任务两次，自动扫描目标并自动采集字段血缘，核对当次冻结结构与最新执行证据，验证 Manager 整表字段图和本地字段聚焦。Business Fixture 在 Hosted 临时部署中拥有两个独占 tmpfs 容器与 ODS 完整行集合验证，退出统一检查零残留。该扩展须有新的真实 Hosted 通过证据，不能由前述 PostgreSQL 验收结果代替。
+
 ### 6.2 图数据库评估边界
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。

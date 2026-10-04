@@ -659,6 +659,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
         for relative, fragment in (
             ("scripts/test/transfer-relational-sql-etl-online.py", '"meta.lineage.read"'),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "validate_mongodb_execution"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.transfer-relational-sql-etl-browser/v3"),
+            ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "--tmpfs /data/db --tmpfs /data/configdb"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "manager_mongodb_field_graph_verified: true"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "expect(mongodbGraphRequests).toBe(1)"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "cleanup_tasks(client"),
             ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}"),
             ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "query_field_lineage_verified: true"),
@@ -675,6 +680,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 path.write_text(original, encoding="utf-8")
         for relative, fragment, message in (
             ("scripts/test/online-hosted-transfer-gate.sh", "CONSOLE_URL=", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-transfer-gate.sh", "addp-transfer-mongodb-online-disposable", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-transfer-gate.sh", "export ADDP_ONLINE_TEST_MONGODB_ENGINE_ID", "Hosted profile is missing"),
             ("scripts/test/online-hosted-transfer-gate.sh", "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "Hosted profile is missing"),
             (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'transfer-relational-sql-etl'", "must not also dispatch"),
             (".github/workflows/online-t4-gates.yml", "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'transfer-relational-sql-etl'", "manual Ubuntu"),

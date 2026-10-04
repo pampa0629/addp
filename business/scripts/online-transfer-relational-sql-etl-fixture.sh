@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Disposable PostgreSQL owner for Hosted SQL ETL and field lineage acceptance.
+# Disposable PostgreSQL and MongoDB owner for Hosted Transfer lineage acceptance.
 
 set -euo pipefail
 umask 077
@@ -8,6 +8,7 @@ SOURCE_TABLE=addp_online_transfer_sql_etl_source
 TARGET_TABLE=addp_online_transfer_sql_etl_target
 NATIVE_TARGET=addp_online_transfer_field_lineage_target
 NATIVE_DOWNSTREAM=addp_online_transfer_field_lineage_downstream
+MONGODB_TARGET=addp_online_transfer_mongodb_ods
 
 fail() {
   echo "Online Transfer relational SQL ETL fixture failed: $*" >&2
@@ -20,6 +21,7 @@ fail() {
   [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || fail "GitHub Hosted Linux x86_64 Online is required"
 
 container=addp-transfer-online-disposable
+mongodb_container=addp-transfer-mongodb-online-disposable
 database=transfer_fixture
 owner=transfer-relational-sql-etl
 action=${1:-}
@@ -30,13 +32,57 @@ esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 
 assert_owned() {
-  [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = "$owner" ] || fail "container ownership mismatch"
+  local owned_container=${1:-$container}
+  [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$owned_container")" = "$owner" ] || fail "container ownership mismatch"
 }
 postgres_running() {
   [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ]
 }
 postgres_sql() {
   docker exec -i "$container" psql -v ON_ERROR_STOP=1 -U postgres -d "$database" "$@"
+}
+
+mongodb_shell() {
+  { printf '%s\n' "if (!db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD)) throw Error('fixture authentication failed');"; cat; } |
+    docker exec -i -e TRANSFER_MONGODB_PASSWORD "$mongodb_container" mongosh --quiet --file /dev/stdin
+}
+
+start_mongodb() {
+  export TRANSFER_MONGODB_PASSWORD MONGO_INITDB_ROOT_PASSWORD
+  TRANSFER_MONGODB_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+  MONGO_INITDB_ROOT_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+  docker run -d --name "$mongodb_container" --label "com.addp.online-fixture=$owner" \
+    --tmpfs /data/db --tmpfs /data/configdb -p 127.0.0.1:55434:27017 \
+    -e MONGO_INITDB_ROOT_USERNAME=fixture_root -e MONGO_INITDB_ROOT_PASSWORD mongo:7.0 >/dev/null
+  ready=0
+  for _ in $(seq 1 60); do
+    if mongodb_shell >/dev/null 2>&1 <<'JS'
+if (db.getSiblingDB('admin').runCommand({ping: 1}).ok !== 1) throw Error('not ready');
+JS
+    then ready=1; break; fi
+    sleep 1
+  done
+  [ "$ready" = 1 ] || fail "source MongoDB did not become ready"
+  if ! mongodb_shell >/dev/null 2>"$ADDP_ONLINE_SECRET_DIR/mongodb-fixture-error.log" <<'JS'
+const fixture = db.getSiblingDB('transfer_fixture');
+fixture.activities.insertMany([
+  {_id: 'activity-1', status: 'active', title: {date: '2026-01-01', level: 'easy'}, leader: {personid: 'person-1', userInfo: {nickName: 'Alice'}}},
+  {_id: 'activity-2', status: 'inactive', title: {date: '2026-01-02', level: 'moderate'}, leader: {personid: 'person-2', userInfo: {nickName: 'Bob'}}},
+  {_id: 'activity-3', status: 'active', title: {date: '2026-01-03', level: 'hard'}, leader: {personid: 'person-3', userInfo: {nickName: 'Carol'}}}
+]);
+fixture.createUser({user: 'transfer_reader', pwd: process.env.TRANSFER_MONGODB_PASSWORD, roles: [{role: 'read', db: 'transfer_fixture'}]});
+JS
+  then fail "MongoDB source permissions could not be initialized"; fi
+  python3 - <<'PY_DESCRIPTOR'
+import json, os
+fd = os.open(os.environ['ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE'], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, 'w') as output:
+    json.dump({'name':'Hosted Transfer MongoDB', 'engine_type':'mongodb', 'engine_origin':'general',
+               'description':'Disposable nested-field ODS lineage acceptance', 'connection_info':{
+                   'host':'127.0.0.1', 'port':55434, 'database':'transfer_fixture', 'user':'transfer_reader',
+                   'password':os.environ['TRANSFER_MONGODB_PASSWORD'], 'auth_source':'transfer_fixture'}}, output)
+PY_DESCRIPTOR
+  unset TRANSFER_MONGODB_PASSWORD MONGO_INITDB_ROOT_PASSWORD
 }
 
 reset_fixture() {
@@ -78,17 +124,24 @@ verify_fixture() {
   columns=$(postgres_sql -Atc \
     "SELECT CONCAT_WS('|', numeric_precision, numeric_scale) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${NATIVE_TARGET}' AND column_name = 'amount'")
   [ "$columns" = "8|2" ] || fail "native target decimal definition differs from mapping: $columns"
+  values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', activity_id, activity_status, activity_date_raw, activity_level_raw, leader_person_id, leader_nickname_snapshot), ';' ORDER BY activity_id) FROM public.${MONGODB_TARGET}")
+  [ "$values" = 'activity-1|active|2026-01-01|easy|person-1|Alice;activity-2|inactive|2026-01-02|moderate|person-2|Bob;activity-3|active|2026-01-03|hard|person-3|Carol' ] || fail "MongoDB ODS rows differ from the exact nested mapping: $values"
+  columns=$(postgres_sql -Atc "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${MONGODB_TARGET}'")
+  [ "$columns" = 'activity_id,activity_status,activity_date_raw,activity_level_raw,leader_person_id,leader_nickname_snapshot' ] || fail "MongoDB ODS columns differ from mapping: $columns"
 }
 
 case "$action" in
   start)
-    ! docker container inspect "$container" >/dev/null 2>&1 || fail "refusing an existing source container"
+    for candidate in "$container" "$mongodb_container"; do
+      ! docker container inspect "$candidate" >/dev/null 2>&1 || fail "refusing an existing source container"
+    done
     [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
     case "$ADDP_ONLINE_SECRET_DIR" in
       "${RUNNER_TEMP:?}"/addp-online-secret-*) ;;
       *) fail "secret directory must be in Runner temporary storage" ;;
     esac
     [ "${ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE:?}" = "$ADDP_ONLINE_SECRET_DIR/transfer-engine.json" ] || fail "descriptor must use the Hosted secret directory"
+    [ "${ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE:?}" = "$ADDP_ONLINE_SECRET_DIR/transfer-mongodb-engine.json" ] || fail "MongoDB descriptor must use the Hosted secret directory"
     export TRANSFER_FIXTURE_PASSWORD
     TRANSFER_FIXTURE_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
     env POSTGRES_PASSWORD="$TRANSFER_FIXTURE_PASSWORD" docker run -d --name "$container" \
@@ -122,28 +175,44 @@ with os.fdopen(fd, 'w') as output:
                    'password':os.environ['TRANSFER_FIXTURE_PASSWORD'], 'sslmode':'disable'}}, output)
 PY_DESCRIPTOR
     unset TRANSFER_FIXTURE_PASSWORD
+    start_mongodb
     echo "Online Transfer relational SQL ETL fixture is ready"
     ;;
   verify)
     assert_owned
     postgres_running || fail "source PostgreSQL is not running"
+    assert_owned "$mongodb_container"
     verify_fixture
     echo "Online Transfer relational SQL ETL target is verified"
     ;;
   stop)
-    if docker container inspect "$container" >/dev/null 2>&1; then
-      assert_owned
-      # Removing the exclusive tmpfs container also removes all four owned tables,
-      # including partial output after a failed task or interrupted startup.
-      docker rm -fv "$container" >/dev/null
-    fi
-    remaining=$(docker ps -aq --filter "name=^/${container}$") || fail "cannot verify container cleanup"
-    [ -z "$remaining" ] || fail "container remains after cleanup"
+    # Check ownership before deleting either container; cleanup also covers partial startup.
+    for candidate in "$container" "$mongodb_container"; do
+      if docker container inspect "$candidate" >/dev/null 2>&1; then assert_owned "$candidate"; fi
+    done
+    cleanup_failed=0
+    for candidate in "$container" "$mongodb_container"; do
+      if docker container inspect "$candidate" >/dev/null 2>&1; then
+        if ! docker rm -fv "$candidate" >/dev/null; then cleanup_failed=1; fi
+      fi
+      if ! remaining=$(docker ps -aq --filter "name=^/${candidate}$"); then
+        echo "cannot verify container cleanup: $candidate" >&2
+        cleanup_failed=1
+      elif [ -n "$remaining" ]; then
+        echo "container remains after cleanup: $candidate" >&2
+        cleanup_failed=1
+      fi
+    done
+    [ "$cleanup_failed" = 0 ] || fail "fixture cleanup is incomplete"
     echo "Online Transfer relational SQL ETL fixture is stopped; zero residuals"
     ;;
   status)
     assert_owned
     postgres_running || fail "source PostgreSQL is not running"
+    assert_owned "$mongodb_container"
+    mongodb_shell <<'JS' | grep -qx '3' || fail "source collection is not ready"
+print(db.getSiblingDB('transfer_fixture').activities.countDocuments({}));
+JS
     postgres_sql -Atc "SELECT COUNT(*) FROM public.${SOURCE_TABLE}" | grep -qx '5' || fail "source table is not ready"
     echo "Online Transfer relational SQL ETL fixture is ready"
     ;;
