@@ -5809,8 +5809,7 @@
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -5950,8 +5949,7 @@
                     "additionalProperties": {}
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6039,8 +6037,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6144,8 +6141,7 @@
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6313,8 +6309,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6368,8 +6363,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6493,8 +6487,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6632,8 +6625,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6733,8 +6725,7 @@
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6776,8 +6767,7 @@
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6824,8 +6814,7 @@
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7059,8 +7048,7 @@
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7082,8 +7070,7 @@
                     "type": "string"
                 },
                 "enrollment_version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 },
                 "rationale": {
                     "type": "string"
@@ -7311,8 +7298,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7400,8 +7386,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7469,8 +7454,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7532,8 +7516,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7548,8 +7531,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7579,8 +7561,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7728,8 +7709,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },

@@ -16,7 +16,7 @@ type ProtectionPolicy struct {
 	ConsumerOwner   string    `gorm:"size:32;not null;uniqueIndex:uq_security_policy_binding" json:"consumer_owner"`
 	Action          string    `gorm:"size:32;not null;uniqueIndex:uq_security_policy_binding" json:"action"`
 	State           string    `gorm:"size:16;not null" json:"state"`
-	Version         int64     `gorm:"not null;default:1" json:"version,string"`
+	Version         int64     `gorm:"not null;default:1" json:"version"`
 	CurrentRevision int64     `gorm:"not null" json:"current_revision"`
 	CreatedBy       int64     `gorm:"not null" json:"created_by,string"`
 	CreatedAt       time.Time `gorm:"not null" json:"created_at"`
@@ -57,7 +57,7 @@ type CreateProtectionPolicyRequest struct {
 	Rationale          string         `json:"rationale" binding:"required"`
 }
 type UpdateProtectionPolicyRequest struct {
-	Version            int64          `json:"version,string" binding:"required"`
+	Version            int64          `json:"version" binding:"required"`
 	Effect             string         `json:"effect" binding:"required"`
 	Algorithm          string         `json:"algorithm"`
 	Parameters         map[string]any `json:"parameters"`
@@ -66,7 +66,7 @@ type UpdateProtectionPolicyRequest struct {
 }
 
 type RevokeProtectionPolicyRequest struct {
-	Version   int64  `json:"version,string" binding:"required"`
+	Version   int64  `json:"version" binding:"required"`
 	Rationale string `json:"rationale" binding:"required"`
 }
 

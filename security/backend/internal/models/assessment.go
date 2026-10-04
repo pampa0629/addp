@@ -39,7 +39,7 @@ type ResourceSecurityAssessment struct {
 	TenantID        int64     `gorm:"not null;index;uniqueIndex:uq_security_assessment_component" json:"-"`
 	EnrollmentID    string    `gorm:"type:uuid;not null;index;uniqueIndex:uq_security_assessment_component" json:"enrollment_id"`
 	ComponentKey    string    `gorm:"type:text;not null;uniqueIndex:uq_security_assessment_component" json:"component_key"`
-	Version         int64     `gorm:"not null;default:1" json:"version,string"`
+	Version         int64     `gorm:"not null;default:1" json:"version"`
 	CurrentRevision int64     `gorm:"not null" json:"current_revision"`
 	CreatedBy       int64     `gorm:"not null" json:"created_by,string"`
 	CreatedAt       time.Time `gorm:"not null" json:"created_at"`
@@ -82,7 +82,7 @@ type FindingReviewRequest struct {
 }
 
 type AssessmentRevisionRequest struct {
-	Version             int64  `json:"version,string" binding:"required"`
+	Version             int64  `json:"version" binding:"required"`
 	SensitiveDataTypeID int64  `json:"sensitive_data_type_id,string" binding:"required"`
 	SecurityGradeID     int64  `json:"security_grade_id,string" binding:"required"`
 	Rationale           string `json:"rationale" binding:"required"`
@@ -90,7 +90,7 @@ type AssessmentRevisionRequest struct {
 
 type CreateManualAssessmentRequest struct {
 	EnrollmentID        string `json:"enrollment_id" binding:"required"`
-	EnrollmentVersion   int64  `json:"enrollment_version,string" binding:"required"`
+	EnrollmentVersion   int64  `json:"enrollment_version" binding:"required"`
 	ComponentKey        string `json:"component_key" binding:"required"`
 	SensitiveDataTypeID int64  `json:"sensitive_data_type_id,string" binding:"required"`
 	SecurityGradeID     int64  `json:"security_grade_id,string" binding:"required"`
@@ -98,7 +98,7 @@ type CreateManualAssessmentRequest struct {
 }
 
 type RevokeAssessmentRequest struct {
-	Version   int64  `json:"version,string" binding:"required"`
+	Version   int64  `json:"version" binding:"required"`
 	Rationale string `json:"rationale" binding:"required"`
 }
 

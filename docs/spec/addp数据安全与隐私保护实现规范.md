@@ -572,6 +572,8 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 
 所有分页管理列表使用 `{data,total,page,page_size,total_pages}`，`page_size` 最大 100。创建返回 `201`，完整更新返回新资源。写入请求使用具体 DTO、snake_case 字段和必填 `version`，不接受旧 ID、旧字段、兼容 query 或 `map[string]interface{}` 隐藏契约。ProtectionExemption 不提供直接创建、续期或重新启用 API；任何新授权都必须来自一条新的 ProtectionAccessRequest 审批结果。
 
+资源并发版本遵循平台 API 规范：所有管理资源及其只读摘要中的 `version` 均输出 JSON 正整数，版本化写请求也只接受 JSON 整数，不接受字符串版本。人工指定敏感字段的 `enrollment_version` 使用同一契约。数据库继续使用 `BIGINT`，资源 ID 的字符串序列化不适用于并发版本；检测能力的语义版本字符串也不属于资源并发版本。
+
 Runtime API 只接受 Tenant Service Access Token，并同时校验固定 OAuth Client 和 Security-owned Runtime Permission。Catalog 页面展示 Security 摘要时，使用当前 User Access Token 直接调用 Security 权限感知摘要 API；Catalog Backend 不代理、不复制安全事实。具体联邦摘要端点与 Catalog 首个展示切片一次实现，不预建无消费者 API。
 
 ## 十二、Permission、认证与 Swagger

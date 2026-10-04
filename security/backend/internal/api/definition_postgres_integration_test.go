@@ -189,6 +189,9 @@ func TestDefaultProtectionHTTPAgainstPostgres(t *testing.T) {
 	if remaining := list(); len(remaining) != 1 || !reflect.DeepEqual(remaining[0], initial) {
 		t.Fatalf("delete affected unrelated default protection: %#v", remaining)
 	}
+	t.Run("policy updates use numeric versions", func(t *testing.T) {
+		verifyPolicyHTTPVersions(t, tx, createdType, initial)
+	})
 }
 
 func decodeDefinitionResponse[T any](t *testing.T, body []byte) T {

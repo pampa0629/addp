@@ -20,7 +20,7 @@ type ProtectionExemption struct {
 	SubjectType     string    `gorm:"size:16;not null;uniqueIndex:uq_security_exemption_binding" json:"subject_type"`
 	SubjectID       string    `gorm:"size:64;not null;uniqueIndex:uq_security_exemption_binding" json:"subject_id"`
 	State           string    `gorm:"size:16;not null" json:"state"`
-	Version         int64     `gorm:"not null;default:1" json:"version,string"`
+	Version         int64     `gorm:"not null;default:1" json:"version"`
 	CurrentRevision int64     `gorm:"not null" json:"current_revision"`
 	CreatedBy       int64     `gorm:"not null" json:"created_by,string"`
 	CreatedAt       time.Time `gorm:"not null" json:"created_at"`

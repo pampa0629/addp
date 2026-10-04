@@ -90,7 +90,7 @@ type SensitiveFindingExplanation struct {
 
 type FindingProtectionBaseline struct {
 	ID                 int64          `json:"id,string"`
-	Version            int64          `json:"version,string"`
+	Version            int64          `json:"version"`
 	Effect             string         `json:"effect"`
 	Algorithm          string         `json:"algorithm,omitempty"`
 	Parameters         map[string]any `json:"parameters"`

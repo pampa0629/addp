@@ -331,8 +331,7 @@ definitions:
         example: "0"
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.DetectorCapability:
     properties:
@@ -425,8 +424,7 @@ definitions:
         additionalProperties: {}
         type: object
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.ProtectionAccessActor:
     properties:
@@ -484,8 +482,7 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.ProtectionAccessRequestSummary:
     properties:
@@ -556,8 +553,7 @@ definitions:
         example: "0"
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.ProtectionBaselineRequest:
     properties:
@@ -669,8 +665,7 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.ProtectionExemptionResponse:
     properties:
@@ -706,8 +701,7 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.ProtectionExemptionRevision:
     properties:
@@ -789,8 +783,7 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.ProtectionPolicyRevision:
     properties:
@@ -882,8 +875,7 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.ResourceSecurityAssessmentRevision:
     properties:
@@ -952,8 +944,7 @@ definitions:
         example: "0"
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.SecurityGrade:
     properties:
@@ -982,8 +973,7 @@ definitions:
         example: "0"
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.SensitiveDataType:
     properties:
@@ -1016,8 +1006,7 @@ definitions:
         example: "0"
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   github_com_addp_security_internal_models.SensitiveDataTypeRequest:
     properties:
@@ -1171,8 +1160,7 @@ definitions:
         example: "0"
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     required:
     - rationale
     - security_grade_id
@@ -1186,8 +1174,7 @@ definitions:
       enrollment_id:
         type: string
       enrollment_version:
-        example: "0"
-        type: string
+        type: integer
       rationale:
         type: string
       security_grade_id:
@@ -1349,8 +1336,7 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   internal_api.ProtectionAccessTargetListResponse:
     properties:
@@ -1408,8 +1394,7 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   internal_api.ProtectionPolicyListResponse:
     properties:
@@ -1454,8 +1439,7 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   internal_api.ResourceSecurityAssessmentListResponse:
     properties:
@@ -1496,16 +1480,14 @@ definitions:
       updated_at:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     type: object
   internal_api.RevokeAssessmentRequest:
     properties:
       rationale:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     required:
     - rationale
     - version
@@ -1525,8 +1507,7 @@ definitions:
       rationale:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     required:
     - rationale
     - version
@@ -1624,8 +1605,7 @@ definitions:
       rationale:
         type: string
       version:
-        example: "0"
-        type: string
+        type: integer
     required:
     - effect
     - rationale

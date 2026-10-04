@@ -34,7 +34,7 @@ type ProtectionEnrollment struct {
 	TargetItemType             string     `gorm:"size:64;not null;default:''" json:"target_item_type"`
 	TargetFullName             string     `gorm:"type:text;not null;default:''" json:"target_full_name"`
 	State                      string     `gorm:"size:16;not null;index" json:"state"`
-	Version                    int64      `gorm:"not null;default:1" json:"version,string"`
+	Version                    int64      `gorm:"not null;default:1" json:"version"`
 	ReleaseReason              string     `gorm:"type:text;not null;default:''" json:"release_reason,omitempty"`
 	ReleaseBasis               string     `gorm:"size:32;not null;default:''" json:"release_basis,omitempty"`
 	ReleaseRequestedBy         *int64     `json:"release_requested_by,omitempty,string"`
@@ -176,7 +176,7 @@ type ProtectionEnrollmentResponse struct {
 	Target                     dataprotection.ResourceReference `json:"target"`
 	TargetSnapshot             ProtectionTargetSnapshot         `json:"target_snapshot"`
 	State                      string                           `json:"state"`
-	Version                    int64                            `json:"version,string"`
+	Version                    int64                            `json:"version"`
 	ReleaseReason              string                           `json:"release_reason,omitempty"`
 	ReleaseBasis               string                           `json:"release_basis,omitempty"`
 	ReleaseRequestedBy         *int64                           `json:"release_requested_by,omitempty,string"`

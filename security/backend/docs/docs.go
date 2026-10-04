@@ -5816,8 +5816,7 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -5957,8 +5956,7 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6046,8 +6044,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6151,8 +6148,7 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6320,8 +6316,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6375,8 +6370,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6500,8 +6494,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6639,8 +6632,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6740,8 +6732,7 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6783,8 +6774,7 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -6831,8 +6821,7 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7066,8 +7055,7 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7089,8 +7077,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "enrollment_version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 },
                 "rationale": {
                     "type": "string"
@@ -7318,8 +7305,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7407,8 +7393,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7476,8 +7461,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7539,8 +7523,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7555,8 +7538,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7586,8 +7568,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },
@@ -7735,8 +7716,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },

@@ -10,7 +10,7 @@ type SecurityClassification struct {
 	Description string    `gorm:"type:text" json:"description"`
 	ParentID    *int64    `gorm:"index" json:"parent_id,omitempty,string"`
 	SortOrder   int       `gorm:"not null;default:0" json:"sort_order"`
-	Version     int64     `gorm:"not null;default:1" json:"version,string"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 	CreatedBy   int64     `gorm:"not null" json:"created_by,string"`
 	UpdatedBy   *int64    `json:"updated_by,omitempty,string"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -26,7 +26,7 @@ type SecurityGrade struct {
 	Name        string    `gorm:"size:200;not null" json:"name"`
 	Description string    `gorm:"type:text" json:"description"`
 	RiskOrder   int       `gorm:"not null" json:"risk_order"`
-	Version     int64     `gorm:"not null;default:1" json:"version,string"`
+	Version     int64     `gorm:"not null;default:1" json:"version"`
 	CreatedBy   int64     `gorm:"not null" json:"created_by,string"`
 	UpdatedBy   *int64    `json:"updated_by,omitempty,string"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -43,7 +43,7 @@ type SensitiveDataType struct {
 	Description              string    `gorm:"type:text" json:"description"`
 	SecurityClassificationID int64     `gorm:"not null;index" json:"security_classification_id,string"`
 	DefaultSecurityGradeID   int64     `gorm:"not null;index" json:"default_security_grade_id,string"`
-	Version                  int64     `gorm:"not null;default:1" json:"version,string"`
+	Version                  int64     `gorm:"not null;default:1" json:"version"`
 	CreatedBy                int64     `gorm:"not null" json:"created_by,string"`
 	UpdatedBy                *int64    `json:"updated_by,omitempty,string"`
 	CreatedAt                time.Time `json:"created_at"`
@@ -62,7 +62,7 @@ type Detector struct {
 	SensitiveDataTypeID int64     `gorm:"not null;index" json:"sensitive_data_type_id,string"`
 	ConfidenceThreshold float64   `gorm:"not null;default:0.9" json:"confidence_threshold"`
 	Enabled             bool      `gorm:"not null;default:true" json:"enabled"`
-	Version             int64     `gorm:"not null;default:1" json:"version,string"`
+	Version             int64     `gorm:"not null;default:1" json:"version"`
 	CreatedBy           int64     `gorm:"not null" json:"created_by,string"`
 	UpdatedBy           *int64    `json:"updated_by,omitempty,string"`
 	CreatedAt           time.Time `json:"created_at"`
@@ -98,7 +98,7 @@ type ProtectionBaseline struct {
 	AllowedAlgorithms   []string       `gorm:"serializer:json;type:text" json:"allowed_algorithms"`
 	InvalidValueEffect  string         `gorm:"size:20;not null;default:suppress" json:"invalid_value_effect"`
 	Enabled             bool           `gorm:"not null;default:true" json:"enabled"`
-	Version             int64          `gorm:"not null;default:1" json:"version,string"`
+	Version             int64          `gorm:"not null;default:1" json:"version"`
 	CreatedBy           int64          `gorm:"not null" json:"created_by,string"`
 	UpdatedBy           *int64         `json:"updated_by,omitempty,string"`
 	CreatedAt           time.Time      `json:"created_at"`

@@ -29,7 +29,7 @@ type ProtectionAccessRequest struct {
 	RequestedExpiresAt   time.Time  `gorm:"not null" json:"requested_expires_at"`
 	Rationale            string     `gorm:"type:text;not null" json:"rationale"`
 	State                string     `gorm:"size:16;not null;index" json:"state"`
-	Version              int64      `gorm:"not null;default:1" json:"version,string"`
+	Version              int64      `gorm:"not null;default:1" json:"version"`
 	DecidedBy            *int64     `json:"-"`
 	DecidedByDisplayName string     `gorm:"size:255;not null;default:''" json:"-"`
 	DecidedAt            *time.Time `json:"decided_at,omitempty"`
