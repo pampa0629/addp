@@ -525,6 +525,23 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 - 二者可以共享内容流读写接口、MIME 推断、格式解析、preview composer 等底层能力。
 - Linux / macOS 本地文件系统后续也必须有结构性 root meta_node，用于容纳根目录下文件；展示名可另行确认，但不得省略 root。
 
+## HDFS 路径目标契约
+
+本节记录已确认、尚待实现与验收的 HDFS 接入契约，不表示当前插件或 Spark 消费链路已经可用。
+
+HDFS 以独立 `engine_type=hdfs`、`engine_family=file` 接入，复用 `FileCatalogModel` 的 `root -> directory -> file` 层级和 Catalog/Content Provider；不复用对象存储目录模型，不新增 data type。CSV、JSON、Parquet 等内容的类型与格式由现有文件探测和解析能力裁决。
+
+- 每个 Engine Instance 绑定一个管理根目录。WebHDFS 端点、原生 HDFS RPC 地址或 nameservice、管理根目录和认证配置属于连接事实，不进入 `full_name`、ResourceLocator 或指纹输入。
+- 显性 root 使用引擎实例名称，`full_name=""`；根目录下普通文件可以直接成为 leaf。业务路径保留根目录内的原始名称，例如管理根为 `/addp` 时，`/addp/samples/orders.parquet` 的 `full_name` 为 `samples/orders.parquet`，locator 业务 path 为 `samples/orders.parquet`，`item_type=file`。
+- 只有经过根目录边界检查的目录和普通文件进入 Catalog；拒绝穿越根目录的路径，不把符号链接作为普通文件或可递归目录。列举、路径解析、事实查询与内容读取必须使用同一边界。
+- 管理根目录是平台资源命名空间边界，不能替代引擎原生认证、权限或集群网络隔离。
+
+Meta/Manager 通过 WebHDFS 消费目录事实和有界内容读取；Spark 通过原生 Hadoop 客户端读取同一个资源。两者共享同一存储 Engine Instance，不为 Spark 重复登记一份 HDFS。Develop 从经过授权和实时校验的资源 locator 与连接事实派生执行期 HDFS URI、Hadoop 配置和认证上下文；用户任务不保存物理路径、连接参数或凭据。Spark 计算集群仍独立选择，不得用 HDFS Engine ID 替代 Spark 集群 ID。
+
+首版交付范围为统一登记、Meta 扫描、Manager 预览和 Spark 分布式读取。认证范围须另行确认，不能将 Simple 模式的 `user.name` 宣称为安全认证；HDFS 写回、HA、YARN 和 MapReduce 不因完成读取自动获得支持声明。
+
+验收必须分别证明 WebHDFS 的目录、状态、有界读取，以及 Spark Driver/Executor 到 NameNode 和 DataNode 的真实连接。Spark 必须在真实 Worker 上读取 CSV、JSON、Parquet 并执行聚合校验；只构造 DataFrame、使用 `local[*]` 或只打开 Web 页面都不能计为分布式读取通过。参考 [WebHDFS 官方协议](https://hadoop.apache.org/docs/r3.5.0/hadoop-project-dist/hadoop-hdfs/WebHDFS.html) 与 [Spark Hadoop 配置说明](https://downloads.apache.org/spark/docs/3.5.0/configuration.html#inheriting-hadoop-cluster-configuration)。
+
 ## Redis key 路径
 
 Redis 的逻辑数据库由 Engine Instance 连接配置固定，目录为显性 `server` root 加一个 `key` leaf。业务 path 和 full_name 均为 `k:<无填充 Base64URL 原始 key 字节>`；空 key 编码为 `k:`。指纹继续使用 engine ID 与该规范 full_name。所有 key 使用同一编码，冒号、斜杠、点、空白、NUL 和非 UTF-8 字节均不增加路径层级；显示标签从编码派生，不能反向用显示标签寻址。首期原始键名最多 189 字节，超额必须失败。`meta_item.item_type=key`、`attributes.item.layout=single`、`attributes.item.data_type=unknown`；原生值类型和 TTL 属于实时 Engine Facts，不作为 type_info 或 format_info 落库。

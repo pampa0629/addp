@@ -286,6 +286,49 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  spark-workflow-tests:
+    name: Spark Workflow tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select shared module gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module engines
+
+      - name: Prepare Spark Workflow test environment
+        if: steps.selection.outputs.run == 'true'
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          venv-path: engines/spark-workflow/venv
+          cache-dependency-path: |
+            engines/spark-workflow/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: engines/spark-workflow/requirements.txt
+          editable-install: ./common-python
+
+      - name: Run Spark Workflow tests
+        if: steps.selection.outputs.run == 'true'
+        run: make test-spark-workflow
+
+      - name: Summarize Spark Workflow gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Spark Workflow tests
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   geopython-workflow-tests:
     name: GeoPython GDAL tests
     runs-on: ubuntu-24.04

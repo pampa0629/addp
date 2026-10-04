@@ -137,6 +137,11 @@ MODEL3D_WORKFLOW_PYTHON ?= engines/model3d-workflow/.venv/bin/python
 test-model3d-workflow: ## 运行 Model3D Runtime 格式边界和 GLB 发布校验测试
 	@cd engines/model3d-workflow && $(abspath $(MODEL3D_WORKFLOW_PYTHON)) -m pytest -q tests
 
+SPARK_WORKFLOW_PYTHON ?= engines/spark-workflow/venv/bin/python
+.PHONY: test-spark-workflow
+test-spark-workflow: ## 运行 Spark Workflow 元数据、租户身份和存储适配确定性测试
+	@cd engines/spark-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(SPARK_WORKFLOW_PYTHON)) -m unittest discover -s . -p 'test_*.py' -v
+
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/.venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
@@ -690,7 +695,7 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
-	test-document-workflow test-geopython-workflow test-model3d-workflow \
+	test-document-workflow test-geopython-workflow test-model3d-workflow test-spark-workflow \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \

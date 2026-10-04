@@ -37,6 +37,8 @@ engines/
 
 ## 启动与验证
 
+Spark Workflow 确定性测试统一运行 `make test-spark-workflow`，自动发现该目录的 `test_*.py`；覆盖算子协议、可信租户上下文、System Service Bearer 和存储适配，不连接开发集群。根 `make test`、`make test-module MODULE=engines` 与 Platform CI 的独立 Spark Workflow Job 均消费同一入口，CI 使用现有运行时依赖和 Common Python 安装。该 T1 门禁不能代替真实 Worker 的 HDFS 分布式读取验收。
+
 ```bash
 bash scripts/dev/start.sh -geopython-workflow
 bash scripts/dev/start.sh -spark-workflow

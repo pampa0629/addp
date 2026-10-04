@@ -7,6 +7,8 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
+| HDFS Engine | HDFS 引擎 | 以 `engine_type=hdfs` 标识的 Hadoop 分布式文件系统存储引擎，目标目录模型为 `root -> directory -> file`。 | 接入方案已确认，正式支持仍待实现与验收；HDFS 不是新的 data type，也不代表已支持 Hadoop 的 YARN 或 MapReduce。 |
+| WebHDFS | WebHDFS 接口 | Hadoop 提供的 HDFS HTTP 内容与目录访问协议。 | ADDP 目录扫描和内容预览的接入协议；Spark 使用同一 HDFS 的原生 Hadoop 客户端，HTTP 端点与 RPC 端点分别由连接事实提供，不互相推算端口。 |
 | key_value engine family | 键值存储引擎族 | 以原生 key 定位值的存储引擎粗分类，能力声明值为 `key_value`。 | 不是 data type；目录、事实与读取能力必须由对应 Provider 声明。Redis 首期支持单端点、ACL 账号、一个逻辑数据库以及有预算的 key 扫描和只读预览。 |
 | key catalog leaf | 键目录叶子 | 键值引擎中以完整原始 key 字节定位的独立资源，`item_type=key`。 | 冒号不产生目录。Meta 首期只登记身份，`data_type=unknown`；原生 string/hash/list/set/zset/stream 类型由实时 Engine Facts 表达，不据此新增 datatype。 |
 | Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Engine Catalog / 查询 / 读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
