@@ -12,8 +12,10 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	commonJSON "github.com/addp/common/jsonmap"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -175,6 +177,7 @@ type RebindManagedQuickViewTaskResponse struct {
 // GetQuickViewCapabilityByLocator 获取 locator 快显能力
 // @Summary 获取 locator 快显能力 | Get locator quick view capability
 // @Description 以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.
+// @Description 源事实来自当前租户的扫描元数据，不通过数据预览补齐；缺失几何、坐标系或记录数时不猜测。 | Source facts come from scanned metadata of the current tenant, without preview sampling or guessing missing geometry, CRS or row counts.
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
@@ -876,13 +879,22 @@ func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenant
 	if h.previewResolver == nil {
 		return service.QuickViewSource{}, errors.New("preview resolver not initialized")
 	}
-	result, err := h.previewResolver.PreviewFromURIWithSelection(ctx, locator, 1, 1, "", "", "", plugin.GraphSampleFilter{}, tenantID)
+	req, err := h.previewResolver.ResolveRequestFromURIWithSelection(ctx, locator, 1, 1, "", "", "", plugin.GraphSampleFilter{}, tenantID)
 	if err != nil {
 		return service.QuickViewSource{}, err
 	}
-	tablePreview, _ := result.Data.(*models.TablePreview)
-	source := quickViewSourceFromPreview(locator, tenantID, result, tablePreview)
-	return source, nil
+	if req.MetaItemID == nil || *req.MetaItemID == 0 {
+		return service.QuickViewSource{}, preview.ErrPreviewRequiresScannedMeta
+	}
+	if req.Metadata == nil || req.Metadata.EngineID != req.Engine.ID {
+		return service.QuickViewSource{}, preview.ErrEngineAccessDenied
+	}
+	// Resolve both identity and facts from the same Meta item, not a caller-supplied path.
+	req.Locator = resourcetree.LocatorFromFullName(req.Engine.ID, req.Engine.EngineType, req.ItemType, req.ItemFullName, req.MetaItemID)
+	if req.Locator == nil {
+		return service.QuickViewSource{}, preview.ErrPreviewRequiresScannedMeta
+	}
+	return quickViewSourceFromMeta(req), nil
 }
 
 func (h *QuickViewHandler) createQuickViewTask(
@@ -1364,163 +1376,79 @@ func quickViewActionTaskName(prefix string, capability *service.QuickViewCapabil
 	return prefix + " - " + locator
 }
 
-func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.PreviewResult, tablePreview *models.TablePreview) service.QuickViewSource {
-	storageTenantID := uint(0)
-	if tenantID != nil {
-		storageTenantID = *tenantID
-	}
+func quickViewSourceFromMeta(req *preview.PreviewResolverRequest) service.QuickViewSource {
 	source := service.QuickViewSource{
 		Identity: service.QuickViewIdentity{
-			TenantID: storageTenantID,
-			Locator:  locator,
+			Locator: req.Locator.ToURI(), ItemFingerprint: req.ItemFingerprint,
 		},
-		EngineID:         quickViewEngineIDFromLocator(locator),
-		DirectFlatGeobuf: true,
-		FlatGeobufURL:    locatorQuickViewFlatGeobufURL(locator, tablePreview),
+		EngineID: req.Engine.ID,
 	}
-	if tablePreview == nil {
+	if req.TenantID != nil {
+		source.Identity.TenantID = *req.TenantID
+	}
+	attrs := req.MetadataAttributes()
+	if source.PPTX = service.PPTXPDFQuickViewSourceFromAttributes(attrs); source.PPTX != nil {
 		return source
 	}
-	if tablePreview.EngineID > 0 {
-		source.EngineID = tablePreview.EngineID
+	streamURL := service.SourceStorageStreamURLFromLocator(source.Identity.Locator, source.EngineID)
+	if source.PointCloud = service.PointCloudCOPCSourceFromAttributes(attrs); source.PointCloud != nil {
+		source.PointCloud.PreviewURL = streamURL
+		return source
 	}
-	source.Schema = tablePreview.Schema
-	source.Table = tablePreview.Table
-	if result != nil && result.Metadata != nil {
-		if metadataLocator := strings.TrimSpace(result.Metadata.Locator); metadataLocator != "" {
-			source.Identity.Locator = metadataLocator
-		}
-		source.Identity.ItemFingerprint = strings.TrimSpace(result.Metadata.ItemFingerprint)
-		if source.EngineID == 0 {
-			source.EngineID = quickViewEngineIDFromLocator(source.Identity.Locator)
-		}
-		source.FlatGeobufURL = locatorQuickViewFlatGeobufURL(source.Identity.Locator, tablePreview)
+	if source.GaussianSplat = service.GaussianSplatKSplatSourceFromAttributes(attrs); source.GaussianSplat != nil {
+		source.GaussianSplat.PreviewURL = streamURL
+		return source
 	}
-	if tablePreview.Object != nil {
-		pptx := service.PPTXPDFQuickViewSourceFromAttributes(tablePreview.Object.Attributes)
-		if pptx != nil {
-			source.EngineID = tablePreview.Object.EngineID
-			source.PPTX = pptx
-			source.DirectFlatGeobuf = false
-			source.FlatGeobufURL = ""
-			source.CanTile = false
-			return source
-		}
-		pointCloud := service.PointCloudCOPCSourceFromAttributes(tablePreview.Object.Attributes)
-		if pointCloud != nil {
-			source.EngineID = tablePreview.Object.EngineID
-			if tablePreview.Object.Content != nil {
-				pointCloud.PreviewURL = strings.TrimSpace(tablePreview.Object.Content.URL)
-			}
-			if pointCloud.PreviewURL == "" {
-				pointCloud.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
-			}
-			source.PointCloud = pointCloud
-			source.DirectFlatGeobuf = false
-			source.FlatGeobufURL = ""
-			source.CanTile = false
-			return source
-		}
-		gaussianSplat := service.GaussianSplatKSplatSourceFromAttributes(tablePreview.Object.Attributes)
-		if gaussianSplat != nil {
-			source.EngineID = tablePreview.Object.EngineID
-			if tablePreview.Object.Content != nil {
-				gaussianSplat.PreviewURL = strings.TrimSpace(tablePreview.Object.Content.URL)
-			}
-			if gaussianSplat.PreviewURL == "" {
-				gaussianSplat.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
-			}
-			source.GaussianSplat = gaussianSplat
-			source.DirectFlatGeobuf = false
-			source.FlatGeobufURL = ""
-			source.CanTile = false
-			return source
-		}
-		model3D := service.Model3DGLBSourceFromAttributes(tablePreview.Object.Attributes)
-		if model3D != nil {
-			source.EngineID = tablePreview.Object.EngineID
-			if tablePreview.Object.Content != nil {
-				model3D.PreviewURL = strings.TrimSpace(tablePreview.Object.Content.URL)
-			}
-			if model3D.PreviewURL == "" {
-				model3D.PreviewURL = strings.TrimSpace(tablePreview.Object.URL)
-			}
-			source.Model3D = model3D
-			source.DirectFlatGeobuf = false
-			source.FlatGeobufURL = ""
-			source.CanTile = false
-			return source
-		}
-		raster := service.RasterQuickViewSourceFromAttributes(tablePreview.Object.Attributes, source.Identity.Locator, tablePreview.Object.EngineID)
-		if raster != nil {
-			source.EngineID = tablePreview.Object.EngineID
-			source.Raster = raster
-			source.DirectFlatGeobuf = false
-			source.FlatGeobufURL = ""
-			source.CanTile = false
-			return source
-		}
+	if source.Model3D = service.Model3DGLBSourceFromAttributes(attrs); source.Model3D != nil {
+		source.Model3D.PreviewURL = streamURL
+		return source
 	}
-	geometryColumn := strings.TrimSpace(tablePreview.GeometryColumn)
-	if geometryColumn == "" && len(tablePreview.GeometryColumns) > 0 {
-		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumns[0])
+	if source.Raster = service.RasterQuickViewSourceFromAttributes(attrs, source.Identity.Locator, source.EngineID); source.Raster != nil {
+		return source
 	}
-	sourceSRID := tablePreview.SourceSRID
-	if sourceSRID == 0 {
-		sourceSRID = tablePreview.SRID
+	spatial := datatype.SpatialInfoFromPayload(commonJSON.Section(attrs, "capabilities.spatial"))
+	if spatial == nil {
+		return source
 	}
-	extentSRID := tablePreview.SRID
-	if extentSRID == 0 {
-		extentSRID = sourceSRID
+	recordCount := int64(-1)
+	if req.ItemRowCount != nil {
+		recordCount = *req.ItemRowCount
+	} else if table := datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), req.ItemName); table != nil && table.RowCount != nil {
+		recordCount = *table.RowCount
 	}
 	source.SpatialMeta = &service.SpatialMetadataResult{
-		GeomColumn:          geometryColumn,
-		GeometryColumns:     tablePreview.GeometryColumns,
-		SRID:                sourceSRID,
-		SourceCRS:           tablePreview.SourceCRS,
-		SourceCRSDefinition: tablePreview.SourceCRSDefinition,
-		ExtentSRID:          extentSRID,
-		Extent:              tablePreview.Extent,
-		RecordCount:         int64(tablePreview.Total),
+		GeomColumn:          spatial.PrimaryGeometryName(),
+		GeometryColumns:     spatial.GeometryColumnNames(),
+		SRID:                spatial.PrimarySRIDValue(),
+		SourceCRS:           spatial.PrimaryCRSRef(),
+		SourceCRSDefinition: spatial.CRSDefinitionByID(spatial.PrimaryCRSRef()),
+		RecordCount:         recordCount,
 	}
-	source.CanTile = quickViewSourceCanGenerateVectorTileCache(source, tablePreview)
+	if spatial.SRID != nil {
+		source.SpatialMeta.ExtentSRID = *spatial.SRID
+	}
+	if spatial.Extent != nil {
+		source.SpatialMeta.Extent = append([]float64(nil), spatial.Extent[:]...)
+	}
+	source.DirectFlatGeobuf = source.SpatialMeta.GeomColumn != ""
+	source.FlatGeobufURL = locatorQuickViewFlatGeobufURL(source.Identity.Locator, source.SpatialMeta)
+	if strings.EqualFold(req.Engine.EngineType, "postgresql") && len(req.Locator.Path) == 2 && req.Locator.Type == resourcetree.TypeTable {
+		source.Schema, source.Table = req.Locator.Path[0], req.Locator.Path[1]
+		source.CanTile = source.SpatialMeta.GeomColumn != ""
+	} else {
+		source.CanTile = source.DirectFlatGeobuf && source.SpatialMeta.SRID > 0 && len(source.SpatialMeta.Extent) == 4
+	}
 	return source
 }
 
-func quickViewEngineIDFromLocator(locator string) uint {
-	parsed, err := resourcetree.ParseURI(strings.TrimSpace(locator))
-	if err != nil {
-		return 0
+func locatorQuickViewFlatGeobufURL(locator string, meta *service.SpatialMetadataResult) string {
+	if meta == nil || meta.RecordCount <= 0 || strings.TrimSpace(meta.GeomColumn) == "" {
+		return ""
 	}
-	return parsed.EngineID
-}
-
-func quickViewSourceCanGenerateVectorTileCache(source service.QuickViewSource, tablePreview *models.TablePreview) bool {
-	if tablePreview == nil || source.SpatialMeta == nil {
-		return false
-	}
-	if strings.EqualFold(strings.TrimSpace(tablePreview.EngineType), "postgresql") &&
-		strings.TrimSpace(tablePreview.Schema) != "" &&
-		strings.TrimSpace(tablePreview.Table) != "" {
-		return true
-	}
-	return source.DirectFlatGeobuf &&
-		strings.TrimSpace(source.SpatialMeta.GeomColumn) != "" &&
-		source.SpatialMeta.SRID > 0 &&
-		len(source.SpatialMeta.Extent) == 4
-}
-
-func locatorQuickViewFlatGeobufURL(locator string, tablePreview *models.TablePreview) string {
 	values := url.Values{}
 	values.Set("locator", strings.TrimSpace(locator))
-	pageSize := 1
-	if tablePreview != nil && tablePreview.Total > 0 {
-		pageSize = tablePreview.Total
-	}
-	values.Set("page_size", strconv.Itoa(pageSize))
-	if tablePreview != nil && strings.TrimSpace(tablePreview.GeometryColumn) != "" {
-		values.Set("geometry_column", strings.TrimSpace(tablePreview.GeometryColumn))
-	}
+	values.Set("page_size", strconv.FormatInt(meta.RecordCount, 10))
+	values.Set("geometry_column", strings.TrimSpace(meta.GeomColumn))
 	return "/api/v1/manager/quick-view/flatgeobuf?" + values.Encode()
 }
 
@@ -1544,7 +1472,9 @@ func applyLocatorQuickViewURLs(capability *service.QuickViewCapability) {
 	switch capability.RenderSource {
 	case service.QuickViewRenderSourceDirectFlatGeobuf:
 		if capability.QuickView.FlatGeobufURL == "" {
-			capability.QuickView.FlatGeobufURL = locatorQuickViewFlatGeobufURL(capability.Locator, nil)
+			capability.QuickView.FlatGeobufURL = locatorQuickViewFlatGeobufURL(capability.Locator, &service.SpatialMetadataResult{
+				RecordCount: capability.QuickView.RecordCount, GeomColumn: capability.QuickView.GeometryColumn,
+			})
 		}
 	case service.QuickViewRenderSourceRealtimeTile, service.QuickViewRenderSourceCachedTile:
 		capability.QuickView.TileURLTemplate = locatorQuickViewTileURL(capability.Locator)

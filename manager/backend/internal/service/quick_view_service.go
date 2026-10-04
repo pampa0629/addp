@@ -3015,7 +3015,7 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 		raster.ExtentSRID = raster.SourceSRID
 	}
 	if raster.PreviewURL == "" && strings.TrimSpace(locator) != "" {
-		raster.PreviewURL = rasterStorageStreamURLFromLocator(locator, engineID)
+		raster.PreviewURL = SourceStorageStreamURLFromLocator(locator, engineID)
 	}
 	return raster
 }
@@ -3094,7 +3094,8 @@ func storageRefFromRasterAttributes(attrs map[string]interface{}) string {
 	return ""
 }
 
-func rasterStorageStreamURLFromLocator(locator string, fallbackEngineID uint) string {
+// SourceStorageStreamURLFromLocator builds a content URL from identity, without reading content.
+func SourceStorageStreamURLFromLocator(locator string, fallbackEngineID uint) string {
 	parsed, err := resourcetree.ParseURI(strings.TrimSpace(locator))
 	if err != nil || parsed == nil {
 		return ""

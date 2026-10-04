@@ -14,6 +14,12 @@ class PlatformSkillToolTests(unittest.TestCase):
         self.assertNotIn("data.preview", skill.tools)
         self.assertNotIn("workflow.run", skill.tools)
         self.assertIn("尚未运行", skill.load_body(registry))
+        body = skill.load_body(registry)
+        self.assertIn("JSON command object", body)
+        self.assertIn("query_names.mql", body)
+        self.assertIn("不是 mongosh", body)
+        self.assertIn("分别提交 `string`、`bool`", body)
+        self.assertIn("不用于 schema、database", body)
         tools = create_agent_tools("token", "run-transfer")
         create = next(tool for tool in tools if stable_tool_name(tool) == "transfer.task.create")
         schema = create.tool_call_schema

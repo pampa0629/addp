@@ -16,7 +16,7 @@ System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants
 
 可信同步 User 凭据组合复用 IAM 唯一 `ResolveUserAccessToken`：自有只读事务统一使用 Repeatable Read，凭据投影和精确规则查询共享已提交快照。Tenant／Principal／Membership／授权版本只由真实当前凭据派生，查询后另以数据库墙钟复核 Token 的自然到期；不保存或输出凭据、不复制 IAM 核验算法。底座本身保持私有，不取代 owner 功能／Client Scope、Execution 或 Security，不新增迁移或 Permission。
 
-首个正式同步检查为 `POST /api/v1/system/engine-access/read-checks/manager-preview`，只接受当前 Tenant User Bearer 与 1–200 个完整目标，固定消费 Manager 已声明的 `manager.data_item.read`。功能／API Client 条件、真实凭据和全部源规则在同一只读快照中核验；任一目标无有效 Grant 或命中 Deny 时整体拒绝。成功只返回不可缓存的当次 `observed_at`，不返回完整 Allow、规则详情或执行凭据。领域检查不写授权审计或请求副本；通用 HTTP 元信息审计仍由现有中间件执行，不记录 Token 或正文。Manager 的完整 Provider ReadSet、同一 PreparedQuery 实际执行及 Security 尚须接入，不能把此接口完成当作真实内容访问闭环完成。
+首个正式同步检查为 `POST /api/v1/system/engine-access/read-checks/manager-preview`，接收当前 Tenant 普通 User Bearer，或精确 `manager` audience、唯一 `data.preview` Scope 的真实委托凭据，与 1–200 个完整目标；固定消费 Manager 已声明的 `manager.data_item.read`。委托凭据由 IAM 核验来源 Token Family、当前用户／成员／授权版本及 Client、Run／Tool 绑定，不降格成普通 User，也不开放其它 System API。功能／Client 条件、真实凭据和全部源规则在同一只读快照中核验；任一目标无有效 Grant 或命中 Deny 时整体拒绝。成功只返回不可缓存的当次 `observed_at`，不返回完整 Allow、规则详情或执行凭据。领域检查不写授权审计或请求副本；通用 HTTP 元信息审计仍由现有中间件执行，不记录 Token 或正文。Manager 的完整 Provider ReadSet、同一 PreparedQuery 实际执行及 Security 尚须接入，不能把此接口完成当作真实内容访问闭环完成。
 
 迁移 000183 增加 `engine_access_grant_revocations`：以原办理 UUID 唯一引用 Grant，追加撤销者 Principal／Tenant Membership、数据库墙钟与必填原因；不复制或改写原目标、接收主体、动作和期限。行及整表历史不可 UPDATE／DELETE／TRUNCATE，插入核验撤销者为原 Tenant 的 User 成员。真实撤销命令发布独立 `system.engine_access_grant.revoke`，不默认分配 Role 或账号，不推进既有授权版本；服务核验当前账号、Token、Permission 和引擎管理委派，并同事务写入高风险撤销审计。引擎停用或失去实时目录能力仍允许收回旧授权，账号或委派失效则拒绝；不修改新授予的启用条件。撤销历史不是 Explicit Deny，也不表示执行侧数据权限已经接通。
 

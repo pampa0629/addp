@@ -3179,7 +3179,7 @@ Manager 的交互式预览是同步 User 请求，不是持久计算 execution�
 - [x] 新增 12 个确定性子场景：遮盖／抑制各覆盖匹配用户、其他用户、空主体、过期授权、允许原值的空页及受保护空页。使用 Provider 的直接字段别名映射，验证派生字段、原值／保护结果及空页列结构，不复制字段保护算法。
 - [x] `make test-go` 退出码 0，覆盖全部 22 个已跟踪 Go 模块及依赖文件校验。日志 `/tmp/addp-query-subject-go-20261004.log`。新共享测试实际执行，projectionstore 包 0.780 秒；其余未变输入允许复用 Go 缓存。
 - [x] 按 `infra/status.sh` 核实 PostgreSQL 实际映射 `25432`，显式选择 `addp_test` 运行完整 `make test-common-postgres`，退出码 0，无 T2 Skip；Provider 读取集合／输出血缘、表写入、execution、投影存储同构及表结果事务门禁均实际执行。日志 `/tmp/addp-query-subject-common-postgres-20261004.log`。不创建额外 database、不连接开发业务库。
-- [ ] 平台 T0：`make test-platform` 正在运行，结果待收口；不先记为通过。
+- [x] 平台 T0：后续按当前工作区输入独立补跑 `make test-platform`，退出码 0；最终证据见 §26.70，日志 `/tmp/addp-manager-delegated-platform-recheck-20261004.log`，不推断此前未收口命令的退出状态。
 
 验证过程保留：首轮新测试的 OutputLineage 回调缺少 ReadSet 参数，编译失败，已按唯一 PreparedQuery 契约修正；日志 `/tmp/addp-query-subject-red-20261004.log`。随后保持旧空主体实现运行同一标准 Go 入口，匹配用户及授权空页共四个子场景正确失败，证明新测试能检出主体丢失；日志 `/tmp/addp-query-subject-red-behavior-20261004.log`。最终实现修正后结果以前述成功命令为准。
 
@@ -3189,3 +3189,53 @@ CI 覆盖：现有 `platform-ci.yml` 的 `make test-go` 自动发现新增 Go �
 
 1. 保留一个受控预览入口，在同一读取链路中分别校验真实普通 User 与固定 Manager `data.preview` Tool 委托凭据；不能用 Service 身份替代用户，也不能将 Tool 凭据降格成普通 User。System 固定检查扩展仍须完成生产 IAM 与源规则的组合验证。
 2. Manager 规范已修订为允许 Provider 为受控分页预览提供不可变、可证明完整依赖的计划，不向用户开放自由 SQL，不保留未核验的旧读取路径。此项仅是已确认契约，Manager 实际消费和内容访问验收仍未完成。
+
+### 26.70 固定预览检查的真实 Tool 委托验证及 Manager 调用边界（2026-10-04）
+
+按用户确认，普通 User 与 Agent `data.preview` 可以使用同一固定检查，但必须分别由 IAM 核验真实凭据；委托身份不降格成普通 User，也不能变成通用 System API 凭据。此阶段仍不代表 Manager 实际内容读取已接通。
+
+- [x] 固定入口接受精确 `manager` audience、唯一 `data.preview` Scope 的委托凭据，复用 IAM 的来源 Token Family、当前用户／成员／授权版本及 Client、Run／Tool 绑定核验；功能权限与源规则仍在同一只读 Repeatable Read 快照内检查。私有普通 User 方法继续拒绝 Delegated，Service／Resource Ticket 不开放。
+- [x] 补充 14 个委托资格场景和直接 HTTP 回归：错误 audience／Tool、缺少功能权限及到期拒绝；挂载实际相邻 System 业务路由，确认即使角色含 System 引擎权限，Manager 预览委托仍不能读取引擎列表、引擎详情、引擎目录或引擎类型。
+- [x] 既有真实 PostgreSQL 夹具增加生产 IAM 签发的 Manager 委托，分别验证功能与 Grant 的交集、C+D 整体拒绝、Grant 撤销、Deny 优先、授权版本失效、来源 Family 注销及不能进入普通 User 私有路径。观察审计零写入的计数在正式委托签发之后取得，不把签发本身的合法审计误记为读取副作用。
+- [x] 同步 System 模块与 IAM 现状文档，Swagger 生成和严格路由覆盖通过，195 个公开路由方法一致；日志 `/tmp/addp-manager-delegated-swagger-20261004.log`、`/tmp/addp-manager-delegated-coverage-20261004.log`。新增 Go／HTTP 用例和真实凭据用例分别由既有 Go T1、System IAM 的 engineaccess T2 分组及 CI 自动发现，无新入口、表或迁移。
+- [x] 修正夹具后的 `make test-go` 退出码 0，覆盖全部 22 个已跟踪 Go 模块；System API 包 6.729 秒，新相邻路由隔离回归实际执行。日志 `/tmp/addp-manager-delegated-go-final-20261004.log`。
+- [x] 完整 `make test-system-iam-postgres` 退出码 0，无 T2 Skip，IAM／OAuth／API／Migration／engineaccess／Repository／Online 夹具七个 owner 全部通过，分别耗时 98.029／9.404／67.662／192.928／50.756／3.179／3.187 秒。新增正式预览交集组 0.36 秒，真实凭据整组 1.04 秒；日志 `/tmp/addp-manager-delegated-iam-final-20261004.log`。只使用 `addp_iam_test`，不创建额外 database。
+- [x] 独立 `make test-system-frontend` 退出码 0，91 项单元测试、41 项浏览器回归及构建通过；日志 `/tmp/addp-manager-delegated-frontend-20261004.log`。
+- [x] 独立 `make test-system-runtime-log` 退出码 0，验证真实采集、断连重试、旧实例隔离、容量及物理保留清理，并确认自有容器、网络、卷及源目录零残留；日志 `/tmp/addp-manager-delegated-runtime-log-20261004.log`。不启停用户开发服务。
+- [x] 并行会话修正平台登记测试后，独立 `make test-platform` 复验退出码 0，日志 `/tmp/addp-manager-delegated-platform-recheck-20261004.log`。本轮分别完成当前输入的 T0、Go、前端、完整 IAM T2 和隔离运行日志标准入口；最初完整模块命令的失败仍保留，不改写为成功。这些结果不代表全工作区 `make test-changed`、Manager 实际读取或业务源 Online T4 已通过。
+
+本轮失败保留：
+
+- 首次 `make test-go` 因新 HTTP 夹具把空角色数组写成 `nil` 失败；标准 AuthContext 先按格式拒绝为 500，未进入期望的 403。已仅将夹具改为标准空数组，不放宽生产认证。日志 `/tmp/addp-manager-delegated-go-20261004.log`。
+- `make test-module MODULE=system` 在平台 T0 的 `module-gate_test.py` 失败：并行 PostgreSQL 门禁改名为 `TestIntegrationPostgresCatalogPreciseReadOnly`，登记测试仍要求旧名 `TestIntegrationPostgresCatalogReadOnlyPrimaryKey`。后续 System T1／前端／T2 尚未由该次模块命令执行；日志 `/tmp/addp-manager-delegated-system-20261004.log`。该并行改动不属于本轮修复范围，不修改其实现或断言以绕过。
+- 初次独立 IAM 门禁命令误用了键值式 DSN，标准入口只接受 PostgreSQL URL，因此在访问数据库前拒绝；日志 `/tmp/addp-manager-delegated-iam-20261004.log`。已按实际 `25432` 映射和允许的 `addp_iam_test` 改用 URL，未修改验证脚本或另建 database。
+
+Manager 实际消费前发现必须收拢的调用事实：
+
+1. `ExplorerHandler.Preview` 的普通 User／Tool 预览必须核完整 Provider ReadSet，并在同一一次性计划上应用当前主体的 Security 保护；不能先按叶子放行，再调用旧批量读取。
+2. `PreviewDataProfileSampleProvider.Sample` 也调用同一解析器，但属于真实后台 `data_profiling` execution，功能权限是 `manager.data_profile.execute`，不是 `manager.data_item.read`。其授权不得借用普通预览或 Agent Tool 凭据；须明确发起人、执行范围与完整源规则的正式组合。
+3. `QuickViewHandler.quickViewSourceForLocator` 为构造能力信息实际预览一行，不是纯事实读取；应改为事实解析，不能让探测旁路读取内容。
+4. Manager 现有投影屏障处理剖析／索引派生结果，尚不能据此证明新的同步准备查询已纳入在途读取撤销屏障；实际接入必须补相应验证。
+
+已向用户提出同次收拢后台剖析和快显探测的建议，涉及授权／操作范围的后续实施等待确认；独立的 System 验证已完成。下一优先项是先确认并落实上述真实调用边界，再贯通 Manager 的完整读取计划，避免只改页面预览而遗留其它读取旁路。未启停开发服务，也未写入来源数据库。
+
+### 26.71 快显源能力改为扫描事实解析（2026-10-04）
+
+用户确认继续调查并收拢地图能力探测中的隐式预览。本轮先完成明确的源事实解析，不将能力发现、内容访问与后台执行混为一项授权。
+
+- [x] `quickViewSourceForLocator` 改为复用现有 Meta 请求解析器，不再执行一行预览或预览 Provider。源身份与事实来自同一当前租户的 Meta item；校验扫描身份与 Engine 一致，并由 Meta FullName 生成唯一 Locator，不以调用方路径拼接另一条目的事实。
+- [x] 复用已有 datatype 空间事实及格式解码器，提取几何字段、坐标系、范围和确切记录数。未扫描、缺少事实、多几何字段未指定主字段时不猜测；未知记录数保持未知，不伪装为空表，也不生成默认一行的全量 FlatGeobuf URL。点云、三维模型等内容 URL 仅由资源身份构造，不为构造 URL 读取内容。
+- [x] 删除旧预览结果转能力实现及其测试路径，新增扫描事实回归：空间／非空间、多种格式、未知／零记录数、自定义坐标系、租户隔离、Engine 不一致、未扫描及调用方路径不一致。用空 Provider 注册表验证源解析不依赖预览执行；此结果不外推为整个能力接口零内容读取。
+- [x] 同步 Manager 模块说明、快显规范和 Swagger。严格路由覆盖通过，92 个公开路由方法一致，无新路由、表、迁移或功能权限。Go 用例由现有 Manager Go T1 与 CI 自动发现，不新增验证入口。
+- [ ] 渲染目标 SRID 校验仍有 `ST_SRID(...) ... LIMIT 1` 旧样本查询。Manager 当前生成的物化视图使用 `ST_Transform`，但未声明输出几何字段的 SRID 类型约束；直接换成类型约束查询会使现有及新生成产物不可用。需要将生成端声明与校验端一起改造，保持几何的 Z／M 维度，不以固定二维类型替代。
+- [ ] 正式普通 User／Tool 预览、后台剖析 execution、完整 Provider ReadSet 与在途撤销屏障仍按 §26.70 跟进。本轮未扩大资源访问权，也未证明实际内容读取已贯通。
+
+本轮验证与未完成项：
+
+- `make test-module MODULE=manager`：平台 T0、Manager Go T1、前端 267 项单测通过；54 项浏览器回归中 53 项通过，资源树长名称／刷新按钮用例失败，整模块命令退出码 2。前端构建和随后 T2 未由此命令执行，不能称整模块通过。
+- 独立 `make test-manager-frontend`：同一浏览器用例再次失败，其余 267 项单测及 53 项浏览器回归通过；构建仍未执行。失败断言为滚动区域及按钮点击命中范围。截图显示测量时 `business` 节点已折叠，展开状态与测试等待链路尚待定位，不能直接断定为 CSS 根因。该前端提交不属于本轮源事实改造，未修改其实现或放宽断言。
+- 按 `bash scripts/infra/status.sh` 核实实际 PostgreSQL 映射为 `25432` 后，使用允许的 `addp_test` 单独执行 `make test-manager-mongodb-security test-manager-postgres`，退出码 0。MongoDB 安全与相关保护测试通过，Manager PostgreSQL 12 项集成测试实际执行通过，无 T2 Skip。未创建额外 database。
+- `bash scripts/swagger/gen-swagger.sh manager`、`bash scripts/swagger/check-route-coverage.sh manager` 和 `git diff --check` 通过。未运行业务源 Online T4，不以 HTTP owner 夹具代替真实内容访问验收。
+- 未启停用户开发服务，未修改来源数据库，未提交或推送尚未收口的门禁结果。
+
+下一优先项：成组收口物化视图的坐标系声明与事实校验，明确旧产物缺少类型声明时只提示用户显式重新生成，不自动修改来源数据或既有产物；随后接入完整读取计划与实际访问授权。资源树回归需独立修复并通过原标准 Manager 前端门禁，不能用本轮后端测试覆盖它。

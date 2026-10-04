@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	engineplugin "github.com/addp/common/engine/plugin"
+	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -80,17 +81,41 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			}
 			assignment := assign(user)
 			session, _ = issue(t, user, time.Minute)
+			delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			delegate := func(session *iam.IssuedBrowserSession) string {
+				t.Helper()
+				issued, err := delegation.IssueDelegatedAccessToken(ctx, iam.IssueDelegatedAccessTokenInput{
+					SourceAccessToken: session.AccessToken, Audience: "manager", Scopes: []string{"data.preview"},
+					AgentRunID: uuid.NewString(), ToolCallID: uuid.NewString(),
+				})
+				if err != nil || issued == nil {
+					t.Fatalf("issue real preview delegation: %v", err)
+				}
+				return issued.AccessToken
+			}
+			delegated := delegate(session)
+			credentials := []string{session.AccessToken, delegated}
 			var before, after int64
 			if err := db.Table("system.audit_logs").Count(&before).Error; err != nil {
 				t.Fatal(err)
 			}
-			result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request)
-			if err != nil || result == nil || result.ObservedAt.IsZero() {
-				t.Fatalf("function + source intersection=%+v %v", result, err)
+			for _, credential := range credentials {
+				result, err := service.CheckManagerPreviewRead(ctx, credential, request)
+				if err != nil || result == nil || result.ObservedAt.IsZero() {
+					t.Fatalf("function + source intersection=%+v %v", result, err)
+				}
 			}
 			d := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "formal_preview_ungranted_D")
-			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, ManagerPreviewReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path, d}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
-				t.Fatalf("partial C+D accepted=%+v %v", result, err)
+			for _, credential := range credentials {
+				if result, err := service.CheckManagerPreviewRead(ctx, credential, ManagerPreviewReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path, d}}); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+					t.Fatalf("partial C+D accepted=%+v %v", result, err)
+				}
+			}
+			if result, err := repo.readCurrentUserSourceRules(ctx, delegated, request.Targets); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+				t.Fatalf("delegate downgraded into ordinary User reader=%+v %v", result, err)
 			}
 			if result, err := service.CheckManagerPreviewRead(ctx, session.ResourceAccessTickets["manager"], request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("ticket accepted=%+v %v", result, err)
@@ -99,19 +124,25 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatalf("read check wrote audits=%d/%d %v", before, after, err)
 			}
 			revoke(t, grantID)
-			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
-				t.Fatalf("revoked Grant accepted=%+v %v", result, err)
+			for _, credential := range credentials {
+				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+					t.Fatalf("revoked Grant accepted=%+v %v", result, err)
+				}
 			}
 			grant(t, "user", user.PrincipalID, nil)
 			deny(t, "user", user.PrincipalID, nil)
-			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
-				t.Fatalf("Deny priority lost=%+v %v", result, err)
+			for _, credential := range credentials {
+				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+					t.Fatalf("Deny priority lost=%+v %v", result, err)
+				}
 			}
 			if _, err := roles.RevokeAssignment(ctx, iam.RevokeTenantRoleAssignmentInput{TenantID: tenantID, AssignmentID: assignment.ID, ActorPrincipalID: adminID, Reason: "End preview fixture"}); err != nil {
 				t.Fatal(err)
 			}
-			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
-				t.Fatalf("old authorization credential accepted=%+v %v", result, err)
+			for _, credential := range credentials {
+				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+					t.Fatalf("old authorization credential accepted=%+v %v", result, err)
+				}
 			}
 			session, _ = issue(t, user, time.Minute)
 			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
@@ -120,8 +151,28 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			ungranted, _ := newUser(t, time.Hour)
 			assign(ungranted)
 			session, _ = issue(t, ungranted, time.Minute)
-			if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
-				t.Fatalf("function without Grant accepted=%+v %v", result, err)
+			for _, credential := range []string{session.AccessToken, delegate(session)} {
+				if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+					t.Fatalf("function without Grant accepted=%+v %v", result, err)
+				}
+			}
+			familyUser, _ := newUser(t, time.Hour)
+			assign(familyUser)
+			grant(t, "user", familyUser.PrincipalID, nil)
+			familySession, tokens := issue(t, familyUser, time.Minute)
+			familyDelegate := delegate(familySession)
+			if _, err := service.CheckManagerPreviewRead(ctx, familyDelegate, request); err != nil {
+				t.Fatal(err)
+			}
+			logout, err := iam.NewLogoutService(identity, tokens)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := logout.LogoutBrowserSession(ctx, iam.LogoutBrowserSessionInput{AccessToken: familySession.AccessToken, RefreshToken: familySession.RefreshToken}); err != nil {
+				t.Fatal(err)
+			}
+			if result, err := service.CheckManagerPreviewRead(ctx, familyDelegate, request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+				t.Fatalf("revoked source family delegate accepted=%+v %v", result, err)
 			}
 		})
 		t.Run("identity derived only from credential and no observation writes", func(t *testing.T) {

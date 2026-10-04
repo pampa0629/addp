@@ -67,6 +67,43 @@ func TestManagerPreviewReadQualification(t *testing.T) {
 	}
 }
 
+func TestManagerPreviewDelegatedQualification(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mutate  func(*auth.AuthContext)
+		allowed bool
+	}{
+		{"exact preview delegate", func(*auth.AuthContext) {}, true},
+		{"System audience", func(c *auth.AuthContext) { c.Client.Audiences = []string{"system"} }, false},
+		{"API audience", func(c *auth.AuthContext) { c.Client.Audiences = []string{"addp.api"} }, false},
+		{"extra audience", func(c *auth.AuthContext) { c.Client.Audiences = []string{"manager", "system"} }, false},
+		{"wrong Tool", func(c *auth.AuthContext) { c.Client.Scopes = []string{"data.download"} }, false},
+		{"extra scope", func(c *auth.AuthContext) { c.Client.Scopes = []string{"data.preview", "addp.api"} }, false},
+		{"unrestricted scope", func(c *auth.AuthContext) { c.Client.ScopeMode = "unrestricted" }, false},
+		{"missing binding", func(c *auth.AuthContext) { c.Delegation = nil }, false},
+		{"missing client", func(c *auth.AuthContext) { c.Client.ClientID = nil }, false},
+		{"different client", func(c *auth.AuthContext) { c.Delegation.DelegatedByClientID = "another-client" }, false},
+		{"missing run", func(c *auth.AuthContext) { c.Delegation.AgentRunID = "" }, false},
+		{"missing call", func(c *auth.AuthContext) { c.Delegation.ToolCallID = "" }, false},
+		{"missing permission", func(c *auth.AuthContext) { c.Authorization.RoleAssignments = nil }, false},
+		{"department is not Tenant", func(c *auth.AuthContext) { c.Authorization.RoleAssignments[0].Scope.Type = "department" }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := previewCheckContext()
+			current.Token.Type = "delegated_access_token"
+			current.Client.Audiences = []string{"manager"}
+			current.Client.ScopeMode = "restricted"
+			current.Client.Scopes = []string{"data.preview"}
+			current.Delegation = &auth.DelegationFacts{DelegatedByClientID: *current.Client.ClientID, AgentRunID: "preview-run", ToolCallID: "preview-call"}
+			tc.mutate(&current)
+			err := qualifyManagerPreviewRead(current)
+			if tc.allowed && err != nil || !tc.allowed && !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("qualification allowed=%t error=%v", tc.allowed, err)
+			}
+		})
+	}
+}
+
 func TestManagerPreviewReadCheckValidatesSetBeforeDatabase(t *testing.T) {
 	service := NewService(NewRepository(nil), nil)
 	path := testFulfillmentRequest().Path

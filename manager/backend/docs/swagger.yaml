@@ -4912,10 +4912,9 @@ paths:
       - manager.derived_artifact.create
   /quick-view/capability:
     get:
-      description: 以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format
-        和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability
-        by Resource Locator. Capability is based on ADDP engine, datatype, format,
-        and spatial capabilities rather than database schema/table identity.
+      description: |-
+        以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.
+        源事实来自当前租户的扫描元数据，不通过数据预览补齐；缺失几何、坐标系或记录数时不猜测。 | Source facts come from scanned metadata of the current tenant, without preview sampling or guessing missing geometry, CRS or row counts.
       parameters:
       - description: 资源定位符URI | Resource locator URI
         in: query

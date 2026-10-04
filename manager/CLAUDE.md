@@ -20,6 +20,10 @@ Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lin
 
 空间快显与瓦片缓存的目标边界：
 
+快显能力和预览状态只解析 Engine／Meta／受管产物事实，不执行 PreviewProvider 或读取样本行。缺少空间事实时提示刷新，不能隐式采样补齐。渲染目标 SRID 只核验目录类型声明，不以一条几何样本推断；技术能力与内容读取授权保持独立。
+
+当前实施状态：源事实解析已移除一行预览；PostgreSQL 渲染目标 SRID 的旧样本核验仍待收口，须与生成端的类型声明一起调整并保留源几何维度。此前不能宣称整个 capability 请求已实现零内容读取。
+
 - `manager.preview_state`：预览状态，表达某个 data item 的用户预览模式偏好与轻量交互设置（包括表格可见字段）；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
 - `manager.task_definitions`：Manager 生成类任务定义的唯一表；`task_type` 选择强类型配置、校验器和执行器，产品分类投影为“快显任务”与“空间数据任务”。向量化任务继续使用 `manager.embedding_tasks`，三类任务只在统一“数据任务”工作台合并呈现，不合并存储和结果生命周期。
 - `manager.task_resource_bindings`：任务定义对源/目标资源的规范化绑定，供引擎生命周期检查和资源回收使用；不得再从异构 `config` JSON 猜测资源归属。

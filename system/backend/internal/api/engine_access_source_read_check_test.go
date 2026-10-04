@@ -21,11 +21,16 @@ type sourceReadCheckFixture struct {
 	calls      int
 	err        error
 	incomplete bool
+	credential string
 }
 
 func (f *sourceReadCheckFixture) CheckManagerPreviewRead(_ context.Context, credential string, request engineaccess.ManagerPreviewReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
 	f.calls++
-	if credential != "addp_at_test" || len(request.Targets) != 1 || request.Targets[0].EngineID != 12 {
+	expected := f.credential
+	if expected == "" {
+		expected = "addp_at_test"
+	}
+	if credential != expected || len(request.Targets) != 1 || request.Targets[0].EngineID != 12 {
 		return nil, errors.New("unexpected trusted consumer input")
 	}
 	if f.err != nil {
@@ -44,15 +49,77 @@ func sourceReadCheckRouter(t *testing.T, f *sourceReadCheckFixture, current auth
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeFirstPartyAccess, middleware.IAMTokenTypeOAuthAccess)
+	router := gin.New()
+	userCredential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeFirstPartyAccess, middleware.IAMTokenTypeOAuthAccess)
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := gin.New()
-	if err := RegisterEngineAccessSourceReadCheckRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authenticate, UserAccessCredential: credential}, &EngineAccessSourceReadCheckHandler{service: f}); err != nil {
+	businessCredential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeFirstPartyAccess, middleware.IAMTokenTypeOAuthAccess, middleware.IAMTokenTypeDelegatedAccess, middleware.IAMTokenTypeServiceAccess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &IAMRuntime{Authentication: authenticate, UserAccessCredential: userCredential, BusinessCredential: businessCredential}
+	if err := RegisterEngineAccessSourceReadCheckRoutes(router.Group("/api/v1/system"), runtime, &EngineAccessSourceReadCheckHandler{service: f}); err != nil {
+		t.Fatal(err)
+	}
+	// Register the actual adjacent production routes. No handler dependency may
+	// be reached by a Manager preview delegate, even with System permissions.
+	if err := RegisterIAMMigratedBusinessRoutes(router.Group("/api/v1/system"), runtime, &EngineHandler{}, &APIConsumerHandler{}, &CleanupHandler{}); err != nil {
 		t.Fatal(err)
 	}
 	return router
+}
+
+func TestSourceReadCheckDelegatedRouteContract(t *testing.T) {
+	body, err := json.Marshal(engineaccess.ManagerPreviewReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{engineplugin.TabularItemPath(12, "schema", "public", "C")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name          string
+		mutate        func(*auth.AuthContext)
+		status, calls int
+	}{
+		{"exact delegate", func(*auth.AuthContext) {}, 200, 1},
+		{"another owner", func(c *auth.AuthContext) { c.Client.Audiences = []string{"develop"} }, 403, 0},
+		{"another Tool", func(c *auth.AuthContext) { c.Client.Scopes = []string{"data.download"} }, 403, 0},
+		{"missing function permission", func(c *auth.AuthContext) { c.Authorization.RoleAssignments = []auth.RoleAssignment{} }, 403, 0},
+		{"expired", func(c *auth.AuthContext) {
+			c.Token.IssuedAt = time.Now().Add(-time.Minute)
+			c.Token.ExpiresAt = time.Now().Add(-time.Second)
+		}, 401, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := sourceReadCheckAuth()
+			current.Authorization.RoleAssignments[0].Permissions = append(current.Authorization.RoleAssignments[0].Permissions, "system.engine.read", "system.engine_catalog.read")
+			current.Token.Type = middleware.IAMTokenTypeDelegatedAccess
+			current.Client.Audiences = []string{"manager"}
+			current.Client.ScopeMode = "restricted"
+			current.Client.Scopes = []string{"data.preview"}
+			current.Delegation = &auth.DelegationFacts{DelegatedByClientID: *current.Client.ClientID, AgentRunID: "preview-run", ToolCallID: "preview-call"}
+			tc.mutate(&current)
+			fixture := &sourceReadCheckFixture{credential: "addp_dat_test"}
+			router := sourceReadCheckRouter(t, fixture, current)
+			request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-checks/manager-preview", strings.NewReader(string(body)))
+			request.Header.Set("Authorization", "Bearer addp_dat_test")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != tc.status || fixture.calls != tc.calls {
+				t.Fatalf("status=%d calls=%d body=%s", response.Code, fixture.calls, response.Body.String())
+			}
+			if tc.status == 200 {
+				for _, ordinaryPath := range []string{"/engines", "/engines/12", "/engine-catalog/engines", "/engine-types"} {
+					ordinary := httptest.NewRequest("GET", "/api/v1/system"+ordinaryPath, nil)
+					ordinary.Header.Set("Authorization", "Bearer addp_dat_test")
+					denied := httptest.NewRecorder()
+					router.ServeHTTP(denied, ordinary)
+					if denied.Code != 403 || fixture.calls != 1 {
+						t.Fatalf("preview delegate expanded to %s: status=%d calls=%d", ordinaryPath, denied.Code, fixture.calls)
+					}
+				}
+			}
+		})
+	}
 }
 
 func sourceReadCheckAuth() auth.AuthContext {
