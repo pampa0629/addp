@@ -18,8 +18,10 @@ test('HDFS 扫描、四个文件预览及正式 Spark 结果通过 Console 收�
     expect(auth.principalID).toBe(expected.principal_id)
     const meta = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: 'Hosted HDFS' })).toHaveCount(1)
+    const samples = meta.locator('.right-panel .el-table__body-wrapper tr').filter({ hasText: 'samples' })
+    await expect(samples).toHaveCount(1)
     const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' && response.request().method() === 'POST')
-    await meta.getByRole('button', { name: /^(重新扫描引擎|Rescan Engine)$/i }).click()
+    await samples.getByRole('button', { name: /^(重新扫描|Rescan)$/i }).click()
     const scan = await json(await submitted, 'Meta UI scan')
     await expect.poll(async () => {
       const execution = await json(await api.get(`/api/v1/meta/executions/${scan.execution_id}`), 'Meta execution')

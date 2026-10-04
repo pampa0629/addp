@@ -77,3 +77,5 @@ Spark Thrift 字段修复的最小验证为 `make test-go` 和 `make test-hdfs-o
 Sedona 修复的本地 `make test-spark-workflow`（34 项）和 ARM64 标准镜像构建/验证均通过；镜像在空 Ivy 缓存下从 Maven Central 解析 6 个依赖制品，经生产连接器建立 Java 11 会话，验证 3 行计数、聚合结果 3 及 `ST_AsText(ST_Point(1, 2))`。该验证属于镜像启动门禁，不能替代 Standalone Worker 的正式 HDFS T4。前置 Thrift 修复提交 `fafc70fc1` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37212498578) 和 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37212498612) 已全部通过。
 
 Sedona 修复后的 `make test-platform` 亦通过，包含 Online 分发/隔离生命周期、引擎启动与 CI 登记一致性和 Swagger 覆盖；完整 Hosted T4 仍须复跑。
+
+第四轮 [37214813784](https://github.com/pampa0629/addp/actions/runs/37214813784) 已通过正式 Spark 三格式聚合和对应 Standalone Worker 已完成任务校验；浏览器因误用 ES 的直接叶模型“重新扫描引擎”按钮而失败。HDFS 层级目录模型的 Console 验收应在现有目录列表对 `samples` 行执行“重新扫描”，再核对四个 DataItem ID 稳定、四个文件预览和同一正式执行详情；完整引擎扫描与根文件发现由前置普通 User API 阶段验证。只修正测试操作，不新增界面扫描路线或放宽结果断言。
