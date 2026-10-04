@@ -146,16 +146,6 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
   })
   const failedResponses = []
   const consoleErrors = []
-  page.on('pageerror', error => consoleErrors.push(error.message))
-  page.on('response', response => {
-    const pathname = new URL(response.url()).pathname
-    if (pathname.startsWith('/api/v1/') && response.status() >= 400) {
-      failedResponses.push({ pathname, status: response.status() })
-    }
-  })
-  page.on('console', message => {
-    if (message.type() === 'error') consoleErrors.push(message.text())
-  })
 
   let taskID = 0
   let taskDeleted = false
@@ -176,8 +166,9 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     ]) {
       expect(apiIdentity.permissions.has(permission), `missing permission ${permission}`).toBe(true)
     }
+    expect(apiIdentity.permissions.has('catalog.entry.read')).toBe(false)
 
-    const browserAccessToken = await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, "/transfer/tasks/create")
+    const browserAccessToken = await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, "/")
     const browserAPI = await request.newContext({
       baseURL: env.GATEWAY_URL,
       extraHTTPHeaders: { Authorization: `Bearer ${browserAccessToken}` }
@@ -186,6 +177,19 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     expect(browserIdentity.principalID).toBe(apiIdentity.principalID)
     expect(browserIdentity.tenantID).toBe(apiIdentity.tenantID)
     await browserAPI.dispose()
+
+    // Signed-out bootstrap precedes the verified User session; inspect every business request from here.
+    page.on('pageerror', error => consoleErrors.push(error.message))
+    page.on('response', response => {
+      const pathname = new URL(response.url()).pathname
+      if (pathname.startsWith('/api/v1/') && response.status() >= 400) {
+        failedResponses.push({ pathname, status: response.status() })
+      }
+    })
+    page.on('console', message => {
+      if (message.type() === 'error') consoleErrors.push(message.text())
+    })
+    await page.goto('/transfer/tasks/create')
 
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const wizard = frame.getByTestId('transfer-task-wizard')

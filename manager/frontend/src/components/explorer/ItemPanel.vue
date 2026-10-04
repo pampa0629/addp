@@ -1,11 +1,11 @@
 <template>
   <div class="item-panel">
     <section
-      v-if="itemFingerprint"
+      v-if="itemFingerprint && (canReadCatalog || canOpenSecurity || canRequestPlaintext)"
       class="resource-governance-summary"
       :aria-label="t('manager.explorer.governanceSummaryLabel')"
     >
-      <div class="resource-governance-summary__group resource-governance-summary__catalog">
+      <div v-if="canReadCatalog" class="resource-governance-summary__group resource-governance-summary__catalog">
         <el-tooltip :content="t('manager.explorer.catalogSummaryDescription')" placement="bottom">
           <span class="resource-governance-summary__label">{{ t('manager.explorer.catalogSummaryTitle') }}</span>
         </el-tooltip>
@@ -515,6 +515,7 @@ let itemMetaRequestSeq = 0
 
 const itemMeta = computed(() => props.previewData?.item_meta || fallbackItemMeta.value)
 const itemFingerprint = computed(() => String(itemMeta.value?.fingerprint || '').trim())
+const canReadCatalog = computed(() => authStore.hasPermission('catalog.entry.read'))
 const canOpenSecurity = computed(() => authStore.hasPermission('security.enrollment.create'))
 const canRequestPlaintext = computed(() => authStore.hasPermission('security.protection_access_request.create') && authStore.hasPermission('security.protection_access_request.read'))
 const accessTargets = ref([])
@@ -666,7 +667,7 @@ const loadCatalogSummary = async () => {
   const requestSeq = ++catalogLookupSeq
   catalogSummary.value = null
   catalogLookupError.value = ''
-  if (!fingerprint) {
+  if (!fingerprint || !canReadCatalog.value) {
     catalogLookupState.value = 'idle'
     return
   }
@@ -685,7 +686,7 @@ const loadCatalogSummary = async () => {
   }
 }
 
-watch(itemFingerprint, loadCatalogSummary, { immediate: true })
+watch([itemFingerprint, canReadCatalog], loadCatalogSummary, { immediate: true })
 watch([itemFingerprint, canRequestPlaintext], loadAccessTargets, { immediate: true })
 onBeforeUnmount(clearAccessStatusPoll)
 const selectedContentActive = computed(() => Boolean(

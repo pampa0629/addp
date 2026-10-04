@@ -7,7 +7,7 @@ const itemPanelSource = readFileSync(
   'utf8'
 )
 const governanceTemplate = itemPanelSource.slice(
-  itemPanelSource.indexOf('<section\n      v-if="itemFingerprint"'),
+  itemPanelSource.indexOf('<section\n'),
   itemPanelSource.indexOf('<div class="item-tab-bar"')
 )
 

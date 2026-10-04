@@ -180,3 +180,40 @@ test('edge evidence opens the source execution in Monitor', async ({ page }) => 
  await expect(popup).toHaveURL(/\/monitor\/executions\?execution_id=lineage-source-execution/)
  await popup.close()
 })
+
+for (const catalogRead of [false, true]) {
+  test(`lineage respects Catalog summary read permission (${catalogRead})`, async ({ page }) => {
+    const catalogRequests = []
+    const context = structuredClone(managerAuthContext)
+    if (catalogRead) context.authorization.role_assignments[0].permissions.push('catalog.entry.read')
+    await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+    await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
+    await page.route('**/api/v1/**', route => {
+      const url = new URL(route.request().url())
+      const path = url.pathname
+      if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
+      if (path.endsWith('/system/users/me')) return json(route, { id: 1, username: 'lineage-e2e' })
+      if (path.endsWith('/system/auth/context')) return json(route, context)
+      if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
+      if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
+      if (path.endsWith('/meta/items/3')) return json(route, { ...node(3), fingerprint: 'sha256:catalog-permission-item' })
+      if (path.endsWith('/catalog/entries')) {
+        catalogRequests.push(Object.fromEntries(url.searchParams))
+        return json(route, { data: [{ id: 42, display_name: 'Current resource', governance_status: 'discovered', source_status: 'active' }] })
+      }
+      if (path.endsWith('/meta/lineage/graph')) return json(route, { subject: node(3), nodes: [node(1), node(3)], edges: [edge(1, 3)] })
+      return json(route, {})
+    })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    await expect(page.locator('.lineage-summary')).toContainText('2 个节点 · 1 条关系')
+    await expect(page.locator('.lineage-canvas canvas')).toBeVisible()
+    const catalog = page.locator('.resource-governance-summary__catalog')
+    if (catalogRead) {
+      await expect(catalog).toContainText('Current resource')
+      expect(catalogRequests).toEqual([{ source_identity: 'sha256:catalog-permission-item', page: '1', page_size: '1' }])
+    } else {
+      await expect(catalog).toBeHidden()
+      expect(catalogRequests).toEqual([])
+    }
+  })
+}
