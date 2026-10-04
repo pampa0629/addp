@@ -751,3 +751,7 @@ Linux 复验：本轮代码提交为 `c004eb0cb9830554f04c4bb66eec4d011238964b`�
 本轮验证：升级订阅回归先在 Webhook／企业微信／邮件三种渠道复现接受旧类型，修复后 `make test-monitor-postgres` 通过。调用标准 `scripts/test/module-gate.py` 已有编排独立执行 Monitor T1–T3，Go、前端 29 项测试／13 项浏览器回归／构建及 PostgreSQL 15 项集成测试通过；System 标准前端门禁 91 项测试／41 项浏览器回归／构建通过，Monitor Swagger 55 个公开路由覆盖一致。
 
 完整 `make test-module MODULE=monitor` 未通过：首次平台 T0 的镜像中断用例就绪等待失败，保持原断言复跑该组 49 项通过；后续 T0 被 Hosted Transfer 夹具超时／清理和并行字段血缘登记断言阻挡。Console 扩散门禁 141 项测试通过、浏览器 92 项通过／8 项失败，发生在并行同源入口改造期间。上述 T0／Console 失败均不计为通过，继续由标准 CI 提交快照复验；不修改其他会话的工作区代码，不把隔离告警回归当作真实故障 T4 或真实群接收证据。
+
+续验（2026-10-04）：提交 `7fec3fa0d78c6c85d1e37afd2c69f162726b29ea` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37192487817) 通过，包含平台一致性、Go 工作区及 Console／System／Monitor 前端测试和构建；[Release and T2 gates](https://github.com/pampa0629/addp/actions/runs/37192487815) 的 Monitor PostgreSQL 通知集成与 System runtime log pipeline 均通过。日志中明确记录容量两类告警独立恢复、三种渠道拒绝升级订阅、配置修正及幂等初始化回归通过；未选中的 T2 Job 为 skipped，不计为通过。此前 Hosted Transfer 中断／清理夹具按标准 Python 入口单独复验 5 项通过，不能据此将此前失败的完整本地 T0 改记为通过。
+
+用户重启 Monitor 后，只读核对开发环境：企业微信目标启用，凭据存在，订阅为 `["opened","resolved"]`、版本为 4；旧升级订阅为 0。观测节点持续接收且登记有效，当前无活动告警；现有 56 条投递记录均为 delivered，无待重试记录。上述数据库状态确认配置与记录结果，不等同于本次真实故障触发或群内接收验收；浏览器当前开发管理员无模块管理权限，平台管理员页面仍待核对。
