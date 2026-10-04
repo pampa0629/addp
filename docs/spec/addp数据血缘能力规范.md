@@ -266,6 +266,8 @@ PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派�
 
 首期跨模块验收复用 `transfer-relational-sql-etl` Online suite，唯一运行于 GitHub Hosted Ubuntu x86_64 临时部署，覆盖真实 Transfer 原生表字段映射、replace 与两跳自动采集，以及 Console 中 Manager 共享字段视图；同一 suite 验证 Provider 能证明的单来源 SQL 查询字段映射。每轮创建隔离身份与 PostgreSQL Engine Instance，退出时随整套部署销毁，不依赖永久账号或自托管 Runner。确定性脚本通过不等于真实 T4 通过，具体身份、夹具、报告和清理契约见《ADDP 测试与验收规范》5.2。
 
+2026-10-04，首期 Hosted T4 [运行 37206323194](https://github.com/pampa0629/addp/actions/runs/37206323194) 首次完整通过，验证源码为 `8c0a1cc142f2bbbd8880745527c224fae7bd2b2c`。归档报告确认同一非管理员 User / Tenant 下的 direct、derived、generated 字段证据，replace 后旧入边关闭、结构快照一致的两跳查询，以及 Console 的整表字段图、字段聚焦和可证明单来源 SQL 查询字段血缘。四个临时任务全部删除并确认 404，物理夹具与隔离部署清理通过，Infra 零残留。该验收不扩大为任意 SQL/MQL、多来源 Transfer 查询或 opaque 输出的来源推断。
+
 ### 6.2 图数据库评估边界
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。
@@ -378,6 +380,7 @@ Service 发布事实同时传递人类可读的 `service_name` 和单调递增�
 3. Develop 成功事实落库后立即通知 Meta；周期 collector 负责漏采和失败重试。
 4. Meta 统一图查询 API、租户 / 权限校验和 `common-frontend/graph` 查看器已具备。
 5. Service 发布版本的 `serve` 依赖事实已纳入模型和 API 契约。
+6. 字段级首期的执行证据、时态投影、整表字段图与 Provider 可证明的单来源查询已通过上述 Hosted T4；支持边界以 6.1 为准。
 
 后续能力必须先更新本规范和术语表，再单一路线实现：
 
