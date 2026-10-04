@@ -51,7 +51,7 @@
 | File Geodatabase | `whole` | `container` | `filegdb` | `.gdb` 目录整体构成容器，内部 feature class / table 为 child |
 | Personal Geodatabase | `single` | `container` | `pgeo` | `.mdb` 单文件容器，只允许作为只读 source |
 | ZIP | `single` | `container` | `zip` | 压缩包 entry 先写入 `type_info.container.children` |
-| 图片 | `single` 或 TIFF sidecar `multi` | `media` | `jpeg` / `png` / `gif` / `tiff` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
+| 图片 | `single` 或 TIFF sidecar `multi` | `media` | `jpeg` / `png` / `gif` / `tiff` / `webp` / `bmp` / `image` | GPS 或 GeoTIFF 空间语义进入 spatial |
 | Raster mosaic | `whole` | `media` | `raster_mosaic` | 由 `mosaic.addp.json` manifest 声明的栅格镶嵌数据集 |
 | 矢量瓦片集 | `single` | `media` | `pmtiles` | PMTiles v3 单文件；当前内部瓦片编码固定为 MVT |
 | 视频 | `single` | `media` | `mp4` / `mov` / `mkv` / `avi` / `webm` / `video` | 第一阶段以元信息和 range / stream 播放为主 |
@@ -1187,14 +1187,16 @@ Manager 展示 ZIP 容器时消费 `type_info.container`。进入某个普通文
 |---|---|
 | `layout` | `single` |
 | `data_type` | `media` |
-| `format` | `jpeg`、`png`、`gif`、`tiff`、`image` |
+| `format` | `jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`image` |
 | 主资源 | `meta_item.full_name` 指向图片文件 |
 
 `image` 是图片兜底格式，只在无法稳定识别具体图片格式时使用。JPEG、PNG、GIF、TIFF 等具体格式应优先写入具体 `format`。GeoTIFF 不新增独立基础格式，表达为 `format=tiff + capabilities.spatial`。COG 是 TIFF 的云优化 profile，不新增 `format=cog`。
 
 TIFF / GeoTIFF 如果存在 `.tfw`、`.tifw`、`.wld`、`.prj`、`.aux.xml`、`.ovr`、`.hdr` 等同 basename sidecar，应按 `layout=multi` 归并为一个 item，primary content 仍为 `.tif` / `.tiff`。如果没有 sidecar，则按普通 `layout=single` 图片 item 处理。具体 ref 白名单见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)。
 
-WebP、BMP、SVG、AVIF、HEIC / HEIF 进入内置主线前，应先明确 descriptor、MIME、预览方式和后端解析边界；在仅能 raw / range 预览时，不应标记为后端已经具备完整 `MediaInfoProvider`。
+WebP、BMP 的 descriptor 与 `MediaInfoProvider` 统一由图片插件持有，默认 `single + media`，保留 `.webp` / `image/webp` 和 `.bmp` / `image/bmp`、`image/x-ms-bmp` 识别事实。头部摘要读取上限为 1 MiB，只返回编码像素宽高、`encoding=webp/bmp` 和 canonical MIME，不声明缩略图、EXIF、ICC 色彩配置、动画帧数或时长，也不凭解码器默认模型补填 `color_space`。WebP 覆盖 VP8、VP8L、VP8X 头部；动画仅记录 VP8X 画布尺寸。BMP 覆盖 BITMAPINFOHEADER / V4 / V5 的无压缩 8/24/32 位及解码器支持的默认 RGBA bitfields，含 top-down；其他位深、压缩或 DIB 变体明确拒绝。非法、截断、格式不符或超预算头部返回错误；摘要成功不代表完整像素数据有效。Manager 沿用媒体原始内容 URL 预览，实际渲染取决于浏览器。
+
+SVG、AVIF、HEIC / HEIF 仍只有 descriptor；在仅能 raw / range 预览时，不应标记为后端已经具备 `MediaInfoProvider`。
 
 ### attributes 写入
 

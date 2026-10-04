@@ -41,8 +41,6 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 
 func init() {
 	plugins := []*Plugin{
-		NewPlugin(format.FormatWebP, "format.webp", []string{".webp"}, []string{"image/webp"}),
-		NewPlugin(format.FormatBMP, "format.bmp", []string{".bmp"}, []string{"image/bmp", "image/x-ms-bmp"}),
 		NewPlugin(format.FormatSVG, "format.svg", []string{".svg", ".svgz"}, []string{"image/svg+xml"}),
 		NewPlugin(format.FormatAVIF, "format.avif", []string{".avif"}, []string{"image/avif"}),
 		NewPlugin(format.FormatHEIC, "format.heic", []string{".heic", ".heif"}, []string{"image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"}),

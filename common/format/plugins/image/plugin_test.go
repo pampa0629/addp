@@ -42,7 +42,7 @@ func TestImageMediaInfoProviderDescribePNG(t *testing.T) {
 }
 
 func TestListImageMediaInfoProviders(t *testing.T) {
-	for _, want := range []format.FormatType{format.FormatImage, format.FormatJPEG, format.FormatPNG, format.FormatGIF, format.FormatTIFF} {
+	for _, want := range []format.FormatType{format.FormatImage, format.FormatJPEG, format.FormatPNG, format.FormatGIF, format.FormatTIFF, format.FormatWebP, format.FormatBMP} {
 		if _, err := format.GetMediaInfoProvider(want); err != nil {
 			t.Fatalf("GetMediaInfoProvider(%s) error = %v", want, err)
 		}

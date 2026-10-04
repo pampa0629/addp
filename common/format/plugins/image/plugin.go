@@ -16,10 +16,13 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
 )
 
 const tiffMetadataReadLimit = 1 << 20
+const imageHeaderReadLimit = 1 << 20
 
 // Plugin 实现 Image 格式插件。
 type Plugin struct {
@@ -81,6 +84,10 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		descriptor.Identification = format.FormatIdentification{Extensions: []string{".png"}, MimeTypes: []string{"image/png"}}
 	case format.FormatGIF:
 		descriptor.Identification = format.FormatIdentification{Extensions: []string{".gif"}, MimeTypes: []string{"image/gif"}}
+	case format.FormatWebP:
+		descriptor.Identification = format.FormatIdentification{Extensions: []string{".webp"}, MimeTypes: []string{"image/webp"}}
+	case format.FormatBMP:
+		descriptor.Identification = format.FormatIdentification{Extensions: []string{".bmp"}, MimeTypes: []string{"image/bmp", "image/x-ms-bmp"}}
 	case format.FormatTIFF:
 		descriptor.Identification = format.FormatIdentification{Extensions: []string{".tif", ".tiff"}, MimeTypes: []string{"image/tiff"}}
 		descriptor.Layouts = []string{format.LayoutSingle, format.LayoutMulti}
@@ -192,8 +199,13 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 	var limited *io.LimitedReader
 	var reader io.Reader = input
 	isJPEG := signature == [2]byte{0xff, 0xd8}
+	isHeaderImage := p.Format() == format.FormatWebP || p.Format() == format.FormatBMP ||
+		signature == [2]byte{'R', 'I'} || signature == [2]byte{'B', 'M'}
 	if isJPEG {
 		limited = &io.LimitedReader{R: input, N: jpegMetadataReadLimit - 2}
+		reader = limited
+	} else if isHeaderImage {
+		limited = &io.LimitedReader{R: input, N: imageHeaderReadLimit - 2}
 		reader = limited
 	}
 	reader = io.MultiReader(bytes.NewReader(signature[:]), reader)
@@ -203,11 +215,22 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 		decoder = io.TeeReader(reader, &header)
 	}
 	cfg, formatName, err := image.DecodeConfig(decoder)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
 	if err != nil {
+		if isHeaderImage && limited.N == 0 {
+			return nil, fmt.Errorf("image header exceeds %d byte read budget: %w", imageHeaderReadLimit, err)
+		}
 		return nil, fmt.Errorf("failed to decode image: %w", err)
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	if p.Format() == format.FormatWebP || p.Format() == format.FormatBMP {
+		if formatName != string(p.Format()) {
+			return nil, fmt.Errorf("image format %s does not match declared format %s", formatName, p.Format())
+		}
+		if cfg.Width <= 0 || cfg.Height <= 0 {
+			return nil, fmt.Errorf("invalid %s image dimensions: %dx%d", formatName, cfg.Width, cfg.Height)
+		}
 	}
 	info := &datatype.MediaInfo{
 		Kind:       datatype.MediaKindImage,
@@ -216,6 +239,11 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 		Height:     cfg.Height,
 		Encoding:   formatName,
 		ColorSpace: inferColorModel(cfg),
+	}
+	// DecodeConfig may report a default color model, particularly for VP8X;
+	// it does not establish the source ICC color space.
+	if formatName == "webp" || formatName == "bmp" {
+		info.ColorSpace = ""
 	}
 	result := &format.MediaDescribeResult{Media: info}
 	if formatName == "jpeg" {
@@ -412,8 +440,12 @@ func init() {
 		format.FormatJPEG,
 		format.FormatPNG,
 		format.FormatGIF,
+		format.FormatWebP,
+		format.FormatBMP,
 	} {
-		_ = format.RegisterFormatPlugin(newPlugin(formatType))
+		if err := format.RegisterFormatPlugin(newPlugin(formatType)); err != nil {
+			panic(err)
+		}
 	}
 	_ = format.RegisterFormatPlugin(newTIFFPlugin())
 	_ = format.RegisterFormatPlugin(newPlugin(format.FormatImage))
