@@ -416,14 +416,15 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             ONLINE.validate_graph_snapshots(graph, {5: "wrong", 7: "sha256:table-7", 11: "sha256:table-11"})
 
     @staticmethod
-    def query_execution(identifier, bindings, target, target_fields, mappings, rows):
-        fields = {"ods": [target for _, target in ONLINE.MONGODB_FIELDS], "dim": ["activity_id", "activity_date"]}
-        return {"execution_id": identifier, "rows_affected": rows, "metadata": {
-            "outputs": {"execution_id": identifier, "target_locator": target, "row_count": rows},
-            "lineage_facts": {"schema_version": "addp.lineage-facts/v1",
-                "inputs": [{"port": "input." + key, "locator": ONLINE.canonical_table_locator(locator), "schema_snapshot": {"hash": "sha256:" + key, "fields": [{"name": value} for value in fields[key]]}} for key, locator in bindings.items()],
-                "outputs": [{"port": "target", "locator": target, "write_mode": "replace", "schema_snapshot": {"hash": "sha256:dim" if len(target_fields) == 2 else "sha256:dwd", "fields": [{"name": value} for value in target_fields]}}],
-                "operations": [{"kind": "derive", "operator": "develop", "field_lineage_status": "complete", "field_mappings": [{"input_port": port, "source_field": source, "target_field": dest, "transformation": transform, "output_port": "target"} for port, source, dest, transform in mappings]}]}}}
+    def query_execution(identifier, bindings, target, rows):
+        # Match ExecutionWithDevTask: Observe removes snapshots/operations,
+        # while the owner's durable write outputs are projected at top level.
+        return {"execution_id": identifier, "rows_affected": rows,
+                "outputs": {"execution_id": identifier, "target_locator": target, "row_count": rows},
+                "metadata": {"lineage_facts": {"schema_version": "addp.lineage-facts/v1",
+                    "inputs": [{"port": "input." + key, "locator": ONLINE.canonical_table_locator(locator)} for key, locator in bindings.items()],
+                    "outputs": [{"port": "target", "locator": target, "write_mode": "replace"}],
+                    "operations": None}}}
 
     def test_orchestrated_child_rejects_wrong_owner_parent_and_task(self):
         child = {"parent_execution_id": "parent", "module": "develop", "task_type": "query", "source": "orchestrator", "source_task_id": "8", "tenant_id": 2, "status": "success"}
@@ -440,26 +441,39 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             with self.assertRaises(ONLINE.SuiteError):
                 ONLINE.canonical_table_locator(invalid)
 
-    def test_query_facts_reject_incomplete_readset_mappings_and_physical_output(self):
+    def test_query_safe_projection_rejects_wrong_readset_and_write_outputs(self):
         bindings, target = {"ods": "addp://engine/3/path/public/ods?type=table&item_id=22"}, "addp://engine/3/path/public/dim?type=table&item_id=23"
-        mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.ods", "activity_date_raw", "activity_date", "derived")}
-        fields = ["activity_id", "activity_date"]
         def proof():
-            return self.query_execution("query", bindings, target, fields, mappings, 3)
-        ONLINE.validate_query_facts(proof(), bindings, target, fields, mappings, 3)
+            return self.query_execution("query", bindings, target, 3)
+        ONLINE.validate_query_facts(proof(), bindings, target, 3)
         for mutate in (
             lambda value: value.update(rows_affected=6),
-            lambda value: value["metadata"]["outputs"].update(target_locator="other"),
+            lambda value: value["outputs"].update(target_locator="other"),
+            lambda value: value["outputs"].update(execution_id="older-query"),
+            lambda value: value["outputs"].update(row_count=6),
             lambda value: value["metadata"]["lineage_facts"]["inputs"].clear(),
-            lambda value: value["metadata"]["lineage_facts"]["inputs"][0]["schema_snapshot"].update(hash=""),
+            lambda value: value["metadata"]["lineage_facts"]["inputs"][0].update(locator="wrong-engine"),
             lambda value: value["metadata"]["lineage_facts"]["outputs"][0].update(write_mode="append"),
-            lambda value: value["metadata"]["lineage_facts"]["operations"][0]["field_mappings"].pop(),
-            lambda value: value["metadata"]["lineage_facts"]["operations"][0].update(field_lineage_status="unavailable"),
+            lambda value: value["metadata"]["lineage_facts"]["outputs"][0].update(locator="wrong-target"),
         ):
             execution = proof()
             mutate(execution)
             with self.assertRaises(ONLINE.SuiteError):
-                ONLINE.validate_query_facts(execution, bindings, target, fields, mappings, 3)
+                ONLINE.validate_query_facts(execution, bindings, target, 3)
+        legacy = proof()
+        legacy["metadata"]["outputs"] = legacy.pop("outputs")
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.validate_query_facts(legacy, bindings, target, 3)
+
+    def test_chain_graph_hashes_reject_mixed_sources_fields_and_unknown_items(self):
+        hashes = {20: "sha256:mongo", 22: "sha256:ods"}
+        allowed = {20, 22, 23, 24}
+        graph = {"nodes": [{"item_id": 22, "schema_snapshot_hash": "sha256:ods"}, {"item_id": 23, "schema_snapshot_hash": "sha256:dim"}]}
+        ONLINE.merge_graph_snapshots(graph, hashes, allowed)
+        self.assertEqual(hashes[23], "sha256:dim")
+        for item, snapshot in ((22, "other-read-schema"), (23, "other-target-schema"), (99, "sha256:unknown"), (24, "")):
+            with self.subTest(item=item), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.merge_graph_snapshots({"nodes": [{"item_id": item, "schema_snapshot_hash": snapshot}]}, hashes, allowed)
 
     def test_chain_reruns_same_definition_and_only_observes_latest_owner_proofs(self):
         items = {"public." + ONLINE.MONGODB_TARGET: {"id": 22, "full_name": "public." + ONLINE.MONGODB_TARGET, "item_type": "table"},
@@ -492,9 +506,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             else:
                 is_dim = identifier.startswith("dim")
                 bindings = {"ods": ods} if is_dim else {"ods": ods, "dim": dim}
-                mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.ods", "activity_date_raw", "activity_date", "derived")} if is_dim else {
-                    ("input.ods", "activity_id", "activity_id", "direct"), ("input.dim", "activity_date", "activity_date", "direct"), ("input.ods", "leader_nickname_snapshot", "person_nickname", "direct"), ("input.ods", "activity_level_raw", "intensity", "derived")}
-                execution = self.query_execution(identifier, bindings, dim if is_dim else dwd, ["activity_id", "activity_date"] if is_dim else ["activity_id", "activity_date", "person_nickname", "intensity"], mappings, 3 if is_dim else 2)
+                execution = self.query_execution(identifier, bindings, dim if is_dim else dwd, 3 if is_dim else 2)
                 task = 8 if is_dim else 9
             execution.update(module=module, parent_execution_id="root-" + round_id, source="orchestrator", source_task_id=str(task), tenant_id=2, status="success", task_type="sync" if module == "transfer" else "query")
             if module == "transfer":
@@ -512,7 +524,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(len(paths), 3)
         self.assertEqual(resource.call_count, 2)
         scan.assert_not_called()
-        self.assertEqual(len(proofs), 20)
+        self.assertEqual(len(proofs), 24)
         date = next(expected for field, expected in reversed(proofs) if field == "activity_date")
         self.assertEqual({edge[5] for edge in date}, {"ods-2", "dim-2", "dwd-2"})
         self.assertEqual(len(date), 3)

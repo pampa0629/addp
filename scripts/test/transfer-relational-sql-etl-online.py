@@ -356,34 +356,33 @@ def canonical_table_locator(locator):
     return urllib.parse.urlunparse(parsed._replace(query="type=table"))
 
 
-def validate_query_facts(execution, bindings, target_locator, target_fields, mappings, rows):
+def validate_query_facts(execution, bindings, target_locator, rows):
+    # Develop's professional DTO deliberately projects safe resources only.
+    # Complete mappings and frozen schema identities are verified through Meta.
     metadata = _object(execution.get("metadata"), "query metadata")
     facts = _object(metadata.get("lineage_facts"), "query lineage facts")
-    inputs, outputs, operations = (_array(facts.get(key), key) for key in ("inputs", "outputs", "operations"))
+    inputs, outputs = (_array(facts.get(key), key) for key in ("inputs", "outputs"))
     if (facts.get("schema_version") != "addp.lineage-facts/v1" or len(inputs) != len(bindings)
-            or len(outputs) != 1 or len(operations) != 1 or execution.get("rows_affected") != rows
-            or metadata.get("outputs") != {"execution_id": execution["execution_id"], "target_locator": target_locator, "row_count": rows}):
+            or len(outputs) != 1 or execution.get("rows_affected") != rows
+            or execution.get("outputs") != {"execution_id": execution["execution_id"], "target_locator": target_locator, "row_count": rows}):
         raise SuiteError("query must persist exact table write outputs and row count")
     if {ref.get("port"): ref.get("locator") for ref in inputs} != {"input." + key: canonical_table_locator(value) for key, value in bindings.items()}:
         raise SuiteError("query frozen ReadSet differs from the relation bindings")
     output = outputs[0]
     if output.get("port") != "target" or output.get("locator") != target_locator or output.get("write_mode") != "replace":
         raise SuiteError("query must record actual overwrite target")
-    hashes = {}
-    for ref in inputs + outputs:
-        snapshot = _object(ref.get("schema_snapshot"), "query frozen schema")
-        if not snapshot.get("hash") or not _array(snapshot.get("fields"), "query frozen fields"):
-            raise SuiteError("query omitted the frozen schema")
-        hashes[canonical_table_locator(ref["locator"])] = snapshot["hash"]
-    if [field.get("name") for field in output["schema_snapshot"]["fields"]] != target_fields:
-        raise SuiteError("query output snapshot differs from physical target columns")
-    operation = operations[0]
-    actual = {(value.get("input_port"), value.get("source_field"), value.get("target_field"), value.get("transformation"), value.get("output_port"))
-              for value in operation.get("field_mappings", [])}
-    expected = {(port, source, target, transformation, "target") for port, source, target, transformation in mappings}
-    if operation.get("kind") != "derive" or operation.get("operator") != "develop" or operation.get("field_lineage_status") != "complete" or actual != expected or len(operation.get("field_mappings", [])) != len(expected):
-        raise SuiteError("query did not prove the exact direct/derived mappings")
-    return hashes
+
+
+def merge_graph_snapshots(graph, hashes, allowed_items):
+    # Edges have already been checked against exact fields and current execution IDs.
+    # Preserve the same frozen identity across every field, source and target.
+    for node in _array(graph.get("nodes"), "chain field nodes"):
+        item_id, snapshot = node.get("item_id"), node.get("schema_snapshot_hash")
+        if item_id not in allowed_items or not isinstance(snapshot, str) or not snapshot:
+            raise SuiteError("chain field graph has an unknown or missing frozen schema")
+        if item_id in hashes and hashes[item_id] != snapshot:
+            raise SuiteError("chain field graph crosses frozen execution schemas")
+        hashes[item_id] = snapshot
 
 
 def cleanup_definitions(client, paths):
@@ -444,7 +443,7 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
         step("dim", "develop", "query", dim_task, ["ods"], {"target_locator": dim_locator, "write_mode": "overwrite"}),
         step("dwd", "develop", "query", dwd_task, ["dim"], {"target_locator": dwd_locator, "write_mode": "overwrite"}),
     ]}, 201)
-    rounds, seen = [], set()
+    rounds, seen, stable_hashes = [], set(), None
     dim_mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.ods", "activity_date_raw", "activity_date", "derived")}
     dwd_mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.dim", "activity_date", "activity_date", "direct"),
                     ("input.ods", "leader_nickname_snapshot", "person_nickname", "direct"), ("input.ods", "activity_level_raw", "intensity", "derived")}
@@ -475,19 +474,26 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
         seen.update([parent_id, *ids.values()])
         source_locator = mongodb["source_locator"]
         source_hash, ods_hash = validate_mongodb_execution(executions["ods"], source_locator, engine_id)
-        dim_hashes = validate_query_facts(executions["dim"], dim_bindings, dim_locator, ["activity_id", "activity_date"], dim_mappings, 3)
-        dwd_hashes = validate_query_facts(executions["dwd"], dwd_bindings, dwd_locator, ["activity_id", "activity_date", "person_nickname", "intensity"], dwd_mappings, 2)
-        if dim_hashes[canonical_table_locator(ods_locator)] != ods_hash or dwd_hashes[canonical_table_locator(ods_locator)] != ods_hash or dwd_hashes[canonical_table_locator(dim_locator)] != dim_hashes[canonical_table_locator(dim_locator)] or source_hash != mongodb["source_schema_snapshot_hash"]:
-            raise SuiteError("chain must preserve exact intermediate frozen schemas across owners")
+        validate_query_facts(executions["dim"], dim_bindings, dim_locator, 3)
+        validate_query_facts(executions["dwd"], dwd_bindings, dwd_locator, 2)
+        if source_hash != mongodb["source_schema_snapshot_hash"]:
+            raise SuiteError("chain changed the MongoDB source frozen schema")
         if find_item(client, engine_id, f"public.{MONGODB_TARGET}", "table").get("id") != mongodb["target_item_id"] or find_item(client, engine_id, f"public.{DIM_TARGET}", "table").get("id") != dim_id or find_item(client, engine_id, f"public.{DWD_TARGET}", "table").get("id") != dwd_id:
             raise SuiteError("chain rerun changed a target DataItem identity")
         source_id, ods_id = mongodb["source_item_id"], mongodb["target_item_id"]
-        hashes = {source_id: source_hash, ods_id: ods_hash, dim_id: dim_hashes[canonical_table_locator(dim_locator)], dwd_id: dwd_hashes[canonical_table_locator(dwd_locator)]}
+        hashes = {source_id: source_hash, ods_id: ods_hash}
+        allowed_items = {source_id, ods_id, dim_id, dwd_id}
         ods_edges = {(source_id, source, ods_id, target, "direct", ids["ods"]) for source, target in MONGODB_FIELDS}
         expected_fields = {}
         for raw, target in MONGODB_FIELDS:
             graph = wait_field_graph(client, ods_id, target, {(source_id, raw, ods_id, target, "direct", ids["ods"])}, timeout)
             validate_graph_snapshots(graph, hashes)
+        for _, source, target, transformation in sorted(dim_mappings):
+            raw = next(raw for raw, ods_field in MONGODB_FIELDS if ods_field == source)
+            expected = {(source_id, raw, ods_id, source, "direct", ids["ods"]),
+                        (ods_id, source, dim_id, target, transformation, ids["dim"])}
+            graph = wait_field_graph(client, dim_id, target, expected, timeout)
+            merge_graph_snapshots(graph, hashes, allowed_items)
         for field, ods_field, raw, transformation in (
             ("activity_id", "activity_id", "_id", "direct"),
             ("person_nickname", "leader_nickname_snapshot", "leader.userInfo.nickName", "direct"),
@@ -498,10 +504,14 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
             (ods_id, "activity_date_raw", dim_id, "activity_date", "derived", ids["dim"]), (dim_id, "activity_date", dwd_id, "activity_date", "direct", ids["dwd"])}
         for field, expected in expected_fields.items():
             graph = wait_field_graph(client, dwd_id, field, expected, timeout)
+            merge_graph_snapshots(graph, hashes, allowed_items)
             validate_graph_snapshots(graph, hashes)
             for node in graph["nodes"]:
                 if node.get("engine_id") != (mongodb["source_engine_id"] if node["item_id"] == source_id else engine_id):
                     raise SuiteError("chain field graph crossed the wrong Engine Instance")
+        if set(hashes) != allowed_items or (stable_hashes is not None and hashes != stable_hashes):
+            raise SuiteError("chain rerun changed a frozen table structure")
+        stable_hashes = dict(hashes)
         all_edges = ods_edges | {(ods_id, source, dim_id, target, transformation, ids["dim"]) for _, source, target, transformation in dim_mappings} | {(dim_id if port == "input.dim" else ods_id, source, dwd_id, target, transformation, ids["dwd"]) for port, source, target, transformation in dwd_mappings}
         wait_resource_chain(client, dwd_id, {(source_id, ods_id, ids["ods"]), (ods_id, dim_id, ids["dim"]), (ods_id, dwd_id, ids["dwd"]), (dim_id, dwd_id, ids["dwd"])}, timeout)
         rounds.append({"parent_execution_id": parent_id, "child_execution_ids": ids, "dim_rows": 3, "dwd_rows": 2})
