@@ -746,7 +746,7 @@ test-system-runtime-log: ## 隔离验证模块运行日志采集、授权、持�
 
 .PHONY: test-common-hdfs-unit test-common-hdfs
 test-common-hdfs-unit: ## HDFS 管理根边界、WebHDFS 协议和只读能力确定性验证
-	@cd common && GOWORK=off go test ./engine/plugins/hdfs ./engine/plugins ./engine/plugin -count=1
+	@cd common && GOWORK=off go test ./resourcetree ./engine/plugins/hdfs ./engine/plugins ./engine/plugin -count=1
 	@cd develop/backend && GOWORK=off go test ./internal/service -count=1
 
 test-common-hdfs: ## 独占 HDFS 集群及真实 Spark Worker 三格式读取门禁

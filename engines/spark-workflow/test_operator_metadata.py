@@ -42,6 +42,17 @@ import api_server
 
 
 class OperatorMetadataTest(unittest.TestCase):
+    def test_collection_parameters_publish_json_schema_types(self):
+        operators = {item['name']: item for item in get_operator_metadata()}
+        group_parameters = {
+            item['name']: item['type'] for item in operators['group_by']['parameters']
+        }
+        self.assertEqual(group_parameters['group_columns'], 'array')
+        self.assertEqual(group_parameters['agg_exprs'], 'object')
+        for operator in operators.values():
+            for parameter in operator['parameters']:
+                self.assertNotIn(parameter['type'], ('list', 'dict'))
+
     def test_workflow_injects_runtime_engine_and_tenant_context(self):
         captured = {}
         engine = object.__new__(SparkWorkflowEngine)

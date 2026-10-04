@@ -16,6 +16,7 @@ PARAMETER_TYPE_MAPPING = {
     "int": "integer",
     "bool": "boolean",
     "dict": "object",
+    "list": "array",
 }
 
 def get_operator_metadata() -> List[Dict[str, Any]]:

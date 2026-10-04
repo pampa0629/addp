@@ -158,7 +158,8 @@ func ParseURI(uri string) (*ResourceLocator, error) {
 
 	// 解析路径：//engine/{id}/path/{path}
 	// 注意：url.Parse 会将 //engine 解析为 Host，我们需要从 Host 和 Path 组合解析
-	pathStr := strings.Trim(u.Host+u.Path, "/")
+	// Split escaped segments before decoding: URL.Path is already unescaped.
+	pathStr := strings.Trim(u.Host+u.EscapedPath(), "/")
 	parts := strings.Split(pathStr, "/")
 
 	if len(parts) < 3 || parts[0] != "engine" || parts[2] != "path" {

@@ -52,4 +52,6 @@ WebHDFS 分页只使用 Hadoop 3.5.0 实际协议的全小写 `startafter`；[�
 
 Business 只拥有 HDFS 服务、样例和生命周期，不调用 System API。Spark 的 Hadoop 配置必须覆盖 Driver 和 Executor，连接必须同时到达 NameNode 与 DataNode；WebHDFS 可用不能代替原生 Spark 访问验收。引擎登记、权限校验与执行期连接解析继续归原有 owner。首版不包含 HDFS 写回、Kerberos 或 HA；真实门禁通过前，不声明 Simple 消费能力。
 
-2026-10-04 实现进展：Simple 只读插件、Business NameNode/DataNode 与三格式样例已落地；独占 T2 已验证每页 2 条的真实目录分页、有界内容与范围读取、中文/空格/百分号文件名、共享 CSV/JSON/Parquet 解析，以及真实 Worker 每格式 20 行、金额合计 2100 的聚合。格式验证消费由 WebHDFS 插件读出的原始字节，在宿主机使用现有 CGO 工具链运行共享解析器；便携 Linux WebHDFS 测试程序仅携带 HDFS 依赖。正式 T4 仍待开发环境重启后验收。
+2026-10-04 实现进展：Simple 只读插件、Business NameNode/DataNode 与三格式样例已落地；独占 T2 已验证每页 2 条的真实目录分页、有界内容与范围读取、中文/空格/百分号文件名、共享 CSV/JSON/Parquet 解析，以及真实 Worker 每格式 20 行、金额合计 2100 的聚合。格式验证消费由 WebHDFS 插件读出的原始字节，在宿主机使用现有 CGO 工具链运行共享解析器；便携 Linux WebHDFS 测试程序仅携带 HDFS 依赖。
+
+正式消费验收进展：已通过 Console 登记 `Business HDFS`（引擎 26），连接测试正常；Meta 自动扫描 229 与目录扫描 230 成功；Manager 的 CSV、JSON、Parquet 预览各显示 20 行。Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三个资源 locator 读取，独立选择 `Business Spark`，按 region 聚合并关联校验结果，任务定义不保存物理地址或连接参数。正式执行尚未通过：Spark 公开元数据漏将内部 `list` 转为规范的 `array`，使 Develop 执行契约生成失败；已在现有元数据转换入口修正并通过 32 项 Spark 确定性测试，待重启后执行。同时修正了共享 locator 解析重复解码造成的百分号文件名失败，确定性回归已通过，Manager 的特殊文件名运行验证待重启。两项运行验证完成前不声明正式消费链路验收通过。

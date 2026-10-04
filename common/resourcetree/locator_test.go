@@ -598,3 +598,19 @@ func TestIndexFullNameKeepsDotsAsOnePathSegment(t *testing.T) {
 		t.Fatal(parsed, err)
 	}
 }
+
+func TestLocatorPathSegmentsDecodeExactlyOnce(t *testing.T) {
+	for _, name := range []string{"订单 100%.csv", "literal%2F.csv", "literal%2E%2E.csv", "name/with/slash", " plus+name.csv "} {
+		t.Run(name, func(t *testing.T) {
+			itemID := uint(20122)
+			original := &ResourceLocator{EngineID: 26, Path: []string{"samples", name}, Type: TypeFile, ItemID: &itemID}
+			parsed, err := ParseURI(original.ToURI())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !equalResourceLocator(original, parsed) {
+				t.Fatalf("round trip changed path: %#v", parsed)
+			}
+		})
+	}
+}

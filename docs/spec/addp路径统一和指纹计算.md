@@ -183,6 +183,8 @@ type ResourceLocator struct {
 
 **URI 格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}&item_id={item_id}`
 
+URI 的每个业务路径段独立编码一次，解析时从仍保留转义的路径切分段，再逐段解码一次。不得对已解码的 `url.URL.Path` 再次执行解码；原始名称中的 `%`、字面 `%2F`、空格和 Unicode 必须往返保持不变，编码的分隔符不得改变原有段边界。
+
 `node_id` 和 `item_id` 互斥。`node_id` 表示定位到资源树节点，`item_id` 表示定位到 data item。不得再使用 `meta_id` 同时表达两类 ID，也不得使用 `item_id + 偏移量` 的虚拟 ID 进入 locator。
 
 `type` 保留为 catalog / 路径模型中的稳定术语，用于路径语义、预览路由、树展示和无 ID locator 的辅助解析。`type` 不负责区分 node / item；当 `node_id` 或 `item_id` 存在时，ID 对应的 Meta 事实优先，`type` 只作为校验和路由提示。
