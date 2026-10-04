@@ -18,7 +18,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration|engineaccess|repository] [--test credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create]" >&2
             exit 2
             ;;
     esac
@@ -71,13 +71,14 @@ run_without_skips() {
 
 run_without_skips ./internal/testsupport '^TestResetDisposablePostgresForGate$'
 case "$PACKAGE_FILTER" in
-    "") packages=(./internal/iam ./internal/iam/oauth ./internal/api ./internal/migration ./internal/engineaccess ./internal/repository) ;;
+    "") packages=(./internal/iam ./internal/iam/oauth ./internal/api ./internal/migration ./internal/engineaccess ./internal/repository ./cmd/online-test-fixture) ;;
     iam) packages=(./internal/iam) ;;
     oauth) packages=(./internal/iam/oauth) ;;
     api) packages=(./internal/api) ;;
     migration) packages=(./internal/migration) ;;
     repository) packages=(./internal/repository) ;;
     engineaccess) packages=(./internal/engineaccess) ;;
+    online-fixture) packages=(./cmd/online-test-fixture) ;;
     *)
         echo "unsupported System IAM PostgreSQL gate package: $PACKAGE_FILTER" >&2
         exit 2

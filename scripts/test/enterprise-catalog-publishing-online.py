@@ -714,8 +714,63 @@ def fulfillment_receipt(
     return receipt
 
 
+def observe_system_grant(request_id: str) -> dict[str, object]:
+    """System-owned read-only oracle, never a borrowed machine Token or ACL."""
+    repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
+    try:
+        result = subprocess.run(
+            ["go", "run", "./cmd/online-test-fixture", "--suite", "enterprise-catalog-publishing",
+             "--observe-catalog-grant", request_id],
+            cwd=repository / "system/backend", env=dict(os.environ, GOWORK="off"),
+            capture_output=True, text=True, timeout=45, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SuiteError("System read-only issuance observation could not complete") from error
+    if result.returncode != 0:
+        # Do not archive owner config, raw database errors or CLI diagnostics.
+        raise SuiteError("System read-only issuance observation failed")
+    try:
+        return _object(json.loads(result.stdout), "System issuance observation")
+    except json.JSONDecodeError as error:
+        raise SuiteError("System issuance observation returned invalid JSON") from error
+
+
+def validate_issuance_observation(
+    observation: dict[str, object], request_id: str, receipt: dict[str, object],
+) -> dict[str, object] | None:
+    observation = _object(observation, "System issuance observation")
+    if (set(observation) != {"request_id", "receipt_count", "grant_count", "granted_at", "issuance_audit_count"}
+            or observation.get("request_id") != request_id):
+        raise SuiteError("System issuance observation identity/shape mismatch")
+    counts = [observation[key] for key in ("receipt_count", "grant_count", "issuance_audit_count")]
+    if any(type(value) is not int or value < 0 for value in counts) or counts[0] != 1:
+        raise SuiteError("System issuance observation must match exactly one accepted receipt")
+    if counts[1:] == [0, 0] and observation["granted_at"] == "":
+        return None
+    if counts[1:] != [1, 1]:
+        raise SuiteError("System must contain exactly one Grant and one successful issuance audit")
+    granted = aware_timestamp(observation["granted_at"], "Grant issuance time")
+    if not aware_timestamp(receipt["recorded_at"], "receipt time") <= granted < aware_timestamp(receipt["deadline"], "receipt deadline"):
+        raise SuiteError("Grant issuance was outside the original acceptance window")
+    return {"request_id": request_id, "granted_at": granted.isoformat()}
+
+
+def wait_for_issuance(
+    observer: Callable[[str], dict[str, object]], request_id: str, receipt: dict[str, object],
+) -> dict[str, object]:
+    deadline = time.monotonic() + 120
+    while True:
+        grant = validate_issuance_observation(observer(request_id), request_id, receipt)
+        if grant is not None:
+            return grant
+        if time.monotonic() >= deadline:
+            raise SuiteError("accepted request did not converge to an issued Grant")
+        time.sleep(1)
+
+
 def validate_fixture_sharing(
     client: GatewayClient, entry_id: str, tenant_id: int, engine_id: int, principal_id: int, run_id: str,
+    grant_observer: Callable[[str], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     route = f"/api/v1/catalog/entries/{entry_id}"
     entry = _object(client.request("GET", route, (200,)).payload, "sharing fixture")
@@ -735,7 +790,7 @@ def validate_fixture_sharing(
         "decision_id": decision_id, "version": str(positive_int(entry.get("version"), "sharing entry version")),
         "recipient_type": "user", "recipient_id": str(principal_id), "expiry_mode": "at_time",
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
-        "reason": f"Dedicated Online read-only confirmation for {run_id}; acceptance only, no Grant",
+        "reason": f"Dedicated Online read-only confirmation for {run_id}; automatic issuance, no source content read",
     }
     decision = _object(client.request("POST", route + "/sharing_decisions", (201,), decision_body).payload,
                        "sharing decision")
@@ -777,6 +832,8 @@ def validate_fixture_sharing(
     try:
         first = fulfillment_receipt(client.request("POST", route + "/sharing_fulfillments", (200, 202), request),
                                     request_id, tenant_id, decision, target, operator, request["requirement_version"])
+        observer = grant_observer or observe_system_grant
+        first_grant = wait_for_issuance(observer, request_id, first)
         conflict = client.request("POST", route + "/sharing_fulfillments", (409,),
                                   dict(request, requirement_version="2" if request["requirement_version"] == "1" else "1"))
         if (conflict.status != 409 or _object(conflict.payload, "fulfillment conflict").get("error_code")
@@ -790,9 +847,14 @@ def validate_fixture_sharing(
         raise SuiteError(f"formal fulfillment request={request_id}, decision={decision_id}: {error}") from error
     if first != recovered:
         raise SuiteError(f"formal fulfillment {request_id} retry changed its immutable receipt/deadline")
+    recovered_grant = validate_issuance_observation(observer(request_id), request_id, recovered)
+    if first_grant != recovered_grant:
+        raise SuiteError("same-parameter recovery changed issuance history or duplicated its audit")
     for path in (
         f"/api/v1/catalog/runtime/sharing-fulfillments/{request_id}/basis",
         f"/api/v1/system/runtime/engine-access-fulfillments/{request_id}/accept",
+        f"/api/v1/system/runtime/engine-access-fulfillments/{request_id}/grant",
+        f"/api/v1/system/runtime/engine-access-fulfillments/{request_id}/grant/resolve",
     ):
         denial = client.request("POST", path, (403,), first["binding"])
         if denial.status != 403:
@@ -802,8 +864,10 @@ def validate_fixture_sharing(
         "approval_requirement_initialized": initialized, "receipt": recovered,
         "recovery_boundary": "caller_response_discard_after_commit", "same_parameter_recovery": "passed",
         "changed_parameter_reuse": "rejected_without_changing_original_results",
-        "human_runtime_denial": "passed", "grant_write": "not-run", "source_content_read": "not-run",
-        "retained_audit_facts": {"sharing_decisions": 1, "settled_requests": 1, "system_receipts": 1},
+        "human_runtime_denial": "passed", "grant_write": "passed", "source_content_read": "not-run",
+        "grant": recovered_grant, "same_parameter_grant_recovery": "passed",
+        "retained_audit_facts": {"sharing_decisions": 1, "settled_requests": 1, "system_receipts": 1,
+                                 "system_grants": 1, "system_issuance_audits": 1},
     }
 
 
@@ -817,6 +881,7 @@ def run_suite(
     principal_id: int,
     convergence_timeout: float,
     browser_runner: Callable[[str, str, str, int, int, int], dict[str, object]] | None = None,
+    grant_observer: Callable[[str], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     deadline = time.monotonic() + convergence_timeout
     asset_id: int | None = None
@@ -861,7 +926,7 @@ def run_suite(
             raise SuiteError("Catalog curation unexpectedly changed the active entry denominator")
 
         lifecycle = validate_deprecated_fixture_lifecycle(client, curated, run_id, principal_id)
-        sharing = validate_fixture_sharing(client, entry_id, tenant_id, engine_id, principal_id, run_id)
+        sharing = validate_fixture_sharing(client, entry_id, tenant_id, engine_id, principal_id, run_id, grant_observer)
 
         types = _array(client.request("GET", "/api/v1/asset/type-definitions", (200,)).payload, "Asset type definitions")
         enabled_types = [item for item in types if isinstance(item, dict) and item.get("enabled") is True]
@@ -928,7 +993,7 @@ def run_suite(
             )
 
         return {
-            "schema_version": "addp.enterprise-catalog-publishing/v3",
+            "schema_version": "addp.enterprise-catalog-publishing/v4",
             "suite": "enterprise-catalog-publishing",
             "run_id": run_id,
             "tenant_id": str(tenant_id),
@@ -951,6 +1016,8 @@ def run_suite(
                 "deprecated_responsibility_transfer_and_withdrawal": "passed",
                 "oauth_formal_fulfillment_acceptance": "passed",
                 "same_parameter_receipt_recovery": "passed",
+                "oauth_automatic_grant_issuance": "passed",
+                "same_parameter_grant_recovery": "passed",
                 "changed_parameter_reuse": "rejected_without_changing_original_results",
                 "human_runtime_denial": "passed",
                 "browser": "passed" if browser_runner is not None else "not-run",

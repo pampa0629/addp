@@ -549,10 +549,15 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 | `ECV-08` 清理 | T4 | 同上 | 临时 Asset 下架后删除，空分类从 Portal 树消失，Asset-owned 目录删除、Portal Asset 404，`residual_resources=0`，永久 fixture 完整编目聚合重新读取并核对恢复 |
 | `ECV-09` 弃用责任与恢复 | T4 | 同上 | 专用 fixture 弃用后，经责任子资源增减可选技术负责人但保持弃用与其他冻结事实；撤销弃用只回到已编目；两类旧版本写入返回规范 409 且无副作用；成功和失败后恢复责任及编目信息 |
 | `ECV-10` 正式共享受理 | T4 | 同上 | 真实 User 业务确认→Catalog 提交→System 专用 OAuth 反查→首次受理；同编号换用途／批准要求版本须 409，拒绝后原决定与回执不变；同参重放完整绑定、受理时间与五分钟截止不变，人类 Token 在两个机器接口均返回 403；回执不是 Grant |
+| `ECV-11` 自动签发与历史恢复 | T4 | 同上 | 正式 Catalog 消费者自动签发，System owner 测试夹具在只读一致快照中核对精确 Tenant、Engine 和请求的唯一 Grant 与唯一成功签发审计；原参重试后签发时间及审计次数不变；人类访问签发和历史机器接口均为 403；不代表执行侧允许读取数据 |
 
 `ECV-09` 复用当前专用 User、Domain 和 Department，不创建第二个身份或自动赋权。测试 User 除原有读取、盘点和编目维护权限外，必须显式具备 `catalog.entry.deprecate`，缺失时身份预检直接失败。责任变化只验证同账号的可选技术负责人配置；跨部门可发现范围、权限交集及审计原子性由现有 Catalog PostgreSQL T2 覆盖。脚本的故障注入及完整恢复断言复用 `make test-online-runner`，仍由 Platform CI 和现有 `Online T4 gates` 的 `enterprise-catalog-publishing` 执行，不另建 suite 或 workflow。
 
-`ECV-10` 也复用该专用 User，要求其为永久 fixture 的当前 `business_owner`，管理员须预置有效引擎管理委派，并显式授予 `catalog.sharing_decision.create`、`system.engine_access_fulfillment.create`、`system.engine_access_approval_requirement.initialize/read`。责任身份不代替 Permission，脚本不创建委派、不改 Role 或自动移交业务负责人。专用 Runner 的仓库外配置另需独立 `SYSTEM_SERVICE_CLIENT_SECRET`，缺失在启动生命周期前失败；普通 ADDP 部署仍允许该配置留空。机器 Secret 只由正式服务使用，脚本不代签 Service Token 或借用 User Token 反查。精确表的批准要求若不存在，首次通过正式 API 初始化为 `catalog`；若已采用 `independent` 模式则停止，不覆盖既有选择。共享显式到期十分钟，同参重放不得续期；调用方丢弃首次响应后重放原三个输入，仅验证调用方恢复边界，不等同双服务之间断网或进程重启。主报告升级为 `addp.enterprise-catalog-publishing/v3`，浏览器协议仍为原 v2；`catalog_sharing` 单列不可变决定、已核清请求和 System 回执，作为长期审计事实保留，不计入临时 Asset／AssetCategory 的残留。`pending` 或核清失败必须使门禁失败，不能删库解除保护。不同人员、跨 Tenant、撤权及锁竞争继续由既有 T2 验证；源 Grant 写入、执行侧内容读取和跨进程故障另行验收，不能据此报告数据授权闭环已完成。
+`ECV-10` 也复用该专用 User，要求其为永久 fixture 的当前 `business_owner`，管理员须预置有效引擎管理委派，并显式授予 `catalog.sharing_decision.create`、`system.engine_access_fulfillment.create`、`system.engine_access_approval_requirement.initialize/read`。责任身份不代替 Permission，脚本不创建委派、不改 Role 或自动移交业务负责人。专用 Runner 的仓库外配置另需独立 `SYSTEM_SERVICE_CLIENT_SECRET`，缺失在启动生命周期前失败；普通 ADDP 部署仍允许该配置留空。机器 Secret 只由正式服务使用，脚本不代签 Service Token 或借用 User Token 反查。精确表的批准要求若不存在，首次通过正式 API 初始化为 `catalog`；若已采用 `independent` 模式则停止，不覆盖既有选择。共享显式到期十分钟，同参重放不得续期；调用方丢弃首次响应后重放原三个输入，仅验证调用方恢复边界，不等同双服务之间断网或进程重启。主报告当前为 `addp.enterprise-catalog-publishing/v4`，浏览器协议仍为原 v2；`catalog_sharing` 单列不可变决定、已核清请求和 System 回执，作为长期审计事实保留，不计入临时 Asset／AssetCategory 的残留。`pending` 或核清失败必须使门禁失败，不能删库解除保护。不同人员、跨 Tenant、撤权及锁竞争继续由既有 T2 验证；自动 Grant 写入由下述 ECV-11 核对，执行侧内容读取和双服务跨进程故障仍另行验收，不能据此报告数据授权闭环已完成。
+
+`ECV-11` 沿用 ECV-10 的真实 User 和正式服务身份，不给脚本签发机器 Token。只读核对复用 System 的 `cmd/online-test-fixture --suite enterprise-catalog-publishing --observe-catalog-grant <请求 UUID>`，只允许显式 `ADDP_ONLINE_HOST=1`、`ADDP_ONLINE_TEST=1`、回环 PostgreSQL 和专用 `addp_online` 数据库，Tenant／Engine 来自已准入环境。该模式不执行身份初始化、迁移、写入或通用 SQL，只读取 System 自有受理、签发和审计表。签发未收敛、查询错误、非唯一审计或重试改变历史均失败，不把受理成功当作签发成功；主报告为 v4，保留每次唯一签发审计，不算临时发布资源残留。确定性测试仍由 `make test-online-runner` 自动覆盖；真实 T4 沿用现有手工 suite，不增加定时触发或接管开发服务。
+
+观察器的 PostgreSQL 查询和只读事务拒写测试也纳入现有 `make test-system-iam-postgres` 全量包发现；聚焦开发验证可用同一标准脚本 `bash scripts/test/system-iam-postgres-gate.sh --package online-fixture`。它仍先核对显式测试 DSN 和共享互斥锁，只使用允许的测试 database，重建并清理 System 测试 Schema，不连接开发库。
 
 T0-T3 checkout 执行：
 

@@ -164,8 +164,15 @@ func run(args []string, environment []string) error {
 	flags.SetOutput(os.Stderr)
 	suite := flags.String("suite", "", "registered Online suite")
 	output := flags.String("output", "", "absolute path for the generated shell environment")
+	observe := flags.String("observe-catalog-grant", "", "read-only Catalog issuance observation for the dedicated Online deployment")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *observe != "" {
+		if flags.NArg() != 0 || *output != "" || *suite != "enterprise-catalog-publishing" {
+			return errors.New("issuance observation requires only the enterprise-catalog-publishing suite and request UUID")
+		}
+		return observeCatalogGrant(*observe, environment, os.Stdout)
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*output) == "" {
 		return errors.New("usage: online-test-fixture --suite <suite> --output <absolute-path>")

@@ -204,6 +204,7 @@ case "$ONLINE_SUITE" in
       ADDP_ONLINE_TEST_ENGINE_DATABASE ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID
       ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID
       SYSTEM_SERVICE_CLIENT_SECRET
+      POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD
     )
     ;;
   workbench-service-consumption)
@@ -226,6 +227,21 @@ esac
 for variable in "${REQUIRED_SUITE_ENV[@]}"; do
   [ -n "${!variable:-}" ] || fail "$ONLINE_SUITE requires $variable in ADDP_ONLINE_ENV_FILE"
 done
+
+if [ "$ONLINE_SUITE" = "enterprise-catalog-publishing" ]; then
+  case "$POSTGRES_HOST" in
+    localhost|127.0.0.1|::1) ;;
+    *) fail "Catalog issuance observation requires loopback POSTGRES_HOST" ;;
+  esac
+  python3 - "$POSTGRES_PORT" <<'PY' || fail "Catalog issuance observation requires a valid POSTGRES_PORT"
+import sys
+try:
+    port = int(sys.argv[1])
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if 1 <= port <= 65535 else 1)
+PY
+fi
 
 case "$ADDP_ONLINE_ARTIFACT_DIR" in
   /*) ;;

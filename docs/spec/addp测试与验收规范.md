@@ -113,6 +113,8 @@ T3 的 PR 主路径使用独立端口、受控 API 夹具和非个人登录态�
 
 ### 5.1 专用环境
 
+企业目录发布的 `enterprise-catalog-publishing` 沿用专用 macOS profile：正式 User 发起共享受理后，生产 Catalog 通过自己的 OAuth 服务身份自动签发。验收脚本不借用该身份，System owner 的现有 Online 测试夹具仅以只读可重复读事务核对精确 Tenant、Engine、请求编号的受理、Grant 和唯一签发成功审计；原参重试后再次核对签发时间与审计次数不变。该观察模式只允许回环 `addp_online`，禁止初始化身份、执行迁移或写入，不是人类 API、Catalog Grant 副本或访问裁决。确定性协议与准入测试归 `make test-online-runner`，真实 PostgreSQL 查询及只读拒写归现有 `make test-system-iam-postgres`，完整 OAuth 链路仍须在现有手工 T4 suite 真实执行后才能计为通过。
+
 T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部署 profile：
 
 - 常规 Online suite 使用带 `self-hosted`、`macOS`、`addp-online` 标签的专用 Runner 和 `addp-online` GitHub Environment，复用专用部署中的稳定 Tenant、User 和 Engine Instance。

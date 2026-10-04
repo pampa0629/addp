@@ -189,6 +189,10 @@ class OnlineHostGateTest(unittest.TestCase):
                 ADDP_ONLINE_TEST=1
                 ADDP_ONLINE_TEST_TENANT_ID=42
                 POSTGRES_DB=addp_online
+                POSTGRES_HOST=127.0.0.1
+                POSTGRES_PORT=25432
+                POSTGRES_USER=online
+                POSTGRES_PASSWORD=online-only-fixture-password
                 SYSTEM_URL=http://127.0.0.1:8180
                 GATEWAY_URL=http://127.0.0.1:8000
                 MANAGER_URL=http://127.0.0.1:8081
@@ -452,6 +456,25 @@ class OnlineHostGateTest(unittest.TestCase):
                 "stop",
             ],
         )
+
+    def test_catalog_missing_observer_database_input_fails_before_lifecycle(self) -> None:
+        original = self.env_file.read_text(encoding="utf-8")
+        self.env_file.write_text(original.replace("POSTGRES_HOST=127.0.0.1", "POSTGRES_HOST="), encoding="utf-8")
+        result = self._run("enterprise-catalog-publishing")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("POSTGRES_HOST", result.stderr)
+        self.assertFalse(self.command_log.exists())
+
+    def test_catalog_nonlocal_or_invalid_database_input_fails_before_lifecycle(self) -> None:
+        original = self.env_file.read_text(encoding="utf-8")
+        for source, target in (("POSTGRES_HOST=127.0.0.1", "POSTGRES_HOST=remote.example"),
+                               ("POSTGRES_PORT=25432", "POSTGRES_PORT=0")):
+            with self.subTest(target=target):
+                self.env_file.write_text(original.replace(source, target), encoding="utf-8")
+                result = self._run("enterprise-catalog-publishing")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("issuance observation requires", result.stderr)
+                self.assertFalse(self.command_log.exists())
 
     def test_catalog_missing_basis_secret_fails_before_lifecycle(self) -> None:
         contents = self.env_file.read_text(encoding="utf-8")

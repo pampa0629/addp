@@ -2982,3 +2982,22 @@ Swagger 生成首次因并行 Go 输入变化被缓存校验拒绝，随后标�
 下一优先项：在既有企业目录发布 Online suite 中验证真实 OAuth 身份下的 Catalog→System 自动签发及原参历史恢复，区别于本轮 HTTP 替身与数据库 T2；之后再落实执行侧当前访问裁决，不能跳过真实跨模块链路或把签发记录视为当前 Allow。新增 Catalog 字段随用户下一次正常启动由 owner 迁移完成，不由本会话启停开发服务或手改开发库。
 
 收口审查：前后台只有一条续办主路径，旧受理核清原语只作为该流程的受理阶段及只读边界测试底座；新标记未进入人类 DTO 或访问裁决。当前 owner 代码与上述规范、术语及专题 `git diff --check` 通过，新文件无行尾空白。本轮实现及分层验证已完成；完整门禁仍按上列阻断项报告，不宣称生产数据授权闭环完成。
+
+### 26.61 自动签发 Online 断言纳入现有测试体系（2026-10-04）
+
+本轮承接 §26.60，扩展既有 `enterprise-catalog-publishing`，不新增 suite、业务 API 或权限。完整真实 OAuth T4 尚未执行，不把测试脚本就绪等同真实链路已通过。
+
+- [x] 新增 `ECV-11`：真实 User 发起正式准备后，由生产 Catalog 自动办理；System owner 测试夹具只读核对同一次请求的受理、唯一 Grant 和唯一成功签发审计。只在明确尚未签发时限时等待，未知响应、错编号、错范围、非法时间或审计异常立即失败。
+- [x] 丢弃首次调用方响应后，原三个输入重试；除原受理回执及五分钟窗口不变外，追加比较原签发时间、唯一 Grant 和审计次数。人类 Token 对签发及签发历史机器接口均须 403。此范围不是双服务断网或进程重启，也不证明执行侧当前读取允许。
+- [x] 复用 System `cmd/online-test-fixture` 的单一只读观察模式；禁止借用机器身份。仅允许显式专用 Online 标记、非默认 Tenant、精确 Engine／请求 UUID、回环 PostgreSQL 和 `addp_online`；查询在数据库只读可重复读事务中执行，核对当前 clean migration，但不运行迁移、初始化身份或写授权。脚本不直接查询 System Schema，Catalog 不保存 Grant 副本。
+- [x] 主报告为 `addp.enterprise-catalog-publishing/v4`，浏览器报告仍为 v2；新增签发历史与审计为保留事实，源内容读取明确 `not-run`，不混入临时 Asset／AssetCategory 残留数量。专用生命周期在启停前检查观察所需数据库配置。
+- [x] CLI／脚本断言、超时、原参恢复、重复审计与机器边界测试由既有 `make test-online-runner` 覆盖；真实 PostgreSQL 查询及只读拒写归现有 System IAM T2 全量包发现，沿用 `release-and-t2-gates.yml` 的 System Job。聚焦入口为 `bash scripts/test/system-iam-postgres-gate.sh --package online-fixture`，没有旁路库或 CI。
+- [x] 本轮聚焦 System PostgreSQL T2 退出码 0、无 Skip，日志 `/tmp/addp-catalog-issuance-observer-postgres-20261004.log`。使用已核对的实际 Infra 映射 25432 和允许的 `addp_iam_test`，由标准门禁重建并清理测试 Schema；查询可执行，数据库以 SQLSTATE 25006 拒绝只读事务写入。
+- [x] `make test-system-iam-runner` 6 项测试通过，日志 `/tmp/addp-catalog-issuance-observer-gate-runner-20261004.log`；新增默认包发现断言不移除既有 System owner 测试。
+- [x] 完整 `make test-online-runner` 最终退出码 0，聚合 339 项及各前置 owner 测试通过，Online CI 登记一致，日志 `/tmp/addp-catalog-issuance-online-runner-verified-20261004.log`。前两次分别发现并修复本轮夹具的 GORM 扫描编号清空，以及生命周期替身遗漏新增数据库环境；不改生产授权路径，不把失败计为通过。
+- [ ] 默认 `make test-changed` 因共享工作区 Common／System／Transfer 所需多项 T2 环境未配置，执行前退出码 2，日志 `/tmp/addp-catalog-issuance-online-changed-20261004.log`。不接管其他会话改动；全门禁不计通过。
+- [ ] 完整真实 OAuth T4 只能由已有专用测试部署及标准 `make test-online ONLINE_SUITE=enterprise-catalog-publishing` 执行，当前个人工作区不满足专用准入；不自行启停开发服务或创建 `addp_online`。
+
+下一优先项：先在现有专用 Online suite 取得自动签发与原参历史恢复的真实证据，再贯通执行侧当前数据访问裁决；不能把受理或签发历史直接当作当前 Allow。
+
+收口审查：核对只读取 System owner 的精确请求及既有审计索引范围，受理与签发由同一只读快照观察；未知、越域、重复或非法时间均失败。没有新增生产 API、权限、迁移、Grant 副本或访问裁决路线，因此不涉及 Swagger 变更；开发服务和开发数据库未由本会话启停或改写。

@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -45,7 +46,12 @@ class FakeClient:
                             "catalog_path": copy.deepcopy(self.target), "mode": "catalog", "version": 1}
         self.decisions = {}
         self.receipts = {}
+        self.grants = {}
         self.operator = {"principal_id": "51", "tenant_membership_id": "61", "authorization_version": "2"}
+
+    def observe_grant(self, request_id):
+        return {"request_id": request_id, "receipt_count": 1, "grant_count": 1,
+                "granted_at": self.grants[request_id], "issuance_audit_count": 1}
 
     def request(self, method, path, expected, body=None):
         self.calls.append((method, path))
@@ -96,6 +102,7 @@ class FakeClient:
                                 "recipient_id": "51", "action": "read", "expiry_mode": "at_time",
                                 "expires_at": self.decisions[body["decision_id"]]["expires_at"]},
                 }
+                self.grants[request_id] = now.isoformat()
             return SUITE.Response(200, {"request_id": request_id, "state": "accepted",
                                         "resolution": copy.deepcopy(self.receipts[request_id])})
         if path.startswith("/api/v1/catalog/runtime/sharing-fulfillments/") or path.startswith(
@@ -280,6 +287,76 @@ class FakeClient:
 
 
 class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
+    def test_issuance_oracle_rejects_missing_malformed_or_duplicate_history(self) -> None:
+        client = FakeClient()
+        report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
+        request_id, receipt = report["request_id"], report["receipt"]
+        original = client.observe_grant(request_id)
+        for changes in (
+            {"request_id": "wrong"}, {"receipt_count": 0}, {"grant_count": True},
+            {"grant_count": 2}, {"issuance_audit_count": 0}, {"issuance_audit_count": 2},
+            {"granted_at": receipt["deadline"]}, {"granted_at": "invalid"},
+            {"granted_at": "2020-01-01T00:00:00+00:00"}, {"active": True},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(SUITE.SuiteError):
+                SUITE.validate_issuance_observation(dict(original, **changes), request_id, receipt)
+        self.assertIsNone(SUITE.validate_issuance_observation(
+            dict(original, grant_count=0, issuance_audit_count=0, granted_at=""), request_id, receipt))
+        with self.assertRaises(SUITE.SuiteError):
+            SUITE.validate_issuance_observation({}, request_id, receipt)
+
+    def test_recovery_rejects_reissued_grant_and_duplicate_audit(self) -> None:
+        for field, value in (("granted_at", "changed"), ("issuance_audit_count", 2)):
+            client = FakeClient()
+            calls = 0
+
+            def observe(request_id):
+                nonlocal calls
+                calls += 1
+                result = client.observe_grant(request_id)
+                if calls > 1:
+                    result[field] = ((SUITE.aware_timestamp(result[field], field) + SUITE.timedelta(seconds=1)).isoformat()
+                                     if field == "granted_at" else value)
+                return result
+
+            with self.subTest(field=field), self.assertRaises(SUITE.SuiteError):
+                SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", observe)
+
+    def test_issuance_waits_only_for_explicit_missing_and_fails_on_timeout(self) -> None:
+        client = FakeClient()
+        report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
+        request_id, receipt = report["request_id"], report["receipt"]
+        issued = client.observe_grant(request_id)
+        missing = dict(issued, grant_count=0, issuance_audit_count=0, granted_at="")
+        results = iter((missing, issued))
+        with patch.object(SUITE.time, "sleep") as sleep:
+            self.assertEqual(SUITE.wait_for_issuance(lambda _: next(results), request_id, receipt), report["grant"])
+            sleep.assert_called_once_with(1)
+        with patch.object(SUITE.time, "monotonic", side_effect=(0, 121)), patch.object(SUITE.time, "sleep") as sleep:
+            with self.assertRaisesRegex(SUITE.SuiteError, "did not converge"):
+                SUITE.wait_for_issuance(lambda _: missing, request_id, receipt)
+            sleep.assert_not_called()
+        with patch.object(SUITE.time, "sleep") as sleep:
+            with self.assertRaises(SUITE.SuiteError):
+                SUITE.wait_for_issuance(lambda _: {}, request_id, receipt)
+            sleep.assert_not_called()
+
+    def test_owner_observation_uses_existing_cli_and_does_not_expose_diagnostics(self) -> None:
+        request_id = "10000000-0000-0000-0000-000000000001"
+        completed = SUITE.subprocess.CompletedProcess([], 0, '{"request_id":"' + request_id + '"}', "")
+        with patch.object(SUITE.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(SUITE.observe_system_grant(request_id), {"request_id": request_id})
+            args, options = run.call_args
+            self.assertEqual(args[0], ["go", "run", "./cmd/online-test-fixture", "--suite",
+                                       "enterprise-catalog-publishing", "--observe-catalog-grant", request_id])
+            self.assertEqual(options["cwd"], SCRIPT.parents[2] / "system/backend")
+            self.assertEqual(options["env"]["GOWORK"], "off")
+        completed.returncode, completed.stderr = 1, "private-owner-secret"
+        with patch.object(SUITE.subprocess, "run", return_value=completed):
+            with self.assertRaises(SUITE.SuiteError) as raised:
+                SUITE.observe_system_grant(request_id)
+            self.assertNotIn("private-owner-secret", str(raised.exception))
+
     def test_catalog_contract_uses_independent_standard_mappings(self) -> None:
         client = FakeClient()
         self.assertEqual(
@@ -303,9 +380,9 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
             browser_calls.append((entry_id, fingerprint, business_name, total_entries, category_id, asset_id))
             return {"result": "passed"}
 
-        report = SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, browser)
+        report = SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, browser, client.observe_grant)
 
-        self.assertEqual(report["schema_version"], "addp.enterprise-catalog-publishing/v3")
+        self.assertEqual(report["schema_version"], "addp.enterprise-catalog-publishing/v4")
         self.assertEqual(report["route"], ["meta", "catalog", "asset", "portal"])
         self.assertEqual(report["meta_execution_ids"], ["execution-1", "execution-2"])
         self.assertEqual(report["cases"]["scan_idempotency"], "passed")
@@ -338,7 +415,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
 
     def test_sharing_replays_original_inputs_without_copying_receipt_or_extending_window(self) -> None:
         client = FakeClient()
-        report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+        report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
         prepares = [body for path, body in client.writes if path.endswith("/sharing_fulfillments")]
         self.assertEqual(len(prepares), 3)
         self.assertEqual(prepares[0], prepares[2])
@@ -347,7 +424,9 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertEqual(set(prepares[0]), {"request_id", "decision_id", "requirement_version"})
         self.assertEqual(report["receipt"], next(iter(client.receipts.values())))
         self.assertEqual(report["recovery_boundary"], "caller_response_discard_after_commit")
-        self.assertEqual(report["grant_write"], "not-run")
+        self.assertEqual(report["grant_write"], "passed")
+        self.assertEqual(report["same_parameter_grant_recovery"], "passed")
+        self.assertEqual(report["retained_audit_facts"]["system_issuance_audits"], 1)
         self.assertEqual(report["source_content_read"], "not-run")
         self.assertEqual(len(client.receipts), 1)
         self.assertFalse(any("/access_delegations" in path for _, path in client.calls))
@@ -364,14 +443,14 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                             return response
                     client = BrokenConflictClient()
                     with self.assertRaisesRegex(SUITE.SuiteError, "not rejected canonically"):
-                        SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                        SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
 
     def test_changed_requirement_version_stays_canonical_at_int64_boundary(self) -> None:
         for version in (2, 9223372036854775807):
             with self.subTest(version=version):
                 client = FakeClient()
                 client.requirement["version"] = version
-                SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
                 prepares = [body for path, body in client.writes if path.endswith("/sharing_fulfillments")]
                 self.assertEqual([body["requirement_version"] for body in prepares], [str(version), "1", str(version)])
                 self.assertEqual(len(client.receipts), 1)
@@ -391,7 +470,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                         return response
                 client = MutatingConflictClient()
                 with self.assertRaisesRegex(SUITE.SuiteError, "changed.*immutable|retry changed"):
-                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
                 self.assertEqual(len(client.decisions), 1)
                 self.assertLessEqual(len(client.receipts), 1)
 
@@ -401,7 +480,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                 client = FakeClient()
                 if initialized:
                     client.requirement = None
-                report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
                 self.assertEqual(report["approval_requirement_initialized"], initialized)
                 writes = [(path, body) for path, body in client.writes if path.endswith("/access_approval_requirements")]
                 self.assertEqual(len(writes), int(initialized))
@@ -413,7 +492,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         client = FakeClient()
         client.requirement["mode"] = "independent"
         with self.assertRaisesRegex(SUITE.SuiteError, "Catalog mode; no overwrite"):
-            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
         self.assertFalse(any(path.endswith(("/access_approval_requirements", "/sharing_fulfillments"))
                              for path, _ in client.writes))
 
@@ -438,7 +517,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         client = FakeClient()
         client.entry["responsibilities"] = []
         with self.assertRaisesRegex(SUITE.SuiteError, "already be the fixture business owner"):
-            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
         self.assertEqual(client.writes, [])
 
     def test_receipt_binding_and_time_errors_fail_and_restore_mutable_fixture(self) -> None:
@@ -467,7 +546,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                 client = CorruptReceiptClient()
                 original = SUITE.catalog_fixture_facts(client.entry)
                 with self.assertRaisesRegex(SUITE.SuiteError, "binding mismatch|invalid acceptance window"):
-                    SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10)
+                    SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, grant_observer=client.observe_grant)
                 self.assertEqual(SUITE.catalog_fixture_facts(client.entry), original)
                 self.assertEqual(len(client.receipts), 1, "immutable history must not be deleted during cleanup")
                 self.assertFalse(client.asset_exists)
@@ -483,7 +562,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                         return super().request(method, path, expected, body)
                 with self.assertRaisesRegex(SUITE.SuiteError, "pending/closed is not success"):
                     client = UnacceptedClient()
-                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
 
     def test_replay_cannot_change_recorded_time_even_inside_valid_window(self) -> None:
         class ChangedReceiptClient(FakeClient):
@@ -499,7 +578,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                 return response
         client = ChangedReceiptClient()
         with self.assertRaisesRegex(SUITE.SuiteError, "retry changed its immutable receipt"):
-            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
 
     def test_uncertain_submission_and_protected_cleanup_keep_request_id_in_failure_evidence(self) -> None:
         class ProtectedFixtureClient(FakeClient):
@@ -515,7 +594,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                 return super().request(method, path, expected, body)
         client = ProtectedFixtureClient()
         with self.assertRaises(SUITE.SuiteError) as result:
-            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10)
+            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, grant_observer=client.observe_grant)
         self.assertIn("cleanup failed", str(result.exception))
         self.assertIn("original failure", str(result.exception))
         self.assertIn(client.uncertain_request, str(result.exception))
@@ -536,20 +615,20 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                         return response
                 client = ChangedDecisionClient()
                 with self.assertRaisesRegex(SUITE.SuiteError, "explicit confirmation"):
-                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
                 self.assertEqual(len(client.receipts), 0)
 
-    def test_runtime_user_token_must_be_denied_at_both_boundaries(self) -> None:
-        for owner in ("catalog", "system"):
-            with self.subTest(owner=owner):
+    def test_runtime_user_token_must_be_denied_at_each_boundary(self) -> None:
+        for suffix in ("basis", "accept", "grant", "grant/resolve"):
+            with self.subTest(suffix=suffix):
                 class OpenRuntimeClient(FakeClient):
                     def request(self, method, path, expected, body=None):
-                        if path.startswith(f"/api/v1/{owner}/runtime/"):
+                        if "/runtime/" in path and path.endswith("/" + suffix):
                             return SUITE.Response(200, {})
                         return super().request(method, path, expected, body)
                 client = OpenRuntimeClient()
                 with self.assertRaisesRegex(SUITE.SuiteError, "machine-only boundary"):
-                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
 
     def test_first_discovered_fixture_is_curated_to_stable_permanent_state(self) -> None:
         client = FakeClient()
@@ -689,7 +768,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         client.entry.update({"governance_status": "discovered", "business_name": None,
                              "business_description": None, "semantic_links": [], "responsibilities": []})
         with self.assertRaisesRegex(SUITE.SuiteError, "lost response"):
-            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10)
+            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, grant_observer=client.observe_grant)
         self.assertEqual(client.entry["governance_status"], "curated")
         self.assertEqual(client.entry["business_name"], "ADDP Online Catalog Fixture")
         self.assertEqual(len(client.entry["responsibilities"]), 3)
@@ -701,7 +780,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(SUITE.SuiteError, "configured business domain"):
-            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10)
+            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, grant_observer=client.observe_grant)
 
         self.assertNotIn(("PUT", f"/api/v1/catalog/entries/{client.entry['id']}"), client.calls)
 
