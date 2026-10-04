@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=minio,runtime-log-store-init,loki,runtime-log-api,alloy,runtime-log-pruner
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.system-runtime-log-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ system/backend/internal/api/module_log_source_handler.go system/backend/internal/api/module_log_source_handler_test.go system/backend/internal/repository/module_log_source_repository_test.go system/backend/internal/repository/module_log_source_repository.go system/backend/internal/service/module_log_sources.go system/backend/internal/models/module_log_source.go system/backend/internal/service/module_runtime_logs.go system/backend/internal/service/module_runtime_logs_test.go system/backend/internal/service/module_runtime_logs_loki_integration_test.go scripts/test/runtime-log-observer-fixture.py scripts/infra/up.sh scripts/utils/runtime-log-env.sh scripts/utils/hosted-online.sh scripts/test/infra-runtime-log-lifecycle_test.py
+# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ system/backend/internal/api/module_log_source_handler.go system/backend/internal/api/module_log_source_handler_test.go system/backend/internal/repository/module_log_source_repository_test.go system/backend/internal/repository/module_log_source_repository.go system/backend/internal/service/module_log_sources.go system/backend/internal/models/module_log_source.go system/backend/internal/service/module_runtime_logs.go system/backend/internal/service/module_runtime_logs_test.go system/backend/internal/service/module_runtime_logs_loki_integration_test.go scripts/test/runtime-log-observer-fixture.py scripts/test/runtime-log-probe.py scripts/infra/up.sh scripts/utils/runtime-log-env.sh scripts/utils/hosted-online.sh scripts/test/infra-runtime-log-lifecycle_test.py
 # Own disposable Compose startup, source files and teardown.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -34,7 +34,7 @@ cleanup(){
    python3 - "$WORK_DIR" <<'PYERROR'
 from pathlib import Path
 import os,sys
-for name in ['build.log','start.log','restart.log','producer.log','crash.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log','source-contract.log','receiver-owner.log','receiver-contract.log']:
+for name in ['build.log','start.log','restart.log','producer.log','crash.log','capacity.log','retention.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log','source-contract.log','receiver-owner.log','receiver-contract.log']:
  p=Path(sys.argv[1])/name
  if not p.exists():continue
  text=p.read_text(errors='replace')[-4000:]
@@ -198,6 +198,57 @@ backup.unlink()
 PYRESTORE
 LOKI_TEST_OBSERVER_CASE=repeated observe_once
 echo "Real continuous observer: one source, two delivered events, sequence 1/2, valid collector metrics and clean stop passed"
+
+# Stop only this gate's housekeeper so its small default fixture quota cannot
+# prune the larger, explicitly scoped complete-burst fixture during its query.
+compose stop runtime-log-pruner >>"$WORK_DIR/capacity.log" 2>&1
+compose run --rm --no-deps \
+  -e ADDP_RUNTIME_LOG_INSTANCE_BYTES=8388608 -e ADDP_RUNTIME_LOG_NODE_BYTES=16777216 \
+  runtime-log-pruner launch --module capacity --role backend -- sh -ec '
+  awk "BEGIN { for (i=1;i<=4000;i++) printf \"runtime-t2-capacity-%06d\\n\",i }"
+  status="/var/log/addp/capacity/$ADDP_PROCESS_INSTANCE_ID/status.json"
+  for attempt in $(seq 1 150); do
+    if grep -q "\"written\":4000" "$status" 2>/dev/null; then sleep 1; exit 0; fi
+    sleep 0.2
+  done
+  exit 4
+' >>"$WORK_DIR/capacity.log" 2>&1
+query_paging capacity
+
+# A fast producer exceeds the instance quota, while the bounded receiver must
+# keep draining and account for every received line (written or dropped).
+compose run --rm --no-deps runtime-log-pruner launch --module capacity-pressure --role backend -- sh -ec '
+  awk "BEGIN { for (i=1;i<=32768;i++) printf \"runtime-t2-pressure-%06d %0256d\\n\",i,0 }"
+  status="/var/log/addp/capacity-pressure/$ADDP_PROCESS_INSTANCE_ID/status.json"
+  for attempt in $(seq 1 150); do
+    if [ -r "$status" ]; then
+      received=$(grep -o "\"received\":[0-9]*" "$status" | cut -d : -f 2)
+      written=$(grep -o "\"written\":[0-9]*" "$status" | cut -d : -f 2)
+      dropped=$(grep -o "\"dropped\":[0-9]*" "$status" | cut -d : -f 2)
+      if [ "$received" = 32768 ] && [ "$((written+dropped))" = 32768 ]; then exit 0; fi
+    fi
+    sleep 0.2
+  done
+  exit 4
+' >>"$WORK_DIR/capacity.log" 2>&1
+python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" capacity-pressure
+
+# The probe owns only this project's Loki and bucket. Seed aged chunks with
+# retention paused, then let the real Compactor remove them; never mc rm.
+LOKI_TEST_RETENTION_ENABLED=false compose up -d --force-recreate --wait --wait-timeout 90 loki runtime-log-api >"$WORK_DIR/retention.log" 2>&1
+export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
+python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" retention-seed "$WORK_DIR/retention.json"
+# Graceful owned restart builds and ships the active TSDB head. A chunk flush
+# alone does not make its index available to Compactor (15-minute rotation).
+LOKI_TEST_RETENTION_ENABLED=false compose up -d --force-recreate --wait --wait-timeout 90 loki runtime-log-api >>"$WORK_DIR/retention.log" 2>&1
+export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
+python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" retention-stored "$WORK_DIR/retention.json"
+LOKI_TEST_RETENTION_ENABLED=true compose up -d --force-recreate --wait --wait-timeout 90 loki runtime-log-api >>"$WORK_DIR/retention.log" 2>&1
+export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
+python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" retention-deleted "$WORK_DIR/retention.json"
+compose up -d --force-recreate --wait --wait-timeout 90 loki runtime-log-api >>"$WORK_DIR/retention.log" 2>&1
+export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
+python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" retention-query "$WORK_DIR/retention.json"
 
 cat "$WORK_DIR/paging.log"
 echo "Runtime log identity, authorization, collection, persistence and old-instance isolation passed"

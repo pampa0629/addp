@@ -29,6 +29,10 @@ func TestRuntimeLogsAgainstLoki(t *testing.T) {
 		t.Fatal("missing owned Loki fixture")
 	}
 	s := NewRuntimeLogService(endpoint, os.Getenv("LOKI_READ_TOKEN"), logTestKey)
+	if os.Getenv("ADDP_RUNTIME_LOG_PHASE") == "capacity" {
+		verifyCapacityProducerLogs(t, s)
+		return
+	}
 	if phase := os.Getenv("ADDP_RUNTIME_LOG_PHASE"); strings.HasPrefix(phase, "crash-") {
 		verifyCrashedProducerLogs(t, s, phase)
 		return
@@ -196,6 +200,96 @@ func TestRuntimeLogsAgainstLoki(t *testing.T) {
 		t.Fatalf("dense real Loki timestamp falsely completed: %v", err)
 	}
 	t.Logf("Real Loki multi-stream paging passed: %d distinct logs, %d batches, nanosecond boundaries, late refresh and dense-boundary rejection", len(seen), batches)
+}
+
+func verifyCapacityProducerLogs(t *testing.T, s *RuntimeLogService) {
+	t.Helper()
+	root := os.Getenv("LOKI_TEST_SOURCE")
+	if root == "" {
+		t.Fatal("missing owned source directory")
+	}
+	files, err := filepath.Glob(filepath.Join(root, "capacity", "*", "*.jsonl"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("capacity source unavailable: %v", err)
+	}
+	want := map[string]runtimelog.Entry{}
+	numbers := map[string]bool{}
+	instance := ""
+	var sourceBytes int
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sourceBytes += len(body)
+		for _, line := range bytes.Split(bytes.TrimSpace(body), []byte{'\n'}) {
+			var entry runtimelog.Entry
+			if err := json.Unmarshal(line, &entry); err != nil {
+				t.Fatal(err)
+			}
+			if instance == "" {
+				instance = entry.InstanceID
+			}
+			if entry.InstanceID != instance || entry.Node != "observer-t2" || entry.Channel != "stdout" || want[entry.ID].ID != "" || numbers[entry.Message] {
+				t.Fatal("capacity source identity or uniqueness violated")
+			}
+			want[entry.ID], numbers[entry.Message] = entry, true
+		}
+	}
+	for i := 1; i <= 4000; i++ {
+		if !numbers[fmt.Sprintf("runtime-t2-capacity-%06d", i)] {
+			t.Fatalf("missing producer line %d", i)
+		}
+	}
+	if len(want) != 4000 || sourceBytes > 8<<20 {
+		t.Fatalf("capacity source count/bytes=%d/%d", len(want), sourceBytes)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "capacity", instance, "status.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counters struct {
+		Received, Written, Dropped int
+		WriteFailures              int `json:"write_failures"`
+	}
+	if err := json.Unmarshal(body, &counters); err != nil || counters.Received != 4000 || counters.Written != 4000 || counters.Dropped != 0 || counters.WriteFailures != 0 {
+		t.Fatalf("capacity receiver accounting=%+v: %v", counters, err)
+	}
+	q := RuntimeLogQuery{From: time.Now().UTC().Add(-time.Hour), To: time.Now().UTC(), Node: "observer-t2", Limit: 200, UserID: 1}
+	started, deadline := time.Now(), time.Now().Add(90*time.Second)
+	for {
+		seen := map[string]bool{}
+		q.Cursor = ""
+		batches := 0
+		for {
+			result, err := s.Query(context.Background(), "capacity", instance, q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			batches++
+			for _, entry := range result.Entries {
+				if expected, ok := want[entry.ID]; !ok || seen[entry.ID] || entry != expected {
+					t.Fatal("capacity query lost source identity/content or duplicated a record")
+				}
+				seen[entry.ID] = true
+			}
+			if !result.HasMore {
+				break
+			}
+			if result.NextCursor == "" || result.Returned == 0 || batches > 21 {
+				t.Fatal("capacity pagination failed to progress")
+			}
+			q.Cursor = result.NextCursor
+		}
+		if len(seen) == len(want) {
+			t.Logf("capacity: %d producer records, %d source bytes, %d query batches, elapsed=%s, zero receiver drops/write failures", len(seen), sourceBytes, batches, time.Since(started))
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("capacity pipeline delivered %d/%d records within bounded wait", len(seen), len(want))
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 // The gate checks the owned container's exit code separately. Source metadata

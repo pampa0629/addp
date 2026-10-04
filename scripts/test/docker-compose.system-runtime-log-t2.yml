@@ -36,6 +36,14 @@ services:
     extends:
       file: ../infra/runtime-logs.yml
       service: loki
+    # Accelerate only owned-fixture cleanup; the production retention stays 168h.
+    command:
+      - -config.file=/etc/loki/runtime.yml
+      - -config.expand-env=true
+      - -compactor.compaction-interval=5s
+      - -compactor.retention-delete-delay=1s
+      - -compactor.retention-enabled=${LOKI_TEST_RETENTION_ENABLED:-true}
+      - -validation.reject-old-samples.max-age=240h
     environment:
       LOKI_S3_ENDPOINT: http://minio:9000
       LOKI_BUCKET: addp-runtime-logs-test
