@@ -876,6 +876,8 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 加载、信息、COG 校验、重投影、重采样、裁剪、计算镶嵌、波段计算、统计和直方图在工作流中执行。统计与直方图按块全量读取；波段表达式仅允许 band 引用、数值常量和受限数组函数，传播无效像元，不执行任意 Python。空间变换要求可信 CRS 和 geotransform，缺失 CRS 时须明确补充；加载与信息读取保留缺失事实，不按坐标范围猜测。重采样尺寸和分辨率互斥；裁剪必须明确边界 CRS；计算镶嵌指定目标 CRS、分辨率及 first/last 重叠策略，可通过成对镶嵌节点组合多个栅格，输出 Float64，空白区域使用 NaN；复数波段拒绝进入数值分析及计算镶嵌。数值分析不承诺大整数逐位精度。
 
+多边形裁剪保留 alpha 波段，数据波段输出 Float64，并以 NaN 表达边界外、孔洞及源无效像元；拒绝复数波段，避免转换时丢失虚部。后续数值分析必须继续排除这些像元，不能把透明区域的填充值计入统计。裁剪按输入像元网格取边界范围，不把裁剪边界当作重新指定网格。
+
 `raster_to_cog` 是唯一通用 COG 转换入口，声明 workflow/direct；Manager 通过同一访问计划调用并继续管理 `manager.raster_cog`，旧 TIFF 专用算子及 URI 参数契约删除。`build_raster_mosaic` 继续承担 Manager 目录型业务数据集职责。Develop 业务保存沿用 produced_targets、命名 ResourceLocator 输出、血缘与 Meta scan。图片瓦片与 Service 在线发布不属于本次栅格计算范围。
 
 Python Runtime 的领域执行器负责内部对象、资源清理和结果投影；DAG、引用解析和异步状态复用 common-python 的 WorkflowRunner / ExecutionRegistry，不为栅格另建执行核心。

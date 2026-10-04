@@ -211,3 +211,86 @@ def test_independent_fixture_rejects_source_changes_and_partial_objects(physical
     source = None
     LocalMinio.objects['source', 'raster-source', 'source.tif'] = source_path.read_bytes()
     with pytest.raises(fixture.FixtureError): fixture.worker('verify-create', physical)
+
+
+@pytest.mark.parametrize('case_name', fixture.GRID_CASES)
+def test_async_grid_outputs_pass_independent_pixel_and_alpha_oracle(physical, tmp_path, monkeypatch, case_name):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    # Reuse the complete persistence protocol rather than testing a second DAG.
+    target(tmp_path, factor=3)
+    spatial_target(tmp_path, 'first')
+    spatial_target(tmp_path, 'last')
+    for prior in fixture.GRID_CASES[:fixture.GRID_CASES.index(case_name)]:
+        grid_target(tmp_path, scene, api_server, prior)
+    result, output = grid_target(tmp_path, scene, api_server, case_name)
+    evidence = fixture.worker('verify-' + case_name, physical)
+    expected = fixture.grid_expectation(case_name)
+    assert evidence['valid_pixels'] == expected['valid_pixels']
+    assert evidence['invalid_pixels'] == expected['width'] * expected['height'] - expected['valid_pixels']
+    assert result['band_count'] == expected['band_count']
+    if case_name == 'clip-polygon':
+        from operators.raster_compute import raster_workspace, raster_load, raster_statistics, raster_band_math
+        with raster_workspace():
+            raster = raster_load(source_access_plan(output))
+            assert raster_statistics(raster)['valid_count'] == 26623
+            assert raster_statistics(raster_band_math(raster, 'b1*2'))['valid_count'] == 26623
+
+
+def source_access_plan(path):
+    return {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
+        'kind': 'file', 'format': 'tiff', 'access': {'method': 'mounted_path', 'path': str(path)}}}
+
+
+def grid_target(tmp_path, scene, api_server, case_name):
+    source = tmp_path / 'spatial.tif'
+    source.write_bytes(LocalMinio.objects['source', 'raster-source', 'spatial.tif'])
+    original = source.read_bytes()
+    output = tmp_path / (case_name + '.cog.tif')
+    definition = scene.grid_workflow('source-locator', 2, case_name)
+    definition['tasks'][0]['params'] = {'access_plan': source_access_plan(source)}
+    definition['tasks'][-1]['params'] = {'input_raster': {'$ref': 'grid', 'port': 'default'},
+        'profile': 'cog', 'blocksize': 128, 'access_plan': {'schema_version': 'addp.workflow.access-plan/v1',
+            'target': {'kind': 'file', 'format': 'tiff', 'name': output.name, 'write_mode': 'create',
+                       'access': {'method': 'mounted_path', 'path': str(output)}}}}
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {}, 'runtime': {
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write']}}})
+    assert response.status_code == 202
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/' + response.json['execution_id']).json
+        if status['status'] in ('success', 'failed'): break
+        time.sleep(.01)
+    assert status['status'] == 'success', status
+    assert source.read_bytes() == original
+    LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    return json.loads(status['result']), output
+
+
+@pytest.mark.parametrize('fault', ['pixel', 'hole', 'alpha', 'nodata', 'crs', 'grid', 'extra'])
+def test_grid_oracle_rejects_corrupt_pixels_masks_georeferencing_and_extra_objects(physical, tmp_path, monkeypatch, fault):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    target(tmp_path, factor=3)
+    spatial_target(tmp_path, 'first')
+    spatial_target(tmp_path, 'last')
+    for case in fixture.GRID_CASES:
+        _, output = grid_target(tmp_path, scene, api_server, case)
+    edited = tmp_path / 'changed-polygon.tif'
+    ds = gdal.Translate(str(edited), str(output), format='GTiff')
+    if fault == 'pixel': ds.GetRasterBand(1).WriteRaster(0, 0, 1, 1, struct.pack('<d', -1), buf_type=gdal.GDT_Float64)
+    if fault == 'hole': ds.GetRasterBand(1).WriteRaster(40, 140, 1, 1, struct.pack('<d', 1), buf_type=gdal.GDT_Float64)
+    if fault == 'alpha': ds.GetRasterBand(2).WriteRaster(40, 140, 1, 1, struct.pack('<d', 255), buf_type=gdal.GDT_Float64)
+    if fault == 'nodata': ds.GetRasterBand(1).DeleteNoDataValue()
+    if fault == 'crs':
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(3857); ds.SetProjection(crs.ExportToWkt())
+    if fault == 'grid': ds.SetGeoTransform((0,1,0,192,0,-1))
+    ds = None
+    ds = gdal.Translate(str(output), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+    ds = None
+    LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    if fault == 'extra': LocalMinio.objects['target', 'raster-target', 'partial.tmp'] = b'partial'
+    with pytest.raises(fixture.FixtureError): fixture.worker('verify-clip-polygon', physical)

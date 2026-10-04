@@ -112,6 +112,29 @@ def analysis_workflow(source_locator, case_name):
     return {'tasks': tasks}
 
 
+def grid_workflow(source_locator, target_engine_id, case_name):
+    if case_name not in fixture.GRID_CASES:
+        raise SuiteError('unknown raster grid case')
+    polygon = case_name == 'clip-polygon'
+    params = {'input_raster': {'$ref': 'math', 'port': 'default'}}
+    if polygon:
+        params.update(boundary_crs='EPSG:3857', geometry=fixture.clip_geometry())
+    elif case_name == 'resample-size':
+        params.update(size=[128, 128], resampling='nearest')
+    else:
+        params.update(resolution=[2 * fixture.ANGULAR_METRE, 4 * fixture.ANGULAR_METRE], resampling='nearest')
+    return {'tasks': [
+        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
+        {'id': 'math', 'operator': 'raster_band_math', 'depends_on': ['load'], 'params': {
+            'input_raster': {'$ref': 'load', 'port': 'default'}, 'expression': 'b2-b1'}},
+        {'id': 'grid', 'operator': 'raster_clip' if polygon else 'raster_resample', 'depends_on': ['math'], 'params': params},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['grid'], 'params': {
+            'input_raster': {'$ref': 'grid', 'port': 'default'},
+            'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+            'target_name': case_name + '.cog.tif', 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}},
+    ]}
+
+
 def validate_analysis(execution, expectation):
     metadata = obj(execution.get('metadata'), 'Develop analysis metadata')
     result = obj(metadata.get('result'), 'Develop analysis result')
@@ -178,7 +201,9 @@ def validate_success(execution, source_locator, target_locator, mode, expectatio
                                  zip(transform, expectation['transform'])):
         raise SuiteError('Develop raster artifact transform is invalid')
     bands = array(artifact.get('bands'), 'artifact bands')
-    if len(bands) != 1 or bands[0].get('dtype') != 'Float64' or bands[0].get('nodata_is_nan') is not True:
+    if len(bands) != expectation['band_count'] or any(
+        band.get('dtype') != 'Float64' or band.get('nodata_is_nan') is not True for band in bands
+    ):
         raise SuiteError('Develop raster artifact did not preserve band dtype/NoData')
     forbidden = {'access_plan', 'connection_info', 'access_key', 'secret_key', 'password', 'path', 'workspace'}
     def check(value):
@@ -266,7 +291,9 @@ def physical(repository, env, action):
     if result.returncode:
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
-    if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != fixture.artifact_expectation(action.startswith('verify-mosaic-'))['valid_pixels']:
+    case_name = action.removeprefix('verify-')
+    expectation = fixture.grid_expectation(case_name) if case_name in fixture.GRID_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
+    if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload
 
@@ -404,12 +431,36 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         })
         analysis_cases.append({'case_name': case_name, 'execution_id': identifier,
             'numeric_result': numeric_result, 'physical': native, 'browser': browser_report})
+    grid_cases = []
+    preserved = {'result.cog.tif': physical_evidence[-1]['sha256'],
+                 'mosaic-first.cog.tif': spatial_cases[0]['physical']['sha256'],
+                 'mosaic-last.cog.tif': spatial_cases[1]['physical']['sha256']}
+    for case_name in fixture.GRID_CASES:
+        expectation = fixture.grid_expectation(case_name)
+        name = case_name + '.cog.tif'
+        locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
+        identifier = submit(client, engine_id, grid_workflow(spatial_locator, target_engine, case_name))
+        execution = wait_execution(client, 'develop', identifier, timeout)
+        facts, scan_id = validate_success(execution, spatial_locator, locator, 'create', expectation)
+        wait_execution(client, 'meta', scan_id, timeout)
+        monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor grid execution')
+        if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
+            or obj(monitor.get('metadata'), 'Monitor metadata').get('lineage_facts') != facts):
+            raise SuiteError('Monitor grid execution differs from Develop status/lineage')
+        native = physical_runner(repository, env, 'verify-' + case_name)
+        if native.get('case_name') != case_name or native.get('preserved_sha256') != preserved:
+            raise SuiteError('grid execution changed an existing artifact or omitted preservation evidence')
+        graph, browser_report = inspect_output(repository, env, client, spatial_source, spatial_locator,
+            target_engine, name, identifier, case_name, identity, timeout, browser_runner, expectation)
+        grid_cases.append({'case_name': case_name, 'execution_id': identifier,
+            'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
+        preserved[name] = native['sha256']
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
-            'analysis_cases': analysis_cases,
+            'analysis_cases': analysis_cases, 'grid_cases': grid_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

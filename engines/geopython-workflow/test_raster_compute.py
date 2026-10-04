@@ -123,6 +123,45 @@ def test_clip_and_mosaic(raster_file, tmp_path):
         assert raster_statistics(last)['mean'] > raster_statistics(first)['mean']
 
 
+def test_polygon_clip_integer_data_keeps_valid_zero_and_excludes_transparent_pixels(tmp_path):
+    values = np.arange(16, dtype=float).reshape(4, 4)
+    values[0, 0] = -9999
+    values[0, 1] = 0
+    source = create_raster(tmp_path / 'float.tif', values)
+    integer = tmp_path / 'integer.tif'
+    dataset = gdal.Translate(str(integer), str(source), outputType=gdal.GDT_Int16)
+    dataset = None
+    geometry = {'type': 'Polygon', 'coordinates': [[[0,0],[4,0],[4,2],[2,2],[2,4],[0,4],[0,0]]]}
+    with raster_workspace():
+        clipped = raster_clip(raster_load(source_plan(integer)), 'EPSG:4326', geometry=geometry)
+        facts = raster_info(clipped)
+        assert facts['band_count'] == 2
+        assert facts['bands'][0]['dtype'] == 'Float64'
+        assert facts['bands'][0]['nodata_is_nan']
+        expected = [values[y, x] for y in range(4) for x in range(4)
+                    if (x < 2 or y >= 2) and (x, y) != (0, 0)]
+        statistics = raster_statistics(clipped)
+        assert (statistics['valid_count'], statistics['invalid_count'], statistics['min']) == (11, 5, 0)
+        assert statistics['mean'] == pytest.approx(np.mean(expected))
+        assert raster_statistics(raster_band_math(clipped, 'b1+1'))['valid_count'] == 11
+
+
+def test_polygon_clip_rejects_complex_bands_before_float64_conversion(tmp_path):
+    source = tmp_path / 'complex.tif'
+    dataset = gdal.GetDriverByName('GTiff').Create(str(source), 4, 4, 1, gdal.GDT_CFloat64)
+    dataset.SetGeoTransform((0,1,0,4,0,-1))
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
+    dataset.SetProjection(crs.ExportToWkt())
+    pixels = np.full((4,4), 1+2j, dtype=np.complex128)
+    dataset.GetRasterBand(1).WriteRaster(0,0,4,4,pixels.tobytes(),buf_type=gdal.GDT_CFloat64)
+    dataset = None
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        with pytest.raises(ValueError, match='Complex'):
+            raster_clip(raster, 'EPSG:4326', geometry={'type': 'Polygon', 'coordinates': [
+                [[0,0],[4,0],[4,4],[0,4],[0,0]]]})
+
+
 def test_cog_save_validate_overviews_and_failed_replace(raster_file, tmp_path):
     target = tmp_path / 'result.tif'
     with raster_workspace():

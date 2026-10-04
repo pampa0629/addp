@@ -24,6 +24,13 @@ class Client:
             item.update(id=item_id, full_name=f'raster-target/mosaic-{overlap}.cog.tif', fingerprint='mosaic-' + overlap)
             item['attributes']['capabilities']['spatial'] = {'srid': 3857, 'extent': [0, 0, 256, 256]}
             self.targets[item_id] = item
+        for item_id, name in enumerate(m.fixture.GRID_CASES, 23):
+            expectation = m.fixture.grid_expectation(name)
+            item = copy.deepcopy(self.target)
+            item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name)
+            item['attributes']['type_info']['media'] = {'width': expectation['width'], 'height': expectation['height']}
+            item['attributes']['capabilities']['spatial'] = {'srid': 4326, 'extent': expectation['extent']}
+            self.targets[item_id] = item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
                             {'role_key': 'online.raster_workflow', 'permissions': sorted(m.PERMISSIONS)}]}}
@@ -78,7 +85,8 @@ class Client:
             source = definition['tasks'][0]['params']['locator']
             target = f'addp://engine/2/path/raster-target/{definition["tasks"][-1]["params"]["target_name"]}?type=object'
             spatial = 'mosaic' in definition['tasks'][-1]['depends_on']
-            expectation = m.fixture.artifact_expectation(spatial)
+            case_name = definition['tasks'][-1]['params']['target_name'].removesuffix('.cog.tif')
+            expectation = m.fixture.grid_expectation(case_name) if case_name in m.fixture.GRID_CASES else m.fixture.artifact_expectation(spatial)
             metadata = {} if status == 'failed' else {
                 'outputs': {'save': {'resource': {'locator': target, 'type': 'object', 'write_mode': mode}}},
                 'lineage_facts': {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source}],
@@ -86,7 +94,7 @@ class Client:
                                   'operations': [{'kind': 'derive', 'operator': 'develop', 'input_ports': ['input'], 'output_ports': ['output']}]},
                 'result': {'final_result': {'artifact_type': 'raster', 'format': 'tiff', 'profile': 'cog',
                                           **{key: value for key, value in expectation.items() if key != 'valid_pixels'},
-                                          'bands': [{'dtype': 'Float64', 'nodata_is_nan': True}]},
+                                          'bands': [{'dtype': 'Float64', 'nodata_is_nan': True} for _ in range(expectation['band_count'])]},
                            'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'auto-' + identifier}]},
             }
             self.executions[identifier] = self.mutate({'execution_id': identifier, 'module': 'develop', 'status': status, 'metadata': metadata,
@@ -99,7 +107,7 @@ class Client:
             if self.monitor_mismatch: result['status'] = 'running'
         elif path.startswith('/api/v1/meta/lineage/graph?'):
             target_id = int(urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)['item_id'][0])
-            source_id, identifier = (10, 'run-3') if target_id == 20 else (11, 'run-' + str(target_id - 17))
+            source_id, identifier = (10, 'run-3') if target_id == 20 else (11, 'run-' + str(target_id - (17 if target_id <= 22 else 13)))
             result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
                       'status': 'active', 'relation_kind': self.relation_kind, 'evidence': {'execution_id': identifier}}]}
         else:
@@ -121,6 +129,13 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             return {'sha256': 'spatial-' + overlap, 'cog_valid': True, 'source_unchanged': True,
                     'valid_pixels': 65534, 'invalid_pixels': 2, 'overlap': overlap,
                     'baseline_sha256': 'new', 'first_sha256': 'spatial-first'}
+        case_name = action.removeprefix('verify-')
+        if case_name in m.fixture.GRID_CASES:
+            preserved = {'result.cog.tif': 'new', 'mosaic-first.cog.tif': 'spatial-first', 'mosaic-last.cog.tif': 'spatial-last'}
+            for prior in m.fixture.GRID_CASES[:m.fixture.GRID_CASES.index(case_name)]:
+                preserved[prior + '.cog.tif'] = prior
+            return {'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
+                    'cog_valid': True, 'source_unchanged': True, 'valid_pixels': m.fixture.grid_expectation(case_name)['valid_pixels']}
         if action == 'verify-analysis':
             return {'sha256': 'new', 'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 65535,
                     'first_sha256': 'spatial-first', 'last_sha256': 'spatial-last'}
@@ -137,7 +152,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4)
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -149,6 +164,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual(manual[0]['engine_id'], 1)
         self.assertFalse(any('collect' in path for _, path, _ in self.client.calls))
         self.assertEqual([case['case_name'] for case in report['analysis_cases']], list(m.fixture.ANALYSIS_CASES))
+        self.assertEqual([case['case_name'] for case in report['grid_cases']], list(m.fixture.GRID_CASES))
+        self.assertEqual([case['lineage']['target_item_id'] for case in report['grid_cases']], [23, 24, 25])
 
     def test_rejects_admin_extra_permissions_default_tenant_and_shared_engine_before_writes(self):
         for fault in ('admin', 'permission', 'tenant', 'engine'):
@@ -318,6 +335,38 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                     if action == 'verify-analysis': payload[field] = 'modified'
                     return payload
                 with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
+
+    def test_grid_cases_reject_dimensions_missing_alpha_and_prior_artifact_changes(self):
+        for fault in ('dimensions', 'alpha', 'nodata', 'preservation'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-12':
+                        artifact = execution['metadata']['result']['final_result']
+                        if fault == 'dimensions': artifact['height'] = 191
+                        if fault == 'alpha': artifact['bands'].pop()
+                        if fault == 'nodata': artifact['bands'][0]['nodata_is_nan'] = False
+                    return execution
+                self.client.mutate = mutate
+                def physical(repo, env, action):
+                    payload = self.physical(repo, env, action)
+                    if action == 'verify-clip-polygon' and fault == 'preservation':
+                        payload['preserved_sha256']['resample-size.cog.tif'] = 'modified'
+                    return payload
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
+    def test_grid_workflows_keep_size_resolution_exclusive_and_explicit_boundary_crs(self):
+        self.run_scene()
+        submitted = [body['content']['workflow_definition']['tasks'] for method, path, body in self.client.calls
+                     if method == 'POST' and path == '/api/v1/develop/executions']
+        size, resolution, polygon = [tasks[2] for tasks in submitted[-3:]]
+        self.assertEqual(size['params']['size'], [128, 128])
+        self.assertNotIn('resolution', size['params'])
+        self.assertEqual(resolution['params']['resolution'], [2*m.fixture.ANGULAR_METRE, 4*m.fixture.ANGULAR_METRE])
+        self.assertNotIn('size', resolution['params'])
+        self.assertEqual(polygon['params']['boundary_crs'], 'EPSG:3857')
+        self.assertEqual(len(polygon['params']['geometry']['coordinates']), 2)
 
 
 if __name__ == '__main__': unittest.main()

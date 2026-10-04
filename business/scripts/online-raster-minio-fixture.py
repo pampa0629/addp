@@ -28,7 +28,8 @@ ANGULAR_METRE = math.degrees(1 / 6378137)
 SPATIAL_SOURCE_TRANSFORM = (0, ANGULAR_METRE, 0, SIZE * ANGULAR_METRE, 0, -ANGULAR_METRE)
 SPATIAL_TRANSFORM = (0, 1, 0, SIZE, 0, -1)
 SPATIAL_NODATA = {0, 127 * SIZE + 127}
-ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis')
+GRID_CASES = ('resample-size', 'resample-resolution', 'clip-polygon')
+ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -73,6 +74,47 @@ def artifact_expectation(spatial=False):
             'extent_srid': 3857 if spatial else 4326, 'transform': list(transform),
             'extent': [transform[0], transform[3] + SIZE * transform[5], transform[0] + SIZE * transform[1], transform[3]],
             'valid_pixels': SIZE * SIZE - (len(SPATIAL_NODATA) if spatial else 1)}
+
+
+def clip_geometry():
+    # Non-integer metre boundaries keep transformed edges away from pixel grid
+    # rounding; pixel centres still have an exact integer-domain inclusion oracle.
+    return {'type': 'Polygon', 'coordinates': [
+        [[31.75,31.75],[224.25,31.75],[224.25,128.25],[128.25,128.25],
+         [128.25,224.25],[31.75,224.25],[31.75,31.75]],
+        [[63.75,63.75],[63.75,96.25],[96.25,96.25],[96.25,63.75],[63.75,63.75]],
+    ]}
+
+
+def grid_pixels(case_name):
+    """Independent nearest-centre/point-in-L oracle, without GDAL or operators."""
+    if case_name not in GRID_CASES:
+        raise ValueError('unknown raster grid case')
+    width, height = (192, 192) if case_name == 'clip-polygon' else (128, 128 if case_name == 'resample-size' else 64)
+    for row in range(height):
+        for column in range(width):
+            if case_name == 'clip-polygon':
+                x, y = 32 + column, 223 - row
+                position = (SIZE - 1 - y) * SIZE + x
+                inside = (x < 128 or y < 128) and not (64 <= x < 96 and 64 <= y < 96)
+            else:
+                step_y = 2 if case_name == 'resample-size' else 4
+                position = (step_y * row + step_y // 2) * SIZE + 2 * column + 1
+                inside = True
+            yield None if not inside or position in SPATIAL_NODATA else float(position + 1)
+
+
+def grid_expectation(case_name):
+    polygon = case_name == 'clip-polygon'
+    width, height = (192, 192) if polygon else (128, 128 if case_name == 'resample-size' else 64)
+    step_x, step_y = (1, 1) if polygon else (2, 2 if case_name == 'resample-size' else 4)
+    transform = [32 * ANGULAR_METRE if polygon else 0, step_x * ANGULAR_METRE, 0,
+                 (224 if polygon else SIZE) * ANGULAR_METRE, 0, -step_y * ANGULAR_METRE]
+    return {'width': width, 'height': height, 'band_count': 2 if polygon else 1,
+            'source_crs': 'EPSG:4326', 'extent_srid': 4326, 'transform': transform,
+            'extent': [transform[0], transform[3] + height * transform[5],
+                       transform[0] + width * transform[1], transform[3]],
+            'valid_pixels': sum(value is not None for value in grid_pixels(case_name))}
 
 
 class FixtureError(RuntimeError):
@@ -243,24 +285,41 @@ def worker(action, path):
         overlap = action.removeprefix('verify-mosaic-') if spatial else None
         target_name = f'mosaic-{overlap}.cog.tif' if spatial else 'result.cog.tif'
 
-        def verify(name, spatial=False, overlap=None, factor=1):
+        def verify(name, spatial=False, overlap=None, factor=1, grid_case=None):
             path = root / name
             clients['target'].fget_object(config['target']['bucket'], name, str(path))
             dataset = gdal.Open(str(path))
             warnings, errors, _ = validate(dataset, full_check=True)
             if errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG':
                 raise FixtureError('persisted target is not a valid COG')
-            expectation = artifact_expectation(spatial)
+            expectation = grid_expectation(grid_case) if grid_case else artifact_expectation(spatial)
             reference = osr.SpatialReference(); reference.ImportFromEPSG(expectation['extent_srid'])
             if (not osr.SpatialReference(dataset.GetProjection()).IsSame(reference)
-                or dataset.GetGeoTransform() != tuple(expectation['transform'])):
+                or any(not math.isclose(actual, expected, rel_tol=0, abs_tol=1e-12) for actual, expected in
+                       zip(dataset.GetGeoTransform(), expectation['transform']))):
                 raise FixtureError('persisted target changed CRS/transform')
-            if (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (SIZE, SIZE, 1):
+            if (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (expectation['width'], expectation['height'], expectation['band_count']):
                 raise FixtureError('persisted target has invalid dimensions/bands')
             band = dataset.GetRasterBand(1)
-            if band.DataType != gdal.GDT_Float64 or not math.isnan(band.GetNoDataValue()):
+            if band.DataType != gdal.GDT_Float64 or band.GetNoDataValue() is None or not math.isnan(band.GetNoDataValue()):
                 raise FixtureError('persisted target did not propagate NoData')
-            values = struct.unpack(f'<{SIZE * SIZE}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+            count = expectation['width'] * expectation['height']
+            values = struct.unpack(f'<{count}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+            if grid_case:
+                expected_values = list(grid_pixels(grid_case))
+                for actual, expected in zip(values, expected_values):
+                    if (expected is None and not math.isnan(actual)) or (expected is not None and actual != expected):
+                        raise FixtureError('persisted grid target pixels/NoData differ from the independent oracle')
+                if grid_case == 'clip-polygon':
+                    alpha = dataset.GetRasterBand(2)
+                    if alpha.DataType != gdal.GDT_Float64 or alpha.GetColorInterpretation() != gdal.GCI_AlphaBand:
+                        raise FixtureError('polygon target lost its alpha band')
+                    alpha_values = struct.unpack(f'<{count}d', alpha.ReadRaster(buf_type=gdal.GDT_Float64))
+                    if any(actual != (0 if expected is None else 255) for actual, expected in zip(alpha_values, expected_values)):
+                        raise FixtureError('polygon alpha differs from boundary/hole/source NoData')
+                return {'cog_valid': True, 'cog_warnings': len(warnings), 'valid_pixels': expectation['valid_pixels'],
+                        'invalid_pixels': count - expectation['valid_pixels'], 'source_unchanged': True,
+                        'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
             invalid = SPATIAL_NODATA if spatial else {0}
             # Near the equator, the projected pixel centres map strictly inside
             # the same source cells. No Warp/production math is used as an oracle.
@@ -276,6 +335,20 @@ def worker(action, path):
             return {'cog_valid': True, 'cog_warnings': len(warnings), 'valid_pixels': expectation['valid_pixels'],
                     'invalid_pixels': len(invalid), 'source_unchanged': True,
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+
+        grid_case = action.removeprefix('verify-')
+        if grid_case in GRID_CASES:
+            evidence = verify(grid_case + '.cog.tif', grid_case=grid_case)
+            preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
+                         'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
+                         'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
+            for prior in GRID_CASES[:GRID_CASES.index(grid_case)]:
+                preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', grid_case=prior)['sha256']
+            evidence.update(case_name=grid_case, preserved_sha256=preserved)
+            names = list(preserved) + [grid_case + '.cog.tif']
+            if sorted(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != sorted(names):
+                raise FixtureError('target contains unexpected or partial artifacts')
+            return evidence
 
         evidence = verify(target_name, spatial, overlap, 3 if action in ('verify-replace', 'verify-analysis') else 1)
         names = ['result.cog.tif']

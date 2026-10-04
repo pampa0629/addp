@@ -315,7 +315,10 @@ def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None):
     feature.SetGeometry(shape)
     layer.CreateFeature(feature)
     feature = layer = cutline = None
-    return _warped([dataset], cutlineDSName=str(cutline_path), cropToCutline=True, dstAlpha=True)
+    for index in range(1, dataset.RasterCount + 1):
+        _band(dataset, index)
+    return _warped([dataset], cutlineDSName=str(cutline_path), cropToCutline=True, dstAlpha=True,
+                   outputType=gdal.GDT_Float64, dstNodata=float('nan'))
 
 
 def raster_mosaic(input_raster, other_raster, target_crs, resolution, overlap='last', resampling='nearest'):
