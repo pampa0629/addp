@@ -115,50 +115,79 @@ def _warped(datasets, **kwargs):
     return _warp(datasets, **kwargs)
 
 
+def _warp_dataset(datasets, initialize_zero=False, **kwargs):
+    result = gdal.Warp(str(_path()),datasets,options=gdal.WarpOptions(
+        format='GTiff',creationOptions=['TILED=YES','COMPRESS=DEFLATE'],
+        warpOptions=['INIT_DEST=0'] if initialize_zero else [],**kwargs))
+    if result is None:
+        raise ValueError('GDAL raster warp failed')
+    return result
+
+
 def _warp(datasets, **kwargs):
     has_alpha = kwargs.get('dstAlpha', False) or any(
         dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand
         for dataset in datasets for index in range(1,dataset.RasterCount+1))
+    # With a source alpha GDAL does not automatically copy source NoData to the
+    # destination. Declare it so each data band's missing values remain missing.
+    if has_alpha and 'dstNodata' not in kwargs:
+        nodata = datasets[0].GetRasterBand(1).GetNoDataValue()
+        if nodata is not None:
+            kwargs['dstNodata'] = nodata
     nodata_values = [kwargs['dstNodata']] if 'dstNodata' in kwargs else [
         dataset.GetRasterBand(index).GetNoDataValue()
         for dataset in datasets for index in range(1,dataset.RasterCount+1)]
-    restore_nodata = has_alpha and any(value is not None and math.isnan(value) for value in nodata_values)
-    path = _path()
-    result = gdal.Warp(str(path), datasets, options=gdal.WarpOptions(
-        format='GTiff', creationOptions=['TILED=YES', 'COMPRESS=DEFLATE'],
-        warpOptions=['INIT_DEST=0'] if restore_nodata else [], **kwargs))
-    if result is None:
-        raise ValueError('GDAL raster warp failed')
+    restore_nodata = has_alpha and any(value is not None for value in nodata_values)
+    result = _warp_dataset(datasets,initialize_zero=restore_nodata,**kwargs)
+    path = result.GetDescription()
     if restore_nodata:
         # Alpha blending must start with finite data: NaN * zero density is still NaN.
-        # After warping, restore each band's NoData only where output coverage is absent.
+        # Shared alpha describes overall coverage, not each band's validity.
         alpha = next(result.GetRasterBand(index) for index in range(1,result.RasterCount+1)
                      if result.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand)
-        if len(datasets) == 1:
-            for index in range(1,result.RasterCount+1):
-                band = result.GetRasterBand(index)
-                if band.GetColorInterpretation() != gdal.GCI_AlphaBand and band.GetNoDataValue() is None:
-                    nodata = datasets[0].GetRasterBand(index).GetNoDataValue()
-                    if nodata is not None:
-                        band.SetNoDataValue(nodata)
-        for y in range(0,result.RasterYSize,512):
-            for x in range(0,result.RasterXSize,512):
-                width,height = min(512,result.RasterXSize-x),min(512,result.RasterYSize-y)
-                coverage = _read_values(alpha,x,y,width,height)
-                invalid = ~np.isfinite(coverage) | (coverage <= 0)
-                if not invalid.any():
-                    continue
-                for index in range(1,result.RasterCount+1):
-                    band = result.GetRasterBand(index)
-                    nodata = band.GetNoDataValue()
-                    if band.GetColorInterpretation() == gdal.GCI_AlphaBand or nodata is None:
+        data_bands = [index for index in range(1,result.RasterCount+1)
+                      if result.GetRasterBand(index).GetColorInterpretation() != gdal.GCI_AlphaBand]
+        for index in data_bands:
+            band = result.GetRasterBand(index)
+            nodata = band.GetNoDataValue()
+            if nodata is None:
+                continue
+            independent = None
+            coverage_band = alpha
+            if len(data_bands) > 1:
+                # A different band's alpha density must not fill this band's holes
+                # or affect its mosaic blending. Warp its data and coverage on the
+                # common grid, retaining the requested kernel and source order.
+                sources = []
+                for dataset in datasets:
+                    bands = [index] + [i for i in range(1,dataset.RasterCount+1)
+                                       if dataset.GetRasterBand(i).GetColorInterpretation() == gdal.GCI_AlphaBand]
+                    sources.append(gdal.Translate(str(_path('.vrt')),dataset,format='VRT',bandList=bands))
+                transform = result.GetGeoTransform()
+                options = dict(kwargs)
+                for key in ('xRes','yRes','targetAlignedPixels','cropToCutline'):
+                    options.pop(key,None)
+                options.update(width=result.RasterXSize,height=result.RasterYSize,dstAlpha=True,
+                               srcAlpha=sources[0].RasterCount>1,
+                               outputBounds=[transform[0],transform[3]+transform[5]*result.RasterYSize,
+                                             transform[0]+transform[1]*result.RasterXSize,transform[3]])
+                independent = _warp_dataset(sources,initialize_zero=True,**options)
+                coverage_band = independent.GetRasterBand(2)
+            for y in range(0,result.RasterYSize,512):
+                for x in range(0,result.RasterXSize,512):
+                    width,height = min(512,result.RasterXSize-x),min(512,result.RasterYSize-y)
+                    coverage = _read_values(coverage_band,x,y,width,height)
+                    invalid = ~np.isfinite(coverage) | (coverage <= 0)
+                    if independent is None and not invalid.any():
                         continue
+                    source_band = independent.GetRasterBand(1) if independent is not None else band
                     complex_values = gdal.DataTypeIsComplex(band.DataType)
                     buffer_type = gdal.GDT_CFloat64 if complex_values else gdal.GDT_Float64
-                    values = np.frombuffer(band.ReadRaster(x,y,width,height,buf_type=buffer_type),
+                    values = np.frombuffer(source_band.ReadRaster(x,y,width,height,buf_type=buffer_type),
                                            dtype=np.complex128 if complex_values else np.float64).reshape(height,width).copy()
                     values[invalid] = nodata
                     band.WriteRaster(x,y,width,height,values.tobytes(),buf_type=buffer_type)
+            independent = None
     result.FlushCache()
     result = None
     return _raster(path)

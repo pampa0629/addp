@@ -310,6 +310,183 @@ def test_size_resampling_preserves_data_type_alpha_validity_and_legal_zero(tmp_p
     assert {path.name for path in tmp_path.iterdir()}=={'source.tif','result.tif'}
 
 
+@pytest.mark.parametrize('operator', ['resize','resample','reproject'])
+@pytest.mark.parametrize('nodata', [-9999,float('nan')], ids=['finite-nodata','nan-nodata'])
+@pytest.mark.parametrize('opaque', [255,128], ids=['opaque','partial-alpha'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+@pytest.mark.parametrize('algorithm', ['nearest','average'])
+def test_multiband_warp_keeps_independent_nodata_with_shared_alpha(tmp_path,operator,nodata,opaque,profile,algorithm):
+    first = np.array([[0,nodata,10,1e6],[20,30,nodata,nodata]],dtype=np.float64)
+    second = np.array([[5,15,nodata,1e6],[nodata,40,nodata,nodata]],dtype=np.float64)
+    alpha = np.full(first.shape,opaque,dtype=np.float64)
+    alpha[0,3] = 0
+    # Uniform 2x2 cells give the same independent nearest and area-average values.
+    source_values = np.stack([np.repeat(np.repeat(array,2,axis=0),2,axis=1)
+                              for array in [first,second,alpha]])
+    source = create_raster(tmp_path/'source.tif',source_values,transform=(0,1,0,4,0,-1),nodata=nodata)
+    dataset = gdal.Open(str(source),gdal.GA_Update)
+    dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    dataset = None
+    original = source.read_bytes()
+    expected = np.stack([first,second])
+    expected[:,alpha==0] = nodata
+    valid = np.isfinite(expected)&(expected!=nodata)
+    target = tmp_path/'result.tif'
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        workspace = raster.workspace
+        if operator=='resize':
+            result = raster_resample(raster,size=[4,2],resampling=algorithm)
+        elif operator=='resample':
+            result = raster_resample(raster,resolution=[2,2],resampling=algorithm)
+        else:
+            result = raster_reproject(raster,'EPSG:4326',[2,2],resampling=algorithm)
+        output = gdal.Open(str(result.path))
+        assert (output.RasterXSize,output.RasterYSize,output.RasterCount)==(4,2,3)
+        np.testing.assert_allclose(output.GetGeoTransform(),[0,2,0,4,0,-2])
+        for index in (1,2):
+            band = output.GetRasterBand(index)
+            declared_nodata = band.GetNoDataValue()
+            assert declared_nodata is not None
+            assert np.isnan(declared_nodata) if np.isnan(nodata) else declared_nodata==nodata
+            actual = read_band_values(band)
+            np.testing.assert_equal(actual,expected[index-1])
+        np.testing.assert_equal(read_band_values(output.GetRasterBand(3))>0,valid.any(axis=0))
+        output = band = None
+        raster_save(result,target_plan(target),profile=profile,blocksize=128)
+        persisted = raster_load(source_plan(target))
+        for index in (1,2):
+            stats = raster_statistics(persisted,band=index)
+            values = expected[index-1][valid[index-1]]
+            assert (stats['valid_count'],stats['invalid_count'])==(values.size,8-values.size)
+            np.testing.assert_allclose([stats['min'],stats['max'],stats['mean'],stats['stddev']],
+                                       [values.min(),values.max(),values.mean(),values.std()])
+        calculated = raster_band_math(persisted,'b1+b2')
+        output = gdal.Open(str(calculated.path))
+        calculated_expected = np.full(first.shape,np.nan)
+        joint = valid.all(axis=0)
+        calculated_expected[joint] = expected[0,joint]+expected[1,joint]
+        np.testing.assert_equal(read_band_values(output.GetRasterBand(1)),calculated_expected)
+        output = None
+        assert raster_statistics(calculated)['valid_count']==2
+        assert raster_histogram(calculated,bins=2,value_range=[0,80])['counts']==[1,1]
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+    assert not workspace.exists() and source.read_bytes()==original
+    assert {path.name for path in tmp_path.iterdir()}=={'source.tif','result.tif'}
+
+
+@pytest.mark.parametrize('nodata', [-9999,float('nan')], ids=['finite-nodata','nan-nodata'])
+@pytest.mark.parametrize('operator', ['resize','resample','reproject'])
+@pytest.mark.parametrize('opaque', [255,128], ids=['opaque','partial-alpha'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+def test_multiband_bilinear_uses_each_bands_valid_contributors(tmp_path,nodata,operator,opaque,profile):
+    values = np.array([[[0,10,30,1e6],[20,nodata,50,1e6],[70,80,100,1e6],[1e6]*4],
+                       [[nodata,15,35,1e6],[25,45,55,1e6],[75,85,nodata,1e6],[1e6]*4]],dtype=float)
+    alpha = np.zeros((4,4))
+    alpha[:3,:3] = opaque
+    source = create_raster(tmp_path/'source.tif',np.concatenate([values,alpha[None,...]]),nodata=nodata)
+    dataset = gdal.Open(str(source),gdal.GA_Update)
+    dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    dataset = None
+    original = source.read_bytes()
+    valid = np.isfinite(values)&(values!=nodata)&(alpha>0)
+    expected = np.full((2,8,8),np.nan)
+    source_y,source_x = np.indices((4,4))
+    for row in range(8):
+        for column in range(8):
+            center_x,center_y = (column+.5)/2,(row+.5)/2
+            weights = np.maximum(0,1-np.abs(source_x+.5-center_x))*np.maximum(0,1-np.abs(source_y+.5-center_y))
+            for index in range(2):
+                if not valid[index,int(center_y),int(center_x)]:
+                    continue
+                contributors = valid[index]&(weights>0)
+                expected[index,row,column] = np.sum(values[index,contributors]*weights[contributors])/weights[contributors].sum()
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        workspace = raster.workspace
+        if operator=='resize':
+            result = raster_resample(raster,size=[8,8],resampling='bilinear')
+        elif operator=='resample':
+            result = raster_resample(raster,resolution=[.5,.5],resampling='bilinear')
+        else:
+            result = raster_reproject(raster,'EPSG:4326',[.5,.5],resampling='bilinear')
+        raster_save(result,target_plan(tmp_path/'result.tif'),profile=profile,blocksize=128)
+        persisted = raster_load(source_plan(tmp_path/'result.tif'))
+        output = gdal.Open(str(persisted.path))
+        np.testing.assert_allclose(output.GetGeoTransform(),[0,.5,0,4,0,-.5])
+        for index in (1,2):
+            actual = read_band_values(output.GetRasterBand(index))
+            if not np.isnan(nodata):
+                actual[actual==nodata] = np.nan
+            np.testing.assert_allclose(actual,expected[index-1],rtol=1e-7,atol=1e-8,equal_nan=True)
+            assert raster_statistics(persisted,index)['valid_count']==np.count_nonzero(np.isfinite(expected[index-1]))
+        output = None
+        calculated = raster_band_math(persisted,'b1+b2')
+        output = gdal.Open(str(calculated.path))
+        np.testing.assert_allclose(read_band_values(output.GetRasterBand(1)),expected.sum(axis=0),rtol=1e-7,atol=1e-8,equal_nan=True)
+        output = None
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+    assert not workspace.exists() and source.read_bytes()==original
+    assert {path.name for path in tmp_path.iterdir()}=={'source.tif','result.tif'}
+
+
+@pytest.mark.parametrize('nodata', [-9999,float('nan')], ids=['finite-nodata','nan-nodata'])
+@pytest.mark.parametrize('overlap', ['first','last'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+def test_multiband_clip_mosaic_preserves_each_bands_missing_pixels(tmp_path,nodata,overlap,profile):
+    left = np.array([[[0,nodata,20,1e6],[40,50,nodata,nodata]],
+                     [[5,15,nodata,1e6],[45,nodata,65,nodata]]],dtype=np.float64)
+    right = np.array([[[100,110,nodata,1e6],[nodata,150,160,nodata]],
+                      [[105,nodata,125,1e6],[145,155,nodata,175]]],dtype=np.float64)
+    # A valid bottom/right anchor keeps the requested union grid independent of
+    # GDAL's removal of wholly blank target-aligned edge rows and columns.
+    alpha = np.full((2,4),255.)
+    alpha[0,3] = 0
+    sources = []
+    for name,values in [('left',left),('right',right)]:
+        path = create_raster(tmp_path/(name+'.tif'),np.concatenate([values,alpha[None,...]]),
+                             transform=(0,1,0,2,0,-1),nodata=nodata)
+        dataset = gdal.Open(str(path),gdal.GA_Update)
+        dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        dataset = None
+        sources.append(path)
+    originals = [path.read_bytes() for path in sources]
+    for values in (left,right):
+        values[(~np.isfinite(values))|(values==nodata)] = np.nan
+        values[:,alpha==0] = np.nan
+    preferred,fallback = (left,right) if overlap=='first' else (right,left)
+    expected = np.where(np.isfinite(preferred),preferred,fallback)
+    polygon = {'type':'Polygon','coordinates':[[[0,0],[4,0],[4,2],[0,2],[0,0]]]}
+    with raster_workspace():
+        rasters = [raster_load(source_plan(path)) for path in sources]
+        workspace = rasters[0].workspace
+        clipped = raster_clip(rasters[0],'EPSG:4326',geometry=polygon)
+        output = gdal.Open(str(clipped.path))
+        for index in (1,2):
+            np.testing.assert_equal(read_band_values(output.GetRasterBand(index)),left[index-1])
+        output = None
+        mosaic = raster_mosaic(clipped,rasters[1],'EPSG:4326',[1,1],overlap)
+        raster_save(mosaic,target_plan(tmp_path/'result.tif'),profile=profile,blocksize=128)
+        persisted = raster_load(source_plan(tmp_path/'result.tif'))
+        output = gdal.Open(str(persisted.path))
+        assert (output.RasterXSize,output.RasterYSize,output.RasterCount)==(4,2,3)
+        for index in (1,2):
+            np.testing.assert_equal(read_band_values(output.GetRasterBand(index)),expected[index-1])
+            assert raster_statistics(persisted,index)['valid_count']==np.count_nonzero(np.isfinite(expected[index-1]))
+        output = None
+        computed = raster_band_math(persisted,'b1+b2')
+        output = gdal.Open(str(computed.path))
+        np.testing.assert_equal(read_band_values(output.GetRasterBand(1)),expected.sum(axis=0))
+        output = None
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+    assert not workspace.exists()
+    assert [path.read_bytes() for path in sources]==originals
+    assert {path.name for path in tmp_path.iterdir()}=={'left.tif','right.tif','result.tif'}
+
+
 @pytest.mark.parametrize('algorithm,resolution,width,height', [
     ('bilinear',.5,12,8), ('average',1.5,4,3),
 ])

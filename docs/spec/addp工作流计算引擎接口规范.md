@@ -882,6 +882,8 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 多边形裁剪保留 alpha 波段，数据波段输出 Float64，并以 NaN 表达边界外、孔洞及源无效像元；拒绝复数波段，避免转换时丢失虚部。后续数值分析必须继续排除这些像元，不能把透明区域的填充值计入统计。裁剪按输入像元网格取边界范围，不把裁剪边界当作重新指定网格。
 
+多波段空间变换保留各数据波段独立的 NoData 有效性：一个波段无效时，其他有效波段仍可参与计算，整体 alpha 有效不能替代各波段的有效性。带 alpha 的输出必须保留数据波段的 NoData 声明及无效像元，不能将初始化零值当作有效数据。NoData 与 alpha 同时存在时，在统一目标网格上用各波段自身的 GDAL Warp 覆盖恢复 NoData，有限 NoData 与 NaN 使用相同的波段有效性规则，不能按像元值是否为零推断有效性；这些内部波段视图和覆盖成果只存在于执行工作目录。
+
 裁剪边界必须与输入栅格四角定义的实际覆盖面有正面积交集，不能只比较两者的外接矩形；仅接触边界、栅格完全落在多边形孔洞中、MultiPolygon 各部分均在覆盖面外时均拒绝执行。旋转栅格使用其实际四角覆盖面判定，不能将 extent 矩形的空白角落视为输入数据。多边形转换到源 CRS 必须成功后再判定交集。
 
 `raster_to_cog` 是唯一通用 COG 转换入口，声明 workflow/direct；Manager 通过同一访问计划调用并继续管理 `manager.raster_cog`，旧 TIFF 专用算子及 URI 参数契约删除。`build_raster_mosaic` 继续承担 Manager 目录型业务数据集职责。Develop 业务保存沿用 produced_targets、命名 ResourceLocator 输出、血缘与 Meta scan。图片瓦片与 Service 在线发布不属于本次栅格计算范围。
