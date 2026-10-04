@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1106,18 +1107,21 @@ func TestCreateIsIdempotentByPermanentIdentityAndPreservesDisabledState(t *testi
 }
 
 func TestDeletedEngineCanRestoreItsIDAndDoesNotReserveAddress(t *testing.T) {
-	repo := newEngineServiceTestRepository(t)
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(runtime.Close)
+	db := newEngineServiceTestDB(t)
+	repo := repository.NewEngineRepository(db)
 	service := NewEngineService(repo, nil, nil)
 	tenantID := uint(7)
 	actorID := uint(42)
 	request := &models.EngineCreateRequest{
-		Name:         "Runtime A",
-		EngineType:   "custom_runtime",
-		EngineOrigin: "extension",
-		ConnectionInfo: models.ConnectionInfo{
-			"protocol": "http", "host": "runtime.internal", "port": 8080,
-		},
-		Capabilities: customRuntimeCapabilities(),
+		Name:           "Runtime A",
+		EngineType:     "custom_runtime",
+		EngineOrigin:   "extension",
+		ConnectionInfo: models.ConnectionInfo(systemTestWorkflowConnectionInfo(t, runtime.URL)),
+		Capabilities:   customRuntimeCapabilities(),
 	}
 	createdEngine, _, err := service.Create(request, actorID, tenantID)
 	if err != nil {
@@ -1131,6 +1135,10 @@ func TestDeletedEngineCanRestoreItsIDAndDoesNotReserveAddress(t *testing.T) {
 	if err := repo.Update(stored); err != nil {
 		t.Fatal(err)
 	}
+	waitForObservation := observeBackgroundUpdate(t, db, "restore_observation", func(tx *gorm.DB) bool {
+		values, ok := tx.Statement.Dest.(map[string]interface{})
+		return tx.Statement.Table == "engines" && ok && values["last_check_at"] != nil
+	})
 	restored, err := service.Restore(stored.ID, tenantID, actorID, &models.EngineRestoreRequest{
 		Version: stored.Version, Name: "Runtime Restored", ConnectionInfo: request.ConnectionInfo,
 		Capabilities: customRuntimeCapabilities(),
@@ -1141,9 +1149,13 @@ func TestDeletedEngineCanRestoreItsIDAndDoesNotReserveAddress(t *testing.T) {
 	if restored.ID != createdEngine.ID || restored.LifecycleState != models.EngineLifecycleActive || restored.Version <= stored.Version {
 		t.Fatalf("restored engine = %#v", restored)
 	}
+	waitForObservation()
 	stored, err = repo.GetByID(restored.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if stored.ConnectionStatus != models.EngineConnectionOffline || stored.LastCheckAt == nil {
+		t.Fatalf("restored engine observation was not persisted: %#v", stored)
 	}
 	stored.LifecycleState = models.EngineLifecycleDeleted
 	if err := repo.Update(stored); err != nil {
@@ -1225,7 +1237,8 @@ func TestUpdateMetadataAndLifecycleDoesNotProbeOfflineEngine(t *testing.T) {
 }
 
 func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
-	repo := newEngineServiceTestRepository(t)
+	db := newEngineServiceTestDB(t)
+	repo := repository.NewEngineRepository(db)
 	tenantID := uint(7)
 	actorID := uint(42)
 	engine := createDeletionTestEngine(t, repo, tenantID)
@@ -1240,6 +1253,17 @@ func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
 	}
 	service := NewEngineService(repo, nil, nil)
 	service.cleanup = cleanup
+	waitForDeletion := observeBackgroundUpdate(t, db, "engine_deletion", func(tx *gorm.DB) bool {
+		stored, ok := tx.Statement.Dest.(*models.Engine)
+		// A failed tombstone write is followed by setDeletionError; await that
+		// final error write rather than closing the pool after the first failure.
+		return tx.Statement.Table == "engines" && ok && (stored.DeletionError != "" ||
+			(stored.LifecycleState == models.EngineLifecycleDeleted && tx.Error == nil && tx.RowsAffected == 1))
+	})
+
+	var releaseOnce sync.Once
+	releaseValidation := func() { releaseOnce.Do(func() { close(cleanup.validationGate) }) }
+	t.Cleanup(releaseValidation)
 
 	assessmentID, err := service.CreateDeletionAssessment(engine.ID, tenantID, actorID, models.ExternalArtifactPolicyAbandon)
 	if err != nil {
@@ -1268,15 +1292,20 @@ func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
 		t.Fatalf("assessment contexts = %#v", cleanup.assessmentContexts)
 	}
 
-	close(cleanup.validationGate)
-	waitForEngineDeleted(t, repo, engine.ID)
+	releaseValidation()
+	waitForDeletion()
+	stored, err = repo.GetByID(engine.ID)
+	if err != nil || stored.LifecycleState != models.EngineLifecycleDeleted {
+		t.Fatalf("deletion tombstone was not persisted: engine=%#v err=%v", stored, err)
+	}
 	if cleanup.executeMode != events.CleanupModePhysical || cleanup.executeActorID != actorID || !cleanup.confirmation.Confirmed || cleanup.confirmation.ConfirmationToken != "CONFIRM" || cleanup.confirmation.ExternalArtifactPolicy != models.ExternalArtifactPolicyAbandon {
 		t.Fatalf("execute request mode=%q actor=%d confirmation=%#v", cleanup.executeMode, cleanup.executeActorID, cleanup.confirmation)
 	}
 }
 
 func TestBeginDeletionKeepsEngineWhenCleanupFails(t *testing.T) {
-	repo := newEngineServiceTestRepository(t)
+	db := newEngineServiceTestDB(t)
+	repo := repository.NewEngineRepository(db)
 	tenantID := uint(7)
 	engine := createDeletionTestEngine(t, repo, tenantID)
 	impact := deletionTestImpact(t, events.CleanupImpactWillDisable, "transfer_task:9")
@@ -1287,6 +1316,13 @@ func TestBeginDeletionKeepsEngineWhenCleanupFails(t *testing.T) {
 	}
 	service := NewEngineService(repo, nil, nil)
 	service.cleanup = cleanup
+	waitForDeletion := observeBackgroundUpdate(t, db, "engine_deletion", func(tx *gorm.DB) bool {
+		stored, ok := tx.Statement.Dest.(*models.Engine)
+		// A failed tombstone write is followed by setDeletionError; await that
+		// final error write rather than closing the pool after the first failure.
+		return tx.Statement.Table == "engines" && ok && (stored.DeletionError != "" ||
+			(stored.LifecycleState == models.EngineLifecycleDeleted && tx.Error == nil && tx.RowsAffected == 1))
+	})
 
 	assessmentID, err := service.CreateDeletionAssessment(engine.ID, tenantID, 42, models.ExternalArtifactPolicyDelete)
 	if err != nil {
@@ -1300,21 +1336,14 @@ func TestBeginDeletionKeepsEngineWhenCleanupFails(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("BeginDeletion() error = %v", err)
 	}
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		stored, err := repo.GetByID(engine.ID)
-		if err != nil {
-			t.Fatalf("engine deleted after failed cleanup: %v", err)
-		}
-		if strings.Contains(stored.DeletionError, "completed_with_errors") {
-			if stored.LifecycleState != models.EngineLifecycleDeleting {
-				t.Fatalf("lifecycle_state = %q, want deleting", stored.LifecycleState)
-			}
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	waitForDeletion()
+	stored, err := repo.GetByID(engine.ID)
+	if err != nil {
+		t.Fatalf("engine deleted after failed cleanup: %v", err)
 	}
-	t.Fatal("cleanup failure was not persisted")
+	if !strings.Contains(stored.DeletionError, "completed_with_errors") || stored.LifecycleState != models.EngineLifecycleDeleting {
+		t.Fatalf("cleanup failure was not persisted: %#v", stored)
+	}
 }
 
 type engineDeletionCleanupStub struct {
@@ -1394,21 +1423,16 @@ func deletionTestImpact(t *testing.T, disposition, stableRef string) events.Clea
 
 func newEngineServiceTestRepository(t *testing.T) *repository.EngineRepository {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sqlite connection pool: %v", err)
-	}
-	// Restore launches a connection check in the background. Serialize access to
-	// this in-memory SQLite database so the check cannot lock out test writes.
-	sqlDB.SetMaxOpenConns(1)
+	return repository.NewEngineRepository(newEngineServiceTestDB(t))
+}
+
+func newEngineServiceTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := newServiceTestDB(t)
 	if err := db.AutoMigrate(&models.Engine{}); err != nil {
 		t.Fatalf("auto migrate engine: %v", err)
 	}
-	return repository.NewEngineRepository(db)
+	return db
 }
 
 func customRuntimeCapabilities() *models.JSONString {
@@ -1431,17 +1455,4 @@ func createDeletionTestEngine(t *testing.T, repo *repository.EngineRepository, t
 		t.Fatalf("create engine: %v", err)
 	}
 	return engine
-}
-
-func waitForEngineDeleted(t *testing.T, repo *repository.EngineRepository, engineID uint) {
-	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		engine, err := repo.GetByID(engineID)
-		if err == nil && engine.LifecycleState == models.EngineLifecycleDeleted {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("engine %d did not become a deleted tombstone after cleanup completed", engineID)
 }

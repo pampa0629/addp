@@ -2,21 +2,34 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:target-system-router?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ATTACH is connection-local; the delayed deletion scan uses this pool too.
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS system").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&iam.SecurityPolicy{}); err != nil {
+	if err := db.AutoMigrate(&iam.SecurityPolicy{}, &models.Engine{}); err != nil {
 		t.Fatal(err)
 	}
 	policy := iam.DefaultSecurityPolicy()
@@ -24,6 +37,7 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := testIAMRuntimeConfig()
+	waitForRouterDeletionRecovery(t, db)
 	router := SetupRouter(db, cfg)
 	routes := make(map[string]struct{})
 	for _, route := range router.Routes() {
@@ -62,4 +76,28 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 			t.Fatalf("legacy route %q is still registered", forbidden)
 		}
 	}
+}
+
+// SetupRouter starts a delayed recovery scan. These fixtures have no deleting
+// engines, so this query is its final database operation.
+func waitForRouterDeletionRecovery(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	done := make(chan error, 1)
+	if err := db.Callback().Query().After("gorm:query").Register("test:router_deletion_recovery", func(tx *gorm.DB) {
+		if tx.Statement.Table == "engines" {
+			done <- tx.Error
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("router deletion recovery: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("router deletion recovery did not finish")
+		}
+	})
 }

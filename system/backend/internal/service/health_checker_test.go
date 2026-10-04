@@ -6,14 +6,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
-	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -52,7 +51,7 @@ func TestHealthCheckerRetriesOfflineRuntimeUntilItIsReady(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer runtime.Close()
+	t.Cleanup(runtime.Close)
 
 	parsed, err := url.Parse(runtime.URL)
 	if err != nil {
@@ -63,10 +62,7 @@ func TestHealthCheckerRetriesOfflineRuntimeUntilItIsReady(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := newServiceTestDB(t)
 	if err := db.AutoMigrate(&models.Engine{}); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +100,7 @@ func TestHealthCheckerIsolatesOfflineEngineFromOtherInstances(t *testing.T) {
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer runtime.Close()
+	t.Cleanup(runtime.Close)
 	parsed, err := url.Parse(runtime.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -114,18 +110,10 @@ func TestHealthCheckerIsolatesOfflineEngineFromOtherInstances(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := newServiceTestDB(t)
 	if err := db.AutoMigrate(&models.Engine{}); err != nil {
 		t.Fatal(err)
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB.SetMaxOpenConns(1)
 	repo := repository.NewEngineRepository(db)
 	engines := []*models.Engine{
 		{
@@ -172,7 +160,7 @@ func TestHealthCheckerRunRecoversEngineStartedAfterSystem(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer runtime.Close()
+	t.Cleanup(runtime.Close)
 
 	parsed, err := url.Parse(runtime.URL)
 	if err != nil {
@@ -182,10 +170,7 @@ func TestHealthCheckerRunRecoversEngineStartedAfterSystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := newServiceTestDB(t)
 	if err := db.AutoMigrate(&models.Engine{}); err != nil {
 		t.Fatal(err)
 	}
@@ -204,6 +189,14 @@ func TestHealthCheckerRunRecoversEngineStartedAfterSystem(t *testing.T) {
 	checker.retryInterval = time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("HealthChecker.Run did not stop after cancellation")
+		}
+	})
 	go func() {
 		defer close(done)
 		checker.Run(ctx, 5*time.Millisecond)
@@ -212,12 +205,6 @@ func TestHealthCheckerRunRecoversEngineStartedAfterSystem(t *testing.T) {
 	waitForEngineConnectionStatus(t, repo, engine.ID, models.EngineConnectionOffline)
 	ready.Store(true)
 	waitForEngineConnectionStatus(t, repo, engine.ID, models.EngineConnectionOnline)
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("HealthChecker.Run did not stop after cancellation")
-	}
 }
 
 func waitForEngineConnectionStatus(t *testing.T, repo *repository.EngineRepository, engineID uint, want string) {
@@ -225,7 +212,10 @@ func waitForEngineConnectionStatus(t *testing.T, repo *repository.EngineReposito
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		engine, err := repo.GetByID(engineID)
-		if err == nil && engine.ConnectionStatus == want {
+		if err != nil {
+			t.Fatalf("read connection observation: %v", err)
+		}
+		if engine.ConnectionStatus == want {
 			return
 		}
 		time.Sleep(2 * time.Millisecond)
@@ -235,4 +225,95 @@ func waitForEngineConnectionStatus(t *testing.T, repo *repository.EngineReposito
 		t.Fatal(err)
 	}
 	t.Fatalf("connection_status = %q, want %q", engine.ConnectionStatus, want)
+}
+
+func TestHealthCheckerReadDuringConnectionObservation(t *testing.T) {
+	db := newServiceTestDB(t)
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewEngineRepository(db)
+	engine := &models.Engine{
+		Name: "offline", EngineType: "custom_runtime", EngineOrigin: "extension",
+		LifecycleState: models.EngineLifecycleActive, ConnectionInfo: models.ConnectionInfo{},
+	}
+	if err := repo.Create(engine); err != nil {
+		t.Fatal(err)
+	}
+	held, releaseWrite := make(chan struct{}), make(chan struct{})
+	var holdOnce, releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseWrite) }) }
+	if err := db.Callback().Update().After("gorm:update").Before("gorm:commit_or_rollback_transaction").Register("test:hold_health_observation", func(tx *gorm.DB) {
+		values, ok := tx.Statement.Dest.(map[string]interface{})
+		if tx.Statement.Table == "engines" && ok && values["last_check_at"] != nil && tx.Error == nil {
+			holdOnce.Do(func() {
+				close(held)
+				<-releaseWrite
+			})
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	checker := NewHealthChecker(NewEngineService(repo, nil, nil))
+	checker.retryWindow, checker.retryInterval = time.Millisecond, time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		release()
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("health checker did not finish")
+		}
+	})
+	go func() {
+		defer close(done)
+		checker.Run(ctx, time.Hour)
+	}()
+	select {
+	case <-held:
+	case <-ctx.Done():
+		t.Fatal("health checker did not reach the uncommitted observation")
+	}
+	readDone := make(chan error, 1)
+	readFinished := make(chan struct{})
+	t.Cleanup(func() {
+		release()
+		cancel()
+		select {
+		case <-readFinished:
+		case <-time.After(5 * time.Second):
+			t.Error("concurrent observation reader did not finish")
+		}
+	})
+	var stored models.Engine
+	go func() {
+		defer close(readFinished)
+		readDone <- db.WithContext(ctx).First(&stored, engine.ID).Error
+	}()
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-readDone:
+			if err != nil {
+				t.Fatalf("read during health observation: %v", err)
+			}
+			if stored.LastCheckAt == nil {
+				t.Fatal("reader did not see the committed health observation")
+			}
+			return
+		case <-ticker.C:
+			if sqlDB.Stats().WaitCount > 0 {
+				release()
+			}
+		case <-ctx.Done():
+			t.Fatal("concurrent health observation read did not finish")
+		}
+	}
 }

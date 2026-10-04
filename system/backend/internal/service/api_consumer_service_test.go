@@ -7,22 +7,11 @@ import (
 
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func TestAPIConsumerServiceEnforcesTenantOwnershipAndExactGrant(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:api-consumer-tenant?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// SQLite ATTACH is connection-local; all fixture queries must share this connection.
-	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = sqlDB.Close() })
+	db := newServiceTestDB(t)
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS system").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +66,10 @@ func TestAPIConsumerServiceEnforcesTenantOwnershipAndExactGrant(t *testing.T) {
 		t.Fatalf("credential = %#v", credential)
 	}
 	digest := sha256.Sum256([]byte(credential.PlainTextCredential))
+	waitForLastUsed := observeBackgroundUpdate(t, db, "credential_last_used", func(tx *gorm.DB) bool {
+		values, ok := tx.Statement.Dest.(map[string]interface{})
+		return tx.Statement.Table == "api_consumer_credentials" && ok && values["last_used_at"] != nil
+	})
 	validation, err := service.ValidateCredential(hex.EncodeToString(digest[:]))
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +77,11 @@ func TestAPIConsumerServiceEnforcesTenantOwnershipAndExactGrant(t *testing.T) {
 	if !validation.Valid || validation.TenantID != 1 || validation.APIConsumerID != created.ID ||
 		len(validation.ServiceGrants) != 1 || validation.ServiceGrants[0].ServiceID != 71 {
 		t.Fatalf("validation = %#v", validation)
+	}
+	waitForLastUsed()
+	credentials, err := service.ListCredentials(created.ID, 1)
+	if err != nil || len(credentials) != 1 || credentials[0].LastUsedAt == nil {
+		t.Fatalf("credential usage was not persisted: credentials=%#v err=%v", credentials, err)
 	}
 	if err := service.RevokeCredential(created.ID, credential.ID, 1, 11); err != nil {
 		t.Fatal(err)

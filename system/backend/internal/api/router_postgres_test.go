@@ -30,7 +30,11 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 	}
 	pgxConfig.RuntimeParams["search_path"] = "system"
 	sqlDB := stdlib.OpenDB(*pgxConfig)
-	defer sqlDB.Close()
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +74,7 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 	assertOfflineTimeQueryAgainstPostgres(t, db)
 
 	cfg := testIAMRuntimeConfig()
+	waitForRouterDeletionRecovery(t, db)
 	router := SetupRouter(db, cfg)
 	routes := router.Routes()
 	var runtimeEngineRegistration bool

@@ -113,7 +113,7 @@ func (r *APIConsumerRepository) FindCredentials(consumerID uint) ([]models.APICo
 func (r *APIConsumerRepository) UpdateCredentialLastUsed(id uint) error {
 	return r.db.Model(&models.APIConsumerCredential{}).
 		Where("id = ?", id).
-		Update("last_used_at", gorm.Expr("NOW()")).Error
+		Update("last_used_at", gorm.Expr("CURRENT_TIMESTAMP")).Error
 }
 
 func (r *APIConsumerRepository) RevokeCredential(consumerID, credentialID, revokedBy uint) error {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -316,10 +317,7 @@ func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *
 }
 
 func TestModuleRoutingRevisionChangesOnlyWithTopologyAndWatchReturnsFreshSnapshot(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := newServiceTestDB(t)
 	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
 		t.Fatal(err)
 	}
@@ -355,14 +353,46 @@ func TestModuleRoutingRevisionChangesOnlyWithTopologyAndWatchReturnsFreshSnapsho
 		t.Fatalf("timeout snapshot = %#v, error=%v", snapshot, err)
 	}
 
-	registration.ModuleURL = "http://manager-b:8081"
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		_ = registry.Register(registration)
-	}()
-	snapshot, err = registry.WatchRoutingSnapshot(context.Background(), revision, time.Second)
-	if err != nil {
+	watchRead := make(chan struct{})
+	var readOnce sync.Once
+	if err := db.Callback().Query().After("gorm:query").Register("test:watch_initial_revision", func(tx *gorm.DB) {
+		if tx.Statement.Table == "module_registry_state" {
+			readOnce.Do(func() { close(watchRead) })
+		}
+	}); err != nil {
 		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	done := make(chan struct{})
+	var watchErr error
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("routing watch did not finish")
+		}
+	})
+	go func() {
+		defer close(done)
+		snapshot, watchErr = registry.WatchRoutingSnapshot(ctx, revision, time.Second)
+	}()
+	select {
+	case <-watchRead:
+	case <-ctx.Done():
+		t.Fatal("routing watch did not read the initial revision")
+	}
+	registration.ModuleURL = "http://manager-b:8081"
+	if err := registry.Register(registration); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("routing watch did not return after registration")
+	}
+	if watchErr != nil {
+		t.Fatal(watchErr)
 	}
 	if snapshot.Revision != 3 || len(snapshot.Modules) != 1 || snapshot.Modules[0].Instances[0].ModuleURL != registration.ModuleURL {
 		t.Fatalf("changed topology snapshot = %#v", snapshot)
