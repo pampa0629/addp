@@ -17,7 +17,7 @@
         <el-dropdown>
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
-            {{ user?.username || 'User' }}
+            {{ user?.display_name || user?.local_account?.username || 'User' }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>

@@ -25,6 +25,17 @@ const SLIDES_LOCATOR = 'addp://engine/12/path/doc/slides.pptx?type=file&item_id=
 const TILES_LOCATOR = 'addp://engine/12/path/tiles?type=directory&node_id=230'
 const TILE_SET_LOCATOR = 'addp://engine/12/path/tiles/farmland.pmtiles?type=file&item_id=1301'
 
+for (const profile of [
+  { id: '1', display_name: 'Local reader', local_account: { username: 'manager-e2e' } },
+  { id: '1', display_name: 'External reader', local_account: null }
+]) {
+  test(`shows formal User Profile display name for ${profile.display_name}`, async ({ page }) => {
+    await installMockBackend(page, { profile })
+    await page.goto('/data-explorer')
+    await expect(page.locator('.user-dropdown')).toContainText(profile.display_name)
+  })
+}
+
 for (const native of [
   { facts: { native_type: 'string', length: 19, ttl_millis: -1 }, value: { encoding: 'utf8', value: '9223372036854775807', byte_length: 19 }, entries: [], truncated: false },
   { facts: { native_type: 'string', length: 2, ttl_millis: 5000 }, value: { encoding: 'base64', value: 'AP8=', byte_length: 2 }, entries: [], truncated: true },
@@ -411,7 +422,7 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, { access_token: 'manager-e2e-token', expires_in: 3600 })
     }
     if (path === '/api/v1/system/users/me') {
-      return fulfillJSON(route, { id: 1, username: 'manager-e2e' })
+      return fulfillJSON(route, options.profile || { id: '1', display_name: 'manager-e2e', local_account: { username: 'manager-e2e' } })
     }
     if (path === '/api/v1/system/auth/context') {
       return fulfillJSON(route, managerAuthContext)

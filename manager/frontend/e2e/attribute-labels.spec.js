@@ -72,7 +72,7 @@ async function openAttributes(page, locale, attributes) {
   await page.route('**/api/v1/**', route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/system/refresh')) return json(route, { access_token: 'attributes-e2e-token', expires_in: 3600 })
-    if (path.endsWith('/system/users/me')) return json(route, { id: 1, username: 'attributes-e2e' })
+    if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'attributes-e2e', local_account: { username: 'attributes-e2e' } })
     if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 12, name: 'Business NFS', engine_type: 'nfs', lifecycle_state: 'active', connection_status: 'online' }] })
     if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [node] })

@@ -52,7 +52,7 @@ async function sessionProbe({ storeID, action = 'snapshot' }) {
     fingerprint: digest,
     tenantID: String(store.authContext?.context?.tenant_id || ''),
     principalID: String(store.authContext?.principal?.id || ''),
-    username: store.user?.username || '',
+    username: store.user?.local_account?.username || '',
     tokenPersisted: Boolean(localStorage.getItem('token') || sessionStorage.getItem('token'))
   }
 }
@@ -76,7 +76,7 @@ test('production Nginx shares one rotating browser session across Console, ifram
   await expect(page.frameLocator('iframe[data-testid="module-iframe"]').locator('.content-only')).toBeVisible()
   await expect.poll(async () => Boolean(moduleFrame() && (await moduleFrame().evaluate(sessionProbe, { storeID: 'manager-auth' })).authenticated)).toBe(true)
   const initial = await page.evaluate(sessionProbe, { storeID: 'console-auth' })
-  expect(initial.authenticated && initial.tenantID === tenantID && initial.username === username && !initial.tokenPersisted).toBe(true)
+  expect(initial).toMatchObject({ authenticated: true, tenantID, username, tokenPersisted: false })
   expect(Boolean(initial.principalID)).toBe(true)
   const frameBeforeRefresh = moduleFrame()
 

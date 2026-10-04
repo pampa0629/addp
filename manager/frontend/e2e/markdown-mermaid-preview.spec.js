@@ -94,7 +94,7 @@ async function installMockBackend(page) {
       return fulfillJSON(route, { access_token: 'manager-e2e-token', expires_in: 3600 })
     }
     if (path === '/api/v1/system/users/me') {
-      return fulfillJSON(route, { id: 1, username: 'manager-e2e' })
+      return fulfillJSON(route, { id: '1', display_name: 'manager-e2e', local_account: { username: 'manager-e2e' } })
     }
     if (path === '/api/v1/system/auth/context') {
       return fulfillJSON(route, managerAuthContext)

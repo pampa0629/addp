@@ -18,26 +18,30 @@ test('keeps long resource names and refresh actions inside a scrolling tree pane
   await page.setViewportSize({ width: 1280, height: 560 })
   await page.goto('/data-explorer')
   await treeNodeContent(page, TIDB_ENGINE.name).click()
-  await treeNodeContent(page, 'business').click()
+  const branch = treeNodeContent(page, 'business')
+  await branch.locator(':scope > .el-tree-node__expand-icon').click()
+  await expect(branch.locator('..')).toHaveAttribute('aria-expanded', 'true')
 
   const action = treeNodeContent(page, labels[45]).getByTitle('深度刷新：重建当前数据项的完整元数据')
-  await action.scrollIntoViewIfNeeded()
-  const geometry = await action.evaluate(element => {
-    const tree = element.closest('.el-scrollbar__wrap')
-    const panel = element.closest('.split-container').querySelector(':scope > .tree-container')
-    const rect = element.getBoundingClientRect()
-    const treeRect = tree.getBoundingClientRect()
-    const panelRect = panel.getBoundingClientRect()
-    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
-    return {
-      treeFitsPanel: treeRect.bottom <= panelRect.bottom && treeRect.right <= panelRect.right,
-      panelFitsViewport: panelRect.bottom <= innerHeight,
-      actionFitsPanel: rect.right <= panelRect.right && rect.bottom <= panelRect.bottom,
-      actionReceivesClick: element.contains(hit),
-      treeScrolls: tree.scrollHeight > tree.clientHeight
-    }
-  })
-  expect(geometry).toEqual({
+  await expect(action).toBeVisible()
+  await expect.poll(async () => {
+    await action.scrollIntoViewIfNeeded()
+    return action.evaluate(element => {
+      const tree = element.closest('.el-scrollbar__wrap')
+      const panel = element.closest('.split-container').querySelector(':scope > .tree-container')
+      const rect = element.getBoundingClientRect()
+      const treeRect = tree.getBoundingClientRect()
+      const panelRect = panel.getBoundingClientRect()
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+      return {
+        treeFitsPanel: treeRect.bottom <= panelRect.bottom && treeRect.right <= panelRect.right,
+        panelFitsViewport: panelRect.bottom <= innerHeight,
+        actionFitsPanel: rect.right <= panelRect.right && rect.bottom <= panelRect.bottom,
+        actionReceivesClick: element.contains(hit),
+        treeScrolls: tree.scrollHeight > tree.clientHeight
+      }
+    })
+  }).toEqual({
     treeFitsPanel: true,
     panelFitsViewport: true,
     actionFitsPanel: true,
@@ -163,7 +167,7 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, { access_token: 'manager-e2e-token', expires_in: 3600 })
     }
     if (path === '/api/v1/system/users/me') {
-      return fulfillJSON(route, { id: 1, username: 'manager-e2e' })
+      return fulfillJSON(route, { id: '1', display_name: 'manager-e2e', local_account: { username: 'manager-e2e' } })
     }
     if (path === '/api/v1/system/auth/context') {
       return fulfillJSON(route, managerAuthContext)

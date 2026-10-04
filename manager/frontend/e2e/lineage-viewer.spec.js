@@ -15,7 +15,7 @@ test('lineage fills the viewport, controls query depth and survives resizing and
     const url = new URL(route.request().url())
     const path = url.pathname
     if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
-    if (path.endsWith('/system/users/me')) return json(route, { id: 1, username: 'lineage-e2e' })
+    if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
     if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
     if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
@@ -73,7 +73,7 @@ test('shows all table fields in one query and focuses fields without fetching ag
     const url = new URL(route.request().url())
     const path = url.pathname
     if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
-    if (path.endsWith('/system/users/me')) return json(route, { id: 1, username: 'lineage-e2e' })
+    if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
     if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
     if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
@@ -119,7 +119,7 @@ test('expands a single direction from a node while keeping the current table and
  await page.route('**/api/v1/**',async route=>{
   const url=new URL(route.request().url()); const path=url.pathname
   if(path.endsWith('/system/refresh')) return json(route,{access_token:'lineage-e2e-token',expires_in:3600})
-  if(path.endsWith('/system/users/me')) return json(route,{id:1,username:'lineage-e2e'})
+  if(path.endsWith('/system/users/me')) return json(route,{ id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
   if(path.endsWith('/system/auth/context')) return json(route,managerAuthContext)
   if(path.endsWith('/manager/engines')) return json(route,{data:[{id:9,name:'Lineage PostgreSQL',engine_type:'postgresql',lifecycle_state:'active',connection_status:'online'}]})
   if(path.endsWith('/ancestors')) return json(route,{target_locator:locator,ancestors:[{id:locator,locator,label:'current',type:'table',metadata:{item_id:3}}]})
@@ -162,7 +162,7 @@ test('edge evidence opens the source execution in Monitor', async ({ page }) => 
  await page.route('**/api/v1/**',async route=>{
   const path=new URL(route.request().url()).pathname
   if(path.endsWith('/system/refresh')) return json(route,{access_token:'lineage-e2e-token',expires_in:3600})
-  if(path.endsWith('/system/users/me')) return json(route,{id:1,username:'lineage-e2e'})
+  if(path.endsWith('/system/users/me')) return json(route,{ id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
   if(path.endsWith('/system/auth/context')) return json(route,managerAuthContext)
   if(path.endsWith('/manager/engines')) return json(route,{data:[{id:9,name:'Lineage PostgreSQL',engine_type:'postgresql',lifecycle_state:'active',connection_status:'online'}]})
   if(path.endsWith('/ancestors')) return json(route,{target_locator:locator,ancestors:[{id:locator,locator,label:'current',type:'table',metadata:{item_id:3}}]})
@@ -192,7 +192,7 @@ for (const catalogRead of [false, true]) {
       const url = new URL(route.request().url())
       const path = url.pathname
       if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
-      if (path.endsWith('/system/users/me')) return json(route, { id: 1, username: 'lineage-e2e' })
+      if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
       if (path.endsWith('/system/auth/context')) return json(route, context)
       if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
       if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
