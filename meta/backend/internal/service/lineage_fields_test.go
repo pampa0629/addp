@@ -10,7 +10,9 @@ import (
 
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -365,5 +367,81 @@ func TestFieldLineageCollectsExactNestedMongoField(t *testing.T) {
 	graph, err := svc.GetGraph(t.Context(), 7, models.LineageGraphRequest{SubjectKind: "field_ref", ItemID: &target.ID, FieldName: "person_nickname", Direction: "upstream", Depth: 1, Limit: 20})
 	if err != nil || graph.FieldLineageStatus != "complete" || len(graph.Edges) != 1 || graph.Edges[0].Source.FieldName != "userInfo.nickName" || graph.Edges[0].Source.SchemaSnapshotHash != sourceSchema.Hash {
 		t.Fatalf("nested field evidence missing: %+v %v", graph, err)
+	}
+}
+
+func TestFieldLineageMultiSourceWriteFactsAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("META_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("META_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	if err := tx.Exec("DROP SCHEMA IF EXISTS meta CASCADE; CREATE SCHEMA meta; CREATE SCHEMA IF NOT EXISTS common").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.AutoMigrate(&commonExecution.TaskExecution{}, &models.MetaItem{}, &models.LineageItemRelation{}, &models.LineageObservation{}); err != nil {
+		t.Fatal(err)
+	}
+	personSchema := fieldTestSchema(t, "person_id", "name")
+	memberSchema := fieldTestSchema(t, "status")
+	activitySchema := fieldTestSchema(t, "activity_id")
+	targetSchema := fieldTestSchema(t, "person_id", "person_nickname", "member_status", "constant")
+	person := fieldTestItem(t, tx, 7, "write-people", personSchema)
+	member := fieldTestItem(t, tx, 7, "write-members", memberSchema)
+	activity := fieldTestItem(t, tx, 7, "write-activities", activitySchema)
+	target := fieldTestItem(t, tx, 7, "write-participation", targetSchema)
+	at := time.Now().UTC()
+	facts := commonExecution.LineageFacts{SchemaVersion: commonExecution.LineageFactsSchemaVersion,
+		Inputs:  []commonExecution.LineageResourceRef{{Port: "input.people", ItemID: &person.ID, SchemaSnapshot: personSchema}, {Port: "input.members", ItemID: &member.ID, SchemaSnapshot: memberSchema}, {Port: "read.2", ItemID: &activity.ID, SchemaSnapshot: activitySchema}},
+		Outputs: []commonExecution.LineageResourceRef{{Port: "target", ItemID: &target.ID, WriteMode: "replace", SchemaSnapshot: targetSchema}},
+		Operations: []commonExecution.LineageOperation{{Kind: "derive", Operator: "develop", InputPorts: []string{"input.people", "input.members", "read.2"}, OutputPorts: []string{"target"}, FieldLineageStatus: "complete", FieldMappings: []commonExecution.LineageFieldMapping{
+			{InputPort: "input.people", OutputPort: "target", SourceField: "person_id", TargetField: "person_id", Transformation: "direct"},
+			{InputPort: "input.people", OutputPort: "target", SourceField: "name", TargetField: "person_nickname", Transformation: "direct"},
+			{InputPort: "input.members", OutputPort: "target", SourceField: "status", TargetField: "member_status", Transformation: "derived"},
+			{OutputPort: "target", TargetField: "constant", Transformation: "generated"},
+		}}}}
+	execution := commonExecution.TaskExecution{TenantID: 7, ExecutionID: uuid.NewString(), Module: "develop", TaskType: "query", Source: "orchestrator", Status: "success", TriggerType: "manual", CompletedAt: &at, Metadata: commonModels.JSONMap{"lineage_facts": facts}}
+	if err := tx.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewLineageService(tx, lineageTestEngineCatalog{})
+	if _, err := service.CollectExecution(t.Context(), 7, execution.ExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct {
+		target, source, kind string
+		id                   uint
+	}{{"person_nickname", "name", "direct", person.ID}, {"member_status", "status", "derived", member.ID}} {
+		graph, err := service.GetGraph(t.Context(), 7, models.LineageGraphRequest{SubjectKind: "field_ref", ItemID: &target.ID, FieldName: want.target, Direction: "both", Depth: 1, Limit: 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if graph.FieldLineageStatus != "complete" || len(graph.Edges) != 1 || graph.Edges[0].Source.FieldName != want.source || graph.Edges[0].Source.ItemID == nil || *graph.Edges[0].Source.ItemID != want.id || graph.Edges[0].Transformation != want.kind {
+			t.Fatalf("field %s graph=%+v", want.target, graph)
+		}
+	}
+	graph, err := service.GetGraph(t.Context(), 7, models.LineageGraphRequest{SubjectKind: "field_ref", ItemID: &target.ID, FieldName: "constant", Direction: "both", Depth: 1, Limit: 20})
+	if err != nil || graph.FieldLineageStatus != "complete" || len(graph.Edges) != 0 {
+		t.Fatalf("generated graph=%+v err=%v", graph, err)
+	}
+	var count int64
+	if err := tx.Model(&models.LineageItemRelation{}).Where("tenant_id=? AND source_item_id=? AND target_item_id=? AND granularity='field'", 7, activity.ID, target.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("row selection became a field value dependency")
 	}
 }

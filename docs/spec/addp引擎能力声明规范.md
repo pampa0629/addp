@@ -402,6 +402,7 @@ type QueryCapability struct {
     SupportsExplain bool     `json:"supports_explain,omitempty"`
     SupportsCancel  bool     `json:"supports_cancel,omitempty"`
     ReadSession     bool     `json:"read_session,omitempty"`
+    TableResult     bool     `json:"table_result,omitempty"`
     Parameters      *QueryParameterCapability `json:"parameters,omitempty"`
     Federation      *QueryFederationCapability `json:"federation,omitempty"`
     Analytical      *AnalyticalCapability `json:"analytical,omitempty"`
@@ -438,6 +439,7 @@ type QueryFederationCapability struct {
 | `read_only` | 运行时是否只允许只读查询。 |
 | `supports_explain` | 是否支持查询计划 / 性能诊断。 |
 | `supports_cancel` | 是否支持取消运行中的查询。 |
+| `table_result` | 是否实现 TableResultProvider，冻结只读查询、同 Engine 现有目标与写入模式，在单个事务中写入并返回实际字段证据。不得从 SQL 方言或 batch_write 推导。 |
 | `read_session` | 是否支持通过 `QueryReadSessionProvider` 连续、无隐式结果行数上限地读取只读查询结果。 |
 | `parameters` | 可选的类型化查询参数能力；声明后必须由 Provider 原生安全绑定。 |
 | `federation` | 可选的多数据源联邦查询能力；声明后必须实现 `FederatedQueryRuntimeProvider`。 |
@@ -609,7 +611,7 @@ type CapabilitiesView struct {
 - 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
-- 声明 `compute.query.supported=true` 的普通查询插件必须实现以 `PrepareQuery()` 为唯一执行入口的 `QueryRuntimeProvider`，并从 PreparedQuery 提供受 `schema_coverage` 约束的 `QueryAnalysis`；联邦运行时必须实现 `FederatedQueryRuntimeProvider`。声明 `compute.query.read_session=true` 时必须实现从同一 PreparedQuery 打开会话的 `QueryReadSessionProvider`；实现该 Provider 时也必须反向声明。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
+- 声明 `compute.query.supported=true` 的普通查询插件必须实现以 `PrepareQuery()` 为唯一执行入口的 `QueryRuntimeProvider`，并从 PreparedQuery 提供受 `schema_coverage` 约束的 `QueryAnalysis`；联邦运行时必须实现 `FederatedQueryRuntimeProvider`。声明 `compute.query.table_result=true` 时必须实现 TableResultProvider，且实现该 Provider 必须反向声明该能力；查询不支持时不得声明 table_result。声明 `compute.query.read_session=true` 时必须实现从同一 PreparedQuery 打开会话的 `QueryReadSessionProvider`；实现该 Provider 时也必须反向声明。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
 - 声明 `compute.query.parameters.supported=true` 的插件必须对 `parameters.languages` 中每种语言实现类型化参数绑定，并拒绝缺失、未知或未使用参数；不得只声明 UI 能力而把参数插值交给调用方。
 - 声明 `compute.workflow.supported=true` 的编译期插件必须实现 `WorkflowRuntimeProvider`。通过 System 注册的 `addp.workflow/v1` 外部运行时不要求独立编译期插件，由 Common 唯一的 `HTTPWorkflowRuntimeProvider` 消费；System 必须在注册时校验 capabilities 并完成协议探测。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。

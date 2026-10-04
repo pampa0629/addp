@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -233,43 +233,87 @@ func (s *QueryExecutionService) executeExistingTableResult(
 	writeCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 	statement, _ := compiled.Content["query"].(string)
-	count, err := dbbridge.ExecuteTableResult(writeCtx, engine, target, statement, compiled.RuntimeParameters, mode)
+	result, err := s.executor.sqlEngine.executeTableResult(writeCtx, uint(execution.TenantID), engine, target, statement, compiled.RuntimeParameters, mode)
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.write_failed")
 	}
-	rowsAffected := &count
-	metadata := tableResultExecutionMetadata(execution.ExecutionID, relationLocators, targetLocator, mode, count)
+	rowsAffected := &result.RowsAffected
+	metadata, err := tableResultExecutionMetadata(execution.ExecutionID, relationLocators, targetLocator, mode, result)
+	if err != nil {
+		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.write_failed")
+	}
 	return s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
 }
 
 // Called only after the relation contract is compiled and the write commits.
 // Orchestration dependencies are deliberately not an input to resource lineage.
-func tableResultExecutionMetadata(executionID string, inputs map[string]string, targetLocator, mode string, count int64) commonModels.JSONMap {
+func tableResultExecutionMetadata(executionID string, inputs map[string]string, targetLocator, mode string, result *plugin.TableResult) (commonModels.JSONMap, error) {
+	if result == nil {
+		return nil, fmt.Errorf("table result evidence is missing")
+	}
 	names := make([]string, 0, len(inputs))
 	for name := range inputs {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	refs := make([]commonExecution.LineageResourceRef, 0, len(names))
-	ports := make([]string, 0, len(names))
-	for _, name := range names {
-		port := "input." + name
-		refs = append(refs, commonExecution.LineageResourceRef{Port: port, Locator: inputs[name]})
+	refs := make([]commonExecution.LineageResourceRef, 0, len(result.Sources))
+	ports := make([]string, 0, len(result.Sources))
+	sourcePorts := make(map[string]string, len(result.Sources))
+	for i, source := range result.Sources {
+		segments := plugin.EngineCatalogPathWithoutRoot(source.Path).Segments
+		if len(segments) != 2 {
+			return nil, fmt.Errorf("table result source is not a schema table")
+		}
+		pathNames := []string{segments[0].Name, segments[1].Name}
+		locator := (&resourcetree.ResourceLocator{EngineID: source.Path.EngineID, Path: pathNames, Type: resourcetree.ResourceType(segments[1].Kind)}).ToURI()
+		port := fmt.Sprintf("read.%d", i)
+		for _, name := range names {
+			bound, err := resourcetree.ParseURI(inputs[name])
+			if err == nil && bound.EngineID == source.Path.EngineID && len(bound.Path) == 2 && bound.Path[0] == pathNames[0] && bound.Path[1] == pathNames[1] {
+				port = "input." + name
+				break
+			}
+		}
+		snapshot, err := commonExecution.NewLineageSchemaSnapshot(source.Fields)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, commonExecution.LineageResourceRef{Port: port, Locator: locator, SchemaSnapshot: snapshot})
 		ports = append(ports, port)
+		sourcePorts[tableResultSourceKey(source.Path)] = port
+	}
+	targetSnapshot, err := commonExecution.NewLineageSchemaSnapshot(result.TargetFields)
+	if err != nil {
+		return nil, err
+	}
+	operation := commonExecution.LineageOperation{Kind: "derive", Operator: "develop", InputPorts: ports, OutputPorts: []string{"target"}, FieldLineageStatus: "unavailable"}
+	if result.FieldLineageComplete {
+		operation.FieldLineageStatus = "complete"
+		for _, mapping := range result.FieldMappings {
+			inputPort := ""
+			if mapping.Transformation != "generated" {
+				var ok bool
+				inputPort, ok = sourcePorts[tableResultSourceKey(mapping.SourcePath)]
+				if !ok {
+					return nil, fmt.Errorf("field mapping source is outside the table result")
+				}
+			}
+			operation.FieldMappings = append(operation.FieldMappings, commonExecution.LineageFieldMapping{InputPort: inputPort, OutputPort: "target", SourceField: mapping.SourceField, TargetField: mapping.TargetField, Transformation: mapping.Transformation})
+		}
 	}
 	writeMode := mode
 	if mode == "overwrite" {
 		writeMode = "replace"
 	}
 	return commonModels.JSONMap{
-		"outputs": commonModels.JSONMap{"execution_id": executionID, "target_locator": targetLocator, "row_count": count},
-		"lineage_facts": &commonExecution.LineageFacts{
-			SchemaVersion: commonExecution.LineageFactsSchemaVersion,
-			Inputs:        refs,
-			Outputs:       []commonExecution.LineageResourceRef{{Port: "target", Locator: targetLocator, WriteMode: writeMode}},
-			Operations:    []commonExecution.LineageOperation{{Kind: "derive", Operator: "develop", InputPorts: ports, OutputPorts: []string{"target"}}},
-		},
-	}
+		"outputs":       commonModels.JSONMap{"execution_id": executionID, "target_locator": targetLocator, "row_count": result.RowsAffected},
+		"lineage_facts": &commonExecution.LineageFacts{SchemaVersion: commonExecution.LineageFactsSchemaVersion, Inputs: refs, Outputs: []commonExecution.LineageResourceRef{{Port: "target", Locator: targetLocator, WriteMode: writeMode, SchemaSnapshot: targetSnapshot}}, Operations: []commonExecution.LineageOperation{operation}},
+	}, nil
+}
+
+func tableResultSourceKey(path plugin.EngineCatalogPath) string {
+	encoded, _ := json.Marshal(path)
+	return string(encoded)
 }
 
 func (s *QueryExecutionService) executeAndComplete(

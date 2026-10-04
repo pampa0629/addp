@@ -259,6 +259,7 @@ type QueryCapability struct {
 	ReadOnly         bool                       `json:"read_only,omitempty"`
 	SupportsExplain  bool                       `json:"supports_explain,omitempty"`
 	SupportsCancel   bool                       `json:"supports_cancel,omitempty"`
+	TableResult      bool                       `json:"table_result,omitempty"`
 	ReadSession      bool                       `json:"read_session,omitempty"`
 	Parameters       *QueryParameterCapability  `json:"parameters,omitempty"`
 	Federation       *QueryFederationCapability `json:"federation,omitempty"`

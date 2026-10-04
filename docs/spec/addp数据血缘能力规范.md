@@ -232,11 +232,11 @@ owner execution/publication fact
 
 ### 5.1 固定正式表查询写入
 
-Develop Query Execution Supervisor 必须在业务写入事务成功提交后，将 `lineage_facts` 与成功终态在同一次带 lease 校验的执行记录事务中保存，再复用已有通知入口调用 Meta collector。输入采用本次冻结的、已通过 relation 查询编译校验的全部实际关系绑定，按参数名稳定排序；目标采用本次实际写入的 `target_locator`。不得从 Orchestrator 的 `depends_on` 推导资源边，也不得将逻辑表建表任务作为数据来源。
+Develop Query Execution Supervisor 必须在业务写入事务成功提交后，将 `lineage_facts` 与成功终态在同一次带 lease 校验的执行记录事务中保存，再复用已有通知入口调用 Meta collector。输入采用 Provider 冻结并在写入事务中复核的完整 ReadSet，按 canonical path 稳定排序。命中 relation 参数绑定的来源保留 input.<参数名> 端口，View 展开的其他实际来源使用 read.<序号> 端口；不得仅靠调用方的绑定列表遗漏间接来源；目标采用本次实际写入的 `target_locator`。不得从 Orchestrator 的 `depends_on` 推导资源边，也不得将逻辑表建表任务作为数据来源。
 
 覆盖计算的 `overwrite` 映射为血缘 `replace`；`append` 保留为 `append`。失败、取消、失去 lease 或终态保存失败时不通知采集、不建立成功关系；通知失败保留已落库的成功事实，由 Meta 周期 collector 重试。业务库提交与平台执行记录提交不是跨库事务，二者之间进程中断的执行不能自动冒充成功或补造血缘。
 
-这一路径记录显式 relation 契约的 data item 级派生关系，不扩大为任意 SQL 的隐式读取闭包或字段级自动解析。历史缺少事实的执行不能由 Meta 反向猜测；通过新的真实执行生成证据。
+这一路径由 TableResultProvider 证明同 Engine 现有表写入的实际读取集合、源/目标实时结构和字段位置映射；Develop 记录完整字段事实或明确的 unavailable 状态，不在 Owner 复制 SQL 依赖解析，也不扩大为任意写 SQL/DDL 的推断。历史缺少事实的执行不能由 Meta 反向猜测；通过新的真实执行生成证据。
 
 ## 六、粒度
 
@@ -250,9 +250,9 @@ Develop Query Execution Supervisor 必须在业务写入事务成功提交后，
 
 ### 6.1 字段级首期契约
 
-首期支持 Transfer bounded native table -> native table，以及同一 PreparedQuery 能证明单一源数据项完整输出映射的 query source -> native table。字段血缘回答目标字段值来自哪些源字段；过滤、JOIN 条件、排序及行数影响不混入值来源关系。查询源只消费 Provider 的 ReadSet / OutputLineage，不在 Transfer 解析 SQL/MQL；MongoDB 透明 aggregate 的嵌套字段别名、`$ifNull: [field, null]` 和 `$unwind.includeArrayIndex` 按 Provider 证据与实际 field mapping 组合，数组索引保留 derived 语义。多来源查询、opaque / unresolved 或缺少精确输出绑定的查询、continuous/CDC、encoded 输出及空间重投影暂不声明完整字段血缘，继续记录数据项级事实，字段视图明确显示证据不可用。
+首期支持 Transfer bounded native table -> native table，以及同一 PreparedQuery 能证明单一源数据项完整输出映射的 query source -> native table。字段血缘回答目标字段值来自哪些源字段；过滤、JOIN 条件、排序及行数影响不混入值来源关系。查询源只消费 Provider 的 ReadSet / OutputLineage，不在 Transfer 解析 SQL/MQL；MongoDB 透明 aggregate 的嵌套字段别名、`$ifNull: [field, null]` 和 `$unwind.includeArrayIndex` 按 Provider 证据与实际 field mapping 组合，数组索引保留 derived 语义。Transfer 多来源查询、opaque / unresolved 或缺少精确输出绑定的查询、continuous/CDC、encoded 输出及空间重投影暂不声明完整字段血缘，继续记录数据项级事实，字段视图明确显示证据不可用。
 
-PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派生表、JOIN、UNION 与表达式的字段值来源。该证明能力不替代执行 owner 的写入事实：Develop 现有表结果写入仍只记录数据项级关系，尚未冻结并记录源/目标字段快照和实际写入字段映射，不能据此声明 DWD 字段血缘已经可用。
+PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派生表、JOIN、UNION 与表达式的字段值来源。该证明能力不替代执行 owner 的写入事实：Develop 的同 Engine 现有表写入消费 TableResultProvider 冻结计划，在成功事务返回的实时源/目标结构上记录 schema snapshot 与实际位置映射。CTE、JOIN、UNION 等可证明查询支持多来源字段血缘；不透明查询仍标记 unavailable。此能力必须通过真实执行验收，不能仅凭查询解析测试声明部署后的 DWD 血缘已经可用。
 
 - `lineage_facts` 保持 `addp.lineage-facts/v1`；资源引用的 `schema_snapshot` 使用 `{hash, fields}`，fields 来自同一次真实读取和目标写入结构，hash 复用 Common 的 `TableSchemaSnapshotHash`。不回查当前结构补造执行快照。
 - 查询源冻结 Provider 的原始来源结构及精确路径绑定，查询结果列不能充当原始来源快照。嵌套字段只按快照中的唯一字段名引用，完整 path 参与结构哈希；点号不会被 collector 或查询 API 再次拆分。查询保护准备同时返回实际受转换影响的结果字段名，与同次保护规则绑定；这些字段经过别名及后续 field mapping 后仍须记为 derived，抑制列不产生映射。

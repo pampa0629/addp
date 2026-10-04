@@ -507,3 +507,28 @@ func TestValidatePluginCapabilitiesRejectsRelationParametersOutsideSQL(t *testin
 		t.Fatalf("ValidatePluginCapabilities() error = %v, want relation language error", err)
 	}
 }
+
+type tableResultCapabilityPlugin struct{ queryParameterCapabilityPlugin }
+
+func (*tableResultCapabilityPlugin) PrepareTableResult(context.Context, ConnectionInfo, TableResultRequest) (PreparedTableResult, error) {
+	return nil, nil
+}
+func TestTableResultCapabilityRequiresMatchingProviderDeclaration(t *testing.T) {
+	query := &queryParameterCapabilityPlugin{MockPlugin: MockPlugin{TypeValue: "result_contract"}, caps: EngineCapabilities{SchemaVersion: CapabilitiesSchemaVersion, EngineType: "result_contract", EngineFamily: "test", Compute: &ComputeCapabilities{Query: &QueryCapability{Supported: true, Languages: []string{"sql"}, TableResult: true}}}}
+	if err := ValidatePluginCapabilities(query); err == nil || !strings.Contains(err.Error(), "TableResultProvider") {
+		t.Fatalf("declaration without provider=%v", err)
+	}
+	provider := &tableResultCapabilityPlugin{*query}
+	if err := ValidatePluginCapabilities(provider); err != nil {
+		t.Fatal(err)
+	}
+	provider.caps.Compute.Query.TableResult = false
+	if err := ValidatePluginCapabilities(provider); err == nil || !strings.Contains(err.Error(), "table_result") {
+		t.Fatalf("provider without declaration=%v", err)
+	}
+	provider.caps.Compute.Query.TableResult = true
+	provider.caps.Compute.Query.Supported = false
+	if err := ValidatePluginCapabilities(provider); err == nil {
+		t.Fatal("table_result without query support accepted")
+	}
+}

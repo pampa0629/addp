@@ -3,61 +3,37 @@ package dbbridge
 import (
 	"context"
 	"fmt"
+
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
-	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
-	"gorm.io/gorm"
-	"strings"
 )
 
-// ExecuteTableResult writes a caller-compiled, authorized INSERT SELECT to an existing table.
-// Overwrite never commits the deletion separately from the insertion.
-func ExecuteTableResult(ctx context.Context, engine *models.Engine, target *resourcetree.ResourceLocator, statement string, parameters map[string]interface{}, mode string) (int64, error) {
-	if engine == nil || target == nil || target.EngineID != engine.ID || target.Type != resourcetree.TypeTable || len(target.Path) != 2 || (mode != "append" && mode != "overwrite") {
-		return 0, fmt.Errorf("invalid table result target or write mode")
+// PrepareTableResult adapts ADDP identity to the provider's frozen write plan.
+// It neither binds SQL parameters nor executes SQL; the provider owns both.
+func PrepareTableResult(ctx context.Context, engine *models.Engine, target *resourcetree.ResourceLocator, query string, parameters map[string]interface{}, mode string) (plugin.PreparedTableResult, error) {
+	if engine == nil || target == nil || target.EngineID != engine.ID || target.Type != resourcetree.TypeTable {
+		return nil, fmt.Errorf("invalid table result target")
 	}
-	dialect, err := sqlDialectForEngine(engine.EngineType)
+	provider, err := plugin.Get(engine.EngineType)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	if dialect != commonquery.DialectPostgreSQL {
-		return 0, fmt.Errorf("transactional table results require PostgreSQL dialect")
+	caps := provider.Capabilities()
+	runtime, ok := provider.(plugin.TableResultProvider)
+	if !ok || caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported || !caps.Compute.Query.TableResult {
+		return nil, fmt.Errorf("engine %s has no table result provider", engine.EngineType)
 	}
-	statement, args, err := bindSQLExecutionParameters(dialect, statement, parameters)
+	model, err := EngineCatalogModel(engine.EngineType)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	db, err := GetOrCreatePool(engine, DefaultPoolConfig())
+	path, err := resourcetree.EngineCatalogPathFromLocator(model, target)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	table := commonquery.ForDialect(dialect).QualifiedTable(target.Path[0], target.Path[1])
-	if !strings.HasPrefix(statement, "INSERT INTO "+table+" ") {
-		return 0, fmt.Errorf("compiled result does not match target")
-	}
-	return executeTableResultTransaction(ctx, db, table, statement, args, mode)
-}
-func executeTableResultTransaction(ctx context.Context, db *gorm.DB, table, statement string, args []interface{}, mode string) (int64, error) {
-	var count int64
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Serialize all writes on this target before evaluating the source query.
-		if err := tx.Exec("LOCK TABLE " + table + " IN EXCLUSIVE MODE").Error; err != nil {
-			return err
-		}
-		if mode == "overwrite" {
-			if err := tx.Exec("DELETE FROM " + table).Error; err != nil {
-				return err
-			}
-		}
-		result := tx.Exec(statement, args...)
-		if result.Error != nil {
-			return result.Error
-		}
-		count = result.RowsAffected
-		return nil
+	return runtime.PrepareTableResult(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.TableResultRequest{
+		Query:  plugin.QueryRequest{EngineID: engine.ID, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true, Parameters: parameters}},
+		Target: path, WriteMode: mode,
 	})
-	if err != nil {
-		return 0, err
-	}
-	return count, nil
 }

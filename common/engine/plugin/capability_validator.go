@@ -256,6 +256,9 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 			return fmt.Errorf("%s declares analytical support without a valid AnalyticalCompilerProvider", p.Type())
 		}
 	}
+	if compute.Query != nil && compute.Query.TableResult && !compute.Query.Supported {
+		return fmt.Errorf("%s table_result requires query support", p.Type())
+	}
 	if compute.Query != nil && compute.Query.Supported {
 		_, nativeQuery := p.(QueryRuntimeProvider)
 		_, federatedQuery := p.(FederatedQueryRuntimeProvider)
@@ -268,6 +271,11 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 			}
 			if compute.Query.Federation.RuntimeAPI == "" {
 				return fmt.Errorf("%s declares query federation without runtime_api", p.Type())
+			}
+		}
+		if compute.Query.TableResult {
+			if _, ok := p.(TableResultProvider); !ok {
+				return fmt.Errorf("%s declares query table_result but does not implement TableResultProvider", p.Type())
 			}
 		}
 		if compute.Query.ReadSession {
@@ -394,6 +402,11 @@ func validateProviderCapabilities(p EnginePlugin, caps EngineCapabilities) error
 	if _, ok := p.(QueryRuntimeProvider); ok {
 		if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported {
 			return fmt.Errorf("%s implements QueryRuntimeProvider but does not declare query support", p.Type())
+		}
+	}
+	if _, ok := p.(TableResultProvider); ok {
+		if caps.Compute == nil || caps.Compute.Query == nil || !caps.Compute.Query.Supported || !caps.Compute.Query.TableResult {
+			return fmt.Errorf("%s implements TableResultProvider but does not declare query table_result", p.Type())
 		}
 	}
 	if _, ok := p.(QueryReadSessionProvider); ok {

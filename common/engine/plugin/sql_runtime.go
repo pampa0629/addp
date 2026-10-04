@@ -333,8 +333,8 @@ type preparedSQLQuery struct {
 }
 
 // ConsumeSQLPreparedQuery transfers the already-bound SQL request from the
-// shared one-shot PreparedQuery to a streaming session owned by the same
-// provider type. It is the only SQL query-session bridge; providers must not
+// shared one-shot PreparedQuery to a streaming session or atomic table result owned by the same
+// provider type. It is the only SQL prepared-request bridge; providers must not
 // re-bind the original request or call Execute after consuming it.
 func ConsumeSQLPreparedQuery(prepared PreparedQuery, provider SQLQueryRuntimeProvider) (ConnectionInfo, QueryRequest, error) {
 	plan, ok := prepared.(*preparedSQLQuery)

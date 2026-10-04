@@ -50,6 +50,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				SupportsExplain: opts.SupportsExplain,
 				SupportsCancel:  opts.SupportsCancel,
 				ReadSession:     opts.QueryReadSession,
+				TableResult:     opts.TableResult,
 				Parameters:      queryParameterCapability(opts.SupportsParameters, "sql", opts.AdditionalParameterTypes...),
 			},
 		},
@@ -94,6 +95,7 @@ type TabularCapabilityOptions struct {
 	BulkWrite                             bool
 	TableReadSession                      bool
 	QueryReadSession                      bool
+	TableResult                           bool
 	TableReadSpatialTransform             bool
 	TableSpatialEncoding                  *NativeTableSpatialEncodingCapability
 	BatchWrite                            bool

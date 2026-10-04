@@ -7,14 +7,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
@@ -32,7 +36,10 @@ func TestTableResultExecutionMetadataRecordsAllFrozenBindingsAndWriteSemantics(t
 	target := "addp://engine/9/path/business/participation?type=table"
 	for mode, wantMode := range map[string]string{"overwrite": "replace", "append": "append"} {
 		t.Run(mode, func(t *testing.T) {
-			metadata := tableResultExecutionMetadata("run", inputs, target, mode, 0)
+			metadata, err := tableResultExecutionMetadata("run", inputs, target, mode, tableResultTestEvidence(inputs, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
 			payload, err := json.Marshal(metadata["lineage_facts"])
 			if err != nil {
 				t.Fatal(err)
@@ -46,13 +53,20 @@ func TestTableResultExecutionMetadataRecordsAllFrozenBindingsAndWriteSemantics(t
 				{Port: "input.members", Locator: inputs["members"]},
 				{Port: "input.person", Locator: inputs["person"]},
 			}
+			for i := range facts.Inputs {
+				if err := facts.Inputs[i].SchemaSnapshot.Validate(); err != nil {
+					t.Fatal(err)
+				}
+				facts.Inputs[i].SchemaSnapshot = nil
+			}
+			wantInputs[2].Locator = "addp://engine/9/path/business/people?type=table"
 			if facts.SchemaVersion != commonExecution.LineageFactsSchemaVersion || !reflect.DeepEqual(facts.Inputs, wantInputs) {
 				t.Fatalf("inputs: %#v", facts)
 			}
 			if len(facts.Outputs) != 1 || facts.Outputs[0].Locator != target || facts.Outputs[0].WriteMode != wantMode {
 				t.Fatalf("outputs: %#v", facts.Outputs)
 			}
-			wantOperation := commonExecution.LineageOperation{Kind: "derive", Operator: "develop", InputPorts: []string{"input.activities", "input.members", "input.person"}, OutputPorts: []string{"target"}}
+			wantOperation := commonExecution.LineageOperation{Kind: "derive", Operator: "develop", FieldLineageStatus: "unavailable", InputPorts: []string{"input.activities", "input.members", "input.person"}, OutputPorts: []string{"target"}}
 			if len(facts.Operations) != 1 || !reflect.DeepEqual(facts.Operations[0], wantOperation) {
 				t.Fatalf("operations: %#v", facts.Operations)
 			}
@@ -147,9 +161,12 @@ func TestQueryCompletionCollectsOnlyCommittedLineage(t *testing.T) {
 			}))
 			defer server.Close()
 			worker := &QueryExecutionService{executor: &DevExecutor{metaClient: commonClient.NewMetaClient(server.URL, staticServiceTokenSource("addp_at_develop"))}, queries: repository.NewQueryExecutionRepository(db)}
-			metadata := tableResultExecutionMetadata(execution.ExecutionID,
+			metadata, err := tableResultExecutionMetadata(execution.ExecutionID,
 				map[string]string{"source": "addp://engine/9/path/public/source?type=table"},
-				"addp://engine/9/path/public/result?type=table", "overwrite", 3)
+				"addp://engine/9/path/public/result?type=table", "overwrite", tableResultTestEvidence(map[string]string{"source": "addp://engine/9/path/public/source?type=table"}, 3))
+			if err != nil {
+				t.Fatal(err)
+			}
 			if scenario == "ordinary_query" {
 				metadata = queryExecutionMetadata(commonModels.JSONMap{"rows": []interface{}{}})
 			}
@@ -216,7 +233,7 @@ func TestCompileExistingTableResultQueryQuotesRuntimeLocators(t *testing.T) {
 		t.Fatalf("compileExistingTableResultQuery: %v", err)
 	}
 	query := compiled.Content["query"].(string)
-	want := `INSERT INTO "materialized"."write_stage" SELECT id, name FROM "materialized"."source_stage" WHERE id > :minimum_id`
+	want := `SELECT id, name FROM "materialized"."source_stage" WHERE id > :minimum_id`
 	if query != want {
 		t.Fatalf("compiled query = %q, want %q", query, want)
 	}
@@ -242,7 +259,7 @@ func TestCompileExistingTableResultQueryAcceptsDeclaredOpenGaussRelationCapabili
 	if err != nil {
 		t.Fatalf("compile openGauss relation query: %v", err)
 	}
-	if got := compiled.Content["query"]; got != `INSERT INTO "business"."result" SELECT id FROM "business"."source"` {
+	if got := compiled.Content["query"]; got != `SELECT id FROM "business"."source"` {
 		t.Fatalf("compiled query = %q", got)
 	}
 }
@@ -381,4 +398,20 @@ func TestExistingResultRejectsSelfInputRegardlessOfCatalogHints(t *testing.T) {
 			t.Fatalf("self input accepted: %s", target)
 		}
 	}
+}
+
+func tableResultTestEvidence(inputs map[string]string, count int64) *plugin.TableResult {
+	names := make([]string, 0, len(inputs))
+	for name := range inputs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt, NativeType: "integer"}}
+	result := &plugin.TableResult{RowsAffected: count, TargetFields: fields}
+	for _, name := range names {
+		locator, _ := resourcetree.ParseURI(inputs[name])
+		path, _ := resourcetree.EngineCatalogPathFromLocator(plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema), locator)
+		result.Sources = append(result.Sources, plugin.TableResultSource{Path: path, Fields: fields})
+	}
+	return result
 }

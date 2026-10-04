@@ -17178,6 +17178,9 @@ const docTemplate = `{
                 },
                 "supports_explain": {
                     "type": "boolean"
+                },
+                "table_result": {
+                    "type": "boolean"
                 }
             }
         },

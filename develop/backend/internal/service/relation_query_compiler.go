@@ -123,7 +123,7 @@ func compileExistingTableResultQuery(
 	for key, value := range task.Content {
 		content[key] = value
 	}
-	content["query"] = "INSERT INTO " + dialect.QualifiedTable(locator.Path[0], locator.Path[1]) + " " + strings.TrimSpace(compiledSource)
+	content["query"] = strings.TrimSpace(compiledSource)
 	compiled := *task
 	compiled.Content = content
 	return &compiled, nil

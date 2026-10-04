@@ -34,6 +34,13 @@ type ProtocolIdentity struct {
 	// AdditionalSystemTables extends the catalog filter for protocol-compatible
 	// engines that expose reserved objects inside an otherwise business schema.
 	AdditionalSystemTables []string
+	// TableResult catalog expressions adapt native facts in the shared target
+	// guard. They are trusted Provider SQL, never request/connection options;
+	// aliases c, a and n are pg_class, pg_attribute and pg_namespace respectively.
+	// Empty expressions use the PostgreSQL catalog.
+	TableResultRowSecurityExpression      string
+	TableResultGeneratedExpression        string
+	TableResultBuiltinNamespaceExpression string
 }
 
 // NewProtocolCompatiblePlugin creates a PostgreSQL protocol implementation
@@ -142,6 +149,7 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		Write:                     true,
 		BulkWrite:                 true,
 		TableReadSession:          true,
+		TableResult:               true,
 		QueryReadSession:          true,
 		TableReadSpatialTransform: true,
 		TableSpatialEncoding: &plugin.NativeTableSpatialEncodingCapability{

@@ -70,6 +70,9 @@ type postgresOutputResolver struct {
 	catalog       postgresReadCatalog
 	sources       []plugin.QueryOutputSource
 	opaqueSources map[int]bool
+	// Only the final INSERT source can use positional columns; CTE/subquery
+	// scopes still require unambiguous names.
+	positionalOutputs map[*pgquery.SelectStmt]bool
 }
 
 func resolvePostgresSelectOutputLineage(ctx context.Context, catalog postgresReadCatalog, statement *pgquery.SelectStmt, sources []plugin.QueryOutputSource) ([]plugin.QueryOutputSource, error) {
@@ -148,7 +151,7 @@ func (r *postgresOutputResolver) selectColumns(stmt *pgquery.SelectStmt, inherit
 		for i := range left {
 			columns[i] = postgresValueColumn{name: left[i].name, origins: mergePostgresValueOrigins(left[i].origins, right[i].origins, true)}
 		}
-		return columns, checkPostgresValueColumnNames(columns)
+		return r.checkedColumns(stmt, columns)
 	}
 	relation := postgresValueRelation{qualified: map[string][]postgresValueColumn{}}
 	for _, node := range stmt.GetFromClause() {
@@ -195,10 +198,17 @@ func (r *postgresOutputResolver) selectColumns(stmt *pgquery.SelectStmt, inherit
 		if name == "" {
 			name = postgresValueExpressionName(target.GetVal())
 		}
-		if name == "" {
+		if name == "" && !r.positionalOutputs[stmt] {
 			return nil, fmt.Errorf("expression output name is unresolved")
 		}
 		columns = append(columns, postgresValueColumn{name: name, origins: origins})
+	}
+	return r.checkedColumns(stmt, columns)
+}
+
+func (r *postgresOutputResolver) checkedColumns(stmt *pgquery.SelectStmt, columns []postgresValueColumn) ([]postgresValueColumn, error) {
+	if r.positionalOutputs[stmt] {
+		return columns, nil
 	}
 	return columns, checkPostgresValueColumnNames(columns)
 }

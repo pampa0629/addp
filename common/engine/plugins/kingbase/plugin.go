@@ -67,10 +67,11 @@ func (p *Plugin) protocol() *postgresql.PostgreSQLPlugin {
 
 func (p *Plugin) protocolIdentity() postgresql.ProtocolIdentity {
 	return postgresql.ProtocolIdentity{
-		EngineType:              p.Type(),
-		DisplayName:             p.DisplayName(),
-		AdditionalSystemSchemas: append([]string(nil), kingbaseSystemSchemas...),
-		AdditionalSystemTables:  append([]string(nil), kingbaseSystemTables...),
+		EngineType:                            p.Type(),
+		DisplayName:                           p.DisplayName(),
+		AdditionalSystemSchemas:               append([]string(nil), kingbaseSystemSchemas...),
+		AdditionalSystemTables:                append([]string(nil), kingbaseSystemTables...),
+		TableResultBuiltinNamespaceExpression: "n.nspname IN ('pg_catalog','sys_catalog')",
 	}
 }
 
@@ -99,6 +100,7 @@ func (p *Plugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermSchema, plugin.TabularCapabilityOptions{
 		Constraints:          true,
 		TableReadSession:     true,
+		TableResult:          true,
 		QueryReadSession:     true,
 		TableWriteSession:    true,
 		TableWritePrepare:    true,
@@ -276,3 +278,7 @@ func (p *Plugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig
 }
 
 func (p *Plugin) GORMDialect() string { return "postgres" }
+
+func (p *Plugin) PrepareTableResult(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.TableResultRequest) (plugin.PreparedTableResult, error) {
+	return p.protocol().PrepareTableResult(ctx, connInfo, req)
+}

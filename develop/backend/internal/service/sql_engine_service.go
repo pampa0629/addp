@@ -738,3 +738,31 @@ func (s *SQLEngineService) normalizedTimeoutForTenant(ctx context.Context, tenan
 	}
 	return timeout, nil
 }
+
+// Native table writes cannot apply post-read masking. Keep each actual source's
+// existing unmanaged gate active until the provider's transaction finishes.
+func (s *SQLEngineService) executeTableResult(ctx context.Context, tenantID uint, engine *commonModels.Engine, target *resourcetree.ResourceLocator, query string, parameters map[string]interface{}, mode string) (*plugin.TableResult, error) {
+	if s.protectionGate == nil || tenantID == 0 {
+		return nil, fmt.Errorf("Develop 查询保护门禁未配置")
+	}
+	prepared, err := dbbridge.PrepareTableResult(ctx, engine, target, query, parameters, mode)
+	if err != nil {
+		return nil, err
+	}
+	readSet, err := prepared.ReadSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range readSet.Paths {
+		end, err := s.protectionGate.BeginCatalogPath(ctx, tenantID, enginePlugin, path)
+		if err != nil {
+			return nil, err
+		}
+		defer end()
+	}
+	return prepared.Execute(ctx)
+}

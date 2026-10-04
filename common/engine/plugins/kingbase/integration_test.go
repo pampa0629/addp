@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,6 +83,48 @@ func TestIntegrationKingbaseProviderContract(t *testing.T) {
 	marker := markerProvider.CommitMarker()
 	if marker == nil || marker.Provider != "kingbase.table_write_session" {
 		t.Fatalf("KingbaseES write marker = %#v", marker)
+	}
+
+	resultPath := plugin.TabularItemPath(engineID, plugin.EngineCatalogTermSchema, schemaName, "table_result")
+	if _, err := db.ExecContext(ctx, "CREATE TABLE "+schemaName+".table_result AS SELECT * FROM "+schemaName+"."+tableName+" WHERE false"); err != nil {
+		t.Fatal(err)
+	}
+	resultPlan, err := p.PrepareTableResult(ctx, connInfo, plugin.TableResultRequest{Query: plugin.QueryRequest{EngineID: engineID, Language: "sql", Query: "SELECT * FROM " + schemaName + "." + tableName, Options: plugin.QueryOptions{ReadOnly: true}}, Target: resultPath, WriteMode: "overwrite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writtenResult, err := resultPlan.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if writtenResult.RowsAffected != 2 || !writtenResult.FieldLineageComplete || len(writtenResult.FieldMappings) != len(fields) {
+		t.Fatalf("table result=%+v", writtenResult)
+	}
+	if _, err := db.ExecContext(ctx, "ALTER TABLE "+schemaName+".table_result ENABLE ROW LEVEL SECURITY"); err != nil {
+		t.Fatal(err)
+	}
+	guardPlan, err := p.PrepareTableResult(ctx, connInfo, plugin.TableResultRequest{Query: plugin.QueryRequest{EngineID: engineID, Language: "sql", Query: "SELECT * FROM " + schemaName + "." + tableName, Options: plugin.QueryOptions{ReadOnly: true}}, Target: resultPath, WriteMode: "overwrite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := guardPlan.Execute(ctx); result != nil || err == nil || !strings.Contains(err.Error(), "unresolved write-side effects") {
+		t.Fatalf("native RLS guard result=%+v error=%v", result, err)
+	}
+	if _, err := db.ExecContext(ctx, "DROP TABLE "+schemaName+".table_result"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "CREATE TABLE "+schemaName+".table_result (id bigint, computed bigint GENERATED ALWAYS AS (id+1) STORED)"); err != nil {
+		t.Fatal(err)
+	}
+	guardPlan, err = p.PrepareTableResult(ctx, connInfo, plugin.TableResultRequest{Query: plugin.QueryRequest{EngineID: engineID, Language: "sql", Query: "SELECT id,id FROM " + schemaName + "." + tableName, Options: plugin.QueryOptions{ReadOnly: true}}, Target: resultPath, WriteMode: "overwrite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := guardPlan.Execute(ctx); result != nil || err == nil || !strings.Contains(err.Error(), "unresolved write-side effects") {
+		t.Fatalf("native generated-column guard result=%+v error=%v", result, err)
+	}
+	if _, err := db.ExecContext(ctx, "DROP TABLE "+schemaName+".table_result"); err != nil {
+		t.Fatal(err)
 	}
 
 	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), engineID)

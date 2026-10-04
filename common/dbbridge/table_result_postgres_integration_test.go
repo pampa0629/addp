@@ -2,13 +2,17 @@ package dbbridge
 
 import (
 	"context"
-	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/postgresql"
+	"github.com/google/uuid"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func TestTableResultTransactionsAgainstPostgres(t *testing.T) {
@@ -29,11 +33,26 @@ func TestTableResultTransactionsAgainstPostgres(t *testing.T) {
 	}
 	must("CREATE SCHEMA " + schema)
 	t.Cleanup(func() { db.Exec("DROP SCHEMA " + schema + " CASCADE"); pool, _ := db.DB(); pool.Close() })
+	connectionURL, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	password, _ := connectionURL.User.Password()
+	conn := plugin.ConnectionInfo{"host": connectionURL.Hostname(), "port": connectionURL.Port(), "user": connectionURL.User.Username(), "password": password, "database": strings.TrimPrefix(connectionURL.Path, "/"), "sslmode": "disable"}
+	provider := &postgresql.PostgreSQLPlugin{}
+	path := plugin.EngineCatalogBranchLeafPath(provider.EngineCatalogModel(), 99, plugin.EngineCatalogTermSchema, schema, plugin.EngineCatalogTermTable, plugin.EngineCatalogKindTable, "target")
 	target := `"` + schema + `"."target"`
 	must("CREATE TABLE " + target + " (id int PRIMARY KEY)")
 	must("INSERT INTO " + target + " VALUES (99)")
 	write := func(ctx context.Context, query, mode string) error {
-		_, err := executeTableResultTransaction(ctx, db, target, "INSERT INTO "+target+" "+query, nil, mode)
+		plan, err := provider.PrepareTableResult(ctx, conn, plugin.TableResultRequest{Query: plugin.QueryRequest{EngineID: 99, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true}}, Target: path, WriteMode: mode})
+		if err != nil {
+			return err
+		}
+		if _, err = plan.ReadSet(ctx); err != nil {
+			return err
+		}
+		_, err = plan.Execute(ctx)
 		return err
 	}
 	check := func(want string) {
@@ -60,11 +79,16 @@ func TestTableResultTransactionsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("1,2,3")
+	blocking := db.Begin()
+	if err := blocking.Exec("LOCK TABLE " + target + " IN EXCLUSIVE MODE").Error; err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if err := write(ctx, "SELECT 4 FROM pg_sleep(1)", "overwrite"); err == nil {
+	if err := write(ctx, "SELECT 4", "overwrite"); err == nil {
 		t.Fatal("cancel should fail")
 	}
+	blocking.Rollback()
 	check("1,2,3")
 	// Simultaneous refreshes serialize into one complete result, never mixed partial rows.
 	done := make(chan error, 2)

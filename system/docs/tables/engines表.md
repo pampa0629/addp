@@ -322,6 +322,7 @@ Kafka `connection_info` 第一版字段：
       "languages": ["sql"],
       "default_language": "sql",
       "result_kinds": ["table", "scalar"],
+      "table_result": true,
       "supports_explain": true,
       "supports_cancel": true
     }

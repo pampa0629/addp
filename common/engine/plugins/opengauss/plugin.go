@@ -66,6 +66,10 @@ func (p *Plugin) protocolIdentity() postgresql.ProtocolIdentity {
 		EngineType:              p.Type(),
 		DisplayName:             p.DisplayName(),
 		AdditionalSystemSchemas: append([]string(nil), openGaussSystemSchemas...),
+		TableResultRowSecurityExpression: `EXISTS(SELECT 1 FROM unnest(c.reloptions) AS catalog_option(value)
+ WHERE CASE WHEN split_part(catalog_option.value,'=',1)='enable_rowsecurity' THEN split_part(catalog_option.value,'=',2)::boolean ELSE false END)`,
+		TableResultGeneratedExpression: `EXISTS(SELECT 1 FROM pg_catalog.pg_attrdef d
+ WHERE d.adrelid=a.attrelid AND d.adnum=a.attnum AND d.adgencol='s')`,
 	}
 }
 
@@ -92,6 +96,7 @@ func (p *Plugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermSchema, plugin.TabularCapabilityOptions{
 		Constraints:          true,
 		TableReadSession:     true,
+		TableResult:          true,
 		QueryReadSession:     true,
 		TableWriteSession:    true,
 		TableWritePrepare:    true,
@@ -236,3 +241,7 @@ func (p *Plugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig
 }
 
 func (p *Plugin) GORMDialect() string { return "postgres" }
+
+func (p *Plugin) PrepareTableResult(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.TableResultRequest) (plugin.PreparedTableResult, error) {
+	return p.protocol().PrepareTableResult(ctx, connInfo, req)
+}

@@ -376,8 +376,13 @@ func postgresReadRelationKind(relkind string) (string, error) {
 	}
 }
 
+type postgresCatalogQuerier interface {
+	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+}
+
 type postgresDatabaseReadCatalog struct {
-	db *sql.DB
+	db postgresCatalogQuerier
 }
 
 const postgresQualifiedRelationQuery = `

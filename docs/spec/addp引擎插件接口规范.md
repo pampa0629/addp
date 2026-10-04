@@ -506,6 +506,12 @@ type QueryOutputBinding struct {
 
 Provider 不得为了提高提示数量把 `sampled` 或 `unknown` 提升为 `complete`。动态 schema 引擎默认是 `sampled` 或 `unknown`；关系参数编辑态只识别已声明的裸关系参数名而没有执行期 locator，覆盖度同样必须是 `unknown`。
 
+现有表结果写入统一使用声明 `compute.query.table_result=true` 的 `TableResultProvider.PrepareTableResult()`。计划冻结只读来源查询、参数、同 Engine 目标和 append/overwrite 模式；`ReadSet()` 复用同一个 SQL PreparedQuery，Owner 对实际来源完成授权和保护门禁后只调用一次 `Execute()`，不得再次提交 SQL 或自行执行 INSERT。Provider 在一个事务中锁定来源结构与目标、重新验证读取集合、读取实时源/目标字段、执行 INSERT SELECT；overwrite 的删除和插入必须原子提交。目标不得同时出现在读取集合中。无法证明执行读取闭包的目标写入效果（用户触发器、规则、生成列、RLS、外键检查或级联、用户函数 CHECK/索引或自定义目标类型）拒绝执行。为避免隐式默认值引入未验证读取，写入必须覆盖目标全部列，且目标字段可见性须覆盖原生目录中的全部有效列。
+
+原生目录差异由对应 Provider 提供固定目录表达式，共用同一事务和目标校验实现；禁止运行失败后尝试另一套目录 SQL。PostgreSQL/Kingbase 使用 `pg_class.relrowsecurity`、`pg_attribute.attgenerated`；openGauss 使用 `pg_class.reloptions` 中的 `enable_rowsecurity` 和 `pg_attrdef.adgencol`。Kingbase 原生内置类型和函数目录还包括 `sys_catalog`。
+
+Provider 返回提交行数、实时字段结构和按实际目标列位置生成的完整字段映射。字段别名不决定写入位置；类型转换为 derived，无字段来源的值为 generated。无法证明完整字段映射时返回 unavailable，保留真实资源事实，禁止猜测。Provider 不构造 ResourceLocator、schema hash 或 execution facts；这些属于执行 Owner。原生 INSERT SELECT 无法应用读取后的脱敏，因此 Owner 必须对 ReadSet 中每个来源使用既有 unmanaged 门禁并保持至事务结束。
+
 `QueryReadSet` 是 PreparedQuery 在查询执行前产生的中性读依赖事实，不是查询语句、查询结果或 Security 专用投影。Develop、Service、Transfer 等 Owner 在授权、血缘、审计或数据保护门禁需要精确 DataItem 身份时，只能消费当前 PreparedQuery 的 `ReadSet()`，不得在各 Owner 中重复解析 SQL、MQL 或 Cypher。
 
 `QueryOutputLineage` 是同一 PreparedQuery 在执行前产生的中性结果来源事实，也不是 Security 策略。它必须为 `QueryReadSet.Paths` 中每个 leaf 提供且只提供一个 `QueryOutputSource`，并携带 Provider 在当前连接目录中观察到的完整字段结构。`IdentityOutput=true` 表示该来源的字段以同一路径直接出现在结果记录中；`Bindings` 完整列出其余输出依赖，`direct` 表示值只发生路径或别名变化，`derived` 表示值经过表达式、聚合或其他不可逆变换；`OpaqueOutput=true` 表示 Provider 只能证明资源依赖，不能证明字段到结果的完整映射。三者共同表达当前查询的全部数据值输出，不包含只影响过滤、排序或行数的依赖。

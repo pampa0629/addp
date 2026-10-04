@@ -3966,6 +3966,8 @@ definitions:
         type: boolean
       supports_explain:
         type: boolean
+      table_result:
+        type: boolean
     type: object
   plugin.QueryFederationCapability:
     properties:
