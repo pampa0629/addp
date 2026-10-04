@@ -6,6 +6,8 @@
 
 HDFS 隔离自动验收使用手动 Hosted T4 `hdfs-spark-consumer-flow`。Business 夹具复用现有 Hadoop 配置、三格式初始化和固定官方镜像，在独占 Linux Runner 的宿主网络启动 NameNode、DataNode、Spark Master/Thrift 与 Worker；消费者地址统一为回环，Driver 和 Worker 共享同一网络命名空间。平台及 Spark Workflow 通过标准开发入口启动，固定 Java 11、Simple 用户 `addp_business_reader`，不启用本地 Spark 模式。System owner 夹具提供最小权限普通 User 和独立登记 User；经正式 API 登记两个 general Engine，移除登记令牌后由普通 User 完成扫描、四个文件预览及八节点正式工作流。结果必须核对三格式每种 20 行、金额 2100，并关联当次 Spark Application 与 Worker 实际完成任务的日志；Console 真实登录、Meta 重扫、Manager 预览和 Develop 专业详情必须输出同一身份的证据。成功、失败、中断均清理当次应用、业务容器和 Infra，并删除凭据；首次 Hosted 真实通过前只允许人工触发，不登记夜间调度。
 
+首轮 Hosted T4 [37209233339](https://github.com/pampa0629/addp/actions/runs/37209233339) 在 HDFS general Engine 连接成功后，因 Spark general Engine 的 Thrift 连接探测失败而终止，尚未进入消费者工作流；应用和业务夹具清理完成，Infra 为零残留。登记器失败日志应保留脱敏后的协议错误，业务夹具清理前归档自身容器状态与 Spark Driver/Worker 日志，以便确定连接根因；不得将该轮计为 T4 通过。
+
 ## 当前语义
 
 - NFS 是文件系统语义存储，不是对象存储。

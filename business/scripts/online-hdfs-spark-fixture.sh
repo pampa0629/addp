@@ -20,6 +20,15 @@ stop() {
         status=1
         continue
       fi
+      # Only the public disposable fixture enters diagnostics, before deletion.
+      # This deployment has no passwords, access tokens or user business data.
+      if [ -n "${ADDP_ONLINE_ARTIFACT_DIR:-}" ]; then
+        docker container inspect --format '{{json .State}}' "$container" > "$ADDP_ONLINE_ARTIFACT_DIR/$container-state.json" || status=1
+        docker logs --tail 80 "$container" > "$ADDP_ONLINE_ARTIFACT_DIR/$container.log" 2>&1 || status=1
+        if [[ "$container" = *-master || "$container" = *-worker ]]; then
+          docker exec "$container" bash -c 'find /opt/spark/logs /opt/spark/work -name "*.out" -o -name stderr | while read -r file; do echo "$file"; tail -80 "$file"; done' > "$ADDP_ONLINE_ARTIFACT_DIR/$container-spark.log" 2>&1 || true
+        fi
+      fi
       docker rm -fv "$container" >/dev/null || status=1
     fi
   done

@@ -42,6 +42,9 @@ elif a[0] == 'run':
 elif a[0] == 'exec':
     if os.environ.get('FAIL_SEED') == '1': sys.exit(1)
     print('HDFS_SAMPLE_PASS rows=20 amount_sum=2100 formats=csv,json,parquet')
+elif a[0] == 'logs':
+    if os.environ.get('FAIL_LOGS') == '1': sys.exit(1)
+    print('fixture diagnostic')
 elif a[0] == 'rm':
     if os.environ.get('FAIL_REMOVE') == '1': sys.exit(1)
     (root / a[-1]).unlink(missing_ok=True)
@@ -123,6 +126,23 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         (self.secret / 'hdfs-engine.json').write_text('preserve')
         self.assertNotEqual(self.run_fixture('start').returncode, 0)
         self.assertEqual((self.secret / 'hdfs-engine.json').read_text(), 'preserve')
+
+    def test_diagnostics_archive_only_owned_containers_and_never_prevent_deletion(self):
+        artifacts = self.root / 'artifacts'; artifacts.mkdir()
+        for failure in ('0', '1'):
+            with self.subTest(failure=failure):
+                owned = self.state / 'addp-hdfs-online-worker'
+                owned.write_text('hdfs-spark-consumer-flow')
+                foreign = self.state / 'addp-hdfs-online-master'; foreign.write_text('foreign')
+                result = self.run_fixture('stop', ADDP_ONLINE_ARTIFACT_DIR=str(artifacts), FAIL_LOGS=failure)
+                self.assertNotEqual(result.returncode, 0)  # Foreign ownership must fail cleanup.
+                self.assertFalse(owned.exists())
+                self.assertTrue(foreign.exists())
+                self.assertTrue((artifacts / 'addp-hdfs-online-worker-state.json').exists())
+                self.assertTrue((artifacts / 'addp-hdfs-online-worker.log').exists())
+                self.assertTrue((artifacts / 'addp-hdfs-online-worker-spark.log').exists())
+                self.assertFalse((artifacts / 'addp-hdfs-online-master.log').exists())
+                foreign.unlink()
 
     def test_cleanup_failure_never_passes(self):
         for flag in ('FAIL_REMOVE', 'FAIL_VERIFY'):

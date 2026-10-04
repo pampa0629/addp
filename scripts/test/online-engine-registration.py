@@ -141,7 +141,25 @@ def register_engine(
     )
     test_result = tested.get("data", tested)
     if not isinstance(test_result, dict) or test_result.get("success") is not True:
-        raise RegistrationError("System Engine connection test did not succeed")
+        detail = str(test_result.get("error", "missing successful probe")) if isinstance(test_result, dict) else "invalid probe response"
+        # Connection errors may contain a DSN. Redact every configured string,
+        # including nested credentials and URL-encoded values, before logging.
+        def strings(value):
+            if isinstance(value, str) and value:
+                yield value
+            elif isinstance(value, dict):
+                for item in value.values():
+                    yield from strings(item)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from strings(item)
+        values = {variant for value in strings(descriptor["connection_info"])
+                  for variant in (value, urllib.parse.quote(value, safe=""), urllib.parse.quote_plus(value),
+                                  json.dumps(value, ensure_ascii=True)[1:-1])}
+        for value in sorted(values, key=len, reverse=True):
+            detail = detail.replace(value, "<configured>")
+        detail = " ".join(detail.split())[:384]
+        raise RegistrationError(f"System Engine connection test did not succeed (type={descriptor['engine_type']}, id={engine_id}): {detail}")
     return engine_id
 
 

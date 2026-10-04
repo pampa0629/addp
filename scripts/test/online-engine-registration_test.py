@@ -4,6 +4,7 @@ import stat
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -71,6 +72,22 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
             REGISTRATION.register_engine(
                 "http://127.0.0.1:8180", "addp_at_engine", self.payload, requester
             )
+
+    def test_failed_probe_reports_reason_without_configured_credentials(self) -> None:
+        secret = "secret 密码/&+"
+        self.payload["connection_info"]["credentials"] = {"password": secret}
+        variants = (secret, urllib.parse.quote(secret, safe=""),
+                    urllib.parse.quote_plus(secret), json.dumps(secret)[1:-1])
+        requester = Mock(side_effect=[{"id": 17, "engine_type": "sampledb"},
+                         {"success": False, "error": "SASL negotiation failed\n" + " ".join(variants)}])
+        with self.assertRaises(REGISTRATION.RegistrationError) as raised:
+            REGISTRATION.register_engine("http://127.0.0.1:8180", "token", self.payload, requester)
+        detail = str(raised.exception)
+        self.assertIn("type=sampledb, id=17", detail)
+        self.assertIn("SASL negotiation failed", detail)
+        for value in variants:
+            self.assertNotIn(value, detail)
+        self.assertNotIn("\n", detail)
 
     def test_descriptor_requires_owner_only_canonical_payload(self) -> None:
         self.assertEqual(
