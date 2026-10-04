@@ -646,4 +646,4 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 
 ### Develop 产物自动扫描来源
 
-Develop 自动扫描使用既有 `/scan/run/manual`，提交已持久化产物及 `parent_execution_id`，由 Meta 校验专用 Develop 服务身份、同租户 running workflow 父执行及精确产物范围，原子继承发起主体。它不创建 ScanTask，不复制数据执行授权，不放宽一次性扫描读取权限；具体契约见任务体系规范“Develop 产物自动扫描的执行归属”。
+Develop 自动扫描使用既有 `/scan/run/manual`，提交已持久化产物及 `parent_execution_id`，由 Meta 校验专用 Develop 服务身份、同租户 running workflow 父执行及请求目标与已保存产物的精确匹配，原子继承发起主体。实际扫描沿用现有目标解析与范围规划，表／集合／图目标可能展开到所属 schema／database；请求目标绑定不等于实际扫描限定为单个叶子产物。它不创建 ScanTask，不复制数据执行授权，不放宽一次性扫描读取权限；具体契约见任务体系规范“Develop 产物自动扫描的执行归属”。

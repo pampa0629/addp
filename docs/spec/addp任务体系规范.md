@@ -107,11 +107,9 @@ Manager 的 `vector_tile_cache_generation`、`vector_tile_set_generation`、`vec
 
 ### Develop 产物自动扫描的执行归属
 
-> 当前改造草案：表／集合／图的请求目标与现有 schema／database 扫描规划是否分开处理，仍待本轮讨论确认；尚未交付。
-
 Develop 工作流生成实际产物后，先在本次 running workflow execution 的 `metadata.outputs` 保存标准产物 ResourceLocator，再通过既有 Meta 手动扫描入口提交 `source=develop.workflow.produced_target` 与 `parent_execution_id`。该来源只允许具有 `meta.scan_task.execute` 的 `addp-develop` Service Principal 使用；User、其他服务和缺少父执行的请求不得借用该来源。
 
-Meta 必须在创建子 execution 的同一事务中读取并锁定同 Tenant、`module=develop`、`task_type=workflow`、running 状态的父 execution，核验完整且正数的 Principal、Membership、授权版本和一致的 `triggered_by`。扫描范围必须精确匹配父 execution 已保存的一个实际产物，不能扩大到引擎或目录，也不能附加未声明的内容引用。Meta 从父记录继承 `triggered_by` 和三项主体来源事实，保存直接父执行 UUID；不接受客户端自报主体，不复制父 Execution Authorization ID 或授权有效期，不将执行归属当作数据访问授权。原有机器 Permission 和扫描执行路径保持不变，System IAM 不增加授权派生路线。
+Meta 必须在创建子 execution 的同一事务中读取并锁定同 Tenant、`module=develop`、`task_type=workflow`、running 状态的父 execution，核验完整且正数的 Principal、Membership、授权版本和一致的 `triggered_by`。扫描请求目标必须精确匹配父 execution 已保存的一个实际产物，不能另行提交引擎全量、目录范围或未声明的内容引用。请求目标绑定与实际扫描规划是两个边界：实际扫描仍沿用 Meta 现有规划，表／集合／图目标可能展开到所属 schema／database；本轮归属改造不改变该行为，不承诺只扫描单个叶子产物。实际扫描范围与资源权限的关系应另行核对并确认方案。Meta 从父记录继承 `triggered_by` 和三项主体来源事实，保存直接父执行 UUID；不接受客户端自报主体，不复制父 Execution Authorization ID 或授权有效期，不将执行归属当作数据访问授权。原有机器 Permission 和扫描执行路径保持不变，System IAM 不增加授权派生路线。
 
 该扫描没有 ScanTask 定义，读取仍遵守 Meta Owner Permission 加本人一次性执行条件；父执行可读不能自动授予 Meta 读取权限。其他 User、跨 Tenant、无主体来源的历史继续不可见，不回填历史身份。自动扫描提交失败只作为工作流产物的扫描反馈，不回滚已生成产物或把成功工作流改为失败。Monitor 复用直接父子关系、Common Observation 与现有事件接口展示该扫描，配置、任意 metadata 和执行授权信息不得进入通用诊断响应。
 
