@@ -15,13 +15,14 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
 HOST = "addp-orchestrator-meta.test"
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-MODES = {"pass", "lose_response", "hold_status", "drop_scope"}
+MODES = {"pass", "lose_response", "hold_status", "hold_renewal", "drop_scope"}
 HOP_HEADERS = {"connection", "proxy-connection", "proxy-authorization", "keep-alive", "transfer-encoding", "upgrade"}
 
 
@@ -88,11 +89,11 @@ class FaultProxy(ThreadingHTTPServer):
             raise ValueError("invalid fault command")
         return command
 
-    def record(self, command, parent=None, child=None, error=None, held=False, scope_dropped=False):
+    def record(self, command, parent=None, child=None, error=None, held=False, scope_dropped=False, cancelled=False):
         with self.lock:
             if self.witness.get("case_id") != command["case_id"]:
                 self.witness = {"case_id": command["case_id"], "posts": 0, "child_execution_ids": [],
-                                "held_status_requests": 0, "scope_drops": 0}
+                                "held_status_requests": 0, "scope_drops": 0, "cancelled_status_requests": 0}
             if parent is not None:
                 self.witness["posts"] += 1
                 if self.witness.get("parent_execution_id", parent) != parent:
@@ -106,6 +107,8 @@ class FaultProxy(ThreadingHTTPServer):
                 self.witness["held_status_requests"] += 1
             if scope_dropped:
                 self.witness["scope_drops"] += 1
+            if cancelled:
+                self.witness["cancelled_status_requests"] += 1
             write_json(self.directory / "witness.json", self.witness)
 
 
@@ -155,13 +158,18 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 server.record(command, parent=parent)
             with server.lock:
                 known_children = tuple(server.witness.get("child_execution_ids", []))
-            if (command and command["mode"] == "hold_status" and self.command == "GET"
+            if (command and command["mode"] in {"hold_status", "hold_renewal"} and self.command == "GET"
                     and parsed.path in ["/api/v1/meta/task-provider/executions/" + x for x in known_children]):
                 server.record(command, held=True)
-                deadline = time.monotonic() + 15
+                deadline = time.monotonic() + (60 if command["mode"] == "hold_renewal" else 15)
                 while not server.stopping.wait(0.05) and time.monotonic() < deadline:
-                    if server.command()["mode"] != "hold_status":
+                    if server.command()["mode"] != command["mode"]:
                         break
+                    ready, _, _ = select.select([self.connection], [], [], 0)
+                    if ready and self.connection.recv(1, socket.MSG_PEEK) == b"":
+                        server.record(command, cancelled=True)
+                        self.close_connection = True
+                        return
             headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_HEADERS | {"host"}}
             connection = http.client.HTTPConnection("127.0.0.1", server.target_port, timeout=35)
             connection.request(self.command, parsed.path + ("?" + parsed.query if parsed.query else ""), body, headers)
@@ -213,13 +221,118 @@ class HostedFaults:
         self.directory = self.secret / "orchestrator-faults"
         self.root = Path(__file__).resolve().parents[2]
         self.case_id = None
-        self.crashed_pid = None
+        self.exited_pid = None
+        self.renewal_schema = None
+        self.renewal_process = None
+
+    def pin_process(self):
+        pid = int((self.root / ".dev-pids/orchestrator.pid").read_text().strip())
+        if pid <= 1:
+            raise ValueError("invalid Orchestrator PID")
+        descriptor = os.pidfd_open(pid)
+        try:
+            validate_process(Path("/proc") / str(pid), self.root, self.secret)
+        except BaseException:
+            os.close(descriptor)
+            raise
+        return pid, descriptor
+
+    def await_renewal_exit(self):
+        if self.renewal_process is None:
+            raise ValueError("renewal process is not pinned")
+        pid, descriptor = self.renewal_process
+        try:
+            ready, _, _ = select.select([descriptor], [], [], 50)
+            if not ready:
+                raise ValueError("renewal failure did not stop its Backend")
+            self.exited_pid = pid
+        finally:
+            os.close(descriptor)
+            self.renewal_process = None
+
+    def postgres(self, sql):
+        # Never use the shared local database or accept an existing Infra container.
+        if deployment_secret() != self.secret:
+            raise ValueError("renewal fault deployment changed")
+        inspected = subprocess.run(["docker", "inspect", "addp-postgres"], check=True,
+                                   capture_output=True, text=True, timeout=10)
+        container = json.loads(inspected.stdout)[0]
+        labels = container["Config"]["Labels"]
+        environment = dict(x.split("=", 1) for x in container["Config"]["Env"] if "=" in x)
+        if (not container["State"]["Running"]
+                or not os.environ.get("ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID")
+                or container["Id"] != os.environ["ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID"]
+                or labels.get("com.docker.compose.service") != "postgres"
+                or labels.get("com.docker.compose.project.working_dir") != str(self.root)
+                or environment.get("POSTGRES_DB") != "addp_online"
+                or not environment.get("POSTGRES_PASSWORD")
+                or any(environment.get(key) != os.environ.get(key) for key in ("POSTGRES_USER", "POSTGRES_PASSWORD"))):
+            raise ValueError("renewal fault PostgreSQL is not owned by this deployment")
+        result = subprocess.run(["docker", "exec", "-i", container["Id"], "psql", "-X", "-qAt",
+            "-v", "ON_ERROR_STOP=1", "-U", environment["POSTGRES_USER"], "-d", "addp_online"],
+            input=sql, check=True, capture_output=True, text=True, timeout=10)
+        return result.stdout.strip()
+
+    def reject_renewal(self, parent, tenant, task):
+        if (not UUID.fullmatch(parent) or type(tenant) is not int or tenant <= 1
+                or type(task) is not int or task <= 0 or self.renewal_schema is not None):
+            raise ValueError("invalid renewal fault target")
+        schema = "online_orch_renew_" + uuid.uuid4().hex
+        self.renewal_process = self.pin_process()
+        self.renewal_schema = schema
+        # Sequence increments survive the rejected UPDATE transaction. No execution
+        # fact, lease token, credential or result is copied into the fault evidence.
+        self.postgres(f"""BEGIN;
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM common.task_executions WHERE execution_id='{parent}'
+  AND tenant_id={tenant} AND module='orchestrator' AND task_type='orchestration'
+  AND source_task_id='{task}' AND status='running' AND lease_expires_at > now()
+  AND metadata->'step_results'->'probe'->>'phase'='waiting') THEN
+  RAISE EXCEPTION 'renewal fault target is not a live waiting parent';
+ END IF;
+END $$;
+CREATE SCHEMA {schema};
+CREATE SEQUENCE {schema}.rejections;
+CREATE FUNCTION {schema}.reject() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ PERFORM nextval('{schema}.rejections');
+ RAISE EXCEPTION 'Hosted renewal rejected' USING ERRCODE='55000';
+END $$;
+CREATE TRIGGER {schema} BEFORE UPDATE OF lease_expires_at ON common.task_executions
+FOR EACH ROW WHEN (OLD.execution_id='{parent}' AND OLD.tenant_id={tenant}
+ AND OLD.module='orchestrator' AND OLD.task_type='orchestration'
+ AND OLD.status='running' AND NEW.status='running'
+ AND NEW.lease_expires_at IS DISTINCT FROM OLD.lease_expires_at)
+EXECUTE FUNCTION {schema}.reject();
+COMMIT;""")
+
+    def renewal_rejections(self):
+        if self.renewal_schema is None:
+            raise ValueError("renewal fault is not installed")
+        return int(self.postgres(f"SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM {self.renewal_schema}.rejections;"))
+
+    def clear_renewal(self):
+        if self.renewal_process is not None:
+            os.close(self.renewal_process[1])
+            self.renewal_process = None
+        if self.renewal_schema is None:
+            return
+        schema = self.renewal_schema
+        self.postgres(f"""BEGIN;
+DROP TRIGGER IF EXISTS {schema} ON common.task_executions;
+DROP FUNCTION IF EXISTS {schema}.reject();
+DROP SEQUENCE IF EXISTS {schema}.rejections;
+DROP SCHEMA IF EXISTS {schema};
+COMMIT;""")
+        if self.postgres(f"SELECT count(*) FROM pg_namespace WHERE nspname='{schema}';") != "0":
+            raise ValueError("renewal fault schema survived cleanup")
+        self.renewal_schema = None
 
     def arm(self, case_id, task_id, mode):
         self.case_id = case_id
         write_json(self.directory / "command.json", {"case_id": case_id, "task_id": task_id, "mode": mode})
 
     def release(self):
+        self.clear_renewal()
         path = self.directory / "command.json"
         if path.exists():
             command = json.loads(path.read_text())
@@ -234,29 +347,25 @@ class HostedFaults:
         return value if value.get("case_id") == self.case_id else {}
 
     def crash(self):
-        pid = int((self.root / ".dev-pids/orchestrator.pid").read_text().strip())
-        if pid <= 1:
-            raise ValueError("invalid Orchestrator PID")
         with ExitStack() as stack:
-            descriptor = os.pidfd_open(pid)
+            pid, descriptor = self.pin_process()
             stack.callback(os.close, descriptor)
-            validate_process(Path("/proc") / str(pid), self.root, self.secret)
             signal.pidfd_send_signal(descriptor, signal.SIGKILL)
             ready, _, _ = select.select([descriptor], [], [], 10)
             if not ready:
                 raise ValueError("Orchestrator did not exit after SIGKILL")
-            self.crashed_pid = pid
+            self.exited_pid = pid
 
     def restart(self):
-        if self.crashed_pid is None:
-            raise ValueError("replacement requires a proven crashed process")
+        if self.exited_pid is None:
+            raise ValueError("replacement requires a proven exited process")
         proxy = os.environ["ADDP_ONLINE_ORCHESTRATOR_PROXY_URL"]
         with (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "orchestrator-replacement.log").open("a") as output:
             subprocess.run(["bash", "scripts/dev/start.sh", "-orchestrator"], cwd=self.root,
                            env={**os.environ, "HTTP_PROXY": proxy, "NO_PROXY": "127.0.0.1,localhost", "SKIP_MODTIDY": "1"},
                            stdout=output, stderr=subprocess.STDOUT, check=True, timeout=180)
         pid = int((self.root / ".dev-pids/orchestrator.pid").read_text().strip())
-        if pid <= 1 or pid == self.crashed_pid:
+        if pid <= 1 or pid == self.exited_pid:
             raise ValueError("replacement did not create a distinct Backend process")
         validate_process(Path("/proc") / str(pid), self.root, self.secret)
 

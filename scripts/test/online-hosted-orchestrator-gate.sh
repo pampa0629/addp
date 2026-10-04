@@ -28,6 +28,8 @@ export ORCHESTRATOR_URL=http://127.0.0.1:8084 MONITOR_URL=http://127.0.0.1:8100
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/orchestrator-engine.json"
 infra_owned=1
 run_logged bash scripts/infra/up.sh
+ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID=$(docker inspect --format '{{.Id}}' addp-postgres)
+export ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID
 fixture_owned=1
 run_logged bash business/scripts/online-metric-postgres-fixture.sh start
 alias_owned=1

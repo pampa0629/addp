@@ -290,6 +290,8 @@ class OrchestratorOnlineTest(unittest.TestCase):
 
             def fault_case(*args):
                 args[-1]["checks"].extend([args[4], args[4] + "_no_replay"])
+                if args[5] == "hold_renewal":
+                    args[-1]["checks"].extend(["renewal_failure_cancels_request", "renewal_failure_terminal_stable"])
 
             with self.subTest(leak=leak), patch.object(ONLINE, "run_fault_case", side_effect=fault_case), \
                     patch.object(ONLINE, "owner_unavailable", side_effect=unavailable), \
@@ -306,7 +308,7 @@ class OrchestratorOnlineTest(unittest.TestCase):
                 else:
                     run()
                     self.assertEqual(report["result"], "passed")
-                    self.assertEqual(len(report["checks"]), 24)
+                    self.assertEqual(len(report["checks"]), 28)
                     self.assertTrue(state["revoked"])
                     self.assertEqual(report["checks"][-3:], ["deleted_parent_read_child_hidden",
                         "revoked_token_invalid", "revoked_owner_read_invisible"])

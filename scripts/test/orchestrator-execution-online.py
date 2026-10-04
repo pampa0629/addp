@@ -181,34 +181,46 @@ def definition_present(client, path, present):
 
 def run_fault_case(client, launch, task_id, scan_id, case_id, mode, faults, report):
     faults.arm(case_id, scan_id, mode)
+    renewal_rejected = None
     try:
         identity, _ = launch(task_id, wait=False)
-        if mode == "hold_status":
+        if mode in {"hold_status", "hold_renewal"}:
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 item = client.request("GET", f"{ORCH}/executions/{identity}", (200,)).payload
                 recorded = item.get("metadata", {}).get("step_results", {}).get("probe", {})
                 witness = faults.witness()
-                if recorded.get("phase") == "waiting" and witness.get("child_execution_ids"):
+                if (recorded.get("phase") == "waiting" and witness.get("child_execution_ids")
+                        and (mode != "hold_renewal" or witness.get("held_status_requests", 0) > 0)):
                     require(item.get("status") == "running" and recorded.get("status") == "running"
-                            and recorded.get("result", {}).get("execution_id") == witness["child_execution_ids"][0]
+                            and isinstance(recorded.get("result"), dict)
+                            and recorded["result"].get("execution_id") == witness["child_execution_ids"][0]
                             and witness.get("parent_execution_id") == identity and witness.get("posts") == 1
-                            and not witness.get("error"), "crash precondition did not prove accepted child")
-                    faults.crash()
-                    faults.release()
-                    faults.restart()
+                            and not witness.get("error"), "waiting fault precondition did not prove accepted child")
+                    if mode == "hold_status":
+                        faults.crash()
+                        faults.release()
+                        faults.restart()
+                    else:
+                        faults.reject_renewal(identity, int(report["tenant_id"]), task_id)
+                        faults.await_renewal_exit()
+                        renewal_rejected = faults.renewal_rejections()
+                        faults.release()
+                        faults.restart()
                     break
-                require(item.get("status") not in TERMINAL, "crash fixture terminated before the waiting barrier")
+                require(item.get("status") not in TERMINAL, "fault fixture terminated before the waiting barrier")
                 time.sleep(0.1)
             else:
-                raise SuiteError("crash fixture did not reach the persisted waiting barrier")
+                raise SuiteError("fault fixture did not reach the persisted waiting barrier")
         terminal = wait_execution(client, identity, timeout=180)
-        code = "orchestrator.execution.lease_expired" if mode == "hold_status" else "orchestrator.execution.dispatch_uncertain"
+        code = {"hold_status": "orchestrator.execution.lease_expired",
+                "hold_renewal": "orchestrator.execution.coordinator_stopped",
+                "lose_response": "orchestrator.execution.dispatch_uncertain"}[mode]
         require(terminal.get("status") == "failed" and terminal.get("error_details", {}).get("code") == code
                 and terminal.get("progress") == 0 and terminal.get("attempt") == 1, "fault parent did not converge truthfully")
         steps = terminal.get("metadata", {}).get("step_results", {})
         require(set(steps) == {"probe"}, "fault replayed or dispatched the dependent step")
-        if mode == "hold_status":
+        if mode in {"hold_status", "hold_renewal"}:
             require(steps["probe"].get("status") == "running" and steps["probe"].get("phase") == "waiting",
                     "recovery replaced the last recorded step with an invented terminal state")
         else:
@@ -232,7 +244,7 @@ def run_fault_case(client, launch, task_id, scan_id, case_id, mode, faults, repo
             require(len(safe_steps) == 1 and safe_steps[0].get("id") == "probe"
                     and visible[identity].get("status") == "failed" and visible[identity].get("progress") == 0
                     and visible[identity].get("error_details", {}).get("code") == code, "fault diagnostics lost its cause or step")
-            if mode == "hold_status":
+            if mode in {"hold_status", "hold_renewal"}:
                 require(safe_steps[0].get("status") == "running" and safe_steps[0].get("phase") == "waiting",
                         "Monitor misrepresented the historical waiting step")
             if visible[child].get("status") == "success" and time.monotonic() >= stable_after:
@@ -242,8 +254,22 @@ def run_fault_case(client, launch, task_id, scan_id, case_id, mode, faults, repo
         else:
             raise SuiteError("accepted child did not finish normally after its parent failed")
         event_count = assert_events(client, identity, "failed")
+        renewal = {}
+        if mode == "hold_renewal":
+            rejected = renewal_rejected
+            require(rejected >= 1 and witness.get("cancelled_status_requests", 0) >= 1,
+                    "renewal rejection did not cancel a real outstanding status request")
+            before_events = read_events(client, identity, "failed")
+            faults.release()
+            time.sleep(2)
+            require(client.request("GET", f"{ORCH}/executions/{identity}", (200,)).payload == terminal
+                    and read_events(client, identity, "failed") == before_events,
+                    "late write changed the parent terminal history after renewal failure")
+            renewal = {"renewal_rejections": rejected, "status_request_cancelled": True,
+                       "backend_exit_proven": True, "fault_cleanup": "passed"}
+            report["checks"].extend(["renewal_failure_cancels_request", "renewal_failure_terminal_stable"])
         report.setdefault("faults", []).append({"kind": case_id, "parent_execution_id": identity,
-            "child_execution_id": child, "posts": 1, "error_code": code, "event_count": event_count})
+            "child_execution_id": child, "posts": 1, "error_code": code, "event_count": event_count, **renewal})
         report["checks"].extend([case_id, case_id + "_no_replay"])
     finally:
         faults.release()
@@ -603,7 +629,9 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
             source_stopped = False
             fault_root = create(f"{ORCH}/orchestrations", {"name": f"{run_id}-faults", "enabled": False,
                 "steps": [step("probe", "meta", "scan", scan), step("after", "meta", "scan", scan, ["probe"])]})
-            for case_id, mode in (("response_lost", "lose_response"), ("process_crash", "hold_status")):
+            # Renewal proves standard Backend exit and replacement before history checks.
+            for case_id, mode in (("response_lost", "lose_response"), ("process_crash", "hold_status"),
+                                 ("renewal_failure", "hold_renewal")):
                 run_fault_case(client, launch, fault_root, scan, case_id, mode, faults, report)
                 checkpoint()
         if permissions is not None:

@@ -107,6 +107,24 @@ class FaultProxyTest(unittest.TestCase):
         self.assertEqual(self.proxy.witness["posts"], 2)
         self.assertEqual(len(self.proxy.witness["child_execution_ids"]), 2)
 
+    def test_renewal_barrier_proves_client_cancellation_without_forwarding_status(self):
+        self.arm("hold_renewal")
+        self.assertEqual(self.request()[0], 202)
+        connection = http.client.HTTPConnection("127.0.0.1", self.proxy.server_port, timeout=2)
+        connection.request("GET", f"http://{FAULTS.HOST}:{self.owner.server_port}/api/v1/meta/task-provider/executions/{CHILD}")
+        for _ in range(100):
+            if self.proxy.witness.get("held_status_requests"):
+                break
+            time.sleep(0.01)
+        self.assertEqual(self.proxy.witness["held_status_requests"], 1)
+        connection.close()
+        for _ in range(100):
+            if self.proxy.witness.get("cancelled_status_requests"):
+                break
+            time.sleep(0.01)
+        self.assertEqual(self.proxy.witness["cancelled_status_requests"], 1)
+        self.assertEqual(self.owner.gets, 0)
+
     def test_proxy_refuses_foreign_target_before_forwarding_authorization(self):
         self.assertEqual(self.request(host="unowned.example")[0], 403)
         self.assertEqual(self.owner.posts, 0)
@@ -136,6 +154,82 @@ class FaultProxyTest(unittest.TestCase):
             with self.assertRaises(http.client.RemoteDisconnected):
                 self.request()
         self.assertEqual(self.owner.posts, 0)
+
+
+class RenewalDatabaseOwnershipTest(unittest.TestCase):
+    def setUp(self):
+        self.faults = object.__new__(FAULTS.HostedFaults)
+        self.faults.root, self.faults.secret = Path("/owned/repo"), Path("/owned/secret")
+        self.faults.renewal_schema = None
+        self.faults.renewal_process = None
+        self.env = {"POSTGRES_USER": "fixture", "POSTGRES_PASSWORD": "private-password",
+                    "ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID": "owned-id"}
+        self.container = {"Id": "owned-id", "State": {"Running": True}, "Config": {
+            "Labels": {"com.docker.compose.service": "postgres", "com.docker.compose.project.working_dir": "/owned/repo"},
+            "Env": ["POSTGRES_DB=addp_online", "POSTGRES_USER=fixture", "POSTGRES_PASSWORD=private-password"]}}
+
+    def test_personal_environment_or_foreign_container_cannot_execute_sql(self):
+        with patch.object(FAULTS, "deployment_secret", side_effect=ValueError("personal")), \
+                patch.object(FAULTS.subprocess, "run") as run:
+            with self.assertRaises(ValueError):
+                self.faults.postgres("SELECT 1")
+            run.assert_not_called()
+        for mutation in ("id", "database", "root", "service", "password", "stopped"):
+            import copy
+            container = copy.deepcopy(self.container)
+            if mutation == "id": container["Id"] = "foreign"
+            if mutation == "database": container["Config"]["Env"][0] = "POSTGRES_DB=addp"
+            if mutation == "root": container["Config"]["Labels"]["com.docker.compose.project.working_dir"] = "/foreign"
+            if mutation == "service": container["Config"]["Labels"]["com.docker.compose.service"] = "business"
+            if mutation == "password": container["Config"]["Env"][2] = "POSTGRES_PASSWORD=foreign"
+            if mutation == "stopped": container["State"]["Running"] = False
+            with self.subTest(mutation=mutation), patch.dict(os.environ, self.env, clear=True), \
+                    patch.object(FAULTS, "deployment_secret", return_value=self.faults.secret), \
+                    patch.object(FAULTS.subprocess, "run", return_value=type("Result", (), {"stdout": json.dumps([container])})()) as run:
+                with self.assertRaises(ValueError): self.faults.postgres("SELECT 1")
+                self.assertEqual(run.call_count, 1)  # inspect only, never docker exec
+
+    def test_sql_uses_verified_container_id_and_stdin_without_credential_arguments(self):
+        results = [type("Result", (), {"stdout": json.dumps([self.container])})(), type("Result", (), {"stdout": "1\n"})()]
+        with patch.dict(os.environ, self.env, clear=True), \
+                patch.object(FAULTS, "deployment_secret", return_value=self.faults.secret), \
+                patch.object(FAULTS.subprocess, "run", side_effect=results) as run:
+            self.assertEqual(self.faults.postgres("SELECT 1;"), "1")
+            command = run.call_args.args[0]
+            self.assertEqual(command[:4], ["docker", "exec", "-i", "owned-id"])
+            self.assertEqual(run.call_args.kwargs["input"], "SELECT 1;")
+            self.assertNotIn("private-password", str(run.call_args))
+
+    def test_invalid_target_is_rejected_and_cleanup_failure_remains_pending(self):
+        with patch.object(self.faults, "postgres") as execute, \
+                patch.object(self.faults, "pin_process", return_value=(1234, 71)), patch.object(FAULTS.os, "close"):
+            for parent, tenant, task in (("bad", 42, 7), (PARENT, 1, 7), (PARENT, 42, 0)):
+                with self.assertRaises(ValueError): self.faults.reject_renewal(parent, tenant, task)
+            execute.assert_not_called()
+            self.faults.reject_renewal(PARENT, 42, 7)
+            schema = self.faults.renewal_schema
+            execute.side_effect = ["", "1"]
+            with self.assertRaises(ValueError): self.faults.clear_renewal()
+            self.assertEqual(self.faults.renewal_schema, schema)
+            execute.side_effect = ["", "0"]
+            self.faults.clear_renewal()
+            self.assertIsNone(self.faults.renewal_schema)
+
+    def test_renewal_observes_pinned_process_exit_without_sending_a_signal(self):
+        for stopped in (True, False):
+            self.faults.renewal_process, self.faults.exited_pid = (1234, 71), None
+            with self.subTest(stopped=stopped), patch.object(FAULTS.select, "select", return_value=([71] if stopped else [], [], [])), \
+                    patch.object(FAULTS.os, "close") as close, \
+                    patch.object(FAULTS.signal, "pidfd_send_signal", create=True) as send:
+                if stopped:
+                    self.faults.await_renewal_exit()
+                    self.assertEqual(self.faults.exited_pid, 1234)
+                else:
+                    with self.assertRaises(ValueError): self.faults.await_renewal_exit()
+                    self.assertIsNone(self.faults.exited_pid)
+                send.assert_not_called()
+                close.assert_called_once_with(71)
+                self.assertIsNone(self.faults.renewal_process)
 
 
 class FaultOwnershipTest(unittest.TestCase):
@@ -223,7 +317,7 @@ class FaultOwnershipTest(unittest.TestCase):
                 faults.crash()
                 send.assert_called_once_with(72, FAULTS.signal.SIGKILL)
                 close.assert_called_once_with(72)
-                self.assertEqual(faults.crashed_pid, 1234)
+                self.assertEqual(faults.exited_pid, 1234)
 
     def test_replacement_requires_proven_crash_and_a_different_owned_process(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -231,12 +325,12 @@ class FaultOwnershipTest(unittest.TestCase):
             (root / ".dev-pids").mkdir()
             (root / ".dev-pids/orchestrator.pid").write_text("1234")
             faults = object.__new__(FAULTS.HostedFaults)
-            faults.root, faults.secret, faults.crashed_pid = root, root / "secret", None
+            faults.root, faults.secret, faults.exited_pid = root, root / "secret", None
             with patch.object(FAULTS.subprocess, "run") as run:
                 with self.assertRaises(ValueError):
                     faults.restart()
                 run.assert_not_called()
-                faults.crashed_pid = 1234
+                faults.exited_pid = 1234
                 with patch.dict(os.environ, {"ADDP_ONLINE_ORCHESTRATOR_PROXY_URL": "http://127.0.0.1:18882",
                                             "ADDP_ONLINE_ARTIFACT_DIR": str(root)}):
                     with self.assertRaises(ValueError):
@@ -251,13 +345,23 @@ class FaultOwnershipTest(unittest.TestCase):
 class FaultScenarioTest(unittest.TestCase):
     def scenario(self, mode, corrupt=None):
         class Controller:
-            crashed = restarted = released = False
+            crashed = restarted = released = injected = False
 
             def arm(self, *args):
                 pass
 
             def witness(self):
-                return {"posts": 2 if corrupt == "replay" else 1, "parent_execution_id": PARENT, "child_execution_ids": [CHILD]}
+                return {"posts": 2 if corrupt == "replay" else 1, "parent_execution_id": PARENT, "child_execution_ids": [CHILD], "held_status_requests": 1,
+                        "cancelled_status_requests": 0 if corrupt == "request_alive" else 1}
+
+            def reject_renewal(self, *args):
+                self.injected = True
+
+            def await_renewal_exit(self):
+                pass
+
+            def renewal_rejections(self):
+                return 0 if corrupt == "not_rejected" else 1
 
             def crash(self):
                 self.crashed = True
@@ -269,10 +373,10 @@ class FaultScenarioTest(unittest.TestCase):
                 self.released = True
 
         controller = Controller()
-        code = "orchestrator.execution.lease_expired" if mode == "hold_status" else "orchestrator.execution.dispatch_uncertain"
+        code = {"hold_status": "orchestrator.execution.lease_expired", "hold_renewal": "orchestrator.execution.coordinator_stopped", "lose_response": "orchestrator.execution.dispatch_uncertain"}[mode]
         # An unknown dispatch outcome leaves Go StepResult.Result nil, serialized as JSON null.
-        steps = {"probe": {"status": "running" if mode == "hold_status" else "failed", "phase": "waiting" if mode == "hold_status" else "terminal", "result": None}}
-        if mode == "hold_status" or corrupt == "invented_child":
+        steps = {"probe": {"status": "running" if mode in {"hold_status", "hold_renewal"} else "failed", "phase": "waiting" if mode in {"hold_status", "hold_renewal"} else "terminal", "result": None}}
+        if mode in {"hold_status", "hold_renewal"} or corrupt == "invented_child":
             steps["probe"]["result"] = {"execution_id": CHILD}
         if corrupt == "malformed_result":
             steps["probe"]["result"] = []
@@ -293,15 +397,18 @@ class FaultScenarioTest(unittest.TestCase):
             def request(self, method, path, expected):
                 if path.endswith("/tree"):
                     return ONLINE.API.Response(200, tree)
+                if mode == "hold_renewal" and controller.injected:
+                    return ONLINE.API.Response(200, {**terminal, "progress": 100} if corrupt == "late_write" else terminal)
                 return ONLINE.API.Response(200, {**terminal, "status": "running"})
 
-        report = {"checks": []}
+        report = {"checks": [], "tenant_id": "42"}
         with patch.object(ONLINE, "wait_execution", return_value=terminal), \
                 patch.object(ONLINE, "assert_events", return_value=3), \
+                patch.object(ONLINE, "read_events", return_value=[]), \
                 patch.object(ONLINE.time, "sleep"), \
                 patch.object(ONLINE.time, "monotonic", side_effect=range(1000)):
             ONLINE.run_fault_case(Client(), lambda *_args, **_kwargs: (PARENT, {}), 8, 7,
-                                  "process_crash" if mode == "hold_status" else "response_lost", mode, controller, report)
+                                  "renewal_failure" if mode == "hold_renewal" else "process_crash" if mode == "hold_status" else "response_lost", mode, controller, report)
         self.assertTrue(controller.released)
         return controller, report
 
@@ -313,6 +420,20 @@ class FaultScenarioTest(unittest.TestCase):
                 self.assertEqual(controller.restarted, mode == "hold_status")
                 self.assertEqual(report["faults"][0]["child_execution_id"], CHILD)
                 self.assertEqual(report["faults"][0]["posts"], 1)
+
+    def test_renewal_proves_database_rejection_cancellation_and_stable_terminal(self):
+        controller, report = self.scenario("hold_renewal")
+        self.assertTrue(controller.injected)
+        self.assertFalse(controller.crashed)
+        self.assertTrue(controller.restarted)
+        self.assertEqual(report["faults"][0]["renewal_rejections"], 1)
+        self.assertEqual(report["faults"][0]["fault_cleanup"], "passed")
+        self.assertEqual(len(report["checks"]), 4)
+
+    def test_renewal_rejects_unproven_fault_live_request_late_write_and_replay(self):
+        for corrupt in ("not_rejected", "request_alive", "late_write", "replay", "private", "fake_cancel", "stale_parent"):
+            with self.subTest(corrupt=corrupt), self.assertRaises(ONLINE.SuiteError):
+                self.scenario("hold_renewal", corrupt)
 
     def test_fault_checks_reject_replay_private_data_fake_cancellation_and_invented_identity(self):
         for corrupt in ("replay", "private", "fake_cancel", "invented_child", "stale_parent", "malformed_result"):

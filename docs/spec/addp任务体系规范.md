@@ -949,6 +949,8 @@ Meta 专业扫描读取边界（2026-10-04 已实现并通过直接入口真实�
 
 Meta 专业入口扩展已在提交 `60faf18da` 的 [Hosted T4 37166379368](https://github.com/pampa0629/addp/actions/runs/37166379368) 真实通过，共 30 项检查。新增 `meta_direct_owner_history_and_scope` 与 `meta_direct_ad_hoc_isolation`，直接经过 Gateway 访问 Meta，证明同 Tenant 有 Owner 读取权限的另一 User 可读任务历史，却不能读取发起人的一次性执行；详情返回 404，列表及总数不增加。跨模块 UUID、不存在的 UUID、跨 Tenant 与缺少 Owner 权限分别按契约拒绝；删除四个任务定义后，Meta 专业安全详情与既有 Monitor 诊断保持一致。此前的嵌套编排、业务源中断、响应丢失、Backend 崩溃、Owner 不可用及正式撤权检查同时通过，两类派发故障仍各只有一次请求，无重放。System、Gateway、Meta、Orchestrator、Monitor 五个服务的构建身份均匹配该提交，干净检出与生命周期清理通过，Infra 容器、网络和数据卷零残留；27 个归档文件未包含凭据或代理控制文件，未检出标准令牌及夹具密码模式。本地 `make test-module MODULE=meta`（含真实 PostgreSQL API 回归）、`make test-orchestrator-online-runner` 53 项和 `make test-online-runner` 339 项通过；Swagger 覆盖 43 个公开路由方法。合法 OAuth User 与专用 TaskProvider 的完整权限矩阵由直接 HTTP T1/T2 回归验证，不扩大为本次 T4 的 OAuth 或机器身份验收。该提交的自动 Platform CI 与 Release/T2 运行及重跑被共享 main 并发取消，不计为通过；包含本改动的后继提交 `6195db4bf` 的 [Meta 前端 CI Job 111331736058](https://github.com/pampa0629/addp/actions/runs/37166874990/job/111331736058) 已通过，Meta PostgreSQL 采用上述本地标准门禁通过证据，未声称被跳过的 Hosted T2 已通过。此结果仍不包含续租故障。
 
+续租故障扩展沿用同一手动 Hosted T4：在真实父编排已保存 waiting 和真实 Meta 子执行身份后，外部 HTTP 夹具暂缓该子执行状态响应；仅在当次独占 addp_online PostgreSQL 中安装限定父执行 UUID 的临时续租拒绝触发器。触发器只拒绝 running 状态下 lease_expires_at 的续租更新，不改写执行事实，不中断其他模块或终态收敛；使用非事务序列证明真实续租被拒绝。监督器必须取消正在等待的状态请求，以 coordinator_stopped 失败收敛有效租约下的父执行，保留 running + waiting 的最后记录，依赖步骤不派发。夹具必须以 pidfd 证明原 Backend 自行退出，不发送崩溃信号，再通过标准生命周期启动身份不同的替代进程；子执行仍正常结束，父终态、步骤和事件在故障解除和替代进程启动后保持一致，只有一次下游提交。数据库准入必须同时核对 Hosted 环境、临时凭据目录及当次 Infra 容器身份；临时触发器、函数、序列和 schema 在退出时清理并核对不存在，失败退出最终销毁当次 Infra。生产服务不增加故障开关，未真实通过前不计为续租验收完成。
+
 ### 编排调度与子任务自身调度
 
 Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，也不是覆盖关系。

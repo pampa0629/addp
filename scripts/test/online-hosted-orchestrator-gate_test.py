@@ -80,6 +80,7 @@ class HostedOrchestratorGateTest(unittest.TestCase):
         ''')
         self.host._executable("make", '''
             #!/usr/bin/env bash
+            [ "$ADDP_ONLINE_ORCHESTRATOR_POSTGRES_ID" = owned-postgres-id ] || exit 1
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
@@ -88,6 +89,7 @@ class HostedOrchestratorGateTest(unittest.TestCase):
             if [ "$1 $2" = "container inspect" ]; then
               [ "${ADDP_TEST_EXISTING_CONTAINER:-}" = "$3" ]; exit
             fi
+            if [ "$1 $2" = "inspect --format" ]; then echo owned-postgres-id; fi
             exit 0
         ''')
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
