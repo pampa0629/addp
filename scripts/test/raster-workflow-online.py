@@ -135,6 +135,22 @@ def grid_workflow(source_locator, target_engine_id, case_name):
     ]}
 
 
+def multiband_workflow(source_locator, target_engine_id, case_name):
+    if case_name not in fixture.MULTIBAND_CASES:
+        raise SuiteError('unknown raster multiband case')
+    joint = case_name == 'multiband-joint'
+    return {'tasks': [
+        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
+        {'id': 'grid', 'operator': 'raster_band_math' if joint else 'raster_resample', 'depends_on': ['load'],
+         'params': {'input_raster': {'$ref': 'load', 'port': 'default'},
+                    **({'expression': 'b1+b2'} if joint else {'size': [128, 128], 'resampling': 'nearest'})}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['grid'], 'params': {
+            'input_raster': {'$ref': 'grid', 'port': 'default'},
+            'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+            'target_name': case_name + '.cog.tif', 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}},
+    ]}
+
+
 def validate_analysis(execution, expectation):
     metadata = obj(execution.get('metadata'), 'Develop analysis metadata')
     result = obj(metadata.get('result'), 'Develop analysis result')
@@ -297,7 +313,7 @@ def physical(repository, env, action):
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
     case_name = action.removeprefix('verify-')
-    expectation = fixture.grid_expectation(case_name) if case_name in fixture.GRID_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
+    expectation = fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
     if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload
@@ -437,16 +453,25 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         analysis_cases.append({'case_name': case_name, 'execution_id': identifier,
             'numeric_result': numeric_result, 'physical': native, 'browser': browser_report})
     grid_cases = []
+    multiband_cases = []
     preserved = {'result.cog.tif': physical_evidence[-1]['sha256'],
                  'mosaic-first.cog.tif': spatial_cases[0]['physical']['sha256'],
                  'mosaic-last.cog.tif': spatial_cases[1]['physical']['sha256']}
-    for case_name in fixture.GRID_CASES:
-        expectation = fixture.grid_expectation(case_name)
+    for case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES:
+        expectation = fixture.computed_expectation(case_name)
+        case_source, case_locator = spatial_source, spatial_locator
+        definition = grid_workflow
+        if case_name in fixture.MULTIBAND_CASES:
+            joint = case_name == 'multiband-joint'
+            case_source = support.find_fixture_item(client, target_engine if joint else source_engine,
+                'raster-target/multiband-alpha.cog.tif' if joint else 'raster-source/multiband.tif', 'multiband source')
+            case_locator = support.build_item_locator(target_engine if joint else source_engine, case_source)
+            definition = multiband_workflow
         name = case_name + '.cog.tif'
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
-        identifier = submit(client, engine_id, grid_workflow(spatial_locator, target_engine, case_name))
+        identifier = submit(client, engine_id, definition(case_locator, target_engine, case_name))
         execution = wait_execution(client, 'develop', identifier, timeout)
-        facts, scan_id = validate_success(execution, spatial_locator, locator, 'create', expectation)
+        facts, scan_id = validate_success(execution, case_locator, locator, 'create', expectation)
         wait_execution(client, 'meta', scan_id, timeout)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor grid execution')
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
@@ -455,9 +480,15 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         native = physical_runner(repository, env, 'verify-' + case_name)
         if native.get('case_name') != case_name or native.get('preserved_sha256') != preserved:
             raise SuiteError('grid execution changed an existing artifact or omitted preservation evidence')
-        graph, browser_report = inspect_output(repository, env, client, spatial_source, spatial_locator,
+        if case_name in fixture.MULTIBAND_CASES:
+            counts = [16382, 16382] if case_name == 'multiband-alpha' else [16381]
+            if (native.get('band_valid_pixels') != counts or native.get('invalid_pixels') != 16384 - counts[0]
+                or native.get('partial_alpha_pixels') != (3 if case_name == 'multiband-alpha' else 0)):
+                raise SuiteError('multiband independent validity/partial alpha evidence is incomplete')
+        graph, browser_report = inspect_output(repository, env, client, case_source, case_locator,
             target_engine, name, identifier, case_name, identity, timeout, browser_runner, expectation, native)
-        grid_cases.append({'case_name': case_name, 'execution_id': identifier,
+        cases = multiband_cases if case_name in fixture.MULTIBAND_CASES else grid_cases
+        cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
         preserved[name] = native['sha256']
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
@@ -465,7 +496,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
-            'analysis_cases': analysis_cases, 'grid_cases': grid_cases,
+            'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

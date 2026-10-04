@@ -245,11 +245,14 @@ def source_access_plan(path):
 
 
 def grid_target(tmp_path, scene, api_server, case_name):
-    source = tmp_path / 'spatial.tif'
-    source.write_bytes(LocalMinio.objects['source', 'raster-source', 'spatial.tif'])
+    multiband = case_name in fixture.MULTIBAND_CASES
+    joint = case_name == 'multiband-joint'
+    source_name = 'multiband-alpha.cog.tif' if joint else 'multiband.tif' if multiband else 'spatial.tif'
+    source = tmp_path / source_name
+    source.write_bytes(LocalMinio.objects['target' if joint else 'source', 'raster-target' if joint else 'raster-source', source_name])
     original = source.read_bytes()
     output = tmp_path / (case_name + '.cog.tif')
-    definition = scene.grid_workflow('source-locator', 2, case_name)
+    definition = (scene.multiband_workflow if multiband else scene.grid_workflow)('source-locator', 2, case_name)
     definition['tasks'][0]['params'] = {'access_plan': source_access_plan(source)}
     definition['tasks'][-1]['params'] = {'input_raster': {'$ref': 'grid', 'port': 'default'},
         'profile': 'cog', 'blocksize': 128, 'access_plan': {'schema_version': 'addp.workflow.access-plan/v1',
@@ -295,3 +298,55 @@ def test_grid_oracle_rejects_corrupt_pixels_masks_georeferencing_and_extra_objec
     LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     if fault == 'extra': LocalMinio.objects['target', 'raster-target', 'partial.tmp'] = b'partial'
     with pytest.raises(fixture.FixtureError): fixture.worker('verify-clip-polygon', physical)
+
+
+def multiband_targets(tmp_path, scene, api_server):
+    target(tmp_path, factor=3)
+    spatial_target(tmp_path, 'first')
+    spatial_target(tmp_path, 'last')
+    for case in fixture.GRID_CASES:
+        grid_target(tmp_path, scene, api_server, case)
+    evidence = []
+    for case in fixture.MULTIBAND_CASES:
+        _, output = grid_target(tmp_path, scene, api_server, case)
+        evidence.append(fixture.worker('verify-' + case, tmp_path / 'fixture.json'))
+    return evidence, output
+
+
+def test_async_multiband_save_reload_joint_math_passes_independent_all_pixel_oracle(physical, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    evidence, output = multiband_targets(tmp_path, scene, api_server)
+    assert evidence[0]['band_valid_pixels'] == [16382, 16382]
+    assert evidence[0]['partial_alpha_pixels'] == 3
+    assert evidence[1]['band_valid_pixels'] == [16381]
+    assert evidence[1]['preserved_sha256']['multiband-alpha.cog.tif'] == evidence[0]['sha256']
+    from operators.raster_compute import raster_workspace, raster_load, raster_statistics
+    with raster_workspace():
+        stats = raster_statistics(raster_load(source_access_plan(output)))
+        assert (stats['valid_count'], stats['invalid_count'], stats['min']) == (16381, 3, 0.)
+
+
+@pytest.mark.parametrize('fault', ['first-hole', 'second-hole', 'alpha', 'zero', 'joint-hole', 'nodata', 'extra'])
+def test_multiband_oracle_rejects_corrupt_independent_holes_alpha_joint_mask_and_artifacts(physical, tmp_path, monkeypatch, fault):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    _, joint_path = multiband_targets(tmp_path, scene, api_server)
+    joint = fault == 'joint-hole'
+    output = joint_path if joint else tmp_path / 'multiband-alpha.cog.tif'
+    edited = tmp_path / 'corrupt-multiband.tif'
+    dataset = gdal.Translate(str(edited), str(output), format='GTiff')
+    if fault == 'first-hole': dataset.GetRasterBand(1).WriteRaster(0, 0, 1, 1, struct.pack('<d', 1), buf_type=gdal.GDT_Float64)
+    if fault == 'second-hole': dataset.GetRasterBand(2).WriteRaster(1, 0, 1, 1, struct.pack('<d', 1), buf_type=gdal.GDT_Float64)
+    if fault == 'alpha': dataset.GetRasterBand(3).WriteRaster(3, 0, 1, 1, struct.pack('<d', 255), buf_type=gdal.GDT_Float64)
+    if fault == 'zero': dataset.GetRasterBand(1).WriteRaster(4, 0, 1, 1, struct.pack('<d', float('nan')), buf_type=gdal.GDT_Float64)
+    if fault == 'joint-hole': dataset.GetRasterBand(1).WriteRaster(1, 0, 1, 1, struct.pack('<d', 1), buf_type=gdal.GDT_Float64)
+    if fault == 'nodata': dataset.GetRasterBand(2).DeleteNoDataValue()
+    dataset = None
+    dataset = gdal.Translate(str(output), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+    dataset = None
+    LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    if fault == 'extra': LocalMinio.objects['target', 'raster-target', 'partial.tmp'] = b'partial'
+    with pytest.raises(fixture.FixtureError): fixture.worker('verify-multiband-joint', physical)

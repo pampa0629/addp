@@ -27,6 +27,19 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
         self.assertEqual(results['histogram-range']['counts'], [8192, 8192, 8192, 8193])
         self.assertEqual(results['histogram-range']['outside_count'], 32766)
 
+    def test_multiband_independent_oracle_keeps_separate_holes_partial_alpha_zero_and_joint_mask(self):
+        first, second, alpha = [list(m.multiband_pixels(band)) for band in (1, 2, 3)]
+        self.assertEqual(first[:6], [None, 2., None, 4., 0., 6.])
+        self.assertEqual(second[:6], [2., None, None, 8., 0., 12.])
+        self.assertEqual(alpha[:6], [128., 128., 0., 128., 255., 255.])
+        self.assertEqual(list(m.multiband_pixels(1, joint=True))[:6], [None, None, None, 12., 0., 18.])
+        self.assertEqual([sum(value is not None for value in values) for values in (first, second)], [16382, 16382])
+        self.assertEqual(m.multiband_expectation('multiband-joint')['valid_pixels'], 16381)
+        source = list(m.multiband_pixels(1, source=True))
+        self.assertEqual(source[4:6], [1e6, 1e6])
+        self.assertEqual(source[:256], source[256:512])
+        for case in m.MULTIBAND_CASES: self.assertIn('verify-' + case, m.ACTIONS)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-raster-fixture-test-')
         self.addCleanup(self.temp.cleanup)

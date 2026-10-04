@@ -29,7 +29,8 @@ SPATIAL_SOURCE_TRANSFORM = (0, ANGULAR_METRE, 0, SIZE * ANGULAR_METRE, 0, -ANGUL
 SPATIAL_TRANSFORM = (0, 1, 0, SIZE, 0, -1)
 SPATIAL_NODATA = {0, 127 * SIZE + 127}
 GRID_CASES = ('resample-size', 'resample-resolution', 'clip-polygon')
-ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES)
+MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint')
+ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -115,6 +116,36 @@ def grid_expectation(case_name):
             'extent': [transform[0], transform[3] + height * transform[5],
                        transform[0] + width * transform[1], transform[3]],
             'valid_pixels': sum(value is not None for value in grid_pixels(case_name))}
+
+
+def multiband_pixels(band, *, source=False, joint=False):
+    """Uniform 2x2 source cells; independent nearest-centre and joint-mask oracle."""
+    width = SIZE if source else SIZE // 2
+    for row in range(width):
+        for column in range(width):
+            cell = (row // 2 if source else row) * (SIZE // 2) + (column // 2 if source else column)
+            if band == 3:
+                yield 0. if cell == 2 else 128. if cell in (0, 1, 3) else 255.
+            elif joint:
+                yield None if cell in (0, 1, 2) else 0. if cell == 4 else float(3 * (cell + 1))
+            elif cell == band - 1 or (cell == 2 and not source):
+                yield None
+            else:
+                yield 1e6 if cell == 2 else 0. if cell == 4 else float(band * (cell + 1))
+
+
+def multiband_expectation(case_name):
+    if case_name not in MULTIBAND_CASES:
+        raise ValueError('unknown raster multiband case')
+    result = artifact_expectation()
+    result.update(width=128, height=128, band_count=3 if case_name == 'multiband-alpha' else 1,
+                  transform=[110, .02, 0, 20.32, 0, -.02],
+                  valid_pixels=128 * 128 - (2 if case_name == 'multiband-alpha' else 3))
+    return result
+
+
+def computed_expectation(case_name):
+    return multiband_expectation(case_name) if case_name in MULTIBAND_CASES else grid_expectation(case_name)
 
 
 class FixtureError(RuntimeError):
@@ -247,16 +278,19 @@ def worker(action, path):
             for role, client in clients.items():
                 client.make_bucket(config[role]['bucket'])
             fingerprints = {}
-            for name, spatial in [('source.tif', False), ('spatial.tif', True)]:
+            for name, spatial in [('source.tif', False), ('spatial.tif', True), ('multiband.tif', False)]:
                 path = root / name
-                dataset = gdal.GetDriverByName('GTiff').Create(str(path), SIZE, SIZE, 2, gdal.GDT_Float64)
+                multiband = name == 'multiband.tif'
+                band_count = 3 if multiband else 2
+                dataset = gdal.GetDriverByName('GTiff').Create(str(path), SIZE, SIZE, band_count, gdal.GDT_Float64)
                 dataset.SetGeoTransform(SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
                 crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
                 dataset.SetProjection(crs.ExportToWkt())
-                for index in (1, 2):
-                    values = source_values(index, spatial)
+                for index in range(1, band_count + 1):
+                    values = tuple(float('nan') if value is None else value for value in multiband_pixels(index, source=True)) if multiband else source_values(index, spatial)
                     band = dataset.GetRasterBand(index)
-                    band.SetNoDataValue(-9999)
+                    band.SetNoDataValue(float('nan') if multiband else -9999)
+                    if multiband and index == 3: band.SetColorInterpretation(gdal.GCI_AlphaBand)
                     band.WriteRaster(0, 0, SIZE, SIZE, struct.pack(f'<{len(values)}d', *values), buf_type=gdal.GDT_Float64)
                     band = None
                 dataset = None
@@ -266,20 +300,26 @@ def worker(action, path):
         if not fingerprint_path.is_file():
             raise FixtureError('source fingerprints are missing')
         fingerprints = json.loads(fingerprint_path.read_text())
-        for name, spatial in [('source.tif', False), ('spatial.tif', True)]:
+        for name, spatial in [('source.tif', False), ('spatial.tif', True), ('multiband.tif', False)]:
             path = root / name
             clients['source'].fget_object(config['source']['bucket'], name, str(path))
             if hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get(name):
                 raise FixtureError('workflow modified source bytes')
             source = gdal.Open(str(path))
-            for index in (1, 2):
+            multiband = name == 'multiband.tif'
+            for index in range(1, 4 if multiband else 3):
                 band = source.GetRasterBand(index)
                 values = struct.unpack(f'<{SIZE * SIZE}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
-                if band.GetNoDataValue() != -9999 or values != source_values(index, spatial):
+                expected_values = list(multiband_pixels(index, source=True)) if multiband else source_values(index, spatial)
+                nodata = band.GetNoDataValue()
+                if (nodata is None or (not math.isnan(nodata) if multiband else nodata != -9999)
+                    or any(not math.isnan(actual) if expected is None else actual != expected
+                           for actual, expected in zip(values, expected_values))
+                    or (multiband and index == 3 and band.GetColorInterpretation() != gdal.GCI_AlphaBand)):
                     raise FixtureError('workflow modified its source pixels/NoData')
             reference = osr.SpatialReference(); reference.ImportFromEPSG(4326)
             if (source.GetGeoTransform() != (SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
-                or source.RasterCount != 2 or not osr.SpatialReference(source.GetProjection()).IsSame(reference)):
+                or source.RasterCount != (3 if multiband else 2) or not osr.SpatialReference(source.GetProjection()).IsSame(reference)):
                 raise FixtureError('workflow modified source georeferencing/bands')
         spatial = action.startswith('verify-mosaic-')
         overlap = action.removeprefix('verify-mosaic-') if spatial else None
@@ -292,7 +332,7 @@ def worker(action, path):
             warnings, errors, _ = validate(dataset, full_check=True)
             if errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG':
                 raise FixtureError('persisted target is not a valid COG')
-            expectation = grid_expectation(grid_case) if grid_case else artifact_expectation(spatial)
+            expectation = computed_expectation(grid_case) if grid_case else artifact_expectation(spatial)
             reference = osr.SpatialReference(); reference.ImportFromEPSG(expectation['extent_srid'])
             if (not osr.SpatialReference(dataset.GetProjection()).IsSame(reference)
                 or any(not math.isclose(actual, expected, rel_tol=0, abs_tol=1e-12) for actual, expected in
@@ -305,6 +345,30 @@ def worker(action, path):
                 raise FixtureError('persisted target did not propagate NoData')
             count = expectation['width'] * expectation['height']
             values = struct.unpack(f'<{count}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+            if grid_case in MULTIBAND_CASES:
+                joint = grid_case == 'multiband-joint'
+                valid_counts = []
+                partial_alpha_pixels = 0
+                for index in range(1, dataset.RasterCount + 1):
+                    current = dataset.GetRasterBand(index)
+                    nodata = current.GetNoDataValue()
+                    if current.DataType != gdal.GDT_Float64 or nodata is None or not math.isnan(nodata):
+                        raise FixtureError('multiband target lost band dtype/NoData')
+                    actual_values = struct.unpack(f'<{count}d', current.ReadRaster(buf_type=gdal.GDT_Float64))
+                    expected_values = list(multiband_pixels(index, joint=joint))
+                    if any(not math.isnan(actual) if expected is None else actual != expected
+                           for actual, expected in zip(actual_values, expected_values)):
+                        raise FixtureError('multiband target pixels/NoData/alpha differ from independent oracle')
+                    if index == 3:
+                        if current.GetColorInterpretation() != gdal.GCI_AlphaBand:
+                            raise FixtureError('multiband target lost alpha interpretation')
+                        partial_alpha_pixels = sum(value == 128 for value in actual_values)
+                    else:
+                        valid_counts.append(sum(value is not None for value in expected_values))
+                return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': band.GetOverviewCount()>0,
+                        'valid_pixels': valid_counts[0], 'invalid_pixels': count - valid_counts[0],
+                        'band_valid_pixels': valid_counts, 'partial_alpha_pixels': partial_alpha_pixels,
+                        'source_unchanged': True, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
             if grid_case:
                 expected_values = list(grid_pixels(grid_case))
                 for actual, expected in zip(values, expected_values):
@@ -339,12 +403,13 @@ def worker(action, path):
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
         grid_case = action.removeprefix('verify-')
-        if grid_case in GRID_CASES:
+        if grid_case in GRID_CASES + MULTIBAND_CASES:
             evidence = verify(grid_case + '.cog.tif', grid_case=grid_case)
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                          'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                          'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
-            for prior in GRID_CASES[:GRID_CASES.index(grid_case)]:
+            cases = GRID_CASES + MULTIBAND_CASES
+            for prior in cases[:cases.index(grid_case)]:
                 preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', grid_case=prior)['sha256']
             evidence.update(case_name=grid_case, preserved_sha256=preserved)
             names = list(preserved) + [grid_case + '.cog.tif']

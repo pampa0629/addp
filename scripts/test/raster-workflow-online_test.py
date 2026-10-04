@@ -18,14 +18,15 @@ class Client:
                                       'format_info': {'tiff': {'profile': 'cog', 'is_tiled': True, 'has_overviews': True}},
                                       'capabilities': {'spatial': {'srid': 4326, 'extent': [110, 17.76, 112.56, 20.32]}}}}
         self.spatial_source = {'id': 11, 'item_type': 'object', 'full_name': 'raster-source/spatial.tif', 'fingerprint': 'spatial-fp'}
+        self.multiband_source = {'id': 12, 'item_type': 'object', 'full_name': 'raster-source/multiband.tif', 'fingerprint': 'multiband-fp'}
         self.targets = {20: self.target}
         for item_id, overlap in [(21, 'first'), (22, 'last')]:
             item = copy.deepcopy(self.target)
             item.update(id=item_id, full_name=f'raster-target/mosaic-{overlap}.cog.tif', fingerprint='mosaic-' + overlap)
             item['attributes']['capabilities']['spatial'] = {'srid': 3857, 'extent': [0, 0, 256, 256]}
             self.targets[item_id] = item
-        for item_id, name in enumerate(m.fixture.GRID_CASES, 23):
-            expectation = m.fixture.grid_expectation(name)
+        for item_id, name in enumerate(m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES, 23):
+            expectation = m.fixture.computed_expectation(name)
             item = copy.deepcopy(self.target)
             item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name)
             item['attributes']['type_info']['media'] = {'width': expectation['width'], 'height': expectation['height']}
@@ -68,7 +69,7 @@ class Client:
             result = {'execution_id': 'source-scan'}
         elif path.startswith('/api/v1/meta/executions/'):
             result = {'status': 'success'}
-        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source]
+        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source, self.multiband_source]
         elif path == '/api/v1/meta/engines/2/items': result = list(self.targets.values())
         elif path.startswith('/api/v1/meta/items/'): result = self.targets[int(path.rsplit('/', 1)[1])]
         elif method == 'POST' and path == '/api/v1/develop/executions':
@@ -88,7 +89,7 @@ class Client:
             target = f'addp://engine/2/path/raster-target/{definition["tasks"][-1]["params"]["target_name"]}?type=object'
             spatial = 'mosaic' in definition['tasks'][-1]['depends_on']
             case_name = definition['tasks'][-1]['params']['target_name'].removesuffix('.cog.tif')
-            expectation = m.fixture.grid_expectation(case_name) if case_name in m.fixture.GRID_CASES else m.fixture.artifact_expectation(spatial)
+            expectation = m.fixture.computed_expectation(case_name) if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES else m.fixture.artifact_expectation(spatial)
             metadata = {} if status == 'failed' else {
                 'outputs': {'save': {'resource': {'locator': target, 'type': 'object', 'write_mode': mode}}},
                 'lineage_facts': {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source}],
@@ -110,6 +111,8 @@ class Client:
         elif path.startswith('/api/v1/meta/lineage/graph?'):
             target_id = int(urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)['item_id'][0])
             source_id, identifier = (10, 'run-3') if target_id == 20 else (11, 'run-' + str(target_id - (17 if target_id <= 22 else 13)))
+            if target_id == 26: source_id = 12
+            if target_id == 27: source_id = 26
             result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
                       'status': 'active', 'relation_kind': self.relation_kind, 'evidence': {'execution_id': identifier}}]}
         else:
@@ -132,13 +135,19 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                     'valid_pixels': 65534, 'invalid_pixels': 2, 'overlap': overlap,
                     'baseline_sha256': 'new', 'first_sha256': 'spatial-first'}
         case_name = action.removeprefix('verify-')
-        if case_name in m.fixture.GRID_CASES:
+        if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES:
             preserved = {'result.cog.tif': 'new', 'mosaic-first.cog.tif': 'spatial-first', 'mosaic-last.cog.tif': 'spatial-last'}
-            for prior in m.fixture.GRID_CASES[:m.fixture.GRID_CASES.index(case_name)]:
+            cases = m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES
+            for prior in cases[:cases.index(case_name)]:
                 preserved[prior + '.cog.tif'] = prior
-            return {'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
+            extra = {}
+            if case_name in m.fixture.MULTIBAND_CASES:
+                joint = case_name == 'multiband-joint'
+                extra = {'band_valid_pixels': [16381] if joint else [16382, 16382],
+                    'invalid_pixels': 3 if joint else 2, 'partial_alpha_pixels': 0 if joint else 3}
+            return {**extra, 'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
                     'cog_valid': True, 'has_overviews': case_name=='clip-polygon',
-                    'source_unchanged': True, 'valid_pixels': m.fixture.grid_expectation(case_name)['valid_pixels']}
+                    'source_unchanged': True, 'valid_pixels': m.fixture.computed_expectation(case_name)['valid_pixels']}
         if action == 'verify-analysis':
             return {'sha256': 'new', 'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 65535,
                     'first_sha256': 'spatial-first', 'last_sha256': 'spatial-last'}
@@ -155,7 +164,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES])
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -169,6 +178,37 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([case['case_name'] for case in report['analysis_cases']], list(m.fixture.ANALYSIS_CASES))
         self.assertEqual([case['case_name'] for case in report['grid_cases']], list(m.fixture.GRID_CASES))
         self.assertEqual([case['lineage']['target_item_id'] for case in report['grid_cases']], [23, 24, 25])
+        self.assertEqual([case['case_name'] for case in report['multiband_cases']], list(m.fixture.MULTIBAND_CASES))
+        self.assertEqual([case['lineage']['source_item_id'] for case in report['multiband_cases']], [12, 26])
+        self.assertEqual([case['lineage']['target_item_id'] for case in report['multiband_cases']], [26, 27])
+        self.assertEqual(report['multiband_cases'][1]['browser']['source_name'], 'multiband-alpha.cog.tif')
+
+    def test_multiband_cases_reject_missing_per_band_counts_partial_alpha_and_reloaded_source(self):
+        for fault in ('counts', 'alpha', 'invalid', 'prior', 'source'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def physical(repo, env, action):
+                    result = self.physical(repo, env, action)
+                    if action == 'verify-multiband-alpha':
+                        if fault == 'counts': result['band_valid_pixels'] = [16384, 16384]
+                        if fault == 'alpha': result['partial_alpha_pixels'] = 0
+                        if fault == 'invalid': result['invalid_pixels'] = 0
+                        if fault == 'prior': result['preserved_sha256']['clip-polygon.cog.tif'] = 'changed'
+                    return result
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-14' and fault == 'source':
+                        execution['metadata']['lineage_facts']['inputs'][0]['locator'] = 'wrong-source'
+                    return execution
+                self.client.mutate = mutate
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
+    def test_multiband_targets_keep_the_original_strict_size_guard(self):
+        for size in (0, -1, True, '001', '1.0'):
+            with self.subTest(size=size):
+                self.setUp()
+                self.client.targets[26]['size_bytes'] = size
+                with self.assertRaises(m.SuiteError): self.run_scene()
+                self.assertNotIn('run-14', self.client.executions)
 
     def test_rejects_admin_extra_permissions_default_tenant_and_shared_engine_before_writes(self):
         for fault in ('admin', 'permission', 'tenant', 'engine'):
@@ -384,7 +424,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.run_scene()
         submitted = [body['content']['workflow_definition']['tasks'] for method, path, body in self.client.calls
                      if method == 'POST' and path == '/api/v1/develop/executions']
-        size, resolution, polygon = [tasks[2] for tasks in submitted[-3:]]
+        size, resolution, polygon = [tasks[2] for tasks in submitted
+            if tasks[-1]['params'].get('target_name', '').removesuffix('.cog.tif') in m.fixture.GRID_CASES]
         self.assertEqual(size['params']['size'], [128, 128])
         self.assertNotIn('resolution', size['params'])
         self.assertEqual(resolution['params']['resolution'], [2*m.fixture.ANGULAR_METRE, 4*m.fixture.ANGULAR_METRE])
