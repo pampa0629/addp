@@ -322,3 +322,7 @@ func openEngineCatalogScanDispatcherTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	return metatest.OpenMetadataDB(t, metatest.WithoutMetaItemTable())
 }
+
+func (a catalogDispatcherTestContentAdapter) ScanLeaf(context.Context, *commonModels.Engine, uint, plugin.EngineCatalogEntry, string, bool) (scanflow.DispatchResult, error) {
+	return scanflow.DispatchResult{Items: 1}, nil
+}

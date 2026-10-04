@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
@@ -40,4 +41,8 @@ func TestContentCatalogScannerChoosesRefGroups(t *testing.T) {
 	if result.Items != 2 {
 		t.Fatalf("items = %d", result.Items)
 	}
+}
+
+func (a *fakeContentAdapter) ScanLeaf(context.Context, *commonModels.Engine, uint, plugin.EngineCatalogEntry, string, bool) (scanflow.DispatchResult, error) {
+	return scanflow.DispatchResult{Items: 1}, nil
 }

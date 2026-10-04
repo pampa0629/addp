@@ -283,6 +283,7 @@ func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 }
 
 type preciseContentAdapter struct {
+	entry       *plugin.EngineCatalogEntry
 	groups      []models.ScanRefGroup
 	pathsCalled bool
 }
@@ -316,7 +317,9 @@ func TestContentLocatorRetainsExactBoundaryAndRootState(t *testing.T) {
 				t.Fatal(err)
 			}
 			last := path.Segments[len(path.Segments)-1]
-			p.entries = []plugin.EngineCatalogEntry{{Name: last.Name, Path: path, Term: last.Term, Kind: last.Kind, Role: plugin.EngineCatalogRoleLeaf}}
+			size := int64(4096)
+			modified := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
+			p.entries = []plugin.EngineCatalogEntry{{Name: last.Name, Path: path, Term: last.Term, Kind: last.Kind, Role: plugin.EngineCatalogRoleLeaf, UpdatedAt: &modified, Storage: &plugin.EngineCatalogStorageFacts{Path: path.StringPath(), SizeBytes: &size, ContentType: "image/tiff", ETag: "source-etag"}}}
 			root, err := metaRepo.EnsureEngineCatalogRootNode(repo, 91, resource, p)
 			if err != nil {
 				t.Fatal(err)
@@ -328,7 +331,7 @@ func TestContentLocatorRetainsExactBoundaryAndRootState(t *testing.T) {
 			adapter := &preciseContentAdapter{}
 			d := scanadapter.NewEngineCatalogScanDispatcher(db, repo, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, scanadapter.NewEngineCatalogContentScanner(adapter, adapter))
 			result, err := d.Dispatch(scanflow.DispatchRequest{Resource: resource, EnginePlugin: p, TenantID: 91, Targets: []string{loc.ToURI()}, ScanDepth: "deep"})
-			if err != nil || result.Items != 1 || adapter.pathsCalled || len(adapter.groups) != 1 || adapter.groups[0].Primary != path.StringPath() {
+			if err != nil || result.Items != 1 || result.Extraction.Extracted != 1 || adapter.pathsCalled || len(adapter.groups) != 0 || adapter.entry == nil || !reflect.DeepEqual(*adapter.entry, p.entries[0]) {
 				t.Fatalf("content boundary: %+v %v %+v", result, err, adapter)
 			}
 			var after models.MetaNode
@@ -482,4 +485,9 @@ func TestPreciseNativePostgresScanAgainstPostgres(t *testing.T) {
 	if !reflect.DeepEqual(siblingBefore, siblingAfter) {
 		t.Fatal("native leaf scan changed unrelated metadata")
 	}
+}
+
+func (a *preciseContentAdapter) ScanLeaf(_ context.Context, _ *commonModels.Engine, _ uint, entry plugin.EngineCatalogEntry, _ string, _ bool) (scanflow.DispatchResult, error) {
+	a.entry = &entry
+	return scanflow.DispatchResult{Items: 1, Extraction: scanflow.ExtractionCounts{Extracted: 1}}, nil
 }

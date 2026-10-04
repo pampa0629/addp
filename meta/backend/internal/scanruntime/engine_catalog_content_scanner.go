@@ -3,6 +3,7 @@ package scanruntime
 import (
 	"context"
 
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanadapter"
@@ -42,4 +43,12 @@ func (a fileCatalogAdapter) ScanPaths(ctx context.Context, resource *commonModel
 
 func (a fileCatalogAdapter) ScanRefGroups(ctx context.Context, resource *commonModels.Engine, tenantID uint, groups []models.ScanRefGroup, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error) {
 	return a.runtime.ScanRefGroups(ctx, resource, tenantID, groups, scanDepth, force, reporter)
+}
+
+func (a objectCatalogAdapter) ScanLeaf(ctx context.Context, resource *commonModels.Engine, tenantID uint, entry plugin.EngineCatalogEntry, scanDepth string, force bool) (scanflow.DispatchResult, error) {
+	return a.runtime.ScanLeaf(ctx, resource, tenantID, entry, scanDepth, force)
+}
+
+func (a fileCatalogAdapter) ScanLeaf(ctx context.Context, resource *commonModels.Engine, tenantID uint, entry plugin.EngineCatalogEntry, scanDepth string, force bool) (scanflow.DispatchResult, error) {
+	return a.runtime.ScanLeaf(ctx, resource, tenantID, entry, scanDepth, force)
 }

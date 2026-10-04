@@ -9,7 +9,6 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 )
 
@@ -81,32 +80,37 @@ func (d *EngineCatalogScanDispatcher) dispatchTargets(p plugin.EnginePlugin, pla
 		}
 		var part scanflow.DispatchResult
 		var err error
-		if t.entry != nil && t.entry.Role == plugin.EngineCatalogRoleLeaf && plan.Strategy != scanflow.EngineCatalogScanObject && plan.Strategy != scanflow.EngineCatalogScanFile {
-			var scanner catalogLeafScanner
-			switch plan.Strategy {
-			case scanflow.EngineCatalogScanTabular:
-				scanner, _ = d.namespaceScan.(catalogLeafScanner)
-			case scanflow.EngineCatalogScanBranchLeaves:
-				scanner, _ = d.branchScan.(catalogLeafScanner)
-			case scanflow.EngineCatalogScanDirectLeaves:
-				scanner, _ = d.directLeafScan.(catalogLeafScanner)
-			}
-			if scanner == nil {
-				err = fmt.Errorf("catalog scanner does not support precise leaves")
+		if t.entry != nil && t.entry.Role == plugin.EngineCatalogRoleLeaf {
+			if plan.Strategy == scanflow.EngineCatalogScanObject || plan.Strategy == scanflow.EngineCatalogScanFile {
+				if d.contentScanner == nil {
+					err = fmt.Errorf("content catalog scanner is nil")
+				} else if plan.Strategy == scanflow.EngineCatalogScanObject {
+					part, err = d.contentScanner.ScanObjectCatalogLeaf(req, *t.entry)
+				} else {
+					part, err = d.contentScanner.ScanFileCatalogLeaf(req, *t.entry)
+				}
 			} else {
-				part, err = d.scanTargetLeaf(scanner, p, plan, req, *t.entry)
+				var scanner catalogLeafScanner
+				switch plan.Strategy {
+				case scanflow.EngineCatalogScanTabular:
+					scanner, _ = d.namespaceScan.(catalogLeafScanner)
+				case scanflow.EngineCatalogScanBranchLeaves:
+					scanner, _ = d.branchScan.(catalogLeafScanner)
+				case scanflow.EngineCatalogScanDirectLeaves:
+					scanner, _ = d.directLeafScan.(catalogLeafScanner)
+				}
+				if scanner == nil {
+					err = fmt.Errorf("catalog scanner does not support precise leaves")
+				} else {
+					part, err = d.scanTargetLeaf(scanner, p, plan, req, *t.entry)
+				}
 			}
 		} else {
 			sub := req
 			sub.Targets = nil
 			sub.Reporter = nil
 			if t.entry != nil {
-				if t.entry.Role == plugin.EngineCatalogRoleLeaf {
-					// Reuse the bounded content path. This does not enumerate siblings.
-					sub.RefGroups = []models.ScanRefGroup{{Primary: t.path.StringPath()}}
-				} else {
-					sub.CatalogPaths = []string{t.path.StringPath()}
-				}
+				sub.CatalogPaths = []string{t.path.StringPath()}
 			}
 			part, err = d.Dispatch(sub)
 		}

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 )
 
 type EngineCatalogContentAdapter interface {
+	ScanLeaf(ctx context.Context, resource *commonModels.Engine, tenantID uint, entry plugin.EngineCatalogEntry, scanDepth string, force bool) (scanflow.DispatchResult, error)
 	ScanPaths(ctx context.Context, resource *commonModels.Engine, tenantID uint, paths []string, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error)
 	ScanRefGroups(ctx context.Context, resource *commonModels.Engine, tenantID uint, groups []models.ScanRefGroup, scanDepth string, force bool, reporter scanflow.ProgressReporter) (scanflow.DispatchResult, error)
 }
@@ -42,4 +44,19 @@ func (s *EngineCatalogContentScanner) scan(adapter EngineCatalogContentAdapter, 
 		return adapter.ScanRefGroups(req.Context, req.Resource, req.TenantID, req.RefGroups, req.ScanDepth, req.Force, req.Reporter)
 	}
 	return adapter.ScanPaths(req.Context, req.Resource, req.TenantID, req.CatalogPaths, req.ScanDepth, req.Force, req.Reporter)
+}
+
+func (s *EngineCatalogContentScanner) ScanObjectCatalogLeaf(req scanflow.DispatchRequest, entry plugin.EngineCatalogEntry) (scanflow.DispatchResult, error) {
+	return s.scanLeaf(s.objectAdapter, req, entry)
+}
+
+func (s *EngineCatalogContentScanner) ScanFileCatalogLeaf(req scanflow.DispatchRequest, entry plugin.EngineCatalogEntry) (scanflow.DispatchResult, error) {
+	return s.scanLeaf(s.fileAdapter, req, entry)
+}
+
+func (s *EngineCatalogContentScanner) scanLeaf(adapter EngineCatalogContentAdapter, req scanflow.DispatchRequest, entry plugin.EngineCatalogEntry) (scanflow.DispatchResult, error) {
+	if adapter == nil {
+		return scanflow.DispatchResult{}, fmt.Errorf("content catalog adapter is nil")
+	}
+	return adapter.ScanLeaf(req.Context, req.Resource, req.TenantID, entry, req.ScanDepth, req.Force)
 }

@@ -114,6 +114,12 @@ func PlanObjectSingleItem(engineID uint, resource StorageResource, trimmedPath s
 			"object_count": resource.ObjectCount,
 		},
 	}
+	if resource.ContentType != "" {
+		metaattr.SetStorage(attrs, "content_type", resource.ContentType)
+	}
+	if resource.ETag != "" {
+		metaattr.SetStorage(attrs, "etag", resource.ETag)
+	}
 	if resource.LastModified != nil {
 		metaattr.SetStorage(attrs, "last_modified_at", resource.LastModified)
 	}

@@ -96,6 +96,8 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 
 目录归属只取决于 bucket 内规范路径，不取决于扫描起点。single、composite 和 `ref_groups` 必须共用 repository 的完整 prefix 链构造；扫描范围只控制枚举与扫描状态，不能参与父节点路径拼接。目录数量和大小只由查询层从有效子树的 item 记录批量聚合，不存储在 node，不由扫描或上传入口维护。详见《addp元数据扫描机制规范》的“对象目录归属不变量”和“节点统计的唯一事实来源”。
 
+精确 file/object 目标由 `ResolvePath` 返回的 `EngineCatalogEntry` 直接进入内容运行时 `ScanLeaf`，复用完整扫描的资源转换和 single processor，保留大小、源修改时间、MIME 与对象 ETag。不得转为只含路径的 `ref_groups`；不枚举同级内容、不清理兄弟 item、不完成父范围状态。`TestPreciseContentStorageFacts` 与标准 `make test-meta-postgres` 中的 `TestPreciseContentStorageFactsAgainstPostgres` 覆盖基本、深度和重复精确扫描的事实与范围不变量；真实 COG 自动扫描仍由既有 Raster Hosted T4 复验。
+
 single 文件的内容增强统一从 `metaenrich.EnrichResourceAttributes` 进入：先确认格式与父级数据类型，再调用相应 provider。格式插件具有表能力不代表父文件是 table；SQLite、GeoPackage、UDBX、Excel 等容器的表能力只供显式选定的 child 使用。仅 document 可通过记录集合内容识别精化为 table，不允许对所有非 table 类型试探转换。known-item refresh 同样按格式声明纠正历史误判的容器身份，清除失效的内容派生 attributes 后重建；容器打开和解析错误必须返回，不能落库为成功空容器。回归须覆盖统一增强入口及 known-item 持久化链路，不能只测 container helper。
 
 node 的 `scan_status` 仅代表最近范围扫描过程；`scanned_depth` 和 `scanned_at` 只代表成功完成的深度及时间。对象扫描使用本次覆盖节点和完整失败路径统一收尾 bucket / prefix，不能只在 bucket 汇总失败后将 prefix 一律标成功，也不能用有限失败样本推断目录状态。文件刷新不改变父范围状态。`025_clear_unsuccessful_node_scan_times.sql` 一次性清除旧 running / failed 节点被开始时间污染的 `scanned_at`，由已有 Meta PostgreSQL 门禁验证迁移重启不重放。
@@ -104,7 +106,7 @@ node 的 `scan_status` 仅代表最近范围扫描过程；`scanned_depth` 和 `
 service.ScanService
   -> scanadapter.EngineCatalogContentScanner
   -> scanruntime.ObjectStorageCatalogRuntime
-  -> scanruntime.ScanPaths / ScanRefGroups
+  -> scanruntime.ScanPaths / ScanRefGroups / ScanLeaf
   -> scanruntime.DetectObjectCatalogResourceFormats     # 基于内容前缀修正未知格式
   -> scanflow.DetectObjectCatalogCompositeItems
   -> metaitem.ResolveItems
@@ -120,7 +122,7 @@ service.ScanService
 service.ScanService
   -> scanadapter.EngineCatalogContentScanner
   -> scanruntime.FilesystemCatalogRuntime
-  -> scanruntime.ScanPaths / ScanRefGroups
+  -> scanruntime.ScanPaths / ScanRefGroups / ScanLeaf
   -> metaitem.StorageFileRef
   -> metaitem.ResolveItems                   # multi / whole / table resolver
   -> metaitem.InferSingleResourceItem        # 单文件兜底
