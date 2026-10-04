@@ -583,7 +583,7 @@ services:
 
   # Apache Spark Master + Thrift Server
   spark-master:
-    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
     container_name: business-spark-master
     user: root
     environment:
@@ -623,7 +623,7 @@ services:
 
   # Spark Worker 1
   spark-worker-1:
-    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
     container_name: business-spark-worker-1
     user: root
     environment:
@@ -652,7 +652,7 @@ services:
 
   # Spark Worker 2 (可选，通过 --profile full 启用)
   spark-worker-2:
-    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
     container_name: business-spark-worker-2
     user: root
     environment:

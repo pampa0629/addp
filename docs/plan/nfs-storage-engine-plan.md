@@ -4,6 +4,8 @@
 
 本文只保留 NFS 当前语义和后续注意事项。正式路径规范见 [../spec/addp存储引擎路径体系规范.md](../spec/addp存储引擎路径体系规范.md)，插件接口规范见 [../spec/addp引擎插件接口规范.md](../spec/addp引擎插件接口规范.md)。
 
+HDFS 隔离自动验收使用手动 Hosted T4 `hdfs-spark-consumer-flow`。Business 夹具复用现有 Hadoop 配置、三格式初始化和固定官方镜像，在独占 Linux Runner 的宿主网络启动 NameNode、DataNode、Spark Master/Thrift 与 Worker；消费者地址统一为回环，Driver 和 Worker 共享同一网络命名空间。平台及 Spark Workflow 通过标准开发入口启动，固定 Java 11、Simple 用户 `addp_business_reader`，不启用本地 Spark 模式。System owner 夹具提供最小权限普通 User 和独立登记 User；经正式 API 登记两个 general Engine，移除登记令牌后由普通 User 完成扫描、四个文件预览及八节点正式工作流。结果必须核对三格式每种 20 行、金额 2100，并关联当次 Spark Application 与 Worker 实际完成任务的日志；Console 真实登录、Meta 重扫、Manager 预览和 Develop 专业详情必须输出同一身份的证据。成功、失败、中断均清理当次应用、业务容器和 Infra，并删除凭据；首次 Hosted 真实通过前只允许人工触发，不登记夜间调度。
+
 ## 当前语义
 
 - NFS 是文件系统语义存储，不是对象存储。
@@ -60,4 +62,6 @@ Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三
 
 2026-10-04 重启 Develop 与 Spark Workflow 后，正式执行 251（`758b526b-2ef8-4b30-99f3-eccfcb843f67`）成功，8 个节点全部完成，耗时 23.61 秒。Develop 专业执行详情及运行时结果均确认三种格式各有 20 行、金额合计 2100；east 分组每格式 10 行、合计 1100，west 分组每格式 10 行、合计 1000。Business Spark Standalone 应用 `app-20261004133131-0002` 分配 1 个核心，Worker 容器中该应用的 Executor 日志确认真实计算任务完成。本地开发环境的正式消费链路人工复验通过；尚未登记或运行隔离环境的 HDFS Online suite，不计为自动化 T4 门禁通过。
 
-格式修复提交 `e93d72b08` 的 [Release and T2 gates](https://github.com/pampa0629/addp/actions/runs/37200801282) 已通过，包括 HDFS WebHDFS 与分布式 Spark、Redis、Elasticsearch 契约；[Platform CI](https://github.com/pampa0629/addp/actions/runs/37200801286) 的 Spark、Develop、Go workspace 与平台一致性检查通过，但产品镜像构建失败：Spark Workflow 镜像安装 Debian Bullseye security 软件包时返回 404。后续已迁移到 Python 3.11 Bookworm 与官方 Temurin Java 11，补齐共享 Python 包、根目录构建上下文、Compose 与构建登记；本地 ARM64 标准镜像构建已通过依赖一致性、API 导入和真实 Spark 计算检查。镜像修复提交 `7bf7489df` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37207120567) 已通过 AMD64 产品镜像构建、平台一致性与 Spark Workflow 测试，原镜像构建阻塞已消除；记录时其他 Job 仍在执行，不声明整套 CI 通过。
+格式修复提交 `e93d72b08` 的 [Release and T2 gates](https://github.com/pampa0629/addp/actions/runs/37200801282) 已通过，包括 HDFS WebHDFS 与分布式 Spark、Redis、Elasticsearch 契约；[Platform CI](https://github.com/pampa0629/addp/actions/runs/37200801286) 的 Spark、Develop、Go workspace 与平台一致性检查通过，但产品镜像构建失败：Spark Workflow 镜像安装 Debian Bullseye security 软件包时返回 404。后续已迁移到 Python 3.11 Bookworm 与官方 Temurin Java 11，补齐共享 Python 包、根目录构建上下文、Compose 与构建登记；本地 ARM64 标准镜像构建已通过依赖一致性、API 导入和真实 Spark 计算检查。镜像修复提交 `7bf7489df` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37207120567) 已通过 AMD64 产品镜像构建、平台一致性与 Spark Workflow 测试，原镜像构建阻塞已消除；后续核对该轮 Platform CI 已全部通过。
+
+HDFS Hosted suite 的实现及登记已补齐。本地 `make test-platform`、`make test-hdfs-online-runner`（17 项场景/夹具测试及 System IAM 夹具）、`make test-common-hdfs-unit`、`make test-spark-workflow`（34 项）与 `make test-business-config` 均通过。工作区 `make test-changed` 因多个 Owner 的 PostgreSQL DSN 和 MySQL/OceanBase 环境缺失停在预检，未执行后续门禁；不能计为通过。当前新 suite 尚待手工 Hosted 真实运行，不声明 T4 已通过。

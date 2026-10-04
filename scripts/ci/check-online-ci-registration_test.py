@@ -125,6 +125,35 @@ class OnlineCIRegistrationTest(unittest.TestCase):
     def test_accepts_one_profile_and_workflow_choice_per_registered_suite(self) -> None:
         CHECK.check_registration(self.repository)
 
+    def test_hdfs_requires_manual_java11_lifecycle_browser_and_owner_tests(self) -> None:
+        source = SCRIPT.parents[2]
+        paths = (
+            "scripts/test/online-hosted-hdfs-gate.sh", "scripts/test/online-gate.py",
+            "business/scripts/online-hdfs-spark-fixture.sh", "scripts/test/hdfs-spark-consumer-flow-online.py",
+            "console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js", "Makefile",
+            ".github/workflows/online-t4-gates.yml",
+        )
+        for relative in paths:
+            destination = self.repository / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, destination)
+        registered = {"hdfs-spark-consumer-flow"}
+        CHECK.validate_hdfs_spark_profile(self.repository, registered)
+        for relative, fragment in (
+            (paths[0], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+            (paths[2], 'refusing to delete a foreign container'),
+            (paths[3], 'Finished task'), (paths[4], 'login('),
+            (paths[5], '$(MAKE) test-hdfs-online-runner'),
+            (paths[6], "java-version: '11'"),
+            (paths[6], "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'hdfs-spark-consumer-flow'\n"),
+        ):
+            path = self.repository / relative
+            original = path.read_text()
+            path.write_text(original.replace(fragment, 'removed'))
+            with self.subTest(relative=relative, fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_hdfs_spark_profile(self.repository, registered)
+            path.write_text(original)
+
     def test_hosted_setup_node_pin_matches_platform_ci(self) -> None:
         repository = SCRIPT.parents[2]
         online = (

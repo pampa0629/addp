@@ -79,6 +79,7 @@ class OnlineGateTest(unittest.TestCase):
                 "compose-public-origin",
                 "consumer-engine-recovery",
                 "elasticsearch-consumer-flow",
+                "hdfs-spark-consumer-flow",
                 "redis-consumer-flow",
                 "enterprise-catalog-publishing",
                 "kingbase-consumer-flow",

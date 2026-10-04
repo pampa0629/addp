@@ -113,7 +113,7 @@ var rasterWorkflowPermissions = []string{
 	"meta.lineage.read", "monitor.execution.read",
 }
 
-var elasticsearchConsumerPermissions = []string{
+var readWorkflowConsumerPermissions = []string{
 	"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"manager.data_item.read", "manager.content.read", "develop.task.read", "develop.task.execute",
 	"develop.data_read.execute", "system.execution_authorization.create",
@@ -127,8 +127,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return append(append([]string{}, consumerPermissions...), securityPermissions...), nil
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
 		return consumerPermissions, nil
-	case "elasticsearch-consumer-flow":
-		return elasticsearchConsumerPermissions, nil
+	case "elasticsearch-consumer-flow", "hdfs-spark-consumer-flow":
+		return readWorkflowConsumerPermissions, nil
 	case "redis-consumer-flow":
 		return redisConsumerPermissions, nil
 	case "transfer-relational-sql-etl":
@@ -149,7 +149,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	return suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func main() {
@@ -307,7 +307,7 @@ func run(args []string, environment []string) error {
 		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenant.ID),
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": consumerSession.AccessToken,
 	}
-	if *suite == "elasticsearch-consumer-flow" || *suite == "raster-workflow" || *suite == "redis-consumer-flow" || *suite == "manager-internal-artifact-lineage" || *suite == "transfer-relational-sql-etl" {
+	if *suite == "hdfs-spark-consumer-flow" || *suite == "elasticsearch-consumer-flow" || *suite == "raster-workflow" || *suite == "redis-consumer-flow" || *suite == "manager-internal-artifact-lineage" || *suite == "transfer-relational-sql-etl" {
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = consumerPassword
 	}

@@ -438,7 +438,13 @@ test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限�
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
 	@python3 -m unittest scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py
 
+.PHONY: test-hdfs-online-runner
+test-hdfs-online-runner: ## 验证 HDFS Spark T4 场景、物理夹具与隔离生命周期
+	@python3 -m unittest scripts/test/hdfs-spark-consumer-flow-online_test.py scripts/test/online-hdfs-spark-fixture_test.py scripts/test/online-hosted-hdfs-gate_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-hdfs-online-runner
 	@$(MAKE) test-raster-online-runner
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture

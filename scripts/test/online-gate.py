@@ -45,6 +45,11 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "hdfs-spark-consumer-flow": Suite(
+        command=(sys.executable, "scripts/test/hdfs-spark-consumer-flow-online.py"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL")),
+    ),
     "raster-workflow": Suite(
         command=(sys.executable, "-m", "scripts.test.raster-workflow-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

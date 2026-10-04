@@ -111,6 +111,8 @@ T3 的 PR 主路径使用独立端口、受控 API 夹具和非个人登录态�
 
 ## 五、T4 Online 验收协议
 
+HDFS 与 Spark 的 `hdfs-spark-consumer-flow` 使用手动 GitHub Hosted Linux x86_64 disposable profile。入口 `scripts/test/online-hosted-hdfs-gate.sh` 复用共享 Hosted 生命周期；Business 只管理当次 Hadoop、Spark Master/Thrift、Worker 与现有三格式样例，System owner helper 管最小权限普通 User 及独立登记身份。HDFS 存储 Engine 与 Spark general Engine 分别通过 System API 创建并连接测试，Spark Workflow 使用标准启动和自注册路径。原生 Linux 夹具统一使用宿主网络及回环消费地址，Worker 必须真实执行分布式任务；不得以 `local[*]` 或直接 Runtime 调用代替 Develop 正式执行。普通 User 经 Meta 深度扫描、Manager CSV/JSON/Parquet 与中文百分号根文件预览，以资源 locator 创建八节点工作流，验证每格式 20 行、合计 2100，以及 region 聚合一致。API、Console 的真实登录身份和执行结果必须一致；Master Application 与该 Application 的 Worker 已完成任务日志必须关联。退出停止应用并销毁业务容器、Infra 及仓库外凭据，核对零残留。确定性脚本、身份与 CI 登记通过 `make test-hdfs-online-runner`、`make test-online-runner` 和平台 T0，真实验收通过 `make test-online ONLINE_SUITE=hdfs-spark-consumer-flow`。首次真实 Hosted 通过前不计为 T4 通过，也不增加定时调度。
+
 ### 5.1 专用环境
 
 企业目录发布的 `enterprise-catalog-publishing` 沿用专用 macOS profile：正式 User 发起共享受理后，生产 Catalog 通过自己的 OAuth 服务身份自动签发。验收脚本不借用该身份，System owner 的现有 Online 测试夹具仅以只读可重复读事务核对精确 Tenant、Engine、请求编号的受理、Grant 和唯一签发成功审计；原参重试后再次核对签发时间与审计次数不变。该观察模式只允许回环 `addp_online`，禁止初始化身份、执行迁移或写入，不是人类 API、Catalog Grant 副本或访问裁决。确定性协议与准入测试归 `make test-online-runner`，真实 PostgreSQL 查询及只读拒写归现有 `make test-system-iam-postgres`，完整 OAuth 链路仍须在现有手工 T4 suite 真实执行后才能计为通过。

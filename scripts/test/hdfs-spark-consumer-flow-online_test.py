@@ -1,0 +1,101 @@
+import importlib.util
+import json
+import os
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+SPEC = importlib.util.spec_from_file_location('hdfs_online', Path(__file__).with_name('hdfs-spark-consumer-flow-online.py'))
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+
+
+def final_result():
+    rows = []
+    for region, amount in (('east', 1100), ('west', 1000)):
+        row = {'region': region}
+        for name in ('csv', 'json', 'parquet'):
+            row[name + '_rows'], row[name + '_amount_sum'] = 10, amount
+        rows.append(row)
+    return {'type': 'spark_dataframe', 'preview_rows': rows}
+
+
+class HDFSOnlineTest(unittest.TestCase):
+    def test_locator_keeps_dot_and_encodes_original_filename_once(self):
+        self.assertEqual(MODULE.locator(7, {'full_name': 'samples/orders.parquet', 'id': 91}),
+                         'addp://engine/7/path/samples/orders.parquet?type=file&item_id=91')
+        self.assertIn('%E8%AE%A2%E5%8D%95%20100%25.csv?', MODULE.locator(7, {'full_name': '订单 100%.csv', 'id': 91}))
+
+    def test_workflow_contains_only_locator_bindings_and_matches_real_operator_signatures(self):
+        definition = MODULE.workflow({name: 'addp://engine/7/path/orders.' + name + '?type=file&item_id=91'
+                                      for name in ('csv', 'json', 'parquet')})
+        self.assertEqual(len(definition['tasks']), 8)
+        for task in definition['tasks']:
+            params = task['params']
+            self.assertFalse(set(params) & {'connection_info', 'path', 'format', 'engine_id'})
+            if task['operator'] == 'load':
+                self.assertEqual(set(params), {'locator', 'source_type'})
+            if task['operator'] == 'join':
+                self.assertEqual((params['on'], params['how']), ('region', 'inner'))
+                self.assertNotIn('join_type', params)
+
+    def test_result_rejects_wrong_total_missing_format_runtime_or_persistent_outputs(self):
+        execution = {'status': 'success', 'metadata': {'result': {'final_result': final_result(), 'runtime_execution_id': 'runtime'}}}
+        self.assertEqual(MODULE.validate_result(execution), final_result())
+        for mutation in ('total', 'missing', 'runtime', 'outputs', 'failed'):
+            value = json.loads(json.dumps(execution))
+            result = value['metadata']['result']
+            if mutation == 'total': result['final_result']['preview_rows'][0]['csv_amount_sum'] = 2100
+            if mutation == 'missing': result['final_result']['preview_rows'][1].pop('parquet_rows')
+            if mutation == 'runtime': result.pop('runtime_execution_id')
+            if mutation == 'outputs': value['outputs'] = {'save': {}}
+            if mutation == 'failed': value['status'] = 'failed'
+            with self.subTest(mutation=mutation), self.assertRaises(MODULE.SuiteError): MODULE.validate_result(value)
+
+    def test_regular_user_has_exact_read_scene_permissions(self):
+        context = {'principal': {'type': 'user', 'id': 42}, 'context': {'type': 'tenant', 'tenant_id': '2'},
+                   'authorization': {'role_assignments': [{'role_key': 'tenant.hdfs-reader', 'permissions': sorted(MODULE.PERMISSIONS)}]}}
+        client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload=context))
+        self.assertEqual(MODULE.validate_identity(client, 2), '42')
+        context['authorization']['role_assignments'][0]['permissions'].append('develop.data_write.execute')
+        with self.assertRaises(MODULE.SuiteError): MODULE.validate_identity(client, 2)
+
+    def test_physical_evidence_requires_exact_application_owned_worker_and_finished_tasks(self):
+        for failure in ('missing', 'local', 'foreign', 'no_tasks', ''):
+            master = {'aliveworkers': 1, 'activeapps': [{'id': 'app-20261004-0001', 'name': 'ADDP-Workflow-Engine-18', 'cores': 1, 'state': 'RUNNING'}]}
+            if failure == 'missing': master['activeapps'] = []
+            if failure == 'local': master['aliveworkers'] = 0
+            import io
+            def docker(command, **kwargs):
+                if 'inspect' in command:
+                    return SimpleNamespace(stdout='foreign' if failure == 'foreign' else 'hdfs-spark-consumer-flow')
+                self.assertEqual(command[-1], 'app-20261004-0001')
+                return SimpleNamespace(stdout='' if failure == 'no_tasks' else 'Finished task 0.0 in stage 1.0 (TID 2)')
+            with self.subTest(failure=failure), patch.object(MODULE.urllib.request, 'urlopen', return_value=io.BytesIO(json.dumps(master).encode())), patch.object(MODULE.subprocess, 'run', side_effect=docker):
+                if failure:
+                    with self.assertRaises(MODULE.SuiteError): MODULE.worker_evidence(18)
+                else:
+                    self.assertEqual(MODULE.worker_evidence(18)['completed_tasks'], 1)
+
+    def test_browser_requires_matching_identity_execution_and_all_screenshots(self):
+        report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42', 'execution_id': 'execution'}
+        for failure in ('process', 'missing_report', 'identity', 'execution', 'screenshot', ''):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                evidence = dict(report, run_id='hdfs-run', meta_ui_scan=True, previews=4, develop_result=True)
+                if failure in ('identity', 'execution'): evidence['principal_id' if failure == 'identity' else 'execution_id'] = 'other'
+                def browser(command, cwd, env):
+                    self.assertIn('e2e/online/hdfs-spark-consumer-flow.spec.js', command)
+                    if failure != 'missing_report': Path(env['ADDP_ONLINE_HDFS_BROWSER_REPORT']).write_text(json.dumps(evidence))
+                    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow'):
+                        if failure != 'screenshot' or name != 'workflow': (root / ('hdfs-' + name + '-console.png')).write_bytes(b'proof')
+                    return SimpleNamespace(returncode=int(failure == 'process'))
+                with patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary, ADDP_ONLINE_TEST_RUN_ID='hdfs-run'), patch.object(MODULE.subprocess, 'run', side_effect=browser):
+                    if failure:
+                        with self.assertRaises(MODULE.SuiteError): MODULE.run_browser(report)
+                    else: self.assertEqual(MODULE.run_browser(report), evidence)
+
+
+if __name__ == '__main__': unittest.main()

@@ -1513,6 +1513,46 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
             raise RegistrationError(f"raster-workflow owner contract is incomplete: {relative}")
 
 
+def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
+    if "hdfs-spark-consumer-flow" not in registered:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  hdfs-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "runs-on: ubuntu-24.04" not in job.group("body") or (
+        "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'hdfs-spark-consumer-flow'\n" not in job.group("body")
+    ) or "actions/setup-java@" not in job.group("body") or "java-version: '11'" not in job.group("body"):
+        raise RegistrationError("HDFS requires a manual Ubuntu Hosted job with Java 11")
+    if "&& inputs.suite != 'hdfs-spark-consumer-flow'" not in workflow:
+        raise RegistrationError("HDFS must not dispatch on self-hosted")
+    if load_suite_registry(repository)["hdfs-spark-consumer-flow"].nightly:
+        raise RegistrationError("HDFS requires real evidence before schedule registration")
+    required = {
+        "scripts/test/online-hosted-hdfs-gate.sh": (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite hdfs-spark-consumer-flow',
+            '-spark-workflow', 'scripts/test/online-engine-registration.py',
+            'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'SPARK_MODE override is forbidden',
+            'run_logged make test-online', 'online-hdfs-spark-fixture.sh stop',
+        ),
+        "business/scripts/online-hdfs-spark-fixture.sh": (
+            'com.addp.online-fixture', '--network host', '--tmpfs /data', '/addp/hdfs/init.py',
+            'refusing to delete a foreign container', 'fixture containers remain',
+        ),
+        "scripts/test/hdfs-spark-consumer-flow-online.py": (
+            '/api/v1/develop/executions', 'spark_cluster_id', 'Finished task', 'worker_evidence',
+            'e2e/online/hdfs-spark-consumer-flow.spec.js', 'evidence != expected',
+        ),
+        "console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js": (
+            'login(', 'auth.principalID', 'meta/scan/run/manual', '.workflow-final-result-json',
+        ),
+        "Makefile": ('$(MAKE) test-hdfs-online-runner', 'scripts/test/hdfs-spark-consumer-flow-online_test.py',
+                     'scripts/test/online-hdfs-spark-fixture_test.py', 'scripts/test/online-hosted-hdfs-gate_test.py'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f"HDFS owner contract is incomplete: {relative}")
+
+
 def validate_public_origin_browser_profile(repository: Path, registered: set[str]) -> None:
     if "compose-public-origin" not in registered:
         return
@@ -1556,6 +1596,7 @@ def check_registration(repository: Path) -> None:
     validate_metric_engine_variant(repository, registered)
     validate_public_origin_browser_profile(repository, registered)
     validate_raster_workflow_profile(repository, registered)
+    validate_hdfs_spark_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)
