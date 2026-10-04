@@ -90,7 +90,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 
 - Infra 使用独立 `addp-log-observer` Service Principal 上报有界安全观测；Monitor 只接收绑定节点的非委托 Platform 服务令牌。不上传日志正文，不访问接收器宿主机文件，不使用虚构租户或任务身份。
 - 唯一路由位于 `/api/v1/monitor/platform/log-*`。`monitor.log_pipeline.read/update`、`monitor.log_notification.read/update` 只用于 Platform；`monitor.log_observation.create` 仅授予观测器。System 模块管理提供页面，正文读取仍由 `platform.module_log.read` 独立控制。
-- 持久表为 `monitor.log_pipeline_policy/log_pipeline_nodes`、`log_observer_boots`、`platform_log_incidents/events/destinations/deliveries`。单一活动告警按节点、信号及有证据的实例去重，开告警/升级/恢复与通知 outbox 同事务；未知事实不能恢复告警，首次累计计数只建立基线。
+- 持久表为 `monitor.log_pipeline_policy/log_pipeline_nodes`、`log_observer_boots`、`platform_log_incidents/events/destinations/deliveries`。单一活动告警按节点、信号及有证据的实例去重，各信号固定严重级别、独立恢复，事件和通知订阅仅为 `opened/resolved`，与通知 outbox 同事务；未知事实不能恢复告警，首次累计计数只建立基线。
 - Webhook/SMTP 复用中立发送接口和统一重试算法，至少一次投递；确认/抑制不改写业务实例状态。读取与管理通过 Monitor 服务账号向 System 独立 Platform 审计接口追加最小操作事实。
 - 最终失败的平台通知通过单条 `POST /platform/log-notification-deliveries/{id}/retry` 重新入队，仅 Platform User 与 `monitor.log_notification.update` 可操作。保留原投递/事件/正文和发生时间，使用原目标当前配置；目标版本与预期人工次数拒绝并发或延迟重复请求，抑制不能绕过。累计次数保留，本轮上限和退避从 `retry_base_attempt_count` 重新计算；历史恢复告警允许补发，界面必须明确提示。
 - 门禁：`make test-go`、`make test-monitor-postgres`、`make test-system-iam-postgres`、`make test-system-runtime-log`、`make test-system-frontend` 和 `make test-platform`；数据库及故障注入必须使用标准 disposable 入口。完整设计见 `docs/next/ADDP模块服务运行日志设计.md` 第十一节。

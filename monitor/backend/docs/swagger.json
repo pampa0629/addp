@@ -1515,7 +1515,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "渠道为 webhook/email/wecom；wecom 的 url 与 recipients 留空，凭据另行设置 | Channels are webhook/email/wecom; wecom requires empty url and recipients with a separate credential write",
+                "description": "渠道为 webhook/email/wecom；订阅仅支持 opened/resolved；wecom 的 url 与 recipients 留空，凭据另行设置 | Channels are webhook/email/wecom; subscriptions only support opened/resolved; wecom requires empty url and recipients with a separate credential write",
                 "consumes": [
                     "application/json"
                 ],
@@ -1576,6 +1576,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "平台日志订阅仅支持 opened/resolved | Platform log subscriptions only support opened/resolved",
                 "consumes": [
                     "application/json"
                 ],
@@ -3922,7 +3923,11 @@
                 "event_types": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "opened",
+                            "resolved"
+                        ]
                     }
                 },
                 "name": {

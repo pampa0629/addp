@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -139,5 +140,110 @@ func TestIntegrationPostgresPlatformLogWeComCredentialRetryAndRecovery(t *testin
 	}
 	if countBefore != countAfter || !strings.Contains(bodies[len(bodies)-1], "无需处理") {
 		t.Fatal("test created formal delivery or used alert content")
+	}
+}
+
+func TestIntegrationPostgresPlatformLogSubscriptionsRejectEscalation(t *testing.T) {
+	for _, channel := range []string{"webhook", "wecom", "email"} {
+		t.Run(channel, func(t *testing.T) {
+			f := newLogRetryFixture(t, channel)
+			input := LogDestinationInput{Version: f.target.Version, Name: f.target.Name, Channel: channel, EventTypes: []string{"opened", "escalated", "resolved"}, Enabled: true}
+			if channel == "webhook" {
+				input.URL = f.target.URL
+			}
+			if channel == "email" {
+				input.Recipients = f.target.Recipients
+			}
+			if _, err := f.n.Save(context.Background(), f.target.ID, input); !errors.Is(err, ErrLogInvalid) {
+				t.Fatalf("platform escalation subscription accepted: %v", err)
+			}
+			var target models.PlatformLogDestination
+			if err := f.db.First(&target, f.target.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if target.Version != f.target.Version {
+				t.Fatal("invalid subscription modified the target")
+			}
+		})
+	}
+}
+
+func TestIntegrationPostgresPlatformLogSubscriptionConvergence(t *testing.T) {
+	// Create every fixture before seeding obsolete configuration: startup itself
+	// performs convergence, so later fixture creation must not alter the evidence.
+	full := newLogRetryFixture(t, "wecom")
+	only := newLogRetryFixture(t, "webhook")
+	current := newLogRetryFixture(t, "wecom")
+	obsolete := newLogRetryFixture(t, "wecom")
+	history := newLogRetryFixture(t, "wecom")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for _, f := range []*logRetryFixture{full, only, current, obsolete, history} {
+		if err := f.db.Model(&f.delivery).Updates(map[string]any{"status": "pending", "secret_ciphertext": f.target.SecretCiphertext, "next_attempt_at": now}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, seed := range []struct {
+		f      *logRetryFixture
+		events models.StringList
+	}{{full, models.StringList{"opened", "escalated", "resolved"}}, {only, models.StringList{"escalated"}}} {
+		if err := seed.f.db.Model(&seed.f.target).Update("event_types", seed.events).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []*logRetryFixture{obsolete, history} {
+		if err := f.db.Model(&f.event).Update("type", "escalated").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := history.db.Model(&history.delivery).Updates(map[string]any{"status": "delivered", "secret_ciphertext": "", "next_attempt_at": nil, "delivered_at": now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for run := 0; run < 2; run++ {
+		if err := EnsureMonitorStore(full.db); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range []*logRetryFixture{full, only, current, obsolete, history} {
+			var target models.PlatformLogDestination
+			var delivery models.PlatformLogDelivery
+			if err := f.db.First(&target, f.target.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := f.db.First(&delivery, "id=?", f.delivery.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			wantVersion, wantEnabled := f.target.Version, true
+			wantEvents := models.StringList{"opened", "resolved"}
+			if f == full || f == only {
+				wantVersion++
+			}
+			if f == only {
+				wantEvents, wantEnabled = models.StringList{}, false
+			}
+			if target.Version != wantVersion || target.Enabled != wantEnabled || !reflect.DeepEqual(target.EventTypes, wantEvents) || target.SecretCiphertext != f.target.SecretCiphertext || target.URL != f.target.URL {
+				t.Fatalf("convergence changed unsupported target facts or was not idempotent: run=%d target=%d", run, target.ID)
+			}
+			wantStatus := "pending"
+			if f == only || f == obsolete {
+				wantStatus = "cancelled"
+			} else if f == history {
+				wantStatus = "delivered"
+			}
+			if delivery.Status != wantStatus || delivery.Payload != f.delivery.Payload || delivery.AttemptCount != 3 {
+				t.Fatal("convergence rewrote delivery history or left obsolete work pending")
+			}
+			if wantStatus == "pending" {
+				if delivery.SecretCiphertext != f.target.SecretCiphertext || delivery.NextAttemptAt == nil || !delivery.NextAttemptAt.Equal(now) {
+					t.Fatal("supported pending delivery was modified")
+				}
+			} else if delivery.SecretCiphertext != "" || delivery.NextAttemptAt != nil {
+				t.Fatal("completed or cancelled delivery retains retry credentials")
+			}
+			if f == obsolete || f == history {
+				var event models.PlatformLogEvent
+				if err := f.db.First(&event, "id=?", f.event.ID).Error; err != nil || event.Type != "escalated" || !event.OccurredAt.Equal(f.event.OccurredAt) {
+					t.Fatal("immutable historical event was rewritten")
+				}
+			}
+		}
 	}
 }

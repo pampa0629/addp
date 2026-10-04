@@ -69,7 +69,7 @@
             <el-descriptions :column="2" border class="delivery-diagnostics" data-testid="delivery-diagnostics">
               <el-descriptions-item :label="t('system.module.pipeline.eventID')">{{ row.event_id }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.pipeline.targetID')">{{ row.destination_id }}</el-descriptions-item>
-              <el-descriptions-item :label="t('system.module.pipeline.eventType')">{{ t(`system.module.pipeline.eventsLabel.${row.event_type}`) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.pipeline.eventType')">{{ row.event_type }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.pipeline.occurredAt')">{{ date(row.occurred_at) }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.pipeline.incidentID')">{{ row.incident_id }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.pipeline.incidentStatus')">{{ t(`system.module.pipeline.statuses.${row.incident_status}`) }}</el-descriptions-item>
@@ -101,7 +101,7 @@
         <el-form-item v-if="destinationDraft.channel === 'webhook'" :label="t('system.module.pipeline.url')"><el-input v-model="destinationDraft.url" maxlength="2048" /></el-form-item>
         <el-form-item v-else-if="destinationDraft.channel === 'email'" :label="t('system.module.pipeline.recipients')"><el-input v-model="recipientsText" /></el-form-item>
         <el-form-item v-if="destinationDraft.channel !== 'email'" :label="t(destinationDraft.channel === 'wecom' ? 'system.module.pipeline.wecomCredential' : 'system.module.pipeline.secret')"><el-input v-model="secret" type="password" show-password autocomplete="new-password" /></el-form-item>
-        <el-form-item :label="t('system.module.pipeline.events')"><el-checkbox-group v-model="destinationDraft.event_types"><el-checkbox v-for="event in ['opened','escalated','resolved']" :key="event" :value="event">{{ t(`system.module.pipeline.eventsLabel.${event}`) }}</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item :label="t('system.module.pipeline.events')"><el-checkbox-group v-model="destinationDraft.event_types"><el-checkbox v-for="event in ['opened','resolved']" :key="event" :value="event">{{ t(`system.module.pipeline.eventsLabel.${event}`) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('system.module.pipeline.enabled')"><el-switch v-model="destinationDraft.enabled" /></el-form-item>
       </el-form>
       <template #footer><el-button :loading="busy" type="primary" @click="saveDestination">{{ t('system.module.pipeline.save') }}</el-button></template>
@@ -174,7 +174,7 @@ function openNotifications() { notificationsOpen.value = true; loadNotifications
 function changeDeliveryPage(page) { deliveryPage.value = page; loadNotifications() }
 function editDestination(row) {
   editingID.value = row?.id || 0
-  destinationDraft.value = row ? { version: row.version, name: row.name, channel: row.channel, url: row.channel === 'webhook' ? row.url || '' : '', recipients: [...row.recipients], event_types: [...row.event_types], enabled: row.enabled } : { name: '', channel: 'webhook', url: '', recipients: [], event_types: ['opened','escalated','resolved'], enabled: false }
+  destinationDraft.value = row ? { version: row.version, name: row.name, channel: row.channel, url: row.channel === 'webhook' ? row.url || '' : '', recipients: [...row.recipients], event_types: [...row.event_types], enabled: row.enabled } : { name: '', channel: 'webhook', url: '', recipients: [], event_types: ['opened','resolved'], enabled: false }
   recipientsText.value = destinationDraft.value.recipients.join(', '); secret.value = ''; editError.value = ''; destinationOpen.value = true
 }
 async function saveDestination() {
@@ -202,7 +202,7 @@ async function retryDelivery(row) {
   busy.value = true
   try {
     const history = row.incident_status === 'resolved' ? `${t('system.module.pipeline.retryHistorical')} ` : ''
-    await ElMessageBox.confirm(history + t('system.module.pipeline.retryConfirm', { target: destinationLabel(row), event: t(`system.module.pipeline.eventsLabel.${row.event_type}`), time: date(row.occurred_at), status: t(`system.module.pipeline.statuses.${row.incident_status}`) }), t('system.module.pipeline.retry'))
+    await ElMessageBox.confirm(history + t('system.module.pipeline.retryConfirm', { target: destinationLabel(row), event: row.event_type, time: date(row.occurred_at), status: t(`system.module.pipeline.statuses.${row.incident_status}`) }), t('system.module.pipeline.retry'))
     notificationError.value = ''
     await logPipelineAPI.retryDelivery(row)
     ElMessage.success(t('system.module.pipeline.requeued'))

@@ -173,7 +173,7 @@ func (h *LogPipelineHandler) Destinations(c *gin.Context) {
 
 // CreateDestination godoc
 // @Summary 创建平台日志通知目标 | Create platform log notification destination
-// @Description 渠道为 webhook/email/wecom；wecom 的 url 与 recipients 留空，凭据另行设置 | Channels are webhook/email/wecom; wecom requires empty url and recipients with a separate credential write
+// @Description 渠道为 webhook/email/wecom；订阅仅支持 opened/resolved；wecom 的 url 与 recipients 留空，凭据另行设置 | Channels are webhook/email/wecom; subscriptions only support opened/resolved; wecom requires empty url and recipients with a separate credential write
 // @Tags 平台日志链路 | Platform Log Pipeline
 // @Produce json
 // @Security BearerAuth
@@ -196,6 +196,7 @@ func (h *LogPipelineHandler) CreateDestination(c *gin.Context) {
 }
 
 // UpdateDestination godoc
+// @Description 平台日志订阅仅支持 opened/resolved | Platform log subscriptions only support opened/resolved
 // @Summary 更新平台日志通知目标 | Update platform log notification destination
 // @Tags 平台日志链路 | Platform Log Pipeline
 // @Produce json

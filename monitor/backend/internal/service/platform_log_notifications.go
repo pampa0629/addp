@@ -37,7 +37,7 @@ type LogDestinationInput struct {
 	Channel    string   `json:"channel" binding:"required" enums:"webhook,email,wecom"`
 	URL        string   `json:"url"`
 	Recipients []string `json:"recipients"`
-	EventTypes []string `json:"event_types" binding:"required"`
+	EventTypes []string `json:"event_types" binding:"required" enums:"opened,resolved"`
 	Enabled    bool     `json:"enabled"`
 }
 
@@ -49,6 +49,11 @@ func (n *PlatformLogNotifications) validate(ctx context.Context, input LogDestin
 	events, err := normalizeAlertEventTypes(input.EventTypes)
 	if err != nil {
 		return d, ErrLogInvalid
+	}
+	for _, event := range events {
+		if event != "opened" && event != "resolved" {
+			return d, ErrLogInvalid
+		}
 	}
 	d.EventTypes = events
 	switch d.Channel {
@@ -226,6 +231,9 @@ func (n *PlatformLogNotifications) Status(ctx context.Context) (string, error) {
 	return "unconfigured", nil
 }
 func (n *PlatformLogNotifications) RecordTx(tx *gorm.DB, event models.PlatformLogEvent, incident models.PlatformLogIncident, now time.Time) error {
+	if event.Type != "opened" && event.Type != "resolved" {
+		return ErrLogInvalid
+	}
 	var destinations []models.PlatformLogDestination
 	if err := tx.Where("enabled=true").Order("id").Find(&destinations).Error; err != nil {
 		return err

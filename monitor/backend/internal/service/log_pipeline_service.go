@@ -174,9 +174,6 @@ func (s *LogPipelineService) reconcile(tx *gorm.DB, node models.LogPipelineNode,
 				incident.Status = "resolved"
 				incident.ResolvedAt = &now
 				event = "resolved"
-			} else if incident.Severity == "warning" && state.Severity == "critical" {
-				incident.Severity = "critical"
-				event = "escalated"
 			}
 			if err = tx.Save(&incident).Error; err != nil {
 				return err

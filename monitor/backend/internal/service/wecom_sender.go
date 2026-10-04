@@ -101,7 +101,7 @@ func wecomLogPayload(raw, deliveryID string) (any, error) {
 	if event.Schema == "addp.platform-log-notification-test/v1" && event.Test {
 		content = "**ADDP 平台告警接入测试（无需处理）**\n企业微信通知渠道连接测试。"
 	} else if event.Schema == "addp.platform-log-alert/v1" && event.EventID != "" && event.IncidentID != 0 && !event.OccurredAt.IsZero() {
-		label := map[string]string{"opened": "异常告警", "escalated": "告警升级", "resolved": "告警恢复"}[event.EventType]
+		label := map[string]string{"opened": "异常告警", "resolved": "告警恢复"}[event.EventType]
 		if label == "" {
 			return nil, ErrLogInvalid
 		}

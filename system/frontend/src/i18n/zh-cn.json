@@ -277,7 +277,6 @@
         },
         "eventsLabel": {
           "opened": "打开",
-          "escalated": "升级",
           "resolved": "恢复"
         },
         "notificationState": {

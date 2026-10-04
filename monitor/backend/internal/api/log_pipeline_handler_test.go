@@ -72,3 +72,41 @@ func TestLogObservationRequiresPlatformObserverServiceToken(t *testing.T) {
 		})
 	}
 }
+
+func TestPlatformLogDestinationsRejectEscalatedSubscriptions(t *testing.T) {
+	identity := monitorTenantAuthContext()
+	identity.Context = authorization.AuthSessionContext{Type: "platform"}
+	identity.Authentication.AssuranceLevel = "aal2"
+	identity.Authorization.RoleAssignments[0].RoleKey = "platform.system_administrator"
+	identity.Authorization.RoleAssignments[0].Scope = authorization.AssignmentScope{Type: "platform"}
+	identity.Authorization.RoleAssignments[0].Permissions = []string{"monitor.log_notification.update"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(identity)
+	}))
+	defer server.Close()
+	notifications := service.NewPlatformLogNotifications(nil, nil, false, nil, nil, 3, 0, 0, 0)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), service.NewLogPipelineService(nil, "node", nil, nil), notifications)
+	for _, tc := range []struct {
+		method, path string
+		version      uint64
+		enabled      bool
+	}{
+		{http.MethodPost, "/api/v1/monitor/platform/log-notification-destinations", 0, false},
+		{http.MethodPut, "/api/v1/monitor/platform/log-notification-destinations/1", 1, true},
+	} {
+		payload, err := json.Marshal(service.LogDestinationInput{Version: tc.version, Name: "platform fixture", Channel: "wecom", EventTypes: []string{"opened", "escalated", "resolved"}, Enabled: tc.enabled})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(tc.method, tc.path, bytes.NewReader(payload))
+		req.Header.Set("Authorization", "Bearer addp_at_fixture")
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		var body map[string]any
+		if response.Code != http.StatusBadRequest || json.Unmarshal(response.Body.Bytes(), &body) != nil || body["error"] == nil || body["error_code"] != "platform_log_invalid" {
+			t.Fatalf("%s accepted unsupported subscriptions: status=%d body=%s", tc.method, response.Code, response.Body.String())
+		}
+	}
+}

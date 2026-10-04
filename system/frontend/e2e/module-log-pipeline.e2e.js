@@ -174,6 +174,16 @@ test('read only notification permission hides mutation actions', async ({ page }
   await expect(page.getByRole('button', { name: '新增通知目标', exact: true })).toHaveCount(0)
 })
 
+test('completed historical delivery shows the immutable protocol event type without offering a subscription', async ({ page }) => {
+  await fixture(page, { deliveries: [{ ...deliveryView, status: 'delivered', event_type: 'escalated' }] })
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  const table = page.getByTestId('pipeline-deliveries')
+  await table.locator('.el-table__expand-icon').click()
+  await expect(table.getByTestId('delivery-diagnostics')).toContainText('escalated')
+  await expect(table).not.toContainText('eventsLabel.')
+  await expect(table.getByRole('button', { name: '重新投递', exact: true })).toHaveCount(0)
+})
+
 test('missing target and active suppression disable retry; pending delivery has no retry action', async ({ page }) => {
   await fixture(page, { deliveries: [
     { ...deliveryView, destination_name: '', destination_version: 0 },
@@ -195,6 +205,9 @@ test('WeCom URL is written only as a credential before enabling and stays blank 
   await page.getByRole('button', { name: '通知管理', exact: true }).click()
   await page.getByRole('button', { name: '新增通知目标', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '通知目标配置', exact: true })
+  await expect(dialog.getByRole('checkbox', { name: '打开', exact: true })).toBeChecked()
+  await expect(dialog.getByRole('checkbox', { name: '恢复', exact: true })).toBeChecked()
+  await expect(dialog.getByRole('checkbox', { name: '升级', exact: true })).toHaveCount(0)
   await dialog.getByRole('textbox').first().fill('企微值班群')
   await dialog.locator('.el-select__wrapper').click()
   await page.getByRole('option', { name: '企业微信', exact: true }).click()
@@ -206,9 +219,9 @@ test('WeCom URL is written only as a credential before enabling and stays blank 
   await expect(dialog).toBeHidden()
   const writes = state.requests.filter(r => r.method !== 'GET')
   expect(writes.map(r => r.method)).toEqual(['POST', 'PUT', 'PUT'])
-  expect(writes[0].body).toMatchObject({ channel: 'wecom', url: '', recipients: [], enabled: false })
+  expect(writes[0].body).toMatchObject({ channel: 'wecom', url: '', recipients: [], event_types: ['opened', 'resolved'], enabled: false })
   expect(writes[1].body).toEqual({ version: 1, secret: robotURL })
-  expect(writes[2].body).toMatchObject({ channel: 'wecom', url: '', enabled: true, version: 2 })
+  expect(writes[2].body).toMatchObject({ channel: 'wecom', url: '', event_types: ['opened', 'resolved'], enabled: true, version: 2 })
   for (const request of [writes[0], writes[2]]) expect(JSON.stringify(request.body)).not.toContain('12345678-1234')
   await page.locator('.el-drawer').getByRole('button', { name: '编辑', exact: true }).click()
   await expect(dialog.locator('input[type=password]')).toHaveValue('')

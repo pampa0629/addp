@@ -33,6 +33,103 @@ type emptyLogRegistry struct{}
 
 func (emptyLogRegistry) ListModules(context.Context) ([]*client.ModuleInfo, error) { return nil, nil }
 
+func TestIntegrationPostgresPlatformLogCapacityIncidentsRecoverIndependently(t *testing.T) {
+	f := newLogRetryFixture(t, "wecom")
+	db, ctx, nodeID := f.db, context.Background(), f.incident.Node
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	pipeline := NewLogPipelineService(db, nodeID, emptyLogRegistry{}, f.n)
+	ids := db.Model(&models.PlatformLogIncident{}).Select("id").Where("node=? AND signal IN ?", nodeID, []string{"source_capacity", "source_quota"})
+	eventIDs := db.Model(&models.PlatformLogEvent{}).Select("id").Where("incident_id IN (?)", ids)
+	t.Cleanup(func() {
+		for _, q := range []struct {
+			model any
+			where string
+			value any
+		}{
+			{&models.PlatformLogDelivery{}, "event_id IN (?)", eventIDs},
+			{&models.PlatformLogEvent{}, "incident_id IN (?)", ids},
+			{&models.PlatformLogIncident{}, "id IN (?)", ids},
+			{&models.LogObserverBoot{}, "node=?", nodeID},
+			{&models.LogPipelineNode{}, "node=?", nodeID},
+		} {
+			if err := db.Where(q.where, q.value).Delete(q.model).Error; err != nil {
+				t.Error(err)
+			}
+			var count int64
+			if err := db.Model(q.model).Where(q.where, q.value).Count(&count).Error; err != nil || count != 0 {
+				t.Errorf("capacity fixture cleanup count=%d err=%v", count, err)
+			}
+		}
+	})
+	if err := pipeline.Initialize(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := pipeline.Policy(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := healthyLogObservation(now, 1)
+	obs.Node, obs.BootID = nodeID, uuid.NewString()
+	obs.SourceBytes = int64(policy.CapacityPercent+1) * 10
+	obs.QuotaExhausted = true
+	ingest := func(samples int) {
+		t.Helper()
+		for i := 0; i < samples; i++ {
+			if err := pipeline.Ingest(ctx, obs, now); err != nil {
+				t.Fatal(err)
+			}
+			now = now.Add(30 * time.Second)
+			obs.Sequence++
+			obs.SampledAt, obs.HousekeepingAt = now, now
+		}
+	}
+	read := func(signal string) models.PlatformLogIncident {
+		t.Helper()
+		var incident models.PlatformLogIncident
+		if err := db.Where("node=? AND signal=?", nodeID, signal).Take(&incident).Error; err != nil {
+			t.Fatal(err)
+		}
+		return incident
+	}
+	counts := func(want int64) {
+		t.Helper()
+		var events, deliveries, upgrades int64
+		if err := db.Model(&models.PlatformLogEvent{}).Where("incident_id IN (?)", ids).Count(&events).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.PlatformLogDelivery{}).Where("event_id IN (?)", eventIDs).Count(&deliveries).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.PlatformLogEvent{}).Where("incident_id IN (?) AND type='escalated'", ids).Count(&upgrades).Error; err != nil {
+			t.Fatal(err)
+		}
+		if events != want || deliveries != want || upgrades != 0 {
+			t.Fatalf("events=%d deliveries=%d upgrades=%d want=%d", events, deliveries, upgrades, want)
+		}
+	}
+	ingest(policy.FailureSamples)
+	warning, critical := read("source_capacity"), read("source_quota")
+	if warning.ID == critical.ID || warning.Severity != "warning" || critical.Severity != "critical" || warning.Status != "open" || critical.Status != "open" {
+		t.Fatal("capacity signals did not open separate incidents with fixed severities")
+	}
+	counts(2)
+	ingest(1)
+	counts(2)
+	obs.QuotaExhausted = false
+	ingest(policy.RecoverySamples)
+	w, c := read("source_capacity"), read("source_quota")
+	if w.ID != warning.ID || w.Status != "open" || w.Severity != "warning" || c.ID != critical.ID || c.Status != "resolved" || c.Severity != "critical" {
+		t.Fatal("quota recovery changed the independent capacity warning")
+	}
+	counts(3)
+	obs.SourceBytes = int64(policy.RecoveryPercent-1) * 10
+	ingest(policy.RecoverySamples)
+	if w = read("source_capacity"); w.ID != warning.ID || w.Status != "resolved" || w.Severity != "warning" {
+		t.Fatal("capacity warning did not recover with its own incident identity")
+	}
+	counts(4)
+}
+
 type receivedPlatformLogWebhook struct {
 	id, timestamp string
 	body          []byte

@@ -79,7 +79,7 @@ type PlatformLogDestination struct {
 	Channel          string     `gorm:"not null;size:20" json:"channel"`
 	URL              string     `gorm:"size:2048" json:"url,omitempty"`
 	Recipients       StringList `gorm:"type:jsonb;not null" json:"recipients"`
-	EventTypes       StringList `gorm:"type:jsonb;not null" json:"event_types"`
+	EventTypes       StringList `gorm:"type:jsonb;not null" json:"event_types" enums:"opened,resolved"`
 	SecretCiphertext string     `gorm:"type:text" json:"-"`
 	SecretConfigured bool       `gorm:"-" json:"secret_configured"`
 	Enabled          bool       `gorm:"not null" json:"enabled"`
