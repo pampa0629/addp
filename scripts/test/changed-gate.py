@@ -126,6 +126,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if any(path.startswith("system/frontend/") for path in files):
         affected.add("console")
 
+    # Console's authorization refresh gate mounts real Security enrollment and policy forms.
+    if any(path.startswith("security/frontend/") for path in files):
+        affected.add("console")
+
     # Workbench's browser gate loads its delivery runtime through the Console Vite proxy.
     if any(path in {
         "console/frontend/vite.config.js",

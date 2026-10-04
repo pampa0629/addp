@@ -36,6 +36,7 @@ console/frontend/
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。
 - AuthContext 刷新期间清空旧候选权限，隐藏并保留当前路由 iframe；加载失败提供重试。同一 Principal、Context 和 Tenant Membership 重新获得当前页权限后恢复原实例，权限撤销、身份或上下文改变、退出及跨页导航卸载旧实例。`make test-console-frontend` 覆盖未保存草稿、故障重试和身份隔离；真实 Nginx T4 必须确认 iframe 实例及内存状态未因刷新丢失。
 - 模块管理查询恢复浏览器回归加载真实 System 前端，验证 Console 地址栏同步不重载 iframe、刷新和新标签恢复组合筛选与分页、单历史及前进/后退。Console 门禁和 CI 同时准备 System 锁定依赖；System 前端改动自动触发该宿主门禁。
+- Security 认证刷新回归加载真实纳管和字段策略表单，以 `Outdoor.Persons`、`userInfo.phone` 为资源与字段样例，验证资源选择、算法参数和调整依据在权限重新确认后保留；HTTP 响应使用确定性夹具，不写开发数据库。Console 门禁和 CI 同时准备 Security 锁定依赖，Security 前端改动自动触发宿主门禁。
 - 前端样式遵守 `common-frontend/docs/addp前端风格设计规范.md`，不要硬编码 ADDP 主题色。
 - 各模块仍应支持独立运行，Console iframe 集成不能破坏 standalone 模式。
 - Console 外层 URL 是 iframe 集成模式下的公开路由事实源。子模块通过共享 Console navigation bridge 同步自身路由；同模块已完成的导航只同步地址栏，不得重载 iframe，浏览器前进/后退或跨页面导航再由 Console 驱动 iframe 到目标路由。公开状态分类、canonical URL 和单历史约束统一遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。
