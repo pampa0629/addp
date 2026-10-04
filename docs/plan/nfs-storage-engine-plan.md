@@ -79,3 +79,5 @@ Sedona 修复的本地 `make test-spark-workflow`（34 项）和 ARM64 标准镜
 Sedona 修复后的 `make test-platform` 亦通过，包含 Online 分发/隔离生命周期、引擎启动与 CI 登记一致性和 Swagger 覆盖；完整 Hosted T4 仍须复跑。
 
 第四轮 [37214813784](https://github.com/pampa0629/addp/actions/runs/37214813784) 已通过正式 Spark 三格式聚合和对应 Standalone Worker 已完成任务校验；浏览器因误用 ES 的直接叶模型“重新扫描引擎”按钮而失败。HDFS 层级目录模型的 Console 验收应在现有目录列表对 `samples` 行执行“重新扫描”，再核对四个 DataItem ID 稳定、四个文件预览和同一正式执行详情；完整引擎扫描与根文件发现由前置普通 User API 阶段验证。只修正测试操作，不新增界面扫描路线或放宽结果断言。
+
+第五轮 [37216410872](https://github.com/pampa0629/addp/actions/runs/37216410872) 已通过目录重扫、四个文件页面预览和正式 Spark/Worker 校验，最后的测试辅助 API 因复用登录时的旧 Access Token 返回 401。页面切换通过共享 Browser AuthSession 恢复并轮换会话，System 按规范撤销旧 Access Token；测试应核对 Develop 页面实际发出的执行详情响应及当前 AuthContext，不跨页面复用令牌快照或新增刷新路线。该轮清理完成、Infra 零残留，仍不计为 T4 通过。对应提交 `e1aadf0f2` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37216400908) 和 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37216400977) 均通过；本地 Console 141 项单元测试通过，浏览器回归启动前被其他进程的 4170 端口占用阻断，CI 的 Console 完整门禁已补齐验证。
