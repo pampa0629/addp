@@ -57,8 +57,14 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         self.assertEqual(mocked["assert_module_gateway_route"].call_count, 4)
         mocked["assert_module_gateway_route"].assert_any_call("Meta", "/api/v1/meta/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Manager", "/api/v1/manager/engines")
-        mocked["assert_module_gateway_route"].assert_any_call("Transfer", "/api/v1/transfer/system-engines")
+        mocked["assert_module_gateway_route"].assert_any_call("Transfer", "/api/v1/transfer/task-definitions")
         mocked["assert_module_gateway_route"].assert_any_call("Orchestrator", "/api/v1/orchestrator/orchestrations")
+        for call in mocked["assert_module_gateway_route"].call_args_list:
+            owner, path = call.args
+            schema = json.loads((SCRIPT.parents[2] / owner.lower() / "backend/docs/swagger.json").read_text())
+            self.assertTrue(path.startswith(schema["basePath"] + "/"))
+            self.assertIn("get", schema["paths"].get(path.removeprefix(schema["basePath"]), {}),
+                          f"{owner} Online probe must use a published GET route: {path}")
         mocked["assert_partial_permission_matrix"].assert_called_once()
         mocked["run_browser"].assert_called_once()
         report = json.loads(output.getvalue())

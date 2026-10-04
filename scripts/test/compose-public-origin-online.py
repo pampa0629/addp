@@ -347,7 +347,7 @@ def main() -> int:
     assert_authorized_gateway()
     assert_module_gateway_route("Meta", "/api/v1/meta/engines")
     assert_module_gateway_route("Manager", "/api/v1/manager/engines")
-    assert_module_gateway_route("Transfer", "/api/v1/transfer/system-engines")
+    assert_module_gateway_route("Transfer", "/api/v1/transfer/task-definitions")
     assert_module_gateway_route("Orchestrator", "/api/v1/orchestrator/orchestrations")
     assert_partial_permission_matrix()
     browser = run_browser()
