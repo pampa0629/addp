@@ -4,7 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pytest
-from osgeo import gdal, osr
+from osgeo import gdal, ogr, osr
 from operators import OPERATORS, list_operators
 from operators.raster_compute import (
     raster_workspace, raster_load, raster_info, raster_save, raster_to_cog,
@@ -14,15 +14,20 @@ from operators.raster_compute import (
 from workflow_engine import execute_workflow
 
 
-def source_plan(path):
+def source_plan(path, format='tiff'):
     return {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
-        'kind': 'file', 'format': 'tiff', 'access': {'method': 'mounted_path', 'path': str(path)}}}
+        'kind': 'file', 'format': format, 'access': {'method': 'mounted_path', 'path': str(path)}}}
 
 
 def target_plan(path, mode='create'):
     return {'schema_version': 'addp.workflow.access-plan/v1', 'target': {
         'kind': 'file', 'format': 'tiff', 'name': path.name, 'write_mode': mode,
         'access': {'method': 'mounted_path', 'path': str(path)}}}
+
+
+def read_band_values(band):
+    return np.frombuffer(band.ReadRaster(buf_type=gdal.GDT_Float64),
+                         dtype=np.float64).reshape(band.YSize,band.XSize)
 
 
 def create_raster(path, array, transform=(0, 1, 0, 4, 0, -1), crs='EPSG:4326', nodata=-9999):
@@ -118,7 +123,7 @@ def test_numeric_analysis_excludes_transparent_source_data(tmp_path, dtype, alph
     expected = np.full(data.shape, np.nan)
     for y,x in positions:
         expected[y,x] = data[y,x]*2
-    np.testing.assert_equal(output.GetRasterBand(1).ReadAsArray(), expected)
+    np.testing.assert_equal(read_band_values(output.GetRasterBand(1)), expected)
     assert source.read_bytes() == original
 
 
@@ -256,18 +261,24 @@ def test_multipolygon_clip_preserves_separate_valid_islands(tmp_path):
         assert raster_statistics(persisted) == statistics
     dataset = gdal.Open(str(target))
     expected = values.copy(); expected[:,1:3] = np.nan
-    np.testing.assert_equal(dataset.GetRasterBand(1).ReadAsArray(), expected)
-    np.testing.assert_equal(dataset.GetRasterBand(2).ReadAsArray(), [[255,0,0,255]]*4)
+    np.testing.assert_equal(read_band_values(dataset.GetRasterBand(1)), expected)
+    np.testing.assert_equal(read_band_values(dataset.GetRasterBand(2)), [[255,0,0,255]]*4)
 
 
-def test_clip_rejects_failed_boundary_crs_transformation(tmp_path):
+@pytest.mark.parametrize('native_exceptions', [False,True], ids=['return-code','native-exception'])
+def test_clip_rejects_failed_boundary_crs_transformation(tmp_path, native_exceptions):
     source = create_raster(tmp_path / 'mercator.tif', np.ones((4,4)), crs='EPSG:3857')
-    with raster_workspace():
-        raster = raster_load(source_plan(source))
-        with pytest.raises(ValueError, match='transform'):
-            raster_clip(raster, 'EPSG:4326', geometry={'type': 'Polygon', 'coordinates': [
-                [[0,94],[1,94],[1,95],[0,95],[0,94]],
-            ]})
+    original = ogr.GetUseExceptions()
+    (ogr.UseExceptions if native_exceptions else ogr.DontUseExceptions)()
+    try:
+        with raster_workspace():
+            raster = raster_load(source_plan(source))
+            with pytest.raises(ValueError, match='transform'):
+                raster_clip(raster, 'EPSG:4326', geometry={'type': 'Polygon', 'coordinates': [
+                    [[0,94],[1,94],[1,95],[0,95],[0,94]],
+                ]})
+    finally:
+        (ogr.UseExceptions if original else ogr.DontUseExceptions)()
 
 
 def test_cog_save_validate_overviews_and_failed_replace(raster_file, tmp_path):
@@ -287,6 +298,128 @@ def test_cog_save_validate_overviews_and_failed_replace(raster_file, tmp_path):
         with pytest.raises(ValueError): raster_save(raster, target_plan(target,'replace'), profile='cog', blocksize=1)
         assert target.read_bytes() == original
         assert set(artifact).isdisjoint({'path','access_plan','connection_info','storage_ref'})
+
+
+@pytest.mark.parametrize('format,driver,suffix', [('png','PNG','.png'), ('jpeg','JPEG','.jpg')])
+@pytest.mark.parametrize('source_crs', ['', 'EPSG:4326'], ids=['missing-crs','explicit-crs'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+def test_async_image_pyramid_save_keeps_pixels_overviews_and_missing_georeferencing(
+        tmp_path, format, driver, suffix, source_crs, profile):
+    import api_server
+    height, width = 128,256
+    y,x = np.indices((height,width))
+    # Constant 8x8 cells let both pyramid levels select the same independent value.
+    pixels = (((x//8 + y//8*7)%100)*2+25).astype(np.uint8)
+    alpha = np.full((height,width),255,dtype=np.uint8)
+    alpha[:16,:16] = 0
+    alpha[64:80,128:144] = 128
+    memory = gdal.GetDriverByName('MEM').Create('',width,height,2 if format=='png' else 1,gdal.GDT_Byte)
+    memory.GetRasterBand(1).WriteRaster(0,0,width,height,pixels.tobytes(),buf_type=gdal.GDT_Byte)
+    if format=='png':
+        memory.GetRasterBand(2).WriteRaster(0,0,width,height,alpha.tobytes(),buf_type=gdal.GDT_Byte)
+        memory.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    source = tmp_path / ('source'+suffix)
+    encoded = gdal.GetDriverByName(driver).CreateCopy(str(source),memory)
+    encoded = memory = None
+    original = source.read_bytes()
+    decoded = gdal.Open(str(source))
+    assert decoded.GetDriver().ShortName == driver
+    assert decoded.GetGeoTransform(can_return_null=True) is None and not decoded.GetProjection()
+    decoded_pixels = read_band_values(decoded.GetRasterBand(1))
+    if format=='png':
+        np.testing.assert_equal(decoded_pixels,pixels)
+    expected = decoded_pixels*2
+    if format=='png':
+        expected[:16,:16] = np.nan
+    # JPEG's oracle is its actual decoded pixels, without claiming lossless encoding.
+    for block_y in range(0,height,8):
+        for block_x in range(0,width,8):
+            cell = expected[block_y:block_y+8,block_x:block_x+8]
+            np.testing.assert_equal(cell,np.full((8,8),cell[0,0]))
+    decoded = None
+    target = tmp_path / ('workflow.'+profile+'.tif')
+    workflow = {'tasks': [
+        {'id':'load','operator':'raster_load','depends_on':[],
+         'params':{'access_plan':source_plan(source,format),'source_crs':source_crs}},
+        {'id':'math','operator':'raster_band_math','depends_on':['load'],
+         'params':{'input_raster':{'$ref':'load'},'expression':'b1*2'}},
+        {'id':'pyramid','operator':'raster_build_overviews','depends_on':['math'],
+         'params':{'input_raster':{'$ref':'math'},'levels':[2,4],'resampling':'nearest'}},
+        {'id':'save','operator':'raster_save','depends_on':['pyramid'],
+         'params':{'input_raster':{'$ref':'pyramid'},'access_plan':target_plan(target),
+                   'profile':profile,'blocksize':128}},
+        {'id':'reload','operator':'raster_load','depends_on':['save'],
+         'params':{'access_plan':source_plan(target)}},
+        {'id':'statistics','operator':'raster_statistics','depends_on':['reload'],
+         'params':{'input_raster':{'$ref':'reload'}}},
+    ]}
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow',json={'workflow_def':workflow,'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code == 202, response.json
+    deadline = time.monotonic()+5
+    while time.monotonic()<deadline:
+        status = client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'): break
+        time.sleep(.01)
+    assert status['status']=='success', status
+    stats = json.loads(status['result'])
+    valid = expected[np.isfinite(expected)]
+    assert (stats['valid_count'],stats['invalid_count']) == (valid.size,width*height-valid.size)
+    np.testing.assert_allclose([stats['min'],stats['max'],stats['mean'],stats['stddev']],
+                               [valid.min(),valid.max(),valid.mean(),valid.std()])
+    assert str(tmp_path) not in json.dumps(status) and 'addp-raster-' not in json.dumps(status)
+    output = gdal.Open(str(target))
+    assert output.GetGeoTransform(can_return_null=True) is None
+    assert bool(output.GetProjection()) == bool(source_crs)
+    if source_crs:
+        assert output.GetSpatialRef().GetAuthorityCode(None)=='4326'
+    assert (output.RasterXSize,output.RasterYSize,output.RasterCount)==(width,height,1)
+    band = output.GetRasterBand(1)
+    assert band.DataType==gdal.GDT_Float64 and np.isnan(band.GetNoDataValue())
+    np.testing.assert_equal(read_band_values(band),expected)
+    assert band.GetOverviewCount()==2
+    for index,level in enumerate([2,4]):
+        overview = band.GetOverview(index)
+        assert (overview.XSize,overview.YSize)==(width//level,height//level)
+        np.testing.assert_equal(read_band_values(overview),expected[::level,::level])
+    output = band = None
+    with raster_workspace():
+        persisted = raster_load(source_plan(target))
+        facts = raster_info(persisted)
+        assert facts['transform']==[] and facts['extent']==[]
+        assert facts['bands'][0]['overviews']==[[128,64],[64,32]]
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+        with pytest.raises(ValueError,match='geotransform' if source_crs else 'CRS'):
+            raster_reproject(persisted,'EPSG:3857')
+        with pytest.raises(ValueError,match='Source format'):
+            raster_load(source_plan(source))
+    if profile=='cog':
+        direct_target = tmp_path / 'direct.tif'
+        plan = {**source_plan(source,format),'target':target_plan(direct_target)['target']}
+        direct = client.post('/api/operators/raster_to_cog/invoke',json={'params':{
+            'access_plan':plan,'options':{'source_crs':source_crs,'blocksize':128}}})
+        assert direct.status_code==200, direct.json
+        assert direct.json['result']['band_count']==(2 if format=='png' else 1)
+        direct_dataset = gdal.Open(str(direct_target))
+        np.testing.assert_equal(read_band_values(direct_dataset.GetRasterBand(1)),decoded_pixels)
+        if format=='png':
+            np.testing.assert_equal(read_band_values(direct_dataset.GetRasterBand(2)),alpha)
+        direct_dataset = None
+        with raster_workspace():
+            assert validate_cog(raster_load(source_plan(direct_target)))['valid']
+        original_target = direct_target.read_bytes()
+        plan['source']['format']='tiff'
+        plan['target']['write_mode']='replace'
+        rejected = client.post('/api/operators/raster_to_cog/invoke',json={'params':{'access_plan':plan}})
+        assert rejected.status_code==500
+        assert rejected.json['error_code']=='EXECUTION_FAILED'
+        assert direct_target.read_bytes()==original_target
+    assert source.read_bytes()==original
+    assert set(path.name for path in tmp_path.iterdir())=={
+        source.name,target.name,*(['direct.tif'] if profile=='cog' else []),
+    }
 
 
 def test_source_crs_is_explicit_and_conflicts_fail(tmp_path):

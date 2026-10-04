@@ -329,7 +329,11 @@ def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None):
     if shape is None or shape.IsEmpty() or not shape.IsValid():
         raise ValueError('Invalid clip geometry')
     shape.AssignSpatialReference(crs)
-    if shape.TransformTo(_crs(dataset.GetProjection())) != 0:
+    try:
+        transform_error = shape.TransformTo(_crs(dataset.GetProjection()))
+    except RuntimeError as error:
+        raise ValueError('Clip geometry cannot be transformed to raster CRS') from error
+    if transform_error != 0:
         raise ValueError('Clip geometry cannot be transformed to raster CRS')
     _require_clip_intersection(dataset, shape)
     cutline_path = _path('.geojson')
