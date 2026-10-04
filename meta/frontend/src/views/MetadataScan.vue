@@ -1087,7 +1087,7 @@ const waitForScanRun = async (run, hooks = {}) => {
       return latest
     }
     if (FAILED_SCAN_STATUSES.has(status)) {
-      const error = new Error(latest?.error_details?.message || latest?.error_message || latest?.error || status)
+      const error = new Error(t('meta.scan.scanFailed'))
       error.run = latest
       throw error
     }
@@ -1166,7 +1166,7 @@ const completeScanStatus = (title, detail) => {
 
 const failScanStatus = (error) => {
   cancelScanStatusTimer()
-  const failures = error?.run ? scanRunFailureSamples(error.run, error) : []
+  const failures = error?.run ? scanRunFailureSamples(error.run, error, t) : []
   activeScan.value = {
     visible: true,
     title: t('meta.scan.scanFailed'),
@@ -1247,9 +1247,9 @@ const handleCreateUnscannedScanRuns = async () => {
         message: failure.message || t('meta.scan.scanFailed')
       }))
       for (const result of failedRuns) {
-        const engineID = Number(result.run?.execution_config?.engine_id || result.run?.execution_config?.engineId)
+        const engineID = Number(result.run?.scan_context?.engine_id)
         const engineName = engines.value.find(engine => Number(engine.id) === engineID)?.name || String(engineID || '')
-        failures.push(...scanRunFailureSamples(result.run, result.error).map(failure => ({
+        failures.push(...scanRunFailureSamples(result.run, result.error, t).map(failure => ({
           engineName,
           ...failure
         })))

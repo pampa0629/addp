@@ -104,6 +104,15 @@ class FakeOwner:
             if self.deleted and self.fault == "history_event_missing":
                 items = items[1:]
             return API.Response(200, {"items": items, "next_cursor": items[-1]["id"], "has_more": False, "retained_after": "2026-09-02"})
+        if path.startswith(ONLINE.META + "/executions/"):
+            detail = copy.deepcopy(ONLINE.tree_ids(self.tree(failed))[identity])
+            if self.deleted and self.fault == "meta_history_lost":
+                raise API.SuiteError("Meta historical detail returned 404")
+            if self.deleted and self.fault == "meta_history_private":
+                detail["execution_config"] = {"password": "never-print"}
+            if self.deleted and self.fault == "meta_history_changed":
+                detail["progress"] = 1
+            return API.Response(200, detail)
         if path.startswith(ONLINE.MONITOR):
             if self.deleted and self.fault == "history_detail_lost":
                 raise API.SuiteError("historical detail returned 404")
@@ -226,7 +235,7 @@ class OrchestratorOnlineTest(unittest.TestCase):
     def test_definition_deletion_cannot_erase_rewrite_or_expose_history(self):
         for fault in ("history_tree_lost", "history_detail_lost", "history_step_changed", "history_error_changed",
                       "history_detail_changed", "history_events_changed", "history_event_missing", "history_private",
-                      "history_owner_steps_changed"):
+                      "history_owner_steps_changed", "meta_history_lost", "meta_history_private", "meta_history_changed"):
             with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
                 self.run_owner(FakeOwner(fault))
             self.assertEqual(self.report["result"], "failed")
@@ -585,6 +594,21 @@ class AdHocGateway:
             if fault == "lost_adhoc_create":
                 raise API.SuiteError("ad-hoc response unavailable")
             status, payload = 201, {**self.detail(), "tenant_id": 99 if fault == "foreign_execution" else 42, "status": "pending"}
+        elif path.startswith(ONLINE.META + "/scan/runs?"):
+            items = [copy.deepcopy(item) for item in ONLINE.tree_ids(self.owner.tree(False)).values() if item["module"] == "meta"]
+            if getattr(self.owner, "ad_hoc_created", False) and (not peer or fault == "meta_peer_list_leak"):
+                items.append(self.detail())
+            payload = {"items": items, "total": len(items) + (1 if fault == "meta_total_leak" else 0), "page": 1, "page_size": 100}
+        elif path.startswith(ONLINE.META + "/executions/") and execution_id(9) not in path:
+            identity = path.rsplit("/", 1)[1]
+            visible = {**ONLINE.tree_ids(self.owner.tree(False)), **ONLINE.tree_ids(self.owner.tree(True))}
+            if identity in visible and visible[identity]["module"] == "meta":
+                payload = copy.deepcopy(visible[identity])
+                if fault == "meta_history_private": payload["execution_config"] = {"password": "never-print"}
+            else:
+                status, payload = 404, {}
+                if fault == "meta_cross_module_leak": status, payload = 200, {"execution_id": identity}
+                if fault == "meta_missing_500" and identity not in visible: status = 500
         elif path.startswith("/api/v1/monitor/executions?"):
             items = list(ONLINE.tree_ids(self.owner.tree(False)).values())
             items = [item for item in items if item["module"] == "meta"]
@@ -595,8 +619,8 @@ class AdHocGateway:
             payload = {"executions": items, "total": len(items) + (1 if fault == "wrong_list_total" else 0), "page": 1, "page_size": 100}
         elif execution_id(9) in path:
             if peer:
-                status = 200 if fault == "peer_detail_leak" else 404
-                payload = self.detail() if fault in {"peer_detail_leak", "denial_payload_leak"} else {}
+                status = 200 if fault == "peer_detail_leak" or (fault == "meta_peer_detail_leak" and path.startswith(ONLINE.META)) else 404
+                payload = self.detail() if fault in {"peer_detail_leak", "denial_payload_leak", "meta_peer_detail_leak"} else {}
             elif path.startswith(ONLINE.META):
                 payload = {**self.detail(), "tenant_id": 42}
             elif path.endswith("/tree"):
@@ -631,8 +655,8 @@ class AdHocCasesTest(unittest.TestCase):
 
     def test_initiator_visible_peer_has_owner_read_but_not_actor_access(self):
         report = self.run_case()
-        self.assertEqual(report["checks"], ["ad_hoc_peer_owner_read_proven", "ad_hoc_initiator_diagnostics",
-                                          "ad_hoc_list_count_isolated", "ad_hoc_other_user_invisible"])
+        self.assertEqual(report["checks"], ["ad_hoc_peer_owner_read_proven", "meta_direct_owner_history_and_scope", "ad_hoc_initiator_diagnostics",
+                                          "ad_hoc_list_count_isolated", "ad_hoc_other_user_invisible", "meta_direct_ad_hoc_isolation"])
         self.assertEqual(report["ad_hoc_execution_id"], execution_id(9))
         self.assertEqual(report["ad_hoc_event_count"], 2)
         self.assertFalse(report["uncertain_mutation"])
@@ -648,7 +672,7 @@ class AdHocCasesTest(unittest.TestCase):
             self.assertFalse(any(method == "POST" for method, _, _ in self.owner.calls))
 
     def test_positive_control_and_exact_count_required_before_mutation(self):
-        for fault in ("peer_no_history", "wrong_list_total"):
+        for fault in ("peer_no_history", "wrong_list_total", "meta_total_leak", "meta_cross_module_leak", "meta_missing_500", "meta_history_private"):
             with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
                 self.run_case(fault)
             self.assertFalse(any(method == "POST" for method, _, _ in self.owner.calls))
@@ -662,10 +686,10 @@ class AdHocCasesTest(unittest.TestCase):
             self.assertNotIn("never-print", json.dumps(self.report))
 
     def test_peer_list_count_detail_or_denial_payload_leak_fails(self):
-        for fault in ("peer_list_leak", "peer_detail_leak", "denial_payload_leak"):
+        for fault in ("peer_list_leak", "peer_detail_leak", "denial_payload_leak", "meta_peer_list_leak", "meta_peer_detail_leak"):
             with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
                 self.run_case(fault)
-            self.assertNotIn("ad_hoc_other_user_invisible", self.report["checks"])
+            self.assertNotIn("meta_direct_ad_hoc_isolation", self.report["checks"])
 
     def test_unknown_creation_not_retried_and_cleanup_fails_closed(self):
         case = self.cases("lost_adhoc_create")
@@ -704,7 +728,7 @@ class AdHocCasesTest(unittest.TestCase):
                          control=controls.append, ad_hoc=case)
         self.assertEqual(report["result"], "passed")
         self.assertEqual(report["cleanup"], "definitions_deleted")
-        self.assertEqual(len(report["checks"]), 18)
+        self.assertEqual(len(report["checks"]), 20)
         self.assertEqual(report["deleted_definition_count"], 3)
         self.assertEqual(controls, ["stop", "start"])
         paths = [(method, path) for method, path, _ in self.owner.calls]

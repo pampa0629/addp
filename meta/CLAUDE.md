@@ -38,6 +38,8 @@ meta/
 
 Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨扫描任务的执行列表、通用状态筛选与统计统一由 Monitor 展示；MetadataScan 页头使用 `common-frontend` 的 `MonitorExecutionsButton(module=meta, task_type=scan)` 进入统一监控，不保留 `/meta/tasks` 菜单、路由或独立执行列表。
 
+专业扫描执行读取按 Tenant + meta/scan 限定；当前 `meta.scan_task.read` 可读有定义的历史（含已删除定义），一次性执行只允许发起 User 读取。专业入口保留既有合法 User 凭据与 Client Scope 守卫，不套用 Monitor 的第一方令牌限制；TaskProvider 继续独立使用专用机器认证和权限。用户读取响应复用 Common Observation，仅增加固定 `scan_context.engine_id/scan_depth`，不得序列化完整 TaskExecution。详见平台任务体系规范；直接 Meta 入口的真实 T4 尚待本轮验收。
+
 ## Meta 扫描分层约定
 
 Meta 扫描链路按“通用规则、Meta 编排、Engine Catalog 规划、内容增强、Attributes 落库”分层。后续改造应优先保持以下边界，避免把同一类逻辑散落到多个扫描入口。

@@ -7,6 +7,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
+	"github.com/addp/meta/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,7 +17,7 @@ import (
 // @Tags Meta Scan
 // @Produce json
 // @Param task_id path int true "任务ID | Task ID"
-// @Success 200 {object} map[string]interface{} "执行记录 | Execution"
+// @Success 200 {object} models.ScanExecutionResponse "安全执行记录 | Safe execution"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
@@ -52,7 +53,7 @@ func (h *Handler) TriggerScanTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, run)
+	c.JSON(http.StatusOK, models.NewScanExecutionResponse(run))
 }
 
 type taskProviderExecuteRequest struct {

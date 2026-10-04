@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 )
 
@@ -17,7 +18,12 @@ const (
 
 // GetExecution 获取执行详情
 func (s *ScanExecutionService) GetExecution(ctx context.Context, executionID string, tenantID int) (*commonExecution.TaskExecution, error) {
-	return s.taskExecutionRepo.GetByExecutionID(ctx, executionID, tenantID)
+	if tenantID <= 0 {
+		return nil, commonapi.ErrNotFound
+	}
+	// Scope ownership in SQL for both user and machine callers.
+	repo := commonExecution.NewTaskExecutionRepository(s.db.Where("module = ? AND task_type = ?", commonExecution.ModuleMeta, commonExecution.TaskTypeScan))
+	return repo.GetByExecutionID(ctx, executionID, tenantID)
 }
 
 func (s *ScanExecutionService) WaitExecution(ctx context.Context, executionID string, tenantID int, timeout time.Duration) (*commonExecution.TaskExecution, error) {
@@ -68,6 +74,9 @@ func (s *ScanExecutionService) WaitExecution(ctx context.Context, executionID st
 
 // ListExecutions 列出 meta 模块的执行记录
 func (s *ScanExecutionService) ListExecutions(ctx context.Context, tenantID int, taskID *int, status, triggerType string, page, pageSize int) ([]*commonExecution.TaskExecution, int64, error) {
+	if tenantID <= 0 {
+		return nil, 0, commonapi.ErrNotFound
+	}
 	if page <= 0 {
 		page = 1
 	}

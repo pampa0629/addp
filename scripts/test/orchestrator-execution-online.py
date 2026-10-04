@@ -31,6 +31,8 @@ REQUIRED_PERMISSIONS = {
 PRIVATE_KEYS = {
     "execution_config", "authorization_ref", "lease_owner", "lease_expires_at",
     "step_results", "outputs", "parameters", "result", "connection_info",
+    "actor_principal_id", "actor_tenant_membership_id", "issued_authorization_version",
+    "execution_authorization_id", "authorization_expires_at",
 }
 EVENT_FIELDS = {"id", "execution_id", "attempt", "occurred_at", "kind", "step_id", "counters"}
 COUNTERS = {"progress", "batch_index", "batch_records", "records_read", "records_written",
@@ -146,13 +148,21 @@ def history_snapshot(client, execution_id, visible):
         assert_safe(detail)
         require(detail == item, "historical execution detail differs from its tree")
         details[identity] = detail
+    meta_details = {}
+    for identity, item in visible.items():
+        if item.get("module") == "meta":
+            professional = client.request("GET", f"{META}/executions/{identity}", (200,)).payload
+            assert_safe(professional)
+            require(professional.get("execution_id") == identity and professional.get("status") == item["status"],
+                    "Meta historical execution identity or status changed")
+            meta_details[identity] = professional
     owner = client.request("GET", f"{ORCH}/executions/{execution_id}", (200,)).payload
     require(owner.get("execution_id") == execution_id and owner.get("status") == visible[execution_id]["status"],
             "historical Owner execution identity or status changed")
     terminal = {"success": "completed", "failed": "failed", "cancelled": "cancelled", "timeout": "timeout"}
     return {"tree": tree, "details": details,
             "events": read_events(client, execution_id, terminal[owner["status"]]),
-            "owner_steps": owner.get("metadata", {}).get("step_results", {})}
+            "owner_steps": owner.get("metadata", {}).get("step_results", {}), "meta_details": meta_details}
 
 
 def definition_present(client, path, present):
@@ -308,6 +318,17 @@ class AdHocCases:
                 and len(set(identities)) == len(items), "invalid ad-hoc execution list identities")
         return set(identities)
 
+    def meta_listing(self, client):
+        payload = client.request("GET", f"{META}/scan/runs?page=1&page_size=100", (200,)).payload
+        assert_safe(payload)
+        items = payload.get("items")
+        require(isinstance(items, list) and type(payload.get("total")) is int and payload["total"] == len(items)
+                and payload.get("page") == 1 and payload.get("page_size") == 100,
+                "Meta direct list/count is incomplete or leaked")
+        ids = [item.get("execution_id") for item in items]
+        require(all(isinstance(i, str) and i for i in ids) and len(set(ids)) == len(ids), "invalid Meta direct list")
+        return set(ids)
+
     def run(self, engine_id, visible, denied, foreign, report, checkpoint):
         defined = {identity for identity, item in visible.items() if item.get("module") == "meta"}
         require(len(defined) == 2, "ad-hoc positive control requires the real successful Meta children")
@@ -319,10 +340,22 @@ class AdHocCases:
             assert_safe(detail)
             require(detail == visible[identity], "peer cannot read the real defined scan history")
         report["checks"].append("ad_hoc_peer_owner_read_proven")
+        meta_before, peer_meta_before = self.meta_listing(self.initiator), self.meta_listing(self.peer)
+        require(defined <= meta_before and defined <= peer_meta_before, "Meta direct history read was not proven")
+        for identity in defined:
+            detail = self.peer.request("GET", f"{META}/executions/{identity}", (200,)).payload
+            assert_safe(detail)
+            require(detail.get("execution_id") == identity and detail.get("module") == "meta", "Meta returned another execution")
+        for identity, item in visible.items():
+            if item.get("module") != "meta":
+                self.invisible_meta(self.peer, identity, 404)
+        self.invisible_meta(self.initiator, "00000000-0000-4000-8000-000000000000", 404)
+        report["checks"].append("meta_direct_owner_history_and_scope")
         report["uncertain_mutation"] = True
         checkpoint()
         item = self.initiator.request("POST", f"{META}/scan/run/manual", (201,),
             {"engine_id": engine_id, "catalog_paths": ["public"], "scan_depth": "basic", "force": True}).payload
+        assert_safe(item)
         identity = item.get("execution_id")
         require(isinstance(identity, str) and re.fullmatch(r"[0-9a-f-]{36}", identity), "missing ad-hoc execution identity")
         report["ad_hoc_execution_id"] = identity
@@ -332,6 +365,7 @@ class AdHocCases:
         report["uncertain_mutation"] = False
         checkpoint()
         terminal = wait_execution(self.initiator, identity, module=META)
+        assert_safe(terminal)
         API.assert_tenant(terminal, self.tenant, "ad-hoc execution")
         self.assert_actor(terminal, identity)
         require(terminal.get("status") == "success" and terminal.get("progress") == 100, "ad-hoc scan did not succeed")
@@ -352,7 +386,19 @@ class AdHocCases:
         for reader in (self.peer, denied, foreign):
             invisible_projection(reader, identity, 404)
         report["checks"].append("ad_hoc_other_user_invisible")
+        require(self.meta_listing(self.initiator) == meta_before | {identity} and identity not in meta_before,
+                "Meta initiator list lost or duplicated the ad-hoc execution")
+        require(self.meta_listing(self.peer) == peer_meta_before and identity not in peer_meta_before,
+                "Meta peer list/count leaked another User execution")
+        self.invisible_meta(self.peer, identity, 404)
+        self.invisible_meta(denied, identity, 403)
+        self.invisible_meta(foreign, identity, 404)
+        report["checks"].append("meta_direct_ad_hoc_isolation")
         checkpoint()
+
+    def invisible_meta(self, client, identity, status):
+        payload = client.request("GET", f"{META}/executions/{identity}", (status,)).payload
+        require(set(payload) <= {"error", "error_code"}, "Meta invisible execution leaked data")
 
     def assert_actor(self, item, identity):
         require(item.get("execution_id") == identity and item.get("module") == "meta" and item.get("task_type") == "scan"

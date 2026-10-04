@@ -36,3 +36,8 @@ other = "Write lineage"
 
 [permissions.meta.lineage.create.description]
 other = "Record service publication lineage facts"
+
+[meta.scan.execution_not_found]
+other = "Execution not found"
+[meta.scan.execution_read_failed]
+other = "Unable to read scan executions"

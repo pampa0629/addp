@@ -6,12 +6,14 @@ import (
 	"strconv"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/taskprovider"
+	metai18n "github.com/addp/meta/i18n"
 	"github.com/addp/meta/internal/models"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // CreateUnscannedScanRuns 提交未扫描存储引擎的后台扫描运行
@@ -42,7 +44,7 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"runs":                result.Runs,
+		"runs":                models.NewScanExecutionResponses(result.Runs),
 		"submitted":           len(result.Runs),
 		"submission_failures": result.SubmissionFailures,
 	})
@@ -55,7 +57,7 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param request body models.ScanRequest true "扫描请求 | Scan request"
-// @Success 201 {object} map[string]interface{} "执行记录 | Execution"
+// @Success 201 {object} models.ScanExecutionResponse "安全执行记录 | Safe execution"
 // @Failure 409 {object} map[string]interface{} "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
@@ -94,18 +96,19 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, run)
+	c.JSON(http.StatusCreated, models.NewScanExecutionResponse(run))
 }
 
 // GetExecution 获取执行详情（按 execution UUID）
 // @Summary 获取执行详情 | Get execution
-// @Description 按标准 TaskProvider 路径获取执行详情 | Get execution by standard TaskProvider path
+// @Description 当前租户 meta/scan 的安全扫描详情；任务历史按读取权限，一次性执行仅发起 User 可读 | Safe tenant meta/scan observation; permission covers task history, ad-hoc executions are initiator-only
 // @Tags Meta Scan
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} map[string]interface{} "执行详情 | Execution detail"
+// @Success 200 {object} models.ScanExecutionResponse "安全执行详情 | Safe execution detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 404 {object} map[string]interface{} "执行不存在 | Execution not found"
+// @Failure 403 {object} map[string]interface{} "用户身份或权限不允许 | User identity or permission denied"
+// @Failure 404 {object} map[string]interface{} "执行不存在或不可读 | Execution absent or invisible"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -113,11 +116,14 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetExecution(c *gin.Context) {
+	if !installScanUserReadScope(c) {
+		return
+	}
 	exec, ok := h.loadExecution(c)
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, exec)
+	c.JSON(http.StatusOK, models.NewScanExecutionResponse(exec))
 }
 
 // ProviderGetExecution 获取 TaskProvider 执行状态。
@@ -157,11 +163,11 @@ func (h *Handler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution,
 
 	exec, err := h.executionService.GetExecution(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error_code": "execution_not_found", "error": commoni18n.T(c, metai18n.MsgScanExecutionNotFound)})
 			return nil, false
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "execution_read_failed", "error": commoni18n.T(c, metai18n.MsgScanExecutionReadFailed)})
 		return nil, false
 	}
 	return exec, true
@@ -169,7 +175,7 @@ func (h *Handler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution,
 
 // ListScanRuns 列出执行记录（从 common.task_executions 查询）
 // @Summary 列出扫描运行 | List scan runs
-// @Description 分页查询当前租户的扫描运行记录 | List scan executions for current tenant
+// @Description 当前租户 meta/scan 的安全运行记录；列表和总数仅包含可读任务历史及本人一次性执行 | Safe meta/scan executions; list and total contain readable task history and own ad-hoc executions only
 // @Tags Meta Scan
 // @Produce json
 // @Param task_id query int false "任务ID | Task ID"
@@ -177,7 +183,8 @@ func (h *Handler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution,
 // @Param trigger_type query string false "触发类型 | Trigger type"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
-// @Success 200 {object} map[string]interface{} "分页执行记录 | Paged executions"
+// @Success 200 {object} models.ScanExecutionListResponse "安全分页执行记录 | Safe paged executions"
+// @Failure 403 {object} map[string]interface{} "用户身份或权限不允许 | User identity or permission denied"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
@@ -186,6 +193,9 @@ func (h *Handler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution,
 // @Router /scan/runs [get]
 // @Security BearerAuth
 func (h *Handler) ListScanRuns(c *gin.Context) {
+	if !installScanUserReadScope(c) {
+		return
+	}
 	if h.executionService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
 		return
@@ -225,7 +235,7 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 
 	executions, total, err := h.executionService.ListExecutions(c.Request.Context(), int(tenantID), taskID, status, triggerType, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "execution_read_failed", "error": commoni18n.T(c, metai18n.MsgScanExecutionReadFailed)})
 		return
 	}
 
@@ -234,11 +244,7 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 		totalPages = (total + int64(pageSize) - 1) / int64(pageSize)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"items":       executions,
-		"total":       total,
-		"page":        page,
-		"page_size":   pageSize,
-		"total_pages": totalPages,
+	c.JSON(http.StatusOK, models.ScanExecutionListResponse{
+		Items: models.NewScanExecutionResponses(executions), Total: total, Page: page, PageSize: pageSize, TotalPages: totalPages,
 	})
 }

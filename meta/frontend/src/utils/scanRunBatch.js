@@ -15,19 +15,14 @@ export const waitForScanRuns = async (runs, waitForRun, hooks = {}) => {
   return results
 }
 
-export const scanRunFailureSamples = (run, error) => {
-  const details = run?.error_details
-  const samples = Array.isArray(details?.failed_target_samples)
-    ? details.failed_target_samples.filter(sample => sample && (sample.target || sample.message))
-    : []
-  if (samples.length > 0) {
-    return samples.map(sample => ({
-      target: String(sample.target || ''),
-      message: String(sample.message || '')
-    }))
-  }
-  return [{
-    target: '',
-    message: String(details?.message || error?.message || run?.error_message || run?.error || run?.status || '')
-  }]
+// Scan reads expose stable failure categories, never raw target/error bodies.
+export const scanRunFailureSamples = (run, error, t) => [{
+  target: '',
+  message: t(`common.executionFailure.${failureCategory(run)}`)
+}]
+
+const failureCategory = run => {
+  const category = run?.error_details?.category
+  return ['permission_denied', 'invalid_input', 'child_failed', 'connection_failed', 'resource_exhausted', 'owner_unavailable', 'submission_uncertain', 'coordinator_lost', 'timeout', 'cancelled', 'execution_failed'].includes(category)
+    ? category : 'execution_failed'
 }

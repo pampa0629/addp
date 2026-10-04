@@ -30,16 +30,16 @@ test('one failed run does not stop waiting for later submitted runs', async () =
   assert.deepEqual(visited, ['first', 'second', 'third'])
   assert.deepEqual(progress, [0, 1, 2])
   assert.deepEqual(results.map(result => result.error === null), [false, true, true])
-  assert.deepEqual(scanRunFailureSamples(results[0].run, results[0].error), [
-    { target: 'data/empty.gdb', message: 'cannot inspect' }
+  assert.deepEqual(scanRunFailureSamples(results[0].run, results[0].error, key => key), [
+    { target: '', message: 'common.executionFailure.execution_failed' }
   ])
 })
 
-test('failure summary falls back to the execution error when no target sample exists', () => {
-  assert.deepEqual(scanRunFailureSamples({ error_details: { message: 'connection refused' } }), [
-    { target: '', message: 'connection refused' }
-  ])
-  assert.deepEqual(scanRunFailureSamples({}, new Error('request failed')), [
-    { target: '', message: 'request failed' }
-  ])
+test('failure summary uses safe categories and ignores raw target and error values', () => {
+  for (const category of ['permission_denied', 'invalid_input', 'child_failed', 'connection_failed', 'resource_exhausted', 'owner_unavailable', 'submission_uncertain', 'coordinator_lost', 'timeout', 'cancelled', 'execution_failed', 'password=secret']) {
+    const run = { error_details: { category, message: 'secret', failed_target_samples: [{ target: 'private', message: 'secret' }] } }
+    assert.deepEqual(scanRunFailureSamples(run, new Error('secret'), key => key), [{
+      target: '', message: `common.executionFailure.${category === 'password=secret' ? 'execution_failed' : category}`
+    }])
+  }
 })

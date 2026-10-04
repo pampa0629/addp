@@ -280,7 +280,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 路径获取执行详情 | Get execution by standard TaskProvider path",
+                "description": "当前租户 meta/scan 的安全扫描详情；任务历史按读取权限，一次性执行仅发起 User 可读 | Safe tenant meta/scan observation; permission covers task history, ad-hoc executions are initiator-only",
                 "produces": [
                     "application/json"
                 ],
@@ -299,10 +299,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "执行详情 | Execution detail",
+                        "description": "安全执行详情 | Safe execution detail",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionResponse"
                         }
                     },
                     "400": {
@@ -312,8 +311,15 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "用户身份或权限不允许 | User identity or permission denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "404": {
-                        "description": "执行不存在 | Execution not found",
+                        "description": "执行不存在或不可读 | Execution absent or invisible",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1784,10 +1790,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "执行记录 | Execution",
+                        "description": "安全执行记录 | Safe execution",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionResponse"
                         }
                     },
                     "400": {
@@ -1890,7 +1895,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页查询当前租户的扫描运行记录 | List scan executions for current tenant",
+                "description": "当前租户 meta/scan 的安全运行记录；列表和总数仅包含可读任务历史及本人一次性执行 | Safe meta/scan executions; list and total contain readable task history and own ad-hoc executions only",
                 "produces": [
                     "application/json"
                 ],
@@ -1934,14 +1939,20 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "分页执行记录 | Paged executions",
+                        "description": "安全分页执行记录 | Safe paged executions",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
+                    "403": {
+                        "description": "用户身份或权限不允许 | User identity or permission denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2378,10 +2389,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "执行记录 | Execution",
+                        "description": "安全执行记录 | Safe execution",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionResponse"
                         }
                     },
                     "400": {
@@ -3632,6 +3642,153 @@ const docTemplate = `{
                 },
                 "unscanned_catalog_nodes": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ScanExecutionContext": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "scan_depth": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ScanExecutionListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionResponse"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ScanExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "bytes_read": {
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
+                "error_details": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "records_read": {
+                    "type": "integer"
+                },
+                "records_written": {
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "type": "integer"
+                },
+                "scan_context": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionContext"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
