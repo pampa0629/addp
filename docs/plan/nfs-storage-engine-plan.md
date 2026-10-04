@@ -54,4 +54,6 @@ Business 只拥有 HDFS 服务、样例和生命周期，不调用 System API。
 
 2026-10-04 实现进展：Simple 只读插件、Business NameNode/DataNode 与三格式样例已落地；独占 T2 已验证每页 2 条的真实目录分页、有界内容与范围读取、中文/空格/百分号文件名、共享 CSV/JSON/Parquet 解析，以及真实 Worker 每格式 20 行、金额合计 2100 的聚合。格式验证消费由 WebHDFS 插件读出的原始字节，在宿主机使用现有 CGO 工具链运行共享解析器；便携 Linux WebHDFS 测试程序仅携带 HDFS 依赖。
 
-正式消费验收进展：已通过 Console 登记 `Business HDFS`（引擎 26），连接测试正常；Meta 自动扫描 229 与目录扫描 230 成功；Manager 的 CSV、JSON、Parquet 预览各显示 20 行。Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三个资源 locator 读取，独立选择 `Business Spark`，按 region 聚合并关联校验结果，任务定义不保存物理地址或连接参数。正式执行尚未通过：Spark 公开元数据漏将内部 `list` 转为规范的 `array`，使 Develop 执行契约生成失败；已在现有元数据转换入口修正并通过 32 项 Spark 确定性测试，待重启后执行。同时修正了共享 locator 解析重复解码造成的百分号文件名失败，确定性回归已通过，Manager 的特殊文件名运行验证待重启。两项运行验证完成前不声明正式消费链路验收通过。
+正式消费验收进展：已通过 Console 登记 `Business HDFS`（引擎 26），连接测试正常；Meta 自动扫描 229 与目录扫描 230 成功；Manager 的 CSV、JSON、Parquet 预览各显示 20 行。共享 locator 重复解码问题修正并重启后，`订单 100%.csv` 也已通过正式预览，显示 20 行。
+
+Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三个资源 locator 读取，独立选择 `Business Spark`，按 region 聚合并关联校验结果，任务定义不保存物理地址或连接参数。Spark 的公开列表类型映射修正后，执行参数契约已正常生成。正式执行 244（`3a5bf624-acf1-476f-8bff-9cdc01353399`）已到达 Worker，但 CSV 被错误地按默认 Parquet 读取，任务失败。已修正 Develop 文件/对象格式派生，复用共享格式识别器读取原始文件名；Spark 必须消费派生格式，缺失时拒绝读取，删除默认 Parquet 路径。HDFS 三格式、对象格式、公开参数边界与 Spark 34 项确定性测试已通过；正式执行等待加载新代码后复验，暂不声明完整消费链路验收通过。

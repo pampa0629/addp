@@ -949,6 +949,7 @@ func deriveWorkflowSourceParams(params map[string]interface{}, loc *resourcetree
 		}
 		params["engine_id"] = loc.EngineID
 		params["path"] = filePath
+		params["format"] = string(format.DetectFormat(lastPathSegment(loc.Path), nil))
 		params["__workflow_resource_derived"] = true
 		params["__workflow_resource_kind"] = "file"
 	case resourcetree.TypeObject:
@@ -958,6 +959,7 @@ func deriveWorkflowSourceParams(params map[string]interface{}, loc *resourcetree
 		}
 		params["engine_id"] = loc.EngineID
 		params["path"] = objectPath
+		params["format"] = string(format.DetectFormat(lastPathSegment(loc.Path), nil))
 		params["__workflow_resource_derived"] = true
 		params["__workflow_resource_kind"] = "object"
 	default:

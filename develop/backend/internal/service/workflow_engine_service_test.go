@@ -262,6 +262,9 @@ func TestPreprocessWorkflowParamsDerivesObjectSourceAsSparkPath(t *testing.T) {
 	if params["path"] != "s3a://addp/lake/roads.parquet" {
 		t.Fatalf("path = %v, want s3a://addp/lake/roads.parquet", params["path"])
 	}
+	if params["format"] != "parquet" {
+		t.Fatalf("object format = %#v, want parquet", params["format"])
+	}
 	assertConnectionInfo(t, params, "minio")
 }
 
@@ -1291,21 +1294,31 @@ func TestRasterConversionRejectsRuntimePlanAndUnsupportedFormat(t *testing.T) {
 func TestPreprocessWorkflowHDFSReadOnly(t *testing.T) {
 	info := commonModels.ConnectionInfo{"webhdfs_endpoint": "http://namenode:9870", "rpc_uri": "hdfs://namenode:8020", "root_path": "/addp", "authentication": "simple", "user": "reader"}
 	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{3: {ID: 3, Name: "test-hdfs", EngineType: "hdfs", LifecycleState: "active", ConnectionInfo: info}})
-	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "load_hdfs", "operator": "load", "params": map[string]interface{}{"source_type": "file", "locator": "addp://engine/3/path/samples/orders.parquet?type=file&item_id=99"}, "depends_on": []interface{}{}}}}
-	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow)
-	if err != nil {
-		t.Fatal(err)
+	for _, extension := range []string{"csv", "json", "parquet"} {
+		t.Run(extension, func(t *testing.T) {
+			workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "load_hdfs", "operator": "load", "params": map[string]interface{}{"source_type": "file", "locator": "addp://engine/3/path/samples/orders." + extension + "?type=file&item_id=99"}, "depends_on": []interface{}{}}}}
+			got, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			params := firstTaskParams(t, got)
+			if params["path"] != "hdfs://namenode:8020/addp/samples/orders."+extension {
+				t.Fatalf("native path=%#v", params)
+			}
+			if params["format"] != extension {
+				t.Fatalf("format = %#v, want %s", params["format"], extension)
+			}
+			assertConnectionInfo(t, params, "hdfs")
+			original := firstTaskParams(t, workflow)
+			if original["locator"] == nil || original["path"] != nil {
+				t.Fatal("saved locator was mutated")
+			}
+			if original["format"] != nil {
+				t.Fatal("derived format was saved into the task")
+			}
+		})
 	}
-	params := firstTaskParams(t, got)
-	if params["path"] != "hdfs://namenode:8020/addp/samples/orders.parquet" {
-		t.Fatalf("native path=%#v", params)
-	}
-	assertConnectionInfo(t, params, "hdfs")
-	original := firstTaskParams(t, workflow)
-	if original["locator"] == nil || original["path"] != nil {
-		t.Fatal("saved locator was mutated")
-	}
-	workflow = map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "save_hdfs", "operator": "save", "params": map[string]interface{}{"target_type": "file", "target_parent_locator": "addp://engine/3/path/samples?type=directory&node_id=18", "target_name": "result.parquet"}, "depends_on": []interface{}{}}}}
+	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "save_hdfs", "operator": "save", "params": map[string]interface{}{"target_type": "file", "target_parent_locator": "addp://engine/3/path/samples?type=directory&node_id=18", "target_name": "result.parquet"}, "depends_on": []interface{}{}}}}
 	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow); err == nil || !strings.Contains(err.Error(), "不支持文件写入") {
 		t.Fatalf("read-only target accepted: %v", err)
 	}

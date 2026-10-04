@@ -371,7 +371,8 @@ func workflowPythonLoadAdapterSpec() workflowOperatorAdapterSpec {
 
 func workflowLoadAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 	return workflowOperatorAdapterSpec{
-		OperatorID: operatorID,
+		OperatorID:    operatorID,
+		RuntimeParams: []string{"format"},
 		PublicParameters: []commonModels.ParameterDescriptor{
 			resourcePickerParameter(
 				"source_resource",

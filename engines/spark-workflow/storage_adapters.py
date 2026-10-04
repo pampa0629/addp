@@ -440,7 +440,7 @@ class FileAdapter:
     def load(spark: SparkSession, params: Dict[str, Any]) -> DataFrame:
         """从文件加载数据"""
         path = params['path']
-        format_type = params.get('format', 'parquet')
+        format_type = params['format']
 
         if path.startswith('hdfs:') or params.get('connection_info', {}).get('engine_type') == 'hdfs':
             path = FileAdapter._validate_hdfs_access(spark, params)

@@ -860,6 +860,8 @@ Orchestrator 为每个执行输入只允许三种互斥来源：使用任务保�
 
 同一算子能够读取多类资源时，应使用一个资源选择参数并由 locator 对应的资源事实决定运行时访问方式，不得要求用户预先选择 `source_type`。文件格式应优先由所选资源的格式事实或路径扩展名确定；支持格式列表属于资源选择器过滤条件，不应作为必选算子参数。内存对象输入应通过算子输入端口传递，不得在资源加载算子中另设 `geojson` 等旁路参数。
 
+Spark 文件加载的 `format` 是 Develop 资源 Adapter 派生的运行时参数。文件和对象 locator 使用共享格式识别器根据原始文件名确定格式，任务不保存独立的格式参数；Spark 必须显式消费该结果，不得在缺失时默认按 Parquet 读取。无法识别或运行时不支持的格式必须拒绝读取。
+
 同一算子能够写入表格或文件目标时，也应使用一个目标父资源选择参数，由父 locator 类型决定 Adapter 派生 `schema/table` 或 `path`，不得要求用户预先选择 `target_type`。文件输出格式由目标名称扩展名确定，不应再公开独立 `format` 参数。
 
 `connection_info`、`schema`、`table`、`path` 和用于派生连接的存储引擎 `engine_id` 都是 Develop 到运行时之间的内部参数，不应作为算子公开填写项；Develop 不接受工作流任务参数直接提交存储引擎 `engine_id` 作为旧式资源身份。Spark Workflow 顶层 `engine_id` 只绑定实际 `spark` 通用引擎资源，与数据源 locator 中的存储引擎 ID 不是同一概念。

@@ -178,6 +178,22 @@ func TestSparkSaveResourceBindingUsesRuntimeOverwriteMode(t *testing.T) {
 	}
 }
 
+func TestSparkLoadFormatIsDerivedRuntimeParameter(t *testing.T) {
+	operators := publicWorkflowOperators("spark_workflow", []commonModels.OperatorDescriptor{{
+		ID:         "load",
+		Parameters: []commonModels.ParameterDescriptor{{Name: "format", Type: "string"}},
+	}})
+	for _, parameter := range operators[0].PublicParameters {
+		if parameter.Name == "format" {
+			t.Fatal("derived file format was published as a user parameter")
+		}
+	}
+	spec, _ := workflowOperatorAdapterSpecFor("spark_workflow", "load")
+	if err := rejectDirectWorkflowRuntimeParams(map[string]interface{}{"format": "parquet"}, spec); err == nil {
+		t.Fatal("task-supplied format was accepted instead of resource facts")
+	}
+}
+
 func TestOperatorDiscoveryPublishesSuperMapUdbxNFSTargetOnly(t *testing.T) {
 	operators := []commonModels.OperatorDescriptor{{
 		ID: "datasource.create",

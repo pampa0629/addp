@@ -6,6 +6,28 @@ from unittest.mock import MagicMock
 
 
 class StorageAdapterTest(unittest.TestCase):
+    def test_file_reads_require_derived_format(self):
+        spark = MagicMock()
+        with self.assertRaisesRegex(KeyError, 'format'):
+            FileAdapter.load(spark, {'path': 's3a://bucket/orders.csv'})
+        spark.read.format.assert_not_called()
+
+    def test_file_reader_uses_each_derived_format(self):
+        for file_format in ('csv', 'json', 'parquet'):
+            with self.subTest(file_format=file_format):
+                spark = MagicMock()
+                reader = spark.read.format.return_value
+                reader.option.return_value = reader
+                path = 's3a://bucket/orders.' + file_format
+                with patch.object(FileAdapter, '_configure_s3_access'):
+                    result = FileAdapter.load(spark, {'path': path, 'format': file_format})
+                spark.read.format.assert_called_once_with(file_format)
+                reader.load.assert_called_once_with(path)
+                self.assertIs(result, reader.load.return_value)
+                if file_format == 'csv':
+                    reader.option.assert_any_call('header', 'true')
+                    reader.option.assert_any_call('inferSchema', 'true')
+
     def test_geometry_columns_are_discovered_from_schema(self):
         class GeometryType:
             def typeName(self):
