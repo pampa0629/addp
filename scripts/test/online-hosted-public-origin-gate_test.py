@@ -24,8 +24,9 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             if [ "$1 $2" = "compose version" ]; then exit 0; fi
             if [ "${ADDP_TEST_VERIFY_PORT_SCOPE:-0}" = 1 ] && [[ "$*" == *"business/docker-compose.yml"* ]]; then
-              [ "${MINIO_API_PORT:-}" = 127.0.0.1:19002 ] &&
-                [ "${MINIO_CONSOLE_PORT:-}" = 127.0.0.1:19003 ] || exit 1
+              [ "${MINIO_BIND_HOST:-}" = 127.0.0.1 ] &&
+                [ "${MINIO_API_PORT:-}" = 19002 ] &&
+                [ "${MINIO_CONSOLE_PORT:-}" = 19003 ] || exit 1
             fi
             if [ "$1 $2" = "container inspect" ]; then
               [ "${ADDP_TEST_EXISTING_CONTAINER:-}" = "$3" ]; exit
@@ -40,6 +41,10 @@ class HostedPublicOriginGateTest(unittest.TestCase):
               exit 0
             fi
             echo "docker:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "${ADDP_TEST_BUSINESS_CONFIG_FAIL:-0}" = 1 ] &&
+               [[ "$*" == *"business/docker-compose.yml config --quiet"* ]]; then
+              exit 1
+            fi
             if [ "${ADDP_TEST_RUNTIME_UP_FAIL:-0}" = 1 ] &&
                [[ "$*" == *"up -d --no-deps --wait --wait-timeout 180 geopython-workflow-engine"* ]]; then
               exit 1
@@ -128,6 +133,16 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertIn("infra-up", trace)
         self.assertIn("infra-down", trace)
         self.assertIn("business/docker-compose.yml up -d", trace)
+
+    def test_business_config_failure_stops_before_builds_or_infra_start(self):
+        result = self.run_gate(ADDP_TEST_BUSINESS_CONFIG_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn("business/docker-compose.yml config --quiet", trace)
+        self.assertNotIn("infra-up", trace)
+        self.assertNotIn("make:build", trace)
+        self.assertNotIn("up -d", trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_scenario_failure_still_cleans_application_and_infra(self):
         result = self.run_gate(ADDP_TEST_SUITE_FAIL="1")

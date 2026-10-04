@@ -114,7 +114,7 @@ def assert_isolated_groups() -> None:
     runtimes = docker_json("compose", "-f", "docker-compose.runtimes.yml", "config", "--format", "json")
     business = docker_json(
         "compose", "--env-file", "/dev/null", "-f", "business/docker-compose.yml", "config", "--format", "json",
-        env={**os.environ, "MINIO_API_PORT": "127.0.0.1:19002", "MINIO_CONSOLE_PORT": "127.0.0.1:19003"},
+        env={**os.environ, "MINIO_BIND_HOST": "127.0.0.1", "MINIO_API_PORT": "19002", "MINIO_CONSOLE_PORT": "19003"},
     )
     if runtimes.get("name") != "addp-runtimes" or "geopython-workflow-engine" not in runtimes.get("services", {}):
         raise AcceptanceError("Runtime Compose project is invalid")

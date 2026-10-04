@@ -268,8 +268,9 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         docker_json.side_effect = lambda *args, **kwargs: fixtures[args[-1]] if args[0] == "inspect" else configs[args[args.index("-f") + 1]]
         MODULE.assert_isolated_groups()
         business_call = next(call for call in docker_json.call_args_list if "business/docker-compose.yml" in call.args)
-        self.assertEqual(business_call.kwargs["env"]["MINIO_API_PORT"], "127.0.0.1:19002")
-        self.assertEqual(business_call.kwargs["env"]["MINIO_CONSOLE_PORT"], "127.0.0.1:19003")
+        self.assertEqual(business_call.kwargs["env"]["MINIO_BIND_HOST"], "127.0.0.1")
+        self.assertEqual(business_call.kwargs["env"]["MINIO_API_PORT"], "19002")
+        self.assertEqual(business_call.kwargs["env"]["MINIO_CONSOLE_PORT"], "19003")
         run.assert_called_once()
         open_url.assert_called_once_with("http://127.0.0.1:19002/minio/health/live", timeout=5)
 
