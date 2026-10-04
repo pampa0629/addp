@@ -7,6 +7,7 @@ import textwrap
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).with_name("online-host-gate.sh")
@@ -311,14 +312,28 @@ class OnlineHostGateTest(unittest.TestCase):
             }
         )
         environment.update(overrides)
-        return subprocess.run(
-            ["bash", "scripts/test/online-host-gate.sh", *arguments],
-            cwd=self.repository,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        try:
+            return subprocess.run(
+                ["bash", "scripts/test/online-host-gate.sh", *arguments],
+                cwd=self.repository,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired as error:
+            commands = (
+                self.command_log.read_text(encoding="utf-8").splitlines()
+                if self.command_log.exists() else []
+            )
+            readiness = "present" if (self.artifacts / "readiness.txt").exists() else "absent"
+            cleanup = "present" if (self.artifacts / "summary.txt").exists() else "absent"
+            error.add_note(
+                f"Online host fixture: suite={suite}; "
+                f"last_fixture_command={commands[-1] if commands else 'not-recorded'}; "
+                f"readiness_report={readiness}; cleanup_report={cleanup}"
+            )
+            raise
 
     def test_dispatches_registered_suite_and_always_stops_application(self) -> None:
         result = self._run("module-registry-recovery")
@@ -437,6 +452,36 @@ class OnlineHostGateTest(unittest.TestCase):
         )
         summary = (self.artifacts / "summary.txt").read_text(encoding="utf-8")
         self.assertIn("process_lifecycle=passed", summary)
+
+    def test_timeout_keeps_original_failure_and_fixture_progress(self) -> None:
+        self.command_log.write_text("start:\nstability:capture\n", encoding="utf-8")
+        self.artifacts.mkdir()
+        (self.artifacts / "readiness.txt").write_text("result=passed\n", encoding="utf-8")
+        failure = subprocess.TimeoutExpired("online-host-gate", 5)
+
+        with patch("subprocess.run", side_effect=failure) as run:
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                self._run("consumer-engine-recovery")
+
+        self.assertIs(raised.exception, failure)
+        run.assert_called_once()
+        diagnostic = "\n".join(raised.exception.__notes__)
+        self.assertIn("suite=consumer-engine-recovery", diagnostic)
+        self.assertIn("last_fixture_command=stability:capture", diagnostic)
+        self.assertIn("readiness_report=present", diagnostic)
+        self.assertIn("cleanup_report=absent", diagnostic)
+
+    def test_timeout_before_lifecycle_reports_missing_progress(self) -> None:
+        failure = subprocess.TimeoutExpired("online-host-gate", 5)
+        with patch("subprocess.run", side_effect=failure):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                self._run("enterprise-catalog-publishing")
+
+        self.assertIs(raised.exception, failure)
+        diagnostic = "\n".join(raised.exception.__notes__)
+        self.assertIn("last_fixture_command=not-recorded", diagnostic)
+        self.assertIn("readiness_report=absent", diagnostic)
+        self.assertIn("cleanup_report=absent", diagnostic)
 
     def test_runs_enterprise_catalog_suite_with_seeded_engine_fixture(self) -> None:
         result = self._run("enterprise-catalog-publishing")

@@ -1117,6 +1117,16 @@ make test-go GOFLAGS='-race -p=4 -count=5 -run=^(TestHealthChecker|TestModuleRou
 
 ---
 
+## Online 宿主机包装测试报五秒超时
+
+`online-host-gate_test.py` 使用临时仓库和本地命令桩验证包装脚本，`TimeoutExpired` 表示整个脚本未在五秒内完成。单次重跑通过不能证明上一次超时的根因已消除；先沿准入检查、夹具准备、启动、业务断言和退出清理定位停留阶段。
+
+超时异常会附带 `Online host fixture` 诊断，保留临时目录删除前的 suite、最近一条夹具命令，以及准入报告、清理报告是否生成。无命令记录且无准入报告时，先查准入检查；已有命令记录时，结合该命令查后续步骤；已有清理报告仍超时时，再查继承输出管道的子进程。报告存在只证明已生成文件，不代表验收或清理通过。
+
+标准入口为 `make test-online-runner`，并由 `make test-platform` 和 Platform CI 聚合覆盖。不要通过重复执行直到成功或直接延长超时来替代现场诊断。这里的测试只运行本地命令桩，不启动真实 Online 部署，也不接管开发服务。
+
+---
+
 ## Workflow Engine Python 测试包名冲突
 
 ### 现象
