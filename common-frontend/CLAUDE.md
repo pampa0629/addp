@@ -27,6 +27,8 @@ common-frontend/
 
 ## 验证
 
+模块的公开开发入口由 `basic/src/utils/moduleFrontend.mjs` 唯一拥有：`withModuleFrontend()` 统一开发与生产的 base、HMR 及顶层页面重定向，Console 的 `createModuleFrontendProxies()` 统一代理模块资源。模块开发端口只承载内部服务，独立界面也从 Console origin 的正式路径访问，避免跨端口轮换同一刷新 Cookie。
+
 ```bash
 cd console/frontend && npm run build
 cd manager/frontend && npm run build

@@ -152,7 +152,7 @@ def validate_browser_isolation(repository: Path) -> list[str]:
                     rf"import\s*{{\s*withFrontendTestIsolation\s*}}\s*from\s*['\"]{re.escape(ISOLATION_IMPORT)}['\"]",
                     vite,
                 ) or not re.search(
-                    rf"export default defineConfig\(withFrontendTestIsolation\(['\"]{re.escape(module)}['\"],\s*{{",
+                    rf"export default defineConfig\((?:withModuleFrontend\(['\"]{re.escape(module)}['\"],\s*)?withFrontendTestIsolation\(['\"]{re.escape(module)}['\"],\s*{{",
                     vite,
                 ):
                     raise ValueError("Vite config must use the shared withFrontendTestIsolation owner")

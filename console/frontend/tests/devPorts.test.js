@@ -91,6 +91,7 @@ describe('开发端口传递', () => {
 
   it('真实 Vite 在解析后的端口提供页面、HMR 和 Gateway 代理', async () => {
     const vitePort = await availablePort()
+    const modulePort = await availablePort()
     const gateway = createHttpServer((request, response) => {
       if (request.url === '/api/__port_probe') {
         response.setHeader('x-addp-port-fixture', 'gateway')
@@ -113,20 +114,44 @@ describe('开发端口传递', () => {
         CONSOLE_FE_PORT: String(vitePort),
         GATEWAY_PORT: String(gatewayPort),
         SYSTEM_BACKEND_PORT: String(gatewayPort),
-        VITE_ADDP_FRONTEND_PORTS: `console:${vitePort},system:15173`,
+        VITE_ADDP_FRONTEND_PORTS: `console:${vitePort},system:${modulePort}`,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     for (const stream of [vite.stdout, vite.stderr]) {
       stream.on('data', (chunk) => { log = (log + chunk.toString()).slice(-10000) })
     }
+    const moduleServer = spawn('npm', ['--prefix', '../../system/frontend', 'run', 'dev', '--', '--host', '127.0.0.1', '--port', String(modulePort), '--strictPort'], {
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+      detached: true,
+      env: { ...process.env, NODE_ENV: 'development', ADDP_E2E: '0', VITE_ADDP_CONSOLE_PORT: String(vitePort) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    for (const stream of [moduleServer.stdout, moduleServer.stderr]) {
+      stream.on('data', (chunk) => { log = (log + chunk.toString()).slice(-10000) })
+    }
+    let socket
     try {
       const origin = `http://127.0.0.1:${vitePort}`
       await waitForVite(origin, vite, () => log)
+      await waitForVite(`http://127.0.0.1:${modulePort}/module-ui/system/`, moduleServer, () => log)
       const hmrClient = await (await fetch(`${origin}/@vite/client`)).text()
       expect(hmrClient).toContain(`const hmrPort = ${vitePort};`)
       const module = await (await fetch(`${origin}/src/config/portalConfig.js`)).text()
-      expect(module).toContain(`console:${vitePort}`)
+      expect(module).toContain('`${window.location.origin}/module-ui/${module}/`')
+      expect(module).not.toContain('15173')
+      const moduleHTML = await (await fetch(`${origin}/module-ui/system/`)).text()
+      expect(moduleHTML).toContain('/module-ui/system/src/main.js')
+      const moduleHMR = await (await fetch(`${origin}/module-ui/system/@vite/client`)).text()
+      expect(moduleHMR).toContain(`const hmrPort = ${vitePort};`)
+      expect(moduleHMR).toContain('/module-ui/system/__hmr')
+      socket = new WebSocket(`ws://127.0.0.1:${vitePort}/module-ui/system/__hmr`, 'vite-hmr')
+      const connected = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Module HMR proxy did not connect')), 5000)
+        socket.addEventListener('message', event => { clearTimeout(timeout); resolve(JSON.parse(event.data)) }, { once: true })
+        socket.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Module HMR proxy failed')) }, { once: true })
+      })
+      expect(connected).toEqual({ type: 'connected' })
       const api = await fetch(`${origin}/api/__port_probe`)
       expect(api.status).toBe(200)
       expect(api.headers.get('x-addp-port-fixture')).toBe('gateway')
@@ -135,6 +160,8 @@ describe('开发端口传递', () => {
       expect(health.status).toBe(200)
       expect(await health.text()).toBe('system-ok')
     } finally {
+      socket?.close()
+      await stopProcessGroup(moduleServer)
       await stopProcessGroup(vite)
       await new Promise((resolve) => gateway.close(resolve))
     }

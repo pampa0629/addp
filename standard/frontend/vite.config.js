@@ -1,3 +1,4 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -6,7 +7,7 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import path from 'path'
 import { resolve } from 'path'
 
-export default defineConfig(withFrontendTestIsolation('standard', {
+export default defineConfig(withModuleFrontend('standard', withFrontendTestIsolation('standard', {
   optimizeDeps: { include: ['element-plus/es'] },
   plugins: [
     vue(),
@@ -28,12 +29,6 @@ export default defineConfig(withFrontendTestIsolation('standard', {
     port: Number(process.env.STANDARD_FE_PORT || 5181),
     strictPort: true,
     // E2E uses port 4181 and must not bind to or reload from the live server.
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.STANDARD_FE_PORT || 5181),
-      clientPort: Number(process.env.STANDARD_FE_PORT || 5181)
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -48,7 +43,6 @@ export default defineConfig(withFrontendTestIsolation('standard', {
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/standard/',
   build: {
     rollupOptions: {
       output: {
@@ -64,4 +58,4 @@ export default defineConfig(withFrontendTestIsolation('standard', {
       }
     }
   }
-}))
+})))

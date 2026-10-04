@@ -1,3 +1,4 @@
+import { createModuleFrontendProxies } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -29,22 +30,7 @@ export default defineConfig(withFrontendTestIsolation('console', {
       ...(IS_E2E ? {
         '/e2e/service-fixture': { target: 'http://127.0.0.1:4180', changeOrigin: true }
       } : {}),
-      '/data-apps': {
-        target: `http://localhost:${process.env.WORKBENCH_FE_PORT || 5190}`,
-        changeOrigin: true,
-        ws: true,
-        rewrite: (path) => `/module-ui/workbench${path}`
-      },
-      '/module-ui/workbench': {
-        target: `http://localhost:${process.env.WORKBENCH_FE_PORT || 5190}`,
-        changeOrigin: true,
-        ws: true
-      },
-      '/portal': {
-        target: `http://localhost:${process.env.PORTAL_FE_PORT || 5185}`,
-        changeOrigin: true,
-        ws: true
-      },
+      ...createModuleFrontendProxies(),
       '/api': {
         target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
         changeOrigin: true

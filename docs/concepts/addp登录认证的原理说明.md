@@ -105,12 +105,14 @@ Access Token expires_in=900
 
 同一个页面内的并发 API 请求共享一个刷新 Promise；同 origin 的多个页面通过 Web Locks 和 BroadcastChannel 协调。
 
-Portal 与 Workbench Data Application 都是独立顶层界面，但不建立独立认证 origin。生产和开发的
-正式入口分别位于 Console 当前 origin 的 `/portal/...` 与 `/data-apps/:application_id`：生产由 Nginx
+模块的独立顶层界面使用 Console 当前 origin 的 `/module-ui/{frontend}/...`，Portal 与 Workbench
+Data Application 分别使用 `/portal/...` 与 `/data-apps/:application_id`，均不建立第二个认证 origin：生产由 Nginx
 提供，开发由 Console Vite 代理到对应 owner 前端。若 Console 与这些界面分处不同端口并各自轮换
 同一个 Cookie 中的 Refresh Token，各 origin 的 Web Lock 和 BroadcastChannel 无法互相协调，后一次
 轮换会使另一窗口的内存 Access Token 失效。因此 owner 前端开发端口只承载前端服务，不是 Console
-打开的产品入口。
+打开的产品入口。浏览器直接打开这些开发端口时，服务器先跳转到同源正式入口，再加载模块页面和
+初始化认证。相同 Host 的 Cookie 不按端口隔离，跨端口刷新还可能触发历史 Refresh Token 重用检测，
+导致整个 Family 被撤销；保持正式入口同 origin 才能让刷新锁覆盖所有参与页面。
 
 页面因 API 401 进入强制刷新时，其他标签页内存中“时间上尚未过期”的 Access Token 不能证明 Token Family 仍然有效，因此不得作为恢复结果。强制刷新必须在全局刷新锁内访问 System Refresh API；只有等待锁时由另一刷新者产生的更新 Token 才可以复用。
 
@@ -118,7 +120,7 @@ Refresh Token Family 的最终有效期默认从登录时起固定 30 天。Toke
 
 ## 五、Console iframe 认证
 
-开发环境中 Console 与模块 iframe 使用不同端口，生产环境中使用同一站点的不同路径。两种环境统一使用同一消息协议。
+开发和生产环境中 Console 与模块 iframe 均使用同一站点的不同路径，并统一使用同一消息协议。
 
 ```mermaid
 sequenceDiagram

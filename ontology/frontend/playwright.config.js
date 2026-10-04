@@ -16,7 +16,7 @@ export default defineConfig({
     actionTimeout: 10_000
   },
   webServer: {
-    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4192 --strictPort',
+    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4192 --strictPort --base /ontology/',
     url: 'http://127.0.0.1:4192/ontology/',
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },

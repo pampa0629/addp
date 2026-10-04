@@ -1,9 +1,10 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import { resolve } from 'path'
 
-export default defineConfig({
+export default defineConfig(withModuleFrontend('asset', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -20,12 +21,6 @@ export default defineConfig({
   server: {
     port: Number(process.env.ASSET_FE_PORT || 5184),
     strictPort: true,
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.ASSET_FE_PORT || 5184),
-      clientPort: Number(process.env.ASSET_FE_PORT || 5184)
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -40,5 +35,4 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/asset/'
-})
+}))

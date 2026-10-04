@@ -1,3 +1,4 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -22,7 +23,7 @@ const enforceEntryChunkBudget = () => ({
   }
 })
 
-export default defineConfig(withFrontendTestIsolation('model', {
+export default defineConfig(withModuleFrontend('model', withFrontendTestIsolation('model', {
   plugins: [
     vue(),
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] }),
@@ -58,12 +59,6 @@ export default defineConfig(withFrontendTestIsolation('model', {
   server: {
     port: Number(process.env.MODEL_FE_PORT || 5182),
     strictPort: true,
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.MODEL_FE_PORT || 5182),
-      clientPort: Number(process.env.MODEL_FE_PORT || 5182)
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -78,7 +73,6 @@ export default defineConfig(withFrontendTestIsolation('model', {
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/model/',
   build: {
     // Mermaid keeps unused diagram engines in lazy chunks; the entry budget above
     // remains the user-facing performance gate.
@@ -97,4 +91,4 @@ export default defineConfig(withFrontendTestIsolation('model', {
       }
     }
   }
-}))
+})))

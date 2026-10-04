@@ -105,6 +105,19 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         package_path.write_text(json.dumps(package))
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
+    def test_public_module_entry_preserves_shared_browser_isolation(self) -> None:
+        self.enable_browser_suite()
+        self.write_isolated_fixture()
+        self.vite.write_text(self.vite.read_text().replace(
+            "defineConfig(withFrontendTestIsolation('sample', {",
+            "defineConfig(withModuleFrontend('sample', withFrontendTestIsolation('sample', {",
+        ).replace("}))", "})))"))
+        self.assertEqual([], MODULE.validate_browser_isolation(self.repository))
+        self.vite.write_text(self.vite.read_text().replace(
+            "withFrontendTestIsolation('sample', {", "{",
+        ))
+        self.assertTrue(MODULE.validate_browser_isolation(self.repository))
+
     def test_browser_failure_evidence_matches_the_gate_and_matrix(self) -> None:
         self.enable_browser_suite()
         original = self.workflow.read_text()

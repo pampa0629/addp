@@ -1,3 +1,4 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { dirname, resolve } from 'path'
@@ -5,17 +6,11 @@ import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-export default defineConfig({
+export default defineConfig(withModuleFrontend('transfer', {
   plugins: [vue()],
   server: {
     port: Number(process.env.TRANSFER_FE_PORT || 5176),
     strictPort: true, // 端口被占用时报错，不自动切换
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.TRANSFER_FE_PORT || 5176),
-      clientPort: Number(process.env.TRANSFER_FE_PORT || 5176)
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -41,5 +36,4 @@ export default defineConfig({
     },
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/transfer/'  // 开发模式用 /，生产模式用 /module-ui/transfer/
-})
+}))

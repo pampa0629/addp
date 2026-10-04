@@ -25,7 +25,7 @@ async function openAsTenant(page, path, permissions, { configurationEntries } = 
     businessRequests.push(pathname)
     return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
   })
-  await page.route(/^http:\/\/127\.0\.0\.1:(?!4170)\d+\//, route =>
+  await page.route('**/module-ui/**', route =>
     route.fulfill({ contentType: 'text/html', body: '<title>Module fixture</title>' }))
   await page.goto(path)
   return businessRequests
@@ -63,7 +63,7 @@ for (const [path, permissions] of independentlyReadablePages) {
     await expect(page.locator('.el-result'), path).toHaveCount(0)
     if (path === '/workbench/applications') {
       const moduleUrl = new URL(await page.locator('iframe.module-iframe').getAttribute('src'))
-      expect(moduleUrl.origin).not.toBe(new URL(page.url()).origin)
+      expect(moduleUrl.origin).toBe(new URL(page.url()).origin)
       expect(moduleUrl.pathname).toBe('/module-ui/workbench/applications')
     }
     expect(businessRequests).toEqual([])
@@ -216,7 +216,7 @@ test('role revocation refreshes an active session and removes the page from ever
     unexpectedRequests.push(pathname)
     return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
   })
-  await context.route(/^http:\/\/127\.0\.0\.1:(?!4170)\d+\//, route => {
+  await context.route('**/module-ui/**', route => {
     moduleLoads += 1
     return route.fulfill({ contentType: 'text/html', body: '<title>Module fixture</title>' })
   })
@@ -292,8 +292,8 @@ for (const contextFailure of [false, true]) {
       }
       return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
     })
-    await context.route(/^http:\/\/127\.0\.0\.1:(?!4170)\d+\//, route => {
-      if (new URL(route.request().url()).pathname === '/dashboard') monitorLoads += 1
+    await context.route('**/module-ui/**', route => {
+      if (new URL(route.request().url()).pathname === '/module-ui/monitor/dashboard') monitorLoads += 1
       return route.fulfill({ contentType: 'text/html', body: '<title>Module fixture</title>' })
     })
 
@@ -429,7 +429,7 @@ test('platform Inference configuration entry opens with all three management rea
     businessRequests.push(pathname)
     return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
   })
-  await page.route(/^http:\/\/127\.0\.0\.1:(?!4170)\d+\//, route =>
+  await page.route('**/module-ui/**', route =>
     route.fulfill({ contentType: 'text/html', body: '<title>Module fixture</title>' }))
   await page.goto('/inference/settings/models')
   await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/settings\/models$/)

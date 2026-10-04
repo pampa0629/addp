@@ -16,11 +16,13 @@
 
 Console 的公开路由与模块前端的加载地址必须可区分，不能让同一 Origin 的同一路径同时指向 Console 和独立模块：
 
-- 开发环境由 Console 端口独占 `/{module}{moduleFullPath}`，模块从各自的前端端口加载；Console 不得把自己的公开路由代理给模块。
-- 生产单入口下，Console 公开地址仍为 `/{module}{moduleFullPath}`；iframe 加载地址统一为 `/module-ui/{frontend}{moduleFullPath}`，静态资源位于 `/module-ui/{frontend}/`。`frontend` 是实际模块前端名称，例如 Console 的 `modeling` 对应 `model` 前端。顶层 Console 路由不得转发给 iframe 模块。
+- 开发和生产环境由 Console origin 独占 `/{module}{moduleFullPath}`；Console 不得把自己的公开路由代理给模块。
+- iframe 加载地址与独立模块正式入口统一为 Console 同 origin 的 `/module-ui/{frontend}{moduleFullPath}`，静态资源位于 `/module-ui/{frontend}/`。`frontend` 是实际模块前端名称，例如 Console 的 `modeling` 对应 `model` 前端。顶层 Console 路由不得转发给 iframe 模块。独立模块入口直接渲染模块界面，不加载 Console 外壳。
 - 生产路由只维护 `nginx/nginx.conf` 一份配置；Nginx 镜像与部署包使用同一份文件，避免模块加载路径分叉。
 - 已有的 Swagger 文档精确地址（例如 `/ontology/swagger/doc.json`、`/catalog/swagger/doc.json`）只用于文档代理，不承担模块页面路由。
-- 独立开发地址使用各模块自己的前端端口与开发基路径。Workbench 使用 `/module-ui/workbench{moduleFullPath}`，Ontology 使用 `/ontology{moduleFullPath}`；其余模块使用各自前端端口根路径。Workbench 的开发与生产静态资源均位于 `/module-ui/workbench/`，开发环境由 Console 在该路径代理 Workbench 资源，使 Console 同 origin 的 `/data-apps/` 运行入口能加载同一前端。`/data-apps/` 和 `/portal/` 是独立运行入口，不占用 Console 模块管理路由。
+- 各模块开发与生产使用同一个静态资源基路径。开发环境由 Console Vite 统一代理模块 HTML、静态资源和 HMR WebSocket，保持浏览器加载地址同源。直接打开模块开发端口的顶层页面必须在执行脚本前跳转到正式入口，保留模块内 path、query 和 fragment；开发端口不是公开入口，不保留旧基路径兼容分支。
+- `/data-apps/` 和 `/portal/` 是独立运行入口，不占用 Console 模块管理路由。Workbench 的静态资源位于 `/module-ui/workbench/`，Console 将 `/data-apps/` 请求转交同一 Workbench 前端。
+- 确定性测试可以通过 Vite CLI `--base` 指定测试夹具路径，并使用隔离端口；此路径只属于测试夹具，不是第二条产品访问路线。同源入口回归必须使用正式基路径验证重定向、模块加载和多页面刷新协调。
 
 ## 三、必须进入 URL 的状态
 

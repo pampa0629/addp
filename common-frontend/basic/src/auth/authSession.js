@@ -211,8 +211,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
     if (!message || message.sender === instanceID) return
     if (message.type === 'token' && message.token) {
       publishToken(message.token, message.expiresAt, 'broadcast', false)
-      tokenRequestResolvers.forEach((resolve) => resolve(message.token))
-      tokenRequestResolvers.clear()
+      tokenRequestResolvers.forEach((resolve) => resolve(message.token, Number(message.expiresAt || 0)))
       return
     }
     if (message.type === 'context_changed' && message.token) {
@@ -287,7 +286,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
     return token
   }
 
-  function requestPeerToken(timeoutMs = 150) {
+  function requestPeerToken(timeoutMs = 150, newerThan = null, differentFrom = null) {
     if (!channel) return Promise.resolve(null)
     const requestID = randomID()
     return new Promise((resolve) => {
@@ -295,8 +294,10 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
         tokenRequestResolvers.delete(requestID)
         resolve(null)
       }, timeoutMs)
-      tokenRequestResolvers.set(requestID, (token) => {
+      tokenRequestResolvers.set(requestID, (token, expiresAt) => {
+        if (newerThan !== null && (expiresAt <= newerThan || token === differentFrom)) return
         clearTimeout(timer)
+        tokenRequestResolvers.delete(requestID)
         resolve(token)
       })
       broadcast({ type: 'token-request', requestId: requestID })
@@ -329,14 +330,21 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
   async function refreshAccessToken({ force = false } = {}) {
     if (isEmbedded()) return requestParentToken({ forceRefresh: force })
     if (refreshPromise) return refreshPromise
+    const observedToken = runtimeToken
     const observedExpiresAt = runtimeExpiresAt
+    const hasUpdatedToken = () => runtimeToken !== observedToken && runtimeExpiresAt > observedExpiresAt && isUsableToken()
     refreshPromise = withRefreshLock(instanceID, async () => {
       if (!force && isUsableToken()) return runtimeToken
-      if (runtimeExpiresAt > observedExpiresAt && isUsableToken()) return runtimeToken
+      if (hasUpdatedToken()) return runtimeToken
 
       if (!force) {
         const peerToken = await requestPeerToken(100)
         if (peerToken && isUsableToken()) return peerToken
+      } else if (observedExpiresAt > 0) {
+        // Web Lock release can arrive before the prior owner's token broadcast.
+        // Only a token newer than this refresh attempt can satisfy a forced refresh.
+        await requestPeerToken(100, observedExpiresAt, observedToken)
+        if (hasUpdatedToken()) return runtimeToken
       }
       if (typeof refresh !== 'function') throw new Error('auth_refresh_not_configured')
 

@@ -1,3 +1,4 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -6,7 +7,7 @@ import { resolve } from 'path'
 const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
 const OUT_BASE = process.env.OUT_DIR
 
-export default defineConfig(withFrontendTestIsolation('system', {
+export default defineConfig(withModuleFrontend('system', withFrontendTestIsolation('system', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -26,10 +27,6 @@ export default defineConfig(withFrontendTestIsolation('system', {
   server: {
     port: Number(process.env.SYSTEM_FE_PORT || 5173),
     strictPort: true, // 端口被占用时报错，不自动切换
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost'
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -51,7 +48,6 @@ export default defineConfig(withFrontendTestIsolation('system', {
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/system/',  // 开发模式用 /，生产模式用 /module-ui/system/
   build: {
     outDir: resolve(__dirname, OUT_BASE ? `${OUT_BASE}/${BUILD_TYPE}/frontend/system` : 'dist'),
     sourcemap: BUILD_TYPE === 'debug',
@@ -67,4 +63,4 @@ export default defineConfig(withFrontendTestIsolation('system', {
       }
     }
   }
-}))
+})))

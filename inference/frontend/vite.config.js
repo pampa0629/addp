@@ -1,8 +1,9 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-export default defineConfig({
+export default defineConfig(withModuleFrontend('inference', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -23,5 +24,4 @@ export default defineConfig({
     },
     fs: { allow: ['..'] }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/inference/'
-})
+}))

@@ -1,3 +1,4 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -6,7 +7,7 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import path from 'path'
 import { resolve } from 'path'
 
-export default defineConfig(withFrontendTestIsolation('quality', {
+export default defineConfig(withModuleFrontend('quality', withFrontendTestIsolation('quality', {
   plugins: [
     vue(),
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })
@@ -29,12 +30,6 @@ export default defineConfig(withFrontendTestIsolation('quality', {
   server: {
     port: Number(process.env.QUALITY_FE_PORT || 5183),
     strictPort: true,
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.QUALITY_FE_PORT || 5183),
-      clientPort: Number(process.env.QUALITY_FE_PORT || 5183)
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -49,7 +44,6 @@ export default defineConfig(withFrontendTestIsolation('quality', {
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/quality/',
   build: {
     rollupOptions: {
       output: {
@@ -65,4 +59,4 @@ export default defineConfig(withFrontendTestIsolation('quality', {
       }
     }
   }
-}))
+})))

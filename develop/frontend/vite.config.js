@@ -1,10 +1,11 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
 
-export default defineConfig(withFrontendTestIsolation('develop', {
+export default defineConfig(withModuleFrontend('develop', withFrontendTestIsolation('develop', {
   plugins: [
     vue()
   ],
@@ -46,12 +47,6 @@ export default defineConfig(withFrontendTestIsolation('develop', {
     port: Number(process.env.DEVELOP_FE_PORT || 5178),
     strictPort: true,
     host: '0.0.0.0',
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.DEVELOP_FE_PORT || 5178),
-      clientPort: Number(process.env.DEVELOP_FE_PORT || 5178)
-    },
     fs: {
       allow: ['..']
     },
@@ -64,5 +59,4 @@ export default defineConfig(withFrontendTestIsolation('develop', {
     }
   },
 
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/develop/'
-}))
+})))

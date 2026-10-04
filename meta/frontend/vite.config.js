@@ -1,10 +1,10 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-export default defineConfig({
+export default defineConfig(withModuleFrontend('meta', {
   plugins: [vue()],
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/meta/',  // 开发模式用 /，生产模式用 /module-ui/meta/
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -18,12 +18,6 @@ export default defineConfig({
   server: {
     port: Number(process.env.META_FE_PORT || 5175),
     strictPort: true, // 端口被占用时报错，不自动切换
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.META_FE_PORT || 5175),
-      clientPort: Number(process.env.META_FE_PORT || 5175)
-    },
     proxy: {
       '/api': {
         target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
@@ -37,4 +31,4 @@ export default defineConfig({
       ]
     }
   }
-})
+}))

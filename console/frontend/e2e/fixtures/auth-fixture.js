@@ -19,7 +19,9 @@ function showResult(nextStatus, token = '', error = '') {
   errorOutput.textContent = error
 }
 
-if (role === 'parent') {
+if (role === 'shared-top-level') {
+  await import('@common-ui/../tests/fixtures/browserSession.js')
+} else if (role === 'parent') {
   const requestIDs = []
   window.addEventListener('message', (event) => {
     const message = event.data

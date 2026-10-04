@@ -1,9 +1,10 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-export default defineConfig(withFrontendTestIsolation('service', {
+export default defineConfig(withModuleFrontend('service', withFrontendTestIsolation('service', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -36,5 +37,4 @@ export default defineConfig(withFrontendTestIsolation('service', {
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/service/'
-}))
+})))

@@ -31,15 +31,15 @@ describe('Console public routes and iframe entry ownership', () => {
   const nginx = read('nginx/nginx.conf')
 
   it('uses a trailing slash for module roots so they match Nginx locations', () => {
-    expect(consoleConfig).toContain('`${window.location.origin}/${prodPath}/`')
+    expect(consoleConfig).toContain('`${window.location.origin}/module-ui/${module}/`')
   })
 
   for (const [publicModule, frontend] of Object.entries(consoleRoutes)) {
     it(`${publicModule} uses the same private entry in Console, Vite and Nginx`, () => {
       const vite = read(`${frontend}/frontend/vite.config.js`)
       const router = read(`${frontend}/frontend/src/router/index.js`)
-      expect(consoleConfig).toMatch(new RegExp(`\\b${publicModule}:\\s+_url\\('${frontend}',[^\\n]*'module-ui/${frontend}/?'`))
-      expect(vite).toContain(`'/module-ui/${frontend}/'`)
+      expect(consoleConfig).toMatch(new RegExp(`\\b${publicModule}:\\s+_url\\('${frontend}'\\)`))
+      expect(vite).toContain(`withModuleFrontend('${frontend}',`)
       expect(nginx).toContain(`location /module-ui/${frontend}/ {`)
       expect(nginx).not.toContain(`location /${frontend}/ {`)
       expect(router).toContain('import.meta.env.BASE_URL')
@@ -54,10 +54,8 @@ describe('Console public routes and iframe entry ownership', () => {
 
   it('proxies the Workbench runtime and its Vite resources without taking Console public routes', () => {
     const vite = read('console/frontend/vite.config.js')
-    expect(consoleConfig).toContain("_url('workbench', 5190, 'module-ui/workbench', '/module-ui/workbench')")
-    expect(vite).toContain("'/data-apps': {")
-    expect(vite).toContain('`/module-ui/workbench${path}`')
-    expect(vite).toContain("'/module-ui/workbench': {")
+    expect(consoleConfig).toContain("_url('workbench')")
+    expect(vite).toContain('...createModuleFrontendProxies()')
     expect(vite).not.toContain("'/workbench': {")
   })
 

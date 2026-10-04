@@ -173,7 +173,12 @@ test('resource selection recovers from an expired token without leaving the unsa
     if (attempts.length === 1) return fulfillJSON(route, { error: 'expired' }, 401);
     return route.fallback();
   });
+  const recoveredEngines = page.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/v1/meta/engines' && response.status() === 200);
   await editor.getByRole('button', { name: '添加数据表', exact: true }).click();
+  // The picker mounts with a request that first recovers authentication. Open
+  // its options after that response rather than racing the loading dropdown.
+  await recoveredEngines;
   await editor.locator('.resource-tree-picker .el-select').click();
   const engine = page.getByRole('option', { name: '业务 PostgreSQL' });
   await expect(engine).toBeVisible();

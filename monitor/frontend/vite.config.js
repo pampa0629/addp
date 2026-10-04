@@ -1,10 +1,11 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { defineConfig } from 'vite'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import { resolve } from 'path'
 
-export default defineConfig(withFrontendTestIsolation('monitor', {
+export default defineConfig(withModuleFrontend('monitor', withFrontendTestIsolation('monitor', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -22,12 +23,6 @@ export default defineConfig(withFrontendTestIsolation('monitor', {
   server: {
     port: Number(process.env.MONITOR_FE_PORT || 5179),
     strictPort: true,
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.MONITOR_FE_PORT || 5179),
-      clientPort: Number(process.env.MONITOR_FE_PORT || 5179)
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -42,5 +37,4 @@ export default defineConfig(withFrontendTestIsolation('monitor', {
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/monitor/'
-}))
+})))

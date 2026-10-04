@@ -10,14 +10,15 @@
 4. Access Token 到期前由 Browser AuthSession 主动刷新；业务请求遇到 401 时只兜底刷新并重试一次。
 5. 同源顶层页面通过 Web Locks、BroadcastChannel 和无 Token 的短期锁租约协调刷新与登出。
 6. Console 是 iframe 集成模式下唯一刷新协调者；模块 iframe 通过可信 `postMessage` 获取 Access Token。
-7. Portal 新窗口使用 Console 当前 origin 的 `/portal/` 正式入口，与 Console 共享顶层页面刷新锁和 Token 广播。
+7. 模块独立页面和 iframe 均使用 Console 当前 origin 的 `/module-ui/{frontend}/` 正式入口；Portal 使用 `/portal/`，Workbench Data Application 使用 `/data-apps/`。同一浏览器配置的同源顶层页面共享刷新锁和 Token 广播，独立模块仍显示自己的界面。
+8. 模块 Vite 配置使用 `withModuleFrontend()`，Console 使用 `createModuleFrontendProxies()`；开发端口顶层页面在脚本加载前跳转，模块 HTML、资源及 HMR 均经 Console 代理。测试夹具可以显式覆盖 `--base`，入口回归使用正式路径。
 
 禁止：
 
 - 在 localStorage、sessionStorage、IndexedDB 或 URL 中持久化 Access Token；
 - 从路由 query 读取 Token；
 - 在 Console iframe URL 或新窗口 URL 中拼接 `?token=`；
-- 从 Console 打开 Portal 前端开发端口，形成无法协调的第二个顶层认证 origin；
+- 将模块前端开发端口作为公开入口，形成无法协调的第二个顶层认证 origin；
 - 为旧认证方式保留兼容分支。
 
 ## 二、Auth Store

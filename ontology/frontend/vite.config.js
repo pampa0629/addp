@@ -1,3 +1,4 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -6,8 +7,7 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'node:path'
 
 const testing = process.env.ADDP_E2E === '1'
-export default defineConfig(withFrontendTestIsolation('ontology', {
-  base: process.env.NODE_ENV === 'development' ? '/ontology/' : '/module-ui/ontology/',
+export default defineConfig(withModuleFrontend('ontology', withFrontendTestIsolation('ontology', {
   plugins: [
     vue(),
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })
@@ -38,4 +38,4 @@ export default defineConfig(withFrontendTestIsolation('ontology', {
       ? {}
       : { '/api': { target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, changeOrigin: true } }
   }
-}))
+})))

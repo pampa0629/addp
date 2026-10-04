@@ -204,12 +204,24 @@ Console Browser AuthSession
 - iframe 等待认证期间保持初始化状态，不跳转到模块登录页；
 - 模块作为顶层页面独立运行时，由自身 Browser AuthSession 通过 Cookie 恢复会话。
 
-独立顶层产品界面的正式入口必须与 Console 保持同 origin。当前包括 Portal 的 `/portal/...` 和
-Workbench Data Application 的 `/data-apps/:application_id`：生产环境由 Nginx 提供，开发环境由
-Console Vite 将同一路径反向代理到对应 owner 前端。Console 只能打开当前 origin 下的正式路径，
-不得打开 owner 前端开发端口形成第二个顶层认证 origin。这样所有顶层入口继续使用同一个 Web Lock、
+所有模块的独立顶层界面与 Console iframe 都使用 Console 同 origin 的 `/module-ui/{frontend}/...`，
+Portal 使用 `/portal/...`，Workbench Data Application 使用 `/data-apps/:application_id`。
+独立界面仍由对应模块渲染，不要求套用 Console 外壳。生产环境由 Nginx 提供，开发环境由
+Console Vite 将正式路径反向代理到对应 owner 前端。直接在浏览器打开模块开发端口时，开发服务器
+必须在页面脚本执行前跳转到 Console 同 origin 的正式入口，并保留模块内 path、query 和 fragment；
+开发端口只承担内部前端服务，不形成第二个顶层认证 origin。这样所有顶层入口继续使用同一个 Web Lock、
 BroadcastChannel 和 Refresh Token Family 协调域，不需要在新窗口 URL、`window.opener` 或持久化
 存储中传递 Access Token。
+
+此协调范围仅限同一浏览器配置下的同 origin 页面；不同浏览器、设备和隐私窗口拥有独立会话。
+模块独立部署于其他站点时，在该站点独立登录，不跨 origin 传递或共享 Token。
+开发入口必须复用 `common-frontend` 的统一 Vite 配置能力；不得通过放宽 Refresh Token 重用检测、
+增加旧 Token 宽限期或业务模块自行刷新来补偿跨 origin 的入口设计。
+
+获取 Web Lock 与接收 BroadcastChannel 消息属于不同的异步步骤。强制刷新获取锁后，应短暂等待
+本次尝试开始之后产生的更新 Token；只有其值不同于本次开始时观察到的 Token、过期时间更晚且
+仍可用，才可以合并此次刷新。旧的未过期 Token 或仅重报
+其过期时间的消息不能结束该等待或绕过 System Refresh API。
 
 旧的 `?token=` iframe 参数和路由守卫 query Token 解析必须删除。
 
@@ -512,7 +524,7 @@ Console 与 iframe 之间的 `addp-auth/v1` 协议必须保留刷新结果语义
 ## 八、部署与 Cookie 边界
 
 - 生产环境推荐统一 origin，通过 Nginx/Gateway 访问 Console、模块前端和 `/api`。
-- 开发环境普通 iframe 模块使用各自端口；Portal `/portal/...` 与 Workbench Data Application `/data-apps/...` 正式入口仍由 Console origin 代理提供，避免一个 Browser Family 被多个顶层 origin 同时轮换。
+- 开发环境 iframe 与独立模块均由 Console origin 代理 `/module-ui/{frontend}/...`；Portal `/portal/...` 与 Workbench Data Application `/data-apps/...` 同样保持同源。直接打开模块开发端口先跳转，避免一个 Browser Family 被多个顶层 origin 同时轮换。
 - System CORS 必须允许已分配的开发 origin，并允许 credentials，供模块独立调试使用。
 - Cookie 不按端口隔离，但按 hostname 隔离；`localhost` 与 `127.0.0.1` 不共享会话。
 - 不同域名、浏览器 Profile、设备和无痕会话默认独立登录。

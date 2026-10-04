@@ -15,7 +15,7 @@ export default defineConfig({
     viewport: { width: 1100, height: 780 }
   },
   webServer: {
-    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4183 --strictPort',
+    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4183 --strictPort --base /',
     url: 'http://127.0.0.1:4183',
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },

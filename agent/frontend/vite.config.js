@@ -1,3 +1,4 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
@@ -5,7 +6,7 @@ import { resolve } from 'path'
 const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
 const OUT_BASE = process.env.OUT_DIR
 
-export default defineConfig({
+export default defineConfig(withModuleFrontend('agent', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -31,12 +32,6 @@ export default defineConfig({
   server: {
     port: Number(process.env.AGENT_FE_PORT || 5186),
     strictPort: true,
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.AGENT_FE_PORT || 5186),
-      clientPort: Number(process.env.AGENT_FE_PORT || 5186)
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -50,11 +45,10 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/agent/',
   build: {
     outDir: resolve(__dirname, OUT_BASE ? `${OUT_BASE}/${BUILD_TYPE}/frontend/agent` : 'dist'),
     sourcemap: BUILD_TYPE === 'debug',
     minify: BUILD_TYPE !== 'debug',
     emptyOutDir: true,
   }
-})
+}))

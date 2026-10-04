@@ -19,7 +19,7 @@ export default defineConfig({
   },
   expect: { timeout: 10_000 },
   webServer: {
-    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4182 --strictPort',
+    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4182 --strictPort --base /',
     url: 'http://127.0.0.1:4182',
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },

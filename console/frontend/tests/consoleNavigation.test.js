@@ -258,7 +258,7 @@ describe('Console navigation bridge', () => {
     const viteSource = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8')
     expect(viteSource).toContain("'/module-health/workbench'")
     expect(viteSource).toContain("'/swagger-spec/workbench'")
-    expect(viteSource).toContain("'/data-apps'")
+    expect(viteSource).toContain('createModuleFrontendProxies()')
   })
 
   it('exposes the consolidated Security information architecture', () => {

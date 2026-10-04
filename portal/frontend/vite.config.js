@@ -1,10 +1,11 @@
+import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import { resolve } from 'path'
 
-export default defineConfig(withFrontendTestIsolation('portal', {
+export default defineConfig(withModuleFrontend('portal', withFrontendTestIsolation('portal', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -21,12 +22,6 @@ export default defineConfig(withFrontendTestIsolation('portal', {
   server: {
     port: Number(process.env.PORTAL_FE_PORT || 5185),
     strictPort: true,
-    hmr: {
-      protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.PORTAL_FE_PORT || 5185),
-      clientPort: Number(process.env.PORTAL_FE_PORT || 5185)
-    },
     fs: {
       allow: [
         resolve(__dirname, '..'),
@@ -41,5 +36,4 @@ export default defineConfig(withFrontendTestIsolation('portal', {
       }
     }
   },
-  base: '/portal/'
-}))
+})))

@@ -1,5 +1,69 @@
 import { expect, test } from '@playwright/test'
 
+test('direct module ports redirect before refresh and all top-level pages share strict cookie rotation', async ({ context, page }) => {
+  let generation = 0
+  let refreshes = 0
+  let logouts = 0
+  let reuseDetected = false
+  let releaseRefresh
+  const concurrentRefresh = new Promise(resolve => { releaseRefresh = resolve })
+  const refreshOrigins = []
+  await context.addCookies([{ name: 'fixture_refresh', value: 'refresh-0', url: 'http://127.0.0.1:4170', httpOnly: true, sameSite: 'Lax' }])
+  await context.route('**/e2e/auth-api/**', async route => {
+    if (new URL(route.request().url()).pathname.endsWith('/logout')) {
+      logouts++
+      await route.fulfill({ json: {}, headers: { 'set-cookie': 'fixture_refresh=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' } })
+      return
+    }
+    refreshes++
+    refreshOrigins.push(new URL(route.request().url()).origin)
+    const cookie = await route.request().headerValue('cookie')
+    if (!cookie?.split('; ').includes(`fixture_refresh=refresh-${generation}`)) {
+      reuseDetected = true
+      await route.fulfill({ status: 401, json: { message: 'refresh_token_reuse_detected' } })
+      return
+    }
+    generation++
+    // Release only after both real page handlers have entered refresh, avoiding
+    // assumptions about background-tab actionability or machine load.
+    if (generation === 2) await concurrentRefresh
+    await route.fulfill({ json: { access_token: `access-${generation}`, expires_in: 300 },
+      headers: { 'set-cookie': `fixture_refresh=refresh-${generation}; Path=/; HttpOnly; SameSite=Lax` } })
+  })
+  await page.goto('/e2e/fixtures/auth-fixture.html?role=shared-top-level&iframe=1')
+  await expect(page.getByTestId('status')).toHaveText('authenticated')
+  const embedded = page.frameLocator('iframe[title="shared-module-auth"]')
+  await expect(embedded.getByTestId('token')).toHaveText('access-1')
+
+  const independent = await context.newPage()
+  const initialRefreshes = refreshes
+  await independent.goto('http://127.0.0.1:4173/module-ui/system/e2e/fixtures/browser-session.html?tab=details#section')
+  await expect(independent).toHaveURL('http://127.0.0.1:4170/module-ui/system/e2e/fixtures/browser-session.html?tab=details#section')
+  await expect(independent.getByTestId('status')).toHaveText('authenticated')
+  await expect(independent.getByTestId('token')).toHaveText('access-1')
+  expect(refreshes).toBe(initialRefreshes)
+
+  await Promise.all([page.getByTestId('refresh').click(), independent.getByTestId('refresh').click()])
+  await expect(page.getByTestId('status')).toHaveText('refreshing')
+  await expect(independent.getByTestId('status')).toHaveText('refreshing')
+  releaseRefresh()
+  await expect(page.getByTestId('token')).toHaveText('access-2')
+  await expect(independent.getByTestId('token')).toHaveText('access-2')
+  await expect(embedded.getByTestId('token')).toHaveText('access-2')
+  expect(refreshes).toBe(2)
+  expect(reuseDetected).toBe(false)
+  expect(new Set(refreshOrigins)).toEqual(new Set(['http://127.0.0.1:4170']))
+  await independent.reload()
+  await expect(independent.getByTestId('token')).toHaveText('access-2')
+  expect(refreshes).toBe(2)
+  await independent.getByTestId('logout').click()
+  await expect(page.getByTestId('token')).toBeEmpty()
+  await expect(independent.getByTestId('token')).toBeEmpty()
+  await expect(embedded.getByTestId('token')).toBeEmpty()
+  expect(logouts).toBe(1)
+  expect((await context.cookies()).some(cookie => cookie.name === 'fixture_refresh')).toBe(false)
+})
+
 test('resource picker and module 401s share one parent refresh in an iframe', async ({ page }) => {
   const requests = []
   await page.route('**/e2e/resource-api/**', async route => {
