@@ -12,6 +12,44 @@ const TIDB_ENGINE = {
 const ROOT_LOCATOR = 'addp://engine/25/path/?type=server&node_id=377'
 const BUSINESS_LOCATOR = 'addp://engine/25/path/business?type=database&node_id=378'
 
+test('keeps long resource names and refresh actions inside a scrolling tree panel', async ({ page }) => {
+  const labels = Array.from({ length: 60 }, (_, index) => `resource_${index}_with_a_long_name_that_must_not_push_the_refresh_action_outside_the_panel`)
+  const backend = await installMockBackend(page, { labels })
+  await page.setViewportSize({ width: 1280, height: 560 })
+  await page.goto('/data-explorer')
+  await treeNodeContent(page, TIDB_ENGINE.name).click()
+  await treeNodeContent(page, 'business').click()
+
+  const action = treeNodeContent(page, labels[45]).getByTitle('深度刷新：重建当前数据项的完整元数据')
+  await action.scrollIntoViewIfNeeded()
+  const geometry = await action.evaluate(element => {
+    const tree = element.closest('.el-scrollbar__wrap')
+    const panel = element.closest('.split-container').querySelector(':scope > .tree-container')
+    const rect = element.getBoundingClientRect()
+    const treeRect = tree.getBoundingClientRect()
+    const panelRect = panel.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+    return {
+      treeFitsPanel: treeRect.bottom <= panelRect.bottom && treeRect.right <= panelRect.right,
+      panelFitsViewport: panelRect.bottom <= innerHeight,
+      actionFitsPanel: rect.right <= panelRect.right && rect.bottom <= panelRect.bottom,
+      actionReceivesClick: element.contains(hit),
+      treeScrolls: tree.scrollHeight > tree.clientHeight
+    }
+  })
+  expect(geometry).toEqual({
+    treeFitsPanel: true,
+    panelFitsViewport: true,
+    actionFitsPanel: true,
+    actionReceivesClick: true,
+    treeScrolls: true
+  })
+  await action.click()
+  await expect.poll(() => backend.itemRefreshRequests).toEqual([
+    'addp://engine/25/path/business/' + labels[45] + '?type=table&item_id=946'
+  ])
+})
+
 test('loads and expands an engine catalog root with the first arrow click', async ({ page }) => {
   await installMockBackend(page)
   await page.goto('/data-explorer')
@@ -105,6 +143,7 @@ test('keeps real server errors visible with their returned explanation', async (
 async function installMockBackend(page, options = {}) {
   const state = {
     refreshRequests: [],
+    itemRefreshRequests: [],
     childRequests: [],
     executionStatus: options.executionStatus || 'success'
   }
@@ -135,6 +174,10 @@ async function installMockBackend(page, options = {}) {
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}`) {
       return fulfillJSON(route, shallowTree())
     }
+    if (path === `/api/v1/manager/engines/${TIDB_ENGINE.id}/items/refresh` && request.method() === 'POST') {
+      state.itemRefreshRequests.push(url.searchParams.get('locator') || '')
+      return fulfillJSON(route, {})
+    }
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/refresh` && request.method() === 'POST') {
       state.refreshRequests.push(url.searchParams.get('locator') || '')
       if (options.refreshError) return fulfillJSON(route, options.refreshError, 500)
@@ -164,7 +207,7 @@ async function installMockBackend(page, options = {}) {
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/node`) {
       const locator = url.searchParams.get('locator') || ''
       state.childRequests.push(locator)
-      return fulfillJSON(route, locator === BUSINESS_LOCATOR ? businessNode(true) : shallowTree())
+      return fulfillJSON(route, locator === BUSINESS_LOCATOR ? businessNode(true, options.labels) : shallowTree())
     }
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/ancestors`) {
       return fulfillJSON(route, { ancestors: [{ ...shallowTree(), children: [] }], target_locator: ROOT_LOCATOR })
@@ -187,7 +230,7 @@ function shallowTree() {
   }
 }
 
-function businessNode(withChildren) {
+function businessNode(withChildren, labels = ['addp_engine_probe', 'customers', 'orders']) {
   return {
     id: BUSINESS_LOCATOR,
     locator: BUSINESS_LOCATOR,
@@ -196,7 +239,7 @@ function businessNode(withChildren) {
     hasChildren: true,
     metadata: { item_count: 3 },
     children: withChildren
-      ? ['addp_engine_probe', 'customers', 'orders'].map((label, index) => ({
+      ? labels.map((label, index) => ({
           id: `addp://engine/25/path/business/${label}?type=table&item_id=${901 + index}`,
           locator: `addp://engine/25/path/business/${label}?type=table&item_id=${901 + index}`,
           label,

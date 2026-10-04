@@ -49,110 +49,111 @@
       </slot>
 
       <!-- 树形结构 -->
-      <el-tree
-        v-else
-        ref="treeRef"
-        :data="filteredTreeData"
-        :props="treeProps"
-        node-key="id"
-        :highlight-current="true"
-        :expand-on-click-node="expandOnClickNode"
-        :default-expanded-keys="computedExpandedKeys"
-        :current-node-key="currentNodeKey"
-        :filter-node-method="currentFilterMethod"
-        :lazy="lazy"
-        :load="load"
-        :node-class-name="resolveNodeClassName"
-        @click.capture="handleUnloadedExpandClick"
-        @node-click="handleNodeClick"
-        @node-expand="handleNodeExpand"
-        @node-collapse="handleNodeCollapse"
-        @current-change="handleCurrentChange"
-      >
-        <template #default="{ data, node }">
-          <slot name="node" :node="node" :data="data">
-            <span
-              class="tree-node-wrapper"
-              :class="{ 'resource-tree-unloaded-children-inline': isUnloadedExpandable(data) }"
-              @dblclick="enableDblclickToggle && !expandOnClickNode ? handleNodeDblclick($event, node, data) : null"
-            >
-              <span class="tree-node" :class="[data.type, { highlight: data.highlight }]">
-                <span class="node-main">
-                  <slot name="node-icon" :node="node" :data="data">
-                    <el-icon v-if="data.type === 'schema' || data.type === 'database'">
-                      <OfficeBuilding />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'bucket'">
-                      <Box />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'directory'">
-                      <FolderOpened />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'root' || data.type === 'server' || data.type === 'service'">
-                      <FolderOpened />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'prefix'">
-                      <Folder />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'table'">
-                      <Grid />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'label'">
-                      <Collection />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'relationship'">
-                      <Connection />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'object'">
-                      <Document />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'task'">
-                      <Files />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'folder' || data.type === 'dir'">
-                      <Folder />
-                    </el-icon>
-                    <el-icon v-else-if="data.type === 'file'">
-                      <Document />
-                    </el-icon>
-                    <!-- 默认图标 -->
-                    <el-icon v-else>
-                      <Document />
-                    </el-icon>
-                  </slot>
-                  <slot name="node-label" :node="node" :data="data">
-                    <span class="label" :title="data.label">
-                      {{ data.label }}
-                    </span>
-                  </slot>
-                </span>
-                <span v-if="visibleNodeActions(data).length" class="node-actions">
-                  <slot name="node-actions" :node="node" :data="data" :actions="visibleNodeActions(data)">
-                    <span
-                      v-for="action in visibleNodeActions(data)"
-                      :key="action.name"
-                      class="node-action"
-                      :class="{
-                        disabled: isActionDisabled(action, data),
-                        loading: isActionLoading(action, data)
-                      }"
-                      :title="action.tooltip"
-                      @click.stop="handleNodeAction(action, data)"
-                    >
-                      <el-icon v-if="isActionLoading(action, data)">
-                        <Loading />
+      <el-scrollbar v-else class="resource-tree-scrollbar">
+        <el-tree
+          ref="treeRef"
+          :data="filteredTreeData"
+          :props="treeProps"
+          node-key="id"
+          :highlight-current="true"
+          :expand-on-click-node="expandOnClickNode"
+          :default-expanded-keys="computedExpandedKeys"
+          :current-node-key="currentNodeKey"
+          :filter-node-method="currentFilterMethod"
+          :lazy="lazy"
+          :load="load"
+          :node-class-name="resolveNodeClassName"
+          @click.capture="handleUnloadedExpandClick"
+          @node-click="handleNodeClick"
+          @node-expand="handleNodeExpand"
+          @node-collapse="handleNodeCollapse"
+          @current-change="handleCurrentChange"
+        >
+          <template #default="{ data, node }">
+            <slot name="node" :node="node" :data="data">
+              <span
+                class="tree-node-wrapper"
+                :class="{ 'resource-tree-unloaded-children-inline': isUnloadedExpandable(data) }"
+                @dblclick="enableDblclickToggle && !expandOnClickNode ? handleNodeDblclick($event, node, data) : null"
+              >
+                <span class="tree-node" :class="[data.type, { highlight: data.highlight }]">
+                  <span class="node-main">
+                    <slot name="node-icon" :node="node" :data="data">
+                      <el-icon v-if="data.type === 'schema' || data.type === 'database'">
+                        <OfficeBuilding />
                       </el-icon>
-                      <el-icon v-else :style="{ color: action.color }">
-                        <component :is="actionIconMap[action.icon]" />
+                      <el-icon v-else-if="data.type === 'bucket'">
+                        <Box />
                       </el-icon>
-                    </span>
-                  </slot>
+                      <el-icon v-else-if="data.type === 'directory'">
+                        <FolderOpened />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'root' || data.type === 'server' || data.type === 'service'">
+                        <FolderOpened />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'prefix'">
+                        <Folder />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'table'">
+                        <Grid />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'label'">
+                        <Collection />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'relationship'">
+                        <Connection />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'object'">
+                        <Document />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'task'">
+                        <Files />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'folder' || data.type === 'dir'">
+                        <Folder />
+                      </el-icon>
+                      <el-icon v-else-if="data.type === 'file'">
+                        <Document />
+                      </el-icon>
+                      <!-- 默认图标 -->
+                      <el-icon v-else>
+                        <Document />
+                      </el-icon>
+                    </slot>
+                    <slot name="node-label" :node="node" :data="data">
+                      <span class="label" :title="data.label">
+                        {{ data.label }}
+                      </span>
+                    </slot>
+                  </span>
+                  <span v-if="visibleNodeActions(data).length" class="node-actions">
+                    <slot name="node-actions" :node="node" :data="data" :actions="visibleNodeActions(data)">
+                      <span
+                        v-for="action in visibleNodeActions(data)"
+                        :key="action.name"
+                        class="node-action"
+                        :class="{
+                          disabled: isActionDisabled(action, data),
+                          loading: isActionLoading(action, data)
+                        }"
+                        :title="action.tooltip"
+                        @click.stop="handleNodeAction(action, data)"
+                      >
+                        <el-icon v-if="isActionLoading(action, data)">
+                          <Loading />
+                        </el-icon>
+                        <el-icon v-else :style="{ color: action.color }">
+                          <component :is="actionIconMap[action.icon]" />
+                        </el-icon>
+                      </span>
+                    </slot>
+                  </span>
                 </span>
               </span>
-            </span>
-          </slot>
-        </template>
-      </el-tree>
+            </slot>
+          </template>
+        </el-tree>
+      </el-scrollbar>
     </div>
   </el-card>
 </template>
@@ -773,12 +774,19 @@ defineExpose({
 <style scoped>
 .resource-tree {
   height: 100%;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
+.resource-tree :deep(.el-card__header) {
+  flex-shrink: 0;
+}
+
 .resource-tree :deep(.el-card__body) {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -815,6 +823,7 @@ defineExpose({
 
 .tree-container {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -825,9 +834,12 @@ defineExpose({
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-.tree-container :deep(.el-tree) {
+.resource-tree-scrollbar {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+}
+
+.tree-container :deep(.el-tree) {
   padding: 0 16px 16px;
 }
 
@@ -867,7 +879,8 @@ defineExpose({
 .tree-node-wrapper {
   display: flex;
   align-items: center;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .empty-placeholder {
@@ -879,7 +892,8 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .tree-node.highlight .label {
@@ -905,6 +919,7 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .node-action {

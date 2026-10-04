@@ -504,7 +504,10 @@ watch(() => route.query.locator, async (locator) => {
 .tree-container {
   height: 100%;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--addp-bg-primary) !important;
 }
 

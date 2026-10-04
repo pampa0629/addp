@@ -361,6 +361,7 @@ import { createAuthenticatedFetch } from '@common-ui'
 
 - **ResourceTree** - 通用资源树组件
   - 配置式节点操作（刷新、查看详情等）
+  - 宿主提供有界高度，树内部使用 Element Plus Scrollbar 滚动；长名称在行内截断，节点操作保持完整可点击，宿主不再叠加资源树滚动容器
   - 全树搜索，自动展开匹配路径，提供无匹配结果状态，清空后恢复搜索前状态
   - 智能展开状态管理
   - 双击展开/折叠交互

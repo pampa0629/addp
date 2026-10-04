@@ -484,7 +484,12 @@ defineExpose({
 
 <style scoped>
 .explorer-tree {
-  overflow: visible;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .skeleton-loader {
