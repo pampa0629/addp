@@ -903,6 +903,8 @@ watch(() => props.depth, () => { expansionAnchor = null })
 }
 
 .lineage-inspector-heading {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   display: flex;
   align-items: baseline;
@@ -934,6 +936,8 @@ watch(() => props.depth, () => { expansionAnchor = null })
 }
 
 .lineage-inspector-fields {
+  grid-column: 2;
+  grid-row: 1 / span 3;
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(120px, 1fr));
@@ -970,6 +974,11 @@ watch(() => props.depth, () => { expansionAnchor = null })
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.lineage-expand-actions,
+.lineage-field-status {
+  grid-column: 1;
+}
+
 @media (max-width: 900px) {
   .lineage-legend {
     display: none;
@@ -978,6 +987,12 @@ watch(() => props.depth, () => { expansionAnchor = null })
   .lineage-inspector {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .lineage-inspector-heading,
+  .lineage-inspector-fields {
+    grid-column: 1;
+    grid-row: auto;
   }
 }
 </style>
