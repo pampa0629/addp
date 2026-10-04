@@ -748,7 +748,7 @@ func (e *DevExecutor) executeWorkflow(
 	if len(resp.ProducedTargets) > 0 {
 		result["produced_targets"] = resp.ProducedTargets
 		outputs = workflowExecutionOutputs(resp.ProducedTargets)
-		result["meta_scan_runs"] = e.createWorkflowProducedTargetScanRuns(ctx, uint(tenantID), resp.ProducedTargets)
+		result["meta_scan_runs"] = e.createWorkflowProducedTargetScanRuns(ctx, uint(tenantID), executionID, resp.ProducedTargets)
 	}
 
 	log.Printf("🔵 [DevExecutor] executeWorkflow 结束: execution_id=%s", executionID)
@@ -860,10 +860,26 @@ func (e *DevExecutor) notifyExecutionLineage(ctx context.Context, tenantID uint,
 func (e *DevExecutor) createWorkflowProducedTargetScanRuns(
 	ctx context.Context,
 	tenantID uint,
+	executionID string,
 	targets []WorkflowProducedTarget,
 ) []map[string]interface{} {
 	if e.metaClient == nil || len(targets) == 0 {
 		return nil
+	}
+	// Freeze actual outputs before the service call: Meta verifies this durable
+	// provenance inside the transaction that creates each scan execution.
+	parent, err := e.taskExecutionRepo.GetByExecutionID(ctx, executionID, int(tenantID))
+	if err == nil && parent.Module == commonExecution.ModuleDevelop && parent.TaskType == commonExecution.TaskTypeWorkflow && parent.Status == commonExecution.ExecutionStatusRunning {
+		if parent.Metadata == nil {
+			parent.Metadata = commonModels.JSONMap{}
+		}
+		parent.Metadata["outputs"] = workflowExecutionOutputs(targets)
+		err = e.taskExecutionRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{"metadata": parent.Metadata})
+	} else if err == nil {
+		err = fmt.Errorf("workflow output provenance is unavailable")
+	}
+	if err != nil {
+		return []map[string]interface{}{{"status": "failed", "error_code": "develop.workflow.scan_provenance_unavailable"}}
 	}
 	scanRuns := make([]map[string]interface{}, 0, len(targets))
 	metaClient := e.metaClient.WithTenantID(tenantID)
@@ -871,7 +887,9 @@ func (e *DevExecutor) createWorkflowProducedTargetScanRuns(
 		if strings.TrimSpace(target.Locator) == "" || target.EngineID == 0 {
 			continue
 		}
-		run, err := metaClient.CreateManualScanRun(workflowProducedTargetScanOptions(target))
+		opts := workflowProducedTargetScanOptions(target)
+		opts.ParentExecutionID = executionID
+		run, err := metaClient.CreateManualScanRun(opts)
 		entry := map[string]interface{}{
 			"target_locator": target.Locator,
 			"engine_id":      target.EngineID,
@@ -895,7 +913,7 @@ func workflowProducedTargetScanOptions(target WorkflowProducedTarget) commonClie
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: commonExecution.TriggerTypeManual,
-		Source:      "develop.workflow.produced_target",
+		Source:      commonClient.MetaScanSourceDevelopProducedTarget,
 	}
 	if strings.EqualFold(target.Type, "file") && len(target.Path) > 0 {
 		opts.RefGroups = []commonClient.MetaScanRefGroup{{

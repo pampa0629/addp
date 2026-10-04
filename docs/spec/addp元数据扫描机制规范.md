@@ -643,3 +643,7 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 - `ref_groups` 只表示内容引用边界；同一批 Transfer 生成物不得同时用父目录 `catalog_paths` 表达。
 - 不保留 `full` / `shallow`。
 - 所有手动扫描请求统一通过 `POST /scan/run/manual` 创建 execution；调用方通过任务监控查询进度和结果，不保留同步扫描入口。
+
+### Develop 产物自动扫描来源
+
+Develop 自动扫描使用既有 `/scan/run/manual`，提交已持久化产物及 `parent_execution_id`，由 Meta 校验专用 Develop 服务身份、同租户 running workflow 父执行及精确产物范围，原子继承发起主体。它不创建 ScanTask，不复制数据执行授权，不放宽一次性扫描读取权限；具体契约见任务体系规范“Develop 产物自动扫描的执行归属”。

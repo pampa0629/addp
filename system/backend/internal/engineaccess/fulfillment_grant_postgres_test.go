@@ -188,7 +188,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			if err != nil || g == nil || !g.GrantedAt.Equal(original.GrantedAt) {
 				t.Fatalf("single connection lookup=%+v %v", g, err)
 			}
-			err = NewRepository(db).readCommittedFulfillmentHistory(ctx, func(tx *Repository) error {
+			err = NewRepository(db).readCommitted(ctx, func(tx *Repository) error {
 				return tx.db.Create(&fulfillmentGrant{RequestID: uuid.New()}).Error
 			})
 			if err == nil || !strings.Contains(err.Error(), "read-only transaction") {

@@ -413,3 +413,5 @@ Query Execution Service 在业务写入提交后，以本次冻结并经编译�
 查询和工作流编辑器统一使用共享 `useUnsavedChangesGuard`，删除原模块内路由确认与 beforeunload 实现；修改状态仍由编辑器定义。Console 导航与 standalone 导航消费同一共享保护契约。
 
 ES DSL 查询沿用普通 query 执行及 TaskProvider 契约主路径；`POST /query-preflight` 的请求校验与 Swagger 枚举必须包含 `sql`、`mql`、`cypher`、`es_dsl`，预检仍由当前 Engine Provider 判定只读子集。首版不声明参数能力，公共引用分析返回空引用集，空定义形成闭合空输入契约；任何非空参数定义或本次参数覆盖都拒绝，JSON 与受控只读子集仍由 ES Provider 校验。对应回归纳入 `make test-common-elasticsearch-unit` 和既有 Go workspace CI。
+
+工作流实际产物自动扫描必须先保存本次 execution 的 `metadata.outputs`，再用 Service Bearer 将直接父执行 UUID 传给 Meta；不得自行填写扫描发起人。Meta 原子校验来源并继承归属，提交失败只记录扫描反馈。

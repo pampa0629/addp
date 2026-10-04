@@ -27,11 +27,14 @@ type MetaClient struct {
 	tenantID           *uint
 }
 
+const MetaScanSourceDevelopProducedTarget = "develop.workflow.produced_target"
+
 type MetaScanOptions struct {
-	EngineID uint
-	NodeID   uint
-	ItemID   uint
-	Targets  []string
+	ParentExecutionID string
+	EngineID          uint
+	NodeID            uint
+	ItemID            uint
+	Targets           []string
 
 	CatalogPaths []string
 	RefGroups    []MetaScanRefGroup
@@ -644,6 +647,9 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/run/manual", c.baseURL)
 
 	scanReq := map[string]interface{}{}
+	if opts.ParentExecutionID != "" {
+		scanReq["parent_execution_id"] = opts.ParentExecutionID
+	}
 	if opts.EngineID > 0 {
 		scanReq["engine_id"] = opts.EngineID
 	}

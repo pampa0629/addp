@@ -41,3 +41,12 @@ other = "记录数据服务发布产生的血缘事实"
 other = "执行不存在"
 [meta.scan.execution_read_failed]
 other = "无法读取扫描执行记录"
+
+[meta.scan.provenance_denied]
+other = "不允许使用此扫描执行来源"
+
+[meta.scan.provenance_unavailable]
+other = "扫描父执行或产物来源不可用"
+
+[meta.scan.request_invalid]
+other = "扫描请求参数无效"

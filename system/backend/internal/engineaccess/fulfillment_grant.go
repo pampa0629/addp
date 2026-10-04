@@ -68,7 +68,7 @@ func (r *Repository) readFulfillmentGrant(ctx context.Context, request fulfillme
 		return nil, err
 	}
 	var result *fulfillmentGrant
-	err = r.readCommittedFulfillmentHistory(ctx, func(tx *Repository) error {
+	err = r.readCommitted(ctx, func(tx *Repository) error {
 		row, err := tx.findFulfillment(ctx, request, path, binding)
 		if err != nil {
 			return err

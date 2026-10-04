@@ -513,3 +513,65 @@ func TestExecutionStatusForQueryTimeout(t *testing.T) {
 		t.Fatalf("status = %q, want failed", got)
 	}
 }
+
+func TestProducedScanFreezesOutputsBeforeSubmittingParent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
+	}
+	repo := commonExecution.NewTaskExecutionRepository(db)
+	parent := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: uuid.New().String(), Module: "develop", TaskType: "workflow", Status: "running", TriggerType: "manual", Metadata: commonModels.JSONMap{"preserved": true}}
+	if err := repo.Create(context.Background(), parent); err != nil {
+		t.Fatal(err)
+	}
+	locator := "addp://engine/9/path/results/dem.tif?type=file"
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var request map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		if request["parent_execution_id"] != parent.ExecutionID || request["source"] != commonClient.MetaScanSourceDevelopProducedTarget || r.Header.Get("Authorization") != "Bearer test-scan-service" {
+			t.Error("scan provenance or machine credentials missing")
+		}
+		stored, err := repo.GetByExecutionID(context.Background(), parent.ExecutionID, 7)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		encoded, _ := json.Marshal(stored.Metadata)
+		if !strings.Contains(string(encoded), locator) || stored.Metadata["preserved"] != true {
+			t.Error("outputs not durable before scan submission")
+		}
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"execution_id":"scan-child","status":"pending"}`))
+	}))
+	defer server.Close()
+	executor := &DevExecutor{taskExecutionRepo: repo, metaClient: commonClient.NewMetaClient(server.URL, staticServiceTokenSource("test-scan-service"))}
+	targets := []WorkflowProducedTarget{{TaskID: "save", EngineID: 9, Type: "file", Path: []string{"results", "dem.tif"}, Locator: locator}}
+	runs := executor.createWorkflowProducedTargetScanRuns(context.Background(), 7, parent.ExecutionID, targets)
+	if calls != 1 || len(runs) != 1 || runs[0]["execution_id"] != "scan-child" {
+		t.Fatalf("scan submissions: %d %#v", calls, runs)
+	}
+	if err := repo.UpdateFields(context.Background(), parent.ExecutionID, 7, map[string]interface{}{"status": "success"}); err != nil {
+		t.Fatal(err)
+	}
+	runs = executor.createWorkflowProducedTargetScanRuns(context.Background(), 7, parent.ExecutionID, targets)
+	if calls != 1 || len(runs) != 1 || runs[0]["status"] != "failed" {
+		t.Fatal("invalid provenance submitted a scan")
+	}
+	if err := repo.UpdateFields(context.Background(), parent.ExecutionID, 7, map[string]interface{}{"status": "running"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TRIGGER common.reject_output_save BEFORE UPDATE OF metadata ON task_executions BEGIN SELECT RAISE(ABORT, 'output persistence fixture failure'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	runs = executor.createWorkflowProducedTargetScanRuns(context.Background(), 7, parent.ExecutionID, targets)
+	if calls != 1 || len(runs) != 1 || runs[0]["error_code"] != "develop.workflow.scan_provenance_unavailable" {
+		t.Fatal("failed output persistence submitted a scan")
+	}
+}

@@ -12,6 +12,8 @@ System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方�
 
 System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants` 是精确源数据共享的不可变签发历史：以原办理编号唯一引用 `engine_access_fulfillment_outcomes`，参数仍由已提交的不可变受理回执提供，不复制 Catalog 责任、业务决定或 IAM Role/Permission。迁移 000182 不自动签发、不新增权限或角色分配、不推进 IAM 授权版本；签发不改变 AuthContext 的功能 Permission。内部签发与高风险审计同事务，插入触发器按数据库墙钟检查原 accepted 窗口并拒绝客户端回填时间。当前没有公开签发或执行侧消费入口；签发历史不能代替后续到期、撤销、Deny 和当前接收主体的访问裁决。
 
+当前源数据读取规则由 `engineaccess` 私有只读批量观察方法复用上述不可变历史，不新增 ACL 表或可编辑副本。该方法拥有独立只读事务，拒绝嵌入调用方写事务；整批目标在一条 SQL、一个已提交快照和一个数据库时刻下核验当前主体、直接组织成员、引擎与 Grant／Deny。仅全部精确目标都有有效 Grant 且没有有效 Deny 时返回规则覆盖，不读取来源数据库、不获取仲裁或 IAM 写锁、不产生规则或审计副作用。可信凭据、功能 Permission、执行范围与 Security 校验仍属后续消费链路，主体 ID／成员关系 ID／授权版本引用自身不是认证证明。
+
 迁移 000183 增加 `engine_access_grant_revocations`：以原办理 UUID 唯一引用 Grant，追加撤销者 Principal／Tenant Membership、数据库墙钟与必填原因；不复制或改写原目标、接收主体、动作和期限。行及整表历史不可 UPDATE／DELETE／TRUNCATE，插入核验撤销者为原 Tenant 的 User 成员。真实撤销命令发布独立 `system.engine_access_grant.revoke`，不默认分配 Role 或账号，不推进既有授权版本；服务核验当前账号、Token、Permission 和引擎管理委派，并同事务写入高风险撤销审计。引擎停用或失去实时目录能力仍允许收回旧授权，账号或委派失效则拒绝；不修改新授予的启用条件。撤销历史不是 Explicit Deny，也不表示执行侧数据权限已经接通。
 
 迁移 000184 只前向收紧撤销插入触发器：按数据库墙钟拒绝原 `at_time` Grant 到期后的首次撤销，不回填时间、不修改既有撤销／受理／签发历史，不新增或分配权限。服务写入前和审计后提交前同样检查授权期限，失败同时回滚撤销与审计；已成功撤销的原参重试优先读取历史，仅重新核验当前操作者资格，不受原授权后续到期或五分钟自动办理窗口限制。`until_revoked` 保持可主动撤销。

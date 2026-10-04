@@ -11,6 +11,9 @@ var localeFS embed.FS
 
 // Meta 模块消息 key 常量
 const (
+	MsgScanRequestInvalid        = "meta.scan.request_invalid"
+	MsgScanProvenanceDenied      = "meta.scan.provenance_denied"
+	MsgScanProvenanceUnavailable = "meta.scan.provenance_unavailable"
 	MsgScanExecutionNotFound     = "meta.scan.execution_not_found"
 	MsgScanExecutionReadFailed   = "meta.scan.execution_read_failed"
 	MsgScanScopeActive           = "meta.scan.scope_active"

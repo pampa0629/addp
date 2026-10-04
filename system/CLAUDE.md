@@ -373,6 +373,8 @@ frontend/src/
 - `POST /api/v1/system/refresh` - Token 刷新
 - `POST /api/v1/system/logout` - 撤销当前 Browser Token Family
 
+当前精确源数据规则观察仅存在于 `engineaccess` 私有仓储方法：非空完整目标集合在自有只读事务的一条 SQL 快照中核验当前主体及 Grant／Deny；无 Grant、有效 Deny、失效主体、停用引擎或缺失结果均不满足覆盖。不提供自报账号的裁决 API，不替代可信凭据、功能权限、执行范围或 Security 条件，也不代表 Manager／Develop 已贯通。
+
 ### 授权上下文（需认证）
 - `GET /api/v1/system/auth/context` - 验证当前访问令牌，回查用户和租户状态，返回权威 AuthContext
 

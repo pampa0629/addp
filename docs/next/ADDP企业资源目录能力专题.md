@@ -3100,3 +3100,23 @@ Swagger 生成首次因并行 Go 输入变化被缓存校验拒绝，随后标�
 - `platform-ci.yml` 全仓 Go 与 `release-and-t2-gates.yml` System IAM PostgreSQL Job 已覆盖新增文件；迁移分组和 runner 契约测试同次更新，无新增 workflow、测试库或旁路入口。Manager／Develop 精确读取集合的权限消费、其他 owner T2、真实 OAuth T4 及 C／D 实际内容读取对照尚未验证，不以解除命令或观察夹具冒充完整数据权限闭环。
 
 下一优先项：优先贯通 System 精确 PostgreSQL 只读当前裁决，再接 Manager／Develop 的完整读取集合消费。必须以当前规则与当前身份判断结果，覆盖无 Grant 拒绝、个人 Deny 压过项目组 Allow，以及解除后仍无有效 Grant 时继续拒绝。
+
+### 26.66 当前源数据读取规则的私有只读底座（2026-10-04）
+
+本轮先落实规则覆盖这一层，不把它与完整访问裁决混为一谈：现有主体引用不是活跃凭据证明，正式消费仍须可信身份／执行链路提供完整读取集合，并与功能 Permission、执行范围、Security 条件取交集。不开放自报账号的裁决 API，不新增表、迁移或权限，不启停开发服务。
+
+- [x] 先明确稳定授权规范、IAM 模型与 System 边界。
+- [x] 复用精确路径规范及已提交 Grant／Deny 历史，在一条 SQL 的同一快照与数据库时刻核验完整目标集合；无 Grant 拒绝，Deny 优先。受理历史、签发历史和规则观察共用唯一自有只读事务实现，原专用事务路径已删除。
+- [x] 验证个人及项目组 Grant、直接部门／项目组 Deny、当前身份、到期／撤销／解除及只读隔离；覆盖项目组关闭和原办理人后来失效，不依赖 Catalog 在线。已提交 Deny 立即生效，建立时刻只作审计事实；数据库时钟回拨用例确认不会将其误当作尚未开始的限制。
+- [x] 通过既有 System Go、IAM PostgreSQL 标准门禁验证；新测试纳入现有 engineaccess 包自动发现，不新建测试入口或数据库。
+- [ ] 后续贯通可信凭据／执行范围与 Manager／Develop 完整读取集合消费，验证 C 可读、D 不可读且 C+D 整体拒绝的实际内容读取闭环。本轮不以私有规则覆盖测试替代该验收。
+
+已查清的入口边界：System 内部接收主体与规则模型支持部门，但当前 Catalog 共享确认及正式受理的跨模块绑定只开放账号和项目组。本轮不扩展共享协议；部门用例验证直接成员命中 Deny、父部门不继承和停用后不再匹配，不将其描述为部门 Grant 正式办理已完成。后续完善独立批准或扩展共享接收方时，应单独落实部门 Grant 的正式入口与端到端验收。
+
+验证记录与未完成边界：
+
+- `make test-module MODULE=system` 退出码 0：平台 T0、System 全部 Go T1、前端 91 项单测／40 项浏览器测试及构建均通过。IAM PostgreSQL 7 个 owner 包均通过，无失败或跳过；当前输入的 engineaccess 包耗时 43.391 秒，其中新规则套件耗时 2.30 秒。运行日志 T2 也通过，包括过期日志物理清理及重启后查询对照；门禁确认测试专属容器／网络／卷全部清零、测试源目录已删除，没有启停开发服务。日志：`/tmp/addp-current-source-rules-system-module-20261004.log`。
+- 默认 `make test-changed` 退出码 2，停在 T2 环境预检：共享工作区扩散到 27 个 owner，其他 owner 的 PostgreSQL／MySQL 等环境未全部提供，没有将其计为通过。全仓 `make test-go` 也曾退出码 2，失败点是并行 Meta 改动的 `handler_scan_runs_test.go:68` 将函数值传给 `Fatal`；本轮未修改 Meta，System 当前完整 Go T1 已单独通过。对应日志：`/tmp/addp-current-source-rules-changed-20261004.log`、`/tmp/addp-current-source-rules-go-20261004.log`。
+- 新测试挂在既有 `TestFulfillmentArbitrationAgainstPostgres` 夹具，现有 IAM PostgreSQL 标准入口的 engineaccess 分组自动命中；`platform-ci.yml` 全仓 Go 和 `release-and-t2-gates.yml` 的 System IAM PostgreSQL Job 已覆盖，不新增测试入口、数据库或 CI Job。初轮新夹具的参数类型、成员到期约束及父级测试引用错误已修复，最终结果以前述当前输入门禁为准。
+
+下一优先项：先落实可信身份／执行上下文消费，再贯通 Manager 单目标预览的真实 C／D 读取对照；随后接 Develop 的完整 `QueryReadSet`。不能把私有 `Covered` 当作对外允许执行的凭据，也不能将规则测试通过描述为实际内容读取闭环已完成。

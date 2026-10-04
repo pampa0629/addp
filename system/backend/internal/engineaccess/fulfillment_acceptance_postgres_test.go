@@ -95,6 +95,7 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		exerciseGrantRevocations(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseSourceDenies(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseDenyReleases(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
+		exerciseCurrentSourceRules(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
 		for _, mutate := range []func(*shared.SharingFulfillmentBinding){
 			func(b *shared.SharingFulfillmentBinding) { b.Operator.AuthorizationVersion++ },
 			func(b *shared.SharingFulfillmentBinding) { b.RequirementVersion++ },

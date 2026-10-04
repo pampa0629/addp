@@ -239,3 +239,5 @@ cd meta/frontend && npm test && npm run build
 ## 数据库启动所有权
 
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
+
+Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服务可提交 `source=develop.workflow.produced_target` 与父执行 UUID；Meta 在子记录创建事务中验证同租户 running workflow、完整主体事实和精确已保存产物范围，再继承发起人。没有父执行不得借用此来源，不能扩大扫描范围或读取权限。

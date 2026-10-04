@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
@@ -35,6 +36,12 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 	}
 	if err := validateManualScanRequestTriggerType(req.TriggerType); err != nil {
 		return nil, err
+	}
+	req.Source = strings.TrimSpace(req.Source)
+	if req.ParentExecutionID != "" || req.Source == commonClient.MetaScanSourceDevelopProducedTarget {
+		if req.Source != commonClient.MetaScanSourceDevelopProducedTarget || req.ParentExecutionID == "" {
+			return nil, commonAPI.ErrBadRequest
+		}
 	}
 	scope, err := s.scanService.ResolveScanScope(tenantID, scanflow.Options{
 		EngineID:     req.EngineID,
@@ -84,7 +91,12 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		}
 	}
 
-	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := inheritDevelopProducedTargetActor(tx, execution, req); err != nil {
+			return err
+		}
+		return tx.Create(execution).Error
+	}); err != nil {
 		s.releaseExecutionLock(ctx, lockAcquired, lockKey, execution.ExecutionID, "创建执行失败后释放扫描范围锁失败", "execution_id", execution.ExecutionID)
 		return nil, err
 	}

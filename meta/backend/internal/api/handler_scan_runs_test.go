@@ -13,12 +13,14 @@ import (
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
+	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/metatest"
+	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/service"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -59,6 +61,12 @@ func TestMetaScanExecutionReadAgainstPostgres(t *testing.T) {
 	if err := tx.AutoMigrate(&execution.TaskExecution{}); err != nil {
 		t.Fatal(err)
 	}
+	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.AutoMigrate(&models.MetaNode{}); err != nil {
+		t.Fatal(err)
+	}
 	testMetaScanReadContract(t, tx)
 }
 
@@ -66,7 +74,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	tenant := strconv.Itoa(scanReadTenant)
 	contexts := map[string]authorization.AuthContext{}
-	for _, token := range []string{"owner", "peer", "oauth", "denied", "foreign", "machine", "wrong-machine", "machine-denied"} {
+	for _, token := range []string{"owner", "peer", "oauth", "denied", "foreign", "machine", "wrong-machine", "machine-denied", "develop-machine", "develop-machine-denied"} {
 		principal, targetTenant := "31", tenant
 		if token == "peer" {
 			principal = "32"
@@ -74,7 +82,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 		if token == "foreign" {
 			targetTenant = strconv.Itoa(scanReadTenant + 1)
 		}
-		permissions := []string{"meta.scan_task.read"}
+		permissions := []string{"meta.scan_task.read", "meta.scan_task.execute"}
 		if token == "denied" {
 			permissions = []string{}
 		}
@@ -92,12 +100,15 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 			a.Authentication.Methods = []string{"service_secret"}
 			a.Authentication.AssuranceLevel = "not_applicable"
 			client := "addp-orchestrator"
+			if strings.HasPrefix(token, "develop-machine") {
+				client = "addp-develop"
+			}
 			if token == "wrong-machine" {
 				client = "addp-other"
 			}
 			a.Client.ClientID = &client
-			a.Authorization.RoleAssignments[0].Permissions = []string{"meta.scan_task.read", "meta.task_provider.read"}
-			if token == "machine-denied" {
+			a.Authorization.RoleAssignments[0].Permissions = []string{"meta.scan_task.execute", "meta.scan_task.read", "meta.task_provider.read"}
+			if token == "machine-denied" || token == "develop-machine-denied" {
 				a.Authorization.RoleAssignments[0].Permissions = []string{"meta.scan_task.read"}
 			}
 		}
@@ -110,6 +121,15 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 		contexts["Bearer "+token] = a
 	}
 	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/system/oauth/token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "addp_at_meta_fixture", "token_type": "bearer", "expires_in": 300, "scope": "addp.api"})
+			return
+		}
+		if r.URL.Path == "/api/v1/system/engines/9" && r.Header.Get("Authorization") == "Bearer addp_at_meta_fixture" {
+			id := uint(scanReadTenant)
+			json.NewEncoder(w).Encode(commonmodels.Engine{ID: 9, TenantID: &id, EngineType: "s3", LifecycleState: "active"})
+			return
+		}
 		a, ok := contexts[r.Header.Get("Authorization")]
 		if !ok {
 			w.WriteHeader(401)
@@ -119,10 +139,14 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 		json.NewEncoder(w).Encode(a)
 	}))
 	t.Cleanup(system.Close)
-	engine := service.NewEngineService(db, nil)
+	tokens, err := commonclient.NewOAuthServiceTokenSource(system.URL, "addp-meta", "meta-scan-read-test-32-byte-secret-value", system.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := service.NewEngineService(db, commonclient.NewSystemServiceClient(system.URL, tokens, system.Client()))
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = system.URL
-	router := SetupRouter(cfg, db, engine, service.NewScanService(db, engine), nil, service.NewScanExecutionService(db, nil, nil, nil), nil, nil, modulelifecycle.NewStandalone("meta"))
+	router := SetupRouter(cfg, db, engine, service.NewScanService(db, engine), nil, service.NewScanExecutionService(db, nil, engine, nil), nil, nil, modulelifecycle.NewStandalone("meta"))
 
 	mine, peer := 31, 32
 	definition, empty := "99", ""
@@ -245,4 +269,5 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	request("owner", "/task-provider/executions/"+fixtures[0].ExecutionID, 403)
 	request("wrong-machine", "/task-provider/executions/"+fixtures[0].ExecutionID, 403)
 	request("machine-denied", "/task-provider/executions/"+fixtures[0].ExecutionID, 403)
+	testMetaDevelopProducedScan(t, db, router, request)
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
+	commonclient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -52,12 +53,14 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 
 // CreateManualScanRun 创建异步扫描运行
 // @Summary 创建手动扫描运行 | Create manual scan run
-// @Description 创建一个异步手动扫描执行记录并入队 | Create and enqueue a manual metadata scan run
+// @Description 创建异步扫描；Develop 产物来源仅允许 addp-develop 服务携带父 execution，原子校验已保存产物并继承发起主体 | Create an async scan; Develop output scans require addp-develop service provenance, a verified parent execution and persisted output
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
 // @Param request body models.ScanRequest true "扫描请求 | Scan request"
 // @Success 201 {object} models.ScanExecutionResponse "安全执行记录 | Safe execution"
+// @Failure 403 {object} map[string]interface{} "不允许使用父执行来源 | Parent provenance is not permitted"
+// @Failure 404 {object} map[string]interface{} "父执行或产物来源不可用 | Parent or output provenance unavailable"
 // @Failure 409 {object} map[string]interface{} "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
@@ -77,10 +80,11 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 	userID := commonAuth.GetUserID(c)
 
 	var req models.ScanRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error_code": "scan_request_invalid", "error": commoni18n.T(c, metai18n.MsgScanRequestInvalid)})
 		return
 	}
+	req.Source = strings.TrimSpace(req.Source)
 	if err := validateManualScanRequestTriggerType(req.TriggerType); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -90,8 +94,19 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
+	if req.ParentExecutionID != "" || req.Source == commonclient.MetaScanSourceDevelopProducedTarget {
+		principal, exists := commonAuth.PrincipalFromGin(c)
+		if !exists || principal.Type != "service_principal" || commonAuth.GetClientID(c) != "addp-develop" {
+			c.JSON(http.StatusForbidden, gin.H{"error_code": "scan_provenance_denied", "error": commoni18n.T(c, metai18n.MsgScanProvenanceDenied)})
+			return
+		}
+	}
 	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, &req)
 	if err != nil {
+		if errors.Is(err, commonapi.ErrBadRequest) || errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error_code": "scan_provenance_unavailable", "error": commoni18n.T(c, metai18n.MsgScanProvenanceUnavailable)})
+			return
+		}
 		h.handleServiceError(c, err)
 		return
 	}

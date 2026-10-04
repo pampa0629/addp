@@ -163,12 +163,13 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	client = client.WithTenantID(tenantID)
 
 	result, err := client.CreateManualScanRun(MetaScanOptions{
-		EngineID:    26,
-		NodeID:      1831,
-		ScanDepth:   "deep",
-		Force:       true,
-		TriggerType: "manual",
-		Source:      commonExecution.ModuleTransfer,
+		ParentExecutionID: "11111111-1111-4111-8111-111111111111",
+		EngineID:          26,
+		NodeID:            1831,
+		ScanDepth:         "deep",
+		Force:             true,
+		TriggerType:       "manual",
+		Source:            commonExecution.ModuleTransfer,
 		RefGroups: []MetaScanRefGroup{
 			{
 				Primary: "bucket/path/roads.shp",
@@ -190,6 +191,9 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	}
 	if gotHeader != "Bearer test-token" || gotLegacyHeaders {
 		t.Fatalf("auth headers = authorization:%q legacy:%t", gotHeader, gotLegacyHeaders)
+	}
+	if gotPayload["parent_execution_id"] != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("parent provenance missing: %#v", gotPayload)
 	}
 	if gotPayload["engine_id"] != float64(26) || gotPayload["node_id"] != float64(1831) {
 		t.Fatalf("payload target = %#v", gotPayload)

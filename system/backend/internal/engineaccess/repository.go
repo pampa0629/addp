@@ -2,6 +2,7 @@ package engineaccess
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -43,6 +44,17 @@ func (r *Repository) transaction(ctx context.Context, f func(*Repository) error)
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return f(NewRepository(tx)) })
 }
 func (r *Repository) identity() *iam.Repository { return iam.NewRepository(r.db) }
+
+// Observations own a read-only transaction. A caller's write transaction must
+// never expose its own uncommitted authorization facts through this boundary.
+func (r *Repository) readCommitted(ctx context.Context, read func(*Repository) error) error {
+	if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); ok {
+		return errFulfillmentBinding
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return read(NewRepository(tx))
+	}, &sql.TxOptions{ReadOnly: true})
+}
 
 func (r *Repository) wallClock(ctx context.Context) (time.Time, error) {
 	var now time.Time

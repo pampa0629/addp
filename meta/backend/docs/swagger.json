@@ -1759,7 +1759,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一个异步手动扫描执行记录并入队 | Create and enqueue a manual metadata scan run",
+                "description": "创建异步扫描；Develop 产物来源仅允许 addp-develop 服务携带父 execution，原子校验已保存产物并继承发起主体 | Create an async scan; Develop output scans require addp-develop service provenance, a verified parent execution and persisted output",
                 "consumes": [
                     "application/json"
                 ],
@@ -1797,6 +1797,20 @@
                     },
                     "401": {
                         "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "不允许使用父执行来源 | Parent provenance is not permitted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "父执行或产物来源不可用 | Parent or output provenance unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3841,6 +3855,10 @@
                 "node_id": {
                     "description": "要扫描的节点 ID",
                     "type": "integer"
+                },
+                "parent_execution_id": {
+                    "description": "Develop 产物扫描的直接父执行 UUID",
+                    "type": "string"
                 },
                 "ref_groups": {
                     "description": "内容引用组",

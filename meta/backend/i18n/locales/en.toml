@@ -41,3 +41,12 @@ other = "Record service publication lineage facts"
 other = "Execution not found"
 [meta.scan.execution_read_failed]
 other = "Unable to read scan executions"
+
+[meta.scan.provenance_denied]
+other = "Scan execution provenance is not permitted"
+
+[meta.scan.provenance_unavailable]
+other = "Scan parent or output provenance is unavailable"
+
+[meta.scan.request_invalid]
+other = "Invalid scan request"

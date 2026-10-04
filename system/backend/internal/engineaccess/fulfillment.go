@@ -3,7 +3,6 @@ package engineaccess
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,7 +121,7 @@ func (r *Repository) readFulfillment(ctx context.Context, request fulfillmentReq
 		return nil, err
 	}
 	var result *fulfillmentOutcome
-	err = r.readCommittedFulfillmentHistory(ctx, func(tx *Repository) error {
+	err = r.readCommitted(ctx, func(tx *Repository) error {
 		var err error
 		result, err = tx.findFulfillment(ctx, request, path, binding)
 		return err
@@ -131,17 +130,6 @@ func (r *Repository) readFulfillment(ctx context.Context, request fulfillmentReq
 		return nil, err
 	}
 	return result, nil
-}
-
-// History owns its read-only transaction, before the caller's qualification
-// transaction. Never expose the caller's own uncommitted arbitration writes.
-func (r *Repository) readCommittedFulfillmentHistory(ctx context.Context, read func(*Repository) error) error {
-	if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); ok {
-		return errFulfillmentBinding
-	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return read(NewRepository(tx))
-	}, &sql.TxOptions{ReadOnly: true})
 }
 
 func (r *Repository) findFulfillment(ctx context.Context, request fulfillmentRequest, path, binding json.RawMessage) (*fulfillmentOutcome, error) {
