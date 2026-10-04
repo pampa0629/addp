@@ -12,7 +12,13 @@ test('direct module ports redirect before refresh and all top-level pages share 
   await context.route('**/e2e/auth-api/**', async route => {
     if (new URL(route.request().url()).pathname.endsWith('/logout')) {
       logouts++
-      await route.fulfill({ json: {}, headers: { 'set-cookie': 'fixture_refresh=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' } })
+      const bearer = await route.request().headerValue('authorization')
+      const cookie = await route.request().headerValue('cookie')
+      if (bearer !== `Bearer access-${generation}` || !cookie?.split('; ').includes(`fixture_refresh=refresh-${generation}`)) {
+        await route.fulfill({ status: 401, json: { message: 'authentication_required' } })
+        return
+      }
+      await route.fulfill({ status: 204, headers: { 'set-cookie': 'fixture_refresh=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' } })
       return
     }
     refreshes++

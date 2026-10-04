@@ -410,7 +410,7 @@ export function createBrowserAuthSession({ refresh, revoke, switchContext } = {}
       return
     }
     try {
-      if (typeof revoke === 'function') await revoke()
+      if (typeof revoke === 'function') await revoke(runtimeToken)
     } finally {
       clearToken({ broadcastEvent: true, source: 'logout' })
     }

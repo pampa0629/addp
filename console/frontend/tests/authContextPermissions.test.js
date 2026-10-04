@@ -58,6 +58,7 @@ describe('browser context API contract', () => {
     const api = createAuthAPI(client)
 
     await api.getContextOptions('addp_at_current')
+    await api.logout('addp_at_current')
     await api.switchContext('addp_at_current', {
       type: 'tenant',
       tenant_membership_id: '18',
@@ -66,6 +67,7 @@ describe('browser context API contract', () => {
 
     expect(calls).toEqual([
       ['get', '/auth/context-options', { headers: { Authorization: 'Bearer addp_at_current' } }],
+      ['post', '/logout', null, { headers: { Authorization: 'Bearer addp_at_current' }, withCredentials: true }],
       ['post', '/auth/context-switches', {
         context_type: 'tenant',
         tenant_membership_id: '18'

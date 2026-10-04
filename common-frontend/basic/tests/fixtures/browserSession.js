@@ -11,13 +11,16 @@ document.body.innerHTML = `<output data-testid="status">initializing</output>
 const status = document.querySelector('[data-testid="status"]')
 const token = document.querySelector('[data-testid="token"]')
 const error = document.querySelector('[data-testid="error"]')
-const request = async path => {
-  const response = await fetch(`/e2e/auth-api/${path}`, { method: 'POST', credentials: 'include' })
-  const payload = await response.json()
+const request = async (path, accessToken) => {
+  const response = await fetch(`/e2e/auth-api/${path}`, {
+    method: 'POST', credentials: 'include',
+    ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {})
+  })
+  const payload = response.status === 204 ? null : await response.json()
   if (!response.ok) throw Object.assign(new Error(payload.message), { status: response.status })
   return payload
 }
-const session = createBrowserAuthSession({ refresh: () => request('refresh'), revoke: () => request('logout') })
+const session = createBrowserAuthSession({ refresh: () => request('refresh'), revoke: accessToken => request('logout', accessToken) })
 subscribeAccessToken(snapshot => { token.textContent = snapshot.token || '' })
 const showError = failure => { status.textContent = 'failed'; error.textContent = failure.message }
 document.querySelector('[data-testid="refresh"]').onclick = async () => {

@@ -124,7 +124,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
   if (typeof localStorage !== 'undefined') localStorage.removeItem('token')
   const authSession = createBrowserAuthSession({
     refresh: () => authAPI.refresh(),
-    revoke: () => authAPI.logout(),
+    revoke: (token) => authAPI.logout(token),
     switchContext: (token, context) => authAPI.switchContext(token, context)
   })
   let boundStore = null
@@ -607,7 +607,10 @@ export function createAuthAPI(client) {
         : {})
     }, { withCredentials: true }),
     refresh: () => client.post('/refresh', null, { withCredentials: true }),
-    logout: () => client.post('/logout', null, { withCredentials: true }),
+    logout: (token) => client.post('/logout', null, {
+      headers: { Authorization: `Bearer ${token}` },
+      withCredentials: true
+    }),
     getCurrentUser: () => client.get('/users/me'),
     getUser: (token) => client.get('/users/me', {
       headers: { Authorization: `Bearer ${token}` }

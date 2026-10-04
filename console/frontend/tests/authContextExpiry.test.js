@@ -29,7 +29,7 @@ describe('shared AuthStore role expiry', () => {
         { scope, permissions: ['monitor.statistics.read'], valid_until: null }
       ] }
     }
-    api = { getAuthContext: vi.fn(async () => context) }
+    api = { getAuthContext: vi.fn(async () => context), logout: vi.fn(async () => {}) }
     const auth = await import('../../../common-frontend/basic/src/composables/useAuth.js')
     transport = await import('../../../common-frontend/basic/src/auth/authSession.js')
     store = defineStore('expiry-auth', auth.createAuthStore('expiry-auth', api, { persistUser: false }))()
@@ -109,7 +109,8 @@ describe('shared AuthStore role expiry', () => {
   })
 
   it('cleans up timers and resume listeners on logout and disposal', async () => {
-    store.clearLocalSession()
+    await store.logout()
+    expect(api.logout).toHaveBeenCalledWith('valid-token')
     await vi.advanceTimersByTimeAsync(120_000)
     browserWindow.dispatchEvent(new Event('focus'))
     expect(api.getAuthContext).toHaveBeenCalledTimes(1)

@@ -134,7 +134,7 @@ test('production Nginx shares one rotating browser session across Console, ifram
   const logout = independent.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/logout')
   await independent.locator('.user-dropdown').hover()
   await independent.getByRole('menuitem', { name: /退出登录|Logout|Log out/i }).click()
-  expect((await logout).status()).toBe(200)
+  expect((await logout).status()).toBe(204)
   await expect(page).toHaveURL(/\/login(?:\?|$)/)
   await expect(independent).toHaveURL(/\/module-ui\/manager\/login(?:\?|$)/)
   expect((await context.cookies()).some(cookie => cookie.name === 'addp_refresh_token')).toBe(false)
