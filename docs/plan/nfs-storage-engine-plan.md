@@ -56,4 +56,8 @@ Business 只拥有 HDFS 服务、样例和生命周期，不调用 System API。
 
 正式消费验收进展：已通过 Console 登记 `Business HDFS`（引擎 26），连接测试正常；Meta 自动扫描 229 与目录扫描 230 成功；Manager 的 CSV、JSON、Parquet 预览各显示 20 行。共享 locator 重复解码问题修正并重启后，`订单 100%.csv` 也已通过正式预览，显示 20 行。
 
-Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三个资源 locator 读取，独立选择 `Business Spark`，按 region 聚合并关联校验结果，任务定义不保存物理地址或连接参数。Spark 的公开列表类型映射修正后，执行参数契约已正常生成。正式执行 244（`3a5bf624-acf1-476f-8bff-9cdc01353399`）已到达 Worker，但 CSV 被错误地按默认 Parquet 读取，任务失败。已修正 Develop 文件/对象格式派生，复用共享格式识别器读取原始文件名；Spark 必须消费派生格式，缺失时拒绝读取，删除默认 Parquet 路径。HDFS 三格式、对象格式、公开参数边界与 Spark 34 项确定性测试已通过；正式执行等待加载新代码后复验，暂不声明完整消费链路验收通过。
+Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三个资源 locator 读取，独立选择 `Business Spark`，按 region 聚合并关联校验结果，任务定义不保存物理地址或连接参数。Spark 的公开列表类型映射修正后，执行参数契约已正常生成。首次执行 244 因 CSV 被默认按 Parquet 读取而失败；修正 Develop 文件/对象格式派生后，Spark 显式消费共享格式识别器根据原始文件名确定的格式，缺失时拒绝读取。HDFS 三格式、对象格式、公开参数边界与 Spark 34 项确定性测试已通过。
+
+2026-10-04 重启 Develop 与 Spark Workflow 后，正式执行 251（`758b526b-2ef8-4b30-99f3-eccfcb843f67`）成功，8 个节点全部完成，耗时 23.61 秒。Develop 专业执行详情及运行时结果均确认三种格式各有 20 行、金额合计 2100；east 分组每格式 10 行、合计 1100，west 分组每格式 10 行、合计 1000。Business Spark Standalone 应用 `app-20261004133131-0002` 分配 1 个核心，Worker 容器中该应用的 Executor 日志确认真实计算任务完成。本地开发环境的正式消费链路人工复验通过；尚未登记或运行隔离环境的 HDFS Online suite，不计为自动化 T4 门禁通过。
+
+格式修复提交 `e93d72b08` 的 [Release and T2 gates](https://github.com/pampa0629/addp/actions/runs/37200801282) 已通过，包括 HDFS WebHDFS 与分布式 Spark、Redis、Elasticsearch 契约；[Platform CI](https://github.com/pampa0629/addp/actions/runs/37200801286) 的 Spark、Develop、Go workspace 与平台一致性检查通过，但产品镜像构建失败：Spark Workflow 镜像安装 Debian Bullseye security 软件包时返回 404。该镜像构建问题尚未解决，不能声明整套 CI 通过。
