@@ -35,7 +35,13 @@ watch(() => [props.implementationId, props.revision.id], () => {
   visible.value = false
   page.value = 1
 }, { flush: 'sync' })
-watch([visible, page, refresh, () => props.implementationId, () => props.revision.id, () => props.canRead], async (_values, _previous, onCleanup) => {
+watch(() => props.canRead, canRead => {
+  if (canRead) return
+  rows.value = []
+  total.value = 0
+  if (visible.value) error.value = t('model.metric_workspace.services_forbidden')
+}, { flush: 'sync' })
+watch([visible, page, refresh, () => props.implementationId, () => props.revision.id], async (_values, _previous, onCleanup) => {
   let cancelled = false
   onCleanup(() => { cancelled = true })
   rows.value = []
@@ -46,7 +52,8 @@ watch([visible, page, refresh, () => props.implementationId, () => props.revisio
   loading.value = true
   try {
     const result = await metricServiceAPI.references(props.implementationId, props.revision.id, page.value, pageSize)
-    if (cancelled) return
+    if (cancelled || !props.canRead) return
+    error.value = ''
     total.value = result.total
     const lastPage = Math.max(1, Math.ceil(result.total / pageSize))
     if (page.value > lastPage) { page.value = lastPage; return }
@@ -54,7 +61,7 @@ watch([visible, page, refresh, () => props.implementationId, () => props.revisio
   } catch (err) {
     if (!cancelled) {
       total.value = 0
-      error.value = t(err.response?.status === 403 ? 'model.metric_workspace.services_forbidden' : 'model.metric_workspace.services_unavailable')
+      error.value = t(err.response?.status === 403 || !props.canRead ? 'model.metric_workspace.services_forbidden' : 'model.metric_workspace.services_unavailable')
     }
   } finally {
     if (!cancelled) loading.value = false

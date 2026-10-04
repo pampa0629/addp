@@ -781,7 +781,12 @@ const withdrawDialog = ref(false), withdrawLoading = ref(false),
 watch(() => [item.value?.id, item.value?.version, revision.value?.id, editingNew.value], () => {
   withdrawDialog.value = false;
 }, { flush: 'sync' });
-watch([withdrawDialog, withdrawRefresh, () => auth.hasPermission('service.definition.read')], async (_values, _previous, onCleanup) => {
+watch(() => auth.hasPermission('service.definition.read'), canRead => {
+  if (canRead) return;
+  withdrawCount.value = null;
+  withdrawError.value = 'withdraw_forbidden';
+}, { flush: 'sync' });
+watch([withdrawDialog, withdrawRefresh], async (_values, _previous, onCleanup) => {
   let cancelled = false;
   onCleanup(() => { cancelled = true; });
   withdrawCount.value = null;
@@ -795,9 +800,9 @@ watch([withdrawDialog, withdrawRefresh, () => auth.hasPermission('service.defini
   withdrawLoading.value = true;
   try {
     const result = await metricServiceAPI.references(item.value.id, revision.value.id, 1, 1);
-    if (!cancelled) withdrawCount.value = result.total;
+    if (!cancelled && auth.hasPermission('service.definition.read')) withdrawCount.value = result.total;
   } catch (err) {
-    if (!cancelled) withdrawError.value = err.response?.status === 403 ? 'withdraw_forbidden' : 'withdraw_unavailable';
+    if (!cancelled) withdrawError.value = err.response?.status === 403 || !auth.hasPermission('service.definition.read') ? 'withdraw_forbidden' : 'withdraw_unavailable';
   } finally {
     if (!cancelled) withdrawLoading.value = false;
   }

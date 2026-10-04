@@ -113,11 +113,13 @@ async function installBackend(page, options = {}) {
       return send({ access_token: `model-e2e-token-${++refreshCount}`, expires_in: 3600 });
     if (path === '/api/v1/system/users/me')
       return send({ id: 1, username: 'metric-author' });
-    if (path === '/api/v1/system/auth/context')
+    if (path === '/api/v1/system/auth/context') {
+      if (options.beforeAuthContext) await options.beforeAuthContext();
       return send({
         context: { type: 'tenant', tenant_id: '1' },
-        authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions }] },
+        authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: permissions.filter(permission => options.serviceRead !== false || permission !== 'service.definition.read') }] },
       });
+    }
     if (path === '/api/v1/meta/engines') {
       engineReads.push(path);
       return options.engineFailure
@@ -287,6 +289,13 @@ function publishedRevision(id = 10, revisionNo = 1, engineId = 2, namespace = 'o
       distinct: { relation_id: 0, field_id: 32 }, time: { relation_id: 8, field_id: 42 }, filters: [] },
     dependency_snapshot: sourceSnapshot(engineId, namespace),
   };
+}
+function pauseAuthorizationReload(options) {
+  let release, started;
+  const pending = new Promise(resolve => { release = resolve; });
+  const requested = new Promise(resolve => { started = resolve; });
+  options.beforeAuthContext = () => { started(); return pending; };
+  return { requested, release };
 }
 async function choose(page, label, option) {
   const field = page.locator('.el-form-item').filter({
@@ -619,8 +628,13 @@ test('reference query errors remain distinct from empty results and can be retri
   await expect(dialog.getByText('暂时无法查询引用服务，请刷新重试')).toBeVisible();
   await expect(dialog.getByText('暂无服务引用此修订')).toHaveCount(0);
   options.referenceFailure=403;
+  const authorization = pauseAuthorizationReload(options);
   await dialog.getByRole('button',{name:'刷新',exact:true}).click();
+  await authorization.requested;
+  await expect(page.getByRole('button',{name:'引用此修订的服务',exact:true})).toHaveCount(0);
+  authorization.release();
   await expect(dialog.getByText('没有读取服务定义的权限')).toBeVisible();
+  expect(backend.referenceReads).toHaveLength(2);
   options.referenceFailure=0;
   await dialog.getByRole('button',{name:'刷新',exact:true}).click();
   await expect(dialog.getByRole('button',{name:'Bound service 0',exact:true})).toBeVisible();
@@ -666,6 +680,27 @@ test('reference dialog survives token renewal and authorization reload', async (
   await expect(dialog.getByText('没有读取服务定义的权限')).toHaveCount(0);
   expect(backend.writes).toHaveLength(0);
 });
+
+for (const withdrawal of [false, true]) {
+  test(`${withdrawal ? 'withdrawal count' : 'reference rows'} cannot reappear after read permission is revoked during renewal`, async ({ page }) => {
+    const options = { referenceExpired: true };
+    const backend = await installBackend(page, options);
+    backend.item.revisions.push(publishedRevision());
+    await page.goto('/metric-implementations/1?revision_id=10');
+    await expect(page.getByRole('heading', { name: '当前主领队活动次数' })).toBeVisible();
+    options.beforeAuthContext = () => { options.serviceRead = false; };
+    const recoveredQuery = page.waitForResponse(response => response.url().includes('/api/v1/service/query?') && response.status() === 200);
+    await page.getByRole('button', { name: withdrawal ? '撤回修订' : '引用此修订的服务', exact: true }).click();
+    await recoveredQuery;
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText(withdrawal ? '没有读取服务定义的权限，无法确认引用服务数量' : '没有读取服务定义的权限');
+    await expect.poll(() => backend.referenceReads.length).toBe(2);
+    await expect(dialog.locator('.el-loading-mask')).toBeHidden();
+    await expect(dialog.getByRole('button', { name: 'Bound service 0', exact: true })).toHaveCount(0);
+    await expect(dialog).not.toContainText('21 个服务引用');
+    expect(backend.writes).toHaveLength(0);
+  });
+}
 
 for (const lang of ['zh-cn', 'en']) {
   test(`withdrawal confirms the total for the exact revision and supports cancel (${lang})`, async ({ page }) => {
@@ -713,8 +748,13 @@ test('withdrawal reports failed and forbidden counts as unknown, and refresh rec
   await expect(dialog).toContainText('暂时无法确认引用服务数量');
   await expect(dialog).not.toContainText('0 个服务');
   options.referenceFailure = 403;
+  const authorization = pauseAuthorizationReload(options);
   await dialog.getByRole('button', { name: '刷新', exact: true }).click();
+  await authorization.requested;
+  await expect(dialog.getByRole('button', { name: '刷新', exact: true })).toHaveCount(0);
+  authorization.release();
   await expect(dialog).toContainText('没有读取服务定义的权限，无法确认引用服务数量');
+  expect(backend.referenceReads).toHaveLength(2);
   options.referenceFailure = 0;
   await dialog.getByRole('button', { name: '刷新', exact: true }).click();
   await expect(dialog).toContainText('21 个服务引用');
