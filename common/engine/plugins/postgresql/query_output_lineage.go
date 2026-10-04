@@ -50,194 +50,435 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryOutputLineage(
 	return &plugin.QueryOutputLineage{Sources: resolvedSources}, nil
 }
 
-func resolvePostgresSelectOutputLineage(
-	ctx context.Context,
-	catalog postgresReadCatalog,
-	statement *pgquery.SelectStmt,
-	sources []plugin.QueryOutputSource,
-) ([]plugin.QueryOutputSource, error) {
-	if statement == nil || statement.GetWithClause() != nil || statement.GetOp() != pgquery.SetOperation_SETOP_NONE || len(statement.GetFromClause()) != 1 {
-		markPostgresLineageOpaque(sources)
-		return sources, nil
-	}
-	from := statement.GetFromClause()[0]
-	if rangeVar := from.GetRangeVar(); rangeVar != nil {
-		return resolvePostgresRangeOutputLineage(ctx, catalog, statement, rangeVar, sources)
-	}
-	rangeSubselect := from.GetRangeSubselect()
-	if rangeSubselect == nil || rangeSubselect.GetSubquery() == nil || strings.TrimSpace(rangeSubselect.GetAlias().GetAliasname()) == "" {
-		markPostgresLineageOpaque(sources)
-		return sources, nil
-	}
-	innerStatement := rangeSubselect.GetSubquery().GetSelectStmt()
-	if innerStatement == nil {
-		markPostgresLineageOpaque(sources)
-		return sources, nil
-	}
-	inner, err := resolvePostgresSelectOutputLineage(ctx, catalog, innerStatement, sources)
-	if err != nil {
-		return nil, err
-	}
-	return composePostgresSubqueryOutputLineage(statement, rangeSubselect.GetAlias().GetAliasname(), inner), nil
+// A column carries ordered result identity and physical value origins through
+// relation scopes. Row-selection dependencies never enter these origins.
+type postgresValueOrigin struct {
+	source  int
+	path    []string
+	derived bool
+}
+type postgresValueColumn struct {
+	name    string
+	origins []postgresValueOrigin
+}
+type postgresValueRelation struct {
+	columns   []postgresValueColumn
+	qualified map[string][]postgresValueColumn
+}
+type postgresOutputResolver struct {
+	ctx           context.Context
+	catalog       postgresReadCatalog
+	sources       []plugin.QueryOutputSource
+	opaqueSources map[int]bool
 }
 
-func resolvePostgresRangeOutputLineage(
-	ctx context.Context,
-	catalog postgresReadCatalog,
-	statement *pgquery.SelectStmt,
-	rangeVar *pgquery.RangeVar,
-	sources []plugin.QueryOutputSource,
-) ([]plugin.QueryOutputSource, error) {
-	resolved, err := catalog.ResolveRelation(ctx, postgresRelationReference{
-		Schema: strings.TrimSpace(rangeVar.GetSchemaname()), Name: strings.TrimSpace(rangeVar.GetRelname()),
-	})
+func resolvePostgresSelectOutputLineage(ctx context.Context, catalog postgresReadCatalog, statement *pgquery.SelectStmt, sources []plugin.QueryOutputSource) ([]plugin.QueryOutputSource, error) {
+	resolver := postgresOutputResolver{ctx: ctx, catalog: catalog, sources: sources, opaqueSources: map[int]bool{}}
+	columns, err := resolver.selectColumns(statement, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%w: resolve PostgreSQL output relation: %v", plugin.ErrQueryOutputLineageUnresolved, err)
+		markPostgresLineageOpaque(sources)
+		return sources, nil
 	}
-	primary := postgresLineageSourceIndex(sources, resolved.Schema, resolved.Name)
-	if primary < 0 {
-		return nil, fmt.Errorf("%w: output relation is missing from read set", plugin.ErrQueryOutputLineageUnresolved)
+	for i := range sources {
+		sources[i].Bindings = nil
+		sources[i].IdentityOutput = false
+		sources[i].OpaqueOutput = false
 	}
-	for index := range sources {
-		if index != primary {
-			sources[index].OpaqueOutput = true
+	for _, column := range columns {
+		for _, origin := range column.origins {
+			transformation := plugin.QueryOutputTransformationDirect
+			if origin.derived {
+				transformation = plugin.QueryOutputTransformationDerived
+			}
+			sources[origin.source].Bindings = append(sources[origin.source].Bindings, plugin.QueryOutputBinding{SourcePath: append([]string(nil), origin.path...), OutputPath: []string{column.name}, Transformation: transformation})
 		}
 	}
-	qualifiers := map[string]struct{}{strings.TrimSpace(rangeVar.GetRelname()): {}}
-	if alias := strings.TrimSpace(rangeVar.GetAlias().GetAliasname()); alias != "" {
-		qualifiers[alias] = struct{}{}
-	}
-	if schema := strings.TrimSpace(rangeVar.GetSchemaname()); schema != "" {
-		qualifiers[schema+"."+strings.TrimSpace(rangeVar.GetRelname())] = struct{}{}
-	}
-
-	if !applyPostgresRangeTargets(statement, qualifiers, &sources[primary]) {
-		sources[primary].OpaqueOutput = true
-		sources[primary].IdentityOutput = false
-		sources[primary].Bindings = nil
+	for index := range resolver.opaqueSources {
+		sources[index].OpaqueOutput = true
+		sources[index].IdentityOutput = false
+		sources[index].Bindings = nil
 	}
 	return sources, nil
 }
 
-func applyPostgresRangeTargets(statement *pgquery.SelectStmt, qualifiers map[string]struct{}, source *plugin.QueryOutputSource) bool {
-	for _, targetNode := range statement.GetTargetList() {
-		target := targetNode.GetResTarget()
-		if target == nil || target.GetVal() == nil {
-			return false
+func (r *postgresOutputResolver) selectColumns(stmt *pgquery.SelectStmt, inherited map[string][]postgresValueColumn) ([]postgresValueColumn, error) {
+	if stmt == nil || len(stmt.GetWindowClause()) > 0 {
+		return nil, fmt.Errorf("missing SELECT")
+	}
+	scope := make(map[string][]postgresValueColumn, len(inherited))
+	for name, columns := range inherited {
+		scope[name] = columns
+	}
+	if with := stmt.GetWithClause(); with != nil {
+		if with.GetRecursive() {
+			return nil, fmt.Errorf("recursive CTE output is unresolved")
 		}
-		if reference := target.GetVal().GetColumnRef(); reference != nil {
-			column, wildcard, ok := postgresOutputColumn(reference, qualifiers)
-			if !ok {
-				return false
+		for _, node := range with.GetCtes() {
+			cte := node.GetCommonTableExpr()
+			if cte == nil {
+				return nil, fmt.Errorf("invalid CTE")
 			}
-			if wildcard {
-				source.IdentityOutput = true
-				continue
+			columns, err := r.selectColumns(cte.GetCtequery().GetSelectStmt(), scope)
+			if err != nil {
+				return nil, err
 			}
-			output := strings.TrimSpace(target.GetName())
-			if output == "" {
-				output = column
+			columns, err = renamePostgresValueColumns(columns, cte.GetAliascolnames())
+			if err != nil {
+				return nil, err
 			}
-			source.Bindings = append(source.Bindings, plugin.QueryOutputBinding{
-				SourcePath: []string{column}, OutputPath: []string{output}, Transformation: plugin.QueryOutputTransformationDirect,
-			})
-			continue
-		}
-		for _, reference := range collectPostgresOutputColumnRefs(target.GetVal()) {
-			column, wildcard, ok := postgresOutputColumn(reference, qualifiers)
-			if !ok || wildcard {
-				return false
-			}
-			source.Bindings = append(source.Bindings, plugin.QueryOutputBinding{
-				SourcePath: []string{column}, OutputPath: postgresOptionalOutputPath(target.GetName()), Transformation: plugin.QueryOutputTransformationDerived,
-			})
+			scope[cte.GetCtename()] = columns
 		}
 	}
-	return true
+	if stmt.GetOp() != pgquery.SetOperation_SETOP_NONE {
+		if stmt.GetOp() != pgquery.SetOperation_SETOP_UNION {
+			return nil, fmt.Errorf("set output is unresolved")
+		}
+		left, err := r.selectColumns(stmt.GetLarg(), scope)
+		if err != nil {
+			return nil, err
+		}
+		right, err := r.selectColumns(stmt.GetRarg(), scope)
+		if err != nil {
+			return nil, err
+		}
+		if len(left) != len(right) {
+			return nil, fmt.Errorf("set output arity differs")
+		}
+		columns := make([]postgresValueColumn, len(left))
+		for i := range left {
+			columns[i] = postgresValueColumn{name: left[i].name, origins: mergePostgresValueOrigins(left[i].origins, right[i].origins, true)}
+		}
+		return columns, checkPostgresValueColumnNames(columns)
+	}
+	relation := postgresValueRelation{qualified: map[string][]postgresValueColumn{}}
+	for _, node := range stmt.GetFromClause() {
+		next, err := r.fromRelation(node, scope)
+		if err != nil {
+			return nil, err
+		}
+		relation.columns = append(relation.columns, next.columns...)
+		if err := mergePostgresValueQualifiers(relation.qualified, next.qualified); err != nil {
+			return nil, err
+		}
+	}
+	columns := []postgresValueColumn{}
+	for _, node := range stmt.GetTargetList() {
+		target := node.GetResTarget()
+		if target == nil || target.GetVal() == nil {
+			return nil, fmt.Errorf("invalid output target")
+		}
+		if ref := target.GetVal().GetColumnRef(); ref != nil {
+			selected, err := postgresValueReference(ref, relation)
+			if err != nil {
+				return nil, err
+			}
+			for _, column := range selected {
+				if target.GetName() != "" {
+					column.name = target.GetName()
+				}
+				columns = append(columns, column)
+			}
+			continue
+		}
+		if postgresOutputHasUnresolvedScope(target.GetVal().ProtoReflect()) {
+			return nil, fmt.Errorf("nested output scope is unresolved")
+		}
+		origins := []postgresValueOrigin{}
+		for _, ref := range collectPostgresOutputColumnRefs(target.GetVal()) {
+			selected, err := postgresValueReference(ref, relation)
+			if err != nil || len(selected) != 1 {
+				return nil, fmt.Errorf("expression source is unresolved")
+			}
+			origins = mergePostgresValueOrigins(origins, selected[0].origins, true)
+		}
+		name := target.GetName()
+		if name == "" {
+			name = postgresValueExpressionName(target.GetVal())
+		}
+		if name == "" {
+			return nil, fmt.Errorf("expression output name is unresolved")
+		}
+		columns = append(columns, postgresValueColumn{name: name, origins: origins})
+	}
+	return columns, checkPostgresValueColumnNames(columns)
 }
 
-func composePostgresSubqueryOutputLineage(statement *pgquery.SelectStmt, alias string, inner []plugin.QueryOutputSource) []plugin.QueryOutputSource {
-	result := make([]plugin.QueryOutputSource, len(inner))
-	for index := range inner {
-		result[index] = plugin.QueryOutputSource{Path: inner[index].Path, Fields: inner[index].Fields, OpaqueOutput: inner[index].OpaqueOutput}
+func (r *postgresOutputResolver) fromRelation(node *pgquery.Node, scope map[string][]postgresValueColumn) (postgresValueRelation, error) {
+	if node == nil {
+		return postgresValueRelation{}, fmt.Errorf("missing relation")
 	}
-	qualifiers := map[string]struct{}{strings.TrimSpace(alias): {}}
-	for _, targetNode := range statement.GetTargetList() {
-		target := targetNode.GetResTarget()
-		if target == nil || target.GetVal() == nil {
-			markPostgresLineageOpaque(result)
-			return result
+	if table := node.GetRangeVar(); table != nil {
+		var columns []postgresValueColumn
+		if table.GetSchemaname() == "" {
+			columns = scope[table.GetRelname()]
 		}
-		if reference := target.GetVal().GetColumnRef(); reference != nil {
-			column, wildcard, ok := postgresOutputColumn(reference, qualifiers)
-			if !ok {
-				markPostgresLineageOpaque(result)
-				return result
+		if columns == nil {
+			resolved, err := r.catalog.ResolveRelation(r.ctx, postgresRelationReference{Schema: table.GetSchemaname(), Name: table.GetRelname()})
+			if err != nil {
+				return postgresValueRelation{}, err
 			}
-			if wildcard {
-				for index := range inner {
-					if inner[index].OpaqueOutput {
-						continue
+			index := postgresLineageSourceIndex(r.sources, resolved.Schema, resolved.Name)
+			if index < 0 {
+				return postgresValueRelation{}, fmt.Errorf("source outside read set")
+			}
+			if resolved.Relkind == "v" {
+				for i := range r.sources {
+					if i != index {
+						r.opaqueSources[i] = true
 					}
-					result[index].IdentityOutput = inner[index].IdentityOutput
-					result[index].Bindings = append(result[index].Bindings, inner[index].Bindings...)
 				}
-				continue
 			}
-			output := strings.TrimSpace(target.GetName())
-			if output == "" {
-				output = column
+			for _, field := range r.sources[index].Fields {
+				path := field.Path
+				if len(path) == 0 {
+					path = []string{field.Name}
+				}
+				columns = append(columns, postgresValueColumn{name: field.Name, origins: []postgresValueOrigin{{source: index, path: path}}})
 			}
-			if !appendPostgresComposedBinding(result, inner, column, []string{output}, plugin.QueryOutputTransformationDirect) {
-				markPostgresLineageOpaque(result)
-				return result
-			}
-			continue
 		}
-		for _, reference := range collectPostgresOutputColumnRefs(target.GetVal()) {
-			column, wildcard, ok := postgresOutputColumn(reference, qualifiers)
-			if !ok || wildcard || !appendPostgresComposedBinding(result, inner, column, postgresOptionalOutputPath(target.GetName()), plugin.QueryOutputTransformationDerived) {
-				markPostgresLineageOpaque(result)
-				return result
+		columns, err := renamePostgresValueColumns(columns, table.GetAlias().GetColnames())
+		if err != nil {
+			return postgresValueRelation{}, err
+		}
+		qualified := map[string][]postgresValueColumn{}
+		if alias := table.GetAlias().GetAliasname(); alias != "" {
+			qualified[alias] = columns
+		} else {
+			qualified[table.GetRelname()] = columns
+			if table.GetSchemaname() != "" {
+				qualified[table.GetSchemaname()+"."+table.GetRelname()] = columns
+			}
+		}
+		return postgresValueRelation{columns: columns, qualified: qualified}, nil
+	}
+	if sub := node.GetRangeSubselect(); sub != nil {
+		if sub.GetLateral() || sub.GetAlias().GetAliasname() == "" {
+			return postgresValueRelation{}, fmt.Errorf("subquery scope is unresolved")
+		}
+		columns, err := r.selectColumns(sub.GetSubquery().GetSelectStmt(), scope)
+		if err != nil {
+			return postgresValueRelation{}, err
+		}
+		columns, err = renamePostgresValueColumns(columns, sub.GetAlias().GetColnames())
+		if err != nil {
+			return postgresValueRelation{}, err
+		}
+		return postgresValueRelation{columns: columns, qualified: map[string][]postgresValueColumn{sub.GetAlias().GetAliasname(): columns}}, nil
+	}
+	if join := node.GetJoinExpr(); join != nil {
+		if join.GetIsNatural() {
+			return postgresValueRelation{}, fmt.Errorf("natural join output is unresolved")
+		}
+		left, err := r.fromRelation(join.GetLarg(), scope)
+		if err != nil {
+			return postgresValueRelation{}, err
+		}
+		right, err := r.fromRelation(join.GetRarg(), scope)
+		if err != nil {
+			return postgresValueRelation{}, err
+		}
+		result := postgresValueRelation{qualified: map[string][]postgresValueColumn{}}
+		if err := mergePostgresValueQualifiers(result.qualified, left.qualified); err != nil {
+			return result, err
+		}
+		if err := mergePostgresValueQualifiers(result.qualified, right.qualified); err != nil {
+			return result, err
+		}
+		using := map[string]bool{}
+		for _, key := range join.GetUsingClause() {
+			name := key.GetString_().GetSval()
+			l, err := uniquePostgresValueColumn(left.columns, name)
+			if err != nil {
+				return result, err
+			}
+			rr, err := uniquePostgresValueColumn(right.columns, name)
+			if err != nil {
+				return result, err
+			}
+			switch join.GetJointype() {
+			case pgquery.JoinType_JOIN_INNER, pgquery.JoinType_JOIN_LEFT:
+			case pgquery.JoinType_JOIN_RIGHT:
+				l = rr
+			case pgquery.JoinType_JOIN_FULL:
+				l.origins = mergePostgresValueOrigins(l.origins, rr.origins, true)
+			default:
+				return result, fmt.Errorf("join output is unresolved")
+			}
+			// The merged key can undergo PostgreSQL common-type coercion.
+			// Preserve only the side(s) supplying its value, with derived semantics.
+			l.origins = mergePostgresValueOrigins(l.origins, nil, true)
+			result.columns = append(result.columns, l)
+			using[name] = true
+		}
+		for _, side := range [][]postgresValueColumn{left.columns, right.columns} {
+			for _, column := range side {
+				if !using[column.name] {
+					result.columns = append(result.columns, column)
+				}
+			}
+		}
+		if alias := join.GetAlias(); alias != nil {
+			result.columns, err = renamePostgresValueColumns(result.columns, alias.GetColnames())
+			if err != nil {
+				return result, err
+			}
+			result.qualified = map[string][]postgresValueColumn{alias.GetAliasname(): result.columns}
+		}
+		// PostgreSQL's USING alias exposes only the merged key columns.
+		if alias := join.GetJoinUsingAlias(); alias != nil {
+			result.qualified[alias.GetAliasname()] = result.columns[:len(using)]
+		}
+		return result, nil
+	}
+	return postgresValueRelation{}, fmt.Errorf("relation output is unresolved")
+}
+
+func postgresValueReference(ref *pgquery.ColumnRef, relation postgresValueRelation) ([]postgresValueColumn, error) {
+	parts := []string{}
+	for _, field := range ref.GetFields() {
+		if field.GetAStar() != nil {
+			parts = append(parts, "*")
+		} else if value := field.GetString_().GetSval(); value != "" {
+			parts = append(parts, value)
+		} else {
+			return nil, fmt.Errorf("invalid field reference")
+		}
+	}
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty field reference")
+	}
+	columns := relation.columns
+	if len(parts) > 1 {
+		var ok bool
+		columns, ok = relation.qualified[strings.Join(parts[:len(parts)-1], ".")]
+		if !ok {
+			return nil, fmt.Errorf("unknown qualifier")
+		}
+	}
+	name := parts[len(parts)-1]
+	if name == "*" {
+		if len(columns) == 0 {
+			return nil, fmt.Errorf("empty wildcard")
+		}
+		return columns, nil
+	}
+	column, err := uniquePostgresValueColumn(columns, name)
+	if err != nil {
+		return nil, err
+	}
+	return []postgresValueColumn{column}, nil
+}
+func uniquePostgresValueColumn(columns []postgresValueColumn, name string) (postgresValueColumn, error) {
+	found := -1
+	for i, column := range columns {
+		if column.name == name {
+			if found >= 0 {
+				return postgresValueColumn{}, fmt.Errorf("ambiguous field")
+			}
+			found = i
+		}
+	}
+	if found < 0 {
+		return postgresValueColumn{}, fmt.Errorf("unknown field")
+	}
+	return columns[found], nil
+}
+func mergePostgresValueOrigins(left, right []postgresValueOrigin, derived bool) []postgresValueOrigin {
+	result := []postgresValueOrigin{}
+	indexes := map[string]int{}
+	for _, origins := range [][]postgresValueOrigin{left, right} {
+		for _, origin := range origins {
+			origin.derived = origin.derived || derived
+			key := fmt.Sprintf("%d:%s", origin.source, strings.Join(origin.path, "\x00"))
+			if index, exists := indexes[key]; exists {
+				result[index].derived = result[index].derived || origin.derived
+			} else {
+				indexes[key] = len(result)
+				result = append(result, origin)
 			}
 		}
 	}
 	return result
 }
-
-func appendPostgresComposedBinding(
-	result []plugin.QueryOutputSource,
-	inner []plugin.QueryOutputSource,
-	innerOutput string,
-	outerOutput []string,
-	outerTransformation string,
-) bool {
-	matched := false
-	for index, source := range inner {
-		if source.OpaqueOutput {
-			continue
+func mergePostgresValueQualifiers(target, source map[string][]postgresValueColumn) error {
+	for key, columns := range source {
+		if _, exists := target[key]; exists {
+			return fmt.Errorf("duplicate qualifier")
 		}
-		if source.IdentityOutput {
-			result[index].Bindings = append(result[index].Bindings, plugin.QueryOutputBinding{
-				SourcePath: []string{innerOutput}, OutputPath: outerOutput, Transformation: outerTransformation,
-			})
-			matched = true
+		target[key] = columns
+	}
+	return nil
+}
+func renamePostgresValueColumns(columns []postgresValueColumn, aliases []*pgquery.Node) ([]postgresValueColumn, error) {
+	if len(aliases) > len(columns) {
+		return nil, fmt.Errorf("too many column aliases")
+	}
+	result := append([]postgresValueColumn(nil), columns...)
+	for i, alias := range aliases {
+		result[i].name = alias.GetString_().GetSval()
+	}
+	return result, checkPostgresValueColumnNames(result)
+}
+func checkPostgresValueColumnNames(columns []postgresValueColumn) error {
+	seen := map[string]bool{}
+	for _, column := range columns {
+		if column.name == "" || seen[column.name] {
+			return fmt.Errorf("empty or duplicate output name")
 		}
-		for _, binding := range source.Bindings {
-			if len(binding.OutputPath) != 1 || binding.OutputPath[0] != innerOutput {
-				continue
-			}
-			transformation := outerTransformation
-			if binding.Transformation != plugin.QueryOutputTransformationDirect {
-				transformation = plugin.QueryOutputTransformationDerived
-			}
-			result[index].Bindings = append(result[index].Bindings, plugin.QueryOutputBinding{
-				SourcePath: append([]string(nil), binding.SourcePath...), OutputPath: append([]string(nil), outerOutput...), Transformation: transformation,
-			})
-			matched = true
+		seen[column.name] = true
+	}
+	return nil
+}
+func postgresValueExpressionName(node *pgquery.Node) string {
+	if node.GetAConst() != nil || node.GetAExpr() != nil || node.GetBoolExpr() != nil {
+		return "?column?"
+	}
+	if call := node.GetFuncCall(); call != nil {
+		names := call.GetFuncname()
+		if len(names) > 0 {
+			return names[len(names)-1].GetString_().GetSval()
 		}
 	}
-	return matched
+	if cast := node.GetTypeCast(); cast != nil {
+		if ref := cast.GetArg().GetColumnRef(); ref != nil {
+			parts := ref.GetFields()
+			if len(parts) > 0 {
+				return parts[len(parts)-1].GetString_().GetSval()
+			}
+		}
+		return ""
+	}
+
+	if node.GetCoalesceExpr() != nil {
+		return "coalesce"
+	}
+	return ""
+}
+func postgresOutputHasUnresolvedScope(message protoreflect.Message) bool {
+	if node, ok := message.Interface().(*pgquery.Node); ok {
+		if node.GetSubLink() != nil || node.GetFuncCall().GetOver() != nil || node.GetFuncCall().GetAggWithinGroup() {
+			return true
+		}
+	}
+	found := false
+	message.Range(func(field protoreflect.FieldDescriptor, value protoreflect.Value) bool {
+		if field.Kind() != protoreflect.MessageKind {
+			return true
+		}
+		if field.IsList() {
+			list := value.List()
+			for i := 0; i < list.Len(); i++ {
+				if postgresOutputHasUnresolvedScope(list.Get(i).Message()) {
+					found = true
+					break
+				}
+			}
+		} else {
+			found = postgresOutputHasUnresolvedScope(value.Message())
+		}
+		return !found
+	})
+	return found
 }
 
 func (p *PostgreSQLPlugin) postgresLineageSources(ctx context.Context, connInfo plugin.ConnectionInfo, readSet *plugin.QueryReadSet) ([]plugin.QueryOutputSource, error) {
@@ -255,6 +496,8 @@ func (p *PostgreSQLPlugin) postgresLineageSources(ctx context.Context, connInfo 
 func markPostgresLineageOpaque(sources []plugin.QueryOutputSource) {
 	for index := range sources {
 		sources[index].OpaqueOutput = true
+		sources[index].IdentityOutput = false
+		sources[index].Bindings = nil
 	}
 }
 
@@ -268,44 +511,21 @@ func postgresLineageSourceIndex(sources []plugin.QueryOutputSource, schema, rela
 	return -1
 }
 
-func postgresOutputColumn(reference *pgquery.ColumnRef, qualifiers map[string]struct{}) (string, bool, bool) {
-	parts := make([]string, 0, len(reference.GetFields()))
-	wildcard := false
-	for _, field := range reference.GetFields() {
-		if field.GetAStar() != nil {
-			wildcard = true
-			parts = append(parts, "*")
-			continue
-		}
-		value := strings.TrimSpace(field.GetString_().GetSval())
-		if value == "" {
-			return "", false, false
-		}
-		parts = append(parts, value)
-	}
-	if len(parts) == 1 {
-		return parts[0], wildcard, true
-	}
-	qualifier := strings.Join(parts[:len(parts)-1], ".")
-	if _, exists := qualifiers[qualifier]; !exists {
-		return "", false, false
-	}
-	return parts[len(parts)-1], wildcard, true
-}
-
-func postgresOptionalOutputPath(name string) []string {
-	if name = strings.TrimSpace(name); name != "" {
-		return []string{name}
-	}
-	return nil
-}
-
 func collectPostgresOutputColumnRefs(node *pgquery.Node) []*pgquery.ColumnRef {
 	if node == nil {
 		return nil
 	}
 	if reference := node.GetColumnRef(); reference != nil {
 		return []*pgquery.ColumnRef{reference}
+	}
+	// Aggregate FILTER and ORDER BY select or order rows; only arguments
+	// supply field values. Ordered-set aggregates are rejected separately.
+	if call := node.GetFuncCall(); call != nil {
+		result := []*pgquery.ColumnRef{}
+		for _, arg := range call.GetArgs() {
+			result = append(result, collectPostgresOutputColumnRefs(arg)...)
+		}
+		return result
 	}
 	return collectPostgresColumnRefsFromMessage(node.ProtoReflect())
 }

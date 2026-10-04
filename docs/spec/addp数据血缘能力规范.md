@@ -244,13 +244,15 @@ Develop Query Execution Supervisor 必须在业务写入事务成功提交后，
 
 1. 先完成 table / file / object / view / collection / graph / whole dataset 的 data item 级闭环。
 2. Transfer 显式 field mapping 先产生字段级关系。
-3. 再按引擎方言实现 SQL 字段解析，并结合 Meta 字段事实处理 CTE、别名、`*` 和表达式。
+3. 再按引擎方言由 Provider 证明 SQL 输出来源，并结合其实时结构事实处理 CTE、别名、`*` 和表达式。
 
 字段不是默认的独立 data item，字段引用使用 `item_id + field_name + schema_snapshot_hash`，完整结构快照保存在执行事实和不可变证据中。无法可靠解析的 SQL 不得保存猜测边，也不使用任意浮点 `confidence` 伪装确定性。
 
 ### 6.1 字段级首期契约
 
 首期支持 Transfer bounded native table -> native table，以及同一 PreparedQuery 能证明单一源数据项完整输出映射的 query source -> native table。字段血缘回答目标字段值来自哪些源字段；过滤、JOIN 条件、排序及行数影响不混入值来源关系。查询源只消费 Provider 的 ReadSet / OutputLineage，不在 Transfer 解析 SQL/MQL；MongoDB 透明 aggregate 的嵌套字段别名、`$ifNull: [field, null]` 和 `$unwind.includeArrayIndex` 按 Provider 证据与实际 field mapping 组合，数组索引保留 derived 语义。多来源查询、opaque / unresolved 或缺少精确输出绑定的查询、continuous/CDC、encoded 输出及空间重投影暂不声明完整字段血缘，继续记录数据项级事实，字段视图明确显示证据不可用。
+
+PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派生表、JOIN、UNION 与表达式的字段值来源。该证明能力不替代执行 owner 的写入事实：Develop 现有表结果写入仍只记录数据项级关系，尚未冻结并记录源/目标字段快照和实际写入字段映射，不能据此声明 DWD 字段血缘已经可用。
 
 - `lineage_facts` 保持 `addp.lineage-facts/v1`；资源引用的 `schema_snapshot` 使用 `{hash, fields}`，fields 来自同一次真实读取和目标写入结构，hash 复用 Common 的 `TableSchemaSnapshotHash`。不回查当前结构补造执行快照。
 - 查询源冻结 Provider 的原始来源结构及精确路径绑定，查询结果列不能充当原始来源快照。嵌套字段只按快照中的唯一字段名引用，完整 path 参与结构哈希；点号不会被 collector 或查询 API 再次拆分。查询保护准备同时返回实际受转换影响的结果字段名，与同次保护规则绑定；这些字段经过别名及后续 field mapping 后仍须记为 derived，抑制列不产生映射。

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -367,4 +368,50 @@ func TestIntegrationResolvePostgresQueryOutputLineageComposesPublishedServiceWra
 	}
 	assertPostgresOutputBinding(t, lineage.Sources[0].Bindings[0], "id", "id", plugin.QueryOutputTransformationDirect)
 	assertPostgresOutputBinding(t, lineage.Sources[0].Bindings[1], "phone", "contact", plugin.QueryOutputTransformationDirect)
+}
+
+func TestIntegrationResolvePostgresQueryOutputLineageDWD(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+	ctx := t.Context()
+	schema := fmt.Sprintf("dwd_lineage_%d", time.Now().UnixNano())
+	if _, err := db.ExecContext(ctx, `CREATE SCHEMA "`+schema+`"`); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(`DROP SCHEMA "` + schema + `" CASCADE`)
+	for name, columns := range map[string]string{
+		"members":    "person_id text, activity_id text, member_status text",
+		"activities": "activity_id text,current_leader_person_id text,is_effective_activity boolean,activity_date date,activity_intensity numeric",
+		"persons":    "person_id text,person_nickname text",
+	} {
+		if _, err := db.ExecContext(ctx, `CREATE TABLE "`+schema+`"."`+name+`" (`+columns+`)`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query := strings.ReplaceAll(postgresDWDLineageQuery, "outdoor.", `"`+schema+`".`)
+	prepared, err := pg.PrepareQuery(ctx, connInfo, plugin.QueryRequest{EngineID: 91, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineage, err := prepared.OutputLineage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := 0
+	for _, source := range lineage.Sources {
+		if source.OpaqueOutput {
+			t.Fatalf("DWD source opaque: %+v", source.Path)
+		}
+		total += len(source.Bindings)
+	}
+	if len(lineage.Sources) != 3 || total != 12 {
+		t.Fatalf("DWD lineage: %+v", lineage)
+	}
+	result, err := prepared.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Columns) != 7 {
+		t.Fatalf("DWD output: %+v", result.Columns)
+	}
 }
