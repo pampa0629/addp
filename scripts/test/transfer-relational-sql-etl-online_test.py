@@ -126,12 +126,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             with patch.dict(ONLINE.os.environ, environment, clear=False), patch.object(
                 ONLINE.subprocess, "run", side_effect=fake_run
             ):
-                self.assertEqual(ONLINE.run_browser(root, environment, name, {"target_item_id": 11}, {"target_item_id": 12}), payload)
+                self.assertEqual(ONLINE.run_browser(root, environment, name, {"target_item_id": 11}, {"target_item_id": 12}, {"target_item_id": 13}), payload)
 
     @staticmethod
     def browser_report(name: str) -> dict[str, object]:
         return {
-            "schema_version": "addp.transfer-relational-sql-etl-browser/v3",
+            "schema_version": "addp.transfer-relational-sql-etl-browser/v4",
             "suite": "transfer-relational-sql-etl",
             "run_id": "run-123",
             "result": "passed",
@@ -148,11 +148,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "manager_field_graph_verified": True,
             "query_field_lineage_verified": True,
             "manager_mongodb_field_graph_verified": True,
+            "manager_orchestrated_field_graph_verified": True,
         }
 
     def test_browser_proofs_and_current_report_version_are_required(self):
         name = ONLINE.task_name("run-123")
-        for key in ("manager_field_graph_verified", "query_field_lineage_verified", "manager_mongodb_field_graph_verified"):
+        for key in ("manager_field_graph_verified", "query_field_lineage_verified", "manager_mongodb_field_graph_verified", "manager_orchestrated_field_graph_verified"):
             with self.subTest(key=key):
                 report = self.browser_report(name)
                 report[key] = False
@@ -268,13 +269,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(full_name, item["full_name"])
             return item
         output = io.StringIO()
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v3")
-        self.assertEqual(report["created_resources"], 5)
-        self.assertEqual(report["deleted_resources"], 5)
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v4")
+        self.assertEqual(report["created_resources"], 8)
+        self.assertEqual(report["deleted_resources"], 8)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
 
@@ -413,6 +414,117 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         ONLINE.validate_graph_snapshots(graph, {5: "sha256:table-5", 7: "sha256:table-7", 11: "sha256:table-11"})
         with self.assertRaisesRegex(ONLINE.SuiteError, "frozen execution schemas"):
             ONLINE.validate_graph_snapshots(graph, {5: "wrong", 7: "sha256:table-7", 11: "sha256:table-11"})
+
+    @staticmethod
+    def query_execution(identifier, bindings, target, target_fields, mappings, rows):
+        fields = {"ods": [target for _, target in ONLINE.MONGODB_FIELDS], "dim": ["activity_id", "activity_date"]}
+        return {"execution_id": identifier, "rows_affected": rows, "metadata": {
+            "outputs": {"execution_id": identifier, "target_locator": target, "row_count": rows},
+            "lineage_facts": {"schema_version": "addp.lineage-facts/v1",
+                "inputs": [{"port": "input." + key, "locator": locator, "schema_snapshot": {"hash": "sha256:" + key, "fields": [{"name": value} for value in fields[key]]}} for key, locator in bindings.items()],
+                "outputs": [{"port": "target", "locator": target, "write_mode": "replace", "schema_snapshot": {"hash": "sha256:dim" if len(target_fields) == 2 else "sha256:dwd", "fields": [{"name": value} for value in target_fields]}}],
+                "operations": [{"kind": "derive", "operator": "develop", "field_lineage_status": "complete", "field_mappings": [{"input_port": port, "source_field": source, "target_field": dest, "transformation": transform, "output_port": "target"} for port, source, dest, transform in mappings]}]}}}
+
+    def test_orchestrated_child_rejects_wrong_owner_parent_and_task(self):
+        child = {"parent_execution_id": "parent", "module": "develop", "task_type": "query", "source": "orchestrator", "source_task_id": "8", "tenant_id": 2, "status": "success"}
+        ONLINE.validate_orchestrated_child(child, "parent", "develop", 8, 2)
+        for key, value in {"parent_execution_id": "older-parent", "module": "orchestrator", "task_type": "sync", "source_task_id": "9", "tenant_id": 3, "source": "manual", "status": "failed"}.items():
+            with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_orchestrated_child(dict(child, **{key: value}), "parent", "develop", 8, 2)
+
+    def test_query_facts_reject_incomplete_readset_mappings_and_physical_output(self):
+        bindings, target = {"ods": "ods-locator"}, "dim-locator"
+        mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.ods", "activity_date_raw", "activity_date", "derived")}
+        fields = ["activity_id", "activity_date"]
+        def proof():
+            return self.query_execution("query", bindings, target, fields, mappings, 3)
+        ONLINE.validate_query_facts(proof(), bindings, target, fields, mappings, 3)
+        for mutate in (
+            lambda value: value.update(rows_affected=6),
+            lambda value: value["metadata"]["outputs"].update(target_locator="other"),
+            lambda value: value["metadata"]["lineage_facts"]["inputs"].clear(),
+            lambda value: value["metadata"]["lineage_facts"]["inputs"][0]["schema_snapshot"].update(hash=""),
+            lambda value: value["metadata"]["lineage_facts"]["outputs"][0].update(write_mode="append"),
+            lambda value: value["metadata"]["lineage_facts"]["operations"][0]["field_mappings"].pop(),
+            lambda value: value["metadata"]["lineage_facts"]["operations"][0].update(field_lineage_status="unavailable"),
+        ):
+            execution = proof()
+            mutate(execution)
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_query_facts(execution, bindings, target, fields, mappings, 3)
+
+    def test_chain_reruns_same_definition_and_only_observes_latest_owner_proofs(self):
+        items = {"public." + ONLINE.MONGODB_TARGET: {"id": 22, "full_name": "public." + ONLINE.MONGODB_TARGET, "item_type": "table"},
+                 "public." + ONLINE.DIM_TARGET: {"id": 23, "full_name": "public." + ONLINE.DIM_TARGET, "item_type": "table"},
+                 "public." + ONLINE.DWD_TARGET: {"id": 24, "full_name": "public." + ONLINE.DWD_TARGET, "item_type": "table"}}
+        locators = {key: ONLINE.SUPPORT.build_item_locator(3, value) for key, value in items.items()}
+        ods, dim, dwd = (locators["public." + table] for table in (ONLINE.MONGODB_TARGET, ONLINE.DIM_TARGET, ONLINE.DWD_TARGET))
+        mongodb = {"target_locator": ods, "target_item_id": 22, "task_id": 7, "source_item_id": 20, "source_engine_id": 4,
+                   "source_locator": self.mongodb_execution()["metadata"]["lineage_facts"]["inputs"][0]["locator"], "source_schema_snapshot_hash": "sha256:mongo"}
+        created, starts, proofs, paths = [], [], [], []
+        def request(method, path, status, body=None):
+            if method == "POST" and path.endswith("/execute"):
+                starts.append(path)
+                return SimpleNamespace(payload={"execution_id": "root-" + str(len(starts)), "status": "pending"})
+            self.assertEqual(method, "POST")
+            created.append((path, body))
+            return SimpleNamespace(payload={"id": 7 + len(created), "tenant_id": 2})
+        def owner(client, module, identifier, timeout):
+            round_id = identifier.rsplit("-", 1)[1]
+            if module == "orchestrator":
+                return {"source_task_id": "10", "tenant_id": 2, "metadata": {"step_results": {key: {"status": "success", "result": {"execution_id": key + "-" + round_id}} for key in ("ods", "dim", "dwd")}}}
+            if module == "transfer":
+                execution, task = self.mongodb_execution(identifier), 7
+            else:
+                is_dim = identifier.startswith("dim")
+                bindings = {"ods": ods} if is_dim else {"ods": ods, "dim": dim}
+                mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.ods", "activity_date_raw", "activity_date", "derived")} if is_dim else {
+                    ("input.ods", "activity_id", "activity_id", "direct"), ("input.dim", "activity_date", "activity_date", "direct"), ("input.ods", "leader_nickname_snapshot", "person_nickname", "direct"), ("input.ods", "activity_level_raw", "intensity", "derived")}
+                execution = self.query_execution(identifier, bindings, dim if is_dim else dwd, ["activity_id", "activity_date"] if is_dim else ["activity_id", "activity_date", "person_nickname", "intensity"], mappings, 3 if is_dim else 2)
+                task = 8 if is_dim else 9
+            execution.update(module=module, parent_execution_id="root-" + round_id, source="orchestrator", source_task_id=str(task), tenant_id=2, status="success", task_type="sync" if module == "transfer" else "query")
+            return execution
+        hashes = {20: "sha256:mongo", 22: "sha256:ods", 23: "sha256:dim", 24: "sha256:dwd"}
+        def graph(client, item_id, field, expected, timeout):
+            proofs.append((field, expected))
+            identities = {(edge[0], edge[1]) for edge in expected} | {(edge[2], edge[3]) for edge in expected}
+            return {"nodes": [{"item_id": item, "field_name": name, "schema_snapshot_hash": hashes[item], "engine_id": 4 if item == 20 else 3} for item, name in identities]}
+        with patch.object(ONLINE, "find_item", side_effect=lambda client, engine, full_name, kind: items[full_name]), patch.object(ONLINE, "wait_owner_execution", side_effect=owner), patch.object(ONLINE, "wait_field_graph", side_effect=graph), patch.object(ONLINE, "wait_resource_chain") as resource, patch.object(ONLINE, "wait_for_scan") as scan:
+            report = ONLINE.run_orchestrated_lineage(SimpleNamespace(request=request), 3, 2, mongodb, "run-name", 30, paths)
+        self.assertEqual(len(created), 3)
+        self.assertEqual(starts, ["/api/v1/orchestrator/orchestrations/10/execute"] * 2)
+        self.assertEqual(len(paths), 3)
+        self.assertEqual(resource.call_count, 2)
+        scan.assert_not_called()
+        self.assertEqual(len(proofs), 20)
+        date = next(expected for field, expected in reversed(proofs) if field == "activity_date")
+        self.assertEqual({edge[5] for edge in date}, {"ods-2", "dim-2", "dwd-2"})
+        self.assertEqual(len(date), 3)
+        self.assertEqual(mongodb["latest_execution_id"], "ods-2")
+        self.assertEqual([value["parent_execution_id"] for value in report["rounds"]], ["root-1", "root-2"])
+        steps = created[2][1]["steps"]
+        self.assertEqual([(step["provider"], step["task_type"], step["depends_on"]) for step in steps], [("transfer", "sync", []), ("develop", "query", ["ods"]), ("develop", "query", ["dim"])])
+
+    def test_resource_chain_rejects_stale_or_fabricated_parent_evidence(self):
+        expected = {(20, 22, "child")}
+        edge = {"source": {"item_id": 20}, "target": {"item_id": 22}, "evidence": {"execution_id": "parent"}, "status": "active", "granularity": "item"}
+        client = SimpleNamespace(request=Mock(return_value=SimpleNamespace(payload={"truncated": False, "edges": [edge]})))
+        with patch.object(ONLINE.time, "monotonic", side_effect=[0, 0, 2]), patch.object(ONLINE.time, "sleep"), self.assertRaisesRegex(ONLINE.SuiteError, "actual latest"):
+            ONLINE.wait_resource_chain(client, 22, expected, 1)
+        edge["evidence"]["execution_id"] = "child"
+        with patch.object(ONLINE.time, "monotonic", return_value=0):
+            ONLINE.wait_resource_chain(client, 22, expected, 1)
+
+    def test_cleanup_definitions_checks_all_owners_and_never_retries_unknown_delete(self):
+        paths = ["/api/v1/develop/task-definitions/8", "/api/v1/orchestrator/orchestrations/10"]
+        calls = []
+        def request(method, path, status):
+            calls.append((method, path, status))
+            if method == "DELETE" and path.endswith("/10"):
+                raise ONLINE.SuiteError("unknown deletion")
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.cleanup_definitions(SimpleNamespace(request=request), paths)
+        self.assertEqual(calls, [("DELETE", "/api/v1/orchestrator/orchestrations/10", (200,)), ("DELETE", "/api/v1/develop/task-definitions/8", (200,)), ("GET", "/api/v1/develop/task-definitions/8", (404,))])
 
 
 if __name__ == "__main__":

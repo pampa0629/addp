@@ -241,6 +241,8 @@ SUITES: Mapping[str, Suite] = {
             ("meta", "META_URL"),
             ("transfer", "TRANSFER_URL"),
             ("manager", "MANAGER_URL"),
+            ("develop", "DEVELOP_URL"),
+            ("orchestrator", "ORCHESTRATOR_URL"),
         ),
     ),
     "enterprise-catalog-publishing": Suite(

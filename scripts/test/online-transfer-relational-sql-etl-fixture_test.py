@@ -73,6 +73,10 @@ case "$1" in
     case " $* " in
       *"string_agg(column_name"*"addp_online_transfer_mongodb_ods"*) echo 'activity_id,activity_status,activity_date_raw,activity_level_raw,leader_person_id,leader_nickname_snapshot' ;;
       *"addp_online_transfer_mongodb_ods"*) echo "${ADDP_TEST_MONGODB_VALUES:-activity-1|active|2026-01-01|easy|person-1|Alice;activity-2|inactive|2026-01-02|moderate|person-2|Bob;activity-3|active|2026-01-03|hard|person-3|Carol}" ;;
+
+      *"string_agg(table_name"*) echo 'addp_online_transfer_dim_activity:date,addp_online_transfer_dwd_activity:date' ;;
+      *"addp_online_transfer_dim_activity"*) echo "${ADDP_TEST_DIM_VALUES:-activity-1|2026-01-01;activity-2|2026-01-02;activity-3|2026-01-03}" ;;
+      *"addp_online_transfer_dwd_activity"*) echo "${ADDP_TEST_DWD_VALUES:-activity-1|2026-01-01|Alice|EASY;activity-3|2026-01-03|Carol|HARD}" ;;
       *"numeric_precision"*) echo '8|2' ;;
       *"generated_label"*) echo "${ADDP_TEST_NATIVE_VALUES:-5|1411.50|3|2|5}" ;;
       *"WHERE area"*) echo '5|1411.50|3|2' ;;
@@ -173,6 +177,15 @@ esac
         self.assertIn('ownership mismatch', result.stderr)
         self.assertTrue(self.postgres_state.exists())
         self.assertTrue(self.mongodb_state.exists())
+
+    def test_rejects_chain_duplicate_append_or_wrong_derived_values(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        self.assertIn('GRANT SELECT, INSERT, DELETE ON public.addp_online_transfer_dim_activity, public.addp_online_transfer_dwd_activity', self.log.read_text())
+        for flags, message in (({'ADDP_TEST_DIM_VALUES': 'activity-1|2026-01-01'}, 'DIM rows differ'),
+                               ({'ADDP_TEST_DWD_VALUES': 'activity-1|2026-01-01|Alice|easy'}, 'DWD rows differ')):
+            result = self.run_fixture('verify', **flags)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(message, result.stderr)
 
     def test_rejects_incorrect_nested_ods_values(self):
         self.assertEqual(self.run_fixture('start').returncode, 0)

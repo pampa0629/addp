@@ -9,6 +9,8 @@ TARGET_TABLE=addp_online_transfer_sql_etl_target
 NATIVE_TARGET=addp_online_transfer_field_lineage_target
 NATIVE_DOWNSTREAM=addp_online_transfer_field_lineage_downstream
 MONGODB_TARGET=addp_online_transfer_mongodb_ods
+DIM_TARGET=addp_online_transfer_dim_activity
+DWD_TARGET=addp_online_transfer_dwd_activity
 
 fail() {
   echo "Online Transfer relational SQL ETL fixture failed: $*" >&2
@@ -91,6 +93,10 @@ DROP TABLE IF EXISTS public.${TARGET_TABLE};
 DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM};
 DROP TABLE IF EXISTS public.${NATIVE_TARGET};
 DROP TABLE IF EXISTS public.${SOURCE_TABLE};
+DROP TABLE IF EXISTS public.${DWD_TARGET};
+DROP TABLE IF EXISTS public.${DIM_TARGET};
+CREATE TABLE public.${DIM_TARGET} (activity_id text PRIMARY KEY, activity_date date NOT NULL);
+CREATE TABLE public.${DWD_TARGET} (activity_id text PRIMARY KEY, activity_date date NOT NULL, person_nickname text NOT NULL, intensity text NOT NULL);
 CREATE TABLE public.${SOURCE_TABLE} (
   id bigint PRIMARY KEY,
   region varchar(32) NOT NULL,
@@ -128,6 +134,12 @@ verify_fixture() {
   [ "$values" = 'activity-1|active|2026-01-01|easy|person-1|Alice;activity-2|inactive|2026-01-02|moderate|person-2|Bob;activity-3|active|2026-01-03|hard|person-3|Carol' ] || fail "MongoDB ODS rows differ from the exact nested mapping: $values"
   columns=$(postgres_sql -Atc "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${MONGODB_TARGET}'")
   [ "$columns" = 'activity_id,activity_status,activity_date_raw,activity_level_raw,leader_person_id,leader_nickname_snapshot' ] || fail "MongoDB ODS columns differ from mapping: $columns"
+  values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', activity_id, activity_date), ';' ORDER BY activity_id) FROM public.${DIM_TARGET}")
+  [ "$values" = 'activity-1|2026-01-01;activity-2|2026-01-02;activity-3|2026-01-03' ] || fail "DIM rows differ from exact date conversion: $values"
+  values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', activity_id, activity_date, person_nickname, intensity), ';' ORDER BY activity_id) FROM public.${DWD_TARGET}")
+  [ "$values" = 'activity-1|2026-01-01|Alice|EASY;activity-3|2026-01-03|Carol|HARD' ] || fail "DWD rows differ from exact JOIN, filter and expression: $values"
+  columns=$(postgres_sql -Atc "SELECT string_agg(table_name || ':' || data_type, ',' ORDER BY table_name) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('${DIM_TARGET}', '${DWD_TARGET}') AND column_name='activity_date'")
+  [ "$columns" = 'addp_online_transfer_dim_activity:date,addp_online_transfer_dwd_activity:date' ] || fail "DIM/DWD dates must use the physical date type: $columns"
 }
 
 case "$action" in
@@ -160,6 +172,7 @@ CREATE ROLE transfer_writer LOGIN PASSWORD :'writer_password';
 GRANT CONNECT ON DATABASE transfer_fixture TO transfer_writer;
 GRANT USAGE, CREATE ON SCHEMA public TO transfer_writer;
 GRANT SELECT ON public.addp_online_transfer_sql_etl_source TO transfer_writer;
+GRANT SELECT, INSERT, DELETE ON public.addp_online_transfer_dim_activity, public.addp_online_transfer_dwd_activity TO transfer_writer;
 SQL
     then
       fail "source permissions could not be initialized"

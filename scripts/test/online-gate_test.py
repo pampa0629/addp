@@ -169,7 +169,7 @@ class OnlineGateTest(unittest.TestCase):
             ),
         )
         sql_etl_suite = ONLINE_GATE.SUITES["transfer-relational-sql-etl"]
-        self.assertEqual(sql_etl_suite.services, transfer_suite.services + (("manager", "MANAGER_URL"),))
+        self.assertEqual(sql_etl_suite.services, transfer_suite.services + (("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL"), ("orchestrator", "ORCHESTRATOR_URL")))
         hybrid_search_suite = ONLINE_GATE.SUITES["manager-hybrid-search"]
         self.assertEqual(
             hybrid_search_suite.services,

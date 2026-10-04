@@ -47,6 +47,9 @@ MONGODB_FIELDS = (
 TASK_PREFIX = "addp_online_sql_etl_"
 FORBIDDEN_ADMIN_ROLES = SUPPORT.FORBIDDEN_ADMIN_ROLES
 REQUIRED_PERMISSIONS = {
+    "develop.task.create", "develop.task.read", "develop.task.execute", "develop.task.delete",
+    "develop.data_read.execute", "develop.data_write.execute", "system.execution_authorization.create",
+    "orchestrator.workflow.create", "orchestrator.workflow.read", "orchestrator.workflow.execute", "orchestrator.workflow.delete",
     "manager.content.read",
     "manager.data_item.read",
     "meta.catalog.read",
@@ -301,9 +304,195 @@ def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_eng
             expected_edges.update(expected)
         execution_ids.append(identifier)
     return {"execution_ids": execution_ids, "task_id": task_id, "target_locator": SUPPORT.build_item_locator(target_engine_id, target),
-            "source_item_id": source_id, "target_item_id": target_id, "source_engine_id": source_engine_id, "target_engine_id": target_engine_id,
+            "source_locator": source_locator, "source_item_id": source_id, "target_item_id": target_id, "source_engine_id": source_engine_id, "target_engine_id": target_engine_id,
             "source_schema_snapshot_hash": source_hash, "schema_snapshot_hash": target_hash, "records_read": 3, "records_written": 3,
             "nested_fields_verified": True, "automatic_collection_verified": True, "rerun_verified": True, "expected_edges": sorted(expected_edges)}
+
+
+DIM_TARGET = "addp_online_transfer_dim_activity"
+DWD_TARGET = "addp_online_transfer_dwd_activity"
+
+
+def query_task(name, engine_id, query, bindings):
+    return {"name": name, "dev_type": "query", "timeout": 120,
+            "content": {"query_type": "sql", "query": query,
+                        "query_parameters": [{"name": key, "type": "relation", "default": {"locator": value}}
+                                             for key, value in bindings.items()]},
+            "execution_config": {"engine_id": engine_id}}
+
+
+def wait_owner_execution(client, module, identifier, timeout):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        execution = _object(client.request("GET", f"/api/v1/{module}/executions/{urllib.parse.quote(identifier)}", (200,)).payload, "owner execution")
+        if execution.get("execution_id") != identifier:
+            raise SuiteError("owner execution identity changed")
+        if execution.get("status") == "success":
+            return execution
+        if execution.get("status") in SUPPORT.TERMINAL_STATUSES:
+            raise SuiteError(f"{module} execution failed: {execution.get('error_details', {}).get('code', execution.get('status'))}")
+        time.sleep(1)
+    raise SuiteError(f"{module} execution did not finish before timeout")
+
+
+def validate_orchestrated_child(execution, parent_id, module, task_id, tenant_id):
+    expected = {"parent_execution_id": parent_id, "module": module, "source": "orchestrator",
+                "source_task_id": str(task_id), "tenant_id": tenant_id, "status": "success",
+                "task_type": "sync" if module == "transfer" else "query"}
+    if any(execution.get(key) != value for key, value in expected.items()):
+        raise SuiteError("orchestrated child owner, task, tenant or parent identity mismatch")
+
+
+def validate_query_facts(execution, bindings, target_locator, target_fields, mappings, rows):
+    metadata = _object(execution.get("metadata"), "query metadata")
+    facts = _object(metadata.get("lineage_facts"), "query lineage facts")
+    inputs, outputs, operations = (_array(facts.get(key), key) for key in ("inputs", "outputs", "operations"))
+    if (facts.get("schema_version") != "addp.lineage-facts/v1" or len(inputs) != len(bindings)
+            or len(outputs) != 1 or len(operations) != 1 or execution.get("rows_affected") != rows
+            or metadata.get("outputs") != {"execution_id": execution["execution_id"], "target_locator": target_locator, "row_count": rows}):
+        raise SuiteError("query must persist exact table write outputs and row count")
+    if {ref.get("port"): ref.get("locator") for ref in inputs} != {"input." + key: value for key, value in bindings.items()}:
+        raise SuiteError("query frozen ReadSet differs from the relation bindings")
+    output = outputs[0]
+    if output.get("port") != "target" or output.get("locator") != target_locator or output.get("write_mode") != "replace":
+        raise SuiteError("query must record actual overwrite target")
+    hashes = {}
+    for ref in inputs + outputs:
+        snapshot = _object(ref.get("schema_snapshot"), "query frozen schema")
+        if not snapshot.get("hash") or not _array(snapshot.get("fields"), "query frozen fields"):
+            raise SuiteError("query omitted the frozen schema")
+        hashes[ref["locator"]] = snapshot["hash"]
+    if [field.get("name") for field in output["schema_snapshot"]["fields"]] != target_fields:
+        raise SuiteError("query output snapshot differs from physical target columns")
+    operation = operations[0]
+    actual = {(value.get("input_port"), value.get("source_field"), value.get("target_field"), value.get("transformation"), value.get("output_port"))
+              for value in operation.get("field_mappings", [])}
+    expected = {(port, source, target, transformation, "target") for port, source, target, transformation in mappings}
+    if operation.get("kind") != "derive" or operation.get("operator") != "develop" or operation.get("field_lineage_status") != "complete" or actual != expected or len(operation.get("field_mappings", [])) != len(expected):
+        raise SuiteError("query did not prove the exact direct/derived mappings")
+    return hashes
+
+
+def cleanup_definitions(client, paths):
+    errors = []
+    for path in list(reversed(paths)):
+        paths.remove(path)  # An unknown mutation outcome must never be replayed.
+        try:
+            client.request("DELETE", path, (200,))
+            client.request("GET", path, (404,))
+        except SuiteError as error:
+            errors.append(str(error))
+    if errors:
+        raise SuiteError("chain definition cleanup failed: " + "; ".join(errors))
+
+
+def wait_resource_chain(client, target_id, expected, timeout):
+    query = urllib.parse.urlencode({"subject_kind": "data_item", "item_id": target_id, "direction": "upstream", "depth": 3, "limit": 100})
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        graph = _object(client.request("GET", "/api/v1/meta/lineage/graph?" + query, (200,)).payload, "chain resource graph")
+        edges = _array(graph.get("edges"), "resource edges")
+        actual = {(edge.get("source", {}).get("item_id"), edge.get("target", {}).get("item_id"), edge.get("evidence", {}).get("execution_id")) for edge in edges}
+        if not graph.get("truncated") and actual == expected and len(edges) == len(expected) and all(edge.get("status") == "active" and edge.get("granularity") == "item" for edge in edges):
+            return
+        time.sleep(1)
+    raise SuiteError("resource graph must contain only actual latest Transfer/Develop child evidence")
+
+
+def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeout, owned_paths):
+    # Existing-table writes use the sole TableResultProvider route; no DDL or inferred DAG edges.
+    ods_locator = mongodb["target_locator"]
+    dim = find_item(client, engine_id, f"public.{DIM_TARGET}", "table")
+    dwd = find_item(client, engine_id, f"public.{DWD_TARGET}", "table")
+    dim_id, dwd_id = (positive_int(item.get("id"), "chain target id") for item in (dim, dwd))
+    dim_locator, dwd_locator = (SUPPORT.build_item_locator(engine_id, item) for item in (dim, dwd))
+    dim_bindings, dwd_bindings = {"ods": ods_locator}, {"ods": ods_locator, "dim": dim_locator}
+
+    def create(module, collection, payload, status):
+        path = f"/api/v1/{module}/{collection}"
+        item = _object(client.request("POST", path, (status,), payload).payload, "chain definition")
+        identifier = positive_int(item.get("id"), "chain definition id")
+        owned_paths.append(f"{path}/{identifier}")
+        if item.get("tenant_id") != tenant_id:
+            raise SuiteError("chain definition tenant mismatch")
+        return identifier
+
+    dim_task = create("develop", "task-definitions", query_task(name + "_dim", engine_id,
+                      "SELECT activity_id, activity_date_raw::date AS activity_date FROM ods", dim_bindings), 200)
+    dwd_task = create("develop", "task-definitions", query_task(name + "_dwd", engine_id,
+                      "WITH enriched AS (SELECT o.activity_id, d.activity_date, o.leader_nickname_snapshot AS person_nickname, "
+                      "upper(o.activity_level_raw) AS intensity FROM ods AS o JOIN dim AS d ON o.activity_id=d.activity_id "
+                      "WHERE o.activity_status='active') SELECT activity_id,activity_date,person_nickname,intensity FROM enriched", dwd_bindings), 200)
+    def step(key, module, task_type, task_id, dependencies, parameters):
+        return {"id": key, "name": key, "provider": module, "task_type": task_type, "task_id": task_id,
+                "depends_on": dependencies, "parameters": parameters, "timeout": 120}
+    root = create("orchestrator", "orchestrations", {"name": name + "_chain", "enabled": False, "steps": [
+        step("ods", "transfer", "sync", mongodb["task_id"], [], {}),
+        step("dim", "develop", "query", dim_task, ["ods"], {"target_locator": dim_locator, "write_mode": "overwrite"}),
+        step("dwd", "develop", "query", dwd_task, ["dim"], {"target_locator": dwd_locator, "write_mode": "overwrite"}),
+    ]}, 201)
+    rounds, seen = [], set()
+    dim_mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.ods", "activity_date_raw", "activity_date", "derived")}
+    dwd_mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.dim", "activity_date", "activity_date", "direct"),
+                    ("input.ods", "leader_nickname_snapshot", "person_nickname", "direct"), ("input.ods", "activity_level_raw", "intensity", "derived")}
+    for _ in range(2):
+        started = _object(client.request("POST", f"/api/v1/orchestrator/orchestrations/{root}/execute", (202,)).payload, "chain admission")
+        parent_id = started.get("execution_id")
+        if not isinstance(parent_id, str) or not parent_id or parent_id in seen or started.get("status") != "pending":
+            raise SuiteError("chain rerun must admit a distinct pending execution")
+        parent = wait_owner_execution(client, "orchestrator", parent_id, timeout)
+        if parent.get("source_task_id") != str(root) or parent.get("tenant_id") != tenant_id or parent.get("metadata", {}).get("lineage_facts"):
+            raise SuiteError("Orchestrator must only own the parent context")
+        steps = parent.get("metadata", {}).get("step_results", {})
+        if set(steps) != {"ods", "dim", "dwd"} or any(value.get("status") != "success" for value in steps.values()):
+            raise SuiteError("chain must complete all three real steps")
+        ids, executions = {}, {}
+        for key, module, task_id in (("ods", "transfer", mongodb["task_id"]), ("dim", "develop", dim_task), ("dwd", "develop", dwd_task)):
+            identifier = steps[key].get("result", {}).get("execution_id")
+            if not isinstance(identifier, str) or not identifier or identifier in seen or identifier == parent_id or identifier in ids.values():
+                raise SuiteError("chain must have distinct real child executions on every rerun")
+            execution = wait_owner_execution(client, module, identifier, timeout)
+            validate_orchestrated_child(execution, parent_id, module, task_id, tenant_id)
+            ids[key], executions[key] = identifier, execution
+        seen.update([parent_id, *ids.values()])
+        source_locator = mongodb["source_locator"]
+        source_hash, ods_hash = validate_mongodb_execution(executions["ods"], source_locator, engine_id)
+        dim_hashes = validate_query_facts(executions["dim"], dim_bindings, dim_locator, ["activity_id", "activity_date"], dim_mappings, 3)
+        dwd_hashes = validate_query_facts(executions["dwd"], dwd_bindings, dwd_locator, ["activity_id", "activity_date", "person_nickname", "intensity"], dwd_mappings, 2)
+        if dim_hashes[ods_locator] != ods_hash or dwd_hashes[ods_locator] != ods_hash or dwd_hashes[dim_locator] != dim_hashes[dim_locator] or source_hash != mongodb["source_schema_snapshot_hash"]:
+            raise SuiteError("chain must preserve exact intermediate frozen schemas across owners")
+        if find_item(client, engine_id, f"public.{MONGODB_TARGET}", "table").get("id") != mongodb["target_item_id"] or find_item(client, engine_id, f"public.{DIM_TARGET}", "table").get("id") != dim_id or find_item(client, engine_id, f"public.{DWD_TARGET}", "table").get("id") != dwd_id:
+            raise SuiteError("chain rerun changed a target DataItem identity")
+        source_id, ods_id = mongodb["source_item_id"], mongodb["target_item_id"]
+        hashes = {source_id: source_hash, ods_id: ods_hash, dim_id: dim_hashes[dim_locator], dwd_id: dwd_hashes[dwd_locator]}
+        ods_edges = {(source_id, source, ods_id, target, "direct", ids["ods"]) for source, target in MONGODB_FIELDS}
+        expected_fields = {}
+        for raw, target in MONGODB_FIELDS:
+            graph = wait_field_graph(client, ods_id, target, {(source_id, raw, ods_id, target, "direct", ids["ods"])}, timeout)
+            validate_graph_snapshots(graph, hashes)
+        for field, ods_field, raw, transformation in (
+            ("activity_id", "activity_id", "_id", "direct"),
+            ("person_nickname", "leader_nickname_snapshot", "leader.userInfo.nickName", "direct"),
+            ("intensity", "activity_level_raw", "title.level", "derived"),
+        ):
+            expected_fields[field] = {(source_id, raw, ods_id, ods_field, "direct", ids["ods"]), (ods_id, ods_field, dwd_id, field, transformation, ids["dwd"])}
+        expected_fields["activity_date"] = {(source_id, "title.date", ods_id, "activity_date_raw", "direct", ids["ods"]),
+            (ods_id, "activity_date_raw", dim_id, "activity_date", "derived", ids["dim"]), (dim_id, "activity_date", dwd_id, "activity_date", "direct", ids["dwd"])}
+        for field, expected in expected_fields.items():
+            graph = wait_field_graph(client, dwd_id, field, expected, timeout)
+            validate_graph_snapshots(graph, hashes)
+            for node in graph["nodes"]:
+                if node.get("engine_id") != (mongodb["source_engine_id"] if node["item_id"] == source_id else engine_id):
+                    raise SuiteError("chain field graph crossed the wrong Engine Instance")
+        all_edges = ods_edges | {(ods_id, source, dim_id, target, transformation, ids["dim"]) for _, source, target, transformation in dim_mappings} | {(dim_id if port == "input.dim" else ods_id, source, dwd_id, target, transformation, ids["dwd"]) for port, source, target, transformation in dwd_mappings}
+        wait_resource_chain(client, dwd_id, {(source_id, ods_id, ids["ods"]), (ods_id, dim_id, ids["dim"]), (ods_id, dwd_id, ids["dwd"]), (dim_id, dwd_id, ids["dwd"])}, timeout)
+        rounds.append({"parent_execution_id": parent_id, "child_execution_ids": ids, "dim_rows": 3, "dwd_rows": 2})
+        # Manager verifies the latest active ODS edges after the enclosing DAG rerun as well.
+        mongodb.update(expected_edges=sorted(ods_edges), latest_execution_id=ids["ods"], schema_snapshot_hash=ods_hash)
+    return {"orchestration_id": root, "rounds": rounds, "target_item_id": dwd_id, "target_locator": dwd_locator,
+            "schema_snapshot_hash": hashes[dwd_id], "snapshot_hashes": hashes,
+            "expected_edges": sorted(all_edges), "date_edges": sorted(expected_fields["activity_date"]), "nickname_edges": sorted(expected_fields["person_nickname"]),
+            "owner_context_verified": True, "three_hop_verified": True, "rerun_verified": True, "resource_owner_evidence_verified": True}
 
 
 def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, object]:
@@ -404,7 +593,7 @@ def suite_task_ids(client: GatewayClient, exact_name: str | None = None) -> list
 def validate_browser_report(report: object, run_id: str, tenant_id: str, expected_task_name: str) -> dict[str, object]:
     payload = _object(report, "Transfer relational SQL ETL browser report")
     expected = {
-        "schema_version": "addp.transfer-relational-sql-etl-browser/v3",
+        "schema_version": "addp.transfer-relational-sql-etl-browser/v4",
         "suite": "transfer-relational-sql-etl",
         "run_id": run_id,
         "result": "passed",
@@ -421,6 +610,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
         "manager_field_graph_verified": True,
         "query_field_lineage_verified": True,
         "manager_mongodb_field_graph_verified": True,
+        "manager_orchestrated_field_graph_verified": True,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
@@ -428,7 +618,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
     return payload
 
 
-def run_browser(repository: Path, environment: Mapping[str, str], expected_task_name: str, lineage: dict[str, object], mongodb_lineage: dict[str, object]) -> dict[str, object]:
+def run_browser(repository: Path, environment: Mapping[str, str], expected_task_name: str, lineage: dict[str, object], mongodb_lineage: dict[str, object], orchestrated_lineage: dict[str, object]) -> dict[str, object]:
     artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     report_path = artifact_dir / "transfer-relational-sql-etl-browser.json"
     report_path.unlink(missing_ok=True)
@@ -441,6 +631,7 @@ def run_browser(repository: Path, environment: Mapping[str, str], expected_task_
             "ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE": TARGET_TABLE,
             "ADDP_ONLINE_TRANSFER_FIELD_LINEAGE": json.dumps(lineage),
             "ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE": json.dumps(mongodb_lineage),
+            "ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE": json.dumps(orchestrated_lineage),
         }
     )
     result = subprocess.run(
@@ -481,6 +672,7 @@ def main() -> int:
     client: GatewayClient | None = None
     owned_name = ""
     owned_ids: list[int] = []
+    owned_paths: list[str] = []
     handlers = {value: signal.getsignal(value) for value in (signal.SIGINT, signal.SIGTERM)}
     for value in handlers:
         signal.signal(value, interrupt_online)
@@ -521,15 +713,18 @@ def main() -> int:
         mongodb_source = find_item(client, mongodb_engine_id, MONGODB_SOURCE, "collection")
         mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids)
 
+        chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
+
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
-        browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage)
+        browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain)
+        cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
         residual = suite_task_ids(client, exact_name=owned_name)
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v3",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v4",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -541,8 +736,9 @@ def main() -> int:
             "mongodb_engine": mongodb_engine,
             "mongodb_source_scan_execution_id": mongodb_scan,
             "mongodb_field_lineage": mongodb_lineage,
-            "created_resources": 5,
-            "deleted_resources": 5,
+            "orchestrated_field_lineage": chain,
+            "created_resources": 8,
+            "deleted_resources": 8,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))
@@ -550,6 +746,7 @@ def main() -> int:
     except (OSError, ValueError, SuiteError) as error:
         if client is not None and owned_name:
             try:
+                cleanup_definitions(client, owned_paths)
                 cleanup_tasks(client, suite_task_ids(client, exact_name=owned_name))
             except SuiteError as cleanup_error:
                 print(f"Transfer relational SQL ETL Online cleanup failed: {cleanup_error}", file=sys.stderr)

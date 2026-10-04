@@ -11,6 +11,7 @@ stop_online_fixture() {
   run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+export ORCHESTRATOR_URL=http://127.0.0.1:8084
 export CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/transfer-engine.json"
 export ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/transfer-mongodb-engine.json"
@@ -19,7 +20,7 @@ run_logged bash scripts/infra/up.sh
 fixture_owned=1
 run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start
 application_owned=1
-for start_target in -transfer -manager; do
+for start_target in -transfer -manager -develop -orchestrator; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium

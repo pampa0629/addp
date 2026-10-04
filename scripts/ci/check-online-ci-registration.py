@@ -1158,15 +1158,15 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     if "transfer-relational-sql-etl" not in registered:
         return
     suite = load_suite_registry(repository)["transfer-relational-sql-etl"]
-    if ("manager", "MANAGER_URL") not in suite.services:
-        raise RegistrationError("transfer-relational-sql-etl must preflight Manager")
+    if not {("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL"), ("orchestrator", "ORCHESTRATOR_URL")}.issubset(suite.services):
+        raise RegistrationError("transfer-relational-sql-etl must preflight Manager, Develop and Orchestrator")
     hosted_path = repository / "scripts/test/online-hosted-transfer-gate.sh"
     if not hosted_path.is_file():
         raise RegistrationError("transfer-relational-sql-etl requires Hosted lifecycle")
     hosted = hosted_path.read_text(encoding="utf-8")
     for fragment in (
         'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
-        'for start_target in -transfer -manager', 'CONSOLE_URL=',
+        'for start_target in -transfer -manager -develop -orchestrator', 'CONSOLE_URL=',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh verify',
@@ -1199,24 +1199,27 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     contracts = {
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
+            "run_orchestrated_lineage", "validate_orchestrated_child", "validate_query_facts", "wait_resource_chain", "cleanup_definitions", "three_hop_verified",
             "run_mongodb_lineage", "validate_mongodb_execution", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID", "automatic_collection_verified", "rerun_verified",
             "run_native_lineage", "wait_field_graph", "execution_schema_hashes", "validate_graph_snapshots", "generated_label", '"_replace"', '"_hop"',
             '"residual_resources": 0', "cleanup_tasks(client", "owned_task_names", "schema_snapshot_hash",
-            "addp.transfer-relational-sql-etl-browser/v3",
+            "addp.transfer-relational-sql-etl-browser/v4",
         ),
         "business/scripts/online-transfer-relational-sql-etl-fixture.sh": (
             "ADDP_ONLINE_HOSTED", "GITHUB_ACTIONS", "NATIVE_TARGET", "NATIVE_DOWNSTREAM", "DROP TABLE IF EXISTS public.${NATIVE_TARGET}",
             "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}", "numeric_precision, numeric_scale", "generated_label",
+            "DIM_TARGET", "DWD_TARGET", "DIM rows differ", "DWD rows differ",
             "MONGODB_TARGET", "mongo:7.0", "--tmpfs /data/db --tmpfs /data/configdb", "leader_nickname_snapshot",
             "container remains after cleanup", "container ownership mismatch", "--tmpfs /var/lib/postgresql/data",
         ),
         "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js": (
             "/manager/data-explorer", "field_ref", "schema_snapshot_hash", "lineage-fields", "lineage-canvas", "lineageFieldConnections",
+            "manager_orchestrated_field_graph_verified: true", "ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE", "transfer-orchestrated-dwd-field-lineage.png",
             "manager_mongodb_field_graph_verified: true", "ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE", "transfer-mongodb-ods-field-lineage.png", "expect(mongodbGraphRequests).toBe(1)",
             "manager_field_graph_verified: true", "query_field_lineage_verified: true", "expect(query.graph.field_lineage_status).toBe('complete')", "expect(query.focused.edges).toHaveLength(1)",
-            "addp.transfer-relational-sql-etl-browser/v3",
+            "addp.transfer-relational-sql-etl-browser/v4",
         ),
-        "scripts/test/transfer-relational-sql-etl-online_test.py": ("test_rejects_wrong_fields_versions_and_execution_proofs", "test_mongodb_reruns_one_task_and_requires_all_latest_automatic_proofs"),
+        "scripts/test/transfer-relational-sql-etl-online_test.py": ("test_rejects_wrong_fields_versions_and_execution_proofs", "test_mongodb_reruns_one_task_and_requires_all_latest_automatic_proofs", "test_chain_reruns_same_definition_and_only_observes_latest_owner_proofs"),
         "scripts/test/online-hosted-transfer-gate_test.py": ("test_failures_destroy_owned_resources",),
         "scripts/test/online-transfer-relational-sql-etl-fixture_test.py": ("test_rejects_native_rows", "test_partial_mongodb_initialization_is_redacted_and_cleans_both_containers"),
     }

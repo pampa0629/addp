@@ -27,6 +27,7 @@ const requiredNames = [
   'ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE',
   'ADDP_ONLINE_TRANSFER_FIELD_LINEAGE',
   'ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE',
+  'ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE',
   'GATEWAY_URL'
 ]
 
@@ -66,10 +67,11 @@ async function scanEngine(api, engineID) {
   }, { timeout: 120_000, intervals: [500, 1000, 2000] }).toBe('success')
 }
 
-async function managerFieldGraph(page, locator, itemID, field) {
+async function managerFieldGraph(page, locator, itemID, field, depth = 2) {
   await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(frame.getByRole('radio', { name: '字段级', exact: true })).toBeVisible()
+  if (depth !== 2) await chooseSelectOption(frame, frame.locator('.lineage-depth'), `${depth} 层`)
   const graphResponse = page.waitForResponse(response => {
     const url = new URL(response.url())
     return url.pathname === '/api/v1/meta/lineage/graph' &&
@@ -134,9 +136,10 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   await expect(query.frame.locator('.lineage-inspector strong')).toHaveText('amount')
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-query-field-lineage.png'), fullPage: true })
 
+  const chain = JSON.parse(env.ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE)
   const mongodb = JSON.parse(env.ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE)
   expect(mongodb.execution_ids).toHaveLength(2)
-  expect(mongodb.execution_ids[0]).not.toBe(mongodb.execution_ids[1])
+  expect(mongodb.execution_ids[0]).not.toBe(mongodb.latest_execution_id)
   let mongodbGraphRequests = 0
   const countGraphRequest = req => {
     const url = new URL(req.url())
@@ -147,14 +150,13 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
     const ods = await managerFieldGraph(page, mongodb.target_locator, mongodb.target_item_id, 'activity_date_raw')
     expect(ods.graph.field_lineage_status).toBe('complete')
     expect(ods.graph.subject.schema_snapshot_hash).toBe(mongodb.schema_snapshot_hash)
-    expect(ods.graph.nodes).toHaveLength(12)
-    expect(ods.graph.edges.map(edgeIdentity).sort()).toEqual(mongodb.expected_edges.sort())
-    expect(ods.focused.edges).toHaveLength(1)
-    expect(ods.focused.edges[0].source.field_name).toBe('title.date')
+    expect(ods.graph.nodes).toHaveLength(18)
+    expect(ods.graph.edges.map(edgeIdentity).sort()).toEqual(chain.expected_edges.sort())
+    expect(ods.focused.edges.map(edgeIdentity).sort()).toEqual(chain.date_edges.sort())
     for (const node of ods.graph.nodes) {
       const isSource = node.item_id === mongodb.source_item_id
       expect(node.engine_id).toBe(isSource ? mongodb.source_engine_id : mongodb.target_engine_id)
-      expect(node.schema_snapshot_hash).toBe(isSource ? mongodb.source_schema_snapshot_hash : mongodb.schema_snapshot_hash)
+      expect(node.schema_snapshot_hash).toBe(chain.snapshot_hashes[String(node.item_id)])
       if (!isSource) expect(node.field_lineage_status).toBe('complete')
     }
     await ods.frame.getByRole('button', { name: 'leader_nickname_snapshot', exact: true }).click()
@@ -162,15 +164,28 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
     const nickname = ods.graph.nodes.find(node => node.item_id === mongodb.target_item_id && node.field_name === 'leader_nickname_snapshot')
     const focused = lineageFieldConnections(ods.graph.edges, lineageNodeId(nickname))
     const edges = ods.graph.edges.filter((_, index) => focused.connections.has(`lineage-edge:${index}`))
-    expect(edges).toHaveLength(1)
-    expect(edges[0].source.field_name).toBe('leader.userInfo.nickName')
-    expect(edges[0].evidence.execution_id).toBe(mongodb.execution_ids[1])
+    expect(edges.map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
     await expect(ods.frame.getByRole('button', { name: '全部字段', exact: true })).toBeVisible()
     expect(mongodbGraphRequests).toBe(1)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-mongodb-ods-field-lineage.png'), fullPage: true })
   } finally {
     page.off('request', countGraphRequest)
   }
+  expect(chain.rounds).toHaveLength(2)
+  expect(chain.rounds[0].parent_execution_id).not.toBe(chain.rounds[1].parent_execution_id)
+  const dwd = await managerFieldGraph(page, chain.target_locator, chain.target_item_id, 'activity_date', 3)
+  expect(dwd.graph.subject.schema_snapshot_hash).toBe(chain.schema_snapshot_hash)
+  expect(dwd.focused.edges.map(edgeIdentity).sort()).toEqual(chain.date_edges.sort())
+  expect(dwd.focused.nodes).toHaveLength(4)
+  for (const node of dwd.graph.nodes) expect(node.schema_snapshot_hash).toBe(chain.snapshot_hashes[String(node.item_id)])
+  const latestChildren = Object.values(chain.rounds[1].child_execution_ids)
+  for (const edge of dwd.graph.edges) expect(latestChildren).toContain(edge.evidence.execution_id)
+  await dwd.frame.getByRole('button', { name: 'person_nickname', exact: true }).click()
+  await expect(dwd.frame.locator('.lineage-inspector strong')).toHaveText('person_nickname')
+  const selected = dwd.graph.nodes.find(node => node.item_id === chain.target_item_id && node.field_name === 'person_nickname')
+  const focus = lineageFieldConnections(dwd.graph.edges, lineageNodeId(selected))
+  expect(dwd.graph.edges.filter((_, index) => focus.connections.has(`lineage-edge:${index}`)).map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
+  await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-orchestrated-dwd-field-lineage.png'), fullPage: true })
 }
 
 test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page }) => {
@@ -330,7 +345,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-relational-sql-etl-browser.json'),
       `${JSON.stringify({
-        schema_version: 'addp.transfer-relational-sql-etl-browser/v3',
+        schema_version: 'addp.transfer-relational-sql-etl-browser/v4',
         suite: 'transfer-relational-sql-etl',
         run_id: env.ADDP_ONLINE_TEST_RUN_ID,
         result: 'passed',
@@ -346,7 +361,8 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
         task_deleted: true,
         manager_field_graph_verified: true,
         query_field_lineage_verified: true,
-        manager_mongodb_field_graph_verified: true
+        manager_mongodb_field_graph_verified: true,
+        manager_orchestrated_field_graph_verified: true
       })}\n`,
       'utf8'
     )
