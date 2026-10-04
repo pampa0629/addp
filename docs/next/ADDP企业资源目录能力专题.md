@@ -3001,3 +3001,36 @@ Swagger 生成首次因并行 Go 输入变化被缓存校验拒绝，随后标�
 下一优先项：先在现有专用 Online suite 取得自动签发与原参历史恢复的真实证据，再贯通执行侧当前数据访问裁决；不能把受理或签发历史直接当作当前 Allow。
 
 收口审查：核对只读取 System owner 的精确请求及既有审计索引范围，受理与签发由同一只读快照观察；未知、越域、重复或非法时间均失败。没有新增生产 API、权限、迁移、Grant 副本或访问裁决路线，因此不涉及 Swagger 变更；开发服务和开发数据库未由本会话启停或改写。
+
+### 26.62 执行侧接入前的缺口与下一项权限决定（2026-10-04，调查与待确认方案）
+
+本轮通过远端 main 引用及本地祖先关系核对，§26.61 的提交 `af746b627` 已包含在远端 main；上一轮推送未完成不再是当前阻塞。该事实不代表真实 OAuth T4 已通过，`ECV-10/11` 仍待专用部署执行。没有启停个人开发服务，也没有为 Online 验收创建数据库或接管其他会话的工作。
+
+只读核对得到的当前边界：
+
+- System `internal/engineaccess/fulfillment_grant.go` 保存原受理请求的签发历史，`fulfillment_grant_revocation.go` 保存指定 Grant 的撤销事实；它们都不是当前访问裁决接口。
+- System IAM 的 `ExecutionEngineAccessScope` 及引擎访问消费仍以 `engine_id + effects` 为范围，校验当前来源、运行主体、功能权限和租约，但没有精确表／文件的路径规则判断。不能把其成功响应当成源数据表级 Allow。
+- PostgreSQL Provider 已有 `PreparedQuery`、完整 `QueryReadSet`、视图依赖展开及未知依赖拒绝能力。后续应复用这一条读取范围证明路线，不新增 SQL 正则分析或从 Catalog 条目名称推断目标。
+- Manager 的预览保护与 Develop 的查询保护处理 Security 数据保护规则，不代替 System 的源数据访问 Grant／Deny。不能因没有脱敏规则就认定有内容读取权限。
+- Explicit Deny 的优先级已经确认，但建立和解除 Deny 的人类资格、公开命令及生命周期尚未确定。现有指定 Grant 撤销权限不能默认为这种更强的禁止权。
+
+#### 下一项需确认：谁可以建立和解除 Explicit Deny
+
+建议由 System 引擎访问控制领域维护，要求**当前有效引擎管理委派与独立 Deny 功能权限同时成立**。建立和解除分别使用独立 Permission，由租户通过现有自定义 Role／Role Assignment 显式安排人员；不默认授予内置管理员、不由编目维护权推导，也不因成为业务责任人、数据管理员或技术维护者而自动取得。
+
+这是待用户确认的方案，不是已发布权限；本轮不新增 Permission、API、Deny 表或执行侧放行代码。确认后先收敛单一命令、期限、审计和幂等契约，再同步实现及测试。Deny 应针对明确主体、精确逻辑资源和动作，不把禁止某账号扩大成停用账号、撤销项目组成员关系或禁止全租户。
+
+必须分别理解两种操作：撤销一份个人 Grant 后，个人仍可能通过有效项目组 Grant 访问；对该个人建立 Explicit Deny 后，相同目标和动作的个人及项目组 Allow 均不能放行。解除 Deny 只移除禁止依据，既有 Grant 是否仍有效须重新判断，不创建或恢复任何 Grant。
+
+#### 已确认原则内的执行侧工作包
+
+1. System 的当前裁决统一核验当前身份／组织成员关系、精确目标、Grant 期限及撤销、Explicit Deny；不依赖 Catalog 可达，不读取 Catalog 责任副本，不以办理人的后续责任变化改写已签发历史。
+2. 第一条贯通仍以 PostgreSQL 只读为界：Manager 精确目标预览与 Develop SQL 使用同一 System 权威规则；SQL 对 Provider 证明的完整读取集合逐项判断，任一目标拒绝或范围不可证明就不执行。引擎级 Execution Authorization 继续约束运行主体及效果，不能替代表级裁决，也不能交付宽连接给用户代码后只在页面隐藏资源。
+3. 功能权限、源数据访问规则与 Security 保护分别执行，最终同时满足才可读。不得以“尚未配置 Grant”回退为全租户公开，也不得增加仅对 Catalog 已编目资源生效的兼容分支。
+4. 通过标准入口验收后再扩展其他引擎与访问模块；独立批准、初始接入授权和 Catalog 明确退出仍是分别待交付的工作包，不以第一条只读链路覆盖它们。
+
+验收至少覆盖：无 Grant 拒绝；精确 C 允许而同 Engine 的 D 拒绝；个人及项目组 Grant 的独立有效性；退组／停用账号后拒绝；到期或撤销后拒绝；个人 Deny 压过项目组 Allow；解除 Deny 后重新判断剩余 Grant；缺少功能权限拒绝；视图／联接含未授权目标拒绝；无法证明读取集合拒绝；Catalog 不可用不影响已有合法规则；授权检查失败前不得执行源内容查询。所有业务库夹具写入仅由专用测试夹具在其明确授权范围内完成，不向用户登记的数据源安装规则或改变物理表来证明身份。
+
+验证分层预先安排：System 当前裁决与 Deny 命令归现有 Go T1／System IAM PostgreSQL T2；Provider 范围证明复用既有 Common PostgreSQL T2；Manager／Develop 消费归各 owner 标准门禁；真实 OAuth 与跨模块 C／D 对照在现有 Online 体系扩展，不新建旁路入口。只有真实源内容读取及拒绝断言完成，才能宣称执行侧权限闭环；本节调查不计为上述门禁通过。
+
+本轮仅更新既有专题，不变更运行代码、API 或 CI 登记。`git diff --check -- docs/next/ADDP企业资源目录能力专题.md` 通过；默认 `make test-changed` 识别共享工作区的 19 个改动文件和 25 个受影响 owner，因各 PostgreSQL／MySQL／OceanBase T2 连接条件未注入，在执行测试前退出码 2，日志 `/tmp/addp-catalog-execution-plan-changed-20261004.log`。这是全工作区预检未通过，不是已执行测试失败，更不计为通过；并行改动的验证仍归其 owner，本轮未修改它们。

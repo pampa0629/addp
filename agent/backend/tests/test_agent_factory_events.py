@@ -165,17 +165,13 @@ class _EngineListTool:
 
     async def ainvoke(self, _args):
         return json.dumps(
-            {
-                "engines": [
-                    {
-                        "id": 20,
-                        "name": "GeoPython Workflow",
-                        "engine_type": "geopython_workflow",
-                        "lifecycle_state": "active",
-                        "connection_status": "online",
-                    }
-                ]
-            },
+            [{
+                "id": 20,
+                "name": "GeoPython Workflow",
+                "engine_type": "geopython_workflow",
+                "lifecycle_state": "active",
+                "connection_status": "online",
+            }],
             ensure_ascii=False,
         )
 

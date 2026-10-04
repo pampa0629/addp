@@ -4,8 +4,8 @@
   "tools": [
     {
       "name": "engine.list",
-      "version": "1.0.0",
-      "description": "查询当前用户可访问的引擎实例，可限定为工作流运行时。",
+      "version": "2.0.0",
+      "description": "查询当前用户可访问的引擎实例，仅返回身份、类型、生命周期及最近连接检测状态，可限定为工作流运行时；不返回连接信息或完整能力声明，检测状态不保证本次可用。",
       "owner": "system",
       "risk": "read",
       "approval": {"mode": "none"},
@@ -20,7 +20,21 @@
         "properties": {"capability": {"type": "string", "enum": ["all", "workflow"], "default": "all"}},
         "additionalProperties": false
       },
-      "output_schema": {"type": "array", "items": {"type": "object"}}
+      "output_schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "integer", "minimum": 1},
+            "name": {"type": "string", "minLength": 1},
+            "engine_type": {"type": "string", "minLength": 1},
+            "lifecycle_state": {"type": "string", "enum": ["active", "disabled", "deleting", "deleted"]},
+            "connection_status": {"type": "string", "enum": ["online", "offline", "unknown", "checking"]}
+          },
+          "required": ["id", "name", "engine_type", "lifecycle_state", "connection_status"],
+          "additionalProperties": false
+        }
+      }
     },
     {
       "name": "data.search",

@@ -111,6 +111,10 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 
 本体读取沿用 API 规范的 `{error, error_code}` owner 错误体；ToolExecutor 按该 owner 契约转换为统一 ToolExecutionError，只有 Manifest 声明的错误码和对应公开消息可以透传。不能要求 owner HTTP API 返回 Runtime 私有的嵌套错误结构。
 
+`engine.list` 的当前契约为 `2.0.0`。`all` 与 `workflow` 使用同一 SDK 精简投影，每个成员只包含 `id`、`name`、`engine_type`、`lifecycle_state`、`connection_status`；不包含连接信息、租户或创建人、完整 capabilities、能力展示模型和管理字段。`workflow` 只选择生命周期为 `active` 且当前 `engine.capabilities/v1` 声明 `compute.workflow.supported=true` 的引擎，不读取已删除的 `is_active`，不猜测缺失状态。连接检测状态只是 System 最近观测，不承诺本次请求可用。System 引擎管理 HTTP API 仍返回原有完整脱敏数组；SDK 的 `list_engines()` 保持该管理契约，Tool 仅消费唯一 `list_engine_summaries()`。不切片、截断或隐式过滤 `all` 的成员；精简后的完整数组仍超过 128 KiB 时明确失败。
+
+Agent 检查点只从已校验的 `engine.list` 结果数组直接成员保存引擎事实，不递归识别嵌套对象，不接受 `engines` 包装或 `type` 别名。
+
 `ontology.classes.list` 要求用户明确指定 ontology_id，只枚举已激活原生定义的类并返回版本绑定。`ontology.class.context` 必须携带前者返回的 revision、generation、activation_version；只返回确定类、完整祖先、继承属性、直接端点关系及直接绑定规则。两者标记 `knowledge_kind=native_definition`，不认证实例事实、不执行规则、不读取业务数据，不产生 ResultRef。激活变化时返回 `ontology_activation_changed`，调用方需重新读取并确认，不能回退旧快照。管理修订权限仍不可委托，独立的 `ontology.semantic.read` 由租户显式授权。
 
 ## 四、执行语义

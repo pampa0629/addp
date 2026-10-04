@@ -54,18 +54,18 @@ async def _test_list_engines_rejects_invalid_response_shape():
         await client.close()
 
 
-def test_get_workflow_engines_filters_active_v1_workflow_engines():
-    asyncio.run(_test_get_workflow_engines_filters_active_v1_workflow_engines())
+def test_list_engine_summaries_filters_active_v1_workflow_engines():
+    asyncio.run(_test_list_engine_summaries_filters_active_v1_workflow_engines())
 
 
-async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
+async def _test_list_engine_summaries_filters_active_v1_workflow_engines():
     async def handler(request):
         return httpx.Response(200, json=[
                 {
                     "id": 1,
                     "name": "GeoPython Workflow",
                     "engine_type": "geopython_workflow",
-                    "is_active": True,
+                    "lifecycle_state": "active",
                     "connection_status": "online",
                     "capabilities": {
                         "schema_version": "engine.capabilities/v1",
@@ -84,7 +84,8 @@ async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
                     "id": 2,
                     "name": "Inactive Workflow",
                     "engine_type": "math_workflow",
-                    "is_active": False,
+                    "lifecycle_state": "disabled",
+                    "connection_status": "unknown",
                     "capabilities": {
                         "schema_version": "engine.capabilities/v1",
                         "compute": {"workflow": {"supported": True}},
@@ -94,7 +95,8 @@ async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
                     "id": 3,
                     "name": "Legacy Workflow",
                     "engine_type": "legacy_workflow",
-                    "is_active": True,
+                    "lifecycle_state": "active",
+                    "connection_status": "unknown",
                     "capabilities": {"compute": [{"dev_modes": ["workflow"]}]},
                 },
             ])
@@ -106,7 +108,7 @@ async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
     )
 
     try:
-        engines = await client.get_workflow_engines()
+        engines = await client.list_engine_summaries("workflow")
     finally:
         await client.close()
 
@@ -114,7 +116,7 @@ async def _test_get_workflow_engines_filters_active_v1_workflow_engines():
         "id": 1,
         "name": "GeoPython Workflow",
         "engine_type": "geopython_workflow",
-        "is_active": True,
+        "lifecycle_state": "active",
         "connection_status": "online",
     }]
 

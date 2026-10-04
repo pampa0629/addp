@@ -19,18 +19,13 @@ class AgentCheckpointTests(unittest.TestCase):
         checkpoint = new_checkpoint()
         engine_delta = capture_owner_facts(
             "engine.list",
-            {
-                "engines": [
-                    {
-                        "id": 20,
-                        "name": "GeoPython Workflow",
-                        "engine_type": "geopython_workflow",
-                        "lifecycle_state": "active",
-                        "connection_status": "online",
-                        "connection_info": {"password": "must-not-persist"},
-                    }
-                ]
-            },
+            [{
+                "id": 20,
+                "name": "GeoPython Workflow",
+                "engine_type": "geopython_workflow",
+                "lifecycle_state": "active",
+                "connection_status": "online",
+            }],
             checkpoint,
         )
         locator = "addp://engine/8/path/public/railway?type=table&item_id=60"
@@ -62,6 +57,22 @@ class AgentCheckpointTests(unittest.TestCase):
         self.assertNotIn("content", restored["observed"]["resources"][locator])
         self.assertEqual(engine_delta["workflow_engines"][0]["id"], 20)
         self.assertEqual(resource_delta["resources"][0]["locator"], locator)
+
+    def test_engine_facts_only_use_direct_array_members_and_current_field_names(self):
+        engine = {
+            "id": 20, "name": "Workflow", "engine_type": "custom_workflow",
+            "lifecycle_state": "active", "connection_status": "online",
+        }
+        for result in (
+            {"engines": [engine]},
+            [{"nested": engine}],
+            [{"id": 20, "type": "custom_workflow"}],
+            [{**engine, "id": True}],
+        ):
+            with self.subTest(result=result):
+                checkpoint = new_checkpoint()
+                self.assertEqual(capture_owner_facts("engine.list", result, checkpoint), {})
+                self.assertEqual(checkpoint, new_checkpoint())
 
     def test_confirmed_selection_must_use_observed_canonical_fact(self):
         checkpoint = new_checkpoint()

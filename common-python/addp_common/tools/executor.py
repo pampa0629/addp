@@ -186,9 +186,7 @@ class ToolExecutor:
 
     async def _engine_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(SystemClient, delegated_token) as client:
-            if arguments.get("capability") == "workflow":
-                return await client.get_workflow_engines()
-            return await client.list_engines()
+            return await client.list_engine_summaries(arguments.get("capability", "all"))
 
     async def _data_search(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(ManagerClient, delegated_token) as client:

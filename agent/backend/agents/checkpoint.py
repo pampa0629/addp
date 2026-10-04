@@ -144,10 +144,12 @@ def capture_owner_facts(tool_name: str, result: Any, checkpoint: dict[str, Any])
         return {}
 
     if tool_name == "engine.list":
-        for value in _walk_objects(result):
+        for value in result if isinstance(result, list) else []:
+            if not isinstance(value, dict):
+                continue
             engine_id = value.get("id")
-            engine_type = value.get("engine_type") or value.get("type")
-            if not isinstance(engine_id, int) or not isinstance(engine_type, str):
+            engine_type = value.get("engine_type")
+            if type(engine_id) is not int or not isinstance(engine_type, str):
                 continue
             key = str(engine_id)
             if key in observed["workflow_engines"]:

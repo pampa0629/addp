@@ -403,7 +403,10 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         # Scripted LLM verifies the runtime contract, not real model planning.
         results = [
             {"knowledge_kind": "platform_definition", "capability": "transfer.task.create", "availability": "not_observed"},
-            {"engines": [{"id": 1, "engine_type": "mongodb"}, {"id": 2, "engine_type": "postgresql"}]},
+            [
+                {"id": 1, "name": "MongoDB fixture", "engine_type": "mongodb", "lifecycle_state": "active", "connection_status": "unknown"},
+                {"id": 2, "name": "PG fixture", "engine_type": "postgresql", "lifecycle_state": "active", "connection_status": "unknown"},
+            ],
             {"locator": "addp://engine/1/path/Outdoor/Activities?type=collection"},
             {"locator": "addp://engine/2/path/demo?type=schema", "children": []},
             {"id": 41, "name": "Outdoor fixture", "status": "idle", "desired_state": "stopped", "enabled": False, "schedule": ""},

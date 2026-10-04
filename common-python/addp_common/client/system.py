@@ -1,5 +1,4 @@
 """System 模块客户端"""
-import json
 from typing import List, Dict, Any, Optional
 from .base import BaseClient
 
@@ -62,23 +61,23 @@ class SystemClient(BaseClient):
         resp = await self.get(f"/api/v1/system/engines/{engine_id}/objects", params=params)
         return resp.get("objects", [])
 
-    async def get_workflow_engines(self) -> List[Dict[str, Any]]:
-        """获取所有支持 compute.workflow 的引擎"""
+    async def list_engine_summaries(self, capability: str = "all") -> List[Dict[str, Any]]:
+        """读取 owner 数组并生成唯一的智能体引擎选择投影。"""
+        if capability not in ("all", "workflow"):
+            raise ValueError("unsupported engine summary capability")
         engines = await self.list_engines()
         result = []
-        for e in engines:
-            if not e.get("is_active", True):
+        for engine in engines:
+            fields = ("id", "name", "engine_type", "lifecycle_state", "connection_status")
+            if not isinstance(engine, dict) or any(field not in engine for field in fields):
+                raise ValueError("system engine response is missing summary facts")
+            summary = {field: engine[field] for field in fields}
+            if capability == "workflow" and (
+                summary["lifecycle_state"] != "active"
+                or not self._supports_workflow(engine.get("capabilities"))
+            ):
                 continue
-            caps_raw = e.get("capabilities", "{}")
-            caps = json.loads(caps_raw) if isinstance(caps_raw, str) else caps_raw
-            if self._supports_workflow(caps):
-                result.append({
-                    "id": e["id"],
-                    "name": e["name"],
-                    "engine_type": e["engine_type"],
-                    "is_active": e.get("is_active", True),
-                    "connection_status": e.get("connection_status", "unknown"),
-                })
+            result.append(summary)
         return result
 
     @staticmethod

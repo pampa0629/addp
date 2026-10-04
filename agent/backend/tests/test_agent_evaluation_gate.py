@@ -26,6 +26,7 @@ class AgentEvaluationGateTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0].args[0], "agent_evaluation_and_persistence")
         self.assertEqual(calls[0].args[1][0], str(REPO_ROOT / "agent/backend/venv/bin/python"))
+        self.assertIn("agent.backend.tests.test_agent_factory_events", calls[0].args[1])
         self.assertEqual(calls[1].args[0], "common_python")
         self.assertEqual(calls[1].args[1][0], str(REPO_ROOT / "agent/backend/venv/bin/python"))
 
