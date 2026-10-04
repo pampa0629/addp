@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -46,12 +47,58 @@ func TestPostgresSQLTypeForField(t *testing.T) {
 		{name: "spatial info geometry type and srid", field: datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "MultiPolygon", 4326, 0), want: "GEOMETRY(MultiPolygon,4326)"},
 		{name: "spatial info dimension z", field: datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 3), want: "GEOMETRY(PointZ,4326)"},
 		{name: "common int", field: datatype.FieldInfo{Name: "id", Type: "int"}, want: "INTEGER"},
+		{name: "bounded decimal", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 8, Scale: 2}, want: "NUMERIC(8,2)"},
+		{name: "integer decimal", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 8}, want: "NUMERIC(8,0)"},
+		{name: "unbounded decimal", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal}, want: "NUMERIC"},
+		{name: "maximum precision", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 1000, Scale: 1000}, want: "NUMERIC(1000,1000)"},
 		{name: "unknown defaults text", field: datatype.FieldInfo{Name: "x", Type: "unknown"}, want: "TEXT"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := postgresSQLTypeForField(tt.field, tt.spatialInfo); got != tt.want {
+			got, err := postgresSQLTypeForField(tt.field, tt.spatialInfo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
 				t.Fatalf("postgresSQLTypeForField() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPostgresSQLTypeForFieldRejectsInvalidDecimalDefinition(t *testing.T) {
+	for _, definition := range [][2]int{{-1, 0}, {0, 2}, {8, -1}, {8, 9}, {1001, 0}, {1000, 1001}} {
+		field := datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: definition[0], Scale: definition[1]}
+		if _, err := postgresSQLTypeForField(field, nil); err == nil {
+			t.Fatalf("accepted invalid decimal precision/scale %v", definition)
+		}
+		if _, err := postgresSchemaEvolutionStatements("public", "target", []datatype.FieldInfo{field}, nil, nil); err == nil {
+			t.Fatalf("schema evolution accepted invalid decimal precision/scale %v", definition)
+		}
+	}
+}
+
+func TestPostgresColumnCompatibleWithFieldRequiresExactDecimalDefinition(t *testing.T) {
+	bounded := postgresColumnInfo{Name: "amount", DataType: "numeric", NativeType: "numeric(8,2)", NumericPrecision: sql.NullInt64{Int64: 8, Valid: true}, NumericScale: sql.NullInt64{Int64: 2, Valid: true}}
+	unbounded := postgresColumnInfo{Name: "amount", DataType: "numeric", NativeType: "numeric"}
+	tests := []struct {
+		name             string
+		column           postgresColumnInfo
+		precision, scale int
+		want             bool
+	}{
+		{"matching bounded", bounded, 8, 2, true},
+		{"different precision", bounded, 9, 2, false},
+		{"different scale", bounded, 8, 3, false},
+		{"bounded target unbounded request", bounded, 0, 0, false},
+		{"unbounded target bounded request", unbounded, 8, 2, false},
+		{"matching unbounded", unbounded, 0, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			field := datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: tt.precision, Scale: tt.scale}
+			if got := postgresColumnCompatibleWithField(tt.column, field, nil); got != tt.want {
+				t.Fatalf("compatible = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -150,7 +197,11 @@ func TestPostgresColumnCompatibleWithFieldAcceptsMixedAsText(t *testing.T) {
 	if !postgresColumnCompatibleWithField(column, field, nil) {
 		t.Fatal("postgresColumnCompatibleWithField rejected text column for mixed field")
 	}
-	if got := postgresSQLTypeForField(field, nil); got != "TEXT" {
+	got, err := postgresSQLTypeForField(field, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "TEXT" {
 		t.Fatalf("postgresSQLTypeForField(mixed) = %q, want TEXT", got)
 	}
 }

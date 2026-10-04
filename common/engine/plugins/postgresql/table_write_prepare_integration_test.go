@@ -16,6 +16,108 @@ import (
 	"github.com/lib/pq"
 )
 
+func TestIntegrationPostgresPrepareTableWritePreservesDecimalDefinition(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	schemaName := "common_pg_it"
+	tableName := fmt.Sprintf("prepare_decimal_%d", time.Now().UnixNano())
+	t.Cleanup(func() {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s"`, schemaName, tableName)); err != nil {
+			t.Errorf("clean up decimal table: %v", err)
+		}
+		var remaining bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname=$1 AND tablename=$2)`, schemaName, tableName).Scan(&remaining); err != nil || remaining {
+			t.Errorf("decimal table cleanup not proven: remaining=%v error=%v", remaining, err)
+		}
+	})
+	path := postgresPrepareTablePath(schemaName, tableName)
+	fields := []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 8, Scale: 2, Nullable: true},
+		{Name: "integer_decimal", Type: datatype.FieldTypeDecimal, Precision: 8, Nullable: true},
+		{Name: "max_decimal", Type: datatype.FieldTypeDecimal, Precision: 1000, Scale: 1000, Nullable: true},
+		{Name: "unbounded", Type: datatype.FieldTypeDecimal, Nullable: true},
+	}
+	if err := pg.PrepareTableUpsert(ctx, connInfo, path, plugin.TableUpsertOptions{Fields: fields, Keys: []string{"id"}}); err != nil {
+		t.Fatal(err)
+	}
+	fields = append(fields, datatype.FieldInfo{Name: "precise", Type: datatype.FieldTypeDecimal, Precision: 20, Scale: 10, Nullable: true})
+	for i := 0; i < 2; i++ {
+		if err := pg.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	columns, err := postgresTableColumns(ctx, db, schemaName, tableName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]int{"amount": {8, 2}, "integer_decimal": {8, 0}, "max_decimal": {1000, 1000}, "precise": {20, 10}, "unbounded": {0, 0}}
+	for _, column := range columns {
+		expected, ok := want[column.Name]
+		if !ok {
+			continue
+		}
+		if expected[0] == 0 {
+			if column.NumericPrecision.Valid || column.NumericScale.Valid {
+				t.Fatalf("unbounded decimal became constrained: %#v", column)
+			}
+		} else if !column.NumericPrecision.Valid || !column.NumericScale.Valid || column.NumericPrecision.Int64 != int64(expected[0]) || column.NumericScale.Int64 != int64(expected[1]) {
+			t.Fatalf("column %s precision/scale = %v/%v, want %v", column.Name, column.NumericPrecision, column.NumericScale, expected)
+		}
+		delete(want, column.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing decimal columns: %v", want)
+	}
+	for _, replacement := range []datatype.FieldInfo{
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 9, Scale: 2},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 8, Scale: 3},
+		{Name: "amount", Type: datatype.FieldTypeDecimal},
+		{Name: "unbounded", Type: datatype.FieldTypeDecimal, Precision: 8, Scale: 2},
+	} {
+		// A conflict must abort the entire schema evolution before adding columns.
+		request := []datatype.FieldInfo{{Name: "marker", Type: datatype.FieldTypeString, Nullable: true}, replacement}
+		if err := pg.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: request}); err == nil {
+			t.Fatalf("accepted conflicting decimal definition: %#v", replacement)
+		}
+		if postgresPrepareColumnExists(t, ctx, db, schemaName, tableName, "marker") {
+			t.Fatal("schema changed despite a conflicting decimal definition")
+		}
+	}
+}
+
+func TestIntegrationPostgresPrepareTableWriteRejectsInvalidDecimalBeforeDDL(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	schemaName := fmt.Sprintf("prepare_invalid_decimal_%d", time.Now().UnixNano())
+	t.Cleanup(func() {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName)); err != nil {
+			t.Errorf("clean up decimal schema: %v", err)
+		}
+		var remaining bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname=$1)`, schemaName).Scan(&remaining); err != nil || remaining {
+			t.Errorf("decimal schema cleanup not proven: remaining=%v error=%v", remaining, err)
+		}
+	})
+	for _, definition := range [][2]int{{-1, 0}, {0, 2}, {8, -1}, {8, 9}, {1001, 0}} {
+		err := pg.PrepareTableWrite(ctx, connInfo, postgresPrepareTablePath(schemaName, "target"), plugin.TableWriteOptions{
+			Fields: []datatype.FieldInfo{{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: definition[0], Scale: definition[1], Nullable: true}},
+		})
+		if err == nil {
+			t.Fatalf("accepted invalid decimal definition %v", definition)
+		}
+		var exists bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname=$1)`, schemaName).Scan(&exists); err != nil {
+			t.Fatal(err)
+		}
+		if exists {
+			t.Fatalf("created schema before rejecting decimal definition %v", definition)
+		}
+	}
+}
+
 func TestIntegrationPostgresPrepareTableWriteUsesSchemaOnlyPrivileges(t *testing.T) {
 	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
 	defer db.Close()

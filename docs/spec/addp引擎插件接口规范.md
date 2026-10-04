@@ -183,6 +183,8 @@ type EngineCatalogFactsProvider interface {
 
 Decimal 字段使用 `FieldInfo.Precision` 表达总有效位数，使用 `FieldInfo.Scale` 表达小数位数；已声明的原生精度必须由 Provider 无损写入这两个字段。`Precision=0` 表示来源未声明有限精度，不得解释为某个默认精度。当目标引擎只支持有界 decimal 时，调用方必须提供显式 `Precision/Scale`；目标 Provider 必须按自身上限严格校验并按该字段事实生成目标原生类型，不得选择固定默认 decimal、截断小数或改写为浮点数。已有目标 decimal 列只有在原生 precision/scale 与请求字段完全一致时才兼容。
 
+PostgreSQL 表写入准备对未声明精度的 decimal 使用无约束 `NUMERIC`，此时 `Scale` 必须为 0；显式字段使用 `NUMERIC(Precision,Scale)`，沿用 ADDP 的可移植 decimal 定义范围：`1 <= Precision <= 1000`、`0 <= Scale <= Precision`。字段定义必须在创建 schema 或表之前完成校验；新建表、补字段及 Upsert 共用同一实现。有约束和无约束目标列不能互相视为兼容，精度冲突不得自动改列或忽略。
+
 `FieldInfo` 当前未单独表达时间类型的小数秒精度。目标 Provider 不得因此退化为原生零位小数秒并静默截断；在目标类型允许时必须选择该引擎可稳定支持的无损精度。MySQL table write、upsert 和 partitioned change apply 统一使用 `TIME(6)`、`DATETIME(6)`，已有低精度目标列不得被误判为兼容。
 
 `EngineCatalogFacts` 不承载 `DocumentInfo`、`MediaInfo` 或 `ContainerInfo`。文档、图片、音视频、压缩包、Excel、SQLite / GeoPackage 等 encoded content 的标题、语言、页数、宽高、时长、编码、颜色空间、内部 child 列表、默认入口等信息，必须由 Meta / Manager / Transfer 等编排层先通过 StoreProvider 构造内容读取抽象，再交给 `common/format` 的 `DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` 或对应 content reader 提取。Engine 只提供 catalog / storage 事实和内容访问能力，不读取内容后裁决 format 语义。

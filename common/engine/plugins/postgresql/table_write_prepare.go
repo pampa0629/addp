@@ -38,6 +38,25 @@ func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, 
 		return fmt.Errorf("postgresql table write prepare requires table fields")
 	}
 	dialect := commonquery.ForDialect("postgresql")
+	writeFields := postgresWriteFields(fields)
+	definitions := make([]string, 0, len(writeFields))
+	primaryKeys := make([]string, 0)
+	for _, field := range writeFields {
+		definition, err := postgresColumnDefinition(field, spatialInfo)
+		if err != nil {
+			return err
+		}
+		definitions = append(definitions, definition)
+		if field.PrimaryKey {
+			primaryKeys = append(primaryKeys, dialect.QuoteIdentifier(field.Name))
+		}
+	}
+	if len(definitions) == 0 {
+		return fmt.Errorf("postgresql table write prepare requires at least one named field")
+	}
+	if len(primaryKeys) > 0 {
+		definitions = append(definitions, "PRIMARY KEY ("+strings.Join(primaryKeys, ", ")+")")
+	}
 	var schemaExists bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name=$1)`, schema).Scan(&schemaExists); err != nil {
 		return fmt.Errorf("check postgresql target schema %s: %w", schema, err)
@@ -49,22 +68,6 @@ func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, 
 		if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+dialect.QuoteIdentifier(schema)); err != nil {
 			return fmt.Errorf("create postgresql schema %s: %w", schema, err)
 		}
-	}
-
-	writeFields := postgresWriteFields(fields)
-	definitions := make([]string, 0, len(writeFields))
-	primaryKeys := make([]string, 0)
-	for _, field := range writeFields {
-		definitions = append(definitions, postgresColumnDefinition(field, spatialInfo))
-		if field.PrimaryKey {
-			primaryKeys = append(primaryKeys, dialect.QuoteIdentifier(field.Name))
-		}
-	}
-	if len(definitions) == 0 {
-		return fmt.Errorf("postgresql table write prepare requires at least one named field")
-	}
-	if len(primaryKeys) > 0 {
-		definitions = append(definitions, "PRIMARY KEY ("+strings.Join(primaryKeys, ", ")+")")
 	}
 
 	createPrefix := "CREATE TABLE "
@@ -110,10 +113,14 @@ func postgresSchemaEvolutionStatements(schema, table string, fields []datatype.F
 
 	statements := make([]string, 0)
 	for _, field := range postgresWriteFields(fields) {
+		sqlType, err := postgresSQLTypeForField(field, spatialInfo)
+		if err != nil {
+			return nil, err
+		}
 		column, exists := existingByName[field.Name]
 		if exists {
 			if !postgresColumnCompatibleWithField(column, field, spatialInfo) {
-				return nil, fmt.Errorf("postgresql target column %q has type %q, expected %q", field.Name, postgresColumnNativeType(column), postgresSQLTypeForField(field, spatialInfo))
+				return nil, fmt.Errorf("postgresql target column %q has type %q, expected %q", field.Name, postgresColumnNativeType(column), sqlType)
 			}
 			continue
 		}
@@ -123,7 +130,11 @@ func postgresSchemaEvolutionStatements(schema, table string, fields []datatype.F
 		if !postgresMissingColumnCanBeAdded(field) {
 			return nil, fmt.Errorf("postgresql schema evolution cannot add non-null column %q without default expression", field.Name)
 		}
-		statements = append(statements, "ALTER TABLE "+dialect.QualifiedTable(schema, table)+" ADD COLUMN "+postgresColumnDefinition(field, spatialInfo))
+		definition, err := postgresColumnDefinition(field, spatialInfo)
+		if err != nil {
+			return nil, err
+		}
+		statements = append(statements, "ALTER TABLE "+dialect.QualifiedTable(schema, table)+" ADD COLUMN "+definition)
 	}
 	return statements, nil
 }
@@ -146,15 +157,19 @@ func postgresWriteFields(fields []datatype.FieldInfo) []datatype.FieldInfo {
 	return result
 }
 
-func postgresColumnDefinition(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
-	definition := commonquery.ForDialect("postgresql").QuoteIdentifier(field.Name) + " " + postgresSQLTypeForField(field, spatialInfo)
+func postgresColumnDefinition(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (string, error) {
+	sqlType, err := postgresSQLTypeForField(field, spatialInfo)
+	if err != nil {
+		return "", err
+	}
+	definition := commonquery.ForDialect("postgresql").QuoteIdentifier(field.Name) + " " + sqlType
 	if strings.TrimSpace(field.DefaultExpression) != "" {
 		definition += " DEFAULT " + strings.TrimSpace(field.DefaultExpression)
 	}
 	if !field.Nullable {
 		definition += " NOT NULL"
 	}
-	return definition
+	return definition, nil
 }
 
 func postgresMissingColumnCanBeAdded(field datatype.FieldInfo) bool {
@@ -169,6 +184,13 @@ func postgresColumnCompatibleWithField(column postgresColumnInfo, field datatype
 	}
 	if datatype.IsSpatialFieldType(expected) {
 		return postgresSpatialColumnCompatibleWithField(column, field, spatialInfo)
+	}
+	if expected == datatype.FieldTypeDecimal && existing == expected {
+		if field.Precision == 0 {
+			return !column.NumericPrecision.Valid && !column.NumericScale.Valid
+		}
+		return column.NumericPrecision.Valid && column.NumericScale.Valid &&
+			column.NumericPrecision.Int64 == int64(field.Precision) && column.NumericScale.Int64 == int64(field.Scale)
 	}
 	return expected == existing
 }
@@ -232,14 +254,23 @@ func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.C
 	return nil
 }
 
-func postgresSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
+func postgresSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (string, error) {
 	if sqlType := postgresSpatialTypeForField(field, spatialInfo); sqlType != "" {
-		return sqlType
+		return sqlType, nil
+	}
+	if datatype.ParseFieldType(string(field.Type)) == datatype.FieldTypeDecimal {
+		if field.Precision == 0 && field.Scale == 0 {
+			return "NUMERIC", nil
+		}
+		if err := plugin.ValidateExplicitDecimalFieldDefinition("postgresql", field, 1000, 1000); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("NUMERIC(%d,%d)", field.Precision, field.Scale), nil
 	}
 	if sqlType, ok := ProtocolSQLTypeForCommonFieldType(field.Type); ok {
-		return sqlType
+		return sqlType, nil
 	}
-	return "TEXT"
+	return "TEXT", nil
 }
 
 func postgresSpatialTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
