@@ -1060,6 +1060,63 @@ whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 
 ---
 
+## System 后台任务测试出现 SQLite 锁竞争或提前关库
+
+### 现象与根因
+
+System 测试中，前台读取与后台更新同时访问 SQLite 内存库，可能报 `database table is locked: engines`。凭据验证还曾出现后台更新报 `no such function: NOW`，但前台验证成功、测试仍通过的情况。后台任务未结束就关闭数据库，也会使后续查询或写入落到已关闭的连接池。
+
+先检查数据库夹具，再沿调用链确认最后一次数据库操作：
+
+- SQLite 的 `:memory:` 数据库属于单个连接；连接池创建第二个连接时，会得到另一份数据库。`ATTACH DATABASE` 同样只对当前连接生效。命名的共享内存库可以共享数据，但多个连接仍可能发生表锁竞争。
+- 方法返回、HTTP 响应完成或某个状态已可见，都不能证明后台任务已完成所有写入。例如删除失败后还会写入错误信息，凭据验证成功后才异步更新 `last_used_at`。
+- `defer` 在测试函数返回时执行，早于 `t.Cleanup`；`t.Cleanup` 按登记顺序的逆序执行。若用 `defer` 关库，cleanup 中等待后台任务的逻辑就会晚于关库。
+
+### 排查调用链
+
+| 测试入口 | 后台操作 | 收尾时必须确认的事实 |
+| --- | --- | --- |
+| Runtime 注册、引擎恢复 | 连接检查并保存连接观测 | 最终观测更新已提交，更新错误已检查；本地模拟服务控制检查结果 |
+| `HealthChecker.Run` | 周期检查及其派生任务 | 取消上下文后等待 `Run` 返回，确认其派生任务已收尾 |
+| `BeginDeletion` | `continueDeletion` 写墓碑或调用 `setDeletionError` | 成功墓碑写入，或最后的错误写入完成；墓碑写入失败后仍有后续操作 |
+| `ValidateCredential` | 异步更新 `last_used_at` | 更新已提交，并重新读取、断言 `LastUsedAt` 已持久化 |
+| 模块路由 `Watch` | 等待拓扑版本变化 | 首次读取旧版本后再修改拓扑，检查注册错误，并等待 Watch 返回 |
+| `SetupRouter` | 延迟五秒执行 `ResumeDeletingEngines` | 空引擎夹具的恢复查询已完成；若夹具包含待删除引擎，还须等待后续删除任务 |
+
+相关实现见 [Service 后台测试夹具](../../system/backend/internal/service/background_test.go)、[健康检查测试](../../system/backend/internal/service/health_checker_test.go)、[引擎服务测试](../../system/backend/internal/service/engine_service_test.go)和[路由测试](../../system/backend/internal/api/router_test.go)。修复追溯：Runtime 注册测试 `6195db4bf`，同类测试修复 `530553bde`。
+
+### 夹具与等待方式
+
+1. 每次测试创建独立内存库，设置 `SetMaxOpenConns(1)` 和 `SetMaxIdleConns(1)`，保留同一个连接并串行化前台读取与后台写入。Service 测试复用 `newServiceTestDB`；不要让重复运行的测试共用命名内存库。
+2. 在触发后台任务前登记完成信号及 cleanup。对于单次最终更新，复用 `observeBackgroundUpdate`，在 GORM 的 `gorm:commit_or_rollback_transaction` 之后检查 `tx.Error` 与受影响行数。匹配条件必须指向该任务的最后一步，不能在中间状态就放行。
+3. 对可取消的循环或 Watch，收尾时取消上下文并等待 goroutine 返回。测试中的阻塞通道必须在失败路径也能释放，避免 `t.Fatal` 后无法退出。
+4. 按资源依赖登记 cleanup：先登记本地模拟服务关闭，再登记数据库关闭，最后登记后台任务收尾。实际执行顺序应为释放测试阻塞、取消并等待后台任务、关闭数据库、关闭模拟服务。
+5. 等待必须有超时，超时应使测试失败。允许等待业务状态变化，但每次查询遇到 SQL 错误都要立即报告。不要通过重试失败的 SQL、忽略错误、增加固定睡眠或设置忙等待来掩盖锁竞争和关闭时序。
+
+凭据更新时间使用统一的 `CURRENT_TIMESTAMP` 表达式，在 PostgreSQL 和 SQLite 中均可执行。不要在测试夹具中重写 SQL 或吞掉异步错误；应检查真实仓储写入及持久化结果。
+
+### 标准验证
+
+入口和测试分层以 [测试与验收规范](../spec/addp测试与验收规范.md) 为准。改动 System 测试或实现后，运行完整 owner 门禁：
+
+```bash
+bash scripts/infra/status.sh
+# 依据 status 输出配置实际 PostgreSQL 端口；本地 IAM 测试只使用 addp_iam_test。
+# 调用方须预先导出 ADDP_SYSTEM_POSTGRES_TEST_DSN，不要把凭据写入仓库。
+: "${ADDP_SYSTEM_POSTGRES_TEST_DSN:?请先配置已核实的 addp_iam_test DSN}"
+make test-module MODULE=system
+```
+
+后台时序修复还可通过标准 Go 入口重复检查，并启用竞态检测。以下命令覆盖本次修复的测试及作为参考的 Runtime 注册测试，不替代完整 owner 门禁：
+
+```bash
+make test-go GOFLAGS='-race -p=4 -count=5 -run=^(TestHealthChecker|TestModuleRoutingRevision|TestAPIConsumerService|TestDeletedEngineCanRestore|TestBeginDeletion|TestSetupRouterUsesOnlyTargetIAMSurface|TestRegisterRuntimeEngine)'
+```
+
+只修改这份排查文档时，运行 `make test-changed`，由标准入口确定所需检查。
+
+---
+
 ## Workflow Engine Python 测试包名冲突
 
 ### 现象
