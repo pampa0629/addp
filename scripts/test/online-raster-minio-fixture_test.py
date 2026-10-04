@@ -72,6 +72,25 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
         self.assertEqual(sum(value is not None for value in m.bilinear_pixels(1, joint=True)), 262080)
         self.assertEqual(sum(0 < value < 255 for value in m.bilinear_pixels(3)), 64)
 
+    def test_fractional_area_oracle_uses_overlap_weights_and_independent_band_validity(self):
+        first, second, alpha = [list(m.average_pixels(band, width=171)) for band in (1, 2, 3)]
+        self.assertIsNone(first[0])
+        self.assertAlmostEqual(second[0], 255/32)
+        self.assertIsNone(second[2])
+        self.assertIsNone(first[3])
+        self.assertIsNone(second[3])
+        self.assertEqual(alpha[3], 0.)
+        self.assertAlmostEqual(first[4], 211179/4064)
+        self.assertNotAlmostEqual(first[4], 54.)  # Incorrect equal contributor weights.
+        self.assertAlmostEqual(first[5], 19239/1024)  # Covered source zeros contribute.
+        self.assertAlmostEqual(first[7], 4370448/50317)
+        self.assertAlmostEqual(second[7], 8564056/51341)
+        self.assertNotAlmostEqual(first[7]+second[7], 4596762/18061)  # Premature joint mask.
+        self.assertAlmostEqual(first[-1], 16776705/64)
+        self.assertEqual([sum(value is not None for value in values) for values in (first, second)], [29239, 29239])
+        self.assertEqual(sum(value is not None for value in m.average_pixels(1, joint=True, width=171)), 29238)
+        self.assertEqual(sum(0 < value < 255 for value in alpha), 0)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-raster-fixture-test-')
         self.addCleanup(self.temp.cleanup)

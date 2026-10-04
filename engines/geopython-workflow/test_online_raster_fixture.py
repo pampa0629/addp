@@ -443,3 +443,51 @@ def test_bilinear_oracle_rejects_wrong_kernel_central_fill_joint_mask_and_saved_
     LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     with pytest.raises(fixture.FixtureError, match='multiband|NoData'):
         fixture.worker('verify-multiband-bilinear-joint', physical)
+
+
+def test_async_fractional_average_saved_reload_passes_independent_area_oracle(physical, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    evidence, _ = multiband_targets(tmp_path, scene, api_server, until='multiband-average-fractional-joint')
+    average, joint = evidence[6:]
+    assert average['band_valid_pixels'] == [29239, 29239]
+    assert average['partial_alpha_pixels'] == 0
+    assert joint['band_valid_pixels'] == [29238]
+    assert average['has_overviews'] and joint['has_overviews']
+    assert len(joint['preserved_sha256']) == 13
+    assert joint['preserved_sha256']['multiband-average-fractional.cog.tif'] == average['sha256']
+    dataset = gdal.Open(str(tmp_path / 'multiband-average-fractional.cog.tif'))
+    for band, column, expected in ((1, 4, 211179/4064), (1, 5, 19239/1024),
+                                  (1, 7, 4370448/50317), (2, 7, 8564056/51341)):
+        actual = struct.unpack('<d', dataset.GetRasterBand(band).ReadRaster(column, 0, 1, 1, buf_type=gdal.GDT_Float64))[0]
+        assert actual == pytest.approx(expected, rel=1e-10, abs=1e-8)
+    dataset = None
+    dataset = gdal.Open(str(tmp_path / 'multiband-average-fractional-joint.cog.tif'))
+    actual = struct.unpack('<d', dataset.GetRasterBand(1).ReadRaster(7, 0, 1, 1, buf_type=gdal.GDT_Float64))[0]
+    assert actual == pytest.approx(4370448/50317+8564056/51341, rel=1e-10, abs=1e-8)
+
+
+@pytest.mark.parametrize('fault', ['equal-weight', 'early-math', 'band-hole', 'transparent', 'alpha', 'zero-contribution', 'nodata'])
+def test_fractional_oracle_rejects_wrong_weights_joint_mask_and_saved_band_facts(physical, tmp_path, monkeypatch, fault):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    multiband_targets(tmp_path, scene, api_server, until='multiband-average-fractional-joint')
+    output = tmp_path / ('multiband-average-fractional-joint.cog.tif' if fault == 'early-math' else 'multiband-average-fractional.cog.tif')
+    edited = tmp_path / 'corrupt-fractional.tif'
+    dataset = gdal.Translate(str(edited), str(output), format='GTiff')
+    band, column, value = 1, 4, 54.
+    if fault == 'early-math': column, value = 7, 4596762/18061
+    if fault == 'band-hole': band, column, value = 2, 2, 22.
+    if fault == 'transparent': column, value = 3, 1e6
+    if fault == 'alpha': band, column, value = 3, 4, 128.
+    if fault == 'zero-contribution': column, value = 5, 3509/64
+    if fault == 'nodata': dataset.GetRasterBand(2).DeleteNoDataValue()
+    else: dataset.GetRasterBand(band).WriteRaster(column, 0, 1, 1, struct.pack('<d', value), buf_type=gdal.GDT_Float64)
+    dataset = None
+    dataset = gdal.Translate(str(output), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+    dataset = None
+    LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    with pytest.raises(fixture.FixtureError, match='multiband|NoData'):
+        fixture.worker('verify-multiband-average-fractional-joint', physical)

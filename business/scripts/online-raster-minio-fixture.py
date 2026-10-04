@@ -29,7 +29,7 @@ SPATIAL_SOURCE_TRANSFORM = (0, ANGULAR_METRE, 0, SIZE * ANGULAR_METRE, 0, -ANGUL
 SPATIAL_TRANSFORM = (0, 1, 0, SIZE, 0, -1)
 SPATIAL_NODATA = {0, 127 * SIZE + 127}
 GRID_CASES = ('resample-size', 'resample-resolution', 'clip-polygon')
-MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'multiband-average-joint', 'multiband-bilinear', 'multiband-bilinear-joint')
+MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'multiband-average-joint', 'multiband-bilinear', 'multiband-bilinear-joint', 'multiband-average-fractional', 'multiband-average-fractional-joint')
 SOURCE_FILES = (('source.tif', False), ('spatial.tif', True), ('multiband.tif', False), ('multiband-average.tif', False))
 ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
@@ -145,35 +145,35 @@ def average_source_pixel(band, row, column):
     return 1e6 if cell == 2 else 0. if cell == 4 else float(band * (cell * 16 + sample * 4))
 
 
-def area_average(band, row, column):
-    """Independent overlap-area average of finite, covered contributors."""
-    left, top, right, bottom = column * 2, row * 2, (column + 1) * 2, (row + 1) * 2
+def area_average(band, row, column, width=SIZE // 2):
+    """Exact integer-domain overlap weights; the common area denominator cancels."""
+    left, top, right, bottom = column * SIZE, row * SIZE, (column + 1) * SIZE, (row + 1) * SIZE
     contributions = []
-    for y in range(top, bottom):
-        for x in range(left, right):
+    for y in range(top // width, (bottom + width - 1) // width):
+        for x in range(left // width, (right + width - 1) // width):
             value = average_source_pixel(band, y, x)
-            area = max(0, min(x + 1, right) - max(x, left)) * max(0, min(y + 1, bottom) - max(y, top))
+            area = max(0, min((x + 1) * width, right) - max(x * width, left)) * max(0, min((y + 1) * width, bottom) - max(y * width, top))
             if value is not None and average_source_pixel(3, y, x) > 0 and area > 0:
                 contributions.append((value, area))
     return (math.fsum(value * area for value, area in contributions) / math.fsum(area for _, area in contributions)
             if contributions else None)
 
 
-def average_pixels(band, *, source=False, joint=False):
-    width = SIZE if source else SIZE // 2
+def average_pixels(band, *, source=False, joint=False, width=SIZE // 2):
+    width = SIZE if source else width
     for row in range(width):
         for column in range(width):
             if source:
                 yield average_source_pixel(band, row, column)
             elif band == 3 or joint:
-                first, second = area_average(1, row, column), area_average(2, row, column)
+                first, second = area_average(1, row, column, width), area_average(2, row, column, width)
                 if band == 3:
                     # GDAL average generates coverage; source opacity is not copied.
                     yield 255. if first is not None or second is not None else 0.
                 else:
                     yield first + second if first is not None and second is not None else None
             else:
-                yield area_average(band, row, column)
+                yield area_average(band, row, column, width)
 
 
 def bilinear_value(band, row, column):
@@ -210,8 +210,10 @@ def multiband_source_name(case_name):
     if case_name not in MULTIBAND_CASES:
         raise ValueError('unknown raster multiband case')
     joint = case_name.endswith('-joint')
-    prefix = ('multiband-bilinear' if joint else 'multiband-average') if 'bilinear' in case_name else (
-        'multiband-average' if 'average' in case_name else 'multiband-alpha' if joint else 'multiband')
+    prefix = case_name.removesuffix('-joint') if joint else (
+        'multiband-average' if 'average' in case_name or 'bilinear' in case_name else 'multiband')
+    if case_name == 'multiband-joint':
+        prefix = 'multiband-alpha'
     return prefix + ('.cog.tif' if joint else '.tif')
 
 
@@ -220,7 +222,8 @@ def multiband_expectation(case_name):
         raise ValueError('unknown raster multiband case')
     result = artifact_expectation()
     bilinear, joint = 'bilinear' in case_name, case_name.endswith('-joint')
-    width, resolution = (512, .005) if bilinear else (128, .02)
+    width = 171 if 'fractional' in case_name else 512 if bilinear else 128
+    resolution = SIZE * TRANSFORM[1] / width
     invalid = (64 if joint else 40) if bilinear else (3 if joint else 2)
     result.update(width=width, height=width, band_count=1 if joint else 3,
                   transform=[110, resolution, 0, 20.32, 0, -resolution],
@@ -444,7 +447,7 @@ def worker(action, path):
                     if current.DataType != gdal.GDT_Float64 or nodata is None or not math.isnan(nodata):
                         raise FixtureError('multiband target lost band dtype/NoData')
                     actual_values = struct.unpack(f'<{count}d', current.ReadRaster(buf_type=gdal.GDT_Float64))
-                    expected_values = list(pixel_formula(index, joint=joint))
+                    expected_values = list(pixel_formula(index, joint=joint, **({'width': expectation['width']} if average else {})))
                     if any(not math.isnan(actual) if expected is None else
                            not math.isclose(actual, expected, rel_tol=1e-10, abs_tol=1e-8) if (average or bilinear) and index != 3 else actual != expected
                            for actual, expected in zip(actual_values, expected_values)):

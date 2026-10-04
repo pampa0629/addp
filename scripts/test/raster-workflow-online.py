@@ -143,7 +143,7 @@ def multiband_workflow(source_locator, target_engine_id, case_name):
         {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
         {'id': 'grid', 'operator': 'raster_band_math' if joint else 'raster_resample', 'depends_on': ['load'],
          'params': {'input_raster': {'$ref': 'load', 'port': 'default'},
-                    **({'expression': 'b1+b2'} if joint else {'size': [512, 512] if 'bilinear' in case_name else [128, 128],
+                    **({'expression': 'b1+b2'} if joint else {'size': [fixture.multiband_expectation(case_name)['width']] * 2,
                         'resampling': 'bilinear' if 'bilinear' in case_name else 'average' if 'average' in case_name else 'nearest'})}},
         {'id': 'save', 'operator': 'raster_save', 'depends_on': ['grid'], 'params': {
             'input_raster': {'$ref': 'grid', 'port': 'default'},
