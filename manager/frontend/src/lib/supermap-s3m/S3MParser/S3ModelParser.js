@@ -29,24 +29,26 @@ function loadArrayBuffer(url) {
 }
 
 let dracoLib;
+let dracoInitialization;
 function initDracoLib() {
-    return loadArrayBuffer('/S3M_module/S3MParser/draco_decoder_new.wasm')
-        .then(function(arrayBuffer) {
-            return new Promise(function(resolve, reject) {
-                try {
-                    const decoderModule = dracoDecoderModule({ wasmBinary: arrayBuffer });
-                    decoderModule.then(function(compiledModule) {
-                        dracoLib = compiledModule;
-                        resolve();
-                    });
-                } catch (error) {
-                    reject(error);
-                }
+    if (!dracoInitialization) {
+        dracoInitialization = loadArrayBuffer(`${import.meta.env.BASE_URL}S3M_module/S3MParser/draco_decoder_new.wasm`)
+            .then(function(arrayBuffer) {
+                return new Promise(function(resolve, reject) {
+                    try {
+                        const decoderModule = dracoDecoderModule({ wasmBinary: arrayBuffer });
+                        decoderModule.then(function(compiledModule) {
+                            dracoLib = compiledModule;
+                            resolve();
+                        });
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
             });
-        });
+    }
+    return dracoInitialization;
 }
-
-S3ModelParser.readyPromise = initDracoLib();
 
 S3ModelParser.s3tc = true;
 S3ModelParser.pvrtc = false;
@@ -1400,7 +1402,7 @@ function createBatchIdAttribute(vertexPackage, typedArray, instanceDivisor){
     });
 }
 S3ModelParser.parseBuffer = async function(buffer) {
-        await S3ModelParser.readyPromise;
+        await initDracoLib();
         let bytesOffset = 0;
         let result = {
             version : undefined,

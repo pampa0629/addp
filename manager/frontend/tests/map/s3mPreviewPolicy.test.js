@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   isCompleteWebpMipChain,
   parseWebpMipPayload
@@ -80,8 +80,7 @@ describe('S3M preview policy', () => {
   })
 
   it('waits for the Draco decoder before parsing S3MB content', () => {
-    expect(s3mParserSource).toContain('S3ModelParser.readyPromise')
-    expect(s3mParserSource).toContain('await S3ModelParser.readyPromise')
+    expect(s3mParserSource).toContain('await initDracoLib()')
     expect(s3mParserSource).toContain('dracoLib = compiledModule')
     expect(s3mParserSource).toContain('resolve()')
     expect(s3mParserSource).not.toContain('return dracoDecoderModule')
@@ -216,5 +215,74 @@ describe('S3M preview policy', () => {
     expect(layoutSource).toContain('<el-container class="body-container">')
     expect(layoutSource).toMatch(/\.body-container\s*\{[^}]*flex:\s*1[^}]*min-height:\s*0[^}]*overflow:\s*hidden/s)
     expect(layoutSource).toMatch(/\.main-content\s*\{[^}]*min-height:\s*0/s)
+  })
+})
+
+
+const decoderFactory = vi.hoisted(() => vi.fn())
+vi.mock('../../src/lib/supermap-s3m/S3MParser/draco_decode.module.js', () => ({ default: decoderFactory }))
+
+describe('S3M Draco decoder lifecycle', () => {
+  let requests
+  beforeEach(() => {
+    vi.resetModules()
+    decoderFactory.mockReset().mockResolvedValue({})
+    requests = []
+    vi.stubGlobal('XMLHttpRequest', class {
+      open(method, url) { this.method = method; this.url = url }
+      send() { requests.push(this) }
+    })
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('does not download a decoder when the preview module is imported', async () => {
+    await import('../../src/lib/supermap-s3m/S3MParser/S3ModelParser.js')
+    expect(requests).toEqual([])
+    expect(decoderFactory).not.toHaveBeenCalled()
+  })
+
+  for (const base of ['/', '/module-ui/manager/']) {
+    it(`shares initialization for concurrent parsing under ${base}`, async () => {
+      vi.stubEnv('BASE_URL', base)
+      const { default: parser } = await import('../../src/lib/supermap-s3m/S3MParser/S3ModelParser.js')
+      // Truncated content lets the test distinguish decoder readiness from content parsing.
+      const outcomes = Promise.allSettled([
+        parser.parseBuffer(new ArrayBuffer(4)),
+        parser.parseBuffer(new ArrayBuffer(4))
+      ])
+      expect(requests).toHaveLength(1)
+      expect(requests[0].url).toBe(`${base}S3M_module/S3MParser/draco_decoder_new.wasm`)
+      expect(decoderFactory).not.toHaveBeenCalled()
+      const binary = new Uint8Array([0, 97, 115, 109]).buffer
+      requests[0].status = 200
+      requests[0].response = binary
+      requests[0].onload()
+      const results = await outcomes
+      expect(decoderFactory).toHaveBeenCalledExactlyOnceWith({ wasmBinary: binary })
+      for (const result of results) {
+        expect(result.status).toBe('rejected')
+        expect(result.reason).toBeInstanceOf(RangeError)
+      }
+    })
+  }
+
+  it('propagates a failed download to all parsing callers', async () => {
+    const { default: parser } = await import('../../src/lib/supermap-s3m/S3MParser/S3ModelParser.js')
+    const outcomes = Promise.allSettled([
+      parser.parseBuffer(new ArrayBuffer(4)),
+      parser.parseBuffer(new ArrayBuffer(4))
+    ])
+    expect(requests).toHaveLength(1)
+    requests[0].status = 503
+    requests[0].onload()
+    const results = await outcomes
+    expect(decoderFactory).not.toHaveBeenCalled()
+    for (const result of results) {
+      expect(result.status).toBe('rejected')
+      expect(result.reason.message).toBe('Failed to load Draco decoder: HTTP 503')
+    }
   })
 })
