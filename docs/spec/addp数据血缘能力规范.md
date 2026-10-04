@@ -274,6 +274,8 @@ MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：�
 
 编排重跑验收继续扩展同一 suite：Orchestrator 调用真实 Transfer ODS 任务和两个 Develop relation 查询任务，依次完成 ODS → DIM 日期转换 → DWD JOIN 写入；同一个编排连续执行两次。每个子执行通过既有 Monitor 安全投影核对当次父 UUID、模块与任务身份，字段及资源边只引用实际 Transfer / Develop 子执行，不得由编排依赖生成。Develop 冻结 ReadSet 采用不带目录选择器 item_id 的规范资源路径，按同一 Engine 与原生路径核对 relation 参数绑定。Develop 专业执行详情复用安全执行投影，不暴露 operations 和 schema_snapshot；验收从该接口核对资源引用、顶层 outputs 与行数，从 Meta 字段图核对映射及冻结结构哈希，跨字段、跨 owner 和重跑必须保持结构身份一致。分别核对精确字段来源、direct/derived、所有冻结结构、三跳日期追溯、最新活跃入边和稳定 DataItem 身份；Manager 必须展示重跑后的整表字段图，Business Fixture 独立验证 DIM、DWD 完整行集合。此扩展的确定性测试不能代替新的真实 Hosted T4 证据。
 
+2026-10-05，编排整链路扩展 Hosted T4 [运行 37225393122](https://github.com/pampa0629/addp/actions/runs/37225393122) 完整通过，验证源码为 `194e0d0ef4f74f534452a81298e47ee5706f6ae6`。同一最小权限 User / Tenant 下，同一个 Orchestrator 编排连续执行两次 MongoDB → PostgreSQL ODS → DIM → DWD；两个父执行与六个实际子执行 UUID 全部不同，每轮 DIM 写入 3 行、DWD 写入 2 行。六条 ODS、两条 DIM 和四条 DWD 字段映射均引用当次真实 Transfer / Develop 子执行，第二轮仅保留最新活跃证据；日期字段可三跳追溯到原始 `title.date`，昵称改名为 direct、强度表达式为 derived，中间表结构哈希与 DataItem 身份保持一致，编排父执行不生成资源或字段边。两轮 API 检查无需手工补扫 ODS 或调用 collect。Console 的 Manager 整表字段图、日期与昵称本地聚焦、恢复全部字段及适应窗口均通过；ODS 整表图包含 18 个字段节点、12 条关系，DWD 三层图包含 13 个字段节点、9 条关系。v4 报告与独立物理夹具验证确认完整行集合及真实 date 列；八个临时任务和编排定义全部删除并确认 404，两个业务容器、平台 Infra 与凭据目录清理通过，零残留。
+
 ### 6.2 图数据库评估边界
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。
