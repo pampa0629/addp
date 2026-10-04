@@ -727,3 +727,15 @@ Loki 的到期标记与物理删除异步执行；短调度只用于独占夹具
 Linux 复验：本轮代码提交为 `c004eb0cb9830554f04c4bb66eec4d011238964b`，其 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37171513466) 成功。日志 T2 首跑被后续文档推送取消，单独重跑又被后续代码推送取消，两次均不计为通过；现有 Release/T2 Workflow 的并发组为整个 `github.ref` 且 `cancel-in-progress=true`，文档提交可能取消旧门禁、随后又因选择器判定无需执行而跳过相同门禁，这属于待单独讨论的 CI 调度问题。
 
 最终读取包含本轮改动的提交 `b07cc880a805ad373f43949e4e4c34f292a00421` 的 [日志 T2 Job](https://github.com/pampa0629/addp/actions/runs/37172095793/job/111347070391) 完整输出，确认批量 4000 条、1194459 字节、20 批查询约 0.453 秒且无接收器丢弃／写入失败；超额 received=32768、written=9812、dropped=22956、write_failures=0、提前清理 176 个源段，实例／节点分别保留 126530／231722 字节。到期对象在约 50.59 秒后物理删除，6 天前对照对象保留，重启后两组正文结果符合预期；最终自建容器／网络／卷与临时源目录零残留。该提交的 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37172095793) 和 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37172095778) 均成功，System IAM verification/gate 同时通过，未选中作业不计为通过。`c004eb0cb..b07cc880a` 未修改本轮日志接收、查询和存储夹具文件，最终门禁也覆盖期间更新的共享编译依赖。后续本节证据记录只修改文档，不改变上述运行输入。
+
+### 14.5 企业微信通知闭环的隔离验证（2026-10-04）
+
+扩展既有 `make test-monitor-postgres`，以真实 PostgreSQL、Monitor 观测判定／事件／outbox 和正式企业微信发送器验证异常、重试、恢复及再次异常。只有测试发送器的网络连接被定向到当次回环 TLS 接收端；仍核对固定官方请求地址、虚构机器人 key、Markdown 正文和 `errcode` 业务结果，不使用真实机器人或向群发送消息。TLS 验证使用夹具证书信任链，不关闭证书校验。
+
+回归核对并发重复观测只产生一个事件和一条投递；HTTP 200 但业务限流时投递进入有界重试，重试保持原消息和投递身份；未知证据不能恢复，连续有效观测才恢复；恢复后的新增丢弃创建新的告警身份。投递完成后清除凭据快照，测试事实退出时删除并核对零残留。
+
+测试属于 Monitor T2，已由现有 PostgreSQL 门禁按 `TestIntegrationPostgres` 自动发现，现有 Release/T2 Monitor Job 覆盖；无需新增服务、入口或 CI Job。范围匹配验证为 `make test-module MODULE=monitor`，包含平台 T0、Monitor Go T1、前端 T3 及 PostgreSQL T2。隔离接收端不证明真实群内收到了每种正式消息，也不覆盖 Infra 观测器身份／System 注册／Gateway 的真实 T4；升级事件的实际触发规则另行确认，不通过修改数据库状态伪造自然升级。
+
+实现核对发现：首版每类信号的严重级别固定，容量接近额度与容量耗尽也是不同信号。`escalated` 在事件协调及通知协议中有处理能力，但当前观测规则没有将同一活动信号从 warning 转为 critical 的路径；消息格式回归不能算作自然升级验收。是否保持独立信号或另行定义升级规则，已提请用户确认，本轮不改变检测含义。
+
+本地验证：`make test-module MODULE=monitor` 退出 0，平台 T0、Monitor Go T1、前端 29 项测试／13 项浏览器回归／构建及 PostgreSQL 12 项集成测试通过，无 T2 跳过。新增企业微信场景核对 3 个生命周期事件、3 条投递、4 次 TLS 请求（限流、成功重试、恢复、再次异常），同一消息重试身份保持、并发重复观测不新增通知、未知证据不恢复、凭据快照清除和当次数据库事实零残留均通过。该结果只覆盖隔离通知 T2，不作为真实群接收或跨模块故障 T4 证据。本轮只修改测试与设计记录，无需重启开发服务。

@@ -5,14 +5,18 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -43,6 +47,232 @@ type receivedPlatformLogWebhook struct {
 		Severity   string    `json:"severity"`
 		OccurredAt time.Time `json:"occurred_at"`
 	}
+}
+
+func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("PostgreSQL owner gate required")
+	}
+	db, err := gorm.Open(postgres.Open(webhookIntegrationDSN()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = EnsureMonitorStore(db); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	nodeID := "wecom-" + uuid.NewString()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	var limited atomic.Bool
+	limited.Store(true)
+	var mu sync.Mutex
+	var messages []string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Host != "qyapi.weixin.qq.com" || r.URL.Path != "/cgi-bin/webhook/send" || len(r.URL.Query()) != 1 || r.URL.Query().Get("key") != fixtureWeComKey || r.Header.Get("Content-Type") != "application/json" || r.Header.Get("X-ADDP-Webhook-Signature") != "" {
+			t.Error("unexpected robot request")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 8193))
+		var payload struct {
+			Type     string `json:"msgtype"`
+			Markdown struct {
+				Content string `json:"content"`
+			} `json:"markdown"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.DisallowUnknownFields()
+		if err != nil || len(body) > 8192 || decoder.Decode(&payload) != nil || decoder.Decode(new(any)) != io.EOF || payload.Type != "markdown" || strings.Contains(payload.Markdown.Content, fixtureWeComKey) {
+			t.Error("invalid or credential-bearing robot payload")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		messages = append(messages, payload.Markdown.Content)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if limited.Load() {
+			_, _ = io.WriteString(w, `{"errcode":45009,"errmsg":"fixture limited"}`)
+		} else {
+			_, _ = io.WriteString(w, `{"errcode":0,"errmsg":"ok"}`)
+		}
+	}))
+	t.Cleanup(server.Close)
+	sender := NewHTTPWebhookSender(2*time.Second, false)
+	transport := sender.client.Transport.(*http.Transport)
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, ServerName: server.Certificate().DNSNames[0]}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address != "qyapi.weixin.qq.com:443" {
+			return nil, errors.New("unexpected destination in isolated robot fixture")
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	n := NewPlatformLogNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), false, sender, nil, 3, 30*time.Second, time.Second, 5*time.Second)
+	pipeline := NewLogPipelineService(db, nodeID, emptyLogRegistry{}, n)
+	var destination models.PlatformLogDestination
+	t.Cleanup(func() {
+		var ids []uint
+		if err := db.Model(&models.PlatformLogIncident{}).Where("node=?", nodeID).Pluck("id", &ids).Error; err != nil {
+			t.Error(err)
+		}
+		for _, q := range []struct {
+			model any
+			where string
+			value any
+		}{
+			{&models.PlatformLogDelivery{}, "destination_id=?", destination.ID},
+			{&models.PlatformLogEvent{}, "incident_id IN ?", ids},
+			{&models.PlatformLogIncident{}, "node=?", nodeID},
+			{&models.PlatformLogDestination{}, "id=?", destination.ID},
+			{&models.LogObserverBoot{}, "node=?", nodeID},
+			{&models.LogPipelineNode{}, "node=?", nodeID},
+		} {
+			if err := db.Where(q.where, q.value).Delete(q.model).Error; err != nil {
+				t.Error(err)
+			}
+			var count int64
+			if err := db.Model(q.model).Where(q.where, q.value).Count(&count).Error; err != nil || count != 0 {
+				t.Errorf("robot fixture cleanup count=%d err=%v", count, err)
+			}
+		}
+	})
+	if err = pipeline.Initialize(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	input := LogDestinationInput{Name: nodeID, Channel: "wecom", EventTypes: []string{"opened", "resolved"}}
+	destination, err = n.Save(ctx, 0, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err = n.SetSecret(ctx, destination.ID, destination.Version, wecomEndpoint+"?key="+fixtureWeComKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Version, input.Enabled = destination.Version, true
+	destination, err = n.Save(ctx, destination.ID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := healthyLogObservation(now, 1)
+	obs.Node, obs.BootID, obs.Collector.Dropped = nodeID, uuid.NewString(), 100
+	ingest := func() {
+		t.Helper()
+		if err := pipeline.Ingest(ctx, obs, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next := func() { now = now.Add(30 * time.Second); obs.SampledAt = now; obs.Sequence++; ingest() }
+	counts := func(want int64) {
+		t.Helper()
+		var events, deliveries int64
+		if err := db.Model(&models.PlatformLogEvent{}).Where("incident_id IN (?)", db.Model(&models.PlatformLogIncident{}).Select("id").Where("node=?", nodeID)).Count(&events).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.PlatformLogDelivery{}).Where("destination_id=?", destination.ID).Count(&deliveries).Error; err != nil {
+			t.Fatal(err)
+		}
+		if events != want || deliveries != want {
+			t.Fatalf("events=%d deliveries=%d want=%d", events, deliveries, want)
+		}
+	}
+	dispatch := func(at time.Time, want bool) {
+		t.Helper()
+		if processed, err := n.DispatchOnce(ctx, at); err != nil || processed != want {
+			t.Fatalf("dispatch=%v want=%v err=%v", processed, want, err)
+		}
+	}
+	ingest()
+	counts(0) // Historical counters establish a baseline without notifying the group.
+	obs.Collector.Dropped++
+	next()
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := pipeline.Ingest(ctx, obs, now); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	counts(1)
+	dispatch(now, true)
+	var opened models.PlatformLogDelivery
+	if err := db.Where("destination_id=?", destination.ID).Take(&opened).Error; err != nil {
+		t.Fatal(err)
+	}
+	if opened.Status != "pending" || opened.LastError != "wecom_rate_limited" || opened.AttemptCount != 1 || opened.SecretCiphertext == "" || opened.NextAttemptAt == nil || !opened.NextAttemptAt.After(now) {
+		t.Fatal("HTTP 200 business failure did not enter bounded retry")
+	}
+	dispatch(now, false)
+	limited.Store(false)
+	dispatch(now.Add(2*time.Second), true)
+	dispatch(now.Add(2*time.Second), false)
+	// One unavailable metrics sample must not resolve a still-active loss incident.
+	obs.Collector.Valid = false
+	next()
+	counts(1)
+	obs.Collector.Valid = true
+	next() // Re-establish the comparable counter baseline.
+	counts(1)
+	for i := 0; i < 2; i++ {
+		next()
+		counts(1)
+	}
+	next()
+	counts(2)
+	dispatch(now, true)
+	obs.Collector.Dropped++
+	next()
+	ingest()
+	counts(3)
+	dispatch(now, true)
+	dispatch(now, false)
+	var deliveries []models.PlatformLogDelivery
+	if err := db.Where("destination_id=?", destination.ID).Order("created_at,id").Find(&deliveries).Error; err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	contents := append([]string(nil), messages...)
+	mu.Unlock()
+	if len(contents) != 4 || contents[0] != contents[1] {
+		t.Fatal("retry changed robot message or lifecycle emitted duplicate requests")
+	}
+	var firstIncident uint
+	for index, d := range deliveries {
+		var event models.PlatformLogEvent
+		if err := db.First(&event, "id=?", d.EventID).Error; err != nil {
+			t.Fatal(err)
+		}
+		wantType, label, messageIndex, attempts := "opened", "异常告警", index+1, 1
+		if index == 0 {
+			attempts = 2
+			firstIncident = event.IncidentID
+		}
+		if index == 1 {
+			wantType, label = "resolved", "告警恢复"
+		}
+		if event.Type != wantType || event.Severity != "critical" || d.Status != "delivered" || d.AttemptCount != attempts || d.SecretCiphertext != "" || d.ClaimID != "" || d.NextAttemptAt != nil || d.LastError != "" {
+			t.Fatal("robot lifecycle does not match completed outbox")
+		}
+		if index == 1 && event.IncidentID != firstIncident || index == 2 && event.IncidentID == firstIncident {
+			t.Fatal("recovery or new failure used the wrong incident identity")
+		}
+		for _, expected := range []string{label, nodeID, "采集器新增丢弃", event.ID, d.ID, strconv.FormatUint(uint64(event.IncidentID), 10), event.OccurredAt.UTC().Format(time.RFC3339Nano)} {
+			if !strings.Contains(contents[messageIndex], expected) {
+				t.Fatalf("robot message missing lifecycle field %q", expected)
+			}
+		}
+		public, err := json.Marshal(d)
+		if err != nil || strings.Contains(string(public), fixtureWeComKey) || strings.Contains(string(public), "secret_ciphertext") || strings.Contains(string(public), wecomEndpoint) {
+			t.Fatal("public outbox contains robot credentials or destination")
+		}
+	}
+	t.Log("isolated WeCom lifecycle: opened, business-limit retry, unknown evidence, resolved, reopened; events=3 deliveries=3 requests=4")
 }
 
 func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T) {
