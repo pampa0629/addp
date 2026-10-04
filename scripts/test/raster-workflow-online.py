@@ -90,6 +90,56 @@ def spatial_workflow(source_locator, target_engine_id, overlap):
     ]}
 
 
+def analysis_workflow(source_locator, case_name):
+    tasks = [{'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}}]
+    input_task = 'load'
+    if case_name in ('statistics-all-invalid', 'histogram-auto'):
+        input_task = 'math'
+        tasks.append({'id': 'math', 'operator': 'raster_band_math', 'depends_on': ['load'], 'params': {
+            'input_raster': {'$ref': 'load', 'port': 'default'},
+            'expression': 'sqrt(-b1)' if case_name == 'statistics-all-invalid' else 'b2-b1'}})
+    params = {'input_raster': {'$ref': input_task, 'port': 'default'},
+              'band': 2 if case_name in ('statistics-band-2', 'histogram-range') else 1}
+    if case_name in ('histogram-auto', 'histogram-range'):
+        operator = 'raster_histogram'
+        params['bins'] = 4
+        if case_name == 'histogram-range': params['value_range'] = [32768, 98304]
+    elif case_name in ('statistics-band-2', 'statistics-all-invalid'):
+        operator = 'raster_statistics'
+    else:
+        raise SuiteError('unknown raster analysis case')
+    tasks.append({'id': 'analysis', 'operator': operator, 'depends_on': [input_task], 'params': params})
+    return {'tasks': tasks}
+
+
+def validate_analysis(execution, expectation):
+    metadata = obj(execution.get('metadata'), 'Develop analysis metadata')
+    result = obj(metadata.get('result'), 'Develop analysis result')
+    if (execution.get('outputs') or metadata.get('lineage_facts') or result.get('produced_targets')
+        or result.get('meta_scan_runs')):
+        raise SuiteError('transient raster analysis published a persistent output, derive fact or target scan')
+    if obj(result.get('summary'), 'analysis summary').get('has_result') is not True:
+        raise SuiteError('Develop did not record its transient analysis result')
+    actual = obj(result.get('final_result'), 'analysis JSON preview')
+
+    def compare(value, expected):
+        if isinstance(expected, dict):
+            return isinstance(value, dict) and value.keys() == expected.keys() and all(
+                compare(value[key], item) for key, item in expected.items())
+        if isinstance(expected, list):
+            return isinstance(value, list) and len(value) == len(expected) and all(
+                compare(item, target) for item, target in zip(value, expected))
+        if type(expected) is int:
+            return type(value) in (int, float) and math.isfinite(value) and value == expected
+        if type(expected) is float:
+            return type(value) in (int, float) and math.isfinite(value) and math.isclose(value, expected, rel_tol=1e-12, abs_tol=1e-10)
+        return type(value) is type(expected) and value == expected
+
+    if not compare(actual, expectation):
+        raise SuiteError('raster analysis JSON differs from the independent numeric oracle')
+    return actual
+
+
 def submit(client, engine_id, definition):
     response = obj(client.request('POST', '/api/v1/develop/executions', (200,), {
         'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 180,
@@ -332,11 +382,34 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             browser_runner, fixture.artifact_expectation(True))
         spatial_cases.append({'case_name': 'mosaic-' + overlap, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
+    analysis_cases = []
+    for case_name, expectation in fixture.analysis_expectations().items():
+        identifier = submit(client, engine_id, analysis_workflow(source_locator, case_name))
+        execution = wait_execution(client, 'develop', identifier, timeout)
+        numeric_result = validate_analysis(execution, expectation)
+        monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor analysis execution')
+        if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
+            or obj(monitor.get('metadata', {}), 'Monitor analysis metadata').get('lineage_facts')):
+            raise SuiteError('Monitor analysis status/owner or transient output semantics are invalid')
+        native = physical_runner(repository, env, 'verify-analysis')
+        if (native.get('sha256') != physical_evidence[-1]['sha256']
+            or native.get('first_sha256') != spatial_cases[0]['physical']['sha256']
+            or native.get('last_sha256') != spatial_cases[1]['physical']['sha256']):
+            raise SuiteError('raster analysis modified an existing persisted artifact')
+        browser_report = browser_runner(repository, env, {
+            'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'principal_id': identity['principal_id'],
+            'tenant_id': identity['tenant_id'], 'execution_id': identifier,
+            'source_item_id': source['id'], 'source_locator': source_locator,
+            'source_name': 'source.tif', 'case_name': case_name, 'result_kind': 'json', 'expected_result': numeric_result,
+        })
+        analysis_cases.append({'case_name': case_name, 'execution_id': identifier,
+            'numeric_result': numeric_result, 'physical': native, 'browser': browser_report})
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
+            'analysis_cases': analysis_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

@@ -64,6 +64,14 @@ class Client:
         elif path.startswith('/api/v1/meta/items/'): result = self.targets[int(path.rsplit('/', 1)[1])]
         elif method == 'POST' and path == '/api/v1/develop/executions':
             definition = body['content']['workflow_definition']
+            if definition['tasks'][-1]['id'] == 'analysis':
+                identifier = f'run-{len(self.executions) + 1}'
+                case_name = next(name for name in m.fixture.ANALYSIS_CASES
+                    if definition == m.analysis_workflow(definition['tasks'][0]['params']['locator'], name))
+                self.executions[identifier] = self.mutate({'execution_id': identifier, 'module': 'develop', 'status': 'success',
+                    'metadata': {'result': {'summary': {'has_result': True},
+                        'final_result': m.fixture.analysis_expectations()[case_name]}}})
+                return m.support.Response(200, {'execution_id': identifier}, {})
             mode = definition['tasks'][-1]['params']['write_mode']
             identifier = f'run-{len(self.executions) + 1}'
             status = 'failed' if identifier == 'run-2' else 'success'
@@ -113,6 +121,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             return {'sha256': 'spatial-' + overlap, 'cog_valid': True, 'source_unchanged': True,
                     'valid_pixels': 65534, 'invalid_pixels': 2, 'overlap': overlap,
                     'baseline_sha256': 'new', 'first_sha256': 'spatial-first'}
+        if action == 'verify-analysis':
+            return {'sha256': 'new', 'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 65535,
+                    'first_sha256': 'spatial-first', 'last_sha256': 'spatial-last'}
         return {'sha256': 'new' if action == 'verify-replace' else 'original', 'cog_valid': True,
                 'source_unchanged': True, 'valid_pixels': 65535}
 
@@ -125,7 +136,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_complete_chain_only_uses_source_manual_scan_and_owner_automatic_target_scan(self):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
-        self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last'])
+        self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4)
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -136,6 +148,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual(len(manual), 1)
         self.assertEqual(manual[0]['engine_id'], 1)
         self.assertFalse(any('collect' in path for _, path, _ in self.client.calls))
+        self.assertEqual([case['case_name'] for case in report['analysis_cases']], list(m.fixture.ANALYSIS_CASES))
 
     def test_rejects_admin_extra_permissions_default_tenant_and_shared_engine_before_writes(self):
         for fault in ('admin', 'permission', 'tenant', 'engine'):
@@ -220,7 +233,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.run_scene()
         submitted = [body['content']['workflow_definition']['tasks'] for method, path, body in self.client.calls
                      if method == 'POST' and path == '/api/v1/develop/executions']
-        for tasks, overlap in zip(submitted[-2:], ('first', 'last')):
+        for tasks, overlap in zip(submitted[3:5], ('first', 'last')):
             self.assertEqual([task['operator'] for task in tasks], ['raster_load', 'raster_reproject',
                 'raster_band_math', 'raster_band_math', 'raster_clip', 'raster_clip', 'raster_mosaic', 'raster_save'])
             self.assertEqual(tasks[1]['params']['target_crs'], 'EPSG:3857')
@@ -262,6 +275,49 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_rejects_incorrect_target_metadata(self):
         self.client.target['attributes']['type_info']['media']['width'] = 1
         with self.assertRaises(m.SuiteError): self.run_scene()
+
+    def test_analysis_rejects_incorrect_numeric_values_nulls_and_private_fields(self):
+        faults = {
+            'statistics-band-2': {'band': 1, 'mean': 65537, 'stddev': 0, 'invalid_count': 0, 'valid_count': True,
+                                  'nodata_ratio': float('nan'), 'secret_key': 'private'},
+            'statistics-all-invalid': {'min': 0, 'mean': float('nan'), 'invalid_count': 0},
+            'histogram-auto': {'edges': [2, 16385, 32769, 49152.5, 65536], 'counts': [16383] * 4},
+            'histogram-range': {'outside_count': 0, 'counts': [8192] * 4},
+        }
+        for name, changes in faults.items():
+            for key, value in changes.items():
+                with self.subTest(case=name, field=key):
+                    expected = m.fixture.analysis_expectations()[name]
+                    execution = {'metadata': {'result': {'summary': {'has_result': True},
+                        'final_result': {**expected, key: value}}}}
+                    with self.assertRaises(m.SuiteError): m.validate_analysis(execution, expected)
+
+    def test_analysis_rejects_persistent_outputs_scans_lineage_and_missing_preview(self):
+        for fault in ('outputs', 'lineage', 'scan', 'target', 'preview', 'summary'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-6':
+                        metadata = execution['metadata']
+                        if fault == 'outputs': metadata['outputs'] = {'analysis': {'resource': {'locator': 'fake'}}}
+                        if fault == 'lineage': metadata['lineage_facts'] = {'outputs': [{'locator': 'fake'}]}
+                        if fault == 'scan': metadata['result']['meta_scan_runs'] = [{'execution_id': 'fake'}]
+                        if fault == 'target': metadata['result']['produced_targets'] = [{'locator': 'fake'}]
+                        if fault == 'preview': metadata['result'].pop('final_result')
+                        if fault == 'summary': metadata['result']['summary']['has_result'] = False
+                    return execution
+                self.client.mutate = mutate
+                with self.assertRaises(m.SuiteError): self.run_scene()
+
+    def test_analysis_preserves_all_prior_artifact_hashes(self):
+        for field in ('sha256', 'first_sha256', 'last_sha256'):
+            with self.subTest(field=field):
+                self.setUp()
+                def physical(repo, env, action):
+                    payload = self.physical(repo, env, action)
+                    if action == 'verify-analysis': payload[field] = 'modified'
+                    return payload
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
 
 
 if __name__ == '__main__': unittest.main()

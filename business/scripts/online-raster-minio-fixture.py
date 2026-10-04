@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from bisect import bisect_right
 import json
 import math
 import os
 from pathlib import Path
 import secrets
 import stat
+import statistics
 import struct
 import subprocess
 import sys
@@ -26,7 +28,38 @@ ANGULAR_METRE = math.degrees(1 / 6378137)
 SPATIAL_SOURCE_TRANSFORM = (0, ANGULAR_METRE, 0, SIZE * ANGULAR_METRE, 0, -ANGULAR_METRE)
 SPATIAL_TRANSFORM = (0, 1, 0, SIZE, 0, -1)
 SPATIAL_NODATA = {0, 127 * SIZE + 127}
-ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last')
+ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis')
+ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
+
+
+def analysis_expectations():
+    """Independent numeric oracle from fixture formulas, without GDAL/NumPy/operators."""
+    values = list(range(2, SIZE * SIZE + 1))
+    total = SIZE * SIZE
+    band_values = [2 * value for value in values]
+    stats = {'band': 2, 'strategy': 'full', 'valid_count': len(values), 'invalid_count': 1,
+             'nodata_ratio': 1 / total, 'min': min(band_values), 'max': max(band_values),
+             'mean': statistics.fmean(band_values), 'stddev': statistics.pstdev(band_values)}
+
+    def histogram(pixels, band, low, high):
+        edges = [low + (high - low) * index / 4 for index in range(5)]
+        counts = [0] * 4
+        outside = 0
+        for value in pixels:
+            if value < low or value > high:
+                outside += 1
+            else:
+                counts[min(bisect_right(edges, value) - 1, 3)] += 1
+        return {'band': band, 'strategy': 'full', 'edges': edges, 'counts': counts,
+                'valid_count': len(pixels), 'invalid_count': 1, 'outside_count': outside}
+
+    return {
+        'statistics-band-2': stats,
+        'statistics-all-invalid': {'band': 1, 'strategy': 'full', 'valid_count': 0,
+            'invalid_count': total, 'nodata_ratio': 1.0, 'min': None, 'max': None, 'mean': None, 'stddev': None},
+        'histogram-auto': histogram(values, 1, min(values), max(values)),
+        'histogram-range': histogram(band_values, 2, 32768, 98304),
+    }
 
 
 def source_values(band, spatial=False):
@@ -244,7 +277,7 @@ def worker(action, path):
                     'invalid_pixels': len(invalid), 'source_unchanged': True,
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
-        evidence = verify(target_name, spatial, overlap, 3 if action == 'verify-replace' else 1)
+        evidence = verify(target_name, spatial, overlap, 3 if action in ('verify-replace', 'verify-analysis') else 1)
         names = ['result.cog.tif']
         if spatial:
             names.append('mosaic-first.cog.tif')
@@ -254,7 +287,12 @@ def worker(action, path):
                 names.append('mosaic-last.cog.tif')
                 evidence['first_sha256'] = verify('mosaic-first.cog.tif', True, 'first')['sha256']
         else:
-            evidence['factor'] = 3 if action == 'verify-replace' else 1
+            evidence['factor'] = 3 if action in ('verify-replace', 'verify-analysis') else 1
+        if action == 'verify-analysis':
+            # Analysis must leave all already accepted artifacts byte-for-byte intact.
+            names.extend(['mosaic-first.cog.tif', 'mosaic-last.cog.tif'])
+            evidence['first_sha256'] = verify('mosaic-first.cog.tif', True, 'first')['sha256']
+            evidence['last_sha256'] = verify('mosaic-last.cog.tif', True, 'last')['sha256']
         if sorted(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != sorted(names):
             raise FixtureError('target contains unexpected or partial artifacts')
         return evidence
@@ -275,7 +313,7 @@ def main():
         elif action in ACTIONS:
             result = physical_worker(action, root)
         else:
-            raise FixtureError('usage: fixture start|seed|verify-create|verify-replace|verify-mosaic-first|verify-mosaic-last|stop')
+            raise FixtureError('unknown physical fixture action')
     print(json.dumps(result, sort_keys=True))
 
 

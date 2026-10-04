@@ -661,6 +661,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/raster-workflow-online.py", "spatial_workflow", "incomplete_case"),
             ("business/scripts/online-raster-minio-fixture.py", "verify-mosaic-last", "omitted"),
             ("console/frontend/e2e/online/raster-workflow.spec.js", "evidence.target_name", "omitted"),
+            ("scripts/test/raster-workflow-online.py", "validate_analysis", "incomplete_analysis"),
+            ("business/scripts/online-raster-minio-fixture.py", "verify-analysis", "omitted_analysis"),
+            ("console/frontend/e2e/online/raster-workflow.spec.js", ".workflow-final-result-json", ".omitted-preview"),
         )
         for relative, old, new in faults:
             with self.subTest(relative=relative, fragment=old):

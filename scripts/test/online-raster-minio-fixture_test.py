@@ -16,6 +16,17 @@ spec.loader.exec_module(m)
 
 
 class RasterPhysicalFixtureTest(unittest.TestCase):
+    def test_analysis_oracle_counts_boundaries_and_outside_range_independently(self):
+        results = m.analysis_expectations()
+        self.assertEqual(results['statistics-band-2']['mean'], 65538)
+        self.assertEqual(results['statistics-band-2']['min'], 4)
+        self.assertEqual(results['statistics-band-2']['max'], 131072)
+        self.assertIsNone(results['statistics-all-invalid']['mean'])
+        self.assertEqual(results['histogram-auto']['edges'], [2, 16385.5, 32769, 49152.5, 65536])
+        self.assertEqual(results['histogram-auto']['counts'], [16384, 16383, 16384, 16384])
+        self.assertEqual(results['histogram-range']['counts'], [8192, 8192, 8192, 8193])
+        self.assertEqual(results['histogram-range']['outside_count'], 32766)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-raster-fixture-test-')
         self.addCleanup(self.temp.cleanup)

@@ -1,8 +1,10 @@
 """Exercise the T4 independent byte verifier with real GDAL and local S3 transport."""
 import importlib.util
+import importlib
 import json
 from pathlib import Path
 import struct
+import time
 from unittest.mock import patch
 
 from osgeo import gdal, osr
@@ -100,6 +102,48 @@ def test_real_reproject_clip_mosaic_outputs_pass_independent_all_pixel_oracle(ph
     assert last['sha256'] != first['sha256']
     assert last['first_sha256'] == first['sha256']
     assert last['baseline_sha256'] == first['baseline_sha256']
+
+
+@pytest.mark.parametrize('case_name', fixture.ANALYSIS_CASES)
+def test_async_analysis_json_matches_independent_fixture_oracle(physical, tmp_path, monkeypatch, case_name):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    source = tmp_path / 'source.tif'
+    original = LocalMinio.objects['source', 'raster-source', 'source.tif']
+    source.write_bytes(original)
+    definition = scene.analysis_workflow('source-locator', case_name)
+    definition['tasks'][0]['params'] = {'access_plan': {'schema_version': 'addp.workflow.access-plan/v1',
+        'source': {'kind': 'file', 'format': 'tiff', 'access': {'method': 'mounted_path', 'path': str(source)}}}}
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {}, 'runtime': {
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read']}}})
+    assert response.status_code == 202
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/' + response.json['execution_id']).json
+        if status['status'] in ('success', 'failed'): break
+        time.sleep(.01)
+    assert status['status'] == 'success', status
+    numeric = json.loads(status['result'])
+    # The oracle uses only Python statistics and deterministic pixel formulas.
+    scene.validate_analysis({'metadata': {'result': {'summary': {'has_result': True}, 'final_result': numeric}}},
+        fixture.analysis_expectations()[case_name])
+    assert source.read_bytes() == original
+
+
+def test_analysis_physical_verification_keeps_all_cog_hashes_and_rejects_extra_objects(physical, tmp_path):
+    target(tmp_path, factor=3)
+    spatial_target(tmp_path, 'first')
+    first = fixture.worker('verify-mosaic-first', physical)
+    spatial_target(tmp_path, 'last')
+    last = fixture.worker('verify-mosaic-last', physical)
+    result = fixture.worker('verify-analysis', physical)
+    assert result['sha256'] == last['baseline_sha256']
+    assert result['first_sha256'] == first['sha256']
+    assert result['last_sha256'] == last['sha256']
+    LocalMinio.objects['target', 'raster-target', 'analysis.json'] = b'{}'
+    with pytest.raises(fixture.FixtureError, match='unexpected'): fixture.worker('verify-analysis', physical)
 
 
 @pytest.mark.parametrize('kwargs', [{'wrong_overlap': True}, {'corrupt': True}, {'crs': 4326},
