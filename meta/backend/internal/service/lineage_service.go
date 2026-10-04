@@ -458,14 +458,29 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 		return models.LineageGraphResponse{}, fmt.Errorf("service_id and revision are required for published_service")
 	}
 
-	if request.SubjectKind == "field_ref" {
-		if request.ItemID == nil || request.FieldName == "" || len(request.ExpandUpstream)+len(request.ExpandDownstream) > 0 {
-			return models.LineageGraphResponse{}, fmt.Errorf("field_ref item_id and field_name are required; item expansions are invalid")
+	if request.Granularity == "" {
+		request.Granularity = "item"
+		if request.SubjectKind == "field_ref" {
+			request.Granularity = "field"
+		}
+	}
+	if request.Granularity != "item" && request.Granularity != "field" {
+		return models.LineageGraphResponse{}, fmt.Errorf("granularity must be item or field")
+	}
+	if request.SubjectKind == "field_ref" && (request.ItemID == nil || request.FieldName == "" || request.Granularity != "field") {
+		return models.LineageGraphResponse{}, fmt.Errorf("field_ref item_id and field_name are required; granularity must be field")
+	}
+	if request.SubjectKind != "field_ref" && request.FieldName != "" {
+		return models.LineageGraphResponse{}, fmt.Errorf("field_name must be used with field_ref")
+	}
+	if request.Granularity == "field" {
+		if request.SubjectKind == "published_service" || len(request.ExpandUpstream)+len(request.ExpandDownstream) > 0 {
+			return models.LineageGraphResponse{}, fmt.Errorf("field granularity must be used with data_item or field_ref without item expansions")
 		}
 		return s.buildFieldLineageGraph(ctx, tenantID, request)
 	}
-	if request.FieldName != "" || request.SchemaSnapshotHash != "" {
-		return models.LineageGraphResponse{}, fmt.Errorf("field parameters must be used with field_ref")
+	if request.SchemaSnapshotHash != "" {
+		return models.LineageGraphResponse{}, fmt.Errorf("schema_snapshot_hash must be used with field granularity")
 	}
 	return s.buildLineageGraph(ctx, tenantID, request)
 }

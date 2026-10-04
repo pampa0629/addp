@@ -60,12 +60,15 @@ function json(route, body) {
   return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
 }
 
-test('selects an exact field and distinguishes unavailable evidence from recorded dependencies', async ({ page }) => {
+test('shows all table fields in one query and focuses fields without fetching again', async ({ page }) => {
   const requests = []
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
+  const field = (id, name, status) => ({ ...node(id), kind: 'field_ref', field_name: name, schema_snapshot_hash: `sha256:table-${id}`, field_lineage_status: status })
+  const roots = [field(3, 'client.id', 'complete'), field(3, 'generated', 'complete'), field(3, 'missing', 'unavailable')]
+  const source = field(1, 'nested.id')
   await page.route('**/api/v1/**', route => {
     const url = new URL(route.request().url())
     const path = url.pathname
@@ -74,30 +77,34 @@ test('selects an exact field and distinguishes unavailable evidence from recorde
     if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
     if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
-    if (path.endsWith('/meta/items/3')) return json(route, { ...node(3), attributes: { type_info: { table: { fields: [{ name: 'client.id', type: 'string' }, { name: 'generated', type: 'string' }] } } } })
+    if (path.endsWith('/meta/items/3')) return json(route, { ...node(3), attributes: { type_info: { table: { fields: roots.map(field => ({ name: field.field_name, type: 'string' })) } } } })
     if (path.endsWith('/meta/lineage/graph')) {
       requests.push(Object.fromEntries(url.searchParams))
-      const field = url.searchParams.get('field_name')
-      if (!field) return json(route, { subject: node(3), nodes: [node(3)], edges: [] })
-      const root = { ...node(3), kind: 'field_ref', field_name: field, schema_snapshot_hash: 'sha256:target' }
-      return json(route, { subject: root, nodes: [root], edges: [], field_lineage_status: field === 'generated' ? 'complete' : 'unavailable' })
+      if (url.searchParams.get('granularity') !== 'field') return json(route, { granularity: 'item', subject: node(3), nodes: [node(3)], edges: [] })
+      return json(route, { granularity: 'field', subject: { ...node(3), schema_snapshot_hash: 'sha256:table-3' }, nodes: [...roots, source], edges: [{ source, target: roots[0], granularity: 'field', relation_kind: 'derive', transformation: 'direct' }], field_lineage_status: 'unavailable' })
     }
     return json(route, {})
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
-  await expect(page.locator('.lineage-field')).toBeVisible()
-  await page.locator('.lineage-field .el-select__wrapper').click()
-  await page.getByRole('option', { name: 'client.id', exact: true }).click()
-  await expect.poll(() => requests.at(-1).subject_kind).toBe('field_ref')
-  expect(requests.at(-1).field_name).toBe('client.id')
-  await expect(page.getByRole('status')).toContainText('当前字段尚无可用血缘证据')
-  await page.locator('.lineage-field .el-select__wrapper').click()
-  await page.getByRole('option', { name: 'generated', exact: true }).click()
-  await expect(page.getByRole('status')).toContainText('已记录的字段血缘中没有关联字段')
-  await page.locator('.lineage-field .el-select__wrapper').click()
-  await page.getByRole('option', { name: '数据项级', exact: true }).click()
-  await expect.poll(() => requests.at(-1).subject_kind).toBe('data_item')
+  await page.getByText('字段级', { exact: true }).click()
+  await expect(page.locator('.lineage-fields')).toBeVisible()
+  await expect(page.locator('.lineage-canvas canvas')).toBeVisible()
+  expect(requests.at(-1)).toMatchObject({ subject_kind: 'data_item', granularity: 'field' })
   expect(requests.at(-1).field_name).toBeUndefined()
+  const count = requests.length
+  await page.getByRole('button', { name: 'client.id', exact: true }).click()
+  await expect(page.locator('.lineage-inspector strong')).toHaveText('client.id')
+  await expect(page.locator('.lineage-inspector')).toContainText('sha256:table-3')
+  await page.getByRole('button', { name: 'generated', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已记录的字段血缘中没有关联字段')
+  await page.getByRole('button', { name: 'missing', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('当前字段尚无可用血缘证据')
+  await page.getByRole('button', { name: '全部字段', exact: true }).click()
+  await expect(page.locator('.lineage-inspector')).toBeHidden()
+  expect(requests.length).toBe(count)
+  await page.screenshot({ path: '/tmp/addp-field-overview-e2e.png' })
+  await page.getByText('数据项级', { exact: true }).click()
+  await expect.poll(() => requests.at(-1).granularity).toBe('item')
   expect(errors).toEqual([])
 })
 

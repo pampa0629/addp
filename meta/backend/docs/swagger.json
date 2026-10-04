@@ -815,13 +815,19 @@
                     },
                     {
                         "type": "string",
+                        "description": "图粒度：item 或 field；数据项可一次查询全部字段，字段主体仅支持 field | Graph granularity: item or field; data items support all fields, field references require field",
+                        "name": "granularity",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "精确字段名，field_ref 时必填 | Exact field name, required for field_ref",
                         "name": "field_name",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "字段结构快照 hash；省略时使用当前 Meta 结构 | Field schema snapshot hash; defaults to current Meta schema",
+                        "description": "字段粒度的结构快照 hash；省略时使用当前 Meta 结构，指定值需执行证据证明 | Schema snapshot hash for field granularity; defaults to current Meta schema; explicit hashes require execution evidence",
                         "name": "schema_snapshot_hash",
                         "in": "query"
                     },
@@ -853,7 +859,7 @@
                     {
                         "type": "integer",
                         "default": 2,
-                        "description": "每条派生或服务依赖边计一层，0 只显示主体，范围 0-20 | Each derive or serve edge is one hop; 0 returns only the subject; range 0-20",
+                        "description": "每条关系计一层，0 只显示主体或根结构字段，范围 0-20 | Each edge is one hop; 0 returns the subject or root schema fields; range 0-20",
                         "name": "depth",
                         "in": "query"
                     },
@@ -3213,6 +3219,9 @@
                 "field_lineage_status": {
                     "type": "string"
                 },
+                "granularity": {
+                    "type": "string"
+                },
                 "nodes": {
                     "type": "array",
                     "items": {
@@ -3234,6 +3243,9 @@
                     "type": "integer"
                 },
                 "engine_name": {
+                    "type": "string"
+                },
+                "field_lineage_status": {
                     "type": "string"
                 },
                 "field_name": {

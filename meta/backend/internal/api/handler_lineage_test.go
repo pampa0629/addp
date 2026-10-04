@@ -189,9 +189,9 @@ func TestLineageGraphRequestExpansion(t *testing.T) {
 
 func TestLineageGraphFieldRequestKeepsExactNames(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest("GET", "/graph?subject_kind=field_ref&item_id=3&field_name=a.b&schema_snapshot_hash=snapshot", nil)
+	c.Request = httptest.NewRequest("GET", "/graph?subject_kind=field_ref&item_id=3&field_name=a.b&schema_snapshot_hash=snapshot&granularity=field", nil)
 	request, err := parseLineageGraphRequest(c)
-	if err != nil || request.FieldName != "a.b" || request.SchemaSnapshotHash != "snapshot" {
+	if err != nil || request.FieldName != "a.b" || request.SchemaSnapshotHash != "snapshot" || request.Granularity != "field" {
 		t.Fatalf("field request=%+v %v", request, err)
 	}
 }
@@ -201,7 +201,7 @@ func TestLineageGraphFieldParametersReturnBadRequest(t *testing.T) {
 	handler := &Handler{lineageService: service.NewLineageService(db, service.NewEngineService(db, nil))}
 	router := gin.New()
 	router.GET("/graph", handler.GetLineageGraph)
-	for _, query := range []string{"subject_kind=field_ref&item_id=3", "subject_kind=field_ref&item_id=3&field_name=id&expand_upstream=1", "subject_kind=data_item&item_id=3&field_name=id"} {
+	for _, query := range []string{"subject_kind=field_ref&item_id=3", "subject_kind=field_ref&item_id=3&field_name=id&expand_upstream=1", "subject_kind=data_item&item_id=3&field_name=id", "subject_kind=data_item&item_id=3&granularity=unknown", "subject_kind=field_ref&item_id=3&field_name=id&granularity=item", "subject_kind=published_service&service_id=1&revision=v1&granularity=field", "subject_kind=data_item&item_id=3&granularity=field&expand_upstream=1"} {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest("GET", "/graph?"+query, nil))
 		if response.Code != http.StatusBadRequest {

@@ -437,11 +437,82 @@ func TestFieldLineageMultiSourceWriteFactsAgainstPostgres(t *testing.T) {
 	if err != nil || graph.FieldLineageStatus != "complete" || len(graph.Edges) != 0 {
 		t.Fatalf("generated graph=%+v err=%v", graph, err)
 	}
+	overview, err := service.GetGraph(t.Context(), 7, models.LineageGraphRequest{SubjectKind: "data_item", Granularity: "field", ItemID: &target.ID, Direction: "upstream", Depth: 1, Limit: 20})
+	if err != nil || overview.FieldLineageStatus != "complete" || len(overview.Nodes) != 7 || len(overview.Edges) != 3 {
+		t.Fatalf("multi-source overview=%+v err=%v", overview, err)
+	}
 	var count int64
 	if err := tx.Model(&models.LineageItemRelation{}).Where("tenant_id=? AND source_item_id=? AND target_item_id=? AND granularity='field'", 7, activity.ID, target.ID).Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
 		t.Fatal("row selection became a field value dependency")
+	}
+}
+
+func TestFieldLineageOverviewSeedsAllFieldsWithOneTraversal(t *testing.T) {
+	db := openLineageTestDB(t)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	sourceSchema, targetSchema := fieldTestSchema(t, "a.b", "value"), fieldTestSchema(t, "id", "total", "constant", "missing")
+	source, target := fieldTestItem(t, db, 7, "overview-source", sourceSchema), fieldTestItem(t, db, 7, "overview-target", targetSchema)
+	at := time.Now().UTC().Add(-time.Hour)
+	fieldTestExecution(t, db, "overview", source, target, sourceSchema, targetSchema, "replace", at,
+		commonExecution.LineageFieldMapping{SourceField: "a.b", TargetField: "id", Transformation: "direct"},
+		commonExecution.LineageFieldMapping{SourceField: "value", TargetField: "total", Transformation: "derived"},
+		commonExecution.LineageFieldMapping{TargetField: "constant", Transformation: "generated"})
+	if _, err := svc.CollectExecution(t.Context(), 7, "overview"); err != nil {
+		t.Fatal(err)
+	}
+	queries := 0
+	const callback = "overview-proof-count"
+	if err := db.Callback().Query().After("gorm:query").Register(callback, func(db *gorm.DB) {
+		if !db.DryRun && strings.Contains(db.Statement.SQL.String(), "lineage_observations") {
+			queries++
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Callback().Query().Remove(callback)
+	request := models.LineageGraphRequest{SubjectKind: "data_item", Granularity: "field", ItemID: &target.ID, Direction: "both", Depth: 2, Limit: 20}
+	graph, err := svc.GetGraph(t.Context(), 7, request)
+	if err != nil || len(graph.Nodes) != 6 || len(graph.Edges) != 2 || graph.Granularity != "field" || graph.Subject.Kind != "data_item" || graph.Subject.SchemaSnapshotHash != targetSchema.Hash {
+		t.Fatalf("overview=%+v err=%v", graph, err)
+	}
+	if queries > 2 {
+		t.Fatalf("%d proof queries for four root fields", queries)
+	}
+	for i, name := range []string{"id", "total", "constant", "missing"} {
+		want := "complete"
+		if name == "missing" {
+			want = "unavailable"
+		}
+		if graph.Nodes[i].FieldName != name || graph.Nodes[i].FieldLineageStatus != want {
+			t.Fatalf("root %s: %+v", name, graph.Nodes[i])
+		}
+	}
+	request.Depth = 0
+	request.Limit = 2
+	graph, err = svc.GetGraph(t.Context(), 7, request)
+	if err != nil || !graph.Truncated || len(graph.Nodes) != 2 || len(graph.Edges) != 0 {
+		t.Fatalf("bounded roots=%+v err=%v", graph, err)
+	}
+	if err := db.Model(&target).Update("attributes", models.JSONMap{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	request.Limit = 20
+	request.SchemaSnapshotHash = "invented"
+	if _, err = svc.GetGraph(t.Context(), 7, request); err == nil {
+		t.Fatal("invented overview schema accepted")
+	}
+	request.SchemaSnapshotHash = targetSchema.Hash
+	past := at.Add(time.Second)
+	request.AsOf = &past
+	graph, err = svc.GetGraph(t.Context(), 7, request)
+	if err != nil || len(graph.Nodes) != 4 {
+		t.Fatalf("historical roots=%+v err=%v", graph, err)
+	}
+	request.AsOf = nil
+	if _, err = svc.GetGraph(t.Context(), 8, request); err == nil {
+		t.Fatal("foreign tenant overview accepted")
 	}
 }

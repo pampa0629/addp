@@ -13,10 +13,10 @@
           </span>
         </div>
         <div class="lineage-tools">
-          <el-select v-if="fields.length" :model-value="field" :aria-label="t('lineage.field')" class="lineage-field" size="small" filterable @update:model-value="emit('update:field', $event)">
-            <el-option value="" :label="t('lineage.granularities.item')" />
-            <el-option v-for="name in fields" :key="name" :value="name" :label="name" />
-          </el-select>
+          <el-radio-group v-if="supportsFields" :model-value="granularity" :aria-label="t('lineage.granularity')" size="small" @update:model-value="emit('update:granularity', $event)">
+            <el-radio-button value="item">{{ t('lineage.granularities.item') }}</el-radio-button>
+            <el-radio-button value="field">{{ t('lineage.granularities.field') }}</el-radio-button>
+          </el-radio-group>
           <span class="lineage-depth-label">{{ t('lineage.depth') }}</span>
           <el-select :model-value="depth" :aria-label="t('lineage.depth')" class="lineage-depth" size="small" @update:model-value="emit('update:depth', $event)">
             <el-option v-for="value in [1, 2, 3, 5, 10, 20]" :key="value" :value="value" :label="t('lineage.layers', { count: value })" />
@@ -39,9 +39,13 @@
         </div>
       </div>
 
+      <div v-if="isFieldGraph" class="lineage-fields" :aria-label="t('lineage.fields')">
+        <el-button size="small" :type="!selectedNode ? 'primary' : ''" @click="clearSelection">{{ t('lineage.showAllFields') }}</el-button>
+        <el-button v-for="node in rootFields" :key="nodeId(node)" size="small" :type="nodeId(selectedNode) === nodeId(node) ? 'primary' : ''" :title="node.field_name" @click="selectField(node)">{{ node.field_name }}</el-button>
+      </div>
       <div v-if="graph.truncated" class="lineage-truncated" role="status">{{ t('lineage.truncated') }}</div>
-      <div v-if="graph.field_lineage_status === 'unavailable'" class="lineage-truncated" role="status">{{ t('lineage.fieldUnavailable') }}</div>
-      <div v-else-if="graph.field_lineage_status === 'complete' && !edges.length" class="lineage-truncated" role="status">{{ t('lineage.fieldNoDependencies') }}</div>
+      <div v-if="!isFieldGraph && graph.field_lineage_status === 'unavailable'" class="lineage-truncated" role="status">{{ t('lineage.fieldUnavailable') }}</div>
+      <div v-else-if="!isFieldGraph && graph.field_lineage_status === 'complete' && !edges.length" class="lineage-truncated" role="status">{{ t('lineage.fieldNoDependencies') }}</div>
       <div class="lineage-stage">
         <el-empty v-if="!nodes.length" :description="t('lineage.noData')" :image-size="56" />
         <div
@@ -62,6 +66,8 @@
         <div class="lineage-expand-actions">
           <el-button v-for="direction in ['upstream', 'downstream']" v-show="selectedNode[`hidden_${direction}_count`] > 0" :key="direction" size="small" :disabled="graph.truncated" @click="expandNode(selectedNode, direction)">{{ t(`lineage.expand.${direction}`, { count: selectedNode[`hidden_${direction}_count`] }) }}</el-button>
         </div>
+        <div v-if="selectedNode.field_lineage_status === 'unavailable'" class="lineage-field-status" role="status">{{ t('lineage.fieldUnavailable') }}</div>
+        <div v-else-if="!graph.truncated && selectedNode.field_lineage_status === 'complete' && !edges.some(edge => nodeId(edge.source) === nodeId(selectedNode) || nodeId(edge.target) === nodeId(selectedNode))" class="lineage-field-status" role="status">{{ t('lineage.fieldNoDependencies') }}</div>
         <dl class="lineage-inspector-fields">
           <div v-if="selectedNode.field_name"><dt>{{ t('lineage.field') }}</dt><dd>{{ selectedNode.field_name }}</dd></div>
           <div v-if="selectedNode.schema_snapshot_hash" class="lineage-inspector-field-wide"><dt>{{ t('lineage.schemaSnapshot') }}</dt><dd class="lineage-mono">{{ selectedNode.schema_snapshot_hash }}</dd></div>
@@ -123,6 +129,7 @@ import { FullScreen, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import G6 from '@antv/g6'
 import { focusDAGConnections } from '../../dag/src/utils/connections.js'
 import { lineageNodeId as nodeId } from './lineageApi.js'
+import { projectLineageFields, lineageFieldConnections, FIELD_HEADER_HEIGHT, FIELD_ROW_HEIGHT } from './lineageFields.js'
 
 const LINEAGE_NODE_TYPE = 'addp-lineage-card'
 const LINEAGE_EDGE_TYPE = 'addp-lineage-link'
@@ -134,11 +141,11 @@ const { t, locale } = useI18n()
 const props = defineProps({
   graph: { type: Object, default: () => ({ nodes: [], edges: [] }) },
   depth: { type: Number, default: 2 },
-  fields: { type: Array, default: () => [] },
-  field: { type: String, default: '' }
+  supportsFields: { type: Boolean, default: false },
+  granularity: { type: String, default: 'item' }
 })
 
-const emit = defineEmits(['update:depth', 'update:field', 'expand', 'view-execution'])
+const emit = defineEmits(['update:depth', 'update:granularity', 'expand', 'view-execution'])
 const canvasRef = ref(null)
 const selectedNode = ref(null)
 const selectedEdge = ref(null)
@@ -161,6 +168,8 @@ const nodes = computed(() => {
 
 const edges = computed(() => props.graph?.edges || [])
 const subjectId = computed(() => nodeId(props.graph?.subject))
+const isFieldGraph = computed(() => props.graph?.granularity === 'field')
+const rootFields = computed(() => nodes.value.filter(node => node.kind === 'field_ref' && node.item_id === props.graph?.subject?.item_id && node.schema_snapshot_hash === props.graph?.subject?.schema_snapshot_hash))
 
 function themeColor(variableName) {
   if (typeof window === 'undefined') return ''
@@ -242,6 +251,7 @@ function registerLineageNode() {
   G6.registerNode(LINEAGE_NODE_TYPE, {
     draw(cfg, group) {
       const visual = cfg._visual
+      if (cfg._fields) return drawFieldCard(cfg, group)
       const card = group.addShape('rect', {
         attrs: {
           x: -NODE_WIDTH / 2,
@@ -444,15 +454,16 @@ function registerLineageNode() {
       }
     },
 
-    getAnchorPoints() {
-      return [[0, 0.5], [1, 0.5]]
+    getAnchorPoints(cfg) {
+      return cfg._anchors || [[0, 0.5], [1, 0.5]]
     }
   }, 'single-node')
 }
 
 function graphData() {
   const palette = themePalette()
-  return {
+  const projection = isFieldGraph.value ? projectLineageFields(nodes.value, edges.value) : null
+  const data = {
     nodes: nodes.value.map(node => {
       const isSubject = nodeId(node) === subjectId.value
       const accent = node.kind === 'published_service' ? palette.warning : palette.primary
@@ -516,6 +527,37 @@ function graphData() {
       }
     }))
   }
+  if (projection) {
+    const visuals = new Map(data.nodes.map(node => [node.id, node]))
+    data.nodes = projection.nodes.map(group => {
+      const visual = visuals.get(nodeId(group.node))
+      const isSubject = group.node.item_id === props.graph.subject?.item_id && group.node.schema_snapshot_hash === props.graph.subject?.schema_snapshot_hash
+      return { ...visual, id: group.id, size: group.size, _fields: group.fields, _anchors: group.anchors,
+        _title: truncate(group.node.name || group.node.full_name, isSubject ? 23 : 30), _path: truncate(group.node.full_name, 40), _isSubject: isSubject,
+        _visual: { ...visual._visual, fill: isSubject ? palette.primarySoft : palette.background, stroke: isSubject ? palette.primary : palette.border, lineWidth: isSubject ? 2 : 1 } }
+    })
+    data.edges = projection.edges.map(edge => ({ ...data.edges.find(model => model.id === edge.id), ...edge, label: '' }))
+  }
+  return data
+}
+
+function drawFieldCard(cfg, group) {
+  const visual = cfg._visual
+  const height = cfg.size[1]
+  const left = -NODE_WIDTH / 2
+  const top = -height / 2
+  const card = group.addShape('rect', { name: 'lineage-card', attrs: { x: left, y: top, width: NODE_WIDTH, height, radius: 6, fill: visual.fill, stroke: visual.stroke, lineWidth: visual.lineWidth } })
+  group.addShape('text', { name: 'lineage-title', capture: false, attrs: { x: left + 14, y: top + 22, text: cfg._title, fill: visual.textPrimary, fontWeight: 600, fontSize: 13 } })
+  group.addShape('text', { name: 'lineage-path', capture: false, attrs: { x: left + 14, y: top + 41, text: cfg._path, fill: visual.textSecondary, fontSize: 10 } })
+  group.addShape('text', { name: 'lineage-engine', capture: false, attrs: { x: left + 14, y: top + 60, text: cfg._engineName, fill: visual.textTertiary, fontSize: 10 } })
+  if (cfg._isSubject) group.addShape('text', { name: 'lineage-current', capture: false, attrs: { x: -left - 12, y: top + 22, text: cfg._currentLabel, textAlign: 'right', fill: visual.accent, fontSize: 11 } })
+  cfg._fields.forEach((field, index) => {
+    const y = top + FIELD_HEADER_HEIGHT + index * FIELD_ROW_HEIGHT
+    const name = `lineage-field:${index}`
+    group.addShape('rect', { name, attrs: { x: left + 1, y, width: NODE_WIDTH - 2, height: FIELD_ROW_HEIGHT, fill: visual.fill, cursor: 'pointer' } })
+    group.addShape('text', { name, attrs: { x: left + 14, y: y + FIELD_ROW_HEIGHT / 2, text: truncate(field.field_name, 32), textBaseline: 'middle', fill: field.field_lineage_status === 'unavailable' ? visual.textTertiary : visual.textPrimary, fontSize: 12, cursor: 'pointer' } })
+  })
+  return card
 }
 
 // The halo belongs to each edge group: the upper edge masks the lower edge at
@@ -539,6 +581,7 @@ function registerLineageEdge() {
 
 function focusItem(item) {
   if (!graphInstance) return
+  if (isFieldGraph.value && selectedNode.value?.kind === 'field_ref') { focusField(selectedNode.value); return }
   const focused = focusDAGConnections(graphInstance, item)
   for (const edge of graphInstance.getEdges()) {
     graphInstance.setItemState(edge, 'hover', focused.includes(edge))
@@ -547,6 +590,34 @@ function focusItem(item) {
     edge.getSource().toFront()
     edge.getTarget().toFront()
   }
+}
+
+function focusField(node) {
+  if (!graphInstance) return
+  const focus = node && lineageFieldConnections(edges.value, nodeId(node))
+  for (const item of graphInstance.getEdges()) {
+    const active = !focus || focus.connections.has(item.getID())
+    graphInstance.setItemState(item, 'hover', !!focus && active)
+    item.getContainer().attr('opacity', active ? 1 : 0.15)
+  }
+  for (const item of graphInstance.getNodes()) {
+    const model = item.getModel()
+    const active = !focus || model._fields.some(field => focus.fields.has(nodeId(field)))
+    item.getContainer().attr('opacity', active ? 1 : 0.35)
+    model._fields.forEach((field, index) => {
+      const selected = nodeId(field) === nodeId(node)
+      for (const shape of item.getContainer().get('children').filter(shape => shape.get('name') === `lineage-field:${index}`)) {
+        if (shape.get('type') === 'rect') shape.attr({ fill: selected ? themePalette().primarySoft : model._visual.fill, stroke: selected ? model._visual.accent : model._visual.fill })
+        shape.attr('opacity', !focus || focus.fields.has(nodeId(field)) ? 1 : 0.35)
+      }
+    })
+  }
+}
+
+function selectField(node) {
+  clearSelection()
+  selectedNode.value = node
+  focusField(node)
 }
 
 function restoreFocus() {
@@ -574,7 +645,8 @@ function clearSelection() {
   graphInstance?.getEdges().forEach(item => graphInstance.setItemState(item, 'selected', false))
   selectedNode.value = null
   selectedEdge.value = null
-  focusItem(null)
+  if (isFieldGraph.value) focusField(null)
+  else focusItem(null)
 }
 
 function selectNode(item) {
@@ -647,7 +719,7 @@ async function renderGraph() {
         return content
       }
     })],
-    layout: { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep: 170, controlPoints: true },
+    layout: { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep: isFieldGraph.value ? 32 : 170, controlPoints: true },
     defaultNode: { type: LINEAGE_NODE_TYPE, size: [NODE_WIDTH, NODE_HEIGHT] },
     defaultEdge: { type: LINEAGE_EDGE_TYPE },
     edgeStateStyles: {
@@ -660,18 +732,31 @@ async function renderGraph() {
     const shape = event.target?.get('name')
     const direction = ['upstream', 'downstream'].find(value => shape === `lineage-expand-${value}`)
     if (direction) expandNode(event.item.getModel()._node, direction)
-    else selectNode(event.item)
+    else if (isFieldGraph.value) {
+      const index = shape?.startsWith('lineage-field:') ? Number(shape.slice('lineage-field:'.length)) : -1
+      if (index >= 0) selectField(event.item.getModel()._fields[index])
+      else clearSelection()
+    } else selectNode(event.item)
   })
   graphInstance.on('edge:click', event => selectEdge(event.item))
   graphInstance.on('canvas:click', clearSelection)
-  graphInstance.on('node:mouseenter', event => focusItem(event.item))
+  graphInstance.on('node:mouseenter', event => { if (!isFieldGraph.value) focusItem(event.item) })
   graphInstance.on('node:mouseleave', restoreFocus)
   graphInstance.on('edge:mouseenter', event => focusItem(event.item))
   graphInstance.on('edge:mouseleave', restoreFocus)
   const restoreViewport = () => {
     if (!graphInstance) return
     const item = anchor && graphInstance.findById(anchor.id)
-    if (!item) { fitView(); return }
+    if (!item) {
+      fitView()
+      // Keep field text readable on entry; fit-view remains an explicit overview.
+      if (isFieldGraph.value && graphInstance.getZoom() < 0.85) {
+        graphInstance.zoomTo(0.85)
+        const root = graphInstance.getNodes().find(node => node.getModel()._isSubject)
+        if (root) graphInstance.focusItem(root, false)
+      }
+      return
+    }
     graphInstance.zoomTo(anchor.zoom)
     const { x, y } = item.getModel()
     const point = graphInstance.getCanvasByPoint(x, y)
@@ -773,7 +858,9 @@ watch(() => props.depth, () => { expansionAnchor = null })
   background: var(--el-color-primary);
 }
 
-.lineage-field { width: 180px; margin-right: 8px; }
+.lineage-fields { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; max-height: 90px; overflow-y: auto; flex-shrink: 0; }
+.lineage-fields .el-button { margin-left: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.lineage-field-status { color: var(--addp-text-secondary); font-size: 12px; margin-top: 8px; }
 .lineage-depth { width: 94px; margin-right: 8px; }
 .lineage-depth-label { margin-right: 6px; white-space: nowrap; }
 .lineage-truncated { padding: 6px 12px; color: var(--el-color-warning); font-size: 12px; }

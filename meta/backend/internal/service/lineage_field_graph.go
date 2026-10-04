@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
@@ -21,31 +22,22 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, *request.ItemID).First(&item).Error; err != nil {
 		return response, err
 	}
+	var fields []datatype.FieldInfo
 	hash := request.SchemaSnapshotHash
 	if hash == "" {
-		fields, err := metaquery.FieldsFromMetaItem(item)
+		var err error
+		fields, err = metaquery.FieldsFromMetaItem(item)
 		if err != nil {
 			return response, err
-		}
-		found := false
-		for _, field := range fields {
-			if field.Name == request.FieldName {
-				found = true
-			}
-		}
-		if !found {
-			return response, gorm.ErrRecordNotFound
 		}
 		hash, err = dataprotection.TableSchemaSnapshotHash(fields)
 		if err != nil {
 			return response, err
 		}
 	}
-	root := models.LineageNode{Kind: "field_ref", ItemID: &item.ID, FieldName: request.FieldName, SchemaSnapshotHash: hash}
-	// A supplied historical snapshot must be grounded in immutable evidence.
+	statuses := map[string]string{}
 	proven := false
-	// Prefer the latest target write: a later read cannot make an unavailable
-	// target mapping complete. Bound proof lookup in SQL instead of loading history.
+	// Prefer the latest target write; a later read must not overwrite its status.
 	for _, column := range []string{"target", "source"} {
 		proofs := s.db.WithContext(ctx).Where("tenant_id = ? AND granularity = 'item' AND relation_kind IN ('derive', 'reference') AND "+column+"_item_id = ?", tenantID, item.ID)
 		if request.AsOf != nil {
@@ -61,26 +53,27 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 			}
 			return response, err
 		}
-		var snapshot interface{}
+		snapshot := observation.SourceSnapshot["schema_snapshot"]
 		if column == "target" {
 			snapshot = observation.TargetSnapshot["schema_snapshot"]
-		} else {
-			snapshot = observation.SourceSnapshot["schema_snapshot"]
 		}
 		structure := snapshotFromEvidence(snapshot)
-		if structure != nil && structure.Hash == hash && structure.HasField(request.FieldName) {
+		if structure != nil && structure.Hash == hash {
 			proven = true
+			if request.SchemaSnapshotHash != "" {
+				fields = structure.Fields
+			}
 			mode, _ := observation.Evidence["write_mode"].(string)
 			if observation.Evidence["field_lineage_status"] == "complete" && (knownLineageWriteMode(mode) || observation.RelationKind == "reference") {
 				if column == "source" {
-					response.FieldLineageStatus = "complete"
+					for _, field := range structure.Fields {
+						statuses[field.Name] = "complete"
+					}
 				} else {
 					var mappings []commonExecution.LineageFieldMapping
 					if decodeJSONValue(observation.Evidence["field_mappings"], &mappings) == nil {
 						for _, mapping := range mappings {
-							if mapping.TargetField == request.FieldName {
-								response.FieldLineageStatus = "complete"
-							}
+							statuses[mapping.TargetField] = "complete"
 						}
 					}
 				}
@@ -91,15 +84,53 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 	if request.SchemaSnapshotHash != "" && !proven {
 		return response, gorm.ErrRecordNotFound
 	}
-	response.Nodes = append(response.Nodes, root)
-	nodes := map[string]bool{fieldNodeKey(root): true}
+	if request.SubjectKind == "field_ref" {
+		selected := []datatype.FieldInfo{}
+		for _, field := range fields {
+			if field.Name == request.FieldName {
+				selected = append(selected, field)
+			}
+		}
+		if len(selected) != 1 {
+			return response, gorm.ErrRecordNotFound
+		}
+		fields = selected
+	}
+	response.Granularity = "field"
+	response.FieldLineageStatus = "complete"
+	if len(fields) == 0 {
+		response.FieldLineageStatus = "unavailable"
+	}
+	nodes := map[string]bool{}
+	for _, field := range fields {
+		status := statuses[field.Name]
+		if status == "" {
+			status = "unavailable"
+			response.FieldLineageStatus = "unavailable"
+		}
+		if len(response.Nodes) >= request.Limit {
+			response.Truncated = true
+			continue
+		}
+		node := models.LineageNode{Kind: "field_ref", ItemID: &item.ID, FieldName: field.Name, SchemaSnapshotHash: hash, FieldLineageStatus: status}
+		response.Nodes = append(response.Nodes, node)
+		nodes[fieldNodeKey(node)] = true
+	}
+	roots := append([]models.LineageNode(nil), response.Nodes...)
+	root := models.LineageNode{Kind: "data_item", ItemID: &item.ID, SchemaSnapshotHash: hash}
+	if request.SubjectKind == "field_ref" {
+		root = roots[0]
+	}
 	edges := map[uint]bool{}
 	for _, direction := range []string{"upstream", "downstream"} {
 		if request.Direction != "both" && request.Direction != direction {
 			continue
 		}
-		frontier := []models.LineageNode{root}
-		seen := map[string]bool{fieldNodeKey(root): true}
+		frontier := append([]models.LineageNode(nil), roots...)
+		seen := map[string]bool{}
+		for _, node := range roots {
+			seen[fieldNodeKey(node)] = true
+		}
 		for depth := 0; depth < request.Depth && len(frontier) > 0; depth++ {
 			query := s.db.WithContext(ctx).Table("meta.lineage_item_relations AS r").Select("r.*").
 				Joins("JOIN meta.meta_item AS source ON source.id = r.source_item_id AND source.tenant_id = r.tenant_id AND source.deleted_at IS NULL").
@@ -165,7 +196,7 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 			}
 		}
 	}
-	ids := []uint{}
+	ids := []uint{item.ID}
 	for _, node := range response.Nodes {
 		ids = append(ids, *node.ItemID)
 	}

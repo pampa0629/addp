@@ -90,13 +90,14 @@ func (h *Handler) RecordServicePublication(c *gin.Context) {
 // @Tags Meta Lineage
 // @Produce json
 // @Param subject_kind query string true "主体类型：data_item、field_ref 或 published_service | Subject kind: data_item, field_ref or published_service"
+// @Param granularity query string false "图粒度：item 或 field；数据项可一次查询全部字段，字段主体仅支持 field | Graph granularity: item or field; data items support all fields, field references require field"
 // @Param field_name query string false "精确字段名，field_ref 时必填 | Exact field name, required for field_ref"
-// @Param schema_snapshot_hash query string false "字段结构快照 hash；省略时使用当前 Meta 结构 | Field schema snapshot hash; defaults to current Meta schema"
+// @Param schema_snapshot_hash query string false "字段粒度的结构快照 hash；省略时使用当前 Meta 结构，指定值需执行证据证明 | Schema snapshot hash for field granularity; defaults to current Meta schema; explicit hashes require execution evidence"
 // @Param item_id query int false "数据项 ID，data_item 或 field_ref 时必填 | Item ID, required for data_item or field_ref"
 // @Param service_id query int false "服务 ID，subject_kind=published_service 时必填 | Service ID, required for published_service"
 // @Param revision query string false "服务发布版本，subject_kind=published_service 时必填 | Published revision, required for published_service"
 // @Param direction query string false "方向：upstream、downstream 或两者有向遍历并集 both，不含旁系 | Direction: upstream, downstream or their directed union both; excludes sibling branches" default(both)
-// @Param depth query int false "每条派生或服务依赖边计一层，0 只显示主体，范围 0-20 | Each derive or serve edge is one hop; 0 returns only the subject; range 0-20" default(2)
+// @Param depth query int false "每条关系计一层，0 只显示主体或根结构字段，范围 0-20 | Each edge is one hop; 0 returns the subject or root schema fields; range 0-20" default(2)
 // @Param expand_upstream query string false "额外向上展开的 item ID，逗号分隔，最多100个 | Item IDs to expand upstream, comma separated, max 100"
 // @Param expand_downstream query string false "额外向下展开的 item ID，逗号分隔，最多100个 | Item IDs to expand downstream, comma separated, max 100"
 // @Param limit query int false "节点和边上限，范围 1-500 | Node and edge limit, 1-500" default(100)
@@ -134,6 +135,7 @@ func (h *Handler) GetLineageGraph(c *gin.Context) {
 
 func parseLineageGraphRequest(c *gin.Context) (models.LineageGraphRequest, error) {
 	request := models.LineageGraphRequest{
+		Granularity:        c.Query("granularity"),
 		FieldName:          c.Query("field_name"),
 		SchemaSnapshotHash: c.Query("schema_snapshot_hash"),
 		SubjectKind:        c.Query("subject_kind"),

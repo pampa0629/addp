@@ -71,6 +71,8 @@
       "direct": "Direct mapping",
       "derived": "Derived transformation",
       "generated": "Generated value"
-    }
+    },
+    "fields": "Table fields",
+    "showAllFields": "All fields"
   }
 }

@@ -327,7 +327,7 @@
           style="margin-bottom: 12px"
         />
         <div v-loading="lineageLoading" class="lineage-panel">
-          <LineageViewer :graph="lineageGraph" :fields="lineageFieldNames" :field="lineageField" @update:field="changeLineageField" v-model:depth="lineageDepth" @expand="expandLineage" @view-execution="openMonitorExecution" />
+          <LineageViewer :graph="lineageGraph" :supports-fields="lineageFieldNames.length > 0" :granularity="lineageGranularity" @update:granularity="changeLineageGranularity" v-model:depth="lineageDepth" @expand="expandLineage" @view-execution="openMonitorExecution" />
         </div>
       </div>
     </div>
@@ -441,7 +441,7 @@ const lineageLoading = ref(false)
 const lineageError = ref('')
 const lineageGraph = ref(normalizeLineageGraph())
 const lineageDepth = ref(2)
-const lineageField = ref('')
+const lineageGranularity = ref('item')
 const lineageFieldNames = computed(() => {
   const fields = itemAttributesMap.value?.type_info?.table?.fields
   return Array.isArray(fields) ? fields.map(field => field.name).filter(name => typeof name === 'string' && name.length > 0) : []
@@ -468,8 +468,8 @@ const loadLineage = async () => {
   lineageLoading.value = true
   try {
     const response = await lineageApi.getGraph({
-      subject_kind: lineageField.value ? 'field_ref' : 'data_item',
-      field_name: lineageField.value || undefined,
+      subject_kind: 'data_item',
+      granularity: lineageGranularity.value,
       item_id: itemId,
       direction: 'both',
       depth: lineageDepth.value,
@@ -486,7 +486,7 @@ const loadLineage = async () => {
 }
 
 const resetLineageExpansion = () => { lineageExpansion.upstream = []; lineageExpansion.downstream = [] }
-const changeLineageField = field => { lineageField.value = field; resetLineageExpansion(); loadLineage() }
+const changeLineageGranularity = granularity => { lineageGranularity.value = granularity; resetLineageExpansion(); loadLineage() }
 const expandLineage = async ({ item_id, direction }) => {
   if (lineageLoading.value || !['upstream', 'downstream'].includes(direction)) return
   if (!lineageExpansion[direction].includes(item_id)) lineageExpansion[direction].push(item_id)
@@ -722,7 +722,7 @@ watch(() => props.activeTab, (tab) => {
 }, { immediate: true })
 
 watch(() => props.selectedNode?.locator, () => {
-  lineageField.value = ''
+  lineageGranularity.value = 'item'
   lineageVisited.value = false
   lineageRequestSeq += 1
   lineageLoading.value = false

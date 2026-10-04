@@ -18,7 +18,7 @@ func lineageGraphNodeKey(node models.LineageNode) string {
 // Each breadth-first frontier keeps its direction. A shared input or output
 // never permits traversal to switch direction into a sibling branch.
 func (s *LineageService) buildLineageGraph(ctx context.Context, tenantID uint, request models.LineageGraphRequest) (models.LineageGraphResponse, error) {
-	response := models.LineageGraphResponse{AsOf: request.AsOf, Nodes: []models.LineageNode{}, Edges: []models.LineageEdge{}}
+	response := models.LineageGraphResponse{Granularity: "item", AsOf: request.AsOf, Nodes: []models.LineageNode{}, Edges: []models.LineageEdge{}}
 	root := models.LineageNode{Kind: request.SubjectKind}
 	if request.SubjectKind == "data_item" {
 		root.ItemID = request.ItemID

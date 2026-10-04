@@ -13,6 +13,7 @@ export function createLineageApi({ request, baseUrl = '/api/v1/meta' } = {}) {
 
 export function normalizeLineageGraph(payload) {
   return {
+    granularity: payload?.granularity || 'item',
     subject: payload?.subject || null,
     nodes: Array.isArray(payload?.nodes) ? payload.nodes : [],
     edges: Array.isArray(payload?.edges) ? payload.edges : [],

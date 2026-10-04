@@ -71,6 +71,8 @@
       "direct": "直接映射",
       "derived": "派生转换",
       "generated": "生成值"
-    }
+    },
+    "fields": "表内字段",
+    "showAllFields": "全部字段"
   }
 }

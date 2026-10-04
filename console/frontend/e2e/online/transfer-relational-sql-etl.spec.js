@@ -1,3 +1,5 @@
+import { lineageFieldConnections } from '../../../../common-frontend/graph/src/lineageFields.js'
+import { lineageNodeId } from '../../../../common-frontend/graph/src/lineageApi.js'
 import { expect, request, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -66,26 +68,33 @@ async function scanEngine(api, engineID) {
 async function managerFieldGraph(page, locator, itemID, field) {
   await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-  await expect(frame.locator('.lineage-field')).toBeVisible()
+  await expect(frame.getByRole('radio', { name: '字段级', exact: true })).toBeVisible()
   const graphResponse = page.waitForResponse(response => {
     const url = new URL(response.url())
     return url.pathname === '/api/v1/meta/lineage/graph' &&
-      url.searchParams.get('subject_kind') === 'field_ref' &&
+      url.searchParams.get('subject_kind') === 'data_item' &&
       url.searchParams.get('item_id') === String(itemID) &&
-      url.searchParams.get('field_name') === field
+      url.searchParams.get('granularity') === 'field'
   })
-  await frame.locator('.lineage-field .el-select__wrapper').click()
-  await frame.getByRole('option', { name: field, exact: true }).click()
+  await frame.getByText('字段级', { exact: true }).click()
   const response = await graphResponse
   expect(response.status()).toBe(200)
   const graph = await response.json()
-  expect(graph.subject.kind).toBe('field_ref')
+  expect(graph.granularity).toBe('field')
+  expect(graph.subject.kind).toBe('data_item')
   expect(String(graph.subject.item_id)).toBe(String(itemID))
-  expect(graph.subject.field_name).toBe(field)
   expect(graph.subject.schema_snapshot_hash).toBeTruthy()
   expect(graph.truncated).toBe(false)
+  await expect(frame.locator('.lineage-fields')).toBeVisible()
+  await frame.getByRole('button', { name: field, exact: true }).click()
+  await expect(frame.locator('.lineage-inspector strong')).toHaveText(field)
   await expect(frame.locator('.lineage-canvas canvas').first()).toBeVisible()
-  return { graph, frame }
+  const selected = graph.nodes.find(node => node.item_id === itemID && node.field_name === field && node.schema_snapshot_hash === graph.subject.schema_snapshot_hash)
+  expect(selected?.kind).toBe('field_ref')
+  expect(selected.field_lineage_status).toBe('complete')
+  const focus = lineageFieldConnections(graph.edges, lineageNodeId(selected))
+  const focused = { nodes: graph.nodes.filter(node => focus.fields.has(lineageNodeId(node))), edges: graph.edges.filter((_, index) => focus.connections.has(`lineage-edge:${index}`)) }
+  return { graph, focused, frame }
 }
 
 async function verifyManagerLineage(page, api, env, sqlExecution) {
@@ -94,13 +103,13 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   expect(native.graph.field_lineage_status).toBe('complete')
   expect(native.graph.subject.schema_snapshot_hash).toBe(lineage.schema_snapshot_hash)
   const edgeIdentity = edge => [edge.source.item_id, edge.source.field_name, edge.target.item_id, edge.target.field_name, edge.transformation, edge.evidence.execution_id]
-  expect(native.graph.edges.map(edgeIdentity).sort()).toEqual(lineage.expected_edges.sort())
-  expect(native.graph.nodes).toHaveLength(3)
+  expect(native.focused.edges.map(edgeIdentity).sort()).toEqual(lineage.expected_edges.sort())
+  expect(native.focused.nodes).toHaveLength(3)
   for (const node of native.graph.nodes) {
     expect(node.kind).toBe('field_ref')
     expect(node.schema_snapshot_hash).toBeTruthy()
   }
-  await expect(native.frame.locator('.lineage-summary')).toContainText('3 个节点 · 2 条关系')
+  await expect(native.frame.getByRole('button', { name: '全部字段', exact: true })).toBeVisible()
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-native-field-lineage.png'), fullPage: true })
 
   await scanEngine(api, env.ADDP_ONLINE_TEST_ENGINE_ID)
@@ -116,12 +125,12 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   const locator = `addp://engine/${env.ADDP_ONLINE_TEST_ENGINE_ID}/path/public/${env.ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE}?type=table&item_id=${target.id}`
   const query = await managerFieldGraph(page, locator, target.id, 'amount')
   expect(query.graph.field_lineage_status).toBe('complete')
-  expect(query.graph.edges).toHaveLength(1)
-  expect(query.graph.edges[0].source.field_name).toBe('amount')
-  expect(query.graph.edges[0].target.field_name).toBe('amount')
-  expect(query.graph.edges[0].evidence.execution_id).toBe(sqlExecution.execution_id)
-  expect(query.graph.edges[0].transformation).toBe('direct')
-  await expect(query.frame.locator('.lineage-summary')).toContainText('2 个节点 · 1 条关系')
+  expect(query.focused.edges).toHaveLength(1)
+  expect(query.focused.edges[0].source.field_name).toBe('amount')
+  expect(query.focused.edges[0].target.field_name).toBe('amount')
+  expect(query.focused.edges[0].evidence.execution_id).toBe(sqlExecution.execution_id)
+  expect(query.focused.edges[0].transformation).toBe('direct')
+  await expect(query.frame.locator('.lineage-inspector strong')).toHaveText('amount')
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-query-field-lineage.png'), fullPage: true })
 }
 

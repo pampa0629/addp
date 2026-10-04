@@ -3,6 +3,7 @@ package models
 import "time"
 
 type LineageGraphRequest struct {
+	Granularity        string
 	SubjectKind        string
 	FieldName          string
 	SchemaSnapshotHash string
@@ -34,6 +35,7 @@ type RecordServicePublicationRequest struct {
 }
 
 type LineageGraphResponse struct {
+	Granularity        string        `json:"granularity"`
 	FieldLineageStatus string        `json:"field_lineage_status,omitempty"`
 	Subject            LineageNode   `json:"subject"`
 	Nodes              []LineageNode `json:"nodes"`
@@ -48,6 +50,7 @@ type LineageErrorResponse struct {
 }
 
 type LineageNode struct {
+	FieldLineageStatus    string `json:"field_lineage_status,omitempty"`
 	FieldName             string `json:"field_name,omitempty"`
 	SchemaSnapshotHash    string `json:"schema_snapshot_hash,omitempty"`
 	HiddenUpstreamCount   int    `json:"hidden_upstream_count"`

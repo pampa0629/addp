@@ -261,7 +261,8 @@ PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派�
 - `lineage_item_relations` 统一存储 item 和 field 两种粒度，field 行保存两端字段名与结构快照 hash；唯一键包含两端字段身份。observation 保存对应快照和转换语义。字段不是新增 DataItem，不新增第二套 collector。
 - replace 在一次目标更新中关闭旧字段入边，即使两端仍是同两张表、字段映射已经改变；append/upsert 合并。未知写入模式只保存证据。迟到执行与重复采集不能恢复已关闭关系。字段快照不匹配时禁止跨版本串接；当前结构变化后旧快照关系标记 stale，重新扫描不重新激活。
 - 统一 `GET /lineage/graph` 增加 `subject_kind=field_ref`、`field_name` 和可选 `schema_snapshot_hash`；省略 hash 时依据 Meta 当前结构定位，指定 hash 时使用对应执行证据。字段图按字段身份沿固定方向遍历，保留租户、深度、数量和端点完整性约束；as_of 沿冻结快照查询已观察的写入事实，stale 标记仍保留在历史关系上，不因当前结构变化删除历史来源，也不反推未观察的外部变更时间；首期字段视图不接受数据项 ID 的局部展开参数。字段视图返回 `field_lineage_status=complete|unavailable`，complete 且无入边可表示已证明的 generated 字段；unavailable 不等于没有来源。
-- `common-frontend/graph` 统一管理字段选择与字段节点展示。宿主传入根数据项的字段名并请求同一 API，字段名称作为精确标识传递，不拆分点号。节点详情提供字段名、所属数据项及结构快照 hash，关系详情提供转换语义和执行证据。
+- 数据项主体可使用 `granularity=field` 一次查询表内字段图。Meta 按根结构顺序播种全部字段（受统一 limit 限制），共用字段引用的有向遍历与批量取证；不逐字段查询或合并多张独立图。根字段分别返回 `field_lineage_status=complete|unavailable`；完整但没有来源边的字段仍保留。历史结构 hash 必须由执行证据证明。响应 subject 仍是根数据项，nodes 是字段引用，根结构 hash 随 subject 返回。
+- `common-frontend/graph` 统一管理数据项级/字段级切换，字段视图按所属数据项和结构快照分组为表卡片，字段行之间连线。点击字段在已加载图中聚焦上下游关系，清除聚焦恢复全图，不重新请求每个字段。宿主只传入是否支持字段视图及粒度，并请求同一 API。字段名称作为精确标识传递，不拆分点号。节点详情提供字段名、所属数据项及结构快照 hash，关系详情提供转换语义和执行证据。删除原逐字段下拉查询交互。
 
 首期跨模块验收复用 `transfer-relational-sql-etl` Online suite，唯一运行于 GitHub Hosted Ubuntu x86_64 临时部署，覆盖真实 Transfer 原生表字段映射、replace 与两跳自动采集，以及 Console 中 Manager 共享字段视图；同一 suite 验证 Provider 能证明的单来源 SQL 查询字段映射。每轮创建隔离身份与 PostgreSQL Engine Instance，退出时随整套部署销毁，不依赖永久账号或自托管 Runner。确定性脚本通过不等于真实 T4 通过，具体身份、夹具、报告和清理契约见《ADDP 测试与验收规范》5.2。
 
@@ -288,14 +289,15 @@ GET /api/v1/meta/lineage/graph
 | 参数 | 说明 |
 | --- | --- |
 | `subject_kind` | `data_item`、`field_ref` 或 `published_service` |
+| `granularity` | `item` / `field`；data_item 默认 item，field_ref 默认且仅支持 field，published_service 仅支持 item。data_item + field 返回根表全部字段的有界图。响应带同名粒度。 |
 | `item_id` | `subject_kind=data_item` 或 `field_ref` 时必须提供 |
 | `field_name` | `subject_kind=field_ref` 时必须提供精确字段名；其他主体不接受此参数，字段名中的点号不拆分 |
-| `schema_snapshot_hash` | 仅 `subject_kind=field_ref` 使用；省略时依据 Meta 当前结构定位，提供时必须有对应执行结构证据 |
+| `schema_snapshot_hash` | 仅字段粒度使用；省略时依据 Meta 当前结构定位，提供时必须有对应执行结构证据 |
 | `service_id` | `subject_kind=published_service` 时使用 |
 | `revision` | 服务发布版本，服务根节点必须明确版本 |
 | `direction` | `upstream` / `downstream` / `both`，默认 `both` |
 | `depth` | 展开深度，服务端限制最大值 |
-| `expand_upstream` / `expand_downstream` | 逗号分隔的 data item ID；在根主体对应方向已可达的节点处额外展开一层，最多各 100 个。不作为新的根，不能借此进入旁系。字段主体不接受这两个参数。 |
+| `expand_upstream` / `expand_downstream` | 逗号分隔的 data item ID；在根主体对应方向已可达的节点处额外展开一层，最多各 100 个。不作为新的根，不能借此进入旁系。字段粒度不接受这两个参数。 |
 | `limit` | 节点和边上限，超过时返回 `truncated=true` |
 | `as_of` | 可选历史观察时间 |
 
@@ -303,6 +305,7 @@ GET /api/v1/meta/lineage/graph
 
 ```json
 {
+  "granularity": "item",
   "subject": {
     "kind": "data_item",
     "item_id": 22,
@@ -322,7 +325,7 @@ GET /api/v1/meta/lineage/graph
 
 当前图响应必须保持结构闭合：每条 edge 的 source 和 target 都必须存在于同一响应的 nodes 中。当前已软删除的 data item 不进入 nodes，其相关 `stale` 投影也不进入当前 edges；历史证据通过 observation 和后续历史视图查询，不得以缺失端点的边混入当前图。
 
-图查询以当前主体为根，`upstream` 只沿输入方向追溯，`downstream` 只沿输出方向展开，`both` 为这两种有向遍历的并集；遍历中不能改变方向进入共同上游的其他产物或共同下游的其他输入。其他主体之间真实存在的事实继续保留，不能因为不在当前视图中而删除。每条资源派生或服务依赖边计一层，`depth=0` 只返回主体；服务是下游终点，以服务为主体时可沿依赖继续追溯数据项。租户和未删除端点约束在每一层遍历时执行。超出节点或边上限时保留根及已连通部分，并返回 `truncated=true`。
+图查询以当前主体为根，`upstream` 只沿输入方向追溯，`downstream` 只沿输出方向展开，`both` 为这两种有向遍历的并集；遍历中不能改变方向进入共同上游的其他产物或共同下游的其他输入。其他主体之间真实存在的事实继续保留，不能因为不在当前视图中而删除。每条资源派生或服务依赖边计一层，`depth=0` 只返回主体（数据项主体的字段粒度返回根结构字段）；服务是下游终点，以服务为主体时可沿依赖继续追溯数据项。租户和未删除端点约束在每一层遍历时执行。超出节点或边上限时保留根及已连通部分，并返回 `truncated=true`。
 
 该 API 必须执行 Tenant、Meta lineage read Permission 和 owner 资源可见性校验。不得因为用户能看到某个服务，就自动泄露该服务无权访问的上游数据项名称。
 
