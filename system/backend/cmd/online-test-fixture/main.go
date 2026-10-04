@@ -312,7 +312,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = consumerPassword
 	}
 	if *suite == "compose-public-origin" {
-		readerSession, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		readerSession, _, readerPassword, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-public-reader", publicOriginReadPermissions)
 		if err != nil {
 			return err
@@ -349,6 +349,8 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"] = administratorSession.AccessToken
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = readerSession.AccessToken
+		values["ADDP_ONLINE_READ_USER_USERNAME"] = "external-online-public-reader"
+		values["ADDP_ONLINE_READ_USER_PASSWORD"] = readerPassword
 		values["ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN"] = creatorSession.AccessToken
 		values["ADDP_ONLINE_OWN_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownAssignmentID)
 		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignments[0].ID)
@@ -654,6 +656,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_PARENT_USER_PASSWORD",
 		"ADDP_ONLINE_PEER_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN",
+		"ADDP_ONLINE_READ_USER_USERNAME",
+		"ADDP_ONLINE_READ_USER_PASSWORD",
 		"ADDP_ONLINE_TEST_TENANT_ID",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_USER_USERNAME",

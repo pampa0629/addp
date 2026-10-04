@@ -96,6 +96,32 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             """
         )
 
+    def test_public_origin_requires_browser_preparation_dispatch_and_source(self) -> None:
+        source = Path(__file__).resolve().parents[2]
+        paths = (
+            "scripts/test/online-hosted-public-origin-gate.sh", "scripts/test/compose-public-origin-online.py",
+            "console/frontend/e2e/online/compose-public-origin.spec.js", "system/backend/cmd/online-test-fixture/main.go",
+        )
+        for relative in paths:
+            destination = self.repository / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, destination)
+        registered = {"compose-public-origin"}
+        CHECK.validate_public_origin_browser_profile(self.repository, registered)
+        for relative, fragment in (
+            (paths[0], "playwright install --with-deps chromium"), (paths[1], "browser = run_browser()"),
+            (paths[2], "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"), (paths[3], 'values["ADDP_ONLINE_READ_USER_PASSWORD"]'),
+        ):
+            path = self.repository / relative
+            original = path.read_text()
+            path.write_text(original.replace(fragment, "removed"))
+            with self.subTest(relative=relative), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_public_origin_browser_profile(self.repository, registered)
+            path.write_text(original)
+        (self.repository / paths[2]).unlink()
+        with self.assertRaises(CHECK.RegistrationError):
+            CHECK.validate_public_origin_browser_profile(self.repository, registered)
+
     def test_accepts_one_profile_and_workflow_choice_per_registered_suite(self) -> None:
         CHECK.check_registration(self.repository)
 

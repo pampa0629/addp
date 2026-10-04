@@ -47,6 +47,7 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             exit 0
         ''')
         self.host._executable("curl", "#!/usr/bin/env bash\nexit 0\n")
+        self.host._executable("npm", '#!/usr/bin/env bash\necho "npm:$*" >> "$ADDP_TEST_GATE_TRACE"\n')
         self.host._executable("make", '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
@@ -93,6 +94,7 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             "infra-up", "make:build BUILD_ARGS=--arch amd64 --services system-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend",
             "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,nginx,geopython-workflow-engine",
             "make:test-online ONLINE_SUITE=compose-public-origin", "docker:compose -f", "docker:rm -fv addp-online-public-origin-upstreams registry", "infra-down",
+            "npm:--prefix console/frontend ci", "npm:--prefix console/frontend exec -- playwright install --with-deps chromium",
             " up -d --no-deps --wait meta-backend", " up -d --no-deps --wait meta-frontend",
             " up -d --no-deps --wait manager-backend", " up -d --no-deps --wait manager-frontend",
             " up -d --no-deps --wait transfer-backend", " up -d --no-deps --wait transfer-frontend",

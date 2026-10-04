@@ -3,7 +3,9 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
+from types import SimpleNamespace
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import DEFAULT, MagicMock, patch
@@ -33,6 +35,9 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN": "admin-token",
             "ADDP_ONLINE_OWN_ASSIGNMENT_ID": "84",
             "ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID": "86",
+            "ADDP_ONLINE_TEST_RUN_ID": "origin-run",
+            "ADDP_ONLINE_READ_USER_USERNAME": "origin-reader",
+            "ADDP_ONLINE_READ_USER_PASSWORD": "fixture-password",
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -41,27 +46,72 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         checks = {
             name: DEFAULT for name in (
                 "root_compose_ports", "infra_compose_ports", "assert_platform_ports", "assert_isolated_groups",
-                "assert_frontend", "assert_authorized_gateway", "assert_module_gateway_route", "assert_partial_permission_matrix",
+                "assert_frontend", "assert_authorized_gateway", "assert_module_gateway_route", "assert_partial_permission_matrix", "run_browser",
             )
         }
         with patch.multiple(MODULE, **checks) as mocked, redirect_stdout(io.StringIO()) as output:
+            mocked["run_browser"].return_value = {"concurrent_refreshes": 1}
             self.assertEqual(MODULE.main(), 0)
-        mocked["assert_frontend"].assert_any_call("/meta/", "/meta/")
-        mocked["assert_frontend"].assert_any_call("/manager/", "/manager/")
-        mocked["assert_frontend"].assert_any_call("/transfer/", "/transfer/")
-        mocked["assert_frontend"].assert_any_call("/orchestrator/", "/orchestrator/")
+        for module in ("system", "meta", "manager", "transfer", "orchestrator"):
+            mocked["assert_frontend"].assert_any_call(f"/module-ui/{module}/", f"/module-ui/{module}/")
         self.assertEqual(mocked["assert_module_gateway_route"].call_count, 4)
         mocked["assert_module_gateway_route"].assert_any_call("Meta", "/api/v1/meta/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Manager", "/api/v1/manager/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Transfer", "/api/v1/transfer/system-engines")
         mocked["assert_module_gateway_route"].assert_any_call("Orchestrator", "/api/v1/orchestrator/orchestrations")
         mocked["assert_partial_permission_matrix"].assert_called_once()
+        mocked["run_browser"].assert_called_once()
         report = json.loads(output.getvalue())
         self.assertEqual(report["frontends"], ["console", "system", "meta", "manager", "transfer", "orchestrator"])
         self.assertEqual(report["gateway_manager_permission_guard"], "passed")
         self.assertEqual(report["gateway_transfer_permission_guard"], "passed")
         self.assertEqual(report["gateway_orchestrator_permission_guard"], "passed")
         self.assertEqual(report["gateway_partial_permission_matrix"], "passed")
+        self.assertEqual(report["browser"], {"concurrent_refreshes": 1})
+
+    def test_browser_requires_current_identity_one_refresh_and_complete_evidence(self):
+        expected = {
+            "run_id": "origin-run", "origin": "http://127.0.0.1:18080", "tenant_id": "42", "username": "origin-reader",
+            "concurrent_refreshes": 1, "iframe_converged": True, "cookie_rotated": True,
+            "reload_without_refresh": True, "logout_propagated": True, "javascript_tokens_persisted": False,
+            "iframe_preserved_on_refresh": True,
+        }
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary):
+            def browser(command, *, cwd, env):
+                self.assertIn("e2e/online/compose-public-origin.spec.js", command)
+                self.assertEqual(env["CONSOLE_URL"], "http://127.0.0.1:18080")
+                Path(env["ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"]).write_text(json.dumps(payload))
+                for name in ("console", "independent"):
+                    (Path(temporary) / f"public-origin-{name}.png").write_bytes(b"fixture-screenshot")
+                return SimpleNamespace(returncode=0)
+
+            payload = expected
+            with patch.object(MODULE.subprocess, "run", side_effect=browser):
+                self.assertEqual(MODULE.run_browser(), expected)
+                payload = {**expected, "iframe_preserved_on_refresh": False}
+                self.assertEqual(MODULE.run_browser(), payload)  # diagnostic, not proof of preserved business state
+                for invalid in ({"origin": "http://127.0.0.1:5170"}, {"tenant_id": "1"}, {"run_id": "old-run"},
+                                {"concurrent_refreshes": 2}, {"concurrent_refreshes": True}, {"iframe_converged": False},
+                                {"cookie_rotated": False}, {"reload_without_refresh": False}, {"logout_propagated": False},
+                                {"javascript_tokens_persisted": True}, {"access_token": "must-not-be-in-evidence"}):
+                    payload = {**expected, **invalid}
+                    with self.subTest(invalid=invalid), self.assertRaises(MODULE.AcceptanceError):
+                        MODULE.run_browser()
+
+            with patch.object(MODULE.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
+                with self.assertRaises(MODULE.AcceptanceError):
+                    MODULE.run_browser()  # stale artifacts were deleted; no new report
+            with patch.object(MODULE.subprocess, "run", return_value=SimpleNamespace(returncode=1)):
+                with self.assertRaises(MODULE.AcceptanceError):
+                    MODULE.run_browser()
+            payload = expected
+            def browser_without_screenshot(*args, **kwargs):
+                result = browser(*args, **kwargs)
+                (Path(temporary) / "public-origin-independent.png").unlink()
+                return result
+            with patch.object(MODULE.subprocess, "run", side_effect=browser_without_screenshot):
+                with self.assertRaises(MODULE.AcceptanceError):
+                    MODULE.run_browser()
 
     def test_real_token_matrix_checks_lists_writes_and_cross_tenant_detail(self):
         read_permissions = ["meta.catalog.read", "manager.data_item.read", "transfer.task.read", "orchestrator.workflow.read"]
@@ -251,9 +301,9 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
 
     @patch.object(MODULE, "request")
     def test_frontend_requires_built_asset(self, request):
-        request.side_effect = [(200, b'<div id="app"></div><script src="/system/assets/index.js"></script>', "text/html"), (200, b"compiled", "application/javascript")]
-        MODULE.assert_frontend("/system/", "/system/")
-        request.assert_any_call("/system/assets/index.js")
+        request.side_effect = [(200, b'<div id="app"></div><script src="/module-ui/system/assets/index.js"></script>', "text/html"), (200, b"compiled", "application/javascript")]
+        MODULE.assert_frontend("/module-ui/system/", "/module-ui/system/")
+        request.assert_any_call("/module-ui/system/assets/index.js")
 
 
 if __name__ == "__main__":

@@ -169,8 +169,11 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":     "addp_at_foreign",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":             "84",
 		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN":        "addp_at_reader",
+		"ADDP_ONLINE_READ_USER_USERNAME":            "external-online-public-reader",
+		"ADDP_ONLINE_READ_USER_PASSWORD":            "reader'quoted-password",
 		"ADDP_ONLINE_TEST_TENANT_ID":                "42",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":        "addp_at_user'quoted",
+		"UNREGISTERED_PASSWORD":                     "must-not-export-this-password",
 	}
 	if err := writeEnvironmentFile(path, values); err != nil {
 		t.Fatal(err)
@@ -192,13 +195,13 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN='addp_at_security_initializer'\n") {
 		t.Fatal("fixture environment omitted the exported Security initialization token")
 	}
-	for _, value := range []string{"addp_at_admin", "addp_at_creator", "addp_at_reader", "addp_at_foreign", "84", "86"} {
+	for _, value := range []string{"addp_at_admin", "addp_at_creator", "addp_at_reader", "addp_at_foreign", "84", "86", "external-online-public-reader", "reader'\"'\"'quoted-password"} {
 		if !strings.Contains(string(content), value) {
 			t.Fatalf("fixture environment omitted %q", value)
 		}
 	}
-	if strings.Contains(string(content), "password") {
-		t.Fatalf("fixture environment leaked a password field: %s", content)
+	if strings.Contains(string(content), values["UNREGISTERED_PASSWORD"]) {
+		t.Fatal("fixture environment exported an unregistered credential")
 	}
 }
 

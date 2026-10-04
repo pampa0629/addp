@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -297,6 +298,40 @@ def assert_module_gateway_route(module: str, path: str) -> None:
     raise AcceptanceError(f"public Gateway did not discover the registered {module} Backend")
 
 
+def run_browser() -> dict[str, object]:
+    for key in ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_READ_USER_USERNAME", "ADDP_ONLINE_READ_USER_PASSWORD"):
+        if not os.environ.get(key):
+            raise AcceptanceError(f"missing browser environment: {key}")
+    artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]).resolve()
+    report_file = artifacts / "public-origin-browser.json"
+    screenshots = [artifacts / f"public-origin-{name}.png" for name in ("console", "independent")]
+    for path in [report_file, *screenshots]:
+        path.unlink(missing_ok=True)
+    result = subprocess.run(
+        ["npm", "exec", "--", "playwright", "test", "e2e/online/compose-public-origin.spec.js", "--config=playwright.online.config.js"],
+        cwd=Path(__file__).resolve().parents[2] / "console/frontend",
+        env={**os.environ, "CONSOLE_URL": os.environ["ADDP_ONLINE_PUBLIC_ORIGIN"],
+             "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT": str(report_file)},
+    )
+    if result.returncode != 0 or not report_file.is_file():
+        raise AcceptanceError("production browser acceptance failed or omitted evidence")
+    evidence = json.loads(report_file.read_text())
+    expected = {
+        "run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "origin": os.environ["ADDP_ONLINE_PUBLIC_ORIGIN"],
+        "tenant_id": os.environ["ADDP_ONLINE_TEST_TENANT_ID"], "username": os.environ["ADDP_ONLINE_READ_USER_USERNAME"],
+        "concurrent_refreshes": 1, "iframe_converged": True, "cookie_rotated": True,
+        "reload_without_refresh": True, "logout_propagated": True, "javascript_tokens_persisted": False,
+    }
+    if (not isinstance(evidence, dict) or type(evidence.get("concurrent_refreshes")) is not int
+            or type(evidence.get("iframe_preserved_on_refresh")) is not bool
+            or set(evidence) != set(expected) | {"iframe_preserved_on_refresh"}
+            or any(evidence.get(key) != value for key, value in expected.items())):
+        raise AcceptanceError("production browser evidence differs from the required identity and session results")
+    if any(not path.is_file() or path.stat().st_size == 0 for path in screenshots):
+        raise AcceptanceError("production browser screenshot evidence is missing")
+    return evidence
+
+
 def main() -> int:
     if os.environ.get("ADDP_ONLINE_TEST") != "1" or os.environ.get("ADDP_ONLINE_HOSTED") != "1":
         raise AcceptanceError("disposable Hosted Online context is required")
@@ -307,18 +342,16 @@ def main() -> int:
     assert_platform_ports()
     assert_isolated_groups()
     assert_frontend("/", "/")
-    assert_frontend("/system/", "/system/")
-    assert_frontend("/meta/", "/meta/")
-    assert_frontend("/manager/", "/manager/")
-    assert_frontend("/transfer/", "/transfer/")
-    assert_frontend("/orchestrator/", "/orchestrator/")
+    for module in ("system", "meta", "manager", "transfer", "orchestrator"):
+        assert_frontend(f"/module-ui/{module}/", f"/module-ui/{module}/")
     assert_authorized_gateway()
     assert_module_gateway_route("Meta", "/api/v1/meta/engines")
     assert_module_gateway_route("Manager", "/api/v1/manager/engines")
     assert_module_gateway_route("Transfer", "/api/v1/transfer/system-engines")
     assert_module_gateway_route("Orchestrator", "/api/v1/orchestrator/orchestrations")
     assert_partial_permission_matrix()
-    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta", "manager", "transfer", "orchestrator"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "gateway_orchestrator_permission_guard": "passed", "gateway_partial_permission_matrix": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"]}, sort_keys=True))
+    browser = run_browser()
+    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta", "manager", "transfer", "orchestrator"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "gateway_orchestrator_permission_guard": "passed", "gateway_partial_permission_matrix": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"], "browser": browser}, sort_keys=True))
     return 0
 
 

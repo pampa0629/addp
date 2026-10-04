@@ -101,6 +101,8 @@ run_logged compose_business up -d --no-deps --wait --wait-timeout 180 minio
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite compose-public-origin --output "$1"' _ "$IDENTITY_ENV"
 # shellcheck disable=SC1090
 source "$IDENTITY_ENV"
+run_logged npm --prefix console/frontend ci
+run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
 
 run_logged compose_business down --remove-orphans --volumes

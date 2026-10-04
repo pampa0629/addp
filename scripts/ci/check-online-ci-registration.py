@@ -1513,6 +1513,32 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
             raise RegistrationError(f"raster-workflow owner contract is incomplete: {relative}")
 
 
+def validate_public_origin_browser_profile(repository: Path, registered: set[str]) -> None:
+    if "compose-public-origin" not in registered:
+        return
+    required = {
+        "scripts/test/online-hosted-public-origin-gate.sh": (
+            "npm --prefix console/frontend ci",
+            "playwright install --with-deps chromium",
+            'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
+        ),
+        "scripts/test/compose-public-origin-online.py": (
+            "e2e/online/compose-public-origin.spec.js", "--config=playwright.online.config.js", "browser = run_browser()",
+        ),
+        "console/frontend/e2e/online/compose-public-origin.spec.js": (
+            "ADDP_ONLINE_READ_USER_PASSWORD", "action: 'hold-lock'", "action: 'queue-refresh'",
+            "requests.length - initialRefreshes", "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT",
+        ),
+        "system/backend/cmd/online-test-fixture/main.go": (
+            'values["ADDP_ONLINE_READ_USER_USERNAME"]', 'values["ADDP_ONLINE_READ_USER_PASSWORD"]',
+        ),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f"compose-public-origin browser contract is incomplete: {relative}")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -1528,6 +1554,7 @@ def check_registration(repository: Path) -> None:
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
     validate_metric_engine_variant(repository, registered)
+    validate_public_origin_browser_profile(repository, registered)
     validate_raster_workflow_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
