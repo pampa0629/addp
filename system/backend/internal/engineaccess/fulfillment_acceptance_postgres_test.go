@@ -96,6 +96,14 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		exerciseSourceDenies(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseDenyReleases(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseCurrentSourceRules(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
+		// The following acceptance checks are a new Runtime request phase. Keep
+		// their one-minute credential independent of preceding serial exercises;
+		// explicit expired-token cases continue to supply their own expired actor.
+		var runtimeNow time.Time
+		if err := db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&runtimeNow).Error; err != nil {
+			t.Fatal(err)
+		}
+		actor.TokenExpiresAt = runtimeNow.Add(time.Minute)
 		for _, mutate := range []func(*shared.SharingFulfillmentBinding){
 			func(b *shared.SharingFulfillmentBinding) { b.Operator.AuthorizationVersion++ },
 			func(b *shared.SharingFulfillmentBinding) { b.RequirementVersion++ },

@@ -147,7 +147,7 @@ func (p *boundedTableProtection) PrepareQueryProtection(ctx context.Context, pre
 	if p == nil {
 		return nil, ErrSourceRequired
 	}
-	return p.store.PrepareQueryProtection(ctx, p.tenantID, p.model, prepared, exportAction, time.Now().UTC())
+	return p.store.PrepareQueryProtection(ctx, p.tenantID, p.model, prepared, exportAction, dataprotection.SubjectReference{}, time.Now().UTC())
 }
 
 func sameCatalogPath(left, right engineplugin.EngineCatalogPath) bool {

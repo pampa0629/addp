@@ -24,6 +24,13 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 	t.Run("current complete source read rules", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
+		// This independent exercise models a fresh bounded Runtime request, not
+		// a one-minute fixture credential consumed by earlier serial exercises.
+		var runtimeNow time.Time
+		if err := db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&runtimeNow).Error; err != nil {
+			t.Fatal(err)
+		}
+		runtime.TokenExpiresAt = runtimeNow.Add(time.Minute)
 		repo := NewRepository(db)
 		service := NewService(repo, nil) // No Catalog connection for observations / restriction commands.
 		identity := iam.NewRepository(db)

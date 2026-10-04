@@ -309,6 +309,8 @@ Explicit Deny 提交后立即生效，其建立时刻是审计事实，不是预
 
 同步消费首个正式检查入口为 System `POST /api/v1/system/engine-access/read-checks/manager-preview`。它只接收非空且至多 200 个完整 EngineCatalogPath；当前凭据只能放在 Bearer 中，不接收 Tenant、账号、AuthContext、execution、Permission 或动作选择。入口固定复核 `manager.data_item.read` 的当前 Tenant Assignment，以及第一方 Web 的 unrestricted API 会话或 OAuth User 的 `addp.api` audience／Scope；组织范围功能分配不能在缺少资源归属证明时升级为租户级功能权限。真实凭据、上述功能／Client 条件和精确源规则使用同一只读快照；结束前复核凭据自然到期。
 
+该固定 Manager 检查另接受真实 IAM 签发、精确绑定 `audience=manager` 与唯一 `data.preview` Scope 的 Delegated Token。它沿 IAM 委托凭据解析核验源会话、当前主体／Membership／授权版本、委托 Client 与调用绑定，使用同一当前 User 的精确源规则；不伪装普通 User，不放开 Resource Ticket 或 Service，不赋予 Tool 凭据其它 System 普通 API 权限。这是同一 Manager 预览的两种可信消费资格，不增加通用跨 Owner 委托检查入口。Tool-only OAuth User 本身仍不能直接调用普通 API 路径，必须先经正式 Tool 委托。
+
 任一条件不满足时整个检查失败，无 Grant／命中 Deny 返回 403，不返回逐项规则或主体详情；成功仅返回 `observed_at`，不生成访问令牌、lease、授权副本或可缓存 Allow，不持久化请求目标或正文。领域检查只读且不追加授权审计；HTTP 入口仍沿用 System 通用请求元信息审计，不记录 Bearer 或请求正文。该入口是 Manager 同步调用链的源规则检查，不是完整执行裁决，也不访问源端或 Security。Manager 仍须先以 Provider 证明本次完整 ReadSet，完成本地 Security 保护，并执行同一 PreparedQuery；未完成实际消费接入时不能宣称预览权限闭环完成。后续不同 owner 操作须明确自己的固定功能契约，不能通过客户端传入权限名复用本入口降低门槛。
 
 #### 5.5.5 批准要求、可选治理与明确交接

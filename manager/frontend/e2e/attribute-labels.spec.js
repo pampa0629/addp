@@ -9,7 +9,8 @@ for (const locale of ['zh-cn', 'en']) {
         jpeg.exif = {
           make: 'Camera Vendor', model: 'Camera X', orientation: 6,
           date_time_original: '2026:10:04 12:11:49',
-          offset_time_original: '+08:00', subsec_time_original: '007'
+          offset_time_original: '+08:00', subsec_time_original: '007',
+          exposure_time_seconds: 0.008, f_number: 2.8, exposure_bias_ev: -0.5, focal_length_mm: 35
         }
       }
       await openAttributes(page, locale, {
@@ -17,8 +18,8 @@ for (const locale of ['zh-cn', 'en']) {
         format_info: { jpeg }
       })
       const labels = locale === 'zh-cn'
-        ? ['相机厂商', '相机型号', '图像方向', '原始拍摄时间', '拍摄时间时区偏移', '拍摄时间小数秒']
-        : ['Camera Make', 'Camera Model', 'Image Orientation', 'Original Capture Time', 'Capture Time Offset', 'Capture Time Subsecond']
+        ? ['相机厂商', '相机型号', '图像方向', '原始拍摄时间', '拍摄时间时区偏移', '拍摄时间小数秒', '曝光时间（秒）', '光圈 F 值', '曝光补偿（EV）', '焦距（毫米）']
+        : ['Camera Make', 'Camera Model', 'Image Orientation', 'Original Capture Time', 'Capture Time Offset', 'Capture Time Subsecond', 'Exposure Time (s)', 'F Number', 'Exposure Bias (EV)', 'Focal Length (mm)']
       for (const label of labels) {
         const field = page.getByText(`EXIF / ${label}`, { exact: true })
         if (status === 'parsed') await expect(field).toBeVisible()
@@ -27,6 +28,9 @@ for (const locale of ['zh-cn', 'en']) {
       if (status === 'parsed') {
         await expect(page.getByText('Camera X', { exact: true })).toBeVisible()
         await expect(page.getByText('007', { exact: true })).toBeVisible()
+        for (const value of ['0.008', '2.8', '-0.5', '35']) {
+          await expect(page.getByText(value, { exact: true })).toBeVisible()
+        }
       }
       await expect(page.getByText(locale === 'zh-cn' ? 'EXIF / 图模型' : 'EXIF / Graph Model', { exact: true })).toHaveCount(0)
       const statusLabels = locale === 'zh-cn'
@@ -35,6 +39,19 @@ for (const locale of ['zh-cn', 'en']) {
       await expect(page.getByText(statusLabels[status], { exact: true })).toBeVisible()
     })
   }
+
+  test(`shows valid exposure fields including zero when EXIF is partially invalid in ${locale}`, async ({ page }) => {
+    await openAttributes(page, locale, {
+      item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+      format_info: { jpeg: { exif_status: 'invalid', exif: { f_number: 4, exposure_bias_ev: 0 } } }
+    })
+    for (const label of locale === 'zh-cn' ? ['光圈 F 值', '曝光补偿（EV）'] : ['F Number', 'Exposure Bias (EV)']) {
+      await expect(page.getByText(`EXIF / ${label}`, { exact: true })).toBeVisible()
+    }
+    await expect(page.getByText('0', { exact: true })).toBeVisible()
+    await expect(page.getByText(locale === 'zh-cn' ? 'EXIF 无效' : 'Invalid EXIF', { exact: true })).toBeVisible()
+    await expect(page.getByText(locale === 'zh-cn' ? 'EXIF / 曝光时间（秒）' : 'EXIF / Exposure Time (s)', { exact: true })).toHaveCount(0)
+  })
 
   test(`keeps the graph model label scoped to graph facts in ${locale}`, async ({ page }) => {
     await openAttributes(page, locale, {

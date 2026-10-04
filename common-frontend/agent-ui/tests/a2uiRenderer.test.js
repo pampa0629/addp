@@ -53,7 +53,11 @@ describe('ADDP A2UI renderer', () => {
             component: 'ClarificationChoice',
             interactionId: '1b842c47-cdf4-4228-af6e-25bfbaa8609b',
             prompt: '请选择数据源',
-            options: [{ label: 'railway', value: 'locator-1' }]
+            options: [{
+              label: 'railway',
+              value: 'locator-1',
+              candidate: { locator: 'locator-1', attributes: { fields: ['name'] } }
+            }]
           }]
         }
       }
@@ -70,6 +74,9 @@ describe('ADDP A2UI renderer', () => {
     expect(action.name).toBe('interaction.submit')
     expect(action.surfaceId).toBe('surface-1')
     expect(action.context.answer.label).toBe('railway')
+    // AG-UI clones resume input before sending; Vue proxies must not cross this boundary.
+    expect(structuredClone(action)).toEqual(action)
+    expect(action.context.answer.candidate.attributes.fields).toEqual(['name'])
   })
 
   it('rejects components not registered in the ADDP catalog', async () => {
@@ -256,6 +263,7 @@ describe('ADDP A2UI renderer', () => {
       value: locator,
       candidate: { locator, engine_id: 8, full_name: 'public.railway' }
     })
+    expect(structuredClone(wrapper.emitted('action')[0][0])).toEqual(wrapper.emitted('action')[0][0])
   })
 
   it.each([

@@ -969,7 +969,11 @@ const fieldPathLabelKeys = {
   'format_info.jpeg.exif.orientation': 'manager.explorer.attributes.fields.imageOrientation',
   'format_info.jpeg.exif.date_time_original': 'manager.explorer.attributes.fields.captureTimeOriginal',
   'format_info.jpeg.exif.offset_time_original': 'manager.explorer.attributes.fields.captureTimeOffset',
-  'format_info.jpeg.exif.subsec_time_original': 'manager.explorer.attributes.fields.captureTimeSubsecond'
+  'format_info.jpeg.exif.subsec_time_original': 'manager.explorer.attributes.fields.captureTimeSubsecond',
+  'format_info.jpeg.exif.exposure_time_seconds': 'manager.explorer.attributes.fields.exposureTimeSeconds',
+  'format_info.jpeg.exif.f_number': 'manager.explorer.attributes.fields.fNumber',
+  'format_info.jpeg.exif.exposure_bias_ev': 'manager.explorer.attributes.fields.exposureBiasEV',
+  'format_info.jpeg.exif.focal_length_mm': 'manager.explorer.attributes.fields.focalLengthMM'
 }
 
 const fieldTooltipKeys = {

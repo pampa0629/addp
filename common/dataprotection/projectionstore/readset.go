@@ -15,12 +15,15 @@ import (
 // PrepareQueryProtection compiles one owner-local result protection closure
 // from the same immutable PreparedQuery that the owner will execute. It keeps
 // tenants without managed resources off the ReadSet and OutputLineage paths.
+// subject must come from the owner's trusted current-user context; an empty
+// subject applies default protection and does not infer an execution's author.
 func (s *Store) PrepareQueryProtection(
 	ctx context.Context,
 	tenantID int64,
 	model plugin.EngineCatalogModelSpec,
 	prepared plugin.PreparedQuery,
 	action string,
+	subject dataprotection.SubjectReference,
 	now time.Time,
 ) (*dataprotection.PreparedTableProtection, error) {
 	if prepared == nil {
@@ -86,7 +89,7 @@ func (s *Store) PrepareQueryProtection(
 			}
 			rules = append(rules, projectionRules...)
 		}
-		fields := dataprotection.QueryOutputDerivedFields(source, action, rules, dataprotection.SubjectReference{}, now)
+		fields := dataprotection.QueryOutputDerivedFields(source, action, rules, subject, now)
 		derived = append(derived, fields...)
 		plans = append(plans, sourceProtection{source: source, rules: rules})
 		matched[target.ResourceIdentity] = struct{}{}
@@ -96,7 +99,7 @@ func (s *Store) PrepareQueryProtection(
 	}
 	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: func(result *plugin.QueryResult) error {
 		for _, plan := range plans {
-			if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules, dataprotection.SubjectReference{}); err != nil {
+			if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules, subject); err != nil {
 				return fmt.Errorf("protect query result: %w", err)
 			}
 		}

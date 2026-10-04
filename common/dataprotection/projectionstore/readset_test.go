@@ -3,6 +3,7 @@ package projectionstore
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ func TestPrepareQueryProtectionKeepsUnmanagedTenantOffReadSetPath(t *testing.T) 
 		t.Fatal(err)
 	}
 	prepared, calls := preparedReadSet(t, plugin.DynamicSchemaCatalogModel(), "Outdoor", "Persons")
-	protect, err := store.PrepareQueryProtection(context.Background(), 7, plugin.DynamicSchemaCatalogModel(), prepared, "query", time.Now().UTC())
+	protect, err := store.PrepareQueryProtection(context.Background(), 7, plugin.DynamicSchemaCatalogModel(), prepared, "query", dataprotection.SubjectReference{}, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +51,117 @@ func TestPrepareQueryProtectionDeniesEnrollingManagedReadSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	prepared, calls := preparedReadSet(t, model, "Outdoor", "Persons")
-	if _, err := store.PrepareQueryProtection(context.Background(), 7, model, prepared, "query", time.Now().UTC()); !errors.Is(err, dataprotection.ErrDenied) {
+	if _, err := store.PrepareQueryProtection(context.Background(), 7, model, prepared, "query", dataprotection.SubjectReference{}, time.Now().UTC()); !errors.Is(err, dataprotection.ErrDenied) {
 		t.Fatalf("gate error = %v, want ErrDenied", err)
 	}
 	if *calls != 1 {
 		t.Fatalf("ReadSet calls = %d, want one", *calls)
+	}
+}
+
+func TestPrepareQueryProtectionUsesExactSubjectForMetadataAndOutput(t *testing.T) {
+	for _, effect := range []string{dataprotection.EffectMask, dataprotection.EffectSuppress} {
+		for _, test := range []struct {
+			name                    string
+			subject                 dataprotection.SubjectReference
+			expired, empty, allowed bool
+		}{
+			{name: "matching user", subject: dataprotection.SubjectReference{Type: "user", ID: "41"}, allowed: true},
+			{name: "other user", subject: dataprotection.SubjectReference{Type: "user", ID: "42"}},
+			{name: "empty subject"},
+			{name: "expired permission", subject: dataprotection.SubjectReference{Type: "user", ID: "41"}, expired: true},
+			{name: "authorized empty page", subject: dataprotection.SubjectReference{Type: "user", ID: "41"}, allowed: true, empty: true},
+			{name: "protected empty page", empty: true},
+		} {
+			t.Run(effect+"/"+test.name, func(t *testing.T) {
+				store, err := Migrate(openProjectionStoreDB(t), "manager", "manager", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				model := plugin.DynamicSchemaCatalogModel()
+				path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
+				fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+				projection := activeTableProjection(t, "manager", "preview", model, path, fields)
+				now := time.Now().UTC()
+				validUntil := now.Add(time.Minute)
+				if test.expired {
+					validUntil = now.Add(-time.Second)
+				}
+				if effect == dataprotection.EffectSuppress {
+					projection.Rules[0].Decision = dataprotection.Decision{Effect: effect, InvalidValueEffect: effect}
+				}
+				projection.Rules[0].Authorizations = []dataprotection.TemporaryAuthorization{{Subject: dataprotection.SubjectReference{Type: "user", ID: "41"}, Effect: dataprotection.EffectAllow, ValidFrom: projection.ValidFrom, ValidUntil: validUntil}}
+				if err := projection.Seal(); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{
+					SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
+					Changes:       []dataprotection.ProjectionChange{{ChangeID: "change-subject", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}},
+					NextCursor:    "cursor-subject",
+				}, now); err != nil {
+					t.Fatal(err)
+				}
+				prepared, err := plugin.NewPreparedQuery(
+					&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+					func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
+					func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
+						return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, Bindings: []plugin.QueryOutputBinding{{SourcePath: []string{"phone"}, OutputPath: []string{"contact"}, Transformation: plugin.QueryOutputTransformationDirect}}}}}, nil
+					},
+					func(context.Context) (*plugin.QueryResult, error) {
+						result := &plugin.QueryResult{Columns: []string{"id", "contact"}}
+						if !test.empty {
+							result.Rows = []map[string]interface{}{{"id": 1, "contact": "13661384499"}}
+						}
+						return result, nil
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				protect, err := store.PrepareQueryProtection(t.Context(), 7, model, prepared, "preview", test.subject, now)
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantDerived := []string{"contact"}
+				if test.allowed {
+					wantDerived = []string{}
+				}
+				if !reflect.DeepEqual(protect.DerivedFields, wantDerived) {
+					t.Fatalf("derived = %v, want %v", protect.DerivedFields, wantDerived)
+				}
+				result, err := prepared.Execute(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := protect.Apply(result); err != nil {
+					t.Fatal(err)
+				}
+				wantColumns := []string{"id", "contact"}
+				if !test.allowed && effect == dataprotection.EffectSuppress {
+					wantColumns = []string{"id"}
+				}
+				if !reflect.DeepEqual(result.Columns, wantColumns) {
+					t.Fatalf("columns = %v, want %v", result.Columns, wantColumns)
+				}
+				if !test.empty {
+					value, exists := result.Rows[0]["contact"]
+					switch {
+					case test.allowed:
+						if value != "13661384499" {
+							t.Fatalf("original = %v", value)
+						}
+					case effect == dataprotection.EffectSuppress:
+						if exists {
+							t.Fatal("suppressed field is present")
+						}
+					default:
+						if value != "136****4499" {
+							t.Fatalf("masked = %v", value)
+						}
+					}
+				}
+			})
+		}
 	}
 }
 

@@ -22,9 +22,22 @@ type SourceReadCheck struct {
 }
 
 func qualifyManagerPreviewRead(current commonauth.AuthContext) error {
-	if current.Principal.Type != "user" || current.Context.Type != "tenant" || current.Delegation != nil ||
+	if current.Principal.Type != "user" || current.Context.Type != "tenant" ||
 		!commonauth.HasContextPermissions(current, ManagerPreviewReadPermission) ||
-		len(current.Client.Audiences) != 1 || current.Client.Audiences[0] != "addp.api" {
+		len(current.Client.Audiences) != 1 {
+		return commonapi.ErrForbidden
+	}
+	if current.Token.Type == "delegated_access_token" {
+		if current.Client.Audiences[0] == "manager" && current.Client.ScopeMode == "restricted" &&
+			len(current.Client.Scopes) == 1 && current.Client.Scopes[0] == "data.preview" &&
+			current.Delegation != nil && current.Client.ClientID != nil &&
+			current.Delegation.DelegatedByClientID == *current.Client.ClientID &&
+			current.Delegation.AgentRunID != "" && current.Delegation.ToolCallID != "" {
+			return nil
+		}
+		return commonapi.ErrForbidden
+	}
+	if current.Delegation != nil || current.Client.Audiences[0] != "addp.api" {
 		return commonapi.ErrForbidden
 	}
 	switch current.Token.Type {
@@ -44,7 +57,7 @@ func qualifyManagerPreviewRead(current commonauth.AuthContext) error {
 	return commonapi.ErrForbidden
 }
 
-// CheckManagerPreviewRead consumes only a real User Bearer. Function/client
+// CheckManagerPreviewRead consumes real User or fixed Manager Tool Bearer. Function/client
 // conditions and complete source rules share one read-only committed snapshot.
 // Security and the actual immutable query remain the Manager owner's gates.
 func (s *Service) CheckManagerPreviewRead(ctx context.Context, credential string, request ManagerPreviewReadCheckRequest) (*SourceReadCheck, error) {
@@ -57,7 +70,7 @@ func (s *Service) CheckManagerPreviewRead(ctx context.Context, credential string
 	if s == nil || s.repository == nil {
 		return nil, errSourceReadRules
 	}
-	result, err := s.repository.observeCurrentUserSourceRules(ctx, credential, request.Targets, qualifyManagerPreviewRead)
+	result, err := s.repository.observeManagerPreviewSourceRules(ctx, credential, request.Targets)
 	if err != nil {
 		return nil, err
 	}

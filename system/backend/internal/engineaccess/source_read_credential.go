@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
@@ -21,6 +22,23 @@ func (r *Repository) readCurrentUserSourceRules(ctx context.Context, credential 
 // qualify is supplied by a fixed server-side consumer, never by an HTTP body.
 // It runs against the SAME current credential projection as the source rules.
 func (r *Repository) observeCurrentUserSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath, qualify func(commonauth.AuthContext) error) (*sourceReadRules, error) {
+	return r.observeSourceRules(ctx, credential, targets, func(auth *iam.AuthContextService) (*commonauth.AuthContext, error) {
+		return auth.ResolveUserAccessToken(ctx, credential)
+	}, qualify)
+}
+
+// This fixed consumer resolves real delegated credentials without treating them
+// as ordinary User tokens. Every credential still uses the same source snapshot.
+func (r *Repository) observeManagerPreviewSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath) (*sourceReadRules, error) {
+	return r.observeSourceRules(ctx, credential, targets, func(auth *iam.AuthContextService) (*commonauth.AuthContext, error) {
+		if strings.HasPrefix(credential, "addp_dat_") {
+			return auth.ResolveDelegatedAccessToken(ctx, credential)
+		}
+		return auth.ResolveUserAccessToken(ctx, credential)
+	}, qualifyManagerPreviewRead)
+}
+
+func (r *Repository) observeSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error) (*sourceReadRules, error) {
 	paths, batch, err := encodeSourceReadTargets(targets)
 	if err != nil {
 		return nil, err
@@ -39,7 +57,7 @@ func (r *Repository) observeCurrentUserSourceRules(ctx context.Context, credenti
 		}
 		// IAM's nested read-only projection shares the outer Repeatable Read
 		// transaction and its committed snapshot, rather than opening another pool.
-		current, err := auth.ResolveUserAccessToken(ctx, credential)
+		current, err := resolve(auth)
 		if err != nil {
 			return err
 		}

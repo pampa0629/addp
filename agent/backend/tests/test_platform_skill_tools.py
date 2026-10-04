@@ -108,6 +108,39 @@ class PlatformSkillToolTests(unittest.TestCase):
             tool_call_id="call-1",
         )
 
+    def test_business_config_is_not_replaced_by_framework_run_config(self):
+        executor = AsyncMock()
+        executor.call.return_value = {"id": 1, "status": "idle", "desired_state": "stopped"}
+        with patch("tools.langchain_tools.ToolExecutor", return_value=executor):
+            tools = create_agent_tools("source-token", "run-transfer")
+        create = next(tool for tool in tools if stable_tool_name(tool) == "transfer.task.create")
+        arguments = {
+            "name": "acceptance-task",
+            "config": {
+                "runtime": {"boundary": "bounded"},
+                "load": {"mode": "snapshot"},
+                "source": {"locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=111"},
+                "target": {
+                    "parent_locator": "addp://engine/2/path/outdoor?type=schema&node_id=3",
+                    "name": "acceptance_table",
+                },
+            },
+        }
+
+        async def invoke():
+            await create.ainvoke({
+                "name": create.name, "args": arguments,
+                "id": "create-call", "type": "tool_call",
+            }, config={"tags": ["framework-only"], "configurable": {"trace": "framework-only"}})
+
+        import asyncio
+
+        asyncio.run(invoke())
+        executor.call.assert_awaited_once_with(
+            "transfer.task.create", arguments,
+            agent_run_id="run-transfer", tool_call_id="create-call",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

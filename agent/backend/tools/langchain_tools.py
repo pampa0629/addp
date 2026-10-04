@@ -64,6 +64,11 @@ class ManifestStructuredTool(StructuredTool):
     def tool_call_schema(self) -> dict[str, Any]:
         return self.manifest_input_schema
 
+    async def _arun(self, *args: Any, **arguments: Any) -> Any:
+        # StructuredTool reserves `config` for RunnableConfig. ADDP's Manifest
+        # owns every business argument; BaseTool already carries run context.
+        return await self.coroutine(*args, **arguments)
+
     def _parse_input(self, tool_input, tool_call_id):
         if not isinstance(tool_input, dict):
             raise ValueError("tool_input_must_be_object")

@@ -3158,9 +3158,34 @@ Manager 的交互式预览是同步 User 请求，不是持久计算 execution�
 
 本轮验证记录：
 
-- Swagger 生成成功；严格覆盖检查退出码 0，195 个公开路由方法一致。初次检查因新文件未遵循 `*_routes.go` 发现约定失败，已按现有约定重命名，不修改扫描器或增加第二条路由。初轮记录 `/tmp/addp-source-read-check-coverage-20261004.log` 不计为通过。
+- Swagger 生成成功；严格覆盖检查退出码 0，195 个公开路由方法一致，最终日志 `/tmp/addp-source-read-check-coverage-final-20261004.log`。初次检查因新文件未遵循 `*_routes.go` 发现约定失败，已按现有约定重命名，不修改扫描器或增加第二条路由。初轮记录 `/tmp/addp-source-read-check-coverage-20261004.log` 不计为通过。
 - 首次 `make test-module MODULE=system` 在平台 T0 的 System API 编译检查失败，原因是新增测试中未使用的 `net/http` 导入；已删除，并补充正式 Router 挂载断言，不修改生产授权策略。失败日志 `/tmp/addp-source-read-check-system-20261004.log` 保留。
-- 修正后完整 System 模块门禁正在运行，最终日志 `/tmp/addp-source-read-check-system-final-20261004.log`；结果待本轮补记，不能提前计为通过。实际 Infra PostgreSQL 映射 `25432`，只使用允许的 `addp_iam_test`，测试 Schema 与清理仍由既有标准入口管理。
+- 首次修正后的完整 System 门禁仍退出码 2，日志 `/tmp/addp-source-read-check-system-final-20261004.log`。平台 T0、System 全部 Go T1、前端 91 项单测／41 项浏览器回归及构建通过，PostgreSQL IAM／OAuth／API／迁移包通过；engineaccess 包因既有短期 Grant 准备和撤销组共享 30 秒 context 失败。受理阶段耗时 63.13 秒后，源规则夹具继续复用开始时的一分钟模拟 Runtime 凭据，准备 Grant 均被正确拒绝；新增真实 User 组也因此未完成有效准备。Repository／Online 夹具与运行日志门禁未由该次命令执行，不能计为完整模块通过。
+- 相同代码按标准 `bash scripts/test/system-iam-postgres-gate.sh --package engineaccess` 独立复验退出码 0、无 Skip，66.430 秒；新增真实 User 组 1.88 秒，正式功能／源规则交集子用例 0.94 秒，均实际执行通过。日志 `/tmp/addp-source-read-check-engineaccess-recheck-20261004.log`。它不改写上一条完整命令的失败，也不表示既有短期到期夹具在任意负载下已稳定。
+- 已按相邻独立阶段的既有做法修正凭据作用域：源规则阶段及随后独立受理检查在数据库墙钟下各自建立新的一分钟模拟 Runtime 凭据，不继承此前串行阶段耗时；专用过期凭据用例、生产 Token TTL、Grant 到期和五分钟窗口均未调整。没有扩大既有测试组超时或修改撤销到期断言。修正后的完整门禁结果见下一条；这不表示此前短期到期夹具已在任意负载下稳定。
+- 最新完整 `make test-module MODULE=system` 退出码 0，日志 `/tmp/addp-source-read-check-system-verified-20261004.log`。平台 T0、System Go T1、前端 91 项单元测试／41 项浏览器回归及构建、完整 IAM PostgreSQL 七个 owner、隔离运行日志门禁全部通过。IAM／OAuth／API／Migration／engineaccess／Repository／Online 夹具包分别耗时 131.947／4.775／98.102／357.763／50.207／2.722／2.793 秒，无 T2 Skip；真实 User 组 1.20 秒，正式功能／源规则交集子用例 0.51 秒，均实际执行通过。运行日志门禁验证真实采集、断连恢复、重启与旧实例隔离、容量及物理保留清理，并确认自有容器、网络、卷和源目录零残留。这只证明本轮 System owner，不替代全工作区 `test-changed`，也不证明 Manager／Develop 已接通实际内容访问。
+- 实际 Infra PostgreSQL 映射 `25432`，只使用允许的 `addp_iam_test`，测试 Schema 与清理仍由既有标准入口管理。
+- 门禁运行期间工作区仍有其它会话的并行改动；本轮结果不外推为这些改动最新版本的验收，未将它们纳入本轮实现或提交范围。
 - 新 Go／HTTP 用例由 System Go T1 自动发现，真实凭据用例由既有 engineaccess PostgreSQL 分组及 System IAM T2 CI 自动覆盖；Swagger 沿用现有 Platform 门禁，无新 workflow、测试库或旁路脚本。没有启停用户开发服务，也没有修改来源数据库。
 
 下一优先项：接入 Manager PostgreSQL 实际预览并验证完整读取集合。共用 `PrepareQueryProtection` 已有 ReadSet／输出血缘保护，但当前使用空 Subject；接入时须保留 Manager 已有当前用户临时原值许可语义，不能再复制一套依赖保护算法或因复用而丢失用户上下文。Delegated／Resource Ticket 等其它入口不能伪装普通 User 消费，也不能留未经核验的旧路径兜底。
+
+### 26.69 完整读取集合保护的当前用户前置适配（2026-10-04）
+
+本轮只完善共享结果保护的主体消费，尚未接入 Manager 的实际数据库预览，也没有扩大任何主体的源数据访问权。
+
+- [x] 先补 Security 稳定规范：`projectionstore.PrepareQueryProtection` 显式接收可信 Owner 提供的当前用户 `SubjectReference`，同一主体参与派生字段说明和实际结果保护；共享库不解析认证凭据、不接受 HTTP 自报主体、不授予资源访问权。结果输出时仍复核临时原值授权的有效期。
+- [x] 删除共享查询方法内部的空主体硬编码，不保留旧签名或兼容方法。Develop、Service、Transfer 的现有调用显式传入空主体，维持原有默认保护；不从任务作者或历史 execution 推断临时原值权限。原生表方法未改造，不能宣称其已支持当前用户。
+- [x] 新增 12 个确定性子场景：遮盖／抑制各覆盖匹配用户、其他用户、空主体、过期授权、允许原值的空页及受保护空页。使用 Provider 的直接字段别名映射，验证派生字段、原值／保护结果及空页列结构，不复制字段保护算法。
+- [x] `make test-go` 退出码 0，覆盖全部 22 个已跟踪 Go 模块及依赖文件校验。日志 `/tmp/addp-query-subject-go-20261004.log`。新共享测试实际执行，projectionstore 包 0.780 秒；其余未变输入允许复用 Go 缓存。
+- [x] 按 `infra/status.sh` 核实 PostgreSQL 实际映射 `25432`，显式选择 `addp_test` 运行完整 `make test-common-postgres`，退出码 0，无 T2 Skip；Provider 读取集合／输出血缘、表写入、execution、投影存储同构及表结果事务门禁均实际执行。日志 `/tmp/addp-query-subject-common-postgres-20261004.log`。不创建额外 database、不连接开发业务库。
+- [ ] 平台 T0：`make test-platform` 正在运行，结果待收口；不先记为通过。
+
+验证过程保留：首轮新测试的 OutputLineage 回调缺少 ReadSet 参数，编译失败，已按唯一 PreparedQuery 契约修正；日志 `/tmp/addp-query-subject-red-20261004.log`。随后保持旧空主体实现运行同一标准 Go 入口，匹配用户及授权空页共四个子场景正确失败，证明新测试能检出主体丢失；日志 `/tmp/addp-query-subject-red-behavior-20261004.log`。最终实现修正后结果以前述成功命令为准。
+
+CI 覆盖：现有 `platform-ci.yml` 的 `make test-go` 自动发现新增 Go 用例；Release/T2 的 Common owner 选择覆盖既有完整 PostgreSQL 门禁。共享依赖影响由 `changed-gate.py` 自动扩散到 Go 消费者，不新增 workflow、测试脚本或登记旁路。全工作区影响清单已通过标准 `--dry-run` 核对，日志 `/tmp/addp-query-subject-impact-20261004.log`；它不是 `make test-changed` 的执行结果。其它数据库／前端／Online 门禁未在本轮全量运行，不能将本轮结果外推为共享工作区全部变更通过。未启停开发服务。
+
+以下两个边界已由用户在本轮确认，按此继续实施 Manager 实际消费：
+
+1. 保留一个受控预览入口，在同一读取链路中分别校验真实普通 User 与固定 Manager `data.preview` Tool 委托凭据；不能用 Service 身份替代用户，也不能将 Tool 凭据降格成普通 User。System 固定检查扩展仍须完成生产 IAM 与源规则的组合验证。
+2. Manager 规范已修订为允许 Provider 为受控分页预览提供不可变、可证明完整依赖的计划，不向用户开放自由 SQL，不保留未核验的旧读取路径。此项仅是已确认契约，Manager 实际消费和内容访问验收仍未完成。

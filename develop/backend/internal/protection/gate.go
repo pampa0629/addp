@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
 )
@@ -33,7 +34,7 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 		end()
 		return nil, nil, fmt.Errorf("%w: query provider has no catalog model", ErrRequired)
 	}
-	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "query", time.Now().UTC())
+	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "query", dataprotection.SubjectReference{}, time.Now().UTC())
 	if err != nil {
 		end()
 		return nil, nil, fmt.Errorf("%w: %w", ErrRequired, err)

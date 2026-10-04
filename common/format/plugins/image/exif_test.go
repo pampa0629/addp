@@ -281,3 +281,105 @@ func TestJPEGMetadataIOErrorsAndCancellationAreNotAbsence(t *testing.T) {
 		t.Fatalf("cancellation swallowed: %v", err)
 	}
 }
+
+func exifExposureFixture(order binary.ByteOrder, biasNumerator, biasDenominator int32) []byte {
+	// IFD0 at 8: Orientation and ExifIFD pointer. Exif IFD at 38: four
+	// single rationals, followed by their out-of-line payloads at 92.
+	data := make([]byte, 92)
+	copy(data, "II")
+	if order == binary.BigEndian {
+		copy(data, "MM")
+	}
+	order.PutUint16(data[2:4], 42)
+	order.PutUint32(data[4:8], 8)
+	order.PutUint16(data[8:10], 2)
+	copy(data[10:22], buildIFDEntry(order, 274, tiffTypeShort, 1, 0))
+	order.PutUint16(data[18:20], 6)
+	copy(data[22:34], buildIFDEntry(order, 34665, tiffTypeLong, 1, 38))
+	order.PutUint16(data[38:40], 4)
+	for index, value := range []struct {
+		tag, typ               uint16
+		numerator, denominator uint32
+	}{
+		{33434, tiffTypeRational, 1, 125},
+		{33437, tiffTypeRational, 28, 10},
+		{37380, tiffTypeSRational, uint32(biasNumerator), uint32(biasDenominator)},
+		{37386, tiffTypeRational, 35, 1},
+	} {
+		entry := 40 + index*12
+		copy(data[entry:entry+12], buildIFDEntry(order, value.tag, value.typ, 1, uint32(len(data))))
+		raw := make([]byte, 8)
+		order.PutUint32(raw[:4], value.numerator)
+		order.PutUint32(raw[4:], value.denominator)
+		data = append(data, raw...)
+	}
+	return data
+}
+
+func TestJPEGExifExposureByteOrderAndSignedFractions(t *testing.T) {
+	for _, order := range []binary.ByteOrder{binary.LittleEndian, binary.BigEndian} {
+		for _, bias := range [][2]int32{{-1, 2}, {0, 1}, {2, 3}, {-1, -2}, {-2147483648, -1}} {
+			data := exifExposureFixture(order, bias[0], bias[1])
+			info := describeJPEG(t, jpegFixture(t, append([]byte("Exif\x00\x00"), data...)))
+			want := map[string]interface{}{
+				"orientation": 6, "exposure_time_seconds": float64(1) / 125,
+				"f_number": 2.8, "exposure_bias_ev": float64(bias[0]) / float64(bias[1]), "focal_length_mm": float64(35),
+			}
+			if info["exif_status"] != "parsed" || !reflect.DeepEqual(info["exif"], want) {
+				t.Fatalf("%s bias %v: %#v", order, bias, info)
+			}
+		}
+	}
+}
+
+func TestJPEGExifInvalidExposureOmitsOnlyBadField(t *testing.T) {
+	fields := []string{"exposure_time_seconds", "f_number", "exposure_bias_ev", "focal_length_mm"}
+	for _, order := range []binary.ByteOrder{binary.LittleEndian, binary.BigEndian} {
+		for index, field := range fields {
+			for _, bad := range []string{"type", "zero count", "multiple count", "offset", "zero denominator", "zero positive value"} {
+				if index == 2 && bad == "zero positive value" {
+					continue // Exposure bias zero is valid.
+				}
+				t.Run(order.String()+"/"+field+"/"+bad, func(t *testing.T) {
+					data := exifExposureFixture(order, -1, 2)
+					entry := 40 + index*12
+					payload := int(order.Uint32(data[entry+8 : entry+12]))
+					switch bad {
+					case "type":
+						wrongType := uint16(tiffTypeSRational)
+						if index == 2 {
+							wrongType = tiffTypeRational
+						}
+						order.PutUint16(data[entry+2:entry+4], wrongType)
+					case "zero count":
+						order.PutUint32(data[entry+4:entry+8], 0)
+					case "multiple count":
+						order.PutUint32(data[entry+4:entry+8], 2)
+					case "offset":
+						order.PutUint32(data[entry+8:entry+12], 0xffffffff)
+					case "zero denominator":
+						order.PutUint32(data[payload+4:payload+8], 0)
+					case "zero positive value":
+						order.PutUint32(data[payload:payload+4], 0)
+					}
+					info := describeJPEG(t, jpegFixture(t, append([]byte("Exif\x00\x00"), data...)))
+					exif := info["exif"].(map[string]interface{})
+					if info["exif_status"] != "invalid" || exif[field] != nil || len(exif) != 4 || exif["orientation"] != 6 {
+						t.Fatalf("bad exposure accepted or valid fields lost: %#v", info)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestJPEGExifDoesNotDeriveMissingExposureFromAPEX(t *testing.T) {
+	data := exifExposureFixture(binary.LittleEndian, 0, 1)
+	binary.LittleEndian.PutUint16(data[40:42], 37377) // ShutterSpeedValue, not ExposureTime.
+	binary.LittleEndian.PutUint16(data[52:54], 37378) // ApertureValue, not FNumber.
+	info := describeJPEG(t, jpegFixture(t, append([]byte("Exif\x00\x00"), data...)))
+	exif := info["exif"].(map[string]interface{})
+	if info["exif_status"] != "parsed" || exif["exposure_time_seconds"] != nil || exif["f_number"] != nil {
+		t.Fatalf("missing exposure derived from different tags: %#v", info)
+	}
+}

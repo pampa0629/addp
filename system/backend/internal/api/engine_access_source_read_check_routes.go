@@ -21,10 +21,20 @@ type EngineAccessSourceReadCheckHandler struct {
 }
 
 func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IAMRuntime, handler *EngineAccessSourceReadCheckHandler) error {
-	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || handler == nil || handler.service == nil {
+	if api == nil || runtime == nil || runtime.Authentication == nil || handler == nil || handler.service == nil {
 		return errors.New("source read check dependencies required")
 	}
 	tenant, err := middleware.NewIAMContextGuard("tenant")
+	if err != nil {
+		return err
+	}
+	credential, err := middleware.NewIAMCredentialGuard(middleware.IAMTokenTypeFirstPartyAccess, middleware.IAMTokenTypeOAuthAccess, middleware.IAMTokenTypeDelegatedAccess)
+	if err != nil {
+		return err
+	}
+	delegated, err := sharedauth.NewDelegatedRouteGuard(sharedauth.DelegatedRouteGuardConfig{
+		Audience: "manager", RequiredScopes: []string{"data.preview"}, RequiredPermissions: []string{engineaccess.ManagerPreviewReadPermission},
+	})
 	if err != nil {
 		return err
 	}
@@ -33,14 +43,14 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 		return err
 	}
 	routes := api.Group("/engine-access/read-checks")
-	routes.Use(runtime.Authentication, runtime.UserAccessCredential, tenant)
+	routes.Use(runtime.Authentication, credential, tenant, delegated)
 	routes.POST("/manager-preview", permission, handler.CheckManagerPreview)
 	return nil
 }
 
 // CheckManagerPreview godoc
 // @Summary 检查 Manager 预览的当前精确源读取范围 | Check current precise source read coverage for Manager preview
-// @Description 仅当前 Tenant 第一方或 OAuth User Bearer；固定检查 manager.data_item.read 和 addp.api Client 边界，身份与完整源规则共用只读快照。无 Grant 或存在 Deny 整体拒绝，不接收自报身份、execution 或 Permission | Only a current Tenant first-party or OAuth User Bearer. Fixed manager.data_item.read and addp.api client constraints are checked with complete source rules in one read-only snapshot. Missing Grants or Deny reject the entire set; caller identity, execution and Permission are not accepted
+// @Description 当前 Tenant 第一方或 OAuth API User，以及精确 manager audience 和唯一 data.preview Scope 的真实委托凭据；固定检查 manager.data_item.read，身份与完整源规则共用只读快照。不开放 Service、Resource Ticket 或其它 System API，无 Grant 或存在 Deny 整体拒绝，不接收自报身份、execution 或 Permission | Current Tenant first-party or OAuth API User, or a real delegated credential with exact manager audience and sole data.preview scope. Fixed manager.data_item.read and complete source rules share one read-only snapshot. Service, Resource Ticket and other System APIs remain unavailable; missing Grants or Deny reject the entire set; caller identity, execution and Permission are not accepted
 // @Description 成功仅为当次源规则观察，不是完整 Allow、访问令牌或可缓存凭据。Manager 必须提供 Provider 证明的完整读取集合、完成本地 Security 保护并执行同一 PreparedQuery；本接口不访问源端或 Catalog | Success is a point-in-time source observation, not a complete Allow, access token or cacheable credential. Manager must supply the Provider-proven complete read set, apply local Security protection and execute the same PreparedQuery. This endpoint accesses neither the source nor Catalog
 // @Tags 源数据读取检查 | Source Data Read Checks
 // @Accept json

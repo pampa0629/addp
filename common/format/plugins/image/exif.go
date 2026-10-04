@@ -176,7 +176,54 @@ func extractExifSummary(data []byte) (map[string]interface{}, bool) {
 			exif[key] = value
 		}
 	}
+	for _, field := range []struct {
+		tag    uint16
+		key    string
+		signed bool
+	}{
+		{33434, "exposure_time_seconds", false},
+		{33437, "f_number", false},
+		{37380, "exposure_bias_ev", true},
+		{37386, "focal_length_mm", false},
+	} {
+		if !sub.hasTag(field.tag) {
+			continue
+		}
+		value, ok := exifRational(sub, field.tag, field.signed)
+		if ok && !field.signed && value <= 0 {
+			ok = false
+		}
+		valid = valid && ok
+		if ok {
+			exif[field.key] = value
+		}
+	}
 	return exif, valid
+}
+
+func exifRational(ifd *tiffIFD, tag uint16, signed bool) (float64, bool) {
+	entry := ifd.tags[tag]
+	typ := uint16(tiffTypeRational)
+	if signed {
+		typ = tiffTypeSRational
+	}
+	if entry.typ != typ || entry.count != 1 {
+		return 0, false
+	}
+	raw, ok := ifd.tagBytes(entry)
+	if !ok || len(raw) != 8 {
+		return 0, false
+	}
+	numerator := float64(ifd.order.Uint32(raw[:4]))
+	denominator := float64(ifd.order.Uint32(raw[4:]))
+	if signed {
+		numerator = float64(int32(ifd.order.Uint32(raw[:4])))
+		denominator = float64(int32(ifd.order.Uint32(raw[4:])))
+	}
+	if denominator == 0 {
+		return 0, false
+	}
+	return numerator / denominator, true
 }
 
 func parseExifIFD(data tiffMetadata, order binary.ByteOrder, offset uint32) (*tiffIFD, bool) {

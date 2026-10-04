@@ -13,16 +13,18 @@ import (
 )
 
 const (
-	tiffTypeByte   = 1
-	tiffTypeASCII  = 2
-	tiffTypeShort  = 3
-	tiffTypeLong   = 4
-	tiffTypeSByte  = 6
-	tiffTypeSShort = 8
-	tiffTypeSLong  = 9
-	tiffTypeFloat  = 11
-	tiffTypeDouble = 12
-	tiffTypeIFD    = 13
+	tiffTypeByte      = 1
+	tiffTypeASCII     = 2
+	tiffTypeShort     = 3
+	tiffTypeLong      = 4
+	tiffTypeRational  = 5
+	tiffTypeSByte     = 6
+	tiffTypeSShort    = 8
+	tiffTypeSLong     = 9
+	tiffTypeSRational = 10
+	tiffTypeFloat     = 11
+	tiffTypeDouble    = 12
+	tiffTypeIFD       = 13
 
 	tagNewSubfileType      = 254
 	tagImageWidth          = 256

@@ -10,9 +10,9 @@ System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方�
 
 业务资源和资源级授权事实仍归对应 owner。System 不复制全平台业务资源，也不建立中央资源 ACL 大表。
 
-System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants` 是精确源数据共享的不可变签发历史：以原办理编号唯一引用 `engine_access_fulfillment_outcomes`，参数仍由已提交的不可变受理回执提供，不复制 Catalog 责任、业务决定或 IAM Role/Permission。迁移 000182 不自动签发、不新增权限或角色分配、不推进 IAM 授权版本；签发不改变 AuthContext 的功能 Permission。内部签发与高风险审计同事务，插入触发器按数据库墙钟检查原 accepted 窗口并拒绝客户端回填时间。当前没有公开签发或执行侧消费入口；签发历史不能代替后续到期、撤销、Deny 和当前接收主体的访问裁决。
+System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants` 是精确源数据共享的不可变签发历史：以原办理编号唯一引用 `engine_access_fulfillment_outcomes`，参数仍由已提交的不可变受理回执提供，不复制 Catalog 责任、业务决定或 IAM Role/Permission。迁移 000182 不自动签发、不新增权限或角色分配、不推进 IAM 授权版本；签发不改变 AuthContext 的功能 Permission。签发与高风险审计同事务，插入触发器按数据库墙钟检查原 accepted 窗口并拒绝客户端回填时间。正式签发与原参反查入口为 `POST /runtime/engine-access-fulfillments/{request_id}/grant` 及其 `/resolve`，只允许固定 `addp-catalog` Tenant Service 凭据与履约 Permission；没有任意目标的用户直接签发入口。签发历史不能代替后续到期、撤销、Deny 和当前接收主体的访问裁决，也不能表示 Manager／Develop 的实际内容读取已消费这些规则。
 
-当前源数据读取规则由 `engineaccess` 私有只读批量观察方法复用上述不可变历史，不新增 ACL 表或可编辑副本。该方法拥有独立只读事务，拒绝嵌入调用方写事务；整批目标在一条 SQL、一个已提交快照和一个数据库时刻下核验当前主体、直接组织成员、引擎与 Grant／Deny。仅全部精确目标都有有效 Grant 且没有有效 Deny 时返回规则覆盖，不读取来源数据库、不获取仲裁或 IAM 写锁、不产生规则或审计副作用。可信凭据、功能 Permission、执行范围与 Security 校验仍属后续消费链路，主体 ID／成员关系 ID／授权版本引用自身不是认证证明。
+当前源数据读取规则由 `engineaccess` 私有只读批量观察方法复用上述不可变历史，不新增 ACL 表或可编辑副本。该方法拥有独立只读事务，拒绝嵌入调用方写事务；整批目标在一条 SQL、一个已提交快照和一个数据库时刻下核验当前主体、直接组织成员、引擎与 Grant／Deny。仅全部精确目标都有有效 Grant 且没有有效 Deny 时返回规则覆盖，不读取来源数据库、不获取仲裁或 IAM 写锁、不产生规则或审计副作用。规则观察本身不独立认证，也不是完整访问许可；正式同步入口按下述契约组合可信凭据与固定功能／Client 条件。适用的执行范围与 Security 仍由实际读取 owner 校验，主体 ID／成员关系 ID／授权版本引用自身不是认证证明。
 
 可信同步 User 凭据组合复用 IAM 唯一 `ResolveUserAccessToken`：自有只读事务统一使用 Repeatable Read，凭据投影和精确规则查询共享已提交快照。Tenant／Principal／Membership／授权版本只由真实当前凭据派生，查询后另以数据库墙钟复核 Token 的自然到期；不保存或输出凭据、不复制 IAM 核验算法。底座本身保持私有，不取代 owner 功能／Client Scope、Execution 或 Security，不新增迁移或 Permission。
 

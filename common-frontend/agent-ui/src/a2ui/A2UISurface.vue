@@ -40,7 +40,10 @@ function renderOperations(operations) {
   disposeProcessor()
   if (!Array.isArray(operations) || operations.length === 0) return
 
-  processor = new MessageProcessor([createAddpCatalog()], action => emit('action', action))
+  processor = new MessageProcessor([createAddpCatalog()], action => {
+    // Catalog actions are JSON; do not expose Vue proxies to protocol clients.
+    emit('action', JSON.parse(JSON.stringify(action)))
+  })
   try {
     processor.processMessages(operations)
     const surfaceIds = operations

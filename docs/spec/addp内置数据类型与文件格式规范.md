@@ -1211,7 +1211,18 @@ SVG、AVIF、HEIC / HEIF 仍只有 descriptor；在仅能 raw / range 预览时�
 
 图片预览面向 `data_type=media`。如果图片包含 GPS 或 GeoTIFF 空间信息，可以额外启用空间能力展示，但图片本身仍是 `media` 类型。
 
-JPEG 首期 EXIF 摘要通过现有 `MediaInfoProvider` 一次读取提供，由 Meta 写入 `format_info.jpeg`：`exif` 只记录有效的 `orientation`（1–8，含镜像方向）、`make`、`model`、`date_time_original`、`offset_time_original` 和 `subsec_time_original`。拍摄时间保留源字符串，未知时区不推断为本地或 UTC；不以文件修改时间替代。宽高继续表示编码像素尺寸，不因方向标签交换、不改写像素。此阶段不解析 GPS、MakerNote、曝光参数或缩略图，也不新增 spatial 事实。相关 tag 定义见 [CIPA Exif 规范](https://cipa.jp/e/std/std-sec.html)。
+JPEG EXIF 摘要通过现有 `MediaInfoProvider` 一次读取提供，由 Meta 写入 `format_info.jpeg`：`exif` 记录有效的 `orientation`（1–8，含镜像方向）、`make`、`model`、`date_time_original`、`offset_time_original` 和 `subsec_time_original`。拍摄时间保留源字符串，未知时区不推断为本地或 UTC；不以文件修改时间替代。宽高继续表示编码像素尺寸，不因方向标签交换、不改写像素。
+
+曝光与焦距摘要直接读取 Exif IFD 的以下标签，JSON 值为数值：
+
+| 源标签 | `format_info.jpeg.exif` 字段 | 单位 | 类型与数量 |
+| --- | --- | --- | --- |
+| ExposureTime（33434） | `exposure_time_seconds` | 秒 | RATIONAL，1 |
+| FNumber（33437） | `f_number` | 无单位 | RATIONAL，1 |
+| ExposureBiasValue（37380） | `exposure_bias_ev` | EV | SRATIONAL，1 |
+| FocalLength（37386） | `focal_length_mm` | 毫米 | RATIONAL，1 |
+
+曝光时间、F 值和焦距须大于零；曝光补偿允许负值和零。分母为零、类型或数量错误、越界数据记为 invalid 并省略该字段，其他合法字段保留。缺失标签不补值，不从 APEX 快门或光圈标签推导曝光时间或 F 值。此阶段不解析感光度、GPS、MakerNote 或缩略图，也不新增 spatial 事实。相关 tag 定义见 [CIPA Exif 规范](https://www.cipa.jp/std/documents/e/DC-X008-Translation-2019-E.pdf)。
 
 JPEG 只扫描图像扫描数据前的 marker segment，总源读取预算为 1 MiB，支持非 seekable 输入及 TIFF 两种字节序。相机字符串与小数秒长度最多 1024 字节；未知或部分未知的拍摄时间不补值。`exif_status` 表示 `absent`（完整检查后没有 EXIF）、`parsed`（支持范围内摘要合法）、`invalid`（EXIF IFD 结构、受支持字段或 marker 非法，包括重复 tag 和 EXIF APP1）、`budget_exceeded`（无法在预算内完成检查）；非法或未完成检查不得被标记为没有 EXIF。非法 EXIF 不阻止已确认的像素尺寸返回，仅保留合法字段；重复 EXIF APP1 不选择其中任意一份。如果标准 JPEG 解码器不能在预算内确认尺寸，则返回解析错误，不输出猜测尺寸。实际 I/O 错误和取消仍返回错误，不吞为缺失元数据。
 
