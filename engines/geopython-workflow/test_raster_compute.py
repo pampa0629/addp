@@ -158,6 +158,138 @@ def test_resampling_and_reprojection(raster_file):
             with pytest.raises(ValueError): raster_resample(raster, **kwargs)
 
 
+@pytest.mark.parametrize('dtype,opaque,nodata', [
+    (gdal.GDT_Byte,255,250), (gdal.GDT_UInt16,65535,65000), (gdal.GDT_Float64,255,-9999),
+], ids=['byte-alpha','uint16-alpha','float64-alpha'])
+@pytest.mark.parametrize('overlap', ['first','last'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+def test_alpha_clip_reproject_mosaic_save_preserves_valid_pixels(
+        tmp_path, dtype, opaque, nodata, overlap, profile):
+    def write_source(path, data, alpha, transform, crs):
+        dataset = gdal.GetDriverByName('GTiff').Create(str(path),6,4,2,dtype)
+        dataset.SetGeoTransform(transform)
+        reference = osr.SpatialReference(); reference.SetFromUserInput(crs)
+        dataset.SetSpatialRef(reference)
+        for index,array in enumerate([data,alpha],1):
+            band = dataset.GetRasterBand(index)
+            band.SetNoDataValue(nodata)
+            band.WriteRaster(0,0,6,4,array.astype(np.float64).tobytes(),buf_type=gdal.GDT_Float64)
+        dataset.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+        dataset = band = None
+        return path
+
+    values = np.arange(24,dtype=np.float64).reshape(4,6)
+    values[1,4] = nodata
+    alpha = np.full((4,6),opaque,dtype=np.float64)
+    alpha[0,1] = alpha[3,5] = 0
+    alpha[0,0] = opaque//2
+    source = write_source(tmp_path/'source.tif',values,alpha,(0,1,0,4,0,-1),'EPSG:4326')
+    clipped_expected = values.copy()
+    clipped_expected[(alpha==0)|(values==nodata)] = np.nan
+    clipped_expected[1:3,2:4] = np.nan
+    polygon = {'type':'Polygon','coordinates':[
+        [[0,0],[6,0],[6,4],[0,4],[0,0]],
+        [[2,1],[2,3],[4,3],[4,1],[2,1]],
+    ]}
+    # Independent spherical Mercator formulas determine the target grid and source cells.
+    radius = 6378137.0
+    resolution = radius*np.pi/180
+    north = radius*np.log(np.tan(np.pi/4+np.deg2rad(4)/2))
+    target_transform = (0,resolution,0,north,0,-resolution)
+    other_values = np.arange(24,dtype=np.float64).reshape(4,6)+100
+    other_values[1,4] = nodata
+    other_values[3,5] = 0
+    other_alpha = np.full((4,6),opaque,dtype=np.float64)
+    other_alpha[0,2] = other_alpha[2,0] = 0
+    other_alpha[3,5] = opaque//2
+    other = write_source(tmp_path/'other.tif',other_values,other_alpha,
+                         (2*resolution,resolution,0,5*resolution,0,-resolution),'EPSG:3857')
+    originals = {path:path.read_bytes() for path in [source,other]}
+    target = tmp_path/'result.tif'
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        workspace = raster.workspace
+        clipped = raster_clip(raster,'EPSG:4326',geometry=polygon)
+        clipped_dataset = gdal.Open(str(clipped.path))
+        assert clipped_dataset.RasterCount==2
+        np.testing.assert_equal(read_band_values(clipped_dataset.GetRasterBand(1)),clipped_expected)
+        clipped_alpha = clipped_dataset.GetRasterBand(2)
+        assert clipped_alpha.GetColorInterpretation()==gdal.GCI_AlphaBand
+        coverage = read_band_values(clipped_alpha)
+        np.testing.assert_equal(coverage>0,np.isfinite(clipped_expected))
+        assert 0<coverage[0,0]<coverage.max()
+        clipped_dataset = clipped_alpha = None
+        warped = raster_reproject(clipped,'EPSG:3857',[resolution,resolution])
+        warped_dataset = gdal.Open(str(warped.path))
+        assert (warped_dataset.RasterXSize,warped_dataset.RasterYSize,warped_dataset.RasterCount)==(6,4,2)
+        np.testing.assert_allclose(warped_dataset.GetGeoTransform(),target_transform,rtol=0,atol=1e-7)
+        assert warped_dataset.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        longitude = np.rad2deg((np.arange(6)+.5)*resolution/radius)
+        latitude = np.rad2deg(np.arctan(np.sinh((north-(np.arange(4)+.5)*resolution)/radius)))
+        source_x = np.floor(longitude).astype(int)
+        source_y = np.floor(4-latitude).astype(int)
+        warped_expected = clipped_expected[np.ix_(source_y,source_x)]
+        np.testing.assert_equal(read_band_values(warped_dataset.GetRasterBand(1)),warped_expected)
+        np.testing.assert_equal(read_band_values(warped_dataset.GetRasterBand(2))>0,np.isfinite(warped_expected))
+        warped_dataset = None
+        other_raster = raster_load(source_plan(other))
+        mosaic = raster_mosaic(warped,other_raster,'EPSG:3857',[resolution,resolution],overlap)
+        mosaic_dataset = gdal.Open(str(mosaic.path))
+        width,height = mosaic_dataset.RasterXSize,mosaic_dataset.RasterYSize
+        assert width==8 and height>=5
+        np.testing.assert_allclose(mosaic_dataset.GetGeoTransform(),
+                                   (0,resolution,0,5*resolution,0,-resolution),rtol=0,atol=1e-7)
+        # Sample both independently known source grids at every returned target center.
+        # GDAL may retain blank edge rows in its automatically suggested union extent.
+        rows,columns = np.indices((height,width))
+        center_x = (columns+.5)*resolution
+        center_y = (5-rows-.5)*resolution
+        left_x = np.floor(center_x/resolution).astype(int)
+        left_y = np.floor((north-center_y)/resolution).astype(int)
+        left_inside = (left_x>=0)&(left_x<6)&(left_y>=0)&(left_y<4)
+        left = np.full((height,width),np.nan)
+        left[left_inside] = warped_expected[left_y[left_inside],left_x[left_inside]]
+        right_x = np.floor((center_x-2*resolution)/resolution).astype(int)
+        right_y = np.floor((5*resolution-center_y)/resolution).astype(int)
+        right_inside = (right_x>=0)&(right_x<6)&(right_y>=0)&(right_y<4)
+        right = np.full((height,width),np.nan)
+        other_valid = other_values.copy()
+        other_valid[(other_alpha==0)|(other_values==nodata)] = np.nan
+        right[right_inside] = other_valid[right_y[right_inside],right_x[right_inside]]
+        preferred,fallback = (left,right) if overlap=='first' else (right,left)
+        expected = np.where(np.isfinite(preferred),preferred,fallback)
+        np.testing.assert_equal(read_band_values(mosaic_dataset.GetRasterBand(1)),expected)
+        np.testing.assert_equal(read_band_values(mosaic_dataset.GetRasterBand(2))>0,np.isfinite(expected))
+        mosaic_dataset = None
+        raster_save(mosaic,target_plan(target),profile=profile,blocksize=128)
+        persisted = raster_load(source_plan(target))
+        facts = raster_info(persisted)
+        assert (facts['width'],facts['height'],facts['band_count'],facts['extent_srid'])==(width,height,2,3857)
+        stats = raster_statistics(persisted)
+        valid = expected[np.isfinite(expected)]
+        assert (stats['valid_count'],stats['invalid_count'])==(valid.size,expected.size-valid.size)
+        np.testing.assert_allclose([stats['min'],stats['max'],stats['mean'],stats['stddev']],
+                                   [valid.min(),valid.max(),valid.mean(),valid.std()])
+        histogram = raster_histogram(persisted,bins=5,value_range=[0,125])
+        counts,edges = np.histogram(valid,bins=5,range=(0,125))
+        assert histogram['counts']==counts.tolist() and histogram['edges']==edges.tolist()
+        assert histogram['outside_count']==0
+        calculated = raster_band_math(persisted,'b1+1')
+        calculated_dataset = gdal.Open(str(calculated.path))
+        np.testing.assert_equal(read_band_values(calculated_dataset.GetRasterBand(1)),expected+1)
+        calculated_dataset = None
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+    assert not workspace.exists()
+    output = gdal.Open(str(target))
+    np.testing.assert_equal(read_band_values(output.GetRasterBand(1)),expected)
+    assert output.GetRasterBand(1).DataType==gdal.GDT_Float64
+    assert np.isnan(output.GetRasterBand(1).GetNoDataValue())
+    output = None
+    assert all(path.read_bytes()==original for path,original in originals.items())
+    assert {path.name for path in tmp_path.iterdir()}=={'source.tif','other.tif','result.tif'}
+
+
 def test_clip_and_mosaic(raster_file, tmp_path):
     right = create_raster(tmp_path / 'right.tif', np.full((2, 4, 4), 100.0), transform=(2,1,0,4,0,-1))
     with raster_workspace():
