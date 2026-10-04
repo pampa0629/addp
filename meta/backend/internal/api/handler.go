@@ -1,11 +1,14 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	metai18n "github.com/addp/meta/i18n"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/service"
@@ -62,6 +65,13 @@ func validateManualScanRequestTriggerType(triggerType string) error {
 
 // handleServiceError 统一处理 Service 层错误，返回合适的 HTTP 状态码
 func (h *Handler) handleServiceError(c *gin.Context, err error) {
+	if errors.Is(err, metaErrors.ErrScanScopeActive) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":      commoni18n.T(c, metai18n.MsgScanScopeActive),
+			"error_code": "scan_scope_active",
+		})
+		return
+	}
 	statusCode := metaErrors.HTTPStatusCode(err)
 	message := metaErrors.ErrorMessage(err)
 	c.JSON(statusCode, gin.H{"error": message})

@@ -269,7 +269,6 @@ const handleNodeAction = async ({ node, action }) => {
 
   if (action === 'refresh-node' || action === 'refresh-item') {
     try {
-      startScanStatus(t('manager.explorer.scanSubmitting'), t('manager.explorer.scanSubmitting'), 5)
       if (resourceTreeRefreshKind(locator) === 'node') {
         await store.refreshNode(locator, {
           onSubmitted: (run) => updateScanStatusFromRun(run, t('manager.explorer.scanSubmitted')),
@@ -277,13 +276,18 @@ const handleNodeAction = async ({ node, action }) => {
           onScanCompleted: (run) => updateScanStatusFromRun(run, t('manager.explorer.treeRefreshing'), 95)
         })
       } else {
+        startScanStatus(t('manager.explorer.scanSubmitting'), t('manager.explorer.scanSubmitting'), 5)
         await store.refreshItem(locator)
       }
       completeScanStatus()
       ElMessage.success(t('manager.explorer.scanCompleted'))
     } catch (error) {
+      if (error?.response?.status === 409 && error?.response?.data?.error_code === 'scan_scope_active') {
+        ElMessage.warning(error.response.data.error)
+        return
+      }
       failScanStatus(error)
-      ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
+      ElMessage.error(t('manager.explorer.refreshFailed', { error: error?.response?.data?.error || error.message }))
     }
     return
   }
@@ -413,7 +417,7 @@ function failScanStatus(error) {
   activeScan.value = {
     visible: true,
     title: t('manager.explorer.scanFailed'),
-    detail: error?.message || t('manager.explorer.scanFailed'),
+    detail: error?.response?.data?.error || error?.message || t('manager.explorer.scanFailed'),
     percent: 100,
     status: 'exception'
   }

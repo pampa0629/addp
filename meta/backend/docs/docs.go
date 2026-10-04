@@ -662,6 +662,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "409": {
+                        "description": "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -1522,6 +1529,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "409": {
+                        "description": "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -1785,6 +1799,13 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "未授权 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

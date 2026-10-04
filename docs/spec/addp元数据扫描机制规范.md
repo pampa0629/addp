@@ -245,6 +245,7 @@ Meta 扫描执行需要短时去重锁，但锁粒度必须和扫描范围对齐
 4. 执行锁的 owner 应使用 `execution_id`，释放时必须校验 owner。
 5. execution 创建失败或事务回滚时必须立即释放锁，不得依赖 TTL 自然过期。
 6. catalog namespace / branch / bucket 级短锁可复用同一 primitive，但仍应独立于 execution 锁。
+7. 手动扫描及 node / item 刷新提交遇到同范围 execution 锁已被持有时，返回 HTTP `409 Conflict`，稳定错误码为 `scan_scope_active`，错误文案按请求语言翻译。拒绝重复提交不创建 execution、不释放原 owner 的锁，也不改变原执行状态。资源树前端仅提示该范围正在扫描，不把提交冲突展示为扫描执行失败，不覆盖已有扫描进度。
 
 ## 扫描编排依据
 

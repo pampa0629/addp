@@ -193,6 +193,7 @@ func (h *Handler) SearchResourceTree(c *gin.Context) {
 // @Param engine_id path int true "存储引擎ID | Engine ID"
 // @Param locator query string true "node ResourceLocator URI"
 // @Success 202 {object} map[string]interface{} "已提交的刷新运行 | Submitted refresh run"
+// @Failure 409 {object} map[string]interface{} "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
@@ -237,7 +238,7 @@ func (h *Handler) RefreshResourceTreeNode(c *gin.Context) {
 
 	run, err := h.executionService.CreateManualRun(c.Request.Context(), commonAuth.GetTenantID(c), commonAuth.GetUserID(c), refreshResourceTreeScanRequest(loc))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.handleServiceError(c, err)
 		return
 	}
 

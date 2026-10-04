@@ -21,6 +21,7 @@ import (
 // @Param item_id path int true "数据项ID | Item ID"
 // @Param request body models.ScanRequest false "刷新请求 | Refresh request"
 // @Success 200 {object} models.ScanResponse "刷新结果 | Refresh result"
+// @Failure 409 {object} map[string]interface{} "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
@@ -54,7 +55,7 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 
 	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.handleServiceError(c, err)
 		return
 	}
 

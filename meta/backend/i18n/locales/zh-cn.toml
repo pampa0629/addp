@@ -1,3 +1,6 @@
+[meta.scan.scope_active]
+other = "该扫描范围正在执行中，请等待当前扫描完成"
+
 [meta.cache.cleared_all]
 other = "已清除所有资源缓存"
 

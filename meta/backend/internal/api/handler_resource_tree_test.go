@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,11 +17,13 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -77,7 +82,7 @@ func TestResourceTreeRefreshHandlerRequiresExecutionService(t *testing.T) {
 }
 
 func TestResourceTreeRefreshHandlerMapsMissingLocatorIdentityToBadRequest(t *testing.T) {
-	router, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
+	router, _, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
 	defer cleanup()
 
 	resp := httptest.NewRecorder()
@@ -92,7 +97,7 @@ func TestResourceTreeRefreshHandlerMapsMissingLocatorIdentityToBadRequest(t *tes
 }
 
 func TestResourceTreeRefreshHandlerRejectsItemLocator(t *testing.T) {
-	router, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
+	router, _, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
 	defer cleanup()
 
 	resp := httptest.NewRecorder()
@@ -107,7 +112,7 @@ func TestResourceTreeRefreshHandlerRejectsItemLocator(t *testing.T) {
 }
 
 func TestResourceTreeRefreshHandlerSubmitsNodeScanRun(t *testing.T) {
-	router, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
+	router, _, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
 	defer cleanup()
 
 	resp := httptest.NewRecorder()
@@ -203,7 +208,88 @@ func newResourceTreeHandlerTestRouter(t *testing.T) (*gin.Engine, func()) {
 	return router, systemServer.Close
 }
 
-func newResourceTreeRefreshHandlerTestRouter(t *testing.T) (*gin.Engine, func()) {
+func TestScanSubmissionConflictPreservesExecutionAndLock(t *testing.T) {
+	lock := &scanSubmissionLockHook{owners: map[string]string{}}
+	redisClient := redis.NewClient(&redis.Options{Addr: "unused"})
+	redisClient.AddHook(lock)
+	t.Cleanup(func() { _ = redisClient.Close() })
+	router, db, cleanup := newResourceTreeRefreshHandlerTestRouter(t, redisClient)
+	defer cleanup()
+	locator := url.QueryEscape("addp://engine/9/path/manager?type=bucket&node_id=2")
+	post := func(path, body, language string) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept-Language", language)
+		router.ServeHTTP(response, request)
+		return response
+	}
+	first := post("/resource-tree/9/refresh?locator="+locator, "", "zh-cn")
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("initial submission: %d %s", first.Code, first.Body.String())
+	}
+	var initial commonExecution.TaskExecution
+	if err := db.First(&initial).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&initial).Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusRunning, "progress": 41}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, submission := range []struct{ path, body, language, message string }{
+		{"/resource-tree/9/refresh?locator=" + locator, "", "zh-cn", "该扫描范围正在执行中，请等待当前扫描完成"},
+		{"/scan/run/manual", `{"engine_id":9,"catalog_paths":["manager"],"scan_depth":"basic","force":true}`, "en", "This scope is already being scanned. Wait for the current scan to finish."},
+	} {
+		response := post(submission.path, submission.body, submission.language)
+		var body map[string]interface{}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != http.StatusConflict || body["error_code"] != "scan_scope_active" || body["error"] != submission.message {
+			t.Fatalf("conflict response: %d %s", response.Code, response.Body.String())
+		}
+	}
+	var count int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("executions after conflict = %d, error = %v", count, err)
+	}
+	var current commonExecution.TaskExecution
+	if err := db.First(&current).Error; err != nil || current.Status != initial.Status || current.Progress != initial.Progress || current.ExecutionID != initial.ExecutionID {
+		t.Fatalf("original execution changed: %#v, %v", current, err)
+	}
+	if len(lock.owners) != 1 {
+		t.Fatalf("lock owners = %#v", lock.owners)
+	}
+	for _, owner := range lock.owners {
+		if owner != initial.ExecutionID {
+			t.Fatalf("lock owner = %s, want %s", owner, initial.ExecutionID)
+		}
+	}
+}
+
+// Intercept only SET NX at the Redis command boundary, without external services.
+type scanSubmissionLockHook struct{ owners map[string]string }
+
+func (h *scanSubmissionLockHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+func (h *scanSubmissionLockHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+func (h *scanSubmissionLockHook) ProcessHook(_ redis.ProcessHook) redis.ProcessHook {
+	return func(_ context.Context, cmd redis.Cmder) error {
+		args := cmd.Args()
+		if cmd.Name() != "set" || len(args) < 5 || fmt.Sprint(args[len(args)-1]) != "nx" {
+			return fmt.Errorf("unexpected Redis command: %v", args)
+		}
+		key, owner := fmt.Sprint(args[1]), fmt.Sprint(args[2])
+		_, exists := h.owners[key]
+		if !exists {
+			h.owners[key] = owner
+		}
+		cmd.(*redis.BoolCmd).SetVal(!exists)
+		return nil
+	}
+}
+
+func newResourceTreeRefreshHandlerTestRouter(t *testing.T, redisClients ...*redis.Client) (*gin.Engine, *gorm.DB, func()) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -254,13 +340,19 @@ func newResourceTreeRefreshHandlerTestRouter(t *testing.T) (*gin.Engine, func())
 	createResourceTreeHandlerNode(t, db, models.MetaNode{TenantID: tenantID, EngineID: engineID, ParentNodeID: &root.ID, NodeType: "bucket", Name: "manager", FullName: "manager", Depth: 1})
 
 	scanSvc := service.NewScanService(db, engineSvc)
-	executionSvc := service.NewScanExecutionService(db, scanSvc, engineSvc, nil)
+	var redisClient *redis.Client
+	if len(redisClients) > 0 {
+		redisClient = redisClients[0]
+	}
+	executionSvc := service.NewScanExecutionService(db, scanSvc, engineSvc, redisClient)
 	handler := NewHandler(engineSvc, scanSvc, nil, executionSvc, service.NewMetadataQueryService(db), nil)
 
 	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
 	installResourceTreeTenantContext(t, router, tenantID)
 	router.POST("/resource-tree/:engine_id/refresh", handler.RefreshResourceTreeNode)
-	return router, systemServer.Close
+	router.POST("/scan/run/manual", handler.CreateManualScanRun)
+	return router, db, systemServer.Close
 }
 
 func installResourceTreeTenantContext(t *testing.T, router *gin.Engine, tenantID uint) {

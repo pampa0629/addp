@@ -1372,6 +1372,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "409":
+          description: '同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active'
+          schema:
+            additionalProperties: true
+            type: object
         "500":
           description: 服务器内部错误 | Internal server error
           schema:
@@ -2002,6 +2007,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "409":
+          description: '同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active'
+          schema:
+            additionalProperties: true
+            type: object
         "500":
           description: 服务器内部错误 | Internal server error
           schema:
@@ -2183,6 +2193,11 @@ paths:
             type: object
         "401":
           description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: '同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active'
           schema:
             additionalProperties: true
             type: object

@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // Meta 模块消息 key 常量
 const (
+	MsgScanScopeActive           = "meta.scan.scope_active"
 	MsgCacheCleared              = "meta.cache.cleared"
 	MsgCacheClearedAll           = "meta.cache.cleared_all"
 	MsgCacheRefreshed            = "meta.cache.refreshed"

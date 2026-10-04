@@ -31,11 +31,15 @@ var (
 	// 扫描相关错误
 	ErrScanNotFound     = errors.New("scan task not found")
 	ErrScanAccessDenied = errors.New("scan access denied: tenant mismatch")
+	ErrScanScopeActive  = errors.New("scan scope already has an active execution")
 )
 
 // HTTPStatusCode 根据错误返回对应的 HTTP 状态码
 func HTTPStatusCode(err error) int {
 	switch {
+	case errors.Is(err, ErrScanScopeActive):
+		return http.StatusConflict
+
 	case errors.Is(err, ErrEngineNotFound),
 		errors.Is(err, ErrNodeNotFound),
 		errors.Is(err, ErrItemNotFound),

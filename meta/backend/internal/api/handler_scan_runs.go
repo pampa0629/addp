@@ -56,6 +56,7 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 // @Produce json
 // @Param request body models.ScanRequest true "扫描请求 | Scan request"
 // @Success 201 {object} map[string]interface{} "执行记录 | Execution"
+// @Failure 409 {object} map[string]interface{} "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
@@ -89,7 +90,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 
 	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.handleServiceError(c, err)
 		return
 	}
 

@@ -1,3 +1,6 @@
+[meta.scan.scope_active]
+other = "This scope is already being scanned. Wait for the current scan to finish."
+
 [meta.cache.cleared_all]
 other = "All resource caches cleared"
 

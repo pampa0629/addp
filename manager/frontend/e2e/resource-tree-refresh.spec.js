@@ -61,10 +61,52 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-async function installMockBackend(page) {
+test('shows a scan submission conflict without marking a scan as failed', async ({ page }) => {
+  const message = '该扫描范围正在执行中，请等待当前扫描完成'
+  const backend = await installMockBackend(page, { conflictLocator: ROOT_LOCATOR })
+  await page.goto('/data-explorer')
+  await treeNodeContent(page, TIDB_ENGINE.name).click()
+  await expect(treeNodeContent(page, 'business')).toBeVisible()
+  await treeNodeContent(page, TIDB_ENGINE.name).getByTitle('基础刷新：重新发现此节点下的新资源').click()
+  await expect(page.locator('.el-message--warning')).toHaveText(message)
+  await expect(page.locator('.scan-status')).toHaveCount(0)
+  await expect(page.getByText('后台扫描失败', { exact: true })).toHaveCount(0)
+  await expect.poll(() => backend.refreshRequests).toEqual([ROOT_LOCATOR])
+})
+
+test('preserves an active scan progress when another submission conflicts', async ({ page }) => {
+  const backend = await installMockBackend(page, { conflictLocator: BUSINESS_LOCATOR, executionStatus: 'running' })
+  await page.goto('/data-explorer')
+  await treeNodeContent(page, TIDB_ENGINE.name).click()
+  await expect(treeNodeContent(page, 'business')).toBeVisible()
+  await treeNodeContent(page, TIDB_ENGINE.name).getByTitle('基础刷新：重新发现此节点下的新资源').click()
+  await expect(page.locator('.scan-status__percent')).toHaveText('41%')
+  await treeNodeContent(page, 'business').getByTitle('基础刷新：重新发现此节点下的新资源').click()
+  await expect(page.locator('.el-message--warning')).toBeVisible()
+  await expect(page.locator('.scan-status__percent')).toHaveText('41%')
+  await expect(page.locator('.scan-status__title')).toHaveText('后台扫描进行中')
+  await expect(page.locator('.el-progress.is-exception')).toHaveCount(0)
+  backend.executionStatus = 'success'
+  await expect(page.locator('.scan-status__title')).toHaveText('扫描已完成，资源树已刷新')
+  await expect.poll(() => backend.refreshRequests).toEqual([ROOT_LOCATOR, BUSINESS_LOCATOR])
+})
+
+test('keeps real server errors visible with their returned explanation', async ({ page }) => {
+  await installMockBackend(page, { refreshError: { error: '扫描服务暂时不可用' } })
+  await page.goto('/data-explorer')
+  await treeNodeContent(page, TIDB_ENGINE.name).click()
+  await expect(treeNodeContent(page, 'business')).toBeVisible()
+  await treeNodeContent(page, TIDB_ENGINE.name).getByTitle('基础刷新：重新发现此节点下的新资源').click()
+  await expect(page.locator('.scan-status__title')).toHaveText('后台扫描失败')
+  await expect(page.locator('.scan-status__detail')).toHaveText('扫描服务暂时不可用')
+  await expect(page.locator('.el-message--error')).toContainText('扫描服务暂时不可用')
+})
+
+async function installMockBackend(page, options = {}) {
   const state = {
     refreshRequests: [],
-    childRequests: []
+    childRequests: [],
+    executionStatus: options.executionStatus || 'success'
   }
 
   await page.addInitScript(() => {
@@ -95,6 +137,13 @@ async function installMockBackend(page) {
     }
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/refresh` && request.method() === 'POST') {
       state.refreshRequests.push(url.searchParams.get('locator') || '')
+      if (options.refreshError) return fulfillJSON(route, options.refreshError, 500)
+      if (url.searchParams.get('locator') === options.conflictLocator) {
+        return fulfillJSON(route, {
+          error: '该扫描范围正在执行中，请等待当前扫描完成',
+          error_code: 'scan_scope_active'
+        }, 409)
+      }
       return fulfillJSON(route, {
         run: {
           execution_id: 'tidb-root-refresh-execution-1',
@@ -107,9 +156,9 @@ async function installMockBackend(page) {
     if (path === '/api/v1/meta/executions/tidb-root-refresh-execution-1') {
       return fulfillJSON(route, {
         execution_id: 'tidb-root-refresh-execution-1',
-        status: 'success',
-        progress: 100,
-        current_step: 'completed'
+        status: state.executionStatus,
+        progress: state.executionStatus === 'success' ? 100 : 41,
+        current_step: state.executionStatus === 'success' ? 'completed' : 'scanning'
       })
     }
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/node`) {

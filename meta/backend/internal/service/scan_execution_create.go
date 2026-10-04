@@ -9,6 +9,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scantask"
@@ -77,7 +78,7 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		if err != nil {
 			s.log.Warn("标记扫描范围运行失败，将继续创建执行", "error", err, "lock_key", lockKey)
 		} else if !acquired {
-			return nil, fmt.Errorf("该扫描范围正在执行中，请稍后再试")
+			return nil, metaErrors.ErrScanScopeActive
 		} else {
 			lockAcquired = true
 		}
