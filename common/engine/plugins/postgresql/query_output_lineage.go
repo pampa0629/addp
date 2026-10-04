@@ -70,8 +70,8 @@ type postgresOutputResolver struct {
 	catalog       postgresReadCatalog
 	sources       []plugin.QueryOutputSource
 	opaqueSources map[int]bool
-	// Only the final INSERT source can use positional columns; CTE/subquery
-	// scopes still require unambiguous names.
+	// INSERT sources and set-operation operands compose by position. Named
+	// CTE/subquery outputs still require unambiguous names.
 	positionalOutputs map[*pgquery.SelectStmt]bool
 }
 
@@ -136,11 +136,11 @@ func (r *postgresOutputResolver) selectColumns(stmt *pgquery.SelectStmt, inherit
 		if stmt.GetOp() != pgquery.SetOperation_SETOP_UNION {
 			return nil, fmt.Errorf("set output is unresolved")
 		}
-		left, err := r.selectColumns(stmt.GetLarg(), scope)
+		left, err := r.setOperandColumns(stmt.GetLarg(), scope)
 		if err != nil {
 			return nil, err
 		}
-		right, err := r.selectColumns(stmt.GetRarg(), scope)
+		right, err := r.setOperandColumns(stmt.GetRarg(), scope)
 		if err != nil {
 			return nil, err
 		}
@@ -204,6 +204,22 @@ func (r *postgresOutputResolver) selectColumns(stmt *pgquery.SelectStmt, inherit
 		columns = append(columns, postgresValueColumn{name: name, origins: origins})
 	}
 	return r.checkedColumns(stmt, columns)
+}
+
+func (r *postgresOutputResolver) setOperandColumns(stmt *pgquery.SelectStmt, scope map[string][]postgresValueColumn) ([]postgresValueColumn, error) {
+	if r.positionalOutputs == nil {
+		r.positionalOutputs = map[*pgquery.SelectStmt]bool{}
+	}
+	previous := r.positionalOutputs[stmt]
+	r.positionalOutputs[stmt] = true
+	defer func() {
+		if previous {
+			r.positionalOutputs[stmt] = true
+		} else {
+			delete(r.positionalOutputs, stmt)
+		}
+	}()
+	return r.selectColumns(stmt, scope)
 }
 
 func (r *postgresOutputResolver) checkedColumns(stmt *pgquery.SelectStmt, columns []postgresValueColumn) ([]postgresValueColumn, error) {

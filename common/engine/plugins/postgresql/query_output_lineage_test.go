@@ -97,6 +97,17 @@ const postgresDWDLineageQuery = `WITH member_rows AS (
  ORDER BY c.person_id,c.activity_id,CASE WHEN c.member_status='leader' THEN 0 ELSE 1 END
 ) SELECT person_id,activity_id,member_status,activity_date,activity_intensity,is_current_leader,person_nickname FROM result`
 
+const postgresPersonDimensionLineageQuery = `WITH candidates AS (
+ SELECT BTRIM(person_id) AS person_id, NULLIF(BTRIM(person_nickname), '') AS person_nickname, 1 AS priority FROM outdoor.persons
+ UNION ALL SELECT NULLIF(BTRIM(leader_person_id), ''), NULLIF(BTRIM(leader_nickname_snapshot), ''), 2 FROM outdoor.activities
+ UNION ALL SELECT NULLIF(BTRIM(person_id), ''), NULLIF(BTRIM(member_nickname_snapshot), ''), 3 FROM outdoor.members
+), result AS (
+ SELECT person_id, (ARRAY_AGG(person_nickname ORDER BY priority, person_nickname) FILTER (WHERE person_nickname IS NOT NULL))[1] AS person_nickname,
+ CASE WHEN BOOL_OR(priority = 1) THEN 'persons' ELSE 'activity_member_snapshot' END AS person_record_source
+ FROM candidates WHERE person_id IS NOT NULL GROUP BY person_id
+)
+SELECT person_id, person_nickname, person_record_source FROM result`
+
 func postgresDWDLineageFixture() ([]plugin.QueryOutputSource, *fakePostgresReadCatalog) {
 	sources := []plugin.QueryOutputSource{}
 	catalog := &fakePostgresReadCatalog{resolved: map[postgresRelationReference]postgresResolvedRelation{}}
@@ -160,6 +171,9 @@ func TestResolvePostgresSelectOutputLineageScopesAndUncertainty(t *testing.T) {
 		{name: "derived survives layers", query: `WITH x AS (SELECT upper(person_nickname) AS nick FROM outdoor.persons) SELECT nick AS name FROM x`, bindings: map[string]string{"persons.person_nickname->name": "derived"}},
 		{name: "generated survives layers", query: `WITH x AS (SELECT 'fixed' AS nick FROM outdoor.persons) SELECT nick AS name FROM x`, bindings: map[string]string{}},
 		{name: "union generated branch", query: `SELECT person_id AS person FROM outdoor.members UNION ALL SELECT 'anonymous'`, bindings: map[string]string{"members.person_id->person": "derived"}},
+		{name: "union ignores repeated right operand names", query: `WITH x AS (SELECT person_id AS person, member_status AS status FROM outdoor.members UNION ALL SELECT nullif(person_id,''), nullif(person_nickname,'') FROM outdoor.persons) SELECT * FROM x`, bindings: map[string]string{"members.person_id->person": "derived", "members.member_status->status": "derived", "persons.person_id->person": "derived", "persons.person_nickname->status": "derived"}},
+		{name: "union final duplicate names remain unresolved", query: `WITH x AS (SELECT person_id AS repeated, member_status AS repeated FROM outdoor.members UNION ALL SELECT person_id, person_nickname FROM outdoor.persons) SELECT * FROM x`, opaque: true},
+		{name: "array aggregate ignores filter and ordering fields", query: `SELECT (array_agg(m.person_id ORDER BY a.activity_id) FILTER (WHERE a.is_effective_activity))[1] AS person FROM outdoor.members m JOIN outdoor.activities a ON m.activity_id=a.activity_id`, bindings: map[string]string{"members.person_id->person": "derived"}},
 		{name: "aggregate FILTER is a row dependency", query: `SELECT count(m.person_id) FILTER (WHERE a.is_effective_activity) AS n FROM outdoor.members m JOIN outdoor.activities a ON m.activity_id=a.activity_id`, bindings: map[string]string{"members.person_id->n": "derived"}},
 		{name: "count star FILTER has no field values", query: `SELECT count(*) FILTER (WHERE is_effective_activity) AS n FROM outdoor.activities`, bindings: map[string]string{}},
 		{name: "ordered set aggregate", query: `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY activity_intensity) AS n FROM outdoor.activities`, opaque: true},

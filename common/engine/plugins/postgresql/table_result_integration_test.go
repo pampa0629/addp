@@ -10,6 +10,77 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
+func TestIntegrationPostgresTableResultPersonDimensionUnionAggregation(t *testing.T) {
+	db, pg, conn := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+	ctx := t.Context()
+	schema := fmt.Sprintf("table_result_person_%d", time.Now().UnixNano())
+	must := func(query string) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(`CREATE SCHEMA "` + schema + `"`)
+	defer db.Exec(`DROP SCHEMA "` + schema + `" CASCADE`)
+	prefix := `"` + schema + `".`
+	must("CREATE TABLE " + prefix + "persons (person_id text,person_nickname text)")
+	must("CREATE TABLE " + prefix + "activities (leader_person_id text,leader_nickname_snapshot text)")
+	must("CREATE TABLE " + prefix + "members (person_id text,member_nickname_snapshot text)")
+	must("CREATE TABLE " + prefix + "target (person_id text PRIMARY KEY,person_nickname text,person_record_source text)")
+	must("INSERT INTO " + prefix + "persons VALUES ('1','甲')")
+	must("INSERT INTO " + prefix + "activities VALUES ('1','活动快照'),('2','乙')")
+	must("INSERT INTO " + prefix + "members VALUES ('2','成员快照')")
+	query := strings.ReplaceAll(postgresPersonDimensionLineageQuery, "outdoor.", prefix)
+	plan, err := pg.PrepareTableResult(ctx, conn, plugin.TableResultRequest{Query: plugin.QueryRequest{EngineID: 91, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true}}, Target: plugin.TabularItemPath(91, plugin.EngineCatalogTermSchema, schema, "target"), WriteMode: "overwrite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := plan.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.FieldLineageComplete || result.RowsAffected != 2 || len(result.Sources) != 3 || len(result.FieldMappings) != 7 {
+		t.Fatalf("person dimension result = %+v", result)
+	}
+	got := map[string]string{}
+	for _, mapping := range result.FieldMappings {
+		if mapping.Transformation == "generated" {
+			if mapping.TargetField != "person_record_source" || mapping.SourceField != "" {
+				t.Fatalf("generated mapping = %+v", mapping)
+			}
+			continue
+		}
+		parts := plugin.EngineCatalogPathWithoutRoot(mapping.SourcePath).Segments
+		if len(parts) != 2 {
+			t.Fatalf("unexpected source path: %+v", mapping.SourcePath)
+		}
+		got[parts[1].Name+"."+mapping.SourceField+"->"+mapping.TargetField] = mapping.Transformation
+	}
+	for _, expected := range []string{"persons.person_id->person_id", "members.person_id->person_id", "activities.leader_person_id->person_id", "persons.person_nickname->person_nickname", "activities.leader_nickname_snapshot->person_nickname", "members.member_nickname_snapshot->person_nickname"} {
+		if got[expected] != "derived" {
+			t.Fatalf("missing derived mapping %s in %#v", expected, got)
+		}
+	}
+	rows, err := db.QueryContext(ctx, "SELECT person_id,person_nickname,person_record_source FROM "+prefix+"target ORDER BY person_id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for _, expected := range [][3]string{{"1", "甲", "persons"}, {"2", "乙", "activity_member_snapshot"}} {
+		var actual [3]string
+		if !rows.Next() {
+			t.Fatal("missing person dimension row")
+		}
+		if err := rows.Scan(&actual[0], &actual[1], &actual[2]); err != nil || actual != expected {
+			t.Fatalf("row = %v, want %v; error = %v", actual, expected, err)
+		}
+	}
+	if rows.Next() || rows.Err() != nil {
+		t.Fatalf("unexpected extra row or error: %v", rows.Err())
+	}
+}
+
 func TestIntegrationPostgresTableResultPositionParametersAndConservativeProof(t *testing.T) {
 	db, pg, conn := openPostgresPrepareIntegration(t, false)
 	defer db.Close()
