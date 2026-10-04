@@ -246,8 +246,8 @@ def source_access_plan(path):
 
 def grid_target(tmp_path, scene, api_server, case_name):
     multiband = case_name in fixture.MULTIBAND_CASES
-    joint = case_name == 'multiband-joint'
-    source_name = 'multiband-alpha.cog.tif' if joint else 'multiband.tif' if multiband else 'spatial.tif'
+    joint = case_name.endswith('-joint')
+    source_name = fixture.multiband_source_name(case_name) if multiband else 'spatial.tif'
     source = tmp_path / source_name
     source.write_bytes(LocalMinio.objects['target' if joint else 'source', 'raster-target' if joint else 'raster-source', source_name])
     original = source.read_bytes()
@@ -310,7 +310,7 @@ def multiband_targets(tmp_path, scene, api_server):
     for case in fixture.MULTIBAND_CASES:
         _, output = grid_target(tmp_path, scene, api_server, case)
         evidence.append(fixture.worker('verify-' + case, tmp_path / 'fixture.json'))
-    return evidence, output
+    return evidence, tmp_path / 'multiband-joint.cog.tif'
 
 
 def test_async_multiband_save_reload_joint_math_passes_independent_all_pixel_oracle(physical, tmp_path, monkeypatch):
@@ -349,4 +349,50 @@ def test_multiband_oracle_rejects_corrupt_independent_holes_alpha_joint_mask_and
     dataset = None
     LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     if fault == 'extra': LocalMinio.objects['target', 'raster-target', 'partial.tmp'] = b'partial'
-    with pytest.raises(fixture.FixtureError): fixture.worker('verify-multiband-joint', physical)
+    with pytest.raises(fixture.FixtureError): fixture.worker('verify-multiband-average-joint', physical)
+
+
+def test_async_average_multiband_saved_then_reloaded_math_passes_independent_area_oracle(physical, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    evidence, _ = multiband_targets(tmp_path, scene, api_server)
+    average, joint = evidence[2:]
+    assert average['band_valid_pixels'] == [16382, 16382]
+    assert average['partial_alpha_pixels'] == 0
+    assert joint['band_valid_pixels'] == [16381]
+    assert joint['preserved_sha256']['multiband-average.cog.tif'] == average['sha256']
+    dataset = gdal.Open(str(tmp_path / 'multiband-average.cog.tif'))
+    first = dataset.GetRasterBand(1).ReadRaster(5, 0, 2, 1, buf_type=gdal.GDT_Float64)
+    second = dataset.GetRasterBand(2).ReadRaster(5, 0, 2, 1, buf_type=gdal.GDT_Float64)
+    assert struct.unpack('<2d', first) == pytest.approx([88., 308/3], rel=1e-10, abs=1e-8)
+    assert struct.unpack('<2d', second) == pytest.approx([168., 608/3], rel=1e-10, abs=1e-8)
+    dataset = None
+    dataset = gdal.Open(str(tmp_path / 'multiband-average-joint.cog.tif'))
+    assert struct.unpack('<d', dataset.GetRasterBand(1).ReadRaster(5, 0, 1, 1, buf_type=gdal.GDT_Float64))[0] == pytest.approx(256.)
+
+
+@pytest.mark.parametrize('fault', ['nearest', 'early-math', 'band-hole', 'transparent', 'alpha', 'zero', 'nodata'])
+def test_average_oracle_rejects_wrong_kernel_early_joint_mask_and_saved_band_facts(physical, tmp_path, monkeypatch, fault):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    multiband_targets(tmp_path, scene, api_server)
+    joint = fault == 'early-math'
+    output = tmp_path / ('multiband-average-joint.cog.tif' if joint else 'multiband-average.cog.tif')
+    edited = tmp_path / 'corrupt-average.tif'
+    dataset = gdal.Translate(str(edited), str(output), format='GTiff')
+    band, column, value = 1, 3, 60.
+    if fault == 'early-math': column, value = 5, 258.
+    if fault == 'band-hole': band, column, value = 2, 5, 172.
+    if fault == 'transparent': column, value = 2, 1e6
+    if fault == 'alpha': band, column, value = 3, 3, 128.
+    if fault == 'zero': column, value = 4, float('nan')
+    if fault == 'nodata': dataset.GetRasterBand(2).DeleteNoDataValue()
+    else: dataset.GetRasterBand(band).WriteRaster(column, 0, 1, 1, struct.pack('<d', value), buf_type=gdal.GDT_Float64)
+    dataset = None
+    dataset = gdal.Translate(str(output), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+    dataset = None
+    LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    with pytest.raises(fixture.FixtureError, match='multiband|NoData'):
+        fixture.worker('verify-multiband-average-joint', physical)

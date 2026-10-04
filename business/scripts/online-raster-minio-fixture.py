@@ -29,7 +29,8 @@ SPATIAL_SOURCE_TRANSFORM = (0, ANGULAR_METRE, 0, SIZE * ANGULAR_METRE, 0, -ANGUL
 SPATIAL_TRANSFORM = (0, 1, 0, SIZE, 0, -1)
 SPATIAL_NODATA = {0, 127 * SIZE + 127}
 GRID_CASES = ('resample-size', 'resample-resolution', 'clip-polygon')
-MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint')
+MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'multiband-average-joint')
+SOURCE_FILES = (('source.tif', False), ('spatial.tif', True), ('multiband.tif', False), ('multiband-average.tif', False))
 ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
@@ -134,13 +135,62 @@ def multiband_pixels(band, *, source=False, joint=False):
                 yield 1e6 if cell == 2 else 0. if cell == 4 else float(band * (cell + 1))
 
 
+def average_source_pixel(band, row, column):
+    cell, sample = (row // 2) * (SIZE // 2) + column // 2, (row % 2) * 2 + column % 2
+    if band == 3:
+        return 0. if cell == 2 else 128. if cell in (0, 1, 3, 6) else 255.
+    if (cell == band - 1 or (cell == 5 and sample == (0 if band == 1 else 3))
+        or (cell == 6 and sample == (1 if band == 1 else 2))):
+        return None
+    return 1e6 if cell == 2 else 0. if cell == 4 else float(band * (cell * 16 + sample * 4))
+
+
+def area_average(band, row, column):
+    """Independent overlap-area average of finite, covered contributors."""
+    left, top, right, bottom = column * 2, row * 2, (column + 1) * 2, (row + 1) * 2
+    contributions = []
+    for y in range(top, bottom):
+        for x in range(left, right):
+            value = average_source_pixel(band, y, x)
+            area = max(0, min(x + 1, right) - max(x, left)) * max(0, min(y + 1, bottom) - max(y, top))
+            if value is not None and average_source_pixel(3, y, x) > 0 and area > 0:
+                contributions.append((value, area))
+    return (math.fsum(value * area for value, area in contributions) / math.fsum(area for _, area in contributions)
+            if contributions else None)
+
+
+def average_pixels(band, *, source=False, joint=False):
+    width = SIZE if source else SIZE // 2
+    for row in range(width):
+        for column in range(width):
+            if source:
+                yield average_source_pixel(band, row, column)
+            elif band == 3 or joint:
+                first, second = area_average(1, row, column), area_average(2, row, column)
+                if band == 3:
+                    # GDAL average generates coverage; source opacity is not copied.
+                    yield 255. if first is not None or second is not None else 0.
+                else:
+                    yield first + second if first is not None and second is not None else None
+            else:
+                yield area_average(band, row, column)
+
+
+def multiband_source_name(case_name):
+    if case_name not in MULTIBAND_CASES:
+        raise ValueError('unknown raster multiband case')
+    joint = case_name.endswith('-joint')
+    prefix = 'multiband-average' if 'average' in case_name else 'multiband-alpha' if joint else 'multiband'
+    return prefix + ('.cog.tif' if joint else '.tif')
+
+
 def multiband_expectation(case_name):
     if case_name not in MULTIBAND_CASES:
         raise ValueError('unknown raster multiband case')
     result = artifact_expectation()
-    result.update(width=128, height=128, band_count=3 if case_name == 'multiband-alpha' else 1,
+    result.update(width=128, height=128, band_count=1 if case_name.endswith('-joint') else 3,
                   transform=[110, .02, 0, 20.32, 0, -.02],
-                  valid_pixels=128 * 128 - (2 if case_name == 'multiband-alpha' else 3))
+                  valid_pixels=128 * 128 - (3 if case_name.endswith('-joint') else 2))
     return result
 
 
@@ -278,16 +328,17 @@ def worker(action, path):
             for role, client in clients.items():
                 client.make_bucket(config[role]['bucket'])
             fingerprints = {}
-            for name, spatial in [('source.tif', False), ('spatial.tif', True), ('multiband.tif', False)]:
+            for name, spatial in SOURCE_FILES:
                 path = root / name
-                multiband = name == 'multiband.tif'
+                multiband = name.startswith('multiband')
+                pixel_formula = average_pixels if name == 'multiband-average.tif' else multiband_pixels
                 band_count = 3 if multiband else 2
                 dataset = gdal.GetDriverByName('GTiff').Create(str(path), SIZE, SIZE, band_count, gdal.GDT_Float64)
                 dataset.SetGeoTransform(SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
                 crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
                 dataset.SetProjection(crs.ExportToWkt())
                 for index in range(1, band_count + 1):
-                    values = tuple(float('nan') if value is None else value for value in multiband_pixels(index, source=True)) if multiband else source_values(index, spatial)
+                    values = tuple(float('nan') if value is None else value for value in pixel_formula(index, source=True)) if multiband else source_values(index, spatial)
                     band = dataset.GetRasterBand(index)
                     band.SetNoDataValue(float('nan') if multiband else -9999)
                     if multiband and index == 3: band.SetColorInterpretation(gdal.GCI_AlphaBand)
@@ -300,17 +351,18 @@ def worker(action, path):
         if not fingerprint_path.is_file():
             raise FixtureError('source fingerprints are missing')
         fingerprints = json.loads(fingerprint_path.read_text())
-        for name, spatial in [('source.tif', False), ('spatial.tif', True), ('multiband.tif', False)]:
+        for name, spatial in SOURCE_FILES:
             path = root / name
             clients['source'].fget_object(config['source']['bucket'], name, str(path))
             if hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get(name):
                 raise FixtureError('workflow modified source bytes')
             source = gdal.Open(str(path))
-            multiband = name == 'multiband.tif'
+            multiband = name.startswith('multiband')
+            pixel_formula = average_pixels if name == 'multiband-average.tif' else multiband_pixels
             for index in range(1, 4 if multiband else 3):
                 band = source.GetRasterBand(index)
                 values = struct.unpack(f'<{SIZE * SIZE}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
-                expected_values = list(multiband_pixels(index, source=True)) if multiband else source_values(index, spatial)
+                expected_values = list(pixel_formula(index, source=True)) if multiband else source_values(index, spatial)
                 nodata = band.GetNoDataValue()
                 if (nodata is None or (not math.isnan(nodata) if multiband else nodata != -9999)
                     or any(not math.isnan(actual) if expected is None else actual != expected
@@ -346,7 +398,9 @@ def worker(action, path):
             count = expectation['width'] * expectation['height']
             values = struct.unpack(f'<{count}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
             if grid_case in MULTIBAND_CASES:
-                joint = grid_case == 'multiband-joint'
+                joint = grid_case.endswith('-joint')
+                average = 'average' in grid_case
+                pixel_formula = average_pixels if average else multiband_pixels
                 valid_counts = []
                 partial_alpha_pixels = 0
                 for index in range(1, dataset.RasterCount + 1):
@@ -355,8 +409,9 @@ def worker(action, path):
                     if current.DataType != gdal.GDT_Float64 or nodata is None or not math.isnan(nodata):
                         raise FixtureError('multiband target lost band dtype/NoData')
                     actual_values = struct.unpack(f'<{count}d', current.ReadRaster(buf_type=gdal.GDT_Float64))
-                    expected_values = list(multiband_pixels(index, joint=joint))
-                    if any(not math.isnan(actual) if expected is None else actual != expected
+                    expected_values = list(pixel_formula(index, joint=joint))
+                    if any(not math.isnan(actual) if expected is None else
+                           not math.isclose(actual, expected, rel_tol=1e-10, abs_tol=1e-8) if average and index != 3 else actual != expected
                            for actual, expected in zip(actual_values, expected_values)):
                         raise FixtureError('multiband target pixels/NoData/alpha differ from independent oracle')
                     if index == 3:

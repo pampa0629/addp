@@ -40,6 +40,22 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
         self.assertEqual(source[:256], source[256:512])
         for case in m.MULTIBAND_CASES: self.assertIn('verify-' + case, m.ACTIONS)
 
+    def test_area_average_oracle_excludes_each_bands_holes_and_differs_from_nearest_and_early_math(self):
+        first, second, alpha = [list(m.average_pixels(band)) for band in (1, 2, 3)]
+        self.assertEqual(first[:6], [None, 22., None, 54., 0., 88.])
+        self.assertEqual(second[:6], [12., None, None, 108., 0., 168.])
+        self.assertAlmostEqual(first[6], 308/3)
+        self.assertAlmostEqual(second[6], 608/3)
+        self.assertEqual(alpha[:7], [255., 255., 0., 255., 255., 255., 255.])
+        self.assertEqual(list(m.average_pixels(1, joint=True))[:6], [None, None, None, 162., 0., 256.])
+        self.assertEqual(m.average_source_pixel(1, 1, 7), 60.)
+        self.assertNotEqual(first[3], m.average_source_pixel(1, 1, 7))
+        # Intersecting source masks before math wrongly discards one contributor from each band.
+        early_math = (84+168+88+176)/2
+        self.assertEqual(early_math, 258.)
+        self.assertNotEqual(first[5]+second[5], early_math)
+        self.assertEqual([sum(value is not None for value in values) for values in (first, second)], [16382, 16382])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-raster-fixture-test-')
         self.addCleanup(self.temp.cleanup)

@@ -19,6 +19,7 @@ class Client:
                                       'capabilities': {'spatial': {'srid': 4326, 'extent': [110, 17.76, 112.56, 20.32]}}}}
         self.spatial_source = {'id': 11, 'item_type': 'object', 'full_name': 'raster-source/spatial.tif', 'fingerprint': 'spatial-fp'}
         self.multiband_source = {'id': 12, 'item_type': 'object', 'full_name': 'raster-source/multiband.tif', 'fingerprint': 'multiband-fp'}
+        self.average_source = {'id': 13, 'item_type': 'object', 'full_name': 'raster-source/multiband-average.tif', 'fingerprint': 'average-fp'}
         self.targets = {20: self.target}
         for item_id, overlap in [(21, 'first'), (22, 'last')]:
             item = copy.deepcopy(self.target)
@@ -69,7 +70,7 @@ class Client:
             result = {'execution_id': 'source-scan'}
         elif path.startswith('/api/v1/meta/executions/'):
             result = {'status': 'success'}
-        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source, self.multiband_source]
+        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source, self.multiband_source, self.average_source]
         elif path == '/api/v1/meta/engines/2/items': result = list(self.targets.values())
         elif path.startswith('/api/v1/meta/items/'): result = self.targets[int(path.rsplit('/', 1)[1])]
         elif method == 'POST' and path == '/api/v1/develop/executions':
@@ -113,6 +114,8 @@ class Client:
             source_id, identifier = (10, 'run-3') if target_id == 20 else (11, 'run-' + str(target_id - (17 if target_id <= 22 else 13)))
             if target_id == 26: source_id = 12
             if target_id == 27: source_id = 26
+            if target_id == 28: source_id = 13
+            if target_id == 29: source_id = 28
             result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
                       'status': 'active', 'relation_kind': self.relation_kind, 'evidence': {'execution_id': identifier}}]}
         else:
@@ -142,9 +145,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 preserved[prior + '.cog.tif'] = prior
             extra = {}
             if case_name in m.fixture.MULTIBAND_CASES:
-                joint = case_name == 'multiband-joint'
+                joint = case_name.endswith('-joint')
                 extra = {'band_valid_pixels': [16381] if joint else [16382, 16382],
-                    'invalid_pixels': 3 if joint else 2, 'partial_alpha_pixels': 0 if joint else 3}
+                    'invalid_pixels': 3 if joint else 2, 'partial_alpha_pixels': 3 if case_name == 'multiband-alpha' else 0}
             return {**extra, 'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
                     'cog_valid': True, 'has_overviews': case_name=='clip-polygon',
                     'source_unchanged': True, 'valid_pixels': m.fixture.computed_expectation(case_name)['valid_pixels']}
@@ -179,8 +182,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([case['case_name'] for case in report['grid_cases']], list(m.fixture.GRID_CASES))
         self.assertEqual([case['lineage']['target_item_id'] for case in report['grid_cases']], [23, 24, 25])
         self.assertEqual([case['case_name'] for case in report['multiband_cases']], list(m.fixture.MULTIBAND_CASES))
-        self.assertEqual([case['lineage']['source_item_id'] for case in report['multiband_cases']], [12, 26])
-        self.assertEqual([case['lineage']['target_item_id'] for case in report['multiband_cases']], [26, 27])
+        self.assertEqual([case['lineage']['source_item_id'] for case in report['multiband_cases']], [12, 26, 13, 28])
+        self.assertEqual([case['lineage']['target_item_id'] for case in report['multiband_cases']], [26, 27, 28, 29])
         self.assertEqual(report['multiband_cases'][1]['browser']['source_name'], 'multiband-alpha.cog.tif')
 
     def test_multiband_cases_reject_missing_per_band_counts_partial_alpha_and_reloaded_source(self):
@@ -209,6 +212,22 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 self.client.targets[26]['size_bytes'] = size
                 with self.assertRaises(m.SuiteError): self.run_scene()
                 self.assertNotIn('run-14', self.client.executions)
+
+    def test_average_workflows_keep_the_kernel_and_reload_the_exact_persisted_source(self):
+        report = self.run_scene()
+        submitted = {body['content']['workflow_definition']['tasks'][-1]['params']['target_name']:
+                     body['content']['workflow_definition']['tasks']
+                     for method, path, body in self.client.calls
+                     if method == 'POST' and path == '/api/v1/develop/executions'
+                     and body['content']['workflow_definition']['tasks'][-1]['id'] == 'save'}
+        average = submitted['multiband-average.cog.tif']
+        joint = submitted['multiband-average-joint.cog.tif']
+        self.assertEqual(average[1]['params']['resampling'], 'average')
+        self.assertEqual(average[1]['params']['size'], [128, 128])
+        self.assertEqual(joint[1]['params']['expression'], 'b1+b2')
+        self.assertEqual(joint[0]['params']['locator'], report['multiband_cases'][3]['browser']['source_locator'])
+        self.assertEqual(report['multiband_cases'][3]['browser']['source_name'], 'multiband-average.cog.tif')
+        self.assertEqual(report['multiband_cases'][2]['physical']['partial_alpha_pixels'], 0)
 
     def test_rejects_admin_extra_permissions_default_tenant_and_shared_engine_before_writes(self):
         for fault in ('admin', 'permission', 'tenant', 'engine'):

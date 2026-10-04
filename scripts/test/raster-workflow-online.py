@@ -138,12 +138,12 @@ def grid_workflow(source_locator, target_engine_id, case_name):
 def multiband_workflow(source_locator, target_engine_id, case_name):
     if case_name not in fixture.MULTIBAND_CASES:
         raise SuiteError('unknown raster multiband case')
-    joint = case_name == 'multiband-joint'
+    joint = case_name.endswith('-joint')
     return {'tasks': [
         {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
         {'id': 'grid', 'operator': 'raster_band_math' if joint else 'raster_resample', 'depends_on': ['load'],
          'params': {'input_raster': {'$ref': 'load', 'port': 'default'},
-                    **({'expression': 'b1+b2'} if joint else {'size': [128, 128], 'resampling': 'nearest'})}},
+                    **({'expression': 'b1+b2'} if joint else {'size': [128, 128], 'resampling': 'average' if 'average' in case_name else 'nearest'})}},
         {'id': 'save', 'operator': 'raster_save', 'depends_on': ['grid'], 'params': {
             'input_raster': {'$ref': 'grid', 'port': 'default'},
             'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
@@ -462,9 +462,9 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         case_source, case_locator = spatial_source, spatial_locator
         definition = grid_workflow
         if case_name in fixture.MULTIBAND_CASES:
-            joint = case_name == 'multiband-joint'
+            joint = case_name.endswith('-joint')
             case_source = support.find_fixture_item(client, target_engine if joint else source_engine,
-                'raster-target/multiband-alpha.cog.tif' if joint else 'raster-source/multiband.tif', 'multiband source')
+                ('raster-target/' if joint else 'raster-source/') + fixture.multiband_source_name(case_name), 'multiband source')
             case_locator = support.build_item_locator(target_engine if joint else source_engine, case_source)
             definition = multiband_workflow
         name = case_name + '.cog.tif'
@@ -481,7 +481,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if native.get('case_name') != case_name or native.get('preserved_sha256') != preserved:
             raise SuiteError('grid execution changed an existing artifact or omitted preservation evidence')
         if case_name in fixture.MULTIBAND_CASES:
-            counts = [16382, 16382] if case_name == 'multiband-alpha' else [16381]
+            counts = [16381] if case_name.endswith('-joint') else [16382, 16382]
             if (native.get('band_valid_pixels') != counts or native.get('invalid_pixels') != 16384 - counts[0]
                 or native.get('partial_alpha_pixels') != (3 if case_name == 'multiband-alpha' else 0)):
                 raise SuiteError('multiband independent validity/partial alpha evidence is incomplete')
