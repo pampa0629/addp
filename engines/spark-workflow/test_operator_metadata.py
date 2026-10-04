@@ -114,7 +114,11 @@ class OperatorMetadataTest(unittest.TestCase):
         )
 
     def test_spark_packages_include_runtime_and_jdbc_dependencies(self):
-        self.assertIn("sedona-spark-shaded-3.5_2.12:1.5.1", SPARK_MAVEN_PACKAGES)
+        self.assertIn("sedona-spark-shaded-3.5_2.12:1.5.3", SPARK_MAVEN_PACKAGES)
+        self.assertIn("geotools-wrapper:1.5.3-28.2", SPARK_MAVEN_PACKAGES)
+        requirements = Path(__file__).with_name("requirements.txt").read_text().splitlines()
+        self.assertEqual([line for line in requirements if line.startswith("apache-sedona==")],
+                         ["apache-sedona==1.5.3"])
         self.assertIn("org.postgresql:postgresql:42.7.4", SPARK_MAVEN_PACKAGES)
         self.assertIn("com.mysql:mysql-connector-j:8.4.0", SPARK_MAVEN_PACKAGES)
 

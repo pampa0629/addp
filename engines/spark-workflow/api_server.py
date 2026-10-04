@@ -140,7 +140,7 @@ def health_check():
             "operators_count": 35,
             "dependencies": {
                 "pyspark": "3.5.0",
-                "sedona": "1.5.1"
+                "sedona": "1.5.3"
             }
         }
     """

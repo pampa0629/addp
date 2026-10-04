@@ -1,7 +1,7 @@
 # Spark Engine Dependencies
 # 核心依赖
 pyspark==3.5.0
-apache-sedona==1.5.1
+apache-sedona==1.5.3
 
 # Web框架
 Flask==3.0.0

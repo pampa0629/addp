@@ -71,3 +71,9 @@ Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三
 HDFS Hosted suite 的实现及登记已补齐。本地 `make test-platform`、`make test-hdfs-online-runner`（17 项场景/夹具测试及 System IAM 夹具）、`make test-common-hdfs-unit`、`make test-spark-workflow`（34 项）与 `make test-business-config` 均通过。工作区 `make test-changed` 因多个 Owner 的 PostgreSQL DSN 和 MySQL/OceanBase 环境缺失停在预检，未执行后续门禁；不能计为通过。Hosted 前两轮在 Spark 空用户名连接探测处失败，修复后仍须完整复跑，不声明 T4 已通过。
 
 Spark Thrift 字段修复的最小验证为 `make test-go` 和 `make test-hdfs-online-runner`：前者先复现三个入口发送旧字段，再验证修复后的真实 SASL 载荷及全部 Go 模块；后者确认夹具显式设置规范用户名及 18 项场景/生命周期测试、System IAM 夹具。两项已通过。现有 Go 模块自动发现覆盖新增协议测试，原 HDFS T4 入口用于验证完整修复，不新增认证路线或 CI 旁路。
+
+第三轮 Hosted [37212514934](https://github.com/pampa0629/addp/actions/runs/37212514934) 的 HDFS 与 Spark 正式登记均成功，Meta 扫描与四文件 API 预览通过；正式工作流因 Sedona 1.5.1 的 `cdm-core:5.4.2` 传递依赖无法从 Maven Central 解析而失败，未开始分布式执行或浏览器验收。该上游缺陷由 [Sedona 官方说明](https://sedona.apache.org/1.5.3/setup/maven-coordinates/) 确认，统一升级同系列 Python/JAR 至 1.5.3、GeoTools wrapper 至 1.5.3-28.2；镜像验证使用实际生产连接器加载依赖并执行空间函数。最小门禁为 `make test-spark-workflow`、标准 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"` 和原 Hosted T4；现有自动发现覆盖相关路径，不增加额外 Maven 仓库或替代会话路线。
+
+Sedona 修复的本地 `make test-spark-workflow`（34 项）和 ARM64 标准镜像构建/验证均通过；镜像在空 Ivy 缓存下从 Maven Central 解析 6 个依赖制品，经生产连接器建立 Java 11 会话，验证 3 行计数、聚合结果 3 及 `ST_AsText(ST_Point(1, 2))`。该验证属于镜像启动门禁，不能替代 Standalone Worker 的正式 HDFS T4。前置 Thrift 修复提交 `fafc70fc1` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37212498578) 和 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37212498612) 已全部通过。
+
+Sedona 修复后的 `make test-platform` 亦通过，包含 Online 分发/隔离生命周期、引擎启动与 CI 登记一致性和 Swagger 覆盖；完整 Hosted T4 仍须复跑。

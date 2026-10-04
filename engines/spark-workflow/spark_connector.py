@@ -12,8 +12,8 @@ from system_client import get_engine
 logger = logging.getLogger(__name__)
 
 SPARK_MAVEN_PACKAGES = ",".join([
-    "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.1",
-    "org.datasyslab:geotools-wrapper:1.5.1-28.2",
+    "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.3",
+    "org.datasyslab:geotools-wrapper:1.5.3-28.2",
     "org.postgresql:postgresql:42.7.4",
     "com.mysql:mysql-connector-j:8.4.0",
 ])

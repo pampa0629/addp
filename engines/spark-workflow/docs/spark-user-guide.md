@@ -660,7 +660,7 @@ SET spark.sql.shuffle.partitions=32;
 **解决方法**:
 检查 `business/docker-compose.yml` 中 Spark Master 启动命令是否包含:
 ```yaml
---packages org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.1,org.datasyslab:geotools-wrapper:1.5.1-28.2
+--packages org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.3,org.datasyslab:geotools-wrapper:1.5.3-28.2
 --conf spark.sql.extensions=org.apache.sedona.sql.SedonaSqlExtensions
 ```
 

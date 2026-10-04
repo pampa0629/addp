@@ -353,7 +353,7 @@ pip install pyspark==3.5.0
 
 ```python
 spark = SparkSession.builder \
-    .config("spark.jars.packages", "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.1,org.datasyslab:geotools-wrapper:1.5.1-28.2,org.postgresql:postgresql:42.7.4,com.mysql:mysql-connector-j:8.4.0") \
+    .config("spark.jars.packages", "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.3,org.datasyslab:geotools-wrapper:1.5.3-28.2,org.postgresql:postgresql:42.7.4,com.mysql:mysql-connector-j:8.4.0") \
     .config("spark.sql.extensions", "org.apache.sedona.sql.SedonaSqlExtensions") \
     .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
     .config("spark.kryo.registrator", "org.apache.sedona.core.serde.SedonaKryoRegistrator") \

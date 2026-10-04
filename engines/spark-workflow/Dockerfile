@@ -52,16 +52,25 @@ RUN pip install --no-cache-dir --no-build-isolation --no-deps /common-python \
 COPY engines/spark-workflow/*.py .
 COPY engines/spark-workflow/operators ./operators
 
-# 构建时实际验证共享依赖、API 和 JVM/PySpark，不启动开发服务。
+# 构建时通过生产连接器实际加载 Sedona/JDBC 依赖并计算，不启动开发服务。
 RUN python -m pip check \
     && python -c "from api_server import app; assert app.test_client().get('/health').status_code == 200" \
     && python - <<'PY'
-from pyspark.sql import SparkSession
+import os
+import spark_connector
 
-spark = SparkSession.builder.master("local[1]").appName("ADDP-Image-Verification").getOrCreate()
+# Only System resource discovery is replaced by a build fixture. Session
+# construction, Maven dependencies and function registration use production code.
+os.environ["SPARK_MODE"] = "local"
+spark_connector.get_engine = lambda engine_id, tenant_id: {
+    "connection_info": {"host": "127.0.0.1", "port": 10000}
+}
+spark = spark_connector.SparkConnector().get_or_create_session(engine_id=1, tenant_id=1)
 try:
     assert spark.sparkContext._jvm.java.lang.System.getProperty("java.specification.version") == "11"
     assert spark.range(3).count() == 3
+    assert spark.range(3).selectExpr("sum(id) AS total").first().total == 3
+    assert spark.sql("SELECT ST_AsText(ST_Point(1, 2)) AS geometry").first().geometry == "POINT (1 2)"
 finally:
     spark.stop()
 PY
