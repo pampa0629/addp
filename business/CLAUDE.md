@@ -77,6 +77,6 @@ bash scripts/stop.sh
 - `docs/spec/addp配置介绍.md`
 - `docs/spec/addp端口分配.md`
 
-Redis T4 使用 `scripts/test/online-hosted-redis-gate.sh`，物理夹具由 `business/scripts/online-redis-consumer-fixture.sh` 唯一拥有。仅接受 GitHub Hosted Linux x86_64，复用 Business 官方镜像、ACL 启动和九个样例初始化，随机回环端口及密码、tmpfs 数据，不连接已有 Redis。Business 仅输出 secret 分区内的 owner-only descriptor；System 使用独立身份经正式 API 登记，引擎注册凭据在验收前移除。首次真实 CI 运行前不计为 T4 通过。
+Redis T4 使用 `scripts/test/online-hosted-redis-gate.sh`，物理夹具由 `business/scripts/online-redis-consumer-fixture.sh` 唯一拥有。仅接受 GitHub Hosted Linux x86_64，复用 Business 官方镜像、ACL 启动和九个样例初始化，随机回环端口及密码、tmpfs 数据，不连接已有 Redis。Business 仅输出 secret 分区内的 owner-only descriptor；System 使用独立身份经正式 API 登记，引擎注册凭据在验收前移除。Hosted T4 已通过；对应提交、运行和归档范围见 `business/README.md` 的 Business Redis 节，后续消费链路变更需重新验收。入口保持人工触发，不登记 schedule。
 
-Elasticsearch T4 的物理夹具由 `scripts/online-elasticsearch-consumer-fixture.sh` 唯一拥有，使用 Hosted Linux x86_64、固定官方镜像、随机回环端口/密码及 tmpfs，复用 `elasticsearch/init.py`。Business 只输出 owner-only Engine descriptor；System owner 负责临时身份，正式 Engine API 负责登记。成功、失败和中断均删除本轮容器并验证零残留，不访问已有 Business 实例。
+Elasticsearch T4 的物理夹具由 `scripts/online-elasticsearch-consumer-fixture.sh` 唯一拥有，使用 Hosted Linux x86_64、固定官方镜像、随机回环端口/密码及 tmpfs，复用 `elasticsearch/init.py`。Business 只输出 owner-only Engine descriptor；System owner 负责临时身份，正式 Engine API 负责登记。成功、失败和中断均删除本轮容器并验证零残留，不访问已有 Business 实例。Hosted T4 已通过；对应提交、运行和归档范围见 `business/README.md` 的 Elasticsearch 节，后续消费链路变更需重新验收。入口保持人工触发，不登记 schedule。

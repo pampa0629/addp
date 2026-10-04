@@ -458,7 +458,9 @@ A: 可以！所有脚本都是幂等的。
 
 验证入口：`make test-business-config`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`。后者创建独占容器、认证用户及样例索引，验证 Common、Manager、Meta 后删除容器、卷和网络，不使用现有 Business 实例。
 
-正式 T4 使用 `make test-online ONLINE_SUITE=elasticsearch-consumer-flow`，由 `online-hosted-elasticsearch-gate.sh` 在 Hosted Ubuntu 临时部署运行；物理夹具复用官方镜像、只读账号与 25 条文档/空索引初始化。System 独立身份经正式 API 登记引擎，普通用户从 Console 完成 Meta 重扫、Manager 预览和 Develop DSL 查询，归档同一身份的报告及截图。所有退出路径销毁临时业务容器、Infra 和凭据，核对零残留；首次真实通过前仅人工触发，不登记 schedule。
+正式 T4 使用 `make test-online ONLINE_SUITE=elasticsearch-consumer-flow`，由 `online-hosted-elasticsearch-gate.sh` 在 Hosted Ubuntu 临时部署运行；物理夹具复用官方镜像、只读账号与 25 条文档/空索引初始化。System 独立身份经正式 API 登记引擎，普通用户从 Console 完成 Meta 重扫、Manager 预览和 Develop DSL 查询，归档同一身份的报告及截图。所有退出路径销毁临时业务容器、Infra 和凭据，核对零残留；仅人工触发，不登记 schedule。
+
+Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169299286](https://github.com/pampa0629/addp/actions/runs/37169299286)，提交 `7398d24d743b96316a338dce4a4b39675b979d7b`。归档报告确认同一租户、普通用户和引擎完成 Meta 页面重扫、Manager 25 条文档/空索引预览、Develop 25 条 DSL 查询结果，并保留四张 Console 截图。该记录只证明对应提交的消费链路，不替代后续变更的重新验收。
 
 ## Business Redis
 
@@ -478,4 +480,6 @@ Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hos
 
 Transfer SQL ETL 与字段血缘验收 `transfer-relational-sql-etl` 唯一使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-transfer-gate.sh` 编排。Business owner `scripts/online-transfer-relational-sql-etl-fixture.sh` 从零创建独占 tmpfs PostgreSQL 容器、5 行固定源表及只读取源表/创建目标表的数据库用户，输出 owner-only Engine 描述；System 负责临时身份和正式 Engine API 注册。业务断言沿用 `make test-online`，owner 核对 SQL 投影过滤、原生 replace/两跳结果和 decimal 精度，退出删除容器并验证零残留，不接管本地 `business-postgres` 或读取 Business `.env`。
 
-Redis 正式 Online 入口为 `make test-online ONLINE_SUITE=redis-consumer-flow`，由 `online-t4-gates.yml` 人工触发 `redis-hosted-t4` Job，经 `scripts/test/online-hosted-redis-gate.sh` 准备一次性 Ubuntu x86_64 部署。物理夹具复用上面的固定镜像、ACL 与九个样例，使用随机回环端口、随机密码和 tmpfs；System helper 建立非默认 Tenant、最小权限普通用户与独立引擎登记身份。断言覆盖 System 实时目录/事实、Meta unknown key 身份及重扫稳定性、Manager 九个原生预览、大整数/二进制/TTL，并实际登录 Console 从 Meta 页面重扫及打开 Manager 预览，归档截图和同一身份的报告。成功、失败及中断都销毁当次业务容器、平台 Infra 和凭据目录；不接管个人开发环境。脚本确定性验证纳入 `make test-online-runner`，实际 Hosted 首跑尚待执行，不登记 schedule。
+Redis 正式 Online 入口为 `make test-online ONLINE_SUITE=redis-consumer-flow`，由 `online-t4-gates.yml` 人工触发 `redis-hosted-t4` Job，经 `scripts/test/online-hosted-redis-gate.sh` 准备一次性 Ubuntu x86_64 部署。物理夹具复用上面的固定镜像、ACL 与九个样例，使用随机回环端口、随机密码和 tmpfs；System helper 建立非默认 Tenant、最小权限普通用户与独立引擎登记身份。断言覆盖 System 实时目录/事实、Meta unknown key 身份及重扫稳定性、Manager 九个原生预览、大整数/二进制/TTL，并实际登录 Console 从 Meta 页面重扫及打开 Manager 预览，归档截图和同一身份的报告。成功、失败及中断都销毁当次业务容器、平台 Infra 和凭据目录；不接管个人开发环境。脚本确定性验证纳入 `make test-online-runner`，仅人工触发，不登记 schedule。
+
+Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169297656](https://github.com/pampa0629/addp/actions/runs/37169297656)，提交 `7398d24d743b96316a338dce4a4b39675b979d7b`。归档报告确认同一租户、普通用户和引擎完成 Meta 页面重扫及九个原生预览，并保留重扫和各样例共十张 Console 截图。该记录只证明对应提交的消费链路，不替代后续变更的重新验收。
