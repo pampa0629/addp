@@ -185,7 +185,24 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 	if p.Format() == format.FormatTIFF {
 		return p.describeTIFFMedia(ctx, input)
 	}
-	cfg, formatName, data, err := decodeImageConfig(input, p.Format() == format.FormatTIFF)
+	var signature [2]byte
+	if _, err := io.ReadFull(input, signature[:]); err != nil {
+		return nil, fmt.Errorf("failed to decode image: %w", err)
+	}
+	var limited *io.LimitedReader
+	var reader io.Reader = input
+	isJPEG := signature == [2]byte{0xff, 0xd8}
+	if isJPEG {
+		limited = &io.LimitedReader{R: input, N: jpegMetadataReadLimit - 2}
+		reader = limited
+	}
+	reader = io.MultiReader(bytes.NewReader(signature[:]), reader)
+	var header bytes.Buffer
+	decoder := reader
+	if isJPEG {
+		decoder = io.TeeReader(reader, &header)
+	}
+	cfg, formatName, err := image.DecodeConfig(decoder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %w", err)
 	}
@@ -201,10 +218,11 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 		ColorSpace: inferColorModel(cfg),
 	}
 	result := &format.MediaDescribeResult{Media: info}
-	if len(data) > 0 {
-		metadata := newTIFFMetadata(data, nil)
-		result.Spatial = extractGeoTIFFSpatial(metadata, cfg.Width, cfg.Height)
-		result.FormatInfo = extractTIFFFormatInfo(metadata, result.Spatial)
+	if formatName == "jpeg" {
+		result.FormatInfo, err = describeJPEGExif(ctx, io.MultiReader(bytes.NewReader(header.Bytes()), reader), limited)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }
@@ -369,21 +387,6 @@ func (m tiffMetadata) byteOrder() (binary.ByteOrder, bool) {
 	default:
 		return nil, false
 	}
-}
-
-func decodeImageConfig(input io.Reader, keepData bool) (image.Config, string, []byte, error) {
-	reader := input
-	var data []byte
-	if keepData {
-		var err error
-		data, err = io.ReadAll(input)
-		if err != nil {
-			return image.Config{}, "", nil, err
-		}
-		reader = bytes.NewReader(data)
-	}
-	cfg, formatName, err := image.DecodeConfig(reader)
-	return cfg, formatName, data, err
 }
 
 func imageMIMEType(formatName string) string {

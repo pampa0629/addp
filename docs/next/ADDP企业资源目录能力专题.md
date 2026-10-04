@@ -3034,3 +3034,69 @@ Swagger 生成首次因并行 Go 输入变化被缓存校验拒绝，随后标�
 验证分层预先安排：System 当前裁决与 Deny 命令归现有 Go T1／System IAM PostgreSQL T2；Provider 范围证明复用既有 Common PostgreSQL T2；Manager／Develop 消费归各 owner 标准门禁；真实 OAuth 与跨模块 C／D 对照在现有 Online 体系扩展，不新建旁路入口。只有真实源内容读取及拒绝断言完成，才能宣称执行侧权限闭环；本节调查不计为上述门禁通过。
 
 本轮仅更新既有专题，不变更运行代码、API 或 CI 登记。`git diff --check -- docs/next/ADDP企业资源目录能力专题.md` 通过；默认 `make test-changed` 识别共享工作区的 19 个改动文件和 25 个受影响 owner，因各 PostgreSQL／MySQL／OceanBase T2 连接条件未注入，在执行测试前退出码 2，日志 `/tmp/addp-catalog-execution-plan-changed-20261004.log`。这是全工作区预检未通过，不是已执行测试失败，更不计为通过；并行改动的验证仍归其 owner，本轮未修改它们。
+
+### 26.63 Explicit Deny 操作者资格确认与期限待定（2026-10-04）
+
+用户已同意 §26.62 的操作者资格方案。该节的“待确认”保留为当时调查记录，以本节及《addp授权上下文规范》5.5.3 的确认结果为准。
+
+- [x] 建立和解除源数据 Explicit Deny 分别要求独立功能 Permission，并与当前有效的目标引擎管理委派取交集。操作者是当前 Tenant 的有效 User；账号、成员关系、Token、授权版本、Permission 及委派均须有效，不默认授予内置管理员，也不由 Catalog 责任或编目维护权推导。
+- [x] 规范及术语表明确：System 引擎访问控制领域唯一维护规则；对个人的精确 Deny 压过相同目标和动作的个人／项目组 Allow；解除只移除该份禁止依据，仍须核验其他 Deny 及有效 Grant，不自动恢复访问。
+- [x] 扩充现有 `approval_requirement_service_test.go` 的功能资格测试：已发布的初始化、读取及指定 Grant 撤销 Permission 逐项互不替代；角色分配在开始时刻生效、截止时刻失效，等待之后再次检查不能沿用旧 Allow。该测试只证明现有资格原语，不冒充尚未发布的 Deny 接口测试。
+- [ ] Deny 期限尚待用户确认。建议同样显式选择“指定到期时间”或“长期有效，直至解除”；漏填不默认永久，到期后仅移除该拒绝的时间效力，仍须满足其余规则。此项不是五分钟自动办理窗口，也不据此放宽引擎管理委派期限。期限未确认前，不实施依赖这一决定的表结构、命令或到期处理。
+- [ ] Deny Permission、向前迁移、公开命令及执行消费者尚未发布，不预先激活无人消费的 Permission。下一实现阶段必须将真实命令、独立授权清单、审计／幂等／锁等待核验、PostgreSQL 不可变保护及标准门禁同次交付；之后才接入源读取裁决。
+
+本轮仅修改上述两个稳定概念文档、既有专题及 System 资格单元测试，不修改生产访问逻辑、开发数据库或源端，不启停服务。新用例由既有 `make test-go` 和 System 模块 Go T1 自动发现，现有 Platform CI 全仓 Go Job 已覆盖；没有新增 API、依赖、测试入口或 CI 路径，无须生成 Swagger 或修改 workflow。
+
+验证：`make test-go` 整条命令退出码 0，全部已跟踪 Go 模块 T1 通过，包含本轮新增的 System 资格用例；日志 `/tmp/addp-deny-qualification-go-20261004.log`。本轮四个文件的 `git diff --check` 通过。默认 `make test-changed` 退出码 2：执行时共享工作区共 35 个改动文件、受影响 owner 为 Agent／Common／Security／System，因缺少显式 disposable PostgreSQL、MySQL 和 OceanBase 连接条件，在执行任何门禁前拒绝；日志 `/tmp/addp-deny-qualification-changed-20261004.log`。本轮不接管其他会话的代码或环境，不将该预检失败计为测试通过。本轮未改动数据库实现，不运行 PostgreSQL T2；未来 Deny 持久化及事务测试仍必须由既有 System IAM T2 验证，当前 Go T1 不替代它。
+
+下一优先项：确认 Deny 期限后先交付创建／解除命令，再以同一 System 规则贯通 PostgreSQL 只读当前裁决与 Manager／Develop 完整读取集合检查。真实 OAuth 自动签发 T4 及实际 C／D 读取对照仍须按既有专用 Online 入口取得证据，不能把签发历史或本轮资格单测当作完整源数据权限生效。
+
+### 26.64 Explicit Deny 显式期限与建立命令（2026-10-04）
+
+用户已确认期限方案：每次显式选择 `at_time` 或 `until_revoked`，遗漏模式不默认永久。§26.63 的“期限待定”是历史记录，以本节与稳定授权规范为准。另有一项独立决策待确认：规则自然到期后是否沿用 Grant 的“首次解除返回已到期，不追加解除事实；到期前已经解除的同参数重试仍可找回原历史”。未确认前仅交付建立命令，不登记或开放无人消费的解除 Permission。
+
+- [x] System 唯一建立入口 `POST /api/v1/system/engines/{id}/access_denies`，当前 Tenant User 的独立 `system.engine_access_deny.create` 与有效引擎管理委派取交集。其他编目、业务责任、管理委派或 Grant 撤销权限不能替代；Tenant 通过既有自定义角色和分配显式安排人员，没有默认管理员赋权。
+- [x] 首版只接受精确叶子、`read` 和有效 User／Department／Project Group。长期有效明确不提供日期，指定到期须为有限未来时间；不开放全租户、递归目录、写入或 DDL，不连接源端、不依赖 Catalog 在线，停用引擎仍能建立限制。
+- [x] 000185 新增不可变 `engine_access_denies` 和唯一有消费者的创建 Permission，不改写已执行 migration、既有角色分配或授权版本。建立时刻由数据库墙钟产生，数据库拒绝回填时间绕过期限及 UPDATE／DELETE／TRUNCATE。引擎、建立主体与成员引用有外键及相应索引。
+- [x] 复用唯一的当前引擎管理资格路径及普通只读共享的路径／期限／主体契约。完整 Principal 集合去重升序锁定；IAM、引擎及委派之后才取命令编号和精确目标锁。建立事实与高风险审计同事务，等待后和审计后提交前再检查资格、接收主体及期限。
+- [x] 同编号、同原操作者／成员关系和同规范化参数返回原事实，不重复审计或延长期限。接收主体后来失效、原规则到期不抹掉历史；当前操作者资格仍须有效。异参冲突，不跨 Tenant／Engine 暴露历史。
+- [x] Manifest、生成常量、双语 Permission／错误、Swagger、System 模块说明、数据规范和术语表同次更新。新单元／HTTP 用例由现有 Go T1 发现；生产服务的 PostgreSQL 用例扩充既有首次受理夹具，迁移纳入既有 `engine-access-coordination` 及其 runner 契约测试，不新建测试库或旁路入口。
+- [ ] 解除命令、当前 Allow／Deny 裁决及 Manager／Develop 完整读取集合消费尚未交付。创建成功只证明规则事实及审计已保存，不证明实际内容读取已经被拦截；没有新增规则管理前端页面或宣称 Online T4 已验收。
+
+本轮不启停 ADDP 开发服务、不接管其他会话的代码、不修改开发数据库或登记的业务源。PostgreSQL 验证使用已核对的实际 Infra 映射 25432 和允许的 `addp_iam_test`，由标准入口重建、清理测试 Schema，不创建其他 database。
+
+已取得验证：
+
+- `make test-authorization` 和严格 `bash scripts/swagger/check-route-coverage.sh system` 退出码 0，193 个 System 公开路由方法覆盖一致；日志 `/tmp/addp-source-deny-authorization-20261004.log`、`/tmp/addp-source-deny-route-20261004.log`。
+- `make test-system-frontend test-system-iam-runner` 退出码 0：91 个单元用例、40 个浏览器用例、构建及 6 个 runner 用例；日志 `/tmp/addp-source-deny-frontend-runner-20261004.log`。
+- `bash scripts/test/system-iam-postgres-gate.sh --package engineaccess` 最终复验退出码 0、无 Skip，32.637 秒；覆盖独立资格、停用引擎、组织主体、并发幂等、审计失败／到期回滚、历史重试、不可变保护及后加的精确目标锁等待到期用例；最终日志 `/tmp/addp-source-deny-engineaccess-final-20261004.log`，初次日志 `/tmp/addp-source-deny-pg-20261004.log` 不作为后加用例的证据。
+- `bash scripts/test/system-iam-postgres-gate.sh --package migration --test engine-access-coordination` 退出码 0、无 Skip，含 000185 前向升级、重复运行及不自动赋权断言；日志 `/tmp/addp-source-deny-migration-20261004.log`。
+- 全仓 `make test-go` 初次修复后退出码 0；后加资格矩阵及并行变化后的复验曾被范围外的 Meta vet 错误阻断，失败日志 `/tmp/addp-source-deny-go-current-20261004.log`。未接管该并行改动；其后工作区更新，最新一次标准整仓 Go T1 退出码 0，日志 `/tmp/addp-source-deny-go-latest-20261004.log`。Go T1 不替代精确目标锁等待的 PostgreSQL 验收。
+- 默认 `make test-changed` 退出码 2，在执行前拒绝共享工作区缺少的各 owner PostgreSQL、MySQL／OceanBase 等 T2 配置；日志 `/tmp/addp-source-deny-changed-20261004.log`。
+- 完整 System `make test-module MODULE=system` 的平台 T0、完整 Go T1、前端及 IAM／OAuth／HTTP PostgreSQL 包通过，但迁移包因本轮新增创建 Permission 后 `TestRunnerAgainstPostgres` 仍断言旧数量 148 而失败，完整模块命令退出码 2；日志 `/tmp/addp-source-deny-system-module-20261004.log`。已将该精确数量断言更新为 149，000185 SQL 本身及其升级用例未失败。修正后通过标准 `system-iam-postgres-gate.sh --package migration` 复验完整迁移包，退出码 0、无 Skip，170.759 秒，初始化断言及 000185 均通过；日志 `/tmp/addp-source-deny-migration-final-20261004.log`。engineaccess 包及原先未执行的运行日志门禁分别复验通过；复用已通过层级，但不把初次完整模块失败改写为整条命令退出码 0。
+- `make test-system-runtime-log` 首次在执行期间遇到并行会话的 `api_consumer_service_test.go` 临时未使用变量编译错误，退出码 2，日志 `/tmp/addp-source-deny-runtime-log-20261004.log`；未修改该并行实现。核对后该变量调用已由工作区更新补齐，按同一标准入口复验退出码 0，日志 `/tmp/addp-source-deny-runtime-log-final-20261004.log`。覆盖真实采集授权、源身份隔离、持久化、重启／失联恢复、SIGKILL、容量及 Compactor 物理保留删除；确认本次一次性 Compose 的容器、网络、卷归零，源目录清理完成。它不启停用户的 ADDP 开发服务，也不替代源数据拒绝判定验收。
+
+既有 `platform-ci.yml` 全仓 Go 和 `release-and-t2-gates.yml` System IAM PostgreSQL Job 已自动覆盖本轮文件；无需另建 workflow。未执行或失败的整仓／全消费者门禁、真实 OAuth Online T4 和实际 C／D 内容读取对照仍必须单独报告，不能以建立事实或受控夹具冒充执行侧权限闭环。
+
+下一优先项：确认自然到期后的首次解除语义，补齐独立解除命令与不可变解除事实，再以同一 System 权威规则贯通 PostgreSQL 只读当前裁决。
+
+### 26.65 Explicit Deny 解除边界确认与命令（2026-10-04）
+
+用户已确认自然到期边界：首次解除已到期规则返回“拒绝规则已到期，无须解除”，不写解除事实或成功审计；到期前已成功解除的同操作者、同成员关系及同规范化原因重试仍返回原历史，但当前操作者资格必须有效。§26.64 的待确认项是历史记录，以本节及稳定授权规范为准。
+
+- [x] 先将上述边界、唯一解除路由、独立 Permission、不可变追加记录及不恢复 Grant 的原则写入授权规范、术语表和 System 规范。
+- [x] 实现 `POST /api/v1/system/engines/{id}/access_denies/{deny_id}/release`、000186 向前迁移和原子高风险审计；当前功能 Permission 与引擎管理委派取交集，停用引擎或历史接收主体失效不阻断解除。解除不要求是原建立人，不默认给内置角色赋权。
+- [x] 覆盖权限独立、原参重试、跨范围隐藏、自然到期、锁等待及审计后过期回滚、并发唯一事实、不可变历史和无 Grant 副作用；纳入既有 System IAM PostgreSQL 迁移分组、默认全量门禁、授权与 Swagger 覆盖。System 前端仅补充角色权限页“解除拒绝”的双语动作名称，不把它当作规则管理页面已交付。
+- [x] 取得当前代码验证证据并更新本节。执行侧 Allow／Deny 当前裁决尚未接通，不把解除成功作为当前允许读取的证明；不启停个人开发服务、不操作开发业务库。
+
+本轮验证与范围边界：
+
+- 全仓 `make test-go` 退出码 0，日志 `/tmp/addp-deny-release-go-20261004.log`；`make test-authorization`、`make test-system-iam-runner` 退出码 0，System Swagger 覆盖 194 个公开路由，runner 6 项通过。日志分别为 `/tmp/addp-deny-release-authorization-20261004.log` 和 `/tmp/addp-deny-release-runner-20261004.log`。
+- `make test-system-frontend` 退出码 0，91 项单测、40 项浏览器测试及构建通过，日志 `/tmp/addp-deny-release-frontend-20261004.log`。浏览器测试使用既有测试入口，不作为开发服务或真实源数据读取的 Online T4 验收。
+- 聚焦的 `system-iam-postgres-gate.sh --package engineaccess` 退出码 0、无 Skip，41.626 秒，日志 `/tmp/addp-deny-release-engineaccess-final-20261004.log`。随后 `make test-system-iam-postgres` 完整 7 个 owner 包退出码 0、无 Skip，涵盖 IAM、OAuth、HTTP、向前迁移、engineaccess、repository 及 Online 观察夹具；完整迁移包 84.396 秒，000185／000186 均通过，完整 engineaccess 包 40.171 秒。日志 `/tmp/addp-deny-release-full-postgres-20261004.log`。测试只使用实际 Infra 端口 25432 下的允许测试库 `addp_iam_test`，由标准入口管理测试 Schema，未创建新 database。
+- 首次 `make test-module MODULE=system` 的平台 T0、Go T1 和前端门禁通过，但既有 `TestInternalTaskAuthorizationAgainstPostgres` 的会话创建因“authenticated time must not be in the future”失败，整条命令退出码 2，日志 `/tmp/addp-deny-release-system-module-20261004.log`。夹具使用应用时钟，生产校验读取数据库时钟；本轮没有修改这条链路。相同代码在上述完整 PostgreSQL 标准入口复验通过，首次失败记录仍保留，不改写为完整模块命令通过。
+- `make test-system-runtime-log` 退出码 0，隔离实例授权、收集、断点恢复、容量和真实保留期删除均通过；门禁确认自己创建的容器、网络、卷及源目录全部清理，日志 `/tmp/addp-deny-release-runtime-log-20261004.log`。这不是开发服务重启；个人开发环境未由本会话启停。
+- 默认 `make test-changed` 在测试执行前退出码 2：共享工作区 58 个改动文件扩散到 24 个 owner，缺少各 owner 明确的 PostgreSQL、MySQL／OceanBase 等 T2 环境，日志 `/tmp/addp-deny-release-changed-20261004.log`。不接管并行修改、不补造连接条件，也不将预检失败计为测试通过；本轮改动由现有 System／共享授权门禁及 CI 自动发现覆盖。
+- `platform-ci.yml` 全仓 Go 与 `release-and-t2-gates.yml` System IAM PostgreSQL Job 已覆盖新增文件；迁移分组和 runner 契约测试同次更新，无新增 workflow、测试库或旁路入口。Manager／Develop 精确读取集合的权限消费、其他 owner T2、真实 OAuth T4 及 C／D 实际内容读取对照尚未验证，不以解除命令或观察夹具冒充完整数据权限闭环。
+
+下一优先项：优先贯通 System 精确 PostgreSQL 只读当前裁决，再接 Manager／Develop 的完整读取集合消费。必须以当前规则与当前身份判断结果，覆盖无 Grant 拒绝、个人 Deny 压过项目组 Allow，以及解除后仍无有效 Grant 时继续拒绝。

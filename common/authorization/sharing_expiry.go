@@ -13,8 +13,9 @@ const (
 var ErrInvalidSharingExpiry = errors.New("invalid ordinary read-sharing expiry")
 
 // NormalizeSharingExpiry never interprets an omitted mode as indefinite. This
-// value contract is only for ordinary read sharing, not temporary onboarding,
-// management delegations, tokens or sensitive raw-value exemptions.
+// value contract covers ordinary read sharing and explicit source read Deny;
+// it does not cover temporary onboarding, management delegations, tokens or
+// sensitive raw-value exemptions. Callers enforce their own eligibility.
 func NormalizeSharingExpiry(mode string, expiresAt *time.Time) (*time.Time, error) {
 	switch mode {
 	case SharingExpiryUntilRevoked:

@@ -2,6 +2,8 @@ import json
 import unittest
 from unittest.mock import patch
 
+from addp_common.tools import get_tool
+
 from agents.checkpoint import capture_owner_facts, new_checkpoint
 from agents.main_agent import _build_routing_system_prompt
 from graph.factory import AgentFactory
@@ -268,11 +270,13 @@ class _ScriptedResponse:
 class _ScriptedLLM:
     def __init__(self, responses):
         self.responses = list(responses)
+        self.messages = []
 
     def bind_tools(self, _tools):
         return self
 
     async def ainvoke(self, _messages):
+        self.messages.append(list(_messages))
         return self.responses.pop(0)
 
 
@@ -300,6 +304,64 @@ def _validation_call():
 
 
 class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
+    async def test_manifest_bounded_tool_json_is_preserved_in_event_and_model_context(self):
+        result = {
+            "locator": "addp://engine/11/path/Outdoor?type=database&node_id=20",
+            "children": [{
+                "locator": f"addp://engine/11/path/Outdoor/collection_{index}?type=collection&item_id={index + 100}",
+                "label": f"collection_{index}", "type": "collection",
+            } for index in range(40)],
+        }
+        encoded = json.dumps(result)
+        self.assertGreater(len(encoded), 3000)
+        self.assertLess(len(encoded.encode("utf-8")), get_tool("resource.children.list").limits["max_bytes"])
+
+        class DirectoryTool:
+            name = "resource__children__list"
+            metadata = {"addp_tool_name": "resource.children.list"}
+
+            async def ainvoke(self, _args):
+                return encoded
+
+        responses = [
+            _ScriptedResponse(tool_calls=[{
+                "id": "directory-1", "name": "resource__children__list", "args": {"engine_id": 11},
+            }]),
+            _ScriptedResponse(content="目录已读取"),
+        ]
+        llm = _ScriptedLLM(responses)
+        events = await self._run_workflow_events(
+            tools=[DirectoryTool()], responses=responses,
+            allowed_tool_names=["resource.children.list"], llm=llm,
+        )
+        tool_event = next(event for event in events if event.kind == "tool_result")
+        self.assertEqual(json.loads(tool_event.payload["content"]), result)
+        self.assertEqual(json.loads(llm.messages[1][-1].content), result)
+
+    async def test_iteration_limit_fails_without_extra_unbound_model_call(self):
+        responses = [
+            _ScriptedResponse(tool_calls=[{
+                "id": "engine-1", "name": "engine__list", "args": {"capability": "all"},
+            }]),
+            _ScriptedResponse(content="unexpected tool syntax in fallback"),
+        ]
+        llm = _ScriptedLLM(responses)
+        with self.assertRaisesRegex(RuntimeError, "agent_iteration_limit_reached"):
+            await self._run_workflow_events(
+                tools=[_EngineListTool()], responses=responses, allowed_tool_names=["engine.list"],
+                llm=llm, max_iterations=1,
+            )
+        self.assertEqual(len(llm.messages), 1)
+
+    async def test_empty_final_response_does_not_reinvoke_model(self):
+        responses = [_ScriptedResponse(), _ScriptedResponse(content="unexpected fallback")]
+        llm = _ScriptedLLM(responses)
+        events = await self._run_workflow_events(
+            tools=[], responses=responses, allowed_tool_names=[], llm=llm,
+        )
+        self.assertEqual(events, [])
+        self.assertEqual(len(llm.messages), 1)
+
     def test_routing_prompt_requires_skill_for_spatial_workflow_design(self):
         prompt = _build_routing_system_prompt()
 
@@ -660,7 +722,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(interaction["request_summary"]["task_count"], 2)
         self.assertNotIn("workflow_definition", interaction)
 
-    async def _run_workflow_events(self, *, tools, responses, allowed_tool_names):
+    async def _run_workflow_events(self, *, tools, responses, allowed_tool_names, llm=None, max_iterations=None):
         context = {
             "skill_name": "workflow-analysis",
             "user_request": "分析铁路",
@@ -672,7 +734,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             patch("graph.factory.create_agent_tools", return_value=tools),
-            patch("graph.factory.get_llm", return_value=_ScriptedLLM(responses)),
+            patch("graph.factory.get_llm", return_value=llm or _ScriptedLLM(responses)),
         ):
             return [
                 event
@@ -680,7 +742,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                     task_context=context,
                     skill_body="test",
                     allowed_tool_names=allowed_tool_names,
-                    max_iterations=len(responses),
+                    max_iterations=len(responses) if max_iterations is None else max_iterations,
                 )
             ]
 

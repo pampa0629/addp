@@ -163,6 +163,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}); err != nil {
 		panic(fmt.Errorf("register engine grant routes: %w", err))
 	}
+	if err := RegisterEngineAccessDenyRoutes(api, runtime, &EngineAccessDenyHandler{
+		service: engineaccess.NewService(engineaccess.NewRepository(db), nil),
+	}); err != nil {
+		panic(fmt.Errorf("register engine deny routes: %w", err))
+	}
 	if err := RegisterIAMRoutes(api, runtime, redisClient); err != nil {
 		panic(fmt.Errorf("注册 IAM 路由失败: %w", err))
 	}

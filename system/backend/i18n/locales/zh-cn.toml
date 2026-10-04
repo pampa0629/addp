@@ -306,6 +306,23 @@ other = "仅供 Catalog 当前租户运行身份调用源读取授权首次受�
 
 [permissions.system.engine_access_grant.revoke.name]
 other = "撤销指定源数据授权"
+
+[permissions.system.engine_access_deny.create.name]
+other = "建立源读取拒绝规则"
+[permissions.system.engine_access_deny.create.description]
+other = "结合当前有效引擎管理委派，对明确主体和精确资源建立只读拒绝；不自动取得解除、共享确认或内容访问权"
+[system.engine_access_deny.conflict]
+other = "本次参数与原拒绝记录不一致，请使用原参数查询历史"
+[system.engine_access_deny.expiry]
+other = "拒绝期限已不在未来，未建立新规则；请明确选择有效期限"
+[permissions.system.engine_access_deny.release.name]
+other = "解除源读取拒绝规则"
+[permissions.system.engine_access_deny.release.description]
+other = "结合当前有效引擎管理委派解除指定拒绝；不自动建立、恢复或续期 Grant"
+[system.engine_access_deny.release_conflict]
+other = "此拒绝规则已解除；本次操作者或原因与原记录不同，请查看原解除历史"
+[system.engine_access_deny.expired]
+other = "拒绝规则已到期，无须解除"
 [permissions.system.engine_access_grant.revoke.description]
 other = "结合当前有效引擎管理委派收回指定 Grant；停用引擎仍可撤销，不影响其他独立授权，也不授予新权限"
 [system.engine_access_grant.revocation_conflict]

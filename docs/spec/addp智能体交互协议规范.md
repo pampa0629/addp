@@ -188,6 +188,8 @@ Catalog props 只允许声明式 JSON、稳定引用和受限展示参数。禁�
 
 Tool 大结果、A2UI Surface 和完整 owner 对象不进入上下文。被截断和省略的消息数量必须进入 `context_metrics`，不能静默丢失可观测性。
 
+会话历史预算不用于切片当前 ToolMessage。当前 Tool 结果由 Manifest 的结构化投影和字节限制约束，校验成功的 JSON 必须完整进入本轮推理。Skill 的 `max_iterations` 是本轮工具推理硬上限；耗尽后以 Runtime 异常失败关闭并保留已记录的 Tool 步骤和检查点，不额外调用未绑定工具的模型生成最终回复，不伪装为任务完成，也不自动重发已发生的 owner 操作。
+
 ## 九、变更与验证
 
 协议变更必须同步 Agent Backend、common-frontend Renderer、Agent Frontend、模块文档与评测契约。破坏性变更直接升级 Schema 或 Catalog 并删除旧解析路径。

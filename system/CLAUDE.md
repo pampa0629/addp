@@ -407,6 +407,8 @@ frontend/src/
 - `POST /api/v1/system/engines/:id/catalog/children` - 统一列出实时 Engine Catalog 子节点，支持数据库、对象存储、文件系统和图数据库等多层目录发现；路由中的 `catalog` 已由 Engine 上下文限定
 - `POST /api/v1/system/engines/:id/catalog/facts` - 按结构化 EngineCatalogPath 读取单个叶子的实时结构事实；列表省略的字段等详情从这里按需读取
 - `POST /api/v1/system/engines/:id/access_grants/:request_id/revoke` - 当前 Tenant User 的独立撤销 Permission 与有效引擎管理委派共同核验，只收回指定 Grant；停用引擎仍允许撤销，不依赖 Catalog 在线，不影响其他独立授权。原因必填，历史及审计同事务追加，同参重试恢复原撤销事实，不恢复权限。
+- `POST /api/v1/system/engines/:id/access_denies` - 当前 Tenant User 的独立 `system.engine_access_deny.create` 与有效引擎管理委派共同核验，绑定精确叶子、当前有效 User／Department／Project Group 和 `read`。期限必须显式选择 `at_time` 或 `until_revoked`；编号同参重试只恢复不可变历史，不能续期。停用引擎仍允许限制，不连接源端或 Catalog；规则及高风险审计同事务，提交前复核资格和数据库墙钟。000185 不默认给任何角色赋权；执行侧消费尚未贯通，没有前端规则管理入口。
+- `POST /api/v1/system/engines/:id/access_denies/:deny_id/release` - 独立 `system.engine_access_deny.release` 与当前有效引擎管理委派共同核验，正文仅接受原因。000186 保存不可变解除事实及同事务高风险审计，不修改原 Deny 或 Grant。自然到期后首次解除返回 409、无新事实；到期前已解除的原参重试仍可恢复历史，但当前资格必须有效。停用引擎、失效接收主体及 Catalog 不可用均不阻断合格操作者解除；解除不等于自动允许访问。
 
 `GET /engines` 对 User 和 Service Principal 都返回脱敏列表。`GET /engines/:id` 对 User 返回脱敏连接信息；具有 `system.engine.read` 的 Tenant Service Principal 返回同 Tenant 的解密连接信息，跨 Tenant 返回 403。
 

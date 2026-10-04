@@ -91,6 +91,7 @@ Permission Key 固定为：
 | `cancel` | 取消执行 |
 | `approve` / `reject` | 作出业务审批决定 |
 | `revoke` | 撤销授权、邀请或凭据 |
+| `release` | 解除显式拒绝，仅移除指定禁止依据，不创建或恢复授权 |
 | `publish` / `offline` | 发布或下线业务对象 |
 | `export` | 导出数据或审计结果 |
 | `initialize` | 为既有对象建立一次性初始管理关系 |

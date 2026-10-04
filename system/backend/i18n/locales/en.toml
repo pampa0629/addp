@@ -306,6 +306,23 @@ other = "Allow only the current Catalog tenant runtime to request acceptance, ex
 
 [permissions.system.engine_access_grant.revoke.name]
 other = "Revoke a specific source-data Grant"
+
+[permissions.system.engine_access_deny.create.name]
+other = "Establish a source read Deny"
+[permissions.system.engine_access_deny.create.description]
+other = "Establish a read Deny for an explicit subject and precise resource with current engine management delegation; does not grant release, sharing confirmation or content access"
+[system.engine_access_deny.conflict]
+other = "Parameters differ from the original Deny; use the original parameters to recover history"
+[system.engine_access_deny.expiry]
+other = "The Deny expiry is no longer future; no new rule was established. Select an explicit valid expiry"
+[permissions.system.engine_access_deny.release.name]
+other = "Release Source Read Deny"
+[permissions.system.engine_access_deny.release.description]
+other = "Release a specific Deny with current engine management delegation; never create, restore or renew a Grant"
+[system.engine_access_deny.release_conflict]
+other = "This Deny was released; the operator or reason differs from the original release history"
+[system.engine_access_deny.expired]
+other = "The Deny has expired; release is unnecessary"
 [permissions.system.engine_access_grant.revoke.description]
 other = "Withdraw one Grant with a current engine management delegation, even on a disabled engine; no effect on independent Grants or new access"
 [system.engine_access_grant.revocation_conflict]

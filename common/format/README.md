@@ -476,6 +476,8 @@ info, err := provider.DescribeMedia(ctx, input, nil)
 
 图片 MediaInfoProvider 目前返回宽高、编码、MIME、颜色空间，并可通过 `MediaDescribeResult.Spatial` 携带 GeoTIFF 等空间横切事实。缩略图、视频、音频等内容读取能力后续通过独立 content reader 扩展。
 
+JPEG 的同一次 `DescribeMedia` 还返回 `FormatInfo.exif` 中的方向、相机厂商/型号及原始拍摄时间、时区偏移和小数秒，写入 `format_info.jpeg`；`exif_status` 区分 absent、parsed、invalid 和 budget_exceeded。读取总预算为 1 MiB，停止于扫描数据，复用图片包的 TIFF IFD 解析，不加载完整图片或引入第二解析路线。宽高保持编码尺寸，GPS 和缩略图不在该摘要范围内。
+
 ## Table Operation Schema
 
 `common/datatype.TableInfo` 是 table 类型信息的通用事实源，对应 `attributes.type_info.table`。`common/format` 不再保留 `TableInfo` 薄壳；reader / writer / Transfer 的 table 执行上下文也直接使用 `datatype.TableInfo`，用来表达执行期所需的字段顺序、写出字段信息和采样上下文。

@@ -673,6 +673,21 @@ definitions:
       version:
         type: integer
     type: object
+  github_com_addp_system_internal_engineaccess.DenyRelease:
+    properties:
+      deny_id:
+        type: string
+      reason:
+        type: string
+      released_at:
+        type: string
+      released_by_membership_id:
+        example: ""
+        type: string
+      released_by_principal_id:
+        example: ""
+        type: string
+    type: object
   github_com_addp_system_internal_engineaccess.GrantRevocation:
     properties:
       reason:
@@ -697,6 +712,37 @@ definitions:
         type: string
       requirement_version:
         example: ""
+        type: string
+    type: object
+  github_com_addp_system_internal_engineaccess.SourceDeny:
+    properties:
+      action:
+        type: string
+      catalog_path:
+        type: object
+      deny_id:
+        type: string
+      engine_id:
+        example: ""
+        type: string
+      established_at:
+        type: string
+      established_by_membership_id:
+        example: ""
+        type: string
+      established_by_principal_id:
+        example: ""
+        type: string
+      expires_at:
+        type: string
+      expiry_mode:
+        type: string
+      reason:
+        type: string
+      recipient_id:
+        example: ""
+        type: string
+      recipient_type:
         type: string
     type: object
   github_com_addp_system_internal_iam.AuditResult:
@@ -1823,6 +1869,34 @@ definitions:
     - expires_at
     - reason
     - tenant_membership_id
+    type: object
+  internal_api.CreateEngineAccessDenyRequest:
+    properties:
+      action:
+        enum:
+        - read
+        type: string
+      catalog_path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      deny_id:
+        type: string
+      expires_at:
+        type: string
+      expiry_mode:
+        enum:
+        - at_time
+        - until_revoked
+        type: string
+      reason:
+        type: string
+      recipient_id:
+        type: string
+      recipient_type:
+        enum:
+        - user
+        - department
+        - project_group
+        type: string
     type: object
   internal_api.CreateExecuteTaskRequest:
     properties:
@@ -3386,6 +3460,13 @@ definitions:
         type: string
     required:
     - catalog_path
+    - reason
+    type: object
+  internal_api.ReleaseEngineAccessDenyRequest:
+    properties:
+      reason:
+        type: string
+    required:
     - reason
     type: object
   internal_api.RevokeEngineAccessGrantRequest:
@@ -5499,6 +5580,128 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_access_delegation.revoke
+  /engines/{id}/access_denies:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        当前租户用户须同时具备独立创建权限和有效引擎管理委派；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and effective engine management delegation; recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO
+        必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 拒绝编号、精确路径、主体、动作、期限与原因 | Deny ID, precise path, subject, action,
+          expiry and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateEngineAccessDenyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 原有或新建的不可变拒绝事实 | Original or newly established immutable Deny
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceDeny'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 建立精确源读取拒绝规则 | Establish a precise source read Deny
+      tags:
+      - 源数据显式拒绝 | Source Data Explicit Deny
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_deny.create
+  /engines/{id}/access_denies/{deny_id}/release:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        当前租户用户须同时具备独立解除权限和有效引擎管理委派，不要求为原建立人；停用引擎及失效接收主体不阻断解除，不访问源端或 Catalog。仅追加不可变解除记录，不创建、恢复或续期 Grant | Current tenant user needs independent release Permission and effective engine management delegation, not original creator identity. Disabled engines and unavailable recipients permit release without source or Catalog IO. Adds immutable release history without creating, restoring or renewing Grants
+        自然到期后首次解除返回 409 engine_access_deny_expired，无新记录或成功审计；到期前已解除的同操作者、同成员关系及同规范化原因重试返回原历史，当前资格仍须有效。异参返回 409 engine_access_deny_release_conflict，跨租户或引擎隐藏为 404 | First release after natural expiry returns 409 engine_access_deny_expired with no history or success audit; identical operator, membership and normalized reason retries recover earlier history subject to current qualification. Changed parameters return 409 engine_access_deny_release_conflict; other tenant or engine history stays hidden as 404
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原拒绝 UUID | Original Deny UUID
+        in: path
+        name: deny_id
+        required: true
+        type: string
+      - description: 解除原因 | Release reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ReleaseEngineAccessDenyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 不可变解除事实，不代表允许访问 | Immutable release fact, not an access verdict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.DenyRelease'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 解除指定源读取拒绝规则 | Release a specific source read Deny
+      tags:
+      - 源数据显式拒绝 | Source Data Explicit Deny
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_deny.release
   /engines/{id}/access_grants/{request_id}/revoke:
     post:
       consumes:

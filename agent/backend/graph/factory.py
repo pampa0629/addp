@@ -32,10 +32,6 @@ from utils.llm import get_llm
 
 logger = logging.getLogger("agent.factory")
 
-# ToolMessage 截断上限（与 main_agent 保持一致）
-_TOOL_RESULT_MAX_LEN = 3000
-
-
 class ClarificationOption(BaseModel):
     label: str = Field(description="展示给用户的选项名称")
     value: str | int = Field(description="恢复运行时使用的稳定值")
@@ -158,14 +154,14 @@ class AgentFactory:
         )
 
         # ReAct 循环
-        final_response = None
         for iteration in range(max_iterations):
             response = await llm_with_tools.ainvoke(lc_messages)
 
             if not response.tool_calls:
                 logger.info("[FACTORY:%s] ReAct 完成（第 %d 轮）", skill_name, iteration + 1)
-                final_response = response
-                break
+                if response.content:
+                    yield text_event(str(response.content))
+                return
 
             lc_messages.append(response)
 
@@ -359,13 +355,6 @@ class AgentFactory:
                             type(e).__name__,
                         )
 
-                # 截断过长的工具结果
-                if len(tool_result) > _TOOL_RESULT_MAX_LEN:
-                    tool_result = (
-                        tool_result[:_TOOL_RESULT_MAX_LEN]
-                        + f"\n...[结果过长已截断，共 {len(tool_result)} 字符]"
-                    )
-
                 yield AgentEvent(
                     kind="tool_result",
                     payload={
@@ -388,14 +377,5 @@ class AgentFactory:
                         },
                     )
                     return
-        else:
-            logger.warning("[FACTORY:%s] 达到最大迭代次数 %d", skill_name, max_iterations)
-
-        # 输出最终结果
-        if final_response is not None and final_response.content:
-            yield text_event(str(final_response.content))
-        else:
-            logger.info("[FACTORY:%s] 超出迭代次数，生成最终回复", skill_name)
-            response = await reasoning_llm.ainvoke(lc_messages)
-            if response.content:
-                yield text_event(str(response.content))
+        logger.warning("[FACTORY:%s] 达到最大迭代次数 %d", skill_name, max_iterations)
+        raise RuntimeError("agent_iteration_limit_reached")

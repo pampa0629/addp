@@ -1971,6 +1971,185 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engines/{id}/access_denies": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前租户用户须同时具备独立创建权限和有效引擎管理委派；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and effective engine management delegation; recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO\n必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据显式拒绝 | Source Data Explicit Deny"
+                ],
+                "summary": "建立精确源读取拒绝规则 | Establish a precise source read Deny",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "拒绝编号、精确路径、主体、动作、期限与原因 | Deny ID, precise path, subject, action, expiry and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateEngineAccessDenyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "原有或新建的不可变拒绝事实 | Original or newly established immutable Deny",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceDeny"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_deny.create"
+                ]
+            }
+        },
+        "/engines/{id}/access_denies/{deny_id}/release": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前租户用户须同时具备独立解除权限和有效引擎管理委派，不要求为原建立人；停用引擎及失效接收主体不阻断解除，不访问源端或 Catalog。仅追加不可变解除记录，不创建、恢复或续期 Grant | Current tenant user needs independent release Permission and effective engine management delegation, not original creator identity. Disabled engines and unavailable recipients permit release without source or Catalog IO. Adds immutable release history without creating, restoring or renewing Grants\n自然到期后首次解除返回 409 engine_access_deny_expired，无新记录或成功审计；到期前已解除的同操作者、同成员关系及同规范化原因重试返回原历史，当前资格仍须有效。异参返回 409 engine_access_deny_release_conflict，跨租户或引擎隐藏为 404 | First release after natural expiry returns 409 engine_access_deny_expired with no history or success audit; identical operator, membership and normalized reason retries recover earlier history subject to current qualification. Changed parameters return 409 engine_access_deny_release_conflict; other tenant or engine history stays hidden as 404",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据显式拒绝 | Source Data Explicit Deny"
+                ],
+                "summary": "解除指定源读取拒绝规则 | Release a specific source read Deny",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原拒绝 UUID | Original Deny UUID",
+                        "name": "deny_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "解除原因 | Release reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ReleaseEngineAccessDenyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可变解除事实，不代表允许访问 | Immutable release fact, not an access verdict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.DenyRelease"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_deny.release"
+                ]
+            }
+        },
         "/engines/{id}/access_grants/{request_id}/revoke": {
             "post": {
                 "security": [
@@ -12244,6 +12423,28 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_engineaccess.DenyRelease": {
+            "type": "object",
+            "properties": {
+                "deny_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "released_at": {
+                    "type": "string"
+                },
+                "released_by_membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "released_by_principal_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "github_com_addp_system_internal_engineaccess.GrantRevocation": {
             "type": "object",
             "properties": {
@@ -12279,6 +12480,51 @@ const docTemplate = `{
                 "requirement_version": {
                     "type": "string",
                     "example": ""
+                }
+            }
+        },
+        "github_com_addp_system_internal_engineaccess.SourceDeny": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "catalog_path": {
+                    "type": "object"
+                },
+                "deny_id": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "established_at": {
+                    "type": "string"
+                },
+                "established_by_membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "established_by_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "expiry_mode": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recipient_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "recipient_type": {
+                    "type": "string"
                 }
             }
         },
@@ -13909,6 +14155,47 @@ const docTemplate = `{
                 },
                 "tenant_membership_id": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.CreateEngineAccessDenyRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "read"
+                    ]
+                },
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "deny_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "expiry_mode": {
+                    "type": "string",
+                    "enum": [
+                        "at_time",
+                        "until_revoked"
+                    ]
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recipient_id": {
+                    "type": "string"
+                },
+                "recipient_type": {
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "department",
+                        "project_group"
+                    ]
                 }
             }
         },
@@ -16302,6 +16589,17 @@ const docTemplate = `{
                 "catalog_path": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ReleaseEngineAccessDenyRequest": {
+            "type": "object",
+            "required": [
+                "reason"
+            ],
+            "properties": {
                 "reason": {
                     "type": "string"
                 }

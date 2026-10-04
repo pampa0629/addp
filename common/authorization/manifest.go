@@ -23,7 +23,7 @@ var (
 	allowedActions = map[string]struct{}{
 		"approve": {}, "cancel": {}, "certify": {}, "close": {}, "create": {}, "delete": {}, "deprecate": {},
 		"execute": {}, "export": {}, "initialize": {}, "link": {}, "offline": {}, "publish": {}, "rebind": {},
-		"reactivate": {}, "read": {}, "reject": {}, "reset": {}, "restore": {}, "retry": {}, "review": {},
+		"reactivate": {}, "read": {}, "reject": {}, "release": {}, "reset": {}, "restore": {}, "retry": {}, "review": {},
 		"revoke": {}, "suspend": {}, "unlink": {}, "update": {},
 	}
 	allowedRiskLevels = map[string]struct{}{

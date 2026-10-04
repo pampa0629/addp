@@ -140,6 +140,8 @@ Tool 不同步等待长任务完成。标准路径为 owner 创建 execution，T
 
 完整表格、地图要素、文件内容、A2UI Surface 和 owner 大对象不得作为无界 Tool Result 进入模型上下文。超限统一返回 `result_too_large`，不能截断后伪装成完整业务结果。
 
+ToolExecutor 已按 Manifest 输出 Schema 和 `max_bytes` 校验的受限结果，在 Agent Adapter、工具事件及当前推理的 ToolMessage 中保持完整。Runtime 不再按固定字符数截取 JSON 前缀，也不另设与 Manifest 冲突的结果限额；资源目录、结构事实和候选列表不能因字符串切片丢失成员。
+
 ### 4.3 `workflow.run`
 
 `workflow.run` 的两次调用由同一个 Tool 契约表达：
