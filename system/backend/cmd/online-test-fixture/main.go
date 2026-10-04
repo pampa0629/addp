@@ -326,26 +326,23 @@ func run(args []string, environment []string) error {
 		if err != nil {
 			return err
 		}
-		ownAssignments, _, err := roleService.ListAssignments(ctx, tenant.ID, iam.TenantRoleAssignmentFilter{}, 1, 100)
+		userType := iam.PrincipalTypeUser
+		assignmentFilter := iam.TenantRoleAssignmentFilter{PrincipalType: &userType}
+		ownAssignments, _, err := roleService.ListAssignments(ctx, tenant.ID, assignmentFilter, 1, 100)
 		if err != nil {
 			return fmt.Errorf("resolve own Tenant assignment: %w", err)
 		}
-		var ownAssignmentID int64
-		for _, assignment := range ownAssignments {
-			if assignment.PrincipalID == administrator.PrincipalID {
-				ownAssignmentID = assignment.ID
-				break
-			}
+		ownAssignmentID, err := tenantAdministratorAssignmentID(ownAssignments, tenant.ID, administrator.PrincipalID)
+		if err != nil {
+			return fmt.Errorf("resolve own Tenant administrator assignment: %w", err)
 		}
-		if ownAssignmentID <= 0 {
-			return errors.New("own Tenant administrator assignment is missing")
-		}
-		reserveAssignments, _, err := roleService.ListAssignments(ctx, reserveTenant.ID, iam.TenantRoleAssignmentFilter{}, 1, 20)
+		reserveAssignments, _, err := roleService.ListAssignments(ctx, reserveTenant.ID, assignmentFilter, 1, 100)
 		if err != nil {
 			return fmt.Errorf("resolve cross-Tenant assignment: %w", err)
 		}
-		if len(reserveAssignments) == 0 || reserveAssignments[0].PrincipalID != reserve.PrincipalID {
-			return errors.New("reserve Tenant administrator assignment is missing")
+		reserveAssignmentID, err := tenantAdministratorAssignmentID(reserveAssignments, reserveTenant.ID, reserve.PrincipalID)
+		if err != nil {
+			return fmt.Errorf("resolve cross-Tenant administrator assignment: %w", err)
 		}
 		values["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"] = administratorSession.AccessToken
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = readerSession.AccessToken
@@ -353,7 +350,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_READ_USER_PASSWORD"] = readerPassword
 		values["ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN"] = creatorSession.AccessToken
 		values["ADDP_ONLINE_OWN_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownAssignmentID)
-		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignments[0].ID)
+		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignmentID)
 	}
 	if *suite == "orchestrator-execution" {
 		foreignTenant, err := createOrchestratorForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
@@ -486,6 +483,26 @@ func createOrchestratorForeignTenant(ctx context.Context, create func(context.Co
 		return nil, errors.New("foreign execution Tenant must be distinct and nondefault")
 	}
 	return tenant, nil
+}
+
+func tenantAdministratorAssignmentID(assignments []iam.ManagedTenantRoleAssignment, tenantID, principalID int64) (int64, error) {
+	var id int64
+	for _, assignment := range assignments {
+		if assignment.PrincipalID != principalID || assignment.PrincipalType != iam.PrincipalTypeUser ||
+			assignment.RoleKey != "tenant.administrator" || assignment.ScopeType != "tenant" ||
+			assignment.TenantID == nil || *assignment.TenantID != tenantID || assignment.ID <= 0 ||
+			assignment.EffectiveState != "effective" {
+			continue
+		}
+		if id != 0 {
+			return 0, errors.New("Tenant administrator assignment is ambiguous")
+		}
+		id = assignment.ID
+	}
+	if id == 0 {
+		return 0, errors.New("Tenant administrator assignment is missing")
+	}
+	return id, nil
 }
 
 func createUser(ctx context.Context, service *iam.IdentityService, username string) (*iam.CreatedLocalUser, error) {

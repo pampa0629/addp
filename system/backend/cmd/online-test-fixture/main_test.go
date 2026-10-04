@@ -45,6 +45,43 @@ func TestOrchestratorForeignTenantIsCreatedSeparatelyAndFailsClosed(t *testing.T
 	}
 }
 
+func TestTenantAdministratorAssignmentIsResolvedByIdentityRatherThanListOrder(t *testing.T) {
+	tenantID := int64(8)
+	administrator := iam.ManagedTenantRoleAssignment{
+		RoleAssignment: iam.RoleAssignment{ID: 11, PrincipalID: 7, TenantID: &tenantID, ScopeType: "tenant"},
+		PrincipalType:  iam.PrincipalTypeUser, RoleKey: "tenant.administrator", EffectiveState: "effective",
+	}
+	runtime := administrator
+	runtime.ID, runtime.PrincipalID, runtime.PrincipalType = 12, 9, iam.PrincipalTypeServicePrincipal
+	runtime.RoleKey = "system.service_runtime"
+	for _, assignments := range [][]iam.ManagedTenantRoleAssignment{{runtime, administrator}, {administrator, runtime}} {
+		id, err := tenantAdministratorAssignmentID(assignments, tenantID, 7)
+		if err != nil || id != administrator.ID {
+			t.Fatalf("administrator selection depends on list order: id=%d, error=%v", id, err)
+		}
+	}
+	for _, mutate := range []func(*iam.ManagedTenantRoleAssignment){
+		func(a *iam.ManagedTenantRoleAssignment) { a.PrincipalID = 9 },
+		func(a *iam.ManagedTenantRoleAssignment) { a.PrincipalType = iam.PrincipalTypeServicePrincipal },
+		func(a *iam.ManagedTenantRoleAssignment) { a.RoleKey = "tenant.infrastructure_administrator" },
+		func(a *iam.ManagedTenantRoleAssignment) { a.TenantID = nil },
+		func(a *iam.ManagedTenantRoleAssignment) { other := int64(9); a.TenantID = &other },
+		func(a *iam.ManagedTenantRoleAssignment) { a.ScopeType = "department" },
+		func(a *iam.ManagedTenantRoleAssignment) { a.EffectiveState = "expired" },
+	} {
+		invalid := administrator
+		mutate(&invalid)
+		if id, err := tenantAdministratorAssignmentID([]iam.ManagedTenantRoleAssignment{invalid}, tenantID, 7); id != 0 || err == nil {
+			t.Fatal("unrelated or ineffective assignment accepted as the Tenant administrator")
+		}
+	}
+	for _, assignments := range [][]iam.ManagedTenantRoleAssignment{nil, {administrator, administrator}} {
+		if id, err := tenantAdministratorAssignmentID(assignments, tenantID, 7); id != 0 || err == nil {
+			t.Fatal("missing or ambiguous Tenant administrator accepted")
+		}
+	}
+}
+
 func TestFixtureRolesKeepSystemEngineControlPlaneOutOfConsumerIdentity(t *testing.T) {
 	if engineProvisionerRoleKey != "tenant.infrastructure_administrator" {
 		t.Fatalf("engine provisioner role = %q", engineProvisionerRoleKey)
