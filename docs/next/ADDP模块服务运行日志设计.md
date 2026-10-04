@@ -705,3 +705,5 @@ Hosted T4 的启动、归档和退出清理属于平台生命周期。Online 环
 本场景属于日志 T2，既有 System CI Job 调用同一标准入口，输入登记已覆盖该集成测试；没有新增服务、测试入口或旁路技术路线。它不包含真实业务模块的 System 登记及租约到期、浏览器 DOWN 展示或企业微信外送，不保证 SIGKILL 前尚未刷新输出的完整性。因此第 14.2 节的真实模块异常退出全链路仍保留为 T4 待验收项。
 
 本地验证：`make test-system-runtime-log` 退出 0，异常终止前／终止后／替代实例三个阶段均通过 System 查询服务读取实际生产日志；既有采集、分页、断连恢复和连续观察器场景同时通过，测试自建容器、网络、卷及临时源目录零残留。`make test-platform` 退出 2，日志相关生命周期和 T2 CI 输入登记检查已通过，但 `online-hosted-public-origin-gate_test.py` 的三项夹具分别在 20 秒超时，整条 T0 命令不计通过；本轮未修改该夹具或放宽其时限。`make test-changed` 在混合工作区预检因其他 owner 缺少 MySQL、OceanBase 及 PostgreSQL 测试配置停止，未运行其聚合门禁。推送后的既有 Platform CI 和 System runtime log CI 承担提交版本的复验，不把本地未通过项预先记为通过。
+
+远端复验：提交 `c821b476025595f7217611f5de9b7807b01faa36` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37169830927) 和 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37169830944) 均为 `success`；平台一致性、Go 全仓、System 前端、System IAM verification/gate 及 System runtime log Job 均通过，未选中的其他 owner Job 跳过，不计为通过。已读取 [Linux 日志 T2 的 Job 日志](https://github.com/pampa0629/addp/actions/runs/37169830944/job/111340420942)，确认异常终止前／终止后／替代实例三个实际查询阶段、退出码 137 和测试资源零残留。Linux T0 通过不改写本地三项超时的失败记录，也不证明其波动根因已经修复。本次仅补充验收记录，运行输入与上述已验证提交一致。
