@@ -90,6 +90,9 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
             self.assertEqual(json.loads(descriptor.read_text())['engine_type'], engine)
         hdfs = json.loads((self.secret / 'hdfs-engine.json').read_text())['connection_info']
         self.assertEqual((hdfs['authentication'], hdfs['user'], hdfs['root_path']), ('simple', 'addp_business_reader', '/addp'))
+        spark = json.loads((self.secret / 'spark-engine.json').read_text())['connection_info']
+        self.assertEqual(spark['username'], 'spark')
+        self.assertNotIn('user', spark)
         self.assertEqual(len(list(self.state.iterdir())), 4)
         commands = [json.loads(line) for line in self.trace.read_text().splitlines()]
         for command in commands:

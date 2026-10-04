@@ -114,7 +114,7 @@ root = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
 for name, engine_type, connection in (
     ('hdfs', 'hdfs', {'webhdfs_endpoint': 'http://127.0.0.1:9870', 'rpc_uri': 'hdfs://127.0.0.1:8020',
                       'root_path': '/addp', 'authentication': 'simple', 'user': 'addp_business_reader'}),
-    ('spark', 'spark', {'host': '127.0.0.1', 'port': 10000, 'master_port': 7077, 'database': 'default'}),
+    ('spark', 'spark', {'host': '127.0.0.1', 'port': 10000, 'master_port': 7077, 'database': 'default', 'username': 'spark'}),
 ):
     value = {'name': 'Hosted ' + name.upper(), 'engine_type': engine_type, 'engine_origin': 'general',
              'description': 'Disposable HDFS distributed Spark acceptance', 'connection_info': connection}

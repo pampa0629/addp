@@ -46,13 +46,8 @@ func (p *SparkSQLPlugin) OpenTableReadSession(
 	if port == 0 {
 		port = p.DefaultPort()
 	}
-	configuration := gohive.NewConnectConfiguration()
-	if user := plugin.GetString(connInfo, "user"); user != "" {
-		configuration.Username = user
-		configuration.Password = plugin.GetString(connInfo, "password")
-	}
-	configuration.ConnectTimeout = 30 * time.Second
-	configuration.SocketTimeout = 30 * time.Second
+	configuration := sparkThriftConfiguration(connInfo)
+
 	connection, err := gohive.Connect(host, port, "NONE", configuration)
 	if err != nil {
 		return nil, fmt.Errorf("open Spark table read connection: %w", err)

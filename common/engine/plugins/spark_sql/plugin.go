@@ -137,6 +137,15 @@ func (p *SparkSQLPlugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error
 	return fmt.Sprintf("%s:%d:%s", host, port, database), nil
 }
 
+func sparkThriftConfiguration(connInfo plugin.ConnectionInfo) *gohive.ConnectConfiguration {
+	configuration := gohive.NewConnectConfiguration()
+	configuration.Username = plugin.GetString(connInfo, "username")
+	configuration.Password = plugin.GetString(connInfo, "password")
+	configuration.ConnectTimeout = 30 * time.Second
+	configuration.SocketTimeout = 30 * time.Second
+	return configuration
+}
+
 func (p *SparkSQLPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
 	// 解析连接参数
 	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
@@ -150,25 +159,11 @@ func (p *SparkSQLPlugin) TestConnection(ctx context.Context, connInfo plugin.Con
 		database = "default"
 	}
 
-	user := plugin.GetString(connInfo, "user")
-	password := plugin.GetString(connInfo, "password")
-
 	if host == "" {
 		return fmt.Errorf("missing required field: host")
 	}
 
-	// 配置连接
-	configuration := gohive.NewConnectConfiguration()
-	if user != "" {
-		configuration.Username = user
-		if password != "" {
-			configuration.Password = password
-		}
-	}
-
-	// 设置超时 - 增加到 30 秒
-	configuration.ConnectTimeout = 30 * time.Second
-	configuration.SocketTimeout = 30 * time.Second
+	configuration := sparkThriftConfiguration(connInfo)
 
 	// 连接到 Apache Spark Thrift Server
 	connection, err := gohive.Connect(host, port, "NONE", configuration)
@@ -267,22 +262,12 @@ func executeSparkSQL(ctx context.Context, connInfo plugin.ConnectionInfo, query 
 	if database == "" {
 		database = "default"
 	}
-	user := plugin.GetString(connInfo, "user")
-	password := plugin.GetString(connInfo, "password")
 
 	if host == "" {
 		return nil, fmt.Errorf("Spark 引擎缺少 host 配置")
 	}
 
-	configuration := gohive.NewConnectConfiguration()
-	if user != "" {
-		configuration.Username = user
-		if password != "" {
-			configuration.Password = password
-		}
-	}
-	configuration.ConnectTimeout = 30 * time.Second
-	configuration.SocketTimeout = 30 * time.Second
+	configuration := sparkThriftConfiguration(connInfo)
 
 	connection, err := gohive.Connect(host, port, "NONE", configuration)
 	if err != nil {

@@ -8,6 +8,8 @@ HDFS 隔离自动验收使用手动 Hosted T4 `hdfs-spark-consumer-flow`。Busin
 
 首轮 Hosted T4 [37209233339](https://github.com/pampa0629/addp/actions/runs/37209233339) 在 HDFS general Engine 连接成功后，因 Spark general Engine 的 Thrift 连接探测失败而终止，尚未进入消费者工作流；应用和业务夹具清理完成，Infra 为零残留。登记器失败日志应保留脱敏后的协议错误，业务夹具清理前归档自身容器状态与 Spark Driver/Worker 日志，以便确定连接根因；不得将该轮计为 T4 通过。
 
+第二轮诊断 [37211144056](https://github.com/pampa0629/addp/actions/runs/37211144056) 确认 Thrift 拒绝空用户名：客户端为 `Bad SASL negotiation status: 3`，服务端为 `No user name provided`，四个业务容器均在运行且无 OOM。Spark 连接唯一用户名字段以插件 `ConnectionSpec` 声明的 `username` 为准，连接探测、SQL 查询及表读取均消费该字段，不接收 `user` 别名。Hosted 夹具显式设置 `username=spark`，不再依赖 Runner 操作系统的用户名称；此为 Spark SQL 会话身份，与 HDFS Simple 用户 `addp_business_reader` 分属两种连接配置。该修复不改变认证模式或 HDFS 路径语义。
+
 ## 当前语义
 
 - NFS 是文件系统语义存储，不是对象存储。
@@ -66,4 +68,6 @@ Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三
 
 格式修复提交 `e93d72b08` 的 [Release and T2 gates](https://github.com/pampa0629/addp/actions/runs/37200801282) 已通过，包括 HDFS WebHDFS 与分布式 Spark、Redis、Elasticsearch 契约；[Platform CI](https://github.com/pampa0629/addp/actions/runs/37200801286) 的 Spark、Develop、Go workspace 与平台一致性检查通过，但产品镜像构建失败：Spark Workflow 镜像安装 Debian Bullseye security 软件包时返回 404。后续已迁移到 Python 3.11 Bookworm 与官方 Temurin Java 11，补齐共享 Python 包、根目录构建上下文、Compose 与构建登记；本地 ARM64 标准镜像构建已通过依赖一致性、API 导入和真实 Spark 计算检查。镜像修复提交 `7bf7489df` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37207120567) 已通过 AMD64 产品镜像构建、平台一致性与 Spark Workflow 测试，原镜像构建阻塞已消除；后续核对该轮 Platform CI 已全部通过。
 
-HDFS Hosted suite 的实现及登记已补齐。本地 `make test-platform`、`make test-hdfs-online-runner`（17 项场景/夹具测试及 System IAM 夹具）、`make test-common-hdfs-unit`、`make test-spark-workflow`（34 项）与 `make test-business-config` 均通过。工作区 `make test-changed` 因多个 Owner 的 PostgreSQL DSN 和 MySQL/OceanBase 环境缺失停在预检，未执行后续门禁；不能计为通过。当前新 suite 尚待手工 Hosted 真实运行，不声明 T4 已通过。
+HDFS Hosted suite 的实现及登记已补齐。本地 `make test-platform`、`make test-hdfs-online-runner`（17 项场景/夹具测试及 System IAM 夹具）、`make test-common-hdfs-unit`、`make test-spark-workflow`（34 项）与 `make test-business-config` 均通过。工作区 `make test-changed` 因多个 Owner 的 PostgreSQL DSN 和 MySQL/OceanBase 环境缺失停在预检，未执行后续门禁；不能计为通过。Hosted 前两轮在 Spark 空用户名连接探测处失败，修复后仍须完整复跑，不声明 T4 已通过。
+
+Spark Thrift 字段修复的最小验证为 `make test-go` 和 `make test-hdfs-online-runner`：前者先复现三个入口发送旧字段，再验证修复后的真实 SASL 载荷及全部 Go 模块；后者确认夹具显式设置规范用户名及 18 项场景/生命周期测试、System IAM 夹具。两项已通过。现有 Go 模块自动发现覆盖新增协议测试，原 HDFS T4 入口用于验证完整修复，不新增认证路线或 CI 旁路。
