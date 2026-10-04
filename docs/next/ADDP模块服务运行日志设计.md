@@ -755,3 +755,5 @@ Linux 复验：本轮代码提交为 `c004eb0cb9830554f04c4bb66eec4d011238964b`�
 续验（2026-10-04）：提交 `7fec3fa0d78c6c85d1e37afd2c69f162726b29ea` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37192487817) 通过，包含平台一致性、Go 工作区及 Console／System／Monitor 前端测试和构建；[Release and T2 gates](https://github.com/pampa0629/addp/actions/runs/37192487815) 的 Monitor PostgreSQL 通知集成与 System runtime log pipeline 均通过。日志中明确记录容量两类告警独立恢复、三种渠道拒绝升级订阅、配置修正及幂等初始化回归通过；未选中的 T2 Job 为 skipped，不计为通过。此前 Hosted Transfer 中断／清理夹具按标准 Python 入口单独复验 5 项通过，不能据此将此前失败的完整本地 T0 改记为通过。
 
 用户重启 Monitor 后，只读核对开发环境：企业微信目标启用，凭据存在，订阅为 `["opened","resolved"]`、版本为 4；旧升级订阅为 0。观测节点持续接收且登记有效，当前无活动告警；现有 56 条投递记录均为 delivered，无待重试记录。上述数据库状态确认配置与记录结果，不等同于本次真实故障触发或群内接收验收；浏览器当前开发管理员无模块管理权限，平台管理员页面仍待核对。
+
+页面续验（2026-10-04 19:31，Asia/Shanghai）：平台系统管理员已进入标准 Console 同源模块管理页面。日志链路显示健康，探针投递成功、实例登记观测有效、通知已配置，活动异常列表为空。通知管理中企业微信目标启用，编辑窗口仅有 opened／resolved（当前中文标签“打开／恢复”），两项均选中，Webhook 留空保持当前值；投递列表共 58 条，最新两条显示已投递、各尝试 1 次且无失败原因。仅打开配置核对，没有保存、测试发送或修改目标。随后浏览器会话返回登录页；该页面核对已完成，真实故障触发与群内接收仍按独立验收范围记录。
