@@ -458,7 +458,7 @@ check_service_changed() {
             comparison_time=$(( workflow_runtime_time > common_time ? workflow_runtime_time : common_time ))
             ;;
 
-        geopython-workflow-engine|jupyter-engine)
+        geopython-workflow-engine|jupyter-engine|spark-workflow-engine)
             # These Dockerfiles package common-python; compare both source trees.
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
@@ -473,7 +473,7 @@ check_service_changed() {
             fi
             ;;
 
-        spark-workflow-engine|raster-mosaic-runtime)
+        raster-mosaic-runtime)
             # These Dockerfiles do not package common-python.
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
@@ -725,7 +725,7 @@ build_service() {
             fi
             ;;
 
-        geopython-workflow-engine|math-workflow-engine|raster-mosaic-runtime)
+        geopython-workflow-engine|math-workflow-engine|raster-mosaic-runtime|spark-workflow-engine)
             # GeoPython Workflow 依赖 common-python，共享 schema/client 需要仓库根作为构建上下文
             build_context="."
             dockerfile_path="${service_dir}/Dockerfile"
@@ -740,17 +740,6 @@ build_service() {
             # 轻量工作流 runtime 依赖 common-python，使用仓库根作为构建上下文。
             build_context="."
             dockerfile_path="${service_dir}/Dockerfile"
-            ;;
-
-        spark-workflow-engine)
-            # Python Engine: Python service built from source
-            build_context="${service_dir}"
-            dockerfile_path="${service_dir}/Dockerfile"
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
             ;;
 
         jupyter-engine)
@@ -1040,7 +1029,8 @@ seed_base_images() {
         "node:20-alpine"
         "python:3.11-slim"
         "python:3.12-slim"
-        "python:3.11-bullseye"
+        "python:3.11-slim-bookworm"
+        "eclipse-temurin:11-jre-jammy"
         "golang:1.24-bookworm=golang:1.24-bookworm"
         "debian:bookworm-slim=debian-slim:bookworm"
         "ubuntu:24.04"

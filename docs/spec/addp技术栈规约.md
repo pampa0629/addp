@@ -13,6 +13,7 @@
 - **有界执行领取**: PostgreSQL `common.task_executions` claim + lease；Cron 只用于 owner scheduler 计算到期 execution
 - **空间计算**: GeoPython Workflow (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
 - **Spark 工作流运行时**: PySpark 3.5 + OpenJDK 11；Workflow driver 与 Spark Master/Worker 必须使用相同的 JVM 主版本；JDBC 使用 PostgreSQL `42.7.4`、MySQL Connector/J `8.4.0`。分布式模式下，`SPARK_WORKFLOW_SHARED_HOST` 必须是 Workflow driver 自身和 Spark executor 都可访问的地址，用于公布 driver 地址，并替换本地开发中数据引擎连接的 loopback host。
+  - 产品镜像使用 Python 3.11 / Debian Bookworm，Java 11 JRE 从官方 Eclipse Temurin `11-jre-jammy` 镜像取得；不使用已结束 LTS、软件包源失效的 Bullseye。镜像必须安装同一仓库的 `common-python`，使用根目录构建上下文；构建门禁验证依赖一致性、API 导入及真实 Spark 计算。
 
 ### Go 依赖版本规范
 

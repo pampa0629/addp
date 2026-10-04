@@ -125,8 +125,6 @@ def image_build_definition(service: str, directory: str) -> tuple[str, str | Non
         return f"{directory}/Dockerfile.prebuilt", compiled_binary_name(service), "."
     if service == "nginx":
         return "nginx/Dockerfile", None, "nginx"
-    if service == "spark-workflow-engine":
-        return f"{directory}/Dockerfile", None, directory
     if service.endswith("-frontend") or service == "console" or service.endswith("-engine") or service == "raster-mosaic-runtime":
         return f"{directory}/Dockerfile", None, "."
     raise RegistrationError(f"{service}: no static image build definition rule")

@@ -240,8 +240,8 @@ services:
 
   spark-workflow-engine:
     build:
-      context: ./engines/spark-workflow
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: engines/spark-workflow/Dockerfile
     image: ${REGISTRY:-localhost:5001}/addp-spark-workflow-engine:${IMAGE_TAG:-latest}
     container_name: spark-workflow-engine
     environment:

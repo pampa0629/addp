@@ -461,12 +461,12 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.image_build_definition("copilot-backend", "copilot"),
         )
 
-    def test_module_local_image_uses_module_build_context(self) -> None:
+    def test_spark_runtime_uses_shared_python_build_context(self) -> None:
         self.assertEqual(
             (
                 "engines/spark-workflow/Dockerfile",
                 None,
-                "engines/spark-workflow",
+                ".",
             ),
             MODULE.image_build_definition(
                 "spark-workflow-engine", "engines/spark-workflow"

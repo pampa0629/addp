@@ -29,6 +29,7 @@ class SelectImageServicesTest(unittest.TestCase):
             ("meta-worker", "meta/backend"),
             ("gateway", "gateway"),
             ("geopython-workflow-engine", "engines/geopython-workflow"),
+            ("spark-workflow-engine", "engines/spark-workflow"),
             ("model3d-workflow-engine", "engines/model3d-workflow"),
             ("console", "console/frontend"),
             ("meta-frontend", "meta/frontend"),
@@ -44,6 +45,10 @@ class SelectImageServicesTest(unittest.TestCase):
         )
         self._write(
             "engines/model3d-workflow/Dockerfile",
+            "FROM scratch\nCOPY common-python /common-python\n",
+        )
+        self._write(
+            "engines/spark-workflow/Dockerfile",
             "FROM scratch\nCOPY common-python /common-python\n",
         )
 
@@ -86,6 +91,7 @@ class SelectImageServicesTest(unittest.TestCase):
         selected = self._select("common-python/addp_common/client.py")
         self.assertIn("agent-backend", selected)
         self.assertIn("geopython-workflow-engine", selected)
+        self.assertIn("spark-workflow-engine", selected)
         self.assertIn("model3d-workflow-engine", selected)
 
     def test_model3d_change_selects_hosted_native_image_build(self) -> None:
