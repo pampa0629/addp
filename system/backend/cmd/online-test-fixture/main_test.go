@@ -168,6 +168,20 @@ func TestComposePublicOriginFixtureHasNoGrantedPermissions(t *testing.T) {
 	}
 }
 
+func TestComposePublicOriginBrowserReaderCanEnterManagerWithoutWritePrivileges(t *testing.T) {
+	// Manager's data-explorer entry requires both navigation and item-read access.
+	for _, permission := range []string{"manager.content.read", "manager.data_item.read"} {
+		if !contains(publicOriginReadPermissions, permission) {
+			t.Fatalf("public origin browser reader cannot enter Manager: missing %s", permission)
+		}
+	}
+	for _, permission := range publicOriginReadPermissions {
+		if !strings.HasSuffix(permission, ".read") {
+			t.Fatalf("public origin browser reader must remain read-only: %s", permission)
+		}
+	}
+}
+
 func TestValidateExternalEnvironment(t *testing.T) {
 	valid := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=1"}
 	if err := validateExternalEnvironment(valid, filepath.Join(t.TempDir(), "fixture.env")); err != nil {

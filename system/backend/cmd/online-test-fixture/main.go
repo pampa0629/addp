@@ -98,7 +98,7 @@ var redisConsumerPermissions = []string{
 }
 
 var publicOriginReadPermissions = []string{
-	"meta.catalog.read", "manager.data_item.read",
+	"meta.catalog.read", "manager.content.read", "manager.data_item.read",
 	"transfer.task.read", "orchestrator.workflow.read",
 }
 

@@ -120,7 +120,7 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
                     MODULE.run_browser()
 
     def test_real_token_matrix_checks_lists_writes_and_cross_tenant_detail(self):
-        read_permissions = ["meta.catalog.read", "manager.data_item.read", "transfer.task.read", "orchestrator.workflow.read"]
+        read_permissions = ["meta.catalog.read", "manager.content.read", "manager.data_item.read", "transfer.task.read", "orchestrator.workflow.read"]
         create_permissions = ["meta.scan_task.create", "transfer.task.create", "orchestrator.workflow.create", "orchestrator.workflow.execute"]
         calls = []
 

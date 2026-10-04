@@ -241,7 +241,7 @@ def assert_partial_permission_matrix() -> None:
     creator = os.environ["ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN"]
     administrator = os.environ["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"]
     assert_context_permissions(reader, {
-        "meta.catalog.read", "manager.data_item.read", "transfer.task.read", "orchestrator.workflow.read",
+        "meta.catalog.read", "manager.content.read", "manager.data_item.read", "transfer.task.read", "orchestrator.workflow.read",
     })
     assert_context_permissions(creator, {
         "meta.scan_task.create", "transfer.task.create", "orchestrator.workflow.create", "orchestrator.workflow.execute",
