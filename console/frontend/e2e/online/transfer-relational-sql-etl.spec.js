@@ -100,6 +100,12 @@ async function managerFieldGraph(page, locator, itemID, field, depth = 2) {
   return { graph, focused, frame }
 }
 
+async function showFieldOverview(frame) {
+  await frame.getByRole('button', { name: '全部字段', exact: true }).click()
+  await expect(frame.locator('.lineage-inspector')).toHaveCount(0)
+  await frame.getByRole('button', { name: '适应窗口', exact: true }).click()
+}
+
 async function verifyManagerLineage(page, api, env, sqlExecution) {
   const lineage = JSON.parse(env.ADDP_ONLINE_TRANSFER_FIELD_LINEAGE)
   const native = await managerFieldGraph(page, lineage.target_locator, lineage.target_item_id, 'area')
@@ -157,7 +163,8 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
       const isSource = node.item_id === mongodb.source_item_id
       expect(node.engine_id).toBe(isSource ? mongodb.source_engine_id : mongodb.target_engine_id)
       expect(node.schema_snapshot_hash).toBe(chain.snapshot_hashes[String(node.item_id)])
-      if (!isSource) expect(node.field_lineage_status).toBe('complete')
+      // Completeness is projected for the requested table's root fields only.
+      if (node.item_id === mongodb.target_item_id) expect(node.field_lineage_status).toBe('complete')
     }
     await ods.frame.getByRole('button', { name: 'leader_nickname_snapshot', exact: true }).click()
     await expect(ods.frame.locator('.lineage-inspector strong')).toHaveText('leader_nickname_snapshot')
@@ -166,6 +173,7 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
     const edges = ods.graph.edges.filter((_, index) => focused.connections.has(`lineage-edge:${index}`))
     expect(edges.map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
     await expect(ods.frame.getByRole('button', { name: '全部字段', exact: true })).toBeVisible()
+    await showFieldOverview(ods.frame)
     expect(mongodbGraphRequests).toBe(1)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-mongodb-ods-field-lineage.png'), fullPage: true })
   } finally {
@@ -177,7 +185,10 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   expect(dwd.graph.subject.schema_snapshot_hash).toBe(chain.schema_snapshot_hash)
   expect(dwd.focused.edges.map(edgeIdentity).sort()).toEqual(chain.date_edges.sort())
   expect(dwd.focused.nodes).toHaveLength(4)
-  for (const node of dwd.graph.nodes) expect(node.schema_snapshot_hash).toBe(chain.snapshot_hashes[String(node.item_id)])
+  for (const node of dwd.graph.nodes) {
+    expect(node.schema_snapshot_hash).toBe(chain.snapshot_hashes[String(node.item_id)])
+    if (node.item_id === chain.target_item_id) expect(node.field_lineage_status).toBe('complete')
+  }
   const latestChildren = Object.values(chain.rounds[1].child_execution_ids)
   for (const edge of dwd.graph.edges) expect(latestChildren).toContain(edge.evidence.execution_id)
   await dwd.frame.getByRole('button', { name: 'person_nickname', exact: true }).click()
@@ -185,6 +196,7 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   const selected = dwd.graph.nodes.find(node => node.item_id === chain.target_item_id && node.field_name === 'person_nickname')
   const focus = lineageFieldConnections(dwd.graph.edges, lineageNodeId(selected))
   expect(dwd.graph.edges.filter((_, index) => focus.connections.has(`lineage-edge:${index}`)).map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
+  await showFieldOverview(dwd.frame)
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-orchestrated-dwd-field-lineage.png'), fullPage: true })
 }
 
