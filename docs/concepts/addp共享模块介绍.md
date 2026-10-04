@@ -29,6 +29,7 @@
 - [client/service_token.go](../../common/client/service_token.go) - OAuthServiceTokenSource 按 `tenant_id` 或显式 `context_type=platform` 向 System 换取短期 Service Access Token，并按 Context 独立缓存
 - [client/system_service.go](../../common/client/system_service.go) - SystemServiceClient 是 Service Principal 调用 System 的 Bearer-only Client；Tenant 请求使用不可变 `WithTenantID`，平台模块注册、心跳以及随模块注册发布 TaskProvider 声明使用 Platform Context。模块注册返回可查询快照和完成信号的生命周期对象，状态固定为 `starting|registered|recovering|failed|stopped`，供 `common/modulelifecycle` 执行就绪判断。实例首次注册成功后，无论生命周期 Context 从心跳等待、请求或重试阶段取消，Client 都必须使用独立的限时 Context 注销该实例。Go 进程入口必须传入信号 Context，并在退出前等待生命周期完成信号。`SystemAPIError` 必须保留 System 错误的方法、路径、HTTP 状态、稳定错误码、错误文案和受限长度的原始响应正文，与 `common-python` 的模块注册客户端共用同一诊断语义
 - `common/client` 的 Tenant owner Client 统一通过 `TenantAPIError` 保留下游 HTTP 状态码和稳定 `error_code`，通过 `TenantTransportError` 表达连接失败和超时；调用方只能使用 `errors.As`、`TenantAPIStatusCode()`、`TenantAPIErrorCode()` 分类，不得解析本地化错误正文。`StandardClient` 的引用校验会将资源不存在和跨租户资源统一收敛为不可探测的“不存在”语义。
+- `common/authorization` 唯一定义普通只读共享的完整办理绑定、受理核清响应和最小签发历史 DTO；`common/client.SystemFulfillmentClient` 通过 Tenant Service Bearer 消费 System 的受理、核清、原参签发与签发历史查询，不编排自动办理、不保存 Grant 或判断当前数据访问。签发历史必须匹配原编号且时间非零；明确 `found=false` 并省略 `grant` 才是未找到，不将错误或缺字段降为未找到。
 - `common/engine/workflowaccess` - 把已解析的文件、对象或目录型存储资源转换为 `addp.workflow.access-plan/v1` 执行计划和脱敏审计计划；不保存任务定义、不决定产物归属，也不触发 Meta scan
 
 `common-python/addp_common/workflow_runtime` 提供 Python Workflow Runtime 的协议执行核心，包括 workflow definition 校验、DAG 拓扑排序、引用解析、异步 execution 状态和标准错误。它是共享库，不是独立工作流引擎；各运行时仍负责自己的算子注册、内存对象类型和专业执行依赖。

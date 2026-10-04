@@ -41,7 +41,7 @@ common/
 - 新增共享能力必须保持模块边界清晰，避免把某个业务模块的私有逻辑沉淀到 `common/`。
 - `common/authorization` 只提供 Permission/内置 Role Manifest Schema、解析/校验、确定性 Catalog Report、发布期聚合 CLI 和共享授权类型；业务 Permission 内容必须留在各 owner 的 `authorization/permissions.yaml`，产品内置 Role 内容必须留在 `system/authorization/builtin_roles.yaml`，不得建立 common 中央业务清单。
 - 普通只读共享的有效期模式、UTC 微秒规范化及同参比较由 `common/authorization` 唯一提供纯值契约；它不持有决定、回执或 Grant，不处理当前责任，也不能用于放宽临时接入、管理委派或 Token 期限。
-- 普通只读办理的完整历史绑定及核清响应 DTO 由 `common/authorization` 提供；`common/client.SystemFulfillmentClient` 只消费 System 的原结果查询与关闭 API，按不可变 Tenant Context 使用 Service Bearer，不处理可信业务批准、不接受用户 Token、不创建新受理或 Grant。明确 `found=false` 才表示权威未找到，HTTP 错误和缺失字段不能转换成未找到。
+- 普通只读办理的完整历史绑定、受理核清响应及最小签发历史 DTO 由 `common/authorization` 唯一定义。`common/client.SystemFulfillmentClient` 按不可变 Tenant Context 使用 Service Bearer，消费当前调用主体查询、受理、原结果查询／关闭及原参签发／签发历史查询 API；不接受用户 Token、不处理可信业务批准、不决定权限、不保存 Grant，也不自动编排这些请求。签发历史须匹配原编号且时间非零；只有明确 `found=false` 且省略 `grant` 才表示未找到签发记录，HTTP 错误和缺失字段不能转换成未找到。
 - `common/jsonmap` 只提供通用 JSON map 读写 helper，不承载 `meta_item.attributes` 规范语义。
 - `common/format` 只提供通用格式、type info / format info、parser / analyzer 能力；Meta item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块。
 - `common/contentio` 只表达内容定位和 I/O，不依赖 engine，不解析 format，不返回上层 DTO。

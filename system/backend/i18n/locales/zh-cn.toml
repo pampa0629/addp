@@ -300,9 +300,9 @@ other = "办理源读取授权"
 [permissions.system.engine_access_fulfillment.create.description]
 other = "结合有效引擎管理委派读取当前可见条目的候选摘要并发起源读取授权办理；不自动取得业务确认或数据访问权"
 [permissions.system.engine_access_fulfillment.execute.name]
-other = "执行源读取授权受理与核清"
+other = "执行源读取授权受理、签发与核清"
 [permissions.system.engine_access_fulfillment.execute.description]
-other = "仅供 Catalog 当前租户运行身份调用源读取授权首次受理、历史核清与关闭；不授予人类办理资格或数据访问权"
+other = "仅供 Catalog 当前租户运行身份调用源读取授权首次受理、原参签发、历史查询与关闭；仍须独立核验人类办理资格，历史结果不等于数据访问许可"
 
 [permissions.system.engine_access_grant.revoke.name]
 other = "撤销指定源数据授权"
@@ -310,3 +310,13 @@ other = "撤销指定源数据授权"
 other = "结合当前有效引擎管理委派收回指定 Grant；停用引擎仍可撤销，不影响其他独立授权，也不授予新权限"
 [system.engine_access_grant.revocation_conflict]
 other = "此授权已被撤销；本次操作者或原因与原记录不同，请查看原撤销历史"
+
+[system.engine_access_grant.expired]
+other = "授权已到期，无须撤销"
+
+[system.engine_access_grant.window_expired]
+other = "原自动办理窗口已到期；请重新核验并发起新的办理，不延续旧依据"
+[system.engine_access_fulfillment.closed]
+other = "原办理请求已关闭，不能签发新授权"
+[system.engine_access_fulfillment.binding_conflict]
+other = "本次参数与原办理请求不一致，请查询原请求，不得改变范围或期限"

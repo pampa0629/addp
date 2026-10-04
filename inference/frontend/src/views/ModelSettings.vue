@@ -133,6 +133,9 @@
               </el-table-column>
               <el-table-column prop="chat_max_output_tokens_parameter" :label="t('inference.deployment.chatMaxOutputTokensParameter')" min-width="210" />
               <el-table-column prop="chat_temperature_mode" :label="t('inference.deployment.chatTemperatureMode')" min-width="160" />
+              <el-table-column :label="t('inference.deployment.chatThinkingMode')" min-width="160">
+                <template #default="{ row }">{{ t(`inference.deployment.thinkingModes.${row.chat_thinking_mode}`) }}</template>
+              </el-table-column>
               <el-table-column prop="dimension" :label="t('inference.deployment.dimension')" width="105" />
               <el-table-column :label="t('inference.common.status')" width="105">
                 <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ t(`inference.status.${row.status}`) }}</el-tag></template>
@@ -284,6 +287,12 @@
             <el-form-item v-if="draftCapability.operations.includes('embedding')" :label="t('inference.deployment.dimension')" required>
               <el-input-number v-model="onboarding.modelDraft.dimension" :min="1" controls-position="right" />
             </el-form-item>
+            <el-form-item v-if="draftCapability.operations.includes('chat')" :label="t('inference.deployment.chatThinkingMode')" required>
+              <el-select v-model="onboarding.modelDraft.chatThinkingMode">
+                <el-option v-for="mode in CHAT_THINKING_MODES" :key="mode" :label="t(`inference.deployment.thinkingModes.${mode}`)" :value="mode" />
+              </el-select>
+              <el-text tag="p" size="small" type="info">{{ t('inference.deployment.thinkingModeHint') }}</el-text>
+            </el-form-item>
           </div>
           <el-button :icon="Plus" @click="addSelectedModel">{{ t('inference.onboarding.addModel') }}</el-button>
         </div>
@@ -296,6 +305,9 @@
           <el-table-column prop="profileCode" :label="t('inference.profile.code')" min-width="170" />
           <el-table-column prop="chatMaxOutputTokensParameter" :label="t('inference.deployment.chatMaxOutputTokensParameter')" min-width="210" />
           <el-table-column prop="chatTemperatureMode" :label="t('inference.deployment.chatTemperatureMode')" min-width="160" />
+          <el-table-column :label="t('inference.deployment.chatThinkingMode')" min-width="160">
+            <template #default="{ row }">{{ t(`inference.deployment.thinkingModes.${row.chatThinkingMode}`) }}</template>
+          </el-table-column>
           <el-table-column prop="dimension" :label="t('inference.deployment.dimension')" width="110" />
           <el-table-column width="80" align="right">
             <template #default="{ row }">
@@ -363,6 +375,12 @@
             </el-select>
           </el-form-item>
           <el-form-item v-if="form.operations.includes('embedding')" :label="t('inference.deployment.dimension')"><el-input-number v-model="form.dimension" :min="0" /></el-form-item>
+          <el-form-item v-if="form.operations.includes('chat')" :label="t('inference.deployment.chatThinkingMode')" required>
+            <el-select v-model="form.chat_thinking_mode">
+              <el-option v-for="mode in CHAT_THINKING_MODES" :key="mode" :label="t(`inference.deployment.thinkingModes.${mode}`)" :value="mode" />
+            </el-select>
+            <el-text tag="p" size="small" type="info">{{ t('inference.deployment.thinkingModeHint') }}</el-text>
+          </el-form-item>
           <el-form-item :label="t('inference.common.status')"><el-select v-model="form.status"><el-option :label="t('inference.status.active')" value="active" /><el-option :label="t('inference.status.disabled')" value="disabled" /></el-select></el-form-item>
         </template>
 
@@ -398,9 +416,12 @@ import {
   CAPABILITY_PRESETS,
   CHAT_MAX_OUTPUT_TOKENS_PARAMETERS,
   CHAT_TEMPERATURE_MODES,
+  CHAT_THINKING_MODES,
   applyPreset,
   capabilityPreset,
   createModelDraft,
+  deploymentPayload,
+  hasMatchingChatSettings,
   isValidProfileCode,
   modelOptions,
   parseTenantIDs
@@ -620,7 +641,8 @@ async function discoverProviderModels(providerId, template) {
     profileCode: item.profile_code,
     dimension: item.dimension || 0,
     chatMaxOutputTokensParameter: item.chat_max_output_tokens_parameter || CHAT_MAX_OUTPUT_TOKENS_PARAMETERS[0],
-    chatTemperatureMode: item.chat_temperature_mode || CHAT_TEMPERATURE_MODES[0]
+    chatTemperatureMode: item.chat_temperature_mode || CHAT_TEMPERATURE_MODES[0],
+    chatThinkingMode: CHAT_THINKING_MODES[0]
   }))
   onboarding.modelDraft = createModelDraft()
 }
@@ -651,7 +673,8 @@ function addSelectedModel() {
     profileCode,
     dimension: draftCapability.value.operations.includes('embedding') ? draft.dimension : 0,
     chatMaxOutputTokensParameter: draft.chatMaxOutputTokensParameter,
-    chatTemperatureMode: draft.chatTemperatureMode
+    chatTemperatureMode: draft.chatTemperatureMode,
+    chatThinkingMode: draft.chatThinkingMode
   })
   onboarding.modelDraft = createModelDraft()
 }
@@ -675,6 +698,11 @@ async function createSelectedModels() {
       ElMessage.warning(t('inference.onboarding.profileExists', { code: item.profileCode }))
       return
     }
+    const selectedDeployment = deployments.value.find(deployment => deployment.provider_connection_id === onboarding.providerId && deployment.upstream_model === item.upstreamModel)
+    if (selectedDeployment && capabilityPreset(item.preset).operations.includes('chat') && !hasMatchingChatSettings(selectedDeployment, item)) {
+      ElMessage.warning(t('inference.onboarding.deploymentSettingsDiffer', { model: item.upstreamModel }))
+      return
+    }
   }
 
   onboarding.processing = true
@@ -684,7 +712,7 @@ async function createSelectedModels() {
       const capability = capabilityPreset(item.preset)
       let deployment = deployments.value.find(value => value.provider_connection_id === onboarding.providerId && value.upstream_model === item.upstreamModel)
       if (!deployment) {
-        deployment = await deploymentAPI.create({
+        deployment = await deploymentAPI.create(deploymentPayload({
           provider_connection_id: onboarding.providerId,
           name: item.upstreamModel,
           upstream_model: item.upstreamModel,
@@ -693,8 +721,9 @@ async function createSelectedModels() {
           dimension: capability.operations.includes('embedding') ? item.dimension : 0,
           chat_max_output_tokens_parameter: item.chatMaxOutputTokensParameter,
           chat_temperature_mode: item.chatTemperatureMode,
+          chat_thinking_mode: item.chatThinkingMode,
           status: 'active'
-        })
+        }))
       }
       const existingProfile = profiles.value.find(profile => profile.scope_type === contextType.value && profile.code === item.profileCode)
       if (!existingProfile) {
@@ -727,7 +756,7 @@ function openCreate() {
   const kind = activeTab.value === 'providers' ? 'provider' : activeTab.value === 'deployments' ? 'deployment' : 'profile'
   Object.assign(dialog, { kind, editing: false, id: null, visible: true })
   if (kind === 'provider') assignForm({ name: '', scope_type: contextType.value, adapter_type: 'openai_compatible', endpoint: '', allow_all_tenants: contextType.value === 'platform', allowed_tenant_ids_text: '', status: 'active' })
-  if (kind === 'deployment') assignForm({ provider_connection_id: manageableProviders.value[0]?.id || '', name: '', upstream_model: '', operations: ['chat'], modalities: ['text'], dimension: 0, chat_max_output_tokens_parameter: CHAT_MAX_OUTPUT_TOKENS_PARAMETERS[0], chat_temperature_mode: CHAT_TEMPERATURE_MODES[0], status: 'active' })
+  if (kind === 'deployment') assignForm({ provider_connection_id: manageableProviders.value[0]?.id || '', name: '', upstream_model: '', operations: ['chat'], modalities: ['text'], dimension: 0, chat_max_output_tokens_parameter: CHAT_MAX_OUTPUT_TOKENS_PARAMETERS[0], chat_temperature_mode: CHAT_TEMPERATURE_MODES[0], chat_thinking_mode: CHAT_THINKING_MODES[0], status: 'active' })
   if (kind === 'profile') assignForm({ name: '', code: '', scope_type: contextType.value, model_deployment_id: deployments.value[0]?.id || '', status: 'active' })
 }
 
@@ -738,7 +767,7 @@ function openEditProvider(row) {
 
 function openEditDeployment(row) {
   Object.assign(dialog, { kind: 'deployment', editing: true, id: row.id, visible: true })
-  assignForm({ provider_connection_id: row.provider_connection_id, name: row.name, upstream_model: row.upstream_model, operations: [...(row.operations || [])], modalities: [...(row.modalities || [])], dimension: row.dimension || 0, chat_max_output_tokens_parameter: row.chat_max_output_tokens_parameter, chat_temperature_mode: row.chat_temperature_mode, status: row.status })
+  assignForm(deploymentPayload(row))
 }
 
 function openEditProfile(row) {
@@ -773,7 +802,7 @@ async function save() {
       if (dialog.editing) await providerAPI.update(dialog.id, providerPayload())
       else await providerAPI.create(providerPayload())
     } else if (dialog.kind === 'deployment') {
-      const payload = { provider_connection_id: form.provider_connection_id, name: form.name, upstream_model: form.upstream_model, operations: form.operations, modalities: form.modalities, dimension: form.operations.includes('embedding') ? form.dimension : 0, chat_max_output_tokens_parameter: form.chat_max_output_tokens_parameter, chat_temperature_mode: form.chat_temperature_mode, status: form.status }
+      const payload = deploymentPayload(form)
       if (dialog.editing) await deploymentAPI.update(dialog.id, payload)
       else await deploymentAPI.create(payload)
     } else {

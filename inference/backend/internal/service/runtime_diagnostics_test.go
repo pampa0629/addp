@@ -25,6 +25,7 @@ func TestRuntimeUpstreamDiagnosticsPreserveErrorsAndExcludeSensitiveData(t *test
 		want                                         error
 	}{
 		{"parameter_rejected", `{"error":{"code":"unsupported_parameter","type":"invalid_request_error","param":"max_tokens","message":"` + secret + `"}}`, "http_status", "unsupported_parameter", "invalid_request_error", "max_tokens", 400, ErrUpstreamFailed},
+		{"message_only", `{"error":{"type":"invalid_request_error","message":"Invalid schema for function '` + secret + `': ` + secret + `"}}`, "http_status", "unclassified", "invalid_request_error", "unclassified", 400, ErrUpstreamFailed},
 		{"untrusted_metadata", `{"error":{"code":"` + secret + `","type":"` + secret + `","param":"` + secret + `","message":"` + secret + `"}}`, "http_status", "unclassified", "unclassified", "unclassified", 401, ErrUpstreamFailed},
 		{"unavailable", `{"error":{"message":"` + secret + `"}}`, "http_status", "unclassified", "unclassified", "unclassified", 503, ErrUpstreamUnavailable},
 		{"timeout", secret, "http_status", "unclassified", "unclassified", "unclassified", 504, ErrTimeout},
@@ -83,7 +84,38 @@ func TestRuntimeUpstreamDiagnosticsPreserveErrorsAndExcludeSensitiveData(t *test
 					t.Errorf("%s=%v, want %v", key, event[key], want)
 				}
 			}
+			wantHint := "unclassified"
+			if tc.name == "message_only" {
+				wantHint = "invalid_tool_schema"
+			}
+			if event["upstream_error_hint"] != wantHint {
+				t.Errorf("upstream_error_hint=%v, want %s", event["upstream_error_hint"], wantHint)
+			}
 		})
+	}
+}
+
+func TestUpstreamErrorHintsOnlyEmitFixedTemplateLabels(t *testing.T) {
+	for _, tc := range []struct{ message, want string }{
+		{"Unsupported parameter: 'temperature'. private-value", "unsupported_parameter:temperature"},
+		{"Unsupported value: 'tool_choice': private-value", "unsupported_value:tool_choice"},
+		{"Unknown parameter: 'max_tokens' private-value", "unknown_parameter:max_tokens"},
+		{"Unsupported parameter: 'private-value'", "unclassified"},
+		{"Unsupported parameter: 'temperature_private-value'", "unclassified"},
+		{"private-value Unsupported parameter: 'temperature'", "unclassified"},
+		{"Unsupported value: 'messages[0].role': private-value", "unsupported_message_role"},
+		{"Invalid schema for function 'private-value': private-value", "invalid_tool_schema"},
+		{"Invalid schema for response_format 'private-value': private-value", "invalid_response_schema"},
+		{"This is not a chat model: private-value", "chat_endpoint_unsupported"},
+		{"This model is only supported in v1/responses: private-value", "responses_endpoint_required"},
+		{"Tool choice 'required' is not supported: private-value", "required_tool_choice_unsupported"},
+		{"private-value", "unclassified"},
+		{"", "unclassified"},
+		{"Unsupported parameter: 'temperature'" + strings.Repeat("private-value", 1000), "unclassified"},
+	} {
+		if got := upstreamErrorHint(tc.message); got != tc.want || strings.Contains(got, "private-value") {
+			t.Errorf("unexpected hint: %s, want %s", got, tc.want)
+		}
 	}
 }
 

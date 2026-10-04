@@ -36,6 +36,14 @@ func (a *systemSharingFulfillmentAuthority) Close(ctx context.Context, tenantID 
 	return runtimeFulfillmentResolution(result)
 }
 
+func (a *systemSharingFulfillmentAuthority) ReadGrant(ctx context.Context, tenantID int64, id uuid.UUID, binding sharingFulfillmentBinding) (*shared.SharingFulfillmentGrantLookup, error) {
+	return a.client.WithTenantID(uint(tenantID)).ResolveGrant(ctx, id, binding)
+}
+
+func (a *systemSharingFulfillmentAuthority) IssueGrant(ctx context.Context, tenantID int64, id uuid.UUID, binding sharingFulfillmentBinding) (*shared.SharingFulfillmentGrant, error) {
+	return a.client.WithTenantID(uint(tenantID)).IssueGrant(ctx, id, binding)
+}
+
 func runtimeFulfillmentResolution(result *shared.SharingFulfillmentResolution) (*sharingFulfillmentResolution, error) {
 	if result == nil || result.RecordedAt.IsZero() || result.Binding.Validate() != nil ||
 		(result.Outcome != "accepted" && result.Outcome != "closed") ||
@@ -46,12 +54,13 @@ func runtimeFulfillmentResolution(result *shared.SharingFulfillmentResolution) (
 	return &sharingFulfillmentResolution{RequestID: result.RequestID, TenantID: result.TenantID, Binding: result.Binding, Outcome: result.Outcome}, nil
 }
 
-// Recovery consumes committed history only. It is not a dispatcher for new
-// acceptance and never drops protection merely because a request is old.
+// Recovery consumes committed requests only: reconcile acceptance, then
+// continue original issuance. It never prepares or accepts a new request,
+// refreshes its window, or drops protection merely because a request is old.
 type SharingFulfillmentReconciliationRunner struct {
 	db        *gorm.DB
 	tenants   TenantIDProvider
-	authority sharingFulfillmentAuthority
+	authority sharingFulfillmentIssuanceAuthority
 	interval  time.Duration
 }
 
@@ -100,7 +109,7 @@ func (r *SharingFulfillmentReconciliationRunner) reconcileTenant(ctx context.Con
 	var cursor *models.FulfillmentCheck
 	for {
 		var checks []models.FulfillmentCheck
-		query := r.db.WithContext(ctx).Where("tenant_id = ? AND resolved_at IS NULL AND created_at <= "+cutoff, tenantID)
+		query := r.db.WithContext(ctx).Where("tenant_id = ? AND grant_reconciled_at IS NULL AND created_at <= "+cutoff, tenantID)
 		if cursor != nil {
 			query = query.Where("(created_at, request_id) > (?, ?)", cursor.CreatedAt, cursor.RequestID)
 		}
@@ -112,7 +121,7 @@ func (r *SharingFulfillmentReconciliationRunner) reconcileTenant(ctx context.Con
 				return ctx.Err()
 			}
 			callContext, cancel := context.WithTimeout(ctx, 30*time.Second)
-			_, err := reconcileSharingFulfillment(callContext, r.db, row.TenantID, row.CatalogEntryID, row.RequestID, r.authority)
+			_, err := continueSharingFulfillment(callContext, r.db, row.TenantID, row.CatalogEntryID, row.RequestID, r.authority)
 			cancel()
 			if err != nil {
 				failures = append(failures, err)

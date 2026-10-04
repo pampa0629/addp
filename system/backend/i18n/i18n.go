@@ -12,6 +12,10 @@ var localeFS embed.FS
 // 消息 key 常量
 const (
 	MsgGrantRevocationConflict                       = "system.engine_access_grant.revocation_conflict"
+	MsgGrantRevocationExpired                        = "system.engine_access_grant.expired"
+	MsgGrantWindowExpired                            = "system.engine_access_grant.window_expired"
+	MsgFulfillmentClosed                             = "system.engine_access_fulfillment.closed"
+	MsgFulfillmentBindingConflict                    = "system.engine_access_fulfillment.binding_conflict"
 	MsgFulfillmentCapabilityUnavailable              = "system.engine_access.fulfillment_capability_unavailable"
 	MsgRuntimeLogSourceInvalid                       = "system.module.log_source_invalid"
 	MsgRuntimeLogSourceForbidden                     = "system.module.log_source_forbidden"

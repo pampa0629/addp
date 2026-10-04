@@ -132,6 +132,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterEngineAccessFulfillmentAcceptanceRoutes(api, runtime, &EngineAccessFulfillmentAcceptanceHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
+	if err := RegisterEngineAccessFulfillmentGrantRoutes(api, runtime, &EngineAccessFulfillmentGrantHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
 	if err := RegisterEngineAccessHandlingScopeRoutes(api, runtime, &EngineAccessHandlingScopeHandler{
 		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability),
 	}); err != nil {

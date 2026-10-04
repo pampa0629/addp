@@ -296,6 +296,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "显式声明 Chat 参数及思考控制；disabled 仅适用于支持 thinking.type=disabled 的上游 | Declare Chat parameters and thinking control; disabled requires upstream support for thinking.type=disabled",
                 "consumes": [
                     "application/json"
                 ],
@@ -375,6 +376,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "完整更新模型配置；省略 chat_thinking_mode 保存 upstream_default，不按模型自动选择 | Replace deployment configuration; omitted chat_thinking_mode uses upstream_default, never model-based inference",
                 "consumes": [
                     "application/json"
                 ],
@@ -1181,6 +1183,15 @@ const docTemplate = `{
                 },
                 "chat_temperature_mode": {
                     "type": "string"
+                },
+                "chat_thinking_mode": {
+                    "description": "ChatThinkingMode 控制是否发送关闭思考的协议字段 | Controls explicit upstream thinking disablement.",
+                    "type": "string",
+                    "default": "upstream_default",
+                    "enum": [
+                        "upstream_default",
+                        "disabled"
+                    ]
                 },
                 "dimension": {
                     "type": "integer"

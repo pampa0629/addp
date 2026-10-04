@@ -258,6 +258,7 @@ func (h *Handler) GetDeployment(c *gin.Context) {
 
 // CreateDeployment godoc
 // @Summary 创建 Model Deployment | Create model deployment
+// @Description 显式声明 Chat 参数及思考控制；disabled 仅适用于支持 thinking.type=disabled 的上游 | Declare Chat parameters and thinking control; disabled requires upstream support for thinking.type=disabled
 // @Tags Inference Deployment
 // @Accept json
 // @Produce json
@@ -282,6 +283,7 @@ func (h *Handler) CreateDeployment(c *gin.Context) {
 
 // UpdateDeployment godoc
 // @Summary 更新 Model Deployment | Update model deployment
+// @Description 完整更新模型配置；省略 chat_thinking_mode 保存 upstream_default，不按模型自动选择 | Replace deployment configuration; omitted chat_thinking_mode uses upstream_default, never model-based inference
 // @Tags Inference Deployment
 // @Accept json
 // @Produce json

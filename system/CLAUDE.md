@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > 源数据授权职责扩展（已确认，表级贯通待实现）：System 的引擎访问控制领域唯一维护物理表、文件或对象的访问规则；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
 
-> 正式受理归属（2026-10-01 已确认，分步实施）：Catalog 管业务批准及当前责任核验，System 的引擎访问控制领域持久保存最小正式受理回执。回执与批准要求变更、Grant 写入在同一精确目标边界排序，不复制业务责任或业务决定正文；不是访问凭据或 Grant。原 5 分钟窗口不因重试刷新，退出不取消退出前已受理的同次、同参办理。迁移 000167 和内部仓储提供同次受理／关闭互斥、不可变结果及事务审计底座；000168 增加精确目标的版本化批准要求，新受理消费当前 `catalog` 模式及版本，退出／重新启用与受理共享目标锁。承接人仅用于当次资格核验及交接审计，不是永久唯一审批人。正式准备、可信 owner 反查与首次受理已接通；尚未发布 Grant 写入或内容访问接口，不以 Catalog 本地锁或独立时钟冒充先后证明。
+> 正式受理归属（2026-10-01 已确认，分步实施）：Catalog 管业务批准及当前责任核验，System 的引擎访问控制领域持久保存最小正式受理回执。回执与批准要求变更、Grant 写入在同一精确目标边界排序，不复制业务责任或业务决定正文；不是访问凭据或 Grant。原 5 分钟窗口不因重试刷新，退出不取消退出前已受理的同次、同参办理。迁移 000167 和内部仓储提供同次受理／关闭互斥、不可变结果及事务审计底座；000168 增加精确目标的版本化批准要求，新受理消费当前 `catalog` 模式及版本，退出／重新启用与受理共享目标锁。承接人仅用于当次资格核验及交接审计，不是永久唯一审批人。正式准备、可信 owner 反查、首次受理及受理后的 Runtime Grant 签发／历史查询已接通；尚未贯通 Catalog 自动签发或执行侧内容访问，不以 Catalog 本地锁或独立时钟冒充先后证明。
 
 > 内部核清读取：`engineaccess.Repository.readFulfillment` 使用独立只读事务，与仲裁共用完整请求绑定匹配，不取仲裁锁；未找到不等于关闭，退出或过期不改写原回执。拒绝在受理写事务中暴露自身未提交结果。该仓储不替代可信跨模块核清接口、当前资格判断或实际 Grant 消费。
 
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 精确目标办理要求观察（2026-10-03）：`POST /engines/:id/access_handling_requirement` 使用同一当前 User 办理权限及委派核验，仅接受完整路径的 `version`／`segments`，Engine ID 唯一来自路径参数。结构路径可能超过安全 URL 长度，故采用只读 POST；仅返回精确叶子的 `mode` 及字符串 `requirement_version`，不继承父要求、不枚举配置、不初始化缺失要求（404），不创建 Grant、待核清或批准要求变更审计。正式准备仍核验原版本，不因观察而扩大配置 `.read` 权限；HTTP 请求审计不记录正文。Catalog 人类办理页已消费此接口，刷新原请求仍只用 GET。
 
-> 内部操作来源底线：完整请求不可变绑定 User Principal、Tenant Membership 和授权版本；首次受理按身份 → 请求 → 目标顺序，在 IAM 共享行锁下核验当前身份、成员关系、租户及成员到期时间，业务核验后再查数据库墙钟。共享锁与审计外键引用兼容，不阻塞不同目标的独立读取核验；现有管理委派写入仍保留原写锁。关闭与只读历史核清不要求原操作人仍有效，不由历史结果恢复新办理资格。身份引用本身并非可信来源证明；正式受理另通过 `addp-system` 反查 Catalog 已提交待核清事实，并独立核验办理 Permission、管理委派及当前确认人 IAM，不发布 Grant 接口。
+> 内部操作来源底线：完整请求不可变绑定 User Principal、Tenant Membership 和授权版本；首次受理按身份 → 请求 → 目标顺序，在 IAM 共享行锁下核验当前身份、成员关系、租户及成员到期时间，业务核验后再查数据库墙钟。共享锁与审计外键引用兼容，不阻塞不同目标的独立读取核验；现有管理委派写入仍保留原写锁。关闭与只读历史核清不要求原操作人仍有效，不由历史结果恢复新办理资格。身份引用本身并非可信来源证明；正式受理另通过 `addp-system` 反查 Catalog 已提交待核清事实，并独立核验办理 Permission、管理委派及当前确认人 IAM；签发仅消费已提交受理回执，不接受浏览器自报批准。
 
 > 普通只读共享有效期：每次显式选择 `at_time`（未来绝对到期时间）或 `until_revoked`（无到期日期，直至撤销）；遗漏模式或矛盾参数拒绝，模式与日期均绑定不可变请求。自动办理窗口仍为原受理时间起 5 分钟；限时共享另受授权到期时间截断，长期有效不延长办理窗口。000172 在排他锁与同一事务内将历史有限期回执无损标为 `at_time`、补齐绑定并恢复不可变触发器，不创建 Grant 或改变历史时间。临时接入、管理委派和敏感操作规则不变。
 
@@ -28,11 +28,11 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 
 正式 Runtime 首次受理（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/accept` 限定当前 `addp-catalog` Tenant Service 身份及 `.execute`。System 在本地锁外使用独立 `addp-system` Tenant Service OAuth 反查 Catalog 精确待核清依据，再按稳定 IAM 锁顺序核验原办理人、确认人、接收主体、独立办理权限／委派及批准要求版本；结果和审计原子提交。000180 仅给 `tenant.system_runtime` 最小 Catalog 依据读取权。可选 `SYSTEM_SERVICE_CLIENT_SECRET` 缺失不影响 Ready，只阻断新受理并返回明确 503；历史结果恢复和关闭不依赖它。移除配置停用 Client 并撤销原 Token Family，不借用其他模块凭据。此链路不是 Grant，不代表实际源读取或 Online T4 已验收。
 
-内部幂等 Grant 签发（2026-10-03）：000182 的 `system.engine_access_grants` 仅保存唯一原办理编号与数据库签发时刻，精确参数继续引用不可变受理回执。`engineaccess.writeAcceptedGrant` 核验当前机器、原办理人版本／权限、引擎管理委派与接收主体，按身份→引擎／委派→原请求→精确目标排序，写入和审计原子提交。锁等待和审计等待跨过原窗口都回滚；已有签发的同参重试只恢复原历史，不要求原操作人仍有效、不延长任何期限。不重新调用 Catalog 或用后续批准要求否定已经受理的同次请求。当前没有 HTTP 签发入口、Catalog 自动消费、Explicit Deny 或执行侧访问裁决；指定 Grant 撤销另由 000183 与下文独立撤销 API 维护，期限边界的待确认项见专题 §26.55。不得声称源数据访问已经生效。
+幂等 Grant 签发（2026-10-03）：000182 的 `system.engine_access_grants` 仅保存唯一原办理编号与数据库签发时刻，精确参数继续引用不可变受理回执。`engineaccess.IssueFulfillmentGrant` 经唯一 `writeAcceptedGrant` 路径核验当前机器、原办理人版本／权限、引擎管理委派与接收主体，按身份→引擎／委派→原请求→精确目标排序，写入和审计原子提交。锁等待和审计等待跨过原窗口都回滚；已有签发的同参重试只恢复原历史，不要求原操作人仍有效、不延长任何期限。不重新调用 Catalog 或用后续批准要求否定已经受理的同次请求。唯一 HTTP 入口为 `POST /runtime/engine-access-fulfillments/:request_id/grant`，历史查询为同路径的 `POST /grant/resolve`；固定 Catalog Tenant Service 与既有 `.execute`，不新增默认授权。窗口过期、关闭和绑定冲突返回稳定 409 错误码，响应仅证明签发历史，不含当前访问允许标记。Catalog 自动消费、Explicit Deny 和执行侧裁决尚未贯通；指定 Grant 撤销由 000183 与独立撤销 API 维护，000184 前向收紧自然到期后的首次撤销。已确认：到期后的首次撤销返回 409、不写新事实及撤销成功审计；到期前已撤销的原参重试仍在当前资格有效时返回原历史，长期有效仍可撤销。不得声称源数据访问已经生效。
 
 精确目标批准要求初始化（2026-10-02）：User 在当前 Tenant Context 中通过 `POST /api/v1/system/engines/:id/access_approval_requirements` 显式建立版本 1 的 `catalog` 要求；只接受完整结构化路径和原因，不接受模式、版本或操作者身份。独立 `system.engine_access_approval_requirement.initialize` 与当前引擎管理委派取交集；读取使用独立 `.read` 与当前委派。两项权限由 000174 登记，均不默认分配给内置角色。身份 → 引擎／委派 → 精确目标锁，等待后按数据库墙钟再核验资格，配置和审计同事务。重复初始化返回 409，不覆盖既有模式，也不创建 Grant。退出、重新启用及实际 Grant 消费者仍未开放；可信跨模块首次受理已接通，不存在批准要求不能视为独立批准。此入口不依赖 Catalog 在线，没有前端配置入口。
 
-内部业务确认资格（2026-10-02）：首次受理还须从 owner 业务决定获取原确认人的身份引用，与办理人及接收账号共同去重升序共享锁定。确认人的历史授权版本只作审计，实时核验原 Tenant Membership、当前身份及 `catalog.entry.read`／`catalog.sharing_decision.create` 的有效 Tenant Scope 授权；原办理人仍严格匹配请求版本。权限和成员自然到期在业务核验后按数据库墙钟复核。历史核清及未受理关闭不重新要求确认资格；内部入参不构成可信 owner 证明；正式 Runtime 受理在数据库锁外通过独立 `addp-system` Tenant Service OAuth 反查 Catalog 原责任依据，事务内核验独立办理 Permission。没有实际 Grant 接口。
+内部业务确认资格（2026-10-02）：首次受理还须从 owner 业务决定获取原确认人的身份引用，与办理人及接收账号共同去重升序共享锁定。确认人的历史授权版本只作审计，实时核验原 Tenant Membership、当前身份及 `catalog.entry.read`／`catalog.sharing_decision.create` 的有效 Tenant Scope 授权；原办理人仍严格匹配请求版本。权限和成员自然到期在业务核验后按数据库墙钟复核。历史核清及未受理关闭不重新要求确认资格；内部入参不构成可信 owner 证明；正式 Runtime 受理在数据库锁外通过独立 `addp-system` Tenant Service OAuth 反查 Catalog 原责任依据，事务内核验独立办理 Permission。后续签发接口只消费本域已经受理的精确请求，不提供新的独立批准入口。
 
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
 - 统一 IAM（全局 User、Tenant Membership、组织、角色、权限和平台三员分立）
@@ -458,7 +458,7 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 - 同一实例的租约过期及恢复由确定性浏览器用例连续验证：全部状态列表自动从 UP 更新为 DOWN；已离线实例不出现在 UP 筛选中，恢复实例自动退出 DOWN 筛选；组合条件与 URL 保持不变。租约超时只说明失联，离线时不推断进程持续运行时长；相同进程续租恢复后继续按原启动时间计算。真实 System/Gateway 注册和恢复链路另由隔离部署中的 T4 `module-registry-recovery` 验证，不以受控 API 夹具替代。
 
 
-内部签发结果只读找回（2026-10-03）：`engineaccess.resolveAcceptedGrant` 只观察已提交签发历史，原完整绑定匹配和当前 Runtime 资格均须通过；未找到不是关闭或授权许可。受理与签发历史共用自有只读事务边界，拒绝暴露调用事务自身未提交记录，不取仲裁锁，先结束历史读取再开始资格事务。签发入口复用此找回路径，但新签发仍在权威写事务内查重与重新核验。尚未开放 HTTP 查询或执行侧裁决。
+签发结果只读找回（2026-10-03）：`engineaccess.ResolveFulfillmentGrant` 经唯一 `resolveAcceptedGrant` 路径只观察已提交签发历史，原完整绑定匹配和当前 Runtime 资格均须通过；未找到不是关闭或授权许可。受理与签发历史共用自有只读事务边界，拒绝暴露调用事务自身未提交记录，不取仲裁锁，先结束历史读取再开始资格事务。签发入口复用此找回路径，但新签发仍在权威写事务内查重与重新核验。HTTP 查询未找到返回 `found=false` 且省略 `grant`；找到仅返回原编号和签发时刻，不能把历史当作执行侧当前访问裁决。
 
 ## 模块实例运行日志
 

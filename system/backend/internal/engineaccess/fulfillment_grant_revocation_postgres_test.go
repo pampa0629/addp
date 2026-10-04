@@ -78,6 +78,160 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				}
 			}
 		}
+		finiteGrant := func(t *testing.T) (*fulfillmentGrant, time.Time) {
+			t.Helper()
+			var expires time.Time
+			if err := db.Raw("SELECT clock_timestamp() + interval '1.5 seconds'").Scan(&expires).Error; err != nil {
+				t.Fatal(err)
+			}
+			binding := base
+			binding.ExpiryMode, binding.ExpiresAt = shared.SharingExpiryAtTime, &expires
+			return issue(t, binding), expires
+		}
+		waitExpiry := func(db *gorm.DB, expires time.Time) error {
+			// Reset the audit INSERT statement after attaching the context while
+			// retaining its transaction; otherwise its bind variables leak here.
+			return db.WithContext(ctx).Session(&gorm.Session{NewDB: true}).Exec("SELECT pg_sleep(GREATEST(EXTRACT(EPOCH FROM (?::timestamptz - clock_timestamp())) + 0.03, 0))", expires).Error
+		}
+		t.Run("expired first withdrawal writes neither history nor audit", func(t *testing.T) {
+			actor, _ := qualified(t, 0)
+			g, expires := finiteGrant(t)
+			if err := waitExpiry(db, expires); err != nil {
+				t.Fatal(err)
+			}
+			if row, err := service.RevokeGrant(ctx, inputFor(actor, g.RequestID)); row != nil || !errors.Is(err, ErrGrantRevocationExpired) {
+				t.Fatalf("expired first withdrawal=%+v %v", row, err)
+			}
+			assertCount(t, g.RequestID, 0)
+			// A caller-supplied old timestamp cannot bypass the storage boundary.
+			tx := db.WithContext(ctx).Begin()
+			if tx.Error != nil {
+				t.Fatal(tx.Error)
+			}
+			defer tx.Rollback()
+			row := &GrantRevocation{RequestID: g.RequestID, RevokedByPrincipalID: actor.PrincipalID,
+				RevokedByMembershipID: actor.MembershipID, RevokedAt: g.GrantedAt, Reason: "Backdated expired withdrawal"}
+			if err := mapError(tx.Create(row).Error); !errors.Is(err, ErrGrantRevocationExpired) {
+				t.Fatalf("storage permitted expired insertion: %v", err)
+			}
+			if err := tx.Rollback().Error; err != nil {
+				t.Fatal(err)
+			}
+			assertCount(t, g.RequestID, 0)
+			actor.TokenExpiresAt = time.Now().Add(-time.Second)
+			if row, err := service.RevokeGrant(ctx, inputFor(actor, g.RequestID)); row != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+				t.Fatalf("expired Grant leaked before qualification: %+v %v", row, err)
+			}
+		})
+		t.Run("withdrawal before expiry retries after expiry without a new fact", func(t *testing.T) {
+			actor, _ := qualified(t, 0)
+			g, expires := finiteGrant(t)
+			input := inputFor(actor, g.RequestID)
+			original, err := service.RevokeGrant(ctx, input)
+			if err != nil || original == nil || !original.RevokedAt.Before(expires) {
+				t.Fatalf("before expiry=%+v %v", original, err)
+			}
+			if err := waitExpiry(db, expires); err != nil {
+				t.Fatal(err)
+			}
+			input.Reason = "  " + input.Reason + "\n"
+			if row, err := service.RevokeGrant(ctx, input); err != nil || row == nil || !row.RevokedAt.Equal(original.RevokedAt) {
+				t.Fatalf("expired retry changed history: %+v %v", row, err)
+			}
+			input.Reason = "Different reason after expiry"
+			if _, err := service.RevokeGrant(ctx, input); !errors.Is(err, ErrGrantRevocationConflict) {
+				t.Fatalf("expiry masked different-parameter conflict: %v", err)
+			}
+			input.Reason = original.Reason
+			input.Actor.TokenExpiresAt = time.Now().Add(-time.Second)
+			if row, err := service.RevokeGrant(ctx, input); row != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+				t.Fatalf("expired retry bypassed current qualification: %+v %v", row, err)
+			}
+			assertCount(t, g.RequestID, 1)
+		})
+		t.Run("Grant expiry during insert is an expiry conflict not a storage failure", func(t *testing.T) {
+			actor, _ := qualified(t, 0)
+			g, expires := finiteGrant(t)
+			const callback = "fixture:withdrawal_insert_expiry"
+			reached := false
+			if err := db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+				if row, ok := tx.Statement.Dest.(*GrantRevocation); ok && row.RequestID == g.RequestID {
+					reached = true
+					if err := waitExpiry(tx.Session(&gorm.Session{NewDB: true}), expires); err != nil {
+						tx.AddError(err)
+					}
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			defer db.Callback().Create().Remove(callback)
+			if row, err := service.RevokeGrant(ctx, inputFor(actor, g.RequestID)); row != nil || !errors.Is(err, ErrGrantRevocationExpired) || !reached {
+				t.Fatalf("insertion boundary: reached=%v row=%+v err=%v", reached, row, err)
+			}
+			assertCount(t, g.RequestID, 0)
+		})
+		t.Run("Grant expiry after successful audit rolls back both facts", func(t *testing.T) {
+			actor, _ := qualified(t, 0)
+			g, expires := finiteGrant(t)
+			const callback = "fixture:withdrawal_audit_grant_expiry"
+			auditWritten := false
+			if err := db.Callback().Create().After("gorm:create").Register(callback, func(tx *gorm.DB) {
+				if log, ok := tx.Statement.Dest.(*iam.AuditLog); ok && log.EventName == "system.engine_access_grant.revoked" {
+					auditWritten = tx.Error == nil
+					if err := waitExpiry(tx.Session(&gorm.Session{NewDB: true}), expires); err != nil {
+						tx.AddError(err)
+					}
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			defer db.Callback().Create().Remove(callback)
+			if row, err := service.RevokeGrant(ctx, inputFor(actor, g.RequestID)); row != nil || !errors.Is(err, ErrGrantRevocationExpired) || !auditWritten {
+				t.Fatalf("audit expiry: written=%v row=%+v err=%v", auditWritten, row, err)
+			}
+			assertCount(t, g.RequestID, 0)
+		})
+		t.Run("target lock wait rechecks Grant natural expiry", func(t *testing.T) {
+			actor, _ := qualified(t, 0)
+			g, expires := finiteGrant(t)
+			path, err := shared.EncodeSharingTarget(base.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tx := db.WithContext(ctx).Begin()
+			if tx.Error != nil {
+				t.Fatal(tx.Error)
+			}
+			defer tx.Rollback()
+			if err := NewRepository(tx).lockFulfillmentTarget(ctx, runtime.TenantID, path); err != nil {
+				t.Fatal(err)
+			}
+			result := make(chan error, 1)
+			go func() { _, err := service.RevokeGrant(ctx, inputFor(actor, g.RequestID)); result <- err }()
+			blocked := false
+			for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+				if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND NOT granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database()))").Scan(&blocked).Error; err != nil {
+					t.Fatal(err)
+				}
+				if blocked {
+					break
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			if !blocked {
+				t.Fatal("withdrawal did not wait on the target lock")
+			}
+			if err := waitExpiry(tx, expires); err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Rollback().Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := <-result; !errors.Is(err, ErrGrantRevocationExpired) {
+				t.Fatalf("lock wait escaped Grant expiry: %v", err)
+			}
+			assertCount(t, g.RequestID, 0)
+		})
 		t.Run("personal withdrawal leaves group and other personal Grants unchanged", func(t *testing.T) {
 			actor, _ := qualified(t, 0)
 			personal := issue(t, base)
@@ -128,9 +282,13 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				if g == groupGrant {
 					b = binding
 				}
-				recovered, err := service.writeAcceptedGrant(ctx, runtime, g.RequestID, b)
+				recovered, err := service.IssueFulfillmentGrant(ctx, runtime, g.RequestID, b)
 				if err != nil || recovered == nil || !recovered.GrantedAt.Equal(g.GrantedAt) {
 					t.Fatalf("withdrawal rewrote issuance=%+v %v", recovered, err)
+				}
+				lookup, err := service.ResolveFulfillmentGrant(ctx, runtime, g.RequestID, b)
+				if err != nil || lookup == nil || !lookup.Found || lookup.Grant == nil || !lookup.Grant.GrantedAt.Equal(g.GrantedAt) {
+					t.Fatalf("withdrawal changed public issuance history=%+v %v", lookup, err)
 				}
 			}
 			assertCount(t, personal.RequestID, 1)
@@ -278,6 +436,56 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			}
 			if r, err := service.RevokeGrant(ctx, input); r != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("unqualified retry exposed history=%+v %v", r, err)
+			}
+			assertCount(t, g.RequestID, 1)
+		})
+		t.Run("normalized reason retries preserve original history", func(t *testing.T) {
+			actor, _ := qualified(t, 0)
+			g := issue(t, base)
+			input := inputFor(actor, g.RequestID)
+			input.Reason = " \tWithdraw this Grant\n "
+			original, err := service.RevokeGrant(ctx, input)
+			if err != nil || original == nil || original.Reason != "Withdraw this Grant" {
+				t.Fatalf("normalized withdrawal=%+v %v", original, err)
+			}
+			input.Reason = "Withdraw this Grant"
+			retried, err := service.RevokeGrant(ctx, input)
+			if err != nil || retried == nil || !retried.RevokedAt.Equal(original.RevokedAt) {
+				t.Fatalf("normalized retry replaced history=%+v %v", retried, err)
+			}
+			assertCount(t, g.RequestID, 1)
+		})
+		t.Run("audit wait cannot commit withdrawal with expired token", func(t *testing.T) {
+			actor, _ := qualified(t, 0)
+			g := issue(t, base)
+			const callback = "fixture:withdrawal_audit_delay"
+			auditWritten := false
+			if err := db.Callback().Create().After("gorm:create").Register(callback, func(tx *gorm.DB) {
+				if log, ok := tx.Statement.Dest.(*iam.AuditLog); ok && log.EventName == "system.engine_access_grant.revoked" {
+					auditWritten = tx.Error == nil
+					if err := tx.Session(&gorm.Session{NewDB: true}).Exec("SELECT pg_sleep(0.4)").Error; err != nil {
+						tx.AddError(err)
+					}
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			defer db.Callback().Create().Remove(callback)
+			actor.TokenExpiresAt = time.Now().Add(300 * time.Millisecond)
+			input := inputFor(actor, g.RequestID)
+			if row, err := service.RevokeGrant(ctx, input); row != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+				t.Fatalf("audit wait escaped token expiry=%+v %v", row, err)
+			}
+			if !auditWritten {
+				t.Fatal("fixture did not reach the successful audit write before waiting")
+			}
+			assertCount(t, g.RequestID, 0)
+			if err := db.Callback().Create().Remove(callback); err != nil {
+				t.Fatal(err)
+			}
+			input.Actor.TokenExpiresAt = time.Now().Add(time.Minute)
+			if _, err := service.RevokeGrant(ctx, input); err != nil {
+				t.Fatal(err)
 			}
 			assertCount(t, g.RequestID, 1)
 		})

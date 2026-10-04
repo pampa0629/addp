@@ -45,6 +45,7 @@ erDiagram
         string[] modalities
         string chat_max_output_tokens_parameter
         string chat_temperature_mode
+        string chat_thinking_mode
         string status
     }
     MODEL_PROFILE {
@@ -84,6 +85,10 @@ OpenAI-compatible Chat 的最大输出 token 参数由 Model Deployment 的 `cha
 
 Chat 的温度参数由 Model Deployment 的 `chat_temperature_mode` 显式声明，当前只允许 `configurable` 和 `default_only`。`configurable` 才向上游发送调用方提供的 `temperature`；`default_only` 使用上游默认值且不得发送该字段。Inference Runtime 不根据模型名称猜测，也不因上游拒绝后重试另一种请求。
 
+Chat 的思考模式控制由 Model Deployment 的 `chat_thinking_mode` 显式声明，当前只允许 `upstream_default` 和 `disabled`。创建或完整更新时省略该字段默认保存 `upstream_default`；启动时由 Inference 的既有模型迁移为存量部署补齐同一非空默认值。`upstream_default` 不发送思考控制字段，并不代表上游关闭思考；`disabled` 在 OpenAI-compatible Chat 请求中单次发送 `thinking={"type":"disabled"}`。管理员只有确认上游支持该字段及语义时才能选择 `disabled`；非 OpenAI-compatible Provider 不接受该选择。不得按厂商、模型名称或 Endpoint 自动选择，不接受任意扩展参数，也不根据失败响应切换模式。
+
+当前统一消息契约不传递 `reasoning_content`，因此不开放显式开启思考或思考内容多轮回传能力。需要思考历史参与 Tool Calling 的部署不能被当作已支持该场景；管理员必须按上游契约显式关闭思考，或选择满足现有消息契约的部署。调用方的 `tool_choice=required` 保持不变，不能静默退化为 `auto`。`disabled` 映射依据支持该字段的 [Chat Completions 协议](https://api-docs.deepseek.com/api/create-chat-completion/)，不是所有 OpenAI-compatible 服务都支持的通用能力。
+
 ### 2.1 Provider Template 与快速接入
 
 Provider Template 是 Inference owner 维护的只读接入目录，用于降低 Provider、Deployment 和 Profile 的首次配置成本。模板可以预置：
@@ -104,6 +109,8 @@ Provider Template
 ```
 
 默认管理界面可以把上述创建过程组织为一个向导，并把三类正式资源放入高级设置，但不得在数据库中建立一套与 Provider、Deployment、Profile 并行的“简化配置”。模板目录由 Inference API 提供，Console 只负责呈现；System 仍只登记配置入口、权限和审计。
+
+快速接入复用已有 Chat Deployment 时，必须核对用户确认的最大输出参数、温度和思考控制与已有事实一致。不一致时应在任何资源创建前拒绝，并提示通过高级设置显式编辑；不得忽略选择，也不得隐式修改可能被其他 Profile 引用的部署。
 
 OpenAI-compatible 模型发现统一由 Inference 服务端使用 Provider Connection 的 Endpoint 和加密凭据调用标准 `/models` 接口。浏览器不得直接访问厂商 Endpoint 或接触已保存凭据。发现结果只表示上游当前列出的模型标识，不能仅根据模型名称推断 Chat、Embedding、Rerank、Tool Calling、输入模态或向量维度；这些能力必须来自模板声明、管理员确认或实际能力探测。
 
@@ -159,7 +166,7 @@ Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据
 | `PUT/DELETE /provider-connections/{id}/credential` | 设置、轮换或删除加密凭据。 |
 | `GET /provider-templates` | 查询 Inference 内置的只读模型服务接入模板。 |
 | `POST /provider-connections/{id}/discover-models` | 使用该 Provider 的服务端 Endpoint 和加密凭据发现 OpenAI-compatible 模型。 |
-| `GET/POST /model-deployments` | 列表或创建 Deployment；Chat 参数能力必须通过 `chat_max_output_tokens_parameter` 和 `chat_temperature_mode` 显式声明。 |
+| `GET/POST /model-deployments` | 列表或创建 Deployment；Chat 参数能力通过 `chat_max_output_tokens_parameter`、`chat_temperature_mode` 和 `chat_thinking_mode` 显式声明。 |
 | `GET/PUT/DELETE /model-deployments/{id}` | 读取、更新或删除 Deployment，包括显式的 Chat 参数能力映射。 |
 | `POST /model-deployments/{id}/probe` | 显式执行无副作用可达性和能力探测。 |
 | `GET/POST /model-profiles` | 列表或创建 Profile。 |
@@ -204,6 +211,8 @@ Chat Tool Calling 使用厂商无关的结构：`tools[]` 只包含稳定 `name/
 
 上游调用失败时，Inference 记录固定的失败阶段、Provider / Deployment 身份和 HTTP 状态。OpenAI-compatible 错误中的 `code/type/param` 只能以严格允许列表投影到诊断日志，未知值统一为 `unclassified`；不得记录原始错误文案、响应正文、Endpoint、凭据、请求消息或 Tool 参数和结果。诊断不改变公开错误契约，也不触发参数替换、模型切换或额外重试。
 
+当上游没有给出可识别的结构化错误时，可以从错误文案的固定模板生成允许列表内的 `upstream_error_hint`。提示与上游的 `code/type/param` 分开记录，不冒充结构化事实，不自动驱动配置变更。模板只识别稳定的参数名、消息角色、Schema 和接口拒绝类别，不输出文案中的模型名、工具名、参数值或任意子串；未匹配或过长的文案仍为 `unclassified`。
+
 ## 七、调用方边界
 
 - Copilot 保存 `resource_resolution`、`query_generation`、`workflow_generation`、`notebook_generation`、`transfer_generation`、`navigation_guide`、`knowledge_graph_extraction` 和 `standard_document_extraction` Scenario Binding，负责领域 prompt、领域上下文、结构化输出校验和有限业务重试。
@@ -230,3 +239,4 @@ Provider、Deployment 和 Profile 是强类型资源，使用独立 API、表、
 4. 三种场景绑定解析结果：Tenant 显式、平台默认、未配置错误。
 5. 上游错误到 ADDP 稳定错误的映射，且不存在隐藏 fallback。
 6. Agent、Copilot、Manager 代码和根 `.env.example` 中不存在厂商 API Key 或直连模型 endpoint 路径。
+7. Chat 思考控制的默认省略、显式关闭、非法值拒绝、持久化更新及快速接入/高级编辑；关闭思考不改变 Tool Choice、不产生额外请求。真实厂商调用须在部署新代码后另行验证，不能以受控上游测试代替。

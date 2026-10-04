@@ -189,6 +189,14 @@ func (s *Runtime) Chat(ctx context.Context, req commoninference.ChatRequest) (*c
 		return nil, ErrUnsupported
 	}
 	body := map[string]interface{}{"model": resolved.deployment.UpstreamModel, "messages": upstreamMessages, "stream": false}
+	switch resolved.deployment.ChatThinkingMode {
+	case ChatThinkingModeUpstreamDefault:
+		// Omission does not assert that upstream thinking is disabled.
+	case ChatThinkingModeDisabled:
+		body["thinking"] = map[string]string{"type": "disabled"}
+	default:
+		return nil, ErrProfileUnavailable
+	}
 	if len(upstreamTools) > 0 {
 		body["tools"] = upstreamTools
 		body["tool_choice"] = req.ToolChoice
@@ -679,17 +687,20 @@ func (s *Runtime) invokeAt(ctx context.Context, resolved *resolvedModel, endpoin
 func logUpstreamFailure(ctx context.Context, resolved *resolvedModel, stage string, status int, payload []byte) {
 	var upstream struct {
 		Error struct {
-			Code  string `json:"code"`
-			Type  string `json:"type"`
-			Param string `json:"param"`
+			Code    string `json:"code"`
+			Type    string `json:"type"`
+			Param   string `json:"param"`
+			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(payload, &upstream) != nil {
 		upstream.Error.Code, upstream.Error.Type, upstream.Error.Param = "", "", ""
+		upstream.Error.Message = ""
 	}
 	logger.L().ErrorContext(ctx, "inference upstream invocation failed",
 		"stage", stage, "upstream_http_status", status,
 		"provider_connection_id", resolved.provider.ID, "model_deployment_id", resolved.deployment.ID,
+		"upstream_error_hint", upstreamErrorHint(upstream.Error.Message),
 		"upstream_error_code", allowedDiagnosticValue(upstream.Error.Code,
 			"unsupported_parameter", "unsupported_value", "invalid_parameter", "invalid_value", "invalid_api_key",
 			"model_not_found", "insufficient_quota", "rate_limit_exceeded", "context_length_exceeded", "content_filter"),
@@ -697,6 +708,35 @@ func logUpstreamFailure(ctx context.Context, resolved *resolvedModel, stage stri
 			"invalid_request_error", "authentication_error", "permission_error", "rate_limit_error", "server_error", "insufficient_quota"),
 		"upstream_error_param", allowedDiagnosticValue(upstream.Error.Param,
 			"model", "messages", "max_tokens", "max_completion_tokens", "temperature", "tools", "tool_choice", "response_format", "stream"))
+}
+
+// Hints describe a recognized text template, not an authoritative upstream
+// error code. Never return upstream text or use hints to change a request.
+func upstreamErrorHint(message string) string {
+	if len(message) > 8192 {
+		return "unclassified"
+	}
+	message = strings.ToLower(strings.TrimSpace(message))
+	for _, parameter := range []string{"model", "messages", "max_tokens", "max_completion_tokens", "temperature", "tools", "tool_choice", "response_format", "stream"} {
+		for _, category := range []string{"unsupported parameter", "unsupported value", "unknown parameter"} {
+			if strings.HasPrefix(message, category+": '"+parameter+"'") {
+				return strings.ReplaceAll(category, " ", "_") + ":" + parameter
+			}
+		}
+	}
+	for _, template := range []struct{ prefix, hint string }{
+		{"unsupported value: 'messages[0].role'", "unsupported_message_role"},
+		{"invalid schema for function ", "invalid_tool_schema"},
+		{"invalid schema for response_format ", "invalid_response_schema"},
+		{"this is not a chat model", "chat_endpoint_unsupported"},
+		{"this model is only supported in v1/responses", "responses_endpoint_required"},
+		{"tool choice 'required' is not supported", "required_tool_choice_unsupported"},
+	} {
+		if strings.HasPrefix(message, template.prefix) {
+			return template.hint
+		}
+	}
+	return "unclassified"
 }
 
 func allowedDiagnosticValue(value string, allowed ...string) string {

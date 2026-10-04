@@ -92,7 +92,7 @@ func testCoordinationForwardMigration(t *testing.T, filename string, expectedVer
 		t.Fatal("coordination migration changed IAM grants or authorization versions")
 	}
 	expectedTriggers := int64(2)
-	if expectedVersion == 182 {
+	if table == "engine_access_grants" || table == "engine_access_grant_revocations" {
 		expectedTriggers = 3 // insertion window plus immutable row/truncate guards
 	}
 	if err := db.QueryRow("SELECT count(*) FROM pg_trigger WHERE tgrelid = $1::regclass AND NOT tgisinternal", "system."+table).Scan(&triggers); err != nil || triggers != expectedTriggers {

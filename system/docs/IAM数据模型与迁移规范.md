@@ -14,6 +14,8 @@ System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants
 
 迁移 000183 增加 `engine_access_grant_revocations`：以原办理 UUID 唯一引用 Grant，追加撤销者 Principal／Tenant Membership、数据库墙钟与必填原因；不复制或改写原目标、接收主体、动作和期限。行及整表历史不可 UPDATE／DELETE／TRUNCATE，插入核验撤销者为原 Tenant 的 User 成员。真实撤销命令发布独立 `system.engine_access_grant.revoke`，不默认分配 Role 或账号，不推进既有授权版本；服务核验当前账号、Token、Permission 和引擎管理委派，并同事务写入高风险撤销审计。引擎停用或失去实时目录能力仍允许收回旧授权，账号或委派失效则拒绝；不修改新授予的启用条件。撤销历史不是 Explicit Deny，也不表示执行侧数据权限已经接通。
 
+迁移 000184 只前向收紧撤销插入触发器：按数据库墙钟拒绝原 `at_time` Grant 到期后的首次撤销，不回填时间、不修改既有撤销／受理／签发历史，不新增或分配权限。服务写入前和审计后提交前同样检查授权期限，失败同时回滚撤销与审计；已成功撤销的原参重试优先读取历史，仅重新核验当前操作者资格，不受原授权后续到期或五分钟自动办理窗口限制。`until_revoked` 保持可主动撤销。
+
 IAM 权威表位于 PostgreSQL `system` schema，只允许 `system/backend/internal/migration/sql/*.up.sql` 单向迁移。IAM 表不得进入 GORM `AutoMigrate`，运行时不得根据表存在性补列、建表或写兼容种子。
 
 ## 二、统一字段规则
@@ -164,6 +166,8 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 迁移 `000178_engine_access_fulfillment_handling` 随 System 当前 User 办理范围观察和 Catalog 人类候选摘要读取登记独立 `system.engine_access_fulfillment.create`：仅 Tenant Scope、high risk、不可委托、允许租户定制。没有默认 Role Permission、Assignment 或 Grant，不修改现有主体授权版本。业务确认权、编目权、管理委派或机器 `.execute` 都不能替代它；有效管理委派仍须另外核验。前向迁移与重复运行并入既有 `engine-access-coordination` PostgreSQL 分组和完整迁移门禁。该观察接口本身不是受理或内容授权入口；正式准备与首次受理另通过专用入口消费同一独立 Permission。
 
 普通只读共享显式选择 `expiry_mode=at_time|until_revoked`，受理结果和完整 binding 都保存该模式，`grant_expires_at` 在长期有效时为 NULL。指定到期仍须为未来时间；长期有效的自动办理窗口仍严格为原受理时间后 5 分钟。迁移 `000172_engine_access_fulfillment_expiry_mode` 在排他表锁及同一事务内暂时撤下该表 UPDATE/DELETE 不可变保护，将存量限时记录无损标记为 `at_time`、为 binding 补齐模式，再恢复保护及完整日期／截止时间约束；原到期、受理时间、截止时间、身份和审计不变。不改写已执行 167，不增加实际 Grant、默认权限或授权版本变化。长期有效不改变临时接入规则和管理委派的强制到期契约。
+
+正式受理后的 Grant HTTP（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/grant` 及其 `/grant/resolve` 查询复用 000182 表和唯一生产签发／只读历史路径；无新迁移、实体或默认赋权。当前 `addp-catalog` Tenant Service 及既有 `.execute` 是机器入口资格，新签发仍独立检查原人类 `.create`、引擎管理委派和接收主体。原编号及 `granted_at` 是最小不可变签发历史；查询 `found=false` 不代表关闭，查询与重试不延长原窗口或恢复撤销。不涉及 Catalog 自动消费、Explicit Deny 或执行侧当前数据访问裁决，完整接口契约见《addp授权上下文规范》§5.5.3。
 
 ### 6.1 Context Selection
 

@@ -2863,19 +2863,19 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 - [x] 明确历史恢复不能恢复权限：保留原受理及签发事实，同参签发重试不清除撤销、不重复授予；撤销事实与高风险审计须由 System 同事务维护，Catalog 不复制源数据授权。
 - [x] 核对现有资格路径：`withApprovalRequirementScope` 及 `lockedManagementScope.check` 将新办理资格与 Engine 启用状态、实时目录能力绑定；直接复用会使停用引擎的旧 Grant 无法撤销。现有 `engine_access_delegation.revoke` 撤销的是管理委派，不能拿来代替源数据 Grant 撤销。
 - [x] 已确认的权限行为：当前账号与管理委派仍有效、并另具独立撤销 Permission 时，允许在 Engine 停用或失去实时目录能力后收回旧 Grant，但不得授予新权限；账号或委派失效仍拒绝。
-- [ ] 自然到期后的首次撤销契约仍待确认；其余原参重试、并发撤销、唯一写路径、不可变事实、独立权限、审计及公开契约已进入 §26.55 实现，不以内部测试回调或预登记无人消费的 Permission 代替生产资格。
+- [x] 自然到期后的首次撤销契约已在 §26.57 确认：到期后拒绝首次主动撤销，已成功撤销的同参重试仍返回原历史。其余原参重试、并发撤销、唯一写路径、不可变事实、独立权限、审计及公开契约已进入 §26.55 实现，不以内部测试回调或预登记无人消费的 Permission 代替生产资格。
 - [x] §26.55 已验证个人／项目组独立 Grant 不受误撤、旧签发重试不能恢复权限、当前资格失效、目标范围隔离、撤销与审计原子性、并发重试和锁等待后凭据到期。沿用现有 System T1、IAM PostgreSQL T2 与权限发布门禁；公开跨模块消费者接通后才开展对应 Online T4，自然到期首次撤销不能用这些结果代替决策。
 
 本节文档核对阶段尚未新增撤销实现、迁移、Permission 或 HTTP API，后续实现见 §26.55；不启停用户开发服务，不修改开发数据库，不接管并行工作。权限语义待确认项会改变实际操作范围，先讨论再实施，不能以“只收回不扩大权限”为由跳过资格定义。
 
 本轮文档范围验证：`git diff --check`（上述三份文档）及 `make test-authorization` 均退出码 0，Manifest／聚合器、生成常量、Tool Catalog、SQL seed、授权覆盖与 Swagger 路由覆盖通过。未新增执行代码，未重跑 System 模块 T1／T2 或 Online T4；该结果不证明尚未实现的撤销操作已经可用。后续实现须重新运行与代码范围匹配的标准门禁，不能沿用本轮文档阶段结果作为完成证据。
 
-### 26.55 指定 Grant 撤销生产路径（2026-10-03，进行中）
+### 26.55 指定 Grant 撤销生产路径（2026-10-03）
 
 - [x] 文档先行明确停用引擎仍可撤销的资格，与新授予资格分开；真实接口发布独立 Permission，不隐式授权角色或账号。
-- [x] 已实现确认范围内的唯一 HTTP 命令 `POST /engines/:id/access_grants/:request_id/revoke`、000183 不可变撤销事实和同事务审计；原受理、签发和其他独立 Grant 不变。自然到期规则仍待确认，不将这一点视为已定稿。
+- [x] 已实现确认范围内的唯一 HTTP 命令 `POST /engines/:id/access_grants/:request_id/revoke`、000183 不可变撤销事实和同事务审计；原受理、签发和其他独立 Grant 不变。当时尚待确认的自然到期规则已在 §26.57 明确并补充实现。
 - [x] 已核验当前资格、跨范围隐藏、重复与并发撤销、审计失败回滚及签发历史重试；新增测试纳入 System T1／IAM PostgreSQL T2 和权限发布标准门禁，最终整模块复验通过。
-- [ ] 自然到期后的首次撤销行为尚在确认：建议到期后只读原历史，不再追加首次主动撤销；已经成功撤销的原参重试仍返回原记录（调用者当前资格必须有效）。另一种选择是允许到期后补充撤销历史，但不得延长或恢复访问。现实现尚未加自然到期的首次撤销限制，不能将这一现状当作业务定稿。
+- [x] 自然到期后的首次撤销行为已明确选择“到期后不追加首次主动撤销”；到期前已成功撤销的同参重试仍返回原记录，调用者当前资格必须有效。实现与本次复验见 §26.57；本节最初未限制自然到期的实现不是最终契约。
 
 本轮不启停用户开发服务、不修改开发数据库、不接管并行工作。尚未开放签发 HTTP／执行侧裁决，不以撤销 API 或数据库回归宣称跨模块数据权限已经贯通。以下为本轮最新输入的复验结果，不沿用前轮结果。
 
@@ -2883,4 +2883,102 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 
 完整门禁复验：先运行 `bash scripts/infra/status.sh` 确认实际 PostgreSQL 为 25432，以 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 显式指定保留测试库 `addp_iam_test`，再运行 `make test-module MODULE=system`，最终退出码 0。平台 T0、全部 System Go T1、前端 18 个文件／91 个单元用例、40 个既有浏览器用例及构建、完整 IAM PostgreSQL T2 与运行日志 T2 均通过。000183 升级、重复迁移和无默认赋权检查通过，完整迁移种子断言同步 System 权限数量为 148；未登录接口用例使用真正无凭据请求，不复用会自动附带 Bearer 的 helper。运行日志门禁专属容器、网络、卷和源目录清理为零残留。Swagger 重新生成完成，System 190 个公开路由方法覆盖一致。
 
-本轮文件的 `git diff --check` 通过；全工作区同命令仍报告并行 `.github/workflows/online-t4-gates.yml:831` 的文件尾空行，未改动该并行文件。不把本次 System owner 的结果外推到所有工作区改动。未运行此授权链路的真实跨模块 Online T4；既有 System 浏览器回归也不等于新 Grant 撤销界面的验证。到期边界确认并补足对应测试前，新接口不视为完整可交付，下一步优先确定“自然到期后首次撤销”规则，而不是先扩展界面或执行侧。
+本轮文件的 `git diff --check` 通过；当时全工作区同命令仍报告并行 `.github/workflows/online-t4-gates.yml:831` 的文件尾空行，未改动该并行文件。不把本次 System owner 的结果外推到所有工作区改动。未运行此授权链路的真实跨模块 Online T4；既有 System 浏览器回归也不等于新 Grant 撤销界面的验证。本节当时优先待确认的“自然到期后首次撤销”规则，随后已由用户确认，最终实现及本轮验证见 §26.57。
+
+### 26.56 撤销重试与提交前资格的补充验证（2026-10-03）
+
+本轮只补充已确认行为的 PostgreSQL 回归，不修改权限规则、公开 API 或数据库迁移；用户负责开发服务启动，本会话不启停或接管开发环境。
+
+- [x] 增加撤销原因首尾空白规范化的重复提交用例：返回原撤销时间，撤销事实和审计各保留一条，不生成第二次撤销。
+- [x] 增加审计已经写入、等待期间调用凭据到期的用例：提交前当前资格核验失败，撤销与审计必须同时回滚；持有效凭据重试后仅提交一次。夹具必须证明已进入成功的审计写入，不能以调用开始前就过期冒充提交前复核。
+- [x] 沿用 System T1／IAM PostgreSQL T2 的自动发现和 Hosted CI `make test-system-iam-postgres`，没有新测试入口、数据库或依赖。标准 owner 计划仍包括平台 T0、System Go、前端 T1/T3、完整 IAM T2 和运行日志 T2。
+- [x] 最新定向 PostgreSQL 复验通过：显式测试 DSN 下执行 `bash scripts/test/system-iam-postgres-gate.sh --package engineaccess`，退出码 0，包含上述两项新增用例与现有受理／签发／撤销／锁竞争回归，没有 Skip。首次定向运行失败在新夹具的 GORM 回调语句复用，已按既有签发测试使用同一事务下的独立语句上下文修正；首次失败结果不计为通过。
+- [ ] 本轮 `make test-module MODULE=system` 退出码 2，被平台 T0 的 `ontology-falkor-gate_test.py` 两项启动夹具阻断：并行 `scripts/dev/start.sh` 将 `source "${SCRIPT_DIR}/ports.sh"` 移到所抽取块中，夹具未提供 `SCRIPT_DIR`，报 `unbound variable`。未修改该并行启动逻辑或夹具；System Go T1、前端 T1/T3、完整 IAM T2 与运行日志 T2 均未由本轮整模块入口执行，不能标为通过。定向 engineaccess T2 结果不替代整模块门禁。
+- [x] §26.55 的自然到期后首次撤销规则随后由用户明确确认，实施见 §26.57；本节补充验证不包含该规则。签发 HTTP、Catalog 自动消费和执行侧访问裁决也不在本节验证范围内。
+
+本轮测试使用经 `scripts/infra/status.sh` 核对的实际 PostgreSQL 映射 25432，显式 DSN 指向 `addp_iam_test`；不连接开发数据库，不运行此授权链路的 Online T4。
+
+本轮改动范围的 `git diff --check` 和全工作区同命令均退出码 0；未提交代码。本节当时的后续事项是确认自然到期后的首次撤销规则、落实期限边界及相应测试，并在并行启动夹具修复后重跑整模块门禁；后续推进与复验结果统一见 §26.57，以上失败记录保留为该阶段证据，不代表当前仍有同一阻断。
+
+### 26.57 Grant 自然到期与主动撤销（2026-10-03，实现完成，整模块门禁待复验）
+
+- [x] 用户明确确认：自然到期后拒绝首次主动撤销；到期前已成功撤销的同主体、同成员关系、同规范化原因重试，在当前资格有效时仍返回原记录；长期有效仍可撤销。只撤指定 Grant，不改变 Catalog 责任或其他独立授权，不把五分钟办理窗口当作撤销期限。
+- [x] 先同步术语表、授权上下文规范与 System 模块文档，API 到期冲突使用 409 `engine_access_grant_expired`，不追加撤销事实及成功审计。
+- [x] 唯一服务路径及前向迁移 000184 按数据库墙钟防止过期首次撤销，保留原迁移摘要和不可变历史。迁移只替换插入保护函数；当前 IAM 资格、原 Tenant 绑定、不可变行及禁止 TRUNCATE 的保护保持不变。
+- [x] 补充精确边界、真实 PostgreSQL 到期、原参历史恢复、插入期间到期及审计等待回滚测试；更新现有定向迁移筛选和 Swagger，沿用 System T1／IAM PostgreSQL T2／权限发布标准入口及 CI 自动发现。
+- [ ] 本轮已运行 `make test-module MODULE=system`，最终退出码 2：平台 T0、System Go T1、前端 18 个文件／91 个单元用例、40 个浏览器用例及构建、完整 IAM PostgreSQL T2 均通过；运行日志 T2 的连续 observer 用例失败，整模块门禁不计通过。失败详见下文，不能沿用前轮结果替代。
+
+本轮不启停用户开发服务、不接管 Redis 或并行 owner、不修改开发数据库、不提交代码。签发 HTTP、Catalog 自动消费、Explicit Deny 和执行侧裁决尚未接通，不宣称完整数据权限闭环。
+
+已完成定向复验：先按 `scripts/infra/status.sh` 确认 PostgreSQL 映射为 25432，显式测试 DSN 指向保留测试库 `addp_iam_test`；`bash scripts/test/system-iam-postgres-gate.sh --package engineaccess` 与 `bash scripts/test/system-iam-postgres-gate.sh --package migration --test engine-access-coordination` 最终均退出码 0、无 Skip。000184 从 000183 前向升级、重复运行、触发器保留及不新增 Permission／授权版本检查通过。第一次定向失败发生在新审计等待夹具：绑定 Context 后未最后清理原 GORM INSERT 语句参数，现已保留同一事务并重置语句上下文后复验通过，首次失败不计为通过。
+
+Swagger 生成首次因并行 Go 输入变化被缓存校验拒绝，随后标准生成入口重跑退出码 0；`bash scripts/swagger/check-route-coverage.sh system` 检查 190 个公开路由方法一致。Hosted CI 既有 `release-and-t2-gates.yml` 的 System IAM Job 执行完整 `make test-system-iam-postgres`，自动包含新迁移及真实 PostgreSQL 用例，无需新建 Job 或数据库。
+
+整模块未通过项：运行日志 T2 在并行新增的连续 observer 场景中，`scripts/test/runtime-log-observer-fixture.py:95` 的 `len(new_sources) == 1` 断言失败，报 `detection created a new receiver source`。核对时，`common/runtimelog/`、`common/cmd/runtime-log/`、该夹具及 `system-runtime-log-gate.sh` 正由并行工作修改；本轮授权改动不涉及这些文件，未覆盖、回退或接管。该错误只能说明日志源数量不符合断言，不能据此断言生产数据权限失败或具体日志实现根因。失败路径已执行自动清理，日志记录本次专属容器、网络和卷删除；当前另有运行日志测试在执行，不停止其资源。
+
+本轮授权用例的锁等待跨过自然到期、插入期间到期冲突、成功审计后到期回滚、历史重试、永久期限和 000184 升级均已由标准 IAM T2 验证；没有运行尚未接通的签发／执行授权 Online T4。全工作区 `git diff --check` 退出码 0。以上结果覆盖各门禁实际读取的输入，不替并行会话之后的新增修改背书。
+
+最小复验：先执行 `bash scripts/infra/status.sh`，按实际 PostgreSQL 映射配置 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 指向 `addp_iam_test`，再执行 `make test-module MODULE=system`；并行运行日志问题修复后，应以该入口重新取得整模块通过结果。000184 尚未应用到开发数据库，由用户下次正常启动 System 时迁移，不手工改开发库或清除 dirty 状态。
+
+后续优先补齐正式 Grant 签发与结果查询的 HTTP 契约，再接 Catalog 自动办理；不能把当前内部受理／签发历史或撤销接口，提前解释成执行侧数据访问已生效。
+
+### 26.58 正式受理后 Grant 签发与历史查询 HTTP（2026-10-03）
+
+本轮限定 System owner：在现有唯一签发与只读历史查询路径上开放 `/runtime/engine-access-fulfillments/:request_id/grant` 和 `/grant/resolve` 两个 POST；固定 Catalog Tenant Service 及既有 `.execute`，不新增权限、默认角色授权或数据库实体。不办理独立批准／初始接入，查询不写入、不续期，成功响应仅证明历史签发，不代表当前数据访问允许。边界契约先落入《addp授权上下文规范》§5.5.3，再实现代码。
+
+验证范围为 System T0、Go T1（HTTP 身份、严格绑定、错误码及最小响应）、IAM PostgreSQL T2（生产 Service 签发／只读查询与原锁竞争回归）、Swagger 路由覆盖，以及现有 `make test-module MODULE=system`。既有 System 自动发现及 CI 门禁已覆盖相应目录，无须新增旁路测试入口。整模块如受并行运行日志改动影响，应保留失败证据，不把定向通过写成整模块通过。开发服务由用户启停，不修改开发数据库、不提交代码。
+
+- [x] 两个 HTTP 入口接入生产 Router，复用既有完整绑定输入、当前机器资格与唯一签发／历史查询事务路径；响应不含 `active`、访问允许或可编辑授权参数。
+- [x] 增加窗口到期、原请求关闭、绑定冲突的稳定错误码及中英文消息；既有 `.execute` 文案同步说明原参签发，不新增权限或默认角色授权。
+- [x] HTTP 回归覆盖缺少凭据、错误身份／Client、无权限、完整合法绑定夹带额外字段、伪造调用主体、非法 UUID、单一 POST 路径、历史最小响应及双语错误。Service PostgreSQL 回归覆盖未签发查询无写入、原参重试、冲突、已撤销历史找回及既有到期／锁等待回滚。
+- [x] `bash scripts/swagger/gen-swagger.sh system` 与 `bash scripts/swagger/check-route-coverage.sh system` 均退出码 0，System 192 个公开路由方法覆盖一致。
+- [x] 定向 IAM PostgreSQL T2：实际映射 25432、显式 `addp_iam_test` DSN 下执行 `bash scripts/test/system-iam-postgres-gate.sh --package engineaccess`，退出码 0，无 Skip；日志 `/tmp/addp-grant-http-engineaccess-20261003.log`。
+- [x] 最新整模块运行中，T0、完整 System Go T1、前端 18 个文件／91 个单元用例、40 个浏览器用例及 Vite 构建通过。日志 `/tmp/addp-grant-http-system-final-20261003.log`。
+- [ ] `make test-module MODULE=system` 尚未取得整条命令成功证据：首次退出码 2 是新增 HTTP 测试未使用 import，已删除；日志 `/tmp/addp-grant-http-system-20261003.log`。第二次 Go T1 失败是无权限夹具错误使用 `nil` Role Assignment，而规范要求显式空数组，认证层因此返回格式错误 500 而非权限拒绝 403；已按现有规范修正夹具，不放宽生产校验，日志 `/tmp/addp-grant-http-system-retry-20261003.log`。第三次退出码 2，停在未改动的 IAM PostgreSQL 用例 `TestInternalTaskAuthorizationAgainstPostgres`：`authenticated time must not be in the future`；后续 IAM 包及运行日志 T2 在该次整模块命令中未执行。以上失败不计为通过。
+- [x] 既有 `make test-system-iam-postgres` 独立完整复验退出码 0，无 Skip，包含 IAM、OAuth、API、迁移、engineaccess 和 repository 六个包；日志 `/tmp/addp-grant-http-iam-recheck-20261003.log`。现有 IAM 用例分别使用宿主机 `time.Now()` 和数据库 `statement_timestamp()` 作为输入／校验时间；只读采样未证实持续时钟偏差，独立完整复验中该用例已通过，不能声称根因已修复，也未放宽生产认证校验。
+- [x] `make test-system-runtime-log` 独立完整复验退出码 0，真实观察器、断网恢复、日志持久化、旧实例隔离及 Loki 分页通过；测试专属容器、网络、卷及来源目录均由标准入口清理，无遗留。日志 `/tmp/addp-grant-http-runtime-log-20261003.log`。未启停用户开发服务。
+
+本轮实现收口：受影响的 T0、Go／前端 T1、完整 IAM 与运行日志 T2、Swagger 均已有通过证据；这些是上述不同标准入口的分层结果，不改写第三次整模块命令退出码 2 的历史。未新增迁移、未修改开发数据库、未提交代码。若后续完整门禁再次出现 IAM 时间错误，应保留失败瞬间的双时间来源证据另行定位，不用固定减时、放宽校验或无根据调整系统时间绕过。
+
+后续优先让 Catalog 自动消费正式签发／历史查询接口：复用原办理编号及完整绑定，响应丢失先查询 System，原参重试不刷新窗口、不扩大范围，不在 Catalog 保存第二份可编辑 Grant。实际数据读取的执行侧裁决仍须另外贯通，不能把本轮 HTTP 签发成功作为访问已生效的验收结论。
+
+### 26.59 自动签发客户端与持久恢复分界（2026-10-03）
+
+本轮先完成与自动调度设计无关的共享协议消费：最小签发历史 DTO 唯一归 `common/authorization`，System 删除原私有公开 DTO，直接复用共享类型；JSON 字段和两条 HTTP 路径不变，不保留类型兼容别名。`common/client.SystemFulfillmentClient` 增加原参 `IssueGrant` 与纯只读 `ResolveGrant`，沿用唯一 Tenant Bearer transport。原编号、完整路径、大整数和期限不变，签发结果必须匹配原请求且时间非零；查询只有明确 `found=false` 且省略 `grant` 才是未找到。错误、缺字段、404 或响应编号不符不触发签发／关闭，不改参数或扩大权限。
+
+已核实的恢复缺口：现有 `fulfillment_checks.resolved_at` 仅表示 System 受理／关闭结果已核清，解除 Catalog 责任与来源依据保护；`SharingFulfillmentReconciliationRunner` 只扫描 `resolved_at IS NULL`。如果仅在前台核清 accepted 后调用签发，Catalog 在两者之间退出会留下不再被扫描的未签发请求。不能将 `resolved_at` 改成“签发完成”，否则改变已确认的责任移交分界；不能把只读 GET 恢复改成新签发，也不能每轮无限重放全部历史。
+
+**待用户确认的首选方案，尚未实施：**在现有办理记录中增加独立的一次性自动签发处理核清时间，只表达本地恢复调度已终结，不复制 System 的 Grant、受理结果、受理时间或窗口截止时间。前台与后台消费同一续办命令，从持久完整绑定查询 System；accepted 之后按原参签发，不创建新受理或新编号。签发响应不确定先读原签发历史；已签发、原请求已关闭或原窗口已到期可终结本地调度，通信／身份／权限／解析错误保持待核清。System 仍在实际新签发时核验当前人类资格与原窗口，历史读取不重新激活已撤销授权。上述标记不重新冻结已核清的责任与来源依据，不成为当前数据访问许可，不门控 Ready。
+
+- [x] 共享客户端、共享 DTO、System 唯一投影及 Swagger 对齐；新增客户端测试纳入 Common `./...` 和现有 CI 自动发现，无新增测试入口、权限、迁移或基础设施。
+- [x] `make test-go` 已运行到 Common／Catalog：全部 Common 和 Catalog Go T1 通过，包括新增客户端原参身份、精度、最小结果、25 个失败／合法响应场景、无效输入与取消；整条命令退出码 2，停在本轮未改动的 Inference SQLite 测试夹具缺少 `chat_thinking_mode` 列，未接管并行实现。日志 `/tmp/addp-grant-client-go-20261003.log`。后续未执行 Go owner 不计为通过。
+- [x] `bash scripts/test/system-iam-postgres-gate.sh --package engineaccess` 退出码 0，无 Skip，使用实际 25432 映射的 `addp_iam_test`；日志 `/tmp/addp-grant-client-engineaccess-20261003.log`。
+- [x] `bash scripts/swagger/gen-swagger.sh system` 与 `bash scripts/swagger/check-route-coverage.sh system` 退出码 0，192 个公开路由方法一致。
+- [x] `make test-platform` 退出码 0，平台一致性、标准入口登记与全模块 Swagger 路由覆盖通过；日志 `/tmp/addp-grant-client-platform-20261003.log`。其中 Online suite 拒绝错误入口的文本来自门禁脚本单元测试的预期场景，不是实际运行 Online T4 的结果。
+- [ ] `make test-module MODULE=system` 退出码 2：T0、System 全包 Go T1、前端 91 个单元测试／40 个浏览器用例及构建通过；完整 IAM T2 在 `TestInternalTaskAuthorizationAgainstPostgres` 建立测试会话时失败，错误为 `authenticated time must not be in the future`，后续 T2 owner 未执行。日志 `/tmp/addp-grant-client-system-20261003.log`。该用例在 `internal_task_authorization_postgres_test.go:85` 使用宿主机 `time.Now()`，会话事务按凭据时间源检查；失败日志未包含两侧实际时间，不能据此断言具体偏差或放宽认证规则。本轮未修改该用例或凭据时间实现。
+- [x] 使用同一标准入口定向复验 `bash scripts/test/system-iam-postgres-gate.sh --package iam --test internal-task-authorization` 退出码 0、无 Skip，内部任务与执行授权两组通过；日志 `/tmp/addp-grant-client-internal-task-20261003.log`。复验通过不覆盖或改写上一条完整门禁的失败结果，重复发生的时间错误仍需保留双时间来源证据另行定位。
+- [ ] `make test-changed` 退出码 2，在执行前拒绝缺少的全工作区 T2 环境（包括 disposable MySQL／OceanBase 及其他 owner 的显式测试连接）；日志 `/tmp/addp-grant-client-changed-20261003.log`。`--dry-run` 已确认 Common 变更扩散到全部注册消费者，现有 `platform-ci.yml` 的全仓 Go、产品编译／受影响镜像及 `release-and-t2-gates.yml` 的各 owner T2 负责剩余标准复验；未运行的全消费者 T2、全产品编译／镜像和 Online T4 不计为通过。
+
+下一步先确认独立恢复标记及终结边界，再同时落地 Catalog 模型约束、唯一续办命令、前后台消费和中断／丢响应／锁等待测试。本轮没有接通 Catalog 自动签发，不声称已完成实际数据读取授权，不启停用户开发服务、不改开发数据库、不提交代码。
+
+### 26.60 自动签发唯一续办与持久恢复（2026-10-04）
+
+用户已批准 §26.59 的独立恢复标记及终结边界。本轮保持既定受理保护分界，接通 Catalog 前台和后台对 System 签发接口的同一消费路径。
+
+- [x] `fulfillment_checks` 增加一次性 `grant_reconciled_at`，只表达自动处理已核清，不存 Grant 或成功状态。现有 owner 迁移同事务新增字段、约束与部分索引；旧 pending／resolved 行保持新标记 NULL，不回填未知结果。数据库拒绝提前核清、逆序时间、清除、覆盖以及无穷时间；原责任／来源保护仍仅取决于 `resolved_at`。
+- [x] 前台接受并核清后和后台统一调用 `continueSharingFulfillment`。受理未知沿用原核清流程；已核清仍反查 System 原回执，accepted 先查签发历史，明确未找到才按原绑定签发，不重新接受、不换编号、不刷新窗口。closed、原签发历史或签发接口明确的原窗口到期／关闭才可结束调度，其他错误保留待恢复。
+- [x] 后台查询改为自动处理未核清，仍使用一分钟发送宽限、100 条 keyset 分页和 30 秒单项边界，不门控 Ready。远端调用不持有 Catalog 事务或条目锁；本地结束采用条目→办理记录短事务。接受核清后，即使签发未结束也允许责任失效对账和移交，不额外冻结业务依据。
+- [x] 新用例纳入既有 Catalog Go T1 与 `TestPostgresSharingFulfillmentRecovery`；现有 `make test-catalog-postgres` 和 `release-and-t2-gates.yml` Catalog owner T2 已覆盖，不新增测试入口或旁路 CI。覆盖受理核清后退出、新进程扫描、签发已提交但响应丢失、本地核清写入失败、已有历史、关闭、窗口到期、鉴权／404／绑定错误、非法历史以及终结后零远端重放。单连接及 PostgreSQL NOWAIT 夹具验证网络阶段不占本地事务／条目写锁。
+- [x] 当前输入的完整 Catalog PostgreSQL T2 两次退出码 0、无 Skip；最后一次包括追加的本地核清写入失败用例，日志 `/tmp/addp-catalog-issuance-postgres-final-20261004.log`。使用实际 Infra 映射 25432 的 `addp_test`，由标准入口管理并清理测试 Schema；旧 schema 升级、不可变保护、HTTP 消费和断点恢复全部通过。
+- [x] `make test-catalog-frontend` 退出码 0，23 个文件／119 个组件和单元用例及 Vite 生产构建通过，日志 `/tmp/addp-catalog-issuance-frontend-20261004.log`；未运行 Catalog 浏览器 T3，不把组件测试视为浏览器验收。
+- [x] `make test-authorization` 退出码 0，Manifest、生成常量、SQL Seed 和全模块 Swagger 路由覆盖通过，Catalog 仍为 43 个公开路由方法，日志 `/tmp/addp-catalog-issuance-authorization-20261004.log`。本轮没有改变人类 API 的请求／响应字段或新增公开路径，无须重生成 Catalog Swagger。
+- [ ] 两次 `make test-module MODULE=catalog` 均退出码 2，未执行到 Catalog 层。首次停在 T0 的 `online-hosted-orchestrator-gate_test.py` 三个子场景的 20 秒超时，日志 `/tmp/addp-catalog-issuance-module-20261004.log`；未修改该门禁或放宽超时。第二次该组 53 个用例通过，但停在 Online CI 注册检查两个用例：并行 Transfer 契约缺少 `query_field_unavailable_verified: true`，日志 `/tmp/addp-catalog-issuance-module-retry-20261004.log`；未接管该并行改动，不能把分层通过改写为整条模块门禁通过。
+- [ ] `make test-go` 首次退出码 2：本轮新 SQLite 断点夹具使用本地时区，未命中 UTC 宽限扫描；已统一夹具 UTC，不修改生产扫描或授权窗口。第二次退出码 2，停在并行 Common 查询用例 `TestReferencesRecognizesESDSLWithoutParameterBinding`，`es_dsl` 不在当前参数化查询集合；未接管该并行改动，不能据此计为 Catalog 完整 Go T1 通过。日志 `/tmp/addp-catalog-issuance-go-20261004.log` 和 `/tmp/addp-catalog-issuance-go-retry-20261004.log`。
+- [x] 共享查询实现更新后，第三次标准 `make test-go` 整条命令退出码 0，所有已跟踪 Go 模块 T1 通过；包含当前 Catalog 的 SQLite 自动续办、最后追加的本地核清失败恢复及既有 API／历史只读回归。日志 `/tmp/addp-catalog-issuance-go-final-20261004.log`；不改写前两次失败证据，也不代替未通过的 T0、未配置的全消费者 T2 或真实 Online T4。
+- [ ] 默认 `make test-changed` 退出码 2，在 T0/T1 执行前拒绝全工作区缺少的 T2 环境；日志 `/tmp/addp-catalog-issuance-changed-20261004.log`。共享工作区受影响消费者的完整 T2、构建及镜像由既有 CI owner 编排负责，未运行部分不计为通过。本轮的 Catalog 模块计划及既有 PostgreSQL Job 已确认命中新文件和恢复用例，无新增 CI 依赖。
+
+受理 POST 与历史 GET 的对外契约不变：accepted 仍只表示受理，GET 不触发签发；签发历史不代替当前访问许可。独立批准／初始接入授权、Explicit Deny 以及 Manager／SQL 执行侧当前访问裁决仍未贯通。未启停用户开发服务、未修改开发数据库或源端、未提交代码。
+
+下一优先项：在既有企业目录发布 Online suite 中验证真实 OAuth 身份下的 Catalog→System 自动签发及原参历史恢复，区别于本轮 HTTP 替身与数据库 T2；之后再落实执行侧当前访问裁决，不能跳过真实跨模块链路或把签发记录视为当前 Allow。新增 Catalog 字段随用户下一次正常启动由 owner 迁移完成，不由本会话启停开发服务或手改开发库。
+
+收口审查：前后台只有一条续办主路径，旧受理核清原语只作为该流程的受理阶段及只读边界测试底座；新标记未进入人类 DTO 或访问裁决。当前 owner 代码与上述规范、术语及专题 `git diff --check` 通过，新文件无行尾空白。本轮实现及分层验证已完成；完整门禁仍按上列阻断项报告，不宣称生产数据授权闭环完成。

@@ -47,6 +47,7 @@ func TestPostgresSharingFulfillmentRecovery(t *testing.T) {
 	}
 	exerciseSharingFulfillmentPreparation(t, db)
 	exerciseSharingFulfillmentHistory(t, db)
+	exerciseCatalogAutomaticIssuance(t, db)
 	entry, input := seedSharingEntry(t, db)
 	input.ExpiryMode, input.ExpiresAt = authorization.SharingExpiryUntilRevoked, nil
 	s := NewEntryService(db, nil, &fakeSystemReferenceResolver{}).WithSharingTargetResolver(&fakeSharingTargetResolver{})

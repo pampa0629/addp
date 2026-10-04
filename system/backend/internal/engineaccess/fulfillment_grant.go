@@ -23,6 +23,37 @@ type fulfillmentGrant struct {
 
 func (fulfillmentGrant) TableName() string { return "system.engine_access_grants" }
 
+// Public failures reference the same arbitration sentinels, not a second path.
+var (
+	ErrGrantWindowExpired         = errFulfillmentExpired
+	ErrFulfillmentAlreadyClosed   = errFulfillmentClosed
+	ErrFulfillmentBindingConflict = errFulfillmentBinding
+)
+
+func grantHistory(row *fulfillmentGrant) *shared.SharingFulfillmentGrant {
+	if row == nil {
+		return nil
+	}
+	return &shared.SharingFulfillmentGrant{RequestID: row.RequestID, GrantedAt: row.GrantedAt}
+}
+
+func (s *Service) IssueFulfillmentGrant(ctx context.Context, actor FulfillmentRuntimeActor, id uuid.UUID,
+	binding shared.SharingFulfillmentBinding,
+) (*shared.SharingFulfillmentGrant, error) {
+	row, err := s.writeAcceptedGrant(ctx, actor, id, binding)
+	return grantHistory(row), err
+}
+
+func (s *Service) ResolveFulfillmentGrant(ctx context.Context, actor FulfillmentRuntimeActor, id uuid.UUID,
+	binding shared.SharingFulfillmentBinding,
+) (*shared.SharingFulfillmentGrantLookup, error) {
+	row, err := s.resolveAcceptedGrant(ctx, actor, id, binding)
+	if err != nil {
+		return nil, err
+	}
+	return &shared.SharingFulfillmentGrantLookup{Found: row != nil, Grant: grantHistory(row)}, nil
+}
+
 func (r *Repository) findFulfillmentGrant(ctx context.Context, id uuid.UUID) (*fulfillmentGrant, error) {
 	var grant fulfillmentGrant
 	if err := r.db.WithContext(ctx).Where("request_id = ?", id).Take(&grant).Error; err != nil {
@@ -87,7 +118,8 @@ func grantWindow(row *fulfillmentOutcome, now time.Time) error {
 	return nil
 }
 
-// writeAcceptedGrant is internal only: no HTTP route or execution consumer.
+// writeAcceptedGrant is the unique issuance path behind the Runtime HTTP API;
+// execution-side access decisions are not consumers of issuance history.
 // The original receipt supplies trusted provenance and exact parameters. New
 // issuance checks current handler and recipient eligibility; historical retry
 // checks only the current machine caller and the complete original binding.

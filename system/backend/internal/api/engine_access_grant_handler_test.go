@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	shared "github.com/addp/common/authorization"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -32,6 +34,7 @@ func grantTestRouter(t *testing.T, projection *shared.AuthContext, service engin
 		t.Fatal(err)
 	}
 	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
 	if err := RegisterEngineAccessGrantRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, UserAccessCredential: credential}, &EngineAccessGrantHandler{service: service}); err != nil {
 		t.Fatal(err)
 	}
@@ -95,4 +98,23 @@ func TestEngineGrantRevocationHTTPContract(t *testing.T) {
 		return nil, engineaccess.ErrGrantRevocationConflict
 	})
 	engineDelegationTestRequest(t, grantTestRouter(t, &projection, conflict), "POST", path, map[string]any{"reason": "different"}, 409)
+	expired := grantServiceFunc(func(context.Context, engineaccess.RevokeGrantInput) (*engineaccess.GrantRevocation, error) {
+		return nil, engineaccess.ErrGrantRevocationExpired
+	})
+	for language, message := range map[string]string{
+		"zh-CN": "授权已到期，无须撤销",
+		"en":    "This Grant has expired; revocation is unnecessary",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"reason":"withdraw"}`))
+		req.Header.Set("Authorization", "Bearer addp_at_fixture")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept-Language", language)
+		response := httptest.NewRecorder()
+		grantTestRouter(t, &projection, expired).ServeHTTP(response, req)
+		var body map[string]any
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != 409 ||
+			body["error_code"] != "engine_access_grant_expired" || body["error"] != message {
+			t.Fatalf("expired response language=%s: status=%d body=%s err=%v", language, response.Code, response.Body.String(), err)
+		}
+	}
 }

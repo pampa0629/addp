@@ -124,6 +124,12 @@ func (s *EntryService) PrepareSharingFulfillment(ctx context.Context, tenantID i
 		return result, nil
 	}
 	result.State, result.Resolution = resolution.Outcome, resolution
+	// A crash or uncertain issuance leaves the durable recovery marker open.
+	// The acceptance response never claims that content access is effective.
+	callContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, _ = continueSharingFulfillment(callContext, s.db, tenantID, entryID, input.RequestID,
+		&systemSharingFulfillmentAuthority{client: s.sharingFulfillment})
 	return result, nil
 }
 

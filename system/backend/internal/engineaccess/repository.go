@@ -139,6 +139,8 @@ func mapError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.ConstraintName {
+		case "engine_access_grant_revocation_expiry":
+			return ErrGrantRevocationExpired
 		case "engine_access_delegations_overlap":
 			return ErrOverlap
 		case "engine_access_delegations_expiry":

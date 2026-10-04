@@ -187,6 +187,20 @@ definitions:
         example: ""
         type: string
     type: object
+  authorization.SharingFulfillmentGrant:
+    properties:
+      granted_at:
+        type: string
+      request_id:
+        type: string
+    type: object
+  authorization.SharingFulfillmentGrantLookup:
+    properties:
+      found:
+        type: boolean
+      grant:
+        $ref: '#/definitions/authorization.SharingFulfillmentGrant'
+    type: object
   authorization.SharingFulfillmentLookup:
     properties:
       found:
@@ -5487,11 +5501,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 当前租户用户须同时具备有效引擎管理委派和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权
-        | Current tenant user needs an effective engine management delegation and
-        independent revocation Permission, even for disabled engines. Withdraws only
-        this Grant; identical retries return original history without affecting independent
-        Grants
+      description: |-
+        当前租户用户须同时具备有效引擎管理委派和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权 | Current tenant user needs an effective engine management delegation and independent revocation Permission, even for disabled engines. Withdraws only this Grant; identical retries return original history without affecting independent Grants
+        自然到期后首次撤销返回 409 engine_access_grant_expired，不写撤销事实；到期前已撤销的同参重试仍须当前资格有效并返回原记录。长期有效仍可撤销，五分钟办理窗口不限制撤销 | First revocation after natural expiry returns 409 engine_access_grant_expired without writing history; retries of an earlier revocation require current qualification and return the original record. Until-revoked Grants remain revocable; the five-minute fulfillment window does not limit revocation
       parameters:
       - description: 引擎 ID | Engine ID
         in: path
@@ -8385,6 +8397,122 @@ paths:
         request
       tags:
       - 源授权办理核清 | Source Access Fulfillment Recovery
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_fulfillment.execute
+  /runtime/engine-access-fulfillments/{request_id}/grant:
+    post:
+      consumes:
+      - application/json
+      description: 仅当前 Catalog Tenant Service；完整匹配原受理绑定，在原窗口内核验人类权限与委派；同参重试只返回原签发历史，不代表当前访问允许
+        | Current Catalog Tenant Service only; exact accepted binding and current
+        human Permission/delegation within the original window; identical retries
+        return issuance history, not current access Allow
+      parameters:
+      - description: 原办理 UUID | Original fulfillment UUID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      - description: 完整原绑定 | Complete original binding
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.SharingFulfillmentBinding'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 不可变签发历史，不是当前访问许可 | Immutable issuance history, not current
+            access Allow
+          schema:
+            $ref: '#/definitions/authorization.SharingFulfillmentGrant'
+        "400":
+          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
+            include stable error codes
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
+            include stable error codes
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
+            include stable error codes
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
+            include stable error codes
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
+            include stable error codes
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 签发已正式受理请求的源数据 Grant | Issue a source-data Grant for an accepted fulfillment
+      tags:
+      - 源授权办理 | Source Access Fulfillment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_fulfillment.execute
+  /runtime/engine-access-fulfillments/{request_id}/grant/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 仅当前 Catalog Tenant Service，严格匹配原绑定；未找到不等于关闭，不签发、不续期、不恢复撤销；历史不证明当前数据访问允许
+        | Current Catalog Tenant Service and exact original binding only; a miss is
+        not closure, never issues, renews or restores a revoked Grant; history is
+        not current access Allow
+      parameters:
+      - description: 原办理 UUID | Original fulfillment UUID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      - description: 完整原绑定 | Complete original binding
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.SharingFulfillmentBinding'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 只读历史；未找到时省略 grant | Read-only history; grant omitted on a miss
+          schema:
+            $ref: '#/definitions/authorization.SharingFulfillmentGrantLookup'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 只读查询原请求的签发历史 | Resolve original Grant issuance history without writes
+      tags:
+      - 源授权办理 | Source Access Fulfillment
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_access_fulfillment.execute

@@ -8,8 +8,8 @@ import (
 
 // Owner-schema guards cover all writers, including sync and responsibility
 // reconciliation. There is no network IO, global lock or Ready dependency.
-// Public preparation/recovery APIs remain unpublished until trusted business
-// decision and System approval-requirement consumers are implemented together.
+// Acceptance reconciliation releases basis protection independently of issuance
+// recovery; neither local marker is System's outcome or Grant authority.
 func applyFulfillmentConstraints(db *gorm.DB) error {
 	if db.Dialector.Name() != "postgres" {
 		return nil
@@ -23,9 +23,13 @@ func applyFulfillmentConstraints(db *gorm.DB) error {
 		`ALTER TABLE catalog.fulfillment_checks ADD CONSTRAINT ck_catalog_fulfillment_shape CHECK (
 			request_id <> '00000000-0000-0000-0000-000000000000'::uuid
 			AND jsonb_typeof(request_binding) = 'object' AND request_binding <> '{}'::jsonb
-			AND isfinite(created_at) AND (resolved_at IS NULL OR (isfinite(resolved_at) AND resolved_at >= created_at)))`,
+			AND isfinite(created_at) AND (resolved_at IS NULL OR (isfinite(resolved_at) AND resolved_at >= created_at))
+			AND (grant_reconciled_at IS NULL OR (resolved_at IS NOT NULL AND isfinite(grant_reconciled_at)
+				AND grant_reconciled_at >= resolved_at)))`,
 		`CREATE INDEX IF NOT EXISTS ix_catalog_fulfillment_pending ON catalog.fulfillment_checks
 			(tenant_id, catalog_entry_id) WHERE resolved_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS ix_catalog_fulfillment_grant_pending ON catalog.fulfillment_checks
+			(tenant_id, created_at, request_id) WHERE grant_reconciled_at IS NULL`,
 		`CREATE OR REPLACE FUNCTION catalog.guard_fulfillment_check() RETURNS trigger
 		LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 		DECLARE entry catalog.entries%ROWTYPE;
@@ -33,8 +37,13 @@ func applyFulfillmentConstraints(db *gorm.DB) error {
 			IF TG_OP IN ('DELETE', 'TRUNCATE') THEN
 				RAISE EXCEPTION 'Catalog fulfillment check history is immutable' USING ERRCODE = '23514';
 			END IF;
-			IF TG_OP = 'UPDATE' AND ((to_jsonb(NEW) - 'resolved_at') IS DISTINCT FROM (to_jsonb(OLD) - 'resolved_at')
-				OR OLD.resolved_at IS NOT NULL OR NEW.resolved_at IS NULL) THEN
+			IF TG_OP = 'UPDATE' AND (
+				(to_jsonb(NEW) - 'resolved_at' - 'grant_reconciled_at') IS DISTINCT FROM
+					(to_jsonb(OLD) - 'resolved_at' - 'grant_reconciled_at')
+				OR (NEW.resolved_at IS DISTINCT FROM OLD.resolved_at AND (OLD.resolved_at IS NOT NULL OR NEW.resolved_at IS NULL))
+				OR (NEW.grant_reconciled_at IS DISTINCT FROM OLD.grant_reconciled_at AND
+					(OLD.grant_reconciled_at IS NOT NULL OR NEW.grant_reconciled_at IS NULL OR OLD.resolved_at IS NULL))
+				OR (NEW.resolved_at IS NOT DISTINCT FROM OLD.resolved_at AND NEW.grant_reconciled_at IS NOT DISTINCT FROM OLD.grant_reconciled_at)) THEN
 				RAISE EXCEPTION 'Catalog fulfillment check binding is immutable' USING ERRCODE = '23514';
 			END IF;
 			SELECT * INTO entry FROM catalog.entries
@@ -42,7 +51,7 @@ func applyFulfillmentConstraints(db *gorm.DB) error {
 			IF NOT FOUND THEN
 				RAISE EXCEPTION 'Catalog fulfillment check entry is missing' USING ERRCODE = '23514';
 			END IF;
-			IF TG_OP = 'INSERT' AND (NEW.resolved_at IS NOT NULL OR entry.entry_status <> 'active'
+			IF TG_OP = 'INSERT' AND (NEW.resolved_at IS NOT NULL OR NEW.grant_reconciled_at IS NOT NULL OR entry.entry_status <> 'active'
 				OR entry.governance_status = 'deprecated' OR entry.entry_type <> 'data_item'
 				OR NOT EXISTS (SELECT 1 FROM catalog.source_bindings WHERE tenant_id = NEW.tenant_id
 					AND catalog_entry_id = entry.id AND is_current AND source_status = 'active' AND source_module = 'meta')) THEN

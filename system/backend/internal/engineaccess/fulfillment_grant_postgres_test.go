@@ -70,6 +70,32 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				MembershipID: operator.MembershipID, AuthorizationVersion: current.AuthorizationVersion}
 			return binding, delegation
 		}
+		t.Run("public service projects only committed issuance history", func(t *testing.T) {
+			id := prepare(t, base)
+			missing, err := issuer.ResolveFulfillmentGrant(ctx, actor, id, base)
+			if err != nil || missing == nil || missing.Found || missing.Grant != nil {
+				t.Fatalf("unissued history=%+v %v", missing, err)
+			}
+			assertCount(t, id, 0)
+			original, err := issuer.IssueFulfillmentGrant(ctx, actor, id, base)
+			if err != nil || original == nil || original.RequestID != id || original.GrantedAt.IsZero() {
+				t.Fatalf("issuance=%+v %v", original, err)
+			}
+			retried, err := issuer.IssueFulfillmentGrant(ctx, actor, id, base)
+			if err != nil || retried == nil || retried.RequestID != original.RequestID || !retried.GrantedAt.Equal(original.GrantedAt) {
+				t.Fatalf("retry=%+v %v", retried, err)
+			}
+			lookup, err := issuer.ResolveFulfillmentGrant(ctx, actor, id, base)
+			if err != nil || lookup == nil || !lookup.Found || lookup.Grant == nil || lookup.Grant.RequestID != original.RequestID || !lookup.Grant.GrantedAt.Equal(original.GrantedAt) {
+				t.Fatalf("lookup=%+v %v", lookup, err)
+			}
+			assertCount(t, id, 1)
+			changed := base
+			changed.RecipientID++
+			if result, err := issuer.ResolveFulfillmentGrant(ctx, actor, id, changed); result != nil || !errors.Is(err, ErrFulfillmentBindingConflict) {
+				t.Fatalf("binding conflict=%+v %v", result, err)
+			}
+		})
 		t.Run("read-only lookup never settles or issues", func(t *testing.T) {
 			missing := uuid.New()
 			accepted := prepare(t, base)
@@ -259,13 +285,13 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 		})
 		t.Run("missing and closed receipts cannot issue", func(t *testing.T) {
 			id := uuid.New()
-			if g, err := issuer.writeAcceptedGrant(ctx, actor, id, base); g != nil || err == nil {
+			if g, err := issuer.IssueFulfillmentGrant(ctx, actor, id, base); g != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatal("missing receipt issued")
 			}
 			if _, err := acceptor.CloseFulfillment(ctx, actor, id, base); err != nil {
 				t.Fatal(err)
 			}
-			if g, err := issuer.writeAcceptedGrant(ctx, actor, id, base); g != nil || !errors.Is(err, commonapi.ErrConflict) {
+			if g, err := issuer.IssueFulfillmentGrant(ctx, actor, id, base); g != nil || !errors.Is(err, commonapi.ErrConflict) || !errors.Is(err, ErrFulfillmentAlreadyClosed) {
 				t.Fatalf("closed issued=%+v %v", g, err)
 			}
 			if err := db.Create(&fulfillmentGrant{RequestID: id}).Error; err == nil {

@@ -14,8 +14,28 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 183 {
-		t.Fatalf("LatestVersion = %d, want 183", catalog.LatestVersion)
+	if catalog.LatestVersion != 184 {
+		t.Fatalf("LatestVersion = %d, want 184", catalog.LatestVersion)
+	}
+}
+
+func TestGrantRevocationExpiryMigrationOnlyReplacesInsertGuard(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000184_engine_access_grant_revocation_expiry.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(data)
+	for _, required := range []string{"CREATE OR REPLACE FUNCTION system.guard_engine_access_grant_revocation_insert()",
+		"engine_access_grant_revoker_binding", "engine_access_grant_revocation_expiry", "NEW.revoked_at := clock_timestamp()",
+		"o.grant_expires_at > NEW.revoked_at", "o.expiry_mode = 'until_revoked' AND o.grant_expires_at IS NULL"} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("expiry migration lost %q", required)
+		}
+	}
+	for _, forbidden := range []string{"INSERT INTO", "UPDATE ", "DELETE ", "TRUNCATE ", "ALTER TABLE", "DROP ", "DISABLE TRIGGER"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("expiry migration must not mutate facts or IAM grants: %q", forbidden)
+		}
 	}
 }
 

@@ -62,15 +62,37 @@ func exerciseSharingFulfillmentPreparation(t *testing.T, db *gorm.DB) {
 				return
 			}
 			parts := strings.Split(r.URL.Path, "/")
-			requestID, err := uuid.Parse(parts[len(parts)-2])
+			requestID, err := uuid.Parse(parts[6])
 			if err != nil {
 				t.Error(err)
 				w.WriteHeader(500)
 				return
 			}
 			var persisted models.FulfillmentCheck
-			if err := db.Where("request_id=?", requestID).Take(&persisted).Error; err != nil || persisted.ResolvedAt != nil {
+			if err := db.Where("request_id=?", requestID).Take(&persisted).Error; err != nil {
 				t.Errorf("send before commit: %+v %v", persisted, err)
+				w.WriteHeader(500)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/grant/resolve") {
+				_ = json.NewEncoder(w).Encode(shared.SharingFulfillmentGrantLookup{Found: false})
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/grant") {
+				if persisted.ResolvedAt == nil {
+					t.Error("issuance precedes acceptance reconciliation")
+				}
+				_ = json.NewEncoder(w).Encode(shared.SharingFulfillmentGrant{RequestID: requestID, GrantedAt: time.Now()})
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/resolve") {
+				now := time.Now().UTC()
+				deadline := now.Add(5 * time.Minute)
+				_ = json.NewEncoder(w).Encode(shared.SharingFulfillmentLookup{Found: true, Resolution: &shared.SharingFulfillmentResolution{RequestID: requestID, TenantID: 7, Binding: binding, Outcome: "accepted", RecordedAt: now, Deadline: &deadline}})
+				return
+			}
+			if persisted.ResolvedAt != nil {
+				t.Error("resolved request presented as new basis")
 				w.WriteHeader(500)
 				return
 			}
@@ -126,6 +148,9 @@ func exerciseSharingFulfillmentPreparation(t *testing.T, db *gorm.DB) {
 		result, err = s.PrepareSharingFulfillment(ctx, 7, EntryAccess{Inventory: true}, entry.ID, prepare, auth, "addp_at_handler")
 		if err != nil || result.State != "accepted" || result.Resolution == nil {
 			t.Fatalf("retry=%+v %v", result, err)
+		}
+		if err := db.Where("request_id=?", prepare.RequestID).Take(&pending).Error; err != nil || pending.GrantReconciledAt == nil {
+			t.Fatalf("foreground issuance was not continued: %+v %v", pending, err)
 		}
 		if _, err := s.ReadSharingFulfillmentBasis(ctx, 7, prepare.RequestID, binding); err == nil {
 			t.Fatal("resolved request presented as new basis")

@@ -29,6 +29,7 @@ type RevokeEngineAccessGrantRequest struct {
 // @Summary 撤销指定源数据 Grant | Revoke a specific source-data Grant
 // @Description 当前租户用户须同时具备有效引擎管理委派和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权 | Current tenant user needs an effective engine management delegation and independent revocation Permission, even for disabled engines. Withdraws only this Grant; identical retries return original history without affecting independent Grants
 // @Tags 源数据授权撤销 | Source Data Grant Revocation
+// @Description 自然到期后首次撤销返回 409 engine_access_grant_expired，不写撤销事实；到期前已撤销的同参重试仍须当前资格有效并返回原记录。长期有效仍可撤销，五分钟办理窗口不限制撤销 | First revocation after natural expiry returns 409 engine_access_grant_expired without writing history; retries of an earlier revocation require current qualification and return the original record. Until-revoked Grants remain revocable; the five-minute fulfillment window does not limit revocation
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -63,6 +64,10 @@ func (h *EngineAccessGrantHandler) Revoke(c *gin.Context) {
 	}
 	row, err := h.service.RevokeGrant(c.Request.Context(), engineaccess.RevokeGrantInput{Actor: actor, EngineID: engineID,
 		RequestID: id, Reason: request.Reason, Audit: iamAuditMetadataWithStatus(c, http.StatusOK)})
+	if errors.Is(err, engineaccess.ErrGrantRevocationExpired) {
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, modulei18n.MsgGrantRevocationExpired), "error_code": "engine_access_grant_expired"})
+		return
+	}
 	if errors.Is(err, engineaccess.ErrGrantRevocationConflict) {
 		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, modulei18n.MsgGrantRevocationConflict), "error_code": "engine_access_grant_revocation_conflict"})
 		return

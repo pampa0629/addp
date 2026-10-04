@@ -56,6 +56,18 @@ type SharingFulfillmentLookup struct {
 	Resolution *SharingFulfillmentResolution `json:"resolution"`
 }
 
+// SharingFulfillmentGrant projects immutable System issuance history. It is
+// neither a stored Grant copy nor a current data-access decision or credential.
+type SharingFulfillmentGrant struct {
+	RequestID uuid.UUID `json:"request_id"`
+	GrantedAt time.Time `json:"granted_at"`
+}
+
+type SharingFulfillmentGrantLookup struct {
+	Found bool                     `json:"found"`
+	Grant *SharingFulfillmentGrant `json:"grant,omitempty"`
+}
+
 // SharingFulfillmentBasis is returned only by Catalog's dedicated runtime
 // endpoint for an exact committed pending request. It is not an access token.
 type SharingFulfillmentBasis struct {

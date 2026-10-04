@@ -24,6 +24,8 @@ const (
 	ChatMaxOutputTokensParameterMaxCompletionTokens = "max_completion_tokens"
 	ChatTemperatureModeConfigurable                 = "configurable"
 	ChatTemperatureModeDefaultOnly                  = "default_only"
+	ChatThinkingModeUpstreamDefault                 = "upstream_default"
+	ChatThinkingModeDisabled                        = "disabled"
 )
 
 var profileCodePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
@@ -73,7 +75,9 @@ type DeploymentInput struct {
 	Dimension                    int      `json:"dimension"`
 	ChatMaxOutputTokensParameter string   `json:"chat_max_output_tokens_parameter"`
 	ChatTemperatureMode          string   `json:"chat_temperature_mode"`
-	Status                       string   `json:"status"`
+	// ChatThinkingMode 控制是否发送关闭思考的协议字段 | Controls explicit upstream thinking disablement.
+	ChatThinkingMode string `json:"chat_thinking_mode" enums:"upstream_default,disabled" default:"upstream_default"`
+	Status           string `json:"status"`
 }
 type ProfileInput struct {
 	Name              string `json:"name" binding:"required"`
@@ -308,7 +312,7 @@ func (s *ControlPlane) UpdateDeployment(ctx context.Context, actor Actor, id str
 	if next.ProviderConnectionID != current.ProviderConnectionID {
 		return nil, fmt.Errorf("%w: provider_connection_id is immutable", ErrInvalidRequest)
 	}
-	current.Name, current.UpstreamModel, current.Operations, current.Modalities, current.Dimension, current.ChatMaxOutputTokensParameter, current.ChatTemperatureMode, current.Status, current.UpdatedBy = next.Name, next.UpstreamModel, next.Operations, next.Modalities, next.Dimension, next.ChatMaxOutputTokensParameter, next.ChatTemperatureMode, next.Status, actor.PrincipalID
+	current.Name, current.UpstreamModel, current.Operations, current.Modalities, current.Dimension, current.ChatMaxOutputTokensParameter, current.ChatTemperatureMode, current.ChatThinkingMode, current.Status, current.UpdatedBy = next.Name, next.UpstreamModel, next.Operations, next.Modalities, next.Dimension, next.ChatMaxOutputTokensParameter, next.ChatTemperatureMode, next.ChatThinkingMode, next.Status, actor.PrincipalID
 	if err := s.store.SaveDeployment(ctx, current); err != nil {
 		return nil, err
 	}
@@ -496,6 +500,10 @@ func (s *ControlPlane) normalizeDeployment(ctx context.Context, actor Actor, inp
 	if input.ChatTemperatureMode == "" {
 		input.ChatTemperatureMode = ChatTemperatureModeConfigurable
 	}
+	input.ChatThinkingMode = strings.TrimSpace(input.ChatThinkingMode)
+	if input.ChatThinkingMode == "" {
+		input.ChatThinkingMode = ChatThinkingModeUpstreamDefault
+	}
 	operations, err := normalizeEnumSet(input.Operations, map[string]bool{"chat": true, "embedding": true, "rerank": true})
 	if err != nil {
 		return nil, err
@@ -513,10 +521,16 @@ func (s *ControlPlane) normalizeDeployment(ctx context.Context, actor Actor, inp
 	if input.ChatTemperatureMode != ChatTemperatureModeConfigurable && input.ChatTemperatureMode != ChatTemperatureModeDefaultOnly {
 		return nil, fmt.Errorf("%w: invalid chat temperature mode", ErrInvalidRequest)
 	}
+	if input.ChatThinkingMode != ChatThinkingModeUpstreamDefault && input.ChatThinkingMode != ChatThinkingModeDisabled {
+		return nil, fmt.Errorf("%w: invalid chat thinking mode", ErrInvalidRequest)
+	}
+	if input.ChatThinkingMode == ChatThinkingModeDisabled && provider.AdapterType != AdapterOpenAICompatible {
+		return nil, fmt.Errorf("%w: thinking control requires openai_compatible adapter", ErrInvalidRequest)
+	}
 	if !contains(operations, "embedding") && input.Dimension != 0 {
 		return nil, fmt.Errorf("%w: dimension requires embedding operation", ErrInvalidRequest)
 	}
-	return &models.ModelDeployment{ProviderConnectionID: provider.ID, Name: input.Name, UpstreamModel: input.UpstreamModel, Operations: mustJSON(operations), Modalities: mustJSON(modalities), Dimension: input.Dimension, ChatMaxOutputTokensParameter: input.ChatMaxOutputTokensParameter, ChatTemperatureMode: input.ChatTemperatureMode, Status: input.Status}, nil
+	return &models.ModelDeployment{ProviderConnectionID: provider.ID, Name: input.Name, UpstreamModel: input.UpstreamModel, Operations: mustJSON(operations), Modalities: mustJSON(modalities), Dimension: input.Dimension, ChatMaxOutputTokensParameter: input.ChatMaxOutputTokensParameter, ChatTemperatureMode: input.ChatTemperatureMode, ChatThinkingMode: input.ChatThinkingMode, Status: input.Status}, nil
 }
 func (s *ControlPlane) normalizeProfile(ctx context.Context, actor Actor, input ProfileInput) (*models.ModelProfile, error) {
 	status, err := normalizeStatus(input.Status)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	shared "github.com/addp/common/authorization"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
@@ -15,6 +16,32 @@ import (
 )
 
 var ErrGrantRevocationConflict = errors.Join(commonapi.ErrConflict, errors.New("grant already revoked with different parameters"))
+var ErrGrantRevocationExpired = errors.Join(commonapi.ErrConflict, errors.New("grant has expired; revocation is unnecessary"))
+
+func checkGrantRevocationExpiry(outcome fulfillmentOutcome, now time.Time) error {
+	switch outcome.ExpiryMode {
+	case shared.SharingExpiryUntilRevoked:
+		if outcome.GrantExpiresAt == nil {
+			return nil
+		}
+	case shared.SharingExpiryAtTime:
+		if outcome.GrantExpiresAt != nil {
+			if !now.Before(*outcome.GrantExpiresAt) {
+				return ErrGrantRevocationExpired
+			}
+			return nil
+		}
+	}
+	return errors.New("invalid immutable Grant expiry")
+}
+
+func (r *Repository) checkGrantRevocationExpiry(ctx context.Context, outcome fulfillmentOutcome) error {
+	now, err := r.wallClock(ctx)
+	if err != nil {
+		return err
+	}
+	return checkGrantRevocationExpiry(outcome, now)
+}
 
 // GrantRevocation is withdrawal history, not a Deny or a current access verdict.
 // Target, recipient and expiry remain in the original immutable fulfillment.
@@ -84,10 +111,15 @@ func (s *Service) RevokeGrant(ctx context.Context, input RevokeGrantInput) (*Gra
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
+			// Recover committed withdrawal history above before checking the Grant's
+			// natural expiry. The original five-minute acceptance window is irrelevant.
+			if err := tx.checkGrantRevocationExpiry(ctx, outcome); err != nil {
+				return err
+			}
 			row := &GrantRevocation{RequestID: input.RequestID, RevokedByPrincipalID: input.Actor.PrincipalID,
 				RevokedByMembershipID: input.Actor.MembershipID, Reason: input.Reason}
 			if err := tx.db.WithContext(ctx).Clauses(clause.Returning{}).Create(row).Error; err != nil {
-				return err
+				return mapError(err)
 			}
 			audit := input.Audit
 			actor := input.Actor
@@ -103,6 +135,9 @@ func (s *Service) RevokeGrant(ctx context.Context, input RevokeGrantInput) (*Gra
 				return err
 			}
 			if err := check(); err != nil {
+				return err
+			}
+			if err := tx.checkGrantRevocationExpiry(ctx, outcome); err != nil {
 				return err
 			}
 			result = row

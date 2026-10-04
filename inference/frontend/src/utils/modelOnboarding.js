@@ -33,6 +33,28 @@ export const CAPABILITY_PRESETS = {
 
 export const CHAT_MAX_OUTPUT_TOKENS_PARAMETERS = ['max_tokens', 'max_completion_tokens']
 export const CHAT_TEMPERATURE_MODES = ['configurable', 'default_only']
+export const CHAT_THINKING_MODES = ['upstream_default', 'disabled']
+
+export function hasMatchingChatSettings(deployment, draft) {
+  return deployment.chat_max_output_tokens_parameter === draft.chatMaxOutputTokensParameter
+    && deployment.chat_temperature_mode === draft.chatTemperatureMode
+    && deployment.chat_thinking_mode === draft.chatThinkingMode
+}
+
+export function deploymentPayload(form) {
+  return {
+    provider_connection_id: form.provider_connection_id,
+    name: form.name,
+    upstream_model: form.upstream_model,
+    operations: [...form.operations],
+    modalities: [...form.modalities],
+    dimension: form.operations.includes('embedding') ? form.dimension : 0,
+    chat_max_output_tokens_parameter: form.chat_max_output_tokens_parameter,
+    chat_temperature_mode: form.chat_temperature_mode,
+    chat_thinking_mode: form.chat_thinking_mode,
+    status: form.status
+  }
+}
 
 export function capabilityPreset(code) {
   return CAPABILITY_PRESETS[code] || CAPABILITY_PRESETS.chat_default
@@ -46,7 +68,8 @@ export function createModelDraft(presetCode = 'chat_default') {
     dimension: preset.dimension,
     profileCode: preset.profileCode,
     chatMaxOutputTokensParameter: CHAT_MAX_OUTPUT_TOKENS_PARAMETERS[0],
-    chatTemperatureMode: CHAT_TEMPERATURE_MODES[0]
+    chatTemperatureMode: CHAT_TEMPERATURE_MODES[0],
+    chatThinkingMode: CHAT_THINKING_MODES[0]
   }
 }
 

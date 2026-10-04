@@ -84,12 +84,32 @@ func TestCatalogFulfillmentChecksAgainstPostgres(t *testing.T) {
 	if err := db.Transaction(func(tx *gorm.DB) error { return tx.Create(&check).Error }); err != nil {
 		t.Fatal(err)
 	}
+	legacyResolved := check
+	legacyResolved.RequestID = uuid.New()
+	if err := db.Create(&legacyResolved).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&legacyResolved).Update("resolved_at", gorm.Expr("clock_timestamp()")).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&legacyResolved, "request_id=?", legacyResolved.RequestID).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Reconstruct the prior schema, then upgrade without assigning a terminal
+	// issuance marker to either old pending or old resolved history.
+	if err := db.Exec("ALTER TABLE catalog.fulfillment_checks DROP COLUMN grant_reconciled_at CASCADE").Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := Migrate(db); err != nil {
 		t.Fatalf("repeat migration erased/blocked pending history: %v", err)
 	}
 	var restored models.FulfillmentCheck
 	if err := db.First(&restored, "request_id = ?", check.RequestID).Error; err != nil {
 		t.Fatal(err)
+	}
+	var migratedResolved models.FulfillmentCheck
+	if err := db.First(&migratedResolved, "request_id=?", legacyResolved.RequestID).Error; err != nil || restored.GrantReconciledAt != nil || migratedResolved.GrantReconciledAt != nil || migratedResolved.ResolvedAt == nil || !migratedResolved.ResolvedAt.Equal(*legacyResolved.ResolvedAt) {
+		t.Fatalf("upgrade invented completion or changed reconciliation: %+v %v", migratedResolved, err)
 	}
 	var exact struct {
 		RecipientID int64 `json:"recipient_id"`
@@ -153,11 +173,25 @@ func TestCatalogFulfillmentChecksAgainstPostgres(t *testing.T) {
 		t.Fatal("coordination history truncated")
 	}
 	// Local resolution is a fixture here, NOT proof of a real System receipt.
+	if err := db.Model(&models.FulfillmentCheck{}).Where("request_id = ?", check.RequestID).Update("grant_reconciled_at", gorm.Expr("clock_timestamp()")).Error; err == nil {
+		t.Fatal("issuance marker preceded acceptance reconciliation")
+	}
 	if err := db.Model(&models.FulfillmentCheck{}).Where("request_id = ?", check.RequestID).Update("resolved_at", gorm.Expr("clock_timestamp()")).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&entry).Update("governance_status", models.GovernanceStatusDeprecated).Error; err != nil {
 		t.Fatalf("resolved guard not released: %v", err)
+	}
+	if err := db.Model(&models.FulfillmentCheck{}).Where("request_id = ?", check.RequestID).Update("grant_reconciled_at", gorm.Expr("resolved_at - INTERVAL '1 microsecond'")).Error; err == nil {
+		t.Fatal("issuance marker backdated before reconciliation")
+	}
+	if err := db.Model(&models.FulfillmentCheck{}).Where("request_id = ?", check.RequestID).Update("grant_reconciled_at", gorm.Expr("clock_timestamp()")).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []any{nil, gorm.Expr("clock_timestamp()"), gorm.Expr("'infinity'::timestamptz")} {
+		if err := db.Model(&models.FulfillmentCheck{}).Where("request_id = ?", check.RequestID).Update("grant_reconciled_at", value).Error; err == nil {
+			t.Fatal("issuance completion rewritten or reopened")
+		}
 	}
 	if err := db.Model(&models.FulfillmentCheck{}).Where("request_id = ?", check.RequestID).Update("resolved_at", nil).Error; err == nil {
 		t.Fatal("resolved coordination reopened")

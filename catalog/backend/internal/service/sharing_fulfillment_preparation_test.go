@@ -35,7 +35,7 @@ func openSharingPreparationTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE catalog.fulfillment_checks (
 		request_id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, catalog_entry_id TEXT NOT NULL,
 		request_binding JSON NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		resolved_at DATETIME)`).Error; err != nil {
+		resolved_at DATETIME, grant_reconciled_at DATETIME)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	return db

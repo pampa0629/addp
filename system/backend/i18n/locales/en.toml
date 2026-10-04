@@ -300,9 +300,9 @@ other = "Handle source-read authorization"
 [permissions.system.engine_access_fulfillment.create.description]
 other = "Read candidate summaries for currently visible entries and initiate source-read fulfillment with an effective engine management delegation; no automatic business confirmation or data access"
 [permissions.system.engine_access_fulfillment.execute.name]
-other = "Execute source-read fulfillment acceptance and settlement"
+other = "Execute source-read fulfillment acceptance, issuance and settlement"
 [permissions.system.engine_access_fulfillment.execute.description]
-other = "Allow only the current Catalog tenant runtime to request first acceptance, historical settlement and closure; no human handling eligibility or data access"
+other = "Allow only the current Catalog tenant runtime to request acceptance, exact-bound issuance, history lookup and closure; human handling eligibility is checked independently and history is not access Allow"
 
 [permissions.system.engine_access_grant.revoke.name]
 other = "Revoke a specific source-data Grant"
@@ -310,3 +310,13 @@ other = "Revoke a specific source-data Grant"
 other = "Withdraw one Grant with a current engine management delegation, even on a disabled engine; no effect on independent Grants or new access"
 [system.engine_access_grant.revocation_conflict]
 other = "This Grant was already revoked by a different actor or with a different reason; consult the original revocation history"
+
+[system.engine_access_grant.expired]
+other = "This Grant has expired; revocation is unnecessary"
+
+[system.engine_access_grant.window_expired]
+other = "The original fulfillment window has expired; revalidate and start a new fulfillment without reusing the old basis"
+[system.engine_access_fulfillment.closed]
+other = "The original fulfillment request is closed; no new Grant can be issued"
+[system.engine_access_fulfillment.binding_conflict]
+other = "Parameters differ from the original fulfillment; resolve the original request without changing its scope or expiry"

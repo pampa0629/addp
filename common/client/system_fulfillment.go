@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -10,8 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// SystemFulfillmentClient transports preparation identity, acceptance and
-// recovery. None of these operations writes a resource Grant.
+// SystemFulfillmentClient transports preparation, acceptance, recovery and
+// exact original Grant issuance/history. It never owns or caches authority
+// facts, and does not orchestrate these distinct operations automatically.
 type SystemFulfillmentClient struct{ tenantHTTPClient }
 
 func NewSystemFulfillmentClient(baseURL string, tokens ServiceTokenProvider, httpClient *http.Client) *SystemFulfillmentClient {
@@ -87,4 +89,61 @@ func (c *SystemFulfillmentClient) Close(ctx context.Context, id uuid.UUID, bindi
 		return nil, err
 	}
 	return &result, nil
+}
+
+// IssueGrant sends only the exact original request. An uncertain response is
+// an error, not permission to renew the window or create a replacement request.
+func (c *SystemFulfillmentClient) IssueGrant(ctx context.Context, id uuid.UUID, binding authorization.SharingFulfillmentBinding) (*authorization.SharingFulfillmentGrant, error) {
+	if id == uuid.Nil || binding.Validate() != nil {
+		return nil, errors.New("invalid fulfillment grant request")
+	}
+	var result authorization.SharingFulfillmentGrant
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/system/runtime/engine-access-fulfillments/"+id.String()+"/grant", binding, &result); err != nil {
+		return nil, err
+	}
+	if err := validateFulfillmentGrant(id, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ResolveGrant is pure history retrieval. Only an explicit valid miss can
+// return Found=false; it never issues, closes or restores a revoked Grant.
+func (c *SystemFulfillmentClient) ResolveGrant(ctx context.Context, id uuid.UUID, binding authorization.SharingFulfillmentBinding) (*authorization.SharingFulfillmentGrantLookup, error) {
+	if id == uuid.Nil || binding.Validate() != nil {
+		return nil, errors.New("invalid fulfillment grant request")
+	}
+	var result struct {
+		Found *bool           `json:"found"`
+		Grant json.RawMessage `json:"grant"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/system/runtime/engine-access-fulfillments/"+id.String()+"/grant/resolve", binding, &result); err != nil {
+		return nil, err
+	}
+	if result.Found == nil {
+		return nil, errors.New("invalid fulfillment grant lookup")
+	}
+	if !*result.Found {
+		if len(result.Grant) != 0 {
+			return nil, errors.New("invalid fulfillment grant lookup")
+		}
+		return &authorization.SharingFulfillmentGrantLookup{Found: false}, nil
+	}
+	var grant authorization.SharingFulfillmentGrant
+	if err := json.Unmarshal(result.Grant, &grant); err != nil {
+		return nil, errors.New("invalid fulfillment grant lookup")
+	}
+	if err := validateFulfillmentGrant(id, &grant); err != nil {
+		return nil, err
+	}
+	return &authorization.SharingFulfillmentGrantLookup{Found: true, Grant: &grant}, nil
+}
+
+func validateFulfillmentGrant(id uuid.UUID, grant *authorization.SharingFulfillmentGrant) error {
+	if grant == nil || grant.RequestID != id || grant.GrantedAt.IsZero() {
+		return errors.New("invalid fulfillment grant history")
+	}
+	// System is the time authority. Historical issuance remains observable
+	// after expiry/revocation, regardless of a client's clock.
+	return nil
 }

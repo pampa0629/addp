@@ -50,6 +50,7 @@ type ModelDeployment struct {
 	Dimension                    int            `gorm:"not null;default:0" json:"dimension,omitempty"`
 	ChatMaxOutputTokensParameter string         `gorm:"size:32;not null;default:max_tokens" json:"chat_max_output_tokens_parameter"`
 	ChatTemperatureMode          string         `gorm:"size:32;not null;default:configurable" json:"chat_temperature_mode"`
+	ChatThinkingMode             string         `gorm:"size:32;not null;default:upstream_default" json:"chat_thinking_mode" enums:"upstream_default,disabled"`
 	Status                       string         `gorm:"size:16;not null;default:active" json:"status"`
 	CreatedBy                    uint           `gorm:"not null" json:"created_by"`
 	UpdatedBy                    uint           `gorm:"not null" json:"updated_by"`
