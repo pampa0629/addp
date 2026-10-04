@@ -101,6 +101,7 @@ func (p *ClickHousePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallba
 		NamespaceTerm:         "database",
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
+		GetTable:              p.getTable,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
 		IsSystemNamespaceFunc: p.isSystemSchema,
@@ -223,6 +224,18 @@ type clickhouseNamespaceRow struct {
 
 // ListTables 列出指定Database下的所有表
 func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+	return p.queryTables(ctx, db, schema, nil)
+}
+
+func (p *ClickHousePlugin) getTable(ctx context.Context, db *gorm.DB, schema, table string) (*datatype.TableInfo, error) {
+	tables, err := p.queryTables(ctx, db, schema, &table)
+	if err != nil || len(tables) == 0 {
+		return nil, err
+	}
+	return &tables[0], nil
+}
+
+func (p *ClickHousePlugin) queryTables(ctx context.Context, db *gorm.DB, schema string, target *string) ([]datatype.TableInfo, error) {
 	var rows []clickhouseTableRow
 
 	query := `
@@ -240,10 +253,16 @@ func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 			total_bytes as size_bytes
 		FROM system.tables
 		WHERE database = ?
-		ORDER BY name
 	`
 
-	err := db.WithContext(ctx).Raw(query, schema).Scan(&rows).Error
+	args := []interface{}{schema}
+	if target != nil {
+		query += " AND name = ?"
+		args = append(args, *target)
+	}
+
+	query += " ORDER BY name"
+	err := db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}

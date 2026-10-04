@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -25,11 +26,7 @@ func TestTabularCatalogEntryCarriesTableInfo(t *testing.T) {
 		},
 	}
 
-	node := tabularCatalogEntryFromFacts(EngineCatalogPath{Version: EngineCatalogPathVersion}, "orders", "table", &EngineCatalogFacts{
-		Kind:      EngineCatalogKindTable,
-		Table:     table.Clone(),
-		UpdatedAt: &updatedAt,
-	})
+	node := tabularCatalogEntry(EngineCatalogPath{Version: EngineCatalogPathVersion}, &table)
 	if node.Table == nil {
 		t.Fatalf("node = %#v, want table info", node)
 	}
@@ -101,7 +98,7 @@ func TestBuildTabularCatalogFactsCarriesTableInfo(t *testing.T) {
 		Native: map[string]interface{}{
 			"engine": "MergeTree",
 		},
-	}, true, EngineCatalogKindTable, nil, nil)
+	}, EngineCatalogKindTable, nil, nil)
 	if item.Table == nil {
 		t.Fatal("EngineCatalogFacts.Table is nil")
 	}
@@ -134,7 +131,7 @@ func TestTabularCatalogEntryFromFactsCarriesTableInfo(t *testing.T) {
 		},
 	}
 
-	node := tabularCatalogEntryFromFacts(EngineCatalogPath{Version: EngineCatalogPathVersion}, "orders", "view", facts)
+	node := tabularCatalogEntry(EngineCatalogPath{Version: EngineCatalogPathVersion}, facts.Table)
 
 	if node.Kind != "view" || node.Role != EngineCatalogRoleLeaf {
 		t.Fatalf("node kind/role = %q/%q", node.Kind, node.Role)
@@ -161,6 +158,9 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 		},
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
 			return []datatype.TableInfo{{Name: "orders", Kind: EngineCatalogKindTable}}, nil
+		},
+		GetTable: func(context.Context, *gorm.DB, string, string) (*datatype.TableInfo, error) {
+			return &datatype.TableInfo{Name: "orders", Kind: EngineCatalogKindTable}, nil
 		},
 		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
 			return []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}}, nil
@@ -219,6 +219,9 @@ func TestDescribeTabularItemRejectsMissingTableBeforeReadingColumns(t *testing.T
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
 			return nil, nil
 		},
+		GetTable: func(context.Context, *gorm.DB, string, string) (*datatype.TableInfo, error) {
+			return nil, nil
+		},
 		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
 			columnCalls++
 			return nil, nil
@@ -251,6 +254,9 @@ func TestDescribeTabularItemCarriesSpatialFactsWhenRequested(t *testing.T) {
 		},
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
 			return []datatype.TableInfo{{Name: "roads", Kind: EngineCatalogKindTable}}, nil
+		},
+		GetTable: func(context.Context, *gorm.DB, string, string) (*datatype.TableInfo, error) {
+			return &datatype.TableInfo{Name: "roads", Kind: EngineCatalogKindTable}, nil
 		},
 		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
 			return []datatype.FieldInfo{{Name: "geom", Type: datatype.FieldTypeGeometry}}, nil
@@ -319,6 +325,9 @@ func TestDescribeTabularItemOnlyReadsRequestedRelationalFacts(t *testing.T) {
 		},
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
 			return []datatype.TableInfo{{Name: "orders", Kind: EngineCatalogKindTable}}, nil
+		},
+		GetTable: func(context.Context, *gorm.DB, string, string) (*datatype.TableInfo, error) {
+			return &datatype.TableInfo{Name: "orders", Kind: EngineCatalogKindTable}, nil
 		},
 		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
 			return []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}}, nil
@@ -389,4 +398,70 @@ func (*tabularCatalogTestPlugin) Capabilities() EngineCapabilities              
 func (*tabularCatalogTestPlugin) GORMDialect() string                                  { return "test" }
 func (*tabularCatalogTestPlugin) CreateConnectionPool(ConnectionInfo, *PoolConfig) (*gorm.DB, error) {
 	return &gorm.DB{}, nil
+}
+
+func TestTabularExactLookupNeverEnumeratesOrReadsUnrequestedDetails(t *testing.T) {
+	engine := &Engine{ID: 7011, EngineType: "tabular_catalog_test"}
+	Register(&tabularCatalogTestPlugin{})
+	t.Cleanup(func() { Unregister("tabular_catalog_test"); ClosePool(engine.ID) })
+	path := TabularItemPath(engine.ID, EngineCatalogTermDatabase, "a.b", "target.'table")
+	callbacks := minimalTabularCatalogCallbacks()
+	callbacks.ListTables = func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
+		t.Fatal("precise lookup enumerated siblings")
+		return nil, nil
+	}
+	lookupCalls, columnCalls := 0, 0
+	callbacks.GetTable = func(_ context.Context, _ *gorm.DB, namespace, table string) (*datatype.TableInfo, error) {
+		lookupCalls++
+		if namespace != "a.b" || table != "target.'table" {
+			t.Fatalf("lookup lost literal target: %q/%q", namespace, table)
+		}
+		return &datatype.TableInfo{Name: table, Kind: "view", Comment: "target summary"}, nil
+	}
+	callbacks.ListColumns = func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
+		columnCalls++
+		return []datatype.FieldInfo{{Name: "id", PrimaryKey: true}}, nil
+	}
+	entry, err := ResolveTabularCatalogPath(t.Context(), callbacks, engine, path)
+	if err != nil || entry == nil || entry.Kind != "view" || entry.Table == nil || entry.Table.Comment != "target summary" || len(entry.Table.Fields) != 0 || columnCalls != 0 || lookupCalls != 1 {
+		t.Fatalf("resolve: entry=%#v error=%v lookup=%d columns=%d", entry, err, lookupCalls, columnCalls)
+	}
+	facts, err := DescribeTabularCatalogFacts(t.Context(), callbacks, engine, path, EngineCatalogFactsOptions{})
+	if err != nil || facts == nil || facts.Table == nil || len(facts.Table.Fields) != 1 || columnCalls != 1 || lookupCalls != 2 {
+		t.Fatalf("facts=%#v error=%v lookup=%d columns=%d", facts, err, lookupCalls, columnCalls)
+	}
+	failure := errors.New("source lookup denied")
+	for _, scenario := range []string{"missing", "failed", "wrong target", "hidden namespace"} {
+		t.Run(scenario, func(t *testing.T) {
+			before := columnCalls
+			callbacks.IsSystemNamespaceFunc = func(string) bool { return scenario == "hidden namespace" }
+			callbacks.GetTable = func(context.Context, *gorm.DB, string, string) (*datatype.TableInfo, error) {
+				if scenario == "hidden namespace" {
+					t.Fatal("hidden namespace reached source lookup")
+				}
+				if scenario == "failed" {
+					return nil, failure
+				}
+				if scenario == "wrong target" {
+					return &datatype.TableInfo{Name: "sibling"}, nil
+				}
+				return nil, nil
+			}
+			_, resolveErr := ResolveTabularCatalogPath(t.Context(), callbacks, engine, path)
+			_, factsErr := DescribeTabularCatalogFacts(t.Context(), callbacks, engine, path, EngineCatalogFactsOptions{})
+			if resolveErr == nil || factsErr == nil || columnCalls != before {
+				t.Fatalf("unsafe lookup: resolve=%v facts=%v columns=%d", resolveErr, factsErr, columnCalls)
+			}
+			if scenario == "failed" && (!errors.Is(resolveErr, failure) || !errors.Is(factsErr, failure)) {
+				t.Fatal("lookup failure was swallowed")
+			}
+			if (scenario == "missing" || scenario == "hidden namespace") && (!IsEngineCatalogErrorKind(resolveErr, EngineCatalogErrorNotFound) || !IsEngineCatalogErrorKind(factsErr, EngineCatalogErrorNotFound)) {
+				t.Fatal("missing target must be not_found")
+			}
+		})
+	}
+	callbacks.GetTable = nil
+	if _, err := ResolveTabularCatalogPath(t.Context(), callbacks, engine, path); err == nil {
+		t.Fatal("missing exact callback must fail without enumeration fallback")
+	}
 }

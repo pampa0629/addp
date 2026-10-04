@@ -111,6 +111,7 @@ func (p *DorisPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 		NamespaceTerm:         "database",
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
+		GetTable:              dorisCatalogFactsDialect.GetTable,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
 		IsSystemNamespaceFunc: p.isSystemSchema,

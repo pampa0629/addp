@@ -1,18 +1,21 @@
 package postgresql
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-func TestIntegrationPostgresCatalogReadOnlyPrimaryKey(t *testing.T) {
+func TestIntegrationPostgresCatalogPreciseReadOnly(t *testing.T) {
 	db, pg, info := openPostgresPrepareIntegration(t, false)
 	defer db.Close()
 	ctx := t.Context()
@@ -67,11 +70,21 @@ func TestIntegrationPostgresCatalogReadOnlyPrimaryKey(t *testing.T) {
 	if err := reader.Raw(`SELECT has_table_privilege(?, 'SELECT'), has_table_privilege(?, 'INSERT,UPDATE,DELETE')`, schema+".source", schema+".source").Row().Scan(&canRead, &canWrite); err != nil || !canRead || canWrite {
 		t.Fatalf("reader privileges: read=%v write=%v error=%v", canRead, canWrite, err)
 	}
+	trace := &preciseCatalogQueryTrace{Interface: logger.Default.LogMode(logger.Silent)}
+	exactReader := reader.Session(&gorm.Session{Logger: trace})
+	summary, err := pg.getTable(ctx, exactReader, schema, "source")
+	if err != nil || summary == nil || summary.Name != "source" || len(summary.Fields) != 0 || len(trace.queries) != 1 || !strings.Contains(trace.queries[0], "t.table_name = 'source'") {
+		t.Fatalf("precise source summary=%#v error=%v queries=%v", summary, err, trace.queries)
+	}
+	path := plugin.TabularItemPath(1, plugin.EngineCatalogTermSchema, schema, "source")
+	entry, err := pg.ResolvePath(ctx, readerInfo, path)
+	if err != nil || entry == nil || entry.Table == nil || len(entry.Table.Fields) != 0 || len(entry.Table.PrimaryKey) != 0 {
+		t.Fatalf("resolve must remain lightweight: entry=%#v error=%v", entry, err)
+	}
 	fields, err := pg.listColumns(ctx, reader, schema, "source")
 	if err != nil || len(fields) != 2 || fields[0].Name != "id" || !fields[0].PrimaryKey || fields[0].Nullable || fields[1].PrimaryKey {
 		t.Fatalf("SELECT-only catalog fields lost primary key: fields=%#v error=%v", fields, err)
 	}
-	path := plugin.TabularItemPath(1, plugin.EngineCatalogTermSchema, schema, "source")
 	facts, err := pg.DescribeEngineCatalogFacts(ctx, readerInfo, path, plugin.EngineCatalogFactsOptions{})
 	if err != nil || facts == nil || facts.Table == nil || !reflect.DeepEqual(facts.Table.PrimaryKey, []string{"id"}) {
 		t.Fatalf("SELECT-only table facts lost stable key: facts=%#v error=%v", facts, err)
@@ -80,4 +93,29 @@ func TestIntegrationPostgresCatalogReadOnlyPrimaryKey(t *testing.T) {
 	if err != nil || len(fields) != 0 {
 		t.Fatalf("ungranted table columns must remain hidden: fields=%#v error=%v", fields, err)
 	}
+	for _, table := range []string{"other", "missing"} {
+		deniedPath := plugin.TabularItemPath(1, plugin.EngineCatalogTermSchema, schema, table)
+		if _, err := pg.ResolvePath(ctx, readerInfo, deniedPath); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+			t.Fatalf("unreadable resolve %s: %v", table, err)
+		}
+		if _, err := pg.DescribeEngineCatalogFacts(ctx, readerInfo, deniedPath, plugin.EngineCatalogFactsOptions{}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+			t.Fatalf("unreadable facts %s: %v", table, err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`REVOKE USAGE ON SCHEMA "%s" FROM "%s"`, schema, role)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pg.ResolvePath(ctx, readerInfo, path); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+		t.Fatalf("schema without USAGE must be hidden: %v", err)
+	}
+}
+
+type preciseCatalogQueryTrace struct {
+	logger.Interface
+	queries []string
+}
+
+func (l *preciseCatalogQueryTrace) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
+	query, _ := fc()
+	l.queries = append(l.queries, query)
 }

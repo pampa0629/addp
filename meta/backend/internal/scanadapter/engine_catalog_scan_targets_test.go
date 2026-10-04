@@ -2,16 +2,21 @@ package scanadapter_test
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/postgresql"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/meta/internal/metatest"
@@ -334,5 +339,147 @@ func TestContentLocatorRetainsExactBoundaryAndRootState(t *testing.T) {
 				t.Fatal("content leaf marked root scan complete")
 			}
 		})
+	}
+}
+
+type preciseNativePostgresPlugin struct {
+	*postgresql.PostgreSQLPlugin
+	t *testing.T
+}
+
+func (p *preciseNativePostgresPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	p.t.Fatal("native single-table scan enumerated parent catalog")
+	return nil, errors.New("unexpected catalog enumeration")
+}
+
+func TestPreciseNativePostgresScanAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("META_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("META_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	uri, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	schema, role, password := "precise_source_"+suffix, "precise_reader_"+suffix, rand.Text()
+	if err := db.Exec(fmt.Sprintf(`CREATE ROLE "%s" LOGIN PASSWORD '%s'`, role, password)).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, statement := range []string{fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schema), fmt.Sprintf(`DROP OWNED BY "%s"`, role), fmt.Sprintf(`DROP ROLE "%s"`, role)} {
+			if err := db.Exec(statement).Error; err != nil {
+				t.Errorf("cleanup native scope fixture: %v", err)
+			}
+		}
+		var remains bool
+		if err := db.Raw(`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=?) OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspname=?)`, role, schema).Scan(&remains).Error; err != nil || remains {
+			t.Errorf("native source fixture remains=%v error=%v", remains, err)
+		}
+	})
+	for _, statement := range []string{
+		fmt.Sprintf(`CREATE SCHEMA "%s"`, schema),
+		fmt.Sprintf(`CREATE TABLE "%s"."A" (id bigint PRIMARY KEY, value text)`, schema),
+		fmt.Sprintf(`CREATE TABLE "%s"."B" (id bigint PRIMARY KEY, private_value text)`, schema),
+		fmt.Sprintf(`GRANT USAGE ON SCHEMA "%s" TO "%s"`, schema, role),
+		fmt.Sprintf(`GRANT SELECT ON "%s"."A" TO "%s"`, schema, role),
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	t.Cleanup(func() { tx.Rollback() })
+	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
+		t.Fatal(err)
+	}
+	p := &preciseNativePostgresPlugin{PostgreSQLPlugin: &postgresql.PostgreSQLPlugin{}, t: t}
+	resource := &commonModels.Engine{ID: 931, EngineType: p.Type(), Name: "native exact source", ConnectionInfo: commonModels.ConnectionInfo{
+		"host": uri.Hostname(), "port": uri.Port(), "database": strings.TrimPrefix(uri.Path, "/"), "user": role, "password": password, "sslmode": uri.Query().Get("sslmode"),
+	}}
+	t.Cleanup(func() { plugin.ClosePool(resource.ID) })
+	repo := metaRepo.NewScanRepository(tx)
+	root, err := metaRepo.EnsureEngineCatalogRootNode(repo, 931, resource, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := repo.UpsertNode(931, resource.ID, root, plugin.EngineCatalogTermSchema, schema, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range []*models.MetaNode{root, parent} {
+		if err := tx.Model(node).Updates(map[string]interface{}{"scan_status": "failed", "scan_error": "previous range failure", "scanned_depth": "basic"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := repo.UpsertItemWithDepth(931, resource.ID, parent, "table", "B", schema+".B", models.JSONMap{"sentinel": "retain"}, nil, nil, nil, "basic"); err != nil {
+		t.Fatal(err)
+	}
+	var siblingBefore models.MetaItem
+	if err := tx.Where("tenant_id = ? AND engine_id = ? AND name = ?", 931, resource.ID, "B").First(&siblingBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	var before []models.MetaNode
+	if err := tx.Where("tenant_id = ? AND engine_id = ?", 931, resource.ID).Order("id").Find(&before).Error; err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	dispatcher := scanadapter.NewEngineCatalogScanDispatcher(tx, repo, log, scanruntime.NewDatabaseRuntime(tx, log, repo, nil), nil, nil, nil)
+	locator := &resourcetree.ResourceLocator{EngineID: resource.ID, Type: resourcetree.ResourceType("table"), Path: []string{schema, "A"}}
+	req := scanflow.DispatchRequest{Context: t.Context(), Resource: resource, EnginePlugin: p, TenantID: 931, Targets: []string{locator.ToURI()}, ScanDepth: "deep", Force: true}
+	result, err := dispatcher.Dispatch(req)
+	if err != nil || result.Items != 1 || result.Fields != 2 || result.CatalogNodes != 0 {
+		t.Fatalf("native exact scan: result=%+v error=%v", result, err)
+	}
+	var target models.MetaItem
+	if err := tx.Where("tenant_id = ? AND engine_id = ? AND name = ?", 931, resource.ID, "A").First(&target).Error; err != nil {
+		t.Fatal(err)
+	}
+	if target.ScannedDepth != "deep" {
+		t.Fatalf("native target depth=%s", target.ScannedDepth)
+	}
+	for _, table := range []string{"B", "missing"} {
+		locator.Path[1] = table
+		req.Targets = []string{locator.ToURI()}
+		if _, err := dispatcher.Dispatch(req); err == nil {
+			t.Fatalf("native scan accepted unreadable target %s", table)
+		}
+	}
+	locator.Path[1] = "A"
+	req.Targets = []string{locator.ToURI()}
+	if err := db.Exec(fmt.Sprintf(`REVOKE USAGE ON SCHEMA "%s" FROM "%s"`, schema, role)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dispatcher.Dispatch(req); err == nil {
+		t.Fatal("native scan accepted revoked schema visibility")
+	}
+	var after []models.MetaNode
+	if err := tx.Where("tenant_id = ? AND engine_id = ?", 931, resource.ID).Order("id").Find(&after).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("native leaf scan modified parent range facts")
+	}
+	var siblingAfter models.MetaItem
+	if err := tx.First(&siblingAfter, siblingBefore.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(siblingBefore, siblingAfter) {
+		t.Fatal("native leaf scan changed unrelated metadata")
 	}
 }

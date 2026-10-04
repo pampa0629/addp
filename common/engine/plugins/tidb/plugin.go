@@ -110,6 +110,7 @@ func (p *Plugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 		NamespaceTerm:         plugin.EngineCatalogTermDatabase,
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
+		GetTable:              tidbCatalogFactsDialect.GetTable,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
 		IsSystemNamespaceFunc: p.isSystemSchema,

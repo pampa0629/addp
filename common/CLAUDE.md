@@ -4,6 +4,8 @@
 
 `common/` 是 ADDP Go 后端共享库，承载跨模块复用的 API 响应、客户端、配置、模型、统一执行记录、内容 I/O、目录视图、调度、空间处理、SQL 构建、存储和通用工具。跨模块重复逻辑应优先抽取到这里。
 
+明确 table leaf 的目录解析与事实读取必须使用必需的 `TabularCatalogCallbacks.GetTable` 精确查询；`ListTables` 仅用于显式 branch 枚举，不得作为单表查找的兜底。`ResolvePath` 只返回摘要，字段和主键等详情由 `DescribeEngineCatalogFacts` 获取；关系型插件保留原生权限过滤及系统目录隐藏。
+
 ## 重要包
 
 ```text

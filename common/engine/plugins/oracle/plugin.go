@@ -223,6 +223,7 @@ func (p *OraclePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks 
 		NamespaceTerm:         plugin.EngineCatalogTermSchema,
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
+		GetTable:              p.getTable,
 		ListColumns:           p.listColumns,
 		ListIndexes:           p.listIndexes,
 		ListConstraints:       p.listConstraints,
@@ -306,11 +307,23 @@ type oracleTableRow struct {
 }
 
 func (p *OraclePlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+	return p.queryTables(ctx, db, schema, nil)
+}
+
+func (p *OraclePlugin) getTable(ctx context.Context, db *gorm.DB, schema, table string) (*datatype.TableInfo, error) {
+	tables, err := p.queryTables(ctx, db, schema, &table)
+	if err != nil || len(tables) == 0 {
+		return nil, err
+	}
+	return &tables[0], nil
+}
+
+func (p *OraclePlugin) queryTables(ctx context.Context, db *gorm.DB, schema string, target *string) ([]datatype.TableInfo, error) {
 	if p.isSystemSchema(schema) {
 		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	var rows []oracleTableRow
-	err := db.WithContext(ctx).Raw(`
+	query := `
 		SELECT o.object_name AS name,
 		       o.object_type,
 		       CASE o.object_type
@@ -344,8 +357,14 @@ func (p *OraclePlugin) listTables(ctx context.Context, db *gorm.DB, schema strin
 		            AND internal_comment.table_name = o.object_name
 		            AND (internal_comment.comments LIKE ? OR internal_comment.comments = ?)
 		       )
-		 ORDER BY o.object_name
-	`, schema, InternalCaptureTableCommentPrefix+"%", InternalTransferApplyTableComment).Scan(&rows).Error
+	`
+	args := []interface{}{schema, InternalCaptureTableCommentPrefix + "%", InternalTransferApplyTableComment}
+	if target != nil {
+		query += " AND o.object_name = ?"
+		args = append(args, *target)
+	}
+	query += " ORDER BY o.object_name"
+	err := db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Oracle tables: %w", err)
 	}

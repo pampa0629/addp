@@ -57,6 +57,18 @@ type mysqlCompatibleNamespaceRow struct {
 }
 
 func (d MySQLCompatibleCatalogFactsDialect) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+	return d.queryTables(ctx, db, schema, nil)
+}
+
+func (d MySQLCompatibleCatalogFactsDialect) GetTable(ctx context.Context, db *gorm.DB, schema, table string) (*datatype.TableInfo, error) {
+	tables, err := d.queryTables(ctx, db, schema, &table)
+	if err != nil || len(tables) == 0 {
+		return nil, err
+	}
+	return &tables[0], nil
+}
+
+func (d MySQLCompatibleCatalogFactsDialect) queryTables(ctx context.Context, db *gorm.DB, schema string, target *string) ([]datatype.TableInfo, error) {
 	var rows []mysqlCompatibleTableRow
 	commentExpr := "'' as comment"
 	if d.IncludeComment {
@@ -81,10 +93,16 @@ func (d MySQLCompatibleCatalogFactsDialect) ListTables(ctx context.Context, db *
 		FROM information_schema.tables
 		WHERE table_schema = ?
 		  AND table_type IN ('BASE TABLE', 'VIEW')
-		ORDER BY table_name
 	`
 
-	if err := db.WithContext(ctx).Raw(query, schema).Scan(&rows).Error; err != nil {
+	args := []interface{}{schema}
+	if target != nil {
+		query += " AND table_name = ?"
+		args = append(args, *target)
+	}
+
+	query += " ORDER BY table_name"
+	if err := db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
 	tables := make([]datatype.TableInfo, 0, len(rows))

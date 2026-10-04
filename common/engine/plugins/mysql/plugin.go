@@ -131,6 +131,7 @@ func (p *MySQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 		NamespaceTerm:         "database",
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
+		GetTable:              mysqlCatalogFactsDialect.GetTable,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
 		DescribeSpatial:       p.describeSpatialFacts,

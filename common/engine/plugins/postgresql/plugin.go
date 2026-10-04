@@ -194,6 +194,7 @@ func (p *PostgreSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallba
 		NamespaceTerm:         "schema",
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
+		GetTable:              p.getTable,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
 		DescribeSpatial:       p.describeSpatialFacts,
@@ -390,19 +391,50 @@ const postgresListTablesQuery = `
 			ON c.relnamespace = n.oid AND c.relname = t.table_name
 		WHERE t.table_schema = $1
 		  AND t.table_type IN ('BASE TABLE', 'VIEW')
-		ORDER BY t.table_name
+		  AND has_schema_privilege(t.table_schema, 'USAGE')
 	`
 
 // ListTables 列出指定Schema下的所有表
 func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
-	var rows []postgresTableRow
+	return p.queryTables(ctx, db, schema, nil)
+}
 
-	superMapSDXDetected, err := p.hasSuperMapSDXSystemTables(ctx, db)
-	if err != nil {
+func (p *PostgreSQLPlugin) getTable(ctx context.Context, db *gorm.DB, schema, table string) (*datatype.TableInfo, error) {
+	tables, err := p.queryTables(ctx, db, schema, &table)
+	if err != nil || len(tables) == 0 {
 		return nil, err
 	}
+	return &tables[0], nil
+}
 
-	err = db.WithContext(ctx).Raw(postgresListTablesQuery, schema).Scan(&rows).Error
+func isSuperMapSDXTableName(table string) bool {
+	for _, name := range superMapSDXSystemTableNames {
+		if strings.EqualFold(strings.TrimSpace(table), name) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *PostgreSQLPlugin) queryTables(ctx context.Context, db *gorm.DB, schema string, target *string) ([]datatype.TableInfo, error) {
+	var rows []postgresTableRow
+
+	var superMapSDXDetected bool
+	if target == nil || isSuperMapSDXTableName(*target) {
+		var err error
+		superMapSDXDetected, err = p.hasSuperMapSDXSystemTables(ctx, db)
+		if err != nil {
+			return nil, err
+		}
+	}
+	query := postgresListTablesQuery
+	args := []interface{}{schema}
+	if target != nil {
+		query += " AND t.table_name = $2"
+		args = append(args, *target)
+	}
+	query += " ORDER BY t.table_name"
+	err := db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}

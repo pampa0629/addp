@@ -348,6 +348,9 @@ func minimalTabularCatalogCallbacks() TabularCatalogCallbacks {
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
 			return nil, nil
 		},
+		GetTable: func(context.Context, *gorm.DB, string, string) (*datatype.TableInfo, error) {
+			return nil, nil
+		},
 		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
 			return nil, nil
 		},

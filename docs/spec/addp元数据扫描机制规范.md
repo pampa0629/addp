@@ -76,9 +76,9 @@ Meta 扫描只保留四个核心维度：
 4. item refresh 必须由已入库 item 标准事实还原内容输入，不得退回为父目录 catalog scan。
 5. `item_id` selector 解析出的 `ScanScope` 和 execution config 必须保持 item 模式，不得为了执行方便补写父级 `catalog_paths` 或 sibling `ref_groups`。
 6. Manager preview、Meta 查询 API 和其他消费方只能读取已落库 attributes 与 `access_index`；缺失或不可用时应降级读取或提示用户执行 item refresh，不得在预览或查询链路自动触发扫描、写回 attributes 或临时构建 `access_index`。
-7. table、collection、graph、直接 catalog leaf、file 和 object 目标只扫描自身。复用 `EngineCatalogProvider.ResolvePath` 精确解析与既有事实／内容处理能力；不支持精确解析、路径无效或跨引擎时拒绝执行，不枚举父级作为兜底。只有显式 root 或 branch selector 才枚举该范围。
+7. 公共表格 Provider 通过必需的 `GetTable` 按命名空间与目标表名称查询；`ResolvePath` 不列举兄弟表、不读取字段，事实接口再读取该表详情。table、collection、graph、直接 catalog leaf、file 和 object 目标只扫描自身。复用 `EngineCatalogProvider.ResolvePath` 精确解析与既有事实／内容处理能力；不支持精确解析、路径无效或跨引擎时拒绝执行，不枚举父级作为兜底。只有显式 root 或 branch selector 才枚举该范围。
 8. 局部扫描不得清理未覆盖的兄弟 item，也不得更新祖先 node 的扫描完成时间、深度或状态。为落库建立结构父链不代表完成父范围扫描；只有成功完整枚举对应范围才允许清理该范围及标记完成。字符串路径不得按 `.` 或首段截断来扩大范围。
-9. 执行归属、扫描深度与数据访问授权是独立边界。租户集中采集、交互扫描与自动产物扫描应由 System 提供当前资源授权裁决，Meta 对解析后的实际范围执行裁决并在 Worker 重核；本期范围精确化不宣称已经完成该授权闭环，也不复用仅用于 Service 查询定义的授权契约。
+9. 执行归属、扫描深度与数据访问授权是独立边界。租户集中采集、交互扫描与自动产物扫描应由 System 提供当前资源授权裁决，Meta 对解析后的实际范围执行裁决并在 Worker 重核；本期范围精确化不宣称已经完成该授权闭环，也不直接套用 Service 查询定义或 Manager 数据预览的专用授权契约。
 
 ### 对象目录归属不变量
 

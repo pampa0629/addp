@@ -364,6 +364,10 @@ Develop 自动扫描归属的原故障已在 `015dcb90a` 的 [Raster Hosted T4 3
 
 Meta 扫描范围精确化门禁：直接 HTTP T1/T2 验证产物完整 locator 冻结到 execution config，非法／跨引擎目标返回本地化 400，失败请求不落记录；Go T1 验证配置 JSON 持久化、去重锁身份以及表、集合、图、直接叶子和 file/object 内容边界。`make test-meta-postgres` 增加 `TestPreciseCatalogScanAgainstPostgres`，复用同一运行时用例与事务回滚，验证局部扫描成功或失败均不改变祖先扫描事实、兄弟 item 保留，显式完整范围仍可清理缺失项。路径中的点号不得截断，空目标不能退回全引擎扫描。标准模块入口与 Release/T2 已自动覆盖 Meta Go 文件及此脚本，无第二套 CI 登记。
 
-以上范围回归使用受控源 Provider 和真实 Meta PostgreSQL，不能证明所有真实引擎插件内部不枚举兄弟项。已发现公共 `ResolveTabularCatalogPath`／`DescribeTabularCatalogFacts` 经 `findTableInfo` 调用 `ListTables`；真实单表“不枚举 B”验收必须先收紧公共 Provider 的精确读取，再补源引擎回归。System 当前资源授权、撤权后 Worker 重核及 metadata 可见性仍属于后续授权阶段；本轮不把运行时范围测试、此前 Monitor T4 或产物归属 T4 当作该权限闭环通过。
+公共表格 Provider 的单表解析和事实读取统一使用必需的 `GetTable`，删除 `findTableInfo` 的父级枚举路径；PostgreSQL、MySQL、Oracle、ClickHouse、Doris、TiDB、OceanBase 同步实现目标名称谓词。T1 分别检查四类原生 SQL 的参数绑定、目标谓词、源目录过滤及错误直接传播，并检查解析不读取字段、缺失／不匹配目标不进入详情。Common PostgreSQL 门禁的 `TestIntegrationPostgresCatalogPreciseReadOnly` 使用真实只读源角色，验证单次目标查询、轻量摘要、主键详情、未授权／不存在目标 NotFound 及撤销 schema USAGE 后不可见。
 
-本期 Meta 工作区验证（2026-10-04）：修复首轮自身编译错误后，完整 `make test-module MODULE=meta` 返回 0，包含平台 T0、Meta 全量 Go T1、13 项前端测试与构建、既有 PostgreSQL 门禁及新增四类精确范围持久化回归；Swagger 生成与 Meta 43 个公开路由覆盖通过。共享 T0 的 Agent Swagger 投影因其他会话的 `deerflow` 依赖未就绪产生 `WARN_ONLY` 告警，不计为 Agent Swagger 验证通过。公共 Provider 的内部枚举缺口待方案确认，本期未运行或宣称通过真实源精确范围 T4，代码尚未作为完整权限闭环交付。
+Meta PostgreSQL 门禁登记 `TestPreciseNativePostgresScanAgainstPostgres`：使用真实 PostgreSQL Provider 和只读源角色扫描 A，显式禁止父级 `ListChildren`，同时核对 B 元数据及父级扫描事实保持不变；不可读 B、缺失目标、撤销源 schema USAGE 后的扫描必须失败。它属于源 Provider 与 Meta 持久化链路的 T2，不等于 HTTP／Worker 的 T4，也不证明其余厂商真实服务均已验收。System 当前资源授权、撤权后 Worker 重核及 metadata 可见性仍属于后续授权阶段，不把本期范围测试、此前 Monitor T4 或产物归属 T4 当作该权限闭环通过。
+
+本期 Meta 工作区验证（2026-10-04）：修复首轮自身编译错误后，完整 `make test-module MODULE=meta` 返回 0，包含平台 T0、Meta 全量 Go T1、13 项前端测试与构建、既有 PostgreSQL 门禁及新增四类精确范围持久化回归；Swagger 生成与 Meta 43 个公开路由覆盖通过。共享 T0 的 Agent Swagger 投影因其他会话的 `deerflow` 依赖未就绪产生 `WARN_ONLY` 告警，不计为 Agent Swagger 验证通过。随后获准收紧公共 Provider 并补充真实源范围回归；后续 Common 与 Meta 门禁结果见本节下方，完整资源权限闭环仍待授权阶段完成。
+
+公共 Provider 收敛后的工作区验证（2026-10-04）：`make test-go` 的全部 22 个 Go 模块通过；`make test-common-postgres`、独立 `make test-meta-postgres` 及完整 `make test-module MODULE=meta` 返回 0，后者包含平台 T0、Meta Go T1、13 项前端测试与构建和新增真实源贯通回归。`make test-changed` 因其他 Owner 的 PostgreSQL DSN、MySQL／OceanBase 测试环境缺失，在预检时中止，不计为通过。本地未运行其余厂商真实服务、其余消费者 T2 及真实 HTTP／Worker T4；已登记的 Platform CI Go workspace、Release/T2 各 Provider／Owner 门禁承接共享依赖扩散验证，T4 仍须相应 Hosted 验收。本轮没有重启开发服务。
