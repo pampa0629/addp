@@ -34,7 +34,8 @@ def create_raster(path, array, transform=(0, 1, 0, 4, 0, -1), crs='EPSG:4326', n
     if array.ndim == 2:
         array = array[None, ...]
     ds = gdal.GetDriverByName('GTiff').Create(str(path), array.shape[2], array.shape[1], array.shape[0], gdal.GDT_Float64)
-    ds.SetGeoTransform(transform)
+    if transform is not None:
+        ds.SetGeoTransform(transform)
     if crs:
         definition = osr.SpatialReference(); definition.SetFromUserInput(crs)
         ds.SetProjection(definition.ExportToWkt())
@@ -158,10 +159,161 @@ def test_resampling_and_reprojection(raster_file):
             with pytest.raises(ValueError): raster_resample(raster, **kwargs)
 
 
+@pytest.mark.parametrize('transform,crs', [
+    (None,''), (None,'EPSG:4326'), ((10,2,.5,20,.25,-3),''),
+    ((10,2,.5,20,.25,-3),'EPSG:4326'),
+], ids=['no-georeferencing','crs-only','transform-only','rotated-georeferencing'])
+@pytest.mark.parametrize('algorithm', ['nearest','bilinear','average'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+@pytest.mark.parametrize('size', [[6,4],[6,2]], ids=['uniform-scale','unequal-scale'])
+def test_size_resampling_preserves_missing_facts_and_rotated_footprint(tmp_path,transform,crs,algorithm,profile,size):
+    values = np.array([[0,30,60],[90,120,150]],dtype=float)
+    width,height = size
+    xscale,yscale = 3/width,2/height
+    source = create_raster(tmp_path/'source.tif',values,transform=transform,crs=crs)
+    original = source.read_bytes()
+    expected = np.repeat(np.repeat(values,height//2,axis=0),width//3,axis=1)
+    if algorithm=='bilinear':
+        sy,sx = np.indices(values.shape)
+        for row in range(height):
+            for column in range(width):
+                weights = np.maximum(0,1-np.abs(sx+.5-(column+.5)*xscale))*np.maximum(0,1-np.abs(sy+.5-(row+.5)*yscale))
+                expected[row,column] = np.sum(weights*values)/weights.sum()
+    target = tmp_path/'result.tif'
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        workspace = raster.workspace
+        result = raster_resample(raster,size=size,resampling=algorithm)
+        facts = raster_info(result)
+        assert (facts['width'],facts['height'])==(width,height)
+        assert facts['crs']==raster_info(raster)['crs']
+        if transform is None:
+            assert facts['transform']==[] and facts['extent']==[]
+        else:
+            np.testing.assert_allclose(facts['transform'],[transform[0],transform[1]*xscale,transform[2]*yscale,
+                                                         transform[3],transform[4]*xscale,transform[5]*yscale])
+            np.testing.assert_allclose(facts['extent'],raster_info(raster)['extent'])
+            output = gdal.Open(str(result.path))
+            for x,y in [(0,0),(3,0),(3,2),(0,2)]:
+                np.testing.assert_allclose(gdal.ApplyGeoTransform(output.GetGeoTransform(),x/xscale,y/yscale),
+                                           gdal.ApplyGeoTransform(transform,x,y))
+            output = None
+        raster_save(result,target_plan(target),profile=profile,blocksize=128)
+        persisted = raster_load(source_plan(target))
+        saved_facts = raster_info(persisted)
+        assert saved_facts['crs']==facts['crs'] and saved_facts['transform']==facts['transform']
+        assert saved_facts['extent']==facts['extent']
+        output = gdal.Open(str(persisted.path))
+        np.testing.assert_allclose(read_band_values(output.GetRasterBand(1)),expected)
+        output = None
+        assert raster_statistics(persisted)['valid_count']==width*height
+        if not crs or transform is None:
+            with pytest.raises(ValueError,match='CRS' if not crs else 'geotransform'):
+                raster_resample(persisted,resolution=[1,1])
+            with pytest.raises(ValueError,match='CRS' if not crs else 'geotransform'):
+                raster_reproject(persisted,'EPSG:3857')
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+    assert not workspace.exists() and source.read_bytes()==original
+    assert {path.name for path in tmp_path.iterdir()}=={'source.tif','result.tif'}
+
+
+@pytest.mark.parametrize('format,driver,suffix', [('png','PNG','.png'),('jpeg','JPEG','.jpg')])
+@pytest.mark.parametrize('source_crs', ['', 'EPSG:4326'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+def test_size_resampling_accepts_unlocated_images_without_fabricating_location(tmp_path,format,driver,suffix,source_crs,profile):
+    pixels = np.array([[0,20,40,60],[80,100,120,140]],dtype=np.uint8)
+    alpha = np.array([[0,255,128,255],[255,255,255,255]],dtype=np.uint8)
+    memory = gdal.GetDriverByName('MEM').Create('',4,2,2 if format=='png' else 1,gdal.GDT_Byte)
+    memory.GetRasterBand(1).WriteRaster(0,0,4,2,pixels.tobytes())
+    if format=='png':
+        memory.GetRasterBand(2).WriteRaster(0,0,4,2,alpha.tobytes())
+        memory.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    source = tmp_path/('source'+suffix)
+    encoded = gdal.GetDriverByName(driver).CreateCopy(str(source),memory)
+    encoded = memory = None
+    original = source.read_bytes()
+    decoded = gdal.Open(str(source))
+    expected = np.repeat(np.repeat(read_band_values(decoded.GetRasterBand(1)),2,axis=0),2,axis=1)
+    valid = np.repeat(np.repeat(alpha>0,2,axis=0),2,axis=1) if format=='png' else np.ones(expected.shape,dtype=bool)
+    decoded = None
+    target = tmp_path/'result.tif'
+    with raster_workspace():
+        raster = raster_load(source_plan(source,format),source_crs=source_crs)
+        workspace = raster.workspace
+        resized = raster_resample(raster,size=[8,4])
+        raster_save(resized,target_plan(target),profile=profile,blocksize=128)
+        persisted = raster_load(source_plan(target))
+        facts = raster_info(persisted)
+        assert (facts['width'],facts['height'])==(8,4)
+        assert facts['transform']==[] and facts['extent']==[]
+        assert facts['source_crs']==source_crs
+        output = gdal.Open(str(persisted.path))
+        np.testing.assert_equal(read_band_values(output.GetRasterBand(1))[valid],expected[valid])
+        assert output.GetRasterBand(1).DataType==gdal.GDT_Byte
+        if format=='png':
+            np.testing.assert_equal(read_band_values(output.GetRasterBand(2)),np.repeat(np.repeat(alpha,2,axis=0),2,axis=1))
+        output = None
+        statistics = raster_statistics(persisted)
+        assert (statistics['valid_count'],statistics['invalid_count'])==(np.count_nonzero(valid),np.count_nonzero(~valid))
+        assert statistics['mean']==pytest.approx(expected[valid].mean())
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+    assert not workspace.exists() and source.read_bytes()==original
+    assert {path.name for path in tmp_path.iterdir()}=={source.name,'result.tif'}
+
+
+@pytest.mark.parametrize('dtype,opaque,nodata,fill', [
+    (gdal.GDT_Byte,255,250,200), (gdal.GDT_UInt16,65535,65000,60000),
+    (gdal.GDT_Float64,255,np.nan,1e6),
+])
+@pytest.mark.parametrize('algorithm', ['nearest','average'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+def test_size_resampling_preserves_data_type_alpha_validity_and_legal_zero(tmp_path,dtype,opaque,nodata,fill,algorithm,profile):
+    values = np.repeat(np.repeat([[0,20],[30,fill]],2,axis=0),2,axis=1).astype(float)
+    alpha = np.repeat(np.repeat([[opaque,opaque//2],[opaque,0]],2,axis=0),2,axis=1).astype(float)
+    source = tmp_path/'source.tif'
+    dataset = gdal.GetDriverByName('GTiff').Create(str(source),4,4,2,dtype)
+    for index,array in enumerate([values,alpha],1):
+        band = dataset.GetRasterBand(index)
+        band.WriteRaster(0,0,4,4,array.tobytes(),buf_type=gdal.GDT_Float64)
+    dataset.GetRasterBand(1).SetNoDataValue(nodata)
+    dataset.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    dataset = band = None
+    original = source.read_bytes()
+    target = tmp_path/'result.tif'
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        workspace = raster.workspace
+        result = raster_resample(raster,size=[2,2],resampling=algorithm)
+        raster_save(result,target_plan(target),profile=profile,blocksize=128)
+        persisted = raster_load(source_plan(target))
+        output = gdal.Open(str(persisted.path))
+        np.testing.assert_equal(read_band_values(output.GetRasterBand(1))[[0,0,1],[0,1,0]],[0,20,30])
+        # Average emits opaque coverage when contributors exist; nearest retains density.
+        expected_alpha = [[opaque,opaque//2 if algorithm=='nearest' else opaque],[opaque,0]]
+        np.testing.assert_equal(read_band_values(output.GetRasterBand(2)),expected_alpha)
+        assert output.GetRasterBand(1).DataType==dtype
+        output = None
+        statistics = raster_statistics(persisted)
+        assert (statistics['valid_count'],statistics['invalid_count'],statistics['min'],statistics['max'])==(3,1,0,30)
+        assert statistics['mean']==pytest.approx(50/3)
+        histogram = raster_histogram(persisted,bins=3,value_range=[0,30])
+        assert histogram['counts']==[1,0,2] and histogram['outside_count']==0
+        calculated = raster_band_math(persisted,'b1+1')
+        output = gdal.Open(str(calculated.path))
+        np.testing.assert_equal(read_band_values(output.GetRasterBand(1)),[[1,21],[31,np.nan]])
+        output = None
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+    assert not workspace.exists() and source.read_bytes()==original
+    assert {path.name for path in tmp_path.iterdir()}=={'source.tif','result.tif'}
+
+
 @pytest.mark.parametrize('algorithm,resolution,width,height', [
     ('bilinear',.5,12,8), ('average',1.5,4,3),
 ])
-@pytest.mark.parametrize('operator', ['resample','reproject'])
+@pytest.mark.parametrize('operator', ['resample','resize','reproject'])
 @pytest.mark.parametrize('nodata', [-9999,float('nan')], ids=['finite-nodata','nan-nodata'])
 @pytest.mark.parametrize('opaque', [255,128], ids=['opaque','partial-alpha'])
 @pytest.mark.parametrize('profile', ['geotiff','cog'])
@@ -179,36 +331,41 @@ def test_interpolation_excludes_invalid_edge_pixels_and_preserves_saved_analysis
     dataset = None
     original = source.read_bytes()
     valid_source = np.isfinite(values)&(values!=nodata)&(alpha>0)
+    xres,yres = (values.shape[1]/width,values.shape[0]/height) if operator=='resize' else (resolution,resolution)
     expected = np.full((height,width),np.nan)
     source_y,source_x = np.indices(values.shape)
     for row in range(height):
         for column in range(width):
             if algorithm=='bilinear':
-                center_x,center_y = (column+.5)*resolution,(row+.5)*resolution
+                center_x,center_y = (column+.5)*xres,(row+.5)*yres
                 # Warp's bilinear kernel first requires a valid containing source cell.
                 if not valid_source[int(center_y),int(center_x)]:
                     continue
                 weights = np.maximum(0,1-np.abs(source_x+.5-center_x))*np.maximum(0,1-np.abs(source_y+.5-center_y))
             else:
                 # Area overlap supplies the average weights, including fractional cells.
-                weights = np.maximum(0,np.minimum(source_x+1,(column+1)*resolution)-np.maximum(source_x,column*resolution))*np.maximum(
-                    0,np.minimum(source_y+1,(row+1)*resolution)-np.maximum(source_y,row*resolution))
+                weights = np.maximum(0,np.minimum(source_x+1,(column+1)*xres)-np.maximum(source_x,column*xres))*np.maximum(
+                    0,np.minimum(source_y+1,(row+1)*yres)-np.maximum(source_y,row*yres))
             contributors = valid_source&(weights>0)
             if contributors.any():
                 expected[row,column] = np.sum(values[contributors]*weights[contributors])/np.sum(weights[contributors])
     if algorithm=='average':
-        np.testing.assert_equal(expected,[[7.5,30,np.nan,np.nan],[60,82.5,np.nan,np.nan],[np.nan]*4])
+        anchor = [[70/11,310/11,np.nan,np.nan],[52,76,np.nan,np.nan],[220/3,280/3,np.nan,np.nan]] if operator=='resize' else [
+            [7.5,30,np.nan,np.nan],[60,82.5,np.nan,np.nan],[np.nan]*4]
+        np.testing.assert_allclose(expected,anchor,equal_nan=True)
     target = tmp_path/'result.tif'
     with raster_workspace():
         raster = raster_load(source_plan(source))
         workspace = raster.workspace
-        if operator=='resample':
+        if operator=='resize':
+            result = raster_resample(raster,size=[width,height],resampling=algorithm)
+        elif operator=='resample':
             result = raster_resample(raster,resolution=[resolution,resolution],resampling=algorithm)
         else:
             result = raster_reproject(raster,'EPSG:4326',[resolution,resolution],resampling=algorithm)
         output = gdal.Open(str(result.path))
         assert (output.RasterXSize,output.RasterYSize,output.RasterCount)==(width,height,2)
-        np.testing.assert_allclose(output.GetGeoTransform(),[0,resolution,0,4,0,-resolution])
+        np.testing.assert_allclose(output.GetGeoTransform(),[0,xres,0,4,0,-yres])
         assert output.GetSpatialRef().GetAuthorityCode(None)=='4326'
         band = output.GetRasterBand(1)
         actual = read_band_values(band)

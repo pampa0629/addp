@@ -11,6 +11,7 @@ import shutil
 from pathlib import Path
 import tempfile
 import uuid
+import xml.etree.ElementTree as ET
 
 import numpy as np
 from osgeo import gdal, ogr, osr
@@ -111,6 +112,10 @@ def _translated(dataset, **kwargs):
 def _warped(datasets, **kwargs):
     for dataset in datasets:
         _require_georeferencing(dataset)
+    return _warp(datasets, **kwargs)
+
+
+def _warp(datasets, **kwargs):
     has_alpha = kwargs.get('dstAlpha', False) or any(
         dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand
         for dataset in datasets for index in range(1,dataset.RasterCount+1))
@@ -157,6 +162,36 @@ def _warped(datasets, **kwargs):
     result.FlushCache()
     result = None
     return _raster(path)
+
+
+def _resized(dataset, width, height, resampling):
+    projection = dataset.GetProjection()
+    transform = dataset.GetGeoTransform(can_return_null=True)
+    source_width, source_height = dataset.RasterXSize, dataset.RasterYSize
+    # Only this trusted execution-local view has synthetic pixel coordinates.
+    pixels = gdal.Translate(str(_path('.vrt')), dataset, format='VRT')
+    pixels.SetProjection('')
+    pixels.SetGeoTransform((0,1,0,source_height,0,-1))
+    resized = _warp([pixels], width=width, height=height, resampleAlg=resampling)
+    pixels = None
+    view_path = _path('.vrt')
+    view = gdal.Translate(str(view_path), _open(resized), format='VRT')
+    document = ET.fromstring(view.GetMetadata('xml:VRT')[0])
+    view = None
+    for tag in ('SRS', 'GeoTransform'):
+        element = document.find(tag)
+        if element is not None:
+            document.remove(element)
+    if projection:
+        ET.SubElement(document,'SRS').text = projection
+    if transform is not None:
+        xscale, yscale = source_width/width, source_height/height
+        restored = (transform[0],transform[1]*xscale,transform[2]*yscale,
+                    transform[3],transform[4]*xscale,transform[5]*yscale)
+        ET.SubElement(document,'GeoTransform').text = ','.join(map(str,restored))
+    ET.ElementTree(document).write(view_path,encoding='utf-8')
+    # Materialize an ordinary TIFF; internal VRTs never become raster-port values.
+    return _translated(gdal.Open(str(view_path)), format='GTiff')
 
 
 def raster_load(access_plan, source_crs=''):
@@ -319,7 +354,7 @@ def raster_resample(input_raster, size=None, resolution=None, resampling='neares
     dataset = _open(input_raster)
     if size is not None:
         width, height = _pair(size, 'size', integer=True)
-        return _translated(dataset, format='GTiff', width=width, height=height, resampleAlg=_algorithm(resampling))
+        return _resized(dataset, width, height, _algorithm(resampling))
     xres, yres = _pair(resolution, 'resolution')
     return _warped([dataset], xRes=xres, yRes=yres, resampleAlg=_algorithm(resampling))
 
