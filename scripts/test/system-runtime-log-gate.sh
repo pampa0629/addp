@@ -34,7 +34,7 @@ cleanup(){
    python3 - "$WORK_DIR" <<'PYERROR'
 from pathlib import Path
 import os,sys
-for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log','source-contract.log','receiver-owner.log','receiver-contract.log']:
+for name in ['build.log','start.log','restart.log','producer.log','crash.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log','source-contract.log','receiver-owner.log','receiver-contract.log']:
  p=Path(sys.argv[1])/name
  if not p.exists():continue
  text=p.read_text(errors='replace')[-4000:]
@@ -146,6 +146,23 @@ export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" outage-recovered
 query_paging recovered
 observe_once
+# Crash only the producer owned by this disposable Compose project. Prove the
+# output is persisted before SIGKILL; unflushed crash output is not guaranteed.
+CRASH_CONTAINER="$COMPOSE_PROJECT-crash"
+compose run -d --no-deps --name "$CRASH_CONTAINER" runtime-log-pruner launch --module manager --role backend -- sh -ec '
+  printf "runtime-t2-crash-stdout\n"
+  printf "runtime-t2-crash-stderr\n" >&2
+  exec sleep 300
+' >"$WORK_DIR/crash.log" 2>&1
+query_paging crash-live
+docker kill --signal KILL "$CRASH_CONTAINER" >>"$WORK_DIR/crash.log" 2>&1
+crash_exit=$(docker wait "$CRASH_CONTAINER")
+[ "$crash_exit" = 137 ] || { echo "Owned crash producer exit code was $crash_exit, expected 137" >&2; exit 1; }
+query_paging crash-retained
+docker rm "$CRASH_CONTAINER" >>"$WORK_DIR/crash.log" 2>&1
+compose run --rm --no-deps runtime-log-pruner launch --module manager --role backend -- sh -ec 'printf "runtime-t2-after-crash\n"; sleep 2' >>"$WORK_DIR/crash.log" 2>&1
+query_paging crash-restarted
+echo "Owned SIGKILL exit 137, retained stdout/stderr and replacement instance isolation passed"
 python3 - "$WORK_DIR" <<'PYOBS'
 from pathlib import Path
 import json,sys

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,6 +29,10 @@ func TestRuntimeLogsAgainstLoki(t *testing.T) {
 		t.Fatal("missing owned Loki fixture")
 	}
 	s := NewRuntimeLogService(endpoint, os.Getenv("LOKI_READ_TOKEN"), logTestKey)
+	if phase := os.Getenv("ADDP_RUNTIME_LOG_PHASE"); strings.HasPrefix(phase, "crash-") {
+		verifyCrashedProducerLogs(t, s, phase)
+		return
+	}
 	stamp := time.Now().UTC().Add(-5 * time.Minute)
 	q := RuntimeLogQuery{From: stamp.Add(-10 * time.Nanosecond), To: stamp.Add(10 * time.Nanosecond), Limit: 200, UserID: 1}
 	if os.Getenv("ADDP_RUNTIME_LOG_PHASE") == "outage" {
@@ -191,4 +196,91 @@ func TestRuntimeLogsAgainstLoki(t *testing.T) {
 		t.Fatalf("dense real Loki timestamp falsely completed: %v", err)
 	}
 	t.Logf("Real Loki multi-stream paging passed: %d distinct logs, %d batches, nanosecond boundaries, late refresh and dense-boundary rejection", len(seen), batches)
+}
+
+// The gate checks the owned container's exit code separately. Source metadata
+// alone is not evidence of process exit or a DOWN registration.
+func verifyCrashedProducerLogs(t *testing.T, s *RuntimeLogService, phase string) {
+	t.Helper()
+	root := os.Getenv("LOKI_TEST_SOURCE")
+	if root == "" {
+		t.Fatal("missing owned source directory")
+	}
+	want := map[string]string{
+		"runtime-t2-crash-stdout": "stdout",
+		"runtime-t2-crash-stderr": "stderr",
+	}
+	if phase == "crash-restarted" {
+		want["runtime-t2-after-crash"] = "stdout"
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		found := map[string]runtimelog.Entry{}
+		files, err := filepath.Glob(filepath.Join(root, "manager", "*", "*.jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range files {
+			body, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, line := range bytes.Split(body, []byte{'\n'}) {
+				if len(line) == 0 {
+					continue
+				}
+				var entry runtimelog.Entry
+				// A live writer can have an incomplete last line. The bounded
+				// retry still requires every expected complete record.
+				if json.Unmarshal(line, &entry) == nil {
+					if _, expected := want[entry.Message]; expected {
+						found[entry.Message] = entry
+					}
+				}
+			}
+		}
+		complete := len(found) == len(want)
+		for message, channel := range want {
+			entry, ok := found[message]
+			if !ok {
+				continue
+			}
+			if entry.Channel != channel || entry.Node != "observer-t2" || entry.InstanceID == "" {
+				t.Fatalf("invalid crash source identity/channel for %s", message)
+			}
+			q := RuntimeLogQuery{From: time.Now().UTC().Add(-time.Hour), To: time.Now().UTC(), Node: entry.Node, Limit: 100, UserID: 1}
+			result, err := s.Query(context.Background(), "manager", entry.InstanceID, q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			matched := false
+			for _, record := range result.Entries {
+				if record.InstanceID != entry.InstanceID || record.Node != entry.Node {
+					t.Fatal("crash query leaked another instance/node")
+				}
+				if record.Message == message && record.Channel == channel && record.ID == entry.ID {
+					matched = true
+				}
+				if message == "runtime-t2-after-crash" && strings.HasPrefix(record.Message, "runtime-t2-crash-") || message != "runtime-t2-after-crash" && record.Message == "runtime-t2-after-crash" {
+					t.Fatal("crashed and replacement process logs were mixed")
+				}
+			}
+			complete = complete && matched
+		}
+		if complete {
+			old := found["runtime-t2-crash-stdout"].InstanceID
+			if old != found["runtime-t2-crash-stderr"].InstanceID {
+				t.Fatal("stdout and stderr lost the shared process identity")
+			}
+			if phase == "crash-restarted" && old == found["runtime-t2-after-crash"].InstanceID {
+				t.Fatal("replacement reused the crashed process identity")
+			}
+			t.Logf("%s: actual producer logs readable through System query service with instance/node isolation", phase)
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s producer logs did not become queryable", phase)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
