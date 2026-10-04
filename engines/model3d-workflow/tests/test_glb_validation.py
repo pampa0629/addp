@@ -8,6 +8,121 @@ from operators import ConverterError, CommandResult, invoke_operator
 from .test_operators import file_plan
 
 
+def scene_fixture(failure):
+    doc, binary = triangle_doc()
+    if failure == "missing_scene": doc.pop("scenes")
+    if failure == "empty_scene": doc["scenes"][0]["nodes"] = []
+    if failure == "unreferenced_mesh": doc["nodes"][0].pop("mesh")
+    if failure == "bad_scene": doc["scene"] = 1
+    if failure == "bad_root": doc["scenes"][0]["nodes"] = [9]
+    if failure == "bool_root": doc["scenes"][0]["nodes"] = [False]
+    if failure == "duplicate_roots": doc["scenes"][0]["nodes"] = [0, 0]
+    if failure == "bad_mesh": doc["nodes"][0]["mesh"] = 9
+    if failure == "bad_child": doc["nodes"][0]["children"] = [9]
+    if failure == "bad_children_type": doc["nodes"][0]["children"] = "0"
+    if failure == "duplicate_children":
+        doc["nodes"] += [{}]
+        doc["nodes"][0]["children"] = [1, 1]
+    if failure == "cycle":
+        doc["nodes"] += [{"children": [0]}]
+        doc["nodes"][0]["children"] = [1]
+    if failure == "unreachable_cycle":
+        doc["nodes"] += [{"children": [2]}, {"children": [1]}]
+    if failure == "multiple_parents":
+        doc["nodes"] += [{"children": [0]}, {"children": [0]}]
+        doc["scenes"][0]["nodes"] = [1, 2]
+    if failure == "root_is_child":
+        doc["nodes"] += [{"children": [0]}]
+    if failure == "nondefault_bad_root": doc["scenes"] += [{"nodes": [9]}]
+    if failure == "nondefault_bad_transform":
+        doc["nodes"] += [{"translation": [float("nan"), 0, 0]}]
+        doc["scenes"] += [{"nodes": [1]}]
+    return doc, binary
+
+
+@pytest.mark.parametrize("failure", [
+    "missing_scene", "empty_scene", "unreferenced_mesh", "bad_scene", "bad_root", "bool_root",
+    "duplicate_roots", "bad_mesh", "bad_child", "bad_children_type", "duplicate_children",
+    "cycle", "unreachable_cycle", "multiple_parents", "root_is_child", "nondefault_bad_root",
+    "nondefault_bad_transform",
+])
+def test_invalid_scene_is_rejected(tmp_path, failure):
+    path = tmp_path / "invalid-scene.glb"
+    path.write_bytes(glb_bytes(*scene_fixture(failure)))
+    with pytest.raises(ValueError):
+        validate_glb(path)
+
+
+@pytest.mark.parametrize("source_format", ["dae", "3ds", "stl"])
+def test_blank_scene_never_replaces_published_model(tmp_path, source_format):
+    from .test_exchange_model import dae, three_ds
+    from .test_operators import directory_plan
+    folder = tmp_path / "source"
+    folder.mkdir()
+    source = folder / f"model.{source_format}"
+    source.write_bytes({"dae": dae(), "3ds": three_ds(), "stl": b"mesh"}[source_format])
+    (folder / "texture.png").write_bytes(b"source texture")
+    target = tmp_path / "published.glb"
+    target.write_bytes(b"previous valid artifact")
+    plan = (file_plan(source, target, "stl", "glb") if source_format == "stl"
+            else directory_plan(folder, target, source_format, "glb", entrypoint=source.name))
+    plan["target"]["write_mode"] = "replace"
+    doc, binary = triangle_doc("PNG")
+    doc["scenes"][0]["nodes"] = []
+
+    def runner(command, timeout_seconds):
+        from pathlib import Path
+        Path(command[-2]).write_bytes(glb_bytes(doc, binary))
+        return CommandResult(0)
+
+    with pytest.raises(ConverterError) as error:
+        invoke_operator(f"{source_format}_to_glb", {"access_plan": plan}, runner=runner)
+    assert error.value.error_code == "INVALID_GLB"
+    assert target.read_bytes() == b"previous valid artifact"
+
+
+@pytest.mark.parametrize("transform", [
+    {"translation": [0, 1]}, {"translation": [True, 0, 0]}, {"scale": [1, float("inf"), 1]},
+    {"rotation": [0, 0, 0, 0]}, {"rotation": [0, 0, 0, 2]},
+    {"matrix": [1] * 15}, {"matrix": [float("nan")] * 16},
+    {"matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], "scale": [1, 1, 1]},
+])
+def test_invalid_node_transform_is_rejected(tmp_path, transform):
+    doc, binary = triangle_doc()
+    doc["nodes"][0].update(transform)
+    path = tmp_path / "invalid-transform.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError):
+        validate_glb(path)
+
+
+@pytest.mark.parametrize("default_scene", [None, 0, 1])
+def test_scene_selection_and_unit_axis_transforms_are_preserved(tmp_path, default_scene):
+    doc, binary = triangle_doc()
+    # Collada centimeter/Z_UP conversion, followed by translation and mirrored scale.
+    matrix = [0.01, 0, 0, 0, 0, 0, -0.01, 0, 0, 0.01, 0, 0, 0, 0, 0, 1]
+    doc["nodes"] = [{"matrix": matrix, "children": [1]},
+                    {"mesh": 0, "translation": [10, 20, 30], "scale": [-1, 2, 3],
+                     "rotation": [0, 0, 0.70710678, 0.70710678]}]
+    doc["scenes"] = [{"nodes": [0]}, {"nodes": [0]}]
+    if default_scene is None:
+        doc.pop("scene")
+    else:
+        doc["scene"] = default_scene
+        if default_scene == 1: doc["scenes"][0]["nodes"] = []
+    path = tmp_path / "units-and-axis.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    assert validate_glb(path) == doc
+
+
+def test_deep_scene_is_checked_without_python_recursion_limit(tmp_path):
+    doc, binary = triangle_doc()
+    doc["nodes"] = [{"children": [index + 1]} for index in range(2000)] + [{"mesh": 0}]
+    path = tmp_path / "deep.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    validate_glb(path)
+
+
 def vertex_storage_fixture(attribute, failure):
     doc, binary = triangle_doc("PNG")
     accessor = doc["accessors"][0 if attribute == "POSITION" else 1]

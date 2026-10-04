@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import struct
 import warnings
 from pathlib import Path
@@ -59,6 +60,82 @@ def _entries(doc: dict, key: str) -> list:
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
         raise ValueError(f"invalid {key} array")
     return value
+
+
+def _finite_vector(value: Any, length: int, label: str) -> list:
+    if not isinstance(value, list) or len(value) != length:
+        raise ValueError(f"invalid {label} dimensions")
+    try:
+        finite = all(type(component) in (int, float) and math.isfinite(component) for component in value)
+    except OverflowError:
+        finite = False
+    if not finite:
+        raise ValueError(f"{label} must contain finite numbers")
+    return value
+
+
+def _node_references(value: Any, nodes: list, label: str) -> list[int]:
+    if not isinstance(value, list):
+        raise ValueError(f"invalid {label} array")
+    seen = set()
+    for index in value:
+        _index(index, nodes, label)
+        if index in seen:
+            raise ValueError(f"duplicate {label}")
+        seen.add(index)
+    return value
+
+
+def _validate_scene(doc: dict, meshes: list) -> None:
+    nodes = _entries(doc, "nodes")
+    scenes = _entries(doc, "scenes")
+    if not scenes:
+        raise ValueError("GLB quick view requires a displayable scene")
+    selected = _index(doc.get("scene", 0), scenes, "default scene")
+    parents = [None] * len(nodes)
+    children = []
+    for index, node in enumerate(nodes):
+        if "mesh" in node:
+            _index(node["mesh"], meshes, "node.mesh")
+        if "matrix" in node:
+            if any(key in node for key in ("translation", "rotation", "scale")):
+                raise ValueError("node matrix and TRS cannot be defined together")
+            _finite_vector(node["matrix"], 16, "node.matrix")
+        for key, length in (("translation", 3), ("rotation", 4), ("scale", 3)):
+            if key in node:
+                vector = _finite_vector(node[key], length, f"node.{key}")
+                if key == "rotation" and (any(abs(v) > 1 for v in vector)
+                        or not math.isclose(math.hypot(*vector), 1, abs_tol=1e-4)):
+                    raise ValueError("node rotation must be a unit quaternion")
+        references = _node_references(node.get("children", []), nodes, "node.children")
+        children.append(references)
+        for child in references:
+            if parents[child] is not None:
+                raise ValueError("node cannot have multiple parents")
+            parents[child] = index
+
+    # A hierarchy with at most one parent is a forest exactly when every node is
+    # reachable from a root. Iterate to support deep exported hierarchies.
+    pending = [index for index, parent in enumerate(parents) if parent is None]
+    visited = 0
+    while pending:
+        index = pending.pop()
+        visited += 1
+        pending.extend(children[index])
+    if visited != len(nodes):
+        raise ValueError("node hierarchy contains a cycle")
+    for scene in scenes:
+        roots = _node_references(scene.get("nodes", []), nodes, "scene.nodes")
+        if any(parents[root] is not None for root in roots):
+            raise ValueError("scene root cannot be a child node")
+
+    pending = list(selected.get("nodes", []))
+    while pending:
+        index = pending.pop()
+        if "mesh" in nodes[index]:
+            return
+        pending.extend(children[index])
+    raise ValueError("default scene contains no reachable mesh")
 
 
 def _unsigned_values(binding: dict, component_type: int, count: int, views: list, binary: bytes, *, sparse: bool = False):
@@ -237,6 +314,7 @@ def validate_glb(path: Path, *, basic_static: bool = False) -> dict[str, Any]:
     meshes = _entries(doc, "meshes")
     if not meshes:
         raise ValueError("GLB contains no mesh")
+    _validate_scene(doc, meshes)
     for mesh in meshes:
         primitives = mesh.get("primitives")
         if not isinstance(primitives, list) or not primitives:
