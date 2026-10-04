@@ -210,9 +210,11 @@ def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, 
 
 def mongodb_task(name: str, source_locator: str, parent_locator: str) -> dict[str, object]:
     payload = native_task(name + "_mongodb", source_locator, parent_locator, MONGODB_TARGET, "", "")
+    projection = {"_id": 0, **{f"source_{target}": "$" + source for source, target in MONGODB_FIELDS}}
+    payload["config"]["source"]["query"] = {"language": "mql", "statement": json.dumps({"aggregate": "activities", "pipeline": [{"$project": projection}]})}
     payload["config"]["transforms"][0]["fields"] = [
-        {"source": source, "target": target, "target_type": "string", "nullable": False}
-        for source, target in MONGODB_FIELDS
+        {"source": f"source_{target}", "target": target, "target_type": "string", "nullable": False}
+        for _, target in MONGODB_FIELDS
     ]
     return payload
 
@@ -516,7 +518,7 @@ def main() -> int:
         lineage = run_native_lineage(client, engine_id, source, owned_name, convergence_timeout, owned_ids)
 
         mongodb_scan = wait_for_scan(client, mongodb_engine_id, time.monotonic() + convergence_timeout)
-        mongodb_source = find_item(client, mongodb_engine_id, MONGODB_SOURCE, "table")
+        mongodb_source = find_item(client, mongodb_engine_id, MONGODB_SOURCE, "collection")
         mongodb_lineage = run_mongodb_lineage(client, mongodb_engine_id, engine_id, mongodb_source, source, owned_name, convergence_timeout, owned_ids)
 
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()

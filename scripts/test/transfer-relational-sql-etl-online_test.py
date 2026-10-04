@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -252,6 +253,31 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         owned.assert_called_with(client, exact_name=ONLINE.task_name("run-123"))
         cleanup.assert_called_once_with(client, [10, 11])
 
+    def test_main_accepts_mongodb_collection_identity_and_reports_both_engines(self):
+        environment = {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_ENGINE_ID": "3",
+                       "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture",
+                       "ADDP_ONLINE_TEST_RUN_ID": "run-123", "CONSOLE_URL": "http://127.0.0.1:5170", "GATEWAY_URL": "http://127.0.0.1:8000",
+                       "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-token", "ADDP_ONLINE_TEST_USER_USERNAME": "fixture",
+                       "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only"}
+        client = object()
+        pg_source = {"id": 5, "node_id": 9, "full_name": "public." + ONLINE.SOURCE_TABLE, "item_type": "table"}
+        mongo_source = {"id": 20, "node_id": 21, "full_name": ONLINE.MONGODB_SOURCE, "item_type": "collection"}
+        def find(client, engine_id, full_name, item_type):
+            item = mongo_source if engine_id == 4 else pg_source
+            self.assertEqual(item_type, item["item_type"])
+            self.assertEqual(full_name, item["full_name"])
+            return item
+        output = io.StringIO()
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+            self.assertEqual(ONLINE.main(), 0)
+        self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v3")
+        self.assertEqual(report["created_resources"], 5)
+        self.assertEqual(report["deleted_resources"], 5)
+        self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
+        self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
+
     def test_native_scenario_requires_generated_replace_and_exact_two_hop_proofs(self):
         source = {"id": 5, "node_id": 9, "full_name": "public.source", "item_type": "table"}
         target = {"id": 7, "node_id": 9, "full_name": "public.target", "item_type": "table"}
@@ -288,7 +314,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
     @staticmethod
     def mongodb_execution(identifier="mongo-first"):
-        source_locator = "addp://engine/4/path/transfer_fixture/activities?type=table&item_id=20"
+        source_locator = "addp://engine/4/path/transfer_fixture/activities?type=collection&item_id=20"
         return {"execution_id": identifier, "status": "success", "records_read": 3, "records_written": 3, "metadata": {"lineage_facts": {
             "schema_version": "addp.lineage-facts/v1",
             "inputs": [{"port": "source", "locator": source_locator, "schema_snapshot": {"hash": "sha256:mongo", "fields": [{"name": source, "path": source.split(".")} for source, _ in ONLINE.MONGODB_FIELDS]}}],
@@ -319,7 +345,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             ONLINE.validate_mongodb_execution(execution, locator, 3)
 
     def test_mongodb_reruns_one_task_and_requires_all_latest_automatic_proofs(self):
-        source = {"id": 20, "node_id": 21, "full_name": ONLINE.MONGODB_SOURCE, "item_type": "table"}
+        source = {"id": 20, "node_id": 21, "full_name": ONLINE.MONGODB_SOURCE, "item_type": "collection"}
         pg_source = {"id": 5, "node_id": 9}
         target = {"id": 22, "node_id": 9, "full_name": "public." + ONLINE.MONGODB_TARGET, "item_type": "table"}
         calls, proofs, owned = [], [], []
@@ -328,9 +354,11 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             calls.append((method, path, payload))
             if method == "POST" and path == "/api/v1/transfer/task-definitions":
                 self.assertTrue(payload["auto_scan_metadata"])
-                self.assertNotIn("query", payload["config"]["source"])
+                query = payload["config"]["source"]["query"]
+                self.assertEqual(query["language"], "mql")
+                self.assertEqual(json.loads(query["statement"]), {"aggregate": "activities", "pipeline": [{"$project": {"_id": 0, **{f"source_{target}": "$" + source for source, target in ONLINE.MONGODB_FIELDS}}}]})
                 self.assertIn("/engine/3/path/public?", payload["config"]["target"]["parent_locator"])
-                self.assertEqual([(field["source"], field["target"]) for field in payload["config"]["transforms"][0]["fields"]], list(ONLINE.MONGODB_FIELDS))
+                self.assertEqual([(field["source"], field["target"]) for field in payload["config"]["transforms"][0]["fields"]], [(f"source_{target}", target) for _, target in ONLINE.MONGODB_FIELDS])
                 return SimpleNamespace(payload={"id": 30})
             if method == "POST" and path == "/api/v1/transfer/task-definitions/30/start":
                 return SimpleNamespace(payload={"execution_id": next(executions)})
