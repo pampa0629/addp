@@ -152,17 +152,22 @@ def raster_load(access_plan, source_crs=''):
     return raster
 
 
+def _corners(dataset):
+    transform = dataset.GetGeoTransform(can_return_null=True)
+    if transform is None:
+        return []
+    return [(transform[0] + x * transform[1] + y * transform[2],
+             transform[3] + x * transform[4] + y * transform[5])
+            for x, y in [(0,0), (dataset.RasterXSize,0),
+                         (dataset.RasterXSize,dataset.RasterYSize), (0,dataset.RasterYSize)]]
+
+
 def raster_info(input_raster):
     dataset = _open(input_raster)
     transform = dataset.GetGeoTransform(can_return_null=True)
-    extent = []
-    if transform:
-        corners = [(transform[0] + x * transform[1] + y * transform[2],
-                    transform[3] + x * transform[4] + y * transform[5])
-                   for x, y in [(0, 0), (dataset.RasterXSize, 0), (0, dataset.RasterYSize),
-                                (dataset.RasterXSize, dataset.RasterYSize)]]
-        extent = [min(x for x, _ in corners), min(y for _, y in corners),
-                  max(x for x, _ in corners), max(y for _, y in corners)]
+    corners = _corners(dataset)
+    extent = [min(x for x, _ in corners), min(y for _, y in corners),
+              max(x for x, _ in corners), max(y for _, y in corners)] if corners else []
     crs = dataset.GetSpatialRef()
     authority = crs.GetAuthorityCode(None) if crs else None
     authority_name = crs.GetAuthorityName(None) if crs else None
@@ -281,6 +286,24 @@ def raster_resample(input_raster, size=None, resolution=None, resampling='neares
     return _warped([dataset], xRes=xres, yRes=yres, resampleAlg=_algorithm(resampling))
 
 
+def _polygon(corners):
+    ring = ogr.Geometry(ogr.wkbLinearRing)
+    for x, y in corners:
+        ring.AddPoint_2D(x,y)
+    ring.CloseRings()
+    shape = ogr.Geometry(ogr.wkbPolygon)
+    shape.AddGeometry(ring)
+    return shape
+
+
+def _require_clip_intersection(dataset, shape):
+    footprint = _polygon(_corners(dataset))
+    footprint.AssignSpatialReference(_crs(dataset.GetProjection()))
+    intersection = shape.Intersection(footprint)
+    if intersection is None or intersection.GetDimension() < 2 or intersection.GetArea() <= 0:
+        raise ValueError('Clip boundary does not intersect raster with positive area')
+
+
 def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None):
     if (bbox is None) == (geometry is None):
         raise ValueError('Specify exactly one of bbox or geometry')
@@ -295,6 +318,10 @@ def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None):
         bounds = [max(transformed[0], extent[0]), max(transformed[1], extent[1]), min(transformed[2], extent[2]), min(transformed[3], extent[3])]
         if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
             raise ValueError('Clip boundary does not intersect raster')
+        _require_clip_intersection(dataset, _polygon([
+            (bounds[0],bounds[1]), (bounds[2],bounds[1]),
+            (bounds[2],bounds[3]), (bounds[0],bounds[3]),
+        ]))
         return _warped([dataset], outputBounds=bounds)
     if not isinstance(geometry, dict) or geometry.get('type') not in ['Polygon', 'MultiPolygon']:
         raise ValueError('geometry must be a GeoJSON Polygon or MultiPolygon')
@@ -302,11 +329,9 @@ def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None):
     if shape is None or shape.IsEmpty() or not shape.IsValid():
         raise ValueError('Invalid clip geometry')
     shape.AssignSpatialReference(crs)
-    shape.TransformTo(_crs(dataset.GetProjection()))
-    envelope = shape.GetEnvelope()
-    extent = raster_info(input_raster)['extent']
-    if envelope[0] >= extent[2] or envelope[1] <= extent[0] or envelope[2] >= extent[3] or envelope[3] <= extent[1]:
-        raise ValueError('Clip geometry does not intersect raster')
+    if shape.TransformTo(_crs(dataset.GetProjection())) != 0:
+        raise ValueError('Clip geometry cannot be transformed to raster CRS')
+    _require_clip_intersection(dataset, shape)
     cutline_path = _path('.geojson')
     driver = ogr.GetDriverByName('GeoJSON')
     cutline = driver.CreateDataSource(str(cutline_path))
@@ -346,15 +371,32 @@ def _band(dataset, index):
     return band
 
 
+def _read_values(band, x, y, width, height):
+    return np.frombuffer(band.ReadRaster(x,y,width,height,buf_type=gdal.GDT_Float64),
+                         dtype=np.float64).reshape(height,width)
+
+
 def _blocks(dataset, indices):
     bands = [_band(dataset, index) for index in indices]
+    alpha = None
+    for index in range(1,dataset.RasterCount+1):
+        candidate = dataset.GetRasterBand(index)
+        if candidate.GetColorInterpretation() == gdal.GCI_AlphaBand:
+            alpha = candidate
+            break
     for y in range(0, dataset.RasterYSize, 512):
         for x in range(0, dataset.RasterXSize, 512):
             width, height = min(512, dataset.RasterXSize - x), min(512, dataset.RasterYSize - y)
+            coverage = None
+            if alpha is not None:
+                values = _read_values(alpha,x,y,width,height)
+                coverage = np.isfinite(values) & (values > 0)
             arrays, masks = [], []
             for band in bands:
-                array = np.frombuffer(band.ReadRaster(x, y, width, height, buf_type=gdal.GDT_Float64), dtype=np.float64).reshape(height, width)
+                array = _read_values(band,x,y,width,height)
                 mask = (np.frombuffer(band.GetMaskBand().ReadRaster(x, y, width, height, buf_type=gdal.GDT_Byte), dtype=np.uint8).reshape(height, width) != 0) & np.isfinite(array)
+                if coverage is not None and band.GetColorInterpretation() != gdal.GCI_AlphaBand:
+                    mask &= coverage
                 nodata = band.GetNoDataValue()
                 if nodata is not None:
                     mask &= array != nodata

@@ -878,6 +878,8 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 多边形裁剪保留 alpha 波段，数据波段输出 Float64，并以 NaN 表达边界外、孔洞及源无效像元；拒绝复数波段，避免转换时丢失虚部。后续数值分析必须继续排除这些像元，不能把透明区域的填充值计入统计。裁剪按输入像元网格取边界范围，不把裁剪边界当作重新指定网格。
 
+裁剪边界必须与输入栅格四角定义的实际覆盖面有正面积交集，不能只比较两者的外接矩形；仅接触边界、栅格完全落在多边形孔洞中、MultiPolygon 各部分均在覆盖面外时均拒绝执行。旋转栅格使用其实际四角覆盖面判定，不能将 extent 矩形的空白角落视为输入数据。多边形转换到源 CRS 必须成功后再判定交集。
+
 `raster_to_cog` 是唯一通用 COG 转换入口，声明 workflow/direct；Manager 通过同一访问计划调用并继续管理 `manager.raster_cog`，旧 TIFF 专用算子及 URI 参数契约删除。`build_raster_mosaic` 继续承担 Manager 目录型业务数据集职责。Develop 业务保存沿用 produced_targets、命名 ResourceLocator 输出、血缘与 Meta scan。图片瓦片与 Service 在线发布不属于本次栅格计算范围。
 
 Python Runtime 的领域执行器负责内部对象、资源清理和结果投影；DAG、引用解析和异步状态复用 common-python 的 WorkflowRunner / ExecutionRegistry，不为栅格另建执行核心。
@@ -901,6 +903,8 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_histogram` | `input_raster`、`band`、`bins`、可选 `value_range` | `object`，全量计数及范围外计数 |
 
 COG 参数为 `compression`（DEFLATE/LZW/ZSTD/NONE）、`blocksize`（128–4096 内的 16 倍数）、`overview_resampling`；转换入口将其放在 `options` 中，保存入口直接声明。波段表达式支持 `b1/b2/...`、有限常量、加减乘除、-16 到 16 的常数幂与 `abs/sqrt/log/minimum/maximum`。统计忽略 mask、nodata 和非有限像元；标准差为总体标准差，全无效栅格返回 null 统计值。直方图 `bins` 为 1–4096，未指定范围时按有效 min/max 派生。
+
+统计、直方图和波段计算对数据波段同时应用 GDAL mask、nodata、有限值及 alpha 覆盖约束：alpha 为非有限值或不大于 0 时，对应数据像元无效；部分透明但 alpha 大于 0 的像元仍有效。不能因 alpha 为浮点类型而遗漏透明区域。显式选择 alpha 波段进行数值分析时，按该波段自身的 mask、nodata 和有限值处理，0 是合法覆盖值。
 
 ## 5. 扩展新引擎指南
 

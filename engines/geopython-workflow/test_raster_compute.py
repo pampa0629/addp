@@ -74,6 +74,54 @@ def test_statistics_combines_blocks_and_all_nodata(tmp_path):
         assert raster_histogram(raster)['counts'] == []
 
 
+@pytest.mark.parametrize('dtype,alpha,positions,counts,alpha_valid', [
+    (gdal.GDT_Byte, [[0,255,128,0],[255,0,255,255]],
+     [(0,1),(0,2),(1,0),(1,2),(1,3)], [2,1,2], 8),
+    (gdal.GDT_UInt16, [[0,65535,1,0],[65535,0,65535,65535]],
+     [(0,1),(0,2),(1,0),(1,2),(1,3)], [2,1,2], 8),
+    (gdal.GDT_Float64, [[0,255,128,0],[255,0,255,255]],
+     [(0,1),(0,2),(1,0),(1,2),(1,3)], [2,1,2], 8),
+    (gdal.GDT_Float64, [[np.nan,1,0.5,0],[np.inf,-1,0,1]],
+     [(0,1),(0,2),(1,3)], [2,0,1], 6),
+], ids=['byte-alpha', 'uint16-alpha', 'float64-alpha', 'fractional-and-invalid-alpha'])
+def test_numeric_analysis_excludes_transparent_source_data(tmp_path, dtype, alpha, positions, counts, alpha_valid):
+    source = tmp_path / 'alpha.tif'
+    data = np.array([[0,20,30,40],[50,60,70,80]], dtype=np.float64)
+    alpha = np.array(alpha, dtype=np.float64)
+    expected_values = np.array([data[y,x] for y,x in positions])
+    dataset = gdal.GetDriverByName('GTiff').Create(str(source), 4,2,2,dtype)
+    dataset.SetGeoTransform((0,1,0,2,0,-1))
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
+    dataset.SetSpatialRef(crs)
+    for index, array in enumerate([data,alpha],1):
+        dataset.GetRasterBand(index).WriteRaster(0,0,4,2,array.tobytes(),buf_type=gdal.GDT_Float64)
+    dataset.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    dataset = None
+    original = source.read_bytes()
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        stats = raster_statistics(raster)
+        assert (stats['valid_count'], stats['invalid_count'], stats['min'], stats['max']) == (len(positions),8-len(positions),20,80)
+        assert stats['mean'] == pytest.approx(expected_values.mean())
+        histogram = raster_histogram(raster, bins=3, value_range=[20,80])
+        assert histogram['counts'] == counts
+        assert (histogram['valid_count'], histogram['invalid_count'], histogram['outside_count']) == (len(positions),8-len(positions),0)
+        calculated = raster_band_math(raster, 'b1*2')
+        assert raster_statistics(calculated)['valid_count'] == len(positions)
+        target = tmp_path / 'math.tif'
+        raster_save(calculated, target_plan(target), profile='cog')
+        persisted = raster_load(source_plan(target))
+        assert raster_statistics(persisted)['mean'] == pytest.approx(expected_values.mean()*2)
+        # Alpha remains an explicit selectable band; its zero values are coverage facts.
+        assert raster_statistics(raster, band=2)['valid_count'] == alpha_valid
+    output = gdal.Open(str(target))
+    expected = np.full(data.shape, np.nan)
+    for y,x in positions:
+        expected[y,x] = data[y,x]*2
+    np.testing.assert_equal(output.GetRasterBand(1).ReadAsArray(), expected)
+    assert source.read_bytes() == original
+
+
 def test_math_is_safe_and_propagates_nodata(raster_file):
     with raster_workspace():
         raster = raster_load(source_plan(raster_file))
@@ -160,6 +208,66 @@ def test_polygon_clip_rejects_complex_bands_before_float64_conversion(tmp_path):
         with pytest.raises(ValueError, match='Complex'):
             raster_clip(raster, 'EPSG:4326', geometry={'type': 'Polygon', 'coordinates': [
                 [[0,0],[4,0],[4,4],[0,4],[0,0]]]})
+
+
+@pytest.mark.parametrize('transform,boundary', [
+    ((0,1,0,4,0,-1), {'geometry': {'type': 'Polygon', 'coordinates': [
+        [[-1,-1],[5,-1],[5,5],[-1,5],[-1,-1]],
+        [[-0.5,-0.5],[-0.5,4.5],[4.5,4.5],[4.5,-0.5],[-0.5,-0.5]],
+    ]}}),
+    ((0,1,0,4,0,-1), {'geometry': {'type': 'MultiPolygon', 'coordinates': [
+        [[[-2,1],[-1,1],[-1,3],[-2,3],[-2,1]]],
+        [[[5,1],[6,1],[6,3],[5,3],[5,1]]],
+    ]}}),
+    ((0,1,0,4,0,-1), {'geometry': {'type': 'Polygon', 'coordinates': [
+        [[-1,3],[1,5],[-1,5],[-1,3]],
+    ]}}),
+    ((0,1,1,4,1,-1), {'bbox': [0,0,0.5,0.5]}),
+    ((0,1,1,4,1,-1), {'geometry': {'type': 'Polygon', 'coordinates': [
+        [[0,0],[0.5,0],[0.5,0.5],[0,0.5],[0,0]],
+    ]}}),
+], ids=['inside-hole', 'outside-multipolygon', 'touch-only', 'rotated-bbox', 'rotated-polygon'])
+def test_clip_rejects_disjoint_footprints_even_when_envelopes_overlap(tmp_path, transform, boundary):
+    source = create_raster(tmp_path / 'source.tif', np.ones((4,4)), transform=transform)
+    original = source.read_bytes()
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        with pytest.raises(ValueError, match='intersect'):
+            raster_clip(raster, 'EPSG:4326', **boundary)
+    assert source.read_bytes() == original
+
+
+def test_multipolygon_clip_preserves_separate_valid_islands(tmp_path):
+    values = np.arange(1,17,dtype=float).reshape(4,4)
+    source = create_raster(tmp_path / 'source.tif', values)
+    geometry = {'type': 'MultiPolygon', 'coordinates': [
+        [[[0,0],[1,0],[1,4],[0,4],[0,0]]],
+        [[[3,0],[4,0],[4,4],[3,4],[3,0]]],
+    ]}
+    with raster_workspace():
+        clipped = raster_clip(raster_load(source_plan(source)), 'EPSG:4326', geometry=geometry)
+        statistics = raster_statistics(clipped)
+        assert (statistics['valid_count'], statistics['invalid_count']) == (8,8)
+        assert statistics['mean'] == pytest.approx(8.5)
+        target = tmp_path / 'islands.tif'
+        raster_save(clipped, target_plan(target), profile='cog')
+        persisted = raster_load(source_plan(target))
+        assert validate_cog(persisted)['valid']
+        assert raster_statistics(persisted) == statistics
+    dataset = gdal.Open(str(target))
+    expected = values.copy(); expected[:,1:3] = np.nan
+    np.testing.assert_equal(dataset.GetRasterBand(1).ReadAsArray(), expected)
+    np.testing.assert_equal(dataset.GetRasterBand(2).ReadAsArray(), [[255,0,0,255]]*4)
+
+
+def test_clip_rejects_failed_boundary_crs_transformation(tmp_path):
+    source = create_raster(tmp_path / 'mercator.tif', np.ones((4,4)), crs='EPSG:3857')
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        with pytest.raises(ValueError, match='transform'):
+            raster_clip(raster, 'EPSG:4326', geometry={'type': 'Polygon', 'coordinates': [
+                [[0,94],[1,94],[1,95],[0,95],[0,94]],
+            ]})
 
 
 def test_cog_save_validate_overviews_and_failed_replace(raster_file, tmp_path):
@@ -305,7 +413,14 @@ def test_source_snapshot_and_driver_restriction(raster_file, tmp_path):
         with pytest.raises((ValueError, RuntimeError)): raster_load(source_plan(disguised))
 
 
-def test_failed_dag_cleans_workspace(monkeypatch, raster_file):
+@pytest.mark.parametrize('operator,params', [
+    ('raster_band_math', {'expression': 'b99'}),
+    ('raster_clip', {'boundary_crs': 'EPSG:4326', 'geometry': {'type': 'Polygon', 'coordinates': [
+        [[-1,-1],[5,-1],[5,5],[-1,5],[-1,-1]],
+        [[-0.5,-0.5],[-0.5,4.5],[4.5,4.5],[4.5,-0.5],[-0.5,-0.5]],
+    ]}}),
+], ids=['invalid-band', 'disjoint-clip'])
+def test_failed_dag_cleans_workspace(monkeypatch, raster_file, tmp_path, operator, params):
     from operators.raster_compute import _WORKSPACE
     original = OPERATORS['raster_load']['function']
     paths = []
@@ -315,12 +430,19 @@ def test_failed_dag_cleans_workspace(monkeypatch, raster_file):
         return original(*args, **kwargs)
 
     monkeypatch.setitem(OPERATORS['raster_load'], 'function', track)
+    target = tmp_path / 'failed.tif'
+    original_source = raster_file.read_bytes()
     result = execute_workflow({'tasks': [
         {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'access_plan': source_plan(raster_file)}},
-        {'id': 'bad', 'operator': 'raster_band_math', 'depends_on': ['load'], 'params': {'input_raster': {'$ref': 'load'}, 'expression': 'b99'}},
+        {'id': 'bad', 'operator': operator, 'depends_on': ['load'], 'params': {'input_raster': {'$ref': 'load'}, **params}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['bad'], 'params': {
+            'input_raster': {'$ref': 'bad'}, 'access_plan': target_plan(target), 'profile': 'cog',
+        }},
     ]})
     assert result['status'] == 'failed'
     assert paths and all(not path.exists() for path in paths)
+    assert not target.exists()
+    assert raster_file.read_bytes() == original_source
 
 
 def test_mosaic_preserves_empty_pixels_and_overviews_survive_save(tmp_path):
