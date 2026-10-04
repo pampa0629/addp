@@ -133,7 +133,7 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 	}
 	withoutPhone, err := provider.PrepareQuery(t.Context(), connection, plugin.QueryRequest{
 		EngineID: 11, Language: "mql", TargetPath: &targetPath, Options: plugin.QueryOptions{ReadOnly: true},
-		Query: `{"aggregate":"Persons","pipeline":[{"$project":{"_id":"$_id","_openid":{"$ifNull":["$_openid",null]},"userInfo__nickName":{"$ifNull":["$userInfo.nickName",null]}}}]}`,
+		Query: `{"aggregate":"Persons","pipeline":[{"$project":{"_id":"$_id","_openid":{"$ifNull":["$_openid",null]},"userInfo__nickName":{"$ifNull":["$userInfo.nickName",null]},"userInfo__gender":{"$ifNull":["$userInfo.gender",null]}}}]}`,
 	})
 	if err != nil {
 		t.Fatalf("prepare projection without phone: %v", err)
@@ -167,24 +167,35 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 	}
 
 	// Exercise the actual provider and Transfer pipeline; the target captures no business writes.
-	target := &mongoLineageTarget{fields: []datatype.FieldInfo{{Name: "person_id", Type: datatype.FieldTypeString}, {Name: "person_openid", Type: datatype.FieldTypeString}, {Name: "person_nickname", Type: datatype.FieldTypeString}}}
+	target := &mongoLineageTarget{fields: []datatype.FieldInfo{{Name: "person_id", Type: datatype.FieldTypeString}, {Name: "person_openid", Type: datatype.FieldTypeString}, {Name: "person_nickname", Type: datatype.FieldTypeString}, {Name: "person_gender", Type: datatype.FieldTypeString}}}
 	readSet, err := withoutPhone.ReadSet(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	transfer := &executor.TableTransferExecutor{SourceQuerySessionProvider: provider, SourceProtector: protector, TargetNativeWriter: target, TargetNativePreparer: target, TargetCatalogFacts: target}
 	metrics, err := transfer.Execute(t.Context(), executor.TableTransferPlan{
-		Source:     executor.TableSourcePlan{Kind: executor.TableEndpointQuery, ConnInfo: connection, ExpectedQueryReadSet: readSet, RuntimeQuery: &plugin.QueryRequest{EngineID: 11, Language: "mql", TargetPath: &targetPath, Options: plugin.QueryOptions{ReadOnly: true}, Query: `{"aggregate":"Persons","pipeline":[{"$project":{"_id":"$_id","_openid":{"$ifNull":["$_openid",null]},"userInfo__nickName":{"$ifNull":["$userInfo.nickName",null]}}}]}`}},
+		Source:     executor.TableSourcePlan{Kind: executor.TableEndpointQuery, ConnInfo: connection, ExpectedQueryReadSet: readSet, RuntimeQuery: &plugin.QueryRequest{EngineID: 11, Language: "mql", TargetPath: &targetPath, Options: plugin.QueryOptions{ReadOnly: true}, Query: `{"aggregate":"Persons","pipeline":[{"$project":{"_id":"$_id","_openid":{"$ifNull":["$_openid",null]},"userInfo__nickName":{"$ifNull":["$userInfo.nickName",null]},"userInfo__gender":{"$ifNull":["$userInfo.gender",null]}}}]}`}},
 		Target:     executor.TableTargetPlan{Kind: executor.TableEndpointNative, Path: plugin.TabularItemPath(2, plugin.EngineCatalogTermSchema, "outdoor", "ods_outdoor_persons")},
-		Transforms: []executor.TableTransformPlan{{Type: "field_mapping", FieldMapping: &executor.FieldMappingTransformPlan{Mode: executor.FieldMappingModeProject, Fields: []executor.FieldMappingFieldPlan{{Source: "_id", Target: "person_id"}, {Source: "_openid", Target: "person_openid"}, {Source: "userInfo__nickName", Target: "person_nickname"}}}}},
+		Transforms: []executor.TableTransformPlan{{Type: "field_mapping", FieldMapping: &executor.FieldMappingTransformPlan{Mode: executor.FieldMappingModeProject, Fields: []executor.FieldMappingFieldPlan{{Source: "_id", Target: "person_id", TargetType: "string"}, {Source: "_openid", Target: "person_openid", TargetType: "string"}, {Source: "userInfo__nickName", Target: "person_nickname", TargetType: "string"}, {Source: "userInfo__gender", Target: "person_gender", TargetType: "string"}}}}},
 	})
-	if err != nil || metrics.FieldLineage == nil || len(metrics.FieldLineage.Mappings) != 3 || metrics.RecordsWritten == 0 {
+	if err != nil || metrics.FieldLineage == nil || len(metrics.FieldLineage.Mappings) != 4 || metrics.RecordsWritten == 0 {
 		t.Fatalf("Mongo aggregate Transfer lost field evidence: %+v %v", metrics, err)
 	}
+	expected := map[string]struct{ source, transformation string }{
+		"person_id":       {"_id", "direct"},
+		"person_openid":   {"_openid", "direct"},
+		"person_nickname": {"userInfo.nickName", "direct"},
+		"person_gender":   {"userInfo.gender", "direct"},
+	}
 	for _, mapping := range metrics.FieldLineage.Mappings {
-		if mapping.TargetField == "person_nickname" && (mapping.SourceField != "userInfo.nickName" || mapping.Transformation != "direct") {
-			t.Fatalf("Mongo nested origin lost: %+v", mapping)
+		want, exists := expected[mapping.TargetField]
+		if !exists || mapping.SourceField != want.source || mapping.Transformation != want.transformation {
+			t.Fatalf("Mongo field origin or conversion lost: %+v", mapping)
 		}
+		delete(expected, mapping.TargetField)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("Mongo field evidence missing: %+v", expected)
 	}
 
 	withPhone, err := provider.PrepareQuery(t.Context(), connection, plugin.QueryRequest{
@@ -284,7 +295,7 @@ func ensureTransferMongoOutdoorPersonsFixture(t *testing.T) plugin.ConnectionInf
 	fixture := bson.M{
 		"_id":      fixtureID,
 		"_openid":  "addp-security-transfer-mongodb-integration",
-		"userInfo": bson.M{"phone": "13661384499", "nickName": "security-e2e"},
+		"userInfo": bson.M{"phone": "13661384499", "nickName": "security-e2e", "gender": "未知"},
 	}
 	switch {
 	case errors.Is(findErr, mongo.ErrNoDocuments):
