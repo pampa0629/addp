@@ -59,6 +59,7 @@ var securityInitializerPermissions = []string{
 }
 
 var transferLineagePermissions = []string{
+	"monitor.execution.read",
 	"develop.task.create", "develop.task.read", "develop.task.execute", "develop.task.delete",
 	"develop.data_read.execute", "develop.data_write.execute", "system.execution_authorization.create",
 	"orchestrator.workflow.create", "orchestrator.workflow.read", "orchestrator.workflow.execute", "orchestrator.workflow.delete",

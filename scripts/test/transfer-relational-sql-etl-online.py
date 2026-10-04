@@ -50,6 +50,7 @@ REQUIRED_PERMISSIONS = {
     "develop.task.create", "develop.task.read", "develop.task.execute", "develop.task.delete",
     "develop.data_read.execute", "develop.data_write.execute", "system.execution_authorization.create",
     "orchestrator.workflow.create", "orchestrator.workflow.read", "orchestrator.workflow.execute", "orchestrator.workflow.delete",
+    "monitor.execution.read",
     "manager.content.read",
     "manager.data_item.read",
     "meta.catalog.read",
@@ -335,12 +336,24 @@ def wait_owner_execution(client, module, identifier, timeout):
     raise SuiteError(f"{module} execution did not finish before timeout")
 
 
-def validate_orchestrated_child(execution, parent_id, module, task_id, tenant_id):
+def validate_orchestrated_child(execution, parent_id, module, task_id):
     expected = {"parent_execution_id": parent_id, "module": module, "source": "orchestrator",
-                "source_task_id": str(task_id), "tenant_id": tenant_id, "status": "success",
+                "source_task_id": str(task_id), "status": "success",
                 "task_type": "sync" if module == "transfer" else "query"}
     if any(execution.get(key) != value for key, value in expected.items()):
-        raise SuiteError("orchestrated child owner, task, tenant or parent identity mismatch")
+        raise SuiteError("orchestrated child owner, task or parent identity mismatch")
+
+
+def canonical_table_locator(locator):
+    """ReadSet identity is the native table path, independent of catalog selection IDs."""
+    parsed = urllib.parse.urlparse(locator)
+    segments = parsed.path.split("/")
+    query = urllib.parse.parse_qs(parsed.query)
+    if (parsed.scheme != "addp" or parsed.netloc != "engine" or len(segments) != 5
+            or not segments[1].isdigit() or int(segments[1]) <= 0 or segments[2] != "path"
+            or not all(segments[3:]) or query.get("type") != ["table"] or parsed.fragment):
+        raise SuiteError("query ReadSet must identify a canonical native table")
+    return urllib.parse.urlunparse(parsed._replace(query="type=table"))
 
 
 def validate_query_facts(execution, bindings, target_locator, target_fields, mappings, rows):
@@ -351,7 +364,7 @@ def validate_query_facts(execution, bindings, target_locator, target_fields, map
             or len(outputs) != 1 or len(operations) != 1 or execution.get("rows_affected") != rows
             or metadata.get("outputs") != {"execution_id": execution["execution_id"], "target_locator": target_locator, "row_count": rows}):
         raise SuiteError("query must persist exact table write outputs and row count")
-    if {ref.get("port"): ref.get("locator") for ref in inputs} != {"input." + key: value for key, value in bindings.items()}:
+    if {ref.get("port"): ref.get("locator") for ref in inputs} != {"input." + key: canonical_table_locator(value) for key, value in bindings.items()}:
         raise SuiteError("query frozen ReadSet differs from the relation bindings")
     output = outputs[0]
     if output.get("port") != "target" or output.get("locator") != target_locator or output.get("write_mode") != "replace":
@@ -361,7 +374,7 @@ def validate_query_facts(execution, bindings, target_locator, target_fields, map
         snapshot = _object(ref.get("schema_snapshot"), "query frozen schema")
         if not snapshot.get("hash") or not _array(snapshot.get("fields"), "query frozen fields"):
             raise SuiteError("query omitted the frozen schema")
-        hashes[ref["locator"]] = snapshot["hash"]
+        hashes[canonical_table_locator(ref["locator"])] = snapshot["hash"]
     if [field.get("name") for field in output["schema_snapshot"]["fields"]] != target_fields:
         raise SuiteError("query output snapshot differs from physical target columns")
     operation = operations[0]
@@ -452,19 +465,24 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
             if not isinstance(identifier, str) or not identifier or identifier in seen or identifier == parent_id or identifier in ids.values():
                 raise SuiteError("chain must have distinct real child executions on every rerun")
             execution = wait_owner_execution(client, module, identifier, timeout)
-            validate_orchestrated_child(execution, parent_id, module, task_id, tenant_id)
+            if module == "transfer" and execution.get("task_id") != task_id:
+                raise SuiteError("Transfer professional DTO has the wrong task identity")
+            observed = _object(client.request("GET", f"/api/v1/monitor/executions/by-execution-id/{urllib.parse.quote(identifier)}", (200,)).payload, "child execution observation")
+            if observed.get("execution_id") != identifier:
+                raise SuiteError("Monitor observation has the wrong execution identity")
+            validate_orchestrated_child(observed, parent_id, module, task_id)
             ids[key], executions[key] = identifier, execution
         seen.update([parent_id, *ids.values()])
         source_locator = mongodb["source_locator"]
         source_hash, ods_hash = validate_mongodb_execution(executions["ods"], source_locator, engine_id)
         dim_hashes = validate_query_facts(executions["dim"], dim_bindings, dim_locator, ["activity_id", "activity_date"], dim_mappings, 3)
         dwd_hashes = validate_query_facts(executions["dwd"], dwd_bindings, dwd_locator, ["activity_id", "activity_date", "person_nickname", "intensity"], dwd_mappings, 2)
-        if dim_hashes[ods_locator] != ods_hash or dwd_hashes[ods_locator] != ods_hash or dwd_hashes[dim_locator] != dim_hashes[dim_locator] or source_hash != mongodb["source_schema_snapshot_hash"]:
+        if dim_hashes[canonical_table_locator(ods_locator)] != ods_hash or dwd_hashes[canonical_table_locator(ods_locator)] != ods_hash or dwd_hashes[canonical_table_locator(dim_locator)] != dim_hashes[canonical_table_locator(dim_locator)] or source_hash != mongodb["source_schema_snapshot_hash"]:
             raise SuiteError("chain must preserve exact intermediate frozen schemas across owners")
         if find_item(client, engine_id, f"public.{MONGODB_TARGET}", "table").get("id") != mongodb["target_item_id"] or find_item(client, engine_id, f"public.{DIM_TARGET}", "table").get("id") != dim_id or find_item(client, engine_id, f"public.{DWD_TARGET}", "table").get("id") != dwd_id:
             raise SuiteError("chain rerun changed a target DataItem identity")
         source_id, ods_id = mongodb["source_item_id"], mongodb["target_item_id"]
-        hashes = {source_id: source_hash, ods_id: ods_hash, dim_id: dim_hashes[dim_locator], dwd_id: dwd_hashes[dwd_locator]}
+        hashes = {source_id: source_hash, ods_id: ods_hash, dim_id: dim_hashes[canonical_table_locator(dim_locator)], dwd_id: dwd_hashes[canonical_table_locator(dwd_locator)]}
         ods_edges = {(source_id, source, ods_id, target, "direct", ids["ods"]) for source, target in MONGODB_FIELDS}
         expected_fields = {}
         for raw, target in MONGODB_FIELDS:

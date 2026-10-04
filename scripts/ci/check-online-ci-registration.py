@@ -1158,15 +1158,15 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     if "transfer-relational-sql-etl" not in registered:
         return
     suite = load_suite_registry(repository)["transfer-relational-sql-etl"]
-    if not {("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL"), ("orchestrator", "ORCHESTRATOR_URL")}.issubset(suite.services):
-        raise RegistrationError("transfer-relational-sql-etl must preflight Manager, Develop and Orchestrator")
+    if not {("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL"), ("orchestrator", "ORCHESTRATOR_URL"), ("monitor", "MONITOR_URL")}.issubset(suite.services):
+        raise RegistrationError("transfer-relational-sql-etl must preflight Manager, Develop, Orchestrator and Monitor")
     hosted_path = repository / "scripts/test/online-hosted-transfer-gate.sh"
     if not hosted_path.is_file():
         raise RegistrationError("transfer-relational-sql-etl requires Hosted lifecycle")
     hosted = hosted_path.read_text(encoding="utf-8")
     for fragment in (
         'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
-        'for start_target in -transfer -manager -develop -orchestrator', 'CONSOLE_URL=',
+        'for start_target in -transfer -manager -develop -orchestrator -monitor', 'CONSOLE_URL=',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh verify',
@@ -1199,7 +1199,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     contracts = {
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
-            "run_orchestrated_lineage", "validate_orchestrated_child", "validate_query_facts", "wait_resource_chain", "cleanup_definitions", "three_hop_verified",
+            "run_orchestrated_lineage", "validate_orchestrated_child", "canonical_table_locator", "validate_query_facts", "wait_resource_chain", "cleanup_definitions", "three_hop_verified",
             "run_mongodb_lineage", "validate_mongodb_execution", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID", "automatic_collection_verified", "rerun_verified",
             "run_native_lineage", "wait_field_graph", "execution_schema_hashes", "validate_graph_snapshots", "generated_label", '"_replace"', '"_hop"',
             '"residual_resources": 0', "cleanup_tasks(client", "owned_task_names", "schema_snapshot_hash",

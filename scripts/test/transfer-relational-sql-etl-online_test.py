@@ -421,19 +421,27 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         return {"execution_id": identifier, "rows_affected": rows, "metadata": {
             "outputs": {"execution_id": identifier, "target_locator": target, "row_count": rows},
             "lineage_facts": {"schema_version": "addp.lineage-facts/v1",
-                "inputs": [{"port": "input." + key, "locator": locator, "schema_snapshot": {"hash": "sha256:" + key, "fields": [{"name": value} for value in fields[key]]}} for key, locator in bindings.items()],
+                "inputs": [{"port": "input." + key, "locator": ONLINE.canonical_table_locator(locator), "schema_snapshot": {"hash": "sha256:" + key, "fields": [{"name": value} for value in fields[key]]}} for key, locator in bindings.items()],
                 "outputs": [{"port": "target", "locator": target, "write_mode": "replace", "schema_snapshot": {"hash": "sha256:dim" if len(target_fields) == 2 else "sha256:dwd", "fields": [{"name": value} for value in target_fields]}}],
                 "operations": [{"kind": "derive", "operator": "develop", "field_lineage_status": "complete", "field_mappings": [{"input_port": port, "source_field": source, "target_field": dest, "transformation": transform, "output_port": "target"} for port, source, dest, transform in mappings]}]}}}
 
     def test_orchestrated_child_rejects_wrong_owner_parent_and_task(self):
         child = {"parent_execution_id": "parent", "module": "develop", "task_type": "query", "source": "orchestrator", "source_task_id": "8", "tenant_id": 2, "status": "success"}
-        ONLINE.validate_orchestrated_child(child, "parent", "develop", 8, 2)
-        for key, value in {"parent_execution_id": "older-parent", "module": "orchestrator", "task_type": "sync", "source_task_id": "9", "tenant_id": 3, "source": "manual", "status": "failed"}.items():
+        ONLINE.validate_orchestrated_child(child, "parent", "develop", 8)
+        for key, value in {"parent_execution_id": "older-parent", "module": "orchestrator", "task_type": "sync", "source_task_id": "9", "source": "manual", "status": "failed"}.items():
             with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
-                ONLINE.validate_orchestrated_child(dict(child, **{key: value}), "parent", "develop", 8, 2)
+                ONLINE.validate_orchestrated_child(dict(child, **{key: value}), "parent", "develop", 8)
+
+    def test_readset_identity_uses_native_paths_and_not_selector_item_ids(self):
+        uri = "addp://engine/3/path/public/ods?type=table"
+        self.assertEqual(ONLINE.canonical_table_locator(uri + "&item_id=22"), uri)
+        self.assertEqual(ONLINE.canonical_table_locator(uri), uri)
+        for invalid in ("opaque", uri.replace("engine/3", "engine/0"), uri.replace("type=table", "type=collection"), uri + "#field", "addp://engine/3/path/public?type=table"):
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.canonical_table_locator(invalid)
 
     def test_query_facts_reject_incomplete_readset_mappings_and_physical_output(self):
-        bindings, target = {"ods": "ods-locator"}, "dim-locator"
+        bindings, target = {"ods": "addp://engine/3/path/public/ods?type=table&item_id=22"}, "addp://engine/3/path/public/dim?type=table&item_id=23"
         mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.ods", "activity_date_raw", "activity_date", "derived")}
         fields = ["activity_id", "activity_date"]
         def proof():
@@ -463,6 +471,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                    "source_locator": self.mongodb_execution()["metadata"]["lineage_facts"]["inputs"][0]["locator"], "source_schema_snapshot_hash": "sha256:mongo"}
         created, starts, proofs, paths = [], [], [], []
         def request(method, path, status, body=None):
+            if method == "GET":
+                self.assertTrue(path.startswith("/api/v1/monitor/executions/by-execution-id/"))
+                identifier = path.rsplit("/", 1)[1]
+                key, round_id = identifier.split("-")
+                module, task = {"ods": ("transfer", 7), "dim": ("develop", 8), "dwd": ("develop", 9)}[key]
+                return SimpleNamespace(payload={"execution_id": identifier, "module": module, "source_task_id": str(task), "source": "orchestrator", "parent_execution_id": "root-" + round_id, "status": "success", "task_type": "sync" if key == "ods" else "query"})
             if method == "POST" and path.endswith("/execute"):
                 starts.append(path)
                 return SimpleNamespace(payload={"execution_id": "root-" + str(len(starts)), "status": "pending"})
@@ -483,6 +497,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 execution = self.query_execution(identifier, bindings, dim if is_dim else dwd, ["activity_id", "activity_date"] if is_dim else ["activity_id", "activity_date", "person_nickname", "intensity"], mappings, 3 if is_dim else 2)
                 task = 8 if is_dim else 9
             execution.update(module=module, parent_execution_id="root-" + round_id, source="orchestrator", source_task_id=str(task), tenant_id=2, status="success", task_type="sync" if module == "transfer" else "query")
+            if module == "transfer":
+                return {key: value for key, value in dict(execution, task_id=task).items() if key in {"execution_id", "task_id", "status", "records_read", "records_written", "metadata"}}
             return execution
         hashes = {20: "sha256:mongo", 22: "sha256:ods", 23: "sha256:dim", 24: "sha256:dwd"}
         def graph(client, item_id, field, expected, timeout):
