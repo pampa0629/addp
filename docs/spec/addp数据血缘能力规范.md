@@ -270,6 +270,8 @@ PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派�
 
 MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：原生集合经透明 MQL `$project` 投影后显式映射六个字段（含嵌套点号字段），冻结源结构保留原始字段而非查询别名，连续执行同一个任务两次，自动扫描目标并自动采集字段血缘，核对当次冻结结构与最新执行证据，验证 Manager 整表字段图和本地字段聚焦。Business Fixture 在 Hosted 临时部署中拥有两个独占 tmpfs 容器与 ODS 完整行集合验证，退出统一检查零残留。该扩展须有新的真实 Hosted 通过证据，不能由前述 PostgreSQL 验收结果代替。
 
+2026-10-05，MongoDB → PostgreSQL ODS 扩展 Hosted T4 [运行 37214989939](https://github.com/pampa0629/addp/actions/runs/37214989939) 完整通过，验证源码为 `e9d030996f664a7b9e31cd37d76e93f15dfaddaf`。同一最小权限 User / Tenant 下，同一个透明 MQL 投影任务连续执行两次，每次读写 3 条；六条活跃字段关系全部引用第二次成功执行，源结构保留原始嵌套字段名和 path，并与目标冻结结构、Meta 字段图一致。目标 DataItem 由 Transfer 自动扫描产生，字段事实由 Meta 自动采集，测试未手工补扫 ODS 或调用 collect。Console 的 Manager 整表字段图包含 12 个节点、6 条关系，日期与昵称字段在本地切换聚焦且只请求一次整表字段图，元数据刷新后关系仍有效。v3 报告与独立物理夹具验证通过，五个临时任务全部删除并确认 404，两个业务容器、平台 Infra 和凭据目录清理通过，零残留。
+
 ### 6.2 图数据库评估边界
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。
