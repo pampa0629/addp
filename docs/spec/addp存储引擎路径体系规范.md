@@ -527,7 +527,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 ## HDFS 路径目标契约
 
-本节记录 HDFS 接入契约。Simple 只读插件、Business 样例及 Spark 原生读取已实现，并通过独占集群的 T2 门禁；System 正式登记、Meta 扫描、Manager 预览和 Develop 正式发起作业的 T4 仍待验收，不能据此声明平台完整支持。
+本节记录 HDFS 接入契约。Simple 只读插件、Business 样例及 Spark 原生读取已实现，通过独占集群的 T2 门禁及 [Hosted T4 正式消费验收](https://github.com/pampa0629/addp/actions/runs/37217772982)（提交 `11bbacfd5`）。同一普通 User 已完成 System 登记后的 Meta 扫描、Manager 四文件预览及 Develop 正式 Spark 工作流；CSV、JSON、Parquet 各 20 行、金额合计 2100，并验证对应 Standalone Worker 已完成任务及 Console 执行详情。支持范围限于本节规定的 Simple 只读接入。
 
 HDFS 以独立 `engine_type=hdfs`、`engine_family=file` 接入，复用 `FileCatalogModel` 的 `root -> directory -> file` 层级和 Catalog/Content Provider；不复用对象存储目录模型，不新增 data type。CSV、JSON、Parquet 等内容的类型与格式由现有文件探测和解析能力裁决。
 

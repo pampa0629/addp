@@ -36,11 +36,11 @@ HDFS 隔离自动验收使用手动 Hosted T4 `hdfs-spark-consumer-flow`。Busin
 ## 后续事项
 
 - 验证根目录文件、深层目录文件、湖表目录三类路径。
-- 若引入 HDFS/local filesystem，应复用同一 Catalog/Content provider 模型。
+- HDFS 已复用同一 Catalog/Content Provider 模型；后续 local filesystem 也应遵循该边界。
 
 ## HDFS 已确认的首版范围
 
-2026-10-04 确认 HDFS 首版包括统一引擎登记、文件目录扫描与预览，以及真实 Spark Worker 的分布式读取；认证采用 Simple 开发实验模式，固定应用 Hadoop 用户，拒绝连接主体与应用身份不一致的读取。路径目标契约见 [存储引擎路径体系规范](../spec/addp存储引擎路径体系规范.md#hdfs-路径目标契约)。实现与真实消费验收完成前不得登记为已支持。
+2026-10-04 确认 HDFS 首版包括统一引擎登记、文件目录扫描与预览，以及真实 Spark Worker 的分布式读取；认证采用 Simple 开发实验模式，固定应用 Hadoop 用户，拒绝连接主体与应用身份不一致的读取。路径契约及已验收范围见 [存储引擎路径体系规范](../spec/addp存储引擎路径体系规范.md#hdfs-路径目标契约)。
 
 实施前须同步识别并接入以下门禁：
 
@@ -64,7 +64,7 @@ Business 只拥有 HDFS 服务、样例和生命周期，不调用 System API。
 
 Develop 已保存任务 5 `hdfs_simple_read_acceptance`，通过引擎 26 的三个资源 locator 读取，独立选择 `Business Spark`，按 region 聚合并关联校验结果，任务定义不保存物理地址或连接参数。Spark 的公开列表类型映射修正后，执行参数契约已正常生成。首次执行 244 因 CSV 被默认按 Parquet 读取而失败；修正 Develop 文件/对象格式派生后，Spark 显式消费共享格式识别器根据原始文件名确定的格式，缺失时拒绝读取。HDFS 三格式、对象格式、公开参数边界与 Spark 34 项确定性测试已通过。
 
-2026-10-04 重启 Develop 与 Spark Workflow 后，正式执行 251（`758b526b-2ef8-4b30-99f3-eccfcb843f67`）成功，8 个节点全部完成，耗时 23.61 秒。Develop 专业执行详情及运行时结果均确认三种格式各有 20 行、金额合计 2100；east 分组每格式 10 行、合计 1100，west 分组每格式 10 行、合计 1000。Business Spark Standalone 应用 `app-20261004133131-0002` 分配 1 个核心，Worker 容器中该应用的 Executor 日志确认真实计算任务完成。本地开发环境的正式消费链路人工复验通过；尚未登记或运行隔离环境的 HDFS Online suite，不计为自动化 T4 门禁通过。
+2026-10-04 重启 Develop 与 Spark Workflow 后，正式执行 251（`758b526b-2ef8-4b30-99f3-eccfcb843f67`）成功，8 个节点全部完成，耗时 23.61 秒。Develop 专业执行详情及运行时结果均确认三种格式各有 20 行、金额合计 2100；east 分组每格式 10 行、合计 1100，west 分组每格式 10 行、合计 1000。Business Spark Standalone 应用 `app-20261004133131-0002` 分配 1 个核心，Worker 容器中该应用的 Executor 日志确认真实计算任务完成。这条本地人工复验记录不计为自动化 T4 门禁通过；隔离验收记录见下文。
 
 格式修复提交 `e93d72b08` 的 [Release and T2 gates](https://github.com/pampa0629/addp/actions/runs/37200801282) 已通过，包括 HDFS WebHDFS 与分布式 Spark、Redis、Elasticsearch 契约；[Platform CI](https://github.com/pampa0629/addp/actions/runs/37200801286) 的 Spark、Develop、Go workspace 与平台一致性检查通过，但产品镜像构建失败：Spark Workflow 镜像安装 Debian Bullseye security 软件包时返回 404。后续已迁移到 Python 3.11 Bookworm 与官方 Temurin Java 11，补齐共享 Python 包、根目录构建上下文、Compose 与构建登记；本地 ARM64 标准镜像构建已通过依赖一致性、API 导入和真实 Spark 计算检查。镜像修复提交 `7bf7489df` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37207120567) 已通过 AMD64 产品镜像构建、平台一致性与 Spark Workflow 测试，原镜像构建阻塞已消除；后续核对该轮 Platform CI 已全部通过。
 
@@ -81,3 +81,5 @@ Sedona 修复后的 `make test-platform` 亦通过，包含 Online 分发/隔离
 第四轮 [37214813784](https://github.com/pampa0629/addp/actions/runs/37214813784) 已通过正式 Spark 三格式聚合和对应 Standalone Worker 已完成任务校验；浏览器因误用 ES 的直接叶模型“重新扫描引擎”按钮而失败。HDFS 层级目录模型的 Console 验收应在现有目录列表对 `samples` 行执行“重新扫描”，再核对四个 DataItem ID 稳定、四个文件预览和同一正式执行详情；完整引擎扫描与根文件发现由前置普通 User API 阶段验证。只修正测试操作，不新增界面扫描路线或放宽结果断言。
 
 第五轮 [37216410872](https://github.com/pampa0629/addp/actions/runs/37216410872) 已通过目录重扫、四个文件页面预览和正式 Spark/Worker 校验，最后的测试辅助 API 因复用登录时的旧 Access Token 返回 401。页面切换通过共享 Browser AuthSession 恢复并轮换会话，System 按规范撤销旧 Access Token；测试应核对 Develop 页面实际发出的执行详情响应及当前 AuthContext，不跨页面复用令牌快照或新增刷新路线。该轮清理完成、Infra 零残留，仍不计为 T4 通过。对应提交 `e1aadf0f2` 的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37216400908) 和 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37216400977) 均通过；本地 Console 141 项单元测试通过，浏览器回归启动前被其他进程的 4170 端口占用阻断，CI 的 Console 完整门禁已补齐验证。
+
+2026-10-05 第六轮 [Hosted T4 37217772982](https://github.com/pampa0629/addp/actions/runs/37217772982) 完整通过，提交 `11bbacfd577cb568f22c47a0a9fe1a39fd3a70bc`。隔离租户 2、普通 User 32 使用 HDFS Engine 2、Spark 集群 3 和自动登记 Runtime 1，正式执行 `b430f5c7-87e9-48bd-927f-6d1dedd139e8`、Runtime 引用 `11bb2c61-0ff2-47fe-a9ee-1ced4daa69ad` 均成功；三格式各 20 行、金额 2100，east 各 10 行/1100、west 各 10 行/1000。Standalone Application `app-20261004165928-0001` 的 Worker 完成 37 个任务；Console 目录重扫、四文件预览、同一用户的正式执行详情及六张截图均通过。最终报告为 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`。该提交的 [Platform CI](https://github.com/pampa0629/addp/actions/runs/37217766414) 和 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37217766371) 亦全部通过；本地 18 项场景/生命周期测试及 System IAM 夹具通过。首版 Simple 只读范围已完成，仍保持手动 T4；Spark Workflow 的 Docker/Gunicorn 入口与自动登记、执行状态进程归属尚需单独确认方案及容器模式验收。
