@@ -71,8 +71,8 @@ func extractTIFFDimensions(data tiffMetadata) (int, int, bool) {
 	if !ok {
 		return 0, 0, false
 	}
-	width, okWidth := ifd.firstLong(tagImageWidth)
-	height, okHeight := ifd.firstLong(tagImageLength)
+	width, okWidth := tiffPageScalar(ifd, tagImageWidth, tiffTypeShort, tiffTypeLong)
+	height, okHeight := tiffPageScalar(ifd, tagImageLength, tiffTypeShort, tiffTypeLong)
 	if !okWidth || !okHeight || width == 0 || height == 0 {
 		return 0, 0, false
 	}
@@ -120,7 +120,7 @@ func extractGeoTIFFSpatial(data tiffMetadata, width, height int) *datatype.Spati
 }
 
 func extractTIFFFormatInfo(data tiffMetadata, spatialInfo *datatype.SpatialInfo) map[string]interface{} {
-	info := map[string]interface{}{}
+	info := describeTIFFPages(data)
 	if data.Len() < 4 {
 		return info
 	}

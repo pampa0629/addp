@@ -207,6 +207,24 @@
         "catalog_nodes_scanned": "Catalog nodes scanned",
         "fields_scanned": "Fields scanned"
       }
+    },
+    "imagePreview": {
+      "pages": "TIFF page preview",
+      "previous": "Previous page",
+      "next": "Next page",
+      "pagePosition": "Page {page} / {count}",
+      "loading": "Loading this TIFF page…",
+      "downloadHint": "Use the download button at the top right to download the original file",
+      "contentType": "File type",
+      "size": "File size",
+      "limit": "Preview limit",
+      "unavailable": "The image exceeds the preview limit",
+      "refreshDirectory": "A complete TIFF page directory is missing. Deep refresh this file and reopen the preview",
+      "unsupportedDirectory": "BigTIFF page preview is not supported. Download the original file",
+      "rangeRequired": "TIFF page preview requires a platform Range URL. Download the original file",
+      "pixelLimit": "This page exceeds 16 million pixels. Download the original file",
+      "unsupportedSamples": "This page uses unsupported color or sample settings. Download the original file",
+      "decodeFailed": "Failed to read or decode this TIFF page. Check the file and Range service, or download the original file"
     }
   },
   "auth": {

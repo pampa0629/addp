@@ -207,6 +207,24 @@
         "catalog_nodes_scanned": "扫描目录",
         "fields_scanned": "扫描字段"
       }
+    },
+    "imagePreview": {
+      "pages": "TIFF 分页预览",
+      "previous": "上一页",
+      "next": "下一页",
+      "pagePosition": "第 {page} 页 / 共 {count} 页",
+      "loading": "正在解析 TIFF 当前页…",
+      "downloadHint": "如需下载原始文件，请使用右上角的下载按钮",
+      "contentType": "文件类型",
+      "size": "文件大小",
+      "limit": "预览限制",
+      "unavailable": "图片超出预览限制，无法在线展示",
+      "refreshDirectory": "缺少完整 TIFF 页目录，请深度刷新该文件后重新打开预览",
+      "unsupportedDirectory": "暂不支持 BigTIFF 分页基础预览，请下载原始文件查看",
+      "rangeRequired": "TIFF 分页预览需要平台提供的 Range 文件地址，请下载原始文件查看",
+      "pixelLimit": "当前页超过 1600 万像素，暂不支持基础预览，请下载原始文件查看",
+      "unsupportedSamples": "当前页的颜色或采样方式暂不支持基础预览，请下载原始文件查看",
+      "decodeFailed": "TIFF 当前页读取或解码失败，请检查文件与 Range 服务，或下载原始文件查看"
     }
   },
   "auth": {

@@ -1479,6 +1479,11 @@
           "indexRef": "搜索索引引用",
           "schemaVersion": "规范版本",
           "exif": "EXIF",
+          "tiffPageWidth": "页宽（像素）",
+          "tiffPageHeight": "页高（像素）",
+          "tiffPages": "TIFF 页面目录",
+          "tiffPageStatus": "TIFF 页目录状态",
+          "tiffIFDIndex": "图像目录索引",
           "exifStatus": "EXIF 解析状态",
           "cameraMake": "相机厂商",
           "cameraModel": "相机型号",
@@ -1498,6 +1503,12 @@
         "fieldTooltips": {
           "contentHash": "基于文件二进制内容计算的 SHA256；内容相同则哈希相同。",
           "indexRef": "指向 Meilisearch assets 索引中的 item 记录；后缀是 item 指纹，不是内容哈希。"
+        },
+        "tiffPageStatus": {
+          "parsed": "已完整解析",
+          "invalid": "目录无效",
+          "budget_exceeded": "超出目录读取预算",
+          "unsupported": "暂不支持 BigTIFF 页目录"
         },
         "exifStatus": {
           "absent": "未包含 EXIF",

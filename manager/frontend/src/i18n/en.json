@@ -1479,6 +1479,11 @@
           "indexRef": "Search Index Reference",
           "schemaVersion": "Schema Version",
           "exif": "EXIF",
+          "tiffPageWidth": "Page width (pixels)",
+          "tiffPageHeight": "Page height (pixels)",
+          "tiffPages": "TIFF page directory",
+          "tiffPageStatus": "TIFF page directory status",
+          "tiffIFDIndex": "Image directory index",
           "exifStatus": "EXIF Parse Status",
           "cameraMake": "Camera Make",
           "cameraModel": "Camera Model",
@@ -1498,6 +1503,12 @@
         "fieldTooltips": {
           "contentHash": "SHA256 calculated from the file binary content; identical content has the same hash.",
           "indexRef": "Reference to the item record in the Meilisearch assets index; the suffix is the item fingerprint, not the content hash."
+        },
+        "tiffPageStatus": {
+          "parsed": "Completely parsed",
+          "invalid": "Invalid directory",
+          "budget_exceeded": "Directory read budget exceeded",
+          "unsupported": "BigTIFF page directory not supported"
         },
         "exifStatus": {
           "absent": "No EXIF",

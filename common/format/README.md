@@ -476,6 +476,8 @@ info, err := provider.DescribeMedia(ctx, input, nil)
 
 图片 MediaInfoProvider 目前返回宽高、编码、MIME、颜色空间，并可通过 `MediaDescribeResult.Spatial` 携带 GeoTIFF 等空间横切事实。缩略图、视频、音频等内容读取能力后续通过独立 content reader 扩展。
 
+Classic TIFF 同次摘要返回 `FormatInfo.page_summary_status`；完整解析时才返回 `page_count` 与 `pages[{ifd_index,width,height}]`，由 Meta 写入 `format_info.tiff`。沿顶层 next-IFD 链最多读 256 个目录，排除 reduced-resolution 图像和透明掩膜，不遍历 SubIFD；复用前 1 MiB 与 seekable 后 1 MiB 元数据窗口。非法目录与循环为 `invalid`，超预算为 `budget_exceeded`，BigTIFF 为 `unsupported`，不把部分结果报告为完整页数。媒体宽高仍描述首 IFD，GeoTIFF 空间事实与 COG profile hint 沿原路线。
+
 WebP / BMP 复用图片插件和已有 `golang.org/x/image` 解码器，只读取有界头部（最多 1 MiB），返回宽高、`encoding=webp/bmp`、canonical MIME；不补填无法从头部确认的 `color_space`。WebP 支持 VP8 / VP8L / VP8X，动画只记录画布尺寸；BMP 支持 INFO / V4 / V5 的 8/24/32 位、top-down 和默认 RGBA bitfields，其他变体返回错误。不读取完整像素或提供缩略图，摘要成功不表示完整文件已通过校验。两种格式的旧 descriptor-only 注册已删除，Meta 和 Manager 继续消费通用媒体能力。
 
 JPEG 的同一次 `DescribeMedia` 还返回 `FormatInfo.exif` 中的方向、相机厂商/型号及原始拍摄时间、时区偏移和小数秒，写入 `format_info.jpeg`；`exif_status` 区分 absent、parsed、invalid 和 budget_exceeded。读取总预算为 1 MiB，停止于扫描数据，复用图片包的 TIFF IFD 解析，不加载完整图片或引入第二解析路线。宽高保持编码尺寸。曝光摘要直接读取 Exif IFD，返回数值 `exposure_time_seconds`（秒）、`f_number`、`exposure_bias_ev`（EV）和 `focal_length_mm`（毫米）；无符号 RATIONAL 参数须大于零，SRATIONAL 曝光补偿允许负值和零，分母、类型、数量或偏移非法时省略该字段并记录 invalid。感光度、GPS 和缩略图不在该摘要范围内，不从 APEX 标签推导缺失参数。

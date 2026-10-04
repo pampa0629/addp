@@ -1226,6 +1226,18 @@ JPEG EXIF 摘要通过现有 `MediaInfoProvider` 一次读取提供，由 Meta �
 
 JPEG 只扫描图像扫描数据前的 marker segment，总源读取预算为 1 MiB，支持非 seekable 输入及 TIFF 两种字节序。相机字符串与小数秒长度最多 1024 字节；未知或部分未知的拍摄时间不补值。`exif_status` 表示 `absent`（完整检查后没有 EXIF）、`parsed`（支持范围内摘要合法）、`invalid`（EXIF IFD 结构、受支持字段或 marker 非法，包括重复 tag 和 EXIF APP1）、`budget_exceeded`（无法在预算内完成检查）；非法或未完成检查不得被标记为没有 EXIF。非法 EXIF 不阻止已确认的像素尺寸返回，仅保留合法字段；重复 EXIF APP1 不选择其中任意一份。如果标准 JPEG 解码器不能在预算内确认尺寸，则返回解析错误，不输出猜测尺寸。实际 I/O 错误和取消仍返回错误，不吞为缺失元数据。
 
+#### TIFF 页目录与分页基础预览
+
+Classic TIFF 的 `format_info.tiff` 增加 `page_summary_status`、`page_count` 和 `pages`。`pages` 按顶层 next-IFD 链顺序列出主图像，每项包含从 0 起的 `ifd_index`、`width`、`height`；不遍历 SubIFD，不把 NewSubfileType 的降采样图像（bit 0）或透明掩膜（bit 2）计入页面。标准 SubfileType 的 reduced-resolution 标记同样排除。多页仍是一个 `media` item，不因内部页数变成 sidecar `multi` 或 container；原有媒体宽高保持首 IFD 的编码尺寸，空间事实与 COG 判定保持原边界。
+
+页目录最多遍历 256 个 IFD，复用 TIFF 元数据窗口（前 1 MiB；seekable 源可另读后 1 MiB），不扫描像素内容。`page_summary_status=parsed` 时才输出完整 `page_count` 和 `pages`；循环、非法 IFD、重复 tag、非法尺寸或子文件类型为 `invalid`，元数据窗口不覆盖所需目录或 IFD 数超预算为 `budget_exceeded`，BigTIFF 为 `unsupported`。不输出部分目录冒充完整页数。页数统计不校验压缩像素是否可解码。
+
+普通 TIFF 的分页基础预览消费已扫描的完整页目录，经既有 `storage-stream` Range URL 用 geotiff.js 按选中 IFD 读取；页目录缺失或不完整时提示深度刷新，不从第一幅图像推断文件只有一页。每次只渲染选中页，输出最长边不超过 1024 像素，源图像超过 1600 万像素则拒绝基础解码；不预加载所有页面，不退回整文件 URL 下载。GeoTIFF 的空间预览继续使用既有栅格/COG 路线。原始下载仍输出完整源 TIFF，不输出当前 canvas。
+
+基础颜色显示支持无符号 8/16 位 RGB、1/2/4/8/16 位黑白或灰度，以及 geotiff.js 支持的调色板和 8 位 CMYK/YCbCr/CIELab 转换；RGB/灰度可带一个标准 alpha 通道，保留零透明度并处理关联 alpha。浮点/有符号采样、非标准附加通道等不猜测颜色，提示下载；不新增专业多波段渲染或方向变换路线。压缩支持沿既有解码库，不以页目录解析成功保证像素解码成功。
+
+依据：[TIFF 6.0](https://image-js.github.io/tiff/media/TIFF6.pdf) 的 IFD、NewSubfileType 与 SubfileType 定义。
+
 GIF、WebP、TIFF 等多帧或多页图片仍表达为 `kind=image`。动图播放、帧数、页数、首帧缩略图等属于媒体信息或内容读取能力，不应改写为 `kind=video`。
 
 大图、GeoTIFF、多页 TIFF 等不应依赖全量 base64 作为首屏预览。Manager 应优先使用 raw / range URL、缩略图、降采样或切片能力；后端是否生成缩略图由 `MediaThumbnailReader` 或后续媒体读取能力声明。

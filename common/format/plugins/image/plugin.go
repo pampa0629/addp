@@ -313,8 +313,8 @@ func readTIFFMetadata(input io.Reader, limit int64) (tiffMetadata, error) {
 
 func readSeekableTIFFMetadata(input io.ReadSeeker, limit int64) (tiffMetadata, error) {
 	head := make([]byte, limit)
-	n, err := input.Read(head)
-	if err != nil && err != io.EOF {
+	n, err := io.ReadFull(input, head)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		return tiffMetadata{}, err
 	}
 	head = head[:n]
@@ -338,7 +338,7 @@ func readSeekableTIFFMetadata(input io.ReadSeeker, limit int64) (tiffMetadata, e
 		return tiffMetadata{}, err
 	}
 	tail = tail[:n]
-	return newTIFFMetadata(head, &tiffWindow{offset: uint64(size - int64(len(tail))), data: tail}), nil
+	return newTIFFMetadata(head, &tiffWindow{offset: uint64(size - tailSize), data: tail}), nil
 }
 
 type tiffWindow struct {
