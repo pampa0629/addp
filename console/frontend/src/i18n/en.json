@@ -5,6 +5,10 @@
     "logout": "Logout",
     "sessionExpired": "Session expired, please login again",
     "logoutSuccess": "Logged out successfully",
+    "authorizationRefresh": {
+      "failed": "Unable to verify access to the current page",
+      "retry": "Retry"
+    },
     "accessDenied": {
       "title": "Access denied",
       "description": "This account does not have permission to use this page.",

@@ -79,6 +79,7 @@ test('production Nginx shares one rotating browser session across Console, ifram
   expect(initial).toMatchObject({ authenticated: true, tenantID, username, tokenPersisted: false })
   expect(Boolean(initial.principalID)).toBe(true)
   const frameBeforeRefresh = moduleFrame()
+  await frameBeforeRefresh.evaluate(() => { window.__onlineDraft = 'unsaved browser state' })
 
   const initialRefreshes = requests.length
   const independent = await context.newPage()
@@ -121,6 +122,9 @@ test('production Nginx shares one rotating browser session across Console, ifram
   expect(requests.length - initialRefreshes).toBe(1)
   expect(responses.slice(initialRefreshes)).toEqual([200])
   const iframePreservedOnRefresh = frameBeforeRefresh === moduleFrame()
+  expect(iframePreservedOnRefresh).toBe(true)
+  expect(await moduleFrame().evaluate(() => window.__onlineDraft)).toBe('unsaved browser state')
+  await moduleFrame().evaluate(() => { delete window.__onlineDraft })
   expect(requests.every(request => request.origin === origin && request.method === 'POST')).toBe(true)
   const cookieAfter = (await context.cookies()).find(cookie => cookie.name === 'addp_refresh_token')
   expect(Boolean(cookieAfter?.httpOnly && cookieAfter.value !== cookieBefore.value)).toBe(true)

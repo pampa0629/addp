@@ -94,12 +94,11 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             payload = expected
             with patch.object(MODULE.subprocess, "run", side_effect=browser):
                 self.assertEqual(MODULE.run_browser(), expected)
-                payload = {**expected, "iframe_preserved_on_refresh": False}
-                self.assertEqual(MODULE.run_browser(), payload)  # diagnostic, not proof of preserved business state
                 for invalid in ({"origin": "http://127.0.0.1:5170"}, {"tenant_id": "1"}, {"run_id": "old-run"},
                                 {"concurrent_refreshes": 2}, {"concurrent_refreshes": True}, {"iframe_converged": False},
                                 {"cookie_rotated": False}, {"reload_without_refresh": False}, {"logout_propagated": False},
-                                {"javascript_tokens_persisted": True}, {"access_token": "must-not-be-in-evidence"}):
+                                {"javascript_tokens_persisted": True}, {"iframe_preserved_on_refresh": False},
+                                {"access_token": "must-not-be-in-evidence"}):
                     payload = {**expected, **invalid}
                     with self.subTest(invalid=invalid), self.assertRaises(MODULE.AcceptanceError):
                         MODULE.run_browser()

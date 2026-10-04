@@ -198,6 +198,7 @@ Console Browser AuthSession
 - Console 根据模块配置生成允许的 origin，不使用 `*`；
 - iframe 必须验证父窗口 origin 和消息来源；
 - Console 刷新 Access Token 后向当前受信任 iframe 推送更新；
+- Token 更新后重新读取 AuthContext 时，候选权限保持清空。Console 必须区分授权事实尚未加载与已确认拒绝访问：保留当前路由的 iframe 实例，但隐藏其内容并阻止交互；读取失败时提供重试，不把故障显示为权限拒绝。同一 Principal、Context 和 Tenant Membership 的新授权仍允许当前页面时，恢复原 iframe，保留内存中的未保存修改。权限撤销、身份或上下文改变、退出以及导航到其他页面时，必须卸载旧 iframe；新页面只能在权威授权确认后加载，不得沿用旧权限或跨上下文恢复草稿。
 - iframe 不把父级 Token 写入任何持久存储；
 - iframe 中的模块刷新页面后重新发起握手；
 - iframe 在认证超时窗口内使用同一个 `requestId` 重发握手消息，收到 Token、Logout 或 Error 后立即停止；Console 必须按幂等请求处理重复消息；

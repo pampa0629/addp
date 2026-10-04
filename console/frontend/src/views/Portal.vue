@@ -25,46 +25,58 @@
         @toggle-collapse="toggleSidebar"
       />
 
-      <el-main class="main-content">
-        <div v-if="currentModule === 'api-docs'" class="api-docs-view">
-          <ApiDocs />
-        </div>
-
-        <PortalHome
-          v-else-if="currentModule === 'home'"
-          :active-group="activeGroup"
-          :home-cards="homeCards"
-          :user="user"
-          :permissions="navigationPermissions"
-          :context-type="authStore.contextType"
-          :context-key="recentContextKey"
-          :portal-available="Boolean(portalLandingRoute)"
-          @card-click="navigateToModule"
-          @portal-click="openPortal"
-          @navigate="handleMenuSelect"
-        />
-
+      <el-main class="main-content" v-loading="authorizationLoading">
         <el-result
-          v-else-if="currentModule === 'access-denied'"
-          icon="warning"
-          :title="t('console.accessDenied.title')"
-          :sub-title="t('console.accessDenied.description')"
+          v-if="authorizationUnavailable && !authorizationLoading"
+          icon="error"
+          :title="t('console.authorizationRefresh.failed')"
         >
           <template #extra>
-            <el-button type="primary" @click="handleLogoClick">{{ t('console.accessDenied.backHome') }}</el-button>
+            <el-button type="primary" @click="retryAuthorization">{{ t('console.authorizationRefresh.retry') }}</el-button>
           </template>
         </el-result>
 
-		<ConfigurationManagement
-		  v-else-if="currentModule === 'configuration'"
-		/>
+        <div v-show="!authorizationUnavailable" class="authorized-content">
+          <div v-if="currentModule === 'api-docs'" class="api-docs-view">
+            <ApiDocs />
+          </div>
 
-        <PortalIframe
-          v-else
-          :iframe-url="iframeUrl"
-          :iframe-key="iframeNavigationKey"
-          @load="handleIframeLoad"
-        />
+          <PortalHome
+            v-else-if="currentModule === 'home'"
+            :active-group="activeGroup"
+            :home-cards="homeCards"
+            :user="user"
+            :permissions="navigationPermissions"
+            :context-type="authStore.contextType"
+            :context-key="recentContextKey"
+            :portal-available="Boolean(portalLandingRoute)"
+            @card-click="navigateToModule"
+            @portal-click="openPortal"
+            @navigate="handleMenuSelect"
+          />
+
+          <el-result
+            v-else-if="currentModule === 'access-denied'"
+            icon="warning"
+            :title="t('console.accessDenied.title')"
+            :sub-title="t('console.accessDenied.description')"
+          >
+            <template #extra>
+              <el-button type="primary" @click="handleLogoClick">{{ t('console.accessDenied.backHome') }}</el-button>
+            </template>
+          </el-result>
+
+          <ConfigurationManagement
+            v-else-if="currentModule === 'configuration'"
+          />
+
+          <PortalIframe
+            v-else
+            :iframe-url="iframeUrl"
+            :iframe-key="iframeNavigationKey"
+            @load="handleIframeLoad"
+          />
+        </div>
       </el-main>
 
     </el-container>
@@ -176,6 +188,8 @@ const activeMenu = ref('/')
 const currentModule = ref('home')
 const iframeUrl = ref('')
 const iframeNavigationKey = ref(0)
+const iframeRoute = ref('')
+const iframeIdentity = ref('')
 const isCollapsed = ref(false)
 const isNarrowViewport = ref(false)
 const activeGroup = ref(null)  // null = 全局首页
@@ -195,9 +209,32 @@ const leaveProtection = useConsoleUnsavedChangesGuard(router, {
   skipNavigation: to => synchronizedIframeRoute === to.fullPath
 })
 watch(iframeNavigationKey, () => leaveProtection.reset(), { flush: 'sync' })
+watch(iframeUrl, url => {
+  if (url) return
+  iframeRoute.value = ''
+  iframeIdentity.value = ''
+  leaveProtection.reset()
+}, { flush: 'sync' })
 
 const effectiveSidebarCollapsed = computed(() => isCollapsed.value || isNarrowViewport.value)
 const navigationPermissions = computed(() => authStore.permissions)
+const authorizationUnavailable = computed(() => Boolean(authStore.token && !authStore.authContext))
+const authorizationLoading = computed(() => authorizationUnavailable.value &&
+  Boolean(authStore.authContextLoadPromise || authStore.sessionInitPromise))
+const authorizationIdentity = computed(() => {
+  const context = authStore.authContext
+  return context ? JSON.stringify([
+    context.principal?.type, context.principal?.id, context.context?.type,
+    context.context?.tenant_id, context.context?.tenant_membership_id
+  ]) : ''
+})
+async function retryAuthorization() {
+  try {
+    await authStore.initializeSession({ force: true })
+  } catch {
+    // Shared session initialization owns failure classification; retain the hidden draft for retry.
+  }
+}
 const recentContextKey = computed(() => authStore.contextType === 'tenant'
   ? `tenant:${authStore.authContext?.context?.tenant_id || ''}`
   : authStore.contextType === 'platform' ? 'platform' : '')
@@ -426,7 +463,8 @@ function syncRouteToPortal(fullPath) {
     return
   }
   const module = parts[0]
-  const keepCurrentIframe = synchronizedIframeRoute === fullPath && isSynchronizedIframeRoute(synchronizedIframeModule, fullPath)
+  const keepCurrentIframe = iframeIdentity.value === authorizationIdentity.value &&
+    synchronizedIframeRoute === fullPath && isSynchronizedIframeRoute(synchronizedIframeModule, fullPath)
   if (keepCurrentIframe) {
     synchronizedIframeModule = ''
   }
@@ -465,16 +503,28 @@ function syncRouteToPortal(fullPath) {
   } else if (!url) {
     console.error('[Console] Module URL not found for:', module)
   }
+  if (url) {
+    iframeRoute.value = fullPath
+    iframeIdentity.value = authorizationIdentity.value
+  }
 
   // 固定菜单页自动记录；动态页面等待所属模块发布页面描述。
   recordRecentVisit(module, fullPath)
 }
 
 watch(
-  [() => route.fullPath, navigationPermissions],
-  ([fullPath], [previousFullPath] = []) => {
-    // Permission updates must not reload an already open, still permitted page.
-    if (fullPath === previousFullPath && iframeUrl.value && canOpenPage(splitConsoleRoute(fullPath)[0])) return
+  [() => route.fullPath, navigationPermissions, authorizationIdentity, authorizationUnavailable],
+  ([fullPath]) => {
+    if (authorizationUnavailable.value) {
+      if (fullPath !== iframeRoute.value) {
+        iframeUrl.value = ''
+        currentModule.value = consoleRouteModule(fullPath) || 'home'
+      }
+      return
+    }
+    // Reuse only the same authorized route and identity after the authority responds.
+    if (iframeRoute.value === fullPath && iframeUrl.value &&
+        iframeIdentity.value === authorizationIdentity.value && canOpenPage(splitConsoleRoute(fullPath)[0])) return
     syncRouteToPortal(fullPath)
   },
   { immediate: true }
@@ -604,6 +654,13 @@ function handleCopilotAction(route) {
   min-height: 0;
   height: auto;
   transition: margin-right 0.3s;
+}
+
+.authorized-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .api-docs-view {

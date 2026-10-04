@@ -321,10 +321,11 @@ def run_browser() -> dict[str, object]:
         "tenant_id": os.environ["ADDP_ONLINE_TEST_TENANT_ID"], "username": os.environ["ADDP_ONLINE_READ_USER_USERNAME"],
         "concurrent_refreshes": 1, "iframe_converged": True, "cookie_rotated": True,
         "reload_without_refresh": True, "logout_propagated": True, "javascript_tokens_persisted": False,
+        "iframe_preserved_on_refresh": True,
     }
     if (not isinstance(evidence, dict) or type(evidence.get("concurrent_refreshes")) is not int
             or type(evidence.get("iframe_preserved_on_refresh")) is not bool
-            or set(evidence) != set(expected) | {"iframe_preserved_on_refresh"}
+            or set(evidence) != set(expected)
             or any(evidence.get(key) != value for key, value in expected.items())):
         raise AcceptanceError("production browser evidence differs from the required identity and session results")
     if any(not path.is_file() or path.stat().st_size == 0 for path in screenshots):
