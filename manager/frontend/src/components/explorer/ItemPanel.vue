@@ -864,6 +864,7 @@ const groupLabelKeys = {
   csv: 'manager.explorer.attributes.groups.csv',
   json: 'manager.explorer.attributes.groups.json',
   geojson: 'manager.explorer.attributes.groups.geojson',
+  jpeg: 'manager.explorer.attributes.groups.jpeg',
   parquet: 'manager.explorer.attributes.groups.parquet',
   excel: 'manager.explorer.attributes.groups.excel',
   sqlite: 'manager.explorer.attributes.groups.sqlite',
@@ -954,10 +955,21 @@ const fieldLabelKeys = {
   content_hash: 'manager.explorer.attributes.fields.contentHash',
   index_ref: 'manager.explorer.attributes.fields.indexRef',
   schema_version: 'manager.explorer.attributes.fields.schemaVersion',
-  model: 'manager.explorer.attributes.fields.graphModel',
   directed: 'manager.explorer.attributes.fields.graphDirected',
   node_count: 'manager.explorer.attributes.fields.graphNodeCount',
   relationship_count: 'manager.explorer.attributes.fields.graphRelationshipCount'
+}
+
+const fieldPathLabelKeys = {
+  'type_info.graph.model': 'manager.explorer.attributes.fields.graphModel',
+  'format_info.jpeg.exif_status': 'manager.explorer.attributes.fields.exifStatus',
+  'format_info.jpeg.exif': 'manager.explorer.attributes.fields.exif',
+  'format_info.jpeg.exif.make': 'manager.explorer.attributes.fields.cameraMake',
+  'format_info.jpeg.exif.model': 'manager.explorer.attributes.fields.cameraModel',
+  'format_info.jpeg.exif.orientation': 'manager.explorer.attributes.fields.imageOrientation',
+  'format_info.jpeg.exif.date_time_original': 'manager.explorer.attributes.fields.captureTimeOriginal',
+  'format_info.jpeg.exif.offset_time_original': 'manager.explorer.attributes.fields.captureTimeOffset',
+  'format_info.jpeg.exif.subsec_time_original': 'manager.explorer.attributes.fields.captureTimeSubsecond'
 }
 
 const fieldTooltipKeys = {
@@ -1307,7 +1319,7 @@ const buildEntry = (pathParts, value, groupRoot = []) => {
   const relativeParts = trimPathPrefix(pathParts, groupRoot)
   return {
     path: pathParts.join('.'),
-    label: formatAttributePath(relativeParts.length ? relativeParts : pathParts),
+    label: formatAttributePath(relativeParts.length ? relativeParts : pathParts, pathParts),
     labelTitle: attributeFieldTooltip(pathParts),
     display,
     title: display
@@ -1603,6 +1615,9 @@ const formatAttributeDisplay = (pathParts, value) => {
   if (path === 'capabilities.extraction.reason') {
     return formatMappedValue('manager.explorer.attributes.extractionReason', value)
   }
+  if (path === 'format_info.jpeg.exif_status') {
+    return formatMappedValue('manager.explorer.attributes.exifStatus', value)
+  }
   return formatScalar(value)
 }
 
@@ -1622,10 +1637,15 @@ const trimPathPrefix = (pathParts, prefixParts) => {
   return matches ? pathParts.slice(prefixParts.length) : pathParts
 }
 
-const formatAttributePath = (pathParts) => {
+const formatAttributePath = (pathParts, fullPathParts = pathParts) => {
   if (!pathParts.length) return '-'
+  const offset = fullPathParts.length - pathParts.length
   return pathParts
-    .map(part => formatAttributeSegment(part))
+    .map((part, index) => translateFromMap(
+      fieldPathLabelKeys,
+      fullPathParts.slice(0, offset + index + 1).join('.'),
+      formatAttributeSegment(part)
+    ))
     .join(' / ')
 }
 

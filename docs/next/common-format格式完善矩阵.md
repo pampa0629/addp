@@ -1,6 +1,6 @@
 # common/format 格式后续事项
 
-更新时间：2026-06-02
+更新时间：2026-10-04
 
 只保留未决事项。
 
@@ -29,7 +29,7 @@
 | GeoPackage | 还要核实 Meta children、container 概览、layer 切换、分页样本、geometry column / SRID / extent 展示，以及容器 child 的字段来源不会误用父 item `type_info.table.fields`。 |
 | ZIP | 还要核实扫描、容器概览、entry 列表截断、CSV entry 分页、文本 entry、嵌套 ZIP 逐层展开和动态识别结果只服务本次预览、不写回 Meta，并设计大压缩包和远程 range-aware entry 读取。 |
 | Text / Markdown | 还要核实编码识别、大文件截断、Markdown 渲染安全、链接、代码块和前端性能。 |
-| Image / JPEG / PNG / GIF / TIFF | JPEG 首期已补有界 EXIF 摘要：8 种方向、相机厂商/型号、源拍摄时间与显式时区偏移/小数秒，保留编码像素尺寸，诊断非法或超预算元数据。GPS、曝光参数、其他图片格式的 EXIF、多帧或多页信息仍待补齐；继续设计 MediaThumbnailReader 或 raw / range URL 预览策略，并核实大图、GeoTIFF、多页 TIFF、动图体验。 |
+| Image / JPEG / PNG / GIF / TIFF | JPEG 首期已补有界 EXIF 摘要：8 种方向、相机厂商/型号、源拍摄时间与显式时区偏移/小数秒，保留编码像素尺寸，诊断非法或超预算元数据。Manager 属性页按完整属性路径展示中英文 EXIF 标签和解析状态，避免相机型号与图模型同名字段混淆；NFS `3d/3ds/test1/IMAGE2.JPG` 的刷新、落库与属性展示已与源文件核对。GPS、曝光参数、其他图片格式的 EXIF、多帧或多页信息仍待补齐；继续设计 MediaThumbnailReader 或 raw / range URL 预览策略，并核实大图、GeoTIFF、多页 TIFF、动图体验。 |
 | PDF | 还要核实真实 PDF metadata、加密提示、raw / range 预览和大文件传输；如需正文提取，再另行定义 `DocumentTextReader` / extraction 任务边界。 |
 | DOC / DOCX / PPTX / WPS | DOC 已有稳定 descriptor，但暂不声明后端文本解析能力。DOCX 已有轻量 `DocumentInfoProvider`，读取 `docProps` 中的 title、language、pages、words；`DocumentTextReader` 从 `word/document.xml` 提取正文，并追加页眉、页脚、脚注、尾注和批注文本。PPTX 已有轻量 `DocumentInfoProvider`，读取 `docProps` 中的 title、language、slides、words；`DocumentTextReader` 从 `ppt/slides/slide*.xml` 按页提取正文，并追加备注页和批注文本。二者可进入 Meta deep scan 的 `type_info.document` 和全文索引链路。后续还要补真实样例、DOCX 修订语义/复杂版面关系、PPTX 母版/隐藏页策略和大文件上限策略。DOC / WPS 格式变体较多，原始文件预览通过 engine / contentio / URL 内容通道交给浏览器统一 Office renderer，deep scan 记录 unsupported。 |
 

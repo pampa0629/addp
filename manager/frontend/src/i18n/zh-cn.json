@@ -1390,6 +1390,7 @@
           "csv": "CSV",
           "json": "JSON",
           "geojson": "GeoJSON",
+          "jpeg": "JPEG",
           "parquet": "Parquet",
           "excel": "Excel",
           "sqlite": "SQLite",
@@ -1477,6 +1478,14 @@
           "contentHash": "内容哈希",
           "indexRef": "搜索索引引用",
           "schemaVersion": "规范版本",
+          "exif": "EXIF",
+          "exifStatus": "EXIF 解析状态",
+          "cameraMake": "相机厂商",
+          "cameraModel": "相机型号",
+          "imageOrientation": "图像方向",
+          "captureTimeOriginal": "原始拍摄时间",
+          "captureTimeOffset": "拍摄时间时区偏移",
+          "captureTimeSubsecond": "拍摄时间小数秒",
           "graphModel": "图模型",
           "graphDirected": "有向图",
           "graphNodeCount": "节点数",
@@ -1485,6 +1494,12 @@
         "fieldTooltips": {
           "contentHash": "基于文件二进制内容计算的 SHA256；内容相同则哈希相同。",
           "indexRef": "指向 Meilisearch assets 索引中的 item 记录；后缀是 item 指纹，不是内容哈希。"
+        },
+        "exifStatus": {
+          "absent": "未包含 EXIF",
+          "parsed": "已解析",
+          "invalid": "EXIF 无效",
+          "budget_exceeded": "超出解析预算"
         },
         "extractionStatus": {
           "completed": "已完成",

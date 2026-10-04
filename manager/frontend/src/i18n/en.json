@@ -1390,6 +1390,7 @@
           "csv": "CSV",
           "json": "JSON",
           "geojson": "GeoJSON",
+          "jpeg": "JPEG",
           "parquet": "Parquet",
           "excel": "Excel",
           "sqlite": "SQLite",
@@ -1477,6 +1478,14 @@
           "contentHash": "Content Hash",
           "indexRef": "Search Index Reference",
           "schemaVersion": "Schema Version",
+          "exif": "EXIF",
+          "exifStatus": "EXIF Parse Status",
+          "cameraMake": "Camera Make",
+          "cameraModel": "Camera Model",
+          "imageOrientation": "Image Orientation",
+          "captureTimeOriginal": "Original Capture Time",
+          "captureTimeOffset": "Capture Time Offset",
+          "captureTimeSubsecond": "Capture Time Subsecond",
           "graphModel": "Graph Model",
           "graphDirected": "Directed",
           "graphNodeCount": "Nodes",
@@ -1485,6 +1494,12 @@
         "fieldTooltips": {
           "contentHash": "SHA256 calculated from the file binary content; identical content has the same hash.",
           "indexRef": "Reference to the item record in the Meilisearch assets index; the suffix is the item fingerprint, not the content hash."
+        },
+        "exifStatus": {
+          "absent": "No EXIF",
+          "parsed": "Parsed",
+          "invalid": "Invalid EXIF",
+          "budget_exceeded": "Parse Budget Exceeded"
         },
         "extractionStatus": {
           "completed": "Completed",
