@@ -10,9 +10,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: quality-frontend-smoke-${{ github.ref }}
-  cancel-in-progress: true
+# Preserve running and queued frontend gates across later unrelated pushes.
+# The path selector only decides whether this run needs tests.
 
 jobs:
   quality-frontend:

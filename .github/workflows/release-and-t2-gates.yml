@@ -12,9 +12,9 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: release-and-t2-gates-${{ github.ref }}
-  cancel-in-progress: true
+# Keep every selected gate run: independent hosted runners own disposable
+# resources. A shared concurrency group can cancel running or pending evidence
+# before a later docs-only run skips those tests.
 
 jobs:
   selection:

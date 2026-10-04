@@ -14,9 +14,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: platform-ci-${{ github.ref }}
-  cancel-in-progress: true
+# Path-selected gates must retain every run, including jobs queued for runners.
+# Hosted jobs own isolated resources; later skipped runs cannot replace them.
 
 jobs:
   platform-consistency:

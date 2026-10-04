@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -24,7 +25,8 @@ class SelectModuleGateTest(unittest.TestCase):
         self.repository = Path(self.temporary_directory.name)
         subprocess.run(["git", "init", "-q"], cwd=self.repository, check=True)
         files = {
-            "sample/backend/go.mod": "module example.com/sample\n",
+            "common/go.mod": "module github.com/addp/common\n",
+            "sample/backend/go.mod": "module example.com/sample\nrequire github.com/addp/common v0.0.0\n",
             "agent/backend/requirements.txt": "PyYAML\n",
             "other/frontend/package.json": '{"scripts":{"build":"vite build"}}\n',
             "Makefile": "test-sample:\n\t@true\ntest-other-frontend:\n\t@true\ntest-agent-eval:\n\t@true\n",
@@ -67,7 +69,10 @@ class SelectModuleGateTest(unittest.TestCase):
         )
         return {
             "ADDP_CI_EVENT": "pull_request",
-            "ADDP_CI_HEAD": "HEAD",
+            "ADDP_CI_HEAD": subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=self.repository,
+                check=True, capture_output=True, text=True,
+            ).stdout.strip(),
             "ADDP_CI_PR_BASE": self.base,
         }
 
@@ -86,6 +91,84 @@ class SelectModuleGateTest(unittest.TestCase):
         environment = self.commit(".github/workflows/platform-ci.yml")
         self.assertTrue(MODULE.select_module(self.repository, "sample", environment)[0])
         self.assertTrue(MODULE.select_module(self.repository, "other", environment)[0])
+
+    def push(self, relative_path: str) -> dict[str, str]:
+        before = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.repository,
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        return {
+            **self.commit(relative_path),
+            "ADDP_CI_EVENT": "push",
+            "ADDP_CI_BEFORE": before,
+        }
+
+    def test_running_and_queued_code_pushes_retain_selection_after_docs_push(self) -> None:
+        running = self.push("sample/backend/first.go")
+        queued = self.push("sample/backend/second.go")
+        docs = self.push("docs/acceptance.md")
+        # Use each immutable event range after the branch advances. A skipped
+        # docs run is valid only while both earlier runs retain their evidence.
+        for event, selected in ((running, True), (queued, True), (docs, False)):
+            with self.subTest(head=event["ADDP_CI_HEAD"]):
+                self.assertEqual(selected, MODULE.select_module(self.repository, "sample", event)[0])
+                self.assertFalse(MODULE.select_module(self.repository, "other", event)[0])
+
+    def test_shared_dependency_push_selects_consumer_after_docs_push(self) -> None:
+        shared = self.push("common/client/meta.go")
+        docs = self.push("docs/shared.md")
+        for owner in ("common", "sample"):
+            with self.subTest(owner=owner):
+                self.assertTrue(MODULE.select_module(self.repository, owner, shared)[0])
+                self.assertFalse(MODULE.select_module(self.repository, owner, docs)[0])
+        self.assertFalse(MODULE.select_module(self.repository, "other", shared)[0])
+
+    def test_push_uses_full_event_range_for_multiple_commits(self) -> None:
+        self.commit("sample/backend/main.go")
+        event = self.push("docs/latest.md")
+        self.assertFalse(MODULE.select_module(self.repository, "sample", event)[0])
+        event["ADDP_CI_BEFORE"] = self.base
+        self.assertTrue(MODULE.select_module(self.repository, "sample", event)[0])
+
+    def test_cli_code_pushes_retain_selection_after_docs_push(self) -> None:
+        running = self.push("common-python/first.py")
+        queued = self.push("common-python/second.py")
+        docs = self.push("docs/cli.md")
+        selector = SCRIPT.with_name("select-gate-by-paths.sh")
+        output = self.repository / "selection-output"
+        for event, selected in ((running, True), (queued, True), (docs, False)):
+            with self.subTest(head=event["ADDP_CI_HEAD"]):
+                output.write_text("", encoding="utf-8")
+                result = subprocess.run(
+                    ["bash", str(selector), "CLI product", "common-python/*"],
+                    cwd=self.repository,
+                    env={**os.environ, **event, "GITHUB_OUTPUT": str(output)},
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(f"run={str(selected).lower()}\n", output.read_text(encoding="utf-8"))
+
+    def test_reporter_refuses_missing_or_unsuccessful_selected_verification(self) -> None:
+        reporter = SCRIPT.with_name("report-selected-gate.sh")
+        cases = [
+            ("true", "success", "success", 0),
+            ("false", "success", "skipped", 0),
+            ("true", "success", "failure", 1),
+            ("true", "success", "cancelled", 1),
+            ("true", "success", "skipped", 1),
+            ("true", "success", "", 1),
+            ("false", "failure", "skipped", 1),
+            ("false", "cancelled", "skipped", 1),
+            ("false", "success", "success", 1),
+            ("", "success", "skipped", 1),
+        ]
+        for selected, selection, verification, expected in cases:
+            with self.subTest(selected=selected, selection=selection, verification=verification):
+                result = subprocess.run(
+                    ["bash", str(reporter), "gate", selected, selection, verification],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(expected, result.returncode, result.stdout + result.stderr)
 
     def test_skill_change_selects_agent_for_pull_request_and_push(self) -> None:
         environment = self.commit("skills/workflow-analysis/SKILL.md")

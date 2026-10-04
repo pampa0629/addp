@@ -263,6 +263,51 @@ class T2CIRegistrationTest(unittest.TestCase):
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def test_rejects_running_cancellation_and_pending_replacement(self) -> None:
+        for cancellation in ("true", "false"):
+            for indentation in ("", "    "):
+                with self.subTest(cancel=cancellation, indentation=indentation):
+                    concurrency = (
+                        f"{indentation}concurrency:\n"
+                        f"{indentation}  group: gates-${{{{ github.ref }}}}\n"
+                        f"{indentation}  cancel-in-progress: {cancellation}\n"
+                    )
+                    workflow = self._workflow_text()
+                    if indentation:
+                        workflow = workflow.replace("  sample:\n", "  sample:\n" + concurrency)
+                    else:
+                        workflow = concurrency + workflow
+                    self.workflow.write_text(workflow, encoding="utf-8")
+                    self.assertTrue(any(
+                        "preserve running and queued gate evidence" in error
+                        for error in MODULE.validate_registration(self.repository)
+                    ))
+
+    def test_scheduling_check_discovers_other_path_selected_workflows(self) -> None:
+        for selector in ("select-module-gate.py", "select-gate-by-paths.sh", "select-image-services"):
+            with self.subTest(selector=selector):
+                other = self.workflow.with_name("other.yaml")
+                other.write_text(
+                    "concurrency: group\njobs:\n  gate:\n    steps:\n"
+                    f"      - run: {selector}\n",
+                    encoding="utf-8",
+                )
+                errors = MODULE.validate_registration(self.repository)
+                self.assertEqual(1, len(errors))
+                self.assertIn("other.yaml", errors[0])
+
+    def test_scheduling_check_preserves_online_resource_locks(self) -> None:
+        self.workflow.with_name("online.yaml").write_text(
+            "jobs:\n  online:\n    concurrency:\n"
+            "      group: dedicated-host\n      cancel-in-progress: false\n"
+            "    steps:\n      - run: make test-online ONLINE_SUITE=sample\n",
+            encoding="utf-8",
+        )
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_repository_path_selected_workflows_preserve_every_run(self) -> None:
+        self.assertEqual([], MODULE.validate_path_selected_scheduling(Path(__file__).parents[2]))
+
     def test_rejects_missing_required_gate_environment_in_workflow(self) -> None:
         self.workflow.write_text(
             self._workflow_text().replace(

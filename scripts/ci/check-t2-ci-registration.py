@@ -322,6 +322,25 @@ def yaml_blocks(content: str, pattern: str) -> list[str]:
     ]
 
 
+def validate_path_selected_scheduling(repository: Path) -> list[str]:
+    errors: list[str] = []
+    selectors = ("select-module-gate.py", "select-gate-by-paths.sh", "select-image-services")
+    for path in sorted((repository / ".github/workflows").glob("*")):
+        if path.suffix not in {".yml", ".yaml"}:
+            continue
+        workflow = path.read_text(encoding="utf-8")
+        if not any(selector in workflow for selector in selectors):
+            continue
+        # Even cancel-in-progress: false replaces a pending run by default.
+        # These hosted gates own isolated resources and need no shared lock.
+        if re.search(r"(?m)^\s*concurrency\s*:", workflow):
+            errors.append(
+                f"{path.relative_to(repository)}: path-selected hosted gates must not "
+                "use workflow/job concurrency; preserve running and queued gate evidence"
+            )
+    return errors
+
+
 def validate_registration(repository: Path) -> list[str]:
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     workflow_path = repository / ".github/workflows/release-and-t2-gates.yml"
@@ -330,7 +349,7 @@ def validate_registration(repository: Path) -> list[str]:
     workflow = workflow_path.read_text(encoding="utf-8")
     jobs = yaml_blocks(workflow, r"(?m)^  [a-zA-Z0-9_-]+:\s*$")
     steps = yaml_blocks(workflow, r"(?m)^      - name:\s*.+$")
-    errors: list[str] = []
+    errors = validate_path_selected_scheduling(repository)
     integration_recipe = make_recipe(makefile, "test-integration")
     hosted_integration_recipe = make_recipe(makefile, "test-integration-hosted")
     owner_managed_recipe = make_recipe(makefile, "test-integration-owner-managed")
