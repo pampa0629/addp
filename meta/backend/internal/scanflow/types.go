@@ -2,10 +2,13 @@ package scanflow
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/addp/meta/internal/models"
 )
+
+var ErrInvalidScope = errors.New("invalid scan scope")
 
 type Mode string
 
@@ -40,6 +43,7 @@ type Options struct {
 }
 
 type Scope struct {
+	Targets      []string
 	EngineID     uint
 	Mode         Mode
 	CatalogPaths []string

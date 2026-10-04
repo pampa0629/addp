@@ -67,6 +67,7 @@ ENABLE_REDIS=false
 ENABLE_DORIS=false
 ENABLE_SPARK=false
 ENABLE_NEO4J=false
+ENABLE_HDFS=false
 ENABLE_NFS=false
 ENABLE_MYSQL=false
 ENABLE_OCEANBASE=false
@@ -89,6 +90,7 @@ for arg in "$@"; do
             ENABLE_REDIS=true
             ENABLE_DORIS=true
             ENABLE_SPARK=true
+            ENABLE_HDFS=true
             ENABLE_NEO4J=true
             ENABLE_NFS=true
             ENABLE_MYSQL=true
@@ -145,6 +147,9 @@ for arg in "$@"; do
         -redpanda)
             ENABLE_REDPANDA=true
             ;;
+        -hdfs)
+            ENABLE_HDFS=true
+            ;;
         -nfs)
             ENABLE_NFS=true
             ;;
@@ -161,6 +166,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -redis                # 只启动 Business Redis"
             echo "  bash scripts/start.sh -mongodb              # 只启动 MongoDB"
             echo "  bash scripts/start.sh -doris                # 只启动 Doris"
+            echo "  bash scripts/start.sh -hdfs                 # HDFS NameNode、DataNode 与三格式样例"
             echo "  bash scripts/start.sh -spark                # 只启动 Spark"
             echo "  bash scripts/start.sh -neo4j                # 只启动 Neo4j"
             echo "  bash scripts/start.sh -mysql               # 只启动 MySQL"
@@ -243,6 +249,11 @@ if [ "$ENABLE_SPARK" = true ]; then
     echo -e "  Spark: ✓"
 else
     echo -e "  Spark: ✗ (使用 -spark 启用)"
+fi
+if [ "$ENABLE_HDFS" = true ]; then
+    echo -e "  HDFS: ✓"
+else
+    echo -e "  HDFS: ✗ (使用 -hdfs 启用)"
 fi
 if [ "$ENABLE_NEO4J" = true ]; then
     echo -e "  Neo4j: ✓"
@@ -454,7 +465,7 @@ fi
 
 for service_flag in ENABLE_PG ENABLE_ORACLE ENABLE_SUPERMAP_PG ENABLE_MINIO ENABLE_CLICKHOUSE \
                     ENABLE_MONGODB ENABLE_ELASTICSEARCH ENABLE_REDIS ENABLE_DORIS ENABLE_SPARK ENABLE_NEO4J ENABLE_MYSQL \
-                    ENABLE_OCEANBASE ENABLE_TIDB ENABLE_OPENGAUSS ENABLE_REDPANDA; do
+                    ENABLE_OCEANBASE ENABLE_TIDB ENABLE_OPENGAUSS ENABLE_REDPANDA ENABLE_HDFS; do
     if [ "${!service_flag}" = true ]; then
         addp_business_ensure_network "$OCEANBASE_PERSISTED_IP" || exit 1
         addp_business_use_network_override || exit 1
@@ -520,6 +531,23 @@ if [ "$ENABLE_CLICKHOUSE" = true ]; then
         docker compose up -d clickhouse
         echo -e "${GREEN}✓ ClickHouse 已启动${NC}"
     fi
+fi
+
+# HDFS requires one host reachable by both host Driver and container Executors.
+if [ "$ENABLE_HDFS" = true ]; then
+    if [ -z "${HDFS_SHARED_HOST:-}" ]; then
+        if command -v route >/dev/null 2>&1 && command -v ipconfig >/dev/null 2>&1; then
+            hdfs_interface=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2; exit}')
+            HDFS_SHARED_HOST=$(ipconfig getifaddr "$hdfs_interface" 2>/dev/null || true)
+        elif command -v ip >/dev/null 2>&1; then
+            HDFS_SHARED_HOST=$(ip route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1);exit}}')
+        fi
+    fi
+    [ -n "${HDFS_SHARED_HOST:-}" ] && [ "$HDFS_SHARED_HOST" != 127.0.0.1 ] || { echo "HDFS_SHARED_HOST 必须是 Driver 与 Worker 均可达的宿主机地址" >&2; exit 1; }
+    export HDFS_SHARED_HOST
+    docker compose up -d hdfs-namenode hdfs-datanode
+    docker compose run --rm --no-deps hdfs-samples
+    echo "✓ HDFS Simple 样例已就绪: WebHDFS=http://127.0.0.1:${HDFS_WEB_PORT:-9870}, RPC=hdfs://${HDFS_SHARED_HOST}:${HDFS_RPC_PORT:-8020}, root=/addp, user=addp_business_reader"
 fi
 
 # Redis

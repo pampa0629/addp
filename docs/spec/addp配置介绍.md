@@ -15,6 +15,8 @@ ADDP 的配置按事实来源和生命周期分层管理，不建立由 System �
 
 ## 配置分类与事实来源
 
+HDFS 首版固定 Simple 开发实验模式。引擎连接的 `webhdfs_endpoint`、`rpc_uri`、`root_path`、`authentication`、`user` 由插件 `ConnectionSpec` 唯一定义；首版 RPC 必须为具体 `hdfs://host:port`，不支持 HA nameservice。Spark 应用部署以 `HADOOP_USER_NAME` 固定 Hadoop 用户，不能按资源切换共享会话的身份；读取前验证当前 Java UGI 用户与引擎 `user` 一致。Business 的 `HDFS_SHARED_HOST` 和四个监听端口归 `business/.env`，不进入平台普通配置，也不保存到工作流任务。Simple 的用户名声明不构成安全认证。
+
 GeoPython、PointCloud、Document 的 HTTP 监听地址由部署入口通过 `WORKFLOW_BIND_HOST` 注入，默认 `0.0.0.0`，用于普通 bridge/Compose 容器内监听。Hosted Online 原生 Linux 使用宿主网络时，标准开发入口固定注入 `127.0.0.1`，并以 `PORT` 指定实际开发端口；`RUNTIME_HOST` 与 `RUNTIME_PUBLIC_PORT` 仍只负责自注册地址，不用于控制监听。该配置随进程启动生效，不保存到业务配置或根 `.env`。
 
 | 类别 | 典型内容 | 事实来源 | 维护者 |

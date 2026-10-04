@@ -53,7 +53,7 @@ func (r *Repository) readCommitted(ctx context.Context, read func(*Repository) e
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return read(NewRepository(tx))
-	}, &sql.TxOptions{ReadOnly: true})
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 }
 
 func (r *Repository) wallClock(ctx context.Context) (time.Time, error) {

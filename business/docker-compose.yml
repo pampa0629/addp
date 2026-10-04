@@ -26,6 +26,56 @@
 name: business
 
 services:
+  hdfs-namenode:
+    image: ghcr.io/apache/hadoop:3.5.0@sha256:389d4c48dcfdc34815d5ad1c4d2aa6ca85714c9c40e34d01ba5acb55b62f2d72
+    container_name: business-hdfs-namenode
+    user: root
+    entrypoint: ["bash", "/addp/hdfs/start.sh", "namenode"]
+    environment:
+      HDFS_RPC_URI: hdfs://hdfs-namenode:8020
+      HDFS_DATANODE_HOST: ${HDFS_SHARED_HOST:-127.0.0.1}
+      HDFS_DATA_PORT: ${HDFS_DATA_PORT:-9866}
+      HDFS_DATA_HTTP_PORT: ${HDFS_DATA_HTTP_PORT:-9864}
+    ports:
+      - "127.0.0.1:${HDFS_WEB_PORT:-9870}:9870"
+      - "${HDFS_SHARED_HOST:-127.0.0.1}:${HDFS_RPC_PORT:-8020}:8020"
+    volumes:
+      - ./hdfs:/addp/hdfs:ro
+      - hdfs_name:/data/name
+    networks: [business-network]
+    mem_limit: 1g
+    restart: unless-stopped
+  hdfs-datanode:
+    image: ghcr.io/apache/hadoop:3.5.0@sha256:389d4c48dcfdc34815d5ad1c4d2aa6ca85714c9c40e34d01ba5acb55b62f2d72
+    container_name: business-hdfs-datanode
+    user: root
+    entrypoint: ["bash", "/addp/hdfs/start.sh", "datanode"]
+    environment:
+      HDFS_RPC_URI: hdfs://hdfs-namenode:8020
+      HDFS_DATANODE_HOST: ${HDFS_SHARED_HOST:-127.0.0.1}
+      HDFS_DATA_PORT: ${HDFS_DATA_PORT:-9866}
+      HDFS_DATA_HTTP_PORT: ${HDFS_DATA_HTTP_PORT:-9864}
+    ports:
+      - "${HDFS_SHARED_HOST:-127.0.0.1}:${HDFS_DATA_PORT:-9866}:${HDFS_DATA_PORT:-9866}"
+      - "${HDFS_SHARED_HOST:-127.0.0.1}:${HDFS_DATA_HTTP_PORT:-9864}:${HDFS_DATA_HTTP_PORT:-9864}"
+    volumes:
+      - ./hdfs:/addp/hdfs:ro
+      - hdfs_data:/data/data
+    networks: [business-network]
+    mem_limit: 1g
+    restart: unless-stopped
+  hdfs-samples:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    profiles: [hdfs-init]
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-submit", "/addp/hdfs/init.py"]
+    environment:
+      HADOOP_USER_NAME: root
+      HDFS_RPC_URI: hdfs://hdfs-namenode:8020
+    volumes: ["./hdfs:/addp/hdfs:ro"]
+    networks: [business-network]
+    mem_limit: 2g
+    restart: "no"
   redis:
     image: public.ecr.aws/docker/library/redis:7.2.13@sha256:37aa82f9fdff30517603b2e2c5376b34b106d353c2b508262260d3bb0d2c21ba
     container_name: business-redis
@@ -632,6 +682,8 @@ services:
           memory: 2G
 
 volumes:
+  hdfs_name:
+  hdfs_data:
   redis_data:
   elasticsearch_data:
   postgres_data:

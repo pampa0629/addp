@@ -23,18 +23,37 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 	branchName string,
 	scanDepth string,
 	force bool,
+	target *plugin.EngineCatalogEntry,
 ) (int, int, error) {
-	parentPath := plugin.EngineCatalogBranchPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName)
-	nodes, err := scanCatalog.catalogProvider.ListChildren(ctx, scanCatalog.connInfo, parentPath, plugin.ListOptions{})
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list catalog leaves: %w", err)
+	var nodes []plugin.EngineCatalogEntry
+	if target != nil {
+		nodes = []plugin.EngineCatalogEntry{*target}
+	} else {
+		parentPath := plugin.EngineCatalogBranchPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName)
+		var err error
+		nodes, err = scanCatalog.catalogProvider.ListChildren(ctx, scanCatalog.connInfo, parentPath, plugin.ListOptions{})
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to list catalog leaves: %w", err)
+		}
 	}
 
 	s.log.Info("扫描到的 catalog branch leaf", "branch", branchName, "leaf_count", len(nodes))
 
-	existingItems, err := s.repo.GetItemsByNode(branchNode.ID)
-	if err != nil {
-		return 0, 0, err
+	var existingItems []*models.MetaItem
+	if target == nil {
+		var err error
+		existingItems, err = s.repo.GetItemsByNode(branchNode.ID)
+		if err != nil {
+			return 0, 0, err
+		}
+	} else {
+		item, found, err := s.repo.FindItemByFullName(tenantID, resource.ID, branchName+"."+target.Name)
+		if err != nil {
+			return 0, 0, err
+		}
+		if found {
+			existingItems = []*models.MetaItem{item}
+		}
 	}
 	existingItemMap := make(map[string]*models.MetaItem, len(existingItems))
 	scannedByType := map[string]map[string]bool{}
@@ -79,6 +98,10 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		var attrs models.JSONMap
 		var rowCount *int64
 		estimatedRowCount := estimatedCount
+		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && scanCatalog.samplingProvider == nil {
+			failures.Add(branchName+"."+itemName, fmt.Errorf("deep collection scan requires DynamicSchemaSamplingProvider"))
+			continue
+		}
 
 		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && scanCatalog.samplingProvider != nil {
 			itemPath := plugin.EngineCatalogBranchLeafPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName, node.Term, node.Kind, itemName)
@@ -90,6 +113,8 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			})
 			if err != nil {
 				s.log.Warn("动态 schema 采样失败", "branch", branchName, "collection", itemName, "error", err)
+				failures.Add(branchName+"."+itemName, err)
+				continue
 			} else {
 				attrs = metaattr.BuildDynamicSchemaAttributes(dynamicSchemaAttributesInput(catalogFacts))
 				if tableInfo := plugin.EngineCatalogFactsTableInfo(catalogFacts); tableInfo != nil {
@@ -145,7 +170,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			rowCount = existingItem.RowCount
 		}
 
-		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, branchNode, itemType, itemName, fullName, attrs, rowCount, &sizeBytes, nil, scanDepth)
+		_, err := s.repo.UpsertItemWithDepth(tenantID, resource.ID, branchNode, itemType, itemName, fullName, attrs, rowCount, &sizeBytes, nil, scanDepth)
 		if err != nil {
 			s.log.Warn("保存 branch leaf 元数据失败", "branch", branchName, "item", itemName, "item_type", itemType, "error", err)
 			failures.Add(branchName+"."+itemName, err)
@@ -155,6 +180,9 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		totalItems++
 	}
 
+	if target != nil || failures.Err() != nil {
+		return totalItems, totalFields, failures.Err()
+	}
 	for itemType, scanned := range scannedByType {
 		if len(scanned) == 0 {
 			continue

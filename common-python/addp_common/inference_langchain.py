@@ -140,10 +140,9 @@ def _normalize_tool_choice(value: str | bool | dict[str, Any] | None) -> str:
 
 
 def _to_inference_message(message: BaseMessage) -> Message:
-    if not isinstance(message.content, str):
-        raise ValueError("Inference Runtime ChatModel only supports text message content")
+    content = _text_content(message.content)
     if isinstance(message, ToolMessage):
-        return Message(role="tool", content=message.content, tool_call_id=message.tool_call_id)
+        return Message(role="tool", content=content, tool_call_id=message.tool_call_id)
     role = {"human": "user", "ai": "assistant", "system": "system"}.get(message.type)
     if role is None:
         raise ValueError(f"unsupported LangChain message type: {message.type}")
@@ -153,4 +152,19 @@ def _to_inference_message(message: BaseMessage) -> Message:
             ToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call.get("args") or {}))
             for call in message.tool_calls
         ]
-    return Message(role=role, content=message.content, tool_calls=calls)
+    return Message(role=role, content=content, tool_calls=calls)
+
+
+def _text_content(content: str | list[str | dict]) -> str:
+    """Normalize text blocks without stringifying or dropping non-text data."""
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+            parts.append(block["text"])
+        else:
+            raise ValueError("Inference Runtime ChatModel only supports text message content")
+    return "".join(parts)

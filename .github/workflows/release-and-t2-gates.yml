@@ -935,6 +935,31 @@ jobs:
           gate: Common, System, Meta and Manager key contracts (Redis 7.2.13)
           status: ${{ job.status }}
 
+  common-hdfs:
+    name: HDFS WebHDFS and distributed Spark contracts
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.meta == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+      - name: Run HDFS and Spark gate
+        run: make test-common-hdfs
+      - name: Summarize HDFS and Spark gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: HDFS WebHDFS and distributed Spark contracts
+          status: ${{ job.status }}
+
   common-elasticsearch:
     name: Common, Manager and Meta document contracts (Elasticsearch 9.5.4)
     needs: selection

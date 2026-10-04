@@ -7,7 +7,7 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
-| HDFS Engine | HDFS 引擎 | 以 `engine_type=hdfs` 标识的 Hadoop 分布式文件系统存储引擎，目标目录模型为 `root -> directory -> file`。 | 接入方案已确认，正式支持仍待实现与验收；HDFS 不是新的 data type，也不代表已支持 Hadoop 的 YARN 或 MapReduce。 |
+| HDFS Engine | HDFS 引擎 | 以 `engine_type=hdfs` 标识的 Hadoop 分布式文件系统存储引擎，目录模型为 `root -> directory -> file`。 | Simple 只读插件和 Spark 分布式读取已通过 T2，正式平台消费链路仍待 T4 验收；HDFS 不是新的 data type，也不代表已支持 Hadoop 的 YARN 或 MapReduce。 |
 | WebHDFS | WebHDFS 接口 | Hadoop 提供的 HDFS HTTP 内容与目录访问协议。 | ADDP 目录扫描和内容预览的接入协议；Spark 使用同一 HDFS 的原生 Hadoop 客户端，HTTP 端点与 RPC 端点分别由连接事实提供，不互相推算端口。 |
 | key_value engine family | 键值存储引擎族 | 以原生 key 定位值的存储引擎粗分类，能力声明值为 `key_value`。 | 不是 data type；目录、事实与读取能力必须由对应 Provider 声明。Redis 首期支持单端点、ACL 账号、一个逻辑数据库以及有预算的 key 扫描和只读预览。 |
 | key catalog leaf | 键目录叶子 | 键值引擎中以完整原始 key 字节定位的独立资源，`item_type=key`。 | 冒号不产生目录。Meta 首期只登记身份，`data_type=unknown`；原生 string/hash/list/set/zset/stream 类型由实时 Engine Facts 表达，不据此新增 datatype。 |
@@ -425,6 +425,8 @@
 | SuperMap SDX+ for PostgreSQL | SuperMap SDX+ for PostgreSQL | 基于 PostgreSQL、由 SuperMap 私有 geometry 编码承载的空间工作区，稳定 workspace 身份为 `supermap/sdx_postgresql`。 | 表结构、记录数、Bounds 和空间索引由 SuperMap iObjects C++ SDK 维护；不得把私有 geometry Blob 暴露给 Transfer 或 Common Spatial。 |
 
 ## 智能体能力与交互
+
+Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度，不是新业务模块或独立微服务。ADDP Agent 唯一使用 DeerFlow Harness；身份、Tool Manifest、Interaction、语义检查点和业务事实仍由 ADDP 原有 owner 管理。
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|

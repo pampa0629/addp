@@ -3,14 +3,29 @@ package scanadapter
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/scanflow"
 )
 
 func (d *EngineCatalogScanDispatcher) dispatchDirectLeafScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanflow.DispatchRequest) (scanflow.DispatchResult, error) {
+	if len(req.CatalogPaths) > 0 || len(req.RefGroups) > 0 {
+		return scanflow.DispatchResult{}, fmt.Errorf("direct leaf scan requires a typed locator target")
+	}
 	if d.directLeafScan == nil {
 		return scanflow.DispatchResult{}, fmt.Errorf("direct leaf catalog scanner is nil")
+	}
+	if d.locker != nil {
+		key := d.locker.GenerateBranchLockKey(req.TenantID, req.Resource.ID, "")
+		acquired, err := d.locker.TryAcquireLock(ctx, key, 2*time.Hour)
+		if err != nil {
+			return scanflow.DispatchResult{}, err
+		}
+		if !acquired {
+			return scanflow.DispatchResult{}, fmt.Errorf("scan target range is already running")
+		}
+		defer d.clearLock(ctx, true, key, "清除扫描目标锁失败", "target", req.Resource.Name)
 	}
 	if req.Reporter != nil {
 		req.Reporter.Message("正在扫描 catalog root 下的业务项")

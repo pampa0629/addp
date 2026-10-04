@@ -37,13 +37,20 @@ type sourceReadRules struct {
 }
 
 func (request sourceReadRequest) encode() ([]engineplugin.EngineCatalogPath, json.RawMessage, error) {
-	if request.TenantID <= 0 || !request.Source.valid() || len(request.Targets) == 0 {
+	if request.TenantID <= 0 || !request.Source.valid() {
 		return nil, nil, errSourceReadRules
 	}
-	paths := make([]engineplugin.EngineCatalogPath, 0, len(request.Targets))
-	encoded := make([]json.RawMessage, 0, len(request.Targets))
-	seen := make(map[string]bool, len(request.Targets))
-	for _, path := range request.Targets {
+	return encodeSourceReadTargets(request.Targets)
+}
+
+func encodeSourceReadTargets(targets []engineplugin.EngineCatalogPath) ([]engineplugin.EngineCatalogPath, json.RawMessage, error) {
+	if len(targets) == 0 {
+		return nil, nil, errSourceReadRules
+	}
+	paths := make([]engineplugin.EngineCatalogPath, 0, len(targets))
+	encoded := make([]json.RawMessage, 0, len(targets))
+	seen := make(map[string]bool, len(targets))
+	for _, path := range targets {
 		canonical, err := authorization.EncodeSharingTarget(path)
 		if err != nil {
 			return nil, nil, errSourceReadRules
@@ -96,13 +103,25 @@ func (r *Repository) readCurrentSourceRules(ctx context.Context, request sourceR
 	if err != nil {
 		return nil, err
 	}
-	var rows []sourceReadRuleRow
+	var result *sourceReadRules
 	err = r.readCommitted(ctx, func(tx *Repository) error {
-		return tx.db.WithContext(ctx).Raw(currentSourceReadRulesSQL, request.TenantID,
-			request.Source.PrincipalID, request.Source.MembershipID, request.Source.AuthorizationVersion,
-			string(batch)).Scan(&rows).Error
+		var queryErr error
+		result, queryErr = tx.queryCurrentSourceRules(ctx, request, paths, batch)
+		return queryErr
 	})
 	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Only called inside the observation's own read-only transaction. The trusted
+// credential adapter uses this same query, not a second source-rule algorithm.
+func (r *Repository) queryCurrentSourceRules(ctx context.Context, request sourceReadRequest, paths []engineplugin.EngineCatalogPath, batch json.RawMessage) (*sourceReadRules, error) {
+	var rows []sourceReadRuleRow
+	if err := r.db.WithContext(ctx).Raw(currentSourceReadRulesSQL, request.TenantID,
+		request.Source.PrincipalID, request.Source.MembershipID, request.Source.AuthorizationVersion,
+		string(batch)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	return sourceReadObservation(paths, rows)

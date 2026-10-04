@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 	"gorm.io/gorm"
 )
 
@@ -83,6 +84,9 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 		return id
 	}
 	// Client-declared actor or authorization fields are rejected, never consumed.
+	for _, targets := range [][]string{{"invalid"}, {" "}, {tableLocator, "addp://engine/10/path/public/B?type=table"}} {
+		post("owner", models.ScanRequest{EngineID: 9, Targets: targets, ScanDepth: "deep"}, 400)
+	}
 	for _, field := range []string{"triggered_by", "actor_principal_id", "execution_authorization_id"} {
 		encoded, _ := json.Marshal(request)
 		body := strings.TrimSuffix(string(encoded), "}") + ",\"" + field + "\":32}"
@@ -169,6 +173,19 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 			child.ActorPrincipalID == nil || *child.ActorPrincipalID != principal || child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membership ||
 			child.IssuedAuthorizationVersion == nil || *child.IssuedAuthorizationVersion != version || child.SourceTaskID != nil || child.ExecutionAuthorizationID != nil || child.AuthorizationExpiresAt != nil {
 			t.Fatal("scan provenance / authorization boundary changed")
+		}
+		config := scanflow.ParseExecutionConfig(child.ExecutionConfig)
+		if id != ids[0] {
+			if len(config.Targets) != 1 || len(config.CatalogPaths) != 0 || len(config.RefGroups) != 0 {
+				t.Fatal("produced leaf expanded before Worker dispatch")
+			}
+			want := tableLocator
+			if id == ids[2] {
+				want = objectLocator
+			}
+			if config.Targets[0] != want {
+				t.Fatal("execution configuration lost the produced target")
+			}
 		}
 		read("owner", "/executions/"+id, 200)
 		read("peer", "/executions/"+id, 404)

@@ -1772,7 +1772,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建异步扫描；Develop 产物来源仅允许 addp-develop 服务携带父 execution，原子校验已保存产物并继承发起主体 | Create an async scan; Develop output scans require addp-develop service provenance, a verified parent execution and persisted output",
+                "description": "叶子 locator 仅扫描自身，root／branch 范围必须显式指定；创建异步扫描；Develop 产物来源仅允许 addp-develop 服务携带父 execution，原子校验已保存产物并继承发起主体 | Leaf locators scan only the selected item; root and branch scopes must be explicit. Create an async scan; Develop output scans require addp-develop service provenance, a verified parent execution and persisted output",
                 "consumes": [
                     "application/json"
                 ],
@@ -3895,7 +3895,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "targets": {
-                    "description": "locator 目标列表",
+                    "description": "完整且同引擎的 locator；叶子不展开父范围 | Complete same-engine locators; leaves never expand to parents",
                     "type": "array",
                     "items": {
                         "type": "string"

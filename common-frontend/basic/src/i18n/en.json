@@ -426,7 +426,8 @@
       "neo4j": "Neo4j graph database via Bolt protocol. Default port: 7687. Community Edition only has one 'neo4j' database.",
       "spatialite": "Reads a local SQLite database (SpatiaLite extension recommended). The task execution node must be able to access the file path.",
       "spark": "Apache Spark via Thrift Server (Hive2 protocol), supports Sedona spatial extension. Default port: 10000",
-      "workflow": "Workflow engine API endpoints are standardized; no manual configuration needed."
+      "workflow": "Workflow engine API endpoints are standardized; no manual configuration needed.",
+      "hdfsSimple": "Simple is for development only. The Spark application Hadoop user must match this user."
     },
     "valid": {
       "selectType": "Please select engine type",
@@ -448,7 +449,11 @@
       "inputFilePath": "Please enter file path",
       "inputNfsServer": "Please enter NFS server address",
       "inputNfsExportPath": "Please enter NFS export path"
-    }
+    },
+    "hdfsWebEndpoint": "WebHDFS endpoint",
+    "hdfsRpcUri": "HDFS RPC URI",
+    "hdfsRootPath": "Management root",
+    "hdfsAuthentication": "HDFS authentication"
   },
   "excelPreview": {
     "sheetsTruncatedTitle": "Showing partial sheets",

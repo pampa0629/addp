@@ -70,6 +70,12 @@ class SparkConnector:
             .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
             .config("spark.kryo.registrator", "org.apache.sedona.core.serde.SedonaKryoRegistrator")
 
+        # HDFS Simple 身份属于应用部署事实，不能按单个资源切换共享会话身份。
+        hadoop_user = os.getenv('HADOOP_USER_NAME', '').strip()
+        if hadoop_user:
+            builder = builder.config("spark.executorEnv.HADOOP_USER_NAME", hadoop_user)
+        builder = builder.config("spark.hadoop.dfs.client.use.datanode.hostname", "true")
+
         # 本地模式仅用于容器内自包含运行；常规模式连接 System 中登记的 Master。
         if os.getenv('SPARK_MODE') == 'local':
             builder = builder.master('local[*]')

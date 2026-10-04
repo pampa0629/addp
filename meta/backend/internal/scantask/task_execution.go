@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func NewManualExecution(tenantID, userID uint, engineID uint, itemID uint, storageType string, catalogPaths []string, refGroups []metaModels.ScanRefGroup, scanDepth string, force bool, source string, now time.Time) *commonExecution.TaskExecution {
+func NewManualExecution(tenantID, userID uint, engineID uint, itemID uint, storageType string, targets []string, catalogPaths []string, refGroups []metaModels.ScanRefGroup, scanDepth string, force bool, source string, now time.Time) *commonExecution.TaskExecution {
 	userIDInt := int(userID)
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -32,6 +32,7 @@ func NewManualExecution(tenantID, userID uint, engineID uint, itemID uint, stora
 			engineID,
 			itemID,
 			storageType,
+			targets,
 			catalogPaths,
 			refGroups,
 			scanDepth,

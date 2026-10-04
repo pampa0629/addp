@@ -245,7 +245,7 @@ def _run_check(name: str, command: list[str], cwd: Path, env: dict[str, str] | N
 
 
 def run_offline_checks() -> list[dict[str, Any]]:
-    agent_python = REPO_ROOT / "agent" / "backend" / "venv" / "bin" / "python"
+    agent_python = Path(os.environ.get("ADDP_AGENT_PYTHON") or REPO_ROOT / "agent" / "backend" / "venv" / "bin" / "python")
     python_path = os.pathsep.join(
         [
             str(REPO_ROOT / "agent" / "backend"),
@@ -253,30 +253,19 @@ def run_offline_checks() -> list[dict[str, Any]]:
             str(Path(__file__).parent),
         ]
     )
-    agent_env = dict(os.environ, PYTHONPATH=python_path)
-    common_env = dict(agent_env, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
+    agent_env = dict(os.environ, PYTHONPATH=python_path, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
+    common_env = dict(agent_env)
     return [
         _run_check(
             "agent_evaluation_and_persistence",
             [
                 str(agent_python),
                 "-m",
-                "unittest",
+                "pytest",
+                "-p",
+                "pytest_asyncio.plugin",
                 "-q",
-                "agent.backend.tests.test_agent_evaluation_baseline",
-                "agent.backend.tests.test_platform_skill_tools",
-                "agent.backend.tests.test_agent_evaluation_gate",
-                "agent.backend.tests.test_agent_evaluation_comparison",
-                "agent.backend.tests.test_agent_online_runner",
-                "agent.backend.tests.test_ag_ui_protocol",
-                "agent.backend.tests.test_agent_factory_events",
-                "agent.backend.tests.test_checkpoints",
-                "agent.backend.tests.test_messages",
-                "agent.backend.tests.test_session_tenant_isolation",
-                "agent.backend.tests.test_auth_middleware",
-                "agent.backend.tests.test_openapi_auth_contract",
-                "agent.backend.tests.test_run_events",
-                "agent.backend.tests.test_runs",
+                "agent/backend/tests",
             ],
             REPO_ROOT,
             agent_env,

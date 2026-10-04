@@ -527,7 +527,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 ## HDFS 路径目标契约
 
-本节记录已确认、尚待实现与验收的 HDFS 接入契约，不表示当前插件或 Spark 消费链路已经可用。
+本节记录 HDFS 接入契约。Simple 只读插件、Business 样例及 Spark 原生读取已实现，并通过独占集群的 T2 门禁；System 正式登记、Meta 扫描、Manager 预览和 Develop 正式发起作业的 T4 仍待验收，不能据此声明平台完整支持。
 
 HDFS 以独立 `engine_type=hdfs`、`engine_family=file` 接入，复用 `FileCatalogModel` 的 `root -> directory -> file` 层级和 Catalog/Content Provider；不复用对象存储目录模型，不新增 data type。CSV、JSON、Parquet 等内容的类型与格式由现有文件探测和解析能力裁决。
 
@@ -538,7 +538,9 @@ HDFS 以独立 `engine_type=hdfs`、`engine_family=file` 接入，复用 `FileCa
 
 Meta/Manager 通过 WebHDFS 消费目录事实和有界内容读取；Spark 通过原生 Hadoop 客户端读取同一个资源。两者共享同一存储 Engine Instance，不为 Spark 重复登记一份 HDFS。Develop 从经过授权和实时校验的资源 locator 与连接事实派生执行期 HDFS URI、Hadoop 配置和认证上下文；用户任务不保存物理路径、连接参数或凭据。Spark 计算集群仍独立选择，不得用 HDFS Engine ID 替代 Spark 集群 ID。
 
-首版交付范围为统一登记、Meta 扫描、Manager 预览和 Spark 分布式读取。认证范围须另行确认，不能将 Simple 模式的 `user.name` 宣称为安全认证；HDFS 写回、HA、YARN 和 MapReduce 不因完成读取自动获得支持声明。
+首版交付范围为统一登记、Meta 扫描、Manager 预览和 Spark 分布式读取。认证已确认采用 Simple 开发实验模式，`user.name` 只是访问主体声明，不是安全认证。每个 Spark 应用使用固定 Hadoop 用户，Driver 与 Executor 必须一致，且与 HDFS 引擎连接配置的用户一致；共享 Spark 会话不得按资源切换全局用户，身份不符须拒绝执行。部署通过 `HADOOP_USER_NAME` 设置该主体。HDFS 写回、Kerberos、HA、YARN 和 MapReduce 不因完成读取自动获得支持声明。
+
+Spark 原生通道消费精确文件资源，不把 locator 文件名解释为 Hadoop glob 表达式。首版对包含 `*?[]{}\` 的物理路径拒绝 Spark 消费，不能扩大已授权源文件的读取集合；WebHDFS Catalog/Content 的原始名称读取不因此改用通配符。URI 由 Develop 编码一次，Spark 适配器在校验管理根和 RPC authority 后解码一次，再传给 Hadoop `Path(String)`，防止空格、Unicode、百分号被重复编码。
 
 验收必须分别证明 WebHDFS 的目录、状态、有界读取，以及 Spark Driver/Executor 到 NameNode 和 DataNode 的真实连接。Spark 必须在真实 Worker 上读取 CSV、JSON、Parquet 并执行聚合校验；只构造 DataFrame、使用 `local[*]` 或只打开 Web 页面都不能计为分布式读取通过。参考 [WebHDFS 官方协议](https://hadoop.apache.org/docs/r3.5.0/hadoop-project-dist/hadoop-hdfs/WebHDFS.html) 与 [Spark Hadoop 配置说明](https://downloads.apache.org/spark/docs/3.5.0/configuration.html#inheriting-hadoop-cluster-configuration)。
 

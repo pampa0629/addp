@@ -98,7 +98,14 @@
 - 升级依赖前，需在所有模块中统一升级
 - 所有版本号最后更新时间记录在文档顶部
 
-### 前端
+### Python AI 执行依赖
+
+- Agent 运行环境为 Python 3.12（开发、测试 CI 和产品镜像一致）。DeerFlow Harness 与 Extension API 从官方源码提交 `130a9ab9f035a8f319502f8d5e044ed05962b2aa` 的两个 package 子目录安装，不使用浮动分支。
+- Agent 固定 `langchain==1.4.3`、`langgraph==1.2.12`。共享 `inference-langchain` extra 固定 `langchain-core==1.6.6`，Agent 与 Copilot 使用同一适配器；Copilot 只消费 Core，不安装未使用的 Agent 框架或 Community 集成。
+- Agent HTTP 运行栈使用 `fastapi==0.142.2`，搭配该 DeerFlow 提交已锁定的稳定版 `langgraph-api==0.10.0`、`langgraph-runtime-inmem==0.30.0`，以满足 Starlette 依赖；不采用旧版 HTTP 栈配合预发布 Runtime 的隐式降级组合。
+- DeerFlow 只作为 Agent 进程内 SDK 使用；平台授权、业务副作用、交互和语义检查点仍属于 ADDP，不新增 DeerFlow 服务或框架持久化数据库。
+
+### 前端技术栈
 
 - **运行时**: Node.js 24（根目录 `.node-version` 是工具链版本的唯一事实源）
 - 前端产品镜像同样读取根 `.node-version`，由唯一镜像构建入口传入 `NODE_VERSION`；Dockerfile 不维护另一个 Node 版本或默认值。

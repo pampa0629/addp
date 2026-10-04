@@ -17,7 +17,7 @@ func (d *EngineCatalogScanDispatcher) dispatchTabularScan(ctx context.Context, e
 		return scanflow.DispatchResult{}, fmt.Errorf("namespace scanner is nil")
 	}
 
-	namespaces := scanflow.TopCatalogTargets(req.CatalogPaths)
+	namespaces := scanflow.UniqueNonEmpty(req.CatalogPaths)
 	fullEngineScan := len(namespaces) == 0
 	visibleNamespaces := make(map[string]bool)
 	if fullEngineScan {

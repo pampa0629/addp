@@ -7,6 +7,7 @@ from addp_common.tools import get_tool
 from agents.checkpoint import capture_owner_facts, new_checkpoint
 from agents.main_agent import _build_routing_system_prompt
 from graph.factory import AgentFactory
+from tests.harness_fixtures import HarnessTestModel, harness_tools
 
 
 class _FakeTool:
@@ -380,8 +381,8 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
             "agent_run_id": "run-1",
         }
         with (
-            patch("graph.factory.create_agent_tools", return_value=[_EngineListTool()]),
-            patch("graph.factory.get_llm", return_value=_ClarificationLLM()),
+            patch("graph.factory.create_agent_tools", return_value=harness_tools([_EngineListTool()])),
+            patch("graph.factory.get_llm", return_value=HarnessTestModel(source=_ClarificationLLM())),
         ):
             events = [
                 event
@@ -491,7 +492,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             patch("graph.factory.create_agent_tools", return_value=[]),
-            patch("graph.factory.get_llm", return_value=_ScriptedLLM([response])),
+            patch("graph.factory.get_llm", return_value=HarnessTestModel(source=_ScriptedLLM([response]))),
         ):
             events = [
                 event
@@ -569,8 +570,8 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
             "agent_run_id": "run-1",
         }
         with (
-            patch("graph.factory.create_agent_tools", return_value=[_EmptyWorkflowTool()]),
-            patch("graph.factory.get_llm", return_value=_EmptyWorkflowLLM()),
+            patch("graph.factory.create_agent_tools", return_value=harness_tools([_EmptyWorkflowTool()])),
+            patch("graph.factory.get_llm", return_value=HarnessTestModel(source=_EmptyWorkflowLLM())),
         ):
             events = [
                 event
@@ -672,7 +673,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool_result.payload["tool_name"], "data.search")
         self.assertEqual(tool_result.payload["error_source"], "runtime")
         self.assertEqual(tool_result.payload["error_code"], "tool_adapter_exception")
-        self.assertIn("owner service unavailable", tool_result.payload["content"])
+        self.assertNotIn("owner service unavailable", tool_result.payload["content"])
 
     async def test_owner_error_envelope_is_attributed_to_owner(self):
         events = await self._run_workflow_events(
@@ -733,8 +734,8 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
             "agent_run_id": "run-1",
         }
         with (
-            patch("graph.factory.create_agent_tools", return_value=tools),
-            patch("graph.factory.get_llm", return_value=llm or _ScriptedLLM(responses)),
+            patch("graph.factory.create_agent_tools", return_value=harness_tools(tools)),
+            patch("graph.factory.get_llm", return_value=HarnessTestModel(source=llm or _ScriptedLLM(responses))),
         ):
             return [
                 event

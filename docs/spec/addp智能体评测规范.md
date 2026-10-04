@@ -31,6 +31,8 @@
 
 离线层是开发和根 `make test` 的稳定门禁，但不能单独成为正式发布评测基线。
 
+DeerFlow Harness 回归使用真实内核、共享 Inference Adapter 与 Manifest Tool Adapter，模型／owner 响应为受控夹具；覆盖暂停批次、取消传播、白名单、完整结果和租户隔离。Agent 标准门禁可通过 `ADDP_AGENT_PYTHON` 指定仓库外 Python 3.12 测试环境，默认仍使用模块 venv；该解释器同时用于 Agent 与共享 Python 回归，不向运行中的开发环境安装依赖。
+
 ### 2.2 定向在线层
 
 在线评测唯一入口为 `evals/agent-scenarios/online_runner.py`。Runner 经过生产 ToolExecutor、System 委托和 owner API 验证真实路径，不调用 LLM，不自动登录，不自动决定审批，也不启动或重启 ADDP 服务。
@@ -99,14 +101,15 @@ make compare-agent-eval-release
 
 ### 5.2 离线门禁
 
-`make test-agent-eval` 必须发现并严格加载全部场景，并运行：
+离线验收同时包含 `make test-agent-eval` 与 `make test-agent-frontend`。前者必须发现并严格加载全部场景，并运行：
 
 1. 场景契约检查；
-2. Agent 评测、协议与持久化测试；
-3. common-python 全量测试；
-4. Agent 前端测试。
+2. Agent 后端全量测试（包括评测、协议、持久化和模型回调日志边界）；
+3. common-python 全量测试。
 
-根 `make test` 必须依赖此目标。任一场景或检查失败时，报告 `status=failed` 且进程返回非零。
+`make test-agent-frontend` 单独验证 Agent 前端测试与构建；它的执行结果不伪装成后端评测报告中的检查项。
+
+根 `make test` 必须依赖上述两个目标。任一后端场景或检查失败时，评测报告 `status=failed` 且进程返回非零；前端门禁失败时，其标准入口返回非零。
 
 ### 5.3 发布门禁
 

@@ -40,9 +40,14 @@ func TestIAMServicesAgainstPostgres(t *testing.T) {
 	}
 
 	repository := NewRepository(db)
-	// Keep the service clock behind PostgreSQL's wall clock so fixture timestamps
-	// cannot accidentally rely on database defaults or test execution speed.
-	currentTime := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+	// Keep the fixture timeline behind the database clock, but not a whole token
+	// lifetime behind it: an hour-old baseline makes a one-hour family expire
+	// after the first two simulated seconds when password hashing takes longer.
+	var databaseTime time.Time
+	if err := db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&databaseTime).Error; err != nil {
+		t.Fatalf("read fixture database clock: %v", err)
+	}
+	currentTime := databaseTime.UTC().Add(-time.Minute).Truncate(time.Microsecond)
 	now := func() time.Time { return currentTime }
 	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	membershipService := NewTenantMembershipService(repository, now)

@@ -50,21 +50,6 @@ func TargetPathsFromAttributes(attrs map[string]interface{}) []string {
 	return nil
 }
 
-func TargetPathsFromLocator(locator string) []string {
-	loc, err := resourcetree.ParseURI(strings.TrimSpace(locator))
-	if err != nil || len(loc.Path) == 0 {
-		return nil
-	}
-	switch loc.Type {
-	case resourcetree.TypeTable, resourcetree.TypeCollection, resourcetree.TypeGraph:
-		return []string{loc.Path[0]}
-	case resourcetree.TypeSchema, resourcetree.TypeDatabase:
-		return []string{loc.Path[0]}
-	default:
-		return []string{strings.Join(loc.Path, "/")}
-	}
-}
-
 func EngineIDFromLocator(locator string) (uint, bool) {
 	loc, err := resourcetree.ParseURI(strings.TrimSpace(locator))
 	if err != nil || loc.EngineID == 0 {
@@ -85,24 +70,6 @@ func UniqueNonEmpty(values []string) []string {
 		result = append(result, value)
 	}
 	return result
-}
-
-func TopCatalogTargets(paths []string) []string {
-	targets := make([]string, 0, len(paths))
-	for _, path := range paths {
-		path = strings.Trim(strings.TrimSpace(path), "/")
-		if path == "" {
-			continue
-		}
-		parts := strings.FieldsFunc(path, func(r rune) bool {
-			return r == '/' || r == '.'
-		})
-		if len(parts) == 0 {
-			continue
-		}
-		targets = append(targets, parts[0])
-	}
-	return UniqueNonEmpty(targets)
 }
 
 func FirstNonEmpty(values ...string) string {

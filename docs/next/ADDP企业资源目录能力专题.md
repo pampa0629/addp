@@ -3120,3 +3120,47 @@ Swagger 生成首次因并行 Go 输入变化被缓存校验拒绝，随后标�
 - 新测试挂在既有 `TestFulfillmentArbitrationAgainstPostgres` 夹具，现有 IAM PostgreSQL 标准入口的 engineaccess 分组自动命中；`platform-ci.yml` 全仓 Go 和 `release-and-t2-gates.yml` 的 System IAM PostgreSQL Job 已覆盖，不新增测试入口、数据库或 CI Job。初轮新夹具的参数类型、成员到期约束及父级测试引用错误已修复，最终结果以前述当前输入门禁为准。
 
 下一优先项：先落实可信身份／执行上下文消费，再贯通 Manager 单目标预览的真实 C／D 读取对照；随后接 Develop 的完整 `QueryReadSet`。不能把私有 `Covered` 当作对外允许执行的凭据，也不能将规则测试通过描述为实际内容读取闭环已完成。
+
+### 26.67 可信同步 User 凭据与当前源规则组合（2026-10-04）
+
+Manager 的交互式预览是同步 User 请求，不是持久计算 execution；不能为复用现有引擎级 Execution Authorization 而制造临时执行或把历史执行主体当作当前登录身份。本轮先落实私有可信身份组合，不开放缺少功能／Client Scope 与 Security 交集的独立放行 API。
+
+- [x] 先补稳定授权规范、IAM 模型与 System 边界。复用 IAM `ResolveUserAccessToken`，当前 Tenant、Principal、Membership 和授权版本全部由真实第一方／OAuth User 凭据派生，不接受自报身份或外部 AuthContext；其他凭据类型不进入这条普通 User 路径。
+- [x] 复用唯一目标编码、精确规则查询和自有只读事务实现。事务统一使用 Repeatable Read，使 IAM 凭据投影与源规则读取共用同一已提交快照；查询后按数据库墙钟复核 Token 自然到期。不保存、记录或返回凭据，不增加表、迁移、Permission 或授权令牌。
+- [x] 通过生产 IAM Service 签发真实浏览器会话并注销，验证注销后拒绝、实际 Resource Ticket／非法凭据拒绝、C+D 部分覆盖不放行、调用方事务拒绝和零观察审计副作用。并发用例在 IAM 凭据加载后由独立正式写路径提交 Grant，首个观察仍未覆盖、下一次观察才覆盖，验证不混用两个快照；另按数据库时钟等待 Token 在查询期间到期后确认拒绝。
+- [x] 完成 System 全模块门禁，确认共用事务隔离级别调整未使既有受理／签发历史读取回归。新用例仍由既有 engineaccess PostgreSQL 分组和 CI 自动发现，无新入口或测试 database。此前阻塞及修复记录保留如下；本次标准模块入口已完整通过，不以局部结果替代整模块结果。
+- [ ] 后续将 owner 的功能 Permission／Client Scope、Security 和 Provider 证明的实际读取集合接到正式消费入口，再完成 Manager 实际预览及 Develop 完整查询读取集合验收。当前 `Covered` 只表示真实身份下的源规则覆盖，不是完整执行 Allow。
+
+验证进度：`bash scripts/test/system-iam-postgres-gate.sh --package engineaccess` 第二轮退出码 0、无 Skip，整个 engineaccess 包耗时 46.233 秒，新增真实凭据套件耗时 0.57 秒；日志 `/tmp/addp-source-credential-pg-second-20261004.log`。首轮仅新夹具编译失败，原因是上下文选择的消费接口返回会话而非选择结果，已修正；该轮不计为通过，日志 `/tmp/addp-source-credential-pg-20261004.log`。
+
+- `make test-module MODULE=system` 退出码 2，平台 T0 报 `scripts/test/common-hdfs-gate.sh: owned-service gate must own disposable Compose startup and cleanup`；System Go、前端和 T2 尚未由该条命令执行。未修改并行 HDFS 登记或启动逻辑，日志 `/tmp/addp-source-credential-system-module-20261004.log`。
+- `make test-changed` 退出码 2：当前 79 个变更文件命中 27 个注册模块，因多个 owner 的必需 T2 连接条件未配置，在测试执行前停止。日志 `/tmp/addp-source-credential-changed-20261004.log`，不计为工作区全量通过。
+- `make test-go` 退出码 2，停在 Common 的既有 `TestPluginSensitiveFields`：并行新增的 HDFS Plugin 未声明敏感字段，错误为 `Plugin 'hdfs' has no sensitive fields defined`。该入口未继续到 System Go T1，不能标为通过，日志 `/tmp/addp-source-credential-go-20261004.log`；未修改该并行插件或放宽测试断言。
+- 完整 `make test-system-iam-postgres` 首轮退出码 2：停在既有 `TestIAMServicesAgainstPostgres` 的会话夹具，错误为 `access token requires an active family and bounded expiry`；IAM 包耗时 245.310 秒，后续六个 owner 未执行。夹具将模拟时钟设为一小时前，又以模拟时间加一小时作为 Family 到期时间，首次建立会话时实际只剩约两秒，密码哈希或排队稍慢就会到期。本轮只将测试基线改为先读取数据库墙钟、回退一分钟，仍保留完整递增生命周期及数据库触发器，不修改生产校验、Token TTL 或授权语义。首轮失败日志 `/tmp/addp-source-credential-full-iam-20261004.log` 保留，不计为通过。
+- 完整 IAM 门禁重跑仍退出码 2：IAM 全包 407.973 秒、OAuth 全包 12.777 秒通过，无 Skip；修正后的 `TestIAMServicesAgainstPostgres` 10.47 秒通过。后续 API 包的 `TestTargetSystemCompositionAgainstPostgres` 在 `migration.NewRunner(dsn).Run(ctx)` 准备阶段耗尽既有 30 秒 context，报 `ping migration checksum database: context deadline exceeded`，API 包失败，迁移／engineaccess／repository／Online 夹具四个 owner 未执行。该失败发生在路由和授权消费之前，不扩大超时或修改生产校验以掩盖，也不称已解决环境性能问题。日志 `/tmp/addp-source-credential-full-iam-recheck-20261004.log`。
+- 最后独立复验既有 engineaccess 标准分组退出码 1，包耗时 69.097 秒：`TestFulfillmentArbitrationAgainstPostgres` 共用的 60 秒父 context 在既有 Grant 撤销用例 `normalized_reason_retries_preserve_original_history` 处到期，之后串行子用例持续报 `context deadline exceeded`；本轮新凭据用例尚未执行，不能称最新复验通过。保留此前同一实现的 46.233 秒成功结果，但不能用它覆盖本次失败；未扩大父 context、跳过用例或关闭开发服务来换取通过。日志 `/tmp/addp-source-credential-engineaccess-final-20261004.log`。未执行成功的 System Go、前端、完整 T2 和运行日志门禁，仍需由同一标准模块入口及既有 Platform／Release T2 CI 复验，不以定向规则测试替代。
+- 后续收口已定位夹具作用域冲突：外层全部串行用例共用 60 秒 context，内层受理套件却声明 90 秒，创建账号的闭包仍继承已消耗的外层预算。因此后续独立组会因前序耗时而连锁失败。夹具改为由 Go 标准门禁截止时间约束整个套件，迁移准备仍单独限时 60 秒，各业务组原限时不变，账号工厂每次独立限时 15 秒；不改变生产五分钟窗口、Token TTL、数据库到期断言或跳过任何用例。修改后的标准门禁结果见下。
+- 最新完整复验：核实 Infra PostgreSQL 实际映射为 `25432` 后，显式注入 `addp_iam_test` DSN，运行 `make test-module MODULE=system`，退出码 0。平台 T0、System Go T1、前端 91 项单元测试与 41 项浏览器回归、生产构建、完整 IAM PostgreSQL 七个 owner 和隔离运行日志门禁全部通过。IAM／OAuth／API／Migration／engineaccess／Repository／Online 夹具包分别耗时 65.174／2.657／36.705／107.555／44.727／2.304／2.487 秒，无 T2 Skip；新增真实凭据组耗时 0.64 秒，三个子用例实际执行并通过。API 迁移准备本次通过，未调整其超时或生产代码。运行日志门禁验证真实采集、断连重试、重启与旧实例隔离、容量及物理保留清理，并确认自有容器、网络、卷和源目录零残留。完整日志 `/tmp/addp-source-credential-system-next-20261004.log`。这证明 System owner 本轮范围，不替代全工作区 `test-changed` 或 Manager／Develop 的真实内容访问验收。
+- 没有启停开发服务，也没有实际连接来源数据库。
+
+下一优先项：本轮 System 门禁已收口，接下来建立正式同步 User 消费入口，接 Manager PostgreSQL 实际预览，不继续扩张批准办理底座。只读核对发现，当前预览的 `DatabaseTablePreviewProvider.queryData` 通过 `BatchReadableProvider.ReadBatch` 执行；PostgreSQL 的批量读取直接打开表读取游标，并未消费已具备视图依赖展开能力的 `PreparedQuery.ReadSet`。因此界面选中一个条目不等于只有一个真实读取目标；接入时必须复用 Provider 证明的完整读取集合并执行同一准备计划，叠加功能／Client Scope 与 Security 校验。不能先按选中条目放行、再走另一条未经核验的批量读取路径，也不能在 Manager 中猜测 SQL 依赖。
+
+### 26.68 Manager 同步预览的正式源规则检查入口（2026-10-04）
+
+本轮将 §26.67 的可信 User 底座接到固定 owner 操作契约，不开放任意自报 Permission／主体的通用裁决接口。此阶段只交付 System 的正式检查入口，Manager 实际预览读取尚未改造，不能将接口通过表述为源数据访问闭环完成。
+
+- [x] 稳定授权规范、IAM 数据规范与 System 模块说明先明确唯一入口 `POST /api/v1/system/engine-access/read-checks/manager-preview`。请求仅含 1–200 个完整 EngineCatalogPath；凭据只通过当前 User Bearer 传入，不接受 query、Tenant、主体、Permission、动作或 execution。不新增表、迁移、功能权限或默认赋权。
+- [x] 固定消费 Manager 已声明的 `manager.data_item.read`，并复核第一方 API 会话或 OAuth User 的 `addp.api` Client 边界。仅有盘点权限、组织范围功能分配、Service／Resource Ticket／Delegated 凭据或仅 Tool Scope 不能通过普通 User API 放大权限。
+- [x] 功能条件、真实凭据与全部精确源规则复用同一自有只读 Repeatable Read 快照；查询后复核凭据自然到期。无 Grant、有效 Deny 或任何未覆盖目标使整批返回 403。成功只返回禁止缓存的当次 `observed_at`，没有 Allow、lease、可重用访问凭据、身份或逐项目标规则详情。
+- [x] HTTP 契约测试覆盖未知字段／query／多个 JSON／错误隐藏／禁止历史 GET／no-store；正式装配测试确认入口已挂载。既有真实 IAM／Grant PostgreSQL 夹具增加“有 Grant 无功能权限”和“有功能权限无 Grant”均拒绝、二者交集成功、C+D 整体拒绝、Grant 撤销、Deny 优先和 Role 撤销后旧凭据失效。领域检查不写规则或授权审计；HTTP 仍沿用正常请求元信息审计，不记录 Bearer 或正文。
+- [ ] Manager 实际消费：从 Provider 获得完整 ReadSet，交给本入口核验；共用 Security 投影处理全部实际依赖，并执行同一不可变、一次性的 PreparedQuery，删除对应 PostgreSQL 旧批量读取路径。不能把叶子条目检查或最终结果保护替代完整依赖检查。
+- [ ] 实际内容访问验收：通过标准测试入口验证 C 可读、D 拒绝、依赖 C+D 的视图整体拒绝，以及字段保护、临时原值许可、撤销／失效和控制面故障不旁路读取。尚未连接业务源或运行 Online T4，不以规则观察夹具代替此验收。
+
+本轮验证记录：
+
+- Swagger 生成成功；严格覆盖检查退出码 0，195 个公开路由方法一致。初次检查因新文件未遵循 `*_routes.go` 发现约定失败，已按现有约定重命名，不修改扫描器或增加第二条路由。初轮记录 `/tmp/addp-source-read-check-coverage-20261004.log` 不计为通过。
+- 首次 `make test-module MODULE=system` 在平台 T0 的 System API 编译检查失败，原因是新增测试中未使用的 `net/http` 导入；已删除，并补充正式 Router 挂载断言，不修改生产授权策略。失败日志 `/tmp/addp-source-read-check-system-20261004.log` 保留。
+- 修正后完整 System 模块门禁正在运行，最终日志 `/tmp/addp-source-read-check-system-final-20261004.log`；结果待本轮补记，不能提前计为通过。实际 Infra PostgreSQL 映射 `25432`，只使用允许的 `addp_iam_test`，测试 Schema 与清理仍由既有标准入口管理。
+- 新 Go／HTTP 用例由 System Go T1 自动发现，真实凭据用例由既有 engineaccess PostgreSQL 分组及 System IAM T2 CI 自动覆盖；Swagger 沿用现有 Platform 门禁，无新 workflow、测试库或旁路脚本。没有启停用户开发服务，也没有修改来源数据库。
+
+下一优先项：接入 Manager PostgreSQL 实际预览并验证完整读取集合。共用 `PrepareQueryProtection` 已有 ReadSet／输出血缘保护，但当前使用空 Subject；接入时须保留 Manager 已有当前用户临时原值许可语义，不能再复制一套依赖保护算法或因复用而丢失用户上下文。Delegated／Resource Ticket 等其它入口不能伪装普通 User 消费，也不能留未经核验的旧路径兜底。

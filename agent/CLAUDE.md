@@ -4,7 +4,7 @@ Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话�
 
 ## 模块概述
 
-- **后端**: Python 3.11+ + FastAPI + LangChain Agent Runtime
+- **后端**: Python 3.12 + FastAPI + 进程内 DeerFlow Harness（唯一执行内核）
 - **前端**: Vue 3 + Element Plus
 - **交互协议**: AG-UI + A2UI `addp.catalog/v1`
 - **端口**: Backend 8190（开发）| Frontend 5186（开发）
@@ -52,6 +52,8 @@ bash scripts/dev/restart.sh -agent
 # 前端测试与构建
 cd agent/frontend && npm test && npm run build
 ```
+
+本次 Harness 升级需要全新 Agent/Copilot venv，不能在保留旧 LangChain 0.3 依赖的环境中直接升级 Core。先通过标准停止脚本停止服务，将这两个 venv 移到仓库外备份，再由标准启动脚本安装完整声明。AI 不自行停止或重启用户服务。
 
 ## API 接口
 

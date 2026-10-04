@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/taskprovider"
 	metai18n "github.com/addp/meta/i18n"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 	"github.com/gin-gonic/gin"
 )
 
@@ -53,7 +54,7 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 
 // CreateManualScanRun 创建异步扫描运行
 // @Summary 创建手动扫描运行 | Create manual scan run
-// @Description 创建异步扫描；Develop 产物来源仅允许 addp-develop 服务携带父 execution，原子校验已保存产物并继承发起主体 | Create an async scan; Develop output scans require addp-develop service provenance, a verified parent execution and persisted output
+// @Description 叶子 locator 仅扫描自身，root／branch 范围必须显式指定；创建异步扫描；Develop 产物来源仅允许 addp-develop 服务携带父 execution，原子校验已保存产物并继承发起主体 | Leaf locators scan only the selected item; root and branch scopes must be explicit. Create an async scan; Develop output scans require addp-develop service provenance, a verified parent execution and persisted output
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
@@ -103,6 +104,10 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 	}
 	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, &req)
 	if err != nil {
+		if errors.Is(err, scanflow.ErrInvalidScope) {
+			c.JSON(http.StatusBadRequest, gin.H{"error_code": "scan_request_invalid", "error": commoni18n.T(c, metai18n.MsgScanRequestInvalid)})
+			return
+		}
 		if errors.Is(err, commonapi.ErrBadRequest) || errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error_code": "scan_provenance_unavailable", "error": commoni18n.T(c, metai18n.MsgScanProvenanceUnavailable)})
 			return

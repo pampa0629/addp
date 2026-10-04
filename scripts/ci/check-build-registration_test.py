@@ -22,6 +22,36 @@ SPEC.loader.exec_module(MODULE)
 
 
 class BuildRegistrationTest(unittest.TestCase):
+    def test_agent_image_cache_observes_skill_changes_and_removals(self):
+        script = (SCRIPT.parents[2] / "scripts/build/build-images.sh").read_text(encoding="utf-8")
+        function = "check_service_changed() {" + script.split("check_service_changed() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+        self._write("agent/backend/main.py", "# fixture\n")
+        self._write("dist/release-linux-arm64/runtime-log", "fixture\n")
+        self._write("skills/fixture/SKILL.md", "fixture\n")
+        self._write(".build-cache/agent-backend-latest.timestamp", "200\n")
+        self._write("fake-bin/stat", "#!/usr/bin/env python3\nimport os, sys\nfor path in sys.argv[3:]:\n print(int(os.stat(path).st_mtime))\n")
+        (self.repository / "fake-bin/stat").chmod(0o755)
+        for path in [self.repository / "skills", *list((self.repository / "skills").rglob("*")), self.repository / "agent/backend/main.py", self.repository / "dist/release-linux-arm64/runtime-log"]:
+            os.utime(path, (100, 100))
+        command = (
+            'REGISTRY=fixture; IMAGE_TAG=latest; BUILD_PLATFORMS=linux/arm64; '
+            'curl() { echo \'{"tags":["latest"]}\'; }; '
+            'common_python_latest_time() { echo 100; }; '
+            + function + '\ncheck_service_changed agent-backend agent/backend'
+        )
+        environment = dict(os.environ, PATH=f"{self.repository / 'fake-bin'}:{os.environ['PATH']}")
+
+        def check():
+            return subprocess.run(["bash", "-c", command], cwd=self.repository, env=environment, capture_output=True).returncode
+
+        self.assertEqual(check(), 0)
+        skill = self.repository / "skills/fixture/SKILL.md"
+        os.utime(skill, (300, 300))
+        self.assertEqual(check(), 1)
+        skill.unlink()
+        os.utime(skill.parent, (300, 300))
+        self.assertEqual(check(), 1)
+
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.repository = Path(self.temporary_directory.name)

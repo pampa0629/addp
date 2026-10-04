@@ -301,9 +301,15 @@ Manager 预览和 SQL 对同一表使用同一授权规则；SQL 必须核验实
 
 System 引擎访问控制领域先提供私有的当前读取规则观察底座：对非空、完整的精确目标集合，以同一条 SQL 的已提交快照和唯一数据库时刻，检查当前 User／Tenant Membership／Tenant／授权版本、启用引擎、直接部门与项目组成员关系，以及尚未到期或撤销的 Grant、尚未到期或解除的 Explicit Deny。任一目标不满足就不满足集合覆盖；Explicit Deny 优先，无 Grant 拒绝。父部门、项目组关联部门、目录责任或管理委派不推导读取许可；原办理人的后续状态、Catalog 在线状态和已经结束的五分钟签发窗口不替代已签发 Grant 的访问期限。
 
-该底座只证明当前源数据规则覆盖，不证明调用凭据真实有效，也不替代功能 Permission、Execution Authorization 范围或 Security 条件。主体引用和完整读取集合须由后续可信消费链路提供，不能从浏览器自报账号或任意路径构造放行请求。观察结果只描述该快照时刻，不是可缓存或跨操作复用的访问令牌；数据库读取失败、无目标、非法目标或结果不完整均不得放行。当前只实现私有领域方法和测试，不开放独立裁决 API，不宣称 Manager／Develop 已接通。
+该底座只证明当前源数据规则覆盖，不证明调用凭据真实有效，也不替代功能 Permission、Execution Authorization 范围或 Security 条件。主体引用和完整读取集合须由后续可信消费链路提供，不能从浏览器自报账号或任意路径构造放行请求。观察结果只描述该快照时刻，不是可缓存或跨操作复用的访问令牌；数据库读取失败、无目标、非法目标或结果不完整均不得放行。规则底座本身保持私有，不开放脱离 owner 操作契约的独立裁决 API；正式同步检查契约见下文，不宣称 Manager／Develop 的实际读取已接通。
+
+可信同步用户消费的第一步复用 System IAM 的 `ResolveUserAccessToken`，仅接受第一方或 OAuth User Access Token，在自有只读 Repeatable Read 事务中解析真实凭据；当前 Tenant、Principal、Membership 和授权版本全部从该结果派生，不接收自报身份、外部 AuthContext 或历史 execution 引用。IAM 凭据核验与精确规则读取共用同一已提交快照；规则查询结束还须按数据库墙钟复核 Token 的自然到期，避免只读事务的开始时间延长凭据。凭据不保存、不缓存、不记录，也不返回给调用方。此私有组合仍只证明身份及源规则覆盖，不替代 owner 的功能 Permission／Client Scope、异步执行范围和 Security；Service Token、Resource Ticket 或 Delegated Token 不进入这条普通 User 消费路径，不能降级为机器读取或兼容放行。
 
 Explicit Deny 提交后立即生效，其建立时刻是审计事实，不是预约生效时间；数据库墙钟小幅回拨不能借此忽略已提交且尚未到期、未解除的拒绝规则。
+
+同步消费首个正式检查入口为 System `POST /api/v1/system/engine-access/read-checks/manager-preview`。它只接收非空且至多 200 个完整 EngineCatalogPath；当前凭据只能放在 Bearer 中，不接收 Tenant、账号、AuthContext、execution、Permission 或动作选择。入口固定复核 `manager.data_item.read` 的当前 Tenant Assignment，以及第一方 Web 的 unrestricted API 会话或 OAuth User 的 `addp.api` audience／Scope；组织范围功能分配不能在缺少资源归属证明时升级为租户级功能权限。真实凭据、上述功能／Client 条件和精确源规则使用同一只读快照；结束前复核凭据自然到期。
+
+任一条件不满足时整个检查失败，无 Grant／命中 Deny 返回 403，不返回逐项规则或主体详情；成功仅返回 `observed_at`，不生成访问令牌、lease、授权副本或可缓存 Allow，不持久化请求目标或正文。领域检查只读且不追加授权审计；HTTP 入口仍沿用 System 通用请求元信息审计，不记录 Bearer 或请求正文。该入口是 Manager 同步调用链的源规则检查，不是完整执行裁决，也不访问源端或 Security。Manager 仍须先以 Provider 证明本次完整 ReadSet，完成本地 Security 保护，并执行同一 PreparedQuery；未完成实际消费接入时不能宣称预览权限闭环完成。后续不同 owner 操作须明确自己的固定功能契约，不能通过客户端传入权限名复用本入口降低门槛。
 
 #### 5.5.5 批准要求、可选治理与明确交接
 

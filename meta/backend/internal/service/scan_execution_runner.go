@@ -27,7 +27,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 	}
 	lockKey := ""
 	if s.dedupService != nil {
-		lockKey = s.dedupService.GenerateExecutionLockKey(uint(exec.TenantID), execConfig.EngineID, execConfig.ItemID, execConfig.CatalogPaths, execConfig.RefGroups)
+		lockKey = s.dedupService.GenerateExecutionLockKey(uint(exec.TenantID), execConfig.EngineID, execConfig.ItemID, execConfig.CatalogPaths, execConfig.RefGroups, execConfig.Targets)
 	}
 
 	lease, ok := s.boundedLease(ctx, executionID)
@@ -59,6 +59,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 		EngineID:     execConfig.EngineID,
 		TenantID:     uint(exec.TenantID),
 		CatalogPaths: execConfig.CatalogPaths,
+		Targets:      execConfig.Targets,
 		RefGroups:    execConfig.RefGroups,
 		ItemID:       execConfig.ItemID,
 		ScanDepth:    execConfig.ScanDepth,

@@ -98,7 +98,7 @@ func (s *ScanExecutionService) FailExpiredBoundedExecutions(ctx context.Context,
 		if s.dedupService == nil || item.config.EngineID == 0 {
 			continue
 		}
-		lockKey := s.dedupService.GenerateExecutionLockKey(uint(item.tenantID), item.config.EngineID, item.config.ItemID, item.config.CatalogPaths, item.config.RefGroups)
+		lockKey := s.dedupService.GenerateExecutionLockKey(uint(item.tenantID), item.config.EngineID, item.config.ItemID, item.config.CatalogPaths, item.config.RefGroups, item.config.Targets)
 		s.releaseExecutionLock(ctx, true, lockKey, item.executionID, "释放过期扫描执行范围锁失败", "execution_id", item.executionID)
 	}
 	return count, nil

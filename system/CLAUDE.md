@@ -373,7 +373,11 @@ frontend/src/
 - `POST /api/v1/system/refresh` - Token 刷新
 - `POST /api/v1/system/logout` - 撤销当前 Browser Token Family
 
-当前精确源数据规则观察仅存在于 `engineaccess` 私有仓储方法：非空完整目标集合在自有只读事务的一条 SQL 快照中核验当前主体及 Grant／Deny；无 Grant、有效 Deny、失效主体、停用引擎或缺失结果均不满足覆盖。不提供自报账号的裁决 API，不替代可信凭据、功能权限、执行范围或 Security 条件，也不代表 Manager／Develop 已贯通。
+当前精确源数据规则观察的唯一底座是 `engineaccess` 私有仓储方法：非空完整目标集合在自有只读事务的一条 SQL 快照中核验当前主体及 Grant／Deny；无 Grant、有效 Deny、失效主体、停用引擎或缺失结果均不满足覆盖。不提供自报账号的裁决 API，不替代可信凭据、功能权限、执行范围或 Security 条件，也不代表 Manager／Develop 已贯通。
+
+可信同步 User 消费组合复用 IAM `ResolveUserAccessToken`，在同一自有只读 Repeatable Read 事务中派生当前 Tenant、Principal、Membership 和授权版本，再调用唯一精确规则查询；不接受自报身份或外部 AuthContext。查询后按数据库墙钟复核 Token 自然到期，不保存、记录或返回凭据。该私有方法只覆盖真实身份与源规则，不授予 owner 功能／Client Scope、不替代 Execution／Security，不接收 Service、Resource Ticket 或 Delegated 凭据，不新增 HTTP 入口。
+
+正式同步检查首个入口为 `POST /engine-access/read-checks/manager-preview`：只接受当前 Tenant User Bearer 和 1–200 个完整目标，固定复核 `manager.data_item.read` 与 API Client 边界，再用同一快照观察全部源规则；任一未覆盖即 403，不公开逐条 Grant／Deny 或主体详情。成功只返回当次 `observed_at` 并禁止缓存，不是完整 Allow 或访问令牌。此入口不访问源端、Catalog 或 Security；Manager 的完整 Provider ReadSet、同一 PreparedQuery 实际执行及本地字段保护仍须单独贯通，不能用检查通过声称实际预览已放行。
 
 ### 授权上下文（需认证）
 - `GET /api/v1/system/auth/context` - 验证当前访问令牌，回查用户和租户状态，返回权威 AuthContext

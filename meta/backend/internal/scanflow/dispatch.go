@@ -16,6 +16,7 @@ const (
 )
 
 type DispatchRequest struct {
+	Targets      []string
 	Context      context.Context
 	Resource     *commonModels.Engine
 	EnginePlugin plugin.EnginePlugin

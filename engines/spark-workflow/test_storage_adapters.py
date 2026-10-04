@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from storage_adapters import DatabaseAdapter
+from storage_adapters import DatabaseAdapter, FileAdapter
+from unittest.mock import MagicMock
 
 
 class StorageAdapterTest(unittest.TestCase):
@@ -209,3 +210,48 @@ class StorageAdapterTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HDFSAdapterTest(unittest.TestCase):
+    def setUp(self):
+        self.spark = MagicMock()
+        self.ugi = self.spark.sparkContext._jvm.org.apache.hadoop.security.UserGroupInformation
+        self.ugi.isSecurityEnabled.return_value = False
+        self.ugi.getCurrentUser.return_value.getShortUserName.return_value = 'reader'
+        self.params = {'path': 'hdfs://namenode:8020/addp/orders.parquet',
+                       'connection_info': {'engine_type': 'hdfs', 'authentication': 'simple',
+                                           'rpc_uri': 'hdfs://namenode:8020', 'root_path': '/addp', 'user': 'reader'}}
+
+    def test_simple_fixed_identity(self):
+        FileAdapter._validate_hdfs_access(self.spark, self.params)
+        self.ugi.getCurrentUser.return_value.getShortUserName.return_value = 'another'
+        with self.assertRaisesRegex(ValueError, 'identity'):
+            FileAdapter._validate_hdfs_access(self.spark, self.params)
+
+    def test_root_authority_and_traversal(self):
+        for path in ('hdfs://other:8020/addp/a.parquet', 'hdfs://namenode:8020/addp-other/a.parquet',
+                     'hdfs://namenode:8020/addp/../secret', 'hdfs://namenode:8020/addp/%2e%2e/secret',
+                     'hdfs://namenode:8020/addp//a', 'hdfs://namenode:8020/addp/a?secret=x'):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                FileAdapter._validate_hdfs_access(self.spark, dict(self.params, path=path))
+
+    def test_uri_decodes_original_name_once_and_rejects_globs(self):
+        source = 'hdfs://namenode:8020/addp/%E8%AE%A2%E5%8D%95%20100%25.csv'
+        self.assertEqual('hdfs://namenode:8020/addp/订单 100%.csv',
+                         FileAdapter._validate_hdfs_access(self.spark, dict(self.params, path=source)))
+        for name in ('*.csv', '%3F.csv', '%5Ba%5D.csv', '%7Ba,b%7D.csv', '%5C.csv'):
+            with self.assertRaisesRegex(ValueError, 'literal resource'):
+                FileAdapter._validate_hdfs_access(self.spark, dict(self.params, path='hdfs://namenode:8020/addp/' + name))
+
+    def test_hdfs_save_rejected_before_writer(self):
+        frame = MagicMock()
+        with self.assertRaisesRegex(ValueError, 'reading only'):
+            FileAdapter.save(frame, self.params)
+        frame.write.format.assert_not_called()
+
+    def test_secure_or_missing_facts_are_rejected(self):
+        self.ugi.isSecurityEnabled.return_value = True
+        with self.assertRaises(ValueError):
+            FileAdapter._validate_hdfs_access(self.spark, self.params)
+        with self.assertRaises(ValueError):
+            FileAdapter._validate_hdfs_access(self.spark, {'path': self.params['path']})

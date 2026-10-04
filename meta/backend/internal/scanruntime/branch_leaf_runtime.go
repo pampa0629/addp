@@ -49,6 +49,18 @@ func (s *BranchLeafRuntime) ScanBranch(
 	force bool,
 ) (int, int, int, error) {
 
+	return s.scanBranch(ctx, enginePlugin, resource, tenantID, branchName, scanDepth, force, nil)
+}
+
+func (s *BranchLeafRuntime) ScanLeaf(ctx context.Context, p plugin.EnginePlugin, resource *commonModels.Engine, tenantID uint, entry plugin.EngineCatalogEntry, scanDepth string, force bool) (int, int, int, error) {
+	if len(entry.Path.Segments) != 3 {
+		return 0, 0, 0, fmt.Errorf("unsupported branch leaf path")
+	}
+	return s.scanBranch(ctx, p, resource, tenantID, entry.Path.Segments[1].Name, scanDepth, force, &entry)
+}
+
+func (s *BranchLeafRuntime) scanBranch(ctx context.Context, enginePlugin plugin.EnginePlugin, resource *commonModels.Engine, tenantID uint, branchName, scanDepth string, force bool, target *plugin.EngineCatalogEntry) (int, int, int, error) {
+
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogProvider)
 	if !ok {
@@ -79,23 +91,30 @@ func (s *BranchLeafRuntime) ScanBranch(
 		return 0, 0, 0, fmt.Errorf("failed to create catalog branch node: %w", err)
 	}
 
-	if err := s.repo.ResetNodeState(branchNode, "running"); err != nil {
-		return 0, 0, 0, err
+	if target == nil {
+		if err := s.repo.ResetNodeState(branchNode, "running"); err != nil {
+			return 0, 0, 0, err
+		}
 	}
-
 	var totalObjects, totalFields int
 
-	totalObjects, totalFields, err = s.scanCatalogLeaves(ctx, scanCatalog, resource, tenantID, branchNode, branchName, scanDepth, force)
+	totalObjects, totalFields, err = s.scanCatalogLeaves(ctx, scanCatalog, resource, tenantID, branchNode, branchName, scanDepth, force, target)
 
 	if err != nil {
-		_ = s.repo.FinalizeNodeState(branchNode, "failed", err.Error())
+		if target == nil {
+			_ = s.repo.FinalizeNodeState(branchNode, "failed", err.Error())
+		}
 		return 0, totalObjects, totalFields, err
 	}
 
 	// 3. 完成扫描
-	if err := s.repo.FinalizeNodeStateWithDepth(branchNode, "completed", "", scanDepth); err != nil {
-		return 0, totalObjects, totalFields, err
+	if target == nil {
+		if err := s.repo.FinalizeNodeStateWithDepth(branchNode, "completed", "", scanDepth); err != nil {
+			return 0, totalObjects, totalFields, err
+		}
 	}
-
+	if target != nil {
+		return 0, totalObjects, totalFields, nil
+	}
 	return 1, totalObjects, totalFields, nil
 }

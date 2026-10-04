@@ -8,6 +8,7 @@ import (
 )
 
 type ExecutionConfig struct {
+	Targets      []string
 	EngineID     uint
 	ItemID       uint
 	StorageType  string
@@ -19,8 +20,9 @@ type ExecutionConfig struct {
 	PlannedRunAt string
 }
 
-func ManualExecutionConfig(engineID uint, itemID uint, storageType string, catalogPaths []string, refGroups []models.ScanRefGroup, scanDepth string, force bool, source string) commonModels.JSONMap {
+func ManualExecutionConfig(engineID uint, itemID uint, storageType string, targets []string, catalogPaths []string, refGroups []models.ScanRefGroup, scanDepth string, force bool, source string) commonModels.JSONMap {
 	config := commonModels.JSONMap{
+		"targets":       targets,
 		"engine_id":     engineID,
 		"storage_type":  storageType,
 		"catalog_paths": catalogPaths,
@@ -79,6 +81,7 @@ func ParseExecutionConfig(config commonModels.JSONMap) ExecutionConfig {
 	parsed.Force = boolFromInterface(config["force"])
 	parsed.Source, _ = config["source"].(string)
 	parsed.PlannedRunAt, _ = config["planned_run_at"].(string)
+	parsed.Targets = StringSliceFromInterface(config["targets"])
 	parsed.CatalogPaths = StringSliceFromInterface(config["catalog_paths"])
 	parsed.RefGroups = RefGroupsFromMap(models.JSONMap(config))
 	return parsed

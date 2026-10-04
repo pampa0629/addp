@@ -24,10 +24,22 @@ func (s *DatabaseRuntime) scanTables(
 	schemaName string,
 	scanDepth string,
 	force bool,
+	target *plugin.EngineCatalogEntry,
 ) (int, int, error) {
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
 
-	existingTableMap := s.repo.GetItemsByNodeAndTypeMap(tenantID, engineID, schemaNode.ID, scanCatalog.itemTerm)
+	existingTableMap := map[string]*models.MetaItem{}
+	if target == nil {
+		existingTableMap = s.repo.GetItemsByNodeAndTypeMap(tenantID, engineID, schemaNode.ID, scanCatalog.itemTerm)
+	} else {
+		item, found, err := s.repo.FindItemByFullName(tenantID, engineID, metapath.ComposeNodeFullName(target.Name, schemaNode, "."))
+		if err != nil {
+			return 0, 0, err
+		}
+		if found {
+			existingTableMap[target.Name] = item
+		}
+	}
 
 	s.log.Info("开始扫描 Schema",
 		"tenant_id", tenantID,
@@ -37,9 +49,20 @@ func (s *DatabaseRuntime) scanTables(
 		"existing_tables", len(existingTableMap),
 	)
 
-	pluginTables, err := s.listTables(ctx, resource, scanCatalog, schemaName)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list tables: %w", err)
+	var pluginTables []datatype.TableInfo
+	if target != nil {
+		table := datatype.TableInfo{Name: target.Name, Kind: target.Kind}
+		if target.Table != nil {
+			table = *target.Table.Clone()
+			table.Name = target.Name
+		}
+		pluginTables = []datatype.TableInfo{table}
+	} else {
+		var err error
+		pluginTables, err = s.listTables(ctx, resource, scanCatalog, schemaName)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to list tables: %w", err)
+		}
 	}
 
 	s.log.Info("扫描到的表",
@@ -124,7 +147,9 @@ func (s *DatabaseRuntime) scanTables(
 		totalFields += len(fields)
 	}
 
-	failures.Add(schemaName, s.deleteRemovedTables(tenantID, engineID, schemaName, existingTableMap, scannedTables))
+	if target == nil && failures.Err() == nil {
+		failures.Add(schemaName, s.deleteRemovedTables(tenantID, engineID, schemaName, existingTableMap, scannedTables))
+	}
 
 	s.log.Info("Schema 扫描完成",
 		"schema", schemaName,

@@ -426,7 +426,8 @@
       "neo4j": "Neo4j 图数据库，Bolt 协议连接。默认端口: 7687。Community Edition 仅有一个 \"neo4j\" 数据库。",
       "spatialite": "该连接器读取本地 SQLite 数据库（建议为 SpatiaLite 扩展），任务执行节点需要能访问该文件路径。",
       "spark": "Apache Spark 通过 Thrift Server (Hive2 协议) 连接，支持 Sedona 空间扩展。默认端口: 10000",
-      "workflow": "工作流引擎的 API 端点已标准化，无需手动配置。"
+      "workflow": "工作流引擎的 API 端点已标准化，无需手动配置。",
+      "hdfsSimple": "Simple 仅用于开发实验；Spark 应用 Hadoop 用户必须与此用户一致。"
     },
     "valid": {
       "selectType": "请选择标准引擎类型",
@@ -448,7 +449,11 @@
       "inputFilePath": "请输入文件路径",
       "inputNfsServer": "请输入 NFS 服务器地址",
       "inputNfsExportPath": "请输入 NFS 导出路径"
-    }
+    },
+    "hdfsWebEndpoint": "WebHDFS 端点",
+    "hdfsRpcUri": "HDFS RPC 地址",
+    "hdfsRootPath": "管理根目录",
+    "hdfsAuthentication": "HDFS 认证模式"
   },
   "excelPreview": {
     "sheetsTruncatedTitle": "仅展示部分工作表",

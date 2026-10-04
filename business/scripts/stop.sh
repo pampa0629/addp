@@ -49,7 +49,7 @@ for arg in "$@"; do
     case $arg in
         -all) HAS_ARGS=false; break ;;
         -h|--help)
-            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-elasticsearch|-redis|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-redpanda|-nfs|-all]"
+            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-elasticsearch|-redis|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-redpanda|-nfs|-hdfs|-all]"
             echo "  -kingbase 和 -dameng 必须独立使用，且不属于 -all"
             exit 0
             ;;
@@ -70,6 +70,9 @@ for arg in "$@"; do
                     ;;
                 doris)
                     SERVICES+=("doris-fe")
+                    ;;
+                hdfs)
+                    SERVICES+=("hdfs-namenode" "hdfs-datanode")
                     ;;
                 spark)
                     SERVICES+=("spark-master" "spark-worker-1" "spark-worker-2")

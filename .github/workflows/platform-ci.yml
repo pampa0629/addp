@@ -179,7 +179,7 @@ jobs:
         with:
           venv-path: common-python/.venv
           cache-dependency-path: common-python/pyproject.toml
-          editable-install: ./common-python[dev]
+          editable-install: ./common-python[dev,inference-langchain]
 
       - name: Run Common Python tests
         if: steps.selection.outputs.run == 'true'
@@ -407,6 +407,7 @@ jobs:
         uses: ./.github/actions/prepare-python-gate
         with:
           venv-path: agent/backend/venv
+          python-version: "3.12"
           cache-dependency-path: |
             agent/backend/requirements.txt
             common-python/pyproject.toml

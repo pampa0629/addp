@@ -125,7 +125,7 @@ func (s *ScanTaskScheduler) claimDueScheduledTask(ctx context.Context, taskID ui
 		execution := scantask.NewScheduledExecution(&task, storageType, targets, plannedRunAt, now)
 
 		if s.executionService.dedupService != nil {
-			lockKey = s.executionService.dedupService.GenerateExecutionLockKey(task.TenantID, task.EngineID, 0, targets.CatalogPaths, targets.RefGroups)
+			lockKey = s.executionService.dedupService.GenerateExecutionLockKey(task.TenantID, task.EngineID, 0, targets.CatalogPaths, targets.RefGroups, nil)
 			acquired, err := s.executionService.dedupService.TryAcquireOwnedLock(ctx, lockKey, execution.ExecutionID, 2*time.Hour)
 			if err != nil {
 				s.taskService.log.Warn("标记定时扫描范围运行失败，将继续创建执行", "task_id", taskID, "error", err, "lock_key", lockKey)

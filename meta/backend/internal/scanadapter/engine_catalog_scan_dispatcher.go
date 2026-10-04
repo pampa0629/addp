@@ -90,6 +90,9 @@ func (d *EngineCatalogScanDispatcher) Dispatch(req scanflow.DispatchRequest) (sc
 		return scanflow.DispatchResult{}, fmt.Errorf("plugin does not expose a supported catalog scan strategy")
 	}
 
+	if len(req.Targets) > 0 {
+		return d.dispatchTargets(enginePlugin, plan, req)
+	}
 	switch plan.Strategy {
 	case scanflow.EngineCatalogScanTabular:
 		return d.dispatchTabularScan(ctx, enginePlugin, plan, req)
@@ -111,7 +114,7 @@ func (d *EngineCatalogScanDispatcher) dispatchObjectCatalogScan(req scanflow.Dis
 		return scanflow.DispatchResult{}, fmt.Errorf("content catalog scanner is nil")
 	}
 	result, err := d.contentScanner.ScanObjectCatalog(req)
-	if err == nil {
+	if err == nil && len(req.CatalogPaths) == 0 && len(req.RefGroups) == 0 && len(req.Targets) == 0 {
 		err = d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, req.ScanDepth)
 	}
 	return result, err
@@ -121,12 +124,13 @@ func (d *EngineCatalogScanDispatcher) dispatchFileCatalogScan(req scanflow.Dispa
 	if d.contentScanner == nil {
 		return scanflow.DispatchResult{}, fmt.Errorf("content catalog scanner is nil")
 	}
-	if req.Mode == scanflow.DispatchAuto && len(req.CatalogPaths) == 0 {
+	fullEngine := len(req.CatalogPaths) == 0 && len(req.RefGroups) == 0 && len(req.Targets) == 0
+	if req.Mode == scanflow.DispatchAuto && fullEngine {
 		req.CatalogPaths = []string{""}
 		d.log.Info("文件 catalog 资源从结构 root 开始扫描")
 	}
 	result, err := d.contentScanner.ScanFileCatalog(req)
-	if err == nil {
+	if err == nil && fullEngine {
 		err = d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, req.ScanDepth)
 	}
 	return result, err

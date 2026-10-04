@@ -125,8 +125,9 @@ test-agent-eval: ## 运行 Agent 统一离线评测门禁
 test-agent-eval-release:
 	@bash scripts/test/agent-evaluation-gate.sh release
 
+COMMON_PYTHON ?= common-python/.venv/bin/python
 test-common-python: ## 运行 common-python 全量测试
-	@cd common-python && .venv/bin/pytest -q
+	@cd common-python && $(abspath $(COMMON_PYTHON)) -m pytest -q
 
 DOCUMENT_WORKFLOW_PYTHON ?= engines/document-workflow/.venv/bin/python
 test-document-workflow: ## 运行 Document Workflow Engine 确定性测试
@@ -147,8 +148,9 @@ GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/.venv/bin/python
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
 	@cd engines/geopython-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(GEOPYTHON_WORKFLOW_PYTHON)) -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_engine.py test_multiport.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs
 
+COPILOT_PYTHON ?= copilot/backend/venv/bin/python
 test-copilot: ## 运行 Copilot 后端全量确定性测试
-	@cd copilot/backend && venv/bin/python -m pytest -q tests
+	@cd copilot/backend && $(abspath $(COPILOT_PYTHON)) -m pytest -q tests
 
 test-common-python-cli-release:
 	@bash scripts/test/common-python-cli-release-gate.sh
@@ -181,6 +183,8 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@bash -n business/hdfs/start.sh scripts/test/common-hdfs-gate.sh
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; services=json.load(sys.stdin)["services"]; nn=services["hdfs-namenode"]; dn=services["hdfs-datanode"]; assert "@sha256:" in nn["image"] and nn["image"] == dn["image"]; assert nn["ports"][0]["host_ip"] == "127.0.0.1"; assert all(str(p["target"]) == p["published"] for p in dn["ports"]); assert nn["volumes"][1]["source"] != dn["volumes"][1]["source"]'
 	@sh -n business/redis/start.sh business/redis/init.sh
 	@bash -n scripts/test/business-redis-gate.sh scripts/test/common-redis-gate.sh scripts/test/redis-owned-fixture.sh scripts/test/common-redis-contract.sh
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["redis"]; assert s["ports"][0]["host_ip"] == "127.0.0.1"; assert "@sha256:" in s["image"]; assert "redis_data" == s["volumes"][0]["source"]'
@@ -280,6 +284,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-common-oceanbase
 	@$(MAKE) test-common-tidb
 	@$(MAKE) test-common-elasticsearch
+	@$(MAKE) test-common-hdfs
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
@@ -474,6 +479,13 @@ test-go-dependency-policy: ## 验证 Go 依赖规约检查器并核对当前版�
 	@python3 scripts/test/check-deps-version_test.py
 	@bash scripts/utils/check-deps-version.sh
 
+.PHONY: test-build-registration
+test-build-registration: ## 验证产品镜像构建登记与影响范围选择
+	@bash -n scripts/build/build-images.sh
+	@python3 scripts/ci/check-build-registration_test.py
+	@python3 scripts/ci/select-image-services_test.py
+	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
+
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-dev-lifecycle
 	@$(MAKE) test-infra-backup
@@ -487,10 +499,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/test/ontology-postgres-gate_test.py
 	@$(MAKE) test-ontology-infra-config
 	@$(MAKE) test-go-dependency-policy
-	@bash -n scripts/build/build-images.sh
-	@python3 scripts/ci/check-build-registration_test.py
-	@python3 scripts/ci/select-image-services_test.py
-	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
+	@$(MAKE) test-build-registration
 	@$(MAKE) test-frontend-ci-registration
 	@$(MAKE) test-python-ci-registration
 	@python3 scripts/ci/check-t2-ci-registration_test.py
@@ -734,6 +743,14 @@ prod-health: ## 检查生产环境服务健康状态
 .PHONY: test-system-runtime-log
 test-system-runtime-log: ## 隔离验证模块运行日志采集、授权、持久化和实例隔离
 	@bash scripts/test/system-runtime-log-gate.sh
+
+.PHONY: test-common-hdfs-unit test-common-hdfs
+test-common-hdfs-unit: ## HDFS 管理根边界、WebHDFS 协议和只读能力确定性验证
+	@cd common && GOWORK=off go test ./engine/plugins/hdfs ./engine/plugins ./engine/plugin -count=1
+	@cd develop/backend && GOWORK=off go test ./internal/service -count=1
+
+test-common-hdfs: ## 独占 HDFS 集群及真实 Spark Worker 三格式读取门禁
+	@bash scripts/test/common-hdfs-gate.sh
 
 test-common-elasticsearch-unit: ## ES 插件、通用文档预览和单层目录扫描确定性测试
 	@cd common && GOWORK=off go test ./engine/plugins/elasticsearch ./resourcetree ./query -count=1

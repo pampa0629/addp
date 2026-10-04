@@ -1,11 +1,29 @@
 package scanflow
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
 	"github.com/addp/meta/internal/models"
 )
+
+func TestLeafExecutionConfigSurvivesPersistence(t *testing.T) {
+	const target = "addp://engine/12/path/public/A?type=table"
+	config := ManualExecutionConfig(12, 0, "postgresql", []string{target}, nil, nil, "deep", true, "meta")
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored map[string]interface{}
+	if err := json.Unmarshal(encoded, &stored); err != nil {
+		t.Fatal(err)
+	}
+	parsed := ParseExecutionConfig(stored)
+	if !reflect.DeepEqual(parsed.Targets, []string{target}) || len(parsed.CatalogPaths) != 0 || parsed.ItemID != 0 {
+		t.Fatalf("stored leaf scope expanded: %+v", parsed)
+	}
+}
 
 func TestParseExecutionConfig(t *testing.T) {
 	t.Parallel()
@@ -14,6 +32,7 @@ func TestParseExecutionConfig(t *testing.T) {
 		12,
 		1831,
 		"postgresql",
+		nil,
 		[]string{"public"},
 		[]models.ScanRefGroup{
 			{

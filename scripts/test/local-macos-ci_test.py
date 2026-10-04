@@ -258,6 +258,9 @@ class LocalMacOSCiTest(unittest.TestCase):
             """,
         )
 
+        # Agent 独立选择 Python 3.12；测试不得调用主机的真实解释器创建环境。
+        (self.fake_bin / "python3.12").symlink_to(self.fake_bin / "python3")
+
     def _run(
         self,
         *arguments: str,

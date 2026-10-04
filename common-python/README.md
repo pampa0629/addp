@@ -210,7 +210,7 @@ CLI Browser Login 按 RFC 8252 在 `127.0.0.1` 绑定随机空闲端口，先向
 
 ```bash
 cd common-python
-uv sync --extra dev
+uv sync --extra dev --extra inference-langchain
 uv run pytest -q
 addp --version
 ```

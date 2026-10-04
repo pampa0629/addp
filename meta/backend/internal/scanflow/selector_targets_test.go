@@ -86,24 +86,6 @@ func TestTargetPathsFromItemFallsBackToPhysicalPath(t *testing.T) {
 	}
 }
 
-func TestTargetPathsFromLocatorUsesTopCatalogForTable(t *testing.T) {
-	t.Parallel()
-
-	got := TargetPathsFromLocator("addp://engine/9/path/public/roads?type=table")
-	if !reflect.DeepEqual(got, []string{"public"}) {
-		t.Fatalf("TargetPathsFromLocator() = %#v", got)
-	}
-}
-
-func TestTargetPathsFromLocatorUsesSharedParserDecoding(t *testing.T) {
-	t.Parallel()
-
-	got := TargetPathsFromLocator("addp://engine/9/path/bucket/folder%20name/report.pdf?type=object")
-	if !reflect.DeepEqual(got, []string{"bucket/folder name/report.pdf"}) {
-		t.Fatalf("TargetPathsFromLocator() = %#v", got)
-	}
-}
-
 func TestEngineIDFromLocator(t *testing.T) {
 	t.Parallel()
 

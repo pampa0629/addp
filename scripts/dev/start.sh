@@ -2630,7 +2630,7 @@ start_runtime_copilot() (
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./copilot/backend/venv/bin/python -c "import fastapi" &> /dev/null; then
+    if ! ./copilot/backend/venv/bin/python -c "import fastapi; from langchain_core import __version__; assert __version__ == '1.6.6'" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
         cd copilot/backend
         NEED_INSTALL=true
@@ -2719,12 +2719,20 @@ start_runtime_agent() (
     echo "首次启动 Agent，创建 Python 虚拟环境..."
     cd agent/backend
     SELECTED_PYTHON=$(select_python)
+    if ! "$SELECTED_PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12)' &> /dev/null; then
+      echo -e "${RED}✗ Agent DeerFlow Harness 需要 Python 3.12，请先安装 python3.12${NC}"
+      exit 1
+    fi
     PYTHON_VER=$($SELECTED_PYTHON --version)
     echo "  使用 $PYTHON_VER"
     $SELECTED_PYTHON -m venv venv
     NEED_INSTALL=true
   else
-    if ! ./agent/backend/venv/bin/python -c "import fastapi" &> /dev/null; then
+    if ! ./agent/backend/venv/bin/python -c 'import sys; assert sys.version_info[:2] == (3, 12)' &> /dev/null; then
+      echo -e "${RED}✗ Agent 虚拟环境需要重建为 Python 3.12；请先停止 Agent 并将 agent/backend/venv 移到仓库外备份${NC}"
+      exit 1
+    fi
+    if ! ./agent/backend/venv/bin/python -c "import fastapi, deerflow; from langchain_core import __version__; assert __version__ == '1.6.6'" &> /dev/null; then
       echo "检测到虚拟环境缺少依赖，重新安装..."
       cd agent/backend
       NEED_INSTALL=true

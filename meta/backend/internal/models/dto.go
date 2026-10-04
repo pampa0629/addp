@@ -18,7 +18,7 @@ type ScanRequest struct {
 	RefGroups         []ScanRefGroup `json:"ref_groups"`          // 内容引用组
 	NodeID            uint           `json:"node_id"`             // 要扫描的节点 ID
 	ItemID            uint           `json:"item_id"`             // 要扫描的数据项 ID
-	Targets           []string       `json:"targets"`             // locator 目标列表
+	Targets           []string       `json:"targets"`             // 完整且同引擎的 locator；叶子不展开父范围 | Complete same-engine locators; leaves never expand to parents
 	ScanDepth         string         `json:"scan_depth"`          // basic/deep
 	TriggerType       string         `json:"trigger_type"`        // manual；空值按 manual 处理
 	Source            string         `json:"source"`              // 扫描来源

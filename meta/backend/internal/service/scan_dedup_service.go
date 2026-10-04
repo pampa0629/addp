@@ -28,7 +28,7 @@ func NewScanDedupService(redis *redis.Client) *ScanDedupService {
 
 // GenerateExecutionLockKey 生成扫描执行范围锁。
 // 锁粒度跟扫描 scope 对齐，避免同一 engine 下 item refresh、ref group 回扫和局部 catalog scan 互相误挡。
-func (s *ScanDedupService) GenerateExecutionLockKey(tenantID, engineID uint, itemID uint, catalogPaths []string, refGroups []models.ScanRefGroup) string {
+func (s *ScanDedupService) GenerateExecutionLockKey(tenantID, engineID uint, itemID uint, catalogPaths []string, refGroups []models.ScanRefGroup, targets []string) string {
 	mode := "engine"
 	keyParts := []string{fmt.Sprintf("tenant:%d", tenantID), fmt.Sprintf("engine:%d", engineID)}
 	if itemID > 0 {
@@ -37,6 +37,9 @@ func (s *ScanDedupService) GenerateExecutionLockKey(tenantID, engineID uint, ite
 	} else if normalizedRefs := canonicalRefGroups(refGroups); len(normalizedRefs) > 0 {
 		mode = "ref_groups"
 		keyParts = append(keyParts, "refs:"+hashJSON(normalizedRefs))
+	} else if locators := canonicalCatalogPaths(targets); len(locators) > 0 {
+		mode = "targets"
+		keyParts = append(keyParts, "targets:"+hashJSON(locators))
 	} else if paths := canonicalCatalogPaths(catalogPaths); len(paths) > 0 {
 		mode = "catalog_paths"
 		keyParts = append(keyParts, "paths:"+hashJSON(paths))

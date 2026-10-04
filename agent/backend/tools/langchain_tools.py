@@ -29,7 +29,7 @@ def _python_type(schema: dict[str, Any]):
     }.get(schema_type, Any)
 
 
-def _arguments_model(tool_name: str, schema: dict[str, Any], *, injected_id: bool = True) -> type[BaseModel]:
+def _arguments_model(tool_name: str, schema: dict[str, Any]) -> type[BaseModel]:
     required = set(schema.get("required") or [])
     fields: dict[str, tuple[Any, Any]] = {}
     for name, property_schema in (schema.get("properties") or {}).items():
@@ -48,8 +48,7 @@ def _arguments_model(tool_name: str, schema: dict[str, Any], *, injected_id: boo
                 json_schema_extra=property_schema,
             ),
         )
-    if injected_id:
-        fields["tool_call_id"] = (Annotated[str, InjectedToolCallId], ...)
+    fields["tool_call_id"] = (Annotated[str, InjectedToolCallId], ...)
     return create_model(
         f"{tool_name.replace('.', '_').title()}Arguments",
         __config__=ConfigDict(extra="forbid"),
@@ -58,14 +57,22 @@ def _arguments_model(tool_name: str, schema: dict[str, Any], *, injected_id: boo
 
 
 class ManifestStructuredTool(StructuredTool):
-    # LangChain's Pydantic subset drops json_schema_extra. Publish a separate
-    # public model from the same Manifest, preserving nested contracts without
-    # exposing the runtime-injected ToolCall identity to the model.
-    public_args_schema: type[BaseModel] = Field(exclude=True)
+    # Public Schema is the Manifest itself, not a framework-generated approximation.
+    manifest_input_schema: dict[str, Any] = Field(exclude=True)
 
     @property
-    def tool_call_schema(self) -> type[BaseModel]:
-        return self.public_args_schema
+    def tool_call_schema(self) -> dict[str, Any]:
+        return self.manifest_input_schema
+
+    def _parse_input(self, tool_input, tool_call_id):
+        if not isinstance(tool_input, dict):
+            raise ValueError("tool_input_must_be_object")
+        provided = set(tool_input)
+        parsed = super()._parse_input(tool_input, tool_call_id)
+        # Core 1.x applies every Pydantic default, including synthetic None.
+        # Only defaults explicitly declared by the Manifest are business inputs.
+        defaults = {name for name, prop in self.manifest_input_schema.get("properties", {}).items() if "default" in prop}
+        return {name: value for name, value in parsed.items() if name in provided or name in defaults or name == "tool_call_id"}
 
 
 def _runtime_name(stable_name: str) -> str:
@@ -102,7 +109,7 @@ def create_agent_tools(token: str, agent_run_id: str) -> list[StructuredTool]:
                 name=_runtime_name(stable_name),
                 description=f"ADDP Tool `{stable_name}`：{definition.description}",
                 args_schema=_arguments_model(stable_name, definition.input_schema),
-                public_args_schema=_arguments_model(stable_name, definition.input_schema, injected_id=False),
+                manifest_input_schema=definition.input_schema,
                 metadata={"addp_tool_name": stable_name},
             )
         )

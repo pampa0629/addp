@@ -483,3 +483,14 @@ Transfer SQL ETL 与字段血缘验收 `transfer-relational-sql-etl` 唯一使�
 Redis 正式 Online 入口为 `make test-online ONLINE_SUITE=redis-consumer-flow`，由 `online-t4-gates.yml` 人工触发 `redis-hosted-t4` Job，经 `scripts/test/online-hosted-redis-gate.sh` 准备一次性 Ubuntu x86_64 部署。物理夹具复用上面的固定镜像、ACL 与九个样例，使用随机回环端口、随机密码和 tmpfs；System helper 建立非默认 Tenant、最小权限普通用户与独立引擎登记身份。断言覆盖 System 实时目录/事实、Meta unknown key 身份及重扫稳定性、Manager 九个原生预览、大整数/二进制/TTL，并实际登录 Console 从 Meta 页面重扫及打开 Manager 预览，归档截图和同一身份的报告。成功、失败及中断都销毁当次业务容器、平台 Infra 和凭据目录；不接管个人开发环境。脚本确定性验证纳入 `make test-online-runner`，仅人工触发，不登记 schedule。
 
 Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169297656](https://github.com/pampa0629/addp/actions/runs/37169297656)，提交 `7398d24d743b96316a338dce4a4b39675b979d7b`。归档报告确认同一租户、普通用户和引擎完成 Meta 页面重扫及九个原生预览，并保留重扫和各样例共十张 Console 截图。该记录只证明对应提交的消费链路，不替代后续变更的重新验收。
+
+
+## HDFS Simple 实验环境
+
+在仓库根运行 `bash business/scripts/start.sh -hdfs`，启动固定官方 Hadoop 3.5.0 NameNode 与 DataNode，并使用固定 Spark 3.5.0 容器幂等生成样例。数据保留在两个独立 volume；`stop.sh -hdfs`、`restart.sh -hdfs` 沿用同一标准生命周期，不重新格式化已有 NameNode。初始化只更新 `/addp/samples/orders.csv`、`orders.json`、`orders.parquet` 和根文件 `/addp/订单 100%.csv`；每份 20 条订单，金额总和 2100，其他业务文件不变。
+
+WebHDFS 首选回环端口 9870，原生 RPC 首选 8020。DataNode 数据端口 9866 与 HTTP 端口 9864 在容器内外保持一致，并广播 `HDFS_SHARED_HOST` 指定的宿主机地址；RPC 与 DataNode 只绑定该地址，不能只开放 NameNode。该地址必须由宿主机 Go 服务、Spark Driver 和容器 Worker 同时访问；标准入口在配置留空时检测宿主机可达 IPv4，配置四个端口发生冲突时直接失败。换网后检查地址，并在 System 编辑同一引擎实例的连接事实。
+
+System 中选择独立 `hdfs` 引擎：填写启动输出的 `webhdfs_endpoint` 和 `rpc_uri`，`root_path=/addp`、`authentication=simple`、`user=addp_business_reader`。根目录不进入 locator；例如 `samples/orders.parquet` 保持 `type=file`。Spark 计算集群单独选择，源文件通过已授权 locator 在执行时派生原生 HDFS URI；任务不保存连接参数。Spark Workflow 部署设置 `HADOOP_USER_NAME=addp_business_reader`，Worker 使用同一应用用户；身份不符或 HDFS 保存请求会被拒绝。Simple 是开发实验的主体声明，首版不提供 Kerberos、HA、YARN、MapReduce 或 HDFS 写回。
+
+`make test-common-hdfs-unit` 与 `make test-spark-workflow` 验证确定性契约；`make test-common-hdfs` 创建专属无宿主端口集群，验证 WebHDFS、共享格式解析、样例幂等、真实 Worker 的 CSV/JSON/Parquet 读取聚合，以及退出后的容器、卷、网络零残留。正式 System/Meta/Manager/Develop 消费链路仍须完成 T4，不能仅以该 T2 门禁声明平台验收完成。

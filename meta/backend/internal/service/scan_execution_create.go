@@ -69,6 +69,7 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		scope.EngineID,
 		req.ItemID,
 		scantask.NormalizeStorageType(resource.EngineType),
+		scope.Targets,
 		scope.CatalogPaths,
 		scope.RefGroups,
 		scope.ScanDepth,
@@ -80,7 +81,7 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 	lockKey := ""
 	lockAcquired := false
 	if s.dedupService != nil {
-		lockKey = s.dedupService.GenerateExecutionLockKey(tenantID, scope.EngineID, req.ItemID, scope.CatalogPaths, scope.RefGroups)
+		lockKey = s.dedupService.GenerateExecutionLockKey(tenantID, scope.EngineID, req.ItemID, scope.CatalogPaths, scope.RefGroups, scope.Targets)
 		acquired, err := s.dedupService.TryAcquireOwnedLock(ctx, lockKey, execution.ExecutionID, 2*time.Hour)
 		if err != nil {
 			s.log.Warn("标记扫描范围运行失败，将继续创建执行", "error", err, "lock_key", lockKey)

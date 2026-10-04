@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	engineplugin "github.com/addp/common/engine/plugin"
 )
 
@@ -25,6 +26,22 @@ func TestSourceReadSetPreservesPreciseTargets(t *testing.T) {
 	request.Targets[0].Segments[2].Name = "changed"
 	if paths[0].Segments[2].Name != " 表/名 " {
 		t.Fatal("observation aliases caller targets")
+	}
+}
+
+func TestSourceReadCredentialRejectsIncompleteInputBeforeDatabase(t *testing.T) {
+	path := testFulfillmentRequest().Path
+	for _, targets := range [][]engineplugin.EngineCatalogPath{nil, {engineplugin.TabularNamespacePath(path.EngineID, "schema", "public")}} {
+		result, err := NewRepository(nil).readCurrentUserSourceRules(context.Background(), "addp_at_not_loaded", targets)
+		if result != nil || !errors.Is(err, errSourceReadRules) {
+			t.Fatalf("incomplete credential target set=%+v %v", result, err)
+		}
+	}
+	if result, err := NewRepository(nil).readCurrentUserSourceRules(context.Background(), "", []engineplugin.EngineCatalogPath{path}); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+		t.Fatalf("empty credential=%+v %v", result, err)
+	}
+	if result, err := (*Repository)(nil).readCurrentUserSourceRules(context.Background(), "addp_at_not_loaded", []engineplugin.EngineCatalogPath{path}); result != nil || !errors.Is(err, errSourceReadRules) {
+		t.Fatalf("missing repository=%+v %v", result, err)
 	}
 }
 

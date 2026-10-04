@@ -1,4 +1,4 @@
-FROM localhost:5001/python:3.11-slim
+FROM localhost:5001/python:3.12-slim
 
 WORKDIR /app
 
@@ -32,8 +32,12 @@ COPY common-python/addp_common/ /tmp/common-python/addp_common/
 RUN pip install --no-cache-dir --no-build-isolation --no-deps /tmp/common-python \
     && rm -rf /tmp/common-python
 
-# 复制代码
+# 保留仓库层级，开发和容器复用平台 Skill 唯一加载路径。
+WORKDIR /app/agent/backend
 COPY agent/backend/ .
+COPY skills/ /app/skills/
+RUN python -m pip check \
+    && python -c "from main import app; from agents.main_agent import _load_skill_registry; assert _load_skill_registry(), 'agent_skills_missing'; app.openapi()"
 
 EXPOSE 8190
 

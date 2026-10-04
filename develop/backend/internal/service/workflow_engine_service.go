@@ -13,6 +13,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/hdfs"
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
@@ -613,7 +614,17 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			return nil, nil, fmt.Errorf("任务 %d 资源访问失败: %w", i, err)
 		}
 
-		if err := normalizeDerivedWorkflowPath(params, engine.EngineType); err != nil {
+		if len(adapterSpec.ResourceOutputs) > 0 {
+			registered, lookupErr := plugin.Get(engine.EngineType)
+			if lookupErr != nil {
+				return nil, nil, lookupErr
+			}
+			capabilities := registered.Capabilities()
+			if capabilities.EngineFamily == "file" && (capabilities.Storage == nil || capabilities.Storage.Store == nil || !capabilities.Storage.Store.StreamWrite) {
+				return nil, nil, fmt.Errorf("任务 %d 目标引擎不支持文件写入", i)
+			}
+		}
+		if err := normalizeDerivedWorkflowPath(params, engine.EngineType, plugin.ConnectionInfo(engine.ConnectionInfo)); err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源路径规范化失败: %w", i, err)
 		}
 
@@ -1066,12 +1077,25 @@ func appendPath(segments []string, targetName string) []string {
 func normalizeDerivedWorkflowPath(
 	params map[string]interface{},
 	engineType string,
+	connectionInfo plugin.ConnectionInfo,
 ) error {
 	resourceKind := strings.TrimSpace(stringParam(params, "__workflow_resource_kind"))
 	if resourceKind == "" {
 		return nil
 	}
 	pathValue := stringParam(params, "path")
+	if engineType == "hdfs" {
+		config, err := hdfs.ParseConnectionInfo(connectionInfo)
+		if err != nil {
+			return err
+		}
+		relative, _ := params["path"].(string)
+		if relative == "" {
+			return fmt.Errorf("derived HDFS resource path is empty")
+		}
+		params["path"], err = config.NativeURI(relative)
+		return err
+	}
 	if pathValue == "" {
 		return fmt.Errorf("derived resource path is empty")
 	}

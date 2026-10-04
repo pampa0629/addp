@@ -1,12 +1,34 @@
 package scanresolver
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 )
+
+func TestResolveScopePreservesLeafTargets(t *testing.T) {
+	const target = "addp://engine/7/path/sales.v2/A?type=table"
+	scope, err := New(nil).ResolveScope(3, scanflow.Options{Targets: []string{target}, ScanDepth: "deep"})
+	if err != nil || scope.EngineID != 7 || scope.Mode != scanflow.ModeTargets || !reflect.DeepEqual(scope.Targets, []string{target}) || len(scope.CatalogPaths) != 0 {
+		t.Fatalf("leaf scope expanded or lost: %+v %v", scope, err)
+	}
+	for _, opts := range []scanflow.Options{
+		{Targets: []string{"bad"}},
+		{EngineID: 7, CatalogPaths: []string{" "}},
+		{EngineID: 7, RefGroups: []models.ScanRefGroup{{Primary: " "}}},
+		{EngineID: 7, Targets: []string{"bad"}},
+		{EngineID: 7, Targets: []string{" "}},
+		{EngineID: 7, Targets: []string{target, "addp://engine/8/path/public/B?type=table"}},
+		{EngineID: 7, Targets: []string{target}, CatalogPaths: []string{"sales.v2"}},
+	} {
+		if _, err := New(nil).ResolveScope(3, opts); !errors.Is(err, scanflow.ErrInvalidScope) {
+			t.Fatalf("invalid target accepted: %+v %v", opts, err)
+		}
+	}
+}
 
 func TestResolveScopeRefGroups(t *testing.T) {
 	t.Parallel()

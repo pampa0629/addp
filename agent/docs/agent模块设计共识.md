@@ -1,6 +1,6 @@
 # Agent 模块设计共识
 
-更新时间：2026-07-15
+更新时间：2026-10-04
 
 本文只记录 Agent 模块内部边界。平台级 Tool、AG-UI / A2UI 和评测契约分别以 `docs/spec/addp智能体Tool开放规范.md`、`docs/spec/addp智能体交互协议规范.md`、`docs/spec/addp智能体评测规范.md` 为事实源；Skill 与认证分别引用各自既有规范。专题文档只保留架构决策和实施历史。
 
@@ -16,6 +16,16 @@ Agent 是 ADDP 官方提供的自然语言交互产品和一种 Agent Runtime，
 - ResultRef、Interaction 和 Presentation 的消息编排。
 
 Agent 不拥有平台级 Skill、owner 模块业务结果或审批事实，也不复制 Copilot 的结构化生成逻辑。
+
+### 进程内执行内核
+
+Agent 保留产品、路由和持久状态边界，唯一执行内核采用 DeerFlow Harness 的 `create_deerflow_agent` SDK，不部署 DeerFlow Server，也不保留自研模型／工具循环。依赖固定到官方源码提交 `130a9ab9f035a8f319502f8d5e044ed05962b2aa`，Agent 使用 Python 3.12；共享 Inference LangChain Adapter 与 Copilot 统一使用 LangChain Core 1.x。
+
+每次请求构建独立、无框架持久化后端的 Harness。ADDP 中间件负责 Skill 轮数上限、受控 Tool 事件、owner 事实投影和暂停；工具仍唯一通过现有 Manifest Adapter → ToolExecutor 调用 owner。工具串行执行，暂停后同一模型响应中的其他调用不得产生副作用；有效澄清优先于同批业务工具。业务 AgentRun ID 仅进入运行上下文，不写入框架 `configurable.run_id`，恢复时从 ADDP 语义检查点重建，不恢复框架消息快照。
+
+本阶段不启用 shell、文件、浏览器、子代理、框架记忆或自主审批；不注册 DeerFlow 内置业务工具。会话摘要沿用 ADDP 原有预算，Harness 不建立第二套持久记忆。模型只经 Inference Runtime；纯文本内容块被共享 Adapter 规范化，非文本内容明确拒绝。
+
+产品镜像保留仓库相对层级：后端位于 `/app/agent/backend`，平台级 Skill 位于 `/app/skills`。开发和容器复用同一 Skill 加载路径，不新增容器专用 loader 或私有 Skill 副本。镜像构建检查应用导入、Skill 装配与依赖一致性；Agent 镜像的增量构建输入包含平台 `skills/`。
 
 ## 二、唯一交互协议
 

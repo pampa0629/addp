@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from graph.factory import AgentFactory
+from tests.harness_fixtures import HarnessTestModel, harness_tools
 from agents.checkpoint import confirm_selection, normalize_checkpoint
 
 
@@ -491,8 +492,8 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             "checkpoint": checkpoint,
         }
         with (
-            patch("graph.factory.create_agent_tools", return_value=tools),
-            patch("graph.factory.get_llm", return_value=llm or _ScriptedLLM(responses)),
+            patch("graph.factory.create_agent_tools", return_value=harness_tools(tools)),
+            patch("graph.factory.get_llm", return_value=HarnessTestModel(source=llm or _ScriptedLLM(responses))),
         ):
             return [
                 event

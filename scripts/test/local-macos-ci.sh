@@ -264,16 +264,17 @@ prepare_python_venv() {
   local venv=$2
   local requirements=$3
   local editable=$4
-  shift 4
+  local interpreter=$5
+  shift 5
   local fingerprint state_file recorded python
-  fingerprint=$(file_fingerprint "$(python3 --version 2>&1)" "$@")
+  fingerprint=$(file_fingerprint "$("$interpreter" --version 2>&1)" "$@")
   state_file="$STATE_DIR/python-${name}.sha256"
   recorded=$(sed -n '1p' "$state_file" 2>/dev/null || true)
   python="$venv/bin/python"
   if [ ! -x "$python" ] || [ "$recorded" != "$fingerprint" ]; then
     echo "==> Prepare Python environment: $name"
     rm -rf "$venv"
-    python3 -m venv "$venv"
+    "$interpreter" -m venv "$venv"
     "$python" -m pip install --disable-pip-version-check --upgrade pip
     if [ -n "$requirements" ]; then
       local requirements_dir requirements_name
@@ -292,13 +293,13 @@ prepare_dependencies() {
   prepare_frontends
   prepare_playwright_browser
   prepare_python_venv \
-    common-python common-python/.venv "" './common-python[dev]' \
+    common-python common-python/.venv "" './common-python[dev,inference-langchain]' python3 \
     common-python/pyproject.toml
   prepare_python_venv \
-    agent agent/backend/venv agent/backend/requirements.txt "" \
+    agent agent/backend/venv agent/backend/requirements.txt "" python3.12 \
     agent/backend/requirements.txt common-python/pyproject.toml
   prepare_python_venv \
-    copilot copilot/backend/venv copilot/backend/requirements.txt './common-python[dev,inference-langchain]' \
+    copilot copilot/backend/venv copilot/backend/requirements.txt './common-python[dev,inference-langchain]' python3 \
     copilot/backend/requirements.txt common-python/pyproject.toml
 }
 

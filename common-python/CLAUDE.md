@@ -60,7 +60,7 @@ common-python/
 
 ```bash
 cd common-python
-uv sync --extra dev
+uv sync --extra dev --extra inference-langchain
 uv run pytest -q
 
 # 正式 CLI wheel、全新 venv、pipx 生命周期和 macOS Keychain 产品门禁

@@ -33,6 +33,15 @@ func (s *DirectLeafRuntime) ScanRoot(
 	scanDepth string,
 	_ bool,
 ) (int, error) {
+	return s.scan(ctx, enginePlugin, resource, tenantID, scanDepth, nil)
+}
+
+func (s *DirectLeafRuntime) ScanLeaf(ctx context.Context, p plugin.EnginePlugin, resource *commonModels.Engine, tenantID uint, entry plugin.EngineCatalogEntry, scanDepth string, _ bool) (int, int, int, error) {
+	items, err := s.scan(ctx, p, resource, tenantID, scanDepth, &entry)
+	return 0, items, 0, err
+}
+
+func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.EnginePlugin, resource *commonModels.Engine, tenantID uint, scanDepth string, target *plugin.EngineCatalogEntry) (int, error) {
 	if resource == nil {
 		return 0, fmt.Errorf("scan resource is nil")
 	}
@@ -49,22 +58,26 @@ func (s *DirectLeafRuntime) ScanRoot(
 	if err != nil {
 		return 0, err
 	}
-	if err := s.repo.ResetNodeState(rootNode, "running"); err != nil {
-		return 0, err
+	if target == nil {
+		if err := s.repo.ResetNodeState(rootNode, "running"); err != nil {
+			return 0, err
+		}
 	}
 	fail := func(scanErr error) (int, error) {
-		_ = s.repo.FinalizeNodeState(rootNode, "failed", scanErr.Error())
+		if target == nil {
+			_ = s.repo.FinalizeNodeState(rootNode, "failed", scanErr.Error())
+		}
 		return 0, scanErr
 	}
 
-	entries, err := catalogProvider.ListChildren(
-		ctx,
-		plugin.ConnectionInfo(resource.ConnectionInfo),
-		plugin.EngineCatalogRootPath(*model, resource.ID),
-		plugin.ListOptions{},
-	)
-	if err != nil {
-		return fail(fmt.Errorf("failed to list direct catalog leaves: %w", err))
+	var entries []plugin.EngineCatalogEntry
+	if target != nil {
+		entries = []plugin.EngineCatalogEntry{*target}
+	} else {
+		entries, err = catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.EngineCatalogRootPath(*model, resource.ID), plugin.ListOptions{})
+		if err != nil {
+			return fail(fmt.Errorf("failed to list direct catalog leaves: %w", err))
+		}
 	}
 
 	keepFingerprints := make([]string, 0, len(entries))
@@ -119,17 +132,21 @@ func (s *DirectLeafRuntime) ScanRoot(
 		keepFingerprints = append(keepFingerprints, item.Fingerprint)
 	}
 
-	if err := failures.Err(); err == nil {
+	if err := failures.Err(); target == nil && err == nil {
 		if err := s.repo.SoftDeleteItemsNotInList(rootNode.ID, keepFingerprints); err != nil {
 			failures.Add(resource.Name, fmt.Errorf("failed to delete missing direct catalog leaves: %w", err))
 		}
 	}
 	if scanErr := failures.Err(); scanErr != nil {
-		_ = s.repo.FinalizeNodeState(rootNode, "failed", scanErr.Error())
+		if target == nil {
+			_ = s.repo.FinalizeNodeState(rootNode, "failed", scanErr.Error())
+		}
 		return len(keepFingerprints), scanErr
 	}
-	if err := s.repo.FinalizeNodeStateWithDepth(rootNode, "completed", "", scanDepth); err != nil {
-		return 0, err
+	if target == nil {
+		if err := s.repo.FinalizeNodeStateWithDepth(rootNode, "completed", "", scanDepth); err != nil {
+			return 0, err
+		}
 	}
 	s.log.Info("direct catalog leaf 扫描完成",
 		"engine_id", resource.ID,

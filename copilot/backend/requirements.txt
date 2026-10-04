@@ -3,10 +3,7 @@ fastapi==0.110.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.9
 
-# LangChain 核心（锁定版本以避免依赖冲突）
-langchain==0.3.16
-langchain-community==0.3.16
-langgraph==0.2.62
+# LangChain Core 由共享 inference-langchain extra 唯一声明版本。
 
 # 数据库
 sqlalchemy==2.0.29

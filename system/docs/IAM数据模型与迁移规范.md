@@ -14,6 +14,10 @@ System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants
 
 当前源数据读取规则由 `engineaccess` 私有只读批量观察方法复用上述不可变历史，不新增 ACL 表或可编辑副本。该方法拥有独立只读事务，拒绝嵌入调用方写事务；整批目标在一条 SQL、一个已提交快照和一个数据库时刻下核验当前主体、直接组织成员、引擎与 Grant／Deny。仅全部精确目标都有有效 Grant 且没有有效 Deny 时返回规则覆盖，不读取来源数据库、不获取仲裁或 IAM 写锁、不产生规则或审计副作用。可信凭据、功能 Permission、执行范围与 Security 校验仍属后续消费链路，主体 ID／成员关系 ID／授权版本引用自身不是认证证明。
 
+可信同步 User 凭据组合复用 IAM 唯一 `ResolveUserAccessToken`：自有只读事务统一使用 Repeatable Read，凭据投影和精确规则查询共享已提交快照。Tenant／Principal／Membership／授权版本只由真实当前凭据派生，查询后另以数据库墙钟复核 Token 的自然到期；不保存或输出凭据、不复制 IAM 核验算法。底座本身保持私有，不取代 owner 功能／Client Scope、Execution 或 Security，不新增迁移或 Permission。
+
+首个正式同步检查为 `POST /api/v1/system/engine-access/read-checks/manager-preview`，只接受当前 Tenant User Bearer 与 1–200 个完整目标，固定消费 Manager 已声明的 `manager.data_item.read`。功能／API Client 条件、真实凭据和全部源规则在同一只读快照中核验；任一目标无有效 Grant 或命中 Deny 时整体拒绝。成功只返回不可缓存的当次 `observed_at`，不返回完整 Allow、规则详情或执行凭据。领域检查不写授权审计或请求副本；通用 HTTP 元信息审计仍由现有中间件执行，不记录 Token 或正文。Manager 的完整 Provider ReadSet、同一 PreparedQuery 实际执行及 Security 尚须接入，不能把此接口完成当作真实内容访问闭环完成。
+
 迁移 000183 增加 `engine_access_grant_revocations`：以原办理 UUID 唯一引用 Grant，追加撤销者 Principal／Tenant Membership、数据库墙钟与必填原因；不复制或改写原目标、接收主体、动作和期限。行及整表历史不可 UPDATE／DELETE／TRUNCATE，插入核验撤销者为原 Tenant 的 User 成员。真实撤销命令发布独立 `system.engine_access_grant.revoke`，不默认分配 Role 或账号，不推进既有授权版本；服务核验当前账号、Token、Permission 和引擎管理委派，并同事务写入高风险撤销审计。引擎停用或失去实时目录能力仍允许收回旧授权，账号或委派失效则拒绝；不修改新授予的启用条件。撤销历史不是 Explicit Deny，也不表示执行侧数据权限已经接通。
 
 迁移 000184 只前向收紧撤销插入触发器：按数据库墙钟拒绝原 `at_time` Grant 到期后的首次撤销，不回填时间、不修改既有撤销／受理／签发历史，不新增或分配权限。服务写入前和审计后提交前同样检查授权期限，失败同时回滚撤销与审计；已成功撤销的原参重试优先读取历史，仅重新核验当前操作者资格，不受原授权后续到期或五分钟自动办理窗口限制。`until_revoked` 保持可主动撤销。

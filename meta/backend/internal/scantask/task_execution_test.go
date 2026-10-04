@@ -21,6 +21,7 @@ func TestNewManualExecution(t *testing.T) {
 		7,
 		1831,
 		"postgres",
+		nil,
 		[]string{"public"},
 		[]models.ScanRefGroup{{Primary: "bucket/path/roads.shp"}},
 		"basic",

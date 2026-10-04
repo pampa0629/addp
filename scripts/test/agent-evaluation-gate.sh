@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-PYTHON="$ROOT_DIR/agent/backend/venv/bin/python"
+PYTHON="${ADDP_AGENT_PYTHON:-$ROOT_DIR/agent/backend/venv/bin/python}"
 MODE=${1:-offline}
 REPORT=${ADDP_AGENT_EVAL_REPORT:-/tmp/addp-agent-evaluation-gate-${MODE}.json}
 

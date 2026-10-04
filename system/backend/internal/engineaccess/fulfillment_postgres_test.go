@@ -53,12 +53,21 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	if err := db.Exec("DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE").Error; err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// The package gate owns the whole-suite deadline. Independent serial
+	// exercises below have their own bounded contexts; the account factory must
+	// not inherit a setup budget consumed by earlier exercises.
+	ctx := context.Background()
+	if deadline, ok := t.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	setupCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	if err := migration.NewRunner(dsn).Run(ctx); err != nil {
+	if err := migration.NewRunner(dsn).Run(setupCtx); err != nil {
 		t.Fatal(err)
 	}
-	if err := migration.NewRunner(dsn).Run(ctx); err != nil {
+	if err := migration.NewRunner(dsn).Run(setupCtx); err != nil {
 		t.Fatal(err)
 	}
 	identity := iam.NewRepository(db)
@@ -111,6 +120,8 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	baseDelegation := seedDelegation(t, member.ID, time.Now().Add(time.Hour))
 	newOperator := func(t *testing.T, lifetime time.Duration) (userProvenance, time.Time) {
 		t.Helper()
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
 		principal := &iam.Principal{PrincipalType: iam.PrincipalTypeUser, Status: iam.PrincipalStatusActive, AuthorizationVersion: 1}
 		if err := identity.Transaction(ctx, func(tx *iam.Repository) error {
 			if err := tx.CreatePrincipal(ctx, principal); err != nil {

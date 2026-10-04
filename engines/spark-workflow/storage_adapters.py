@@ -3,10 +3,12 @@ Storage Adapters - 统一存储访问适配器
 支持: 数据库(JDBC) + 文件(S3/HDFS) + 湖仓(Iceberg/Delta) + Catalog
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from typing import Any, Dict
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, unquote
 import uuid
 
 try:
@@ -440,6 +442,9 @@ class FileAdapter:
         path = params['path']
         format_type = params.get('format', 'parquet')
 
+        if path.startswith('hdfs:') or params.get('connection_info', {}).get('engine_type') == 'hdfs':
+            path = FileAdapter._validate_hdfs_access(spark, params)
+
         logger.info(f"Loading from file: {path}, format: {format_type}")
 
         # 如果是S3路径,配置S3访问
@@ -480,6 +485,8 @@ class FileAdapter:
     def save(df: DataFrame, params: Dict[str, Any]):
         """保存到文件"""
         path = params['path']
+        if path.startswith('hdfs:') or params.get('connection_info', {}).get('engine_type') == 'hdfs':
+            raise ValueError("HDFS engine supports reading only")
         format_type = params.get('format', 'parquet')
         mode = params.get('mode', 'overwrite')
 
@@ -499,6 +506,31 @@ class FileAdapter:
             df.write.format("delta").mode(mode).save(path)
         else:
             raise ValueError(f"Unsupported file format: {format_type}")
+
+    @staticmethod
+    def _validate_hdfs_access(spark: SparkSession, params: Dict[str, Any]):
+        conn = params.get('connection_info')
+        if not isinstance(conn, dict) or conn.get('engine_type') != 'hdfs' or conn.get('authentication') != 'simple':
+            raise ValueError("HDFS requires explicit Simple engine connection facts")
+        source, rpc = urlsplit(params['path']), urlsplit(conn.get('rpc_uri', ''))
+        root = conn.get('root_path', '')
+        physical = unquote(source.path)
+        if (source.scheme != 'hdfs' or rpc.scheme != 'hdfs' or source.netloc != rpc.netloc
+                or not source.hostname or not source.port or source.username or source.query or source.fragment
+                or rpc.username or rpc.query or rpc.fragment or rpc.path not in ('', '/')
+                or not root.startswith('/') or (root != '/' and root.endswith('/'))
+                or any(part in ('.', '..', '') for part in root.split('/')[1:] if root != '/')
+                or '\x00' in physical or any(part in ('.', '..', '') for part in physical.split('/')[1:])
+                or not (physical == root or physical.startswith(root.rstrip('/') + '/'))):
+            raise ValueError("HDFS path is outside the engine management root or RPC authority")
+        ugi = spark.sparkContext._jvm.org.apache.hadoop.security.UserGroupInformation
+        if ugi.isSecurityEnabled() or ugi.getCurrentUser().getShortUserName() != conn.get('user'):
+            raise ValueError("HDFS Simple user differs from the fixed Spark application Hadoop identity")
+        if any(char in physical for char in '*?[]{}\\'):
+            raise ValueError("HDFS source must be a literal resource; Hadoop glob characters are unsupported")
+        # Spark passes strings to Hadoop Path(String), which escapes literal names.
+        # Decode the derived URI once, after validating its physical root boundary.
+        return source.scheme + '://' + source.netloc + physical
 
     @staticmethod
     def _configure_s3_access(spark: SparkSession, params: Dict[str, Any]):

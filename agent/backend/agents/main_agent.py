@@ -55,7 +55,7 @@ class SkillMeta:
         self.description = description
         self.path = path
         self.tools = tools                   # 工具白名单
-        self.max_iterations = max_iterations  # ReAct 最大迭代次数
+        self.max_iterations = max_iterations  # Harness 模型调用轮数上限
         self.required_skills = required_skills or []  # 只组合方法正文，不继承工具权限
 
     def load_body(self, registry: Dict[str, "SkillMeta"] | None = None, stack: tuple[str, ...] = ()) -> str:

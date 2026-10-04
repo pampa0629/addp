@@ -198,12 +198,23 @@ func TestPluginSensitiveFields(t *testing.T) {
 	allPlugins := plugin.GetAll()
 
 	for dbType, p := range allPlugins {
-		if p.EngineOrigin() == "extension" || dbType == "nfs" {
+		if p.EngineOrigin() == "extension" {
 			continue
 		}
-		sensitiveFields := p.SensitiveFields()
-		if len(sensitiveFields) == 0 {
-			t.Errorf("Plugin '%s' has no sensitive fields defined", dbType)
+		provider, ok := p.(plugin.ConnectionSpecProvider)
+		if !ok {
+			t.Fatalf("general plugin %s has no connection spec", dbType)
+		}
+		// Protocols without credentials (NFS and HDFS Simple) legitimately have none.
+		expected := provider.ConnectionSpec().SensitiveFields()
+		actual := p.SensitiveFields()
+		if len(expected) != len(actual) {
+			t.Errorf("Plugin %s sensitive fields differ from its connection spec", dbType)
+		}
+		for i, field := range expected {
+			if i >= len(actual) || actual[i] != field {
+				t.Errorf("Plugin %s sensitive field %s differs from its connection spec", dbType, field)
+			}
 		}
 	}
 }
@@ -245,6 +256,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"spark":             {origin: "general", family: "tabular", storage: true, query: true},
 		"minio":             {origin: "general", family: "object", storage: true},
 		"nfs":               {origin: "general", family: "file", storage: true},
+		"hdfs":              {origin: "general", family: "file", storage: true},
 		"s3":                {origin: "general", family: "object", storage: true},
 		"duckdb":            {origin: "extension", family: "query_runtime", query: true},
 		"jupyter":           {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook"}, scriptLanguages: []string{"python"}},

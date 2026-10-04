@@ -871,6 +871,73 @@ const docTemplate = `{
                 "x-addp-auth-mode": "self"
             }
         },
+        "/engine-access/read-checks/manager-preview": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前 Tenant 第一方或 OAuth User Bearer；固定检查 manager.data_item.read 和 addp.api Client 边界，身份与完整源规则共用只读快照。无 Grant 或存在 Deny 整体拒绝，不接收自报身份、execution 或 Permission | Only a current Tenant first-party or OAuth User Bearer. Fixed manager.data_item.read and addp.api client constraints are checked with complete source rules in one read-only snapshot. Missing Grants or Deny reject the entire set; caller identity, execution and Permission are not accepted\n成功仅为当次源规则观察，不是完整 Allow、访问令牌或可缓存凭据。Manager 必须提供 Provider 证明的完整读取集合、完成本地 Security 保护并执行同一 PreparedQuery；本接口不访问源端或 Catalog | Success is a point-in-time source observation, not a complete Allow, access token or cacheable credential. Manager must supply the Provider-proven complete read set, apply local Security protection and execute the same PreparedQuery. This endpoint accesses neither the source nor Catalog",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "检查 Manager 预览的当前精确源读取范围 | Check current precise source read coverage for Manager preview",
+                "parameters": [
+                    {
+                        "description": "1 至 200 个完整读取目标，不支持 query 参数 | 1 to 200 complete read targets; no query parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.ManagerPreviewReadCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次观察时刻，不授予访问权 | Observation time without granting access",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read"
+                ]
+            }
+        },
         "/engine-catalog/engines": {
             "get": {
                 "security": [
@@ -12483,6 +12550,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_engineaccess.ManagerPreviewReadCheckRequest": {
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogPath"
+                    }
+                }
+            }
+        },
         "github_com_addp_system_internal_engineaccess.SourceDeny": {
             "type": "object",
             "properties": {
@@ -12524,6 +12602,14 @@ const docTemplate = `{
                     "example": ""
                 },
                 "recipient_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_engineaccess.SourceReadCheck": {
+            "type": "object",
+            "properties": {
+                "observed_at": {
                     "type": "string"
                 }
             }

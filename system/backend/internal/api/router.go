@@ -122,6 +122,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 	api := router.Group("/api/v1/system")
 	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
+	if err := RegisterEngineAccessSourceReadCheckRoutes(api, runtime, &EngineAccessSourceReadCheckHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
 	if secret := cfg.ServiceClientSecrets["addp-system"]; secret != "" {
 		tokens, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-system", secret, nil)
 		if err != nil {

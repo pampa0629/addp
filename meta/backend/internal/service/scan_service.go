@@ -161,6 +161,9 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		"force", scope.Force,
 		"source", scope.Source,
 	)
+	if len(scope.Targets) > 0 {
+		startFields = append(startFields, "target_count", len(scope.Targets))
+	}
 	if len(scope.CatalogPaths) > 0 {
 		startFields = append(startFields, "target_paths", scope.CatalogPaths)
 	}
@@ -203,6 +206,7 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		EnginePlugin: enginePlugin,
 		TenantID:     effectiveTenantID,
 		CatalogPaths: scope.CatalogPaths,
+		Targets:      scope.Targets,
 		RefGroups:    scope.RefGroups,
 		ScanDepth:    scope.ScanDepth,
 		Force:        scope.Force,
@@ -255,6 +259,9 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 }
 
 func scanFailureTarget(resource *commonModels.Engine, scope scanflow.Scope) string {
+	if len(scope.Targets) > 0 {
+		return scope.Targets[0]
+	}
 	if len(scope.CatalogPaths) > 0 {
 		return scope.CatalogPaths[0]
 	}

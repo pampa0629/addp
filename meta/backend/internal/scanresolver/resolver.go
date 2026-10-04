@@ -3,6 +3,8 @@ package scanresolver
 import (
 	"fmt"
 
+	"github.com/addp/common/resourcetree"
+
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"gorm.io/gorm"
@@ -22,9 +24,34 @@ func (r *Resolver) ResolveScope(tenantID uint, opts scanflow.Options) (scanflow.
 		return scanflow.Scope{}, err
 	}
 
+	if opts.NodeID > 0 || opts.ItemID > 0 {
+		selector := opts
+		selector.EngineID = 0
+		selectedEngineID, err := r.ResolveEngineID(tenantID, selector)
+		if err != nil || selectedEngineID != engineID {
+			return scanflow.Scope{}, fmt.Errorf("%w: selector engine mismatch", scanflow.ErrInvalidScope)
+		}
+	}
 	scanDepth, err := scanflow.NormalizeScanDepth(opts.ScanDepth, scanflow.ScanDepthBasic)
 	if err != nil {
 		return scanflow.Scope{}, err
+	}
+	if len(opts.Targets) > 0 && (opts.NodeID > 0 || opts.ItemID > 0 || len(opts.CatalogPaths) > 0 || len(opts.RefGroups) > 0) {
+		return scanflow.Scope{}, fmt.Errorf("%w: mixed locator selectors", scanflow.ErrInvalidScope)
+	}
+	for _, target := range opts.Targets {
+		loc, err := resourcetree.ParseURI(target)
+		if err != nil || loc.EngineID != engineID {
+			return scanflow.Scope{}, fmt.Errorf("%w: malformed or cross-engine target", scanflow.ErrInvalidScope)
+		}
+	}
+	for _, path := range opts.CatalogPaths {
+		if len(scanflow.UniqueNonEmpty([]string{path})) == 0 {
+			return scanflow.Scope{}, fmt.Errorf("%w: empty catalog path", scanflow.ErrInvalidScope)
+		}
+	}
+	if len(opts.RefGroups) > 0 && len(scanflow.NormalizeRefGroups(opts.RefGroups)) == 0 {
+		return scanflow.Scope{}, fmt.Errorf("%w: empty content references", scanflow.ErrInvalidScope)
 	}
 	if opts.ItemID > 0 {
 		return scanflow.Scope{
@@ -44,6 +71,7 @@ func (r *Resolver) ResolveScope(tenantID uint, opts scanflow.Options) (scanflow.
 
 	return scanflow.Scope{
 		EngineID:     engineID,
+		Targets:      scanflow.UniqueNonEmpty(opts.Targets),
 		Mode:         scanflow.ModeFor(opts, catalogPaths),
 		CatalogPaths: catalogPaths,
 		RefGroups:    scanflow.NormalizeRefGroups(opts.RefGroups),
@@ -82,6 +110,9 @@ func (r *Resolver) ResolveEngineID(tenantID uint, opts scanflow.Options) (uint, 
 			return id, nil
 		}
 	}
+	if len(opts.Targets) > 0 {
+		return 0, fmt.Errorf("%w: no valid target engine", scanflow.ErrInvalidScope)
+	}
 	return 0, fmt.Errorf("engine_id is required")
 }
 
@@ -108,10 +139,6 @@ func (r *Resolver) ResolveTargets(tenantID uint, opts scanflow.Options) ([]strin
 			return nil, fmt.Errorf("item target not found: %w", err)
 		}
 		catalogPaths = append(catalogPaths, scanflow.TargetPathsFromItem(item)...)
-	}
-
-	for _, target := range opts.Targets {
-		catalogPaths = append(catalogPaths, scanflow.TargetPathsFromLocator(target)...)
 	}
 
 	return scanflow.UniqueNonEmpty(catalogPaths), nil

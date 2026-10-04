@@ -1,0 +1,44 @@
+services:
+  hdfs-namenode:
+    image: ghcr.io/apache/hadoop:3.5.0@sha256:389d4c48dcfdc34815d5ad1c4d2aa6ca85714c9c40e34d01ba5acb55b62f2d72
+    user: root
+    entrypoint: ["bash", "/addp/hdfs/start.sh", "namenode"]
+    environment:
+      HDFS_RPC_URI: hdfs://hdfs-namenode:8020
+      HDFS_DATANODE_HOST: hdfs-datanode
+      HDFS_LIST_LIMIT: "2"
+    volumes:
+      - ../../business/hdfs:/addp/hdfs:ro
+      - hdfs_name:/data/name
+      - ${HDFS_T2_WORK_DIR:?T2 work directory required}:/gate
+    mem_limit: 1g
+  hdfs-datanode:
+    image: ghcr.io/apache/hadoop:3.5.0@sha256:389d4c48dcfdc34815d5ad1c4d2aa6ca85714c9c40e34d01ba5acb55b62f2d72
+    user: root
+    entrypoint: ["bash", "/addp/hdfs/start.sh", "datanode"]
+    environment:
+      HDFS_RPC_URI: hdfs://hdfs-namenode:8020
+      HDFS_DATANODE_HOST: hdfs-datanode
+    volumes:
+      - ../../business/hdfs:/addp/hdfs:ro
+      - hdfs_data:/data/data
+    mem_limit: 1g
+  spark-master:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    environment:
+      HDFS_RPC_URI: hdfs://hdfs-namenode:8020
+    volumes:
+      - ../../business/hdfs:/addp/hdfs:ro
+      - ../../engines/spark-workflow:/addp/spark-workflow:ro
+      - ./hdfs-spark-contract.py:/addp/hdfs-spark-contract.py:ro
+    mem_limit: 2g
+  spark-worker:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "--host", "spark-worker", "--cores", "2", "--memory", "1g", "spark://spark-master:7077"]
+    mem_limit: 2g
+volumes:
+  hdfs_name:
+  hdfs_data:

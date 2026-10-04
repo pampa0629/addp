@@ -34,7 +34,7 @@
 
 ## HDFS 已确认的首版范围
 
-2026-10-04 确认 HDFS 首版包括统一引擎登记、文件目录扫描与预览，以及真实 Spark Worker 的分布式读取；认证范围仍待确认。路径目标契约见 [存储引擎路径体系规范](../spec/addp存储引擎路径体系规范.md#hdfs-路径目标契约)。当前尚无 HDFS 正式插件、Business 集群或真实消费验收，不得登记为已支持。
+2026-10-04 确认 HDFS 首版包括统一引擎登记、文件目录扫描与预览，以及真实 Spark Worker 的分布式读取；认证采用 Simple 开发实验模式，固定应用 Hadoop 用户，拒绝连接主体与应用身份不一致的读取。路径目标契约见 [存储引擎路径体系规范](../spec/addp存储引擎路径体系规范.md#hdfs-路径目标契约)。实现与真实消费验收完成前不得登记为已支持。
 
 实施前须同步识别并接入以下门禁：
 
@@ -46,4 +46,10 @@
 
 准备阶段补齐现有 Spark Workflow T1 的 `make test-spark-workflow` 与 Platform CI 登记，并由 `make test-module MODULE=engines` 自动发现；这只验证已有运行时契约，不表示 HDFS 访问已经完成。
 
-Business 只拥有 HDFS 服务、样例和生命周期，不调用 System API。Spark 的 Hadoop 配置必须覆盖 Driver 和 Executor，连接必须同时到达 NameNode 与 DataNode；WebHDFS 可用不能代替原生 Spark 访问验收。引擎登记、权限校验与执行期连接解析继续归原有 owner。首版不包含 HDFS 写回或 HA；认证范围确认并通过真实门禁前，不声明 Simple 或 Kerberos 消费能力。
+实现门禁入口为 `make test-common-hdfs-unit`（插件边界与 Develop locator 派生）、`make test-spark-workflow`（Spark 身份/地址/只读适配）和 `make test-common-hdfs`（固定官方镜像、独占网络、真实 WebHDFS、共享格式解析器和 Standalone Worker 三格式聚合）。HDFS T2 注册到根 `test-integration`、Common 自动发现与 `release-and-t2-gates.yml`，其输入声明覆盖 Business HDFS、Spark Workflow 和 Develop 派生代码；这些路径的变化会选中 Common HDFS 门禁。T2 不替代 System 登记、Meta 扫描、Manager 预览和 Develop 正式发起作业的 T4。
+
+WebHDFS 分页只使用 Hadoop 3.5.0 实际协议的全小写 `startafter`；[官方 StartAfterParam 源码](https://github.com/apache/hadoop/blob/rel/release-3.5.0/hadoop-hdfs-project/hadoop-hdfs-client/src/main/java/org/apache/hadoop/hdfs/web/resources/StartAfterParam.java)及固定镜像中的类常量均如此。官方 WebHDFS 文档的 `startAfter` 示例不能作为运行字段事实，不能发送双字段兜底。独占 T2 将 NameNode `dfs.ls.limit` 设置为 2，必须跨页列出全部样例；Business 默认仍为 1000。
+
+Business 只拥有 HDFS 服务、样例和生命周期，不调用 System API。Spark 的 Hadoop 配置必须覆盖 Driver 和 Executor，连接必须同时到达 NameNode 与 DataNode；WebHDFS 可用不能代替原生 Spark 访问验收。引擎登记、权限校验与执行期连接解析继续归原有 owner。首版不包含 HDFS 写回、Kerberos 或 HA；真实门禁通过前，不声明 Simple 消费能力。
+
+2026-10-04 实现进展：Simple 只读插件、Business NameNode/DataNode 与三格式样例已落地；独占 T2 已验证每页 2 条的真实目录分页、有界内容与范围读取、中文/空格/百分号文件名、共享 CSV/JSON/Parquet 解析，以及真实 Worker 每格式 20 行、金额合计 2100 的聚合。格式验证消费由 WebHDFS 插件读出的原始字节，在宿主机使用现有 CGO 工具链运行共享解析器；便携 Linux WebHDFS 测试程序仅携带 HDFS 依赖。正式 T4 仍待开发环境重启后验收。

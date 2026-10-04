@@ -419,6 +419,14 @@ check_service_changed() {
             common_time=$(common_python_latest_time)
             comparison_time=$(( python_backend_time > common_time ? python_backend_time : common_time ))
 
+            if [ "$service" = "agent-backend" ]; then
+                local skills_time
+                # 目录时间也参与判断，删除 Skill 后必须重建，不能继续打包旧版本。
+                skills_time=$(find skills -not -path "*/__pycache__/*" 2>/dev/null | \
+                    xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+                comparison_time=$(( comparison_time > skills_time ? comparison_time : skills_time ))
+            fi
+
             if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
                 echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
                 return 1

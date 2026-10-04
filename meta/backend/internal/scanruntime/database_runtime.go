@@ -54,10 +54,22 @@ func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanReposi
 //   - tenantID: 租户ID
 //   - engineID: 引擎ID
 //   - namespaceName: 命名空间名称
-//   - scanDepth: 扫描深度 ("quick"快速扫描 | "deep"深度扫描)
+//   - scanDepth: 扫描深度 ("basic"基础扫描 | "deep"深度扫描)
 //
 // 返回：(schema数量, 表数量, 字段数量, error)
 func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, p plugin.EnginePlugin, resource *commonModels.Engine, tenantID, engineID uint, namespaceName string, scanDepth string, force bool) (int, int, int, error) {
+	return s.scanNamespace(ctx, p, resource, tenantID, engineID, namespaceName, scanDepth, force, nil)
+}
+
+// ScanLeaf uses the same table processor without enumerating or completing its namespace.
+func (s *DatabaseRuntime) ScanLeaf(ctx context.Context, p plugin.EnginePlugin, resource *commonModels.Engine, tenantID uint, entry plugin.EngineCatalogEntry, scanDepth string, force bool) (int, int, int, error) {
+	if len(entry.Path.Segments) != 3 {
+		return 0, 0, 0, fmt.Errorf("unsupported tabular leaf path")
+	}
+	return s.scanNamespace(ctx, p, resource, tenantID, resource.ID, entry.Path.Segments[1].Name, scanDepth, force, &entry)
+}
+
+func (s *DatabaseRuntime) scanNamespace(ctx context.Context, p plugin.EnginePlugin, resource *commonModels.Engine, tenantID, engineID uint, namespaceName, scanDepth string, force bool, target *plugin.EngineCatalogEntry) (int, int, int, error) {
 	if p == nil {
 		return 0, 0, 0, fmt.Errorf("engine plugin is required for %s", resource.EngineType)
 	}
@@ -88,21 +100,28 @@ func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, p plugin.EnginePlug
 		return 0, 0, 0, err
 	}
 
-	if err := s.repo.ResetNodeState(schemaNode, "running"); err != nil {
-		return 0, 0, 0, err
+	if target == nil {
+		if err := s.repo.ResetNodeState(schemaNode, "running"); err != nil {
+			return 0, 0, 0, err
+		}
 	}
-
 	// 3. 扫描表
-	tables, fields, err := s.scanTables(ctx, resource, scanCatalog, tenantID, engineID, schemaNode, namespaceName, scanDepth, force)
+	tables, fields, err := s.scanTables(ctx, resource, scanCatalog, tenantID, engineID, schemaNode, namespaceName, scanDepth, force, target)
 	if err != nil {
-		_ = s.repo.FinalizeNodeState(schemaNode, "failed", err.Error())
+		if target == nil {
+			_ = s.repo.FinalizeNodeState(schemaNode, "failed", err.Error())
+		}
 		return 0, tables, fields, err
 	}
 
 	// 6. 完成扫描
-	if err := s.repo.FinalizeNodeStateWithDepth(schemaNode, "completed", "", scanDepth); err != nil {
-		return 0, tables, fields, err
+	if target == nil {
+		if err := s.repo.FinalizeNodeStateWithDepth(schemaNode, "completed", "", scanDepth); err != nil {
+			return 0, tables, fields, err
+		}
 	}
-
+	if target != nil {
+		return 0, tables, fields, nil
+	}
 	return 1, tables, fields, nil
 }
