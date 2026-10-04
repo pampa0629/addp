@@ -158,6 +158,93 @@ def test_resampling_and_reprojection(raster_file):
             with pytest.raises(ValueError): raster_resample(raster, **kwargs)
 
 
+@pytest.mark.parametrize('algorithm,resolution,width,height', [
+    ('bilinear',.5,12,8), ('average',1.5,4,3),
+])
+@pytest.mark.parametrize('operator', ['resample','reproject'])
+@pytest.mark.parametrize('nodata', [-9999,float('nan')], ids=['finite-nodata','nan-nodata'])
+@pytest.mark.parametrize('opaque', [255,128], ids=['opaque','partial-alpha'])
+@pytest.mark.parametrize('profile', ['geotiff','cog'])
+def test_interpolation_excludes_invalid_edge_pixels_and_preserves_saved_analysis(
+        tmp_path, algorithm, resolution, width, height, operator, nodata, opaque, profile):
+    values = np.array([[0,10,30,1e6,1e6,1e6],
+                       [20,nodata,50,1e6,1e6,1e6],
+                       [70,80,100,1e6,1e6,1e6],
+                       [1e6,1e6,1e6,1e6,1e6,1e6]],dtype=np.float64)
+    alpha = np.zeros(values.shape)
+    alpha[:3,:3] = opaque
+    source = create_raster(tmp_path/'source.tif',np.stack([values,alpha]),nodata=nodata)
+    dataset = gdal.Open(str(source),gdal.GA_Update)
+    dataset.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    dataset = None
+    original = source.read_bytes()
+    valid_source = np.isfinite(values)&(values!=nodata)&(alpha>0)
+    expected = np.full((height,width),np.nan)
+    source_y,source_x = np.indices(values.shape)
+    for row in range(height):
+        for column in range(width):
+            if algorithm=='bilinear':
+                center_x,center_y = (column+.5)*resolution,(row+.5)*resolution
+                # Warp's bilinear kernel first requires a valid containing source cell.
+                if not valid_source[int(center_y),int(center_x)]:
+                    continue
+                weights = np.maximum(0,1-np.abs(source_x+.5-center_x))*np.maximum(0,1-np.abs(source_y+.5-center_y))
+            else:
+                # Area overlap supplies the average weights, including fractional cells.
+                weights = np.maximum(0,np.minimum(source_x+1,(column+1)*resolution)-np.maximum(source_x,column*resolution))*np.maximum(
+                    0,np.minimum(source_y+1,(row+1)*resolution)-np.maximum(source_y,row*resolution))
+            contributors = valid_source&(weights>0)
+            if contributors.any():
+                expected[row,column] = np.sum(values[contributors]*weights[contributors])/np.sum(weights[contributors])
+    if algorithm=='average':
+        np.testing.assert_equal(expected,[[7.5,30,np.nan,np.nan],[60,82.5,np.nan,np.nan],[np.nan]*4])
+    target = tmp_path/'result.tif'
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        workspace = raster.workspace
+        if operator=='resample':
+            result = raster_resample(raster,resolution=[resolution,resolution],resampling=algorithm)
+        else:
+            result = raster_reproject(raster,'EPSG:4326',[resolution,resolution],resampling=algorithm)
+        output = gdal.Open(str(result.path))
+        assert (output.RasterXSize,output.RasterYSize,output.RasterCount)==(width,height,2)
+        np.testing.assert_allclose(output.GetGeoTransform(),[0,resolution,0,4,0,-resolution])
+        assert output.GetSpatialRef().GetAuthorityCode(None)=='4326'
+        band = output.GetRasterBand(1)
+        actual = read_band_values(band)
+        coverage = read_band_values(output.GetRasterBand(2))
+        np.testing.assert_equal(coverage>0,np.isfinite(expected))
+        np.testing.assert_allclose(actual[np.isfinite(expected)],expected[np.isfinite(expected)],rtol=1e-7,atol=1e-8)
+        if band.GetNoDataValue() is not None:
+            np.testing.assert_equal(actual[~np.isfinite(expected)],np.full(np.count_nonzero(~np.isfinite(expected)),band.GetNoDataValue()))
+        output = band = None
+        raster_save(result,target_plan(target),profile=profile,blocksize=128)
+        persisted = raster_load(source_plan(target))
+        statistics = raster_statistics(persisted)
+        valid = expected[np.isfinite(expected)]
+        assert (statistics['valid_count'],statistics['invalid_count'])==(valid.size,expected.size-valid.size)
+        np.testing.assert_allclose([statistics['min'],statistics['max'],statistics['mean'],statistics['stddev']],
+                                   [valid.min(),valid.max(),valid.mean(),valid.std()],rtol=1e-7,atol=1e-8)
+        histogram = raster_histogram(persisted,bins=5,value_range=[0,100])
+        counts,edges = np.histogram(valid,bins=5,range=(0,100))
+        assert histogram['counts']==counts.tolist() and histogram['edges']==edges.tolist()
+        assert histogram['outside_count']==0
+        assert raster_statistics(persisted,band=2)['valid_count']==expected.size
+        calculated = raster_band_math(persisted,'b1+1')
+        output = gdal.Open(str(calculated.path))
+        np.testing.assert_allclose(read_band_values(output.GetRasterBand(1)),expected+1,rtol=1e-7,atol=1e-8,equal_nan=True)
+        output = None
+        if profile=='cog':
+            assert validate_cog(persisted)['valid']
+    assert not workspace.exists()
+    output = gdal.Open(str(target))
+    np.testing.assert_equal(read_band_values(output.GetRasterBand(2))>0,np.isfinite(expected))
+    np.testing.assert_allclose(read_band_values(output.GetRasterBand(1))[np.isfinite(expected)],valid,rtol=1e-7,atol=1e-8)
+    output = None
+    assert source.read_bytes()==original
+    assert {path.name for path in tmp_path.iterdir()}=={'source.tif','result.tif'}
+
+
 @pytest.mark.parametrize('dtype,opaque,nodata', [
     (gdal.GDT_Byte,255,250), (gdal.GDT_UInt16,65535,65000), (gdal.GDT_Float64,255,-9999),
 ], ids=['byte-alpha','uint16-alpha','float64-alpha'])
