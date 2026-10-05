@@ -7,6 +7,34 @@ const locator = 'addp://engine/9/path/public/current?type=table&item_id=3'
 const node = id => ({ kind: 'data_item', item_id: id, name: id === 3 ? 'current' : `source_${id}`, full_name: `public.table_${id}`, engine_id: 9, engine_name: 'Lineage PostgreSQL', item_type: 'table' })
 const edge = (source, target) => ({ source: node(source), target: node(target), relation_kind: 'derive', granularity: 'item' })
 
+test('canvas observations wait for queued text and path repaint', async ({ page }) => {
+  await observeLineageCanvas(page)
+  await page.goto('about:blank')
+  await page.setContent('<div class="lineage-canvas"><canvas width="400" height="200"></canvas></div>')
+  const canvas = page.locator('canvas')
+  for (const read of [lineageCanvasText, lineageCanvasSnapshot]) {
+    await canvas.evaluate(element => {
+      const context = element.getContext('2d')
+      const paint = x => {
+        context.clearRect(0, 0, element.width, element.height)
+        context.font = '18px sans-serif'
+        context.fillText('current', x, 80)
+        context.beginPath()
+        context.moveTo(10, 80)
+        context.bezierCurveTo(50, 80, 80, 80, x, 80)
+        context.stroke()
+      }
+      paint(20)
+      // G6 queues Canvas repaint; a DOM click can finish before pixels update.
+      requestAnimationFrame(() => requestAnimationFrame(() => paint(120)))
+    })
+    const observation = await read(canvas)
+    const rows = Array.isArray(observation) ? observation : observation.rows
+    expect(rows.find(row => row.text === 'current').x).toBe(120)
+    if (observation.paths) expect(observation.paths.at(-1).at(-1).x).toBe(120)
+  }
+})
+
 for (const theme of ['light', 'dark']) {
   test(`hundred-column branched lineage preserves every field port in ${theme} theme`, async ({ page }) => {
     await observeLineageCanvas(page)

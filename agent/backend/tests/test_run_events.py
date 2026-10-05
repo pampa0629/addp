@@ -1,6 +1,7 @@
 import json
 import unittest
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from ag_ui.core import StateSnapshotEvent
@@ -66,6 +67,67 @@ class _MessageDB:
 
 
 class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
+    async def test_search_failure_is_visible_persisted_and_never_completed(self):
+        from ag_ui.core import RunAgentInput
+        from agents.events import AgentEvent
+        from api.chat import chat
+
+        message = "The index outlet is isolated; search remains unavailable"
+        run_id = uuid.uuid4()
+        db = _MessageDB()
+        entry_db = SimpleNamespace(commit=AsyncMock())
+        request = SimpleNamespace(
+            state=SimpleNamespace(principal_id=1, tenant_id=1, token="fixture"),
+            headers={}, is_disconnected=AsyncMock(return_value=False),
+        )
+        body = RunAgentInput.model_validate({
+            "threadId": "12", "runId": "protocol-1", "state": {}, "tools": [], "context": [], "forwardedProps": {},
+            "messages": [{"id": "user-1", "role": "user", "content": "Outdoor"}],
+        })
+
+        async def failed_stream(*_args, **_kwargs):
+            yield AgentEvent(kind="tool_start", payload={"tool_call_id": "search", "tool_name": "data.search", "args": {"query": "Outdoor"}})
+            yield AgentEvent(kind="tool_result", payload={
+                "tool_call_id": "search", "tool_name": "data.search", "is_error": True,
+                "error_source": "owner", "error_code": "manager_search_isolated",
+                "content": json.dumps({"error": {"code": "manager_search_isolated", "message": message}}),
+            })
+            yield AgentEvent(kind="run_failed", payload={
+                "error_source": "owner", "error_code": "manager_search_isolated", "message": message,
+            })
+
+        with (
+            patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary=""))),
+            patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
+            patch("api.chat.create_agent_run", new=AsyncMock(return_value=SimpleNamespace(id=run_id, checkpoint={}))),
+            patch("api.chat._load_agent_history", new=AsyncMock(return_value=([{"role": "user", "content": "Outdoor"}], 1))),
+            patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(db)),
+            patch("api.chat.set_run_context_metrics", new=AsyncMock()),
+            patch("api.chat.create_run_step", new=AsyncMock(return_value=SimpleNamespace(id=42))),
+            patch("api.chat.complete_run_step", new=AsyncMock()) as complete_step,
+            patch("api.chat.set_run_status", new=AsyncMock()) as set_status,
+            patch("api.chat.append_run_event", new=AsyncMock(return_value=None)),
+            patch("api.chat.refresh_run_metrics", new=AsyncMock()),
+            patch("api.chat.maybe_update_summary", new=AsyncMock()),
+            patch("api.chat.stream_agent_response", new=failed_stream),
+        ):
+            response = await chat(request, body, db=entry_db)
+            chunks = [chunk async for chunk in response.body_iterator]
+
+        events = [json.loads(line[6:]) for chunk in chunks for line in chunk.splitlines() if line.startswith("data: ")]
+        self.assertEqual(events[-1]["type"], "RUN_ERROR")
+        self.assertEqual(events[-1]["code"], "manager_search_isolated")
+        self.assertEqual(events[-1]["message"], message)
+        self.assertNotIn("RUN_FINISHED", [event["type"] for event in events])
+        self.assertEqual(events[-2]["snapshot"]["status"], "failed")
+        self.assertEqual(complete_step.await_args.kwargs["status"], "failed")
+        self.assertEqual(set_status.await_count, 1)
+        self.assertEqual(set_status.await_args.kwargs["status"], "failed")
+        self.assertEqual(set_status.await_args.kwargs["error_source"], "owner")
+        self.assertEqual(set_status.await_args.kwargs["error_code"], "manager_search_isolated")
+        self.assertEqual(db.added[0].content, message)
+        self.assertEqual(db.added[0].parts, [{"type": "text", "text": message}])
+
     def test_tool_arguments_are_not_replayable(self):
         self.assertIsNone(
             replay_payload(

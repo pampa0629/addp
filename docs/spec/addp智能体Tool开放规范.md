@@ -109,7 +109,7 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
 
-本体读取沿用 API 规范的 `{error, error_code}` owner 错误体；ToolExecutor 按该 owner 契约转换为统一 ToolExecutionError，只有 Manifest 声明的错误码和对应公开消息可以透传。不能要求 owner HTTP API 返回 Runtime 私有的嵌套错误结构。
+本体读取和 Manager 搜索沿用 API 规范的 `{error, error_code}` owner 错误体；ToolExecutor 按 owner 的正式错误契约转换为统一 ToolExecutionError，只有 Manifest 声明的错误码和对应公开消息可以透传。不能要求 owner HTTP API 返回 Runtime 私有的嵌套错误结构；未声明的错误码和正文不得透传。
 
 `engine.list` 的当前契约为 `2.0.0`。`all` 与 `workflow` 使用同一 SDK 精简投影，每个成员只包含 `id`、`name`、`engine_type`、`lifecycle_state`、`connection_status`；不包含连接信息、租户或创建人、完整 capabilities、能力展示模型和管理字段。`workflow` 只选择生命周期为 `active` 且当前 `engine.capabilities/v1` 声明 `compute.workflow.supported=true` 的引擎，不读取已删除的 `is_active`，不猜测缺失状态。连接检测状态只是 System 最近观测，不承诺本次请求可用。System 引擎管理 HTTP API 仍返回原有完整脱敏数组；SDK 的 `list_engines()` 保持该管理契约，Tool 仅消费唯一 `list_engine_summaries()`。不切片、截断或隐式过滤 `all` 的成员；精简后的完整数组仍超过 128 KiB 时明确失败。
 
@@ -222,6 +222,10 @@ ResultRef 是消息对 owner 结果的稳定引用，不是新的全局 Artifact
 ResultRef 的消息结构、Presentation 投影和客户端加载规则见 `docs/spec/addp智能体交互协议规范.md`。ToolExecutor 返回 owner 结果，Agent Runtime 才能按 Manifest 声明构造 ResultRef；不得从任意形似 ID 的字段猜测引用。
 
 ## 七、错误与安全
+
+`data.search` 明确透传 Manager 的 `manager_search_isolated`，表示索引出口受保护隔离，不表示零召回、权限不足或外部清理完成。普通源发现中，搜索的 owner、委托、响应或 Adapter 错误必须终止当前 AgentRun；仅输入 Schema 错误允许修正参数。Runtime 必须保留稳定错误归因，以既有 AG-UI `RUN_ERROR` 结束运行并保存公开失败消息，不能只记录失败 Tool step 后把 run 标成成功。停止后的同批 Tool 不执行，不向模型追加一轮以决定是否换路。
+
+只有搜索成功且零召回时才允许 Skill 规定的有界同义词补检索；不得把搜索失败当作零召回，不自动重试、不改用目录枚举、样本读取或扫描作为兜底，不解除索引隔离。调用方原本已明确限定容器的正常目录发现仍按 §4.4 执行，不是搜索失败后的备用路线；故障处理后由用户明确发起新的操作或重试。
 
 所有 Tool 共享以下基础错误类别：
 

@@ -215,3 +215,42 @@ def test_executor_preserves_stable_owner_approval_error():
 
     asyncio.run(run_case(409, "approval_not_approved", "审批尚未批准"))
     asyncio.run(run_case(403, "approval_forbidden", "审批不属于当前 AgentRun"))
+
+
+def test_search_isolation_preserves_declared_code_and_public_message_only():
+    import httpx
+
+    async def run_case(body, expected_code, expected_message):
+        executor = ToolExecutor("http://gateway", "token")
+
+        async def issue(*_args, **_kwargs):
+            return "addp_dat_test"
+
+        async def fail_handler(_arguments, _delegated_token):
+            request = httpx.Request("GET", "http://gateway/api/v1/manager/search")
+            response = httpx.Response(503, request=request, json=body)
+            raise httpx.HTTPStatusError("unavailable", request=request, response=response)
+
+        executor._issue_delegated_token = issue
+        executor._handlers["data.search"] = fail_handler
+        try:
+            await executor.call("data.search", {"query": "Outdoor"}, agent_run_id="run", tool_call_id="search")
+        except ToolExecutionError as exc:
+            assert exc.code == expected_code
+            assert exc.message == expected_message
+            assert exc.details == {"status": 503}
+            assert "private" not in str(exc.as_dict())
+        else:
+            raise AssertionError("search isolation must remain a failure")
+
+    for message in ["索引出口已隔离，暂不可搜索", "The index outlet is isolated"]:
+        asyncio.run(run_case(
+            {"error": message, "error_code": "manager_search_isolated", "detail": "private"},
+            "manager_search_isolated", message,
+        ))
+    for body in [
+        {"error": "private", "error_code": "undeclared_code"},
+        {"error": {"code": "undeclared_code", "message": "private"}},
+        {"error": "private"},
+    ]:
+        asyncio.run(run_case(body, "owner_api_error", "manager API 返回 HTTP 503"))

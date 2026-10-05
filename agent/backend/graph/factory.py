@@ -64,6 +64,7 @@ def _runtime_instructions() -> str:
 - AgentCheckpoint 中的 observed 事实可以直接复用，除非事实缺失或本次操作明确要求刷新；confirmed 选择视为用户已经完成，不得重复澄清。
 - `workflow.run` 返回 `approval_required` 时当前 run 必须暂停，不能重试或把客户端确认当作批准。
 - 恢复消息提供 approval_id 和 request_fingerprint 时，再次调用 `workflow.run` 且只提交这两个字段。
+- `data.search` 的服务、委托或响应失败终止当前运行，不是零召回，不能重复搜索或切换目录枚举、样本读取、扫描；不解除保护隔离。
 """
 
 
@@ -127,6 +128,8 @@ class _PlatformBoundary(AgentMiddleware):
             if message.status == "error":
                 return self._error(call, name, "invalid_tool_arguments", "工具参数不符合 Schema")
             approval = self._owner_result(call, name, message.content)
+            if isinstance(approval, Command):
+                return approval
             if approval is not None:
                 self.paused = True
                 _emit("interaction_required", tool_call_id=call["id"], **approval)
@@ -137,7 +140,19 @@ class _PlatformBoundary(AgentMiddleware):
         content = json.dumps({"error": {"code": code, "message": message}}, ensure_ascii=False)
         _emit("tool_result", tool_call_id=call["id"], tool_name=name, content=content,
               is_error=True, error_source="runtime", error_code=code)
+        halted = self._halt_failed_search(call, name, "runtime", code, message, content)
+        if halted is not None:
+            return halted
         return ToolMessage(content=content, tool_call_id=call["id"], name=call["name"], status="error")
+
+    def _halt_failed_search(self, call, name, source, code, message, content):
+        if name != "data.search" or not code or code in {"invalid_arguments", "invalid_tool_arguments", "tool_not_allowed"}:
+            return None
+        self.paused = True
+        _emit("run_failed", error_source=source, error_code=code, message=str(message)[:1000])
+        return Command(update={"messages": [ToolMessage(
+            content=content, tool_call_id=call["id"], name=call["name"], status="error",
+        )]}, goto=END)
 
     def _clarify(self, call):
         try:
@@ -167,7 +182,7 @@ class _PlatformBoundary(AgentMiddleware):
         source = None
         if code:
             source = "owner" if code.startswith("approval_") or code in {
-                "owner_api_error", "owner_api_unavailable", "invalid_owner_response",
+                "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "manager_search_isolated",
             } else "tool"
         if result is not None:
             facts = capture_owner_facts(name, result, self.checkpoint)
@@ -185,6 +200,11 @@ class _PlatformBoundary(AgentMiddleware):
                     _emit("presentation", kind="workflow_dag", workflow=definition)
         _emit("tool_result", tool_call_id=call["id"], tool_name=name, content=content,
               is_error=code is not None, error_source=source, error_code=code)
+        halted = self._halt_failed_search(
+            call, name, source, code, error.get("message", code) if isinstance(error, dict) else None, content,
+        )
+        if halted is not None:
+            return halted
         if name == "workflow.run" and isinstance(result, dict) and result.get("status") == "approval_required":
             return {
                 "interaction_kind": "owner_approval", "owner": "develop",

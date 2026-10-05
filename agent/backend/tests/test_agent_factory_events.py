@@ -305,6 +305,64 @@ def _validation_call():
 
 
 class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
+    async def test_search_failure_stops_without_retry_enumeration_or_write(self):
+        for code in ["manager_search_isolated", "owner_api_error", "owner_api_unavailable", "delegation_rejected", "invalid_owner_response"]:
+            with self.subTest(code=code):
+                class SearchTool(_OwnerErrorTool):
+                    async def ainvoke(self, _args):
+                        return json.dumps({"error": {"code": code, "message": "公开搜索失败"}})
+
+                calls = []
+
+                class ForbiddenTool:
+                    def __init__(self, name):
+                        self.name = name.replace(".", "__")
+                        self.metadata = {"addp_tool_name": name}
+
+                    async def ainvoke(self, _args):
+                        calls.append(self.name)
+                        return "{}"
+
+                responses = [
+                    _ScriptedResponse(tool_calls=[
+                        {"id": "search", "name": "data__search", "args": {"query": "Outdoor"}},
+                        {"id": "enumeration", "name": "resource__children__list", "args": {"engine_id": 11}},
+                        {"id": "write", "name": "transfer__task__create", "args": {}},
+                    ]),
+                    _ScriptedResponse(content="不应执行的模型兜底"),
+                ]
+                llm = _ScriptedLLM(responses)
+                events = await self._run_workflow_events(
+                    tools=[SearchTool(), ForbiddenTool("resource.children.list"), ForbiddenTool("transfer.task.create")],
+                    responses=responses, llm=llm,
+                    allowed_tool_names=["data.search", "resource.children.list", "transfer.task.create"],
+                )
+                self.assertEqual(calls, [])
+                self.assertEqual(len(llm.messages), 1)
+                self.assertEqual([event.kind for event in events], ["tool_start", "tool_result", "run_failed"])
+                failure = events[-1].payload
+                self.assertEqual(failure["error_code"], code)
+                self.assertEqual(failure["message"], "公开搜索失败")
+                self.assertEqual(failure["error_source"], "tool" if code == "delegation_rejected" else "owner")
+
+    async def test_search_zero_results_and_input_errors_do_not_stop_runtime(self):
+        for result in [{"total": 0, "results": []}, {"error": {"code": "invalid_arguments", "message": "参数错误"}}]:
+            with self.subTest(result=result):
+                class SearchTool(_DocumentSearchTool):
+                    async def ainvoke(self, _args):
+                        return json.dumps(result)
+
+                responses = [
+                    _ScriptedResponse(tool_calls=[{"id": "search", "name": "data__search", "args": {"query": "Outdoor"}}]),
+                    _ScriptedResponse(content="可以继续按 Skill 处理"),
+                ]
+                llm = _ScriptedLLM(responses)
+                events = await self._run_workflow_events(
+                    tools=[SearchTool()], responses=responses, llm=llm, allowed_tool_names=["data.search"],
+                )
+                self.assertEqual(len(llm.messages), 2)
+                self.assertNotIn("run_failed", [event.kind for event in events])
+
     async def test_manifest_bounded_tool_json_is_preserved_in_event_and_model_context(self):
         result = {
             "locator": "addp://engine/11/path/Outdoor?type=database&node_id=20",
@@ -674,6 +732,9 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool_result.payload["error_source"], "runtime")
         self.assertEqual(tool_result.payload["error_code"], "tool_adapter_exception")
         self.assertNotIn("owner service unavailable", tool_result.payload["content"])
+        self.assertEqual(events[-1].kind, "run_failed")
+        self.assertEqual(events[-1].payload["error_source"], "runtime")
+        self.assertEqual(events[-1].payload["error_code"], "tool_adapter_exception")
 
     async def test_owner_error_envelope_is_attributed_to_owner(self):
         events = await self._run_workflow_events(

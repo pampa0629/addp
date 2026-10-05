@@ -9,6 +9,7 @@ AgentEventKind = Literal[
     "checkpoint",
     "result_ref",
     "run_state",
+    "run_failed",
     "presentation",
     "interaction_required",
 ]

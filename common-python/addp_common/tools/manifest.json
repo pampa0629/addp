@@ -48,7 +48,7 @@
       "audit": {"mode": "owner"},
       "result_ref": {"mode": "locator"},
       "limits": {"max_bytes": 131072},
-      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large", "manager_search_isolated"],
       "input_schema": {
         "type": "object",
         "properties": {

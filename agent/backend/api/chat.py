@@ -469,6 +469,33 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     )
                     continue
 
+                if event.kind == "run_failed":
+                    # 失败由 Runtime 边界确定，不再让模型决定是否换路或宣称成功。
+                    error_message = str(event.payload["message"])[:1000]
+                    error_code = str(event.payload["error_code"])
+                    if not text_started:
+                        yield await emit(TextMessageStartEvent(message_id=assistant_message_id, role="assistant"))
+                    delta = ("\n\n" if full_text else "") + error_message
+                    full_text += delta
+                    yield await emit(TextMessageContentEvent(message_id=assistant_message_id, delta=delta))
+                    yield await emit(TextMessageEndEvent(message_id=assistant_message_id))
+                    parts.insert(0, {"type": "text", "text": full_text})
+                    await _save_assistant_message(
+                        session_id=session_id, message_id=assistant_message_id, content=full_text, parts=parts,
+                    )
+                    async with AsyncSessionLocal() as run_db:
+                        async with run_db.begin():
+                            await set_run_status(
+                                run_db, agent_run_id=agent_run_id, status="failed",
+                                error_source=event.payload["error_source"], error_code=error_code,
+                                error_message=error_message,
+                            )
+                    yield await emit(StateSnapshotEvent(snapshot={
+                        "sessionId": session_id, "agentRunId": str(agent_run_id), "status": "failed",
+                    }))
+                    yield await emit(RunErrorEvent(message=error_message, code=error_code))
+                    return
+
                 if event.kind == "run_state":
                     async with AsyncSessionLocal() as run_db:
                         async with run_db.begin():

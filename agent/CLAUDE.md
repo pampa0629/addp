@@ -160,6 +160,7 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 - 场景按“Tenant 显式绑定 > 平台默认绑定 > inference_scenario_not_configured”解析，不回退环境变量、任意 Profile 或另一个场景。
 - Agent 不保存或读取 Provider、endpoint、上游模型名和 API Key；这些事实只属于 Inference。
 - 错误归因使用 `error_source=client|runtime|tool|owner|protocol`、稳定 `error_code` 和最多 1000 字符的受限 `error_message`；不保留 `error_type` 兼容字段。
+- `data.search` 的非输入参数错误由平台边界确定性终止 run；同批后续 Tool 不执行，也不再请求模型决定重试或换发现路径。内部 `run_failed` 事件映射为既有 AG-UI `RUN_ERROR`，持久状态为 `failed`，公开失败消息保存到会话历史。`manager_search_isolated` 保持 owner 归因；不修改 Manager 保护状态。成功零召回和输入 Schema 错误仍按 Skill 正常处理。
 - ResultRef 由 Tool Manifest 声明驱动；当前 execution 引用只保存 `schema + owner_module + kind + execution:<id>`，不得复制 owner execution 状态或结果。locator 候选没有单一结果身份时不得创建 ResultRef。
 - Workflow DAG 只能在 `workflow.validate` 返回 `valid=true` 后生成 A2UI Presentation；draft 未校验或校验失败均不得展示为可用 DAG。
 - 不保留 `0:`、`dag:` 或 Vercel AI SDK 兼容流。

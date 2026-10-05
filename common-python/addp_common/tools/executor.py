@@ -107,7 +107,7 @@ class ToolExecutor:
             try:
                 body = exc.response.json()
                 error_body = body.get("error") if isinstance(body, dict) else None
-                if definition.owner == "ontology" and isinstance(error_body, str):
+                if isinstance(error_body, str):
                     candidate_code = str(body.get("error_code") or "")
                     if candidate_code in definition.errors:
                         error_code = candidate_code
@@ -116,7 +116,7 @@ class ToolExecutor:
                     candidate_code = str(error_body.get("code") or "")
                     if candidate_code in definition.errors:
                         error_code = candidate_code
-                    error_message = str(error_body.get("message") or error_message)
+                        error_message = str(error_body.get("message") or error_message)
             except (TypeError, ValueError):
                 pass
             raise ToolExecutionError(
