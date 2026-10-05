@@ -21,6 +21,15 @@ export function identity(payload) {
   }
 }
 
+export function matchesRedirectURL(actual, expected) {
+  if (actual.pathname !== expected.pathname) return false
+  const actualQuery = new URLSearchParams(actual.search)
+  const expectedQuery = new URLSearchParams(expected.search)
+  actualQuery.sort()
+  expectedQuery.sort()
+  return actualQuery.toString() === expectedQuery.toString()
+}
+
 export async function login(page, username, password, redirect) {
   const expectedRedirect = new URL(redirect, 'http://addp.invalid')
   let browserAccessToken = ''
@@ -41,7 +50,7 @@ export async function login(page, username, password, redirect) {
   if (await page.locator('input[autocomplete="one-time-code"]').isVisible().catch(() => false)) {
     throw new Error('the dedicated Online browser user must not require MFA')
   }
-  await page.waitForURL(url => url.pathname === expectedRedirect.pathname && url.search === expectedRedirect.search)
+  await page.waitForURL(url => matchesRedirectURL(url, expectedRedirect))
   await expect.poll(() => browserAccessToken, { timeout: 20_000 }).not.toBe('')
   return browserAccessToken
 }

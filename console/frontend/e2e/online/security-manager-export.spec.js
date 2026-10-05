@@ -123,6 +123,13 @@ test('protected Manager export retains its verified initiator and opens in Monit
       manager_source_verified: true, monitor_detail_visible: true,
       browser_warning_errors: 0, failed_business_responses: 0
     })}\n`, 'utf8')
+  } catch (error) {
+    const current = new URL(page.url())
+    console.error('Security export route at failure:', JSON.stringify({
+      pathname: current.pathname, query_keys: [...current.searchParams.keys()],
+      locator_matches_expected: current.searchParams.get('locator') === env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR
+    }))
+    throw error
   } finally {
     if (download) await download.delete()
     if (browserAPI) await browserAPI.dispose()
