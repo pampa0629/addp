@@ -563,8 +563,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
-| managed host node | 纳管节点 | System 维护稳定 node_id 的物理机或虚拟机身份，以及基础台账。 | 名称和 IP 是属性；不由 registered_host、容器主机名或服务 URL 推算，不等同 Engine Instance。 |
-| deployment association | 部署关联 | 受信部署环境明确提供的节点、容器、运行实例或引擎之间的承载关系。 | 保存来源与有效时间；无证据时不回填历史，不参与 Ready、路由或执行所有权。 |
+| managed host node | 纳管节点 | System 维护稳定 node_id 的物理机或虚拟机身份，以及基础台账。 | 名称和 IP 是属性；不由 registered_host、容器主机名或服务 URL 推算，不等同 Engine Instance。平台节点 API 创建 UUID，enabled 表示纳管意图而非在线状态。 |
+| deployment association | 部署关联 | 受信部署环境明确提供的节点、容器、运行实例或引擎之间的承载关系。 | 保存来源与有效时间；模块实例首次声明固定，当前 node_id 必须经节点允许集合裁定，declared_node_id 仅为历史声明。无证据时不回填历史，不参与 Ready、路由或执行所有权。 |
 | monitoring target | 监测目标 | Monitor 管理的被观测对象引用、监测类别和采集端点配置。 | 不替代节点、模块实例或引擎登记；引擎已登记不代表已接入资源监测。 |
 | observability capability | 观测能力 | 可独立选择部署的指标、集中日志或追踪能力。 | 组件属于 Infra，但不是所有模块的必需依赖；关闭与故障必须分别表达。 |
 | resource observation | 资源观测 | 带对象身份、来源、采样时间和单位的资源指标事实。 | CPU/内存、执行槽位、实例租约分别解释；无数据或过期不等于零负载或正常。 |
@@ -704,3 +704,11 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | 英文 | 中文 | 定义 | 边界 |
 | --- | --- | --- | --- |
 | protection algorithm | 保护算法 | 平台代码提供的版本化脱敏实现，声明适用字段类型、参数和输出类型。 | 当前内置前后掩码、固定值替换和普通 SM3；基线显式许可算法，字段策略按许可及参数边界配置。图层属性按空间表字段处理，几何不执行字符串算法。 |
+
+
+### 栅格运行资源治理
+
+| 英文 | 中文 | 定义 | 边界 |
+| --- | --- | --- | --- |
+| raster runtime resource policy | 栅格运行资源策略 | System 按 Engine Instance 管理的 GeoPython 进程栅格运行、等待与 GDAL 块缓存预算。 | 进程容量跨 Tenant 共享；不是算子参数、静态 capabilities、连接信息或总内存保证；Runtime 只应用与执行。 |
+| raster tenant quota | 租户栅格额度 | 当前 Tenant 在一个 GeoPython Runtime 中允许同时运行和等待的上限。 | System 引擎实例管理拥有事实；Tenant 管理员只能调整本租户且受平台约束；额度不是独享资源或容量预留。 |

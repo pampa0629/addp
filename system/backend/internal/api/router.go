@@ -121,6 +121,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	})
 
 	api := router.Group("/api/v1/system")
+	if err := RegisterEngineRasterPolicyRoutes(api, runtime, &EngineRasterPolicyHandler{
+		service: service.NewEngineRasterPolicyService(repository.NewEngineRasterPolicyRepository(db)),
+	}); err != nil {
+		panic(fmt.Errorf("register raster resource policy routes: %w", err))
+	}
 	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
 	if err := RegisterEngineAccessSourceReadCheckRoutes(api, runtime, &EngineAccessSourceReadCheckHandler{service: fulfillmentService}); err != nil {
 		panic(err)

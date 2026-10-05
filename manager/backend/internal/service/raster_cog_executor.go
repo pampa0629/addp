@@ -86,6 +86,7 @@ func (e *ManagerRasterCOGExecutor) BuildRasterCOG(ctx context.Context, req Raste
 		return nil, err
 	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
+		TenantID: req.Task.TenantID,
 		Params: map[string]interface{}{
 			"access_plan": plan.JSONMap(),
 			"options": commonModels.JSONMap{

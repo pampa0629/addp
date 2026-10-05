@@ -28,6 +28,8 @@ from geometry_batches import (
     geometry_batch_arrow_metadata,
 )
 from operators import get_operator, list_operators
+from raster_resources import RasterResources, RasterPolicyUnavailable, requires_raster
+from addp_common.workflow_runtime.admission import RuntimeBusy
 
 # 配置日志
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -45,6 +47,25 @@ start_time = datetime.now()
 
 # 内存存储（生产环境应使用数据库）
 executions = ExecutionRegistry()
+raster_resources = RasterResources()
+
+_RASTER_MESSAGES = {
+    'zh-cn': {'RUNTIME_BUSY': '栅格运行时容量已满，请稍后重试',
+              'RUNTIME_POLICY_UNAVAILABLE': '栅格资源策略暂不可用',
+              'INVALID_RASTER_TENANT': 'tenant_id 必须是正整数'},
+    'en': {'RUNTIME_BUSY': 'Raster runtime capacity is busy; retry later',
+           'RUNTIME_POLICY_UNAVAILABLE': 'Raster resource policy is unavailable',
+           'INVALID_RASTER_TENANT': 'tenant_id must be a positive integer'},
+}
+
+
+def _raster_message(code):
+    language = request.accept_languages.best_match(['zh-cn', 'en']) or 'zh-cn'
+    return _RASTER_MESSAGES[language][code]
+
+
+def _raster_busy_response(code):
+    return jsonify(error_response(code, _raster_message(code))), 503
 
 
 # ========================================
@@ -109,6 +130,7 @@ def health_check():
             "version": "1.0.0",
             "uptime": uptime,
             "operators_count": len(operators),
+            "raster_resources": raster_resources.snapshot(),
             "dependencies": {
                 "geopandas": gpd.__version__,
                 "pandas": pd.__version__
@@ -177,8 +199,16 @@ def execute_workflow_api():
     try:
         operators = {op['id']: op['effects'] for op in list_operators() if 'workflow' in op['execution_modes']}
         validate_execution_authorization(data.get('workflow_def'), operator_effects=operators, runtime=data.get('runtime'))
-        snapshot = executions.submit(GeoPythonWorkflowRunner(), data['workflow_def'], data.get('input_data'))
+        metadata = {op['id']: op for op in list_operators()}
+        raster = any(requires_raster(metadata[task['operator']]) for task in data['workflow_def']['tasks'])
+        admission = raster_resources.refresh() if raster else None
+        snapshot = executions.submit(GeoPythonWorkflowRunner(), data['workflow_def'], data.get('input_data'),
+                                     admission=admission, tenant_id=data['runtime']['tenant_id'])
         return jsonify(snapshot.to_dict()), 202
+    except RasterPolicyUnavailable:
+        return _raster_busy_response('RUNTIME_POLICY_UNAVAILABLE')
+    except RuntimeBusy:
+        return _raster_busy_response('RUNTIME_BUSY')
     except WorkflowValidationError as exc:
         return jsonify(error_response(ErrorCode.WORKFLOW_INVALID, str(exc))), 400
 
@@ -390,7 +420,14 @@ def invoke_operator_endpoint(operator_name):
                 response["execution_time_ms"] = execution_time
                 return jsonify(response), 500
 
-        result = execute_single_operator(operator_name, params)
+        if requires_raster(operator_meta):
+            tenant = data.get('tenant_id')
+            if type(tenant) is not int or tenant <= 0:
+                return jsonify(error_response(ErrorCode.INVALID_PARAMS, _raster_message('INVALID_RASTER_TENANT'))), 400
+            with raster_resources.refresh().direct(tenant):
+                result = execute_single_operator(operator_name, params)
+        else:
+            result = execute_single_operator(operator_name, params)
 
         execution_time = (time.time() - start) * 1000
 
@@ -411,6 +448,10 @@ def invoke_operator_endpoint(operator_name):
             response["execution_time_ms"] = execution_time
             return jsonify(response), 500
 
+    except RasterPolicyUnavailable:
+        return _raster_busy_response('RUNTIME_POLICY_UNAVAILABLE')
+    except RuntimeBusy:
+        return _raster_busy_response('RUNTIME_BUSY')
     except TypeError as e:
         execution_time = (time.time() - start) * 1000
         logger.error(f"Parameter error: {e}")

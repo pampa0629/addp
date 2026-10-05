@@ -1102,3 +1102,13 @@ Spark 只提供领域算子执行器和已声明输出端口适配；DAG 校验�
 ---
 
 **文档维护**: 本文档应随引擎接口变更及时更新。
+
+## GeoPython 栅格资源准入（2026-10-05 已确认）
+
+GeoPython 从 System 的引擎实例资源策略读取进程共享运行/等待上限和 Tenant 额度。资源需求通过算子 `attributes.resource_groups` 显式声明，当前栅格为 `raster`；混合工作流按整个 execution 占用一次额度，`build_raster_mosaic` 与栅格 direct 调用使用同一额度，其内部 leaf/GDAL 线程预算仍由原领域策略控制。纯矢量工作流不计入栅格额度。公共 Python 核心统一提供有界准入，不另建栅格执行核心。
+
+合法且已授权的工作流受理后仍返回 HTTP 202 和可查询 execution_id，等待时保持 pending，未实际执行前不创建私有栅格工作目录或加载数据。队列先领取最早且其 Tenant 额度允许的 execution，满载 Tenant 不阻塞其他 Tenant。总等待或 Tenant 等待满额时返回 HTTP 503、error_code=RUNTIME_BUSY，不创建 execution，不自动重试；同步 direct 满额立即返回同一繁忙错误，不转成异步任务。策略读取或校验失败时返回 HTTP 503、error_code=RUNTIME_POLICY_UNAVAILABLE，拒绝新的栅格调用，并暂停等待领取，已有运行自然结束；恢复权威策略后继续领取。
+
+GeoPython 栅格 direct 请求必须提供顶层正整数 `tenant_id`，由 Manager 等任务 owner 从自身执行上下文传入；该身份用于额度记账，不代替既有数据授权。缺失身份返回 HTTP 400。资源策略每秒重新读取，并在每次栅格调用前刷新；读取失败保持暂停，恢复后继续派发。
+
+System Runtime 策略解析接口仅供 addp-geopython 的 Platform Service Access Token 消费，资源身份由已注册 Runtime 的稳定连接身份解析，不允许调用方传入配置值。System 管理 API 的 Tenant 身份始终从 AuthContext 取得。Runtime `/health` 的栅格资源事实展示有效资源约束、当前活动/等待数、实际应用准入版本与实际 GDAL 缓存预算；这些诊断事实不授予权限，也不参与自动扩容。

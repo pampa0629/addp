@@ -507,16 +507,77 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 
+
+def prepare_resource_policy(platform, tenant, consumer):
+    engines = array(platform.request('GET', '/api/v1/system/platform/engine-raster-policies/engines', (200,)).payload, 'raster resource engines')
+    if len(engines) != 1:
+        raise SuiteError('resource policy acceptance requires exactly one shared GeoPython instance')
+    engine = positive(engines[0].get('id'), 'resource policy engine')
+    platform_path = f'/api/v1/system/platform/engine-raster-policies/{engine}'
+    tenant_path = f'/api/v1/system/tenant/engine-raster-policies/{engine}'
+    consumer.request('GET', tenant_path, (403,))
+    tenant.request('GET', platform_path, (403,))
+    original = obj(obj(platform.request('GET', platform_path, (200,)).payload, 'policy view')['policy'], 'policy')
+    fields = ('running', 'waiting', 'cache_mib', 'default_tenant_running', 'default_tenant_waiting')
+    if {key: original[key] for key in fields} != dict(running=2, waiting=2, cache_mib=256, default_tenant_running=2, default_tenant_waiting=2):
+        raise SuiteError('fresh Hosted raster default differs from the declared definition')
+    body = dict(version=original['version'], running=1, waiting=1, cache_mib=256, default_tenant_running=1, default_tenant_waiting=1)
+    saved = obj(platform.request('PUT', platform_path, (200,), body).payload, 'saved platform policy')
+    platform.request('PUT', platform_path, (409,), body)
+    quota = obj(obj(tenant.request('GET', tenant_path, (200,)).payload, 'tenant policy')['quota'], 'quota')
+    update = dict(version=quota['version'], running=1, waiting=0)
+    tenant.request('PUT', tenant_path, (400,), {**update, 'cache_mib': 128})
+    tenant.request('PUT', tenant_path, (400,), {**update, 'tenant_id': 1})
+    changed = obj(tenant.request('PUT', tenant_path, (200,), update).payload, 'saved tenant quota')
+    tenant.request('PUT', tenant_path, (409,), update)
+    if changed['effective_running'] != 1 or changed['effective_waiting'] != 0:
+        raise SuiteError('tenant effective resource quota differs from the saved policy')
+    return {'engine_id': engine, 'platform_path': platform_path, 'tenant_path': tenant_path,
+            'original': original, 'platform_version': saved['policy']['version'], 'quota_version': changed['quota']['version']}
+
+
+def finish_resource_policy(platform, tenant, setup, timeout):
+    def applied(version, restart):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            view = obj(platform.request('GET', setup['platform_path'], (200,)).payload, 'applied resource policy')
+            facts = view.get('runtime')
+            if (isinstance(facts, dict) and facts.get('enabled') is True and facts.get('applied_version') == version
+                    and facts.get('cache_mib') == 256 and facts.get('pending_restart') is restart):
+                return facts
+            time.sleep(1)
+        raise SuiteError('Runtime did not apply the saved resource policy/cache restart status')
+    facts = applied(setup['platform_version'], False)
+    if facts['running_limit'] != 1 or facts['waiting_limit'] != 1 or facts['running'] != 0 or facts['waiting'] != 0:
+        raise SuiteError('Runtime resource counts/limits do not match the completed raster scene')
+    body = {key: setup['original'][key] for key in ('running', 'waiting', 'cache_mib', 'default_tenant_running', 'default_tenant_waiting')}
+    changed = platform.request('PUT', setup['platform_path'], (200,), {**body, 'version': setup['platform_version'], 'cache_mib': 128}).payload
+    pending = applied(changed['policy']['version'], True)
+    restored = platform.request('PUT', setup['platform_path'], (200,), {**body, 'version': changed['policy']['version']}).payload
+    quota = tenant.request('PUT', setup['tenant_path'], (200,), {'version': setup['quota_version'], 'running': None, 'waiting': None}).payload
+    recovered = applied(restored['policy']['version'], False)
+    if quota['quota']['running'] is not None or quota['quota']['waiting'] is not None or quota['effective_running'] != 2 or quota['effective_waiting'] != 2:
+        raise SuiteError('tenant quota did not restore inheritance')
+    return {'engine_id': setup['engine_id'], 'configured_running': 1, 'configured_waiting': 1, 'tenant_waiting': 0,
+            'platform_applied_version': facts['applied_version'], 'cache_restart_verified_version': pending['applied_version'],
+            'restored_applied_version': recovered['applied_version'], 'result': 'passed',
+            'management_identity': 'separate-disposable-platform-and-tenant-users', 'consumer_admin_permission': False}
+
 def main():
     env = dict(os.environ)
     required = ('ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',
                 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID', 'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID',
                 'ADDP_ONLINE_TEST_USER_USERNAME', 'ADDP_ONLINE_TEST_USER_PASSWORD',
-                'ADDP_ONLINE_ARTIFACT_DIR', 'GATEWAY_URL', 'CONSOLE_URL')
+                'ADDP_ONLINE_ARTIFACT_DIR', 'GATEWAY_URL', 'CONSOLE_URL',
+                'ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN', 'ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN')
     if any(not env.get(key) for key in required):
         raise SuiteError('required raster Online environment is missing')
     client = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
+    platform = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN'], 30)
+    tenant = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN'], 30)
+    setup = prepare_resource_policy(platform, tenant, client)
     report = run_scenario(Path(__file__).resolve().parents[2], env, client)
+    report['resource_policy'] = finish_resource_policy(platform, tenant, setup, 30)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 

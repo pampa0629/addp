@@ -143,6 +143,9 @@ func HTTPInvokeOperator(ctx context.Context, connInfo ConnectionInfo, operatorNa
 	payload := map[string]interface{}{
 		"params": req.Params,
 	}
+	if req.TenantID > 0 {
+		payload["tenant_id"] = req.TenantID
+	}
 	if req.EngineID > 0 {
 		payload["engine_id"] = req.EngineID
 	}

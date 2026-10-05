@@ -683,6 +683,10 @@ components:
       required:
         - params
       properties:
+        tenant_id:
+          type: integer
+          minimum: 1
+          description: GeoPython 栅格 direct 调用必填，调用 owner 提供当前 execution 的租户身份，仅用于额度计数，不授予数据访问权限。 | Required for GeoPython raster direct calls; the owner supplies the execution tenant for quota accounting, not data authorization.
         engine_id:
           type: integer
           description: 条件运行时资源 ID。Spark Workflow direct 调用必填，指向已启用的 Apache Spark 通用引擎资源；普通工作流运行时不需要。

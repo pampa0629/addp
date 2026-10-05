@@ -4245,6 +4245,229 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/engine-raster-policies/engines": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "栅格资源配置 | Raster Resource Policy"
+                ],
+                "summary": "栅格资源配置 | List raster runtimes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_system_internal_service.RasterEngineSummary"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_raster_policy.read"
+                ]
+            }
+        },
+        "/platform/engine-raster-policies/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "栅格资源配置 | Raster Resource Policy"
+                ],
+                "summary": "栅格资源配置 | Get raster resource policy",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎实例 ID | Engine instance ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.RasterPolicyView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_raster_policy.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "栅格资源配置 | Raster Resource Policy"
+                ],
+                "summary": "栅格资源配置 | Update raster resource policy",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎实例 ID | Engine instance ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "配置 | Configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterPlatformUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.RasterPolicyView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_raster_policy.update"
+                ]
+            }
+        },
         "/platform/identity_changes": {
             "get": {
                 "security": [
@@ -6894,6 +7117,84 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/engine-raster-policy": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "栅格资源配置 | Raster Resource Policy"
+                ],
+                "summary": "栅格资源配置 | Resolve runtime raster policy",
+                "parameters": [
+                    {
+                        "description": "配置 | Configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RuntimeRasterPolicyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_service.RuntimeRasterPolicy"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_raster_policy_runtime.read"
+                ]
+            }
+        },
         "/runtime/engines": {
             "post": {
                 "security": [
@@ -9180,6 +9481,229 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "iam.department.restore"
+                ]
+            }
+        },
+        "/tenant/engine-raster-policies/engines": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "栅格资源配置 | Raster Resource Policy"
+                ],
+                "summary": "栅格资源配置 | List raster runtimes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_system_internal_service.RasterEngineSummary"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_raster_policy.read"
+                ]
+            }
+        },
+        "/tenant/engine-raster-policies/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "栅格资源配置 | Raster Resource Policy"
+                ],
+                "summary": "栅格资源配置 | Get tenant raster quota",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎实例 ID | Engine instance ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.RasterPolicyView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_raster_policy.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "栅格资源配置 | Raster Resource Policy"
+                ],
+                "summary": "栅格资源配置 | Update tenant raster quota",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎实例 ID | Engine instance ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "配置 | Configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RasterTenantUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.RasterPolicyView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_raster_policy.update"
                 ]
             }
         },
@@ -11910,6 +12434,23 @@ const docTemplate = `{
                 }
             }
         },
+        "datatype.CaptureLocation": {
+            "type": "object",
+            "properties": {
+                "datum": {
+                    "type": "string"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "srid": {
+                    "type": "integer"
+                }
+            }
+        },
         "datatype.FieldInfo": {
             "type": "object",
             "properties": {
@@ -12136,6 +12677,9 @@ const docTemplate = `{
         "datatype.SpatialInfo": {
             "type": "object",
             "properties": {
+                "capture_location": {
+                    "$ref": "#/definitions/datatype.CaptureLocation"
+                },
                 "crs_definitions": {
                     "type": "array",
                     "items": {
@@ -13556,6 +14100,52 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.EngineRasterPolicy": {
+            "type": "object",
+            "properties": {
+                "cache_mib": {
+                    "type": "integer"
+                },
+                "default_tenant_running": {
+                    "type": "integer"
+                },
+                "default_tenant_waiting": {
+                    "type": "integer"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "waiting": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineRasterQuota": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "waiting": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.EngineResponse": {
             "type": "object",
             "properties": {
@@ -14112,6 +14702,27 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.RasterPolicyView": {
+            "type": "object",
+            "properties": {
+                "effective_running": {
+                    "type": "integer"
+                },
+                "effective_waiting": {
+                    "type": "integer"
+                },
+                "policy": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRasterPolicy"
+                },
+                "quota": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRasterQuota"
+                },
+                "runtime": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
         "github_com_addp_system_internal_models.TaskProgress": {
             "type": "object",
             "properties": {
@@ -14190,6 +14801,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_service.RasterEngineSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_service.RuntimeLogResult": {
             "type": "object",
             "properties": {
@@ -14222,6 +14844,20 @@ const docTemplate = `{
                 },
                 "to": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_service.RuntimeRasterPolicy": {
+            "type": "object",
+            "properties": {
+                "policy": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRasterPolicy"
+                },
+                "quotas": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.EngineRasterQuota"
+                    }
                 }
             }
         },
@@ -16680,6 +17316,60 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.RasterPlatformUpdate": {
+            "type": "object",
+            "required": [
+                "cache_mib",
+                "default_tenant_running",
+                "default_tenant_waiting",
+                "running",
+                "version",
+                "waiting"
+            ],
+            "properties": {
+                "cache_mib": {
+                    "type": "integer"
+                },
+                "default_tenant_running": {
+                    "type": "integer"
+                },
+                "default_tenant_waiting": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "waiting": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.RasterTenantUpdate": {
+            "type": "object",
+            "required": [
+                "running",
+                "version",
+                "waiting"
+            ],
+            "properties": {
+                "running": {
+                    "description": "Running 为 null 时继承平台默认值 | Null inherits the platform default.",
+                    "type": "integer",
+                    "x-nullable": true
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "waiting": {
+                    "description": "Waiting 为 null 时继承平台默认值 | Null inherits the platform default.",
+                    "type": "integer",
+                    "x-nullable": true
+                }
+            }
+        },
         "internal_api.ReleaseEngineAccessDenyRequest": {
             "type": "object",
             "required": [
@@ -16729,6 +17419,17 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.RuntimeRasterPolicyRequest": {
+            "type": "object",
+            "required": [
+                "connection_info"
+            ],
+            "properties": {
+                "connection_info": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.ConnectionInfo"
                 }
             }
         },

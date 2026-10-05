@@ -279,6 +279,7 @@ func TestHTTPInvokeOperatorUsesCanonicalRequestShape(t *testing.T) {
 			"source_uri": "s3://bucket/source.tif",
 		},
 		EngineID: 34,
+		TenantID: 7,
 	})
 	if err != nil {
 		t.Fatalf("HTTPInvokeOperator returned error: %v", err)
@@ -291,6 +292,9 @@ func TestHTTPInvokeOperatorUsesCanonicalRequestShape(t *testing.T) {
 	}
 	if _, ok := result.Result["execution_time_ms"]; ok {
 		t.Fatalf("execution_time_ms should be parsed as top-level standard field: %#v", result.Result)
+	}
+	if got["tenant_id"] != float64(7) {
+		t.Fatalf("tenant_id was not included at top level: %#v", got)
 	}
 	if got["engine_id"] != float64(34) {
 		t.Fatalf("engine_id was not included at top level: %#v", got)

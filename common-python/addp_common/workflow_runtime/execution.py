@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from .errors import WorkflowExecutionError, WorkflowValidationError
 from .runner import WorkflowRunner
+from .admission import ExecutionAdmission
 
 
 @dataclass
@@ -55,6 +56,8 @@ class ExecutionRegistry:
         input_data: dict[str, Any] | None = None,
         *,
         thread_factory: Callable[..., threading.Thread] = threading.Thread,
+        admission: ExecutionAdmission | None = None,
+        tenant_id: int | None = None,
     ) -> ExecutionSnapshot:
         execution_id = str(uuid.uuid4())
         snapshot = ExecutionSnapshot(
@@ -62,15 +65,21 @@ class ExecutionRegistry:
             status="pending",
             started_at=datetime.now(timezone.utc).isoformat(),
         )
+        accepted = ExecutionSnapshot(**snapshot.to_dict())
         with self._lock:
             self._executions[execution_id] = snapshot
-        accepted = ExecutionSnapshot(**snapshot.to_dict())
-        thread = thread_factory(
-            target=self._run,
-            args=(execution_id, runner, workflow_def, input_data or {}),
-            daemon=True,
-        )
-        thread.start()
+        job = lambda: self._run(execution_id, runner, workflow_def, input_data or {})
+        def start_failed(exc):
+            self._fail(execution_id, "INTERNAL_ERROR", "工作流运行时内部错误", time.monotonic(), details=str(exc))
+        try:
+            if admission is not None:
+                admission.submit(tenant_id, job, thread_factory=thread_factory, on_start_failure=start_failed)
+            else:
+                thread_factory(target=job, args=(), daemon=True).start()
+        except BaseException:
+            with self._lock:
+                del self._executions[execution_id]
+            raise
         return accepted
 
     def _run(

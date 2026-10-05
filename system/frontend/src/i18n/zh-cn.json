@@ -884,7 +884,9 @@
           "log_pipeline": "日志链路",
           "log_observation": "日志链路观测",
           "log_notification": "平台日志通知",
-          "module_log_source": "日志来源"
+          "module_log_source": "日志来源",
+          "engine_raster_policy": "栅格资源配置",
+          "engine_raster_policy_runtime": "栅格运行时策略读取"
         },
         "types": {
           "tenant_builtin": "租户内置角色",
@@ -1901,6 +1903,43 @@
         "detailFailed": "加载任务详情失败",
         "tenantScopeRequired": "手动资源回收必须在明确租户范围内发起"
       }
+    },
+    "rasterPolicy": {
+      "title": "栅格引擎资源策略",
+      "refresh": "刷新",
+      "engine": "选择栅格运行时",
+      "empty": "暂无可管理的栅格运行时",
+      "shared": "所有租户共享进程总容量；租户额度不代表独享资源。",
+      "running": "进程运行上限",
+      "waiting": "进程等待上限",
+      "cache_mib": "GDAL 块缓存预算（MiB）",
+      "default_tenant_running": "租户默认运行额度",
+      "default_tenant_waiting": "租户默认等待额度",
+      "tenant_running": "本租户运行额度",
+      "tenant_waiting": "本租户等待额度",
+      "inherit": "继承平台默认值",
+      "constraints": "平台上限：运行 {running} 项，等待 {waiting} 项，块缓存 {cache} MiB（只读）。",
+      "effective": "当前有效租户额度：运行 {running} 项，等待 {waiting} 项。",
+      "save": "保存",
+      "resources": "运行资源与生效状态",
+      "capacity": "当前运行 {running} 项、等待 {waiting} 项。",
+      "applied": "平台策略版本 {saved}；运行时已应用版本 {applied}。",
+      "unapplied": "尚未应用",
+      "cacheApplied": "进程实际块缓存预算：{value} MiB。",
+      "restart": "缓存变更将在运行时重启后生效；并发变更不取消已有工作。",
+      "hardware": "有效 CPU：{cpu}；内存预算：{memory} MiB；采样时间：{time}。",
+      "adviceHint": "建议结合有效 CPU 和内存预算计算，需手动采用并保存；不保证所有算子的内存安全，块缓存预算不等于进程总内存。",
+      "adoptAdvice": "采用资源建议值",
+      "resourcesUnavailable": "运行时资源信息暂不可用，未确认配置是否生效。",
+      "unknown": "未知",
+      "loadFailed": "资源策略加载失败，请刷新重试",
+      "saved": "配置已保存，请核对运行时生效状态",
+      "conflict": "配置已被修改，请刷新后重新编辑",
+      "saveFailed": "配置保存失败，当前输入已保留",
+      "paused": "栅格准入已暂停，尚未获得可用的资源策略。",
+      "adviceValues": "建议值：运行 {running}，等待 {waiting}，GDAL 缓存 {cache} MiB。",
+      "adviceUnavailable": "资源信息不足，暂不提供建议值。",
+      "quotaExceeds": "已保存额度高于当前平台上限，有效值已收敛；重新保存前请降低额度或恢复继承。"
     }
   },
   "roles": {

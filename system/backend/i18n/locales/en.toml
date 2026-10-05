@@ -337,3 +337,27 @@ other = "The original fulfillment window has expired; revalidate and start a new
 other = "The original fulfillment request is closed; no new Grant can be issued"
 [system.engine_access_fulfillment.binding_conflict]
 other = "Parameters differ from the original fulfillment; resolve the original request without changing its scope or expiry"
+
+["system.raster_policy.version_conflict"]
+other = "Resource policy changed; refresh and retry"
+
+["system.raster_policy.not_found"]
+other = "Managed raster runtime not found"
+
+["permissions.system.engine_raster_policy.read.name"]
+other = "Read raster resource policy"
+
+["permissions.system.engine_raster_policy.read.description"]
+other = "Read raster resource policy"
+
+["permissions.system.engine_raster_policy.update.name"]
+other = "Update raster resource policy"
+
+["permissions.system.engine_raster_policy.update.description"]
+other = "Update raster resource policy"
+
+["permissions.system.engine_raster_policy_runtime.read.name"]
+other = "Runtime raster resource policy read"
+
+["permissions.system.engine_raster_policy_runtime.read.description"]
+other = "Runtime raster resource policy read"

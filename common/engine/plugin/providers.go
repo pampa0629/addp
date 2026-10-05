@@ -820,6 +820,7 @@ type WorkflowExecuteResult struct {
 }
 
 type OperatorInvokeRequest struct {
+	TenantID      uint                   `json:"tenant_id,omitempty"`
 	Params        map[string]interface{} `json:"params,omitempty"`
 	EngineID      uint                   `json:"engine_id,omitempty"`
 	BinaryPayload *BinaryPayload         `json:"binary_payload,omitempty"`

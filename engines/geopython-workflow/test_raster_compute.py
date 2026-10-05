@@ -20,6 +20,7 @@ from operators.raster_compute import (
 from workflow_engine import execute_workflow
 
 
+
 def source_plan(path, format='tiff'):
     return {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
         'kind': 'file', 'format': format, 'access': {'method': 'mounted_path', 'path': str(path)}}}
@@ -1312,7 +1313,7 @@ def test_async_image_pyramid_save_keeps_pixels_overviews_and_missing_georeferenc
     if profile=='cog':
         direct_target = tmp_path / 'direct.tif'
         plan = {**source_plan(source,format),'target':target_plan(direct_target)['target']}
-        direct = client.post('/api/operators/raster_to_cog/invoke',json={'params':{
+        direct = client.post('/api/operators/raster_to_cog/invoke',json={'tenant_id':7,'params':{
             'access_plan':plan,'options':{'source_crs':source_crs,'blocksize':128}}})
         assert direct.status_code==200, direct.json
         assert direct.json['result']['band_count']==(2 if format=='png' else 1)
@@ -1326,7 +1327,7 @@ def test_async_image_pyramid_save_keeps_pixels_overviews_and_missing_georeferenc
         original_target = direct_target.read_bytes()
         plan['source']['format']='tiff'
         plan['target']['write_mode']='replace'
-        rejected = client.post('/api/operators/raster_to_cog/invoke',json={'params':{'access_plan':plan}})
+        rejected = client.post('/api/operators/raster_to_cog/invoke',json={'tenant_id':7,'params':{'access_plan':plan}})
         assert rejected.status_code==500
         assert rejected.json['error_code']=='EXECUTION_FAILED'
         assert direct_target.read_bytes()==original_target
@@ -1512,7 +1513,7 @@ def test_direct_cog_api_uses_the_same_access_plan_contract(raster_file, tmp_path
     target = tmp_path / 'direct.tif'
     plan = {**source_plan(raster_file), 'target': target_plan(target)['target']}
     client = api_server.app.test_client()
-    response = client.post('/api/operators/raster_to_cog/invoke', json={'params': {
+    response = client.post('/api/operators/raster_to_cog/invoke', json={'tenant_id':7,'params': {
         'access_plan': plan, 'options': {'source_crs': '+proj=longlat +datum=WGS84 +no_defs'},
     }})
     assert response.status_code == 200, response.json
@@ -1541,3 +1542,55 @@ def test_non_epsg_authority_is_not_reported_as_epsg(monkeypatch):
     assert facts['extent_srid'] == 0
     assert facts['source_crs'] == dataset.GetProjection()
     assert not facts['source_crs'].startswith('EPSG:')
+
+
+def test_raster_http_bounded_admission_direct_sharing_and_policy_failure(monkeypatch):
+    import threading
+    from types import SimpleNamespace
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    from raster_resources import RasterPolicyUnavailable
+    release = threading.Event()
+    started, lock = [], threading.Lock()
+    class Runner:
+        def execute(self, workflow, input_data, **kwargs):
+            with lock:
+                started.append(workflow)
+            assert release.wait(5)
+            return SimpleNamespace(final_result='ok', all_results={}, task_order=[])
+    monkeypatch.setattr(api_server, 'GeoPythonWorkflowRunner', Runner)
+    registry = ExecutionRegistry()
+    monkeypatch.setattr(api_server, 'executions', registry)
+    client = api_server.app.test_client()
+    payload = {'workflow_def': {'tasks': [{'id':'r', 'operator':'raster_load', 'params':{}, 'depends_on':[]}]},
+               'runtime': {'tenant_id':7, 'execution_authorization': {'id':1, 'effects':['read']}}}
+    try:
+        accepted = [client.post('/api/workflow', json=payload) for _ in range(4)]
+        assert all(response.status_code == 202 for response in accepted)
+        deadline = time.monotonic() + 2
+        while len(started) < 2 and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert len(started) == 2
+        statuses = [client.get('/api/executions/' + response.json['execution_id']).json['status'] for response in accepted]
+        assert statuses == ['running','running','pending','pending']
+        rejected = client.post('/api/workflow', json=payload)
+        assert rejected.status_code == 503 and rejected.json['error_code'] == 'RUNTIME_BUSY'
+        assert len(registry._executions) == 4
+        direct = client.post('/api/operators/raster_to_cog/invoke', json={'tenant_id':7, 'params':{}})
+        assert direct.status_code == 503 and direct.json['error_code'] == 'RUNTIME_BUSY'
+        assert client.post('/api/operators/raster_to_cog/invoke', json={'params':{}}).status_code == 400
+        def unavailable():
+            raise RasterPolicyUnavailable('unavailable')
+        monkeypatch.setattr(api_server.raster_resources, 'refresh', unavailable)
+        failed = client.post('/api/workflow', json=payload)
+        assert failed.status_code == 503 and failed.json['error_code'] == 'RUNTIME_POLICY_UNAVAILABLE'
+        # Vector execution does not consume raster capacity or fetch raster policy.
+        vector = {'workflow_def': {'tasks': [{'id':'v', 'operator':'buffer', 'params':{}, 'depends_on':[]}]},
+                  'runtime': {'tenant_id':7, 'execution_authorization': {'id':1, 'effects':['read','write']}}}
+        assert client.post('/api/workflow', json=vector).status_code == 202
+    finally:
+        release.set()
+        deadline = time.monotonic() + 2
+        while api_server.raster_resources.admission.snapshot()['running'] and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert api_server.raster_resources.admission.snapshot()['running'] == 0

@@ -322,6 +322,15 @@ func run(args []string, environment []string) error {
 		return err
 	}
 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
+	if *suite == "raster-workflow" {
+		policyValues, err := rasterPolicyIdentities(ctx, repository, identity, selectionService, administrator.PrincipalID)
+		if err != nil {
+			return err
+		}
+		for key, value := range policyValues {
+			values[key] = value
+		}
+	}
 	if *suite == "compose-public-origin" {
 		readerSession, _, readerPassword, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-public-reader", publicOriginReadPermissions)

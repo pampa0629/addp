@@ -370,7 +370,10 @@
       }
     },
     "modules": {
-      "ontology": { "label": "Domain ontology", "desc": "Classes, relations, rules and revision publication" },
+      "ontology": {
+        "label": "Domain ontology",
+        "desc": "Classes, relations, rules and revision publication"
+      },
       "portal": {
         "label": "Data Portal",
         "desc": "Consumer portal for searching and requesting data assets"
@@ -449,7 +452,10 @@
       }
     },
     "menus": {
-      "ontology": { "label": "Domain ontology", "list": "Domain ontology modeling" },
+      "ontology": {
+        "label": "Domain ontology",
+        "list": "Domain ontology modeling"
+      },
       "transfer": {
         "label": "Data Transfer",
         "tasks": "Transfer Tasks",
@@ -606,7 +612,8 @@
         "recentEngines": "Data Engine Management",
         "recentModules": "Platform Module Management",
         "recentCleanup": "System Resource Reclaim",
-        "recentConfiguration": "Platform Configuration"
+        "recentConfiguration": "Platform Configuration",
+        "rasterPolicy": "Raster runtime resource policy"
       }
     }
   }

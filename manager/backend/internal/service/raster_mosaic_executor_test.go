@@ -24,10 +24,14 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 				t.Fatalf("unexpected workflow path: %s", r.URL.Path)
 			}
 			var payload struct {
-				Params map[string]interface{} `json:"params"`
+				TenantID uint                   `json:"tenant_id"`
+				Params   map[string]interface{} `json:"params"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode workflow request: %v", err)
+			}
+			if payload.TenantID != 7 {
+				t.Fatalf("tenant identity missing: %#v", payload)
 			}
 			capturedParams = payload.Params
 			w.Header().Set("Content-Type", "application/json")

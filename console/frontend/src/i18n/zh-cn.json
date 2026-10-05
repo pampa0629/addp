@@ -370,7 +370,10 @@
       }
     },
     "modules": {
-      "ontology": { "label": "领域本体", "desc": "类型、关系、规则与修订发布" },
+      "ontology": {
+        "label": "领域本体",
+        "desc": "类型、关系、规则与修订发布"
+      },
       "portal": {
         "label": "数据门户",
         "desc": "数据消费者门户，搜索与申请数据资产"
@@ -449,7 +452,10 @@
       }
     },
     "menus": {
-      "ontology": { "label": "领域本体", "list": "领域本体建模" },
+      "ontology": {
+        "label": "领域本体",
+        "list": "领域本体建模"
+      },
       "transfer": {
         "label": "数据传输",
         "tasks": "传输任务",
@@ -606,7 +612,8 @@
         "recentEngines": "数据引擎管理",
         "recentModules": "平台模块管理",
         "recentCleanup": "系统资源回收",
-        "recentConfiguration": "平台配置管理"
+        "recentConfiguration": "平台配置管理",
+        "rasterPolicy": "栅格引擎资源策略"
       }
     }
   }

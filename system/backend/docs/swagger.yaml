@@ -282,6 +282,17 @@ definitions:
       source:
         type: string
     type: object
+  datatype.CaptureLocation:
+    properties:
+      datum:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      srid:
+        type: integer
+    type: object
   datatype.FieldInfo:
     properties:
       comment:
@@ -441,6 +452,8 @@ definitions:
     type: object
   datatype.SpatialInfo:
     properties:
+      capture_location:
+        $ref: '#/definitions/datatype.CaptureLocation'
       crs_definitions:
         items:
           $ref: '#/definitions/datatype.CRSDefinition'
@@ -1417,6 +1430,36 @@ definitions:
       assessment_id:
         type: string
     type: object
+  github_com_addp_system_internal_models.EngineRasterPolicy:
+    properties:
+      cache_mib:
+        type: integer
+      default_tenant_running:
+        type: integer
+      default_tenant_waiting:
+        type: integer
+      engine_id:
+        type: integer
+      running:
+        type: integer
+      version:
+        type: integer
+      waiting:
+        type: integer
+    type: object
+  github_com_addp_system_internal_models.EngineRasterQuota:
+    properties:
+      engine_id:
+        type: integer
+      running:
+        type: integer
+      tenant_id:
+        type: integer
+      version:
+        type: integer
+      waiting:
+        type: integer
+    type: object
   github_com_addp_system_internal_models.EngineResponse:
     properties:
       capabilities:
@@ -1791,6 +1834,20 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_system_internal_models.RasterPolicyView:
+    properties:
+      effective_running:
+        type: integer
+      effective_waiting:
+        type: integer
+      policy:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineRasterPolicy'
+      quota:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineRasterQuota'
+      runtime:
+        additionalProperties: true
+        type: object
+    type: object
   github_com_addp_system_internal_models.TaskProgress:
     properties:
       completed:
@@ -1846,6 +1903,13 @@ definitions:
         - suspended
         type: string
     type: object
+  github_com_addp_system_internal_service.RasterEngineSummary:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
   github_com_addp_system_internal_service.RuntimeLogResult:
     properties:
       collection_state:
@@ -1868,6 +1932,15 @@ definitions:
         type: integer
       to:
         type: string
+    type: object
+  github_com_addp_system_internal_service.RuntimeRasterPolicy:
+    properties:
+      policy:
+        $ref: '#/definitions/github_com_addp_system_internal_models.EngineRasterPolicy'
+      quotas:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineRasterQuota'
+        type: array
     type: object
   internal_api.CreateEngineAccessDelegationRequest:
     properties:
@@ -3474,6 +3547,45 @@ definitions:
     - catalog_path
     - reason
     type: object
+  internal_api.RasterPlatformUpdate:
+    properties:
+      cache_mib:
+        type: integer
+      default_tenant_running:
+        type: integer
+      default_tenant_waiting:
+        type: integer
+      running:
+        type: integer
+      version:
+        type: integer
+      waiting:
+        type: integer
+    required:
+    - cache_mib
+    - default_tenant_running
+    - default_tenant_waiting
+    - running
+    - version
+    - waiting
+    type: object
+  internal_api.RasterTenantUpdate:
+    properties:
+      running:
+        description: Running 为 null 时继承平台默认值 | Null inherits the platform default.
+        type: integer
+        x-nullable: true
+      version:
+        type: integer
+      waiting:
+        description: Waiting 为 null 时继承平台默认值 | Null inherits the platform default.
+        type: integer
+        x-nullable: true
+    required:
+    - running
+    - version
+    - waiting
+    type: object
   internal_api.ReleaseEngineAccessDenyRequest:
     properties:
       reason:
@@ -3508,6 +3620,13 @@ definitions:
     - connection_info
     - engine_type
     - name
+    type: object
+  internal_api.RuntimeRasterPolicyRequest:
+    properties:
+      connection_info:
+        $ref: '#/definitions/github_com_addp_system_internal_models.ConnectionInfo'
+    required:
+    - connection_info
     type: object
   models.AuditLogCreateRequest:
     properties:
@@ -7155,6 +7274,150 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - audit.event.read
+  /platform/engine-raster-policies/{id}:
+    get:
+      parameters:
+      - description: 引擎实例 ID | Engine instance ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.RasterPolicyView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 栅格资源配置 | Get raster resource policy
+      tags:
+      - 栅格资源配置 | Raster Resource Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_raster_policy.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 引擎实例 ID | Engine instance ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 配置 | Configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RasterPlatformUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.RasterPolicyView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 栅格资源配置 | Update raster resource policy
+      tags:
+      - 栅格资源配置 | Raster Resource Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_raster_policy.update
+  /platform/engine-raster-policies/engines:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_system_internal_service.RasterEngineSummary'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 栅格资源配置 | List raster runtimes
+      tags:
+      - 栅格资源配置 | Raster Resource Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_raster_policy.read
   /platform/identity_changes:
     get:
       produces:
@@ -8932,6 +9195,56 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_descriptor.read
+  /runtime/engine-raster-policy:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 配置 | Configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RuntimeRasterPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_service.RuntimeRasterPolicy'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 栅格资源配置 | Resolve runtime raster policy
+      tags:
+      - 栅格资源配置 | Raster Resource Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_raster_policy_runtime.read
   /runtime/engines:
     post:
       consumes:
@@ -10440,6 +10753,150 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.department.restore
+  /tenant/engine-raster-policies/{id}:
+    get:
+      parameters:
+      - description: 引擎实例 ID | Engine instance ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.RasterPolicyView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 栅格资源配置 | Get tenant raster quota
+      tags:
+      - 栅格资源配置 | Raster Resource Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_raster_policy.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 引擎实例 ID | Engine instance ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 配置 | Configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RasterTenantUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.RasterPolicyView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 栅格资源配置 | Update tenant raster quota
+      tags:
+      - 栅格资源配置 | Raster Resource Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_raster_policy.update
+  /tenant/engine-raster-policies/engines:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_system_internal_service.RasterEngineSummary'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 栅格资源配置 | List raster runtimes
+      tags:
+      - 栅格资源配置 | Raster Resource Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_raster_policy.read
   /tenant/invitations:
     get:
       parameters:

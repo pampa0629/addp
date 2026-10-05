@@ -671,6 +671,6 @@ for function, label, params, output, effects in _SPECS:
         params=params, output_ports=[OutputPort(name='default', type=output, description=label + '结果')],
         execution_modes=['workflow', 'direct'] if name == 'raster_to_cog' else ['workflow'], effects=effects,
         use_cases=['遥感影像处理', '业务栅格成果生成'], notes=['CRS 不隐式推断', '栅格对象仅在当前工作流内流转'],
-        workflow_example={'operator': name, 'params': examples})
+        workflow_example={'operator': name, 'params': examples}, attributes={'resource_groups': ['raster']})
     key, descriptor = register_operator(metadata, function)
     OPERATORS[key] = descriptor

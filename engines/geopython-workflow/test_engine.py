@@ -281,3 +281,91 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_raster_resource_policy_hot_admission_and_restart_cache(monkeypatch):
+    import pytest
+    import raster_resources as module
+    from osgeo import gdal
+    payload = {'policy': {'engine_id': 1, 'version': 1, 'running': 2, 'waiting': 2,
+                         'cache_mib': 256, 'default_tenant_running': 2, 'default_tenant_waiting': 2}, 'quotas': []}
+    class Client:
+        def fetch(self):
+            return payload
+    applied = []
+    monkeypatch.setattr(gdal, 'SetCacheMax', applied.append)
+    resources = module.RasterResources(Client, poll=False)
+    assert not resources.snapshot()['enabled']
+    assert resources.snapshot()['running_limit'] is None and resources.snapshot()['waiting_limit'] is None
+    resources.refresh()
+    assert applied == [256 * 1048576]
+    payload['policy'].update(version=2, running=1, waiting=0, default_tenant_running=1, default_tenant_waiting=0, cache_mib=64)
+    resources.refresh()
+    facts = resources.snapshot()
+    assert facts['applied_version'] == 2 and facts['running_limit'] == 1 and facts['pending_restart']
+    assert applied == [256 * 1048576]
+    payload['policy']['running'] = True
+    with pytest.raises(module.RasterPolicyUnavailable):
+        resources.refresh()
+    assert not resources.snapshot()['enabled']
+    payload['policy']['running'] = 1
+    resources.refresh()
+    assert resources.snapshot()['enabled']
+    payload['policy']['version'] = 1
+    with pytest.raises(module.RasterPolicyUnavailable):
+        resources.refresh()
+
+
+def test_raster_resource_observation_uses_strictest_container_ancestor(tmp_path, monkeypatch):
+    import raster_resources as module
+    root = tmp_path / 'cgroups'
+    leaf = root / 'parent' / 'worker'
+    leaf.mkdir(parents=True)
+    (root / 'cpu.max').write_text('max 100000')
+    (leaf.parent / 'cpu.max').write_text('150000 100000')
+    (leaf / 'cpu.max').write_text('200000 100000')
+    (root / 'memory.max').write_text('max')
+    (leaf.parent / 'memory.max').write_text(str(1024 * 1048576))
+    (leaf / 'memory.max').write_text(str(2048 * 1048576))
+    proc = tmp_path / 'proc'
+    proc.write_text('malformed\n0::/parent/worker\n')
+    monkeypatch.setattr(module.os, 'cpu_count', lambda: 8)
+    monkeypatch.setattr(module.os, 'sched_getaffinity', lambda _: set(range(4)), raising=False)
+    monkeypatch.setattr(module.os, 'sysconf', lambda key: 4096 if key == 'SC_PAGE_SIZE' else 1048576)
+    facts = module.resource_observation(cgroup_root=root, proc_cgroup=proc)
+    assert facts['effective_cpu'] == 1.5 and facts['memory_limit_bytes'] == 1024 * 1048576
+    assert facts['advice'] == {'running': 1, 'waiting': 1, 'cache_mib': 32, 'basis': 'cpu-and-memory-budget-heuristic'}
+    (leaf.parent / 'memory.max').write_text(str(256 * 1048576))
+    assert module.resource_observation(cgroup_root=root, proc_cgroup=proc)['advice'] is None
+
+
+def test_raster_resource_observation_unknown_cpu_is_not_fabricated(tmp_path, monkeypatch):
+    import raster_resources as module
+    monkeypatch.setattr(module.os, 'cpu_count', lambda: None)
+    def unknown(_):
+        raise OSError('unknown')
+    monkeypatch.setattr(module.os, 'sched_getaffinity', unknown, raising=False)
+    monkeypatch.setattr(module.os, 'sysconf', lambda _: -1)
+    # Unknown physical memory must stay unknown even if sysconf returned a negative sentinel.
+    facts = module.resource_observation(cgroup_root=tmp_path, proc_cgroup=tmp_path / 'missing')
+    assert facts['effective_cpu'] is None and facts['memory_limit_bytes'] is None and facts['advice'] is None
+
+
+def test_raster_policy_rejects_foreign_engine_quota_and_clamps_saved_quota(monkeypatch):
+    import pytest
+    import raster_resources as module
+    from osgeo import gdal
+    monkeypatch.setattr(gdal, 'SetCacheMax', lambda _: None)
+    payload = {'policy': {'engine_id': 1, 'version': 1, 'running': 1, 'waiting': 0,
+        'cache_mib': 256, 'default_tenant_running': 1, 'default_tenant_waiting': 0},
+        'quotas': [{'engine_id': 1, 'tenant_id': 7, 'version': 1, 'running': 2, 'waiting': 2}]}
+    class Client:
+        def fetch(self): return payload
+    resources = module.RasterResources(Client, poll=False)
+    resources.refresh()
+    with resources.admission.direct(7):
+        with pytest.raises(module.RuntimeBusy):
+            with resources.admission.direct(7): pass
+    payload['quotas'][0]['engine_id'] = 2
+    with pytest.raises(module.RasterPolicyUnavailable): resources.refresh()
+    assert not resources.snapshot()['enabled']

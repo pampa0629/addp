@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 110
+manifest_version: 111
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -86,6 +86,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - system.engine_raster_policy_runtime.read
       - system.runtime_registry.update
   - key: platform.graph_runtime
     role_type: platform_builtin
@@ -295,6 +296,8 @@ roles:
       - platform.tenant.update
       - service.configuration.read
       - service.configuration.update
+      - system.engine_raster_policy.read
+      - system.engine_raster_policy.update
       - transfer.configuration.read
       - transfer.configuration.update
   - key: platform.transfer_runtime
@@ -439,6 +442,8 @@ roles:
       - security.sensitive_data_type.read
       - security.sensitive_data_type.update
       - service.definition.read
+      - system.engine_raster_policy.read
+      - system.engine_raster_policy.update
       - workbench.data_application.create
       - workbench.data_application.delete
       - workbench.data_application.execute
@@ -847,6 +852,8 @@ roles:
       - system.engine.read
       - system.engine.update
       - system.engine_catalog.read
+      - system.engine_raster_policy.read
+      - system.engine_raster_policy.update
   - key: tenant.manager_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.manager_runtime.name

@@ -74,6 +74,10 @@
               <el-icon><Connection /></el-icon>
               <span>{{ t('system.layout.engineMgmt') }}</span>
             </el-menu-item>
+            <el-menu-item v-if="canEnter('/engine-raster-policies')" index="/engine-raster-policies">
+              <el-icon><Connection /></el-icon>
+              <span>{{ t('system.rasterPolicy.title') }}</span>
+            </el-menu-item>
             <el-menu-item v-if="canEnter('/cleanup')" index="/cleanup">
               <el-icon><Refresh /></el-icon>
               <span>{{ t('system.layout.cleanup') }}</span>
@@ -148,7 +152,7 @@ const visibleIAMPages = computed(() => availableIAMPages(
   authStore.contextType,
   permission => authStore.hasPermission(permission)
 ))
-const hasSystemPages = computed(() => visibleIAMPages.value.length > 0 || ['/modules', '/engines', '/cleanup'].some(canEnter))
+const hasSystemPages = computed(() => visibleIAMPages.value.length > 0 || ['/modules', '/engines', '/engine-raster-policies', '/cleanup'].some(canEnter))
 const iamPageIcons = {
   identity: User,
   organization: OfficeBuilding,

@@ -59,6 +59,7 @@ func (e *ManagerRasterMosaicExecutor) BuildRasterMosaic(ctx context.Context, req
 		return nil, err
 	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
+		TenantID: req.Task.TenantID,
 		Params: map[string]interface{}{
 			"access_plan": accessPlan,
 			"placement": commonModels.JSONMap{

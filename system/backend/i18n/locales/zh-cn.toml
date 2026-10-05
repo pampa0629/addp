@@ -337,3 +337,27 @@ other = "原自动办理窗口已到期；请重新核验并发起新的办理�
 other = "原办理请求已关闭，不能签发新授权"
 [system.engine_access_fulfillment.binding_conflict]
 other = "本次参数与原办理请求不一致，请查询原请求，不得改变范围或期限"
+
+["system.raster_policy.version_conflict"]
+other = "资源策略已被修改，请刷新后重试"
+
+["system.raster_policy.not_found"]
+other = "未找到可管理的栅格运行时"
+
+["permissions.system.engine_raster_policy.read.name"]
+other = "读取栅格资源策略"
+
+["permissions.system.engine_raster_policy.read.description"]
+other = "读取栅格资源策略"
+
+["permissions.system.engine_raster_policy.update.name"]
+other = "修改栅格资源策略"
+
+["permissions.system.engine_raster_policy.update.description"]
+other = "修改栅格资源策略"
+
+["permissions.system.engine_raster_policy_runtime.read.name"]
+other = "运行时读取栅格资源策略"
+
+["permissions.system.engine_raster_policy_runtime.read.description"]
+other = "运行时读取栅格资源策略"

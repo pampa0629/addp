@@ -1083,6 +1083,7 @@ BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 	category=OperatorCategory.FORMAT_CONVERSION,
 	description="栅格 mosaic 数据集生成",
 	brief_description="从资源树 node 批量生成业务存储中的 raster_mosaic 数据集",
+	attributes={"resource_groups": ["raster"]},
 	execution_modes=["workflow", "direct"],
 	effects=["read", "write"],
 	overview="面向 Manager raster_mosaic_generation 任务的栅格 mosaic 生成算子。Manager 负责任务定义、源 node 和目标业务存储选择；GeoPython Workflow 负责内容级 COG 校验、必要的 leaf COG 转换、全局 overview COG 和 manifest/index 生成。",

@@ -251,6 +251,9 @@ func TestManagerRasterCOGExecutorPreparesAccessPlanAndInvokesPythonWorkflowOpera
 			if err := json.NewDecoder(r.Body).Decode(&invokePayload); err != nil {
 				t.Fatalf("decode operator invoke request: %v", err)
 			}
+			if invokePayload["tenant_id"] != float64(7) {
+				t.Fatalf("tenant identity missing: %#v", invokePayload)
+			}
 			params := invokePayload["params"].(map[string]interface{})
 			plan := params["access_plan"].(map[string]interface{})
 			source := plan["source"].(map[string]interface{})

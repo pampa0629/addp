@@ -580,3 +580,66 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class ResourcePolicyClient:
+    def __init__(self, scope, state):
+        self.scope, self.state = scope, state
+
+    def request(self, method, path, expected, body=None):
+        if path.endswith('/engines'):
+            return m.support.Response(200, [{'id': 3}], {})
+        platform = '/platform/' in path
+        status = 200
+        if self.scope == 'consumer' or (self.scope == 'tenant' and platform):
+            status = 403
+        elif method == 'PUT':
+            record = self.state['policy' if platform else 'quota']
+            allowed = set(record) - {'engine_id', 'tenant_id'}
+            if set(body) != allowed:
+                status = 400
+            elif body['version'] != record['version']:
+                status = 409
+            else:
+                record.update(body)
+                record['version'] += 1
+        assert status in expected, (method, path, status, expected)
+        p, q = self.state['policy'], self.state['quota']
+        runtime = {'enabled': True, 'applied_version': p['version'], 'cache_mib': 256, 'pending_restart': p['cache_mib'] != 256,
+                   'running': 0, 'waiting': 0, 'running_limit': p['running'], 'waiting_limit': p['waiting']}
+        runtime.update(self.state.get('runtime', {}))
+        return m.support.Response(status, copy.deepcopy({'policy': p, 'quota': q, 'runtime': runtime,
+            'effective_running': q['running'] if q['running'] is not None else p['default_tenant_running'],
+            'effective_waiting': q['waiting'] if q['waiting'] is not None else p['default_tenant_waiting']}), {})
+
+
+class ResourcePolicyAcceptanceTest(unittest.TestCase):
+    def setUp(self):
+        self.state = {'policy': {'engine_id': 3, 'version': 1, 'running': 2, 'waiting': 2, 'cache_mib': 256,
+                                'default_tenant_running': 2, 'default_tenant_waiting': 2},
+                      'quota': {'engine_id': 3, 'tenant_id': 2, 'version': 1, 'running': None, 'waiting': None}}
+        self.platform = ResourcePolicyClient('platform', self.state)
+        self.tenant = ResourcePolicyClient('tenant', self.state)
+        self.consumer = ResourcePolicyClient('consumer', self.state)
+
+    def test_management_versions_scope_cache_restart_and_inheritance(self):
+        setup = m.prepare_resource_policy(self.platform, self.tenant, self.consumer)
+        self.assertEqual((self.state['policy']['running'], self.state['quota']['waiting']), (1, 0))
+        evidence = m.finish_resource_policy(self.platform, self.tenant, setup, 1)
+        self.assertEqual(evidence['restored_applied_version'], 4)
+        self.assertFalse(evidence['consumer_admin_permission'])
+        self.assertNotIn('token', str(evidence).lower())
+        self.assertIsNone(self.state['quota']['running'])
+
+    def test_declared_default_and_actual_runtime_counts_are_required(self):
+        self.state['policy']['cache_mib'] = 512
+        with self.assertRaises(m.SuiteError):
+            m.prepare_resource_policy(self.platform, self.tenant, self.consumer)
+        self.state['policy']['cache_mib'] = 256
+        setup = m.prepare_resource_policy(self.platform, self.tenant, self.consumer)
+        self.state['runtime'] = {'running': 1}
+        with self.assertRaises(m.SuiteError):
+            m.finish_resource_policy(self.platform, self.tenant, setup, 1)
+        self.state['runtime'] = {'enabled': False}
+        with self.assertRaises(m.SuiteError):
+            m.finish_resource_policy(self.platform, self.tenant, setup, 0)

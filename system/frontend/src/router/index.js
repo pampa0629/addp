@@ -65,6 +65,12 @@ const routes = [
         meta: { requiresAuth: true, title: '模块管理-addp', requiredPermissions: ['platform.module.read'] }
       },
       {
+        path: 'engine-raster-policies',
+        name: 'EngineRasterPolicies',
+        component: () => import('../views/EngineRasterPolicies.vue'),
+        meta: { requiresAuth: true, requiredPermissions: ['system.engine_raster_policy.read'] }
+      },
+      {
         path: 'engines',
         name: 'Engines',
         component: () => import('../views/Engines.vue'),

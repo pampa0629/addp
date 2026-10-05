@@ -884,7 +884,9 @@
           "log_pipeline": "Log pipeline",
           "log_observation": "Log observation",
           "log_notification": "Platform log notifications",
-          "module_log_source": "Log source"
+          "module_log_source": "Log source",
+          "engine_raster_policy": "Raster Resource Policy",
+          "engine_raster_policy_runtime": "Raster Runtime Policy Read"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
@@ -1901,6 +1903,43 @@
         "detailFailed": "Failed to load task details",
         "tenantScopeRequired": "Manual resource reclaim requires an explicit tenant scope"
       }
+    },
+    "rasterPolicy": {
+      "title": "Raster runtime resource policy",
+      "refresh": "Refresh",
+      "engine": "Select raster runtime",
+      "empty": "No managed raster runtimes",
+      "shared": "Process capacity is shared by all tenants; tenant quotas do not reserve capacity.",
+      "running": "Process running limit",
+      "waiting": "Process waiting limit",
+      "cache_mib": "GDAL block cache budget (MiB)",
+      "default_tenant_running": "Default tenant running quota",
+      "default_tenant_waiting": "Default tenant waiting quota",
+      "tenant_running": "Tenant running quota",
+      "tenant_waiting": "Tenant waiting quota",
+      "inherit": "Inherit platform default",
+      "constraints": "Platform limits: {running} running, {waiting} waiting, {cache} MiB block cache (read only).",
+      "effective": "Effective tenant quota: {running} running and {waiting} waiting.",
+      "save": "Save",
+      "resources": "Resources and applied state",
+      "capacity": "Currently {running} running and {waiting} waiting.",
+      "applied": "Platform policy version {saved}; runtime applied version {applied}.",
+      "unapplied": "Not applied",
+      "cacheApplied": "Actual process block cache budget: {value} MiB.",
+      "restart": "Cache changes require a runtime restart; concurrency changes preserve accepted work.",
+      "hardware": "Effective CPUs: {cpu}; memory budget: {memory} MiB; observed at: {time}.",
+      "adviceHint": "Suggestions use effective CPU and memory budgets. Adopt and save explicitly; they do not guarantee memory safety for every operator, and block cache is not total process memory.",
+      "adoptAdvice": "Adopt resource suggestions",
+      "resourcesUnavailable": "Runtime resource information is unavailable; applied state is unknown.",
+      "unknown": "Unknown",
+      "loadFailed": "Failed to load resource policy; refresh to retry",
+      "saved": "Configuration saved; check runtime applied state",
+      "conflict": "Configuration changed; refresh before editing again",
+      "saveFailed": "Failed to save; current inputs are retained",
+      "paused": "Raster admission is paused until a valid resource policy is available.",
+      "adviceValues": "Suggested limits: running {running}, waiting {waiting}, GDAL cache {cache} MiB.",
+      "adviceUnavailable": "Resource information is insufficient to provide suggested limits.",
+      "quotaExceeds": "The saved quota exceeds the current platform limit and its effective value is capped. Lower it or restore inheritance before saving."
     }
   },
   "roles": {
