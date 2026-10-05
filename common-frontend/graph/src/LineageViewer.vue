@@ -217,14 +217,14 @@ function lineageLayout() {
   return { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep, controlPoints: true }
 }
 
-async function autoLayout() {
+async function autoLayout({ fit = true } = {}) {
   if (!graphInstance.value || layoutPending.value) return
   const instance = graphInstance.value
   layoutPending.value = true
   try {
     await layoutDAG({ layout: lineageLayout(), fit: () => {
       if (graphInstance.value !== instance) return
-      fitView()
+      if (fit) fitView()
       restoreFocus()
     } })
   } finally {
@@ -728,7 +728,11 @@ async function selectField(node, locate = false) {
     for (const table of fieldProjection.value.nodes) {
       if (table.fields.some(field => focus.fields.has(nodeId(field)))) next.delete(table.id)
     }
-    if (next.size !== collapsedTables.value.size) await applyCollapsedTables(next)
+    if (next.size !== collapsedTables.value.size) {
+      await applyCollapsedTables(next)
+      // Expanded branches need their actual heights before locating the field.
+      await autoLayout({ fit: false })
+    }
   }
   clearSelection()
   selectedNode.value = node

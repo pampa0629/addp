@@ -113,10 +113,13 @@ export async function lineageCanvasPaths(canvas) {
 export async function dragLineageTable(page, canvas, title, dx, dy) {
   const header = (await lineageCanvasText(canvas)).find(row => row.text === title)
   if (!header) throw new Error(`Missing lineage table header: ${title}`)
+  // Keep the pointer inside the field-card header even in a large fit-view.
+  const zoom = header.fontSize / 15
   const box = await canvas.boundingBox()
-  await page.mouse.move(box.x + header.x + 10, box.y + header.y - 3)
+  const x = box.x + header.x + 10 * zoom, y = box.y + header.y - 3 * zoom
+  await page.mouse.move(x, y)
   await page.mouse.down()
-  await page.mouse.move(box.x + header.x + 10 + dx, box.y + header.y - 3 + dy, { steps: 12 })
+  await page.mouse.move(x + dx, y + dy, { steps: 12 })
   await page.mouse.up()
 }
 

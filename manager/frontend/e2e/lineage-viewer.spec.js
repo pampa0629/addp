@@ -1,10 +1,170 @@
 import { expect, test } from '@playwright/test'
 import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, toggleLineageTableFields } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { managerAuthContext } from './managerAuthContext.js'
+import { FIELD_CARD_WIDTH, FIELD_FONT_SIZE, FIELD_HEADER_HEIGHT, FIELD_ROW_HEIGHT } from '../../../common-frontend/graph/src/lineageFields.js'
 
 const locator = 'addp://engine/9/path/public/current?type=table&item_id=3'
 const node = id => ({ kind: 'data_item', item_id: id, name: id === 3 ? 'current' : `source_${id}`, full_name: `public.table_${id}`, engine_id: 9, engine_name: 'Lineage PostgreSQL', item_type: 'table' })
 const edge = (source, target) => ({ source: node(source), target: node(target), relation_kind: 'derive', granularity: 'item' })
+
+for (const theme of ['light', 'dark']) {
+  test(`hundred-column branched lineage preserves every field port in ${theme} theme`, async ({ page }) => {
+    await observeLineageCanvas(page)
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.addInitScript(theme => {
+      localStorage.setItem('addp-lang', 'zh-cn')
+      localStorage.setItem('theme-mode', theme)
+    }, theme)
+    const counts = [100, 18, 12, 20, 14, 24]
+    const tables = counts.map((count, index) => Array.from({ length: count }, (_, column) => ({
+      ...node(index + 1), kind: 'field_ref', field_name: `field_${index + 1}.${column}`,
+      schema_snapshot_hash: `sha256:table-${index + 1}`, field_lineage_status: 'complete'
+    })))
+    const links = []
+    for (const [source, target, count] of [[1, 4, 20], [1, 5, 14], [2, 6, 18], [4, 3, 12], [5, 3, 12], [6, 3, 12]]) {
+      for (let index = 0; index < count; index++) links.push({
+        source: tables[source - 1][index], target: tables[target - 1][index],
+        relation_kind: 'derive', granularity: 'field', transformation: 'direct'
+      })
+    }
+    expect(tables.flat()).toHaveLength(188)
+    expect(links).toHaveLength(88)
+    let graphRequests = 0
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
+    await page.route('**/api/v1/**', route => {
+      const url = new URL(route.request().url()), path = url.pathname
+      if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
+      if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
+      if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
+      if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
+      if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
+      if (path.endsWith('/meta/items/3')) return json(route, { ...node(3), attributes: { type_info: { table: { fields: tables[2].map(field => ({ name: field.field_name, type: 'string' })) } } } })
+      if (path.endsWith('/meta/lineage/graph')) {
+        if (url.searchParams.get('granularity') !== 'field') return json(route, { granularity: 'item', subject: node(3), nodes: [node(3)], edges: [] })
+        graphRequests++
+        return json(route, { granularity: 'field', subject: { ...node(3), schema_snapshot_hash: 'sha256:table-3' }, nodes: tables.flat(), edges: links })
+      }
+      return json(route, {})
+    })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    await page.getByText('字段级', { exact: true }).click()
+    const canvas = page.locator('.lineage-canvas canvas')
+    await expect(canvas).toBeVisible()
+    await expect(page.locator('.lineage-summary')).toContainText('188 个节点 · 88 条关系')
+    // Entry focuses the root at a readable size, even when a source has 100 columns.
+    // G6's Float32 viewport matrix introduces sub-millionth-pixel rounding.
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'field_3.0')?.fontSize).toBeCloseTo(11, 5)
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    const fieldRows = rows => rows.filter(row => /^field_\d+\.\d+$/.test(row.text))
+    const headerName = id => id === 3 ? 'current' : `source_${id}`
+    const verifyCards = async (collapsed = false) => {
+      const rows = await lineageCanvasText(canvas)
+      const zoom = rows.find(row => row.text === 'current').fontSize / 15
+      const box = await canvas.boundingBox()
+      const cards = counts.map((count, index) => {
+        const title = rows.find(row => row.text === headerName(index + 1))
+        return { x: title.x - 12 * zoom, y: title.y - 22 * zoom,
+          width: FIELD_CARD_WIDTH * zoom,
+          height: (FIELD_HEADER_HEIGHT + (collapsed ? 1 : count) * FIELD_ROW_HEIGHT + 8) * zoom }
+      })
+      for (const card of cards) {
+        expect(card.x).toBeGreaterThanOrEqual(0)
+        expect(card.y).toBeGreaterThanOrEqual(0)
+        expect(card.x + card.width).toBeLessThanOrEqual(box.width)
+        expect(card.y + card.height).toBeLessThanOrEqual(box.height)
+      }
+      for (let i = 0; i < cards.length; i++) for (let j = i + 1; j < cards.length; j++) {
+        const a = cards[i], b = cards[j]
+        expect(a.x + a.width <= b.x + 1 || b.x + b.width <= a.x + 1 ||
+          a.y + a.height <= b.y + 1 || b.y + b.height <= a.y + 1).toBe(true)
+      }
+    }
+    const verifyPorts = async (collapsedSource = false) => {
+      await expect.poll(async () => {
+        const { rows, paths } = await lineageCanvasSnapshot(canvas)
+        const zoom = rows.find(row => row.text === 'current')?.fontSize / 15
+        return links.every(link => {
+          const source = rows.find(row => row.text === (collapsedSource && link.source.item_id === 1 ? '100 个字段' : link.source.field_name))
+          const target = rows.find(row => row.text === link.target.field_name)
+          return source && target && paths.some(points =>
+            Math.abs(points[0].x - source.x - (FIELD_CARD_WIDTH - 12) * zoom) < 2 &&
+            Math.abs(points[0].y - source.y) < 2 &&
+            Math.abs(points.at(-1).x - target.x + 12 * zoom) < 2 &&
+            Math.abs(points.at(-1).y - target.y) < 2)
+        })
+      }).toBe(true)
+    }
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(188)
+    await verifyCards()
+    await verifyPorts()
+    const header = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
+    const stationary = (await lineageCanvasText(canvas)).find(row => row.text === 'current')
+    await toggleLineageTableFields(page, canvas, 'source_1')
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(88)
+    expect((await lineageCanvasText(canvas)).find(row => row.text === 'source_1').y).toBeCloseTo(header.y, 1)
+    await dragLineageTable(page, canvas, 'source_1', 35, 30)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')?.y).toBeCloseTo(header.y + 30, 1)
+    const unchanged = (await lineageCanvasText(canvas)).find(row => row.text === 'current')
+    expect(unchanged.x).toBeCloseTo(stationary.x, 1)
+    expect(unchanged.y).toBeCloseTo(stationary.y, 1)
+    await verifyPorts(true)
+    await toggleLineageTableFields(page, canvas, 'source_1')
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(188)
+    await verifyPorts()
+    await page.getByRole('button', { name: '收起字段', exact: true }).click()
+    await page.getByRole('button', { name: '自动布局', exact: true }).click()
+    await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(0)
+    await verifyCards(true)
+    await page.screenshot({ path: `/tmp/addp-field-hundred-collapsed-${theme}.png` })
+    const compactFont = (await lineageCanvasText(canvas)).find(row => row.text === '12 个字段').fontSize
+    const search = page.getByRole('textbox', { name: '搜索字段', exact: true })
+    await search.fill('FIELD_3.11')
+    await expect(page.locator('.lineage-field-options button')).toHaveCount(2)
+    await page.getByRole('button', { name: 'field_3.11', exact: true }).click()
+    await expect(page.locator('.lineage-inspector strong')).toHaveText('field_3.11')
+    // All six tables belong to this reconverging field chain and must reopen.
+    await expect(page.getByRole('button', { name: '展开字段', exact: true })).toBeDisabled()
+    await expect.poll(async () => {
+      const selected = (await lineageCanvasText(canvas)).find(row => row.text === 'field_3.11')
+      return selected && Math.abs(selected.y - (await canvas.boundingBox()).height / 2)
+    }).toBeLessThan(3)
+    expect((await lineageCanvasText(canvas)).find(row => row.text === 'field_3.11').fontSize).toBeGreaterThanOrEqual(11)
+    expect((await lineageCanvasText(canvas)).find(row => row.text === 'field_3.11').fontSize).toBeCloseTo(compactFont, 5)
+    // Reopening tall branches from a compact layout must not overlap visible cards.
+    // Recover each card's bounds from a painted field when its header is offscreen.
+    const focusedRows = fieldRows(await lineageCanvasText(canvas))
+    const focusedZoom = focusedRows.find(row => row.text === 'field_3.11').fontSize / FIELD_FONT_SIZE
+    const visibleCards = counts.flatMap((count, index) => {
+      const field = focusedRows.find(row => row.text.startsWith(`field_${index + 1}.`))
+      if (!field) return []
+      const column = Number(field.text.split('.').at(-1))
+      return [{ id: index + 1, x: field.x - 12 * focusedZoom,
+        y: field.y - (FIELD_HEADER_HEIGHT + (column + 0.5) * FIELD_ROW_HEIGHT) * focusedZoom,
+        width: FIELD_CARD_WIDTH * focusedZoom,
+        height: (FIELD_HEADER_HEIGHT + count * FIELD_ROW_HEIGHT + 8) * focusedZoom }]
+    })
+    expect(visibleCards.length).toBeGreaterThanOrEqual(2)
+    for (let i = 0; i < visibleCards.length; i++) for (let j = i + 1; j < visibleCards.length; j++) {
+      const a = visibleCards[i], b = visibleCards[j]
+      expect(a.x + a.width <= b.x + 1 || b.x + b.width <= a.x + 1 ||
+        a.y + a.height <= b.y + 1 || b.y + b.height <= a.y + 1,
+      `expanded table ${a.id} overlaps table ${b.id}`).toBe(true)
+    }
+    await page.screenshot({ path: `/tmp/addp-field-hundred-focus-${theme}.png` })
+    await search.fill('')
+    await page.getByRole('button', { name: '全部字段', exact: true }).click()
+    await page.getByRole('button', { name: '自动布局', exact: true }).click()
+    await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(188)
+    await verifyCards()
+    await verifyPorts()
+    expect(graphRequests).toBe(1)
+    expect(errors).toEqual([])
+  })
+}
 
 test('lineage fills the viewport, controls query depth and survives resizing and empty results', async ({ page }) => {
   const requests = []
