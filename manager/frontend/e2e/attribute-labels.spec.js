@@ -64,7 +64,43 @@ for (const locale of ['zh-cn', 'en']) {
   })
 }
 
-async function openAttributes(page, locale, attributes) {
+for (const unavailable of [false, true]) {
+  test(`preserves the attributes deep link while metadata is pending (${unavailable ? 'failure' : 'success'})`, async ({ page }) => {
+    let releaseMetadata
+    let metadataStarted
+    const pendingMetadata = new Promise(resolve => { releaseMetadata = resolve })
+    const metadataRequest = new Promise(resolve => { metadataStarted = resolve })
+    await openAttributes(page, 'zh-cn', {
+      item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+      format_info: { jpeg: { exif_status: 'budget_exceeded' } }
+    }, async (route, body) => {
+      metadataStarted()
+      await pendingMetadata
+      return unavailable
+        ? route.fulfill({ status: 404, contentType: 'application/json', body: '{}' })
+        : json(route, body)
+    })
+    await metadataRequest
+    // Preview rendering finishes before the independent Meta request does.
+    await expect(page.getByText('sample - 数据预览', { exact: true })).toHaveCount(1)
+    try {
+      await expect(page).toHaveURL(/&tab=attributes$/)
+      await expect(page.getByRole('tab', { name: '预览', exact: true })).toHaveAttribute('aria-selected', 'false')
+    } finally {
+      releaseMetadata()
+    }
+    if (unavailable) {
+      await expect(page.getByRole('tab', { name: '预览', exact: true })).toHaveAttribute('aria-selected', 'true')
+      await expect(page).not.toHaveURL(/tab=attributes/)
+    } else {
+      await expect(page.getByText('超出解析预算', { exact: true })).toBeVisible()
+      await expect(page.getByRole('tab', { name: '属性', exact: true })).toHaveAttribute('aria-selected', 'true')
+      await expect(page).toHaveURL(/&tab=attributes$/)
+    }
+  })
+}
+
+async function openAttributes(page, locale, attributes, respondMetadata = json) {
   const locator = 'addp://engine/12/path/sample?type=file&item_id=1201'
   const node = { id: locator, locator, label: 'sample', type: 'file', metadata: { item_id: 1201 } }
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
@@ -76,7 +112,7 @@ async function openAttributes(page, locale, attributes) {
     if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 12, name: 'Business NFS', engine_type: 'nfs', lifecycle_state: 'active', connection_status: 'online' }] })
     if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [node] })
-    if (path.endsWith('/meta/items/1201')) return json(route, { id: 1201, item_type: 'file', full_name: 'sample', attributes })
+    if (path.endsWith('/meta/items/1201')) return respondMetadata(route, { id: 1201, item_type: 'file', full_name: 'sample', attributes })
     return json(route, {})
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=attributes`)

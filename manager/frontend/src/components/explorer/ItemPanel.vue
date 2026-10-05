@@ -511,6 +511,7 @@ watch(() => [
 })
 
 const fallbackItemMeta = ref(null)
+const itemMetaLoading = ref(false)
 let itemMetaRequestSeq = 0
 
 const itemMeta = computed(() => props.previewData?.item_meta || fallbackItemMeta.value)
@@ -615,6 +616,7 @@ const submitAccessRequest = async () => {
 
 const loadFallbackItemMeta = async (itemId) => {
   const requestSeq = ++itemMetaRequestSeq
+  itemMetaLoading.value = true
   try {
     const item = await client.get(`/meta/items/${itemId}`)
     if (requestSeq === itemMetaRequestSeq && selectedItemId.value === itemId && !props.previewData?.item_meta) {
@@ -622,6 +624,8 @@ const loadFallbackItemMeta = async (itemId) => {
     }
   } catch {
     if (requestSeq === itemMetaRequestSeq) fallbackItemMeta.value = null
+  } finally {
+    if (requestSeq === itemMetaRequestSeq) itemMetaLoading.value = false
   }
 }
 
@@ -633,10 +637,12 @@ watch([
   if (itemId !== previousItemId) {
     itemMetaRequestSeq += 1
     fallbackItemMeta.value = null
+    itemMetaLoading.value = false
   }
   if (previewItemMeta) {
     itemMetaRequestSeq += 1
     fallbackItemMeta.value = null
+    itemMetaLoading.value = false
     return
   }
   if (!loading && itemId) loadFallbackItemMeta(itemId)
@@ -741,10 +747,11 @@ watch([
   () => props.activeTab,
   () => props.previewData,
   profileSupported,
-  itemMeta
-], ([loading, tab, preview, supportsProfile, metadata]) => {
+  itemMeta,
+  itemMetaLoading
+], ([loading, tab, preview, supportsProfile, metadata, metadataLoading]) => {
   if (loading || !preview) return
-  if ((tab === 'profile' && !supportsProfile) || (tab === 'attributes' && !metadata)) {
+  if ((tab === 'profile' && !supportsProfile) || (tab === 'attributes' && !metadata && !metadataLoading)) {
     emit('tab-change', 'preview')
   }
 })
