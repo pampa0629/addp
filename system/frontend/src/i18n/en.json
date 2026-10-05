@@ -260,7 +260,9 @@
         "health": {
           "healthy": "Healthy",
           "alert": "Alert",
-          "unknown": "Unknown"
+          "unknown": "Unknown",
+          "disabled": "Disabled",
+          "unconfigured": "Invalid deployment configuration"
         },
         "facts": {
           "yes": "Yes",
@@ -321,7 +323,9 @@
         "permissionDenied": "This account cannot view the platform log pipeline",
         "sourceUsage": "Source usage / quota (bytes)",
         "collectorCounters": "Cumulative send retries / dropped entries",
-        "earlyCleaning": "Files cleaned early in latest cleanup cycle"
+        "earlyCleaning": "Files cleaned early in latest cleanup cycle",
+        "paused": "Central logging is disabled and pipeline evaluation is paused. Historical incidents are retained; disabling logging does not indicate recovery.",
+        "deploymentUnconfigured": "Central logging deployment configuration is invalid and pipeline evaluation is paused. Business services run independently."
       },
       "sources": {
         "title": "Unregistered instance runtime logs",
@@ -886,7 +890,9 @@
           "log_notification": "Platform log notifications",
           "module_log_source": "Log source",
           "engine_raster_policy": "Raster Resource Policy",
-          "engine_raster_policy_runtime": "Raster Runtime Policy Read"
+          "engine_raster_policy_runtime": "Raster Runtime Policy Read",
+          "host_node": "Platform node",
+          "observability_identity": "Observability identities"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
@@ -1940,6 +1946,56 @@
       "adviceValues": "Suggested limits: running {running}, waiting {waiting}, GDAL cache {cache} MiB.",
       "adviceUnavailable": "Resource information is insufficient to provide suggested limits.",
       "quotaExceeds": "The saved quota exceeds the current platform limit and its effective value is capped. Lower it or restore inheritance before saving."
+    },
+    "hostNodes": {
+      "title": "Platform node inventory",
+      "create": "Create node",
+      "search": "Search node name or address",
+      "name": "Node name",
+      "id": "Node ID",
+      "kind": "Node type",
+      "kinds": {
+        "physical": "Physical node",
+        "virtual": "Virtual node"
+      },
+      "addresses": "Addresses",
+      "state": "Management state",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "bindings": "Allowed modules",
+      "details": "Node details",
+      "empty": "No matching nodes",
+      "notLoaded": "Node list has not been loaded",
+      "addressHint": "One IP address or DNS name per line, without a port; up to 32 entries",
+      "bindingHint": "Only the listed modules may associate their service instances with this node. An empty list allows no associations.",
+      "module": "Module identifier",
+      "moduleAt": "Module identifier {index}",
+      "removeAt": "Remove allowed module {index}",
+      "remove": "Remove",
+      "addBinding": "Add module",
+      "version": "Current version: {version}",
+      "reload": "Reload",
+      "loadFailed": "Failed to read nodes. Please retry.",
+      "invalidName": "Enter a node name of up to 255 characters without control characters",
+      "invalidID": "Invalid node ID",
+      "notFound": "Node does not exist",
+      "invalidEntries": "Check addresses and modules: use IP addresses or DNS names, valid distinct module identifiers, at most 32 addresses and 64 modules.",
+      "saving": "Saving node",
+      "saved": "Node saved",
+      "conflict": "The node has changed. Your draft is preserved. Reload the latest version before editing.",
+      "saveFailed": "Failed to save the node. Your draft is preserved.",
+      "declaredID": "Initial declared node ID",
+      "bindingStates": {
+        "bound": "Associated",
+        "unbound": "Unassociated",
+        "rejected": "Association rejected",
+        "unknown": "Association unknown"
+      },
+      "bindingReasons": {
+        "node_unknown": "The declared node does not exist",
+        "node_disabled": "The declared node is disabled",
+        "source_not_allowed": "This module identity is not allowed on the node"
+      }
     }
   },
   "roles": {

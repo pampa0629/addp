@@ -29,3 +29,23 @@ func TestSystemBasisCredentialIsOptionalAndIndependent(t *testing.T) {
 		t.Fatal("business credentials remain required")
 	}
 }
+
+func TestLogObserverCredentialIsOptionalAndIndependent(t *testing.T) {
+	secrets := map[string]string{}
+	for i, id := range builtinServiceClientIDs {
+		secrets[id] = fmt.Sprintf("%032d", i+1)
+	}
+	secrets["addp-log-observer"] = ""
+	if err := validateBuiltinServiceSecrets(secrets); err != nil {
+		t.Fatal(err)
+	}
+	secrets["addp-log-observer"] = secrets["addp-manager"]
+	if err := validateBuiltinServiceSecrets(secrets); err == nil {
+		t.Fatal("observer borrowed a business credential")
+	}
+	secrets["addp-log-observer"] = ""
+	secrets["addp-manager"] = ""
+	if err := validateBuiltinServiceSecrets(secrets); err == nil {
+		t.Fatal("required business credential became optional")
+	}
+}

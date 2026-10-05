@@ -361,3 +361,45 @@ other = "Runtime raster resource policy read"
 
 ["permissions.system.engine_raster_policy_runtime.read.description"]
 other = "Runtime raster resource policy read"
+
+[permissions.platform.host_node.create.name]
+other = "Create host node"
+
+[permissions.platform.host_node.create.description]
+other = "Maintain the platform node inventory without granting remote host operations"
+
+[permissions.platform.host_node.read.name]
+other = "Read host nodes"
+
+[permissions.platform.host_node.read.description]
+other = "Maintain the platform node inventory without granting remote host operations"
+
+[permissions.platform.host_node.update.name]
+other = "Update host node"
+
+[permissions.platform.host_node.update.description]
+other = "Maintain the platform node inventory without granting remote host operations"
+
+[system.host_node.invalid]
+other = "Invalid node fields, version or allowed bindings"
+
+[system.host_node.not_found]
+other = "Managed host node not found"
+
+[system.host_node.version_conflict]
+other = "The host node changed; refresh and retry"
+
+[system.host_node.failed]
+other = "Host node inventory operation failed"
+
+["system.observability_identity.invalid"]
+other = "The identity snapshot request accepts no parameters or body."
+
+["system.observability_identity.unavailable"]
+other = "The current observability identity snapshot is unavailable."
+
+["system.observability_identity.budget_exceeded"]
+other = "The observability identity snapshot exceeds its configured budget."
+
+["system.observability_identity.timeout"]
+other = "The observability identity snapshot timed out."

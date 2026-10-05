@@ -8,6 +8,11 @@ if [ -f .env ]; then
   set +a
 fi
 
+# Always use the actual owned container mappings, including port collision resolution.
+source scripts/infra/ports.sh
+ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
+core_compose() { PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose -f docker-compose.infra.yml "$@"; }
+
 POSTGRES_USER="${POSTGRES_USER:-addp}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-addp_password}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-addp_redis}"
@@ -17,7 +22,7 @@ MEILISEARCH_PORT="${MEILISEARCH_PORT:-17700}"
 echo "等待 PostgreSQL 就绪..."
 timeout=90
 counter=0
-until docker compose -f docker-compose.infra.yml exec -T postgres env PGPASSWORD="${POSTGRES_PASSWORD}" \
+until core_compose exec -T postgres env PGPASSWORD="${POSTGRES_PASSWORD}" \
   psql -h 127.0.0.1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB:-addp}" -c "select 1" > /dev/null 2>&1; do
   sleep 2
   counter=$((counter + 2))
@@ -31,7 +36,7 @@ echo "✓ PostgreSQL 已就绪"
 
 echo "等待 Redis 就绪..."
 counter=0
-until docker compose -f docker-compose.infra.yml exec -T redis redis-cli -a "${REDIS_PASSWORD}" ping > /dev/null 2>&1; do
+until core_compose exec -T redis redis-cli -a "${REDIS_PASSWORD}" ping > /dev/null 2>&1; do
   sleep 2
   counter=$((counter + 2))
   if [ $counter -ge $timeout ]; then
@@ -78,6 +83,10 @@ done
 echo "✓ Meilisearch 已就绪"
 
 echo "业务基础设施服务已就绪。"
+if [[ "${ADDP_OBSERVABILITY_LOGS_ENABLED-true}" != true ]]; then
+  echo "集中运行日志未启用或配置无效；业务 Infra 状态独立。"
+  exit 0
+fi
 for component in addp-runtime-log-api addp-alloy addp-runtime-log-pruner; do
   state=$(docker inspect --format '{{.State.Running}}:{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$component" 2>/dev/null || true)
   case "$state" in

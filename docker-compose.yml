@@ -37,6 +37,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=system-backend
@@ -99,8 +100,9 @@ services:
       - MANAGER_URL=http://manager-backend:8081
       - ORCHESTRATOR_URL=http://orchestrator-backend:8084
       - DEVELOP_URL=http://develop-backend:8185
-      - LOKI_URL=http://runtime-log-api:3100
-      - LOKI_READ_TOKEN=${LOKI_READ_TOKEN:?runtime log read token required}
+      - ADDP_OBSERVABILITY_LOGS_ENABLED=${ADDP_OBSERVABILITY_LOGS_ENABLED-true}
+      - LOKI_URL=${LOKI_URL:-}
+      - LOKI_READ_TOKEN=${LOKI_READ_TOKEN:-}
       - LOKI_RETENTION_HOURS=${LOKI_RETENTION_HOURS:-168}
       - GIN_MODE=release
     volumes:
@@ -132,6 +134,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=manager-backend
@@ -195,6 +198,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=meta-backend
@@ -247,6 +251,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - DB_SCHEMA=meta
@@ -308,6 +313,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=transfer-backend
@@ -391,6 +397,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - DB_SCHEMA=transfer
@@ -489,6 +496,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=orchestrator-backend
@@ -537,6 +545,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=develop-backend
@@ -592,6 +601,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=service-backend
@@ -648,8 +658,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-monitor-backend:${IMAGE_TAG:-latest}
     container_name: monitor-backend
     environment:
+      - ADDP_OBSERVABILITY_LOGS_ENABLED=${ADDP_OBSERVABILITY_LOGS_ENABLED-true}
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=monitor-backend
@@ -700,6 +712,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=standard-backend
@@ -755,6 +768,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=catalog-backend
@@ -811,6 +825,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=workbench-backend
@@ -859,6 +874,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=copilot-backend
@@ -898,6 +914,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=model-backend
@@ -946,6 +963,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=quality-backend
@@ -986,6 +1004,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - QUALITY_CHECK_TIMEOUT=${QUALITY_CHECK_TIMEOUT:-30m}
@@ -1034,6 +1053,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=ontology-backend
@@ -1068,6 +1088,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=security-backend
@@ -1099,6 +1120,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=security-worker
@@ -1140,6 +1162,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=asset-backend
@@ -1191,6 +1214,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - PORTAL_BACKEND_PORT=8184
@@ -1233,6 +1257,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=graph-backend
@@ -1274,6 +1299,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=inference-backend
@@ -1329,6 +1355,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=agent-backend
@@ -1380,6 +1407,7 @@ services:
     environment:
       - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
       - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
+      - ADDP_HOST_NODE_ID=${ADDP_HOST_NODE_ID:-}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=gateway

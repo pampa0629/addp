@@ -5,8 +5,8 @@ services:
     environment:
       LOKI_S3_ENDPOINT: ${LOKI_S3_ENDPOINT:-http://minio:9000}
       LOKI_BUCKET: ${LOKI_BUCKET:-addp-runtime-logs}
-      LOKI_S3_ACCESS_KEY: ${LOKI_S3_ACCESS_KEY:?runtime log account required}
-      LOKI_S3_SECRET_KEY: ${LOKI_S3_SECRET_KEY:?runtime log secret required}
+      LOKI_S3_ACCESS_KEY: ${LOKI_S3_ACCESS_KEY:-}
+      LOKI_S3_SECRET_KEY: ${LOKI_S3_SECRET_KEY:-}
       LOKI_RETENTION_HOURS: ${LOKI_RETENTION_HOURS:-168}
     volumes:
       - ./loki.yml:/etc/loki/runtime.yml:ro
@@ -16,15 +16,15 @@ services:
     command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "--storage.path=/var/lib/alloy", "/etc/alloy/runtime.alloy"]
     environment:
       LOKI_WRITE_URL: http://runtime-log-api:3100/loki/api/v1/push
-      LOKI_WRITE_TOKEN: ${LOKI_WRITE_TOKEN:?runtime log write token required}
+      LOKI_WRITE_TOKEN: ${LOKI_WRITE_TOKEN:-}
     volumes:
       - ./runtime-logs.alloy:/etc/alloy/runtime.alloy:ro
     restart: unless-stopped
   runtime-log-api:
     image: nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
     environment:
-      LOKI_READ_TOKEN: ${LOKI_READ_TOKEN:?runtime log read token required}
-      LOKI_WRITE_TOKEN: ${LOKI_WRITE_TOKEN:?runtime log write token required}
+      LOKI_READ_TOKEN: ${LOKI_READ_TOKEN:-}
+      LOKI_WRITE_TOKEN: ${LOKI_WRITE_TOKEN:-}
       NGINX_ENVSUBST_FILTER: ^LOKI_(READ|WRITE)_TOKEN$$
     volumes:
       - ./runtime-log-api.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -61,5 +61,5 @@ services:
       MONITOR_URL: ${LOG_OBSERVER_MONITOR_URL:-http://host.docker.internal:8100}
       ALLOY_URL: http://alloy:12345
       LOKI_URL: http://runtime-log-api:3100
-      LOKI_READ_TOKEN: ${LOKI_READ_TOKEN:?runtime log read token required}
+      LOKI_READ_TOKEN: ${LOKI_READ_TOKEN:-}
     restart: unless-stopped

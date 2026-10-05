@@ -65,6 +65,18 @@ const routes = [
         meta: { requiresAuth: true, title: '模块管理-addp', requiredPermissions: ['platform.module.read'] }
       },
       {
+        path: 'host-nodes',
+        name: 'HostNodes',
+        component: () => import('../views/HostNodes.vue'),
+        meta: { requiresAuth: true, requiredPermissions: ['platform.host_node.read'] }
+      },
+      {
+        path: 'host-nodes/:node_id',
+        name: 'HostNodeDetail',
+        component: () => import('../views/HostNodes.vue'),
+        meta: { requiresAuth: true, requiredPermissions: ['platform.host_node.read'] }
+      },
+      {
         path: 'engine-raster-policies',
         name: 'EngineRasterPolicies',
         component: () => import('../views/EngineRasterPolicies.vue'),

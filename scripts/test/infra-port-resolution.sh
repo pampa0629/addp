@@ -11,6 +11,7 @@ MOCK_EXTRA_BUSY=''
 MOCK_LOGS_DOWN=0
 unset ADDP_ONLINE_HOST
 unset GITHUB_ACTIONS ADDP_LOCAL_CI_POSTGRES
+unset ADDP_OBSERVABILITY_LOGS_ENABLED ADDP_INFRA_PORT_SCOPE
 
 mock_service() {
   case "$1" in
@@ -138,6 +139,18 @@ addp_infra_read_actual_ports
 [ -z "$ALLOY_PORT" ]
 MOCK_LOGS_DOWN=0
 
+ADDP_OBSERVABILITY_LOGS_ENABLED=false
+MOCK_LOGS_DOWN=1
+LOKI_PORT=invalid
+ALLOY_PORT=invalid
+addp_infra_resolve_ports >/dev/null
+addp_infra_read_actual_ports
+addp_infra_ready
+[ -z "$LOKI_URL" ]
+unset ADDP_OBSERVABILITY_LOGS_ENABLED
+MOCK_LOGS_DOWN=0
+unset LOKI_PORT ALLOY_PORT
+
 addp_infra_verify_test_postgres_target localhost 25432 addp_test
 addp_infra_verify_test_postgres_dsn 'postgres://addp:secret@127.0.0.1:25432/addp_iam_test?sslmode=disable'
 if addp_infra_verify_test_postgres_target localhost 15432 addp_test >/dev/null 2>&1; then
@@ -202,10 +215,16 @@ set -euo pipefail
 case "$1" in
   compose)
     if [[ "$2" == version ]]; then exit 0; fi
-    [[ "$2" == -f && "$3" == docker-compose.infra.yml ]] || exit 2
-    case "$4" in
+    [[ "$2" == --profile && "$3" == observability-logs ]] || exit 2
+    [[ "${LOKI_PORT:-}" == 0 && "${ALLOY_PORT:-}" == 0 && "${PROMETHEUS_PORT:-}" == 0 ]] || exit 2
+    shift 3
+    [[ "$1" == --profile && "$2" == observability-metrics ]] || exit 2
+    shift 2
+    [[ "$1" == -f && "$2" == docker-compose.infra.yml ]] || exit 2
+    shift 2
+    case "$1" in
       ps) echo addp-postgres ;;
-      down) printf '%s\n' "${5:-down}" > "$MOCK_DOWN_MARKER" ;;
+      down) printf '%s\n' "${2:-down}" > "$MOCK_DOWN_MARKER" ;;
       *) exit 2 ;;
     esac
     ;;

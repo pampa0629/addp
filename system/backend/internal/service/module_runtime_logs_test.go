@@ -284,3 +284,24 @@ func TestRuntimeLogsConfigurationAndRedirectFailClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRuntimeLogsUnselectedNeverContactStorage(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(500) }))
+	defer server.Close()
+	t.Setenv("LOKI_RETENTION_HOURS", "invalid")
+	for _, state := range []string{"false", "invalid"} {
+		t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", state)
+		logs := NewRuntimeLogService(server.URL, "fixture-token", logTestKey)
+		_, err := logs.Query(context.Background(), "manager", "instance", logQuery())
+		if state == "false" && !errors.Is(err, ErrRuntimeLogsDisabled) {
+			t.Fatal(err)
+		}
+		if state == "invalid" && !errors.Is(err, ErrRuntimeLogsUpstream) {
+			t.Fatal(err)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("unselected logging sent %d storage requests", calls)
+	}
+}

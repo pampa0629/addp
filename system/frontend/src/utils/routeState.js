@@ -111,6 +111,20 @@ function queriesEqual(left, right) {
     rightKeys.every(key => String(left[key] || '') === String(right[key] || ''))
 }
 
+export function resolveHostNodesRouteState(routeQuery = {}) {
+  const query = {}
+  const search = singleQueryValue(routeQuery.search)
+  if (search && [...search].length <= 255 && !/[\u0000-\u001f\u007f]/u.test(search)) query.search = search
+  const page = Number(singleQueryValue(routeQuery.page))
+  if (Number.isInteger(page) && page > 1 && page <= 1000000) query.page = String(page)
+  const size = Number(singleQueryValue(routeQuery.page_size))
+  if ([10, 50, 100].includes(size)) query.page_size = String(size)
+  return {
+    query, changed: !queriesEqual(routeQuery, query),
+    search: query.search || '', page: Number(query.page || 1), pageSize: Number(query.page_size || 20)
+  }
+}
+
 export function resolveIAMCategoryRouteState(availableTabKeys, routeQuery = {}) {
   const tabs = availableTabKeys.map(key => String(key))
   const defaultTab = tabs[0] || ''

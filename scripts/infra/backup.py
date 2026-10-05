@@ -485,7 +485,8 @@ def settings_preserved(expected, actual) -> bool:
     return expected == actual
 
 
-def verify_meili_restore(name: str, key: str, inventory: dict) -> None:
+def verify_meili_restore(name: str, key: str, inventory: dict, *,
+                         accept_content_drift: bool = False) -> list[str]:
     def get(route):
         return meili_get(name, route, key)
 
@@ -508,6 +509,7 @@ def verify_meili_restore(name: str, key: str, inventory: dict) -> None:
             break
         if not rows or offset > page["total"]:
             raise BackupError("incomplete Meilisearch index pagination")
+    content_drift = []
     for uid, expected in inventory["indexes"].items():
         if indexes[uid].get("primaryKey") != expected["metadata.json"].get("primaryKey"):
             raise BackupError("restored Meilisearch primary key differs")
@@ -525,18 +527,49 @@ def verify_meili_restore(name: str, key: str, inventory: dict) -> None:
                 break
             if not rows or len(hashes) > count:
                 raise BackupError("incomplete Meilisearch document pagination")
-        if document_set_hash(hashes) != expected["documents.jsonl"]["sha256"]:
-            raise BackupError("restored Meilisearch document contents differ")
-    if get("/tasks?limit=1").get("total") != len(inventory["tasks"]):
-        raise BackupError("restored Meilisearch task history count differs")
-    for expected in inventory["tasks"]:
-        actual = get(f"/tasks/{expected['uid']}")
-        if any(actual.get(field) != value for field, value in expected.items()):
-            raise BackupError("restored Meilisearch task identity or terminal evidence differs")
+        actual_hash = document_set_hash(hashes)
+        expected_hash = expected["documents.jsonl"]["sha256"]
+        if actual_hash != expected_hash:
+            detail = (
+                f"restored Meilisearch document contents differ: index={uid}, count={count}, "
+                f"expected_sha256={expected_hash}, actual_sha256={actual_hash}")
+            if not accept_content_drift:
+                raise BackupError(detail)
+            content_drift.append(uid)
+            print(f"WARN: accepted Meilisearch content drift; {detail}")
+    expected_tasks = {item["uid"]: item for item in inventory["tasks"]}
+    seen_tasks = set()
+    cursor = None
+    while True:
+        route = "/tasks?limit=1000" + (f"&from={cursor}" if cursor is not None else "")
+        page = get(route)
+        rows = page.get("results")
+        if (type(page.get("total")) is not int or page["total"] != len(expected_tasks) or
+                not isinstance(rows, list) or len(rows) > 1000):
+            raise BackupError("restored Meilisearch task history count differs")
+        for actual in rows:
+            uid = actual.get("uid") if isinstance(actual, dict) else None
+            if (type(uid) is not int or uid not in expected_tasks or uid in seen_tasks or
+                    (cursor is not None and uid > cursor)):
+                raise BackupError("restored Meilisearch task identity differs")
+            if any(actual.get(field) != value for field, value in expected_tasks[uid].items()):
+                raise BackupError("restored Meilisearch task identity or terminal evidence differs")
+            seen_tasks.add(uid)
+        next_cursor = page.get("next")
+        if next_cursor is None:
+            if seen_tasks != expected_tasks.keys():
+                raise BackupError("incomplete Meilisearch task pagination")
+            break
+        if (not rows or len(seen_tasks) >= len(expected_tasks) or
+                type(next_cursor) is not int or next_cursor < 0 or
+                next_cursor >= min(item["uid"] for item in rows)):
+            raise BackupError("invalid Meilisearch task pagination cursor")
+        cursor = next_cursor
+    return content_drift
 
 
 def drill_meili(path: Path, evidence: dict, name: str, token: str,
-                restore_image: str | None) -> None:
+                restore_image: str | None, *, accept_content_drift: bool = False) -> None:
     inventory = dump_inventory(path / "meilisearch.dump")
     image = restore_image or evidence["source_image"]
     key = secrets.token_urlsafe(32)
@@ -564,11 +597,14 @@ def drill_meili(path: Path, evidence: dict, name: str, token: str,
                         if restore_image else evidence["source_version"])
     if meili_get(name, "/version", key).get("pkgVersion") != expected_version:
         raise BackupError("isolated Meilisearch version differs from selected image")
-    verify_meili_restore(name, key, inventory)
-    print(f"PASS: isolated Meilisearch restore {evidence['indexes']} indexes, {evidence['tasks']} tasks")
+    content_drift = verify_meili_restore(name, key, inventory, accept_content_drift=accept_content_drift)
+    suffix = (f"; accepted content drift in {len(content_drift)} indexes, not lossless"
+              if content_drift else "")
+    print(f"PASS: isolated Meilisearch restore {evidence['indexes']} indexes, {evidence['tasks']} tasks{suffix}")
 
 
-def drill(path: Path, *, meilisearch_restore_image: str | None = None) -> None:
+def drill(path: Path, *, meilisearch_restore_image: str | None = None,
+          accept_meilisearch_content_drift: bool = False) -> None:
     path = private_directory(path, create=False)
     manifest = validate(path)
     if meilisearch_restore_image is not None:
@@ -642,7 +678,8 @@ def drill(path: Path, *, meilisearch_restore_image: str | None = None) -> None:
         print(f"PASS: isolated PostgreSQL restore {manifest['postgres_counts']}")
         print(f"PASS: isolated MinIO restore {len(restored)} buckets")
         if "meilisearch" in manifest:
-            drill_meili(path, manifest["meilisearch"], meili_name, token, meilisearch_restore_image)
+            drill_meili(path, manifest["meilisearch"], meili_name, token, meilisearch_restore_image,
+                        accept_content_drift=accept_meilisearch_content_drift)
         validate(path)
     finally:
         failures = []
@@ -666,12 +703,14 @@ def main() -> None:
     drill_parser = action.add_parser("drill")
     drill_parser.add_argument("--backup-dir", required=True, type=Path)
     drill_parser.add_argument("--meilisearch-restore-image")
+    drill_parser.add_argument("--accept-meilisearch-content-drift", action="store_true")
     args = parser.parse_args()
     try:
         if args.action == "create":
             print(f"Backup created: {create(args.output_root, meilisearch_dump=args.meilisearch_dump, meilisearch_dump_task=args.meilisearch_dump_task)}")
         else:
-            drill(args.backup_dir, meilisearch_restore_image=args.meilisearch_restore_image)
+            drill(args.backup_dir, meilisearch_restore_image=args.meilisearch_restore_image,
+                  accept_meilisearch_content_drift=args.accept_meilisearch_content_drift)
     except (BackupError, OSError, KeyError, ValueError, tarfile.TarError, EOFError,
             subprocess.TimeoutExpired) as error:
         raise SystemExit(f"Backup operation failed: {error}") from None

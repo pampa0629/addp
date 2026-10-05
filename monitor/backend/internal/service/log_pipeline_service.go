@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	commonconfig "github.com/addp/common/config"
 	"github.com/addp/common/logpipeline"
 	"github.com/addp/monitor/internal/models"
 	"github.com/google/uuid"
@@ -20,21 +21,27 @@ import (
 var ErrLogInvalid = errors.New("invalid platform log request")
 var ErrLogConflict = errors.New("platform log version or sequence conflict")
 var ErrLogNotFound = errors.New("platform log resource not found")
+var ErrLogDisabled = errors.New("platform log collection disabled")
+var ErrLogUnconfigured = errors.New("platform log deployment unconfigured")
 
 type logModuleLister interface {
 	ListModules(context.Context) ([]*client.ModuleInfo, error)
 }
 type LogPipelineService struct {
-	db            *gorm.DB
-	node          string
-	registry      logModuleLister
-	notifications *PlatformLogNotifications
+	db              *gorm.DB
+	node            string
+	registry        logModuleLister
+	notifications   *PlatformLogNotifications
+	deploymentState string
 }
 
 func NewLogPipelineService(db *gorm.DB, node string, registry logModuleLister, n *PlatformLogNotifications) *LogPipelineService {
-	return &LogPipelineService{db: db, node: node, registry: registry, notifications: n}
+	return &LogPipelineService{db: db, node: node, registry: registry, notifications: n, deploymentState: commonconfig.RuntimeLogDeploymentState()}
 }
 func (s *LogPipelineService) Initialize(ctx context.Context, now time.Time) error {
+	if s.deploymentState != "enabled" {
+		return nil
+	}
 	if s.node == "" {
 		return nil
 	}
@@ -42,7 +49,22 @@ func (s *LogPipelineService) Initialize(ctx context.Context, now time.Time) erro
 		return ErrLogInvalid
 	}
 	node := models.LogPipelineNode{Node: s.node, StartedAt: now, Signals: map[string]models.LogSignalState{}}
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&node).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&node).Error; err != nil {
+			return err
+		}
+		var stored models.LogPipelineNode
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("node=?", s.node).Take(&stored).Error; err != nil {
+			return err
+		}
+		// A new evaluation lifecycle cannot count samples from before a pause
+		// toward recovery. Keep incidents, observations and replay guards intact.
+		for key, signal := range stored.Signals {
+			signal.Failures, signal.Successes = 0, 0
+			stored.Signals[key] = signal
+		}
+		return tx.Model(&stored).Select("Signals").Updates(&stored).Error
+	})
 }
 func (s *LogPipelineService) Policy(ctx context.Context) (models.LogPipelinePolicy, error) {
 	p := defaultLogPolicy()
@@ -68,6 +90,12 @@ func (s *LogPipelineService) UpdatePolicy(ctx context.Context, p models.LogPipel
 	return s.Policy(ctx)
 }
 func (s *LogPipelineService) Ingest(ctx context.Context, obs logpipeline.Observation, now time.Time) error {
+	if s.deploymentState == "disabled" {
+		return ErrLogDisabled
+	}
+	if s.deploymentState != "enabled" {
+		return ErrLogUnconfigured
+	}
 	if s.node == "" || obs.Node != s.node || obs.Validate(now) != nil {
 		return ErrLogInvalid
 	}
@@ -194,6 +222,9 @@ func (s *LogPipelineService) reconcile(tx *gorm.DB, node models.LogPipelineNode,
 	return nil
 }
 func (s *LogPipelineService) CheckStale(ctx context.Context, now time.Time) error {
+	if s.deploymentState != "enabled" {
+		return nil
+	}
 	if s.node == "" {
 		return nil
 	}
@@ -234,15 +265,16 @@ func (s *LogPipelineService) CheckStale(ctx context.Context, now time.Time) erro
 }
 
 type LogPipelineSummary struct {
-	Configured    bool                         `json:"configured"`
-	Health        string                       `json:"health"`
-	Node          *models.LogPipelineNode      `json:"node,omitempty"`
-	Incidents     []models.PlatformLogIncident `json:"incidents"`
-	Notifications string                       `json:"notifications"`
+	DeploymentState string                       `json:"deployment_state" enums:"enabled,disabled,unconfigured"`
+	Configured      bool                         `json:"configured"`
+	Health          string                       `json:"health"`
+	Node            *models.LogPipelineNode      `json:"node,omitempty"`
+	Incidents       []models.PlatformLogIncident `json:"incidents"`
+	Notifications   string                       `json:"notifications"`
 }
 
 func (s *LogPipelineService) Summary(ctx context.Context, now time.Time) (LogPipelineSummary, error) {
-	result := LogPipelineSummary{Configured: s.node != "", Health: "unknown", Notifications: "unconfigured", Incidents: []models.PlatformLogIncident{}}
+	result := LogPipelineSummary{DeploymentState: s.deploymentState, Configured: s.node != "", Health: "unknown", Notifications: "unconfigured", Incidents: []models.PlatformLogIncident{}}
 	if s.node == "" {
 		return result, nil
 	}
@@ -252,13 +284,18 @@ func (s *LogPipelineService) Summary(ctx context.Context, now time.Time) (LogPip
 	}
 	var node models.LogPipelineNode
 	if err = s.db.WithContext(ctx).Where("node=?", s.node).Take(&node).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) && s.deploymentState != "enabled" {
+			return result, nil
+		}
 		return result, err
 	}
 	result.Node = &node
 	if err = s.db.WithContext(ctx).Where("node=? AND status IN ?", s.node, []string{"open", "acknowledged"}).Order("opened_at DESC,id DESC").Find(&result.Incidents).Error; err != nil {
 		return result, err
 	}
-	result.Health = logPipelineHealth(node, p, len(result.Incidents), now)
+	if s.deploymentState == "enabled" {
+		result.Health = logPipelineHealth(node, p, len(result.Incidents), now)
+	}
 	if s.notifications != nil {
 		result.Notifications, err = s.notifications.Status(ctx)
 	}
@@ -308,6 +345,9 @@ func (s *LogPipelineService) ManageIncident(ctx context.Context, id uint, versio
 	return i, err
 }
 func (s *LogPipelineService) Run(ctx context.Context) {
+	if s.deploymentState != "enabled" {
+		return
+	}
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {

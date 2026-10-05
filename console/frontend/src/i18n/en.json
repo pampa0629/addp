@@ -613,7 +613,8 @@
         "recentModules": "Platform Module Management",
         "recentCleanup": "System Resource Reclaim",
         "recentConfiguration": "Platform Configuration",
-        "rasterPolicy": "Raster runtime resource policy"
+        "rasterPolicy": "Raster runtime resource policy",
+        "hostNodes": "Platform node inventory"
       }
     }
   }

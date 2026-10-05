@@ -361,3 +361,45 @@ other = "运行时读取栅格资源策略"
 
 ["permissions.system.engine_raster_policy_runtime.read.description"]
 other = "运行时读取栅格资源策略"
+
+[permissions.platform.host_node.create.name]
+other = "创建节点"
+
+[permissions.platform.host_node.create.description]
+other = "维护平台节点台账；不授予主机远程操作权限"
+
+[permissions.platform.host_node.read.name]
+other = "查看节点"
+
+[permissions.platform.host_node.read.description]
+other = "维护平台节点台账；不授予主机远程操作权限"
+
+[permissions.platform.host_node.update.name]
+other = "更新节点"
+
+[permissions.platform.host_node.update.description]
+other = "维护平台节点台账；不授予主机远程操作权限"
+
+[system.host_node.invalid]
+other = "节点参数、版本或允许集合无效"
+
+[system.host_node.not_found]
+other = "纳管节点不存在"
+
+[system.host_node.version_conflict]
+other = "节点已被其他操作修改，请刷新后重试"
+
+[system.host_node.failed]
+other = "节点台账操作失败"
+
+["system.observability_identity.invalid"]
+other = "身份快照请求不接受参数或正文。"
+
+["system.observability_identity.unavailable"]
+other = "当前观测身份快照不可用。"
+
+["system.observability_identity.budget_exceeded"]
+other = "观测身份快照超过规定预算。"
+
+["system.observability_identity.timeout"]
+other = "观测身份快照读取超时。"

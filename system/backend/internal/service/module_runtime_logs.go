@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	commonconfig "github.com/addp/common/config"
 	"github.com/addp/common/opaquetoken"
 	"github.com/addp/common/runtimelog"
 )
@@ -58,7 +59,14 @@ type RuntimeLogService struct {
 func NewRuntimeLogService(endpoint, token string, encryptionKey []byte) *RuntimeLogService {
 	hours := 168
 	invalid := false
-	if raw := os.Getenv("LOKI_RETENTION_HOURS"); raw != "" {
+	deploymentState := commonconfig.RuntimeLogDeploymentState()
+	switch deploymentState {
+	case "disabled":
+		endpoint, token = "", ""
+	case "unconfigured":
+		invalid = true
+	}
+	if raw := os.Getenv("LOKI_RETENTION_HOURS"); deploymentState == "enabled" && raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 24 || n > 8760 {
 			invalid = true

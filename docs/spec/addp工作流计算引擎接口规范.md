@@ -1103,6 +1103,7 @@ Spark 只提供领域算子执行器和已声明输出端口适配；DAG 校验�
 
 **文档维护**: 本文档应随引擎接口变更及时更新。
 
+
 ## GeoPython 栅格资源准入（2026-10-05 已确认）
 
 GeoPython 从 System 的引擎实例资源策略读取进程共享运行/等待上限和 Tenant 额度。资源需求通过算子 `attributes.resource_groups` 显式声明，当前栅格为 `raster`；混合工作流按整个 execution 占用一次额度，`build_raster_mosaic` 与栅格 direct 调用使用同一额度，其内部 leaf/GDAL 线程预算仍由原领域策略控制。纯矢量工作流不计入栅格额度。公共 Python 核心统一提供有界准入，不另建栅格执行核心。

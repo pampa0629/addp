@@ -215,6 +215,7 @@ func newSystemRegistrationRequest(serviceURL, instanceID string) *models.ModuleR
 	hostNodeName, runtimeHostname := commonConfig.RuntimeNodeIdentity()
 	return &models.ModuleRegistrationRequest{
 		HostNodeName: hostNodeName, RuntimeHostname: runtimeHostname,
+		NodeID: commonConfig.RuntimeHostNodeID(), RegistrationClientID: "addp-system",
 		HostNodeIPs:      commonConfig.RuntimeHostNodeIPs(),
 		ModuleName:       "system",
 		InstanceID:       instanceID,

@@ -148,6 +148,7 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 		}
 		instance := models.ModuleRuntimeInstance{
 			ModuleDefinitionID: definition.ID, InstanceID: req.InstanceID, Role: req.Role,
+			DeclaredNodeID: req.NodeID, RegistrationClientID: req.RegistrationClientID,
 			ModuleURL: req.ModuleURL, HealthCheckURL: req.HealthCheckURL,
 			RegisteredHost: registeredHost(req.ModuleURL, req.HealthCheckURL),
 			HostNodeName:   req.HostNodeName, RuntimeHostname: req.RuntimeHostname,
@@ -303,6 +304,13 @@ func (r *ModuleRegistryRepository) listCurrentRuntimeInstances(definitionIDs []u
 		Scan(&instances).Error; err != nil {
 		return nil, err
 	}
+	pointers := make([]*models.ModuleRuntimeInstance, 0, len(instances))
+	for index := range instances {
+		pointers = append(pointers, &instances[index])
+	}
+	if err := r.resolveNodeBindings(pointers); err != nil {
+		return nil, err
+	}
 	for index := range instances {
 		instance := instances[index]
 		result[instance.ModuleDefinitionID] = append(result[instance.ModuleDefinitionID], instance)
@@ -375,6 +383,13 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 		Offset((filter.Page - 1) * filter.PageSize).
 		Limit(filter.PageSize).
 		Scan(&instances).Error; err != nil {
+		return nil, 0, err
+	}
+	pointers := make([]*models.ModuleRuntimeInstance, 0, len(instances))
+	for index := range instances {
+		pointers = append(pointers, &instances[index].ModuleRuntimeInstance)
+	}
+	if err := r.resolveNodeBindings(pointers); err != nil {
 		return nil, 0, err
 	}
 	return instances, total, nil

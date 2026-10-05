@@ -10,10 +10,11 @@
       </template>
     </div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-    <p v-if="result && !result.configured">{{ t('system.module.pipeline.unconfigured') }}</p>
+    <p v-if="result && result.deployment_state !== 'enabled'" data-testid="pipeline-paused">{{ t(health === 'disabled' ? 'system.module.pipeline.paused' : 'system.module.pipeline.deploymentUnconfigured') }}</p>
+    <p v-if="result?.deployment_state === 'enabled' && !result.configured">{{ t('system.module.pipeline.unconfigured') }}</p>
     <p v-if="compact && result?.configured && !nodeMatches">{{ t('system.module.pipeline.nodeUnconfirmed') }}</p>
     <template v-if="result?.node && nodeMatches">
-      <el-descriptions :column="compact ? 2 : 3" border>
+      <el-descriptions v-if="result.deployment_state === 'enabled'" :column="compact ? 2 : 3" border>
         <el-descriptions-item :label="t('system.module.pipeline.node')">{{ result.node.node }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.module.pipeline.observed')">{{ date(result.node.received_at) }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.module.pipeline.delay')">{{ result.node.observation.probe_delivered ? `${result.node.observation.probe_delay_ms} ms` : '—' }}</el-descriptions-item>
@@ -24,7 +25,7 @@
         <el-descriptions-item :label="t('system.module.pipeline.collectorCounters')">{{ result.node.observation.collector?.valid ? `${result.node.observation.collector.retries} / ${result.node.observation.collector.dropped}` : '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.module.pipeline.earlyCleaning')">{{ result.node.observation.housekeeping_valid ? result.node.observation.source_files_early_cleaned : '—' }}</el-descriptions-item>
       </el-descriptions>
-      <p class="pipeline-hint">{{ t('system.module.pipeline.coverage') }}</p>
+      <p v-if="result.deployment_state === 'enabled'" class="pipeline-hint">{{ t('system.module.pipeline.coverage') }}</p>
       <el-table :data="incidents" data-testid="pipeline-incidents">
         <el-table-column :label="t('system.module.pipeline.signal')" min-width="180"><template #default="{ row }">{{ signalLabel(row.signal) }}</template></el-table-column>
         <el-table-column v-if="!compact" prop="instance_id" :label="t('system.module.instances.id')" min-width="220" show-overflow-tooltip />
@@ -125,8 +126,12 @@ const destinations = ref([]), notificationError = ref(''), deliveries = ref({ da
 const editingID = ref(0), destinationDraft = ref({}), recipientsText = ref(''), secret = ref('')
 let timer, controller, generation = 0, disposed = false
 const nodeMatches = computed(() => !props.instance || (!!props.instance.host_node_name && props.instance.host_node_name === result.value?.node?.node))
-const health = computed(() => error.value || !nodeMatches.value ? 'unknown' : (result.value?.health || 'unknown'))
-const tagType = computed(() => ({ healthy: 'success', alert: 'danger', unknown: 'info' })[health.value])
+const health = computed(() => {
+  if (error.value || !result.value) return 'unknown'
+  if (result.value.deployment_state !== 'enabled') return result.value.deployment_state
+  return nodeMatches.value ? result.value.health : 'unknown'
+})
+const tagType = computed(() => ({ healthy: 'success', alert: 'danger', unknown: 'info', disabled: 'info', unconfigured: 'warning' })[health.value])
 const incidents = computed(() => (result.value?.incidents || []).filter(row => !props.instance || !row.instance_id || row.instance_id === props.instance.instance_id))
 const policyFields = [
   { key: 'failure_samples', min: 1, max: 10 }, { key: 'recovery_samples', min: 1, max: 10 },

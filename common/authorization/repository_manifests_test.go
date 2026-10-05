@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 476 {
-		t.Fatalf("descriptor count = %d, want 476", len(descriptors))
+	if len(descriptors) != 480 {
+		t.Fatalf("descriptor count = %d, want 480", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -28,6 +28,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	roles := report.Roles
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if key == "system.observability_identity.read" && role.Key != "platform.monitor_runtime" {
+				t.Fatalf("built-in role %q unexpectedly grants background observability identities", role.Key)
+			}
 			if key == "system.engine_access_deny.create" || key == "system.engine_access_deny.release" {
 				t.Fatalf("built-in role %q unexpectedly grants source Deny command %q", role.Key, key)
 			}
@@ -211,6 +214,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.monitor_runtime", []string{
 		"audit.event.create",
+		"system.observability_identity.read",
 		"system.runtime_registry.read",
 		"system.runtime_registry.update",
 	})

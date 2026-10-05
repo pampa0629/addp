@@ -117,9 +117,8 @@ func (s *ServiceCredentialProvisioner) applyClient(ctx context.Context, reposito
 	if client.ServicePrincipalID <= 0 {
 		return fmt.Errorf("%w: OAuth client %s is not bound to a service principal", commonapi.ErrConflict, clientID)
 	}
-	// The independent System basis reader is optional. Removing its configured
-	// credential disables only this client, including previously issued tokens.
-	if clientID == "addp-system" && secret == "" {
+	// Removing an optional capability credential disables its client and tokens.
+	if (clientID == "addp-system" || clientID == "addp-log-observer") && secret == "" {
 		if client.Status == "disabled" {
 			return nil
 		}
@@ -184,7 +183,7 @@ func validateBuiltinServiceSecrets(secrets map[string]string) error {
 	seen := make(map[string]string, len(secrets))
 	for _, clientID := range builtinServiceClientIDs {
 		secret := secrets[clientID]
-		if clientID == "addp-system" && secret == "" {
+		if (clientID == "addp-system" || clientID == "addp-log-observer") && secret == "" {
 			continue
 		}
 		if secret != strings.TrimSpace(secret) || len(secret) < 32 || len(secret) > 72 {

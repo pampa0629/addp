@@ -23,6 +23,8 @@ ADDP 的配置按事实来源和生命周期分层管理，不建立由 System �
 
 ### 当前部署配置说明
 
+共享 Meilisearch 固定使用 `1.54.3` 的多架构镜像摘要与独立命名卷 `meilisearch_data_v1543`。旧版本的 `meilisearch_data` 卷只作为历史回滚材料保留，不再作为当前 Compose 挂载路径；升级必须从已核验 dump 导入空的新卷，不能让新二进制打开旧卷。镜像与卷绑定均由基础设施 Compose 唯一定义，不新增运行时配置或双轨服务。
+
 HDFS 首版固定 Simple 开发实验模式。引擎连接的 `webhdfs_endpoint`、`rpc_uri`、`root_path`、`authentication`、`user` 由插件 `ConnectionSpec` 唯一定义；首版 RPC 必须为具体 `hdfs://host:port`，不支持 HA nameservice。Spark 应用部署以 `HADOOP_USER_NAME` 固定 Hadoop 用户，不能按资源切换共享会话的身份；读取前验证当前 Java UGI 用户与引擎 `user` 一致。Business 的 `HDFS_SHARED_HOST` 和四个监听端口归 `business/.env`，不进入平台普通配置，也不保存到工作流任务。Simple 的用户名声明不构成安全认证。
 
 GeoPython、PointCloud、Document 的 HTTP 监听地址由部署入口通过 `WORKFLOW_BIND_HOST` 注入，默认 `0.0.0.0`，用于普通 bridge/Compose 容器内监听。Hosted Online 原生 Linux 使用宿主网络时，标准开发入口固定注入 `127.0.0.1`，并以 `PORT` 指定实际开发端口；`RUNTIME_HOST` 与 `RUNTIME_PUBLIC_PORT` 仍只负责自注册地址，不用于控制监听。该配置随进程启动生效，不保存到业务配置或根 `.env`。
@@ -646,6 +648,10 @@ System 不提供公开 `/register`。平台 IAM 管理使用 `/platform/*`，Ten
 
 ### 模块运行节点标识
 
+`ADDP_HOST_NODE_ID` 是可选的稳定节点 UUID，由 Platform User 通过 System 节点台账 API 创建后配置。单节点 Compose 将它传入各模块；多节点编排必须为每个进程注入所属节点 ID，Docker Desktop 的 Linux VM 使用独立虚拟节点。Go/Python 共享登记只接受显式 UUID，不从名称/IP/容器主机名计算或自动创建；非法环境值仅输出 `host_node_id_invalid` 安全诊断并省略声明，不中断登记或业务 Ready。未配置表示未关联。
+
+System 从已验证服务身份取得登记 Client ID，以节点当前 `allowed_module_bindings` 校验 Client/模块对。节点未知、禁用或不允许该来源时，登记和心跳仍正常，关联投影为 rejected；节点声明第一次登记即固定，同 instance_id 恢复不能补填或改挂，迁移或首次新增声明需新进程实例。配置修改在下次进程启动生效，部署前应先创建节点并明确允许对应 Client/模块。当前节点基础 API 不执行 SSH、修改防火墙或采集主机指标；Monitor 采集接口仍属后续范围。
+
 `ADDP_HOST_NODE_IPS` 是逗号分隔的宿主节点 IP 列表，由部署明确指定，不从服务 URL、DNS、容器主机名或客户端连接推断。只接受不带端口、网段或 zone 的 IPv4/IPv6 字面地址；登记时规范化并去重，IPv4 映射 IPv6 统一为 IPv4。未配置登记为空数组，非法配置不能静默丢弃。它仅用于观测，不改变 `SERVICE_HOST` 或 Gateway 转发地址。地址变化后通过正常重新登记更新，已有离线记录保留原值。
 
 System 的模块登记请求与实例响应统一使用 `host_node_ips: string[]`。平台实例查询新增 `node_ip`，按规范化后的 IP 在集合中精确匹配，并与其他条件取交集；非法 IP 返回 400。页面在运行节点中显示该集合，提供独立的宿主节点 IP 查询框，沿用文本防抖查询和 URL 状态恢复。
@@ -656,11 +662,15 @@ System 的模块登记请求与实例响应统一使用 `host_node_ips: string[]
 
 ## 模块服务运行日志配置
 
+`ADDP_OBSERVABILITY_LOGS_ENABLED` 是集中日志部署选择，缺省 `true`，只接受 `true/false`。`false` 时标准 Infra 入口不创建 Loki、Alloy、查询代理、观察器与日志存储初始化容器；已部署组件在核实工作区归属后停止，数据卷保留。日志独立凭据不参与核心启动校验，System 停用日志观察器 Client 并撤销其授权，Monitor 暂停新观测及链路评估；既有告警与投递历史保留，关闭不产生恢复事件；新的检测生命周期清零连续异常/恢复样本数，重新取得足够的新样本后才能判定恢复。部署值无效时仅该能力不可用。部署选择随组件和 System/Monitor 生命周期生效，不承诺热更新。
+
+本地进程输出接收器与独立清理器继续工作，容量、时长和目录权限约束保持有效。核心 Infra 先启动并验证，再预检和启动所选日志组件；日志失败返回非零整体结果，开发与生产入口按核心服务实际状态继续启动业务并保留部分失败报告。Compose 解析会校验未选 Profile 的端口，核心操作将不参与运行的日志端口设为无分配占位值，日志阶段再单独解析实际映射。System 正文查询在关闭时返回既有 `503` 未接入响应，不读取宿主文件；Monitor 观测上报在关闭时返回 `409`，部署配置无效时返回 `503`。
+
 `ADDP_PROCESS_INSTANCE_ID` 由标准启动入口生成，不写入 .env；`ADDP_RUNTIME_LOG_ROOT` 指向节点受控日志根目录。日志按实例分段，应用统一 JSON 输出。`ADDP_RUNTIME_LOG_SEGMENT_BYTES`、`ADDP_RUNTIME_LOG_INSTANCE_BYTES`、`ADDP_RUNTIME_LOG_NODE_BYTES` 和 `ADDP_RUNTIME_LOG_SOURCE_HOURS` 分别控制段、实例、节点限额与最长源保留期；额度优先于时长。技术探针 `runtime-probe` 的已关闭源段按最后写入时间保留最多一小时（不超过源保留配置），持续探针接收器按小时轮转；业务源仍使用配置时长。`LOKI_URL` 是 System 服务端受控查询地址，空值表示未接入；`LOKI_RETENTION_HOURS` 默认 168，须与 Loki Compactor 配置一致。日志存储和源文件不是零丢失归档，不以 positions 证明远端收妥。完整方案见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。
 
 ### 平台日志链路观测与通知
 
-日志凭据初始化统一使用 `scripts/utils/runtime-log-env.sh`。开发启动将缺失的日志秘密写入根 `.env`；Online 启动必须提供仓库外绝对路径 `ADDP_ONLINE_ENV_FILE`，且该文件不能位于 Artifact 目录。Hosted 在已准入的 owner-only 秘密目录内创建 `runtime.env`，在 Infra 启动前生成并导出凭据，退出时销毁；不生成根 `.env`，不放宽个人环境数据卷删除保护。已配置的秘密不轮换，无新增配置时不改写文件。
+日志凭据初始化统一使用 `scripts/utils/observability-env.sh`。启用集中日志时，开发启动将缺失的日志秘密写入根 `.env`；Online 启动必须提供仓库外绝对路径 `ADDP_ONLINE_ENV_FILE`，且该文件不能位于 Artifact 目录。Hosted 在已准入的 owner-only 秘密目录内创建 `runtime.env`，在 Infra 启动前生成并导出凭据，退出时销毁；不生成根 `.env`，不放宽个人环境数据卷删除保护。已配置的秘密不轮换，无新增配置时不改写文件。
 
 `ADDP_RUNTIME_LOG_OWNER` 是日志观察器与清理器的数值 `UID:GID`。标准宿主启动使用调用用户身份并提前创建 `logs` 和源目录；直接容器部署未覆盖时使用 `0:0`，覆盖值须与受控源目录所有者一致。root 业务容器中的独立日志接收器使用源目录所有者身份写入，业务进程身份保持原样；目录 `0700`、文件 `0600` 不放宽，也不自动修改既有目录所有权。
 
@@ -670,6 +680,7 @@ Infra `runtime-log-observer` 与应用接收器共享显式 `ADDP_HOST_NODE_NAME
 
 通知目标由平台管理员在 System 模块管理的“日志链路 → 通知管理”配置，Webhook 签名凭据与目标字段分开写入、加密保存；企业微信 `wecom` 目标的完整机器人地址仅通过凭据接口写入，key 使用现有 ENCRYPTION_KEY 加密，普通目标和投递读取不回显 key。邮件复用 Monitor-owned SMTP Relay。未配置目标或 SMTP 时明确显示未配置状态，不计为已通知。通知采用事务 outbox 和至少一次投递，通用 Webhook 接收方可按投递 ID 去重；企业微信群消息保留投递 ID，但可能重复或乱序，不提供接收方自动去重保证。失败达到尝试上限后保留最终失败记录。
 
+
 ## 栅格引擎资源策略（2026-10-05 已确认）
 
 System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资源策略和 Tenant 使用额度，Console 的 System 模块“栅格资源配置”页面（`/system/engine-raster-policies`）呈现。当前仅管理 active、共享、内置的 GeoPython 引擎实例。它是 System-owned 的引擎资源治理，不代存 Manager 或 Develop 的业务策略，Runtime 不新增数据库、权限管理或控制面。平台策略默认总运行 2 项、总等待 2 项、GDAL 块缓存 256 MiB；平台管理员可修改。平台同时管理 Tenant 默认运行/等待额度（均默认 2），Tenant 管理员只能在平台总上限内修改本租户额度或恢复继承，不得修改全局容量、缓存或其他 Tenant。执行同时受进程共享上限与当前 Tenant 额度约束，不承诺独享资源。
@@ -677,3 +688,10 @@ System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资
 策略使用独立正整数版本和精确配置 Permission，保存与审计同事务。平台 PUT 必须完整提交版本和五个预算字段；Tenant PUT 必须提交版本、运行及等待额度，后两项为 null 时恢复继承。缺失字段、额外字段和平台预算的 null 均拒绝。新注册实例或首次租户读取会在 System 事务内物化定义默认记录；Runtime 不另存默认值。配置值只由 System 的持久化事实与已声明定义默认值解析，不从环境变量或任务参数回退。并发/等待策略由 Runtime 周期读取后热更新，缩容保留已有工作；运行额度小于当前活动数时暂停领取，等待数超过新上限时拒绝新入队。缓存仅在新 Runtime 进程第一次应用策略时固定，后续变更展示待重启；已保存版本、实际应用的准入版本和实际缓存预算分开展示。
 
 资源建议根据 Runtime 上报的有效 CPU 和内存约束生成，包含容器 cgroup 与 CPU affinity，未知字段明确为空。建议基于有效 CPU（并发取向下取整、至少 1、至多 2）及内存约束（至少 512 MiB 才生成建议，缓存为限额的 1/32、至多 256 MiB），属于明确展示的启发式。建议由管理员显式采用，不自动修改配置，不依据瞬时空闲内存保证安全并发，不把 GDAL 块缓存当作总 RSS 上限。当前范围仅为 GeoPython 栅格调用，不扩展其他引擎资源治理。
+
+
+## 指标中心部署选择
+
+`ADDP_OBSERVABILITY_METRICS_ENABLED` 缺省 `false`，只接受 `true/false`，不根据端口探测或证书是否存在推断部署意图。中心采用 `observability-metrics` Profile，与 `observability-logs` 独立；共享生命周期准备只由 `scripts/utils/observability-env.sh` 组织。选择、证书和启动配置随下一次标准 Infra 生命周期生效，不承诺热更新。缺失或故障只影响指标设施，不加入业务 Ready。
+
+`PROMETHEUS_PORT` 首选 `19090`，宿主固定回环发布，开发实际映射由标准入口解析；`ADDP_METRICS_TLS_DIR` 是外部部署证书目录，不是用户可修改的 Monitor 普通配置。启用需要独立 CA、服务器和健康客户端证书；未启用不校验这些专用输入、不创建证书目录。具体文件、用途与容器可读要求见 [Infra 指标中心](../../scripts/infra/README.md#可选指标中心)。运行状态分别报告 Disabled、Unconfigured、Not deployed、Unavailable 或中心 Ready；当前自身采集与业务资源覆盖分别解释。

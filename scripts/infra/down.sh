@@ -61,7 +61,7 @@ done
 COMPOSE_FILES=(-f docker-compose.infra.yml)
 
 compose() {
-  docker compose "${COMPOSE_FILES[@]}" "$@"
+  PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose --profile observability-logs --profile observability-metrics "${COMPOSE_FILES[@]}" "$@"
 }
 
 if ! command -v docker >/dev/null 2>&1; then

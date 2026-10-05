@@ -905,13 +905,15 @@ echo -e "${YELLOW}Step 1/7: 启动基础设施（PostgreSQL, Redis, FalkorDB, Mi
 echo ""
 
 source "${ROOT_DIR}/scripts/infra/ports.sh"
-if addp_infra_ready; then
+infra_optional_result=0
+if addp_infra_ready && addp_runtime_logs_enabled && addp_runtime_log_preflight && addp_metrics_enabled && addp_metrics_preflight; then
   echo -e "${GREEN}✓ ADDP Infra 容器健康，跳过启动${NC}"
 else
   echo -e "${YELLOW}启动基础设施服务...${NC}"
   if ! bash "${ROOT_DIR}/scripts/infra/up.sh"; then
     if addp_infra_ready core; then
-      echo -e "${YELLOW}⚠️  运行日志设施未就绪；业务所需 Infra 健康，继续启动应用${NC}"
+      infra_optional_result=1
+      echo -e "${YELLOW}⚠️  可选观测设施未就绪；业务所需 Infra 健康，继续启动应用${NC}"
     else
       echo -e "${RED}✗ 基础设施启动失败,请检查 Docker 是否运行${NC}"
       echo -e "${YELLOW}提示: 运行 'docker info' 检查 Docker 状态${NC}"
@@ -928,7 +930,12 @@ if [ "${ADDP_ONLINE_HOST:-0}" != 1 ] && [ -f "${ROOT_DIR}/.env" ]; then
   export ADDP_RUNTIME_LOG_ROOT="${ADDP_RUNTIME_LOG_ROOT:-${PROJECT_ROOT}/logs/runtime}"
   case "$ADDP_RUNTIME_LOG_ROOT" in /*) ;; *) export ADDP_RUNTIME_LOG_ROOT="${PROJECT_ROOT}/${ADDP_RUNTIME_LOG_ROOT}" ;; esac
 fi
-addp_infra_read_actual_ports
+ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
+if addp_runtime_logs_enabled && ! ADDP_INFRA_PORT_SCOPE=logs addp_infra_read_actual_ports; then
+  infra_optional_result=1
+  export LOKI_URL=''
+  echo 'Cannot read optional runtime log mappings; business ports remain available' >&2
+fi
 echo "  PostgreSQL: localhost:${POSTGRES_PORT}  Redis: localhost:${REDIS_PORT}  MinIO: localhost:${MINIO_API_PORT}"
 
 # Runtime 容器归属与清理在所有部署模式都需要；仅本地模式解析开发端口。
@@ -3083,3 +3090,5 @@ echo -e "${GREEN}✓ ADDP 开发环境启动完成！${NC}"
   echo "停止所有服务: make dev-stop 或 ./scripts/dev/stop.sh"
   echo ""
 fi
+
+exit "$infra_optional_result"

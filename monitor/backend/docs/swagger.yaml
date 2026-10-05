@@ -638,6 +638,12 @@ definitions:
     properties:
       configured:
         type: boolean
+      deployment_state:
+        enum:
+        - enabled
+        - disabled
+        - unconfigured
+        type: string
       health:
         type: string
       incidents:
@@ -2701,6 +2707,10 @@ paths:
             $ref: '#/definitions/internal_api.ErrorResponse'
         "409":
           description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
           schema:
             $ref: '#/definitions/internal_api.ErrorResponse'
       security:

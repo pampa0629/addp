@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 32
+manifest_version: 34
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -778,6 +778,30 @@ permissions:
     status: disabled
     name_i18n_key: permissions.platform.configuration.update.name
     description_i18n_key: permissions.platform.configuration.update.description
+  - key: platform.host_node.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.host_node.create.name
+    description_i18n_key: permissions.platform.host_node.create.description
+  - key: platform.host_node.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.host_node.read.name
+    description_i18n_key: permissions.platform.host_node.read.description
+  - key: platform.host_node.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.host_node.update.name
+    description_i18n_key: permissions.platform.host_node.update.description
   - key: platform.module.read
     allowed_scope_types: [platform]
     risk_level: low
@@ -1138,6 +1162,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.notebook_session_authorization.execute.name
     description_i18n_key: permissions.system.notebook_session_authorization.execute.description
+  - key: system.observability_identity.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.observability_identity.read.name
+    description_i18n_key: permissions.system.observability_identity.read.description
   - key: system.runtime_registry.read
     allowed_scope_types: [platform]
     risk_level: low

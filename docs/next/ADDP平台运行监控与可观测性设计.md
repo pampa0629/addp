@@ -1,6 +1,6 @@
 # ADDP 平台运行监控与可观测性设计
 
-状态：总体方案与依赖隔离原则已确认，详细设计推进中，尚未实施（2026-10-04）。
+状态：总体方案与依赖隔离原则已确认；第一期开工契约已细化，告警领域调整待确认，尚未实施（2026-10-05）。
 
 用户已确认首期覆盖 ADDP 自身部署节点、服务和明确纳管的业务引擎；监控组件按 Infra 组织、按需部署，其缺失或故障只影响对应观测能力。本文记录目标边界、组件依赖、对象身份、分期与验收要求，不代表现有部署已支持观测设施裁剪。
 
@@ -248,10 +248,11 @@ disabled 不尝试发送，不制造设施离线告警；unconfigured 表示已�
 - [x] 定义观测设施不进入业务 Ready/主请求的隔离要求。
 - [x] 区分已实现日志/执行基础与待实现资源、裁剪和追踪能力。
 - [x] 同步术语及概念、模块和文档导航。
-- [ ] 完成 D1 的字段、配置、权限、采集预算和告警契约。
+- [x] 细化 D1 的节点/实例字段、目标发现、部署选择、数据状态、权限和采集/查询预算（目标契约，待实施）。
+- [ ] 确认 D1 的平台运行告警领域调整，完成历史记录、接口、权限与订阅的替换契约。
 - [ ] 按 P1.1/P1.2 实施并通过门禁；未实施项不得计为通过。
 
-下一步优先推进 D1：先冻结节点绑定和观测部署/状态契约，再编写采集与页面。已有平台日志事件若需领域调整，应先单独明确语义与替换方案。
+第一期开工契约见第十节。节点、部署、状态、查询与权限部分可据此拆分实施；平台告警领域调整在确认之前不进入迁移或代码变更。
 
 ## 九、技术资料与相关规范
 
@@ -266,3 +267,343 @@ disabled 不尝试发送，不制造设施离线告警；unconfigured 表示已�
 - [配置规范](../spec/addp配置介绍.md)
 - [技术栈规约](../spec/addp技术栈规约.md)
 - [模块服务运行日志设计](ADDP模块服务运行日志设计.md)
+
+## 十、第一期开工契约（2026-10-05，目标设计，待实施）
+
+本节给出第一期的字段、行为及验收边界。字段与接口均为目标契约，当前代码、环境模板和 Swagger 尚未增加这些能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
+
+### 10.1 节点与实例绑定
+
+System 的节点台账只保存身份和部署元数据，不保存瞬时资源指标、SSH 凭据或“综合在线状态”。
+
+| 字段 | 契约 |
+| --- | --- |
+| `node_id` | System 创建的 UUID，不由 IP、名称或硬件信息计算；纳管期间稳定，不复用已退出节点的身份 |
+| `display_name` | 运维显示名称，可编辑，不要求作为全局身份唯一键 |
+| `node_kind` | `physical` 或 `virtual`；Docker Desktop 的 Linux VM 属于独立虚拟节点，容器不是节点 |
+| `addresses` | 显式填写的 IP/DNS 地址，仅作台账属性；不自动选择一个地址作为采集端点 |
+| `enabled` | 是否继续纳管的管理员意图，不表示电源、网络或业务实例状态 |
+| `version` | 独立可变台账的正整数并发版本，创建为 1；更新须原子校验并递增 |
+| `created_at`、`updated_at` | UTC 时间；所有操作者与变更结果另走现有审计，不重复建审计表 |
+
+节点聚合内的部署绑定声明明确列举允许的模块服务 Client 与模块名，变更使用节点 `version`；同一模块 Client 可被明确允许部署在多个节点，不因此推断某次进程的具体位置。服务登记中的 `node_id` 只是一份声明，System 按当前 Client 与这份允许集合裁决；关联投影附带 `node_binding_state`（`unbound/bound/rejected`）及安全原因。被拒绝的声明不能进入部署拓扑、资源汇总或采集身份标签；主实例登记与租约仍成立。这是节点领域的来源约束，不为 Client 增加 Shell 或其他业务权限。
+
+首期采用停用纳管，暂不提供节点物理删除、关机或 SSH 操作。停用后停止纳入当前资源汇总与采集发现，保留节点身份、历史关联和指标保留窗口；这不停止节点上的业务服务。
+
+绑定按以下顺序进行：
+
+1. Platform User 在 System 创建节点，取得 `node_id`；部署人员向属于该节点的进程注入目标部署输入 `ADDP_HOST_NODE_ID`。本地 `.dev-state` 可以保存已配置输入，不能成为第二个节点身份分配器。
+2. Common/Common-Python 在既有模块登记请求增加可空 `node_id`。System 继续校验当前模块服务身份；非空值须是合法 UUID，且只在台账存在、启用并符合该部署来源的绑定约束时投影为已关联。未知或未被允许的节点引用保留绑定诊断，不建立承载关系，不因此拒绝整个业务实例登记或续租。
+3. `host_node_name/host_node_ips/runtime_hostname/registered_host` 保留各自既有语义，不成为 `node_id` 的别名或兼容输入。缺少 ID 时显示未关联；历史实例不靠名称匹配补填。部署声明是声明证据，不等于平台已独立验证物理位置。
+4. 一个具体进程实例的节点声明在首次登记时固定，同一 `instance_id` 恢复登记不得改挂节点。部署位置变化后产生新的进程实例身份；不能通过编辑当前节点反写历史实例。绑定诊断与实例 UP/DOWN 分别返回。
+5. 引擎的部署关联由 System 在已有引擎事实旁维护显式节点集合，使用引擎聚合的 `version` 校验，记录声明来源与生效时间。远端、集群或云引擎允许节点集合为空；删除关联保留其历史有效区间，不自动拆成多个 Engine Instance。
+
+共享部署输入解析遇到非法 `ADDP_HOST_NODE_ID` 时只停用该绑定并记录安全诊断，不将非法 UUID 发送进业务登记请求，也不退回名称/IP 推算；进程注册仍用原有必需字段完成。API 对恶意或非规范请求的体积、类型和语法错误继续严格拒绝，这与合法业务进程因观测输入错误而无法启动分别验证。
+
+部署绑定约束必须来自受控部署登记，不能信任浏览器提交的服务身份，也不能把采集端点响应的任意 `node_id` 当作授权证据。编码前须在 System 登记测试中证明同模块多节点部署可区分、非授权来源不建立绑定以及绑定失败不影响租约；不能仅凭 UUID 存在就认定位置可信。首次声明与登记写入同事务，重登记只核验原声明，不覆盖它；台账停用或允许来源撤销后当前关联失效，原声明仍作为带时间的历史证据保留。
+
+### 10.2 监测目标与采集发现
+
+Monitor 的监测目标引用已有对象，拥有采集配置。目标的普通配置使用自身 `version`；采集权限和 Secret 不进入普通读取响应。
+
+| 字段 | 契约 |
+| --- | --- |
+| `id`、`version` | Monitor 主资源身份与并发版本 |
+| `subject` | 判别联合：节点 `{kind:node,node_id}`；模块实例 `{kind:module_instance,module_name,instance_id}`；引擎 `{kind:engine,engine_id}`。只接受所属类型的字段 |
+| `monitor_kind` | `host_resources`、`process_resources`、`container_resources`、`service_quality`；第一期不自动开放数据库专业采集 |
+| `source` | 固定受支持来源类型及受控端点；不接受任意脚本、任意 PromQL 或用户指定的多目标代理参数 |
+| `enabled` | 监测意图，独立于主体和模块的 enabled；关闭不改主体生命周期 |
+| `created_at`、`updated_at` | 配置时间，不冒充最近采样时间 |
+
+同一主体和监测类别最多一个启用来源。一个实例指标端点可同时承载进程资源和服务质量，发现投影按物理采集端点合并为一个 scrape target，不能为两个视图重复拉取。cAdvisor 一个节点端点可返回多个容器：节点绑定和容器筛选来自受控配置，明确声明的容器/进程关系才能投影到实例；未绑定容器不得推断为某个 Tenant 或业务实例。
+
+首期引擎视图展示明确关联节点的资源及采集覆盖，不把节点总消耗标成该引擎独占消耗。远端未纳管宿主的引擎显示未接入；引擎专用 exporter、数据库指标或云厂商 API 的专业接入留到 P2，在 Owner 授权与专用凭据契约完成后开放。
+
+首期对主机与显式容器来源支持目标配置；模块实例来源随已有登记投影产生，不再要求为每次重启人工登记新实例。部署输入明确提供 Prometheus 可达的指标地址，不能拼接 `module_url + /metrics`，Worker 无业务地址时也不能被遗漏。相同语义的目标配置由一个 Monitor 服务维护，自动实例投影不能成为第二套实例登记或管理员可编辑的身份事实。
+
+Prometheus 通过 Monitor 的单一受认证 HTTP SD 读取全量目标投影；投影组合 Monitor 配置与 System 当前对象状态，不分页，不接受调用者自报标签。固定刷新周期初值 30 秒，身份标签由控制面填入，覆盖来源自报的保留身份标签。停用节点/目标、已结束实例及未绑定来源从新快照移除；历史指标仍按原身份保留。
+
+HTTP SD 失败时 Prometheus 会保留上一份列表，因此“不出现在新快照”只在刷新成功后生效。Monitor 当前查询与告警必须重新按当前纳管/目标范围筛选，不能把旧采集列表当作当前授权或对象状态。页面展示最近成功发现时间与配置生效状态；停止采集有收敛窗口，凭据撤销及网络策略才是紧急阻断边界，不能承诺发现服务故障时仍即时停采。[Prometheus HTTP SD 官方契约](https://prometheus.io/docs/prometheus/latest/http_sd/)
+
+控制面不可用时返回失败，不以成功空列表清除全部目标。应用指标端点仅绑定受控网络与独立采集认证，不经公开 Gateway 业务路由；第一期应用指标采用部署管理的 mTLS 采集身份，证书由 Secret 注入并支持吊销/轮换。采集身份不能访问业务 API，指标读取不能获取用户或业务引擎凭据。
+
+exporter 不能假设都原生提供相同的 TLS 服务端能力。node_exporter 的保护使用其 exporter-toolkit 配置；cAdvisor 的 `collector_cert/collector_key` 用于它向应用端采集的客户端，并不保护其对外指标服务。cAdvisor 原始端点只暴露于隔离的本节点采集网络，远程读取通过节点专用 Nginx mTLS 入口，仅允许固定指标路径且不开放 Web UI/调试/任意反向代理。该入口属于 Infra 的传输防护，不承担第二条采集或授权事实路径，不让日志 Alloy 获得宿主权限；节点入口镜像、预算、配置输入及证书测试随 P1.1 一同登记。未部署这种保护的来源不进入远程发现。[node_exporter 文档](https://github.com/prometheus/node_exporter#tls-endpoint)、[cAdvisor 服务实现](https://github.com/google/cadvisor/blob/master/cmd/cadvisor.go)
+
+目标端点须限制到受管地址范围和明确端口，禁止 URL 凭据、重定向、云 metadata 地址与任意外网扫描；受控回环/私网按部署模式显式允许，DNS 解析结果须重新核验。不能复制通知 Webhook 的外网访问规则直接当作主机采集规则。端点变更必须重验证并记审计。
+
+### 10.3 部署选择与配置生效
+
+以下是目标部署键；本轮已实现集中日志选择，其余键仍待实现，不作为当前可用命令。根 `.env.example` 仍是唯一模板，不新增 `deploy.env` 或模块私有覆盖文件。
+
+| 目标部署输入 | 建议模板值 | 使用者与行为 |
+| --- | --- | --- |
+| `ADDP_OBSERVABILITY_METRICS_ENABLED` | `false` | 标准 Infra 入口选择 Prometheus 及明确的指标采集来源；业务进程据此决定是否开放指标端点 |
+| `ADDP_OBSERVABILITY_LOGS_ENABLED` | `true` | 选择现有集中日志组合；保留现有模板的日志使用意图，支持显式关闭，不靠 Loki Secret 是否存在猜开关 |
+| `ADDP_OBSERVABILITY_TRACES_ENABLED` | `false` | 第二期才提供 true 的实现；首期 true 明确报告未支持，核心业务仍按实际就绪结果启动 |
+| `ADDP_HOST_NODE_ID` | 空 | 单个部署节点显式绑定，不为全环境所有宿主注入同一个 ID |
+| 各设施端点、证书与 Secret 引用 | 按实际部署填写 | 能力 enabled 时独立预检；浏览器不读取内部端点或凭据 |
+
+布尔值只接受 `true/false`；模板与显式部署输入决定意图，不按组件探测结果改变开关。中心设施选择与节点采集选择分别处理：开启中心 Prometheus 不自动在全部机器安装 exporter。共享 Alloy 的日志/追踪配置按能力生成，未选择的输入不出现在有效配置和 Secret 校验中。
+
+标准 `up/status/down`、开发与生产启动都消费同一选择解析实现。核心服务与各观测能力分别记录结果，整体命令在所选能力失败时返回非零，但调用者应按必需服务的实际状态决定是否继续，不能靠 `set -e` 把可选能力失败提升为全平台中止。未选择的组件不创建；已有观测组件停用只能由标准入口在确认项目归属后处理，保留数据卷，不停止其他工作区或核心服务。
+
+部署选择、物理资源限制、设施端点和证书随对应组件生命周期生效；修改它们不承诺热更新。恢复同一设施的连接无需重启业务。Monitor-owned 查询预算与阈值采用原子热更新，目标配置在下一次成功发现后生效，响应区分保存版本与已应用版本。首期采样周期固定 15 秒，由唯一的版本化采集契约生成配置；页面不提供一个不能实际生效的采样编辑项，后续可配置采样时再明确发布与回执协议。
+
+### 10.4 状态与读取响应
+
+能力读取返回 `capability`、`enabled`、`availability`、安全 `reason_code`、`checked_at`；不返回原始连接错误、内部地址或 Secret。全局可用性采用有界周期探测，不能因某个 exporter 无样本就判整个 Prometheus 不可用。
+
+资源读取返回对象身份、指标目录键、单位、时间与数据状态。有效性按每个指标/序列判断，不把“有一个 CPU 点”解释为整个对象全部有效。
+
+| `data_state` | 条件与展示 |
+| --- | --- |
+| `not_connected` | 当前没有启用且有效绑定的来源；不调用后端猜测身份 |
+| `valid` | 有满足新鲜度和口径的有效样本；速率还必须满足所需样本数与完整窗口 |
+| `no_data` | 来源已接入，但查询窗口没有有效样本；值为空，不能显示 0 |
+| `stale` | 最近有效样本超过新鲜度；可以显示带时间的历史值，不计入当前排行、汇总与恢复判定 |
+| `unsupported` | 来源/操作系统/配额证据不支持该指标；不是设施故障 |
+
+瞬时视图包含 `sampled_at`、`queried_at`、`window_seconds`；趋势包含起止时间、实际步长与各序列缺口。`value=null` 与 `value=0` 明确区分。时钟异常或速率计算窗口不足不生成伪有效点。CPU 分母、内存配额及容器映射等口径证据来自同一对象与窗口，不能用现在的容量回算过去百分比。
+
+HTTP 行为遵守既有 API 规范：
+
+- 能力目录读取成功返回 200，即使其中某个能力 disabled/unavailable；这仅证明状态查询成功。
+- 直接请求未启用能力返回 409 与 `observability_capability_disabled`；已启用但配置缺失返回 503 与 `observability_capability_unconfigured`；后端故障返回 503 与 `observability_backend_unavailable`，超时返回 504 与 `observability_query_timeout`。
+- 已成功查询但没有样本返回 200 和明确数据状态；不能将故障包装成这种响应。非法指标/参数返回 400，超出已声明查询预算返回 422，瞬时并发限流返回 429；无权限/对象不存在分别沿用 403/404。
+- 管理列表沿用 `data/total/page/page_size/total_pages`，每页最大 100；组合页面各区独立请求。当前数据汇总返回有效对象数与应覆盖对象数，覆盖率不足时明确“不完整”，不能用部分成功值冒充全平台总值。
+
+### 10.5 第一版指标与预算
+
+数字为第一期初始设计值，需要由真实采集及负载门禁证明；不是已经取得的性能上限。固定指标目录是唯一的公式、单位和来源定义，前端与告警共用，不各自编写 PromQL。第一期不开放任意表达式、插件代码或全量标签搜索。
+
+| 指标目录范围 | 计算与缺失规则 |
+| --- | --- |
+| 节点 CPU、1/5/15 分钟负载 | CPU 使用 1 分钟计数器速率；负载展示原值并同时显示核数，不直接当 CPU 百分比 |
+| 节点内存、文件系统、inode | 内存压力基于可用量；文件系统按挂载证据和排除规则展示，共享归属不明确则不作全局总容量 |
+| 节点网络、磁盘 IO | 1 分钟计数器速率，区分设备；过滤桥接/虚拟设备需要显式规则，计数重置使用后端速率语义 |
+| 进程 CPU 核数、RSS、运行时 | 进程与容器范围分别展示；没有有效配额就不生成配额利用率 |
+| 服务请求量、5xx 率、延迟分位数 | 完成请求计数和时长直方图；规范化 route 与有限方法/状态类别；无请求时错误率/延迟为空，不判断服务故障 |
+
+| 预算项 | 初值与所有权 |
+| --- | --- |
+| 采样与超时 | scrape 15 秒、超时 5 秒；首期固定采集契约，超时不得大于采样周期 |
+| 数据新鲜度 | 单点超过 60 秒标 stale；告警连续窗口内缺样本时进入 unknown，不能仅凭最新一点跨缺口判定 |
+| 刷新与范围 | 页面默认 15 秒刷新、最短 10 秒；查询范围最长 7 天，不修改后端采样频率 |
+| 查询输出 | 每请求最多 12 个目录指标、100 条序列、每序列 1,000 点、总计 20,000 点；实际步长至少 15 秒，随范围增大；拒绝超限，不能偷偷截断 |
+| 查询保护 | 总超时 5 秒；单主体并发 2、单 Monitor 进程上游查询并发 8；满额快速返回 429，无无界等待队列；存储预算与限流策略分开 |
+| 时序保留 | 初始 7 天与 10 GiB 体积上限同时限制，达到体积上限可能提前淘汰，不能保证总能查到 7 天；磁盘另预留 WAL/压缩空间 |
+| 序列准入 | 单端点采样上限 20,000；全部署初始活跃序列预算 200,000。端点超限是采集失败，必须可见；总预算需要有界计数与准入，不能把单端点 sample_limit 当成全局限额 |
+| 组件资源 | Prometheus 初始上限 1 CPU/2 GiB；node_exporter 0.25 CPU/256 MiB；cAdvisor 0.5 CPU/512 MiB，均为可调整部署预算，负载证据不足时不能宣称满足规模 |
+
+查询预算归 Monitor 普通平台配置，版本校验、热生效与审计同次实现；初次无持久值使用定义默认值，保存后不退回环境值。组件资源、磁盘卷容量和 TSDB 启动保留参数归 Infra 部署，页面只读呈现实际配置。Alloy/Loki/日志接收与清理沿用现有已验证预算，不因指标开启取消它们的边界。
+
+客户端选择窗口，服务端依据指标目录与预计序列上界规划步长，使单序列点数和总点数同时满足预算；实际返回序列仍要二次核验。Nginx 节点入口初始上限 0.25 CPU/128 MiB，同样只表示设计预算。全局序列准入按去重后的采集端点及每端点配额预留总额，包含自身指标开销；配额预留之和不得超过全局预算，新增端点与提高配额须原子校验。不根据一次观测到的少量序列承诺剩余容量充足。
+
+固定 scrape 配置、sample limit、标签和响应体限额应在实际选择版本的配置校验中验证。Prometheus 时间/体积保留针对时序块，不代表整个数据目录的绝对磁盘硬配额，需要额外卷容量与磁盘告警。[Prometheus 配置](https://prometheus.io/docs/prometheus/latest/configuration/configuration/)、[存储说明](https://prometheus.io/docs/prometheus/latest/storage/)
+
+### 10.6 权限与接口责任
+
+下表是待发布的功能契约，Permission Key 必须在实施时进入 owner manifest、生成常量、角色目录与双语文本，不能只在 Handler 中手写字符串。Platform Context 不能因 URL 相似自动激活 Tenant 权限。
+
+| 功能/API 目标 | Owner 与最小权限 |
+| --- | --- |
+| `/api/v1/system/platform/host_nodes` 节点列表/详情、创建和更新 | System；目标 `platform.host_node.read/create/update`，Platform User；更新携带版本，第一期不开放 delete |
+| 既有模块实例及引擎的关联投影 | System；沿用对应对象读取权限，关联变更由对应聚合管理权限与节点读取权限共同裁决，不新增复制对象 API |
+| `/api/v1/system/runtime/observability-identities` | System；`system.observability_identity.read`，仅固定 `addp-monitor` 的非委托 Platform Service Access Token；无分页、筛选或调用者标签，只提供有界当前身份与租约投影 |
+| `/api/v1/monitor/platform/observability_capabilities` | Monitor；目标 `monitor.resource_observation.read`，只返回安全状态 |
+| `/api/v1/monitor/platform/monitoring_targets` | Monitor；目标 `monitor.monitoring_target.read/create/update/delete`，Platform User；只编辑可变采集配置，不修改自动实例身份 |
+| `/api/v1/monitor/platform/resource_observations` 与 `/resource_trends` | Monitor；目标 `monitor.resource_observation.read`；指标目录白名单、主体约束与预算校验，不接受任意 query |
+| `/api/v1/monitor/platform/metrics_discovery` | Monitor；目标 `monitor.metrics_discovery.read`，仅固定 Prometheus Platform Service Client；全量有界快照，不接受 User 或委托身份 |
+| 查询预算配置 | Monitor；沿用自身 `monitor.configuration.read/update`，注册在已有模块级配置入口内，不增加 Console 一级域入口 |
+| 平台日志正文 | System；沿用 `platform.module_log.read` 和原授权读取路径；资源/告警读取权不附带正文权 |
+
+System 节点与 Monitor 采集配置管理属于平台系统管理职责；Platform Security Administrator 不因安全角色而自动得到业务观测权，Platform Audit Administrator 读取统一审计也不等于能编辑目标或看正文。角色授予必须在发布清单显式声明，不能硬编码“管理员全部放行”。采集、发现、日志上报身份互相隔离，不复用 `addp-log-observer` 取得额外权限。
+
+Monitor 读取 System 的跨 owner 对象投影须按调用类型授权：用户关联查询仅在当前请求内转发已验证 User Token、由 System 再裁决；后台发现使用独立最小 Platform 服务能力，仅读有界身份/租约/部署投影，不获得 Engine Connection 或 Tenant 业务读取。当前 User 的节点/实例权限不足时不暴露其关联详情，也不能用后台服务结果绕过。第一期不发布 Tenant 资源观测接口。
+
+各批实施同步其实际变更 Owner 的 Swagger 和权限覆盖报告，API 请求/响应/错误/版本与调用方一致；分批记录区分已发布接口与尚未实现的目标，不为后续设计生成不存在的 Swagger operation。
+
+### 10.7 告警契约与待确认的领域调整
+
+建议将现有平台日志专用事件、通知目标和投递域收敛为平台运行告警，保留日志来源专用观测及规则。该调整已提出确认，确认前只完成下述可复用行为设计，不迁移表、接口或权限。
+
+- 资源规则显式绑定主体/指标/有限维度；同一主体、规则与维度最多一个未恢复事件。严重级别固定，不在同一事件里擅自升级；warning 与 critical 如同时启用须是两个明确规则身份。
+- 建议内存压力规则初值超过 80% 持续 5 分钟打开，低于 75% 持续 2 分钟恢复；CPU 忙碌超过 90% 持续 5 分钟打开，低于 80% 持续 2 分钟恢复。规则由管理员显式启用；名称为资源压力，不称内存泄漏或自动扩容结论。
+- 连续性按原始采样证据与质量窗口证明，不能把多次重复读取同一个样本当作持续异常。评估默认 15 秒并复用 Monitor 调度预算；evaluator 输出 risk/normal/unknown，由单一事务 reconciler 创建 incident/event/outbox。
+- 能力关闭、目标停用、来源断开或查询失败时，资源规则暂停或 unknown，既有事件保持未恢复；列表区分事件状态与当前评估状态。再次启用先取得完整窗口再判定，不把暂停时间累加进持续时间；无有效恢复证据不生成 resolved。
+- 确认表示人员接手，限时抑制只控制通知；两者不把故障改成正常。规则被停用后保留处理入口与历史，不以规则停用自动宣告资源恢复；规则变更不得把不同信号覆盖成原事件，生效与活动事件处理需要在同次接口中显式表达。
+- 资源样本缺失先标 unknown；独立的采集链路告警只能基于其本身的有效心跳/探测判定，不能把 Prometheus 故障扩成每台主机业务 DOWN。
+- opened/resolved 通知复用事务 outbox、至少一次传输、确认/抑制、失败重试和历史重投；不配置目标也保存事件，发送失败不回滚业务或告警事实。停用评估不取消已生成的事实通知；停用通知目标沿用现有取消未投递记录的契约。
+
+领域调整若确认，实施方案必须同时满足：原位迁移而非另建同职责事件链；历史 ID、事件发生时间、投递身份及凭据保持；旧通知目标只订阅日志类别，不自动扩到资源；原权限不能自动授予新增资源范围；所有旧表/API/页面/权限路径在同次切换删除。外部历史消息载荷作为不可变事实保留，不能为统一 schema 重新发送或改写；新消息协议与接收端变更另作明确验证。
+
+### 10.8 开工顺序与最小验收场景
+
+优先完成 P1.1 的能力裁剪与启动隔离，然后实现 System 节点及绑定、Monitor 目标与指标查询，最后接入已确认的告警域。整个过程不新增业务 Ready 依赖，也不以节点绑定失败中止业务注册。
+
+| 场景 | 必须证明 |
+| --- | --- |
+| 指标/日志均关闭，观测 Secret 缺失 | 核心依赖仍按标准入口启动；业务注册/Ready/任务执行不因观测关闭失败，无远端发送和离线告警 |
+| 只开启指标、只开启日志 | 各自独立预检/启动/查询，未选择组件不被隐式拉起；日志关闭后的结构化输出仍有界 |
+| enabled 配置缺失、故障、恢复 | 状态与错误码区分，核心仍可用；恢复不重启业务、不伪填缺口，不伪造告警恢复 |
+| 节点改名/IP 变化、真实进程重启、未知节点 ID | 节点身份稳定；新实例身份明确，恢复注册不改节点，绑定未知不影响租约 |
+| 停用目标时发现服务失联 | 当前查询与告警排除已停用范围；陈旧采集状态可见，不把缓存继续采集说成已停止 |
+| 缺配额、短窗口、无请求、部分序列过期 | 空值/不支持/过期不变成零；不同口径不混算，排行与汇总给出覆盖范围 |
+| 查询及采集超限 | 有界失败、无静默截断和无限队列；业务线程与必需 Infra 未被观测压垮 |
+| Platform/Tenant、User/采集服务、跨 owner 权限 | 目标和身份隔离，拒绝绕过 Owner、委托及机器身份扩权，日志正文权限独立 |
+| 告警暂停、unknown、恢复和通知失败 | 只有有效恢复产生 resolved；事件/通知原子、无渠道仍存事件、投递重试身份稳定 |
+
+当前设计变更只需文档结构/链接/空白检查和 `make test-changed`。实现上述场景时按 8.2 分配 T0-T5 owner 与 disposable 依赖：标准入口自动发现已有 Go/前端测试，新 Infra 输入、组件和采集链路门禁须在编码同次登记；真实多节点、生产规模与完整七天保留仍须独立验收。
+
+### 10.9 D1 文档验证记录
+
+2026-10-05 D1 文档阶段仅修改本文，未变更服务、接口、权限清单、环境或依赖，未重启任何开发服务。
+
+- 文档八个详细设计小节、14 条本地链接、代码围栏及空白检查通过；`git diff --check -- docs/next/ADDP平台运行监控与可观测性设计.md` 通过。
+- `make test-changed` 退出 2：共享工作区其他并行改动使全部已登记模块进入计划，缺少相关 PostgreSQL/MySQL/OceanBase 等 T2 参数，在执行门禁前预检失败；未运行的聚合门禁不计通过。
+- `make test-platform` 退出 2：`test-dev-lifecycle` 的 GeoPython `container_entrypoint.sh` 夹具超过 10 秒超时；本轮未修改该夹具或放宽时限，后续平台门禁未执行。不能据此宣称全平台验证通过，未来实现仍由已有 Platform CI 和对应 owner 标准门禁验收。
+- D1 文档阶段尚未实施 P1/P2/P3；下节单独记录后续实施的实际范围。
+
+### 10.10 P1.1 第一批：集中日志部署与启动隔离
+
+本批只实施已有集中日志组合的选择与隔离，不计为完整 P1.1。`ADDP_OBSERVABILITY_LOGS_ENABLED` 已进入根模板、Infra/开发/生产生命周期与 System/Monitor；Prometheus、指标端点、节点绑定及追踪选择尚未实现。
+
+- 可选设施统一归 `observability-logs` Profile，先启动核心 Infra，再独立预检日志凭据、端口、构建与健康；观测失败保留非零整体结果，业务调用入口根据核心实际 Ready 继续。
+- 关闭时停止经过工作区归属核验的远端组件并保留卷；本地有界输出及清理继续运行。无效的日志专用凭据和端口不阻断核心 Compose 校验。
+- System 停用日志观察器 OAuth Client 并撤销授权，正文读取仍由既有授权接口访问 Loki；关闭时返回既有未接入响应，不新增宿主文件读取路径。
+- Monitor 的日志摘要增加 `deployment_state=enabled/disabled/unconfigured`，关闭或配置无效时暂停观测与失联评估，当前健康显示 unknown；前端单独呈现部署选择，隐藏过时实时指标，保留历史告警。关闭或重新开启本身不生成恢复事件；新的检测生命周期清零连续异常/恢复样本数，保留已有告警和观测身份，恢复必须重新取得足够的新样本。通知历史与既有投递流程保持独立。
+- 统一平台运行告警的表/API/权限迁移仍待明确确认。本批沿用现有日志告警域，没有迁移订阅或新增资源告警。
+
+本批门禁复用 `test-dev-lifecycle`、`test-go`、`test-system-frontend`、`test-monitor-postgres`、`test-system-iam-postgres`、`test-system-runtime-log` 及 Swagger 覆盖检查。没有新增测试入口、外部服务类型或镜像；已有 Platform、Go、System 前端和 PostgreSQL/日志 T2 CI 自动登记覆盖变更。具体执行结果如下，未运行项不计通过。
+
+
+2026-10-05 实施验证：
+
+| 入口 | 结果与范围 |
+| --- | --- |
+| `make test-platform` | 通过；平台一致性、授权/Swagger 覆盖、Make/CI 自动登记和隔离夹具验证完成 |
+| `make test-dev-lifecycle` | 最新输入完整通过；22 项部署/模型夹具检查、端口与停止保护、生命周期/构建以及 Worker 编译检查 |
+| `make test-go` | 当前代码通过；所有已跟踪 Go 模块的依赖一致性与 T1 测试，数据库验证另走下列 T2 入口 |
+| `make test-system-frontend` | 91 项确定性测试、43 项浏览器测试及构建通过；包括关闭/配置无效时隐藏过时实时指标并保留告警 |
+| `make test-monitor-postgres` | 通过；包含暂停时不评估失联、不生成恢复事件，重新开启后恢复样本重新累计 |
+| `make test-system-iam-postgres` | 完整门禁通过；包含日志观察器 Client 停用、授权版本失效与业务 Client 独立性 |
+| `make test-system-runtime-log` | 固定输入后重跑完整通过；实际采集、查询、故障恢复、容量、物理保留与旧实例隔离验证完成，退出核验自建容器/网络/卷/目录清理为零；首次运行因修改执行中的登记信息而作废 |
+| Monitor Swagger 生成与路由覆盖 | 通过，55 个公开路由方法；同步部署状态与观测上报错误契约 |
+| 本文链接/围栏与任务范围空白检查 | 14 条本地链接、围栏与 `git diff --check` 通过 |
+| `make test-changed` | 未通过聚合预检：共享工作区还含其他任务改动，全部模块入选，缺少其他 PostgreSQL/MySQL/OceanBase 等 T2 参数；该聚合没有执行，不能计为通过，由已有模块 T2 CI 覆盖未运行的其他 Owner 门禁 |
+
+既有个人环境未重启，运行验收只使用标准 T2 自建隔离设施，以及已核实 `25432` 映射下的 `addp_test`/`addp_iam_test`。根 Make 的脚本语法验证改为逐文件检查；复制端口工具的隔离夹具同步携带其共享日志选择依赖，停止测试替身校验新的 Profile 参数，同时保留工作区归属与删卷保护。
+
+本批不等于 P1.1 全部完成：Prometheus、节点身份绑定、资源指标查询、TLS/采样预算和完整故障隔离验收仍按后续步骤实施。优先继续 P1.1 的 Prometheus 与指标采集部署，沿用本批的独立选择、实际状态报告及业务启动隔离。
+
+
+### 10.11 P1.1 第二批：指标中心部署与采集夹具
+
+本批先建立 Prometheus 中心的可选生命周期，不提前发布节点台账、资源查询或 HTTP SD 接口。根模板指标开关缺省 `false`，开启只选择 `observability-metrics` Profile；关闭停止经当前工作区归属核验的中心容器并保留时序卷，错误配置或中心失败在核心 Infra Ready 后报告非零，不停止业务设施。共享部署准备归 `scripts/utils/observability-env.sh`，删除原日志专用入口文件；日志仍独立选择。
+
+中心固定 [官方版本目录](https://prometheus.io/download/) 中的 Prometheus 3.13.4 LTS 镜像 tag 与 manifest digest；查询监听只发布回环首选 `19090`，经实际映射读取。独立部署证书目录只包含 `ca.crt`、`server.crt/key`、`health.crt/key`，签发 CA 私钥与其他客户端私钥在目录外保管；CA 限于本中心的可信部署客户端，不复用业务身份凭据或节点采集客户端，服务器证书包含 `localhost` 和 `prometheus` SAN。开启必需路径与可读文件，标准入口不生成生产 CA 或证书。服务端强制验证客户端证书，TLS 最低 1.2；健康探针也使用 mTLS。管理 API、远端写入和 HTTP 重载均不开启，容器无宿主采集权限，非 root、只读根文件系统并丢弃 capabilities。
+
+基础配置仅采中心自身的运行指标（15 秒/5 秒），不能算作主机或业务引擎已纳管。业务目标依然只有后续 Monitor HTTP SD 路线，不另开放生产静态目标文件或任意采集配置入口。自身端点预留 20,000 序列预算，后续全局准入必须包含此开销。每端点 sample limit 20,000、响应体 10 MiB、标签数量 20、标签名 128 字节、标签值 512 字节；真实预算与 TLS 在所选版本校验。Prometheus 内部查询保护采用 5 秒超时、8 并发和 200,000 个加载样本；这些限制不替代 Monitor 的请求准入或全局活跃序列预算。保留 7 天/10 GiB、容器 1 CPU/2 GiB 属于部署上限，不等于性能或磁盘绝对硬配额证明。
+
+新增 `make test-monitor-metrics`：Owner 自建随机 Compose 项目、回环随机端口、临时 CA/证书/源文件及私有卷，复用中心部署定义和单一配置。只在测试配置加入受控 mTLS 指标来源，验证真实样本、采样参数、预算越限可见、无证书/错误 CA 拒绝、来源中断恢复、中心重启持久化和退出零残留；不把夹具声明为真实宿主/业务服务纳管。登记到根集成入口、T2 变更选择与 CI；部署脚本隔离验证继续走 `test-dev-lifecycle`，平台登记走 `test-platform`。
+
+追踪开关和通用能力状态 API 不在本批范围；正式节点/实例绑定与 HTTP SD、应用埋点、资源查询仍须后续实现。最终输入验证记录：
+
+| 标准入口或检查 | 结果与边界 |
+| --- | --- |
+| `make test-monitor-metrics` | 完整通过；官方固定镜像配置校验、实际非 root/只读/CPU/内存边界、中心自身与受控来源 mTLS 采样、无证书/外部 CA/明文拒绝、20,001 样本越限失败且不接纳部分样本、来源中断恢复、中心 SIGKILL 后原时点样本重放、独立夹具路由及退出零残留 |
+| `make test-dev-lifecycle`（由 `test-platform` 调用） | 完整子门禁通过；29 项部署检查及端口、停止保护、开发生命周期和 Worker 编译检查，包括指标默认关闭、无效布尔值、缺失证书、中心启动失败、日志失败不阻断指标及四种能力组合 |
+| T2 CI 登记检查 | 通过；新 Monitor owner 独占服务门禁、固定镜像、输入路径、Make 集成入口和 CI job 均已覆盖 |
+| `make test-platform` | 未通过最终权限目录检查：共享工作区的栅格策略并行任务新增 3 个权限，实际目录 476/内置角色 manifest version 111，既有测试仍期待 473/110。本批没有新增 Permission 或修改角色目录，不改写该并行任务；已有 `.github/workflows/platform-ci.yml` 的同一入口将复核 |
+| `make test-changed` | 聚合预检未通过，多个其他 Owner 的 PostgreSQL/MySQL/OceanBase 等 T2 参数缺失，聚合未执行；本批指标 T2 已单独运行，其他 Owner 由现有已登记模块 T2 CI 门禁验证，未执行项不计通过 |
+| 任务范围 `git diff --check`、设计本地链接及围栏 | 通过；14 条本地链接有效，旧日志专用准备文件及代码调用均已移除 |
+
+首次夹具运行发现行内 YAML tmpfs 选项未加引号而拆成两项，随后补正临时 CA 的标准用途扩展、所选版本的 `7d`→`1w` 归一化断言，以及临时容器每次重启后的实际随机端口读取。最终固定输入已完整重跑通过；不计失败运行作为通过证据。标准启动同时核验容器健康与宿主实际端口的 mTLS Ready，避免中心消失或宿主访问失败时报告就绪。
+
+个人 Infra 与业务进程未重启；只启动和清理本轮独占夹具。当前没有新增 HTTP API 或权限契约，未新增 Swagger 路由。下一步优先实施 System 节点台账与明确部署身份绑定，再向 Monitor HTTP SD 提供可靠的对象引用；中心自身采集和受控技术夹具不计为正式资源覆盖。
+
+### 10.12 P1.1 第三批：节点台账与模块实例声明
+
+本批实现 System 平台节点 API 和模块实例绑定基础，暂不发布 Monitor 发现/查询接口、引擎部署关联或节点操作页面。节点创建、读取、更新分别要求 `platform.host_node.create/read/update`，仅 Platform User 使用，默认仅平台系统管理员获权；无删除、SSH 或电源操作。节点 API 采用 `/api/v1/system/platform/host_nodes`，列表按名称/地址检索并分页（最大 100）。创建不带 version，更新为携带正整数 version 的完整替换；台账与绑定允许集合同事务递增版本并写入既有审计。
+
+节点包含 UUID `node_id`、`display_name`、`node_kind=physical|virtual`、显式 `addresses`、`enabled`、`allowed_module_bindings=[{client_id,module_name}]`、version 和 UTC 时间。名称最大 255 字符且不含控制字符、地址最多 32 个，每项仅无端口的 IP 或 DNS 名，允许绑定最多 64 对且无重复。允许集合明确枚举 `addp-<module_name>` 身份，可以在首次部署前设置；它不创建 OAuth Client，也不授予登记权。实际关联仍要求已验证的 Platform Service Principal。节点名称、地址与当前实例的历史展示字段分别维护。
+
+登记请求增加可空 `node_id`。首次登记在原登记事务内固定 `declared_node_id`、真实 `registration_client_id` 及既有 `registered_at`，重登记只续租和更新既有运行信息，不能补填或改挂首次声明；进程迁移须换 instance_id。System 自登记由受信本地启动路径明确提供自身 `addp-system` 身份，不接受外部请求声明 Client。Go 与 Python 共享登记从 `ADDP_HOST_NODE_ID` 读取 UUID；非法环境值仅输出不含原值的安全诊断并省略声明，不能阻断业务启动。直接 HTTP 的非法 UUID、未知字段、错误类型或超限正文仍返回 400。
+
+实例投影返回 `declared_node_id`（首次声明）、`node_id`（仅当前有效关联）、`node_binding_state=unbound|bound|rejected` 和固定 `node_binding_reason`。无声明为 unbound；未知节点、禁用节点或允许集合不包含首次真实 Client/模块对分别返回 `node_unknown/node_disabled/source_not_allowed`。读取按当前台账重新裁定，撤销和停用立即生效，不把拒绝声明放进 node_id、资源汇总或拓扑；不能将部署声明解释为物理位置已独立验证。绑定状态不改变登记成功、租约、路由或 Ready。
+
+实施前门禁范围：System/Common Go T1、Common Python、授权目录/常量/SQL 与 Swagger 覆盖、System IAM PostgreSQL T2（实际迁移、并发版本、审计原子性及绑定投影）、部署 Compose 配置检查。既有 `test-go`、`test-common-python`、`test-authorization`、`test-system-iam-postgres` 和平台登记覆盖这些路径，不新增数据库、服务依赖或门禁入口。下表只记录已实际执行的结果。
+
+2026-10-05 本批验证：
+
+| 标准入口或检查 | 结果与边界 |
+| --- | --- |
+| `make test-platform` | 最后一轮完整通过；29 项部署配置夹具、生命周期与启动隔离、共享前端、Make/CI 自动登记、Online 分发夹具、授权目录及 Swagger 路由覆盖均通过；本轮结果同时复核此前两批的相关平台登记 |
+| `make test-go` | 完整通过，22 个 Go 模块的依赖一致性与 T1；最终 System 接口、服务、仓储和模型变更又单独复验通过 |
+| `make test-common-python` | 236 项测试、28 项子测试通过；在系统临时目录创建独立 Python 3.12 环境，安装仓库已声明的开发及 LangChain 可选依赖，并显式引用已有 libspatialindex 动态库；没有修改个人虚拟环境 |
+| `make test-system-iam-postgres` | 完整通过；覆盖迁移 189 重放、权限种子、真实节点/模块绑定、版本并发及既有 IAM/OAuth 门禁。旧版本迁移夹具先完成其历史断言，再迁至当前版本调用当前仓储，不增加生产兼容路径 |
+| `bash scripts/test/system-iam-postgres-gate.sh --package repository` | 最终新增断言后复验通过；同版本并发更新仅一个成功、首次声明不可改挂、数据库直接改挂被约束拒绝、节点停用/撤销后投影立即失效且续租继续、真实审计写入异常回滚整个节点更新 |
+| `make test-authorization` 与 System Swagger 标准生成 | 通过；三个节点权限、平台系统管理员授予、生成常量、SQL 种子、公开路由覆盖和双语说明同步。创建五项字段必需，更新另要求 version，无删除路由 |
+| `docker compose -f docker-compose.yml config --quiet` | 通过；节点 ID 透传未增加业务依赖或改变可选观测组件生命周期 |
+| 文档与任务范围空白检查 | 设计 14 条本地链接及代码围栏有效；任务范围 `git diff --check`、9 个新增 Go/SQL 文件空白检查通过 |
+| `make test-changed` | 聚合预检未通过；共享工作区多个其他 Owner 入选，缺少其 PostgreSQL/MySQL/OceanBase 等 T2 参数，聚合未执行。相关本批门禁已单独运行；其他未执行 Owner 由已有 CI 门禁覆盖，不计为本地通过 |
+
+PostgreSQL 验证先核实当前 Infra 映射 `25432`，只使用标准入口管理的 `addp_iam_test`；没有新增或删除 database，没有重启个人 Infra 或业务服务。首次 Python 门禁因个人环境缺少已声明的可选依赖而收集失败，最终使用上述独立临时环境完整重跑；失败运行不计通过。
+
+平台总门禁此前一次遇到生命周期夹具 10 秒超时，另一次在其他任务正在调整的 Hosted Elasticsearch/Spark 夹具处失败；相关夹具复验后，最后一轮总入口退出 0。本批没有放宽超时或改写其他任务的 Hosted 实现，不以部分子门禁结果代替总入口通过。
+
+本批尚未实现节点管理页面、业务引擎部署关联、Monitor HTTP SD、主机/实例指标查询或统一平台运行告警迁移；节点台账与声明成功不能计为资源采集覆盖。控制台节点管理可在现有 API 和权限基础上继续实施，使节点 ID 与允许集合可由管理员配置。
+
+### 10.13 P1.1 第四批：控制台节点台账与实例关联展示
+
+本批沿用第三批 API 与权限。System 唯一节点列表路由为 `/host-nodes`，节点详情为 `/host-nodes/:node_id`，经 Console 公开为 `/system/host-nodes` 及其详情路径；节点身份保留在路径，名称/地址检索与分页使用 `search/page/page_size`，默认第 1 页、每页 20 条省略。通过共享导航桥恢复刷新、分享和历史导航；创建弹窗与未保存草稿不写入 URL。
+
+页面仅允许持有 `platform.host_node.read` 的 Platform User。创建与更新按钮分别受既有独立权限控制；节点 UUID 只读，停用通过携带最新版本的完整更新提交，无删除、SSH、电源或资源采集按钮。地址每行一项，允许集合以模块标识维护，其 Client 固定为 API 契约规定的 `addp-<module_name>`；空数组明确提交。编辑先读取详情，不用列表旧版本覆盖；409 保留草稿并提示主动重新加载，不自动重试写入。详情读取失败不展示可提交的默认表单，迟到响应不能覆盖新节点或新 Context。
+
+模块实例概览及查询共用既有 `ModuleInstanceNode`，显示当前关联状态、首次声明及固定拒绝原因；只有当前 bound 的 node_id 且具有节点读取权限时提供详情导航。无节点权限仍能读取已获权的模块实例，不额外查询节点台账，不用首次声明或旧名称/IP制造有效关联。
+
+实施前识别 T0/T1/T3：System 前端状态、真实组件浏览器及构建，Console 菜单/权限/iframe 导航及构建，共享路由策略与组件唯一所有权，授权与前端 CI 自动登记检查。本批不改变后端 API、Swagger、数据库、外部服务依赖或门禁入口，新增测试由已有 System/Console 前端 CI 自动发现。
+
+页面沿用共享 API Client、导航桥、主题、国际化、状态播报和 Element Plus 焦点陷阱。关闭弹窗优先恢复触发控件，列表重查后原控件不存在时恢复搜索框；列表及详情请求分别校验请求序号和当前身份生命周期。无法识别的关联状态显示未知，不由旧节点名称/IP或首次声明推断有效关联。IAM 权限页面同步补齐 `host_node` 中英文资源名称。
+
+本批浏览器验收使用正式 System/Console 组件与受控 API 响应，不将 HTTP 夹具计为真实采集覆盖；真实节点绑定、审计和数据库并发证据见第三批。没有启动或重启个人 Infra、Backend 或开发前端，只使用标准门禁自建的隔离浏览器与 Vite 服务。
+
+2026-10-05 最终验收记录：
+
+| 标准入口或检查 | 结果与边界 |
+| --- | --- |
+| `make test-system-frontend` | 最终输入完整通过：93 项单元测试、63 项浏览器测试及构建。包括新建完整请求、详情最新版本、清空地址/允许集合、停用、409 保留草稿且不重试、只读和跨 Context 拒绝、404/503/非法 ID、同页两个节点的迟到响应隔离、实例关联权限及英文窄屏；迟到用例等待旧响应完成后再断言 |
+| `make test-console-frontend` | 完整通过：146 项单元测试、113 项浏览器测试及构建。真实 System iframe 验证列表/详情公开 URL、保持同一 iframe 文档、刷新恢复、筛选保留、关闭后的焦点恢复；新增菜单与平台权限策略均覆盖 |
+| `make test-common-frontend` | 143 项测试通过；复用已有导航、主题、焦点与状态播报实现，没有新增同职责共享组件或第二套节点展示 |
+| `make test-authorization` | 通过；权限目录、生成产物及 Swagger 路由覆盖一致。本批只消费第三批 API，不需要重新生成后端 Swagger |
+| `make test-frontend-ci-registration` | 16 项登记测试及一致性检查通过；21 个前端仍由既有 CI 注册覆盖，新增 System/Console 浏览器用例自动发现，无需新增 Workflow 或门禁入口 |
+| 文档/翻译/任务范围检查 | 6 个新增前端文件空白检查、42 条节点中英文词条对应、JSON 解析、设计本地链接/围栏及任务范围 `git diff --check` 通过；已查看 Console 桌面和英文窄屏截图 |
+| `make test-changed` | 聚合预检未通过，共享工作区其他 Owner 的 PostgreSQL/MySQL/OceanBase 等 T2 参数缺失，聚合未执行；本批前端及相关 T0 门禁已单独运行，其他 Owner 的未执行项仍由已有 CI 验证，不计为本地通过 |
+| `make test-platform`、后端/T2 总入口 | 本批未重跑；本批没有后端/数据库/Infra 变更，沿用第三批相应证据，当前前端及共享路由策略按上述实际门禁验证，不宣称整工作区全部通过 |
+
+首次前端验证发现 IAM 权限资源翻译缺项、新建弹窗初始焦点不稳定，以及测试定位/拒绝访问地址断言与规范实现不一致，均已修正；最终标准入口完整重跑通过。构建仍有既有共享大包体积提示，未放宽构建门禁或改变依赖。测试结束后清理由标准入口负责，不接管个人开发环境。
+
+下一步优先接入 Monitor 采集目标及认证 HTTP SD，使 Prometheus 发现仅引用 System 当前有效节点/实例关联的目标；控制台台账完成不计为主机或业务引擎已采集资源指标。统一平台运行告警迁移仍按第 10.7 节等待单独确认。
+
+
+### 10.14 P1.1 第五批：采集发现的 System 身份准入
+
+本批先补齐 Monitor 采集发现所需的跨 Owner 依赖，再接目标配置及 Prometheus HTTP SD。正式发现不能复用全量模块详情或直接读取 System 私有表。
+
+- System 唯一服务投影为 `GET /api/v1/system/runtime/observability-identities`，无 query 参数和请求正文，只接收固定 `addp-monitor` 的 Platform Service Access Token 与 `system.observability_identity.read`。权限只授予 `platform.monitor_runtime`，不授予 User、Gateway、日志观测器或 Tenant Role，不可委托或租户定制。
+- 响应只包含 `observed_at`、`nodes[{node_id,version}]` 与 `module_instances[{module_name,instance_id,role,node_id,lease_expires_at}]`。节点只含当前启用台账；实例须模块启用、UP、租约尚有效，并由既有唯一节点绑定裁决确认。Worker、Scheduler、Ingress 与 Backend 一视同仁，不要求业务 URL。停用、撤销来源、未关联、未知节点、已结束与过期实例不进入有效集合。
+- 全量读取在只读可重复读事务内完成，初始上限 1,000 个启用节点和 10,000 个带节点声明的当前候选实例，输出最多 4 MiB，总超时 5 秒。超过预算返回 503 `observability_identity_budget_exceeded`；控制面失败返回 503 `observability_identity_unavailable`，超时返回 504 `observability_identity_timeout`。均不返回成功的空快照或截断快照；真实空集合仍为 200。`Cache-Control: no-store`，不持久化或缓存新一套租约。
+- Common 是共享 DTO 与 Bearer-only 服务 Client 的唯一实现；读取必须有界、校验完整数组、时间、唯一身份及节点引用；相对本次读取允许最多 5 秒时钟偏差，陈旧或异常未来快照失败关闭。Monitor 后续只按当前快照生成采集投影，生成时还须按当时的时间排除已到期租约，不能把该后台能力转用于浏览器节点详情、Engine Connection 或 Tenant 业务读取。Engine 部署关联和指标地址尚未发布，因此本批不推断引擎节点、不拼接业务 URL、不生成虚假采集端点。
+
+实施前门禁登记：现有 Go 自动发现覆盖 Common/System；System IAM PostgreSQL 标准入口的 `AgainstPostgres` 自动发现覆盖新迁移、角色授予和事务投影测试；已有权限目录、Swagger 覆盖与平台一致性 T0 覆盖新增权限和服务路由，无新增设施、构建方式或 CI owner。本批运行 `make test-changed` 并按工作区共享变更的实际限制报告结果，再运行 Common/System 最小充分 Go、`make test-authorization`、System Swagger 覆盖及 `make test-system-iam-postgres`。不修改业务 Ready，不重启个人开发服务。
+
+本批实现与验收记录（2026-10-05）：
+
+- 已实现 System 服务路由、只读有界事务投影、Common DTO/读取 Client、权限 Manifest 与生成常量、迁移 190、角色授予和双语文本；System Swagger 严格覆盖为 207 个公开路由方法。节点、模块、业务地址与凭据的所有权未发生变化。
+- `make test-go` 的 22 个已登记 Go 模块通过；随后 Common Client/Models/Authorization 全包、System API/Service/Repository/Migration 全包复跑通过。新增准入测试覆盖普通 User、Tenant Service、其他 Client、缺权限和委托令牌拒绝，以及未知/重复参数、正文、503/504 安全错误。
+- 预算专项证明 1,000 个节点及 10,000 个候选实例的边界成功，增加一个即整份拒绝；合法 100 字符多字节实例名使序列化结果超过 4 MiB 时同样整份拒绝。四种运行角色均可进入，未关联、被撤销来源、模块/节点停用、DOWN 与扫描前已过期实例不进入；观测读取不改租约，停用观测后业务心跳仍成功。
+- `make test-system-iam-postgres` 使用经 Infra status 核实的 localhost:25432 / `addp_iam_test`。IAM、OAuth、API、Migration、Engine Access 包首次均通过；Repository 首次因测试在未消费完结果集时对同一连接执行 SHOW 而失败，调整为查询前检查后，`SYSTEM_IAM_POSTGRES_TEST_ARGS=--package repository` 全包复跑通过，并补跑 `--package online-fixture` 通过。生产实现无需绕过事务隔离：已真实核对 repeatable read/read-only，在首次节点 SELECT 后并发停用节点仍返回同一旧快照，下一次读取才移除节点/实例；查询失败返回 nil 而非部分对象。迁移重复运行无重复授予。
+- `make test-authorization`、严格 System Swagger 路由覆盖通过；System 前端标准门禁通过 93 个确定性测试、63 个浏览器用例和构建，覆盖新增权限资源名称。新接口、新 Go/PG 测试由既有 CI 自动发现命中，无新 owner 或设施依赖。
+- `make test-platform` 完整通过，包含生命周期隔离、构建/前端/Python/T2/Online CI 自动登记、权限目录及全模块 Swagger 覆盖；新路由与测试的既有登记链已验证。文档 38 个相对链接、双语 JSON/TOML、Swagger 响应/权限契约及新文件空白检查通过。
+- `make test-changed` 在执行前因共享工作区其他门禁所需 PostgreSQL/MySQL/OceanBase 参数未提供而失败，聚合不计通过。初次 Swagger 路由覆盖因注册函数位于 handler 文件、超出既有 `*_routes.go` 扫描范围而失败，迁至唯一 routes 文件后严格复跑通过；没有修改覆盖检查或留下双路由。
+- 本批未重启个人服务/Infra、未声明已在真实业务部署生效。Monitor 目标配置、Prometheus HTTP SD、指标端点及资源查询仍待下一批接入；本批完成的是这些功能需要的 System 当前身份准入。

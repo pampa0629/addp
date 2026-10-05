@@ -2,8 +2,8 @@
 # Infrastructure Layer: PostgreSQL, Redis, FalkorDB, MinIO, Meilisearch, Kafka, Kafka Connect
 #
 # 使用方法:
-#   启动: docker compose -f docker-compose.infra.yml up -d
-#   停止: docker compose -f docker-compose.infra.yml down
+#   启动: bash scripts/infra/up.sh
+#   停止: bash scripts/infra/down.sh
 #   日志: docker compose -f docker-compose.infra.yml logs -f
 
 name: addp-infra
@@ -105,14 +105,14 @@ services:
       retries: 5
 
   meilisearch:
-    image: getmeili/meilisearch:v1.54.3
+    image: getmeili/meilisearch:v1.54.3@sha256:e68913ab7d6f5b159529e472cfd362ce3c741fafd3c127961b2142abbe41b3c9
     container_name: addp-meilisearch
     environment:
       - MEILI_ENV=production
       - MEILI_MASTER_KEY=${MEILISEARCH_MASTER_KEY}
       - MEILI_NO_ANALYTICS=true
     volumes:
-      - meilisearch_data:/meili_data
+      - meilisearch_data_v1543:/meili_data
     ports:
       - "${INFRA_BIND_HOST:-0.0.0.0}:${MEILISEARCH_PORT:-17700}:7700"
     networks:
@@ -272,7 +272,19 @@ services:
       retries: 12
       start_period: 30s
 
+  prometheus:
+    profiles: [observability-metrics]
+    extends:
+      file: scripts/infra/metrics.yml
+      service: prometheus
+    container_name: addp-prometheus
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"]
+    volumes:
+      - prometheus_data:/prometheus
+    networks: [addp-network]
+
   loki:
+    profiles: [observability-logs]
     extends:
       file: scripts/infra/runtime-logs.yml
       service: loki
@@ -284,6 +296,7 @@ services:
       runtime-log-store-init:
         condition: service_completed_successfully
   runtime-log-observer:
+    profiles: [observability-logs]
     extends:
       file: scripts/infra/runtime-logs.yml
       service: runtime-log-observer
@@ -294,6 +307,7 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on: [alloy, runtime-log-api, runtime-log-pruner]
   runtime-log-api:
+    profiles: [observability-logs]
     extends:
       file: scripts/infra/runtime-logs.yml
       service: runtime-log-api
@@ -302,6 +316,7 @@ services:
     networks: [addp-network, runtime-log-backend]
     depends_on: [loki]
   alloy:
+    profiles: [observability-logs]
     extends:
       file: scripts/infra/runtime-logs.yml
       service: alloy
@@ -323,13 +338,14 @@ services:
       - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks: [runtime-log-backend]
   runtime-log-store-init:
+    profiles: [observability-logs]
     image: addp-minio:RELEASE.2025-10-15T17-29-55Z
     entrypoint: ["/bin/sh", "/init-runtime-log-store.sh"]
     environment:
       LOKI_S3_ENDPOINT: http://minio:9000
       LOKI_BUCKET: ${LOKI_BUCKET:-addp-runtime-logs}
-      LOKI_S3_ACCESS_KEY: ${LOKI_S3_ACCESS_KEY:?runtime log account required}
-      LOKI_S3_SECRET_KEY: ${LOKI_S3_SECRET_KEY:?runtime log secret required}
+      LOKI_S3_ACCESS_KEY: ${LOKI_S3_ACCESS_KEY:-}
+      LOKI_S3_SECRET_KEY: ${LOKI_S3_SECRET_KEY:-}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
@@ -348,11 +364,12 @@ networks:
     driver: bridge
 
 volumes:
+  prometheus_data:
   loki_data:
   alloy_data:
   postgres_data:
   redis_data:
   falkordb_data:
   minio_data:
-  meilisearch_data:
+  meilisearch_data_v1543:
   redpanda_data:

@@ -32,6 +32,15 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unknown.runtime_hostname, "")
         self.assertEqual(unknown.host_node_ips, [])
 
+    def test_optional_node_id_is_explicit_and_invalid_values_do_not_block_registration(self):
+        for value in ("", "secret-invalid-value", "00000000-0000-0000-0000-000000000000", "urn:uuid:550e8400-e29b-41d4-a716-446655440000"):
+            with self.subTest(value=value), patch.dict("os.environ", {"ADDP_HOST_NODE_ID": value}):
+                registration = ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+                self.assertEqual(registration.node_id, "")
+        with patch.dict("os.environ", {"ADDP_HOST_NODE_ID": " 550E8400-E29B-41D4-A716-446655440000 "}):
+            registration = ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+            self.assertEqual(registration.node_id, "550e8400-e29b-41d4-a716-446655440000")
+
     def test_host_node_ips_reject_invalid_deployment_addresses(self):
         for value in ("host-a", "192.0.2.7:80", "192.0.2.0/24", "fe80::1%en0", "192.0.2.7,"):
             with self.subTest(value=value), patch.dict("os.environ", {"ADDP_HOST_NODE_IPS": value}):

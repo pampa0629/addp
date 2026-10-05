@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"github.com/addp/common/logpipeline"
 	"github.com/addp/monitor/internal/models"
 	"testing"
@@ -190,5 +192,28 @@ func TestLogPipelineEarlyCleaningUsesNewEvidenceAndRecovers(t *testing.T) {
 	}
 	if node.Signals["source_early_cleaning"].Active {
 		t.Fatal("valid no-cleanup samples did not resolve incident")
+	}
+}
+
+func TestLogPipelineUnselectedDoesNotUseRegistryOrDatabase(t *testing.T) {
+	for _, state := range []string{"false", "invalid"} {
+		t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", state)
+		pipeline := NewLogPipelineService(nil, "node-a", nil, nil)
+		ctx, now := context.Background(), time.Now().UTC()
+		if err := pipeline.Initialize(ctx, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := pipeline.CheckStale(ctx, now); err != nil {
+			t.Fatal(err)
+		}
+		pipeline.Run(ctx)
+		err := pipeline.Ingest(ctx, healthyLogObservation(now, 1), now)
+		want := ErrLogDisabled
+		if state == "invalid" {
+			want = ErrLogUnconfigured
+		}
+		if !errors.Is(err, want) {
+			t.Fatal(err)
+		}
 	}
 }

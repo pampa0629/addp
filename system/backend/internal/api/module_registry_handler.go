@@ -12,9 +12,11 @@ import (
 	commonauthmiddleware "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
+	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 )
 
@@ -56,8 +58,9 @@ func NewModuleRegistryHandler(registry *service.ModuleRegistryService, encryptio
 // @x-addp-required-permissions ["system.runtime_registry.update"]
 // @Router       /runtime/modules [post]
 func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 65536)
 	var req models.ModuleRegistrationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || binding.Validator.ValidateStruct(&req) != nil {
 		respondModuleRegistryError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid), moduleRegistrationInvalidErrorCode)
 		return
 	}
@@ -65,6 +68,8 @@ func (h *ModuleRegistryHandler) RegisterService(c *gin.Context) {
 		respondModuleRegistryIAMError(c, err)
 		return
 	}
+	authContext, _ := middleware.IAMAuthContextFromGin(c)
+	req.RegistrationClientID = *authContext.Client.ClientID
 	if err := h.service.Register(&req); err != nil {
 		if errors.Is(err, service.ErrInvalidModuleRegistration) {
 			respondModuleRegistryError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid), moduleRegistrationInvalidErrorCode)

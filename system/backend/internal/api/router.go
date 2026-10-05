@@ -121,6 +121,10 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	})
 
 	api := router.Group("/api/v1/system")
+	if err := RegisterHostNodeRoutes(api, runtime, &HostNodeHandler{service: service.NewHostNodeService(repository.NewHostNodeRepository(db))}); err != nil {
+		panic(err)
+	}
+
 	if err := RegisterEngineRasterPolicyRoutes(api, runtime, &EngineRasterPolicyHandler{
 		service: service.NewEngineRasterPolicyService(repository.NewEngineRasterPolicyRepository(db)),
 	}); err != nil {
@@ -199,6 +203,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		engineHandler,
 	); err != nil {
 		panic(fmt.Errorf("注册 IAM Service Runtime 路由失败: %w", err))
+	}
+	if err := RegisterObservabilityIdentityRoute(api, runtime, moduleRegistryHandler); err != nil {
+		panic(fmt.Errorf("注册观测身份投影路由失败: %w", err))
 	}
 	serviceInternalHandler := NewInternalHandler(apiConsumerService)
 	platformContext, err := middleware.NewIAMServiceContextGuard("platform")

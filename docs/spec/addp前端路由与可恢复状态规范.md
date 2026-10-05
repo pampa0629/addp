@@ -80,6 +80,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 
 | 模块 | 页面或状态 | Canonical 表达 |
 | --- | --- | --- |
+| System | 平台节点台账及详情 | 列表 `/system/host-nodes`、详情 `/system/host-nodes/:node_id`；query 为 `search/page/page_size`，默认第 1 页及每页 20 条省略；创建弹窗与未保存草稿不进入 URL |
 | Manager | 数据资源与预览子视图 | `locator`、`tab` |
 | Manager | 数据任务工作区 | 分类使用 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个 canonical path；query 只保存 `task_type`、向量化页内 `tab`、`task_id`、`create=1` 及页面定义的创建来源参数，默认页内任务视图省略 `tab` |
 | Develop | SQL、工作流、Notebook 创建或编辑 | `action`、`id` |

@@ -77,6 +77,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/system/iam/application-access': [anyOf('tenant', 'iam.service_account.read', 'iam.api_consumer.read', 'iam.oauth_client.read')],
   '/system/iam/security': [anyOf('platform', 'iam.security_policy.read', 'audit.event.read'), anyOf('tenant', 'audit.tenant_event.read')],
   '/system/modules': [platform('platform.module.read')],
+  '/system/host-nodes': [platform('platform.host_node.read')],
   '/system/engines': [tenant('system.engine.read')],
   '/system/engine-raster-policies': [platform('system.engine_raster_policy.read'), tenant('system.engine_raster_policy.read')],
   '/system/cleanup': [tenant('system.cleanup.read')],

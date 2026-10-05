@@ -22,6 +22,9 @@ class OntologyGateTest(unittest.TestCase):
         utility = self.root / "scripts/infra/ports.sh"
         utility.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT.parents[1] / "infra/ports.sh", utility)
+        log_utility = self.root / "scripts/utils/observability-env.sh"
+        log_utility.parent.mkdir(parents=True)
+        shutil.copyfile(SCRIPT.parents[1] / "utils/observability-env.sh", log_utility)
         (self.root / "ontology/backend").mkdir(parents=True)
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()

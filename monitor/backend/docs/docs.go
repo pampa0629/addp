@@ -1890,6 +1890,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3959,6 +3965,14 @@ const docTemplate = `{
             "properties": {
                 "configured": {
                     "type": "boolean"
+                },
+                "deployment_state": {
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled",
+                        "unconfigured"
+                    ]
                 },
                 "health": {
                     "type": "string"

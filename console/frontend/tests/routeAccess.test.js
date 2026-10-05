@@ -4,6 +4,14 @@ import { CONSOLE_ROUTE_ACCESS, consoleRouteAccess } from '@common-ui'
 import { matchesNavigationAccess } from '../src/utils/navigationAccess'
 
 describe('Console page access', () => {
+  it('isolates managed node pages to their platform read permission', () => {
+    for (const path of ['/system/host-nodes', '/system/host-nodes/10000000-0000-4000-8000-000000000001']) {
+      expect(matchesNavigationAccess({ route: path }, 'platform', ['platform.host_node.read'])).toBe(true)
+      expect(matchesNavigationAccess({ route: path }, 'tenant', ['platform.host_node.read'])).toBe(false)
+      expect(matchesNavigationAccess({ route: path }, 'platform', ['platform.module.read'])).toBe(false)
+      expect(matchesNavigationAccess({ route: path }, 'platform', ['platform.host_node.create'])).toBe(false)
+    }
+  })
   it('has one rule for every navigable menu page', () => {
     const source = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     const pages = [...source.matchAll(/index: '(\/[^']+)'/g)].map(match => match[1])

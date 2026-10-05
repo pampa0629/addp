@@ -1,0 +1,137 @@
+import { expect, test } from '@playwright/test'
+import { HOST_NODE_ID, HOST_NODE_OTHER_ID, mockHostNodesAPI } from './host-nodes.fixture'
+
+test('node creation submits complete arrays and opens a reloadable node identity', async ({ page }) => {
+  const { writes } = await mockHostNodesAPI(page)
+  await page.goto('/host-nodes?search=Node&page=2')
+  await page.getByTestId('node-create').click()
+  const dialog = page.getByRole('dialog')
+  await expect(page.getByTestId('node-name')).toBeFocused()
+  await page.getByTestId('node-name').fill('New node')
+  await page.getByTestId('node-addresses').fill('10.0.0.4\nworker.local')
+  await page.getByTestId('node-add-binding').click()
+  await dialog.getByRole('textbox', { name: '第 1 项模块标识' }).fill('transfer')
+  await page.getByTestId('node-save').click()
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toEqual({ display_name: 'New node', node_kind: 'physical', addresses: ['10.0.0.4', 'worker.local'], enabled: true,
+    allowed_module_bindings: [{ module_name: 'transfer', client_id: 'addp-transfer' }] })
+  await expect(page).toHaveURL(new RegExp(`/host-nodes/${HOST_NODE_ID}\\?search=Node&page=2$`))
+  await page.reload()
+  await expect(page.getByTestId('node-name')).toHaveValue('New node')
+})
+
+test('editing uses fresh detail version and can clear bindings and disable a node', async ({ page }) => {
+  const { writes } = await mockHostNodesAPI(page)
+  await page.goto(`/host-nodes/${HOST_NODE_ID}`)
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('当前版本：7')).toBeVisible()
+  await dialog.getByRole('button', { name: '移除第 1 项允许关联的模块' }).click()
+  await page.getByTestId('node-addresses').fill('')
+  await page.getByTestId('node-enabled').click()
+  await page.getByTestId('node-save').click()
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toEqual({ display_name: 'Node A', node_kind: 'virtual', addresses: [], enabled: false, allowed_module_bindings: [], version: 7 })
+  await expect(dialog.getByText('当前版本：8')).toBeVisible()
+})
+
+test('version conflict preserves the draft and never automatically retries', async ({ page }) => {
+  const { writes } = await mockHostNodesAPI(page, { conflict: true })
+  await page.goto(`/host-nodes/${HOST_NODE_ID}`)
+  await page.getByTestId('node-name').fill('My draft')
+  await page.getByTestId('node-save').click()
+  await expect(page.getByTestId('node-save-error')).toContainText('草稿已保留')
+  await expect(page.getByTestId('node-name')).toHaveValue('My draft')
+  expect(writes).toHaveLength(1)
+  await page.getByRole('button', { name: '重新加载', exact: true }).click()
+  await expect(page.getByTestId('node-name')).toHaveValue('Node A')
+})
+
+test('read permission exposes a read-only inventory without create or save controls', async ({ page }) => {
+  const { writes } = await mockHostNodesAPI(page, { permissions: ['platform.host_node.read'] })
+  await page.goto(`/host-nodes/${HOST_NODE_ID}`)
+  await expect(page.getByTestId('node-name')).toHaveValue('Node A')
+  await expect(page.getByTestId('node-name')).toBeDisabled()
+  await expect(page.getByTestId('node-create')).toHaveCount(0)
+  await expect(page.getByTestId('node-save')).toHaveCount(0)
+  await expect(page.getByTestId('node-add-binding')).toHaveCount(0)
+  expect(writes).toEqual([])
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: '搜索节点名称或地址' })).toBeFocused()
+})
+
+for (const scope of ['platform', 'tenant']) test(`unauthorized ${scope} entry makes no node request`, async ({ page }) => {
+  const { calls } = await mockHostNodesAPI(page, { scope, permissions: scope === 'tenant' ? ['platform.host_node.read'] : [] })
+  await page.goto(`/host-nodes/${HOST_NODE_ID}`)
+  await expect(page).toHaveURL('http://127.0.0.1:4173/forbidden')
+  await expect(page.getByTestId('host-nodes')).toHaveCount(0)
+  expect(calls).toEqual([])
+})
+
+for (const detailFailure of [404, 503]) test(`failed detail ${detailFailure} offers no writable default`, async ({ page }) => {
+  await mockHostNodesAPI(page, { detailFailure })
+  await page.goto(`/host-nodes/${HOST_NODE_ID}`)
+  await expect(page.getByTestId('node-detail')).toContainText(detailFailure === 404 ? '节点不存在' : '节点读取失败')
+  await expect(page.getByTestId('node-save')).toHaveCount(0)
+  await expect(page.getByTestId('node-name')).toHaveCount(0)
+  await expect(page).toHaveURL(new RegExp(HOST_NODE_ID))
+})
+
+test('invalid identity is not requested or silently replaced with another node', async ({ page }) => {
+  const { calls } = await mockHostNodesAPI(page)
+  await page.goto('/host-nodes/invalid-id')
+  await expect(page.getByTestId('node-detail')).toContainText('节点 ID 无效')
+  expect(calls.every(call => call.path.endsWith('/host_nodes'))).toBe(true)
+  await expect(page.getByTestId('node-save')).toHaveCount(0)
+})
+
+test('a late old detail response cannot overwrite a new node', async ({ page }) => {
+  await mockHostNodesAPI(page)
+  let release
+  await page.route(`**/api/v1/system/platform/host_nodes/${HOST_NODE_ID}`, async route => {
+    if (route.request().method() === 'OPTIONS') return route.fallback()
+    await new Promise(resolve => { release = resolve })
+    return route.fulfill({ json: { node_id: HOST_NODE_ID, display_name: 'Late node A', node_kind: 'physical', addresses: [], enabled: true, allowed_module_bindings: [], version: 1 } })
+  })
+  await page.goto(`/host-nodes/${HOST_NODE_ID}`)
+  await expect.poll(() => typeof release).toBe('function')
+  const documentIdentity = await page.evaluate(() => performance.timeOrigin)
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('row').filter({ hasText: 'Node B' }).getByRole('button', { name: '节点详情', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(HOST_NODE_OTHER_ID))
+  await expect(page.getByTestId('node-name')).toHaveValue('Node B')
+  const oldResponse = page.waitForResponse(response => response.url().endsWith(HOST_NODE_ID) && response.request().method() === 'GET')
+  release()
+  await (await oldResponse).finished()
+  await expect(page.getByTestId('node-name')).toHaveValue('Node B')
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentIdentity)
+})
+
+test('English node form fits a narrow viewport and preserves its focused field', async ({ page }) => {
+  await mockHostNodesAPI(page, { language: 'en' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/host-nodes/${HOST_NODE_ID}`)
+  await expect(page.getByRole('dialog')).toContainText('Node details')
+  await expect(page.getByTestId('node-name')).toBeFocused()
+  const bounds = await page.getByRole('dialog').boundingBox()
+  expect(bounds.x).toBeGreaterThanOrEqual(0)
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390)
+  await page.screenshot({ path: '/tmp/addp-host-node-form-mobile.png', fullPage: true, animations: 'disabled' })
+})
+
+for (const readable of [false, true]) test(`instance associations expose only valid authorized links (${readable})`, async ({ page }) => {
+  const { calls } = await mockHostNodesAPI(page, { permissions: ['platform.module.read', ...(readable ? ['platform.host_node.read'] : [])] })
+  await page.goto('/modules?tab=instances')
+  const table = page.locator('.module-instances')
+  const bound = table.getByRole('row').filter({ hasText: 'binding-bound' })
+  const rejected = table.getByRole('row').filter({ hasText: 'binding-rejected' })
+  await expect(bound.getByTestId('instance-node-binding')).toContainText('已关联')
+  await expect(rejected).toContainText('声明的节点已停用')
+  await expect(rejected.getByRole('button', { name: '节点详情' })).toHaveCount(0)
+  await expect(table.getByRole('row').filter({ hasText: 'binding-unbound' }).getByTestId('instance-node-binding')).toContainText('未关联')
+  expect(calls).toEqual([])
+  if (readable) {
+    await bound.getByRole('button', { name: '节点详情' }).click()
+    await expect(page).toHaveURL(new RegExp(`/host-nodes/${HOST_NODE_ID}$`))
+    await expect(page.getByTestId('node-name')).toHaveValue('Node A')
+  } else await expect(bound.getByRole('button', { name: '节点详情' })).toHaveCount(0)
+})

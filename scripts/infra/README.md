@@ -700,12 +700,19 @@ SKIP_MEILISEARCH_INIT=0
 
 包含搜索 dump 的备份沿用 `make infra-restore-drill`：只读挂载 dump 到带本次所有权标签、无网络、无宿主端口、无持久卷的第三个一次性容器；使用来源镜像导入，核对索引身份、主键、文档、原显式设置与任务回执，再核实容器清理。版本新增的默认设置允许存在；原设置为 unset 的空值不强制覆盖新版本默认。`MEILISEARCH_RESTORE_IMAGE` 仅用于显式验证目标版本，须为 `getmeili/meilisearch:v<完整版本>@sha256:<digest>`；不接受浮动标签，不自动切换开发实例。恢复使用新的一次性 Master Key，不复用开发凭据。该演练不证明 Catalog／Asset 可见性、Manager 当前保护状态或故障恢复 T4 已通过，也不替代旧卷备份。
 
+任务历史按官方 [`/tasks` 游标分页契约](https://www.meilisearch.com/docs/reference/api/async-task-management/list-tasks)读取，每页最多 1000 条，以 `next` 作为下一页的 `from`；UID `0` 不能被当成结束标记。仍逐条核对完整身份、终态、纳秒入队时间与关联标记，并拒绝重复／未知 UID、数量漂移、提前结束或游标不前进。不抽样、不删除历史，也不保留逐 UID 发起 Docker 查询的第二条核验路线。
+
+默认任何文档内容摘要差异都会使恢复失败。用户明确接受搜索文档内容差异时，可仅对本次手动演练传入 `MEILISEARCH_ACCEPT_CONTENT_DRIFT=1`：仍读取全部文档并计算摘要，但内容差异输出带索引、数量、预期／实际摘要的 `WARN`，继续核验全部任务；索引、主键、数量、设置、任务和备份文件校验仍是必需门禁。完成输出明确注明已接受内容差异，不宣称逐文档无损恢复。此选项不进入环境模板、定时云备份或默认 CI，不改变业务权限，不替代正式切卷所需的 Owner 权限／故障验证与旧卷回滚准备，也不删除／改写原索引。未传入 `1` 时保持严格检查。
+
 先在用户确认的导出窗口获得成功 dump，并将文件置于仓库外私有目录，再使用以下入口。尖括号为需要替换的实际值，UID `0` 有效；这些命令本身不会创建 dump：
 
 ```bash
 make infra-backup BACKUP_ROOT=/绝对路径/ADDP-backups \
   MEILISEARCH_DUMP=/绝对路径/私有导出目录/实际文件.dump MEILISEARCH_DUMP_TASK=实际成功任务UID
 make infra-restore-drill BACKUP_DIR=/绝对路径/ADDP-backups/实际备份目录
+# 仅在用户明确接受搜索文档内容差异时，对本次手动演练显式选择
+make infra-restore-drill BACKUP_DIR=/绝对路径/ADDP-backups/实际备份目录 \
+  MEILISEARCH_ACCEPT_CONTENT_DRIFT=1
 # 仅在核验目标镜像 digest 后，显式验证跨版本导入
 make infra-restore-drill BACKUP_DIR=/绝对路径/ADDP-backups/实际备份目录 \
   MEILISEARCH_RESTORE_IMAGE='getmeili/meilisearch:v1.54.3@sha256:<已核验的64位摘要>'
@@ -819,7 +826,13 @@ docker logs minio
 
 当前源码固定 Meilisearch `1.54.3`、Go SDK `0.36.3`。Manager 新文档投递必须使用 `customMetadata` 并关闭自动重试；旧服务仍可运行其他模块，但 Manager 搜索保持隔离，不退回无标记写入。
 
-已有 `1.7.6` 持久卷**不得只改镜像后重启**。[官方迁移指南](https://www.meilisearch.com/docs/resources/migration/updating) 明确 `--upgrade-db` 不支持低于 `1.12` 的数据库，因此这次需先设计并确认 dump 迁移及恢复步骤：由用户停止各 Owner 写入，保留旧版本可启动的卷备份与任务历史，核查 Manager 持久投递；备份验证成功后才在独立新卷导入并验证三个 Owner。任务身份／历史必须逐项验证，不能假定 dump 保留原回执或把编号复用当作成功。尚无编号的旧提交若无法证明收敛，保持隔离；受控重建另行确认。此次研发不执行 dump、卷切换、清空索引或开发服务重启。
+已有 `1.7.6` 持久卷**不得只改镜像后重启**。[官方迁移指南](https://www.meilisearch.com/docs/resources/migration/updating) 明确 `--upgrade-db` 不支持低于 `1.12` 的数据库，因此需先确认 dump 迁移及恢复步骤：停止各 Owner 写入，保留旧版本可启动的卷备份与任务历史，核查 Manager 持久投递；备份验证成功后才在独立新卷导入并验证三个 Owner。任务身份／历史必须逐项验证，不能假定 dump 保留原回执或把编号复用当作成功。尚无编号的旧提交若无法证明收敛，保持隔离；受控重建另行确认。普通启动入口不得代替显式授权的迁移操作。
+
+当前 Compose 固定 `1.54.3` 的多架构 registry digest，唯一挂载命名卷 `meilisearch_data_v1543`（默认物理名称 `addp-infra_meilisearch_data_v1543`）。旧物理卷 `addp-infra_meilisearch_data` 不再被当前 Compose 引用；它和原镜像保留作回滚，不删除、不改名，也不由新版本打开。正式迁移只操作 Meilisearch 服务，不启动或重启 ADDP 应用。执行结果与未完成的运行验收记录在企业资源目录专题中。
+
+普通 `infra/up.sh` 在构建／拉取／启动容器之前，必须核对当前工作区已有 Meilisearch 容器与 Compose 所选镜像的实际 Image ID；不同、归属不明或身份无法核实均拒绝自动替换，不能把 `docker compose up -d` 的幂等性当作数据库可升级证明。该检查保护仍保留原容器的环境，不证明脱离容器的历史卷可以直接使用；删除旧容器不能代替迁移。应用 `restart.sh` 可能间接调用该入口，因此目标隔离导入成功后仍须先完成正式新卷导入、验收与切换，不能直接全量重启完成升级。
+
+应用恢复与搜索迁移分开：当前核心 Infra 健康时，开发启动入口在上述替换被拒绝后仍可继续启动应用，旧搜索容器／卷不动；Manager 搜索继续隔离，不退回无标记投递。此分支只允许恢复其他功能，不表示新版本搜索已可用，也不替代正式迁移、当前保护核验或完整应用启动验收。
 
 新建无历史数据的部署直接使用固定版本；Owner 初始化和恢复单测通过，不等于现有开发卷已迁移，也不等于真实故障 T4 通过。
 
@@ -899,7 +912,9 @@ Common PostgreSQL 门禁同时验证正式表结果的覆盖事务：重复覆�
 
 ## 模块实例运行日志
 
-运行日志由共享 `runtime-log` 启动工具捕获，使用“节点分段文件 → Alloy → Loki → Infra MinIO”单一路径。`bash scripts/infra/up.sh` 管理日志设施，开发环境首次启动仅生成缺失的独立读写令牌和 S3 密钥；生产环境使用 `scripts/prod/setup-env.sh` 校验配置，不自动补凭据。读、写令牌不得复用，应用只输出日志，不携带 Loki 写入凭据。
+集中日志由根模板 `ADDP_OBSERVABILITY_LOGS_ENABLED=true` 选择，缺省保持启用。设置 `false` 后运行标准 `bash scripts/infra/up.sh` 会停止属于当前工作区的远端日志组件并保留卷，独立本地输出清理器继续运行；不能直接用全量 `docker compose up` 替代生命周期入口。`observability-logs` Profile 只组织可选设施，不作为业务依赖。日志未启用、配置无效或启动失败均不改变核心 Infra Ready；所选日志失败会使整体命令返回非零，调用者按核心服务实际状态决定继续。`status.sh` 对关闭/配置无效分别报告 Disabled/Unconfigured，关闭时不运行远端探针。System 与 Monitor 的部署选择随其下一次标准启动生效。
+
+运行日志由共享 `runtime-log` 启动工具捕获，使用“节点分段文件 → Alloy → Loki → Infra MinIO”单一路径。`bash scripts/infra/up.sh` 管理日志设施，开发环境首次启动仅生成缺失的独立读写令牌和 S3 密钥；生产初始化仅为所选日志能力生成凭据，已有环境不自动补凭据；日志独立预检由 `infra/up.sh` 在核心服务就绪后执行。读、写令牌不得复用，应用只输出日志，不携带 Loki 写入凭据。
 
 Online 启动只使用仓库外的 `ADDP_ONLINE_ENV_FILE`；Hosted 在不归档的秘密目录内初始化同一组凭据，退出时删除，禁止生成根 `.env`。标准宿主启动在 Compose 前创建日志父目录，并将观察器和清理器的 `ADDP_RUNTIME_LOG_OWNER` 设为调用用户的 UID/GID；root 容器中的独立接收器使用受控源目录所有者身份写入。源目录和文件继续保持 `0700`／`0600`，不通过放宽权限或递归 chown 修复历史目录；个人数据卷删除保护保持不变。
 
@@ -917,3 +932,14 @@ Online 启动只使用仓库外的 `ADDP_ONLINE_ENV_FILE`；Hosted 在不归档�
 集成验证入口：`make test-system-runtime-log`。该入口创建自己的 disposable MinIO/Alloy/Loki，使用随机回环端口、临时凭据和源目录；退出时销毁自建容器、网络、数据卷并检查零残留，不接管开发 Infra。
 
 平台日志链路由独立 `runtime-log-observer` 每 30 秒观测并使用最小 Platform 服务凭据上报 Monitor；它不登记成业务模块。节点绑定、控制面地址、Secret 与通知配置见 [配置规范](../../docs/spec/addp配置介绍.md#平台日志链路观测与通知)。Monitor 持久化告警及通知，System 模块管理“日志链路”展示结果；Loki 不承担告警事实存储。`runtime-log observe --once` 运行单次真实采样并上报，失败返回非零，不是完整日志归档证明。常驻观察进程复用一个探针接收器，每轮使用独立消息标记验证投递，日志序号连续；技术探针段按最后写入时间保留一小时并按小时轮转，清理仅处理已关闭段及过期空来源，业务源仍按配置保留。这样避免每 30 秒创建一个目录撑满来源扫描和采集器指标预算。T2 门禁同时验证实际观测器 OAuth 上报、日志接口中断及恢复，并清理其自建 HTTP 夹具。
+
+
+## 可选指标中心
+
+根模板 `ADDP_OBSERVABILITY_METRICS_ENABLED=false` 默认关闭 Prometheus。设置 `true` 时，标准 `bash scripts/infra/up.sh` 在核心 Infra Ready 后独立预检、校验配置并启动 `observability-metrics` Profile。中心失败返回非零，开发/生产入口依据核心实际健康继续启动业务；日志与指标独立选择。关闭后再运行标准入口会停止当前工作区的中心并保留时序卷，不停止其他工作区容器。不要用全量 Compose 启动替代生命周期入口。
+
+启用前将 `ADDP_METRICS_TLS_DIR` 设置为部署方管理的绝对证书目录，内含 `ca.crt`、`server.crt`、`server.key`、`health.crt`、`health.key`。此目录仅存放这五项输入，CA 私钥和其他客户端私钥由各自部署 Owner 在目录外保管。CA 只信任本中心部署客户端；`server.crt` 包含 `localhost` 和 `prometheus` DNS SAN，`health.crt` 具有客户端认证用途。目录和文件须可被容器 UID/GID `65534:65534` 读取，私钥不得通过仓库或 Artifact 分发；标准脚本不生成部署 CA 或证书。错误、过期、不匹配或容器不可读证书由真实 mTLS 启动/探针拒绝。
+
+中心 API/UI 强制 mTLS，宿主只发布 `127.0.0.1:${PROMETHEUS_PORT:-19090}`。本地冲突沿用端口解析和现有映射，实际值用 `bash scripts/infra/status.sh` 查看；容器间使用 `https://prometheus:9090`。管理员写入、远端写入和 HTTP 重载不开启。独立卷 `prometheus_data` 保留时序块 7 天或 10 GiB，体积淘汰可能缩短历史窗口；WAL 与压缩空间需要额外磁盘容量。镜像版本及 digest、资源预算和固定采集限制统一定义在 `metrics.yml` 及 `prometheus*.yml`。
+
+当前仅采集中心自身指标，Ready 不代表节点或业务引擎已接入。正式目标须由后续 Monitor HTTP SD 与 System 当前对象绑定提供，不支持手工生产静态目标文件。`make test-monitor-metrics` 使用独占临时项目、临时证书及固定镜像，验证真实受控采样和故障恢复，退出清理容器、网络、卷及文件；该夹具不安装个人环境采集器，不证明生产规模或完整 7 天保留窗口。

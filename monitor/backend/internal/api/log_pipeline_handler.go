@@ -103,6 +103,7 @@ func (h *LogPipelineHandler) UpdatePolicy(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.log_observation.create"]
 // @Router /platform/log-observations [post]
@@ -424,6 +425,14 @@ func logRespond(c *gin.Context, v any, err error) {
 	key := monitori18n.MsgDiagnosticQueryFailed
 	code := "platform_log_operation_failed"
 	switch {
+	case errors.Is(err, service.ErrLogDisabled):
+		status = 409
+		key = monitori18n.MsgLogDisabled
+		code = "observability_capability_disabled"
+	case errors.Is(err, service.ErrLogUnconfigured):
+		status = 503
+		key = monitori18n.MsgLogUnconfigured
+		code = "observability_capability_unconfigured"
 	case errors.Is(err, service.ErrLogRetryUnavailable):
 		status = 409
 		key = monitori18n.MsgLogRetryUnavailable

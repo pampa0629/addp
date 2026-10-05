@@ -649,3 +649,76 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 	}
 
 }
+
+func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
+	f := newLogRetryFixture(t, "webhook")
+	now, ctx := time.Now().UTC(), context.Background()
+	if err := f.db.Model(&f.incident).Updates(map[string]any{"status": "open", "resolved_at": nil}).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", "true")
+	enabled := NewLogPipelineService(f.db, f.incident.Node, emptyLogRegistry{}, f.n)
+	if err := enabled.Initialize(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	var stored models.LogPipelineNode
+	if err := f.db.Where("node=?", f.incident.Node).Take(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	policy, err := enabled.Policy(ctx)
+	if err != nil || policy.RecoverySamples < 2 {
+		t.Fatalf("fixture requires consecutive recovery samples: %v", err)
+	}
+	stored.Signals["delivery_probe"] = models.LogSignalState{Active: true, Severity: "critical", Successes: policy.RecoverySamples - 1}
+	if err := f.db.Save(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := f.db.Where("node=?", f.incident.Node).Delete(&models.LogPipelineNode{}).Error; err != nil {
+			t.Error(err)
+		}
+	})
+	var eventsBefore int64
+	if err := f.db.Model(&models.PlatformLogEvent{}).Where("incident_id=?", f.incident.ID).Count(&eventsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{"false", "invalid"} {
+		t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", state)
+		paused := NewLogPipelineService(f.db, f.incident.Node, nil, f.n)
+		if err := paused.CheckStale(ctx, now.Add(24*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		summary, err := paused.Summary(ctx, now.Add(24*time.Hour))
+		if err != nil || summary.Health != "unknown" || len(summary.Incidents) != 1 || summary.Incidents[0].Status != "open" {
+			t.Fatalf("pause summary=%#v err=%v", summary, err)
+		}
+		if err := paused.Ingest(ctx, healthyLogObservation(now, 1), now); err == nil {
+			t.Fatal("unselected observation accepted")
+		}
+	}
+	var eventsAfter int64
+	if err := f.db.Model(&models.PlatformLogEvent{}).Where("incident_id=?", f.incident.ID).Count(&eventsAfter).Error; err != nil {
+		t.Fatal(err)
+	}
+	if eventsBefore != eventsAfter {
+		t.Fatal("pause emitted a synthetic transition")
+	}
+	t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", "true")
+	resumed := NewLogPipelineService(f.db, f.incident.Node, emptyLogRegistry{}, f.n)
+	if err := resumed.Initialize(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := resumed.Summary(ctx, now)
+	if err != nil || len(summary.Incidents) != 1 || summary.Incidents[0].Status != "open" {
+		t.Fatalf("resume synthesized recovery: %#v %v", summary, err)
+	}
+	observation := healthyLogObservation(now, 1)
+	observation.Node, observation.BootID = f.incident.Node, uuid.NewString()
+	if err := resumed.Ingest(ctx, observation, now); err != nil {
+		t.Fatal(err)
+	}
+	summary, err = resumed.Summary(ctx, now)
+	if err != nil || len(summary.Incidents) != 1 || summary.Node.Signals["delivery_probe"].Successes != 1 {
+		t.Fatalf("recovery counted samples from before the pause: %#v %v", summary, err)
+	}
+}

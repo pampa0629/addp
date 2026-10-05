@@ -34,7 +34,23 @@ func NewModuleRegistryService(repo *repository.ModuleRegistryRepository) *Module
 	return &ModuleRegistryService{repo: repo, leaseDuration: models.ModuleRuntimeLeaseDuration}
 }
 
+// ObservabilityIdentities is a read projection; it never renews leases or participates in Ready.
+func (s *ModuleRegistryService) ObservabilityIdentities(ctx context.Context) (*commonmodels.ObservabilityIdentitySnapshot, error) {
+	ctx, cancel := context.WithTimeout(ctx, commonmodels.ObservabilityIdentityTimeout)
+	defer cancel()
+	result, err := s.repo.ObservabilityIdentities(ctx)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return result, err
+}
+
 func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) error {
+	if req != nil && req.NodeID != "" {
+		if err := validateNodeID(req.NodeID); err != nil {
+			return ErrInvalidModuleRegistration
+		}
+	}
 	if req == nil {
 		return fmt.Errorf("%w: request is required", ErrInvalidModuleRegistration)
 	}
@@ -397,6 +413,8 @@ func convertRuntimeInstanceInfoWithStatus(instance *models.ModuleRuntimeInstance
 	}
 	return models.ModuleRuntimeInstanceInfo{
 		ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
+		DeclaredNodeID: instance.DeclaredNodeID, NodeID: instance.NodeID,
+		NodeBindingState: instance.NodeBindingState, NodeBindingReason: instance.NodeBindingReason,
 		ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL, RegisteredHost: instance.RegisteredHost,
 		HostNodeName: instance.HostNodeName, RuntimeHostname: instance.RuntimeHostname,
 		HostNodeIPs: append([]string{}, instance.HostNodeIPs...),

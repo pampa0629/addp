@@ -2,10 +2,20 @@
 # ports.sh - Resolve local ADDP Infra host ports and read their actual Compose mappings.
 # Source this file after loading the root .env. It does not edit configuration files.
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../utils" && pwd)/observability-env.sh"
+
 addp_infra_port_specs() {
-  cat <<'EOF'
+  if [[ "${ADDP_INFRA_PORT_SCOPE:-all}" != core && "${ADDP_INFRA_PORT_SCOPE:-all}" != metrics ]] && addp_runtime_logs_enabled; then
+    cat <<'EOF'
 runtime-log-api LOKI_PORT 3100 13100 addp-runtime-log-api
 alloy ALLOY_PORT 12345 12345 addp-alloy
+EOF
+  fi
+  if [[ "${ADDP_INFRA_PORT_SCOPE:-all}" != core && "${ADDP_INFRA_PORT_SCOPE:-all}" != logs ]] && addp_metrics_enabled; then
+    echo 'prometheus PROMETHEUS_PORT 9090 19090 addp-prometheus'
+  fi
+  case "${ADDP_INFRA_PORT_SCOPE:-all}" in logs|metrics) return 0 ;; esac
+  cat <<'EOF'
 postgres POSTGRES_PORT 5432 15432 addp-postgres
 redis REDIS_PORT 6379 16379 addp-redis
 falkordb FALKORDB_PORT 6379 16479 addp-falkordb
@@ -159,13 +169,13 @@ addp_infra_resolve_ports() {
 addp_infra_read_actual_ports() {
   local service variable internal preferred container mapped
   while read -r service variable internal preferred container; do
-    if [[ "$service" = runtime-log-api || "$service" = alloy ]] && ! docker inspect "$container" >/dev/null 2>&1; then
+    if [[ "$service" = runtime-log-api || "$service" = alloy || "$service" = prometheus ]] && ! docker inspect "$container" >/dev/null 2>&1; then
       printf -v "$variable" '%s' ''
       export "$variable"
       continue
     fi
     addp_infra_verify_container "$service" "$container" || return 1
-    if [[ "$service" = runtime-log-api || "$service" = alloy ]] && [ "$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null)" != true ]; then
+    if [[ "$service" = runtime-log-api || "$service" = alloy || "$service" = prometheus ]] && [ "$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null)" != true ]; then
       printf -v "$variable" '%s' ''
       export "$variable"
       continue
@@ -181,7 +191,7 @@ addp_infra_read_actual_ports() {
 }
 
 addp_infra_apply_endpoints() {
-  if [ -n "${LOKI_PORT:-}" ]; then export LOKI_URL="http://127.0.0.1:${LOKI_PORT}"; else export LOKI_URL=""; fi
+  if addp_runtime_logs_enabled && [ -n "${LOKI_PORT:-}" ]; then export LOKI_URL="http://127.0.0.1:${LOKI_PORT}"; else export LOKI_URL=""; fi
   local host="${SERVICE_HOST:-localhost}"
   export INFRA_FALKORDB_ADDRESS="127.0.0.1:${FALKORDB_PORT}"
   export MEILISEARCH_URL="http://${host}:${MEILISEARCH_PORT}"
@@ -194,7 +204,7 @@ addp_infra_ready() {
   local scope="${1:-all}"
   local service variable internal preferred container state
   while read -r service variable internal preferred container; do
-    if [[ "$scope" = core && ( "$service" = runtime-log-api || "$service" = alloy ) ]]; then continue; fi
+    if [[ "$scope" = core && ( "$service" = runtime-log-api || "$service" = alloy || "$service" = prometheus ) ]]; then continue; fi
     addp_infra_verify_container "$service" "$container" >/dev/null 2>&1 || return 1
     state=$(docker inspect --format '{{.State.Running}}:{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" 2>/dev/null) || return 1
     case "$state" in true:healthy|true:) ;; *) return 1 ;; esac

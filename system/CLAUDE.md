@@ -41,6 +41,7 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 - API 消费方（外部数据面 API 调用方登记、服务授权与 API 消费凭据管理）
 - 资源回收管理（跨模块评估和执行资源回收）
 - 模块注册与发现（供 Gateway 动态路由）
+- 平台节点台账：`/platform/host_nodes` 创建/分页读取/版本更新；独立 `platform.host_node.*`，Platform User、默认平台系统管理员。模块实例通过部署 `ADDP_HOST_NODE_ID` 声明，System 从真实 Client 校验节点允许集合；首次声明不可改挂，拒绝/撤销关联不影响登记与租约。节点基础不含 SSH、采集或引擎部署关联，详见平台运行监控设计 10.12。
 - TaskProvider 模块角色声明与动态发现（供 Orchestrator 查询调用）
 - 数据存储在 PostgreSQL 数据库（system schema）
 
@@ -79,6 +80,12 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 - 模块管理的服务实例页提供正文查询，日志链路页提供 Monitor 拥有的观测、告警和通知管理。正文读取与链路/通知权限独立，不由页面推断租户执行事实。
 - 通知投递列表使用 Monitor 返回的当前目标名称/版本、原事件类型/发生时间和告警当前状态。最终失败记录可由 `monitor.log_notification.update` 管理者重新入队；只读权限不显示操作。
 - 重投确认包含历史恢复提示，提交仅带预期人工重投次数与目标版本，保持原投递身份。成功表示已重新入队，刷新当前页；冲突保留失败信息并要求刷新。累计、本轮和人工次数分别展示，不把累计领取次数解释为实际网络请求次数。
+
+## 资源观测的身份投影
+
+- `GET /api/v1/system/runtime/observability-identities` 只允许固定 `addp-monitor` 的非委托 Platform Service Access Token 与 `system.observability_identity.read`，不允许 User、Gateway、日志观测器或 Tenant Context。该 Permission 只授予 `platform.monitor_runtime`。
+- 只读可重复读事务返回启用节点的 UUID/版本与有效节点绑定、启用模块、UP 且未过期的 Backend/Worker/Scheduler/Ingress 实例身份和租约时间；不含台账地址、业务 URL、Metadata、Engine Connection 或凭据。不持久化新副本，不续租，不参与业务 Ready。
+- 节点上限 1,000、带节点声明的当前候选实例上限 10,000、响应上限 4 MiB、总超时 5 秒。超限/控制面失败返回 503，超时 504；无成功空快照兜底或截断。真实空数组为 200，所有投影响应禁止缓存。Common 的唯一服务 Client 校验完整性、时间、重复身份、节点引用与响应体预算。
 
 ## 常用命令
 
@@ -454,6 +461,7 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 
 ### 前端公开路由
 
+- 平台节点台账唯一使用 `/host-nodes` 和 `/host-nodes/:node_id`，仅 Platform User、`platform.host_node.read`；创建与更新另需对应权限。检索和分页使用 `search/page/page_size`，默认第 1 页、每页 20 条省略，共享导航桥同步 Console。详情新读取版本后完整提交，409 保留草稿，不自动重试；实例节点展示共用 `ModuleInstanceNode`，只对当前有效绑定提供节点详情入口。
 - IAM 左侧导航按业务大类固定为 `/iam/organization`、`/iam/accounts`、`/iam/roles`、`/iam/application-access`、`/iam/security` 五个页面；具体管理对象使用页内稳定 `tab`，默认 Tab 省略，无权限或无效 Tab 规范化为该分类下的首个可用值。
 - `/iam/organization` 承载租户、部门和项目组；`/iam/accounts` 承载用户账号、用户邀请和平台身份变更；`/iam/roles` 承载角色定义和用户账号角色分配；`/iam/application-access` 分别承载 API 消费方、外部 OAuth 应用、租户服务账号和平台运行账号，其中平台运行账号只读、租户服务账号可管理且 Service Principal 角色入口只存在于此；`/iam/security` 承载 IAM 平台安全策略以及当前 Context 审计。当前 User 的 MFA 与凭据安全只由右上角“我的账号”进入 `/account/security`，不属于任一 IAM 管理页 Tab。
 - 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略。

@@ -260,7 +260,9 @@
         "health": {
           "healthy": "健康",
           "alert": "告警",
-          "unknown": "未知"
+          "unknown": "未知",
+          "disabled": "已关闭",
+          "unconfigured": "部署配置无效"
         },
         "facts": {
           "yes": "是",
@@ -321,7 +323,9 @@
         "permissionDenied": "当前账号没有查看平台日志链路的权限",
         "sourceUsage": "源文件占用 / 额度（字节）",
         "collectorCounters": "发送重试 / 丢弃累计次数",
-        "earlyCleaning": "最近清理轮次的提前清理文件数"
+        "earlyCleaning": "最近清理轮次的提前清理文件数",
+        "paused": "集中日志已关闭，链路检测已暂停；历史告警仍保留，关闭不表示故障恢复。",
+        "deploymentUnconfigured": "集中日志部署配置无效，链路检测已暂停；业务服务可独立运行。"
       },
       "sources": {
         "title": "未登记实例的运行日志",
@@ -886,7 +890,9 @@
           "log_notification": "平台日志通知",
           "module_log_source": "日志来源",
           "engine_raster_policy": "栅格资源配置",
-          "engine_raster_policy_runtime": "栅格运行时策略读取"
+          "engine_raster_policy_runtime": "栅格运行时策略读取",
+          "host_node": "平台节点",
+          "observability_identity": "观测身份"
         },
         "types": {
           "tenant_builtin": "租户内置角色",
@@ -1940,6 +1946,56 @@
       "adviceValues": "建议值：运行 {running}，等待 {waiting}，GDAL 缓存 {cache} MiB。",
       "adviceUnavailable": "资源信息不足，暂不提供建议值。",
       "quotaExceeds": "已保存额度高于当前平台上限，有效值已收敛；重新保存前请降低额度或恢复继承。"
+    },
+    "hostNodes": {
+      "title": "平台节点台账",
+      "create": "新建节点",
+      "search": "搜索节点名称或地址",
+      "name": "节点名称",
+      "id": "节点 ID",
+      "kind": "节点类型",
+      "kinds": {
+        "physical": "物理节点",
+        "virtual": "虚拟节点"
+      },
+      "addresses": "地址",
+      "state": "纳管状态",
+      "enabled": "启用",
+      "disabled": "停用",
+      "bindings": "允许关联的模块",
+      "details": "节点详情",
+      "empty": "暂无符合条件的节点",
+      "notLoaded": "尚未获取节点列表",
+      "addressHint": "每行填写一个 IP 或 DNS 名称，不含端口；最多 32 项",
+      "bindingHint": "仅下列模块允许将服务实例关联到此节点；空列表表示不允许关联。",
+      "module": "模块标识",
+      "moduleAt": "第 {index} 项模块标识",
+      "removeAt": "移除第 {index} 项允许关联的模块",
+      "remove": "移除",
+      "addBinding": "添加模块",
+      "version": "当前版本：{version}",
+      "reload": "重新加载",
+      "loadFailed": "节点读取失败，请重试",
+      "invalidName": "请填写不含控制字符、最多 255 个字符的节点名称",
+      "invalidID": "节点 ID 无效",
+      "notFound": "节点不存在",
+      "invalidEntries": "请检查地址和模块：地址仅限 IP 或 DNS 名称；模块标识需有效且不重复，地址最多 32 项、模块最多 64 项。",
+      "saving": "正在保存节点",
+      "saved": "节点已保存",
+      "conflict": "节点已被修改。草稿已保留，请重新加载最新版本后编辑。",
+      "saveFailed": "节点保存失败，草稿已保留",
+      "declaredID": "首次声明节点 ID",
+      "bindingStates": {
+        "bound": "已关联",
+        "unbound": "未关联",
+        "rejected": "关联被拒绝",
+        "unknown": "关联状态未知"
+      },
+      "bindingReasons": {
+        "node_unknown": "声明的节点不存在",
+        "node_disabled": "声明的节点已停用",
+        "source_not_allowed": "节点不允许此模块身份关联"
+      }
     }
   },
   "roles": {

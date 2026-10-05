@@ -24,9 +24,18 @@ func TestLogObservationRequiresPlatformObserverServiceToken(t *testing.T) {
 		{"missing permission", "platform", "service_principal", "addp-log-observer", "service_access_token", false, 403},
 		{"wrong token type", "platform", "service_principal", "addp-log-observer", "oauth_access_token", true, 403},
 		{"observer validates payload", "platform", "service_principal", "addp-log-observer", "service_access_token", true, 400},
+		{"collection disabled", "platform", "service_principal", "addp-log-observer", "service_access_token", true, 409},
+		{"deployment invalid", "platform", "service_principal", "addp-log-observer", "service_access_token", true, 503},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", "true")
+			if tc.name == "collection disabled" {
+				t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", "false")
+			}
+			if tc.name == "deployment invalid" {
+				t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", "invalid")
+			}
 			identity := monitorTenantAuthContext()
 			identity.Principal.Type = tc.principal
 			identity.Client.ClientID = &tc.client

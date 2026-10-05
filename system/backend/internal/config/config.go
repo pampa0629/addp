@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	commonconfig "github.com/addp/common/config"
 )
 
 type Config struct {
@@ -102,7 +104,7 @@ func Load() *Config {
 	port := getEnv("SYSTEM_BACKEND_PORT", "8180")
 	serverAddr := ":" + port
 
-	return &Config{
+	cfg := &Config{
 		Env:                         env,
 		ServerAddr:                  serverAddr,
 		DatabaseURL:                 "", // PostgreSQL 不使用此字段
@@ -177,6 +179,22 @@ func Load() *Config {
 		// CORS 配置
 		AllowedOrigins: allowedOrigins,
 		TrustedProxies: trustedProxies,
+	}
+	cfg.configureLogObserver()
+	return cfg
+}
+
+// Optional log collection must not invalidate required business client credentials.
+func (c *Config) configureLogObserver() {
+	secret := c.ServiceClientSecrets["addp-log-observer"]
+	valid := commonconfig.RuntimeLogDeploymentState() == "enabled" && len(secret) >= 32 && len(secret) <= 72 && secret == strings.TrimSpace(secret)
+	for clientID, value := range c.ServiceClientSecrets {
+		if clientID != "addp-log-observer" && value == secret {
+			valid = false
+		}
+	}
+	if !valid {
+		c.ServiceClientSecrets["addp-log-observer"] = ""
 	}
 }
 

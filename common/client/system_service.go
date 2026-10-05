@@ -443,6 +443,7 @@ func newModuleRegistrationLifecycle(request *ModuleRegistrationRequest) (*Module
 	registration.ProcessStartedAt = buildinfo.ProcessStartedAt()
 	registration.HostNodeName, registration.RuntimeHostname = config.RuntimeNodeIdentity()
 	registration.HostNodeIPs = config.RuntimeHostNodeIPs()
+	registration.NodeID = config.RuntimeHostNodeID()
 	if strings.TrimSpace(registration.InstanceID) == "" {
 		registration.InstanceID = buildinfo.ProcessInstanceID()
 	}
@@ -731,6 +732,10 @@ func (c *SystemServiceClient) doTenantJSON(ctx context.Context, method, path str
 }
 
 func (c *SystemServiceClient) doPlatformJSON(ctx context.Context, method, path string, payload, result any) error {
+	return c.doPlatformJSONBounded(ctx, method, path, payload, result, 0)
+}
+
+func (c *SystemServiceClient) doPlatformJSONBounded(ctx context.Context, method, path string, payload, result any, limit int64) error {
 	if c == nil || c.platformTokens == nil || c.tenantID != nil {
 		return errors.New("System service request requires a platform context")
 	}
@@ -738,7 +743,7 @@ func (c *SystemServiceClient) doPlatformJSON(ctx context.Context, method, path s
 	if err != nil {
 		return err
 	}
-	status, err := c.doJSON(ctx, method, path, token, payload, result)
+	status, err := c.doJSON(ctx, method, path, token, payload, result, limit)
 	if status != http.StatusUnauthorized {
 		return err
 	}
@@ -751,11 +756,11 @@ func (c *SystemServiceClient) doPlatformJSON(ctx context.Context, method, path s
 	if tokenErr != nil {
 		return tokenErr
 	}
-	_, err = c.doJSON(ctx, method, path, token, payload, result)
+	_, err = c.doJSON(ctx, method, path, token, payload, result, limit)
 	return err
 }
 
-func (c *SystemServiceClient) doJSON(ctx context.Context, method, path, token string, payload, result any) (int, error) {
+func (c *SystemServiceClient) doJSON(ctx context.Context, method, path, token string, payload, result any, responseLimit ...int64) (int, error) {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -789,6 +794,20 @@ func (c *SystemServiceClient) doJSON(ctx context.Context, method, path, token st
 		}
 	}
 	if result == nil || response.StatusCode == http.StatusNoContent {
+		return response.StatusCode, nil
+	}
+	if len(responseLimit) > 0 && responseLimit[0] > 0 {
+		limit := responseLimit[0]
+		encoded, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+		if err != nil {
+			return response.StatusCode, fmt.Errorf("read System response: %w", err)
+		}
+		if int64(len(encoded)) > limit {
+			return response.StatusCode, errors.New("System response exceeds byte budget")
+		}
+		if err := json.Unmarshal(encoded, result); err != nil {
+			return response.StatusCode, fmt.Errorf("decode System response: %w", err)
+		}
 		return response.StatusCode, nil
 	}
 	decoder := json.NewDecoder(response.Body)

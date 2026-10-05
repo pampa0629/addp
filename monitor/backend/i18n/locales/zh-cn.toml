@@ -124,3 +124,9 @@ other = "投递状态、重投次数或通知目标版本已变化，请刷新�
 
 [monitor.platform_log.wecom_test_failed]
 other = "企业微信测试发送失败，请检查机器人地址、网络或发送频率"
+
+[monitor.platform_log.disabled]
+other = "集中日志已关闭，链路检测已暂停"
+
+[monitor.platform_log.unconfigured]
+other = "集中日志部署配置无效，链路检测已暂停"

@@ -613,7 +613,8 @@
         "recentModules": "平台模块管理",
         "recentCleanup": "系统资源回收",
         "recentConfiguration": "平台配置管理",
-        "rasterPolicy": "栅格引擎资源策略"
+        "rasterPolicy": "栅格引擎资源策略",
+        "hostNodes": "平台节点台账"
       }
     }
   }

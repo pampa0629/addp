@@ -4468,6 +4468,334 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/host_nodes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 User 节点台账；不执行主机操作或资源采集 | Platform user node inventory without host operations or resource collection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "节点台账 | Host Nodes"
+                ],
+                "summary": "查询节点台账 | List managed host nodes",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称或地址片段 | Name or address fragment",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.HostNodePage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.host_node.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 User 节点台账；不执行主机操作或资源采集 | Platform user node inventory without host operations or resource collection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "节点台账 | Host Nodes"
+                ],
+                "summary": "创建纳管节点 | Create managed host node",
+                "parameters": [
+                    {
+                        "description": "节点台账与允许集合 | Node inventory and allowed bindings",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.HostNodeInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.HostNode"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.host_node.create"
+                ]
+            }
+        },
+        "/platform/host_nodes/{node_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 User 节点台账；不执行主机操作或资源采集 | Platform user node inventory without host operations or resource collection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "节点台账 | Host Nodes"
+                ],
+                "summary": "查看节点台账 | Get managed host node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "节点 UUID | Node UUID",
+                        "name": "node_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.HostNode"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.host_node.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台 User 节点台账；不执行主机操作或资源采集 | Platform user node inventory without host operations or resource collection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "节点台账 | Host Nodes"
+                ],
+                "summary": "更新节点台账 | Update managed host node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "节点 UUID | Node UUID",
+                        "name": "node_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整替换及节点版本 | Full replacement and node version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.HostNodeUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.HostNode"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.host_node.update"
+                ]
+            }
+        },
         "/platform/identity_changes": {
             "get": {
                 "security": [
@@ -7906,6 +8234,65 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.runtime_registry.update"
+                ]
+            }
+        },
+        "/runtime/observability-identities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定 Monitor Platform Service Client 读取有界节点及有效实例投影；不含端点、元数据、凭据或租户数据 | The fixed Monitor Platform Service Client reads a bounded projection of nodes and valid instances without endpoints, metadata, credentials or tenant data",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "运行登记 | Runtime Registry"
+                ],
+                "summary": "读取当前观测身份 | Read current observability identities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.ObservabilityIdentitySnapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.observability_identity.read"
                 ]
             }
         },
@@ -14368,6 +14755,160 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.HostNode": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_module_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.HostNodeModuleBinding"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "node_kind": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.HostNodeInput": {
+            "type": "object",
+            "required": [
+                "addresses",
+                "allowed_module_bindings",
+                "display_name",
+                "enabled",
+                "node_kind"
+            ],
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_module_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.HostNodeModuleBinding"
+                    }
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "node_kind": {
+                    "type": "string",
+                    "enum": [
+                        "physical",
+                        "virtual"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.HostNodeModuleBinding": {
+            "type": "object",
+            "required": [
+                "client_id",
+                "module_name"
+            ],
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.HostNodePage": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.HostNode"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.HostNodeUpdateRequest": {
+            "type": "object",
+            "required": [
+                "addresses",
+                "allowed_module_bindings",
+                "display_name",
+                "enabled",
+                "node_kind",
+                "version"
+            ],
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_module_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.HostNodeModuleBinding"
+                    }
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "node_kind": {
+                    "type": "string",
+                    "enum": [
+                        "physical",
+                        "virtual"
+                    ]
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.ModuleDefinitionUpdateRequest": {
             "type": "object",
             "required": [
@@ -14539,6 +15080,9 @@ const docTemplate = `{
                 "module_url": {
                     "type": "string"
                 },
+                "node_id": {
+                    "type": "string"
+                },
                 "process_started_at": {
                     "type": "string"
                 },
@@ -14576,6 +15120,9 @@ const docTemplate = `{
         "github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo": {
             "type": "object",
             "properties": {
+                "declared_node_id": {
+                    "type": "string"
+                },
                 "health_check_url": {
                     "type": "string"
                 },
@@ -14605,6 +15152,15 @@ const docTemplate = `{
                     "additionalProperties": true
                 },
                 "module_url": {
+                    "type": "string"
+                },
+                "node_binding_reason": {
+                    "type": "string"
+                },
+                "node_binding_state": {
+                    "type": "string"
+                },
+                "node_id": {
                     "type": "string"
                 },
                 "process_started_at": {
@@ -14639,6 +15195,9 @@ const docTemplate = `{
         "github_com_addp_system_internal_models.ModuleRuntimeInstanceRecord": {
             "type": "object",
             "properties": {
+                "declared_node_id": {
+                    "type": "string"
+                },
                 "health_check_url": {
                     "type": "string"
                 },
@@ -14671,6 +15230,15 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "module_url": {
+                    "type": "string"
+                },
+                "node_binding_reason": {
+                    "type": "string"
+                },
+                "node_binding_state": {
+                    "type": "string"
+                },
+                "node_id": {
                     "type": "string"
                 },
                 "process_started_at": {
@@ -17487,6 +18055,57 @@ const docTemplate = `{
                 },
                 "user_agent": {
                     "type": "string"
+                }
+            }
+        },
+        "models.ObservabilityIdentitySnapshot": {
+            "type": "object",
+            "properties": {
+                "module_instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ObservabilityModuleIdentity"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ObservabilityNodeIdentity"
+                    }
+                },
+                "observed_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ObservabilityModuleIdentity": {
+            "type": "object",
+            "properties": {
+                "instance_id": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ObservabilityNodeIdentity": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

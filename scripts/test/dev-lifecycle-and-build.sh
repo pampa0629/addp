@@ -579,7 +579,7 @@ import sys
 
 root, temporary = map(Path, sys.argv[1:])
 source = (root / 'scripts/dev/start.sh').read_text()
-start = source.index('\naddp_infra_read_actual_ports\n')
+start = source.index('\nADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports\n')
 end = source.index('\n# 2. 启动 System Backend', start)
 phase = source[start:end]
 for online, hosted in [('0', '0'), ('1', '0'), ('1', '1')]:
@@ -591,6 +591,7 @@ for online, hosted in [('0', '0'), ('1', '0'), ('1', '1')]:
     script = '''
 set -euo pipefail
 addp_infra_read_actual_ports() { POSTGRES_PORT=25432 REDIS_PORT=26379 MINIO_API_PORT=29000; }
+addp_runtime_logs_enabled() { return 0; }
 generate_service_urls() { :; }
 lsof() { return 1; }
 docker() { return 1; }

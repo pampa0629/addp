@@ -2,10 +2,13 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"os"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // CheckPortAvailable 检查端口是否可用
@@ -84,4 +87,18 @@ func NormalizeHostNodeIPs(values []string) ([]string, error) {
 		}
 	}
 	return result, nil
+}
+
+// RuntimeHostNodeID accepts only an explicit UUID; an invalid optional declaration never blocks registration.
+func RuntimeHostNodeID() string {
+	raw := strings.TrimSpace(os.Getenv("ADDP_HOST_NODE_ID"))
+	if raw == "" {
+		return ""
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil || len(raw) != 36 || id == uuid.Nil {
+		slog.Warn("optional node binding omitted", "error_code", "host_node_id_invalid")
+		return ""
+	}
+	return id.String()
 }

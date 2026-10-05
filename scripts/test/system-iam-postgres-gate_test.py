@@ -34,9 +34,9 @@ class SystemIAMGateLockTest(unittest.TestCase):
             utility = checkout / "scripts/infra/ports.sh"
             utility.parent.mkdir(parents=True)
             shutil.copyfile(Path(__file__).parents[1] / "infra/ports.sh", utility)
-            log_utility = checkout / "scripts/utils/runtime-log-env.sh"
+            log_utility = checkout / "scripts/utils/observability-env.sh"
             log_utility.parent.mkdir(parents=True)
-            shutil.copyfile(Path(__file__).parents[1] / "utils/runtime-log-env.sh", log_utility)
+            shutil.copyfile(Path(__file__).parents[1] / "utils/observability-env.sh", log_utility)
             (checkout / "system/backend/go.mod").write_text("module github.com/addp/system\n")
             subprocess.run(["git", "init", "-q"], cwd=checkout, check=True)
             subprocess.run(["git", "add", "."], cwd=checkout, check=True)

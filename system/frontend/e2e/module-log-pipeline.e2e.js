@@ -12,7 +12,7 @@ const deliveryView = {
 async function fixture(page, { destinations = [], deliveries = [], deliveryTotal = deliveries.length, management = true, retryConflict = false } = {}) {
   await mockModuleQueryAPI(page, { pipelinePermission: true, pipelineManagement: management })
   const requests = []
-  let failure = false, conflict = false, acknowledged = false
+  let failure = false, conflict = false, acknowledged = false, deploymentState = 'enabled'
   await page.route('**/api/v1/monitor/platform/**', async route => {
     const req = route.request(), path = new URL(req.url()).pathname
     const headers = { 'access-control-allow-origin': req.headers().origin || 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS' }
@@ -21,7 +21,7 @@ async function fixture(page, { destinations = [], deliveries = [], deliveryTotal
     const body = req.postDataJSON(); requests.push({ path, query: Object.fromEntries(new URL(req.url()).searchParams), method: req.method(), body })
     if (path.endsWith('/log-pipeline')) {
       if (failure) return reply({ error: '观测不可用' }, 503)
-      return reply({ configured: true, health: 'alert', notifications: 'unconfigured', node: { node: 'host-a', received_at: new Date().toISOString(), registry_valid: true, observation: { probe_delivered: true, probe_delay_ms: 100 } }, incidents: [{ id: 9, version: 3, signal: 'collector_dropped', severity: 'critical', status: acknowledged ? 'acknowledged' : 'open', opened_at: new Date().toISOString(), instance_id: '' }] })
+      return reply({ deployment_state: deploymentState, configured: true, health: deploymentState === 'enabled' ? 'alert' : 'unknown', notifications: 'unconfigured', node: { node: 'host-a', received_at: new Date().toISOString(), registry_valid: true, observation: { probe_delivered: true, probe_delay_ms: 100 } }, incidents: [{ id: 9, version: 3, signal: 'collector_dropped', severity: 'critical', status: acknowledged ? 'acknowledged' : 'open', opened_at: new Date().toISOString(), instance_id: '' }] })
     }
     if (path.endsWith('/policy')) return req.method() === 'GET' ? reply(policy) : conflict ? reply({ error: '规则版本冲突' }, 409) : reply({ ...body, version: 2 })
     if (path.endsWith('/acknowledge')) { acknowledged = true; return reply({ id: 9 }) }
@@ -40,7 +40,7 @@ async function fixture(page, { destinations = [], deliveries = [], deliveryTotal
   })
   await page.goto('/modules?tab=log-pipeline')
   await expect(page.getByTestId('pipeline-health')).toContainText('告警')
-  return { requests, fail: () => { failure = true }, conflict: () => { conflict = true } }
+  return { requests, deployment: state => { deploymentState = state }, fail: () => { failure = true }, conflict: () => { conflict = true } }
 }
 
 test('platform permission hides pipeline entry', async ({ page }) => {
@@ -230,3 +230,15 @@ test('WeCom URL is written only as a credential before enabling and stays blank 
   expect(state.requests.filter(r => r.path.endsWith('/credential'))).toHaveLength(1)
   await expect(page.locator('.el-drawer')).not.toContainText('12345678-1234')
 })
+
+for (const [state, label] of [['disabled', '已关闭'], ['unconfigured', '部署配置无效']]) {
+  test(`paused logging shows ${state} while preserving incidents`, async ({ page }) => {
+    const fixtureState = await fixture(page)
+    fixtureState.deployment(state)
+    await page.getByTestId('log-pipeline').getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(page.getByTestId('pipeline-health')).toContainText(label)
+    await expect(page.getByTestId('pipeline-paused')).toContainText('链路检测已暂停')
+    await expect(page.getByTestId('pipeline-incidents')).toContainText('未处理')
+    await expect(page.getByText('探针成功', { exact: true })).toHaveCount(0)
+  })
+}

@@ -11,7 +11,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Literal
 from urllib.parse import quote
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -41,6 +41,20 @@ def _process_instance_id() -> str:
         return _PROCESS_INSTANCE_ID
 
 
+def _runtime_host_node_id() -> str:
+    raw = os.environ.get("ADDP_HOST_NODE_ID", "").strip()
+    if not raw:
+        return ""
+    try:
+        value = UUID(raw)
+        if len(raw) != 36 or value.int == 0:
+            raise ValueError("invalid optional node identity")
+        return str(value)
+    except ValueError:
+        logger.warning("optional node binding omitted: host_node_id_invalid")
+        return ""
+
+
 class _ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,6 +81,7 @@ def _runtime_hostname() -> str:
 
 
 class ModuleRegistration(_ContractModel):
+    node_id: str = Field(default_factory=_runtime_host_node_id)
     module_name: str
     instance_id: str = Field(default_factory=_process_instance_id, min_length=1, max_length=100)
     role: Literal["backend", "worker", "scheduler"] = "backend"

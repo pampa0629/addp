@@ -37,6 +37,8 @@ Spark Workflow 的本地开发容器固定使用宿主网络，以承载动态 D
 
 `13306` 和 `12881` 由 `scripts/test/docker-compose.local-macos-ci.yml` 中的固定 digest MySQL 8 与 OceanBase CE 4.4.2 LTS 使用，不属于 System 或 Business 长期基础设施。两个服务都无数据卷，只绑定 `127.0.0.1`，在本地巡检的确定性门禁和编译开始前完成健康检查，并在巡检的统一退出清理中删除。
 
+可选 Prometheus 中心宿主首选 `19090`，固定只发布回环，容器内 `9090`，通过 `https://prometheus:9090` 访问并强制 mTLS。只有 `ADDP_OBSERVABILITY_METRICS_ENABLED=true` 时解析该端口；本地沿用当前工作区实际映射或首次避让，Hosted 显式端口冲突失败。中心 Ready 与业务资源目标覆盖分别报告。
+
 ## Business (业务库)
 
 HDFS Simple 实验实例通过 `business/scripts/start.sh -hdfs` 启动：NameNode WebHDFS 首选 `9870`（只绑定回环），原生 RPC 首选 `8020`；DataNode 数据传输 `9866` 和 HTTP `9864`。RPC 和两个 DataNode 端口只绑定 `HDFS_SHARED_HOST` 指定的宿主机可达 IP，供宿主机 Driver 与容器 Worker 共用；DataNode 两个端口在容器内外必须一致，不能仅发布 NameNode。四个端口由 `business/.env` 显式配置，冲突失败。System 登记 `webhdfs_endpoint=http://127.0.0.1:<实际 Web 端口>`、`rpc_uri=hdfs://<共享宿主地址>:<实际 RPC 端口>`、`root_path=/addp`、`authentication=simple`、`user=addp_business_reader`；容器部署须使用容器实际可达的 Web 端点。T2 的独占集群没有宿主端口，Go 测试与 Spark Driver 在同一门禁网络内运行，不复用个人 Business 集群。

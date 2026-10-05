@@ -1,6 +1,26 @@
 package config
 
-import "github.com/addp/common/logger"
+import (
+	"github.com/addp/common/logger"
+	"os"
+)
+
+// RuntimeLogDeploymentState is deployment intent, independent of backend health.
+// Invalid optional configuration disables evaluation, never business readiness.
+func RuntimeLogDeploymentState() string {
+	value, configured := os.LookupEnv("ADDP_OBSERVABILITY_LOGS_ENABLED")
+	if !configured {
+		value = "true"
+	}
+	switch value {
+	case "true":
+		return "enabled"
+	case "false":
+		return "disabled"
+	default:
+		return "unconfigured"
+	}
+}
 
 // LoggerOptions 用于在默认环境变量基础上覆盖日志配置。
 type LoggerOptions struct {

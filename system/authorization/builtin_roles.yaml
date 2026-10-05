@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 111
+manifest_version: 113
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -154,6 +154,7 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - audit.event.create
+      - system.observability_identity.read
       - system.runtime_registry.read
       - system.runtime_registry.update
   - key: platform.ontology_runtime
@@ -284,6 +285,9 @@ roles:
       - monitor.log_notification.update
       - monitor.log_pipeline.read
       - monitor.log_pipeline.update
+      - platform.host_node.create
+      - platform.host_node.read
+      - platform.host_node.update
       - platform.module.read
       - platform.module.update
       - platform.module_log.read

@@ -232,6 +232,7 @@ func (c *SystemClient) doTenantJSONWithPayload(ctx context.Context, method, path
 // ModuleRegistrationRequest is the shared request model for the
 // Bearer-only SystemServiceClient platform registration API.
 type ModuleRegistrationRequest struct {
+	NodeID                  string                                     `json:"node_id,omitempty"`
 	ModuleName              string                                     `json:"module_name"`
 	InstanceID              string                                     `json:"instance_id"`
 	Role                    string                                     `json:"role"`
@@ -274,6 +275,11 @@ type ModuleRoutingSnapshot struct {
 }
 
 type ModuleRuntimeInstanceInfo struct {
+	DeclaredNodeID    string `json:"declared_node_id"`
+	NodeID            string `json:"node_id"`
+	NodeBindingState  string `json:"node_binding_state"`
+	NodeBindingReason string `json:"node_binding_reason"`
+
 	ID               uint                   `json:"id"`
 	InstanceID       string                 `json:"instance_id"`
 	Role             string                 `json:"role"`

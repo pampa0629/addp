@@ -45,8 +45,20 @@ bash scripts/prod/setup-env.sh
 
 # 第一步：启动基础设施层
 echo -e "${YELLOW}[1/4] 启动基础设施层...${NC}"
-docker compose -f docker-compose.infra.yml up -d
+PROJECT_ROOT=$(pwd)
+source scripts/utils/observability-env.sh
+addp_prepare_observability_env "$PROJECT_ROOT/.env"
+infra_result=0
+if ! bash scripts/infra/up.sh; then
+  source scripts/infra/ports.sh
+  addp_infra_ready core || exit 1
+  infra_result=1
+  echo 'Optional observability startup failed; core services are ready' >&2
+fi
 bash scripts/prod/wait-infra.sh
+# Containers use the fixed internal query endpoint; native development uses the resolved host mapping.
+export LOKI_URL=''
+if addp_runtime_logs_enabled; then export LOKI_URL=http://runtime-log-api:3100; fi
 
 # 第二步：System 先就绪，再启动应用全量服务。
 echo -e "${YELLOW}[2/4] 等待 System Backend 就绪...${NC}"
@@ -71,3 +83,5 @@ echo -e "统一入口: ${public_origin}"
 echo ""
 docker compose -f docker-compose.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
 docker compose -f docker-compose.runtimes.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
+
+exit "$infra_result"

@@ -1612,6 +1612,111 @@ definitions:
     - instance_id
     - module_name
     type: object
+  github_com_addp_system_internal_models.HostNode:
+    properties:
+      addresses:
+        items:
+          type: string
+        type: array
+      allowed_module_bindings:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.HostNodeModuleBinding'
+        type: array
+      created_at:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      node_id:
+        type: string
+      node_kind:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_system_internal_models.HostNodeInput:
+    properties:
+      addresses:
+        items:
+          type: string
+        type: array
+      allowed_module_bindings:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.HostNodeModuleBinding'
+        type: array
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      node_kind:
+        enum:
+        - physical
+        - virtual
+        type: string
+    required:
+    - addresses
+    - allowed_module_bindings
+    - display_name
+    - enabled
+    - node_kind
+    type: object
+  github_com_addp_system_internal_models.HostNodeModuleBinding:
+    properties:
+      client_id:
+        type: string
+      module_name:
+        type: string
+    required:
+    - client_id
+    - module_name
+    type: object
+  github_com_addp_system_internal_models.HostNodePage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.HostNode'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_system_internal_models.HostNodeUpdateRequest:
+    properties:
+      addresses:
+        items:
+          type: string
+        type: array
+      allowed_module_bindings:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.HostNodeModuleBinding'
+        type: array
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      node_kind:
+        enum:
+        - physical
+        - virtual
+        type: string
+      version:
+        type: integer
+    required:
+    - addresses
+    - allowed_module_bindings
+    - display_name
+    - enabled
+    - node_kind
+    - version
+    type: object
   github_com_addp_system_internal_models.ModuleDefinitionUpdateRequest:
     properties:
       enabled:
@@ -1721,6 +1826,8 @@ definitions:
         type: string
       module_url:
         type: string
+      node_id:
+        type: string
       process_started_at:
         type: string
       role:
@@ -1750,6 +1857,8 @@ definitions:
     type: object
   github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo:
     properties:
+      declared_node_id:
+        type: string
       health_check_url:
         type: string
       host_node_ips:
@@ -1770,6 +1879,12 @@ definitions:
         additionalProperties: true
         type: object
       module_url:
+        type: string
+      node_binding_reason:
+        type: string
+      node_binding_state:
+        type: string
+      node_id:
         type: string
       process_started_at:
         type: string
@@ -1792,6 +1907,8 @@ definitions:
     type: object
   github_com_addp_system_internal_models.ModuleRuntimeInstanceRecord:
     properties:
+      declared_node_id:
+        type: string
       health_check_url:
         type: string
       host_node_ips:
@@ -1814,6 +1931,12 @@ definitions:
       module_name:
         type: string
       module_url:
+        type: string
+      node_binding_reason:
+        type: string
+      node_binding_state:
+        type: string
+      node_id:
         type: string
       process_started_at:
         type: string
@@ -3665,6 +3788,39 @@ definitions:
         type: string
       user_agent:
         type: string
+    type: object
+  models.ObservabilityIdentitySnapshot:
+    properties:
+      module_instances:
+        items:
+          $ref: '#/definitions/models.ObservabilityModuleIdentity'
+        type: array
+      nodes:
+        items:
+          $ref: '#/definitions/models.ObservabilityNodeIdentity'
+        type: array
+      observed_at:
+        type: string
+    type: object
+  models.ObservabilityModuleIdentity:
+    properties:
+      instance_id:
+        type: string
+      lease_expires_at:
+        type: string
+      module_name:
+        type: string
+      node_id:
+        type: string
+      role:
+        type: string
+    type: object
+  models.ObservabilityNodeIdentity:
+    properties:
+      node_id:
+        type: string
+      version:
+        type: integer
     type: object
   models.TaskProvider:
     properties:
@@ -7418,6 +7574,224 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_raster_policy.read
+  /platform/host_nodes:
+    get:
+      consumes:
+      - application/json
+      description: 平台 User 节点台账；不执行主机操作或资源采集 | Platform user node inventory without
+        host operations or resource collection
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 名称或地址片段 | Name or address fragment
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.HostNodePage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询节点台账 | List managed host nodes
+      tags:
+      - 节点台账 | Host Nodes
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.host_node.read
+    post:
+      consumes:
+      - application/json
+      description: 平台 User 节点台账；不执行主机操作或资源采集 | Platform user node inventory without
+        host operations or resource collection
+      parameters:
+      - description: 节点台账与允许集合 | Node inventory and allowed bindings
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.HostNodeInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.HostNode'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建纳管节点 | Create managed host node
+      tags:
+      - 节点台账 | Host Nodes
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.host_node.create
+  /platform/host_nodes/{node_id}:
+    get:
+      consumes:
+      - application/json
+      description: 平台 User 节点台账；不执行主机操作或资源采集 | Platform user node inventory without
+        host operations or resource collection
+      parameters:
+      - description: 节点 UUID | Node UUID
+        in: path
+        name: node_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.HostNode'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查看节点台账 | Get managed host node
+      tags:
+      - 节点台账 | Host Nodes
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.host_node.read
+    put:
+      consumes:
+      - application/json
+      description: 平台 User 节点台账；不执行主机操作或资源采集 | Platform user node inventory without
+        host operations or resource collection
+      parameters:
+      - description: 节点 UUID | Node UUID
+        in: path
+        name: node_id
+        required: true
+        type: string
+      - description: 完整替换及节点版本 | Full replacement and node version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.HostNodeUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.HostNode'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新节点台账 | Update managed host node
+      tags:
+      - 节点台账 | Host Nodes
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.host_node.update
   /platform/identity_changes:
     get:
       produces:
@@ -9729,6 +10103,47 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.runtime_registry.read
+  /runtime/observability-identities:
+    get:
+      description: 固定 Monitor Platform Service Client 读取有界节点及有效实例投影；不含端点、元数据、凭据或租户数据
+        | The fixed Monitor Platform Service Client reads a bounded projection of
+        nodes and valid instances without endpoints, metadata, credentials or tenant
+        data
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.ObservabilityIdentitySnapshot'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取当前观测身份 | Read current observability identities
+      tags:
+      - 运行登记 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.observability_identity.read
   /runtime/security-access-actors/resolve:
     post:
       consumes:

@@ -316,7 +316,7 @@ class InfraBackupSafetyTest(unittest.TestCase):
             "/indexes/example/settings": {"filterableAttributes": ["tenant_id"], "newDefault": True},
             "/indexes/example/documents?limit=100&offset=0": {
                 "results": [{"id": 9007199254740993, "tenant_id": 1, "title": "example"}], "total": 1},
-            "/tasks?limit=1": {"total": 1}, "/tasks/0": inventory["tasks"][0],
+            "/tasks?limit=1000": {"total": 1, "results": inventory["tasks"], "next": None},
         }
         with patch.object(BACKUP, "meili_get", side_effect=lambda _name, route, _key: responses[route]):
             BACKUP.verify_meili_restore("owned", "key", inventory)
@@ -328,9 +328,11 @@ class InfraBackupSafetyTest(unittest.TestCase):
             ("/indexes/example/settings", {"filterableAttributes": []}),
             ("/indexes/example/documents?limit=100&offset=0", {"results": [{"id": 9007199254740992}], "total": 1}),
             ("/indexes/example/documents?limit=100&offset=0", {"results": [], "total": 1}),
-            ("/tasks/0", {**inventory["tasks"][0], "enqueuedAt": "2026-10-05T00:00:00Z"}),
-            ("/tasks/0", {**inventory["tasks"][0], "customMetadata": "invented"}),
-            ("/tasks?limit=1", {"total": 0}),
+            ("/tasks?limit=1000", {"total": 1, "results": [
+                {**inventory["tasks"][0], "enqueuedAt": "2026-10-05T00:00:00Z"}], "next": None}),
+            ("/tasks?limit=1000", {"total": 1, "results": [
+                {**inventory["tasks"][0], "customMetadata": "invented"}], "next": None}),
+            ("/tasks?limit=1000", {"total": 0, "results": [], "next": None}),
         ):
             current = {**responses, route: changed}
             with patch.object(BACKUP, "meili_get", side_effect=lambda _name, request, _key: current[request]):
@@ -373,7 +375,7 @@ class InfraBackupSafetyTest(unittest.TestCase):
             "/indexes/example/settings": {},
             "/indexes/example/documents?limit=100&offset=0": {"results": reversed_documents[:100], "total": 103},
             "/indexes/example/documents?limit=100&offset=100": {"results": reversed_documents[100:], "total": 103},
-            "/tasks?limit=1": {"total": 0},
+            "/tasks?limit=1000": {"total": 0, "results": [], "next": None},
         }
         with patch.object(BACKUP, "meili_get", side_effect=lambda _name, route, _key: responses[route]) as get:
             BACKUP.verify_meili_restore("owned", "key", inventory)
@@ -382,6 +384,108 @@ class InfraBackupSafetyTest(unittest.TestCase):
         with patch.object(BACKUP, "meili_get", side_effect=lambda _name, route, _key: responses[route]):
             with self.assertRaisesRegex(BACKUP.BackupError, "contents differ"):
                 BACKUP.verify_meili_restore("owned", "key", inventory)
+
+    def test_meili_restore_rejects_two_ulp_float_drift_with_safe_index_evidence(self):
+        import math
+
+        original = {"id": "private-document", "bounds": {"max_x": 0.1234567890123456}}
+        changed = {**original, "bounds": {"max_x": math.nextafter(
+            math.nextafter(original["bounds"]["max_x"], math.inf), math.inf)}}
+        expected_hash = BACKUP.document_set_hash([BACKUP.document_hash(original)])
+        actual_hash = BACKUP.document_set_hash([BACKUP.document_hash(changed)])
+        inventory = {"indexes": {"example": {
+            "metadata.json": {"primaryKey": "id"}, "settings.json": {},
+            "documents.jsonl": {"count": 1, "sha256": expected_hash}}}, "tasks": []}
+        responses = {
+            "/indexes?limit=1000&offset=0": {"results": [{"uid": "example", "primaryKey": "id"}], "total": 1},
+            "/indexes/example/settings": {},
+            "/indexes/example/documents?limit=100&offset=0": {"results": [changed], "total": 1},
+        }
+        with patch.object(BACKUP, "meili_get", side_effect=lambda _name, route, _key: responses[route]):
+            with self.assertRaises(BACKUP.BackupError) as failure:
+                BACKUP.verify_meili_restore("owned", "private-key", inventory)
+        message = str(failure.exception)
+        self.assertIn("index=example", message)
+        self.assertIn("count=1", message)
+        self.assertIn(f"expected_sha256={expected_hash}", message)
+        self.assertIn(f"actual_sha256={actual_hash}", message)
+        self.assertNotIn("private-document", message)
+        self.assertNotIn("private-key", message)
+        self.assertNotIn(str(original["bounds"]["max_x"]), message)
+        self.assertNotIn(str(changed["bounds"]["max_x"]), message)
+
+    def test_meili_task_history_uses_complete_cursor_pages_including_uid_zero(self):
+        tasks = [{"uid": uid, "indexUid": None, "type": "dumpCreation", "status": "succeeded",
+                  "enqueuedAt": TASK_TIME, "customMetadata": None} for uid in (7, 4, 0)]
+        inventory = {"indexes": {}, "tasks": tasks}
+        responses = {
+            "/indexes?limit=1000&offset=0": {"results": [], "total": 0},
+            "/tasks?limit=1000": {"results": tasks[:2], "total": 3, "next": 0},
+            "/tasks?limit=1000&from=0": {"results": tasks[2:], "total": 3, "next": None},
+        }
+        with patch.object(BACKUP, "meili_get", side_effect=lambda _name, route, _key: responses[route]) as get:
+            BACKUP.verify_meili_restore("owned", "key", inventory)
+        self.assertEqual(list(responses), [call.args[1] for call in get.call_args_list])
+        for route, changed in (
+            ("/tasks?limit=1000", {"results": tasks[:2], "total": 3, "next": None}),
+            ("/tasks?limit=1000", {"results": [], "total": 3, "next": 0}),
+            ("/tasks?limit=1000", {"results": tasks[:2], "total": 3, "next": True}),
+            ("/tasks?limit=1000", {"results": tasks[:2], "total": 3, "next": -1}),
+            ("/tasks?limit=1000", {"results": tasks[:2], "total": 3, "next": 4}),
+            ("/tasks?limit=1000", {"results": tasks[:2], "total": 3, "next": "0"}),
+            ("/tasks?limit=1000&from=0", {"results": [tasks[0]], "total": 3, "next": None}),
+            ("/tasks?limit=1000&from=0", {"results": [None], "total": 3, "next": None}),
+            ("/tasks?limit=1000&from=0", {"results": [{**tasks[2], "uid": True}], "total": 3, "next": None}),
+            ("/tasks?limit=1000&from=0", {"results": [{**tasks[2], "uid": 1}], "total": 3, "next": None}),
+            ("/tasks?limit=1000&from=0", {"results": [{**tasks[2], "status": "processing"}], "total": 3, "next": None}),
+            ("/tasks?limit=1000&from=0", {"results": tasks[2:], "total": 2, "next": None}),
+            ("/tasks?limit=1000&from=0", {"results": tasks[2:], "total": 3, "next": 0}),
+        ):
+            current = {**responses, route: changed}
+            with self.subTest(route=route, changed=changed), patch.object(
+                    BACKUP, "meili_get", side_effect=lambda _name, request, _key: current[request]):
+                with self.assertRaises(BACKUP.BackupError):
+                    BACKUP.verify_meili_restore("owned", "key", inventory)
+
+    def test_explicit_content_drift_acceptance_keeps_other_checks_required(self):
+        with tempfile.TemporaryDirectory() as parent:
+            path = Path(parent) / "export.dump"
+            write_dump(path)
+            inventory = BACKUP.dump_inventory(path)
+        responses = {
+            "/indexes?limit=1000&offset=0": {"results": [{"uid": "example", "primaryKey": "id"}], "total": 1},
+            "/indexes/example/settings": {"filterableAttributes": ["tenant_id"]},
+            "/indexes/example/documents?limit=100&offset=0": {
+                "results": [{"id": 9007199254740993, "tenant_id": 1, "title": "changed"}], "total": 1},
+            "/tasks?limit=1000": {"results": inventory["tasks"], "total": 1, "next": None},
+        }
+        with patch.object(BACKUP, "meili_get", side_effect=lambda _name, route, _key: responses[route]) as get, \
+                patch("builtins.print") as output:
+            changed = BACKUP.verify_meili_restore("owned", "key", inventory, accept_content_drift=True)
+        self.assertEqual(["example"], changed)
+        self.assertIn("/tasks?limit=1000", [call.args[1] for call in get.call_args_list])
+        self.assertIn("WARN: accepted", output.call_args.args[0])
+        for route, change in (
+            ("/indexes?limit=1000&offset=0", {"results": [{"uid": "example", "primaryKey": "wrong"}], "total": 1}),
+            ("/indexes/example/settings", {"filterableAttributes": []}),
+            ("/indexes/example/documents?limit=100&offset=0", {"results": [], "total": 0}),
+            ("/tasks?limit=1000", {"results": [{**inventory["tasks"][0], "status": "processing"}], "total": 1, "next": None}),
+        ):
+            current = {**responses, route: change}
+            with self.subTest(route=route), patch.object(
+                    BACKUP, "meili_get", side_effect=lambda _name, request, _key: current[request]), \
+                    patch("builtins.print"):
+                with self.assertRaises(BACKUP.BackupError):
+                    BACKUP.verify_meili_restore("owned", "key", inventory, accept_content_drift=True)
+
+    def test_manual_drift_acceptance_is_explicit_and_not_enabled_by_other_values(self):
+        for value, accepted in ((None, False), ("0", False), ("true", False), ("1", True)):
+            args = ["make", "-n", "infra-restore-drill", "BACKUP_DIR=/private/backup"]
+            if value is not None:
+                args.append(f"MEILISEARCH_ACCEPT_CONTENT_DRIFT={value}")
+            result = BACKUP.subprocess.run(args, cwd=BACKUP.ROOT, capture_output=True, check=True)
+            self.assertEqual(accepted, b"--accept-meilisearch-content-drift" in result.stdout)
+        self.assertNotIn("accept_content_drift", CLOUD_SCRIPT.read_text())
 
     def test_meili_import_stopped_or_wrong_version_cannot_pass_verification(self):
         with tempfile.TemporaryDirectory() as parent:

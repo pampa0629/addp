@@ -1,0 +1,36 @@
+services:
+  prometheus:
+    image: quay.io/prometheus/prometheus:v3.13.4@sha256:87861b8cf91579109319ebc300f3f1060e6da9c05d6ae8ad15a20c879e84e32e
+    command:
+      - --config.file=/etc/prometheus/addp.yml
+      - --web.config.file=/etc/prometheus/web.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=10GB
+      - --query.timeout=5s
+      - --query.max-concurrency=8
+      - --query.max-samples=200000
+    user: "65534:65534"
+    cpus: 1.0
+    mem_limit: 2g
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/addp.yml:ro
+      - ./prometheus-web.yml:/etc/prometheus/web.yml:ro
+      - ./prometheus-http.yml:/etc/prometheus/http.yml:ro
+      - type: bind
+        source: ${ADDP_METRICS_TLS_DIR:-/nonexistent/addp-metrics-tls}
+        target: /etc/prometheus/tls
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, /bin/promtool, check, ready, --url=https://localhost:9090, --http.config.file=/etc/prometheus/http.yml]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

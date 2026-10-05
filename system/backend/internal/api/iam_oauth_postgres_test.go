@@ -233,6 +233,26 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	if response := performIAMOAuthClientCredentialsRequest(t, router, rotatedSecrets["addp-manager"], tenantID); response.Code != http.StatusBadRequest {
 		t.Fatalf("suspended service principal token status = %d body=%s", response.Code, response.Body.String())
 	}
+	// Disabling log collection revokes only its optional service credential.
+	var observerPrincipalID, observerVersion int64
+	if err := db.Raw(`SELECT s.id,p.authorization_version FROM system.service_principals s JOIN system.principals p ON p.id=s.id WHERE s.name='addp-log-observer'`).Row().Scan(&observerPrincipalID, &observerVersion); err != nil {
+		t.Fatal(err)
+	}
+	rotatedSecrets["addp-log-observer"] = ""
+	if err := provisioner.Apply(ctx, rotatedSecrets); err != nil {
+		t.Fatal(err)
+	}
+	var observerStatus, metaStatus string
+	var revokedVersion int64
+	if err := db.Raw(`SELECT c.status,p.authorization_version FROM system.oauth_clients c JOIN system.principals p ON p.id=c.service_principal_id WHERE c.client_id='addp-log-observer'`).Row().Scan(&observerStatus, &revokedVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Raw(`SELECT status FROM system.oauth_clients WHERE client_id='addp-meta'`).Row().Scan(&metaStatus); err != nil {
+		t.Fatal(err)
+	}
+	if observerStatus != "disabled" || revokedVersion <= observerVersion || metaStatus != "active" {
+		t.Fatalf("observer=%s version=%d/%d business=%s", observerStatus, revokedVersion, observerVersion, metaStatus)
+	}
 	assertServiceTokenDatabaseClockAgainstPostgres(t, db, router, rotatedSecrets["addp-meta"], tenantID)
 }
 

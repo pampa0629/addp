@@ -25,6 +25,9 @@ class FalkorGateTest(unittest.TestCase):
         utility = self.root / "scripts/infra/ports.sh"
         utility.parent.mkdir(parents=True)
         shutil.copyfile(REPOSITORY / "scripts/infra/ports.sh", utility)
+        log_utility = self.root / "scripts/utils/observability-env.sh"
+        log_utility.parent.mkdir(parents=True)
+        shutil.copyfile(REPOSITORY / "scripts/utils/observability-env.sh", log_utility)
         (self.root / "ontology/backend").mkdir(parents=True)
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
@@ -120,12 +123,16 @@ class DevInfraStartupTest(unittest.TestCase):
 
     def run_check(self, ready=True, up_exit=0):
         source = (REPOSITORY / "scripts/dev/start.sh").read_text()
-        block = source.split("# 1. 启动基础设施\n", 1)[1].split('if [ "${ADDP_ONLINE_HOST:-0}" != 1 ]; then', 1)[0]
+        block = source.split("# 1. 启动基础设施\n", 1)[1].split('# Runtime 容器归属与清理', 1)[0]
         with tempfile.TemporaryDirectory(prefix="addp-infra-startup-test-") as directory:
             root = Path(directory)
             utility = root / "scripts/infra/ports.sh"
             utility.parent.mkdir(parents=True)
             utility.write_text('''addp_infra_ready() { [ "$TEST_INFRA_READY" = 1 ]; }
+addp_runtime_logs_enabled() { return 0; }
+addp_runtime_log_preflight() { return 0; }
+addp_metrics_enabled() { return 0; }
+addp_metrics_preflight() { return 0; }
 addp_infra_read_actual_ports() { POSTGRES_PORT=25432; REDIS_PORT=26379; MINIO_API_PORT=19000; }
 ''')
             harness = '''set -eu

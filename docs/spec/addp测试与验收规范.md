@@ -373,3 +373,8 @@ Meta PostgreSQL 门禁登记 `TestPreciseNativePostgresScanAgainstPostgres`：�
 本期 Meta 工作区验证（2026-10-04）：修复首轮自身编译错误后，完整 `make test-module MODULE=meta` 返回 0，包含平台 T0、Meta 全量 Go T1、13 项前端测试与构建、既有 PostgreSQL 门禁及新增四类精确范围持久化回归；Swagger 生成与 Meta 43 个公开路由覆盖通过。共享 T0 的 Agent Swagger 投影因其他会话的 `deerflow` 依赖未就绪产生 `WARN_ONLY` 告警，不计为 Agent Swagger 验证通过。随后获准收紧公共 Provider 并补充真实源范围回归；后续 Common 与 Meta 门禁结果见本节下方，完整资源权限闭环仍待授权阶段完成。
 
 公共 Provider 收敛后的工作区验证（2026-10-04）：`make test-go` 的全部 22 个 Go 模块通过；`make test-common-postgres`、独立 `make test-meta-postgres` 及完整 `make test-module MODULE=meta` 返回 0，后者包含平台 T0、Meta Go T1、13 项前端测试与构建和新增真实源贯通回归。`make test-changed` 因其他 Owner 的 PostgreSQL DSN、MySQL／OceanBase 测试环境缺失，在预检时中止，不计为通过。本地未运行其余厂商真实服务、其余消费者 T2 及真实 HTTP／Worker T4；已登记的 Platform CI Go workspace、Release/T2 各 Provider／Owner 门禁承接共享依赖扩散验证，T4 仍须相应 Hosted 验收。本轮没有重启开发服务。
+
+
+### 平台指标设施独占门禁
+
+`make test-monitor-metrics` 由 Monitor owner 自建 Prometheus 与受控指标源，登记固定镜像 tag/digest、共享部署配置和生命周期输入，随机 Compose project、回环随机宿主端口及私有时序卷。实际验证 mTLS、采样周期与超时、单端点样本越限、断开恢复、SIGKILL 后 WAL 样本重放及退出零残留；临时 CA/私钥仅存在于本轮临时目录。根 `test-integration`、owner T2 自动发现、变更输入选择与 `release-and-t2-gates.yml` 使用同一入口。`test-dev-lifecycle` 验证部署未选择、错误选择、证书缺失和可选启动故障的核心 Infra 隔离。此门禁不替代后续节点绑定、HTTP SD 授权、业务埋点、资源查询及规模验收，不宣称完成 7 天物理保留时间窗验证。

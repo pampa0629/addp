@@ -29,7 +29,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 source "${SCRIPT_DIR}/ports.sh"
-addp_infra_read_actual_ports
+ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 echo -e "${YELLOW}▶ ADDP Infra 容器状态${NC}"
 docker ps -a --filter label=com.docker.compose.project=addp-infra --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
@@ -153,6 +153,29 @@ if docker ps --filter name='^/business-postgres$' --format '{{.Names}}' | grep -
   ) 2>/dev/null || echo -e "${RED}无法读取本地业务 PostgreSQL replication slot${NC}"
 fi
 
+source "$PROJECT_ROOT/scripts/utils/observability-env.sh"
+case "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" in
+  false) echo '- Metrics center: Disabled' ;;
+  true)
+    if ! addp_metrics_preflight >/dev/null 2>&1; then
+      echo '- Metrics center: Unconfigured (deployment certificates)'
+    elif ! ADDP_INFRA_PORT_SCOPE=metrics addp_infra_read_actual_ports || [[ -z "${PROMETHEUS_PORT:-}" ]]; then
+      echo '- Metrics center: Not deployed'
+    elif curl -fsS --max-time 3 --cacert "$ADDP_METRICS_TLS_DIR/ca.crt" --cert "$ADDP_METRICS_TLS_DIR/health.crt" --key "$ADDP_METRICS_TLS_DIR/health.key" "https://localhost:${PROMETHEUS_PORT}/-/ready" >/dev/null 2>&1; then
+      echo '- Metrics center: Ready (business resource targets not yet connected)'
+    else
+      echo '- Metrics center: Unavailable'
+    fi ;;
+  *) echo '- Metrics center: Unconfigured (invalid deployment selection)' ;;
+esac
+
+if ! addp_runtime_logs_enabled; then
+  case "${ADDP_OBSERVABILITY_LOGS_ENABLED-true}" in
+    false) echo '- Central runtime logs: Disabled' ;;
+    *) echo '- Central runtime logs: Unconfigured (invalid deployment selection)' ;;
+  esac
+  exit 0
+fi
 LOKI_PORT=$(get_port runtime-log-api 3100 || true)
 ALLOY_PORT=$(get_port alloy 12345 || true)
 printf "%s" "- Runtime log query (localhost:${LOKI_PORT}): "

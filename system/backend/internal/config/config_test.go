@@ -66,3 +66,26 @@ func TestValidateTrustedProxiesRejectsUniversalNetworks(t *testing.T) {
 		t.Fatalf("valid proxies rejected: %v", err)
 	}
 }
+
+func TestLogObserverConfigurationDoesNotInvalidateBusinessCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		state, observer string
+		active          bool
+	}{
+		{"true", strings.Repeat("o", 32), true},
+		{"false", strings.Repeat("o", 32), false},
+		{"invalid", strings.Repeat("o", 32), false},
+		{"true", "short", false},
+		{"true", strings.Repeat("m", 32), false},
+	} {
+		t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", tc.state)
+		c := &Config{ServiceClientSecrets: map[string]string{"addp-manager": strings.Repeat("m", 32), "addp-log-observer": tc.observer}}
+		c.configureLogObserver()
+		if (c.ServiceClientSecrets["addp-log-observer"] != "") != tc.active {
+			t.Fatalf("selection %s: unexpected observer credential state", tc.state)
+		}
+		if c.ServiceClientSecrets["addp-manager"] != strings.Repeat("m", 32) {
+			t.Fatal("business credential changed")
+		}
+	}
+}
