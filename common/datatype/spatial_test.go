@@ -1,9 +1,68 @@
 package datatype
 
 import (
+	"encoding/json"
+	"math"
 	"reflect"
 	"testing"
 )
+
+func TestCaptureLocationRoundTripKeepsZeroAndItsOwnCRS(t *testing.T) {
+	for _, datum := range []string{"", "TOKYO", "WGS-84"} {
+		point := &CaptureLocation{Latitude: 0, Longitude: -120.25, Datum: datum}
+		if datum == "WGS-84" {
+			srid := 4326
+			point.SRID = &srid
+		}
+		info := &SpatialInfo{CaptureLocation: point}
+		payload := SpatialInfoPayload(info)
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded map[string]interface{}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if restored := SpatialInfoFromPayload(decoded); restored == nil || !reflect.DeepEqual(restored.CaptureLocation, point) ||
+			restored.SRID != nil || restored.Extent != nil || restored.IsSpatial() {
+			t.Fatalf("point round trip: %#v != %#v", restored, info)
+		}
+		if info.IsSpatial() || payload["srid"] != nil || payload["extent"] != nil || payload["geometry_columns"] != nil {
+			t.Fatalf("capture point became coverage: %#v", payload)
+		}
+		cloned := info.Clone()
+		cloned.CaptureLocation.Latitude = 45
+		if cloned.CaptureLocation.SRID != nil {
+			*cloned.CaptureLocation.SRID = 3857
+		}
+		if point.Latitude != 0 || point.SRID != nil && *point.SRID != 4326 {
+			t.Fatal("clone aliased capture point")
+		}
+	}
+}
+
+func TestCaptureLocationPayloadRejectsMissingOrInvalidCoordinates(t *testing.T) {
+	for _, point := range []interface{}{
+		nil, map[string]interface{}{}, map[string]interface{}{"latitude": 0},
+		map[string]interface{}{"latitude": "0", "longitude": 0},
+		map[string]interface{}{"latitude": nil, "longitude": 0},
+		map[string]interface{}{"latitude": 91, "longitude": 0},
+		map[string]interface{}{"latitude": 0, "longitude": -181},
+		map[string]interface{}{"latitude": math.NaN(), "longitude": 0},
+		map[string]interface{}{"latitude": 0, "longitude": math.Inf(1)},
+		map[string]interface{}{"latitude": 0, "longitude": 0, "srid": 0},
+	} {
+		if got := SpatialInfoFromPayload(map[string]interface{}{"capture_location": point}); got != nil {
+			t.Fatalf("invalid point accepted: %#v", got)
+		}
+	}
+	// A malformed optional capture point must not remove independent raster facts.
+	info := SpatialInfoFromPayload(map[string]interface{}{"capture_location": map[string]interface{}{"latitude": 0}, "srid": 3857})
+	if info == nil || info.SRID == nil || *info.SRID != 3857 || info.CaptureLocation != nil {
+		t.Fatalf("independent facts lost: %#v", info)
+	}
+}
 
 func TestSpatialInfoHelpersDoNotAssumeGeometryName(t *testing.T) {
 	srid := 4326

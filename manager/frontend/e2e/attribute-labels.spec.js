@@ -75,6 +75,44 @@ for (const locale of ['zh-cn', 'en']) {
     })
   }
 
+  for (const knownDatum of [true, false]) {
+    test(`shows capture GPS facts without inventing a CRS (${knownDatum}) in ${locale}`, async ({ page }) => {
+      const point = { latitude: 0, longitude: -120.25 }
+      if (knownDatum) Object.assign(point, { datum: 'WGS-84', srid: 4326 })
+      await openAttributes(page, locale, {
+        item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+        capabilities: { spatial: { capture_location: point } },
+        format_info: { jpeg: { exif_status: 'parsed', exif: { gps: {
+          version_id: [2, 3, 0, 0], latitude_ref: 'N', latitude_dms: [0, 0, 0],
+          longitude_ref: 'W', longitude_dms: [120, 15, 0], altitude_ref: 0,
+          altitude_meters: 12.5, status: 'A', ...(knownDatum ? { map_datum: 'WGS-84' } : {})
+        } } } }
+      })
+      const capturePrefix = locale === 'zh-cn' ? '拍摄位置' : 'Capture Location'
+      const latitudeLabel = `${capturePrefix} / ${locale === 'zh-cn' ? '拍摄纬度（度）' : 'Capture Latitude (degrees)'}`
+      await expect(page.getByText(latitudeLabel, { exact: true })).toBeVisible()
+      await expect(page.getByText(latitudeLabel, { exact: true })).toHaveAttribute('title',
+        locale === 'zh-cn' ? /基准未知时不能按 WGS84 定位/ : /unknown datum must not be treated as WGS84/)
+      await expect(page.getByText(`${capturePrefix} / ${locale === 'zh-cn' ? '拍摄经度（度）' : 'Capture Longitude (degrees)'}`, { exact: true })).toBeVisible()
+      await expect(page.getByText('0', { exact: true })).toBeVisible()
+      await expect(page.getByText('-120.25', { exact: true })).toBeVisible()
+      const sridLabel = page.getByText(`${capturePrefix} / ${locale === 'zh-cn' ? '拍摄点 SRID' : 'Capture Point SRID'}`, { exact: true })
+      if (knownDatum) await expect(sridLabel).toBeVisible()
+      else await expect(sridLabel).toHaveCount(0)
+      const nativeLabels = locale === 'zh-cn'
+        ? ['GPS 版本', '纬度方位', '源纬度（度、分、秒）', '经度方位', '源经度（度、分、秒）', '海拔参考', '源海拔绝对值（米）', '测量状态']
+        : ['GPS Version', 'Latitude Reference', 'Source Latitude (degrees, minutes, seconds)', 'Longitude Reference', 'Source Longitude (degrees, minutes, seconds)', 'Altitude Reference', 'Source Absolute Altitude (m)', 'Measurement Status']
+      for (const label of nativeLabels) await expect(page.getByText(`EXIF / GPS / ${label}`, { exact: true })).toBeVisible()
+      for (const value of locale === 'zh-cn' ? ['北纬', '西经', '海平面以上', '测量中'] : ['North', 'West', 'Above Sea Level', 'Measurement in Progress']) {
+        await expect(page.getByText(value, { exact: true })).toBeVisible()
+      }
+      await expect(page.getByText('2, 3, 0, 0', { exact: true })).toBeVisible()
+      await expect(page.getByText(`EXIF / GPS / ${nativeLabels[6]}`, { exact: true })).toHaveAttribute('title',
+        locale === 'zh-cn' ? /不表示椭球高/ : /not ellipsoidal height/)
+      await expect(page.getByText(locale === 'zh-cn' ? '空间范围' : 'Extent', { exact: true })).toHaveCount(0)
+    })
+  }
+
   test(`keeps the graph model label scoped to graph facts in ${locale}`, async ({ page }) => {
     await openAttributes(page, locale, {
       item: { data_type: 'graph', format: 'graphml', layout: 'single' },

@@ -3,7 +3,9 @@ package datatype
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	commonJSON "github.com/addp/common/jsonmap"
@@ -28,6 +30,7 @@ const (
 
 // SpatialInfo describes spatial facts that cut across data types.
 type SpatialInfo struct {
+	CaptureLocation       *CaptureLocation     `json:"capture_location,omitempty"`
 	SRID                  *int                 `json:"srid,omitempty"`
 	CRSRef                string               `json:"crs_ref,omitempty"`
 	CRSDefinitions        []CRSDefinition      `json:"crs_definitions,omitempty"`
@@ -36,6 +39,41 @@ type SpatialInfo struct {
 	Extent                *BoundingBox         `json:"extent,omitempty"`
 	HasSpatialIndex       *bool                `json:"has_spatial_index,omitempty"`
 	IndexName             string               `json:"index_name,omitempty"`
+}
+
+// CaptureLocation is the acquisition point of a media object, in decimal
+// geographic degrees. It does not describe pixel georeferencing or coverage.
+// SRID belongs to this point alone; an absent datum must not imply WGS84.
+type CaptureLocation struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Datum     string  `json:"datum,omitempty"`
+	SRID      *int    `json:"srid,omitempty"`
+}
+
+func captureLocationFromPayload(value interface{}) *CaptureLocation {
+	if value == nil {
+		return nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var point struct {
+		Latitude  *float64 `json:"latitude"`
+		Longitude *float64 `json:"longitude"`
+		Datum     string   `json:"datum"`
+		SRID      *int     `json:"srid"`
+	}
+	if json.Unmarshal(raw, &point) != nil || point.Latitude == nil || point.Longitude == nil {
+		return nil
+	}
+	lat, lon := *point.Latitude, *point.Longitude
+	if math.IsNaN(lat) || math.IsInf(lat, 0) || math.IsNaN(lon) || math.IsInf(lon, 0) ||
+		lat < -90 || lat > 90 || lon < -180 || lon > 180 || point.SRID != nil && *point.SRID <= 0 {
+		return nil
+	}
+	return &CaptureLocation{Latitude: lat, Longitude: lon, Datum: point.Datum, SRID: point.SRID}
 }
 
 // CRSDefinition describes the CRS definition text that can be registered by a consumer.
@@ -95,6 +133,7 @@ func SpatialInfoFromPayload(payload map[string]interface{}) *SpatialInfo {
 	}
 
 	info := &SpatialInfo{
+		CaptureLocation:       captureLocationFromPayload(payload["capture_location"]),
 		GeometryColumns:       geometryColumns,
 		PrimaryGeometryColumn: primaryName,
 		CRSRef:                commonJSON.InterfaceString(payload["crs_ref"]),
@@ -112,7 +151,7 @@ func SpatialInfoFromPayload(payload map[string]interface{}) *SpatialInfo {
 		boundingBox := BoundingBox{extent[0], extent[1], extent[2], extent[3]}
 		info.Extent = &boundingBox
 	}
-	if primaryName == "" && len(geometryColumns) == 0 && info.SRID == nil && info.CRSRef == "" && len(info.CRSDefinitions) == 0 && info.Extent == nil && info.HasSpatialIndex == nil && info.IndexName == "" {
+	if info.CaptureLocation == nil && primaryName == "" && len(geometryColumns) == 0 && info.SRID == nil && info.CRSRef == "" && len(info.CRSDefinitions) == 0 && info.Extent == nil && info.HasSpatialIndex == nil && info.IndexName == "" {
 		return nil
 	}
 	return info
@@ -134,6 +173,7 @@ func SpatialInfoPayload(info *SpatialInfo) map[string]interface{} {
 		}
 	}
 	payload := commonJSON.MapFromStruct(spatialInfoPayload{
+		CaptureLocation:       info.CaptureLocation,
 		SRID:                  srid,
 		CRSRef:                crsRef,
 		PrimaryGeometryColumn: info.PrimaryGeometryColumn,
@@ -163,11 +203,12 @@ func SpatialInfoPayload(info *SpatialInfo) map[string]interface{} {
 }
 
 type spatialInfoPayload struct {
-	SRID                  *int   `json:"srid,omitempty"`
-	CRSRef                string `json:"crs_ref,omitempty"`
-	PrimaryGeometryColumn string `json:"primary_geometry_column,omitempty"`
-	HasSpatialIndex       *bool  `json:"has_spatial_index,omitempty"`
-	IndexName             string `json:"index_name,omitempty"`
+	CaptureLocation       *CaptureLocation `json:"capture_location,omitempty"`
+	SRID                  *int             `json:"srid,omitempty"`
+	CRSRef                string           `json:"crs_ref,omitempty"`
+	PrimaryGeometryColumn string           `json:"primary_geometry_column,omitempty"`
+	HasSpatialIndex       *bool            `json:"has_spatial_index,omitempty"`
+	IndexName             string           `json:"index_name,omitempty"`
 }
 
 type geometryColumnPayload struct {
@@ -249,6 +290,11 @@ func (s *SpatialInfo) Clone() *SpatialInfo {
 		GeometryColumns:       make([]GeometryColumnInfo, 0, len(s.GeometryColumns)),
 		PrimaryGeometryColumn: s.PrimaryGeometryColumn,
 		IndexName:             s.IndexName,
+	}
+	if s.CaptureLocation != nil {
+		point := *s.CaptureLocation
+		point.SRID = cloneIntPtr(point.SRID)
+		cloned.CaptureLocation = &point
 	}
 	for _, column := range s.GeometryColumns {
 		nextColumn := column

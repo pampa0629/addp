@@ -140,16 +140,16 @@ func extractExifSummary(data []byte) (map[string]interface{}, bool) {
 			exif[key] = value
 		}
 	}
-	entry, present := root.tags[34665]
+	gps, gpsValid := extractGPSIFD(root, metadata, order, rootOffset)
+	valid = valid && gpsValid
+	if len(gps) > 0 {
+		exif["gps"] = gps
+	}
+	_, present := root.tags[34665]
 	if !present {
 		return exif, valid
 	}
-	offset, ok := root.firstLong(34665)
-	if !ok || entry.typ != tiffTypeLong || entry.count != 1 || offset < 8 ||
-		(uint64(offset) >= uint64(rootOffset) && uint64(offset) < uint64(rootOffset)+uint64(2+len(root.tags)*12+4)) {
-		return exif, false
-	}
-	sub, ok := parseExifIFD(metadata, order, offset)
+	sub, ok := exifSubIFD(root, metadata, order, rootOffset, 34665)
 	if !ok {
 		return exif, false
 	}

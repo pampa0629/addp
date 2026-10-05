@@ -198,6 +198,7 @@
 | layout | 内容布局 | content 如何组成 data item 的布局维度。 | `format.layouts` 表示格式支持的布局列表，`attributes.item.layout` 表示已识别 item 的布局结果；取值为 `single`、`multi`、`whole`。 |
 | vector tile set | 矢量瓦片集 | 以 PMTiles v3 单文件封装、可作为业务数据长期保存和跨平台交换的二维矢量瓦片 data item。 | 统一使用 `data_type=media`、`format=pmtiles`、`layout=single`；当前瓦片编码固定为 MVT。 |
 | PMTiles | PMTiles | 面向 HTTP Range Read 的单文件瓦片归档格式。 | ADDP 业务矢量瓦片集固定使用 PMTiles v3；PMTiles 是归档格式，MVT 是归档内单瓦片编码。 |
+| capture location | 拍摄位置 | 媒体记录时采集设备所处的地理位置，以经纬度和源大地基准表达。 | 写入 `capabilities.spatial.capture_location`；与影像地面覆盖范围 `extent`、像元定位及几何字段相互独立。基准未知时不猜测 WGS84，不据拍摄点开启栅格地图预览。 |
 | model_3d | 三维模型数据 | 以三维空间对象、场景、网格、构件或三维可视化结构为核心消费对象的数据类型。 | 覆盖 GLB / glTF、单 OSGB、OSGB Scene 倾斜摄影、S3M、3D Tiles 场景、IFC / Revit BIM 等；具体子形态由 `type_info.model_3d.model_kind`、format、layout 和 capabilities 表达。 |
 | Collada / DAE | Collada 三维交换格式 | 以 XML 描述几何、场景、材质及资源引用的三维交换格式，文件扩展名为 `.dae`。 | ADDP 使用 `format=dae`、`data_type=model_3d`、`layout=single`；首期转换为静态 GLB。 |
 | 3DS | 3DS 三维模型格式 | 以二进制 chunk 存储网格、材质和关键帧等内容的三维模型格式。 | ADDP 使用 `format=3ds`、`data_type=model_3d`、`layout=single`；不与 3D Tiles 或 S3M 混用。 |

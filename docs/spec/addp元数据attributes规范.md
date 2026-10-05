@@ -459,7 +459,7 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 }
 ```
 
-非字段型空间对象，例如 GeoTIFF、栅格覆盖、带 GPS 或整体空间参考的媒体对象，不要求写入 `geometry_columns`，可以只写对象整体空间参考：
+非字段型空间对象，例如 GeoTIFF、栅格覆盖、带整体空间参考的媒体对象，不要求写入 `geometry_columns`，可以只写对象整体空间参考：
 
 ```json
 {
@@ -469,6 +469,21 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
   "has_spatial_index": false
 }
 ```
+
+媒体的拍摄位置使用 `capabilities.spatial.capture_location`，不写入 `extent`，不虚构 `geometry_columns`，也不替换图片整体 CRS。结构为：
+
+```json
+{
+  "capture_location": {
+    "latitude": 30.5,
+    "longitude": 120.25,
+    "datum": "WGS-84",
+    "srid": 4326
+  }
+}
+```
+
+`latitude` / `longitude` 为有符号十进制度，必须同时存在且有限，分别在 [-90, 90] / [-180, 180] 内，零是合法坐标；南纬和西经取负。`datum` 只保留源大地基准，缺失时省略；`srid` 只在可确定该拍摄点的地理 CRS 时写入，不继承或改写 spatial 顶层 CRS。未知基准可保留坐标，但消费者不得把它按 WGS84 定位。此结构只表达拍摄点，不声明地面覆盖范围、像元定位、空间索引或几何字段；`SpatialInfo.IsSpatial()` 仍只表示几何字段能力，不因拍摄点存在而启用表格空间查询。海拔的垂直参考必须独立确认，不把 GPS 海平面参考高程视为椭球高。
 
 GeoTIFF 的整体 CRS 必须与其像元坐标对应。[OGC GeoTIFF 1.1 的模型 CRS 规则](https://docs.ogc.org/is/19-008r4/19-008r4.html#_requirements_for_definition_of_model_crs_when_model_is_from_geotiff_crs_register)规定：投影模型由 `ProjectedCRSGeoKey`（3072）标识，地理基准由 `GeodeticCRSGeoKey`（2048）标识。投影文件同时包含两个编号时，整体 `srid` 应取投影 CRS，不得因标签顺序取其基底地理 CRS；投影 CRS 为 user-defined 时，也不得把基底地理编号当作整体 CRS。无法确定完整投影 CRS 时保留未知状态，不能猜成 EPSG:4326。
 

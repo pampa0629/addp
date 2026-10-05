@@ -119,18 +119,24 @@ func SetExtension(attrs models.JSONMap, namespace string, key string, value inte
 
 // ReplaceCapabilityNamespace replaces one authoritative capability facts section.
 func ReplaceCapabilityNamespace(attrs models.JSONMap, namespace string, values map[string]interface{}) {
-	if attrs == nil || namespace == "" {
+	ReplaceAttributeNamespace(attrs, "capabilities", namespace, values)
+}
+
+// ReplaceAttributeNamespace replaces an authoritative snapshot, including
+// removing facts absent from the current successful description.
+func ReplaceAttributeNamespace(attrs models.JSONMap, section, namespace string, values map[string]interface{}) {
+	if attrs == nil || section == "" || namespace == "" {
 		return
 	}
-	capabilities := Section(attrs, "capabilities")
-	delete(capabilities, namespace)
+	sectionAttrs := Section(attrs, section)
+	delete(sectionAttrs, namespace)
 	if cleaned := cleanAttributeMap(values); len(cleaned) > 0 {
-		capabilities[namespace] = cleaned
+		sectionAttrs[namespace] = cleaned
 	}
-	if capabilities = cleanAttributeMap(capabilities); len(capabilities) > 0 {
-		attrs["capabilities"] = capabilities
+	if sectionAttrs = cleanAttributeMap(sectionAttrs); len(sectionAttrs) > 0 {
+		attrs[section] = sectionAttrs
 	} else {
-		delete(attrs, "capabilities")
+		delete(attrs, section)
 	}
 }
 

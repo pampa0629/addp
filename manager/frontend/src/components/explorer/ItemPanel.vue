@@ -996,10 +996,28 @@ const fieldPathLabelKeys = {
   'format_info.jpeg.exif.sensitivity_type': 'manager.explorer.attributes.fields.sensitivityType',
   'format_info.jpeg.exif.standard_output_sensitivity': 'manager.explorer.attributes.fields.standardOutputSensitivity',
   'format_info.jpeg.exif.recommended_exposure_index': 'manager.explorer.attributes.fields.recommendedExposureIndex',
-  'format_info.jpeg.exif.iso_speed': 'manager.explorer.attributes.fields.isoSpeed'
+  'format_info.jpeg.exif.iso_speed': 'manager.explorer.attributes.fields.isoSpeed',
+  'capabilities.spatial.capture_location': 'manager.explorer.attributes.fields.captureLocation',
+  'capabilities.spatial.capture_location.latitude': 'manager.explorer.attributes.fields.captureLatitude',
+  'capabilities.spatial.capture_location.longitude': 'manager.explorer.attributes.fields.captureLongitude',
+  'capabilities.spatial.capture_location.datum': 'manager.explorer.attributes.fields.captureDatum',
+  'capabilities.spatial.capture_location.srid': 'manager.explorer.attributes.fields.captureSrid',
+  'format_info.jpeg.exif.gps': 'manager.explorer.attributes.fields.gps',
+  'format_info.jpeg.exif.gps.version_id': 'manager.explorer.attributes.fields.gpsVersion',
+  'format_info.jpeg.exif.gps.latitude_ref': 'manager.explorer.attributes.fields.gpsLatitudeRef',
+  'format_info.jpeg.exif.gps.latitude_dms': 'manager.explorer.attributes.fields.gpsLatitudeDMS',
+  'format_info.jpeg.exif.gps.longitude_ref': 'manager.explorer.attributes.fields.gpsLongitudeRef',
+  'format_info.jpeg.exif.gps.longitude_dms': 'manager.explorer.attributes.fields.gpsLongitudeDMS',
+  'format_info.jpeg.exif.gps.altitude_ref': 'manager.explorer.attributes.fields.gpsAltitudeRef',
+  'format_info.jpeg.exif.gps.altitude_meters': 'manager.explorer.attributes.fields.gpsAltitudeMeters',
+  'format_info.jpeg.exif.gps.status': 'manager.explorer.attributes.fields.gpsStatus',
+  'format_info.jpeg.exif.gps.map_datum': 'manager.explorer.attributes.fields.gpsDatum'
 }
 
 const fieldTooltipKeys = {
+  'capabilities.spatial.capture_location.latitude': 'manager.explorer.attributes.fieldTooltips.captureLocation',
+  'capabilities.spatial.capture_location.longitude': 'manager.explorer.attributes.fieldTooltips.captureLocation',
+  'format_info.jpeg.exif.gps.altitude_meters': 'manager.explorer.attributes.fieldTooltips.gpsAltitude',
   'format_info.jpeg.exif.photographic_sensitivity': 'manager.explorer.attributes.fieldTooltips.photographicSensitivity',
   content_hash: 'manager.explorer.attributes.fieldTooltips.contentHash',
   index_ref: 'manager.explorer.attributes.fieldTooltips.indexRef'
@@ -1657,6 +1675,15 @@ const formatAttributeDisplay = (pathParts, value) => {
   }
   if (path === 'format_info.tiff.page_summary_status') {
     return formatMappedValue('manager.explorer.attributes.tiffPageStatus', value)
+  }
+  if (['format_info.jpeg.exif.gps.latitude_ref', 'format_info.jpeg.exif.gps.longitude_ref'].includes(path)) {
+    return formatMappedValue('manager.explorer.attributes.gpsDirection', value)
+  }
+  if (path === 'format_info.jpeg.exif.gps.status') {
+    return formatMappedValue('manager.explorer.attributes.gpsStatus', value)
+  }
+  if (path === 'format_info.jpeg.exif.gps.altitude_ref') {
+    return formatMappedValue('manager.explorer.attributes.gpsAltitudeReference', String(value))
   }
   if (path === 'format_info.jpeg.exif.sensitivity_type') {
     return formatMappedValue('manager.explorer.attributes.sensitivityType', String(value))

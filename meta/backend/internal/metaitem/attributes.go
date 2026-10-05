@@ -60,13 +60,6 @@ func ApplyDocumentInfo(attrs models.JSONMap, item *DetectedItem) {
 	metaattr.MergeAttributeMaps(attrs, metaattr.DocumentInfoAttributes(item.Document))
 }
 
-func ApplyMediaInfo(attrs models.JSONMap, item *DetectedItem, spatialInfo *datatype.SpatialInfo) {
-	if attrs == nil || item == nil || item.Media == nil {
-		return
-	}
-	metaattr.MergeAttributeMaps(attrs, metaattr.MediaInfoAttributes(item.Media, spatialInfo))
-}
-
 func ApplyCADInfo(attrs models.JSONMap, item *DetectedItem) {
 	if attrs == nil || item == nil || item.CAD == nil {
 		return

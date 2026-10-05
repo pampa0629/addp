@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/engine/contentadapter"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -145,13 +146,12 @@ func EnrichSingleMediaItem(
 	if err != nil {
 		return err
 	}
-	if info.Media != nil {
-		item.Media = info.Media.Clone()
-		metaitem.ApplyMediaInfo(attrs, item, info.Spatial)
-	}
-	if len(info.FormatInfo) > 0 {
-		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), info.FormatInfo))
-	}
+	item.Media = info.Media.Clone()
+	mediaAttrs := metaattr.MediaInfoAttributes(info.Media, info.Spatial)
+	metaattr.ReplaceAttributeNamespace(attrs, "type_info", "media", commonJSON.Section(mediaAttrs, "type_info.media"))
+	metaattr.ReplaceCapabilityNamespace(attrs, "spatial", commonJSON.Section(mediaAttrs, "capabilities.spatial"))
+	formatAttrs := metaattr.FormatInfoAttributes(string(formatType), info.FormatInfo)
+	metaattr.ReplaceAttributeNamespace(attrs, "format_info", string(formatType), commonJSON.Section(formatAttrs, "format_info."+string(formatType)))
 	return nil
 }
 

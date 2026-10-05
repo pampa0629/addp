@@ -259,6 +259,7 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 		if err != nil {
 			return nil, err
 		}
+		result.Spatial = jpegCaptureLocation(result.FormatInfo)
 	}
 	if formatName == "gif" || formatName == "webp" {
 		result.FormatInfo, err = describeAnimation(ctx, formatName, io.MultiReader(bytes.NewReader(header.Bytes()), reader), limited)

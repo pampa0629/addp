@@ -11,7 +11,7 @@
 - `DataType` 枚举：`table`、`document`、`media`、`container`、`graph`、`cad`、`model_3d`、`point_cloud`、`gaussian_splat`、`unknown`。
 - `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`GraphInfo`、`CADInfo`、`Model3DInfo`、`PointCloudInfo`、`GaussianSplatInfo`。
 - `FieldInfo`、`FieldType`，以及各模块共享的字段语义。
-- `SpatialInfo` 等横切事实结构。
+- `SpatialInfo` 等横切事实结构。`CaptureLocation` 表达媒体采集设备的拍摄经纬度、源大地基准及可确认的拍摄点 SRID，与影像覆盖范围、顶层 CRS 和几何字段独立；未知基准不默认 WGS84。
 - `AccessIndex` 当前共享结构。
 
 `common/datatype` 不负责：
