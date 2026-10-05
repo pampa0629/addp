@@ -8,17 +8,9 @@ import logging
 from typing import Dict, Tuple
 from pyspark.sql import SparkSession
 from system_client import get_engine
-from spark_dependencies import ensure_elasticsearch_jar
+from spark_dependencies import configure_spark_dependencies
 
 logger = logging.getLogger(__name__)
-
-SPARK_MAVEN_PACKAGES = ",".join([
-    "org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.3",
-    "org.datasyslab:geotools-wrapper:1.5.3-28.2",
-    "org.postgresql:postgresql:42.7.4",
-    "com.mysql:mysql-connector-j:8.4.0",
-])
-
 
 class SparkConnector:
     """
@@ -64,13 +56,8 @@ class SparkConnector:
 
         # 工作流通过 Standalone Master 提交 DataFrame 作业；同一引擎实例的
         # Thrift 端口属于 SQL 查询能力，不参与 PySpark Session 建立。
-        builder = SparkSession.builder \
-            .appName(f"ADDP-Workflow-Engine-{engine_id}") \
-            .config("spark.jars.packages", SPARK_MAVEN_PACKAGES) \
-            .config("spark.jars", str(ensure_elasticsearch_jar())) \
-            .config("spark.sql.extensions", "org.apache.sedona.sql.SedonaSqlExtensions") \
-            .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
-            .config("spark.kryo.registrator", "org.apache.sedona.core.serde.SedonaKryoRegistrator")
+        builder = configure_spark_dependencies(SparkSession.builder) \
+            .appName(f"ADDP-Workflow-Engine-{engine_id}")
 
         # HDFS Simple 身份属于应用部署事实，不能按单个资源切换共享会话身份。
         hadoop_user = os.getenv('HADOOP_USER_NAME', '').strip()

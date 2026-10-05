@@ -70,7 +70,7 @@ engines/spark-workflow/
 
 Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 executor，因此两端必须使用同一个可达地址。当数据引擎连接地址是 loopback 时，Spark Workflow 只在构造 JDBC URL 时使用 `SPARK_WORKFLOW_SHARED_HOST`，System 中保存的连接配置不变；远程主机地址不会被改写。PostgreSQL JDBC URL 同时继承 System `connection_info.sslmode`。
 
-Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop 按当前用户授权派生连接与单段索引名，任务不保存连接或 `index`。首版仅普通具体索引的 HTTP Basic 只读批量访问，HTTPS 显式拒绝。Driver 和 Executor 必须能访问同一端点；回环地址使用 `SPARK_WORKFLOW_SHARED_HOST`。公开 `array_fields` 显式声明 Mapping 无法区分的数组字段，nested 无需重复声明。不支持别名、data stream、隐藏索引、DSL、流式、写回，也不承诺各次 action 共享同一个 PIT。Spark 内部保留 bigint，JSON 摘要超出 JavaScript 安全整数范围时转成十进制字符串。固定官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR 校验 SHA256，构建时缓存并通过 `spark.jars` 分发，避免该制品 POM 引入另一版 Spark。
+Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop 按当前用户授权派生连接与单段索引名，任务不保存连接或 `index`。首版仅普通具体索引的 HTTP Basic 只读批量访问，HTTPS 显式拒绝。Driver 和 Executor 必须能访问同一端点；回环地址使用 `SPARK_WORKFLOW_SHARED_HOST`。公开 `array_fields` 显式声明 Mapping 无法区分的数组字段，nested 无需重复声明。不支持别名、data stream、隐藏索引、DSL、流式、写回，也不承诺各次 action 共享同一个 PIT。Spark 内部保留 bigint，JSON 摘要超出 JavaScript 安全整数范围时转成十进制字符串。固定官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR 校验 SHA256，构建时缓存，通过 `PYSPARK_SUBMIT_ARGS --jars` 在 Spark 提交阶段与 Sedona/JDBC Maven 依赖合并分发，避免该制品 POM 引入另一版 Spark。Python Session 不设置 `spark.jars`，以免覆盖提交阶段已解析的完整依赖列表。生产 Runtime、镜像构建和分布式 T2 共用同一个依赖配置入口；T2 必须同时核对实际 JAR 分发列表和 Worker 上的 Sedona/ES 计算。
 
 最小验证：`make test-spark-workflow`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`；正式消费验收使用既有 Hosted T4 `elasticsearch-consumer-flow`，同时核对 Console、Runtime 状态和真实 Worker。
 

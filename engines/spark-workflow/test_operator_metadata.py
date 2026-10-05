@@ -36,7 +36,7 @@ else:
 
 from workflow_engine import SparkWorkflowRunner
 from addp_common.workflow_runtime import WorkflowValidationError, validate_workflow_def
-from spark_connector import SPARK_MAVEN_PACKAGES
+from spark_dependencies import SPARK_MAVEN_PACKAGES
 from api_server import serialize_json_value
 from operators.spatial_operators import buffer
 import api_server

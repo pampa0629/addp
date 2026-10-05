@@ -5,11 +5,17 @@ import socket
 import sys
 
 sys.path.insert(0, '/addp/spark-workflow')
+# Use the pinned official image's PySpark distribution while exercising the
+# production Python submission path rather than bypassing it with spark-submit.
+sys.path.insert(0, '/opt/spark/python')
+sys.path.extend(str(path) for path in Path('/opt/spark/python/lib').glob('py4j-*.zip'))
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import sum as total
+from spark_dependencies import configure_spark_dependencies
 from storage_adapters import StorageAdapter
 
-spark = (SparkSession.builder.appName('ADDP-ES-distributed-contract')
+spark = (configure_spark_dependencies(SparkSession.builder, '/gate')
+         .master('spark://spark-master:7077').appName('ADDP-ES-distributed-contract')
          .config('spark.driver.host', 'spark-master').config('spark.driver.bindAddress', '0.0.0.0')
          .config('spark.cores.max', '2').config('spark.executor.memory', '512m').getOrCreate())
 spark.sparkContext.setLogLevel('WARN')
@@ -18,6 +24,12 @@ params = {'source_type': 'index', 'index': 'addp_orders.v1', 'array_fields': ['t
               'user': os.environ['ELASTICSEARCH_READER_USER'], 'password': os.environ['ELASTICSEARCH_READER_PASSWORD']}}
 try:
     assert spark.sparkContext.master == 'spark://spark-master:7077'
+    distributed_jars = spark.sparkContext._jsc.sc().listJars().toString()
+    for name in ('elasticsearch-spark-30_2.12-9.5.4.jar',
+                 'sedona-spark-shaded-3.5_2.12-1.5.3.jar', 'geotools-wrapper-1.5.3-28.2.jar',
+                 'postgresql-42.7.4.jar', 'mysql-connector-j-8.4.0.jar'):
+        assert name in distributed_jars, (name, distributed_jars)
+    assert spark.range(3).selectExpr('ST_AsText(ST_Point(id, id)) AS point').collect()[2].point == 'POINT (2 2)'
     frame = StorageAdapter.load(spark, params)
     rows = frame.orderBy('order_id').collect()
     assert len(rows) == 25 and rows[0].order_id == 9007199254740993

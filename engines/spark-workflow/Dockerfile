@@ -68,6 +68,11 @@ spark_connector.get_engine = lambda engine_id, tenant_id: {
 spark = spark_connector.SparkConnector().get_or_create_session(engine_id=1, tenant_id=1)
 try:
     assert spark.sparkContext._jvm.java.lang.System.getProperty("java.specification.version") == "11"
+    distributed_jars = spark.sparkContext._jsc.sc().listJars().toString()
+    for name in ("elasticsearch-spark-30_2.12-9.5.4.jar",
+                 "sedona-spark-shaded-3.5_2.12-1.5.3.jar", "geotools-wrapper-1.5.3-28.2.jar",
+                 "postgresql-42.7.4.jar", "mysql-connector-j-8.4.0.jar"):
+        assert name in distributed_jars, (name, distributed_jars)
     assert spark.range(3).count() == 3
     assert spark.range(3).selectExpr("sum(id) AS total").first().total == 3
     assert spark.sql("SELECT ST_AsText(ST_Point(1, 2)) AS geometry").first().geometry == "POINT (1 2)"

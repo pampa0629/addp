@@ -63,8 +63,7 @@ fixture.request(endpoint, password, 'POST', '/_reindex?refresh=true', {'source':
 fixture.request(endpoint, password, 'POST', '/_aliases', {'actions': [{'add': {'index': 'addp_orders.v1', 'alias': 'addp_alias'}}]})
 fixture.request(endpoint, password, 'PUT', '/foreign_private', {'settings': {'number_of_replicas': 0}})
 PY
-compose exec -T spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 \
-    --jars /gate/elasticsearch-spark-30_2.12-9.5.4.jar /addp/elasticsearch-spark-contract.py 2>&1 | tee "$WORK_DIR/spark.log"
+compose exec -T spark-master python3 /addp/elasticsearch-spark-contract.py 2>&1 | tee "$WORK_DIR/spark.log"
 grep -q '^ES_SPARK_PASS rows=25 amount_sum=562.5 empty=true multi_shard=true distributed=true$' "$WORK_DIR/spark.log"
 python3 - "$ROOT_DIR" <<'PY'
 import importlib.util, os, sys, time

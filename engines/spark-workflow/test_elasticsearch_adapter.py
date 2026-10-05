@@ -1,6 +1,7 @@
 import copy
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
 from elasticsearch_adapter import ElasticsearchAdapter
-from spark_dependencies import ensure_elasticsearch_jar
+from spark_dependencies import ensure_elasticsearch_jar, configure_spark_dependencies
 from storage_adapters import StorageAdapter
 
 
@@ -84,6 +85,35 @@ class ElasticsearchAdapterTest(unittest.TestCase):
 
 
 class PinnedConnectorTest(unittest.TestCase):
+    def test_dependencies_merge_at_submit_without_overwriting_resolved_jars(self):
+        import shlex
+        for inherited in (
+            'pyspark-shell',
+            '--driver-memory 1g --jars "/custom/a jar.jar" pyspark-shell',
+            '--jars=/custom/a.jar --conf spark.jars=/custom/b.jar pyspark-shell',
+        ):
+            with self.subTest(inherited=inherited), patch.dict('os.environ', {'PYSPARK_SUBMIT_ARGS': inherited}), \
+                    patch('spark_dependencies.ensure_elasticsearch_jar', return_value=Path('/cache/es connector.jar')):
+                builder = MagicMock()
+                builder.config.return_value = builder
+                self.assertIs(configure_spark_dependencies(builder), builder)
+                first = os.environ['PYSPARK_SUBMIT_ARGS']
+                configure_spark_dependencies(builder)
+                self.assertEqual(os.environ['PYSPARK_SUBMIT_ARGS'], first)
+                arguments = shlex.split(first)
+                jars = arguments[arguments.index('--jars') + 1].split(',')
+                self.assertEqual(jars.count('/cache/es connector.jar'), 1)
+                if '/custom/' in inherited:
+                    self.assertIn('/custom/a jar.jar' if 'a jar' in inherited else '/custom/a.jar', jars)
+                if '/custom/b.jar' in inherited:
+                    self.assertIn('/custom/b.jar', jars)
+                self.assertEqual(arguments[-1], 'pyspark-shell')
+                config = dict(call.args for call in builder.config.call_args_list)
+                self.assertNotIn('spark.jars', config)
+                self.assertIn('org.apache.sedona:', config['spark.jars.packages'])
+                self.assertEqual(config['spark.kryo.registrator'], 'org.apache.sedona.core.serde.SedonaKryoRegistrator')
+
+
     def test_verified_artifact_is_cached_and_tampering_never_loads(self):
         import hashlib
         data = b'fixture-complete-jar'
