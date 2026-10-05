@@ -287,6 +287,8 @@ MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：�
 
 2026-10-05，字段图紧凑布局的 Hosted 复验[运行 37252213496](https://github.com/pampa0629/addp/actions/runs/37252213496) 已通过，验证源码为 `680ce20325a7a20cddeadd6889dafbacb8768e6b`。Console 中真实 MongoDB → PostgreSQL ODS → DIM → DWD 三跳整表图包含 13 个字段节点、9 条关系；适应窗口后所有字段行都在画布内，Canvas 实际记录的最小字段字号为 14.22px，画布为 820×667px。截图与 `transfer-field-overview-layout.json` 同时归档。既有字段映射、重跑、结构演进和冻结历史取证回归同时通过；八个临时定义删除并确认 404，业务夹具和部署清理通过、Infra 零残留。同源码 Platform CI 30 项和 Release/T2 的 32 个实际执行任务通过；另 6 项按 workflow 条件跳过，不计为通过。
 
+2026-10-05，字段曲线、拖拽与全屏 Hosted 复验[运行 37276985688](https://github.com/pampa0629/addp/actions/runs/37276985688) 已通过，验证源码为 `7665c0b612d83d31a9a418d94af070d321e1bd79`。真实 MongoDB → PostgreSQL ODS → DIM → DWD 整表图绘制 13 个字段、9 条水平三次贝塞尔连线，820×667px 画布内最小字段字号为 13.96px。目标表向左、向下各拖拽 30px 后，昵称字段的曲线端点偏差为 0.85px，满足 2px 精度要求；自动布局、收起/展开、搜索定位及 Console iframe 原生全屏进出均通过。Canvas 观察工具等待绘制帧后统一读取文字和连线，保留原有位移及端点断言，修正适应窗口后读取旧帧坐标的验收时序。三轮编排、九个实际子执行、结构演进与冻结历史取证、独立物理行集合及列类型检查同时通过；八个临时定义删除，部署清理通过、Infra 零残留。同源码 [Platform CI 37276976663](https://github.com/pampa0629/addp/actions/runs/37276976663) 的 24 个门禁任务实际执行通过，另 6 个按路径条件跳过；Manager 在 Linux Runner 上通过 279 项单元测试、96 项浏览器测试及构建。
+
 ### 6.2 图数据库评估边界
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。
