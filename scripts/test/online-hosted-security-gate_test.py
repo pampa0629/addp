@@ -37,6 +37,8 @@ class HostedSecurityGateTest(unittest.TestCase):
             export ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN=initializer-token
             export ADDP_ONLINE_TEST_TENANT_ID=2
             export ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
+            export ADDP_ONLINE_TEST_USER_USERNAME=external-online-consumer
+            export ADDP_ONLINE_TEST_USER_PASSWORD=private-password
             EOF
                 exit 0
               fi
@@ -69,6 +71,8 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 17 ]
             [ "$ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID" = 23 ]
             [ "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" = consumer-token ]
+            [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ]
+            [ "$ADDP_ONLINE_TEST_USER_PASSWORD" = private-password ]
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')

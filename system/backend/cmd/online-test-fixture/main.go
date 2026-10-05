@@ -157,6 +157,19 @@ func needsEngineProvisioner(suite string) bool {
 	return suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
+func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
+	values := map[string]string{
+		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenantID),
+		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
+	}
+	switch suite {
+	case "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "security-mysql-owner-protection":
+		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
+		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
+	}
+	return values
+}
+
 func main() {
 	if err := run(os.Args[1:], os.Environ()); err != nil {
 		fmt.Fprintf(os.Stderr, "External Online identity fixture failed: %v\n", err)
@@ -308,14 +321,7 @@ func run(args []string, environment []string) error {
 	if err != nil {
 		return err
 	}
-	values := map[string]string{
-		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenant.ID),
-		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": consumerSession.AccessToken,
-	}
-	if *suite == "hdfs-spark-consumer-flow" || *suite == "elasticsearch-consumer-flow" || *suite == "raster-workflow" || *suite == "redis-consumer-flow" || *suite == "manager-internal-artifact-lineage" || *suite == "transfer-relational-sql-etl" {
-		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
-		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = consumerPassword
-	}
+	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
 	if *suite == "compose-public-origin" {
 		readerSession, _, readerPassword, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-public-reader", publicOriginReadPermissions)

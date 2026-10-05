@@ -392,6 +392,35 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	}
 }
 
+func TestConsumerEnvironmentPublishesOnlyRequiredBrowserCredentials(t *testing.T) {
+	for _, suite := range []string{"security-mysql-owner-protection", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl"} {
+		t.Run(suite, func(t *testing.T) {
+			values := consumerEnvironment(suite, 2, "consumer-token", "private'password")
+			if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private'password" || values["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"] != "consumer-token" || values["ADDP_ONLINE_TEST_TENANT_ID"] != "2" || len(values) != 4 {
+				t.Fatal("browser suite did not receive exactly its verified consumer identity and login credentials")
+			}
+			path := filepath.Join(t.TempDir(), "identity.env")
+			if err := writeEnvironmentFile(path, values); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || !strings.Contains(string(data), "export ADDP_ONLINE_TEST_USER_USERNAME='external-online-consumer'") || !strings.Contains(string(data), "export ADDP_ONLINE_TEST_USER_PASSWORD='private'\"'\"'password'") {
+				t.Fatal("browser credentials are missing or not shell quoted in the published environment")
+			}
+			info, err := os.Stat(path)
+			if err != nil || info.Mode().Perm() != 0o600 {
+				t.Fatal("browser credentials must remain in an owner-only environment file")
+			}
+		})
+	}
+	for _, suite := range []string{"opengauss-consumer-flow", "kingbase-consumer-flow", "metric-service-revision-lifecycle", "ontology-revision-lifecycle"} {
+		values := consumerEnvironment(suite, 2, "consumer-token", "private-password")
+		if len(values) != 2 || values["ADDP_ONLINE_TEST_USER_USERNAME"] != "" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "" {
+			t.Fatalf("API-only suite %s must not export browser credentials", suite)
+		}
+	}
+}
+
 func TestRedisFixtureUsesCatalogPermissionWithoutInfrastructureAdministration(t *testing.T) {
 	permissions, err := suitePermissions("redis-consumer-flow")
 	if err != nil {
