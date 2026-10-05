@@ -4,6 +4,7 @@
  */
 
 // Tree Management Composables
+export { useElementFullscreen } from './useElementFullscreen'
 export { useTreeCache } from './useTreeCache'
 export { useTreeLoader } from './useTreeLoader'
 

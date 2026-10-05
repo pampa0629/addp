@@ -114,6 +114,7 @@ export {
 export { useTreeCache, useTreeLoader } from './composables'
 
 // Composables - Resizable
+export { useElementFullscreen } from './composables/useElementFullscreen'
 export { useResizable } from './composables/useResizable'
 
 // Composables - Theme Management

@@ -6,6 +6,19 @@ export async function observeLineageCanvas(page) {
     window.__lineageCanvasPaths = paths
     const frames = new WeakMap()
     window.__lineageCanvasText = frames
+    // Assigning a Canvas dimension clears its bitmap without calling clearRect.
+    // Fullscreen/ResizeObserver uses this path; discard all previous observations.
+    for (const dimension of ['width', 'height']) {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, dimension)
+      Object.defineProperty(HTMLCanvasElement.prototype, dimension, {
+        ...descriptor,
+        set(value) {
+          frames.delete(this)
+          paths.delete(this)
+          descriptor.set.call(this, value)
+        }
+      })
+    }
     const clear = CanvasRenderingContext2D.prototype.clearRect
     CanvasRenderingContext2D.prototype.clearRect = function (x, y, width, height) {
       // G6 can repaint only a dirty rectangle; retain unaffected painted shapes.
@@ -66,7 +79,11 @@ export async function observeLineageCanvas(page) {
           width: this.measureText(text).width * scale,
           fontSize: Number(this.font.match(/([\d.]+)px/)?.[1]) * scale }
         const current = records.filter(row => row.text !== record.text || Math.abs(row.x - record.x) > 0.01 || Math.abs(row.y - record.y) > 0.01)
-        current.push(record)
+        // G6 may issue draw calls wholly outside the bitmap after zooming.
+        // Those calls produce no pixels and must not survive as painted labels.
+        const bounds = this.canvas.getBoundingClientRect()
+        if (record.x <= bounds.width && record.x + record.width >= 0 &&
+          record.y - record.fontSize <= bounds.height && record.y + record.fontSize >= 0) current.push(record)
         frames.set(this.canvas, current.slice(-1000))
       }
       return paint.call(this, text, x, y, ...args)

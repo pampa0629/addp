@@ -1,5 +1,5 @@
 <template>
-  <div class="lineage-viewer">
+  <div ref="fullscreenHost" class="lineage-viewer">
       <div class="lineage-toolbar">
         <div class="lineage-summary">
           <span>{{ t('lineage.summary', { nodes: nodes.length, edges: edges.length }) }}</span>
@@ -18,27 +18,32 @@
             <el-radio-button value="field">{{ t('lineage.granularities.field') }}</el-radio-button>
           </el-radio-group>
           <span class="lineage-depth-label">{{ t('lineage.depth') }}</span>
-          <el-select :model-value="depth" :aria-label="t('lineage.depth')" class="lineage-depth" size="small" @update:model-value="emit('update:depth', $event)">
+          <el-select :model-value="depth" :aria-label="t('lineage.depth')" class="lineage-depth" size="small" :teleported="false" @update:model-value="emit('update:depth', $event)">
             <el-option v-for="value in [1, 2, 3, 5, 10, 20]" :key="value" :value="value" :label="t('lineage.layers', { count: value })" />
           </el-select>
-          <el-tooltip :content="t('lineage.zoomOut')" placement="bottom">
+          <el-tooltip :teleported="false" :content="t('lineage.zoomOut')" placement="bottom">
             <el-button text circle size="small" :aria-label="t('lineage.zoomOut')" @click="zoomBy(0.8)">
               <el-icon><ZoomOut /></el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip :content="t('lineage.zoomIn')" placement="bottom">
+          <el-tooltip :teleported="false" :content="t('lineage.zoomIn')" placement="bottom">
             <el-button text circle size="small" :aria-label="t('lineage.zoomIn')" @click="zoomBy(1.25)">
               <el-icon><ZoomIn /></el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip :content="t('lineage.autoLayout')" placement="bottom">
+          <el-tooltip :teleported="false" :content="t('lineage.autoLayout')" placement="bottom">
             <el-button text circle size="small" :aria-label="t('lineage.autoLayout')" :disabled="layoutPending || !nodes.length" @click="autoLayout">
               <el-icon><Rank /></el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip :content="t('lineage.fitView')" placement="bottom">
+          <el-tooltip :teleported="false" :content="t('lineage.fitView')" placement="bottom">
             <el-button text circle size="small" :aria-label="t('lineage.fitView')" @click="fitView">
               <el-icon><FullScreen /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip :teleported="false" :content="fullscreenLabel" placement="bottom">
+            <el-button text circle size="small" :aria-label="fullscreenLabel" :aria-pressed="isFullscreen" :disabled="fullscreenPending" @click="toggleFullscreen">
+              <el-icon><Close v-if="isFullscreen" /><Expand v-else /></el-icon>
             </el-button>
           </el-tooltip>
         </div>
@@ -134,8 +139,10 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FullScreen, Rank, Search, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import { Close, Expand, FullScreen, Rank, Search, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import G6 from '@antv/g6'
+import { ElMessage } from 'element-plus'
+import { useElementFullscreen } from '../../basic/src/composables/useElementFullscreen.js'
 import { useDAGViewport } from '../../dag/src/composables/useDAGViewport.js'
 import { createDAGDragNodeBehavior } from '../../dag/src/utils/directEdge.js'
 import { focusDAGConnections } from '../../dag/src/utils/connections.js'
@@ -157,6 +164,11 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:depth', 'update:granularity', 'expand', 'view-execution'])
+const fullscreenHost = ref(null)
+const { isFullscreen, pending: fullscreenPending, toggleFullscreen } = useElementFullscreen(fullscreenHost, {
+  onError: () => ElMessage.error(t('lineage.fullscreenFailed'))
+})
+const fullscreenLabel = computed(() => t(isFullscreen.value ? 'lineage.exitFullscreen' : 'lineage.fullscreen'))
 const canvasRef = ref(null)
 const selectedNode = ref(null)
 const selectedEdge = ref(null)
@@ -923,6 +935,11 @@ watch(() => props.depth, () => { expansionAnchor = null })
   flex-direction: column;
   background: var(--addp-bg-primary);
   color: var(--addp-text-primary);
+}
+
+.lineage-viewer:fullscreen {
+  width: 100vw;
+  height: 100vh;
 }
 
 .lineage-toolbar {

@@ -398,6 +398,47 @@ for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: '自动布局', exact: true }).click()
     await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
     await expect(page.locator('.lineage-inspector strong')).toHaveText('field_3.1')
+    // Native fullscreen keeps the same graph/selection, zoom and dragged positions.
+    await search.fill('FIELD_3.1')
+    const fontBeforeZoom = (await lineageCanvasText(canvas)).find(row => row.text === 'field_1.0').fontSize
+    await page.getByRole('button', { name: '放大', exact: true }).click()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'field_1.0')?.fontSize).toBeCloseTo(fontBeforeZoom * 1.25, 1)
+    const beforeFullscreen = await lineageCanvasText(canvas)
+    const originalBounds = await canvas.boundingBox()
+    await page.getByRole('button', { name: '全屏查看', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement?.className)).toBe('lineage-viewer')
+    await expect.poll(async () => (await canvas.boundingBox()).width).toBeGreaterThan(originalBounds.width + 100)
+    await expect(page.getByRole('button', { name: '退出全屏', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(search).toHaveValue('FIELD_3.1')
+    await expect(page.locator('.lineage-inspector strong')).toHaveText('field_3.1')
+    const verifyViewport = async () => {
+      const current = await lineageCanvasText(canvas)
+      for (const row of beforeFullscreen.filter(row => row.text.startsWith('field_'))) {
+        const rendered = current.find(value => value.text === row.text)
+        expect(rendered.x).toBeCloseTo(row.x, 1)
+        expect(rendered.y).toBeCloseTo(row.y, 1)
+        expect(rendered.fontSize).toBeCloseTo(row.fontSize, 1)
+      }
+    }
+    await verifyViewport()
+    // Element Plus popups must remain inside the fullscreen element.
+    await page.locator('.lineage-depth .el-select__wrapper').click()
+    await expect(page.getByRole('option', { name: '10 层', exact: true })).toBeVisible()
+    await page.locator('.lineage-depth .el-select__wrapper').click()
+    await page.getByRole('button', { name: '退出全屏', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull()
+    await expect.poll(async () => (await canvas.boundingBox()).width).toBeCloseTo(originalBounds.width, 1)
+    await expect.poll(async () => (await canvas.boundingBox()).height).toBeCloseTo(originalBounds.height, 1)
+    await verifyViewport()
+    await page.getByRole('button', { name: '全屏查看', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement?.className)).toBe('lineage-viewer')
+    // Browser exit (the same fullscreenchange emitted by Esc) synchronizes the control.
+    await page.evaluate(() => document.exitFullscreen())
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull()
+    await expect.poll(async () => (await canvas.boundingBox()).width).toBeCloseTo(originalBounds.width, 1)
+    await expect.poll(async () => (await canvas.boundingBox()).height).toBeCloseTo(originalBounds.height, 1)
+    await expect(page.getByRole('button', { name: '全屏查看', exact: true })).toHaveAttribute('aria-pressed', 'false')
+    await verifyViewport()
     await search.fill('absent')
     await expect(page.getByRole('status')).toContainText('没有匹配的字段')
     await search.fill('')
@@ -405,13 +446,15 @@ for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: '全部字段', exact: true }).click()
     await page.getByRole('button', { name: '自动布局', exact: true }).click()
     await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
-    const finalRows = await lineageCanvasText(canvas)
+    // Layout completion precedes Canvas repaint. Wait for the actual drawn positions.
     // Hover/border strokes can shift the fitted bounds by a pixel.
-    for (const initial of initialRows.filter(row => row.text.startsWith('field_'))) {
-      const current = finalRows.find(row => row.text === initial.text)
-      expect(Math.abs(current.x - initial.x)).toBeLessThan(2)
-      expect(Math.abs(current.y - initial.y)).toBeLessThan(2)
-    }
+    await expect.poll(async () => {
+      const finalRows = await lineageCanvasText(canvas)
+      return initialRows.filter(row => row.text.startsWith('field_')).every(initial => {
+        const current = finalRows.find(row => row.text === initial.text)
+        return current && Math.abs(current.x - initial.x) < 2 && Math.abs(current.y - initial.y) < 2
+      })
+    }).toBe(true)
     await portsMatch()
     expect(graphRequests).toBe(1)
     expect(errors).toEqual([])

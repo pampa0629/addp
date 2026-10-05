@@ -39,7 +39,7 @@
 
         <el-button
           size="small"
-          :disabled="loading || Boolean(error)"
+          :disabled="loading || Boolean(error) || fullscreenPending"
           :title="t('officePreview.fullscreen')"
           :aria-label="t('officePreview.fullscreen')"
           @click="toggleFullscreen"
@@ -116,6 +116,7 @@ import { useI18n } from 'vue-i18n'
 import { FullScreen, Loading, Printer, RefreshRight, Search, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getAccessToken } from '../../auth/authSession'
+import { useElementFullscreen } from '../../composables/useElementFullscreen'
 import { getTouchDistance, resolvePinchZoom, resolveWheelZoom } from '../../lib/office/pinchZoom'
 
 const props = defineProps({
@@ -132,6 +133,9 @@ const maximumSearchMatches = 1000
 
 const { locale, t } = useI18n()
 const fullscreenHost = ref(null)
+const { pending: fullscreenPending, toggleFullscreen } = useElementFullscreen(fullscreenHost, {
+  onError: () => ElMessage.error(t('officePreview.fullscreenFailed'))
+})
 const scrollHost = ref(null)
 const viewerHost = ref(null)
 const loading = ref(false)
@@ -445,15 +449,6 @@ function handleFullscreenWheelZoom(event) {
     resolveWheelZoom(zoom.value, event.deltaY, minimumZoom, maximumZoom),
     getPointInScroll(event.clientX, event.clientY, scroll)
   )
-}
-
-async function toggleFullscreen() {
-  try {
-    if (document.fullscreenElement) await document.exitFullscreen()
-    else await fullscreenHost.value?.requestFullscreen()
-  } catch {
-    ElMessage.error(t('officePreview.fullscreenFailed'))
-  }
 }
 
 function printDocument() {
