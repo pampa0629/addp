@@ -426,13 +426,13 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
 class ManagerExportBrowserTest(unittest.TestCase):
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v1", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v2", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
             "email_field_present": False, "non_sensitive_fields_preserved": True,
             "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
             "manager_source_verified": True, "monitor_detail_visible": True,
-            "browser_warning_errors": 0, "failed_business_responses": 0,
+            "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
         }
 
     def test_rejects_missing_provenance_hidden_detail_wrong_run_and_browser_errors(self):
@@ -446,6 +446,8 @@ class ManagerExportBrowserTest(unittest.TestCase):
             ("initiator_verified", False), ("taskless_execution", False),
             ("manager_source_verified", False), ("monitor_detail_visible", False),
             ("browser_warning_errors", 1), ("failed_business_responses", 1),
+            ("anonymous_refresh_401", 0), ("anonymous_refresh_401", 2), ("anonymous_refresh_401", True),
+            ("schema_version", "addp.security-manager-export-browser/v1"),
             ("initiator_verified", 1), ("browser_warning_errors", False),
         ):
             with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):

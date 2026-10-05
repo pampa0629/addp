@@ -30,6 +30,16 @@ export function matchesRedirectURL(actual, expected) {
   return actualQuery.toString() === expectedQuery.toString()
 }
 
+export function isAnonymousRefreshConsoleError(message, businessStarted) {
+  if (businessStarted || message.type() !== 'error' ||
+      message.text() !== 'Failed to load resource: the server responded with a status of 401 (Unauthorized)') return false
+  try {
+    return new URL(message.location().url).pathname === '/api/v1/system/refresh'
+  } catch {
+    return false
+  }
+}
+
 export async function login(page, username, password, redirect) {
   const expectedRedirect = new URL(redirect, 'http://addp.invalid')
   let browserAccessToken = ''

@@ -1161,12 +1161,12 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v1", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v2", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
         "manager_source_verified": True, "monitor_detail_visible": True,
-        "browser_warning_errors": 0, "failed_business_responses": 0,
+        "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
     }
     mismatches = [key for key, value in expected.items()
                   if type(report.get(key)) is not type(value) or report.get(key) != value]

@@ -2,7 +2,7 @@ import { expect, request, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { identity, json, login } from './transfer-browser-support.js'
+import { identity, isAnonymousRefreshConsoleError, json, login } from './transfer-browser-support.js'
 
 test('protected Manager export retains its verified initiator and opens in Monitor', async ({ page }) => {
   const names = [
@@ -19,14 +19,18 @@ test('protected Manager export retains its verified initiator and opens in Monit
   const browserErrors = []
   const failedResponses = []
   let businessStarted = false
+  let anonymousRefresh401 = 0
   let browserAPI
   let download
   page.on('pageerror', error => browserErrors.push(error.message))
   page.on('console', message => {
+    if (isAnonymousRefreshConsoleError(message, businessStarted)) return
     if (['warning', 'error'].includes(message.type())) browserErrors.push(message.text())
   })
   page.on('response', response => {
     const path = new URL(response.url()).pathname
+    if (!businessStarted && path === '/api/v1/system/refresh' &&
+        response.request().method() === 'POST' && response.status() === 401) anonymousRefresh401 += 1
     if (businessStarted && path.startsWith('/api/v1/') && response.status() >= 400) {
       failedResponses.push({ path, status: response.status() })
     }
@@ -43,6 +47,7 @@ test('protected Manager export retains its verified initiator and opens in Monit
     for (const permission of requiredPermissions) expect(expected.permissions.has(permission), permission).toBe(true)
     const path = `/manager/data-explorer?locator=${encodeURIComponent(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)}`
     const token = await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, path)
+    businessStarted = true
     browserAPI = await request.newContext({
       baseURL: env.GATEWAY_URL,
       extraHTTPHeaders: { Authorization: `Bearer ${token}` }
@@ -55,7 +60,6 @@ test('protected Manager export retains its verified initiator and opens in Monit
     for (const permission of requiredPermissions) {
       expect(actual.permissions.has(permission)).toBe(true)
     }
-    businessStarted = true
 
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     await frame.getByRole('button', { name: /导出全部结果|Export All Results/i }).click()
@@ -117,14 +121,15 @@ test('protected Manager export retains its verified initiator and opens in Monit
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-monitor.png') })
     expect(failedResponses).toEqual([])
     expect(browserErrors).toEqual([])
+    expect(anonymousRefresh401).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v1', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v2', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
       same_user_verified: true, initiator_verified: true, taskless_execution: true,
       manager_source_verified: true, monitor_detail_visible: true,
-      browser_warning_errors: 0, failed_business_responses: 0
+      browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {
     const current = new URL(page.url())

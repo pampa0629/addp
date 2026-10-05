@@ -664,7 +664,7 @@ def validate_security_mysql_owner_protection_profile(
         "format: 'csv'", "csv.DictReader",
         "transfer_execution_id", "execution.triggered_by", "execution.source_task_id",
         "/api/v1/monitor/executions/by-execution-id/", ".execution-detail-content",
-        "addp.security-manager-export-browser/v1", "download.delete()",
+        "addp.security-manager-export-browser/v2", "anonymous_refresh_401", "download.delete()",
         "expect(browserErrors).toEqual([])", "expect(failedResponses).toEqual([])",
     ):
         if fragment not in browser:
