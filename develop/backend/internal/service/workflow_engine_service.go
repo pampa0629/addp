@@ -878,6 +878,11 @@ func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOp
 		if err != nil {
 			return nil, fmt.Errorf("invalid %s: %w", inputSpec.PublicParam, err)
 		}
+		if loc.Type == resourcetree.TypeIndex {
+			if _, supported := workflowAdapterRuntimeParams(spec)["index"]; !supported {
+				return nil, fmt.Errorf("operator %s does not support index resources", spec.OperatorID)
+			}
+		}
 		if err := deriveWorkflowSourceParams(params, loc); err != nil {
 			return nil, err
 		}
@@ -933,6 +938,15 @@ func workflowLineageWriteMode(params map[string]interface{}) string {
 
 func deriveWorkflowSourceParams(params map[string]interface{}, loc *resourcetree.ResourceLocator) error {
 	switch loc.Type {
+	case resourcetree.TypeIndex:
+		if len(loc.Path) != 1 || loc.Path[0] == "" {
+			return fmt.Errorf("index locator must contain one concrete index name")
+		}
+		params["engine_id"] = loc.EngineID
+		params["source_type"] = "index"
+		params["index"] = loc.Path[0]
+		params["__workflow_resource_derived"] = true
+		params["__workflow_resource_kind"] = "index"
 	case resourcetree.TypeTable, resourcetree.TypeCollection:
 		schema, table := schemaTableFromPath(loc.Path)
 		if table == "" {
@@ -963,7 +977,7 @@ func deriveWorkflowSourceParams(params map[string]interface{}, loc *resourcetree
 		params["__workflow_resource_derived"] = true
 		params["__workflow_resource_kind"] = "object"
 	default:
-		return fmt.Errorf("locator must point to table, collection, file or object, got %s", loc.Type)
+		return fmt.Errorf("locator must point to table, collection, index, file or object, got %s", loc.Type)
 	}
 	return nil
 }
@@ -1082,6 +1096,12 @@ func normalizeDerivedWorkflowPath(
 	connectionInfo plugin.ConnectionInfo,
 ) error {
 	resourceKind := strings.TrimSpace(stringParam(params, "__workflow_resource_kind"))
+	if resourceKind == "index" {
+		if engineType != "elasticsearch" {
+			return fmt.Errorf("index loading requires an Elasticsearch engine")
+		}
+		return nil
+	}
 	if resourceKind == "" {
 		return nil
 	}

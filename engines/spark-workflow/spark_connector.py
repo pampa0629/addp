@@ -8,6 +8,7 @@ import logging
 from typing import Dict, Tuple
 from pyspark.sql import SparkSession
 from system_client import get_engine
+from spark_dependencies import ensure_elasticsearch_jar
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class SparkConnector:
         builder = SparkSession.builder \
             .appName(f"ADDP-Workflow-Engine-{engine_id}") \
             .config("spark.jars.packages", SPARK_MAVEN_PACKAGES) \
+            .config("spark.jars", str(ensure_elasticsearch_jar())) \
             .config("spark.sql.extensions", "org.apache.sedona.sql.SedonaSqlExtensions") \
             .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
             .config("spark.kryo.registrator", "org.apache.sedona.core.serde.SedonaKryoRegistrator")

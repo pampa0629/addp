@@ -961,9 +961,9 @@ jobs:
           status: ${{ job.status }}
 
   common-elasticsearch:
-    name: Common, Manager and Meta document contracts (Elasticsearch 9.5.4)
+    name: Elasticsearch 9.5.4 and distributed Spark contracts
     needs: selection
-    if: needs.selection.outputs.meta == 'true' || needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true'
+    if: needs.selection.outputs.business == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -985,7 +985,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Common, Manager and Meta document contracts (Elasticsearch 9.5.4)
+          gate: Elasticsearch 9.5.4 and distributed Spark contracts
           status: ${{ job.status }}
 
   common-mysql-data-protection:

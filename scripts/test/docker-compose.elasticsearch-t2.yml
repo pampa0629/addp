@@ -13,5 +13,22 @@ services:
       - elasticsearch_data:/usr/share/elasticsearch/data
     mem_limit: 2g
     restart: "no"
+  spark-master:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077"]
+    volumes:
+      - ../../engines/spark-workflow:/addp/spark-workflow:ro
+      - ./elasticsearch-spark-contract.py:/addp/elasticsearch-spark-contract.py:ro
+      - ${ELASTICSEARCH_T2_WORK_DIR:?T2 work directory required}:/gate:ro
+    environment:
+      ELASTICSEARCH_READER_USER: ${ELASTICSEARCH_READER_USER:?T2 user required}
+      ELASTICSEARCH_READER_PASSWORD: ${ELASTICSEARCH_READER_PASSWORD:?T2 password required}
+    mem_limit: 2g
+  spark-worker:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "--host", "spark-worker", "--cores", "2", "--memory", "1g", "spark://spark-master:7077"]
+    mem_limit: 2g
 volumes:
   elasticsearch_data:

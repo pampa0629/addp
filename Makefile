@@ -443,12 +443,16 @@ test-hdfs-online-runner: ## 验证 HDFS Spark T4 场景、物理夹具与隔离�
 	@python3 -m unittest scripts/test/hdfs-spark-consumer-flow-online_test.py scripts/test/online-hdfs-spark-fixture_test.py scripts/test/online-hosted-hdfs-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
+.PHONY: test-elasticsearch-online-runner
+test-elasticsearch-online-runner: ## 验证 ES Spark T4 场景、物理夹具与隔离生命周期
+	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py scripts/test/online-hosted-elasticsearch-gate_test.py scripts/test/online-elasticsearch-consumer-fixture_test.py
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-hdfs-online-runner
 	@$(MAKE) test-raster-online-runner
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
-	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py scripts/test/online-hosted-elasticsearch-gate_test.py scripts/test/online-elasticsearch-consumer-fixture_test.py
+	@$(MAKE) test-elasticsearch-online-runner
 	@$(MAKE) test-orchestrator-online-runner
 	@python3 -m unittest scripts/test/online-hosted-manager-gate_test.py
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
@@ -764,7 +768,7 @@ test-common-elasticsearch-unit: ## ES 插件、通用文档预览和单层目录
 	@cd meta/backend && GOWORK=off go test ./internal/scanruntime -count=1
 	@cd develop/backend && GOWORK=off go test ./internal/api ./internal/service -count=1
 
-test-common-elasticsearch: ## 使用独占 ES 容器验证插件、Manager 预览与 Meta 扫描并清理资源
+test-common-elasticsearch: ## 独占 ES 与 Spark Worker 验证插件、预览、扫描和索引分布式读取
 	@bash scripts/test/common-elasticsearch-gate.sh
 
 .PHONY: test-business-redis

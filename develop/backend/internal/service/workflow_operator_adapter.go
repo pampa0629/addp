@@ -377,12 +377,12 @@ func workflowLoadAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 			resourcePickerParameter(
 				"source_resource",
 				"数据源",
-				"选择已有数据库表、文件或对象。",
+				"选择已有数据库表、ES 索引、文件或对象。",
 				nil,
 				map[string]interface{}{
 					"api_base_url":              "/api/v1/meta",
 					"engine_families":           []string{"tabular", "dynamic_schema", "file", "object"},
-					"selectable_node_types":     []string{"table", "collection", "file", "object"},
+					"selectable_node_types":     []string{"table", "collection", "index", "file", "object"},
 					"enable_geometry_detection": true,
 					"require_geometry":          false,
 					"resource_binding": map[string]interface{}{
@@ -390,7 +390,7 @@ func workflowLoadAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 						"locator_param": "locator",
 						"type_param":    "source_type",
 						"type_values": map[string]interface{}{
-							"table": "table", "collection": "table", "file": "file", "object": "file",
+							"table": "table", "collection": "table", "index": "index", "file": "file", "object": "file",
 						},
 					},
 				},
@@ -399,7 +399,7 @@ func workflowLoadAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 		},
 		ResourceInputs: []workflowResourceInputSpec{{
 			PublicParam:   "locator",
-			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table", "path"},
+			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table", "index", "path"},
 		}},
 	}
 }

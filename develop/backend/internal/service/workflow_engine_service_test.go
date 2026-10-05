@@ -1323,3 +1323,29 @@ func TestPreprocessWorkflowHDFSReadOnly(t *testing.T) {
 		t.Fatalf("read-only target accepted: %v", err)
 	}
 }
+
+func TestPreprocessWorkflowElasticsearchIndexLocator(t *testing.T) {
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		3: {ID: 3, EngineType: "elasticsearch", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "http://es:9200", "user": "reader", "password": "secret"}},
+	})
+	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "load_es", "operator": "load", "params": map[string]interface{}{"locator": "addp://engine/3/path/orders.v1?type=index&item_id=99", "array_fields": []interface{}{"tags"}}}}}
+	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := firstTaskParams(t, got)
+	if params["index"] != "orders.v1" || params["source_type"] != "index" || params["locator"] != nil {
+		t.Fatalf("incorrect derived index: %#v", params)
+	}
+	assertConnectionInfo(t, params, "elasticsearch")
+	if original := firstTaskParams(t, workflow); original["index"] != nil || original["connection_info"] != nil || original["locator"] == nil {
+		t.Fatalf("saved task mutated: %#v", original)
+	}
+	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow); err == nil {
+		t.Fatal("GeoPython accepted ES index")
+	}
+	firstTaskParams(t, workflow)["index"] = "private"
+	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow); err == nil {
+		t.Fatal("direct runtime index accepted")
+	}
+}

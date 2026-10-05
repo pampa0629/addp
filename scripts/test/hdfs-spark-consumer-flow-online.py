@@ -5,7 +5,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 import time
@@ -18,6 +17,9 @@ support = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = support
 spec.loader.exec_module(support)
 SuiteError = support.SuiteError
+spec = importlib.util.spec_from_file_location('hdfs_spark_online_evidence', Path(__file__).with_name('spark-online-evidence.py'))
+SPARK = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(SPARK)
 PERMISSIONS = {'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
                'manager.data_item.read', 'manager.content.read', 'develop.task.read', 'develop.task.execute',
                'develop.data_read.execute', 'system.execution_authorization.create'}
@@ -88,42 +90,17 @@ def validate_result(execution):
 
 
 def runtime_status_evidence(execution_id, final_result):
-    base = support.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL').rstrip('/')
-    snapshots = []
-    for _ in range(8):
-        with urllib.request.urlopen(base + '/api/executions/' + urllib.parse.quote(execution_id), timeout=10) as response:
-            snapshots.append(json.load(response))
-    for snapshot in snapshots:
-        if (snapshot.get('execution_id') != execution_id or snapshot.get('status') != 'success'
-            or snapshot.get('progress') != 100 or snapshot.get('result') != final_result
-            or len(snapshot.get('task_order', [])) != 8 or len(snapshot.get('all_results', {})) != 8
-            or any(value.get('type') != 'spark_dataframe' for value in snapshot['all_results'].values())):
-            raise SuiteError('Runtime status must preserve the exact formal execution and canonical node summaries across HTTP requests')
-    return {'execution_id': execution_id, 'status': 'success', 'queries': len(snapshots), 'tasks': 8}
+    try:
+        return SPARK.runtime_status_evidence(support.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL'), execution_id, final_result, 8)
+    except ValueError as error:
+        raise SuiteError(str(error)) from error
 
 
 def worker_evidence(engine_id):
-    with urllib.request.urlopen('http://127.0.0.1:18080/json', timeout=10) as response:
-        master = json.load(response)
-    applications = [app for app in master.get('activeapps', []) if app.get('name') == f'ADDP-Workflow-Engine-{engine_id}']
-    if len(applications) != 1 or applications[0].get('state') != 'RUNNING' or applications[0].get('cores', 0) < 1 or master.get('aliveworkers') != 1:
-        raise SuiteError('Formal workflow must allocate cores on the disposable Standalone Worker')
-    app_id = applications[0].get('id', '')
-    if not re.fullmatch(r'app-[0-9]+-[0-9]+', app_id):
-        raise SuiteError('invalid Standalone Application ID')
-    container = 'addp-hdfs-online-worker'
-    owned = subprocess.run(['docker', 'container', 'inspect', '--format', '{{index .Config.Labels "com.addp.online-fixture"}}', container],
-                           check=True, capture_output=True, text=True)
-    if owned.stdout.strip() != 'hdfs-spark-consumer-flow':
-        raise SuiteError('Worker evidence must belong to this disposable fixture')
-    # The exact Application directory binds task completion to the formal execution.
-    logs = subprocess.run(['docker', 'exec', container, 'bash', '-c', 'cat /opt/spark/work/"$1"/*/stderr', '_', app_id],
-                          check=True, capture_output=True, text=True)
-    tasks = re.findall(r'Finished task ([0-9.]+) in stage ([0-9.]+)', logs.stdout)
-    if not tasks:
-        raise SuiteError('Standalone Application has no completed Executor tasks')
-    return {'application_id': app_id, 'application_name': applications[0]['name'],
-            'worker_container': container, 'completed_tasks': len(tasks), 'cores': applications[0]['cores']}
+    try:
+        return SPARK.worker_evidence(engine_id, 'hdfs-spark-consumer-flow', 'addp-hdfs-online-worker', 'http://127.0.0.1:18080')
+    except ValueError as error:
+        raise SuiteError(str(error)) from error
 
 
 def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evidence):

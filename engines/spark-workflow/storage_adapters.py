@@ -39,6 +39,9 @@ class StorageAdapter:
 
         if source_type == 'table':
             return DatabaseAdapter.load(spark, params)
+        elif source_type == 'index':
+            from elasticsearch_adapter import ElasticsearchAdapter
+            return ElasticsearchAdapter.load(spark, params)
         elif source_type == 'file':
             return FileAdapter.load(spark, params)
         elif source_type == 'catalog':

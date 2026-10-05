@@ -75,6 +75,8 @@ def error_response(error_code: str, message: str, details: str = None):
 
 def serialize_json_value(value):
     """Recursively reduce runtime values to JSON-safe primitives."""
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 9007199254740991:
+        return str(value)
     if isinstance(value, dict):
         return {key: serialize_json_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):

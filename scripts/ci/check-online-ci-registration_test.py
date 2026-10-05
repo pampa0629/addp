@@ -131,7 +131,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "scripts/test/online-hosted-hdfs-gate.sh", "scripts/test/online-gate.py",
             "business/scripts/online-hdfs-spark-fixture.sh", "scripts/test/hdfs-spark-consumer-flow-online.py",
             "console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js", "Makefile",
-            ".github/workflows/online-t4-gates.yml",
+            ".github/workflows/online-t4-gates.yml", "scripts/test/spark-online-evidence.py",
         )
         for relative in paths:
             destination = self.repository / relative
@@ -144,7 +144,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[0], 'make build-images'), (paths[0], 'hdfs-runtime-build.txt'),
             (paths[0], 'hdfs-runtime.log'), (paths[0], 'com.addp.online-runtime'),
             (paths[2], 'refusing to delete a foreign container'),
-            (paths[3], 'Finished task'), (paths[4], 'login('),
+            (paths[3], 'SPARK.worker_evidence'), (paths[7], 'Finished task'), (paths[4], 'login('),
             (paths[5], '$(MAKE) test-hdfs-online-runner'),
             (paths[6], "java-version: '11'"),
             (paths[6], "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'hdfs-spark-consumer-flow'\n"),
@@ -154,6 +154,26 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             path.write_text(original.replace(fragment, 'removed'))
             with self.subTest(relative=relative, fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_hdfs_spark_profile(self.repository, registered)
+            path.write_text(original)
+
+    def test_elasticsearch_spark_requires_java_worker_runtime_and_console_evidence(self) -> None:
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-hosted-elasticsearch-gate.sh',
+                 'scripts/test/elasticsearch-consumer-flow-online.py', 'scripts/test/spark-online-evidence.py',
+                 'console/frontend/e2e/online/elasticsearch-consumer-flow.spec.js', 'Makefile')
+        for relative in paths:
+            destination = self.repository / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, destination)
+        CHECK.validate_elasticsearch_spark_profile(self.repository, {'elasticsearch-consumer-flow'})
+        for relative, fragment in ((paths[0], "java-version: '11'"), (paths[1], '-spark-workflow'),
+                                   (paths[2], 'validate_workflow_nodes'), (paths[3], 'Finished task'),
+                                   (paths[4], '.workflow-final-result-json'), (paths[5], '$(MAKE) test-elasticsearch-online-runner')):
+            path = self.repository / relative
+            original = path.read_text()
+            path.write_text(original.replace(fragment, 'removed'))
+            with self.subTest(relative=relative), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_elasticsearch_spark_profile(self.repository, {'elasticsearch-consumer-flow'})
             path.write_text(original)
 
     def test_hosted_setup_node_pin_matches_platform_ci(self) -> None:

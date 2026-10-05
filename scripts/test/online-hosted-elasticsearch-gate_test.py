@@ -20,6 +20,7 @@ class HostedElasticsearchGateTest(unittest.TestCase):
             echo "elasticsearch-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
             if [ "$1" = start ]; then
               printf '{}\\n' > "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE"
+              printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/spark-engine.json"
             fi
             [ "${ADDP_TEST_FIXTURE_FAIL:-}" != "$1" ]
         ''')
@@ -51,12 +52,15 @@ class HostedElasticsearchGateTest(unittest.TestCase):
             if os.environ.get('ADDP_TEST_REGISTRATION_FAIL') == '1':
                 sys.exit(1)
             assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'provisioner-token'
-            Path(sys.argv[-1]).write_text('export ADDP_ONLINE_CONSUMER_ENGINE_ID=17\\n')
+            identifier = 18 if 'spark-engine.json' in sys.argv[-3] else 17
+            Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={identifier}\\n')
         ''')
         self.host._executable('make', '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_ELASTICSEARCH_ENGINE_ID" = 17 ] &&
+              [ "$ADDP_ONLINE_SPARK_ENGINE_ID" = 18 ] &&
+              [ "$SPARK_WORKFLOW_SHARED_HOST" = 127.0.0.1 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] &&
               [ -z "${ELASTICSEARCH_PASSWORD:-}" ] || exit 1
@@ -75,7 +79,7 @@ class HostedElasticsearchGateTest(unittest.TestCase):
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}",
                    GITHUB_ACTIONS='true', RUNNER_OS='Linux', RUNNER_TEMP=str(self.host.root),
-                   ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1', ONLINE_SUITE_INPUT='elasticsearch-consumer-flow',
+                   SPARK_WORKFLOW_PORT='8098', ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1', ONLINE_SUITE_INPUT='elasticsearch-consumer-flow',
                    ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts), ADDP_ONLINE_SECRET_DIR=str(self.host.secrets),
                    ADDP_TEST_GATE_TRACE=str(self.host.trace), ADDP_TEST_BACKGROUND_PIDS=str(self.host.background_pids))
         env.update(overrides)
@@ -98,12 +102,13 @@ class HostedElasticsearchGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
-        sequence = ('infra-up', 'elasticsearch-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop',
+        sequence = ('infra-up', 'elasticsearch-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'start:-spark-workflow',
                     'playwright install --with-deps chromium', '--suite elasticsearch-consumer-flow',
                     'engine-register', 'make:test-online ONLINE_SUITE=elasticsearch-consumer-flow',
                     'application-stop', 'elasticsearch-fixture:stop', 'infra-down')
         indices = [trace.index(step) for step in sequence]
         self.assertEqual(indices, sorted(indices))
+        self.assertEqual(trace.count('engine-register'), 2)
         self.assertNotIn('start:-all', trace)
         self.assertFalse(self.host.secrets.exists())
         summary = (self.host.artifacts / 'summary.txt').read_text()

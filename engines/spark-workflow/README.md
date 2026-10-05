@@ -6,7 +6,7 @@ Spark 工作流 Engine 是 ADDP 平台的分布式空间计算引擎,基于 Apac
 
 - **分布式计算**: 支持 TB 级空间数据处理,自动并行化
 - **Sedona 空间算子**: 提供核心空间算子 (buffer, intersection, spatial_join 等)
-- **统一存储访问**: 支持数据库 (PostgreSQL/MySQL/Doris)、对象存储 (S3/MinIO/HDFS)、湖仓 (Iceberg/Delta/Hudi)
+- **统一存储访问**: 支持数据库 (PostgreSQL/MySQL/Doris)、对象存储 (S3/MinIO/HDFS)、湖仓 (Iceberg/Delta/Hudi)，以及 Elasticsearch 具体索引只读批量加载
 - **动态 Spark 资源**: 用户注册多个 Spark 集群,工作流执行时选择
 - **DAG 工作流**: 拓扑排序 + DataFrame 内存传递,最小化序列化开销
 - **与 GeoPython Workflow 互补**: 快速原型用 GeoPython Workflow,生产大规模用 Spark
@@ -19,6 +19,8 @@ engines/spark-workflow/
 ├── runtime_server.py       # 本地与容器共用的 HTTP 启动和就绪后注册
 ├── workflow_engine.py      # 公共 WorkflowRunner 的 Spark 领域算子适配
 ├── spark_connector.py      # 动态 SparkSession 管理器
+├── elasticsearch_adapter.py # ES 具体索引 Mapping、数组和只读访问
+├── spark_dependencies.py   # 固定 ES Spark JAR 下载和 SHA256 校验
 ├── storage_adapters.py     # 统一存储访问适配器
 ├── operators/              # 算子实现与 Pydantic 元数据定义
 ├── operator_metadata.py    # 公开算子元数据出口 (供前端使用)
@@ -30,7 +32,7 @@ engines/spark-workflow/
 ## 算子列表
 
 ### 1. 数据 I/O (5个)
-- `load` - 数据加载 (数据库/文件/湖仓/SQL)
+- `load` - 数据加载 (数据库/文件/湖仓/SQL/Elasticsearch 索引)
 - `save` - 数据保存 (数据库/文件)
 - `preview` - 数据预览
 - `cache` - 内存缓存
@@ -67,6 +69,10 @@ engines/spark-workflow/
 当注册的 Spark Master 使用 `localhost` 时，Workflow driver 会绑定本机所有地址，并通过 `SPARK_WORKFLOW_SHARED_HOST` 公布一个 driver 和 executor 都可访问的宿主机地址。本地启动脚本默认探测当前默认网络接口的 IPv4 地址，也可由部署者显式配置。
 
 Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 executor，因此两端必须使用同一个可达地址。当数据引擎连接地址是 loopback 时，Spark Workflow 只在构造 JDBC URL 时使用 `SPARK_WORKFLOW_SHARED_HOST`，System 中保存的连接配置不变；远程主机地址不会被改写。PostgreSQL JDBC URL 同时继承 System `connection_info.sslmode`。
+
+Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop 按当前用户授权派生连接与单段索引名，任务不保存连接或 `index`。首版仅普通具体索引的 HTTP Basic 只读批量访问，HTTPS 显式拒绝。Driver 和 Executor 必须能访问同一端点；回环地址使用 `SPARK_WORKFLOW_SHARED_HOST`。公开 `array_fields` 显式声明 Mapping 无法区分的数组字段，nested 无需重复声明。不支持别名、data stream、隐藏索引、DSL、流式、写回，也不承诺各次 action 共享同一个 PIT。Spark 内部保留 bigint，JSON 摘要超出 JavaScript 安全整数范围时转成十进制字符串。固定官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR 校验 SHA256，构建时缓存并通过 `spark.jars` 分发，避免该制品 POM 引入另一版 Spark。
+
+最小验证：`make test-spark-workflow`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`；正式消费验收使用既有 Hosted T4 `elasticsearch-consumer-flow`，同时核对 Console、Runtime 状态和真实 Worker。
 
 保存到 PostgreSQL 时，Runtime 按 DataFrame schema 识别 Sedona Geometry 列，不依赖固定列名。空间结果先以 EWKT 写入同 schema 的唯一暂存表，再在 PostgreSQL 事务中转换为 PostGIS `geometry` 并替换或追加目标表；暂存表不作为工作流产物暴露。
 

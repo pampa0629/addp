@@ -124,10 +124,25 @@ test('Elasticsearch scan, document previews and DSL execution converge through C
     await expect(resultTable).toHaveCount(1)
     await expect(resultTable).toContainText('9007199254740993')
     await screenshot('query')
+    const workflowResponse = page.waitForResponse(response => new URL(response.url()).pathname ===
+      `/api/v1/develop/executions/${expected.spark.execution_id}` && response.request().method() === 'GET')
+    await page.goto(`/develop/executions/${expected.spark.execution_id}`)
+    const workflowExecution = await json(await workflowResponse, 'formal Spark execution')
+    expect(workflowExecution.execution_id).toBe(expected.spark.execution_id)
+    expect(workflowExecution.status).toBe('success')
+    expect(workflowExecution.metadata.result.runtime_execution_id).toBe(expected.spark.runtime_execution_id)
+    await expect(develop.locator('.execution-detail-page')).toBeVisible()
+    await expect(develop.locator('.execution-detail-page')).toContainText(expected.spark.execution_id)
+    const finalResult = develop.locator('.workflow-final-result-json')
+    await expect(finalResult).toBeVisible()
+    await expect.poll(async () => JSON.parse(await finalResult.innerText())).toEqual(expected.spark.final_result)
+    await expect(finalResult).toContainText('9007199254740993')
+    await screenshot('workflow')
     writeFileSync(required('ADDP_ONLINE_ELASTICSEARCH_BROWSER_REPORT'), JSON.stringify({
       run_id: required('ADDP_ONLINE_TEST_RUN_ID'), engine_id: expected.engine_id, tenant_id: expected.tenant_id,
       principal_id: browserIdentity.principalID, manager_rows: 25, develop_rows: 25,
-      empty_index: true, meta_ui_scan: true, develop_ui_query: true
+      empty_index: true, meta_ui_scan: true, develop_ui_query: true,
+      spark_execution_id: expected.spark.execution_id, spark_workflow_result: true
     }))
   } finally {
     await browserAPI.dispose()

@@ -3,6 +3,7 @@
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 CONTAINER=addp-elasticsearch-online-disposable
+CONTAINERS=($CONTAINER addp-elasticsearch-online-master addp-elasticsearch-online-worker)
 LABEL=com.addp.online-fixture
 SUITE=elasticsearch-consumer-flow
 fail() { echo "Online Elasticsearch fixture failed: $*" >&2; exit 1; }
@@ -12,23 +13,28 @@ fail() { echo "Online Elasticsearch fixture failed: $*" >&2; exit 1; }
   [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || fail 'requires GitHub Hosted Linux x86_64'
 [ "$#" -eq 1 ] || fail 'usage: start|stop'
 owned() {
-  [ "$(docker container inspect --format "{{index .Config.Labels \"$LABEL\"}}" "$CONTAINER")" = "$SUITE" ]
+  [ "$(docker container inspect --format "{{index .Config.Labels \"$LABEL\"}}" "$1")" = "$SUITE" ]
 }
 stop() {
-  if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
-    owned || fail 'refusing to delete a foreign container'
-    docker rm -fv "$CONTAINER" >/dev/null
-  fi
-  local remaining
-  remaining=$(docker ps -aq --filter "label=$LABEL=$SUITE") || fail 'cannot verify fixture cleanup'
-  [ -z "$remaining" ] || fail 'fixture containers remain'
+  local container remaining status=0
+  for container in "${CONTAINERS[@]}"; do
+    if docker container inspect "$container" >/dev/null 2>&1; then
+      if ! owned "$container"; then echo 'refusing to delete a foreign container' >&2; status=1; continue; fi
+      docker rm -fv "$container" >/dev/null || status=1
+    fi
+  done
+  remaining=$(docker ps -aq --filter "label=$LABEL=$SUITE") || status=1
+  [ -z "$remaining" ] || status=1
+  return "$status"
 }
 case "$1" in
   stop) stop; exit 0 ;;
   start) ;;
   *) fail 'usage: start|stop' ;;
 esac
-if docker container inspect "$CONTAINER" >/dev/null 2>&1; then fail 'refusing to reuse an existing container'; fi
+for container in "${CONTAINERS[@]}"; do
+  if docker container inspect "$container" >/dev/null 2>&1; then fail 'refusing to reuse an existing container'; fi
+done
 # A descriptor contains the reader credential and must stay in the lifecycle's secret partition.
 python3 - <<'PY'
 import os, stat
@@ -39,6 +45,12 @@ if not output.is_absolute() or output.parent.resolve() != root or output.exists(
     raise SystemExit('descriptor must be a new file directly inside the secret directory')
 if stat.S_IMODE(root.stat().st_mode) != 0o700:
     raise SystemExit('secret directory must have mode 0700')
+spark = root / 'spark-engine.json'
+if spark.exists() or spark.is_symlink():
+    raise SystemExit('Spark descriptor must be a new secret file')
+import socket
+for port in (7077, 10000, 18080, 18081):
+    with socket.socket() as probe: probe.bind(('127.0.0.1', port))
 PY
 export ELASTICSEARCH_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
 export ELASTICSEARCH_READER_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
@@ -46,6 +58,9 @@ export ELASTICSEARCH_READER_USER=addp_business_reader
 IMAGE=$(docker compose --env-file "$ROOT_DIR/business/.env.example" -f "$ROOT_DIR/business/docker-compose.yml" config --format json |
   python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["elasticsearch"]["image"])')
 [[ "$IMAGE" =~ ^docker\.elastic\.co/elasticsearch/elasticsearch:[0-9.]+@sha256:[a-f0-9]{64}$ ]] || fail 'Elasticsearch image must be fixed to the official digest'
+SPARK_IMAGE=$(docker compose --env-file "$ROOT_DIR/business/.env.example" -f "$ROOT_DIR/business/docker-compose.yml" config --format json |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["spark-master"]["image"])')
+[[ "$SPARK_IMAGE" =~ ^apache/spark:3\.5\.0-scala2\.12-java11-python3-ubuntu@sha256:[a-f0-9]{64}$ ]] || fail 'Spark image must be fixed to the official digest'
 created=0
 finish_start() {
   local status=$?
@@ -74,8 +89,26 @@ if not match or not 1024 <= int(match[1]) <= 65535:
 PYPORT
 export ELASTICSEARCH_ENDPOINT="http://$ELASTICSEARCH_FIXTURE_ENDPOINT"
 python3 "$ROOT_DIR/business/elasticsearch/init.py"
+docker run -d --name addp-elasticsearch-online-master --label "$LABEL=$SUITE" --network host --user root --memory 2g \
+  --entrypoint bash "$SPARK_IMAGE" -c '
+    set -e
+    /opt/spark/sbin/start-master.sh --host 127.0.0.1 --port 7077 --webui-port 18080
+    /opt/spark/sbin/start-thriftserver.sh --master spark://127.0.0.1:7077 --conf spark.driver.host=127.0.0.1 --conf spark.driver.bindAddress=127.0.0.1 --conf spark.cores.max=1 --conf spark.executor.cores=1 --conf spark.executor.memory=1g
+    exec tail -f /dev/null' >/dev/null
+docker run -d --name addp-elasticsearch-online-worker --label "$LABEL=$SUITE" --network host --user root --memory 3g \
+  --entrypoint /opt/spark/bin/spark-class "$SPARK_IMAGE" org.apache.spark.deploy.worker.Worker \
+    --host 127.0.0.1 --cores 2 --memory 2g --webui-port 18081 spark://127.0.0.1:7077 >/dev/null
 python3 - <<'PY'
-import json, os
+import json, os, time, urllib.request
+from pathlib import Path
+deadline = time.monotonic() + 120
+while time.monotonic() < deadline:
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:18080/json', timeout=5) as response: master = json.load(response)
+        if master.get('aliveworkers') == 1 and any(app.get('name') == 'Thrift JDBC/ODBC Server' and app.get('state') == 'RUNNING' for app in master.get('activeapps', [])): break
+    except (OSError, ValueError): pass
+    time.sleep(1)
+else: raise SystemExit('Spark Standalone readiness timed out')
 endpoint = os.environ['ELASTICSEARCH_FIXTURE_ENDPOINT']
 value = {'name': 'Hosted Elasticsearch', 'engine_type': 'elasticsearch', 'engine_origin': 'general',
          'description': 'Disposable Business Elasticsearch document samples for Online acceptance',
@@ -84,5 +117,10 @@ value = {'name': 'Hosted Elasticsearch', 'engine_type': 'elasticsearch', 'engine
 fd = os.open(os.environ['ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE'], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(fd, 'w') as stream:
     json.dump(value, stream)
+value = {'name': 'Hosted Spark', 'engine_type': 'spark', 'engine_origin': 'general',
+         'description': 'Disposable ES distributed Spark acceptance',
+         'connection_info': {'host': '127.0.0.1', 'port': 10000, 'master_port': 7077, 'database': 'default', 'username': 'spark'}}
+fd = os.open(Path(os.environ['ADDP_ONLINE_SECRET_DIR']) / 'spark-engine.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, 'w') as stream: json.dump(value, stream)
 PY
 echo 'Disposable Business Elasticsearch samples ready'

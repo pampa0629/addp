@@ -43,6 +43,11 @@ import api_server
 
 
 class OperatorMetadataTest(unittest.TestCase):
+    def test_recursive_json_summary_preserves_bigint_precision_and_booleans(self):
+        self.assertEqual(serialize_json_value({'safe': 9007199254740991,
+            'values': [9007199254740993, {'negative': -9007199254740993, 'boolean': True}]}),
+            {'safe': 9007199254740991, 'values': ['9007199254740993', {'negative': '-9007199254740993', 'boolean': True}]})
+
     def test_collection_parameters_publish_json_schema_types(self):
         operators = {item['name']: item for item in get_operator_metadata()}
         group_parameters = {

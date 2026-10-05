@@ -1572,8 +1572,12 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
             'com.addp.online-fixture', '--network host', '--tmpfs /data', '/addp/hdfs/init.py',
             'refusing to delete a foreign container', 'fixture containers remain',
         ),
+        "scripts/test/spark-online-evidence.py": (
+            'Finished task', 'ADDP-Workflow-Engine-', 'com.addp.online-fixture',
+            '/api/executions/', 'range(8)', 'all_results',
+        ),
         "scripts/test/hdfs-spark-consumer-flow-online.py": (
-            '/api/v1/develop/executions', 'spark_cluster_id', 'Finished task', 'worker_evidence',
+            '/api/v1/develop/executions', 'spark_cluster_id', 'SPARK.worker_evidence', 'SPARK.runtime_status_evidence',
             'e2e/online/hdfs-spark-consumer-flow.spec.js', 'evidence != expected',
         ),
         "console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js": (
@@ -1586,6 +1590,34 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         path = repository / relative
         if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
             raise RegistrationError(f"HDFS owner contract is incomplete: {relative}")
+
+
+def validate_elasticsearch_spark_profile(repository: Path, registered: set[str]) -> None:
+    if 'elasticsearch-consumer-flow' not in registered:
+        return
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  elasticsearch-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if job is None or 'actions/setup-java@' not in job.group('body') or "java-version: '11'" not in job.group('body'):
+        raise RegistrationError('ES distributed Spark Hosted acceptance requires Java 11')
+    required = {
+        'scripts/test/online-hosted-elasticsearch-gate.sh': (
+            '-spark-workflow', 'ADDP_ONLINE_SPARK_ENGINE_ID', 'SPARK_MODE override is forbidden',
+            'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+        ),
+        'scripts/test/elasticsearch-consumer-flow-online.py': (
+            'SPARK.worker_evidence', 'SPARK.runtime_status_evidence', 'spark_cluster_id', 'validate_workflow_nodes',
+        ),
+        'scripts/test/spark-online-evidence.py': ('Finished task', 'range(8)', 'all_results'),
+        'console/frontend/e2e/online/elasticsearch-consumer-flow.spec.js': (
+            '.workflow-final-result-json', 'expected.spark.execution_id', 'spark_workflow_result',
+        ),
+        'Makefile': ('$(MAKE) test-elasticsearch-online-runner', 'scripts/test/elasticsearch-consumer-flow-online_test.py',
+                     'scripts/test/online-hosted-elasticsearch-gate_test.py', 'scripts/test/online-elasticsearch-consumer-fixture_test.py'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f'ES Spark owner contract is incomplete: {relative}')
 
 
 def validate_public_origin_browser_profile(repository: Path, registered: set[str]) -> None:
@@ -1632,6 +1664,7 @@ def check_registration(repository: Path) -> None:
     validate_public_origin_browser_profile(repository, registered)
     validate_raster_workflow_profile(repository, registered)
     validate_hdfs_spark_profile(repository, registered)
+    validate_elasticsearch_spark_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)

@@ -862,9 +862,17 @@ Orchestrator 为每个执行输入只允许三种互斥来源：使用任务保�
 
 Spark 文件加载的 `format` 是 Develop 资源 Adapter 派生的运行时参数。文件和对象 locator 使用共享格式识别器根据原始文件名确定格式，任务不保存独立的格式参数；Spark 必须显式消费该结果，不得在缺失时默认按 Parquet 读取。无法识别或运行时不支持的格式必须拒绝读取。
 
+Spark 的 `load` 同时支持 Elasticsearch 的具体 `index` locator。目录仍为 `service → index`，索引的结构化消费仍使用既有 `table` 数据类型；`source_type=index` 只是运行时访问分支，不是新增数据类型。Develop 按当前用户授权，在执行期从 locator 派生单段索引名 `index` 和 System 连接事实；任务不保存这些派生字段，Spark 集群仍通过独立的 `spark_cluster_id` 选择。GeoPython 的加载和所有保存算子不因此获得 ES 能力。
+
+ES 首版 Spark 加载固定使用官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR，校验 SHA256 并由 Spark 分发给 Executor，不通过该制品的 Maven POM 引入另一版 Spark/Scala。仅支持 HTTP Basic 认证的普通具体索引批量读取；HTTPS 明确拒绝，不自动降级，不开放别名、data stream、隐藏索引、通配符、任意连接器选项、DSL、流式或写回。关闭节点发现，只访问登记端点；Driver 和 Executor 必须同时可达该端点。本地回环地址按既有 `SPARK_WORKFLOW_SHARED_HOST` 部署事实派生，不能修改 System 中的原始连接。
+
+字段结构由实时 Mapping 决定。公开可选参数 `array_fields` 只声明 Mapping 无法区分的单值/多值字段，例如 `["tags"]`；字段必须存在于 Mapping 的 `_source` 结构中，不能是 multi-field 或通配表达式。`nested` 已固定为对象数组，不重复声明；不得抽样猜测数组或把不一致的结构强制转成字符串。Spark 内部保留 `long/bigint`，JSON 结果摘要中超出 JavaScript 安全整数范围的值使用十进制字符串，Schema 仍保留原类型。连接器的分片 scroll 读取不承诺全工作流或多次 Spark action 共享同一个 PIT 快照。
+
+Business ES reader 仅增加 `cluster:monitor/main` 和 `cluster:monitor/health` 两项集群读取动作，索引权限保持 `addp_*` 的 `read + view_index_metadata`；不增加节点发现、集群配置或写入权限。HTTP 首版属于开发实验接入；已有 Go ES 插件的 HTTPS 与 PIT 读取契约保持独立。该限制来自官方连接器 9.5.4 的主机名校验实测差异，不能以一次 Driver 证书预检代替 Executor 每次连接的服务端身份校验。
+
 同一算子能够写入表格或文件目标时，也应使用一个目标父资源选择参数，由父 locator 类型决定 Adapter 派生 `schema/table` 或 `path`，不得要求用户预先选择 `target_type`。文件输出格式由目标名称扩展名确定，不应再公开独立 `format` 参数。
 
-`connection_info`、`schema`、`table`、`path` 和用于派生连接的存储引擎 `engine_id` 都是 Develop 到运行时之间的内部参数，不应作为算子公开填写项；Develop 不接受工作流任务参数直接提交存储引擎 `engine_id` 作为旧式资源身份。Spark Workflow 顶层 `engine_id` 只绑定实际 `spark` 通用引擎资源，与数据源 locator 中的存储引擎 ID 不是同一概念。
+`connection_info`、`schema`、`table`、`index`、`path` 和用于派生连接的存储引擎 `engine_id` 都是 Develop 到运行时之间的内部参数，不应作为算子公开填写项；Develop 不接受工作流任务参数直接提交存储引擎 `engine_id` 作为旧式资源身份。Spark Workflow 顶层 `engine_id` 只绑定实际 `spark` 通用引擎资源，与数据源 locator 中的存储引擎 ID 不是同一概念。
 
 Copilot 在生成工作流前做数据源理解时也必须遵守同一资源契约：低置信度或未验证的数据源只能返回 `DataSourceCandidate[]` 给调用方澄清，候选项中的位置字段使用 `namespace`、`table`、`bucket`、`path` 作为解释性事实，并提供标准 `locator` 或 `target_parent_locator`；不得把元数据搜索结果中的 `schema` 字段透传为 Copilot 对外模型字段，也不得把存储引擎 `engine_id` 写入工作流任务 params。
 

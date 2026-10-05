@@ -452,13 +452,15 @@ A: 可以！所有脚本都是幂等的。
 
 通过 `bash business/scripts/start.sh -elasticsearch` 按需启动官方 Elasticsearch 9.5.4 单节点，支持 ARM64 和 AMD64。停止和重启使用同目录 `stop.sh -elasticsearch`、`restart.sh -elasticsearch`，数据卷保留。镜像固定 manifest digest，内存上限 2 GiB。宿主机只开放回环 HTTP，启用 Basic 认证；远程环境使用 HTTPS，插件允许提供 PEM CA，验证服务器证书。
 
-配置位于 `business/.env` 的 `ELASTICSEARCH_PORT`、`ELASTICSEARCH_PASSWORD`、`ELASTICSEARCH_READER_USER`、`ELASTICSEARCH_READER_PASSWORD`；实际端口查看 `business/.business-state/ports.env`。初始化使用管理员，仅创建/更新固定 ID 的样例记录，不删除已有索引；创建 `addp_orders.v1` 和空索引 `addp_empty.v1`，内容包括对象、nested、multi-field、数组、null、缺失字段和超出安全整数范围的 long。注册 ADDP 引擎时使用只读用户，该角色仅有 `addp_*` 的 `read` 与 `view_index_metadata`，没有写入及集群管理权限。
+配置位于 `business/.env` 的 `ELASTICSEARCH_PORT`、`ELASTICSEARCH_PASSWORD`、`ELASTICSEARCH_READER_USER`、`ELASTICSEARCH_READER_PASSWORD`；实际端口查看 `business/.business-state/ports.env`。初始化使用管理员，仅创建/更新固定 ID 的样例记录，不删除已有索引；创建 `addp_orders.v1` 和空索引 `addp_empty.v1`，内容包括对象、nested、multi-field、数组、null、缺失字段和超出安全整数范围的 long。注册 ADDP 引擎时使用只读用户，该角色仅有 `addp_*` 的 `read` 与 `view_index_metadata`，以及 Spark 官方连接器版本与健康检查需要的 `cluster:monitor/main`、`cluster:monitor/health` 两项集群动作；没有写入、节点发现及集群配置权限。
 
 本机标准 `scripts/utils/register-business.sh` 在 ES 容器运行时会读取实际端口并注册只读接入。System 新增 `elasticsearch` 引擎填写 `endpoint`、`user`、`password`，按需填写 `tls_ca_cert`。目录仅展示普通、打开、非隐藏的具体索引；Meta 获取 Mapping；Manager 读取文档；Develop 在选定索引后使用 `es_dsl`。首版不提供聚合、脚本、别名、数据流、跨索引查询或 Transfer 写入/同步。
 
-验证入口：`make test-business-config`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`。后者创建独占容器、认证用户及样例索引，验证 Common、Manager、Meta 后删除容器、卷和网络，不使用现有 Business 实例。
+Spark Workflow 的 `load` 通过具体索引 locator 读取，Spark 计算集群独立选择。公开 `array_fields=["tags"]` 声明普通数组字段，nested 自动映射为对象数组；源连接与索引名在执行时派生。首版固定官方 ES Spark 9.5.4 连接器，仅 HTTP Basic 开发实验接入，HTTPS 明确拒绝；不支持别名、data stream、隐藏索引、DSL、写回、流式或全 DAG 统一 PIT。JSON 摘要中超出 JavaScript 安全整数范围的 bigint 使用十进制字符串，计算内部保留原类型。
 
-正式 T4 使用 `make test-online ONLINE_SUITE=elasticsearch-consumer-flow`，由 `online-hosted-elasticsearch-gate.sh` 在 Hosted Ubuntu 临时部署运行；物理夹具复用官方镜像、只读账号与 25 条文档/空索引初始化。System 独立身份经正式 API 登记引擎，普通用户从 Console 完成 Meta 重扫、Manager 预览和 Develop DSL 查询，归档同一身份的报告及截图。所有退出路径销毁临时业务容器、Infra 和凭据，核对零残留；仅人工触发，不登记 schedule。
+验证入口：`make test-business-config`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`。后者创建独占容器、认证用户及样例索引，验证 Common、Manager、Meta 及真实 Spark Worker 的多分片读取、空索引、数组声明和大整数后删除容器、卷和网络，不使用现有 Business 实例。
+
+正式 T4 使用 `make test-online ONLINE_SUITE=elasticsearch-consumer-flow`，由 `online-hosted-elasticsearch-gate.sh` 在 Hosted Ubuntu 临时部署运行；物理夹具复用官方镜像、只读账号与 25 条文档/空索引初始化。System 独立身份经正式 API 登记引擎，普通用户从 Console 完成 Meta 重扫、Manager 预览和 Develop DSL 查询，并查看通过正式 Develop API 提交的 ES → Spark 工作流结果；该场景使用标准本地 Spark Runtime、独立 Master/Worker，核对四个节点、八次 Runtime 状态查询及实际 Executor 任务，归档同一身份的报告及五张截图。所有退出路径销毁临时业务容器、Infra 和凭据，核对零残留；仅人工触发，不登记 schedule。
 
 Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169299286](https://github.com/pampa0629/addp/actions/runs/37169299286)，提交 `7398d24d743b96316a338dce4a4b39675b979d7b`。归档报告确认同一租户、普通用户和引擎完成 Meta 页面重扫、Manager 25 条文档/空索引预览、Develop 25 条 DSL 查询结果，并保留四张 Console 截图。该记录只证明对应提交的消费链路，不替代后续变更的重新验收。
 

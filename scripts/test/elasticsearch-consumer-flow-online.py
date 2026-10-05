@@ -16,6 +16,9 @@ SUPPORT = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = SUPPORT
 spec.loader.exec_module(SUPPORT)
 SuiteError = SUPPORT.SuiteError
+spec = importlib.util.spec_from_file_location('es_spark_online_evidence', Path(__file__).with_name('spark-online-evidence.py'))
+SPARK = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(SPARK)
 
 
 def locator(engine_id, item):
@@ -76,6 +79,81 @@ def execute_query(client, engine_id, target, query, deadline):
     raise SuiteError('Develop Elasticsearch query timed out')
 
 
+def workflow(target, empty):
+    reference = lambda node: {'$ref': node, 'port': 'default'}
+    return {'tasks': [
+        {'id': 'orders', 'operator': 'load', 'depends_on': [], 'params': {'source_type': 'index', 'locator': target, 'array_fields': ['tags']}},
+        {'id': 'empty', 'operator': 'load', 'depends_on': [], 'params': {'source_type': 'index', 'locator': empty, 'array_fields': ['tags']}},
+        {'id': 'empty_total', 'operator': 'group_by', 'depends_on': ['empty'], 'params': {
+            'input_df': reference('empty'), 'group_columns': [], 'agg_exprs': {'rows': 'count(*)'}}},
+        {'id': 'summary', 'operator': 'group_by', 'depends_on': ['orders', 'empty_total'], 'params': {
+            'input_df': reference('orders'), 'group_columns': [],
+            'agg_exprs': {'rows': 'count(*)', 'amount_sum': 'sum(amount)', 'minimum_order_id': 'min(order_id)'}}},
+    ]}
+
+
+def validate_workflow_result(execution):
+    if execution.get('status') != 'success' or execution.get('outputs'):
+        raise SuiteError('ES Spark read workflow must succeed without persistent outputs')
+    result = SUPPORT._object(execution.get('metadata', {}).get('result'), 'Spark result')
+    final = SUPPORT._object(result.get('final_result'), 'final DataFrame')
+    expected = [{'rows': 25, 'amount_sum': 562.5, 'minimum_order_id': '9007199254740993'}]
+    if (final.get('type') != 'spark_dataframe' or final.get('preview_rows') != expected
+            or not result.get('runtime_execution_id') or result.get('produced_targets') or result.get('meta_scan_runs')):
+        raise SuiteError('ES Spark aggregate or bigint JSON precision differs from the fixture')
+    return final
+
+
+def validate_workflow_nodes(results):
+    results = SUPPORT._object(results, 'node summaries')
+    if set(results) != {'orders', 'empty', 'empty_total', 'summary'} or results['empty'].get('preview_rows') != [] or results['empty_total'].get('preview_rows') != [{'rows': 0}]:
+        raise SuiteError('ES Spark empty index or node summaries differ from the fixture')
+    orders = results['orders']
+    fields = {field['name']: field['type'] for field in orders.get('schema', [])}
+    if fields.get('order_id') != 'bigint' or fields.get('tags') != 'array<string>' or not fields.get('items', '').startswith('array<struct<'):
+        raise SuiteError('ES Spark Mapping types were lost')
+    rows = orders.get('preview_rows', [])
+    if not rows: raise SuiteError('ES Spark load summary has no rows')
+    for row in rows:
+        identifier = row.get('order_id')
+        if not isinstance(identifier, str): raise SuiteError('ES Spark bigint precision was lost')
+        number = int(identifier) - 9007199254740993
+        if (not 0 <= number < 25 or row.get('tags') != ['sample', 'business'] or row.get('customer') != {'name': 'customer-' + str(number)}
+                or row.get('items') != [{'quantity': number + 1, 'sku': 'SKU-001'}]):
+            raise SuiteError('ES Spark nested/object/array structure was lost')
+
+
+def execute_workflow(client, target, empty, cluster_id, deadline):
+    runtimes = SUPPORT._array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
+    selected = [runtime for runtime in runtimes if runtime.get('engine_type') == 'spark_workflow' and runtime.get('connection_status') == 'online']
+    if len(selected) != 1: raise SuiteError('Exactly one online self-registered Spark Runtime is required')
+    runtime_id = SUPPORT.positive_int(selected[0]['id'], 'Runtime')
+    response = SUPPORT._object(client.request('GET', f'/api/v1/develop/workflow-engines/{runtime_id}/operators', (200,)).payload, 'operator response')
+    operators = SUPPORT._array(response.get('operators'), 'operators')
+    load = next(operator for operator in operators if operator['id'] == 'load')
+    picker = next(parameter for parameter in load['public_parameters'] if parameter['name'] == 'source_resource')
+    if 'index' not in picker['ui_config']['selectable_node_types'] or any(p['name'] in ('index', 'connection_info') for p in load['public_parameters']):
+        raise SuiteError('Spark load must expose index selection and hide derived connection/index')
+    started = SUPPORT._object(client.request('POST', '/api/v1/develop/executions', (200,), {
+        'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 300,
+        'content': {'workflow_definition': workflow(target, empty)},
+        'execution_config': {'engine_id': runtime_id, 'engine_specific': {'spark_cluster_id': cluster_id}},
+    }).payload, 'Spark submission')
+    execution_id = started.get('execution_id')
+    if not isinstance(execution_id, str) or not execution_id: raise SuiteError('Develop omitted execution ID')
+    while time.monotonic() < deadline:
+        execution = SUPPORT._object(client.request('GET', '/api/v1/develop/executions/' + urllib.parse.quote(execution_id), (200,)).payload, 'Spark execution')
+        if execution.get('status') in SUPPORT.TERMINAL_STATUSES:
+            final = validate_workflow_result(execution)
+            result = execution['metadata']['result']
+            return {'execution_id': execution_id, 'runtime_id': runtime_id, 'cluster_id': cluster_id,
+                    'runtime_execution_id': result['runtime_execution_id'], 'final_result': final,
+                    'runtime_status': SPARK.runtime_status_evidence(SUPPORT.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL'), result['runtime_execution_id'], final, 4, validate_workflow_nodes),
+                    'worker': SPARK.worker_evidence(cluster_id, 'elasticsearch-consumer-flow', 'addp-elasticsearch-online-worker', 'http://127.0.0.1:18080')}
+        time.sleep(1)
+    raise SuiteError('ES Spark workflow did not converge')
+
+
 def run(client, tenant_id, engine_id, timeout):
     # The standard Online runner enforces a dedicated tenant and deployment.
     context = SUPPORT._object(client.request('GET', '/api/v1/system/auth/context', (200,)).payload, 'identity')
@@ -91,6 +169,9 @@ def run(client, tenant_id, engine_id, timeout):
     selected = [engine for engine in engines if int(engine.get('id', 0)) == engine_id]
     if len(selected) != 1 or selected[0].get('engine_type') != 'elasticsearch':
         raise SuiteError('Online catalog must contain the dedicated Elasticsearch engine')
+    cluster_id = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark')
+    if cluster_id == engine_id or len([engine for engine in engines if engine.get('id') == cluster_id and engine.get('engine_type') == 'spark']) != 1:
+        raise SuiteError('ES source and Spark cluster must be distinct catalog Engines')
     deadline = time.monotonic() + timeout
     scan = SUPPORT.wait_for_scan(client, engine_id, deadline)
     item = SUPPORT.find_item(client, engine_id, 'addp_orders.v1', 'index')
@@ -106,7 +187,8 @@ def run(client, tenant_id, engine_id, timeout):
         'sort': [{'order_id': 'asc'}], '_source': ['order_id', 'customer'],
     }, deadline)
     validate_rows(queried, 25, projected=True, ordered=True)
-    return {'engine_id': engine_id, 'tenant_id': tenant_id, 'principal_id': str(principal['id']),
+    spark = execute_workflow(client, target, locator(engine_id, empty), cluster_id, deadline)
+    return {'engine_id': engine_id, 'tenant_id': tenant_id, 'principal_id': str(principal['id']), 'spark': spark,
             'scan_execution_id': scan, 'query_execution_id': execution,
             'index_locator': target, 'empty_index_locator': locator(engine_id, empty),
             'index_item_id': item['id'], 'empty_item_id': empty['id'],
@@ -126,10 +208,11 @@ def run_browser(report):
     evidence = json.loads(report_file.read_text())
     expected = {'run_id': SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'),
                 'engine_id': report['engine_id'], 'tenant_id': report['tenant_id'], 'principal_id': report['principal_id'],
-                'manager_rows': 25, 'develop_rows': 25, 'empty_index': True, 'meta_ui_scan': True, 'develop_ui_query': True}
+                'manager_rows': 25, 'develop_rows': 25, 'empty_index': True, 'meta_ui_scan': True, 'develop_ui_query': True,
+                'spark_execution_id': report['spark']['execution_id'], 'spark_workflow_result': True}
     if evidence != expected:
         raise SuiteError('Console browser evidence does not match API identity and results')
-    for name in ('meta', 'orders', 'empty', 'query'):
+    for name in ('meta', 'orders', 'empty', 'query', 'workflow'):
         if not (artifacts / f'elasticsearch-{name}-console.png').is_file():
             raise SuiteError('Console Elasticsearch screenshot evidence is missing')
     return evidence
@@ -152,6 +235,6 @@ def main():
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
-    except (SuiteError, OSError, ValueError, KeyError) as error:
+    except (SuiteError, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

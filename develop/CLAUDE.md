@@ -12,6 +12,8 @@ Develop 模块是 ADDP 平台的**开发工作台**，负责以下核心功能�
 4. **算子发现** - 聚合工作流运行时的动态算子（GeoPython Workflow、Spark Workflow 等）
 5. **执行历史管理** - 保存 SQL/工作流执行记录，支持历史回溯
 
+Spark Workflow 的加载资源选择器还支持 Elasticsearch `index` locator。执行时由当前用户授权派生单段 `index` 与连接，公开参数仅增加显式数组声明 `array_fields`；保存算子和 GeoPython 不支持 ES。首版仅普通具体索引的 HTTP Basic 只读批量加载，HTTPS 明确拒绝；Spark 集群仍由独立 `spark_cluster_id` 绑定，结果 JSON 中超出安全整数范围的 bigint 保持十进制字符串。
+
 ## 关键架构
 
 ### 统一执行架构

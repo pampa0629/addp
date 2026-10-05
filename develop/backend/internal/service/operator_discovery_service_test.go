@@ -194,6 +194,24 @@ func TestSparkLoadFormatIsDerivedRuntimeParameter(t *testing.T) {
 	}
 }
 
+func TestSparkLoadIndexIsDerivedAndSelectableOnlyForRead(t *testing.T) {
+	operators := publicWorkflowOperators("spark_workflow", []commonModels.OperatorDescriptor{{ID: "load", Parameters: []commonModels.ParameterDescriptor{{Name: "index", Type: "string"}, {Name: "array_fields", Type: "array"}}}})
+	picker := parameterByName(t, operators[0].PublicParameters, "source_resource")
+	if values := picker.UIConfig["resource_binding"].(map[string]interface{})["type_values"].(map[string]interface{}); values["index"] != "index" {
+		t.Fatalf("missing index binding: %#v", values)
+	}
+	for _, parameter := range operators[0].PublicParameters {
+		if parameter.Name == "index" {
+			t.Fatal("runtime index leaked into public parameters")
+		}
+	}
+	parameterByName(t, operators[0].PublicParameters, "array_fields")
+	spec, _ := workflowOperatorAdapterSpecFor("spark_workflow", "load")
+	if err := rejectDirectWorkflowRuntimeParams(map[string]interface{}{"index": "private"}, spec); err == nil {
+		t.Fatal("direct index accepted")
+	}
+}
+
 func TestOperatorDiscoveryPublishesSuperMapUdbxNFSTargetOnly(t *testing.T) {
 	operators := []commonModels.OperatorDescriptor{{
 		ID: "datasource.create",

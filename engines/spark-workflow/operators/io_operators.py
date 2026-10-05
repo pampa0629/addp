@@ -21,6 +21,7 @@ def load(engine_id: int, tenant_id: int, **params) -> DataFrame:
 
     支持多种数据源:
     - table: 数据库表 (PostgreSQL/MySQL/Doris)
+    - index: Elasticsearch 具体索引，只读 HTTP
     - file: 文件 (S3/HDFS/本地, Parquet/GeoParquet/CSV/Shapefile/Delta/Hudi)
     - sql: 自定义SQL查询
     - catalog: 数据目录 (Iceberg/Delta)
@@ -29,7 +30,7 @@ def load(engine_id: int, tenant_id: int, **params) -> DataFrame:
         engine_id: Spark引擎ID (从system.engines获取)
         tenant_id: Runtime 已验证的租户上下文
         **params: 统一参数 (DataLocation格式)
-            - source_type: "table" | "file" | "sql" | "catalog"
+            - source_type: "table" | "index" | "file" | "sql" | "catalog"
             - schema: 数据库schema (table类型)
             - table: 表名 (table类型)
             - geom_column: 几何列名 (默认"geom")
@@ -183,7 +184,7 @@ LOAD_METADATA = OperatorMetadata(
     name="load",
     category=OperatorCategory.DATA_IO,
     description="数据加载",
-    brief_description="从多种数据源加载数据,支持数据库表、文件、SQL查询和数据目录",
+    brief_description="从多种数据源加载数据,支持数据库表、ES索引、文件、SQL查询和数据目录",
     execution_modes=["workflow"],
     effects=["read"],
     overview="load 算子是工作流的起点,支持从数据库(PostgreSQL/MySQL/Doris)、文件系统(S3/HDFS/本地)、SQL查询和数据目录(Iceberg/Delta)加载数据到 Spark DataFrame。支持多种格式:Parquet/GeoParquet/CSV/Shapefile/Delta/Hudi。",
@@ -192,7 +193,7 @@ LOAD_METADATA = OperatorMetadata(
             name="source_type",
             type="str",
             required=True,
-            description="数据源类型: table/file/sql/catalog",
+            description="数据源类型: table/index/file/sql/catalog",
             notes="不同类型需要不同的参数组合"
         ),
         OperatorParam(
@@ -230,6 +231,20 @@ LOAD_METADATA = OperatorMetadata(
             notes="parquet/csv/shapefile/geojson/delta/hudi"
         ),
         OperatorParam(
+            name="index",
+            type="str",
+            required=False,
+            description="Elasticsearch 具体索引名(运行时派生)",
+            notes="仅 source_type=index；由 Develop 从单段 index locator 注入"
+        ),
+        OperatorParam(
+            name="array_fields",
+            type="list",
+            required=False,
+            description="Elasticsearch 数组字段路径",
+            notes='Mapping 无法区分单值与多值时显式声明，例如 ["tags"]；nested 已固定为数组，无需声明'
+        ),
+        OperatorParam(
             name="geom_column",
             type="str",
             required=False,
@@ -248,7 +263,8 @@ LOAD_METADATA = OperatorMetadata(
         "Shapefile 会自动解析 .shp/.shx/.dbf/.prj 文件组",
         "首次加载大文件建议使用 cache 算子缓存结果",
         "SQL 查询类型支持 JOIN 和 WHERE,但复杂查询建议在数据库端完成",
-        "connection_info、schema/table 或 path 由 Develop Adapter 在执行前注入"
+        "connection_info、schema/table/index 或 path 由 Develop Adapter 在执行前注入",
+        "ES 只支持 HTTP Basic 认证的具体索引批量读取；不支持 HTTPS、别名、通配符和写回"
     ],
     input_desc="无(起始算子)",
     output_desc="DataFrame (包含加载的数据)",

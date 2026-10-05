@@ -54,7 +54,8 @@ def initialize(endpoint, password, user, reader_password):
     if result.get('errors'):
         raise RuntimeError('Elasticsearch sample bulk write failed')
     request(endpoint, password, 'PUT', '/_security/role/addp_business_reader',
-            {'cluster': [], 'indices': [{'names': ['addp_*'], 'privileges': ['read', 'view_index_metadata']}]})
+            {'cluster': ['cluster:monitor/main', 'cluster:monitor/health'],
+             'indices': [{'names': ['addp_*'], 'privileges': ['read', 'view_index_metadata']}]})
     request(endpoint, password, 'PUT', '/_security/user/' + user,
             {'password': reader_password, 'roles': ['addp_business_reader']})
     print('Elasticsearch samples and read-only principal initialized')
