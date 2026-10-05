@@ -111,6 +111,22 @@ def validate_items(items, samples):
     return {'keyspace': item}
 
 
+def browse_keys(client, target, prefix=''):
+    seen = {}
+    cursor = ''
+    for _ in range(1000):
+        payload = client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode(
+            {'locator': target, 'key_cursor': cursor, 'key_prefix': prefix}), (200,)).payload
+        dataset = SUPPORT._object(payload.get('data', {}).get('keyspace'), 'keyspace contents')
+        require(dataset.get('database') == 0 and type(dataset.get('complete')) is bool and isinstance(dataset.get('next_cursor'), str), 'Invalid keyspace cursor response')
+        for key in SUPPORT._array(dataset.get('keys'), 'keyspace keys'):
+            seen[key['key']] = key
+        if dataset['complete']:
+            return seen
+        cursor = dataset['next_cursor']
+    raise SuiteError('Keyspace cursor did not complete within budget')
+
+
 def run(client, tenant_id, engine_id, timeout):
     require(tenant_id > 1, 'Redis Online requires a nondefault tenant')
     context = SUPPORT._object(client.request('GET', '/api/v1/system/auth/context', (200,)).payload, 'identity')
@@ -139,19 +155,7 @@ def run(client, tenant_id, engine_id, timeout):
     scan = SUPPORT.wait_for_scan(client, engine_id, time.monotonic() + timeout)
     items = validate_items(client.request('GET', f'/api/v1/meta/engines/{engine_id}/items', (200,)).payload, samples)
     target = locator(engine_id, items['keyspace'])
-    seen = {}
-    cursor = ''
-    for _ in range(1000):
-        payload = client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode({'locator': target, 'key_cursor': cursor}), (200,)).payload
-        dataset = SUPPORT._object(payload.get('data', {}).get('keyspace'), 'keyspace contents')
-        require(dataset.get('database') == 0 and type(dataset.get('complete')) is bool and isinstance(dataset.get('next_cursor'), str), 'Invalid keyspace cursor response')
-        for key in SUPPORT._array(dataset.get('keys'), 'keyspace keys'):
-            seen[key['key']] = key
-        if dataset['complete']:
-            break
-        cursor = dataset['next_cursor']
-    else:
-        raise SuiteError('Keyspace cursor did not complete within budget')
+    seen = browse_keys(client, target)
     require(set(seen) == {sample['key'] for sample in samples}, 'Keyspace browse lost sample keys')
     for sample in samples:
         validate_facts(seen[sample['key']]['facts'], sample)
@@ -161,8 +165,14 @@ def run(client, tenant_id, engine_id, timeout):
         sample.update(item_id=item['id'], locator=target)
     # Native previews are bounded samples, not a repeatable table pagination contract.
     client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode({'locator': samples[0]['locator'], 'page': 2}), (400,))
+    for prefix in ('addp:sample:counter', 'addp:sample:binary', 'addp:sample:*', ' addp:sample:'):
+        expected = {key for key in seen if base64.urlsafe_b64decode(
+            key[2:] + '=' * (-len(key[2:]) % 4)).startswith(prefix.encode('utf8'))}
+        require(set(browse_keys(client, target, prefix)) == expected, 'Literal key prefix lost keys or interpreted wildcards/whitespace')
+    client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode(
+        {'locator': target, 'key_name': samples[0]['key'], 'key_prefix': 'addp:'}), (400,))
     return {'engine_id': engine_id, 'tenant_id': tenant_id, 'principal_id': principal['id'],
-            'scan_execution_id': scan, 'samples': samples, 'table_pagination_rejected': True}
+            'scan_execution_id': scan, 'samples': samples, 'table_pagination_rejected': True, 'prefix_filter': True}
 
 
 def run_browser(report):
@@ -176,7 +186,7 @@ def run_browser(report):
     evidence = json.loads(report_file.read_text())
     require(evidence == {'run_id': SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'),
                         'engine_id': report['engine_id'], 'tenant_id': report['tenant_id'], 'principal_id': str(report['principal_id']),
-                        'samples': [sample['sample'] for sample in report['samples']], 'meta_ui_scan': True},
+                        'samples': [sample['sample'] for sample in report['samples']], 'meta_ui_scan': True, 'prefix_filter': True},
             'Console browser evidence does not match the API identity and samples')
     return evidence
 

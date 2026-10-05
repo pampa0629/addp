@@ -85,6 +85,7 @@ func bearerToken(c *gin.Context) string {
 // @Description Redis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only
 // @Param key_cursor query string false "键空间浏览游标 | Keyspace browse cursor"
 // @Param key_name query string false "规范内容键令牌 k:Base64URL | Canonical content key token k:Base64URL"
+// @Param key_prefix query string false "UTF-8 字面键名前缀，最多 64 KiB；保留空格、不解释通配符，可与 key_cursor 同用，与非空 key_name 互斥 | Literal UTF-8 key prefix, up to 64 KiB; whitespace preserved, no wildcards, allowed with key_cursor, mutually exclusive with nonempty key_name"
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
@@ -146,8 +147,8 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	// 未纳管资源只是一次本地 map miss，不访问 Security。
 	req, err := h.previewResolver.ResolveRequestFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
 	if err == nil {
-		req.KeyValueOptions = plugin.KeyValueReadOptions{Key: c.Query("key_name"), Cursor: c.Query("key_cursor")}
-		if (req.KeyValueOptions.Key != "" || req.KeyValueOptions.Cursor != "") && (req.ItemType != "keyspace" || (req.KeyValueOptions.Key != "" && req.KeyValueOptions.Cursor != "")) {
+		req.KeyValueOptions = plugin.KeyValueReadOptions{Key: c.Query("key_name"), Cursor: c.Query("key_cursor"), Prefix: c.Query("key_prefix")}
+		if (req.KeyValueOptions.Key != "" || req.KeyValueOptions.Cursor != "" || req.KeyValueOptions.Prefix != "") && (req.ItemType != "keyspace" || (req.KeyValueOptions.Key != "" && (req.KeyValueOptions.Cursor != "" || req.KeyValueOptions.Prefix != ""))) {
 			err = plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid keyspace content selection"))
 		}
 	}

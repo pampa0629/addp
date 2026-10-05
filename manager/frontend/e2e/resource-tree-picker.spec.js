@@ -73,8 +73,10 @@ test('browses an empty nonterminal keyspace batch and selects a key from the nex
   const native = { facts: { native_type: 'string', length: 3, ttl_millis: -1 }, value: { encoding: 'utf8', value: '123', byte_length: 3 }, entries: [], truncated: false }
   await installMockBackend(page, { recordSet: { type: 'keyspace', locator, rows: [] }, keyValue: native,
     keyspacePages: {
+     '': {
       '': { database: 0, keys: [], complete: false, next_cursor: '42' },
       '42': { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, facts: native.facts }], complete: true, next_cursor: '0' }
+     }
     }
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
@@ -87,6 +89,50 @@ test('browses an empty nonterminal keyspace batch and selects a key from the nex
   await page.getByRole('button', { name: '刷新', exact: true }).last().click()
   await expect(next).toBeEnabled()
   await expect(page.getByTestId('key-value-string')).toHaveCount(0)
+})
+
+test('applies literal key prefixes from the first cursor, retains them across batches and clears selection', async ({ page }) => {
+  const locator = 'addp://engine/12/path/keyspace?type=keyspace&item_id=1204'
+  const native = { facts: { native_type: 'string', length: 3, ttl_millis: -1 }, value: { encoding: 'utf8', value: '123', byte_length: 3 }, entries: [], truncated: false }
+  const prefix = ' 客户:*?[]\\:'
+  const summary = name => ({ key: `k:${Buffer.from(name).toString('base64url')}`, name: { encoding: 'utf8', value: name }, facts: native.facts })
+  const backend = await installMockBackend(page, { recordSet: { type: 'keyspace', locator, rows: [] }, keyValue: native,
+    keyspacePages: {
+      '': { '': { database: 0, keys: [summary('sample')], complete: true, next_cursor: '0' } },
+      [prefix]: {
+        '': { database: 0, keys: [], complete: false, next_cursor: '7' },
+        '7': { database: 0, keys: [summary(prefix + 'one')], complete: true, next_cursor: '0' }
+      },
+      'missing:': { '': { database: 0, keys: [], complete: true, next_cursor: '0' } }
+    }
+  })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+  const keys = page.getByTestId('keyspace-keys')
+  await keys.getByRole('button', { name: '"sample"', exact: true }).click()
+  await expect(page.getByTestId('key-value-string')).toHaveText('123')
+  const input = page.getByRole('textbox', { name: '键名前缀', exact: true })
+  await input.fill(prefix)
+  await input.press('Enter')
+  await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ locator, key_cursor: '', key_prefix: prefix })
+  await expect(page.getByTestId('key-value-string')).toHaveCount(0)
+  await expect(keys).toContainText('当前批次没有可见键')
+  // An edited draft must not change the active prefix during cursor browsing.
+  await input.fill('missing:')
+  await page.getByRole('button', { name: '下一批', exact: true }).click()
+  await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ key_cursor: '7', key_prefix: prefix })
+  await keys.getByRole('button', { name: JSON.stringify(prefix + 'one'), exact: true }).click()
+  expect(backend.previewQueries.at(-1)).not.toHaveProperty('key_prefix')
+  await expect(page.getByTestId('key-value-string')).toHaveText('123')
+  await page.getByRole('button', { name: '刷新', exact: true }).last().click()
+  await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ key_cursor: '', key_prefix: prefix })
+  await expect(page.getByTestId('key-value-string')).toHaveCount(0)
+  await page.getByRole('button', { name: '筛选', exact: true }).click()
+  await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ key_cursor: '', key_prefix: 'missing:' })
+  await expect(page.getByRole('button', { name: '下一批', exact: true })).toBeDisabled()
+  await input.fill('')
+  await input.press('Enter')
+  await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ key_cursor: '', key_prefix: '' })
+  await expect(keys.getByRole('button', { name: '"sample"', exact: true })).toBeVisible()
 })
 
 for (const [type, rows] of [
@@ -419,6 +465,7 @@ async function installMockBackend(page, options = {}) {
     : (options.includeResultTask ? [resultTask()] : (options.includeSpatialTask ? [spatialTask()] : []))
   const state = {
     previewLocators: [],
+    previewQueries: [],
     capabilityLocators: [],
     quickViewActions: [],
     preferredModeRequests: [],
@@ -534,9 +581,10 @@ async function installMockBackend(page, options = {}) {
     }
     if (path === '/api/v1/manager/preview' && recordSet) {
       state.previewLocators.push(url.searchParams.get('locator'))
+      state.previewQueries.push(Object.fromEntries(url.searchParams))
       return fulfillJSON(route, {
         preview_type: options.keyValue ? 'key_value' : 'table',
-        data: options.keyValue ? { mode: 'key_value', total: 0, ...(url.searchParams.has('key_name') ? { key_value: options.keyValue } : { keyspace: options.keyspacePages?.[url.searchParams.get('key_cursor') || ''] || { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, facts: options.keyValue.facts }], complete: true, next_cursor: '0' } }), columns: [], rows: [], item_meta: { attributes: [{ key: 'item', value: { data_type: 'key_value', layout: 'single' } }] } } : { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
+        data: options.keyValue ? { mode: 'key_value', total: 0, ...(url.searchParams.has('key_name') ? { key_value: options.keyValue } : { keyspace: options.keyspacePages?.[url.searchParams.get('key_prefix') || '']?.[url.searchParams.get('key_cursor') || ''] || { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, facts: options.keyValue.facts }], complete: true, next_cursor: '0' } }), columns: [], rows: [], item_meta: { attributes: [{ key: 'item', value: { data_type: 'key_value', layout: 'single' } }] } } : { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
           rows: recordSet.rows, total: recordSet.rows.length, page: 1, page_size: 20 },
         metadata: { item_id: 1204, meta_scanned: true }
       })

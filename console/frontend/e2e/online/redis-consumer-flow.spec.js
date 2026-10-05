@@ -110,9 +110,35 @@ test('Redis live catalog and scan converge to keyspace contents and native previ
       await expect(frame.locator('.explorer-tree .tree-node.keyspace')).toHaveCount(1)
       await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `redis-${sample.sample}-console.png`) })
     }
+    const prefixInput = manager.getByRole('textbox', { name: /^(键名前缀|Key prefix)$/ })
+    const keys = manager.getByTestId('keyspace-keys')
+    const filter = manager.getByRole('button', { name: /^(筛选|Filter)$/ })
+    const filtered = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/manager/preview' &&
+      new URL(response.url()).searchParams.get('key_prefix') === 'addp:sample:counter')
+    await prefixInput.fill('addp:sample:counter')
+    await filter.click()
+    const filteredPayload = await json(await filtered, 'Console prefix filter')
+    expect(filteredPayload.data.keyspace.keys.map(key => key.key)).toEqual([expected.samples.find(sample => sample.sample === 'counter').key])
+    await expect(keys.locator('.el-table__body-wrapper tr')).toHaveCount(1)
+    await expect(manager.getByTestId('key-value-string')).toHaveCount(0)
+    const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/manager/preview' &&
+      new URL(response.url()).searchParams.get('key_prefix') === 'addp:sample:counter' &&
+      new URL(response.url()).searchParams.get('key_cursor') === '')
+    await manager.getByRole('button', { name: /^(刷新|Refresh)$/ }).last().click()
+    await json(await refreshed, 'Console filtered refresh')
+    await expect(keys.locator('.el-table__body-wrapper tr')).toHaveCount(1)
+    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'redis-prefix-console.png') })
+    await prefixInput.fill('addp:sample:*')
+    await filter.click()
+    await expect(keys.locator('.el-table__body-wrapper tr')).toHaveCount(0)
+    await expect(keys).toContainText(/当前批次没有可见键|No visible keys in this batch/)
+    await expect(manager.getByRole('button', { name: /^(下一批|Next batch)$/ })).toBeDisabled()
+    await prefixInput.fill('')
+    await prefixInput.press('Enter')
+    await expect(keys.locator('.el-table__body-wrapper tr')).toHaveCount(9)
     writeFileSync(required('ADDP_ONLINE_REDIS_BROWSER_REPORT'), JSON.stringify({
       run_id: required('ADDP_ONLINE_TEST_RUN_ID'), engine_id: expected.engine_id, tenant_id: expected.tenant_id,
-      principal_id: browserIdentity.principalID, samples: expected.samples.map(sample => sample.sample), meta_ui_scan: true
+      principal_id: browserIdentity.principalID, samples: expected.samples.map(sample => sample.sample), meta_ui_scan: true, prefix_filter: true
     }))
   } finally {
     await browserAPI.dispose()

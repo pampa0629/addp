@@ -30,13 +30,18 @@ func TestIntegrationRedisPreview(t *testing.T) {
 	p := &redisplugin.RedisPlugin{}
 	provider := NewKeyValuePreviewProvider()
 	ctx := context.Background()
+	loc := &resourcetree.ResourceLocator{EngineID: 42, Type: resourcetree.TypeKeyspace, Path: []string{"keyspace"}}
+	path, err := resourcetree.EngineCatalogPathFromLocator(p.EngineCatalogModel(), loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listReq := &PreviewRequest{Engine: &models.Engine{ID: 42, EngineType: "redis", ConnectionInfo: c}, EnginePlugin: p, ProviderPath: path, Page: 1, PageSize: 100, ItemType: "keyspace", KeyValueOptions: plugin.KeyValueReadOptions{Prefix: "addp:sample:counter"}}
+	list, err := provider.Preview(ctx, listReq)
+	if err != nil || list.Keyspace == nil || len(list.Keyspace.Keys) != 1 || list.Keyspace.Keys[0].Name.Value != "addp:sample:counter" {
+		t.Fatalf("Manager prefix was not passed to Redis: %v %v", list, err)
+	}
 	for _, key := range []string{"addp:sample:counter", "addp:sample:hash", "addp:sample:list", "addp:sample:set", "addp:sample:zset", "addp:sample:stream", "addp:sample:binary\x00\xff"} {
 		name, err := plugin.EncodeKeyName([]byte(key))
-		if err != nil {
-			t.Fatal(err)
-		}
-		loc := &resourcetree.ResourceLocator{EngineID: 42, Type: resourcetree.TypeKeyspace, Path: []string{"keyspace"}}
-		path, err := resourcetree.EngineCatalogPathFromLocator(p.EngineCatalogModel(), loc)
 		if err != nil {
 			t.Fatal(err)
 		}

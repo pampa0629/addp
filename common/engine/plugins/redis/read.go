@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/addp/common/engine/plugin"
 	rdb "github.com/redis/go-redis/v9"
@@ -23,8 +24,8 @@ func (p *RedisPlugin) ReadKeyValue(ctx context.Context, c plugin.ConnectionInfo,
 	if !keyspacePath(path) {
 		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("exact keyspace path required"))
 	}
-	if opts.Cursor != "" {
-		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("key and cursor are mutually exclusive"))
+	if opts.Cursor != "" || opts.Prefix != "" {
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("key and browse options are mutually exclusive"))
 	}
 	rawKey, err := plugin.DecodeKeyName(opts.Key)
 	key := string(rawKey)
@@ -209,6 +210,9 @@ func (p *RedisPlugin) ListKeyValues(ctx context.Context, c plugin.ConnectionInfo
 	if !keyspacePath(path) || opts.Key != "" {
 		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("keyspace cursor request required"))
 	}
+	if len(opts.Prefix) > plugin.MaxKeyNameBytes || !utf8.ValidString(opts.Prefix) {
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid key prefix"))
+	}
 	var cursor uint64
 	var err error
 	if opts.Cursor != "" {
@@ -235,7 +239,7 @@ func (p *RedisPlugin) ListKeyValues(ctx context.Context, c plugin.ConnectionInfo
 	}
 	defer client.Close()
 	defer conn.Close()
-	keys, next, err := conn.Scan(ctx, cursor, "", int64(limit)).Result()
+	keys, next, err := conn.Scan(ctx, cursor, keyPrefixPattern(opts.Prefix), int64(limit)).Result()
 	if err != nil {
 		return nil, operationError(err)
 	}
@@ -283,4 +287,21 @@ func (p *RedisPlugin) ListKeyValues(ctx context.Context, c plugin.ConnectionInfo
 		return nil, operationError(fmt.Errorf("Redis key batch bytes exceed budget"))
 	}
 	return result, nil
+}
+
+// MATCH uses Redis glob syntax; a content prefix treats all input bytes literally.
+func keyPrefixPattern(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	var pattern strings.Builder
+	for i := 0; i < len(prefix); i++ {
+		switch prefix[i] {
+		case '*', '?', '[', ']', '\\':
+			pattern.WriteByte('\\')
+		}
+		pattern.WriteByte(prefix[i])
+	}
+	pattern.WriteByte('*')
+	return pattern.String()
 }

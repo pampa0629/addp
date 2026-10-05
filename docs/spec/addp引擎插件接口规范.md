@@ -269,6 +269,8 @@ type GraphSampleFilter struct {
 
 键值数据集通过 `KeyValueReadableProvider.ListKeyValues(ctx, connInfo, path, opts)` 返回键摘要、数据库编号、next_cursor 和 complete；通过同一 Provider 的 `ReadKeyValue` 读取 `opts.Key` 指定的内容令牌，返回实时 KeyValueFacts、显式 UTF-8/Base64 字节值和有界原生条目。path 必须是 keyspace 数据集路径，Key/Cursor 属于内容选择，不形成目录层级。浏览每次执行一次 SCAN，MaxEntries 是 COUNT 提示，不能截断响应后丢弃多返回的键；允许空批次及重复键，无稳定页码、排序或快照保证。单批最多 1000 键、响应最多 1 MiB，原生解码前仍执行预算检查，超限明确失败。单键 truncated 表示样本不完整，不是导出游标。EngineCatalogFacts.keyspace 表达连接指定数据库的原生事实；原生值类型与 TTL 不落 Meta。Manager 唯一预览 API 使用 key_cursor 或 key_name 参数，二者互斥，page 必须为 1；内容请求仍绑定已扫描数据集及其保护门禁。
 
+键浏览可通过 `KeyValueReadOptions.Prefix`（Manager query `key_prefix`）指定 UTF-8 字面前缀，最多 64 KiB；不裁剪空格，不将 `*`、`?`、方括号或反斜杠解释为用户通配符。Redis 插件转义这些字符后使用原生 SCAN MATCH，空前缀浏览全部可见键，ACL 与响应预算继续生效。`key_prefix` 可与 `key_cursor` 同用，与非空 `key_name` 互斥；前缀只筛选内容，不进入目录路径、数据集身份或持久元数据。切换或清空前缀必须从初始游标开始，后续批次保持同一前缀；空批次是否结束仍由 complete 决定。
+
 表达 item 内容访问能力。Engine Catalog 回答“有什么”，Facts 回答“Engine 直接知道什么”，Store 回答“如何读写内容”。
 
 ```go

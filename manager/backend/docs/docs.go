@@ -2523,6 +2523,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "UTF-8 字面键名前缀，最多 64 KiB；保留空格、不解释通配符，可与 key_cursor 同用，与非空 key_name 互斥 | Literal UTF-8 key prefix, up to 64 KiB; whitespace preserved, no wildcards, allowed with key_cursor, mutually exclusive with nonempty key_name",
+                        "name": "key_prefix",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "资源定位符URI | Resource locator URI",
                         "name": "locator",
                         "in": "query",

@@ -219,3 +219,54 @@ func TestRedisEmptyKeyspaceAndCursorBatches(t *testing.T) {
 		t.Fatal("COUNT hint dropped keys", batch, err)
 	}
 }
+
+func TestRedisLiteralKeyPrefixes(t *testing.T) {
+	m := miniredis.RunT(t)
+	m.RequireUserAuth("reader", "secret")
+	p := &RedisPlugin{}
+	c := redisTestConnection(t, m.Addr())
+	ctx := context.Background()
+	keys := []string{"客户:一", "客户:二", " key:one", "key:two", "a*?:one", "aXX:one", "a[x]:one", "ax:one", "a\\:one", "binary:\x00\xff"}
+	for _, key := range keys {
+		m.Set(key, "value")
+	}
+	for _, prefix := range []string{"", "客户:", " key:", "a*?", "a[x]", "a\\", "binary:", "missing:"} {
+		t.Run(prefix, func(t *testing.T) {
+			seen := map[string]bool{}
+			cursor := ""
+			for step := 0; ; step++ {
+				if step > 100 {
+					t.Fatal("prefix cursor did not complete")
+				}
+				batch, err := p.ListKeyValues(ctx, c, p.entry(42).Path, plugin.KeyValueReadOptions{Prefix: prefix, Cursor: cursor, MaxEntries: 1})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, key := range batch.Keys {
+					raw, err := plugin.DecodeKeyName(key.Key)
+					if err != nil || !strings.HasPrefix(string(raw), prefix) {
+						t.Fatalf("prefix returned another key: %q %v", raw, err)
+					}
+					seen[string(raw)] = true
+				}
+				if batch.Complete {
+					break
+				}
+				cursor = batch.NextCursor
+			}
+			for _, key := range keys {
+				if seen[key] != strings.HasPrefix(key, prefix) {
+					t.Fatalf("prefix %q lost or added %q", prefix, key)
+				}
+			}
+		})
+	}
+	for _, prefix := range []string{strings.Repeat("x", plugin.MaxKeyNameBytes+1), string([]byte{0xff})} {
+		if _, err := p.ListKeyValues(ctx, c, p.entry(42).Path, plugin.KeyValueReadOptions{Prefix: prefix}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorInvalidPath) {
+			t.Fatalf("invalid prefix accepted: %v", err)
+		}
+	}
+	if _, err := readTestKey(t, p, ctx, c, keys[0], plugin.KeyValueReadOptions{Prefix: "客户:"}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorInvalidPath) {
+		t.Fatalf("key and prefix accepted: %v", err)
+	}
+}

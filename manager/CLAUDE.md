@@ -102,6 +102,7 @@ manager/
 - 元数据树与数据项优先通过 Meta 查询，Manager 只做预览、检索和快显侧的缓存与呈现。
 - 预览能力走 `PreviewRegistry` 和 provider，不要为单一数据源在 Handler 中写特殊逻辑。
 - Redis 键值数据集通过 `builtin:key-value` 与 `KeyValueReadableProvider` 读取，要求已扫描的 keyspace Meta item 身份，数据类型为 `key_value`。统一 preview API 先返回游标键列表，再用 `key_name` 内容令牌读取选中键；所有请求沿用数据集 locator 与保护门禁。共享 `KeyValuePreview` 是键浏览和原生内容预览的唯一前端实现，字段和值显式标明 UTF-8/Base64，stream 字段对保留顺序和重复名称。首期不提供表剖析、稳定分页、导出或字段保护适配；存在未支持的字段保护规则时拒绝键列表及内容读取。
+- 键名前缀筛选由同一 preview API 的 `key_prefix` 传入，按 UTF-8 字面前缀匹配，保留空格并转义 Redis 通配字符。共享组件在应用或清空前缀时重置游标和选中内容，下一批与刷新保留已应用前缀；不在浏览器按当前批次过滤，也不创建前缀目录。
 - 资源树、预览、刷新和跨页面跳转统一使用 ResourceLocator；不得恢复 `engine_id/schema/table` 公共预览入口。
 - 预览响应材料必须遵守 `content.kind`、`preview_material`、`frontend_renderer` 三层语义；不得把 `raw_content`、`range_content`、`binary_content` 写入 `preview_material`。
 - 存储型 item 原始下载走 `downloads/file` 的 ResourceLocator + DownloadPlan；前端不得从 preview metadata refs 拼接 multi 文件下载。

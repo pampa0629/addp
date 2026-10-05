@@ -574,6 +574,8 @@
     "stay": "Keep editing"
   },
   "keyValuePreview": {
+    "prefix": "Key prefix",
+    "filter": "Filter",
     "nativeType": "Native type",
     "length": "Length / entry count",
     "ttl": "Remaining TTL",

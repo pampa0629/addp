@@ -48,19 +48,35 @@ class FakeClient:
         elif url.path.endswith('/items'): payload = self.items
         elif url.path.endswith('/manager/preview'):
             query = parse_qs(url.query)
-            if query.get('page') == ['2']:
+            if query.get('page') == ['2'] or ('key_name' in query and query.get('key_prefix')):
                 assert statuses == (400,)
                 payload = {'error_code': 'invalid_preview_page'}
             else:
                 if 'key_name' in query:
                     payload = preview(next(sample for sample in self.samples if sample['key'] == query['key_name'][0]))
                 else:
-                    payload = {'preview_type': 'key_value', 'data': {'keyspace': {'database': 0, 'keys': [{'key': sample['key'], 'facts': preview(sample)['data']['key_value']['facts']} for sample in self.samples], 'complete': True, 'next_cursor': '0'}}}
+                    prefix = query.get('key_prefix', [''])[0]
+                    selected = [sample for sample in self.samples if ('addp:sample:' + sample['sample']).startswith(prefix)]
+                    payload = {'preview_type': 'key_value', 'data': {'keyspace': {'database': 0, 'keys': [{'key': sample['key'], 'facts': preview(sample)['data']['key_value']['facts']} for sample in selected], 'complete': True, 'next_cursor': '0'}}}
         else: raise AssertionError(f'unexpected route {method} {url.path}')
         return SimpleNamespace(payload=copy.deepcopy(payload))
 
 
 class RedisConsumerContractTest(unittest.TestCase):
+    def test_prefix_filter_checks_literal_matching_and_cannot_accept_unfiltered_results(self):
+        client = FakeClient()
+        self.assertTrue(MODULE.run(client, 2, 17, 10)['prefix_filter'])
+        browse_calls = [parse_qs(urlsplit(call[1]).query) for call in client.calls if '/manager/preview?' in call[1]]
+        self.assertTrue(any(call.get('key_prefix') == ['addp:sample:*'] for call in browse_calls))
+        original = client.request
+        def ignoring_prefix(method, path, statuses, body=None):
+            response = original(method, path, statuses, body)
+            if parse_qs(urlsplit(path).query).get('key_prefix') == ['addp:sample:counter']:
+                response.payload['data']['keyspace']['keys'] = [{'key': s['key']} for s in client.samples]
+            return response
+        client.request = ignoring_prefix
+        with self.assertRaises(MODULE.SuiteError): MODULE.run(client, 2, 17, 10)
+
     def test_full_consumer_flow_checks_all_live_facts_and_previews_without_management_access(self):
         client = FakeClient()
         report = MODULE.run(client, 2, 17, 10)
@@ -131,7 +147,7 @@ class RedisConsumerContractTest(unittest.TestCase):
             self.assertFalse(target.exists())
             def browser(*args, **kwargs):
                 evidence = {'run_id': 'r1', 'engine_id': 17, 'tenant_id': 2, 'principal_id': '8',
-                            'samples': [s['sample'] for s in report['samples']], 'meta_ui_scan': True}
+                            'samples': [s['sample'] for s in report['samples']], 'meta_ui_scan': True, 'prefix_filter': True}
                 Path(kwargs['env']['ADDP_ONLINE_REDIS_BROWSER_REPORT']).write_text(json.dumps(evidence))
                 return SimpleNamespace(returncode=0)
             with patch.object(MODULE.subprocess, 'run', side_effect=browser):

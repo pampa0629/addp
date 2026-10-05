@@ -96,6 +96,7 @@ type KeyValueDatasetPreview struct {
 type KeyValueReadOptions struct {
 	Key        string
 	Cursor     string
+	Prefix     string // UTF-8 literal key-name prefix, only used for dataset browsing.
 	MaxEntries int
 	MaxBytes   int
 }

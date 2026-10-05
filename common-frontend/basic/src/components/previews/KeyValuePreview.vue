@@ -2,11 +2,13 @@
   <section v-if="dataset || value" class="key-value-preview" data-testid="key-value-preview">
     <div v-if="dataset" class="dataset-toolbar">
       <span>{{ t('keyValuePreview.database') }}: DB {{ dataset.database }}</span>
+      <el-input v-model="prefixInput" class="prefix-input" size="small" :disabled="busy" :aria-label="t('keyValuePreview.prefix')" :placeholder="t('keyValuePreview.prefix')" clearable @keyup.enter="applyPrefix" @clear="applyPrefix" />
+      <el-button size="small" :disabled="busy" @click="applyPrefix">{{ t('keyValuePreview.filter') }}</el-button>
       <el-button size="small" :disabled="busy" @click="browse('')">{{ t('keyValuePreview.refresh') }}</el-button>
       <el-button size="small" :disabled="busy || dataset.complete" @click="browse(dataset.next_cursor)">{{ t('keyValuePreview.nextBatch') }}</el-button>
     </div>
     <el-alert v-if="failed" :title="t('keyValuePreview.failed')" type="error" :closable="false" />
-    <el-table v-if="dataset" :data="dataset.keys" v-loading="busy" row-key="key" size="small" border data-testid="keyspace-keys">
+    <el-table v-if="dataset" :data="dataset.keys" :empty-text="t('keyValuePreview.empty')" v-loading="busy" row-key="key" size="small" border data-testid="keyspace-keys">
       <el-table-column :label="t('keyValuePreview.key')" min-width="240">
         <template #default="{ row }"><el-button link type="primary" @click="select(row)">{{ keyLabel(row.name) }}</el-button></template>
       </el-table-column>
@@ -56,6 +58,8 @@ const value = ref(null)
 const selectedName = ref('')
 const busy = ref(false)
 const failed = ref(false)
+const prefixInput = ref('')
+const appliedPrefix = ref('')
 let sequence = 0
 watch(() => props.data, data => {
  sequence++
@@ -64,6 +68,8 @@ watch(() => props.data, data => {
  selectedName.value = ''
  busy.value = false
  failed.value = false
+ prefixInput.value = ''
+ appliedPrefix.value = ''
 }, { immediate: true })
 onBeforeUnmount(() => { sequence++ })
 const ttlLabel = millis => millis === -1 ? t('keyValuePreview.persistent') : `${millis} ms`
@@ -85,9 +91,17 @@ async function request(options) {
   if (current === sequence) busy.value = false
  }
 }
-async function browse(cursor) {
- const data = await request({ key_cursor: cursor })
- if (data?.keyspace) { dataset.value = data.keyspace; value.value = null; selectedName.value = '' }
+async function browse(cursor, prefix = appliedPrefix.value) {
+ const data = await request({ key_cursor: cursor, key_prefix: prefix })
+ if (data?.keyspace) {
+  dataset.value = data.keyspace
+  appliedPrefix.value = prefix
+  value.value = null
+  selectedName.value = ''
+ }
+}
+function applyPrefix() {
+ return browse('', prefixInput.value)
 }
 async function select(row) {
  const data = await request({ key_name: row.key })
@@ -98,6 +112,7 @@ async function select(row) {
 <style scoped>
 .key-value-preview { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 .dataset-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.prefix-input { flex: 1 1 180px; max-width: 320px; }
 .native-value { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--el-font-family-monospace, monospace); }
 .stream-fields { margin: 0; padding-inline-start: 20px; }
 </style>

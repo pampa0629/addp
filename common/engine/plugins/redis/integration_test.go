@@ -92,6 +92,10 @@ func TestIntegrationRedisNativeAccessAndACL(t *testing.T) {
 	if raw, err := plugin.DecodeKeyName(visible.Keys[0].Key); err != nil || string(raw) != "addp:sample:counter" {
 		t.Fatal(visible, err)
 	}
+	visible, err = p.ListKeyValues(ctx, limited, entries[0].Path, plugin.KeyValueReadOptions{Prefix: "addp:sample:", MaxEntries: 100})
+	if err != nil || len(visible.Keys) != 1 || visible.Keys[0].Key != "k:YWRkcDpzYW1wbGU6Y291bnRlcg" {
+		t.Fatalf("prefix bypassed key ACL: %v %v", visible, err)
+	}
 	if v, err := readTestKey(t, p, ctx, limited, "addp:sample:hash", plugin.KeyValueReadOptions{}); err == nil || v != nil {
 		t.Fatal("key permission denial returned data")
 	}
@@ -119,5 +123,50 @@ func TestIntegrationRedisNativeAccessAndACL(t *testing.T) {
 	v, err := readTestKey(t, p, ctx, c, "addp:sample:duplicates", plugin.KeyValueReadOptions{})
 	if err != nil || len(v.Entries) != 1 || len(v.Entries[0].Fields) != 2 || v.Entries[0].Fields[0].Name.Value != "f" || v.Entries[0].Fields[1].Value.Value != "second" {
 		t.Fatalf("stream field pairs lost: %v", err)
+	}
+}
+
+func TestIntegrationRedisLiteralKeyPrefixes(t *testing.T) {
+	if os.Getenv("ADDP_REDIS_INTEGRATION") != "1" {
+		t.Skip("run make test-common-redis")
+	}
+	ctx := context.Background()
+	p := &RedisPlugin{}
+	c := redisTestConnection(t, os.Getenv("ADDP_REDIS_T2_ENDPOINT"))
+	c["user"], c["password"] = "addp_business_reader", os.Getenv("BUSINESS_REDIS_READER_PASSWORD")
+	admin := rdb.NewClient(&rdb.Options{Addr: os.Getenv("ADDP_REDIS_T2_ENDPOINT"), Username: "addp_business_admin", Password: os.Getenv("BUSINESS_REDIS_ADMIN_PASSWORD")})
+	defer admin.Close()
+	prefix := "addp:prefix:*?[]\\ 客户:"
+	keys := []string{prefix + "one", prefix + "two", "addp:prefix:other"}
+	for _, key := range keys {
+		if err := admin.Set(ctx, key, "value", 0).Err(); err != nil {
+			t.Fatal(err)
+		}
+		defer admin.Del(ctx, key)
+	}
+	seen := map[string]bool{}
+	cursor := ""
+	for step := 0; ; step++ {
+		if step > 100 {
+			t.Fatal("real Redis prefix cursor did not complete")
+		}
+		batch, err := p.ListKeyValues(ctx, c, p.entry(42).Path, plugin.KeyValueReadOptions{Prefix: prefix, Cursor: cursor, MaxEntries: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range batch.Keys {
+			raw, err := plugin.DecodeKeyName(key.Key)
+			if err != nil || !strings.HasPrefix(string(raw), prefix) {
+				t.Fatalf("literal prefix returned %q: %v", raw, err)
+			}
+			seen[string(raw)] = true
+		}
+		if batch.Complete {
+			break
+		}
+		cursor = batch.NextCursor
+	}
+	if len(seen) != 2 || !seen[keys[0]] || !seen[keys[1]] {
+		t.Fatalf("literal prefix lost keys: %v", seen)
 	}
 }
