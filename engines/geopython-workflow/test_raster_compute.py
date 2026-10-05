@@ -1,5 +1,10 @@
 import json
+import hashlib
+import multiprocessing
+import os
 from pathlib import Path
+import platform
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
@@ -78,6 +83,157 @@ def test_statistics_combines_blocks_and_all_nodata(tmp_path):
         raster = raster_load(source_plan(path))
         assert raster_statistics(raster)['mean'] is None
         assert raster_histogram(raster)['counts'] == []
+
+
+def _raster_profile_worker(source, target, scratch, connection):
+    """Measure the operator process independently of the parent's pixel oracle."""
+    import resource
+    import sys
+    import traceback
+
+    tempfile.tempdir = str(scratch)
+    stages = []
+    workspace = None
+
+    def measure(name, operation):
+        nonlocal workspace
+        started = time.perf_counter()
+        result = operation()
+        elapsed = time.perf_counter() - started
+        if workspace is None:
+            workspace = result.workspace
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        observed_bytes = sum(p.stat().st_size for p in workspace.rglob('*') if p.is_file())
+        if target.is_file():
+            observed_bytes += target.stat().st_size
+        stages.append({'operator': name, 'elapsed_seconds': elapsed,
+                       'process_peak_rss_bytes': int(usage.ru_maxrss * (1 if sys.platform == 'darwin' else 1024)),
+                       'observed_file_bytes': observed_bytes})
+        return result
+
+    try:
+        started = time.perf_counter()
+        with raster_workspace():
+            raster = measure('raster_load', lambda: raster_load(source_plan(source)))
+            facts = raster_info(raster)
+            assert facts['band_count'] == 1
+            stats = measure('raster_statistics', lambda: raster_statistics(raster))
+            histogram = measure('raster_histogram', lambda: raster_histogram(raster))
+            computed = measure('raster_band_math', lambda: raster_band_math(raster, 'b1*2+1'))
+            saved = measure('raster_save_cog', lambda: raster_save(computed, target_plan(target), profile='cog'))
+            reloaded = measure('raster_load_saved', lambda: raster_load(source_plan(target)))
+            output_stats = measure('raster_statistics_saved', lambda: raster_statistics(reloaded))
+            validation = measure('validate_cog_saved', lambda: validate_cog(reloaded))
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        connection.send({'source': facts, 'statistics': stats, 'histogram': histogram,
+                         'saved': saved, 'output_statistics': output_stats, 'validation': validation,
+                         'workspace_removed': not workspace.exists(), 'stages': stages,
+                         'elapsed_seconds': time.perf_counter() - started,
+                         'process_cpu_seconds': usage.ru_utime + usage.ru_stime,
+                         'process_peak_rss_bytes': int(usage.ru_maxrss * (1 if sys.platform == 'darwin' else 1024)),
+                         'environment': {'platform': platform.platform(), 'machine': platform.machine(),
+                                         'cpu_count': os.cpu_count(), 'python': platform.python_version(),
+                                         'gdal': gdal.VersionInfo('RELEASE_NAME'),
+                                         'gdal_cache_max_bytes': gdal.GetCacheMax()}})
+    except BaseException:
+        connection.send({'error': traceback.format_exc()})
+    finally:
+        connection.close()
+
+
+def test_multiblock_cog_roundtrip_profile(tmp_path):
+    """T1 correctness gate; an external TIFF uses the same path for local profiling."""
+    external = os.environ.get('ADDP_RASTER_PROFILE_SOURCE')
+    source = Path(external).resolve() if external is not None else tmp_path / 'profile-source.tif'
+    if external is None:
+        values = (np.arange(1025 * 513).reshape(513, 1025) % 2001 - 1000).astype(float)
+        values.flat[::97] = -32768
+        create_raster(source, values, crs='EPSG:32650', nodata=-32768)
+    assert source.is_file(), f'Raster profile source does not exist: {source}'
+
+    def digest(path):
+        with path.open('rb') as stream:
+            return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+    original_hash = digest(source)
+    target = tmp_path / 'profile-result.tif'
+    context = multiprocessing.get_context('spawn')
+    receiver, sender = context.Pipe(duplex=False)
+    # Parent-owned scratch is also reclaimed after child failure or termination.
+    with tempfile.TemporaryDirectory(prefix='profile-worker-', dir=tmp_path) as scratch:
+        process = context.Process(target=_raster_profile_worker, args=(source, target, Path(scratch), sender))
+        process.start()
+        sender.close()
+        try:
+            assert receiver.poll(300), 'Raster profile worker exceeded 300 seconds'
+            report = receiver.recv()
+            process.join(10)
+            assert process.exitcode == 0
+        finally:
+            if process.is_alive():
+                process.terminate()
+                process.join(10)
+            receiver.close()
+    assert 'error' not in report, report.get('error')
+    assert report['workspace_removed']
+    assert report['validation'] == {'valid': True, 'warnings': [], 'errors': []}
+    assert report['saved']['size_bytes'] == target.stat().st_size > 0
+
+    original = gdal.Open(str(source), gdal.GA_ReadOnly)
+    output = gdal.Open(str(target), gdal.GA_ReadOnly)
+    assert original.RasterCount == output.RasterCount == 1
+    assert (original.RasterXSize, original.RasterYSize) == (output.RasterXSize, output.RasterYSize)
+    assert original.GetGeoTransform() == output.GetGeoTransform()
+    assert original.GetSpatialRef().IsSame(output.GetSpatialRef())
+    source_band, output_band = original.GetRasterBand(1), output.GetRasterBand(1)
+    assert np.isnan(output_band.GetNoDataValue())
+    assert output_band.DataType == gdal.GDT_Float64
+    assert output_band.GetOverviewCount() > 0
+    total, count, sum_values, sum_squares = original.RasterXSize * original.RasterYSize, 0, 0.0, 0.0
+    minimum, maximum = np.inf, -np.inf
+    bins = np.zeros(256, dtype=np.int64)
+    # Different block shape and independent GDAL/NumPy reads avoid reusing the operator's oracle.
+    for y in range(0, original.RasterYSize, 127):
+        height = min(127, original.RasterYSize - y)
+        values = np.frombuffer(source_band.ReadRaster(0, y, original.RasterXSize, height,
+                              buf_type=gdal.GDT_Float64), dtype=np.float64)
+        valid = np.frombuffer(source_band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height),
+                              dtype=np.uint8) != 0
+        valid &= np.isfinite(values)
+        nodata = source_band.GetNoDataValue()
+        if nodata is not None:
+            valid &= values != nodata
+        actual = np.frombuffer(output_band.ReadRaster(0, y, original.RasterXSize, height,
+                              buf_type=gdal.GDT_Float64), dtype=np.float64)
+        np.testing.assert_array_equal(actual[valid], values[valid] * 2 + 1)
+        assert np.isnan(actual[~valid]).all()
+        output_valid = np.frombuffer(output_band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height),
+                                    dtype=np.uint8) != 0
+        np.testing.assert_array_equal(output_valid, valid)
+        selected = values[valid]
+        count += selected.size
+        sum_values += float(selected.sum())
+        sum_squares += float(np.square(selected).sum())
+        if selected.size:
+            minimum, maximum = min(minimum, selected.min()), max(maximum, selected.max())
+        bins += np.histogram(selected, bins=report['histogram']['edges'])[0]
+    assert count > 0
+    mean = sum_values / count
+    stddev = np.sqrt(max(0, sum_squares / count - mean * mean))
+    for stats, offset, scale in ((report['statistics'], 0, 1), (report['output_statistics'], 1, 2)):
+        assert (stats['valid_count'], stats['invalid_count']) == (count, total - count)
+        np.testing.assert_allclose([stats['min'], stats['max'], stats['mean'], stats['stddev']],
+                                   [minimum * scale + offset, maximum * scale + offset,
+                                    mean * scale + offset, stddev * scale], rtol=1e-8, atol=1e-8)
+    histogram = report['histogram']
+    assert histogram['counts'] == bins.tolist()
+    assert (histogram['valid_count'], histogram['invalid_count'], histogram['outside_count']) == (count, total - count, 0)
+    bounds = [minimum, maximum] if minimum < maximum else [minimum - 0.5, maximum + 0.5]
+    np.testing.assert_array_equal(histogram['edges'], np.linspace(*bounds, 257))
+    source_band = output_band = original = output = None
+    assert digest(source) == original_hash
+    print('RASTER_PROFILE ' + json.dumps({'source_sha256': original_hash,
+          'source_size_bytes': source.stat().st_size, **report}, sort_keys=True))
 
 
 @pytest.mark.parametrize('dtype,alpha,positions,counts,alpha_valid', [
