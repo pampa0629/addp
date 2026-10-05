@@ -34,6 +34,9 @@ class SystemIAMGateLockTest(unittest.TestCase):
             utility = checkout / "scripts/infra/ports.sh"
             utility.parent.mkdir(parents=True)
             shutil.copyfile(Path(__file__).parents[1] / "infra/ports.sh", utility)
+            log_utility = checkout / "scripts/utils/runtime-log-env.sh"
+            log_utility.parent.mkdir(parents=True)
+            shutil.copyfile(Path(__file__).parents[1] / "utils/runtime-log-env.sh", log_utility)
             self.scripts.append(script)
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
