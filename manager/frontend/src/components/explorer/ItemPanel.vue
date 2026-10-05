@@ -1134,6 +1134,7 @@ const showDynamicSchemaNotice = computed(() => {
 })
 
 const itemRowCount = computed(() => {
+  if (itemDataType.value === 'key_value') return null
   const directRowCount = optionalCount(itemMeta.value?.row_count)
   if (directRowCount !== null) return directRowCount
   const attributeRowCount = pickNestedCount(itemAttributesMap.value, [

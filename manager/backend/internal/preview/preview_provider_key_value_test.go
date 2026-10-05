@@ -35,12 +35,12 @@ func TestIntegrationRedisPreview(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		loc := &resourcetree.ResourceLocator{EngineID: 42, Type: resourcetree.TypeKey, Path: []string{name}}
+		loc := &resourcetree.ResourceLocator{EngineID: 42, Type: resourcetree.TypeKeyspace, Path: []string{"keyspace"}}
 		path, err := resourcetree.EngineCatalogPathFromLocator(p.EngineCatalogModel(), loc)
 		if err != nil {
 			t.Fatal(err)
 		}
-		req := &PreviewRequest{Engine: &models.Engine{ID: 42, EngineType: "redis", ConnectionInfo: c}, EnginePlugin: p, ProviderPath: path, Page: 1, PageSize: 1, ItemType: "key"}
+		req := &PreviewRequest{Engine: &models.Engine{ID: 42, EngineType: "redis", ConnectionInfo: c}, EnginePlugin: p, ProviderPath: path, Page: 1, PageSize: 1, ItemType: "keyspace", KeyValueOptions: plugin.KeyValueReadOptions{Key: name}}
 		value, err := provider.Preview(ctx, req)
 		if err != nil || value.Mode != PreviewModeKeyValue || value.KeyValue == nil || len(value.Fields) != 0 || len(value.Columns) != 0 {
 			t.Fatalf("native Manager result %s: %v", key, err)
@@ -59,11 +59,11 @@ func TestIntegrationRedisPreview(t *testing.T) {
 }
 
 func TestKeyValueRoutingRequiresScannedIdentity(t *testing.T) {
-	req := &PreviewResolverRequest{ItemType: "key", Locator: &resourcetree.ResourceLocator{EngineID: 42, Type: resourcetree.TypeKey, Path: []string{"k:"}}, Engine: &commonModels.Engine{ID: 42, EngineType: "redis"}}
+	req := &PreviewResolverRequest{ItemType: "keyspace", Locator: &resourcetree.ResourceLocator{EngineID: 42, Type: resourcetree.TypeKeyspace, Path: []string{"keyspace"}}, Engine: &commonModels.Engine{ID: 42, EngineType: "redis"}}
 	if names := providerNamesForMeta(req, nil); len(names) != 1 || names[0] != "builtin:key-value" {
 		t.Fatal(names)
 	}
-	if !isPreviewItemType("key") {
+	if !isPreviewItemType("keyspace") {
 		t.Fatal("key item rejected")
 	}
 	r := NewPreviewResolver(nil, nil, nil)
@@ -72,7 +72,7 @@ func TestKeyValueRoutingRequiresScannedIdentity(t *testing.T) {
 	}
 	itemID := uint(42)
 	req.MetaItemID = &itemID
-	req.Metadata = &commonModels.MetaNode{Attributes: map[string]interface{}{"item": map[string]interface{}{"data_type": "unknown", "layout": "single"}}}
+	req.Metadata = &commonModels.MetaNode{Attributes: map[string]interface{}{"item": map[string]interface{}{"data_type": "key_value", "layout": "single"}}}
 	req.ItemScannedDepth = "deep"
 	if schemaCoverage(req) != "unknown" {
 		t.Fatal("identity scan advertised complete field schema")

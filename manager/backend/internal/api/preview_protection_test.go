@@ -31,12 +31,17 @@ func TestPreviewCatalogErrorDoesNotExposeNativeDetails(t *testing.T) {
 }
 
 func TestPreviewProtectionRejectsNativeKeyWithoutFieldAdapter(t *testing.T) {
-	result := &preview.PreviewResult{PreviewType: "key_value", Data: &models.TablePreview{Mode: "key_value", KeyValue: &plugin.KeyValuePreview{}}}
-	if err := applyPreviewProtection(result, []dataprotection.Rule{{}}, dataprotection.SubjectReference{}); err != managerprotection.ErrRequired {
-		t.Fatalf("native protection bypass: %v", err)
-	}
-	if err := applyPreviewProtection(result, nil, dataprotection.SubjectReference{}); err != nil {
-		t.Fatal(err)
+	for _, data := range []*models.TablePreview{
+		{Mode: "key_value", KeyValue: &plugin.KeyValuePreview{}},
+		{Mode: "key_value", Keyspace: &plugin.KeyValueDatasetPreview{}},
+	} {
+		result := &preview.PreviewResult{PreviewType: "key_value", Data: data}
+		if err := applyPreviewProtection(result, []dataprotection.Rule{{}}, dataprotection.SubjectReference{}); err != managerprotection.ErrRequired {
+			t.Fatalf("native protection bypass: %v", err)
+		}
+		if err := applyPreviewProtection(result, nil, dataprotection.SubjectReference{}); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

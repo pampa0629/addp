@@ -1523,6 +1523,7 @@ curl() { case "$*" in *:1111/*) return 0;; *:2222/*) [ -f slow-ready ];; *) retu
 wait_for_marker() {
   local marker="$1" i
   for i in {1..500}; do [ -f "$marker" ] && return 0; sleep 0.01; done
+  printf 'Worker fixture marker not observed: %s\\n' "$marker" >&2
   return 1
 }
 '''+helper+'''
@@ -1545,7 +1546,8 @@ if start_module_workers failed alive 3333 failed-worker; then exit 8; fi
 [ ! -f failed-worker-started ]
 '''
 result=subprocess.run(['bash','-c',body],cwd=fixture,text=True,capture_output=True,timeout=30)
-assert result.returncode==0,(result.returncode,result.stdout,result.stderr)
+assert result.returncode==0,(result.returncode,result.stdout,result.stderr,
+ {path.name:path.read_text() for path in (fixture/'logs').glob('*.log')})
 # Guard ownership and indirect initialization paths at the production entry points.
 workers=['security/backend/cmd/worker/main.go','meta/backend/cmd/worker/main.go','quality/backend/cmd/worker/main.go','transfer/backend/cmd/worker/main.go','transfer/backend/cmd/continuous-worker/main.go']
 for name in workers:

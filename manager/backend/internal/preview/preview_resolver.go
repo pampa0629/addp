@@ -123,6 +123,7 @@ type PreviewResolverRequest struct {
 	NestedChildPath  string                        // 当前 child 是容器时，继续寻址其内部 child 的相对路径
 	GraphSample      plugin.GraphSampleFilter      // 图预览样本过滤条件
 	DataScope        dataprofile.DataScope         // Manager 剖析内部使用的数据范围；公共预览不接受该参数
+	KeyValueOptions  plugin.KeyValueReadOptions
 }
 
 // Pagination 分页参数
@@ -551,7 +552,7 @@ func isContentFileItemType(itemType string) bool {
 
 func isPreviewItemType(itemType string) bool {
 	switch itemType {
-	case "table", "view", "materialized_view", "collection", "index", "graph", "topic", "key", "object", "file":
+	case "table", "view", "materialized_view", "collection", "index", "graph", "topic", "keyspace", "object", "file":
 		return true
 	default:
 		return false
@@ -665,6 +666,7 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 
 	return &PreviewRequest{
 		Locator:         req.Locator.ToURI(),
+		KeyValueOptions: req.KeyValueOptions,
 		Engine:          managerEngine,
 		EnginePlugin:    plug,
 		Schema:          schema,
@@ -739,7 +741,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 	layout := itemLayoutFromMetaAttributes(attrs)
 
 	switch itemType {
-	case "key":
+	case "keyspace":
 		return []string{"builtin:key-value"}
 	case "collection", "index":
 		return []string{"builtin:document-record-set"}
@@ -972,7 +974,8 @@ func schemaCoverage(req *PreviewResolverRequest) string {
 	if req == nil || req.MetaItemID == nil {
 		return "unknown"
 	}
-	if itemDataTypeFromMetaAttributes(req.MetadataAttributes()) == "unknown" {
+	dataType := itemDataTypeFromMetaAttributes(req.MetadataAttributes())
+	if dataType == "unknown" || dataType == "key_value" {
 		return "unknown"
 	}
 	if registered, err := plugin.Get(req.Engine.EngineType); err == nil && registered.Capabilities().EngineFamily == "dynamic_schema" {

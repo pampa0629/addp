@@ -350,8 +350,8 @@
     },
     {
       "name": "transfer.draft.generate",
-      "version": "2.0.0",
-      "description": "发现并确认单一源资源，在 Transfer 已确认目标和任务边界内生成不带副作用的任务草稿。",
+      "version": "3.0.0",
+      "description": "不访问资源 Owner。无 resources 时仅返回源资源意图；调用方完成 Owner 发现校验并提供 resources/task 后，生成无副作用草稿，创建执行仍由 Transfer 校验。",
       "owner": "copilot",
       "risk": "propose",
       "approval": {"mode": "none"},
@@ -367,7 +367,7 @@
           "query": {"type": "string", "minLength": 1, "maxLength": 4000},
           "resources": {
             "type": "array", "maxItems": 1,
-            "description": "一个 owner 已确认的 ResourceFact；不得混入搜索候选、行粒度或投影配置。",
+            "description": "调用方经 owner 确认后提供的 ResourceFact；Copilot 不代读、不证明授权，不得混入搜索候选、行粒度或投影配置。",
             "items": {
               "type": "object", "required": ["role", "locator"],
               "properties": {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Authenticated Redis live catalog, unknown DataItems and native Console preview."""
+"""Authenticated Redis keyspace dataset, cursor browsing and native Console preview."""
 from __future__ import annotations
 import base64
 import importlib.util
@@ -97,21 +97,18 @@ def validate_preview(payload, sample):
 
 def locator(engine_id, item):
     name = urllib.parse.quote(item['full_name'], safe=':')
-    query = urllib.parse.urlencode({'type': 'key', 'item_id': item['id']})
+    query = urllib.parse.urlencode({'type': 'keyspace', 'item_id': item['id']})
     return f'addp://engine/{engine_id}/path/{name}?{query}'
 
 
 def validate_items(items, samples):
-    require(isinstance(items, list) and len(items) == len(samples), 'Meta must retain exactly nine Redis key DataItems')
-    by_name = {item.get('full_name'): item for item in items if isinstance(item, dict)}
-    require(set(by_name) == {sample['key'] for sample in samples}, 'Meta canonical key identities differ from source bytes')
-    for item in by_name.values():
-        SUPPORT.positive_int(item.get('id'), 'key DataItem ID')
-        SUPPORT.positive_int(item.get('node_id'), 'key node ID')
-        require(item.get('item_type') == 'key' and bool(item.get('fingerprint')), 'Meta key identity or fingerprint is missing')
-        require(item.get('attributes') == {'item': {'layout': 'single', 'data_type': 'unknown'}, 'schema_version': 1},
-                'Meta must persist unknown identity without native values, type or TTL')
-    return by_name
+    require(isinstance(items, list) and len(items) == 1, 'Meta must retain exactly one Redis keyspace DataItem')
+    item = items[0]
+    SUPPORT.positive_int(item.get('id'), 'keyspace DataItem ID')
+    SUPPORT.positive_int(item.get('node_id'), 'keyspace node ID')
+    require(item.get('full_name') == 'keyspace' and item.get('item_type') == 'keyspace' and bool(item.get('fingerprint')), 'Meta keyspace identity is missing')
+    require(item.get('attributes') == {'item': {'layout': 'single', 'data_type': 'key_value'}, 'schema_version': 1}, 'Meta must not persist key contents, counts or TTL')
+    return {'keyspace': item}
 
 
 def run(client, tenant_id, engine_id, timeout):
@@ -136,20 +133,31 @@ def run(client, tenant_id, engine_id, timeout):
     require(isinstance(root, list) and len(root) == 1 and root[0].get('kind') == 'server', 'Redis must expose one structural server root')
     leaves = SUPPORT._object(client.request('POST', f'/api/v1/system/engines/{engine_id}/catalog/children', (200,),
         {'path': root[0]['path']}).payload, 'key catalog').get('nodes')
-    require(isinstance(leaves, list) and len(leaves) == 9 and
-            {leaf.get('name') for leaf in leaves} == {s['key'] for s in samples}, 'Live catalog must expose nine canonical keys')
-    by_key = {leaf['name']: leaf for leaf in leaves}
-    for sample in samples:
-        leaf = by_key[sample['key']]
-        require(leaf.get('kind') == 'key' and leaf.get('role') == 'leaf', 'Redis catalog key must be a leaf')
-        facts = client.request('POST', f'/api/v1/system/engines/{engine_id}/catalog/facts', (200,), {'path': leaf['path']}).payload
-        validate_facts(SUPPORT._object(facts, 'live facts').get('key_value'), sample)
+    require(isinstance(leaves, list) and len(leaves) == 1 and leaves[0].get('name') == 'keyspace' and leaves[0].get('kind') == 'keyspace' and leaves[0].get('role') == 'leaf', 'Live catalog must expose one keyspace dataset')
+    facts = client.request('POST', f'/api/v1/system/engines/{engine_id}/catalog/facts', (200,), {'path': leaves[0]['path']}).payload
+    require(SUPPORT._object(facts, 'live facts').get('keyspace') == {'database': 0}, 'Keyspace database fact is missing')
     scan = SUPPORT.wait_for_scan(client, engine_id, time.monotonic() + timeout)
     items = validate_items(client.request('GET', f'/api/v1/meta/engines/{engine_id}/items', (200,)).payload, samples)
+    target = locator(engine_id, items['keyspace'])
+    seen = {}
+    cursor = ''
+    for _ in range(1000):
+        payload = client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode({'locator': target, 'key_cursor': cursor}), (200,)).payload
+        dataset = SUPPORT._object(payload.get('data', {}).get('keyspace'), 'keyspace contents')
+        require(dataset.get('database') == 0 and type(dataset.get('complete')) is bool and isinstance(dataset.get('next_cursor'), str), 'Invalid keyspace cursor response')
+        for key in SUPPORT._array(dataset.get('keys'), 'keyspace keys'):
+            seen[key['key']] = key
+        if dataset['complete']:
+            break
+        cursor = dataset['next_cursor']
+    else:
+        raise SuiteError('Keyspace cursor did not complete within budget')
+    require(set(seen) == {sample['key'] for sample in samples}, 'Keyspace browse lost sample keys')
     for sample in samples:
-        item = items[sample['key']]
+        validate_facts(seen[sample['key']]['facts'], sample)
+        item = items['keyspace']
         target = locator(engine_id, item)
-        validate_preview(client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode({'locator': target}), (200,)).payload, sample)
+        validate_preview(client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode({'locator': target, 'key_name': sample['key']}), (200,)).payload, sample)
         sample.update(item_id=item['id'], locator=target)
     # Native previews are bounded samples, not a repeatable table pagination contract.
     client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode({'locator': samples[0]['locator'], 'page': 2}), (400,))

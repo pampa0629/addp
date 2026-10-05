@@ -23,6 +23,8 @@ class PlatformSkillToolTests(unittest.TestCase):
         self.assertIn("必须包含 `role + locator`", body)
         self.assertIn("task.config.source.query", body)
         self.assertIn("task.config.transforms", body)
+        self.assertIn("不再代替 Agent 访问资源", body)
+        self.assertIn("不申请二次委托", body)
         tools = create_agent_tools("token", "run-transfer")
         create = next(tool for tool in tools if stable_tool_name(tool) == "transfer.task.create")
         schema = create.tool_call_schema
@@ -40,7 +42,8 @@ class PlatformSkillToolTests(unittest.TestCase):
         draft = next(tool for tool in tools if stable_tool_name(tool) == "transfer.draft.generate")
         published = convert_to_openai_tool(draft)["function"]["parameters"]
         definition = get_tool("transfer.draft.generate")
-        self.assertEqual(definition.version, "2.0.0")
+        self.assertEqual(definition.version, "3.0.0")
+        self.assertNotIn("source_engine_id", published["properties"])
         for key in ("resources", "task"):
             actual = {name: value for name, value in published["properties"][key].items() if name != "title"}
             self.assertEqual(actual, definition.input_schema["properties"][key])

@@ -2,7 +2,7 @@
   "engine": {
     "term": {
       "index": "索引",
-      "key": "键"
+      "keyspace": "键值数据集"
     }
   },
   "common": {
@@ -583,6 +583,16 @@
     "field": "字段",
     "value": "值",
     "score": "分数",
-    "fields": "有序字段对"
+    "fields": "有序字段对",
+    "key": "键名",
+    "database": "逻辑数据库",
+    "nextBatch": "下一批",
+    "refresh": "刷新",
+    "open": "查看",
+    "failed": "读取失败",
+    "empty": "当前批次没有可见键",
+    "summary": "内容摘要",
+    "bytes": "{count} 字节",
+    "elements": "{count} 个元素"
   }
 }

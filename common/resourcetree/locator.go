@@ -15,7 +15,7 @@ const (
 	TypeCollection ResourceType = "collection"
 	TypeTopic      ResourceType = "topic"
 	TypeIndex      ResourceType = "index"
-	TypeKey        ResourceType = "key"
+	TypeKeyspace   ResourceType = "keyspace"
 	TypeGraph      ResourceType = "graph"  // 图数据库整体
 	TypeObject     ResourceType = "object" // 对象存储文件
 	TypeFile       ResourceType = "file"   // 文件系统文件（NFS/本地FS）
@@ -93,7 +93,7 @@ func ParseFullNamePath(engineType, resourceType, fullName string) []string {
 	if fullName == "" {
 		return []string{}
 	}
-	if strings.EqualFold(strings.TrimSpace(resourceType), string(TypeTopic)) || strings.EqualFold(strings.TrimSpace(resourceType), string(TypeIndex)) || strings.EqualFold(strings.TrimSpace(resourceType), string(TypeKey)) {
+	if strings.EqualFold(strings.TrimSpace(resourceType), string(TypeTopic)) || strings.EqualFold(strings.TrimSpace(resourceType), string(TypeIndex)) || strings.EqualFold(strings.TrimSpace(resourceType), string(TypeKeyspace)) {
 		return []string{fullName}
 	}
 	if UsesSlashFullName(engineType, resourceType) {

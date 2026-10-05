@@ -4,7 +4,7 @@
 
 ## 模块概述
 
-**Copilot 模块**是 ADDP 平台的领域 AI 辅助模块，嵌入具体业务页面，统一完成输入资源解析与确认，并提供查询、工作流、Notebook、Transfer、导航和图谱领域生成。
+**Copilot 模块**是 ADDP 平台的领域 AI 辅助模块，嵌入具体业务页面，提供输入意图提取和查询、工作流、Notebook、Transfer、导航与图谱领域生成。Transfer 的资源发现与确认由调用方完成；其草稿生成不承担资源访问授权。
 
 技术栈：
 - **后端**：Python 3.11+ + FastAPI + SQLAlchemy + PostgreSQL
@@ -154,7 +154,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 - `/query/generate` 使用 `query.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.sql.execute`；请求体禁止 `tenant_id/user_id`。
 - `/notebook/generate` 使用 `notebook.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.notebook.execute`；只接受 Develop 已限定的 Session 候选或已验证资源事实，不自行执行租户级资源搜索。
 - `/workflow/generate` 使用 `workflow.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.workflow.execute`。
-- `/transfer/generate` 使用 `transfer.draft.generate` Tool Scope，只要求 `copilot.transfer.execute`；源资源和目标父节点由 owner 重新验证，运行边界和目标策略沿用 Transfer 向导草稿。
+- `/transfer/generate` 使用 `transfer.draft.generate` Tool Scope，只要求 `copilot.transfer.execute`；源和目标由 Agent/Transfer 向导调用正式 owner 能力校验，Copilot 只生成草稿，不再调用资源 Tool 或申请二次委托。无资源时返回源资源意图，调用方发现候选；完整配置只使用 `transfer_generation` 场景。传入的 ResourceFact 是受限生成上下文，不是权限或真实性凭据，Transfer 创建及执行仍独立校验。
 - `/kg-build/extract` 只接受 Graph 的 Tenant Service Access Token，请求和令牌 Tenant 必须一致，不消费 User Permission。
 - `/standard-documents/extract` 只接受 Standard 的 Tenant Service Access Token；只返回候选内容与绝对行号，不保存、创建或发布正式标准。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；原文只能确定 `numeric`、`date_or_datetime` 等上位类型时必须保持 `null`，不得猜测。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`；枚举数据元必须通过 `code_set_code` 引用同一响应中的码值集候选，非枚举及其他类型候选必须为 `null`。候选不得生成数据库修订 ID，正式数据元修订仍由 Standard 冻结具体码值集修订；`identifier` 等业务语义写入名称或定义，不得发明数据类型或值域类型。
 - `/navigate/guide` 只要求已认证 User，不读取客户端提交的身份，也不借用其他业务 Permission。

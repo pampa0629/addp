@@ -1,7 +1,7 @@
 """统一输入资源解析与确认编排。
 
 该服务只负责把自然语言输入收敛为 owner 已验证的 ResourceFact。领域生成器
-（查询、工作流、Notebook、Transfer）不再各自复制意图提取、候选重试或确认规则。
+（查询、工作流、Notebook）不再各自复制意图提取、候选重试或确认规则。
 """
 
 from __future__ import annotations
@@ -53,16 +53,6 @@ class ResourceResolutionPolicy:
     @classmethod
     def notebook(cls) -> "ResourceResolutionPolicy":
         return cls(name="notebook", max_inputs=8, session_catalog=True)
-
-    @classmethod
-    def transfer(cls, source_engine_id: int | None = None) -> "ResourceResolutionPolicy":
-        return cls(
-            name="transfer",
-            intent_scope=ResourceIntentScope.TRANSFER_SOURCE,
-            engine_id=source_engine_id,
-            max_inputs=1,
-        )
-
 
 @dataclass(frozen=True)
 class ResourceResolutionResult:
@@ -135,8 +125,6 @@ class ResourceResolutionService:
         intents = await self.extract(query, policy)
         if not intents:
             return ResourceResolutionResult(intents=[], candidates=[], missing_roles=[])
-        if policy.name == "transfer" and len(intents) != 1:
-            return ResourceResolutionResult(intents=intents, candidates=[], missing_roles=[])
 
         result = await self._discover_once(intents, policy, query=query)
         if result.missing_roles:
@@ -175,8 +163,6 @@ class ResourceResolutionService:
             raise ValueError("当前资源确认策略没有 owner 校验器")
         if not resources or len(resources) > policy.max_inputs:
             raise ValueError(f"{policy.name} 输入资源数量必须为 1 到 {policy.max_inputs}")
-        if policy.name == "transfer" and len(resources) != 1:
-            raise ValueError("Transfer 只允许一个源资源")
         return await self.discovery.verify(
             resources,
             engine_id=None if policy.allowed_source_engine_types else policy.engine_id,
@@ -203,8 +189,6 @@ class ResourceResolutionService:
 
     @staticmethod
     def _validate_intent_count(intents: list[ResourceIntent], policy: ResourceResolutionPolicy) -> None:
-        if policy.name == "transfer":
-            return
         if len(intents) > policy.max_inputs:
             raise ValueError(f"{policy.name} 输入数据项超过上限")
 

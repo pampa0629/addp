@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
@@ -17,9 +20,16 @@ func do(ctx context.Context, conn *rdb.Conn, args ...interface{}) *rdb.Cmd {
 }
 
 func (p *RedisPlugin) ReadKeyValue(ctx context.Context, c plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.KeyValueReadOptions) (*plugin.KeyValuePreview, error) {
-	key, err := keyName(path)
+	if !keyspacePath(path) {
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("exact keyspace path required"))
+	}
+	if opts.Cursor != "" {
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("key and cursor are mutually exclusive"))
+	}
+	rawKey, err := plugin.DecodeKeyName(opts.Key)
+	key := string(rawKey)
 	if err != nil {
-		return nil, err
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, err)
 	}
 	limit := opts.MaxEntries
 	if limit <= 0 {
@@ -192,4 +202,85 @@ func readStreamSample(response interface{}, result *plugin.KeyValuePreview) erro
 		result.Entries = append(result.Entries, entry)
 	}
 	return nil
+}
+
+// ListKeyValues reads one native SCAN batch. COUNT is a hint: never drop extra keys.
+func (p *RedisPlugin) ListKeyValues(ctx context.Context, c plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.KeyValueReadOptions) (*plugin.KeyValueDatasetPreview, error) {
+	if !keyspacePath(path) || opts.Key != "" {
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("keyspace cursor request required"))
+	}
+	var cursor uint64
+	var err error
+	if opts.Cursor != "" {
+		cursor, err = strconv.ParseUint(opts.Cursor, 10, 64)
+		if err != nil || strconv.FormatUint(cursor, 10) != opts.Cursor {
+			return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid keyspace cursor"))
+		}
+	}
+	limit := opts.MaxEntries
+	if limit <= 0 {
+		limit = 20
+	}
+	limit = min(limit, 100)
+	maxBytes := opts.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = maxReplyBytes
+	}
+	maxBytes = min(maxBytes, maxReplyBytes)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	client, conn, err := p.open(ctx, c)
+	if err != nil {
+		return nil, operationError(err)
+	}
+	defer client.Close()
+	defer conn.Close()
+	keys, next, err := conn.Scan(ctx, cursor, "", int64(limit)).Result()
+	if err != nil {
+		return nil, operationError(err)
+	}
+	if len(keys) > 1000 {
+		return nil, operationError(fmt.Errorf("Redis key batch exceeds budget"))
+	}
+	database, err := connectionInteger(c, "database", 0, 0, 2147483647)
+	if err != nil {
+		return nil, err
+	}
+	result := &plugin.KeyValueDatasetPreview{Database: database, Keys: []plugin.KeyValueSummary{}, NextCursor: strconv.FormatUint(next, 10), Complete: next == 0}
+	seen := map[string]bool{}
+	for _, raw := range keys {
+		if seen[raw] {
+			continue
+		}
+		seen[raw] = true
+		facts, err := describe(ctx, conn, raw)
+		if err != nil {
+			if plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+				continue
+			}
+			// SCAN is not ACL key-pattern filtered; filter denied keys before returning names.
+			if strings.Contains(err.Error(), "Redis operation denied by ACL") {
+				// Distinguish denied key from denied command by probing TYPE's exact reply.
+				_, typeErr := conn.Type(ctx, raw).Result()
+				if typeErr != nil && typeErr.Error() == "NOPERM No permissions to access a key" {
+					continue
+				}
+			}
+			return nil, err
+		}
+		name, err := plugin.EncodeKeyName([]byte(raw))
+		if err != nil {
+			return nil, operationError(err)
+		}
+		result.Keys = append(result.Keys, plugin.KeyValueSummary{Key: name, Name: plugin.NewByteValue(raw), Facts: *facts})
+	}
+	sort.Slice(result.Keys, func(i, j int) bool { return result.Keys[i].Key < result.Keys[j].Key })
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) > maxBytes {
+		return nil, operationError(fmt.Errorf("Redis key batch bytes exceed budget"))
+	}
+	return result, nil
 }

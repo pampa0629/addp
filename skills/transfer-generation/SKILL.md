@@ -14,7 +14,7 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 3. 通过 `resource.ancestors.get → resource.facts.get` 确认源身份和最新结构，不用样本猜 Schema。缺扫描事实则要求补扫描，不能读取原始行兜底。
 4. 用 `resource.children.list(engine_id=<目标>)` 从 owner 返回的真实根节点开始逐层浏览；后续父 locator 只取自返回结果。让用户确认目标 `parent_locator + name`，目标尚不存在时不能把它当成已有输入搜索。不可假定 PostgreSQL schema 是 public。
 5. 确认 bounded/snapshot、显式 apply_mode（replace/append/upsert）、必要 keys、目标字段及类型。MongoDB 嵌套字段必须先确认行粒度；只读 MQL `$project`/单次 `$unwind` 明确整形，field_mapping 只引用实际查询输出。不能递归摊平、多数组猜粒度或凭业务名猜字段。复杂计算交给 Develop，不伪造本次 Tool 能力。
-6. 如需名称、描述或直接字段映射辅助，可调用 `transfer.draft.generate`；它仍只产生草稿，不负责创建，且不能覆盖用户确定的 endpoint/边界/策略。已有完整确认配置时不必调用 Copilot。
+6. 如需名称、描述或直接字段映射辅助，可调用 `transfer.draft.generate`；调用前由本步骤的 Owner Tool 确认资源和字段并提交完整上下文。Copilot 不再代替 Agent 访问资源，不申请二次委托，只产生草稿；结果不是授权或资源真实性证明，不负责创建，且不能覆盖用户确定的 endpoint/边界/策略。没有资源时 Tool 只返回意图检索词，由 Agent 继续调用 Owner Tool，不把检索词当作候选身份。已有完整确认配置时不必调用 Copilot。
 7. 展示任务名、源、目标、行粒度、字段映射、运行边界、装载和目标策略，用 clarification 请用户明确确认创建。未确认不调用写 Tool；只要用户要求草稿就停在草稿。
 8. 确认后调用 `transfer.task.create`，只提交 Manifest 接受的 name/description/config/batch_size。成功必须返回真实 ID、idle/stopped、无计划；报告“任务已创建，尚未运行”，给出 Transfer 页面入口。不宣称数据已同步，不调用其他执行 Tool。创建响应不确定或失败时不自动重发，要求用户到 Transfer 核对。
 

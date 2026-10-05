@@ -3833,8 +3833,8 @@ definitions:
         items:
           $ref: '#/definitions/plugin.IndexFacts'
         type: array
-      key_value:
-        $ref: '#/definitions/plugin.KeyValueFacts'
+      keyspace:
+        $ref: '#/definitions/plugin.KeyspaceFacts'
       kind:
         type: string
       partitioning:
@@ -3984,13 +3984,9 @@ definitions:
       supported:
         type: boolean
     type: object
-  plugin.KeyValueFacts:
+  plugin.KeyspaceFacts:
     properties:
-      length:
-        type: integer
-      native_type:
-        type: string
-      ttl_millis:
+      database:
         type: integer
     type: object
   plugin.NativeTableSpatialEncodingCapability:

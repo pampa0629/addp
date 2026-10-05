@@ -17217,8 +17217,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/plugin.IndexFacts"
                     }
                 },
-                "key_value": {
-                    "$ref": "#/definitions/plugin.KeyValueFacts"
+                "keyspace": {
+                    "$ref": "#/definitions/plugin.KeyspaceFacts"
                 },
                 "kind": {
                     "type": "string"
@@ -17449,16 +17449,10 @@ const docTemplate = `{
                 }
             }
         },
-        "plugin.KeyValueFacts": {
+        "plugin.KeyspaceFacts": {
             "type": "object",
             "properties": {
-                "length": {
-                    "type": "integer"
-                },
-                "native_type": {
-                    "type": "string"
-                },
-                "ttl_millis": {
+                "database": {
                     "type": "integer"
                 }
             }

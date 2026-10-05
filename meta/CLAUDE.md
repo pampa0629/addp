@@ -197,7 +197,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 
 - 扫描必须执行租户隔离校验，不能绕过 System 引擎归属与 execution/request 的 Tenant Context。
 - 数据库、对象存储、文件系统和 NoSQL 扫描逻辑按 `scanadapter` / `scanruntime` / `scanprocessor` 分层扩展，`service` 只做应用门面和依赖装配，避免在 Handler 或 service 中堆叠扫描细节。
-- Redis 的 `server -> key` 复用 `DirectLeafRuntime`，仅登记规范 key 身份与 `layout=single + data_type=unknown`；原生类型、长度和 TTL 不写入 attributes。插件完整完成有预算的 SCAN 后才返回目录，范围扫描、权限探测或 Facts 失败不得清理既有未见 item，不能返回半份目录冒充扫描完成。
+- Redis 的 `server -> keyspace` 复用 `DirectLeafRuntime`，连接指定数据库只登记一个键值数据集身份与 `layout=single + data_type=key_value`，空数据库也保留该身份。Catalog 不遍历内容键；完整重扫成功后清理旧逐 key item，Catalog 或 Facts 失败不得清理既有未见 item。原生类型、长度和 TTL 通过内容 Provider 实时读取，不写入 attributes。
 - `ScanTaskService` 的类型和构造保留在 `scan_task_service.go`；生命周期、execution、任务 CRUD、调度同步分别放在 `scan_task_lifecycle.go`、`scan_task_execution.go`、`scan_task_crud.go`、`scan_task_schedule.go`。
 - `EngineCatalogScanDispatcher` 的类型和总分发保留在 `engine_catalog_scan_dispatcher.go`；tabular、branch-leaf、通用锁和 root 收尾分别放在 `engine_catalog_scan_dispatcher_tabular.go`、`engine_catalog_scan_dispatcher_branch.go`、`engine_catalog_scan_dispatcher_helpers.go`。只保留这一条分发路径。
 - `scanprocessor.Processor` 主流程保留在 `processor.go`；输入构造、文档抽取、内容 hash 分别放在 `processor_inputs.go`、`processor_document.go`、`content_hash.go`。

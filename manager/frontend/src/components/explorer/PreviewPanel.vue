@@ -459,6 +459,7 @@
         :is="previewComponent"
         :key="refKey"
         :data="previewComponentData"
+        :load-key-value="loadKeyValue"
         v-bind="previewComponentProps"
         :view-state="activeBasicPreviewState"
         :table-state="activeBasicTableState"
@@ -553,6 +554,11 @@ const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 const executeConfirmedQuickViewAction = (locator, action) => executeWithCurrentResultConfirmation(payload => (
   quickViewAPI.executeQuickViewAction(locator, action, toQuickViewExistingResultPayload(payload))
 ))
+
+const loadKeyValue = async selection => {
+ const response = await client.get('/manager/preview', { params: { locator: props.selectedNode?.locator, page: 1, page_size: 20, ...selection } })
+ return response.data
+}
 
 const props = defineProps({
   selectedNode: {

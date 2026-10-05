@@ -48,7 +48,7 @@ func (p *RedisPlugin) Capabilities() plugin.EngineCapabilities {
 
 func (*RedisPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	return plugin.EngineCatalogModelSpec{PathVersion: plugin.EngineCatalogPathVersion, RootTerm: plugin.EngineCatalogTermServer,
-		Levels: []plugin.EngineCatalogLevelSpec{{Term: plugin.EngineCatalogTermKey, Kinds: []string{plugin.EngineCatalogTermKey}, Role: plugin.EngineCatalogRoleLeaf, I18nKey: "engine.term.key"}}}
+		Levels: []plugin.EngineCatalogLevelSpec{{Term: plugin.EngineCatalogTermKeyspace, Kinds: []string{plugin.EngineCatalogTermKeyspace}, Role: plugin.EngineCatalogRoleLeaf, I18nKey: "engine.term.keyspace"}}}
 }
 
 func (p *RedisPlugin) StoreSemantics() plugin.StoreSemantics {

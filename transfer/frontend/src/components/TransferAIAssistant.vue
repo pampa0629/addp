@@ -235,17 +235,18 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Close, MagicStick } from '@element-plus/icons-vue'
-import { defaultResourceCandidatesByRole, engineSelectionState, isEngineSelectable, normalizeFieldType, ResourceTreePicker } from '@addp/common-frontend'
+import { defaultResourceCandidatesByRole, engineSelectionState, getResourceTreeAncestors, isEngineSelectable, normalizeFieldType, ResourceTreePicker } from '@addp/common-frontend'
 import { transferCopilotAPI } from '@/api/copilot'
 import { taskAPI, fieldDefinitionRecommendationAPI } from '@/api/tasks'
 import { engineCatalogAPI } from '@/api/engineCatalog'
 import { capabilitiesAPI } from '@/api/capabilities'
 import { getItemFieldsByID } from '@/api/meta'
 import { getManagerPreview } from '@/api/managerPreview'
+import { managerResourceAPI } from '@/api/manager'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { useTaskWizardState } from '../views/TaskWizard/useTaskWizardState.js'
 import { hasNativeTableWriteCapability, hasStorageCapability, isNativeTableEngine } from '@/utils/transferDisplay'
-import { groupResourceCandidates, inferSourceEngineFromPrompt, inferSourceEnginesFromPrompt, inferTargetEngineFromPrompt, inferTransferSyncMode, resolveAuthoritativeSourceFields, resourceCandidateKey as candidateKey, resourceFact } from '../utils/transferCopilot.mjs'
+import { discoverTransferSources, verifyTransferSource, groupResourceCandidates, inferSourceEnginesFromPrompt, inferTargetEngineFromPrompt, inferTransferSyncMode, resolveAuthoritativeSourceFields, resourceCandidateKey as candidateKey, resourceFact } from '../utils/transferCopilot.mjs'
 import { decimalMappingIssues, decimalTableWriteLimits } from '../views/TaskWizard/decimalMapping.mjs'
 import { CONTINUOUS_FIELD_TYPES, databaseCDCFieldTypes, isKafkaTopicSource } from '../views/TaskWizard/continuousTask.mjs'
 import { inferTopicFieldRecommendations } from '../views/TaskWizard/topicFieldRecommendations.mjs'
@@ -253,6 +254,10 @@ import { inferTopicFieldRecommendations } from '../views/TaskWizard/topicFieldRe
 const emit = defineEmits(['task-created'])
 const { t } = useI18n()
 const wizardState = useTaskWizardState()
+const resourceOwners = {
+  ...managerResourceAPI,
+  ancestors: (engineID, locator) => getResourceTreeAncestors('/api/v1/meta', engineID, locator)
+}
 const visible = ref(false)
 const busy = ref(false)
 const prompt = ref('')
@@ -365,14 +370,14 @@ async function discoverSource() {
   busy.value = true; message.value = ''
   try {
     const [list] = await Promise.all([loadEngines(), loadTransferCapabilities()])
-    const sourceEngine = inferSourceEngineFromPrompt(prompt.value, list)
-    const result = await transferCopilotAPI.generate({ query: prompt.value.trim(), ...(sourceEngine ? { source_engine_id: Number(sourceEngine.id) } : {}) })
-    if (result?.status !== 'need_clarification' || !Array.isArray(result.data_source_candidates) || !result.data_source_candidates.length) throw new Error(result?.message || t('transfer.taskAssistant.sourceNotFound'))
+    const result = await transferCopilotAPI.generate({ query: prompt.value.trim() })
+    if (result?.status !== 'intents_ready') throw new Error(result?.message || t('transfer.taskAssistant.sourceNotFound'))
     const sourceEngines = inferSourceEnginesFromPrompt(prompt.value, list)
     const sourceEngineIDs = new Set(sourceEngines.map(engine => Number(engine.id)))
+    const discovered = await discoverTransferSources(result.intents, resourceOwners, [...sourceEngineIDs])
     candidates.value = sourceEngineIDs.size
-      ? result.data_source_candidates.filter(candidate => sourceEngineIDs.has(Number(candidate.engine_id)))
-      : result.data_source_candidates
+      ? discovered.filter(candidate => sourceEngineIDs.has(Number(candidate.engine_id)))
+      : discovered
     if (!candidates.value.length) throw new Error(t('transfer.taskAssistant.sourceNotFound'))
     selectedByRole.value = defaultResourceCandidatesByRole(candidates.value)
     message.value = result.message || t('transfer.taskAssistant.sourceConfirmDescription')
@@ -384,7 +389,8 @@ async function confirmSource() {
   if (!selectedSource.value) return
   busy.value = true; message.value = ''
   try {
-    const source = selectedSource.value
+    const source = await verifyTransferSource(selectedSource.value, resourceOwners)
+    candidates.value = candidates.value.map(candidate => candidateKey(candidate) === candidateKey(source) ? source : candidate)
     const engine = engines.value.find(item => Number(item.id) === Number(source.engine_id))
     wizardState.applyAssistantSource(source, engine)
     const itemID = parseTransferLocator(source.locator).itemID
@@ -543,7 +549,7 @@ async function confirmFields() {
 async function createTask() {
   busy.value = true; message.value = ''
   try {
-    const generated = await transferCopilotAPI.generate({ query: prompt.value.trim(), source_engine_id: Number(selectedSource.value.engine_id), resources: [resourceFact(selectedSource.value)], task: wizardState.taskConfig.value })
+    const generated = await transferCopilotAPI.generate({ query: prompt.value.trim(), resources: [resourceFact(selectedSource.value)], task: wizardState.taskConfig.value })
     if (generated?.status !== 'success' || !generated.task) throw new Error(generated?.message || t('transfer.taskAssistant.invalidDraft'))
     const task = generated.task
     const created = await taskAPI.create(task)
@@ -559,6 +565,11 @@ function advance() { if (stage.value === 'request') return discoverSource(); if 
 function previousStage() { const previous = { source: 'request', target: 'source', fields: 'target', review: 'fields' }[stage.value]; if (previous) stage.value = previous }
 function showError(error) {
   const detail = error.response?.data?.detail || error.response?.data?.error || error.message
+  if (['transfer_source_owner_response_invalid', 'transfer_source_intent_invalid', 'transfer_source_context_missing',
+    'transfer_source_engine_mismatch', 'transfer_source_datatype_mismatch'].includes(detail)) {
+    ElMessage.error(t('transfer.taskAssistant.invalidDraft'))
+    return
+  }
   if (detail === 'transfer_inference_scenario_not_configured') {
     ElMessage.error(t('transfer.taskAssistant.inferenceNotConfigured'))
     return

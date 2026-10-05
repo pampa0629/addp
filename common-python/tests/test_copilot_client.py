@@ -266,14 +266,13 @@ class CopilotClientTests(unittest.IsolatedAsyncioTestCase):
             await client.close()
         self.assertEqual(result, {"status": "need_clarification"})
 
-    async def test_generate_transfer_scopes_initial_discovery_to_source_engine(self):
+    async def test_generate_transfer_extracts_intent_without_owner_scope(self):
         async def handler(request):
             self.assertEqual(json.loads(request.content), {
                 "query": "从 pg 到 mysql，同步 farmland",
                 "resources": [],
-                "source_engine_id": 8,
             })
-            return httpx.Response(200, json={"status": "need_clarification"})
+            return httpx.Response(200, json={"status": "intents_ready", "intents": [{"role": "source", "search_queries": ["farmland"]}]})
 
         client = CopilotClient("http://copilot", user_token="user-token")
         await client._client.aclose()
@@ -285,11 +284,11 @@ class CopilotClientTests(unittest.IsolatedAsyncioTestCase):
         try:
             result = await client.generate_transfer(
                 "从 pg 到 mysql，同步 farmland",
-                source_engine_id=8,
             )
         finally:
             await client.close()
-        self.assertEqual(result, {"status": "need_clarification"})
+        self.assertEqual(result["status"], "intents_ready")
+        self.assertEqual(result["intents"], [{"role": "source", "search_queries": ["farmland"]}])
 
 
 if __name__ == "__main__":

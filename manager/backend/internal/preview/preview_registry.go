@@ -52,6 +52,7 @@ type PreviewRequest struct {
 	// ScopeTableReaderProvider is bound by PreviewResolver when a whole-scope
 	// format requires native dependencies from a workflow runtime.
 	ScopeTableReaderProvider format.ScopeTableReaderProvider
+	KeyValueOptions          plugin.KeyValueReadOptions
 }
 
 // Mode 根据请求推断预览模式。
@@ -63,7 +64,7 @@ func (r *PreviewRequest) Mode() string {
 	if r.Table == "" {
 		return PreviewModeNode
 	}
-	if r.ItemType == "key" {
+	if r.ItemType == "keyspace" {
 		return PreviewModeKeyValue
 	}
 

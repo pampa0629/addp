@@ -19,7 +19,7 @@ export const ResourceType = {
   TABLE: 'table',
   COLLECTION: 'collection',
   INDEX: 'index',
-  KEY: 'key',
+  KEYSPACE: 'keyspace',
   GRAPH: 'graph',
   OBJECT: 'object',
   FILE: 'file',

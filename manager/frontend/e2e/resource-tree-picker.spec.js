@@ -43,12 +43,14 @@ for (const native of [
   { facts: { native_type: 'zset', length: 1, ttl_millis: -1 }, entries: [{ value: { encoding: 'utf8', value: 'member' }, score: '1.2345678901234567' }], truncated: false }
 ]) {
   test(`previews native key ${native.facts.native_type} ${native.value?.encoding || 'entries'} without table semantics`, async ({ page }) => {
-    const locator = 'addp://engine/12/path/k:c2FtcGxl?type=key&item_id=1204'
-    const backend = await installMockBackend(page, { recordSet: { type: 'key', locator, rows: [] }, keyValue: native })
+    const locator = 'addp://engine/12/path/keyspace?type=keyspace&item_id=1204'
+    const backend = await installMockBackend(page, { recordSet: { type: 'keyspace', locator, rows: [] }, keyValue: native })
     await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
     await expect.poll(() => backend.previewLocators).toEqual([locator])
     const preview = page.getByTestId('key-value-preview')
     await expect(preview).toBeVisible()
+    await expect(page.getByTestId('keyspace-keys')).toBeVisible()
+    await page.getByTestId('keyspace-keys').getByRole('button', { name: '"sample"', exact: true }).click()
     await expect(preview).toContainText(native.facts.native_type)
     if (native.value) await expect(page.getByTestId('key-value-string')).toHaveText(native.value.value)
     if (native.facts.native_type === 'stream') {
@@ -60,8 +62,32 @@ for (const native of [
     if (native.truncated) await expect(preview).toContainText('仅显示有限样本，内容已截断')
     await expect(page.getByRole('tab', { name: '数据剖析', exact: true })).toHaveCount(0)
     await expect(preview.locator('.el-pagination')).toHaveCount(0)
+    await page.getByRole('tab', { name: '属性', exact: true }).click()
+    await expect(page.getByText('key_value', { exact: true })).toBeVisible()
+    await expect(page.getByText('行数', { exact: true })).toHaveCount(0)
   })
 }
+
+test('browses an empty nonterminal keyspace batch and selects a key from the next batch', async ({ page }) => {
+  const locator = 'addp://engine/12/path/keyspace?type=keyspace&item_id=1204'
+  const native = { facts: { native_type: 'string', length: 3, ttl_millis: -1 }, value: { encoding: 'utf8', value: '123', byte_length: 3 }, entries: [], truncated: false }
+  await installMockBackend(page, { recordSet: { type: 'keyspace', locator, rows: [] }, keyValue: native,
+    keyspacePages: {
+      '': { database: 0, keys: [], complete: false, next_cursor: '42' },
+      '42': { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, facts: native.facts }], complete: true, next_cursor: '0' }
+    }
+  })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+  const next = page.getByRole('button', { name: '下一批', exact: true })
+  await expect(next).toBeEnabled()
+  await next.click()
+  await expect(next).toBeDisabled()
+  await page.getByTestId('keyspace-keys').getByRole('button', { name: '"sample"', exact: true }).click()
+  await expect(page.getByTestId('key-value-string')).toHaveText('123')
+  await page.getByRole('button', { name: '刷新', exact: true }).last().click()
+  await expect(next).toBeEnabled()
+  await expect(page.getByTestId('key-value-string')).toHaveCount(0)
+})
 
 for (const [type, rows] of [
   ['index', [{ order_id: '9007199254740993', customer: { name: 'customer-0' }, items: [{ sku: 'SKU-001', quantity: 1 }] }]],
@@ -373,7 +399,7 @@ async function installMockBackend(page, options = {}) {
   const recordSet = options.recordSet
   const recordNode = recordSet && {
     id: recordSet.locator, locator: recordSet.locator, label: 'sample', type: recordSet.type,
-    children: [], metadata: { item_id: 1204, data_type: options.keyValue ? 'unknown' : 'table', layout: 'single' }
+    children: [], metadata: { item_id: 1204, data_type: options.keyValue ? 'key_value' : 'table', layout: 'single' }
   }
   const recordTree = recordNode && { ...nfsTree(), children: [recordNode] }
   const exchangeModel = options.exchangeModel
@@ -510,7 +536,7 @@ async function installMockBackend(page, options = {}) {
       state.previewLocators.push(url.searchParams.get('locator'))
       return fulfillJSON(route, {
         preview_type: options.keyValue ? 'key_value' : 'table',
-        data: options.keyValue ? { mode: 'key_value', key_value: options.keyValue, columns: [], rows: [], item_meta: { attributes: [{ key: 'item', value: { data_type: 'unknown', layout: 'single' } }] } } : { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
+        data: options.keyValue ? { mode: 'key_value', total: 0, ...(url.searchParams.has('key_name') ? { key_value: options.keyValue } : { keyspace: options.keyspacePages?.[url.searchParams.get('key_cursor') || ''] || { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, facts: options.keyValue.facts }], complete: true, next_cursor: '0' } }), columns: [], rows: [], item_meta: { attributes: [{ key: 'item', value: { data_type: 'key_value', layout: 'single' } }] } } : { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
           rows: recordSet.rows, total: recordSet.rows.length, page: 1, page_size: 20 },
         metadata: { item_id: 1204, meta_scanned: true }
       })

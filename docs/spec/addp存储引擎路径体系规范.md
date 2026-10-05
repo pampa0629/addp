@@ -544,12 +544,14 @@ Spark 原生通道消费精确文件资源，不把 locator 文件名解释为 H
 
 验收必须分别证明 WebHDFS 的目录、状态、有界读取，以及 Spark Driver/Executor 到 NameNode 和 DataNode 的真实连接。Spark 必须在真实 Worker 上读取 CSV、JSON、Parquet 并执行聚合校验；只构造 DataFrame、使用 `local[*]` 或只打开 Web 页面都不能计为分布式读取通过。参考 [WebHDFS 官方协议](https://hadoop.apache.org/docs/r3.5.0/hadoop-project-dist/hadoop-hdfs/WebHDFS.html) 与 [Spark Hadoop 配置说明](https://downloads.apache.org/spark/docs/3.5.0/configuration.html#inheriting-hadoop-cluster-configuration)。
 
-## Redis key 路径
+## Redis 键值数据集路径
 
-Redis 的逻辑数据库由 Engine Instance 连接配置固定，目录为显性 `server` root 加一个 `key` leaf。业务 path 和 full_name 均为 `k:<无填充 Base64URL 原始 key 字节>`；空 key 编码为 `k:`。指纹继续使用 engine ID 与该规范 full_name。所有 key 使用同一编码，冒号、斜杠、点、空白、NUL 和非 UTF-8 字节均不增加路径层级；显示标签从编码派生，不能反向用显示标签寻址。首期原始键名最多 189 字节，超额必须失败。`meta_item.item_type=key`、`attributes.item.layout=single`、`attributes.item.data_type=unknown`；原生值类型和 TTL 属于实时 Engine Facts，不作为 type_info 或 format_info 落库。
+Redis 的逻辑数据库由 Engine Instance 连接配置固定。唯一目录模型为 `server -> keyspace`，业务 path、name 和 full_name 固定为 `keyspace`；数据库编号不进入路径。资源树将其显示为键值数据集，数据库编号由实时事实展示。ResourceLocator 使用 `type=keyspace` 与数据集 item_id，指纹使用 engine ID 与 `keyspace`。空数据库也有同一数据集身份。
+
+`meta_item.item_type=keyspace`、`attributes.item.layout=single`、`attributes.item.data_type=key_value`。单个 key 是数据集内容，不再作为目录叶子或 Meta item；完整重扫成功后移除旧 key item，不保留旧 locator 路线。原始键通过 `k:<无填充 Base64URL>` 内容令牌寻址，空 key 为 `k:`；该令牌不进入 ResourceLocator、full_name 或指纹。内容键预算为 64 KiB，超过预算明确失败，冒号和任意二进制字节不产生目录层级。
+
+Redis 数据集的 `keyspace` 目录术语与 `key_value` 数据类型保持分离；重扫及跨 Console/Manager 跳转保持数据集 item_id 和指纹稳定。
 
 ## Elasticsearch 索引路径
 
 Elasticsearch 使用 `service(root) -> index(leaf)`，root 的 `full_name` 为空；index 的 `full_name` 等于完整索引名。索引名中的 `.` 不分层，ResourceLocator 只有一个业务路径段，例如 `addp://engine/31/path/orders.v1?type=index`。连接端点和认证主体属于 ConnectionSpec，不进入数据路径。首版只列出当前身份可见的普通、打开、非隐藏索引；别名、data stream、隐藏/系统索引不投影为普通索引。解析明确的 index 路径必须验证它是具体索引，不允许别名或通配符扩大读取范围。
-
-Redis key 在资源树、Meta DataItem 与 ResourceLocator 中的目录术语保持 `key`，locator 的 `type=key` 不受 `attributes.item.data_type=unknown` 影响。后者表示未裁决的内容语义，不得用它替换目录术语；规范键名与真实 `item_id` 在重扫和跨 Console/Manager 跳转后必须保持一致。

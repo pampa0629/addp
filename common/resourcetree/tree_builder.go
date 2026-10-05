@@ -373,7 +373,7 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 	return &TreeNode{
 		ID:          locatorURI,
 		Locator:     locatorURI,
-		Label:       resourceLabel(string(loc.Type), loc.LastSegment()),
+		Label:       loc.LastSegment(),
 		Type:        string(loc.Type),
 		TypeLabel:   enginePlugin.EngineCatalogTermI18nKey(string(loc.Type)),
 		Icon:        getIconByType(string(loc.Type)),
@@ -467,7 +467,7 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	treeNode := &TreeNode{
 		ID:          locatorURI,
 		Locator:     locatorURI,
-		Label:       resourceLabel(node.NodeType, node.Name),
+		Label:       node.Name,
 		Type:        node.NodeType,
 		TypeLabel:   catalogTypeLabel(engine, node.NodeType),
 		Icon:        getIconByType(node.NodeType),
@@ -480,13 +480,6 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	// 如果 MetaNode 没有 Children，则跳过
 
 	return treeNode
-}
-
-func resourceLabel(kind, name string) string {
-	if kind == enginePlugin.EngineCatalogTermKey {
-		return enginePlugin.KeyDisplayName(name)
-	}
-	return name
 }
 
 func engineTreeMetadata(engine *models.Engine, nodeID uint, fullName string, itemCount int, scanStatus string, scannedAt *time.Time) map[string]interface{} {
@@ -651,7 +644,7 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"topic":      TypeTopic,
 		"index":      TypeIndex,
 		"graph":      TypeGraph,
-		"key":        TypeKey,
+		"keyspace":   TypeKeyspace,
 		"object":     TypeObject,
 		"file":       TypeFile,
 	}

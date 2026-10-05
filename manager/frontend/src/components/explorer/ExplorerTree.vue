@@ -70,7 +70,7 @@
             :data-engine-state="isCatalogRootNode(data) ? data.engineState : undefined"
             :data-connection-status="isCatalogRootNode(data) ? data.connectionStatus : undefined"
           >
-            <span class="explorer-node-label__text">{{ data.label }}</span>
+            <span class="explorer-node-label__text">{{ data.type === 'keyspace' ? t('engine.term.keyspace') : data.label }}</span>
             <el-tag
               v-if="isCatalogRootNode(data) && !isNodeEngineAvailable(data)"
               size="small"

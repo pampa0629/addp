@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
 from api.transfer_agent_api import (
@@ -20,7 +19,8 @@ from chains.transfer_generation_chain import TransferFieldMappingIntent, Transfe
 from addp_common.resources import ResourceFact
 from addp_common.auth import AuthorizationContext, RoleAssignment
 from services.inference_service import InferenceScenarioNotConfigured
-from addp_common.client import CopilotClient
+from addp_common.client import CopilotClient, ManagerClient, MetaClient
+from addp_common.client.system import SystemClient
 from addp_common.tools import ToolExecutor
 from api import transfer_agent_api
 
@@ -61,9 +61,9 @@ def test_transfer_request_forbids_identity_fields():
         TransferGenerationRequest(query="传输道路", tenant_id=1)
 
 
-def test_transfer_request_accepts_registered_source_engine_scope():
-    request = TransferGenerationRequest(query="从 pg 到 mysql，同步 farmland", source_engine_id=8)
-    assert request.source_engine_id == 8
+def test_transfer_request_rejects_removed_discovery_scope():
+    with pytest.raises(ValidationError):
+        TransferGenerationRequest(query="从 pg 到 mysql，同步 farmland", source_engine_id=8)
 
 
 def test_transfer_reports_missing_inference_binding_as_service_unavailable(monkeypatch):
@@ -90,17 +90,68 @@ def test_transfer_reports_missing_inference_binding_as_service_unavailable(monke
         asyncio.run(generate_transfer(
             TransferGenerationRequest(query="从 pg 到 mysql，同步 farmland"),
             context,
-            HTTPAuthorizationCredentials(scheme="Bearer", credentials="delegated-token"),
             object(),
         ))
     assert error.value.status_code == 503
     assert error.value.detail == "transfer_inference_scenario_not_configured"
 
 
+@pytest.mark.parametrize("count", [0, 1, 2])
+def test_transfer_intent_phase_never_discovers_owner_resources(monkeypatch, count):
+    from chains.resource_intent_chain import ResourceIntent, ResourceIntentScope
+
+    extract = AsyncMock(return_value=[ResourceIntent(role=f"source-{i}", search_queries=["roads"]) for i in range(count)])
+    delegate = AsyncMock(side_effect=AssertionError("Copilot must not delegate"))
+    monkeypatch.setattr(SystemClient, "create_delegation", delegate)
+    monkeypatch.setattr(transfer_agent_api.ResourceIntentChain, "extract", extract)
+    monkeypatch.setattr(transfer_agent_api.CopilotInferenceService, "chat_model", lambda *_args, **_kwargs: object())
+    response = asyncio.run(generate_transfer(
+        TransferGenerationRequest(query="传输道路"), AuthorizationContext(principal_id=11, tenant_id=7), object(),
+    ))
+    assert response.status == ("intents_ready" if count == 1 else "need_clarification")
+    assert "data_source_candidates" not in response.model_dump()
+    extract.assert_awaited_once_with("传输道路", scope=ResourceIntentScope.TRANSFER_SOURCE)
+    delegate.assert_not_awaited()
+
+
+@pytest.mark.parametrize("change", ["engine", "type", "target"])
+def test_transfer_context_checks_locator_and_datatype_consistency(change):
+    source, task = _source(), _task(_source())
+    if change == "engine":
+        source.engine_id = 10
+    elif change == "type":
+        task["config"]["source"]["data_type"] = "graph"
+    else:
+        task["config"]["target"]["parent_locator"] = "https://example.invalid/data"
+    with pytest.raises(ValueError):
+        _validate_task_context(task, source)
+
+
+def test_transfer_incomplete_context_does_not_initialize_inference(monkeypatch):
+    def inference_must_not_run(*_args, **_kwargs):
+        raise AssertionError("incomplete context must not invoke inference")
+
+    monkeypatch.setattr(transfer_agent_api.CopilotInferenceService, "chat_model", inference_must_not_run)
+    user = AuthorizationContext(principal_id=11, tenant_id=7)
+    response = asyncio.run(generate_transfer(
+        TransferGenerationRequest(query="传输道路", resources=[_source()]), user, object(),
+    ))
+    assert response.status == "need_clarification"
+    assert response.clarification_reason == "target_configuration_required"
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(generate_transfer(
+            TransferGenerationRequest(query="传输道路", task=_task(_source())), user, object(),
+        ))
+    assert error.value.status_code == 400
+    assert error.value.detail == "transfer_source_context_missing"
+
+
 def test_transfer_locator_uses_engine_segment_from_resource_locator():
     assert _locator_engine_id("addp://engine/9/path/public?type=schema") == 9
-    with pytest.raises(ValueError):
-        _locator_engine_id("https://example.invalid/data")
+    assert _locator_engine_id("addp://engine/9/path/?type=root") == 9
+    for invalid in ["https://example.invalid/data", 9, None, ""]:
+        with pytest.raises(ValueError):
+            _locator_engine_id(invalid)
 
 
 def test_transfer_context_rejects_legacy_parallel_fields():
@@ -202,12 +253,21 @@ def test_transfer_draft_tool_sdk_http_contract_preserves_mongodb_configuration(m
                    {"source": "status", "target": "status", "target_type": "string"}],
     }]
     original = copy.deepcopy(task)
-    verify_source = AsyncMock(return_value=[source])
-    verify_target = AsyncMock()
+    delegate_again = AsyncMock(side_effect=AssertionError("delegated tokens must not delegate again"))
+    owner_read = AsyncMock(side_effect=AssertionError("Copilot must not read resource Owners"))
     generate_intent = AsyncMock(return_value=TransferGenerationOutput(name="活动同步", description="归档活动"))
-    monkeypatch.setattr(transfer_agent_api.CopilotInferenceService, "chat_model", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(transfer_agent_api.ResourceResolutionService, "verify", verify_source)
-    monkeypatch.setattr(transfer_agent_api, "_verify_target_parent", verify_target)
+    scenarios = []
+
+    def chat_model(*_args, **kwargs):
+        scenarios.append(kwargs["scenario_code"])
+        assert kwargs["scenario_code"] == "transfer_generation"
+        return object()
+
+    monkeypatch.setattr(transfer_agent_api.CopilotInferenceService, "chat_model", chat_model)
+    monkeypatch.setattr(SystemClient, "create_delegation", delegate_again)
+    monkeypatch.setattr(ManagerClient, "get_resource_facts", owner_read)
+    monkeypatch.setattr(ManagerClient, "search", owner_read)
+    monkeypatch.setattr(MetaClient, "get_resource_tree_ancestors", owner_read)
     monkeypatch.setattr(transfer_agent_api.TransferGenerationChain, "generate", generate_intent)
     app = FastAPI()
     app.include_router(transfer_agent_api.router, prefix="/api/v1/copilot")
@@ -248,8 +308,9 @@ def test_transfer_draft_tool_sdk_http_contract_preserves_mongodb_configuration(m
     assert result["task"]["config"] == original["config"]
     assert task == original
     assert len(requests) == 1  # Draft only; no query execution, task creation, scan or business write.
-    verify_source.assert_awaited_once()
-    verify_target.assert_awaited_once()
+    assert scenarios == ["transfer_generation"]
+    delegate_again.assert_not_awaited()
+    owner_read.assert_not_awaited()
     generate_intent.assert_awaited_once()
 
 

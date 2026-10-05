@@ -4,38 +4,24 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
-// KeyDisplayName derives a display-only label; the canonical token remains identity.
-func KeyDisplayName(name string) string {
-	raw, err := DecodeKeyName(name)
-	if err != nil {
-		return name
-	}
-	value := NewByteValue(string(raw))
-	if value.Encoding == "base64" {
-		return "base64:" + value.Value
-	}
-	return strconv.QuoteToGraphic(value.Value)
-}
-
-const EngineCatalogTermKey = "key"
+const EngineCatalogTermKeyspace = "keyspace"
 
 // Key names have one canonical byte-preserving representation, including empty keys.
-const MaxKeyNameBytes = 189
+const MaxKeyNameBytes = 64 << 10
 
 func EncodeKeyName(raw []byte) (string, error) {
 	if len(raw) > MaxKeyNameBytes {
-		return "", fmt.Errorf("key name exceeds catalog budget")
+		return "", fmt.Errorf("key name exceeds content budget")
 	}
 	return "k:" + base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func DecodeKeyName(name string) ([]byte, error) {
-	if !strings.HasPrefix(name, "k:") || len(name) > 254 {
+	if !strings.HasPrefix(name, "k:") || len(name) > 2+(MaxKeyNameBytes*4+2)/3 {
 		return nil, fmt.Errorf("canonical key name required")
 	}
 	raw, err := base64.RawURLEncoding.Strict().DecodeString(name[2:])
@@ -90,12 +76,32 @@ type KeyValuePreview struct {
 	Truncated bool            `json:"truncated"`
 }
 
+type KeyspaceFacts struct {
+	Database int `json:"database"`
+}
+
+type KeyValueSummary struct {
+	Key   string        `json:"key"`
+	Name  ByteValue     `json:"name"`
+	Facts KeyValueFacts `json:"facts"`
+}
+
+type KeyValueDatasetPreview struct {
+	Database   int               `json:"database"`
+	Keys       []KeyValueSummary `json:"keys"`
+	NextCursor string            `json:"next_cursor"`
+	Complete   bool              `json:"complete"`
+}
+
 type KeyValueReadOptions struct {
+	Key        string
+	Cursor     string
 	MaxEntries int
 	MaxBytes   int
 }
 
 type KeyValueReadableProvider interface {
 	StoreProvider
+	ListKeyValues(context.Context, ConnectionInfo, EngineCatalogPath, KeyValueReadOptions) (*KeyValueDatasetPreview, error)
 	ReadKeyValue(context.Context, ConnectionInfo, EngineCatalogPath, KeyValueReadOptions) (*KeyValuePreview, error)
 }

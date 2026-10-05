@@ -1484,6 +1484,33 @@
         "title": "ResourceFact",
         "type": "object"
       },
+      "ResourceIntent": {
+        "description": "一个需要独立检索并由用户确认的输入数据项。",
+        "properties": {
+          "role": {
+            "description": "数据项在本次分析中的稳定业务用途",
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "search_queries": {
+            "description": "用于 data.search 的业务资源名或常用技术名",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Search Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "role",
+          "search_queries"
+        ],
+        "title": "ResourceIntent",
+        "type": "object"
+      },
       "StandardDocumentCandidate": {
         "additionalProperties": false,
         "properties": {
@@ -1868,25 +1895,13 @@
             "type": "string"
           },
           "resources": {
+            "description": "调用方提供的源资源上下文，不是授权证明 | Caller-supplied source context, not proof of authorization",
             "items": {
               "$ref": "#/components/schemas/ResourceFact"
             },
             "maxItems": 1,
             "title": "Resources",
             "type": "array"
-          },
-          "source_engine_id": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "由 System 已注册引擎解析出的源引擎实例 ID；仅用于限定源资源发现",
-            "title": "Source Engine Id"
           },
           "task": {
             "anyOf": [
@@ -1921,11 +1936,11 @@
             ],
             "title": "Clarification Reason"
           },
-          "data_source_candidates": {
+          "intents": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/TransferResourceCandidate"
+                  "$ref": "#/components/schemas/ResourceIntent"
                 },
                 "type": "array"
               },
@@ -1933,7 +1948,8 @@
                 "type": "null"
               }
             ],
-            "title": "Data Source Candidates"
+            "description": "无资源时返回的检索意图，由调用方发现资源 | Search intents for caller-owned discovery when no resource is supplied",
+            "title": "Intents"
           },
           "message": {
             "anyOf": [
@@ -1961,6 +1977,11 @@
             "title": "Resources"
           },
           "status": {
+            "enum": [
+              "intents_ready",
+              "need_clarification",
+              "success"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -1988,237 +2009,6 @@
           "status"
         ],
         "title": "TransferGenerationResponse",
-        "type": "object"
-      },
-      "TransferResourceCandidate": {
-        "additionalProperties": false,
-        "properties": {
-          "ancestors": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Ancestors",
-            "type": "array"
-          },
-          "asset_type": {
-            "title": "Asset Type",
-            "type": "string"
-          },
-          "crs": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "已验证的 CRS",
-            "title": "Crs"
-          },
-          "data_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "资源数据类型",
-            "title": "Data Type"
-          },
-          "engine_id": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "资源所属引擎实例 ID",
-            "title": "Engine Id"
-          },
-          "engine_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Engine Name"
-          },
-          "fields": {
-            "description": "受限字段事实",
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "maxItems": 200,
-            "title": "Fields",
-            "type": "array"
-          },
-          "format": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Format"
-          },
-          "full_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Full Name"
-          },
-          "geometry_column": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "已验证的几何列",
-            "title": "Geometry Column"
-          },
-          "geometry_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "已验证的几何类型",
-            "title": "Geometry Type"
-          },
-          "locator": {
-            "description": "已验证的 ADDP ResourceLocator",
-            "minLength": 1,
-            "title": "Locator",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Path"
-          },
-          "query_names": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "description": "按查询语言声明的原生资源名称，例如 sql=public.users、mql=users",
-            "title": "Query Names",
-            "type": "object"
-          },
-          "recommendation_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Recommendation Reason"
-          },
-          "recommended": {
-            "default": false,
-            "title": "Recommended",
-            "type": "boolean"
-          },
-          "representation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Representation"
-          },
-          "role": {
-            "description": "资源在本次任务中的稳定用途",
-            "minLength": 1,
-            "title": "Role",
-            "type": "string"
-          },
-          "schema_coverage": {
-            "anyOf": [
-              {
-                "enum": [
-                  "complete",
-                  "sampled",
-                  "unknown"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "字段事实覆盖范围：complete、sampled 或 unknown",
-            "title": "Schema Coverage"
-          },
-          "score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Score"
-          },
-          "source_engine_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "资源来源引擎类型，由 Owner 校验",
-            "title": "Source Engine Type"
-          }
-        },
-        "required": [
-          "role",
-          "locator",
-          "name",
-          "asset_type"
-        ],
-        "title": "TransferResourceCandidate",
         "type": "object"
       },
       "ValidationError": {
@@ -3343,7 +3133,7 @@
     },
     "/transfer/generate": {
       "post": {
-        "description": "发现并确认单一源资源，之后生成不带副作用的 Transfer 草稿。",
+        "description": "提取单一源意图，或在调用方上下文内生成无副作用的草稿。",
         "operationId": "generate_transfer_api_v1_copilot_transfer_generate_post",
         "parameters": [
           {
@@ -3423,7 +3213,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "生成 Transfer 任务草稿 | Generate Transfer task draft",
+        "summary": "提取 Transfer 源意图或生成任务草稿 | Extract Transfer source intent or generate task draft",
         "tags": [
           "Transfer 智能体 | Transfer Agent"
         ],

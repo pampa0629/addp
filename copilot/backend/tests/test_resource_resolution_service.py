@@ -123,20 +123,6 @@ def test_workflow_policy_preserves_multiple_input_roles():
     assert [item.role for item in result.intents] == ["铁路", "耕地"]
 
 
-def test_transfer_multiple_intents_are_returned_for_clarification_without_search():
-    intents = [
-        ResourceIntent(role="源", search_queries=["source"]),
-        ResourceIntent(role="目标", search_queries=["target"]),
-    ]
-    discovery = Discovery([])
-    service = ResourceResolutionService(discovery=discovery, intent_chain=IntentChain(intents))
-
-    result = asyncio.run(service.discover("从 pg 到 mysql", ResourceResolutionPolicy.transfer()))
-
-    assert len(result.intents) == 2
-    assert discovery.discover_calls == []
-
-
 def test_zero_recall_retries_only_missing_roles_once():
     intents = [
         ResourceIntent(role="铁路", search_queries=["铁路"]),

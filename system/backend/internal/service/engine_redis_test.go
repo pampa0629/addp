@@ -23,7 +23,7 @@ func verifyRedisRegistration(t *testing.T, connection models.ConnectionInfo) (*E
 	for _, d := range descriptors {
 		if d.Type == "redis" {
 			found = true
-			if d.Capabilities.EngineFamily != "key_value" || d.CatalogModel == nil || d.CatalogModel.RootTerm != "server" || d.CatalogModel.Levels[0].Term != "key" {
+			if d.Capabilities.EngineFamily != "key_value" || d.CatalogModel == nil || d.CatalogModel.RootTerm != "server" || d.CatalogModel.Levels[0].Term != "keyspace" {
 				t.Fatal("invalid Redis descriptor")
 			}
 		}

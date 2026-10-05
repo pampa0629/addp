@@ -179,7 +179,11 @@ Copilot 默认保留 `current_query` 已声明的主 collection，除非用户�
 
 `platform.capability.context` 由 Ontology 提供随代码版本发布的只读概念/关系/操作前置条件，首个 capability 为 `transfer.task.create`。返回 `knowledge_kind=platform_definition`、revision、digest；不返回可变权限、连接信息或模块当前可用性，不将平台定义伪装为 Tenant 原生定义。当前请求的实际可用性、权限和资源事实仍由 System 委托及执行 owner 判定。
 
-`transfer.draft.generate` 的当前契约为 `2.0.0`。`resources[]` 最多一个成员，必须遵守共享 `ResourceFact`：必填 `role + locator`，其他字段只能来自 owner 已确认的资源事实；搜索候选的 `name/item_type`、用户决定的行粒度和投影字段不得混入。`task` 是当前任务草稿，运行边界、装载、source/target endpoint 和 transforms 均放在 `task.config`；源查询只保存在正式 `task.config.source.query`，字段映射只保存在 `task.config.transforms`。Tool 输入 Schema 必须在委托和 HTTP 调用前拒绝缺少角色、未知资源字段和错误的草稿层级。Copilot 重新确认资源与目标，沿用用户确定的源查询、运行边界、装载及目标策略，只辅助名称、描述或直接字段映射，不执行源查询、不创建或启动任务。带源查询时，直接映射修改还必须限定为当前已有且匹配 owner 源字段事实的映射；不得从原集合 Schema 追加未确认的查询输出列或猜测查询别名。没有完整当前配置时返回澄清；已确认完整配置时不要求调用可选草稿 Tool。
+`transfer.draft.generate` 的当前契约为 `3.0.0`。`resources[]` 最多一个成员，必须遵守共享 `ResourceFact`：必填 `role + locator`，其他字段只能来自调用方经 owner 确认的资源事实；搜索候选的 `name/item_type`、用户决定的行粒度和投影字段不得混入。`task` 是当前任务草稿，运行边界、装载、source/target endpoint 和 transforms 均放在 `task.config`；源查询只保存在正式 `task.config.source.query`，字段映射只保存在 `task.config.transforms`。Tool 输入 Schema 必须在委托和 HTTP 调用前拒绝缺少角色、未知资源字段和错误的草稿层级。
+
+Transfer 草稿链路固定分工：Agent 通过 Owner Tool、Transfer 向导通过正式 Owner API 发现并校验源资源和目标父节点，确认后提交上下文；Copilot 只做意图提取和受限生成，不调用资源 Owner API、不申请二次委托、不使用 Service Principal 代替用户读资源。没有 `resources` 时，同一生成接口只返回 `status=intents_ready` 和 `intents[role,search_queries]`，不返回资源候选或编造定位符；源引擎搜索范围属于调用方，不再接受 `source_engine_id`。有资源而没有完整当前配置时返回澄清。完整配置生成只需要 `transfer_generation` 模型场景，不依赖 `resource_resolution` 绑定。
+
+Copilot 校验上下文的结构与源定位符、引擎、数据类型一致性，沿用用户确定的源查询、运行边界、装载及目标策略，只辅助名称、描述或直接字段映射；请求和结果都不是授权或资源真实性证明，真正创建、执行时仍由 Transfer 校验并拒绝无效配置或越权。Copilot 不执行源查询、不创建或启动任务。带源查询时，直接映射修改还必须限定为当前已有且匹配输入字段上下文的映射；不得从原集合 Schema 追加未确认的查询输出列或猜测查询别名。已确认完整配置时不要求调用可选草稿 Tool。Query/Workflow 的资源编排不属于本次 Transfer 收敛范围，不能将本段视为它们已经完成改造的证明。
 
 `transfer.task.create` 复用 Transfer 的唯一 `POST /task-definitions`，只保存 `bounded + snapshot + native table` 的无计划、未启动任务。SDK 固定发送空 schedule、enabled=false、auto_scan_metadata=false；owner 对 Delegated 请求再次执行同一限制，Manifest 不是唯一安全边界。目标策略与字段映射需显式确定；既不授予 `transfer.task.execute`，也不自动启动、调度、扫描或写入业务库。此元数据创建不要求执行审批，返回实际 task ID、status、desired_state；没有 execution ResultRef。结果不确定时禁止自动重发，必须人工到 Transfer 核对。
 

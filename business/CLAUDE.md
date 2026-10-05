@@ -23,7 +23,7 @@
 - HDFS 3.5.0：独立 NameNode/DataNode，Simple 开发实验模式，`/addp/samples` 下 CSV、JSON、Parquet 各 20 条订单，金额合计 2100。通过 `bash scripts/start.sh -hdfs` 启动和幂等初始化；只创建样例，不登记 System 引擎。WebHDFS 端点与原生 RPC 地址分别登记，DataNode 广播地址必须同时被宿主机与 Spark Worker 访问。`HDFS_SHARED_HOST` 可显式配置，留空由标准入口检测可达宿主机 IPv4；IP 变化后须由有权限用户更新同一 System 引擎端点。端口为显式部署配置，冲突直接失败，不自动漂移。
 - ClickHouse、MongoDB、Doris、Spark：可选业务数据源和分析组件。
 - Neo4j：图业务数据测试环境。
-- Redis 7.2.13：独立 Business 单机键值样例，不复用 Infra Redis。使用固定官方多架构镜像、单独数据卷和 ACL 管理/只读账号；ADDP Redis Engine Plugin 提供 ACL 连接登记、认证检测、server → key 目录、Meta unknown 身份扫描与 Manager 原生有限样本预览；Develop 查询尚未实现。
+- Redis 7.2.13：独立 Business 单机键值样例，不复用 Infra Redis。使用固定官方多架构镜像、单独数据卷和 ACL 管理/只读账号；ADDP Redis Engine Plugin 提供 ACL 连接登记、认证检测、server → keyspace 目录、Meta 键值数据集身份扫描与 Manager 原生有限样本预览；Develop 查询尚未实现。
 
 ## 重要目录
 

@@ -94,7 +94,7 @@ type DecimalFieldLimits struct {
 
 `engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/leaf catalog、是否需要内容读取、是否可做动态 schema 采样，必须由 `EngineCatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
 
-Redis 声明 `engine_family=key_value`、`server -> key` Catalog Model、Catalog/Facts 与 `storage.store.key_value_read`。Catalog 的 `real_time=true` 表示有界 SCAN 直接查询真实引擎，不保证一致快照或稳定分页。原生 key 读取必须实现 `KeyValueReadableProvider`；它不声明表、记录集合、查询或写入能力。Meta 对 key 仅登记身份和 `data_type=unknown`，Manager 按原生读取能力提供有限样本预览；连接检测成功不代表 key 权限已经获准。
+Redis 声明 `engine_family=key_value`、`server -> keyspace` Catalog Model、Catalog/Facts 与 `storage.store.key_value_read`。Catalog 实时枚举一个连接指定数据库的键值数据集，不执行全量 SCAN；空数据库仍返回该 leaf。KeyValueReadableProvider 提供有界游标键浏览及单键原生样本，不声明表、记录集合、查询或写入能力。Meta 登记单个 `data_type=key_value` 数据集；键扫描是内容读取，不是元数据目录扫描，连接检测成功不代表 key 权限已经获准。
 
 ### 2.1 Limits
 

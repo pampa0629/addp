@@ -19,7 +19,7 @@ func applyPreviewProtection(result *preview.PreviewResult, rules []dataprotectio
 		return managerprotection.ErrRequired
 	}
 	table, ok := result.Data.(*models.TablePreview)
-	if !ok || table == nil || table.KeyValue != nil {
+	if !ok || table == nil || table.KeyValue != nil || table.Keyspace != nil {
 		return managerprotection.ErrRequired
 	}
 	for _, row := range table.Rows {

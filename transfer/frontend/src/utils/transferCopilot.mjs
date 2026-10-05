@@ -1,8 +1,70 @@
+import { resourceFact } from '@addp/common-frontend/basic/src/utils/resourceCandidateSelection.mjs'
+import { parseLocator } from '@addp/common-frontend/basic/src/types/resourceLocator.js'
+
 export {
   groupResourceCandidates,
   resourceCandidateKey,
   resourceFact
 } from '@addp/common-frontend/basic/src/utils/resourceCandidateSelection.mjs'
+
+function invalidOwnerResponse() {
+  return new Error('transfer_source_owner_response_invalid')
+}
+
+export async function verifyTransferSource(candidate, { ancestors, facts }) {
+  const engineID = Number(candidate?.engine_id)
+  let locatorEngineID
+  try { locatorEngineID = parseLocator(candidate?.locator).engineId } catch { throw invalidOwnerResponse() }
+  if (!Number.isInteger(engineID) || engineID <= 0 || locatorEngineID !== engineID) {
+    throw invalidOwnerResponse()
+  }
+  const [path, schema] = await Promise.all([
+    ancestors(engineID, candidate.locator), facts(candidate.locator)
+  ])
+  if (path?.target_locator !== candidate.locator || schema?.locator !== candidate.locator ||
+      schema.engine_id !== engineID || !schema.data_type ||
+      (schema.fields !== undefined && (!Array.isArray(schema.fields) || schema.fields.length > 200))) {
+    throw invalidOwnerResponse()
+  }
+  // 不复制 Owner 响应中的身份或凭据字段，只转交规范 ResourceFact。
+  return {
+    ...candidate,
+    ...resourceFact({ ...schema, role: candidate.role, fields: schema.fields ?? [] }),
+    ancestors: Array.isArray(path.ancestors) ? path.ancestors : []
+  }
+}
+
+export async function discoverTransferSources(intents, owners, engineIDs = []) {
+  if (!Array.isArray(intents) || intents.length !== 1 || !intents[0]?.role ||
+      !Array.isArray(intents[0].search_queries) || !intents[0].search_queries.length || intents[0].search_queries.length > 8) {
+    throw new Error('transfer_source_intent_invalid')
+  }
+  const intent = intents[0]
+  const candidates = []
+  const seen = new Set()
+  const scopes = engineIDs.length ? [...new Set(engineIDs)] : [undefined]
+  for (const query of intent.search_queries) {
+    if (typeof query !== 'string' || !query.trim()) throw new Error('transfer_source_intent_invalid')
+    for (const engineID of scopes) {
+      const result = await owners.search(query, engineID)
+      if (!Array.isArray(result?.results)) throw invalidOwnerResponse()
+      for (const hit of result.results.slice(0, 20)) {
+        if (!hit?.locator || !Number.isInteger(hit.engine_id) || hit.engine_id <= 0 ||
+            (engineID !== undefined && hit.engine_id !== engineID) || seen.has(hit.locator)) continue
+        const candidate = await verifyTransferSource({
+          role: intent.role, locator: hit.locator, engine_id: hit.engine_id,
+          name: hit.name || hit.full_name || hit.locator, engine_name: hit.engine_name,
+          asset_type: hit.asset_type, path: hit.path,
+          representation: hit.attributes?.representation, format: hit.attributes?.format
+        }, owners)
+        seen.add(hit.locator)
+        candidates.push(candidate)
+        if (candidates.length >= 20) return candidates
+      }
+    }
+  }
+  return candidates
+}
 
 export function inferTargetEngineFromPrompt(query, engines) {
   const targetText = targetClause(query)

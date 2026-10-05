@@ -1500,3 +1500,7 @@ DAE 不接受 XML DTD、实体声明或外部 DTD 引用。此限制由 XML 解�
 POSITION 和基础颜色贴图使用的 TEXCOORD accessor 还必须满足 glTF 顶点存储规则：accessor 偏移按 4 字节对齐，与 bufferView 偏移相加后按分量大小对齐；显式 byteStride 必须是 4 的倍数，位于 4–252 字节内、不小于单个元素大小且不超过 bufferView 长度。无符号整数 UV 必须显式声明步长。紧密排列和合法交错排列均沿用同一校验路径。
 
 DAE / 3DS 的贴图必须由网格 primitive 实际使用的基础颜色材质引用，不能仅在产物中保留未使用的 image 或 material。该材质选择的 `TEXCOORD_n`（包括 `KHR_texture_transform.texCoord` 覆盖值）必须存在，其 accessor 使用 VEC2、合法的浮点或归一化无符号整数编码，顶点数与 POSITION 一致，且读取范围位于内嵌 bufferView 内；缺失、非法索引或越界均在发布前拒绝。
+
+## 原生键值数据集
+
+Redis 的连接指定逻辑数据库识别为单个 `item_type=keyspace`、`data_type=key_value`、`layout=single` 数据项。没有统一表字段，不声明 `format=redis`；值结构由原生内容读取提供。空键空间也可识别，单个键不登记 Meta item，原始字节、原生类型、长度和 TTL 不落库。详见键值数据集路径、attributes 和 Engine Provider 规范。

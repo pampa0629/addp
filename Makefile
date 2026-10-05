@@ -105,11 +105,11 @@ infra-status: ## 查看系统库基础设施状态与健康
 
 infra-backup: ## 只读备份本地 ADDP Infra；需 BACKUP_ROOT=/绝对路径
 	@test -n "$(BACKUP_ROOT)" || (echo "BACKUP_ROOT is required" >&2; exit 2)
-	@python3 scripts/infra/backup.py create --output-root "$(BACKUP_ROOT)"
+	@python3 scripts/infra/backup.py create --output-root "$(BACKUP_ROOT)" $(if $(MEILISEARCH_DUMP),--meilisearch-dump "$(MEILISEARCH_DUMP)") $(if $(MEILISEARCH_DUMP_TASK),--meilisearch-dump-task "$(MEILISEARCH_DUMP_TASK)")
 
 infra-restore-drill: ## 在无端口、无持久卷的隔离容器中演练；需 BACKUP_DIR=/绝对路径
 	@test -n "$(BACKUP_DIR)" || (echo "BACKUP_DIR is required" >&2; exit 2)
-	@python3 scripts/infra/backup.py drill --backup-dir "$(BACKUP_DIR)"
+	@python3 scripts/infra/backup.py drill --backup-dir "$(BACKUP_DIR)" $(if $(MEILISEARCH_RESTORE_IMAGE),--meilisearch-restore-image "$(MEILISEARCH_RESTORE_IMAGE)")
 
 infra-cloud-backup: ## 备份并隔离演练后加密到本地网盘监视目录；需 BACKUP_ROOT、EXPORT_ROOT、PRIVATE_ROOT
 	@test -n "$(BACKUP_ROOT)" -a -n "$(EXPORT_ROOT)" -a -n "$(PRIVATE_ROOT)" || (echo "BACKUP_ROOT, EXPORT_ROOT and PRIVATE_ROOT are required" >&2; exit 2)
@@ -772,8 +772,8 @@ test-business-redis: ## 独占 Redis 验证 Business 认证、原生样例、幂
 	@bash scripts/test/business-redis-gate.sh
 
 .PHONY: test-common-redis test-common-redis-unit
-test-common-redis-unit: ## Redis 连接、原生 key 读取预算与 System 加密登记确定性测试
-	@cd common && GOWORK=off go test ./engine/plugin ./resourcetree -count=1
+test-common-redis-unit: ## Redis 连接、键值数据集与内容读取预算与 System 加密登记确定性测试
+	@cd common && GOWORK=off go test ./datatype ./engine/plugin ./resourcetree -count=1
 	@cd common && GOWORK=off go test ./engine/plugins/redis -run '^Test(ConnectionValidation|AuthenticatedConnection|TLS|ConnectionRejects|Redis)' -count=1
 	@cd system/backend && GOWORK=off go test ./internal/service -run '^TestRedisRegistration' -count=1
 	@cd system/backend && GOWORK=off go test ./internal/api -run '^TestRedisCatalogRequests' -count=1
@@ -781,5 +781,5 @@ test-common-redis-unit: ## Redis 连接、原生 key 读取预算与 System 加�
 	@cd manager/backend && GOWORK=off go test ./internal/api -run '^TestPreview(Protection|Catalog)' -count=1
 	@cd meta/backend && GOWORK=off go test ./internal/scanruntime -count=1
 
-test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 原生 key 消费链路
+test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 键值数据集消费链路
 	@bash scripts/test/common-redis-gate.sh

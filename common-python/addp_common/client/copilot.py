@@ -71,15 +71,12 @@ class CopilotClient(BaseClient):
         *,
         resources: list[dict[str, Any]] | None = None,
         task: dict[str, Any] | None = None,
-        source_engine_id: int | None = None,
     ) -> Dict[str, Any]:
-        """发现 Transfer 单一源资源或生成不带副作用的任务草稿。"""
+        """提取 Transfer 源意图，或使用调用方资源上下文生成无副作用草稿。"""
         payload: dict[str, Any] = {
             "query": query,
             "resources": resources or [],
         }
-        if source_engine_id is not None:
-            payload["source_engine_id"] = source_engine_id
         if task is not None:
             payload["task"] = task
         return await self.post("/api/v1/copilot/transfer/generate", json=payload)

@@ -470,17 +470,17 @@ Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169299286]
 
 启动后仅补齐缺失的 `addp:sample:*` 固定样例，包含 string、大整数计数、hash、list、set、zset、stream、TTL 和带非 UTF-8 字节的 key/value。重复初始化不重复追加 list/stream、不重置仍存在的 TTL、不删除或覆盖既有 key；样例出现不符的原生类型时先整体拒绝初始化。初始化脚本只能由管理员执行，不属于读取账号的查询能力。
 
-已实现独立 Business 部署、原生数据夹具、Redis Engine Plugin、System 连接注册、Meta key 身份扫描与 Manager 原生有限样本预览。System 通用表单按 ConnectionSpec 配置 ACL 用户、数据库编号与 TLS，注册脚本读取真实容器映射并使用只读账号登记数据库 0；连接检测执行 SELECT 和 DBSIZE，不读写业务 key。Catalog 为 `server -> key`，键名使用 `k:` 加无填充 Base64URL 的唯一编码；Meta 首期保持 `data_type=unknown`，原生类型、长度和 TTL 实时读取，不能伪装为 document collection。SCAN 是有预算的弱一致遍历，COUNT 不保证返回条数；扫描失败保留既有目录。Develop 查询、写入、迁移及 Cluster/Sentinel 尚未实现。消费链路验证使用 `make test-common-redis-unit` 与 `make test-common-redis`。
+已实现独立 Business 部署、原生数据夹具、Redis Engine Plugin、System 连接注册、Meta 键值数据集身份扫描与 Manager 原生有限样本预览。System 通用表单按 ConnectionSpec 配置 ACL 用户、数据库编号与 TLS，注册脚本读取真实容器映射并使用只读账号登记数据库 0；连接检测执行 SELECT 和 DBSIZE，不读写业务 key。Catalog 为 `server -> keyspace`，Meta 只登记一个 `data_type=key_value` 数据集，内容键使用 `k:` 加无填充 Base64URL 令牌，原生类型、长度和 TTL 实时读取，不能伪装为 document collection。SCAN 是有预算的弱一致遍历，COUNT 不保证返回条数；扫描失败保留既有目录。Develop 查询、写入、迁移及 Cluster/Sentinel 尚未实现。消费链路验证使用 `make test-common-redis-unit` 与 `make test-common-redis`。
 
 验证入口为 `make test-business-config` 和 `make test-business-redis`。后者创建独占 Compose project、随机回环端口和随机密码，核验认证拒绝、只读权限、原生类型、精确字节、初始化幂等和重启持久化，退出后检查容器、数据卷和网络零残留。该入口已纳入 `make test-integration`、模块/变更自动发现和 `release-and-t2-gates.yml`，不连接 Infra 或现有 Business Redis。
 
-Redis 插件与消费契约验证入口：`make test-common-redis-unit`、`make test-common-redis`。后者复用同一独占夹具生命周期，验证真实 ACL 凭据、数据库选择、权限不足、System 密码加密/脱敏与在线状态更新，以及 Meta key 扫描和 Manager 原生预览，并已登记 Common/System/Meta/Manager/Business 变更触发的 CI 门禁。
+Redis 插件与消费契约验证入口：`make test-common-redis-unit`、`make test-common-redis`。后者复用同一独占夹具生命周期，验证真实 ACL 凭据、数据库选择、权限不足、System 密码加密/脱敏与在线状态更新，以及 Meta 键值数据集扫描和 Manager 原生预览，并已登记 Common/System/Meta/Manager/Business 变更触发的 CI 门禁。
 
 Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-manager-gate.sh` 从零建立最小权限身份、Business MinIO 与真实 Runtime，复用 `make test-online` 业务断言并在退出时销毁环境；无需永久账号或自备 Runner。首次真实运行成功前只登记手工触发，不计为 T4 通过。
 
 Transfer SQL ETL 与字段血缘验收 `transfer-relational-sql-etl` 唯一使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-transfer-gate.sh` 编排。Business owner `scripts/online-transfer-relational-sql-etl-fixture.sh` 从零创建独占 tmpfs PostgreSQL 容器、5 行固定源表及只读取源表/创建目标表的数据库用户，输出 owner-only Engine 描述；System 负责临时身份和正式 Engine API 注册。业务断言沿用 `make test-online`，owner 核对 SQL 投影过滤、原生 replace/两跳结果和 decimal 精度，退出删除容器并验证零残留，不接管本地 `business-postgres` 或读取 Business `.env`。
 
-Redis 正式 Online 入口为 `make test-online ONLINE_SUITE=redis-consumer-flow`，由 `online-t4-gates.yml` 人工触发 `redis-hosted-t4` Job，经 `scripts/test/online-hosted-redis-gate.sh` 准备一次性 Ubuntu x86_64 部署。物理夹具复用上面的固定镜像、ACL 与九个样例，使用随机回环端口、随机密码和 tmpfs；System helper 建立非默认 Tenant、最小权限普通用户与独立引擎登记身份。断言覆盖 System 实时目录/事实、Meta unknown key 身份及重扫稳定性、Manager 九个原生预览、大整数/二进制/TTL，并实际登录 Console 从 Meta 页面重扫及打开 Manager 预览，归档截图和同一身份的报告。成功、失败及中断都销毁当次业务容器、平台 Infra 和凭据目录；不接管个人开发环境。脚本确定性验证纳入 `make test-online-runner`，仅人工触发，不登记 schedule。
+Redis 正式 Online 入口为 `make test-online ONLINE_SUITE=redis-consumer-flow`，由 `online-t4-gates.yml` 人工触发 `redis-hosted-t4` Job，经 `scripts/test/online-hosted-redis-gate.sh` 准备一次性 Ubuntu x86_64 部署。物理夹具复用上面的固定镜像、ACL 与九个样例，使用随机回环端口、随机密码和 tmpfs；System helper 建立非默认 Tenant、最小权限普通用户与独立引擎登记身份。断言覆盖 System 实时目录/事实、Meta keyspace 身份及重扫稳定性、Manager 九个原生预览、大整数/二进制/TTL，并实际登录 Console 从 Meta 页面重扫及打开 Manager 预览，归档截图和同一身份的报告。成功、失败及中断都销毁当次业务容器、平台 Infra 和凭据目录；不接管个人开发环境。脚本确定性验证纳入 `make test-online-runner`，仅人工触发，不登记 schedule。
 
 Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169297656](https://github.com/pampa0629/addp/actions/runs/37169297656)，提交 `7398d24d743b96316a338dce4a4b39675b979d7b`。归档报告确认同一租户、普通用户和引擎完成 Meta 页面重扫及九个原生预览，并保留重扫和各样例共十张 Console 截图。该记录只证明对应提交的消费链路，不替代后续变更的重新验收。
 

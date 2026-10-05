@@ -2500,7 +2500,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more\nRedis key 必须先完成 Meta 身份扫描；响应 preview_type 与 data.mode 为 key_value，data.key_value 包含实时 facts、显式 UTF-8/Base64 的 value 或 entries、truncated；仅 page=1，最多50个元素，无写入或表结构推断 | Redis keys require scanned Meta identity; preview_type and data.mode are key_value, data.key_value contains live facts, explicitly encoded UTF-8/Base64 value or entries, and truncated; page=1 only, at most 50 entries, no writes or table schema inference",
+                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more\nRedis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only",
                 "produces": [
                     "application/json"
                 ],
@@ -2509,6 +2509,18 @@ const docTemplate = `{
                 ],
                 "summary": "数据预览 | Data preview",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "键空间浏览游标 | Keyspace browse cursor",
+                        "name": "key_cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "规范内容键令牌 k:Base64URL | Canonical content key token k:Base64URL",
+                        "name": "key_name",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "资源定位符URI | Resource locator URI",

@@ -1,7 +1,8 @@
 """生成 Transfer 任务的受限语义补丁。
 
 Transfer 的 endpoint、运行边界和目标策略属于 Transfer owner。模型只返回
-任务名称、描述和基于已验证源字段的映射意图，不能构造 locator 或改变任务边界。
+任务名称、描述和基于调用方提供字段上下文的映射意图，不证明资源访问授权，
+不能构造 locator 或改变任务边界。
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field
 
 
 class TransferFieldMappingIntent(BaseModel):
-    source: str = Field(min_length=1, description="已验证源字段名称")
+    source: str = Field(min_length=1, description="调用方提供的源字段名称")
     target: str = Field(min_length=1, description="目标字段名称")
 
 

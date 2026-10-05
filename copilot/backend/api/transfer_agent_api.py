@@ -1,37 +1,30 @@
 """Transfer 模块内的 AI 助手。
 
-助手只返回待人工检查的任务草稿。源资源、目标父节点和 Transfer 任务配置
-均由 owner 重新验证，接口不会创建或启动任务。
+助手仅提取资源意图或使用调用方提供的上下文生成草稿。
+不访问资源 Owner、不二次委托，也不创建或启动任务。
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from addp_common.auth import AuthorizationContext
-from addp_common.tools import ToolExecutionError, ToolExecutor
 from authorization_permissions_generated import COPILOT_TRANSFER_EXECUTE
-from chains.resource_intent_chain import ResourceIntentChain
-from chains.resource_recommendation_chain import ResourceRecommendationChain
+from chains.resource_intent_chain import ResourceIntent, ResourceIntentChain, ResourceIntentScope
 from chains.transfer_generation_chain import TransferGenerationChain
-from config import settings
 from database import get_db
-from dependencies.auth import bearer_auth, require_tool_user
+from dependencies.auth import require_tool_user
 from addp_common.resources import ResourceFact
 from services.inference_service import (
     CopilotInferenceService,
     InferenceClientNotInitialized,
     InferenceScenarioNotConfigured,
 )
-from services.resource_discovery import ResourceDiscovery
-from services.resource_resolution import ResourceResolutionPolicy, ResourceResolutionService
 
 router = APIRouter()
 require_transfer_draft_tool = require_tool_user(
@@ -45,11 +38,9 @@ class TransferGenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1, max_length=4000)
-    resources: list[ResourceFact] = Field(default_factory=list, max_length=1)
-    source_engine_id: int | None = Field(
-        default=None,
-        ge=1,
-        description="由 System 已注册引擎解析出的源引擎实例 ID；仅用于限定源资源发现",
+    resources: list[ResourceFact] = Field(
+        default_factory=list, max_length=1,
+        description="调用方提供的源资源上下文，不是授权证明 | Caller-supplied source context, not proof of authorization",
     )
     task: dict[str, Any] | None = Field(
         default=None,
@@ -57,25 +48,14 @@ class TransferGenerationRequest(BaseModel):
     )
 
 
-class TransferResourceCandidate(ResourceFact):
-    name: str
-    engine_name: str | None = None
-    asset_type: str
-    full_name: str | None = None
-    path: str | None = None
-    score: float | None = None
-    ancestors: list[dict[str, Any]] = Field(default_factory=list)
-    recommended: bool = False
-    recommendation_reason: str | None = None
-    representation: str | None = None
-    format: str | None = None
-
-
 class TransferGenerationResponse(BaseModel):
-    status: str
+    status: Literal["intents_ready", "need_clarification", "success"]
     task: dict[str, Any] | None = None
     resources: list[ResourceFact] | None = None
-    data_source_candidates: list[TransferResourceCandidate] | None = None
+    intents: list[ResourceIntent] | None = Field(
+        default=None,
+        description="无资源时返回的检索意图，由调用方发现资源 | Search intents for caller-owned discovery when no resource is supplied",
+    )
     clarification_reason: str | None = None
     message: str | None = None
     warnings: list[str] = Field(default_factory=list)
@@ -84,7 +64,7 @@ class TransferGenerationResponse(BaseModel):
 @router.post(
     "/transfer/generate",
     response_model=TransferGenerationResponse,
-    summary="生成 Transfer 任务草稿 | Generate Transfer task draft",
+    summary="提取 Transfer 源意图或生成任务草稿 | Extract Transfer source intent or generate task draft",
     responses={503: {"description": "推理场景未配置或推理运行时未就绪 | Inference scenario is not configured or runtime is not ready"}},
     openapi_extra={
         "x-addp-auth-mode": "delegated_tool",
@@ -94,38 +74,29 @@ class TransferGenerationResponse(BaseModel):
 async def generate_transfer(
     request: TransferGenerationRequest,
     user: AuthorizationContext = Depends(require_transfer_draft_tool),
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
     db: Session = Depends(get_db),
 ):
-    """发现并确认单一源资源，之后生成不带副作用的 Transfer 草稿。"""
-    executor = ToolExecutor(settings.get_gateway_url(), credentials.credentials)
+    """提取单一源意图，或在调用方上下文内生成无副作用的草稿。"""
     try:
-        resolution_llm = CopilotInferenceService.chat_model(
-            db,
-            tenant_id=user.tenant_id,
-            scenario_code="resource_resolution",
-            temperature=0,
-            max_output_tokens=1200,
-        )
-        discovery = ResourceDiscovery(
-            settings.get_gateway_url(),
-            credentials.credentials,
-            executor=executor,
-            recommender=ResourceRecommendationChain(resolution_llm),
-        )
-        resolver = ResourceResolutionService(
-            discovery=discovery,
-            intent_chain=ResourceIntentChain(resolution_llm),
-        )
-        policy = ResourceResolutionPolicy.transfer(request.source_engine_id)
         if not request.resources:
-            return await _discover_transfer_resources(
-                request.query,
-                resolver,
-                policy,
+            if request.task is not None:
+                raise ValueError("transfer_source_context_missing")
+            resolution_llm = CopilotInferenceService.chat_model(
+                db, tenant_id=user.tenant_id, scenario_code="resource_resolution",
+                temperature=0, max_output_tokens=1200,
             )
+            intents = await ResourceIntentChain(resolution_llm).extract(
+                request.query, scope=ResourceIntentScope.TRANSFER_SOURCE,
+            )
+            if len(intents) != 1:
+                return TransferGenerationResponse(
+                    status="need_clarification",
+                    clarification_reason="single_source_required",
+                    message="Transfer 任务一次只允许一个源资源，请明确要传输的源数据",
+                )
+            return TransferGenerationResponse(status="intents_ready", intents=intents)
 
-        source = (await resolver.verify(request.resources, policy))[0]
+        source = request.resources[0]
         if request.task is None:
             return TransferGenerationResponse(
                 status="need_clarification",
@@ -136,7 +107,6 @@ async def generate_transfer(
 
         _validate_task_context(request.task, source)
         target = request.task["config"]["target"]
-        await _verify_target_parent(executor, target)
         current_task = {
             "name": request.task.get("name", ""),
             "description": request.task.get("description", ""),
@@ -161,8 +131,6 @@ async def generate_transfer(
             resources=[source],
             warnings=["运行边界、装载模式、目标引擎和目标策略沿用 Transfer 向导当前选择；请在提交前复核。"],
         )
-    except ToolExecutionError as error:
-        raise HTTPException(status_code=502, detail=error.message) from error
     except InferenceScenarioNotConfigured as error:
         raise HTTPException(
             status_code=503,
@@ -179,34 +147,6 @@ async def generate_transfer(
         raise HTTPException(status_code=500, detail="Transfer 草稿生成失败") from error
 
 
-async def _discover_transfer_resources(
-    query: str,
-    resolver: ResourceResolutionService,
-    policy: ResourceResolutionPolicy,
-) -> TransferGenerationResponse:
-    result = await resolver.discover(query, policy)
-    if len(result.intents) != 1:
-        return TransferGenerationResponse(
-            status="need_clarification",
-            clarification_reason="single_source_required",
-            message="Transfer 任务一次只允许一个源资源，请明确要传输的源数据",
-            data_source_candidates=[],
-        )
-    if result.missing_roles:
-        return TransferGenerationResponse(
-            status="need_clarification",
-            clarification_reason="data_source_not_found",
-            message="未找到可用于 Transfer 的源资源：" + "、".join(result.missing_roles),
-            data_source_candidates=[],
-        )
-    return TransferGenerationResponse(
-        status="need_clarification",
-        clarification_reason="data_source_confirmation_required",
-        message="请确认唯一源资源后再生成 Transfer 草稿",
-        data_source_candidates=[TransferResourceCandidate.model_validate(item) for item in result.candidates],
-    )
-
-
 def _validate_task_context(task: dict[str, Any], source: ResourceFact) -> None:
     if set(task) - {"name", "description", "task_type", "config", "schedule", "enabled", "batch_size", "auto_scan_metadata"}:
         raise ValueError("Transfer 草稿包含不受支持的字段")
@@ -220,6 +160,10 @@ def _validate_task_context(task: dict[str, Any], source: ResourceFact) -> None:
     source_config = config["source"]
     if not isinstance(source_config, dict) or source_config.get("locator") != source.locator:
         raise ValueError("Transfer 草稿 source locator 必须与已确认资源一致")
+    if source.engine_id != _locator_engine_id(source.locator):
+        raise ValueError("transfer_source_engine_mismatch")
+    if not source.data_type or source_config.get("data_type") != source.data_type:
+        raise ValueError("transfer_source_datatype_mismatch")
     source_unknown = set(source_config) - {"locator", "data_type", "representation", "format", "options", "policy", "change_stream", "query"}
     if source_unknown:
         raise ValueError("Transfer source endpoint 包含不受支持的字段")
@@ -229,6 +173,7 @@ def _validate_task_context(task: dict[str, Any], source: ResourceFact) -> None:
     target_unknown = set(target) - {"parent_locator", "name", "data_type", "representation", "format", "options", "policy"}
     if target_unknown:
         raise ValueError("Transfer target endpoint 包含不受支持的字段")
+    _locator_engine_id(target["parent_locator"])
     boundary = config["runtime"].get("boundary") if isinstance(config["runtime"], dict) else None
     if boundary not in {"bounded", "continuous"}:
         raise ValueError("Transfer runtime.boundary 不受支持")
@@ -237,25 +182,14 @@ def _validate_task_context(task: dict[str, Any], source: ResourceFact) -> None:
         raise ValueError("Transfer load.mode 不受支持")
 
 
-async def _verify_target_parent(executor: ToolExecutor, target: dict[str, Any]) -> None:
-    parent_locator = str(target.get("parent_locator") or "").strip()
-    engine_id = _locator_engine_id(parent_locator)
-    ancestors = await executor.call(
-        "resource.ancestors.get",
-        {"engine_id": engine_id, "locator": parent_locator},
-        agent_run_id=f"copilot-transfer-{uuid4()}",
-        tool_call_id=f"transfer-target-ancestors-{uuid4()}",
-    )
-    if not isinstance(ancestors, dict) or ancestors.get("target_locator") != parent_locator:
-        raise ToolExecutionError("invalid_owner_response", "Meta 未确认 Transfer 目标父 locator")
-
-
 def _locator_engine_id(locator: str) -> int:
+    if not isinstance(locator, str) or not locator.strip():
+        raise ValueError("Transfer locator 必须是 ADDP ResourceLocator")
     parsed = urlparse(locator)
     if parsed.scheme != "addp" or parsed.netloc != "engine":
         raise ValueError("Transfer locator 必须是 ADDP ResourceLocator")
     parts = [part for part in parsed.path.split("/") if part]
-    if len(parts) < 3 or not parts[0].isdigit() or parts[1] != "path" or int(parts[0]) <= 0:
+    if len(parts) < 2 or not parts[0].isdigit() or parts[1] != "path" or int(parts[0]) <= 0:
         raise ValueError("Transfer locator 缺少有效 engine_id")
     return int(parts[0])
 

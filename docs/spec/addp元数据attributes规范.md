@@ -520,9 +520,9 @@ GeoTIFF 的整体 CRS 必须与其像元坐标对应。[OGC GeoTIFF 1.1 的模�
 - `srid=0` 且 `crs_ref` / `crs_definitions` 缺失时必须按 `unknown_crs` 处理，不得默认解释为 `EPSG:4326`。如果 `srid=0` 但存在有效 `crs_ref` 和 CRS 定义，表示“无数字 SRID 但 CRS 已知”。
 - 如果某条路径已经由具体引擎能力完成转换，例如 MVT / 矢量物化视图，应在该路径响应中明确 `target_srid`、`transform_status=engine_transformed` 和 `transform_engine`；该事实不得反向改写源数据的 `capabilities.spatial`。
 
-## Redis key 身份
+## Redis 键值数据集身份
 
-Redis key 首期仅保存 `item.layout=single` 和 `item.data_type=unknown` 以及既有 item 身份列。string/hash/list/set/zset/stream 是引擎原生类型，不创建 `type_info.key_value` 或 `format_info.redis`；实时长度和 TTL 从 Engine Facts 读取，不持久化值样本或递减 TTL。
+Redis keyspace 保存 `item.layout=single` 和 `item.data_type=key_value` 以及数据集身份列。数据库编号由实时 KeyspaceFacts 表达，不重复持久化连接配置。string/hash/list/set/zset/stream 是内容值结构；键名、长度、样本和 TTL 通过有预算的 KeyValueReadableProvider 实时读取，不建立逐 key item，不持久化动态计数、值样本或递减 TTL，不伪造 table 字段或行数。
 
 ## Elasticsearch Mapping 字段事实
 

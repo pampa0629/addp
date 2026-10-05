@@ -27,6 +27,10 @@ func (*keyCapabilityReader) ReadKeyValue(context.Context, ConnectionInfo, Engine
 	return nil, nil
 }
 
+func (*keyCapabilityReader) ListKeyValues(context.Context, ConnectionInfo, EngineCatalogPath, KeyValueReadOptions) (*KeyValueDatasetPreview, error) {
+	return nil, nil
+}
+
 func TestKeyValueCapabilityRequiresMatchingProvider(t *testing.T) {
 	base := keyCapabilityOnly{MockPlugin: MockPlugin{TypeValue: "key_test"}, enabled: true}
 	if err := ValidatePluginCapabilities(&base); err == nil {
@@ -49,11 +53,11 @@ func TestKeyNameCanonicalBytes(t *testing.T) {
 			t.Fatal(err)
 		}
 		decoded, err := DecodeKeyName(name)
-		if err != nil || !bytes.Equal(raw, decoded) || len(name) > 255 {
+		if err != nil || !bytes.Equal(raw, decoded) {
 			t.Fatalf("roundtrip %q: %v", name, err)
 		}
 	}
-	for _, bad := range []string{"", "a", "k:Zg==", "k:Zh", "k:_", "k:/w", "k:" + strings.Repeat("YQ", 200)} {
+	for _, bad := range []string{"", "a", "k:Zg==", "k:Zh", "k:_", "k:/w", "k:" + strings.Repeat("YQ", MaxKeyNameBytes)} {
 		if _, err := DecodeKeyName(bad); err == nil {
 			t.Fatalf("accepted %q", bad)
 		}
@@ -67,7 +71,5 @@ func TestKeyNameCanonicalBytes(t *testing.T) {
 	if got := NewByteValue("\x00\xff"); got.Encoding != "base64" || got.Value != "AP8=" {
 		t.Fatal(got)
 	}
-	if KeyDisplayName("k:") != "\"\"" {
-		t.Fatal("empty key lost")
-	}
+
 }

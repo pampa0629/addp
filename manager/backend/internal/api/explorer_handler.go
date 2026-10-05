@@ -82,7 +82,9 @@ func bearerToken(c *gin.Context) string {
 // GET /api/explorer/preview?locator=addp://engine/1/path/public/users?type=table&page=1&page_size=20
 // @Summary 数据预览 | Data preview
 // @Description 根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more
-// @Description Redis key 必须先完成 Meta 身份扫描；响应 preview_type 与 data.mode 为 key_value，data.key_value 包含实时 facts、显式 UTF-8/Base64 的 value 或 entries、truncated；仅 page=1，最多50个元素，无写入或表结构推断 | Redis keys require scanned Meta identity; preview_type and data.mode are key_value, data.key_value contains live facts, explicitly encoded UTF-8/Base64 value or entries, and truncated; page=1 only, at most 50 entries, no writes or table schema inference
+// @Description Redis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only
+// @Param key_cursor query string false "键空间浏览游标 | Keyspace browse cursor"
+// @Param key_name query string false "规范内容键令牌 k:Base64URL | Canonical content key token k:Base64URL"
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
@@ -143,6 +145,12 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	// 先解析到 Meta DataItem 的稳定指纹，再查 Owner 本地保护索引。
 	// 未纳管资源只是一次本地 map miss，不访问 Security。
 	req, err := h.previewResolver.ResolveRequestFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
+	if err == nil {
+		req.KeyValueOptions = plugin.KeyValueReadOptions{Key: c.Query("key_name"), Cursor: c.Query("key_cursor")}
+		if (req.KeyValueOptions.Key != "" || req.KeyValueOptions.Cursor != "") && (req.ItemType != "keyspace" || (req.KeyValueOptions.Key != "" && req.KeyValueOptions.Cursor != "")) {
+			err = plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid keyspace content selection"))
+		}
+	}
 	var result *preview.PreviewResult
 	var protectionRules []dataprotection.Rule
 	var protectionSubject dataprotection.SubjectReference

@@ -3414,3 +3414,86 @@ Manager 实际消费前发现必须收拢的调用事实：
 尚未完成且不计通过：新镜像实际拉取／digest 核对、旧开发持久卷迁移、真实新版本“已接收但响应丢失＋进程退出”的 T4，以及多 Backend／HA 认证。Docker Hub 的只读镜像核对因网络超时未取得证据，不填写猜测的 digest，不在旧卷上试启动新版本。
 
 下一步建议先确认旧 `1.7.6` 卷的 dump 迁移与回滚方案，再安排独立新卷的三个 Owner 验证和真实故障验收。[官方升级指南](https://www.meilisearch.com/docs/resources/migration/updating)说明 `--upgrade-db` 不支持低于 `1.12` 的数据库，不能直接执行普通 Infra 重启来替代迁移。必须保留旧卷、任务历史和 Manager 未决记录，并核验导入后的任务身份；无标记旧提交的受控重建另外确认。本轮未启停用户服务、未切换卷、未改写开发索引或接入源数据，未提交推送。该可选搜索恢复不改变 System 资源授权权威，也不阻塞正式读取计划与全源权限核验的独立研发。
+
+### 26.79 旧 Meilisearch 卷的迁移、回滚与验收方案（2026-10-05，待确认执行窗口）
+
+本节只完成只读盘点和方案，不表示已执行备份、导入、卷切换或服务重启。继续研发不包含启停用户服务的许可；实际操作须先确认本次范围和窗口。
+
+**当前事实与复用边界：**
+
+- `bash scripts/infra/status.sh` 核实 Meilisearch 当前端口为 `17700`，PostgreSQL 为 `25432`。运行容器使用 `getmeili/meilisearch:v1.7`，实际二进制为 `1.7.6`，属于 `addp-infra` project；挂载卷为 `addp-infra_meilisearch_data`，工作目录及数据挂载点均为 `/meili_data`。本次旧镜像 ID 为 `sha256:010341a778fe82592cff7a4f85d05eb89d2618141defea005616a476064fa56a`；这是本机镜像身份，不是已核验的目标镜像 registry digest。
+- 已有 `make infra-backup` 和 `make infra-restore-drill` 覆盖 PostgreSQL、MinIO 和环境文件，**不覆盖 Meilisearch**。现有入口可保护配套元数据并演练其恢复，不能充当搜索卷已备份或已可回滚的证据。此次不重复建设备份框架，也不擅自新增长期脚本。
+- `infra-backup` 的现有契约是只读；`POST /dumps` 会登记外部管理任务，停容器和切卷更不属于只读操作。拟采用的扩展方式为：原备份入口仅校验、收录已明确授权导出的 dump 及身份／校验清单，恢复演练仍只操作本次隔离资源；不静默把导出、停服或迁移加进日常／定时备份。这一边界待用户确认后实现。
+- 只读核对开发库 `manager.content_index_outlets`：`manager_content_documents` 已配置且仍隔离。投递表有且仅有一条 `delete/queued`，无 UID、无关联标记；本次观察没有 `submitting/unknown/submitted`。这条尚未发送的清理事实应保留，不能手工删掉或改成成功。该快照不证明外部任务已排空，执行窗口开始时必须重新盘点。
+- Manager、Catalog、Asset 共用外部实例，但索引、专业事实和可见性由各 Owner 分别负责。迁移不是把它们合并成 Catalog 的副本，也不恢复旧 PostgreSQL 来回退当前 IAM 授权。
+
+**官方契约与任务风险：**
+
+[升级指南](https://www.meilisearch.com/docs/resources/migration/updating)要求低于 `1.12` 的旧数据库走 dump 导出／导入，不能直接原卷升级。[Dump 文档](https://www.meilisearch.com/docs/resources/self_hosting/data_backup/dumps)说明导出包含索引、文档、设置以及开始处理 dump 前已登记的任务；导出是异步操作，须核验具体 dump 任务的成功终态，并保全产物和摘要。
+
+版本源码进一步支持任务身份核验的必要性：[`1.7.6` TaskWriter](https://github.com/meilisearch/meilisearch/blob/v1.7.6/dump/src/writer.rs)序列化历史任务，[`1.54.3` 导入器](https://github.com/meilisearch/meilisearch/blob/v1.54.3/crates/index-scheduler/src/dump.rs)沿用导入任务的 UID、入队时间和状态，并为未执行文档任务恢复待处理内容；因此不能把“导入”当成任务历史已清空。目标 [TaskDump 定义](https://github.com/meilisearch/meilisearch/blob/v1.54.3/crates/dump/src/lib.rs)对缺失的 `customMetadata` 使用空值，升级不会凭空补出旧投递关联证据。这是源码契约，不代替本次真实 dump 的导入验收。
+
+**推荐的单一路线：旧实例导出，独立新卷演练，验收后切换；原卷只保留作回滚，不同时服务。**
+
+| 阶段 | 要做的事 | 允许进入下一阶段的条件 |
+| --- | --- | --- |
+| 1. 冻结与盘点 | 用户按标准生命周期停止索引生产者及上游自动投递，暂停本次迁移范围的索引／内容保护变更；旧 Meilisearch 保持运行。记录三个 Owner 的索引、主键、设置、文档 ID 集合及任务身份，重新核对 Manager 持久出口／投递。记录现用秘密来源，不输出凭据或文档正文。 | 没有生产者继续写入；旧外部任务的 `enqueued/processing` 已排空，完整分页证据成立。无法排空时停止迁移，不取消任务或删除历史绕过。 |
+| 2. 备份 | 使用现有标准入口备份配套元数据；在旧实例请求 dump 并等待其成功，将产物、校验摘要与脱敏清单保存到仓库外 owner-only 目录。停旧搜索容器后，对原卷做一致性副本并保留可启动的旧镜像；核实磁盘容量和备份归属。 | dump 完整、SHA-256 一致；旧卷与镜像的同版本恢复副本可在独立环境启动。原卷不删、不改名碰运气、不让新二进制挂载它。 |
+| 3. 独立导入 | 核验固定 `1.54.3` 的架构与 registry digest，再将 dump 导入独立、空的新卷；备份只读挂载。演练实例仅回环可达或不发布宿主机端口，使用可追踪的本次所有权，不接入开发 Owner 自动写入。 | 导入完成且版本正确；索引／主键／设置及文档身份、内容校验一致；仍有未决任务或无法证明历史身份时不切换。 |
+| 4. 分层验收 | 先只读对账导入实例与 dump／旧实例清单：历史任务的 UID、完整入队时间、种类、索引和状态逐项一致；旧任务无标记不得补写。三个 Owner 分别核验租户及可见性／上架过滤，Manager 按当前保护事实验证出口仍受控。随后在专用 disposable 部署执行真实故障验收。 | 数据对账与权限负例通过；不能仅凭索引数量、`/health` 或搜索命中判定安全。真实故障验收须使用已实现并登记的标准门禁，不能把演练开发卷当作 T4 环境。 |
+| 5. 正式切换 | 用户在已确认窗口切换到验收过的新卷，统一使用新版本，不保留新旧运行分支。先保持生产者冻结核对构建／端点身份，再由当前 Owner 正常恢复清理与投递。现有本地 `delete/queued` 由正常流程登记新 UUID、发送并确认终态。 | 清理和保护复核成立后才允许 Manager 搜索出口开放；Catalog／Asset 的当前可见性规则仍生效。每次恢复后的新写入有持久回执，任何不确定结果继续隔离，不改记录强行恢复。 |
+| 6. 保留与收口 | 保留旧卷、旧镜像、dump、摘要、切换后投递证据及回滚记录。只清理本次明确拥有且不再需要的演练资源。 | 三个 Owner 的运行验收与回滚验证完成后，再由用户确定备份保留和删除时机；不把删除原卷作为默认步骤。 |
+
+**回滚边界：**
+
+1. 正式切换前或仍处于冻结验证窗口时失败，停止新实例，由用户恢复旧镜像与未经新版本改写的旧卷；新源码不会退回旧无标记发送路线，Manager 可选搜索继续隔离，其他合法功能不因此停止。
+2. 切换后已有新投递时，旧卷不包含这些派生更新，不能称直接回滚为“无损”。先冻结并保存新卷及切换后回执，搜索保持隔离，再按当前专业事实和保护要求恢复投影；不得回退 IAM 或把新任务证据清掉。需要重建时另行确认精确索引范围，不能盲目重发未决请求。
+3. 即使旧索引可启动，其内容也可能落后于当前保护状态。恢复旧卷不授予浏览权限，必须沿用当前 Owner 的隔离和权限裁决，不开放绕过 ADDP 的原始 Meilisearch 出口。
+
+**验收登记与跟进清单：**
+
+- [x] 复用既有备份／恢复演练入口，查清不含搜索卷；核实当前版本、卷、端口及 Manager 持久状态。
+- [x] 将迁移风险提示放到 Infra 故障说明与部署入口，避免普通 `infra/up.sh` 被误用作旧卷升级。
+- [ ] 用户确认执行窗口及范围：旧实例 dump、冻结索引生产者、停旧搜索容器做卷副本、独立新卷演练；服务启停仍由用户负责。
+- [x] 用户已确认只读备份扩展边界；原标准入口已支持收录既有成功 dump、摘要与归属核对，并实现隔离恢复及失败清理，见 §26.80。真实 dump 导入、迁移与回滚尚未验收，不自动请求 dump 或停服。
+- [ ] 目标镜像 registry digest／架构核验、真实导出、独立新卷导入、三个 Owner 对账及回滚演练。
+- [ ] 新版本真实“已接收但响应丢失＋进程退出”恢复：认回同一原任务、提交次数不增加；任务未终结／关联不符／删除未决时出口不开放。现有 T1 HTTP 与 T2 PostgreSQL 不涵盖这个外部服务故障，后续扩展须同次进入标准入口及 CI；本轮不登记空壳 suite，不声称 T4 通过。
+
+本轮改动仅为文档，验证层级为 T0；本轮三份文档及最后一次全工作区 `git diff --check` 均通过。`make test-changed` 退出码 2：当时 79 个变更文件影响 27 个已登记模块，多 Owner 缺少 T2 环境参数，在门禁执行前停止，日志 `/tmp/addp-meili-migration-plan-changed-20261005.log`。`make test-platform` 退出码 2：前序检查通过，随后前端 CI 登记检查拒绝执行当时 `manager/frontend/playwright.config.js` 的动态 webServer 命令，要求字面量 npm fixture recipe，后续平台检查未执行，日志 `/tmp/addp-meili-migration-plan-platform-20261005.log`。该配置由并行工作收敛为字面量后，本轮执行 `make test-frontend-ci-registration` 定向复查退出码 0，16 项测试及 21 个已跟踪前端的登记检查通过，日志 `/tmp/addp-meili-migration-plan-frontend-registration-recheck-20261005.log`；未改动或覆盖该配置，也未完整重跑平台门禁，不把定向复查外推为全部平台门禁通过。迁移相关 T2／T4 尚未执行；不启停服务、不创建 dump、不切卷、不改写开发索引或接入源数据。
+
+### 26.80 已授权 Meilisearch dump 的收录与隔离恢复入口（2026-10-05）
+
+用户已确认 §26.79 的只读扩展边界。本轮扩展既有 `scripts/infra/backup.py`、`make infra-backup` 和 `make infra-restore-drill`，未新增长期脚本、第二套备份框架或自动迁移路线。§26.79 中“不覆盖搜索”的盘点结论描述扩展前状态；当前**默认范围仍是 PostgreSQL、Infra MinIO 与环境文件**，只有显式传入 dump 文件和任务 UID 时才增加搜索产物，定时云备份不自动导出或收录搜索。
+
+**已实现：**
+
+- 收录 `MEILISEARCH_DUMP` 与 `MEILISEARCH_DUMP_TASK`，二者必须同时提供，UID `0` 有效。输入须位于仓库外当前用户独占目录，文件为 0600、父目录为 0700，拒绝文件软链接。核对运行中 `addp-meilisearch` 的 Compose project、service、工作目录归属；只读取得成功 dump 回执，并比较标准容器路径 `/meili_data/dumps/<dumpUid>.dump` 与输入文件摘要，再记录来源镜像 ID、版本、导出身份及数量。任何不符均拒绝，不调用 `POST /dumps`。
+- 流式读取完整 V6 tar/gzip，不解压到宿主文件系统；拒绝路径穿越、链接、重复路径／JSON 键、截断、缺失索引文件、非法 UID 和未终结任务，并限制解压大小／记录预算。任务保留 UID、索引、种类、终态、完整纳秒入队时间和原 `customMetadata`；无标记旧任务仍是空值，不能补造标记。
+- 在既有 PG／MinIO 演练后，用第三个本轮 owned 一次性容器导入 dump。容器无外部网络、无宿主发布端口、不挂开发卷，dump 只读挂载；使用全新短期 Master Key，读取请求的 Key 仅经 stdin，不进入命令参数或清单。默认用来源镜像 ID；显式目标必须是完整版本标签加 registry digest，并核对实际二进制版本。
+- 恢复核验不止 `/health`：分页核对全部索引、主键、文档数量和内容摘要、原显式设置，以及全部历史任务的身份／终态。文档顺序不影响摘要，大整数 ID 不经 JavaScript 精度转换；允许新版本增加默认设置，不强行覆盖旧 unset 设置。失败或清单变化均不计为成功。
+- 成功与失败路径都尝试清理全部本轮容器；只删除标签匹配本轮 nonce 的资源，并重新确认容器不存在。归属不明或仍有残留时报告失败，不能输出整体零残留成功。旧持久卷的独立一致性副本、三个 Owner 权限验收和真实故障 T4 不在该入口的成功证明范围内。
+
+使用参数和标准命令见 [Infra 备份说明](../../scripts/infra/README.md#本地-infra-备份与隔离恢复演练)。没有引入新的 CI 依赖：既有 `make test-infra-backup` 由 `make test-platform` 调用，`.github/workflows/platform-ci.yml` 的推送、每日和手动 Platform consistency Job 使用同一入口；本轮确认现有登记已覆盖，不新增占位 suite。
+
+**验证与未完成事项：**
+
+- `make test-infra-backup`：27 项 T1 通过，日志 `/tmp/addp-meili-backup-t1-20261005.log`。测试使用临时 V6 格式夹具与受控 Docker/API 替身，不表示真实容器导入。首轮负例曾发现 `././metadata.json` 别名绕过重复路径检查，修正后通过；同时覆盖来源不符、UID `0`、精确时间、大整数、跨页全内容校验、错误版本、失败清理、畸形归属响应和残留拒绝。
+- `make test-changed`：退出码 2，当次 136 个改动影响 27 个已登记模块，因多个 PostgreSQL／MySQL／OceanBase T2 必需连接条件缺失，在门禁前置阶段停止；日志 `/tmp/addp-meili-backup-changed-20261005.log`。不计为全工作区通过，不借用开发数据库补齐条件。
+- `make test-platform`：首跑退出码 2，在既有 `test-dev-lifecycle` 的 15 项测试中出现 3 个 Infra Runtime 日志初始化夹具的 10 秒超时，后续平台步骤未执行；日志 `/tmp/addp-meili-backup-platform-20261005.log`。独立 `make test-dev-lifecycle` 完整复查退出码 0，含 15 项 Python 测试、生命周期脚本夹具及其 Go 检查，日志 `/tmp/addp-meili-backup-lifecycle-recheck-20261005.log`。随后完整平台复跑退出码 2：15 项 Python 测试通过，但 Worker Backend readiness 顺序夹具返回码断言失败，日志 `/tmp/addp-meili-backup-platform-recheck-20261005.log`。失败位于本轮未修改的既有夹具，时序失败的根因仍待定位；不放宽断言／超时掩盖，也不把独立复查外推为完整平台通过。夹具在仓库外使用替身，不是开发服务重启。
+- 本轮最后 `git diff --check` 通过。T1 已进入现有 Platform CI，但 CI 登记不等于本次 CI 已运行；完整平台门禁和全工作区门禁仍未通过。
+- 当前只读核对旧实例标准 dumps 目录中有 0 个 dump 文件；本轮没有发起导出。因此真实同版本／目标版本导入、源任务对账、卷副本回滚、三个 Owner 与故障 T4 均未验证，不能由 T1 推断通过。
+
+下一步优先在用户确认的冻结／导出窗口，取得一个带成功任务 UID 的真实 dump，先执行来源版本的既有备份与隔离恢复入口；通过后，再核验固定目标镜像并演练跨版本导入。仍不允许普通 Infra 重启直接挂载旧卷升级。没有真实导出产物前，不擅自启动开发服务或自动请求 dump。
+
+### 26.81 备份入口的平台门禁复查与迁移前置条件（2026-10-05）
+
+本轮继续处理 §26.80 的独立验证事项，未把“继续”视为开发服务启停、dump 创建或旧卷迁移的许可。
+
+- 对既有 Worker readiness 夹具补充失败诊断：未观察到启动标记时输出具体标记名，子进程失败时附带临时夹具日志。不改变正式启动代码、断言或等待期限，也不把增加诊断当作根因修复。
+- `make test-dev-lifecycle` 完整通过（退出码 0），包含 15 项 Python 测试、Worker 顺序／失败拒绝夹具及既有 Go 检查；日志 `/tmp/addp-meili-lifecycle-diagnose-20261005.log`。这次未复现旧失败，偶发问题的根因仍未确定。
+- `make test-platform` 本次完整复查通过（退出码 0）；日志 `/tmp/addp-meili-platform-diagnose-20261005.log`。包含生命周期夹具、27 项备份测试、共享前端、构建／CI 登记、Online 入口夹具、IAM Manifest 与 Swagger 路由覆盖检查。Online 入口夹具不等于真实 Hosted 场景验收；本次成功也不表示旧偶发失败的根因已修复。
+- `make test-changed` 退出码 2：当次 148 个改动影响 27 个已登记模块，因多个 PostgreSQL／MySQL／OceanBase T2 连接参数缺失在执行前停止；日志 `/tmp/addp-meili-backup-changed-recheck-20261005.log`。不借用开发数据库，也不将未执行的门禁计为通过。
+- 只读执行 `docker buildx imagetools inspect getmeili/meilisearch:v1.54.3`，Docker Hub registry 连接超时；额外 IPv4 连接检查也超时。因此本轮没有取得可信的 registry digest 或 CPU 架构清单，不填写推测摘要、不替换镜像来源、不部署镜像。
+- 本轮 `bash -n scripts/test/dev-lifecycle-and-build.sh` 与最后一次全工作区 `git diff --check` 通过。诊断改动沿用既有 `test-dev-lifecycle`／Platform CI 登记，没有新增测试入口。没有提交或推送并行工作区改动。
+
+真实 dump 导出、来源／目标版本隔离导入、卷副本回滚、三个 Owner 权限验收和故障 T4 仍未执行。下一步仍优先确认索引写入冻结和真实 dump 导出窗口，再使用既有标准入口验证来源版本恢复；目标版本验证须先取得可信的固定镜像摘要。

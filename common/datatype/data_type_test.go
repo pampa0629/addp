@@ -8,6 +8,7 @@ func TestParseDataType(t *testing.T) {
 		in   string
 		want DataType
 	}{
+		{name: "key value", in: " Key_Value ", want: KeyValue},
 		{name: "normalizes", in: " Table ", want: Table},
 		{name: "normalizes model 3d", in: " MODEL_3D ", want: Model3D},
 		{name: "normalizes point cloud", in: " Point_Cloud ", want: PointCloud},

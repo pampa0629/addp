@@ -10,7 +10,8 @@
 | HDFS Engine | HDFS 引擎 | 以 `engine_type=hdfs` 标识的 Hadoop 分布式文件系统存储引擎，目录模型为 `root -> directory -> file`。 | Simple 只读插件和 Spark 分布式读取已通过 T2，正式平台消费链路仍待 T4 验收；HDFS 不是新的 data type，也不代表已支持 Hadoop 的 YARN 或 MapReduce。 |
 | WebHDFS | WebHDFS 接口 | Hadoop 提供的 HDFS HTTP 内容与目录访问协议。 | ADDP 目录扫描和内容预览的接入协议；Spark 使用同一 HDFS 的原生 Hadoop 客户端，HTTP 端点与 RPC 端点分别由连接事实提供，不互相推算端口。 |
 | key_value engine family | 键值存储引擎族 | 以原生 key 定位值的存储引擎粗分类，能力声明值为 `key_value`。 | 不是 data type；目录、事实与读取能力必须由对应 Provider 声明。Redis 首期支持单端点、ACL 账号、一个逻辑数据库以及有预算的 key 扫描和只读预览。 |
-| key catalog leaf | 键目录叶子 | 键值引擎中以完整原始 key 字节定位的独立资源，`item_type=key`。 | 冒号不产生目录。Meta 首期只登记身份，`data_type=unknown`；原生 string/hash/list/set/zset/stream 类型由实时 Engine Facts 表达，不据此新增 datatype。 |
+| keyspace catalog leaf | 键空间目录叶子 | 连接指定的逻辑数据库中的键值数据集，`item_type=keyspace`、`data_type=key_value`。 | Meta 只登记数据集身份；单个 key 是内容成员，不建立 Meta item。冒号不产生目录，原生 string/hash/list/set/zset/stream 是值结构。 |
+| key_value data type | 键值数据类型 | 以原始键字节定位原生值的数据集语义。 | 与同名 engine family 分属数据语义和引擎分类；表格展示不改变键值语义。 |
 | Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Engine Catalog / 查询 / 读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
 | OceanBase Engine | OceanBase 引擎 | 通过 `engine_type=oceanbase` 登记的 OceanBase Community Edition 数据库 Engine Instance；首版使用 MySQL 模式协议与 SQL 方言，以 database/table 为 Engine Catalog 业务路径。 | OceanBase 是独立引擎类型，不登记为 MySQL；`user` 使用 `user@tenant` 完整账号表达租户边界。MySQL 协议兼容只是插件内部复用事实。 |
 | openGauss Engine | openGauss 引擎 | 通过 `engine_type=opengauss` 登记的 openGauss 6.0.6 LTS 数据库 Engine Instance；首版使用 PG 兼容 database，以 schema/table 为 Engine Catalog 业务路径。 | openGauss 是独立引擎类型，不登记为 PostgreSQL；PostgreSQL wire protocol、驱动和 SQL 方言兼容只是插件内部复用事实，不自动获得 PostGIS、CDC 或 PostgreSQL 扩展能力。 |
@@ -463,7 +464,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Model Deployment | 模型部署 | Provider Connection 下一个可调用的具体模型或部署单元。 | 保存上游模型标识、能力、限制和状态，包括显式的 Chat 参数与思考控制；继承 Provider 的范围，不在 System 中展开为 Engine Instance。 |
 | Model Profile | 模型档案 | 面向调用方的稳定逻辑能力名称及其当前明确 Model Deployment 绑定。 | 例如 `general-chat`、`reasoning`、`text-embedding`、`multimodal-embedding`、`rerank`；第一版只绑定一个 Deployment，不包含隐藏 fallback。 |
 | Scenario Binding | 场景绑定 | 业务 owner 将本模块的稳定 AI 场景显式绑定到 Model Profile 或特定 Model Deployment 的事实。 | 归 Agent、Copilot、Manager 等调用模块保存；有效值按 Tenant 显式绑定、平台默认绑定、明确未配置错误解析。 |
-| Input Resource Resolution | 输入资源解析与确认 | 将自然语言中的输入数据意图提取为候选资源，经过 owner 校验并形成可供领域生成器消费的 `ResourceFact` 的共享能力。 | 与 Query、Workflow、Notebook、Transfer 等领域生成场景正交；各场景通过策略声明引擎范围、资源类型、数量和 Session 候选边界，不重复实现发现与确认流程。 |
+| Input Resource Resolution | 输入资源解析与确认 | 将自然语言中的输入数据意图提取为候选资源，经过 owner 校验并形成可供领域生成器消费的 `ResourceFact` 的共享能力。 | 与领域生成正交，不代表生成器取得资源访问授权。Transfer 的意图由 Copilot 提取，发现与校验由 Agent Owner Tool 或 Transfer 向导的正式 Owner API 完成；Copilot 消费的上下文不是授权或资源真实性证明，创建与执行仍由 Transfer 最终判断。 |
 | inference credential | 推理凭据 | Provider Connection 用于访问上游模型服务的 API Key 或等价认证材料。 | 由 Inference 使用部署级 `ENCRYPTION_KEY` 加密；API 只返回 `configured` 和 `version`，不返回明文、掩码或可复用引用。 |
 
 ## 身份与授权

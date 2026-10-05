@@ -25,9 +25,8 @@ class FakeClient:
     def __init__(self):
         self.calls = []
         self.samples = MODULE.sample_contract()
-        self.items = [{'id': n, 'node_id': 10, 'item_type': 'key', 'full_name': sample['key'], 'fingerprint': 'fp-' + str(n),
-                       'attributes': {'schema_version': 1, 'item': {'layout': 'single', 'data_type': 'unknown'}}}
-                      for n, sample in enumerate(self.samples, 1)]
+        self.items = [{'id': 1, 'node_id': 10, 'item_type': 'keyspace', 'full_name': 'keyspace', 'fingerprint': 'fp-1',
+                       'attributes': {'schema_version': 1, 'item': {'layout': 'single', 'data_type': 'key_value'}}}]
         self.context = {'principal': {'id': 8, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'authorization': {'role_assignments': [{'role_key': 'online.redis_consumer_flow'}]}}
         self.selectors = [{'id': 17, 'engine_type': 'redis', 'capabilities': {'storage': {'catalog': {'supported': True, 'real_time': True}}}}]
@@ -41,10 +40,9 @@ class FakeClient:
             if not body['path']['segments']:
                 payload = {'nodes': [{'kind': 'server', 'path': {'version': 'catalog.path/v1', 'segments': [{'term': 'server', 'kind': 'server', 'name': ''}]}}]}
             else:
-                payload = {'nodes': [{'name': s['key'], 'kind': 'key', 'role': 'leaf', 'path': {'segments': [{'name': s['key']}]}} for s in self.samples]}
+                payload = {'nodes': [{'name': 'keyspace', 'kind': 'keyspace', 'role': 'leaf', 'path': {'segments': [{'name': 'keyspace'}]}}]}
         elif url.path.endswith('/catalog/facts'):
-            sample = next(s for s in self.samples if s['key'] == body['path']['segments'][-1]['name'])
-            payload = {'key_value': preview(sample)['data']['key_value']['facts']}
+            payload = {'keyspace': {'database': 0}}
         elif url.path.endswith('/scan/run/manual'): payload = {'execution_id': 'redis-scan'}
         elif url.path.endswith('/executions/redis-scan'): payload = {'status': 'success'}
         elif url.path.endswith('/items'): payload = self.items
@@ -54,8 +52,10 @@ class FakeClient:
                 assert statuses == (400,)
                 payload = {'error_code': 'invalid_preview_page'}
             else:
-                item_id = int(parse_qs(urlsplit(query['locator'][0]).query)['item_id'][0])
-                payload = preview(self.samples[item_id - 1])
+                if 'key_name' in query:
+                    payload = preview(next(sample for sample in self.samples if sample['key'] == query['key_name'][0]))
+                else:
+                    payload = {'preview_type': 'key_value', 'data': {'keyspace': {'database': 0, 'keys': [{'key': sample['key'], 'facts': preview(sample)['data']['key_value']['facts']} for sample in self.samples], 'complete': True, 'next_cursor': '0'}}}
         else: raise AssertionError(f'unexpected route {method} {url.path}')
         return SimpleNamespace(payload=copy.deepcopy(payload))
 
@@ -67,7 +67,7 @@ class RedisConsumerContractTest(unittest.TestCase):
         self.assertEqual(len(report['samples']), 9)
         self.assertEqual(report['scan_execution_id'], 'redis-scan')
         facts = [call for call in client.calls if call[1].endswith('/catalog/facts')]
-        self.assertEqual(len(facts), 9)
+        self.assertEqual(len(facts), 1)
         self.assertTrue(report['table_pagination_rejected'])
         self.assertFalse(any(path == '/api/v1/system/engines/17' for _, path, _, _ in client.calls))
         self.assertEqual([call[3]['force'] for call in client.calls if call[1].endswith('/scan/run/manual')], [True])
@@ -104,10 +104,10 @@ class RedisConsumerContractTest(unittest.TestCase):
             payload = preview(samples[name]); payload['data']['key_value']['entries'].reverse()
             MODULE.validate_preview(payload, samples[name])
 
-    def test_meta_unknown_identity_rejects_duplicates_values_or_native_type_persistence(self):
+    def test_meta_keyspace_identity_rejects_duplicates_values_or_native_type_persistence(self):
         client = FakeClient()
-        for mutate in [lambda v: v.__setitem__(1, copy.deepcopy(v[0])),
-                       lambda v: v[0]['attributes']['item'].update(data_type='key_value'),
+        for mutate in [lambda v: v.append(copy.deepcopy(v[0])),
+                       lambda v: v[0]['attributes']['item'].update(data_type='unknown'),
                        lambda v: v[0]['attributes'].update(native_type='string'),
                        lambda v: v[0].update(fingerprint=''), lambda v: v.pop()]:
             items = copy.deepcopy(client.items); mutate(items)
@@ -116,10 +116,10 @@ class RedisConsumerContractTest(unittest.TestCase):
     def test_binary_key_locator_round_trip_is_one_canonical_component(self):
         sample = MODULE.sample_contract()[-1]
         self.assertEqual(sample['value'], {'encoding': 'base64', 'value': 'AP9BRERQ', 'byte_length': 6})
-        target = MODULE.locator(17, {'id': 9, 'full_name': sample['key']})
-        self.assertEqual(parse_qs(urlsplit(target).query), {'type': ['key'], 'item_id': ['9']})
+        target = MODULE.locator(17, {'id': 1, 'full_name': 'keyspace'})
+        self.assertEqual(parse_qs(urlsplit(target).query), {'type': ['keyspace'], 'item_id': ['1']})
         self.assertNotIn('=', sample['key'])
-        self.assertIn('/path/k:', target)
+        self.assertIn('/path/keyspace', target)
 
     def test_browser_success_requires_matching_evidence_and_cannot_reuse_stale_report(self):
         report = MODULE.run(FakeClient(), 2, 17, 10)

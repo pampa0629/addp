@@ -7,6 +7,7 @@ type DataType string
 
 const (
 	Unknown       DataType = "unknown"
+	KeyValue      DataType = "key_value"
 	Table         DataType = "table"
 	Document      DataType = "document"
 	Media         DataType = "media"
@@ -20,6 +21,7 @@ const (
 
 var knownDataTypes = map[DataType]struct{}{
 	Unknown:       {},
+	KeyValue:      {},
 	Table:         {},
 	Document:      {},
 	Media:         {},

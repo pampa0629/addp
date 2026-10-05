@@ -20,7 +20,9 @@ test('唯一源候选也进入显式确认阶段', () => {
   assert.doesNotMatch(assistant, /shouldAutoConfirmSource/)
   assert.match(assistant, /sourceConfirmTitle/)
   assert.match(assistant, /inferSourceEnginesFromPrompt/)
-  assert.match(assistant, /source_engine_id: Number\(selectedSource\.value\.engine_id\)/)
+  assert.doesNotMatch(assistant, /source_engine_id|data_source_candidates/)
+  assert.match(assistant, /discoverTransferSources\(result\.intents, resourceOwners/)
+  assert.match(assistant, /verifyTransferSource\(selectedSource\.value, resourceOwners\)/)
 })
 
 test('确认数据源后使用 Meta 权威字段而不是 Copilot 候选简化字段', () => {

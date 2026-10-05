@@ -128,14 +128,10 @@ describe('explorer revealLocator', () => {
     expect(store.selectedLocator).toBe(targetLocator)
   })
 
-  it('loads all root-level Redis keys when restoring a key deep link', async () => {
+  it('restores one Redis keyspace dataset without registering content keys', async () => {
     const rootLocator = 'addp://engine/24/path/?type=server&node_id=10'
-    const keys = ['string', 'counter', 'hash', 'list', 'set', 'zset', 'stream', 'ttl', 'binary']
-      .map((label, index) => {
-        const token = `k:${Buffer.from(`addp:sample:${label}`).toString('base64url')}`
-        const locator = `addp://engine/24/path/${token}?type=key&item_id=${900 + index}`
-        return { id: locator, locator, label, type: 'key', hasChildren: false, children: [] }
-      })
+    const locator = 'addp://engine/24/path/keyspace?type=keyspace&item_id=900'
+    const keys = [{ id: locator, locator, label: 'keyspace', type: 'keyspace', hasChildren: false, children: [] }]
     const root = { id: rootLocator, locator: rootLocator, label: 'Redis', type: 'server',
       hasChildren: true, children: [] }
     const target = keys.at(-1)

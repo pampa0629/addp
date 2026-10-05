@@ -267,7 +267,7 @@ type GraphSampleFilter struct {
 
 ### StoreProvider
 
-原生 key 值读取使用 `KeyValueReadableProvider.ReadKeyValue(ctx, connInfo, path, opts)`，返回带实时 `KeyValueFacts`、显式 UTF-8/Base64 字节值和有界条目的 `KeyValuePreview`。`KeyValueReadOptions` 只表达 `MaxEntries` 与 `MaxBytes`；结果的 `truncated` 表示样本不完整，不是可以用于导出的读取游标。EngineCatalogFacts 的 `key_value` 分区表达原生值类型、长度及 TTL，不属于 `common/datatype`，不推导平台 data type。Provider 必须在原生解码前执行预算检查，禁止返回已超预算的半份结果。
+键值数据集通过 `KeyValueReadableProvider.ListKeyValues(ctx, connInfo, path, opts)` 返回键摘要、数据库编号、next_cursor 和 complete；通过同一 Provider 的 `ReadKeyValue` 读取 `opts.Key` 指定的内容令牌，返回实时 KeyValueFacts、显式 UTF-8/Base64 字节值和有界原生条目。path 必须是 keyspace 数据集路径，Key/Cursor 属于内容选择，不形成目录层级。浏览每次执行一次 SCAN，MaxEntries 是 COUNT 提示，不能截断响应后丢弃多返回的键；允许空批次及重复键，无稳定页码、排序或快照保证。单批最多 1000 键、响应最多 1 MiB，原生解码前仍执行预算检查，超限明确失败。单键 truncated 表示样本不完整，不是导出游标。EngineCatalogFacts.keyspace 表达连接指定数据库的原生事实；原生值类型与 TTL 不落 Meta。Manager 唯一预览 API 使用 key_cursor 或 key_name 参数，二者互斥，page 必须为 1；内容请求仍绑定已扫描数据集及其保护门禁。
 
 表达 item 内容访问能力。Engine Catalog 回答“有什么”，Facts 回答“Engine 直接知道什么”，Store 回答“如何读写内容”。
 
@@ -875,7 +875,7 @@ type InferenceRuntimeProvider interface {
 | Oracle | 通用 tabular 组合 + `SpatialFeatureReadProvider` + `PartitionedTableChangeApplyProvider`；普通 Store 不声明 CDC |
 | Doris / ClickHouse | 非空间通用 tabular 组合；不声明 `BoundedWatermarkReadProvider`、`TableUpsertProvider` 或 CDC |
 | Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
-| Redis | `EnginePlugin` + `ConnectionSpecProvider` + Catalog Model/Catalog/Facts + `KeyValueReadableProvider`；`key_value` 存储族，模型为 `server -> key`，不实现表、记录集合或 Query Provider。认证后的 HELLO 必须报告 standalone 模式，再执行 SELECT 与 DBSIZE。 |
+| Redis | `EnginePlugin` + `ConnectionSpecProvider` + Catalog Model/Catalog/Facts + `KeyValueReadableProvider`；`key_value` 存储族，模型为 `server -> keyspace`，不实现表、记录集合或 Query Provider。认证后的 HELLO 必须报告 standalone 模式，再执行 SELECT 与 DBSIZE。 |
 | MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `EncodedRecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
 | Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |

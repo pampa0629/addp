@@ -10,7 +10,7 @@ function required(name) {
 
 const contextPath = '/api/v1/system/auth/context'
 
-test('Redis live catalog and scan converge to native key previews through Console', async ({ page }) => {
+test('Redis live catalog and scan converge to keyspace contents and native previews through Console', async ({ page }) => {
   const expected = JSON.parse(required('ADDP_ONLINE_REDIS_EXPECTATIONS'))
   const gateway = required('GATEWAY_URL')
   const api = await request.newContext({ baseURL: gateway, extraHTTPHeaders: {
@@ -39,8 +39,8 @@ test('Redis live catalog and scan converge to native key previews through Consol
     const engineRow = meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: 'Hosted Redis' })
     await expect(engineRow).toHaveCount(1)
     const catalog = await json(await catalogResponse, 'Meta UI live System catalog')
-    expect(catalog.nodes.map(node => node.name).sort()).toEqual(expected.samples.map(sample => sample.key).sort())
-    await expect(meta.locator('.right-panel .el-table__body-wrapper tr')).toHaveCount(9)
+    expect(catalog.nodes.map(node => node.name).sort()).toEqual(['keyspace'])
+    await expect(meta.locator('.right-panel .el-table__body-wrapper tr')).toHaveCount(1)
     const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' &&
       response.request().method() === 'POST')
     await meta.getByRole('button', { name: /^(重新扫描引擎|Rescan Engine)$/i }).click()
@@ -52,26 +52,27 @@ test('Redis live catalog and scan converge to native key previews through Consol
       return execution.status
     }, { timeout: 120_000 }).toBe('success')
     await expect(meta.locator('.scan-status')).toContainText(/(扫描完成|completed)/i)
-    await expect(meta.locator('.right-panel .el-table__body-wrapper tr')).toHaveCount(9)
+    await expect(meta.locator('.right-panel .el-table__body-wrapper tr')).toHaveCount(1)
     // Rescanning must retain the identities used by links, not create new DataItems.
     const rescanned = await json(await browserAPI.get(`/api/v1/meta/engines/${expected.engine_id}/items`), 'rescanned keys')
-    expect(rescanned.map(item => ({ key: item.full_name, id: item.id })).sort((a, b) => a.key.localeCompare(b.key)))
-      .toEqual(expected.samples.map(sample => ({ key: sample.key, id: sample.item_id })).sort((a, b) => a.key.localeCompare(b.key)))
+    expect(rescanned).toHaveLength(1)
+    expect(rescanned[0].full_name).toBe('keyspace')
+    expect(rescanned[0].id).toBe(expected.samples[0].item_id)
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'redis-meta-console.png') })
 
     // Opening one deep link expands the real Meta-backed resource tree.
     const initial = expected.samples.at(-1)
     await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(initial.locator)}`)
     const manager = page.frameLocator('iframe[data-testid="module-iframe"]')
-    await expect(manager.getByTestId('key-value-preview')).toBeVisible()
-    await expect(manager.locator('.explorer-tree .tree-node.key')).toHaveCount(9)
+    await expect(manager.getByTestId('keyspace-keys')).toBeVisible()
+    await expect(manager.locator('.explorer-tree .tree-node.keyspace')).toHaveCount(1)
     for (const sample of expected.samples) {
-      // Click the real tree: its locator must retain type=key and the scanned item_id.
+      // Click the real tree: its locator must retain type=keyspace and the scanned item_id.
       const previewResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/manager/preview' &&
-        new URL(response.url()).searchParams.get('locator') === sample.locator)
+        new URL(response.url()).searchParams.get('locator') === sample.locator && new URL(response.url()).searchParams.get('key_name') === sample.key)
       const rawKey = Buffer.from(sample.key.slice(2), 'base64url')
-      const label = sample.sample === 'binary' ? `base64:${rawKey.toString('base64')}` : JSON.stringify(rawKey.toString('utf8'))
-      await manager.getByText(label, { exact: true }).click()
+      const label = sample.sample === 'binary' ? `Base64: ${rawKey.toString('base64')}` : JSON.stringify(rawKey.toString('utf8'))
+      await manager.getByTestId('keyspace-keys').getByRole('button', { name: label, exact: true }).click()
       const payload = await json(await previewResponse, 'Console native Redis preview')
       expect(payload.preview_type).toBe('key_value')
       expect(payload.data.mode).toBe('key_value')
@@ -83,7 +84,7 @@ test('Redis live catalog and scan converge to native key previews through Consol
         await expect(native.getByTestId('key-value-string')).toHaveText(sample.value.value)
         await expect(native.locator('.el-tag')).toHaveText(sample.value.encoding === 'base64' ? 'Base64' : 'UTF-8')
       } else {
-        const rows = native.locator('.el-table__body-wrapper tr')
+        const rows = native.locator('.el-table').last().locator('.el-table__body-wrapper tr')
         await expect(rows).toHaveCount(sample.entries.length)
         for (let index = 0; index < sample.entries.length; index += 1) {
           const entry = sample.entries[index]
@@ -106,7 +107,7 @@ test('Redis live catalog and scan converge to native key previews through Consol
       }
       await expect(frame.locator('.preview-container .el-pagination')).toHaveCount(0)
       await expect(frame.getByRole('tab', { name: /数据画像|Data Profile/i })).toHaveCount(0)
-      await expect(frame.locator('.explorer-tree .tree-node.key')).toHaveCount(9)
+      await expect(frame.locator('.explorer-tree .tree-node.keyspace')).toHaveCount(1)
       await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `redis-${sample.sample}-console.png`) })
     }
     writeFileSync(required('ADDP_ONLINE_REDIS_BROWSER_REPORT'), JSON.stringify({

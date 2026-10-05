@@ -694,7 +694,24 @@ SKIP_MEILISEARCH_INIT=0
 
 `make infra-restore-drill BACKUP_DIR=/绝对路径/ADDP-backups/<备份目录>` 先校验清单，再使用与来源相同的镜像创建两个没有宿主机端口、没有持久卷的一次性容器。PostgreSQL 在隔离容器内真实恢复并核对关键表行数；MinIO 在隔离容器内导入 Bucket/IAM 并逐 Bucket 恢复对象，下载后比较文件哈希。演练结束仅清理本轮带所有权标签的一次性容器。该入口不连接或重置当前 `addp`、`addp_test`、`addp_iam_test`，不停止服务，不修改 Infra/Business/SCP 卷。
 
-本地备份覆盖当前 System 数据库和 Infra MinIO 的当前对象版本，不覆盖 Business 引擎、Redis、FalkorDB、Meilisearch、Kafka 的持久事实，也不保存 MinIO 对象历史版本。正式平台备份还需界定这些状态的恢复来源、使用独立存储与加密保留策略，并做定期演练；本地单份备份不等于灾备。
+默认本地备份覆盖当前 System 数据库和 Infra MinIO 的当前对象版本，不覆盖 Business 引擎、Redis、FalkorDB、Meilisearch、Kafka 的持久事实，也不保存 MinIO 对象历史版本。显式收录 Meilisearch dump 的范围见下文；它仍不是原始搜索卷副本。正式平台备份还需界定这些状态的恢复来源、使用独立存储与加密保留策略，并做定期演练；本地单份备份不等于灾备。
+
+已确认的 Meilisearch 扩展边界：普通备份仍不包含搜索卷，不自动调用 `POST /dumps`。仅当用户显式提供 `MEILISEARCH_DUMP=/仓库外私有目录/<文件>.dump` 和 `MEILISEARCH_DUMP_TASK=<已成功导出任务UID>` 时，标准入口收录该既有文件。必须核对本工作区运行中搜索容器的所有权、成功 dump 回执及其容器内文件 SHA-256；归属、版本、终态或摘要不符均拒绝收录。文件须为当前用户拥有的 0600 普通文件，父目录为 0700，不能是软链接。只接受完整 V6 dump，且其中任务全部已终结；收录不代表该快照与稍后导出的 PostgreSQL 具有共同事务时间点，迁移的一致性冻结仍由用户负责。
+
+包含搜索 dump 的备份沿用 `make infra-restore-drill`：只读挂载 dump 到带本次所有权标签、无网络、无宿主端口、无持久卷的第三个一次性容器；使用来源镜像导入，核对索引身份、主键、文档、原显式设置与任务回执，再核实容器清理。版本新增的默认设置允许存在；原设置为 unset 的空值不强制覆盖新版本默认。`MEILISEARCH_RESTORE_IMAGE` 仅用于显式验证目标版本，须为 `getmeili/meilisearch:v<完整版本>@sha256:<digest>`；不接受浮动标签，不自动切换开发实例。恢复使用新的一次性 Master Key，不复用开发凭据。该演练不证明 Catalog／Asset 可见性、Manager 当前保护状态或故障恢复 T4 已通过，也不替代旧卷备份。
+
+先在用户确认的导出窗口获得成功 dump，并将文件置于仓库外私有目录，再使用以下入口。尖括号为需要替换的实际值，UID `0` 有效；这些命令本身不会创建 dump：
+
+```bash
+make infra-backup BACKUP_ROOT=/绝对路径/ADDP-backups \
+  MEILISEARCH_DUMP=/绝对路径/私有导出目录/实际文件.dump MEILISEARCH_DUMP_TASK=实际成功任务UID
+make infra-restore-drill BACKUP_DIR=/绝对路径/ADDP-backups/实际备份目录
+# 仅在核验目标镜像 digest 后，显式验证跨版本导入
+make infra-restore-drill BACKUP_DIR=/绝对路径/ADDP-backups/实际备份目录 \
+  MEILISEARCH_RESTORE_IMAGE='getmeili/meilisearch:v1.54.3@sha256:<已核验的64位摘要>'
+```
+
+`make test-infra-backup` 是不连接开发服务的 T1 校验逻辑测试，已由 `make test-platform` 和 Platform CI 覆盖；真实恢复必须另行执行 `make infra-restore-drill`，不能用 T1 通过代替导入成功。演练失败后会尝试清理全部本轮容器；任何清理失败均报告失败，不输出零残留成功。
 
 本机网盘备份使用 `make infra-cloud-backup BACKUP_ROOT=/Users/pampa/addp-backups EXPORT_ROOT=/Users/pampa/addp-cloud-encrypted PRIVATE_ROOT=/Users/pampa/.config/addp/backup`。入口先只读生成上述 Infra 快照，在无宿主机端口和持久卷的隔离容器中恢复核对，再用 age 收件人公钥生成 `.tar.age`，解密流并逐文件核对 SHA-256，最后才原子移入网盘客户端监视的本地目录；脚本本身不将明文快照或私钥放入该目录。`.sha256` 是加密文件的校验值，`last-run.json` 仅记在私有目录。失败时保留本地快照供检查，不上传不完整归档，也不自动删除已有备份。
 
@@ -805,6 +822,8 @@ docker logs minio
 已有 `1.7.6` 持久卷**不得只改镜像后重启**。[官方迁移指南](https://www.meilisearch.com/docs/resources/migration/updating) 明确 `--upgrade-db` 不支持低于 `1.12` 的数据库，因此这次需先设计并确认 dump 迁移及恢复步骤：由用户停止各 Owner 写入，保留旧版本可启动的卷备份与任务历史，核查 Manager 持久投递；备份验证成功后才在独立新卷导入并验证三个 Owner。任务身份／历史必须逐项验证，不能假定 dump 保留原回执或把编号复用当作成功。尚无编号的旧提交若无法证明收敛，保持隔离；受控重建另行确认。此次研发不执行 dump、卷切换、清空索引或开发服务重启。
 
 新建无历史数据的部署直接使用固定版本；Owner 初始化和恢复单测通过，不等于现有开发卷已迁移，也不等于真实故障 T4 通过。
+
+具体执行阶段、冻结条件、任务身份对账与回滚边界见[企业资源目录专题 §26.79](../../docs/next/ADDP企业资源目录能力专题.md#2679-旧-meilisearch-卷的迁移回滚与验收方案2026-10-05待确认执行窗口)。`make infra-backup` **默认不包含 Meilisearch**；仅显式传入既有成功 dump 和任务 UID 时收录，不能以 PostgreSQL／MinIO 备份成功代替搜索恢复验证。实际 dump、停服、迁移导入及卷切换须另行确认操作窗口；普通 `up.sh` 不是旧索引卷迁移入口。
 
 ```bash
 # 检查容器状态

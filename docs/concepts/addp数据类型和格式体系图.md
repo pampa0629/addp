@@ -30,6 +30,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | `media` | 图片、视频、音频等可感知媒体内容 | 媒体信息、原始内容、缩略图、播放、转码 |
 | `container` | 内部包含子对象或子资源的数据 | 内部对象枚举、默认入口、子对象读取 |
 | `graph` | 节点、边、关系结构的数据 | 图结构信息、关系查询、子图样本 |
+| `key_value` | 按原始键定位值的键值数据集 | 游标浏览键、实时原生值预览；不推断统一表结构 |
 | `cad` | 保留 CAD 图层、块、布局、标注等设计图纸原生语义的数据 | 图纸结构摘要、专业渲染、原文件传输、显式 CAD→GIS 导入 |
 | `model_3d` | 三维空间对象、网格、场景、构件或倾斜摄影模型 | 模型结构信息、三维预览、空间定位、LOD 或构件摘要 |
 | `point_cloud` | 三维点集合及其点属性、空间范围和抽样结构 | 点云信息、抽样预览、空间定位、LOD / 分块读取 |
@@ -45,6 +46,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | 数据类型 | 当前支持的原生 / 承载引擎 | 当前内置文件格式或容器子格式 | 说明 |
 |---|---|---|---|
 | `table` | 原生表格引擎：PostgreSQL、MySQL、Doris、ClickHouse、Spark SQL。动态 schema 引擎：MongoDB collection。文件 / 对象承载：NFS、S3、MinIO。 | `csv`、`tsv`、records `json` / JSON Lines、`geojson`、`shapefile`、`parquet`、`orc`、`avro`。容器 child 可归一为 table：Excel sheet、SQLite table / view、GeoPackage layer / table、File Geodatabase feature class / table、Personal Geodatabase feature class / table、ZIP 内部表格文件。 | 表格数据可以来自引擎原生 catalog leaf，也可以来自文件格式。空间语义通过 `capabilities.spatial` 表达，不新增空间表 data type。Iceberg 属于规范层 whole table 示例，当前未作为内置 format descriptor 注册。 |
+| `key_value` | 原生键值引擎：Redis 的已连接逻辑数据库。 | 不定义 Redis 文件格式。 | keyspace 是数据项，key/value 是实时内容；原生值结构不扩展为独立 datatype。 |
 | `document` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 document catalog 引擎。 | `pdf`、`doc`、`docx`、`rtf`、`pptx`、`wps`、`text`、`markdown`、文档型 `json`。ZIP 内部文档文件可作为 container child 被识别。 | MongoDB query 可以返回 document 形态结果，但 MongoDB collection data item 在当前语义中仍按动态 schema 记录集合归为 `table`。 |
 | `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。地图数据集：`pmtiles`、`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `pmtiles` 表示 PMTiles v3 单文件矢量瓦片归档，当前内部编码固定为 gzip MVT；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集。 |
 | `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |

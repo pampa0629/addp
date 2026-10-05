@@ -568,7 +568,7 @@ type GraphSampleOptions struct {
 }
 
 type EngineCatalogFacts struct {
-	KeyValue     *KeyValueFacts             `json:"key_value,omitempty"`
+	Keyspace     *KeyspaceFacts             `json:"keyspace,omitempty"`
 	Path         EngineCatalogPath          `json:"path"`
 	Kind         string                     `json:"kind"`
 	Table        *datatype.TableInfo        `json:"table,omitempty"`

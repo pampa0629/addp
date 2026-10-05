@@ -152,16 +152,16 @@ TiDB 的完成证据必须同时包含固定三组件官方镜像 digest、Linux
 
 KingbaseES 的完成证据必须同时包含固定官方介质 SHA-256、owner 提供 License 文件的 SHA-256 与有效性校验、Linux x86_64 T5 官方介质协议认证、同环境真实 T2 disposable Provider 门禁、Business 幂等样例，以及 `kingbase-consumer-flow` 的 Manager / Transfer / Develop / Service 跨模块 T4 与容器零残留证据。三层门禁只在带 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签的受保护 Runner 上执行，首次真实通过前只登记手工 `workflow_dispatch`，不得增加 schedule。
 
-### Redis key 扫描与原生预览
+### Redis 键值数据集扫描与原生预览
 
 `redis` 插件复用固定版本 `go-redis/v9@v9.17.2`，只支持单端点 ACL 认证和一个逻辑数据库。ConnectionSpec 使用 `host`、`port`（默认 6379）、`user`（默认 default）、`password`、`database`（从 0 开始，默认 0）、`use_ssl` 和可选 PEM `tls_ca_cert`。TLS 必须验证证书链与连接主机，不能关闭证书验证。连接检测以配置的凭据执行 HELLO（必须为 standalone）、SELECT 和 DBSIZE；此检测不读写业务 key，也不证明账号有 key 读取权限。
 
-目录模型固定 `server -> key`；数据库属于连接边界，不重复进入业务路径。所有 key（包括空 key、非 UTF-8 和特殊字符）统一用 `k:` 加无填充 Base64URL 原始字节编码定位；显示名称由该编码派生。首期键名最多 189 字节，使编码后的 Meta `name` 不超过既有 255 字符预算；超长键名不能被截断、忽略或改成哈希身份。
+目录模型固定 `server -> keyspace`，连接指定的数据库对应唯一 `keyspace` 数据集，`data_type=key_value`。数据库编号属于连接边界，不进入业务路径。key/value 为数据集内容，不逐键登记 Meta；内容 key 用 `k:` 加无填充 Base64URL 编码，空 key 为 `k:`，内容键预算为 64 KiB。浏览使用有预算的原生游标，COUNT 是提示且不得丢弃多返回的键；单键读取保留原生结构和精确字节。
 
-插件内部完整推进 SCAN 游标、去重并按编码名称排序，随后应用 ListOptions；不将 SCAN COUNT 当作严格分页。枚举最多 10000 个不同 key、8 MiB 累计键名字节和 1000 次 SCAN，单次操作最长 10 秒；超限、取消或权限探测失败返回失败，不交付半份目录。Meta 只有成功完成范围扫描才清理未见 key；每个 key 只保存 `layout=single + data_type=unknown`，不采样业务值或持久化递减 TTL。
+Catalog 不遍历键空间。内容浏览每次执行一次 SCAN，保留全部返回键，过滤 key ACL 拒绝的键；COUNT 只作提示，单批最多 1000 个键、输出最多 1 MiB，操作最长 10 秒；超限、取消或命令权限不足明确失败，不返回半份批次。游标允许空批次及重复键，不承诺稳定分页。Meta 完整重扫成功后清理旧逐 key 元数据，只保留一个键值数据集。
 
 原生 Facts 返回类型、字节长度或元素数与实时 PTTL；读取通过 `KeyValueReadableProvider` 给出 string 字节窗口或 hash/list/set/zset/stream 有限样本，最多 50 项、string 最多 64 KiB、单个 RESP 响应最多 1 MiB。数据读取在 SDK 分配内存前检查 RESP 长度、元素数和嵌套深度；TLS 解密后同样检查。字段和值使用显式 UTF-8/Base64 字节表达，不自动转换数值字符串、JSON 或 stream ID，stream 字段对保留顺序及重复字段名。只读样本不承诺快照、稳定分页或完整导出，key 消失、类型变化和访问拒绝必须明确返回。
 
-System 公开真实能力与 KeyValue Facts；Manager 继续要求 Meta item 身份，并以独立原生键值预览呈现。首期不声明 Cluster、Sentinel、写入、查询、搬运或字段保护适配。
+System 公开真实能力与 Keyspace Facts；Manager 继续要求 Meta item 身份，并以独立原生键值预览呈现。首期不声明 Cluster、Sentinel、写入、查询、搬运或字段保护适配。
 
 最小验证为 `make test-common-redis-unit`（原生读取、资源路径、预览路由与保护边界）、`make test-common-redis`（独占真实 Redis + Common/System/Meta/Manager 消费契约）、`make test-business-redis`（原生夹具）、`make test-engine-plugin-registration`、`make test-common-frontend test-manager-frontend test-system-frontend test-meta-frontend`；共享聚合依赖由 `make test-go` 验证。现有 Redis T2 job 按 Common/System/Meta/Manager/Business 路径触发，不新增另一套测试生命周期。

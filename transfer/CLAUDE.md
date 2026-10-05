@@ -69,7 +69,7 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 - 资源选择与资源树：引擎列表及资源树统一使用 Meta engine / resource-tree / item API；Transfer 不保留私有引擎列表、数据源树、节点 children 或表 metadata 代理接口。
 - TaskProvider 标准任务：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`，其中 `task_type` 固定为 `sync`；四个端点不接受用户任务权限。
 - 任务定义：`GET /task-definitions`、`POST /task-definitions`、`GET /task-definitions/statistics`、`GET /task-definitions/:id`、`PUT /task-definitions/:id`、`DELETE /task-definitions/:id`、`POST /task-definitions/:id/start|pause|resume`、`GET /task-definitions/:id/executions`。`pause/resume` 只控制 owner schedule，不中断 active execution。
-- “传输任务”列表页提供传输任务创建助手，由 Copilot `/api/v1/copilot/transfer/generate` 识别源资源意图并给出候选。唯一候选也必须由用户确认；之后在助手内依次确认目标引擎、目标父位置、目标表、字段映射和任务配置。声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐 API，按目标 capability 校验基于源数据生成并展示确认；不得按 MySQL、OceanBase 等 `engine_type` 建立名单。Copilot 接口不创建或启动任务，最终仍使用本模块 `task-definitions` API 和 `transfer.task.create` 权限。
+- “传输任务”列表页提供传输任务创建助手，由 Copilot `/api/v1/copilot/transfer/generate` 只识别源资源意图；向导调用 Manager 搜索/资源事实和 Meta 祖先链得到真实候选，确认时重读 owner 事实，目标继续使用共享资源树。唯一候选也必须由用户确认；之后在助手内依次确认目标引擎、目标父位置、目标表、字段映射和任务配置。声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐 API，按目标 capability 校验基于源数据生成并展示确认；不得按 MySQL、OceanBase 等 `engine_type` 建立名单。Copilot 接口只消费上下文，不调用资源 owner、不创建或启动任务；最终仍使用本模块 `task-definitions` API 和 `transfer.task.create` 权限，由 Transfer 独立校验。
 - Transfer 不提供模块级全局执行列表或监控面板；任务列表通过 `MonitorExecutionsButton(module=transfer, task_type=sync)` 进入统一 Monitor。任务详情保留当前任务的执行历史和 Transfer 领域诊断、结果、重试操作，单次领域详情继续使用 `ExecutionDetail`。
 - 数据库 CDC 结构变更：`GET /task-definitions/:id/schema-change` 查询当前请求，`POST /task-definitions/:id/schema-change/approve` 人工审批 additive migration。
 - 业务 Kafka DLQ 只读管理：`GET /task-definitions/:id/dead-letters`、`GET /task-definitions/:id/dead-letters/:identity`。只公开 tenant/task scoped 安全控制索引，不返回 Infra Kafka payload reference 或原始 key/value/headers。
@@ -80,6 +80,8 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
 
 ## 执行规则
+
+- 服务代发导出必须按已认证 Client ID 推导 Manager／Develop owner，再从 System 活动模块注册信息解析 Backend 地址，使用 Transfer tenant Service Token 核验导出会话、预绑定 execution UUID、完整请求摘要和待执行状态。核验得到的用户只写入 `triggered_by`，不能写入执行授权 actor 字段。请求不接受自报用户或回调地址；无来源的机器执行不声明人类发起用户，不能为旧记录猜测归属。
 
 - 新任务配置必须使用 `runtime.boundary`、`load.mode`、source / target endpoint 和 `target.policy.apply_mode` JSON；旧顶层 `mode`、`write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 - Transfer 任务类型固定为 `sync`；不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型。

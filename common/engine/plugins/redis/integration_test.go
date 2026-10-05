@@ -62,13 +62,17 @@ func TestIntegrationRedisNativeAccessAndACL(t *testing.T) {
 	defer admin.Close()
 	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 42)
 	entries, err := p.ListChildren(ctx, c, root, plugin.ListOptions{})
-	if err != nil || len(entries) != 9 {
+	if err != nil || len(entries) != 1 {
 		t.Fatalf("native catalog %d: %v", len(entries), err)
 	}
-	for _, entry := range entries {
-		v, err := p.ReadKeyValue(ctx, c, entry.Path, plugin.KeyValueReadOptions{})
-		if err != nil || v.Facts.NativeType == "" {
-			t.Fatalf("native preview %s: %v", entry.Name, err)
+	batch, err := p.ListKeyValues(ctx, c, entries[0].Path, plugin.KeyValueReadOptions{MaxEntries: 100})
+	if err != nil || len(batch.Keys) != 9 || !batch.Complete {
+		t.Fatal(batch, err)
+	}
+	for _, key := range batch.Keys {
+		value, err := p.ReadKeyValue(ctx, c, entries[0].Path, plugin.KeyValueReadOptions{Key: key.Key})
+		if err != nil || value.Facts.NativeType != key.Facts.NativeType {
+			t.Fatal(value, err)
 		}
 	}
 	if err := admin.Do(ctx, "ACL", "SETUSER", "addp_native_limited", "reset", "on", ">native-limited", "~addp:sample:counter", "+hello", "+select", "+scan", "+type", "+strlen", "+pttl", "+getrange").Err(); err != nil {
@@ -81,20 +85,20 @@ func TestIntegrationRedisNativeAccessAndACL(t *testing.T) {
 	}
 	limited["user"] = "addp_native_limited"
 	limited["password"] = "native-limited"
-	visible, err := p.ListChildren(ctx, limited, root, plugin.ListOptions{})
-	if err != nil || len(visible) != 1 {
-		t.Fatalf("key ACL catalog %d: %v", len(visible), err)
+	visible, err := p.ListKeyValues(ctx, limited, entries[0].Path, plugin.KeyValueReadOptions{MaxEntries: 100})
+	if err != nil || visible == nil || len(visible.Keys) != 1 {
+		t.Fatalf("key ACL contents %v: %v", visible, err)
 	}
-	if raw, err := plugin.DecodeKeyName(visible[0].Name); err != nil || string(raw) != "addp:sample:counter" {
+	if raw, err := plugin.DecodeKeyName(visible.Keys[0].Key); err != nil || string(raw) != "addp:sample:counter" {
 		t.Fatal(visible, err)
 	}
-	if v, err := p.ReadKeyValue(ctx, limited, keyTestPath(t, p, "addp:sample:hash"), plugin.KeyValueReadOptions{}); err == nil || v != nil {
+	if v, err := readTestKey(t, p, ctx, limited, "addp:sample:hash", plugin.KeyValueReadOptions{}); err == nil || v != nil {
 		t.Fatal("key permission denial returned data")
 	}
 	if err := admin.Do(ctx, "ACL", "SETUSER", "addp_native_limited", "-type").Err(); err != nil {
 		t.Fatal(err)
 	}
-	if items, err := p.ListChildren(ctx, limited, root, plugin.ListOptions{}); err == nil || items != nil {
+	if items, err := p.ListKeyValues(ctx, limited, entries[0].Path, plugin.KeyValueReadOptions{}); err == nil || items != nil {
 		t.Fatal("command ACL denial treated as empty catalog")
 	}
 	for _, test := range []struct {
@@ -109,10 +113,10 @@ func TestIntegrationRedisNativeAccessAndACL(t *testing.T) {
 		}
 		defer admin.Del(ctx, test.key)
 	}
-	if v, err := p.ReadKeyValue(ctx, c, keyTestPath(t, p, "addp:sample:budget"), plugin.KeyValueReadOptions{MaxEntries: 1}); err == nil || v != nil || !strings.Contains(err.Error(), "budget") {
+	if v, err := readTestKey(t, p, ctx, c, "addp:sample:budget", plugin.KeyValueReadOptions{MaxEntries: 1}); err == nil || v != nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("large native allocation accepted: %v", err)
 	}
-	v, err := p.ReadKeyValue(ctx, c, keyTestPath(t, p, "addp:sample:duplicates"), plugin.KeyValueReadOptions{})
+	v, err := readTestKey(t, p, ctx, c, "addp:sample:duplicates", plugin.KeyValueReadOptions{})
 	if err != nil || len(v.Entries) != 1 || len(v.Entries[0].Fields) != 2 || v.Entries[0].Fields[0].Name.Value != "f" || v.Entries[0].Fields[1].Value.Value != "second" {
 		t.Fatalf("stream field pairs lost: %v", err)
 	}

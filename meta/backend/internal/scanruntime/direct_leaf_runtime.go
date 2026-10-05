@@ -110,6 +110,9 @@ func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.Engine
 				metaattr.ApplyTableItemAttributes(attrs, table)
 				rowCount, sizeBytes = table.RowCount, table.SizeBytes
 			}
+			if facts != nil && facts.Keyspace != nil {
+				metaattr.SetItem(attrs, "data_type", string(datatype.KeyValue))
+			}
 			metaattr.ApplyEngineCatalogFactsCapabilities(attrs, facts)
 		}
 		item, err := s.repo.UpsertItemWithDepth(

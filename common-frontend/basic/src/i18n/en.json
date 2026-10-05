@@ -2,7 +2,7 @@
   "engine": {
     "term": {
       "index": "Index",
-      "key": "Key"
+      "keyspace": "Key-value dataset"
     }
   },
   "common": {
@@ -583,6 +583,16 @@
     "field": "Field",
     "value": "Value",
     "score": "Score",
-    "fields": "Ordered field pairs"
+    "fields": "Ordered field pairs",
+    "key": "Key",
+    "database": "Logical database",
+    "nextBatch": "Next batch",
+    "refresh": "Refresh",
+    "open": "View",
+    "failed": "Read failed",
+    "empty": "No visible keys in this batch",
+    "summary": "Summary",
+    "bytes": "{count} bytes",
+    "elements": "{count} entries"
   }
 }
