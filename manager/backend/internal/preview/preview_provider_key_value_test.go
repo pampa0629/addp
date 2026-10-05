@@ -40,6 +40,9 @@ func TestIntegrationRedisPreview(t *testing.T) {
 	if err != nil || list.Keyspace == nil || len(list.Keyspace.Keys) != 1 || list.Keyspace.Keys[0].Name.Value != "addp:sample:counter" {
 		t.Fatalf("Manager prefix was not passed to Redis: %v %v", list, err)
 	}
+	if list.Keyspace.Keys[0].Value == nil || list.Keyspace.Keys[0].Value.Value != "9007199254740993" || list.Keyspace.Keys[0].Truncated {
+		t.Fatal("Manager list omitted the inline native value", list.Keyspace)
+	}
 	for _, key := range []string{"addp:sample:counter", "addp:sample:hash", "addp:sample:list", "addp:sample:set", "addp:sample:zset", "addp:sample:stream", "addp:sample:binary\x00\xff"} {
 		name, err := plugin.EncodeKeyName([]byte(key))
 		if err != nil {

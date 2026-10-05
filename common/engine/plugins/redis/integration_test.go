@@ -92,6 +92,18 @@ func TestIntegrationRedisNativeAccessAndACL(t *testing.T) {
 	if raw, err := plugin.DecodeKeyName(visible.Keys[0].Key); err != nil || string(raw) != "addp:sample:counter" {
 		t.Fatal(visible, err)
 	}
+	if visible.Keys[0].Value == nil || visible.Keys[0].Value.Value != "9007199254740993" {
+		t.Fatal("inline value was not read with the restricted identity", visible)
+	}
+	if err := admin.Do(ctx, "ACL", "SETUSER", "addp_native_limited", "-getrange").Err(); err != nil {
+		t.Fatal(err)
+	}
+	if items, err := p.ListKeyValues(ctx, limited, entries[0].Path, plugin.KeyValueReadOptions{}); err == nil || items != nil {
+		t.Fatal("value command denial returned a successful key batch")
+	}
+	if err := admin.Do(ctx, "ACL", "SETUSER", "addp_native_limited", "+getrange").Err(); err != nil {
+		t.Fatal(err)
+	}
 	visible, err = p.ListKeyValues(ctx, limited, entries[0].Path, plugin.KeyValueReadOptions{Prefix: "addp:sample:", MaxEntries: 100})
 	if err != nil || len(visible.Keys) != 1 || visible.Keys[0].Key != "k:YWRkcDpzYW1wbGU6Y291bnRlcg" {
 		t.Fatalf("prefix bypassed key ACL: %v %v", visible, err)

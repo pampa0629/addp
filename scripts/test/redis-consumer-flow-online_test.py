@@ -57,12 +57,26 @@ class FakeClient:
                 else:
                     prefix = query.get('key_prefix', [''])[0]
                     selected = [sample for sample in self.samples if ('addp:sample:' + sample['sample']).startswith(prefix)]
-                    payload = {'preview_type': 'key_value', 'data': {'keyspace': {'database': 0, 'keys': [{'key': sample['key'], 'facts': preview(sample)['data']['key_value']['facts']} for sample in selected], 'complete': True, 'next_cursor': '0'}}}
+                    payload = {'preview_type': 'key_value', 'data': {'keyspace': {'database': 0, 'keys': [{'key': sample['key'], **preview(sample)['data']['key_value']} for sample in selected], 'complete': True, 'next_cursor': '0'}}}
         else: raise AssertionError(f'unexpected route {method} {url.path}')
         return SimpleNamespace(payload=copy.deepcopy(payload))
 
 
 class RedisConsumerContractTest(unittest.TestCase):
+    def test_key_list_must_include_native_value_samples(self):
+        client = FakeClient()
+        original = client.request
+        def missing_sample(method, path, statuses, body=None):
+            response = original(method, path, statuses, body)
+            dataset = response.payload.get('data', {}).get('keyspace') if urlsplit(path).path.endswith('/manager/preview') else None
+            if dataset:
+                for key in dataset['keys']:
+                    key.pop('value', None)
+                    key.pop('entries', None)
+            return response
+        client.request = missing_sample
+        with self.assertRaises(MODULE.SuiteError): MODULE.run(client, 2, 17, 10)
+
     def test_prefix_filter_checks_literal_matching_and_cannot_accept_unfiltered_results(self):
         client = FakeClient()
         self.assertTrue(MODULE.run(client, 2, 17, 10)['prefix_filter'])

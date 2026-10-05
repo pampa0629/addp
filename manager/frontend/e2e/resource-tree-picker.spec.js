@@ -39,6 +39,9 @@ for (const profile of [
 for (const native of [
   { facts: { native_type: 'string', length: 19, ttl_millis: -1 }, value: { encoding: 'utf8', value: '9223372036854775807', byte_length: 19 }, entries: [], truncated: false },
   { facts: { native_type: 'string', length: 2, ttl_millis: 5000 }, value: { encoding: 'base64', value: 'AP8=', byte_length: 2 }, entries: [], truncated: true },
+  { facts: { native_type: 'hash', length: 1, ttl_millis: -1 }, entries: [{ field: { encoding: 'utf8', value: 'name' }, value: { encoding: 'utf8', value: '张三' } }], truncated: false },
+  { facts: { native_type: 'list', length: 1, ttl_millis: -1 }, entries: [{ index: 0, value: { encoding: 'utf8', value: 'first' } }], truncated: false },
+  { facts: { native_type: 'set', length: 1, ttl_millis: -1 }, entries: [{ value: { encoding: 'utf8', value: 'member' } }], truncated: false },
   { facts: { native_type: 'stream', length: 1, ttl_millis: -1 }, entries: [{ id: '1-0', fields: [{ name: { encoding: 'utf8', value: 'name' }, value: { encoding: 'utf8', value: 'first' } }, { name: { encoding: 'utf8', value: 'name' }, value: { encoding: 'utf8', value: 'second' } }] }], truncated: false },
   { facts: { native_type: 'zset', length: 1, ttl_millis: -1 }, entries: [{ value: { encoding: 'utf8', value: 'member' }, score: '1.2345678901234567' }], truncated: false }
 ]) {
@@ -50,6 +53,17 @@ for (const native of [
     const preview = page.getByTestId('key-value-preview')
     await expect(preview).toBeVisible()
     await expect(page.getByTestId('keyspace-keys')).toBeVisible()
+    const inline = page.getByTestId('key-value-sample')
+    await expect(page.getByTestId('keyspace-keys').getByRole('columnheader')).toHaveText(['键名', '原生类型', '值', '内容摘要', '剩余 TTL'])
+    await expect(page.getByTestId('selected-key-name')).toHaveCount(0)
+    if (native.value) await expect(inline).toContainText(native.value.encoding === 'base64' ? `Base64: ${native.value.value}` : JSON.stringify(native.value.value))
+    if (native.facts.native_type === 'stream') await expect(inline).toHaveText('[1-0: [["name", "first"], ["name", "second"]]]')
+    if (native.facts.native_type === 'zset') await expect(inline).toHaveText('["member" (1.2345678901234567)]')
+    if (native.facts.native_type === 'hash') await expect(inline).toHaveText('{"name": "张三"}')
+    if (native.facts.native_type === 'list') await expect(inline).toHaveText('["first"]')
+    if (native.facts.native_type === 'set') await expect(inline).toHaveText('["member"]')
+    if (native.truncated) await expect(inline).toContainText('…')
+    expect(backend.previewQueries).toHaveLength(1)
     await page.getByTestId('keyspace-keys').getByRole('button', { name: '"sample"', exact: true }).click()
     await expect(preview).toContainText(native.facts.native_type)
     if (native.value) await expect(page.getByTestId('key-value-string')).toHaveText(native.value.value)
@@ -75,7 +89,7 @@ test('browses an empty nonterminal keyspace batch and selects a key from the nex
     keyspacePages: {
      '': {
       '': { database: 0, keys: [], complete: false, next_cursor: '42' },
-      '42': { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, facts: native.facts }], complete: true, next_cursor: '0' }
+      '42': { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, ...native }], complete: true, next_cursor: '0' }
      }
     }
   })
@@ -95,7 +109,7 @@ test('applies literal key prefixes from the first cursor, retains them across ba
   const locator = 'addp://engine/12/path/keyspace?type=keyspace&item_id=1204'
   const native = { facts: { native_type: 'string', length: 3, ttl_millis: -1 }, value: { encoding: 'utf8', value: '123', byte_length: 3 }, entries: [], truncated: false }
   const prefix = ' 客户:*?[]\\:'
-  const summary = name => ({ key: `k:${Buffer.from(name).toString('base64url')}`, name: { encoding: 'utf8', value: name }, facts: native.facts })
+  const summary = name => ({ key: `k:${Buffer.from(name).toString('base64url')}`, name: { encoding: 'utf8', value: name }, ...native })
   const backend = await installMockBackend(page, { recordSet: { type: 'keyspace', locator, rows: [] }, keyValue: native,
     keyspacePages: {
       '': { '': { database: 0, keys: [summary('sample')], complete: true, next_cursor: '0' } },
@@ -108,6 +122,7 @@ test('applies literal key prefixes from the first cursor, retains them across ba
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
   const keys = page.getByTestId('keyspace-keys')
+  await expect(keys.getByTestId('key-value-sample')).toHaveText('"123"')
   await keys.getByRole('button', { name: '"sample"', exact: true }).click()
   await expect(page.getByTestId('key-value-string')).toHaveText('123')
   const input = page.getByRole('textbox', { name: '键名前缀', exact: true })
@@ -116,10 +131,12 @@ test('applies literal key prefixes from the first cursor, retains them across ba
   await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ locator, key_cursor: '', key_prefix: prefix })
   await expect(page.getByTestId('key-value-string')).toHaveCount(0)
   await expect(keys).toContainText('当前批次没有可见键')
+  await expect(keys.getByTestId('key-value-sample')).toHaveCount(0)
   // An edited draft must not change the active prefix during cursor browsing.
   await input.fill('missing:')
   await page.getByRole('button', { name: '下一批', exact: true }).click()
   await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ key_cursor: '7', key_prefix: prefix })
+  await expect(keys.getByTestId('key-value-sample')).toHaveText('"123"')
   await keys.getByRole('button', { name: JSON.stringify(prefix + 'one'), exact: true }).click()
   expect(backend.previewQueries.at(-1)).not.toHaveProperty('key_prefix')
   await expect(page.getByTestId('key-value-string')).toHaveText('123')
@@ -584,7 +601,7 @@ async function installMockBackend(page, options = {}) {
       state.previewQueries.push(Object.fromEntries(url.searchParams))
       return fulfillJSON(route, {
         preview_type: options.keyValue ? 'key_value' : 'table',
-        data: options.keyValue ? { mode: 'key_value', total: 0, ...(url.searchParams.has('key_name') ? { key_value: options.keyValue } : { keyspace: options.keyspacePages?.[url.searchParams.get('key_prefix') || '']?.[url.searchParams.get('key_cursor') || ''] || { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, facts: options.keyValue.facts }], complete: true, next_cursor: '0' } }), columns: [], rows: [], item_meta: { attributes: [{ key: 'item', value: { data_type: 'key_value', layout: 'single' } }] } } : { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
+        data: options.keyValue ? { mode: 'key_value', total: 0, ...(url.searchParams.has('key_name') ? { key_value: options.keyValue } : { keyspace: options.keyspacePages?.[url.searchParams.get('key_prefix') || '']?.[url.searchParams.get('key_cursor') || ''] || { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, ...options.keyValue }], complete: true, next_cursor: '0' } }), columns: [], rows: [], item_meta: { attributes: [{ key: 'item', value: { data_type: 'key_value', layout: 'single' } }] } } : { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
           rows: recordSet.rows, total: recordSet.rows.length, page: 1, page_size: 20 },
         metadata: { item_id: 1204, meta_scanned: true }
       })

@@ -81,9 +81,9 @@ type KeyspaceFacts struct {
 }
 
 type KeyValueSummary struct {
-	Key   string        `json:"key"`
-	Name  ByteValue     `json:"name"`
-	Facts KeyValueFacts `json:"facts"`
+	Key  string    `json:"key"`
+	Name ByteValue `json:"name"`
+	KeyValuePreview
 }
 
 type KeyValueDatasetPreview struct {

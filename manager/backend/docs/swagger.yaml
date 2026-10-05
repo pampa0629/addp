@@ -4677,6 +4677,7 @@ paths:
       description: |-
         根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more
         Redis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only
+        键列表含有界原生值样本：string 最多 256 字节，集合最多 3 个条目；truncated 表示样本不完整 | Key lists include bounded native value samples: up to 256 bytes for strings or 3 collection entries; truncated marks an incomplete sample
       parameters:
       - description: 键空间浏览游标 | Keyspace browse cursor
         in: query

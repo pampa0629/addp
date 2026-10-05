@@ -79,6 +79,10 @@ def validate_preview(payload, sample):
     require(data.get('mode') == 'key_value' and not data.get('columns') and not data.get('rows'),
             'Redis must use native key_value mode without synthetic table records')
     native = SUPPORT._object(data.get('key_value'), 'key value preview')
+    return validate_native_sample(native, sample)
+
+
+def validate_native_sample(native, sample):
     validate_facts(native.get('facts'), sample)
     require(native.get('truncated') is False, 'Small Business Redis sample was truncated')
     if 'value' in sample:
@@ -158,7 +162,7 @@ def run(client, tenant_id, engine_id, timeout):
     seen = browse_keys(client, target)
     require(set(seen) == {sample['key'] for sample in samples}, 'Keyspace browse lost sample keys')
     for sample in samples:
-        validate_facts(seen[sample['key']]['facts'], sample)
+        validate_native_sample(seen[sample['key']], sample)
         item = items['keyspace']
         target = locator(engine_id, item)
         validate_preview(client.request('GET', '/api/v1/manager/preview?' + urllib.parse.urlencode({'locator': target, 'key_name': sample['key']}), (200,)).payload, sample)

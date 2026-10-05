@@ -153,6 +153,34 @@ func TestRedisNativeReadAndCatalog(t *testing.T) {
 	if err != nil || len(batch.Keys) != 10 || !batch.Complete {
 		t.Fatal(batch, err)
 	}
+	for _, sample := range batch.Keys {
+		switch sample.Name.Value {
+		case "app:a/b.c":
+			if sample.Value == nil || sample.Value.Value != "9223372036854775807" || sample.Truncated {
+				t.Fatal("inline integer precision lost", sample)
+			}
+		case "binary":
+			if sample.Value == nil || sample.Value.Encoding != "base64" || sample.Value.Value != "AP8=" {
+				t.Fatal("inline binary value lost", sample)
+			}
+		case "long":
+			if sample.Value == nil || sample.Value.ByteLength != 256 || !sample.Truncated {
+				t.Fatal("inline string budget ignored", sample)
+			}
+		case "stream":
+			if len(sample.Entries) != 1 || len(sample.Entries[0].Fields) != 2 || sample.Entries[0].Fields[1].Value.Value != "second" {
+				t.Fatal("inline stream pairs lost", sample)
+			}
+		case "zset":
+			if len(sample.Entries) != 1 || sample.Entries[0].Score != "1.25" {
+				t.Fatal("inline score lost", sample)
+			}
+		case "hash", "list", "set":
+			if len(sample.Entries) == 0 {
+				t.Fatal("inline collection missing", sample)
+			}
+		}
+	}
 	if _, err := p.ReadKeyValue(ctx, c, root, plugin.KeyValueReadOptions{Key: "k:YQ"}); err == nil {
 		t.Fatal("root accepted as dataset")
 	}
@@ -161,6 +189,44 @@ func TestRedisNativeReadAndCatalog(t *testing.T) {
 	}
 	if _, err := p.ListKeyValues(ctx, c, p.entry(42).Path, plugin.KeyValueReadOptions{MaxBytes: 1}); err == nil {
 		t.Fatal("browse budget ignored")
+	}
+}
+
+func TestRedisInlineSamplesBoundCollectionAndSkipExpiredKeys(t *testing.T) {
+	m := miniredis.RunT(t)
+	m.RequireUserAuth("reader", "secret")
+	m.Push("list", "a", "b", "c", "d")
+	m.Set("expired", "gone")
+	m.Server().SetPreHook(func(peer *server.Peer, command string, args ...string) bool {
+		if command == "GETRANGE" && args[0] == "expired" {
+			m.Del("expired")
+		}
+		return false
+	})
+	p := &RedisPlugin{}
+	batch, err := p.ListKeyValues(context.Background(), redisTestConnection(t, m.Addr()), p.entry(42).Path, plugin.KeyValueReadOptions{})
+	if err != nil || len(batch.Keys) != 1 || batch.Keys[0].Name.Value != "list" || len(batch.Keys[0].Entries) != 3 || !batch.Keys[0].Truncated {
+		t.Fatalf("inline collection/expiry: %v %v", batch, err)
+	}
+}
+
+func TestRedisInlineBatchBudgetStopsReadingBeforeAccumulatingAllValues(t *testing.T) {
+	m := miniredis.RunT(t)
+	m.RequireUserAuth("reader", "secret")
+	for i := 0; i < 10; i++ {
+		m.Push(fmt.Sprintf("large:%d", i), strings.Repeat("x", 300<<10))
+	}
+	reads := 0
+	m.Server().SetPreHook(func(peer *server.Peer, command string, args ...string) bool {
+		if command == "LRANGE" {
+			reads++
+		}
+		return false
+	})
+	p := &RedisPlugin{}
+	batch, err := p.ListKeyValues(context.Background(), redisTestConnection(t, m.Addr()), p.entry(42).Path, plugin.KeyValueReadOptions{})
+	if err == nil || batch != nil || !strings.Contains(err.Error(), "budget") || reads != 4 {
+		t.Fatalf("batch accumulated unbounded values: reads=%d err=%v", reads, err)
 	}
 }
 

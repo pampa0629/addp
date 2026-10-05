@@ -72,6 +72,17 @@ test('Redis live catalog and scan converge to keyspace contents and native previ
         new URL(response.url()).searchParams.get('locator') === sample.locator && new URL(response.url()).searchParams.get('key_name') === sample.key)
       const rawKey = Buffer.from(sample.key.slice(2), 'base64url')
       const label = sample.sample === 'binary' ? `Base64: ${rawKey.toString('base64')}` : JSON.stringify(rawKey.toString('utf8'))
+      const inline = manager.getByTestId('keyspace-keys').locator('.el-table__body-wrapper tr').filter({ hasText: label }).getByTestId('key-value-sample')
+      if (sample.value) {
+        await expect(inline).toContainText(sample.value.encoding === 'base64' ? `Base64: ${sample.value.value}` : JSON.stringify(sample.value.value))
+      } else {
+        for (const entry of sample.entries) {
+          if (entry.field) await expect(inline).toContainText(JSON.stringify(entry.field.value))
+          if (entry.value) await expect(inline).toContainText(JSON.stringify(entry.value.value))
+          if (entry.score) await expect(inline).toContainText(entry.score)
+          if (entry.fields) for (const field of entry.fields) await expect(inline).toContainText(JSON.stringify(field.value.value))
+        }
+      }
       await manager.getByTestId('keyspace-keys').getByRole('button', { name: label, exact: true }).click()
       const payload = await json(await previewResponse, 'Console native Redis preview')
       expect(payload.preview_type).toBe('key_value')
@@ -120,6 +131,7 @@ test('Redis live catalog and scan converge to keyspace contents and native previ
     const filteredPayload = await json(await filtered, 'Console prefix filter')
     expect(filteredPayload.data.keyspace.keys.map(key => key.key)).toEqual([expected.samples.find(sample => sample.sample === 'counter').key])
     await expect(keys.locator('.el-table__body-wrapper tr')).toHaveCount(1)
+    await expect(keys.getByTestId('key-value-sample')).toHaveText('"9007199254740993"')
     await expect(manager.getByTestId('key-value-string')).toHaveCount(0)
     const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/manager/preview' &&
       new URL(response.url()).searchParams.get('key_prefix') === 'addp:sample:counter' &&

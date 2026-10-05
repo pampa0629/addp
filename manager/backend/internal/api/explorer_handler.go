@@ -83,6 +83,7 @@ func bearerToken(c *gin.Context) string {
 // @Summary 数据预览 | Data preview
 // @Description 根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more
 // @Description Redis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only
+// @Description 键列表含有界原生值样本：string 最多 256 字节，集合最多 3 个条目；truncated 表示样本不完整 | Key lists include bounded native value samples: up to 256 bytes for strings or 3 collection entries; truncated marks an incomplete sample
 // @Param key_cursor query string false "键空间浏览游标 | Keyspace browse cursor"
 // @Param key_name query string false "规范内容键令牌 k:Base64URL | Canonical content key token k:Base64URL"
 // @Param key_prefix query string false "UTF-8 字面键名前缀，最多 64 KiB；保留空格、不解释通配符，可与 key_cursor 同用，与非空 key_name 互斥 | Literal UTF-8 key prefix, up to 64 KiB; whitespace preserved, no wildcards, allowed with key_cursor, mutually exclusive with nonempty key_name"

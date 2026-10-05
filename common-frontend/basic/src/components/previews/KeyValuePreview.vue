@@ -2,7 +2,7 @@
   <section v-if="dataset || value" class="key-value-preview" data-testid="key-value-preview">
     <div v-if="dataset" class="dataset-toolbar">
       <span>{{ t('keyValuePreview.database') }}: DB {{ dataset.database }}</span>
-      <el-input v-model="prefixInput" class="prefix-input" size="small" :disabled="busy" :aria-label="t('keyValuePreview.prefix')" :placeholder="t('keyValuePreview.prefix')" clearable @keyup.enter="applyPrefix" @clear="applyPrefix" />
+      <el-input v-model="prefixInput" class="prefix-input" size="small" :disabled="busy" :aria-label="t('keyValuePreview.prefix')" :placeholder="t('keyValuePreview.prefixExample')" clearable @keyup.enter="applyPrefix" @clear="applyPrefix" />
       <el-button size="small" :disabled="busy" @click="applyPrefix">{{ t('keyValuePreview.filter') }}</el-button>
       <el-button size="small" :disabled="busy" @click="browse('')">{{ t('keyValuePreview.refresh') }}</el-button>
       <el-button size="small" :disabled="busy || dataset.complete" @click="browse(dataset.next_cursor)">{{ t('keyValuePreview.nextBatch') }}</el-button>
@@ -13,6 +13,9 @@
         <template #default="{ row }"><el-button link type="primary" @click="select(row)">{{ keyLabel(row.name) }}</el-button></template>
       </el-table-column>
       <el-table-column prop="facts.native_type" :label="t('keyValuePreview.nativeType')" width="100" />
+      <el-table-column :label="t('keyValuePreview.value')" min-width="280" show-overflow-tooltip>
+        <template #default="{ row }"><span class="value-sample" data-testid="key-value-sample">{{ sampleLabel(row) }}<span v-if="row.truncated" :title="t('keyValuePreview.truncated')"> …</span></span></template>
+      </el-table-column>
       <el-table-column :label="t('keyValuePreview.summary')" min-width="120"><template #default="{ row }">{{ t(row.facts.native_type === 'string' ? 'keyValuePreview.bytes' : 'keyValuePreview.elements', { count: row.facts.length }) }}</template></el-table-column>
       <el-table-column :label="t('keyValuePreview.ttl')" min-width="120"><template #default="{ row }">{{ ttlLabel(row.facts.ttl_millis) }}</template></el-table-column>
     </el-table>
@@ -76,6 +79,16 @@ const ttlLabel = millis => millis === -1 ? t('keyValuePreview.persistent') : `${
 const ttl = computed(() => ttlLabel(value.value?.facts.ttl_millis))
 const keyLabel = bytes => bytes?.encoding === 'base64' ? `Base64: ${bytes.value}` : JSON.stringify(bytes?.value || '')
 const display = bytes => bytes ? `${bytes.encoding === 'base64' ? 'Base64' : 'UTF-8'}: ${bytes.value}` : ''
+function sampleLabel(sample) {
+ if (sample.value) return keyLabel(sample.value)
+ const entries = sample.entries.map(entry => {
+  if (entry.field) return `${keyLabel(entry.field)}: ${keyLabel(entry.value)}`
+  if (entry.id) return `${entry.id}: [${entry.fields.map(field => `[${keyLabel(field.name)}, ${keyLabel(field.value)}]`).join(', ')}]`
+  if (entry.score !== undefined) return `${keyLabel(entry.value)} (${entry.score})`
+  return keyLabel(entry.value)
+ })
+ return sample.facts.native_type === 'hash' ? `{${entries.join(', ')}}` : `[${entries.join(', ')}]`
+}
 async function request(options) {
  if (!props.loadKeyValue || busy.value) return null
  const current = ++sequence
@@ -114,5 +127,6 @@ async function select(row) {
 .dataset-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .prefix-input { flex: 1 1 180px; max-width: 320px; }
 .native-value { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--el-font-family-monospace, monospace); }
+.value-sample { white-space: nowrap; font-family: var(--el-font-family-monospace, monospace); }
 .stream-fields { margin: 0; padding-inline-start: 20px; }
 </style>

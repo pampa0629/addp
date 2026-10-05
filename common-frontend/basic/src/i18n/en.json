@@ -575,6 +575,7 @@
   },
   "keyValuePreview": {
     "prefix": "Key prefix",
+    "prefixExample": "Key prefix, e.g. addp:sample:counter",
     "filter": "Filter",
     "nativeType": "Native type",
     "length": "Length / entry count",

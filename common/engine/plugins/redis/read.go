@@ -54,11 +54,17 @@ func (p *RedisPlugin) ReadKeyValue(ctx context.Context, c plugin.ConnectionInfo,
 	if err != nil {
 		return nil, err
 	}
+	return readNativeValue(ctx, conn, key, facts, limit, maxBytes, 64<<10)
+}
+
+// Both dataset samples and selected-key details use the same native read path.
+func readNativeValue(ctx context.Context, conn *rdb.Conn, key string, facts *plugin.KeyValueFacts, limit, maxBytes, stringBytes int) (*plugin.KeyValuePreview, error) {
+	var err error
 	result := &plugin.KeyValuePreview{Facts: *facts, Entries: []plugin.KeyValueEntry{}}
 	switch facts.NativeType {
 	case "string":
 		var raw string
-		raw, err = conn.GetRange(ctx, key, 0, int64(min(maxBytes, 64<<10)-1)).Result()
+		raw, err = conn.GetRange(ctx, key, 0, int64(min(maxBytes, stringBytes)-1)).Result()
 		value := plugin.NewByteValue(raw)
 		result.Value = &value
 		result.Truncated = int64(len(raw)) < facts.Length
@@ -251,6 +257,14 @@ func (p *RedisPlugin) ListKeyValues(ctx context.Context, c plugin.ConnectionInfo
 		return nil, err
 	}
 	result := &plugin.KeyValueDatasetPreview{Database: database, Keys: []plugin.KeyValueSummary{}, NextCursor: strconv.FormatUint(next, 10), Complete: next == 0}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	bytesUsed := len(encoded)
+	if bytesUsed > maxBytes {
+		return nil, operationError(fmt.Errorf("Redis key batch bytes exceed budget"))
+	}
 	seen := map[string]bool{}
 	for _, raw := range keys {
 		if seen[raw] {
@@ -276,16 +290,28 @@ func (p *RedisPlugin) ListKeyValues(ctx context.Context, c plugin.ConnectionInfo
 		if err != nil {
 			return nil, operationError(err)
 		}
-		result.Keys = append(result.Keys, plugin.KeyValueSummary{Key: name, Name: plugin.NewByteValue(raw), Facts: *facts})
+		value, err := readNativeValue(ctx, conn, raw, facts, 3, maxBytes, 256)
+		if err != nil {
+			if plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		summary := plugin.KeyValueSummary{Key: name, Name: plugin.NewByteValue(raw), KeyValuePreview: *value}
+		encoded, err := json.Marshal(summary)
+		if err != nil {
+			return nil, err
+		}
+		bytesUsed += len(encoded)
+		if len(result.Keys) > 0 {
+			bytesUsed++ // JSON array separator.
+		}
+		if bytesUsed > maxBytes {
+			return nil, operationError(fmt.Errorf("Redis key batch bytes exceed budget"))
+		}
+		result.Keys = append(result.Keys, summary)
 	}
 	sort.Slice(result.Keys, func(i, j int) bool { return result.Keys[i].Key < result.Keys[j].Key })
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		return nil, err
-	}
-	if len(encoded) > maxBytes {
-		return nil, operationError(fmt.Errorf("Redis key batch bytes exceed budget"))
-	}
 	return result, nil
 }
 

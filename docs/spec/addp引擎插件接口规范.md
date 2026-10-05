@@ -271,6 +271,8 @@ type GraphSampleFilter struct {
 
 键浏览可通过 `KeyValueReadOptions.Prefix`（Manager query `key_prefix`）指定 UTF-8 字面前缀，最多 64 KiB；不裁剪空格，不将 `*`、`?`、方括号或反斜杠解释为用户通配符。Redis 插件转义这些字符后使用原生 SCAN MATCH，空前缀浏览全部可见键，ACL 与响应预算继续生效。`key_prefix` 可与 `key_cursor` 同用，与非空 `key_name` 互斥；前缀只筛选内容，不进入目录路径、数据集身份或持久元数据。切换或清空前缀必须从初始游标开始，后续批次保持同一前缀；空批次是否结束仍由 complete 决定。
 
+键摘要同时包含原生值样本，复用 `KeyValuePreview` 的 `facts/value/entries/truncated` 契约，直接展示“值”列；不在前端逐键请求内容。Redis 列表中的 string 最多读取 256 字节，集合最多取 3 个原生条目，详情仍使用既有单键读取预算。字段、元素、score、stream ID 与有序重复字段对保留原生含义，UTF-8/Base64 编码保持显式；截断样本标明不完整。列表和详情复用同一原生读取实现、ACL 与 RESP 解码前预算，整个批次继续受 1 MiB 响应预算约束，超限明确失败，不静默丢弃键。读取过程中消失的键不返回，类型变化或命令权限不足明确失败；值样本不落 Meta。
+
 表达 item 内容访问能力。Engine Catalog 回答“有什么”，Facts 回答“Engine 直接知道什么”，Store 回答“如何读写内容”。
 
 ```go

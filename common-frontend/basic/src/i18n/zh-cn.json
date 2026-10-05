@@ -575,6 +575,7 @@
   },
   "keyValuePreview": {
     "prefix": "键名前缀",
+    "prefixExample": "键名前缀，例如 addp:sample:counter",
     "filter": "筛选",
     "nativeType": "原生类型",
     "length": "长度 / 元素数",
