@@ -60,7 +60,7 @@ test('protected Manager export retains its verified initiator and opens in Monit
     await frame.getByRole('button', { name: /导出全部结果|Export All Results/i }).click()
     const dialog = frame.getByRole('dialog', { name: /导出全部结果|Export All Results/i })
     await expect(dialog).toBeVisible()
-    await dialog.getByRole('combobox').click()
+    await dialog.locator('.el-select__wrapper').click()
     await frame.getByRole('option', { name: 'JSONL', exact: true }).click()
     const fileName = `security-export-${env.ADDP_ONLINE_TEST_RUN_ID}`
     await dialog.locator('.el-input input').last().fill(fileName)
