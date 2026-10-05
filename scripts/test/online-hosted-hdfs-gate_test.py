@@ -22,6 +22,10 @@ class HostedHDFSGateTest(unittest.TestCase):
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/hdfs-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/spark-engine.json"
             fi
+            if [ "$1" = stop ]; then
+              remaining=$(docker ps -aq --filter label=com.addp.online-fixture=hdfs-spark-consumer-flow)
+              [ -z "$remaining" ] || exit 1
+            fi
             [ "${ADDP_TEST_FIXTURE_FAIL:-}" != "$1" ]
         ''')
         self.host._executable('go', '''
@@ -86,24 +90,37 @@ class HostedHDFSGateTest(unittest.TestCase):
               'image rm') rm -f "${ADDP_TEST_GATE_TRACE}.image"; exit 0 ;;
             esac
             if [ "$1" = run ]; then
-              previous= name=
+              previous= name= label=
               for argument in "$@"; do
                 [ "$previous" != --name ] || name=$argument
+                [ "$previous" != --label ] || label=$argument
                 previous=$argument
               done
               echo "docker-run:$name" >> "$ADDP_TEST_GATE_TRACE"
               [ "${ADDP_TEST_RUNTIME_FAIL:-0}" != 1 ] || [ "$name" != addp-hdfs-online-runtime ] || exit 1
-              touch "${ADDP_TEST_GATE_TRACE}.$name"
+              printf '%s\\n' "$label" > "${ADDP_TEST_GATE_TRACE}.$name"
               exit 0
             fi
             if [ "$1" = inspect ]; then
               case "$3" in
-                *Config.Labels*) echo hdfs-spark-consumer-flow ;;
+                *Config.Labels*)
+                  label=$(cat "${ADDP_TEST_GATE_TRACE}.${@: -1}")
+                  case "$3" in
+                    *com.addp.online-runtime*) expected=com.addp.online-runtime ;;
+                    *) expected=com.addp.online-fixture ;;
+                  esac
+                  if [ "$label" = "$expected=hdfs-spark-consumer-flow" ]; then echo hdfs-spark-consumer-flow; else echo '<no value>'; fi ;;
                 *Config.Cmd*) echo '["python","api_server.py"]' ;;
                 *State.Running*) echo true ;;
                 *) echo sha256:runtime-image ;;
               esac
               exit 0
+            fi
+            if [ "$1" = ps ]; then
+              for container in "${ADDP_TEST_GATE_TRACE}".addp-hdfs-*; do
+                [ -f "$container" ] || continue
+                [ "$(cat "$container")" != "${4#label=}" ] || echo "$container"
+              done
             fi
             if [ "$1" = rm ]; then
               echo "docker-rm:$3" >> "$ADDP_TEST_GATE_TRACE"

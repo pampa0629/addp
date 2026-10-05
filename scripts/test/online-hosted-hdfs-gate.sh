@@ -14,7 +14,7 @@ runtime_owned=0
 remove_owned_container() {
   local container=$1 status=0
   if docker container inspect "$container" >/dev/null 2>&1; then
-    [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = "$ONLINE_SUITE" ] || return 1
+    [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-runtime" }}' "$container")" = "$ONLINE_SUITE" ] || return 1
     run_logged docker rm -fv "$container" || status=1
     if docker container inspect "$container" >/dev/null 2>&1; then status=1; fi
   fi
@@ -39,7 +39,7 @@ stop_online_application() {
   local status=0
   if [ "$runtime_owned" -eq 1 ]; then
     if docker container inspect addp-hdfs-online-runtime >/dev/null 2>&1 &&
-      [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-fixture" }}' addp-hdfs-online-runtime)" = "$ONLINE_SUITE" ]; then
+      [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-runtime" }}' addp-hdfs-online-runtime)" = "$ONLINE_SUITE" ]; then
       run_logged docker logs addp-hdfs-online-runtime > "$ADDP_ONLINE_ARTIFACT_DIR/hdfs-runtime.log" || status=1
     fi
     remove_owned_container addp-hdfs-online-runtime || status=1
@@ -61,7 +61,7 @@ for start_target in -meta -manager -develop; do
 done
 # The standard builder seeds its required base images into this owned mirror.
 registry_owned=1
-run_logged docker run -d --name addp-hdfs-online-registry --label "com.addp.online-fixture=$ONLINE_SUITE" -p 127.0.0.1:5001:5000 registry:2
+run_logged docker run -d --name addp-hdfs-online-registry --label "com.addp.online-runtime=$ONLINE_SUITE" -p 127.0.0.1:5001:5000 registry:2
 for attempt in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:5001/v2/ >/dev/null; then break; fi
   [ "$attempt" -lt 30 ] || fail 'image registry readiness timed out'
@@ -72,7 +72,7 @@ runtime_owned=1
 export ADDP_ONLINE_SPARK_RUNTIME_URL="http://127.0.0.1:$SPARK_WORKFLOW_PORT"
 # No command override: exercise exactly the product image's default entry.
 run_logged docker run -d --name addp-hdfs-online-runtime --network host \
-  --label "com.addp.online-fixture=$ONLINE_SUITE" \
+  --label "com.addp.online-runtime=$ONLINE_SUITE" \
   -e "PORT=$SPARK_WORKFLOW_PORT" -e SYSTEM_URL -e SPARK_WORKFLOW_SERVICE_CLIENT_SECRET \
   -e HADOOP_USER_NAME -e SPARK_WORKFLOW_SHARED_HOST -e RUNTIME_HOST=127.0.0.1 "$RUNTIME_IMAGE"
 image_id=$(docker image inspect -f '{{.Id}}' "$RUNTIME_IMAGE")

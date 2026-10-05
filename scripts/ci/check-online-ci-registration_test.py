@@ -142,7 +142,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in (
             (paths[0], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
             (paths[0], 'make build-images'), (paths[0], 'hdfs-runtime-build.txt'),
-            (paths[0], 'hdfs-runtime.log'),
+            (paths[0], 'hdfs-runtime.log'), (paths[0], 'com.addp.online-runtime'),
             (paths[2], 'refusing to delete a foreign container'),
             (paths[3], 'Finished task'), (paths[4], 'login('),
             (paths[5], '$(MAKE) test-hdfs-online-runner'),
