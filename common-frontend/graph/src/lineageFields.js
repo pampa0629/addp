@@ -6,7 +6,7 @@ export const FIELD_CARD_WIDTH = 224
 export const FIELD_FONT_SIZE = 18
 
 // Group only the same item and frozen schema; field identity remains untouched.
-export function projectLineageFields(nodes, edges) {
+export function projectLineageFields(nodes, edges, collapsedTables = new Set()) {
   const groups = new Map()
   const endpoints = new Map()
   for (const node of nodes) {
@@ -20,9 +20,10 @@ export function projectLineageFields(nodes, edges) {
   }
   return {
     nodes: [...groups.values()].map(group => {
-      const height = FIELD_HEADER_HEIGHT + group.fields.length * FIELD_ROW_HEIGHT + 8
-      return { ...group, size: [FIELD_CARD_WIDTH, height], anchors: group.fields.flatMap((_, index) => {
-        const y = (FIELD_HEADER_HEIGHT + (index + 0.5) * FIELD_ROW_HEIGHT) / height
+      const collapsed = collapsedTables.has(group.id)
+      const height = FIELD_HEADER_HEIGHT + (collapsed ? 1 : group.fields.length) * FIELD_ROW_HEIGHT + 8
+      return { ...group, collapsed, size: [FIELD_CARD_WIDTH, height], anchors: group.fields.flatMap((_, index) => {
+        const y = (FIELD_HEADER_HEIGHT + ((collapsed ? 0 : index) + 0.5) * FIELD_ROW_HEIGHT) / height
         return [[0, y], [1, y]]
       }) }
     }),

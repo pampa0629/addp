@@ -31,6 +31,22 @@ test('table cards preserve schema versions, exact fields, generated rows and row
   assert.notEqual(graph.edges[0].source, graph.edges[1].source)
   assert.equal(graph.nodes[0].anchors.length, 4)
 })
+test('collapsed cards keep precise fields, snapshots and every edge while routing to a summary row', () => {
+  const first = field(1, 'nested.id'), second = field(1, 'nickname'), old = field(1, 'nickname', 'sha256:old'), target = field(2, 'out')
+  const nodes = [first, second, old, target], edges = [{ source: first, target }, { source: second, target }, { source: old, target }]
+  const expanded = projectLineageFields(nodes, edges)
+  const collapsed = projectLineageFields(nodes, edges, new Set([expanded.nodes[0].id]))
+  assert.equal(collapsed.nodes.length, expanded.nodes.length)
+  assert.deepEqual(collapsed.edges, expanded.edges)
+  assert.deepEqual(collapsed.nodes[0].fields, [first, second])
+  assert.equal(collapsed.nodes[0].collapsed, true)
+  assert.equal(collapsed.nodes[0].size[1], 106)
+  assert.deepEqual(collapsed.nodes[0].anchors[0], collapsed.nodes[0].anchors[2])
+  assert.deepEqual(collapsed.nodes[0].anchors[1], collapsed.nodes[0].anchors[3])
+  assert.equal(collapsed.nodes[1].collapsed, false)
+  assert.deepEqual(collapsed.nodes[1], expanded.nodes[1])
+  assert.deepEqual(projectLineageFields(nodes, edges, new Set()), expanded)
+})
 test('field focus follows a chain without bringing in its siblings and stops cycles', () => {
   const a = field(1, 'a'), b = field(2, 'b'), c = field(3, 'c'), sibling = field(4, 'sibling')
   const edges = [{ source: a, target: b }, { source: b, target: c }, { source: a, target: sibling }, { source: c, target: b }]
@@ -47,7 +63,7 @@ test('the shared viewer owns field grouping and Manager sends a single table gra
   assert.doesNotMatch(viewer + office + host, /requestFullscreen\(/)
   assert.match(viewer, /useDAGViewport/)
   assert.match(viewer, /createDAGDragNodeBehavior/)
-  assert.doesNotMatch(host, /updateLayout|drag-node/)
+  assert.doesNotMatch(host, /updateLayout|drag-node|collapsedTables|toggleFields/)
   assert.match(viewer, /projectLineageFields/)
   assert.match(viewer, /lineageFieldConnections/)
   assert.doesNotMatch(viewer, /update:field|v-for="name in fields"/)

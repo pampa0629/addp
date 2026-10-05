@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
+import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, toggleLineageTableFields } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { managerAuthContext } from './managerAuthContext.js'
 
 const locator = 'addp://engine/9/path/public/current?type=table&item_id=3'
@@ -291,7 +291,7 @@ for (const theme of ['light', 'dark']) {
     const previousFont = (await lineageCanvasText(canvas)).find(row => row.text === 'activity_id').fontSize
     await page.setViewportSize({ width: 1600, height: 1000 })
     await expect.poll(async () => (await canvas.boundingBox()).width).toBeGreaterThan(previousWidth)
-    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'activity_id').fontSize).toBeCloseTo(previousFont, 2)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'activity_id')?.fontSize).toBeCloseTo(previousFont, 2)
     expect(graphRequests).toBe(1)
   })
 }
@@ -455,6 +455,49 @@ for (const theme of ['light', 'dark']) {
         return current && Math.abs(current.x - initial.x) < 2 && Math.abs(current.y - initial.y) < 2
       })
     }).toBe(true)
+    await portsMatch()
+    const beforeCollapse = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
+    await toggleLineageTableFields(page, canvas, 'source_1')
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_/.test(row.text)).length).toBe(26)
+    const collapsedHeader = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
+    expect(collapsedHeader.x).toBeCloseTo(beforeCollapse.x, 1)
+    expect(collapsedHeader.y).toBeCloseTo(beforeCollapse.y, 1)
+    expect(collapsedHeader.fontSize).toBeCloseTo(beforeCollapse.fontSize, 1)
+    await dragLineageTable(page, canvas, 'source_1', 0, -30)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')?.y).toBeCloseTo(beforeCollapse.y - 30, 1)
+    await expect.poll(async () => {
+      const folded = await lineageCanvasSnapshot(canvas)
+      const summary = folded.rows.find(row => row.text === '6 个字段')
+      if (!summary) return false
+      const collapsedZoom = summary.fontSize / 18
+      return folded.paths.some(points => Math.abs(points[0].x - summary.x - 212 * collapsedZoom) < 2 && Math.abs(points[0].y - summary.y) < 2)
+    }).toBe(true)
+    await toggleLineageTableFields(page, canvas, 'source_1')
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_/.test(row.text)).length).toBe(32)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')?.y).toBeCloseTo(beforeCollapse.y - 30, 1)
+    await portsMatch()
+    await page.getByRole('button', { name: '收起字段', exact: true }).click()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_/.test(row.text)).length).toBe(0)
+    await expect(page.getByRole('button', { name: '收起字段', exact: true })).toBeDisabled()
+    await expect(page.locator('.lineage-summary')).toContainText('32 个节点 · 25 条关系')
+    await page.getByRole('button', { name: '自动布局', exact: true }).click()
+    await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+    await page.screenshot({ path: `/tmp/addp-field-collapsed-${theme}.png` })
+    // A generated field reveals only its own table, leaving unrelated tables folded.
+    await page.getByRole('button', { name: 'field_3.8', exact: true }).click()
+    await expect(page.locator('.lineage-inspector strong')).toHaveText('field_3.8')
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_/.test(row.text)).length).toBe(9)
+    await page.locator('html').evaluate(element => element.classList.toggle('dark'))
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_/.test(row.text)).length).toBe(9)
+    await page.locator('html').evaluate(element => element.classList.toggle('dark'))
+    // A derived field automatically opens its complete upstream chain.
+    await page.getByRole('button', { name: 'field_3.1', exact: true }).click()
+    await expect(page.locator('.lineage-inspector strong')).toHaveText('field_3.1')
+    await expect(page.getByRole('button', { name: '展开字段', exact: true })).toBeDisabled()
+    await page.getByRole('button', { name: '全部字段', exact: true }).click()
+    await page.getByRole('button', { name: '自动布局', exact: true }).click()
+    await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_/.test(row.text)).length).toBe(32)
     await portsMatch()
     expect(graphRequests).toBe(1)
     expect(errors).toEqual([])

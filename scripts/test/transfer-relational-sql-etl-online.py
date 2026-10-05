@@ -142,6 +142,17 @@ def wait_field_graph(client: GatewayClient, item_id: int, field: str, expected: 
     raise SuiteError("field lineage did not converge: " + last_error)
 
 
+def wait_transfer_target(client: GatewayClient, engine_id: int, full_name: str, timeout: float) -> dict[str, object]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        items = _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "Meta engine items")
+        if any(isinstance(item, dict) and item.get("full_name") == full_name for item in items):
+            # Once visible, use the strict canonical reader; malformed/duplicate facts fail immediately.
+            return find_item(client, engine_id, full_name, "table")
+        time.sleep(1)
+    raise SuiteError(f"{full_name} did not appear through automatic metadata scanning")
+
+
 def execution_schema_hashes(execution: dict[str, object]) -> tuple[str, str]:
     facts = _object(_object(execution.get("metadata"), "native execution metadata").get("lineage_facts"), "native lineage facts")
     inputs, outputs, operations = (_array(facts.get(key), key) for key in ("inputs", "outputs", "operations"))
@@ -174,7 +185,6 @@ def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, 
         _, execution = SUPPORT.create_and_run_task(client, native_task(name + suffix, locator, parent, target, input_field, output_field), time.monotonic() + timeout, owned_ids)
         if execution.get("records_read") != 5 or execution.get("records_written") != 5:
             raise SuiteError("native field lineage execution must read/write exactly five rows")
-        wait_for_scan(client, engine_id, time.monotonic() + timeout)
         identifier = execution.get("execution_id")
         if not isinstance(identifier, str) or not identifier:
             raise SuiteError("native execution is missing its execution_id")
@@ -182,7 +192,7 @@ def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, 
         return identifier, source_hash, target_hash
 
     first, source_hash, target_hash = execute("_native", source_locator, NATIVE_TARGET, "region", "region_name")
-    target = find_item(client, engine_id, f"public.{NATIVE_TARGET}", "table")
+    target = wait_transfer_target(client, engine_id, f"public.{NATIVE_TARGET}", timeout)
     target_id = positive_int(target.get("id"), "native target id")
     for field, expected in (
         ("region_name", {(source_id, "region", target_id, "region_name", "direct", first)}),
@@ -192,7 +202,7 @@ def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, 
         graph = wait_field_graph(client, target_id, field, expected, timeout)
         validate_graph_snapshots(graph, {source_id: source_hash, target_id: target_hash})
     replacement, source_hash, target_hash = execute("_replace", source_locator, NATIVE_TARGET, "status", "region_name")
-    target = find_item(client, engine_id, f"public.{NATIVE_TARGET}", "table")
+    target = wait_transfer_target(client, engine_id, f"public.{NATIVE_TARGET}", timeout)
     if target.get("id") != target_id:
         raise SuiteError("replace must preserve the target DataItem identity")
     graph = wait_field_graph(client, target_id, "region_name", {(source_id, "status", target_id, "region_name", "direct", replacement)}, timeout)
@@ -200,7 +210,7 @@ def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, 
     hop, hop_source_hash, downstream_hash = execute("_hop", SUPPORT.build_item_locator(engine_id, target), NATIVE_DOWNSTREAM, "region_name", "area")
     if hop_source_hash != target_hash:
         raise SuiteError("two-hop execution schemas must match at the intermediate table")
-    downstream = find_item(client, engine_id, f"public.{NATIVE_DOWNSTREAM}", "table")
+    downstream = wait_transfer_target(client, engine_id, f"public.{NATIVE_DOWNSTREAM}", timeout)
     downstream_id = positive_int(downstream.get("id"), "downstream id")
     expected_edges = {
         (source_id, "status", target_id, "region_name", "direct", replacement),
@@ -282,15 +292,7 @@ def run_mongodb_lineage(client: GatewayClient, source_engine_id: int, target_eng
             raise SuiteError("MongoDB execution response identity mismatch")
         source_hash, target_hash = validate_mongodb_execution(execution, source_locator, target_engine_id)
         # Observe owner-triggered metadata scanning. Never manually scan the target or collect lineage.
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                target = find_item(client, target_engine_id, f"public.{MONGODB_TARGET}", "table")
-                break
-            except SuiteError:
-                time.sleep(1)
-        else:
-            raise SuiteError("MongoDB ODS target did not appear through automatic metadata scanning")
+        target = wait_transfer_target(client, target_engine_id, f"public.{MONGODB_TARGET}", timeout)
         current_id = positive_int(target.get("id"), "MongoDB ODS target id")
         if target_id is not None and current_id != target_id:
             raise SuiteError("MongoDB rerun must preserve the target DataItem identity")

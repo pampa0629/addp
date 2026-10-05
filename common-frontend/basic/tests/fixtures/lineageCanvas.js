@@ -1,3 +1,5 @@
+import { FIELD_CARD_WIDTH } from '../../../graph/src/lineageFields.js'
+
 // Observe the text actually painted by G6, including device-pixel scaling.
 export async function observeLineageCanvas(page) {
   await page.addInitScript(() => {
@@ -116,4 +118,12 @@ export async function dragLineageTable(page, canvas, title, dx, dy) {
   await page.mouse.down()
   await page.mouse.move(box.x + header.x + 10 + dx, box.y + header.y - 3 + dy, { steps: 12 })
   await page.mouse.up()
+}
+
+export async function toggleLineageTableFields(page, canvas, title) {
+  const header = (await lineageCanvasText(canvas)).find(row => row.text === title)
+  if (!header) throw new Error(`Missing lineage table header: ${title}`)
+  const zoom = header.fontSize / 15
+  const box = await canvas.boundingBox()
+  await page.mouse.click(box.x + header.x + (FIELD_CARD_WIDTH - 32) * zoom, box.y + header.y - zoom)
 }

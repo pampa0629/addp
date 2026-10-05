@@ -335,6 +335,23 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
 
+    def test_transfer_target_waits_only_for_absent_automatic_metadata(self):
+        item = {"id": 7, "node_id": 9, "full_name": "public.target", "item_type": "table", "fingerprint": "sha256:target"}
+        reads = iter([[], [item], [item]])
+        def request(method, path, expected):
+            self.assertEqual((method, path, expected), ("GET", "/api/v1/meta/engines/3/items", (200,)))
+            return SimpleNamespace(payload=next(reads))
+        with patch.object(ONLINE.time, "sleep") as sleep:
+            self.assertEqual(ONLINE.wait_transfer_target(SimpleNamespace(request=request), 3, "public.target", 30), item)
+        sleep.assert_called_once_with(1)
+        # Existing but invalid facts are not treated as eventual consistency.
+        for items in ([item, item], [{**item, "item_type": "collection"}]):
+            with patch.object(ONLINE.time, "sleep") as sleep, self.assertRaises(ONLINE.SuiteError):
+                ONLINE.wait_transfer_target(SimpleNamespace(request=lambda *args: SimpleNamespace(payload=items)), 3, "public.target", 30)
+            sleep.assert_not_called()
+        with patch.object(ONLINE.time, "monotonic", side_effect=[0, 31]), self.assertRaisesRegex(ONLINE.SuiteError, "automatic metadata scanning"):
+            ONLINE.wait_transfer_target(SimpleNamespace(request=request), 3, "public.target", 30)
+
     def test_native_scenario_requires_generated_replace_and_exact_two_hop_proofs(self):
         source = {"id": 5, "node_id": 9, "full_name": "public.source", "item_type": "table"}
         target = {"id": 7, "node_id": 9, "full_name": "public.target", "item_type": "table"}
@@ -360,10 +377,10 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             identities = {(item_id, field)} | {(edge[0], edge[1]) for edge in expected} | {(edge[2], edge[3]) for edge in expected}
             return {"subject": {"schema_snapshot_hash": hashes[item_id]}, "nodes": [{"item_id": key, "field_name": name, "schema_snapshot_hash": hashes[key]} for key, name in identities]}
 
-        with patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=execute), patch.object(ONLINE, "wait_for_scan") as scan, patch.object(ONLINE, "find_item", side_effect=[target, target, downstream]), patch.object(ONLINE, "wait_field_graph", side_effect=proof):
+        with patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=execute), patch.object(ONLINE, "wait_for_scan") as scan, patch.object(ONLINE, "wait_transfer_target", side_effect=[target, target, downstream]), patch.object(ONLINE, "wait_field_graph", side_effect=proof):
             result = ONLINE.run_native_lineage(object(), 3, source, "run-name", 30, owned)
         self.assertEqual(owned, [1, 2, 3])
-        self.assertEqual(scan.call_count, 3)
+        scan.assert_not_called()
         self.assertEqual(proofs[2], (7, "generated_label", set()))
         self.assertEqual(proofs[3], (7, "region_name", {(5, "status", 7, "region_name", "direct", "replacement")}))
         self.assertEqual(proofs[4], (11, "area", {(5, "status", 7, "region_name", "direct", "replacement"), (7, "region_name", 11, "area", "direct", "hop")}))
@@ -427,7 +444,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             source_field = next(iter(expected))[1]
             return {"nodes": [{"item_id": 20, "field_name": source_field, "schema_snapshot_hash": "sha256:mongo", "engine_id": 4},
                               {"item_id": 22, "field_name": field, "schema_snapshot_hash": "sha256:ods", "engine_id": 3}]}
-        with patch.object(ONLINE, "find_item", side_effect=[ONLINE.SuiteError("not scanned yet"), target, target]), patch.object(ONLINE.time, "sleep"), patch.object(ONLINE, "wait_field_graph", side_effect=proof):
+        with patch.object(ONLINE, "wait_transfer_target", side_effect=[target, target]), patch.object(ONLINE.time, "sleep"), patch.object(ONLINE, "wait_field_graph", side_effect=proof):
             report = ONLINE.run_mongodb_lineage(SimpleNamespace(request=request), 4, 3, source, pg_source, "run-name", 30, owned)
         self.assertEqual(owned, [30])
         self.assertEqual([call[1] for call in calls if call[0] == "POST"], ["/api/v1/transfer/task-definitions", "/api/v1/transfer/task-definitions/30/start", "/api/v1/transfer/task-definitions/30/start"])

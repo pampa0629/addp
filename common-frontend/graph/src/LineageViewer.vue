@@ -32,7 +32,7 @@
             </el-button>
           </el-tooltip>
           <el-tooltip :teleported="false" :content="t('lineage.autoLayout')" placement="bottom">
-            <el-button text circle size="small" :aria-label="t('lineage.autoLayout')" :disabled="layoutPending || !nodes.length" @click="autoLayout">
+            <el-button text circle size="small" :aria-label="t('lineage.autoLayout')" :disabled="layoutPending || fieldDisplayPending || !nodes.length" @click="autoLayout">
               <el-icon><Rank /></el-icon>
             </el-button>
           </el-tooltip>
@@ -53,8 +53,12 @@
         <el-input v-model="fieldSearch" class="lineage-field-search" size="small" clearable :prefix-icon="Search" :aria-label="t('lineage.searchFields')" :placeholder="t('lineage.searchFields')" />
         <div class="lineage-field-options">
           <el-button size="small" :type="!selectedNode ? 'primary' : ''" @click="clearSelection">{{ t('lineage.showAllFields') }}</el-button>
-          <el-button v-for="node in visibleRootFields" :key="nodeId(node)" size="small" :type="nodeId(selectedNode) === nodeId(node) ? 'primary' : ''" :title="node.field_name" @click="selectField(node, true)">{{ node.field_name }}</el-button>
+          <el-button v-for="node in visibleRootFields" :key="nodeId(node)" size="small" :disabled="layoutPending || fieldDisplayPending" :type="nodeId(selectedNode) === nodeId(node) ? 'primary' : ''" :title="node.field_name" @click="selectField(node, true)">{{ node.field_name }}</el-button>
           <span v-if="!visibleRootFields.length" class="lineage-field-empty" role="status">{{ t('lineage.noMatchingFields') }}</span>
+        </div>
+        <div class="lineage-field-display">
+          <el-button size="small" :disabled="layoutPending || fieldDisplayPending || collapsedTables.size === fieldProjection.nodes.length" @click="setAllFieldsCollapsed(true)">{{ t('lineage.collapseFields') }}</el-button>
+          <el-button size="small" :disabled="layoutPending || fieldDisplayPending || !collapsedTables.size" @click="setAllFieldsCollapsed(false)">{{ t('lineage.expandFields') }}</el-button>
         </div>
       </div>
       <div v-if="graph.truncated" class="lineage-truncated" role="status">{{ t('lineage.truncated') }}</div>
@@ -174,6 +178,8 @@ const selectedNode = ref(null)
 const selectedEdge = ref(null)
 const graphInstance = shallowRef(null)
 const fieldSearch = ref('')
+const collapsedTables = ref(new Set())
+const fieldDisplayPending = ref(false)
 const layoutPending = ref(false)
 const { autoLayout: layoutDAG } = useDAGViewport(graphInstance)
 let resizeObserver
@@ -197,6 +203,7 @@ const edges = computed(() => props.graph?.edges || [])
 const subjectId = computed(() => nodeId(props.graph?.subject))
 const isFieldGraph = computed(() => props.graph?.granularity === 'field')
 const rootFields = computed(() => nodes.value.filter(node => node.kind === 'field_ref' && node.item_id === props.graph?.subject?.item_id && node.schema_snapshot_hash === props.graph?.subject?.schema_snapshot_hash))
+const fieldProjection = computed(() => projectLineageFields(nodes.value, edges.value, collapsedTables.value))
 
 const visibleRootFields = computed(() => {
   const query = fieldSearch.value.trim().toLocaleLowerCase()
@@ -204,7 +211,7 @@ const visibleRootFields = computed(() => {
 })
 
 function lineageLayout() {
-  const tableCount = isFieldGraph.value ? projectLineageFields(nodes.value, edges.value).nodes.length : 0
+  const tableCount = isFieldGraph.value ? fieldProjection.value.nodes.length : 0
   // Small chains stay readable in a narrow pane; larger graphs need routing space.
   const ranksep = isFieldGraph.value ? (tableCount <= 4 ? 12 : 48) : 170
   return { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep, controlPoints: true }
@@ -223,6 +230,28 @@ async function autoLayout() {
   } finally {
     layoutPending.value = false
   }
+}
+
+async function applyCollapsedTables(next) {
+  if (!graphInstance.value || fieldDisplayPending.value || layoutPending.value) return
+  fieldDisplayPending.value = true
+  try {
+    collapsedTables.value = next
+    await renderGraph(true)
+  } finally {
+    fieldDisplayPending.value = false
+  }
+}
+
+function setAllFieldsCollapsed(collapsed) {
+  return applyCollapsedTables(new Set(collapsed ? fieldProjection.value.nodes.map(table => table.id) : []))
+}
+
+function toggleFields(tableId) {
+  const next = new Set(collapsedTables.value)
+  if (next.has(tableId)) next.delete(tableId)
+  else next.add(tableId)
+  return applyCollapsedTables(next)
 }
 
 function themeColor(variableName) {
@@ -516,7 +545,7 @@ function registerLineageNode() {
 
 function graphData() {
   const palette = themePalette()
-  const projection = isFieldGraph.value ? projectLineageFields(nodes.value, edges.value) : null
+  const projection = isFieldGraph.value ? fieldProjection.value : null
   const data = {
     nodes: nodes.value.map(node => {
       const isSubject = nodeId(node) === subjectId.value
@@ -587,6 +616,7 @@ function graphData() {
       const visual = visuals.get(nodeId(group.node))
       const isSubject = group.node.item_id === props.graph.subject?.item_id && group.node.schema_snapshot_hash === props.graph.subject?.schema_snapshot_hash
       return { ...visual, id: group.id, size: group.size, _fields: group.fields, _anchors: group.anchors,
+        _collapsed: group.collapsed, _collapsedLabel: t('lineage.collapsedFieldCount', { count: group.fields.length }),
         _title: truncate(group.node.name || group.node.full_name, isSubject ? 23 : 30), _path: truncate(group.node.full_name, 40), _isSubject: isSubject,
         _visual: { ...visual._visual, fill: isSubject ? palette.primarySoft : palette.background, stroke: isSubject ? palette.primary : palette.border, lineWidth: isSubject ? 2 : 1 } }
     })
@@ -617,10 +647,17 @@ function drawFieldCard(cfg, group) {
   const top = -height / 2
   const card = group.addShape('rect', { name: 'lineage-card', attrs: { x: left, y: top, width, height, radius: 6, cursor: 'move', fill: visual.fill, stroke: visual.stroke, lineWidth: visual.lineWidth } })
   const text = (name, value, y, fontSize, fill, available = width - 24, fontWeight = 400) => group.addShape('text', { name, capture: false, attrs: { x: left + 12, y: top + y, text: fieldLabel(value, available, fontSize, fontWeight), fill, fontSize, fontWeight, fontFamily: 'sans-serif' } })
-  text('lineage-title', cfg._node.name || cfg._node.full_name, 22, 15, visual.textPrimary, width - (cfg._isSubject ? 62 : 24), 600)
+  text('lineage-title', cfg._node.name || cfg._node.full_name, 22, 15, visual.textPrimary, width - (cfg._isSubject ? 92 : 54), 600)
   text('lineage-path', cfg._node.full_name, 40, 11, visual.textSecondary)
   text('lineage-engine', cfg._node.engine_name, 56, 11, visual.textTertiary)
-  if (cfg._isSubject) group.addShape('text', { name: 'lineage-current', capture: false, attrs: { x: -left - 12, y: top + 22, text: cfg._currentLabel, textAlign: 'right', fill: visual.accent, fontSize: 11 } })
+  if (cfg._isSubject) group.addShape('text', { name: 'lineage-current', capture: false, attrs: { x: -left - 42, y: top + 22, text: cfg._currentLabel, textAlign: 'right', fill: visual.accent, fontSize: 11 } })
+  const toggleName = 'lineage-toggle-fields'
+  group.addShape('rect', { name: toggleName, attrs: { x: width / 2 - 34, y: top + 7, width: 28, height: 28, radius: 4, fill: visual.fill, stroke: visual.stroke, cursor: 'pointer' } })
+  group.addShape('text', { name: toggleName, attrs: { x: width / 2 - 20, y: top + 21, text: cfg._collapsed ? '+' : '−', textAlign: 'center', textBaseline: 'middle', fill: visual.accent, fontSize: 20, cursor: 'pointer' } })
+  if (cfg._collapsed) {
+    text('lineage-collapsed-summary', cfg._collapsedLabel, FIELD_HEADER_HEIGHT + FIELD_ROW_HEIGHT / 2, FIELD_FONT_SIZE, visual.textSecondary).attr('textBaseline', 'middle')
+    return card
+  }
   cfg._fields.forEach((field, index) => {
     const y = top + FIELD_HEADER_HEIGHT + index * FIELD_ROW_HEIGHT
     const name = `lineage-field:${index}`
@@ -685,6 +722,14 @@ function focusField(node) {
 }
 
 async function selectField(node, locate = false) {
+  if (locate && collapsedTables.value.size) {
+    const focus = lineageFieldConnections(edges.value, nodeId(node))
+    const next = new Set(collapsedTables.value)
+    for (const table of fieldProjection.value.nodes) {
+      if (table.fields.some(field => focus.fields.has(nodeId(field)))) next.delete(table.id)
+    }
+    if (next.size !== collapsedTables.value.size) await applyCollapsedTables(next)
+  }
   clearSelection()
   selectedNode.value = node
   focusField(node)
@@ -771,7 +816,7 @@ async function renderGraph(preserveView = false) {
     matrix: graphInstance.value.getGroup().getMatrix()?.slice() || null
   } : null
   const sequence = ++renderSequence
-  if (!preserved) fieldSearch.value = ''
+  if (!preserved) { fieldSearch.value = ''; collapsedTables.value = new Set() }
   const anchor = expansionAnchor?.subject === subjectId.value ? expansionAnchor : null
   expansionAnchor = null
   destroyGraph()
@@ -788,13 +833,14 @@ async function renderGraph(preserveView = false) {
   registerLineageNode()
   registerLineageEdge()
   const palette = themePalette()
+  const dragBehavior = createDAGDragNodeBehavior()
   graphInstance.value = new G6.Graph({
     container: canvasRef.value,
     width,
     height: canvasRef.value.clientHeight,
     minZoom: 0.1,
     maxZoom: 2.5,
-    modes: { default: ['drag-canvas', 'zoom-canvas', createDAGDragNodeBehavior()] },
+    modes: { default: ['drag-canvas', 'zoom-canvas', { ...dragBehavior, shouldBegin: event => event.target?.get('name') !== 'lineage-toggle-fields' && dragBehavior.shouldBegin(event) }] },
     plugins: [new G6.Tooltip({
       className: 'lineage-tooltip',
       itemTypes: ['node'], offsetX: 12, offsetY: 12,
@@ -802,6 +848,10 @@ async function renderGraph(preserveView = false) {
         const content = document.createElement('div')
         const model = event.item.getModel()
         const shape = event.target?.get('name')
+        if (shape === 'lineage-toggle-fields') {
+          content.textContent = t(model._collapsed ? 'lineage.expandFields' : 'lineage.collapseFields')
+          return content
+        }
         const index = shape?.startsWith('lineage-field:') ? Number(shape.slice('lineage-field:'.length)) : -1
         content.textContent = index >= 0 ? nodeQualifiedName(model._fields[index]) : model._fields ? model._node.full_name : nodeQualifiedName(model._node)
         return content
@@ -825,6 +875,7 @@ async function renderGraph(preserveView = false) {
     const direction = ['upstream', 'downstream'].find(value => shape === `lineage-expand-${value}`)
     if (direction) expandNode(event.item.getModel()._node, direction)
     else if (isFieldGraph.value) {
+      if (shape === 'lineage-toggle-fields') { toggleFields(event.item.getID()); return }
       const index = shape?.startsWith('lineage-field:') ? Number(shape.slice('lineage-field:'.length)) : -1
       if (index >= 0) selectField(event.item.getModel()._fields[index])
       else clearSelection()
@@ -870,11 +921,16 @@ async function renderGraph(preserveView = false) {
   if (preserved) {
     const positions = new Map(preserved.data.nodes.map(node => [node.id, node]))
     const routes = new Map(preserved.data.edges.map(edge => [edge.id, edge.controlPoints]))
+    const resized = new Set()
     for (const node of data.nodes) {
       const previous = positions.get(node.id)
-      if (previous) Object.assign(node, { x: previous.x, y: previous.y })
+      if (previous) {
+        const heightChange = node.size[1] - previous.size[1]
+        Object.assign(node, { x: previous.x, y: previous.y + heightChange / 2 })
+        if (heightChange) resized.add(node.id)
+      }
     }
-    for (const edge of data.edges) edge.controlPoints = routes.get(edge.id)
+    for (const edge of data.edges) edge.controlPoints = resized.has(edge.source) || resized.has(edge.target) ? [] : routes.get(edge.id)
   }
   graphInstance.value.data(data)
   graphInstance.value.render()
@@ -987,6 +1043,7 @@ watch(() => props.depth, () => { expansionAnchor = null })
 }
 
 .lineage-fields { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px; padding: 6px 12px; flex-shrink: 0; }
+.lineage-field-display { display: flex; gap: 6px; flex-shrink: 0; }
 .lineage-field-search { width: 180px; }
 .lineage-field-options { display: flex; flex: 1; min-width: min(240px, 100%); flex-wrap: wrap; gap: 6px; max-height: 90px; overflow-y: auto; }
 .lineage-field-empty { color: var(--addp-text-secondary); font-size: 12px; padding: 4px; }
