@@ -39,7 +39,7 @@ engines/
 
 Spark Workflow 确定性测试统一运行 `make test-spark-workflow`，自动发现该目录的 `test_*.py`；覆盖算子协议、可信租户上下文、System Service Bearer 和存储适配，不连接开发集群。根 `make test`、`make test-module MODULE=engines` 与 Platform CI 的独立 Spark Workflow Job 均消费同一入口，CI 使用现有运行时依赖和 Common Python 安装。该 T1 门禁也覆盖唯一 Gunicorn 入口的真实 HTTP 监听、就绪后异步注册、跨请求状态和公共 DAG 执行；不能代替真实 Worker 的 HDFS 分布式读取验收。
 
-Spark Workflow 本地开发与 Hosted 验收统一运行产品容器，`start.sh -spark-workflow`、`restart.sh -spark-workflow` 共用唯一容器启动入口，`stop.sh` 仅清理当前工作区所属容器。宿主机无需安装 Java 或 PySpark，不提供 Native Runtime 启动路径。容器使用宿主网络以支持 Driver 的动态 RPC 和 BlockManager 端口；macOS Docker Desktop 必须启用 Settings → Resources → Network → Enable host networking，设置生效需要用户执行 Apply and restart。HTTP 仅绑定 `127.0.0.1`，本地 macOS 的 Driver 和数据端点使用 `host.docker.internal`，Hosted Linux 使用 `127.0.0.1`；部署者可通过既有 `SPARK_WORKFLOW_SHARED_HOST` 声明实际双向可达地址。生产 Compose 仍按其独立部署网络契约运行。
+Spark Workflow 本地开发使用 Python 3.11/3.12 虚拟环境与原生 OpenJDK 11，`start.sh -spark-workflow` 和 `restart.sh -spark-workflow` 共用 `scripts/dev/spark-workflow.sh`，通过已有依赖安装互斥锁同步完整 requirements 与 editable Common Python。`stop.sh` 按原生 PID 停止；HTTP 绑定回环，就绪核对 PID、监听和 HTTP。macOS 需要本机 `/etc/hosts` 的 `127.0.0.1 host.docker.internal` 映射，Docker Worker 仍用内置解析。生产与 Hosted 产品验收保留镜像默认入口，使用 `scripts/utils/hosted-online.sh` 的独立产品启动，不依赖开发脚本构建 Spark 镜像。
 
 Spark 产品镜像使用 Python 3.11 Bookworm 和官方 Temurin Java 11 JRE，安装同一仓库的 `common-python`。唯一构建入口为 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"`，使用根目录构建上下文；本地缓存与 CI 影响选择均覆盖共享 Python 包。镜像构建包含依赖一致性、Flask API 导入及本地 Spark 计算检查；该构建检查不代表分布式 Worker 验收。
 

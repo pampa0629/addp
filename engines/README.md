@@ -20,6 +20,19 @@ engines/
 └── docs/               # 引擎 API 与设计文档
 ```
 
+## 本地开发运行方式
+
+支持 macOS 的开发服务采用原生进程；产品构建与 Hosted 产品验收独立使用镜像。Infra 与 Business 保留现有容器部署用途。当前开发启动盘点如下，待调整项尚未改动生命周期：
+
+| Runtime | 当前开发启动 | 依赖支持与后续工作 |
+| --- | --- | --- |
+| Spark Workflow | 原生 Python 3.11/3.12 + OpenJDK 11 | 已统一标准启动、重启、停止；macOS 配置本机 `host.docker.internal` 映射，Worker 使用 Docker 内置解析 |
+| GeoPython Workflow | Docker | [GDAL 提供 macOS 安装方式](https://gdal.org/en/latest/download.html)；下一步优先改原生，核对 GDAL Python 绑定及 PGeo 的 MDBTools/ODBC 驱动链 |
+| PointCloud Workflow | Docker | [PDAL 支持 macOS 环境](https://pdal.org/en/stable/quickstart.html)；需核对本机 PDAL 的 COPC、E57、PCD 驱动和临时目录契约 |
+| Document Workflow | Docker | [LibreOffice 支持 Intel 与 Apple Silicon macOS](https://hr.libreoffice.org/get-help/install-howto/macos/)；需核对 headless 转换、中文字体和独立 profile |
+| SuperMap Workflow | Docker，当前接入 Linux ARM64 C++ SDK | 先核对同版本 SDK 的 macOS 支持及许可；不能从当前 Linux 制品推断厂商仅支持 Linux |
+| Math、Model3D、DuckDB、Jupyter | 原生进程 | 保持当前标准生命周期；Model3D 的外部转换器依赖另行核对平台范围 |
+
 ## 引擎分类
 
 ### 工作流运行时

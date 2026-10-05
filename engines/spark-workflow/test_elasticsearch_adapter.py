@@ -31,6 +31,8 @@ class ElasticsearchAdapterTest(unittest.TestCase):
         reader = spark.read.format.return_value
         options = reader.options.call_args.kwargs
         self.assertEqual(options['es.nodes.wan.only'], 'true')
+        self.assertEqual(options['es.net.proxy.http.use.system.props'], 'false')
+        self.assertEqual(options['es.net.proxy.socks.use.system.props'], 'false')
         self.assertEqual(options['es.read.field.as.array.include'], 'tags')
         self.assertEqual(options['es.net.http.auth.pass'], 'secret')
         self.assertEqual(options['es.index.read.allow.red.status'], 'false')

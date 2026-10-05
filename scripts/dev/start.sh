@@ -2403,7 +2403,7 @@ fi
 start_runtime_spark() (
   source "${SCRIPT_DIR}/spark-workflow.sh"
   if check_service_running "spark-workflow-engine" "$SPARK_WORKFLOW_PORT"; then
-    addp_start_spark_workflow_container
+    addp_start_spark_workflow
   fi
   SPARK_WORKFLOW_PID=$(cat "${ROOT_DIR}/.dev-pids/spark-workflow-engine.pid")
 )

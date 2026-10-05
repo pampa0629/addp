@@ -156,7 +156,7 @@ stop_services_concurrent() {
   stop_pid_group "模块、Worker 和前端" "${all_pids[@]}"
 
   local name container labels
-  for name in pointcloud-workflow document-workflow geopython-workflow supermap-workflow spark-workflow; do
+  for name in pointcloud-workflow document-workflow geopython-workflow supermap-workflow; do
     container="${name}-engine"
     labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || continue
     if [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ]; then

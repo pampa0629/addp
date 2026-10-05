@@ -6,8 +6,9 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=elasticsearch-consumer-flow
-HOSTED_FIXTURE_CONTAINERS=(addp-elasticsearch-online-disposable addp-elasticsearch-online-master addp-elasticsearch-online-worker addp-elasticsearch-online-registry spark-workflow-engine)
+HOSTED_FIXTURE_CONTAINERS=(addp-elasticsearch-online-disposable addp-elasticsearch-online-master addp-elasticsearch-online-worker addp-elasticsearch-online-registry addp-elasticsearch-online-runtime)
 HOSTED_SPARK_REGISTRY=addp-elasticsearch-online-registry
+RUNTIME_CONTAINER=addp-elasticsearch-online-runtime
 RUNTIME_IMAGE=localhost:5001/addp-spark-workflow-engine:online-elasticsearch
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim-bookworm localhost:5001/eclipse-temurin:11-jre-jammy)
 stop_online_fixture() {
@@ -27,13 +28,10 @@ fixture_owned=1
 run_logged bash business/scripts/online-elasticsearch-consumer-fixture.sh start
 start_online_spark_image_registry
 application_owned=1
-for start_target in -meta -manager -develop -spark-workflow; do
+for start_target in -meta -manager -develop; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
-image_id=$(docker image inspect -f '{{.Id}}' "$RUNTIME_IMAGE")
-[ "$(docker inspect -f '{{.Image}}' spark-workflow-engine)" = "$image_id" ] || fail 'Runtime image identity mismatch'
-[ "$(docker inspect -f '{{json .Config.Cmd}}' spark-workflow-engine)" = '["python","api_server.py"]' ] || fail 'Runtime default entry mismatch'
-printf 'image_id=%s\ngit_commit=%s\ndefault_entry=python api_server.py\n' "$image_id" "$(git rev-parse HEAD)" > "$ADDP_ONLINE_ARTIFACT_DIR/elasticsearch-runtime-build.txt"
+start_online_spark_runtime online-elasticsearch elasticsearch
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite elasticsearch-consumer-flow --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"

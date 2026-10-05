@@ -1564,11 +1564,15 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
     required = {
         "scripts/test/online-hosted-hdfs-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite hdfs-spark-consumer-flow',
-            'make build-images', 'RUNTIME_IMAGE', 'hdfs-runtime-build.txt', 'hdfs-runtime.log',
-            'com.addp.online-runtime',
+            'start_online_spark_runtime online-hdfs hdfs', 'RUNTIME_IMAGE', 'RUNTIME_CONTAINER',
             'scripts/test/online-engine-registration.py',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'SPARK_MODE override is forbidden',
             'run_logged make test-online', 'online-hdfs-spark-fixture.sh stop',
+        ),
+        "scripts/utils/hosted-online.sh": (
+            "make build-images", "Runtime image identity mismatch", "Runtime default entry mismatch",
+            "${SPARK_RUNTIME_REPORT}-runtime-build.txt", "${SPARK_RUNTIME_REPORT}-runtime.log",
+            "com.addp.online-runtime", "stop_online_spark_runtime || status=1",
         ),
         "business/scripts/online-hdfs-spark-fixture.sh": (
             'com.addp.online-fixture', '--network host', '--tmpfs /data', '/addp/hdfs/init.py',
@@ -1599,14 +1603,16 @@ def validate_elasticsearch_spark_profile(repository: Path, registered: set[str])
         return
     required = {
         'scripts/test/online-hosted-elasticsearch-gate.sh': (
-            '-spark-workflow', 'ADDP_ONLINE_SPARK_ENGINE_ID', 'SPARK_MODE override is forbidden',
+            'start_online_spark_runtime online-elasticsearch elasticsearch', 'ADDP_ONLINE_SPARK_ENGINE_ID', 'SPARK_MODE override is forbidden',
             'start_online_spark_image_registry', 'stop_online_spark_image_registry',
-            'Runtime image identity mismatch', 'Runtime default entry mismatch', 'elasticsearch-runtime-build.txt',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
         ),
-        'scripts/dev/spark-workflow.sh': (
-            'make build-images', '--services spark-workflow-engine --verify --jobs 1',
+        'scripts/utils/hosted-online.sh': (
+            'make build-images', '--services spark-workflow-engine --tag $tag --verify --jobs 1',
             '--network host', '-e WORKFLOW_BIND_HOST=127.0.0.1',
+            'Runtime image identity mismatch', 'Runtime default entry mismatch',
+            '${SPARK_RUNTIME_REPORT}-runtime-build.txt', '${SPARK_RUNTIME_REPORT}-runtime.log',
+            'com.addp.online-runtime', 'stop_online_spark_runtime || status=1',
         ),
         'scripts/test/elasticsearch-consumer-flow-online.py': (
             'SPARK.worker_evidence', 'SPARK.runtime_status_evidence', 'spark_cluster_id', 'validate_workflow_nodes',

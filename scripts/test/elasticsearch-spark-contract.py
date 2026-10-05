@@ -17,6 +17,7 @@ from storage_adapters import StorageAdapter
 spark = (configure_spark_dependencies(SparkSession.builder, '/gate')
          .master('spark://spark-master:7077').appName('ADDP-ES-distributed-contract')
          .config('spark.driver.host', 'spark-master').config('spark.driver.bindAddress', '0.0.0.0')
+         .config('spark.ui.showConsoleProgress', 'false')
          .config('spark.cores.max', '2').config('spark.executor.memory', '512m').getOrCreate())
 spark.sparkContext.setLogLevel('WARN')
 params = {'source_type': 'index', 'index': 'addp_orders.v1', 'array_fields': ['tags'],

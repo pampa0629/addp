@@ -16,7 +16,7 @@ Spark 工作流 Engine 是 ADDP 平台的分布式空间计算引擎,基于 Apac
 ```
 engines/spark-workflow/
 ├── api_server.py           # Flask API Server (端口 8098)
-├── runtime_server.py       # 产品容器的 HTTP 启动和就绪后注册
+├── runtime_server.py       # 原生开发与产品容器共用的 HTTP 启动和就绪后注册
 ├── workflow_engine.py      # 公共 WorkflowRunner 的 Spark 领域算子适配
 ├── spark_connector.py      # 动态 SparkSession 管理器
 ├── elasticsearch_adapter.py # ES 具体索引 Mapping、数组和只读访问
@@ -64,13 +64,12 @@ engines/spark-workflow/
 
 ## 快速开始
 
-本地开发运行时统一使用产品容器中的 Python 3.11 和 Java 11，与 Business Spark Master/Worker 保持一致，宿主机无需安装 Java 或 PySpark。标准生命周期脚本通过产品构建入口校验当前源码并启动镜像的默认入口；不挂载源码、不在运行时安装依赖。确定性测试仍使用独立 Python 测试环境，不承担 Runtime 启动。
+Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境和 OpenJDK 11，与 Business Spark Worker 保持 JVM 主版本一致。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用唯一原生启动入口，按完整 requirements 和 editable `common-python` 同步依赖并执行 `pip check`。全套重启在停止已有服务前完成 Java、Python、依赖和共享地址预检；失败保留已有服务。HTTP 仅绑定 `127.0.0.1`，就绪必须同时验证原生 PID、监听归属和 HTTP 健康检查；`stop.sh` 按原生 PID 停止服务。macOS 使用 `host.docker.internal` 公布 Driver 与回环数据端点，需要在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`；Docker Worker 保留 Docker 内置解析。该方式不依赖 Docker Desktop host networking。生产 Compose 和 Hosted 产品验收使用独立容器入口，仍验证同一应用的镜像默认启动命令。
 
-本地容器使用宿主网络以承载 Driver 的动态通信端口。macOS 需要 Docker Desktop 4.34 及以上，并启用 Settings → Resources → Network → Enable host networking；Apply and restart 由用户操作。API 只绑定 `127.0.0.1`，向 System 注册实际开发端口。macOS 默认以 `host.docker.internal` 公布 Driver 和回环数据端点，Hosted Linux 使用 `127.0.0.1`。普通 Linux 默认使用宿主机路由地址；部署者须确保 Worker 同时可达该地址及数据端点，必要时显式设置既有 `SPARK_WORKFLOW_SHARED_HOST`。生产 Compose 使用自身声明的部署网络，不由开发脚本接管。
 
 Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 executor，因此两端必须使用同一个可达地址。当数据引擎连接地址是 loopback 时，Spark Workflow 只在构造 JDBC URL 时使用 `SPARK_WORKFLOW_SHARED_HOST`，System 中保存的连接配置不变；远程主机地址不会被改写。PostgreSQL JDBC URL 同时继承 System `connection_info.sslmode`。
 
-Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop 按当前用户授权派生连接与单段索引名，任务不保存连接或 `index`。首版仅普通具体索引的 HTTP Basic 只读批量访问，HTTPS 显式拒绝。Driver 和 Executor 必须能访问同一端点；回环地址使用 `SPARK_WORKFLOW_SHARED_HOST`。公开 `array_fields` 显式声明 Mapping 无法区分的数组字段，nested 无需重复声明。不支持别名、data stream、隐藏索引、DSL、流式、写回，也不承诺各次 action 共享同一个 PIT。Spark 内部保留 bigint，JSON 摘要超出 JavaScript 安全整数范围时转成十进制字符串。固定官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR 校验 SHA256，构建时缓存，通过 `PYSPARK_SUBMIT_ARGS --jars` 在 Spark 提交阶段与 Sedona/JDBC Maven 依赖合并分发，避免该制品 POM 引入另一版 Spark。Python Session 不设置 `spark.jars`，以免覆盖提交阶段已解析的完整依赖列表。生产 Runtime、镜像构建和分布式 T2 共用同一个依赖配置入口；T2 必须同时核对实际 JAR 分发列表和 Worker 上的 Sedona/ES 计算。
+Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop 按当前用户授权派生连接与单段索引名，任务不保存连接或 `index`。首版仅普通具体索引的 HTTP Basic 只读批量访问，HTTPS 显式拒绝。Driver 和 Executor 均直接访问源端点，不继承系统 HTTP/SOCKS 代理；必须能访问同一端点，回环地址使用 `SPARK_WORKFLOW_SHARED_HOST`。公开 `array_fields` 显式声明 Mapping 无法区分的数组字段，nested 无需重复声明。不支持别名、data stream、隐藏索引、DSL、流式、写回，也不承诺各次 action 共享同一个 PIT。Spark 内部保留 bigint，JSON 摘要超出 JavaScript 安全整数范围时转成十进制字符串。固定官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR 校验 SHA256，构建时缓存，通过 `PYSPARK_SUBMIT_ARGS --jars` 在 Spark 提交阶段与 Sedona/JDBC Maven 依赖合并分发，避免该制品 POM 引入另一版 Spark。Python Session 不设置 `spark.jars`，以免覆盖提交阶段已解析的完整依赖列表。生产 Runtime、镜像构建和分布式 T2 共用同一个依赖配置入口；T2 必须同时核对实际 JAR 分发列表和 Worker 上的 Sedona/ES 计算。
 
 最小验证：`make test-spark-workflow`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`；正式消费验收使用既有 Hosted T4 `elasticsearch-consumer-flow`，同时核对 Console、Runtime 状态和真实 Worker。
 
@@ -83,13 +82,12 @@ Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop �
 在仓库根目录执行：
 
 ```bash
-make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"
 bash scripts/dev/start.sh -spark-workflow
 # 修改运行时代码后，使用同一产品构建和启动入口
 ./scripts/dev/restart.sh -spark-workflow
 ```
 
-产品默认入口 `python api_server.py` 使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。HTTP worker 与远端 Spark Worker 是不同职责；实际计算由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
+原生开发与产品默认入口 `python api_server.py` 使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。HTTP worker 与远端 Spark Worker 是不同职责；实际计算由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
 
 工作流的 DAG、引用和 `$input` 使用公共 `WorkflowRunner`。算子输出按元数据声明的端口适配，`all_results` 的单端口节点直接返回结果，多端口节点返回端口对象，DataFrame 对外只返回最多五行的摘要。
 

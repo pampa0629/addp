@@ -56,19 +56,14 @@ class HostedElasticsearchGateTest(unittest.TestCase):
             identifier = 18 if 'spark-engine.json' in sys.argv[-3] else 17
             Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={identifier}\\n')
         ''')
-        SPARK_SUPPORT.install_spark_container_fixture(self.host, 'elasticsearch-consumer-flow', 'spark-workflow-engine')
+        SPARK_SUPPORT.install_spark_container_fixture(self.host, 'elasticsearch-consumer-flow', 'addp-elasticsearch-online-runtime')
         self.host._executable('curl', '#!/usr/bin/env bash\nexit 0\n')
         self.host._write_repository_script('scripts/dev/start.sh', '''
             #!/usr/bin/env bash
             echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
-            if [ "$1" = -spark-workflow ]; then
-              make build-images || exit 1
-              docker run -d --name spark-workflow-engine --label com.addp.online-runtime=elasticsearch-consumer-flow
-            fi
         ''')
         self.host._write_repository_script('scripts/dev/stop.sh', '''
             #!/usr/bin/env bash
-            docker rm -fv spark-workflow-engine || exit 1
             echo application-stop >> "$ADDP_TEST_GATE_TRACE"
         ''')
         self.host._executable('make', '''
@@ -123,10 +118,10 @@ class HostedElasticsearchGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
-        sequence = ('infra-up', 'elasticsearch-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'start:-spark-workflow', 'make:build-images',
+        sequence = ('infra-up', 'elasticsearch-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'make:build-images', 'docker-run:addp-elasticsearch-online-runtime',
                     'playwright install --with-deps chromium', '--suite elasticsearch-consumer-flow',
                     'engine-register', 'make:test-online ONLINE_SUITE=elasticsearch-consumer-flow',
-                    'application-stop', 'elasticsearch-fixture:stop', 'infra-down')
+                    'docker-rm:addp-elasticsearch-online-runtime', 'application-stop', 'elasticsearch-fixture:stop', 'infra-down')
         indices = [trace.index(step) for step in sequence]
         self.assertEqual(indices, sorted(indices))
         self.assertEqual(trace.count('engine-register'), 2)
@@ -150,7 +145,7 @@ class HostedElasticsearchGateTest(unittest.TestCase):
                 self.assertIn('result=failed', (self.host.artifacts / 'summary.txt').read_text())
 
     def test_preflight_refuses_existing_product_resources(self):
-        for flags in ({'ADDP_TEST_PREEXIST_CONTAINER': 'spark-workflow-engine'},
+        for flags in ({'ADDP_TEST_PREEXIST_CONTAINER': 'addp-elasticsearch-online-runtime'},
                       {'ADDP_TEST_PREEXIST_CONTAINER': 'addp-elasticsearch-online-registry'},
                       {'ADDP_TEST_PREEXIST_IMAGE': '1'}):
             result = self.run_gate(check=True, **flags)

@@ -358,7 +358,7 @@ for name, args, failed in (
     ("selected", ["-system", "-asset", "-meta"], False),
     ("single", ["-system"], False),
     ("swagger-failure", ["-all"], True),
-    ("network-failure", ["-all"], True),
+    ("spark-prepare-failure", ["-all"], True),
 ):
     root = temporary / ("restart-" + name)
     dev = root / "scripts/dev"
@@ -366,8 +366,8 @@ for name, args, failed in (
     for filename in ("restart.sh", "lifecycle-lock.sh", "node-dependencies.sh", "jupyter-env.sh"):
         shutil.copy2(repository / "scripts/dev" / filename, dev / filename)
     (dev / "ports.sh").write_text('addp_dev_load_saved_ports() { :; }\n')
-    (dev / "spark-workflow.sh").write_text('addp_prepare_spark_workflow_container() { '
-        'echo network >> "$FIXTURE_ROOT/events"; [ "$FAIL_NETWORK" = 0 ]; }\n')
+    (dev / "spark-workflow.sh").write_text('addp_prepare_spark_workflow() { '
+        'echo spark-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_SPARK_PREPARE" = 0 ]; }\n')
     (root / ".env").write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
 
     infra = root / "scripts/infra"
@@ -420,7 +420,7 @@ exit 1
     env.update(
         PATH=str(root / "tools") + os.pathsep + env["PATH"],
         FIXTURE_ROOT=str(root), FAIL_SWAGGER=str(int(name == 'swagger-failure')),
-        FAIL_NETWORK=str(int(name == 'network-failure')),
+        FAIL_SPARK_PREPARE=str(int(name == 'spark-prepare-failure')),
         ALLOW_SWAGGER_FAILURE="0", MEILISEARCH_PORT="17700", SERVICE_HOST="localhost",
     )
     result = subprocess.run(["bash", str(dev / "restart.sh"), *args], env=env,
@@ -433,11 +433,11 @@ exit 1
     assert not any(event.startswith("pkill ") for event in events), \
         "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
     target = "all" if args in ([], ["-all"]) else "system" if name == 'single' else "system asset meta"
-    expected = ([] if name == 'single' else ['network']) + ["stop", "generate " + target]
+    expected = ([] if name == 'single' else ['spark-preflight']) + ["stop", "generate " + target]
     if not failed:
         expected += ["generated", "coverage " + target, "start"]
-    if name == 'network-failure':
-        expected = ['network']
+    if name == 'spark-prepare-failure':
+        expected = ['spark-preflight']
     for binary in ("system", "asset", "meta", "meta-worker", "gateway"):
         assert (bins / ("addp-" + binary)).read_text() == "old binary", "restart must preserve " + binary
     assert events == expected, events
@@ -741,6 +741,7 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
         MATH_WORKFLOW_PORT) pidfile=math-workflow-engine ;;
         JUPYTER_API_PORT) pidfile=jupyter-api-server ;;
         MODEL3D_WORKFLOW_PORT) pidfile=model3d-workflow-engine ;;
+        SPARK_WORKFLOW_PORT) pidfile=spark-workflow-engine ;;
         *) continue ;;
       esac
       printf "%s\n" "$$" > "$ROOT_DIR/.dev-pids/${pidfile}.pid"
@@ -748,7 +749,7 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
       printf "%s=%s\n" "$variable" "$((preferred + 10000))" >> "$ROOT_DIR/.dev-state/ports.env"
       checked=$((checked + 1))
     done < <(addp_dev_port_specs)
-    [ "$checked" -eq 3 ]
+    [ "$checked" -eq 4 ]
     addp_dev_load_saved_ports
     [ "$MATH_WORKFLOW_PORT" -eq 18089 ]
     [ "$JUPYTER_API_PORT" -eq 18097 ]
@@ -756,176 +757,91 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
   ' || fail "runtime port ownership did not match the startup PID files"
 }
 
-test_spark_product_lifecycle() {
+test_spark_native_lifecycle() {
   ROOT_DIR="$ROOT_DIR" TEST_ROOT="$TEST_ROOT" python3 - <<'PY_SPARK'
 import os
-import pathlib
-import subprocess
-root = pathlib.Path(os.environ['ROOT_DIR'])
-script = root / 'scripts/dev/spark-workflow.sh'
-launcher = '''
-set -euo pipefail
-source "$SCRIPT"
-uname() { echo "$KERNEL"; }
-ip() { echo "1.1.1.1 dev eth0 src 192.0.2.8"; }
-make() { echo build >> "$TRACE"; [ "$BUILD_FAIL" = 0 ]; }
-addp_spark_check_host_network() { echo network >> "$TRACE"; [ "$NETWORK_FAIL" = 0 ]; }
-curl() { return 0; }
-addp_dev_port_busy() { return 1; }
-addp_dev_owned_listener() { return 0; }
-addp_dev_remove_owned_container() { echo remove >> "$TRACE"; }
-docker() {
-  case "$1" in
-    info) return 0 ;;
-    inspect)
-      if [ "$2" = --format ]; then
-        case "$3" in
-          *Labels*) echo "$LABELS" ;;
-          *Running*) echo true ;;
-        esac
-      else
-        [ "$EXISTS" = 1 ]
-      fi ;;
-    run) printf "%s\n" "$@" > "$ARGS"; echo run >> "$TRACE"; echo container-id ;;
-    *) return 2 ;;
-  esac
-}
-addp_start_spark_workflow_container
-'''
-for kernel, hosted, explicit, expected in [('Darwin','0','','host.docker.internal'),
-                                           ('Linux','1','','127.0.0.1'),
-                                           ('Linux','0','','192.0.2.8'),
-                                           ('Darwin','0','shared.example','shared.example')]:
-    work = pathlib.Path(os.environ['TEST_ROOT']) / f'spark-product-{kernel}-{hosted}-{explicit}'
-    work.mkdir()
-    env = dict(os.environ, SCRIPT=str(script), ROOT_DIR=str(work), TRACE=str(work/'trace'),
-               ARGS=str(work/'args'), KERNEL=kernel, ADDP_ONLINE_HOSTED=hosted,
-               SPARK_WORKFLOW_SHARED_HOST=explicit, SPARK_WORKFLOW_PORT='18098', SPARK_MODE='',
-               REGISTRY='localhost:5001', IMAGE_TAG='latest', RUNTIME_HOST='', BUILD_FAIL='0', NETWORK_FAIL='0', EXISTS='0', LABELS='foreign')
-    result = subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True)
-    assert result.returncode == 0, result.stderr
-    args = (work/'args').read_text().splitlines()
-    assert args[args.index('--network')+1] == 'host', args
-    assert '-p' not in args and not any(a.startswith('--add-host') for a in args), args
-    assert args[-1] == 'localhost:5001/addp-spark-workflow-engine:latest', args
-    assert '-v' not in args and '--entrypoint' not in args, args
-    assert 'WORKFLOW_BIND_HOST=127.0.0.1' in args and 'PORT=18098' in args, args
-    assert 'RUNTIME_HOST=localhost' in args, args
-    assert 'SPARK_WORKFLOW_SHARED_HOST='+expected in args, args
-    assert 'SPARK_WORKFLOW_SERVICE_CLIENT_SECRET' in args, args
-    assert (work/'trace').read_text().splitlines() == ['build','network','remove','run']
-    assert (work/'.dev-pids/spark-workflow-engine.pid').read_text().strip() == 'container-id'
-    for flags in ({'BUILD_FAIL':'1'}, {'EXISTS':'1'}, {'SPARK_MODE':'local'}, {'NETWORK_FAIL':'1'}):
-        (work/'trace').unlink()
-        (work/'args').unlink()
-        rejected = subprocess.run(['bash','-c',launcher], env=dict(env,**flags),capture_output=True,text=True)
-        assert rejected.returncode != 0, flags
-        assert not (work/'args').exists(), flags
-        assert not (work/'trace').exists() or (work/'trace').read_text().splitlines() in (['build'], ['build','network']), flags
-        (work/'trace').touch(); (work/'args').touch()
-for name in ('start.sh','restart.sh'):
-    text = (root/'scripts/dev'/name).read_text()
-    assert 'addp_start_spark_workflow_container' in text
-    assert 'configure_spark_workflow_java' not in text
-    assert 'detect_spark_workflow_shared_host' not in text
-assert 'spark-workflow' in (root/'scripts/dev/stop.sh').read_text()
-restart = (root/'scripts/dev/restart.sh').read_text()
-assert restart.index('addp_prepare_spark_workflow_container || exit 1') < restart.index('if ! "${SCRIPT_DIR}/stop.sh"')
-print('PASS: Spark lifecycle uses one product build and container path')
-PY_SPARK
-}
-
-test_spark_bidirectional_host_network() {
-  ROOT_DIR="$ROOT_DIR" TEST_ROOT="$TEST_ROOT" python3 - <<'PY_NETWORK_TEST'
-import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
-
 root = Path(os.environ['ROOT_DIR'])
-work = Path(os.environ['TEST_ROOT']) / 'spark-network'
-work.mkdir()
-docker = work / 'docker'
-docker.write_text('''#!''' + sys.executable + '''
+work = Path(os.environ['TEST_ROOT']) / 'spark-native'
+runtime = work / 'engines/spark-workflow'
+(runtime / 'venv/bin').mkdir(parents=True)
+java = work / 'jdk/bin'
+java.mkdir(parents=True)
+(java / 'java').write_text('#!/bin/bash\necho \'openjdk version "11.0.32"\' >&2\n')
+(java / 'java').chmod(0o755)
+python = runtime / 'venv/bin/python'
+python.write_text('#!' + sys.executable + '''
 import os, sys
-from pathlib import Path
-args = sys.argv[1:]
-mode = os.environ['NETWORK_CASE']
-with open(os.environ['NETWORK_TRACE'], 'a') as trace:
-    trace.write(args[0] + '\\n')
-if args[0] == 'run':
-    assert args[args.index('--network')+1] == 'host'
-    assert '-p' not in args
-    assert args[args.index('--entrypoint')+1] == 'python'
-    assert args[args.index('--name')+1].startswith('addp-spark-network-')
-    assert 'com.addp.network-probe=spark-workflow' in args
-    if mode == 'start-failure':
-        sys.exit(1)
-    code = args[args.index('-c')+1]
-    if mode in ('container-to-host-failure', 'both-failure'):
-        code = code.replace("('127.0.0.1', port)", "('127.0.0.1', 0)")
-    if mode in ('host-to-container-failure', 'both-failure'):
-        code = code.replace("listener.getsockname()[1]", '0')
-    if mode == 'wrong-identity':
-        code = code.replace('peer.sendall(nonce)', "peer.sendall(b'foreign-listener')")
-    os.execv(sys.executable, [sys.executable, '-u', '-c', code] + args[-2:])
-if args[0] == 'rm':
-    sys.exit(1 if mode == 'cleanup-failure' else 0)
-if args[:2] == ['container', 'inspect']:
-    sys.exit(0 if mode == 'cleanup-failure' else 1)
-sys.exit(2)
+if len(sys.argv)>2 and sys.argv[1]=='-c':
+    if 'sys.version_info' in sys.argv[2]: sys.exit(int(os.environ.get('FAIL_PYTHON', '0')))
+    if 'import api_server' in sys.argv[2]: sys.exit(int(os.environ.get('FAIL_IMPORT', '0')))
+os.execv(sys.executable, [sys.executable]+sys.argv[1:])
 ''')
-docker.chmod(0o755)
-for mode in ('success', 'container-to-host-failure', 'host-to-container-failure',
-             'both-failure', 'start-failure', 'wrong-identity', 'cleanup-failure'):
-    trace = work / mode
-    env = dict(os.environ, PATH=str(work) + ':' + os.environ['PATH'], ROOT_DIR=str(root),
-               NETWORK_CASE=mode, NETWORK_TRACE=str(trace))
-    result = subprocess.run(['bash', '-c', 'source "$ROOT_DIR/scripts/dev/spark-workflow.sh"; '
-                             'addp_spark_check_host_network test-product-image'],
-                            env=env, capture_output=True, text=True, timeout=15)
-    assert (result.returncode == 0) == (mode == 'success'), (mode, result.stdout, result.stderr)
-    operations = trace.read_text().splitlines()
-    assert operations[:2] == ['run', 'rm'], (mode, operations)
-    if mode == 'container-to-host-failure':
-        assert '容器 → 宿主回环: 不可达；宿主 → 容器回环: 可达' in result.stderr
-    if mode == 'host-to-container-failure':
-        assert '容器 → 宿主回环: 可达；宿主 → 容器回环: 不可达' in result.stderr
-    if mode == 'cleanup-failure':
-        assert operations[-1] == 'container' and '无法清理' in result.stderr
-print('PASS: actual TCP probe rejects either unreachable direction, wrong identity and cleanup failure')
-PY_NETWORK_TEST
+python.chmod(0o755)
+(runtime / 'api_server.py').write_text('''
+import http.server, os, sys
+assert os.environ['WORKFLOW_BIND_HOST']=='127.0.0.1'
+assert os.environ['SPARK_WORKFLOW_SHARED_HOST']=='127.0.0.1'
+assert os.environ['JAVA_HOME']==os.environ['EXPECTED_JAVA']
+if os.environ.get('FAIL_START')=='1': sys.exit(1)
+http.server.HTTPServer(('127.0.0.1',int(os.environ['PORT'])), http.server.SimpleHTTPRequestHandler).serve_forever()
+''')
+(runtime / 'health').write_text('ok')
+with socket.socket() as sock:
+    sock.bind(('127.0.0.1', 0)); port = str(sock.getsockname()[1])
+launcher = '''
+set -euo pipefail
+source "$SOURCE_ROOT/scripts/dev/lifecycle-lock.sh"
+source "$SOURCE_ROOT/scripts/dev/ports.sh"
+source "$SOURCE_ROOT/scripts/dev/spark-workflow.sh"
+addp_sync_python_dependencies() {
+  [ "$1" = "$ROOT_DIR" ] && [ "$2" = "$ROOT_DIR/engines/spark-workflow" ] || return 2
+  echo sync >> "$ROOT_DIR/trace"
+  [ "${FAIL_SYNC:-0}" = 0 ]
 }
-
-test_spark_runtime_owned_listener() {
-  ROOT_DIR="$TEST_ROOT" PORT_SCRIPT="$PORT_SCRIPT" bash -c '
-    set -euo pipefail
-    source "$PORT_SCRIPT"
-    mock_labels=owned mock_mode="host|" mock_port=18098 mock_bind=127.0.0.1 mock_socket=owned
-    docker() {
-      if [ "$1" = exec ]; then cat >/dev/null; [ "$mock_socket" = owned ]; return; fi
-      case "$3" in
-        *Config.Labels*) [ "$mock_labels" = owned ] && printf "addp-runtimes|spark-workflow-engine|%s\n" "$ROOT_DIR" || echo foreign ;;
-        *State.Running*) echo true ;;
-        *NetworkMode*) echo "$mock_mode" ;;
-        *Config.Env*) printf "PORT=%s\nWORKFLOW_BIND_HOST=%s\n" "$mock_port" "$mock_bind" ;;
-        *) return 2 ;;
-      esac
-    }
-    addp_dev_owned_listener spark-workflow-engine 18098
-    mock_socket=foreign
-    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 11; fi
-    mock_socket=owned mock_labels=foreign
-    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 12; fi
-    mock_labels=owned mock_mode="host|host"
-    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 13; fi
-    mock_mode="bridge|"
-    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 14; fi
-    mock_mode="host|" mock_port=8098
-    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 15; fi
-    mock_port=18098 mock_bind=0.0.0.0
-    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 16; fi
-  ' || fail "Spark container ownership must prove its private process holds the loopback socket"
+addp_start_spark_workflow
+pid=$(cat "$ROOT_DIR/.dev-pids/spark-workflow-engine.pid")
+trap 'kill -TERM "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+addp_dev_owned_listener spark-workflow-engine "$SPARK_WORKFLOW_PORT"
+'''
+env = dict(os.environ, SOURCE_ROOT=str(root), ROOT_DIR=str(work), JAVA_HOME=str(java.parent),
+           EXPECTED_JAVA=str(java.parent), SPARK_WORKFLOW_SHARED_HOST='127.0.0.1', SPARK_WORKFLOW_PORT=port, SPARK_MODE='')
+result = subprocess.run(['bash', '-c', launcher], env=env, capture_output=True, text=True, timeout=15)
+assert result.returncode == 0, (result.stdout,result.stderr)
+assert (work / 'trace').read_text().splitlines()==['sync']
+assert (work / '.dev-pids/spark-workflow-engine.pid').read_text().strip().isdigit()
+for flags in ({'FAIL_SYNC':'1'}, {'FAIL_PYTHON':'1'}, {'FAIL_IMPORT':'1'}, {'SPARK_MODE':'local'},
+              {'SPARK_WORKFLOW_SHARED_HOST':'invalid.addp.example'}, {'FAIL_START':'1'}):
+    (work / '.dev-pids/spark-workflow-engine.pid').unlink(missing_ok=True)
+    result=subprocess.run(['bash','-c',launcher],env=dict(env,**flags),capture_output=True,text=True,timeout=15)
+    assert result.returncode != 0, (flags,result)
+    assert not (work / '.dev-pids/spark-workflow-engine.pid').exists(), flags
+# An unrelated HTTP listener must fail before launching a replacement.
+with socket.socket() as sock:
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(('127.0.0.1',int(port))); sock.listen()
+    result=subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True,timeout=15)
+    assert result.returncode != 0 and '外部监听者' in result.stderr, result.stderr
+    assert not (work / '.dev-pids/spark-workflow-engine.pid').exists()
+# Shared host defaults and explicit override retain one address contract.
+for kernel, hosted, explicit, expected in [('Darwin','0','','host.docker.internal'),('Linux','1','','127.0.0.1'),
+                                           ('Linux','0','','192.0.2.8'),('Darwin','0','shared.example','shared.example')]:
+    script='source "$SOURCE_ROOT/scripts/dev/spark-workflow.sh"; uname() { echo "$KERNEL"; }; ip() { echo "1.1.1.1 dev eth0 src 192.0.2.8"; }; addp_spark_shared_host'
+    result=subprocess.run(['bash','-c',script],env=dict(env,KERNEL=kernel,ADDP_ONLINE_HOSTED=hosted,SPARK_WORKFLOW_SHARED_HOST=explicit),capture_output=True,text=True)
+    assert result.returncode==0 and result.stdout.strip()==expected,result
+helper=(root/'scripts/dev/spark-workflow.sh').read_text()
+assert 'docker ' not in helper and 'make build-images' not in helper
+assert 'addp_sync_python_dependencies' in helper and 'exec "$runtime_dir/venv/bin/python" api_server.py' in helper
+assert 'addp_start_spark_workflow' in (root/'scripts/dev/start.sh').read_text()
+restart=(root/'scripts/dev/restart.sh').read_text()
+assert 'addp_launch_spark_workflow' in restart
+assert restart.index('(addp_prepare_spark_workflow) || exit 1') < restart.index('if ! "${SCRIPT_DIR}/stop.sh"')
+assert 'supermap-workflow spark-workflow;' not in (root/'scripts/dev/stop.sh').read_text()
+print('PASS: native Spark PID/HTTP ownership, dependency/import/DNS failures and one shared address')
+PY_SPARK
 }
 
 test_hosted_runtime_owned_listener() {
@@ -1815,9 +1731,7 @@ test_dev_port_resolution
 test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid
 test_dev_runtime_owned_listeners_match_pidfiles
-test_spark_product_lifecycle
-test_spark_bidirectional_host_network
-test_spark_runtime_owned_listener
+test_spark_native_lifecycle
 test_hosted_runtime_owned_listener
 test_runtime_host_port_advertisement
 test_hosted_runtime_network

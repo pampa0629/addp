@@ -36,7 +36,7 @@ show_usage() {
   echo "  -supermap-workflow 重启 SuperMap Workflow Engine (C++ Docker runtime，需先构建基础镜像)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -agent       重启 Agent Backend (Python 服务)"
-  echo "  -spark-workflow 重启 Spark 工作流 Engine (Docker runtime)"
+  echo "  -spark-workflow 重启 Spark 工作流 Engine (原生 Python/JDK runtime)"
   echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
   echo "  -duckdb      按需编译并重启 DuckDB Federated Query Runtime"
   echo ""
@@ -658,10 +658,9 @@ restart_supermap_workflow_service() {
 
 restart_spark_workflow_service() {
     source "${SCRIPT_DIR}/spark-workflow.sh"
-    # Generic PID-file cleanup also releases a process left by an earlier checkout.
-    # Runtime startup itself has only the product container path.
+    addp_prepare_spark_workflow || return 1
     stop_pidfile_process ".dev-pids/spark-workflow-engine.pid" "Spark Workflow Engine"
-    addp_start_spark_workflow_container
+    addp_launch_spark_workflow
 }
 
 restart_jupyter_service() {
@@ -770,11 +769,10 @@ fi
 echo "📦 构建计划: 同步 Swagger，按完整构建指纹复用或编译产物"
 echo ""
 
-# The full start includes Spark. Reject unavailable Desktop host forwarding
-# before stopping an otherwise usable workspace (including multi-module restart).
+# Validate native Spark prerequisites before stopping the workspace.
 if [ "$RESTART_ALL" = true ] || [ ${#ORIGINAL_ARGS[@]} -ne 1 ]; then
     source "${SCRIPT_DIR}/spark-workflow.sh"
-    addp_prepare_spark_workflow_container || exit 1
+    (addp_prepare_spark_workflow) || exit 1
 fi
 
 # 1. 统一停止工作区服务，保留 System 供 Go、Python 和 Runtime 完成注销。

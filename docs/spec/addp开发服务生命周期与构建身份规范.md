@@ -61,11 +61,13 @@ Go 二进制不得直接编译到 `.dev-bins/addp-*` 正式路径。统一流程
 
 ## 三、运行时依赖构建输入
 
-Model3D 的宿主机 Python Runtime 在每次启动和局部重启时，必须复用同一依赖同步函数，通过既有 Python 安装互斥锁，按 `engines/model3d-workflow/requirements.txt` 和 editable `common-python` 同步依赖，再执行 `pip check`。已有虚拟环境或少量模块可导入不能作为跳过同步的依据；依赖新增、版本调整和共享包依赖变化必须在实际启动环境生效。任一步失败立即阻止 Runtime 启动，不进入服务就绪等待。
+Model3D 和 Spark Workflow 的宿主机 Python Runtime 在每次启动和局部重启时，必须复用同一依赖同步函数，通过既有 Python 安装互斥锁，按各自的 `requirements.txt` 和 editable `common-python` 同步依赖，再执行 `pip check`。已有虚拟环境或少量模块可导入不能作为跳过同步的依据；依赖新增、版本调整和共享包依赖变化必须在实际启动环境生效。任一步失败立即阻止 Runtime 启动，不进入服务就绪等待。
 
 所有由开发生命周期启动的 Node 单元必须提交 `package-lock.json`。锁文件是不可变构建输入，启动和重启统一通过 `scripts/dev/node-dependencies.sh` 执行 `npm ci`；缺少锁文件必须立即失败，不得在生命周期内退回 `npm install`、生成锁文件或静默采用未锁定依赖。
 
 `npm install` 只允许用于显式的依赖维护流程，由开发者审查并提交 `package.json` 与 `package-lock.json` 的一致变更。Hosted Online 等要求干净构建身份的门禁在安装前后必须保持仓库状态不变，不能通过忽略锁文件改动、关闭仓库清洁检查或在预检前恢复文件来掩盖生命周期污染。
+
+Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境和 OpenJDK 11，与 Business Spark Worker 保持 JVM 主版本一致。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用唯一原生启动入口，按完整 requirements 和 editable `common-python` 同步依赖并执行 `pip check`。全套重启在停止已有服务前完成 Java、Python、依赖和共享地址预检；失败保留已有服务。HTTP 仅绑定 `127.0.0.1`，就绪必须同时验证原生 PID、监听归属和 HTTP 健康检查；`stop.sh` 按原生 PID 停止服务。macOS 使用 `host.docker.internal` 公布 Driver 与回环数据端点，需要在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`；Docker Worker 保留 Docker 内置解析。该方式不依赖 Docker Desktop host networking。生产 Compose 和 Hosted 产品验收使用独立容器入口，仍验证同一应用的镜像默认启动命令。
 
 ## 四、构建身份
 

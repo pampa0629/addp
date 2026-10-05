@@ -1,4 +1,4 @@
-"""The product container HTTP entry; Spark executors remain remote."""
+"""The native development and product container HTTP entry; Spark executors remain remote."""
 import os
 import threading
 import time

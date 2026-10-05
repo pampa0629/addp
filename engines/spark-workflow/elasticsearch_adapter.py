@@ -104,6 +104,7 @@ class ElasticsearchAdapter:
                    'es.net.http.auth.user': user, 'es.net.http.auth.pass': password,
                    'es.index.read.allow.red.status': 'false', 'es.index.read.missing.as.empty': 'false',
                    'es.net.ssl': 'false', 'es.net.proxy.http.use.system.props': 'false',
+                   'es.net.proxy.socks.use.system.props': 'false',
                    'es.http.retries': '0', 'es.scroll.keepalive': '1m', 'es.scroll.size': '1000'}
         if arrays:
             options['es.read.field.as.array.include'] = arrays

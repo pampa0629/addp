@@ -29,7 +29,7 @@ HDFS 首版固定 Simple 开发实验模式。引擎连接的 `webhdfs_endpoint`
 
 GeoPython、PointCloud、Document 的 HTTP 监听地址由部署入口通过 `WORKFLOW_BIND_HOST` 注入，默认 `0.0.0.0`，用于普通 bridge/Compose 容器内监听。Hosted Online 原生 Linux 使用宿主网络时，标准开发入口固定注入 `127.0.0.1`，并以 `PORT` 指定实际开发端口；`RUNTIME_HOST` 与 `RUNTIME_PUBLIC_PORT` 仍只负责自注册地址，不用于控制监听。该配置随进程启动生效，不保存到业务配置或根 `.env`。
 
-Spark Workflow 的开发生命周期使用产品容器和宿主网络，固定注入 `WORKFLOW_BIND_HOST=127.0.0.1` 与实际 `PORT`，不依赖宿主机 Java/PySpark。`SPARK_WORKFLOW_SHARED_HOST` 只声明 Driver/Executor 共用的访问地址：macOS 默认为 `host.docker.internal`，Hosted Linux 为 `127.0.0.1`，普通 Linux 使用路由接口地址；远程部署应按实际拓扑显式配置。Docker Desktop 必须启用 host networking，修改该设置后由用户重启 Docker。生产 Compose 按自己的网络与稳定服务名部署。
+Spark Workflow 原生开发启动固定注入 `WORKFLOW_BIND_HOST=127.0.0.1` 与实际 `PORT`，Java 11 只注入 Spark 子进程。`SPARK_WORKFLOW_SHARED_HOST` 声明 Driver/Executor 共用的地址：macOS 默认为 `host.docker.internal`，需在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，容器继续使用 Docker 内置解析；Hosted Linux 为 `127.0.0.1`，普通 Linux 使用路由接口地址。远程部署按实际拓扑显式配置。开发启动不构建镜像，不依赖 Docker Desktop host networking；生产 Compose 按自身网络部署。
 
 
 | 类别 | 典型内容 | 事实来源 | 维护者 |
