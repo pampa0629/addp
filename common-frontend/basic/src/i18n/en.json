@@ -593,7 +593,8 @@
     "refresh": "Refresh",
     "open": "View",
     "failed": "Read failed",
-    "empty": "No visible keys in this batch",
+    "emptyBatchContinue": "No visible keys in this batch. Scanning is not finished; click Next batch.",
+    "emptyBatchComplete": "No visible keys in this batch. Scanning is finished.",
     "summary": "Summary",
     "bytes": "{count} bytes",
     "elements": "{count} entries"

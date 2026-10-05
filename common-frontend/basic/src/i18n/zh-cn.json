@@ -593,7 +593,8 @@
     "refresh": "刷新",
     "open": "查看",
     "failed": "读取失败",
-    "empty": "当前批次没有可见键",
+    "emptyBatchContinue": "当前批次没有可见键，扫描尚未结束，请点击“下一批”。",
+    "emptyBatchComplete": "当前批次没有可见键，扫描已结束。",
     "summary": "内容摘要",
     "bytes": "{count} 字节",
     "elements": "{count} 个元素"

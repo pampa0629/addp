@@ -8,7 +8,7 @@
       <el-button size="small" :disabled="busy || dataset.complete" @click="browse(dataset.next_cursor)">{{ t('keyValuePreview.nextBatch') }}</el-button>
     </div>
     <el-alert v-if="failed" :title="t('keyValuePreview.failed')" type="error" :closable="false" />
-    <el-table v-if="dataset" :data="dataset.keys" :empty-text="t('keyValuePreview.empty')" v-loading="busy" row-key="key" size="small" border data-testid="keyspace-keys">
+    <el-table v-if="dataset" :data="dataset.keys" :empty-text="t(dataset.complete ? 'keyValuePreview.emptyBatchComplete' : 'keyValuePreview.emptyBatchContinue')" v-loading="busy" row-key="key" size="small" border data-testid="keyspace-keys">
       <el-table-column :label="t('keyValuePreview.key')" min-width="240">
         <template #default="{ row }"><el-button link type="primary" @click="select(row)">{{ keyLabel(row.name) }}</el-button></template>
       </el-table-column>

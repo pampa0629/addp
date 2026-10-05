@@ -82,26 +82,36 @@ for (const native of [
   })
 }
 
-test('browses an empty nonterminal keyspace batch and selects a key from the next batch', async ({ page }) => {
+test('distinguishes nonterminal and terminal empty keyspace batches after a matching batch', async ({ page }) => {
   const locator = 'addp://engine/12/path/keyspace?type=keyspace&item_id=1204'
   const native = { facts: { native_type: 'string', length: 3, ttl_millis: -1 }, value: { encoding: 'utf8', value: '123', byte_length: 3 }, entries: [], truncated: false }
   await installMockBackend(page, { recordSet: { type: 'keyspace', locator, rows: [] }, keyValue: native,
     keyspacePages: {
      '': {
       '': { database: 0, keys: [], complete: false, next_cursor: '42' },
-      '42': { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, ...native }], complete: true, next_cursor: '0' }
+      '42': { database: 0, keys: [{ key: 'k:c2FtcGxl', name: { encoding: 'utf8', value: 'sample' }, ...native }], complete: false, next_cursor: '99' },
+      '99': { database: 0, keys: [], complete: true, next_cursor: '0' }
      }
     }
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
   const next = page.getByRole('button', { name: '下一批', exact: true })
+  const keys = page.getByTestId('keyspace-keys')
+  await expect(keys).toContainText('当前批次没有可见键，扫描尚未结束，请点击“下一批”。')
   await expect(next).toBeEnabled()
   await next.click()
-  await expect(next).toBeDisabled()
+  await expect(keys.locator('.el-table__empty-block')).toHaveCount(0)
+  await expect(next).toBeEnabled()
   await page.getByTestId('keyspace-keys').getByRole('button', { name: '"sample"', exact: true }).click()
   await expect(page.getByTestId('key-value-string')).toHaveText('123')
+  await next.click()
+  await expect(keys).toContainText('当前批次没有可见键，扫描已结束。')
+  await expect(keys).not.toContainText('请点击“下一批”')
+  await expect(next).toBeDisabled()
+  await expect(page.getByTestId('key-value-string')).toHaveCount(0)
   await page.getByRole('button', { name: '刷新', exact: true }).last().click()
   await expect(next).toBeEnabled()
+  await expect(keys).toContainText('扫描尚未结束，请点击“下一批”。')
   await expect(page.getByTestId('key-value-string')).toHaveCount(0)
 })
 
@@ -130,7 +140,7 @@ test('applies literal key prefixes from the first cursor, retains them across ba
   await input.press('Enter')
   await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ locator, key_cursor: '', key_prefix: prefix })
   await expect(page.getByTestId('key-value-string')).toHaveCount(0)
-  await expect(keys).toContainText('当前批次没有可见键')
+  await expect(keys).toContainText('当前批次没有可见键，扫描尚未结束，请点击“下一批”。')
   await expect(keys.getByTestId('key-value-sample')).toHaveCount(0)
   // An edited draft must not change the active prefix during cursor browsing.
   await input.fill('missing:')
@@ -146,6 +156,7 @@ test('applies literal key prefixes from the first cursor, retains them across ba
   await page.getByRole('button', { name: '筛选', exact: true }).click()
   await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ key_cursor: '', key_prefix: 'missing:' })
   await expect(page.getByRole('button', { name: '下一批', exact: true })).toBeDisabled()
+  await expect(keys).toContainText('当前批次没有可见键，扫描已结束。')
   await input.fill('')
   await input.press('Enter')
   await expect.poll(() => backend.previewQueries.at(-1)).toMatchObject({ key_cursor: '', key_prefix: '' })
