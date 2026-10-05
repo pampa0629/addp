@@ -3794,6 +3794,92 @@
                 ]
             }
         },
+        "/runtime/export-sessions/{id}/execution-source": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Transfer 服务可按租户、UUID、请求摘要及待执行会话核验发起用户；不返回数据、文件或授权。| Only Transfer may verify the initiator against the tenant, UUID, request digest and pending session; no data, artifact or authorization is returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "核验导出执行来源 | Verify export execution provenance",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "导出会话 ID | Export session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "来源绑定 | Provenance binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ExportExecutionSourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ExportExecutionSource"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.export_provenance.read"
+                ]
+            }
+        },
         "/search": {
             "get": {
                 "security": [
@@ -7274,6 +7360,32 @@
                 },
                 "recursive": {
                     "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.ExportExecutionSource": {
+            "type": "object",
+            "properties": {
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.ExportExecutionSourceRequest": {
+            "type": "object",
+            "required": [
+                "execution_id",
+                "request_digest"
+            ],
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "request_digest": {
+                    "type": "string"
                 }
             }
         },

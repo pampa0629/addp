@@ -18,3 +18,12 @@
 "msg.module_heartbeat"       = "心跳更新成功"
 "msg.module_deleted"         = "模块注销成功"
 "msg.audit_log_created"      = "审计日志已创建"
+
+[export.execution_source.invalid]
+other = "导出执行来源请求无效"
+
+[export.execution_source.not_found]
+other = "导出执行来源不存在"
+
+[export.execution_source.unavailable]
+other = "暂时无法核验导出执行来源，请稍后重试"

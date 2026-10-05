@@ -136,6 +136,10 @@ func (s *QueryExportService) Get(ctx context.Context, id, tenantID, userID uint)
 	return queryExportResponse(response), nil
 }
 
+func (s *QueryExportService) ResolveExecutionSource(ctx context.Context, id, tenantID uint, request commonClient.ExportExecutionSourceRequest) (*commonClient.ExportExecutionSource, error) {
+	return s.artifacts.ResolveExecutionSource(ctx, id, tenantID, request)
+}
+
 func (s *QueryExportService) Open(ctx context.Context, id, tenantID, userID uint) (*exportartifact.File, error) {
 	if _, err := s.Get(ctx, id, tenantID, userID); err != nil {
 		return nil, err

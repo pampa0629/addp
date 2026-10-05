@@ -1179,6 +1179,23 @@ definitions:
       recursive:
         type: boolean
     type: object
+  github_com_addp_manager_internal_service.ExportExecutionSource:
+    properties:
+      tenant_id:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  github_com_addp_manager_internal_service.ExportExecutionSourceRequest:
+    properties:
+      execution_id:
+        type: string
+      request_digest:
+        type: string
+    required:
+    - execution_id
+    - request_digest
+    type: object
   github_com_addp_manager_internal_service.ExportRequest:
     properties:
       file_name:
@@ -5576,6 +5593,64 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.content_index.update
+  /runtime/export-sessions/{id}/execution-source:
+    post:
+      consumes:
+      - application/json
+      description: 仅 Transfer 服务可按租户、UUID、请求摘要及待执行会话核验发起用户；不返回数据、文件或授权。| Only Transfer
+        may verify the initiator against the tenant, UUID, request digest and pending
+        session; no data, artifact or authorization is returned.
+      parameters:
+      - description: 导出会话 ID | Export session ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 来源绑定 | Provenance binding
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_service.ExportExecutionSourceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.ExportExecutionSource'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 核验导出执行来源 | Verify export execution provenance
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.export_provenance.read
   /search:
     get:
       description: 执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页 | Execute full-text and

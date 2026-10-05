@@ -196,13 +196,15 @@ class ModuleGateTest(unittest.TestCase):
     def test_common_postgres_group_preserves_full_default_and_scopes_explicitly(self) -> None:
         result, calls = self._run_common_postgres_group([])
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(4, len(calls))
+        self.assertEqual(5, len(calls))
         self.assertIn("TestIntegrationPostgresCatalogPreciseReadOnly", calls[0])
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
         self.assertIn("./execution", calls[1])
-        self.assertIn("./dataprotection/projectionstore", calls[2])
-        self.assertIn("./dbbridge", calls[3])
+        self.assertIn("./exportartifact", calls[2])
+        self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[2])
+        self.assertIn("./dataprotection/projectionstore", calls[3])
+        self.assertIn("./dbbridge", calls[4])
 
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"])
         self.assertEqual(0, result.returncode, result.stderr)

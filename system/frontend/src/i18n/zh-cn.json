@@ -788,6 +788,7 @@
           "sharing_decision": "业务共享决定",
           "sharing_fulfillment": "持久办理依据",
           "event": "审计事件",
+          "export_provenance": "导出执行来源",
           "execution": "执行记录",
           "execution_authorization": "执行授权",
           "external_identity": "外部身份",

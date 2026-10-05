@@ -788,6 +788,7 @@
           "sharing_decision": "Business Sharing Decision",
           "sharing_fulfillment": "Persisted Fulfillment Basis",
           "event": "Audit Event",
+          "export_provenance": "Export Execution Provenance",
           "execution": "Execution Record",
           "execution_authorization": "Execution Authorization",
           "external_identity": "External Identity",

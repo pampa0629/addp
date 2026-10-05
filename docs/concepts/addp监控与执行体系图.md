@@ -92,6 +92,7 @@ graph TB
 | `module` | string | 模块名称 (meta/transfer/develop/manager/quality/graph/orchestrator) |
 | `task_type` | string | 任务类型 (scan/sync/orchestration/query/workflow/script/vector_tile_cache_generation/vector_materialized_view_generation/embedding/check/kg_build) |
 | `source` | string | 触发来源模块 |
+
 | `source_task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
 | `trigger_type` | string | `manual` / `scheduled` |
 | `status` | string | 执行状态 (pending/running/success/failed/timeout/cancelled) |
@@ -105,6 +106,8 @@ graph TB
 | `execution_time_ms` | bigint | 执行时长 (毫秒) |
 | `metadata` | jsonb | 结果摘要、步骤结果、模块扩展信息 |
 | `error_details` | jsonb | 仅保存失败、超时或取消的错误类型、消息和诊断信息；成功 execution 必须为空 |
+
+Manager／Develop 代发的一次性导出仍由 Transfer 独占 execution。导出 owner 从认证用户上下文保存发起用户，并在派发前将导出会话绑定到唯一 Transfer execution UUID 和不可变请求摘要。Transfer 根据认证服务 Client 推导 owner，用自己的租户服务令牌向 owner 的 `POST /runtime/export-sessions/{id}/execution-source` 核验会话、租户、UUID、摘要与待执行状态，然后只将核验得到的用户写入 `triggered_by`。Monitor 继续通过统一 OwnAdHoc 读取范围允许发起用户查看临时执行；来源事实不授予执行或数据权限，不复制用户 Token、Membership 或 Execution Authorization。没有导出会话来源的机器执行不声明人类发起用户，旧执行也不推测或回填归属。
 
 ### 执行运行时角色矩阵
 

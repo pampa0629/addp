@@ -42,6 +42,31 @@ func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *serv
 	}
 }
 
+// ResolveExportExecutionSource 核验查询导出会话的发起用户事实。
+// @Summary 核验导出执行来源 | Verify export execution provenance
+// @Description 仅 Transfer 服务可核验租户内待执行导出会话的 UUID、请求摘要与发起用户；该事实不授予执行或数据访问权。| Only Transfer may verify the UUID, request digest and initiator of a pending tenant export session; these facts grant no execution or data access.
+// @Tags Execution
+// @Accept json
+// @Produce json
+// @Param id path int true "导出会话 ID | Export session ID"
+// @Param request body commonClient.ExportExecutionSourceRequest true "来源绑定 | Provenance binding"
+// @Success 200 {object} commonClient.ExportExecutionSource
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.export_provenance.read"]
+// @Router /runtime/export-sessions/{id}/execution-source [post]
+// @Security BearerAuth
+func (h *ExecutionHandler) ResolveExportExecutionSource(c *gin.Context) {
+	if h == nil || h.queryExports == nil {
+		exportartifact.ServeExecutionSource(c, nil)
+		return
+	}
+	exportartifact.ServeExecutionSource(c, h.queryExports)
+}
+
 // CreateQueryExport 基于成功查询 execution 创建全部结果导出会话。
 // @Summary 导出全部查询结果 | Export all query results
 // @Description 使用已成功查询 execution 的冻结查询与参数创建一次性 Transfer execution，结果暂存到 infra 并通过导出会话下载。| Create a one-off Transfer execution from the frozen query and parameters of a successful query execution, stage it in infra, and download it through the export session.

@@ -42,6 +42,8 @@ System 只保存 BCrypt Hash；Secret 轮换使旧 Client Credential 立即失�
 的 Membership、Role、Tenant 或 `authorization_version` 变化使已签发 Token 立即失效。
 owner 路由不得接受共享 Internal API Key、`X-Tenant-ID` 或 User Token 代传来构造服务身份。
 
+服务代发导出时，机器认证主体与原始发起用户分别记录。Manager／Develop 的导出会话从已验证 User AuthContext 保存用户，派发前冻结 execution UUID 与完整请求摘要；Transfer 仅用自身 tenant Service Access Token 调用导出 owner 的来源核验接口，不能接受请求自报用户或回调地址。owner 必须同时校验固定 `addp-transfer` Service Client、不可委托且不可租户定制的 `<owner>.export_provenance.read` Permission，以及会话租户、UUID、摘要和有效待执行状态。该 Permission 只授予 `tenant.transfer_runtime`，不授予 User Role；`platform.transfer_runtime` 的 `system.runtime_registry.read` 只用于通过 System 获取受信 owner Backend 地址。响应只提供匹配会话的发起用户事实，不返回源数据、文件或凭据；Transfer 只用于 `triggered_by` 与 Monitor 本人读取隔离，不能作为 Execution Authorization 使用。普通机器执行保持无人类归属。
+
 Tenant 管理员创建“服务账号”时，System 必须在同一事务内创建 Tenant-owned Service Principal、
 该 Tenant 内唯一 Membership，以及与其一对一绑定的 Confidential OAuth Client。管理端只把它们
 作为一个服务账号聚合对象暴露：Client ID 不可修改，Client Secret 只在创建或轮换成功响应中

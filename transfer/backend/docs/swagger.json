@@ -140,7 +140,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "模块 Service Client 创建不带 Transfer 任务定义的一次性 bounded sync execution；调用来源由认证 Client ID 推导，响应只返回统一 execution_id。| A module Service Client creates a one-off bounded sync execution without a Transfer task definition; the source module is derived from the authenticated Client ID and the response contains only the unified execution_id.",
+                "description": "模块服务创建无任务定义的 bounded sync execution；来源由认证 Client ID 推导。导出会话必须核验 owner 保存的 UUID、请求摘要及用户事实；无会话的机器执行不声明人类发起用户。| A module service creates a bounded sync execution without a task definition; its source is derived from the authenticated Client ID. An export session must verify the owner's UUID, request digest and initiator facts; a machine execution without a session has no human initiator.",
                 "consumes": [
                     "application/json"
                 ],
@@ -180,6 +180,15 @@
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2152,6 +2161,166 @@
         }
     },
     "definitions": {
+        "client.TransferExecutionConfig": {
+            "type": "object",
+            "properties": {
+                "batch_size": {
+                    "type": "integer"
+                },
+                "load": {
+                    "$ref": "#/definitions/client.TransferExecutionLoad"
+                },
+                "runtime": {
+                    "$ref": "#/definitions/client.TransferExecutionRuntime"
+                },
+                "source": {
+                    "$ref": "#/definitions/client.TransferExecutionEndpoint"
+                },
+                "target": {
+                    "$ref": "#/definitions/client.TransferExecutionEndpoint"
+                },
+                "transforms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.TransferExecutionTransform"
+                    }
+                }
+            }
+        },
+        "client.TransferExecutionEndpoint": {
+            "type": "object",
+            "properties": {
+                "data_type": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_locator": {
+                    "type": "string"
+                },
+                "policy": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "query": {
+                    "$ref": "#/definitions/client.TransferExecutionQuery"
+                },
+                "representation": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferExecutionFieldMapping": {
+            "type": "object",
+            "properties": {
+                "nullable": {
+                    "type": "boolean"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "target_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferExecutionLoad": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferExecutionQuery": {
+            "type": "object",
+            "properties": {
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.TransferExecutionQueryInput"
+                    }
+                },
+                "language": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "statement": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferExecutionQueryInput": {
+            "type": "object",
+            "properties": {
+                "locator": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferExecutionRuntime": {
+            "type": "object",
+            "properties": {
+                "boundary": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferExecutionTransform": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.TransferExecutionFieldMapping"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.TransferExportSessionReference": {
+            "type": "object",
+            "required": [
+                "execution_id",
+                "session_id"
+            ],
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "execution.DiagnosticStep": {
             "type": "object",
             "properties": {
@@ -2392,7 +2561,10 @@
                     "type": "integer"
                 },
                 "config": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc"
+                    "$ref": "#/definitions/client.TransferExecutionConfig"
+                },
+                "export_session": {
+                    "$ref": "#/definitions/client.TransferExportSessionReference"
                 },
                 "name": {
                     "type": "string"

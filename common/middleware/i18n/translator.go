@@ -21,6 +21,9 @@ const (
 	MsgInvalidParams                   = "err.invalid_params"
 	MsgMethodNotAllowed                = "err.method_not_allowed"
 	MsgAuthorizationServiceUnavailable = "err.authorization_service_unavailable"
+	MsgExportSourceInvalid             = "export.execution_source.invalid"
+	MsgExportSourceNotFound            = "export.execution_source.not_found"
+	MsgExportSourceUnavailable         = "export.execution_source.unavailable"
 )
 
 // Bundle 是全局翻译 Bundle，各模块可通过 RegisterBundle 注册自己的翻译文件。

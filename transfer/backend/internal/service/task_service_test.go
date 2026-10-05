@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	commonClient "github.com/addp/common/client"
 	"strings"
 	"testing"
 	"time"
@@ -118,19 +119,19 @@ func TestCreateAdHocExecutionPersistsNoTransferTaskDefinition(t *testing.T) {
 
 	result, err := taskService.CreateAdHocExecution(context.Background(), &models.CreateAdHocExecutionRequest{
 		Name: "query export", BatchSize: 1000,
-		Config: models.TableTransferTaskConfigDoc{
-			Runtime: models.TransferRuntimeDoc{Boundary: commonExecution.ExecutionBoundaryBounded},
-			Load:    models.TransferLoadDoc{Mode: "snapshot"},
-			Source: models.TransferSourceEndpointDoc{
+		Config: commonClient.TransferExecutionConfig{
+			Runtime: commonClient.TransferExecutionRuntime{Boundary: commonExecution.ExecutionBoundaryBounded},
+			Load:    commonClient.TransferExecutionLoad{Mode: "snapshot"},
+			Source: commonClient.TransferExecutionEndpoint{
 				Locator: "addp://engine/1/path/public/orders?type=table", DataType: "table", Representation: "native",
 			},
-			Target: models.TransferTargetEndpointDoc{
+			Target: commonClient.TransferExecutionEndpoint{
 				ParentLocator: "addp://engine/2/path/exports?type=directory", Name: "orders.csv",
 				DataType: "table", Representation: "encoded", Format: "csv",
-				Policy: models.TransferTargetPolicyDoc{ApplyMode: "replace"},
+				Policy: map[string]interface{}{"apply_mode": "replace"},
 			},
 		},
-	}, "asset", 7, 9)
+	}, "asset", 7)
 	if err != nil {
 		t.Fatalf("CreateAdHocExecution() error = %v", err)
 	}
@@ -145,7 +146,7 @@ func TestCreateAdHocExecutionPersistsNoTransferTaskDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if execution.SourceTaskID != nil || execution.Source != "asset" || execution.MaxAttempts != 1 {
+	if execution.SourceTaskID != nil || execution.Source != "asset" || execution.MaxAttempts != 1 || execution.TriggeredBy != nil {
 		t.Fatalf("ad-hoc execution = %#v", execution)
 	}
 	claimed, lease, err := taskService.taskRepo.ClaimNextBoundedExecution(context.Background(), "transfer-test-worker", time.Now(), time.Minute)

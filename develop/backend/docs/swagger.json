@@ -2419,6 +2419,92 @@
                 ]
             }
         },
+        "/runtime/export-sessions/{id}/execution-source": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Transfer 服务可核验租户内待执行导出会话的 UUID、请求摘要与发起用户；该事实不授予执行或数据访问权。| Only Transfer may verify the UUID, request digest and initiator of a pending tenant export session; these facts grant no execution or data access.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "核验导出执行来源 | Verify export execution provenance",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "导出会话 ID | Export session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "来源绑定 | Provenance binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.ExportExecutionSourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.ExportExecutionSource"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.export_provenance.read"
+                ]
+            }
+        },
         "/settings/query-policy": {
             "get": {
                 "security": [
@@ -3505,6 +3591,32 @@
                     "type": "string"
                 },
                 "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.ExportExecutionSource": {
+            "type": "object",
+            "properties": {
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.ExportExecutionSourceRequest": {
+            "type": "object",
+            "required": [
+                "execution_id",
+                "request_digest"
+            ],
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "request_digest": {
                     "type": "string"
                 }
             }

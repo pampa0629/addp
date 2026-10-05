@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/middleware/auth"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/service"
@@ -19,6 +20,31 @@ type ExportHandler struct {
 
 func NewExportHandler(exportService *service.ExportService) *ExportHandler {
 	return &ExportHandler{exportService: exportService}
+}
+
+// ResolveExecutionSource 核验导出会话的发起用户事实。
+// @Summary 核验导出执行来源 | Verify export execution provenance
+// @Description 仅 Transfer 服务可按租户、UUID、请求摘要及待执行会话核验发起用户；不返回数据、文件或授权。| Only Transfer may verify the initiator against the tenant, UUID, request digest and pending session; no data, artifact or authorization is returned.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param id path int true "导出会话 ID | Export session ID"
+// @Param request body service.ExportExecutionSourceRequest true "来源绑定 | Provenance binding"
+// @Success 200 {object} service.ExportExecutionSource
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.export_provenance.read"]
+// @Router /runtime/export-sessions/{id}/execution-source [post]
+// @Security BearerAuth
+func (h *ExportHandler) ResolveExecutionSource(c *gin.Context) {
+	if h == nil || h.exportService == nil {
+		exportartifact.ServeExecutionSource(c, nil)
+		return
+	}
+	exportartifact.ServeExecutionSource(c, h.exportService)
 }
 
 // CreateExport 创建数据库 item 导出会话。

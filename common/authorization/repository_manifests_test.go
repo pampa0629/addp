@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 471 {
-		t.Fatalf("descriptor count = %d, want 471", len(descriptors))
+	if len(descriptors) != 473 {
+		t.Fatalf("descriptor count = %d, want 473", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -168,6 +168,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.transfer_runtime", []string{
 		"audit.tenant_event.create",
+		"develop.export_provenance.read",
+		"manager.export_provenance.read",
 		"meta.catalog.read",
 		"meta.inspect.execute",
 		"meta.scan_task.execute",
@@ -236,6 +238,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.transfer_runtime", []string{
 		"platform.tenant.read",
+		"system.runtime_registry.read",
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.workbench_runtime", []string{

@@ -38,25 +38,27 @@ var (
 // Session is the shared control-plane record for a short-lived export artifact.
 // Repositories choose the owning module table explicitly; Session has no global table.
 type Session struct {
-	ID                  uint                 `json:"id" gorm:"primaryKey"`
-	TenantID            uint                 `json:"tenant_id" gorm:"not null;index:idx_export_sessions_scope_status_created,priority:1"`
-	UserID              uint                 `json:"user_id" gorm:"not null;index:idx_export_sessions_scope_status_created,priority:2"`
-	SourceRef           string               `json:"source_ref" gorm:"column:source_item_locator;type:text;not null"`
-	Format              string               `json:"format" gorm:"size:64;not null"`
-	FileName            string               `json:"file_name" gorm:"size:512;not null"`
-	TargetParentLocator string               `json:"target_parent_locator" gorm:"type:text;not null"`
-	TargetLocator       string               `json:"target_locator" gorm:"type:text;not null"`
-	ArtifactManifest    commonModels.JSONMap `json:"artifact_manifest,omitempty" gorm:"type:jsonb"`
-	TransferExecutionID string               `json:"transfer_execution_id" gorm:"size:64;not null;index"`
-	Status              string               `json:"status" gorm:"size:32;not null;index:idx_export_sessions_scope_status_created,priority:3"`
-	ErrorMessage        string               `json:"error_message,omitempty" gorm:"type:text"`
-	CreatedAt           time.Time            `json:"created_at" gorm:"index:idx_export_sessions_scope_status_created,priority:4,sort:desc"`
-	UpdatedAt           time.Time            `json:"updated_at"`
+	ID                     uint                 `json:"id" gorm:"primaryKey"`
+	TenantID               uint                 `json:"tenant_id" gorm:"not null;index:idx_export_sessions_scope_status_created,priority:1"`
+	UserID                 uint                 `json:"user_id" gorm:"not null;index:idx_export_sessions_scope_status_created,priority:2"`
+	SourceRef              string               `json:"source_ref" gorm:"column:source_item_locator;type:text;not null"`
+	Format                 string               `json:"format" gorm:"size:64;not null"`
+	FileName               string               `json:"file_name" gorm:"size:512;not null"`
+	TargetParentLocator    string               `json:"target_parent_locator" gorm:"type:text;not null"`
+	TargetLocator          string               `json:"target_locator" gorm:"type:text;not null"`
+	ArtifactManifest       commonModels.JSONMap `json:"artifact_manifest,omitempty" gorm:"type:jsonb"`
+	TransferExecutionID    string               `json:"transfer_execution_id" gorm:"size:64;not null;index"`
+	ExecutionRequestDigest string               `json:"-" gorm:"size:64;not null;default:''"`
+	Status                 string               `json:"status" gorm:"size:32;not null;index:idx_export_sessions_scope_status_created,priority:3"`
+	ErrorMessage           string               `json:"error_message,omitempty" gorm:"type:text"`
+	CreatedAt              time.Time            `json:"created_at" gorm:"index:idx_export_sessions_scope_status_created,priority:4,sort:desc"`
+	UpdatedAt              time.Time            `json:"updated_at"`
 }
 
 type Store interface {
 	Create(context.Context, *Session) error
 	Get(context.Context, uint, uint, uint) (*Session, error)
+	GetExecutionSource(context.Context, uint, uint, commonClient.ExportExecutionSourceRequest) (*Session, error)
 	UpdateStatus(context.Context, *Session) error
 	MarkRunningExpired(context.Context, time.Time) (int64, error)
 	ListExpiredFinalSessions(context.Context, time.Time, time.Time, int) ([]*Session, error)
@@ -202,8 +204,7 @@ func (s *GormStore) UpdateStatus(ctx context.Context, session *Session) error {
 	return s.db.WithContext(ctx).Table(s.table).
 		Where("id = ? AND tenant_id = ? AND user_id = ?", session.ID, session.TenantID, session.UserID).
 		Updates(map[string]interface{}{
-			"transfer_execution_id": session.TransferExecutionID,
-			"status":                session.Status, "error_message": session.ErrorMessage,
+			"status": session.Status, "error_message": session.ErrorMessage,
 			"artifact_manifest": session.ArtifactManifest, "updated_at": time.Now(),
 		}).Error
 }
@@ -317,29 +318,32 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*SessionRespon
 	session := &Session{
 		TenantID: req.TenantID, UserID: req.UserID, SourceRef: strings.TrimSpace(req.SourceRef),
 		Format: string(formatType), FileName: downloadName, TargetParentLocator: parentLocator,
-		TargetLocator: targetLocator, Status: StatusPending,
+		TargetLocator: targetLocator, Status: StatusPending, TransferExecutionID: uuid.NewString(),
+	}
+	transferRequest := &commonClient.CreateTransferExecutionRequest{
+		Name: executionName, Config: config, AutoScanMetadata: false, BatchSize: 1000, TenantID: req.TenantID,
+	}
+	var err error
+	session.ExecutionRequestDigest, err = commonClient.ExportRequestDigest(transferRequest)
+	if err != nil {
+		return nil, fmt.Errorf("freeze export execution request: %w", err)
 	}
 	if err := s.store.Create(ctx, session); err != nil {
 		return nil, fmt.Errorf("create export session: %w", err)
 	}
-	created, err := s.transfer.CreateExecution(ctx, &commonClient.CreateTransferExecutionRequest{
-		Name: executionName, Config: config, AutoScanMetadata: false, BatchSize: 1000, TenantID: req.TenantID,
-	})
+	transferRequest.ExportSession = &commonClient.TransferExportSessionReference{SessionID: session.ID, ExecutionID: session.TransferExecutionID}
+	created, err := s.transfer.CreateExecution(ctx, transferRequest)
 	if err != nil {
 		session.Status = StatusFailed
 		session.ErrorMessage = "failed to create transfer export execution"
 		_ = s.store.UpdateStatus(ctx, session)
 		return nil, fmt.Errorf("create transfer export execution: %w", err)
 	}
-	if created == nil || strings.TrimSpace(created.ExecutionID) == "" {
+	if created == nil || created.ExecutionID != session.TransferExecutionID {
 		session.Status = StatusFailed
-		session.ErrorMessage = "transfer export execution id is empty"
+		session.ErrorMessage = "transfer export execution does not match session"
 		_ = s.store.UpdateStatus(ctx, session)
-		return nil, errors.New("transfer export execution id is empty")
-	}
-	session.TransferExecutionID = strings.TrimSpace(created.ExecutionID)
-	if err := s.store.UpdateStatus(ctx, session); err != nil {
-		return nil, fmt.Errorf("attach transfer execution to export session: %w", err)
+		return nil, errors.New("transfer export execution does not match session")
 	}
 	return s.response(session), nil
 }

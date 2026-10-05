@@ -57,6 +57,23 @@ definitions:
       term:
         type: string
     type: object
+  client.ExportExecutionSource:
+    properties:
+      tenant_id:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  client.ExportExecutionSourceRequest:
+    properties:
+      execution_id:
+        type: string
+      request_digest:
+        type: string
+    required:
+    - execution_id
+    - request_digest
+    type: object
   datatype.FieldInfo:
     properties:
       comment:
@@ -3514,6 +3531,64 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.catalog.read
+  /runtime/export-sessions/{id}/execution-source:
+    post:
+      consumes:
+      - application/json
+      description: 仅 Transfer 服务可核验租户内待执行导出会话的 UUID、请求摘要与发起用户；该事实不授予执行或数据访问权。| Only
+        Transfer may verify the UUID, request digest and initiator of a pending tenant
+        export session; these facts grant no execution or data access.
+      parameters:
+      - description: 导出会话 ID | Export session ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 来源绑定 | Provenance binding
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.ExportExecutionSourceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.ExportExecutionSource'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 核验导出执行来源 | Verify export execution provenance
+      tags:
+      - Execution
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.export_provenance.read
   /settings/query-policy:
     get:
       produces:

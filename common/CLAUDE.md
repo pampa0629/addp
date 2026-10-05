@@ -8,6 +8,8 @@
 
 ## 重要包
 
+`common/exportartifact` 独占导出会话、请求摘要和发起用户来源核验实现。派发前保存绑定 execution UUID 与完整请求摘要；仅固定 Transfer 服务经过 owner 专用 Permission 核验后取得发起用户事实。`common/client` 通过 System 活动 Backend 注册信息调用来源接口，禁止客户端自报用户、回调 URL 或传递 User Token。来源只用于 `triggered_by` 与本人观测隔离，不派生执行或数据授权。
+
 ```text
 common/
 ├── opaquetoken/    # 用途隔离的 JSON 不透明令牌编解码，领域绑定由调用方校验

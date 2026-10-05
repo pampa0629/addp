@@ -1,5 +1,7 @@
 # Develop 模块说明
 
+导出发起用户来源核验复用 `common/exportartifact`：派发前持久化 Transfer UUID 与完整请求摘要，`POST /runtime/export-sessions/{id}/execution-source` 仅允许 `addp-transfer` 持有 `develop.export_provenance.read` 核验有效待执行会话。只返回发起用户事实，不开放文件下载或数据权限。最小验证入口为 `make test-module MODULE=develop`；Common 变更按 `make test-changed` 扩散验证。
+
 ## 核心职责
 
 Develop 模块是 ADDP 平台的**开发工作台**，负责以下核心功能：

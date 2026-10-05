@@ -77,6 +77,14 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-execution-postgres.log"; then
     exit 1
 fi
 
+ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
+    go test ./exportartifact -run '^TestExportExecutionSourceAgainstPostgres$' \
+    -count=1 -v 2>&1 | tee "$WORK_DIR/common-export-source-postgres.log"
+if grep -q -- '--- SKIP:' "$WORK_DIR/common-export-source-postgres.log"; then
+    echo "Common export source PostgreSQL gate refuses skipped tests" >&2
+    exit 1
+fi
+
 ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN="$execution_dsn" \
     go test ./dataprotection/projectionstore \
     -run '^TestProjectionStore.*AgainstPostgres$' \

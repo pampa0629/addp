@@ -34,7 +34,7 @@ func NewExecutionHandler(executionService *service.ExecutionService, taskService
 
 // CreateExecution 创建一次性 bounded sync execution。
 // @Summary 创建一次性同步执行 | Create one-off sync execution
-// @Description 模块 Service Client 创建不带 Transfer 任务定义的一次性 bounded sync execution；调用来源由认证 Client ID 推导，响应只返回统一 execution_id。| A module Service Client creates a one-off bounded sync execution without a Transfer task definition; the source module is derived from the authenticated Client ID and the response contains only the unified execution_id.
+// @Description 模块服务创建无任务定义的 bounded sync execution；来源由认证 Client ID 推导。导出会话必须核验 owner 保存的 UUID、请求摘要及用户事实；无会话的机器执行不声明人类发起用户。| A module service creates a bounded sync execution without a task definition; its source is derived from the authenticated Client ID. An export session must verify the owner's UUID, request digest and initiator facts; a machine execution without a session has no human initiator.
 // @Tags 执行管理 | Execution Management
 // @Accept json
 // @Produce json
@@ -42,6 +42,7 @@ func NewExecutionHandler(executionService *service.ExecutionService, taskService
 // @Success 202 {object} models.CreateAdHocExecutionResponse
 // @Failure 400 {object} map[string]string
 // @Failure 403 {object} map[string]string
+// @Failure 503 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.execution.create"]
 // @Router /executions [post]
@@ -52,8 +53,8 @@ func (h *ExecutionHandler) CreateExecution(c *gin.Context) {
 		return
 	}
 	var req models.CreateAdHocExecutionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		commonAPI.BadRequestError(c, err.Error())
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
 		return
 	}
 	sourceModule, ok := transferExecutionSourceModule(c)
@@ -62,11 +63,19 @@ func (h *ExecutionHandler) CreateExecution(c *gin.Context) {
 		return
 	}
 	result, err := h.taskService.CreateAdHocExecution(
-		c.Request.Context(), &req, sourceModule, commonAuth.GetTenantID(c), commonAuth.GetUserID(c),
+		c.Request.Context(), &req, sourceModule, commonAuth.GetTenantID(c),
 	)
 	if err != nil {
+		if errors.Is(err, commonAPI.ErrForbidden) {
+			commonAPI.ForbiddenError(c, i18nmiddleware.T(c, i18nmiddleware.MsgForbidden))
+			return
+		}
+		if errors.Is(err, service.ErrExportSourceUnavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": i18nmiddleware.T(c, i18nmiddleware.MsgExportSourceUnavailable)})
+			return
+		}
 		if errors.Is(err, service.ErrInvalidTaskConfig) {
-			commonAPI.BadRequestError(c, err.Error())
+			commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
 			return
 		}
 		commonAPI.InternalServerError(c, err.Error())

@@ -72,11 +72,12 @@ type TriggerTaskResponse struct {
 // It deliberately exposes the stable transfer endpoint contract instead of a
 // Transfer task definition or its private database identity.
 type CreateTransferExecutionRequest struct {
-	Name             string                  `json:"name"`
-	Config           TransferExecutionConfig `json:"config"`
-	BatchSize        int                     `json:"batch_size,omitempty"`
-	AutoScanMetadata bool                    `json:"auto_scan_metadata,omitempty"`
-	TenantID         uint                    `json:"-"`
+	Name             string                          `json:"name" binding:"required"`
+	Config           TransferExecutionConfig         `json:"config" binding:"required"`
+	BatchSize        int                             `json:"batch_size,omitempty"`
+	AutoScanMetadata bool                            `json:"auto_scan_metadata,omitempty"`
+	TenantID         uint                            `json:"-"`
+	ExportSession    *TransferExportSessionReference `json:"export_session,omitempty"`
 }
 
 type TransferExecutionConfig struct {

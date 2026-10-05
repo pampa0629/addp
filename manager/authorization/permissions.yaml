@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: manager
-manifest_version: 8
+manifest_version: 9
 permissions:
   - key: manager.configuration.read
     allowed_scope_types: [platform, tenant]
@@ -106,6 +106,14 @@ permissions:
     status: active
     name_i18n_key: permissions.manager.derived_artifact.update.name
     description_i18n_key: permissions.manager.derived_artifact.update.description
+  - key: manager.export_provenance.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.export_provenance.read.name
+    description_i18n_key: permissions.manager.export_provenance.read.description
   - key: manager.resource_grant.create
     allowed_scope_types: [tenant]
     risk_level: high

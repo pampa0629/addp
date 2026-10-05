@@ -18,3 +18,12 @@
 "msg.module_heartbeat"       = "Heartbeat updated successfully"
 "msg.module_deleted"         = "Module unregistered successfully"
 "msg.audit_log_created"      = "Audit log created"
+
+[export.execution_source.invalid]
+other = "Invalid export execution source request"
+
+[export.execution_source.not_found]
+other = "Export execution source not found"
+
+[export.execution_source.unavailable]
+other = "Export execution source could not be verified; try again later"

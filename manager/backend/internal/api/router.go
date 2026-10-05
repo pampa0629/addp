@@ -5,6 +5,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection/projectionstore"
+	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/middleware/audit"
 	"github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
@@ -151,6 +152,9 @@ func SetupRouter(
 		api.Use(audit.ServiceAuditMiddleware("manager", systemServiceClient))
 	}
 	{
+		exportSource := api.Group("/runtime/export-sessions")
+		exportSource.Use(exportartifact.ExecutionSourceGuards(managerauthorization.PermissionManagerExportProvenanceRead)...)
+		exportSource.POST("/:id/execution-source", exportHandler.ResolveExecutionSource)
 		// TaskProvider 仅允许 Orchestrator Runtime 使用专用最小权限访问。
 		taskProvider := api.Group("/task-provider")
 		taskProvider.Use(auth.MustNewServiceClientGuard("addp-orchestrator"))

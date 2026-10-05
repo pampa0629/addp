@@ -1,5 +1,110 @@
 basePath: /api/v1/transfer
 definitions:
+  client.TransferExecutionConfig:
+    properties:
+      batch_size:
+        type: integer
+      load:
+        $ref: '#/definitions/client.TransferExecutionLoad'
+      runtime:
+        $ref: '#/definitions/client.TransferExecutionRuntime'
+      source:
+        $ref: '#/definitions/client.TransferExecutionEndpoint'
+      target:
+        $ref: '#/definitions/client.TransferExecutionEndpoint'
+      transforms:
+        items:
+          $ref: '#/definitions/client.TransferExecutionTransform'
+        type: array
+    type: object
+  client.TransferExecutionEndpoint:
+    properties:
+      data_type:
+        type: string
+      format:
+        type: string
+      locator:
+        type: string
+      name:
+        type: string
+      options:
+        additionalProperties: true
+        type: object
+      parent_locator:
+        type: string
+      policy:
+        additionalProperties: true
+        type: object
+      query:
+        $ref: '#/definitions/client.TransferExecutionQuery'
+      representation:
+        type: string
+    type: object
+  client.TransferExecutionFieldMapping:
+    properties:
+      nullable:
+        type: boolean
+      source:
+        type: string
+      target:
+        type: string
+      target_type:
+        type: string
+    type: object
+  client.TransferExecutionLoad:
+    properties:
+      mode:
+        type: string
+    type: object
+  client.TransferExecutionQuery:
+    properties:
+      inputs:
+        items:
+          $ref: '#/definitions/client.TransferExecutionQueryInput'
+        type: array
+      language:
+        type: string
+      parameters:
+        additionalProperties: true
+        type: object
+      statement:
+        type: string
+    type: object
+  client.TransferExecutionQueryInput:
+    properties:
+      locator:
+        type: string
+      name:
+        type: string
+    type: object
+  client.TransferExecutionRuntime:
+    properties:
+      boundary:
+        type: string
+    type: object
+  client.TransferExecutionTransform:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/client.TransferExecutionFieldMapping'
+        type: array
+      mode:
+        type: string
+      type:
+        type: string
+      version:
+        type: string
+    type: object
+  client.TransferExportSessionReference:
+    properties:
+      execution_id:
+        type: string
+      session_id:
+        type: integer
+    required:
+    - execution_id
+    - session_id
+    type: object
   execution.DiagnosticStep:
     properties:
       duration:
@@ -159,7 +264,9 @@ definitions:
       batch_size:
         type: integer
       config:
-        $ref: '#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc'
+        $ref: '#/definitions/client.TransferExecutionConfig'
+      export_session:
+        $ref: '#/definitions/client.TransferExportSessionReference'
       name:
         type: string
     required:
@@ -1298,11 +1405,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: 模块 Service Client 创建不带 Transfer 任务定义的一次性 bounded sync execution；调用来源由认证
-        Client ID 推导，响应只返回统一 execution_id。| A module Service Client creates a one-off
-        bounded sync execution without a Transfer task definition; the source module
-        is derived from the authenticated Client ID and the response contains only
-        the unified execution_id.
+      description: 模块服务创建无任务定义的 bounded sync execution；来源由认证 Client ID 推导。导出会话必须核验
+        owner 保存的 UUID、请求摘要及用户事实；无会话的机器执行不声明人类发起用户。| A module service creates a bounded
+        sync execution without a task definition; its source is derived from the authenticated
+        Client ID. An export session must verify the owner's UUID, request digest
+        and initiator facts; a machine execution without a session has no human initiator.
       parameters:
       - description: 一次性同步执行 | One-off sync execution
         in: body
@@ -1325,6 +1432,12 @@ paths:
             type: object
         "403":
           description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
           schema:
             additionalProperties:
               type: string

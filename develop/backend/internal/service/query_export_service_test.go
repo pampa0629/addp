@@ -26,7 +26,7 @@ type queryExportTransferClientStub struct {
 
 func (s *queryExportTransferClientStub) CreateExecution(_ context.Context, request *commonClient.CreateTransferExecutionRequest) (*commonClient.CreateTransferExecutionResponse, error) {
 	s.request = request
-	return &commonClient.CreateTransferExecutionResponse{ExecutionID: "transfer-export-1", Status: "pending"}, nil
+	return &commonClient.CreateTransferExecutionResponse{ExecutionID: request.ExportSession.ExecutionID, Status: "pending"}, nil
 }
 
 func (s *queryExportTransferClientStub) GetExecution(_ string, _ uint) (*commonClient.TransferExecutionResponse, error) {
@@ -118,7 +118,7 @@ func TestQueryExportUsesFrozenSuccessfulExecutionSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if result.TransferExecutionID != "transfer-export-1" || result.Status != "pending" {
+	if result.TransferExecutionID != transfer.request.ExportSession.ExecutionID || result.Status != "pending" {
 		t.Fatalf("result = %#v", result)
 	}
 	revoked := authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"})

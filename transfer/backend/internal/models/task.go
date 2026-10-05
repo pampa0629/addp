@@ -3,6 +3,7 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
+	commonClient "github.com/addp/common/client"
 	"time"
 
 	commonModels "github.com/addp/common/models"
@@ -494,12 +495,7 @@ type CreateTaskRequest struct {
 
 // CreateAdHocExecutionRequest creates a one-off bounded sync execution. It
 // shares the stable endpoint contract with sync tasks but has no task identity.
-type CreateAdHocExecutionRequest struct {
-	Name             string                     `json:"name" binding:"required"`
-	Config           TableTransferTaskConfigDoc `json:"config" binding:"required"`
-	BatchSize        int                        `json:"batch_size,omitempty"`
-	AutoScanMetadata bool                       `json:"auto_scan_metadata,omitempty"`
-}
+type CreateAdHocExecutionRequest = commonClient.CreateTransferExecutionRequest
 
 type CreateAdHocExecutionResponse struct {
 	ExecutionID string `json:"execution_id"`

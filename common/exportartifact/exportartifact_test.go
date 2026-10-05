@@ -25,7 +25,7 @@ func (s *transferStub) CreateExecution(_ context.Context, request *commonClient.
 	if s.err != nil {
 		return nil, s.err
 	}
-	return &commonClient.CreateTransferExecutionResponse{ExecutionID: "transfer-1", Status: StatusPending}, nil
+	return &commonClient.CreateTransferExecutionResponse{ExecutionID: request.ExportSession.ExecutionID, Status: StatusPending}, nil
 }
 
 func (s *transferStub) GetExecution(_ string, _ uint) (*commonClient.TransferExecutionResponse, error) {
@@ -63,7 +63,7 @@ func TestCreateOwnsInfraTargetAndDisablesMetadataScan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if created.TransferExecutionID != "transfer-1" || created.Status != StatusPending || created.FileName != "orders.csv" {
+	if created.TransferExecutionID != transfer.request.ExportSession.ExecutionID || created.Status != StatusPending || created.FileName != "orders.csv" {
 		t.Fatalf("created = %#v", created)
 	}
 	request := transfer.request
@@ -122,7 +122,7 @@ func TestCreateKeepsFailedSessionForCleanupWhenTransferCreationFails(t *testing.
 	if err := db.Table("export_sessions").First(&session).Error; err != nil {
 		t.Fatal(err)
 	}
-	if session.Status != StatusFailed || session.TransferExecutionID != "" || session.TargetParentLocator == "" {
+	if session.Status != StatusFailed || session.TransferExecutionID == "" || session.TargetParentLocator == "" {
 		t.Fatalf("failed session = %#v", session)
 	}
 }

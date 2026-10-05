@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
@@ -120,6 +121,9 @@ func SetupRouter(
 		api.Use(audit.ServiceAuditMiddleware("develop", systemClient))
 	}
 	{
+		exportSource := api.Group("/runtime/export-sessions")
+		exportSource.Use(exportartifact.ExecutionSourceGuards(developauthorization.PermissionDevelopExportProvenanceRead)...)
+		exportSource.POST("/:id/execution-source", executionHandler.ResolveExportExecutionSource)
 		catalogResources := api.Group("")
 		catalogResources.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
 		catalogResources.GET("/catalog-resources/changes", permission(developauthorization.PermissionDevelopCatalogRead), catalogResourceHandler.ListChanges)

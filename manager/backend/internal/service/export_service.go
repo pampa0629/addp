@@ -48,6 +48,8 @@ type ExportSessionResponse struct {
 }
 
 type ExportFile = exportartifact.File
+type ExportExecutionSourceRequest = commonClient.ExportExecutionSourceRequest
+type ExportExecutionSource = commonClient.ExportExecutionSource
 
 func NewExportService(systemClient SystemClient, transferClient exportartifact.TransferClient, sessionStore exportartifact.Store, minioClient *minio.Client, minioBucket string) *ExportService {
 	return &ExportService{
@@ -124,6 +126,10 @@ func (s *ExportService) GetExport(ctx context.Context, id, tenantID, userID uint
 		return nil, err
 	}
 	return managerExportResponse(response), nil
+}
+
+func (s *ExportService) ResolveExecutionSource(ctx context.Context, id, tenantID uint, request commonClient.ExportExecutionSourceRequest) (*commonClient.ExportExecutionSource, error) {
+	return s.artifacts.ResolveExecutionSource(ctx, id, tenantID, request)
 }
 
 func (s *ExportService) OpenExportFile(ctx context.Context, id, tenantID, userID uint) (*ExportFile, error) {

@@ -33,6 +33,11 @@ var ErrSchemaChangeNotFound = errors.New("schema change request not found")
 var ErrSchemaChangeNotAdditive = errors.New("schema change is not eligible for additive migration")
 var ErrSchemaChangeApprovalConflict = errors.New("schema change approval conflicts with current source or mapping")
 var ErrSchemaChangeControlUnavailable = errors.New("schema change control is unavailable")
+var ErrExportSourceUnavailable = errors.New("export execution source is unavailable")
+
+type ExportExecutionSourceResolver interface {
+	ResolveExportExecutionSource(context.Context, string, uint, commonClient.TransferExportSessionReference, string) (*commonClient.ExportExecutionSource, error)
+}
 
 type CaptureControl interface {
 	Start(ctx context.Context, task *models.TransferTask) (*models.CaptureResource, error)
@@ -66,7 +71,12 @@ type TaskService struct {
 	engineResolver   planner.EngineResolver
 	schemaInspector  SchemaChangeInspector
 	metaClient       *commonClient.MetaClient
+	exportSource     ExportExecutionSourceResolver
 	logger           *slog.Logger
+}
+
+func (s *TaskService) SetExportExecutionSourceResolver(resolver ExportExecutionSourceResolver) {
+	s.exportSource = resolver
 }
 
 func (s *TaskService) SetCaptureControl(control CaptureControl) {
@@ -466,7 +476,7 @@ func (s *TaskService) CreateAdHocExecution(
 	ctx context.Context,
 	req *models.CreateAdHocExecutionRequest,
 	sourceModule string,
-	tenantID, userID uint,
+	tenantID uint,
 ) (*models.CreateAdHocExecutionResponse, error) {
 	if s == nil || s.executionService == nil || req == nil || tenantID == 0 {
 		return nil, fmt.Errorf("%w: ad-hoc execution context is incomplete", ErrInvalidTaskConfig)
@@ -478,6 +488,33 @@ func (s *TaskService) CreateAdHocExecution(
 	source := strings.TrimSpace(sourceModule)
 	if commonAuthorization.ValidateOwnerModuleName(source) != nil {
 		return nil, fmt.Errorf("%w: source module is required", ErrInvalidTaskConfig)
+	}
+	executionID := uuid.NewString()
+	var triggeredBy *int
+	if req.ExportSession != nil {
+		if (source != "manager" && source != "develop") || req.ExportSession.Validate() != nil {
+			return nil, fmt.Errorf("%w: invalid export source reference", ErrInvalidTaskConfig)
+		}
+		digest, err := commonClient.ExportRequestDigest(req)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid export digest", ErrInvalidTaskConfig)
+		}
+		if s.exportSource == nil {
+			return nil, ErrExportSourceUnavailable
+		}
+		provenance, err := s.exportSource.ResolveExportExecutionSource(ctx, source, tenantID, *req.ExportSession, digest)
+		if err != nil {
+			if status, ok := commonClient.TenantAPIStatusCode(err); ok && (status == 400 || status == 403 || status == 404) {
+				return nil, commonAPI.ErrForbidden
+			}
+			return nil, ErrExportSourceUnavailable
+		}
+		if provenance == nil || provenance.TenantID != tenantID || provenance.UserID == 0 || int(provenance.UserID) <= 0 {
+			return nil, commonAPI.ErrForbidden
+		}
+		actor := int(provenance.UserID)
+		triggeredBy = &actor
+		executionID = req.ExportSession.ExecutionID
 	}
 	configBytes, err := json.Marshal(req.Config)
 	if err != nil {
@@ -499,21 +536,17 @@ func (s *TaskService) CreateAdHocExecution(
 		return nil, fmt.Errorf("%w: ad-hoc execution must be bounded", ErrInvalidTaskConfig)
 	}
 	now := time.Now()
-	triggeredBy := int(userID)
 	record := &commonExecution.TaskExecution{
-		TenantID: int(tenantID), ExecutionID: uuid.NewString(), Module: commonExecution.ModuleTransfer,
+		TenantID: int(tenantID), ExecutionID: executionID, Module: commonExecution.ModuleTransfer,
 		TaskType: commonExecution.TaskTypeSync, Source: source,
 		Status: commonExecution.ExecutionStatusPending, Progress: 0,
 		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, MaxAttempts: 1,
-		TriggerType: commonExecution.TriggerTypeManual, TriggeredBy: &triggeredBy,
+		TriggerType: commonExecution.TriggerTypeManual, TriggeredBy: triggeredBy,
 		ExecutionConfig: config,
 		Metadata: commonModels.JSONMap{"ad_hoc": commonModels.JSONMap{
 			"name": name, "batch_size": batchSize, "auto_scan_metadata": req.AutoScanMetadata,
 		}},
 		CreatedAt: now, UpdatedAt: now,
-	}
-	if userID == 0 {
-		record.TriggeredBy = nil
 	}
 	if err := s.executionService.taskExecutionRepo.Create(ctx, record); err != nil {
 		return nil, fmt.Errorf("create ad-hoc transfer execution: %w", err)
