@@ -1500,12 +1500,18 @@
           "fNumber": "F Number",
           "exposureBiasEV": "Exposure Bias (EV)",
           "focalLengthMM": "Focal Length (mm)",
+          "photographicSensitivity": "Photographic Sensitivity (Source Values)",
+          "sensitivityType": "Sensitivity Type",
+          "standardOutputSensitivity": "Standard Output Sensitivity (SOS)",
+          "recommendedExposureIndex": "Recommended Exposure Index (REI)",
+          "isoSpeed": "ISO Speed",
           "graphModel": "Graph Model",
           "graphDirected": "Directed",
           "graphNodeCount": "Nodes",
           "graphRelationshipCount": "Relationships"
         },
         "fieldTooltips": {
+          "photographicSensitivity": "Preserves all source values and their order. 65535 marks the SHORT upper limit; actual sensitivity may be higher. Sensitivity Type identifies the definition; these values do not always mean ISO speed.",
           "contentHash": "SHA256 calculated from the file binary content; identical content has the same hash.",
           "indexRef": "Reference to the item record in the Meilisearch assets index; the suffix is the item fingerprint, not the content hash."
         },
@@ -1521,6 +1527,16 @@
           "invalid": "Invalid directory",
           "budget_exceeded": "Directory read budget exceeded",
           "unsupported": "BigTIFF page directory not supported"
+        },
+        "sensitivityType": {
+          "0": "Unknown",
+          "1": "Standard Output Sensitivity (SOS)",
+          "2": "Recommended Exposure Index (REI)",
+          "3": "ISO Speed",
+          "4": "SOS and REI",
+          "5": "SOS and ISO Speed",
+          "6": "REI and ISO Speed",
+          "7": "SOS, REI and ISO Speed"
         },
         "exifStatus": {
           "absent": "No EXIF",

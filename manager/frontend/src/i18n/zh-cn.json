@@ -1500,12 +1500,18 @@
           "fNumber": "光圈 F 值",
           "exposureBiasEV": "曝光补偿（EV）",
           "focalLengthMM": "焦距（毫米）",
+          "photographicSensitivity": "拍摄感光度（源值）",
+          "sensitivityType": "感光度类型",
+          "standardOutputSensitivity": "标准输出感光度（SOS）",
+          "recommendedExposureIndex": "推荐曝光指数（REI）",
+          "isoSpeed": "ISO 感光速度",
           "graphModel": "图模型",
           "graphDirected": "有向图",
           "graphNodeCount": "节点数",
           "graphRelationshipCount": "关系数"
         },
         "fieldTooltips": {
+          "photographicSensitivity": "保留源标签的全部值及顺序；65535 表示达到 SHORT 上限，实际感光度可能更高。具体定义由感光度类型说明，不能一概解释为 ISO。",
           "contentHash": "基于文件二进制内容计算的 SHA256；内容相同则哈希相同。",
           "indexRef": "指向 Meilisearch assets 索引中的 item 记录；后缀是 item 指纹，不是内容哈希。"
         },
@@ -1521,6 +1527,16 @@
           "invalid": "目录无效",
           "budget_exceeded": "超出目录读取预算",
           "unsupported": "暂不支持 BigTIFF 页目录"
+        },
+        "sensitivityType": {
+          "0": "未知",
+          "1": "标准输出感光度（SOS）",
+          "2": "推荐曝光指数（REI）",
+          "3": "ISO 感光速度",
+          "4": "SOS 和 REI",
+          "5": "SOS 和 ISO 感光速度",
+          "6": "REI 和 ISO 感光速度",
+          "7": "SOS、REI 和 ISO 感光速度"
         },
         "exifStatus": {
           "absent": "未包含 EXIF",

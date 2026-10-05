@@ -198,6 +198,44 @@ func extractExifSummary(data []byte) (map[string]interface{}, bool) {
 			exif[field.key] = value
 		}
 	}
+	if sub.hasTag(34855) {
+		values, ok := sub.shorts(34855)
+		for _, value := range values {
+			ok = ok && value > 0
+		}
+		valid = valid && ok
+		if ok {
+			// Keep all source values, including the 65535 upper-limit marker.
+			// PhotographicSensitivity does not necessarily mean ISO speed.
+			exif["photographic_sensitivity"] = values
+		}
+	}
+	for _, field := range []struct {
+		tag uint16
+		key string
+		typ uint16
+	}{
+		{34864, "sensitivity_type", tiffTypeShort},
+		{34865, "standard_output_sensitivity", tiffTypeLong},
+		{34866, "recommended_exposure_index", tiffTypeLong},
+		{34867, "iso_speed", tiffTypeLong},
+	} {
+		entry, present := sub.tags[field.tag]
+		if !present {
+			continue
+		}
+		value, ok := sub.firstLong(field.tag)
+		ok = ok && entry.typ == field.typ && entry.count == 1
+		if field.tag == 34864 {
+			ok = ok && value <= 7
+		} else {
+			ok = ok && value > 0
+		}
+		valid = valid && ok
+		if ok {
+			exif[field.key] = value
+		}
+	}
 	return exif, valid
 }
 

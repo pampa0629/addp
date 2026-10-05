@@ -383,3 +383,105 @@ func TestJPEGExifDoesNotDeriveMissingExposureFromAPEX(t *testing.T) {
 		t.Fatalf("missing exposure derived from different tags: %#v", info)
 	}
 }
+
+func exifSensitivityFixture(order binary.ByteOrder, values []uint16, kind uint16) []byte {
+	data := make([]byte, 104) // IFD0 at 8, five-tag Exif IFD at 38.
+	copy(data, "II")
+	if order == binary.BigEndian {
+		copy(data, "MM")
+	}
+	order.PutUint16(data[2:4], 42)
+	order.PutUint32(data[4:8], 8)
+	order.PutUint16(data[8:10], 2)
+	copy(data[10:22], buildIFDEntry(order, 274, tiffTypeShort, 1, 0))
+	order.PutUint16(data[18:20], 6)
+	copy(data[22:34], buildIFDEntry(order, 34665, tiffTypeLong, 1, 38))
+	order.PutUint16(data[38:40], 5)
+	copy(data[40:52], buildIFDEntry(order, 34855, tiffTypeShort, uint32(len(values)), 0))
+	raw := make([]byte, len(values)*2)
+	for i, value := range values {
+		order.PutUint16(raw[i*2:], value)
+	}
+	if len(raw) <= 4 {
+		copy(data[48:52], raw)
+	} else {
+		order.PutUint32(data[48:52], uint32(len(data)))
+		data = append(data, raw...)
+	}
+	copy(data[52:64], buildIFDEntry(order, 34864, tiffTypeShort, 1, 0))
+	order.PutUint16(data[60:62], kind)
+	for i, tag := range []uint16{34865, 34866, 34867} {
+		copy(data[64+i*12:76+i*12], buildIFDEntry(order, tag, tiffTypeLong, 1, []uint32{80000, 102400, 0xffffffff}[i]))
+	}
+	return data
+}
+
+func TestJPEGExifSensitivityPreservesDefinitionsAndSourceValues(t *testing.T) {
+	for _, order := range []binary.ByteOrder{binary.LittleEndian, binary.BigEndian} {
+		for _, values := range [][]uint16{{100}, {200, 400}, {800, 1600, 65535}} {
+			for kind := uint16(0); kind <= 7; kind++ {
+				data := exifSensitivityFixture(order, values, kind)
+				info := describeJPEG(t, jpegFixture(t, append([]byte("Exif\x00\x00"), data...)))
+				want := map[string]interface{}{"orientation": 6, "photographic_sensitivity": values, "sensitivity_type": uint32(kind),
+					"standard_output_sensitivity": uint32(80000), "recommended_exposure_index": uint32(102400), "iso_speed": uint32(0xffffffff)}
+				if info["exif_status"] != "parsed" || !reflect.DeepEqual(info["exif"], want) {
+					t.Fatalf("%s values=%v type=%d: %#v", order, values, kind, info)
+				}
+			}
+		}
+	}
+}
+
+func TestJPEGExifInvalidSensitivityOmitsOnlyBadField(t *testing.T) {
+	fields := []string{"photographic_sensitivity", "sensitivity_type", "standard_output_sensitivity", "recommended_exposure_index", "iso_speed"}
+	for _, order := range []binary.ByteOrder{binary.LittleEndian, binary.BigEndian} {
+		for i, field := range fields {
+			for _, bad := range []string{"type", "zero count", "multiple scalar count", "huge count", "invalid value", "offset"} {
+				if i == 0 && bad == "multiple scalar count" || i > 0 && bad == "offset" {
+					continue
+				}
+				t.Run(order.String()+"/"+field+"/"+bad, func(t *testing.T) {
+					data := exifSensitivityFixture(order, []uint16{100, 200, 65535}, 3)
+					entry := 40 + i*12
+					switch bad {
+					case "type":
+						order.PutUint16(data[entry+2:entry+4], tiffTypeRational)
+					case "zero count":
+						order.PutUint32(data[entry+4:entry+8], 0)
+					case "multiple scalar count":
+						order.PutUint32(data[entry+4:entry+8], 2)
+					case "huge count":
+						order.PutUint32(data[entry+4:entry+8], 0xffffffff)
+					case "invalid value":
+						if i == 0 {
+							order.PutUint16(data[106:108], 0) // A zero invalidates the complete array.
+						} else if i == 1 {
+							order.PutUint16(data[entry+8:entry+10], 8)
+						} else {
+							order.PutUint32(data[entry+8:entry+12], 0)
+						}
+					case "offset":
+						order.PutUint32(data[entry+8:entry+12], 0xffffffff)
+					}
+					info := describeJPEG(t, jpegFixture(t, append([]byte("Exif\x00\x00"), data...)))
+					exif := info["exif"].(map[string]interface{})
+					if info["exif_status"] != "invalid" || exif[field] != nil || len(exif) != 5 || exif["orientation"] != 6 {
+						t.Fatalf("bad sensitivity accepted or valid fields lost: %#v", info)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestJPEGExifSensitivityDoesNotInferMissingTypesOrISO(t *testing.T) {
+	data := exifSensitivityFixture(binary.LittleEndian, []uint16{65535}, 3)
+	for i := 1; i < 5; i++ {
+		binary.LittleEndian.PutUint16(data[40+i*12:42+i*12], uint16(65000+i))
+	}
+	info := describeJPEG(t, jpegFixture(t, append([]byte("Exif\x00\x00"), data...)))
+	want := map[string]interface{}{"orientation": 6, "photographic_sensitivity": []uint16{65535}}
+	if info["exif_status"] != "parsed" || !reflect.DeepEqual(info["exif"], want) {
+		t.Fatalf("missing sensitivity definition or extended value inferred: %#v", info)
+	}
+}

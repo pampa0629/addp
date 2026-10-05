@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"image"
 	"image/jpeg"
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/dataitem"
@@ -24,7 +25,7 @@ func TestEnrichJPEGExifStaysInFormatInfoAndPreservesPixelDimensions(t *testing.T
 		t.Fatal(err)
 	}
 	// IFD0 holds Orientation, Make and the Exif IFD pointer. Exposure
-	// fields remain format facts; no GPS or capture timestamp is present.
+	// and sensitivity fields remain format facts; no GPS or capture timestamp is present.
 	var metadata bytes.Buffer
 	metadata.Write([]byte{'I', 'I', 42, 0, 8, 0, 0, 0, 3, 0})
 	entry := func(tag, typ uint16, count, value uint32) {
@@ -37,11 +38,16 @@ func TestEnrichJPEGExifStaysInFormatInfoAndPreservesPixelDimensions(t *testing.T
 	entry(271, 2, 4, 0x00494a44) // Inline "DJI\x00".
 	entry(34665, 4, 1, 50)
 	_ = binary.Write(&metadata, binary.LittleEndian, uint32(0))
-	_ = binary.Write(&metadata, binary.LittleEndian, uint16(4))
-	entry(33434, 5, 1, 104)
-	entry(33437, 5, 1, 112)
-	entry(37380, 10, 1, 120)
-	entry(37386, 5, 1, 128)
+	_ = binary.Write(&metadata, binary.LittleEndian, uint16(9))
+	entry(33434, 5, 1, 164)
+	entry(33437, 5, 1, 172)
+	entry(37380, 10, 1, 180)
+	entry(37386, 5, 1, 188)
+	entry(34855, 3, 2, 100|(65535<<16))
+	entry(34864, 3, 1, 3)
+	entry(34865, 4, 1, 80000)
+	entry(34866, 4, 1, 102400)
+	entry(34867, 4, 1, 204800)
 	_ = binary.Write(&metadata, binary.LittleEndian, uint32(0))
 	_ = binary.Write(&metadata, binary.LittleEndian, []uint32{1, 125, 28, 10, 0, 1, 35, 1})
 	payload := append([]byte("Exif\x00\x00"), metadata.Bytes()...)
@@ -76,10 +82,15 @@ func TestEnrichJPEGExifStaysInFormatInfoAndPreservesPixelDimensions(t *testing.T
 		commonJSON.InterfaceInt64(exif["orientation"]) != 6 || exif["make"] != "DJI" ||
 		exif["exposure_time_seconds"] != float64(1)/125 || exif["f_number"] != 2.8 ||
 		exif["exposure_bias_ev"] != float64(0) || exif["focal_length_mm"] != float64(35) ||
+		!reflect.DeepEqual(exif["photographic_sensitivity"], []uint16{100, 65535}) ||
+		commonJSON.InterfaceInt64(exif["sensitivity_type"]) != 3 ||
+		commonJSON.InterfaceInt64(exif["standard_output_sensitivity"]) != 80000 ||
+		commonJSON.InterfaceInt64(exif["recommended_exposure_index"]) != 102400 ||
+		commonJSON.InterfaceInt64(exif["iso_speed"]) != 204800 ||
 		commonJSON.String(attrs, "format_info.jpeg", "exif_status") != "parsed" {
 		t.Fatalf("JPEG facts not persisted: %#v", attrs)
 	}
-	if media["orientation"] != nil || media["exif"] != nil || media["exposure_time_seconds"] != nil || exif["date_time_original"] != nil ||
+	if media["photographic_sensitivity"] != nil || media["iso_speed"] != nil || media["orientation"] != nil || media["exif"] != nil || media["exposure_time_seconds"] != nil || exif["date_time_original"] != nil ||
 		len(commonJSON.Section(attrs, "capabilities.spatial")) != 0 {
 		t.Fatalf("format facts leaked into type info or invented timestamp/spatial facts: %#v", attrs)
 	}

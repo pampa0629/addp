@@ -991,10 +991,16 @@ const fieldPathLabelKeys = {
   'format_info.jpeg.exif.exposure_time_seconds': 'manager.explorer.attributes.fields.exposureTimeSeconds',
   'format_info.jpeg.exif.f_number': 'manager.explorer.attributes.fields.fNumber',
   'format_info.jpeg.exif.exposure_bias_ev': 'manager.explorer.attributes.fields.exposureBiasEV',
-  'format_info.jpeg.exif.focal_length_mm': 'manager.explorer.attributes.fields.focalLengthMM'
+  'format_info.jpeg.exif.focal_length_mm': 'manager.explorer.attributes.fields.focalLengthMM',
+  'format_info.jpeg.exif.photographic_sensitivity': 'manager.explorer.attributes.fields.photographicSensitivity',
+  'format_info.jpeg.exif.sensitivity_type': 'manager.explorer.attributes.fields.sensitivityType',
+  'format_info.jpeg.exif.standard_output_sensitivity': 'manager.explorer.attributes.fields.standardOutputSensitivity',
+  'format_info.jpeg.exif.recommended_exposure_index': 'manager.explorer.attributes.fields.recommendedExposureIndex',
+  'format_info.jpeg.exif.iso_speed': 'manager.explorer.attributes.fields.isoSpeed'
 }
 
 const fieldTooltipKeys = {
+  'format_info.jpeg.exif.photographic_sensitivity': 'manager.explorer.attributes.fieldTooltips.photographicSensitivity',
   content_hash: 'manager.explorer.attributes.fieldTooltips.contentHash',
   index_ref: 'manager.explorer.attributes.fieldTooltips.indexRef'
 }
@@ -1652,6 +1658,9 @@ const formatAttributeDisplay = (pathParts, value) => {
   if (path === 'format_info.tiff.page_summary_status') {
     return formatMappedValue('manager.explorer.attributes.tiffPageStatus', value)
   }
+  if (path === 'format_info.jpeg.exif.sensitivity_type') {
+    return formatMappedValue('manager.explorer.attributes.sensitivityType', String(value))
+  }
   if (path === 'format_info.jpeg.exif_status') {
     return formatMappedValue('manager.explorer.attributes.exifStatus', value)
   }
@@ -1702,7 +1711,7 @@ const translateFromMap = (map, key, fallback) => {
 
 const attributeFieldTooltip = (pathParts) => {
   const key = pathParts[pathParts.length - 1]
-  const i18nKey = fieldTooltipKeys[key]
+  const i18nKey = fieldTooltipKeys[pathParts.join('.')] || fieldTooltipKeys[key]
   if (!i18nKey) return ''
   const translated = t(i18nKey)
   return translated === i18nKey ? '' : translated

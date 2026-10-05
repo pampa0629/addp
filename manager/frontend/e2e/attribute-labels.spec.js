@@ -53,6 +53,28 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(page.getByText(locale === 'zh-cn' ? 'EXIF / 曝光时间（秒）' : 'EXIF / Exposure Time (s)', { exact: true })).toHaveCount(0)
   })
 
+  for (const kind of [0, 7]) {
+    test(`shows source sensitivity definitions and upper-limit hint for type ${kind} in ${locale}`, async ({ page }) => {
+      await openAttributes(page, locale, {
+        item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+        format_info: { jpeg: { exif_status: 'parsed', exif: {
+          photographic_sensitivity: [200, 65535], sensitivity_type: kind,
+          standard_output_sensitivity: 80000, recommended_exposure_index: 102400, iso_speed: 204800
+        } } }
+      })
+      const labels = locale === 'zh-cn'
+        ? ['拍摄感光度（源值）', '感光度类型', '标准输出感光度（SOS）', '推荐曝光指数（REI）', 'ISO 感光速度']
+        : ['Photographic Sensitivity (Source Values)', 'Sensitivity Type', 'Standard Output Sensitivity (SOS)', 'Recommended Exposure Index (REI)', 'ISO Speed']
+      for (const label of labels) await expect(page.getByText(`EXIF / ${label}`, { exact: true })).toBeVisible()
+      for (const value of ['200, 65535', '80000', '102400', '204800']) await expect(page.getByText(value, { exact: true })).toBeVisible()
+      const typeLabel = kind === 0 ? (locale === 'zh-cn' ? '未知' : 'Unknown')
+        : (locale === 'zh-cn' ? 'SOS、REI 和 ISO 感光速度' : 'SOS, REI and ISO Speed')
+      await expect(page.getByText(typeLabel, { exact: true })).toBeVisible()
+      await expect(page.getByText(`EXIF / ${labels[0]}`, { exact: true })).toHaveAttribute('title',
+        locale === 'zh-cn' ? /65535 表示达到 SHORT 上限/ : /65535 marks the SHORT upper limit/)
+    })
+  }
+
   test(`keeps the graph model label scoped to graph facts in ${locale}`, async ({ page }) => {
     await openAttributes(page, locale, {
       item: { data_type: 'graph', format: 'graphml', layout: 'single' },

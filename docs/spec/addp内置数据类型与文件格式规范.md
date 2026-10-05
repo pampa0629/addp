@@ -1222,7 +1222,19 @@ JPEG EXIF 摘要通过现有 `MediaInfoProvider` 一次读取提供，由 Meta �
 | ExposureBiasValue（37380） | `exposure_bias_ev` | EV | SRATIONAL，1 |
 | FocalLength（37386） | `focal_length_mm` | 毫米 | RATIONAL，1 |
 
-曝光时间、F 值和焦距须大于零；曝光补偿允许负值和零。分母为零、类型或数量错误、越界数据记为 invalid 并省略该字段，其他合法字段保留。缺失标签不补值，不从 APEX 快门或光圈标签推导曝光时间或 F 值。此阶段不解析感光度、GPS、MakerNote 或缩略图，也不新增 spatial 事实。相关 tag 定义见 [CIPA Exif 规范](https://www.cipa.jp/std/documents/e/DC-X008-Translation-2019-E.pdf)。
+曝光时间、F 值和焦距须大于零；曝光补偿允许负值和零。分母为零、类型或数量错误、越界数据记为 invalid 并省略该字段，其他合法字段保留。缺失标签不补值，不从 APEX 快门或光圈标签推导曝光时间或 F 值。此阶段不解析 GPS、MakerNote 或缩略图，也不新增 spatial 事实。相关 tag 定义见 [CIPA Exif 规范](https://www.cipa.jp/std/documents/e/DC-X008-Translation-2019-E.pdf)。
+
+感光度摘要同样直接读取 Exif IFD，不统一命名为 ISO，也不通过不同定义的参数互相补值：
+
+| 源标签 | `format_info.jpeg.exif` 字段 | 类型与数量 |
+| --- | --- | --- |
+| PhotographicSensitivity（34855） | `photographic_sensitivity` | SHORT，非空数值数组，保留源数量和顺序 |
+| SensitivityType（34864） | `sensitivity_type` | SHORT，1，取值 0–7 |
+| StandardOutputSensitivity（34865） | `standard_output_sensitivity` | LONG，1 |
+| RecommendedExposureIndex（34866） | `recommended_exposure_index` | LONG，1 |
+| ISOSpeed（34867） | `iso_speed` | LONG，1 |
+
+拍摄感光度及三个 LONG 参数须大于零；类型 0 是源声明的“未知”，类型缺失时不补为 0。`photographic_sensitivity` 的 65535 按源编码保留，仅表示达到 SHORT 上限（实际值可能更高），不能显示为准确 ISO；Manager 为该字段提供中英文提示。类型 1–7 分别表达 SOS、REI、ISO Speed 及其组合，按源值译名展示。类型、数量、值或偏移非法时省略对应字段并记录 `exif_status=invalid`，合法的其他摘要仍保留；不据这些字段诊断文件的全部跨标签合规性。未实现 ISO Speed Latitude、SpectralSensitivity、OECF 或 MakerNote 中的厂商参数。沿用总读取预算，不增加像素解码或第二解析路线。上述定义参见 [JEITA/CIPA Exif 感光度标签和附录 G](https://home.jeita.or.jp/tsc/std-pdf/CP-3451D.pdf)。
 
 JPEG 只扫描图像扫描数据前的 marker segment，总源读取预算为 1 MiB，支持非 seekable 输入及 TIFF 两种字节序。相机字符串与小数秒长度最多 1024 字节；未知或部分未知的拍摄时间不补值。`exif_status` 表示 `absent`（完整检查后没有 EXIF）、`parsed`（支持范围内摘要合法）、`invalid`（EXIF IFD 结构、受支持字段或 marker 非法，包括重复 tag 和 EXIF APP1）、`budget_exceeded`（无法在预算内完成检查）；非法或未完成检查不得被标记为没有 EXIF。非法 EXIF 不阻止已确认的像素尺寸返回，仅保留合法字段；重复 EXIF APP1 不选择其中任意一份。如果标准 JPEG 解码器不能在预算内确认尺寸，则返回解析错误，不输出猜测尺寸。实际 I/O 错误和取消仍返回错误，不吞为缺失元数据。
 
