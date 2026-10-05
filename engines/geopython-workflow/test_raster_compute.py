@@ -85,7 +85,7 @@ def test_statistics_combines_blocks_and_all_nodata(tmp_path):
         assert raster_histogram(raster)['counts'] == []
 
 
-def _raster_profile_worker(source, target, scratch, connection):
+def _raster_profile_worker(source, target, scratch, connection, profile_case):
     """Measure the operator process independently of the parent's pixel oracle."""
     import resource
     import sys
@@ -120,12 +120,19 @@ def _raster_profile_worker(source, target, scratch, connection):
             stats = measure('raster_statistics', lambda: raster_statistics(raster))
             histogram = measure('raster_histogram', lambda: raster_histogram(raster))
             computed = measure('raster_band_math', lambda: raster_band_math(raster, expression))
+            resampling = None
+            if profile_case == 'average_resample':
+                size = [(facts['width'] + 1) // 2, (facts['height'] + 1) // 2]
+                computed = measure('raster_resample_average',
+                                   lambda: raster_resample(computed, size=size, resampling='average'))
+                resampling = {'algorithm': 'average', 'size': size}
             saved = measure('raster_save_cog', lambda: raster_save(computed, target_plan(target), profile='cog'))
             reloaded = measure('raster_load_saved', lambda: raster_load(source_plan(target)))
             output_stats = measure('raster_statistics_saved', lambda: raster_statistics(reloaded))
             validation = measure('validate_cog_saved', lambda: validate_cog(reloaded))
         usage = resource.getrusage(resource.RUSAGE_SELF)
-        connection.send({'source': facts, 'expression': expression, 'statistics': stats, 'histogram': histogram,
+        connection.send({'source': facts, 'expression': expression, 'profile_case': profile_case,
+                         'resampling': resampling, 'statistics': stats, 'histogram': histogram,
                          'saved': saved, 'output_statistics': output_stats, 'validation': validation,
                          'workspace_removed': not workspace.exists(), 'stages': stages,
                          'elapsed_seconds': time.perf_counter() - started,
@@ -141,7 +148,103 @@ def _raster_profile_worker(source, target, scratch, connection):
         connection.close()
 
 
-def test_multiblock_cog_roundtrip_profile(tmp_path):
+def _profile_values(original, y, height):
+    width = original.RasterXSize
+    combined = np.zeros((height, width), dtype=np.float64)
+    joint_valid = np.ones(combined.shape, dtype=bool)
+    counts = []
+    for index in range(1, original.RasterCount + 1):
+        band = original.GetRasterBand(index)
+        values = np.frombuffer(band.ReadRaster(0, y, width, height, buf_type=gdal.GDT_Float64),
+                               dtype=np.float64).reshape(height, width)
+        valid = np.frombuffer(band.GetMaskBand().ReadRaster(0, y, width, height, buf_type=gdal.GDT_Byte),
+                              dtype=np.uint8).reshape(height, width) != 0
+        valid &= np.isfinite(values)
+        nodata = band.GetNoDataValue()
+        if nodata is not None:
+            valid &= values != nodata
+        counts.append(int(valid.sum()))
+        joint_valid &= valid
+        combined += values
+        if index == 1:
+            selected_source = values[valid]
+    expected = combined * 2 + 1
+    joint_valid &= np.isfinite(expected)
+    return expected, joint_valid, counts, selected_source
+
+
+def _profile_moments(accumulator, selected):
+    if not selected.size:
+        return
+    if accumulator['origin'] is None:
+        accumulator['origin'] = float(selected[0])
+    centered = selected - accumulator['origin']
+    accumulator['count'] += selected.size
+    accumulator['sum'] += float(centered.sum())
+    accumulator['squares'] += float(np.square(centered).sum())
+    accumulator['min'] = min(accumulator['min'], float(selected.min()))
+    accumulator['max'] = max(accumulator['max'], float(selected.max()))
+
+
+def _profile_average_blocks(original, width, height):
+    """Independent area overlap oracle, bounded by output strips and source bands."""
+    source_width, source_height = original.RasterXSize, original.RasterYSize
+    # Integer edge units avoid accumulating floating-point coordinate errors.
+    columns = np.arange(width, dtype=np.int64)
+    x_start = columns * source_width // width
+    x_contributors = (source_width + width - 1) // width + 1
+    y_contributors = (source_height + height - 1) // height + 1
+    for row in range(0, height, 127):
+        rows = np.arange(row, min(row + 127, height), dtype=np.int64)
+        y_start = rows * source_height // height
+        source_row = int(y_start[0])
+        source_end = min(source_height, int(y_start[-1]) + y_contributors)
+        values, valid, _, _ = _profile_values(original, source_row, source_end - source_row)
+        numerator = np.zeros((rows.size, width), dtype=np.float64)
+        denominator = np.zeros_like(numerator)
+        for dy in range(y_contributors):
+            source_y = y_start + dy
+            y_weight = np.maximum(0, np.minimum((rows + 1) * source_height, (source_y + 1) * height)
+                                  - np.maximum(rows * source_height, source_y * height))
+            y_index = np.minimum(source_y, source_height - 1) - source_row
+            for dx in range(x_contributors):
+                source_x = x_start + dx
+                x_weight = np.maximum(0, np.minimum((columns + 1) * source_width, (source_x + 1) * width)
+                                      - np.maximum(columns * source_width, source_x * width))
+                x_index = np.minimum(source_x, source_width - 1)
+                covered = valid[y_index[:, None], x_index[None, :]]
+                weights = y_weight[:, None] * x_weight[None, :] * covered
+                numerator += np.where(covered, values[y_index[:, None], x_index[None, :]], 0) * weights
+                denominator += weights
+        expected = np.full_like(numerator, np.nan)
+        np.divide(numerator, denominator, out=expected, where=denominator > 0)
+        yield row, expected
+
+
+def test_profile_area_oracle_fractional_edges_and_joint_nodata(tmp_path):
+    source = create_raster(tmp_path / 'oracle.tif', np.array([[[0, 10], [20, 40]],
+                                                            [[2, -9999], [4, 8]]], dtype=float))
+    original = gdal.Open(str(source))
+    blocks = list(_profile_average_blocks(original, 3, 3))
+    assert len(blocks) == 1 and blocks[0][0] == 0
+    np.testing.assert_allclose(blocks[0][1], [[5, 5, np.nan], [27, 151 / 3, 97], [49, 73, 97]],
+                               rtol=0, atol=1e-12, equal_nan=True)
+    np.testing.assert_allclose(next(_profile_average_blocks(original, 1, 1))[1], [[151 / 3]])
+    original = None
+    values = np.array([[0, 10, 20], [30, 40, 50], [60, 70, 80]], dtype=float)
+    other = np.zeros_like(values)
+    other[1, 1] = -9999
+    source = create_raster(tmp_path / 'unequal-areas.tif', np.stack([values, other]))
+    original = gdal.Open(str(source))
+    # A 1.5 x 1.5 footprint weights full, half and quarter cells; the missing
+    # center contributes neither its value nor its quarter-cell area.
+    np.testing.assert_allclose(next(_profile_average_blocks(original, 2, 2))[1], [[21, 51], [111, 141]],
+                               rtol=0, atol=1e-12)
+    original = None
+
+
+@pytest.mark.parametrize('profile_case', ['band_math', 'average_resample'])
+def test_multiblock_cog_roundtrip_profile(tmp_path, profile_case):
     """T1 correctness gate; an external TIFF uses the same path for local profiling."""
     external = os.environ.get('ADDP_RASTER_PROFILE_SOURCE')
     source = Path(external).resolve() if external is not None else tmp_path / 'profile-source.tif'
@@ -165,7 +268,8 @@ def test_multiblock_cog_roundtrip_profile(tmp_path):
     receiver, sender = context.Pipe(duplex=False)
     # Parent-owned scratch is also reclaimed after child failure or termination.
     with tempfile.TemporaryDirectory(prefix='profile-worker-', dir=tmp_path) as scratch:
-        process = context.Process(target=_raster_profile_worker, args=(source, target, Path(scratch), sender))
+        process = context.Process(target=_raster_profile_worker,
+                                  args=(source, target, Path(scratch), sender, profile_case))
         process.start()
         sender.close()
         try:
@@ -180,6 +284,7 @@ def test_multiblock_cog_roundtrip_profile(tmp_path):
             receiver.close()
     assert 'error' not in report, report.get('error')
     assert report['workspace_removed']
+    assert report['profile_case'] == profile_case
     assert report['validation'] == {'valid': True, 'warnings': [], 'errors': []}
     assert report['saved']['size_bytes'] == target.stat().st_size > 0
 
@@ -191,8 +296,19 @@ def test_multiblock_cog_roundtrip_profile(tmp_path):
                for i in range(1, original.RasterCount + 1))
     assert all(original.GetRasterBand(i).GetColorInterpretation() != gdal.GCI_AlphaBand
                for i in range(1, original.RasterCount + 1))
-    assert (original.RasterXSize, original.RasterYSize) == (output.RasterXSize, output.RasterYSize)
-    assert original.GetGeoTransform() == output.GetGeoTransform()
+    width, height = original.RasterXSize, original.RasterYSize
+    output_width, output_height = ((width + 1) // 2, (height + 1) // 2) if profile_case == 'average_resample' else (width, height)
+    assert (output.RasterXSize, output.RasterYSize) == (output_width, output_height)
+    assert report['resampling'] == ({'algorithm': 'average', 'size': [output_width, output_height]}
+                                    if profile_case == 'average_resample' else None)
+    transform = original.GetGeoTransform()
+    if profile_case == 'band_math':
+        assert transform == output.GetGeoTransform()
+    np.testing.assert_allclose(output.GetGeoTransform(),
+                               [transform[0], transform[1] * width / output_width,
+                                transform[2] * height / output_height, transform[3],
+                                transform[4] * width / output_width, transform[5] * height / output_height],
+                               rtol=1e-12, atol=1e-12)
     assert original.GetSpatialRef().IsSame(output.GetSpatialRef())
     output_band = output.GetRasterBand(1)
     assert np.isnan(output_band.GetNoDataValue())
@@ -207,65 +323,51 @@ def test_multiblock_cog_roundtrip_profile(tmp_path):
     # Different block shape and independent GDAL/NumPy reads avoid reusing the operator's oracle.
     for y in range(0, original.RasterYSize, 127):
         height = min(127, original.RasterYSize - y)
-        combined = np.zeros(original.RasterXSize * height, dtype=np.float64)
-        joint_valid = np.ones(combined.size, dtype=bool)
-        for index in range(1, original.RasterCount + 1):
-            band = original.GetRasterBand(index)
-            values = np.frombuffer(band.ReadRaster(0, y, original.RasterXSize, height,
-                                  buf_type=gdal.GDT_Float64), dtype=np.float64)
-            valid = np.frombuffer(band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height,
-                                 buf_type=gdal.GDT_Byte), dtype=np.uint8) != 0
-            valid &= np.isfinite(values)
-            nodata = band.GetNoDataValue()
-            if nodata is not None:
-                valid &= values != nodata
-            band_counts[index - 1] += int(valid.sum())
-            joint_valid &= valid
-            combined += values
-            if index == 1:
-                selected_source = values[valid]
-                bins += np.histogram(selected_source, bins=report['histogram']['edges'])[0]
-        expected = combined * 2 + 1
-        joint_valid &= np.isfinite(expected)
-        actual = np.frombuffer(output_band.ReadRaster(0, y, original.RasterXSize, height,
-                              buf_type=gdal.GDT_Float64), dtype=np.float64)
-        np.testing.assert_array_equal(actual[joint_valid], expected[joint_valid])
-        assert np.isnan(actual[~joint_valid]).all()
-        output_valid = np.frombuffer(output_band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height,
-                                    buf_type=gdal.GDT_Byte), dtype=np.uint8) != 0
-        np.testing.assert_array_equal(output_valid, joint_valid)
-        for accumulator, selected in zip(moments, (selected_source, expected[joint_valid])):
-            if not selected.size:
-                continue
-            if accumulator['origin'] is None:
-                accumulator['origin'] = float(selected[0])
-            centered = selected - accumulator['origin']
-            accumulator['count'] += selected.size
-            accumulator['sum'] += float(centered.sum())
-            accumulator['squares'] += float(np.square(centered).sum())
-            accumulator['min'] = min(accumulator['min'], float(selected.min()))
-            accumulator['max'] = max(accumulator['max'], float(selected.max()))
-    for stats, accumulator in zip((report['statistics'], report['output_statistics']), moments):
+        expected, joint_valid, counts, selected_source = _profile_values(original, y, height)
+        band_counts = [count + block_count for count, block_count in zip(band_counts, counts)]
+        bins += np.histogram(selected_source, bins=report['histogram']['edges'])[0]
+        _profile_moments(moments[0], selected_source)
+        if profile_case == 'band_math':
+            actual = np.frombuffer(output_band.ReadRaster(0, y, original.RasterXSize, height,
+                                  buf_type=gdal.GDT_Float64), dtype=np.float64).reshape(expected.shape)
+            np.testing.assert_array_equal(actual[joint_valid], expected[joint_valid])
+            assert np.isnan(actual[~joint_valid]).all()
+            output_valid = np.frombuffer(output_band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height,
+                                        buf_type=gdal.GDT_Byte), dtype=np.uint8).reshape(expected.shape) != 0
+            np.testing.assert_array_equal(output_valid, joint_valid)
+            _profile_moments(moments[1], expected[joint_valid])
+    if profile_case == 'average_resample':
+        for y, expected in _profile_average_blocks(original, output_width, output_height):
+            block_height = expected.shape[0]
+            actual = np.frombuffer(output_band.ReadRaster(0, y, output_width, block_height,
+                                  buf_type=gdal.GDT_Float64), dtype=np.float64).reshape(expected.shape)
+            np.testing.assert_allclose(actual, expected, rtol=1e-8, atol=1e-7, equal_nan=True)
+            output_valid = np.frombuffer(output_band.GetMaskBand().ReadRaster(0, y, output_width, block_height,
+                                        buf_type=gdal.GDT_Byte), dtype=np.uint8).reshape(expected.shape) != 0
+            np.testing.assert_array_equal(output_valid, np.isfinite(expected))
+            _profile_moments(moments[1], expected[np.isfinite(expected)])
+    for stats, accumulator, pixel_count in zip((report['statistics'], report['output_statistics']), moments,
+                                               (total, output_width * output_height)):
         count = accumulator['count']
         assert count > 0
         centered_mean = accumulator['sum'] / count
         mean = accumulator['origin'] + centered_mean
         stddev = np.sqrt(max(0, accumulator['squares'] / count - centered_mean ** 2))
-        assert (stats['valid_count'], stats['invalid_count']) == (count, total - count)
+        assert (stats['valid_count'], stats['invalid_count']) == (count, pixel_count - count)
         np.testing.assert_allclose([stats['min'], stats['max'], stats['mean'], stats['stddev']],
                                    [accumulator['min'], accumulator['max'], mean, stddev],
                                    rtol=1e-8, atol=1e-8)
     count = moments[0]['count']
     minimum, maximum = moments[0]['min'], moments[0]['max']
     report['source_band_valid_counts'] = band_counts
-    if external is None:
+    if external is None and profile_case == 'band_math':
         assert moments[1]['count'] < min(band_counts)
     histogram = report['histogram']
     assert histogram['counts'] == bins.tolist()
     assert (histogram['valid_count'], histogram['invalid_count'], histogram['outside_count']) == (count, total - count, 0)
     bounds = [minimum, maximum] if minimum < maximum else [minimum - 0.5, maximum + 0.5]
     np.testing.assert_array_equal(histogram['edges'], np.linspace(*bounds, 257))
-    band = output_band = original = output = None
+    output_band = original = output = None
     assert digest(source) == original_hash
     print('RASTER_PROFILE ' + json.dumps({'source_sha256': original_hash,
           'source_size_bytes': source.stat().st_size, **report}, sort_keys=True))
