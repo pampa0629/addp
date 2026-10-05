@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import stat
@@ -90,6 +91,17 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
         self.assertEqual([sum(value is not None for value in values) for values in (first, second)], [29239, 29239])
         self.assertEqual(sum(value is not None for value in m.average_pixels(1, joint=True, width=171)), 29238)
         self.assertEqual(sum(0 < value < 255 for value in alpha), 0)
+
+    def test_source_declarations_keep_finite_and_nan_sentinels_on_the_same_grid(self):
+        sources = {name: (spatial, nodata) for name, spatial, nodata in m.SOURCE_FILES}
+        self.assertEqual(len(sources), 5)
+        self.assertEqual(sources['multiband-average-finite.tif'], (False, -9999.))
+        self.assertTrue(math.isnan(sources['multiband-average.tif'][1]))
+        self.assertEqual(m.multiband_source_name('multiband-average-finite'), 'multiband-average-finite.tif')
+        self.assertEqual(m.multiband_source_name('multiband-average-finite-joint'), 'multiband-average-finite.cog.tif')
+        self.assertEqual(m.multiband_expectation('multiband-average-finite')['width'], 171)
+        self.assertEqual(m.multiband_expectation('multiband-average-finite')['valid_pixels'], 29239)
+        self.assertEqual(m.multiband_expectation('multiband-average-finite-joint')['valid_pixels'], 29238)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-raster-fixture-test-')

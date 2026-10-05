@@ -1,5 +1,7 @@
 """Exercise the T4 independent byte verifier with real GDAL and local S3 transport."""
 import importlib.util
+import hashlib
+import math
 import importlib
 import json
 from pathlib import Path
@@ -491,3 +493,75 @@ def test_fractional_oracle_rejects_wrong_weights_joint_mask_and_saved_band_facts
     LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     with pytest.raises(fixture.FixtureError, match='multiband|NoData'):
         fixture.worker('verify-multiband-average-fractional-joint', physical)
+
+
+def test_async_finite_average_saved_reload_matches_nan_results_and_independent_area_oracle(physical, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    evidence, _ = multiband_targets(tmp_path, scene, api_server, until='multiband-average-finite-joint')
+    average, joint = evidence[8:]
+    assert average['band_nodata'] == -9999. and average['band_nodata_is_nan'] is False
+    assert joint['band_nodata'] is None and joint['band_nodata_is_nan'] is True
+    assert average['band_valid_pixels'] == [29239, 29239]
+    assert joint['band_valid_pixels'] == [29238]
+    assert average['partial_alpha_pixels'] == 0
+    assert average['has_overviews'] and joint['has_overviews']
+    assert len(joint['preserved_sha256']) == 15
+    assert joint['preserved_sha256']['multiband-average-finite.cog.tif'] == average['sha256']
+    source = gdal.Open(str(tmp_path / 'multiband-average-finite.tif'))
+    for band, column in ((1, 0), (2, 2)):
+        assert source.GetRasterBand(band).GetNoDataValue() == -9999.
+        assert struct.unpack('<d', source.GetRasterBand(band).ReadRaster(column, 0, 1, 1, buf_type=gdal.GDT_Float64))[0] == -9999.
+    source = None
+    for suffix in ('', '-joint'):
+        finite = gdal.Open(str(tmp_path / ('multiband-average-finite'+suffix+'.cog.tif')))
+        nan = gdal.Open(str(tmp_path / ('multiband-average-fractional'+suffix+'.cog.tif')))
+        for index in range(1, finite.RasterCount+1):
+            nodata = finite.GetRasterBand(index).GetNoDataValue()
+            assert math.isnan(nodata) if suffix else nodata == -9999.
+            count = finite.RasterXSize*finite.RasterYSize
+            actual = struct.unpack(f'<{count}d', finite.GetRasterBand(index).ReadRaster(buf_type=gdal.GDT_Float64))
+            expected = struct.unpack(f'<{count}d', nan.GetRasterBand(index).ReadRaster(buf_type=gdal.GDT_Float64))
+            assert all((math.isnan(a) if suffix else a == -9999.) if math.isnan(b) else a == pytest.approx(b, rel=1e-10, abs=1e-8)
+                       for a, b in zip(actual, expected))
+        finite = nan = None
+
+
+@pytest.mark.parametrize('fault', ['source-hole', 'source-nodata'])
+def test_finite_source_verifier_checks_pixels_and_declaration_even_with_matching_hash(physical, tmp_path, fault):
+    source = tmp_path / 'multiband-average-finite.tif'
+    source.write_bytes(LocalMinio.objects['source', 'raster-source', source.name])
+    dataset = gdal.Open(str(source), gdal.GA_Update)
+    if fault == 'source-hole':
+        dataset.GetRasterBand(1).WriteRaster(0, 0, 1, 1, struct.pack('<d', 0.), buf_type=gdal.GDT_Float64)
+    else:
+        dataset.GetRasterBand(1).SetNoDataValue(float('nan'))
+    dataset = None
+    LocalMinio.objects['source', 'raster-source', source.name] = source.read_bytes()
+    fingerprint_path = physical.with_name('raster-source-sha256.json')
+    fingerprints = json.loads(fingerprint_path.read_text())
+    fingerprints[source.name] = hashlib.sha256(source.read_bytes()).hexdigest()
+    fingerprint_path.write_text(json.dumps(fingerprints))
+    with pytest.raises(fixture.FixtureError, match='source pixels/NoData'):
+        fixture.worker('verify-create', physical)
+
+
+@pytest.mark.parametrize('fault', ['saved-hole', 'saved-nodata', 'joint-mask'])
+def test_finite_oracle_rejects_lost_persisted_holes_nodata_and_joint_validity(physical, tmp_path, monkeypatch, fault):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    multiband_targets(tmp_path, scene, api_server, until='multiband-average-finite-joint')
+    output = tmp_path / ('multiband-average-finite-joint.cog.tif' if fault == 'joint-mask' else 'multiband-average-finite.cog.tif')
+    edited = tmp_path / 'corrupt-finite.tif'
+    dataset = gdal.Translate(str(edited), str(output), format='GTiff')
+    if fault == 'saved-nodata': dataset.GetRasterBand(2).DeleteNoDataValue()
+    else:
+        dataset.GetRasterBand(1).WriteRaster(0, 0, 1, 1, struct.pack('<d', 255/32 if fault == 'joint-mask' else 0.), buf_type=gdal.GDT_Float64)
+    dataset = None
+    dataset = gdal.Translate(str(output), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+    dataset = None
+    LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    with pytest.raises(fixture.FixtureError, match='multiband|NoData'):
+        fixture.worker('verify-multiband-average-finite-joint', physical)

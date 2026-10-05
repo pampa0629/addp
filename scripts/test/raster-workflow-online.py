@@ -218,8 +218,10 @@ def validate_success(execution, source_locator, target_locator, mode, expectatio
                                  zip(transform, expectation['transform'])):
         raise SuiteError('Develop raster artifact transform is invalid')
     bands = array(artifact.get('bands'), 'artifact bands')
+    expected_nodata = expectation['band_nodata']
     if len(bands) != expectation['band_count'] or any(
-        band.get('dtype') != 'Float64' or band.get('nodata_is_nan') is not True for band in bands
+        band.get('dtype') != 'Float64' or band.get('nodata_is_nan') is not (expected_nodata is None)
+        or band.get('nodata') != expected_nodata for band in bands
     ):
         raise SuiteError('Develop raster artifact did not preserve band dtype/NoData')
     forbidden = {'access_plan', 'connection_info', 'access_key', 'secret_key', 'password', 'path', 'workspace'}
@@ -486,7 +488,9 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             partial = 64 if case_name == 'multiband-bilinear' else 3 if case_name == 'multiband-alpha' else 0
             if (native.get('band_valid_pixels') != counts
                 or native.get('invalid_pixels') != expectation['width'] * expectation['height'] - counts[0]
-                or native.get('partial_alpha_pixels') != partial):
+                or native.get('partial_alpha_pixels') != partial
+                or native.get('band_nodata') != expectation['band_nodata']
+                or native.get('band_nodata_is_nan') is not (expectation['band_nodata'] is None)):
                 raise SuiteError('multiband independent validity/partial alpha evidence is incomplete')
         graph, browser_report = inspect_output(repository, env, client, case_source, case_locator,
             target_engine, name, identifier, case_name, identity, timeout, browser_runner, expectation, native)

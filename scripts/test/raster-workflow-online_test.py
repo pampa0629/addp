@@ -20,6 +20,7 @@ class Client:
         self.spatial_source = {'id': 11, 'item_type': 'object', 'full_name': 'raster-source/spatial.tif', 'fingerprint': 'spatial-fp'}
         self.multiband_source = {'id': 12, 'item_type': 'object', 'full_name': 'raster-source/multiband.tif', 'fingerprint': 'multiband-fp'}
         self.average_source = {'id': 13, 'item_type': 'object', 'full_name': 'raster-source/multiband-average.tif', 'fingerprint': 'average-fp'}
+        self.finite_source = {'id': 14, 'item_type': 'object', 'full_name': 'raster-source/multiband-average-finite.tif', 'fingerprint': 'finite-fp'}
         self.targets = {20: self.target}
         for item_id, overlap in [(21, 'first'), (22, 'last')]:
             item = copy.deepcopy(self.target)
@@ -32,8 +33,8 @@ class Client:
             item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name)
             item['attributes']['type_info']['media'] = {'width': expectation['width'], 'height': expectation['height']}
             item['attributes']['capabilities']['spatial'] = {'srid': 4326, 'extent': expectation['extent']}
-            item['attributes']['format_info']['tiff'] = {'profile': 'cog' if name=='clip-polygon' or 'bilinear' in name or 'fractional' in name else 'geotiff',
-                'is_tiled': True, 'has_overviews': name=='clip-polygon' or 'bilinear' in name or 'fractional' in name}
+            item['attributes']['format_info']['tiff'] = {'profile': 'cog' if name=='clip-polygon' or 'bilinear' in name or 'fractional' in name or 'finite' in name else 'geotiff',
+                'is_tiled': True, 'has_overviews': name=='clip-polygon' or 'bilinear' in name or 'fractional' in name or 'finite' in name}
             self.targets[item_id] = item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
@@ -70,7 +71,7 @@ class Client:
             result = {'execution_id': 'source-scan'}
         elif path.startswith('/api/v1/meta/executions/'):
             result = {'status': 'success'}
-        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source, self.multiband_source, self.average_source]
+        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source, self.multiband_source, self.average_source, self.finite_source]
         elif path == '/api/v1/meta/engines/2/items': result = list(self.targets.values())
         elif path.startswith('/api/v1/meta/items/'): result = self.targets[int(path.rsplit('/', 1)[1])]
         elif method == 'POST' and path == '/api/v1/develop/executions':
@@ -97,8 +98,8 @@ class Client:
                                   'outputs': [{'locator': target, 'write_mode': mode}],
                                   'operations': [{'kind': 'derive', 'operator': 'develop', 'input_ports': ['input'], 'output_ports': ['output']}]},
                 'result': {'final_result': {'artifact_type': 'raster', 'format': 'tiff', 'profile': 'cog',
-                                          **{key: value for key, value in expectation.items() if key != 'valid_pixels'},
-                                          'bands': [{'dtype': 'Float64', 'nodata_is_nan': True} for _ in range(expectation['band_count'])]},
+                                          **{key: value for key, value in expectation.items() if key not in ('valid_pixels', 'band_nodata')},
+                                          'bands': [{'dtype': 'Float64', 'nodata_is_nan': expectation['band_nodata'] is None, 'nodata': expectation['band_nodata']} for _ in range(expectation['band_count'])]},
                            'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'auto-' + identifier}]},
             }
             self.executions[identifier] = self.mutate({'execution_id': identifier, 'module': 'develop', 'status': status, 'metadata': metadata,
@@ -120,6 +121,8 @@ class Client:
             if target_id == 31: source_id = 30
             if target_id == 32: source_id = 13
             if target_id == 33: source_id = 32
+            if target_id == 34: source_id = 14
+            if target_id == 35: source_id = 34
             result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
                       'status': 'active', 'relation_kind': self.relation_kind, 'evidence': {'execution_id': identifier}}]}
         else:
@@ -153,9 +156,10 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 expectation = m.fixture.computed_expectation(case_name)
                 extra = {'band_valid_pixels': [expectation['valid_pixels']] * (1 if joint else 2),
                     'invalid_pixels': expectation['width'] * expectation['height'] - expectation['valid_pixels'],
-                    'partial_alpha_pixels': 64 if case_name == 'multiband-bilinear' else 3 if case_name == 'multiband-alpha' else 0}
+                    'partial_alpha_pixels': 64 if case_name == 'multiband-bilinear' else 3 if case_name == 'multiband-alpha' else 0,
+                    'band_nodata': expectation['band_nodata'], 'band_nodata_is_nan': expectation['band_nodata'] is None}
             return {**extra, 'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
-                    'cog_valid': True, 'has_overviews': case_name=='clip-polygon' or 'bilinear' in case_name or 'fractional' in case_name,
+                    'cog_valid': True, 'has_overviews': case_name=='clip-polygon' or 'bilinear' in case_name or 'fractional' in case_name or 'finite' in case_name,
                     'source_unchanged': True, 'valid_pixels': m.fixture.computed_expectation(case_name)['valid_pixels']}
         if action == 'verify-analysis':
             return {'sha256': 'new', 'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 65535,
@@ -188,8 +192,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([case['case_name'] for case in report['grid_cases']], list(m.fixture.GRID_CASES))
         self.assertEqual([case['lineage']['target_item_id'] for case in report['grid_cases']], [23, 24, 25])
         self.assertEqual([case['case_name'] for case in report['multiband_cases']], list(m.fixture.MULTIBAND_CASES))
-        self.assertEqual([case['lineage']['source_item_id'] for case in report['multiband_cases']], [12, 26, 13, 28, 13, 30, 13, 32])
-        self.assertEqual([case['lineage']['target_item_id'] for case in report['multiband_cases']], [26, 27, 28, 29, 30, 31, 32, 33])
+        self.assertEqual([case['lineage']['source_item_id'] for case in report['multiband_cases']], [12, 26, 13, 28, 13, 30, 13, 32, 14, 34])
+        self.assertEqual([case['lineage']['target_item_id'] for case in report['multiband_cases']], [26, 27, 28, 29, 30, 31, 32, 33, 34, 35])
         self.assertEqual(report['multiband_cases'][1]['browser']['source_name'], 'multiband-alpha.cog.tif')
 
     def test_multiband_cases_reject_missing_per_band_counts_partial_alpha_and_reloaded_source(self):
@@ -308,6 +312,47 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 self.client.mutate = mutate
                 if fault == 'overview': self.client.targets[32]['attributes']['format_info']['tiff']['has_overviews'] = False
                 if fault == 'size': self.client.targets[32]['size_bytes'] = 0
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
+    def test_finite_average_reads_its_own_source_and_reloads_the_persisted_cog(self):
+        report = self.run_scene()
+        submitted = {body['content']['workflow_definition']['tasks'][-1]['params']['target_name']:
+                     body['content']['workflow_definition']['tasks']
+                     for method, path, body in self.client.calls
+                     if method == 'POST' and path == '/api/v1/develop/executions'
+                     and body['content']['workflow_definition']['tasks'][-1]['id'] == 'save'}
+        average = submitted['multiband-average-finite.cog.tif']
+        joint = submitted['multiband-average-finite-joint.cog.tif']
+        self.assertEqual(average[1]['params']['resampling'], 'average')
+        self.assertEqual(average[1]['params']['size'], [171, 171])
+        self.assertEqual(report['multiband_cases'][8]['browser']['source_name'], 'multiband-average-finite.tif')
+        self.assertEqual(joint[0]['params']['locator'], report['multiband_cases'][9]['browser']['source_locator'])
+        self.assertEqual(report['multiband_cases'][9]['browser']['source_name'], 'multiband-average-finite.cog.tif')
+        self.assertEqual(report['multiband_cases'][8]['physical']['band_valid_pixels'], [29239, 29239])
+        self.assertEqual(report['multiband_cases'][9]['physical']['band_valid_pixels'], [29238])
+
+    def test_finite_cases_reject_wrong_counts_nodata_sources_and_strict_size(self):
+        for fault in ('counts', 'nodata', 'nan', 'missing-nodata', 'physical-nodata', 'physical-flag', 'source', 'reload', 'size'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def physical(repo, env, action):
+                    result = self.physical(repo, env, action)
+                    if action == 'verify-multiband-average-finite':
+                        if fault == 'counts': result['band_valid_pixels'] = [29241, 29241]
+                        if fault == 'physical-nodata': result['band_nodata'] = None
+                        if fault == 'physical-flag': result['band_nodata_is_nan'] = True
+                    return result
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-21':
+                        if fault == 'nodata': execution['metadata']['result']['final_result']['bands'][0]['nodata'] = -8888.
+                        if fault == 'nan': execution['metadata']['result']['final_result']['bands'][0].update(nodata=None, nodata_is_nan=True)
+                        if fault == 'missing-nodata': execution['metadata']['result']['final_result']['bands'][0].pop('nodata')
+                        if fault == 'source': execution['metadata']['lineage_facts']['inputs'][0]['locator'] = 'nan-source'
+                    if execution['execution_id'] == 'run-22' and fault == 'reload':
+                        execution['metadata']['lineage_facts']['inputs'][0]['locator'] = 'original-source'
+                    return execution
+                self.client.mutate = mutate
+                if fault == 'size': self.client.targets[34]['size_bytes'] = 0
                 with self.assertRaises(m.SuiteError): self.run_scene(physical)
 
     def test_rejects_admin_extra_permissions_default_tenant_and_shared_engine_before_writes(self):
