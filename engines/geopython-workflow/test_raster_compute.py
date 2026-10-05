@@ -18,6 +18,7 @@ from operators.raster_compute import (
     raster_band_math, raster_statistics, raster_histogram, raster_build_overviews, validate_cog,
 )
 from workflow_engine import execute_workflow
+from operators.raster_operators import build_raster_mosaic
 
 
 
@@ -97,6 +98,8 @@ def _profile_process_usage():
 
 def _raster_profile_task(source, target, profile_case, epoch, barrier=None):
     """Each thread owns its workspace and GDAL datasets; cache and RSS are process-wide."""
+    if profile_case == 'directory_mosaic':
+        return _directory_mosaic_profile_task(source, target, epoch, barrier)
     stages = []
     workspace = None
 
@@ -125,8 +128,17 @@ def _raster_profile_task(source, target, profile_case, epoch, barrier=None):
         expression = '(' + '+'.join(f'b{i}' for i in range(1, facts['band_count'] + 1)) + ')*2+1'
         stats = measure('raster_statistics', lambda: raster_statistics(raster))
         histogram = measure('raster_histogram', lambda: raster_histogram(raster))
-        computed = measure('raster_band_math', lambda: raster_band_math(raster, expression))
         resampling = None
+        if profile_case == 'multiband_reproject':
+            expression = None
+            transform = facts['transform']
+            resolution = [6378137 * np.deg2rad(transform[1]) * 1.5,
+                          6378137 * np.deg2rad(-transform[5]) / np.cos(np.deg2rad(transform[3])) * 1.5]
+            computed = measure('raster_reproject_nearest', lambda: raster_reproject(
+                raster, 'EPSG:3857', resolution=resolution, resampling='nearest'))
+            resampling = {'algorithm': 'nearest', 'target_crs': 'EPSG:3857', 'resolution': resolution}
+        else:
+            computed = measure('raster_band_math', lambda: raster_band_math(raster, expression))
         if profile_case == 'average_resample':
             size = [(facts['width'] + 1) // 2, (facts['height'] + 1) // 2]
             computed = measure('raster_resample_average',
@@ -162,6 +174,8 @@ def _raster_profile_worker(source, targets, scratch, connection, profile_case, e
             reports = [_raster_profile_task(source, target, profile_case, started) for target in targets]
         connection.send({'tasks': reports, 'execution_mode': execution_mode,
                          'elapsed_seconds': time.perf_counter() - started, **_profile_process_usage(),
+                         'mosaic_vrts_removed': not any(name.startswith('addp-raster-mosaic-')
+                                                       for name in gdal.ReadDir('/vsimem') or []),
                          'environment': {'platform': platform.platform(), 'machine': platform.machine(),
                                          'cpu_count': os.cpu_count(), 'python': platform.python_version(),
                                          'gdal': gdal.VersionInfo('RELEASE_NAME'),
@@ -290,7 +304,7 @@ def test_profile_area_oracle_fractional_edges_and_joint_nodata(tmp_path):
     original = None
 
 
-def _profile_source(tmp_path):
+def _profile_source(tmp_path, profile_case='band_math'):
     external = os.environ.get('ADDP_RASTER_PROFILE_SOURCE')
     source = Path(external).resolve() if external is not None else tmp_path / 'profile-source.tif'
     if external is None:
@@ -300,7 +314,10 @@ def _profile_source(tmp_path):
             band = values + index * 7
             band.flat[index::97] = -32768
             bands.append(band)
-        create_raster(source, np.stack(bands), crs='EPSG:32650', nodata=-32768)
+        geographic = profile_case == 'multiband_reproject'
+        create_raster(source, np.stack(bands), crs='EPSG:4326' if geographic else 'EPSG:32650',
+                      transform=(110, .0002, 0, 30, 0, -.0002) if geographic else (0, 1, 0, 4, 0, -1),
+                      nodata=-32768)
     assert source.is_file(), f'Raster profile source does not exist: {source}'
 
     return source, external is None
@@ -311,11 +328,201 @@ def _profile_digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def _mercator_inverse(x, y):
+    # EPSG:3857 is spherical Mercator, independently inverted without GDAL Warp.
+    return np.rad2deg(x / 6378137), np.rad2deg(np.arctan(np.sinh(y / 6378137)))
+
+
+def _assert_profile_moments(stats, accumulator, total):
+    count = accumulator['count']
+    assert count > 0
+    centered_mean = accumulator['sum'] / count
+    mean = accumulator['origin'] + centered_mean
+    stddev = np.sqrt(max(0, accumulator['squares'] / count - centered_mean ** 2))
+    assert (stats['valid_count'], stats['invalid_count']) == (count, total - count)
+    np.testing.assert_allclose([stats['min'], stats['max'], stats['mean'], stats['stddev']],
+                               [accumulator['min'], accumulator['max'], mean, stddev], rtol=1e-8, atol=1e-8)
+
+
+def _validate_reprojection_profile(source, target, report):
+    original, output = gdal.Open(str(source)), gdal.Open(str(target))
+    assert original.GetSpatialRef().GetAuthorityCode(None) == '4326'
+    assert output.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    assert output.RasterCount == original.RasterCount > 1
+    source_grid, grid = original.GetGeoTransform(), output.GetGeoTransform()
+    assert source_grid[2] == source_grid[4] == grid[2] == grid[4] == 0
+    assert source_grid[1] > 0 and source_grid[5] < 0
+    left, top = source_grid[0], source_grid[3]
+    right = left + source_grid[1] * original.RasterXSize
+    bottom = top + source_grid[5] * original.RasterYSize
+    bounds = [6378137 * np.deg2rad(left), 6378137 * np.log(np.tan(np.pi / 4 + np.deg2rad(bottom) / 2)),
+              6378137 * np.deg2rad(right), 6378137 * np.log(np.tan(np.pi / 4 + np.deg2rad(top) / 2))]
+    np.testing.assert_allclose([grid[0], grid[3]], [bounds[0], bounds[3]], rtol=0, atol=1e-7)
+    np.testing.assert_allclose([grid[1], -grid[5]], report['resampling']['resolution'], rtol=1e-12)
+    # Automatic bounds first round GDAL's diagonal-derived suggested grid,
+    # then round again to the requested resolution; a half-target-cell bound
+    # alone incorrectly rejects the legitimate extra edge cells.
+    suggested_resolution = np.hypot(bounds[2] - bounds[0], bounds[3] - bounds[1]) / np.hypot(
+        original.RasterXSize, original.RasterYSize)
+    assert abs(output.RasterXSize * grid[1] - (bounds[2] - bounds[0])) <= (grid[1] + suggested_resolution) / 2 + 1e-7
+    assert abs(output.RasterYSize * -grid[5] - (bounds[3] - bounds[1])) <= (-grid[5] + suggested_resolution) / 2 + 1e-7
+    source_moments = {'count': 0, 'origin': None, 'sum': 0., 'squares': 0., 'min': np.inf, 'max': -np.inf}
+    bins = np.zeros(256, dtype=np.int64)
+    first_band = original.GetRasterBand(1)
+    for row in range(0, original.RasterYSize, 127):
+        height = min(127, original.RasterYSize - row)
+        values = np.frombuffer(first_band.ReadRaster(0, row, original.RasterXSize, height,
+                               buf_type=gdal.GDT_Float64), dtype=np.float64)
+        mask = np.frombuffer(first_band.GetMaskBand().ReadRaster(0, row, original.RasterXSize,
+                            height, buf_type=gdal.GDT_Byte), dtype=np.uint8) != 0
+        selected = values[mask & np.isfinite(values) & (values != first_band.GetNoDataValue())]
+        _profile_moments(source_moments, selected)
+        bins += np.histogram(selected, bins=report['histogram']['edges'])[0]
+    _assert_profile_moments(report['statistics'], source_moments, original.RasterXSize * original.RasterYSize)
+    assert report['histogram']['counts'] == bins.tolist()
+    minimum, maximum = source_moments['min'], source_moments['max']
+    value_bounds = [minimum, maximum] if minimum < maximum else [minimum - .5, maximum + .5]
+    np.testing.assert_array_equal(report['histogram']['edges'], np.linspace(*value_bounds, 257))
+    assert (report['histogram']['valid_count'], report['histogram']['invalid_count'], report['histogram']['outside_count']) == (
+        source_moments['count'], original.RasterXSize * original.RasterYSize - source_moments['count'], 0)
+    counts = []
+    for band_index in range(1, original.RasterCount + 1):
+        source_band, output_band = original.GetRasterBand(band_index), output.GetRasterBand(band_index)
+        assert source_band.DataType == output_band.DataType
+        nodata = source_band.GetNoDataValue()
+        assert nodata is not None and np.isfinite(nodata)
+        assert output_band.GetNoDataValue() == nodata
+        count = 0
+        output_moments = {'count': 0, 'origin': None, 'sum': 0., 'squares': 0., 'min': np.inf, 'max': -np.inf}
+        for row in range(0, output.RasterYSize, 127):
+            height = min(127, output.RasterYSize - row)
+            longitude, latitude = _mercator_inverse(
+                grid[0] + (np.arange(output.RasterXSize) + .5) * grid[1],
+                grid[3] + (np.arange(row, row + height) + .5) * grid[5])
+            columns = np.floor((longitude - source_grid[0]) / source_grid[1]).astype(int)
+            rows = np.floor((latitude - source_grid[3]) / source_grid[5]).astype(int)
+            covered = ((rows[:, None] >= 0) & (rows[:, None] < original.RasterYSize)
+                       & (columns[None, :] >= 0) & (columns[None, :] < original.RasterXSize))
+            rows = np.clip(rows, 0, original.RasterYSize - 1)
+            columns = np.clip(columns, 0, original.RasterXSize - 1)
+            first, end = int(rows.min()), int(rows.max()) + 1
+            values = np.frombuffer(source_band.ReadRaster(0, first, original.RasterXSize, end - first,
+                                   buf_type=gdal.GDT_Float64), dtype=np.float64).reshape(end - first, original.RasterXSize)
+            masks = np.frombuffer(source_band.GetMaskBand().ReadRaster(0, first, original.RasterXSize,
+                                  end - first, buf_type=gdal.GDT_Byte), dtype=np.uint8).reshape(values.shape)
+            expected = values[rows[:, None] - first, columns[None, :]]
+            valid = covered & (masks[rows[:, None] - first, columns[None, :]] != 0) & np.isfinite(expected) & (expected != nodata)
+            actual = np.frombuffer(output_band.ReadRaster(0, row, output.RasterXSize, height,
+                                  buf_type=gdal.GDT_Float64), dtype=np.float64).reshape(height, output.RasterXSize)
+            actual_mask = np.frombuffer(output_band.GetMaskBand().ReadRaster(0, row, output.RasterXSize,
+                                       height, buf_type=gdal.GDT_Byte), dtype=np.uint8).reshape(actual.shape) != 0
+            np.testing.assert_array_equal(actual_mask, valid)
+            np.testing.assert_array_equal(actual[valid], expected[valid])
+            assert (actual[~valid] == nodata).all()
+            count += int(valid.sum())
+            _profile_moments(output_moments, actual[valid])
+        counts.append(count)
+        if band_index == 1:
+            _assert_profile_moments(report['output_statistics'], output_moments, output.RasterXSize * output.RasterYSize)
+    report['output_band_valid_counts'] = counts
+    original = output = None
+
+
+def _directory_profile_source(source, root):
+    root.mkdir()
+    dataset = gdal.Open(str(source))
+    width, height = dataset.RasterXSize, dataset.RasterYSize
+    x_edges, y_edges = [0, width // 2, width], [0, height // 2, height]
+    for y in range(2):
+        for x in range(2):
+            tile = gdal.Translate(str(root / f'{y}{x}.tif'), dataset, format='GTiff',
+                                  srcWin=[x_edges[x], y_edges[y], x_edges[x + 1] - x_edges[x], y_edges[y + 1] - y_edges[y]],
+                                  creationOptions=['TILED=NO', 'COMPRESS=DEFLATE'])
+            assert tile is not None
+            tile = None
+    dataset = None
+    return root
+
+
+def _directory_mosaic_profile_task(source, target, epoch, barrier):
+    if barrier is not None:
+        barrier.wait(timeout=30)
+    started = time.perf_counter()
+    total_pixels = 0
+    for tile in sorted(source.glob('*.tif')):
+        dataset = gdal.Open(str(tile))
+        total_pixels += dataset.RasterXSize * dataset.RasterYSize
+        dataset = None
+    result = build_raster_mosaic(access_plan={
+        'source': {'root_uri': str(source), 'recursive': True, 'include_patterns': ['*.tif']},
+        'target': {'dataset_root_uri': str(target), 'dataset_name': target.name}},
+        placement={'mode': 'detached'},
+        cog={'compression': 'DEFLATE', 'blocksize': 512, 'overview_resampling': 'NEAREST',
+             'leaf_concurrency': 4, 'num_threads': 2},
+        overview={'enabled': True, 'max_pixels': total_pixels, 'resampling': 'NEAREST'},
+        tiles={'enabled': False})
+    finished = time.perf_counter()
+    return {'profile_case': 'directory_mosaic', 'mosaic': result, 'thread_id': threading.get_ident(),
+            'started_seconds': started - epoch, 'finished_seconds': finished - epoch,
+            'elapsed_seconds': finished - started,
+            'observed_file_bytes': sum(p.stat().st_size for p in target.rglob('*') if p.is_file())}
+
+
+def _assert_profile_raster_copy(source, target):
+    original, output = gdal.Open(str(source)), gdal.Open(str(target))
+    assert (original.RasterXSize, original.RasterYSize, original.RasterCount) == (output.RasterXSize, output.RasterYSize, output.RasterCount)
+    np.testing.assert_array_equal(original.GetGeoTransform(), output.GetGeoTransform())
+    assert original.GetSpatialRef().IsSame(output.GetSpatialRef())
+    for index in range(1, original.RasterCount + 1):
+        source_band, output_band = original.GetRasterBand(index), output.GetRasterBand(index)
+        assert source_band.DataType == output_band.DataType
+        assert source_band.GetNoDataValue() == output_band.GetNoDataValue()
+        for row in range(0, original.RasterYSize, 127):
+            height = min(127, original.RasterYSize - row)
+            for first_band, second_band, dtype in ((source_band, output_band, gdal.GDT_Float64),
+                                                   (source_band.GetMaskBand(), output_band.GetMaskBand(), gdal.GDT_Byte)):
+                assert first_band.ReadRaster(0, row, original.RasterXSize, height, buf_type=dtype) == second_band.ReadRaster(
+                    0, row, output.RasterXSize, height, buf_type=dtype)
+    original = output = None
+    with raster_workspace():
+        assert validate_cog(raster_load(source_plan(target))) == {'valid': True, 'warnings': [], 'errors': []}
+
+
+def _validate_directory_profile(source, directory, target, task):
+    result = task['mosaic']
+    assert result['status'] == 'success' and result['format'] == 'raster_mosaic'
+    assert result['source_count'] == result['leaf_count'] == 4 and result['failed_count'] == 0
+    assert result['stage_timings']['leaf_cog']['generated_count'] == 4
+    assert result['stage_timings']['leaf_cog']['concurrency'] == 4
+    manifest = json.loads((target / 'mosaic.addp.json').read_text())
+    index = json.loads((target / 'index/source-index.json').read_text())
+    assert manifest['format'] == 'raster_mosaic' and manifest['layout'] == 'whole'
+    assert manifest['refs']['overview'] == 'overviews/overview.cog.tif'
+    leaves = index['leaves']
+    assert len(leaves) == 4
+    expected_paths = {'mosaic.addp.json', 'index/source-index.json', 'overviews/overview.cog.tif'}
+    for tile in sorted(directory.glob('*.tif')):
+        relative = 'leaf/' + tile.stem + '.cog.tif'
+        assert sum(leaf['leaf_ref'] == relative and leaf['cog_validation']['status'] == 'valid' for leaf in leaves) == 1
+        _assert_profile_raster_copy(tile, target / relative)
+        expected_paths.add(relative)
+    _assert_profile_raster_copy(source, target / 'overviews/overview.cog.tif')
+    actual = {p.relative_to(target).as_posix(): p for p in target.rglob('*') if p.is_file()}
+    assert set(actual) == expected_paths
+    task['artifact_sizes_bytes'] = {name: path.stat().st_size for name, path in actual.items()}
+    assert all(size > 0 for size in task['artifact_sizes_bytes'].values())
+    task['cog_sha256'] = {name: _profile_digest(path) for name, path in actual.items() if path.suffix == '.tif'}
+
+
 def _validate_profile_result(source, target, report, profile_case, original_hash, default_source):
     assert report['workspace_removed']
     assert report['profile_case'] == profile_case
     assert report['validation'] == {'valid': True, 'warnings': [], 'errors': []}
     assert report['saved']['size_bytes'] == target.stat().st_size > 0
+    if profile_case == 'multiband_reproject':
+        _validate_reprojection_profile(source, target, report)
+        assert _profile_digest(source) == original_hash
+        return
 
     original = gdal.Open(str(source), gdal.GA_ReadOnly)
     output = gdal.Open(str(target), gdal.GA_ReadOnly)
@@ -423,21 +630,91 @@ def test_same_process_raster_pair_profile(tmp_path, execution_mode):
     report = _run_raster_profile(source, targets, tmp_path, 'average_resample', execution_mode)
     first, second = report['tasks']
     assert first['workspace'] != second['workspace']
-    overlap = min(task['finished_seconds'] for task in report['tasks']) - max(
-        task['started_seconds'] for task in report['tasks'])
-    if execution_mode == 'parallel':
-        assert first['thread_id'] != second['thread_id']
-        assert overlap > 0
-    else:
-        assert first['finished_seconds'] <= second['started_seconds']
-    report['task_overlap_seconds'] = max(0, overlap)
-    report['throughput_tasks_per_second'] = len(targets) / report['elapsed_seconds']
+    _profile_pair_metrics(report)
     for target, task in zip(targets, report['tasks']):
         _validate_profile_result(source, target, task, 'average_resample', original_hash, default_source)
         assert not Path(task['workspace']).exists()
         task['output_sha256'] = _profile_digest(target)
     assert first['output_sha256'] == second['output_sha256']
     assert _profile_digest(source) == original_hash
+    print('RASTER_PAIR_PROFILE ' + json.dumps({'source_sha256': original_hash,
+          'source_size_bytes': source.stat().st_size, **report}, sort_keys=True))
+
+
+def _profile_pair_metrics(report):
+    first, second = report['tasks']
+    overlap = min(task['finished_seconds'] for task in report['tasks']) - max(
+        task['started_seconds'] for task in report['tasks'])
+    if report['execution_mode'] == 'parallel':
+        assert first['thread_id'] != second['thread_id']
+        assert overlap > 0
+    else:
+        assert first['finished_seconds'] <= second['started_seconds']
+    report['task_overlap_seconds'] = max(0, overlap)
+    report['throughput_tasks_per_second'] = len(report['tasks']) / report['elapsed_seconds']
+
+
+def test_profile_mercator_inverse_hand_calculated_anchors():
+    np.testing.assert_allclose(_mercator_inverse(np.array([0, np.pi * 6378137]),
+                               np.array([0, 6378137 * np.log(1 + np.sqrt(2))])), [[0, 180], [0, 45]],
+                               rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize('execution_mode', ['serial', 'parallel'])
+def test_multiband_reprojection_pair_profile(tmp_path, execution_mode):
+    source, default_source = _profile_source(tmp_path, 'multiband_reproject')
+    original_hash = _profile_digest(source)
+    targets = [tmp_path / f'profile-result-{index}.tif' for index in range(2)]
+    report = _run_raster_profile(source, targets, tmp_path, 'multiband_reproject', execution_mode)
+    _profile_pair_metrics(report)
+    first, second = report['tasks']
+    assert first['workspace'] != second['workspace']
+    for target, task in zip(targets, report['tasks']):
+        _validate_profile_result(source, target, task, 'multiband_reproject', original_hash, default_source)
+        assert not Path(task['workspace']).exists()
+        task['output_sha256'] = _profile_digest(target)
+    assert first['output_sha256'] == second['output_sha256']
+    assert _profile_digest(source) == original_hash
+    print('RASTER_PAIR_PROFILE ' + json.dumps({'source_sha256': original_hash,
+          'source_size_bytes': source.stat().st_size, **report}, sort_keys=True))
+
+
+@pytest.mark.parametrize('fault', ['value', 'mask'])
+def test_reprojection_profile_oracle_rejects_nonfirst_band_corruption(tmp_path, fault):
+    source, _ = _profile_source(tmp_path, 'multiband_reproject')
+    target = tmp_path / 'original.tif'
+    report = _run_raster_profile(source, [target], tmp_path, 'multiband_reproject', 'serial')['tasks'][0]
+    _validate_reprojection_profile(source, target, report)
+    tampered = tmp_path / 'tampered.tif'
+    copied = gdal.Translate(str(tampered), str(target), format='GTiff')
+    band = copied.GetRasterBand(copied.RasterCount)
+    mask = np.frombuffer(band.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte), dtype=np.uint8).reshape(
+        copied.RasterYSize, copied.RasterXSize)
+    y, x = np.argwhere(mask != 0)[0]
+    value = np.frombuffer(band.ReadRaster(int(x), int(y), 1, 1, buf_type=gdal.GDT_Float64), dtype=np.float64)[0]
+    band.WriteRaster(int(x), int(y), 1, 1, np.array([value + 123 if fault == 'value' else band.GetNoDataValue()],
+                     dtype=np.float64).tobytes(), buf_type=gdal.GDT_Float64)
+    band = copied = None
+    with pytest.raises(AssertionError):
+        _validate_reprojection_profile(source, tampered, report)
+
+
+@pytest.mark.parametrize('execution_mode', ['serial', 'parallel'])
+def test_directory_mosaic_pair_profile(tmp_path, execution_mode):
+    source, _ = _profile_source(tmp_path)
+    original_hash = _profile_digest(source)
+    directory = _directory_profile_source(source, tmp_path / 'tiles')
+    source_hashes = {p.name: _profile_digest(p) for p in directory.glob('*.tif')}
+    targets = [tmp_path / f'profile-mosaic-{index}' for index in range(2)]
+    report = _run_raster_profile(directory, targets, tmp_path, 'directory_mosaic', execution_mode)
+    _profile_pair_metrics(report)
+    assert report['mosaic_vrts_removed']
+    for target, task in zip(targets, report['tasks']):
+        _validate_directory_profile(source, directory, target, task)
+    assert report['tasks'][0]['cog_sha256'] == report['tasks'][1]['cog_sha256']
+    assert _profile_digest(source) == original_hash
+    assert source_hashes == {p.name: _profile_digest(p) for p in directory.glob('*.tif')}
+    report['source_tile_sha256'] = source_hashes
     print('RASTER_PAIR_PROFILE ' + json.dumps({'source_sha256': original_hash,
           'source_size_bytes': source.stat().st_size, **report}, sort_keys=True))
 
