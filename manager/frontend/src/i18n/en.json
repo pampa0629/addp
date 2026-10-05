@@ -1479,6 +1479,10 @@
           "contentHash": "Content Hash",
           "indexRef": "Search Index Reference",
           "schemaVersion": "Schema Version",
+          "animationSummary": "Animation Summary",
+          "animationSummaryStatus": "Animation Summary Status",
+          "animationFrameCount": "Image Frame Count",
+          "animationDurationMS": "Encoded Frame Delay Sum per Cycle (ms)",
           "exif": "EXIF",
           "tiffPageWidth": "Page width (pixels)",
           "tiffPageHeight": "Page height (pixels)",
@@ -1504,6 +1508,13 @@
         "fieldTooltips": {
           "contentHash": "SHA256 calculated from the file binary content; identical content has the same hash.",
           "indexRef": "Reference to the item record in the Meilisearch assets index; the suffix is the item fingerprint, not the content hash."
+        },
+        "animationSummaryStatus": {
+          "parsed": "Completely Parsed",
+          "not_animated": "Not Animated",
+          "invalid": "Invalid Animation Structure",
+          "budget_exceeded": "Parse Budget Exceeded",
+          "unsupported": "Unsupported Rendering or Interaction"
         },
         "tiffPageStatus": {
           "parsed": "Completely parsed",

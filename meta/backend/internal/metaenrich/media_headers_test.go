@@ -55,8 +55,16 @@ func TestEnrichWebPAndBMPUsesSharedMediaAttributes(t *testing.T) {
 				commonJSON.InterfaceInt64(m["width"]) != 7 || commonJSON.InterfaceInt64(m["height"]) != 5 {
 				t.Fatalf("media facts not mapped: %#v", attrs)
 			}
-			if m["color_space"] != nil || m["duration_ms"] != nil || len(commonJSON.Section(attrs, "format_info")) != 0 || len(commonJSON.Section(attrs, "capabilities.spatial")) != 0 {
+			if m["color_space"] != nil || m["duration_ms"] != nil || len(commonJSON.Section(attrs, "capabilities.spatial")) != 0 {
 				t.Fatalf("invented format/spatial/color facts: %#v", attrs)
+			}
+			if tt.kind == format.FormatWebP {
+				f := commonJSON.Section(attrs, "format_info.webp.animation")
+				if f["summary_status"] != "invalid" || f["frame_count"] != nil || f["duration_ms"] != nil {
+					t.Fatalf("partial animation facts: %#v", f)
+				}
+			} else if len(commonJSON.Section(attrs, "format_info")) != 0 {
+				t.Fatalf("unexpected BMP format facts: %#v", attrs)
 			}
 		})
 	}

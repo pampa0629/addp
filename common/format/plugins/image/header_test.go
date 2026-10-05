@@ -91,8 +91,17 @@ func TestWebPAndBMPReadOnlyHeaderSummaries(t *testing.T) {
 			if m == nil || m.Kind != "image" || m.Width != 7 || m.Height != 5 || m.Encoding != string(tt.format) || m.MIMEType != "image/"+string(tt.format) {
 				t.Fatalf("unexpected media summary: %#v", m)
 			}
-			if m.ColorSpace != "" || m.DurationMS != nil || len(result.FormatInfo) != 0 || result.Spatial != nil {
+			if m.ColorSpace != "" || m.DurationMS != nil || result.Spatial != nil {
 				t.Fatalf("invented color, animation, EXIF or spatial facts: %#v", result)
+			}
+			if tt.format == format.FormatWebP {
+				status := "not_animated"
+				if tt.name == "animation_canvas" {
+					status = "invalid"
+				}
+				requireAnimationStatus(t, result.FormatInfo["animation"].(map[string]interface{}), status)
+			} else if len(result.FormatInfo) != 0 {
+				t.Fatalf("unexpected BMP format facts: %#v", result)
 			}
 			if reader.read > len(tt.content)+4096 {
 				t.Fatalf("read pixel payload: %d bytes", reader.read)

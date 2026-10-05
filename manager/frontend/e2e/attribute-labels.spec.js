@@ -64,6 +64,41 @@ for (const locale of ['zh-cn', 'en']) {
   })
 }
 
+for (const locale of ['zh-cn', 'en']) {
+  for (const kind of ['gif', 'webp']) {
+    test(`shows ${kind} encoded animation timing and diagnostics in ${locale}`, async ({ page }) => {
+      await openAttributes(page, locale, {
+        item: { data_type: 'media', format: kind, layout: 'single' },
+        format_info: { [kind]: { animation: { summary_status: 'parsed', frame_count: 3, duration_ms: 0 } } }
+      })
+      await expect(page.getByRole('tab', { name: locale === 'zh-cn' ? '属性' : 'Attributes', exact: true })).toHaveAttribute('aria-selected', 'true')
+      for (const label of locale === 'zh-cn'
+        ? ['动画摘要状态', '图像帧数', '一轮帧延时合计（毫秒）']
+        : ['Animation Summary Status', 'Image Frame Count', 'Encoded Frame Delay Sum per Cycle (ms)']) {
+        await expect(page.getByText(`${locale === 'zh-cn' ? '动画摘要' : 'Animation Summary'} / ${label}`, { exact: true })).toBeVisible()
+      }
+      await expect(page.getByText(locale === 'zh-cn' ? '已完整解析' : 'Completely Parsed', { exact: true })).toBeVisible()
+      await expect(page.getByText('0', { exact: true })).toBeVisible()
+      await expect(page.getByText('3', { exact: true })).toBeVisible()
+    })
+  }
+  for (const [status, zh, en] of [
+    ['invalid', '动画结构无效', 'Invalid Animation Structure'],
+    ['budget_exceeded', '超出解析预算', 'Parse Budget Exceeded'],
+    ['unsupported', '含不支持的渲染或交互控制', 'Unsupported Rendering or Interaction'],
+    ['not_animated', '非动画', 'Not Animated']
+  ]) {
+    test(`shows animation ${status} without inventing frame facts in ${locale}`, async ({ page }) => {
+      await openAttributes(page, locale, {
+        item: { data_type: 'media', format: 'webp', layout: 'single' },
+        format_info: { webp: { animation: { summary_status: status } } }
+      })
+      await expect(page.getByText(locale === 'zh-cn' ? zh : en, { exact: true })).toBeVisible()
+      await expect(page.getByText(locale === 'zh-cn' ? '动画摘要 / 图像帧数' : 'Animation Summary / Image Frame Count', { exact: true })).toHaveCount(0)
+    })
+  }
+}
+
 for (const unavailable of [false, true]) {
   test(`preserves the attributes deep link while metadata is pending (${unavailable ? 'failure' : 'success'})`, async ({ page }) => {
     let releaseMetadata

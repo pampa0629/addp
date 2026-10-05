@@ -1479,6 +1479,10 @@
           "contentHash": "内容哈希",
           "indexRef": "搜索索引引用",
           "schemaVersion": "规范版本",
+          "animationSummary": "动画摘要",
+          "animationSummaryStatus": "动画摘要状态",
+          "animationFrameCount": "图像帧数",
+          "animationDurationMS": "一轮帧延时合计（毫秒）",
           "exif": "EXIF",
           "tiffPageWidth": "页宽（像素）",
           "tiffPageHeight": "页高（像素）",
@@ -1504,6 +1508,13 @@
         "fieldTooltips": {
           "contentHash": "基于文件二进制内容计算的 SHA256；内容相同则哈希相同。",
           "indexRef": "指向 Meilisearch assets 索引中的 item 记录；后缀是 item 指纹，不是内容哈希。"
+        },
+        "animationSummaryStatus": {
+          "parsed": "已完整解析",
+          "not_animated": "非动画",
+          "invalid": "动画结构无效",
+          "budget_exceeded": "超出解析预算",
+          "unsupported": "含不支持的渲染或交互控制"
         },
         "tiffPageStatus": {
           "parsed": "已完整解析",

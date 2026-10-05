@@ -969,6 +969,14 @@ const fieldLabelKeys = {
 }
 
 const fieldPathLabelKeys = {
+  'format_info.gif.animation': 'manager.explorer.attributes.fields.animationSummary',
+  'format_info.webp.animation': 'manager.explorer.attributes.fields.animationSummary',
+  'format_info.gif.animation.summary_status': 'manager.explorer.attributes.fields.animationSummaryStatus',
+  'format_info.webp.animation.summary_status': 'manager.explorer.attributes.fields.animationSummaryStatus',
+  'format_info.gif.animation.frame_count': 'manager.explorer.attributes.fields.animationFrameCount',
+  'format_info.webp.animation.frame_count': 'manager.explorer.attributes.fields.animationFrameCount',
+  'format_info.gif.animation.duration_ms': 'manager.explorer.attributes.fields.animationDurationMS',
+  'format_info.webp.animation.duration_ms': 'manager.explorer.attributes.fields.animationDurationMS',
   'type_info.graph.model': 'manager.explorer.attributes.fields.graphModel',
   'format_info.tiff.pages': 'manager.explorer.attributes.fields.tiffPages',
   'format_info.tiff.page_summary_status': 'manager.explorer.attributes.fields.tiffPageStatus',
@@ -1631,6 +1639,9 @@ const formatScalar = (value) => {
 
 const formatAttributeDisplay = (pathParts, value) => {
   const path = pathParts.join('.')
+  if (path === 'format_info.gif.animation.summary_status' || path === 'format_info.webp.animation.summary_status') {
+    return formatMappedValue('manager.explorer.attributes.animationSummaryStatus', value)
+  }
   if (path === 'capabilities.extraction.status') {
     return formatMappedValue('manager.explorer.attributes.extractionStatus', value)
   }

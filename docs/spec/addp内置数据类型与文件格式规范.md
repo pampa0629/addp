@@ -1194,7 +1194,7 @@ Manager 展示 ZIP 容器时消费 `type_info.container`。进入某个普通文
 
 TIFF / GeoTIFF 如果存在 `.tfw`、`.tifw`、`.wld`、`.prj`、`.aux.xml`、`.ovr`、`.hdr` 等同 basename sidecar，应按 `layout=multi` 归并为一个 item，primary content 仍为 `.tif` / `.tiff`。如果没有 sidecar，则按普通 `layout=single` 图片 item 处理。具体 ref 白名单见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)。
 
-WebP、BMP 的 descriptor 与 `MediaInfoProvider` 统一由图片插件持有，默认 `single + media`，保留 `.webp` / `image/webp` 和 `.bmp` / `image/bmp`、`image/x-ms-bmp` 识别事实。头部摘要读取上限为 1 MiB，只返回编码像素宽高、`encoding=webp/bmp` 和 canonical MIME，不声明缩略图、EXIF、ICC 色彩配置、动画帧数或时长，也不凭解码器默认模型补填 `color_space`。WebP 覆盖 VP8、VP8L、VP8X 头部；动画仅记录 VP8X 画布尺寸。BMP 覆盖 BITMAPINFOHEADER / V4 / V5 的无压缩 8/24/32 位及解码器支持的默认 RGBA bitfields，含 top-down；其他位深、压缩或 DIB 变体明确拒绝。非法、截断、格式不符或超预算头部返回错误；摘要成功不代表完整像素数据有效。Manager 沿用媒体原始内容 URL 预览，实际渲染取决于浏览器。
+WebP、BMP 的 descriptor 与 `MediaInfoProvider` 统一由图片插件持有，默认 `single + media`，保留 `.webp` / `image/webp` 和 `.bmp` / `image/bmp`、`image/x-ms-bmp` 识别事实。头部摘要读取上限为 1 MiB，只返回编码像素宽高、`encoding=webp/bmp` 和 canonical MIME，不声明缩略图、EXIF 或 ICC 色彩配置，也不凭解码器默认模型补填 `color_space`。WebP 覆盖 VP8、VP8L、VP8X 头部；动画画布尺寸由 VP8X 提供，帧摘要按下述有界动画规则读取。BMP 覆盖 BITMAPINFOHEADER / V4 / V5 的无压缩 8/24/32 位及解码器支持的默认 RGBA bitfields，含 top-down；其他位深、压缩或 DIB 变体明确拒绝。非法、截断、格式不符或超预算头部返回错误；摘要成功不代表完整像素数据有效。Manager 沿用媒体原始内容 URL 预览，实际渲染取决于浏览器。
 
 SVG、AVIF、HEIC / HEIF 仍只有 descriptor；在仅能 raw / range 预览时，不应标记为后端已经具备 `MediaInfoProvider`。
 
@@ -1225,6 +1225,14 @@ JPEG EXIF 摘要通过现有 `MediaInfoProvider` 一次读取提供，由 Meta �
 曝光时间、F 值和焦距须大于零；曝光补偿允许负值和零。分母为零、类型或数量错误、越界数据记为 invalid 并省略该字段，其他合法字段保留。缺失标签不补值，不从 APEX 快门或光圈标签推导曝光时间或 F 值。此阶段不解析感光度、GPS、MakerNote 或缩略图，也不新增 spatial 事实。相关 tag 定义见 [CIPA Exif 规范](https://www.cipa.jp/std/documents/e/DC-X008-Translation-2019-E.pdf)。
 
 JPEG 只扫描图像扫描数据前的 marker segment，总源读取预算为 1 MiB，支持非 seekable 输入及 TIFF 两种字节序。相机字符串与小数秒长度最多 1024 字节；未知或部分未知的拍摄时间不补值。`exif_status` 表示 `absent`（完整检查后没有 EXIF）、`parsed`（支持范围内摘要合法）、`invalid`（EXIF IFD 结构、受支持字段或 marker 非法，包括重复 tag 和 EXIF APP1）、`budget_exceeded`（无法在预算内完成检查）；非法或未完成检查不得被标记为没有 EXIF。非法 EXIF 不阻止已确认的像素尺寸返回，仅保留合法字段；重复 EXIF APP1 不选择其中任意一份。如果标准 JPEG 解码器不能在预算内确认尺寸，则返回解析错误，不输出猜测尺寸。实际 I/O 错误和取消仍返回错误，不吞为缺失元数据。
+
+#### GIF / WebP 动画摘要
+
+GIF 和动画 WebP 继续使用 `single + media + kind=image`。图片插件通过现有 `MediaInfoProvider` 提供 `format_info.gif.animation` / `format_info.webp.animation` 摘要对象，包含 `summary_status`；只有 `parsed` 才输出完整 `frame_count` 和 `duration_ms`。摘要对象在刷新时整体替换，避免旧帧数与新状态混合。这里的时长是单轮各图像帧的源编码延时合计（毫秒），不乘循环次数、不采用浏览器最短帧延时、不表达无限循环的总播放时长，也不写入 `type_info.media.duration_ms`。GIF 以 Image Descriptor 计帧，Graphic Control Extension 的百分之一秒延时乘 10；缺少控制扩展的帧按源默认零延时计。WebP 以 ANMF 计帧，延时直接为毫秒。宽高仍是画布尺寸。
+
+头部确认沿用 1 MiB 上限；包括头部在内的总顺序读取不超过 8 MiB，最多 10000 帧和 65536 个块（GIF 含数据子块）。不解压或缓存压缩像素，只按块长度跳过。GIF 必须读到 Trailer，动画 WebP 必须完成 RIFF 声明边界内的 chunk 检查；未完成时不输出部分帧数或时长。`invalid` 表示非法长度、越界帧、重复/错误控制块或截断；`budget_exceeded` 表示读字节、帧或块超预算；GIF Plain Text 或交互等待控制为 `unsupported`，不把文本渲染或用户输入等待猜成普通图片动画。非动画 WebP 为 `not_animated`，保留原有头部摘要，不扫描像素以构造帧事实。摘要只校验受支持的容器结构，不保证压缩像素可解码；实际 I/O 错误及取消返回错误，非法动画结构仍保留已确认画布尺寸。
+
+依据：[GIF89a](https://www.w3.org/Graphics/GIF/spec-gif89a.txt) 的 Graphic Control Extension 和 Image Descriptor，以及 [WebP RIFF](https://developers.google.com/speed/webp/docs/riff_container) 的 ANIM、ANMF 和 chunk 边界。
 
 #### TIFF 页目录与分页基础预览
 

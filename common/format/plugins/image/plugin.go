@@ -199,10 +199,15 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 	var limited *io.LimitedReader
 	var reader io.Reader = input
 	isJPEG := signature == [2]byte{0xff, 0xd8}
+	isAnimationImage := p.Format() == format.FormatGIF || p.Format() == format.FormatWebP ||
+		signature == [2]byte{'G', 'I'} || signature == [2]byte{'R', 'I'}
 	isHeaderImage := p.Format() == format.FormatWebP || p.Format() == format.FormatBMP ||
 		signature == [2]byte{'R', 'I'} || signature == [2]byte{'B', 'M'}
 	if isJPEG {
 		limited = &io.LimitedReader{R: input, N: jpegMetadataReadLimit - 2}
+		reader = limited
+	} else if isAnimationImage {
+		limited = &io.LimitedReader{R: input, N: animationReadLimit - 2}
 		reader = limited
 	} else if isHeaderImage {
 		limited = &io.LimitedReader{R: input, N: imageHeaderReadLimit - 2}
@@ -211,20 +216,23 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 	reader = io.MultiReader(bytes.NewReader(signature[:]), reader)
 	var header bytes.Buffer
 	decoder := reader
-	if isJPEG {
+	if isJPEG || isAnimationImage {
 		decoder = io.TeeReader(reader, &header)
+	}
+	if isAnimationImage {
+		decoder = io.LimitReader(decoder, imageHeaderReadLimit)
 	}
 	cfg, formatName, err := image.DecodeConfig(decoder)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
 	}
 	if err != nil {
-		if isHeaderImage && limited.N == 0 {
+		if (isAnimationImage && header.Len() == imageHeaderReadLimit) || (isHeaderImage && limited.N == 0) {
 			return nil, fmt.Errorf("image header exceeds %d byte read budget: %w", imageHeaderReadLimit, err)
 		}
 		return nil, fmt.Errorf("failed to decode image: %w", err)
 	}
-	if p.Format() == format.FormatWebP || p.Format() == format.FormatBMP {
+	if p.Format() == format.FormatWebP || p.Format() == format.FormatBMP || p.Format() == format.FormatGIF {
 		if formatName != string(p.Format()) {
 			return nil, fmt.Errorf("image format %s does not match declared format %s", formatName, p.Format())
 		}
@@ -248,6 +256,12 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 	result := &format.MediaDescribeResult{Media: info}
 	if formatName == "jpeg" {
 		result.FormatInfo, err = describeJPEGExif(ctx, io.MultiReader(bytes.NewReader(header.Bytes()), reader), limited)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if formatName == "gif" || formatName == "webp" {
+		result.FormatInfo, err = describeAnimation(ctx, formatName, io.MultiReader(bytes.NewReader(header.Bytes()), reader), limited)
 		if err != nil {
 			return nil, err
 		}
