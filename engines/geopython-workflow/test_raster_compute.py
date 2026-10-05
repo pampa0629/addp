@@ -116,16 +116,16 @@ def _raster_profile_worker(source, target, scratch, connection):
         with raster_workspace():
             raster = measure('raster_load', lambda: raster_load(source_plan(source)))
             facts = raster_info(raster)
-            assert facts['band_count'] == 1
+            expression = '(' + '+'.join(f'b{i}' for i in range(1, facts['band_count'] + 1)) + ')*2+1'
             stats = measure('raster_statistics', lambda: raster_statistics(raster))
             histogram = measure('raster_histogram', lambda: raster_histogram(raster))
-            computed = measure('raster_band_math', lambda: raster_band_math(raster, 'b1*2+1'))
+            computed = measure('raster_band_math', lambda: raster_band_math(raster, expression))
             saved = measure('raster_save_cog', lambda: raster_save(computed, target_plan(target), profile='cog'))
             reloaded = measure('raster_load_saved', lambda: raster_load(source_plan(target)))
             output_stats = measure('raster_statistics_saved', lambda: raster_statistics(reloaded))
             validation = measure('validate_cog_saved', lambda: validate_cog(reloaded))
         usage = resource.getrusage(resource.RUSAGE_SELF)
-        connection.send({'source': facts, 'statistics': stats, 'histogram': histogram,
+        connection.send({'source': facts, 'expression': expression, 'statistics': stats, 'histogram': histogram,
                          'saved': saved, 'output_statistics': output_stats, 'validation': validation,
                          'workspace_removed': not workspace.exists(), 'stages': stages,
                          'elapsed_seconds': time.perf_counter() - started,
@@ -147,8 +147,12 @@ def test_multiblock_cog_roundtrip_profile(tmp_path):
     source = Path(external).resolve() if external is not None else tmp_path / 'profile-source.tif'
     if external is None:
         values = (np.arange(1025 * 513).reshape(513, 1025) % 2001 - 1000).astype(float)
-        values.flat[::97] = -32768
-        create_raster(source, values, crs='EPSG:32650', nodata=-32768)
+        bands = []
+        for index in range(3):
+            band = values + index * 7
+            band.flat[index::97] = -32768
+            bands.append(band)
+        create_raster(source, np.stack(bands), crs='EPSG:32650', nodata=-32768)
     assert source.is_file(), f'Raster profile source does not exist: {source}'
 
     def digest(path):
@@ -181,56 +185,87 @@ def test_multiblock_cog_roundtrip_profile(tmp_path):
 
     original = gdal.Open(str(source), gdal.GA_ReadOnly)
     output = gdal.Open(str(target), gdal.GA_ReadOnly)
-    assert original.RasterCount == output.RasterCount == 1
+    assert original.RasterCount == report['source']['band_count']
+    assert output.RasterCount == 1
+    assert all(not gdal.DataTypeIsComplex(original.GetRasterBand(i).DataType)
+               for i in range(1, original.RasterCount + 1))
+    assert all(original.GetRasterBand(i).GetColorInterpretation() != gdal.GCI_AlphaBand
+               for i in range(1, original.RasterCount + 1))
     assert (original.RasterXSize, original.RasterYSize) == (output.RasterXSize, output.RasterYSize)
     assert original.GetGeoTransform() == output.GetGeoTransform()
     assert original.GetSpatialRef().IsSame(output.GetSpatialRef())
-    source_band, output_band = original.GetRasterBand(1), output.GetRasterBand(1)
+    output_band = output.GetRasterBand(1)
     assert np.isnan(output_band.GetNoDataValue())
     assert output_band.DataType == gdal.GDT_Float64
     assert output_band.GetOverviewCount() > 0
-    total, count, sum_values, sum_squares = original.RasterXSize * original.RasterYSize, 0, 0.0, 0.0
-    minimum, maximum = np.inf, -np.inf
+    total = original.RasterXSize * original.RasterYSize
+    # Centered moments use a fixed sample origin rather than the operator's block-merge algorithm.
+    moments = [{'count': 0, 'origin': None, 'sum': 0.0, 'squares': 0.0,
+                'min': np.inf, 'max': -np.inf} for _ in range(2)]
+    band_counts = [0] * original.RasterCount
     bins = np.zeros(256, dtype=np.int64)
     # Different block shape and independent GDAL/NumPy reads avoid reusing the operator's oracle.
     for y in range(0, original.RasterYSize, 127):
         height = min(127, original.RasterYSize - y)
-        values = np.frombuffer(source_band.ReadRaster(0, y, original.RasterXSize, height,
-                              buf_type=gdal.GDT_Float64), dtype=np.float64)
-        valid = np.frombuffer(source_band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height),
-                              dtype=np.uint8) != 0
-        valid &= np.isfinite(values)
-        nodata = source_band.GetNoDataValue()
-        if nodata is not None:
-            valid &= values != nodata
+        combined = np.zeros(original.RasterXSize * height, dtype=np.float64)
+        joint_valid = np.ones(combined.size, dtype=bool)
+        for index in range(1, original.RasterCount + 1):
+            band = original.GetRasterBand(index)
+            values = np.frombuffer(band.ReadRaster(0, y, original.RasterXSize, height,
+                                  buf_type=gdal.GDT_Float64), dtype=np.float64)
+            valid = np.frombuffer(band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height,
+                                 buf_type=gdal.GDT_Byte), dtype=np.uint8) != 0
+            valid &= np.isfinite(values)
+            nodata = band.GetNoDataValue()
+            if nodata is not None:
+                valid &= values != nodata
+            band_counts[index - 1] += int(valid.sum())
+            joint_valid &= valid
+            combined += values
+            if index == 1:
+                selected_source = values[valid]
+                bins += np.histogram(selected_source, bins=report['histogram']['edges'])[0]
+        expected = combined * 2 + 1
+        joint_valid &= np.isfinite(expected)
         actual = np.frombuffer(output_band.ReadRaster(0, y, original.RasterXSize, height,
                               buf_type=gdal.GDT_Float64), dtype=np.float64)
-        np.testing.assert_array_equal(actual[valid], values[valid] * 2 + 1)
-        assert np.isnan(actual[~valid]).all()
-        output_valid = np.frombuffer(output_band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height),
-                                    dtype=np.uint8) != 0
-        np.testing.assert_array_equal(output_valid, valid)
-        selected = values[valid]
-        count += selected.size
-        sum_values += float(selected.sum())
-        sum_squares += float(np.square(selected).sum())
-        if selected.size:
-            minimum, maximum = min(minimum, selected.min()), max(maximum, selected.max())
-        bins += np.histogram(selected, bins=report['histogram']['edges'])[0]
-    assert count > 0
-    mean = sum_values / count
-    stddev = np.sqrt(max(0, sum_squares / count - mean * mean))
-    for stats, offset, scale in ((report['statistics'], 0, 1), (report['output_statistics'], 1, 2)):
+        np.testing.assert_array_equal(actual[joint_valid], expected[joint_valid])
+        assert np.isnan(actual[~joint_valid]).all()
+        output_valid = np.frombuffer(output_band.GetMaskBand().ReadRaster(0, y, original.RasterXSize, height,
+                                    buf_type=gdal.GDT_Byte), dtype=np.uint8) != 0
+        np.testing.assert_array_equal(output_valid, joint_valid)
+        for accumulator, selected in zip(moments, (selected_source, expected[joint_valid])):
+            if not selected.size:
+                continue
+            if accumulator['origin'] is None:
+                accumulator['origin'] = float(selected[0])
+            centered = selected - accumulator['origin']
+            accumulator['count'] += selected.size
+            accumulator['sum'] += float(centered.sum())
+            accumulator['squares'] += float(np.square(centered).sum())
+            accumulator['min'] = min(accumulator['min'], float(selected.min()))
+            accumulator['max'] = max(accumulator['max'], float(selected.max()))
+    for stats, accumulator in zip((report['statistics'], report['output_statistics']), moments):
+        count = accumulator['count']
+        assert count > 0
+        centered_mean = accumulator['sum'] / count
+        mean = accumulator['origin'] + centered_mean
+        stddev = np.sqrt(max(0, accumulator['squares'] / count - centered_mean ** 2))
         assert (stats['valid_count'], stats['invalid_count']) == (count, total - count)
         np.testing.assert_allclose([stats['min'], stats['max'], stats['mean'], stats['stddev']],
-                                   [minimum * scale + offset, maximum * scale + offset,
-                                    mean * scale + offset, stddev * scale], rtol=1e-8, atol=1e-8)
+                                   [accumulator['min'], accumulator['max'], mean, stddev],
+                                   rtol=1e-8, atol=1e-8)
+    count = moments[0]['count']
+    minimum, maximum = moments[0]['min'], moments[0]['max']
+    report['source_band_valid_counts'] = band_counts
+    if external is None:
+        assert moments[1]['count'] < min(band_counts)
     histogram = report['histogram']
     assert histogram['counts'] == bins.tolist()
     assert (histogram['valid_count'], histogram['invalid_count'], histogram['outside_count']) == (count, total - count, 0)
     bounds = [minimum, maximum] if minimum < maximum else [minimum - 0.5, maximum + 0.5]
     np.testing.assert_array_equal(histogram['edges'], np.linspace(*bounds, 257))
-    source_band = output_band = original = output = None
+    band = output_band = original = output = None
     assert digest(source) == original_hash
     print('RASTER_PROFILE ' + json.dumps({'source_sha256': original_hash,
           'source_size_bytes': source.stat().st_size, **report}, sort_keys=True))
