@@ -6,6 +6,7 @@ from pathlib import Path
 import platform
 import tempfile
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pytest
@@ -85,13 +86,16 @@ def test_statistics_combines_blocks_and_all_nodata(tmp_path):
         assert raster_histogram(raster)['counts'] == []
 
 
-def _raster_profile_worker(source, target, scratch, connection, profile_case):
-    """Measure the operator process independently of the parent's pixel oracle."""
+def _profile_process_usage():
     import resource
     import sys
-    import traceback
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return {'process_cpu_seconds': usage.ru_utime + usage.ru_stime,
+            'process_peak_rss_bytes': int(usage.ru_maxrss * (1 if sys.platform == 'darwin' else 1024))}
 
-    tempfile.tempdir = str(scratch)
+
+def _raster_profile_task(source, target, profile_case, epoch, barrier=None):
+    """Each thread owns its workspace and GDAL datasets; cache and RSS are process-wide."""
     stages = []
     workspace = None
 
@@ -99,45 +103,64 @@ def _raster_profile_worker(source, target, scratch, connection, profile_case):
         nonlocal workspace
         started = time.perf_counter()
         result = operation()
-        elapsed = time.perf_counter() - started
+        finished = time.perf_counter()
         if workspace is None:
             workspace = result.workspace
-        usage = resource.getrusage(resource.RUSAGE_SELF)
         observed_bytes = sum(p.stat().st_size for p in workspace.rglob('*') if p.is_file())
         if target.is_file():
             observed_bytes += target.stat().st_size
-        stages.append({'operator': name, 'elapsed_seconds': elapsed,
-                       'process_peak_rss_bytes': int(usage.ru_maxrss * (1 if sys.platform == 'darwin' else 1024)),
+        stages.append({'operator': name, 'elapsed_seconds': finished - started,
+                       'started_seconds': started - epoch, 'finished_seconds': finished - epoch,
+                       'process_peak_rss_bytes': _profile_process_usage()['process_peak_rss_bytes'],
                        'observed_file_bytes': observed_bytes})
         return result
 
+    if barrier is not None:
+        barrier.wait(timeout=30)
+    started = time.perf_counter()
+    with raster_workspace():
+        raster = measure('raster_load', lambda: raster_load(source_plan(source)))
+        facts = raster_info(raster)
+        expression = '(' + '+'.join(f'b{i}' for i in range(1, facts['band_count'] + 1)) + ')*2+1'
+        stats = measure('raster_statistics', lambda: raster_statistics(raster))
+        histogram = measure('raster_histogram', lambda: raster_histogram(raster))
+        computed = measure('raster_band_math', lambda: raster_band_math(raster, expression))
+        resampling = None
+        if profile_case == 'average_resample':
+            size = [(facts['width'] + 1) // 2, (facts['height'] + 1) // 2]
+            computed = measure('raster_resample_average',
+                               lambda: raster_resample(computed, size=size, resampling='average'))
+            resampling = {'algorithm': 'average', 'size': size}
+        saved = measure('raster_save_cog', lambda: raster_save(computed, target_plan(target), profile='cog'))
+        reloaded = measure('raster_load_saved', lambda: raster_load(source_plan(target)))
+        output_stats = measure('raster_statistics_saved', lambda: raster_statistics(reloaded))
+        validation = measure('validate_cog_saved', lambda: validate_cog(reloaded))
+    finished = time.perf_counter()
+    return {'source': facts, 'expression': expression, 'profile_case': profile_case,
+            'resampling': resampling, 'statistics': stats, 'histogram': histogram,
+            'saved': saved, 'output_statistics': output_stats, 'validation': validation,
+            'workspace': str(workspace), 'workspace_removed': not workspace.exists(), 'stages': stages,
+            'thread_id': threading.get_ident(), 'started_seconds': started - epoch,
+            'finished_seconds': finished - epoch, 'elapsed_seconds': finished - started}
+
+
+def _raster_profile_worker(source, targets, scratch, connection, profile_case, execution_mode):
+    """Measure one process independently of the parent's pixel oracle."""
+    import traceback
+    # Set the process-wide temporary root once, before starting any threads.
+    tempfile.tempdir = str(scratch)
     try:
         started = time.perf_counter()
-        with raster_workspace():
-            raster = measure('raster_load', lambda: raster_load(source_plan(source)))
-            facts = raster_info(raster)
-            expression = '(' + '+'.join(f'b{i}' for i in range(1, facts['band_count'] + 1)) + ')*2+1'
-            stats = measure('raster_statistics', lambda: raster_statistics(raster))
-            histogram = measure('raster_histogram', lambda: raster_histogram(raster))
-            computed = measure('raster_band_math', lambda: raster_band_math(raster, expression))
-            resampling = None
-            if profile_case == 'average_resample':
-                size = [(facts['width'] + 1) // 2, (facts['height'] + 1) // 2]
-                computed = measure('raster_resample_average',
-                                   lambda: raster_resample(computed, size=size, resampling='average'))
-                resampling = {'algorithm': 'average', 'size': size}
-            saved = measure('raster_save_cog', lambda: raster_save(computed, target_plan(target), profile='cog'))
-            reloaded = measure('raster_load_saved', lambda: raster_load(source_plan(target)))
-            output_stats = measure('raster_statistics_saved', lambda: raster_statistics(reloaded))
-            validation = measure('validate_cog_saved', lambda: validate_cog(reloaded))
-        usage = resource.getrusage(resource.RUSAGE_SELF)
-        connection.send({'source': facts, 'expression': expression, 'profile_case': profile_case,
-                         'resampling': resampling, 'statistics': stats, 'histogram': histogram,
-                         'saved': saved, 'output_statistics': output_stats, 'validation': validation,
-                         'workspace_removed': not workspace.exists(), 'stages': stages,
-                         'elapsed_seconds': time.perf_counter() - started,
-                         'process_cpu_seconds': usage.ru_utime + usage.ru_stime,
-                         'process_peak_rss_bytes': int(usage.ru_maxrss * (1 if sys.platform == 'darwin' else 1024)),
+        if execution_mode == 'parallel':
+            barrier = threading.Barrier(len(targets))
+            with ThreadPoolExecutor(max_workers=len(targets)) as executor:
+                futures = [executor.submit(_raster_profile_task, source, target, profile_case, started, barrier)
+                           for target in targets]
+                reports = [future.result() for future in futures]
+        else:
+            reports = [_raster_profile_task(source, target, profile_case, started) for target in targets]
+        connection.send({'tasks': reports, 'execution_mode': execution_mode,
+                         'elapsed_seconds': time.perf_counter() - started, **_profile_process_usage(),
                          'environment': {'platform': platform.platform(), 'machine': platform.machine(),
                                          'cpu_count': os.cpu_count(), 'python': platform.python_version(),
                                          'gdal': gdal.VersionInfo('RELEASE_NAME'),
@@ -146,6 +169,29 @@ def _raster_profile_worker(source, target, scratch, connection, profile_case):
         connection.send({'error': traceback.format_exc()})
     finally:
         connection.close()
+
+
+def _run_raster_profile(source, targets, tmp_path, profile_case, execution_mode):
+    context = multiprocessing.get_context('spawn')
+    receiver, sender = context.Pipe(duplex=False)
+    # Parent-owned scratch is also reclaimed after child failure or termination.
+    with tempfile.TemporaryDirectory(prefix='profile-worker-', dir=tmp_path) as scratch:
+        process = context.Process(target=_raster_profile_worker,
+                                  args=(source, targets, Path(scratch), sender, profile_case, execution_mode))
+        process.start()
+        sender.close()
+        try:
+            assert receiver.poll(300), 'Raster profile worker exceeded 300 seconds'
+            report = receiver.recv()
+            process.join(10)
+            assert process.exitcode == 0
+        finally:
+            if process.is_alive():
+                process.terminate()
+                process.join(10)
+            receiver.close()
+    assert 'error' not in report, report.get('error')
+    return report
 
 
 def _profile_values(original, y, height):
@@ -243,9 +289,7 @@ def test_profile_area_oracle_fractional_edges_and_joint_nodata(tmp_path):
     original = None
 
 
-@pytest.mark.parametrize('profile_case', ['band_math', 'average_resample'])
-def test_multiblock_cog_roundtrip_profile(tmp_path, profile_case):
-    """T1 correctness gate; an external TIFF uses the same path for local profiling."""
+def _profile_source(tmp_path):
     external = os.environ.get('ADDP_RASTER_PROFILE_SOURCE')
     source = Path(external).resolve() if external is not None else tmp_path / 'profile-source.tif'
     if external is None:
@@ -258,31 +302,15 @@ def test_multiblock_cog_roundtrip_profile(tmp_path, profile_case):
         create_raster(source, np.stack(bands), crs='EPSG:32650', nodata=-32768)
     assert source.is_file(), f'Raster profile source does not exist: {source}'
 
-    def digest(path):
-        with path.open('rb') as stream:
-            return hashlib.file_digest(stream, 'sha256').hexdigest()
+    return source, external is None
 
-    original_hash = digest(source)
-    target = tmp_path / 'profile-result.tif'
-    context = multiprocessing.get_context('spawn')
-    receiver, sender = context.Pipe(duplex=False)
-    # Parent-owned scratch is also reclaimed after child failure or termination.
-    with tempfile.TemporaryDirectory(prefix='profile-worker-', dir=tmp_path) as scratch:
-        process = context.Process(target=_raster_profile_worker,
-                                  args=(source, target, Path(scratch), sender, profile_case))
-        process.start()
-        sender.close()
-        try:
-            assert receiver.poll(300), 'Raster profile worker exceeded 300 seconds'
-            report = receiver.recv()
-            process.join(10)
-            assert process.exitcode == 0
-        finally:
-            if process.is_alive():
-                process.terminate()
-                process.join(10)
-            receiver.close()
-    assert 'error' not in report, report.get('error')
+
+def _profile_digest(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def _validate_profile_result(source, target, report, profile_case, original_hash, default_source):
     assert report['workspace_removed']
     assert report['profile_case'] == profile_case
     assert report['validation'] == {'valid': True, 'warnings': [], 'errors': []}
@@ -360,7 +388,7 @@ def test_multiblock_cog_roundtrip_profile(tmp_path, profile_case):
     count = moments[0]['count']
     minimum, maximum = moments[0]['min'], moments[0]['max']
     report['source_band_valid_counts'] = band_counts
-    if external is None and profile_case == 'band_math':
+    if default_source and profile_case == 'band_math':
         assert moments[1]['count'] < min(band_counts)
     histogram = report['histogram']
     assert histogram['counts'] == bins.tolist()
@@ -368,8 +396,48 @@ def test_multiblock_cog_roundtrip_profile(tmp_path, profile_case):
     bounds = [minimum, maximum] if minimum < maximum else [minimum - 0.5, maximum + 0.5]
     np.testing.assert_array_equal(histogram['edges'], np.linspace(*bounds, 257))
     output_band = original = output = None
-    assert digest(source) == original_hash
+    assert _profile_digest(source) == original_hash
+
+
+@pytest.mark.parametrize('profile_case', ['band_math', 'average_resample'])
+def test_multiblock_cog_roundtrip_profile(tmp_path, profile_case):
+    """T1 correctness gate; an external TIFF uses the same path for local profiling."""
+    source, default_source = _profile_source(tmp_path)
+    original_hash = _profile_digest(source)
+    target = tmp_path / 'profile-result.tif'
+    batch = _run_raster_profile(source, [target], tmp_path, profile_case, 'serial')
+    report = {**batch['tasks'][0], **{key: batch[key] for key in
+              ('environment', 'process_cpu_seconds', 'process_peak_rss_bytes')}}
+    _validate_profile_result(source, target, report, profile_case, original_hash, default_source)
     print('RASTER_PROFILE ' + json.dumps({'source_sha256': original_hash,
+          'source_size_bytes': source.stat().st_size, **report}, sort_keys=True))
+
+
+@pytest.mark.parametrize('execution_mode', ['serial', 'parallel'])
+def test_same_process_raster_pair_profile(tmp_path, execution_mode):
+    """Two complete chains share the process cache, with independent files and full oracles."""
+    source, default_source = _profile_source(tmp_path)
+    original_hash = _profile_digest(source)
+    targets = [tmp_path / f'profile-result-{index}.tif' for index in range(2)]
+    report = _run_raster_profile(source, targets, tmp_path, 'average_resample', execution_mode)
+    first, second = report['tasks']
+    assert first['workspace'] != second['workspace']
+    overlap = min(task['finished_seconds'] for task in report['tasks']) - max(
+        task['started_seconds'] for task in report['tasks'])
+    if execution_mode == 'parallel':
+        assert first['thread_id'] != second['thread_id']
+        assert overlap > 0
+    else:
+        assert first['finished_seconds'] <= second['started_seconds']
+    report['task_overlap_seconds'] = max(0, overlap)
+    report['throughput_tasks_per_second'] = len(targets) / report['elapsed_seconds']
+    for target, task in zip(targets, report['tasks']):
+        _validate_profile_result(source, target, task, 'average_resample', original_hash, default_source)
+        assert not Path(task['workspace']).exists()
+        task['output_sha256'] = _profile_digest(target)
+    assert first['output_sha256'] == second['output_sha256']
+    assert _profile_digest(source) == original_hash
+    print('RASTER_PAIR_PROFILE ' + json.dumps({'source_sha256': original_hash,
           'source_size_bytes': source.stat().st_size, **report}, sort_keys=True))
 
 
