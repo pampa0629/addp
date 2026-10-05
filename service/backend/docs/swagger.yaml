@@ -54,6 +54,7 @@ definitions:
   datatype.DataType:
     enum:
     - unknown
+    - key_value
     - table
     - document
     - media
@@ -66,6 +67,7 @@ definitions:
     type: string
     x-enum-varnames:
     - Unknown
+    - KeyValue
     - Table
     - Document
     - Media

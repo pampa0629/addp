@@ -3901,6 +3901,7 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "unknown",
+                "key_value",
                 "table",
                 "document",
                 "media",
@@ -3913,6 +3914,7 @@ const docTemplate = `{
             ],
             "x-enum-varnames": [
                 "Unknown",
+                "KeyValue",
                 "Table",
                 "Document",
                 "Media",
