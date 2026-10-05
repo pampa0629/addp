@@ -252,13 +252,14 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   const header = beforeDrag.find(row => row.text === rootTitle || (row.text.endsWith('…') && rootTitle.startsWith(row.text.slice(0, -1))))
   expect(header).toBeTruthy()
   const display = beforeDrag.filter(row => row.text === 'person_display_name').at(-1)
-  await dragLineageTable(page, canvas, header.text, -30, 30)
-  await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === header.text)?.y).toBeCloseTo(header.y + 30, 1)
-  const moved = (await lineageCanvasText(canvas)).filter(row => row.text === 'person_display_name').at(-1)
-  expect(moved.x).toBeCloseTo(display.x - 30, 1)
-  expect(moved.y).toBeCloseTo(display.y + 30, 1)
+  let moved
   let dragGeometry
   try {
+    await dragLineageTable(page, canvas, header.text, -30, 30)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === header.text)?.y).toBeCloseTo(header.y + 30, 1)
+    moved = (await lineageCanvasText(canvas)).filter(row => row.text === 'person_display_name').at(-1)
+    expect(moved.x).toBeCloseTo(display.x - 30, 1)
+    expect(moved.y).toBeCloseTo(display.y + 30, 1)
     await expect.poll(async () => {
       dragGeometry = await lineageCanvasSnapshot(canvas)
       const target = dragGeometry.rows.filter(row => row.text === 'person_display_name').at(-1)
@@ -271,7 +272,9 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
       })
     }).toBe(true)
   } finally {
-    // Keep the observed geometry even if the Hosted endpoint assertion fails.
+    // Retain geometry even when dragging fails before the endpoint assertion.
+    dragGeometry = await lineageCanvasSnapshot(canvas)
+    moved = dragGeometry.rows.filter(row => row.text === 'person_display_name').at(-1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'field-lineage-drag-geometry.json'), JSON.stringify({ before: display, after: moved, ...dragGeometry }, null, 2))
   }
   await dwd.frame.getByRole('button', { name: '自动布局', exact: true }).click()

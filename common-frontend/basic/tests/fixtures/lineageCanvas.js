@@ -94,16 +94,22 @@ export async function observeLineageCanvas(page) {
 }
 
 export async function lineageCanvasText(canvas) {
-  return canvas.evaluate(element => window.__lineageCanvasText.get(element) || [])
+  return (await lineageCanvasSnapshot(canvas)).rows
 }
 
 // Deduplicate halo/key strokes; retain the actual field-port endpoints.
 export async function lineageCanvasSnapshot(canvas) {
-  return canvas.evaluate(element => ({
-    rows: window.__lineageCanvasText.get(element) || [],
-    paths: [...new Map((window.__lineageCanvasPaths.get(element) || [])
-      .map(points => [JSON.stringify(points), points])).values()]
-  }))
+  return canvas.evaluate(async element => {
+    // DOM actions and G6 layout completion precede its queued Canvas repaint.
+    // Cross the next paint frame before reading labels and paths together.
+    const view = element.ownerDocument.defaultView
+    await new Promise(resolve => view.requestAnimationFrame(() => view.requestAnimationFrame(resolve)))
+    return {
+      rows: window.__lineageCanvasText.get(element) || [],
+      paths: [...new Map((window.__lineageCanvasPaths.get(element) || [])
+        .map(points => [JSON.stringify(points), points])).values()]
+    }
+  })
 }
 
 export async function lineageCanvasPaths(canvas) {
