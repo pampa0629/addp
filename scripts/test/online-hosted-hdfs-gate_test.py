@@ -58,6 +58,11 @@ class HostedHDFSGateTest(unittest.TestCase):
         self.host._executable('make', '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = build-images ]; then
+              [ "${ADDP_TEST_BUILD_FAIL:-0}" != 1 ] || exit 1
+              touch "${ADDP_TEST_GATE_TRACE}.image"
+              exit 0
+            fi
             [ "$ADDP_ONLINE_HDFS_ENGINE_ID" = 17 ] && [ "$ADDP_ONLINE_SPARK_ENGINE_ID" = 18 ] &&
               [ "$HADOOP_USER_NAME" = addp_business_reader ] && [ "$SPARK_WORKFLOW_SHARED_HOST" = 127.0.0.1 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
@@ -65,6 +70,48 @@ class HostedHDFSGateTest(unittest.TestCase):
               [ -z "${ELASTICSEARCH_PASSWORD:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
+        self.host._executable('curl', '''
+            #!/usr/bin/env bash
+            exit 0
+        ''')
+        self.host._executable('docker', '''
+            #!/usr/bin/env bash
+            case "$1 $2" in
+              'compose version') exit 0 ;;
+              'container inspect') [ "${ADDP_TEST_PREEXIST_CONTAINER:-}" != "$3" ] || exit 0; [ -f "${ADDP_TEST_GATE_TRACE}.$3" ]; exit ;;
+              'image inspect')
+                [ "${ADDP_TEST_PREEXIST_IMAGE:-0}" = 1 ] && exit 0
+                [ -f "${ADDP_TEST_GATE_TRACE}.image" ] || exit 1
+                echo sha256:runtime-image; exit 0 ;;
+              'image rm') rm -f "${ADDP_TEST_GATE_TRACE}.image"; exit 0 ;;
+            esac
+            if [ "$1" = run ]; then
+              previous= name=
+              for argument in "$@"; do
+                [ "$previous" != --name ] || name=$argument
+                previous=$argument
+              done
+              echo "docker-run:$name" >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_RUNTIME_FAIL:-0}" != 1 ] || [ "$name" != addp-hdfs-online-runtime ] || exit 1
+              touch "${ADDP_TEST_GATE_TRACE}.$name"
+              exit 0
+            fi
+            if [ "$1" = inspect ]; then
+              case "$3" in
+                *Config.Labels*) echo hdfs-spark-consumer-flow ;;
+                *Config.Cmd*) echo '["python","api_server.py"]' ;;
+                *State.Running*) echo true ;;
+                *) echo sha256:runtime-image ;;
+              esac
+              exit 0
+            fi
+            if [ "$1" = rm ]; then
+              echo "docker-rm:$3" >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_RUNTIME_CLEANUP_FAIL:-0}" != 1 ] || [ "$3" != addp-hdfs-online-runtime ] || exit 1
+              rm -f "${ADDP_TEST_GATE_TRACE}.$3"
+            fi
+        ''')
+        self.host._write_repository_script('.env.example', 'SPARK_WORKFLOW_PORT=8098\n')
         self.host._executable('npm', '''
             #!/usr/bin/env bash
             echo "npm:$*" >> "$ADDP_TEST_GATE_TRACE"
@@ -101,13 +148,17 @@ class HostedHDFSGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
-        sequence = ('infra-up', 'hdfs-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'start:-spark-workflow',
+        sequence = ('infra-up', 'hdfs-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'docker-run:addp-hdfs-online-registry', 'make:build-images', 'docker-run:addp-hdfs-online-runtime',
                     'playwright install --with-deps chromium', '--suite hdfs-spark-consumer-flow',
                     'engine-register', 'make:test-online ONLINE_SUITE=hdfs-spark-consumer-flow',
-                    'application-stop', 'hdfs-fixture:stop', 'infra-down')
+                    'docker-rm:addp-hdfs-online-runtime', 'application-stop', 'hdfs-fixture:stop', 'docker-rm:addp-hdfs-online-registry', 'infra-down')
         indices = [trace.index(step) for step in sequence]
         self.assertEqual(indices, sorted(indices))
         self.assertNotIn('start:-all', trace)
+        self.assertNotIn('start:-spark-workflow', trace)
+        self.assertIn('default_entry=python api_server.py', (self.host.artifacts / 'hdfs-runtime-build.txt').read_text())
+        self.assertFalse(list(self.host.root.glob('trace.log.addp-hdfs-*')))
+        self.assertFalse(Path(str(self.host.trace) + '.image').exists())
         self.assertFalse(self.host.secrets.exists())
         summary = (self.host.artifacts / 'summary.txt').read_text()
         self.assertIn('result=passed', summary)
@@ -115,7 +166,8 @@ class HostedHDFSGateTest(unittest.TestCase):
 
     def test_failures_destroy_owned_resources(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL': 'start'}, {'ADDP_TEST_IDENTITY_FAIL': '1'},
-                      {'ADDP_TEST_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_SUITE_FAIL': '1'}):
+                      {'ADDP_TEST_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_SUITE_FAIL': '1'},
+                      {'ADDP_TEST_BUILD_FAIL': '1'}, {'ADDP_TEST_RUNTIME_FAIL': '1'}):
             with self.subTest(flags=flags):
                 self.host.trace.unlink(missing_ok=True)
                 result = self.run_gate(**flags)
@@ -134,6 +186,18 @@ class HostedHDFSGateTest(unittest.TestCase):
         self.assertIn('result=failed', summary)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra-down', self.host.trace.read_text())
+
+    def test_runtime_cleanup_failure_cannot_pass(self):
+        result = self.run_gate(ADDP_TEST_RUNTIME_CLEANUP_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('cleanup=failed', (self.host.artifacts / 'summary.txt').read_text())
+        self.assertIn('docker-rm:addp-hdfs-online-registry', self.host.trace.read_text())
+
+    def test_refuses_existing_runtime_resources_before_mutation(self):
+        for flag in ({'ADDP_TEST_PREEXIST_IMAGE': '1'}, {'ADDP_TEST_PREEXIST_CONTAINER': 'addp-hdfs-online-runtime'}):
+            result = self.run_gate(check=True, **flag)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.host.trace.exists())
 
     def test_interrupt_still_cleans_the_owned_fixture(self):
         self.host._executable('make', '''

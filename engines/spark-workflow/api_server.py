@@ -18,7 +18,9 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 from workflow_engine import execute_workflow, execute_single_operator
-from addp_common.workflow_runtime import validate_execution_authorization
+from addp_common.workflow_runtime import (
+    ExecutionRegistry, ExecutionSnapshot, WorkflowValidationError, validate_execution_authorization,
+)
 from operators import list_operators
 from operators import OPERATORS as OPERATOR_REGISTRY
 
@@ -40,8 +42,8 @@ CORS(app)  # 启用跨域
 # 启动时间（用于计算 uptime）
 start_time = datetime.now()
 
-# 内存存储 (生产环境应使用数据库)
-executions = {}  # {execution_id: {status, result, ...}}
+# Runtime 快照只属于当前 HTTP worker，业务历史由平台持有。
+executions = ExecutionRegistry()
 
 
 # ========================================
@@ -293,26 +295,19 @@ def execute_workflow_endpoint():
         execution_id = str(uuid.uuid4())
         logger.info(f"Executing workflow {execution_id} on Spark engine {engine_id}")
 
+        started_at = datetime.now().isoformat()
+        executions.record(ExecutionSnapshot(execution_id=execution_id, status="running", started_at=started_at))
         result = execute_workflow(engine_id, tenant_id, workflow_def, input_data)
         execution_time = (time.time() - start) * 1000
         final_result = serialize_workflow_value(result.get('final_result'))
         all_results = serialize_workflow_value(result.get('all_results', {}))
 
-        # 存储执行记录
-        executions[execution_id] = {
-            "execution_id": execution_id,
-            "engine_id": engine_id,
-            "status": result['status'],
-            "result": final_result,
-            "all_results": all_results,
-            "task_order": result.get('task_order'),
-            "error": result.get('error'),
-            "error_code": result.get('error_code'),
-            "details": result.get('details'),
-            "message": result.get('message'),
-            "started_at": datetime.now().isoformat(),
-            "execution_time_ms": execution_time
-        }
+        executions.record(ExecutionSnapshot(
+            execution_id=execution_id, status=result['status'], progress=100,
+            result=final_result, all_results=all_results, task_order=result.get('task_order', []),
+            error=result.get('error', ''), error_code=result.get('error_code', ''),
+            details=result.get('details', ''), started_at=started_at, execution_time_ms=execution_time,
+        ))
 
         response = {
             "status": result['status'],
@@ -341,24 +336,20 @@ def execute_workflow_endpoint():
         status_code = 200 if result['status'] == 'success' else 500
         return jsonify(response), status_code
 
+    except WorkflowValidationError as e:
+        response = error_response(ErrorCode.WORKFLOW_INVALID, str(e))
+        response["execution_time_ms"] = (time.time() - start) * 1000
+        return jsonify(response), 400
+
     except Exception as e:
         execution_time = (time.time() - start) * 1000 if 'start' in locals() else 0
         logger.error(f"Workflow execution failed: {e}", exc_info=True)
         if execution_id:
-            executions[execution_id] = {
-                "execution_id": execution_id,
-                "engine_id": data.get('engine_id') if 'data' in locals() else None,
-                "status": "failed",
-                "result": None,
-                "all_results": None,
-                "task_order": None,
-                "error": f"工作流执行失败: {str(e)}",
-                "error_code": ErrorCode.EXECUTION_FAILED,
-                "details": str(e),
-                "message": "工作流执行失败",
-                "started_at": datetime.now().isoformat(),
-                "execution_time_ms": execution_time
-            }
+            executions.record(ExecutionSnapshot(
+                execution_id=execution_id, status="failed", progress=100,
+                error=f"工作流执行失败: {str(e)}", error_code=ErrorCode.EXECUTION_FAILED,
+                details=str(e), started_at=started_at, execution_time_ms=execution_time,
+            ))
         response = error_response(
             ErrorCode.EXECUTION_FAILED,
             f"工作流执行失败: {str(e)}"
@@ -473,28 +464,13 @@ def get_execution_status(execution_id):
             "progress": 100
         }
     """
-    if execution_id not in executions:
+    execution = executions.get(execution_id)
+    if execution is None:
         return jsonify(error_response(
             ErrorCode.EXECUTION_NOT_FOUND,
             "Execution not found"
         )), 404
-
-    execution = executions[execution_id]
-
-    return jsonify({
-        "status": execution['status'],
-        "execution_id": execution_id,
-        "result": execution.get('result'),
-        "all_results": execution.get('all_results'),
-        "message": execution.get('message'),
-        "task_order": execution.get('task_order'),
-        "error": execution.get('error'),
-        "error_code": execution.get('error_code'),
-        "details": execution.get('details'),
-        "progress": 100 if execution['status'] in ['success', 'failed'] else 50,
-        "started_at": execution.get('started_at'),
-        "execution_time_ms": execution.get('execution_time_ms')
-    }), 200
+    return jsonify(execution.to_dict()), 200
 
 
 # ========================================
@@ -505,7 +481,7 @@ def register_to_system():
     """
     向 System Backend 自注册（创建或更新引擎记录）
     """
-    from addp_common.client import register_runtime_engine
+    from addp_common.client import register_runtime_engine, runtime_advertised_port
 
     system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
     client_secret = os.getenv('SPARK_WORKFLOW_SERVICE_CLIENT_SECRET', '')
@@ -514,7 +490,7 @@ def register_to_system():
     port = int(os.getenv('PORT', 8098))
     protocol = os.getenv('PROTOCOL', 'http')
     runtime_host = os.getenv('RUNTIME_HOST', 'localhost').strip()
-    connection_info = {"protocol": protocol, "port": port}
+    connection_info = {"protocol": protocol, "port": runtime_advertised_port(port)}
     if runtime_host:
         connection_info["host"] = runtime_host
 
@@ -566,12 +542,5 @@ def register_to_system_with_retry():
 # ========================================
 
 if __name__ == '__main__':
-    # 启动后台线程注册到 System (不阻塞应用启动)
-    import threading
-    registration_thread = threading.Thread(target=register_to_system_with_retry, daemon=True)
-    registration_thread.start()
-
-    # 启动 Flask 服务
-    port = int(os.getenv('PORT', 8098))
-    logger.info(f"🚀 Starting Spark 工作流引擎 on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    from runtime_server import run
+    run()

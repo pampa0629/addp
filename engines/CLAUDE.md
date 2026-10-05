@@ -37,7 +37,7 @@ engines/
 
 ## 启动与验证
 
-Spark Workflow 确定性测试统一运行 `make test-spark-workflow`，自动发现该目录的 `test_*.py`；覆盖算子协议、可信租户上下文、System Service Bearer 和存储适配，不连接开发集群。根 `make test`、`make test-module MODULE=engines` 与 Platform CI 的独立 Spark Workflow Job 均消费同一入口，CI 使用现有运行时依赖和 Common Python 安装。该 T1 门禁不能代替真实 Worker 的 HDFS 分布式读取验收。
+Spark Workflow 确定性测试统一运行 `make test-spark-workflow`，自动发现该目录的 `test_*.py`；覆盖算子协议、可信租户上下文、System Service Bearer 和存储适配，不连接开发集群。根 `make test`、`make test-module MODULE=engines` 与 Platform CI 的独立 Spark Workflow Job 均消费同一入口，CI 使用现有运行时依赖和 Common Python 安装。该 T1 门禁也覆盖唯一 Gunicorn 入口的真实 HTTP 监听、就绪后异步注册、跨请求状态和公共 DAG 执行；不能代替真实 Worker 的 HDFS 分布式读取验收。
 
 Spark 产品镜像使用 Python 3.11 Bookworm 和官方 Temurin Java 11 JRE，安装同一仓库的 `common-python`。唯一构建入口为 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"`，使用根目录构建上下文；本地缓存与 CI 影响选择均覆盖共享 Python 包。镜像构建包含依赖一致性、Flask API 导入及本地 Spark 计算检查；该构建检查不代表分布式 Worker 验收。
 

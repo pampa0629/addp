@@ -16,7 +16,8 @@ Spark 工作流 Engine 是 ADDP 平台的分布式空间计算引擎,基于 Apac
 ```
 engines/spark-workflow/
 ├── api_server.py           # Flask API Server (端口 8098)
-├── workflow_engine.py      # 工作流执行引擎 (DAG + DataFrame 传递)
+├── runtime_server.py       # 本地与容器共用的 HTTP 启动和就绪后注册
+├── workflow_engine.py      # 公共 WorkflowRunner 的 Spark 领域算子适配
 ├── spark_connector.py      # 动态 SparkSession 管理器
 ├── storage_adapters.py     # 统一存储访问适配器
 ├── operators/              # 算子实现与 Pydantic 元数据定义
@@ -87,8 +88,12 @@ pip install -r requirements.txt
 
 关键配置项:
 - `SYSTEM_URL`: System Backend URL (默认 http://localhost:8180)
-- `SPARK_MODE`: local (开发) 或 remote (生产)
+- `SPARK_MODE`: 默认不设置，连接用户选择的 Spark general Engine；仅依赖构建检查显式使用 local
 - `SPARK_WORKFLOW_PORT`: Flask API Server 端口 (默认 8098)
+
+本地标准启动脚本和产品镜像均调用 `python api_server.py`，使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。HTTP worker 与远端 Spark Worker 是不同职责；实际计算仍由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
+
+工作流的 DAG、引用和 `$input` 使用公共 `WorkflowRunner`。算子输出按元数据声明的端口适配，`all_results` 的单端口节点直接返回结果，多端口节点返回端口对象，DataFrame 对外只返回最多五行的摘要。
 
 ### 3. 启动服务
 
@@ -276,17 +281,13 @@ df = StorageAdapter.load(spark, {
 
 ### DAG 工作流执行
 
-`SparkWorkflowEngine` 执行流程:
-
-1. 加载工作流定义 → 构建任务图
-2. 拓扑排序 → 确定执行顺序
-3. 逐步执行 → DataFrame 内存传递 (避免序列化)
-4. 引用解析 → `{"$ref": "task_id"}` 获取上游结果
+`SparkWorkflowRunner` 只注入可信 Spark 集群与租户上下文，并将领域算子结果映射到声明端口。公共 `WorkflowRunner` 校验 DAG、排序、解析嵌套 `$ref` / `$input`，在节点间直接传递 DataFrame；HTTP API 在执行结束后将结果投影为摘要。
 
 ```python
-engine = SparkWorkflowEngine(engine_id=34)
-engine.load_workflow(workflow_def)
-result = engine.run()
+from workflow_engine import SparkWorkflowRunner
+
+result = SparkWorkflowRunner(engine_id=34, tenant_id=7).execute(workflow_def, input_data={})
+# result.final_result / result.all_results / result.task_order
 ```
 
 ## 与 GeoPython Workflow 的对比

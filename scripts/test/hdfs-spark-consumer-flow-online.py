@@ -87,6 +87,21 @@ def validate_result(execution):
     return final
 
 
+def runtime_status_evidence(execution_id, final_result):
+    base = support.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL').rstrip('/')
+    snapshots = []
+    for _ in range(8):
+        with urllib.request.urlopen(base + '/api/executions/' + urllib.parse.quote(execution_id), timeout=10) as response:
+            snapshots.append(json.load(response))
+    for snapshot in snapshots:
+        if (snapshot.get('execution_id') != execution_id or snapshot.get('status') != 'success'
+            or snapshot.get('progress') != 100 or snapshot.get('result') != final_result
+            or len(snapshot.get('task_order', [])) != 8 or len(snapshot.get('all_results', {})) != 8
+            or any(value.get('type') != 'spark_dataframe' for value in snapshot['all_results'].values())):
+            raise SuiteError('Runtime status must preserve the exact formal execution and canonical node summaries across HTTP requests')
+    return {'execution_id': execution_id, 'status': 'success', 'queries': len(snapshots), 'tasks': 8}
+
+
 def worker_evidence(engine_id):
     with urllib.request.urlopen('http://127.0.0.1:18080/json', timeout=10) as response:
         master = json.load(response)
@@ -154,7 +169,8 @@ def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evide
             'runtime_id': runtime_id, 'tenant_id': tenant_id, 'principal_id': principal, 'locators': locators,
             'item_ids': item_ids, 'scan_execution_id': scan, 'execution_id': execution_id,
             'runtime_execution_id': execution['metadata']['result']['runtime_execution_id'],
-            'final_result': final, 'worker': physical(cluster_id)}
+            'final_result': final, 'worker': physical(cluster_id),
+            'runtime_status': runtime_status_evidence(execution['metadata']['result']['runtime_execution_id'], final)}
 
 
 def run_browser(report):

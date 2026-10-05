@@ -668,7 +668,7 @@ components:
           description: 最终结果，必须可 JSON 序列化。Spark DataFrame 等大规模运行时对象应返回轻量摘要而不是完整数据集。
         all_results:
           type: object
-          description: 所有任务结果，值必须可 JSON 序列化。Spark DataFrame 等大规模运行时对象应返回 schema、少量预览行等轻量摘要。
+          description: 所有任务结果，单端口节点直接返回结果，多端口节点返回端口对象；值必须可 JSON 序列化。Spark DataFrame 等大规模运行时对象应返回 schema、少量预览行等轻量摘要。
         error:
           type: string
           description: 错误信息(失败时)
@@ -777,7 +777,7 @@ components:
           description: 执行结果
         all_results:
           type: object
-          description: 所有任务结果摘要，必须可 JSON 序列化
+          description: 所有任务结果摘要，单端口节点直接返回结果，多端口节点返回端口对象；必须可 JSON 序列化
         message:
           type: string
           description: 状态说明

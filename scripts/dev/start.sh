@@ -2476,7 +2476,7 @@ if [ ! -d "engines/spark-workflow/venv" ]; then
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./engines/spark-workflow/venv/bin/python -c "import pyspark, addp_common.workflow_runtime" &> /dev/null; then
+    if ! ./engines/spark-workflow/venv/bin/python -c "import gunicorn, pyspark, addp_common.workflow_runtime" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
         cd engines/spark-workflow
         NEED_INSTALL=true

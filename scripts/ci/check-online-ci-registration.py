@@ -1541,7 +1541,8 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
     required = {
         "scripts/test/online-hosted-hdfs-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite hdfs-spark-consumer-flow',
-            '-spark-workflow', 'scripts/test/online-engine-registration.py',
+            'make build-images', 'RUNTIME_IMAGE', 'hdfs-runtime-build.txt', 'hdfs-runtime.log',
+            'scripts/test/online-engine-registration.py',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'SPARK_MODE override is forbidden',
             'run_logged make test-online', 'online-hdfs-spark-fixture.sh stop',
         ),

@@ -34,7 +34,8 @@ else:
     class _DataFrame:
         pass
 
-from workflow_engine import SparkWorkflowEngine, WorkflowInvalidError, validate_workflow_def
+from workflow_engine import SparkWorkflowRunner
+from addp_common.workflow_runtime import WorkflowValidationError, validate_workflow_def
 from spark_connector import SPARK_MAVEN_PACKAGES
 from api_server import serialize_json_value
 from operators.spatial_operators import buffer
@@ -55,26 +56,16 @@ class OperatorMetadataTest(unittest.TestCase):
 
     def test_workflow_injects_runtime_engine_and_tenant_context(self):
         captured = {}
-        engine = object.__new__(SparkWorkflowEngine)
-        engine.engine_id = 34
-        engine.tenant_id = 7
-        engine.results = {}
-        engine.tasks = {
-            "load_data": {
-                "operator": "load",
-                "params": {"source_type": "table", "engine_id": 999, "tenant_id": 999},
-                "depends_on": [],
-            }
-        }
+        engine = SparkWorkflowRunner(34, 7)
 
         def fake_operator(**params):
             captured.update(params)
             return "loaded"
 
         with patch("workflow_engine.get_operator", return_value=fake_operator):
-            result = engine.execute_task("load_data")
+            result = engine._execute_workflow_operator("load", {"source_type": "table", "engine_id": 999, "tenant_id": 999})
 
-        self.assertEqual(result, {"result": "loaded"})
+        self.assertEqual(result, {"__ports__": {"default": "loaded"}})
         self.assertEqual(captured["engine_id"], 34)
         self.assertEqual(captured["tenant_id"], 7)
 
@@ -257,7 +248,7 @@ class OperatorMetadataTest(unittest.TestCase):
             self.assertNotIn("task_status", payload)
 
     def test_workflow_definition_requires_params_object_and_string_dependencies(self):
-        with self.assertRaisesRegex(WorkflowInvalidError, "'params' 必须是对象"):
+        with self.assertRaisesRegex(WorkflowValidationError, "params 必须是对象"):
             validate_workflow_def({
                 "tasks": [{
                     "id": "invalid_params",
@@ -267,7 +258,7 @@ class OperatorMetadataTest(unittest.TestCase):
                 }]
             })
 
-        with self.assertRaisesRegex(WorkflowInvalidError, "任务 id 重复"):
+        with self.assertRaisesRegex(WorkflowValidationError, "任务 ID 重复"):
             validate_workflow_def({
                 "tasks": [
                     {"id": "load", "operator": "load", "params": {}, "depends_on": []},
@@ -275,7 +266,7 @@ class OperatorMetadataTest(unittest.TestCase):
                 ]
             })
 
-        with self.assertRaisesRegex(WorkflowInvalidError, "未在 depends_on 中声明"):
+        with self.assertRaisesRegex(WorkflowValidationError, "未在 depends_on 中声明"):
             validate_workflow_def({
                 "tasks": [
                     {"id": "load", "operator": "load", "params": {}, "depends_on": []},
@@ -288,7 +279,7 @@ class OperatorMetadataTest(unittest.TestCase):
                 ]
             })
 
-        with self.assertRaisesRegex(WorkflowInvalidError, "'depends_on' 必须是字符串数组"):
+        with self.assertRaisesRegex(WorkflowValidationError, "depends_on 必须是字符串数组"):
             validate_workflow_def({
                 "tasks": [{
                     "id": "invalid_dep",

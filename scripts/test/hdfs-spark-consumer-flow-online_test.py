@@ -79,6 +79,24 @@ class HDFSOnlineTest(unittest.TestCase):
                 else:
                     self.assertEqual(MODULE.worker_evidence(18)['completed_tasks'], 1)
 
+    def test_runtime_status_uses_exact_formal_id_and_shared_canonical_results(self):
+        import io
+        expected = final_result()
+        for failure in ('wrong_id', 'missing_results', 'nested_ports', ''):
+            snapshot = {'execution_id': 'runtime-id', 'status': 'success', 'progress': 100,
+                        'result': expected, 'task_order': list(range(8)),
+                        'all_results': {str(i): expected for i in range(8)}}
+            if failure == 'wrong_id': snapshot['execution_id'] = 'other'
+            if failure == 'missing_results': snapshot['all_results'] = {}
+            if failure == 'nested_ports': snapshot['all_results']['0'] = {'default': expected}
+            with self.subTest(failure=failure), patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://127.0.0.1:8098'), patch.object(MODULE.urllib.request, 'urlopen', side_effect=lambda *a, **k: io.BytesIO(json.dumps(snapshot).encode())) as request:
+                if failure:
+                    with self.assertRaises(MODULE.SuiteError): MODULE.runtime_status_evidence('runtime-id', expected)
+                else:
+                    self.assertEqual(MODULE.runtime_status_evidence('runtime-id', expected)['queries'], 8)
+                    self.assertEqual(request.call_count, 8)
+                    self.assertEqual(request.call_args.args[0], 'http://127.0.0.1:8098/api/executions/runtime-id')
+
     def test_browser_requires_matching_identity_execution_and_all_screenshots(self):
         report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42', 'execution_id': 'execution'}
         for failure in ('process', 'missing_report', 'identity', 'execution', 'screenshot', ''):

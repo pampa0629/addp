@@ -84,7 +84,7 @@ ENV PORT=8098
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8098/health')"
+    CMD python -c "import requests; requests.get('http://localhost:8098/health').raise_for_status()"
 
-# 使用 Gunicorn 运行（生产级）
-CMD ["gunicorn", "--bind", "0.0.0.0:8098", "api_server:app", "--workers", "4", "--timeout", "300"]
+# 与标准本地启动共用入口：一个 HTTP worker，多线程和就绪后注册。
+CMD ["python", "api_server.py"]

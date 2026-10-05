@@ -257,7 +257,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=develop
       - HADOOP_USER_NAME=${HADOOP_USER_NAME:-addp_business_reader}
-      - SPARK_MODE=local
     volumes:
       - ./logs:/app/logs
     networks:
