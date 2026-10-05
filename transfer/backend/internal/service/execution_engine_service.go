@@ -1008,18 +1008,39 @@ func (s *ExecutionEngineService) transferLineageMetadata(ctx context.Context, ta
 		RuntimeExecutionID: executionIDString(s, ctx, executionID),
 	}
 	facts.Operations[0].FieldLineageStatus = "unavailable"
-	if fieldLineage != nil && len(inputs) == 1 {
-		facts.Inputs[0].SchemaSnapshot = fieldLineage.Source
+	if transferFieldLineageMatchesInputs(fieldLineage, inputs) {
+		for i := range facts.Inputs {
+			facts.Inputs[i].SchemaSnapshot = fieldLineage.Sources[facts.Inputs[i].Port]
+		}
 		facts.Outputs[0].SchemaSnapshot = fieldLineage.Target
 		facts.Operations[0].FieldLineageStatus = "complete"
 		facts.Operations[0].FieldMappings = append([]commonExecution.LineageFieldMapping(nil), fieldLineage.Mappings...)
-		for i := range facts.Operations[0].FieldMappings {
-			if facts.Operations[0].FieldMappings[i].InputPort != "" {
-				facts.Operations[0].FieldMappings[i].InputPort = inputs[0].Port
-			}
-		}
 	}
 	return commonModels.JSONMap{"lineage_facts": facts}
+}
+
+func transferFieldLineageMatchesInputs(lineage *executor.TableFieldLineage, inputs []commonExecution.LineageResourceRef) bool {
+	if lineage == nil || len(lineage.Sources) != len(inputs) || lineage.Target.Validate() != nil {
+		return false
+	}
+	for _, input := range inputs {
+		if lineage.Sources[input.Port].Validate() != nil {
+			return false
+		}
+	}
+	for _, mapping := range lineage.Mappings {
+		if !lineage.Target.HasField(mapping.TargetField) || mapping.OutputPort != "target" {
+			return false
+		}
+		if mapping.Transformation == "generated" {
+			if mapping.InputPort != "" || mapping.SourceField != "" {
+				return false
+			}
+		} else if (mapping.Transformation != "direct" && mapping.Transformation != "derived") || !lineage.Sources[mapping.InputPort].HasField(mapping.SourceField) {
+			return false
+		}
+	}
+	return true
 }
 
 func transferLineageInputs(source planner.EndpointSpec) []commonExecution.LineageResourceRef {

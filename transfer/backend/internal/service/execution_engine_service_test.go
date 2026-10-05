@@ -902,7 +902,7 @@ func TestTransferQueryLineagePreservesDeclaredInputPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fieldLineage := &executor.TableFieldLineage{Source: source, Target: target, Mappings: []commonExecution.LineageFieldMapping{{InputPort: "source", OutputPort: "target", SourceField: "userInfo.nickName", TargetField: "person_nickname", Transformation: "direct"}, {OutputPort: "target", TargetField: "label", Transformation: "generated"}}}
+	fieldLineage := &executor.TableFieldLineage{Sources: map[string]*commonExecution.LineageSchemaSnapshot{"persons": source}, Target: target, Mappings: []commonExecution.LineageFieldMapping{{InputPort: "persons", OutputPort: "target", SourceField: "userInfo.nickName", TargetField: "person_nickname", Transformation: "direct"}, {OutputPort: "target", TargetField: "label", Transformation: "generated"}}}
 	endpoint := planner.EndpointSpec{Query: &planner.QuerySourceSpec{Inputs: []planner.QueryInputSpec{{Name: "persons", Locator: "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=106"}}}}
 	metadata := svc.transferLineageMetadata(t.Context(), &task, uint(run.ID), endpoint, "addp://engine/2/path/outdoor/ods_outdoor_persons?type=table&item_id=10", "", "", map[string]interface{}{"apply_mode": "replace"}, fieldLineage)
 	payload, err := json.Marshal(metadata["lineage_facts"])
@@ -913,7 +913,47 @@ func TestTransferQueryLineagePreservesDeclaredInputPort(t *testing.T) {
 	if err := json.Unmarshal(payload, &facts); err != nil {
 		t.Fatal(err)
 	}
-	if facts.Operations[0].FieldLineageStatus != "complete" || facts.Operations[0].FieldMappings[0].InputPort != "persons" || facts.Operations[0].FieldMappings[1].InputPort != "" || fieldLineage.Mappings[0].InputPort != "source" {
+	if facts.Operations[0].FieldLineageStatus != "complete" || facts.Operations[0].FieldMappings[0].InputPort != "persons" || facts.Operations[0].FieldMappings[1].InputPort != "" || fieldLineage.Mappings[0].InputPort != "persons" {
 		t.Fatalf("single-source query port or immutable mappings lost: %+v", facts)
+	}
+}
+
+func TestTransferMultiQueryLineageRetainsEveryDeclaredPort(t *testing.T) {
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	run := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	svc := &ExecutionEngineService{executionService: NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))}
+	snapshot, err := commonExecution.NewLineageSchemaSnapshot([]datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := commonExecution.NewLineageSchemaSnapshot([]datatype.FieldInfo{{Name: "label", Type: datatype.FieldTypeString}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldLineage := &executor.TableFieldLineage{Sources: map[string]*commonExecution.LineageSchemaSnapshot{"people": snapshot, "events": snapshot, "scope": snapshot}, Target: target, Mappings: []commonExecution.LineageFieldMapping{
+		{InputPort: "events", OutputPort: "target", SourceField: "name", TargetField: "label", Transformation: "derived"},
+		{InputPort: "people", OutputPort: "target", SourceField: "name", TargetField: "label", Transformation: "derived"},
+	}}
+	endpoint := planner.EndpointSpec{Query: &planner.QuerySourceSpec{Inputs: []planner.QueryInputSpec{
+		{Name: "events", Locator: "addp://engine/11/path/public/activities?type=table&item_id=20"},
+		{Name: "people", Locator: "addp://engine/11/path/public/persons?type=table&item_id=21"},
+		{Name: "scope", Locator: "addp://engine/11/path/public/allowed?type=table&item_id=22"},
+	}}}
+	metadata := svc.transferLineageMetadata(t.Context(), &task, uint(run.ID), endpoint, "addp://engine/2/path/public/result?type=table", "", "", nil, fieldLineage)
+	facts := metadata["lineage_facts"].(commonExecution.LineageFacts)
+	if facts.Operations[0].FieldLineageStatus != "complete" || len(facts.Inputs) != 3 || !reflect.DeepEqual(facts.Operations[0].FieldMappings, fieldLineage.Mappings) {
+		t.Fatalf("multi-source facts lost or reordered ports: %+v", facts)
+	}
+	for _, input := range facts.Inputs {
+		if input.SchemaSnapshot == nil || input.SchemaSnapshot.Hash != snapshot.Hash {
+			t.Fatalf("missing frozen input at %s", input.Port)
+		}
+	}
+	delete(fieldLineage.Sources, "scope")
+	metadata = svc.transferLineageMetadata(t.Context(), &task, uint(run.ID), endpoint, "addp://engine/2/path/public/result?type=table", "", "", nil, fieldLineage)
+	facts = metadata["lineage_facts"].(commonExecution.LineageFacts)
+	if facts.Operations[0].FieldLineageStatus != "unavailable" || len(facts.Operations[0].FieldMappings) != 0 || facts.Outputs[0].SchemaSnapshot != nil {
+		t.Fatalf("partial inputs published as complete: %+v", facts)
 	}
 }

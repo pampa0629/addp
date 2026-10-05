@@ -29,7 +29,7 @@ func TestQueryTableTransferCapturesOriginalNestedFieldsAndDerivedIndex(t *testin
 	provider := &lineageTestQueryProvider{fakeQueryReadSessionProvider: fakeQueryReadSessionProvider{prepared: prepared}, batch: &plugin.BatchData{Fields: outputs, Rows: []map[string]interface{}{{"_id": "p1", "nick": "nickname", "index": int64(0)}}}}
 	e := &TableTransferExecutor{SourceQuerySessionProvider: provider, TargetNativeWriter: &fakeBatchWriter{}, TargetNativePreparer: &fakeTableWritePreparer{}, TargetCatalogFacts: &lineageTestCatalog{fields: targets}}
 	plan := TableTransferPlan{
-		Source:     TableSourcePlan{Kind: TableEndpointQuery, RuntimeQuery: &plugin.QueryRequest{Language: "mql", Query: "provider-owned"}, ExpectedQueryReadSet: readSet, TableInfo: &datatype.TableInfo{Fields: outputs}},
+		Source:     TableSourcePlan{Kind: TableEndpointQuery, RuntimeQuery: &plugin.QueryRequest{Language: "mql", Query: "provider-owned"}, ExpectedQueryReadSet: readSet, QueryInputs: []TableQueryInput{{Port: "source", Path: path}}, TableInfo: &datatype.TableInfo{Fields: outputs}},
 		Target:     TableTargetPlan{Kind: TableEndpointNative, Path: plugin.TabularItemPath(2, plugin.EngineCatalogTermSchema, "outdoor", "ods")},
 		Transforms: []TableTransformPlan{{Type: "field_mapping", FieldMapping: &FieldMappingTransformPlan{Mode: FieldMappingModeProject, Fields: []FieldMappingFieldPlan{{Source: "_id", Target: "person_id"}, {Source: "nick", Target: "person_nickname"}, {Source: "index", Target: "member_index"}}}}},
 	}
@@ -38,7 +38,7 @@ func TestQueryTableTransferCapturesOriginalNestedFieldsAndDerivedIndex(t *testin
 		t.Fatalf("query execution missing field evidence: %+v, %v", metrics, err)
 	}
 	lineage := metrics.FieldLineage
-	if !lineage.Source.HasField("userInfo.nickName") || lineage.Source.HasField("nick") || len(lineage.Mappings) != 3 {
+	if !lineage.Sources["source"].HasField("userInfo.nickName") || lineage.Sources["source"].HasField("nick") || len(lineage.Mappings) != 3 {
 		t.Fatalf("query aliases replaced source schema: %+v", lineage)
 	}
 	for _, mapping := range lineage.Mappings {
@@ -117,6 +117,8 @@ func TestTableFieldLineageDoesNotGuessAbsentFields(t *testing.T) {
 }
 
 func TestQueryFieldLineageRejectsIncompleteOrAmbiguousProof(t *testing.T) {
+	path := plugin.TabularItemPath(11, plugin.EngineCatalogTermSchema, "public", "persons")
+	inputs := []TableQueryInput{{Port: "source", Path: path}}
 	fields := []datatype.FieldInfo{{Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString}}
 	target := []datatype.FieldInfo{{Name: "nick", Type: datatype.FieldTypeString}}
 	info := &datatype.TableInfo{Fields: target}
@@ -125,28 +127,91 @@ func TestQueryFieldLineageRejectsIncompleteOrAmbiguousProof(t *testing.T) {
 		name   string
 		source plugin.QueryOutputSource
 	}{
-		{"opaque", plugin.QueryOutputSource{Fields: fields, OpaqueOutput: true}},
-		{"missing", plugin.QueryOutputSource{Fields: fields}},
-		{"no exact output", plugin.QueryOutputSource{Fields: fields, Bindings: []plugin.QueryOutputBinding{{SourcePath: binding.SourcePath, Transformation: "derived"}}}},
-		{"multiple origins", plugin.QueryOutputSource{Fields: fields, Bindings: []plugin.QueryOutputBinding{binding, binding}}},
-		{"ambiguous source name", plugin.QueryOutputSource{Fields: append(append([]datatype.FieldInfo{}, fields...), datatype.FieldInfo{Name: "userInfo.nickName", Path: []string{"userInfo.nickName"}, Type: datatype.FieldTypeString}), Bindings: []plugin.QueryOutputBinding{binding}}},
+		{"opaque", plugin.QueryOutputSource{Path: path, Fields: fields, OpaqueOutput: true}},
+		{"missing", plugin.QueryOutputSource{Path: path, Fields: fields}},
+		{"no exact output", plugin.QueryOutputSource{Path: path, Fields: fields, Bindings: []plugin.QueryOutputBinding{{SourcePath: binding.SourcePath, Transformation: "derived"}}}},
+		{"missing physical field", plugin.QueryOutputSource{Path: path, Fields: fields, Bindings: []plugin.QueryOutputBinding{{SourcePath: []string{"absent"}, OutputPath: binding.OutputPath, Transformation: "direct"}}}},
+		{"ambiguous source name", plugin.QueryOutputSource{Path: path, Fields: append(append([]datatype.FieldInfo{}, fields...), datatype.FieldInfo{Name: "userInfo.nickName", Path: []string{"userInfo.nickName"}, Type: datatype.FieldTypeString}), Bindings: []plugin.QueryOutputBinding{binding}}},
 	} {
 		t.Run(entry.name, func(t *testing.T) {
-			if got := buildQueryTableFieldLineage(&plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{entry.source}}, target, info, info, nil, nil); got != nil {
+			if got := buildQueryTableFieldLineage(&plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{entry.source}}, inputs, target, info, info, nil, nil); got != nil {
 				t.Fatalf("unproven query declared complete: %+v", got)
 			}
 		})
 	}
-	source := plugin.QueryOutputSource{Fields: fields, Bindings: []plugin.QueryOutputBinding{binding}}
-	if got := buildQueryTableFieldLineage(&plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{source, source}}, target, info, info, nil, nil); got != nil {
+	source := plugin.QueryOutputSource{Path: path, Fields: fields, Bindings: []plugin.QueryOutputBinding{binding}}
+	if got := buildQueryTableFieldLineage(&plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{source, source}}, inputs, target, info, info, nil, nil); got != nil {
 		t.Fatal("multiple sources declared complete")
 	}
-	lineage := buildQueryTableFieldLineage(&plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{source}}, target, info, info, nil, []string{"nick"})
+	lineage := buildQueryTableFieldLineage(&plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{source}}, inputs, target, info, info, nil, []string{"nick"})
 	if lineage == nil || len(lineage.Mappings) != 1 || lineage.Mappings[0].Transformation != "derived" || lineage.Mappings[0].SourceField != fields[0].Name {
 		t.Fatalf("masked query alias lost physical origin: %+v", lineage)
 	}
 	// Suppression removes the query column before field mapping; it cannot create an origin.
-	if got := buildQueryTableFieldLineage(&plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{source}}, target, &datatype.TableInfo{}, info, nil, nil); got != nil {
+	if got := buildQueryTableFieldLineage(&plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{source}}, inputs, target, &datatype.TableInfo{}, info, nil, nil); got != nil {
 		t.Fatal("suppressed field acquired an origin")
+	}
+}
+
+func TestQueryFieldLineageComposesMultipleOriginsByPath(t *testing.T) {
+	persons := plugin.TabularItemPath(11, plugin.EngineCatalogTermSchema, "public", "persons")
+	activities := plugin.TabularItemPath(11, plugin.EngineCatalogTermSchema, "public", "activities")
+	filter := plugin.TabularItemPath(11, plugin.EngineCatalogTermSchema, "public", "allowed")
+	fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}, {Name: "name", Type: datatype.FieldTypeString}}
+	// Owner order differs from canonical resource order and provider order.
+	inputs := []TableQueryInput{{Port: "people", Path: persons}, {Port: "events", Path: activities}, {Port: "scope", Path: filter}}
+	lineage := &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{
+		{Path: activities, Fields: fields, Bindings: []plugin.QueryOutputBinding{{SourcePath: []string{"name"}, OutputPath: []string{"label"}, Transformation: "derived"}}},
+		{Path: filter, Fields: fields}, // Row-only dependence is still a frozen input.
+		{Path: persons, Fields: fields, Bindings: []plugin.QueryOutputBinding{
+			{SourcePath: []string{"id"}, OutputPath: []string{"id"}, Transformation: "direct"},
+			{SourcePath: []string{"name"}, OutputPath: []string{"label"}, Transformation: "direct"},
+			{SourcePath: []string{"name"}, OutputPath: []string{"label"}, Transformation: "derived"},
+		}},
+	}}
+	read := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}, {Name: "label", Type: datatype.FieldTypeString}}}
+	target := []datatype.FieldInfo{{Name: "person_id", Type: datatype.FieldTypeBigInt}, {Name: "person_label", Type: datatype.FieldTypeString}, {Name: "category", Type: datatype.FieldTypeString}}
+	plans := []TableTransformPlan{
+		{Type: "field_mapping", FieldMapping: &FieldMappingTransformPlan{Mode: FieldMappingModeProject, Fields: []FieldMappingFieldPlan{{Source: "id", Target: "person_id"}, {Source: "label", Target: "temp"}, {Target: "category", Default: "outdoor"}}}},
+		{Type: "field_mapping", FieldMapping: &FieldMappingTransformPlan{Mode: FieldMappingModeProject, Fields: []FieldMappingFieldPlan{{Source: "person_id", Target: "person_id"}, {Source: "temp", Target: "person_label"}, {Source: "category", Target: "category"}}}},
+	}
+	got := buildQueryTableFieldLineage(lineage, inputs, target, read, &datatype.TableInfo{Fields: target}, plans, []string{"label"})
+	if got == nil || len(got.Sources) != 3 || len(got.Mappings) != 4 {
+		t.Fatalf("multi-source proof missing: %+v", got)
+	}
+	for _, port := range []string{"people", "events", "scope"} {
+		if got.Sources[port].Validate() != nil || !got.Sources[port].HasField("name") || got.Sources[port].HasField("label") {
+			t.Fatalf("original source snapshot lost at %s: %+v", port, got)
+		}
+	}
+	want := map[string]string{"people/id/person_id": "derived", "people/name/person_label": "derived", "events/name/person_label": "derived", "//category": "generated"}
+	for _, mapping := range got.Mappings {
+		key := mapping.InputPort + "/" + mapping.SourceField + "/" + mapping.TargetField
+		if mapping.OutputPort != "target" || want[key] != mapping.Transformation {
+			t.Fatalf("incorrect origin: %+v", mapping)
+		}
+		delete(want, key)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing origins: %+v", want)
+	}
+	for _, entry := range []struct {
+		name   string
+		mutate func(*plugin.QueryOutputLineage, []TableQueryInput)
+	}{
+		{"opaque input", func(l *plugin.QueryOutputLineage, _ []TableQueryInput) { l.Sources[1].OpaqueOutput = true }},
+		{"undeclared source", func(_ *plugin.QueryOutputLineage, i []TableQueryInput) { i[0].Path = filter }},
+		{"duplicate port", func(_ *plugin.QueryOutputLineage, i []TableQueryInput) { i[0].Port = i[1].Port }},
+		{"unbound result", func(l *plugin.QueryOutputLineage, _ []TableQueryInput) {
+			l.Sources[2].Bindings = l.Sources[2].Bindings[1:]
+		}},
+	} {
+		t.Run(entry.name, func(t *testing.T) {
+			l, i := lineage.Clone(), append([]TableQueryInput(nil), inputs...)
+			entry.mutate(l, i)
+			if got := buildQueryTableFieldLineage(l, i, target, read, &datatype.TableInfo{Fields: target}, plans, nil); got != nil {
+				t.Fatalf("incomplete proof claimed complete: %+v", got)
+			}
+		})
 	}
 }

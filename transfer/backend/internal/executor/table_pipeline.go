@@ -278,7 +278,7 @@ func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, err
 	}
 	// Evidence failure leaves field lineage unavailable, without changing the read.
 	lineage, lineageErr := prepared.OutputLineage(ctx)
-	if lineageErr == nil && engineplugin.ValidateQueryOutputLineage(readSet, lineage) == nil && len(lineage.Sources) == 1 {
+	if lineageErr == nil && engineplugin.ValidateQueryOutputLineage(readSet, lineage) == nil {
 		s.lineage = lineage.Clone()
 	}
 	var protect *dataprotection.PreparedTableProtection

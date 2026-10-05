@@ -81,7 +81,7 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
 		t.Fatalf("metrics = %#v", metrics)
 	}
-	if metrics.FieldLineage == nil || metrics.FieldLineage.Source.Validate() != nil || metrics.FieldLineage.Target.Validate() != nil || len(metrics.FieldLineage.Mappings) != 2 {
+	if metrics.FieldLineage == nil || metrics.FieldLineage.Sources["source"].Validate() != nil || metrics.FieldLineage.Target.Validate() != nil || len(metrics.FieldLineage.Mappings) != 2 {
 		t.Fatalf("native export field evidence = %#v", metrics.FieldLineage)
 	}
 	for _, mapping := range metrics.FieldLineage.Mappings {
@@ -120,6 +120,7 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 			Kind: executor.TableEndpointQuery, ConnInfo: connInfo,
 			RuntimeQuery:         &plugin.QueryRequest{EngineID: 11, Language: "sql", Query: query, TargetPath: &sourcePath, Options: plugin.QueryOptions{ReadOnly: true, Parameters: map[string]interface{}{"p1": 1}}},
 			ExpectedQueryReadSet: expectedQueryReadSet,
+			QueryInputs:          []executor.TableQueryInput{{Port: "source", Path: sourcePath}},
 			TableInfo:            &datatype.TableInfo{Name: sourceTable, Fields: queryFields},
 		},
 		Target:    executor.TableTargetPlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: queryTargetPath},

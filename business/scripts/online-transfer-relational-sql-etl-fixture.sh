@@ -7,6 +7,7 @@ umask 077
 SOURCE_TABLE=addp_online_transfer_sql_etl_source
 TARGET_TABLE=addp_online_transfer_sql_etl_target
 NATIVE_TARGET=addp_online_transfer_field_lineage_target
+MULTI_TARGET=addp_online_transfer_multi_query_target
 NATIVE_DOWNSTREAM=addp_online_transfer_field_lineage_downstream
 MONGODB_TARGET=addp_online_transfer_mongodb_ods
 DIM_TARGET=addp_online_transfer_dim_activity
@@ -90,6 +91,7 @@ PY_DESCRIPTOR
 reset_fixture() {
   postgres_sql <<SQL >/dev/null
 DROP TABLE IF EXISTS public.${TARGET_TABLE};
+DROP TABLE IF EXISTS public.${MULTI_TARGET};
 DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM};
 DROP TABLE IF EXISTS public.${NATIVE_TARGET};
 DROP TABLE IF EXISTS public.${SOURCE_TABLE};
@@ -115,6 +117,11 @@ SQL
 
 verify_fixture() {
   local values columns
+  values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', id, combined_label, combined_amount), ';' ORDER BY id, combined_label) FROM public.${MULTI_TARGET}")
+  [ "$values" = '3|north:active|600.50;3|north:active|600.50;4|east:active|801.50;4|east:active|801.50' ] || fail "multi-source CTE/JOIN/UNION rows differ: $values"
+  columns=$(postgres_sql -Atc "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema='public' AND table_name='${MULTI_TARGET}'")
+  [ "$columns" = 'id,combined_label,combined_amount' ] || fail "multi-source query output columns differ: $columns"
+
   values=$(postgres_sql -Atc \
     "SELECT CONCAT_WS('|', COUNT(*), MIN(id), MAX(id), SUM(amount)::numeric(12,2)) FROM public.${TARGET_TABLE}")
   [ "$values" = "2|3|4|701.00" ] || fail "target rows do not prove SQL filter semantics: $values"

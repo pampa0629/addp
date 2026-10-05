@@ -382,11 +382,11 @@ func TestBuildExpectedQueryReadSetUsesDeclaredInputLeavesInsteadOfAnchor(t *test
 		}},
 	}
 
-	readSet, err := buildExpectedQueryReadSet(endpoint, model, anchor)
+	readSet, inputs, err := buildExpectedQueryReadSet(endpoint, model, anchor)
 	if err != nil {
 		t.Fatalf("buildExpectedQueryReadSet() error = %v", err)
 	}
-	if len(readSet.Paths) != 2 || readSet.Paths[0].StringPath() != "Outdoor/Outdoors" || readSet.Paths[1].StringPath() != "Outdoor/Persons" {
+	if len(inputs) != 2 || inputs[0].Port != "activities" || inputs[0].Path.StringPath() != "Outdoor/Outdoors" || inputs[1].Port != "persons" || len(readSet.Paths) != 2 || readSet.Paths[0].StringPath() != "Outdoor/Outdoors" || readSet.Paths[1].StringPath() != "Outdoor/Persons" {
 		t.Fatalf("expected read set = %#v", readSet.Paths)
 	}
 }
@@ -395,7 +395,7 @@ func TestBuildExpectedQueryReadSetRejectsBranchAnchorWithoutInputs(t *testing.T)
 	model := engineplugin.DynamicSchemaCatalogModel()
 	anchor := engineplugin.EngineCatalogBranchPath(model, 11, engineplugin.EngineCatalogTermDatabase, "Outdoor")
 
-	_, err := buildExpectedQueryReadSet(EndpointSpec{Query: &QuerySourceSpec{}}, model, anchor)
+	_, _, err := buildExpectedQueryReadSet(EndpointSpec{Query: &QuerySourceSpec{}}, model, anchor)
 	if err == nil || !strings.Contains(err.Error(), "must use a catalog leaf locator") {
 		t.Fatalf("buildExpectedQueryReadSet() error = %v", err)
 	}

@@ -76,6 +76,8 @@ case "$1" in
          fi ;;
     esac
     case " $* " in
+      *"string_agg(column_name"*"addp_online_transfer_multi_query_target"*) echo 'id,combined_label,combined_amount' ;;
+      *"addp_online_transfer_multi_query_target"*) echo "${ADDP_TEST_MULTI_VALUES:-3|north:active|600.50;3|north:active|600.50;4|east:active|801.50;4|east:active|801.50}" ;;
       *"string_agg(column_name"*"addp_online_transfer_mongodb_ods"*) echo 'activity_id,activity_status,activity_date_raw,activity_level_raw,leader_person_id,leader_nickname_snapshot' ;;
       *"addp_online_transfer_mongodb_ods"*) echo "${ADDP_TEST_MONGODB_VALUES:-activity-1|active|2026-01-01|easy|person-1|Alice;activity-2|inactive|2026-01-02|moderate|person-2|Bob;activity-3|active|2026-01-03|hard|person-3|Carol}" ;;
 
@@ -173,6 +175,12 @@ esac
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('ownership mismatch', result.stderr)
             self.assertTrue(self.postgres_state.exists())
+
+    def test_rejects_incorrect_multi_source_query_rows(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        result = self.run_fixture('verify', ADDP_TEST_MULTI_VALUES='3|north:active|600.50')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('multi-source CTE/JOIN/UNION rows differ', result.stderr)
 
     def test_rejects_native_rows_that_do_not_prove_replace_and_generation(self):
         self.assertEqual(self.run_fixture('start').returncode, 0)

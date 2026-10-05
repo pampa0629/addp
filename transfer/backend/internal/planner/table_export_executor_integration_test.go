@@ -315,3 +315,102 @@ type plannerIntegrationWriteCloser struct {
 func (w plannerIntegrationWriteCloser) Close() error {
 	return nil
 }
+
+func TestIntegrationPlannerMultiSourceQueryFieldLineage(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	t.Setenv("PGOPTIONS", "-c search_path=pg_catalog")
+	ctx := t.Context()
+	conn := plannerIntegrationPostgresConnInfo(t)
+	pg := &postgresql.PostgreSQLPlugin{}
+	db := openPlannerIntegrationPostgres(t, ctx, pg, conn)
+	schema := plannerIntegrationPostgresTestSchema(t, ctx, db)
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TABLE "%[1]s".persons (id integer, name text);
+		CREATE TABLE "%[1]s".activities (id integer, name text);
+		CREATE TABLE "%[1]s".allowed (id integer);
+		INSERT INTO "%[1]s".persons VALUES (1, 'Alice'), (2, 'Bob');
+		INSERT INTO "%[1]s".activities VALUES (1, 'Hiking'), (2, 'Running');
+		INSERT INTO "%[1]s".allowed VALUES (1);
+	`, schema)); err != nil {
+		t.Fatal(err)
+	}
+	query := fmt.Sprintf(`WITH joined AS (
+		SELECT p.id, p.name || ':' || a.name AS label
+		FROM "%[1]s".persons p JOIN "%[1]s".activities a ON p.id=a.id
+		WHERE EXISTS (SELECT 1 FROM "%[1]s".allowed s WHERE s.id=p.id)
+	) SELECT id, label FROM joined UNION ALL SELECT id, label FROM joined`, schema)
+	fields := []map[string]interface{}{
+		{"source": "id", "target": "person_id", "target_type": "bigint"},
+		{"source": "label", "target": "person_label", "target_type": "string"},
+	}
+	spec, err := ParseTableExportTaskSpec(map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "bounded"}, "load": map[string]interface{}{"mode": "snapshot"},
+		"source": map[string]interface{}{"locator": tableLocator(1, schema, "persons"), "data_type": "table", "representation": "native", "query": map[string]interface{}{
+			"language": "sql", "statement": query, "inputs": []map[string]interface{}{
+				{"name": "events", "locator": tableLocator(1, schema, "activities")},
+				{"name": "people", "locator": tableLocator(1, schema, "persons")},
+				{"name": "scope", "locator": tableLocator(1, schema, "allowed")},
+			},
+		}},
+		"target":     map[string]interface{}{"parent_locator": fmt.Sprintf("addp://engine/1/path/%s?type=schema", schema), "name": "query_export", "data_type": "table", "representation": "native", "policy": map[string]interface{}{"apply_mode": "replace"}},
+		"transforms": []map[string]interface{}{{"type": "field_mapping", "version": "v1", "mode": "project", "fields": fields}},
+	}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps := pg.Capabilities()
+	build, err := BuildTableTransferPlan(spec, StaticEngineResolver{1: {Type: "postgresql", ConnInfo: conn, Capabilities: &caps}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tableExecutor, err := executor.NewTableTransferExecutor("postgresql", "postgresql", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics, err := tableExecutor.Execute(ctx, build.Plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineage := metrics.FieldLineage
+	if metrics.RecordsWritten != 2 || lineage == nil || len(lineage.Sources) != 3 || len(lineage.Mappings) != 3 {
+		t.Fatalf("multi-source field lineage missing: %+v", metrics)
+	}
+	for port, snapshot := range lineage.Sources {
+		if snapshot.Validate() != nil || snapshot.HasField("label") {
+			t.Fatalf("query alias replaced %s source schema: %+v", port, snapshot)
+		}
+	}
+	want := map[string]string{"people/id/person_id": "derived", "people/name/person_label": "derived", "events/name/person_label": "derived"}
+	for _, mapping := range lineage.Mappings {
+		key := mapping.InputPort + "/" + mapping.SourceField + "/" + mapping.TargetField
+		if want[key] != mapping.Transformation {
+			t.Fatalf("unexpected mapping: %+v", mapping)
+		}
+		delete(want, key)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing mappings: %+v", want)
+	}
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`SELECT person_id, person_label FROM "%s".query_export`, schema))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var id int64
+		var label string
+		if err := rows.Scan(&id, &label); err != nil {
+			t.Fatal(err)
+		}
+		if id != 1 || label != "Alice:Hiking" {
+			t.Fatalf("unexpected physical row: %d %s", id, label)
+		}
+		count++
+	}
+	if rows.Err() != nil || count != 2 {
+		t.Fatalf("physical row count=%d, err=%v", count, rows.Err())
+	}
+}

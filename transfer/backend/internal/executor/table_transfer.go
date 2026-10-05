@@ -28,6 +28,7 @@ type TableSourcePlan struct {
 	Query                string
 	RuntimeQuery         *engineplugin.QueryRequest
 	ExpectedQueryReadSet *engineplugin.QueryReadSet
+	QueryInputs          []TableQueryInput
 	ReadOptions          map[string]interface{}
 	ContentRead          engineplugin.ReadOptions
 	Format               format.FormatType
@@ -37,6 +38,12 @@ type TableSourcePlan struct {
 	TableInfo            *datatype.TableInfo
 	SpatialInfo          *datatype.SpatialInfo
 	RelatedRefs          []format.RelatedRef
+}
+
+// TableQueryInput binds an owner-declared port to a native read leaf.
+type TableQueryInput struct {
+	Port string
+	Path engineplugin.EngineCatalogPath
 }
 
 type TableTargetPlan struct {

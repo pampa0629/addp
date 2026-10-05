@@ -272,13 +272,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual((fields[1]["source"], fields[1]["target"]), ("region", "region_name"))
         self.assertEqual((fields[2]["precision"], fields[2]["scale"]), (8, 2))
         self.assertEqual((fields[3]["source"], fields[3]["default"]), ("", "online"))
-        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb"})
+        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi"})
 
     def test_cleanup_selection_is_limited_to_the_exact_run_family(self):
         name = ONLINE.task_name("run-123")
         names = sorted(ONLINE.owned_task_names(name)) + [ONLINE.task_name("another-run"), name + "_unrelated"]
         client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload={"items": [{"id": index + 1, "name": value} for index, value in enumerate(names)], "total": len(names)}))
-        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), [1, 2, 3, 4, 5])
+        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), [1, 2, 3, 4, 5, 6])
 
     def test_online_identity_requires_lineage_and_manager_permissions(self):
         self.assertFalse(any(key.startswith("system.engine.") for key in ONLINE.REQUIRED_PERMISSIONS))
@@ -325,13 +325,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(full_name, item["full_name"])
             return item
         output = io.StringIO()
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v5")
-        self.assertEqual(report["created_resources"], 8)
-        self.assertEqual(report["deleted_resources"], 8)
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v6")
+        self.assertEqual(report["created_resources"], 9)
+        self.assertEqual(report["deleted_resources"], 9)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
 
@@ -385,6 +385,75 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(proofs[3], (7, "region_name", {(5, "status", 7, "region_name", "direct", "replacement")}))
         self.assertEqual(proofs[4], (11, "area", {(5, "status", 7, "region_name", "direct", "replacement"), (7, "region_name", 11, "area", "direct", "hop")}))
         self.assertTrue(result["two_hop_verified"])
+
+    @staticmethod
+    def multi_source_execution():
+        bindings = {"base": "addp://engine/3/path/public/" + ONLINE.SOURCE_TABLE + "?type=table&item_id=5",
+                    "mapped": "addp://engine/3/path/public/" + ONLINE.NATIVE_TARGET + "?type=table&item_id=7"}
+        fields = {"base": ["id", "region", "status", "amount", "internal_note"],
+                  "mapped": ["id", "region_name", "amount", "generated_label"],
+                  "target": ["id", "combined_label", "combined_amount"]}
+        def ref(port, locator):
+            return {"port": port, "locator": locator, "schema_snapshot": {"hash": "sha256:" + port,
+                    "fields": [{"name": name, "path": [name]} for name in fields[port]]}}
+        target = "addp://engine/3/path/public/" + ONLINE.MULTI_TARGET + "?type=table"
+        output = dict(ref("target", target), write_mode="replace")
+        mappings = [("base", "id", "id"), ("base", "region", "combined_label"),
+                    ("mapped", "region_name", "combined_label"), ("base", "amount", "combined_amount"),
+                    ("mapped", "amount", "combined_amount")]
+        execution = {"execution_id": "multi-execution", "records_read": 4, "records_written": 4, "metadata": {"lineage_facts": {
+            "schema_version": "addp.lineage-facts/v1", "inputs": [ref(port, locator) for port, locator in bindings.items()],
+            "outputs": [output], "operations": [{"input_ports": ["base", "mapped"], "output_ports": ["target"],
+            "field_lineage_status": "complete", "field_mappings": [{"input_port": port, "output_port": "target",
+            "source_field": source, "target_field": field, "transformation": "derived"} for port, source, field in mappings]}]}}}
+        return execution, bindings, target
+
+    def test_multi_source_frozen_evidence_rejects_partial_or_guessed_origins(self):
+        execution, bindings, target = self.multi_source_execution()
+        self.assertEqual(ONLINE.validate_multi_source_execution(execution, bindings, target),
+                         {"base": "sha256:base", "mapped": "sha256:mapped", "target": "sha256:target"})
+        mutations = {
+            "missing source": lambda f: f["inputs"].pop(),
+            "wrong port": lambda f: f["inputs"][0].update(port="mapped"),
+            "query alias snapshot": lambda f: f["inputs"][0]["schema_snapshot"]["fields"][1].update(name="label", path=["label"]),
+            "missing origin": lambda f: f["operations"][0]["field_mappings"].pop(),
+            "row-only origin": lambda f: f["operations"][0]["field_mappings"][0].update(source_field="status"),
+            "wrong transformation": lambda f: f["operations"][0]["field_mappings"][1].update(transformation="direct"),
+            "wrong output": lambda f: f["outputs"][0].update(locator=bindings["base"]),
+            "unavailable": lambda f: f["operations"][0].update(field_lineage_status="unavailable"),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                changed = json.loads(json.dumps(execution))
+                mutate(changed["metadata"]["lineage_facts"])
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_multi_source_execution(changed, bindings, target)
+
+    def test_multi_source_scenario_preserves_inputs_parameters_and_exact_graph_origins(self):
+        execution, bindings, target = self.multi_source_execution()
+        source = {"id": 5, "node_id": 9, "full_name": "public." + ONLINE.SOURCE_TABLE, "item_type": "table"}
+        mapped = {"id": 7, "node_id": 9, "full_name": "public." + ONLINE.NATIVE_TARGET, "item_type": "table"}
+        result_item = {"id": 12, "node_id": 9, "full_name": "public." + ONLINE.MULTI_TARGET, "item_type": "table"}
+        def create(client, payload, deadline, owned):
+            query = payload["config"]["source"]["query"]
+            self.assertEqual(query["inputs"], [{"name": port, "locator": locator} for port, locator in bindings.items()])
+            self.assertEqual(query["parameters"], {"status": "active", "minimum": 3})
+            self.assertIn("WITH joined", query["statement"])
+            self.assertIn(" JOIN ", query["statement"])
+            self.assertIn("UNION ALL", query["statement"])
+            self.assertEqual([f["source"] for f in payload["config"]["transforms"][0]["fields"]], ["id", "label", "amount"])
+            owned.append(99)
+            return 99, execution
+        owned = []
+        with patch.object(ONLINE, "find_item", return_value=mapped), patch.object(ONLINE, "wait_transfer_target", return_value=result_item), patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=create), patch.object(ONLINE, "wait_field_graph", return_value={}) as graphs, patch.object(ONLINE, "validate_graph_snapshots") as snapshots:
+            report = ONLINE.run_multi_source_lineage(object(), 3, source, {"execution_ids": ["initial", "replacement", "hop"]}, "name", 30, owned)
+        self.assertEqual(owned, [99])
+        self.assertEqual(graphs.call_count, 3)
+        self.assertEqual(snapshots.call_count, 3)
+        self.assertEqual(graphs.call_args_list[1].args[3], {(5, "region", 12, "combined_label", "derived", "multi-execution"),
+                         (7, "region_name", 12, "combined_label", "derived", "multi-execution"),
+                         (5, "status", 7, "region_name", "direct", "replacement")})
+        self.assertTrue(report["cte_join_union_verified"])
 
     @staticmethod
     def mongodb_execution(identifier="mongo-first"):

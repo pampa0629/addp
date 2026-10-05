@@ -28,7 +28,7 @@ cd "$ROOT_DIR/transfer/backend"
 ADDP_POSTGRES_INTEGRATION=1 \
     ADDP_TEST_POSTGRES_DATABASE="$database" \
     go test ./internal/repository ./internal/protection ./internal/planner \
-    -run '^(TestIntegrationPostgresExecutionEventsRemoveRetiredText|TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite|TestIntegrationPlannerTargetOverrideAppendsOnlyToExistingPostgresTable)$' \
+    -run '^(TestIntegrationPostgresExecutionEventsRemoveRetiredText|TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite|TestIntegrationPlannerTargetOverrideAppendsOnlyToExistingPostgresTable|TestIntegrationPlannerMultiSourceQueryFieldLineage)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/transfer.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/transfer.log"; then
     echo "Transfer PostgreSQL gate refuses skipped tests" >&2

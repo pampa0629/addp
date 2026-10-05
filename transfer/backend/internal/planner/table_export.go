@@ -953,7 +953,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 		if err != nil {
 			return executor.TableSourcePlan{}, fmt.Errorf("build query source catalog path: %w", err)
 		}
-		expectedReadSet, err := buildExpectedQueryReadSet(endpoint, modelProvider.EngineCatalogModel(), path)
+		expectedReadSet, queryInputs, err := buildExpectedQueryReadSet(endpoint, modelProvider.EngineCatalogModel(), path)
 		if err != nil {
 			return executor.TableSourcePlan{}, err
 		}
@@ -987,6 +987,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			Path:                 path,
 			RuntimeQuery:         &request,
 			ExpectedQueryReadSet: expectedReadSet,
+			QueryInputs:          queryInputs,
 		}, nil
 	}
 	itemDescriptor, hasItemAttributes := sourceItemDescriptorFromMetaAttributes(endpoint.Attributes)
@@ -1067,34 +1068,37 @@ func buildExpectedQueryReadSet(
 	endpoint EndpointSpec,
 	model engineplugin.EngineCatalogModelSpec,
 	sourcePath engineplugin.EngineCatalogPath,
-) (*engineplugin.QueryReadSet, error) {
+) (*engineplugin.QueryReadSet, []executor.TableQueryInput, error) {
 	paths := make([]engineplugin.EngineCatalogPath, 0, len(endpoint.Query.Inputs))
+	inputs := make([]executor.TableQueryInput, 0, len(endpoint.Query.Inputs))
 	if len(endpoint.Query.Inputs) == 0 {
 		paths = append(paths, sourcePath)
+		inputs = append(inputs, executor.TableQueryInput{Port: "source", Path: sourcePath})
 	} else {
 		for _, input := range endpoint.Query.Inputs {
 			locator, err := resourcetree.ParseURI(strings.TrimSpace(input.Locator))
 			if err != nil {
-				return nil, fmt.Errorf("parse query source input %q locator: %w", input.Name, err)
+				return nil, nil, fmt.Errorf("parse query source input %q locator: %w", input.Name, err)
 			}
 			path, err := resourcetree.EngineCatalogPathFromLocator(model, locator)
 			if err != nil {
-				return nil, fmt.Errorf("build query source input %q catalog path: %w", input.Name, err)
+				return nil, nil, fmt.Errorf("build query source input %q catalog path: %w", input.Name, err)
 			}
 			paths = append(paths, path)
+			inputs = append(inputs, executor.TableQueryInput{Port: strings.TrimSpace(input.Name), Path: path})
 		}
 	}
 	expected, err := engineplugin.NewQueryReadSet(paths...)
 	if err != nil {
 		if len(endpoint.Query.Inputs) == 0 {
-			return nil, fmt.Errorf("query source without inputs must use a catalog leaf locator: %w", err)
+			return nil, nil, fmt.Errorf("query source without inputs must use a catalog leaf locator: %w", err)
 		}
-		return nil, fmt.Errorf("query source inputs must identify catalog leaves: %w", err)
+		return nil, nil, fmt.Errorf("query source inputs must identify catalog leaves: %w", err)
 	}
 	if len(endpoint.Query.Inputs) > 0 && len(expected.Paths) != len(endpoint.Query.Inputs) {
-		return nil, fmt.Errorf("query source input locators must be unique")
+		return nil, nil, fmt.Errorf("query source input locators must be unique")
 	}
-	return expected, nil
+	return expected, inputs, nil
 }
 
 func queryCapabilitySupportsLanguage(capability *engineplugin.QueryCapability, language string) bool {

@@ -37,6 +37,7 @@ cleanup_tasks = SUPPORT.cleanup_tasks
 SOURCE_TABLE = "addp_online_transfer_sql_etl_source"
 TARGET_TABLE = "addp_online_transfer_sql_etl_target"
 NATIVE_TARGET = "addp_online_transfer_field_lineage_target"
+MULTI_TARGET = "addp_online_transfer_multi_query_target"
 NATIVE_DOWNSTREAM = "addp_online_transfer_field_lineage_downstream"
 MONGODB_SOURCE = "transfer_fixture.activities"
 MONGODB_TARGET = "addp_online_transfer_mongodb_ods"
@@ -70,7 +71,7 @@ def task_name(run_id: str) -> str:
 
 
 def owned_task_names(name: str) -> set[str]:
-    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb"}
+    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi"}
 
 
 def native_task(name: str, source_locator: str, parent_locator: str, target: str, region_source: str, region_target: str) -> dict[str, object]:
@@ -174,6 +175,86 @@ def validate_graph_snapshots(graph: dict[str, object], expected: dict[int, str])
     for node in graph["nodes"]:
         if node["schema_snapshot_hash"] != expected.get(node["item_id"]):
             raise SuiteError("Meta field graph does not match the owner's frozen execution schemas")
+
+
+def validate_multi_source_execution(execution, bindings, target_locator):
+    facts = _object(_object(execution.get("metadata"), "multi-source metadata").get("lineage_facts"), "multi-source facts")
+    inputs, outputs, operations = (_array(facts.get(key), key) for key in ("inputs", "outputs", "operations"))
+    if (facts.get("schema_version") != "addp.lineage-facts/v1" or len(inputs) != 2 or len(outputs) != 1 or len(operations) != 1
+            or execution.get("records_read") != 4 or execution.get("records_written") != 4
+            or not isinstance(execution.get("execution_id"), str) or not execution["execution_id"]):
+        raise SuiteError("multi-source execution must preserve exact inputs, output and four rows")
+    if {ref.get("port"): ref.get("locator") for ref in inputs} != bindings:
+        raise SuiteError("multi-source frozen input ports differ from declarations")
+    output, operation = outputs[0], operations[0]
+    if (output.get("port") != "target" or output.get("locator") != target_locator or output.get("write_mode") != "replace"
+            or operation.get("field_lineage_status") != "complete" or operation.get("input_ports") != ["base", "mapped"]
+            or operation.get("output_ports") != ["target"]):
+        raise SuiteError("multi-source write must record complete field evidence and actual target")
+    mappings = _array(operation.get("field_mappings"), "multi-source field mappings")
+    expected = {("base", "id", "id", "derived"), ("base", "region", "combined_label", "derived"),
+                ("mapped", "region_name", "combined_label", "derived"), ("base", "amount", "combined_amount", "derived"),
+                ("mapped", "amount", "combined_amount", "derived")}
+    observed = {(m.get("input_port", ""), m.get("source_field", ""), m.get("target_field"), m.get("transformation")) for m in mappings}
+    if observed != expected or len(mappings) != len(expected) or any(m.get("output_port") != "target" for m in mappings):
+        raise SuiteError("multi-source exact value origins differ; JOIN-only fields must not become origins")
+    expected_fields = {"base": ["id", "region", "status", "amount", "internal_note"],
+                       "mapped": ["id", "region_name", "amount", "generated_label"],
+                       "target": ["id", "combined_label", "combined_amount"]}
+    hashes = {}
+    for ref in inputs + outputs:
+        snapshot = _object(ref.get("schema_snapshot"), "multi-source frozen schema")
+        fields = _array(snapshot.get("fields"), "multi-source frozen fields")
+        if ([f.get("name") for f in fields] != expected_fields[ref["port"]]
+                or any(f.get("path") != [f.get("name")] for f in fields)
+                or not isinstance(snapshot.get("hash"), str) or not snapshot["hash"]):
+            raise SuiteError("multi-source frozen schema lost original fields or precise paths")
+        hashes[ref["port"]] = snapshot["hash"]
+    return hashes
+
+
+def run_multi_source_lineage(client, engine_id, source, native, name, timeout, owned_ids):
+    mapped = find_item(client, engine_id, "public." + NATIVE_TARGET, "table")
+    bindings = {"base": SUPPORT.build_item_locator(engine_id, source), "mapped": SUPPORT.build_item_locator(engine_id, mapped)}
+    parent = f"addp://engine/{engine_id}/path/public?type=schema&node_id={positive_int(source.get('node_id'), 'multi-source parent')}"
+    payload = native_task(name + "_multi", bindings["base"], parent, MULTI_TARGET, "region", "combined_label")
+    payload["config"]["source"]["query"] = {
+        "language": "sql", "statement": f'''WITH joined AS (
+            SELECT a.id, a.region || ':' || b.region_name AS label, a.amount + b.amount AS amount
+            FROM public.{SOURCE_TABLE} a JOIN public.{NATIVE_TARGET} b ON a.id=b.id
+            WHERE a.status=:status AND a.id>=:minimum
+        ) SELECT id,label,amount FROM joined UNION ALL SELECT id,label,amount FROM joined''',
+        "parameters": {"status": "active", "minimum": 3},
+        "inputs": [{"name": port, "locator": locator} for port, locator in bindings.items()],
+    }
+    payload["config"]["transforms"][0]["fields"] = [
+        {"source": "id", "target": "id", "target_type": "bigint", "nullable": False},
+        {"source": "label", "target": "combined_label", "target_type": "string", "nullable": False},
+        {"source": "amount", "target": "combined_amount", "target_type": "decimal", "precision": 10, "scale": 2, "nullable": False},
+    ]
+    _, execution = SUPPORT.create_and_run_task(client, payload, time.monotonic() + timeout, owned_ids)
+    target_locator = f"addp://engine/{engine_id}/path/public/{MULTI_TARGET}?type=table"
+    hashes = validate_multi_source_execution(execution, bindings, target_locator)
+    target = wait_transfer_target(client, engine_id, "public." + MULTI_TARGET, timeout)
+    source_id, mapped_id, target_id = (positive_int(item.get("id"), "multi-source item") for item in (source, mapped, target))
+    identifier = execution["execution_id"]
+    previous = native["execution_ids"][1]
+    expected = {
+        "id": {(source_id, "id", target_id, "id", "derived", identifier)},
+        "combined_label": {(source_id, "region", target_id, "combined_label", "derived", identifier),
+                           (mapped_id, "region_name", target_id, "combined_label", "derived", identifier),
+                           (source_id, "status", mapped_id, "region_name", "direct", previous)},
+        "combined_amount": {(source_id, "amount", target_id, "combined_amount", "derived", identifier),
+                            (mapped_id, "amount", target_id, "combined_amount", "derived", identifier),
+                            (source_id, "amount", mapped_id, "amount", "derived", previous)},
+    }
+    for field, edges in expected.items():
+        graph = wait_field_graph(client, target_id, field, edges, timeout)
+        validate_graph_snapshots(graph, {source_id: hashes["base"], mapped_id: hashes["mapped"], target_id: hashes["target"]})
+    return {"execution_id": identifier, "target_item_id": target_id, "records_written": 4,
+            "input_schema_hashes": {"base": hashes["base"], "mapped": hashes["mapped"]}, "target_schema_hash": hashes["target"],
+            "multiple_origins_verified": True, "cte_join_union_verified": True,
+            "exact_field_mappings_verified": True, "graph_snapshots_verified": True}
 
 
 def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, object], name: str, timeout: float, owned_ids: list[int]) -> dict[str, object]:
@@ -838,6 +919,7 @@ def main() -> int:
 
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain)
+        multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
@@ -845,7 +927,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v5",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v6",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -858,8 +940,9 @@ def main() -> int:
             "mongodb_source_scan_execution_id": mongodb_scan,
             "mongodb_field_lineage": mongodb_lineage,
             "orchestrated_field_lineage": chain,
-            "created_resources": 8,
-            "deleted_resources": 8,
+            "multi_source_field_lineage": multi,
+            "created_resources": 9,
+            "deleted_resources": 9,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))
