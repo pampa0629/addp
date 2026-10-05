@@ -219,6 +219,8 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN": "addp_at_security_initializer",
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":     "addp_at_foreign",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":             "84",
+		"ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN":  "addp_at_raster_platform",
+		"ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN":    "addp_at_raster_tenant",
 		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN":        "addp_at_reader",
 		"ADDP_ONLINE_READ_USER_USERNAME":            "external-online-public-reader",
 		"ADDP_ONLINE_READ_USER_PASSWORD":            "reader'quoted-password",
@@ -249,6 +251,11 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	for _, value := range []string{"addp_at_admin", "addp_at_creator", "addp_at_reader", "addp_at_foreign", "84", "86", "external-online-public-reader", "reader'\"'\"'quoted-password"} {
 		if !strings.Contains(string(content), value) {
 			t.Fatalf("fixture environment omitted %q", value)
+		}
+	}
+	for _, key := range []string{"ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN", "ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN"} {
+		if !strings.Contains(string(content), "export "+key+"='"+values[key]+"'\n") {
+			t.Fatalf("owner-only environment omitted raster management identity %s", key)
 		}
 	}
 	if strings.Contains(string(content), values["UNREGISTERED_PASSWORD"]) {

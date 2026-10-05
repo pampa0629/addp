@@ -37,6 +37,10 @@ class SystemIAMGateLockTest(unittest.TestCase):
             log_utility = checkout / "scripts/utils/runtime-log-env.sh"
             log_utility.parent.mkdir(parents=True)
             shutil.copyfile(Path(__file__).parents[1] / "utils/runtime-log-env.sh", log_utility)
+            (checkout / "system/backend/go.mod").write_text("module github.com/addp/system\n")
+            subprocess.run(["git", "init", "-q"], cwd=checkout, check=True)
+            subprocess.run(["git", "add", "."], cwd=checkout, check=True)
+            subprocess.run(["git", "-c", "user.name=Gate Fixture", "-c", "user.email=gate@example.test", "commit", "-qm", "fixture"], cwd=checkout, check=True)
             self.scripts.append(script)
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
@@ -44,6 +48,8 @@ class SystemIAMGateLockTest(unittest.TestCase):
         go.write_text(f'''#!/usr/bin/env python3
 import os, sys, time
 from pathlib import Path
+with open(os.environ["TEST_GO_CWD"], "a") as trace:
+    trace.write(str(Path.cwd()) + "\\n")
 with open(os.environ["TEST_GO_TRACE"], "a") as trace:
     trace.write(" ".join(sys.argv[1:]) + "\\n")
 if os.environ.get("TEST_GO_HOLD") == "1" and "./internal/testsupport" in sys.argv:
@@ -59,7 +65,7 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}",
                                 ADDP_SYSTEM_POSTGRES_TEST_DSN="postgres://fixture/addp_iam_test",
                                 GITHUB_ACTIONS="true",
-                                TEST_STARTED=str(self.started), TEST_RELEASE=str(self.release))
+                                TEST_STARTED=str(self.started), TEST_RELEASE=str(self.release), TEST_GO_CWD=str(self.root / "cwd-trace"))
 
     def tearDown(self):
         for process in self.processes:
@@ -138,6 +144,30 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         result = self.run_gate(arguments=("--test", "credential-context"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package iam", result.stderr)
+
+    def test_source_checkout_is_explicit_and_keeps_the_original_infra_entry(self):
+        checkout = self.root / "review"
+        subprocess.run(["git", "clone", "--shared", "-q", str(self.scripts[1].parents[2]), str(checkout)], check=True)
+        # The source checkout's Infra scripts must not become the connection authority.
+        (checkout / "scripts/infra/ports.sh").unlink()
+        result = self.run_gate(arguments=("--source-root", str(checkout)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        working_directories = (self.root / "cwd-trace").read_text().splitlines()
+        self.assertTrue(working_directories)
+        self.assertEqual(set(working_directories), {str((checkout / "system/backend").resolve())})
+        self.assertIn("./internal/testsupport -run ^TestResetDisposablePostgresForGate$", (self.root / "trace-1").read_text())
+
+    def test_unrelated_source_is_rejected_before_any_database_command(self):
+        unrelated = self.root / "unrelated"
+        (unrelated / "system/backend").mkdir(parents=True)
+        (unrelated / "system/backend/go.mod").write_text("module github.com/addp/system\n")
+        subprocess.run(["git", "init", "-q"], cwd=unrelated, check=True)
+        subprocess.run(["git", "add", "."], cwd=unrelated, check=True)
+        subprocess.run(["git", "-c", "user.name=Gate Fixture", "-c", "user.email=gate@example.test", "commit", "-qm", "unrelated"], cwd=unrelated, check=True)
+        result = self.run_gate(arguments=("--source-root", str(unrelated)))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be an ADDP checkout", result.stderr)
+        self.assertFalse((self.root / "trace-1").exists())
 
     def test_transfer_create_filter_keeps_default_migration_discovery(self):
         result = self.run_gate(arguments=("--test", "transfer-task-create"))

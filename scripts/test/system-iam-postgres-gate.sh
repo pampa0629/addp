@@ -7,8 +7,13 @@ set -euo pipefail
 
 PACKAGE_FILTER=""
 TEST_FILTER=""
+SOURCE_ROOT=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --source-root)
+            SOURCE_ROOT="${2:?--source-root requires a checkout path}"
+            shift 2
+            ;;
         --package)
             PACKAGE_FILTER="${2:-}"
             shift 2
@@ -18,7 +23,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
+            echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
             exit 2
             ;;
     esac
@@ -34,6 +39,18 @@ trap cleanup EXIT
 
 if [ -z "${ADDP_SYSTEM_POSTGRES_TEST_DSN:-}" ]; then
     echo "ADDP_SYSTEM_POSTGRES_TEST_DSN must reference a disposable PostgreSQL 15+ database" >&2
+    exit 1
+fi
+
+SOURCE_ROOT="${SOURCE_ROOT:-$ROOT_DIR}"
+SOURCE_ROOT=$(cd "$SOURCE_ROOT" && pwd -P)
+source_checkout=$(git -C "$SOURCE_ROOT" rev-parse --show-toplevel)
+source_commit=$(git -C "$SOURCE_ROOT" rev-parse HEAD)
+if [ "$source_checkout" != "$SOURCE_ROOT" ] ||
+   ! git -C "$ROOT_DIR" merge-base --is-ancestor "$source_commit" HEAD ||
+   ! [ -f "$SOURCE_ROOT/system/backend/go.mod" ] ||
+   ! grep -qx 'module github.com/addp/system' "$SOURCE_ROOT/system/backend/go.mod"; then
+    echo "--source-root must be an ADDP checkout whose commit belongs to this repository" >&2
     exit 1
 fi
 
@@ -54,7 +71,7 @@ except BlockingIOError:
     sys.exit("System IAM PostgreSQL gate is already running; run gates serially")
 PY
 
-cd "$ROOT_DIR/system/backend"
+cd "$SOURCE_ROOT/system/backend"
 
 run_without_skips() {
     package=$1
