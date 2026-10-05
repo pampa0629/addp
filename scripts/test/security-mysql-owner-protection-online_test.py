@@ -1,8 +1,10 @@
 import importlib.util
+import json
 import sys
 import copy
 import struct
 import time
+import tempfile
 import urllib.parse
 import unittest
 from pathlib import Path
@@ -419,6 +421,61 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
             "addp://engine/17/path/public/customers",
         )
         self.assertNotIn("stable_key", payload["data_config"])
+
+
+class ManagerExportBrowserTest(unittest.TestCase):
+    def report(self):
+        return {
+            "schema_version": "addp.security-manager-export-browser/v1", "result": "passed",
+            "run_id": "run-42", "tenant_id": "2", "records": 5,
+            "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
+            "email_field_present": False, "non_sensitive_fields_preserved": True,
+            "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
+            "manager_source_verified": True, "monitor_detail_visible": True,
+            "browser_warning_errors": 0, "failed_business_responses": 0,
+        }
+
+    def test_rejects_missing_provenance_hidden_detail_wrong_run_and_browser_errors(self):
+        valid = self.report()
+        self.assertEqual(ONLINE.validate_export_browser_report(valid, "run-42", "2"), valid)
+        for key, value in (
+            ("schema_version", "old"), ("run_id", "other"), ("tenant_id", "9"),
+            ("execution_id", "invalid"), ("execution_id", "00000000-0000-0000-0000-000000000000"),
+            ("access_token", "unexpected"), ("records", 4), ("email_field_present", True),
+            ("non_sensitive_fields_preserved", False), ("same_user_verified", False),
+            ("initiator_verified", False), ("taskless_execution", False),
+            ("manager_source_verified", False), ("monitor_detail_visible", False),
+            ("browser_warning_errors", 1), ("failed_business_responses", 1),
+            ("initiator_verified", 1), ("browser_warning_errors", False),
+        ):
+            with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_export_browser_report(dict(valid, **{key: value}), "run-42", "2")
+        for key in valid:
+            incomplete = dict(valid); incomplete.pop(key)
+            with self.subTest(missing=key), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_export_browser_report(incomplete, "run-42", "2")
+
+    def test_browser_failure_and_missing_report_cannot_reuse_previous_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory)
+            path = artifact / "security-manager-export-browser.json"
+            environment = dict(ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_TEST_RUN_ID="run-42",
+                ADDP_ONLINE_TEST_TENANT_ID="2", ADDP_ONLINE_TEST_USER_ACCESS_TOKEN="test-token",
+                ADDP_ONLINE_TEST_USER_USERNAME="test-user", ADDP_ONLINE_TEST_USER_PASSWORD="test-password",
+                GATEWAY_URL="http://127.0.0.1:8000", CONSOLE_URL="http://127.0.0.1:5170")
+            for exit_code in (1, 0):
+                path.write_text(json.dumps(self.report()))
+                with patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=exit_code, stdout="", stderr="")):
+                    with self.subTest(exit_code=exit_code), self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.run_export_browser(artifact, environment, "source")
+                self.assertFalse(path.exists())
+            def browser(command, **kwargs):
+                self.assertIn("e2e/online/security-manager-export.spec.js", command)
+                self.assertEqual(kwargs["env"]["ADDP_ONLINE_SECURITY_EXPORT_LOCATOR"], "source")
+                path.write_text(json.dumps(self.report()))
+                return Mock(returncode=0, stdout="", stderr="")
+            with patch.object(ONLINE.subprocess, "run", side_effect=browser):
+                self.assertEqual(ONLINE.run_export_browser(artifact, environment, "source"), self.report())
 
 
 class HostedGovernanceInitializationTest(unittest.TestCase):

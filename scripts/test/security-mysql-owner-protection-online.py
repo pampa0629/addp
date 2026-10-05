@@ -9,9 +9,11 @@ import json
 import struct
 import os
 import signal
+import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -83,6 +85,9 @@ REQUIRED_PERMISSIONS = {
     "develop.task.execute",
     "develop.task.read",
     "manager.data_item.read",
+    "manager.derived_artifact.create",
+    "manager.derived_artifact.read",
+    "monitor.execution.read",
     "meta.catalog.read",
     "meta.scan_task.execute",
     "meta.scan_task.read",
@@ -1043,7 +1048,7 @@ def run_scenario(
             raise SuiteError("Transfer target lost non-sensitive customer fields")
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v2",
+            "schema_version": "addp.security-mysql-owner-protection-online/v3",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -1152,6 +1157,64 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
             })
 
 
+def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
+    report = _object(payload, "Manager export browser report")
+    expected = {
+        "schema_version": "addp.security-manager-export-browser/v1", "result": "passed",
+        "run_id": run_id, "tenant_id": tenant_id, "records": 5,
+        "email_field_present": False, "non_sensitive_fields_preserved": True,
+        "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
+        "manager_source_verified": True, "monitor_detail_visible": True,
+        "browser_warning_errors": 0, "failed_business_responses": 0,
+    }
+    mismatches = [key for key, value in expected.items()
+                  if type(report.get(key)) is not type(value) or report.get(key) != value]
+    if set(report) != set(expected) | {"execution_id"}:
+        mismatches.append("report_fields")
+    execution_id = report.get("execution_id")
+    try:
+        valid_uuid = (isinstance(execution_id, str) and str(uuid.UUID(execution_id)) == execution_id
+                      and uuid.UUID(execution_id).int != 0)
+    except ValueError:
+        valid_uuid = False
+    if not valid_uuid:
+        mismatches.append("execution_id")
+    if mismatches:
+        raise SuiteError("Manager export browser report mismatch: " + ", ".join(mismatches))
+    return report
+
+
+def run_export_browser(repository: Path, environment: Mapping[str, str], locator: str) -> dict[str, object]:
+    required = ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_TEST_TENANT_ID",
+                "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN", "ADDP_ONLINE_TEST_USER_USERNAME",
+                "ADDP_ONLINE_TEST_USER_PASSWORD", "GATEWAY_URL", "CONSOLE_URL")
+    missing = [key for key in required if not environment.get(key)]
+    if missing:
+        raise SuiteError("Manager export browser environment is missing: " + ", ".join(missing))
+    report_path = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "security-manager-export-browser.json"
+    report_path.unlink(missing_ok=True)
+    browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator)
+    result = subprocess.run(
+        ["npm", "run", "test:e2e", "--", "--config=playwright.online.config.js",
+         "e2e/online/security-manager-export.spec.js"],
+        cwd=repository / "console/frontend", env=browser_environment, text=True, capture_output=True,
+    )
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
+    if result.returncode:
+        raise SuiteError(f"Manager export Playwright exited with status {result.returncode}")
+    if not report_path.is_file():
+        raise SuiteError("Playwright did not write security-manager-export-browser.json")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SuiteError("Manager export browser report is not valid JSON") from error
+    return validate_export_browser_report(report, environment["ADDP_ONLINE_TEST_RUN_ID"],
+                                         environment["ADDP_ONLINE_TEST_TENANT_ID"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--initialize", action="store_true", help="initialize fresh Hosted governance through formal APIs")
@@ -1195,6 +1258,10 @@ def main() -> int:
         required_environment("ADDP_ONLINE_TEST_RUN_ID"),
         timeout,
     )
+    source_item = find_item(client, source_engine_id,
+                            f"{required_environment('ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE')}.{SOURCE_TABLE}", "table")
+    report["manager_export_browser"] = run_export_browser(
+        Path(__file__).resolve().parents[2], dict(os.environ), build_item_locator(source_engine_id, source_item))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     return 0
 

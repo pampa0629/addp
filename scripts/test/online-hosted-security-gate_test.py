@@ -16,6 +16,12 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test/online-hosted-security-gate.sh')
+        self.host._executable('npm', '''
+            #!/usr/bin/env bash
+            [ "$*" = '--prefix console/frontend exec -- playwright install --with-deps chromium' ] || exit 2
+            echo "chromium" >> "$ADDP_TEST_GATE_TRACE"
+            [ "${ADDP_TEST_BROWSER_PREPARE_FAIL:-0}" != 1 ]
+        ''')
         self.host._write_repository_script('business/scripts/online-security-owner-fixture.sh', '''
             #!/usr/bin/env bash
             echo "security-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
@@ -95,17 +101,19 @@ class HostedSecurityGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
-        for target in ('-meta', '-security', '-manager', '-develop', '-service', '-transfer'):
+        for target in ('-meta', '-security', '-manager', '-develop', '-service', '-transfer', '-monitor'):
             self.assertIn('start:' + target, trace)
         self.assertIn('initialize', trace)
+        self.assertIn('chromium', trace)
         self.assertIn('make:test-online ONLINE_SUITE=security-mysql-owner-protection', trace)
         self.assertLess(trace.index('initialize'), trace.index('make:'))
+        self.assertLess(trace.index('chromium'), trace.index('make:'))
         self.assertLess(trace.index('application-stop'), trace.index('security-fixture:stop'))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
 
     def test_failures_destroy_owned_resources(self):
-        for key in ('ADDP_TEST_FIXTURE_FAIL', 'ADDP_TEST_INITIALIZE_FAIL', 'ADDP_TEST_SUITE_FAIL'):
+        for key in ('ADDP_TEST_FIXTURE_FAIL', 'ADDP_TEST_BROWSER_PREPARE_FAIL', 'ADDP_TEST_INITIALIZE_FAIL', 'ADDP_TEST_SUITE_FAIL'):
             with self.subTest(stage=key):
                 # Each case needs a fresh external secret and evidence directory.
                 shutil.rmtree(self.host.artifacts, ignore_errors=True)

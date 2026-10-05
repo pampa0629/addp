@@ -251,6 +251,7 @@ class OnlineGateTest(unittest.TestCase):
                 ("develop", "DEVELOP_URL"),
                 ("service", "SERVICE_URL"),
                 ("transfer", "TRANSFER_URL"),
+                ("monitor", "MONITOR_URL"),
             ),
         )
 

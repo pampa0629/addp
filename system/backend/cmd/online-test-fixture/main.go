@@ -128,7 +128,8 @@ func suitePermissions(suite string) ([]string, error) {
 	case "raster-workflow":
 		return rasterWorkflowPermissions, nil
 	case "security-mysql-owner-protection":
-		return append(append([]string{}, consumerPermissions...), securityPermissions...), nil
+		permissions := append(append([]string{}, consumerPermissions...), securityPermissions...)
+		return append(permissions, "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read"), nil
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
 		return consumerPermissions, nil
 	case "elasticsearch-consumer-flow", "hdfs-spark-consumer-flow":

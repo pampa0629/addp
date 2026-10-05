@@ -380,7 +380,7 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	if !needsEngineProvisioner("security-mysql-owner-protection") {
 		t.Fatal("missing provisioner")
 	}
-	for _, key := range []string{"security.protection_baseline.update", "security.policy.create", "system.execution_authorization.create"} {
+	for _, key := range []string{"security.protection_baseline.update", "security.policy.create", "system.execution_authorization.create", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read"} {
 		if !contains(permissions, key) {
 			t.Fatalf("missing owner permission %s", key)
 		}

@@ -571,13 +571,18 @@ def validate_security_mysql_owner_protection_profile(
 ) -> None:
     if "security-mysql-owner-protection" not in registered:
         return
+    suite = load_suite_registry(repository)["security-mysql-owner-protection"]
+    if ("monitor", "MONITOR_URL") not in suite.services:
+        raise RegistrationError("security-mysql-owner-protection must preflight Monitor")
     hosted_path = repository / "scripts/test/online-hosted-security-gate.sh"
     if not hosted_path.is_file():
         raise RegistrationError("security-mysql-owner-protection requires Hosted lifecycle")
     hosted = hosted_path.read_text(encoding="utf-8")
     for fragment in (
         'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
-        'for start_target in -meta -security -manager -develop -service -transfer',
+        'for start_target in -meta -security -manager -develop -service -transfer -monitor',
+        'playwright install --with-deps chromium',
+        'MONITOR_URL=', 'CONSOLE_URL=',
         'bash business/scripts/online-security-owner-fixture.sh start',
         'bash business/scripts/online-security-owner-fixture.sh stop',
         '--suite security-mysql-owner-protection', 'scripts/test/online-engine-registration.py',
@@ -606,6 +611,7 @@ def validate_security_mysql_owner_protection_profile(
         "business/scripts/online-security-owner-fixture.sh",
         "scripts/test/security-mysql-owner-protection-online.py",
         "scripts/test/security-transfer-protection-online.py",
+        "console/frontend/e2e/online/security-manager-export.spec.js",
     ):
         if not (repository / relative).is_file():
             raise RegistrationError(f"security-mysql-owner-protection requires {relative}")
@@ -648,6 +654,20 @@ def validate_security_mysql_owner_protection_profile(
                 "security-mysql-owner-protection owner contract is missing "
                 + fragment
             )
+
+    for fragment in ("run_export_browser(", "validate_export_browser_report(", "e2e/online/security-manager-export.spec.js"):
+        if fragment not in owner:
+            raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
+    browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")
+    for fragment in (
+        "login(page,", "page.waitForEvent('download'", "source_item_locator",
+        "transfer_execution_id", "execution.triggered_by", "execution.source_task_id",
+        "/api/v1/monitor/executions/by-execution-id/", ".execution-detail-content",
+        "addp.security-manager-export-browser/v1", "download.delete()",
+        "expect(browserErrors).toEqual([])", "expect(failedResponses).toEqual([])",
+    ):
+        if fragment not in browser:
+            raise RegistrationError("security-mysql-owner-protection export browser contract is missing " + fragment)
 
 
 def validate_oceanbase_consumer_flow_profile(

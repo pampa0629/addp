@@ -12,15 +12,17 @@ stop_online_fixture() {
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export SECURITY_URL=http://127.0.0.1:8194
+export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE=security_fixture
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 fixture_owned=1
 run_logged bash business/scripts/online-security-owner-fixture.sh start
 application_owned=1
-for start_target in -meta -security -manager -develop -service -transfer; do
+for start_target in -meta -security -manager -develop -service -transfer -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
+run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite security-mysql-owner-protection --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \

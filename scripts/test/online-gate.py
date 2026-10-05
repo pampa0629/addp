@@ -192,6 +192,7 @@ SUITES: Mapping[str, Suite] = {
             ("develop", "DEVELOP_URL"),
             ("service", "SERVICE_URL"),
             ("transfer", "TRANSFER_URL"),
+            ("monitor", "MONITOR_URL"),
         ),
     ),
     "metric-service-revision-lifecycle": Suite(

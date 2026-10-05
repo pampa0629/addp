@@ -617,6 +617,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "business/scripts/online-security-owner-fixture.sh",
             "scripts/test/security-mysql-owner-protection-online.py",
             "scripts/test/security-transfer-protection-online.py",
+            "scripts/test/online-gate.py",
+            "console/frontend/e2e/online/security-manager-export.spec.js",
         ):
             target = self.repository / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -625,6 +627,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
         for relative, fragment, message in (
             ("scripts/test/security-mysql-owner-protection-online.py", '"rollback_verified"', "owner contract is missing"),
+            ("scripts/test/online-hosted-security-gate.sh", "playwright install --with-deps chromium", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-security-gate.sh", "-transfer -monitor", "Hosted profile is missing"),
+            ("scripts/test/online-gate.py", '("monitor", "MONITOR_URL"),', "must preflight Monitor"),
+            ("scripts/test/security-mysql-owner-protection-online.py", "run_export_browser(", "must dispatch and validate"),
+            ("console/frontend/e2e/online/security-manager-export.spec.js", "execution.triggered_by", "export browser contract is missing"),
+            ("console/frontend/e2e/online/security-manager-export.spec.js", "download.delete()", "export browser contract is missing"),
             ("business/scripts/online-security-owner-fixture.sh", "container ownership mismatch", "fixture contract is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN", "Hosted profile is missing"),
             (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'security-mysql-owner-protection'", "must not also dispatch"),
@@ -634,9 +642,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 path = self.repository / relative
                 original = path.read_text()
                 path.write_text(original.replace(fragment, ""))
-                with self.assertRaisesRegex(CHECK.RegistrationError, message):
-                    CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
-                path.write_text(original)
+                try:
+                    with self.assertRaisesRegex(CHECK.RegistrationError, message):
+                        CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
+                finally:
+                    path.write_text(original)
         host = self.repository / "scripts/test/online-host-gate.sh"
         host.write_text(host.read_text() + "\nsecurity-mysql-owner-protection)\n")
         with self.assertRaisesRegex(CHECK.RegistrationError, "self-hosted route"):
