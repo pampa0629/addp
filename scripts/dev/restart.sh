@@ -770,6 +770,13 @@ fi
 echo "📦 构建计划: 同步 Swagger，按完整构建指纹复用或编译产物"
 echo ""
 
+# The full start includes Spark. Reject unavailable Desktop host forwarding
+# before stopping an otherwise usable workspace (including multi-module restart).
+if [ "$RESTART_ALL" = true ] || [ ${#ORIGINAL_ARGS[@]} -ne 1 ]; then
+    source "${SCRIPT_DIR}/spark-workflow.sh"
+    addp_prepare_spark_workflow_container || exit 1
+fi
+
 # 1. 统一停止工作区服务，保留 System 供 Go、Python 和 Runtime 完成注销。
 if ! "${SCRIPT_DIR}/stop.sh"; then
   echo ""

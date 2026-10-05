@@ -125,7 +125,7 @@ make test-module MODULE=<模块>
 
 共享 Go、前端和 Python 代码会根据仓库内真实依赖扩散到消费者。`make test-platform` 负责检查新模块、测试入口、前端、Python 包、PostgreSQL 门禁和产品构建是否完整登记。GitHub Actions 在 `main` push 后和每日定时任务中使用独立 Runner 复验；本地 `start.sh`、`restart.sh`、`git commit` 均不会触发 CI。
 
-`spark-workflow-engine` 的本地生命周期统一使用产品容器，无需宿主机安装 Java/PySpark。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"` 的产品构建结果。容器使用宿主网络支持 Driver 动态端口，HTTP 只监听本机回环；macOS 必须先在 Docker Desktop Settings → Resources → Network 勾选 Enable host networking，由用户执行 Apply and restart。修改源码后仍执行 `./scripts/dev/restart.sh -spark-workflow`；`stop.sh` 仅删除当前工作区所属容器，保留 Business 数据。
+`spark-workflow-engine` 的本地生命周期统一使用产品容器，无需宿主机安装 Java/PySpark。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"` 的产品构建结果。容器使用宿主网络支持 Driver 动态端口，HTTP 只监听本机回环；macOS 必须先在 Docker Desktop Settings → Resources → Network 勾选 Enable host networking，由用户执行 Apply and restart。启动入口在替换 Runtime 前使用同一产品镜像、随机回环端口和一次性标识检查宿主机与容器的双向 TCP；不能用容器内 `/health` 或 `host.docker.internal` 单向访问代替。包含 Spark 的全套重启在停止已有服务前完成此检查，失败保留已有服务并明确报告不可达方向；探针容器在所有退出路径清理。修改源码后仍执行 `./scripts/dev/restart.sh -spark-workflow`；`stop.sh` 仅删除当前工作区所属容器，保留 Business 数据。
 
 `model3d-workflow-engine` 使用专用镜像构建链路：先构建绑定 `_3dtile` 的 `addp-model3d-converter`，再构建内置转换器的 `addp-model3d-workflow-engine`。当前转换器构建一次只支持一个 Linux 平台，Apple Silicon 本机优先使用默认的 `linux/arm64` 容器路径。
 

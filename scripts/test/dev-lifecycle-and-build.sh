@@ -356,7 +356,9 @@ for name, args, failed in (
     ("all", ["-all"], False),
     ("default", [], False),
     ("selected", ["-system", "-asset", "-meta"], False),
+    ("single", ["-system"], False),
     ("swagger-failure", ["-all"], True),
+    ("network-failure", ["-all"], True),
 ):
     root = temporary / ("restart-" + name)
     dev = root / "scripts/dev"
@@ -364,6 +366,8 @@ for name, args, failed in (
     for filename in ("restart.sh", "lifecycle-lock.sh", "node-dependencies.sh", "jupyter-env.sh"):
         shutil.copy2(repository / "scripts/dev" / filename, dev / filename)
     (dev / "ports.sh").write_text('addp_dev_load_saved_ports() { :; }\n')
+    (dev / "spark-workflow.sh").write_text('addp_prepare_spark_workflow_container() { '
+        'echo network >> "$FIXTURE_ROOT/events"; [ "$FAIL_NETWORK" = 0 ]; }\n')
     (root / ".env").write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
 
     infra = root / "scripts/infra"
@@ -415,7 +419,8 @@ exit 1
             del env[key]
     env.update(
         PATH=str(root / "tools") + os.pathsep + env["PATH"],
-        FIXTURE_ROOT=str(root), FAIL_SWAGGER=str(int(failed)),
+        FIXTURE_ROOT=str(root), FAIL_SWAGGER=str(int(name == 'swagger-failure')),
+        FAIL_NETWORK=str(int(name == 'network-failure')),
         ALLOW_SWAGGER_FAILURE="0", MEILISEARCH_PORT="17700", SERVICE_HOST="localhost",
     )
     result = subprocess.run(["bash", str(dev / "restart.sh"), *args], env=env,
@@ -427,10 +432,12 @@ exit 1
     events = (root / "events").read_text().splitlines()
     assert not any(event.startswith("pkill ") for event in events), \
         "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
-    target = "all" if args in ([], ["-all"]) else "system asset meta"
-    expected = ["stop", "generate " + target]
+    target = "all" if args in ([], ["-all"]) else "system" if name == 'single' else "system asset meta"
+    expected = ([] if name == 'single' else ['network']) + ["stop", "generate " + target]
     if not failed:
         expected += ["generated", "coverage " + target, "start"]
+    if name == 'network-failure':
+        expected = ['network']
     for binary in ("system", "asset", "meta", "meta-worker", "gateway"):
         assert (bins / ("addp-" + binary)).read_text() == "old binary", "restart must preserve " + binary
     assert events == expected, events
@@ -762,6 +769,7 @@ source "$SCRIPT"
 uname() { echo "$KERNEL"; }
 ip() { echo "1.1.1.1 dev eth0 src 192.0.2.8"; }
 make() { echo build >> "$TRACE"; [ "$BUILD_FAIL" = 0 ]; }
+addp_spark_check_host_network() { echo network >> "$TRACE"; [ "$NETWORK_FAIL" = 0 ]; }
 curl() { return 0; }
 addp_dev_port_busy() { return 1; }
 addp_dev_owned_listener() { return 0; }
@@ -793,7 +801,7 @@ for kernel, hosted, explicit, expected in [('Darwin','0','','host.docker.interna
     env = dict(os.environ, SCRIPT=str(script), ROOT_DIR=str(work), TRACE=str(work/'trace'),
                ARGS=str(work/'args'), KERNEL=kernel, ADDP_ONLINE_HOSTED=hosted,
                SPARK_WORKFLOW_SHARED_HOST=explicit, SPARK_WORKFLOW_PORT='18098', SPARK_MODE='',
-               REGISTRY='localhost:5001', IMAGE_TAG='latest', RUNTIME_HOST='', BUILD_FAIL='0', EXISTS='0', LABELS='foreign')
+               REGISTRY='localhost:5001', IMAGE_TAG='latest', RUNTIME_HOST='', BUILD_FAIL='0', NETWORK_FAIL='0', EXISTS='0', LABELS='foreign')
     result = subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True)
     assert result.returncode == 0, result.stderr
     args = (work/'args').read_text().splitlines()
@@ -805,15 +813,15 @@ for kernel, hosted, explicit, expected in [('Darwin','0','','host.docker.interna
     assert 'RUNTIME_HOST=localhost' in args, args
     assert 'SPARK_WORKFLOW_SHARED_HOST='+expected in args, args
     assert 'SPARK_WORKFLOW_SERVICE_CLIENT_SECRET' in args, args
-    assert (work/'trace').read_text().splitlines() == ['build','remove','run']
+    assert (work/'trace').read_text().splitlines() == ['build','network','remove','run']
     assert (work/'.dev-pids/spark-workflow-engine.pid').read_text().strip() == 'container-id'
-    for flags in ({'BUILD_FAIL':'1'}, {'EXISTS':'1'}, {'SPARK_MODE':'local'}):
+    for flags in ({'BUILD_FAIL':'1'}, {'EXISTS':'1'}, {'SPARK_MODE':'local'}, {'NETWORK_FAIL':'1'}):
         (work/'trace').unlink()
         (work/'args').unlink()
         rejected = subprocess.run(['bash','-c',launcher], env=dict(env,**flags),capture_output=True,text=True)
         assert rejected.returncode != 0, flags
         assert not (work/'args').exists(), flags
-        assert not (work/'trace').exists() or (work/'trace').read_text().strip() == 'build', flags
+        assert not (work/'trace').exists() or (work/'trace').read_text().splitlines() in (['build'], ['build','network']), flags
         (work/'trace').touch(); (work/'args').touch()
 for name in ('start.sh','restart.sh'):
     text = (root/'scripts/dev'/name).read_text()
@@ -821,8 +829,72 @@ for name in ('start.sh','restart.sh'):
     assert 'configure_spark_workflow_java' not in text
     assert 'detect_spark_workflow_shared_host' not in text
 assert 'spark-workflow' in (root/'scripts/dev/stop.sh').read_text()
+restart = (root/'scripts/dev/restart.sh').read_text()
+assert restart.index('addp_prepare_spark_workflow_container || exit 1') < restart.index('if ! "${SCRIPT_DIR}/stop.sh"')
 print('PASS: Spark lifecycle uses one product build and container path')
 PY_SPARK
+}
+
+test_spark_bidirectional_host_network() {
+  ROOT_DIR="$ROOT_DIR" TEST_ROOT="$TEST_ROOT" python3 - <<'PY_NETWORK_TEST'
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path(os.environ['ROOT_DIR'])
+work = Path(os.environ['TEST_ROOT']) / 'spark-network'
+work.mkdir()
+docker = work / 'docker'
+docker.write_text('''#!''' + sys.executable + '''
+import os, sys
+from pathlib import Path
+args = sys.argv[1:]
+mode = os.environ['NETWORK_CASE']
+with open(os.environ['NETWORK_TRACE'], 'a') as trace:
+    trace.write(args[0] + '\\n')
+if args[0] == 'run':
+    assert args[args.index('--network')+1] == 'host'
+    assert '-p' not in args
+    assert args[args.index('--entrypoint')+1] == 'python'
+    assert args[args.index('--name')+1].startswith('addp-spark-network-')
+    assert 'com.addp.network-probe=spark-workflow' in args
+    if mode == 'start-failure':
+        sys.exit(1)
+    code = args[args.index('-c')+1]
+    if mode in ('container-to-host-failure', 'both-failure'):
+        code = code.replace("('127.0.0.1', port)", "('127.0.0.1', 0)")
+    if mode in ('host-to-container-failure', 'both-failure'):
+        code = code.replace("listener.getsockname()[1]", '0')
+    if mode == 'wrong-identity':
+        code = code.replace('peer.sendall(nonce)', "peer.sendall(b'foreign-listener')")
+    os.execv(sys.executable, [sys.executable, '-u', '-c', code] + args[-2:])
+if args[0] == 'rm':
+    sys.exit(1 if mode == 'cleanup-failure' else 0)
+if args[:2] == ['container', 'inspect']:
+    sys.exit(0 if mode == 'cleanup-failure' else 1)
+sys.exit(2)
+''')
+docker.chmod(0o755)
+for mode in ('success', 'container-to-host-failure', 'host-to-container-failure',
+             'both-failure', 'start-failure', 'wrong-identity', 'cleanup-failure'):
+    trace = work / mode
+    env = dict(os.environ, PATH=str(work) + ':' + os.environ['PATH'], ROOT_DIR=str(root),
+               NETWORK_CASE=mode, NETWORK_TRACE=str(trace))
+    result = subprocess.run(['bash', '-c', 'source "$ROOT_DIR/scripts/dev/spark-workflow.sh"; '
+                             'addp_spark_check_host_network test-product-image'],
+                            env=env, capture_output=True, text=True, timeout=15)
+    assert (result.returncode == 0) == (mode == 'success'), (mode, result.stdout, result.stderr)
+    operations = trace.read_text().splitlines()
+    assert operations[:2] == ['run', 'rm'], (mode, operations)
+    if mode == 'container-to-host-failure':
+        assert '容器 → 宿主回环: 不可达；宿主 → 容器回环: 可达' in result.stderr
+    if mode == 'host-to-container-failure':
+        assert '容器 → 宿主回环: 可达；宿主 → 容器回环: 不可达' in result.stderr
+    if mode == 'cleanup-failure':
+        assert operations[-1] == 'container' and '无法清理' in result.stderr
+print('PASS: actual TCP probe rejects either unreachable direction, wrong identity and cleanup failure')
+PY_NETWORK_TEST
 }
 
 test_spark_runtime_owned_listener() {
@@ -1744,6 +1816,7 @@ test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid
 test_dev_runtime_owned_listeners_match_pidfiles
 test_spark_product_lifecycle
+test_spark_bidirectional_host_network
 test_spark_runtime_owned_listener
 test_hosted_runtime_owned_listener
 test_runtime_host_port_advertisement
