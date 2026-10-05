@@ -1520,6 +1520,9 @@
           "gpsAltitudeMeters": "Source Absolute Altitude (m)",
           "gpsStatus": "Measurement Status",
           "gpsDatum": "Source Geodetic Datum",
+          "gpsDateStamp": "Source UTC Date",
+          "gpsTimeHMS": "Source UTC Time (hours, minutes, seconds)",
+          "gpsDateTimeUTC": "GPS Receiver Time (UTC)",
           "graphModel": "Graph Model",
           "graphDirected": "Directed",
           "graphNodeCount": "Nodes",
@@ -1528,6 +1531,7 @@
         "fieldTooltips": {
           "captureLocation": "Records the acquisition device location, not image ground coverage. An unknown datum must not be treated as WGS84.",
           "gpsAltitude": "Preserves the source absolute value. Altitude Reference distinguishes above and below sea level; this is not ellipsoidal height.",
+          "gpsClock": "From complete GPS UTC date and time, summed exactly then truncated to nanoseconds; this is not the camera shutter time.",
           "photographicSensitivity": "Preserves all source values and their order. 65535 marks the SHORT upper limit; actual sensitivity may be higher. Sensitivity Type identifies the definition; these values do not always mean ISO speed.",
           "contentHash": "SHA256 calculated from the file binary content; identical content has the same hash.",
           "indexRef": "Reference to the item record in the Meilisearch assets index; the suffix is the item fingerprint, not the content hash."

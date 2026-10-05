@@ -184,3 +184,87 @@ func TestEnrichJPEGRefreshReplacesMediaSnapshot(t *testing.T) {
 		})
 	}
 }
+
+// Extend the independent GPS IFD with clock tags while preserving the existing
+// rational offsets and the original camera Orientation entry.
+func gpsClockJPEGContent(t *testing.T, date string, clock []uint32) []byte {
+	t.Helper()
+	content := gpsJPEGContent(t, "WGS-84", 'A')
+	end := 4 + int(binary.BigEndian.Uint16(content[4:6]))
+	metadata := append([]byte{}, content[12:end]...)
+	count := 7
+	if date != "" {
+		count++
+	}
+	if clock != nil {
+		count++
+	}
+	newIFD := len(metadata)
+	metadata = append(metadata, make([]byte, 2+count*12+4)...)
+	order := binary.LittleEndian
+	order.PutUint32(metadata[30:34], uint32(newIFD))
+	order.PutUint16(metadata[newIFD:], uint16(count))
+	copy(metadata[newIFD+2:], metadata[40:124])
+	at := newIFD + 2 + 7*12
+	add := func(tag, typ uint16, count uint32, raw []byte) {
+		order.PutUint16(metadata[at:], tag)
+		order.PutUint16(metadata[at+2:], typ)
+		order.PutUint32(metadata[at+4:], count)
+		order.PutUint32(metadata[at+8:], uint32(len(metadata)))
+		metadata = append(metadata, raw...)
+		at += 12
+	}
+	if clock != nil {
+		var raw bytes.Buffer
+		_ = binary.Write(&raw, order, clock)
+		add(7, 5, 3, raw.Bytes())
+	}
+	if date != "" {
+		add(29, 2, 11, []byte(date+"\x00"))
+	}
+	payload := append([]byte("Exif\x00\x00"), metadata...)
+	header := []byte{0xff, 0xe1, 0, 0}
+	binary.BigEndian.PutUint16(header[2:], uint16(len(payload)+2))
+	result := append(append([]byte{}, content[:2]...), header...)
+	result = append(result, payload...)
+	return append(result, content[end:]...)
+}
+
+func TestEnrichJPEGGPSUTCClockReplacement(t *testing.T) {
+	item := &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{
+		Layout: format.LayoutSingle, DataType: datatype.Media, Format: "jpeg", PrimaryContentPath: "images/gps-clock.jpg",
+	}, PhysicalPath: "images/gps-clock.jpg"}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+	clock := []uint32{12, 1, 34, 1, 56789, 1000}
+	for _, tc := range []struct {
+		name, date, timestamp string
+		clock                 []uint32
+		status                string
+	}{
+		{"complete", "2024:02:29", "2024-02-29T12:34:56.789Z", clock, "parsed"},
+		{"date removed", "", "", clock, "parsed"},
+		{"restored", "2024:02:29", "2024-02-29T12:34:56.789Z", clock, "parsed"},
+		{"time removed", "2024:02:29", "", nil, "parsed"},
+		{"invalid date", "2023:02:29", "", clock, "invalid"},
+		{"all removed", "", "", nil, "parsed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := gpsClockJPEGContent(t, tc.date, tc.clock)
+			_, _, err := EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+				ContentReader: bytesContentReader{content: content}, Item: item, PhysicalPath: item.PhysicalPath,
+				EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath { return plugin.FileItemPath(1, path) },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			gps := commonJSON.Section(attrs, "format_info.jpeg.exif.gps")
+			if commonJSON.InterfaceString(gps["date_time_utc"]) != tc.timestamp || commonJSON.String(attrs, "format_info.jpeg", "exif_status") != tc.status ||
+				(gps["date_stamp"] != nil) != (tc.date != "" && tc.status == "parsed") || (gps["time_hms"] != nil) != (tc.clock != nil) {
+				t.Fatalf("stale or missing UTC snapshot: %#v", attrs)
+			}
+			if len(commonJSON.Section(attrs, "capabilities.temporal")) != 0 || commonJSON.Section(attrs, "type_info.media")["date_time_utc"] != nil {
+				t.Fatalf("receiver clock became a media/temporal capability: %#v", attrs)
+			}
+		})
+	}
+}

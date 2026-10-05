@@ -111,7 +111,8 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 			gps["map_datum"] = value
 		}
 	}
-	return gps, valid
+	clockValid := extractGPSTime(ifd, gps, valid)
+	return gps, valid && clockValid
 }
 
 func exifBytes(ifd *tiffIFD, tag uint16, count uint32) ([]byte, bool) {
@@ -124,6 +125,14 @@ func exifBytes(ifd *tiffIFD, tag uint16, count uint32) ([]byte, bool) {
 }
 
 func exifDMS(ifd *tiffIFD, tag uint16, maximum float64) ([]float64, bool) {
+	values, ok := exifRationalTriplet(ifd, tag)
+	if !ok || values[1] >= 60 || values[2] >= 60 || values[0]+values[1]/60+values[2]/3600 > maximum {
+		return nil, false
+	}
+	return values, true
+}
+
+func exifRationalTriplet(ifd *tiffIFD, tag uint16) ([]float64, bool) {
 	entry := ifd.tags[tag]
 	if entry.typ != tiffTypeRational || entry.count != 3 {
 		return nil, false
@@ -139,9 +148,6 @@ func exifDMS(ifd *tiffIFD, tag uint16, maximum float64) ([]float64, bool) {
 			return nil, false
 		}
 		values[i] = float64(ifd.order.Uint32(raw[i*8:i*8+4])) / float64(denominator)
-	}
-	if values[1] >= 60 || values[2] >= 60 || values[0]+values[1]/60+values[2]/3600 > maximum {
-		return nil, false
 	}
 	return values, true
 }

@@ -75,6 +75,33 @@ for (const locale of ['zh-cn', 'en']) {
     })
   }
 
+  for (const clockCase of ['complete', 'date-only', 'time-only', 'leap', 'invalid']) {
+    test(`shows GPS UTC source clock without inventing missing time (${clockCase}) in ${locale}`, async ({ page }) => {
+      const gps = { version_id: [2, 3, 0, 0] }
+      if (clockCase !== 'time-only' && clockCase !== 'invalid') gps.date_stamp = '2024:02:29'
+      if (clockCase !== 'date-only') gps.time_hms = clockCase === 'leap' ? [23, 59, 60] : [0, 0, 0.125]
+      if (clockCase === 'complete') gps.date_time_utc = '2024-02-29T00:00:00.125Z'
+      await openAttributes(page, locale, {
+        item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+        format_info: { jpeg: { exif_status: clockCase === 'invalid' ? 'invalid' : 'parsed', exif: { gps } } }
+      })
+      const labels = locale === 'zh-cn'
+        ? ['源 UTC 日期', '源 UTC 时间（时、分、秒）', 'GPS 接收机时间（UTC）']
+        : ['Source UTC Date', 'Source UTC Time (hours, minutes, seconds)', 'GPS Receiver Time (UTC)']
+      for (const [i, key] of ['date_stamp', 'time_hms', 'date_time_utc'].entries()) {
+        const label = page.getByText(`EXIF / GPS / ${labels[i]}`, { exact: true })
+        if (key in gps) await expect(label).toBeVisible()
+        else await expect(label).toHaveCount(0)
+      }
+      if ('time_hms' in gps) await expect(page.getByText(gps.time_hms.join(', '), { exact: true })).toBeVisible()
+      if (clockCase === 'complete') {
+        await expect(page.getByText(gps.date_time_utc, { exact: true })).toBeVisible()
+        await expect(page.getByText(`EXIF / GPS / ${labels[2]}`, { exact: true })).toHaveAttribute('title',
+          locale === 'zh-cn' ? /不表示相机快门时间/ : /not the camera shutter time/)
+      }
+    })
+  }
+
   for (const knownDatum of [true, false]) {
     test(`shows capture GPS facts without inventing a CRS (${knownDatum}) in ${locale}`, async ({ page }) => {
       const point = { latitude: 0, longitude: -120.25 }

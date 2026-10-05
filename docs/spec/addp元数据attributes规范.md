@@ -290,6 +290,10 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 
 `format_info.unqualified` 是 normalizer 的隔离区，不是业务语义命名空间。正常的新 detector、format provider 或 reader 不应主动写入 `unqualified`。平台级行为不得依赖 `unqualified`。
 
+### format_info.jpeg
+
+JPEG EXIF GPS 的 `date_stamp` 与 `time_hms` 分别保存源 UTC 日期和时、分、秒。二者完整合法时，可在同一 `format_info.jpeg.exif.gps` 命名空间写入 RFC3339 UTC `date_time_utc`；它只表达 GPS 接收机时间，不声明相机快门时间、时间列或时间范围。部分标签缺失时不补值，闰秒源分量保留但不组合。精度、合法性及替换规则见 [内置 JPEG GPS 规范](addp内置数据类型与文件格式规范.md#jpeg-gps-拍摄位置)。
+
 ### format_info.tiff
 
 `format_info.tiff` 表达 TIFF / GeoTIFF 格式层事实。GeoTIFF 不新增基础 `format`，仍写 `attributes.item.format=tiff`；COG 是 TIFF 的 profile，不写成新的基础格式。

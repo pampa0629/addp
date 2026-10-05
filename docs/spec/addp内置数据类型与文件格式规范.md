@@ -1249,14 +1249,18 @@ JPEG EXIF 摘要通过现有 `MediaInfoProvider` 一次读取提供，由 Meta �
 | GPSLongitude（4） | `longitude_dms` | RATIONAL，3；度、分、秒，分母非零 |
 | GPSAltitudeRef（5） | `altitude_ref` | BYTE，1；0 / 1，分别为海平面参考以上 / 以下 |
 | GPSAltitude（6） | `altitude_meters` | RATIONAL，1；保留非负源绝对值（米） |
+| GPSTimeStamp（7） | `time_hms` | RATIONAL，3；UTC 时、分、秒，支持小数分量，分母非零 |
 | GPSStatus（9） | `status` | ASCII，2；A / V，测量中 / 测量中断 |
 | GPSMapDatum（18） | `map_datum` | 有界 ASCII；源大地基准 |
+| GPSDateStamp（29） | `date_stamp` | ASCII，11（含末尾 NULL）；保留有效的 `YYYY:MM:DD` 源日期 |
 
 分、秒须在 [0, 60) 内，按 `度 + 分/60 + 秒/3600` 校验总量；支持带小数的分。缺失标签不补默认值，类型、数量、方位、分母、范围或偏移非法时省略对应字段并记 `exif_status=invalid`，其他合法字段保留。GPSVersionID 缺失记 invalid，但不为其补版本；仅诊断受支持标签，不宣称验证全部 EXIF 合规性。
 
+GPS 接收机时间与相机 `DateTimeOriginal` 独立，明确采用 UTC，不补相机时区或把接收机时间认作快门时间。源日期必须为真实公历日期（年份 0001–9999）；源时、分分别在 [0, 24)、[0, 60)，普通秒在 [0, 60)，普通时间合计须小于 24 小时。仅 GPS 摘要合法且日期和时间都完整时，在同一 `gps` 命名空间生成 `date_time_utc`，使用 RFC3339 UTC 字符串；从源分数精确合计后截取到纳秒，不将浮点舍入造成的次日误写为源日期。`23:59:60` 至 `23:59:61` 之前的闰秒源分量可保留，但此阶段不验证具体闰秒日期、不生成 RFC3339 时间；不把闰秒归一化到次日。缺日期或时间只保留已有合法源字段，不借用文件修改时间、相机时间或当前日期。刷新删除任一标签时同时清除旧组合时间。
+
 媒体内容成功描述后，Meta 整体替换此次描述拥有的 `type_info.media`、`capabilities.spatial` 和当前 `format_info.<format>` 命名空间；本次未返回的事实须清除，其他命名空间保留。因此同一 JPEG 移除 EXIF / GPS、失去可用定位或移除基准时，刷新不能沿用旧拍摄位置、旧 SRID 或旧源标签。内容读取或描述失败时返回错误，不将失败当成成功空快照。
 
-只有 EXIF 摘要为 `parsed`、经纬度及各自方位都合法，且未显式声明测量中断（V），才能生成 `capabilities.spatial.capture_location`。源 `map_datum` 为去掉外围空白、忽略大小写的 `WGS-84` 时，拍摄位置的 `srid=4326`；缺失、非法或其他基准不推断 SRID，不转换坐标，合法坐标仍可记录但不可当作 WGS84 上图。不会由 GPS 元数据生成影像覆盖 `extent`、顶层 SRID、像元 transform 或空间字段；海拔源值和海平面参考仅留在原生 GPS 摘要，不混为椭球高。GPS 日期 / 时间、航向、速度、目的地与精度标签尚未支持。定义见 [JEITA/CIPA Exif GPS 标签](https://home.jeita.or.jp/tsc/std-pdf/CP-3451D.pdf)。
+只有 EXIF 摘要为 `parsed`、经纬度及各自方位都合法，且未显式声明测量中断（V），才能生成 `capabilities.spatial.capture_location`。源 `map_datum` 为去掉外围空白、忽略大小写的 `WGS-84` 时，拍摄位置的 `srid=4326`；缺失、非法或其他基准不推断 SRID，不转换坐标，合法坐标仍可记录但不可当作 WGS84 上图。不会由 GPS 元数据生成影像覆盖 `extent`、顶层 SRID、像元 transform 或空间字段；海拔源值和海平面参考仅留在原生 GPS 摘要，不混为椭球高。GPS 航向、速度、目的地与精度标签尚未支持。定义见 [JEITA/CIPA Exif GPS 标签](https://home.jeita.or.jp/tsc/std-pdf/CP-3451D.pdf)。
 
 JPEG 只扫描图像扫描数据前的 marker segment，总源读取预算为 1 MiB，支持非 seekable 输入及 TIFF 两种字节序。相机字符串与小数秒长度最多 1024 字节；未知或部分未知的拍摄时间不补值。`exif_status` 表示 `absent`（完整检查后没有 EXIF）、`parsed`（支持范围内摘要合法）、`invalid`（EXIF IFD 结构、受支持字段或 marker 非法，包括重复 tag 和 EXIF APP1）、`budget_exceeded`（无法在预算内完成检查）；非法或未完成检查不得被标记为没有 EXIF。非法 EXIF 不阻止已确认的像素尺寸返回，仅保留合法字段；重复 EXIF APP1 不选择其中任意一份。如果标准 JPEG 解码器不能在预算内确认尺寸，则返回解析错误，不输出猜测尺寸。实际 I/O 错误和取消仍返回错误，不吞为缺失元数据。
 

@@ -1011,10 +1011,14 @@ const fieldPathLabelKeys = {
   'format_info.jpeg.exif.gps.altitude_ref': 'manager.explorer.attributes.fields.gpsAltitudeRef',
   'format_info.jpeg.exif.gps.altitude_meters': 'manager.explorer.attributes.fields.gpsAltitudeMeters',
   'format_info.jpeg.exif.gps.status': 'manager.explorer.attributes.fields.gpsStatus',
-  'format_info.jpeg.exif.gps.map_datum': 'manager.explorer.attributes.fields.gpsDatum'
+  'format_info.jpeg.exif.gps.map_datum': 'manager.explorer.attributes.fields.gpsDatum',
+  'format_info.jpeg.exif.gps.date_stamp': 'manager.explorer.attributes.fields.gpsDateStamp',
+  'format_info.jpeg.exif.gps.time_hms': 'manager.explorer.attributes.fields.gpsTimeHMS',
+  'format_info.jpeg.exif.gps.date_time_utc': 'manager.explorer.attributes.fields.gpsDateTimeUTC'
 }
 
 const fieldTooltipKeys = {
+  'format_info.jpeg.exif.gps.date_time_utc': 'manager.explorer.attributes.fieldTooltips.gpsClock',
   'capabilities.spatial.capture_location.latitude': 'manager.explorer.attributes.fieldTooltips.captureLocation',
   'capabilities.spatial.capture_location.longitude': 'manager.explorer.attributes.fieldTooltips.captureLocation',
   'format_info.jpeg.exif.gps.altitude_meters': 'manager.explorer.attributes.fieldTooltips.gpsAltitude',
