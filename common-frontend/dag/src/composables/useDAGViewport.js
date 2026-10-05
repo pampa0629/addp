@@ -68,15 +68,15 @@ export function useDAGViewport(graph, {
     syncZoom()
   }
 
-  function autoLayout() {
+  function autoLayout({ layout: nextLayout = layout, fit = fitView } = {}) {
     if (!graph.value || graph.value.getNodes().length === 0) return
     const instance = graph.value
     return new Promise(resolve => {
       instance.once('afterlayout', () => {
-        fitView()
+        fit()
         resolve()
       })
-      instance.updateLayout({ ...layout })
+      instance.updateLayout({ ...nextLayout })
     })
   }
 

@@ -168,6 +168,8 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 字段级视图由同一 `LineageViewer` 实现：宿主传入 `supportsFields` 和 `v-model:granularity`，调用原图 API 的 `subject_kind=data_item` 与 `granularity=field`，一次加载根表全部字段及其有界关系。字段按数据项和结构快照分组，连线对齐字段行；点击字段聚焦已加载的上下游关系，清除聚焦恢复全图，不逐字段发请求。表卡的宽度、字段行和层间距采用紧凑布局，默认优先显示满足阅读字号的全图；适应窗口仍显示完整图，长字段名按文字宽度截断，悬停和详情提供精确全名。节点 ID 包含数据项、字段名和结构快照 hash，字段名中的点号不拆分；每个根字段的 `field_lineage_status=unavailable` 明确表示证据不可用，不能解释为没有依赖。
 
+字段入口支持本地搜索；选中入口定位字段并高亮上下游。表卡可拖拽，连线跟随字段行锚点；自动布局复用 `useDAGViewport`，重新排列卡片并适应窗口，保留当前选择。适应窗口保留手动坐标，自动布局或重查图数据才重新排列；坐标不提交后端。主题或语言切换保留手动坐标、视口和当前选择。
+
 ### ResourceLocator 定位符系统
 
 统一的资源定位符 URI 系统，支持跨存储引擎的资源标识。

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { observeLineageCanvas, lineageCanvasText } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
+import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { managerAuthContext } from './managerAuthContext.js'
 
 const locator = 'addp://engine/9/path/public/current?type=table&item_id=3'
@@ -293,5 +293,128 @@ for (const theme of ['light', 'dark']) {
     await expect.poll(async () => (await canvas.boundingBox()).width).toBeGreaterThan(previousWidth)
     await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'activity_id').fontSize).toBeCloseTo(previousFont, 2)
     expect(graphRequests).toBe(1)
+  })
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`branched field graph supports search, drag and automatic layout in ${theme} theme`, async ({ page }) => {
+    await observeLineageCanvas(page)
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.addInitScript(theme => {
+      localStorage.setItem('addp-lang', 'zh-cn')
+      localStorage.setItem('theme-mode', theme)
+    }, theme)
+    const counts = [6, 2, 9, 4, 3, 2, 2, 2, 2]
+    const tables = counts.map((count, index) => Array.from({ length: count }, (_, column) => ({
+      ...node(index + 1), kind: 'field_ref', field_name: `field_${index + 1}.${column}`,
+      schema_snapshot_hash: `sha256:table-${index + 1}`, field_lineage_status: 'complete'
+    })))
+    const links = []
+    const connect = (source, target, count) => {
+      for (let i = 0; i < count; i++) links.push({ source: tables[source - 1][i], target: tables[target - 1][i],
+        relation_kind: 'derive', granularity: 'field', transformation: 'direct' })
+    }
+    // Two sources, reconverging ODS/DIM/DWD branches and a final nine-field table.
+    connect(1, 4, 4); connect(1, 5, 3); connect(2, 6, 2); connect(4, 7, 2)
+    connect(5, 8, 2); connect(6, 9, 2); connect(7, 8, 2); connect(8, 3, 2)
+    connect(9, 3, 2); connect(4, 3, 4)
+    expect(tables.flat()).toHaveLength(32); expect(links).toHaveLength(25)
+    let graphRequests = 0
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
+    await page.route('**/api/v1/**', route => {
+      const url = new URL(route.request().url()), path = url.pathname
+      if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
+      if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
+      if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
+      if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
+      if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
+      if (path.endsWith('/meta/items/3')) return json(route, { ...node(3), attributes: { type_info: { table: { fields: tables[2].map(field => ({ name: field.field_name, type: 'string' })) } } } })
+      if (path.endsWith('/meta/lineage/graph')) {
+        if (url.searchParams.get('granularity') !== 'field') return json(route, { granularity: 'item', subject: node(3), nodes: [node(3)], edges: [] })
+        graphRequests++
+        return json(route, { granularity: 'field', subject: { ...node(3), schema_snapshot_hash: 'sha256:table-3' }, nodes: tables.flat(), edges: links })
+      }
+      return json(route, {})
+    })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    await page.getByText('字段级', { exact: true }).click()
+    const canvas = page.locator('.lineage-canvas canvas')
+    await expect(canvas).toBeVisible()
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_/.test(row.text)).length).toBe(32)
+    const initialRows = await lineageCanvasText(canvas)
+    const header = initialRows.find(row => row.text === 'source_1')
+    const scale = header.fontSize / 15
+    const cards = tables.map((fields, index) => {
+      const title = initialRows.find(row => row.text === (index === 2 ? 'current' : `source_${index + 1}`))
+      return { x: title.x - 12 * scale, y: title.y - 22 * scale,
+        width: 224 * scale, height: (72 + fields.length * 34) * scale }
+    })
+    for (let i = 0; i < cards.length; i++) for (let j = i + 1; j < cards.length; j++) {
+      const a = cards[i], b = cards[j]
+      expect(a.x + a.width <= b.x + 1 || b.x + b.width <= a.x + 1 ||
+        a.y + a.height <= b.y + 1 || b.y + b.height <= a.y + 1).toBe(true)
+    }
+    const portsMatch = async () => {
+      await expect.poll(async () => {
+        // Read paths and labels from the same painted frame, including hover redraws.
+        const { rows, paths } = await lineageCanvasSnapshot(canvas)
+        const fields = rows.filter(row => row.text.startsWith('field_1.')).slice(0, 4)
+        const header = rows.find(row => row.text === 'source_1')
+        const zoom = header?.fontSize / 15
+        const targets = rows.filter(row => row.text.startsWith('field_3.')).slice(0, 4)
+        return fields.length === 4 && targets.length === 4 && fields.every(row => paths.some(points =>
+          Math.abs(points[0].x - row.x - 212 * zoom) < 2 && Math.abs(points[0].y - row.y) < 2)) &&
+          targets.every(row => paths.some(points => Math.abs(points.at(-1).x - row.x + 12 * zoom) < 2 &&
+            Math.abs(points.at(-1).y - row.y) < 2))
+      }).toBe(true)
+    }
+    await portsMatch()
+    await dragLineageTable(page, canvas, 'source_1', 0, -60)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')?.y).toBeCloseTo(header.y - 60, 1)
+    await portsMatch()
+    const draggedRows = await lineageCanvasText(canvas)
+    await page.locator('html').evaluate(element => element.classList.toggle('dark'))
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')?.y).toBeCloseTo(header.y - 60, 1)
+    for (const row of draggedRows.filter(row => row.text.startsWith('field_'))) {
+      const current = (await lineageCanvasText(canvas)).find(current => current.text === row.text)
+      expect(current.x).toBeCloseTo(row.x, 1)
+      expect(current.y).toBeCloseTo(row.y, 1)
+    }
+    await portsMatch()
+    await page.locator('html').evaluate(element => element.classList.toggle('dark'))
+    // Fit changes only the viewport; dragging remains reversible through auto layout.
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    const search = page.getByRole('textbox', { name: '搜索字段', exact: true })
+    await search.fill('FIELD_3.1')
+    await expect(page.locator('.lineage-field-options button')).toHaveCount(2)
+    await expect(page.getByRole('button', { name: 'field_3.1', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'field_3.1', exact: true }).click()
+    await expect(page.locator('.lineage-inspector strong')).toHaveText('field_3.1')
+    const selectedRow = (await lineageCanvasText(canvas)).find(row => row.text === 'field_3.1')
+    expect(Math.abs(selectedRow.y - (await canvas.boundingBox()).height / 2)).toBeLessThan(3)
+    await page.getByRole('button', { name: '自动布局', exact: true }).click()
+    await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+    await expect(page.locator('.lineage-inspector strong')).toHaveText('field_3.1')
+    await search.fill('absent')
+    await expect(page.getByRole('status')).toContainText('没有匹配的字段')
+    await search.fill('')
+    await expect(page.locator('.lineage-field-options button')).toHaveCount(10)
+    await page.getByRole('button', { name: '全部字段', exact: true }).click()
+    await page.getByRole('button', { name: '自动布局', exact: true }).click()
+    await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+    const finalRows = await lineageCanvasText(canvas)
+    // Hover/border strokes can shift the fitted bounds by a pixel.
+    for (const initial of initialRows.filter(row => row.text.startsWith('field_'))) {
+      const current = finalRows.find(row => row.text === initial.text)
+      expect(Math.abs(current.x - initial.x)).toBeLessThan(2)
+      expect(Math.abs(current.y - initial.y)).toBeLessThan(2)
+    }
+    await portsMatch()
+    expect(graphRequests).toBe(1)
+    expect(errors).toEqual([])
+    await page.screenshot({ path: `/tmp/addp-field-interaction-${theme}.png` })
   })
 }

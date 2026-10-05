@@ -1,4 +1,4 @@
-import { observeLineageCanvas, lineageCanvasText } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
+import { observeLineageCanvas, lineageCanvasText, lineageCanvasPaths, dragLineageTable } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { lineageFieldConnections } from '../../../../common-frontend/graph/src/lineageFields.js'
 import { lineageNodeId } from '../../../../common-frontend/graph/src/lineageApi.js'
 import { expect, request, test } from '@playwright/test'
@@ -206,6 +206,32 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   expect(dwd.graph.edges.filter((_, index) => focus.connections.has(`lineage-edge:${index}`)).map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
   await showFieldOverview(dwd.frame)
   const canvas = dwd.frame.locator('.lineage-canvas canvas').first()
+  const search = dwd.frame.getByRole('textbox', { name: '搜索字段', exact: true })
+  await search.fill('PERSON_DISPLAY')
+  await expect(dwd.frame.locator('.lineage-field-options button')).toHaveCount(2)
+  await dwd.frame.getByRole('button', { name: 'person_display_name', exact: true }).click()
+  await expect(dwd.frame.locator('.lineage-inspector strong')).toHaveText('person_display_name')
+  await search.fill('')
+  await showFieldOverview(dwd.frame)
+  const beforeDrag = await lineageCanvasText(canvas)
+  const rootTitle = dwd.graph.nodes.find(node => node.item_id === chain.target_item_id).name
+  const header = beforeDrag.find(row => row.text === rootTitle || (row.text.endsWith('…') && rootTitle.startsWith(row.text.slice(0, -1))))
+  expect(header).toBeTruthy()
+  const display = beforeDrag.filter(row => row.text === 'person_display_name').at(-1)
+  const scale = header.fontSize / 15
+  await dragLineageTable(page, canvas, header.text, -30, 30)
+  await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === header.text)?.y).toBeCloseTo(header.y + 30, 1)
+  const moved = (await lineageCanvasText(canvas)).filter(row => row.text === 'person_display_name').at(-1)
+  expect(moved.x).toBeCloseTo(display.x - 30, 1)
+  expect(moved.y).toBeCloseTo(display.y + 30, 1)
+  expect((await lineageCanvasPaths(canvas)).some(points => {
+    const endpoint = points.at(-1)
+    return Math.abs(endpoint.x - moved.x + 12 * scale) < 2 && Math.abs(endpoint.y - moved.y) < 2
+  })).toBe(true)
+  await dwd.frame.getByRole('button', { name: '自动布局', exact: true }).click()
+  await expect(dwd.frame.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+  await expect.poll(async () => Math.abs((await lineageCanvasText(canvas)).find(row => row.text === header.text)?.x - header.x)).toBeLessThan(2)
+  await expect.poll(async () => Math.abs((await lineageCanvasText(canvas)).find(row => row.text === header.text)?.y - header.y)).toBeLessThan(2)
   const fieldNames = dwd.graph.nodes.map(node => node.field_name)
   const isFieldLabel = row => fieldNames.some(name => row.text === name || (row.text.endsWith('…') && name.startsWith(row.text.slice(0, -1))))
   await expect.poll(async () => (await lineageCanvasText(canvas)).filter(isFieldLabel).length).toBe(dwd.graph.nodes.length)

@@ -31,6 +31,11 @@
               <el-icon><ZoomIn /></el-icon>
             </el-button>
           </el-tooltip>
+          <el-tooltip :content="t('lineage.autoLayout')" placement="bottom">
+            <el-button text circle size="small" :aria-label="t('lineage.autoLayout')" :disabled="layoutPending || !nodes.length" @click="autoLayout">
+              <el-icon><Rank /></el-icon>
+            </el-button>
+          </el-tooltip>
           <el-tooltip :content="t('lineage.fitView')" placement="bottom">
             <el-button text circle size="small" :aria-label="t('lineage.fitView')" @click="fitView">
               <el-icon><FullScreen /></el-icon>
@@ -40,8 +45,12 @@
       </div>
 
       <div v-if="isFieldGraph" class="lineage-fields" :aria-label="t('lineage.fields')">
-        <el-button size="small" :type="!selectedNode ? 'primary' : ''" @click="clearSelection">{{ t('lineage.showAllFields') }}</el-button>
-        <el-button v-for="node in rootFields" :key="nodeId(node)" size="small" :type="nodeId(selectedNode) === nodeId(node) ? 'primary' : ''" :title="node.field_name" @click="selectField(node)">{{ node.field_name }}</el-button>
+        <el-input v-model="fieldSearch" class="lineage-field-search" size="small" clearable :prefix-icon="Search" :aria-label="t('lineage.searchFields')" :placeholder="t('lineage.searchFields')" />
+        <div class="lineage-field-options">
+          <el-button size="small" :type="!selectedNode ? 'primary' : ''" @click="clearSelection">{{ t('lineage.showAllFields') }}</el-button>
+          <el-button v-for="node in visibleRootFields" :key="nodeId(node)" size="small" :type="nodeId(selectedNode) === nodeId(node) ? 'primary' : ''" :title="node.field_name" @click="selectField(node, true)">{{ node.field_name }}</el-button>
+          <span v-if="!visibleRootFields.length" class="lineage-field-empty" role="status">{{ t('lineage.noMatchingFields') }}</span>
+        </div>
       </div>
       <div v-if="graph.truncated" class="lineage-truncated" role="status">{{ t('lineage.truncated') }}</div>
       <div v-if="!isFieldGraph && graph.field_lineage_status === 'unavailable'" class="lineage-truncated" role="status">{{ t('lineage.fieldUnavailable') }}</div>
@@ -123,10 +132,12 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FullScreen, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import { FullScreen, Rank, Search, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import G6 from '@antv/g6'
+import { useDAGViewport } from '../../dag/src/composables/useDAGViewport.js'
+import { createDAGDragNodeBehavior } from '../../dag/src/utils/directEdge.js'
 import { focusDAGConnections } from '../../dag/src/utils/connections.js'
 import { lineageNodeId as nodeId } from './lineageApi.js'
 import { projectLineageFields, lineageFieldConnections, FIELD_HEADER_HEIGHT, FIELD_ROW_HEIGHT, FIELD_FONT_SIZE } from './lineageFields.js'
@@ -149,7 +160,10 @@ const emit = defineEmits(['update:depth', 'update:granularity', 'expand', 'view-
 const canvasRef = ref(null)
 const selectedNode = ref(null)
 const selectedEdge = ref(null)
-let graphInstance
+const graphInstance = shallowRef(null)
+const fieldSearch = ref('')
+const layoutPending = ref(false)
+const { autoLayout: layoutDAG } = useDAGViewport(graphInstance)
 let resizeObserver
 let themeObserver
 let observedCanvas
@@ -171,6 +185,33 @@ const edges = computed(() => props.graph?.edges || [])
 const subjectId = computed(() => nodeId(props.graph?.subject))
 const isFieldGraph = computed(() => props.graph?.granularity === 'field')
 const rootFields = computed(() => nodes.value.filter(node => node.kind === 'field_ref' && node.item_id === props.graph?.subject?.item_id && node.schema_snapshot_hash === props.graph?.subject?.schema_snapshot_hash))
+
+const visibleRootFields = computed(() => {
+  const query = fieldSearch.value.trim().toLocaleLowerCase()
+  return rootFields.value.filter(node => !query || node.field_name.toLocaleLowerCase().includes(query))
+})
+
+function lineageLayout() {
+  const tableCount = isFieldGraph.value ? projectLineageFields(nodes.value, edges.value).nodes.length : 0
+  // Small chains stay readable in a narrow pane; larger graphs need routing space.
+  const ranksep = isFieldGraph.value ? (tableCount <= 4 ? 12 : 48) : 170
+  return { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep, controlPoints: true }
+}
+
+async function autoLayout() {
+  if (!graphInstance.value || layoutPending.value) return
+  const instance = graphInstance.value
+  layoutPending.value = true
+  try {
+    await layoutDAG({ layout: lineageLayout(), fit: () => {
+      if (graphInstance.value !== instance) return
+      fitView()
+      restoreFocus()
+    } })
+  } finally {
+    layoutPending.value = false
+  }
+}
 
 function themeColor(variableName) {
   if (typeof window === 'undefined') return ''
@@ -562,7 +603,7 @@ function drawFieldCard(cfg, group) {
   const [width, height] = cfg.size
   const left = -width / 2
   const top = -height / 2
-  const card = group.addShape('rect', { name: 'lineage-card', attrs: { x: left, y: top, width, height, radius: 6, fill: visual.fill, stroke: visual.stroke, lineWidth: visual.lineWidth } })
+  const card = group.addShape('rect', { name: 'lineage-card', attrs: { x: left, y: top, width, height, radius: 6, cursor: 'move', fill: visual.fill, stroke: visual.stroke, lineWidth: visual.lineWidth } })
   const text = (name, value, y, fontSize, fill, available = width - 24, fontWeight = 400) => group.addShape('text', { name, capture: false, attrs: { x: left + 12, y: top + y, text: fieldLabel(value, available, fontSize, fontWeight), fill, fontSize, fontWeight, fontFamily: 'sans-serif' } })
   text('lineage-title', cfg._node.name || cfg._node.full_name, 22, 15, visual.textPrimary, width - (cfg._isSubject ? 62 : 24), 600)
   text('lineage-path', cfg._node.full_name, 40, 11, visual.textSecondary)
@@ -597,11 +638,11 @@ function registerLineageEdge() {
 }
 
 function focusItem(item) {
-  if (!graphInstance) return
+  if (!graphInstance.value) return
   if (isFieldGraph.value && selectedNode.value?.kind === 'field_ref') { focusField(selectedNode.value); return }
-  const focused = focusDAGConnections(graphInstance, item)
-  for (const edge of graphInstance.getEdges()) {
-    graphInstance.setItemState(edge, 'hover', focused.includes(edge))
+  const focused = focusDAGConnections(graphInstance.value, item)
+  for (const edge of graphInstance.value.getEdges()) {
+    graphInstance.value.setItemState(edge, 'hover', focused.includes(edge))
   }
   for (const edge of focused) {
     edge.getSource().toFront()
@@ -610,14 +651,14 @@ function focusItem(item) {
 }
 
 function focusField(node) {
-  if (!graphInstance) return
+  if (!graphInstance.value) return
   const focus = node && lineageFieldConnections(edges.value, nodeId(node))
-  for (const item of graphInstance.getEdges()) {
+  for (const item of graphInstance.value.getEdges()) {
     const active = !focus || focus.connections.has(item.getID())
-    graphInstance.setItemState(item, 'hover', !!focus && active)
+    graphInstance.value.setItemState(item, 'hover', !!focus && active)
     item.getContainer().attr('opacity', active ? 1 : 0.15)
   }
-  for (const item of graphInstance.getNodes()) {
+  for (const item of graphInstance.value.getNodes()) {
     const model = item.getModel()
     const active = !focus || model._fields.some(field => focus.fields.has(nodeId(field)))
     item.getContainer().attr('opacity', active ? 1 : 0.35)
@@ -631,35 +672,45 @@ function focusField(node) {
   }
 }
 
-function selectField(node) {
+async function selectField(node, locate = false) {
   clearSelection()
   selectedNode.value = node
   focusField(node)
+  if (!locate) return
+  const instance = graphInstance.value
+  await nextTick()
+  if (!instance || graphInstance.value !== instance) return
+  const table = instance.getNodes().find(item => item.getModel()._fields.some(field => nodeId(field) === nodeId(node)))
+  if (!table) return
+  const model = table.getModel()
+  const index = model._fields.findIndex(field => nodeId(field) === nodeId(node))
+  const point = instance.getCanvasByPoint(model.x, model.y - model.size[1] / 2 + FIELD_HEADER_HEIGHT + (index + 0.5) * FIELD_ROW_HEIGHT)
+  instance.translate(canvasRef.value.clientWidth / 2 - point.x, canvasRef.value.clientHeight / 2 - point.y)
 }
 
 function restoreFocus() {
-  const selected = [...(graphInstance?.getNodes() || []), ...(graphInstance?.getEdges() || [])].find(item => item.hasState('selected'))
+  const selected = [...(graphInstance.value?.getNodes() || []), ...(graphInstance.value?.getEdges() || [])].find(item => item.hasState('selected'))
   focusItem(selected)
 }
 
 function fitView() {
-  if (!graphInstance) return
-  graphInstance.fitView(isFieldGraph.value ? 20 : FIT_PADDING)
-  if (graphInstance.getZoom() > 1) {
-    graphInstance.zoomTo(1)
-    graphInstance.fitCenter()
+  if (!graphInstance.value) return
+  graphInstance.value.fitView(isFieldGraph.value ? 20 : FIT_PADDING)
+  if (graphInstance.value.getZoom() > 1) {
+    graphInstance.value.zoomTo(1)
+    graphInstance.value.fitCenter()
   }
 }
 
 function zoomBy(ratio) {
-  if (!graphInstance) return
-  const nextZoom = Math.min(2.5, Math.max(0.1, graphInstance.getZoom() * ratio))
-  graphInstance.zoomTo(nextZoom)
+  if (!graphInstance.value) return
+  const nextZoom = Math.min(2.5, Math.max(0.1, graphInstance.value.getZoom() * ratio))
+  graphInstance.value.zoomTo(nextZoom)
 }
 
 function clearSelection() {
-  graphInstance?.getNodes().forEach(item => graphInstance.setItemState(item, 'selected', false))
-  graphInstance?.getEdges().forEach(item => graphInstance.setItemState(item, 'selected', false))
+  graphInstance.value?.getNodes().forEach(item => graphInstance.value.setItemState(item, 'selected', false))
+  graphInstance.value?.getEdges().forEach(item => graphInstance.value.setItemState(item, 'selected', false))
   selectedNode.value = null
   selectedEdge.value = null
   if (isFieldGraph.value) focusField(null)
@@ -668,21 +719,21 @@ function clearSelection() {
 
 function selectNode(item) {
   clearSelection()
-  graphInstance.setItemState(item, 'selected', true)
+  graphInstance.value.setItemState(item, 'selected', true)
   selectedNode.value = item.getModel()._node
   focusItem(item)
 }
 
 function selectEdge(item) {
   clearSelection()
-  graphInstance.setItemState(item, 'selected', true)
+  graphInstance.value.setItemState(item, 'selected', true)
   selectedEdge.value = item.getModel()._edge
   focusItem(item)
 }
 
 function destroyGraph() {
-  graphInstance?.destroy()
-  graphInstance = undefined
+  graphInstance.value?.destroy()
+  graphInstance.value = null
 }
 
 function observeCanvasSize() {
@@ -694,20 +745,25 @@ function observeCanvasSize() {
 
 function expandNode(node, direction) {
   if (props.graph.truncated || !node.item_id) return
-  const item = graphInstance?.findById(nodeId(node))
+  const item = graphInstance.value?.findById(nodeId(node))
   if (item) {
     const { x, y } = item.getModel()
-    expansionAnchor = { id: nodeId(node), subject: subjectId.value, zoom: graphInstance.getZoom(), point: graphInstance.getCanvasByPoint(x, y) }
+    expansionAnchor = { id: nodeId(node), subject: subjectId.value, zoom: graphInstance.value.getZoom(), point: graphInstance.value.getCanvasByPoint(x, y) }
   }
   emit('expand', { item_id: node.item_id, direction })
 }
 
-async function renderGraph() {
+async function renderGraph(preserveView = false) {
+  const preserved = preserveView && graphInstance.value ? {
+    data: graphInstance.value.save(),
+    matrix: graphInstance.value.getGroup().getMatrix()?.slice() || null
+  } : null
   const sequence = ++renderSequence
+  if (!preserved) fieldSearch.value = ''
   const anchor = expansionAnchor?.subject === subjectId.value ? expansionAnchor : null
   expansionAnchor = null
   destroyGraph()
-  if (!anchor) { selectedNode.value = null; selectedEdge.value = null }
+  if (!anchor && !preserved) { selectedNode.value = null; selectedEdge.value = null }
   else if (selectedNode.value) selectedNode.value = nodes.value.find(node => nodeId(node) === nodeId(selectedNode.value)) || null
   await nextTick()
   if (sequence !== renderSequence) return
@@ -720,13 +776,13 @@ async function renderGraph() {
   registerLineageNode()
   registerLineageEdge()
   const palette = themePalette()
-  graphInstance = new G6.Graph({
+  graphInstance.value = new G6.Graph({
     container: canvasRef.value,
     width,
     height: canvasRef.value.clientHeight,
     minZoom: 0.1,
     maxZoom: 2.5,
-    modes: { default: ['drag-canvas', 'zoom-canvas'] },
+    modes: { default: ['drag-canvas', 'zoom-canvas', createDAGDragNodeBehavior()] },
     plugins: [new G6.Tooltip({
       className: 'lineage-tooltip',
       itemTypes: ['node'], offsetX: 12, offsetY: 12,
@@ -739,7 +795,7 @@ async function renderGraph() {
         return content
       }
     })],
-    layout: { type: 'dagre', rankdir: 'LR', nodesep: isFieldGraph.value ? 20 : 48, ranksep: isFieldGraph.value ? 10 : 170, controlPoints: true },
+    layout: preserved ? undefined : lineageLayout(),
     defaultNode: { type: LINEAGE_NODE_TYPE, size: [NODE_WIDTH, NODE_HEIGHT] },
     defaultEdge: { type: LINEAGE_EDGE_TYPE },
     edgeStateStyles: {
@@ -748,7 +804,11 @@ async function renderGraph() {
     }
   })
 
-  graphInstance.on('node:click', event => {
+  graphInstance.value.on('node:dragstart', event => {
+    // Dagre points are absolute: discard them before moving the endpoints.
+    for (const edge of event.item.getEdges()) graphInstance.value.updateItem(edge, { controlPoints: [] })
+  })
+  graphInstance.value.on('node:click', event => {
     const shape = event.target?.get('name')
     const direction = ['upstream', 'downstream'].find(value => shape === `lineage-expand-${value}`)
     if (direction) expandNode(event.item.getModel()._node, direction)
@@ -758,33 +818,54 @@ async function renderGraph() {
       else clearSelection()
     } else selectNode(event.item)
   })
-  graphInstance.on('edge:click', event => selectEdge(event.item))
-  graphInstance.on('canvas:click', clearSelection)
-  graphInstance.on('node:mouseenter', event => { if (!isFieldGraph.value) focusItem(event.item) })
-  graphInstance.on('node:mouseleave', restoreFocus)
-  graphInstance.on('edge:mouseenter', event => focusItem(event.item))
-  graphInstance.on('edge:mouseleave', restoreFocus)
+  graphInstance.value.on('edge:click', event => selectEdge(event.item))
+  graphInstance.value.on('canvas:click', clearSelection)
+  graphInstance.value.on('node:mouseenter', event => { if (!isFieldGraph.value) focusItem(event.item) })
+  graphInstance.value.on('node:mouseleave', restoreFocus)
+  graphInstance.value.on('edge:mouseenter', event => focusItem(event.item))
+  graphInstance.value.on('edge:mouseleave', restoreFocus)
   const restoreViewport = () => {
-    if (!graphInstance) return
-    const item = anchor && graphInstance.findById(anchor.id)
+    if (!graphInstance.value) return
+    if (preserved) {
+      if (preserved.matrix) graphInstance.value.getGroup().setMatrix(preserved.matrix)
+      else graphInstance.value.getGroup().resetMatrix()
+      const selected = selectedEdge.value
+        ? graphInstance.value.getEdges().find(item => item.getModel()._edge === selectedEdge.value)
+        : graphInstance.value.findById(nodeId(selectedNode.value))
+      if (selected) graphInstance.value.setItemState(selected, 'selected', true)
+      restoreFocus()
+      graphInstance.value.paint()
+      return
+    }
+    const item = anchor && graphInstance.value.findById(anchor.id)
     if (!item) {
       fitView()
       // Keep field text readable on entry; fit-view remains an explicit overview.
-      if (isFieldGraph.value && graphInstance.getZoom() < 11 / FIELD_FONT_SIZE) {
-        graphInstance.zoomTo(11 / FIELD_FONT_SIZE)
-        const root = graphInstance.getNodes().find(node => node.getModel()._isSubject)
-        if (root) graphInstance.focusItem(root, false)
+      if (isFieldGraph.value && graphInstance.value.getZoom() < 11 / FIELD_FONT_SIZE) {
+        graphInstance.value.zoomTo(11 / FIELD_FONT_SIZE)
+        const root = graphInstance.value.getNodes().find(node => node.getModel()._isSubject)
+        if (root) graphInstance.value.focusItem(root, false)
       }
       return
     }
-    graphInstance.zoomTo(anchor.zoom)
+    graphInstance.value.zoomTo(anchor.zoom)
     const { x, y } = item.getModel()
-    const point = graphInstance.getCanvasByPoint(x, y)
-    graphInstance.translate(anchor.point.x - point.x, anchor.point.y - point.y)
+    const point = graphInstance.value.getCanvasByPoint(x, y)
+    graphInstance.value.translate(anchor.point.x - point.x, anchor.point.y - point.y)
   }
-  graphInstance.once('afterrender', restoreViewport)
-  graphInstance.data(graphData())
-  graphInstance.render()
+  graphInstance.value.once('afterrender', restoreViewport)
+  const data = graphData()
+  if (preserved) {
+    const positions = new Map(preserved.data.nodes.map(node => [node.id, node]))
+    const routes = new Map(preserved.data.edges.map(edge => [edge.id, edge.controlPoints]))
+    for (const node of data.nodes) {
+      const previous = positions.get(node.id)
+      if (previous) Object.assign(node, { x: previous.x, y: previous.y })
+    }
+    for (const edge of data.edges) edge.controlPoints = routes.get(edge.id)
+  }
+  graphInstance.value.data(data)
+  graphInstance.value.render()
 
 }
 
@@ -792,18 +873,18 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(entries => {
     const width = Math.floor(entries[0]?.contentRect?.width || canvasRef.value?.clientWidth || 0)
     if (width <= 0) return
-    if (!graphInstance) {
+    if (!graphInstance.value) {
       renderGraph()
       return
     }
     const height = Math.floor(entries[0]?.contentRect?.height || canvasRef.value?.clientHeight || 0)
     if (height <= 0) return
-    graphInstance.changeSize(width, height)
+    graphInstance.value.changeSize(width, height)
     // Resizing the inspector/canvas must not reset user zoom or local expansion.
   })
 
   themeObserver = new MutationObserver(mutations => {
-    if (mutations.some(mutation => mutation.attributeName === 'class')) renderGraph()
+    if (mutations.some(mutation => mutation.attributeName === 'class')) renderGraph(true)
   })
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
   renderGraph()
@@ -817,8 +898,8 @@ onUnmounted(() => {
   destroyGraph()
 })
 
-watch(() => props.graph, renderGraph, { deep: true })
-watch(locale, renderGraph)
+watch(() => props.graph, () => renderGraph(), { deep: true })
+watch(locale, () => renderGraph(true))
 watch(() => props.depth, () => { expansionAnchor = null })
 </script>
 
@@ -888,7 +969,10 @@ watch(() => props.depth, () => { expansionAnchor = null })
   background: var(--el-color-primary);
 }
 
-.lineage-fields { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; max-height: 90px; overflow-y: auto; flex-shrink: 0; }
+.lineage-fields { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px; padding: 6px 12px; flex-shrink: 0; }
+.lineage-field-search { width: 180px; }
+.lineage-field-options { display: flex; flex: 1; min-width: min(240px, 100%); flex-wrap: wrap; gap: 6px; max-height: 90px; overflow-y: auto; }
+.lineage-field-empty { color: var(--addp-text-secondary); font-size: 12px; padding: 4px; }
 .lineage-fields .el-button { margin-left: 0; max-width: min(240px, 100%); }
 .lineage-fields .el-button :deep(span) { min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lineage-field-status { color: var(--addp-text-secondary); font-size: 12px; margin-top: 8px; }

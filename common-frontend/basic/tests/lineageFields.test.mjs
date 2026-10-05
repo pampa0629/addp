@@ -41,6 +41,9 @@ test('field focus follows a chain without bringing in its siblings and stops cyc
 test('the shared viewer owns field grouping and Manager sends a single table graph query', () => {
   const viewer = readFileSync(new URL('../../graph/src/LineageViewer.vue', import.meta.url), 'utf8')
   const host = readFileSync(new URL('../../../manager/frontend/src/components/explorer/ItemPanel.vue', import.meta.url), 'utf8')
+  assert.match(viewer, /useDAGViewport/)
+  assert.match(viewer, /createDAGDragNodeBehavior/)
+  assert.doesNotMatch(host, /updateLayout|drag-node/)
   assert.match(viewer, /projectLineageFields/)
   assert.match(viewer, /lineageFieldConnections/)
   assert.doesNotMatch(viewer, /update:field|v-for="name in fields"/)

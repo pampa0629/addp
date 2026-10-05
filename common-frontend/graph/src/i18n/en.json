@@ -73,6 +73,9 @@
       "generated": "Generated value"
     },
     "fields": "Table fields",
-    "showAllFields": "All fields"
+    "showAllFields": "All fields",
+    "autoLayout": "Auto layout",
+    "searchFields": "Search fields",
+    "noMatchingFields": "No matching fields"
   }
 }
