@@ -427,12 +427,14 @@ OPERATORS = dict([
 
 ### 运行测试
 
-```bash
-# 测试工作流引擎
-python3 workflow_engine.py
+确定性契约入口为 `make test-spark-workflow`（44 项），覆盖公共 WorkflowRunner、跨请求执行快照及真实 Gunicorn 的先监听、后注册行为；Hosted 编排入口为 `make test-hdfs-online-runner`（21 项）。产品镜像通过标准 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"` 构建验证。
 
-# 测试算子
-python3 -c "from operators import get_operator; op = get_operator('buffer'); print(op)"
+2026-10-05，提交 `eccfaeeda07a51c471cde67d1fe1d5c624ea3a19` 的 [容器 HDFS T4](https://github.com/pampa0629/addp/actions/runs/37254858559) 完整通过。当次 AMD64 产品镜像使用默认 `python api_server.py` 入口启动，日志确认一个 gthread HTTP worker 在监听后自动登记成功。普通用户发起的八节点正式工作流通过公共 WorkflowRunner 执行，CSV、JSON、Parquet 各 20 行、金额合计 2100；实际 Standalone Worker 完成 37 个任务，Runtime 连续八次状态查询一致。Console 重扫、四文件预览和同一执行详情通过，应用、容器及 Infra 清理均通过且零残留。[Platform CI](https://github.com/pampa0629/addp/actions/runs/37254827587) 与 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37254827477) 均全部通过。执行快照仍仅在 Runtime 进程内保存，不提供跨重启恢复。
+
+```bash
+# 在仓库根目录运行标准入口
+make test-spark-workflow
+make test-hdfs-online-runner
 ```
 
 ## 许可证
