@@ -289,7 +289,7 @@ MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：�
 
 2026-10-05，字段曲线、拖拽与全屏 Hosted 复验[运行 37276985688](https://github.com/pampa0629/addp/actions/runs/37276985688) 已通过，验证源码为 `7665c0b612d83d31a9a418d94af070d321e1bd79`。真实 MongoDB → PostgreSQL ODS → DIM → DWD 整表图绘制 13 个字段、9 条水平三次贝塞尔连线，820×667px 画布内最小字段字号为 13.96px。目标表向左、向下各拖拽 30px 后，昵称字段的曲线端点偏差为 0.85px，满足 2px 精度要求；自动布局、收起/展开、搜索定位及 Console iframe 原生全屏进出均通过。Canvas 观察工具等待绘制帧后统一读取文字和连线，保留原有位移及端点断言，修正适应窗口后读取旧帧坐标的验收时序。三轮编排、九个实际子执行、结构演进与冻结历史取证、独立物理行集合及列类型检查同时通过；八个临时定义删除，部署清理通过、Infra 零残留。同源码 [Platform CI 37276976663](https://github.com/pampa0629/addp/actions/runs/37276976663) 的 24 个门禁任务实际执行通过，另 6 个按路径条件跳过；Manager 在 Linux Runner 上通过 279 项单元测试、96 项浏览器测试及构建。
 
-Transfer 多来源查询扩展沿用 `transfer-relational-sql-etl` 手工 Hosted T4 与既有最小权限身份。在原生源及已完成 replace 的映射表上声明两个 query.inputs，由真实 CTE、JOIN 与 UNION ALL 生成四行结果；冻结每个原始来源结构，验证一个结果字段同时来自两张表的精确 derived 映射、仅用于 JOIN 的字段不产生值来源边、Meta 自动采集及三层冻结结构一致性。Business Fixture 独立核对目标完整行集合与列顺序；新增任务进入既有本轮定义清理，报告使用 v6。Transfer PostgreSQL T2 同时覆盖三个输入（含只参与行筛选的来源）、查询改名、类型转换和完整物理行集合。扩展须有新的真实 Hosted 通过证据，不能由此前单来源或 Develop 多来源结果代替。
+Transfer 多来源查询扩展沿用 `transfer-relational-sql-etl` 手工 Hosted T4 与既有最小权限身份。在原生源及已完成 replace 的映射表上声明两个 query.inputs，由真实 CTE、JOIN 与 UNION ALL 生成四行结果；冻结每个原始来源结构，验证一个结果字段同时来自两张表的精确 derived 映射、仅用于 JOIN 的字段不产生值来源边、Meta 自动采集及三层冻结结构一致性。Business Fixture 独立核对目标完整行集合与列顺序；整套物理结果验证由 Hosted 生命周期在浏览器与多来源场景全部完成后统一执行，浏览器不提前调用同一验证入口。新增任务进入既有本轮定义清理，报告使用 v6。Transfer PostgreSQL T2 同时覆盖三个输入（含只参与行筛选的来源）、查询改名、类型转换和完整物理行集合。扩展须有新的真实 Hosted 通过证据，不能由此前单来源或 Develop 多来源结果代替。
 
 ### 6.2 图数据库评估边界
 

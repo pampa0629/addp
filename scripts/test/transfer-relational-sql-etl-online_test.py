@@ -19,6 +19,15 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
+    def test_physical_verification_has_one_owner_after_all_scenarios(self):
+        repository = SCRIPT.parents[2]
+        browser = (repository / "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js").read_text()
+        hosted = (repository / "scripts/test/online-hosted-transfer-gate.sh").read_text()
+        verify = "bash business/scripts/online-transfer-relational-sql-etl-fixture.sh verify"
+        self.assertNotIn("controlFixture", browser, "browser runs before the multi-source target exists")
+        self.assertEqual(hosted.count(verify), 1, "the Hosted lifecycle owns complete physical verification")
+        self.assertLess(hosted.index('make test-online "ONLINE_SUITE=$ONLINE_SUITE"'), hosted.index(verify))
+
     def test_registered_browser_spec_parses(self):
         browser = SCRIPT.parents[2] / "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js"
         result = subprocess.run(["node", "--check", str(browser)], capture_output=True, text=True)

@@ -5,7 +5,6 @@ import { expect, request, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  controlFixture,
   identity,
   json,
   login,
@@ -300,7 +299,6 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
   await observeLineageCanvas(page)
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const env = environment()
-  const repository = env.ADDP_ONLINE_REPOSITORY
   const expectedStatement = `SELECT "id", "region", "amount" FROM "public"."${env.ADDP_ONLINE_TRANSFER_SQL_ETL_SOURCE_TABLE}" WHERE "status" = :p1 AND "amount" >= :p2`
   const api = await request.newContext({
     baseURL: env.GATEWAY_URL,
@@ -436,7 +434,6 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
       ?.find(transform => transform?.type === 'field_mapping')?.fields
     expect(mappingsPayload?.map(mapping => mapping.source)).toEqual(['id', 'region', 'amount'])
     expect(taskPayload?.config?.target?.policy?.apply_mode).toBe('replace')
-    controlFixture(repository, 'business/scripts/online-transfer-relational-sql-etl-fixture.sh', 'verify')
     await verifyManagerLineage(page, api, env, execution)
 
     await json(await api.delete(`/api/v1/transfer/task-definitions/${taskID}`), 'delete Transfer task')
