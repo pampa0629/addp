@@ -502,6 +502,8 @@ scripts/test/
 
 平台无外部服务的一致性门禁使用 `make test-platform`，依次校验技术栈规约与全部 `go.mod` 的依赖版本、统一 execution 测试夹具、IAM Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖。该入口不启动或重启 ADDP 服务，不连接开发数据库；GitHub Actions 的 Platform CI 在 `main` 推送、每日定时和手工触发时直接调用该入口。
 
+Swagger 独立标准入口为 `make test-swagger`，由 `test-authorization` 调用；它先执行检查脚本回归，再比较全模块真实路由与文档。FastAPI 的生成和检查只使用各自 `backend/venv/bin/python`；平台 CI 通过现有 Python 环境准备 action 安装 Agent/Copilot 声明依赖后执行 T0。环境缺失、导入或导出失败返回 2，不能被历史覆盖告警模式降级；只有完成比较后的文档不一致可按既有规范告警。环境准备顺序和回归入口由 Python CI 登记检查约束。
+
 统一执行夹具和保护投影存储归属检查分别沿用 `make test-execution-fixtures`、`make test-projection-store-ownership`，各入口先运行隔离 Git 夹具回归，再检索当前仓库。两项检查要求 `git` 与 `rg`（ripgrep）；Platform CI 在调用平台门禁前显式安装 ripgrep，本地调用方需事先安装。检索状态 0（有匹配）和 1（无匹配）是正常结果，命中的文件仍须按原有精确白名单判断；缺少命令、Git 文件枚举失败、检索异常或空输入均退出失败，不能把错误当成无匹配。临时清单和检索结果使用 NUL 分隔，并在退出时删除。
 
 根 `make test` 是 T0-T1 全部无外部服务确定性门禁的唯一聚合入口，包含 `make test-platform`、全部 Go 模块、Common Python、Agent 离线评测、Copilot 后端，以及所有已登记前端的测试和生产构建。前端与 Python CI 登记检查同时要求每个自动发现的组件进入该聚合入口，新增测试组件不能只登记 CI 而遗漏本地总门禁。需要专用 PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁不并入 `make test`，必须使用各自显式入口。

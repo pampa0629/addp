@@ -67,11 +67,25 @@ def workflow_jobs(repository: Path) -> list[str]:
     return jobs
 
 
+def workflow_steps(job: str) -> list[tuple[int, str]]:
+    matches = list(re.finditer(r"(?m)^      - ", job))
+    return [
+        (match.start(), job[match.start():matches[index + 1].start() if index + 1 < len(matches) else len(job)])
+        for index, match in enumerate(matches)
+    ]
+
+
+def step_setting(step: str, name: str) -> str:
+    match = re.search(rf"(?m)^\s+{re.escape(name)}:\s*(.*?)\s*$", step)
+    return match.group(1).strip("\"'") if match else ""
+
+
 def validate_registration(repository: Path) -> list[str]:
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     jobs = workflow_jobs(repository)
     root_dependencies = make_dependencies(makefile, "test") or []
     errors = []
+    fastapi_environments = []
     for owner, manifest in discover_python_modules(repository):
         eval_target = f"test-{owner}-eval"
         target = eval_target if make_dependencies(makefile, eval_target) is not None else f"test-{owner}"
@@ -92,12 +106,41 @@ def validate_registration(repository: Path) -> list[str]:
             continue
         if PYTHON_GATE_ACTION not in target_job:
             errors.append(f"{manifest}: Python gate setup action is missing from {target} job")
+        if (repository / Path(manifest).parent / "openapi.json").is_file():
+            owner_setup = next((step for _, step in workflow_steps(target_job) if PYTHON_GATE_ACTION in step), "")
+            fastapi_environments.append((manifest, owner_setup))
         selector_owner = manifest.split("/", 1)[0]
         if not re.search(
             rf"{re.escape(MODULE_GATE_SELECTOR)}\s+--module\s+['\"]?{re.escape(selector_owner)}['\"]?",
             target_job,
         ):
             errors.append(f"{manifest}: shared module change selector is missing")
+
+    if fastapi_environments:
+        coverage = re.search(r"(?m)^test-swagger:[^\n]*\n(?P<recipe>(?:\t[^\n]*\n)*)", makefile)
+        authorization = re.search(r"(?m)^test-authorization:[^\n]*\n(?P<recipe>(?:\t[^\n]*\n)*)", makefile)
+        if (
+            not coverage or not authorization
+            or "python3 scripts/test/swagger-route-coverage_test.py" not in coverage.group("recipe")
+            or "bash scripts/swagger/check-route-coverage.sh all" not in coverage.group("recipe")
+            or "$(MAKE) test-swagger" not in authorization.group("recipe")
+            or not (repository / "scripts/test/swagger-route-coverage_test.py").is_file()
+        ):
+            errors.append("FastAPI Swagger checks must retain their regression and coverage entry in test-authorization")
+        platform_jobs = [job for job in jobs if re.search(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform\s*$", job)]
+        for manifest, owner_setup in fastapi_environments:
+            for job in platform_jobs or [""]:
+                gate = re.search(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform\s*$", job)
+                if not any(
+                    gate and start < gate.start()
+                    and PYTHON_GATE_ACTION in step
+                    and not re.search(r"(?m)^\s+if:", step)
+                    and step_setting(step, "venv-path") == str(Path(manifest).parent / "venv")
+                    and step_setting(step, "requirements-file") == manifest
+                    and step_setting(step, "python-version") == step_setting(owner_setup, "python-version")
+                    for start, step in workflow_steps(job)
+                ):
+                    errors.append(f"{Path(manifest).parent}/openapi.json: platform Swagger checks require the unconditional owner Python environment before make test-platform")
     return errors
 
 

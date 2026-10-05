@@ -714,6 +714,11 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@cd common && go run ./authorization/cmd/manifest --check-tool-catalog --repository-root .. > /tmp/addp-system-tool-catalog.json
 	@cd common && go run ./authorization/cmd/manifest --check-sql-seed --repository-root .. > /tmp/addp-iam-catalog-seed.json
 	@cd common && go run ./authorization/cmd/manifest --coverage-report --repository-root .. > /tmp/addp-authorization-coverage.json
+	@$(MAKE) test-swagger
+
+.PHONY: test-swagger
+test-swagger: ## 校验 Swagger 检查脚本与全模块路由覆盖
+	@python3 scripts/test/swagger-route-coverage_test.py
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \

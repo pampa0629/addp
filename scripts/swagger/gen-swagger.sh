@@ -190,7 +190,9 @@ def generate(module):
     print(f"  📄 [{module}] 生成中...", flush=True)
     if module in fastapi:
         python = directory / "venv/bin/python"
-        executable = str(python) if os.access(python, os.X_OK) else shutil.which("python3")
+        if not os.access(python, os.X_OK):
+            raise RuntimeError(f"{module}: 模块 Python 环境缺失: {python}")
+        executable = str(python)
         command = [executable, "-c", 'import json; from pathlib import Path; from main import app; Path("openapi.json").write_text(json.dumps(app.openapi(), ensure_ascii=False, indent=2, sort_keys=True) + "\\n", encoding="utf-8")']
     else:
         command = [swag, "init", "-g", "cmd/server/main.go", "-o", "docs", "--parseDependency", "--parseInternal", "-q"]

@@ -43,6 +43,81 @@ class PythonCIRegistrationTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def fastapi_registration(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        makefile = self.repository / "Makefile"
+        for owner in ("agent", "copilot"):
+            backend = self.repository / owner / "backend"
+            backend.mkdir(parents=True)
+            (backend / "requirements.txt").write_text("fastapi\n")
+            (backend / "openapi.json").write_text("{}\n")
+            target = f"test-{owner}"
+            makefile.write_text(makefile.read_text().replace("test: ", f"test: {target} ", 1) + f"\n{target}:\n\t@true\n")
+            workflow.write_text(workflow.read_text() +
+                f"  {owner}-tests:\n    steps:\n"
+                f"      - run: python3 scripts/ci/select-module-gate.py --module {owner}\n"
+                "      - uses: ./.github/actions/prepare-python-gate\n"
+                f"        with:\n          venv-path: {owner}/backend/venv\n"
+                "          python-version: \"3.12\"\n"
+                f"          requirements-file: {owner}/backend/requirements.txt\n"
+                f"      - run: make {target}\n")
+        setup = ""
+        for owner in ("agent", "copilot"):
+            setup += (f"      - name: Prepare {owner} Swagger environment\n"
+                "        uses: ./.github/actions/prepare-python-gate\n"
+                f"        with:\n          venv-path: {owner}/backend/venv\n"
+                "          python-version: \"3.12\"\n"
+                f"          requirements-file: {owner}/backend/requirements.txt\n")
+        workflow.write_text(workflow.read_text() + "  platform-consistency:\n    steps:\n" + setup + "      - run: make test-platform\n")
+        regression = self.repository / "scripts/test/swagger-route-coverage_test.py"
+        regression.parent.mkdir(parents=True)
+        regression.write_text("# regression fixture\n")
+        makefile.write_text(makefile.read_text() +
+            "\ntest-swagger:\n\t@python3 scripts/test/swagger-route-coverage_test.py\n"
+            "\t@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all\n"
+            "\ntest-authorization:\n\t@$(MAKE) test-swagger\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+
+    def test_accepts_fastapi_platform_environments(self) -> None:
+        self.fastapi_registration()
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_platform_requires_unconditional_owner_environment_before_check(self) -> None:
+        self.fastapi_registration()
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        original = workflow.read_text()
+        prefix, platform = original.split("  platform-consistency:\n")
+        for changed in (
+            platform.replace("uses: ./.github/actions/prepare-python-gate", "run: pip install fastapi", 1),
+            platform.replace("agent/backend/venv", "agent/backend/.venv"),
+            platform.replace("agent/backend/requirements.txt", "common-python/pyproject.toml"),
+            platform.replace('python-version: "3.12"', 'python-version: "3.11"', 1),
+            platform.replace("        uses:", "        if: false\n        uses:", 1),
+            platform.replace("    steps:\n", "    steps:\n      - run: make test-platform\n", 1),
+        ):
+            with self.subTest(platform=changed):
+                workflow.write_text(prefix + "  platform-consistency:\n" + changed)
+                self.assertIn(
+                    "agent/backend/openapi.json: platform Swagger checks require the unconditional owner Python environment before make test-platform",
+                    MODULE.validate_registration(self.repository),
+                )
+
+    def test_fastapi_swagger_standard_entry_cannot_omit_regressions(self) -> None:
+        self.fastapi_registration()
+        makefile = self.repository / "Makefile"
+        original = makefile.read_text()
+        for removed in (
+            "\t@python3 scripts/test/swagger-route-coverage_test.py\n",
+            "\t@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all\n",
+            "\t@$(MAKE) test-swagger\n",
+        ):
+            with self.subTest(removed=removed):
+                makefile.write_text(original.replace(removed, ""))
+                self.assertIn("FastAPI Swagger checks must retain their regression and coverage entry in test-authorization", MODULE.validate_registration(self.repository))
+        makefile.write_text(original)
+        (self.repository / "scripts/test/swagger-route-coverage_test.py").unlink()
+        self.assertIn("FastAPI Swagger checks must retain their regression and coverage entry in test-authorization", MODULE.validate_registration(self.repository))
+
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
 

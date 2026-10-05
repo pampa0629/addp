@@ -60,41 +60,42 @@ check_module() {
     local openapi_file="${module_dir}/openapi.json"
     local python_bin="${ROOT_DIR}/${module_dir}/venv/bin/python"
     if [ ! -x "$python_bin" ]; then
-      python_bin="$(command -v python3 || true)"
-    fi
-    if [ -z "$python_bin" ]; then
-      echo "  ❌ [$module] 未找到可用 Python"
-      return 1
+      echo "  ❌ [$module] 模块 Python 环境缺失: ${python_bin}"
+      return 2
     fi
     if [ ! -f "$openapi_file" ]; then
-      echo "  ❌ [$module] 未找到 $openapi_file，请先运行 gen-swagger.sh"
-      return 1
+      echo "  ❌ [$module] 未找到 ${openapi_file}，请先运行 gen-swagger.sh"
+      return 2
     fi
-    if (cd "$module_dir" && "$python_bin" - "$ROOT_DIR/$openapi_file" <<'PY'
+    local check_status=0
+    (cd "$module_dir" && "$python_bin" - "$ROOT_DIR/$openapi_file" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-from main import app
-
-document_path = Path(sys.argv[1])
-expected = json.dumps(app.openapi(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-actual = document_path.read_text(encoding="utf-8")
+try:
+    from main import app
+    schema = app.openapi()
+    document_path = Path(sys.argv[1])
+    expected = json.dumps(schema, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    actual = document_path.read_text(encoding="utf-8")
+    operation_count = sum(
+        1
+        for path_item in schema.get("paths", {}).values()
+        for method in path_item
+        if method.lower() in {"get", "post", "put", "delete", "patch", "head", "options"}
+    )
+except (Exception, SystemExit):
+    import traceback
+    traceback.print_exc()
+    raise SystemExit(2)
 if actual != expected:
     print("  ❌ FastAPI OpenAPI 投影与运行时路由不一致，请重新运行 gen-swagger.sh")
     raise SystemExit(1)
-operation_count = sum(
-    1
-    for path_item in app.openapi().get("paths", {}).values()
-    for method in path_item
-    if method.lower() in {"get", "post", "put", "delete", "patch", "head", "options"}
-)
 print(f"  ✅ FastAPI OpenAPI 投影一致（{operation_count} 个公开路由方法）")
 PY
-    ); then
-      return 0
-    fi
-    return 1
+    ) || check_status=$?
+    return "$check_status"
   fi
 
   local router_file="${module}/backend/internal/api/router.go"
@@ -301,9 +302,16 @@ PY
 echo "🔎 校验 Swagger 路由覆盖: ${TARGETS[*]}"
 echo ""
 
+CHECK_ERRORS=()
 for module in "${TARGETS[@]}"; do
-  if ! check_module "$module"; then
+  if check_module "$module"; then
+    continue
+  else
+    check_status=$?
     FAILED+=("$module")
+    if [ "$check_status" -gt 1 ]; then
+      CHECK_ERRORS+=("$module")
+    fi
   fi
 done
 
@@ -314,6 +322,10 @@ if [ ${#FAILED[@]} -eq 0 ]; then
 fi
 
 echo "⚠️  Swagger 路由覆盖校验发现问题: ${FAILED[*]}"
+if [ ${#CHECK_ERRORS[@]} -gt 0 ]; then
+  echo "❌ Swagger 检查无法执行: ${CHECK_ERRORS[*]}；不能降级为告警"
+  exit 2
+fi
 if [ "${SWAGGER_COVERAGE_WARN_ONLY:-0}" = "1" ]; then
   echo "ℹ️  SWAGGER_COVERAGE_WARN_ONLY=1，本次仅告警"
   exit 0

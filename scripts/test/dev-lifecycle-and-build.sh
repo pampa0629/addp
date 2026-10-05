@@ -1647,6 +1647,8 @@ assert calls() == previous + 1
 # FastAPI reflects environment changes on every export, even with unchanged source.
 directory = fixture / 'agent/backend'
 directory.mkdir(parents=True)
+(directory / 'venv/bin').mkdir(parents=True)
+(directory / 'venv/bin/python').symlink_to(sys.executable)
 (directory / 'main.py').write_text('import os\nclass App:\n def openapi(self): return {"value": os.environ["SCHEMA_VALUE"]}\napp = App()\n')
 run('agent', SCHEMA_VALUE='first')
 run('agent', SCHEMA_VALUE='second')

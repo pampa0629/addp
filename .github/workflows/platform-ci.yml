@@ -64,6 +64,26 @@ jobs:
           sudo apt-get install -y --no-install-recommends ripgrep
           command -v rg
 
+      - name: Prepare Agent Swagger environment
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          venv-path: agent/backend/venv
+          python-version: "3.12"
+          cache-dependency-path: |
+            agent/backend/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: agent/backend/requirements.txt
+
+      - name: Prepare Copilot Swagger environment
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          venv-path: copilot/backend/venv
+          cache-dependency-path: |
+            copilot/backend/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: copilot/backend/requirements.txt
+          editable-install: ./common-python[dev,inference-langchain]
+
       - name: Run platform consistency gate
         # Includes Backend-owned schema startup, Worker ordering, Swagger cache invalidation and lifecycle concurrency tests.
         run: make test-platform
