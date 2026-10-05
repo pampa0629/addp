@@ -51,6 +51,17 @@ definitions:
       source:
         type: string
     type: object
+  datatype.CaptureLocation:
+    properties:
+      datum:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      srid:
+        type: integer
+    type: object
   datatype.DataType:
     enum:
     - unknown
@@ -167,6 +178,8 @@ definitions:
     type: object
   datatype.SpatialInfo:
     properties:
+      capture_location:
+        $ref: '#/definitions/datatype.CaptureLocation'
       crs_definitions:
         items:
           $ref: '#/definitions/datatype.CRSDefinition'

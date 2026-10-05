@@ -3897,6 +3897,23 @@ const docTemplate = `{
                 }
             }
         },
+        "datatype.CaptureLocation": {
+            "type": "object",
+            "properties": {
+                "datum": {
+                    "type": "string"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "srid": {
+                    "type": "integer"
+                }
+            }
+        },
         "datatype.DataType": {
             "type": "string",
             "enum": [
@@ -4046,6 +4063,9 @@ const docTemplate = `{
         "datatype.SpatialInfo": {
             "type": "object",
             "properties": {
+                "capture_location": {
+                    "$ref": "#/definitions/datatype.CaptureLocation"
+                },
                 "crs_definitions": {
                     "type": "array",
                     "items": {

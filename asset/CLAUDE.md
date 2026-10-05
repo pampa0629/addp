@@ -46,6 +46,7 @@ asset/
 - 目标来源模型是 `Asset -> AssetComponent[] -> catalog_entry_id`。Asset 不复制 Catalog 的来源绑定、语义关联或责任事实；发布时校验 CatalogEntry 有效性，发布承诺和需要冻结的说明由 Asset 自己版本化。
 - Asset 只通过 Catalog 选择和组合目录对象，不调用 Meta、Service、Standard 或 Develop 自动创建草稿，也不保留 `{source_module, source_reference}` 或 fallback。
 - 资产发布、授权和评价均按租户隔离，认证信息通过 `common/middleware/auth` 获取。
+- 搜索索引初始化先读取现有索引，仅结构化 `index_not_found` 错误允许创建；其他读取错误及错误主键必须拒绝。创建、设置安装和启动时已上架投影重建均在有界上下文内等待任务成功，不能将异步入队当作已完成，也不能在重启时重复创建已有索引。该初始化失败只禁用可选关键词搜索，不改变资产事实或授权。
 
 ## 开发与验证
 

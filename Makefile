@@ -720,7 +720,7 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 .PHONY: test-swagger
 test-swagger: ## 校验 Swagger 检查脚本与全模块路由覆盖
 	@python3 scripts/test/swagger-route-coverage_test.py
-	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
+	@bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
 	test-document-workflow test-geopython-workflow test-model3d-workflow test-spark-workflow \

@@ -27,7 +27,7 @@ bash scripts/swagger/gen-swagger.sh all
 bash scripts/swagger/check-route-coverage.sh all
 ```
 
-`scripts/dev/restart.sh -<module>` 和 `scripts/dev/restart.sh -all` 会参与 Swagger 生成和覆盖校验，但不能替代开发者补注解。生成失败默认中断重启；覆盖不一致在历史欠账清理阶段可降级为告警。检查无法执行不能降级：FastAPI 的模块环境缺失、应用导入或 OpenAPI 导出失败、文档无法读取时返回 2，即使设置 `SWAGGER_COVERAGE_WARN_ONLY=1` 也必须失败；已经执行的覆盖比较不一致返回 1，历史告警模式只作用于这类结果。
+`scripts/dev/restart.sh -<module>` 和 `scripts/dev/restart.sh -all` 会参与 Swagger 生成和覆盖校验，但不能替代开发者补注解。生成失败或覆盖检查失败必须中断重启，不进入后续编译和启动。所有标准入口采用同一严格检查：已经完成的覆盖比较不一致返回 1；检查无法执行（例如 Go 模块缺少路由、入口或 Swagger 文件，FastAPI 模块环境缺失、应用导入或 OpenAPI 导出失败、文档无法读取）返回 2。两类结果均为失败，不提供告警降级或生成失败后继续启动的开关。
 
 FastAPI 生成和覆盖比较都使用对应模块唯一的 `backend/venv/bin/python`，不退回系统 Python。平台一致性 CI 必须在 `make test-platform` 前通过现有 `prepare-python-gate` action，按 Agent、Copilot 各自的声明依赖准备这两个独立环境。检查只导入真实应用并读取 `app.openapi()`，不进入应用 lifespan，不启动服务或连接运行中的 ADDP。根 `make test-swagger` 执行脚本回归和全模块覆盖比较，`make test-authorization` 调用同一入口。
 

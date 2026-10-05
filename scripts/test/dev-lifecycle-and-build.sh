@@ -358,6 +358,13 @@ for name, args, failed in (
     ("selected", ["-system", "-asset", "-meta"], False),
     ("single", ["-system"], False),
     ("swagger-failure", ["-all"], True),
+    ("swagger-failure-single", ["-system"], True),
+    ("swagger-failure-legacy-override", ["-all"], True),
+    ("coverage-failure", ["-all"], True),
+    ("coverage-failure-single", ["-system"], True),
+    ("coverage-failure-selected", ["-system", "-asset", "-meta"], True),
+    ("coverage-error", ["-all"], True),
+    ("coverage-error-single", ["-system"], True),
     ("spark-prepare-failure", ["-all"], True),
 ):
     root = temporary / ("restart-" + name)
@@ -399,8 +406,7 @@ echo generated >> "$FIXTURE_ROOT/events"
 ''')
     script("scripts/swagger/check-route-coverage.sh", '''
 echo "coverage $*" >> "$FIXTURE_ROOT/events"
-# Coverage remains advisory during the documented cleanup period.
-exit 1
+exit "$FAIL_COVERAGE"
 ''')
     sources = []
     for module in ("system/backend", "asset/backend", "meta/backend", "common", "gateway"):
@@ -419,9 +425,10 @@ exit 1
             del env[key]
     env.update(
         PATH=str(root / "tools") + os.pathsep + env["PATH"],
-        FIXTURE_ROOT=str(root), FAIL_SWAGGER=str(int(name == 'swagger-failure')),
+        FIXTURE_ROOT=str(root), FAIL_SWAGGER=str(int(name.startswith('swagger-failure'))),
+        FAIL_COVERAGE='2' if name.startswith('coverage-error') else '1' if name.startswith('coverage-failure') else '0',
         FAIL_SPARK_PREPARE=str(int(name == 'spark-prepare-failure')),
-        ALLOW_SWAGGER_FAILURE="0", MEILISEARCH_PORT="17700", SERVICE_HOST="localhost",
+        ALLOW_SWAGGER_FAILURE="1", SWAGGER_COVERAGE_WARN_ONLY="1", MEILISEARCH_PORT="17700", SERVICE_HOST="localhost",
     )
     result = subprocess.run(["bash", str(dev / "restart.sh"), *args], env=env,
                             text=True, capture_output=True, timeout=30)
@@ -432,9 +439,11 @@ exit 1
     events = (root / "events").read_text().splitlines()
     assert not any(event.startswith("pkill ") for event in events), \
         "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
-    target = "all" if args in ([], ["-all"]) else "system" if name == 'single' else "system asset meta"
-    expected = ([] if name == 'single' else ['spark-preflight']) + ["stop", "generate " + target]
-    if not failed:
+    target = "all" if args in ([], ["-all"]) else "system" if args == ["-system"] else "system asset meta"
+    expected = ([] if args == ['-system'] else ['spark-preflight']) + ["stop", "generate " + target]
+    if name.startswith('coverage-'):
+        expected += ["generated", "coverage " + target]
+    elif not failed:
         expected += ["generated", "coverage " + target, "start"]
     if name == 'spark-prepare-failure':
         expected = ['spark-preflight']
@@ -442,7 +451,7 @@ exit 1
         assert (bins / ("addp-" + binary)).read_text() == "old binary", "restart must preserve " + binary
     assert events == expected, events
     assert not (root / ".dev-state/lifecycle.lock").exists(), "restart leaked its lock"
-print("PASS: restart preserves cache, batches Swagger and stops on generation failure")
+print("PASS: restart preserves cache, batches Swagger and stops on Swagger generation or coverage failure")
 PY
 }
 

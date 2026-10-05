@@ -74,7 +74,7 @@ class PythonCIRegistrationTest(unittest.TestCase):
         regression.write_text("# regression fixture\n")
         makefile.write_text(makefile.read_text() +
             "\ntest-swagger:\n\t@python3 scripts/test/swagger-route-coverage_test.py\n"
-            "\t@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all\n"
+            "\t@bash scripts/swagger/check-route-coverage.sh all\n"
             "\ntest-authorization:\n\t@$(MAKE) test-swagger\n")
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
@@ -102,13 +102,28 @@ class PythonCIRegistrationTest(unittest.TestCase):
                     MODULE.validate_registration(self.repository),
                 )
 
+    def test_fastapi_swagger_standard_entry_cannot_suppress_failure(self) -> None:
+        self.fastapi_registration()
+        makefile = self.repository / "Makefile"
+        source = makefile.read_text()
+        command = "\t@bash scripts/swagger/check-route-coverage.sh all\n"
+        for replacement in (
+            "\t@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all\n",
+            "\t@bash scripts/swagger/check-route-coverage.sh all || true\n",
+            "\t@-bash scripts/swagger/check-route-coverage.sh all\n",
+        ):
+            with self.subTest(replacement=replacement):
+                makefile.write_text(source.replace(command, replacement))
+                self.assertTrue(MODULE.validate_registration(self.repository))
+        makefile.write_text(source)
+
     def test_fastapi_swagger_standard_entry_cannot_omit_regressions(self) -> None:
         self.fastapi_registration()
         makefile = self.repository / "Makefile"
         original = makefile.read_text()
         for removed in (
             "\t@python3 scripts/test/swagger-route-coverage_test.py\n",
-            "\t@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all\n",
+            "\t@bash scripts/swagger/check-route-coverage.sh all\n",
             "\t@$(MAKE) test-swagger\n",
         ):
             with self.subTest(removed=removed):

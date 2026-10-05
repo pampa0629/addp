@@ -122,7 +122,7 @@ def validate_registration(repository: Path) -> list[str]:
         if (
             not coverage or not authorization
             or "python3 scripts/test/swagger-route-coverage_test.py" not in coverage.group("recipe")
-            or "bash scripts/swagger/check-route-coverage.sh all" not in coverage.group("recipe")
+            or "\t@bash scripts/swagger/check-route-coverage.sh all" not in coverage.group("recipe").splitlines()
             or "$(MAKE) test-swagger" not in authorization.group("recipe")
             or not (repository / "scripts/test/swagger-route-coverage_test.py").is_file()
         ):

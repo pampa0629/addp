@@ -47,7 +47,7 @@ done
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "❌ 未找到 python3，无法执行 Swagger 覆盖校验"
-  exit 1
+  exit 2
 fi
 
 FAILED=()
@@ -103,16 +103,16 @@ PY
   local swagger_file="${module}/backend/docs/swagger.json"
 
   if [ ! -f "$router_file" ]; then
-    echo "  ⚠️  [$module] 未找到 $router_file，跳过"
-    return 0
+    echo "  ❌ [$module] 未找到 ${router_file}，无法执行覆盖校验"
+    return 2
   fi
   if [ ! -f "$main_file" ]; then
-    echo "  ⚠️  [$module] 未找到 $main_file，跳过"
-    return 0
+    echo "  ❌ [$module] 未找到 ${main_file}，无法执行覆盖校验"
+    return 2
   fi
   if [ ! -f "$swagger_file" ]; then
-    echo "  ❌ [$module] 未找到 $swagger_file，请先运行 gen-swagger.sh"
-    return 1
+    echo "  ❌ [$module] 未找到 ${swagger_file}，请先运行 gen-swagger.sh"
+    return 2
   fi
 
   python3 - "$module" "$router_file" "$main_file" "$swagger_file" <<'PY'
@@ -230,7 +230,7 @@ try:
     swagger = json.loads(Path(swagger_file).read_text(encoding="utf-8"))
 except Exception as exc:
     print(f"  ❌ [{module}] swagger.json 解析失败: {exc}")
-    sys.exit(1)
+    sys.exit(2)
 
 swagger_base = clean_path(swagger.get("basePath") or base_path)
 if swagger_base != base_path:
@@ -321,13 +321,9 @@ if [ ${#FAILED[@]} -eq 0 ]; then
   exit 0
 fi
 
-echo "⚠️  Swagger 路由覆盖校验发现问题: ${FAILED[*]}"
+echo "❌ Swagger 路由覆盖校验发现问题: ${FAILED[*]}"
 if [ ${#CHECK_ERRORS[@]} -gt 0 ]; then
-  echo "❌ Swagger 检查无法执行: ${CHECK_ERRORS[*]}；不能降级为告警"
+  echo "❌ Swagger 检查无法执行: ${CHECK_ERRORS[*]}"
   exit 2
-fi
-if [ "${SWAGGER_COVERAGE_WARN_ONLY:-0}" = "1" ]; then
-  echo "ℹ️  SWAGGER_COVERAGE_WARN_ONLY=1，本次仅告警"
-  exit 0
 fi
 exit 1

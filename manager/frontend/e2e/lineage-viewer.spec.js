@@ -35,28 +35,32 @@ test('canvas observations wait for queued text and path repaint', async ({ page 
   }
 })
 
-for (const theme of ['light', 'dark']) {
-  test(`hundred-column branched lineage preserves every field port in ${theme} theme`, async ({ page }) => {
+for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
+  test(`${columnCount}-column branched lineage preserves every field port in ${theme} theme`, async ({ page }) => {
     await observeLineageCanvas(page)
     await page.setViewportSize({ width: 1600, height: 1000 })
     await page.addInitScript(theme => {
       localStorage.setItem('addp-lang', 'zh-cn')
       localStorage.setItem('theme-mode', theme)
     }, theme)
-    const counts = [100, 18, 12, 20, 14, 24]
+    const scale = columnCount / 100
+    const counts = [100, 18, 12, 20, 14, 24].map(count => count * scale)
+    const fieldCount = counts.reduce((total, count) => total + count, 0)
+    const linkCount = 88 * scale
+    const timings = {}
     const tables = counts.map((count, index) => Array.from({ length: count }, (_, column) => ({
       ...node(index + 1), kind: 'field_ref', field_name: `field_${index + 1}.${column}`,
       schema_snapshot_hash: `sha256:table-${index + 1}`, field_lineage_status: 'complete'
     })))
     const links = []
     for (const [source, target, count] of [[1, 4, 20], [1, 5, 14], [2, 6, 18], [4, 3, 12], [5, 3, 12], [6, 3, 12]]) {
-      for (let index = 0; index < count; index++) links.push({
+      for (let index = 0; index < count * scale; index++) links.push({
         source: tables[source - 1][index], target: tables[target - 1][index],
         relation_kind: 'derive', granularity: 'field', transformation: 'direct'
       })
     }
-    expect(tables.flat()).toHaveLength(188)
-    expect(links).toHaveLength(88)
+    expect(tables.flat()).toHaveLength(fieldCount)
+    expect(links).toHaveLength(linkCount)
     let graphRequests = 0
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
@@ -77,13 +81,15 @@ for (const theme of ['light', 'dark']) {
       return json(route, {})
     })
     await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    const renderStarted = Date.now()
     await page.getByText('字段级', { exact: true }).click()
     const canvas = page.locator('.lineage-canvas canvas')
     await expect(canvas).toBeVisible()
-    await expect(page.locator('.lineage-summary')).toContainText('188 个节点 · 88 条关系')
-    // Entry focuses the root at a readable size, even when a source has 100 columns.
+    await expect(page.locator('.lineage-summary')).toContainText(`${fieldCount} 个节点 · ${linkCount} 条关系`)
+    // Entry focuses the root at a readable size, even when a source has hundreds of columns.
     // G6's Float32 viewport matrix introduces sub-millionth-pixel rounding.
     await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'field_3.0')?.fontSize).toBeCloseTo(11, 5)
+    timings.initialRenderMs = Date.now() - renderStarted
     await page.getByRole('button', { name: '适应窗口', exact: true }).click()
     const fieldRows = rows => rows.filter(row => /^field_\d+\.\d+$/.test(row.text))
     const headerName = id => id === 3 ? 'current' : `source_${id}`
@@ -114,7 +120,7 @@ for (const theme of ['light', 'dark']) {
         const { rows, paths } = await lineageCanvasSnapshot(canvas)
         const zoom = rows.find(row => row.text === 'current')?.fontSize / 15
         return links.every(link => {
-          const source = rows.find(row => row.text === (collapsedSource && link.source.item_id === 1 ? '100 个字段' : link.source.field_name))
+          const source = rows.find(row => row.text === (collapsedSource && link.source.item_id === 1 ? `${columnCount} 个字段` : link.source.field_name))
           const target = rows.find(row => row.text === link.target.field_name)
           return source && target && paths.some(points =>
             points.some(point => point.command === 'bezierCurveTo') &&
@@ -125,13 +131,13 @@ for (const theme of ['light', 'dark']) {
         })
       }).toBe(true)
     }
-    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(188)
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(fieldCount)
     await verifyCards()
     await verifyPorts()
     const header = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
     const stationary = (await lineageCanvasText(canvas)).find(row => row.text === 'current')
     await toggleLineageTableFields(page, canvas, 'source_1')
-    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(88)
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(fieldCount - columnCount)
     expect((await lineageCanvasText(canvas)).find(row => row.text === 'source_1').y).toBeCloseTo(header.y, 1)
     await dragLineageTable(page, canvas, 'source_1', 35, 30)
     await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')?.y).toBeCloseTo(header.y + 30, 1)
@@ -140,15 +146,18 @@ for (const theme of ['light', 'dark']) {
     expect(unchanged.y).toBeCloseTo(stationary.y, 1)
     await verifyPorts(true)
     await toggleLineageTableFields(page, canvas, 'source_1')
-    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(188)
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(fieldCount)
     await verifyPorts()
     await page.getByRole('button', { name: '收起字段', exact: true }).click()
+    const layoutStarted = Date.now()
     await page.getByRole('button', { name: '自动布局', exact: true }).click()
     await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
     await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(0)
+    timings.collapsedAutoLayoutMs = Date.now() - layoutStarted
     await verifyCards(true)
-    await page.screenshot({ path: `/tmp/addp-field-hundred-collapsed-${theme}.png` })
-    const compactFont = (await lineageCanvasText(canvas)).find(row => row.text === '12 个字段').fontSize
+    await page.screenshot({ path: `/tmp/addp-field-${columnCount}-collapsed-${theme}.png` })
+    const compactFont = (await lineageCanvasText(canvas)).find(row => row.text === `${counts[2]} 个字段`).fontSize
+    const focusStarted = Date.now()
     const search = page.getByRole('textbox', { name: '搜索字段', exact: true })
     await search.fill('FIELD_3.11')
     await expect(page.locator('.lineage-field-options button')).toHaveCount(2)
@@ -182,21 +191,24 @@ for (const theme of ['light', 'dark']) {
         a.y + a.height <= b.y + 1 || b.y + b.height <= a.y + 1,
       `expanded table ${a.id} overlaps table ${b.id}`).toBe(true)
     }
-    await page.screenshot({ path: `/tmp/addp-field-hundred-focus-${theme}.png` })
+    timings.expandAndFocusMs = Date.now() - focusStarted
+    await test.info().attach('wide-lineage-focus', { body: await page.screenshot(), contentType: 'image/png' })
+    await page.screenshot({ path: `/tmp/addp-field-${columnCount}-focus-${theme}.png` })
     await search.fill('')
     await page.getByRole('button', { name: '全部字段', exact: true }).click()
     await page.getByRole('button', { name: '自动布局', exact: true }).click()
     await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
-    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(188)
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(fieldCount)
     await verifyCards()
     await verifyPorts()
+    await test.info().attach('wide-lineage-timings', { body: JSON.stringify({ theme, columnCount, fieldCount, linkCount, ...timings }), contentType: 'application/json' })
     expect(graphRequests).toBe(1)
     expect(errors).toEqual([])
   })
 }
 
-for (const theme of ['light', 'dark']) {
-  test(`hundred-column target locates last and generated fields in ${theme} theme`, async ({ page }) => {
+for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
+  test(`${columnCount}-column target locates last and generated fields in ${theme} theme`, async ({ page }) => {
     await observeLineageCanvas(page)
     await page.setViewportSize({ width: 1600, height: 1000 })
     await page.addInitScript(theme => {
@@ -207,13 +219,14 @@ for (const theme of ['light', 'dark']) {
       ...node(id), kind: 'field_ref', field_name: `field_${id}.${index}`,
       schema_snapshot_hash: `sha256:table-${id}`, field_lineage_status: 'complete'
     }))
-    const sources = fields(1, 3), targets = fields(3, 100)
-    const links = [0, 49, 99].map((column, index) => ({
+    const sources = fields(1, 3), targets = fields(3, columnCount)
+    const links = [0, Math.floor(columnCount / 2) - 1, columnCount - 1].map((column, index) => ({
       source: sources[index], target: targets[column], relation_kind: 'derive', granularity: 'field',
       transformation: 'direct', evidence: { execution_id: `target-column-${column}` }
     }))
     let graphRequests = 0
     const errors = []
+    const timings = {}
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
     await page.route('**/api/v1/**', route => {
@@ -232,14 +245,17 @@ for (const theme of ['light', 'dark']) {
       return json(route, {})
     })
     await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    const renderStarted = Date.now()
     await page.getByText('字段级', { exact: true }).click()
     const canvas = page.locator('.lineage-canvas canvas')
     await expect(canvas).toBeVisible()
-    await expect(page.locator('.lineage-field-options button')).toHaveCount(101)
-    await expect(page.locator('.lineage-summary')).toContainText('103 个节点 · 3 条关系')
+    await expect(page.locator('.lineage-field-options button')).toHaveCount(columnCount + 1)
+    await expect(page.locator('.lineage-summary')).toContainText(`${columnCount + 3} 个节点 · 3 条关系`)
     await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => /^field_3\./.test(row.text))?.fontSize).toBeCloseTo(11, 5)
+    timings.initialRenderMs = Date.now() - renderStarted
     const search = page.getByRole('textbox', { name: '搜索字段', exact: true })
     const locate = async column => {
+      const started = Date.now()
       await search.fill(`FIELD_3.${column}`)
       await expect(page.locator('.lineage-field-options button')).toHaveCount(2)
       await page.getByRole('button', { name: `field_3.${column}`, exact: true }).click()
@@ -249,13 +265,14 @@ for (const theme of ['light', 'dark']) {
         return row && Math.abs(row.y - (await canvas.boundingBox()).height / 2)
       }).toBeLessThan(3)
       expect((await lineageCanvasText(canvas)).find(row => row.text === `field_3.${column}`).fontSize).toBeCloseTo(11, 5)
+      timings[`locateColumn${column}Ms`] = Date.now() - started
     }
     await page.getByRole('button', { name: '收起字段', exact: true }).click()
-    await locate(98)
+    await locate(columnCount - 2)
     await expect(page.locator('.lineage-field-status')).toContainText('没有关联字段')
     // A generated field opens only its own table; its source stays folded.
     await expect(page.getByRole('button', { name: '展开字段', exact: true })).toBeEnabled()
-    await locate(99)
+    await locate(columnCount - 1)
     await expect(page.locator('.lineage-field-status')).toHaveCount(0)
     await expect(page.getByRole('button', { name: '展开字段', exact: true })).toBeDisabled()
     await search.fill('')
@@ -281,14 +298,16 @@ for (const theme of ['light', 'dark']) {
     await ports()
     // The cubic midpoint remains clickable and exposes the exact evidence.
     const { rows, paths } = await lineageCanvasSnapshot(canvas)
-    const target = rows.find(row => row.text === 'field_3.99')
+    const target = rows.find(row => row.text === `field_3.${columnCount - 1}`)
     const zoom = target.fontSize / FIELD_FONT_SIZE
     const curve = paths.find(points => points.some(point => point.command === 'bezierCurveTo') &&
       Math.abs(points.at(-1).y - target.y) < 2 && Math.abs(points.at(-1).x - target.x + 12 * zoom) < 2)
     await canvas.click({ position: { x: (curve[0].x + curve.at(-1).x) / 2, y: (curve[0].y + curve.at(-1).y) / 2 } })
-    await expect(page.locator('.lineage-inspector')).toContainText('target-column-99')
-    await expect(page.locator('.lineage-inspector')).toContainText('field_3.99')
-    await expect(page.locator('.lineage-summary')).toContainText('103 个节点 · 3 条关系')
+    await expect(page.locator('.lineage-inspector')).toContainText(`target-column-${columnCount - 1}`)
+    await expect(page.locator('.lineage-inspector')).toContainText(`field_3.${columnCount - 1}`)
+    await expect(page.locator('.lineage-summary')).toContainText(`${columnCount + 3} 个节点 · 3 条关系`)
+    await test.info().attach('wide-target-evidence', { body: await page.screenshot(), contentType: 'image/png' })
+    await test.info().attach('wide-target-timings', { body: JSON.stringify({ theme, columnCount, ...timings }), contentType: 'application/json' })
     expect(graphRequests).toBe(1)
     expect(errors).toEqual([])
   })

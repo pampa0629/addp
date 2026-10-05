@@ -121,18 +121,12 @@ run_swagger_generate() {
     return 0
   fi
 
-  if [ "${ALLOW_SWAGGER_FAILURE:-0}" = "1" ]; then
-    echo "⚠️ [$target] Swagger 文档生成失败，ALLOW_SWAGGER_FAILURE=1，本次继续"
-    return 0
-  fi
-
   echo "❌ [$target] Swagger 文档生成失败，已中断重启"
-  echo "   如需临时容忍历史欠账，可使用：ALLOW_SWAGGER_FAILURE=1 $0 ${ORIGINAL_ARGS[*]}"
   return 1
 }
 
 run_swagger_coverage_check() {
-  SWAGGER_COVERAGE_WARN_ONLY=1 bash "${SCRIPT_DIR}/../swagger/check-route-coverage.sh" "$@"
+  bash "${SCRIPT_DIR}/../swagger/check-route-coverage.sh" "$@"
 }
 
 # 解析参数
@@ -789,7 +783,7 @@ if [ "$RESTART_ALL" = true ]; then
   echo "📄 重新生成所有模块 Swagger 文档..."
   run_swagger_generate all
   echo "🔎 校验所有模块 Swagger 路由覆盖..."
-  run_swagger_coverage_check all || true
+  run_swagger_coverage_check all
 elif [ ${#RESTART_MODULES[@]} -gt 0 ]; then
   SWAGGER_TARGETS=()
   for module in "${RESTART_MODULES[@]}"; do
@@ -799,7 +793,7 @@ elif [ ${#RESTART_MODULES[@]} -gt 0 ]; then
   done
   if [ ${#SWAGGER_TARGETS[@]} -gt 0 ]; then
     run_swagger_generate "${SWAGGER_TARGETS[@]}"
-    run_swagger_coverage_check "${SWAGGER_TARGETS[@]}" || true
+    run_swagger_coverage_check "${SWAGGER_TARGETS[@]}"
   fi
 fi
 echo "✅ 保留已有产物，启动时校验构建指纹并按需编译"

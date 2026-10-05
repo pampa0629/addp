@@ -1,6 +1,8 @@
 package search
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -50,7 +52,9 @@ func NewIndexer(msURL, msAPIKey, indexName string) (*Indexer, error) {
 
 	idx.client = meilisearch.New(msURL, meilisearch.WithAPIKey(msAPIKey), meilisearch.WithCustomClient(&http.Client{Timeout: 10 * time.Second}), meilisearch.DisableRetries())
 
-	if err := idx.ensureIndex(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := idx.ensureIndex(ctx); err != nil {
 		return nil, fmt.Errorf("初始化 Meilisearch 索引失败: %w", err)
 	}
 
@@ -64,43 +68,59 @@ func (i *Indexer) Enabled() bool {
 }
 
 // ensureIndex 确保索引存在并配置正确
-func (i *Indexer) ensureIndex() error {
-	_, err := i.client.CreateIndex(&meilisearch.IndexConfig{
-		Uid:        i.index,
-		PrimaryKey: "id",
-	})
-	// 忽略索引已存在的错误
-	if err != nil && !strings.Contains(err.Error(), "index_already_exists") {
-		return fmt.Errorf("创建索引失败: %w", err)
+func (i *Indexer) ensureIndex(ctx context.Context) error {
+	existing, err := i.client.GetIndexWithContext(ctx, i.index)
+	if err != nil {
+		var apiErr *meilisearch.Error
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusNotFound || apiErr.MeilisearchApiError.Code != "index_not_found" {
+			return fmt.Errorf("读取索引失败: %w", err)
+		}
+		task, err := i.client.CreateIndexWithContext(ctx, &meilisearch.IndexConfig{Uid: i.index, PrimaryKey: "id"})
+		if err != nil {
+			return fmt.Errorf("创建索引失败: %w", err)
+		}
+		if err := i.waitTask(ctx, task); err != nil {
+			return fmt.Errorf("创建索引失败: %w", err)
+		}
+	} else if existing == nil || existing.PrimaryKey != "id" {
+		return fmt.Errorf("资产索引 %s 主键必须为 id", i.index)
 	}
 
 	assetIdx := i.client.Index(i.index)
-
-	if _, err := assetIdx.UpdateSearchableAttributes(&[]string{
-		"name",
-		"description",
-		"tags",
-		"type_name",
-		"category_name",
-	}); err != nil {
-		return fmt.Errorf("配置可搜索属性失败: %w", err)
+	settings := []func() (*meilisearch.TaskInfo, error){
+		func() (*meilisearch.TaskInfo, error) {
+			return assetIdx.UpdateSearchableAttributesWithContext(ctx, &[]string{"name", "description", "tags", "type_name", "category_name"})
+		},
+		func() (*meilisearch.TaskInfo, error) {
+			return assetIdx.UpdateFilterableAttributesWithContext(ctx, &[]interface{}{"tenant_id", "status", "type_code", "category_id"})
+		},
+		func() (*meilisearch.TaskInfo, error) {
+			return assetIdx.UpdateSortableAttributesWithContext(ctx, &[]string{"published_at"})
+		},
 	}
-
-	if _, err := assetIdx.UpdateFilterableAttributes(&[]interface{}{
-		"tenant_id",
-		"status",
-		"type_code",
-		"category_id",
-	}); err != nil {
-		return fmt.Errorf("配置过滤属性失败: %w", err)
+	for _, update := range settings {
+		task, err := update()
+		if err != nil {
+			return fmt.Errorf("配置索引属性失败: %w", err)
+		}
+		if err := i.waitTask(ctx, task); err != nil {
+			return fmt.Errorf("配置索引属性失败: %w", err)
+		}
 	}
+	return nil
+}
 
-	if _, err := assetIdx.UpdateSortableAttributes(&[]string{
-		"published_at",
-	}); err != nil {
-		return fmt.Errorf("配置排序属性失败: %w", err)
+func (i *Indexer) waitTask(ctx context.Context, receipt *meilisearch.TaskInfo) error {
+	if receipt == nil || receipt.TaskUID < 0 {
+		return fmt.Errorf("资产索引任务缺少有效回执")
 	}
-
+	task, err := i.client.WaitForTaskWithContext(ctx, receipt.TaskUID, 50*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	if task == nil || task.UID != receipt.TaskUID || task.Status != meilisearch.TaskStatusSucceeded {
+		return fmt.Errorf("资产索引任务 %d 未成功完成", receipt.TaskUID)
+	}
 	return nil
 }
 
@@ -139,8 +159,14 @@ func (i *Indexer) ReplaceAssets(docs []AssetIndexDoc) error {
 	if !i.Enabled() {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	index := i.client.Index(i.index)
-	if _, err := index.DeleteAllDocuments(nil); err != nil {
+	task, err := index.DeleteAllDocumentsWithContext(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("清空资产索引失败: %w", err)
+	}
+	if err := i.waitTask(ctx, task); err != nil {
 		return fmt.Errorf("清空资产索引失败: %w", err)
 	}
 	if len(docs) == 0 {
@@ -151,10 +177,11 @@ func (i *Indexer) ReplaceAssets(docs []AssetIndexDoc) error {
 			docs[idx].Tags = []string{}
 		}
 	}
-	if _, err := index.AddDocuments(docs, nil); err != nil {
+	task, err = index.AddDocumentsWithContext(ctx, docs, nil)
+	if err != nil {
 		return fmt.Errorf("重建资产索引失败: %w", err)
 	}
-	return nil
+	return i.waitTask(ctx, task)
 }
 
 // UpdateStatus 仅更新资产的 status 字段（下架时调用，文档保留在索引中）

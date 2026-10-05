@@ -3591,6 +3591,8 @@ make infra-restore-drill \
 
 用户随后明确要求“尽快切换完成，然后就通知我”。本次只执行共享 Meilisearch 的新卷准备、旧实例停止、卷副本验证及单服务切换；没有启动 ADDP 应用，没有启停其他 Infra，没有新增 dump、清空索引、修改业务权限或手工解除 Manager 出口隔离。
 
+按本次授权分阶段交付：先在索引生产者冻结状态完成基础设施切换，供用户恢复应用；§26.79 的 Owner 运行验收与故障 T4 仍保留为后续必需工作，不将其标为通过，也不以切换成功代替搜索出口解封条件。
+
 **实际结果：搜索基础设施已切换，应用运行验收尚未完成。**
 
 - 切换前核实索引生产者未运行，旧实例仍与既有 dump 的索引、主键、设置、文档数量及全部任务身份一致，无需重新导出。保留完整备份 `/Users/pampa/addp-backups/addp-infra-20261005T114042Z-119c28`；dump SHA-256 为 `c0f748f6842e1a26374dc15b5c12a4fea064b3e805213f3b6478bb7351617795`。
@@ -3599,7 +3601,35 @@ make infra-restore-drill \
 - 停旧 Meilisearch 后，从原卷只读复制到 `addp-infra_meilisearch_rollback_20261005_f4c9f207755d`，用原镜像在隔离环境启动副本，核实二进制 `1.7.6`、索引和全部历史任务一致。原卷 `addp-infra_meilisearch_data`、旧镜像 `sha256:010341a778fe82592cff7a4f85d05eb89d2618141defea005616a476064fa56a` 和回滚副本均保留；新二进制从未挂载原卷。
 - 只重建 `addp-infra` 的 `meilisearch` 服务，保持端口 `17700`。正式容器版本、镜像、Compose 归属、新卷挂载及完整索引／任务核对通过：`catalog_entries=20247`、`manager_content_documents=970`、`asset_published=0`，历史任务共 `42254`。Manager 文档摘要差异依此前授权接受并保留 WARN，不称无损恢复。
 - 本次 owned 临时容器零残留；三个持久卷和旧镜像存在性复核通过。临时操作脚本及日志保留在系统临时目录，没有新增长期迁移框架。准备日志 `/tmp/addp-meili-cutover-prepare-20261005.log`，切换与回滚副本核验日志 `/tmp/addp-meili-cutover-switch-20261005.log`。
+- 最终 Compose 配置新增回归，固定多架构摘要和独立新卷，并断言旧卷不再挂载。`make test-dev-lifecycle test-infra-backup` 退出码 0，日志 `/tmp/addp-meili-cutover-gates-20261005.log`；命中已有 Platform CI 标准入口，无需新建登记。宿主机 `http://127.0.0.1:17700/health` 返回 available，正式容器 running/healthy；PostgreSQL、Redis、MinIO 的启动时间仍为 2026-10-04，未被本次切换重启。
+- 最终配置的完整 `make test-platform` 退出码 0，日志 `/tmp/addp-meili-cutover-platform-20261005.log`。不将其等同于全工作区 T2 或真实故障 T4；§26.85 的 `make test-changed` 环境预检失败仍未计为通过。
 
 **验收边界与下一步：**
 
 本次完成基础设施迁移，不宣称 §26.79 的全部分层业务验收完成。真实 Owner 的重启后投递、当前权限／保护负例，以及响应丢失和进程崩溃的真实故障 T4 尚未执行；旧的无关联证据投递保持正常流程处理，不能手改为成功或解封。用户现在可在自己的终端执行 `./scripts/dev/restart.sh -all`，随后优先复验 Manager、Catalog、Asset 的版本连接、正常投递与受控读取；完整应用 Ready 和搜索出口安全仍以这些运行结果为准。
+
+### 26.87 用户重启后的运行核对与 Asset 初始化修复（2026-10-05）
+
+用户通知全套服务已重启。本轮只读检查实际运行状态，没有由 AI 启停服务或基础设施，没有新增 dump、清空正式索引、修改业务数据／权限，也没有手工处理投递记录或解除出口隔离。
+
+**运行证据（本地时间 22:56）：**
+
+- `bash scripts/infra/status.sh` 核实 Meilisearch 为 `1.54.3`／端口 `17700`，PostgreSQL 实际端口 `25432`。Manager `8081`、Catalog `8192`、Asset `8183` 的 `/health/ready` 均返回 200；运行构建分别为 `20261005T123045Z-manager-56390-8NWgRr`、`20261005T123032Z-catalog-56390-Pt2nCO`、`20261005T123031Z-asset-56390-VW6860`。这些证据只覆盖本次启动的二进制，不覆盖随后修改的 Asset 源码。
+- Manager 唯一搜索出口 `configured=true`、`isolated=false`。两笔清理投递均为 `delete/succeeded`，回执为 `42257`、`42271`，数据库关联标记均非空；对应 Meilisearch 任务成功，并携带 `customMetadata`。出口由正常清理／核对流程恢复，不是人工解封。这证明本次清理投递链路，不等同于新内容写入、受保护内容读取或真实故障恢复已经验收。
+- 三个索引当前文档数量仍为 `catalog_entries=20247`、`manager_content_documents=970`、`asset_published=0`，均非正在索引。Catalog 当前投影任务表为空，Asset 权威资产表也为空；因此本次不能证明新的 Catalog 正向投递、已上架资产搜索／下架过滤，以及跨租户和当前条目可见性负例已经通过。
+- 当前运行日志位于 `logs/runtime/<module>/<instance>/`；旧的平面 `logs/*-backend.log` 没有本次运行证据，不能把其旧报错当成当前阻塞。
+
+**发现并修复：**
+
+Asset 每次启动无条件提交索引创建请求。Meilisearch 异步受理返回成功，但任务随后以 `index_already_exists` 失败（本次任务 `42263`）；原代码只检查入队结果，错误地继续宣称初始化完成。启动重建同样只检查入队，未等待清空和写入任务完成。
+
+先更新 `asset/CLAUDE.md`，再修改唯一 SDK 路径：先读取现有索引，仅 HTTP 404 且结构化错误码 `index_not_found` 才允许创建；权限错误、其他读取失败和错误主键直接拒绝。创建和三项设置均按序等待成功终态；启动重建先等待清空成功，再写入并等待成功。每个阶段使用有界上下文，UID `0` 有效，不在超时或响应错误后自动重发。失败仍只禁用可选搜索，不改变 Asset 事实、授权或 System 启动依赖。
+
+**门禁与 CI：**
+
+- `make test-module MODULE=asset` 在平台 T0 被并行 Swagger CI 登记回归的 3 项断言失败阻断，退出码 2，日志 `/tmp/addp-asset-index-init-red-20261005.log`；未修改这组并行文件，不把完整模块门禁标为通过。
+- 复用 `scripts/test/module-gate.py` 已有 `plan_module(..., include_platform=False)` 和 `run_steps` 执行 Asset Owner 门禁，不新增第二套测试实现或修改门禁登记。修复前退出码 1，初始化和重建断言真实复现重复创建、错误／未完成任务被接受、清空未完成即写入的问题，日志 `/tmp/addp-asset-owner-red-20261005.log`；修复后 Owner 编排退出码 0，日志 `/tmp/addp-asset-owner-green-20261005.log`。
+- 通过范围为 Asset 后端 T1、前端 14 项测试及构建 T3，以及 `make test-asset-postgres` 的 schema、运营统计和资产目录子树 T2（只使用实际端口 `25432` 上的 `addp_test`）。新增后端回归由现有 `make test-go`／模块发现自动覆盖，前端及 PostgreSQL 入口已有登记，无新增依赖或 Workflow 改动。
+- 本轮只修复初始化与启动重建的完成判定，不宣称普通资产投影更新已改成可靠投递，也不宣称真实响应丢失／进程退出的故障 T4 已通过。
+
+**下一步：** 用户在自己的终端执行 `./scripts/dev/restart.sh -asset`，使本轮修复进入运行二进制，再核实没有新增重复创建失败、设置及重建均得到成功回执。无需为本次 Asset 私有代码改动重启全部模块。之后继续 §26.79 尚未完成的当前权限／保护验收和隔离环境真实故障 T4；当前开发环境只读诊断不是正式 T4 通过证据。

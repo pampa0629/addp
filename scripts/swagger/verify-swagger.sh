@@ -34,7 +34,7 @@ done
 if [ "$RUN_COVERAGE" = true ]; then
     echo "=== 验证 Swagger 路由覆盖 ==="
     echo ""
-    SWAGGER_COVERAGE_WARN_ONLY="${SWAGGER_COVERAGE_WARN_ONLY:-1}" bash "${SCRIPT_DIR}/check-route-coverage.sh" all
+    bash "${SCRIPT_DIR}/check-route-coverage.sh" all
     echo ""
 fi
 
