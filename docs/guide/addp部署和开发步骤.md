@@ -44,6 +44,8 @@ bash scripts/dev/start.sh
 
 开发生命周期安装 Node 依赖时以 `package-lock.json` 为不可变构建输入，并统一执行 `npm ci`；缺少锁文件时直接失败，锁文件生成只属于显式的依赖维护流程。因此本地启动和 Hosted Online 门禁不会在安装依赖时改写已跟踪的锁文件或污染构建身份。
 
+需要启动的前端先完成依赖安装，再创建开发服务进程；安装失败直接结束启动。前端 HTTP 就绪检查的 60 秒等待从依赖准备完成后开始，避免冷启动的 `npm ci` 消耗服务就绪时间。已运行的前端沿用现有进程，不重新安装依赖。
+
 启动脚本按 Compose 项目、服务名和容器健康状态检查 Infra；其他服务即使占用 ADDP 的首选端口，也不能被当作 ADDP Infra。实际宿主机映射由 Compose 查询并注入开发进程。Backend 仍须通过 `/health/ready`：Ontology 还需验证 PostgreSQL、FalkorDB 图能力及 System 注册全部就绪。
 
 开发启动还会检查 Gateway、模块 Backend/Frontend 和工作流 Runtime 的首选端口。发生冲突时，启动输出会显示替代端口，实际地址以输出和 `.dev-state/ports.env` 为准；Console 的代理、iframe、API 文档和各前端 Gateway 代理同步使用该结果。停止脚本只清理当前工作区的进程及容器，不会清理占用首选端口的其他服务。

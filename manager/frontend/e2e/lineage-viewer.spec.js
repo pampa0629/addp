@@ -89,6 +89,7 @@ for (const theme of ['light', 'dark']) {
           const source = rows.find(row => row.text === (collapsedSource && link.source.item_id === 1 ? '100 个字段' : link.source.field_name))
           const target = rows.find(row => row.text === link.target.field_name)
           return source && target && paths.some(points =>
+            points.some(point => point.command === 'bezierCurveTo') &&
             Math.abs(points[0].x - source.x - (FIELD_CARD_WIDTH - 12) * zoom) < 2 &&
             Math.abs(points[0].y - source.y) < 2 &&
             Math.abs(points.at(-1).x - target.x + 12 * zoom) < 2 &&
@@ -161,6 +162,105 @@ for (const theme of ['light', 'dark']) {
     await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(188)
     await verifyCards()
     await verifyPorts()
+    expect(graphRequests).toBe(1)
+    expect(errors).toEqual([])
+  })
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`hundred-column target locates last and generated fields in ${theme} theme`, async ({ page }) => {
+    await observeLineageCanvas(page)
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.addInitScript(theme => {
+      localStorage.setItem('addp-lang', 'zh-cn')
+      localStorage.setItem('theme-mode', theme)
+    }, theme)
+    const fields = (id, count) => Array.from({ length: count }, (_, index) => ({
+      ...node(id), kind: 'field_ref', field_name: `field_${id}.${index}`,
+      schema_snapshot_hash: `sha256:table-${id}`, field_lineage_status: 'complete'
+    }))
+    const sources = fields(1, 3), targets = fields(3, 100)
+    const links = [0, 49, 99].map((column, index) => ({
+      source: sources[index], target: targets[column], relation_kind: 'derive', granularity: 'field',
+      transformation: 'direct', evidence: { execution_id: `target-column-${column}` }
+    }))
+    let graphRequests = 0
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
+    await page.route('**/api/v1/**', route => {
+      const url = new URL(route.request().url()), path = url.pathname
+      if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
+      if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
+      if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
+      if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
+      if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
+      if (path.endsWith('/meta/items/3')) return json(route, { ...node(3), attributes: { type_info: { table: { fields: targets.map(field => ({ name: field.field_name, type: 'string' })) } } } })
+      if (path.endsWith('/meta/lineage/graph')) {
+        if (url.searchParams.get('granularity') !== 'field') return json(route, { granularity: 'item', subject: node(3), nodes: [node(3)], edges: [] })
+        graphRequests++
+        return json(route, { granularity: 'field', subject: { ...node(3), schema_snapshot_hash: 'sha256:table-3' }, nodes: [...sources, ...targets], edges: links })
+      }
+      return json(route, {})
+    })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    await page.getByText('字段级', { exact: true }).click()
+    const canvas = page.locator('.lineage-canvas canvas')
+    await expect(canvas).toBeVisible()
+    await expect(page.locator('.lineage-field-options button')).toHaveCount(101)
+    await expect(page.locator('.lineage-summary')).toContainText('103 个节点 · 3 条关系')
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => /^field_3\./.test(row.text))?.fontSize).toBeCloseTo(11, 5)
+    const search = page.getByRole('textbox', { name: '搜索字段', exact: true })
+    const locate = async column => {
+      await search.fill(`FIELD_3.${column}`)
+      await expect(page.locator('.lineage-field-options button')).toHaveCount(2)
+      await page.getByRole('button', { name: `field_3.${column}`, exact: true }).click()
+      await expect(page.locator('.lineage-inspector strong')).toHaveText(`field_3.${column}`)
+      await expect.poll(async () => {
+        const row = (await lineageCanvasText(canvas)).find(row => row.text === `field_3.${column}`)
+        return row && Math.abs(row.y - (await canvas.boundingBox()).height / 2)
+      }).toBeLessThan(3)
+      expect((await lineageCanvasText(canvas)).find(row => row.text === `field_3.${column}`).fontSize).toBeCloseTo(11, 5)
+    }
+    await page.getByRole('button', { name: '收起字段', exact: true }).click()
+    await locate(98)
+    await expect(page.locator('.lineage-field-status')).toContainText('没有关联字段')
+    // A generated field opens only its own table; its source stays folded.
+    await expect(page.getByRole('button', { name: '展开字段', exact: true })).toBeEnabled()
+    await locate(99)
+    await expect(page.locator('.lineage-field-status')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '展开字段', exact: true })).toBeDisabled()
+    await search.fill('')
+    await page.getByRole('button', { name: '全部字段', exact: true }).click()
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    const ports = async () => {
+      await expect.poll(async () => {
+        const { rows, paths } = await lineageCanvasSnapshot(canvas)
+        const zoom = rows.find(row => row.text === 'current')?.fontSize / 15
+        return links.every(link => {
+          const source = rows.find(row => row.text === link.source.field_name)
+          const target = rows.find(row => row.text === link.target.field_name)
+          return source && target && paths.some(points => points.some(point => point.command === 'bezierCurveTo') &&
+            Math.abs(points[0].x - source.x - 212 * zoom) < 2 && Math.abs(points[0].y - source.y) < 2 &&
+            Math.abs(points.at(-1).x - target.x + 12 * zoom) < 2 && Math.abs(points.at(-1).y - target.y) < 2)
+        })
+      }).toBe(true)
+    }
+    await ports()
+    const title = (await lineageCanvasText(canvas)).find(row => row.text === 'current')
+    await dragLineageTable(page, canvas, 'current', 0, 25)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'current')?.y).toBeCloseTo(title.y + 25, 1)
+    await ports()
+    // The cubic midpoint remains clickable and exposes the exact evidence.
+    const { rows, paths } = await lineageCanvasSnapshot(canvas)
+    const target = rows.find(row => row.text === 'field_3.99')
+    const zoom = target.fontSize / FIELD_FONT_SIZE
+    const curve = paths.find(points => points.some(point => point.command === 'bezierCurveTo') &&
+      Math.abs(points.at(-1).y - target.y) < 2 && Math.abs(points.at(-1).x - target.x + 12 * zoom) < 2)
+    await canvas.click({ position: { x: (curve[0].x + curve.at(-1).x) / 2, y: (curve[0].y + curve.at(-1).y) / 2 } })
+    await expect(page.locator('.lineage-inspector')).toContainText('target-column-99')
+    await expect(page.locator('.lineage-inspector')).toContainText('field_3.99')
+    await expect(page.locator('.lineage-summary')).toContainText('103 个节点 · 3 条关系')
     expect(graphRequests).toBe(1)
     expect(errors).toEqual([])
   })
@@ -526,6 +626,7 @@ for (const theme of ['light', 'dark']) {
         const zoom = header?.fontSize / 15
         const targets = rows.filter(row => row.text.startsWith('field_3.')).slice(0, 4)
         return fields.length === 4 && targets.length === 4 && fields.every(row => paths.some(points =>
+          points.some(point => point.command === 'bezierCurveTo') &&
           Math.abs(points[0].x - row.x - 212 * zoom) < 2 && Math.abs(points[0].y - row.y) < 2)) &&
           targets.every(row => paths.some(points => Math.abs(points.at(-1).x - row.x + 12 * zoom) < 2 &&
             Math.abs(points.at(-1).y - row.y) < 2))

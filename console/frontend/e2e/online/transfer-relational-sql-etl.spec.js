@@ -266,7 +266,8 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
       const scale = target.fontSize / FIELD_FONT_SIZE
       return dragGeometry.paths.some(points => {
         const endpoint = points.at(-1)
-        return Math.abs(endpoint.x - target.x + 12 * scale) < 2 && Math.abs(endpoint.y - target.y) < 2
+        return points.some(point => point.command === 'bezierCurveTo') &&
+          Math.abs(endpoint.x - target.x + 12 * scale) < 2 && Math.abs(endpoint.y - target.y) < 2
       })
     }).toBe(true)
   } finally {

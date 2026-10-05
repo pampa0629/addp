@@ -1257,6 +1257,60 @@ print('PASS: Model3D start/restart syncs full declarations in new/existing venv;
 PY
 }
 
+test_frontend_dependencies_precede_health_wait() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+root, temporary = map(Path, sys.argv[1:])
+source = (root/'scripts/dev/start.sh').read_text()
+launch = source[source.index('# 并发启动所有前端\nfor config'):source.index('  end_start_listener_batch', source.index('# 并发启动所有前端\nfor config'))]
+for mode in ('success', 'failure', 'running'):
+    workspace = temporary/('frontend-dependencies-'+mode)
+    (workspace/'fixture/frontend').mkdir(parents=True)
+    (workspace/'logs').mkdir()
+    (workspace/'.dev-pids').mkdir()
+    (workspace/'.dev-pids/fixture-frontend.pid').write_text('111\n')
+    script = r'''
+set -eu
+cd "$CASE_ROOT"
+FRONTEND_CONFIGS=("fixture:8180:fixture/frontend")
+FRONTEND_PID_FILE="$CASE_ROOT/pids"
+check_service_running() { [ "$MODE" != running ]; }
+ensure_node_modules() {
+  touch "$CASE_ROOT/install-started"
+  until [ -f "$CASE_ROOT/release-install" ]; do sleep 0.02; done
+  [ "$MODE" != failure ] || return 19
+  touch "$CASE_ROOT/install-completed"
+}
+npm() { touch "$CASE_ROOT/server-started"; }
+''' + launch + '\ntouch "$CASE_ROOT/health-started"\nwait\n'
+    process = subprocess.Popen(['bash', '-c', script], env=dict(os.environ, CASE_ROOT=str(workspace), MODE=mode), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        if mode != 'running':
+            deadline = time.monotonic()+5
+            while not (workspace/'install-started').exists() and time.monotonic()<deadline:
+                time.sleep(0.02)
+            assert (workspace/'install-started').exists(), mode
+            time.sleep(0.1)
+            assert not (workspace/'health-started').exists(), 'HTTP timeout began while npm ci was still running'
+            assert not (workspace/'server-started').exists(), 'Vite started before dependencies completed'
+    finally:
+        (workspace/'release-install').touch()
+        stdout, stderr = process.communicate(timeout=5)
+    assert process.returncode == (19 if mode == 'failure' else 0), (mode, stdout, stderr)
+    assert (workspace/'health-started').exists() == (mode != 'failure'), mode
+    assert (workspace/'server-started').exists() == (mode == 'success'), mode
+    assert (workspace/'install-completed').exists() == (mode == 'success'), mode
+    if mode == 'running':
+        assert not (workspace/'install-started').exists(), 'reused frontend installed dependencies'
+print('PASS: frontend dependency preparation precedes HTTP wait; failed installs stop startup; running frontend is reused')
+PY
+}
+
 test_start_batches_listening_ports() {
   python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
 import os
@@ -1572,6 +1626,7 @@ test_stop_keeps_system_available_for_deregistration
 test_worker_backend_readiness_order
 test_swagger_incremental_generation
 test_start_batches_listening_ports
+test_frontend_dependencies_precede_health_wait
 test_parallel_runtime_startup
 test_python_dependency_install_lock
 test_model3d_python_dependency_sync

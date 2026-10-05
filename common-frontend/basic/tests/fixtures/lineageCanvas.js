@@ -53,7 +53,7 @@ export async function observeLineageCanvas(page) {
           const x = args.at(-2), y = args.at(-1)
           const points = activePaths.get(this) || []
           points.push({ x: (matrix.a * x + matrix.c * y + matrix.e) / ratio,
-            y: (matrix.b * x + matrix.d * y + matrix.f) / ratio })
+            y: (matrix.b * x + matrix.d * y + matrix.f) / ratio, command: method })
           activePaths.set(this, points)
         }
         return original.apply(this, args)

@@ -214,7 +214,7 @@ function lineageLayout() {
   const tableCount = isFieldGraph.value ? fieldProjection.value.nodes.length : 0
   // Small chains stay readable in a narrow pane; larger graphs need routing space.
   const ranksep = isFieldGraph.value ? (tableCount <= 4 ? 12 : 48) : 170
-  return { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep, controlPoints: true }
+  return { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep }
 }
 
 async function autoLayout({ fit = true } = {}) {
@@ -589,8 +589,6 @@ function graphData() {
       style: {
         stroke: palette.textTertiary,
         lineWidth: 1.5,
-        radius: 8,
-        offset: 28,
         lineAppendWidth: 12,
         endArrow: {
           path: G6.Arrow.triangle(8, 6, 0),
@@ -683,7 +681,7 @@ function registerLineageEdge() {
       const halo = item.getContainer().find(shape => shape.get('name') === 'lineage-edge-halo')
       halo?.attr('path', item.getKeyShape().attr('path'))
     }
-  }, 'polyline')
+  }, 'cubic-horizontal')
 }
 
 function focusItem(item) {
@@ -870,10 +868,6 @@ async function renderGraph(preserveView = false) {
     }
   })
 
-  graphInstance.value.on('node:dragstart', event => {
-    // Dagre points are absolute: discard them before moving the endpoints.
-    for (const edge of event.item.getEdges()) graphInstance.value.updateItem(edge, { controlPoints: [] })
-  })
   graphInstance.value.on('node:click', event => {
     const shape = event.target?.get('name')
     const direction = ['upstream', 'downstream'].find(value => shape === `lineage-expand-${value}`)
@@ -924,17 +918,13 @@ async function renderGraph(preserveView = false) {
   const data = graphData()
   if (preserved) {
     const positions = new Map(preserved.data.nodes.map(node => [node.id, node]))
-    const routes = new Map(preserved.data.edges.map(edge => [edge.id, edge.controlPoints]))
-    const resized = new Set()
     for (const node of data.nodes) {
       const previous = positions.get(node.id)
       if (previous) {
         const heightChange = node.size[1] - previous.size[1]
         Object.assign(node, { x: previous.x, y: previous.y + heightChange / 2 })
-        if (heightChange) resized.add(node.id)
       }
     }
-    for (const edge of data.edges) edge.controlPoints = resized.has(edge.source) || resized.has(edge.target) ? [] : routes.get(edge.id)
   }
   graphInstance.value.data(data)
   graphInstance.value.render()

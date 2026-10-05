@@ -3044,8 +3044,10 @@ for config in "${FRONTEND_CONFIGS[@]}"; do
 
   # 检查前端服务是否已在运行
   if check_service_running "${name}-frontend" "$port"; then
+    # Dependency installation is preparation, not part of the HTTP readiness budget.
+    # Keep it in the launcher so a failed npm ci also prevents the health batch.
+    ensure_node_modules "$dir"
     (
-      ensure_node_modules "$dir"
       cd "$dir"
       npm run dev -- --host "${SERVICE_HOST:-0.0.0.0}" --port "$port" --strictPort > "../../logs/${name}-frontend.log" 2>&1
     ) &
