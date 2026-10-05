@@ -280,6 +280,8 @@ MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：�
 
 2026-10-05，结构演进扩展 Hosted T4 [运行 37247522460](https://github.com/pampa0629/addp/actions/runs/37247522460) 完整通过，验证源码为 `2b5f1c1437a362e2b7f513c41dd6cad1f180d2b0`。同一最小权限 User / Tenant、同一个编排和任务定义完成三轮写入，共三个父执行与九个实际子执行 UUID，每轮 DIM 三行、DWD 两行。第二轮后，夹具真实改名 DWD 昵称列并将 date 改为 timestamp without time zone，正式扫描后四张当前字段图均声明 unavailable、各仅一个根节点且无来源边，旧字段名查询返回 404；冻结旧 hash 与第二轮父完成时间的四张历史图保留原字段、原 direct 日期关系及第二轮子执行证据，DWD 入边为 stale。第三轮自动采集的新字段关系使用新列名，日期赋值转换为 derived，DWD hash 变化，源集合、ODS、DIM 的 hash 与全部 DataItem 身份保持稳定；原历史图的 DWD 入边转为 closed，观察时间仍不晚于查询时间，不混入第三轮证据。v5 报告保存写入前的当前图及写入前后的历史图，独立归档核验、完整物理行集合、新列与 timestamp 类型、Manager 三层整表字段图及本地聚焦全部通过。八个定义删除并确认 404，两个业务容器、平台 Infra 与凭据目录清理通过，零残留。相同源码的 Platform CI 30/30、Release/T2 的 34 个实际执行任务与 Quality 前端门禁通过；另 4 项 CLI 发布及 Keychain / 官方介质认证任务按 workflow 条件跳过，不计为通过。
 
+2026-10-05，字段图紧凑布局的 Hosted 复验[运行 37252213496](https://github.com/pampa0629/addp/actions/runs/37252213496) 已通过，验证源码为 `680ce20325a7a20cddeadd6889dafbacb8768e6b`。Console 中真实 MongoDB → PostgreSQL ODS → DIM → DWD 三跳整表图包含 13 个字段节点、9 条关系；适应窗口后所有字段行都在画布内，Canvas 实际记录的最小字段字号为 14.22px，画布为 820×667px。截图与 `transfer-field-overview-layout.json` 同时归档。既有字段映射、重跑、结构演进和冻结历史取证回归同时通过；八个临时定义删除并确认 404，业务夹具和部署清理通过、Infra 零残留。同源码 Platform CI 30 项和 Release/T2 的 32 个实际执行任务通过；另 6 项按 workflow 条件跳过，不计为通过。
+
 ### 6.2 图数据库评估边界
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。
