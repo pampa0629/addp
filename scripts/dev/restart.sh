@@ -333,6 +333,7 @@ geopython_workflow_source_fingerprint() {
                     engines/geopython-workflow/container_entrypoint.sh \
                     engines/geopython-workflow/workflow_engine.py \
                     engines/geopython-workflow/geometry_batches.py \
+                    engines/geopython-workflow/raster_resources.py \
                     common-python/README.md \
                     common-python/pyproject.toml
                 find engines/geopython-workflow/operators common-python/addp_common \

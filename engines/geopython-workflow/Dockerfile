@@ -63,9 +63,13 @@ RUN pip install --no-cache-dir --no-build-isolation --no-deps /tmp/common-python
 # Copy application code
 COPY engines/geopython-workflow/operators/ ./operators/
 COPY engines/geopython-workflow/geometry_batches.py .
+COPY engines/geopython-workflow/raster_resources.py .
 COPY engines/geopython-workflow/workflow_engine.py .
 COPY engines/geopython-workflow/api_server.py .
 COPY engines/geopython-workflow/container_entrypoint.sh .
+
+# Verify the packaged API and health route without starting a service or contacting System.
+RUN python -c "import api_server; assert api_server.app.test_client().get('/health').status_code == 200"
 
 # Expose Flask port
 EXPOSE 8099

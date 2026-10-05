@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+import re
+import shlex
 import importlib.util
 import json
 import os
@@ -805,6 +808,73 @@ sys.exit(9 if name==os.environ.get('FAKE_FAILURE') else 0)
                 if event['kind']=='start':
                     try: os.killpg(event['group'],signal.SIGKILL)
                     except ProcessLookupError: pass
+
+
+
+class GeoPythonPackagedRuntimeTest(unittest.TestCase):
+    def test_image_copies_every_imported_local_module(self):
+        root = SCRIPT.parents[2]
+        engine = root / "engines/geopython-workflow"
+        sources = []
+        for line in (engine / "Dockerfile").read_text().splitlines():
+            if line.startswith("COPY "):
+                sources.extend(shlex.split(line)[1:-1])
+
+        def copied(path):
+            relative = path.relative_to(root).as_posix()
+            return any(relative == source or (source.endswith("/") and relative.startswith(source)) for source in sources)
+
+        api = engine / "api_server.py"
+        self.assertTrue(copied(api))
+        for path in engine.rglob("*.py"):
+            if not copied(path):
+                continue
+            for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+                imports = []
+                if isinstance(node, ast.Import):
+                    imports = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    imports = [node.module]
+                for name in imports:
+                    module = engine.joinpath(*name.split("."))
+                    local = module.with_suffix(".py")
+                    if not local.is_file():
+                        local = module / "__init__.py"
+                    if local.is_file():
+                        self.assertTrue(copied(local), f"{path.name} imports {name}, missing from the product image")
+
+    def test_start_and_restart_fingerprints_observe_resource_module_changes(self):
+        root = SCRIPT.parents[2]
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            subprocess.run(["git", "init", "-q"], cwd=workspace, check=True)
+            for relative in ["engines/geopython-workflow/Dockerfile", "engines/geopython-workflow/requirements.txt",
+                             "engines/geopython-workflow/api_server.py", "engines/geopython-workflow/container_entrypoint.sh",
+                             "engines/geopython-workflow/workflow_engine.py", "engines/geopython-workflow/geometry_batches.py",
+                             "engines/geopython-workflow/raster_resources.py", "common-python/README.md", "common-python/pyproject.toml"]:
+                path = workspace / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(root / relative, path)
+            for relative in ["engines/geopython-workflow/operators", "common-python/addp_common"]:
+                (workspace / relative).mkdir(parents=True)
+            functions = []
+            for relative in ["scripts/dev/start.sh", "scripts/dev/restart.sh"]:
+                source = (root / relative).read_text()
+                match = re.search(r"geopython_workflow_source_fingerprint\(\) \{.*?\n\}", source, re.S)
+                self.assertIsNotNone(match)
+                functions.append(match[0])
+
+            def fingerprint(function):
+                return subprocess.check_output(["bash", "-c", function + "\ngeopython_workflow_source_fingerprint"], cwd=workspace, text=True).strip()
+
+            before = [fingerprint(function) for function in functions]
+            self.assertEqual(before[0], before[1])
+            resource = workspace / "engines/geopython-workflow/raster_resources.py"
+            resource.write_text(resource.read_text() + "\n# changed policy application\n")
+            after = [fingerprint(function) for function in functions]
+            self.assertEqual(after[0], after[1])
+            for old, new in zip(before, after):
+                self.assertNotEqual(old, new, "resource policy changes reused a stale Runtime image")
 
 
 if __name__ == "__main__":
