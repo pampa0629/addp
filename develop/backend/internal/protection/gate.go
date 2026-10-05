@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/addp/common/dataprotection"
@@ -15,13 +14,12 @@ import (
 var ErrRequired = errors.New("develop data protection gate is required")
 
 type Gate struct {
-	store  *projectionstore.Store
-	mu     sync.Mutex
-	active map[int64]int
+	store *projectionstore.Store
+	reads projectionstore.InflightReads
 }
 
 func NewGate(store *projectionstore.Store) *Gate {
-	return &Gate{store: store, active: make(map[int64]int)}
+	return &Gate{store: store}
 }
 
 func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlugin plugin.EnginePlugin, prepared plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error) {
@@ -82,28 +80,12 @@ func (g *Gate) begin(tenantID uint) (func(), error) {
 	if g == nil || g.store == nil || tenantID == 0 {
 		return nil, ErrRequired
 	}
-	tenant := int64(tenantID)
-	g.mu.Lock()
-	g.active[tenant]++
-	g.mu.Unlock()
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			g.mu.Lock()
-			g.active[tenant]--
-			if g.active[tenant] <= 0 {
-				delete(g.active, tenant)
-			}
-			g.mu.Unlock()
-		})
-	}, nil
+	return g.reads.Begin(int64(tenantID))
 }
 
 func (g *Gate) HasActiveExecutionsForTenant(tenantID int64) bool {
 	if g == nil || tenantID <= 0 {
 		return false
 	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.active[tenantID] > 0
+	return g.reads.HasActiveExecutionsForTenant(tenantID)
 }

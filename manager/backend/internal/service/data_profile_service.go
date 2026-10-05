@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/dataprotection/projectionstore"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -19,13 +20,20 @@ import (
 	"github.com/addp/manager/internal/profilefilter"
 	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const dataProfileConfigVersion = "data-profile-config/v4"
 
 type dataProfileStore interface {
 	GetCurrent(context.Context, uint, string, string, string) (*models.DataProfile, *dataprofile.Profile, error)
-	ReplaceCurrent(context.Context, *models.DataProfile, dataprofile.Profile) error
+	ReplaceCurrent(context.Context, *gorm.DB, *models.DataProfile, dataprofile.Profile) error
+}
+
+type dataProfileProtectionStore interface {
+	managerprotection.LocalProjectionGate
+	CaptureVersion(context.Context, int64, func(projectionstore.GateReader) error) (projectionstore.Version, error)
+	CommitVersion(context.Context, int64, projectionstore.Version, func(*gorm.DB, projectionstore.GateReader) error) error
 }
 
 type dataProfileExecutionStore interface {
@@ -43,7 +51,7 @@ type DataProfileService struct {
 	profiles       dataProfileStore
 	executions     dataProfileExecutionStore
 	sampler        DataProfileSampleProvider
-	protectionGate managerprotection.LocalProjectionGate
+	protectionGate dataProfileProtectionStore
 	budget         DataProfileBudget
 }
 
@@ -67,8 +75,9 @@ type DataProfileExecutionView struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	ErrorCode   string     `json:"error_code,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	// 稳定执行错误码；protection_version_changed 表示规则已变化，须重新执行 | Stable execution error code; protection_version_changed requires explicit rerun after protection changes.
+	ErrorCode string `json:"error_code,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type DataProfileCurrentResponse struct {
@@ -98,7 +107,7 @@ func NewDataProfileService(
 	profiles dataProfileStore,
 	executions dataProfileExecutionStore,
 	sampler DataProfileSampleProvider,
-	protectionGate managerprotection.LocalProjectionGate,
+	protectionGate dataProfileProtectionStore,
 ) *DataProfileService {
 	return &DataProfileService{
 		profiles:       profiles,
@@ -294,13 +303,18 @@ func (s *DataProfileService) runExecution(
 			logger.L().Error("更新数据剖析失败状态失败", "execution_id", execution.ExecutionID, "error", updateErr)
 		}
 	}
-	_, managed, err := s.profileRules(uint(execution.TenantID), target)
+	version, err := s.protectionGate.CaptureVersion(ctx, int64(execution.TenantID), func(gate projectionstore.GateReader) error {
+		_, managed, err := profileRulesForGate(gate, uint(execution.TenantID), target)
+		if err != nil {
+			return err
+		}
+		if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
+			return ErrDataProfileProtectionRequired
+		}
+		return nil
+	})
 	if err != nil {
 		fail("security_protection_required", err)
-		return
-	}
-	if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
-		fail("security_protection_required", ErrDataProfileProtectionRequired)
 		return
 	}
 	sample, err := s.sampler.Sample(ctx, target, dataScope, s.budget)
@@ -342,23 +356,30 @@ func (s *DataProfileService) runExecution(
 		ProfileConfigHash:  configHash,
 		LastExecutionID:    execution.ExecutionID,
 	}
-	profileRules, managed, err := s.profileRules(uint(execution.TenantID), target)
+	err = s.protectionGate.CommitVersion(ctx, int64(execution.TenantID), version, func(tx *gorm.DB, gate projectionstore.GateReader) error {
+		rules, managed, err := profileRulesForGate(gate, uint(execution.TenantID), target)
+		if err != nil {
+			return err
+		}
+		if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
+			return ErrDataProfileProtectionRequired
+		}
+		protected, err := managerprotection.ProtectProfile(&profile, rules)
+		if err != nil {
+			return ErrDataProfileProtectionRequired
+		}
+		profile = *protected
+		return s.profiles.ReplaceCurrent(ctx, tx, state, profile)
+	})
 	if err != nil {
-		fail("security_protection_required", err)
-		return
-	}
-	if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
-		fail("security_protection_required", ErrDataProfileProtectionRequired)
-		return
-	}
-	protectedProfile, err := managerprotection.ProtectProfile(&profile, profileRules)
-	if err != nil {
-		fail("security_protection_required", err)
-		return
-	}
-	profile = *protectedProfile
-	if err := s.profiles.ReplaceCurrent(ctx, state, profile); err != nil {
-		fail("result_store_failed", err)
+		code := "result_store_failed"
+		if errors.Is(err, projectionstore.ErrVersionChanged) {
+			code = "protection_version_changed"
+		}
+		if errors.Is(err, ErrDataProfileProtectionRequired) {
+			code = "security_protection_required"
+		}
+		fail(code, err)
 		return
 	}
 	metadata := managerExecutionLineage(commonModels.JSONMap{
@@ -410,10 +431,17 @@ func (s *DataProfileService) runClaimedExecution(ctx context.Context, execution 
 // profileRules resolves the single local protection path for profiling. An
 // unmanaged DataItem returns no rules and keeps the original execution path.
 func (s *DataProfileService) profileRules(tenantID uint, target *DataProfileTarget) ([]dataprotection.Rule, bool, error) {
-	if s == nil || s.protectionGate == nil || target == nil {
+	if s == nil {
 		return nil, false, ErrDataProfileUnavailable
 	}
-	gate := managerprotection.DataItemGate(s.protectionGate, tenantID, target.ItemFingerprint, time.Now().UTC())
+	return profileRulesForGate(s.protectionGate, tenantID, target)
+}
+
+func profileRulesForGate(reader projectionstore.GateReader, tenantID uint, target *DataProfileTarget) ([]dataprotection.Rule, bool, error) {
+	if reader == nil || target == nil {
+		return nil, false, ErrDataProfileUnavailable
+	}
+	gate := managerprotection.DataItemGate(reader, tenantID, target.ItemFingerprint, time.Now().UTC())
 	rules, err := managerprotection.TableRules(target.ItemFingerprint, target.Fields, gate, managerprotection.ActionProfile, time.Now().UTC())
 	if err != nil {
 		return nil, gate.Managed, ErrDataProfileProtectionRequired

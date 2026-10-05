@@ -555,6 +555,21 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | module registry revision | 模块注册表修订号 | System 对可路由模块拓扑变更维护的单调递增版本。 | 新增、恢复、下线、端点变化和管理员启停会递增；普通续租心跳不递增。 |
 | module routing snapshot | 模块路由快照 | System 在某个注册表修订号下返回的全部可路由 Backend 及其当前租约投影。 | Gateway 只原子替换完整快照，不拼接多次查询结果；长轮询超时也返回新鲜快照以续新租约投影。 |
 
+## 平台运行观测（2026-10-04 已确认目标，待实施）
+
+本节记录已确认的设计边界，不表示节点台账、资源指标或观测设施裁剪已实现。详细范围和依赖矩阵见 [平台运行监控与可观测性设计](../next/ADDP平台运行监控与可观测性设计.md)。
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| managed host node | 纳管节点 | System 维护稳定 node_id 的物理机或虚拟机身份，以及基础台账。 | 名称和 IP 是属性；不由 registered_host、容器主机名或服务 URL 推算，不等同 Engine Instance。 |
+| deployment association | 部署关联 | 受信部署环境明确提供的节点、容器、运行实例或引擎之间的承载关系。 | 保存来源与有效时间；无证据时不回填历史，不参与 Ready、路由或执行所有权。 |
+| monitoring target | 监测目标 | Monitor 管理的被观测对象引用、监测类别和采集端点配置。 | 不替代节点、模块实例或引擎登记；引擎已登记不代表已接入资源监测。 |
+| observability capability | 观测能力 | 可独立选择部署的指标、集中日志或追踪能力。 | 组件属于 Infra，但不是所有模块的必需依赖；关闭与故障必须分别表达。 |
+| resource observation | 资源观测 | 带对象身份、来源、采样时间和单位的资源指标事实。 | CPU/内存、执行槽位、实例租约分别解释；无数据或过期不等于零负载或正常。 |
+| service quality metric | 服务质量指标 | 请求量、错误率、延迟分布等应用服务行为指标。 | 接口采用规范化 route；不使用完整 URL、请求正文或用户身份作为指标标签。 |
+| distributed trace | 分布式追踪 | 由 Trace/Span 与上下文传播描述的一次跨服务调用过程。 | request_id、trace_id 和 execution 身份不互相替代；缺失或采样不能证明没有调用关系。 |
+| observed call relationship | 观测调用关系 | 从明确配置或实际追踪得到的服务、引擎之间的调用关系。 | 注明来源、窗口和覆盖范围；与部署关联、数据血缘分别表达，不能仅凭关系染色确认根因。 |
+
 ## Cleanup 与生命周期
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
@@ -580,6 +595,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | full-text index | 全文索引 | 面向关键词检索的外部搜索索引。 | 例如 Meilisearch 中的资产记录；与 `access_index` 不同，不用于 range read 或表格分页定位。 |
 | technical metadata search projection | 技术元数据搜索投影 | 只包含 DataItem 身份、名称、路径、类型、结构、字段定义和规模等 Meta 技术事实的可重建搜索投影。 | 不包含数据行、字段值、文件正文、正文预览或正文派生属性；它不是 Security `search_index` 数据出口动作。 |
 | content search projection | 数据内容搜索投影 | 包含文件正文、正文预览、数据值或其派生摘要、关键词、作者等内容信息的可重建搜索投影。 | 属于 Security `search_index` 数据出口；已纳管 DataItem 必须命中本地有效投影和独立执行器，缺失时失效关闭。 |
+| persistent index delivery record | 持久索引投递记录 | Owner 保存的外部索引操作身份、投递阶段、外部任务编号及核查结果，用于跨请求、跨进程恢复和证明派生结果收敛。 | 不保存正文或凭据，不是用户审批、资源授权或业务任务；接受入队不等于操作完成，响应丢失的未决记录不得按超时自动视为完成。Manager 的接入进度见企业资源目录能力专题。 |
+| index delivery correlation | 索引投递关联标记 | 发出请求前持久绑定投递 UUID、并随外部请求保存到任务的非敏感技术标记。 | 仅用于认回原任务，不是幂等键、访问授权或完成回执；未曾发送标记的历史记录不能回填为已关联。 |
 | capability | 能力 | 引擎、当前进程格式实现或数据项呈现的能力。 | engine capability、format descriptor / provider status、item capability 含义不同。 |
 | official-media technical fixture | 官方介质技术夹具 | 使用固定厂商介质、完整性摘要和 disposable 生命周期验证原生运行时、驱动协议与 SQL 边界的技术环境。 | 夹具自身不调用 System API，也不替代 Provider 准入与 capability 声明；独立 Provider 已准入后，夹具可作为技术验证 Engine Instance 的数据面。 |
 | official-driver execution boundary | 官方驱动执行边界 | 商业数据库官方驱动依法从固定官方介质注入、且真正加载该驱动并访问数据库的进程运行边界。 | DM8 当前固定为 Linux ARM64 Docker；仓库、镜像仓库和 Artifact 不保存或重分发驱动。System 控制面登记可位于边界外，但连接检测和数据面 Provider 调用必须位于边界内。 |

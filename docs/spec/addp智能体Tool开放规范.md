@@ -179,6 +179,8 @@ Copilot 默认保留 `current_query` 已声明的主 collection，除非用户�
 
 `platform.capability.context` 由 Ontology 提供随代码版本发布的只读概念/关系/操作前置条件，首个 capability 为 `transfer.task.create`。返回 `knowledge_kind=platform_definition`、revision、digest；不返回可变权限、连接信息或模块当前可用性，不将平台定义伪装为 Tenant 原生定义。当前请求的实际可用性、权限和资源事实仍由 System 委托及执行 owner 判定。
 
+`transfer.draft.generate` 的当前契约为 `2.0.0`。`resources[]` 最多一个成员，必须遵守共享 `ResourceFact`：必填 `role + locator`，其他字段只能来自 owner 已确认的资源事实；搜索候选的 `name/item_type`、用户决定的行粒度和投影字段不得混入。`task` 是当前任务草稿，运行边界、装载、source/target endpoint 和 transforms 均放在 `task.config`；源查询只保存在正式 `task.config.source.query`，字段映射只保存在 `task.config.transforms`。Tool 输入 Schema 必须在委托和 HTTP 调用前拒绝缺少角色、未知资源字段和错误的草稿层级。Copilot 重新确认资源与目标，沿用用户确定的源查询、运行边界、装载及目标策略，只辅助名称、描述或直接字段映射，不执行源查询、不创建或启动任务。带源查询时，直接映射修改还必须限定为当前已有且匹配 owner 源字段事实的映射；不得从原集合 Schema 追加未确认的查询输出列或猜测查询别名。没有完整当前配置时返回澄清；已确认完整配置时不要求调用可选草稿 Tool。
+
 `transfer.task.create` 复用 Transfer 的唯一 `POST /task-definitions`，只保存 `bounded + snapshot + native table` 的无计划、未启动任务。SDK 固定发送空 schedule、enabled=false、auto_scan_metadata=false；owner 对 Delegated 请求再次执行同一限制，Manifest 不是唯一安全边界。目标策略与字段映射需显式确定；既不授予 `transfer.task.execute`，也不自动启动、调度、扫描或写入业务库。此元数据创建不要求执行审批，返回实际 task ID、status、desired_state；没有 execution ResultRef。结果不确定时禁止自动重发，必须人工到 Transfer 核对。
 
 ## 五、Adapter 边界

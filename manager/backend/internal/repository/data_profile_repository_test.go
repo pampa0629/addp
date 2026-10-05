@@ -37,7 +37,7 @@ func TestDataProfileRepositoryReplaceCurrentAtomicallyReplacesFields(t *testing.
 			{Name: "name", Type: datatype.FieldTypeString, Status: dataprofile.MetricStatusComputed},
 		},
 	}
-	if err := repo.ReplaceCurrent(context.Background(), state, first); err != nil {
+	if err := db.Transaction(func(tx *gorm.DB) error { return repo.ReplaceCurrent(context.Background(), tx, state, first) }); err != nil {
 		t.Fatalf("ReplaceCurrent(first) error = %v", err)
 	}
 	firstID := state.ID
@@ -50,7 +50,7 @@ func TestDataProfileRepositoryReplaceCurrentAtomicallyReplacesFields(t *testing.
 	second.Fields = []dataprofile.FieldProfile{
 		{Name: "amount", Type: datatype.FieldTypeDouble, Status: dataprofile.MetricStatusComputed},
 	}
-	if err := repo.ReplaceCurrent(context.Background(), state, second); err != nil {
+	if err := db.Transaction(func(tx *gorm.DB) error { return repo.ReplaceCurrent(context.Background(), tx, state, second) }); err != nil {
 		t.Fatalf("ReplaceCurrent(second) error = %v", err)
 	}
 	if state.ID != firstID {
@@ -74,6 +74,17 @@ func TestDataProfileRepositoryReplaceCurrentAtomicallyReplacesFields(t *testing.
 	}
 	if fieldCount != 1 {
 		t.Fatalf("field count = %d, want 1", fieldCount)
+	}
+}
+
+func TestDataProfileRepositoryRejectsWritesOutsideProtectionTransaction(t *testing.T) {
+	db := newDataProfileRepositoryTestDB(t)
+	repo := NewDataProfileRepository(db)
+	state := &models.DataProfile{TenantID: 7}
+	for _, tx := range []*gorm.DB{nil, db} {
+		if err := repo.ReplaceCurrent(context.Background(), tx, state, dataprofile.Profile{}); err == nil {
+			t.Fatal("independent write accepted")
+		}
 	}
 }
 
@@ -138,7 +149,7 @@ func TestDataProfileProjectionCleanupDeletesCachedResultsAndSuppressesConditionV
 			SampleMethod: "systematic_pages_reservoir", FieldCount: 1, ProfiledAt: time.Now().UTC(),
 			Fields: []dataprofile.FieldProfile{{Name: "phone", Type: datatype.FieldTypeString, Status: dataprofile.MetricStatusComputed}},
 		}
-		if err := profiles.ReplaceCurrent(context.Background(), state, profile); err != nil {
+		if err := db.Transaction(func(tx *gorm.DB) error { return profiles.ReplaceCurrent(context.Background(), tx, state, profile) }); err != nil {
 			t.Fatal(err)
 		}
 		execution := newDataProfileRepositoryTestExecution("cleanup-"+fingerprint, time.Now().UTC())

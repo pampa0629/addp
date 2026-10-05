@@ -12,6 +12,8 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestDataProfileServiceGetCurrentMarksStoredResultStale(t *testing.T) {
@@ -110,6 +112,70 @@ func TestDataProfileServiceFailedRefreshDoesNotReplaceSuccessfulResult(t *testin
 	}
 	if executions.failedCode != "sample_failed" {
 		t.Fatalf("failed code = %q, want sample_failed", executions.failedCode)
+	}
+}
+
+func TestDataProfileServiceRejectsResultWhenProtectionChangesDuringSampling(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := projectionstore.Migrate(db, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := projectionstore.Open(db, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := &dataprofile.Profile{Mode: dataprofile.ModeSample}
+	profiles := &dataProfileServiceTestProfileStore{profile: previous}
+	executions := &dataProfileServiceTestExecutionStore{}
+	sampler := &dataProfileServiceTestSampler{sample: &DataProfileSample{}, onSample: func() {
+		projection := dataprotection.Projection{
+			SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "install", Revision: "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateEnrolling,
+			Target:    dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"},
+			ValidFrom: time.Now().Add(-time.Minute), ExpiresAt: time.Now().Add(time.Hour),
+		}
+		if err := projection.Seal(); err != nil {
+			t.Fatal(err)
+		}
+		if err := other.ApplyBatch(context.Background(), 7, "", &dataprotection.ProjectionChangesResponse{
+			SchemaVersion: dataprotection.ProjectionChangesSchemaV1, NextCursor: "new", Changes: []dataprotection.ProjectionChange{{ChangeID: "install", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}},
+		}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	NewDataProfileService(profiles, executions, sampler, store).runExecution(context.Background(), &DataProfileTarget{ItemFingerprint: "item"}, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, "config", &commonExecution.TaskExecution{TenantID: 7, ExecutionID: "old"})
+	if profiles.replaceCalls != 0 || profiles.profile != previous || executions.completed || executions.failedCode != "protection_version_changed" {
+		t.Fatalf("late profile was accepted: writes=%d complete=%v code=%s", profiles.replaceCalls, executions.completed, executions.failedCode)
+	}
+}
+
+func TestDataProfileServiceRevalidatesExpiredRulesAtCommit(t *testing.T) {
+	fields := []datatype.FieldInfo{{Name: "phone", Type: datatype.FieldTypeString}}
+	gate := managedDataProfileServiceTestGate(t, "item", fields, dataprotection.EffectSuppress)
+	profiles := &dataProfileServiceTestProfileStore{}
+	executions := &dataProfileServiceTestExecutionStore{}
+	sampler := &dataProfileServiceTestSampler{sample: &DataProfileSample{Fields: fields}, onSample: func() {
+		// Same checkpoint; the rule itself expires while work is in flight.
+		gate.result.Projections[0].ExpiresAt = time.Now().Add(-time.Second)
+		if err := gate.result.Projections[0].Seal(); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	NewDataProfileService(profiles, executions, sampler, gate).runExecution(context.Background(), &DataProfileTarget{ItemFingerprint: "item", Fields: fields}, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, "config", &commonExecution.TaskExecution{TenantID: 7, ExecutionID: "expired"})
+	if profiles.replaceCalls != 0 || executions.completed || executions.failedCode != "security_protection_required" {
+		t.Fatalf("expired profile was committed: writes=%d code=%s", profiles.replaceCalls, executions.failedCode)
 	}
 }
 
@@ -299,7 +365,7 @@ func (s *dataProfileServiceTestProfileStore) GetCurrent(context.Context, uint, s
 	return s.state, s.profile, nil
 }
 
-func (s *dataProfileServiceTestProfileStore) ReplaceCurrent(_ context.Context, _ *models.DataProfile, profile dataprofile.Profile) error {
+func (s *dataProfileServiceTestProfileStore) ReplaceCurrent(_ context.Context, _ *gorm.DB, _ *models.DataProfile, profile dataprofile.Profile) error {
 	s.replaceCalls++
 	s.replaced = &profile
 	return nil
@@ -347,18 +413,34 @@ type dataProfileServiceTestSampler struct {
 	target    *DataProfileTarget
 	sample    *DataProfileSample
 	sampleErr error
+	onSample  func()
 }
 
 func (s *dataProfileServiceTestSampler) ResolveTarget(context.Context, uint, string, DataProfileSelection) (*DataProfileTarget, error) {
 	return s.target, nil
 }
 func (s *dataProfileServiceTestSampler) Sample(context.Context, *DataProfileTarget, dataprofile.DataScope, DataProfileBudget) (*DataProfileSample, error) {
+	if s.onSample != nil {
+		s.onSample()
+	}
 	return s.sample, s.sampleErr
 }
 
 type dataProfileServiceTestProtectionGate struct {
-	managed bool
-	result  projectionstore.GateResult
+	managed   bool
+	result    projectionstore.GateResult
+	commitErr error
+}
+
+func (g *dataProfileServiceTestProtectionGate) CaptureVersion(_ context.Context, _ int64, observe func(projectionstore.GateReader) error) (projectionstore.Version, error) {
+	return projectionstore.Version{}, observe(g)
+}
+
+func (g *dataProfileServiceTestProtectionGate) CommitVersion(_ context.Context, _ int64, _ projectionstore.Version, commit func(*gorm.DB, projectionstore.GateReader) error) error {
+	if g.commitErr != nil {
+		return g.commitErr
+	}
+	return commit(nil, g)
 }
 
 func (g *dataProfileServiceTestProtectionGate) Gate(int64, dataprotection.ResourceReference, time.Time) projectionstore.GateResult {

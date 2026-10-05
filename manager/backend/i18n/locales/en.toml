@@ -37,6 +37,9 @@ other = "The content search projection request is invalid"
 [manager.error.content_protection_required]
 other = "This content is security-managed and has no executable search protection rule"
 
+[manager.error.content_protection_version_changed]
+other = "Protection rules changed; this content was not submitted to the index. Submit again"
+
 [manager.error.content_index_unavailable]
 other = "The Manager content index is currently unavailable"
 
@@ -120,6 +123,9 @@ other = "Invalid parameter"
 
 [manager.error.hybrid_search_not_configured]
 other = "Hybrid search is not configured"
+
+[manager.error.hybrid_search_isolated]
+other = "The index outlet is isolated; search remains unavailable until the index recovers and external tasks are reconciled"
 
 [manager.error.missing_query]
 other = "Missing search query"

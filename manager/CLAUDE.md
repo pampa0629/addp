@@ -6,7 +6,11 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 
 数据剖析已经按确认边界实现：剖析执行和结果归 Manager，Meta 只提供 data item 身份、结构和源版本事实；首期在用户进入“剖析”标签时按需创建 `task_type=data_profiling` 的 ad-hoc execution，不创建持久任务定义、不声明 TaskProvider capability。完整规则见 `manager/docs/数据剖析规范.md`。
 
-Manager 通过本地保护投影统一约束预览、剖析和全文索引写入，用户请求不调用 Security。`profile=suppress` 在持久化前删除敏感字段及全部祖先容器的字段剖析对象和对应全局观察，防止父级 Top N 携带敏感叶子值；`search_index=mask` 在写入 Meilisearch 前覆盖正文及所有正文派生字符串。投影变化与历史剖析结果、条件值和既有全文索引记录的清除，以及 cursor 保存共用本地安装屏障；启动时对已安装投影重放清理。
+Manager 通过本地保护投影统一约束预览、剖析和全文索引写入，用户请求不调用 Security。`profile=suppress` 在持久化前删除敏感字段及全部祖先容器的字段剖析对象和对应全局观察，防止父级 Top N 携带敏感叶子值；`search_index=mask` 在写入 Meilisearch 前覆盖正文及所有正文派生字符串。投影变化与历史剖析结果、条件值清理及 cursor 保存共用本地安装屏障；启动时对已安装投影重放清理。外部全文索引只走持久投递路线：保护事务内登记清理并隔离出口，事务外提交或核查 Meilisearch 任务；任务入队不算完成。新投递在发送前持久绑定 UUID，并随请求发送 `customMetadata`，关闭 SDK 自动重试；已知 UID 的任务在超时或重启后续查，无 UID 的新提交只能从完整保留的任务历史中唯一认回同一标记、端点、索引和操作种类的原任务，再保存回执并核查终态。没有标记的旧提交不回填证据；零匹配、历史不完整或冲突均保留未决，不重发、不按时间清除。服务器不支持标记、未配置或暂时失联均不使 Manager 初始化失败；重新开放搜索必须先核清历史任务、完成清理。出口隔离且旧读取结束时允许保护回执，但不声称外部清理成功。本轮不认证多 Backend／HA；实现和验收记录见 `docs/next/ADDP企业资源目录能力专题.md` §26.76、§26.78。旧 Meilisearch 数据卷须另行确认迁移，不能只改镜像后重启，见 `scripts/infra/README.md`。
+
+Tenant HTTP 请求与有界执行分发先登记在途生命周期，再刷新 Owner 本地持久保护 cursor；登记覆盖响应序列化／流复制或执行结果落库。投影同步的后置屏障等待本进程在途工作及持久有效 lease 下的运行执行结束，再回执 Security；pending 和过期遗留记录不阻塞。此机制不授予数据访问权，也不替代 System 的源授权核验。
+
+剖析采样前通过 Common 捕获持久保护版本，结果提交通过同一 checkpoint 锁核验版本、重新执行保护校验并落库；不接受“先检查、后独立事务写入”。版本变化以 `protection_version_changed` 失败，前端提示显式重新执行。采样期间不持锁，规则更新可以及时安装；Repository 不保留没有保护提交事务的生产写入路径。
 
 表格预览的 `preview=suppress` 必须同时删除行值、输出列和对应列元数据；空结果页也不得重新暴露被抑制列。响应边界复用 Common 的查询结果保护执行器，Manager 只适配预览协议；临时原值授权命中时，列契约与有效允许决策保持一致，不能按默认规则额外删除已授权列。
 
@@ -22,7 +26,7 @@ Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lin
 
 快显能力和预览状态只解析 Engine／Meta／受管产物事实，不执行 PreviewProvider 或读取样本行。缺少空间事实时提示刷新，不能隐式采样补齐。渲染目标 SRID 只核验目录类型声明，不以一条几何样本推断；技术能力与内容读取授权保持独立。
 
-当前实施状态：源事实解析已移除一行预览；PostgreSQL 渲染目标 SRID 的旧样本核验仍待收口，须与生成端的类型声明一起调整并保留源几何维度。此前不能宣称整个 capability 请求已实现零内容读取。
+PostgreSQL 渲染目标核验只查 geometry 字段的 typmod 声明；旧目标缺少声明时提示用户显式重新生成，不自动修改。生成端声明 EPSG:3857 并保留 2D／Z／M／ZM；未约束源列的全列维度核验仅发生在明确执行的生成任务中，不能移入 capability 链路。此边界不替代实际内容读取的授权核验。
 
 - `manager.preview_state`：预览状态，表达某个 data item 的用户预览模式偏好与轻量交互设置（包括表格可见字段）；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
 - `manager.task_definitions`：Manager 生成类任务定义的唯一表；`task_type` 选择强类型配置、校验器和执行器，产品分类投影为“快显任务”与“空间数据任务”。向量化任务继续使用 `manager.embedding_tasks`，三类任务只在统一“数据任务”工作台合并呈现，不合并存储和结果生命周期。

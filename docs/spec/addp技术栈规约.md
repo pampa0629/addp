@@ -18,7 +18,7 @@
 
 ### Go 依赖版本规范
 
-为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2026-09-06）。本节中反引号包裹的 `Go模块路径@版本` 是依赖版本检查脚本的唯一事实源；同一个 Go 模块路径只能声明一个目标版本：
+为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2026-10-05）。本节中反引号包裹的 `Go模块路径@版本` 是依赖版本检查脚本的唯一事实源；同一个 Go 模块路径只能声明一个目标版本：
 
 #### 核心框架
 
@@ -59,7 +59,7 @@
 
 #### 全文搜索
 
-- **Meilisearch**: `github.com/meilisearch/meilisearch-go@v0.26.0`
+- **Meilisearch**: `github.com/meilisearch/meilisearch-go@v0.36.3`（Manager、Catalog、Asset 统一；正式服务固定 `getmeili/meilisearch:v1.54.3`，新文档投递使用任务 `customMetadata`，关闭 SDK 自动重试）
 
 #### 地理与空间数据
 

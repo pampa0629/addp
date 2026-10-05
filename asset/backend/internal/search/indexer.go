@@ -3,6 +3,7 @@ package search
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ type AssetIndexDoc struct {
 
 // Indexer 封装 asset 模块的 Meilisearch 操作
 type Indexer struct {
-	client  *meilisearch.Client
+	client  meilisearch.ServiceManager
 	index   string
 	enabled bool
 }
@@ -47,10 +48,7 @@ func NewIndexer(msURL, msAPIKey, indexName string) (*Indexer, error) {
 		return idx, nil
 	}
 
-	idx.client = meilisearch.NewClient(meilisearch.ClientConfig{
-		Host:   msURL,
-		APIKey: msAPIKey,
-	})
+	idx.client = meilisearch.New(msURL, meilisearch.WithAPIKey(msAPIKey), meilisearch.WithCustomClient(&http.Client{Timeout: 10 * time.Second}), meilisearch.DisableRetries())
 
 	if err := idx.ensureIndex(); err != nil {
 		return nil, fmt.Errorf("初始化 Meilisearch 索引失败: %w", err)
@@ -88,7 +86,7 @@ func (i *Indexer) ensureIndex() error {
 		return fmt.Errorf("配置可搜索属性失败: %w", err)
 	}
 
-	if _, err := assetIdx.UpdateFilterableAttributes(&[]string{
+	if _, err := assetIdx.UpdateFilterableAttributes(&[]interface{}{
 		"tenant_id",
 		"status",
 		"type_code",
@@ -115,7 +113,7 @@ func (i *Indexer) UpsertAsset(doc *AssetIndexDoc) {
 		doc.Tags = []string{}
 	}
 	idx := i.client.Index(i.index)
-	if _, err := idx.AddDocuments([]AssetIndexDoc{*doc}); err != nil {
+	if _, err := idx.AddDocuments([]AssetIndexDoc{*doc}, nil); err != nil {
 		log.Printf("⚠️  写入资产索引失败 (id=%d): %v", doc.ID, err)
 	}
 }
@@ -131,7 +129,7 @@ func (i *Indexer) UpsertAssets(docs []AssetIndexDoc) {
 		}
 	}
 	index := i.client.Index(i.index)
-	if _, err := index.AddDocuments(docs); err != nil {
+	if _, err := index.AddDocuments(docs, nil); err != nil {
 		log.Printf("⚠️  批量写入资产索引失败 (count=%d): %v", len(docs), err)
 	}
 }
@@ -142,7 +140,7 @@ func (i *Indexer) ReplaceAssets(docs []AssetIndexDoc) error {
 		return nil
 	}
 	index := i.client.Index(i.index)
-	if _, err := index.DeleteAllDocuments(); err != nil {
+	if _, err := index.DeleteAllDocuments(nil); err != nil {
 		return fmt.Errorf("清空资产索引失败: %w", err)
 	}
 	if len(docs) == 0 {
@@ -153,7 +151,7 @@ func (i *Indexer) ReplaceAssets(docs []AssetIndexDoc) error {
 			docs[idx].Tags = []string{}
 		}
 	}
-	if _, err := index.AddDocuments(docs); err != nil {
+	if _, err := index.AddDocuments(docs, nil); err != nil {
 		return fmt.Errorf("重建资产索引失败: %w", err)
 	}
 	return nil
@@ -170,7 +168,7 @@ func (i *Indexer) UpdateStatus(id int64, status string) {
 		"status": status,
 	}
 	idx := i.client.Index(i.index)
-	if _, err := idx.UpdateDocuments([]map[string]interface{}{doc}); err != nil {
+	if _, err := idx.UpdateDocuments([]map[string]interface{}{doc}, nil); err != nil {
 		log.Printf("⚠️  更新资产状态索引失败 (id=%d, status=%s): %v", id, status, err)
 	}
 }
@@ -188,7 +186,7 @@ func (i *Indexer) UpdateStatusBatch(ids []int64, status string) {
 		}
 	}
 	idx := i.client.Index(i.index)
-	if _, err := idx.UpdateDocuments(docs); err != nil {
+	if _, err := idx.UpdateDocuments(docs, nil); err != nil {
 		log.Printf("⚠️  批量更新资产状态索引失败 (count=%d, status=%s): %v", len(ids), status, err)
 	}
 }
@@ -198,7 +196,7 @@ func (i *Indexer) DeleteAsset(id int64) {
 	if !i.Enabled() || id <= 0 {
 		return
 	}
-	if _, err := i.client.Index(i.index).DeleteDocument(strconv.FormatInt(id, 10)); err != nil {
+	if _, err := i.client.Index(i.index).DeleteDocument(strconv.FormatInt(id, 10), nil); err != nil {
 		log.Printf("⚠️  删除资产索引失败 (id=%d): %v", id, err)
 	}
 }
@@ -235,15 +233,14 @@ func (i *Indexer) Search(tenantID int64, keyword string, typeCode string, catego
 		IDs:   make([]int64, 0, len(resp.Hits)),
 		Total: resp.EstimatedTotalHits,
 	}
-	for _, hit := range resp.Hits {
-		if m, ok := hit.(map[string]interface{}); ok {
-			switch v := m["id"].(type) {
-			case float64:
-				result.IDs = append(result.IDs, int64(v))
-			case int64:
-				result.IDs = append(result.IDs, v)
-			}
-		}
+	var hits []struct {
+		ID int64 `json:"id"`
+	}
+	if err := resp.Hits.DecodeInto(&hits); err != nil {
+		return nil, err
+	}
+	for _, hit := range hits {
+		result.IDs = append(result.IDs, hit.ID)
 	}
 
 	return result, nil

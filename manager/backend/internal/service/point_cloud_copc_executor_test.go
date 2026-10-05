@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/repository"
 	"github.com/minio/minio-go/v7"
 	"gorm.io/driver/sqlite"
@@ -334,7 +335,7 @@ func TestPointCloudCOPCTaskExecutionMarksResultReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute point cloud COPC generation task: %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypePointCloudCOPCGeneration, &BoundedExecutionDispatcher{pointCloudCOPC: taskSvc})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypePointCloudCOPCGeneration, &BoundedExecutionDispatcher{pointCloudCOPC: taskSvc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
 	exec := waitForPointCloudCOPCTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, want success", exec.Status)

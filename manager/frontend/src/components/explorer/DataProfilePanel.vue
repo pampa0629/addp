@@ -155,6 +155,7 @@
     </div>
 
     <template v-else-if="profile">
+      <el-alert v-if="latestFailureText" :title="latestFailureText" type="warning" :closable="false" show-icon />
       <section class="summary-strip" :aria-label="t('manager.explorer.profile.summary')">
         <div v-for="item in summaryItems" :key="item.key" class="summary-item">
           <span class="summary-label">{{ item.label }}</span>
@@ -308,6 +309,7 @@ import { Delete, Filter, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import DataProfileChart from '@/components/explorer/DataProfileChart.vue'
 import { dataExplorerAPI } from '@/api/dataExplorer'
+import { profileFailureMessage } from '@/utils/dataProfileExecution'
 import {
   buildProfileDataScope,
   isNumericProfileType,
@@ -392,10 +394,7 @@ const freshnessLabel = computed(() => current.value?.stale
   ? t('manager.explorer.profile.stale')
   : t('manager.explorer.profile.current'))
 const freshnessTagType = computed(() => current.value?.stale ? 'warning' : 'success')
-const latestFailureText = computed(() => {
-  if (!['failed', 'timeout'].includes(latestExecution.value?.status)) return ''
-  return t('manager.explorer.profile.latestFailed')
-})
+const latestFailureText = computed(() => profileFailureMessage(latestExecution.value, t))
 
 const formatInteger = value => {
   const number = Number(value)
@@ -600,7 +599,7 @@ const loadCurrent = async (allowAutoStart = true) => {
     const response = await dataExplorerAPI.getDataProfileCurrent(props.locator, selection.value, activeConfigHash.value)
     if (sequence !== requestSequence) return
     if (activeConfigHash.value && !response?.profile && ['failed', 'timeout'].includes(response?.latest_execution?.status)) {
-      const message = response.latest_execution.error || t('manager.explorer.profile.latestFailed')
+      const message = profileFailureMessage(response.latest_execution, t)
       activeConfigHash.value = ''
       appliedScope.value = { kind: 'all' }
       scopeMode.value = 'all'

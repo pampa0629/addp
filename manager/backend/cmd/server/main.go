@@ -27,6 +27,7 @@ import (
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/preview"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/addp/manager/internal/worker"
@@ -186,13 +187,8 @@ func main() {
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry)
-	searchService, err := service.NewHybridSearchService(cfg, embeddingRepo, embeddingConfigurationProvider, inferenceScenarioBindingService, inferenceClient)
-	if err != nil {
-		logger.L().Error("初始化混合检索服务失败", "error", err)
-		os.Exit(1)
-	}
-	defer searchService.Close()
-	managerProjectionBarrier := service.NewManagerProjectionBarrier(dataProfileRepo, dataProfileExecutionRepo, searchService)
+	indexDeliveries := repository.NewContentIndexDeliveryRepository(db, cfg.MeilisearchManagerContentIndex)
+	managerProjectionBarrier := service.NewManagerProjectionBarrier(dataProfileRepo, dataProfileExecutionRepo, indexDeliveries)
 	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "manager", managerProjectionBarrier)
 	if err != nil {
 		logger.L().Error("保护投影本地存储初始化失败", "error", err)
@@ -202,6 +198,13 @@ func main() {
 		logger.L().Error("已安装保护投影的派生数据收敛失败", "error", err)
 		os.Exit(1)
 	}
+	searchService, err := service.NewHybridSearchService(cfg, embeddingRepo, embeddingConfigurationProvider, inferenceScenarioBindingService, inferenceClient, indexDeliveries, protectionStore)
+	if err != nil {
+		logger.L().Error("初始化混合检索服务失败", "error", err)
+		os.Exit(1)
+	}
+	defer searchService.Close()
+	protectionReadBoundary := managerprotection.NewReadBoundary(protectionStore)
 	dataProfileService := service.NewDataProfileService(dataProfileRepo, dataProfileExecutionRepo, dataProfileSampler, protectionStore)
 	dataProfileHandler := api.NewDataProfileHandler(dataProfileService)
 
@@ -404,7 +407,7 @@ func main() {
 
 	lifecycleController := modulelifecycle.NewBusiness("manager", commonClient.ModuleRuntimeRoleBackend)
 	var notifyExecutionEnqueued func()
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, lifecycleController, pptxPDFHandler, func() {
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, protectionReadBoundary, lifecycleController, pptxPDFHandler, func() {
 		if notifyExecutionEnqueued != nil {
 			notifyExecutionEnqueued()
 		}
@@ -511,7 +514,7 @@ func main() {
 			tileCacheTaskSvc, vectorTileSetTaskSvc, vectorMaterializedViewTaskSvc,
 			rasterCOGTaskSvc, rasterMosaicTaskSvc, model3DGLBTaskSvc, model3DTilesTaskSvc,
 			gaussianSplatKSplatTaskSvc, pointCloudCOPCTaskSvc, pptxPDFTaskSvc,
-			embeddingService, embeddingTaskSvc, dataProfileService,
+			embeddingService, embeddingTaskSvc, dataProfileService, protectionReadBoundary,
 		),
 		worker.BoundedExecutionSupervisorConfig{
 			InstanceID:  fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString()),
@@ -527,7 +530,9 @@ func main() {
 		os.Exit(1)
 	}
 	notifyExecutionEnqueued = supervisor.Notify
-	projectionstore.NewRunner(protectionStore, securityClient, systemServiceClient, 30*time.Second, nil).Start(runtimeContext)
+	searchService.StartContentRecovery(runtimeContext)
+	projectionstore.NewRunner(protectionStore, securityClient, systemServiceClient, 30*time.Second,
+		managerprotection.NewAcknowledgementBarrier(db, protectionReadBoundary, searchService)).Start(runtimeContext)
 	addr := ":" + cfg.Port
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {

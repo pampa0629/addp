@@ -57,11 +57,15 @@ func (r *DataProfileRepository) GetCurrent(
 
 func (r *DataProfileRepository) ReplaceCurrent(
 	ctx context.Context,
+	tx *gorm.DB,
 	state *models.DataProfile,
 	profile dataprofile.Profile,
 ) error {
-	if state == nil {
-		return errors.New("data profile state is required")
+	if state == nil || tx == nil {
+		return errors.New("data profile state and protection transaction are required")
+	}
+	if _, ok := tx.Statement.ConnPool.(gorm.TxCommitter); !ok {
+		return errors.New("data profile write requires an active protection transaction")
 	}
 	observations, err := json.Marshal(profile.Observations)
 	if err != nil {
@@ -85,7 +89,7 @@ func (r *DataProfileRepository) ReplaceCurrent(
 	state.Partial = profile.Partial
 	state.ProfiledAt = profile.ProfiledAt
 
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return tx.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
 			if err := commonExecution.UpdateWithLease(ctx, tx, lease, map[string]interface{}{}); err != nil {
 				return err

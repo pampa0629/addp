@@ -1043,14 +1043,14 @@ jobs:
           status: ${{ job.status }}
 
   manager-postgres:
-    name: Manager unified task lifecycle integration (PostgreSQL 15)
+    name: Manager task lifecycle and geometry declarations (PostgreSQL 15 / PostGIS 3.4)
     needs: selection
     if: needs.selection.outputs.manager == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
       postgres:
-        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        image: postgis/postgis:15-3.4@sha256:3f4a5d48e0be9580ed70ed618cd039ce57bbb2dd113053d3836e28513f1f87cd
         env:
           POSTGRES_USER: addp_ci
           POSTGRES_PASSWORD: addp_ci_password
@@ -1083,7 +1083,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Manager unified task lifecycle integration (PostgreSQL 15)
+          gate: Manager task lifecycle and geometry declarations (PostgreSQL 15 / PostGIS 3.4)
           status: ${{ job.status }}
 
   manager-mongodb-security:

@@ -162,6 +162,9 @@ func (s *Store) ApplyBatch(ctx context.Context, tenantID int64, expectedCursor s
 	if batch.NextCursor == "" && (expectedCursor != "" || len(batch.Changes) > 0) {
 		return errors.New("invalid protection projection next cursor")
 	}
+	if len(batch.Changes) > 0 && batch.NextCursor == expectedCursor {
+		return errors.New("protection projection changes must advance the checkpoint")
+	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -330,6 +333,12 @@ func (s *Store) HasManagedTargets(tenantID int64) bool {
 }
 
 func (s *Store) lockCheckpoint(tx *gorm.DB, tenantID int64) (*checkpointRow, error) {
+	// Insert first, so concurrent first observations/installations share one
+	// durable row instead of racing an absent-row SELECT followed by INSERT.
+	initial := checkpointRow{TenantID: tenantID, Cursor: "", UpdatedAt: time.Now().UTC()}
+	if err := tx.Table(s.checkpointTable).Clauses(clause.OnConflict{DoNothing: true}).Create(&initial).Error; err != nil {
+		return nil, fmt.Errorf("initialize protection projection checkpoint: %w", err)
+	}
 	var row checkpointRow
 	query := tx.Table(s.checkpointTable)
 	if tx.Dialector.Name() == "postgres" {
@@ -339,14 +348,7 @@ func (s *Store) lockCheckpoint(tx *gorm.DB, tenantID int64) (*checkpointRow, err
 	if err == nil {
 		return &row, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("lock protection projection checkpoint: %w", err)
-	}
-	row = checkpointRow{TenantID: tenantID, Cursor: "", UpdatedAt: time.Now().UTC()}
-	if err := tx.Table(s.checkpointTable).Create(&row).Error; err != nil {
-		return nil, fmt.Errorf("create protection projection checkpoint: %w", err)
-	}
-	return &row, nil
+	return nil, fmt.Errorf("lock protection projection checkpoint: %w", err)
 }
 
 func (s *Store) applyChange(tx *gorm.DB, tenantID int64, change dataprotection.ProjectionChange, now time.Time) error {

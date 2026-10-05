@@ -354,7 +354,7 @@ test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal Prov
 test-common-clickhouse-decimal: ## 使用一次性 ClickHouse database 验证 Decimal Provider 契约
 	@bash scripts/test/common-clickhouse-decimal-gate.sh
 
-test-manager-postgres: ## 使用测试 PostgreSQL 数据库运行 Manager 统一任务与清理集成门禁
+test-manager-postgres: ## 使用测试 PostGIS 数据库运行 Manager 统一任务、几何声明与清理集成门禁
 	@bash scripts/test/manager-postgres-gate.sh
 
 test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁

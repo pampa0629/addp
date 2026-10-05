@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/modulelifecycle"
 	managerauthorization "github.com/addp/manager/internal/authorization"
 	"github.com/addp/manager/internal/config"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/service"
 )
 
@@ -27,7 +28,7 @@ func TestManagerTaskProviderRoutesRequireOrchestratorRuntimeIdentity(t *testing.
 	router := SetupRouter(
 		cfg, metadataService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, taskHandler, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("manager"), nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil,
 	)
 
 	for _, test := range []struct {

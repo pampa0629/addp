@@ -32,11 +32,11 @@ type contentSearchBarrierCleaner struct {
 	calls map[uint][]string
 }
 
-func (c *contentSearchBarrierCleaner) DeleteContentDocument(_ context.Context, tenantID uint, fingerprint string) error {
+func (c *contentSearchBarrierCleaner) QueueProtectionPurges(_ context.Context, _ *gorm.DB, tenantID int64, fingerprints []string) error {
 	if c.calls == nil {
 		c.calls = make(map[uint][]string)
 	}
-	c.calls[tenantID] = append(c.calls[tenantID], fingerprint)
+	c.calls[uint(tenantID)] = append(c.calls[uint(tenantID)], fingerprints...)
 	return nil
 }
 

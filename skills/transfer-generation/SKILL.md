@@ -23,6 +23,8 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 - `source.query.statement` 是序列化后的单个 JSON command object，不是 mongosh / JavaScript 文本。基础投影使用 `{"aggregate":"<已确认的 query_names.mql>","pipeline":[{"$project":{"<已确认的字段>":1}}]}` 的结构；占位符必须替换为 owner 事实，不能提交示例占位符。禁止 `db.<collection>.find(...)`、`db.<collection>.aggregate(...)` 或只提交 `$project` 阶段。不要从 full_name 或 locator 拼接 collection 名。
 - `field_mapping.fields[].target_type` 使用 ADDP 的标准字段类型，不使用目标数据库的 DDL 类型。字符串与布尔字段分别提交 `string`、`bool`；用户提出 PostgreSQL `text`、`boolean` 时，复核中可保留其物理类型意图，但任务配置必须使用 `string`、`bool`，具体数据库类型由 owner Provider 映射。其他类型依照平台字段类型事实确定，不猜测。
 - 目标 schema 等父节点用 `resource.ancestors.get` / `resource.children.list` 确认；`resource.facts.get` 只查询已存在的数据项，不用于 schema、database 或尚未创建的目标。
+- 可选 `transfer.draft.generate` 的 `resources[]` 使用已确认的 `ResourceFact`，必须包含 `role + locator`；源用途可明确为 `role="source"`。不要直接提交搜索候选，也不要混入 `name`、`item_type`、`row_grain`、`project_fields`。行粒度与投影通过正式 `source.query` 表达，不是资源事实字段。
+- 草稿调用中的 `task` 使用 `name/description/task_type/config` 层级，`task_type="sync"`。`runtime/load/source/target/transforms` 全部放入 `task.config`，写入策略放在 `task.config.target.policy`，字段映射放在 `task.config.transforms` 的 `field_mapping` 中；源查询放在 `task.config.source.query`。不能把创建 Tool 的顶层 `config` 参数误当作草稿调用的 `task`，也不能自造顶层 `field_mapping`。缺少目标或配置时先澄清，不让 Copilot 猜测。
 
 ## 必须澄清
 

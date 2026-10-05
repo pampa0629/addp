@@ -69,6 +69,8 @@ common/
 - `common/secretcipher` 只承载跨模块敏感配置值的 AES-256-GCM 加解密，不承载 IAM、Permission 或业务字段识别。
 - `common/dataprotection` 只承载 Security 与参与 Owner 共享的保护投影契约、校验、确定性算法和存量 payload 一次性协议转换，不读写 Security 业务事实；通用本地投影存储的 DDL、有序迁移、结构校验和迁移锁只允许在 `common/dataprotection/projectionstore` 定义，Owner 不得复制或扩展私有列。Owner 可注入事务变化屏障，使派生结果收敛与投影 cursor 原子提交，但屏障实现和派生业务语义仍归 Owner。
 - 空间能力不要默认几何字段名为 `geom`，应通过元数据或调用方参数传入。
+- `common/dataprotection/projectionstore.InflightReads` 是 Owner 本进程按 Tenant 追踪在途保护读取的唯一计数实现；Begin 必须先于保护门禁，幂等 end 必须覆盖最终输出。Owner 仍负责持久 cursor 刷新、跨进程有效 execution lease 核对和回执；计数不产生资源授权。
+- `projectionstore.CaptureVersion/CommitVersion` 是数据库内派生提交的唯一保护版本边界；复用持久 checkpoint 锁，在同一锁下读取版本和事实、核验版本并执行 Owner 事务回调。采样和外部 I/O 不进入事务；Owner 仍负责提交时的有效期校验、结果保护和 lease 核验，版本不产生资源授权。真实 PostgreSQL 锁竞争及首次并发初始化由既有 `make test-common-postgres` 自动发现。
 - 修改 `common/` 后通常需要 `./scripts/dev/restart.sh -all` 验证受影响模块。
 
 ## 验证

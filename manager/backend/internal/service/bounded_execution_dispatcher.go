@@ -8,6 +8,7 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	managerprotection "github.com/addp/manager/internal/protection"
 )
 
 // BoundedExecutionDispatcher is the single Manager domain dispatch path used
@@ -26,6 +27,7 @@ type BoundedExecutionDispatcher struct {
 	embedding              *EmbeddingService
 	embeddingTask          *EmbeddingTaskService
 	dataProfile            *DataProfileService
+	readBoundary           *managerprotection.ReadBoundary
 }
 
 func NewBoundedExecutionDispatcher(
@@ -42,21 +44,26 @@ func NewBoundedExecutionDispatcher(
 	embedding *EmbeddingService,
 	embeddingTask *EmbeddingTaskService,
 	dataProfile *DataProfileService,
+	readBoundary *managerprotection.ReadBoundary,
 ) *BoundedExecutionDispatcher {
 	return &BoundedExecutionDispatcher{
 		tileCache: tileCache, vectorTileSet: vectorTileSet, vectorMaterializedView: vectorMaterializedView,
 		rasterCOG: rasterCOG, rasterMosaic: rasterMosaic, model3DGLB: model3DGLB,
 		model3DTiles: model3DTiles, gaussianSplat: gaussianSplat, pointCloudCOPC: pointCloudCOPC,
-		pptxPDF: pptxPDF, embedding: embedding, embeddingTask: embeddingTask, dataProfile: dataProfile,
+		pptxPDF: pptxPDF, embedding: embedding, embeddingTask: embeddingTask, dataProfile: dataProfile, readBoundary: readBoundary,
 	}
 }
 
 func (d *BoundedExecutionDispatcher) RunClaimedExecution(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease) error {
-	if execution == nil || execution.ExecutionID != lease.ExecutionID || execution.TenantID != lease.TenantID {
+	if d == nil || execution == nil || execution.ExecutionID != lease.ExecutionID || execution.TenantID != lease.TenantID {
 		return fmt.Errorf("claimed Manager execution and lease are inconsistent")
 	}
+	end, err := d.readBoundary.BeginRead(ctx, int64(execution.TenantID))
+	if err != nil {
+		return err
+	}
+	defer end()
 	taskID := uint(0)
-	var err error
 	if execution.SourceTaskID != nil {
 		taskID, err = commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
 		if err != nil {

@@ -66,7 +66,6 @@ type vectorMaterializedViewBuildPlan struct {
 	StagingTable   string
 	OldTargetTable string
 	IndexName      string
-	CreateSQL      string
 	CreateIndexSQL string
 	AnalyzeSQL     string
 }
@@ -443,7 +442,14 @@ func executeVectorMaterializedViewPlan(ctx context.Context, db *sql.DB, execCfg 
 		return nil, err
 	}
 	primaryKeys, _ := queryPostGISPrimaryKeys(ctx, db, execCfg.Identity.Schema, execCfg.Identity.Table)
-	plan.CreateSQL = buildVectorMaterializedViewCreateSQL(execCfg, plan.StagingTable, primaryKeys)
+	dimension, err := queryVectorMaterializedViewSourceDimension(ctx, db, execCfg.Identity.Schema, execCfg.Identity.Table, execCfg.Geometry.GeometryColumn)
+	if err != nil {
+		return nil, err
+	}
+	createSQL, err := buildVectorMaterializedViewCreateSQL(execCfg, plan.StagingTable, primaryKeys, dimension)
+	if err != nil {
+		return nil, err
+	}
 	sourceHasIndex, sourceIndexErr := hasValidGiSTIndex(ctx, db, execCfg.Identity.Schema, execCfg.Identity.Table, execCfg.Geometry.GeometryColumn)
 
 	if _, err := db.ExecContext(ctx, "DROP MATERIALIZED VIEW IF EXISTS "+spatial.QualifiedPostGISTable(execCfg.Options.TargetSchema, plan.StagingTable)); err != nil {
@@ -464,7 +470,7 @@ func executeVectorMaterializedViewPlan(ctx context.Context, db *sql.DB, execCfg 
 				"error", cleanupErr)
 		}
 	}()
-	if _, err := db.ExecContext(ctx, plan.CreateSQL); err != nil {
+	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return nil, fmt.Errorf("create 3857 materialized view: %w", err)
 	}
 	stagingCreated = true
@@ -701,23 +707,27 @@ func buildVectorMaterializedViewPlan(execCfg vectorMaterializedViewExecutionConf
 		oldTable = targetTable[:minInt(len(targetTable), 40)] + "_old_" + suffix[len(suffix)-minInt(len(suffix), 16):]
 	}
 	indexName := vectorMaterializedViewIndexName(stagingTable)
-	createSQL := buildVectorMaterializedViewCreateSQL(execCfg, stagingTable, nil)
 	return vectorMaterializedViewBuildPlan{
 		TargetTable:    targetTable,
 		StagingTable:   stagingTable,
 		OldTargetTable: oldTable,
 		IndexName:      indexName,
-		CreateSQL:      createSQL,
 		CreateIndexSQL: spatial.BuildPostGISCreateGISTIndexSQL(execCfg.Options.TargetSchema, stagingTable, indexName, models.VectorMaterializedViewTargetGeometryColumn, false),
 		AnalyzeSQL:     spatial.BuildPostGISAnalyzeSQL(execCfg.Options.TargetSchema, stagingTable),
 	}
 }
 
-func buildVectorMaterializedViewCreateSQL(execCfg vectorMaterializedViewExecutionConfig, stagingTable string, sourceKeyColumns []string) string {
+func buildVectorMaterializedViewCreateSQL(execCfg vectorMaterializedViewExecutionConfig, stagingTable string, sourceKeyColumns []string, dimension string) (string, error) {
+	switch dimension {
+	case "Geometry", "GeometryZ", "GeometryM", "GeometryZM":
+	default:
+		return "", errors.New("vector materialized view requires a proven geometry dimension")
+	}
 	selectExpressions := vectorMaterializedViewSelectExpressions(execCfg.Options.IncludeSourceKey, sourceKeyColumns, execCfg.Options.Attributes)
 	selectExpressions = append(selectExpressions, fmt.Sprintf(
-		"ST_Transform(%s, 3857) AS %s",
+		"ST_Transform(%s, 3857)::geometry(%s,3857) AS %s",
 		spatial.QuotePostGISIdentifier(execCfg.Geometry.GeometryColumn),
+		dimension,
 		spatial.QuotePostGISIdentifier(models.VectorMaterializedViewTargetGeometryColumn),
 	))
 	return fmt.Sprintf(`
@@ -731,7 +741,7 @@ func buildVectorMaterializedViewCreateSQL(execCfg vectorMaterializedViewExecutio
 		strings.Join(selectExpressions, ",\n\t\t\t"),
 		spatial.QualifiedPostGISTable(execCfg.Identity.Schema, execCfg.Identity.Table),
 		spatial.QuotePostGISIdentifier(execCfg.Geometry.GeometryColumn),
-	)
+	), nil
 }
 
 func vectorMaterializedViewSelectExpressions(includeSourceKey bool, sourceKeyColumns []string, attributes []string) []string {

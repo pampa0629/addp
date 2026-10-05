@@ -3227,7 +3227,7 @@ Manager 实际消费前发现必须收拢的调用事实：
 - [x] 复用已有 datatype 空间事实及格式解码器，提取几何字段、坐标系、范围和确切记录数。未扫描、缺少事实、多几何字段未指定主字段时不猜测；未知记录数保持未知，不伪装为空表，也不生成默认一行的全量 FlatGeobuf URL。点云、三维模型等内容 URL 仅由资源身份构造，不为构造 URL 读取内容。
 - [x] 删除旧预览结果转能力实现及其测试路径，新增扫描事实回归：空间／非空间、多种格式、未知／零记录数、自定义坐标系、租户隔离、Engine 不一致、未扫描及调用方路径不一致。用空 Provider 注册表验证源解析不依赖预览执行；此结果不外推为整个能力接口零内容读取。
 - [x] 同步 Manager 模块说明、快显规范和 Swagger。严格路由覆盖通过，92 个公开路由方法一致，无新路由、表、迁移或功能权限。Go 用例由现有 Manager Go T1 与 CI 自动发现，不新增验证入口。
-- [ ] 渲染目标 SRID 校验仍有 `ST_SRID(...) ... LIMIT 1` 旧样本查询。Manager 当前生成的物化视图使用 `ST_Transform`，但未声明输出几何字段的 SRID 类型约束；直接换成类型约束查询会使现有及新生成产物不可用。需要将生成端声明与校验端一起改造，保持几何的 Z／M 维度，不以固定二维类型替代。
+- [x] 渲染目标 SRID 的旧样本查询与生成端类型声明已成组收口，保留源几何的 Z／M 维度；后续实现与验证见 §26.72。
 - [ ] 正式普通 User／Tool 预览、后台剖析 execution、完整 Provider ReadSet 与在途撤销屏障仍按 §26.70 跟进。本轮未扩大资源访问权，也未证明实际内容读取已贯通。
 
 本轮验证与未完成项：
@@ -3239,3 +3239,178 @@ Manager 实际消费前发现必须收拢的调用事实：
 - 未启停用户开发服务，未修改来源数据库，未提交或推送尚未收口的门禁结果。
 
 下一优先项：成组收口物化视图的坐标系声明与事实校验，明确旧产物缺少类型声明时只提示用户显式重新生成，不自动修改来源数据或既有产物；随后接入完整读取计划与实际访问授权。资源树回归需独立修复并通过原标准 Manager 前端门禁，不能用本轮后端测试覆盖它。
+
+### 26.72 渲染目标只核验类型声明，生成端保留几何维度（2026-10-04）
+
+用户确认成组改造生成与核验链路。技术能力发现不隐式读取业务记录；明确执行生成任务时的内容读取，不外推为 capability 或预览状态的授权。
+
+- [x] 删除 Manager 自建／外部渲染目标的 `ST_SRID(...) ... LIMIT 1` 样本路径。统一读取 PostgreSQL 系统目录（pg_catalog，不是企业 Catalog 模块）的字段类型、typmod SRID 和维度声明，并核对 PostGIS 扩展所属的真实 geometry OID，不受 search_path 中同名类型影响，不把 varchar 等其它类型的 typmod 误读为空间声明。
+- [x] 物化视图生成时显式声明 `Geometry`／`GeometryZ`／`GeometryM`／`GeometryZM` 与 SRID=3857，保留坐标维度和几何子类型，不 Force2D、不补维。删除预先生成未声明 CreateSQL 的计划字段，执行时取得维度事实后才生成唯一 SQL。
+- [x] 已声明源列从类型事实取得维度；未声明源列仅在明确生成任务中对全部非 NULL 几何核验维度极值，不用一行样本猜测。混合维度或未声明且为空时拒绝生成，不替换既有目标。源数据在生成期间变化且不符合声明时由 SQL 类型约束拒绝，保留旧产物并清理 staging。
+- [x] 缺少声明的 Manager 旧结果按现有 stale 闭环引导用户重新生成；外部旧目标不选为已验证目标。不自动修改来源表，也不 ALTER／重建既有派生对象。仅明确触发的生成任务创建并替换其受管产物。
+- [x] 新增 T1 声明白名单与缺失 SRID 用例；真实 PostGIS 验证 2D／Z／M／ZM 的有声明及无声明源、空目标、旧目标未改写、混合维度失败保留旧结果、非 geometry 类型拒绝、低权限账号目录核验与业务 SELECT 拒绝。用标准集成用例替换旧的个人 business-postgres／DLTB opt-in 测试，不再保留默认个人端口的另一条验证路线。
+- [x] 复用 `make test-manager-postgres`，扩展到 Repository 与 Service，用例拒绝 Skip、清理本轮 Schema 和事务内角色并检查零残留。现有 CI 的 Manager PostgreSQL Job 同次改为仓库已使用的固定摘要 PostGIS 15-3.4 镜像，无新 database、独立脚本或测试入口。辅助 macOS CI 已向同一 gate 注入允许的共享测试 DSN，无需另建巡检。
+- [ ] 完整 Provider ReadSet、普通 User／Tool 内容预览、后台剖析 execution 和在途撤销屏障仍按 §26.70 跟进；本轮声明核验不增加任何数据访问权，也不证明实际内容读取已经受控。
+
+本轮验证：
+
+- 按 Infra status 核实 PostgreSQL 实际端口 `25432`，注入指向 `addp_test` 的 `MANAGER_POSTGRES_TEST_DSN`，运行完整 `make test-module MODULE=manager`，退出码 0。平台 T0（含 CI 登记、工作流安全、Swagger 路由覆盖）、Manager 全部 Go T1、前端 271 项单测、67 项浏览器回归、构建、MongoDB 安全 T2 与 PostgreSQL T2 均通过；Manager 92 个公开路由方法一致。
+- 独立 `make test-manager-postgres` 也通过。最终输入的 13 项顶层集成测试通过（新增 Service 组含 11 项子用例），无 T2 Skip，清理检查通过；同名伪 geometry、无内容权限读取声明、空 Manager／外部目标与未声明 Manager／外部旧目标均已实际验证。
+- 首次完整模块命令未注入测试 DSN，被标准前置检查在任何测试和数据库访问前拒绝；随后按已核实映射注入 DSN，不放宽环境检查、不创建额外 database。§26.71 的资源树失败在本次完整门禁中通过，相关修复来自并行工作，本轮未修改其实现或放宽断言。
+- `git diff --check` 通过。未执行真实业务源 Online T4，也不把本轮通过外推为实际内容授权链路或全工作区所有并行改动的验收。未启停用户开发服务，未连接或改写业务来源数据库；空间数据夹具仅写入允许测试库的本轮自建 Schema。未自行提交或推送。
+
+下一优先项：回到 Manager 正式内容读取链路，贯通不可变分页读取计划、完整依赖 ReadSet、User／Tool 分别核验与在途撤销屏障。不得以本轮地图能力改造替代这项授权工作。
+
+### 26.73 Manager 在途读取生命周期与保护回执屏障（2026-10-04）
+
+本轮先补足 §26.70 的在途生命周期，不把保护规则同步误记为 System 源授权已贯通。未新增 Permission、公开 API、DDL 或凭据路线。
+
+- [x] Manager Tenant HTTP 请求和 Runtime 内容索引写入在读取保护规则前登记，并刷新共享持久 cursor；登记一直保留到响应序列化／流复制结束。后台任务由唯一 bounded dispatcher 独立登记，覆盖真实执行及领域结果落库，不沿用已经结束的入队 HTTP 请求。
+- [x] Manager Runner 不再使用空后置屏障；回执前核对本进程活动与持久 execution 中有效 lease 下的 `running` 工作。`pending`、过期遗留、其他 Tenant／Owner 不形成永久阻塞，未手工修改历史状态。
+- [x] 将 Develop 已有的同语义计数收敛为 Common 唯一 `InflightReads`，删除 Develop 私有计数实现；保留其原门禁、Notebook 和 execution 屏障，不改变授权范围。
+- [x] T1 覆盖 Tenant 隔离、并发幂等释放、登记早于刷新、刷新失败／取消清理、HTTP 输出期间仍在途、剖析采样与结果落库期间仍在途、有效 lease 与历史记录的区别。用两个实际投影 Store 验证：新 cursor 已持久安装但旧读取仍阻塞回执，新读取刷新到新规则，旧读取结束后才可回执。
+- [x] 规范和模块文档同次更新；新增 Go 用例由现有 `make test-go`、Manager owner Go T1 自动发现。共享 Common 的影响仍由标准 changed gate 扩散到 Go 消费者，不新建 CI 或测试旁路。
+- [ ] 不可变分页计划、完整 ReadSet、普通 User／Tool 分别核验、剖析正式 execution 源授权仍未完成，不能把本轮活动登记当作授权或有效租约。
+- [ ] 派生结果收敛仍需继续核对旧执行在清理之后回写的竞态：当前剖析的 `profileRules → ReplaceCurrent` 与投影批次事务不共用版本校验，内容索引写入也须核对外部异步写入结束边界。仅等待旧活动结束不等于禁止旧派生结果重新出现；本轮不宣称整个派生缓存撤销链已经闭合，也不外推为多 Backend HTTP 的跨进程／HA 认证。
+
+验证记录：
+
+- 首轮 Go 编译／Vet 暴露新测试使用了当前 Go 版本不支持的 `WaitGroup.Go`，以及格式化函数值；已改为现有版本支持的并发写法及布尔断言。HTTP 夹具改用标准 AuthContext，不放宽生产认证。
+- 随后的全量回归暴露旧 bounded 任务夹具缺少新保护边界；并发用例在执行提前失败后仍无限等待 started。已补齐真实分发夹具，并增加提前结束／超时的失败退出，不绕过生产门禁。诊断只终止本轮自有测试进程，未操作用户开发服务；最初失败命令不改写为通过。
+- 当前输入的 `make test-go` 退出码 0，覆盖全部 22 个 Go 模块；Manager 新增跨 Store 用例实际执行，Protection 包 0.731 秒。日志 `/tmp/addp-manager-boundary-go-recheck-20261004.log`。补齐并发夹具失败路径清理后，再次运行同一标准入口退出码 0，最终日志 `/tmp/addp-manager-boundary-go-verified-20261004.log`；单独定向用例不替代标准门禁。
+- `make test-common-postgres test-develop-postgres test-develop-frontend` 退出码 0：Common Provider、execution、投影存储及表结果事务四组真实 PostgreSQL 门禁，Develop Repository／Service PostgreSQL 门禁，以及 Develop 38 项浏览器回归和构建通过，无 T2 Skip。只使用已核实 `25432` 映射下的 `addp_test`，未创建额外 database。日志 `/tmp/addp-manager-boundary-shared-recheck-20261004.log`。第一次命令缺少 Common 门禁要求的端口／密码变量，在访问数据库前失败，随后注入标准变量重跑，未放宽检查。
+- `MANAGER_POSTGRES_TEST_DSN=<已核实的 addp_test URL> make test-module MODULE=manager` 退出码 0：平台 T0、Manager 全部 Go T1、前端 271 项单测、67 项浏览器回归、构建、MongoDB 安全 T2、PostgreSQL Repository／Service T2 均通过，无 T2 Skip，门禁清理检查通过。日志 `/tmp/addp-manager-boundary-module-final-20261004.log`。随后只补充并发测试失败路径释放，其当前输入的 Go 验证以前述最后一次标准入口为准。
+- 全工作区 `make test-changed` 退出码 2，在任何门禁执行前因其他 owner 的 T2 连接变量缺失停止；未把前置检查当作通过。日志 `/tmp/addp-manager-boundary-changed-20261004.log`。这些未运行项由已有 Release/T2 owner Job 按共享影响选择覆盖；本轮不把已通过范围外推为所有并行变更通过。真实 Online T4／HA T5 未执行。`git diff --check` 通过；未启停用户开发服务，未提交或推送。
+
+下一优先项：先把旧派生执行的回写与保护版本切换收拢为可验证的边界，再继续接入正式内容读取计划与 System 全部源规则核验；不通过放宽权限、旧批量读取或提前回执推进。
+
+已确认的收口方案：将派生结果提交绑定到它实际使用的保护版本，提交时与当前持久版本核对并避免“先检查、后写入”的竞态；规则已变化时拒绝旧结果提交，而不是让旧任务自动重跑。外部搜索索引还必须等待实际写入任务结束，并与保护切换的清理顺序形成同一可验证边界，不能将 `AddDocuments` 接受入队当成索引已经完成。该调整属于 Owner 派生写入边界，不改变 Catalog 责任或 System 源授权权威。2026-10-04 用户确认，先实施数据库内剖析提交；外部任务超时及提交响应丢失仍必须证明收敛，不能以本进程计数替代持久依据。
+
+### 26.74 剖析结果保护版本绑定与外部索引未决边界（2026-10-04）
+
+本轮已落实数据库内剖析提交，不把此进展解释为全部源授权或外部索引收敛已经完成。
+
+- Common 新增唯一 `CaptureVersion/CommitVersion` 能力，复用现有持久 checkpoint 和事务行锁，不新建生产表。观察版本与读取保护事实在同一锁内完成，采样期间释放锁；提交时再次加锁比较版本，并从同一事务读取保护事实，避免其他进程的规则更新被内存缓存掩盖。版本绑定租户、Owner 和 schema，不是 Grant，也不是数据源版本。
+- Manager 剖析提交使用 Common 提供的事务，重新核验规则有效期、保护结果并写入表级／字段级剖析。Repository 拒绝独立数据库连接和无事务写入，不保留原来的“检查后另开事务”路线；已有 execution lease 校验仍在提交事务内。版本已变时以 `protection_version_changed` 失败，不自动重跑；同一版本的规则已过期也拒绝提交。
+- 前端以当前界面语言提示“保护规则已变化，本次剖析结果未保存。请重新执行剖析。”，不显示存储的 worker 错误详情。刷新失败可能仍有上一份未被保护切换清除的成功结果，因此通用失败提示不再一概声称“尚无可用结果”。保护切换已清除的结果不会由旧执行恢复。
+- Common 批次若携带变化，必须推进 checkpoint；首次并发使用 checkpoint 以单一路径初始化并加锁，避免两个进程同时初始化出现唯一键冲突。数据库并发测试覆盖提交先持锁、规则安装等待、后续清理旧结果及旧版本迟到提交拒绝；同时覆盖回调失败整体回滚、跨租户／Owner／schema 拒绝与首次并发初始化。
+
+验证及 CI 归属：
+
+- `make test-go` 退出码 0，覆盖全部已登记 Go 模块及本轮 Common／Manager 当前后端输入。日志 `/tmp/addp-profile-version-go-final-20261004.log`。
+- `ADDP_TEST_POSTGRES_PORT=25432 ADDP_TEST_POSTGRES_PASSWORD=<测试密码> ADDP_TEST_EXECUTION_POSTGRES_DSN=<已核实 addp_test URL> make test-common-postgres` 退出码 0，新增真实并发用例 `TestProjectionStoreVersionCommitSerializesCleanupAgainstPostgres` 通过，无 T2 Skip。日志 `/tmp/addp-profile-version-common-postgres-final-20261004.log`。
+- `MANAGER_POSTGRES_TEST_DSN=<已核实 addp_test URL> make test-module MODULE=manager` 退出码 0：平台 T0、Manager Go T1、前端、MongoDB 安全 T2、PostgreSQL Repository／Service T2 通过。日志 `/tmp/addp-profile-version-manager-20261004.log`。随后仅调整通用失败提示及其单测，再运行 `make test-manager-frontend` 退出码 0，当前前端 273 项单测、67 项浏览器用例及构建通过，日志 `/tmp/addp-profile-version-frontend-final-20261004.log`。
+- `bash scripts/swagger/gen-swagger.sh manager` 与 `bash scripts/swagger/check-route-coverage.sh manager` 通过，生成文件同步新错误码说明，覆盖 92 个公开路由方法。日志 `/tmp/addp-profile-version-swagger-20261004.log`。
+- 新 Common PostgreSQL 用例由既有 `^TestProjectionStore.*AgainstPostgres$` 发现，前端用例由既有 Manager 前端入口发现；已有 CI Common／Manager owner Job 和共享影响选择已覆盖，无需新增测试入口或维护第二套编排。
+- 全工作区 `make test-changed` 在提供本轮 Common／Manager 已核实连接变量后仍退出码 2：其余 owner 的 T2 连接条件缺失，在执行门禁前停止。日志 `/tmp/addp-profile-version-changed-final-20261004.log`。未运行的其他 owner T2、镜像构建、真实 Online T4／HA T5 不计为通过，仍由已有相应 CI 门禁覆盖。`git diff --check` 通过。未启停用户开发服务，未写入接入业务数据库，未提交或推送。
+
+下一优先项需要确认外部索引的持久收敛设计，而不是继续增加本地计数：
+
+1. 已确认事实：`HybridSearchService.UpsertContentDocument` 当前丢弃 `AddDocuments` 返回的 task UID，接受入队即返回成功；单条清理虽然等待删除任务，但写入、清理与保护版本未形成可跨进程证明的顺序。HTTP 结束、进程退出或请求超时均不能证明外部任务已经结束。[Meilisearch 官方任务说明](https://www.meilisearch.com/docs/capabilities/indexing/tasks_and_batches/async_operations)明确区分入队响应与任务终态。
+2. 已确认方向（2026-10-04）：由 Manager 持久保存索引投递状态及外部 task UID，超时或重启后继续核查；保护回执只有在相关写入与清理得到可靠收敛证据后才能发出。请求可能已被接收、但响应丢失导致没有 task UID 时，记录未决状态，不猜测成功、不盲目重发、不提前回执；该状态的安全核清与恢复路径仍需要在实施前设计清楚，不能把方向确认等同完整实现。
+3. 这属于 Manager 内部派生写入的可靠性设计，不新增用户审批步骤，不改变 Catalog 责任分工或 System 授权权威。本轮未用延长 PostgreSQL 事务、临时内存标记或仅等待任务的局部补丁替代该设计。确认并解决这一边界后，再继续贯通正式读取计划与 System 全部源规则核验。
+
+### 26.75 外部索引持久收敛方案与可选能力边界（2026-10-04）
+
+方案确认阶段只完成链路调查和文档收敛，未新增生产表、投递实现或替换旧路径；下述现状记录对应实施前，后续实际进展见 §26.76。
+
+已核实的现状：
+
+- `HybridSearchService` 允许 `MeilisearchURL` 未配置，此时禁用混合检索；单条索引删除却直接返回成功，不能据此证明历史外部记录已删除。
+- `ManagerProjectionBarrier` 在本地投影安装事务内调用并等待外部删除。它与已确认的短事务、后置外部收敛方向冲突，应在同一轮实现中替换，不能保留前置和后置两条外部清理路线。
+- 单条写入和范围删除仍丢弃外部 task UID；单条删除虽等待终态，但没有跨进程持久投递依据。仅补等待或增加进程内计数不足以解决晚写及响应丢失。
+
+已确认方向的实现约束：
+
+1. 投递前持久登记操作身份，取得响应后保存 task UID；只存操作元数据，不复制正文或凭据，不引入用户审批或新的业务 TaskProvider。
+2. 已知 task UID 的任务在超时、重启后续查；无 task UID 的未决提交不盲目重发、不按时间自动清除。外部 task UID 的 `0` 不能当作“没有任务”。
+3. 待清理事实与投影和 cursor 同事务登记；后置屏障收敛相关旧写入再完成清理。等待外部服务不持 PostgreSQL 事务锁。
+4. 清理期间不能从搜索返回旧内容；后置屏障失败保留新投影和未决记录，出口未可靠隔离且旧读取尚未结束时不得向 Security 回执。完整实现必须同时替换写入、清理、搜索出口和回执链路，不能仅交付一张未使用的任务表。
+
+已确认的可选能力边界（2026-10-04 用户同意）：
+
+- 建议将“明确停用索引”与“索引已清理”分开：停用时关闭相关搜索和索引写入出口，保留历史未决事实，其他 Manager 能力仍可使用；重新启用必须先核清历史任务、完成必要清理，再开放搜索。
+- 索引临时失联不能被自动解释为明确停用，也不能当作清理完成。未决提交无法证明时，需要可靠的核清／恢复依据，不能通过改数据库状态或过期释放绕过。
+- 允许在可证明出口已经隔离、旧读取已经结束、但外部清理尚未完成时确认保护回执；这不表示外部索引已删除。搜索和索引写入必须核验共享持久出口状态及启动代次，旧代次不能自行重新开放出口；恢复必须先核清历史任务、完成清理。既有 HTTP 在途边界继续覆盖响应输出，不将本轮扩大为多 Backend／HA 回执认证。
+
+后续验证沿用现有测试体系：Manager Go T1 覆盖外部响应与终态、超时、响应丢失和状态转移；Manager PostgreSQL T2 覆盖事务回滚、并发及跨进程恢复；混合检索 Online T4 覆盖真实索引恢复和旧内容不可见。现有入口是否足以覆盖新增依赖，应在实施前核对，不新建旁路验收脚本。本轮未运行这些实现验收，不将此前剖析版本门禁外推为外部索引通过。
+
+本轮文档验证：`git diff --check` 通过；`make test-changed` 退出码 2，当前共享工作区影响 27 个已登记模块，但其 T2 连接前置条件不齐，执行门禁前停止，日志 `/tmp/addp-index-delivery-docs-changed-20261004.log`。未运行的门禁不计为通过；本轮未修改生产代码、接入数据或服务生命周期，未创建未使用的持久任务表。
+
+### 26.76 外部索引持久投递、隔离与恢复链路（2026-10-05）
+
+按用户确认的边界落实同一条生产路线，不新增用户审批步骤，不改变 Catalog 责任事实与 System 授权权威。
+
+- Manager 新增实际接入启动链路的 `content_index_outlets` 和 `content_index_deliveries`。前者记录索引隔离、端点身份和启动代次；后者只记录操作、租户、技术范围、阶段及外部任务证据，不保存正文或凭据。采用 Manager 既有 GORM schema 初始化入口，不添加 System SQL migration。
+- 内容写入在保护 checkpoint 事务内重新执行唯一保护器并登记投递，释放事务后提交外部任务。回执保存不依赖调用者仍在线；只有任务实际成功才返回 204。超时或取消不删除记录，不表示外部任务已取消。任务 UID `0` 有效，任务入队时间保存完整 UTC RFC3339Nano 精度，后续核查同时匹配端点、索引、UID、类型和入队时间，避免误认重置后的同号任务。
+- 投影变化、cursor、本地剖析清理、待删除索引记录与出口隔离同事务提交；旧事务内等待 Meilisearch 的路线已删除。清理等待旧写入得到明确终态，再由唯一受理者提交删除；已知失败／取消的删除保留原证据并创建新投递，不改写旧任务。所有外部 I/O 均在 PostgreSQL 事务外。
+- 后台恢复只续查有完整任务回执的记录并办理尚未提交的清理，不重发原写入；未取得 UID 的 `submitting/unknown` 保留未决事实，不因记录陈旧而自动释放。新启动代次不能被旧实例重新开放，变更端点不能拿新服务的任务冒充旧回执。历史未决或未完成清理继续阻止重新开放。
+- 搜索在外部读取前后核验共享出口状态；读取期间发生保护安装时丢弃旧结果。已隔离返回 503 和稳定错误码 `manager_search_isolated`，不误报为“未配置”。索引未配置或临时失联不使 Manager 初始化失败，其他能力继续；临时失联仍不是清理完成。
+- 保护回执组合既有 HTTP／有界执行在途屏障、持久有效执行 lease 和索引出口证明。出口安全隔离且旧读取结束时允许回执，但不把隔离当作外部删除成功。本轮只落实当前 Backend 的边界，不声明多 Backend／HA 已认证，也不替代 System 源访问授权。
+
+当前验证事实：
+
+- `make test-go` 退出码 0，覆盖全部已登记 Go 模块及本轮最终后端输入。日志 `/tmp/addp-index-delivery-go-contract-final-20261005.log`。T1 覆盖已知任务超时续查、响应丢失不重发、调用者取消后保存回执、任务身份不一致拒绝、晚写与清理排序、停用／失联构造、读取期间隔离，以及原正文保护器回归；接口另验证 204 无响应体、保护版本变化与规则缺失分别返回稳定 409 错误码、未决投递返回 503 且不回显外部错误详情。
+- `MANAGER_POSTGRES_TEST_DSN=<已核实 addp_test URL> make test-manager-postgres` 退出码 0，无 T2 Skip。新增真实 PG 用例验证回执 CAS、另一个连接池恢复、原始时间精度、旧代次拒绝、事务回滚、并发清理去重、唯一受理者、非法阶段／回执及跨租户任务 UID 重复拒绝，并核对自身记录清理零残留。日志 `/tmp/addp-index-delivery-pg-final-20261005.log`。另一个连接池验证持久依据，不等同真实进程故障或 HA 认证。
+- `bash scripts/swagger/gen-swagger.sh manager` 与 `bash scripts/swagger/check-route-coverage.sh manager` 退出码 0，生成文件同步 409／503 语义，覆盖 92 个公开路由方法。日志 `/tmp/addp-index-delivery-swagger-contract-final-20261005.log`。`make test-execution-fixtures test-projection-store-ownership test-authorization` 对当前最终接口输入退出码 0，日志 `/tmp/addp-index-delivery-contract-static-20261005.log`。
+- `MANAGER_POSTGRES_TEST_DSN=<已核实 addp_test URL> make test-module MODULE=manager` 退出码 0：平台 T0、Manager Go T1、273 项前端单测、67 项浏览器用例、前端构建、MongoDB 安全 T2 和 PostgreSQL T2 通过。日志 `/tmp/addp-index-delivery-manager-final-20261005.log`。随后仅细化内容写入 409 的错误分类与接口单测，补跑上列全 Go、Swagger 和接口静态门禁均通过；前端及 T2 输入未变，复用有效结果。
+- 全工作区 `make test-changed` 退出码 2：共享工作区影响 27 个已登记模块，其余 owner 的 T2 连接前置条件缺失，执行门禁前停止。日志 `/tmp/addp-index-delivery-changed-final-20261005.log`。未运行的其他 owner T2 不计为通过。
+- 新 Go 测试由既有自动发现命中，真实 PG 用例由既有 `^TestIntegrationPostgresManager` 标准入口和 Manager CI owner Job 命中，无新增外部依赖或旁路脚本。既有 `manager-hybrid-search` T4 suite 覆盖真实正常检索链路，但尚未增加本轮故障恢复场景；本轮未运行真实 Online T4、镜像构建或 HA T5，不能宣称其已验证。未启停用户开发服务，未写入接入业务数据库，未提交或推送。
+
+下一优先项：补齐未决索引的可解释诊断及受控核清方案。无 UID 的提交目前安全保留并隔离，不具备可靠自动恢复证据；不能通过清空任务表、延长等待、重发写入或重建源数据绕过。先确定可证明的外部核清依据及恢复边界，再接入正式入口和真实故障验收；该可选能力问题不应阻塞后续 System 正式读取计划与全部源授权核验的独立工作。
+
+### 26.77 无任务编号投递的恢复依据调查（2026-10-05）
+
+本轮仅调查和记录待确认方案，不变更生产投递状态、权限、依赖版本或运行环境。遵循 §26.76 的唯一持久投递路线，不新增兼容路径，不把以下建议记为已经实施。
+
+后续确认：用户已同意升级依赖并让新投递使用关联标记；本节保留调查阶段的事实与待办，实际实施及未验证边界见 §26.78。旧持久卷迁移、无标记历史投递的受控重建仍未执行。
+
+已核实的事实：
+
+- 仓库 Infra 固定 `getmeili/meilisearch:v1.7`；通过标准 `bash scripts/infra/status.sh` 核对当前容器归属和端口，再只读执行容器内版本查询，实际运行版本为 `1.7.6`。Manager、Catalog、Asset 的 Go 依赖均为 `meilisearch-go v0.26.0`，现有 SDK 的写入参数和任务结果没有 `customMetadata` 字段。
+- [Meilisearch 1.7.6 文档写入源码](https://github.com/meilisearch/meilisearch/blob/v1.7.6/meilisearch/src/routes/indexes/documents.rs) 的写入 query 只接受主键和 CSV 分隔符，且拒绝未知参数；不能给当前接口直接补一个关联 query 并假定已被持久保存。该版本自指定 TaskId 的路径受实验性复制参数开关控制，不是面向 ADDP 投递身份的普通稳定契约，不采用它作为恢复路线。
+- [Meilisearch 1.26 发布说明](https://github.com/meilisearch/meilisearch/releases/tag/v1.26.0) 正式引入文档类任务的 `customMetadata`：可随写入或删除请求发送应用自定字符串，并在任务查询中返回。依据这一契约，今后的请求可携带已经持久登记的投递 UUID，响应丢失后有机会从保留的任务历史中认回原操作，而不是按时间和操作类型猜测。此能力并不提供幂等提交保证，也不为旧任务补写关联标记。
+- 任务列表、任务取消和任务历史删除是不同契约。[任务取消](https://www.meilisearch.com/docs/reference/api/async-task-management/cancel-tasks) 自身也是异步任务；[删除任务历史](https://www.meilisearch.com/docs/reference/api/async-task-management/delete-tasks) 不能用作索引内容删除的证据。取消当前已知任务或观察当前列表为空，都不能证明以后不会出现此前尚在传输的提交。
+- 当前 Infra 初始化脚本只校验服务健康，索引创建与设置由各 Owner 完成；Manager 没有可复用的正式“无 UID 核清”或索引重建接口。已有后台恢复只处理完整回执和未提交清理，不应改成盲目重发。
+
+**首选建议，待用户确认：**先升级共享 Meilisearch 与相应 SDK 到经核验、支持任务关联标记的固定版本，按单一路线让新投递使用现有持久 UUID；不保留旧版本无标记提交分支。具体版本、持久卷升级／迁移步骤及所有消费者验证需要单独完成，不能只改镜像标签后直接重启旧数据卷。此轮没有执行升级。
+
+升级后的恢复仍须遵守以下证据边界：
+
+1. 只有关联标记、端点、索引和操作种类全部匹配，且没有重复或冲突证据的任务，才可保存其 UID 与完整入队时间，复用既有终态核查；不能因关联字符串相同就直接标为成功。
+2. 没找到、查不完整、历史已清除、实例恢复后证据不一致或发现重复匹配，都保持未决和隔离；查不到不等于没提交，不自动重发、不按等待时间结束。
+3. 既有未带标记的历史提交不能靠升级自动核清。若仍需恢复该索引，应另行确认受控重建派生索引的边界，包括旧出口及写入者的隔离、旧未决证据保留、新索引只接收按当前保护规则重新生成的投影，以及旧索引后续清理的证据。没有获得确认前，不换索引、不改终态、不删除历史，也不操作接入源库。
+4. 可解释诊断只提供出口状态、投递阶段和缺失的技术证据，不返回正文、凭据或跨租户任务内容。平台索引诊断与租户资源浏览的权限不是同一个范围，正式入口的准入须先确认，不能借现有搜索权限放开全平台任务枚举。
+
+后续实施的验证清单（尚未执行、不计为通过）：
+
+- T1：投递标记实际进入请求；响应丢失后认回原任务且零重发；零匹配、错索引／错种类、重复标记、历史缺失均保留隔离；任务入队仍不返回完成。沿用标准 Go 自动发现，不另建生产投递实现。
+- T2：复用 `make test-manager-postgres` 验证认回回执的并发 CAS、重启恢复和证据约束；共享索引升级同步验证 Catalog、Asset 的现有 Owner 门禁。
+- T4：在隔离验收部署中使用真实新版本索引，制造“外部已接收但响应丢失”和进程退出，再证明原任务恢复、保护清理与搜索重开；现有正常混合检索验收不能代替该故障证据。新增或扩展夹具须同次接入根 Make、CI 编排及零残留检查，不接管个人开发服务。
+
+本轮验证：`git diff --check` 通过；`make test-platform` 退出码 0，日志 `/tmp/addp-index-recovery-research-platform-20261005.log`。全工作区 `make test-changed` 退出码 2：86 个变更文件影响 27 个已登记模块，缺少多 Owner 的 T2 连接前置条件，门禁执行前停止，日志 `/tmp/addp-index-recovery-research-changed-20261005.log`。这些结果不表示待确认的升级或故障恢复已经实现、通过 T2／T4；本轮未启停用户开发服务，未修改索引或接入源数据，未提交推送。
+
+下一步需确认的技术选择：是否按上述顺序升级索引依赖，先让新投递具有可靠关联依据；历史无编号提交继续隔离，其受控重建另外确认。该可选全文索引恢复事项不改变 Catalog 的责任分配或 System 的资源授权权威，也不应无限拖延正式读取计划和全源权限核验的独立工作。
+
+### 26.78 新投递关联标记与原任务恢复实现（2026-10-05）
+
+用户已确认 §26.77 的依赖升级与关联恢复方向。本轮完成源码路线，不将其记为现有开发索引卷已升级，也不自动处理旧无标记提交。
+
+已落实：
+
+- 共享 Infra 源码基线固定为 [Meilisearch `1.54.3`](https://github.com/meilisearch/meilisearch/releases/tag/v1.54.3)，Manager、Catalog、Asset 统一使用 [Go SDK `0.36.3`](https://github.com/meilisearch/meilisearch-go/releases/tag/v0.36.3)。三个消费者都关闭 SDK 自动重试，改用当前 SDK 的请求与结果解码契约；Catalog 保留租户及条目可见性过滤，Asset 保留租户及上架过滤，并用整数解码避免大 ID 经过浮点数丢失精度。未保留旧 SDK 分支。
+- Manager 新写入在保护事务内登记 `task_correlation = 投递 UUID`；清理在持久 CAS 认领时绑定自己的新 UUID。发送使用文档任务 `customMetadata`，写入设置 `skipCreation=true`，不能在索引意外丢失时隐式新建索引。服务器不支持关联标记时仅隔离可选搜索能力，不使 Manager 的其他功能初始化失败，不退回无标记发送。
+- 无 UID 的新记录只能只读扫描当前端点保留的任务历史。要求分页完整、UID 严格递减、总数稳定且不超过 10000 条；唯一匹配标记、索引及写入／删除种类后，CAS 保存原 UID 和完整入队时间。SDK 将 `next=null` 和 `next=0` 都解码为零，且省略 `from=0`，因此仅在总数证明恰剩一条时显式核查原任务 `0`，不把它当作无回执。
+- 找回回执后仍核查同一任务的终态、完整时间和标记；任务处理中不开放出口。响应丢失、分页不完整、零匹配、重复／冲突、端点变化或标记不符均保留隔离，不重发原写入或未决删除。删除已被证明失败／取消时，沿用既有规则新建一条清理投递，不复用旧编号或标记。
+- 旧记录的关联字段默认为空；没有实际发送过的标记不得补写。旧完整回执只作为既有历史证据继续核验；旧无编号记录不进入自动关联恢复，也不允许凭记录过期重新开放出口。PostgreSQL 约束核验空或与投递 UUID 相同的标记，并维持任务回执唯一性。
+
+测试体系与本轮结果：
+
+- T1 沿用 `make test-go` 自动发现：覆盖写入和删除的响应丢失后零重发恢复、入队不等于成功、UID 0 和分页、零匹配／重复／错误索引及种类／历史不足／预算不足／总数变化／终态标记变化、旧服务器拒绝发送；并通过真实 SDK 加 HTTP 夹具核验 Catalog 的 UUID 和可见性过滤、Asset 的大整数身份与租户过滤。最新全量 Go 测试及 `go mod tidy -diff` 退出码 0，日志 `/tmp/addp-index-correlation-go-final-20261005.log`。
+- T2 复用 `make test-manager-postgres`，退出码 0：真实 PostgreSQL 回执并发 CAS、另建连接池后的恢复、标记／回执约束、无标记历史事实不被迁移回填、清理认领唯一性和夹具零残留通过，日志 `/tmp/addp-index-correlation-manager-pg-20261005.log`。`make test-module MODULE=catalog` 退出码 0，覆盖其 T0、Go T1、前端 T1／T3 和 PostgreSQL T2，日志 `/tmp/addp-index-correlation-catalog-module-20261005.log`；`make test-asset-postgres` 退出码 0，日志 `/tmp/addp-index-correlation-asset-pg-20261005.log`。三个测试库入口均使用标准状态脚本核实的本地端口 `25432` 与唯一允许的 `addp_test`，按 Owner 串行执行。
+- CI 登记已核对：Go 标准入口自动覆盖三个消费者；Manager、Catalog、Asset 的 PostgreSQL 门禁已有 Hosted T2 Job。当前测试不增加新服务依赖或旁路入口，无须为登记重复修改 Make／Workflow。T1 HTTP 故障夹具与 PostgreSQL T2 不能替代真实 Meilisearch 故障链路。
+- `make test-platform`、`make test-go-dependency-policy` 与 `git diff --check` 通过；前两项退出码均为 0，日志分别为 `/tmp/addp-index-correlation-platform-20261005.log`、`/tmp/addp-index-correlation-deps-20261005.log`。全工作区 `make test-changed` 退出码 2：98 个变更文件影响 27 个已登记模块，因多 Owner 的 T2 环境前置条件不齐，在实际门禁前停止；日志 `/tmp/addp-index-correlation-changed-20261005.log`。这些未运行门禁不计通过，不把本轮定向验证外推为全部工作区门禁已通过。
+
+尚未完成且不计通过：新镜像实际拉取／digest 核对、旧开发持久卷迁移、真实新版本“已接收但响应丢失＋进程退出”的 T4，以及多 Backend／HA 认证。Docker Hub 的只读镜像核对因网络超时未取得证据，不填写猜测的 digest，不在旧卷上试启动新版本。
+
+下一步建议先确认旧 `1.7.6` 卷的 dump 迁移与回滚方案，再安排独立新卷的三个 Owner 验证和真实故障验收。[官方升级指南](https://www.meilisearch.com/docs/resources/migration/updating)说明 `--upgrade-db` 不支持低于 `1.12` 的数据库，不能直接执行普通 Infra 重启来替代迁移。必须保留旧卷、任务历史和 Manager 未决记录，并核验导入后的任务身份；无标记旧提交的受控重建另外确认。本轮未启停用户服务、未切换卷、未改写开发索引或接入源数据，未提交推送。该可选搜索恢复不改变 System 资源授权权威，也不阻塞正式读取计划与全源权限核验的独立研发。

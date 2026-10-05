@@ -14,6 +14,7 @@ import (
 	managerauthorization "github.com/addp/manager/internal/authorization"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/preview"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -54,6 +55,7 @@ func SetupRouter(
 	model3DTilesHandler *Model3DTilesHandler,
 	dataProfileHandler *DataProfileHandler,
 	protectionStore *projectionstore.Store,
+	readBoundary *managerprotection.ReadBoundary,
 	lifecycle *modulelifecycle.Controller,
 	pptxPDFHandler *PPTXPDFHandler,
 	notifyExecutionEnqueued func(),
@@ -118,8 +120,9 @@ func SetupRouter(
 		auth.MustNewContextGuard("tenant"),
 		auth.MustNewServiceClientGuard("addp-meta"),
 		auth.MustNewPermissionGuard(managerauthorization.PermissionManagerContentIndexUpdate),
+		protectionReadBoundary(readBoundary),
 	)
-	contentIndexHandler := NewContentIndexHandler(searchService, protectionStore)
+	contentIndexHandler := NewContentIndexHandler(searchService)
 	runtime.PUT("/content-documents/:document_id", contentIndexHandler.UpsertDocument)
 	runtime.DELETE("/content-documents", contentIndexHandler.DeleteEngineDocuments)
 
@@ -137,6 +140,7 @@ func SetupRouter(
 		auth.MustNewMiddleware(auth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
 		auth.MustNewContextGuard("tenant"),
 		auth.MustNewDelegatedPolicyGuard("manager", managerDelegatedToolPolicies()),
+		protectionReadBoundary(readBoundary),
 	)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
 	permission := func(keys ...string) gin.HandlerFunc {

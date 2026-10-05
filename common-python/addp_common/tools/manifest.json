@@ -350,7 +350,7 @@
     },
     {
       "name": "transfer.draft.generate",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "description": "发现并确认单一源资源，在 Transfer 已确认目标和任务边界内生成不带副作用的任务草稿。",
       "owner": "copilot",
       "risk": "propose",
@@ -364,9 +364,81 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "query": {"type": "string", "minLength": 1},
-          "resources": {"type": "array", "items": {"type": "object"}, "maxItems": 1},
-          "task": {"type": ["object", "null"]}
+          "query": {"type": "string", "minLength": 1, "maxLength": 4000},
+          "resources": {
+            "type": "array", "maxItems": 1,
+            "description": "一个 owner 已确认的 ResourceFact；不得混入搜索候选、行粒度或投影配置。",
+            "items": {
+              "type": "object", "required": ["role", "locator"],
+              "properties": {
+                "role": {"type": "string", "minLength": 1, "description": "本次任务中的源资源用途，例如 source。"},
+                "locator": {"type": "string", "minLength": 1},
+                "engine_id": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
+                "source_engine_type": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "full_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "query_names": {"type": "object", "additionalProperties": {"type": "string"}},
+                "schema_coverage": {"anyOf": [{"type": "string", "enum": ["complete", "sampled", "unknown"]}, {"type": "null"}]},
+                "data_type": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "geometry_column": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "geometry_type": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "crs": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "fields": {"type": "array", "maxItems": 200, "items": {"type": "object", "additionalProperties": true}}
+              },
+              "additionalProperties": false
+            }
+          },
+          "task": {
+            "type": ["object", "null"],
+            "description": "当前任务草稿；runtime/load/source/target/transforms 必须位于 config，不是顶层字段。",
+            "required": ["config"],
+            "properties": {
+              "name": {"type": "string"}, "description": {"type": "string"},
+              "task_type": {"const": "sync"},
+              "schedule": {"type": "string"}, "enabled": {"type": "boolean"},
+              "batch_size": {"type": "integer", "minimum": 1}, "auto_scan_metadata": {"type": "boolean"},
+              "config": {
+                "type": "object", "required": ["runtime", "load", "source", "target"],
+                "properties": {
+                  "runtime": {
+                    "type": "object", "required": ["boundary"],
+                    "properties": {"boundary": {"enum": ["bounded", "continuous"]}},
+                    "additionalProperties": true
+                  },
+                  "load": {
+                    "type": "object", "required": ["mode"],
+                    "properties": {"mode": {"enum": ["snapshot", "incremental"]}},
+                    "additionalProperties": true
+                  },
+                  "source": {
+                    "type": "object", "required": ["locator"],
+                    "properties": {
+                      "locator": {"type": "string", "minLength": 1},
+                      "data_type": {"type": "string"}, "representation": {"type": "string"}, "format": {"type": "string"},
+                      "options": {"type": "object"}, "policy": {"type": "object"}, "change_stream": {"type": "object"},
+                      "query": {
+                        "type": "object", "required": ["language", "statement"],
+                        "properties": {
+                          "language": {"type": "string", "minLength": 1},
+                          "statement": {"type": "string", "minLength": 1},
+                          "parameters": {"type": "object"}, "inputs": {"type": "array", "items": {"type": "object"}}
+                        }, "additionalProperties": false
+                      }
+                    }, "additionalProperties": false
+                  },
+                  "target": {
+                    "type": "object", "required": ["parent_locator", "name"],
+                    "properties": {
+                      "parent_locator": {"type": "string", "minLength": 1}, "name": {"type": "string", "minLength": 1},
+                      "data_type": {"type": "string"}, "representation": {"type": "string"}, "format": {"type": "string"},
+                      "options": {"type": "object"}, "policy": {"type": "object"}
+                    }, "additionalProperties": false
+                  },
+                  "transforms": {"type": "array", "items": {"type": "object"}},
+                  "batch_size": {"type": "integer", "minimum": 1}
+                }, "additionalProperties": false
+              }
+            }, "additionalProperties": false
+          }
         },
         "required": ["query"],
         "additionalProperties": false

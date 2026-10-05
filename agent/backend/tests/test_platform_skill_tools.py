@@ -20,6 +20,9 @@ class PlatformSkillToolTests(unittest.TestCase):
         self.assertIn("不是 mongosh", body)
         self.assertIn("分别提交 `string`、`bool`", body)
         self.assertIn("不用于 schema、database", body)
+        self.assertIn("必须包含 `role + locator`", body)
+        self.assertIn("task.config.source.query", body)
+        self.assertIn("task.config.transforms", body)
         tools = create_agent_tools("token", "run-transfer")
         create = next(tool for tool in tools if stable_tool_name(tool) == "transfer.task.create")
         schema = create.tool_call_schema
@@ -29,6 +32,18 @@ class PlatformSkillToolTests(unittest.TestCase):
         self.assertNotIn("tool_call_id", published["properties"])
         expected_config = {key: value for key, value in schema["properties"]["config"].items() if key != "title"}
         self.assertEqual(published["properties"]["config"], expected_config)
+
+    def test_transfer_draft_publishes_strict_context_to_harness(self):
+        from addp_common.tools import get_tool
+
+        tools = create_agent_tools("token", "run-draft")
+        draft = next(tool for tool in tools if stable_tool_name(tool) == "transfer.draft.generate")
+        published = convert_to_openai_tool(draft)["function"]["parameters"]
+        definition = get_tool("transfer.draft.generate")
+        self.assertEqual(definition.version, "2.0.0")
+        for key in ("resources", "task"):
+            actual = {name: value for name, value in published["properties"][key].items() if name != "title"}
+            self.assertEqual(actual, definition.input_schema["properties"][key])
 
     def test_agent_loads_root_skill_and_addp_runtime_config(self):
         registry = _load_skill_registry()

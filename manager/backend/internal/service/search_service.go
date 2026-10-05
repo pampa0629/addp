@@ -2,14 +2,15 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection/projectionstore"
 	commonInference "github.com/addp/common/inference"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
@@ -23,6 +24,7 @@ import (
 var (
 	// ErrSearchDisabled 在未配置搜索引擎时返回
 	ErrSearchDisabled = errors.New("hybrid search is not configured")
+	ErrSearchIsolated = errors.New("hybrid search outlet is isolated")
 )
 
 const (
@@ -32,7 +34,7 @@ const (
 
 // HybridSearchService 提供混合检索能力（全文检索 + 向量语义检索）
 type HybridSearchService struct {
-	client                *meilisearch.Client
+	client                meilisearch.ServiceManager
 	contentIndex          string
 	enabled               bool
 	log                   *slog.Logger
@@ -41,6 +43,11 @@ type HybridSearchService struct {
 	configurationProvider *EmbeddingConfigurationProvider
 	bindingService        *InferenceScenarioBindingService
 	inferenceClient       InferenceEmbeddingClient
+	deliveries            *repository.ContentIndexDeliveryRepository
+	protectionStore       *projectionstore.Store
+	epoch                 string
+	endpointID            string
+	initialized           atomic.Bool
 }
 
 // SearchDocument 表示检索结果中的单个文档（混合检索的统一格式）
@@ -104,7 +111,10 @@ type SearchResult struct {
 }
 
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
-func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository, configurationProvider *EmbeddingConfigurationProvider, bindingService *InferenceScenarioBindingService, inferenceClient InferenceEmbeddingClient) (*HybridSearchService, error) {
+func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository, configurationProvider *EmbeddingConfigurationProvider, bindingService *InferenceScenarioBindingService, inferenceClient InferenceEmbeddingClient, deliveries *repository.ContentIndexDeliveryRepository, protectionStore *projectionstore.Store) (*HybridSearchService, error) {
+	if cfg == nil || deliveries == nil || protectionStore == nil {
+		return nil, errors.New("content index requires durable delivery and protection stores")
+	}
 	svc := &HybridSearchService{
 		contentIndex:          strings.TrimSpace(cfg.MeilisearchManagerContentIndex),
 		enabled:               strings.TrimSpace(cfg.MeilisearchURL) != "",
@@ -114,7 +124,15 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 		configurationProvider: configurationProvider,
 		bindingService:        bindingService,
 		inferenceClient:       inferenceClient,
+		deliveries:            deliveries,
+		protectionStore:       protectionStore,
+		endpointID:            contentIndexEndpointID(cfg.MeilisearchURL),
 	}
+	epoch, err := deliveries.Open(context.Background(), svc.endpointID, svc.enabled)
+	if err != nil {
+		return nil, err
+	}
+	svc.epoch = epoch
 
 	if !svc.enabled {
 		svc.log.Info("Meilisearch 未配置，混合检索功能已禁用")
@@ -122,18 +140,22 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 	}
 
 	// 创建 Meilisearch 客户端
-	client := meilisearch.NewClient(meilisearch.ClientConfig{
-		Host:   cfg.MeilisearchURL,
-		APIKey: cfg.MeilisearchMasterKey,
-	})
+	client := meilisearch.New(cfg.MeilisearchURL, meilisearch.WithAPIKey(cfg.MeilisearchMasterKey), meilisearch.WithCustomClient(&http.Client{Timeout: 5 * time.Second}), meilisearch.DisableRetries())
 	svc.client = client
 
 	// 初始化索引配置
-	if err := svc.initIndexes(); err != nil {
-		return nil, fmt.Errorf("failed to initialize indexes: %w", err)
+	initCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := svc.initIndexes(initCtx); err != nil {
+		svc.log.Warn("搜索出口保持隔离，等待索引恢复")
+		return svc, nil
+	}
+	svc.initialized.Store(true)
+	if err := deliveries.ActivateIfSettled(context.Background(), epoch); err != nil && !errors.Is(err, repository.ErrContentIndexIsolated) {
+		return nil, err
 	}
 
-	svc.log.Info("混合检索服务已启用",
+	svc.log.Info("混合检索配置已载入",
 		"content_index", svc.contentIndex,
 		"url", cfg.MeilisearchURL,
 	)
@@ -142,18 +164,26 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 }
 
 // initIndexes 初始化 Meilisearch 索引配置
-func (s *HybridSearchService) initIndexes() error {
+func (s *HybridSearchService) initIndexes(ctx context.Context) error {
+	version, err := s.client.VersionWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	// No fallback submission without correlation to older servers.
+	if version == nil || !supportsContentTaskCorrelation(version.PkgVersion) {
+		return errors.New("Meilisearch task correlation requires version 1.26 or later")
+	}
 	// Manager 创建并独占技术内容索引。
-	existing, err := s.client.GetIndex(s.contentIndex)
+	existing, err := s.client.GetIndexWithContext(ctx, s.contentIndex)
 	if err != nil {
 		if !strings.Contains(err.Error(), "index_not_found") {
 			return fmt.Errorf("failed to inspect Manager content index: %w", err)
 		}
-		task, createErr := s.client.CreateIndex(&meilisearch.IndexConfig{Uid: s.contentIndex, PrimaryKey: "id"})
+		task, createErr := s.client.CreateIndexWithContext(ctx, &meilisearch.IndexConfig{Uid: s.contentIndex, PrimaryKey: "id"})
 		if createErr != nil {
 			return fmt.Errorf("failed to create Manager content index: %w", createErr)
 		}
-		if err := s.waitMeilisearchTask(context.Background(), task.TaskUID); err != nil {
+		if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
 			return fmt.Errorf("failed to create Manager content index: %w", err)
 		}
 	} else if existing.PrimaryKey != "id" {
@@ -164,7 +194,7 @@ func (s *HybridSearchService) initIndexes() error {
 	contentIdx := s.client.Index(s.contentIndex)
 
 	// 设置可搜索字段（按权重排序，与 Meta 模块保持一致）
-	task, err := contentIdx.UpdateSearchableAttributes(&[]string{
+	task, err := contentIdx.UpdateSearchableAttributesWithContext(ctx, &[]string{
 		"name",            // 文件名/表名 - 最高权重
 		"title",           // 文档标题
 		"full_name",       // 完整路径名
@@ -180,12 +210,12 @@ func (s *HybridSearchService) initIndexes() error {
 	if err != nil {
 		return fmt.Errorf("failed to update searchable attributes: %w", err)
 	}
-	if err := s.waitMeilisearchTask(context.Background(), task.TaskUID); err != nil {
+	if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
 		return fmt.Errorf("failed to update searchable attributes: %w", err)
 	}
 
 	// 设置可过滤字段
-	task, err = contentIdx.UpdateFilterableAttributes(&[]string{
+	task, err = contentIdx.UpdateFilterableAttributesWithContext(ctx, &[]interface{}{
 		"tenant_id",
 		"document_id",
 		"engine_id",
@@ -200,12 +230,12 @@ func (s *HybridSearchService) initIndexes() error {
 	if err != nil {
 		return fmt.Errorf("failed to update filterable attributes: %w", err)
 	}
-	if err := s.waitMeilisearchTask(context.Background(), task.TaskUID); err != nil {
+	if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
 		return fmt.Errorf("failed to update filterable attributes: %w", err)
 	}
 
 	// 设置可排序字段
-	task, err = contentIdx.UpdateSortableAttributes(&[]string{
+	task, err = contentIdx.UpdateSortableAttributesWithContext(ctx, &[]string{
 		"data_updated_at",
 		"size_bytes",
 		"row_count",
@@ -215,7 +245,7 @@ func (s *HybridSearchService) initIndexes() error {
 	if err != nil {
 		return fmt.Errorf("failed to update sortable attributes: %w", err)
 	}
-	if err := s.waitMeilisearchTask(context.Background(), task.TaskUID); err != nil {
+	if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
 		return fmt.Errorf("failed to update sortable attributes: %w", err)
 	}
 
@@ -232,7 +262,7 @@ func (s *HybridSearchService) waitMeilisearchTask(ctx context.Context, taskID in
 		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 	}
-	completed, err := s.client.WaitForTask(taskID, meilisearch.WaitParams{Context: ctx, Interval: 50 * time.Millisecond})
+	completed, err := s.client.WaitForTaskWithContext(ctx, taskID, 50*time.Millisecond)
 	if err != nil {
 		return err
 	}
@@ -262,6 +292,9 @@ func (s *HybridSearchService) SearchDocuments(
 ) (*SearchResult, error) {
 	if !s.Enabled() {
 		return nil, ErrSearchDisabled
+	}
+	if err := s.deliveries.RequireActive(ctx, s.epoch); err != nil {
+		return nil, ErrSearchIsolated
 	}
 
 	query = strings.TrimSpace(query)
@@ -299,13 +332,17 @@ func (s *HybridSearchService) SearchDocuments(
 
 	// 执行 Manager owner 的技术内容搜索。
 	index := s.client.Index(s.contentIndex)
-	resp, err := index.Search(query, searchReq)
+	resp, err := index.SearchWithContext(ctx, query, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute search: %w", err)
 	}
 
 	keywordHits := make([]SearchDocument, 0, len(resp.Hits))
-	for _, hit := range resp.Hits {
+	var decodedHits []map[string]interface{}
+	if err := resp.Hits.DecodeInto(&decodedHits); err != nil {
+		return nil, err
+	}
+	for _, hit := range decodedHits {
 		keywordHits = append(keywordHits, mapMeilisearchHit(hit))
 	}
 
@@ -318,6 +355,10 @@ func (s *HybridSearchService) SearchDocuments(
 		}
 	}
 
+	// Recheck after external I/O; a protection installation may have fenced this outlet.
+	if err := s.deliveries.RequireActive(ctx, s.epoch); err != nil {
+		return nil, ErrSearchIsolated
+	}
 	return fuseSearchDocuments(keywordHits, int(resp.EstimatedTotalHits), vectorHits, page, pageSize), nil
 }
 
@@ -546,57 +587,6 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 // Close 释放底层资源
 func (s *HybridSearchService) Close() {}
 
-func (s *HybridSearchService) UpsertContentDocument(_ context.Context, tenantID uint, document commonClient.ManagerContentDocument) error {
-	if !s.Enabled() {
-		return ErrSearchDisabled
-	}
-	document.DocumentID = strings.TrimSpace(document.DocumentID)
-	if tenantID == 0 {
-		return errors.New("invalid Manager content document")
-	}
-	if err := document.Validate(); err != nil {
-		return fmt.Errorf("invalid Manager content document: %w", err)
-	}
-	if document.ProjectionTime.IsZero() {
-		document.ProjectionTime = time.Now().UTC()
-	}
-	encoded, err := json.Marshal(document)
-	if err != nil {
-		return fmt.Errorf("encode Manager content document: %w", err)
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(encoded, &payload); err != nil {
-		return fmt.Errorf("normalize Manager content document: %w", err)
-	}
-	payload["id"] = document.DocumentID
-	payload["tenant_id"] = tenantID
-	if _, err := s.client.Index(s.contentIndex).AddDocuments([]map[string]interface{}{payload}); err != nil {
-		return fmt.Errorf("upsert Manager content document: %w", err)
-	}
-	return nil
-}
-
-// DeleteContentDocument synchronously purges one DataItem projection. The
-// protection cursor must not advance while Meilisearch still exposes an older
-// value-bearing document.
-func (s *HybridSearchService) DeleteContentDocument(ctx context.Context, tenantID uint, documentID string) error {
-	if s == nil || tenantID == 0 || strings.TrimSpace(documentID) == "" {
-		return errors.New("invalid Manager content document deletion")
-	}
-	if !s.Enabled() {
-		return nil
-	}
-	filter := fmt.Sprintf("tenant_id = %d AND document_id = '%s'", tenantID, strings.ReplaceAll(strings.TrimSpace(documentID), "'", "\\'"))
-	task, err := s.client.Index(s.contentIndex).DeleteDocumentsByFilter(filter)
-	if err != nil {
-		return fmt.Errorf("delete Manager content document: %w", err)
-	}
-	if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
-		return fmt.Errorf("wait for Manager content document deletion: %w", err)
-	}
-	return nil
-}
-
 type ContentDocumentDeleteScope struct {
 	EngineID     uint
 	DataItemType string
@@ -605,7 +595,7 @@ type ContentDocumentDeleteScope struct {
 	PathPrefix   string
 }
 
-func (s *HybridSearchService) DeleteContentDocuments(_ context.Context, tenantID uint, scope ContentDocumentDeleteScope) error {
+func (s *HybridSearchService) DeleteContentDocuments(ctx context.Context, tenantID uint, scope ContentDocumentDeleteScope) error {
 	if !s.Enabled() {
 		return ErrSearchDisabled
 	}
@@ -624,10 +614,11 @@ func (s *HybridSearchService) DeleteContentDocuments(_ context.Context, tenantID
 		filters = append(filters, fmt.Sprintf("path ^= '%s'", strings.ReplaceAll(value, "'", "\\'")))
 	}
 	filter := strings.Join(filters, " AND ")
-	if _, err := s.client.Index(s.contentIndex).DeleteDocumentsByFilter(filter); err != nil {
-		return fmt.Errorf("delete Manager content documents: %w", err)
+	op, err := s.deliveries.QueueDelete(ctx, s.epoch, int64(tenantID), filter)
+	if err != nil {
+		return err
 	}
-	return nil
+	return s.waitContentDelivery(ctx, op)
 }
 
 func buildSearchFilter(tenantID, engineID *uint) string {

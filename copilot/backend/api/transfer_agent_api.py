@@ -220,7 +220,7 @@ def _validate_task_context(task: dict[str, Any], source: ResourceFact) -> None:
     source_config = config["source"]
     if not isinstance(source_config, dict) or source_config.get("locator") != source.locator:
         raise ValueError("Transfer 草稿 source locator 必须与已确认资源一致")
-    source_unknown = set(source_config) - {"locator", "data_type", "representation", "format", "options", "policy", "change_stream"}
+    source_unknown = set(source_config) - {"locator", "data_type", "representation", "format", "options", "policy", "change_stream", "query"}
     if source_unknown:
         raise ValueError("Transfer source endpoint 包含不受支持的字段")
     target = config["target"]
@@ -272,6 +272,16 @@ def _build_task_draft(task: dict[str, Any], source: ResourceFact, intent: Any) -
         for field in source.fields
         if isinstance(field, dict) and str(field.get("name") or "").strip()
     }
+    if source_config.get("query") is not None:
+        # Collection/table facts do not describe a query's projected or aliased output.
+        # Only rename an already-confirmed direct mapping; never add a source column.
+        source_fields.intersection_update(
+            str(field.get("source") or "").strip()
+            for transform in config.get("transforms", [])
+            if isinstance(transform, dict) and transform.get("type") == "field_mapping"
+            for field in transform.get("fields", [])
+            if isinstance(field, dict)
+        )
     mappings = [
         mapping for mapping in intent.mappings
         if mapping.source.strip() in source_fields and mapping.target.strip()

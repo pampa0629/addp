@@ -37,6 +37,9 @@ other = "内容检索投影请求无效"
 [manager.error.content_protection_required]
 other = "该内容已纳入安全保护，当前缺少可执行的检索保护规则"
 
+[manager.error.content_protection_version_changed]
+other = "保护规则已变化，当前内容尚未提交索引，请重新提交"
+
 [manager.error.content_index_unavailable]
 other = "Manager 内容索引当前不可用"
 
@@ -120,6 +123,9 @@ other = "无效参数"
 
 [manager.error.hybrid_search_not_configured]
 other = "混合检索未配置"
+
+[manager.error.hybrid_search_isolated]
+other = "索引出口已隔离，暂不可搜索；索引恢复且外部任务核清后才会开放"
 
 [manager.error.missing_query]
 other = "缺少搜索关键词"

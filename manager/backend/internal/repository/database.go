@@ -99,6 +99,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureDataProfileSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure data profile schema: %w", err)
 	}
+	if err := db.AutoMigrate(&models.ContentIndexOutlet{}, &models.ContentIndexDelivery{}); err != nil {
+		return nil, fmt.Errorf("failed to ensure content index delivery schema: %w", err)
+	}
 	if err := normalizePreviewArtifactSchemaNames(db); err != nil {
 		return nil, fmt.Errorf("failed to normalize preview artifact schema names: %w", err)
 	}

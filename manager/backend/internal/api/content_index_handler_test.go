@@ -1,99 +1,68 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
-	"time"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
+	managerprotection "github.com/addp/manager/internal/protection"
+	"github.com/addp/manager/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
-type contentIndexProtectionGate struct {
-	result projectionstore.GateResult
-	calls  int
-	target dataprotection.ResourceReference
+type contentIndexerTestService struct{ err error }
+
+func (s contentIndexerTestService) Enabled() bool { return true }
+func (s contentIndexerTestService) UpsertContentDocument(context.Context, uint, commonClient.ManagerContentDocument) error {
+	return s.err
+}
+func (s contentIndexerTestService) DeleteContentDocuments(context.Context, uint, service.ContentDocumentDeleteScope) error {
+	return s.err
 }
 
-func (g *contentIndexProtectionGate) Gate(_ int64, target dataprotection.ResourceReference, _ time.Time) projectionstore.GateResult {
-	g.calls++
-	g.target = target
-	return g.result
-}
-
-func TestContentIndexProtectionLeavesTechnicalMetadataOutsideDataAction(t *testing.T) {
-	gate := &contentIndexProtectionGate{result: projectionstore.GateResult{Managed: true}}
-	document := commonClient.ManagerContentDocument{
-		DocumentID: "fingerprint-1", PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata,
-		EngineID: 9, DataItemType: "table", Name: "persons",
-	}
-	if err := applyContentIndexProtection(gate, 7, &document); err != nil {
-		t.Fatal(err)
-	}
-	if gate.calls != 0 {
-		t.Fatalf("technical metadata performed %d protection lookups", gate.calls)
-	}
-}
-
-func TestContentIndexProtectionUsesOneLocalMissForUnmanagedContent(t *testing.T) {
-	gate := &contentIndexProtectionGate{}
-	document := commonClient.ManagerContentDocument{
-		DocumentID: "fingerprint-1", PayloadKind: commonClient.ManagerContentPayloadExtractedContent,
-		EngineID: 9, DataItemType: "document", Name: "contacts.txt", Content: "13661384499",
-	}
-	if err := applyContentIndexProtection(gate, 7, &document); err != nil {
-		t.Fatal(err)
-	}
-	if gate.calls != 1 || gate.target.ResourceIdentity != "fingerprint-1" {
-		t.Fatalf("gate calls=%d target=%#v", gate.calls, gate.target)
-	}
-}
-
-func TestContentIndexProtectionFailsClosedForManagedContentWithoutSearchRule(t *testing.T) {
-	gate := &contentIndexProtectionGate{result: projectionstore.GateResult{Managed: true, State: dataprotection.ProjectionStateActive}}
-	document := commonClient.ManagerContentDocument{
-		DocumentID: "fingerprint-1", PayloadKind: commonClient.ManagerContentPayloadExtractedContent,
-		EngineID: 9, DataItemType: "document", Name: "contacts.txt", Content: "13661384499",
-	}
-	if err := applyContentIndexProtection(gate, 7, &document); err == nil {
-		t.Fatal("managed extracted content was accepted without a search_index rule")
-	}
-}
-
-func TestContentIndexProtectionMasksManagedDocumentBeforeIndexWrite(t *testing.T) {
-	hash, err := dataprotection.DocumentTextSnapshotHash("正文 13661384499", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-1", Revision: "00000000000000000001",
-		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
-		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "fingerprint-1"},
-		SourceSnapshotHash: hash,
-		Rules: []dataprotection.Rule{{
-			Action: "search_index", Component: dataprotection.DocumentTextComponent(),
-			Decision: dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmPhoneOccurrencesV1, InvalidValueEffect: dataprotection.EffectSuppress, Parameters: map[string]any{
-				"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit",
-			}},
-		}},
-		ValidFrom: time.Now().Add(-time.Hour), ExpiresAt: time.Now().Add(time.Hour),
-	}
-	if err := projection.Seal(); err != nil {
-		t.Fatal(err)
-	}
-	gate := &contentIndexProtectionGate{result: projectionstore.GateResult{
-		Managed: true, State: dataprotection.ProjectionStateActive, Projections: []dataprotection.Projection{projection},
-	}}
-	document := commonClient.ManagerContentDocument{
-		DocumentID: "fingerprint-1", PayloadKind: commonClient.ManagerContentPayloadExtractedContent,
-		EngineID: 9, DataItemType: "document", Name: "contacts.txt",
-		Content: "正文 13661384499", ContentPreview: "摘要 13661384499",
-		Title: "联系人13661384499", Metadata: map[string]interface{}{"owner": "13661384499"},
-	}
-	if err := applyContentIndexProtection(gate, 7, &document); err != nil {
-		t.Fatal(err)
-	}
-	if document.Content != "正文 136****4499" || document.ContentPreview != "摘要 136****4499" || document.Title != "联系人136****4499" || document.Metadata["owner"] != "136****4499" {
-		t.Fatalf("protected document = %#v", document)
+func TestContentIndexHandlerReportsDistinctProtectionAndDeliveryOutcomes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"completed", nil, http.StatusNoContent, ""},
+		{"version_changed", projectionstore.ErrVersionChanged, http.StatusConflict, "protection_version_changed"},
+		{"rule_required", managerprotection.ErrRequired, http.StatusConflict, "manager_content_protection_required"},
+		{"unresolved", errors.New("private external task details"), http.StatusServiceUnavailable, "manager_content_index_unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			router := gin.New()
+			router.PUT("/content/:document_id", NewContentIndexHandler(contentIndexerTestService{tc.err}).UpsertDocument)
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPut, "/content/item", strings.NewReader(`{"document_id":"item","payload_kind":"technical_metadata","engine_id":9,"data_item_type":"table","name":"persons"}`))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(response, request)
+			if response.Code != tc.status {
+				t.Fatalf("status %d: %s", response.Code, response.Body.String())
+			}
+			if tc.code == "" {
+				if response.Body.Len() != 0 {
+					t.Fatal("204 response had a body")
+				}
+				return
+			}
+			var body struct {
+				Code string `json:"error_code"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || body.Code != tc.code {
+				t.Fatalf("error contract: %s %v", response.Body.String(), err)
+			}
+			if strings.Contains(response.Body.String(), "private external task details") {
+				t.Fatal("external error details escaped")
+			}
+		})
 	}
 }

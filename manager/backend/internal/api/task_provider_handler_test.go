@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -661,7 +662,7 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	}
 	dispatcher := service.NewBoundedExecutionDispatcher(
 		nil, nil, nil, nil, nil, nil, handler.model3DTilesTaskSvc,
-		nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}),
 	)
 	if err := dispatcher.RunClaimedExecution(context.Background(), claimed, *lease); err != nil {
 		t.Fatalf("dispatch first model3d tiles execution: %v", err)

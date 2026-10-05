@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestMeilisearchCatalogIndexReusesExistingIndex(t *testing.T) {
@@ -59,5 +61,32 @@ func TestMeilisearchCatalogIndexReusesExistingIndex(t *testing.T) {
 	}
 	if createRequests.Load() != 0 {
 		t.Fatalf("existing index triggered %d create requests", createRequests.Load())
+	}
+}
+
+func TestCatalogSDKSearchDecodesIdentityAndPreservesVisibility(t *testing.T) {
+	id := uuid.New()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Filter string `json:"filter"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		if !strings.Contains(request.Filter, "tenant_id = 7") || !strings.Contains(request.Filter, `visibility = "tenant"`) {
+			t.Error("visibility filter lost", request.Filter)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"hits": []map[string]string{{"id": id.String()}}, "estimatedTotalHits": 1})
+	}))
+	defer server.Close()
+	index, err := NewMeilisearchCatalogIndex(server.URL, "", "catalog_entries")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index.ready = true
+	ids, total, err := index.SearchCatalogEntries(t.Context(), 7, EntryAccess{}, EntryListFilter{Page: 1, PageSize: 10})
+	if err != nil || total != 1 || len(ids) != 1 || ids[0] != id {
+		t.Fatalf("SDK search identity: %#v %d %v", ids, total, err)
 	}
 }

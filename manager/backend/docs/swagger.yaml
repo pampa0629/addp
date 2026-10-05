@@ -1103,6 +1103,9 @@ definitions:
       error:
         type: string
       error_code:
+        description: 稳定执行错误码；protection_version_changed 表示规则已变化，须重新执行 | Stable execution
+          error code; protection_version_changed requires explicit rerun after protection
+          changes.
         type: string
       execution_id:
         type: string
@@ -5477,8 +5480,10 @@ paths:
       - manager.data_item.read
   /runtime/content-documents:
     delete:
-      description: 仅 addp-meta 可删除当前 Tenant 指定 Engine 的全部内容文档 | Only addp-meta may
-        delete all content documents for an engine in the current tenant
+      description: 仅 addp-meta 可删除当前 Tenant 指定 Engine 的内容投影；等待已有写入及实际删除成功，超时保留持久任务，不能视为已删除
+        | Only addp-meta may delete engine content projections in the tenant; wait
+        for prior writes and proven deletion, retain pending deliveries on timeout
+        without claiming deletion
       parameters:
       - description: Engine ID
         in: query
@@ -5504,6 +5509,16 @@ paths:
       responses:
         "204":
           description: No Content
+        "400":
+          description: 请求契约无效 | Invalid request contract
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 索引不可用或任务未决 | Index unavailable or delivery unresolved
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 删除 Engine 内容检索投影 | Delete engine content search projections
@@ -5516,10 +5531,11 @@ paths:
     put:
       consumes:
       - application/json
-      description: 仅 addp-meta 可按当前 Tenant 幂等覆盖一个显式标记为 technical_metadata 或 extracted_content
-        的 DataItem 检索投影；已纳管正文必须通过 search_index 门禁 | Only addp-meta may idempotently
-        replace a DataItem search projection explicitly marked technical_metadata
-        or extracted_content; managed content must pass the search_index gate
+      description: 仅 addp-meta 可覆盖当前 Tenant 的显式内容投影；持久登记并核验保护版本，外部任务确认成功才返回 204；超时或未决提交返回
+        503，不表示任务取消 | Only addp-meta may replace an explicit tenant content projection;
+        persist delivery and verify protection version, return 204 only for proven
+        external success; timeout or uncertain submission returns 503 and does not
+        imply cancellation
       parameters:
       - description: DataItem fingerprint
         in: path
@@ -5541,8 +5557,9 @@ paths:
             additionalProperties: true
             type: object
         "409":
-          description: 已纳管内容尚无可执行 search_index 投影 | Managed content has no executable
-            search_index projection
+          description: 'protection_version_changed：保护版本变化；manager_content_protection_required：无可执行
+            search_index 投影 | protection_version_changed: protection version changed;
+            manager_content_protection_required: no executable search_index projection'
           schema:
             additionalProperties: true
             type: object
@@ -5601,7 +5618,8 @@ paths:
             additionalProperties: true
             type: object
         "503":
-          description: 搜索服务不可用 | Search service unavailable
+          description: 搜索未配置或索引出口隔离；隔离不表示外部清理完成 | Search unconfigured or index outlet
+            isolated; isolation does not imply external cleanup completion
           schema:
             additionalProperties: true
             type: object

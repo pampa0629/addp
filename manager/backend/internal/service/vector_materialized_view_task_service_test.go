@@ -122,13 +122,16 @@ func TestBuildVectorMaterializedViewPlanUsesStagingMaterializedViewAndIndex(t *t
 		t.Fatalf("normalize config: %v", err)
 	}
 	plan := buildVectorMaterializedViewPlan(execCfg, "addp_vmv_abcd", "1234567890")
-	createSQLWithPK := buildVectorMaterializedViewCreateSQL(execCfg, plan.StagingTable, []string{"id"})
+	createSQLWithPK, err := buildVectorMaterializedViewCreateSQL(execCfg, plan.StagingTable, []string{"id"}, "Geometry")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, fragment := range []string{
 		`CREATE MATERIALIZED VIEW "public"."addp_vmv_abcd_staging_1234567890" AS`,
 		`("id")::text AS source_row_id`,
 		`"name"`,
-		`ST_Transform("shape", 3857) AS "geom_3857"`,
+		`ST_Transform("shape", 3857)::geometry(Geometry,3857) AS "geom_3857"`,
 		`FROM "public"."roads"`,
 		`WHERE "shape" IS NOT NULL`,
 	} {
@@ -144,6 +147,26 @@ func TestBuildVectorMaterializedViewPlanUsesStagingMaterializedViewAndIndex(t *t
 	}
 	if plan.AnalyzeSQL != `ANALYZE "public"."addp_vmv_abcd_staging_1234567890"` {
 		t.Fatalf("analyze SQL = %s", plan.AnalyzeSQL)
+	}
+}
+
+func TestVectorMaterializedViewGeometryDeclarationPreservesDimensions(t *testing.T) {
+	cfg, err := normalizeVectorMaterializedViewTaskConfig(newVectorMaterializedViewTaskDefinition().Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dimension := range []string{"Geometry", "GeometryZ", "GeometryM", "GeometryZM"} {
+		t.Run(dimension, func(t *testing.T) {
+			query, err := buildVectorMaterializedViewCreateSQL(cfg, "staging", nil, dimension)
+			if err != nil || !strings.Contains(query, "::geometry("+dimension+",3857)") || strings.Contains(query, "Force2D") {
+				t.Fatalf("dimension declaration: %s, %v", query, err)
+			}
+		})
+	}
+	for _, dimension := range []string{"", "Point", "Geometry); DROP TABLE roads; --"} {
+		if query, err := buildVectorMaterializedViewCreateSQL(cfg, "staging", nil, dimension); err == nil || query != "" {
+			t.Fatalf("unproven dimension accepted: %q", dimension)
+		}
 	}
 }
 

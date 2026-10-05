@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -12,7 +13,7 @@ import (
 )
 
 type MeilisearchCatalogIndex struct {
-	client    *meilisearch.Client
+	client    meilisearch.ServiceManager
 	indexName string
 	mu        sync.Mutex
 	ready     bool
@@ -59,20 +60,21 @@ func (i *MeilisearchCatalogIndex) SearchCatalogEntries(ctx context.Context, tena
 	if filter.SourceEngineID > 0 {
 		filters = append(filters, fmt.Sprintf("source_engine_id = %d", filter.SourceEngineID))
 	}
-	response, err := i.client.Index(i.indexName).Search(filter.Search, &meilisearch.SearchRequest{
+	response, err := i.client.Index(i.indexName).SearchWithContext(ctx, filter.Search, &meilisearch.SearchRequest{
 		Filter: strings.Join(filters, " AND "), Limit: int64(filter.PageSize), Offset: int64((filter.Page - 1) * filter.PageSize),
 	})
 	if err != nil {
 		return nil, 0, err
 	}
 	ids := make([]uuid.UUID, 0, len(response.Hits))
-	for _, hit := range response.Hits {
-		payload, ok := hit.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		value, _ := payload["id"].(string)
-		id, err := uuid.Parse(value)
+	var hits []struct {
+		ID string `json:"id"`
+	}
+	if err := response.Hits.DecodeInto(&hits); err != nil {
+		return nil, 0, err
+	}
+	for _, hit := range hits {
+		id, err := uuid.Parse(hit.ID)
 		if err == nil && id != uuid.Nil {
 			ids = append(ids, id)
 		}
@@ -87,9 +89,7 @@ func NewMeilisearchCatalogIndex(url, apiKey, indexName string) (*MeilisearchCata
 		return nil, fmt.Errorf("Catalog Meilisearch URL and index are required")
 	}
 	return &MeilisearchCatalogIndex{
-		client: meilisearch.NewClient(meilisearch.ClientConfig{
-			Host: url, APIKey: apiKey, Timeout: 10 * time.Second,
-		}),
+		client:    meilisearch.New(url, meilisearch.WithAPIKey(apiKey), meilisearch.WithCustomClient(&http.Client{Timeout: 10 * time.Second}), meilisearch.DisableRetries()),
 		indexName: indexName,
 	}, nil
 }
@@ -112,7 +112,8 @@ func (i *MeilisearchCatalogIndex) Upsert(ctx context.Context, document CatalogSe
 	if err := i.ensureIndex(ctx); err != nil {
 		return err
 	}
-	task, err := i.client.Index(i.indexName).AddDocuments([]CatalogSearchDocument{document}, "id")
+	primaryKey := "id"
+	task, err := i.client.Index(i.indexName).AddDocumentsWithContext(ctx, []CatalogSearchDocument{document}, &meilisearch.DocumentOptions{PrimaryKey: &primaryKey})
 	if err != nil {
 		return err
 	}
@@ -123,7 +124,7 @@ func (i *MeilisearchCatalogIndex) Delete(ctx context.Context, id string) error {
 	if err := i.ensureIndex(ctx); err != nil {
 		return err
 	}
-	task, err := i.client.Index(i.indexName).DeleteDocument(id)
+	task, err := i.client.Index(i.indexName).DeleteDocumentWithContext(ctx, id, nil)
 	if err != nil {
 		return err
 	}
@@ -139,12 +140,12 @@ func (i *MeilisearchCatalogIndex) ensureIndex(ctx context.Context) error {
 	if err := i.Health(); err != nil {
 		return err
 	}
-	existing, err := i.client.GetIndex(i.indexName)
+	existing, err := i.client.GetIndexWithContext(ctx, i.indexName)
 	if err != nil {
 		if !strings.Contains(err.Error(), "index_not_found") {
 			return err
 		}
-		task, createErr := i.client.CreateIndex(&meilisearch.IndexConfig{Uid: i.indexName, PrimaryKey: "id"})
+		task, createErr := i.client.CreateIndexWithContext(ctx, &meilisearch.IndexConfig{Uid: i.indexName, PrimaryKey: "id"})
 		if createErr != nil {
 			return createErr
 		}
@@ -157,18 +158,20 @@ func (i *MeilisearchCatalogIndex) ensureIndex(ctx context.Context) error {
 	index := i.client.Index(i.indexName)
 	settings := []func() (*meilisearch.TaskInfo, error){
 		func() (*meilisearch.TaskInfo, error) {
-			return index.UpdateSearchableAttributes(&[]string{
+			return index.UpdateSearchableAttributesWithContext(ctx, &[]string{
 				"business_name", "business_description", "source_name", "source_identity", "domain_names",
 				"glossary_names", "responsibility_names", "component_names",
 			})
 		},
 		func() (*meilisearch.TaskInfo, error) {
-			return index.UpdateFilterableAttributes(&[]string{
+			return index.UpdateFilterableAttributesWithContext(ctx, &[]interface{}{
 				"tenant_id", "entry_status", "entry_type", "source_status", "source_engine_id", "governance_status",
 				"visibility", "primary_domain_id", "accountable_department_id",
 			})
 		},
-		func() (*meilisearch.TaskInfo, error) { return index.UpdateSortableAttributes(&[]string{"updated_at"}) },
+		func() (*meilisearch.TaskInfo, error) {
+			return index.UpdateSortableAttributesWithContext(ctx, &[]string{"updated_at"})
+		},
 	}
 	for _, update := range settings {
 		task, err := update()
@@ -184,7 +187,7 @@ func (i *MeilisearchCatalogIndex) ensureIndex(ctx context.Context) error {
 }
 
 func (i *MeilisearchCatalogIndex) waitTask(ctx context.Context, taskID int64) error {
-	task, err := i.client.WaitForTask(taskID, meilisearch.WaitParams{Context: ctx, Interval: 50 * time.Millisecond})
+	task, err := i.client.WaitForTaskWithContext(ctx, taskID, 50*time.Millisecond)
 	if err != nil {
 		return err
 	}

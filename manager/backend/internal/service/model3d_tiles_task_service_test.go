@@ -10,6 +10,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/repository"
 )
 
@@ -68,7 +69,7 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 	if err != nil {
 		t.Fatalf("first Execute() error = %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
 	waitForModel3DTilesExecution(t, execRepo, firstExecutionID, int(task.TenantID))
 	firstResult, err := repo.GetCurrentResult(context.Background(), task.TenantID, "fp-repeat", models.Model3DTilesTargetFormatS3M)
 	if err != nil || firstResult == nil {
@@ -94,7 +95,7 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 	if err != nil {
 		t.Fatalf("confirmed refresh Execute() error = %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
 	waitForModel3DTilesExecution(t, execRepo, secondExecutionID, int(task.TenantID))
 	secondResult, err := repo.GetCurrentResult(context.Background(), task.TenantID, "fp-repeat", models.Model3DTilesTargetFormatS3M)
 	if err != nil || secondResult == nil {
@@ -119,6 +120,13 @@ func TestModel3DTilesTaskServiceRejectsConcurrentExecution(t *testing.T) {
 	svc := NewModel3DTilesTaskService(repo)
 	svc.SetBucket("manager")
 	executor := &blockingModel3DTilesExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	t.Cleanup(func() {
+		select {
+		case <-executor.release:
+		default:
+			close(executor.release)
+		}
+	})
 	svc.SetExecutor(executor)
 	task := newModel3DTilesTaskForTest("S3M 快显", "fp-active", models.Model3DTilesTargetFormatS3M)
 	if err := svc.Create(context.Background(), task); err != nil {
@@ -129,8 +137,14 @@ func TestModel3DTilesTaskServiceRejectsConcurrentExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Execute() error = %v", err)
 	}
-	done := runManagerBoundedExecutionAsyncForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc})
-	<-executor.started
+	done := runManagerBoundedExecutionAsyncForTest(t, db, commonExecution.TaskTypeModel3DTilesGeneration, &BoundedExecutionDispatcher{model3DTiles: svc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
+	select {
+	case <-executor.started:
+	case <-done:
+		t.Fatal("execution returned before reaching the builder")
+	case <-time.After(2 * time.Second):
+		t.Fatal("execution did not reach the builder")
+	}
 	if _, err := svc.Execute(context.Background(), task.ID, task.TenantID, "manual", "manager", nil, false); !errors.Is(err, ErrModel3DTilesTaskExecutionBusy) {
 		t.Fatalf("concurrent Execute() error = %v", err)
 	}

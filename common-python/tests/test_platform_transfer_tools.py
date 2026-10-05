@@ -7,6 +7,7 @@ import httpx
 from jsonschema import Draft202012Validator
 
 from addp_common.client import MetaClient, OntologyClient, TransferClient
+from addp_common.resources import ResourceFact
 from addp_common.tools import ToolExecutionError, ToolExecutor, get_tool, load_manifest
 
 
@@ -83,6 +84,67 @@ def test_transfer_create_schema_rejects_schedules_credentials_and_other_modes():
     assert list(validator.iter_errors(upsert))
     upsert["config"]["target"]["policy"]["keys"] = ["activity_id"]
     assert not list(validator.iter_errors(upsert))
+
+
+def test_transfer_draft_schema_matches_resource_fact_contract():
+    schema = get_tool("transfer.draft.generate").input_schema
+    resource_schema = schema["properties"]["resources"]["items"]
+
+    def validation_rules(value):
+        if isinstance(value, dict):
+            return {key: validation_rules(item) for key, item in value.items()
+                    if key not in {"title", "description", "default"}}
+        if isinstance(value, list):
+            return [validation_rules(item) for item in value]
+        return value
+
+    assert validation_rules(resource_schema) == validation_rules(ResourceFact.model_json_schema())
+
+
+def test_transfer_draft_rejects_bad_context_before_delegation_or_http():
+    async def run():
+        executor = ToolExecutor("http://gateway", "private")
+
+        async def forbidden(*_args, **_kwargs):
+            raise AssertionError("invalid draft must not delegate or reach Copilot")
+
+        executor._issue_delegated_token = forbidden
+        executor._handlers["transfer.draft.generate"] = forbidden
+        source = {"role": "source", "locator": task_arguments()["config"]["source"]["locator"]}
+        valid = {"query": "生成同步草稿", "resources": [source], "task": task_arguments()}
+        valid["task"]["config"]["batch_size"] = 1000  # Transfer Wizard's formal current-task shape.
+        validator = Draft202012Validator(get_tool("transfer.draft.generate").input_schema)
+        assert not list(validator.iter_errors(valid))
+        assert not list(validator.iter_errors({"query": "发现源资源", "resources": [], "task": None}))
+        invalid_cases = [
+            {**valid, "resources": [{"locator": source["locator"]}]},
+            *[{**valid, "resources": [{**source, key: value}]} for key, value in [
+                ("name", "Activities"), ("item_type", "collection"),
+                ("row_grain", "one_document_per_row"), ("project_fields", ["status"]),
+            ]],
+            {**valid, "query": "x" * 4001},
+            {**valid, "task": {"runtime": {"boundary": "bounded"}, "field_mapping": {"status": "string"}}},
+        ]
+        for path, value in [
+            (("task", "config", "source", "connection_info"), {"password": "private"}),
+            (("task", "config", "target", "apply_mode"), "replace"),
+            (("task", "config", "field_mapping"), {"status": "string"}),
+        ]:
+            invalid = copy.deepcopy(valid)
+            target = invalid
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            invalid_cases.append(invalid)
+        for arguments in invalid_cases:
+            try:
+                await executor.call("transfer.draft.generate", arguments, agent_run_id="run", tool_call_id="draft")
+            except ToolExecutionError as error:
+                assert error.code == "invalid_arguments"
+            else:
+                raise AssertionError("malformed draft context must fail")
+
+    asyncio.run(run())
 
 
 def test_platform_and_transfer_executor_use_exact_owner_and_safe_sdk_projection():

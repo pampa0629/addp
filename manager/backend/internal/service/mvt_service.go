@@ -280,7 +280,7 @@ func validateManagerVectorMaterializedViewTarget(ctx context.Context, db *sql.DB
 	if err != nil {
 		return managerOptimizationTargetStatus{}, err
 	}
-	srid, err := queryGeometryColumnActualSRID(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
+	srid, err := queryGeometryColumnDeclaredSRID(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
 	if err != nil {
 		return managerOptimizationTargetStatus{}, err
 	}
@@ -302,7 +302,7 @@ func managerOptimizationTargetIdentityStatus(result *models.VectorMaterializedVi
 	return managerOptimizationTargetStatus{Ready: true}
 }
 
-func managerOptimizationTargetFactsStatus(result *models.VectorMaterializedView, populated, columnExists, indexed bool, actualSRID int) managerOptimizationTargetStatus {
+func managerOptimizationTargetFactsStatus(result *models.VectorMaterializedView, populated, columnExists, indexed bool, declaredSRID int) managerOptimizationTargetStatus {
 	if status := managerOptimizationTargetIdentityStatus(result); !status.Ready {
 		return status
 	}
@@ -312,10 +312,10 @@ func managerOptimizationTargetFactsStatus(result *models.VectorMaterializedView,
 	if !columnExists {
 		return managerOptimizationTargetStatus{Reason: "vector materialized view target geometry column is missing"}
 	}
-	if actualSRID == 0 {
+	if declaredSRID == 0 {
 		return managerOptimizationTargetStatus{Reason: "vector materialized view target geometry srid is missing"}
 	}
-	if actualSRID != spatial.SRIDWebMercator {
+	if declaredSRID != spatial.SRIDWebMercator {
 		return managerOptimizationTargetStatus{Reason: "vector materialized view target geometry srid is not 3857"}
 	}
 	if !indexed {
@@ -372,7 +372,7 @@ func discoverExternal3857MaterializedView(ctx context.Context, db *sql.DB, schem
 		} else if !ok {
 			continue
 		}
-		srid, err := queryGeometryColumnActualSRID(ctx, db, schema, candidate, "geom_3857")
+		srid, err := queryGeometryColumnDeclaredSRID(ctx, db, schema, candidate, "geom_3857")
 		if err != nil {
 			return nil, err
 		}
@@ -421,16 +421,12 @@ func postGISColumnExists(ctx context.Context, db *sql.DB, schema, table, column 
 	return exists, nil
 }
 
-func queryGeometryColumnActualSRID(ctx context.Context, db *sql.DB, schema, table, geomColumn string) (int, error) {
-	query := spatial.BuildPostGISSRIDQuery(schema, table, geomColumn)
-	var srid int
-	if err := db.QueryRowContext(ctx, query).Scan(&srid); err != nil {
-		if err == sql.ErrNoRows {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("query geometry srid failed: %w", err)
+func queryGeometryColumnDeclaredSRID(ctx context.Context, db geometryCatalogQuerier, schema, table, geomColumn string) (int, error) {
+	declaration, err := queryGeometryColumnDeclaration(ctx, db, schema, table, geomColumn)
+	if err != nil || declaration == nil || !declaration.Declared {
+		return 0, err
 	}
-	return srid, nil
+	return declaration.SRID, nil
 }
 
 func hasValidGiSTIndex(ctx context.Context, db *sql.DB, schema, table, geomColumn string) (bool, error) {

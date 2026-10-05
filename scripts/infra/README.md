@@ -87,7 +87,7 @@ bash scripts/test/certify-infra-kafka-ha.sh
 
 `template0` 和 `template1` 是 PostgreSQL 内置模板库；`template_postgis` 是当前 PostGIS 镜像提供的空间数据库模板。三者都不属于 ADDP 业务清单，也不得删除。
 
-`make infra-up` 调用 `init-postgresql.sh`，幂等确保 `addp_test` 与 `addp_iam_test` 存在，并在 `addp_test` 中安装 PostGIS。Common PostgreSQL 门禁依赖该扩展验证空间类型和可信空间函数。`addp_iam_test` 不安装 PostGIS；测试库也不执行开发库的模块 Schema 初始化 SQL。
+`make infra-up` 调用 `init-postgresql.sh`，幂等确保 `addp_test` 与 `addp_iam_test` 存在，并在 `addp_test` 中安装 PostGIS。Common PostgreSQL 门禁依赖该扩展验证空间类型和可信空间函数；Manager 的 `make test-manager-postgres` 同时验证物化视图的 SRID／2D／Z／M／ZM 声明和无业务 SELECT 权限的目录核验，自建测试 Schema 与事务内角色在退出时清理并核对零残留。`addp_iam_test` 不安装 PostGIS；测试库也不执行开发库的模块 Schema 初始化 SQL。
 
 本地共享 `addp-postgres` 禁止创建清单之外的测试 database；所有非 IAM 测试复用 `addp_test`，System IAM、Fosite、API 与 Migration 测试复用 `addp_iam_test`。本地测试必须调用根 `Makefile` 或 `scripts/test/` 的标准门禁，由门禁重建并清理自己拥有的 Schema 或测试事实；禁止为了单次验证直接执行 `createdb`、`CREATE DATABASE`、`dropdb` 或 `DROP DATABASE`。如果现有门禁不能提供所需隔离，应先修正门禁的重置和清理能力，不能用新增 database 绕过问题。
 
@@ -799,6 +799,12 @@ docker logs minio
 ```
 
 ### Meilisearch 连接失败
+
+当前源码固定 Meilisearch `1.54.3`、Go SDK `0.36.3`。Manager 新文档投递必须使用 `customMetadata` 并关闭自动重试；旧服务仍可运行其他模块，但 Manager 搜索保持隔离，不退回无标记写入。
+
+已有 `1.7.6` 持久卷**不得只改镜像后重启**。[官方迁移指南](https://www.meilisearch.com/docs/resources/migration/updating) 明确 `--upgrade-db` 不支持低于 `1.12` 的数据库，因此这次需先设计并确认 dump 迁移及恢复步骤：由用户停止各 Owner 写入，保留旧版本可启动的卷备份与任务历史，核查 Manager 持久投递；备份验证成功后才在独立新卷导入并验证三个 Owner。任务身份／历史必须逐项验证，不能假定 dump 保留原回执或把编号复用当作成功。尚无编号的旧提交若无法证明收敛，保持隔离；受控重建另行确认。此次研发不执行 dump、卷切换、清空索引或开发服务重启。
+
+新建无历史数据的部署直接使用固定版本；Owner 初始化和恢复单测通过，不等于现有开发卷已迁移，也不等于真实故障 T4 通过。
 
 ```bash
 # 检查容器状态

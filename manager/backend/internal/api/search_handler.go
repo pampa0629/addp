@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/logger"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -37,7 +38,7 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 // @Success 200 {object} service.SearchResult "搜索结果，results[].locator 为跨引擎资源定位符 | Search results; results[].locator is the cross-engine resource locator"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "混合检索失败 | Hybrid search failed"
-// @Failure 503 {object} map[string]interface{} "搜索服务不可用 | Search service unavailable"
+// @Failure 503 {object} map[string]interface{} "搜索未配置或索引出口隔离；隔离不表示外部清理完成 | Search unconfigured or index outlet isolated; isolation does not imply external cleanup completion"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.search.execute"]
 // @Router /search [get]
@@ -70,6 +71,10 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	tenantID := tenantFilterIDFromContext(c)
 	result, err := h.searchService.SearchDocuments(c.Request.Context(), tenantID, engineID, query, page, pageSize)
 	if err != nil {
+		if errors.Is(err, service.ErrSearchIsolated) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgHybridSearchIsolated), "error_code": "manager_search_isolated"})
+			return
+		}
 		if errors.Is(err, service.ErrSearchDisabled) {
 			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchNotConfigured)
 			return

@@ -21,7 +21,7 @@ type dataProfileExecutionCleaner interface {
 }
 
 type contentSearchProjectionCleaner interface {
-	DeleteContentDocument(context.Context, uint, string) error
+	QueueProtectionPurges(context.Context, *gorm.DB, int64, []string) error
 }
 
 // ManagerProjectionBarrier makes every value-bearing derived projection
@@ -57,8 +57,8 @@ func (b *ManagerProjectionBarrier) ApplyProjectionChanges(
 	return b.converge(ctx, tx, tenantID, sortedFingerprintSet(fingerprints))
 }
 
-// ReconcileInstalled removes material created before the profile executor and
-// transaction barrier existed. It runs before Manager serves requests.
+// ReconcileInstalled clears local derived material and queues external purges
+// before Manager serves requests; it performs no external I/O in the transaction.
 func (b *ManagerProjectionBarrier) ReconcileInstalled(
 	ctx context.Context,
 	db *gorm.DB,
@@ -105,12 +105,7 @@ func (b *ManagerProjectionBarrier) converge(ctx context.Context, tx *gorm.DB, te
 	if err := b.executions.SuppressConditionalScopesByItemFingerprints(ctx, tx, tenantID, fingerprints); err != nil {
 		return err
 	}
-	for _, fingerprint := range fingerprints {
-		if err := b.search.DeleteContentDocument(ctx, uint(tenantID), fingerprint); err != nil {
-			return err
-		}
-	}
-	return nil
+	return b.search.QueueProtectionPurges(ctx, tx, tenantID, fingerprints)
 }
 
 func managerProjectionChangeTarget(change dataprotection.ProjectionChange) (dataprotection.ResourceReference, bool) {

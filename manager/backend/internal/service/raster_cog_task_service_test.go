@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/repository"
 	"github.com/minio/minio-go/v7"
 	"gorm.io/driver/sqlite"
@@ -119,7 +120,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 	if err != nil {
 		t.Fatalf("execute raster COG generation task: %v", err)
 	}
-	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeRasterCOGGeneration, &BoundedExecutionDispatcher{rasterCOG: taskSvc})
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeRasterCOGGeneration, &BoundedExecutionDispatcher{rasterCOG: taskSvc, readBoundary: managerprotection.NewReadBoundary(dispatcherFreshener{})})
 
 	exec := waitForRasterCOGTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusFailed {
