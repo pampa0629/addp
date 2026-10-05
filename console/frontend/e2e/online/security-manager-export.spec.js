@@ -31,10 +31,15 @@ test('protected Manager export retains its verified initiator and opens in Monit
     }
   })
   try {
+    const requiredPermissions = [
+      'manager.content.read', 'manager.data_item.read', 'manager.derived_artifact.create',
+      'manager.derived_artifact.read', 'monitor.execution.read'
+    ]
     const expected = identity(await json(await api.get('/api/v1/system/auth/context'), 'API AuthContext'))
     expect(expected.principalType).toBe('user')
     expect(expected.contextType).toBe('tenant')
     expect(expected.tenantID).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
+    for (const permission of requiredPermissions) expect(expected.permissions.has(permission), permission).toBe(true)
     const path = `/manager/data-explorer?locator=${encodeURIComponent(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)}`
     const token = await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, path)
     browserAPI = await request.newContext({
@@ -46,7 +51,7 @@ test('protected Manager export retains its verified initiator and opens in Monit
     expect(actual.principalType).toBe('user')
     expect(actual.contextType).toBe('tenant')
     expect(actual.tenantID).toBe(expected.tenantID)
-    for (const permission of ['manager.derived_artifact.create', 'manager.derived_artifact.read', 'monitor.execution.read']) {
+    for (const permission of requiredPermissions) {
       expect(actual.permissions.has(permission)).toBe(true)
     }
     businessStarted = true

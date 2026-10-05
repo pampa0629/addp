@@ -85,6 +85,7 @@ REQUIRED_PERMISSIONS = {
     "develop.task.execute",
     "develop.task.read",
     "manager.data_item.read",
+    "manager.content.read",
     "manager.derived_artifact.create",
     "manager.derived_artifact.read",
     "monitor.execution.read",
