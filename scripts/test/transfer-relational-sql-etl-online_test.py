@@ -404,7 +404,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                   "target": ["id", "combined_label", "combined_amount"]}
         def ref(port, locator):
             return {"port": port, "locator": locator, "schema_snapshot": {"hash": "sha256:" + port,
-                    "fields": [{"name": name, "path": [name]} for name in fields[port]]}}
+                    "fields": [{"name": name} for name in fields[port]]}}
         target = "addp://engine/3/path/public/" + ONLINE.MULTI_TARGET + "?type=table"
         output = dict(ref("target", target), write_mode="replace")
         mappings = [("base", "id", "id"), ("base", "region", "combined_label"),
@@ -425,6 +425,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "missing source": lambda f: f["inputs"].pop(),
             "wrong port": lambda f: f["inputs"][0].update(port="mapped"),
             "query alias snapshot": lambda f: f["inputs"][0]["schema_snapshot"]["fields"][1].update(name="label", path=["label"]),
+            "invented relational path": lambda f: f["inputs"][0]["schema_snapshot"]["fields"][0].update(path=["id"]),
             "missing origin": lambda f: f["operations"][0]["field_mappings"].pop(),
             "row-only origin": lambda f: f["operations"][0]["field_mappings"][0].update(source_field="status"),
             "wrong transformation": lambda f: f["operations"][0]["field_mappings"][1].update(transformation="direct"),

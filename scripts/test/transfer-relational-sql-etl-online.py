@@ -206,7 +206,7 @@ def validate_multi_source_execution(execution, bindings, target_locator):
         snapshot = _object(ref.get("schema_snapshot"), "multi-source frozen schema")
         fields = _array(snapshot.get("fields"), "multi-source frozen fields")
         if ([f.get("name") for f in fields] != expected_fields[ref["port"]]
-                or any(f.get("path") != [f.get("name")] for f in fields)
+                or any("path" in f for f in fields)
                 or not isinstance(snapshot.get("hash"), str) or not snapshot["hash"]):
             raise SuiteError("multi-source frozen schema lost original fields or precise paths")
         hashes[ref["port"]] = snapshot["hash"]

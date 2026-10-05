@@ -255,7 +255,7 @@ Develop Query Execution Supervisor 必须在业务写入事务成功提交后，
 PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派生表、JOIN、UNION 与表达式的字段值来源。该证明能力不替代执行 owner 的写入事实：Develop 的同 Engine 现有表写入消费 TableResultProvider 冻结计划，在成功事务返回的实时源/目标结构上记录 schema snapshot 与实际位置映射。CTE、JOIN、UNION 等可证明查询支持多来源字段血缘；不透明查询仍标记 unavailable。此能力必须通过真实执行验收，不能仅凭查询解析测试声明部署后的 DWD 血缘已经可用。
 
 - `lineage_facts` 保持 `addp.lineage-facts/v1`；资源引用的 `schema_snapshot` 使用 `{hash, fields}`，fields 来自同一次真实读取和目标写入结构，hash 复用 Common 的 `TableSchemaSnapshotHash`。不回查当前结构补造执行快照。
-- 查询源冻结 Provider 的原始来源结构及精确路径绑定，查询结果列不能充当原始来源快照。嵌套字段只按快照中的唯一字段名引用，完整 path 参与结构哈希；点号不会被 collector 或查询 API 再次拆分。查询保护准备同时返回实际受转换影响的结果字段名，与同次保护规则绑定；这些字段经过别名及后续 field mapping 后仍须记为 derived，抑制列不产生映射。
+- 查询源冻结 Provider 的原始来源结构及精确路径绑定，查询结果列不能充当原始来源快照。普通关系列的可选 path 按 Provider 原样冻结，省略时不补造单段路径；嵌套字段只按快照中的唯一字段名引用，完整 path 参与结构哈希，点号不会被 collector 或查询 API 再次拆分。查询保护准备同时返回实际受转换影响的结果字段名，与同次保护规则绑定；这些字段经过别名及后续 field mapping 后仍须记为 derived，抑制列不产生映射。
 - operation 增加 `field_lineage_status=complete|unavailable` 和 `field_mappings`。每条映射明确 `input_port`、`output_port`、`source_field`、`target_field` 和 `transformation=direct|derived|generated`。generated 没有输入端口或源字段，只证明常量/默认值生成，不生成虚假的字段来源边。非空默认值会改变源值语义，记为 derived；数据保护准备阶段同时返回实际受转换影响的字段名，脱敏字段记为 derived，受抑制字段不产生目标映射；按运行时顺序组合多步映射与覆盖，透传字段来自实际源结构。
 - 成功执行才采集；字段快照与映射必须校验哈希、端口和字段存在性。无法证明时记录 unavailable，不按同名字段猜测。缺少字段契约的其他 owner 事实也属于 unavailable，而不是 complete 或无依赖。
 - `lineage_item_relations` 统一存储 item 和 field 两种粒度，field 行保存两端字段名与结构快照 hash；唯一键包含两端字段身份。observation 保存对应快照和转换语义。字段不是新增 DataItem，不新增第二套 collector。
