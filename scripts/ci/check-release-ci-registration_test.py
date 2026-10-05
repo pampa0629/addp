@@ -39,6 +39,10 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             '\t@python3 scripts/test/workflow-security-gate.py --repository "$(CURDIR)"\n',
         )
         self._write(
+            "scripts/test/common-python-cli-release-gate.sh",
+            '"$VENV_PYTHON" -m pip install "$WHEEL[dev,inference-langchain]"\n',
+        )
+        self._write(
             ".github/workflows/release-and-t2-gates.yml",
             "jobs:\n"
             "  selection:\n"
@@ -71,6 +75,18 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
 
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_cli_wheel_tests_require_declared_inference_test_dependencies(self) -> None:
+        gate = self.repository / "scripts/test/common-python-cli-release-gate.sh"
+        original = gate.read_text()
+        for changed in (
+            original.replace("dev,inference-langchain", "dev"),
+            original.replace('$WHEEL[dev,inference-langchain]', './common-python[dev,inference-langchain]'),
+            "",
+        ):
+            with self.subTest(gate=changed):
+                gate.write_text(changed)
+                self.assertIn("CLI wheel tests must install dev and inference-langchain extras from the verified wheel", MODULE.validate_registration(self.repository))
 
     def test_rejects_manual_suite_in_any_workflow(self) -> None:
         for command in (

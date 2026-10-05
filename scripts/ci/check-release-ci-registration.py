@@ -105,6 +105,15 @@ def validate_registration(repository: Path) -> list[str]:
     if not suites:
         errors.append("release suite registry must not be empty")
 
+    if "common-python-cli" in suites:
+        cli_gate = repository / "scripts/test/common-python-cli-release-gate.sh"
+        cli_source = cli_gate.read_text(encoding="utf-8") if cli_gate.is_file() else ""
+        if not re.search(
+            r'(?m)^"\$VENV_PYTHON" -m pip install[^\n]*"\$WHEEL\[dev,inference-langchain\]"',
+            cli_source,
+        ):
+            errors.append("CLI wheel tests must install dev and inference-langchain extras from the verified wheel")
+
     makefile_path = repository / "Makefile"
     makefile = makefile_path.read_text(encoding="utf-8") if makefile_path.is_file() else ""
     aggregate_recipe = make_recipe(makefile, "test-release")

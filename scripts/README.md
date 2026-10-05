@@ -656,7 +656,7 @@ T5 发布认证的统一入口是 `make test-release RELEASE_SUITE=<suite>`。�
 
 阶段 5 封板后，上述五个 Make 目标与 `scripts/test/agent-evaluation-gate.sh` 是唯一标准入口；不新增旁路脚本、仓库内报告归档或兼容旧 Schema 的命令。
 
-正式 `addp` CLI 发布使用 `make test-release RELEASE_SUITE=common-python-cli`；分发器调用 owner 唯一目标 `test-common-python-cli-release`。该门禁构建 wheel，在全新 venv 安装并运行全量测试，校验 venv 中的 `addp` entry point 和版本；随后在临时 pipx 根目录中通过 `PIPX_DEFAULT_BACKEND=pip` 安装并强制重装同一个 wheel，校验包来源、版本、命令入口和卸载无残留，再通过 pipx 入口使用真实 macOS Keychain 执行 Browser PKCE、Device Flow、AuthContext、跨进程刷新、撤销和终端敏感信息产品 E2E。CLI 最终目标支持主流桌面操作系统，Windows 与 Linux 在各自真实 OS 凭据后端建立同等级 E2E 后再加入支持矩阵。门禁不接受明文文件 Keyring 降级，也不替代 System Fosite 与 PostgreSQL 协议测试。
+正式 `addp` CLI 发布使用 `make test-release RELEASE_SUITE=common-python-cli`；分发器调用 owner 唯一目标 `test-common-python-cli-release`。该门禁构建 wheel，在全新 venv 安装该 wheel 的 `dev` 与 `inference-langchain` 测试 extras 后运行全量测试，校验 venv 中的 `addp` entry point 和版本；随后在临时 pipx 根目录中通过 `PIPX_DEFAULT_BACKEND=pip` 安装并强制重装同一个 wheel，校验包来源、版本、命令入口和卸载无残留，再通过 pipx 入口使用真实 macOS Keychain 执行 Browser PKCE、Device Flow、AuthContext、跨进程刷新、撤销和终端敏感信息产品 E2E。CLI 最终目标支持主流桌面操作系统，Windows 与 Linux 在各自真实 OS 凭据后端建立同等级 E2E 后再加入支持矩阵。门禁不接受明文文件 Keyring 降级，也不替代 System Fosite 与 PostgreSQL 协议测试。
 
 GitHub Actions 的 IAM/CLI 发布工作流并行运行 macOS CLI 产品门禁和 Linux PostgreSQL 15 System 门禁。macOS Job 归档通过 `twine check` 和产品 E2E 的同一个 wheel 及 SHA-256，不在测试后重新构建发布制品；PostgreSQL Job 使用独占的临时 `addp_iam_test` database，不连接开发环境 Infra。
 
