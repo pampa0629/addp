@@ -179,7 +179,11 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   } finally {
     page.off('request', countGraphRequest)
   }
-  expect(chain.rounds).toHaveLength(2)
+  expect(chain.rounds).toHaveLength(3)
+  expect(chain.schema_evolution.history_verified).toBe(true)
+  expect(chain.schema_evolution.unproven_current_verified).toBe(true)
+  expect(chain.schema_evolution.new_hash).toBe(chain.schema_snapshot_hash)
+  expect(chain.schema_evolution.old_hash).not.toBe(chain.schema_snapshot_hash)
   expect(chain.rounds[0].parent_execution_id).not.toBe(chain.rounds[1].parent_execution_id)
   const dwd = await managerFieldGraph(page, chain.target_locator, chain.target_item_id, 'activity_date', 3)
   expect(dwd.graph.subject.schema_snapshot_hash).toBe(chain.schema_snapshot_hash)
@@ -189,11 +193,14 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
     expect(node.schema_snapshot_hash).toBe(chain.snapshot_hashes[String(node.item_id)])
     if (node.item_id === chain.target_item_id) expect(node.field_lineage_status).toBe('complete')
   }
-  const latestChildren = Object.values(chain.rounds[1].child_execution_ids)
+  const latestChildren = Object.values(chain.rounds[2].child_execution_ids)
   for (const edge of dwd.graph.edges) expect(latestChildren).toContain(edge.evidence.execution_id)
-  await dwd.frame.getByRole('button', { name: 'person_nickname', exact: true }).click()
-  await expect(dwd.frame.locator('.lineage-inspector strong')).toHaveText('person_nickname')
-  const selected = dwd.graph.nodes.find(node => node.item_id === chain.target_item_id && node.field_name === 'person_nickname')
+  await expect(dwd.frame.getByRole('button', { name: 'person_nickname', exact: true })).toHaveCount(0)
+  const changedDateEdge = dwd.graph.edges.find(edge => edge.target.item_id === chain.target_item_id && edge.target.field_name === 'activity_date')
+  expect(changedDateEdge.transformation).toBe('derived')
+  await dwd.frame.getByRole('button', { name: 'person_display_name', exact: true }).click()
+  await expect(dwd.frame.locator('.lineage-inspector strong')).toHaveText('person_display_name')
+  const selected = dwd.graph.nodes.find(node => node.item_id === chain.target_item_id && node.field_name === 'person_display_name')
   const focus = lineageFieldConnections(dwd.graph.edges, lineageNodeId(selected))
   expect(dwd.graph.edges.filter((_, index) => focus.connections.has(`lineage-edge:${index}`)).map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
   await showFieldOverview(dwd.frame)
@@ -357,7 +364,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-relational-sql-etl-browser.json'),
       `${JSON.stringify({
-        schema_version: 'addp.transfer-relational-sql-etl-browser/v4',
+        schema_version: 'addp.transfer-relational-sql-etl-browser/v5',
         suite: 'transfer-relational-sql-etl',
         run_id: env.ADDP_ONLINE_TEST_RUN_ID,
         result: 'passed',
@@ -374,7 +381,8 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
         manager_field_graph_verified: true,
         query_field_lineage_verified: true,
         manager_mongodb_field_graph_verified: true,
-        manager_orchestrated_field_graph_verified: true
+        manager_orchestrated_field_graph_verified: true,
+        manager_evolved_schema_verified: true
       })}\n`,
       'utf8'
     )

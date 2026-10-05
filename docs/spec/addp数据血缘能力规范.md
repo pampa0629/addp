@@ -276,6 +276,8 @@ MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：�
 
 2026-10-05，编排整链路扩展 Hosted T4 [运行 37225393122](https://github.com/pampa0629/addp/actions/runs/37225393122) 完整通过，验证源码为 `194e0d0ef4f74f534452a81298e47ee5706f6ae6`。同一最小权限 User / Tenant 下，同一个 Orchestrator 编排连续执行两次 MongoDB → PostgreSQL ODS → DIM → DWD；两个父执行与六个实际子执行 UUID 全部不同，每轮 DIM 写入 3 行、DWD 写入 2 行。六条 ODS、两条 DIM 和四条 DWD 字段映射均引用当次真实 Transfer / Develop 子执行，第二轮仅保留最新活跃证据；日期字段可三跳追溯到原始 `title.date`，昵称改名为 direct、强度表达式为 derived，中间表结构哈希与 DataItem 身份保持一致，编排父执行不生成资源或字段边。两轮 API 检查无需手工补扫 ODS 或调用 collect。Console 的 Manager 整表字段图、日期与昵称本地聚焦、恢复全部字段及适应窗口均通过；ODS 整表图包含 18 个字段节点、12 条关系，DWD 三层图包含 13 个字段节点、9 条关系。v4 报告与独立物理夹具验证确认完整行集合及真实 date 列；八个临时任务和编排定义全部删除并确认 404，两个业务容器、平台 Infra 与凭据目录清理通过，零残留。
 
+结构演进验收继续沿用同一编排和任务定义：Business Fixture 在 Hosted 独占 PostgreSQL 容器中将 DWD 的 `person_nickname` 改为 `person_display_name`，将 `activity_date` 从 date 改为 timestamp without time zone，执行正式 Meta 扫描。新写入之前，当前字段图必须声明 unavailable 且无旧关系，旧字段名不再作为当前字段存在；冻结旧 hash 与第二轮父执行完成时间的历史图仍引用第二轮子执行，并保留 stale 状态。随后第三次执行原编排，Provider 按实际目标列位置写入，昵称映射使用新物理列名，日期赋值转换变为 derived；新 DWD 结构 hash 必须变化，源集合、ODS、DIM 的 hash 和所有 DataItem 身份保持不变。第三轮当前图只引用当次子执行，旧结构历史图仍保留原字段、原转换语义和已关闭关系。Manager 展示新结构的整表图，夹具独立核对完整行集合、改名列和真实 timestamp 类型。该验收不更新任务定义、不扩大消费 User 权限，不向 Meta 手工写入结构或血缘事实。
+
 ### 6.2 图数据库评估边界
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。

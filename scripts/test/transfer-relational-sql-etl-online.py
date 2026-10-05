@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 import importlib.util
 import json
 import os
@@ -91,7 +92,7 @@ def native_task(name: str, source_locator: str, parent_locator: str, target: str
     }
 
 
-def validate_field_graph(payload: object, item_id: int, field: str, expected: set[tuple[int, str, int, str, str, str]]) -> dict[str, object]:
+def validate_field_graph(payload: object, item_id: int, field: str, expected: set[tuple[int, str, int, str, str, str]], *, historical: bool = False) -> dict[str, object]:
     graph = _object(payload, "field lineage graph")
     subject = _object(graph.get("subject"), "field lineage subject")
     if graph.get("field_lineage_status") != "complete" or graph.get("truncated"):
@@ -110,7 +111,7 @@ def validate_field_graph(payload: object, item_id: int, field: str, expected: se
     for raw in edges:
         edge = _object(raw, "field edge")
         source, target = _object(edge.get("source"), "edge source"), _object(edge.get("target"), "edge target")
-        if edge.get("granularity") != "field" or edge.get("status") != "active":
+        if edge.get("granularity") != "field" or edge.get("status") not in ({"active", "stale", "closed"} if historical else {"active"}):
             raise SuiteError("field lineage contains a non-active or non-field edge")
         evidence = _object(edge.get("evidence"), "field edge evidence")
         for endpoint in (source, target):
@@ -411,6 +412,67 @@ def wait_resource_chain(client, target_id, expected, timeout):
     raise SuiteError("resource graph must contain only actual latest Transfer/Develop child evidence")
 
 
+def evolve_fixture():
+    # Only the existing Hosted Business owner may mutate its exclusive physical fixture.
+    repository = Path(__file__).resolve().parents[2]
+    result = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "evolve"], cwd=repository)
+    if result.returncode != 0:
+        raise SuiteError("Hosted physical schema evolution failed")
+
+
+def field_graph_request(client, item_id, field, **parameters):
+    query = urllib.parse.urlencode({"subject_kind": "field_ref", "item_id": item_id, "field_name": field,
+                                  "direction": "upstream", "depth": 3, "limit": 100, **parameters})
+    return _object(client.request("GET", "/api/v1/meta/lineage/graph?" + query, (200,)).payload, "schema evolution field graph")
+
+
+def verify_unproven_schema(client, item_id, old_hash):
+    hashes, graphs = set(), {}
+    for field in ("activity_id", "activity_date", "person_display_name", "intensity"):
+        graph = field_graph_request(client, item_id, field)
+        subject = graph.get("subject", {})
+        nodes = graph.get("nodes", [])
+        if (graph.get("field_lineage_status") != "unavailable" or graph.get("truncated") or graph.get("edges") != []
+                or subject.get("kind") != "field_ref" or subject.get("item_id") != item_id or subject.get("field_name") != field
+                or len(nodes) != 1 or nodes[0].get("item_id") != item_id or nodes[0].get("field_name") != field
+                or nodes[0].get("schema_snapshot_hash") != subject.get("schema_snapshot_hash")):
+            raise SuiteError("changed current structure must be unproven without old field edges")
+        hashes.add(subject.get("schema_snapshot_hash"))
+        graphs[field] = graph
+    if len(hashes) != 1 or not next(iter(hashes)) or old_hash in hashes:
+        raise SuiteError("physical rename/type change must produce a new current structure hash")
+    query = urllib.parse.urlencode({"subject_kind": "field_ref", "item_id": item_id, "field_name": "person_nickname"})
+    client.request("GET", "/api/v1/meta/lineage/graph?" + query, (404,))
+    return {"schema_snapshot_hash": next(iter(hashes)), "field_graphs": graphs}
+
+
+def verify_historical_schema(client, item_id, hashes, as_of, expected_fields, target_status):
+    if not isinstance(as_of, str):
+        raise SuiteError("historical anchor must use the actual parent completed_at")
+    try:
+        timestamp = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise SuiteError("parent completed_at must be RFC3339") from error
+    if timestamp.tzinfo is None:
+        raise SuiteError("parent completed_at must have a timezone")
+    graphs = {}
+    for field, expected in expected_fields.items():
+        graph = field_graph_request(client, item_id, field, schema_snapshot_hash=hashes[item_id], as_of=as_of)
+        validate_field_graph(graph, item_id, field, expected, historical=True)
+        validate_graph_snapshots(graph, hashes)
+        try:
+            returned_time = datetime.fromisoformat(str(graph.get("as_of")).replace("Z", "+00:00"))
+            observed_times = [datetime.fromisoformat(str(edge.get("last_observed_at")).replace("Z", "+00:00")) for edge in graph["edges"]]
+        except ValueError as error:
+            raise SuiteError("historical graph must preserve valid observation times") from error
+        if returned_time != timestamp or any(value.tzinfo is None or value > timestamp for value in observed_times):
+            raise SuiteError("historical graph contains evidence after the requested time")
+        if any(edge.get("status") != target_status for edge in graph["edges"] if edge["target"]["item_id"] == item_id):
+            raise SuiteError("historical target edges have the wrong schema lifecycle status")
+        graphs[field] = graph
+    return graphs
+
+
 def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeout, owned_paths):
     # Existing-table writes use the sole TableResultProvider route; no DDL or inferred DAG edges.
     ods_locator = mongodb["target_locator"]
@@ -447,7 +509,20 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
     dim_mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.ods", "activity_date_raw", "activity_date", "derived")}
     dwd_mappings = {("input.ods", "activity_id", "activity_id", "direct"), ("input.dim", "activity_date", "activity_date", "direct"),
                     ("input.ods", "leader_nickname_snapshot", "person_nickname", "direct"), ("input.ods", "activity_level_raw", "intensity", "derived")}
-    for _ in range(2):
+    for round_index in range(3):
+        if round_index == 2:
+            old_hashes, old_fields = dict(stable_hashes), dict(expected_fields)
+            historical_as_of = rounds[-1]["completed_at"]
+            evolve_fixture()
+            evolution_scan = wait_for_scan(client, engine_id, time.monotonic() + timeout)
+            unproven_schema = verify_unproven_schema(client, dwd_id, old_hashes[dwd_id])
+            evolved_hash = unproven_schema["schema_snapshot_hash"]
+            before_write = verify_historical_schema(client, dwd_id, old_hashes, historical_as_of, old_fields, "stale")
+            dwd_mappings = {(port, source, "person_display_name" if target == "person_nickname" else target,
+                             "derived" if port == "input.dim" else transformation)
+                            for port, source, target, transformation in dwd_mappings}
+        nickname_field = "person_display_name" if round_index == 2 else "person_nickname"
+        date_transformation = "derived" if round_index == 2 else "direct"
         started = _object(client.request("POST", f"/api/v1/orchestrator/orchestrations/{root}/execute", (202,)).payload, "chain admission")
         parent_id = started.get("execution_id")
         if not isinstance(parent_id, str) or not parent_id or parent_id in seen or started.get("status") != "pending":
@@ -496,12 +571,12 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
             merge_graph_snapshots(graph, hashes, allowed_items)
         for field, ods_field, raw, transformation in (
             ("activity_id", "activity_id", "_id", "direct"),
-            ("person_nickname", "leader_nickname_snapshot", "leader.userInfo.nickName", "direct"),
+            (nickname_field, "leader_nickname_snapshot", "leader.userInfo.nickName", "direct"),
             ("intensity", "activity_level_raw", "title.level", "derived"),
         ):
             expected_fields[field] = {(source_id, raw, ods_id, ods_field, "direct", ids["ods"]), (ods_id, ods_field, dwd_id, field, transformation, ids["dwd"])}
         expected_fields["activity_date"] = {(source_id, "title.date", ods_id, "activity_date_raw", "direct", ids["ods"]),
-            (ods_id, "activity_date_raw", dim_id, "activity_date", "derived", ids["dim"]), (dim_id, "activity_date", dwd_id, "activity_date", "direct", ids["dwd"])}
+            (ods_id, "activity_date_raw", dim_id, "activity_date", "derived", ids["dim"]), (dim_id, "activity_date", dwd_id, "activity_date", date_transformation, ids["dwd"])}
         for field, expected in expected_fields.items():
             graph = wait_field_graph(client, dwd_id, field, expected, timeout)
             merge_graph_snapshots(graph, hashes, allowed_items)
@@ -509,18 +584,33 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
             for node in graph["nodes"]:
                 if node.get("engine_id") != (mongodb["source_engine_id"] if node["item_id"] == source_id else engine_id):
                     raise SuiteError("chain field graph crossed the wrong Engine Instance")
-        if set(hashes) != allowed_items or (stable_hashes is not None and hashes != stable_hashes):
+        if set(hashes) != allowed_items:
+            raise SuiteError("chain graph lost a frozen table structure")
+        if round_index == 2:
+            expected_hashes = dict(old_hashes)
+            expected_hashes[dwd_id] = evolved_hash
+            if hashes != expected_hashes:
+                raise SuiteError("schema evolution changed unrelated hashes or failed to freeze the new DWD structure")
+        elif stable_hashes is not None and hashes != stable_hashes:
             raise SuiteError("chain rerun changed a frozen table structure")
         stable_hashes = dict(hashes)
         all_edges = ods_edges | {(ods_id, source, dim_id, target, transformation, ids["dim"]) for _, source, target, transformation in dim_mappings} | {(dim_id if port == "input.dim" else ods_id, source, dwd_id, target, transformation, ids["dwd"]) for port, source, target, transformation in dwd_mappings}
         wait_resource_chain(client, dwd_id, {(source_id, ods_id, ids["ods"]), (ods_id, dim_id, ids["dim"]), (ods_id, dwd_id, ids["dwd"]), (dim_id, dwd_id, ids["dwd"])}, timeout)
-        rounds.append({"parent_execution_id": parent_id, "child_execution_ids": ids, "dim_rows": 3, "dwd_rows": 2})
+        rounds.append({"parent_execution_id": parent_id, "completed_at": parent.get("completed_at"), "child_execution_ids": ids, "dim_rows": 3, "dwd_rows": 2, "schema_snapshot_hash": hashes[dwd_id]})
         # Manager verifies the latest active ODS edges after the enclosing DAG rerun as well.
         mongodb.update(expected_edges=sorted(ods_edges), latest_execution_id=ids["ods"], schema_snapshot_hash=ods_hash)
+    after_write = verify_historical_schema(client, dwd_id, old_hashes, historical_as_of, old_fields, "closed")
+    old_field_query = urllib.parse.urlencode({"subject_kind": "field_ref", "item_id": dwd_id, "field_name": "person_nickname"})
+    client.request("GET", "/api/v1/meta/lineage/graph?" + old_field_query, (404,))
     return {"orchestration_id": root, "rounds": rounds, "target_item_id": dwd_id, "target_locator": dwd_locator,
             "schema_snapshot_hash": hashes[dwd_id], "snapshot_hashes": hashes,
-            "expected_edges": sorted(all_edges), "date_edges": sorted(expected_fields["activity_date"]), "nickname_edges": sorted(expected_fields["person_nickname"]),
-            "owner_context_verified": True, "three_hop_verified": True, "rerun_verified": True, "resource_owner_evidence_verified": True}
+            "expected_edges": sorted(all_edges), "date_edges": sorted(expected_fields["activity_date"]), "nickname_edges": sorted(expected_fields[nickname_field]),
+            "owner_context_verified": True, "three_hop_verified": True, "rerun_verified": True, "resource_owner_evidence_verified": True,
+            "schema_evolution": {"old_hash": old_hashes[dwd_id], "new_hash": evolved_hash, "as_of": historical_as_of,
+                                 "scan_execution_id": evolution_scan, "unproven_current_verified": True, "unproven_current_graphs": unproven_schema["field_graphs"],
+                                 "history_before_write": before_write, "history_after_write": after_write,
+                                 "old_field_name": "person_nickname", "new_field_name": nickname_field,
+                                 "type_change": "date -> timestamp without time zone", "history_verified": True}}
 
 
 def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, object]:
@@ -621,7 +711,7 @@ def suite_task_ids(client: GatewayClient, exact_name: str | None = None) -> list
 def validate_browser_report(report: object, run_id: str, tenant_id: str, expected_task_name: str) -> dict[str, object]:
     payload = _object(report, "Transfer relational SQL ETL browser report")
     expected = {
-        "schema_version": "addp.transfer-relational-sql-etl-browser/v4",
+        "schema_version": "addp.transfer-relational-sql-etl-browser/v5",
         "suite": "transfer-relational-sql-etl",
         "run_id": run_id,
         "result": "passed",
@@ -639,6 +729,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
         "query_field_lineage_verified": True,
         "manager_mongodb_field_graph_verified": True,
         "manager_orchestrated_field_graph_verified": True,
+        "manager_evolved_schema_verified": True,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
@@ -752,7 +843,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v4",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v5",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",

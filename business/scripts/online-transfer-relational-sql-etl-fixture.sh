@@ -28,8 +28,8 @@ database=transfer_fixture
 owner=transfer-relational-sql-etl
 action=${1:-}
 case "$action" in
-  start|verify|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|verify|stop|status" ;;
+  start|evolve|verify|stop|status) ;;
+  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|verify|stop|status" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 
@@ -136,10 +136,12 @@ verify_fixture() {
   [ "$columns" = 'activity_id,activity_status,activity_date_raw,activity_level_raw,leader_person_id,leader_nickname_snapshot' ] || fail "MongoDB ODS columns differ from mapping: $columns"
   values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', activity_id, activity_date), ';' ORDER BY activity_id) FROM public.${DIM_TARGET}")
   [ "$values" = 'activity-1|2026-01-01;activity-2|2026-01-02;activity-3|2026-01-03' ] || fail "DIM rows differ from exact date conversion: $values"
-  values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', activity_id, activity_date, person_nickname, intensity), ';' ORDER BY activity_id) FROM public.${DWD_TARGET}")
-  [ "$values" = 'activity-1|2026-01-01|Alice|EASY;activity-3|2026-01-03|Carol|HARD' ] || fail "DWD rows differ from exact JOIN, filter and expression: $values"
+  values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', activity_id, activity_date, person_display_name, intensity), ';' ORDER BY activity_id) FROM public.${DWD_TARGET}")
+  [ "$values" = 'activity-1|2026-01-01 00:00:00|Alice|EASY;activity-3|2026-01-03 00:00:00|Carol|HARD' ] || fail "DWD rows differ from exact JOIN, filter and expression: $values"
   columns=$(postgres_sql -Atc "SELECT string_agg(table_name || ':' || data_type, ',' ORDER BY table_name) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('${DIM_TARGET}', '${DWD_TARGET}') AND column_name='activity_date'")
-  [ "$columns" = 'addp_online_transfer_dim_activity:date,addp_online_transfer_dwd_activity:date' ] || fail "DIM/DWD dates must use the physical date type: $columns"
+  [ "$columns" = 'addp_online_transfer_dim_activity:date,addp_online_transfer_dwd_activity:timestamp without time zone' ] || fail "DIM/DWD dates must use the expected physical types: $columns"
+  columns=$(postgres_sql -Atc "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema='public' AND table_name='${DWD_TARGET}'")
+  [ "$columns" = 'activity_id,activity_date,person_display_name,intensity' ] || fail "evolved DWD columns differ: $columns"
 }
 
 case "$action" in
@@ -190,6 +192,21 @@ PY_DESCRIPTOR
     unset TRANSFER_FIXTURE_PASSWORD
     start_mongodb
     echo "Online Transfer relational SQL ETL fixture is ready"
+    ;;
+  evolve)
+    assert_owned
+    postgres_running || fail "source PostgreSQL is not running"
+    columns=$(postgres_sql -Atc "SELECT string_agg(column_name || ':' || data_type, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema='public' AND table_name='${DWD_TARGET}'")
+    [ "$columns" = 'activity_id:text,activity_date:date,person_nickname:text,intensity:text' ] || fail "schema evolution requires the original DWD structure: $columns"
+    values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', activity_id, activity_date, person_nickname, intensity), ';' ORDER BY activity_id) FROM public.${DWD_TARGET}")
+    [ "$values" = 'activity-1|2026-01-01|Alice|EASY;activity-3|2026-01-03|Carol|HARD' ] || fail "schema evolution requires exact completed DWD rows: $values"
+    postgres_sql <<SQL_EVOLVE
+BEGIN;
+ALTER TABLE public.${DWD_TARGET} RENAME COLUMN person_nickname TO person_display_name;
+ALTER TABLE public.${DWD_TARGET} ALTER COLUMN activity_date TYPE timestamp without time zone USING activity_date::timestamp;
+COMMIT;
+SQL_EVOLVE
+    echo "Online Transfer DWD physical schema is evolved"
     ;;
   verify)
     assert_owned

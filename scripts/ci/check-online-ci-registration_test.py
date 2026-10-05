@@ -660,7 +660,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in (
             ("scripts/test/transfer-relational-sql-etl-online.py", '"meta.lineage.read"'),
             ("scripts/test/transfer-relational-sql-etl-online.py", "validate_mongodb_execution"),
-            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.transfer-relational-sql-etl-browser/v4"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "verify_historical_schema"),
+            ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "TYPE timestamp without time zone USING activity_date::timestamp"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "manager_evolved_schema_verified: true"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.transfer-relational-sql-etl-browser/v5"),
             ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "--tmpfs /data/db --tmpfs /data/configdb"),
             ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "manager_mongodb_field_graph_verified: true"),
             ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "expect(mongodbGraphRequests).toBe(1)"),

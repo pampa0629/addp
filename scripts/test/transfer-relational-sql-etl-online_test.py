@@ -131,7 +131,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
     @staticmethod
     def browser_report(name: str) -> dict[str, object]:
         return {
-            "schema_version": "addp.transfer-relational-sql-etl-browser/v4",
+            "schema_version": "addp.transfer-relational-sql-etl-browser/v5",
             "suite": "transfer-relational-sql-etl",
             "run_id": "run-123",
             "result": "passed",
@@ -149,11 +149,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "query_field_lineage_verified": True,
             "manager_mongodb_field_graph_verified": True,
             "manager_orchestrated_field_graph_verified": True,
+            "manager_evolved_schema_verified": True,
         }
 
     def test_browser_proofs_and_current_report_version_are_required(self):
         name = ONLINE.task_name("run-123")
-        for key in ("manager_field_graph_verified", "query_field_lineage_verified", "manager_mongodb_field_graph_verified", "manager_orchestrated_field_graph_verified"):
+        for key in ("manager_field_graph_verified", "query_field_lineage_verified", "manager_mongodb_field_graph_verified", "manager_orchestrated_field_graph_verified", "manager_evolved_schema_verified"):
             with self.subTest(key=key):
                 report = self.browser_report(name)
                 report[key] = False
@@ -194,6 +195,61 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 mutate(graph)
                 with self.assertRaises(ONLINE.SuiteError):
                     ONLINE.validate_field_graph(graph, 11, "area", expected)
+
+    def test_schema_scan_rejects_old_edges_false_completeness_and_mixed_hashes(self):
+        def response(client, item, field):
+            node = {"kind": "field_ref", "item_id": item, "field_name": field, "schema_snapshot_hash": "sha256:new"}
+            return {"field_lineage_status": "unavailable", "truncated": False, "subject": node.copy(), "nodes": [node], "edges": []}
+        client = SimpleNamespace(request=Mock(return_value=SimpleNamespace(payload={})))
+        with patch.object(ONLINE, "field_graph_request", side_effect=response):
+            result = ONLINE.verify_unproven_schema(client, 11, "sha256:old")
+            self.assertEqual(result["schema_snapshot_hash"], "sha256:new")
+            self.assertEqual(set(result["field_graphs"]), {"activity_id", "activity_date", "person_display_name", "intensity"})
+        self.assertEqual(client.request.call_args.args[-1], (404,))
+        self.assertIn("field_name=person_nickname", client.request.call_args.args[1])
+        for mutate in (
+            lambda graph: graph.update(field_lineage_status="complete"),
+            lambda graph: graph["edges"].append({"status": "stale"}),
+            lambda graph: graph["subject"].update(schema_snapshot_hash="sha256:old"),
+            lambda graph: graph["nodes"][0].update(field_name="person_nickname"),
+        ):
+            def invalid(client, item, field):
+                graph = response(client, item, field)
+                mutate(graph)
+                return graph
+            with patch.object(ONLINE, "field_graph_request", side_effect=invalid), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.verify_unproven_schema(client, 11, "sha256:old")
+
+    def test_old_schema_history_keeps_exact_hashes_execution_and_lifecycle(self):
+        as_of = "2026-10-05T00:00:02Z"
+        expected = {"area": {(5, "status", 7, "region_name", "direct", "replacement"), (7, "region_name", 11, "area", "direct", "hop")}}
+        hashes = {item: f"sha256:table-{item}" for item in (5, 7, 11)}
+        def graph():
+            value = self.field_graph()
+            value["as_of"] = as_of
+            for edge in value["edges"]:
+                edge["last_observed_at"] = "2026-10-05T00:00:01Z"
+            value["edges"][-1]["status"] = "closed"
+            return value
+        with patch.object(ONLINE, "field_graph_request", return_value=graph()) as request:
+            ONLINE.verify_historical_schema(None, 11, hashes, as_of, expected, "closed")
+        request.assert_called_once_with(None, 11, "area", schema_snapshot_hash=hashes[11], as_of=as_of)
+        for mutate in (
+            lambda value: value["edges"][-1]["evidence"].update(execution_id="future-write"),
+            lambda value: value["edges"][-1].update(status="active"),
+            lambda value: value["edges"][-1].update(transformation="derived"),
+            lambda value: value["nodes"][-1].update(schema_snapshot_hash="sha256:new"),
+            lambda value: value.pop("as_of"),
+            lambda value: value.update(as_of="2026-10-05T00:00:03Z"),
+            lambda value: value["edges"][-1].update(last_observed_at="2026-10-05T00:00:03Z"),
+        ):
+            value = graph()
+            mutate(value)
+            with patch.object(ONLINE, "field_graph_request", return_value=value), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.verify_historical_schema(None, 11, hashes, as_of, expected, "closed")
+        for invalid in (None, "bad-time", "2026-10-05T00:00:02"):
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.verify_historical_schema(None, 11, hashes, invalid, expected, "closed")
 
     def test_generated_evidence_has_no_source_edge_and_is_not_unavailable(self):
         graph = self.field_graph()
@@ -273,7 +329,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v4")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v5")
         self.assertEqual(report["created_resources"], 8)
         self.assertEqual(report["deleted_resources"], 8)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
@@ -486,6 +542,9 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         created, starts, proofs, paths = [], [], [], []
         def request(method, path, status, body=None):
             if method == "GET":
+                if status == (404,):
+                    self.assertIn("field_name=person_nickname", path)
+                    return SimpleNamespace(payload={})
                 self.assertTrue(path.startswith("/api/v1/monitor/executions/by-execution-id/"))
                 identifier = path.rsplit("/", 1)[1]
                 key, round_id = identifier.split("-")
@@ -500,7 +559,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         def owner(client, module, identifier, timeout):
             round_id = identifier.rsplit("-", 1)[1]
             if module == "orchestrator":
-                return {"source_task_id": "10", "tenant_id": 2, "metadata": {"step_results": {key: {"status": "success", "result": {"execution_id": key + "-" + round_id}} for key in ("ods", "dim", "dwd")}}}
+                return {"source_task_id": "10", "tenant_id": 2, "completed_at": "2026-10-05T00:00:0" + round_id + "Z", "metadata": {"step_results": {key: {"status": "success", "result": {"execution_id": key + "-" + round_id}} for key in ("ods", "dim", "dwd")}}}
             if module == "transfer":
                 execution, task = self.mongodb_execution(identifier), 7
             else:
@@ -514,22 +573,33 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             return execution
         hashes = {20: "sha256:mongo", 22: "sha256:ods", 23: "sha256:dim", 24: "sha256:dwd"}
         def graph(client, item_id, field, expected, timeout):
+            if len(starts) == 3:
+                hashes[24] = "sha256:evolved"
             proofs.append((field, expected))
             identities = {(edge[0], edge[1]) for edge in expected} | {(edge[2], edge[3]) for edge in expected}
             return {"nodes": [{"item_id": item, "field_name": name, "schema_snapshot_hash": hashes[item], "engine_id": 4 if item == 20 else 3} for item, name in identities]}
-        with patch.object(ONLINE, "find_item", side_effect=lambda client, engine, full_name, kind: items[full_name]), patch.object(ONLINE, "wait_owner_execution", side_effect=owner), patch.object(ONLINE, "wait_field_graph", side_effect=graph), patch.object(ONLINE, "wait_resource_chain") as resource, patch.object(ONLINE, "wait_for_scan") as scan:
+        with patch.object(ONLINE, "find_item", side_effect=lambda client, engine, full_name, kind: items[full_name]), patch.object(ONLINE, "wait_owner_execution", side_effect=owner), patch.object(ONLINE, "wait_field_graph", side_effect=graph), patch.object(ONLINE, "wait_resource_chain") as resource, patch.object(ONLINE, "wait_for_scan", return_value="schema-scan") as scan, patch.object(ONLINE, "evolve_fixture") as evolve, patch.object(ONLINE, "verify_unproven_schema", return_value={"schema_snapshot_hash": "sha256:evolved", "field_graphs": {}}) as unproven, patch.object(ONLINE, "verify_historical_schema", return_value={}) as history:
             report = ONLINE.run_orchestrated_lineage(SimpleNamespace(request=request), 3, 2, mongodb, "run-name", 30, paths)
         self.assertEqual(len(created), 3)
-        self.assertEqual(starts, ["/api/v1/orchestrator/orchestrations/10/execute"] * 2)
+        self.assertEqual(starts, ["/api/v1/orchestrator/orchestrations/10/execute"] * 3)
         self.assertEqual(len(paths), 3)
-        self.assertEqual(resource.call_count, 2)
-        scan.assert_not_called()
-        self.assertEqual(len(proofs), 24)
+        self.assertEqual(resource.call_count, 3)
+        scan.assert_called_once()
+        evolve.assert_called_once_with()
+        unproven.assert_called_once_with(unittest.mock.ANY, 24, "sha256:dwd")
+        self.assertEqual([call.args[-1] for call in history.call_args_list], ["stale", "closed"])
+        self.assertTrue(all(call.args[3] == "2026-10-05T00:00:02Z" for call in history.call_args_list))
+        self.assertTrue(all(call.args[2][24] == "sha256:dwd" for call in history.call_args_list))
+        self.assertEqual(len(proofs), 36)
         date = next(expected for field, expected in reversed(proofs) if field == "activity_date")
-        self.assertEqual({edge[5] for edge in date}, {"ods-2", "dim-2", "dwd-2"})
+        self.assertEqual({edge[5] for edge in date}, {"ods-3", "dim-3", "dwd-3"})
         self.assertEqual(len(date), 3)
-        self.assertEqual(mongodb["latest_execution_id"], "ods-2")
-        self.assertEqual([value["parent_execution_id"] for value in report["rounds"]], ["root-1", "root-2"])
+        self.assertIn((23, "activity_date", 24, "activity_date", "derived", "dwd-3"), date)
+        self.assertTrue(any(field == "person_display_name" for field, _ in proofs))
+        self.assertEqual(mongodb["latest_execution_id"], "ods-3")
+        self.assertEqual(report["schema_evolution"]["old_hash"], "sha256:dwd")
+        self.assertEqual(report["schema_evolution"]["new_hash"], "sha256:evolved")
+        self.assertEqual([value["parent_execution_id"] for value in report["rounds"]], ["root-1", "root-2", "root-3"])
         steps = created[2][1]["steps"]
         self.assertEqual([(step["provider"], step["task_type"], step["depends_on"]) for step in steps], [("transfer", "sync", []), ("develop", "query", ["ods"]), ("develop", "query", ["dim"])])
 

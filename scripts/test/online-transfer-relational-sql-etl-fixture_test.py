@@ -17,6 +17,7 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self.bin = self.root / 'bin'
         self.postgres_state = self.root / 'postgres-running'
         self.mongodb_state = self.root / 'mongodb-running'
+        self.schema_state = self.root / 'evolved-schema'
         self.log = self.root / 'fixture.log'
         self.secrets = self.root / 'addp-online-secret-test'
         (self.root / 'business/scripts').mkdir(parents=True)
@@ -65,6 +66,10 @@ case "$1" in
       *" -Atc "*|*" -c "*) ;;
       *) input=$(cat)
          printf 'stdin:%s\n' "$input" >> "$ADDP_TEST_FIXTURE_LOG"
+         if [[ "$input" == *"ALTER TABLE"* ]]; then
+           [ "${ADDP_TEST_EVOLVE_FAIL:-0}" != 1 ] || exit 1
+           touch "$ADDP_TEST_SCHEMA_STATE"
+         fi
          if [[ "$input" == *"CREATE ROLE"* ]] && [ "${ADDP_TEST_SEED_FAIL:-0}" = 1 ]; then
            echo "SECRET_MARKER: $*" >&2
            exit 1
@@ -74,9 +79,17 @@ case "$1" in
       *"string_agg(column_name"*"addp_online_transfer_mongodb_ods"*) echo 'activity_id,activity_status,activity_date_raw,activity_level_raw,leader_person_id,leader_nickname_snapshot' ;;
       *"addp_online_transfer_mongodb_ods"*) echo "${ADDP_TEST_MONGODB_VALUES:-activity-1|active|2026-01-01|easy|person-1|Alice;activity-2|inactive|2026-01-02|moderate|person-2|Bob;activity-3|active|2026-01-03|hard|person-3|Carol}" ;;
 
-      *"string_agg(table_name"*) echo 'addp_online_transfer_dim_activity:date,addp_online_transfer_dwd_activity:date' ;;
+      *"string_agg(table_name"*) echo "${ADDP_TEST_DATE_TYPES:-addp_online_transfer_dim_activity:date,addp_online_transfer_dwd_activity:timestamp without time zone}" ;;
+      *"string_agg(column_name ||"*)
+        if [ -f "$ADDP_TEST_SCHEMA_STATE" ]; then echo 'changed'; else echo 'activity_id:text,activity_date:date,person_nickname:text,intensity:text'; fi ;;
+      *"string_agg(column_name"*"addp_online_transfer_dwd_activity"*) echo "${ADDP_TEST_DWD_COLUMNS:-activity_id,activity_date,person_display_name,intensity}" ;;
       *"addp_online_transfer_dim_activity"*) echo "${ADDP_TEST_DIM_VALUES:-activity-1|2026-01-01;activity-2|2026-01-02;activity-3|2026-01-03}" ;;
-      *"addp_online_transfer_dwd_activity"*) echo "${ADDP_TEST_DWD_VALUES:-activity-1|2026-01-01|Alice|EASY;activity-3|2026-01-03|Carol|HARD}" ;;
+      *"addp_online_transfer_dwd_activity"*)
+        if [ -f "$ADDP_TEST_SCHEMA_STATE" ]; then
+          echo "${ADDP_TEST_DWD_VALUES:-activity-1|2026-01-01 00:00:00|Alice|EASY;activity-3|2026-01-03 00:00:00|Carol|HARD}"
+        else
+          echo "${ADDP_TEST_DWD_VALUES:-activity-1|2026-01-01|Alice|EASY;activity-3|2026-01-03|Carol|HARD}"
+        fi ;;
       *"numeric_precision"*) echo '8|2' ;;
       *"generated_label"*) echo "${ADDP_TEST_NATIVE_VALUES:-5|1411.50|3|2|5}" ;;
       *"WHERE area"*) echo '5|1411.50|3|2' ;;
@@ -93,7 +106,7 @@ esac
                                 ADDP_ONLINE_SECRET_DIR=str(self.secrets),
                                 ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-engine.json'),
                                 ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-mongodb-engine.json'),
-                                ADDP_TEST_MONGODB_STATE=str(self.mongodb_state),
+                                ADDP_TEST_MONGODB_STATE=str(self.mongodb_state), ADDP_TEST_SCHEMA_STATE=str(self.schema_state),
                                 ADDP_TEST_POSTGRES_STATE=str(self.postgres_state), ADDP_TEST_FIXTURE_LOG=str(self.log))
 
     def tearDown(self):
@@ -111,7 +124,7 @@ esac
                               cwd=self.root, env=environment, capture_output=True, text=True, timeout=20)
 
     def test_owns_projection_filter_verification_and_cleanup(self):
-        for action in ('start', 'status', 'verify', 'stop'):
+        for action in ('start', 'status', 'evolve', 'verify', 'stop'):
             result = self.run_fixture(action)
             self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.log.read_text()
@@ -155,7 +168,7 @@ esac
     def test_refuses_existing_source_and_foreign_ownership(self):
         self.postgres_state.write_text('foreign-owner')
         self.assertNotEqual(self.run_fixture('start').returncode, 0)
-        for action in ('stop', 'verify', 'status'):
+        for action in ('stop', 'evolve', 'verify', 'status'):
             result = self.run_fixture(action)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('ownership mismatch', result.stderr)
@@ -186,6 +199,30 @@ esac
             result = self.run_fixture('verify', **flags)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(message, result.stderr)
+
+    def test_physical_evolution_is_atomic_once_and_retains_least_privilege(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        self.assertEqual(self.run_fixture('evolve').returncode, 0)
+        commands = self.log.read_text()
+        self.assertIn('BEGIN;\nALTER TABLE public.addp_online_transfer_dwd_activity RENAME COLUMN person_nickname TO person_display_name;', commands)
+        self.assertIn('TYPE timestamp without time zone USING activity_date::timestamp;\nCOMMIT;', commands)
+        self.assertNotIn('GRANT ALTER', commands)
+        self.assertNotIn('GRANT ALL', commands)
+        self.assertNotEqual(self.run_fixture('evolve').returncode, 0)
+        self.assertEqual(self.log.read_text().count('RENAME COLUMN person_nickname'), 1)
+        for flags, message in (({'ADDP_TEST_DATE_TYPES': 'addp_online_transfer_dim_activity:date,addp_online_transfer_dwd_activity:date'}, 'expected physical types'),
+                               ({'ADDP_TEST_DWD_COLUMNS': 'activity_id,activity_date,person_nickname,intensity'}, 'evolved DWD columns')):
+            result = self.run_fixture('verify', **flags)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(message, result.stderr)
+
+    def test_evolution_failure_and_bad_previous_rows_cannot_claim_success(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        for flags in ({'ADDP_TEST_EVOLVE_FAIL': '1'}, {'ADDP_TEST_DWD_VALUES': 'wrong-old-rows'}):
+            result = self.run_fixture('evolve', **flags)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('physical schema is evolved', result.stdout)
+            self.assertFalse(self.schema_state.exists())
 
     def test_rejects_incorrect_nested_ods_values(self):
         self.assertEqual(self.run_fixture('start').returncode, 0)
