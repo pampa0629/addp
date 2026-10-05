@@ -763,7 +763,7 @@ function fitView() {
 
 function zoomBy(ratio) {
   if (!graphInstance.value) return
-  const nextZoom = Math.min(2.5, Math.max(0.1, graphInstance.value.getZoom() * ratio))
+  const nextZoom = Math.min(2.5, graphInstance.value.getZoom() * ratio)
   graphInstance.value.zoomTo(nextZoom)
 }
 
@@ -840,7 +840,8 @@ async function renderGraph(preserveView = false) {
     container: canvasRef.value,
     width,
     height: canvasRef.value.clientHeight,
-    minZoom: 0.1,
+    // Fit-view must include arbitrarily tall field cards; entry sets readable zoom separately.
+    minZoom: 0,
     maxZoom: 2.5,
     modes: { default: ['drag-canvas', 'zoom-canvas', { ...dragBehavior, shouldBegin: event => event.target?.get('name') !== 'lineage-toggle-fields' && dragBehavior.shouldBegin(event) }] },
     plugins: [new G6.Tooltip({

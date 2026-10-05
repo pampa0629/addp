@@ -65,7 +65,7 @@ export async function observeLineageCanvas(page) {
       if (points.length > 1 && this.canvas.closest('.lineage-canvas')) {
         const records = paths.get(this.canvas) || []
         records.push(points.slice())
-        paths.set(this.canvas, records.slice(-1000))
+        paths.set(this.canvas, records)
       }
       return stroke.apply(this, args)
     }
@@ -86,7 +86,7 @@ export async function observeLineageCanvas(page) {
         const bounds = this.canvas.getBoundingClientRect()
         if (record.x <= bounds.width && record.x + record.width >= 0 &&
           record.y - record.fontSize <= bounds.height && record.y + record.fontSize >= 0) current.push(record)
-        frames.set(this.canvas, current.slice(-1000))
+        frames.set(this.canvas, current)
       }
       return paint.call(this, text, x, y, ...args)
     }

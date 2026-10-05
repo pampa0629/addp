@@ -3,6 +3,16 @@ import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLin
 import { managerAuthContext } from './managerAuthContext.js'
 import { FIELD_CARD_WIDTH, FIELD_FONT_SIZE, FIELD_HEADER_HEIGHT, FIELD_ROW_HEIGHT } from '../../../common-frontend/graph/src/lineageFields.js'
 
+async function zoomAt(page, canvas, point, zoom) {
+  const box = await canvas.boundingBox()
+  await page.mouse.move(box.x + point.x, box.y + point.y)
+  // G6's standard wheel gesture increases zoom by 1 / 0.9 per event.
+  for (let current = zoom; current < 0.5; current /= 0.9) {
+    await page.mouse.wheel(0, -100)
+    await lineageCanvasSnapshot(canvas)
+  }
+}
+
 const locator = 'addp://engine/9/path/public/current?type=table&item_id=3'
 const node = id => ({ kind: 'data_item', item_id: id, name: id === 3 ? 'current' : `source_${id}`, full_name: `public.table_${id}`, engine_id: 9, engine_name: 'Lineage PostgreSQL', item_type: 'table' })
 const edge = (source, target) => ({ source: node(source), target: node(target), relation_kind: 'derive', granularity: 'item' })
@@ -33,6 +43,34 @@ test('canvas observations wait for queued text and path repaint', async ({ page 
     expect(rows.find(row => row.text === 'current').x).toBe(120)
     if (observation.paths) expect(observation.paths.at(-1).at(-1).x).toBe(120)
   }
+})
+
+test('canvas observations retain every label and curve in a wide graph', async ({ page }) => {
+  await observeLineageCanvas(page)
+  await page.goto('about:blank')
+  await page.setContent('<div class="lineage-canvas"><canvas width="400" height="2400"></canvas></div>')
+  const canvas = page.locator('canvas')
+  await canvas.evaluate(element => {
+    const context = element.getContext('2d')
+    context.font = '1px sans-serif'
+    for (let index = 0; index < 1100; index++) context.fillText(`field.${index}`, 10, index * 2 + 1)
+    for (let index = 0; index < 800; index++) {
+      // G6 paints an edge's halo and key stroke at the same endpoints.
+      for (let stroke = 0; stroke < 2; stroke++) {
+        context.beginPath()
+        context.moveTo(100, index * 2)
+        context.bezierCurveTo(150, index * 2, 200, index * 2, 250, index * 2)
+        context.stroke()
+      }
+    }
+  })
+  const snapshot = await lineageCanvasSnapshot(canvas)
+  expect(snapshot.rows).toHaveLength(1100)
+  expect(snapshot.paths).toHaveLength(800)
+  expect(snapshot.rows[0].text).toBe('field.0')
+  expect(snapshot.rows.at(-1).text).toBe('field.1099')
+  await canvas.evaluate(element => element.getContext('2d').clearRect(0, 0, element.width, element.height))
+  expect(await lineageCanvasSnapshot(canvas)).toEqual({ rows: [], paths: [] })
 })
 
 for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
@@ -88,7 +126,7 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
     await expect(page.locator('.lineage-summary')).toContainText(`${fieldCount} 个节点 · ${linkCount} 条关系`)
     // Entry focuses the root at a readable size, even when a source has hundreds of columns.
     // G6's Float32 viewport matrix introduces sub-millionth-pixel rounding.
-    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'field_3.0')?.fontSize).toBeCloseTo(11, 5)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => /^field_3\./.test(row.text))?.fontSize).toBeCloseTo(11, 5)
     timings.initialRenderMs = Date.now() - renderStarted
     await page.getByRole('button', { name: '适应窗口', exact: true }).click()
     const fieldRows = rows => rows.filter(row => /^field_\d+\.\d+$/.test(row.text))
@@ -133,19 +171,33 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
     }
     await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(fieldCount)
     await verifyCards()
+    const overviewFont = (await lineageCanvasText(canvas)).find(row => row.text === 'current').fontSize
+    await page.getByRole('button', { name: '缩小', exact: true }).click()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'current')?.fontSize).toBeCloseTo(overviewFont * 0.8, 5)
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
     await verifyPorts()
-    const header = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
-    const stationary = (await lineageCanvasText(canvas)).find(row => row.text === 'current')
+    // At overview scale a 500-column card's toggle is smaller than one pixel.
+    // Zoom around its header as a user would before operating that control.
+    let header = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
+    await zoomAt(page, canvas, { x: header.x, y: header.y }, header.fontSize / 15)
+    header = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
     await toggleLineageTableFields(page, canvas, 'source_1')
-    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(fieldCount - columnCount)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).some(row => row.text === `${columnCount} 个字段`)).toBe(true)
     expect((await lineageCanvasText(canvas)).find(row => row.text === 'source_1').y).toBeCloseTo(header.y, 1)
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(fieldCount - columnCount)
+    header = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
+    const stationary = (await lineageCanvasText(canvas)).find(row => row.text === 'current')
     await dragLineageTable(page, canvas, 'source_1', 35, 30)
     await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')?.y).toBeCloseTo(header.y + 30, 1)
     const unchanged = (await lineageCanvasText(canvas)).find(row => row.text === 'current')
     expect(unchanged.x).toBeCloseTo(stationary.x, 1)
     expect(unchanged.y).toBeCloseTo(stationary.y, 1)
     await verifyPorts(true)
+    header = (await lineageCanvasText(canvas)).find(row => row.text === 'source_1')
+    await zoomAt(page, canvas, { x: header.x, y: header.y }, header.fontSize / 15)
     await toggleLineageTableFields(page, canvas, 'source_1')
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
     await expect.poll(async () => fieldRows(await lineageCanvasText(canvas)).length).toBe(fieldCount)
     await verifyPorts()
     await page.getByRole('button', { name: '收起字段', exact: true }).click()
@@ -293,8 +345,8 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
     }
     await ports()
     const title = (await lineageCanvasText(canvas)).find(row => row.text === 'current')
-    await dragLineageTable(page, canvas, 'current', 0, 25)
-    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'current')?.y).toBeCloseTo(title.y + 25, 1)
+    await dragLineageTable(page, canvas, 'current', 25, 0)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'current')?.x).toBeCloseTo(title.x + 25, 1)
     await ports()
     // The cubic midpoint remains clickable and exposes the exact evidence.
     const { rows, paths } = await lineageCanvasSnapshot(canvas)
@@ -302,7 +354,17 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
     const zoom = target.fontSize / FIELD_FONT_SIZE
     const curve = paths.find(points => points.some(point => point.command === 'bezierCurveTo') &&
       Math.abs(points.at(-1).y - target.y) < 2 && Math.abs(points.at(-1).x - target.x + 12 * zoom) < 2)
-    await canvas.click({ position: { x: (curve[0].x + curve.at(-1).x) / 2, y: (curve[0].y + curve.at(-1).y) / 2 } })
+    const midpoint = { x: (curve[0].x + curve.at(-1).x) / 2, y: (curve[0].y + curve.at(-1).y) / 2 }
+    await zoomAt(page, canvas, midpoint, zoom)
+    const zoomed = await lineageCanvasSnapshot(canvas)
+    const rootRow = zoomed.rows.find(row => /^field_3\./.test(row.text))
+    const targetX = rootRow.x - 12 * rootRow.fontSize / FIELD_FONT_SIZE
+    // Match the current target port as well as the curve's direction: dirty
+    // Canvas repaints can retain an older offscreen halo in the observation.
+    const zoomedCurve = zoomed.paths.find(points => points.some(point => point.command === 'bezierCurveTo') &&
+      points.at(-1).y > points[0].y + 2 && Math.abs(points.at(-1).x - targetX) < 2)
+    await canvas.click({ position: { x: (zoomedCurve[0].x + zoomedCurve.at(-1).x) / 2,
+      y: (zoomedCurve[0].y + zoomedCurve.at(-1).y) / 2 } })
     await expect(page.locator('.lineage-inspector')).toContainText(`target-column-${columnCount - 1}`)
     await expect(page.locator('.lineage-inspector')).toContainText(`field_3.${columnCount - 1}`)
     await expect(page.locator('.lineage-summary')).toContainText(`${columnCount + 3} 个节点 · 3 条关系`)
