@@ -1,4 +1,5 @@
 import { expect, request, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { identity, json, login } from './transfer-browser-support.js'
@@ -61,7 +62,7 @@ test('protected Manager export retains its verified initiator and opens in Monit
     const dialog = frame.getByRole('dialog', { name: /导出全部结果|Export All Results/i })
     await expect(dialog).toBeVisible()
     await dialog.locator('.el-select__wrapper').click()
-    await frame.getByRole('option', { name: 'JSONL', exact: true }).click()
+    await frame.getByRole('option', { name: 'CSV', exact: true }).click()
     const fileName = `security-export-${env.ADDP_ONLINE_TEST_RUN_ID}`
     await dialog.locator('.el-input input').last().fill(fileName)
     const createdResponse = page.waitForResponse(response =>
@@ -72,7 +73,7 @@ test('protected Manager export retains its verified initiator and opens in Monit
     const response = await createdResponse
     expect(response.status()).toBe(202)
     expect(response.request().postDataJSON()).toEqual({
-      source_item_locator: env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR, format: 'jsonl', file_name: fileName
+      source_item_locator: env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR, format: 'csv', file_name: fileName
     })
     const session = await json(response, 'create export from browser')
     expect(session.transfer_execution_id).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
@@ -81,7 +82,9 @@ test('protected Manager export retains its verified initiator and opens in Monit
     const stream = await download.createReadStream()
     const chunks = []
     for await (const chunk of stream) chunks.push(chunk)
-    const rows = Buffer.concat(chunks).toString('utf8').trim().split('\n').map(line => JSON.parse(line))
+    const rows = JSON.parse(execFileSync('python3', ['-c',
+      'import csv, io, json, sys; print(json.dumps(list(csv.DictReader(io.StringIO(sys.stdin.buffer.read().decode("utf-8-sig"))))))'
+    ], { input: Buffer.concat(chunks), encoding: 'utf8' }))
     expect(rows).toHaveLength(5)
     expect(rows.map(row => String(row.id)).sort()).toEqual(['1', '2', '3', '4', '5'])
     for (const row of rows) {

@@ -633,6 +633,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/security-mysql-owner-protection-online.py", "run_export_browser(", "must dispatch and validate"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "execution.triggered_by", "export browser contract is missing"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "download.delete()", "export browser contract is missing"),
+            ("console/frontend/e2e/online/security-manager-export.spec.js", "format: 'csv'", "export browser contract is missing"),
+            ("console/frontend/e2e/online/security-manager-export.spec.js", "csv.DictReader", "export browser contract is missing"),
             ("business/scripts/online-security-owner-fixture.sh", "container ownership mismatch", "fixture contract is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN", "Hosted profile is missing"),
             (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'security-mysql-owner-protection'", "must not also dispatch"),

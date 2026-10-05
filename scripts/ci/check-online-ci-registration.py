@@ -661,6 +661,7 @@ def validate_security_mysql_owner_protection_profile(
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")
     for fragment in (
         "login(page,", "page.waitForEvent('download'", "source_item_locator",
+        "format: 'csv'", "csv.DictReader",
         "transfer_execution_id", "execution.triggered_by", "execution.source_task_id",
         "/api/v1/monitor/executions/by-execution-id/", ".execution-detail-content",
         "addp.security-manager-export-browser/v1", "download.delete()",
