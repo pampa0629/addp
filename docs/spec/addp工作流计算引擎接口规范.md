@@ -1071,7 +1071,7 @@ curl -X POST http://localhost:8100/api/workflow \
 **Q3: 如何支持异步执行？**
 - `/api/executions/<id>` 是必需接口。单进程 Python Runtime 使用公共 `ExecutionRegistry`；需要跨进程或分布式执行时，可以替换其状态持久化和调度后端，但对外状态契约保持一致。未知 ID 必须返回 `EXECUTION_NOT_FOUND`。
 
-Spark Workflow 保持同步 `/api/workflow`，本地与产品镜像统一以 `python api_server.py` 启动 Gunicorn，一个 HTTP worker、四个请求线程共享 `ExecutionRegistry`。HTTP worker 数量不限制远端 Spark Executor 数量。Runtime 先通过自身 HTTP 健康检查，再在后台使用公共注册客户端持续退避注册到 System；System 未就绪不阻塞 HTTP readiness。注册地址使用稳定 `RUNTIME_HOST` 和公共 advertised-port 规则。执行快照只在该 worker 生命周期内有效，平台业务执行历史仍由 `common.task_executions` 持有，不新增状态数据库。
+Spark Workflow 保持同步 `/api/workflow`，本地标准生命周期统一运行产品容器，镜像默认以 `python api_server.py` 启动 Gunicorn，一个 HTTP worker、四个请求线程共享 `ExecutionRegistry`。HTTP worker 数量不限制远端 Spark Executor 数量。Runtime 先通过自身 HTTP 健康检查，再在后台使用公共注册客户端持续退避注册到 System；System 未就绪不阻塞 HTTP readiness。注册地址使用稳定 `RUNTIME_HOST` 和公共 advertised-port 规则。执行快照只在该 worker 生命周期内有效，平台业务执行历史仍由 `common.task_executions` 持有，不新增状态数据库。
 
 Spark 只提供领域算子执行器和已声明输出端口适配；DAG 校验、排序、嵌套引用与 `$input` 参数统一由公共 `WorkflowRunner` 执行。单端口节点的 `all_results[task_id]` 直接返回结果，多端口返回端口对象；DataFrame 对外仅返回轻量摘要。容器默认根据选择的 Spark general Engine 连接真实集群，不强制 `SPARK_MODE=local`。镜像构建中的显式本地计算仅验证依赖，不作为分布式验收。
 

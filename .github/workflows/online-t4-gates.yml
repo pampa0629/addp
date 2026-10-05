@@ -467,12 +467,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Set up Java 11
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: '11'
-
       - name: Validate Hosted Elasticsearch readiness
         env:
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}

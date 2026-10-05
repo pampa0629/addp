@@ -36,7 +36,7 @@ show_usage() {
   echo "  -supermap-workflow 重启 SuperMap Workflow Engine (C++ Docker runtime，需先构建基础镜像)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -agent       重启 Agent Backend (Python 服务)"
-  echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
+  echo "  -spark-workflow 重启 Spark 工作流 Engine (Docker runtime)"
   echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
   echo "  -duckdb      按需编译并重启 DuckDB Federated Query Runtime"
   echo ""
@@ -655,64 +655,12 @@ restart_supermap_workflow_service() {
     bash "${SCRIPT_DIR}/supermap-workflow.sh"
 }
 
-configure_spark_workflow_java() {
-    local candidate
-    local java_major
-    local candidates=(
-        "${JAVA_HOME:-}"
-        "/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home"
-        "/usr/local/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home"
-        /usr/lib/jvm/java-11-openjdk-*
-        "/usr/lib/jvm/java-11-openjdk"
-    )
-
-    for candidate in "${candidates[@]}"; do
-        [ -x "${candidate}/bin/java" ] || continue
-        java_major=$("${candidate}/bin/java" -version 2>&1 | awk -F'[\".]' '/version/ { print $2; exit }')
-        if [ "$java_major" = "11" ]; then
-            export JAVA_HOME="$candidate"
-            export PATH="${JAVA_HOME}/bin:${PATH}"
-            echo "  Spark Workflow 使用 JDK 11: ${JAVA_HOME}"
-            return 0
-        fi
-    done
-
-    echo "❌ Spark Workflow 需要 JDK 11，当前未找到可用安装"
-    echo "   macOS 请运行: brew install openjdk@11"
-    return 1
-}
-
-detect_spark_workflow_shared_host() {
-    local interface
-    local host
-
-    if command -v route >/dev/null 2>&1 && command -v ipconfig >/dev/null 2>&1; then
-        interface=$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')
-        [ -n "$interface" ] && host=$(ipconfig getifaddr "$interface" 2>/dev/null || true)
-    elif command -v ip >/dev/null 2>&1; then
-        host=$(ip route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')
-    fi
-
-    [ -n "$host" ] || return 1
-    printf '%s\n' "$host"
-}
-
 restart_spark_workflow_service() {
-    local port="${SPARK_WORKFLOW_PORT:-8098}"
+    source "${SCRIPT_DIR}/spark-workflow.sh"
+    # Generic PID-file cleanup also releases a process left by an earlier checkout.
+    # Runtime startup itself has only the product container path.
     stop_pidfile_process ".dev-pids/spark-workflow-engine.pid" "Spark Workflow Engine"
-    stop_matching_port_process "$port" "Spark Workflow Engine" "python.*api_server\\.py|engines/spark-workflow"
-    require_service_python "engines/spark-workflow" "Spark Workflow Engine" "spark-workflow"
-    configure_spark_workflow_java
-    echo "  启动 Spark Workflow Engine..."
-    (
-        cd engines/spark-workflow
-        export PORT="$port"
-        export SPARK_WORKFLOW_SERVICE_CLIENT_SECRET="${SPARK_WORKFLOW_SERVICE_CLIENT_SECRET:-}"
-        export SPARK_WORKFLOW_SHARED_HOST="${SPARK_WORKFLOW_SHARED_HOST:-$(detect_spark_workflow_shared_host)}"
-        start_background_process "." ".dev-pids/spark-workflow-engine.pid" "logs/spark-workflow-engine.log" "logs/spark-workflow-engine-stderr.log" ./venv/bin/python api_server.py
-    )
-    wait_http_ready "Spark Workflow Engine" "http://localhost:${port}/health"
-    verify_pidfile_process_alive ".dev-pids/spark-workflow-engine.pid" "Spark Workflow Engine" "logs/spark-workflow-engine.log" "logs/spark-workflow-engine-stderr.log"
+    addp_start_spark_workflow_container
 }
 
 restart_jupyter_service() {

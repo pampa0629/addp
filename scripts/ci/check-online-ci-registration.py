@@ -1597,14 +1597,16 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
 def validate_elasticsearch_spark_profile(repository: Path, registered: set[str]) -> None:
     if 'elasticsearch-consumer-flow' not in registered:
         return
-    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
-    job = re.search(r'(?ms)^  elasticsearch-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
-    if job is None or 'actions/setup-java@' not in job.group('body') or "java-version: '11'" not in job.group('body'):
-        raise RegistrationError('ES distributed Spark Hosted acceptance requires Java 11')
     required = {
         'scripts/test/online-hosted-elasticsearch-gate.sh': (
             '-spark-workflow', 'ADDP_ONLINE_SPARK_ENGINE_ID', 'SPARK_MODE override is forbidden',
+            'start_online_spark_image_registry', 'stop_online_spark_image_registry',
+            'Runtime image identity mismatch', 'Runtime default entry mismatch', 'elasticsearch-runtime-build.txt',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+        ),
+        'scripts/dev/spark-workflow.sh': (
+            'make build-images', '--services spark-workflow-engine --verify --jobs 1',
+            '--network host', '-e WORKFLOW_BIND_HOST=127.0.0.1',
         ),
         'scripts/test/elasticsearch-consumer-flow-online.py': (
             'SPARK.worker_evidence', 'SPARK.runtime_status_evidence', 'spark_cluster_id', 'validate_workflow_nodes',

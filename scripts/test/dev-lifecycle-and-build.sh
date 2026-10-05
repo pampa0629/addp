@@ -732,7 +732,6 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
       case "$variable" in
         MATH_WORKFLOW_PORT) pidfile=math-workflow-engine ;;
         JUPYTER_API_PORT) pidfile=jupyter-api-server ;;
-        SPARK_WORKFLOW_PORT) pidfile=spark-workflow-engine ;;
         MODEL3D_WORKFLOW_PORT) pidfile=model3d-workflow-engine ;;
         *) continue ;;
       esac
@@ -741,13 +740,119 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
       printf "%s=%s\n" "$variable" "$((preferred + 10000))" >> "$ROOT_DIR/.dev-state/ports.env"
       checked=$((checked + 1))
     done < <(addp_dev_port_specs)
-    [ "$checked" -eq 4 ]
+    [ "$checked" -eq 3 ]
     addp_dev_load_saved_ports
     [ "$MATH_WORKFLOW_PORT" -eq 18089 ]
     [ "$JUPYTER_API_PORT" -eq 18097 ]
-    [ "$SPARK_WORKFLOW_PORT" -eq 18098 ]
     [ "$MODEL3D_WORKFLOW_PORT" -eq 18101 ]
   ' || fail "runtime port ownership did not match the startup PID files"
+}
+
+test_spark_product_lifecycle() {
+  ROOT_DIR="$ROOT_DIR" TEST_ROOT="$TEST_ROOT" python3 - <<'PY_SPARK'
+import os
+import pathlib
+import subprocess
+root = pathlib.Path(os.environ['ROOT_DIR'])
+script = root / 'scripts/dev/spark-workflow.sh'
+launcher = '''
+set -euo pipefail
+source "$SCRIPT"
+uname() { echo "$KERNEL"; }
+ip() { echo "1.1.1.1 dev eth0 src 192.0.2.8"; }
+make() { echo build >> "$TRACE"; [ "$BUILD_FAIL" = 0 ]; }
+curl() { return 0; }
+addp_dev_port_busy() { return 1; }
+addp_dev_owned_listener() { return 0; }
+addp_dev_remove_owned_container() { echo remove >> "$TRACE"; }
+docker() {
+  case "$1" in
+    info) return 0 ;;
+    inspect)
+      if [ "$2" = --format ]; then
+        case "$3" in
+          *Labels*) echo "$LABELS" ;;
+          *Running*) echo true ;;
+        esac
+      else
+        [ "$EXISTS" = 1 ]
+      fi ;;
+    run) printf "%s\n" "$@" > "$ARGS"; echo run >> "$TRACE"; echo container-id ;;
+    *) return 2 ;;
+  esac
+}
+addp_start_spark_workflow_container
+'''
+for kernel, hosted, explicit, expected in [('Darwin','0','','host.docker.internal'),
+                                           ('Linux','1','','127.0.0.1'),
+                                           ('Linux','0','','192.0.2.8'),
+                                           ('Darwin','0','shared.example','shared.example')]:
+    work = pathlib.Path(os.environ['TEST_ROOT']) / f'spark-product-{kernel}-{hosted}-{explicit}'
+    work.mkdir()
+    env = dict(os.environ, SCRIPT=str(script), ROOT_DIR=str(work), TRACE=str(work/'trace'),
+               ARGS=str(work/'args'), KERNEL=kernel, ADDP_ONLINE_HOSTED=hosted,
+               SPARK_WORKFLOW_SHARED_HOST=explicit, SPARK_WORKFLOW_PORT='18098', SPARK_MODE='',
+               REGISTRY='localhost:5001', IMAGE_TAG='latest', RUNTIME_HOST='', BUILD_FAIL='0', EXISTS='0', LABELS='foreign')
+    result = subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True)
+    assert result.returncode == 0, result.stderr
+    args = (work/'args').read_text().splitlines()
+    assert args[args.index('--network')+1] == 'host', args
+    assert '-p' not in args and not any(a.startswith('--add-host') for a in args), args
+    assert args[-1] == 'localhost:5001/addp-spark-workflow-engine:latest', args
+    assert '-v' not in args and '--entrypoint' not in args, args
+    assert 'WORKFLOW_BIND_HOST=127.0.0.1' in args and 'PORT=18098' in args, args
+    assert 'RUNTIME_HOST=localhost' in args, args
+    assert 'SPARK_WORKFLOW_SHARED_HOST='+expected in args, args
+    assert 'SPARK_WORKFLOW_SERVICE_CLIENT_SECRET' in args, args
+    assert (work/'trace').read_text().splitlines() == ['build','remove','run']
+    assert (work/'.dev-pids/spark-workflow-engine.pid').read_text().strip() == 'container-id'
+    for flags in ({'BUILD_FAIL':'1'}, {'EXISTS':'1'}, {'SPARK_MODE':'local'}):
+        (work/'trace').unlink()
+        (work/'args').unlink()
+        rejected = subprocess.run(['bash','-c',launcher], env=dict(env,**flags),capture_output=True,text=True)
+        assert rejected.returncode != 0, flags
+        assert not (work/'args').exists(), flags
+        assert not (work/'trace').exists() or (work/'trace').read_text().strip() == 'build', flags
+        (work/'trace').touch(); (work/'args').touch()
+for name in ('start.sh','restart.sh'):
+    text = (root/'scripts/dev'/name).read_text()
+    assert 'addp_start_spark_workflow_container' in text
+    assert 'configure_spark_workflow_java' not in text
+    assert 'detect_spark_workflow_shared_host' not in text
+assert 'spark-workflow' in (root/'scripts/dev/stop.sh').read_text()
+print('PASS: Spark lifecycle uses one product build and container path')
+PY_SPARK
+}
+
+test_spark_runtime_owned_listener() {
+  ROOT_DIR="$TEST_ROOT" PORT_SCRIPT="$PORT_SCRIPT" bash -c '
+    set -euo pipefail
+    source "$PORT_SCRIPT"
+    mock_labels=owned mock_mode="host|" mock_port=18098 mock_bind=127.0.0.1 mock_socket=owned
+    docker() {
+      if [ "$1" = exec ]; then cat >/dev/null; [ "$mock_socket" = owned ]; return; fi
+      case "$3" in
+        *Config.Labels*) [ "$mock_labels" = owned ] && printf "addp-runtimes|spark-workflow-engine|%s\n" "$ROOT_DIR" || echo foreign ;;
+        *State.Running*) echo true ;;
+        *NetworkMode*) echo "$mock_mode" ;;
+        *Config.Env*) printf "PORT=%s\nWORKFLOW_BIND_HOST=%s\n" "$mock_port" "$mock_bind" ;;
+        *) return 2 ;;
+      esac
+    }
+    addp_dev_owned_listener spark-workflow-engine 18098
+    mock_socket=foreign
+    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 11; fi
+    mock_socket=owned mock_labels=foreign
+    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 12; fi
+    mock_labels=owned mock_mode="host|host"
+    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 13; fi
+    mock_mode="bridge|"
+    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 14; fi
+    mock_mode="host|" mock_port=8098
+    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 15; fi
+    mock_port=18098 mock_bind=0.0.0.0
+    if addp_dev_owned_listener spark-workflow-engine 18098; then exit 16; fi
+  ' || fail "Spark container ownership must prove its private process holds the loopback socket"
 }
 
 test_hosted_runtime_owned_listener() {
@@ -1635,6 +1740,8 @@ test_dev_port_resolution
 test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid
 test_dev_runtime_owned_listeners_match_pidfiles
+test_spark_product_lifecycle
+test_spark_runtime_owned_listener
 test_hosted_runtime_owned_listener
 test_runtime_host_port_advertisement
 test_hosted_runtime_network

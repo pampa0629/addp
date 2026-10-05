@@ -2,6 +2,36 @@
 # Shared Hosted Online lifecycle. Source after declaring suite and fixture cleanup.
 MODE=run
 
+# The two distributed Spark suites use the product builder's owned mirror.
+spark_registry_owned=0
+start_online_spark_image_registry() {
+  spark_registry_owned=1
+  run_logged docker run -d --name "$HOSTED_SPARK_REGISTRY" --label "com.addp.online-runtime=$ONLINE_SUITE" -p 127.0.0.1:5001:5000 registry:2
+  local attempt
+  for attempt in $(seq 1 30); do
+    if curl -fsS http://127.0.0.1:5001/v2/ >/dev/null; then return 0; fi
+    [ "$attempt" -lt 30 ] || fail 'image registry readiness timed out'
+    sleep 1
+  done
+}
+
+stop_online_spark_image_registry() {
+  [ "$spark_registry_owned" -eq 1 ] || return 0
+  local status=0 image
+  if docker container inspect "$HOSTED_SPARK_REGISTRY" >/dev/null 2>&1; then
+    [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-runtime" }}' "$HOSTED_SPARK_REGISTRY")" = "$ONLINE_SUITE" ] || return 1
+    run_logged docker rm -fv "$HOSTED_SPARK_REGISTRY" || status=1
+    if docker container inspect "$HOSTED_SPARK_REGISTRY" >/dev/null 2>&1; then status=1; fi
+  fi
+  for image in "${HOSTED_FIXTURE_IMAGES[@]}"; do
+    if docker image inspect "$image" >/dev/null 2>&1; then
+      run_logged docker image rm "$image" || status=1
+      if docker image inspect "$image" >/dev/null 2>&1; then status=1; fi
+    fi
+  done
+  return "$status"
+}
+
 fail() {
   echo "Hosted Online gate failed: $*" >&2
   exit 1

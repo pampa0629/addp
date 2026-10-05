@@ -156,17 +156,17 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_hdfs_spark_profile(self.repository, registered)
             path.write_text(original)
 
-    def test_elasticsearch_spark_requires_java_worker_runtime_and_console_evidence(self) -> None:
+    def test_elasticsearch_spark_requires_product_container_worker_and_console_evidence(self) -> None:
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-hosted-elasticsearch-gate.sh',
                  'scripts/test/elasticsearch-consumer-flow-online.py', 'scripts/test/spark-online-evidence.py',
-                 'console/frontend/e2e/online/elasticsearch-consumer-flow.spec.js', 'Makefile')
+                 'console/frontend/e2e/online/elasticsearch-consumer-flow.spec.js', 'Makefile', 'scripts/dev/spark-workflow.sh')
         for relative in paths:
             destination = self.repository / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, destination)
         CHECK.validate_elasticsearch_spark_profile(self.repository, {'elasticsearch-consumer-flow'})
-        for relative, fragment in ((paths[0], "java-version: '11'"), (paths[1], '-spark-workflow'),
+        for relative, fragment in ((paths[6], '--network host'), (paths[1], '-spark-workflow'),
                                    (paths[2], 'validate_workflow_nodes'), (paths[3], 'Finished task'),
                                    (paths[4], '.workflow-final-result-json'), (paths[5], '$(MAKE) test-elasticsearch-online-runner')):
             path = self.repository / relative

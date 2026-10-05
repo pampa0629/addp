@@ -128,7 +128,7 @@ api_server.execute_workflow = lambda *args: {
     'all_results': {'a': {'rows': 20}}, 'task_order': ['a']}
 run()
 ''')
-            environment = dict(os.environ, PORT=str(port), ADDP_HTTP_TEST_ROOT=directory,
+            environment = dict(os.environ, PORT=str(port), WORKFLOW_BIND_HOST='127.0.0.1', ADDP_HTTP_TEST_ROOT=directory,
                                PYTHONPATH=os.pathsep.join([str(Path(__file__).parent.resolve()),
                                                           os.environ.get('PYTHONPATH', '')]))
             with (root / 'server.log').open('w') as log:
@@ -173,9 +173,9 @@ run()
                         process.wait(timeout=5)
 
     def test_entry_has_one_worker_multiple_threads_no_preload(self):
-        with patch.dict(os.environ, {'PORT': '28098', 'GUNICORN_CMD_ARGS': '--workers 9'}):
+        with patch.dict(os.environ, {'PORT': '28098', 'WORKFLOW_BIND_HOST': '127.0.0.1', 'GUNICORN_CMD_ARGS': '--workers 9'}):
             application = RuntimeApplication()
-        self.assertEqual(application.cfg.bind, ['0.0.0.0:28098'])
+        self.assertEqual(application.cfg.bind, ['127.0.0.1:28098'])
         self.assertEqual(application.cfg.workers, 1)
         self.assertEqual(application.cfg.threads, 4)
         self.assertFalse(application.cfg.preload_app)

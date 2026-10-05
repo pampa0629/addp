@@ -1,4 +1,4 @@
-"""The single native/container HTTP entry; Spark executors remain remote."""
+"""The product container HTTP entry; Spark executors remain remote."""
 import os
 import threading
 import time
@@ -32,7 +32,7 @@ class RuntimeApplication(BaseApplication):
         # Fixed process model: all requests share the in-worker registry. Do not
         # preload the application or create a JVM in the Gunicorn master.
         for key, value in {
-            'bind': f"0.0.0.0:{int(os.getenv('PORT', '8098'))}",
+            'bind': f"{os.getenv('WORKFLOW_BIND_HOST', '0.0.0.0')}:{int(os.getenv('PORT', '8098'))}",
             'workers': 1, 'worker_class': 'gthread', 'threads': 4,
             'timeout': 300, 'preload_app': False,
             'post_worker_init': post_worker_init,

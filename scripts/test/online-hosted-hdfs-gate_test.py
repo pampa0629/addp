@@ -9,6 +9,59 @@ SUPPORT = importlib.import_module('scripts.test.online-hosted-opengauss-gate_tes
 SCRIPT = Path(__file__).with_name('online-hosted-hdfs-gate.sh')
 
 
+def install_spark_container_fixture(host, suite, runtime):
+    host._executable('docker', '''
+            #!/usr/bin/env bash
+            case "$1 $2" in
+              'compose version') exit 0 ;;
+              'container inspect') [ "${ADDP_TEST_PREEXIST_CONTAINER:-}" != "$3" ] || exit 0; [ -f "${ADDP_TEST_GATE_TRACE}.$3" ]; exit ;;
+              'image inspect')
+                [ "${ADDP_TEST_PREEXIST_IMAGE:-0}" = 1 ] && exit 0
+                [ -f "${ADDP_TEST_GATE_TRACE}.image" ] || exit 1
+                echo sha256:runtime-image; exit 0 ;;
+              'image rm') rm -f "${ADDP_TEST_GATE_TRACE}.image"; exit 0 ;;
+            esac
+            if [ "$1" = run ]; then
+              previous= name= label=
+              for argument in "$@"; do
+                [ "$previous" != --name ] || name=$argument
+                [ "$previous" != --label ] || label=$argument
+                previous=$argument
+              done
+              echo "docker-run:$name" >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_RUNTIME_FAIL:-0}" != 1 ] || [ "$name" != addp-hdfs-online-runtime ] || exit 1
+              printf '%s\\n' "$label" > "${ADDP_TEST_GATE_TRACE}.$name"
+              exit 0
+            fi
+            if [ "$1" = inspect ]; then
+              case "$3" in
+                *Config.Labels*)
+                  label=$(cat "${ADDP_TEST_GATE_TRACE}.${@: -1}")
+                  case "$3" in
+                    *com.addp.online-runtime*) expected=com.addp.online-runtime ;;
+                    *) expected=com.addp.online-fixture ;;
+                  esac
+                  if [ "$label" = "$expected=hdfs-spark-consumer-flow" ]; then echo hdfs-spark-consumer-flow; else echo '<no value>'; fi ;;
+                *Config.Cmd*) echo '["python","api_server.py"]' ;;
+                *State.Running*) echo true ;;
+                *) echo sha256:runtime-image ;;
+              esac
+              exit 0
+            fi
+            if [ "$1" = ps ]; then
+              for container in "${ADDP_TEST_GATE_TRACE}".addp-*; do
+                [ -f "$container" ] || continue
+                [ "$(cat "$container")" != "${4#label=}" ] || echo "$container"
+              done
+            fi
+            if [ "$1" = rm ]; then
+              echo "docker-rm:$3" >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_RUNTIME_CLEANUP_FAIL:-0}" != 1 ] || [ "$3" != addp-hdfs-online-runtime ] || exit 1
+              rm -f "${ADDP_TEST_GATE_TRACE}.$3"
+            fi
+        '''.replace('hdfs-spark-consumer-flow', suite).replace('addp-hdfs-online-runtime', runtime))
+
+
 class HostedHDFSGateTest(unittest.TestCase):
     def setUp(self):
         self.host = SUPPORT.OnlineHostedOpenGaussGateTest()
@@ -78,56 +131,7 @@ class HostedHDFSGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             exit 0
         ''')
-        self.host._executable('docker', '''
-            #!/usr/bin/env bash
-            case "$1 $2" in
-              'compose version') exit 0 ;;
-              'container inspect') [ "${ADDP_TEST_PREEXIST_CONTAINER:-}" != "$3" ] || exit 0; [ -f "${ADDP_TEST_GATE_TRACE}.$3" ]; exit ;;
-              'image inspect')
-                [ "${ADDP_TEST_PREEXIST_IMAGE:-0}" = 1 ] && exit 0
-                [ -f "${ADDP_TEST_GATE_TRACE}.image" ] || exit 1
-                echo sha256:runtime-image; exit 0 ;;
-              'image rm') rm -f "${ADDP_TEST_GATE_TRACE}.image"; exit 0 ;;
-            esac
-            if [ "$1" = run ]; then
-              previous= name= label=
-              for argument in "$@"; do
-                [ "$previous" != --name ] || name=$argument
-                [ "$previous" != --label ] || label=$argument
-                previous=$argument
-              done
-              echo "docker-run:$name" >> "$ADDP_TEST_GATE_TRACE"
-              [ "${ADDP_TEST_RUNTIME_FAIL:-0}" != 1 ] || [ "$name" != addp-hdfs-online-runtime ] || exit 1
-              printf '%s\\n' "$label" > "${ADDP_TEST_GATE_TRACE}.$name"
-              exit 0
-            fi
-            if [ "$1" = inspect ]; then
-              case "$3" in
-                *Config.Labels*)
-                  label=$(cat "${ADDP_TEST_GATE_TRACE}.${@: -1}")
-                  case "$3" in
-                    *com.addp.online-runtime*) expected=com.addp.online-runtime ;;
-                    *) expected=com.addp.online-fixture ;;
-                  esac
-                  if [ "$label" = "$expected=hdfs-spark-consumer-flow" ]; then echo hdfs-spark-consumer-flow; else echo '<no value>'; fi ;;
-                *Config.Cmd*) echo '["python","api_server.py"]' ;;
-                *State.Running*) echo true ;;
-                *) echo sha256:runtime-image ;;
-              esac
-              exit 0
-            fi
-            if [ "$1" = ps ]; then
-              for container in "${ADDP_TEST_GATE_TRACE}".addp-hdfs-*; do
-                [ -f "$container" ] || continue
-                [ "$(cat "$container")" != "${4#label=}" ] || echo "$container"
-              done
-            fi
-            if [ "$1" = rm ]; then
-              echo "docker-rm:$3" >> "$ADDP_TEST_GATE_TRACE"
-              [ "${ADDP_TEST_RUNTIME_CLEANUP_FAIL:-0}" != 1 ] || [ "$3" != addp-hdfs-online-runtime ] || exit 1
-              rm -f "${ADDP_TEST_GATE_TRACE}.$3"
-            fi
-        ''')
+        install_spark_container_fixture(self.host, 'hdfs-spark-consumer-flow', 'addp-hdfs-online-runtime')
         self.host._write_repository_script('.env.example', 'SPARK_WORKFLOW_PORT=8098\n')
         self.host._executable('npm', '''
             #!/usr/bin/env bash

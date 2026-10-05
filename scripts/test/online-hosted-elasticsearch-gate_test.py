@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 SUPPORT = importlib.import_module('scripts.test.online-hosted-opengauss-gate_test')
+SPARK_SUPPORT = importlib.import_module('scripts.test.online-hosted-hdfs-gate_test')
 SCRIPT = Path(__file__).with_name('online-hosted-elasticsearch-gate.sh')
 
 
@@ -55,9 +56,29 @@ class HostedElasticsearchGateTest(unittest.TestCase):
             identifier = 18 if 'spark-engine.json' in sys.argv[-3] else 17
             Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={identifier}\\n')
         ''')
+        SPARK_SUPPORT.install_spark_container_fixture(self.host, 'elasticsearch-consumer-flow', 'spark-workflow-engine')
+        self.host._executable('curl', '#!/usr/bin/env bash\nexit 0\n')
+        self.host._write_repository_script('scripts/dev/start.sh', '''
+            #!/usr/bin/env bash
+            echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = -spark-workflow ]; then
+              make build-images || exit 1
+              docker run -d --name spark-workflow-engine --label com.addp.online-runtime=elasticsearch-consumer-flow
+            fi
+        ''')
+        self.host._write_repository_script('scripts/dev/stop.sh', '''
+            #!/usr/bin/env bash
+            docker rm -fv spark-workflow-engine || exit 1
+            echo application-stop >> "$ADDP_TEST_GATE_TRACE"
+        ''')
         self.host._executable('make', '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = build-images ]; then
+              [ "${ADDP_TEST_BUILD_FAIL:-0}" != 1 ] || exit 1
+              touch "${ADDP_TEST_GATE_TRACE}.image"
+              exit 0
+            fi
             [ "$ADDP_ONLINE_ELASTICSEARCH_ENGINE_ID" = 17 ] &&
               [ "$ADDP_ONLINE_SPARK_ENGINE_ID" = 18 ] &&
               [ "$SPARK_WORKFLOW_SHARED_HOST" = 127.0.0.1 ] &&
@@ -102,7 +123,7 @@ class HostedElasticsearchGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
-        sequence = ('infra-up', 'elasticsearch-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'start:-spark-workflow',
+        sequence = ('infra-up', 'elasticsearch-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'start:-spark-workflow', 'make:build-images',
                     'playwright install --with-deps chromium', '--suite elasticsearch-consumer-flow',
                     'engine-register', 'make:test-online ONLINE_SUITE=elasticsearch-consumer-flow',
                     'application-stop', 'elasticsearch-fixture:stop', 'infra-down')
@@ -116,7 +137,7 @@ class HostedElasticsearchGateTest(unittest.TestCase):
         self.assertIn('infra_cleanup=zero_residuals', summary)
 
     def test_failures_destroy_owned_resources(self):
-        for flags in ({'ADDP_TEST_FIXTURE_FAIL': 'start'}, {'ADDP_TEST_IDENTITY_FAIL': '1'},
+        for flags in ({'ADDP_TEST_BUILD_FAIL': '1'}, {'ADDP_TEST_RUNTIME_FAIL': '1'}, {'ADDP_TEST_FIXTURE_FAIL': 'start'}, {'ADDP_TEST_IDENTITY_FAIL': '1'},
                       {'ADDP_TEST_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_SUITE_FAIL': '1'}):
             with self.subTest(flags=flags):
                 self.host.trace.unlink(missing_ok=True)
@@ -127,6 +148,14 @@ class HostedElasticsearchGateTest(unittest.TestCase):
                 self.assertIn('infra-down', trace)
                 self.assertFalse(self.host.secrets.exists())
                 self.assertIn('result=failed', (self.host.artifacts / 'summary.txt').read_text())
+
+    def test_preflight_refuses_existing_product_resources(self):
+        for flags in ({'ADDP_TEST_PREEXIST_CONTAINER': 'spark-workflow-engine'},
+                      {'ADDP_TEST_PREEXIST_CONTAINER': 'addp-elasticsearch-online-registry'},
+                      {'ADDP_TEST_PREEXIST_IMAGE': '1'}):
+            result = self.run_gate(check=True, **flags)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.host.trace.exists())
 
     def test_cleanup_failure_cannot_be_reported_as_passed(self):
         result = self.run_gate(ADDP_TEST_FIXTURE_FAIL='stop')

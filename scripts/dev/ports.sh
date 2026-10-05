@@ -69,6 +69,47 @@ addp_dev_owned_listener() {
   local name="$1" port="$2" pidfile owner listener listeners
   pidfile="${ROOT_DIR}/.dev-pids/${name}.pid"
   case "$name" in
+    spark-workflow-engine)
+      local container="$name" labels mode
+      labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || return 1
+      [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ] || return 1
+      [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ] || return 1
+      mode=$(docker inspect --format '{{.HostConfig.NetworkMode}}|{{.HostConfig.PidMode}}' "$container") || return 1
+      [ "$mode" = "host|" ] || return 1
+      docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" |
+        awk -v port="$port" '$0 == "PORT=" port { correct_port=1 } $0 == "WORKFLOW_BIND_HOST=127.0.0.1" { loopback=1 } END { exit !(correct_port && loopback) }' || return 1
+      # Desktop PIDs belong to the Linux VM, not to macOS. In a private PID
+      # namespace, only this container can hold the listening socket's inode.
+      docker exec -i "$container" python - "$port" <<'PY_SOCKET'
+import os
+import pathlib
+import sys
+port = int(sys.argv[1])
+inodes = set()
+for table in ('tcp', 'tcp6'):
+    for line in pathlib.Path('/proc/net/' + table).read_text().splitlines()[1:]:
+        fields = line.split()
+        address, number = fields[1].split(':')
+        if fields[3] == '0A' and int(number, 16) == port and address in {
+            '0100007F', '00000000000000000000000001000000'}:
+            inodes.add('socket:[' + fields[9] + ']')
+for process in pathlib.Path('/proc').iterdir():
+    if not process.name.isdigit():
+        continue
+    try:
+        descriptors = list((process / 'fd').iterdir())
+    except OSError:
+        continue
+    for descriptor in descriptors:
+        try:
+            if os.readlink(descriptor) in inodes:
+                sys.exit(0)
+        except OSError:
+            continue
+sys.exit(1)
+PY_SOCKET
+      return $?
+      ;;
     geopython-workflow|pointcloud-workflow|document-workflow|supermap-workflow)
       local container="${name}-engine" labels mapping mode
       labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || return 1

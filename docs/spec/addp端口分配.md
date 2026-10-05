@@ -33,6 +33,8 @@ Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hos
 
 普通本地开发的 GeoPython、PointCloud、Document 容器 Runtime 使用 bridge 网络，在内部固定端口监听，通过 `host.docker.internal` 访问宿主机服务；向 System 自注册时，开发启动通过 `RUNTIME_PUBLIC_PORT` 传递实际宿主机映射端口。Hosted Online 的原生 Linux Runner（`ADDP_ONLINE_HOSTED=1`）统一使用宿主网络：Runtime 通过 `WORKFLOW_BIND_HOST=127.0.0.1` 只监听回环地址与配置的开发端口，通过 `127.0.0.1` 访问 System、Infra 和 Business 服务，不发布 Docker 端口映射、不改写为 host gateway。两套 MinIO 仍各自只发布回环端口，源数据和平台内部产物的存储域保持独立。Hosted 标记用于非 Linux 宿主机时启动失败。`addp-runtimes` Compose 部署继续使用 Docker 服务名和固定容器端口。SuperMap Runtime 不自注册，需要按相应部署模式的实际可达地址登记。
 
+Spark Workflow 的本地开发容器固定使用宿主网络，以承载动态 Driver RPC 和 BlockManager 端口；macOS Docker Desktop 必须启用 host networking。HTTP 使用 `WORKFLOW_BIND_HOST=127.0.0.1` 与实际 `SPARK_WORKFLOW_PORT`，不使用 Docker `-p`。macOS 默认 `SPARK_WORKFLOW_SHARED_HOST=host.docker.internal`；Hosted Linux 为 `127.0.0.1`，普通 Linux 为可达的宿主路由地址。端口归属必须同时核对工作区标签、宿主网络、独立 PID namespace、声明端口与回环监听，并在容器内核对监听 socket inode 是否由其可见进程的文件描述符持有；不能把 Docker Desktop VM 的 PID 当成 macOS 进程 PID。
+
 `13306` 和 `12881` 由 `scripts/test/docker-compose.local-macos-ci.yml` 中的固定 digest MySQL 8 与 OceanBase CE 4.4.2 LTS 使用，不属于 System 或 Business 长期基础设施。两个服务都无数据卷，只绑定 `127.0.0.1`，在本地巡检的确定性门禁和编译开始前完成健康检查，并在巡检的统一退出清理中删除。
 
 ## Business (业务库)

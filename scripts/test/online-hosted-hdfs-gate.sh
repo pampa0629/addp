@@ -9,7 +9,7 @@ ONLINE_SUITE=hdfs-spark-consumer-flow
 HOSTED_FIXTURE_CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-runtime addp-hdfs-online-registry)
 RUNTIME_IMAGE=localhost:5001/addp-spark-workflow-engine:online-hdfs
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim-bookworm localhost:5001/eclipse-temurin:11-jre-jammy)
-registry_owned=0
+HOSTED_SPARK_REGISTRY=addp-hdfs-online-registry
 runtime_owned=0
 remove_owned_container() {
   local container=$1 status=0
@@ -23,15 +23,7 @@ remove_owned_container() {
 stop_online_fixture() {
   local status=0 image
   run_logged bash business/scripts/online-hdfs-spark-fixture.sh stop || status=1
-  if [ "$registry_owned" -eq 1 ]; then
-    remove_owned_container addp-hdfs-online-registry || status=1
-    for image in "${HOSTED_FIXTURE_IMAGES[@]}"; do
-      if docker image inspect "$image" >/dev/null 2>&1; then
-        run_logged docker image rm "$image" || status=1
-        if docker image inspect "$image" >/dev/null 2>&1; then status=1; fi
-      fi
-    done
-  fi
+  stop_online_spark_image_registry || status=1
   return "$status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
@@ -60,20 +52,14 @@ for start_target in -meta -manager -develop; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 # The standard builder seeds its required base images into this owned mirror.
-registry_owned=1
-run_logged docker run -d --name addp-hdfs-online-registry --label "com.addp.online-runtime=$ONLINE_SUITE" -p 127.0.0.1:5001:5000 registry:2
-for attempt in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:5001/v2/ >/dev/null; then break; fi
-  [ "$attempt" -lt 30 ] || fail 'image registry readiness timed out'
-  sleep 1
-done
+start_online_spark_image_registry
 run_logged make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --tag online-hdfs --verify --jobs 1"
 runtime_owned=1
 export ADDP_ONLINE_SPARK_RUNTIME_URL="http://127.0.0.1:$SPARK_WORKFLOW_PORT"
 # No command override: exercise exactly the product image's default entry.
 run_logged docker run -d --name addp-hdfs-online-runtime --network host \
   --label "com.addp.online-runtime=$ONLINE_SUITE" \
-  -e "PORT=$SPARK_WORKFLOW_PORT" -e SYSTEM_URL -e SPARK_WORKFLOW_SERVICE_CLIENT_SECRET \
+  -e "PORT=$SPARK_WORKFLOW_PORT" -e WORKFLOW_BIND_HOST=127.0.0.1 -e SYSTEM_URL -e SPARK_WORKFLOW_SERVICE_CLIENT_SECRET \
   -e HADOOP_USER_NAME -e SPARK_WORKFLOW_SHARED_HOST -e RUNTIME_HOST=127.0.0.1 "$RUNTIME_IMAGE"
 image_id=$(docker image inspect -f '{{.Id}}' "$RUNTIME_IMAGE")
 [ "$(docker inspect -f '{{.Image}}' addp-hdfs-online-runtime)" = "$image_id" ] || fail 'Runtime image identity mismatch'

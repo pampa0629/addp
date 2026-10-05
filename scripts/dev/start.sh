@@ -197,48 +197,6 @@ select_python() {
   exit 1
 }
 
-configure_spark_workflow_java() {
-  local candidate
-  local java_major
-  local candidates=(
-    "${JAVA_HOME:-}"
-    "/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home"
-    "/usr/local/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home"
-    /usr/lib/jvm/java-11-openjdk-*
-    "/usr/lib/jvm/java-11-openjdk"
-  )
-
-  for candidate in "${candidates[@]}"; do
-    [ -x "${candidate}/bin/java" ] || continue
-    java_major=$("${candidate}/bin/java" -version 2>&1 | awk -F'[\".]' '/version/ { print $2; exit }')
-    if [ "$java_major" = "11" ]; then
-      export JAVA_HOME="$candidate"
-      export PATH="${JAVA_HOME}/bin:${PATH}"
-      echo "Spark Workflow 使用 JDK 11: ${JAVA_HOME}"
-      return 0
-    fi
-  done
-
-  echo -e "${RED}✗ Spark Workflow 需要 JDK 11，当前未找到可用安装${NC}"
-  echo -e "${YELLOW}macOS 请运行: brew install openjdk@11${NC}"
-  return 1
-}
-
-detect_spark_workflow_shared_host() {
-  local interface
-  local host
-
-  if command -v route >/dev/null 2>&1 && command -v ipconfig >/dev/null 2>&1; then
-    interface=$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')
-    [ -n "$interface" ] && host=$(ipconfig getifaddr "$interface" 2>/dev/null || true)
-  elif command -v ip >/dev/null 2>&1; then
-    host=$(ip route get 1.1.1.1 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')
-  fi
-
-  [ -n "$host" ] || return 1
-  printf '%s\n' "$host"
-}
-
 # ============================================================
 # 模块选择逻辑
 # ============================================================
@@ -2435,132 +2393,11 @@ fi
 )
 
 start_runtime_spark() (
-  echo -e "${YELLOW}Step 4.5/5: 启动 Spark 工作流引擎...${NC}"
-
-  # 检查 Python 3 是否安装
-  if ! command -v python3 &> /dev/null; then
-      echo -e "${RED}✗ Python 3 未安装，请先安装 Python 3.11+${NC}"
-      exit 1
+  source "${SCRIPT_DIR}/spark-workflow.sh"
+  if check_service_running "spark-workflow-engine" "$SPARK_WORKFLOW_PORT"; then
+    addp_start_spark_workflow_container
   fi
-
-  # 检查 Python 版本（需要 3.11+）
-  PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-  REQUIRED_VERSION="3.11"
-  if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
-      echo -e "${RED}✗ Python 版本过低 ($PYTHON_VERSION)，需要 3.11+${NC}"
-      exit 1
-  fi
-
-# 检查并创建虚拟环境（幂等）
-NEED_INSTALL=false
-if [ ! -d "engines/spark-workflow/venv" ]; then
-    echo "首次启动，创建 Python 虚拟环境..."
-    cd engines/spark-workflow
-    # 优先使用兼容性好的 Python 版本（避免新版本兼容性问题）
-    # 优先级: 3.12 > 3.13 > 3.11 > 系统默认
-    if command -v /opt/homebrew/bin/python3.12 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.12 --version)"
-        /opt/homebrew/bin/python3.12 -m venv venv
-    elif command -v /opt/homebrew/bin/python3.13 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.13 --version)"
-        /opt/homebrew/bin/python3.13 -m venv venv
-    elif command -v /opt/homebrew/bin/python3.11 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.11 --version)"
-        /opt/homebrew/bin/python3.11 -m venv venv
-    elif command -v /opt/homebrew/bin/python3 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
-        /opt/homebrew/bin/python3 -m venv venv
-    else
-        python3 -m venv venv
-    fi
-    NEED_INSTALL=true
-else
-    # 检查关键依赖是否已安装
-    if ! ./engines/spark-workflow/venv/bin/python -c "import gunicorn, pyspark, addp_common.workflow_runtime" &> /dev/null; then
-        echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd engines/spark-workflow
-        NEED_INSTALL=true
-    else
-        echo "虚拟环境已存在且依赖完整，跳过安装"
-    fi
-fi
-
-if [ "$NEED_INSTALL" = true ]; then
-    # 使用 pip 安装依赖（更稳定，避免 uv 虚拟环境识别问题）
-    echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
-
-    # 构建 pip 安装命令（支持镜像源配置）
-    PIP_CMD="./venv/bin/python -m pip install"
-    if [ -n "$PIP_INDEX_URL" ]; then
-        echo "  使用镜像源: $PIP_INDEX_URL"
-        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
-        if [ -n "$PIP_TRUSTED_HOST" ]; then
-            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
-        fi
-    else
-        echo "  使用官方源（国外可能较慢，建议在 .env 中配置 PIP_INDEX_URL）"
-    fi
-
-    # 升级 pip 并安装依赖
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -e ../../common-python
-
-    # 检查安装是否成功
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
-    else
-        echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
-        echo -e "${YELLOW}提示：某些依赖可能需要系统库支持（如 PySpark）${NC}"
-        cd ../..
-        exit 1
-    fi
-    cd ../..
-fi
-
-# 启动 Spark 工作流引擎
-if check_service_running "spark-workflow-engine" "$SPARK_WORKFLOW_PORT"; then
-  echo "启动 Spark 工作流引擎..."
-  configure_spark_workflow_java
-  cd engines/spark-workflow
-
-  # 设置环境变量
-  export PORT=$SPARK_WORKFLOW_PORT
-  # SYSTEM_URL 已由 generate_service_urls() 自动生成
-  export SPARK_WORKFLOW_SERVICE_CLIENT_SECRET=${SPARK_WORKFLOW_SERVICE_CLIENT_SECRET:-""}
-  export SPARK_WORKFLOW_SHARED_HOST="${SPARK_WORKFLOW_SHARED_HOST:-$(detect_spark_workflow_shared_host)}"
-
-  # 直接使用虚拟环境的 Python（无需 activate）
-  ./venv/bin/python api_server.py > ../../logs/spark-workflow-engine.log 2> ../../logs/spark-workflow-engine-stderr.log &
-  SPARK_WORKFLOW_PID=$!
-  echo $SPARK_WORKFLOW_PID > ../../.dev-pids/spark-workflow-engine.pid
-  cd ../..
-
-  echo -e "${GREEN}✓ Spark 工作流引擎 已启动 (PID: $SPARK_WORKFLOW_PID)${NC}"
-
-  # 等待健康检查通过
-  echo -n "等待 Spark 工作流引擎 就绪..."
-  WAIT_COUNT=0
-  MAX_WAIT=60
-  until curl -f http://localhost:${SPARK_WORKFLOW_PORT}/health > /dev/null 2>&1; do
-    echo -n "."
-    sleep 1
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-      echo -e " ${RED}✗${NC}"
-      echo -e "${RED}✗ Spark 工作流引擎 启动超时（60秒）${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/spark-workflow-engine.log${NC}"
-      echo -e "${YELLOW}或检查错误: tail -f logs/spark-workflow-engine-stderr.log${NC}"
-      exit 1
-    fi
-  done
-  echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Spark 工作流引擎 就绪 (http://localhost:${SPARK_WORKFLOW_PORT})${NC}"
-else
-  SPARK_WORKFLOW_PID=$(cat .dev-pids/spark-workflow-engine.pid 2>/dev/null)
-  echo -e "${GREEN}✓ Spark 工作流引擎 已在运行 (PID: $SPARK_WORKFLOW_PID)${NC}"
-fi
-  echo ""
+  SPARK_WORKFLOW_PID=$(cat "${ROOT_DIR}/.dev-pids/spark-workflow-engine.pid")
 )
 
 start_runtime_jupyter() (

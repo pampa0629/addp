@@ -16,7 +16,7 @@ Spark 工作流 Engine 是 ADDP 平台的分布式空间计算引擎,基于 Apac
 ```
 engines/spark-workflow/
 ├── api_server.py           # Flask API Server (端口 8098)
-├── runtime_server.py       # 本地与容器共用的 HTTP 启动和就绪后注册
+├── runtime_server.py       # 产品容器的 HTTP 启动和就绪后注册
 ├── workflow_engine.py      # 公共 WorkflowRunner 的 Spark 领域算子适配
 ├── spark_connector.py      # 动态 SparkSession 管理器
 ├── elasticsearch_adapter.py # ES 具体索引 Mapping、数组和只读访问
@@ -64,9 +64,9 @@ engines/spark-workflow/
 
 ## 快速开始
 
-本地开发运行时固定使用 OpenJDK 11，与 Business Spark Master/Worker 保持一致。Spark 3.5 / Hadoop 3.3 不支持直接运行在 JDK 25 上，且分布式 driver/executor 不得混用 JVM 主版本；macOS 可通过 `brew install openjdk@11` 安装，`scripts/dev/start.sh` 和 `scripts/dev/restart.sh` 会自动选择该版本。
+本地开发运行时统一使用产品容器中的 Python 3.11 和 Java 11，与 Business Spark Master/Worker 保持一致，宿主机无需安装 Java 或 PySpark。标准生命周期脚本通过产品构建入口校验当前源码并启动镜像的默认入口；不挂载源码、不在运行时安装依赖。确定性测试仍使用独立 Python 测试环境，不承担 Runtime 启动。
 
-当注册的 Spark Master 使用 `localhost` 时，Workflow driver 会绑定本机所有地址，并通过 `SPARK_WORKFLOW_SHARED_HOST` 公布一个 driver 和 executor 都可访问的宿主机地址。本地启动脚本默认探测当前默认网络接口的 IPv4 地址，也可由部署者显式配置。
+本地容器使用宿主网络以承载 Driver 的动态通信端口。macOS 需要 Docker Desktop 4.34 及以上，并启用 Settings → Resources → Network → Enable host networking；Apply and restart 由用户操作。API 只绑定 `127.0.0.1`，向 System 注册实际开发端口。macOS 默认以 `host.docker.internal` 公布 Driver 和回环数据端点，Hosted Linux 使用 `127.0.0.1`。普通 Linux 默认使用宿主机路由地址；部署者须确保 Worker 同时可达该地址及数据端点，必要时显式设置既有 `SPARK_WORKFLOW_SHARED_HOST`。生产 Compose 使用自身声明的部署网络，不由开发脚本接管。
 
 Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 executor，因此两端必须使用同一个可达地址。当数据引擎连接地址是 loopback 时，Spark Workflow 只在构造 JDBC URL 时使用 `SPARK_WORKFLOW_SHARED_HOST`，System 中保存的连接配置不变；远程主机地址不会被改写。PostgreSQL JDBC URL 同时继承 System `connection_info.sslmode`。
 
@@ -76,40 +76,22 @@ Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop �
 
 保存到 PostgreSQL 时，Runtime 按 DataFrame schema 识别 Sedona Geometry 列，不依赖固定列名。空间结果先以 EWKT 写入同 schema 的唯一暂存表，再在 PostgreSQL 事务中转换为 PostGIS `geometry` 并替换或追加目标表；暂存表不作为工作流产物暴露。
 
-### 1. 安装依赖
+### 1. 配置与启动
+
+部署配置使用仓库根目录 `.env`，不读取引擎目录中的 `.env`。关键配置为 `SYSTEM_URL`、`SPARK_WORKFLOW_PORT`（默认 8098）、独立 `SPARK_WORKFLOW_SERVICE_CLIENT_SECRET`，以及应用固定的 HDFS Simple 身份 `HADOOP_USER_NAME`。默认不设置 `SPARK_MODE`，计算使用用户选择的 Spark general Engine。
+
+在仓库根目录执行：
 
 ```bash
-# 创建虚拟环境 (推荐)
-cd engines/spark-workflow
-python3 -m venv venv
-source venv/bin/activate
-
-# 安装依赖
-pip install -r requirements.txt
+make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"
+bash scripts/dev/start.sh -spark-workflow
+# 修改运行时代码后，使用同一产品构建和启动入口
+./scripts/dev/restart.sh -spark-workflow
 ```
 
-### 2. 配置环境变量
-
-开发环境统一使用 ADDP 仓库根目录 `.env`；`start.sh` 会自动加载该文件，不再创建或读取引擎目录内的 `.env`。
-
-关键配置项:
-- `SYSTEM_URL`: System Backend URL (默认 http://localhost:8180)
-- `SPARK_MODE`: 默认不设置，连接用户选择的 Spark general Engine；仅依赖构建检查显式使用 local
-- `SPARK_WORKFLOW_PORT`: Flask API Server 端口 (默认 8098)
-
-本地标准启动脚本和产品镜像均调用 `python api_server.py`，使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。HTTP worker 与远端 Spark Worker 是不同职责；实际计算仍由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
+产品默认入口 `python api_server.py` 使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。HTTP worker 与远端 Spark Worker 是不同职责；实际计算由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
 
 工作流的 DAG、引用和 `$input` 使用公共 `WorkflowRunner`。算子输出按元数据声明的端口适配，`all_results` 的单端口节点直接返回结果，多端口节点返回端口对象，DataFrame 对外只返回最多五行的摘要。
-
-### 3. 启动服务
-
-```bash
-# 使用启动脚本
-./start.sh
-
-# 或手动启动
-python3 api_server.py
-```
 
 服务启动后:
 - API 端口: 8098
