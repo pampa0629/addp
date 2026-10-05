@@ -242,8 +242,9 @@ func (s *LineageService) fieldLineageEvidence(ctx context.Context, tenantID uint
 	for _, relation := range relations {
 		ids = append(ids, relation.ID)
 	}
+	// Graph edges need the immutable evidence and its observation time, not full schema snapshots.
 	query := s.db.WithContext(ctx).Table("meta.lineage_observations AS o").
-		Select("o.*, r.id AS relation_id, ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY o.observed_at DESC, o.id DESC) AS evidence_rank").
+		Select("o.evidence, o.observed_at, r.id AS relation_id, ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY o.observed_at DESC, o.id DESC) AS evidence_rank").
 		Joins(`JOIN meta.lineage_item_relations AS r ON r.tenant_id = o.tenant_id
 			AND r.granularity = o.granularity AND r.relation_kind = o.relation_kind
 			AND r.source_item_id = o.source_item_id AND r.target_item_id = o.target_item_id

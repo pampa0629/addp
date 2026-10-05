@@ -877,8 +877,7 @@
                     },
                     {
                         "type": "integer",
-                        "default": 100,
-                        "description": "节点和边上限，范围 1-500 | Node and edge limit, 1-500",
+                        "description": "节点和边分别计数的上限：item 默认100、范围1-500；field 默认5000、范围1-5000 | Separate node and edge limit: item defaults to 100, range 1-500; field defaults to 5000, range 1-5000",
                         "name": "limit",
                         "in": "query"
                     },

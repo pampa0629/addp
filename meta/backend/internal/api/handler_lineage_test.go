@@ -201,11 +201,33 @@ func TestLineageGraphFieldParametersReturnBadRequest(t *testing.T) {
 	handler := &Handler{lineageService: service.NewLineageService(db, service.NewEngineService(db, nil))}
 	router := gin.New()
 	router.GET("/graph", handler.GetLineageGraph)
-	for _, query := range []string{"subject_kind=field_ref&item_id=3", "subject_kind=field_ref&item_id=3&field_name=id&expand_upstream=1", "subject_kind=data_item&item_id=3&field_name=id", "subject_kind=data_item&item_id=3&granularity=unknown", "subject_kind=field_ref&item_id=3&field_name=id&granularity=item", "subject_kind=published_service&service_id=1&revision=v1&granularity=field", "subject_kind=data_item&item_id=3&granularity=field&expand_upstream=1"} {
+	for _, query := range []string{"subject_kind=field_ref&item_id=3", "subject_kind=field_ref&item_id=3&field_name=id&expand_upstream=1", "subject_kind=data_item&item_id=3&field_name=id", "subject_kind=data_item&item_id=3&granularity=unknown", "subject_kind=field_ref&item_id=3&field_name=id&granularity=item", "subject_kind=published_service&service_id=1&revision=v1&granularity=field", "subject_kind=data_item&item_id=3&granularity=field&expand_upstream=1", "subject_kind=data_item&item_id=3&limit=501", "subject_kind=data_item&item_id=3&granularity=field&limit=5001", "subject_kind=data_item&item_id=3&granularity=field&limit=0", "subject_kind=data_item&item_id=3&granularity=field&limit=-1"} {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest("GET", "/graph?"+query, nil))
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("query=%s status=%d body=%s", query, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestLineageGraphRequestDefaultCapacityByGranularity(t *testing.T) {
+	for _, entry := range []struct {
+		query string
+		want  int
+	}{
+		{"subject_kind=data_item&item_id=3", 100},
+		{"subject_kind=published_service&service_id=3&revision=v1", 100},
+		{"subject_kind=data_item&item_id=3&granularity=field", 5000},
+		{"subject_kind=field_ref&item_id=3&field_name=a.b", 5000},
+		{"subject_kind=data_item&item_id=3&granularity=field&limit=100", 100},
+	} {
+		t.Run(entry.query, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/graph?"+entry.query, nil)
+			request, err := parseLineageGraphRequest(c)
+			if err != nil || request.Limit != entry.want {
+				t.Fatalf("limit=%d err=%v, want %d", request.Limit, err, entry.want)
+			}
+		})
 	}
 }

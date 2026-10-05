@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestFieldLineageEvidenceAgainstPostgres(t *testing.T) {
@@ -126,8 +128,13 @@ func TestFieldLineageBatchesEvidenceAndPreservesHistory(t *testing.T) {
 		}
 		for _, edge := range graph.Edges {
 			want := "batch-old"
+			wantAt := at
 			if asOf == nil && edge.Source.FieldName == "a" {
 				want = "batch-tie"
+				wantAt = at.Add(time.Minute)
+			}
+			if !edge.LastObservedAt.Equal(wantAt) {
+				t.Fatalf("observation time for %q: %s, want %s", edge.Source.FieldName, edge.LastObservedAt, wantAt)
 			}
 			if edge.Transformation != "derived" || edge.Evidence["execution_id"] != want {
 				t.Fatalf("evidence for %q: %+v, want %s", edge.Source.FieldName, edge, want)
@@ -514,5 +521,133 @@ func TestFieldLineageOverviewSeedsAllFieldsWithOneTraversal(t *testing.T) {
 	request.AsOf = nil
 	if _, err = svc.GetGraph(t.Context(), 8, request); err == nil {
 		t.Fatal("foreign tenant overview accepted")
+	}
+}
+
+// Exercises the production collector and batched graph queries on a real database.
+// All fixture DDL and facts are rolled back, including on a failed assertion.
+func TestFieldLineageWideOverviewAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("META_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("META_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	executionIDs := []string{}
+	t.Cleanup(func() {
+		if err := tx.Rollback().Error; err != nil {
+			t.Error(err)
+			return
+		}
+		if db.Migrator().HasTable(&commonExecution.TaskExecution{}) && len(executionIDs) > 0 {
+			var remaining int64
+			if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id IN ?", executionIDs).Count(&remaining).Error; err != nil || remaining != 0 {
+				t.Errorf("wide fixture cleanup: %d executions remain, err=%v", remaining, err)
+			}
+		}
+	})
+	if err := tx.Exec("DROP SCHEMA IF EXISTS meta CASCADE; CREATE SCHEMA meta; CREATE SCHEMA IF NOT EXISTS common").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.AutoMigrate(&commonExecution.TaskExecution{}, &models.MetaItem{}, &models.LineageItemRelation{}, &models.LineageObservation{}); err != nil {
+		t.Fatal(err)
+	}
+	const columns = 500
+	names := make([]string, columns)
+	mappings := make([]commonExecution.LineageFieldMapping, columns)
+	for i := range names {
+		names[i] = fmt.Sprintf("column.%03d", i)
+	}
+	names[columns-1] = `column."499`
+	for i, name := range names {
+		mappings[i] = commonExecution.LineageFieldMapping{SourceField: name, TargetField: name, Transformation: "direct"}
+	}
+	schema := fieldTestSchema(t, names...)
+	runID := uuid.NewString()
+	items := make([]models.MetaItem, 3)
+	for i := range items {
+		items[i] = fieldTestItem(t, tx, 7, fmt.Sprintf("wide-%s-%d", runID, i), schema)
+	}
+	svc := NewLineageService(tx, lineageTestEngineCatalog{})
+	at := time.Now().UTC().Add(-time.Hour)
+	executions := make(map[string]bool)
+	for i := 1; i < len(items); i++ {
+		id := uuid.NewString()
+		executions[id] = true
+		executionIDs = append(executionIDs, id)
+		fieldTestExecution(t, tx, id, items[i-1], items[i], schema, schema, "replace", at.Add(time.Duration(i)*time.Second), mappings...)
+		if _, err := svc.CollectExecution(t.Context(), 7, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queries := 0
+	const callback = "wide-overview-proof-count"
+	if err := tx.Callback().Query().After("gorm:query").Register(callback, func(query *gorm.DB) {
+		if !query.DryRun && strings.Contains(query.Statement.SQL.String(), "lineage_observations") {
+			queries++
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tx.Callback().Query().Remove(callback) })
+	request := models.LineageGraphRequest{SubjectKind: "data_item", Granularity: "field", ItemID: &items[2].ID, Direction: "both", Depth: 2, Limit: 5000}
+	start := time.Now()
+	graph, err := svc.GetGraph(t.Context(), 7, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if graph.Truncated || len(graph.Nodes) != columns*3 || len(graph.Edges) != columns*2 || graph.FieldLineageStatus != "complete" {
+		t.Fatalf("wide overview: %d nodes, %d edges, truncated=%v status=%s", len(graph.Nodes), len(graph.Edges), graph.Truncated, graph.FieldLineageStatus)
+	}
+	if queries != 3 {
+		t.Fatalf("%d proof queries, want one root query and one batch per hop", queries)
+	}
+	for i, name := range names {
+		if graph.Nodes[i].FieldName != name || graph.Nodes[i].ItemID == nil || *graph.Nodes[i].ItemID != items[2].ID {
+			t.Fatalf("missing or reordered root field %q", name)
+		}
+	}
+	for _, edge := range graph.Edges {
+		id, ok := edge.Evidence["execution_id"].(string)
+		if !ok || !executions[id] || edge.Source.FieldName != edge.Target.FieldName || edge.Transformation != "direct" {
+			t.Fatalf("wrong edge identity or evidence: %+v", edge)
+		}
+	}
+	t.Logf("wide overview: %d nodes, %d edges, %d batched proof queries in %s", len(graph.Nodes), len(graph.Edges), queries, time.Since(start))
+	for _, limit := range []int{100, 500, 501} {
+		request.Limit = limit
+		graph, err = svc.GetGraph(t.Context(), 7, request)
+		if err != nil || !graph.Truncated || len(graph.Nodes) != limit || len(graph.Edges) != max(0, limit-columns) {
+			t.Fatalf("limit %d: nodes=%d edges=%d truncated=%v err=%v", limit, len(graph.Nodes), len(graph.Edges), graph.Truncated, err)
+		}
+	}
+	request.Limit = 5001
+	if _, err := svc.GetGraph(t.Context(), 7, request); err == nil {
+		t.Fatal("field graph above capacity accepted")
+	}
+	request.Limit = 5000
+	if _, err := svc.GetGraph(t.Context(), 8, request); err == nil {
+		t.Fatal("cross-tenant wide graph accepted")
+	}
+	request.Depth = 0
+	graph, err = svc.GetGraph(t.Context(), 7, request)
+	if err != nil || graph.Truncated || len(graph.Nodes) != columns || len(graph.Edges) != 0 {
+		t.Fatalf("depth zero: nodes=%d edges=%d err=%v", len(graph.Nodes), len(graph.Edges), err)
+	}
+	request.Granularity = "item"
+	request.Limit = 501
+	if _, err := svc.GetGraph(t.Context(), 7, request); err == nil {
+		t.Fatal("item graph above its capacity accepted")
 	}
 }

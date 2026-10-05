@@ -442,9 +442,6 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 	if request.Depth < 0 || request.Depth > 20 {
 		return models.LineageGraphResponse{}, fmt.Errorf("depth must be between 0 and 20")
 	}
-	if request.Limit < 1 || request.Limit > 500 {
-		return models.LineageGraphResponse{}, fmt.Errorf("limit must be between 1 and 500")
-	}
 	if request.Direction != "upstream" && request.Direction != "downstream" && request.Direction != "both" {
 		return models.LineageGraphResponse{}, fmt.Errorf("direction must be upstream, downstream or both")
 	}
@@ -466,6 +463,13 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 	}
 	if request.Granularity != "item" && request.Granularity != "field" {
 		return models.LineageGraphResponse{}, fmt.Errorf("granularity must be item or field")
+	}
+	maxLimit := 500
+	if request.Granularity == "field" {
+		maxLimit = models.FieldLineageGraphMaxLimit
+	}
+	if request.Limit < 1 || request.Limit > maxLimit {
+		return models.LineageGraphResponse{}, fmt.Errorf("limit must be between 1 and %d", maxLimit)
 	}
 	if request.SubjectKind == "field_ref" && (request.ItemID == nil || request.FieldName == "" || request.Granularity != "field") {
 		return models.LineageGraphResponse{}, fmt.Errorf("field_ref item_id and field_name are required; granularity must be field")

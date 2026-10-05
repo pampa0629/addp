@@ -100,7 +100,7 @@ func (h *Handler) RecordServicePublication(c *gin.Context) {
 // @Param depth query int false "每条关系计一层，0 只显示主体或根结构字段，范围 0-20 | Each edge is one hop; 0 returns the subject or root schema fields; range 0-20" default(2)
 // @Param expand_upstream query string false "额外向上展开的 item ID，逗号分隔，最多100个 | Item IDs to expand upstream, comma separated, max 100"
 // @Param expand_downstream query string false "额外向下展开的 item ID，逗号分隔，最多100个 | Item IDs to expand downstream, comma separated, max 100"
-// @Param limit query int false "节点和边上限，范围 1-500 | Node and edge limit, 1-500" default(100)
+// @Param limit query int false "节点和边分别计数的上限：item 默认100、范围1-500；field 默认5000、范围1-5000 | Separate node and edge limit: item defaults to 100, range 1-500; field defaults to 5000, range 1-5000"
 // @Param as_of query string false "历史观察时间（RFC3339） | Historical observation time (RFC3339)"
 // @Success 200 {object} models.LineageGraphResponse "血缘图 | Lineage graph"
 // @Failure 400 {object} models.LineageErrorResponse "请求参数错误 | Bad request"
@@ -142,6 +142,9 @@ func parseLineageGraphRequest(c *gin.Context) (models.LineageGraphRequest, error
 		Direction:          c.DefaultQuery("direction", "both"),
 		Depth:              2,
 		Limit:              100,
+	}
+	if request.Granularity == "field" || request.SubjectKind == "field_ref" {
+		request.Limit = models.FieldLineageGraphMaxLimit
 	}
 	var err error
 	for key, target := range map[string]*[]uint{"expand_upstream": &request.ExpandUpstream, "expand_downstream": &request.ExpandDownstream} {

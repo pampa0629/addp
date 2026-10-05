@@ -474,8 +474,7 @@ const loadLineage = async () => {
       direction: 'both',
       depth: lineageDepth.value,
       expand_upstream: lineageExpansion.upstream.join(',') || undefined,
-      expand_downstream: lineageExpansion.downstream.join(',') || undefined,
-      limit: 100
+      expand_downstream: lineageExpansion.downstream.join(',') || undefined
     })
     if (requestSeq === lineageRequestSeq) lineageGraph.value = normalizeLineageGraph(response)
   } catch (error) {

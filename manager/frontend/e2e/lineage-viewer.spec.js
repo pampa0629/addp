@@ -461,6 +461,7 @@ test('shows all table fields in one query and focuses fields without fetching ag
   await expect(page.locator('.lineage-canvas canvas')).toBeVisible()
   expect(requests.at(-1)).toMatchObject({ subject_kind: 'data_item', granularity: 'field' })
   expect(requests.at(-1).field_name).toBeUndefined()
+  expect(requests.at(-1).limit).toBeUndefined()
   const count = requests.length
   await page.getByRole('button', { name: 'client.id', exact: true }).click()
   await expect(page.locator('.lineage-inspector strong')).toHaveText('client.id')

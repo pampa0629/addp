@@ -2,6 +2,8 @@ package models
 
 import "time"
 
+const FieldLineageGraphMaxLimit = 5000
+
 type LineageGraphRequest struct {
 	Granularity        string
 	SubjectKind        string
