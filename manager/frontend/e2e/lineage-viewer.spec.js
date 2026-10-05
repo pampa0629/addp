@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { observeLineageCanvas, lineageCanvasText } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { managerAuthContext } from './managerAuthContext.js'
 
 const locator = 'addp://engine/9/path/public/current?type=table&item_id=3'
@@ -215,5 +216,82 @@ for (const catalogRead of [false, true]) {
       await expect(catalog).toBeHidden()
       expect(catalogRequests).toEqual([])
     }
+  })
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`three-hop field overview remains readable and clickable in ${theme} theme`, async ({ page }) => {
+    await observeLineageCanvas(page)
+    await page.addInitScript(theme => {
+      localStorage.setItem('addp-lang', 'zh-cn')
+      localStorage.setItem('theme-mode', theme)
+      if (theme === 'dark') document.documentElement.classList.add('dark')
+    }, theme)
+    const names = ['activity_id', 'activity_date', 'person_display_name', 'intensity']
+    const fields = (id, columns) => columns.map(name => ({ ...node(id), kind: 'field_ref', field_name: name, schema_snapshot_hash: `sha256:table-${id}`, field_lineage_status: 'complete' }))
+    const longName = 'source.profile.very_long_nested_field_name_that_requires_truncation'
+    const source = fields(1, names.slice(0, 3)), ods = fields(2, names.slice(0, 3)), dim = fields(4, names.slice(0, 3)), root = fields(3, [...names, longName])
+    const links = [source, ods, dim.slice(0, 2)].flatMap((columns, layer) => columns.map((source, index) => ({ source, target: [ods, dim, root][layer][index], relation_kind: 'derive', granularity: 'field', transformation: 'direct' })))
+    links.push({ source: ods[2], target: root[2], relation_kind: 'derive', granularity: 'field', transformation: 'direct' })
+    let graphRequests = 0
+    await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
+    await page.route('**/api/v1/**', route => {
+      const url = new URL(route.request().url()), path = url.pathname
+      if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
+      if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
+      if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
+      if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
+      if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
+      if (path.endsWith('/meta/items/3')) return json(route, { ...node(3), attributes: { type_info: { table: { fields: names.map(name => ({ name, type: 'string' })) } } } })
+      if (path.endsWith('/meta/lineage/graph')) {
+        if (url.searchParams.get('granularity') !== 'field') return json(route, { granularity: 'item', subject: node(3), nodes: [node(3)], edges: [] })
+        graphRequests++
+        return json(route, { granularity: 'field', subject: { ...node(3), schema_snapshot_hash: 'sha256:table-3' }, nodes: [...source, ...ods, ...dim, ...root], edges: links })
+      }
+      return json(route, {})
+    })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    await page.getByText('字段级', { exact: true }).click()
+    expect(await page.locator('html').evaluate(element => element.classList.contains('dark'))).toBe(theme === 'dark')
+    await page.locator('.lineage-viewer').evaluate(element => { element.style.maxWidth = '820px' })
+    const canvas = page.locator('.lineage-canvas canvas')
+    await expect(canvas).toBeVisible()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => names.includes(row.text)).length).toBe(13)
+    const initialBox = await canvas.boundingBox()
+    for (const row of (await lineageCanvasText(canvas)).filter(row => names.includes(row.text))) {
+      expect(row.x).toBeGreaterThanOrEqual(0)
+      expect(row.x + row.width).toBeLessThanOrEqual(initialBox.width)
+    }
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => names.includes(row.text)).length).toBe(13)
+    const rows = (await lineageCanvasText(canvas)).filter(row => names.includes(row.text))
+    const box = await canvas.boundingBox()
+    for (const row of rows) {
+      expect(row.fontSize).toBeGreaterThanOrEqual(11)
+      expect(row.x).toBeGreaterThanOrEqual(0)
+      expect(row.x + row.width).toBeLessThanOrEqual(box.width)
+      expect(row.y).toBeGreaterThan(row.fontSize)
+      expect(row.y).toBeLessThan(box.height)
+    }
+    const buttonLabel = page.getByRole('button', { name: longName, exact: true }).locator('span')
+    expect(await buttonLabel.evaluate(element => element.scrollWidth > element.clientWidth && getComputedStyle(element).textOverflow === 'ellipsis')).toBe(true)
+    const truncated = (await lineageCanvasText(canvas)).find(row => row.text.startsWith('source.profile.'))
+    expect(truncated.text).toMatch(/…$/)
+    await canvas.hover({ position: { x: truncated.x + 10, y: truncated.y } })
+    await expect(page.locator('.lineage-tooltip')).toContainText(longName)
+    await canvas.click({ position: { x: truncated.x + 10, y: truncated.y } })
+    await expect(page.locator('.lineage-inspector strong')).toHaveText(longName)
+    const chosen = rows.filter(row => row.text === 'person_display_name').at(-1)
+    await canvas.click({ position: { x: chosen.x + 10, y: chosen.y } })
+    await expect(page.locator('.lineage-inspector strong')).toHaveText('person_display_name')
+    await page.getByRole('button', { name: '全部字段', exact: true }).click()
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    await page.screenshot({ path: `/tmp/addp-field-compact-${theme}.png` })
+    const previousWidth = (await canvas.boundingBox()).width
+    const previousFont = (await lineageCanvasText(canvas)).find(row => row.text === 'activity_id').fontSize
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await expect.poll(async () => (await canvas.boundingBox()).width).toBeGreaterThan(previousWidth)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'activity_id').fontSize).toBeCloseTo(previousFont, 2)
+    expect(graphRequests).toBe(1)
   })
 }

@@ -166,7 +166,7 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 `@addp/common-frontend/graph` 提供 `LineageViewer`、`createLineageApi` 和 `normalizeLineageGraph`，消费 Meta `GET /api/v1/meta/lineage/graph` 返回的 `{ nodes, edges }`，可在 Service、Manager、Asset 页面内嵌展示。请求函数由宿主注入，组件不处理 Token。`LineageViewer` 填满宿主容器，宿主须提供有界的 flex 高度；宿主通过 `v-model:depth` 接收层数变化，以同一层数重查 API。未传入层数时组件显示 2 层，宿主可显式指定初始层数。共享组件负责交叉连线隔离、悬停/选中高亮和截断提示。
 
-字段级视图由同一 `LineageViewer` 实现：宿主传入 `supportsFields` 和 `v-model:granularity`，调用原图 API 的 `subject_kind=data_item` 与 `granularity=field`，一次加载根表全部字段及其有界关系。字段按数据项和结构快照分组，连线对齐字段行；点击字段聚焦已加载的上下游关系，清除聚焦恢复全图，不逐字段发请求。节点 ID 包含数据项、字段名和结构快照 hash，字段名中的点号不拆分；每个根字段的 `field_lineage_status=unavailable` 明确表示证据不可用，不能解释为没有依赖。
+字段级视图由同一 `LineageViewer` 实现：宿主传入 `supportsFields` 和 `v-model:granularity`，调用原图 API 的 `subject_kind=data_item` 与 `granularity=field`，一次加载根表全部字段及其有界关系。字段按数据项和结构快照分组，连线对齐字段行；点击字段聚焦已加载的上下游关系，清除聚焦恢复全图，不逐字段发请求。表卡的宽度、字段行和层间距采用紧凑布局，默认优先显示满足阅读字号的全图；适应窗口仍显示完整图，长字段名按文字宽度截断，悬停和详情提供精确全名。节点 ID 包含数据项、字段名和结构快照 hash，字段名中的点号不拆分；每个根字段的 `field_lineage_status=unavailable` 明确表示证据不可用，不能解释为没有依赖。
 
 ### ResourceLocator 定位符系统
 

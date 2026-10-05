@@ -1,3 +1,4 @@
+import { observeLineageCanvas, lineageCanvasText } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { lineageFieldConnections } from '../../../../common-frontend/graph/src/lineageFields.js'
 import { lineageNodeId } from '../../../../common-frontend/graph/src/lineageApi.js'
 import { expect, request, test } from '@playwright/test'
@@ -204,11 +205,26 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   const focus = lineageFieldConnections(dwd.graph.edges, lineageNodeId(selected))
   expect(dwd.graph.edges.filter((_, index) => focus.connections.has(`lineage-edge:${index}`)).map(edgeIdentity).sort()).toEqual(chain.nickname_edges.sort())
   await showFieldOverview(dwd.frame)
+  const canvas = dwd.frame.locator('.lineage-canvas canvas').first()
+  const fieldNames = dwd.graph.nodes.map(node => node.field_name)
+  const isFieldLabel = row => fieldNames.some(name => row.text === name || (row.text.endsWith('…') && name.startsWith(row.text.slice(0, -1))))
+  await expect.poll(async () => (await lineageCanvasText(canvas)).filter(isFieldLabel).length).toBe(dwd.graph.nodes.length)
+  const box = await canvas.boundingBox()
+  const fieldRows = (await lineageCanvasText(canvas)).filter(isFieldLabel)
+  for (const row of fieldRows) {
+    expect(row.fontSize).toBeGreaterThanOrEqual(11)
+    expect(row.x).toBeGreaterThanOrEqual(0)
+    expect(row.x + row.width).toBeLessThanOrEqual(box.width)
+    expect(row.y).toBeGreaterThan(row.fontSize)
+    expect(row.y).toBeLessThan(box.height)
+  }
+  writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-field-overview-layout.json'), JSON.stringify({ canvas_width_px: box.width, canvas_height_px: box.height, graph_nodes: dwd.graph.nodes.length, graph_edges: dwd.graph.edges.length, fields_painted: fieldRows.length, min_field_font_px: Math.min(...fieldRows.map(row => row.fontSize)), rows: fieldRows }, null, 2))
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-orchestrated-dwd-field-lineage.png'), fullPage: true })
 }
 
 test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page }) => {
   test.setTimeout(360_000)
+  await observeLineageCanvas(page)
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const env = environment()
   const repository = env.ADDP_ONLINE_REPOSITORY

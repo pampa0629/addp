@@ -1,8 +1,9 @@
 import { lineageNodeId } from './lineageApi.js'
 
-export const FIELD_HEADER_HEIGHT = 78
-export const FIELD_ROW_HEIGHT = 28
-export const FIELD_CARD_WIDTH = 280
+export const FIELD_HEADER_HEIGHT = 64
+export const FIELD_ROW_HEIGHT = 34
+export const FIELD_CARD_WIDTH = 224
+export const FIELD_FONT_SIZE = 18
 
 // Group only the same item and frozen schema; field identity remains untouched.
 export function projectLineageFields(nodes, edges) {

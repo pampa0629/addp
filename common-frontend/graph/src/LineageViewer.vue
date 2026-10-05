@@ -129,7 +129,7 @@ import { FullScreen, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import G6 from '@antv/g6'
 import { focusDAGConnections } from '../../dag/src/utils/connections.js'
 import { lineageNodeId as nodeId } from './lineageApi.js'
-import { projectLineageFields, lineageFieldConnections, FIELD_HEADER_HEIGHT, FIELD_ROW_HEIGHT } from './lineageFields.js'
+import { projectLineageFields, lineageFieldConnections, FIELD_HEADER_HEIGHT, FIELD_ROW_HEIGHT, FIELD_FONT_SIZE } from './lineageFields.js'
 
 const LINEAGE_NODE_TYPE = 'addp-lineage-card'
 const LINEAGE_EDGE_TYPE = 'addp-lineage-link'
@@ -155,6 +155,7 @@ let themeObserver
 let observedCanvas
 let expansionAnchor
 let renderSequence = 0
+let textMeasureContext
 
 
 const nodes = computed(() => {
@@ -541,21 +542,37 @@ function graphData() {
   return data
 }
 
+function fieldLabel(value, width, fontSize, fontWeight = 400) {
+  textMeasureContext ||= document.createElement('canvas').getContext('2d')
+  textMeasureContext.font = `${fontWeight} ${fontSize}px sans-serif`
+  const text = String(value || '')
+  if (textMeasureContext.measureText(text).width <= width) return text
+  const characters = Array.from(text)
+  let low = 0, high = characters.length
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2)
+    if (textMeasureContext.measureText(`${characters.slice(0, middle).join('')}…`).width <= width) low = middle
+    else high = middle - 1
+  }
+  return `${characters.slice(0, low).join('')}…`
+}
+
 function drawFieldCard(cfg, group) {
   const visual = cfg._visual
-  const height = cfg.size[1]
-  const left = -NODE_WIDTH / 2
+  const [width, height] = cfg.size
+  const left = -width / 2
   const top = -height / 2
-  const card = group.addShape('rect', { name: 'lineage-card', attrs: { x: left, y: top, width: NODE_WIDTH, height, radius: 6, fill: visual.fill, stroke: visual.stroke, lineWidth: visual.lineWidth } })
-  group.addShape('text', { name: 'lineage-title', capture: false, attrs: { x: left + 14, y: top + 22, text: cfg._title, fill: visual.textPrimary, fontWeight: 600, fontSize: 13 } })
-  group.addShape('text', { name: 'lineage-path', capture: false, attrs: { x: left + 14, y: top + 41, text: cfg._path, fill: visual.textSecondary, fontSize: 10 } })
-  group.addShape('text', { name: 'lineage-engine', capture: false, attrs: { x: left + 14, y: top + 60, text: cfg._engineName, fill: visual.textTertiary, fontSize: 10 } })
+  const card = group.addShape('rect', { name: 'lineage-card', attrs: { x: left, y: top, width, height, radius: 6, fill: visual.fill, stroke: visual.stroke, lineWidth: visual.lineWidth } })
+  const text = (name, value, y, fontSize, fill, available = width - 24, fontWeight = 400) => group.addShape('text', { name, capture: false, attrs: { x: left + 12, y: top + y, text: fieldLabel(value, available, fontSize, fontWeight), fill, fontSize, fontWeight, fontFamily: 'sans-serif' } })
+  text('lineage-title', cfg._node.name || cfg._node.full_name, 22, 15, visual.textPrimary, width - (cfg._isSubject ? 62 : 24), 600)
+  text('lineage-path', cfg._node.full_name, 40, 11, visual.textSecondary)
+  text('lineage-engine', cfg._node.engine_name, 56, 11, visual.textTertiary)
   if (cfg._isSubject) group.addShape('text', { name: 'lineage-current', capture: false, attrs: { x: -left - 12, y: top + 22, text: cfg._currentLabel, textAlign: 'right', fill: visual.accent, fontSize: 11 } })
   cfg._fields.forEach((field, index) => {
     const y = top + FIELD_HEADER_HEIGHT + index * FIELD_ROW_HEIGHT
     const name = `lineage-field:${index}`
-    group.addShape('rect', { name, attrs: { x: left + 1, y, width: NODE_WIDTH - 2, height: FIELD_ROW_HEIGHT, fill: visual.fill, cursor: 'pointer' } })
-    group.addShape('text', { name, attrs: { x: left + 14, y: y + FIELD_ROW_HEIGHT / 2, text: truncate(field.field_name, 32), textBaseline: 'middle', fill: field.field_lineage_status === 'unavailable' ? visual.textTertiary : visual.textPrimary, fontSize: 12, cursor: 'pointer' } })
+    group.addShape('rect', { name, attrs: { x: left + 1, y, width: width - 2, height: FIELD_ROW_HEIGHT, fill: visual.fill, cursor: 'pointer' } })
+    group.addShape('text', { name, attrs: { x: left + 12, y: y + FIELD_ROW_HEIGHT / 2, text: fieldLabel(field.field_name, width - 24, FIELD_FONT_SIZE), textBaseline: 'middle', fill: field.field_lineage_status === 'unavailable' ? visual.textTertiary : visual.textPrimary, fontSize: FIELD_FONT_SIZE, fontFamily: 'sans-serif', cursor: 'pointer' } })
   })
   return card
 }
@@ -627,7 +644,7 @@ function restoreFocus() {
 
 function fitView() {
   if (!graphInstance) return
-  graphInstance.fitView(FIT_PADDING)
+  graphInstance.fitView(isFieldGraph.value ? 20 : FIT_PADDING)
   if (graphInstance.getZoom() > 1) {
     graphInstance.zoomTo(1)
     graphInstance.fitCenter()
@@ -711,15 +728,18 @@ async function renderGraph() {
     maxZoom: 2.5,
     modes: { default: ['drag-canvas', 'zoom-canvas'] },
     plugins: [new G6.Tooltip({
+      className: 'lineage-tooltip',
       itemTypes: ['node'], offsetX: 12, offsetY: 12,
       getContent(event) {
         const content = document.createElement('div')
-        content.textContent = nodeQualifiedName(event.item.getModel()._node)
-        content.style.cssText = 'max-width: 480px; overflow-wrap: anywhere; padding: 8px 12px; background: var(--addp-bg-primary); color: var(--addp-text-primary); border: 1px solid var(--addp-border-color); border-radius: 4px;'
+        const model = event.item.getModel()
+        const shape = event.target?.get('name')
+        const index = shape?.startsWith('lineage-field:') ? Number(shape.slice('lineage-field:'.length)) : -1
+        content.textContent = index >= 0 ? nodeQualifiedName(model._fields[index]) : model._fields ? model._node.full_name : nodeQualifiedName(model._node)
         return content
       }
     })],
-    layout: { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep: isFieldGraph.value ? 32 : 170, controlPoints: true },
+    layout: { type: 'dagre', rankdir: 'LR', nodesep: isFieldGraph.value ? 20 : 48, ranksep: isFieldGraph.value ? 10 : 170, controlPoints: true },
     defaultNode: { type: LINEAGE_NODE_TYPE, size: [NODE_WIDTH, NODE_HEIGHT] },
     defaultEdge: { type: LINEAGE_EDGE_TYPE },
     edgeStateStyles: {
@@ -750,8 +770,8 @@ async function renderGraph() {
     if (!item) {
       fitView()
       // Keep field text readable on entry; fit-view remains an explicit overview.
-      if (isFieldGraph.value && graphInstance.getZoom() < 0.85) {
-        graphInstance.zoomTo(0.85)
+      if (isFieldGraph.value && graphInstance.getZoom() < 11 / FIELD_FONT_SIZE) {
+        graphInstance.zoomTo(11 / FIELD_FONT_SIZE)
         const root = graphInstance.getNodes().find(node => node.getModel()._isSubject)
         if (root) graphInstance.focusItem(root, false)
       }
@@ -803,6 +823,16 @@ watch(() => props.depth, () => { expansionAnchor = null })
 </script>
 
 <style scoped>
+.lineage-canvas :deep(.lineage-tooltip) {
+  max-width: 480px;
+  overflow-wrap: anywhere;
+  padding: 8px 12px;
+  background: var(--addp-bg-primary);
+  color: var(--addp-text-primary);
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+}
+
 .lineage-viewer {
   position: relative;
   width: 100%;
@@ -859,7 +889,8 @@ watch(() => props.depth, () => { expansionAnchor = null })
 }
 
 .lineage-fields { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; max-height: 90px; overflow-y: auto; flex-shrink: 0; }
-.lineage-fields .el-button { margin-left: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.lineage-fields .el-button { margin-left: 0; max-width: min(240px, 100%); }
+.lineage-fields .el-button :deep(span) { min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lineage-field-status { color: var(--addp-text-secondary); font-size: 12px; margin-top: 8px; }
 .lineage-depth { width: 94px; margin-right: 8px; }
 .lineage-depth-label { margin-right: 6px; white-space: nowrap; }
