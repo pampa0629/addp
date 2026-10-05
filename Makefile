@@ -422,9 +422,11 @@ test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial �
 	@bash scripts/test/arcgis-open-formats-integration-gate.sh
 
 test-execution-fixtures: ## 校验统一执行存储测试夹具
+	@python3 scripts/test/schema-ownership-gates_test.py ExecutionFixtureGateTest
 	@bash scripts/test/check-execution-test-fixtures.sh
 
 test-projection-store-ownership: ## 校验保护投影存储 DDL 的 Common 唯一归属
+	@python3 scripts/test/schema-ownership-gates_test.py ProjectionStoreGateTest
 	@bash scripts/test/check-protection-projection-store-ownership.sh
 
 test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_ONLINE_TEST=1）

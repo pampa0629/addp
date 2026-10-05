@@ -5,8 +5,22 @@ set -euo pipefail
 
 ROOT_DIR=${ADDP_REPOSITORY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 
+for required_command in git rg; do
+    command -v "$required_command" >/dev/null 2>&1 || {
+        echo "required command is missing: $required_command" >&2
+        exit 2
+    }
+done
+
 if ! git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "Repository root is not a Git work tree: $ROOT_DIR" >&2
+    exit 2
+fi
+
+scratch_dir=$(mktemp -d "${TMPDIR:-/tmp}/addp-projection-ownership.XXXXXX")
+trap 'rm -rf "$scratch_dir"' EXIT
+if ! git -C "$ROOT_DIR" ls-files --cached --others --exclude-standard -z -- '*.go' '*.sql' > "$scratch_dir/files"; then
+    echo "Git file enumeration failed: $ROOT_DIR" >&2
     exit 2
 fi
 
@@ -30,22 +44,29 @@ while IFS= read -r -d '' file; do
     if [ -f "$ROOT_DIR/$file" ]; then
         source_files+=("$file")
     fi
-done < <(git -C "$ROOT_DIR" ls-files --cached --others --exclude-standard -z -- '*.go' '*.sql')
+done < "$scratch_dir/files"
 
 if [ ${#source_files[@]} -eq 0 ]; then
     echo "No Go or SQL source files found under $ROOT_DIR" >&2
     exit 2
 fi
 
+search_status=0
+(
+    cd "$ROOT_DIR" || exit 2
+    rg --files-with-matches --null "$TABLE_PATTERN" -- "${source_files[@]}"
+) > "$scratch_dir/matches" || search_status=$?
+if [ "$search_status" -gt 1 ]; then
+    echo "ripgrep search failed (exit status $search_status)" >&2
+    exit 2
+fi
+
 violations=()
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
     if ! is_allowed_schema_owner "$file"; then
         violations+=("$file")
     fi
-done < <(
-    cd "$ROOT_DIR"
-    rg --files-with-matches "$TABLE_PATTERN" -- "${source_files[@]}" || true
-)
+done < "$scratch_dir/matches"
 
 if [ ${#violations[@]} -gt 0 ]; then
     echo "Protection projection store tables may only be defined by common/dataprotection/projectionstore:" >&2

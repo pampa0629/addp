@@ -442,6 +442,15 @@ def validate_registration(repository: Path) -> list[str]:
         errors.append(".github/workflows/platform-ci.yml is missing")
     else:
         platform_workflow = platform_workflow_path.read_text(encoding="utf-8")
+        consistency_match = re.search(
+            r"(?ms)^  platform-consistency:\s*\n(?P<job>.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)",
+            platform_workflow,
+        )
+        consistency_job = consistency_match.group("job") if consistency_match else ""
+        install = re.search(r"(?m)^\s*sudo apt-get install[^\n]*\bripgrep\b[^\n]*$", consistency_job)
+        check = re.search(r"(?m)^\s*(?:-\s*)?run:\s*make test-platform\s*$", consistency_job)
+        if not install or not check or install.end() > check.start():
+            errors.append("Platform CI must install ripgrep before make test-platform")
         product_match = re.search(
             r"(?ms)^  product-build:\s*\n(?P<job>.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)",
             platform_workflow,
@@ -529,6 +538,19 @@ def validate_registration(repository: Path) -> list[str]:
     platform_recipe = make_recipe(makefile, "test-platform") or ""
     if "$(MAKE) test-dev-lifecycle" not in platform_recipe:
         errors.append("Makefile test-platform must run test-dev-lifecycle")
+
+    ownership_tests = "scripts/test/schema-ownership-gates_test.py"
+    if not (repository / ownership_tests).is_file():
+        errors.append(f"{ownership_tests} is missing")
+    for target, test_class, script in (
+        ("test-execution-fixtures", "ExecutionFixtureGateTest", "check-execution-test-fixtures.sh"),
+        ("test-projection-store-ownership", "ProjectionStoreGateTest", "check-protection-projection-store-ownership.sh"),
+    ):
+        recipe = make_recipe(makefile, target) or ""
+        if f"python3 {ownership_tests} {test_class}" not in recipe or f"bash scripts/test/{script}" not in recipe:
+            errors.append(f"Makefile {target} must run its regression tests and repository check")
+        if f"$(MAKE) {target}" not in platform_recipe:
+            errors.append(f"Makefile test-platform must run {target}")
 
     release_check_recipe = make_recipe(makefile, "check-cli-release")
     if release_check_recipe is None:

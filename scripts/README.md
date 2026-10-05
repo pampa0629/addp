@@ -502,6 +502,8 @@ scripts/test/
 
 平台无外部服务的一致性门禁使用 `make test-platform`，依次校验技术栈规约与全部 `go.mod` 的依赖版本、统一 execution 测试夹具、IAM Manifest、owner 常量、Tool Catalog、SQL seed 和 Swagger 路由覆盖。该入口不启动或重启 ADDP 服务，不连接开发数据库；GitHub Actions 的 Platform CI 在 `main` 推送、每日定时和手工触发时直接调用该入口。
 
+统一执行夹具和保护投影存储归属检查分别沿用 `make test-execution-fixtures`、`make test-projection-store-ownership`，各入口先运行隔离 Git 夹具回归，再检索当前仓库。两项检查要求 `git` 与 `rg`（ripgrep）；Platform CI 在调用平台门禁前显式安装 ripgrep，本地调用方需事先安装。检索状态 0（有匹配）和 1（无匹配）是正常结果，命中的文件仍须按原有精确白名单判断；缺少命令、Git 文件枚举失败、检索异常或空输入均退出失败，不能把错误当成无匹配。临时清单和检索结果使用 NUL 分隔，并在退出时删除。
+
 根 `make test` 是 T0-T1 全部无外部服务确定性门禁的唯一聚合入口，包含 `make test-platform`、全部 Go 模块、Common Python、Agent 离线评测、Copilot 后端，以及所有已登记前端的测试和生产构建。前端与 Python CI 登记检查同时要求每个自动发现的组件进入该聚合入口，新增测试组件不能只登记 CI 而遗漏本地总门禁。需要专用 PostgreSQL、真实运行服务、在线证据或发布环境的 T2-T5 门禁不并入 `make test`，必须使用各自显式入口。
 
 日常使用的 macOS 可以在独立、干净的 `main` checkout 中定时运行 `make local-ci`。脚本会 fast-forward 到 `origin/main`，首次运行 `make test` 和全部已登记 PostgreSQL 门禁，之后以上次成功 SHA 运行 `make test-changed`；每个新 SHA 还会通过 `make build BUILD_ARGS=--force` 复验全部 Linux 产品二进制。失败不更新基线，后续调度会重试；无新提交时直接跳过。使用 `make local-ci LOCAL_CI_ARGS=--full` 可强制全量复验，使用 `make local-ci LOCAL_CI_ARGS=--check-only` 只检查 macOS、Git、Go 1.24+、Python 3.11+、`.node-version` 声明的 Node.js 24、Docker 和工作区边界；使用 `make local-ci LOCAL_CI_ARGS=--no-fetch` 可在调用方已同步完成后，仅验证当前干净的 `main` checkout，不执行远端 fetch 或 fast-forward。

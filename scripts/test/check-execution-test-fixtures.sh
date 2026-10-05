@@ -11,8 +11,22 @@ set -euo pipefail
 
 ROOT_DIR=${ADDP_REPOSITORY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 
+for required_command in git rg; do
+    command -v "$required_command" >/dev/null 2>&1 || {
+        echo "required command is missing: $required_command" >&2
+        exit 2
+    }
+done
+
 if ! git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "Repository root is not a Git work tree: $ROOT_DIR" >&2
+    exit 2
+fi
+
+scratch_dir=$(mktemp -d "${TMPDIR:-/tmp}/addp-execution-fixtures.XXXXXX")
+trap 'rm -rf "$scratch_dir"' EXIT
+if ! git -C "$ROOT_DIR" ls-files -z -- '*_test.go' > "$scratch_dir/files"; then
+    echo "Git file enumeration failed: $ROOT_DIR" >&2
     exit 2
 fi
 
@@ -37,22 +51,29 @@ while IFS= read -r -d '' file; do
     if [ -f "$ROOT_DIR/$file" ]; then
         test_files+=("$file")
     fi
-done < <(git -C "$ROOT_DIR" ls-files -z -- '*_test.go')
+done < "$scratch_dir/files"
 
 if [ ${#test_files[@]} -eq 0 ]; then
     echo "No tracked Go test files found under $ROOT_DIR" >&2
     exit 2
 fi
 
+search_status=0
+(
+    cd "$ROOT_DIR" || exit 2
+    rg --files-with-matches --null --multiline --ignore-case "$TABLE_PATTERN" -- "${test_files[@]}"
+) > "$scratch_dir/matches" || search_status=$?
+if [ "$search_status" -gt 1 ]; then
+    echo "ripgrep search failed (exit status $search_status)" >&2
+    exit 2
+fi
+
 violations=()
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
     if ! is_allowed_schema_owner "$file"; then
         violations+=("$file")
     fi
-done < <(
-    cd "$ROOT_DIR"
-    rg --files-with-matches --multiline --ignore-case "$TABLE_PATTERN" -- "${test_files[@]}" || true
-)
+done < "$scratch_dir/matches"
 
 if [ ${#violations[@]} -gt 0 ]; then
     echo "Direct task_executions schema definitions are not allowed in business tests:" >&2

@@ -58,6 +58,12 @@ jobs:
             git show --check --format= "$ADDP_CI_HEAD"
           fi
 
+      - name: Install platform check dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep
+          command -v rg
+
       - name: Run platform consistency gate
         # Includes Backend-owned schema startup, Worker ordering, Swagger cache invalidation and lifecycle concurrency tests.
         run: make test-platform

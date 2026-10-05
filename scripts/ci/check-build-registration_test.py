@@ -93,6 +93,9 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write("scripts/ci/update-cli-version.py", "print('updated')\n")
         self._write("scripts/ci/update-cli-version_test.py", "print('tested')\n")
         self._write("scripts/test/dev-lifecycle-and-build.sh", "#!/bin/bash\n")
+        self._write("scripts/test/schema-ownership-gates_test.py", "# ownership regression fixture\n")
+        self._write("scripts/test/check-execution-test-fixtures.sh", "#!/bin/bash\n")
+        self._write("scripts/test/check-protection-projection-store-ownership.sh", "#!/bin/bash\n")
         self._write(
             "docker-compose.yml",
             "services:\n  sample:\n"
@@ -107,13 +110,23 @@ class BuildRegistrationTest(unittest.TestCase):
             "prepare-cli-release:\n\t@python3 scripts/ci/update-cli-version.py\n\n"
             "check-cli-release:\n\t@python3 scripts/ci/check-release-eligibility.py --pre-tag\n\n"
             "test-platform:\n\t@python3 scripts/ci/update-cli-version_test.py\n"
-            "\t@$(MAKE) test-dev-lifecycle\n\n"
+            "\t@$(MAKE) test-dev-lifecycle\n"
+            "\t@$(MAKE) test-execution-fixtures\n\t@$(MAKE) test-projection-store-ownership\n\n"
+            "test-execution-fixtures:\n"
+            "\t@python3 scripts/test/schema-ownership-gates_test.py ExecutionFixtureGateTest\n"
+            "\t@bash scripts/test/check-execution-test-fixtures.sh\n\n"
+            "test-projection-store-ownership:\n"
+            "\t@python3 scripts/test/schema-ownership-gates_test.py ProjectionStoreGateTest\n"
+            "\t@bash scripts/test/check-protection-projection-store-ownership.sh\n\n"
             "test-dev-lifecycle:\n\t@bash scripts/test/dev-lifecycle-and-build.sh\n\n"
             "test-go:\n\t@echo $${ADDP_CI_SUMMARY_FILE:-}; GOWORK=off go mod tidy -diff\n",
         )
         self._write(
             ".github/workflows/platform-ci.yml",
-            "jobs:\n  go-tests:\n    steps:\n"
+            "jobs:\n  platform-consistency:\n    steps:\n"
+            "      - run: |\n          sudo apt-get install -y --no-install-recommends ripgrep\n"
+            "      - run: make test-platform\n"
+            "  go-tests:\n    steps:\n"
             "      - run: make test-go\n        env:\n          ADDP_CI_SUMMARY_FILE: go.md\n"
             "      - uses: ./.github/actions/ci-gate-summary\n        with:\n          details-file: go.md\n"
             "  product-build:\n    steps:\n"
@@ -266,6 +279,37 @@ class BuildRegistrationTest(unittest.TestCase):
             with self.subTest(removed=removed):
                 makefile.write_text(original.replace(removed, ""), encoding="utf-8")
                 self.assertIn(expected, MODULE.validate_registration(self.repository))
+
+    def test_ownership_regressions_cannot_be_removed_from_standard_gates(self) -> None:
+        makefile = self.repository / "Makefile"
+        original = makefile.read_text()
+        for target, test_class in (
+            ("test-execution-fixtures", "ExecutionFixtureGateTest"),
+            ("test-projection-store-ownership", "ProjectionStoreGateTest"),
+        ):
+            for removed, expected in (
+                (f"\t@$(MAKE) {target}\n", f"Makefile test-platform must run {target}"),
+                (f"\t@python3 scripts/test/schema-ownership-gates_test.py {test_class}\n",
+                 f"Makefile {target} must run its regression tests and repository check"),
+            ):
+                with self.subTest(removed=removed):
+                    makefile.write_text(original.replace(removed, ""))
+                    self.assertIn(expected, MODULE.validate_registration(self.repository))
+        makefile.write_text(original)
+        (self.repository / "scripts/test/schema-ownership-gates_test.py").unlink()
+        self.assertIn("scripts/test/schema-ownership-gates_test.py is missing", MODULE.validate_registration(self.repository))
+
+    def test_platform_ripgrep_preparation_is_required_before_the_gate(self) -> None:
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        original = workflow.read_text()
+        install = "          sudo apt-get install -y --no-install-recommends ripgrep\n"
+        for changed in (
+            original.replace(install, ""),
+            original.replace(install, "").replace("      - run: make test-platform\n", "      - run: make test-platform\n" + install),
+        ):
+            with self.subTest(workflow=changed):
+                workflow.write_text(changed)
+                self.assertIn("Platform CI must install ripgrep before make test-platform", MODULE.validate_registration(self.repository))
 
     def test_rejects_shallow_product_checkout(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"
