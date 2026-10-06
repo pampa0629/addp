@@ -759,3 +759,5 @@ System-owned Online 身份准备先执行三员 Bootstrap，分别保存临时�
 实施前门禁确定为：新增脚本/身份边界/清理与 CI 登记属于现有 `test-online-runner` 和平台 T0；System 身份准备的真实数据库验证进入既有 `test-system-iam-postgres --package online-fixture`。完整链路只能在手工 Hosted T4 执行，首次真实通过前不增加 schedule、不计为 T4 已验收。节点宿主挂载及完整生产覆盖仍不替代 T5；本地 macOS 不启动此套部署。
 
 本批本地先行验证：平台聚合门禁 `make test-platform` 通过；`make test-node-metrics-online-runner` 通过，覆盖正式 TLS 生成/唯一中心配置、平台与采集身份校验、版本投影及 Hosted 各阶段失败清理；System 标准 Online fixture PostgreSQL 门禁通过，实际验证 Bootstrap、真实密码/MFA、三员权限区分和两个非默认 Tenant 的最小授权。CI 登记检查及反例回归通过。默认 `make test-changed` 因全工作区其他 Owner 的测试连接参数缺失而在预检失败，未执行的跨 Owner 数据库门禁不计为通过。完整 Hosted T4 仍待首次真实执行，部署与清理结果以该次 CI 证据为准。
+
+首轮 Hosted T4（[37461258797](https://github.com/pampa0629/addp/actions/runs/37461258797)，`fbb246880`）在采集服务身份阶段失败：System 已以 HTTP 200 签发原生 OAuth Token，验收脚本错误地按大小写敏感方式比较 `token_type`；当前 OAuth Provider 固定返回 `bearer`，既有 Common Service Client 按大小写不敏感方式核验。修复沿用同一标准校验，不新增协议分支。该轮已完成平台真实密码/MFA 与两类平台角色核验；退出摘要为 `cleanup=passed`、`infra_cleanup=zero_residuals`，不计为完整 T4 通过。

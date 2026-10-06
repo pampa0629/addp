@@ -1,5 +1,7 @@
 import copy
 import importlib
+import io
+import json
 import unittest
 from unittest.mock import patch
 
@@ -13,6 +15,16 @@ def identity(role="platform.system_administrator"):
 
 
 class MetricsProtocolTest(unittest.TestCase):
+    def test_native_oauth_token_type_is_case_insensitive(self):
+        for token_type in ("bearer", "Bearer", "BEARER"):
+            opener = unittest.mock.Mock()
+            opener.open.return_value = io.BytesIO(json.dumps({"access_token": "addp_at_test-only", "token_type": token_type, "scope": "addp.api"}).encode())
+            with self.subTest(token_type=token_type), patch.dict(ONLINE.os.environ, PROMETHEUS_SERVICE_CLIENT_SECRET="test-only-secret"), patch.object(ONLINE.urllib.request, "build_opener", return_value=opener):
+                client = ONLINE.machine_client("http://127.0.0.1:8000")
+                self.assertEqual(client.token, "addp_at_test-only")
+                form = ONLINE.urllib.parse.parse_qs(opener.open.call_args.args[0].data.decode())
+                self.assertEqual(form, {"grant_type": ["client_credentials"], "scope": ["addp.api"], "audience": ["addp.api"], "context_type": ["platform"]})
+
     def test_rfc6238_sha1_vectors_use_six_digits(self):
         secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
         for at, expected in ((59, "287082"), (1111111109, "081804"), (1234567890, "005924"), (20000000000, "353130")):

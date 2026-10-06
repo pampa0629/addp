@@ -97,7 +97,8 @@ def machine_client(base):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(request, timeout=10) as response:
         result = json.load(response)
-    require(result.get("token_type") == "Bearer" and result.get("scope") == "addp.api", "invalid native OAuth response")
+    token_type = result.get("token_type")
+    require(isinstance(token_type, str) and token_type.lower() == "bearer" and result.get("scope") == "addp.api", "invalid native OAuth response")
     token = result.get("access_token")
     require(isinstance(token, str) and token.startswith("addp_at_"), "missing native OAuth token")
     return API.GatewayClient(base, token, 10)
