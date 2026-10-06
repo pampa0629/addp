@@ -87,6 +87,8 @@ Secret、内部连接信息及明确限制 Tenant 读取的安全策略不在此
 
 各模块通过版本化的 `addp.configuration-management/v1` 契约向 System 发布配置管理入口。该声明是模块目录能力，不是配置定义或配置值，至少包含稳定 entry id、owner module、支持的 scope types、模块前端路由以及读写 Permission。一级配置管理入口按模块聚合：一个模块只呈现一个稳定的模块级配置页面；同一模块的多个配置域由该页面在内部使用 Tab、分组或其他二级导航组织。现有 `entries` 声明可按配置域分别登记原有读写 Permission 和适用范围，这些声明指向 owner 配置页面或其内部分组路由，Console 按 owner 聚合为一行，不能把权限声明拆成一级菜单。System 的安全策略和栅格引擎资源策略统一由 `/system/configuration` 页面承载，各分组仍使用原有 Permission 和 Platform/Tenant 边界。
 
+System 的引擎配置遵循“已注册引擎实例 → 该实例可管理的配置域 → 配置字段”的从属关系：先选择引擎，再呈现该实例的资源策略等配置域，不能将引擎选择器嵌入某个配置域后再选择实例。IAM 安全策略是独立的 System 配置域，不从属于引擎。
+
 约束如下：
 
 1. 模块 Service Principal 只能发布与自身 owner 一致的入口，重复发布按稳定 entry id 幂等更新。入口引用的读写 Permission 必须在 System Permission 目录中存在、处于 `active` 且其 `owner_module` 等于入口 owner；Permission Key 的首段是资源命名空间，不能代替 `owner_module` 判断归属。
@@ -685,7 +687,7 @@ Infra `runtime-log-observer` 与应用接收器共享显式 `ADDP_HOST_NODE_NAME
 
 ## 栅格引擎资源策略（2026-10-05 已确认）
 
-System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资源策略和 Tenant 使用额度，Console 通过“配置管理 → 系统管理 → 栅格引擎资源策略”（`/system/configuration`）呈现。当前仅管理 active、共享、内置的 GeoPython 引擎实例。它是 System-owned 的引擎资源治理，不代存 Manager 或 Develop 的业务策略，Runtime 不新增数据库、权限管理或控制面。平台策略默认总运行 2 项、总等待 2 项、GDAL 块缓存 256 MiB；平台管理员可修改。平台同时管理 Tenant 默认运行/等待额度（均默认 2），Tenant 管理员只能在平台总上限内修改本租户额度或恢复继承，不得修改全局容量、缓存或其他 Tenant。执行同时受进程共享上限与当前 Tenant 额度约束，不承诺独享资源。
+System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资源策略和 Tenant 使用额度，Console 通过“配置管理 → 系统管理 → 引擎配置 → 选择引擎 → 栅格引擎资源策略”（`/system/configuration`）呈现。引擎配置先选择已登记实例，再显示该实例的栅格资源策略。当前列表沿用原配置 API，仅管理 active、共享、内置的 GeoPython 引擎实例，不借用引擎目录权限扩大配置范围。它是 System-owned 的引擎资源治理，不代存 Manager 或 Develop 的业务策略，Runtime 不新增数据库、权限管理或控制面。平台策略默认总运行 2 项、总等待 2 项、GDAL 块缓存 256 MiB；平台管理员可修改。平台同时管理 Tenant 默认运行/等待额度（均默认 2），Tenant 管理员只能在平台总上限内修改本租户额度或恢复继承，不得修改全局容量、缓存或其他 Tenant。执行同时受进程共享上限与当前 Tenant 额度约束，不承诺独享资源。
 
 策略使用独立正整数版本和精确配置 Permission，保存与审计同事务。平台 PUT 必须完整提交版本和五个预算字段；Tenant PUT 必须提交版本、运行及等待额度，后两项为 null 时恢复继承。缺失字段、额外字段和平台预算的 null 均拒绝。新注册实例或首次租户读取会在 System 事务内物化定义默认记录；Runtime 不另存默认值。配置值只由 System 的持久化事实与已声明定义默认值解析，不从环境变量或任务参数回退。并发/等待策略由 Runtime 周期读取后热更新，缩容保留已有工作；运行额度小于当前活动数时暂停领取，等待数超过新上限时拒绝新入队。缓存仅在新 Runtime 进程第一次应用策略时固定，后续变更展示待重启；已保存版本、实际应用的准入版本和实际缓存预算分开展示。
 

@@ -15,7 +15,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import SecurityPolicy from './SecurityPolicy.vue'
-import RasterPolicy from '../components/configuration/RasterPolicy.vue'
+import EngineConfiguration from '../components/configuration/EngineConfiguration.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -23,7 +23,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const domains = [
   { name: 'security-policy', label: 'system.iam.tabs.securityPolicy', permission: 'iam.security_policy.read', platformOnly: true, component: markRaw(SecurityPolicy) },
-  { name: 'raster-policy', label: 'system.rasterPolicy.title', permission: 'system.engine_raster_policy.read', component: markRaw(RasterPolicy) }
+  { name: 'engine-configuration', label: 'system.configuration.engines', permission: 'system.engine_raster_policy.read', component: markRaw(EngineConfiguration) }
 ]
 const tabs = computed(() => domains.filter(tab =>
   (!tab.platformOnly || auth.contextType === 'platform') && auth.hasPermission(tab.permission)))

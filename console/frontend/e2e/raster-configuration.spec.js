@@ -12,6 +12,8 @@ test('configuration management opens the single System raster group with the ten
   await expect(page).toHaveURL(/\/system\/configuration$/)
   const system = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(system.getByTestId('raster-policy')).toHaveAttribute('data-state', 'loaded')
+  await expect(system.getByRole('tab', { name: '引擎配置', exact: true })).toBeVisible()
+  await expect(system.getByTestId('configuration-engine')).toContainText('GeoPython')
   await expect(system.getByRole('tab', { name: 'IAM 安全策略', exact: true })).toHaveCount(0)
   await expect(page.locator('.el-menu-item.is-active').filter({ hasText: '配置管理' })).toBeVisible()
   await page.reload()

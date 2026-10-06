@@ -1,10 +1,6 @@
 <template>
   <el-card data-testid="raster-policy" :data-state="loaded ? 'loaded' : 'unavailable'">
-    <template #header><div class="policy-header"><h2>{{ t('system.rasterPolicy.title') }}</h2><el-button :loading="loading" :disabled="saving" @click="reload">{{ t('system.rasterPolicy.refresh') }}</el-button></div></template>
-    <el-select v-model="engineID" :placeholder="t('system.rasterPolicy.engine')" :disabled="saving" data-testid="raster-engine">
-      <el-option v-for="engine in engines" :key="engine.id" :label="engine.name" :value="engine.id" />
-    </el-select>
-    <el-empty v-if="!loading && !engines.length" :description="t('system.rasterPolicy.empty')" />
+    <template #header><h2 class="policy-title">{{ t('system.rasterPolicy.title') }}</h2></template>
     <template v-if="loaded">
       <el-alert :title="t('system.rasterPolicy.shared')" type="info" :closable="false" show-icon />
       <el-form label-position="top" :disabled="!canUpdate || saving" class="policy-form">
@@ -45,18 +41,19 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../../store/auth'
 import { rasterPoliciesAPI } from '../../api/rasterPolicies'
 
+const props = defineProps({ engineId: { type: Number, required: true } })
 const { t } = useI18n()
 const auth = useAuthStore()
 const scope = computed(() => auth.contextType)
 const isPlatform = computed(() => scope.value === 'platform')
 const canUpdate = computed(() => auth.hasPermission('system.engine_raster_policy.update'))
-const engines = ref([]), engineID = ref(null), view = ref(null), loaded = ref(false), loading = ref(false), saving = ref(false)
+const view = ref(null), loaded = ref(false), loading = ref(false), saving = ref(false)
 const form = reactive({}), inherit = reactive({ running: true, waiting: true })
 let requestID = 0
 const platformFields = [
@@ -85,25 +82,12 @@ function populate(value) {
   loaded.value = true
 }
 async function load() {
-  const ticket = ++requestID, id = engineID.value, context = scope.value
+  const ticket = ++requestID, id = props.engineId, context = scope.value
   loaded.value = false; view.value = null
   if (!id) { loading.value = false; return }
   loading.value = true
   try { const value = await rasterPoliciesAPI.get(context, id); if (ticket === requestID) populate(value) }
   catch { if (ticket === requestID) ElMessage.error(t('system.rasterPolicy.loadFailed')) }
-  finally { if (ticket === requestID) loading.value = false }
-}
-async function reload() {
-  const ticket = ++requestID, context = scope.value
-  loaded.value = false; view.value = null; loading.value = true
-  try {
-    const values = await rasterPoliciesAPI.engines(context)
-    if (ticket !== requestID) return
-    engines.value = values
-    const id = values.some(item => item.id === engineID.value) ? engineID.value : values[0]?.id ?? null
-    if (id === engineID.value) await load()
-    else engineID.value = id
-  } catch { if (ticket === requestID) { engines.value = []; ElMessage.error(t('system.rasterPolicy.loadFailed')) } }
   finally { if (ticket === requestID) loading.value = false }
 }
 function applyAdvice() {
@@ -114,7 +98,7 @@ function applyAdvice() {
 }
 async function save() {
   if (!loaded.value || !canUpdate.value || saving.value) return
-  const ticket = requestID, context = scope.value, id = engineID.value
+  const ticket = requestID, context = scope.value, id = props.engineId
   const body = isPlatform.value ? Object.fromEntries(['version', ...platformFields.map(field => field.key)].map(key => [key, form[key]]))
     : { version: form.version, running: inherit.running ? null : form.running, waiting: inherit.waiting ? null : form.waiting }
   saving.value = true
@@ -122,15 +106,13 @@ async function save() {
   catch (error) { if (ticket === requestID) ElMessage.error(t(error.response?.status === 409 ? 'system.rasterPolicy.conflict' : 'system.rasterPolicy.saveFailed')) }
   finally { saving.value = false }
 }
-watch(engineID, load)
-watch(() => JSON.stringify([auth.authContext?.principal?.id, auth.authContext?.context]), () => { engineID.value = null; engines.value = []; reload() })
-onMounted(reload)
+watch(() => props.engineId, load, { immediate: true })
+defineExpose({ saving, loading })
 onBeforeUnmount(() => { requestID++ })
 </script>
 
 <style scoped>
-.policy-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.policy-header h2 { margin: 0; }
+.policy-title { margin: 0; }
 .policy-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 20px 0; }
 .policy-form p { grid-column: 1 / -1; }
 .runtime-facts { border-top: 1px solid var(--addp-border-color); padding-top: 16px; }

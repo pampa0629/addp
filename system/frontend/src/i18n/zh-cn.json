@@ -1916,7 +1916,6 @@
     "rasterPolicy": {
       "title": "栅格引擎资源策略",
       "refresh": "刷新",
-      "engine": "选择栅格运行时",
       "empty": "暂无可管理的栅格运行时",
       "shared": "所有租户共享进程总容量；租户额度不代表独享资源。",
       "running": "进程运行上限",
@@ -2001,7 +2000,9 @@
       }
     },
     "configuration": {
-      "title": "配置管理"
+      "title": "配置管理",
+      "engines": "引擎配置",
+      "registeredEngine": "已注册引擎"
     }
   },
   "roles": {

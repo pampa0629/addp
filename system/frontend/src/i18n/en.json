@@ -1916,7 +1916,6 @@
     "rasterPolicy": {
       "title": "Raster runtime resource policy",
       "refresh": "Refresh",
-      "engine": "Select raster runtime",
       "empty": "No managed raster runtimes",
       "shared": "Process capacity is shared by all tenants; tenant quotas do not reserve capacity.",
       "running": "Process running limit",
@@ -2001,7 +2000,9 @@
       }
     },
     "configuration": {
-      "title": "Configuration Management"
+      "title": "Configuration Management",
+      "engines": "Engine Configuration",
+      "registeredEngine": "Registered engine"
     }
   },
   "roles": {

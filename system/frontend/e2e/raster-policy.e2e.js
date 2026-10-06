@@ -54,7 +54,10 @@ test('version conflict keeps the draft', async ({ page }) => {
 for (const empty of [false, true]) test(`unavailable policy or empty engine list exposes no fabricated defaults (${empty})`, async ({ page }) => {
   await mockRaster(page, { unavailable: true, empty })
   await page.goto('/configuration')
-  await expect(page.getByTestId('raster-policy')).toHaveAttribute('data-state', 'unavailable')
+  if (empty) {
+    await expect(page.getByTestId('engine-configuration')).toHaveAttribute('data-state', 'unavailable')
+    await expect(page.getByTestId('raster-policy')).toHaveCount(0)
+  } else await expect(page.getByTestId('raster-policy')).toHaveAttribute('data-state', 'unavailable')
   await expect(page.getByTestId('raster-save')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '刷新', exact: true })).not.toHaveClass(/is-loading/)
 })
@@ -74,7 +77,7 @@ test('platform shrink displays the saved tenant quota without silently overwriti
 test('configuration groups are permission filtered and the old raster route is removed', async ({ page }) => {
   await mockRaster(page, { scope: 'tenant' })
   await page.goto('/configuration?tab=security-policy')
-  await expect(page.getByRole('tab', { name: '栅格引擎资源策略' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '引擎配置' })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'IAM 安全策略', exact: true })).toHaveCount(0)
   await expect(page.getByTestId('raster-policy')).toHaveAttribute('data-state', 'loaded')
   await page.goto('/engine-raster-policies')
@@ -104,18 +107,85 @@ for (const rasterAccess of [false, true]) test(`platform configuration preserves
   await expect(page.getByRole('tab', { name: 'IAM 安全策略', exact: true })).toBeVisible()
   await expect(page.locator('.security-policy')).toContainText('会话与访问凭据')
   await expect(page.locator('.security-policy .form-actions')).toHaveCount(0)
-  const rasterTab = page.getByRole('tab', { name: '栅格引擎资源策略', exact: true })
+  const rasterTab = page.getByRole('tab', { name: '引擎配置', exact: true })
   if (!rasterAccess) {
     await expect(rasterTab).toHaveCount(0)
     await expect(page.getByTestId('raster-policy')).toHaveCount(0)
     return
   }
   await rasterTab.click()
-  await expect(page).toHaveURL(/tab=raster-policy/)
+  await expect(page).toHaveURL(/tab=engine-configuration/)
   await expect(page.getByTestId('raster-policy')).toHaveAttribute('data-state', 'loaded')
   await expect(page.getByTestId('raster-save')).toHaveCount(0)
   await page.reload()
   await expect(rasterTab).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByTestId('raster-policy')).toHaveAttribute('data-state', 'loaded')
   await testInfo.attach('system-configuration', { body: await page.screenshot(), contentType: 'image/png' })
+})
+
+test('registered engine selection precedes its configuration domains', async ({ page }, testInfo) => {
+  await mockRaster(page)
+  await page.goto('/configuration')
+  await expect(page.getByRole('tab', { name: '引擎配置', exact: true })).toBeVisible()
+  const selector = page.getByTestId('configuration-engine')
+  const policy = page.getByTestId('raster-policy')
+  await expect(policy).toHaveAttribute('data-state', 'loaded')
+  await expect(selector).toContainText('GeoPython')
+  await expect(page.getByText('已注册引擎', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('engine-configuration').getByTestId('configuration-engine')).toHaveCount(1)
+  await expect(policy.getByTestId('configuration-engine')).toHaveCount(0)
+  expect((await selector.boundingBox()).y).toBeLessThan((await policy.getByRole('heading', { name: '栅格引擎资源策略' }).boundingBox()).y)
+  const screenshot = testInfo.outputPath('engine-configuration.png')
+  await page.screenshot({ path: screenshot })
+  await testInfo.attach('engine-configuration', { path: screenshot, contentType: 'image/png' })
+})
+
+test('switching the registered engine ignores a late response from the previous instance', async ({ page }) => {
+  await mockRaster(page, { engines: [{ id: 1, name: 'GeoPython A' }, { id: 2, name: 'GeoPython B' }], cacheByEngine: { 1: 128, 2: 512 } })
+  let release, received
+  const held = new Promise(resolve => { release = resolve })
+  const requested = new Promise(resolve => { received = resolve })
+  await page.route('**/engine-raster-policies/1', async route => {
+    received()
+    await held
+    await route.fallback()
+  })
+  await page.goto('/configuration')
+  await requested
+  await page.getByTestId('configuration-engine').click()
+  await page.getByRole('option', { name: 'GeoPython B', exact: true }).click()
+  await expect(page.getByTestId('raster-policy')).toHaveAttribute('data-state', 'loaded')
+  await expect(page.getByTestId('cache_mib').getByRole('spinbutton')).toHaveValue('512')
+  const response = page.waitForResponse(value => value.url().endsWith('/engine-raster-policies/1'))
+  release()
+  await response
+  await expect(page.getByTestId('cache_mib').getByRole('spinbutton')).toHaveValue('512')
+  await expect(page.getByTestId('configuration-engine')).toContainText('GeoPython B')
+})
+
+test('saving an engine policy locks engine selection and writes only to the selected instance', async ({ page }) => {
+  const writes = await mockRaster(page, { engines: [{ id: 1, name: 'GeoPython A' }, { id: 2, name: 'GeoPython B' }], cacheByEngine: { 1: 128, 2: 512 } })
+  let release, received
+  const held = new Promise(resolve => { release = resolve })
+  const requested = new Promise(resolve => { received = resolve })
+  await page.route('**/engine-raster-policies/2', async route => {
+    if (route.request().method() === 'PUT') { received(); await held }
+    await route.fallback()
+  })
+  await page.goto('/configuration')
+  await expect(page.getByTestId('raster-policy')).toHaveAttribute('data-state', 'loaded')
+  await page.getByTestId('configuration-engine').click()
+  await page.getByRole('option', { name: 'GeoPython B', exact: true }).click()
+  await expect(page.getByTestId('cache_mib').getByRole('spinbutton')).toHaveValue('512')
+  await page.getByTestId('cache_mib').getByRole('spinbutton').fill('256')
+  await page.getByTestId('raster-save').click()
+  await requested
+  await expect(page.getByTestId('configuration-engine').locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeDisabled()
+  release()
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0].cache_mib).toBe(256)
+  await expect(page.getByTestId('configuration-engine').locator('.el-select__wrapper')).not.toHaveClass(/is-disabled/)
+  await expect(page.getByTestId('configuration-engine')).toContainText('GeoPython B')
+  await expect(page.getByTestId('cache_mib').getByRole('spinbutton')).toHaveValue('256')
 })
