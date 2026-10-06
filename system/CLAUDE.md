@@ -22,6 +22,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > 普通只读共享有效期：每次显式选择 `at_time`（未来绝对到期时间）或 `until_revoked`（无到期日期，直至撤销）；遗漏模式或矛盾参数拒绝，模式与日期均绑定不可变请求。自动办理窗口仍为原受理时间起 5 分钟；限时共享另受授权到期时间截断，长期有效不延长办理窗口。000172 在排他锁与同一事务内将历史有限期回执无损标为 `at_time`、补齐绑定并恢复不可变触发器，不创建 Grant 或改变历史时间。临时接入、管理委派和敏感操作规则不变。
 
+平台节点指标 Hosted T4 的 `cmd/online-test-fixture --suite platform-node-metrics` 使用正式三员 Bootstrap，独立准备临时系统/安全管理员登录及 TOTP 凭据，不直接签发平台 User Token。两个不同的非默认 Tenant User 仅授予 `monitor.execution.read`，用于验证平台入口越权拒绝。凭据只写入 owner-only 临时文件，身份随当次 Hosted Infra 销毁；真实登录/MFA、节点/目标管理与独立 Prometheus 发现身份由同名 T4 suite 验证，身份数据库回归纳入既有 Online fixture PostgreSQL 门禁。
+
 ## 项目概述
 
 Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixture` 正式 IAM Service 路径；验收 User、引擎登记 User 与治理初始化 User 分别授权。Security 分类、等级和检测绑定的创建权限仅授予准备用户，不进入四出口验收身份；凭据由 Hosted 生命周期在业务验收前移除，完整身份随当次 Infra 销毁。

@@ -125,6 +125,8 @@ var readWorkflowConsumerPermissions = []string{
 
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
+	case "platform-node-metrics":
+		return nil, nil
 	case "raster-workflow":
 		return rasterWorkflowPermissions, nil
 	case "security-mysql-owner-protection":
@@ -230,6 +232,9 @@ func run(args []string, environment []string) error {
 	}
 	if users != 0 {
 		return errors.New("disposable External Online database already contains User principals")
+	}
+	if *suite == "platform-node-metrics" {
+		return preparePlatformMetricsIdentities(db, cfg, *output)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -680,6 +685,13 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		return fmt.Errorf("protect fixture environment: %w", err)
 	}
 	for _, key := range []string{
+		"ADDP_ONLINE_METRICS_ADMIN_USERNAME",
+		"ADDP_ONLINE_METRICS_ADMIN_PASSWORD",
+		"ADDP_ONLINE_METRICS_ADMIN_TOTP",
+		"ADDP_ONLINE_METRICS_SECURITY_USERNAME",
+		"ADDP_ONLINE_METRICS_SECURITY_PASSWORD",
+		"ADDP_ONLINE_METRICS_SECURITY_TOTP",
+		"ADDP_ONLINE_METRICS_FOREIGN_TENANT_ID",
 		"ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID",

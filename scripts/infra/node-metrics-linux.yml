@@ -1,0 +1,11 @@
+services:
+  node-exporter:
+    network_mode: host
+    pid: host
+    volumes:
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          propagation: rslave

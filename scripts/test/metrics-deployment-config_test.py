@@ -120,5 +120,131 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertNotIn('prometheus', monitor.get('depends_on', {}))
 
 
+node_spec = importlib.util.spec_from_file_location('node_metrics', ROOT / 'scripts/infra/node-metrics.py')
+node_config = importlib.util.module_from_spec(node_spec)
+node_spec.loader.exec_module(node_config)
+
+
+class NodeMetricsDeploymentTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='addp-node-config-')
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        for name in ('ca.crt', 'server.crt', 'server.key'):
+            (self.directory / name).write_text(name)
+        self.env = dict(ADDP_NODE_METRICS_ENABLED='true',
+                        ADDP_NODE_METRICS_TLS_DIR=str(self.directory),
+                        ADDP_NODE_METRICS_LISTEN='192.0.2.10:9100')
+
+    def test_disabled_does_not_access_docker_or_validate_source_secrets(self):
+        from unittest.mock import patch
+        with patch.object(node_config, 'docker_json', side_effect=AssertionError('Docker called')):
+            node_config.run('up', {'ADDP_NODE_METRICS_ENABLED': 'false'})
+        with self.assertRaises(ValueError):
+            node_config.deployment(dict(self.env, ADDP_NODE_METRICS_ENABLED='1'))
+
+    def test_only_canonical_ip_listen_and_source_files_are_admitted(self):
+        self.assertEqual(node_config.deployment(self.env), self.directory)
+        for listen in ('0.0.0.0:9100', '[::]:9100', ':9100', 'host:9100', '192.0.2.10',
+                       '192.0.2.10:09100', '192.0.2.10:65536', '169.254.1.1:9100',
+                       '224.0.0.1:9100', '192.0.2.10:9100/metrics'):
+            with self.subTest(listen=listen), self.assertRaises(ValueError):
+                node_config.deployment(dict(self.env, ADDP_NODE_METRICS_LISTEN=listen))
+        extra = self.directory / 'ca.key'
+        extra.write_text('do-not-mount')
+        with self.assertRaises(ValueError):
+            node_config.deployment(self.env)
+        extra.unlink()
+        (self.directory / 'server.key').unlink()
+        (self.directory / 'server.key').symlink_to(self.directory / 'ca.crt')
+        with self.assertRaises(ValueError):
+            node_config.deployment(self.env)
+        with self.assertRaises(ValueError):
+            node_config.deployment(dict(self.env, ADDP_NODE_METRICS_TLS_DIR=str(ROOT)))
+
+    def test_native_linux_boundary_rejects_desktop_remote_and_old_kernel(self):
+        node_config.native_host('Linux', '6.8.0', 'unix:///var/run/docker.sock', 'Ubuntu 24.04')
+        for args in (('Darwin', '6.8.0', 'unix:///var/run/docker.sock', 'Docker Desktop'),
+                     ('Linux', '6.8.0', 'unix:///var/run/docker.sock', 'Docker Desktop'),
+                     ('Linux', '6.8.0', 'ssh://owner@node', 'Ubuntu'),
+                     ('Linux', '5.11.0', 'unix:///var/run/docker.sock', 'Ubuntu')):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                node_config.native_host(*args)
+
+    def test_context_precedence_ownership_and_certificate_independent_stop(self):
+        from unittest.mock import patch
+        context = [{'Endpoints': {'docker': {'Host': 'ssh://owner@remote'}}}]
+        values = dict(self.env, DOCKER_CONTEXT='remote', DOCKER_HOST='unix:///var/run/docker.sock')
+        with patch.object(node_config, 'docker_json', return_value=context), \
+                patch.object(node_config.subprocess, 'run') as execute:
+            with self.assertRaises(ValueError):
+                node_config.run('up', values)
+            execute.assert_not_called()
+        local = [{'Endpoints': {'docker': {'Host': 'unix:///var/run/docker.sock'}}}]
+        foreign = [{'Config': {'Labels': {'io.addp.node-metrics.owner': '/another/workspace'}}}]
+        with patch.object(node_config, 'docker_json', side_effect=[local, foreign]), \
+                patch.object(node_config.subprocess, 'check_output', return_value='other-container'), \
+                patch.object(node_config.subprocess, 'run') as execute:
+            with self.assertRaises(ValueError):
+                node_config.run('down', {})
+            execute.assert_not_called()
+        with patch.object(node_config, 'docker_json', return_value=local), \
+                patch.object(node_config.subprocess, 'check_output', return_value=''), \
+                patch.object(node_config.subprocess, 'run') as execute:
+            node_config.run('down', {'ADDP_NODE_METRICS_ENABLED': 'false'})
+            self.assertEqual(execute.call_args.args[0][-1], 'down')
+            self.assertNotIn('--volumes', execute.call_args.args[0])
+
+    def test_native_launch_overrides_untrusted_root_paths_and_profiles(self):
+        from unittest.mock import patch
+        values = dict(self.env, DOCKER_HOST='unix:///var/run/docker.sock',
+                      ADDP_NODE_METRICS_ROOTFS='/wrong', COMPOSE_PROFILES='unexpected')
+        info = {'KernelVersion': '6.8.0', 'OperatingSystem': 'Ubuntu', 'OSType': 'linux'}
+        with patch.object(node_config, 'docker_json', return_value=info), \
+                patch.object(node_config.platform, 'system', return_value='Linux'), \
+                patch.object(node_config.platform, 'release', return_value='6.8.0'), \
+                patch.object(node_config.subprocess, 'check_output', return_value=''), \
+                patch.object(node_config.subprocess, 'run') as execute:
+            node_config.run('up', values)
+            self.assertIn('--force-recreate', execute.call_args.args[0])
+            env = execute.call_args.kwargs['env']
+            self.assertEqual(env['ADDP_NODE_METRICS_ROOTFS'], '/host')
+            self.assertEqual(env['ADDP_NODE_METRICS_PROCFS'], '/host/proc')
+            self.assertNotIn('COMPOSE_PROFILES', env)
+
+    def test_production_compose_has_sole_host_source_and_readonly_mounts(self):
+        env = dict(os.environ, **self.env, ADDP_NODE_METRICS_OWNER=str(ROOT),
+                   ADDP_NODE_METRICS_ROOTFS='/host', ADDP_NODE_METRICS_PROCFS='/host/proc',
+                   ADDP_NODE_METRICS_SYSFS='/host/sys')
+        value = subprocess.run(['docker', 'compose', '--env-file', '/dev/null',
+                                '-f', str(ROOT / 'scripts/infra/node-metrics.yml'),
+                                '-f', str(ROOT / 'scripts/infra/node-metrics-linux.yml'),
+                                'config', '--format', 'json'], env=env, capture_output=True,
+                               text=True, check=True, timeout=15)
+        services = json.loads(value.stdout)['services']
+        self.assertEqual(set(services), {'node-exporter'})
+        source = services['node-exporter']
+        self.assertEqual(source['network_mode'], 'host')
+        self.assertEqual(source['pid'], 'host')
+        self.assertEqual(source['user'], '65534:65534')
+        self.assertTrue(source['read_only'])
+        self.assertEqual(source['cap_drop'], ['ALL'])
+        self.assertEqual(source['cpus'], 0.25)
+        self.assertEqual(source['mem_limit'], '268435456')
+        self.assertFalse(source.get('privileged', False))
+        self.assertNotIn('ports', source)
+        volumes = source['volumes']
+        self.assertTrue(all(v['read_only'] for v in volumes))
+        host = next(v for v in volumes if v['target'] == '/host')
+        self.assertEqual(host['source'], '/')
+        self.assertEqual(host['bind']['propagation'], 'rslave')
+        self.assertEqual(set(v['target'] for v in volumes), {
+            '/host', '/etc/addp/node-metrics/web.yml', '/etc/addp/node-metrics/tls/ca.crt',
+            '/etc/addp/node-metrics/tls/server.crt', '/etc/addp/node-metrics/tls/server.key'})
+        self.assertIn('--collector.disable-defaults', source['command'])
+        self.assertEqual(sum(c.startswith('--collector.') and c != '--collector.disable-defaults'
+                             for c in source['command']), 10)
+
+
 if __name__ == '__main__':
     unittest.main()

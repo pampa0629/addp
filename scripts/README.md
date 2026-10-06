@@ -873,3 +873,11 @@ Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hos
 栅格工作流验收在 `online-t4-gates.yml` 手工选择 `raster-workflow`，由 `online-hosted-raster-gate.sh` 复用 Hosted 生命周期和标准 Runtime 启动入口。Business owner `online-raster-minio-fixture.py` 管理两套 tmpfs MinIO，凭据不同且只存于 owner-only 临时文件；独立 Provisioner 注册源、目标 Engine 后从业务进程移除 Provisioner Token 与数据库密码。普通 User 通过 Develop 执行加载、波段计算和 COG 保存，验证 create、重复 create 失败不改目标、replace、原始像元和完整 COG 布局、自动 Meta scan/血缘，以及同一 User 的 Console Monitor 状态与源目标卡片。退出时清理业务容器、Runtime 镜像、registry、Infra 数据卷和凭据，清理失败使门禁失败。`make test-raster-online-runner` 验证场景与生命周期，归入 `make test-online-runner` 和 `make test-platform`；独立物理校验器的真实 GDAL 回归归入既有 `make test-geopython-workflow`。此 suite 尚待首次真实 Hosted 执行，不登记 schedule，也不得在当前开发部署运行。
 
 Redis Online 验收使用 `make test-online ONLINE_SUITE=redis-consumer-flow`，在 `online-t4-gates.yml` 选择该 suite 后由人工 `redis-hosted-t4` Job 执行 `bash scripts/test/online-hosted-redis-gate.sh`。该入口复用 `scripts/utils/hosted-online.sh` 的准入、一次性 Infra、秘密分区及清理；Business owner 脚本 `business/scripts/online-redis-consumer-fixture.sh` 提供固定镜像、只读 ACL 与九个原生样例，System owner helper 创建普通验收用户及独立 Engine provisioner，登记后移除 provisioner 凭据。验收覆盖 System 实时目录、Meta 扫描、Manager 原生预览以及真实 Console Meta 重扫和 Manager 页面，截图、API 与同一 User/Tenant 的浏览器报告归档到仓库外 artifact 目录。脚本/断言确定性门禁是 `make test-online-runner`；登记检查从 Hosted metadata 自动发现 suite 并核对 workflow choice，不需要额外 owner 清单。该 gate 拒绝 macOS、脏 checkout、个人环境与已有资源；首次真实运行前不计为 T4 通过，不纳入夜间执行。
+
+### 平台节点指标 Hosted 验收
+
+`platform-node-metrics` 使用 `scripts/test/online-hosted-node-metrics-gate.sh` 在干净 Hosted Linux x86_64 部署验证真实 System / Gateway / Monitor / Prometheus / node_exporter 链路。正式三员 Bootstrap 只准备临时登录凭据，平台 User 经真实 MFA 取 Token；两个非默认 Tenant 的最小权限 User 均应被平台入口拒绝，Prometheus 仅持有独立发现权限。
+
+采集中心由标准 Infra 启动，节点由 `scripts/infra/node-metrics.py` 独立部署。临时 TLS 转发只连接真实 Gateway；监听地址取原生 Docker bridge Gateway 并限定端口，不对外放开来源准入。suite 核验保存版本、发现版本、活动目标及新鲜样本，验证来源/控制面中断恢复，以及节点和目标停用后的撤除。报告和 Hosted 清理摘要分别记录业务断言与部署零残留。
+
+确定性门禁为 `make test-node-metrics-online-runner`，由 `make test-online-runner`、`make test-platform` 和既有 Platform CI 聚合；身份数据库验证进入 `bash scripts/test/system-iam-postgres-gate.sh --package online-fixture`。真实 T4 在 `Online T4 gates` 手工选择同名 suite，首次真实通过前不加入 schedule。本地 macOS 不启动这套部署，也不以 T2 协议夹具替代 T4。

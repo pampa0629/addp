@@ -209,6 +209,56 @@ assert requests.count('POST /api/v1/system/oauth/token 200') >= 2, 'native OAuth
 assert 'POST /api/v1/system/oauth/token 401' not in requests, 'OAuth must use the independent Basic client credential'
 assert os.environ['PROMETHEUS_SERVICE_CLIENT_SECRET'] not in config + requests
 print('Metrics T2: native OAuth renewal and owner labels verified; no Token or secret logged', flush=True)
+# A real exporter uses the production base template without any host namespace/mount.
+node = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'node-exporter')], text=True))[0]
+assert node['Config']['User'] == '65534:65534'
+assert node['HostConfig']['ReadonlyRootfs'] and node['HostConfig']['CapDrop'] == ['ALL']
+assert not node['HostConfig']['Privileged'] and node['HostConfig']['PidMode'] != 'host'
+assert node['HostConfig']['NetworkMode'] != 'host'
+assert node['HostConfig']['NanoCpus'] == 250_000_000
+assert node['HostConfig']['Memory'] == 256 * 1024**2
+assert all(m['Source'] != '/' and not m['RW'] for m in node['Mounts'])
+node_base = 'https://localhost:' + port('node-exporter', 9100)
+eventually(lambda: b'node_memory_MemTotal_bytes' in get(node_base + '/metrics', source_context),
+           'real node_exporter serves authenticated resource metrics')
+admission = ssl.create_default_context(cafile=str(deployment / 'source-ca.crt'))
+admission.load_cert_chain(str(WORK / 'admission.crt'), str(WORK / 'admission.key'))
+assert b'node_cpu_seconds_total' in get(node_base + '/metrics', admission)
+foreign_source = ssl.create_default_context(cafile=str(deployment / 'source-ca.crt'))
+foreign_source.load_cert_chain(str(WORK / 'untrusted.crt'), str(WORK / 'untrusted.key'))
+for ctx in (source_anonymous, source_health, foreign_source):
+    rejected(node_base + '/metrics', ctx)
+rejected(node_base.replace('https:', 'http:') + '/metrics', source_anonymous)
+# The IP SAN, rather than an editable server_name, protects the discovery address.
+node_ip = next(iter(node['NetworkSettings']['Networks'].values()))['IPAddress']
+node_instance = node_ip + ':9100'
+projection = json.loads(original_discovery)
+projection[0]['targets'] = [node_instance]
+discovery_text(json.dumps(projection))
+
+
+def node_resource_samples():
+    for metric in ('node_cpu_seconds_total', 'node_memory_MemTotal_bytes', 'node_load1',
+                   'node_disk_reads_completed_total', 'node_network_receive_bytes_total',
+                   'node_boot_time_seconds'):
+        rows = query(metric + '{job="addp_nodes",instance="' + node_instance + '"}')
+        if not rows or any(row['metric'].get('addp_source') != 'node_exporter' or
+                           row['metric'].get('addp_node_id') != projection[0]['labels']['addp_node_id']
+                           for row in rows):
+            return False
+    return True
+
+
+eventually(node_resource_samples, 'real exporter resource samples enter the sole HTTP SD job')
+compose('stop', 'node-exporter')
+eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 0')),
+           'node exporter outage is visible without stopping the center')
+assert get(base + '/-/ready')
+compose('start', 'node-exporter')
+eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 1')),
+           'node exporter recovery')
+discovery_text(original_discovery)
+eventually(valid_sample, 'fixture scope restored after real exporter checks')
 # Only the disposable metrics center is killed; a separate fixture route stays live.
 compose('kill', '-s', 'SIGKILL', 'prometheus')
 assert get('http://127.0.0.1:' + port('metrics-source', 8080) + '/alive') == b'fixture alive\n'

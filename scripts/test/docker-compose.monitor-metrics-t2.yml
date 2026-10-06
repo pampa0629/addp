@@ -1,4 +1,9 @@
 services:
+  node-exporter:
+    extends:
+      file: ../infra/node-metrics.yml
+      service: node-exporter
+    ports: ["127.0.0.1::9100"]
   prometheus:
     extends:
       file: ../infra/metrics.yml

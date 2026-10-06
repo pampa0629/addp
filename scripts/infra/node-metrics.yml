@@ -1,0 +1,50 @@
+services:
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    command:
+      - --web.listen-address=${ADDP_NODE_METRICS_LISTEN:-:9100}
+      - --web.config.file=/etc/addp/node-metrics/web.yml
+      - --web.max-requests=2
+      - --path.rootfs=${ADDP_NODE_METRICS_ROOTFS:-/}
+      - --path.procfs=${ADDP_NODE_METRICS_PROCFS:-/proc}
+      - --path.sysfs=${ADDP_NODE_METRICS_SYSFS:-/sys}
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.meminfo
+      - --collector.loadavg
+      - --collector.filesystem
+      - --collector.diskstats
+      - --collector.netdev
+      - --collector.netstat
+      - --collector.stat
+      - --collector.uname
+      - --collector.time
+    user: "65534:65534"
+    cpus: 0.25
+    mem_limit: 256m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    labels:
+      io.addp.node-metrics.owner: ${ADDP_NODE_METRICS_OWNER:-t2}
+    volumes:
+      - ./node-metrics-web.yml:/etc/addp/node-metrics/web.yml:ro
+      - type: bind
+        source: ${ADDP_NODE_METRICS_TLS_DIR:-/nonexistent/addp-node-metrics}/ca.crt
+        target: /etc/addp/node-metrics/tls/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ADDP_NODE_METRICS_TLS_DIR:-/nonexistent/addp-node-metrics}/server.crt
+        target: /etc/addp/node-metrics/tls/server.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ADDP_NODE_METRICS_TLS_DIR:-/nonexistent/addp-node-metrics}/server.key
+        target: /etc/addp/node-metrics/tls/server.key
+        read_only: true
+        bind:
+          create_host_path: false

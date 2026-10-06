@@ -84,6 +84,24 @@ node_id 由部署环境明确绑定到实例和采集来源，不能用现有 ho
 
 采集服务使用独立最小权限身份和绑定来源，不代传长期 User Token。数据库专业指标使用专用监测账号；Monitor 不获取业务读写账号自行查询。平台日志正文继续由 System 的独立 Permission 和授权查询路径提供。
 
+### 3.3 实际运行的平台级与租户级边界
+
+2026-10-06 用户确认隔离测试身份安排，并明确实际运行须区分平台级和租户级。测试身份例外不改变以下运行边界，也不授予生产角色新的权限。
+
+| 维度 | 平台级（Platform Context） | 租户级（Tenant Context） |
+| --- | --- | --- |
+| 观测范围 | 纳管节点、共享 Infra、平台模块实例及采集链路的有界运维事实 | 当前 Tenant 内获授权的引擎观测、任务执行及其摘要 |
+| 管理范围 | 节点台账与平台监测目标，分别要求对应独立 Permission | 当前 Tenant 的已发布监控/执行功能及 Owner 对象权限；不获得平台节点或采集配置管理权 |
+| 资源口径 | 宿主或平台服务的实际观测值，明确来源、窗口和覆盖范围 | 仅展示有可信租户归属依据的指标；共享宿主总用量不能按引擎关联直接归给租户 |
+| 业务内容 | 平台角色不自动授予业务 SQL、参数、结果或 Tenant 内容读取权 | 按当前 Tenant 身份、功能 Permission 与 Owner 资源策略共同裁决 |
+| 日志及告警 | 平台运行日志正文使用独立权限；平台事件不得虚构 Tenant | 现有租户执行告警按 Tenant 隔离；执行读取不附带平台日志正文或其他租户信息 |
+
+服务端从 System 权威 AuthContext 派生当前 Context 和 Tenant，不接受浏览器自报 `tenant_id`、指标标签或引擎 ID 作为跨租户授权依据。具有平台角色的 User 切换到 Tenant Context 后仍须具备有效 Membership、当前 Tenant Role Permission 和 Owner 对象权限；Platform Context 不代表所有 Tenant。用户关联查询继续由对应 Owner 用当前已验证 User Token 裁决，后台采集身份不得代替用户读取裁决。
+
+Console 与 Monitor 页面随当前 Context 呈现对应范围；上下文切换时清空旧范围数据、筛选和待完成请求，迟到响应不得覆盖新上下文。服务端授权覆盖列表、详情、趋势、汇总和拓扑，不能仅依靠前端隐藏页面。租户统计必须明确覆盖范围；租户 A、租户 B 和 Platform 三类身份分别验收，拒绝跨 Context、跨 Tenant 和后台身份绕过。
+
+当前已发布的节点台账、监测目标与指标发现链路属于平台级。首期继续完成该链路；现有租户执行监控保持 Tenant 隔离。租户引擎资源观测仍须补齐可信归属、指标口径和 Owner 授权契约后实现，本节不宣称新增 Tenant 资源查询已经可用，也不增加新接口或权限占位。
+
 ## 四、技术路线与部署组织
 
 ### 4.1 唯一数据路径
@@ -270,7 +288,7 @@ disabled 不尝试发送，不制造设施离线告警；unconfigured 表示已�
 
 ## 十、第一期开工契约（2026-10-05，目标设计，待实施）
 
-本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.17 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
+本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.18 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
 
 ### 10.1 节点与实例绑定
 
@@ -675,3 +693,69 @@ Monitor 的 CIDR、端口、来源 CA 和准入客户端证书由部署注入，
 - `make test-changed` 因全工作区所需 PostgreSQL、MySQL/OceanBase 等测试连接参数缺失而在预检退出，后续门禁未执行，不计为通过；本批按实际范围单独完成上述标准入口验证。未运行的跨 Owner 数据库 T2 由既有 `.github/workflows/release-and-t2-gates.yml` 对应门禁验证，CI 登记检查已确认覆盖；本批没有推送触发 CI，因此不声明这些门禁已通过。
 
 本批没有提交、推送或重启个人服务。节点 exporter 的受控部署、真实 System → Monitor → Prometheus 全链路以及生产生效回执尚未实施、未验收；下一批优先补齐这些来源与验收证据，随后再交付资源查询和页面展示。统一平台运行告警迁移仍按第 10.7 节等待单独确认。
+
+
+### 10.18 P1.1 第七批 B：Linux 主机指标来源的受控部署
+
+本批沿已确认来源契约实现独立 node_exporter 部署入口。中心 `up.sh` 和业务生命周期不调用节点入口；节点选择由根 `.env.example` 的 `ADDP_NODE_METRICS_ENABLED=false` 单独声明。节点入口仅消费显式导出的部署输入，不创建节点身份、不修改 Monitor 目标、不签发证书、不修改防火墙。部署方在目标 Linux 节点主动执行 `python3 scripts/infra/node-metrics.py up`，选中且通过准入后才启动单一来源；未选择直接报告 Disabled，不访问 Docker。
+
+生产来源固定官方 node_exporter v1.12.1 及多架构 digest，使用 exporter-toolkit 原生 `RequireAndVerifyClientCert`、TLS 1.2 起。`ADDP_NODE_METRICS_TLS_DIR` 必须是仓库外绝对目录，只包含 `ca.crt/server.crt/server.key`；仅这些文件及版本化 Web 模板只读挂载，CA 签发私钥与客户端私钥不得进入此目录。客户端 CA 仅签发本来源的 Monitor 准入与 Prometheus 采集身份，中心健康身份不被信任。服务器证书须包含 Monitor 发现所用 IP SAN；证书有效性、用途、密钥匹配由真实 TLS 验证，不把文件存在当作身份或物理位置证明。
+
+`ADDP_NODE_METRICS_LISTEN` 必须是受控本机 IP 与显式端口，无通配监听、DNS 或自动避让；端口冲突明确失败。原生 Linux Docker 使用 host 网络和 PID 命名空间、宿主 `/` 只读且 rslave 传播、显式 `/host/proc` 与 `/host/sys`；这属于节点部署权限，不向日志 Alloy 或业务服务授予。来源以 UID/GID 65534 运行，禁 privileged、移除全部 capability、禁止权限提升，初始预算 0.25 CPU/256 MiB。仅启用 CPU、内存、负载、文件系统、磁盘 IO、网卡、TCP 统计、系统统计、uname 和时间这十个采集器，不启用 textfile、systemd、进程命令行或额外宿主权限采集器。宿主文件系统与证书须可由该 UID 读取，不能自动放宽权限。
+
+部署入口拒绝 macOS/Windows、Docker Desktop、远程 Docker endpoint 及低于 5.12 的 Linux 内核，以免把虚拟机资源误报为纳管宿主，或把旧内核的子挂载只读行为当作已满足边界。`down/status` 不要求当前证书仍存在，停止不依赖指标中心。固定节点 Compose Project 带仓库 Owner 标签，异工作区已有同名容器时拒绝操作；不会扫描或接管用户其他服务。
+
+验证范围在实施前确定：配置/入口分支属于现有 `make test-dev-lifecycle` 的 T0/T1；现有 `make test-monitor-metrics` 增加独占的真实 node_exporter，直接复用生产基础模板与 mTLS Web 配置，覆盖匿名/错误客户端/明文拒绝、实际资源样本进入生产 HTTP SD 作业、故障与恢复。该 T2 不挂载宿主 `/`、不使用 host 网络/PID，不能证明 Linux 生产权限、物理节点绑定或真实 System/Monitor 认证。新增镜像、模板及入口加入该 owner 的 `ADDP_T2_INPUT_FILES`，沿既有 CI Job 执行，不新增第二个门禁或 workflow。真实 Linux 部署（包括宿主子挂载实际只读及传播）、cAdvisor 节点入口、System → Monitor → Prometheus T4 和生效回执继续单独验收。
+
+来源实现参考 [node_exporter 官方容器部署](https://github.com/prometheus/node_exporter#docker)、[exporter-toolkit Web 配置](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md) 和 [Docker 递归只读挂载约束](https://docs.docker.com/engine/storage/bind-mounts/#recursive-mounts)。
+
+
+本批已取得的本地证据：
+
+- `make test-monitor-metrics` 完整通过：复用唯一生产基础/Web 模板的真实 node_exporter 接受独立采集与准入证书，拒绝匿名、外部签发客户端、中心健康身份及明文；CPU、内存、负载、磁盘、网卡和启动时间样本经原生 HTTP SD 进入时序库。来源停止/恢复、发现故障保留旧目标/成功空列表撤除、中心 SIGKILL 后 WAL 历史恢复继续通过，退出后本轮容器、网络、卷与临时文件均零残留。
+- 当前 `make test-dev-lifecycle` 完整通过，部署配置聚合为 49 项；新增六项节点入口测试覆盖关闭时不访问 Docker、受控 IP/三文件输入、Linux/Desktop/远程边界、Docker Context 优先级、工作区所有权、证书缺失时可停止和强制重建，正式 Compose 合并确认 host 网络/PID、资源限制与只读挂载。未在本机执行生产节点 `up`。
+- `python3 scripts/ci/check-t2-ci-registration.py --repository .` 和 `git diff --check` 通过；新增来源的镜像/模板/入口沿现有 `monitor-metrics` CI Job 与统一 owner 输入登记覆盖，未新增重复门禁。
+- `make test-changed` 在数据库测试参数预检退出，后续未运行，不计为通过；未运行的 PostgreSQL、MySQL/OceanBase 等跨 Owner T2 由既有 `.github/workflows/release-and-t2-gates.yml` 对应标准入口验证，本批未推送触发这些 CI。
+
+
+平台聚合的失败须单独保留，不能计为本批已通过：`make test-platform` 在既有 Online Runner 的 `test_runs_transfer_insert_only_suite_with_owned_browser_fixture` 发生 5 秒子进程超时后退出。随后按标准入口运行 `make test-online-runner`，Redis Hosted/Consumer 的 19 项组中出现 7 个 10/20 秒子进程超时错误，复验仍失败。最初 Transfer 用例仅复制既有 Runner/Preflight，Infra/启动为其私有夹具，不调用本批新节点入口；本批未修改这些夹具或放宽超时，重复超时根因尚未确认。`make test-authorization` 的 Common 授权测试通过，但后续 Swagger 检查器的 18 项夹具中出现 3 个 15 秒子进程超时，入口失败，不计为整体通过。对应复验日志分别为系统临时目录中的 `addp-node-metrics-platform.log`、`addp-node-metrics-online-recheck.log` 和 `addp-node-metrics-authorization.log`；既有 Platform CI 会执行同一标准入口，本批未推送、未取得 CI 复验结果。
+
+本批完成节点来源实现及其部署/指标 T0–T2 验证，没有在用户机器安装宿主采集器、重启业务或执行真实 T4。下一步优先定位并稳定上述本地标准门禁的重复超时，再补真实 System → Monitor → Prometheus 的身份、准入、发现及生效回执；真实 Linux 宿主权限、cAdvisor、资源查询/页面及统一告警域迁移仍不是已交付能力。
+
+2026-10-06 后续诊断与复验：
+
+- `make test-swagger` 完整通过，18 项检查器夹具及全模块真实路由覆盖均通过。同一 Agent/Copilot 夹具的临时进程树诊断约 1.3 秒完成，普通 Python 启动约 35 毫秒；诊断仅使用本轮私有临时目录，未连接个人服务。
+- `make test-platform` 完整复验退出 0，包含当前 49 项部署/生命周期聚合、Online Runner、授权目录及 Swagger 检查；此前失败的 Redis Hosted/Consumer 19 项组和 Transfer 所在 Online 聚合均通过。日志为系统临时目录中的 `addp-timeout-platform-recheck.log`。
+- 本轮没有修改上述夹具代码、超时阈值或测试调度。此前超时未复现，根因仍未确认；当前通过不能作为已修复某个确定性缺陷的结论，也不删除上方历史失败记录。
+- 新增调查记录后，`make test-changed` 再次因全工作区 PostgreSQL、MySQL/OceanBase 等连接条件缺失而在预检退出，后续门禁未运行；设计文档围栏、本地链接和变更空白检查通过。本轮没有运行真实 T4/T5，也没有提交、推送或重启个人服务。
+
+### 10.19 真实认证链路的隔离验收身份（已确认）
+
+2026-10-06 用户同意测试身份安排，并明确实际运行区分平台级与租户级。下述限定例外已同步到测试规范；权限目录与已发布接口保持现有契约。真实 T4 suite 尚未实现、登记或执行，不因设计确认计为通过。
+
+现有 `platform.host_node.*` 与 `monitor.monitoring_target.*` 都只允许 Platform Scope、不可委托、不可租户定制；内置 User 角色目录仅向平台系统管理员授予这些权限。目标管理路由还明确要求非委托 Platform User，不能以 `addp-prometheus` 或其他服务身份代替。现有 Online 身份夹具建立 Tenant 自定义角色，因此不能原样复用于本链路。
+
+实施前调查发现，测试规范原有的 T4 平台管理员 Token 全面禁用规则与真实节点/目标管理验收冲突。用户确认后，仅为本平台控制面链路明确一次性隔离部署的身份例外；直接插入测试角色或把 Platform 权限授予 Tenant 仍不能作为正式 API 授权验收。
+
+本链路的限定例外保持生产权限模型：
+
+- 仅在干净 GitHub Hosted Linux disposable 部署中，通过 System 正式三员 Bootstrap 建立临时平台身份；User 使用真实密码/MFA 登录与 Platform Context，凭据只保存到仓库外当次私有 Secret 目录。
+- 临时平台系统管理员只用于本 suite 的节点与监测目标创建、读取、版本更新、停用和删除断言，不用于租户业务数据验收；验证三员职责分离及 Tenant/无权限身份拒绝。Bootstrap 不合并三员，验收不修改角色清单或绕过 Permission Guard。
+- Prometheus 始终通过原生 Client Credentials 换取独立 `addp-prometheus` Platform Service Access Token，仅持有 `monitor.metrics_discovery.read`；User 令牌不能代替发现身份，采集身份不能管理节点或目标。
+- 通过 Gateway 正式节点/目标 API、真实 Monitor 准入与当前 System 身份投影，以及生产 Prometheus 模板验证发现和采集。TLS 入口只转发正式 API，不返回合成 Token、AuthContext 或发现列表。
+- 生效证据分别记录保存版本、当前发现投影、Prometheus 活动目标及新鲜抓取样本；配置保存成功不能当作已采集。节点停用须证明成功空发现与活动目标撤除，控制面故障须证明发现失败及旧目标保留，不能因历史样本仍存在而误判未撤除或已恢复。
+- 成功、失败和中断均沿现有 Hosted 生命周期停止当次模块，销毁当次来源、指标中心、Infra、卷及凭据，并验证零残留；不调用个人服务、不使用本地共享 PostgreSQL 运行 T4。首次真实通过前只允许手工调度。
+
+测试规范的限定范围已修订，后续实施须同批完成唯一 Online suite、System-owned 身份准备、标准分发/预检、确定性回归及既有 T4 Workflow 登记。临时管理员仍持有既有角色的完整权限，因此只在当次隔离部署使用，测试脚本限制为节点/目标管理；不新建平台最小权限角色、不扩大生产权限。Linux 宿主权限与物理节点绑定的 T5 证据仍独立取得，本 suite 的采样事实不替代这些证据。
+
+### 10.20 P1.1 第八批：真实节点指标控制面验收
+
+本批实现 `platform-node-metrics` 唯一 Hosted Linux T4 suite，复用 `hosted-online.sh`、标准 Infra/开发启动、正式 node_exporter 部署入口及指标中心生成器。指标中心只由标准 Infra 启动；临时来源和 TLS 转发监听原生 Docker bridge Gateway 的限定端口，使中心可从独立容器网络访问宿主，不新增第二个采集中心。TLS 转发入口只连接真实 Gateway；System 签发 Token、Monitor 当前节点投影与来源准入均使用正式实现。固定端口只属于准入后的一次性测试部署，端口占用失败，不扫描或接管个人服务。
+
+System-owned Online 身份准备先执行三员 Bootstrap，分别保存临时系统/安全管理员的登录与 TOTP 凭据；不伪造 AAL2 或直接签发平台 User Token。另建立两个不同的非默认 Tenant 和最小执行读取 User，用于证明两者均无法访问平台节点、目标与发现入口。管理员通过真实登录/MFA 后先核验 AuthContext，Prometheus 独立 OAuth 身份同样核验当前 Context、Client 和唯一 Permission。
+
+验收顺序为节点/目标创建及 CAS 冲突、实际发现版本、活动目标与新鲜 CPU/内存等样本、来源中断/恢复、真实控制面不可达时发现失败而保留旧目标、恢复后节点停用撤除及目标停用/删除。历史指标样本保留不等于当前目标仍活动；成功保存不是生效回执。报告只保存安全身份编号、版本和观测时间，不保存 Token、Secret、MFA 凭据或业务正文。
+
+实施前门禁确定为：新增脚本/身份边界/清理与 CI 登记属于现有 `test-online-runner` 和平台 T0；System 身份准备的真实数据库验证进入既有 `test-system-iam-postgres --package online-fixture`。完整链路只能在手工 Hosted T4 执行，首次真实通过前不增加 schedule、不计为 T4 已验收。节点宿主挂载及完整生产覆盖仍不替代 T5；本地 macOS 不启动此套部署。
+
+本批本地先行验证：平台聚合门禁 `make test-platform` 通过；`make test-node-metrics-online-runner` 通过，覆盖正式 TLS 生成/唯一中心配置、平台与采集身份校验、版本投影及 Hosted 各阶段失败清理；System 标准 Online fixture PostgreSQL 门禁通过，实际验证 Bootstrap、真实密码/MFA、三员权限区分和两个非默认 Tenant 的最小授权。CI 登记检查及反例回归通过。默认 `make test-changed` 因全工作区其他 Owner 的测试连接参数缺失而在预检失败，未执行的跨 Owner 数据库门禁不计为通过。完整 Hosted T4 仍待首次真实执行，部署与清理结果以该次 CI 证据为准。

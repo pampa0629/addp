@@ -222,6 +222,40 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             profiles["hosted-suite"], "github-hosted-linux-x86_64"
         )
 
+    def test_node_metrics_requires_owned_regressions_and_manual_hosted_dispatch(self):
+        root = SCRIPT.parents[2]
+        paths = (
+            "scripts/test/online-hosted-node-metrics-gate.sh", "scripts/test/platform-node-metrics-online.py",
+            "scripts/test/platform-node-metrics-online_test.py", "scripts/test/platform-node-metrics-fixture.py",
+            "scripts/test/platform-node-metrics-fixture_test.py", "scripts/test/online-hosted-node-metrics-gate_test.py",
+            "system/backend/cmd/online-test-fixture/platform_metrics.go",
+            "system/backend/cmd/online-test-fixture/platform_metrics_test.go", "scripts/infra/node-metrics.py",
+            "Makefile", ".github/workflows/online-t4-gates.yml",
+        )
+        for relative in paths:
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(root / relative, target)
+        CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
+        original = self.workflow.read_text()
+        for changed in (
+            original.replace("github.event_name == 'workflow_dispatch' && inputs.suite == 'platform-node-metrics'", "github.event_name == 'schedule'"),
+            original.replace("&& inputs.suite != 'platform-node-metrics'", ""),
+        ):
+            self.workflow.write_text(changed)
+            with self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
+        self.workflow.write_text(original)
+        makefile = self.repository / "Makefile"
+        original = makefile.read_text()
+        makefile.write_text(original.replace("$(MAKE) test-node-metrics-online-runner", ""))
+        with self.assertRaises(CHECK.RegistrationError):
+            CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
+        makefile.write_text(original)
+        (self.repository / "scripts/test/platform-node-metrics-online_test.py").unlink()
+        with self.assertRaises(CHECK.RegistrationError):
+            CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
+
     def prepare_orchestrator_profile(self):
         root = SCRIPT.parents[2]
         for relative in (

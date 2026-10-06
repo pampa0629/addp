@@ -1457,6 +1457,41 @@ def validate_metric_engine_variant(repository: Path, registered: set[str]) -> No
         raise RegistrationError("Hosted metric T4 must schedule both engines and dispatch only the selected engine")
 
 
+def validate_platform_node_metrics_profile(repository: Path, registered: set[str]) -> None:
+    if "platform-node-metrics" not in registered:
+        return
+    for relative in (
+        "scripts/test/platform-node-metrics-online.py", "scripts/test/platform-node-metrics-online_test.py",
+        "scripts/test/platform-node-metrics-fixture.py", "scripts/test/platform-node-metrics-fixture_test.py",
+        "scripts/test/online-hosted-node-metrics-gate_test.py",
+        "system/backend/cmd/online-test-fixture/platform_metrics.go",
+        "system/backend/cmd/online-test-fixture/platform_metrics_test.go",
+        "scripts/infra/node-metrics.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"platform-node-metrics requires {relative}")
+    makefile = (repository / "Makefile").read_text()
+    owned = re.search(r"(?ms)^test-node-metrics-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    if owned is None or aggregate is None or "$(MAKE) test-node-metrics-online-runner" not in aggregate.group("body"):
+        raise RegistrationError("platform-node-metrics requires its owner regression in test-online-runner")
+    for filename in ("platform-node-metrics-online_test.py", "platform-node-metrics-fixture_test.py", "online-hosted-node-metrics-gate_test.py"):
+        if filename not in owned.group("body"):
+            raise RegistrationError(f"platform-node-metrics regression is missing {filename}")
+    gate = (repository / "scripts/test/online-hosted-node-metrics-gate.sh").read_text()
+    for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', "scripts/infra/node-metrics.py up",
+                     "scripts/infra/node-metrics.py down", "--suite platform-node-metrics", "scripts/dev/start.sh -monitor",
+                     'make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
+        if fragment not in gate:
+            raise RegistrationError(f"platform-node-metrics lifecycle is missing {fragment}")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  node-metrics-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'platform-node-metrics'\n" not in job.group("body"):
+        raise RegistrationError("platform-node-metrics requires a manual Hosted T4 job")
+    if "&& inputs.suite != 'platform-node-metrics'" not in workflow:
+        raise RegistrationError("platform-node-metrics must not dispatch on the self-hosted deployment")
+
+
 def validate_orchestrator_execution_profile(repository: Path, registered: set[str]) -> None:
     if "orchestrator-execution" not in registered:
         return
@@ -1683,6 +1718,7 @@ def check_registration(repository: Path) -> None:
     validate_hdfs_spark_profile(repository, registered)
     validate_elasticsearch_spark_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)
+    validate_platform_node_metrics_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)
     validate_enterprise_catalog_publishing_profile(repository, registered)

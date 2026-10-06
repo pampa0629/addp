@@ -39,6 +39,8 @@ Spark Workflow 本地开发使用原生进程，HTTP 以 `WORKFLOW_BIND_HOST=127
 
 可选 Prometheus 中心宿主首选 `19090`，固定只发布回环，容器内 `9090`，通过 `https://prometheus:9090` 访问并强制 mTLS。只有 `ADDP_OBSERVABILITY_METRICS_ENABLED=true` 时解析该端口；本地沿用当前工作区实际映射或首次避让，Hosted 显式端口冲突失败。中心 Ready 与业务资源目标覆盖分别报告。
 
+独立 Linux node_exporter 使用 host 网络；`ADDP_NODE_METRICS_LISTEN` 必须由节点部署方明确给出本机 IP:端口，无默认生产监听和自动避让，冲突时失败。其地址必须同时落入 Monitor 明确配置的 CIDR/端口允许集合，服务器证书包含发现使用的 IP SAN；部署入口不自动放行防火墙。T2 仅在独占 bridge 中使用容器 `9100`，映射随机回环端口，不与生产监听形成第二套端口事实。
+
 ## Business (业务库)
 
 HDFS Simple 实验实例通过 `business/scripts/start.sh -hdfs` 启动：NameNode WebHDFS 首选 `9870`（只绑定回环），原生 RPC 首选 `8020`；DataNode 数据传输 `9866` 和 HTTP `9864`。RPC 和两个 DataNode 端口只绑定 `HDFS_SHARED_HOST` 指定的宿主机可达 IP，供宿主机 Driver 与容器 Worker 共用；DataNode 两个端口在容器内外必须一致，不能仅发布 NameNode。四个端口由 `business/.env` 显式配置，冲突失败。System 登记 `webhdfs_endpoint=http://127.0.0.1:<实际 Web 端口>`、`rpc_uri=hdfs://<共享宿主地址>:<实际 RPC 端口>`、`root_path=/addp`、`authentication=simple`、`user=addp_business_reader`；容器部署须使用容器实际可达的 Web 端点。T2 的独占集群没有宿主端口，Go 测试与 Spark Driver 在同一门禁网络内运行，不复用个人 Business 集群。

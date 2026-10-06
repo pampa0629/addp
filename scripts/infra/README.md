@@ -951,3 +951,22 @@ Online 启动只使用仓库外的 `ADDP_ONLINE_ENV_FILE`；Hosted 在不归档�
 中心自身作业与节点 HTTP SD 作业已分别接线，Ready 不代表节点或业务引擎已接入。正式目标只由 Monitor HTTP SD 与 System 当前对象绑定提供，不支持手工生产静态目标文件。`make test-monitor-metrics` 使用独占临时项目、临时证书及固定镜像，验证原生 OAuth/HTTP SD、真实受控采样和故障恢复，退出清理容器、网络、卷及文件；控制面为协议夹具，不证明真实部署全链路、生产规模或完整 7 天保留窗口。
 
 生产平台通过根 Compose 向 System 传递可选指标开关及独立发现 Secret，向 Monitor 传递指标开关与明确 CIDR/端口集合。`scripts/prod/start.sh` 只在选中指标且三个 `MONITOR_METRICS_*_FILE` 是可读绝对文件时合并 `scripts/prod/metrics-platform.yml`，仅向 Monitor 挂载来源准入 CA/客户端证书/私钥，不重复定义服务。未选中或证书缺失不挂载不存在的文件、不创建空证书目录；缺失时报告可选能力未配置并继续业务启动。Monitor 准入证书可独立于 Prometheus collector 管理，两者均不使用中心健康证书。
+
+
+### 独立 Linux 主机指标来源
+
+中心和业务启动不调用节点采集入口。部署方在明确纳管的 Linux 节点导出根 `.env.example` 所定义的三个输入后，主动执行：
+
+```bash
+python3 scripts/infra/node-metrics.py up
+python3 scripts/infra/node-metrics.py status
+python3 scripts/infra/node-metrics.py down
+```
+
+入口只消费当前环境，不自动读取或改写 `.env`。`ADDP_NODE_METRICS_ENABLED=false` 时 `up` 不调用 Docker；选择 `true` 后要求 `ADDP_NODE_METRICS_LISTEN` 为明确本机 IP:端口（IPv6 使用 `[IP]:端口`），不能通配监听、使用 DNS 或自动避让。`ADDP_NODE_METRICS_TLS_DIR` 为仓库外绝对目录，只含 `ca.crt/server.crt/server.key`，不能混入签发私钥或客户端私钥；文件须可由 UID/GID 65534 读取。来源 CA 仅信任独立 Monitor 准入与 Prometheus 采集客户端，不信任中心健康身份；服务器证书包含 Monitor 发现使用的 IP SAN。文件存在不代表证书已通过验证。
+
+正式入口拒绝 Docker Desktop、非 Linux、低于 5.12 的内核、远程 Docker Endpoint 或与当前宿主内核不一致的 Docker Engine。生产层采用 host 网络/PID 和宿主根目录只读 rslave 挂载，显式从 `/host/proc`、`/host/sys` 读取；版本化基础层固定官方镜像 tag/digest、原生 mTLS、十个资源采集器、0.25 CPU/256 MiB、非 root、只读容器文件系统与全部 capability 移除。节点源能读取宿主资源属于明确部署权限，不由中心开关授予。证书替换和配置变更通过再次执行节点 `up` 重建生效；密钥文件 inode 替换不会自动更新既有文件 bind mount，不能承诺热轮换。生产宿主子挂载的实际只读状态与传播仍需 Linux 验收；配置声明和内核门槛不能替代运行检查。
+
+固定项目 `addp-node-metrics` 使用仓库绝对路径 Owner 标签，异工作区同名容器存在时拒绝操作。`down/status` 不校验已失效的来源证书或当前开关，不依赖中心，不删除业务容器、网络或卷。启动成功只说明来源容器运行；部署方仍需通过独立 mTLS 验证来源，再用 Monitor 正式目标接口完成准入，来源部署不会自动创建 System 节点、目标或发现标签。端口与来源错误只影响这个独立入口。
+
+`make test-monitor-metrics` 还以相同基础/Web 模板运行真实 node_exporter，验证客户端认证、资源样本进入唯一原生 HTTP SD 作业、来源中断与恢复。独占 T2 使用 bridge、随机回环端口和临时证书，不挂载宿主根、不使用 host 网络/PID；Docker Desktop 中得到的是测试容器/虚拟机指标，不能作为真实 Linux 节点、cAdvisor 或 System/Monitor 全链路验收结果。

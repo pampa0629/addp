@@ -450,7 +450,14 @@ test-hdfs-online-runner: ## 验证 HDFS Spark T4 场景、物理夹具与隔离�
 test-elasticsearch-online-runner: ## 验证 ES Spark T4 场景、物理夹具与隔离生命周期
 	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py scripts/test/online-hosted-elasticsearch-gate_test.py scripts/test/online-elasticsearch-consumer-fixture_test.py
 
+.PHONY: test-node-metrics-online-runner
+test-node-metrics-online-runner: ## 验证节点指标 Online 身份边界与 Hosted 清理
+	@bash -n scripts/test/online-hosted-node-metrics-gate.sh
+	@python3 -m unittest scripts/test/platform-node-metrics-online_test.py scripts/test/platform-node-metrics-fixture_test.py scripts/test/online-hosted-node-metrics-gate_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run Metrics -count=1
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-node-metrics-online-runner
 	@$(MAKE) test-hdfs-online-runner
 	@$(MAKE) test-raster-online-runner
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py

@@ -88,6 +88,7 @@ class OnlineGateTest(unittest.TestCase):
                 "metric-service-revision-lifecycle",
                 "ontology-revision-lifecycle",
                 "orchestrator-execution",
+                "platform-node-metrics",
                 "module-registry-recovery",
                 "oceanbase-consumer-flow",
                 "opengauss-consumer-flow",
