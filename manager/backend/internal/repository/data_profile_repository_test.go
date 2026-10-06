@@ -131,6 +131,11 @@ func TestDataProfileExecutionRepositoryReusesOnlyActiveTarget(t *testing.T) {
 	if err != nil || !created || other.ExecutionID != "execution-3" {
 		t.Fatalf("other target create = (%#v, %v, %v)", other, created, err)
 	}
+	// Queue eligibility is a fixture fact, not a System Allow decision. These
+	// tests exercise terminal lease updates rather than execution source reads.
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id IN ?", []string{"execution-1", "execution-3"}).Updates(map[string]interface{}{"execution_authorization_id": 41, "authorization_expires_at": now.Add(100 * 365 * 24 * time.Hour)}).Error; err != nil {
+		t.Fatal(err)
+	}
 	firstLeaseCtx := managerExecutionLeaseContextForTest(t, db, "execution-1", 7, now.Add(3*time.Second))
 	otherLeaseCtx := managerExecutionLeaseContextForTest(t, db, "execution-3", 7, now.Add(2*time.Second))
 	if err := repo.Timeout(otherLeaseCtx, 7, "execution-3", now.Add(2*time.Second), "timeout", "timed out"); err != nil {

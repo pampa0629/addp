@@ -26,8 +26,10 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 		route := c.FullPath()
+		isResource := strings.HasPrefix(route, "/api/v1/monitor/platform/resource_")
+		isQueryPolicy := route == "/api/v1/monitor/settings/resource-query-policy"
 		isTarget := strings.HasPrefix(route, "/api/v1/monitor/platform/monitoring_targets")
-		if system == nil || (!isTarget && !strings.HasPrefix(route, "/api/v1/monitor/platform/log-")) || route == "/api/v1/monitor/platform/log-observations" {
+		if system == nil || (!isTarget && !isResource && !isQueryPolicy && !strings.HasPrefix(route, "/api/v1/monitor/platform/log-")) || route == "/api/v1/monitor/platform/log-observations" {
 			return
 		}
 		identity, ok := commonauth.AuthContextFromGin(c)
@@ -47,6 +49,25 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 		}
 		path, method, id := c.Request.URL.Path, c.Request.Method, uuid.NewString()
 		request := &models.AuditLogCreateRequest{EventName: event, ModuleName: "monitor", Result: result, RiskLevel: "medium", EntityType: "log_pipeline", EntityID: "platform", ResourcePath: &path, HTTPMethod: &method, HTTPStatus: &status, RequestID: &id, Details: map[string]any{"source_principal_id": identity.Principal.ID, "source_principal_type": "user"}}
+		if isResource || isQueryPolicy {
+			request.RiskLevel = "low"
+			request.EntityType = "resource_observation"
+			request.EventName = "platform.resource_observation.read"
+			if node, ok := c.Get("resource_query_audit_node"); ok {
+				request.EntityID = node.(string)
+			}
+			if isQueryPolicy {
+				request.EntityType = "resource_query_policy"
+				request.EventName = "platform.resource_query_policy.read"
+				if c.Request.Method == http.MethodPut {
+					request.EventName = "platform.resource_query_policy.update"
+					request.RiskLevel = "high"
+				}
+				if version, ok := c.Get("resource_query_policy_audit_version"); ok {
+					request.Details["saved_version"] = version
+				}
+			}
+		}
 		if isTarget {
 			request.EventName = "platform.monitoring_target.manage"
 			if c.Request.Method == http.MethodGet {

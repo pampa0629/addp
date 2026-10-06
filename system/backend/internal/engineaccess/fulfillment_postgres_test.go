@@ -12,6 +12,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/schema"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
@@ -68,6 +69,9 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := migration.NewRunner(dsn).Run(setupCtx); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.InitializeCommon(db); err != nil {
 		t.Fatal(err)
 	}
 	identity := iam.NewRepository(db)

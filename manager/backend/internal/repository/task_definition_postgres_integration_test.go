@@ -2,19 +2,84 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestIntegrationPostgresManagerProfilePersistsActualReadSet(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(managerTileCacheRepositoryIntegrationDSN()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureDataProfileSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	tenantID := uint(time.Now().UnixNano()%100000000 + 970000000)
+	state := &models.DataProfile{TenantID: tenantID, EngineID: 11, ItemFingerprint: uuid.NewString(),
+		ProfileConfigHash: uuid.NewString(), LastExecutionID: uuid.NewString(), Locator: "addp://test-profile"}
+	t.Cleanup(func() {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			return NewDataProfileRepository(db).DeleteByItemFingerprints(context.Background(), tx, int64(tenantID), []string{state.ItemFingerprint})
+		}); err != nil {
+			t.Errorf("cleanup: %v", err)
+		}
+		var remaining int64
+		if err := db.Model(&models.DataProfile{}).Where("tenant_id = ?", tenantID).Count(&remaining).Error; err != nil || remaining != 0 {
+			t.Errorf("profile residue=%d %v", remaining, err)
+		}
+	})
+	readSet, err := plugin.NewQueryReadSet(plugin.TabularItemPath(11, "schema", "public", "C"), plugin.TabularItemPath(11, "schema", "public", "D"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.DependencySnapshot, err = json.Marshal(map[string]interface{}{"read_set": readSet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := readSet.Clone()
+	repo := NewDataProfileRepository(db)
+	profile := dataprofile.Profile{SchemaVersion: dataprofile.SchemaVersionV2, Mode: dataprofile.ModeSample,
+		DataScope: dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, ProfiledAt: time.Now().UTC()}
+	if err := db.Transaction(func(tx *gorm.DB) error { return repo.ReplaceCurrent(context.Background(), tx, state, profile) }); err != nil {
+		t.Fatal(err)
+	}
+	readSet.Paths[0] = plugin.TabularItemPath(11, "schema", "public", "today_changed_source")
+	stored, result, err := repo.GetCurrent(context.Background(), tenantID, state.ItemFingerprint, dataprofile.ModeSample, state.ProfileConfigHash)
+	if err != nil || stored == nil || result == nil || stored.LastExecutionID != state.LastExecutionID {
+		t.Fatalf("actual source proof lost: %#v %v", stored, err)
+	}
+	var snapshot struct {
+		ReadSet *plugin.QueryReadSet `json:"read_set"`
+	}
+	if err := json.Unmarshal(stored.DependencySnapshot, &snapshot); err != nil || !reflect.DeepEqual(snapshot.ReadSet, expected) {
+		t.Fatalf("stored sources changed: %+v %v", snapshot, err)
+	}
+}
 
 func TestIntegrationPostgresManagerProfileActorPersistenceAndReuse(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
@@ -50,7 +115,9 @@ func TestIntegrationPostgresManagerProfileActorPersistenceAndReuse(t *testing.T)
 			Source: commonExecution.ModuleManager, TaskType: commonExecution.TaskTypeDataProfiling,
 			Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 			ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID, IssuedAuthorizationVersion: &version,
-			ExecutionConfig: commonModels.JSONMap{"target_key": key}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+			ExecutionConfig: commonModels.JSONMap{"target_key": key, "engine_id": 11,
+				"budget": map[string]interface{}{"sample_size": 10, "max_rows_scanned": 20, "page_size": 5, "timeout_ms": 30000}},
+			CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 		}
 	}
 	key := uuid.NewString()
@@ -77,6 +144,14 @@ func TestIntegrationPostgresManagerProfileActorPersistenceAndReuse(t *testing.T)
 		stored.ActorTenantMembershipID == nil || *stored.ActorTenantMembershipID != membershipID ||
 		stored.IssuedAuthorizationVersion == nil || *stored.IssuedAuthorizationVersion != version {
 		t.Fatalf("persisted actor=%#v err=%v", stored, err)
+	}
+	budgetJSON, err := json.Marshal(stored.ExecutionConfig["budget"])
+	if err != nil || string(budgetJSON) != `{"max_rows_scanned":20,"page_size":5,"sample_size":10,"timeout_ms":30000}` {
+		t.Fatalf("persisted frozen budget=%s err=%v", budgetJSON, err)
+	}
+	engineJSON, err := json.Marshal(stored.ExecutionConfig["engine_id"])
+	if err != nil || string(engineJSON) != "11" {
+		t.Fatalf("persisted frozen engine=%s err=%v", engineJSON, err)
 	}
 	otherKey := uuid.NewString()
 	other := makeExecution(otherKey)

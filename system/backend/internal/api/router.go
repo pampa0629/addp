@@ -131,6 +131,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(fmt.Errorf("register raster resource policy routes: %w", err))
 	}
 	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
+	if err := RegisterIAMManagerProfileAuthorizationRoutes(api, runtime, &IAMManagerProfileAuthorizationHandler{
+		service: iam.NewManagerProfileAuthorizationService(runtime.Repository, engineaccess.VerifyExecutionSourceRead),
+	}); err != nil {
+		panic(err)
+	}
 	if err := RegisterEngineAccessSourceReadCheckRoutes(api, runtime, &EngineAccessSourceReadCheckHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}

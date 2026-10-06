@@ -334,6 +334,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			}
 		})
 		exerciseSourceReadCredentials(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, deny, revoke)
+		exerciseManagerProfileAuthorization(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, deny, revoke)
 		t.Run("later handler suspension does not revoke recipient Grant", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			binding := base

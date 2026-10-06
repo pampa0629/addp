@@ -229,6 +229,9 @@ other = "当前资源不支持数据剖析"
 [manager.error.data_profile_unavailable]
 other = "数据剖析服务暂不可用"
 
+[manager.error.data_profile_source_read_required]
+other = "剖析结果缺少可信来源记录，或您当前无权读取其全部来源；不能返回结果内容"
+
 [manager.error.data_profile_query_failed]
 other = "查询数据剖析结果失败"
 

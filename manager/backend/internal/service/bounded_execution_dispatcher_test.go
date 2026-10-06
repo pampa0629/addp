@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
-	"github.com/addp/common/models"
 	"github.com/addp/manager/internal/dataprofile"
 	managermodels "github.com/addp/manager/internal/models"
 	managerprotection "github.com/addp/manager/internal/protection"
@@ -28,11 +28,11 @@ type trackedProfileSampler struct {
 	reads *managerprotection.ReadBoundary
 }
 
-func (s *trackedProfileSampler) Sample(ctx context.Context, target *DataProfileTarget, scope dataprofile.DataScope, budget DataProfileBudget) (*DataProfileSample, error) {
+func (s *trackedProfileSampler) Sample(ctx context.Context, target *DataProfileTarget, scope dataprofile.DataScope, budget DataProfileBudget, plan *DataProfileSamplePlan, beforeRead func(context.Context) error) (*DataProfileSample, error) {
 	if !s.reads.HasActiveExecutionsForTenant(7) {
 		s.t.Error("sampling was not registered")
 	}
-	return s.dataProfileServiceTestSampler.Sample(ctx, target, scope, budget)
+	return s.dataProfileServiceTestSampler.Sample(ctx, target, scope, budget, plan, beforeRead)
 }
 
 type trackedProfileStore struct {
@@ -52,25 +52,31 @@ func TestBoundedExecutionDispatcherTracksProfileThroughPersistence(t *testing.T)
 	for _, failure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "sampling-fails"}[failure], func(t *testing.T) {
 			reads := managerprotection.NewReadBoundary(dispatcherFreshener{})
-			target := &DataProfileTarget{Locator: "addp://engine/1/path/public/orders?type=table", ItemFingerprint: "orders", SourceVersion: "version"}
+			target := &DataProfileTarget{EngineID: 1, Locator: "addp://engine/1/path/public/orders?type=table", ItemFingerprint: "orders", SourceVersion: "version"}
+			set, err := plugin.NewQueryReadSet(plugin.TabularItemPath(1, "schema", "public", "orders"))
+			if err != nil {
+				t.Fatal(err)
+			}
 			sampler := &trackedProfileSampler{dataProfileServiceTestSampler: dataProfileServiceTestSampler{
-				target: target, sample: &DataProfileSample{},
+				target: target, sample: &DataProfileSample{ReadSet: set},
 			}, t: t, reads: reads}
 			if failure {
 				sampler.sampleErr = errors.New("sample failed")
 			}
 			profiles := &trackedProfileStore{t: t, reads: reads}
 			executions := &dataProfileServiceTestExecutionStore{}
-			profileService := NewDataProfileService(profiles, executions, sampler, &dataProfileServiceTestProtectionGate{})
+			profileService := newAuthorizedProfileServiceForTest(profiles, executions, sampler, &dataProfileServiceTestProtectionGate{})
 			dispatcher := &BoundedExecutionDispatcher{dataProfile: profileService, readBoundary: reads}
-			item := &execution.TaskExecution{
-				ExecutionID: "profile", TenantID: 7, TaskType: execution.TaskTypeDataProfiling,
-				ExecutionConfig: models.JSONMap{
-					"locator": target.Locator, "item_fingerprint": target.ItemFingerprint, "source_version": target.SourceVersion,
-					"data_scope": dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll},
-				},
+			if _, err := profileService.CreateExecution(t.Context(), profileAuthContextForTest(), "addp_at_user", DataProfileExecutionRequest{Locator: target.Locator}); err != nil {
+				t.Fatal(err)
 			}
-			if err := dispatcher.RunClaimedExecution(t.Context(), item, execution.Lease{ExecutionID: item.ExecutionID, TenantID: 7}); err != nil {
+			item := executions.createdExecution
+			claimProfileForTest(item)
+			lease, err := execution.LeaseFromExecution(*item)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := dispatcher.RunClaimedExecution(t.Context(), item, lease); err != nil {
 				t.Fatal(err)
 			}
 			if failure && executions.failedCode != "sample_failed" {

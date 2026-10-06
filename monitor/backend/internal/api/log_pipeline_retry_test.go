@@ -61,7 +61,7 @@ func TestPlatformLogRetryRequiresPlatformUserAndStrictInput(t *testing.T) {
 			defer server.Close()
 			pipeline := service.NewLogPipelineService(nil, "node", nil, nil)
 			notifications := service.NewPlatformLogNotifications(nil, nil, false, nil, nil, 3, 0, 0, 0)
-			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), pipeline, notifications, nil, nil)
+			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), pipeline, notifications, nil, nil, nil)
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/platform/log-notification-deliveries/"+uuid.NewString()+"/retry", bytes.NewBufferString(tc.body))
 			request.Header.Set("Authorization", "Bearer addp_at_fixture")
 			request.Header.Set("Content-Type", "application/json")

@@ -34,6 +34,7 @@ func SetupRouter(
 	logNotifications *service.PlatformLogNotifications,
 	runtimeHealthService *service.RuntimeHealthService,
 	monitoringTargets *service.MonitoringTargetService,
+	resourceObservations *service.ResourceObservationService,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -116,12 +117,17 @@ func SetupRouter(
 	}
 
 	targetHandler := NewMonitoringTargetHandler(monitoringTargets)
-	platform.GET("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), monitoringTargetIdentity(false), targetHandler.List)
-	platform.GET("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), monitoringTargetIdentity(false), targetHandler.Get)
-	platform.POST("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetCreate), monitoringTargetIdentity(false), targetHandler.Create)
-	platform.PUT("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetUpdate), monitoringTargetIdentity(false), targetHandler.Update)
-	platform.DELETE("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetDelete), monitoringTargetIdentity(false), targetHandler.Delete)
-	platform.GET("/platform/metrics_discovery", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMetricsDiscoveryRead), monitoringTargetIdentity(true), targetHandler.Discovery)
+	platform.GET("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), platformObservationIdentity(false), targetHandler.List)
+	platform.GET("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), platformObservationIdentity(false), targetHandler.Get)
+	platform.POST("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetCreate), platformObservationIdentity(false), targetHandler.Create)
+	platform.PUT("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetUpdate), platformObservationIdentity(false), targetHandler.Update)
+	platform.DELETE("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetDelete), platformObservationIdentity(false), targetHandler.Delete)
+	platform.GET("/platform/metrics_discovery", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMetricsDiscoveryRead), platformObservationIdentity(true), targetHandler.Discovery)
+	resourceHandler := NewResourceObservationHandler(resourceObservations)
+	platform.GET("/platform/resource_observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Instant)
+	platform.GET("/platform/resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Trend)
+	platform.GET("/settings/resource-query-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationRead), platformObservationIdentity(false), resourceHandler.Policy)
+	platform.PUT("/settings/resource-query-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), platformObservationIdentity(false), resourceHandler.UpdatePolicy)
 	api.Use(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
 		commonAuth.MustNewContextGuard("tenant"),

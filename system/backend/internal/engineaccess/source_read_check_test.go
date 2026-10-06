@@ -111,9 +111,32 @@ func TestManagerPreviewReadCheckValidatesSetBeforeDatabase(t *testing.T) {
 		{engineplugin.TabularNamespacePath(path.EngineID, "schema", "public")},
 		make([]engineplugin.EngineCatalogPath, 201),
 	} {
-		result, err := service.CheckManagerPreviewRead(context.Background(), "not-a-credential", ManagerPreviewReadCheckRequest{Targets: targets})
+		result, err := service.CheckManagerPreviewRead(context.Background(), "not-a-credential", SourceReadCheckRequest{Targets: targets})
 		if result != nil || !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("invalid target set reached database: %+v %v", result, err)
 		}
+	}
+}
+
+func TestManagerProfileResultQualificationRejectsPreviewDelegation(t *testing.T) {
+	current := previewCheckContext()
+	if err := qualifyManagerProfileResultRead(current); err != nil {
+		t.Fatal(err)
+	}
+	current.Token.Type = "oauth_access_token"
+	current.Client.ScopeMode = "restricted"
+	current.Client.Scopes = []string{"addp.api"}
+	if err := qualifyManagerProfileResultRead(current); err != nil {
+		t.Fatal(err)
+	}
+	for _, tokenType := range []string{"delegated_access_token", "service_access_token", "resource_access_ticket"} {
+		current.Token.Type = tokenType
+		if err := qualifyManagerProfileResultRead(current); !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("unsupported result token %s: %v", tokenType, err)
+		}
+	}
+	service := NewService(NewRepository(nil), nil)
+	if result, err := service.CheckManagerProfileResultRead(t.Context(), "token", SourceReadCheckRequest{}); result != nil || !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("empty source set reached DB: %+v %v", result, err)
 	}
 }

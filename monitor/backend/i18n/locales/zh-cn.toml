@@ -160,3 +160,12 @@ other = "监测目标配置正在更新，请稍后重试"
 
 ["monitor.metrics.admission"]
 other = "指标来源未通过认证与入口保护验证"
+
+["monitor.resource_query.invalid"]
+other = "资源查询参数或预算不合法"
+
+["monitor.resource_query.budget"]
+other = "资源查询超过预算"
+
+["monitor.resource_query.busy"]
+other = "资源查询并发已满，请稍后重试"

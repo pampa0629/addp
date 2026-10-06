@@ -14,8 +14,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 485 {
-		t.Fatalf("descriptor count = %d, want 485", len(descriptors))
+	if len(descriptors) != 486 {
+		t.Fatalf("descriptor count = %d, want 486", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -35,7 +35,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "monitor.metrics_discovery.read" && role.Key != "platform.prometheus_runtime" {
 				t.Fatalf("unexpected metrics discovery role %q", role.Key)
 			}
-			if strings.HasPrefix(key, "monitor.monitoring_target.") && role.Key != "platform.system_administrator" {
+			if (key == "monitor.resource_observation.read" || strings.HasPrefix(key, "monitor.monitoring_target.")) && role.Key != "platform.system_administrator" {
 				t.Fatalf("unexpected target management role %q", role.Key)
 			}
 			if key == "system.observability_identity.read" && role.Key != "platform.monitor_runtime" {
@@ -131,6 +131,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine.read",
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
+		"system.execution_authorization.execute",
 		"transfer.execution.create",
 		"transfer.execution.read",
 		"transfer.task.create",

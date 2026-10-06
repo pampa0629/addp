@@ -41,7 +41,7 @@ func (p *DatabaseTablePreviewProvider) Name() string {
 }
 
 func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	const maxRows = 2000
+	const maxRows = MaxPreparedTablePageRows
 
 	plug := req.EnginePlugin
 	if plug == nil {
@@ -211,7 +211,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 func (p *DatabaseTablePreviewProvider) preparePostgreSQLPreview(ctx context.Context, req *PreviewRequest, columns []datatype.FieldInfo, offset, limit int) (plugin.PreparedQuery, error) {
 	runtime, ok := req.EnginePlugin.(plugin.QueryRuntimeProvider)
 	dialectProvider, hasDialect := req.EnginePlugin.(plugin.SQLDialectProvider)
-	if !ok || !hasDialect || req.Engine == nil || req.ProviderPath.EngineID != req.Engine.ID || len(req.ProviderPath.Segments) < 3 || limit < 1 || limit > 2000 || offset < 0 {
+	if !ok || !hasDialect || req.Engine == nil || req.ProviderPath.EngineID != req.Engine.ID || len(req.ProviderPath.Segments) < 3 || limit < 1 || limit > MaxPreparedTablePageRows || offset < 0 {
 		return nil, ErrSourceAuthorizationRequired
 	}
 	dialect := commonquery.ForDialect(dialectProvider.SQLDialect())

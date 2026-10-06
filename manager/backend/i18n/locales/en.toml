@@ -229,6 +229,9 @@ other = "Data profiling is not supported for this resource"
 [manager.error.data_profile_unavailable]
 other = "Data profiling is currently unavailable"
 
+[manager.error.data_profile_source_read_required]
+other = "The profile lacks trusted source provenance or you cannot currently read all its sources; result content cannot be returned"
+
 [manager.error.data_profile_query_failed]
 other = "Failed to query the data profile"
 

@@ -288,7 +288,7 @@ disabled 不尝试发送，不制造设施离线告警；unconfigured 表示已�
 
 ## 十、第一期开工契约（2026-10-05，目标设计，待实施）
 
-本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.20 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
+本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.21 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
 
 ### 10.1 节点与实例绑定
 
@@ -770,6 +770,72 @@ System-owned Online 身份准备先执行三员 Bootstrap，分别保存临时�
 - [Platform CI 37462963043](https://github.com/pampa0629/addp/actions/runs/37462963043) 与 [Release/T2 37462963023](https://github.com/pampa0629/addp/actions/runs/37462963023) 完整通过。来源实现的指标 T2 和 System Online fixture PostgreSQL 由前一实现提交的 [Release/T2 37461221654](https://github.com/pampa0629/addp/actions/runs/37461221654) 对应 Job 通过；修复提交未改变这些输入，部分选择性 Job 被跳过，不将跳过计为再次通过。本地默认工作区总门禁的数据库参数预检失败仍单独保留。
 
 本批交付原生 Linux VM 的真实节点来源与平台控制面链路验收，不代表全部生产节点已纳管，也不替代宿主子挂载传播/只读边界、物理身份绑定等完整 T5。suite 继续手工触发。下一批优先实现 Platform 资源查询 API，以可信样本支撑节点总览和趋势页；目标管理页面、生效状态查询、cAdvisor 和租户引擎资源归属仍按各自契约推进，统一告警域收敛仍须单独确认。
+
+
+### 10.21 Platform 节点资源查询第一批契约
+
+本批在已验收采集链路上实现节点即时资源和趋势读取；仅非委托 Platform User 使用 `monitor.resource_observation.read`，默认授予平台系统管理员。每次把当前 User Token 转给 System 裁决节点引用，后台身份投影不能替代用户授权。Tenant、采集 Service 和委托身份不得调用。查询显式指定 `node_id` 与逗号分隔的 `metrics` 白名单；趋势另指定整秒 RFC3339 `start/end`，不接收 PromQL、标签、端点或自选步长。不发布 Tenant 资源查询或资源排行。
+
+首批目录为 `node.cpu.logical_cores`（核）、`node.memory.total_bytes/available_bytes`（字节）、`node.memory.used_percent`（百分比）、`node.load.average_1m/average_5m/average_15m`（负载原值）、`node.uptime_seconds`（秒）。CPU 核数来自同一时刻 idle CPU 序列计数；内存百分比以同次采样的可用量和总量计算，容量变化不以现在值回算历史。CPU 忙碌率、文件系统、网络与磁盘 IO 速率未发布；这些指标的完整窗口、设备维度及序列上界随下一指标批次验收，不能把负载当作 CPU 百分比。
+
+节点停用或无启用主机目标返回逐指标 `not_connected`，不查询历史采集作为当前值。node_version 是当前 User 取得的 System 台账版本，target_saved_version 是当前 Monitor 配置版本，不能当作 Prometheus 已应用回执。查询选择器只能来自当前节点、当前启用 node_exporter 目标及其受控解析地址；来源切换后旧端点样本不得混入当前来源。每个指标提供单位、评估时间、真实 `sampled_at`、数据状态和可空值；趋势按规划网格显式补缺口。即时及每个趋势网格点采用显式 300 秒有界 lookback；此窗口没有样本为 no_data，窗口内样本超过 60 秒为 stale（即时视图以 queried_at 判断，趋势以各网格评估时间判断），不能声称已经查遍全部历史。响应返回 lookback_seconds。时间在未来、非有限数值或分母证据不足不能生成有效值；超过 60 秒为 stale。Prometheus 的评估时间不是采样时间，必须分别查询真实 timestamp 证据。[Prometheus 查询 API](https://prometheus.io/docs/prometheus/latest/querying/api/) 与 [timestamp 函数](https://prometheus.io/docs/prometheus/latest/querying/functions/#timestamp) 是传输与时间语义依据。
+
+查询目录、表达式生成、步长规划和证据归一由 Monitor 唯一维护。只用 Prometheus 原生 query/query_range，通过独立查询 mTLS 身份连接显式部署 origin；不复用中心 health、节点准入或 collector 证书。部署新增 `MONITOR_PROMETHEUS_URL/CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE`，关闭或配置错误不影响 Monitor Ready，查询返回 disabled/unconfigured。查询客户端不跟随重定向、不使用系统代理、不执行管理端点、不返回上游地址或原始错误。
+
+查询预算在已有模块级配置域 `/settings/resource-query-policy` 读取/更新，沿用 `monitor.configuration.read/update`，仅 Platform User。Monitor 保存唯一单例版本，CAS 更新和标准平台审计同次接入；每次查询读取一份已提交预算，无持久值使用定义默认值，不回退环境变量。新请求立即消费新版本，已在途请求使用开始时的预算；降限不会取消已在途请求。响应明确 `pending_restart=false`。指标数、序列数、每序列点数、总点数、最长范围、超时和并发配置不得高于 10.5 的初始保护上限，最小步长固定 15 秒、新鲜度固定 60 秒。按主体与进程计数快速拒绝，无等待队列；硬上限准入必须在读取持久预算前执行，再核对本请求预算版本的更低限额，防止配置读取先形成无界请求队列；返回内容再次核验，不使用上游 limit 截断。
+
+实施前确定门禁：Monitor Go T1 覆盖白名单/注入、预算规划、身份/用户节点裁决、缺失/过期/分母证据、上游错误/限额/重定向/真实 mTLS、即时/趋势与并发；Monitor PostgreSQL T2 覆盖预算 CAS 与热读取；System IAM PostgreSQL T2 验证新读取权限发布（Role Permission 触发器唯一推进授权版本，迁移另撤销旧 Refresh Token Family）。沿既有 owner 自动发现与 CI 门禁，不增加测试库、启动路线或必需依赖。实际资源查询 Hosted T4 的限定身份范围已按用户确认同步到测试规范，扩展实现与待验收范围见 10.22；尚未取得扩展后的真实 T4 结果。
+
+本批已取得的验证证据（2026-10-06）：
+
+| 标准入口 | 实际结果与范围 |
+| --- | --- |
+| `make test-module MODULE=monitor` | 完整退出 0；平台 T0、Monitor 全量 Go T1、前端测试/构建、真实指标 T2 与 PostgreSQL T2 均通过，覆盖末次查询客户端证书叶子、有效期和 ClientAuth 用途校验 |
+| `make test-dev-lifecycle` | CI 编排收尾后完整退出 0；51 项部署配置测试及生命周期/编译检查通过，新增回归验证查询目录子文件与删除路径均纳入指标门禁输入，Hosted Job 在运行原生 Go 查询探针前准备规约工具链 |
+| `make test-monitor-postgres` | 通过；预算单例首次并发 CAS、冲突版本及跨仓储热读取通过，沿用 `addp_test` |
+| `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration'` | 迁移包完整通过；迁移 193 重放、仅系统管理员获权、持有人授权版本恰好推进一次及旧 Refresh Family 撤销通过，沿用 `addp_iam_test`；不计其他 IAM 包再次通过 |
+| `make test-monitor-metrics` | 通过；原生 Prometheus 与真实 node_exporter 经独立查询 mTLS 身份返回八项指标的即时与趋势证据，错误来源端点不混入旧样本；查询私钥位于中心未挂载的私有目录，退出确认容器、网络、卷与临时文件零残留 |
+| `make test-authorization` | 通过；权限目录、生成常量、SQL 种子及全模块 Swagger 覆盖一致，Monitor 为 65 个公开路由方法 |
+| `make test-system-frontend` | 通过；93 项单元测试、67 项浏览器测试及构建，包含新权限的中英文目录显示文本 |
+| `python3 scripts/ci/check-t2-ci-registration.py --repository .` | 通过；查询内核目录、配置与部署输入沿既有指标 owner 登记，Hosted 指标 Job 增加按公共 Go 版本准备工具链；数据库门禁仍由现有 Monitor/System Job 承接 |
+
+本批较早一次 `make test-go` 在另一批未提交的 Manager 剖析授权测试 `TestDataProfileServiceFreezesActorAndIsolatesReuse` 失败后退出，错误为 `query read set unresolved: catalog path engine is required`，后续模块未运行，不计全仓通过。较早的全仓 Go 测试曾通过，但之后追加了查询客户端证书叶子校验，旧结果不能覆盖该末次改动；后续全仓 Go 重新通过的证据见 10.22。默认 `make test-changed` 因其他 Owner 的 PostgreSQL、MySQL/OceanBase 等测试连接条件缺失而在预检退出，后续未运行。这些失败和未运行项不能由专项通过替代；未覆盖的全仓 Go 与跨 Owner T2 仍由既有 Platform CI 和 Release/T2 对应标准入口验证，本批尚未提交或推送触发 CI。
+
+本批迁移 193 依赖工作区中另一批尚未提交的迁移 192，迁移目录要求版本连续。当前保留全部本批改动于工作区，不单独提交导致主干迁移缺号，也不把其他任务改动合并提交。本机指标中心仍关闭，未重启个人服务、修改个人环境配置或安装宿主采集器。资源查询页面、CPU 忙碌率与磁盘/网络速率、Tenant 资源观测、实际资源查询 Hosted T4 及宿主权限 T5 均不在本批已验收范围。
+
+### 10.22 资源查询 Hosted 验收扩展（已实现，待真实验收）
+
+复用唯一 `platform-node-metrics` suite 和当次 Hosted Linux 一次性部署，不新增并行 suite、测试角色或生产授权。沿正式三员 Bootstrap、真实密码/MFA、Platform AuthContext 和 Gateway 路由验证本批新增接口；不使用管理员访问 Tenant 业务数据。2026-10-06 用户确认查询及预算配置验收范围，测试规范 5.2 节已同步扩展限定例外；生产权限模型不变。
+
+本批新增验证范围：
+
+| 接口或情形 | 预期断言 |
+| --- | --- |
+| `GET /platform/resource_observations`、`GET /platform/resource_trends` | 仅查询本 suite 正式创建的节点和八项目录指标；核对真实有限值、单位、评估/采样时间、节点版本和目标保存版本，趋势缺口不可伪造成零 |
+| `GET/PUT /settings/resource-query-policy` | 仅在当次隔离库读取与更新预算；CAS 冲突不得改版本，降限后新请求按新版本拒绝超额指标，合法请求成功，`pending_restart=false`，随后按 CAS 恢复原预算 |
+| 平台与租户隔离 | 平台安全管理员、独立采集 Service、两个非默认 Tenant User 均拒绝上述接口；匿名拒绝，拒绝配置更新不能改变保存版本 |
+| 节点/目标停用 | 继续使用已批准的节点/目标管理操作；新查询须返回逐指标 `not_connected` 与 null，历史样本仍存在也不得返回当前有效值 |
+| 节点重新启用 | 使用本次重新启用前的时间作为恢复界线；通过资源查询 API 核对当前节点和目标保存版本，八项指标均须有晚于该界线的新有效样本，停用前样本不得计为恢复 |
+| 指标中心中断与恢复 | 仅操作本 suite 标准 Infra 拥有的中心容器；查询明确失败，Monitor Ready 与既有租户执行列表继续可用，恢复后取得新的有效查询证据 |
+
+Monitor 查询证书与 health、collector、节点准入身份分离，私钥仅放在仓库外当次私有目录，不挂载进指标中心。查询 origin 必须从标准 Infra 已启动中心的真实 loopback 端口映射取得，在 Monitor 标准启动前提供，不推断首选端口，不增加业务 Ready 依赖。指标中心仍只由标准 Infra 生命周期创建；不在个人本地环境运行这套验收或重启个人服务。
+
+实施前门禁范围：现有 `make test-node-metrics-online-runner` 覆盖断言、证书/端口接线及退出清理，`make test-online-runner` 和平台登记继续覆盖唯一 suite 与 Hosted 编排；已有 System Online fixture 仅需确认当前权限清单，不引入新身份类型。真实结果以手工 Hosted T4 的业务报告、独立清理摘要和安全归档为准。用户已确认资源查询及预算读写两类接口；扩展实现后，未真实运行的检查仍不计为 T4 通过。
+
+本轮只读核对：迁移 192、193 仍均未提交，主干仍为 `91afa033c`。再次运行 `make test-go` 返回 2，Manager 新增 `data_profile_consumption_test.go:199` 的测试 Token Source 缺少 `PlatformToken` 方法，导致该包编译失败；后续模块未运行，本轮不计全仓 Go 通过。该文件属于另一批正在修改的剖析授权工作，本轮未代为修复或提交；上一批 Monitor 模块专项证据仍按原范围保留。`git diff --check` 通过。用户随后已确认测试用途范围；继续扩展实施及本地门禁，前序迁移提交仍是本批提交和真实 Hosted 运行的依赖。
+
+
+本批扩展已接入唯一 suite，未新增公开 API、角色或 Hosted profile，原 API Swagger 契约不变。查询证书由当次中心 CA 独立签发，私钥目录权限为 0700、密钥为 0600；中心端口须同时核验 Infra Project、Service 和当前工作区归属，不接受通配、多映射或非规范端口。配置/启动/查询接线的任何阶段失败继续走同一完整清理路径。三员及两个非默认 Tenant 的真实密码/MFA/最小授权准备沿原 System helper；不以测试身份替代正式运行隔离。
+
+本批实际门禁结果：
+
+- `make test-node-metrics-online-runner` 退出 0：恢复断言补强后 17 项确定性检查及 System Metrics 单元检查通过，包含有效零值、过期证据、缺口伪值、网格截断、预算 CAS/热读取/恢复、独立证书、动态端口与容器归属、查询接线失败清理。新增恢复反例拒绝停用前仍新鲜的样本、任一指标缺失或未恢复及旧节点/目标版本；中心恢复与节点重新启用复用同一新样本核验。首次新增过期反例恰好为 60 秒，按契约仍应有效；调整为超过 60 秒后通过，没有放宽实现阈值。
+- `make test-online-runner` 完整退出 0，原 suite 继续沿既有标准分发、预检、报告、Hosted 生命周期及 CI 登记被覆盖。
+- `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package online-fixture'` 退出 0；真实数据库验证 Bootstrap、密码/MFA、平台系统/安全管理员权限区别及两个 Tenant 的最小执行读取身份，新增断言确认资源读取和预算配置只授予系统管理员。本轮使用已核实 localhost:25432 的 `addp_iam_test`，没有新建或删除 database。
+- 上述 Manager 测试 Token Source 已由原任务补齐；检测到输入变化后再次运行 `make test-go`，全部 Go 模块完整退出 0，先前编译失败不作为当前通过证据，也不删除其历史记录。
+- `python3 scripts/ci/check-online-ci-registration.py --repository .`、设计文档围栏/引用文件检查及 `git diff --check` 通过。默认 `make test-changed` 仍因其他 Owner 的测试连接参数缺失在预检退出，后续未运行；未覆盖的跨 Owner T2 由既有 Release/T2 标准 Job 承接，未运行项不计为通过。
+
+前序迁移 192 仍未提交，本批不夹带其他任务改动，尚未提交、推送或执行扩展后的 Hosted T4。原 `456d3bb84` 的 T4 通过只证明原节点/目标采集链路，不能覆盖新增查询与预算 API；中心故障时业务不受影响、停用后不复用历史及恢复后的新 API 样本仍须该次真实 Hosted 结果证明。下一步先完成连续迁移的提交依赖，再提交本批并手工运行同一个 suite 取得新证据。
 
 ### 10.23 平台监测目标管理前端
 

@@ -413,6 +413,14 @@ func (r *Repository) CreateExecutionAuthorization(
 	if authorization == nil || (authorization.InternalTask == nil) == (len(accesses) == 0) {
 		return fmt.Errorf("%w: execution authorization is required", commonapi.ErrBadRequest)
 	}
+	if authorization.Audience == "manager" || authorization.SourceReadScope != nil {
+		if authorization.Audience != "manager" || authorization.InternalTask != nil ||
+			authorization.SourceReadScope.Validate() != nil || len(accesses) != 1 ||
+			accesses[0].EngineID != int64(authorization.SourceReadScope.ReadSet.Paths[0].EngineID) ||
+			len(accesses[0].Effects) != 1 || accesses[0].Effects[0] != "read" {
+			return fmt.Errorf("%w: complete Manager source boundary is required", commonapi.ErrBadRequest)
+		}
+	}
 	err := r.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
 		if createErr := db.Create(authorization).Error; createErr != nil {
 			var postgresError *pgconn.PgError

@@ -702,3 +702,6 @@ System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资
 
 
 主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。正式入口只支持本机原生 Linux Docker，明确拒绝 Docker Desktop 与远程 Engine；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../scripts/infra/README.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
+
+
+Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 部署输入；不复用采集、节点准入或中心健康证书。缺配置只使资源 API 返回能力未配置，不影响原有 Ready。端点/证书随服务生命周期生效；查询预算是 Monitor 平台普通配置 `/settings/resource-query-policy`，版本/CAS 保存后对新请求立即生效，不通过环境变量配置或回退；在途请求保留开始时的预算版本。具体保护上限和指标目录见 [运行监控设计](../next/ADDP平台运行监控与可观测性设计.md#1021-platform-节点资源查询第一批契约)。

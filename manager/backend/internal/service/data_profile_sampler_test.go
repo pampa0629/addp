@@ -12,7 +12,7 @@ import (
 func TestProfileSamplerCannotReuseUncheckedPreview(t *testing.T) {
 	// Empty resolver would panic if the sampler attempted the old preview read.
 	sampler := NewPreviewDataProfileSampleProvider(&preview.PreviewResolver{}, nil)
-	result, err := sampler.Sample(context.Background(), &DataProfileTarget{resolved: &preview.PreviewResolverRequest{}}, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, DefaultDataProfileBudget)
+	result, err := sampler.Sample(context.Background(), &DataProfileTarget{resolved: &preview.PreviewResolverRequest{}}, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, DefaultDataProfileBudget, nil, nil)
 	if result != nil || !errors.Is(err, ErrDataProfileSourceAuthorizationRequired) {
 		t.Fatalf("unchecked profiling read was allowed: %#v %v", result, err)
 	}

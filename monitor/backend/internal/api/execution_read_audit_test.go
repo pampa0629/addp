@@ -42,7 +42,7 @@ func TestDiagnosticReadAuditRecordsPermissionDenialWithoutQueryOrUserCredential(
 	}))
 	defer system.Close()
 	systemClient := client.NewSystemServiceClient(system.URL, auditTestTokens{}, system.Client())
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, systemClient, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, systemClient, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil)
 	request := httptest.NewRequest("GET", "/api/v1/monitor/executions?keyword=private-query-sentinel", nil)
 	request.Header.Set("Authorization", "Bearer private-user-sentinel")
 	response := httptest.NewRecorder()

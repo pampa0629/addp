@@ -970,3 +970,12 @@ python3 scripts/infra/node-metrics.py down
 固定项目 `addp-node-metrics` 使用仓库绝对路径 Owner 标签，异工作区同名容器存在时拒绝操作。`down/status` 不校验已失效的来源证书或当前开关，不依赖中心，不删除业务容器、网络或卷。启动成功只说明来源容器运行；部署方仍需通过独立 mTLS 验证来源，再用 Monitor 正式目标接口完成准入，来源部署不会自动创建 System 节点、目标或发现标签。端口与来源错误只影响这个独立入口。
 
 `make test-monitor-metrics` 还以相同基础/Web 模板运行真实 node_exporter，验证客户端认证、资源样本进入唯一原生 HTTP SD 作业、来源中断与恢复。独占 T2 使用 bridge、随机回环端口和临时证书，不挂载宿主根、不使用 host 网络/PID；Docker Desktop 中得到的是测试容器/虚拟机指标，不能作为真实 Linux 节点、cAdvisor 或 System/Monitor 全链路验收结果。
+
+
+### Monitor 资源查询身份
+
+指标中心的 query/query_range 由 Monitor 使用独立 mTLS 客户端访问。显式部署 `MONITOR_PROMETHEUS_URL`（HTTPS origin、端口，无路径）以及 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE`（绝对文件路径）。CA 信任中心服务器证书；中心的客户端 CA 需信任该独立查询证书。不要复用 health、collector 或节点准入私钥。Prometheus 原生 mTLS 验证客户端身份，不提供按证书区分 HTTP 路径的 RBAC；查询客户端只调用固定读取端点，部署网络只允许 Monitor 访问中心，中心不得开启 admin/lifecycle API。
+
+原生开发由标准环境加载传给 Monitor；生产通过唯一 `scripts/prod/start.sh` 在输入完整时添加 `metrics-query.yml` 的三项只读挂载，不增加中心启动依赖。未填写查询 origin 时不挂载，资源 API 报能力未配置；填写 origin 但证书缺失时生产脚本报告可选观测失败，业务仍继续启动。仅恢复同一中心的连接不重启业务；修改端点或证书须按服务生命周期由运维生效。
+
+首批读取 8 个节点基础量的即时值及趋势，预算位于模块级 `/settings/resource-query-policy`；查询参数、权限和验收边界见平台运行监控设计 10.21。CPU 忙碌率、磁盘和网络速率尚未发布。

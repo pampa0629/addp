@@ -1,31 +1,70 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/addp/common/authorization"
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/profilefilter"
 	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-const dataProfileConfigVersion = "data-profile-config/v4"
+const dataProfileConfigVersion = "data-profile-config/v6"
+
+type frozenDataProfileBudget struct {
+	SampleSize     int   `json:"sample_size"`
+	MaxRowsScanned int   `json:"max_rows_scanned"`
+	PageSize       int   `json:"page_size"`
+	TimeoutMS      int64 `json:"timeout_ms"`
+}
+
+func (b frozenDataProfileBudget) executionBudget() (DataProfileBudget, error) {
+	if b.SampleSize <= 0 || b.MaxRowsScanned < b.SampleSize || b.PageSize <= 0 ||
+		b.PageSize > b.MaxRowsScanned || b.TimeoutMS <= 0 || b.TimeoutMS > (1<<63-1)/int64(time.Millisecond) {
+		return DataProfileBudget{}, ErrDataProfileInvalidRequest
+	}
+	return DataProfileBudget{SampleSize: b.SampleSize, MaxRowsScanned: b.MaxRowsScanned,
+		PageSize: b.PageSize, Timeout: time.Duration(b.TimeoutMS) * time.Millisecond}, nil
+}
+
+type frozenDataProfileConfig struct {
+	Version           string                  `json:"config_version"`
+	TargetKey         string                  `json:"target_key"`
+	Locator           string                  `json:"locator"`
+	Selection         DataProfileSelection    `json:"selection"`
+	ItemID            *uint                   `json:"item_id"`
+	ItemFingerprint   string                  `json:"item_fingerprint"`
+	EngineID          uint                    `json:"engine_id"`
+	SourceVersion     string                  `json:"source_version"`
+	Mode              string                  `json:"profile_mode"`
+	ProfileConfigHash string                  `json:"profile_config_hash"`
+	DataScope         dataprofile.DataScope   `json:"data_scope"`
+	SampleMethod      string                  `json:"sample_method"`
+	Budget            frozenDataProfileBudget `json:"budget"`
+	ReadSet           plugin.QueryReadSet     `json:"read_set"`
+	Pages             []preview.TablePage     `json:"pages"`
+}
 
 type dataProfileStore interface {
 	GetCurrent(context.Context, uint, string, string, string) (*models.DataProfile, *dataprofile.Profile, error)
@@ -47,14 +86,40 @@ type dataProfileExecutionStore interface {
 	Complete(context.Context, int, string, time.Time, int64, map[string]interface{}) error
 	Fail(context.Context, int, string, time.Time, string, string) error
 	Timeout(context.Context, int, string, time.Time, string, string) error
+	GetRawExecutionConfig(context.Context, int, string) (json.RawMessage, error)
+	BindSourceAuthorization(context.Context, *commonExecution.TaskExecution, commonExecution.ManagerProfileReadScope, *commonClient.IssuedManagerProfileAuthorization) error
+	FailUnbound(context.Context, *commonExecution.TaskExecution) error
 }
 
 type DataProfileService struct {
-	profiles       dataProfileStore
-	executions     dataProfileExecutionStore
-	sampler        DataProfileSampleProvider
-	protectionGate dataProfileProtectionStore
-	budget         DataProfileBudget
+	profiles              dataProfileStore
+	executions            dataProfileExecutionStore
+	sampler               DataProfileSampleProvider
+	protectionGate        dataProfileProtectionStore
+	budget                DataProfileBudget
+	resultChecker         dataProfileResultReadChecker
+	authorizationIssuer   dataProfileAuthorizationIssuer
+	authorizationConsumer dataProfileAuthorizationConsumer
+}
+
+type dataProfileAuthorizationIssuer interface {
+	IssueManagerProfile(context.Context, string, commonClient.IssueManagerProfileAuthorizationRequest) (*commonClient.IssuedManagerProfileAuthorization, error)
+}
+
+func (s *DataProfileService) SetAuthorizationIssuer(issuer dataProfileAuthorizationIssuer) {
+	s.authorizationIssuer = issuer
+}
+
+type dataProfileSamplePlanner interface {
+	Prepare(context.Context, *DataProfileTarget, dataprofile.DataScope, DataProfileBudget) (*DataProfileSamplePlan, error)
+}
+
+type dataProfileResultReadChecker interface {
+	CheckManagerProfileResultRead(context.Context, string, []plugin.EngineCatalogPath) error
+}
+
+func (s *DataProfileService) SetResultReadChecker(checker dataProfileResultReadChecker) {
+	s.resultChecker = checker
 }
 
 type DataProfileCurrentRequest struct {
@@ -123,6 +188,7 @@ func NewDataProfileService(
 func (s *DataProfileService) GetCurrent(
 	ctx context.Context,
 	authContext authorization.AuthContext,
+	credential string,
 	req DataProfileCurrentRequest,
 ) (*DataProfileCurrentResponse, error) {
 	if s == nil || s.profiles == nil || s.executions == nil || s.sampler == nil || s.protectionGate == nil {
@@ -150,6 +216,17 @@ func (s *DataProfileService) GetCurrent(
 	state, profile, err := s.profiles.GetCurrent(ctx, tenantID, target.ItemFingerprint, dataprofile.ModeSample, configHash)
 	if err != nil {
 		return nil, err
+	}
+	// Derived values require the ACTUAL historical read set. Current target
+	// resolution cannot prove which dependencies generated a stored result.
+	if state != nil || profile != nil {
+		readSet, err := profileResultReadSet(state)
+		if err != nil || profile == nil || s.resultChecker == nil {
+			return nil, ErrDataProfileSourceAuthorizationRequired
+		}
+		if err := s.resultChecker.CheckManagerProfileResultRead(ctx, credential, readSet.Paths); err != nil {
+			return nil, err
+		}
 	}
 	if managed && profile != nil && profile.DataScope.Kind == dataprofile.DataScopeKindCondition {
 		return nil, ErrDataProfileProtectionRequired
@@ -193,9 +270,46 @@ func (s *DataProfileService) GetCurrent(
 	return response, nil
 }
 
+func profileResultReadSet(state *models.DataProfile) (*plugin.QueryReadSet, error) {
+	if state == nil || state.EngineID == 0 || strings.TrimSpace(state.LastExecutionID) == "" || strings.TrimSpace(state.LastExecutionID) != state.LastExecutionID {
+		return nil, ErrDataProfileSourceAuthorizationRequired
+	}
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(state.DependencySnapshot, &snapshot); err != nil {
+		return nil, ErrDataProfileSourceAuthorizationRequired
+	}
+	var readSet plugin.QueryReadSet
+	decoder := json.NewDecoder(bytes.NewReader(snapshot["read_set"]))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&readSet); err != nil {
+		return nil, ErrDataProfileSourceAuthorizationRequired
+	}
+	return canonicalProfileReadSet(&readSet, state.EngineID)
+}
+
+func canonicalProfileReadSet(readSet *plugin.QueryReadSet, engineID uint) (*plugin.QueryReadSet, error) {
+	if engineID == 0 || readSet == nil || len(readSet.Paths) == 0 || len(readSet.Paths) > 200 {
+		return nil, ErrDataProfileSourceAuthorizationRequired
+	}
+	canonical, err := plugin.NewQueryReadSet(readSet.Paths...)
+	if err != nil || !reflect.DeepEqual(readSet, canonical) {
+		return nil, ErrDataProfileSourceAuthorizationRequired
+	}
+	for _, path := range readSet.Paths {
+		if path.EngineID != engineID {
+			return nil, ErrDataProfileSourceAuthorizationRequired
+		}
+		if _, err := authorization.EncodeSharingTarget(path); err != nil {
+			return nil, ErrDataProfileSourceAuthorizationRequired
+		}
+	}
+	return canonical, nil
+}
+
 func (s *DataProfileService) CreateExecution(
 	ctx context.Context,
 	authContext authorization.AuthContext,
+	credential string,
 	req DataProfileExecutionRequest,
 ) (*DataProfileExecutionResponse, error) {
 	if s == nil || s.executions == nil || s.sampler == nil || s.protectionGate == nil {
@@ -207,6 +321,10 @@ func (s *DataProfileService) CreateExecution(
 	}
 	tenantID := actor.TenantID
 	mode := strings.ToLower(strings.TrimSpace(req.Mode))
+	// Do not persist a rounded timeout or silently substitute worker defaults.
+	if _, err := (frozenDataProfileBudget{s.budget.SampleSize, s.budget.MaxRowsScanned, s.budget.PageSize, s.budget.Timeout.Milliseconds()}).executionBudget(); err != nil || s.budget.Timeout%time.Millisecond != 0 {
+		return nil, ErrDataProfileInvalidRequest
+	}
 	if mode == "" {
 		mode = dataprofile.ModeSample
 	}
@@ -231,29 +349,47 @@ func (s *DataProfileService) CreateExecution(
 	if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
 		return nil, ErrDataProfileProtectionRequired
 	}
+	if s.authorizationIssuer == nil {
+		return nil, ErrDataProfileUnavailable
+	}
+	if !strings.HasPrefix(credential, "addp_at_") || len(credential) <= len("addp_at_") || strings.ContainsAny(credential, " \t\r\n") {
+		return nil, ErrDataProfileActorRequired
+	}
+	planner, ok := s.sampler.(dataProfileSamplePlanner)
+	if !ok {
+		return nil, ErrDataProfileSourceAuthorizationRequired
+	}
+	plan, err := planner.Prepare(ctx, target, dataScope, s.budget)
+	if err != nil {
+		return nil, err
+	}
+	readSet, err := canonicalProfileReadSet(plan.ReadSet(), target.EngineID)
+	if err != nil || len(plan.Positions()) == 0 {
+		return nil, ErrDataProfileSourceAuthorizationRequired
+	}
 	configHash := dataProfileConfigHash(target.Selection, dataScope, s.budget)
 	targetKey := profileTargetKey(actor, target.Locator, target.Selection, configHash)
 	now := time.Now().UTC()
 	executionID := uuid.NewString()
-	executionConfig := commonModels.JSONMap{
-		"config_version":      dataProfileConfigVersion,
-		"target_key":          targetKey,
-		"locator":             target.Locator,
-		"selection":           target.Selection,
-		"item_id":             target.ItemID,
-		"item_fingerprint":    target.ItemFingerprint,
-		"engine_id":           target.EngineID,
-		"source_version":      target.SourceVersion,
-		"profile_mode":        mode,
-		"profile_config_hash": configHash,
-		"data_scope":          dataScope,
-		"sample_method":       sampleMethodForScope(dataScope),
-		"budget": map[string]interface{}{
-			"sample_size":      s.budget.SampleSize,
-			"max_rows_scanned": s.budget.MaxRowsScanned,
-			"page_size":        s.budget.PageSize,
-			"timeout_ms":       s.budget.Timeout.Milliseconds(),
-		},
+	frozen := frozenDataProfileConfig{
+		Version: dataProfileConfigVersion, TargetKey: targetKey, Locator: target.Locator,
+		Selection: target.Selection, ItemID: target.ItemID, ItemFingerprint: target.ItemFingerprint,
+		EngineID: target.EngineID, SourceVersion: target.SourceVersion, Mode: mode,
+		ProfileConfigHash: configHash, DataScope: dataScope, SampleMethod: sampleMethodForScope(dataScope),
+		Budget:  frozenDataProfileBudget{s.budget.SampleSize, s.budget.MaxRowsScanned, s.budget.PageSize, s.budget.Timeout.Milliseconds()},
+		ReadSet: *readSet, Pages: plan.Positions(),
+	}
+	// The producer and consumer share one schema. Freeze nested condition values
+	// and resource references before passing configuration to the queue store.
+	frozenJSON, err := json.Marshal(frozen)
+	if err != nil {
+		return nil, fmt.Errorf("encode data profile config: %w", err)
+	}
+	var executionConfig commonModels.JSONMap
+	freezeDecoder := json.NewDecoder(bytes.NewReader(frozenJSON))
+	freezeDecoder.UseNumber()
+	if err := freezeDecoder.Decode(&executionConfig); err != nil {
+		return nil, fmt.Errorf("freeze data profile config: %w", err)
 	}
 	triggeredBy := int(actor.PrincipalID)
 	execution := &commonExecution.TaskExecution{
@@ -262,6 +398,7 @@ func (s *DataProfileService) CreateExecution(
 		Module:                     commonExecution.ModuleManager,
 		TaskType:                   commonExecution.TaskTypeDataProfiling,
 		Source:                     commonExecution.ModuleManager,
+		ExecutionBoundary:          commonExecution.ExecutionBoundaryBounded,
 		Status:                     commonExecution.ExecutionStatusPending,
 		Progress:                   0,
 		TriggerType:                commonExecution.TriggerTypeManual,
@@ -276,6 +413,16 @@ func (s *DataProfileService) CreateExecution(
 	stored, created, err := s.executions.CreateOrReuseActive(ctx, targetKey, execution)
 	if err != nil {
 		return nil, err
+	}
+	if stored == nil {
+		return nil, ErrDataProfileUnavailable
+	}
+	if created {
+		if err := s.issueProfileAuthorization(ctx, credential, stored, readSet); err != nil {
+			return nil, err
+		}
+	} else if stored == nil || stored.ExecutionAuthorizationID == nil || stored.AuthorizationExpiresAt == nil {
+		return nil, ErrDataProfileUnavailable
 	}
 	return &DataProfileExecutionResponse{
 		Execution:         dataProfileExecutionView(stored),
@@ -331,9 +478,12 @@ func (s *DataProfileService) runExecution(
 	dataScope dataprofile.DataScope,
 	configHash string,
 	execution *commonExecution.TaskExecution,
+	budget DataProfileBudget,
+	plan *DataProfileSamplePlan,
+	checkSource func(context.Context) error,
 ) {
 	startedAt := time.Now().UTC()
-	ctx, cancel := context.WithTimeout(parent, s.budget.Timeout)
+	ctx, cancel := context.WithTimeout(parent, budget.Timeout)
 	defer cancel()
 	if err := s.executions.Start(ctx, execution.TenantID, execution.ExecutionID, startedAt); err != nil {
 		logger.L().Error("启动数据剖析 execution 失败", "execution_id", execution.ExecutionID, "error", err)
@@ -353,8 +503,12 @@ func (s *DataProfileService) runExecution(
 			logger.L().Error("更新数据剖析失败状态失败", "execution_id", execution.ExecutionID, "error", updateErr)
 		}
 	}
+	if plan == nil || checkSource == nil {
+		fail("source_authorization_required", ErrDataProfileSourceAuthorizationRequired)
+		return
+	}
 	version, err := s.protectionGate.CaptureVersion(ctx, int64(execution.TenantID), func(gate projectionstore.GateReader) error {
-		_, managed, err := profileRulesForGate(gate, uint(execution.TenantID), target)
+		_, managed, err := profilePlanRules(gate, uint(execution.TenantID), target, plan)
 		if err != nil {
 			return err
 		}
@@ -367,10 +521,32 @@ func (s *DataProfileService) runExecution(
 		fail("security_protection_required", err)
 		return
 	}
-	sample, err := s.sampler.Sample(ctx, target, dataScope, s.budget)
+	beforeRead := func(ctx context.Context) error {
+		if err := checkSource(ctx); err != nil {
+			return err
+		}
+		// This transaction only observes local protection. It never performs
+		// remote I/O or holds the checkpoint while reading business content.
+		return s.protectionGate.CommitVersion(ctx, int64(execution.TenantID), version, func(_ *gorm.DB, gate projectionstore.GateReader) error {
+			_, managed, err := profilePlanRules(gate, uint(execution.TenantID), target, plan)
+			if err != nil || managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
+				return ErrDataProfileProtectionRequired
+			}
+			return ctx.Err()
+		})
+	}
+	sample, err := s.sampler.Sample(ctx, target, dataScope, budget, plan, beforeRead)
 	if err != nil {
 		if errors.Is(err, ErrDataProfileSourceAuthorizationRequired) {
 			fail("source_authorization_required", err)
+			return
+		}
+		if errors.Is(err, projectionstore.ErrVersionChanged) {
+			fail("protection_version_changed", err)
+			return
+		}
+		if errors.Is(err, ErrDataProfileProtectionRequired) {
+			fail("security_protection_required", err)
 			return
 		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -378,6 +554,15 @@ func (s *DataProfileService) runExecution(
 			return
 		}
 		fail("sample_failed", err)
+		return
+	}
+	if sample == nil {
+		fail("source_authorization_required", ErrDataProfileSourceAuthorizationRequired)
+		return
+	}
+	readSet, err := canonicalProfileReadSet(sample.ReadSet, target.EngineID)
+	if err != nil || !reflect.DeepEqual(readSet, plan.ReadSet()) {
+		fail("source_authorization_required", err)
 		return
 	}
 	profile := dataprofile.Build(sample.Rows, sample.Fields, dataprofile.BuildOptions{
@@ -393,7 +578,14 @@ func (s *DataProfileService) runExecution(
 		HistogramBins: 10,
 		ProfiledAt:    time.Now().UTC(),
 	})
-	dependencySnapshot, err := json.Marshal(target.DependencySnapshot)
+	// Clone the source metadata; never mutate shared target facts or replace
+	// actual sampling sources with the current target's dependencies.
+	snapshot := make(map[string]interface{}, len(target.DependencySnapshot)+1)
+	for key, value := range target.DependencySnapshot {
+		snapshot[key] = value
+	}
+	snapshot["read_set"] = readSet
+	dependencySnapshot, err := json.Marshal(snapshot)
 	if err != nil {
 		fail("result_encode_failed", err)
 		return
@@ -410,8 +602,18 @@ func (s *DataProfileService) runExecution(
 		ProfileConfigHash:  configHash,
 		LastExecutionID:    execution.ExecutionID,
 	}
+	// System takes a shared lock on the execution. Consume before acquiring
+	// Manager's result/lease update locks, not from inside the write callback.
+	if err := checkSource(ctx); err != nil {
+		code := "source_authorization_required"
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			code = "timeout"
+		}
+		fail(code, err)
+		return
+	}
 	err = s.protectionGate.CommitVersion(ctx, int64(execution.TenantID), version, func(tx *gorm.DB, gate projectionstore.GateReader) error {
-		rules, managed, err := profileRulesForGate(gate, uint(execution.TenantID), target)
+		rules, managed, err := profilePlanRules(gate, uint(execution.TenantID), target, plan)
 		if err != nil {
 			return err
 		}
@@ -453,33 +655,95 @@ func (s *DataProfileService) runExecution(
 }
 
 func (s *DataProfileService) runClaimedExecution(ctx context.Context, execution *commonExecution.TaskExecution) error {
-	if s == nil || execution == nil {
+	if s == nil || s.sampler == nil || execution == nil || execution.TenantID <= 0 {
 		return ErrDataProfileUnavailable
 	}
-	payload, err := json.Marshal(execution.ExecutionConfig)
+	if err := validateProfileClaim(ctx, execution); err != nil {
+		return err
+	}
+	payload, err := s.executions.GetRawExecutionConfig(ctx, execution.TenantID, execution.ExecutionID)
 	if err != nil {
 		return fmt.Errorf("encode frozen data profile config: %w", err)
 	}
-	var frozen struct {
-		Locator           string                `json:"locator"`
-		Selection         DataProfileSelection  `json:"selection"`
-		DataScope         dataprofile.DataScope `json:"data_scope"`
-		ProfileConfigHash string                `json:"profile_config_hash"`
-		ItemFingerprint   string                `json:"item_fingerprint"`
-		SourceVersion     string                `json:"source_version"`
+	var frozen frozenDataProfileConfig
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	decoder.UseNumber()
+	if err := decoder.Decode(&frozen); err != nil {
+		return fmt.Errorf("%w: decode frozen data profile config: %v", ErrDataProfileInvalidRequest, err)
 	}
-	if err := json.Unmarshal(payload, &frozen); err != nil {
-		return fmt.Errorf("decode frozen data profile config: %w", err)
+	budget, err := frozen.Budget.executionBudget()
+	if execution.ActorPrincipalID == nil || *execution.ActorPrincipalID <= 0 ||
+		execution.ActorTenantMembershipID == nil || *execution.ActorTenantMembershipID <= 0 ||
+		execution.IssuedAuthorizationVersion == nil || *execution.IssuedAuthorizationVersion <= 0 {
+		return ErrDataProfileActorRequired
 	}
+	actor := dataProfileActor{uint(execution.TenantID), *execution.ActorPrincipalID,
+		*execution.ActorTenantMembershipID, *execution.IssuedAuthorizationVersion}
+	if err != nil || frozen.Version != dataProfileConfigVersion || frozen.Mode != dataprofile.ModeSample ||
+		frozen.EngineID == 0 || frozen.ItemFingerprint == "" || frozen.SourceVersion == "" || frozen.Locator == "" ||
+		frozen.Selection != normalizeDataProfileSelection(frozen.Selection) ||
+		frozen.SampleMethod != sampleMethodForScope(frozen.DataScope) ||
+		frozen.ProfileConfigHash != dataProfileConfigHash(frozen.Selection, frozen.DataScope, budget) ||
+		frozen.TargetKey != profileTargetKey(actor, frozen.Locator, frozen.Selection, frozen.ProfileConfigHash) {
+		return ErrDataProfileInvalidRequest
+	}
+	frozenScope, err := commonExecution.NewManagerProfileReadScope(payload, &frozen.ReadSet)
+	if err != nil || frozenScope.ReadSet.Paths[0].EngineID != frozen.EngineID {
+		return ErrDataProfileSourceAuthorizationRequired
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget.Timeout)
+	defer cancel()
 	target, err := s.sampler.ResolveTarget(ctx, uint(execution.TenantID), frozen.Locator, frozen.Selection)
 	if err != nil {
 		return err
 	}
-	if target.ItemFingerprint != frozen.ItemFingerprint || target.SourceVersion != frozen.SourceVersion {
+	if target == nil || target.EngineID != frozen.EngineID || target.Locator != frozen.Locator ||
+		target.Selection != frozen.Selection || target.ItemFingerprint != frozen.ItemFingerprint || target.SourceVersion != frozen.SourceVersion ||
+		!reflect.DeepEqual(target.ItemID, frozen.ItemID) {
 		return ErrDataProfileSourceChanged
 	}
-	s.runExecution(ctx, target, frozen.DataScope, frozen.ProfileConfigHash, execution)
+	normalizedScope, err := profilefilter.Normalize(frozen.DataScope, target.Fields)
+	if err != nil || dataProfileConfigHash(frozen.Selection, normalizedScope, budget) != frozen.ProfileConfigHash {
+		return ErrDataProfileInvalidRequest
+	}
+	if normalizedScope.Kind == dataprofile.DataScopeKindCondition && !target.ConditionSupported {
+		return ErrDataProfileUnsupported
+	}
+	planner, ok := s.sampler.(dataProfileSamplePlanner)
+	if !ok {
+		return ErrDataProfileSourceAuthorizationRequired
+	}
+	plan, err := planner.Prepare(ctx, target, normalizedScope, budget)
+	if err != nil {
+		return err
+	}
+	if err := s.consumeProfileAuthorization(ctx, execution, payload, &frozen, plan); err != nil {
+		return err
+	}
+	checkSource := func(ctx context.Context) error {
+		return s.consumeProfileAuthorization(ctx, execution, payload, &frozen, plan)
+	}
+	s.runExecution(ctx, target, normalizedScope, frozen.ProfileConfigHash, execution, budget, plan, checkSource)
 	return nil
+}
+
+// Non-selected protected dependencies need an aggregate output mapping before
+// they can be sampled. Never treat an unmanaged view as an unmanaged read set.
+func profilePlanRules(reader projectionstore.GateReader, tenantID uint, target *DataProfileTarget, plan *DataProfileSamplePlan) ([]dataprotection.Rule, bool, error) {
+	if reader == nil || target == nil || plan == nil {
+		return nil, false, ErrDataProfileProtectionRequired
+	}
+	sources, err := dataprotection.DataItemTargetsFromQueryReadSet(plan.model, plan.ReadSet())
+	if err != nil || len(sources) == 0 {
+		return nil, false, ErrDataProfileProtectionRequired
+	}
+	for _, source := range sources {
+		if source.ResourceIdentity != target.ItemFingerprint && reader.Gate(int64(tenantID), source, time.Now().UTC()).Managed {
+			return nil, true, ErrDataProfileProtectionRequired
+		}
+	}
+	return profileRulesForGate(reader, tenantID, target)
 }
 
 // profileRules resolves the single local protection path for profiling. An
@@ -515,6 +779,7 @@ func dataProfileConfigHash(selection DataProfileSelection, dataScope dataprofile
 		SampleSize     int                   `json:"sample_size"`
 		MaxRowsScanned int                   `json:"max_rows_scanned"`
 		PageSize       int                   `json:"page_size"`
+		TimeoutMS      int64                 `json:"timeout_ms"`
 		TopN           int                   `json:"top_n"`
 		HistogramBins  int                   `json:"histogram_bins"`
 	}{
@@ -525,6 +790,7 @@ func dataProfileConfigHash(selection DataProfileSelection, dataScope dataprofile
 		SampleSize:     budget.SampleSize,
 		MaxRowsScanned: budget.MaxRowsScanned,
 		PageSize:       budget.PageSize,
+		TimeoutMS:      budget.Timeout.Milliseconds(),
 		TopN:           10,
 		HistogramBins:  10,
 	})

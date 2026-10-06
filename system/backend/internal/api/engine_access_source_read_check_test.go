@@ -24,7 +24,11 @@ type sourceReadCheckFixture struct {
 	credential string
 }
 
-func (f *sourceReadCheckFixture) CheckManagerPreviewRead(_ context.Context, credential string, request engineaccess.ManagerPreviewReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
+func (f *sourceReadCheckFixture) CheckManagerProfileResultRead(ctx context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
+	return f.CheckManagerPreviewRead(ctx, credential, request)
+}
+
+func (f *sourceReadCheckFixture) CheckManagerPreviewRead(_ context.Context, credential string, request engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error) {
 	f.calls++
 	expected := f.credential
 	if expected == "" {
@@ -71,7 +75,7 @@ func sourceReadCheckRouter(t *testing.T, f *sourceReadCheckFixture, current auth
 }
 
 func TestSourceReadCheckDelegatedRouteContract(t *testing.T) {
-	body, err := json.Marshal(engineaccess.ManagerPreviewReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{engineplugin.TabularItemPath(12, "schema", "public", "C")}})
+	body, err := json.Marshal(engineaccess.SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{engineplugin.TabularItemPath(12, "schema", "public", "C")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,9 +134,14 @@ func sourceReadCheckAuth() auth.AuthContext {
 }
 
 func TestSourceReadCheckRouteContract(t *testing.T) {
-	const path = "/api/v1/system/engine-access/read-checks/manager-preview"
+	for _, path := range []string{"/api/v1/system/engine-access/read-checks/manager-preview", "/api/v1/system/engine-access/read-checks/manager-profile-result"} {
+		t.Run(path, func(t *testing.T) { testSourceReadCheckRouteContract(t, path) })
+	}
+}
+
+func testSourceReadCheckRouteContract(t *testing.T, path string) {
 	target := engineplugin.TabularItemPath(12, "schema", "public", "C")
-	body, err := json.Marshal(engineaccess.ManagerPreviewReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{target}})
+	body, err := json.Marshal(engineaccess.SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{target}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,5 +194,24 @@ func TestSourceReadCheckRouteContract(t *testing.T) {
 		if response.Code != 403 || fixture.calls != 0 {
 			t.Fatalf("unqualified context reached consumer: %d/%d", response.Code, fixture.calls)
 		}
+	}
+}
+
+func TestProfileResultRouteDoesNotAcceptPreviewDelegate(t *testing.T) {
+	current := sourceReadCheckAuth()
+	current.Token.Type = middleware.IAMTokenTypeDelegatedAccess
+	current.Client.Audiences = []string{"manager"}
+	current.Client.ScopeMode = "restricted"
+	current.Client.Scopes = []string{"data.preview"}
+	current.Delegation = &auth.DelegationFacts{DelegatedByClientID: *current.Client.ClientID, AgentRunID: "run", ToolCallID: "tool"}
+	fixture := &sourceReadCheckFixture{}
+	router := sourceReadCheckRouter(t, fixture, current)
+	body, _ := json.Marshal(engineaccess.SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{engineplugin.TabularItemPath(12, "schema", "public", "C")}})
+	request := httptest.NewRequest("POST", "/api/v1/system/engine-access/read-checks/manager-profile-result", strings.NewReader(string(body)))
+	request.Header.Set("Authorization", "Bearer addp_dat_test")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != 403 || fixture.calls != 0 {
+		t.Fatalf("preview delegate entered result: %d/%d", response.Code, fixture.calls)
 	}
 }

@@ -12,7 +12,7 @@ import (
 // Reference to Manager's existing Permission, not a new System Permission.
 const ManagerPreviewReadPermission = "manager.data_item.read"
 
-type ManagerPreviewReadCheckRequest struct {
+type SourceReadCheckRequest struct {
 	Targets []engineplugin.EngineCatalogPath `json:"targets"`
 }
 
@@ -60,7 +60,28 @@ func qualifyManagerPreviewRead(current commonauth.AuthContext) error {
 // CheckManagerPreviewRead consumes real User or fixed Manager Tool Bearer. Function/client
 // conditions and complete source rules share one read-only committed snapshot.
 // Security and the actual immutable query remain the Manager owner's gates.
-func (s *Service) CheckManagerPreviewRead(ctx context.Context, credential string, request ManagerPreviewReadCheckRequest) (*SourceReadCheck, error) {
+func (s *Service) CheckManagerPreviewRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
+	return s.checkSourceRead(ctx, request, func(r *Repository) (*sourceReadRules, error) {
+		return r.observeManagerPreviewSourceRules(ctx, credential, request.Targets)
+	})
+}
+
+// Result content uses the current ordinary User, never a preview Tool delegate
+// or a historical execution identity. It does not authorize background sampling.
+func (s *Service) CheckManagerProfileResultRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
+	return s.checkSourceRead(ctx, request, func(r *Repository) (*sourceReadRules, error) {
+		return r.observeCurrentUserSourceRules(ctx, credential, request.Targets, qualifyManagerProfileResultRead)
+	})
+}
+
+func qualifyManagerProfileResultRead(current commonauth.AuthContext) error {
+	if current.Token.Type != "first_party_access_token" && current.Token.Type != "oauth_access_token" {
+		return commonapi.ErrForbidden
+	}
+	return qualifyManagerPreviewRead(current)
+}
+
+func (s *Service) checkSourceRead(ctx context.Context, request SourceReadCheckRequest, observe func(*Repository) (*sourceReadRules, error)) (*SourceReadCheck, error) {
 	if len(request.Targets) == 0 || len(request.Targets) > 200 {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -70,7 +91,7 @@ func (s *Service) CheckManagerPreviewRead(ctx context.Context, credential string
 	if s == nil || s.repository == nil {
 		return nil, errSourceReadRules
 	}
-	result, err := s.repository.observeManagerPreviewSourceRules(ctx, credential, request.Targets)
+	result, err := observe(s.repository)
 	if err != nil {
 		return nil, err
 	}

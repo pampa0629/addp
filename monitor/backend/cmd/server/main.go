@@ -151,6 +151,11 @@ func main() {
 	go logPipeline.Run(runtimeContext)
 	go logNotifications.Run(runtimeContext)
 
+	var resourceBackend service.ResourceBackend
+	if cfg.MetricsQueryClient != nil {
+		resourceBackend = cfg.MetricsQueryClient
+		defer cfg.MetricsQueryClient.Close()
+	}
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("monitor", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
@@ -170,6 +175,7 @@ func main() {
 		logPipeline, logNotifications,
 		runtimeHealthService,
 		service.NewMonitoringTargetService(repository.NewMonitoringTargetRepository(db), systemServiceClient, systemServiceClient, cfg.MetricsEnabled, cfg.MetricsPolicy),
+		service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy),
 	)
 
 	go func() {

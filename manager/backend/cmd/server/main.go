@@ -206,6 +206,9 @@ func main() {
 	defer searchService.Close()
 	protectionReadBoundary := managerprotection.NewReadBoundary(protectionStore)
 	dataProfileService := service.NewDataProfileService(dataProfileRepo, dataProfileExecutionRepo, dataProfileSampler, protectionStore)
+	dataProfileService.SetResultReadChecker(systemServiceClient)
+	dataProfileService.SetAuthorizationIssuer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil))
+	dataProfileService.SetExecutionAccessClient(systemServiceClient)
 	dataProfileHandler := api.NewDataProfileHandler(dataProfileService)
 
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）

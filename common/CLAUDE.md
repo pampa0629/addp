@@ -57,6 +57,7 @@ common/
 - `common/resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
 - `common/taskprovider` 只承载 TaskProvider capabilities 的纯解析和规范校验，不访问 System 注册表，不调用 owner 模块，不处理执行调度。
 - `common/client` 只放跨服务 HTTP/API 客户端，不作为 infra PostgreSQL `common` schema 的读写入口。
+- `common/execution.ManagerProfileReadScope` 独占 Manager 剖析执行的 wire 范围及纯值校验／深拷贝，只表达全配置摘要和完整、规范、同引擎的 1–200 个只读叶子；`NewManagerProfileReadScope` 从不超过 512 KiB 的持久原始 JSON 对象规范化并计算完整摘要，保留 JSON 数字精度，不能从浮点数往返后的 `JSONMap` 补造。共享工厂不解释私有配置、不签发授权、不查询 Grant、不缓存 Allow。System 签发与 Manager 不可变 Provider 计划各自拥有领域事实。`SystemExecutionAuthorizationClient.IssueManagerProfile` 使用本次普通 User 凭据签发，`SystemServiceClient.CheckManagerProfileAccess` 使用当前 Tenant Service 凭据复核真实执行租约；固定路径不跟随重定向、不自动重试，只接受最小响应，不泄漏上游正文或凭据。Manager 生产采样接线仍须单独验证。
 - `common/client.MetaClient` 只接受 `ServiceTokenProvider`，按 Tenant 使用 Fosite Client Credentials Grant 获取短期 Service Access Token，并且只发送 `Authorization: Bearer`。不得恢复 User Token 代传、`X-Internal-API-Key`、`X-Tenant-ID` 或可变 Tenant setter。
 - `common/client.SystemServiceClient` 只接受同时支持 Tenant 与 Platform 的 `ServiceTokenSource`。Tenant 调用必须先通过不可变 `WithTenantID` 选择 Context；模块注册（含可选 TaskProvider 声明）和心跳使用显式 Platform Token；所有业务请求只发送 Bearer。
 - 唯一显式人类适配方法 `GetEngineAccessHandlingScope` 使用请求作用域的当前 User Bearer 读取 System 办理范围，不保留或替换为该客户端的 Service 凭据，不在 401 时改用机器重试。调用方先核验 User AuthContext，再核对返回的 Tenant、Engine 和操作人完整来源。Bearer 语法复用 `middleware/auth.CanonicalBearerToken`；提取 Token 不等于认证或授权。

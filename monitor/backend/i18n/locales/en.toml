@@ -159,3 +159,12 @@ other = "Monitoring target configuration is busy; retry later"
 
 ["monitor.metrics.admission"]
 other = "Metrics source failed authentication or protection admission"
+
+["monitor.resource_query.invalid"]
+other = "Invalid resource query parameters or budget"
+
+["monitor.resource_query.budget"]
+other = "Resource query exceeds budget"
+
+["monitor.resource_query.busy"]
+other = "Resource query concurrency exhausted; retry later"

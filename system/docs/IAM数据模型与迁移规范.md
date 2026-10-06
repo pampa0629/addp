@@ -205,6 +205,12 @@ Refresh 采用轮换和重用检测。并发 Refresh、logout、context switch�
 
 消费时使用 Principal → Membership/Tenant → Authorization → execution 的锁顺序，检查当前 running lease、完整授权引用、当前功能权限和唯一服务身份。返回期限不超过授权、租约及相关 Membership 到期时间；租约等待后使用数据库墙钟再次检查，不能把事务开始时间当作当前有效时间。System 不读取 Ontology owner 表，也不返回 Infra 连接信息。
 
+### 6.2b Manager 剖析源读取执行范围
+
+000192 在既有 `execution_authorizations` 增加 `source_read_scope` JSONB，而非另建授权实体。该范围仅用于 `audience=manager` 的普通 User 手工剖析，保存全配置 SHA-256 摘要和规范完整 ReadSet；它补充逐引擎只读范围，不与 `internal_task`、Notebook 来源或动态子执行来源共存。其他 audience 的历史记录保持空值，不补造来源，也不修改原授权。插入必须匹配已提交的精确 pending `common.task_executions` 身份、任务类型及 v6 配置，数据库保护范围不可变并拒绝其他引擎或效果。
+
+签发与消费在 IAM 事务中组合引擎访问控制领域的现行全来源规则，不保存 Grant 副本或缓存 Allow。消费还绑定当前 Manager Service Principal、Tenant Membership、机器消费 Permission、真实 running attempt／lease、授权引用及配置摘要；审计失败或等待跨过资格、授权或租约期限均回滚。000192 只向内置 `tenant.manager_runtime` 加入已有 `system.execution_authorization.execute`，与内置角色 Manifest 115 同步；由已有 Role Permission 触发器推进受影响机器主体的授权版本，迁移不再次手工推进，并撤销旧 Token Family。不增加用户角色授权、Assignment 或源 Grant。固定 HTTP 签发／消费接口已接入 System 路由，契约见授权上下文规范 5.2.2；签发不接收调用方声明的来源范围，消费只返回当次观察时刻。共享 wire 范围唯一归 `common/execution`，不是另一授权权威。Manager 实际采样接入仍须独立完成和验证。
+
 ### 6.3 Notebook Session Authorization
 
 `notebook_session_authorizations` 保存由当前 Tenant User Access Token 派生、绑定唯一 Notebook Session 和 Task 的短期授权事实。它不是 Token，不保存 Token Hash、Engine 列表或连接信息，也不新增 AuthContext 类型；身份边界通过 User Principal、Tenant Membership、Token Family 和签发时 `authorization_version` 固定。它只允许实时 Catalog 发现，以及为每次 Notebook 只读查询/扫描派生独立 Execution Authorization。派生记录必须通过 `execution_authorizations.source_notebook_session_authorization_id` 保存唯一来源，并继承 Session 的身份、有效期和撤销边界。
@@ -331,3 +337,6 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-syste
 该门禁会重建目标数据库的 `system` 和 `common` Schema，禁止指向开发库或生产库。
 
 标准成员清单能力退出后，迁移 000140 停用其六项 Permission、删除全部 Role 关联并撤销受影响会话，并撤销 `tenant.standard_runtime` 的人员目录读取授权；已应用的历史迁移保持校验和不变。Catalog 的组织引用继续只允许 `addp-catalog` 调用，由 Catalog 专用解析方法处理。
+
+
+资源观测权限由连续迁移 `000193_resource_observation_read.up.sql` 发布：`monitor.resource_observation.read` 仅允许 Platform、不可委托及租户定制，产品目录只授予 `platform.system_administrator`；内置角色 Manifest 116 同步。迁移推进受影响主体授权版本并撤销旧 Refresh Token Family，不扩大三员其他角色、Prometheus 采集身份或 Tenant Runtime 角色。预算配置沿用 Monitor 已有模块级平台配置 Permission。

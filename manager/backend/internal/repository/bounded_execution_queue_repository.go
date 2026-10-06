@@ -117,7 +117,10 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 	var lease *commonExecution.Lease
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
+		// The reference enables claiming only. Actual source access still requires
+		// System consumption under the exact running attempt and lease.
+		claimDB := tx.Where("(task_type <> ? OR (execution_authorization_id IS NOT NULL AND authorization_expires_at IS NOT NULL))", commonExecution.TaskTypeDataProfiling)
+		execution, lease, err = commonExecution.ClaimNext(ctx, claimDB, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleManager, TaskTypes: taskTypes, WorkerID: owner,
 			Now: now, LeaseDuration: leaseDuration,
 		})
@@ -214,7 +217,8 @@ func (r *BoundedExecutionQueueRepository) FailClaimed(ctx context.Context, execu
 	})
 }
 
-// RecoverUnleased closes running Manager bounded executions that predate or
+// RecoverUnleased closes abandoned unbound profile preparations and running
+// Manager bounded executions that predate or
 // violate the lease protocol. A valid claim changes status and lease identity
 // atomically, so a visible running row without a complete lease can never be a
 // legal current attempt.
@@ -224,6 +228,27 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 	}
 	recovered := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A producer can disappear between inserting pending and binding System's
+		// response. Such rows are never claimable and must not pin the reuse key.
+		var abandoned []commonExecution.TaskExecution
+		unbound := tx.Where("module = ? AND source = ? AND task_type = ? AND execution_boundary = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL AND created_at < ?", commonExecution.ModuleManager, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusPending, now.UTC().Add(-2*time.Minute)).Order("created_at ASC, id ASC").Limit(limit)
+		if tx.Dialector.Name() == "postgres" {
+			unbound = unbound.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+		}
+		if err := unbound.Find(&abandoned).Error; err != nil {
+			return err
+		}
+		for _, item := range abandoned {
+			result := tx.Model(&commonExecution.TaskExecution{}).Where("id = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL", item.ID, commonExecution.ExecutionStatusPending).
+				Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusFailed, "completed_at": now.UTC(), "updated_at": now.UTC(), "error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "data profiling source authorization preparation expired"}})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return commonAPI.ErrConflict
+			}
+			recovered++
+		}
 		query := tx.Where(
 			"module = ? AND task_type IN ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)",
 			commonExecution.ModuleManager, ManagerBoundedTaskTypes(), commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,

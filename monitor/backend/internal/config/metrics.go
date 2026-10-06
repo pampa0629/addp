@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/addp/monitor/internal/metricsdiscovery"
+	"github.com/addp/monitor/internal/resourcequery"
 )
 
 // Optional metrics configuration never becomes a business startup dependency.
@@ -38,29 +39,13 @@ func loadMetricsPolicy() (bool, *metricsdiscovery.SourcePolicy) {
 		}
 		ports = append(ports, uint16(n))
 	}
-	read := func(key string) []byte {
-		file, err := os.Open(os.Getenv(key))
-		if err != nil {
-			return nil
-		}
-		defer file.Close()
-		info, err := file.Stat()
-		if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 1<<20 {
-			return nil
-		}
-		data := make([]byte, info.Size())
-		n, err := io.ReadFull(file, data)
-		if err != nil || n != len(data) {
-			return nil
-		}
-		return data
-	}
-	ca := read("MONITOR_METRICS_CA_FILE")
+
+	ca := readMetricsCertificate("MONITOR_METRICS_CA_FILE")
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(ca) {
 		return true, nil
 	}
-	cert, err := tls.X509KeyPair(read("MONITOR_METRICS_CLIENT_CERT_FILE"), read("MONITOR_METRICS_CLIENT_KEY_FILE"))
+	cert, err := tls.X509KeyPair(readMetricsCertificate("MONITOR_METRICS_CLIENT_CERT_FILE"), readMetricsCertificate("MONITOR_METRICS_CLIENT_KEY_FILE"))
 	if err != nil {
 		return true, nil
 	}
@@ -69,4 +54,50 @@ func loadMetricsPolicy() (bool, *metricsdiscovery.SourcePolicy) {
 		return true, nil
 	}
 	return true, policy
+}
+
+// Query trust and credentials are independent of source admission/collection.
+func loadMetricsQueryClient(enabled bool) *resourcequery.Client {
+	if !enabled {
+		return nil
+	}
+	read := func(key string) []byte {
+		if !strings.HasPrefix(os.Getenv(key), "/") {
+			return nil
+		}
+		return readMetricsCertificate(key)
+	}
+
+	cert, err := tls.X509KeyPair(read("MONITOR_PROMETHEUS_CLIENT_CERT_FILE"), read("MONITOR_PROMETHEUS_CLIENT_KEY_FILE"))
+	if err != nil {
+		return nil
+	}
+	query, err := resourcequery.NewClient(os.Getenv("MONITOR_PROMETHEUS_URL"), read("MONITOR_PROMETHEUS_CA_FILE"), cert)
+	if err != nil {
+		return nil
+	}
+	return query
+}
+
+func readMetricsCertificate(key string) []byte {
+	path := os.Getenv(key)
+	before, err := os.Stat(path)
+	if err != nil || !before.Mode().IsRegular() || before.Size() < 1 || before.Size() > 1<<20 {
+		return nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 1<<20 {
+		return nil
+	}
+	data := make([]byte, info.Size())
+	n, err := io.ReadFull(file, data)
+	if err != nil || n != len(data) {
+		return nil
+	}
+	return data
 }

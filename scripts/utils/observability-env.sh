@@ -151,3 +151,17 @@ addp_metrics_platform_preflight() {
     }
   done
 }
+
+# Query credentials have their own preflight and mount; never substitute health,
+# admission or collector files when query credentials are absent.
+addp_metrics_query_preflight() {
+  addp_metrics_enabled || return 1
+  [[ -n "${MONITOR_PROMETHEUS_URL:-}" ]] || return 1
+  local name value
+  for name in MONITOR_PROMETHEUS_CA_FILE MONITOR_PROMETHEUS_CLIENT_CERT_FILE MONITOR_PROMETHEUS_CLIENT_KEY_FILE; do
+    value="${!name:-}"
+    [[ "$value" == /* && -f "$value" && -r "$value" ]] || {
+      echo "Missing absolute Monitor query certificate file: $name" >&2; return 1;
+    }
+  done
+}

@@ -79,11 +79,15 @@ def prepare(directory):
         # Only temporary fixture files under the private, unmounted parent.
         key.chmod(0o644)
 
+    (directory / "query").mkdir(mode=0o700)
     center, control, source = ca("center-ca"), ca("control-ca"), ca("source-ca")
     for folder, issuer in (("center-tls", center), ("node-tls", source)):
         (directory / folder / "ca.crt").write_bytes(Path(str(issuer)+".crt").read_bytes())
         certificate(issuer, directory / folder, "server", True)
     certificate(center, directory / "center-tls", "health")
+    certificate(center, directory / "query", "client")
+    (directory / "query/client.key").chmod(0o600)
+    (directory / "query/ca.crt").write_bytes(Path(str(center)+".crt").read_bytes())
     certificate(control, directory / "control", "server", True)
     certificate(source, directory / "deployment", "collector")
     certificate(source, directory / "admission", "client")
@@ -102,6 +106,9 @@ def prepare(directory):
         "ADDP_ONLINE_METRICS_NODE_IP": address,
         "ADDP_NODE_METRICS_ENABLED": "true", "ADDP_NODE_METRICS_LISTEN": address+":19100",
         "ADDP_NODE_METRICS_TLS_DIR": str(directory / "node-tls"),
+        "MONITOR_PROMETHEUS_CA_FILE": str(directory / "query/ca.crt"),
+        "MONITOR_PROMETHEUS_CLIENT_CERT_FILE": str(directory / "query/client.crt"),
+        "MONITOR_PROMETHEUS_CLIENT_KEY_FILE": str(directory / "query/client.key"),
         "MONITOR_METRICS_ALLOWED_CIDRS": address+"/32", "MONITOR_METRICS_ALLOWED_PORTS": "19100",
         "MONITOR_METRICS_CA_FILE": str(directory / "admission/ca.crt"),
         "MONITOR_METRICS_CLIENT_CERT_FILE": str(directory / "admission/client.crt"),
@@ -156,6 +163,41 @@ http {
     runtime.chmod(0o600)
 
 
+def center_identity():
+    ids = command(["docker", "ps", "-aq", "--filter", "label=com.docker.compose.project=addp-infra",
+                   "--filter", "label=com.docker.compose.service=prometheus"]).split()
+    if len(ids) != 1:
+        raise ValueError("expected exactly one standard Infra metrics center")
+    rows = json.loads(command(["docker", "inspect", ids[0]]))
+    labels = rows[0]["Config"].get("Labels", {}) if len(rows) == 1 else {}
+    expected = {"com.docker.compose.project": "addp-infra", "com.docker.compose.service": "prometheus",
+                "com.docker.compose.project.working_dir": str(ROOT)}
+    if any(labels.get(key) != value for key, value in expected.items()):
+        raise ValueError("refusing a foreign Infra metrics center")
+    return ids[0]
+
+
+def center_origin():
+    address = command(["docker", "port", center_identity(), "9090/tcp"]).strip()
+    host, separator, port = address.partition(":")
+    if host != "127.0.0.1" or separator != ":" or not port.isdecimal() or not 1 <= int(port) <= 65535 or port != str(int(port)):
+        raise ValueError("center must publish one canonical owned loopback port")
+    return "https://" + address
+
+
+def configure_query(directory):
+    origin = center_origin()
+    marker = directory / "query/connected"
+    if marker.exists():
+        raise ValueError("query fixture is already configured")
+    text = "export MONITOR_PROMETHEUS_URL=" + shlex.quote(origin) + "\n"
+    for name in ("metrics.env", "runtime.env"):
+        with (directory / name).open("a") as file:
+            file.write(text)
+        (directory / name).chmod(0o600)
+    marker.write_text("configured\n")
+
+
 def assert_owned(directory):
     ids = command(["docker", "ps", "-aq", "--filter", "label=com.docker.compose.project="+PROJECT]).split()
     if ids:
@@ -166,11 +208,13 @@ def assert_owned(directory):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare", "up", "down"))
+    parser.add_argument("action", choices=("prepare", "query", "up", "down"))
     args = parser.parse_args()
     directory = boundary()
     if args.action == "prepare":
         prepare(directory)
+    elif args.action == "query":
+        configure_query(directory)
     elif (directory / "metrics-compose.json").exists():
         assert_owned(directory)
         if args.action == "up":

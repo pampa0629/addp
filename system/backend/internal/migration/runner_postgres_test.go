@@ -4140,6 +4140,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 			('tenant.data_steward', 'develop.data_write.execute'),
 			('tenant.data_viewer', 'develop.data_read.execute'),
 			('tenant.develop_runtime', 'system.execution_authorization.execute'),
+			('tenant.manager_runtime', 'system.execution_authorization.execute'),
 			('tenant.governance_manager', 'develop.data_read.execute'),
 			('tenant.governance_manager', 'system.execution_authorization.create'),
 			('tenant.model_runtime', 'system.engine_descriptor.read'),
@@ -4160,6 +4161,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 		  AND pg_get_constraintdef(oid) LIKE '%model%'
 		  AND pg_get_constraintdef(oid) LIKE '%quality%'
 		  AND pg_get_constraintdef(oid) LIKE '%transfer%'
+		  AND pg_get_constraintdef(oid) LIKE '%manager%'
 		  AND pg_get_constraintdef(oid) NOT LIKE '%addp-quality%'
 	`).Scan(&audienceConstraintCount); err != nil {
 		t.Fatalf("inspect execution authorization audience constraint: %v", err)
@@ -4184,7 +4186,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&triggerCount); err != nil {
 		t.Fatalf("count execution authorization triggers: %v", err)
 	}
-	if permissionCount != 8 || rolePermissionCount != 20 || triggerCount != 4 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
+	if permissionCount != 8 || rolePermissionCount != 21 || triggerCount != 5 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
 		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d audience_constraints=%d attempt_columns=%d", permissionCount, rolePermissionCount, triggerCount, audienceConstraintCount, attemptBoundaryCount)
 	}
 }
@@ -4492,7 +4494,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		t.Fatalf("read platform.manager_runtime permissions: %v", err)
 	}
 	if catalogTenantPermissions != "develop.catalog.read,iam.department.read,iam.project_group.read,iam.tenant_membership.read,meta.catalog.read,model.catalog.read,quality.catalog.read,service.catalog.read,standard.catalog.read,standard.domain.read,standard.element.read,standard.glossary.read,system.engine_access_fulfillment.execute,system.engine_descriptor.read,workbench.catalog.read" ||
-		managerTenantPermissions != "audit.tenant_event.create,inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,transfer.execution.create,transfer.execution.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
+		managerTenantPermissions != "audit.tenant_event.create,inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute,transfer.execution.create,transfer.execution.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
 		metaTenantPermissions != "audit.tenant_event.create,manager.content_index.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read" ||
 		serviceTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,model.metric_implementation.read,security.protection_projection.read,security.protection_projection.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
 		transferTenantPermissions != "audit.tenant_event.create,develop.export_provenance.read,manager.export_provenance.read,meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||

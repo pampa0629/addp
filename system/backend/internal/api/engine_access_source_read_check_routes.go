@@ -12,16 +12,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type managerPreviewReadCheckService interface {
-	CheckManagerPreviewRead(context.Context, string, engineaccess.ManagerPreviewReadCheckRequest) (*engineaccess.SourceReadCheck, error)
+type managerSourceReadCheckService interface {
+	CheckManagerPreviewRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
+	CheckManagerProfileResultRead(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)
 }
 
 type EngineAccessSourceReadCheckHandler struct {
-	service managerPreviewReadCheckService
+	service managerSourceReadCheckService
 }
 
 func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IAMRuntime, handler *EngineAccessSourceReadCheckHandler) error {
-	if api == nil || runtime == nil || runtime.Authentication == nil || handler == nil || handler.service == nil {
+	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.UserAccessCredential == nil || handler == nil || handler.service == nil {
 		return errors.New("source read check dependencies required")
 	}
 	tenant, err := middleware.NewIAMContextGuard("tenant")
@@ -45,6 +46,9 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 	routes := api.Group("/engine-access/read-checks")
 	routes.Use(runtime.Authentication, credential, tenant, delegated)
 	routes.POST("/manager-preview", permission, handler.CheckManagerPreview)
+	// The result operation has no Tool delegation route. Membership or preview
+	// capability does not broaden a delegated credential to derived results.
+	api.POST("/engine-access/read-checks/manager-profile-result", runtime.Authentication, runtime.UserAccessCredential, tenant, permission, handler.CheckManagerProfileResult)
 	return nil
 }
 
@@ -56,19 +60,41 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body engineaccess.ManagerPreviewReadCheckRequest true "1 至 200 个完整读取目标，不支持 query 参数 | 1 to 200 complete read targets; no query parameters"
+// @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整读取目标，不支持 query 参数 | 1 to 200 complete read targets; no query parameters"
 // @Success 200 {object} engineaccess.SourceReadCheck "当次观察时刻，不授予访问权 | Observation time without granting access"
 // @Failure 400,401,403,500 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /engine-access/read-checks/manager-preview [post]
 func (h *EngineAccessSourceReadCheckHandler) CheckManagerPreview(c *gin.Context) {
-	var request engineaccess.ManagerPreviewReadCheckRequest
+	h.check(c, h.service.CheckManagerPreviewRead)
+}
+
+// CheckManagerProfileResult godoc
+// @Summary 检查 Manager 剖析结果的当前源读取权限 | Check current source read coverage for Manager profile results
+// @Description 仅当前 Tenant 普通第一方或 OAuth API User；固定核验 manager.data_item.read 及完整历史采样来源的现行规则，无 Grant 或命中 Deny 整体拒绝。不支持委托、Service、Resource Ticket 或自报身份、execution、Permission；不授予后台采样权限 | Current Tenant ordinary first-party or OAuth API User only. Fixed manager.data_item.read and current rules for all historical sampling sources; missing Grants or Deny reject the entire set. Delegation, Service, Resource Ticket and caller-supplied identity, execution or Permission are not supported; no background sampling authority is granted
+// @Description Manager 必须提供实际结果冻结的完整 ReadSet，不能用当前视图依赖补造。只返回不可缓存的当次观察时刻，不访问源端，不创建 Grant 或执行授权 | Manager must supply the complete ReadSet frozen from the actual result, not reconstruct it from current view dependencies. Returns only a non-cacheable observation time; no source access, Grant or execution authorization
+// @Tags 源数据读取检查 | Source Data Read Checks
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整历史读取目标，不支持 query 参数 | 1 to 200 complete historical read targets; no query parameters"
+// @Success 200 {object} engineaccess.SourceReadCheck "当次观察时刻 | Observation time"
+// @Failure 400,401,403,500 {object} IAMErrorResponse "请求失败 | Request failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read"]
+// @Router /engine-access/read-checks/manager-profile-result [post]
+func (h *EngineAccessSourceReadCheckHandler) CheckManagerProfileResult(c *gin.Context) {
+	h.check(c, h.service.CheckManagerProfileResultRead)
+}
+
+func (h *EngineAccessSourceReadCheckHandler) check(c *gin.Context, check func(context.Context, string, engineaccess.SourceReadCheckRequest) (*engineaccess.SourceReadCheck, error)) {
+	var request engineaccess.SourceReadCheckRequest
 	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil || len(request.Targets) == 0 || len(request.Targets) > 200 {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return
 	}
-	result, err := h.service.CheckManagerPreviewRead(c.Request.Context(), sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
+	result, err := check(c.Request.Context(), sharedauth.CanonicalBearerToken(c.GetHeader("Authorization")), request)
 	if err != nil {
 		respondIAMError(c, err)
 		return

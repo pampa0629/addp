@@ -4,9 +4,9 @@
 
 Monitor 模块是 ADDP 的统一执行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 日志链路健康与告警域。
 
-平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 节点台账、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，应用埋点与资源查询尚未实施，统一告警域收敛仍待明确确认。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
+平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 节点台账、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，应用埋点尚未实施；节点基础资源查询首批已接入（见文末范围），统一告警域收敛仍待明确确认。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
 
-节点来源准入和发现投影内核位于 `backend/internal/metricsdiscovery/`，由 Monitor 唯一维护。已实现受控 CIDR/端口、固定 HTTPS 指标路径、每次发现重新解析 DNS 并固定单一 IP、来源 mTLS 准入、节点当前身份筛选和端点预留预算；只支持 node_exporter 主机来源与通过既定 mTLS 入口的 cAdvisor 节点容器来源。目标持久化、公开 HTTP SD 和独立 Prometheus OAuth 身份已消费此内核：管理请求转发当前 User Token，由 System 对节点再次裁决；目标写事务串行化预算和 CAS，发现读取当前身份而不复制 System 台账。启用目标必须通过 mTLS 准入，停用配置保存和撤除采集意图不依赖指标设施或来源在线。Prometheus 生产模板和正式节点来源已完成真实 Hosted T4，包含权限隔离、发现版本、真实采样及故障恢复；面向用户的资源查询、生效状态查询和生产纳管覆盖仍须交付，不能以一次测试部署宣称生产覆盖。T1 归 `make test-go`，目标事务与 IAM/OAuth 使用现有 PostgreSQL T2 自动发现；设计第 10.15–10.20 节记录边界与接线门禁。
+节点来源准入和发现投影内核位于 `backend/internal/metricsdiscovery/`，由 Monitor 唯一维护。已实现受控 CIDR/端口、固定 HTTPS 指标路径、每次发现重新解析 DNS 并固定单一 IP、来源 mTLS 准入、节点当前身份筛选和端点预留预算；只支持 node_exporter 主机来源与通过既定 mTLS 入口的 cAdvisor 节点容器来源。目标持久化、公开 HTTP SD 和独立 Prometheus OAuth 身份已消费此内核：管理请求转发当前 User Token，由 System 对节点再次裁决；目标写事务串行化预算和 CAS，发现读取当前身份而不复制 System 台账。启用目标必须通过 mTLS 准入，停用配置保存和撤除采集意图不依赖指标设施或来源在线。Prometheus 生产模板和正式节点来源已完成真实 Hosted T4，包含权限隔离、发现版本、真实采样及故障恢复；资源查询的生效状态查询、后续指标与生产纳管覆盖仍须交付，不能以一次测试部署宣称生产覆盖。T1 归 `make test-go`，目标事务与 IAM/OAuth 使用现有 PostgreSQL T2 自动发现；设计第 10.15–10.20 节记录边界与接线门禁。
 
 ## 技术栈与端口
 
@@ -111,7 +111,16 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - `ADDP_OBSERVABILITY_METRICS_ENABLED` 严格选择；`MONITOR_METRICS_ALLOWED_CIDRS/PORTS` 是明确网络准入集合，CA 和独立客户端证书由 `MONITOR_METRICS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 注入。关闭或缺配置不阻断 Monitor 原有 Ready；相应采集请求返回 disabled/unconfigured。`PROMETHEUS_SERVICE_CLIENT_SECRET` 只配置 System 的独立发现身份，不能借用日志或业务客户端凭据。
 - `GET /platform/metrics_discovery` 返回原生 HTTP SD 数组；成功空列表与失败分开，不接受分页、调用者标签、query 或正文。保存版本不是实际 Prometheus 生效回执，版本只进入内部发现元数据。
 - 现有 `make test-monitor-postgres` 自动运行目标并发预算和 CAS 回归。`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test prometheus-credential"` 验证可选身份及撤销；`--package api --test oauth-client-credentials` 使用真实 System OAuth Handler 验证最小平台身份、Tenant 拒绝及旧令牌撤销。两者是既有标准入口的精确选择，CI 仍使用完整门禁，不缩减范围。
-- 指标中心生产模板已接入原生 OAuth2/HTTP SD；控制面 HTTPS origin、独立来源证书和 Secret 文件由部署注入，标准 Infra 预检生成唯一配置。`make test-monitor-metrics` 验证真实 Prometheus 的认证发现、令牌续取、身份标签清理、失败保留旧目标及成功空列表移除；控制面为受控协议夹具，不能替代真实 System/Monitor 部署全链路验收。节点 exporter 部署与生产回执仍待后续实施，具体输入见 `scripts/infra/README.md`。
+- 指标中心生产模板已接入原生 OAuth2/HTTP SD；控制面 HTTPS origin、独立来源证书和 Secret 文件由部署注入，标准 Infra 预检生成唯一配置。`make test-monitor-metrics` 验证真实 Prometheus 的认证发现、令牌续取、身份标签清理、失败保留旧目标及成功空列表移除；控制面为受控协议夹具，不能替代真实 System/Monitor 部署全链路验收。正式节点来源与控制面已取得 Hosted T4；生产纳管覆盖、cAdvisor 及面向用户的生效状态仍待后续验收，具体输入见 `scripts/infra/README.md`。
+
+
+## Platform 节点基础资源查询
+
+- 唯一读取接口 `/platform/resource_observations`、`/platform/resource_trends` 使用 `monitor.resource_observation.read`；System 连续迁移 000193 仅给平台系统管理员发布该权限，采集服务与 Tenant 身份无此能力。当前请求内转发 User Token，由 System 裁决节点；读取当前启用目标及受控解析端点，节点/目标停用返回 `not_connected`，不查历史作为当前值。
+- `internal/resourcequery/` 唯一维护 8 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率、文件系统、磁盘/网络速率尚未发布。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
+- `/settings/resource-query-policy` 沿用模块级 `monitor.configuration.read/update`，仅 Platform User，唯一 `monitor.resource_query_policy` 单例保存 CAS 版本与完整预算。每个查询读一次已提交预算，对新请求热生效；没有环境回退或重启要求。标准平台审计记录安全结果与保存版本，不记录 PromQL、Token 或内部地址。
+- mTLS 查询部署输入独立于节点准入和 collector；关闭或不完整配置不阻断业务。生产只通过标准生命周期的 `metrics-query.yml` 挂载，不增加必需 Infra 依赖。
+- Go T1、Monitor PostgreSQL 及 System IAM Migration T2 沿既有标准入口自动发现；查询链路已扩展同一个 `platform-node-metrics` Hosted suite 的断言与独立查询身份接线，尚未取得扩展后的真实 T4 结果；页面与后续指标须分批补齐，不能以先前节点/目标采集 T4 代替本批 API 验收。
 
 ## 平台监测目标管理前端
 

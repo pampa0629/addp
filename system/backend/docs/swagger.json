@@ -489,6 +489,80 @@
                 ]
             }
         },
+        "/auth/execution-authorizations/manager-profiles": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从当前普通 API User 和精确 pending execution 反查完整来源、配置及当前权限，不接受自报身份或范围；不返回连接或凭据 | Resolve complete sources, configuration and current permissions from an ordinary API User and exact pending execution; no caller-supplied identity or scope, connections or credentials",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "签发 Manager 剖析执行授权 | Issue Manager profiling execution authorization",
+                "parameters": [
+                    {
+                        "description": "执行 UUID 与有效期秒数，默认 900、最大 3600；正文上限 512 KiB，无 query | Execution UUID and TTL seconds, default 900, maximum 3600; 512 KiB body limit, no query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMIssueManagerProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "固定只读来源范围 | Fixed read-only source boundary",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMIssuedManagerProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "签发失败 | Issuance failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_profile.execute",
+                    "manager.data_item.read"
+                ]
+            }
+        },
         "/auth/mfa": {
             "get": {
                 "security": [
@@ -889,13 +963,80 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.ManagerPreviewReadCheckRequest"
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheckRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "当次观察时刻，不授予访问权 | Observation time without granting access",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read"
+                ]
+            }
+        },
+        "/engine-access/read-checks/manager-profile-result": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前 Tenant 普通第一方或 OAuth API User；固定核验 manager.data_item.read 及完整历史采样来源的现行规则，无 Grant 或命中 Deny 整体拒绝。不支持委托、Service、Resource Ticket 或自报身份、execution、Permission；不授予后台采样权限 | Current Tenant ordinary first-party or OAuth API User only. Fixed manager.data_item.read and current rules for all historical sampling sources; missing Grants or Deny reject the entire set. Delegation, Service, Resource Ticket and caller-supplied identity, execution or Permission are not supported; no background sampling authority is granted\nManager 必须提供实际结果冻结的完整 ReadSet，不能用当前视图依赖补造。只返回不可缓存的当次观察时刻，不访问源端，不创建 Grant 或执行授权 | Manager must supply the complete ReadSet frozen from the actual result, not reconstruct it from current view dependencies. Returns only a non-cacheable observation time; no source access, Grant or execution authorization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据读取检查 | Source Data Read Checks"
+                ],
+                "summary": "检查 Manager 剖析结果的当前源读取权限 | Check current source read coverage for Manager profile results",
+                "parameters": [
+                    {
+                        "description": "1 至 200 个完整历史读取目标，不支持 query 参数 | 1 to 200 complete historical read targets; no query parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次观察时刻 | Observation time",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck"
                         }
@@ -3120,6 +3261,80 @@
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/manager-profile-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅固定 addp-manager Tenant Service 凭据；核验真实 running attempt、租约、完整配置和全部现行源规则。仅返回当次观察时刻，不是访问租约或源连接 | Only the fixed addp-manager Tenant Service credential; checks the actual running attempt, lease, complete configuration and all current source rules. Returns only a point-in-time observation, not an access lease or source connection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行授权 | Execution Authorization"
+                ],
+                "summary": "复核 Manager 剖析执行的当前完整来源权限 | Recheck current complete source permissions for Manager profiling",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规范正整数授权 ID | Canonical positive authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "精确执行租约与相同来源范围；正文上限 512 KiB，无 query | Exact execution lease and identical source boundary; 512 KiB body limit, no query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMManagerProfileAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可缓存的当次观察 | Non-cacheable current observation",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMManagerProfileAccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "复核失败 | Recheck failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "复核失败 | Recheck failed",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
@@ -13160,6 +13375,17 @@
                 }
             }
         },
+        "execution.ManagerProfileReadScope": {
+            "type": "object",
+            "properties": {
+                "config_digest": {
+                    "type": "string"
+                },
+                "read_set": {
+                    "$ref": "#/definitions/plugin.QueryReadSet"
+                }
+            }
+        },
         "execution.ReadGrant": {
             "type": "object",
             "properties": {
@@ -13474,17 +13700,6 @@
                 }
             }
         },
-        "github_com_addp_system_internal_engineaccess.ManagerPreviewReadCheckRequest": {
-            "type": "object",
-            "properties": {
-                "targets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/plugin.EngineCatalogPath"
-                    }
-                }
-            }
-        },
         "github_com_addp_system_internal_engineaccess.SourceDeny": {
             "type": "object",
             "properties": {
@@ -13535,6 +13750,17 @@
             "properties": {
                 "observed_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_engineaccess.SourceReadCheckRequest": {
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogPath"
+                    }
                 }
             }
         },
@@ -16590,6 +16816,17 @@
                 }
             }
         },
+        "internal_api.IAMIssueManagerProfileRequest": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_in": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.IAMIssueNotebookSessionAuthorizationRequest": {
             "type": "object",
             "properties": {
@@ -16601,6 +16838,29 @@
                 },
                 "task_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMIssuedManagerProfileResponse": {
+            "type": "object",
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "source_read_scope": {
+                    "$ref": "#/definitions/execution.ManagerProfileReadScope"
+                },
+                "tenant_id": {
+                    "type": "string"
                 }
             }
         },
@@ -16768,6 +17028,31 @@
                 },
                 "user": {
                     "$ref": "#/definitions/internal_api.IAMManagedUserResponse"
+                }
+            }
+        },
+        "internal_api.IAMManagerProfileAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "source_read_scope": {
+                    "$ref": "#/definitions/execution.ManagerProfileReadScope"
+                }
+            }
+        },
+        "internal_api.IAMManagerProfileAccessResponse": {
+            "type": "object",
+            "properties": {
+                "observed_at": {
+                    "type": "string"
                 }
             }
         },
@@ -18914,6 +19199,17 @@
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "plugin.QueryReadSet": {
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogPath"
                     }
                 }
             }

@@ -3718,3 +3718,219 @@ Manager 的数据库预览与后台数据剖析共同调用同一 Resolver／数
 - `make test-changed` 因并行工作区多个 Owner 缺少 T2 环境变量，在预检停止；不代表全工作区通过。真实用户／工具、System／Gateway／Manager 的 T4 未运行，Ready 核对不是授权运行验收。运行新源码无需 AI 接管服务，后续需要时由用户重启 Manager。
 
 **下一优先项：** 扩展 System 的正式 Manager execution 契约，将可信来源与真实 execution、固定 Manager 服务调用方、有界只读效果绑定；随后以同一不可变采样计划的完整 ReadSet 核验当前源授权，并补齐结果提交／读取复核。来源冻结只是前置条件，不能替代源授权，更不能据此恢复未核验采样。
+
+### 26.92 剖析结果的历史来源与当前读取授权（2026-10-06）
+
+继续核对正式执行链路后确认：现有 System Execution Authorization 只有引擎及效果范围，尚无 Manager audience 或冻结的物理完整 ReadSet，不能只增加 audience 就宣称采样授权闭环。另发现历史剖析结果只核验功能权限和本地保护，没有复核实际来源的现行读取规则；因此先收紧这一派生内容出口，再恢复后台执行。
+
+**本轮实施：**
+
+- System 新增唯一固定操作 `POST /api/v1/system/engine-access/read-checks/manager-profile-result`，复用已有只读快照底座；固定检查 `manager.data_item.read`、普通第一方／OAuth API User 的当前凭据和 Client 条件，以及完整历史来源的当前 Grant／Explicit Deny。预览 Tool 委托、Service 和 Resource Ticket 不能进入结果读取，不接受自报身份、Permission 或 execution。
+- Manager 结果生成时在既有 `dependency_snapshot.read_set` 中冻结实际采样提供的完整规范 ReadSet，而非所选叶子或 ResolveTarget 的当前依赖。空集合、未知字段、非法路径、非规范排序／重复路径、跨引擎或超过 200 项均拒绝；缺少实际来源的新结果不得发布。此项是结果来源前置条件，不是执行授权。
+- 结果读取按当前普通 User Bearer 同步调用上述固定检查，失败时不返回结果内容、不借机器身份重试、不缓存 Allow。来源不足的历史结果保留但拒绝，不从当前 Meta、视图或血缘补造，不回填。结果仍按资源／配置共享，不改为发起人私有。
+- 本地 Security 和覆盖响应序列化的既有 ReadBoundary 仍独立生效；错误使用稳定状态和双语消息，不暴露上游来源细节或凭据。规范、模块说明及 Swagger 同步，无新增 Permission、迁移、数据库或后台凭据存储。
+- 生产采样仍明确返回 `source_authorization_required`；本轮未恢复采样，未启停应用或 Infra，未改动业务源、Asset 数据或其他并行工作。
+
+**验证和测试体系：**
+
+- `make test-go` 最终退出码 0，覆盖全部已跟踪 Go 模块；新增 Manager 来源缺失／非法／冻结、当前读取失败、历史不回填和发布拒绝用例，Common 客户端无缓存／无重试／无重定向／无机器回退，以及 System 固定路由和普通凭据边界。日志 `/tmp/addp-profile-result-go.log`。
+- `make test-manager-postgres` 通过；新增完整 C+D 来源的真实 JSONB 持久化和夹具零残留检查，复用既有 `TestIntegrationPostgresManager*` 自动发现。只使用已核实的 `25432/addp_test`，日志 `/tmp/addp-profile-result-manager-postgres.log`。
+- `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess"` 通过；既有正式 Grant／真实 IAM 会话夹具追加结果读取检查，验证 Grant 与功能权限交集、C+D 部分授权拒绝、撤销、Deny、旧授权版本和会话撤销。只使用 `25432/addp_iam_test`，不读取业务源，日志 `/tmp/addp-profile-result-system-postgres.log`。
+- `make test-authorization` 通过，包括授权清单和全模块 Swagger 覆盖；System 208、Manager 93 个公开路由方法一致。生成命令 `bash scripts/swagger/gen-swagger.sh system manager`，日志 `/tmp/addp-profile-result-authorization.log`。
+- `git diff --check` 通过。测试复用根 Makefile 和已有 Go／PostgreSQL CI 注册，没有新增平行入口；没有运行会在户外业务库插入样例的既有 MongoDB 门禁。
+- `make test-changed` 因共享工作区涉及多个 Owner、缺少其 T2 环境配置而在预检停止，不能计为全工作区通过，日志 `/tmp/addp-profile-result-changed.log`。本轮未修改前端，也未运行真实用户／Gateway／Manager T4；上述回归不等于在线验收或完整执行授权完成。
+
+**下一优先项：** 正式 Manager 剖析执行授权，绑定当前发起人／Membership／授权版本、真实 execution、固定 Manager 服务身份、只读效果、有界预算及实际采样不可变计划的完整来源；执行与提交均沿同一来源和现行授权检查，完成后再恢复生产采样。不得复用同步结果检查或机器 Token 冒充后台授权。用户若需要加载本轮 Common／System／Manager 新源码，仍由用户在外部终端执行 `./scripts/dev/restart.sh -all`；本轮不要求立即重启。
+
+### 26.93 剖析后台消费的冻结配置与预算边界（2026-10-06）
+
+继续梳理正式执行授权的前置链路，发现预算虽写入 execution，后台采样和超时仍读取进程当前配置；同时只解码部分配置，没有完整核对引擎、模式和摘要。因此先固定可供正式授权绑定的执行范围，不能在范围尚会漂移时恢复采样。
+
+**本轮实施：**
+
+- 入队与消费统一使用当前强类型配置契约；配置摘要升级至 `data-profile-config/v5`，纳入超时。完整配置通过 JSON 深拷贝冻结，不随请求／响应条件值、Meta item 引用或服务当前预算变化而改写。
+- 后台仅接受当前版本、完整正数预算及合法预算关系，拒绝缺失、未知字段、溢出和摘要不一致；不补进程默认预算，也不兼容旧版本 execution。采样参数和 context 超时都采用入队预算。
+- 采样前核对冻结来源主体与复用键，并比对重新解析的引擎、Locator、内容选择、item fingerprint 和源版本；重新校验结构化条件及能力。没有可信主体、配置被更换或来源变化时，不进入采样。
+- 删除已无消费者的预算补默认函数。生产 Provider 仍以 `source_authorization_required` 拒绝采样；冻结配置及来源主体不是 Allow，不伪造 execution 授权，也不借用结果／预览检查放行后台读取。
+- 更新剖析规范、Manager 模块说明及本专题；不改变公共 API 字段、Permission、数据库 schema 或 Swagger 路由，无需新增迁移、CI Job 或测试入口。未启停服务／Infra、未修改账号授权或业务源、未处理 Asset／搜索迁移和其他并行任务。
+
+**验证与边界：**
+
+- `make test-go` 通过全部已跟踪 Go 模块。新增回归覆盖入队后扩大进程预算仍使用旧预算和超时、超时摘要隔离、嵌套配置冻结、缺失／非法／溢出预算、未知字段、旧版本、配置摘要及来源主体／引擎／源身份变化；异常场景采样次数为零。日志 `/tmp/addp-profile-execution-boundary-go.log`。
+- `make test-manager-postgres` 通过；既有正式剖析入队、并发复用、来源字段持久化夹具追加冻结引擎和完整预算的 JSONB 回查断言，并沿原清理范围核对零残留。使用 Infra 状态核实的 `25432/addp_test`，日志 `/tmp/addp-profile-execution-boundary-postgres.log`。测试沿用已有 Go 和 `TestIntegrationPostgresManager*` CI 自动发现，不连接户外业务源。
+- `git diff --check` 通过。`make test-changed` 仍因共享工作区多个 Owner 缺少 T2 环境变量而在预检停止，不能计为全工作区通过；日志 `/tmp/addp-profile-execution-boundary-changed.log`。未运行会写入户外业务夹具的 MongoDB 门禁或真实用户 T4；无需为本轮纯后台前置核验重启服务。
+
+**下一优先项：** 将这份冻结执行范围与 Provider 完整采样 ReadSet 一起绑定到 System 正式 Execution Authorization：当前 User 请求内签发，后台仅消费固定 Manager 服务身份对应的执行引用，并在实际计划消费及提交时复核现行全来源授权。现有引擎级授权仍不能替代表级授权；该链路接通并通过允许／拒绝及撤销回归前，保持生产采样拒绝。
+
+### 26.94 Manager 正式剖析执行授权内部底座（2026-10-06）
+
+在既有 Execution Authorization 上完成 Manager 物理来源范围的内部签发与消费，不另建授权实体，不把引擎级访问当作表级授权。本轮不启停服务／Infra，不修改开发账号或业务源，不接管其他并行工作。
+
+**本轮实施：**
+
+- System 内部签发从当前普通第一方／OAuth API User 的真实凭据及精确 pending Manager execution 反查租户、发起人、Membership、授权版本和完整配置；固定要求 `manager.data_profile.execute` 与 `manager.data_item.read`，不接受客户端自报身份、范围或配置。Tool 委托、Tool-only User、Service 和 Resource Ticket 不可签发。
+- `source_read_scope` 保存整个配置的 SHA-256 摘要及单引擎、规范叶子、1–200 项的完整 ReadSet。摘要保留 JSON 大整数，不因数值转换漏掉条件变化；配置、预算或来源变化均不能沿用原授权。签发只接受 v6 owner execution；Manager 生产配置仍为 v5，尚未切换，不做旧版本兼容或回填。
+- 消费只允许当前固定 `addp-manager` Tenant Runtime，绑定同一 running execution、attempt、有效 lease、授权引用和完整配置／ReadSet。现行发起人功能权限、机器消费资格和所有来源 Grant／Explicit Deny 在 IAM 同一事务中复核；审计之后再次核验自然到期及真实 claim。返回当次数据库观察，不是可缓存 Allow 或源连接凭据。
+- 禁止经仅提交 Engine ID 的通用 engine-accesses 路径消费该授权。范围不可变、其他引擎／效果不可插入，审计失败、期限跨越或任一来源不满足覆盖时整体拒绝；未提交签发不返回授权 ID，失败消费不返回成功观察。
+- 新前向迁移 000192 保留既有授权及其封存事实，其他 audience 的新字段保持空值，不补造历史来源。只给既有 `tenant.manager_runtime` 加入已有机器消费 Permission，同步内置角色 Manifest 115；已有 Role Permission 触发器推进授权版本一次，不再手工重复推进。撤销受影响旧机器会话，不增加用户 Role／Assignment、Permission 定义或源 Grant。
+- 规范、System 模块说明及 IAM 迁移说明已更新。没有新增 HTTP 路由或公共 API 契约，本轮无需生成 Swagger；没有接入 System 生产组合根或 Manager 采样，生产仍以 `source_authorization_required` 拒绝，不能据此宣称剖析已恢复。
+
+**验证与标准入口：**
+
+- `make test-go` 最终退出码 0；`make test-authorization` 最终退出码 0，包含角色唯一清单、Manifest 版本、权限投影及全模块 Swagger 覆盖。日志分别为 `/tmp/addp-profile-formal-source-go-final.log`、`/tmp/addp-profile-formal-source-authorization.log`。
+- System PostgreSQL 七个包分段全覆盖：首轮标准门禁中的 IAM、OAuth 通过；API 原精确权限列表缺少本轮机器 Permission，修正后经同一标准入口串行复验 API、Migration、EngineAccess、Repository、Online Fixture，五包全部退出码 0。日志 `/tmp/addp-profile-formal-source-full-postgres.log` 保留首次失败及有效前两包证据，`/tmp/addp-profile-formal-source-remaining-postgres.log` 为后五包复验结果，不把首次完整入口记为通过。
+- 新集成回归覆盖真实用户会话、完整 C+D 来源、部分授权拒绝、真实 running claim、配置／预算变化、错误 lease、Grant 撤销、Deny、审计失败回滚及等待跨过授权／lease 到期。新增 191→192 历史数据升级回归，核对旧授权 JSON 不变、无源 Grant／Assignment 增量、机器授权版本恰好推进一次及重复 Runner 不再改写。
+- PostgreSQL 验证仅使用 Infra 状态核实的 `25432/addp_iam_test`，由已有 `make test-system-iam-postgres` 完成隔离与清理，没有新建测试数据库。新测试命中既有包自动发现及已登记的 Release/T2 CI，不新建脚本、Workflow 或平行入口。
+- 最小复验命令：`make test-go`、`make test-authorization`；设置核实端口对应的 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 后运行 `make test-system-iam-postgres`，也可通过 `SYSTEM_IAM_POSTGRES_TEST_ARGS="--package <包>"` 执行现有分包入口。
+- `make test-platform` 未通过：Workflow 安全检查下载固定 `zizmor==1.28.0` 时遇到 PyPI TLS EOF，未关闭 TLS 校验、降级或修改 CI 绕过；后续由既有 `test-workflow-security`／平台 CI 复验。`make test-changed` 因共享工作区多个 Owner 缺少 T2 环境配置在预检停止，不能计为全工作区通过。日志分别为 `/tmp/addp-profile-formal-source-platform.log`、`/tmp/addp-profile-formal-source-changed.log`。未运行真实用户／Gateway／Manager T4 或会写入户外业务样例的 MongoDB 门禁。
+
+**下一优先项：** 将上述内部底座接为固定签发／消费 HTTP 契约及 Common 客户端，使用真实 Provider 不可变采样计划生成完整 ReadSet，切换唯一 v6 入队配置；再贯通真实计划执行、本地 Security 和结果提交前的现行授权复核。逐步补齐允许、拒绝和执行中撤销回归后才能恢复生产采样，不借预览／结果检查或 Service Token 绕过。
+
+### 26.95 Manager 正式剖析授权 HTTP 与共享客户端（2026-10-06）
+
+在 26.94 内部底座上接入 System 生产路由和 Common 客户端；不新增授权实体、通用连接接口或用户默认授权。没有启停 ADDP／Infra，也没有写入业务数据源。
+
+**本轮实施：**
+
+- 固定签发 `POST /auth/execution-authorizations/manager-profiles` 使用当前普通 User 凭据，仅接收 execution UUID 和可选有效期秒数；两个 Manager 功能 Permission 同时满足后，由 System 可信反查完整配置／来源。响应核对当前租户和精确执行，只返回授权编号、范围和期限，不返回源连接或用户凭据。
+- 固定消费 `POST /execution-authorizations/:id/manager-profile-accesses` 仅接受 `addp-manager` Tenant Service 凭据和既有机器消费 Permission，主体与租户来自可信 AuthContext；正文绑定真实 execution、attempt、lease 和相同来源范围。成功响应只有不可缓存的 `observed_at`，不是访问租约。
+- 两入口严格解析、拒绝未知字段／额外 JSON／query／非法规范 ID，正文上限 512 KiB。沿用已有国际化执行授权错误，不向响应泄漏底层错误或凭据。生产组合根使用正式 IAM 服务与同事务源规则检查，不通过 fake／测试绕过。
+- `common/execution.ManagerProfileReadScope` 唯一定义 wire 范围、规范校验和深拷贝，删除 IAM 原本地类型／重复校验，不保留 alias。IAM、API、客户端复用同一实现；共享契约不持有 Grant 或领域授权决定。
+- Common 签发客户端只保留本次同步 User 凭据；消费客户端使用当前不可变 Tenant Context 的 Service 凭据。不自动重试、不跟随重定向、不缓存观察；严格核验最小响应，错误只保留状态和安全固定错误码。新增路由和 DTO 已生成 System Swagger，命中现有 `*_routes.go` 覆盖检查与全 Go／System PostgreSQL CI 自动发现，无需新增 Workflow 或入口。
+- **生产边界保持不变：** Manager 仍为 v5 入队，没有使用这两个客户端创建 v6 执行或执行真实采样；生产采样继续以 `source_authorization_required` 拒绝。接口、客户端与底座通过，不等于实际用户采样或完整数据授权闭环已恢复。
+
+**验证与标准入口：**
+
+- `make test-go` 复验退出码 0，覆盖全部已跟踪 Go 模块。新增路由回归覆盖真实 Guard、当前 User／固定 Service 身份、缺权限／错误 Client／到期凭据、正文预算、非法租约／ID、拒绝自报主体、错误脱敏及只返回最小事实；客户端回归覆盖固定路径／凭据、租户／摘要匹配、响应篡改、超限响应、零重试／零缓存和拒绝重定向。日志 `/tmp/addp-manager-profile-http-test-go-recheck.log`。
+- `make test-authorization` 复验退出码 0，包含 Manifest 与全模块 Swagger 路由覆盖；首次检查因新路由文件未采用既有登记命名而失败，已改为唯一 `*_routes.go` 文件后通过，没有修改检查器绕过。日志 `/tmp/addp-manager-profile-http-authorization-recheck.log`。
+- System IAM／API／EngineAccess PostgreSQL 标准分包门禁串行复验全部退出码 0，分别耗时约 139／53／47 秒。仅使用已核实的 `25432/addp_iam_test`；初次 EngineAccess 门禁中 Manager 完整来源回归通过，但另一项 Grant 自然到期测试在准备阶段超过其 1.5 秒期限，不能将整个首次门禁记为通过。串行重跑原测试通过，没有为此修改夹具或放宽生产期限／权限。最终日志分别为 `/tmp/addp-manager-profile-http-postgres-iam-recheck.log`、`/tmp/addp-manager-profile-http-postgres-api-recheck.log`、`/tmp/addp-manager-profile-http-postgres-engineaccess-recheck.log`。
+- 最小复验入口：`make test-go`、`make test-authorization`；设置已核实端口对应的 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 后，使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package <包>"`，包名依次为 `iam`、`api`、`engineaccess`，串行执行。源范围类型抽取没有改变数据库 JSON 字段、迁移或生产 Provider 查询；Migration／OAuth 等其他数据库包的前轮证据仍见 26.94，不把本轮分包复验写成全七包重跑。
+- `make test-platform` 退出码 0，包含生命周期／测试登记／模块选择／Workflow 安全／执行夹具及权限、Swagger 一致性检查；日志 `/tmp/addp-manager-profile-http-platform.log`。`git diff --check` 通过。
+- `make test-changed` 因共享工作区多个 Owner 缺少 T2 环境配置在预检停止，不算全工作区通过；日志 `/tmp/addp-manager-profile-http-changed.log`。未运行 Gateway／真实用户 Manager T4 或会写入户外业务样例的 MongoDB 门禁。
+
+**下一优先项：** 在 Manager 真实 Provider 不可变采样计划上生成完整 ReadSet，切换唯一 v6 入队配置并调用正式签发／消费客户端；贯通同一计划执行、本地 Security 与结果提交前复核，再以允许／拒绝／执行中撤销回归证明实际闭环。不要仅删掉当前拒绝或把结果／预览检查当作后台执行授权。
+
+### 26.96 Manager 不可变分页采样准备与完整配置摘要（2026-10-06）
+
+继续 26.95 的真实 Provider 接线，先完成读取前的计划准备，不开放未授权采样。没有启停 ADDP／Infra，没有对业务数据源执行写入；并行 Monitor 改动不在本轮修改范围。
+
+**本轮实施：**
+
+- Manager 通过现有表格查询生成器准备 PostgreSQL 表／视图的全部有界分页，冻结参数、页位置及原始一次性 `PreparedQuery`；不调用 Preview、ReadBatch 或 COUNT，不读取样本行。准备前核验总行数预算、单页预算、页间重叠及整数溢出。
+- 每页在读取前取得完整视图／底表来源，逐页形成最多 200 项的规范并集；任何来源缺失、不规范、跨引擎或超限均整次拒绝。输出来源与页位置采用深拷贝，不能通过调用方修改输入或返回值改变已准备计划。
+- 总读取预算最多 10000 行、单页最多 2000 行；未知行数及条件范围采用有界连续页，不附加行数读取、不伪称全范围代表性。已扫描行数只用于系统化页位置；未知行数、无稳定分页键或条件范围的实际结果仍须在后续接线保留有界／部分采样语义。
+- 新增 `common/execution.NewManagerProfileReadScope`，从持久原始 JSON 计算完整配置摘要，保留大整数并覆盖预算、条件与超时；System 删除原私有重复算法，Manager 准备结果复用同一工厂。不能从已被 `JSONMap` 浮点数转换的对象重新计算摘要；原始对象上限 512 KiB，工厂不解释私有配置或授予访问。
+- 复验遇到既有内部任务 PostgreSQL 夹具使用宿主机认证时间、而生产验证器使用数据库时间的问题，原样复跑仍在相同位置失败；只读时钟核对观察到亚毫秒级差值。夹具改用既有 `CurrentDatabaseTime`，与正式浏览器认证时钟契约一致；不放宽生产时间限制、不调整数据库时钟、不绕过未来时间检查。
+- **生产边界保持不变：** Manager 仍为 v5 入队，生产 Sample 仍明确拒绝。本轮准备底座尚未接到 v6 创建／签发／引用绑定／租约消费，不能把 Provider 隔离执行测试认作真实用户授权采样完成。
+
+**验证与标准入口：**
+
+- 最终 `make test-go` 退出码 0；新增回归覆盖零业务行读取、绑定条件、不完整依赖、超限并集、预算／溢出、不可变页位置、一次性计划及原始 JSON 大整数。首次新增集成测试字段名不符合共享 `FieldInfo` 定义导致编译失败，已修正后复验。最终日志 `/tmp/addp-manager-profile-plan-test-go-final.log`。
+- `make test-manager-postgres` 最终退出码 0，无跳过；新增真实 PostgreSQL 视图分页回归证明读取前准备包含视图及底表，且原计划执行按相同过滤／页位置返回、重复消费拒绝。仅使用已核实的 `25432/addp_test`。日志 `/tmp/addp-manager-profile-plan-postgres-recheck.log`。
+- `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess"` 退出码 0，无跳过；包含 Manager 完整源执行授权的签发、消费、Deny／撤销、自然到期及审计失败回滚回归。仅使用 `25432/addp_iam_test`，日志 `/tmp/addp-manager-profile-plan-engineaccess-postgres.log`。
+- System IAM 整包在夹具修正后复验退出码 0，无跳过，约 119 秒；修正前两次失败均单独保留，不计为通过。最终命令为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam"`，使用同一已核实测试库，日志 `/tmp/addp-manager-profile-plan-iam-postgres-final.log`。
+- `make test-platform` 的前序阶段通过，末尾授权清单断言因并行 Monitor 已将角色 Manifest 升至 116、共享断言仍期待 115 而失败；只将断言同步为现行版本，未修改 Monitor 实现或角色授权。随后 `make test-authorization` 退出码 0，包含全模块 Swagger 路由覆盖。整条平台命令未再次全量运行，不把失败记录改称整条重跑通过；日志分别为 `/tmp/addp-manager-profile-plan-platform.log`、`/tmp/addp-manager-profile-plan-authorization-final.log`。
+- 新测试由既有 Go 包与 Manager PostgreSQL 测试名自动发现，复用现有 CI 注册，不新增 Workflow、数据库或旁路脚本；公开 HTTP 契约未改变，无需重新生成 Swagger。
+- `make test-changed` 因共享工作区多个 Owner 缺少 T2 环境配置在预检停止，不计为通过；日志 `/tmp/addp-manager-profile-plan-changed.log`。未运行真实 User／Gateway／Manager T4 或会写入户外业务样例的 MongoDB 门禁。
+
+**下一优先项：** 将完整 ReadSet 和冻结页位置落入唯一 v6 入队配置，从持久原始 JSON 核验摘要，并贯通当前 User 签发／原子绑定。同步保证未绑定授权的 pending 剖析不能被混合任务队列提前领取；随后在有效 lease 下重建并核验相同计划，逐页复核现行授权与本地 Security，完成结果提交前复核后才恢复采样。
+
+### 26.97 Manager v6 入队、当前 User 签发与原子引用绑定（2026-10-06）
+
+继续 26.96，完成后台读取前的持久化和队列边界。本轮没有启停 ADDP／Infra，也没有对业务数据源执行写入；没有修改并行 Monitor／Metrics 实现。
+
+**本轮实施：**
+
+- 唯一创建配置升级为 v6：冻结完整 ReadSet、全部页位置、条件、预算和发起人来源，先持久化，再由当前同步 User 凭据调用 System 正式签发接口。User Bearer 不进入执行配置、日志或后台队列；准备不调用内容预览、ReadBatch 或 COUNT。
+- 签发与绑定都使用执行表的原始 JSON。绑定在行锁事务内再次核对完整配置摘要、来源集合、租户、执行、发起人、成员关系和授权版本；只允许尚未领取且没有授权引用的 pending 执行，拒绝过期、错租户、错执行、错 audience 或已有绑定的响应。绑定不读取 System 私有表，不作源访问裁决。
+- 混合任务队列排除未完整绑定的剖析，仍可领取其他任务类型；活动执行复用只接受已绑定记录，正在签发的记录不返回假受理成功，也不替另一个请求重新签发。
+- 签发／绑定失败关闭本次仍未绑定且未领取的执行。持久化后的系统处理预算为 60 秒；超过 2 分钟的中断遗留 pending 在既有队列恢复流程中失败收敛，避免长期锁住复用键。这不是用户操作时限，也不改变数据访问有效期。
+- Worker 从持久原始配置解码，不经 `JSONMap` 重编码；HTTP 条件解码和持久化解码使用 `UseNumber`，避免大整数在配置摘要和实际条件之间漂移。同步更新 Manager 规范、模块说明和 Swagger。
+- **当前生产边界：** v6 创建／签发／原子绑定已接线，生产 `Sample` 仍明确拒绝。授权引用仅使执行可以领取，不等于读取 Allow；有效 lease 下的 Service 消费、同一准备计划逐页读取、现行授权／本地 Security 复核和结果提交前复核仍待接通，不能宣称完整授权采样已验收。
+
+**验证与标准入口：**
+
+- 最终 `make test-go` 退出码 0，日志 `/tmp/addp-manager-profile-binding-test-go-verified.log`。新增回归覆盖签发拒绝／失联、响应范围不匹配、失败收敛、已绑定复用不重新签发、未绑定不受理、原始大整数、事实变化拒绝、重复绑定拒绝、混合队列领取及遗留准备清理。中间编译和夹具失败均已修正后重跑，不计为通过。
+- 最终 `make test-manager-postgres` 退出码 0，无跳过；真实行锁并发绑定只允许一个请求成功，未绑定执行不能领取，原始 JSON 保留大整数。使用已核实的 `25432/addp_test`，日志 `/tmp/addp-manager-profile-binding-postgres-final.log`。这组仓储测试使用授权响应夹具，不冒充真实 User／System／Manager 端到端验收。
+- `bash scripts/swagger/gen-swagger.sh manager` 和 `make test-authorization` 均退出码 0；后者包含授权 Manifest、生成常量、种子与全模块 Swagger 路由覆盖。日志 `/tmp/addp-manager-profile-binding-swagger.log`、`/tmp/addp-manager-profile-binding-authorization.log`。
+- 本轮新测试由既有 Go 包和 `^TestIntegrationPostgresManager` 自动发现，复用 Platform CI 的 `test-go` 与 T2 的 `manager-postgres` Job；没有新增数据库、依赖、旁路脚本或 Workflow。
+- `make test-platform` 整条门禁最终退出码 0，包含 CI 登记、共享所有权、Online 验证脚本确定性回归与授权契约检查；日志 `/tmp/addp-manager-profile-binding-platform.log`。其中 Online 脚本回归不是实际部署的 T4 验收。
+- `make test-changed` 因共享工作区多个 Owner 缺少 T2 环境配置停在预检，退出码 2，不计为通过；日志 `/tmp/addp-manager-profile-binding-changed.log`。未运行真实 User／Gateway／Manager T4，也没有运行会操作业务样例的 MongoDB 门禁。
+
+**下一优先项：** 在有效 attempt／lease 下消费 v6 源授权，重新准备并核验相同分页位置、配置摘要和完整来源；逐页读取及结果提交前均核验现行授权与本地 Security。只有撤权、到期、来源变化和租约失效都能阻断读取／提交后，才解除生产 Sample 的拒绝门禁。
+
+### 26.98 Manager Worker 精确租约、同一计划核验与正式 Service 消费（2026-10-06）
+
+继续 26.97，接通已绑定执行领取后的首次消费边界。本轮没有启停 ADDP／Infra，没有写入业务源，也未修改并行 Monitor／Metrics 实现。
+
+**本轮实施：**
+
+- Service 创建时显式声明 `bounded`，不再只依赖 Repository 补入。Worker 只接受 Manager 手工剖析的 running 执行，拒绝父执行、持久任务来源和其他模块／任务／边界；上下文的 execution、tenant、attempt、lease token 与 owner 必须和领取记录完全相同。未绑定正数授权引用或缺少期限事实时，在源解析前拒绝。
+- 从持久原始 JSON 校验唯一 v6 配置、完整规范 ReadSet 与摘要，继续保留大整数；复核 Item ID、指纹、源版本、引擎及内容选择。按照冻结预算重新准备全部分页，页位置和完整来源必须完全相同，增加来源、减少来源或改变 offset／limit 均不能进入消费。准备阶段不读取业务行。
+- 复用 Common 固定 `manager-profile-accesses` 客户端和当前 Tenant Service Token Source；正文只携带精确 execution／attempt／lease 与相同完整范围。System 对当前 IAM、源规则、绑定引用及数据库中的有效 lease 作裁决；Manager 不凭领取时间快照缓存 Allow，不保存 User Token，不请求 Platform Token，也不自动重试。
+- 拒绝、冲突、失联、空观察响应以及消费前／消费中取消均不进入采样；安全错误不泄露上游正文。冻结执行超时预算覆盖重新解析、准备、正式消费和后续编排，而不只覆盖采样。
+- **生产边界仍关闭：** 本轮只接通首次消费和计划一致性核验。`PreviewDataProfileSampleProvider.Sample` 仍明确拒绝，未恢复旧 Preview／ReadBatch 路径；不能把首次观察当成逐页读取许可或结果提交许可。下一步必须把已核验的同一准备计划交给唯一执行路径，逐页及提交前重新核验 System 与本地 Security。
+
+**验证与 CI：**
+
+- 最终 `make test-go` 退出码 0，日志 `/tmp/addp-manager-profile-consumption-test-go-final.log`。新 Worker 回归覆盖精确租约、活动边界、缺失绑定、非法冻结来源、分页／来源变化、拒绝／冲突／故障、取消及不缓存；HTTP 夹具确认当前 Tenant Service、固定路径和完整范围，不冒充真实 System 授权裁决或 T4 验收。
+- `make test-manager-postgres` 退出码 0，无跳过；使用本轮标准状态命令核实的 `25432/addp_test`，日志 `/tmp/addp-manager-profile-consumption-postgres.log`。该门禁复验原始配置、原子绑定、混合队列、租约与真实 Provider 准备计划等已有 T2 契约，不代表后台内容采样已经恢复。
+- 新测试位于既有 Service Go 包，由 Platform CI 的 `make test-go` 自动发现；T2 继续由既有 `manager-postgres` Job 调用唯一标准入口。不新增依赖、数据库、脚本、权限或公开 API，公开契约和 Swagger 无新增变化。
+- Manager owner 标准门禁的 Platform T0 步骤已成功完成，包含授权清单、CI 登记与全模块 Swagger 覆盖，随后进入 Manager Go T1。检查后续步骤时发现既有 `manager-mongodb-security` 夹具默认连接本机 `Outdoor.Persons` 并可能插入数据，尚未证明 disposable 归属，因此在 MongoDB 步骤前主动终止聚合入口，整体退出码 2，不计为完整通过；日志 `/tmp/addp-manager-profile-consumption-module.log`。不绕过该门禁，也不借测试授权写入业务样例；新逻辑的无服务 Go 与隔离 PostgreSQL 结果分别以上述独立标准入口为准。MongoDB 专用门禁的本地隔离是既有测试体系的独立缺口，本轮未扩大到修改它。
+- `make test-changed` 因共享工作区多个 Owner 缺少 T2 连接参数在预检失败，不计为通过；日志 `/tmp/addp-manager-profile-consumption-changed.log`。未运行真实 User／Gateway／System／Manager Worker T4，也未运行上述 MongoDB 门禁；CI 已有独占 MongoDB Service 的专用 Job，不以本地业务库替代其隔离环境。
+
+**下一优先项：** 执行同一不可变分页计划，在每次实际读取前复核完整源授权和本地 Security，并在结果提交前再次复核；以读取中撤权、租约失效、来源变化与保护更新回归证明不会提交新结果后，再解除生产采样拒绝。
+
+### 26.99 Manager 逐页检查契约、提交前复核与原生视图绑定阻塞（2026-10-06）
+
+继续 26.98。Worker 的持续授权契约已经接线，但真实 PostgreSQL 验证发现共享执行边界缺口，本轮**未解除生产采样拒绝**。没有启停 ADDP／Infra；测试写入只发生在已核实 `25432/addp_test` 的随机 schema，结束后自动删除并检查零残留，没有修改业务库或并行 Monitor／Metrics 实现。
+
+**已完成的独立工作：**
+
+- Sampler 契约唯一接收已经核验的 `DataProfileSamplePlan` 与读取前检查回调，不接受再次准备查询或缺失门禁的生产替代路径。计划保留真实 Provider 的 Engine Catalog Model，用于把完整来源转换为本地保护目标，不通过引擎类型猜模型。
+- Worker 的回调每次重新调用固定 System 消费入口，然后在本地 checkpoint 内比较原保护版本并核验当前规则及自然到期；System 观察不缓存、不自动重试，不在本地保护／执行更新锁内跨 HTTP 调用。
+- 完整 ReadSet 中未选中的受管底表，在底表字段到剖析输出的保护映射完成前明确拒绝，不能因选中视图未受管而忽略底表保护。选中条目继续使用既有规则和 `profile=suppress` 结果保护。
+- 提交前再次在事务外复核完整源授权；随后在原保护版本的事务边界内核验保护、处理结果并通过 Repository 校验有效 lease 和写入结果。来源不一致、撤权或保护变化不得覆盖上一份成功结果。此流程不宣称跨 System／Manager 数据库原子提交。
+- 新 Worker 单元回归覆盖三个不同分页检查点的撤权、采样完成后提交前撤权、受管底表不能忽略；使用测试 Sampler 和消费夹具，不冒充真实 System 或真实内容读取。生产 Sampler 拒绝回归独立证明，即使具有准备计划和成功回调，也不执行查询。
+
+**新发现、必须先确认的共享边界：**
+
+真实夹具准备 `v → base` 的分页及完整 ReadSet 后，把测试视图改为 `v → other`。执行原 PreparedQuery 没有拒绝，实际进入新的来源。根因是 Common `PrepareSQLRuntimeQuery` 只冻结 SQL／参数及缓存的 ReadSet，普通 SQL 的 `ExecuteSQLWithConnectionPool` 没有在内容事务内验证该冻结集合；现有事务 preflight 仅为分析编译请求启用。因此，“同一 SQL”不能证明“同一实际读取对象”。这也涉及复用该 PreparedQuery 的其他读取入口，不能只在 Manager 中再次解析或重查一次掩盖 TOCTOU。
+
+建议确认后在共享 PostgreSQL Provider 的唯一执行链路落实原生绑定、完整依赖复核与内容读取的同一受控只读事务；必要的只读结构锁仅持续到本页读取结束，不写源数据、不改表、不要求业务源端配合。已有 TableResult／Analytical 同事务结构校验可作为复用依据，但不直接把它们的写入模式或基表限制套到普通读取。须同时评估直接 Execute、流式消费、搜索路径及保护字段事实的边界，再确定最小切片与门禁，不能因本轮失败而自动缩小既定业务范围。
+
+**验证与 CI：**
+
+- 最终 `make test-go` 退出码 0，日志 `/tmp/addp-profile-binding-blocked-go-final.log`；覆盖生产拒绝、三个分页检查点撤权、提交前撤权及受管底表拒绝。`git diff --check` 退出码 0。无服务测试不代表原生依赖冻结已修复。
+- `MANAGER_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:25432/addp_test?sslmode=disable' make test-manager-postgres` 退出码 2；日志 `/tmp/addp-profile-binding-blocked-postgres.log`。新增 `TestIntegrationPostgresManagerProfilePreparedSourceBoundary` 的基表、未变更视图及生产保持关闭通过，**视图准备后改源回归失败**；保留严格断言，不跳过、不弱化，不计为通过。清理没有报告残留。
+- `make test-changed` 退出码 2，因共享工作区多个 Owner 缺少 T2 连接配置在预检停止；日志 `/tmp/addp-profile-binding-blocked-changed.log`。本轮没有运行可能写入本机业务 MongoDB 的门禁，也未运行真实 User／Gateway／System／Worker T4。
+- 新 Go 测试由既有 Platform CI 自动发现；真实 PostgreSQL 回归由既有 `^TestIntegrationPostgresManager` 与 `manager-postgres` Job 自动命中，没有新增测试数据库、服务、脚本或 Workflow。共享 Provider 后续改动还必须按 Common 依赖扩散验证；不能以本节 Manager 局部结果提前认证 Common。
+
+**下一优先项：** 确认上述共享 Provider 执行事务边界，先让“准备后改源必须拒绝”真实回归转绿，再恢复同一计划采样和完整授权验收。确认前只继续不依赖该决定的安全收口，不提交／推送未通过的读取改造。
+
+本节记录当时的阻塞和失败证据，不作当前能力结论。用户随后决定暂缓特殊并发改源增强，先收敛首版，当前范围与验证计划以 §26.100 为准。
+
+### 26.100 首版收口：已扫描 PostgreSQL 单表受控剖析（2026-10-06）
+
+用户要求优先完成可用、可体验版本，不让特殊并发情形继续阻塞。本轮不扩展共享 Provider 事务锁定、不改业务源结构、不启停服务，先跑通普通单表创建剖析、后台采样及结果查询。
+
+- 首版只接受完整 ReadSet 中唯一的 PostgreSQL `kind=table` 叶子；视图、物化视图和间接多来源计划在准备阶段明确不支持，不缩小其完整依赖集合来冒充单表。
+- 执行同一冻结分页计划，保留独立源授权、有效 lease、每页及提交前的现行授权／本地保护检查、行数和时间预算；不恢复 Preview／ReadBatch／额外 COUNT 读取路径。失败不覆盖旧成功结果。
+- 准备后并发改源问题暂缓，包括普通表被源端并发替换为视图；范围收缩不是根因修复。后续在共享 Provider 唯一执行边界处理，不能据此宣称原生事务内绑定已获证明。
+- T1 验证同计划执行、逐页拒绝、结果结构与预算；既有 `manager-postgres` T2 使用唯一 `addp_test` 随机 schema 验证真实普通表采样、条件范围和视图不支持。新增用例沿用既有 Go／PostgreSQL 自动发现与 CI，不新增数据库或 Workflow。
+- 真实 User／Gateway／System／Worker 页面体验仍需由用户重启后验证；不把 T1／T2 当作完整运行验收，也不运行会写入本机业务 MongoDB 的门禁。
+
+**本轮验证结果：**
+
+- `make test-go` 退出码 0：全仓 Go T1 通过，含实际 Sampler 同计划执行、三个分页检查点拒绝、结果结构／预算变化拒绝，以及 Worker 提交前撤权与受管底表检查。日志 `/tmp/addp-profile-first-release-go.log`。
+- `MANAGER_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:25432/addp_test?sslmode=disable' make test-manager-postgres` 退出码 0，无 Skip：真实普通表三页采样、第二页拒绝、条件范围和视图明确不支持均通过，随机 schema 自动清理，无残留报告。日志 `/tmp/addp-profile-first-release-postgres.log`。
+- `make test-authorization` 退出码 0；Manager Swagger 生成与 route coverage 均退出码 0，93 个公开路由方法一致；`git diff --check` 退出码 0。公开路由和字段不新增，只同步首版支持范围。日志 `/tmp/addp-profile-first-release-authorization.log`、`/tmp/addp-profile-first-release-swagger.log`、`/tmp/addp-profile-first-release-route-coverage.log`。
+- `make test-changed` 退出码 2：共享工作区涉及多个并行 Owner，缺少其 T2 环境配置，预检停止；不能计为全工作区验收通过。日志 `/tmp/addp-profile-first-release-changed.log`。MongoDB 门禁及真实页面 T4 未运行，前者仍由既有独占 CI Job 验证。
+
+**体验步骤：**
+
+1. 由用户在自己的终端执行 `./scripts/dev/restart.sh -all`，加载本主线此前 Common／System 授权切换、迁移及本轮 Manager 实现；AI 不代为重启。
+2. 用同时具备 `manager.data_item.read`、`manager.data_profile.execute` 和目标表源读取授权的账号，在 Manager 打开已扫描 PostgreSQL 普通表，进入“剖析”标签；没有当前结果时按既有流程创建 execution，页面轮询直至显示结果。已有旧失败执行时点击刷新重新发起。
+3. 确认行数、样本量、字段统计和部分采样提示符合实际；再显式应用字段条件，确认范围与结果分开保存。无授权账号应明确被拒绝，不以服务身份兜底。
+
+**下一优先项：** 先以户外域的一张真实 PostgreSQL 普通表完成上述页面允许／拒绝体验，修复正常链路的阻塞；不要重新把并发源端 DDL 增强作为体验前置。

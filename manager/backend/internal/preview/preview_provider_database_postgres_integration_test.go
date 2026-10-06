@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/manager/internal/dataprofile"
@@ -66,6 +67,43 @@ func TestIntegrationPostgresManagerPreviewPreparedPageReadSet(t *testing.T) {
 		}
 	}
 	pg := &postgresql.PostgreSQLPlugin{}
+	t.Run("prepared profile pages", func(t *testing.T) {
+		// This isolated Provider test proves preparation and exact plan execution,
+		// not IAM approval. Production profiling remains closed until owner gates connect.
+		path := plugin.TabularItemPath(12, "schema", schema, "view")
+		path.Segments[len(path.Segments)-1].Kind = "view"
+		req := &PreviewRequest{
+			Engine:       &models.Engine{ID: 12, EngineType: "postgresql", ConnectionInfo: map[string]interface{}(conn)},
+			EnginePlugin: pg, ProviderPath: path,
+			DataScope: dataprofile.DataScope{Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd, Conditions: []dataprofile.DataScopeCondition{{Field: "status", Operator: "eq", Value: "active"}}},
+		}
+		fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true}, {Name: "status", Type: datatype.FieldTypeString}}
+		pages, err := prepareProfilePages(ctx, req, fields, []TablePage{{Offset: 0, Limit: 1}, {Offset: 1, Limit: 1}})
+		if err != nil {
+			t.Fatalf("prepare bounded pages: %v", err)
+		}
+		want, _ := plugin.NewQueryReadSet(path, plugin.TabularItemPath(12, "schema", schema, "base"))
+		if !reflect.DeepEqual(pages.ReadSet(), want) {
+			t.Fatal("complete view dependencies were not prepared")
+		}
+		for index := range pages.Positions() {
+			plan, err := pages.Query(index)
+			if err != nil {
+				t.Fatal(err)
+			}
+			set, err := plan.ReadSet(ctx)
+			if err != nil || !reflect.DeepEqual(set, want) {
+				t.Fatal("page source binding changed")
+			}
+			result, err := plan.Execute(ctx)
+			if err != nil || result == nil || len(result.Rows) != 1 || result.Rows[0]["status"] != "active" || fmt.Sprint(result.Rows[0]["id"]) != strconv.Itoa(index+1) {
+				t.Fatalf("bounded page %d result: %#v %v", index, result, err)
+			}
+			if _, err := plan.Execute(ctx); !errors.Is(err, plugin.ErrPreparedQueryConsumed) {
+				t.Fatal("page was executed twice")
+			}
+		}
+	})
 	for _, name := range []string{"base", "view"} {
 		t.Run(name, func(t *testing.T) {
 			path := plugin.TabularItemPath(12, "schema", schema, name)

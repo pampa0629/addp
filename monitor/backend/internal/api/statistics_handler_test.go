@@ -53,7 +53,7 @@ func TestExecutionRuntimeMetricsRouteUsesCanonicalTenantContext(t *testing.T) {
 
 	repository := &runtimeMetricsAPIRepository{}
 	statisticsService := service.NewStatisticsServiceWithRuntimeMetrics(nil, repository)
-	router := SetupRouter(runtimeMetricsReadQuery(t), statisticsService, nil, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
+	router := SetupRouter(runtimeMetricsReadQuery(t), statisticsService, nil, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/executions/runtime-metrics?duration=24h&module=quality", nil)
 	request.Header.Set("Authorization", "Bearer addp_at_monitor")
@@ -87,7 +87,7 @@ func TestExecutionRuntimeMetricsRouteRejectsInvalidDurationInRequestedLanguage(t
 	defer systemServer.Close()
 
 	statisticsService := service.NewStatisticsServiceWithRuntimeMetrics(nil, &runtimeMetricsAPIRepository{})
-	router := SetupRouter(runtimeMetricsReadQuery(t), statisticsService, nil, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
+	router := SetupRouter(runtimeMetricsReadQuery(t), statisticsService, nil, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil)
 
 	tests := []struct {
 		language string

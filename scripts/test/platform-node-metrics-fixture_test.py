@@ -52,6 +52,10 @@ class MetricsFixtureTest(unittest.TestCase):
         self.assertNotIn("@@", config)
         self.assertIn("https://172.17.0.1:9444/api/v1/monitor/platform/metrics_discovery", config)
         self.assertEqual({p.name for p in (self.secret / "node-tls").iterdir()}, {"ca.crt", "server.crt", "server.key"})
+        self.assertEqual((self.secret / "query/client.key").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((self.secret / "query").stat().st_mode & 0o777, 0o700)
+        self.assertNotEqual((self.secret / "query/client.crt").read_bytes(), (self.secret / "center-tls/health.crt").read_bytes())
+        self.assertFalse(any("/query" in volume["source"] for volume in spec["services"]["control-tls"]["volumes"]))
         self.assertNotEqual((self.secret / "center-tls/health.crt").read_bytes(), (self.secret / "deployment/collector.crt").read_bytes())
         self.assertNotEqual((self.secret / "control-ca.crt").read_bytes(), (self.secret / "source-ca.crt").read_bytes())
         for cert, ca in (("center-tls/health.crt", "center-ca.crt"), ("node-tls/server.crt", "source-ca.crt"), ("deployment/collector.crt", "source-ca.crt")):
@@ -64,6 +68,25 @@ class MetricsFixtureTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 FIXTURE.prepare(self.secret)
             command.assert_not_called()
+
+    def test_query_origin_uses_verified_center_mapping_and_refuses_foreign_or_public_ports(self):
+        (self.secret / "query").mkdir(mode=0o700)
+        labels = {"com.docker.compose.project": "addp-infra", "com.docker.compose.service": "prometheus",
+                  "com.docker.compose.project.working_dir": str(FIXTURE.ROOT)}
+        inspect = json.dumps([{"Config": {"Labels": labels}}])
+        with patch.object(FIXTURE, "command", side_effect=["center-id", inspect, "127.0.0.1:29990"]):
+            FIXTURE.configure_query(self.secret)
+        for name in ("metrics.env", "runtime.env"):
+            self.assertIn("https://127.0.0.1:29990", (self.secret / name).read_text())
+            self.assertEqual((self.secret / name).stat().st_mode & 0o777, 0o600)
+        (self.secret / "query/connected").unlink()
+        for port in ("0.0.0.0:19090", "127.0.0.1:0", "127.0.0.1:65536", "127.0.0.1:019090", "127.0.0.1:19090\n127.0.0.1:19091"):
+            with self.subTest(port=port), patch.object(FIXTURE, "command", side_effect=["center-id", inspect, port]), self.assertRaises(ValueError):
+                FIXTURE.configure_query(self.secret)
+        labels["com.docker.compose.project.working_dir"] = "foreign"
+        with patch.object(FIXTURE, "command", side_effect=["center-id", json.dumps([{"Config": {"Labels": labels}}])]) as command, self.assertRaises(ValueError):
+            FIXTURE.center_origin()
+        self.assertEqual(command.call_count, 2)
 
     def test_cleanup_refuses_foreign_container_before_compose(self):
         with patch.object(FIXTURE, "command", side_effect=["foreign-id", '[{"Config":{"Labels":{}}}]']) as command:

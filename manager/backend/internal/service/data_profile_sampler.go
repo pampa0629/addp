@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"reflect"
 	"strings"
 	"time"
 
@@ -50,6 +52,7 @@ type DataProfileTarget struct {
 }
 
 type DataProfileSample struct {
+	ReadSet       *plugin.QueryReadSet
 	Rows          []map[string]interface{}
 	Fields        []datatype.FieldInfo
 	RowsScanned   int64
@@ -68,18 +71,18 @@ type DataProfileBudget struct {
 
 var DefaultDataProfileBudget = DataProfileBudget{
 	SampleSize:     2000,
-	MaxRowsScanned: 10000,
+	MaxRowsScanned: preview.MaxProfilePreparedRows,
 	PageSize:       500,
 	Timeout:        2 * time.Minute,
 }
 
 type DataProfileSampleProvider interface {
 	ResolveTarget(context.Context, uint, string, DataProfileSelection) (*DataProfileTarget, error)
-	Sample(context.Context, *DataProfileTarget, dataprofile.DataScope, DataProfileBudget) (*DataProfileSample, error)
+	Sample(context.Context, *DataProfileTarget, dataprofile.DataScope, DataProfileBudget, *DataProfileSamplePlan, func(context.Context) error) (*DataProfileSample, error)
 }
 
-// PreviewDataProfileSampleProvider resolves source facts. Sampling remains
-// explicitly blocked until independent execution source authorization is wired.
+// PreviewDataProfileSampleProvider consumes only the already-bound plan, never
+// the interactive preview or an unchecked ReadBatch route.
 type PreviewDataProfileSampleProvider struct {
 	resolver   *preview.PreviewResolver
 	metaClient *commonClient.MetaClient
@@ -157,8 +160,7 @@ func (p *PreviewDataProfileSampleProvider) ResolveTarget(
 	if !selectionTargetsChild(selection) && len(fields) > 0 && resolved.Engine != nil {
 		if plug, pluginErr := plugin.Get(resolved.Engine.EngineType); pluginErr == nil {
 			parameterized, parameterizedOK := plug.(plugin.ParameterizedSQLQueryRuntimeProvider)
-			_, batchReadable := plug.(plugin.BatchReadableProvider)
-			conditionSupported = batchReadable && parameterizedOK && parameterized.SupportsParameterizedQueries()
+			conditionSupported = parameterizedOK && parameterized.SupportsParameterizedQueries()
 		}
 	}
 
@@ -183,32 +185,99 @@ func (p *PreviewDataProfileSampleProvider) Sample(
 	target *DataProfileTarget,
 	dataScope dataprofile.DataScope,
 	budget DataProfileBudget,
+	plan *DataProfileSamplePlan,
+	beforeRead func(context.Context) error,
 ) (*DataProfileSample, error) {
 	if p == nil || p.resolver == nil || target == nil || target.resolved == nil {
 		return nil, ErrDataProfileUnavailable
 	}
-	// Background profiling needs its own execution source authorization.
-	// The user-approved staged switch removes the old unchecked sampling path.
-	return nil, ErrDataProfileSourceAuthorizationRequired
-}
-
-func normalizeDataProfileBudget(budget DataProfileBudget) DataProfileBudget {
-	if budget.SampleSize <= 0 {
-		budget.SampleSize = DefaultDataProfileBudget.SampleSize
+	if plan == nil || plan.pages == nil || beforeRead == nil {
+		return nil, ErrDataProfileSourceAuthorizationRequired
 	}
-	if budget.MaxRowsScanned < budget.SampleSize {
-		budget.MaxRowsScanned = max(budget.SampleSize, DefaultDataProfileBudget.MaxRowsScanned)
+	if err := validateSingleTableProfilePlan(plan, target.EngineID); err != nil {
+		return nil, err
 	}
-	if budget.PageSize <= 0 {
-		budget.PageSize = DefaultDataProfileBudget.PageSize
+	positions, err := dataProfilePagePositions(target.RowCount, dataScope, budget)
+	if err != nil || !reflect.DeepEqual(positions, plan.Positions()) {
+		return nil, ErrDataProfileSourceChanged
 	}
-	if budget.PageSize > budget.MaxRowsScanned {
-		budget.PageSize = budget.MaxRowsScanned
+	boundSet, err := canonicalProfileReadSet(plan.ReadSet(), target.EngineID)
+	if err != nil || len(target.Fields) == 0 {
+		return nil, ErrDataProfileSourceAuthorizationRequired
 	}
-	if budget.Timeout <= 0 {
-		budget.Timeout = DefaultDataProfileBudget.Timeout
+	columns := make([]string, len(target.Fields))
+	stable := false
+	for i, field := range target.Fields {
+		columns[i] = field.Name
+		stable = stable || field.PrimaryKey
 	}
-	return budget
+	sample := &DataProfileSample{Fields: append([]datatype.FieldInfo(nil), target.Fields...)}
+	var readPaths []plugin.EngineCatalogPath
+	for i, page := range positions {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		query, err := plan.pages.Query(i)
+		if err != nil || query == nil {
+			return nil, ErrDataProfileSourceAuthorizationRequired
+		}
+		pageSet, err := query.ReadSet(ctx)
+		if err != nil {
+			return nil, err
+		}
+		canonical, err := canonicalProfileReadSet(pageSet, target.EngineID)
+		if err != nil {
+			return nil, ErrDataProfileSourceAuthorizationRequired
+		}
+		union, err := plugin.NewQueryReadSet(append(append([]plugin.EngineCatalogPath(nil), boundSet.Paths...), canonical.Paths...)...)
+		if err != nil || !reflect.DeepEqual(union, boundSet) {
+			return nil, ErrDataProfileSourceChanged
+		}
+		if err := beforeRead(ctx); err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		result, err := query.Execute(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if result == nil || len(result.Rows) > page.Limit || !reflect.DeepEqual(result.Columns, columns) {
+			return nil, ErrDataProfileSourceChanged
+		}
+		readPaths = append(readPaths, canonical.Paths...)
+		for _, row := range result.Rows {
+			if len(row) != len(columns) {
+				return nil, ErrDataProfileSourceChanged
+			}
+			for _, name := range columns {
+				if _, exists := row[name]; !exists {
+					return nil, ErrDataProfileSourceChanged
+				}
+			}
+			sample.RowsScanned++
+			if len(sample.Rows) < budget.SampleSize {
+				sample.Rows = append(sample.Rows, row)
+			} else if index := rand.Int64N(sample.RowsScanned); index < int64(budget.SampleSize) {
+				sample.Rows[index] = row
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	sample.ReadSet, err = plugin.NewQueryReadSet(readPaths...)
+	if err != nil || !reflect.DeepEqual(sample.ReadSet, boundSet) {
+		return nil, ErrDataProfileSourceChanged
+	}
+	if dataScope.Kind == dataprofile.DataScopeKindAll && target.RowCount != nil {
+		count := *target.RowCount
+		sample.RowCount, sample.RowCountExact = &count, target.RowCountExact
+	}
+	sample.Partial = !stable || !sample.RowCountExact
+	sample.Truncated = sample.RowsScanned >= int64(budget.MaxRowsScanned) && (sample.RowCount == nil || *sample.RowCount > sample.RowsScanned)
+	return sample, nil
 }
 
 func dataTypeFromAttributes(attributes map[string]interface{}) string {

@@ -499,6 +499,11 @@ func (s *ExecutionAuthorizationService) AuthorizeEngineAccess(
 		if err != nil {
 			return err
 		}
+		// A physical source boundary can only be consumed with its complete
+		// immutable plan and current claim, never as engine-wide permission.
+		if snapshot.SourceReadScope != nil || snapshot.Audience == "manager" {
+			return ErrExecutionAuthorizationPermissionDenied
+		}
 		var authorization *ExecutionAuthorization
 		var principal *Principal
 		var membership *TenantMembership

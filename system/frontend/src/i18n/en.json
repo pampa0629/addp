@@ -894,6 +894,7 @@
           "host_node": "Platform node",
           "observability_identity": "Observability identities",
           "monitoring_target": "Monitoring targets",
+          "resource_observation": "Resource observations",
           "metrics_discovery": "Metrics discovery"
         },
         "types": {

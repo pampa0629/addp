@@ -1,0 +1,26 @@
+# Optional read-only query credentials, selected by the sole production lifecycle.
+services:
+  monitor-backend:
+    environment:
+      MONITOR_PROMETHEUS_CA_FILE: /etc/addp/metrics-query/ca.crt
+      MONITOR_PROMETHEUS_CLIENT_CERT_FILE: /etc/addp/metrics-query/client.crt
+      MONITOR_PROMETHEUS_CLIENT_KEY_FILE: /etc/addp/metrics-query/client.key
+    volumes:
+      - type: bind
+        source: ${MONITOR_PROMETHEUS_CA_FILE}
+        target: /etc/addp/metrics-query/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MONITOR_PROMETHEUS_CLIENT_CERT_FILE}
+        target: /etc/addp/metrics-query/client.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MONITOR_PROMETHEUS_CLIENT_KEY_FILE}
+        target: /etc/addp/metrics-query/client.key
+        read_only: true
+        bind:
+          create_host_path: false

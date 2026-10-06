@@ -31,7 +31,7 @@ type MonitoringTargetVersion struct {
 	Version int64 `json:"version" binding:"required,min=1"`
 }
 
-func monitoringTargetIdentity(serviceToken bool) gin.HandlerFunc {
+func platformObservationIdentity(serviceToken bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		identity, ok := auth.AuthContextFromGin(c)

@@ -67,6 +67,14 @@ if addp_metrics_enabled; then
     echo 'Monitor metrics admission unconfigured; business startup remains independent' >&2
   fi
 fi
+if addp_metrics_enabled && [[ -n "${MONITOR_PROMETHEUS_URL:-}" ]]; then
+  if addp_metrics_query_preflight; then
+    PLATFORM_COMPOSE_FILES+=(-f scripts/prod/metrics-query.yml)
+  else
+    infra_result=1
+    echo 'Monitor metrics query unconfigured; business startup remains independent' >&2
+  fi
+fi
 # Containers use the fixed internal query endpoint; native development uses the resolved host mapping.
 export LOKI_URL=''
 if addp_runtime_logs_enabled; then export LOKI_URL=http://runtime-log-api:3100; fi

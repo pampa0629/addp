@@ -42,7 +42,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "为指定表格型 data item 创建或复用一次全范围或结构化条件范围的采样剖析 ad-hoc execution；仅在发起人、租户成员关系及授权版本相同时复用，不接受身份输入、Token 或 SQL。独立执行源授权接通前，采样明确失败。| Create or reuse sample profiling only for the same actor, tenant membership, and authorization version; identity, Token, and SQL inputs are not accepted. Sampling explicitly fails until independent execution source authorization is connected.",
+                "description": "首版仅支持已扫描 PostgreSQL 单表的有界采样，视图及多来源计划返回 422。冻结完整分页计划，由当前用户请求签发并原子绑定源授权后受理；后台逐页及提交前复核现行源授权、保护和租约。不接受身份、Token 或 SQL 请求字段；不保证准备后源端并发 DDL 的事务内依赖冻结。| The first release supports bounded sampling of scanned PostgreSQL single tables only; views and multi-source plans return 422. Freeze the full paging plan and accept after current-user issuance and atomic source authorization binding; revalidate current source authorization, protection and lease before each read and result commit. Identity, Token and SQL request fields are not accepted. Transactional dependency freezing against concurrent source DDL after preparation is not guaranteed.",
                 "consumes": [
                     "application/json"
                 ],
@@ -86,7 +86,7 @@
                         }
                     },
                     "403": {
-                        "description": "主体不支持此入口或已纳管资源禁止剖析 | Principal is not supported by this entry or profiling is denied for the managed resource",
+                        "description": "主体不支持此入口、来源授权被拒绝或保护规则禁止剖析 | Unsupported principal, denied source authorization, or protection rules prohibit profiling",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -128,7 +128,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "查询指定表格型 data item、内容选择上下文和可选剖析配置哈希的当前成功结果、活跃执行及新鲜度，不会隐式触发执行。| Query the current successful profile, active execution, and freshness for a tabular data item, content selection, and optional profile config hash without implicitly starting an execution.",
+                "description": "查询当前剖析状态，不隐式触发执行；已有结果须以实际采样冻结的完整来源复核当前用户的源规则及本地 Security。缺失来源证据的历史结果保留但拒绝返回，不从当前视图依赖补造。| Query current profiling state without starting an execution. Stored results require current User source rules for the complete frozen actual sampling sources and local Security; historical results without provenance are retained but not returned, never reconstructed from current view dependencies.",
                 "produces": [
                     "application/json"
                 ],
@@ -191,7 +191,7 @@
                         }
                     },
                     "403": {
-                        "description": "主体不支持此入口或已纳管资源禁止剖析 | Principal is not supported by this entry or profiling is denied for the managed resource",
+                        "description": "主体不支持此入口、来源证据缺失或当前无权读取全部来源 | Principal unsupported, source provenance missing or current access to all sources denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

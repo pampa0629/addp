@@ -1,11 +1,14 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	commonClient "github.com/addp/common/client"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -45,6 +48,20 @@ func TestDataProfileHandlerRejectsMissingTrustedContextAndIdentityInput(t *testi
 	}
 }
 
+func TestProfileResultErrorDoesNotExposeSourceOrCredential(t *testing.T) {
+	for _, lang := range []string{commoni18n.LangZhCN, commoni18n.LangEn} {
+		response := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(response)
+		c.Set("addp_lang", lang)
+		err := fmt.Errorf("private source D credential addp_at_secret: %w", commonClient.ErrManagerPreviewReadDenied)
+		handleDataProfileError(c, err, "unused")
+		body := response.Body.String()
+		if response.Code != http.StatusForbidden || !strings.Contains(body, "source_authorization_required") || strings.Contains(body, "addp_at_secret") || strings.Contains(body, "private source D") || strings.Contains(body, "manager.error.") {
+			t.Fatalf("unsafe error response: %d %s", response.Code, body)
+		}
+	}
+}
+
 func TestDataProfileHandlerMapsActorErrors(t *testing.T) {
 	for _, tc := range []struct {
 		err    error
@@ -52,6 +69,10 @@ func TestDataProfileHandlerMapsActorErrors(t *testing.T) {
 	}{
 		{service.ErrDataProfileActorExpired, http.StatusUnauthorized},
 		{service.ErrDataProfileActorRequired, http.StatusForbidden},
+		{service.ErrDataProfileSourceAuthorizationRequired, http.StatusForbidden},
+		{commonClient.ErrManagerPreviewCredentialRejected, http.StatusUnauthorized},
+		{commonClient.ErrManagerPreviewReadDenied, http.StatusForbidden},
+		{commonClient.ErrManagerPreviewReadUnavailable, http.StatusServiceUnavailable},
 	} {
 		response := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(response)

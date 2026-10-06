@@ -25,6 +25,7 @@ class HostedMetricsGateTest(unittest.TestCase):
                 [ "${ADDP_TEST_PREPARE_FAIL:-0}" != 1 ] || exit 1
                 printf 'export ADDP_OBSERVABILITY_METRICS_ENABLED=true\\nexport ADDP_OBSERVABILITY_LOGS_ENABLED=false\\n' > "$ADDP_ONLINE_SECRET_DIR/metrics.env"
               fi
+              [ "$2" != query ] || [ "${ADDP_TEST_QUERY_FAIL:-0}" != 1 ] || exit 1
               [ "$2" != down ] || [ "${ADDP_TEST_CLEANUP_FAIL:-0}" != 1 ]
               exit
             elif [[ "${1:-}" == *scripts/infra/node-metrics.py ]]; then
@@ -84,15 +85,17 @@ class HostedMetricsGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         trace = self.host.trace.read_text()
-        for item in ("infra-up", "metrics-fixture:prepare", "node-source:up", "metrics-fixture:up", "start:-monitor",
+        for item in ("infra-up", "metrics-fixture:prepare", "node-source:up", "metrics-fixture:up", "metrics-fixture:query", "start:-monitor",
                      "make:test-online ONLINE_SUITE=platform-node-metrics", "application-stop", "metrics-fixture:down", "node-source:down", "infra-down"):
             self.assertIn(item, trace)
+        self.assertLess(trace.index("metrics-fixture:query"), trace.index("start:-monitor"))
+        self.assertEqual(trace.count("infra-up"), 2)
         self.assertLess(trace.index("application-stop"), trace.index("node-source:down"))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):
-        for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):
+        for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_QUERY_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):
             with self.subTest(variable=variable):
                 if self.host.artifacts.exists():
                     shutil.rmtree(self.host.artifacts)

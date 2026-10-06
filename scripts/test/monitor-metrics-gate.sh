@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
+# ADDP_T2_INPUT_FILES=scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -53,6 +53,12 @@ for identity in server health; do
   # Ephemeral fixture files only; the parent directory remains owner-private.
   chmod 644 "$ADDP_METRICS_TLS_DIR/$identity.key"
 done
+# The query private key is outside the TLS directory mounted into the center.
+mkdir -m 700 "$WORK_DIR/query-tls"
+openssl req -new -newkey rsa:2048 -nodes -subj /CN=addp-monitor-query -keyout "$WORK_DIR/query-tls/client.key" -out "$WORK_DIR/query.csr" >/dev/null 2>&1
+printf 'extendedKeyUsage=clientAuth\n' >"$WORK_DIR/query-extensions"
+openssl x509 -req -in "$WORK_DIR/query.csr" -CA "$ADDP_METRICS_TLS_DIR/ca.crt" -CAkey "$WORK_DIR/ca.key" -CAserial "$ADDP_METRICS_TLS_DIR/ca.srl" -days 1 -extfile "$WORK_DIR/query-extensions" -out "$WORK_DIR/query-tls/client.crt" >/dev/null 2>&1
+chmod 600 "$WORK_DIR/query-tls/client.key"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=Untrusted -keyout "$WORK_DIR/untrusted.key" -out "$WORK_DIR/untrusted.crt" >/dev/null 2>&1
 cp "$ADDP_METRICS_TLS_DIR/ca.crt" "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Source-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/source-ca.key" -out "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" >/dev/null 2>&1

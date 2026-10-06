@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import datetime
 import hashlib
 import hmac
 import json
@@ -24,9 +25,17 @@ SuiteError = API.SuiteError
 NODES = "/api/v1/system/platform/host_nodes"
 TARGETS = "/api/v1/monitor/platform/monitoring_targets"
 DISCOVERY = "/api/v1/monitor/platform/metrics_discovery"
+OBSERVATIONS = "/api/v1/monitor/platform/resource_observations"
+TRENDS = "/api/v1/monitor/platform/resource_trends"
+QUERY_POLICY = "/api/v1/monitor/settings/resource-query-policy"
+METRICS = {"node.cpu.logical_cores": "cores", "node.memory.total_bytes": "bytes",
+           "node.memory.available_bytes": "bytes", "node.memory.used_percent": "percent",
+           "node.load.average_1m": "load", "node.load.average_5m": "load",
+           "node.load.average_15m": "load", "node.uptime_seconds": "seconds"}
 REQUIRED = {"platform.host_node.create", "platform.host_node.read", "platform.host_node.update",
             "monitor.monitoring_target.create", "monitor.monitoring_target.read",
-            "monitor.monitoring_target.update", "monitor.monitoring_target.delete"}
+            "monitor.monitoring_target.update", "monitor.monitoring_target.delete",
+            "monitor.resource_observation.read", "monitor.configuration.read", "monitor.configuration.update"}
 
 
 def require(ok, message):
@@ -109,11 +118,7 @@ class Prometheus:
         context = ssl.create_default_context(cafile=str(directory / "center-tls/ca.crt"))
         context.load_cert_chain(str(directory / "center-tls/health.crt"), str(directory / "center-tls/health.key"))
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
-        ids = FIXTURE.command(["docker", "ps", "-q", "--filter", "label=com.docker.compose.project=addp-infra", "--filter", "label=com.docker.compose.service=prometheus"]).split()
-        require(len(ids) == 1, "expected the standard Infra metrics center")
-        address = FIXTURE.command(["docker", "port", ids[0], "9090/tcp"]).strip()
-        require(address.startswith("127.0.0.1:") and len(address.splitlines()) == 1, "center must publish only the owned loopback port")
-        self.base = "https://"+address
+        self.base = FIXTURE.center_origin()
 
     def request(self, path):
         with self.opener.open(self.base+path, timeout=10) as response:
@@ -152,6 +157,107 @@ def source_action(action):
     container = json.loads(FIXTURE.command(["docker", "inspect", ids[0]]))[0]
     require(container["Config"].get("Labels", {}).get("io.addp.node-metrics.owner") == str(FIXTURE.ROOT), "refusing an unowned node source")
     FIXTURE.command(["docker", action, ids[0]])
+
+
+def resource_path(node, trend=False, keys=None):
+    query = {"node_id": node["node_id"], "metrics": ",".join(METRICS if keys is None else keys)}
+    if trend:
+        end = int(time.time())
+        for field, timestamp in (("start", end-60), ("end", end)):
+            query[field] = datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    return (TRENDS if trend else OBSERVATIONS) + "?" + urllib.parse.urlencode(query)
+
+
+def utc_timestamp(value):
+    require(isinstance(value, str) and value.endswith("Z"), "resource time must be UTC")
+    try:
+        parsed = datetime.datetime.fromisoformat(value[:-1]+"+00:00")
+    except ValueError as error:
+        raise SuiteError("invalid resource UTC time") from error
+    require(parsed.tzinfo is not None and parsed.utcoffset() == datetime.timedelta(0), "resource time lacks UTC offset")
+    return parsed.timestamp()
+
+
+def assert_resources(value, node, target=None, trend=False, keys=None, disconnected=False):
+    expected = METRICS if keys is None else {key: METRICS[key] for key in keys}
+    require(value.get("subject") == {"kind": "node", "node_id": node["node_id"]}, "query node identity mismatch")
+    require(value.get("node_version") == node["version"], "query node version mismatch")
+    require(type(value.get("policy_version")) is int and value["policy_version"] >= 0, "missing query budget version")
+    require(value.get("lookback_seconds") == 300, "query lookback mismatch")
+    if target is not None:
+        require(value.get("target_id") == target["id"] and value.get("target_saved_version") == target["version"], "query target saved version mismatch")
+    queried, start, end = (utc_timestamp(value.get(key)) for key in ("queried_at", "start", "end"))
+    step = value.get("step_seconds")
+    require(start <= end <= queried and type(step) is int, "invalid query evaluation interval")
+    require((trend and end-start == 60 and step >= 15 and step % 15 == 0) or (not trend and start == end), "invalid query grid")
+    count = int((end-start)//step)+1 if trend else 1
+    rows = value.get("series")
+    require(isinstance(rows, list) and len(rows) == len(expected), "missing or excess resource series")
+    seen = set()
+    for row in rows:
+        key = row.get("metric_key")
+        require(key in expected and key not in seen and row.get("unit") == expected[key] and row.get("window_seconds") == 0, "resource catalog mismatch")
+        seen.add(key)
+        points = row.get("points")
+        require(isinstance(points, list) and len(points) == count, "resource grid truncated")
+        valid = 0
+        for index, point in enumerate(points):
+            evaluated = utc_timestamp(point.get("evaluated_at"))
+            require(abs(evaluated-(start+index*step)) < 0.001, "misaligned resource point")
+            state, sample, number = point.get("data_state"), point.get("sampled_at"), point.get("value")
+            require(state in {"valid", "no_data", "stale", "not_connected"}, "invalid data state")
+            if disconnected:
+                require(state == "not_connected" and sample is None and number is None, "disconnected query reused history")
+            elif state in {"valid", "stale"}:
+                sampled = utc_timestamp(sample)
+                require(type(number) in {int, float} and math.isfinite(number) and number >= 0 and sampled <= evaluated, "invalid resource evidence")
+                require(key != "node.memory.used_percent" or number <= 100, "invalid memory percentage")
+                age = (evaluated if trend else queried)-sampled
+                require((state == "valid" and age <= 60) or (state == "stale" and age > 60), "freshness state lacks evidence")
+                valid += int(state == "valid")
+            else:
+                require(state == "no_data" and sample is None and number is None, "missing evidence became a value")
+        if not disconnected:
+            require(valid > 0, "metric has no fresh resource evidence")
+
+
+def check_query_policy(admin, node):
+    initial = admin.request("GET", QUERY_POLICY, (200,)).payload
+    require(initial.get("pending_restart") is False and initial.get("max_metrics", 0) >= len(METRICS), "invalid initial query policy")
+    original = {key: value for key, value in initial.items() if key != "pending_restart"}
+    lowered = admin.request("PUT", QUERY_POLICY, (200,), dict(original, max_metrics=1)).payload
+    require(lowered["version"] == initial["version"]+1 and lowered.get("pending_restart") is False, "query policy did not commit immediately")
+    admin.request("PUT", QUERY_POLICY, (409,), dict(original, max_metrics=1))
+    require(admin.request("GET", QUERY_POLICY, (200,)).payload == lowered, "conflicting query policy changed state")
+    failure = admin.request("GET", resource_path(node), (422,)).payload
+    require(failure.get("error_code") == "observability_query_budget_exceeded", "new query ignored lowered budget")
+    key = ["node.memory.total_bytes"]
+    limited = admin.request("GET", resource_path(node, keys=key), (200,)).payload
+    assert_resources(limited, node, keys=key)
+    require(limited["policy_version"] == lowered["version"], "query did not consume saved budget version")
+    restored = admin.request("PUT", QUERY_POLICY, (200,), dict(original, version=lowered["version"])).payload
+    require(restored["version"] == lowered["version"]+1 and restored.get("pending_restart") is False, "query budget restoration failed")
+    resumed = admin.request("GET", resource_path(node), (200,)).payload
+    assert_resources(resumed, node)
+    require(resumed["policy_version"] == restored["version"], "restored budget not consumed")
+    return restored
+
+
+def center_action(action):
+    require(action in {"stop", "start"}, "invalid center fault action")
+    FIXTURE.boundary()
+    FIXTURE.command(["docker", action, FIXTURE.center_identity()])
+
+
+def resource_query_after(admin, node, target, after):
+    result = admin.request("GET", resource_path(node), (200, 503, 504))
+    if result.status != 200:
+        return False
+    rows = result.payload.get("series", [])
+    if len(rows) != len(METRICS) or not all(row.get("points") and row["points"][0].get("data_state") == "valid" and utc_timestamp(row["points"][0].get("sampled_at")) > after for row in rows):
+        return False
+    assert_resources(result.payload, node, target)
+    return True
 
 
 def assert_discovery(client, target, node_version):
@@ -219,6 +325,15 @@ def run(base, directory, report):
         client.request("DELETE", target_path, (403,), {"version": target["version"]})
     require(admin.request("GET", node_path, (200,)).payload["version"] == node["version"], "denied node requests changed state")
     require(admin.request("GET", target_path, (200,)).payload["version"] == target["version"], "denied target requests changed state")
+    query_policy = admin.request("GET", QUERY_POLICY, (200,)).payload
+    for client in [security, machine, *tenant_clients, API.GatewayClient(base, "", 10)]:
+        expected = (401,) if not client.token else (403,)
+        for trend in (False, True):
+            client.request("GET", resource_path(node, trend), expected)
+        client.request("GET", QUERY_POLICY, expected)
+        client.request("PUT", QUERY_POLICY, expected, {key: value for key, value in query_policy.items() if key != "pending_restart"})
+    require(admin.request("GET", QUERY_POLICY, (200,)).payload == query_policy, "denied budget writes changed state")
+    report["query_identity_isolation"] = True
     assert_discovery(machine, target, node["version"])
     report["stage"] = "native-discovery-and-resource-samples"
     prom = Prometheus(directory)
@@ -237,6 +352,25 @@ def run(base, directory, report):
         require(rows and all(math.isfinite(float(row["value"][1])) for row in rows), "missing or invalid resource metric "+metric)
         require(all(row["metric"].get("addp_source") == "node_exporter" and row["metric"].get("addp_monitor_kind") == "host_resources" for row in rows), "resource identity labels mismatch")
     report["applied_version"], report["resource_metrics"] = 2, True
+    report["stage"] = "platform-resource-query-and-budget"
+    for trend in (False, True):
+        value = admin.request("GET", resource_path(node, trend), (200,)).payload
+        assert_resources(value, node, target, trend)
+    query_policy = check_query_policy(admin, node)
+    report.update(resource_query=True, query_budget_cas_hot_read=True, query_policy_version=query_policy["version"])
+    report["stage"] = "center-query-outage-recovery"
+    center_action("stop")
+    try:
+        failure = admin.request("GET", resource_path(node), (503, 504)).payload
+        require(failure.get("error_code") in {"observability_backend_unavailable", "observability_query_timeout"}, "center failure became query success")
+        API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/ready", (200,))
+        for client in tenant_clients:
+            client.request("GET", "/api/v1/monitor/executions", (200,))
+    finally:
+        recovery = time.time()
+        center_action("start")
+    eventually(lambda: resource_query_after(admin, node, target, recovery), "new API query evidence after center recovery")
+    report["center_query_outage_recovery"] = True
     report["stage"] = "source-outage-recovery"
     source_action("stop")
     try:
@@ -257,15 +391,22 @@ def run(base, directory, report):
     report["stage"] = "node-disable-and-resume"
     node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"])).payload
     require(machine.request("GET", DISCOVERY, (200,), response_type=list).payload == [], "disabled node remains in current discovery")
+    for trend in (False, True):
+        assert_resources(admin.request("GET", resource_path(node, trend), (200,)).payload, node, trend=trend, disconnected=True)
     eventually(lambda: not prom.targets(node["node_id"]), "disabled node removal after control recovery")
+    resumed_at = time.time()
     node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, version=node["version"])).payload
     assert_discovery(machine, target, node["version"])
     eventually(active, "re-enabled node sampling")
-    # Native SD + fresh sample prove recovery; historical range data alone does not.
-    eventually(lambda: bool(prom.query("timestamp(node_memory_MemTotal_bytes"+expression+") > "+str(since))), "new resource sample after recovery")
+    # Require this activation's samples and current versions through the user API.
+    eventually(lambda: resource_query_after(admin, node, target, resumed_at), "new API resource evidence after node re-enablement")
+    report["node_query_resume_fresh_samples"] = True
     report["stage"] = "target-disable-and-delete"
     target = admin.request("PUT", target_path, (200,), dict(body, enabled=False, version=target["version"])).payload
     require(machine.request("GET", DISCOVERY, (200,), response_type=list).payload == [], "disabled target remains in discovery")
+    for trend in (False, True):
+        assert_resources(admin.request("GET", resource_path(node, trend), (200,)).payload, node, trend=trend, disconnected=True)
+    report["disabled_query_does_not_reuse_history"] = True
     eventually(lambda: not prom.targets(node["node_id"]), "target disable application")
     admin.request("DELETE", target_path, (409,), {"version": 2})
     admin.request("DELETE", target_path, (204,), {"version": target["version"]})

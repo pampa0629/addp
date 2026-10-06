@@ -153,6 +153,18 @@ DuckDB 是平台共享的联邦查询 Runtime；`addp-duckdb` 在租户上下文
 
 消费方限定为 `addp-ontology` Tenant Runtime；每次消费必须携带精确 execution、attempt、lease_token 和同一 internal_task，System 复核完整授权引用、当前 running 租约、授权期限及用户当前授权版本与 Permission。Ontology 继续负责资源授权、撤回、摘要及激活基线；System 的成功响应不是投影 ready 凭证。内部任务授权不能消费 engine-accesses，也不返回 Infra 凭据。
 
+### 5.2.2 Manager 剖析执行授权
+
+完整配置摘要由 `common/execution.NewManagerProfileReadScope` 唯一计算，输入为持久 execution 不超过 512 KiB 的原始 JSON 对象。规范化只消除键序与空白差异，不经过浮点数反序列化，不承诺不同数字字面量具有相同摘要。Manager 私有配置语义仍由 owner 和 System 可信反查入口分别核验；共享工厂只提供纯值绑定，不作授权判断。
+
+Manager 后台剖析使用物理源读取范围，不属于内部任务。其正式 Execution Authorization 在既有逐引擎 `read` scope 之外，必须不可变绑定完整 `source_read_scope`：已提交的 Manager 一次性执行配置摘要与 Provider 提供的规范完整 ReadSet。首期仅支持普通第一方／OAuth API User、单引擎、手工 `data_profiling`；不接受浏览器自报主体、来源集合或配置，不从当前 Meta 补造依赖。System 从精确 pending execution 可信反查配置及发起人，复核当前 `manager.data_profile.execute` 和 `manager.data_item.read` 的 Tenant Scope 与全部源 Grant／Explicit Deny，签发、封存和审计原子提交。
+
+消费必须是当前 `addp-manager` Tenant Runtime，并绑定同一 running execution、attempt、lease_token、授权引用、完整配置摘要与本次不可变计划的相同 ReadSet。每次重新读取当前 IAM 和全部源规则；权限撤销、Explicit Deny、自然到期、执行配置或租约变化均拒绝。带物理源读取范围的授权禁止通过仅提交 Engine ID 的 engine-accesses 路径消费，不能从 Notebook、服务定义或父 execution 自动派生。正式源范围不是可缓存 Allow，Manager 仍负责同一 Provider 计划和本地 Security 的真实执行、响应与持久化边界。内部签发／消费底座与 HTTP／Manager 采样接通分别验证，未接通前生产采样继续明确拒绝。
+
+固定 HTTP 签发入口为 `POST /api/v1/system/auth/execution-authorizations/manager-profiles`，只提交 `execution_id` 和可选整数秒 `expires_in`（省略为 900，最大 3600）；以两个 Manager 功能 Permission 为 all-of Guard，不开放通用 audience／效果选择，不借此获得通用执行授权创建能力。201 返回不可变授权 `id`、`execution_id`、`tenant_id`、固定 `audience=manager`、`source_read_scope` 和 `expires_at`，不返回用户凭据。Manager 必须校验响应与自己的真实计划及租户一致后才绑定执行。
+
+固定消费入口为 `POST /api/v1/system/execution-authorizations/{id}/manager-profile-accesses`，只接受 `execution_id`、正数 `attempt`、`lease_token` 和相同 `source_read_scope`；以 Service 凭据、Tenant Context、固定 `addp-manager` Client 和 `system.execution_authorization.execute` 为 Guard，主体与租户仅从可信 AuthContext 获取。200 仅返回 `observed_at`，不返回源连接或通用访问租约。两入口拒绝未知字段、额外 JSON、query 参数、非法规范 ID 和超限正文，响应禁止缓存。客户端不跟随重定向、不缓存放行、不自动重试签发或消费，不向 owner 日志透出上游正文或凭据；400／401／403／409 与服务故障分别保留稳定错误语义。共享范围 DTO 与规范校验由 `common/execution` 唯一提供，不复制校验到 IAM、HTTP 与 Client。
+
 ### 5.3 Notebook 会话授权
 
 Notebook Interactive Session 不复用 Agent Delegated Access Token。Develop 必须在 Session 创建的同步 BFF 调用栈内，用当前 User Bearer 请求 System 创建 Notebook Session Authorization，随后丢弃 User Bearer。System 保存的授权事实至少绑定唯一 authorization ID、Notebook Session ID、Develop Task ID、Tenant、Principal、Tenant Membership、Token Family、`authorization_version`、固定 audience `develop`、允许操作集合、签发时间、到期时间和撤销时间；不保存 User Token、Service Token、Engine ID 列表或连接信息。
@@ -312,6 +324,8 @@ Explicit Deny 提交后立即生效，其建立时刻是审计事实，不是预
 该固定 Manager 检查另接受真实 IAM 签发、精确绑定 `audience=manager` 与唯一 `data.preview` Scope 的 Delegated Token。它沿 IAM 委托凭据解析核验源会话、当前主体／Membership／授权版本、委托 Client 与调用绑定，使用同一当前 User 的精确源规则；不伪装普通 User，不放开 Resource Ticket 或 Service，不赋予 Tool 凭据其它 System 普通 API 权限。这是同一 Manager 预览的两种可信消费资格，不增加通用跨 Owner 委托检查入口。Tool-only OAuth User 本身仍不能直接调用普通 API 路径，必须先经正式 Tool 委托。
 
 任一条件不满足时整个检查失败，无 Grant／命中 Deny 返回 403，不返回逐项规则或主体详情；成功仅返回 `observed_at`，不生成访问令牌、lease、授权副本或可缓存 Allow，不持久化请求目标或正文。领域检查只读且不追加授权审计；HTTP 入口仍沿用 System 通用请求元信息审计，不记录 Bearer 或请求正文。该入口是 Manager 同步调用链的源规则检查，不是完整执行裁决，也不访问源端或 Security。Manager 仍须先以 Provider 证明本次完整 ReadSet，完成本地 Security 保护，并执行同一 PreparedQuery；未完成实际消费接入时不能宣称预览权限闭环完成。后续不同 owner 操作须明确自己的固定功能契约，不能通过客户端传入权限名复用本入口降低门槛。
+
+Manager 剖析结果读取另使用固定同步入口 `POST /api/v1/system/engine-access/read-checks/manager-profile-result`，与预览共用当前源规则和普通 User 凭据的只读快照实现，但不开放 Delegated Token、Service Token 或 Resource Ticket。固定功能条件同为 `manager.data_item.read`，请求只含 1–200 个完整目标，不接受身份、Permission、execution 或效果选择；成功只返回不可缓存的当次 `observed_at`。Manager 必须提供结果生成时冻结的真实采样完整 ReadSet，不以今天的依赖或所选叶子替代；来源证据缺失或不规范时拒绝派生内容读取，不回填历史、不删除结果。该入口不授予后台剖析执行资格，不代替 Security，也不改变结果共享语义。
 
 #### 5.5.5 批准要求、可选治理与明确交接
 

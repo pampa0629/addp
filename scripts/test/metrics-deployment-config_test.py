@@ -1,6 +1,8 @@
 import importlib.util
 import json
 import os
+import re
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -24,6 +26,24 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                         PROMETHEUS_SERVICE_CLIENT_SECRET=self.secret,
                         PROMETHEUS_SYSTEM_URL='https://system.internal:8443',
                         PROMETHEUS_MONITOR_URL='https://monitor.internal:8443')
+
+    def test_query_native_probe_has_registered_inputs_and_hosted_go_runtime(self):
+        gate_spec = importlib.util.spec_from_file_location('metrics_module_gate', ROOT / 'scripts/test/module-gate.py')
+        gate_module = importlib.util.module_from_spec(gate_spec)
+        sys.modules[gate_spec.name] = gate_module
+        gate_spec.loader.exec_module(gate_module)
+        script = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
+        inputs = re.search(r'^# ADDP_T2_INPUT_FILES=(.+)$', script, re.M).group(1).split()
+        for path in ('monitor/backend/internal/resourcequery/client.go',
+                     'monitor/backend/internal/resourcequery/deleted-or-future.go',
+                     'monitor/backend/internal/config/config.go',
+                     'scripts/prod/metrics-query.yml'):
+            self.assertTrue(gate_module.gate_input_covers(inputs, path), path)
+        workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
+        job = re.search(r'^  monitor-metrics:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
+        self.assertIn('uses: actions/setup-go@', job)
+        self.assertIn('go-version-file: common/go.mod', job)
+        self.assertLess(job.index('uses: actions/setup-go@'), job.index('run: make test-monitor-metrics'))
 
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):
         config.render(self.env)
@@ -78,13 +98,41 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 config.render(dict(self.env, ADDP_METRICS_TLS_DIR=health))
 
+    def test_query_certificate_mount_is_independent_and_optional(self):
+        source = (ROOT / 'scripts/prod/start.sh').read_text()
+        phase = source.split('bash scripts/prod/wait-infra.sh\n', 1)[1].split('# Containers use', 1)[0]
+        script = ('source scripts/utils/observability-env.sh\n'
+                  'PLATFORM_COMPOSE_FILES=(-f docker-compose.yml)\ninfra_result=0\n'
+                  + phase + '\nprintf "%s\n" "$infra_result" "${PLATFORM_COMPOSE_FILES[*]}"\n')
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith(('ADDP_METRICS_', 'MONITOR_METRICS_', 'MONITOR_PROMETHEUS_'))}
+        env.update(ADDP_OBSERVABILITY_METRICS_ENABLED='true',
+                   MONITOR_METRICS_CA_FILE=str(self.directory / 'source-ca.crt'),
+                   MONITOR_METRICS_CLIENT_CERT_FILE=str(self.directory / 'collector.crt'),
+                   MONITOR_METRICS_CLIENT_KEY_FILE=str(self.directory / 'collector.key'))
+        for origin, complete in (('', False), ('https://prometheus:9090', False),
+                                 ('https://prometheus:9090', True)):
+            values = dict(env, MONITOR_PROMETHEUS_URL=origin)
+            if complete:
+                for key in ('CA_FILE', 'CLIENT_CERT_FILE', 'CLIENT_KEY_FILE'):
+                    values['MONITOR_PROMETHEUS_' + key] = str(self.directory / 'control-ca.crt')
+            result = subprocess.run(['bash', '-c', script], cwd=ROOT, env=values,
+                                    text=True, capture_output=True, check=True)
+            self.assertEqual('metrics-query.yml' in result.stdout, bool(origin) and complete)
+            self.assertEqual(result.stdout.splitlines()[0], '1' if origin and not complete else '0')
+        text = (ROOT / 'scripts/prod/metrics-query.yml').read_text()
+        self.assertEqual(text.count('read_only: true'), 3)
+        self.assertNotIn('health.', text)
+        self.assertNotIn('collector.', text)
+        self.assertNotIn('depends_on', text)
+
     def test_platform_certificate_mounts_are_selected_only_with_complete_inputs(self):
         source = (ROOT / 'scripts/prod/start.sh').read_text()
         phase = source.split('bash scripts/prod/wait-infra.sh\n', 1)[1].split('# Containers use', 1)[0]
         script = ('source scripts/utils/observability-env.sh\n'
                   'PLATFORM_COMPOSE_FILES=(-f docker-compose.yml)\ninfra_result=0\n'
                   + phase + '\nprintf "%s\\n" "$infra_result" "${PLATFORM_COMPOSE_FILES[*]}"\n')
-        env = {key: value for key, value in os.environ.items() if not key.startswith(('ADDP_METRICS_', 'MONITOR_METRICS_'))}
+        env = {key: value for key, value in os.environ.items() if not key.startswith(('ADDP_METRICS_', 'MONITOR_METRICS_', 'MONITOR_PROMETHEUS_'))}
         for selected, valid, expected in (('false', False, '0'), ('true', False, '1'), ('true', True, '0')):
             with self.subTest(selected=selected, valid=valid):
                 values = dict(env, ADDP_OBSERVABILITY_METRICS_ENABLED=selected)

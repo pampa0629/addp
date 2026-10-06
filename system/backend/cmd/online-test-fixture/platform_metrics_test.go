@@ -138,12 +138,14 @@ func TestMetricsIdentitiesAgainstPostgres(t *testing.T) {
 		if err != nil || projection.Context.Type != "platform" || projection.Context.TenantID != nil || projection.Authentication.AssuranceLevel != "aal2" || len(projection.Authorization.RoleAssignments) != 1 {
 			t.Fatal("invalid Platform identity", err)
 		}
-		read := false
-		for _, permission := range projection.Authorization.RoleAssignments[0].Permissions {
-			read = read || permission == "platform.host_node.read"
-		}
-		if read != (prefix == "ADDP_ONLINE_METRICS_ADMIN") {
-			t.Fatal("officer separation lost")
+		for _, key := range []string{"platform.host_node.read", "monitor.resource_observation.read", "monitor.configuration.read", "monitor.configuration.update"} {
+			allowed := false
+			for _, permission := range projection.Authorization.RoleAssignments[0].Permissions {
+				allowed = allowed || permission == key
+			}
+			if allowed != (prefix == "ADDP_ONLINE_METRICS_ADMIN") {
+				t.Fatalf("officer separation lost for %s", key)
+			}
 		}
 	}
 	for _, key := range []string{"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN", "ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN"} {

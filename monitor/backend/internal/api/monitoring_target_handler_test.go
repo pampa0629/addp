@@ -101,7 +101,7 @@ func TestMetricsDiscoveryRejectsOtherIdentitiesAndDoesNotReturnEmptyOnFailure(t 
 			}))
 			defer system.Close()
 			targets := service.NewMonitoringTargetService(&apiTargetStore{}, nil, nil, tc.name == "unconfigured", nil)
-			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, targets)
+			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, targets, nil)
 			req := httptest.NewRequest("GET", "/api/v1/monitor/platform/metrics_discovery", nil)
 			req.Header.Set("Authorization", "Bearer addp_at_collector")
 			w := httptest.NewRecorder()
@@ -132,7 +132,7 @@ func TestTargetAPIForwardsUserAndValidatesStrictPayload(t *testing.T) {
 	defer system.Close()
 	store := &apiTargetStore{}
 	targets := service.NewMonitoringTargetService(store, client.NewSystemServiceClient(system.URL, nil, system.Client()), nil, false, nil)
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, targets)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, targets, nil)
 	base := fmt.Sprintf(`{"subject":{"kind":"node","node_id":%q},"monitor_kind":"host_resources","source":{"type":"node_exporter","endpoint":"https://127.0.0.1:443/metrics"},"enabled":false}`, nodeID)
 	for _, tc := range []struct {
 		body   string
@@ -238,7 +238,7 @@ func TestMetricsDiscoveryProjectsCurrentNodesAndFailsWithoutCurrentFacts(t *test
 	store := &apiTargetStore{rows: []metricsdiscovery.NodeTarget{{ID: targetID, Version: 3, Subject: metricsdiscovery.NodeSubject{Kind: "node", NodeID: nodeID}, MonitorKind: "host_resources", Source: metricsdiscovery.NodeSource{Type: "node_exporter", Endpoint: "https://127.0.0.1:8443/metrics"}, Enabled: true}}}
 	facts := &apiCurrentIdentities{snapshot: &models.ObservabilityIdentitySnapshot{Nodes: []models.ObservabilityNodeIdentity{{NodeID: nodeID, Version: 2}}, ModuleInstances: []models.ObservabilityModuleIdentity{}}}
 	targets := service.NewMonitoringTargetService(store, nil, facts, true, apiDiscoveryPolicy(t))
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, targets)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, targets, nil)
 	request := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", "/api/v1/monitor/platform/metrics_discovery", nil)
 		req.Header.Set("Authorization", "Bearer addp_at_collector")

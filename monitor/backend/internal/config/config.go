@@ -9,11 +9,13 @@ import (
 
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/monitor/internal/metricsdiscovery"
+	"github.com/addp/monitor/internal/resourcequery"
 )
 
 type Config struct {
-	MetricsEnabled bool
-	MetricsPolicy  *metricsdiscovery.SourcePolicy
+	MetricsQueryClient *resourcequery.Client
+	MetricsEnabled     bool
+	MetricsPolicy      *metricsdiscovery.SourcePolicy
 	// 服务配置
 	ServerPort      string
 	LogObserverNode string
@@ -135,6 +137,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg.MetricsEnabled, cfg.MetricsPolicy = loadMetricsPolicy()
+	cfg.MetricsQueryClient = loadMetricsQueryClient(cfg.MetricsEnabled)
 	return cfg, nil
 }
 

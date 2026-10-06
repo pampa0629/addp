@@ -520,6 +520,13 @@ definitions:
       task_type:
         type: string
     type: object
+  execution.ManagerProfileReadScope:
+    properties:
+      config_digest:
+        type: string
+      read_set:
+        $ref: '#/definitions/plugin.QueryReadSet'
+    type: object
   execution.ReadGrant:
     properties:
       own_ad_hoc:
@@ -727,13 +734,6 @@ definitions:
         example: ""
         type: string
     type: object
-  github_com_addp_system_internal_engineaccess.ManagerPreviewReadCheckRequest:
-    properties:
-      targets:
-        items:
-          $ref: '#/definitions/plugin.EngineCatalogPath'
-        type: array
-    type: object
   github_com_addp_system_internal_engineaccess.SourceDeny:
     properties:
       action:
@@ -769,6 +769,13 @@ definitions:
     properties:
       observed_at:
         type: string
+    type: object
+  github_com_addp_system_internal_engineaccess.SourceReadCheckRequest:
+    properties:
+      targets:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogPath'
+        type: array
     type: object
   github_com_addp_system_internal_iam.AuditResult:
     enum:
@@ -2830,6 +2837,13 @@ definitions:
       internal_task:
         $ref: '#/definitions/execution.InternalTaskScope'
     type: object
+  internal_api.IAMIssueManagerProfileRequest:
+    properties:
+      execution_id:
+        type: string
+      expires_in:
+        type: integer
+    type: object
   internal_api.IAMIssueNotebookSessionAuthorizationRequest:
     properties:
       expires_in:
@@ -2838,6 +2852,21 @@ definitions:
         type: string
       task_id:
         type: integer
+    type: object
+  internal_api.IAMIssuedManagerProfileResponse:
+    properties:
+      audience:
+        type: string
+      execution_id:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      source_read_scope:
+        $ref: '#/definitions/execution.ManagerProfileReadScope'
+      tenant_id:
+        type: string
     type: object
   internal_api.IAMLifecycleReasonRequest:
     properties:
@@ -2946,6 +2975,22 @@ definitions:
         type: integer
       user:
         $ref: '#/definitions/internal_api.IAMManagedUserResponse'
+    type: object
+  internal_api.IAMManagerProfileAccessRequest:
+    properties:
+      attempt:
+        type: integer
+      execution_id:
+        type: string
+      lease_token:
+        type: string
+      source_read_scope:
+        $ref: '#/definitions/execution.ManagerProfileReadScope'
+    type: object
+  internal_api.IAMManagerProfileAccessResponse:
+    properties:
+      observed_at:
+        type: string
     type: object
   internal_api.IAMNotebookEngineCatalogChildrenRequest:
     properties:
@@ -4361,6 +4406,13 @@ definitions:
           type: string
         type: array
     type: object
+  plugin.QueryReadSet:
+    properties:
+      paths:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogPath'
+        type: array
+    type: object
   plugin.ScriptCapability:
     properties:
       interactive:
@@ -4907,6 +4959,59 @@ paths:
       - ontology.revision.publish
       x-addp-required-permissions:
       - system.execution_authorization.create
+  /auth/execution-authorizations/manager-profiles:
+    post:
+      consumes:
+      - application/json
+      description: 从当前普通 API User 和精确 pending execution 反查完整来源、配置及当前权限，不接受自报身份或范围；不返回连接或凭据
+        | Resolve complete sources, configuration and current permissions from an
+        ordinary API User and exact pending execution; no caller-supplied identity
+        or scope, connections or credentials
+      parameters:
+      - description: 执行 UUID 与有效期秒数，默认 900、最大 3600；正文上限 512 KiB，无 query | Execution
+          UUID and TTL seconds, default 900, maximum 3600; 512 KiB body limit, no
+          query
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMIssueManagerProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 固定只读来源范围 | Fixed read-only source boundary
+          schema:
+            $ref: '#/definitions/internal_api.IAMIssuedManagerProfileResponse'
+        "400":
+          description: 签发失败 | Issuance failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 签发失败 | Issuance failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 签发失败 | Issuance failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 签发失败 | Issuance failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 签发失败 | Issuance failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 签发 Manager 剖析执行授权 | Issue Manager profiling execution authorization
+      tags:
+      - 执行授权 | Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_profile.execute
+      - manager.data_item.read
   /auth/mfa:
     get:
       produces:
@@ -5160,7 +5265,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_system_internal_engineaccess.ManagerPreviewReadCheckRequest'
+          $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheckRequest'
       produces:
       - application/json
       responses:
@@ -5188,6 +5293,53 @@ paths:
       - BearerAuth: []
       summary: 检查 Manager 预览的当前精确源读取范围 | Check current precise source read coverage
         for Manager preview
+      tags:
+      - 源数据读取检查 | Source Data Read Checks
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
+  /engine-access/read-checks/manager-profile-result:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        仅当前 Tenant 普通第一方或 OAuth API User；固定核验 manager.data_item.read 及完整历史采样来源的现行规则，无 Grant 或命中 Deny 整体拒绝。不支持委托、Service、Resource Ticket 或自报身份、execution、Permission；不授予后台采样权限 | Current Tenant ordinary first-party or OAuth API User only. Fixed manager.data_item.read and current rules for all historical sampling sources; missing Grants or Deny reject the entire set. Delegation, Service, Resource Ticket and caller-supplied identity, execution or Permission are not supported; no background sampling authority is granted
+        Manager 必须提供实际结果冻结的完整 ReadSet，不能用当前视图依赖补造。只返回不可缓存的当次观察时刻，不访问源端，不创建 Grant 或执行授权 | Manager must supply the complete ReadSet frozen from the actual result, not reconstruct it from current view dependencies. Returns only a non-cacheable observation time; no source access, Grant or execution authorization
+      parameters:
+      - description: 1 至 200 个完整历史读取目标，不支持 query 参数 | 1 to 200 complete historical
+          read targets; no query parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当次观察时刻 | Observation time
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 检查 Manager 剖析结果的当前源读取权限 | Check current source read coverage for Manager
+        profile results
       tags:
       - 源数据读取检查 | Source Data Read Checks
       x-addp-auth-mode: permission
@@ -6686,6 +6838,59 @@ paths:
       summary: 消费内部任务执行授权 | Consume internal task execution authorization
       tags:
       - Runtime 执行授权 | Runtime Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
+  /execution-authorizations/{id}/manager-profile-accesses:
+    post:
+      consumes:
+      - application/json
+      description: 仅固定 addp-manager Tenant Service 凭据；核验真实 running attempt、租约、完整配置和全部现行源规则。仅返回当次观察时刻，不是访问租约或源连接
+        | Only the fixed addp-manager Tenant Service credential; checks the actual
+        running attempt, lease, complete configuration and all current source rules.
+        Returns only a point-in-time observation, not an access lease or source connection
+      parameters:
+      - description: 规范正整数授权 ID | Canonical positive authorization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 精确执行租约与相同来源范围；正文上限 512 KiB，无 query | Exact execution lease and
+          identical source boundary; 512 KiB body limit, no query
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMManagerProfileAccessRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 不可缓存的当次观察 | Non-cacheable current observation
+          schema:
+            $ref: '#/definitions/internal_api.IAMManagerProfileAccessResponse'
+        "400":
+          description: 复核失败 | Recheck failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 复核失败 | Recheck failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 复核失败 | Recheck failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 复核失败 | Recheck failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 复核 Manager 剖析执行的当前完整来源权限 | Recheck current complete source permissions
+        for Manager profiling
+      tags:
+      - 执行授权 | Execution Authorization
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.execution_authorization.execute

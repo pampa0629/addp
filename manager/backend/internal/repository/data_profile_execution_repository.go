@@ -4,11 +4,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"gorm.io/gorm"
@@ -145,12 +151,97 @@ func (r *DataProfileExecutionRepository) GetByExecutionID(
 ) (*commonExecution.TaskExecution, error) {
 	var execution commonExecution.TaskExecution
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND execution_id = ?", tenantID, executionID).
+		Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ?", tenantID, executionID, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling).
 		First(&execution).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &execution, err
+}
+
+// GetRawExecutionConfig never passes persisted numeric literals through JSONMap.
+func (r *DataProfileExecutionRepository) GetRawExecutionConfig(ctx context.Context, tenantID int, executionID string) (json.RawMessage, error) {
+	return rawDataProfileConfig(ctx, r.db, tenantID, executionID)
+}
+
+func rawDataProfileConfig(ctx context.Context, db *gorm.DB, tenantID int, executionID string) (json.RawMessage, error) {
+	var raw []byte
+	err := db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
+		Select("execution_config").Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ?", tenantID, executionID, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling).
+		Row().Scan(&raw)
+	return json.RawMessage(raw), err
+}
+
+// BindSourceAuthorization only binds a validated System issuance response.
+// Holding the execution row lock closes the check/write/claim race. No System
+// private tables are read and this binding is not a source-access decision.
+func (r *DataProfileExecutionRepository) BindSourceAuthorization(ctx context.Context, expected *commonExecution.TaskExecution, scope commonExecution.ManagerProfileReadScope, issued *commonClient.IssuedManagerProfileAuthorization) error {
+	if expected == nil || expected.TenantID <= 0 || issued == nil || issued.ExecutionID != expected.ExecutionID || !issued.Matches(uint(expected.TenantID), scope) {
+		return commonAPI.ErrConflict
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current commonExecution.TaskExecution
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ?", expected.TenantID, expected.ExecutionID, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling).First(&current).Error
+		if err != nil {
+			return err
+		}
+		if current.Source != commonExecution.ModuleManager || current.TriggerType != commonExecution.TriggerTypeManual || current.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded || current.SourceTaskID != nil || current.ParentExecutionID != nil ||
+			current.Status != commonExecution.ExecutionStatusPending || current.Attempt != 0 || current.ExecutionAuthorizationID != nil || current.AuthorizationExpiresAt != nil || current.LeaseToken != nil || current.LeaseOwner != nil || current.LeaseExpiresAt != nil ||
+			!samePositiveProfileFact(current.ActorPrincipalID, expected.ActorPrincipalID) || !samePositiveProfileFact(current.ActorTenantMembershipID, expected.ActorTenantMembershipID) || !samePositiveProfileFact(current.IssuedAuthorizationVersion, expected.IssuedAuthorizationVersion) {
+			return commonAPI.ErrConflict
+		}
+		raw, err := rawDataProfileConfig(ctx, tx, current.TenantID, current.ExecutionID)
+		if err != nil {
+			return err
+		}
+		var header struct {
+			Version string              `json:"config_version"`
+			ReadSet plugin.QueryReadSet `json:"read_set"`
+		}
+		if json.Unmarshal(raw, &header) != nil || header.Version != "data-profile-config/v6" {
+			return commonAPI.ErrConflict
+		}
+		actual, err := commonExecution.NewManagerProfileReadScope(raw, &header.ReadSet)
+		if err != nil || !reflect.DeepEqual(actual, &scope) || !issued.Matches(uint(current.TenantID), *actual) {
+			return commonAPI.ErrConflict
+		}
+		authorizationID, err := strconv.ParseInt(issued.ID, 10, 64)
+		if err != nil {
+			return commonAPI.ErrConflict
+		}
+		result := tx.Model(&commonExecution.TaskExecution{}).Where("id = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL", current.ID, commonExecution.ExecutionStatusPending).
+			Updates(map[string]interface{}{"execution_authorization_id": authorizationID, "authorization_expires_at": issued.ExpiresAt, "updated_at": time.Now().UTC()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return commonAPI.ErrConflict
+		}
+		return nil
+	})
+}
+
+func samePositiveProfileFact(left, right *int64) bool {
+	return left != nil && right != nil && *left > 0 && *left == *right
+}
+
+// FailUnbound closes only this producer's still-unclaimed, unbound execution.
+func (r *DataProfileExecutionRepository) FailUnbound(ctx context.Context, expected *commonExecution.TaskExecution) error {
+	if expected == nil || expected.TenantID <= 0 || expected.ActorPrincipalID == nil || *expected.ActorPrincipalID <= 0 || expected.ActorTenantMembershipID == nil || *expected.ActorTenantMembershipID <= 0 || expected.IssuedAuthorizationVersion == nil || *expected.IssuedAuthorizationVersion <= 0 {
+		return commonAPI.ErrConflict
+	}
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
+		Where("source = ? AND trigger_type = ? AND execution_boundary = ? AND source_task_id IS NULL AND parent_execution_id IS NULL AND lease_token IS NULL AND lease_owner IS NULL AND lease_expires_at IS NULL", commonExecution.ModuleManager, commonExecution.TriggerTypeManual, commonExecution.ExecutionBoundaryBounded).
+		Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL AND actor_principal_id = ? AND actor_tenant_membership_id = ? AND issued_authorization_version = ?", expected.TenantID, expected.ExecutionID, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling, commonExecution.ExecutionStatusPending, *expected.ActorPrincipalID, *expected.ActorTenantMembershipID, *expected.IssuedAuthorizationVersion).
+		Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusFailed, "completed_at": now, "updated_at": now, "error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "data profiling execution source authorization unavailable"}})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return commonAPI.ErrConflict
+	}
+	return nil
 }
 
 func (r *DataProfileExecutionRepository) Start(

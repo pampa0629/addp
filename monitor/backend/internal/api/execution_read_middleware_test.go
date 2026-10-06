@@ -55,7 +55,7 @@ func TestExecutionReadAPIRejectsHiddenChildrenRevocationAndUnavailableOwner(t *t
 	resolver := &requestScopeResolver{}
 	query := service.NewExecutionQueryService(repo)
 	query.SetReadResolver(resolver)
-	router := SetupRouter(query, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
+	router := SetupRouter(query, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil)
 	get := func(path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", path, nil)
 		req.Header.Set("Authorization", "Bearer addp_at_monitor")

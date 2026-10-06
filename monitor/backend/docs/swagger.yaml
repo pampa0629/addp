@@ -324,6 +324,30 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_monitor_internal_resourcequery.Point:
+    properties:
+      data_state:
+        type: string
+      evaluated_at:
+        type: string
+      sampled_at:
+        type: string
+      value:
+        type: number
+    type: object
+  github_com_addp_monitor_internal_resourcequery.Series:
+    properties:
+      metric_key:
+        type: string
+      points:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Point'
+        type: array
+      unit:
+        type: string
+      window_seconds:
+        type: integer
+    type: object
   github_com_addp_monitor_internal_service.AlertRuleRouteInput:
     properties:
       channel:
@@ -799,6 +823,77 @@ definitions:
         type: integer
       task_type:
         type: string
+    type: object
+  github_com_addp_monitor_internal_service.ResourceObservationResponse:
+    properties:
+      end:
+        type: string
+      lookback_seconds:
+        type: integer
+      node_version:
+        type: integer
+      policy_version:
+        type: integer
+      queried_at:
+        type: string
+      series:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Series'
+        type: array
+      start:
+        type: string
+      step_seconds:
+        type: integer
+      subject:
+        $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSubject'
+      target_id:
+        type: string
+      target_saved_version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.ResourceQueryPolicyInput:
+    properties:
+      max_metrics:
+        type: integer
+      max_points_per_series:
+        type: integer
+      max_range_seconds:
+        type: integer
+      max_series:
+        type: integer
+      max_total_points:
+        type: integer
+      process_concurrency:
+        type: integer
+      subject_concurrency:
+        type: integer
+      timeout_seconds:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.ResourceQueryPolicyResponse:
+    properties:
+      max_metrics:
+        type: integer
+      max_points_per_series:
+        type: integer
+      max_range_seconds:
+        type: integer
+      max_series:
+        type: integer
+      max_total_points:
+        type: integer
+      pending_restart:
+        type: boolean
+      process_concurrency:
+        type: integer
+      subject_concurrency:
+        type: integer
+      timeout_seconds:
+        type: integer
+      version:
+        type: integer
     type: object
   github_com_addp_monitor_internal_service.RuntimeHealthInstance:
     properties:
@@ -3350,6 +3445,144 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.monitoring_target.update
+  /platform/resource_observations:
+    get:
+      parameters:
+      - description: 节点 UUID | Node UUID
+        in: query
+        name: node_id
+        required: true
+        type: string
+      - description: 逗号分隔的固定目录键 | Comma separated fixed catalog keys
+        in: query
+        name: metrics
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceObservationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取节点即时资源 | Read current node resources
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
+  /platform/resource_trends:
+    get:
+      parameters:
+      - description: 节点 UUID | Node UUID
+        in: query
+        name: node_id
+        required: true
+        type: string
+      - description: 逗号分隔的固定目录键 | Comma separated fixed catalog keys
+        in: query
+        name: metrics
+        required: true
+        type: string
+      - description: 整秒 RFC3339 开始时间 | Whole-second RFC3339 start
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: 整秒 RFC3339 结束时间 | Whole-second RFC3339 end
+        in: query
+        name: end
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceObservationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取节点资源趋势 | Read node resource trends
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
   /providers/{module}/health:
     get:
       description: 从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready
@@ -3441,6 +3674,92 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.health.read
+  /settings/resource-query-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceQueryPolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取资源查询预算 | Get resource query budget
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.configuration.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 版本和完整预算 | Version and complete budget
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceQueryPolicyInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceQueryPolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 原子更新并即时生效资源查询预算 | Atomically update and apply resource query budget
+      tags:
+      - 配置管理 | Configuration Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.configuration.update
   /settings/runtime-policy:
     get:
       produces:

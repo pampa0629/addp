@@ -894,6 +894,7 @@
           "host_node": "平台节点",
           "observability_identity": "观测身份",
           "monitoring_target": "监测目标",
+          "resource_observation": "资源观测",
           "metrics_discovery": "指标发现"
         },
         "types": {

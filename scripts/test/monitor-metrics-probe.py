@@ -250,6 +250,17 @@ def node_resource_samples():
 
 
 eventually(node_resource_samples, 'real exporter resource samples enter the sole HTTP SD job')
+query_env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1',
+                 MONITOR_PROMETHEUS_URL=base, MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'),
+                 MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
+                 MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'),
+                 ADDP_METRICS_QUERY_INSTANCE=node_instance)
+subprocess.run(['go', 'test', './internal/resourcequery', '-run',
+                '^TestIntegrationMetricsResourceQueries$', '-count=1', '-v'],
+               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+               env=query_env, check=True, timeout=90)
+print('Metrics T2: native fixed catalog instant/range and source isolation', flush=True)
+
 compose('stop', 'node-exporter')
 eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 0')),
            'node exporter outage is visible without stopping the center')

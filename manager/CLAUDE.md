@@ -8,7 +8,7 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 
 数据剖析已经按确认边界实现：剖析执行和结果归 Manager，Meta 只提供 data item 身份、结构和源版本事实；首期在用户进入“剖析”标签时按需创建 `task_type=data_profiling` 的 ad-hoc execution，不创建持久任务定义、不声明 TaskProvider capability。完整规则见 `manager/docs/数据剖析规范.md`。
 
-PostgreSQL item 预览只执行 Provider 的不可变 PreparedQuery：完整 ReadSet 先用当前 User／固定 `data.preview` 委托 Bearer 调用 System 源检查，再编译本地 Security 保护；检查和执行使用同一计划，不回退 ReadBatch。保护在响应输出前执行并同步删除被抑制列的展示元数据。后台剖析暂时以 `source_authorization_required` 明确失败，不读取样本、不借用用户预览或机器凭据；用户已同意先切换预览，再补齐独立 execution 源授权。
+PostgreSQL item 预览只执行 Provider 的不可变 PreparedQuery：完整 ReadSet 先用当前 User／固定 `data.preview` 委托 Bearer 调用 System 源检查，再编译本地 Security 保护；检查和执行使用同一计划，不回退 ReadBatch。保护在响应输出前执行并同步删除被抑制列的展示元数据。后台剖析首版仅开放已扫描 PostgreSQL 单表的有界采样；独立 execution 签发、绑定、当前 Tenant Service 消费、逐页及提交前复核均使用同一计划，不借用户预览凭据。视图、物化视图和多来源计划明确不支持。用户决定暂缓源端并发 DDL 改源的特殊情形；本轮不声称原生内容事务内依赖冻结已经完成，也不认证预览已解决该缺口。跟进见专题 §26.99–26.100。
 
 Manager 通过本地保护投影统一约束预览、剖析和全文索引写入，用户请求不调用 Security。`profile=suppress` 在持久化前删除敏感字段及全部祖先容器的字段剖析对象和对应全局观察，防止父级 Top N 携带敏感叶子值；`search_index=mask` 在写入 Meilisearch 前覆盖正文及所有正文派生字符串。投影变化与历史剖析结果、条件值清理及 cursor 保存共用本地安装屏障；启动时对已安装投影重放清理。外部全文索引只走持久投递路线：保护事务内登记清理并隔离出口，事务外提交或核查 Meilisearch 任务；任务入队不算完成。新投递在发送前持久绑定 UUID，并随请求发送 `customMetadata`，关闭 SDK 自动重试；已知 UID 的任务在超时或重启后续查，无 UID 的新提交只能从完整保留的任务历史中唯一认回同一标记、端点、索引和操作种类的原任务，再保存回执并核查终态。没有标记的旧提交不回填证据；零匹配、历史不完整或冲突均保留未决，不重发、不按时间清除。服务器不支持标记、未配置或暂时失联均不使 Manager 初始化失败；重新开放搜索必须先核清历史任务、完成清理。出口隔离且旧读取结束时允许保护回执，但不声称外部清理成功。本轮不认证多 Backend／HA；实现和验收记录见 `docs/next/ADDP企业资源目录能力专题.md` §26.76、§26.78。旧 Meilisearch 数据卷须另行确认迁移，不能只改镜像后重启，见 `scripts/infra/README.md`。
 
@@ -117,6 +117,9 @@ manager/
 - 表格数据剖析只按 `data_type=table` 和当前内容选择上下文开放；不得按 `item_type`、engine type 或文件扩展名硬编码。首期剖析是 `data_profiling` ad-hoc execution，结果写 Manager 私有表，不写 Meta attributes，不创建 `manager.data_profile_tasks`，也不声明 TaskProvider capability。
 - 数据剖析不得使用当前预览页、分页记录或前端数组计算；采样和指标计算必须走统一 Provider 与服务端预算。刷新失败必须保留上一份成功结果。
 - 剖析入队及活跃／最近执行查询只从可信当前 User AuthContext 获取发起人、租户成员关系与授权版本；冻结共享 execution 来源字段，并按这三项隔离执行复用。不保存 User Token，不把来源事实当作源授权；独立 execution 源授权贯通前保持采样拒绝。
+- PostgreSQL 剖析准备通过同一表格查询生成器冻结预算内所有分页及完整视图依赖，不调用预览或读取业务行；最多 10000 行、单页 2000 行。v6 入队先保存完整计划，当前 User 请求签发后在行锁事务内绑定；未绑定不得领取，失败或中断须收敛。Worker 核对精确租约、原始配置和重新准备的完整分页计划后，用当前 Tenant Service 消费 System 固定源授权入口；拒绝与不可用不进入采样，不缓存 Allow。逐页读取和提交前复核接通前生产采样仍关闭。完整配置摘要复用 `common/execution.NewManagerProfileReadScope`，只能输入持久执行的原始 JSON，不能经 `JSONMap` 浮点数往返。
+- 剖析入队与后台消费共享当前强类型配置契约；配置摘要覆盖超时。消费只使用入队时冻结的完整预算，并复核来源主体、复用键、引擎及稳定源身份；旧版本、缺失预算、未知字段或摘要不一致均在采样前拒绝，不补默认值。入队时深拷贝条件和资源引用，后续修改请求对象不得改变已有执行。
+- 已保存剖析结果必须带实际采样完整 `dependency_snapshot.read_set`；结果内容按当前普通 User Bearer 同步复核 System 固定 `manager-profile-result` 源规则及本地 Security。缺失或不规范的历史来源不从当前依赖补造、不回填、不删除，明确拒绝结果内容；不能用委托预览或机器身份读取。结果仍按资源／配置共享，不改为发起人私有。
 - 条件剖析只接受结构化 `data_scope`，条件必须由声明支持的 Provider 在采样前执行并安全绑定参数；全范围和条件范围按 `profile_config_hash` 分别保存。Manager 不接受任意 SQL，也不得退回到采样后过滤。已纳入 Security 保护的 DataItem 在条件值保护契约完成前只允许全范围剖析，条件剖析必须拒绝。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_cache_generation`。

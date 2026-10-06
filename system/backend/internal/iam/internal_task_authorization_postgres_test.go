@@ -81,8 +81,14 @@ func TestInternalTaskAuthorizationAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertRoleAssignment(t, db, user.PrincipalID, role.RoleKey, "tenant", &tenant.ID, nil, nil, time.Now().Add(-time.Minute), nil, "manual")
+	// Authentication facts and their validator share the database clock. A
+	// current host timestamp can be slightly ahead of the container clock.
+	authenticatedAt, err := repo.CurrentDatabaseTime(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	session, err := selection.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: user.PrincipalID,
-		Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: time.Now()}, Audit: audit})
+		Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: authenticatedAt}, Audit: audit})
 	if err != nil || session.Session == nil {
 		t.Fatalf("session: %v", err)
 	}
