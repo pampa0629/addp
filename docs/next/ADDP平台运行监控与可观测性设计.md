@@ -288,7 +288,7 @@ disabled 不尝试发送，不制造设施离线告警；unconfigured 表示已�
 
 ## 十、第一期开工契约（2026-10-05，目标设计，待实施）
 
-本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.18 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
+本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.20 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
 
 ### 10.1 节点与实例绑定
 
@@ -761,3 +761,12 @@ System-owned Online 身份准备先执行三员 Bootstrap，分别保存临时�
 本批本地先行验证：平台聚合门禁 `make test-platform` 通过；`make test-node-metrics-online-runner` 通过，覆盖正式 TLS 生成/唯一中心配置、平台与采集身份校验、版本投影及 Hosted 各阶段失败清理；System 标准 Online fixture PostgreSQL 门禁通过，实际验证 Bootstrap、真实密码/MFA、三员权限区分和两个非默认 Tenant 的最小授权。CI 登记检查及反例回归通过。默认 `make test-changed` 因全工作区其他 Owner 的测试连接参数缺失而在预检失败，未执行的跨 Owner 数据库门禁不计为通过。完整 Hosted T4 仍待首次真实执行，部署与清理结果以该次 CI 证据为准。
 
 首轮 Hosted T4（[37461258797](https://github.com/pampa0629/addp/actions/runs/37461258797)，`fbb246880`）在采集服务身份阶段失败：System 已以 HTTP 200 签发原生 OAuth Token，验收脚本错误地按大小写敏感方式比较 `token_type`；当前 OAuth Provider 固定返回 `bearer`，既有 Common Service Client 按大小写不敏感方式核验。修复沿用同一标准校验，不新增协议分支。该轮已完成平台真实密码/MFA 与两类平台角色核验；退出摘要为 `cleanup=passed`、`infra_cleanup=zero_residuals`，不计为完整 T4 通过。
+
+本批首次真实通过（2026-10-06）：
+
+- [Hosted T4 37463003308](https://github.com/pampa0629/addp/actions/runs/37463003308) 在 `456d3bb84` 上完整通过。平台系统/安全管理员分别完成真实密码/MFA；固定采集 Service 身份仅有发现权限；两个非默认 Tenant 均被平台列表、详情、创建、更新、删除与发现入口拒绝，拒绝操作未改变对象版本。
+- `platform-node-metrics.json` 为 `result=passed`、`stage=complete`，保存/应用版本均为 2。CPU、内存、负载、磁盘 IO、网络和启动时间均有真实有限值样本；来源停止/恢复、控制面失败保留旧目标及恢复、节点停用/重新启用后的新样本、目标停用与 CAS 删除均通过。采样观察时间为 `2026-10-06T12:37:12Z`；记录阶段和安全编号，不归档 Token 或 Secret。
+- Hosted `summary.txt` 独立确认 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`。归档产物未包含环境文件或 opaque 凭据模式；完整清理不由业务报告中的待销毁标记推断。
+- [Platform CI 37462963043](https://github.com/pampa0629/addp/actions/runs/37462963043) 与 [Release/T2 37462963023](https://github.com/pampa0629/addp/actions/runs/37462963023) 完整通过。来源实现的指标 T2 和 System Online fixture PostgreSQL 由前一实现提交的 [Release/T2 37461221654](https://github.com/pampa0629/addp/actions/runs/37461221654) 对应 Job 通过；修复提交未改变这些输入，部分选择性 Job 被跳过，不将跳过计为再次通过。本地默认工作区总门禁的数据库参数预检失败仍单独保留。
+
+本批交付原生 Linux VM 的真实节点来源与平台控制面链路验收，不代表全部生产节点已纳管，也不替代宿主子挂载传播/只读边界、物理身份绑定等完整 T5。suite 继续手工触发。下一批优先实现 Platform 资源查询 API，以可信样本支撑节点总览和趋势页；目标管理页面、生效状态查询、cAdvisor 和租户引擎资源归属仍按各自契约推进，统一告警域收敛仍须单独确认。
