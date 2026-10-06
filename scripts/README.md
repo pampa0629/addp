@@ -880,7 +880,7 @@ Redis Online 验收使用 `make test-online ONLINE_SUITE=redis-consumer-flow`，
 
 采集中心由标准 Infra 启动，节点由 `scripts/infra/node-metrics.py` 独立部署。临时 TLS 转发只连接真实 Gateway；监听地址取原生 Docker bridge Gateway 并限定端口，不对外放开来源准入。suite 核验保存版本、发现版本、活动目标及新鲜样本，验证来源/控制面中断恢复，以及节点和目标停用后的撤除。报告和 Hosted 清理摘要分别记录业务断言与部署零残留。
 
-本 suite 已扩展八项基础节点资源的正式即时/趋势 API、查询预算 CAS 与热生效、查询权限隔离、停用后不复用历史，以及中心故障时 Ready/租户执行列表继续可用的断言。Monitor 使用独立查询客户端证书，私钥不挂载到中心；在标准 Infra 启动后核实中心所有权和实际 loopback 映射，再提供查询 origin 并启动 Monitor。用户已批准同一一次性部署内的查询及预算配置验收，具体范围见测试规范 5.2 节和平台运行监控设计 10.22 节。扩展尚未取得真实 Hosted 运行结果；下方首次通过的历史证据仅覆盖原节点/目标采集链路。
+本 suite 已扩展八项基础节点资源的正式即时/趋势 API、查询预算 CAS 与热生效、查询权限隔离、停用后不复用历史，以及中心故障时 Ready/租户执行列表继续可用的断言。Monitor 使用独立查询客户端证书，私钥不挂载到中心；在标准 Infra 启动后核实中心所有权和实际 loopback 映射，再提供查询 origin 并启动 Monitor。用户已批准同一一次性部署内的查询及预算配置验收，具体范围见测试规范 5.2 节和平台运行监控设计 10.22 节。扩展已在 `794450a30` 通过 [Run 37485747576](https://github.com/pampa0629/addp/actions/runs/37485747576)：查询、预算 CAS/热生效、身份隔离、中心故障与新样本恢复、节点重启用、停用后不复用历史均有业务断言，独立摘要确认清理成功与 Infra 零残留；18 个归档文件的私钥及完整 IAM 不透明凭据检查通过。下方首次通过的历史证据仍只覆盖原节点/目标采集链路。
 
 确定性门禁为 `make test-node-metrics-online-runner`，由 `make test-online-runner`、`make test-platform` 和既有 Platform CI 聚合；身份数据库验证进入 `bash scripts/test/system-iam-postgres-gate.sh --package online-fixture`。真实 T4 在 `Online T4 gates` 手工选择同名 suite，首次真实通过前不加入 schedule。本地 macOS 不启动这套部署，也不以 T2 协议夹具替代 T4。
 

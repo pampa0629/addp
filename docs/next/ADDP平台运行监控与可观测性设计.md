@@ -784,7 +784,7 @@ System-owned Online 身份准备先执行三员 Bootstrap，分别保存临时�
 
 查询预算在已有模块级配置域 `/settings/resource-query-policy` 读取/更新，沿用 `monitor.configuration.read/update`，仅 Platform User。Monitor 保存唯一单例版本，CAS 更新和标准平台审计同次接入；每次查询读取一份已提交预算，无持久值使用定义默认值，不回退环境变量。新请求立即消费新版本，已在途请求使用开始时的预算；降限不会取消已在途请求。响应明确 `pending_restart=false`。指标数、序列数、每序列点数、总点数、最长范围、超时和并发配置不得高于 10.5 的初始保护上限，最小步长固定 15 秒、新鲜度固定 60 秒。按主体与进程计数快速拒绝，无等待队列；硬上限准入必须在读取持久预算前执行，再核对本请求预算版本的更低限额，防止配置读取先形成无界请求队列；返回内容再次核验，不使用上游 limit 截断。
 
-实施前确定门禁：Monitor Go T1 覆盖白名单/注入、预算规划、身份/用户节点裁决、缺失/过期/分母证据、上游错误/限额/重定向/真实 mTLS、即时/趋势与并发；Monitor PostgreSQL T2 覆盖预算 CAS 与热读取；System IAM PostgreSQL T2 验证新读取权限发布（Role Permission 触发器唯一推进授权版本，迁移另撤销旧 Refresh Token Family）。沿既有 owner 自动发现与 CI 门禁，不增加测试库、启动路线或必需依赖。实际资源查询 Hosted T4 的限定身份范围已按用户确认同步到测试规范，扩展实现与待验收范围见 10.22；尚未取得扩展后的真实 T4 结果。
+实施前确定门禁：Monitor Go T1 覆盖白名单/注入、预算规划、身份/用户节点裁决、缺失/过期/分母证据、上游错误/限额/重定向/真实 mTLS、即时/趋势与并发；Monitor PostgreSQL T2 覆盖预算 CAS 与热读取；System IAM PostgreSQL T2 验证新读取权限发布（Role Permission 触发器唯一推进授权版本，迁移另撤销旧 Refresh Token Family）。沿既有 owner 自动发现与 CI 门禁，不增加测试库、启动路线或必需依赖。实际资源查询 Hosted T4 的限定身份范围已按用户确认同步到测试规范，扩展实现、验收范围与首次真实通过证据见 10.22；证据只覆盖该次 Hosted Linux 部署。
 
 本批已取得的验证证据（2026-10-06）：
 
@@ -803,7 +803,7 @@ System-owned Online 身份准备先执行三员 Bootstrap，分别保存临时�
 
 本批迁移 193 依赖工作区中另一批尚未提交的迁移 192，迁移目录要求版本连续。当前保留全部本批改动于工作区，不单独提交导致主干迁移缺号，也不把其他任务改动合并提交。本机指标中心仍关闭，未重启个人服务、修改个人环境配置或安装宿主采集器。资源查询页面、CPU 忙碌率与磁盘/网络速率、Tenant 资源观测、实际资源查询 Hosted T4 及宿主权限 T5 均不在本批已验收范围。
 
-### 10.22 资源查询 Hosted 验收扩展（已实现，待真实验收）
+### 10.22 资源查询 Hosted 验收扩展（已完成真实验收）
 
 复用唯一 `platform-node-metrics` suite 和当次 Hosted Linux 一次性部署，不新增并行 suite、测试角色或生产授权。沿正式三员 Bootstrap、真实密码/MFA、Platform AuthContext 和 Gateway 路由验证本批新增接口；不使用管理员访问 Tenant 业务数据。2026-10-06 用户确认查询及预算配置验收范围，测试规范 5.2 节已同步扩展限定例外；生产权限模型不变。
 
@@ -835,7 +835,25 @@ Monitor 查询证书与 health、collector、节点准入身份分离，私钥�
 - 上述 Manager 测试 Token Source 已由原任务补齐；检测到输入变化后再次运行 `make test-go`，全部 Go 模块完整退出 0，先前编译失败不作为当前通过证据，也不删除其历史记录。
 - `python3 scripts/ci/check-online-ci-registration.py --repository .`、设计文档围栏/引用文件检查及 `git diff --check` 通过。默认 `make test-changed` 仍因其他 Owner 的测试连接参数缺失在预检退出，后续未运行；未覆盖的跨 Owner T2 由既有 Release/T2 标准 Job 承接，未运行项不计为通过。
 
-前序迁移 192 仍未提交，本批不夹带其他任务改动，尚未提交、推送或执行扩展后的 Hosted T4。原 `456d3bb84` 的 T4 通过只证明原节点/目标采集链路，不能覆盖新增查询与预算 API；中心故障时业务不受影响、停用后不复用历史及恢复后的新 API 样本仍须该次真实 Hosted 结果证明。下一步先完成连续迁移的提交依赖，再提交本批并手工运行同一个 suite 取得新证据。
+上述迁移未提交状态属于实施期间的验证记录。2026-10-06 用户提交并推送 `v0.1.22`（`794450a30`），已包含连续迁移 000192/000193、资源查询与预算配置实现，以及同一 suite 的 Hosted 验收扩展；提交依赖已解除。当前提交上重新执行 `make test-node-metrics-online-runner`，17 项确定性检查及 System 身份夹具检查通过，Online CI 登记一致。已手工触发 [扩展 Hosted T4 run 37485747576](https://github.com/pampa0629/addp/actions/runs/37485747576)，验收对象固定为 `794450a30`，目标 Job 已完成并通过（16 分 36 秒）。原 `456d3bb84` 的通过只证明原节点/目标采集链路，不能覆盖新增查询与预算 API；中心故障时业务不受影响、停用后不复用历史及恢复后的新 API 样本已由本轮真实结果证明，具体证据如下。
+
+本轮业务报告、独立清理摘要与归档已下载并逐项核对：
+
+| 真实验收范围 | 实际结果 |
+| --- | --- |
+| 构建与运行身份 | `online-report.json` 为 `passed`，前检 `repository_clean=true`；System/Gateway/Monitor 的 `git_commit` 均为完整 `794450a30`，构建 ID 与源码 fingerprint 按标准前检校验；使用独占 `addp_online` |
+| 八项即时/趋势资源查询 | `resource_query=true`；八项指标的单位、有限值、采样/评估时间、完整网格、节点版本与目标保存版本均通过断言；不是协议夹具 |
+| 查询预算 CAS 与热生效 | `query_budget_cas_hot_read=true`，恢复后的预算版本为 2；陈旧版本更新返回 409 且不改变状态，降限后的新请求拒绝超额指标，合法单指标请求与恢复后的完整查询消费对应保存版本，`pending_restart=false` |
+| Platform/Tenant/Service 隔离 | `identity_isolation=true`、`query_identity_isolation=true`；真实 MFA 平台系统管理员执行限定操作，平台安全管理员、独立采集身份、两个非默认 Tenant 与匿名身份拒绝查询及预算接口，拒绝写入不改变版本 |
+| 中心故障与恢复 | `center_query_outage_recovery=true`；中心中断时查询明确失败，Monitor Ready 与两个租户执行列表继续可用，恢复后的八项新有效 API 样本通过 |
+| 节点重启用与停用 | `node_query_resume_fresh_samples=true`、`disabled_query_does_not_reuse_history=true`；重启用后核对当前节点/目标版本及晚于激活界线的八项新样本，节点或目标停用后即时/趋势均为 `not_connected` 与 null |
+| 来源、控制面与目标撤除 | `source_outage_recovery=true`、`control_outage_recovery=true`、`node_and_target_removal=true`；发现失败保留最后成功目标，成功空列表撤除，保存/活动配置版本 2 的证据与管理 CAS 验证均通过 |
+| 独立退出清理 | `summary.txt` 的 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`；业务报告的待部署销毁标记必须与该独立摘要联合读取，不能单独报告整体通过 |
+| 安全归档 | 18 个文件无 Secret env/私钥文件，无私钥正文或完整 IAM 不透明凭据；秘密目录由 Hosted 生命周期销毁，核验使用本轮正式 IAM 前缀，不输出凭据内容 |
+
+本轮在测试规范已批准的同一一次性部署与身份范围内执行，未新增角色、接口、suite、夜间调度或启动路线，没有重启个人开发服务。`make test-node-metrics-online-runner` 和 Online CI 登记检查通过；任务文档空白、围栏与链接校验通过。`794450a30` 的既有 Release/T2 中 Monitor metrics 与 Monitor PostgreSQL 两个 Job 均已通过；整仓结果仍待其他 Job 完成，OceanBase Job 因下载 `go-toml/v2@v2.2.4` 的 HTTP/2 `INTERNAL_ERROR` 失败，测试包未编译完成，当前工作流未结束时重跑请求未接受，不计为通过。默认 `make test-changed` 因共享工作区其他 Common/模块变更需要的 PostgreSQL、MySQL/OceanBase 等 T2 参数缺失在预检退出，后续未执行，也不计为通过。
+
+本次证据只覆盖该 Linux VM 的八项基础指标与平台权限链路。生产 T5、cAdvisor、更多指标及用户资源查询页面仍未交付；下一批优先把已验收的八项即时/趋势查询接入 Console 节点资源视图，继续明确展示关闭、未配置、陈旧与缺失状态。
 
 ### 10.23 平台监测目标管理前端
 

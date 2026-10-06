@@ -120,7 +120,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - `internal/resourcequery/` 唯一维护 8 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率、文件系统、磁盘/网络速率尚未发布。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
 - `/settings/resource-query-policy` 沿用模块级 `monitor.configuration.read/update`，仅 Platform User，唯一 `monitor.resource_query_policy` 单例保存 CAS 版本与完整预算。每个查询读一次已提交预算，对新请求热生效；没有环境回退或重启要求。标准平台审计记录安全结果与保存版本，不记录 PromQL、Token 或内部地址。
 - mTLS 查询部署输入独立于节点准入和 collector；关闭或不完整配置不阻断业务。生产只通过标准生命周期的 `metrics-query.yml` 挂载，不增加必需 Infra 依赖。
-- Go T1、Monitor PostgreSQL 及 System IAM Migration T2 沿既有标准入口自动发现；查询链路已扩展同一个 `platform-node-metrics` Hosted suite 的断言与独立查询身份接线，尚未取得扩展后的真实 T4 结果；页面与后续指标须分批补齐，不能以先前节点/目标采集 T4 代替本批 API 验收。
+- Go T1、Monitor PostgreSQL 及 System IAM Migration T2 沿既有标准入口自动发现；同一个 `platform-node-metrics` suite 已在 `794450a30` 取得扩展后的真实 Hosted T4（run 37485747576），覆盖八项即时/趋势查询、预算 CAS/热生效、权限隔离、中心故障与新样本恢复、停用后不复用历史及独立清理零残留；具体证据见设计 10.22 节。用户资源查询页面、更多指标和生产 T5 仍须分批补齐，该次 Linux VM 通过不代表生产纳管覆盖。
 
 ## 平台监测目标管理前端
 
