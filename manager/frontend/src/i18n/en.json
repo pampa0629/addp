@@ -1524,12 +1524,21 @@
           "gpsDateStamp": "Source UTC Date",
           "gpsTimeHMS": "Source UTC Time (hours, minutes, seconds)",
           "gpsDateTimeUTC": "GPS Receiver Time (UTC)",
+          "gpsSpeedRef": "Source Speed Unit",
+          "gpsSpeed": "Source Speed",
+          "gpsTrackRef": "Movement Direction Reference",
+          "gpsTrackDegrees": "Movement Direction (degrees)",
+          "gpsImageDirectionRef": "Image Direction Reference",
+          "gpsImageDirectionDegrees": "Image Direction (degrees)",
           "graphModel": "Graph Model",
           "graphDirected": "Directed",
           "graphNodeCount": "Nodes",
           "graphRelationshipCount": "Relationships"
         },
         "fieldTooltips": {
+          "gpsSpeed": "Keeps the source speed value; the source speed unit is independent. A missing unit is not defaulted to km/h.",
+          "gpsTrack": "GPS receiver movement direction, independent of image direction. A missing true/magnetic reference is not defaulted; no device trajectory is inferred.",
+          "gpsImageDirection": "Direction of the image when captured, independent of movement and pixel rotation. A missing true/magnetic reference is not defaulted; no camera pose is inferred.",
           "captureLocation": "Records the acquisition device location, not image ground coverage. An unknown datum must not be treated as WGS84.",
           "gpsAltitude": "Preserves the source absolute value. Altitude Reference distinguishes above and below sea level; this is not ellipsoidal height.",
           "gpsClock": "From complete GPS UTC date and time, summed exactly then truncated to nanoseconds; this is not the camera shutter time.",
@@ -1559,6 +1568,15 @@
           "5": "SOS and ISO Speed",
           "6": "REI and ISO Speed",
           "7": "SOS, REI and ISO Speed"
+        },
+        "gpsSpeedUnit": {
+          "K": "Kilometers per Hour",
+          "M": "Miles per Hour",
+          "N": "Knots"
+        },
+        "gpsBearingReference": {
+          "T": "True North",
+          "M": "Magnetic North"
         },
         "gpsDirection": {
           "N": "North",

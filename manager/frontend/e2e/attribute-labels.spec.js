@@ -75,6 +75,40 @@ for (const locale of ['zh-cn', 'en']) {
     })
   }
 
+  for (const unit of ['K', 'M', 'N', null]) {
+    test(`shows independent GPS motion sources (${unit ?? 'missing refs'}) in ${locale}`, async ({ page }) => {
+      const gps = { speed: 0, track_degrees: 12.5, image_direction_degrees: 359.99 }
+      if (unit) Object.assign(gps, { speed_ref: unit, track_ref: 'T', image_direction_ref: 'M' })
+      await openAttributes(page, locale, {
+        item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+        format_info: { jpeg: { exif_status: 'parsed', exif: { gps } } }
+      })
+      const labels = locale === 'zh-cn'
+        ? ['源移动速度单位', '源移动速度', '移动方向参考', '移动方向（度）', '图像方向参考', '图像方向（度）']
+        : ['Source Speed Unit', 'Source Speed', 'Movement Direction Reference', 'Movement Direction (degrees)', 'Image Direction Reference', 'Image Direction (degrees)']
+      for (const [i, key] of ['speed_ref', 'speed', 'track_ref', 'track_degrees', 'image_direction_ref', 'image_direction_degrees'].entries()) {
+        const label = page.getByText(`EXIF / GPS / ${labels[i]}`, { exact: true })
+        if (key in gps) await expect(label).toBeVisible()
+        else await expect(label).toHaveCount(0)
+      }
+      for (const value of ['0', '12.5', '359.99']) await expect(page.getByText(value, { exact: true })).toBeVisible()
+      const units = locale === 'zh-cn' ? { K: '千米/小时', M: '英里/小时', N: '节' }
+        : { K: 'Kilometers per Hour', M: 'Miles per Hour', N: 'Knots' }
+      for (const [code, label] of Object.entries(units)) {
+        if (unit === code) await expect(page.getByText(label, { exact: true })).toBeVisible()
+        else await expect(page.getByText(label, { exact: true })).toHaveCount(0)
+      }
+      for (const label of locale === 'zh-cn' ? ['真北', '磁北'] : ['True North', 'Magnetic North']) {
+        if (unit) await expect(page.getByText(label, { exact: true })).toBeVisible()
+        else await expect(page.getByText(label, { exact: true })).toHaveCount(0)
+      }
+      await expect(page.getByText(`EXIF / GPS / ${labels[3]}`, { exact: true })).toHaveAttribute('title',
+        locale === 'zh-cn' ? /与图像方向独立/ : /independent of image direction/)
+      await expect(page.getByText(`EXIF / GPS / ${labels[5]}`, { exact: true })).toHaveAttribute('title',
+        locale === 'zh-cn' ? /与移动方向及像素旋转方向独立/ : /independent of movement and pixel rotation/)
+    })
+  }
+
   for (const clockCase of ['complete', 'date-only', 'time-only', 'leap', 'invalid']) {
     test(`shows GPS UTC source clock without inventing missing time (${clockCase}) in ${locale}`, async ({ page }) => {
       const gps = { version_id: [2, 3, 0, 0] }

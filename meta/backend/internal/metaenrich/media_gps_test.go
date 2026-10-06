@@ -185,20 +185,19 @@ func TestEnrichJPEGRefreshReplacesMediaSnapshot(t *testing.T) {
 	}
 }
 
-// Extend the independent GPS IFD with clock tags while preserving the existing
-// rational offsets and the original camera Orientation entry.
-func gpsClockJPEGContent(t *testing.T, date string, clock []uint32) []byte {
+// Extend the independent GPS IFD while preserving rational offsets and Orientation.
+type gpsAdditionalTag struct {
+	id, typ uint16
+	count   uint32
+	raw     []byte
+}
+
+func gpsExtendedJPEGContent(t *testing.T, tags []gpsAdditionalTag) []byte {
 	t.Helper()
 	content := gpsJPEGContent(t, "WGS-84", 'A')
 	end := 4 + int(binary.BigEndian.Uint16(content[4:6]))
 	metadata := append([]byte{}, content[12:end]...)
-	count := 7
-	if date != "" {
-		count++
-	}
-	if clock != nil {
-		count++
-	}
+	count := 7 + len(tags)
 	newIFD := len(metadata)
 	metadata = append(metadata, make([]byte, 2+count*12+4)...)
 	order := binary.LittleEndian
@@ -206,21 +205,17 @@ func gpsClockJPEGContent(t *testing.T, date string, clock []uint32) []byte {
 	order.PutUint16(metadata[newIFD:], uint16(count))
 	copy(metadata[newIFD+2:], metadata[40:124])
 	at := newIFD + 2 + 7*12
-	add := func(tag, typ uint16, count uint32, raw []byte) {
-		order.PutUint16(metadata[at:], tag)
-		order.PutUint16(metadata[at+2:], typ)
-		order.PutUint32(metadata[at+4:], count)
-		order.PutUint32(metadata[at+8:], uint32(len(metadata)))
-		metadata = append(metadata, raw...)
+	for _, tag := range tags {
+		order.PutUint16(metadata[at:], tag.id)
+		order.PutUint16(metadata[at+2:], tag.typ)
+		order.PutUint32(metadata[at+4:], tag.count)
+		if len(tag.raw) <= 4 {
+			copy(metadata[at+8:at+12], tag.raw)
+		} else {
+			order.PutUint32(metadata[at+8:], uint32(len(metadata)))
+			metadata = append(metadata, tag.raw...)
+		}
 		at += 12
-	}
-	if clock != nil {
-		var raw bytes.Buffer
-		_ = binary.Write(&raw, order, clock)
-		add(7, 5, 3, raw.Bytes())
-	}
-	if date != "" {
-		add(29, 2, 11, []byte(date+"\x00"))
 	}
 	payload := append([]byte("Exif\x00\x00"), metadata...)
 	header := []byte{0xff, 0xe1, 0, 0}
@@ -228,6 +223,20 @@ func gpsClockJPEGContent(t *testing.T, date string, clock []uint32) []byte {
 	result := append(append([]byte{}, content[:2]...), header...)
 	result = append(result, payload...)
 	return append(result, content[end:]...)
+}
+
+func gpsClockJPEGContent(t *testing.T, date string, clock []uint32) []byte {
+	t.Helper()
+	var tags []gpsAdditionalTag
+	if clock != nil {
+		var raw bytes.Buffer
+		_ = binary.Write(&raw, binary.LittleEndian, clock)
+		tags = append(tags, gpsAdditionalTag{7, 5, 3, raw.Bytes()})
+	}
+	if date != "" {
+		tags = append(tags, gpsAdditionalTag{29, 2, 11, []byte(date + "\x00")})
+	}
+	return gpsExtendedJPEGContent(t, tags)
 }
 
 func TestEnrichJPEGGPSUTCClockReplacement(t *testing.T) {

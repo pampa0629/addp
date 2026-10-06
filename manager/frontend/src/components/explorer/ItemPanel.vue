@@ -1013,10 +1013,19 @@ const fieldPathLabelKeys = {
   'format_info.jpeg.exif.gps.map_datum': 'manager.explorer.attributes.fields.gpsDatum',
   'format_info.jpeg.exif.gps.date_stamp': 'manager.explorer.attributes.fields.gpsDateStamp',
   'format_info.jpeg.exif.gps.time_hms': 'manager.explorer.attributes.fields.gpsTimeHMS',
-  'format_info.jpeg.exif.gps.date_time_utc': 'manager.explorer.attributes.fields.gpsDateTimeUTC'
+  'format_info.jpeg.exif.gps.date_time_utc': 'manager.explorer.attributes.fields.gpsDateTimeUTC',
+  'format_info.jpeg.exif.gps.speed_ref': 'manager.explorer.attributes.fields.gpsSpeedRef',
+  'format_info.jpeg.exif.gps.speed': 'manager.explorer.attributes.fields.gpsSpeed',
+  'format_info.jpeg.exif.gps.track_ref': 'manager.explorer.attributes.fields.gpsTrackRef',
+  'format_info.jpeg.exif.gps.track_degrees': 'manager.explorer.attributes.fields.gpsTrackDegrees',
+  'format_info.jpeg.exif.gps.image_direction_ref': 'manager.explorer.attributes.fields.gpsImageDirectionRef',
+  'format_info.jpeg.exif.gps.image_direction_degrees': 'manager.explorer.attributes.fields.gpsImageDirectionDegrees'
 }
 
 const fieldTooltipKeys = {
+  'format_info.jpeg.exif.gps.speed': 'manager.explorer.attributes.fieldTooltips.gpsSpeed',
+  'format_info.jpeg.exif.gps.track_degrees': 'manager.explorer.attributes.fieldTooltips.gpsTrack',
+  'format_info.jpeg.exif.gps.image_direction_degrees': 'manager.explorer.attributes.fieldTooltips.gpsImageDirection',
   'format_info.jpeg.exif.gps.date_time_utc': 'manager.explorer.attributes.fieldTooltips.gpsClock',
   'capabilities.spatial.capture_location.latitude': 'manager.explorer.attributes.fieldTooltips.captureLocation',
   'capabilities.spatial.capture_location.longitude': 'manager.explorer.attributes.fieldTooltips.captureLocation',
@@ -1681,6 +1690,12 @@ const formatAttributeDisplay = (pathParts, value) => {
   }
   if (['format_info.jpeg.exif.gps.latitude_ref', 'format_info.jpeg.exif.gps.longitude_ref'].includes(path)) {
     return formatMappedValue('manager.explorer.attributes.gpsDirection', value)
+  }
+  if (path === 'format_info.jpeg.exif.gps.speed_ref') {
+    return formatMappedValue('manager.explorer.attributes.gpsSpeedUnit', value)
+  }
+  if (['format_info.jpeg.exif.gps.track_ref', 'format_info.jpeg.exif.gps.image_direction_ref'].includes(path)) {
+    return formatMappedValue('manager.explorer.attributes.gpsBearingReference', value)
   }
   if (path === 'format_info.jpeg.exif.gps.status') {
     return formatMappedValue('manager.explorer.attributes.gpsStatus', value)

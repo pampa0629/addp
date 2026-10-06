@@ -1524,12 +1524,21 @@
           "gpsDateStamp": "源 UTC 日期",
           "gpsTimeHMS": "源 UTC 时间（时、分、秒）",
           "gpsDateTimeUTC": "GPS 接收机时间（UTC）",
+          "gpsSpeedRef": "源移动速度单位",
+          "gpsSpeed": "源移动速度",
+          "gpsTrackRef": "移动方向参考",
+          "gpsTrackDegrees": "移动方向（度）",
+          "gpsImageDirectionRef": "图像方向参考",
+          "gpsImageDirectionDegrees": "图像方向（度）",
           "graphModel": "图模型",
           "graphDirected": "有向图",
           "graphNodeCount": "节点数",
           "graphRelationshipCount": "关系数"
         },
         "fieldTooltips": {
+          "gpsSpeed": "保留源速度数值；单位由源移动速度单位独立声明，缺失时不补千米/小时。",
+          "gpsTrack": "GPS 接收机的移动方向，与图像方向独立；真北／磁北参考缺失时不补值，不推导设备轨迹。",
+          "gpsImageDirection": "图像拍摄时的方向，与移动方向及像素旋转方向独立；真北／磁北参考缺失时不补值，不推导相机姿态。",
           "captureLocation": "记录采集设备的拍摄位置，不表示影像地面覆盖范围。基准未知时不能按 WGS84 定位。",
           "gpsAltitude": "保留源绝对值；海拔参考区分海平面以上和以下，不表示椭球高。",
           "gpsClock": "来自完整的 GPS UTC 日期与时间，精确合计后截取到纳秒；不表示相机快门时间。",
@@ -1559,6 +1568,15 @@
           "5": "SOS 和 ISO 感光速度",
           "6": "REI 和 ISO 感光速度",
           "7": "SOS、REI 和 ISO 感光速度"
+        },
+        "gpsSpeedUnit": {
+          "K": "千米/小时",
+          "M": "英里/小时",
+          "N": "节"
+        },
+        "gpsBearingReference": {
+          "T": "真北",
+          "M": "磁北"
         },
         "gpsDirection": {
           "N": "北纬",

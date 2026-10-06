@@ -59,6 +59,7 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 		key, allowed string
 	}{
 		{1, "latitude_ref", "NS"}, {3, "longitude_ref", "EW"}, {9, "status", "AV"},
+		{12, "speed_ref", "KMN"}, {14, "track_ref", "TM"}, {16, "image_direction_ref", "TM"},
 	} {
 		if !ifd.hasTag(field.tag) {
 			continue
@@ -94,11 +95,22 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 			gps["altitude_ref"] = int(ref[0])
 		}
 	}
-	if ifd.hasTag(6) {
-		value, ok := exifRational(ifd, 6, false)
+	for _, field := range []struct {
+		tag   uint16
+		key   string
+		angle bool
+	}{
+		{6, "altitude_meters", false}, {13, "speed", false},
+		{15, "track_degrees", true}, {17, "image_direction_degrees", true},
+	} {
+		if !ifd.hasTag(field.tag) {
+			continue
+		}
+		value, ok := exifRational(ifd, field.tag, false)
+		ok = ok && (!field.angle || value <= 359.99)
 		valid = valid && ok
 		if ok {
-			gps["altitude_meters"] = value
+			gps[field.key] = value
 		}
 	}
 	if ifd.hasTag(18) {
