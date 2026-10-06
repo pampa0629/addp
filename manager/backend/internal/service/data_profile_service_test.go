@@ -115,6 +115,19 @@ func TestDataProfileServiceFailedRefreshDoesNotReplaceSuccessfulResult(t *testin
 	}
 }
 
+func TestDataProfileServiceMissingSourceAuthorizationDoesNotPublishProfile(t *testing.T) {
+	previous := &dataprofile.Profile{SchemaVersion: dataprofile.SchemaVersionV2, Mode: dataprofile.ModeSample}
+	profiles := &dataProfileServiceTestProfileStore{profile: previous}
+	executions := &dataProfileServiceTestExecutionStore{}
+	sampler := &dataProfileServiceTestSampler{sampleErr: ErrDataProfileSourceAuthorizationRequired}
+	NewDataProfileService(profiles, executions, sampler, &dataProfileServiceTestProtectionGate{}).runExecution(
+		context.Background(), &DataProfileTarget{ItemFingerprint: "item"}, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, "config", &commonExecution.TaskExecution{TenantID: 7, ExecutionID: "execution-1"},
+	)
+	if profiles.replaceCalls != 0 || profiles.profile != previous || executions.completed || executions.failedCode != "source_authorization_required" {
+		t.Fatalf("unauthorized sample published: writes=%d completed=%v code=%s", profiles.replaceCalls, executions.completed, executions.failedCode)
+	}
+}
+
 func TestDataProfileServiceRejectsResultWhenProtectionChangesDuringSampling(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

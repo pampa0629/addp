@@ -54,6 +54,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	}
 
 	secrets := testBuiltinServiceClientSecrets("initial")
+	secrets["addp-prometheus"] = "prometheus-0123456789abcdef0123456789abcdef"
 	provisioner, err := iam.NewServiceCredentialProvisioner(iam.NewRepository(db), nil)
 	if err != nil {
 		t.Fatalf("create service credential provisioner: %v", err)
@@ -217,9 +218,34 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 		t.Fatalf("ambiguous service context status = %d body=%s", response.Code, response.Body.String())
 	}
 
+	prometheusResponse := performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-prometheus", secrets["addp-prometheus"])
+	if prometheusResponse.Code != http.StatusOK {
+		t.Fatalf("Prometheus platform grant status=%d body=%s", prometheusResponse.Code, prometheusResponse.Body.String())
+	}
+	var prometheusToken struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(prometheusResponse.Body.Bytes(), &prometheusToken); err != nil || prometheusToken.AccessToken == "" {
+		t.Fatalf("Prometheus token: %v", err)
+	}
+	prometheusContext, err := runtime.AuthContextService.ResolveAccessToken(ctx, prometheusToken.AccessToken)
+	if err != nil {
+		t.Fatalf("Prometheus AuthContext: %v", err)
+	}
+	if prometheusContext.Context.Type != "platform" || prometheusContext.Principal.Type != "service_principal" || prometheusContext.Token.Type != "service_access_token" || prometheusContext.Delegation != nil || len(prometheusContext.Authorization.RoleAssignments) != 1 || !slices.Equal(prometheusContext.Authorization.RoleAssignments[0].Permissions, []string{"monitor.metrics_discovery.read"}) {
+		t.Fatalf("Prometheus context=%#v", prometheusContext)
+	}
+	tenantPrometheus := performIAMOAuthClientCredentialsFormRequest(t, router, "addp-prometheus", secrets["addp-prometheus"], url.Values{"tenant_id": {strconv.FormatInt(tenantID, 10)}})
+	if tenantPrometheus.Code == http.StatusOK {
+		t.Fatal("Prometheus obtained Tenant credential")
+	}
+
 	rotatedSecrets := testBuiltinServiceClientSecrets("rotated")
 	if err := provisioner.Apply(ctx, rotatedSecrets); err != nil {
 		t.Fatalf("rotate service credentials: %v", err)
+	}
+	if _, err := runtime.AuthContextService.ResolveAccessToken(ctx, prometheusToken.AccessToken); err == nil {
+		t.Fatal("Prometheus token remained valid after optional credential removal")
 	}
 	if _, err := runtime.AuthContextService.ResolveAccessToken(ctx, tokenPayload.AccessToken); err == nil {
 		t.Fatal("service token remained valid after credential rotation")
@@ -515,6 +541,7 @@ func testBuiltinServiceClientSecrets(prefix string) map[string]string {
 		"addp-model":        prefix + "-model-0123456789abcdef0123456789abcdef",
 		"addp-model3d":      prefix + "-model3d-0123456789abcdef0123456789abcdef",
 		"addp-monitor":      prefix + "-monitor-0123456789abcdef0123456789abcdef",
+		"addp-prometheus":   "",
 		"addp-log-observer": prefix + "-log-observer-0123456789abcdef0123456789",
 		"addp-orchestrator": prefix + "-orchestrator-0123456789abcdef0123456789abcdef",
 		"addp-portal":       prefix + "-portal-0123456789abcdef0123456789abcdef",

@@ -26,7 +26,8 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 		route := c.FullPath()
-		if system == nil || !strings.HasPrefix(route, "/api/v1/monitor/platform/log-") || route == "/api/v1/monitor/platform/log-observations" {
+		isTarget := strings.HasPrefix(route, "/api/v1/monitor/platform/monitoring_targets")
+		if system == nil || (!isTarget && !strings.HasPrefix(route, "/api/v1/monitor/platform/log-")) || route == "/api/v1/monitor/platform/log-observations" {
 			return
 		}
 		identity, ok := commonauth.AuthContextFromGin(c)
@@ -46,6 +47,16 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 		}
 		path, method, id := c.Request.URL.Path, c.Request.Method, uuid.NewString()
 		request := &models.AuditLogCreateRequest{EventName: event, ModuleName: "monitor", Result: result, RiskLevel: "medium", EntityType: "log_pipeline", EntityID: "platform", ResourcePath: &path, HTTPMethod: &method, HTTPStatus: &status, RequestID: &id, Details: map[string]any{"source_principal_id": identity.Principal.ID, "source_principal_type": "user"}}
+		if isTarget {
+			request.EventName = "platform.monitoring_target.manage"
+			if c.Request.Method == http.MethodGet {
+				request.EventName = "platform.monitoring_target.read"
+			}
+			request.EntityType = "monitoring_target"
+			if id, err := uuid.Parse(c.Param("id")); err == nil && id.String() == c.Param("id") {
+				request.EntityID = id.String()
+			}
+		}
 		if strings.HasSuffix(route, "/log-notification-deliveries/:id/retry") {
 			request.Details["operation"] = "retry"
 			if parsed, err := uuid.Parse(c.Param("id")); err == nil && parsed.String() == c.Param("id") {
@@ -64,7 +75,7 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err := system.AppendPlatformAuditEvent(ctx, request); err != nil {
-			log.Print("platform log operation audit append failed")
+			log.Print("platform monitor operation audit append failed")
 		}
 	}
 }

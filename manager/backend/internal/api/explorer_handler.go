@@ -11,10 +11,12 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	commonauth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/preview"
@@ -43,10 +45,11 @@ func writeCatalogPreviewError(c *gin.Context, err error) bool {
 // ExplorerHandler 数据探查 API Handler（新版本）
 // 基于 ResourceLocator URI 系统
 type ExplorerHandler struct {
-	explorerService *service.ExplorerService
-	previewResolver *preview.PreviewResolver
-	metadataService *service.MetadataService
-	protectionStore explorerProtectionStore
+	explorerService      *service.ExplorerService
+	previewResolver      *preview.PreviewResolver
+	metadataService      *service.MetadataService
+	protectionStore      explorerProtectionStore
+	previewSourceChecker managerprotection.PreviewSourceChecker
 }
 
 type explorerProtectionStore interface {
@@ -60,12 +63,14 @@ func NewExplorerHandler(
 	previewResolver *preview.PreviewResolver,
 	metadataService *service.MetadataService,
 	protectionStore explorerProtectionStore,
+	previewSourceChecker managerprotection.PreviewSourceChecker,
 ) *ExplorerHandler {
 	return &ExplorerHandler{
-		explorerService: explorerService,
-		previewResolver: previewResolver,
-		metadataService: metadataService,
-		protectionStore: protectionStore,
+		explorerService:      explorerService,
+		previewResolver:      previewResolver,
+		metadataService:      metadataService,
+		protectionStore:      protectionStore,
+		previewSourceChecker: previewSourceChecker,
 	}
 }
 
@@ -84,6 +89,7 @@ func bearerToken(c *gin.Context) string {
 // @Description 根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more
 // @Description Redis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only
 // @Description 键列表含有界原生值样本：string 最多 256 字节，集合最多 3 个条目；truncated 表示样本不完整 | Key lists include bounded native value samples: up to 256 bytes for strings or 3 collection entries; truncated marks an incomplete sample
+// @Description PostgreSQL 使用当前用户或委托工具凭据核验不可变分页计划的全部来源，并应用本地字段保护；未授权来源或依赖无法证明时拒绝读取 | PostgreSQL checks every source of an immutable page plan with the current user or delegated tool credential and applies local field protection; unauthorized or unprovable sources are rejected before reading
 // @Param key_cursor query string false "键空间浏览游标 | Keyspace browse cursor"
 // @Param key_name query string false "规范内容键令牌 k:Base64URL | Canonical content key token k:Base64URL"
 // @Param key_prefix query string false "UTF-8 字面键名前缀，最多 64 KiB；保留空格、不解释通配符，可与 key_cursor 同用，与非空 key_name 互斥 | Literal UTF-8 key prefix, up to 64 KiB; whitespace preserved, no wildcards, allowed with key_cursor, mutually exclusive with nonempty key_name"
@@ -102,9 +108,10 @@ func bearerToken(c *gin.Context) string {
 // @Param graph_to_labels query string false "关系终点 label set，逗号分隔 | Relationship target label set, comma separated"
 // @Success 200 {object} map[string]interface{} "预览数据 | Preview data"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "凭据无效 | Invalid credential"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
-// @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
+// @Failure 503 {object} map[string]interface{} "引擎或授权服务不可用 | Engine or authorization service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /preview [get]
@@ -169,7 +176,13 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		}
 	}
 	if err == nil {
-		result, err = h.previewResolver.Preview(c.Request.Context(), req)
+		store, _ := h.protectionStore.(managerprotection.PreviewQueryProtectionStore)
+		var tenant uint
+		if tenantID != nil {
+			tenant = *tenantID
+		}
+		execute := managerprotection.PreviewQueryExecutor(h.previewSourceChecker, store, tenant, req.Engine.ID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), protectionSubject)
+		result, err = h.previewResolver.PreviewWithQueryExecutor(c.Request.Context(), req, execute)
 		if err == nil {
 			err = applyPreviewProtection(result, protectionRules, protectionSubject)
 			if err != nil {
@@ -179,6 +192,9 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		}
 	}
 	if err != nil {
+		if writePreviewAuthorizationError(c, err) {
+			return
+		}
 		if writeCatalogPreviewError(c, err) {
 			return
 		}
@@ -212,6 +228,22 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 
 	// 根据 API 设计规范：查询单个资源直接返回对象
 	c.JSON(http.StatusOK, result)
+}
+
+func writePreviewAuthorizationError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, commonClient.ErrManagerPreviewCredentialRejected):
+		managerError(c, http.StatusUnauthorized, commoni18n.MsgUnauthorized)
+	case errors.Is(err, commonClient.ErrManagerPreviewReadDenied), errors.Is(err, preview.ErrSourceAuthorizationRequired):
+		accessDeniedToEngine(c)
+	case errors.Is(err, commonClient.ErrManagerPreviewReadUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, commoni18n.MsgAuthorizationServiceUnavailable), "error_code": "authorization_service_unavailable"})
+	case errors.Is(err, managerprotection.ErrRequired):
+		protectionRequired(c)
+	default:
+		return false
+	}
+	return true
 }
 
 // ResourceFacts 返回不含原始数据行的资源事实。

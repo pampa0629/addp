@@ -8,9 +8,12 @@ import (
 	"time"
 
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/monitor/internal/metricsdiscovery"
 )
 
 type Config struct {
+	MetricsEnabled bool
+	MetricsPolicy  *metricsdiscovery.SourcePolicy
 	// 服务配置
 	ServerPort      string
 	LogObserverNode string
@@ -131,6 +134,7 @@ func LoadConfig() (*Config, error) {
 		EmailFromName:           "ADDP Monitor",
 	}
 
+	cfg.MetricsEnabled, cfg.MetricsPolicy = loadMetricsPolicy()
 	return cfg, nil
 }
 

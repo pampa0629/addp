@@ -32,7 +32,8 @@ func SetupRouter(
 	lifecycle *modulelifecycle.Controller,
 	logPipeline *service.LogPipelineService,
 	logNotifications *service.PlatformLogNotifications,
-	runtimeHealthServices ...*service.RuntimeHealthService,
+	runtimeHealthService *service.RuntimeHealthService,
+	monitoringTargets *service.MonitoringTargetService,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -63,8 +64,8 @@ func SetupRouter(
 	statisticsHandler := NewStatisticsHandler(statisticsService)
 	healthHandler := NewHealthHandler(healthService)
 	var runtimeHealthHandler *RuntimeHealthHandler
-	if len(runtimeHealthServices) > 0 && runtimeHealthServices[0] != nil {
-		runtimeHealthHandler = NewRuntimeHealthHandler(runtimeHealthServices[0])
+	if runtimeHealthService != nil {
+		runtimeHealthHandler = NewRuntimeHealthHandler(runtimeHealthService)
 	}
 	alertHandler := NewAlertHandler(alertService)
 	alertRuleHandler := NewAlertRuleHandler(alertRuleService)
@@ -114,6 +115,13 @@ func SetupRouter(
 
 	}
 
+	targetHandler := NewMonitoringTargetHandler(monitoringTargets)
+	platform.GET("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), monitoringTargetIdentity(false), targetHandler.List)
+	platform.GET("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), monitoringTargetIdentity(false), targetHandler.Get)
+	platform.POST("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetCreate), monitoringTargetIdentity(false), targetHandler.Create)
+	platform.PUT("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetUpdate), monitoringTargetIdentity(false), targetHandler.Update)
+	platform.DELETE("/platform/monitoring_targets/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetDelete), monitoringTargetIdentity(false), targetHandler.Delete)
+	platform.GET("/platform/metrics_discovery", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMetricsDiscoveryRead), monitoringTargetIdentity(true), targetHandler.Discovery)
 	api.Use(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
 		commonAuth.MustNewContextGuard("tenant"),

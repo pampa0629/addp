@@ -134,6 +134,7 @@ func Load() *Config {
 			"addp-model":        getEnv("MODEL_SERVICE_CLIENT_SECRET", ""),
 			"addp-ontology":     getEnv("ONTOLOGY_SERVICE_CLIENT_SECRET", ""),
 			"addp-model3d":      getEnv("MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
+			"addp-prometheus":   getEnv("PROMETHEUS_SERVICE_CLIENT_SECRET", ""),
 			"addp-log-observer": getEnv("LOG_OBSERVER_SERVICE_CLIENT_SECRET", ""),
 			"addp-monitor":      getEnv("MONITOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-orchestrator": getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
@@ -180,22 +181,30 @@ func Load() *Config {
 		AllowedOrigins: allowedOrigins,
 		TrustedProxies: trustedProxies,
 	}
-	cfg.configureLogObserver()
+	cfg.configureOptionalObservers()
 	return cfg
 }
 
-// Optional log collection must not invalidate required business client credentials.
-func (c *Config) configureLogObserver() {
-	secret := c.ServiceClientSecrets["addp-log-observer"]
-	valid := commonconfig.RuntimeLogDeploymentState() == "enabled" && len(secret) >= 32 && len(secret) <= 72 && secret == strings.TrimSpace(secret)
-	for clientID, value := range c.ServiceClientSecrets {
-		if clientID != "addp-log-observer" && value == secret {
+// Optional observers are independently disabled without invalidating business clients.
+func (c *Config) configureOptionalObservers() {
+	logValid := c.observerCredentialValid("addp-log-observer", commonconfig.RuntimeLogDeploymentState() == "enabled")
+	metricsValid := c.observerCredentialValid("addp-prometheus", os.Getenv("ADDP_OBSERVABILITY_METRICS_ENABLED") == "true")
+	if !logValid {
+		c.ServiceClientSecrets["addp-log-observer"] = ""
+	}
+	if !metricsValid {
+		c.ServiceClientSecrets["addp-prometheus"] = ""
+	}
+}
+func (c *Config) observerCredentialValid(clientID string, enabled bool) bool {
+	secret := c.ServiceClientSecrets[clientID]
+	valid := enabled && len(secret) >= 32 && len(secret) <= 72 && secret == strings.TrimSpace(secret)
+	for id, value := range c.ServiceClientSecrets {
+		if id != clientID && value == secret {
 			valid = false
 		}
 	}
-	if !valid {
-		c.ServiceClientSecrets["addp-log-observer"] = ""
-	}
+	return valid
 }
 
 func splitAndTrim(value string) []string {

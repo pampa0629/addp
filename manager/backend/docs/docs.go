@@ -2500,7 +2500,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more\nRedis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only\n键列表含有界原生值样本：string 最多 256 字节，集合最多 3 个条目；truncated 表示样本不完整 | Key lists include bounded native value samples: up to 256 bytes for strings or 3 collection entries; truncated marks an incomplete sample",
+                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more\nRedis 键值数据集需先完成 Meta 扫描；key_cursor 浏览一个实时 SCAN 批次，key_name 选择原生键值，二者互斥且仅 page=1 | Redis keyspace requires scanned Meta identity; key_cursor browses a live SCAN batch, key_name selects one native value; mutually exclusive and page=1 only\n键列表含有界原生值样本：string 最多 256 字节，集合最多 3 个条目；truncated 表示样本不完整 | Key lists include bounded native value samples: up to 256 bytes for strings or 3 collection entries; truncated marks an incomplete sample\nPostgreSQL 使用当前用户或委托工具凭据核验不可变分页计划的全部来源，并应用本地字段保护；未授权来源或依赖无法证明时拒绝读取 | PostgreSQL checks every source of an immutable page plan with the current user or delegated tool credential and applies local field protection; unauthorized or unprovable sources are rejected before reading",
                 "produces": [
                     "application/json"
                 ],
@@ -2610,6 +2610,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "凭据无效 | Invalid credential",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "403": {
                         "description": "无权访问 | Access denied",
                         "schema": {
@@ -2625,7 +2632,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "引擎不可用 | Engine unavailable",
+                        "description": "引擎或授权服务不可用 | Engine or authorization service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7276,7 +7283,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "error_code": {
-                    "description": "稳定执行错误码；protection_version_changed 表示规则已变化，须重新执行 | Stable execution error code; protection_version_changed requires explicit rerun after protection changes.",
+                    "description": "稳定执行错误码；protection_version_changed 表示规则已变化，source_authorization_required 表示缺少独立执行源授权、本次未读取源数据 | Stable execution error code; protection_version_changed means rules changed; source_authorization_required means execution source authorization is missing and no source rows were read.",
                     "type": "string"
                 },
                 "execution_id": {

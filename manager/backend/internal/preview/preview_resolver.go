@@ -180,6 +180,12 @@ type ResourceFacts struct {
 
 // Preview 执行预览。预览必须基于已经由 Meta 扫描入库的节点或 item。
 func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverRequest) (*PreviewResult, error) {
+	return r.PreviewWithQueryExecutor(ctx, req, nil)
+}
+
+// PreviewWithQueryExecutor binds request-scoped authorization without storing
+// credentials on the shared resolver. PostgreSQL has no unchecked fallback.
+func (r *PreviewResolver) PreviewWithQueryExecutor(ctx context.Context, req *PreviewResolverRequest, execute PreparedPreviewExecutor) (*PreviewResult, error) {
 	// 1. 验证参数
 	if req.Locator == nil {
 		return nil, fmt.Errorf("locator is required")
@@ -197,6 +203,7 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 	if err != nil {
 		return nil, err
 	}
+	providerReq.executePrepared = execute
 
 	// 4. 按 Meta 标准属性确定性选择预览插件
 	provider, err := r.resolveProviderByMeta(req, providerReq)

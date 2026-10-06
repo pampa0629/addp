@@ -27,11 +27,25 @@ engines/
 | Runtime | 当前开发启动 | 依赖支持与后续工作 |
 | --- | --- | --- |
 | Spark Workflow | 原生 Python 3.11/3.12 + OpenJDK 11 | 已统一标准启动、重启、停止；macOS 配置本机 `host.docker.internal` 映射，Worker 使用 Docker 内置解析 |
-| GeoPython Workflow | Docker | [GDAL 提供 macOS 安装方式](https://gdal.org/en/latest/download.html)；下一步优先改原生，核对 GDAL Python 绑定及 PGeo 的 MDBTools/ODBC 驱动链 |
-| PointCloud Workflow | Docker | [PDAL 支持 macOS 环境](https://pdal.org/en/stable/quickstart.html)；需核对本机 PDAL 的 COPC、E57、PCD 驱动和临时目录契约 |
-| Document Workflow | Docker | [LibreOffice 支持 Intel 与 Apple Silicon macOS](https://hr.libreoffice.org/get-help/install-howto/macos/)；需核对 headless 转换、中文字体和独立 profile |
+| GeoPython Workflow | Docker | [GDAL 提供 macOS 安装方式](https://gdal.org/en/latest/download.html)；可采用独立 Python 环境与同版本 GDAL 绑定，PGeo 另需 MDBTools/ODBC。开发启动切换时必须同步拆开现有栅格 T4 的产品镜像启动 |
+| PointCloud Workflow | Docker | [PDAL 支持 macOS 环境](https://pdal.org/en/stable/quickstart.html)；建议在 Runtime 独立环境安装 PDAL，继续使用 `POINTCLOUD_PDAL_BIN`，预检 COPC、LAS、E57、PCD、text 驱动及可写临时目录 |
+| Document Workflow | Docker | [LibreOffice 支持 Intel 与 Apple Silicon macOS](https://hr.libreoffice.org/get-help/install-howto/macos/)；可继续用 `DOCUMENT_LIBREOFFICE_BIN` 绑定原生程序，现有转换已为每次执行创建独立 profile，仍需验证中文字体与多页 PPTX 转 PDF |
 | SuperMap Workflow | Docker，当前接入 Linux ARM64 C++ SDK | 先核对同版本 SDK 的 macOS 支持及许可；不能从当前 Linux 制品推断厂商仅支持 Linux |
 | Math、Model3D、DuckDB、Jupyter | 原生进程 | 保持当前标准生命周期；Model3D 的外部转换器依赖另行核对平台范围 |
+
+### GeoPython 原生开发候选方案
+
+2026-10-05 的本机只读盘点发现：`venv` 与测试用 `.venv` 均继承 Anaconda 的系统包，加载 GDAL 3.6.2，缺少 PGeo 驱动；测试环境的 `pip check` 还报告了继承的 Spyder、Numba 等无关包冲突。Homebrew 已安装 GDAL 3.12.1 和 unixODBC，但尚未安装 MDBTools。Homebrew 的 `ogrinfo --formats` 在隔离 Anaconda 环境变量后可发现 PGeo、ODBC、OpenFileGDB 与 GPKG。这些结果只证明依赖路线可行，尚不代表原生 Python 绑定、真实 MDB 读取或 Runtime 启动验收通过。
+
+建议采用以下单一路线，实施范围由用户确认后再调整生命周期：
+
+- 以独立 Python 3.12 虚拟环境安装完整 requirements 与 editable Common Python，不继承系统 site-packages；[Python GDAL 绑定](https://gdal.org/en/stable/api/python/python_bindings.html)与所链接的原生 GDAL 版本匹配，不直接加载 Homebrew 为另一 Python 主次版本编译的扩展。
+- GDAL/PROJ 资源目录由所选原生依赖派生，只注入 GeoPython 子进程，隔离终端继承的 `GDAL_DATA`、`GDAL_DRIVER_PATH`、`PROJ_DATA` 与 `PROJ_LIB`，保持离线坐标处理。
+- 按 [PGeo 官方配置要求](https://gdal.org/en/stable/drivers/vector/pgeo.html)补齐 MDBTools ODBC 驱动与 Access 驱动名；优先使用 Runtime 专属 ODBC 配置，不改宿主机其他应用的配置。
+- 标准 start/restart/stop 使用原生进程身份、监听归属和健康检查；预检失败保留已有服务，删除开发镜像启动路径。应用统一使用现有产品的单 Worker、四线程 Gunicorn 语义，先监听再异步注册，不新增另一条 Flask 开发入口。原生消费回环数据源时不注入容器专用的 `GEOPYTHON_WORKFLOW_LOOPBACK_HOST`。System 注册、访问计划与业务引擎连接事实继续由现有模块拥有。
+- 栅格 Hosted T4 通过根 `make build-images` 构建并独立启动产品镜像，核验实际 image ID、默认入口和退出清理；不再借开发入口证明产品构建身份。现有 ArcGIS 集成入口的 `docker exec` 前置条件也必须同步调整。
+
+最小验证范围包括 `make test-dev-lifecycle`、`make test-geopython-workflow`、`make test-raster-online-runner`、`make test-platform` 和按变更影响计算的 `make test-changed`。真实 Access/PGeo 样本及 Oracle Spatial 往返沿用 `make test-arcgis-open-formats`；完整跨模块栅格与 Console 链路使用已登记的 `raster-workflow` Hosted T4。确定性测试通过不能替代原生依赖和产品镜像各自的真实运行证据。
 
 ## 引擎分类
 

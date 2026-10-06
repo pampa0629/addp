@@ -27,9 +27,9 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/asset.log"; then
     echo "Asset PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
-go test ./internal/service -run '^TestDashboardStatsAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/dashboard.log"
-if grep -q -- '--- SKIP:' "$WORK_DIR/dashboard.log"; then
-    echo "Asset PostgreSQL dashboard gate refuses skipped tests" >&2
+go test ./internal/service -run '^Test(DashboardStats|AssetKeywordSearchCurrentFacts)AgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/service.log"
+if grep -q -- '--- SKIP:' "$WORK_DIR/service.log"; then
+    echo "Asset PostgreSQL service gate refuses skipped tests" >&2
     exit 1
 fi
 go test ./internal/service -run '^TestCategoryServiceSubtreeAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/category-subtree.log"

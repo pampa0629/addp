@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/datatype"
@@ -18,6 +19,71 @@ import (
 	"github.com/addp/manager/internal/preview"
 	managerprotection "github.com/addp/manager/internal/protection"
 )
+
+func TestPreviewAuthorizationErrorsAreStableAndDoNotExposeUpstreamDetails(t *testing.T) {
+	for _, test := range []struct {
+		err    error
+		status int
+	}{
+		{commonClient.ErrManagerPreviewCredentialRejected, 401},
+		{commonClient.ErrManagerPreviewReadDenied, 403},
+		{commonClient.ErrManagerPreviewReadUnavailable, 503},
+		{preview.ErrSourceAuthorizationRequired, 403},
+		{managerprotection.ErrRequired, 403},
+	} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/preview", nil)
+		if !writePreviewAuthorizationError(c, errors.Join(test.err, errors.New("secret-current-credential"))) || w.Code != test.status || strings.Contains(w.Body.String(), "secret-current-credential") {
+			t.Fatalf("unstable or unsafe authorization response: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestPreparedPreviewProtectionIsAppliedWithoutLeafRulesAndFiltersSpatialMetadata(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		calls := 0
+		table := &models.TablePreview{
+			Columns: []string{"id", "shape"}, Rows: []map[string]interface{}{{"id": 1, "shape": "private"}},
+			Fields:          []datatype.FieldInfo{{Name: "id"}, {Name: "shape"}},
+			ColumnMetadata:  []models.ColumnMetadata{{ColumnName: "id"}, {ColumnName: "shape"}},
+			GeometryColumns: []string{"shape"}, GeometryColumn: "shape", SRID: 4326, SourceSRID: 4326,
+			SourceCRS: "EPSG:4326", TransformStatus: "not_transformed", PreviewHint: "spatial",
+			Extent: []float64{1, 2, 3, 4},
+			PreparedProtection: &dataprotection.PreparedTableProtection{Apply: func(result *plugin.QueryResult) error {
+				calls++
+				result.Columns = []string{"id"}
+				if !empty {
+					result.Rows = []map[string]interface{}{{"id": 1}}
+				}
+				return nil
+			}},
+		}
+		if empty {
+			table.Rows = nil
+		}
+		if err := applyPreviewProtection(&preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}); err != nil || calls != 1 {
+			t.Fatalf("prepared protection skipped or applied twice: %v calls=%d", err, calls)
+		}
+		if len(table.Columns) != 1 || len(table.Fields) != 1 || len(table.ColumnMetadata) != 1 || len(table.GeometryColumns) != 0 || table.GeometryColumn != "" || table.SRID != 0 || table.SourceSRID != 0 || table.SourceCRS != "" || table.Extent != nil || table.TransformStatus != "" || table.PreviewHint != "" {
+			t.Fatalf("suppressed spatial metadata was retained: %#v", table)
+		}
+		if !empty {
+			if _, exists := table.Rows[0]["shape"]; exists {
+				t.Fatal("replacement protected rows not used")
+			}
+		}
+	}
+}
+
+func TestPreparedPreviewProtectionFailureDoesNotFallbackToUnmanagedRows(t *testing.T) {
+	for _, apply := range []func(*plugin.QueryResult) error{nil, func(*plugin.QueryResult) error { return errors.New("unsafe projection") }} {
+		table := &models.TablePreview{PreparedProtection: &dataprotection.PreparedTableProtection{Apply: apply}}
+		if !errors.Is(applyPreviewProtection(&preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}), managerprotection.ErrRequired) {
+			t.Fatal("prepared protection failure was ignored")
+		}
+	}
+}
 
 func TestPreviewCatalogErrorDoesNotExposeNativeDetails(t *testing.T) {
 	for kind, status := range map[plugin.EngineCatalogErrorKind]int{plugin.EngineCatalogErrorNotFound: 404, plugin.EngineCatalogErrorInvalidPath: 400, plugin.EngineCatalogErrorUnsupported: 400, plugin.EngineCatalogErrorUnavailable: 503} {

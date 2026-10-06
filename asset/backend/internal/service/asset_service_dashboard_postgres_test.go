@@ -13,25 +13,7 @@ import (
 )
 
 func TestDashboardStatsAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("ASSET_POSTGRES_TEST_DSN")
-	if dsn == "" {
-		t.Skip("set ASSET_POSTGRES_TEST_DSN to addp_test or an isolated disposable database")
-	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := db.Exec("DROP SCHEMA IF EXISTS asset CASCADE").Error; err != nil {
-			t.Errorf("clean asset test schema: %v", err)
-		}
-	})
-	if err := db.Exec("DROP SCHEMA IF EXISTS asset CASCADE").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := repository.Migrate(db); err != nil {
-		t.Fatal(err)
-	}
+	db := openAssetServicePostgresTestDB(t)
 
 	typeDefinition := models.TypeDefinition{TenantID: 0, Name: "Data application", Code: "application", Enabled: true}
 	if err := db.Create(&typeDefinition).Error; err != nil {
@@ -79,4 +61,39 @@ func TestDashboardStatsAgainstPostgres(t *testing.T) {
 	if len(stats.PublishTrend) != 1 || stats.PublishTrend[0].Count != 1 || len(stats.ApplicationTrend) != 1 || stats.ApplicationTrend[0].Count != 1 {
 		t.Fatalf("dashboard trends = publish %#v application %#v", stats.PublishTrend, stats.ApplicationTrend)
 	}
+}
+
+func TestAssetKeywordSearchCurrentFactsAgainstPostgres(t *testing.T) {
+	testAssetKeywordSearchRechecksCurrentFacts(t, openAssetServicePostgresTestDB(t))
+}
+
+func openAssetServicePostgresTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := os.Getenv("ASSET_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ASSET_POSTGRES_TEST_DSN to addp_test or an isolated disposable database")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := db.Exec("DROP SCHEMA IF EXISTS asset CASCADE").Error; err != nil {
+			t.Errorf("clean asset test schema: %v", err)
+		}
+		if err := pool.Close(); err != nil {
+			t.Errorf("close asset test database: %v", err)
+		}
+	})
+	if err := db.Exec("DROP SCHEMA IF EXISTS asset CASCADE").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	return db
 }

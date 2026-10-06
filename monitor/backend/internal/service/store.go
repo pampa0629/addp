@@ -18,7 +18,7 @@ func EnsureMonitorStore(db *gorm.DB) error {
 		&monitorModels.WebhookDelivery{},
 		&monitorModels.EmailDestination{},
 		&monitorModels.EmailDelivery{},
-		&monitorModels.RuntimePolicy{},
+		&monitorModels.RuntimePolicy{}, &monitorModels.MonitoringTarget{},
 		&monitorModels.SMTPRelay{},
 		&monitorModels.LogPipelinePolicy{}, &monitorModels.LogPipelineNode{}, &monitorModels.LogObserverBoot{},
 		&monitorModels.PlatformLogIncident{}, &monitorModels.PlatformLogEvent{}, &monitorModels.PlatformLogDestination{}, &monitorModels.PlatformLogDelivery{},

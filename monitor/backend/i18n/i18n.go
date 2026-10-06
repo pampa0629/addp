@@ -11,6 +11,17 @@ var localeFS embed.FS
 
 // Monitor 模块消息 key 常量
 const (
+	MsgMetricsInvalid      = "monitor.metrics.invalid"
+	MsgMetricsUnavailable  = "monitor.metrics.unavailable"
+	MsgMetricsTimeout      = "monitor.metrics.timeout"
+	MsgMetricsDisabled     = "monitor.metrics.disabled"
+	MsgMetricsUnconfigured = "monitor.metrics.unconfigured"
+	MsgMetricsBudget       = "monitor.metrics.budget"
+	MsgMetricsConflict     = "monitor.metrics.conflict"
+	MsgMetricsNotFound     = "monitor.metrics.notfound"
+	MsgMetricsBusy         = "monitor.metrics.busy"
+	MsgMetricsAdmission    = "monitor.metrics.admission"
+
 	MsgLogUnconfigured              = "monitor.platform_log.unconfigured"
 	MsgLogDisabled                  = "monitor.platform_log.disabled"
 	MsgLogRetryUnavailable          = "monitor.platform_log.retry_unavailable"

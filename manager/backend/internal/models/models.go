@@ -3,6 +3,7 @@ package models
 import (
 	"time"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/exportartifact"
@@ -138,6 +139,9 @@ type TablePreview struct {
 	KeyValue            *plugin.KeyValuePreview        `json:"key_value,omitempty"`
 	ItemMeta            *EngineCatalogFacts            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
 	Advisories          []PreviewAdvisory              `json:"preview_advisories,omitempty"`
+
+	PreparedProtection *dataprotection.PreparedTableProtection `json:"-"`
+
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
 	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
 	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API

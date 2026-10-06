@@ -80,12 +80,31 @@ func TestLogObserverConfigurationDoesNotInvalidateBusinessCredentials(t *testing
 	} {
 		t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", tc.state)
 		c := &Config{ServiceClientSecrets: map[string]string{"addp-manager": strings.Repeat("m", 32), "addp-log-observer": tc.observer}}
-		c.configureLogObserver()
+		c.configureOptionalObservers()
 		if (c.ServiceClientSecrets["addp-log-observer"] != "") != tc.active {
 			t.Fatalf("selection %s: unexpected observer credential state", tc.state)
 		}
 		if c.ServiceClientSecrets["addp-manager"] != strings.Repeat("m", 32) {
 			t.Fatal("business credential changed")
+		}
+	}
+}
+
+func TestOptionalObserversCannotShareCredentials(t *testing.T) {
+	t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", "true")
+	t.Setenv("ADDP_OBSERVABILITY_METRICS_ENABLED", "true")
+	shared := strings.Repeat("p", 32)
+	c := &Config{ServiceClientSecrets: map[string]string{"addp-prometheus": shared, "addp-log-observer": shared, "addp-monitor": strings.Repeat("m", 32)}}
+	c.configureOptionalObservers()
+	if c.ServiceClientSecrets["addp-prometheus"] != "" || c.ServiceClientSecrets["addp-log-observer"] != "" || c.ServiceClientSecrets["addp-monitor"] == "" {
+		t.Fatal("optional credential collision was not independently disabled")
+	}
+	for _, flag := range []string{"false", "invalid", "true"} {
+		t.Setenv("ADDP_OBSERVABILITY_METRICS_ENABLED", flag)
+		c := &Config{ServiceClientSecrets: map[string]string{"addp-prometheus": shared, "addp-monitor": strings.Repeat("m", 32)}}
+		c.configureOptionalObservers()
+		if (c.ServiceClientSecrets["addp-prometheus"] != "") != (flag == "true") {
+			t.Fatalf("invalid metrics selection %q activated a client", flag)
 		}
 	}
 }

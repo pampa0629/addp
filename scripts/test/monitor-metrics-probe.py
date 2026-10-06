@@ -53,6 +53,17 @@ def query(expression):
     return api('query?' + urllib.parse.urlencode({'query': expression}))['result']
 
 
+def job_is_up(job, expected):
+    rows = query('up{job="' + job + '"}')
+    return len(rows) == 1 and rows[0]['value'][1] == expected
+
+
+def self_sample_ready():
+    rows = query('process_resident_memory_bytes{job="prometheus"}')
+    return (job_is_up('prometheus', '1') and len(rows) == 1
+            and float(rows[0]['value'][1]) > 0)
+
+
 def eventually(check, label, seconds=65):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -105,9 +116,9 @@ def valid_sample():
 
 
 eventually(valid_sample, 'real mTLS scrape and controlled job label')
-assert query('up{job="prometheus"}')[0]['value'][1] == '1'
-assert float(query('process_resident_memory_bytes{job="prometheus"}')[0]['value'][1]) > 0
-assert query('up{job="fixture"}')[0]['value'][1] == '1'
+# Scrape jobs have independent initial offsets; fixture readiness is not self readiness.
+eventually(self_sample_ready, 'center self scrape and resident memory')
+assert job_is_up('fixture', '1')
 initial_sample_time = query('addp_fixture_resource_bytes{job="fixture"}')[0]['value'][0]
 # Write atomically without replacing the bind-mounted source directory.
 def source_text(text):
@@ -125,10 +136,10 @@ source_text(''.join(f'addp_fixture_overflow{{index="{i}"}} {i}\n' for i in range
 eventually(exceeded, 'sample overflow is a visible scrape failure')
 assert query('addp_fixture_overflow') == [], 'overflow must not admit a partial sample set'
 source_text('addp_fixture_resource_bytes{job="spoof"} 4096\n')
-eventually(lambda: query('up{job="fixture"}')[0]['value'][1] == '1', 'budget recovery')
+eventually(lambda: job_is_up('fixture', '1'), 'budget recovery')
 
 compose('stop', 'metrics-source')
-eventually(lambda: query('up{job="fixture"}')[0]['value'][1] == '0', 'source outage remains a collection failure')
+eventually(lambda: job_is_up('fixture', '0'), 'source outage remains a collection failure')
 assert get(base + '/-/ready')
 compose('start', 'metrics-source')
 eventually(valid_sample, 'source recovery')

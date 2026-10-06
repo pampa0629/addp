@@ -1297,6 +1297,7 @@
         "noResult": "No profile is available",
         "retry": "Run Again",
         "latestFailed": "The latest profile failed. Please run profiling again.",
+        "sourceAuthorizationRequired": "Source authorization for profiling execution is not yet available. No source data was read; existing successful results are unchanged.",
         "protectionVersionChanged": "Protection rules changed and this profile was not saved. Please run profiling again.",
         "stale": "Stale",
         "current": "Current",

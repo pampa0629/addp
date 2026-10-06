@@ -18,4 +18,10 @@ describe('data profile execution feedback', () => {
     expect(profileFailureMessage({ status: 'failed', error: 'unsafe stored details' }, translate(zh))).toBe('最近一次剖析失败，请重新执行。')
     expect(profileFailureMessage({ status: 'timeout' }, translate(en))).toBe('The latest profile failed. Please run profiling again.')
   })
+
+  it('explains missing execution source authorization without suggesting unsafe retries', () => {
+    const execution = { status: 'failed', error_code: 'source_authorization_required', error: 'unsafe source details' }
+    expect(profileFailureMessage(execution, translate(zh))).toBe('剖析执行的源数据授权尚未接通，本次未读取源数据。已有成功结果不受影响。')
+    expect(profileFailureMessage(execution, translate(en))).toBe('Source authorization for profiling execution is not yet available. No source data was read; existing successful results are unchanged.')
+  })
 })

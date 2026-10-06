@@ -34,6 +34,46 @@ definitions:
       step_id:
         type: string
     type: object
+  github_com_addp_monitor_internal_metricsdiscovery.NodeSource:
+    properties:
+      endpoint:
+        type: string
+      type:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_metricsdiscovery.NodeSubject:
+    properties:
+      kind:
+        type: string
+      node_id:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_metricsdiscovery.NodeTarget:
+    properties:
+      enabled:
+        type: boolean
+      id:
+        type: string
+      monitor_kind:
+        type: string
+      source:
+        $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSource'
+      subject:
+        $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSubject'
+      version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_metricsdiscovery.TargetGroup:
+    properties:
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+      targets:
+        items:
+          type: string
+        type: array
+    type: object
   github_com_addp_monitor_internal_models.AlertIncident:
     properties:
       acknowledged_at:
@@ -655,6 +695,36 @@ definitions:
       notifications:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.MonitoringTargetInput:
+    properties:
+      enabled:
+        type: boolean
+      monitor_kind:
+        type: string
+      source:
+        $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSource'
+      subject:
+        $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSubject'
+      version:
+        type: integer
+    required:
+    - enabled
+    type: object
+  github_com_addp_monitor_internal_service.MonitoringTargetPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeTarget'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
   github_com_addp_monitor_internal_service.ProviderBackendHealthStatus:
     properties:
       base_url:
@@ -1220,6 +1290,14 @@ definitions:
       suppressed_until:
         type: string
       version:
+        type: integer
+    required:
+    - version
+    type: object
+  internal_api.MonitoringTargetVersion:
+    properties:
+      version:
+        minimum: 1
         type: integer
     required:
     - version
@@ -2902,6 +2980,376 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.log_pipeline.update
+  /platform/metrics_discovery:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.TargetGroup'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取受认证指标发现 | Get authenticated metrics discovery
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.metrics_discovery.read
+  /platform/monitoring_targets:
+    get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.MonitoringTargetPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询监测目标 | List monitoring targets
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.monitoring_target.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 目标配置与版本 | Target configuration and version
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.MonitoringTargetInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeTarget'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建监测目标 | Create monitoring target
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.monitoring_target.create
+  /platform/monitoring_targets/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 目标 UUID | Target UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 目标配置与版本 | Target configuration and version
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.MonitoringTargetVersion'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除监测目标 | Delete monitoring target
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.monitoring_target.delete
+    get:
+      parameters:
+      - description: 目标 UUID | Target UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeTarget'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取监测目标 | Get monitoring target
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.monitoring_target.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 目标 UUID | Target UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 目标配置与版本 | Target configuration and version
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.MonitoringTargetInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeTarget'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新监测目标 | Update monitoring target
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.monitoring_target.update
   /providers/{module}/health:
     get:
       description: 从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready

@@ -1297,6 +1297,7 @@
         "noResult": "暂无剖析结果",
         "retry": "重新执行",
         "latestFailed": "最近一次剖析失败，请重新执行。",
+        "sourceAuthorizationRequired": "剖析执行的源数据授权尚未接通，本次未读取源数据。已有成功结果不受影响。",
         "protectionVersionChanged": "保护规则已变化，本次剖析结果未保存。请重新执行剖析。",
         "stale": "已过期",
         "current": "当前",

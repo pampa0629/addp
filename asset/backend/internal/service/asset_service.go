@@ -104,6 +104,25 @@ type BatchCategoryRequest struct {
 
 // List 查询资产列表（分页 + 过滤）。关键词搜索只走 Asset 自己的搜索投影。
 func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWithType, int64, error) {
+	query := s.db.Table("asset.assets a").
+		Select("a.*, t.name as type_name, t.code as type_code, c.name as category_name").
+		Joins("LEFT JOIN asset.type_definitions t ON t.id = a.type_id").
+		Joins("LEFT JOIN asset.categories c ON c.id = a.category_id").
+		Where("a.tenant_id = ?", tenantID)
+	if params.Status != "" {
+		query = query.Where("a.status = ?", params.Status)
+	}
+	if params.TypeID > 0 {
+		query = query.Where("a.type_id = ?", params.TypeID)
+	}
+	if params.CategoryIDs != nil {
+		if len(params.CategoryIDs) == 1 && params.CategoryIDs[0] == -1 {
+			query = query.Where("a.category_id IS NULL")
+		} else {
+			query = query.Where("a.category_id IN ?", params.CategoryIDs)
+		}
+	}
+
 	if params.Keyword != "" {
 		if !s.indexer.Enabled() {
 			return nil, 0, errors.New("Asset search projection is unavailable")
@@ -124,11 +143,8 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 			return []AssetWithType{}, msResult.Total, nil
 		}
 		var assets []AssetWithType
-		if err := s.db.Table("asset.assets a").
-			Select("a.*, t.name as type_name, t.code as type_code, c.name as category_name").
-			Joins("LEFT JOIN asset.type_definitions t ON t.id = a.type_id").
-			Joins("LEFT JOIN asset.categories c ON c.id = a.category_id").
-			Where("a.tenant_id = ? AND a.id IN ?", tenantID, msResult.IDs).
+		// The published index supplies candidates, not authoritative current visibility.
+		if err := query.Where("a.status = ? AND a.id IN ?", "published", msResult.IDs).
 			Scan(&assets).Error; err != nil {
 			return nil, 0, err
 		}
@@ -146,25 +162,6 @@ func (s *AssetService) List(tenantID uint, params *AssetListParams) ([]AssetWith
 		return sorted, msResult.Total, nil
 	}
 
-	query := s.db.Table("asset.assets a").
-		Select("a.*, t.name as type_name, t.code as type_code, c.name as category_name").
-		Joins("LEFT JOIN asset.type_definitions t ON t.id = a.type_id").
-		Joins("LEFT JOIN asset.categories c ON c.id = a.category_id").
-		Where("a.tenant_id = ?", tenantID)
-
-	if params.Status != "" {
-		query = query.Where("a.status = ?", params.Status)
-	}
-	if params.TypeID > 0 {
-		query = query.Where("a.type_id = ?", params.TypeID)
-	}
-	if params.CategoryIDs != nil {
-		if len(params.CategoryIDs) == 1 && params.CategoryIDs[0] == -1 {
-			query = query.Where("a.category_id IS NULL")
-		} else {
-			query = query.Where("a.category_id IN ?", params.CategoryIDs)
-		}
-	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

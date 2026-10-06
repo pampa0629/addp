@@ -43,7 +43,7 @@ func TestTaskProviderDirectoryUsesExecutionReadAndOmitsBackends(t *testing.T) {
 	defer systemServer.Close()
 
 	healthService := service.NewHealthCheckService(taskProviderAuditLister{}, nil)
-	router := SetupRouter(nil, nil, healthService, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil)
+	router := SetupRouter(nil, nil, healthService, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/task-providers", nil)
 	request.Header.Set("Authorization", "Bearer addp_at_monitor")
 	response := httptest.NewRecorder()
@@ -76,7 +76,7 @@ func TestTaskProviderDirectoryUsesExecutionReadAndOmitsBackends(t *testing.T) {
 func TestSetupRouterRegistersExecutionTreeRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
 	for _, route := range router.Routes() {
 		if route.Method == "GET" && route.Path == "/api/v1/monitor/executions/:id/tree" {
 			return
@@ -88,7 +88,7 @@ func TestSetupRouterRegistersExecutionTreeRoute(t *testing.T) {
 func TestSetupRouterRegistersExecutionIDRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
 	routes := map[string]bool{}
 	for _, route := range router.Routes() {
 		if route.Method == "GET" {
@@ -106,7 +106,7 @@ func TestSetupRouterRegistersExecutionIDRoutes(t *testing.T) {
 func TestSetupRouterRegistersProviderHealthRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
 	routes := map[string]bool{}
 	for _, route := range router.Routes() {
 		if route.Method == "GET" {
@@ -133,7 +133,7 @@ func TestSetupRouterRegistersProviderHealthRoutes(t *testing.T) {
 func TestSetupRouterRegistersWebhookRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
 	routes := map[string]bool{}
 	for _, route := range router.Routes() {
 		routes[route.Method+" "+route.Path] = true
@@ -156,7 +156,7 @@ func TestSetupRouterRegistersWebhookRoutes(t *testing.T) {
 func TestSetupRouterRegistersEmailRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
 	routes := map[string]bool{}
 	for _, route := range router.Routes() {
 		routes[route.Method+" "+route.Path] = true
@@ -179,7 +179,7 @@ func TestSetupRouterRegistersEmailRoutes(t *testing.T) {
 func TestSetupRouterRegistersAlertRuleRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, "http://system.invalid", nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
 	routes := map[string]bool{}
 	for _, route := range router.Routes() {
 		routes[route.Method+" "+route.Path] = true
@@ -218,7 +218,7 @@ func TestListExecutionsUsesCanonicalTenantAuthContext(t *testing.T) {
 
 	repository := commonexecution.NewTaskExecutionRepository(db)
 	queryService := service.NewExecutionQueryService(repository)
-	router := SetupRouter(queryService, nil, nil, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil)
+	router := SetupRouter(queryService, nil, nil, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/executions?page_size=1", nil)
 	request.Header.Set("Authorization", "Bearer addp_at_monitor")

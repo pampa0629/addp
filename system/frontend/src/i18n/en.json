@@ -892,7 +892,9 @@
           "engine_raster_policy": "Raster Resource Policy",
           "engine_raster_policy_runtime": "Raster Runtime Policy Read",
           "host_node": "Platform node",
-          "observability_identity": "Observability identities"
+          "observability_identity": "Observability identities",
+          "monitoring_target": "Monitoring targets",
+          "metrics_discovery": "Metrics discovery"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
@@ -2023,6 +2025,10 @@
       "portal_runtime": {
         "name": "Portal Platform Runtime",
         "description": "Registers the Portal module and sends runtime heartbeats without user or tenant business permissions."
+      },
+      "prometheus_runtime": {
+        "name": "Metrics Collector Runtime",
+        "description": "Reads authenticated metrics discovery only; grants no node management or business access."
       }
     },
     "tenant": {

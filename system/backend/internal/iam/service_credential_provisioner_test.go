@@ -49,3 +49,30 @@ func TestLogObserverCredentialIsOptionalAndIndependent(t *testing.T) {
 		t.Fatal("required business credential became optional")
 	}
 }
+
+func TestPrometheusCredentialIsOptionalAndIndependent(t *testing.T) {
+	secrets := map[string]string{}
+	for i, id := range builtinServiceClientIDs {
+		secrets[id] = fmt.Sprintf("%032d", i+1)
+	}
+	secrets["addp-prometheus"] = ""
+	if err := validateBuiltinServiceSecrets(secrets); err != nil {
+		t.Fatal(err)
+	}
+	for _, other := range []string{"addp-monitor", "addp-log-observer"} {
+		secrets["addp-prometheus"] = secrets[other]
+		if err := validateBuiltinServiceSecrets(secrets); err == nil {
+			t.Fatalf("Prometheus borrowed %s credential", other)
+		}
+	}
+	secrets["addp-prometheus"] = ""
+	secrets["addp-monitor"] = ""
+	if err := validateBuiltinServiceSecrets(secrets); err == nil {
+		t.Fatal("required Monitor credential became optional")
+	}
+	for _, id := range builtinTenantRuntimeServiceClientIDs {
+		if id == "addp-prometheus" {
+			t.Fatal("Prometheus acquired tenant runtime scope")
+		}
+	}
+}

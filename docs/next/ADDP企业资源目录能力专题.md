@@ -3633,3 +3633,66 @@ Asset 每次启动无条件提交索引创建请求。Meilisearch 异步受理�
 - 本轮只修复初始化与启动重建的完成判定，不宣称普通资产投影更新已改成可靠投递，也不宣称真实响应丢失／进程退出的故障 T4 已通过。
 
 **下一步：** 用户在自己的终端执行 `./scripts/dev/restart.sh -asset`，使本轮修复进入运行二进制，再核实没有新增重复创建失败、设置及重建均得到成功回执。无需为本次 Asset 私有代码改动重启全部模块。之后继续 §26.79 尚未完成的当前权限／保护验收和隔离环境真实故障 T4；当前开发环境只读诊断不是正式 T4 通过证据。
+
+### 26.88 重启后的初始化复验与 Asset 搜索候选当前事实复核（2026-10-05）
+
+用户重启后继续推进。本轮遵守服务生命周期边界，只读核对运行实例和搜索任务；没有启停应用／Infra，没有写入开发业务数据、变更账号权限或清空正式索引。回归数据只由标准门禁写入 `addp_test`，SDK 搜索响应由进程内 HTTP 夹具提供。
+
+**运行核对（本地时间 23:20–23:30）：**
+
+- Manager、Catalog、Asset Ready 均为 200。Asset 已加载 §26.87 修复构建 `20261005T151647Z-asset-28247-JuXAWv`，实例 `5d063658-00ab-421a-9848-4da6d681ad40`；本次启动后三笔设置任务 `42368`／`42369`／`42370` 和清空任务 `42371` 全部成功，没有提交重复创建请求。此处清空由用户重启触发的正常 Asset 初始化执行，不是本轮 AI 操作。
+- Meilisearch 为 `1.54.3`，索引文档数量为 `catalog_entries=20250`、`manager_content_documents=970`、`asset_published=0`。这是新运行时点的事实，不能要求其等于迁移冻结快照；三个索引均非正在索引。
+- Manager 搜索出口仍为 `configured=true`、`isolated=false`。成功内容写入任务 `42330`–`42333` 和本次清理任务 `42375` 有正常关联回执；出口未人工解封。Catalog 近期新增写入也已成功，但 Asset 权威资产表为空，因此没有真实已上架资产可用于消费面正向／负向运行验收。
+
+**本轮修复：**
+
+检查消费搜索链路发现，关键词分支只按当前租户和索引命中 ID 回查数据库，忽略请求中的上架状态、类型和目录分类。索引更新延迟时，同租户已经下架的资产仍可能出现在消费搜索结果中；类型或分类变更也会令筛选失真。先在 `asset/CLAUDE.md` 明确候选和事实边界，再将数据库筛选移到关键词与普通列表共用的唯一路径；关键词分支额外限定当前 `published`，索引只负责匹配和相关度排序，不增加 SQL 关键词搜索旁路。
+
+- SDK HTTP 夹具按真实 SDK 的 `PUT` 设置请求校正后，T1 的 7 个场景真实复现旧逻辑错误返回下架、草稿及筛选不匹配的资产，退出码 1，日志 `/tmp/addp-asset-search-red-20261005.log`。修复后通过相同编排的 Go T1，日志 `/tmp/addp-asset-search-green-20261005.log`。
+- 用例覆盖当前上架状态、跨租户／已删除候选、类型变化、单分类／分类子树／未分类／空集合及原搜索排序。消费 API 回归使用原有普通消费权限，验证关键词搜索仍遵守当前上架和子树边界，不依赖管理权限。
+- 同一事实复核夹具接入现有 `make test-asset-postgres`；`make test-module MODULE=asset` 自动发现后端、前端和该 T2，已有 `release-and-t2-gates.yml` 的 Asset PostgreSQL Job 直接复验，无新增服务依赖或 CI 第二套实现。本次完整模块门禁退出码 0，日志 `/tmp/addp-asset-module-final-20261005.log`：平台 T0、Asset Go T1、前端 14 项测试及生产构建 T3、PostgreSQL schema／运营统计／7 个搜索复核场景／目录子树 T2 均通过；上一轮平台检查阻塞本次未再出现。不代表其他并行 Owner 的工作区门禁通过，也不是 T4。
+- 请求、响应、公开路由、权限 Key 与消费端调用均未改变；修复落实原有“消费面只展示当前已上架资产”的约定，不需要改 Swagger 产物。
+
+**尚未完成与下一步：**
+
+本轮读取修复尚未进入上述运行构建；AI 不接管服务。普通资产投影更新仍不是可靠投递，搜索 `total` 仍是索引估计值，复核后本页可能不足页大小，不能称精确计数／完整分页。用户已明确 Asset 内容非当前优先项，不再为它要求单独重启或继续扩展搜索改造；后续回到 Manager 实际读取的源授权主线。§26.79 的真实跨模块权限／保护验证、响应丢失和进程退出故障 T4 仍未通过，不用本轮 HTTP 夹具或 PostgreSQL T2 替代。
+
+### 26.89 回到源授权消费主线：当前凭据检查客户端与切换边界（2026-10-05）
+
+用户明确要求停止扩展 Asset，优先推进授权。本轮不启停应用或基础设施，不修改开发数据、账号权限或业务源端；保留并行会话改动。
+
+- 新增 `common/client/SystemServiceClient.CheckManagerPreviewRead`，消费 §26.68、§26.70 已有的唯一 System 检查接口。不新增 HTTP 路由、权限 Key、公开请求字段或 Swagger 契约。请求只提交完整精确目标集合；当前普通 User／固定 `data.preview` 委托凭据由调用方按请求传入，不获取 Tenant Service Token，不自报租户、主体或动作。
+- 无目标、超过 200 项、非法叶子或非法凭据在发送前拒绝；401／403 拒绝，不更换身份重试；通信、非 200、缺失观察时点、坏 JSON、超限响应或重定向均不可视为放行。不缓存成功，不返回访问 lease，不把上游正文或凭据相关诊断传播到 owner 日志。
+- 新增 Common T1 HTTP 夹具，覆盖普通／委托凭据、完整 C/D 集合、每次操作重新检查、非法输入、失败关闭及重定向不转发。沿用 `scripts/test/module-gate.py` 的 Common Go T1 自动发现与既有 Go CI；没有新增测试入口、数据库或服务依赖。最终客户端输入下，执行该标准编排发现的 Common Go T1，全包测试退出码 0；`git diff --check` 通过。HTTP 夹具不是真实 System／Manager T4。
+- 补跑 `make test-go` 在并行会话的 `monitor/backend/internal/service/monitoring_target.go` 未使用 import 处失败，日志 `/tmp/addp-authorization-client-go.log`；`make test-platform` 在既有 Runtime Log 生命周期夹具的五次 10 秒子进程超时处失败，日志 `/tmp/addp-authorization-client-platform.log`。均不算通过，不修理或覆盖并行监控改动。完整 `make test-changed`／共享依赖 T2 与真实访问 T4 未运行，现有 CI 仍负责共享消费者扩散及其已登记门禁；不能把本轮 Common T1 当作全工作区验收。
+
+**尚未切换的真实内容路径与必须确认的顺序：**
+
+Manager 的数据库预览与后台数据剖析共同调用同一 Resolver／数据库 Provider。浏览器预览已有固定 `manager.data_item.read` 当前凭据源检查；后台剖析必须使用自己的 `manager.data_profile.execute`／真实 execution 授权，不能借用普通预览凭据或服务账号继续旧读取。用户已确认：先切换 PostgreSQL 预览，暂时明确拒绝未贯通授权的后台剖析，不保留新旧读取旁路。实施结果见 §26.90。
+
+本轮仅完成请求客户端；尚未接入 Manager 正式内容读取，不宣称完整授权闭环。下一步是按确认顺序贯通 Provider 完整 ReadSet → System 当前源规则 → Common 本地 Security 保护 → 同一不可变 PreparedQuery 执行，随后验证 C/D 的允许、拒绝及视图完整依赖。不是继续做搜索迁移或泛化治理页面。
+
+### 26.90 PostgreSQL 预览单路径授权切换与后台剖析暂停（2026-10-06）
+
+按用户确认的顺序完成源码切换；本轮不启停服务／基础设施，不改变开发账号授权，不读写业务源数据。未修改并行 Monitor、System 和 Meta 血缘实现。
+
+**当前实现：**
+
+- PostgreSQL 普通预览与固定 Agent `data.preview` 工具共用同一受控链路：Provider 生成参数绑定的不可变分页计划 → 证明完整 `ReadSet`（视图及其底表）→ 以当前请求凭据调用 System 源规则检查 → 按该计划准备 Common 本地字段保护 → 执行同一计划一次 → 响应边界应用保护。当前主体来自可信认证上下文，不保存用户 Token，不换成机器身份，不缓存放行。
+- 任一来源未授权、来源集合缺失／不规范、授权服务不可达或字段保护准备失败，均不执行数据查询。删除 PostgreSQL 原 `ReadBatch` 预览通路；没有自由 SQL 输入、叶子单独放行、重新生成查询或旧读取回退。字段保护删除列时同步清理字段／空间辅助信息；保护函数替换行集合时，响应采用保护后的行。
+- 后台剖析旧的未核验采样路径已删除。独立 `manager.data_profile.execute` execution 源授权接通前，生产采样明确以 `source_authorization_required` 失败，不读取源行、不产生新结果、不覆盖既有成功结果；前端提供双语稳定提示。此限制针对后台剖析，不影响已经接通的 PostgreSQL 用户／工具预览。
+- 已同步 Manager 模块说明、预览／剖析规范、API 双语注释与 Swagger。现有 Manager PostgreSQL 门禁新增扫描 `internal/preview`，新测试沿用已登记的测试名前缀；Go、前端和 PostgreSQL 均命中既有 CI，无新入口、测试库或 Workflow。
+
+**已验证范围：**
+
+- 标准模块编排 `scripts/test/module-gate.py` 发现的 Manager Go T1 全包通过（最后模型字段调整后再次通过）。HTTP 夹具覆盖当前普通／委托凭据、全来源检查、检查／保护先于执行、任一失败执行次数为零，以及响应保护一致性。
+- `make test-manager-postgres` 通过：在 `addp_test` 随机隔离 schema 中验证真实主键分页、视图递归底表证明、实际结果及计划只消费一次，夹具自动清理。`make test-common-postgres` 完整门禁通过，覆盖 Provider 依赖证明、本地保护及已有 execution／export 相关契约。两者使用 Infra 状态核实的 PostgreSQL 端口 `25432`，未借用业务库。
+- `make test-manager-frontend` 通过：280 项 T1、118 项 E2E 和生产构建。`bash scripts/swagger/check-route-coverage.sh manager` 通过，覆盖 93 个路由方法；Swagger 已重新生成。结果日志前缀为 `/tmp/addp-manager-source-auth-`。
+
+**未通过／未运行，不能计为完成：**
+
+- `make test-go` 在 Meta 血缘字段粒度容量的两项断言失败（实际 100、预期 5000）；本轮 Common 和 Manager 包通过。`make test-platform` 在 Runtime Log 生命周期夹具的一个 10 秒子进程超时处失败。记录并保留并行改动，不恢复旧字段或改容量绕过检查。
+- `make test-changed` 因多个 Owner 的 T2 环境变量缺失而在预检停止，不代表全工作区通过。未运行含业务 MongoDB 夹具的完整 Manager 模块门禁；真实 System／Gateway／Manager 当前账号及工具调用的 T4 尚未运行，HTTP 夹具和 PostgreSQL T2 不能替代它们。
+- 本轮仅切换 PostgreSQL 表格预览，不宣称其他引擎的所有读取出口或整个数据授权闭环已经完成。源码尚需用户重启加载；涉及 Common，运行验收时由用户执行 `./scripts/dev/restart.sh -all`，AI 不接管服务。
+
+**下一优先项：** 贯通后台剖析的真实发起人 → 独立 execution 授权 → 每次受控计划全来源复核 → 结果提交与读取权限复核。现有 System execution audience 尚未包含 Manager，现有预览检查固定为用户／`data.preview`，不能直接复用为后台授权；剖析恢复必须扩展正式契约及标准门禁，不恢复旧采样或借用 Service Token 放行。

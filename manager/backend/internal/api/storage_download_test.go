@@ -146,7 +146,7 @@ func TestStorageStreamDeniesManagedRawContent(t *testing.T) {
 		"full_name": "bucket/report.pdf",
 		"attributes": {"item":{"layout":"single","format":"pdf"},"storage":{"physical_path":"report.pdf","bucket":"bucket"}}
 	}`), nil, nil)
-	handler := NewExplorerHandler(nil, nil, metadataService, apiDownloadProtectionGate{err: dataprotection.ErrDenied})
+	handler := NewExplorerHandler(nil, nil, metadataService, apiDownloadProtectionGate{err: dataprotection.ErrDenied}, nil)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -184,7 +184,7 @@ func TestStorageAssetDeniesManagedRawContent(t *testing.T) {
 		"full_name": "bucket/tiles/city",
 		"attributes": {"item":{"layout":"whole","format":"s3m"},"storage":{"physical_path":"tiles/city","bucket":"bucket"}}
 	}`), nil, nil)
-	handler := NewExplorerHandler(nil, nil, metadataService, apiDownloadProtectionGate{err: dataprotection.ErrDenied})
+	handler := NewExplorerHandler(nil, nil, metadataService, apiDownloadProtectionGate{err: dataprotection.ErrDenied}, nil)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

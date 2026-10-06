@@ -69,7 +69,7 @@ func TestLogObservationRequiresPlatformObserverServiceToken(t *testing.T) {
 			defer server.Close()
 			pipeline := service.NewLogPipelineService(nil, "node", nil, nil)
 			notifications := service.NewPlatformLogNotifications(nil, nil, false, nil, nil, 3, 0, 0, 0)
-			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), pipeline, notifications)
+			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), pipeline, notifications, nil, nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/platform/log-observations", bytes.NewBufferString(`{}`))
 			req.Header.Set("Authorization", "Bearer addp_at_fixture")
 			req.Header.Set("Content-Type", "application/json")
@@ -95,7 +95,7 @@ func TestPlatformLogDestinationsRejectEscalatedSubscriptions(t *testing.T) {
 	}))
 	defer server.Close()
 	notifications := service.NewPlatformLogNotifications(nil, nil, false, nil, nil, 3, 0, 0, 0)
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), service.NewLogPipelineService(nil, "node", nil, nil), notifications)
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), service.NewLogPipelineService(nil, "node", nil, nil), notifications, nil, nil)
 	for _, tc := range []struct {
 		method, path string
 		version      uint64

@@ -270,7 +270,7 @@ disabled 不尝试发送，不制造设施离线告警；unconfigured 表示已�
 
 ## 十、第一期开工契约（2026-10-05，目标设计，待实施）
 
-本节给出第一期的字段、行为及验收边界。字段与接口均为目标契约，当前代码、环境模板和 Swagger 尚未增加这些能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
+本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.16 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
 
 ### 10.1 节点与实例绑定
 
@@ -623,3 +623,32 @@ PostgreSQL 验证先核实当前 Infra 映射 `25432`，只使用标准入口管
 节点来源预留每端点 20,000 样本，中心自身预留 20,000，总预留 200,000，因而首批最多九个不同的启用节点端点。不同节点/类别不能共用同一物理入口；同一节点/类别不能重复启用。准入与投影有共同固定预算，投影再次检验；后续配置写事务仍须原子执行预算准入，本批纯内核不宣称数据库并发准入已经完成。预留不是历史活跃序列硬上限，也不证明 Prometheus 已应用配置；返回发现投影不能当作生效回执。
 
 本批测试层级为 Monitor Go T1（受控 DNS、真实本地 TLS 握手与协议边界）及平台 T0；沿用 `make test-go` 的模块自动发现，不新增模块、数据库、外部服务依赖或构建入口。实际 Prometheus HTTP SD、OAuth、目标并发写及生产证书部署在后续接线批次分别补齐既有 T2/权限/Swagger 门禁。本地 TLS 测试不计为真实 Prometheus T2 或个人环境运行验收。
+
+最终验证记录：
+
+- `make test-go`：最终代码通过全部 22 个 Go 模块的依赖与测试门禁；新增内核有 16 个测试组，覆盖 TLS 1.2/1.3 真实握手、匿名可读与证书不匹配拒绝、受控网络与 DNS 变化、重定向、正文限制、当前身份失效、重复归属、预算及可选状态。
+- `make test-platform`：完整 T0 通过，包括生命周期/启动隔离、CI 登记、执行夹具、授权目录和 Swagger 路由覆盖。Monitor 仍为 55 个公开路由方法，未将内部投影计为已发布发现 API。
+- `make test-changed`：全工作区预检因缺少跨模块 PostgreSQL、MySQL/OceanBase 测试配置退出，后续门禁未执行，不计为通过。本批没有数据库、镜像、前端或外部设施变更，按实际范围完成上述 T0/T1；后续真实采集接线的必需 T2 尚未实施、未运行。
+- 最终变更空白检查通过；个人 Infra、业务进程与证书部署未重启或接管。下一批优先补齐目标配置的 User 对象裁决与原子持久化、固定 Prometheus 身份的认证 HTTP SD，以及唯一生产接线的真实 T2。
+
+### 10.16 P1.1 第六批 B：目标持久化与认证发现接口
+
+本批发布节点目标管理和固定 `addp-prometheus` 身份的 HTTP SD，复用第六批 A 内核。目标主体与监测类别创建后不可改写；更新以完整配置和正版本执行 CAS，删除同样携带版本。列表与详情、创建、更新、删除均按当前请求转发已验证 User Token，逐个引用节点由 System 详情接口重新裁决，不使用后台身份快照替代用户授权。分页最多 100 条，节点核验在请求内去重，有界失败时整次请求明确失败，不返回部分授权结果。
+
+停用配置允许在指标能力关闭或配置缺失时保存；启用或修改启用目标须通过现有来源准入。写事务用全局非阻塞事务锁串行化目标预算、版本和去重；最多 1,000 个保存目标、九个启用节点端点。启用写入在同一有界窗口重新解析全部启用端点，拒绝当前物理入口重复，不保存第二份 DNS/IP 身份台账。停用或删除只收回意图，不依赖来源在线；发现依旧重新核验当前节点身份与 DNS。
+
+Monitor 的 CIDR、端口、来源 CA 和准入客户端证书由部署注入，独立于指标中心健康证书。指标开关关闭、配置错误或证书缺失不使全模块启动失败；只在需要采集的接口返回能力状态。HTTP SD 只接受固定 Prometheus 非委托 Platform Service Access Token，管理接口只接受非委托 Platform User Access Token。新增权限进入 Monitor manifest、生成常量、角色目录、双语文本和 System 连续迁移；Prometheus 凭据可选、独立，关闭时撤销，不能复用业务模块或日志观测器身份。
+
+接口返回保存版本，不声明 Prometheus 已应用该版本。实际生产 HTTP SD/OAuth 配置、来源部署与真实采集回执须由后续接线和既有独占 `test-monitor-metrics` T2 验证，不能用 Handler 单测代替。当前批验证范围为平台 T0、Go T1、Monitor 原子写入 PostgreSQL T2 与 System IAM PostgreSQL T2；沿用现有标准入口和 CI 自动发现，无新数据库、模块或测试启动路线。个人开发服务不重启。
+
+2026-10-06 验证记录：
+
+- `make test-go` 最终复验通过全部 22 个 Go 模块，覆盖当前 Common Client、Monitor Handler/Service、System 配置与凭据管理。Monitor 新增发现回归验证当前有效节点、节点停用后的成功空列表，以及 System 身份读取失败时的 503；受控响应不计为真实生产 HTTP SD 生效证据。
+- `make test-module MODULE=monitor` 已完成平台 T0、Monitor Go T1、前端测试与构建；首次在指标 T2 的首次采样断言处失败，后续步骤未执行，不计为模块聚合通过。失败原因是不同 job 的首次采样时间独立，夹具已有样本不能证明中心自身也已有样本。改为分别等待对应采样事实，未放宽超时、TLS 或样本限额；两个确定性回归及 `scripts/test/infra-runtime-log-lifecycle_test.py` 全部 29 项通过。
+- `make test-monitor-metrics` 修正后独立复跑通过，覆盖真实 Prometheus 双向 TLS、受控标签、样本超限、来源中断、指标中心恢复与 WAL 历史样本持久化；退出后自有容器、网络、卷和临时文件均清零。该入口当前仍验证中心自身与受控来源，不证明新增 Monitor HTTP SD 已生产接线。
+- `make test-monitor-postgres` 全包通过，包含新增目标事务预算竞争、CAS、主体不可改写和删除版本检查；测试只清理自己创建的 UUID，并核对没有残留。使用 Infra status 核实的 localhost:25432 / `addp_test`，未新增或删除 database。
+- System IAM 的 `--package iam --test prometheus-credential` 与 `--package api --test oauth-client-credentials` 分别通过：目标权限归属、独立最小服务身份、可选凭据启停、真实 Client Credentials 签发、Tenant 拒绝及旧令牌撤销均覆盖。随后 `make test-system-iam-postgres` 完整复验通过 IAM、OAuth、API、Migration、Engine Access、Repository 和 Online Fixture 七个包，使用同一已核实 Infra 的 `addp_iam_test`，没有跳过项；迁移 191 与既有身份、权限目录和节点投影回归均验证。
+- `make test-authorization` 通过，Monitor Swagger 生成与严格覆盖校验一致，公开路由方法为 61；System 前端标准门禁通过 93 项单元测试、63 项浏览器测试及构建。现有 Owner 发现和 CI 登记已覆盖新增文件，没有新增模块或并行测试路线。
+- `make test-changed` 因共享工作区其他 Owner 所需 PostgreSQL、MySQL/OceanBase 等连接参数未提供而在预检退出，后续门禁未执行，不计为通过。此前全 Go 验证遇到其他任务的 Manager 测试失败，最终全入口复跑已通过，不将失败运行算作通过。
+
+本批没有提交、推送或接管个人运行环境；T4/T5、生产 Prometheus OAuth/HTTP SD 配置和节点来源部署未实施、未验收。下一步优先完成这条生产接线并扩展已有指标 T2，验证真实身份签发、目标发现、节点失效移除和抓取结果；统一平台运行告警迁移仍按第 10.7 节等待单独确认。

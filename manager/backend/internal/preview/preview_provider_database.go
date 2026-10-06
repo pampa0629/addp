@@ -3,10 +3,13 @@ package preview
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -19,7 +22,7 @@ import (
 )
 
 // DatabaseTablePreviewProvider 通用数据库表预览 Provider。
-// 自动支持所有实现 BatchReadableProvider 的表格型数据库。
+// PostgreSQL 只消费受控 PreparedQuery；其他数据库使用原生表读取接口。
 type DatabaseTablePreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	metaClient   *commonClient.MetaClient
@@ -44,9 +47,12 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if plug == nil {
 		return nil, fmt.Errorf("resolved engine provider is required for database table preview")
 	}
+	if plug.Type() == "postgresql" && req.executePrepared == nil {
+		return nil, ErrSourceAuthorizationRequired
+	}
 	batchReader, ok := plug.(plugin.BatchReadableProvider)
 	sessionReader, hasSession := plug.(plugin.TableReadSessionProvider)
-	if !ok && !hasSession {
+	if plug.Type() != "postgresql" && !ok && !hasSession {
 		return nil, fmt.Errorf("engine %s does not implement a table read provider", req.Engine.EngineType)
 	}
 	catalogFactsProvider, _ := plug.(plugin.EngineCatalogFactsProvider)
@@ -143,16 +149,37 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		pageSize = maxRows
 	}
 
+	if page-1 > math.MaxInt/pageSize {
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("preview pagination overflow"))
+	}
 	offset := (page - 1) * pageSize
 	limit := pageSize
 
 	// 6. 执行分页查询
-	rows, err := p.queryData(ctx, batchReader, sessionReader, connInfo, req.ProviderPath, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns, req.DataScope)
+	var rows []map[string]interface{}
+	var preparedProtection *dataprotection.PreparedTableProtection
+	if plug.Type() == "postgresql" {
+		prepared, prepareErr := p.preparePostgreSQLPreview(ctx, req, columns, offset, limit)
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		var result *plugin.QueryResult
+		result, preparedProtection, err = req.executePrepared(ctx, plug, prepared)
+		if err == nil {
+			if result == nil || preparedProtection == nil || preparedProtection.Apply == nil {
+				return nil, ErrSourceAuthorizationRequired
+			}
+			rows, columnNames = result.Rows, result.Columns
+		}
+	} else {
+		rows, err = p.queryData(ctx, batchReader, sessionReader, connInfo, req.ProviderPath, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns, req.DataScope)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
 
 	return &models.TablePreview{
+		PreparedProtection:  preparedProtection,
 		Mode:                PreviewModeTable,
 		Columns:             columnNames,
 		Fields:              profileFields,
@@ -179,6 +206,45 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	}, nil
 }
 
+// The server generates a bounded table query, not a user SQL endpoint. The
+// resolved instance owns preparation, complete dependency proof and execution.
+func (p *DatabaseTablePreviewProvider) preparePostgreSQLPreview(ctx context.Context, req *PreviewRequest, columns []datatype.FieldInfo, offset, limit int) (plugin.PreparedQuery, error) {
+	runtime, ok := req.EnginePlugin.(plugin.QueryRuntimeProvider)
+	dialectProvider, hasDialect := req.EnginePlugin.(plugin.SQLDialectProvider)
+	if !ok || !hasDialect || req.Engine == nil || req.ProviderPath.EngineID != req.Engine.ID || len(req.ProviderPath.Segments) < 3 || limit < 1 || limit > 2000 || offset < 0 {
+		return nil, ErrSourceAuthorizationRequired
+	}
+	dialect := commonquery.ForDialect(dialectProvider.SQLDialect())
+	if !dialect.IsPostgreSQL() {
+		return nil, ErrSourceAuthorizationRequired
+	}
+	path := req.ProviderPath
+	schema, table := "", path.Segments[len(path.Segments)-1].Name
+	for _, segment := range path.Segments {
+		if segment.Term == plugin.EngineCatalogTermSchema {
+			schema = segment.Name
+		}
+	}
+	if schema == "" || table == "" {
+		return nil, ErrSourceAuthorizationRequired
+	}
+	where, args, err := profilefilter.SQL(req.DataScope, dialect, "")
+	if err != nil {
+		return nil, err
+	}
+	keys := databasePrimaryKeyColumns(columns)
+	query := ""
+	if len(keys) > 0 {
+		query = databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, databasePreviewSelectExpr(dialect, columns, databasePreviewSourceAlias), schema, table, keys, where, limit, offset)
+	} else {
+		query = dialect.SelectTableSQL(databasePreviewSelectExpr(dialect, columns, ""), schema, table, where, "", limit, offset)
+	}
+	return runtime.PrepareQuery(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), plugin.QueryRequest{
+		EngineID: req.Engine.ID, Language: "sql", Query: query, TargetPath: &path,
+		Options: plugin.QueryOptions{ReadOnly: true, Timeout: 30 * time.Second, Args: args},
+	})
+}
+
 // queryData 执行分页查询
 func (p *DatabaseTablePreviewProvider) queryData(
 	ctx context.Context,
@@ -191,6 +257,9 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	columns []datatype.FieldInfo,
 	dataScope dataprofile.DataScope,
 ) ([]map[string]interface{}, error) {
+	if engineType == "postgresql" {
+		return nil, ErrSourceAuthorizationRequired
+	}
 	registered, err := plugin.Get(engineType)
 	if err != nil {
 		return nil, err

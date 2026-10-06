@@ -892,7 +892,9 @@
           "engine_raster_policy": "栅格资源配置",
           "engine_raster_policy_runtime": "栅格运行时策略读取",
           "host_node": "平台节点",
-          "observability_identity": "观测身份"
+          "observability_identity": "观测身份",
+          "monitoring_target": "监测目标",
+          "metrics_discovery": "指标发现"
         },
         "types": {
           "tenant_builtin": "租户内置角色",
@@ -2023,6 +2025,10 @@
       "portal_runtime": {
         "name": "资产门户平台运行时",
         "description": "供 Portal 注册模块并发送运行时心跳，不授予用户或租户业务权限。"
+      },
+      "prometheus_runtime": {
+        "name": "指标采集服务",
+        "description": "只读取受认证指标发现，不授予节点管理或业务读取。"
       }
     },
     "tenant": {

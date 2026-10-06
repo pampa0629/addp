@@ -493,3 +493,5 @@ System 唯一拥有 `module_log_sources` 保留目录。Infra `addp-log-observer
 `cmd/online-test-fixture` 支持 Redis 的 `redis-consumer-flow` Hosted T4 身份准备：非默认 Tenant 的普通用户仅授予 `system.engine_catalog.read`、Meta 目录/扫描和 Manager 阅读权限，输出浏览器登录凭据到 owner-only Secret 文件；独立 Engine provisioner 经正式 API 登记后由生命周期移除其凭据，不把基础设施管理权限加入消费用户。
 
 ES Hosted T4 的 System-owned `cmd/online-test-fixture --suite elasticsearch-consumer-flow` 仅建立非默认 Tenant、最小权限消费 User 和独立 Engine Provisioner。消费 User 读取 System 目录而不读取 Engine 控制面；身份和登录凭据仅写入 owner-only 临时目录。引擎由正式 API 登记，所有身份随 Hosted 平台库销毁。
+
+平台指标发现身份（2026-10-05）：迁移 000191 发布独立 `addp-prometheus` Platform Service Principal，唯一权限 `monitor.metrics_discovery.read`，没有 Tenant Runtime 绑定。`PROMETHEUS_SERVICE_CLIENT_SECRET` 可选且不可与业务/日志观测凭据复用；指标选择关闭或凭据非法时只禁用该 Client，授权版本和旧 Token Family 随凭据关闭撤销，不阻断业务必需客户端。节点监测目标 CRUD 权限仅默认授予平台系统管理员，身份事实仍由 System 当前节点接口与观测投影各自裁决。精确 IAM/OAuth 回归通过既有 `test-system-iam-postgres` 选择，完整 CI 自动发现新增测试，设计见平台运行监控文档第 10.16 节；生产采集与 Prometheus 接线另行验收。

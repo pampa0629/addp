@@ -8,6 +8,8 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 
 数据剖析已经按确认边界实现：剖析执行和结果归 Manager，Meta 只提供 data item 身份、结构和源版本事实；首期在用户进入“剖析”标签时按需创建 `task_type=data_profiling` 的 ad-hoc execution，不创建持久任务定义、不声明 TaskProvider capability。完整规则见 `manager/docs/数据剖析规范.md`。
 
+PostgreSQL item 预览只执行 Provider 的不可变 PreparedQuery：完整 ReadSet 先用当前 User／固定 `data.preview` 委托 Bearer 调用 System 源检查，再编译本地 Security 保护；检查和执行使用同一计划，不回退 ReadBatch。保护在响应输出前执行并同步删除被抑制列的展示元数据。后台剖析暂时以 `source_authorization_required` 明确失败，不读取样本、不借用用户预览或机器凭据；用户已同意先切换预览，再补齐独立 execution 源授权。
+
 Manager 通过本地保护投影统一约束预览、剖析和全文索引写入，用户请求不调用 Security。`profile=suppress` 在持久化前删除敏感字段及全部祖先容器的字段剖析对象和对应全局观察，防止父级 Top N 携带敏感叶子值；`search_index=mask` 在写入 Meilisearch 前覆盖正文及所有正文派生字符串。投影变化与历史剖析结果、条件值清理及 cursor 保存共用本地安装屏障；启动时对已安装投影重放清理。外部全文索引只走持久投递路线：保护事务内登记清理并隔离出口，事务外提交或核查 Meilisearch 任务；任务入队不算完成。新投递在发送前持久绑定 UUID，并随请求发送 `customMetadata`，关闭 SDK 自动重试；已知 UID 的任务在超时或重启后续查，无 UID 的新提交只能从完整保留的任务历史中唯一认回同一标记、端点、索引和操作种类的原任务，再保存回执并核查终态。没有标记的旧提交不回填证据；零匹配、历史不完整或冲突均保留未决，不重发、不按时间清除。服务器不支持标记、未配置或暂时失联均不使 Manager 初始化失败；重新开放搜索必须先核清历史任务、完成清理。出口隔离且旧读取结束时允许保护回执，但不声称外部清理成功。本轮不认证多 Backend／HA；实现和验收记录见 `docs/next/ADDP企业资源目录能力专题.md` §26.76、§26.78。旧 Meilisearch 数据卷须另行确认迁移，不能只改镜像后重启，见 `scripts/infra/README.md`。
 
 Tenant HTTP 请求与有界执行分发先登记在途生命周期，再刷新 Owner 本地持久保护 cursor；登记覆盖响应序列化／流复制或执行结果落库。投影同步的后置屏障等待本进程在途工作及持久有效 lease 下的运行执行结束，再回执 Security；pending 和过期遗留记录不阻塞。此机制不授予数据访问权，也不替代 System 的源授权核验。
@@ -119,7 +121,7 @@ manager/
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_cache_generation`。
 - “快显任务”“空间数据任务”和“向量化任务”是统一“数据任务”工作区中的产品分类，不是单一 `task_type`。三类任务在“数据任务”父菜单下使用独立 canonical path，但复用同一个工作区实现。全部 Manager 生成类任务定义统一写入 `manager.task_definitions`，由 `task_type` 选择强类型配置、执行器和结果策略；向量化任务继续使用 `manager.embedding_tasks` 及其独立调度和结果语义。不得恢复生成类型独立实现或向量化独立工作区。
 - Manager 数据任务工作区只展示任务定义、最近执行摘要和领域结果入口；页头统一使用 `MonitorExecutionsButton(module=manager)`，按当前 `task_type` 筛选 Monitor。不得新增 Manager 模块级执行列表、菜单或通用统计页。
-- 统一任务表、语义唯一约束、资源绑定和资源回收生命周期的真实 PostgreSQL 验收统一走 `MANAGER_POSTGRES_TEST_DSN=... make test-manager-postgres`；普通 Go 测试不得把该场景降级为内存替身。
+- 统一任务表、语义唯一约束、资源绑定、资源回收生命周期及受控分页计划的完整依赖证明，真实 PostgreSQL 验收统一走 `MANAGER_POSTGRES_TEST_DSN=... make test-manager-postgres`；普通 Go 测试不得把该场景降级为内存替身。分页夹具仅在安全测试库创建随机命名 Schema，并在退出时清理和核验零残留。
 - 业务矢量瓦片集生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_set_generation`；结果只写用户选择的 Business 存储并触发 Meta scan，不进入 `manager.vector_tile_cache`。
 - “保存为业务瓦片集”必须创建或执行 `vector_tile_set_generation`。ready 缓存仅在源版本和生成 profile 完全一致时作为执行复用候选；复制必须使用临时对象、PMTiles 校验和原子提交，成功后再触发 Meta scan。
 - 矢量物化视图任务统一使用 `manager.task_definitions` 中的 `task_type=vector_materialized_view_generation`；结果只登记 Manager 创建并拥有生命周期的 3857 目标。

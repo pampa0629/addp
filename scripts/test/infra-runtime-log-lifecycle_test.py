@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import shutil
@@ -8,6 +9,35 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 KEYS = ("LOKI_READ_TOKEN", "LOKI_WRITE_TOKEN", "LOKI_S3_SECRET_KEY", "LOG_OBSERVER_SERVICE_CLIENT_SECRET")
+
+
+class MetricsProbeReadinessTest(unittest.TestCase):
+    def readiness(self, samples):
+        source = ast.parse((ROOT / 'scripts/test/monitor-metrics-probe.py').read_text())
+        functions = ast.Module(body=[node for node in source.body
+                                     if isinstance(node, ast.FunctionDef)
+                                     and node.name in ('job_is_up', 'self_sample_ready')],
+                               type_ignores=[])
+        namespace = {'query': lambda expression: samples.get(expression, [])}
+        exec(compile(functions, 'monitor-metrics-probe.py', 'exec'), namespace)
+        return namespace['self_sample_ready']
+
+    def test_fixture_first_sample_does_not_prove_center_self_scrape(self):
+        check = self.readiness({'up{job="fixture"}': [{'value': [1, '1']}]})
+        self.assertFalse(check())
+
+    def test_self_scrape_requires_up_and_positive_memory(self):
+        samples = {}
+        check = self.readiness(samples)
+        self.assertFalse(check())
+        samples['up{job="prometheus"}'] = [{'value': [1, '1']}]
+        self.assertFalse(check())
+        samples['process_resident_memory_bytes{job="prometheus"}'] = [{'value': [1, '0']}]
+        self.assertFalse(check())
+        samples['process_resident_memory_bytes{job="prometheus"}'] = [{'value': [1, '4096']}]
+        self.assertTrue(check())
+        samples['up{job="prometheus"}'] = [{'value': [1, '0']}]
+        self.assertFalse(check())
 
 
 class InfraRuntimeLogLifecycleTest(unittest.TestCase):

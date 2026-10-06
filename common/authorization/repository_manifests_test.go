@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -13,8 +14,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 480 {
-		t.Fatalf("descriptor count = %d, want 480", len(descriptors))
+	if len(descriptors) != 485 {
+		t.Fatalf("descriptor count = %d, want 485", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -26,8 +27,17 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 
 	roles := report.Roles
+	assertRepositoryRolePrincipalTypes(t, roles, "platform.prometheus_runtime", []string{"service_principal"})
+	assertRepositoryRoleScopes(t, roles, "platform.prometheus_runtime", []string{"platform"})
+	assertRepositoryRolePermissions(t, roles, "platform.prometheus_runtime", []string{"monitor.metrics_discovery.read"})
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if key == "monitor.metrics_discovery.read" && role.Key != "platform.prometheus_runtime" {
+				t.Fatalf("unexpected metrics discovery role %q", role.Key)
+			}
+			if strings.HasPrefix(key, "monitor.monitoring_target.") && role.Key != "platform.system_administrator" {
+				t.Fatalf("unexpected target management role %q", role.Key)
+			}
 			if key == "system.observability_identity.read" && role.Key != "platform.monitor_runtime" {
 				t.Fatalf("built-in role %q unexpectedly grants background observability identities", role.Key)
 			}
@@ -51,8 +61,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 		}
 	}
-	if len(roles) != 71 {
-		t.Fatalf("role count = %d, want 71", len(roles))
+	if len(roles) != 72 {
+		t.Fatalf("role count = %d, want 72", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)

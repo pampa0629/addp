@@ -130,3 +130,33 @@ other = "集中日志已关闭，链路检测已暂停"
 
 [monitor.platform_log.unconfigured]
 other = "集中日志部署配置无效，链路检测已暂停"
+
+["monitor.metrics.invalid"]
+other = "监测目标配置不合法或来源重复"
+
+["monitor.metrics.unavailable"]
+other = "指标观测依赖当前不可用"
+
+["monitor.metrics.timeout"]
+other = "指标观测请求超时"
+
+["monitor.metrics.disabled"]
+other = "指标观测能力已关闭"
+
+["monitor.metrics.unconfigured"]
+other = "指标观测部署配置未就绪"
+
+["monitor.metrics.budget"]
+other = "监测目标超过采集预算"
+
+["monitor.metrics.conflict"]
+other = "监测目标版本冲突或主体不可修改"
+
+["monitor.metrics.notfound"]
+other = "监测目标或引用节点不存在"
+
+["monitor.metrics.busy"]
+other = "监测目标配置正在更新，请稍后重试"
+
+["monitor.metrics.admission"]
+other = "指标来源未通过认证与入口保护验证"

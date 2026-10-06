@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/addp/asset/internal/models"
+	"github.com/addp/asset/internal/search"
 	assetservice "github.com/addp/asset/internal/service"
 	"github.com/addp/common/authorization/authtest"
 	"github.com/addp/common/modulelifecycle"
@@ -55,7 +57,8 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	}
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer consumer": permissions})
 	defer authServer.Close()
-	assetSvc := assetservice.NewAssetService(db, nil, nil)
+	indexer := consumerSearchTestIndexer(t, []*models.Asset{&publishedChild, &published, &publishedOther, &draft, &otherTenant})
+	assetSvc := assetservice.NewAssetService(db, nil, indexer)
 	router := SetupRouter(db, authServer.URL, nil, assetSvc, modulelifecycle.NewStandalone("asset"))
 
 	list := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets", "")
@@ -65,6 +68,13 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	subtree := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets?category_id="+int64String(root.ID), "")
 	if subtree.Code != http.StatusOK || !strings.Contains(subtree.Body.String(), "published-root") || !strings.Contains(subtree.Body.String(), "published-child") || strings.Contains(subtree.Body.String(), "published-healthcare") {
 		t.Fatalf("consumer subtree mismatch: status=%d body=%s", subtree.Code, subtree.Body.String())
+	}
+	keyword := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets?keyword=published&category_id="+int64String(root.ID), "")
+	var searchPage struct {
+		Data []models.Asset `json:"data"`
+	}
+	if keyword.Code != http.StatusOK || json.Unmarshal(keyword.Body.Bytes(), &searchPage) != nil || len(searchPage.Data) != 2 || searchPage.Data[0].ID != publishedChild.ID || searchPage.Data[1].ID != published.ID {
+		t.Fatalf("consumer keyword search must recheck current published subtree: status=%d body=%s", keyword.Code, keyword.Body.String())
 	}
 	invalidCategory := consumerRequest(t, router, http.MethodGet, "/api/v1/asset/consumer/assets?category_id=invalid", "")
 	if invalidCategory.Code != http.StatusBadRequest {
@@ -158,6 +168,39 @@ func TestConsumerProjectionFiltersVisibilityAndDerivesCurrentUser(t *testing.T) 
 	if applications.Code != http.StatusOK || !strings.Contains(applications.Body.String(), `"applicant_id":9`) {
 		t.Fatalf("my applications not scoped to current user: status=%d body=%s", applications.Code, applications.Body.String())
 	}
+}
+
+func consumerSearchTestIndexer(t *testing.T, assets []*models.Asset) *search.Indexer {
+	t.Helper()
+	hits := make([]map[string]int64, 0, len(assets))
+	for _, asset := range assets {
+		hits = append(hits, map[string]int64{"id": asset.ID})
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/indexes/assets":
+			fmt.Fprint(w, `{"uid":"assets","primaryKey":"id"}`)
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/indexes/assets/settings/"):
+			w.WriteHeader(http.StatusAccepted)
+			fmt.Fprint(w, `{"taskUid":0,"status":"enqueued"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/tasks/0":
+			fmt.Fprint(w, `{"uid":0,"status":"succeeded"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/indexes/assets/search":
+			if err := json.NewEncoder(w).Encode(map[string]any{"hits": hits, "estimatedTotalHits": len(hits)}); err != nil {
+				t.Error(err)
+			}
+		default:
+			t.Errorf("unexpected search fixture request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+	indexer, err := search.NewIndexer(server.URL, "", "assets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return indexer
 }
 
 func TestConsumerRatingSeparatesCreateUpdateAndChecksEffectiveGrant(t *testing.T) {

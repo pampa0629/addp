@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_REQUIRED_ENV=MANAGER_POSTGRES_TEST_DSN
-# manager-postgres-gate.sh - Verify Manager task lifecycle and declared geometry targets against PostGIS.
+# manager-postgres-gate.sh - Verify Manager lifecycle, geometry targets and controlled preview plans against PostGIS.
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ addp_infra_verify_test_postgres_dsn "$MANAGER_POSTGRES_TEST_DSN"
 
 cd "$ROOT_DIR/manager/backend"
 ADDP_POSTGRES_INTEGRATION=1 \
-    go test ./internal/repository ./internal/service \
+    go test ./internal/repository ./internal/service ./internal/preview \
     -run '^TestIntegrationPostgresManager' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/manager-postgres.log"
 

@@ -75,7 +75,7 @@ type DataProfileExecutionView struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	// 稳定执行错误码；protection_version_changed 表示规则已变化，须重新执行 | Stable execution error code; protection_version_changed requires explicit rerun after protection changes.
+	// 稳定执行错误码；protection_version_changed 表示规则已变化，source_authorization_required 表示缺少独立执行源授权、本次未读取源数据 | Stable execution error code; protection_version_changed means rules changed; source_authorization_required means execution source authorization is missing and no source rows were read.
 	ErrorCode string `json:"error_code,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
@@ -319,6 +319,10 @@ func (s *DataProfileService) runExecution(
 	}
 	sample, err := s.sampler.Sample(ctx, target, dataScope, s.budget)
 	if err != nil {
+		if errors.Is(err, ErrDataProfileSourceAuthorizationRequired) {
+			fail("source_authorization_required", err)
+			return
+		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			fail("timeout", err)
 			return

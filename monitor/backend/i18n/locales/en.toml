@@ -129,3 +129,33 @@ other = "Central logging is disabled and pipeline evaluation is paused"
 
 [monitor.platform_log.unconfigured]
 other = "Central logging deployment configuration is invalid and pipeline evaluation is paused"
+
+["monitor.metrics.invalid"]
+other = "Invalid monitoring target or duplicate source"
+
+["monitor.metrics.unavailable"]
+other = "Metrics observation dependencies are unavailable"
+
+["monitor.metrics.timeout"]
+other = "Metrics observation request timed out"
+
+["monitor.metrics.disabled"]
+other = "Metrics observation is disabled"
+
+["monitor.metrics.unconfigured"]
+other = "Metrics observation deployment is not configured"
+
+["monitor.metrics.budget"]
+other = "Monitoring targets exceed the collection budget"
+
+["monitor.metrics.conflict"]
+other = "Monitoring target version conflict or immutable subject"
+
+["monitor.metrics.notfound"]
+other = "Monitoring target or referenced node was not found"
+
+["monitor.metrics.busy"]
+other = "Monitoring target configuration is busy; retry later"
+
+["monitor.metrics.admission"]
+other = "Metrics source failed authentication or protection admission"

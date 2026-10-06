@@ -169,6 +169,7 @@ func main() {
 		lifecycleController,
 		logPipeline, logNotifications,
 		runtimeHealthService,
+		service.NewMonitoringTargetService(repository.NewMonitoringTargetRepository(db), systemServiceClient, systemServiceClient, cfg.MetricsEnabled, cfg.MetricsPolicy),
 	)
 
 	go func() {

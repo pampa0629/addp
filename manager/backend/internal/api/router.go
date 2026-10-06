@@ -295,7 +295,7 @@ func SetupRouter(
 		previewRegistry := metadataService.PreviewRegistry()
 		previewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient, systemServiceClient)
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
-		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService, protectionStore)
+		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService, protectionStore, systemServiceClient)
 		metadataHandler := NewMetadataHandler(metadataService)
 		downloadHandler := NewDownloadHandler(metadataService, protectionStore)
 

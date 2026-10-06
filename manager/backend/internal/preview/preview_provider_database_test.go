@@ -2,10 +2,12 @@ package preview
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
@@ -127,7 +129,7 @@ func TestDatabasePreviewOracleUsesTableReadSessionForSpatialRows(t *testing.T) {
 	}
 }
 
-func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t *testing.T) {
+func TestDatabaseTablePreviewProviderPreviewUsesPreparedQueryAndAttributeRowCount(t *testing.T) {
 	previous, previousErr := plugin.Get("postgresql")
 	rowCount := int64(999)
 	srid := 2360
@@ -192,11 +194,12 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 			ID:         7,
 			EngineType: enginePlugin.Type(),
 		},
-		EnginePlugin: enginePlugin,
-		Schema:       "public",
-		Table:        "public.dltb",
-		Page:         3,
-		PageSize:     2,
+		EnginePlugin:    enginePlugin,
+		executePrepared: executeDatabasePreviewTestPlan,
+		Schema:          "public",
+		Table:           "public.dltb",
+		Page:            3,
+		PageSize:        2,
 		ProviderPath: plugin.EngineCatalogPath{
 			Version:  plugin.EngineCatalogPathVersion,
 			EngineID: 7,
@@ -221,20 +224,20 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	if preview.Total != 321 {
 		t.Fatalf("Total = %d, want 321 from request attributes", preview.Total)
 	}
-	if len(enginePlugin.readBatchCalls) != 1 {
-		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
+	if len(enginePlugin.readBatchCalls) != 0 || len(enginePlugin.prepareCalls) != 1 || enginePlugin.executeCalls != 1 {
+		t.Fatalf("reads=%d prepare=%d execute=%d", len(enginePlugin.readBatchCalls), len(enginePlugin.prepareCalls), enginePlugin.executeCalls)
 	}
-	if len(enginePlugin.readBatchPaths) != 1 || !plugin.IsEngineCatalogRootSegment(enginePlugin.readBatchPaths[0].Segments[0]) {
-		t.Fatalf("ReadBatch path = %#v, want explicit root segment", enginePlugin.readBatchPaths)
+	if path := enginePlugin.prepareCalls[0].TargetPath; path == nil || !reflect.DeepEqual(*path, req.ProviderPath) {
+		t.Fatalf("prepared path = %#v, want resolved path", path)
 	}
 	if len(enginePlugin.describePaths) != 1 || !plugin.IsEngineCatalogRootSegment(enginePlugin.describePaths[0].Segments[0]) {
 		t.Fatalf("DescribeEngineCatalogFacts path = %#v, want explicit root segment", enginePlugin.describePaths)
 	}
-	if got := enginePlugin.readBatchCalls[0].Query; !strings.Contains(got, `WITH "__addp_page_keys"`) {
-		t.Fatalf("ReadBatch query does not use page-key CTE:\n%s", got)
+	if got := enginePlugin.prepareCalls[0].Query; !strings.Contains(got, `WITH "__addp_page_keys"`) {
+		t.Fatalf("prepared query does not use page-key CTE:\n%s", got)
 	}
-	if !strings.Contains(enginePlugin.readBatchCalls[0].Query, `OFFSET 4`) {
-		t.Fatalf("ReadBatch query = %q, want offset 4", enginePlugin.readBatchCalls[0].Query)
+	if !strings.Contains(enginePlugin.prepareCalls[0].Query, `OFFSET 4`) {
+		t.Fatalf("prepared query = %q, want offset 4", enginePlugin.prepareCalls[0].Query)
 	}
 	if preview.GeometryColumn != "SmGeometry" {
 		t.Fatalf("GeometryColumn = %q, want SmGeometry", preview.GeometryColumn)
@@ -251,33 +254,31 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	if preview.TransformStatus != "not_transformed" || preview.PreviewHint != "frontend_transform_required" {
 		t.Fatalf("transform contract = %q/%q, want not_transformed/frontend_transform_required", preview.TransformStatus, preview.PreviewHint)
 	}
-	if strings.Contains(enginePlugin.readBatchCalls[0].Query, "ST_Transform") {
-		t.Fatalf("ReadBatch query should not transform geometry:\n%s", enginePlugin.readBatchCalls[0].Query)
+	if strings.Contains(enginePlugin.prepareCalls[0].Query, "ST_Transform") {
+		t.Fatalf("prepared query should not transform geometry:\n%s", enginePlugin.prepareCalls[0].Query)
 	}
 }
 
 func TestDatabaseTablePreviewProviderBindsProfileConditionsBeforePaging(t *testing.T) {
 	reader := &recordingDatabasePreviewPlugin{engineType: "postgresql", batchData: &plugin.BatchData{}}
 	provider := &DatabaseTablePreviewProvider{}
-	_, err := provider.queryData(
-		context.Background(), reader, nil, plugin.ConnectionInfo{},
-		plugin.TabularItemPath(7, plugin.EngineCatalogTermSchema, "public", "orders"),
-		"postgresql", "public", "orders", 0, 500,
-		[]datatype.FieldInfo{{Name: "status", Type: datatype.FieldTypeString}},
-		dataprofile.DataScope{
+	_, err := provider.preparePostgreSQLPreview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{ID: 7}, EnginePlugin: reader,
+		ProviderPath: plugin.TabularItemPath(7, plugin.EngineCatalogTermSchema, "public", "orders"),
+		DataScope: dataprofile.DataScope{
 			Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd,
 			Conditions: []dataprofile.DataScopeCondition{{Field: "status", Operator: "eq", Value: "active"}},
 		},
-	)
+	}, []datatype.FieldInfo{{Name: "status", Type: datatype.FieldTypeString}}, 0, 500)
 	if err != nil {
 		t.Fatalf("queryData() error = %v", err)
 	}
-	call := reader.readBatchCalls[0]
+	call := reader.prepareCalls[0]
 	if !strings.Contains(call.Query, `WHERE ("status" = $1)`) || strings.Contains(call.Query, "active") {
 		t.Fatalf("parameterized query = %q", call.Query)
 	}
-	if !reflect.DeepEqual(call.Args, []interface{}{"active"}) {
-		t.Fatalf("query args = %#v", call.Args)
+	if !reflect.DeepEqual(call.Options.Args, []interface{}{"active"}) || !call.Options.ReadOnly || reader.executeCalls != 0 || len(reader.readBatchCalls) != 0 {
+		t.Fatalf("query options = %#v, execute=%d reads=%d", call.Options, reader.executeCalls, len(reader.readBatchCalls))
 	}
 }
 
@@ -316,11 +317,12 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 			ID:         8,
 			EngineType: enginePlugin.Type(),
 		},
-		EnginePlugin: enginePlugin,
-		Schema:       "public",
-		Table:        "public.people",
-		Page:         1,
-		PageSize:     10,
+		EnginePlugin:    enginePlugin,
+		executePrepared: executeDatabasePreviewTestPlan,
+		Schema:          "public",
+		Table:           "public.people",
+		Page:            1,
+		PageSize:        10,
 		ProviderPath: plugin.EngineCatalogPath{
 			Version:  plugin.EngineCatalogPathVersion,
 			EngineID: 8,
@@ -340,11 +342,8 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 	if preview.Total != 999 {
 		t.Fatalf("Total = %d, want 999 from catalog facts", preview.Total)
 	}
-	if len(enginePlugin.readBatchCalls) != 1 {
-		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
-	}
-	if enginePlugin.readBatchCalls[0].Query == "" {
-		t.Fatalf("ReadBatch query should not be empty")
+	if len(enginePlugin.readBatchCalls) != 0 || len(enginePlugin.prepareCalls) != 1 || enginePlugin.executeCalls != 1 {
+		t.Fatalf("reads=%d prepare=%d execute=%d", len(enginePlugin.readBatchCalls), len(enginePlugin.prepareCalls), enginePlugin.executeCalls)
 	}
 }
 
@@ -378,11 +377,12 @@ func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 			ID:         8,
 			EngineType: enginePlugin.Type(),
 		},
-		EnginePlugin: enginePlugin,
-		Schema:       "public",
-		Table:        "public.farmland",
-		Page:         1,
-		PageSize:     127,
+		EnginePlugin:    enginePlugin,
+		executePrepared: executeDatabasePreviewTestPlan,
+		Schema:          "public",
+		Table:           "public.farmland",
+		Page:            1,
+		PageSize:        127,
 		ProviderPath: plugin.EngineCatalogPath{
 			Version:  plugin.EngineCatalogPathVersion,
 			EngineID: 8,
@@ -401,12 +401,41 @@ func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
 	if preview.PageSize != 127 {
 		t.Fatalf("PageSize = %d, want 127", preview.PageSize)
 	}
-	if len(enginePlugin.readBatchCalls) != 1 {
-		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
+	if len(enginePlugin.readBatchCalls) != 0 || len(enginePlugin.prepareCalls) != 1 || enginePlugin.executeCalls != 1 {
+		t.Fatalf("reads=%d prepare=%d execute=%d", len(enginePlugin.readBatchCalls), len(enginePlugin.prepareCalls), enginePlugin.executeCalls)
 	}
-	if !strings.Contains(enginePlugin.readBatchCalls[0].Query, "LIMIT 127") {
-		t.Fatalf("ReadBatch query = %q, want LIMIT 127", enginePlugin.readBatchCalls[0].Query)
+	if !strings.Contains(enginePlugin.prepareCalls[0].Query, "LIMIT 127") {
+		t.Fatalf("prepared query = %q, want LIMIT 127", enginePlugin.prepareCalls[0].Query)
 	}
+}
+
+func TestDatabasePreviewPostgreSQLRejectsMissingAuthorizationExecutorAndOldReadPath(t *testing.T) {
+	reader := &recordingDatabasePreviewPlugin{engineType: "postgresql"}
+	provider := &DatabaseTablePreviewProvider{}
+	_, err := provider.Preview(context.Background(), &PreviewRequest{EnginePlugin: reader})
+	if !errors.Is(err, ErrSourceAuthorizationRequired) || len(reader.describePaths) != 0 || len(reader.prepareCalls) != 0 {
+		t.Fatalf("unchecked provider was accessed: %v %#v", err, reader)
+	}
+	_, err = provider.queryData(context.Background(), reader, nil, nil, plugin.EngineCatalogPath{}, "postgresql", "public", "orders", 0, 20, nil, dataprofile.DataScope{})
+	if !errors.Is(err, ErrSourceAuthorizationRequired) || len(reader.readBatchCalls) != 0 {
+		t.Fatalf("old PostgreSQL read path remains open: %v", err)
+	}
+}
+
+func TestDatabasePreviewPostgreSQLUsesExactLeafName(t *testing.T) {
+	reader := &recordingDatabasePreviewPlugin{engineType: "postgresql"}
+	_, err := (&DatabaseTablePreviewProvider{}).preparePostgreSQLPreview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{ID: 7}, EnginePlugin: reader, Schema: "public", Table: "public.fake",
+		ProviderPath: plugin.TabularItemPath(7, plugin.EngineCatalogTermSchema, "public", "public.real.name"),
+	}, []datatype.FieldInfo{{Name: "id"}}, 0, 20)
+	if err != nil || !strings.Contains(reader.prepareCalls[0].Query, `"public"."public.real.name"`) {
+		t.Fatalf("leaf name was guessed from UI name: %v %#v", err, reader.prepareCalls)
+	}
+}
+
+func executeDatabasePreviewTestPlan(ctx context.Context, _ plugin.EnginePlugin, plan plugin.PreparedQuery) (*plugin.QueryResult, *dataprotection.PreparedTableProtection, error) {
+	result, err := plan.Execute(ctx)
+	return result, &dataprotection.PreparedTableProtection{Apply: func(*plugin.QueryResult) error { return nil }}, err
 }
 
 type recordingDatabasePreviewPlugin struct {
@@ -418,6 +447,31 @@ type recordingDatabasePreviewPlugin struct {
 	readBatchPaths   []plugin.EngineCatalogPath
 	readBatchCalls   []plugin.BatchReadOptions
 	openSessionCalls []plugin.TableReadSessionOptions
+	prepareCalls     []plugin.QueryRequest
+	executeCalls     int
+}
+
+func (*recordingDatabasePreviewPlugin) QueryLanguages() []string { return []string{"sql"} }
+func (*recordingDatabasePreviewPlugin) GenerateSampleQuery(context.Context, plugin.ConnectionInfo, plugin.SampleQueryOptions) (string, string) {
+	return "", "sql"
+}
+func (p *recordingDatabasePreviewPlugin) PrepareQuery(_ context.Context, _ plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	p.prepareCalls = append(p.prepareCalls, req)
+	return plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, func(context.Context) (*plugin.QueryReadSet, error) {
+		return plugin.NewQueryReadSet(*req.TargetPath)
+	}, nil, func(context.Context) (*plugin.QueryResult, error) {
+		p.executeCalls++
+		result := &plugin.QueryResult{}
+		if p.batchData != nil {
+			result.Rows = p.batchData.Rows
+		}
+		if p.catalogFacts != nil && p.catalogFacts.Table != nil {
+			for _, field := range p.catalogFacts.Table.Fields {
+				result.Columns = append(result.Columns, field.Name)
+			}
+		}
+		return result, nil
+	})
 }
 
 func (p *recordingDatabasePreviewPlugin) Type() string         { return p.engineType }

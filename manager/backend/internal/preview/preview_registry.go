@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/dataprofile"
@@ -22,6 +23,12 @@ const (
 
 // ErrNoPreviewProvider is returned when no provider can handle the request.
 var ErrNoPreviewProvider = errors.New("no preview provider registered for request")
+
+var ErrSourceAuthorizationRequired = errors.New("preview source authorization is required")
+
+// PreparedPreviewExecutor is bound by the HTTP owner to the current request.
+// The query and its response protection must come from the same immutable plan.
+type PreparedPreviewExecutor func(context.Context, plugin.EnginePlugin, plugin.PreparedQuery) (*plugin.QueryResult, *dataprotection.PreparedTableProtection, error)
 
 // PreviewRequest 包含生成预览所需的上下文信息。
 type PreviewRequest struct {
@@ -53,6 +60,7 @@ type PreviewRequest struct {
 	// format requires native dependencies from a workflow runtime.
 	ScopeTableReaderProvider format.ScopeTableReaderProvider
 	KeyValueOptions          plugin.KeyValueReadOptions
+	executePrepared          PreparedPreviewExecutor
 }
 
 // Mode 根据请求推断预览模式。
