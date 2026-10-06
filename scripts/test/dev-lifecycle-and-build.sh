@@ -826,6 +826,43 @@ addp_dev_owned_listener geopython-workflow-engine "$GEOPYTHON_WORKFLOW_PORT"
 '''
 env=dict(os.environ,SOURCE_ROOT=str(root),ROOT_DIR=str(work),GEOPYTHON_WORKFLOW_PORT=port,
          GEOPYTHON_WORKFLOW_LOOPBACK_HOST='container-only.invalid')
+# The user's Conda-first shell must select the same GDAL toolchain as a clean shell.
+brew_root = work / 'homebrew'
+conda = work / 'conda'
+for folder in ('gdal/bin', 'gdal/share/gdal', 'pkgconf/bin', 'proj/lib/pkgconfig', 'proj/share/proj', 'mdbtools/lib/odbc'):
+    (brew_root / folder).mkdir(parents=True)
+(conda / 'bin').mkdir(parents=True)
+(brew_root / 'proj/share/proj/proj.db').touch()
+(brew_root / 'proj/lib/pkgconfig/proj.pc').touch()
+(brew_root / 'mdbtools/lib/odbc/libmdbodbc.dylib').touch()
+tools = {
+    brew_root / 'gdal/bin/gdal-config': 'case "$1" in --version) echo 3.12.1;; --datadir) echo "$FAKE_BREW_ROOT/gdal/share/gdal";; esac',
+    brew_root / 'pkgconf/bin/pkg-config': '[ "$*" = "--variable=datadir $FAKE_BREW_ROOT/proj/lib/pkgconfig/proj.pc" ] || exit 2; echo "$FAKE_BREW_ROOT/proj/share/proj"',
+    conda / 'bin/gdal-config': 'echo conda >> "$ROOT_DIR/conda-trace"; case "$1" in --version) echo 3.6.2;; --datadir) echo "$FAKE_BREW_ROOT/gdal/share/gdal";; esac',
+    conda / 'bin/pkg-config': 'echo conda >> "$ROOT_DIR/conda-trace"; echo "$FAKE_BREW_ROOT/proj/share/proj"',
+}
+for path, body in tools.items():
+    path.write_text('#!/bin/bash\nset -eu\n' + body + '\n'); path.chmod(0o755)
+native_probe = '''
+set -euo pipefail
+source "$SOURCE_ROOT/scripts/dev/geopython-workflow.sh"
+uname() { echo Darwin; }
+brew() { [ "$1" = --prefix ]; printf '%s/%s\\n' "$FAKE_BREW_ROOT" "$2"; }
+addp_geopython_native_environment
+printf '%s\\n' "$(gdal-config --version)" "$GDAL_DATA" "$PROJ_DATA" "$ODBCSYSINI"
+[ -z "${GDAL_DRIVER_PATH:-}${PROJ_LIB:-}${GEOPYTHON_WORKFLOW_LOOPBACK_HOST:-}" ]
+'''
+native_env = dict(env, FAKE_BREW_ROOT=str(brew_root), PATH=str(conda / 'bin') + ':' + os.environ['PATH'],
+                  GDAL_DRIVER_PATH='conda-drivers', GDAL_DATA='conda-data', PROJ_DATA='conda-proj', PROJ_LIB='conda-proj',
+                  PKG_CONFIG_PATH=str(conda), PKG_CONFIG_LIBDIR=str(conda))
+result = subprocess.run(['bash', '-c', native_probe], env=native_env, capture_output=True, text=True)
+assert result.returncode == 0, (result.stdout, result.stderr)
+assert result.stdout.splitlines() == ['3.12.1', str(brew_root / 'gdal/share/gdal'), str(brew_root / 'proj/share/proj'), str(work / '.dev-state/geopython-odbc')], result.stdout
+assert not (work / 'conda-trace').exists(), 'native GDAL must not use Conda tools'
+(brew_root / 'gdal/bin/gdal-config').unlink()
+result = subprocess.run(['bash', '-c', native_probe], env=native_env, capture_output=True, text=True)
+assert result.returncode != 0, 'missing Homebrew GDAL must fail instead of falling back to Conda'
+assert not (work / 'conda-trace').exists(), 'missing Homebrew GDAL used Conda fallback'
 result=subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True,timeout=15)
 assert result.returncode==0,(result.stdout,result.stderr)
 assert (work/'trace').read_text().splitlines()==['sync']

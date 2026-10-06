@@ -2,12 +2,25 @@
 # Shared native development entry, sourced after actual ports are resolved.
 
 addp_geopython_native_environment() {
-  local prefix driver candidate
-  command -v gdal-config >/dev/null 2>&1 || { echo '✗ GeoPython 需要原生 GDAL（macOS: brew install gdal mdbtools）' >&2; return 1; }
+  local prefix driver candidate pkg_config
   unset GDAL_DRIVER_PATH GDAL_DATA PROJ_DATA PROJ_LIB GEOPYTHON_WORKFLOW_LOOPBACK_HOST
-  export GDAL_DATA="$(gdal-config --datadir)" PROJ_NETWORK=OFF
-  command -v pkg-config >/dev/null 2>&1 || { echo '✗ GeoPython 需要 pkg-config 解析原生 PROJ 资源目录' >&2; return 1; }
-  export PROJ_DATA="$(pkg-config --variable=datadir proj)"
+  if [ "$(uname -s)" = Darwin ]; then
+    command -v brew >/dev/null 2>&1 || return 1
+    prefix=$(brew --prefix gdal) || return 1
+    [ -x "$prefix/bin/gdal-config" ] || { echo '✗ GeoPython 缺少 Homebrew GDAL，请执行 brew install gdal' >&2; return 1; }
+    pkg_config="$(brew --prefix pkgconf)/bin/pkg-config" || return 1
+    [ -x "$pkg_config" ] || { echo '✗ GeoPython 缺少 Homebrew pkg-config' >&2; return 1; }
+    # GDAL's Python build also resolves gdal-config through PATH.
+    export PATH="$prefix/bin:$(dirname "$pkg_config"):$PATH"
+    prefix=$(brew --prefix proj) || return 1
+    PROJ_DATA=$("$pkg_config" --variable=datadir "$prefix/lib/pkgconfig/proj.pc") || return 1
+  else
+    command -v pkg-config >/dev/null 2>&1 || { echo '✗ GeoPython 需要 pkg-config 解析原生 PROJ 资源目录' >&2; return 1; }
+    PROJ_DATA=$(pkg-config --variable=datadir proj) || return 1
+  fi
+  command -v gdal-config >/dev/null 2>&1 || { echo '✗ GeoPython 需要原生 GDAL（macOS: brew install gdal mdbtools）' >&2; return 1; }
+  GDAL_DATA=$(gdal-config --datadir) || return 1
+  export GDAL_DATA PROJ_DATA PROJ_NETWORK=OFF
   [ -f "$PROJ_DATA/proj.db" ] && [ -d "$GDAL_DATA" ] || { echo '✗ 原生 GDAL/PROJ 资源目录不完整' >&2; return 1; }
   driver=''
   if [ "$(uname -s)" = Darwin ]; then
@@ -39,6 +52,7 @@ addp_prepare_geopython_workflow() {
   "$python_bin" -c 'import sys; assert sys.version_info[:2] == (3,12), "GeoPython 要求 Python 3.12"; from pathlib import Path; assert "include-system-site-packages = false" in Path(sys.prefix, "pyvenv.cfg").read_text(), "GeoPython 不允许继承系统 site-packages，请重建独立 venv"' || return 1
   addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'GeoPython Workflow' || return 1
   version=$(gdal-config --version) || return 1
+  echo "GeoPython 原生 GDAL: $version ($(command -v gdal-config))"
   addp_with_python_dependency_lock "$ROOT_DIR" "$python_bin" -m pip install "GDAL==$version" || return 1
   "$python_bin" -m pip check || return 1
   "$python_bin" - "$version" <<'PY' || return 1
