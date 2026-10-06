@@ -1534,12 +1534,23 @@
           "gpsTrackDegrees": "Movement Direction (degrees)",
           "gpsImageDirectionRef": "Image Direction Reference",
           "gpsImageDirectionDegrees": "Image Direction (degrees)",
+          "gpsDestinationLatitudeRef": "Destination Latitude Reference",
+          "gpsDestinationLatitudeDMS": "Source Destination Latitude (degrees, minutes, seconds)",
+          "gpsDestinationLongitudeRef": "Destination Longitude Reference",
+          "gpsDestinationLongitudeDMS": "Source Destination Longitude (degrees, minutes, seconds)",
+          "gpsDestinationBearingRef": "Destination Bearing Reference",
+          "gpsDestinationBearingDegrees": "Destination Bearing (degrees)",
+          "gpsDestinationDistanceRef": "Source Destination Distance Unit",
+          "gpsDestinationDistance": "Source Destination Distance",
           "graphModel": "Graph Model",
           "graphDirected": "Directed",
           "graphNodeCount": "Nodes",
           "graphRelationshipCount": "Relationships"
         },
         "fieldTooltips": {
+          "gpsDestinationPoint": "Preserve source destination coordinate components, independent of capture location; do not compute a destination point or image coverage.",
+          "gpsDestinationBearing": "Preserve source bearing to the destination and its independent true/magnetic north reference; do not borrow movement or image direction.",
+          "gpsDestinationDistance": "Preserve source destination distance and its independent unit: kilometers, miles or nautical miles; do not convert units or compute a route.",
           "gpsMeasureMode": "Keeps the source 2D/3D measurement mode; altitude or other fields do not supply a missing mode. Independent of measurement status.",
           "gpsDOP": "HDOP for 2D and PDOP for 3D measurement. A missing mode does not determine the type; no error in meters or quality grade is inferred.",
           "gpsDifferential": "Only the source differential correction declaration; no RTK fixed/float status or positioning quality grade is inferred.",
@@ -1589,6 +1600,11 @@
           "K": "Kilometers per Hour",
           "M": "Miles per Hour",
           "N": "Knots"
+        },
+        "gpsDistanceUnit": {
+          "K": "Kilometers",
+          "M": "Miles",
+          "N": "Nautical Miles"
         },
         "gpsBearingReference": {
           "T": "True North",

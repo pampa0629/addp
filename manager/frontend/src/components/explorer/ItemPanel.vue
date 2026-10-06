@@ -1018,6 +1018,14 @@ const fieldPathLabelKeys = {
   'format_info.jpeg.exif.gps.dop': 'manager.explorer.attributes.fields.gpsDOP',
   'format_info.jpeg.exif.gps.differential': 'manager.explorer.attributes.fields.gpsDifferential',
   'format_info.jpeg.exif.gps.horizontal_positioning_error_meters': 'manager.explorer.attributes.fields.gpsHorizontalPositioningErrorMeters',
+  'format_info.jpeg.exif.gps.destination_latitude_ref': 'manager.explorer.attributes.fields.gpsDestinationLatitudeRef',
+  'format_info.jpeg.exif.gps.destination_latitude_dms': 'manager.explorer.attributes.fields.gpsDestinationLatitudeDMS',
+  'format_info.jpeg.exif.gps.destination_longitude_ref': 'manager.explorer.attributes.fields.gpsDestinationLongitudeRef',
+  'format_info.jpeg.exif.gps.destination_longitude_dms': 'manager.explorer.attributes.fields.gpsDestinationLongitudeDMS',
+  'format_info.jpeg.exif.gps.destination_bearing_ref': 'manager.explorer.attributes.fields.gpsDestinationBearingRef',
+  'format_info.jpeg.exif.gps.destination_bearing_degrees': 'manager.explorer.attributes.fields.gpsDestinationBearingDegrees',
+  'format_info.jpeg.exif.gps.destination_distance_ref': 'manager.explorer.attributes.fields.gpsDestinationDistanceRef',
+  'format_info.jpeg.exif.gps.destination_distance': 'manager.explorer.attributes.fields.gpsDestinationDistance',
   'format_info.jpeg.exif.gps.speed_ref': 'manager.explorer.attributes.fields.gpsSpeedRef',
   'format_info.jpeg.exif.gps.speed': 'manager.explorer.attributes.fields.gpsSpeed',
   'format_info.jpeg.exif.gps.track_ref': 'manager.explorer.attributes.fields.gpsTrackRef',
@@ -1027,6 +1035,10 @@ const fieldPathLabelKeys = {
 }
 
 const fieldTooltipKeys = {
+  'format_info.jpeg.exif.gps.destination_latitude_dms': 'manager.explorer.attributes.fieldTooltips.gpsDestinationPoint',
+  'format_info.jpeg.exif.gps.destination_longitude_dms': 'manager.explorer.attributes.fieldTooltips.gpsDestinationPoint',
+  'format_info.jpeg.exif.gps.destination_bearing_degrees': 'manager.explorer.attributes.fieldTooltips.gpsDestinationBearing',
+  'format_info.jpeg.exif.gps.destination_distance': 'manager.explorer.attributes.fieldTooltips.gpsDestinationDistance',
   'format_info.jpeg.exif.gps.measure_mode': 'manager.explorer.attributes.fieldTooltips.gpsMeasureMode',
   'format_info.jpeg.exif.gps.dop': 'manager.explorer.attributes.fieldTooltips.gpsDOP',
   'format_info.jpeg.exif.gps.differential': 'manager.explorer.attributes.fieldTooltips.gpsDifferential',
@@ -1696,7 +1708,8 @@ const formatAttributeDisplay = (pathParts, value) => {
   if (path === 'format_info.tiff.page_summary_status') {
     return formatMappedValue('manager.explorer.attributes.tiffPageStatus', value)
   }
-  if (['format_info.jpeg.exif.gps.latitude_ref', 'format_info.jpeg.exif.gps.longitude_ref'].includes(path)) {
+  if (['format_info.jpeg.exif.gps.latitude_ref', 'format_info.jpeg.exif.gps.longitude_ref',
+    'format_info.jpeg.exif.gps.destination_latitude_ref', 'format_info.jpeg.exif.gps.destination_longitude_ref'].includes(path)) {
     return formatMappedValue('manager.explorer.attributes.gpsDirection', value)
   }
   if (path === 'format_info.jpeg.exif.gps.measure_mode') {
@@ -1705,10 +1718,14 @@ const formatAttributeDisplay = (pathParts, value) => {
   if (path === 'format_info.jpeg.exif.gps.differential') {
     return formatMappedValue('manager.explorer.attributes.gpsDifferential', String(value))
   }
+  if (path === 'format_info.jpeg.exif.gps.destination_distance_ref') {
+    return formatMappedValue('manager.explorer.attributes.gpsDistanceUnit', value)
+  }
   if (path === 'format_info.jpeg.exif.gps.speed_ref') {
     return formatMappedValue('manager.explorer.attributes.gpsSpeedUnit', value)
   }
-  if (['format_info.jpeg.exif.gps.track_ref', 'format_info.jpeg.exif.gps.image_direction_ref'].includes(path)) {
+  if (['format_info.jpeg.exif.gps.track_ref', 'format_info.jpeg.exif.gps.image_direction_ref',
+    'format_info.jpeg.exif.gps.destination_bearing_ref'].includes(path)) {
     return formatMappedValue('manager.explorer.attributes.gpsBearingReference', value)
   }
   if (path === 'format_info.jpeg.exif.gps.status') {

@@ -60,6 +60,8 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 	}{
 		{1, "latitude_ref", "NS"}, {3, "longitude_ref", "EW"}, {9, "status", "AV"},
 		{10, "measure_mode", "23"}, {12, "speed_ref", "KMN"}, {14, "track_ref", "TM"}, {16, "image_direction_ref", "TM"},
+		{19, "destination_latitude_ref", "NS"}, {21, "destination_longitude_ref", "EW"},
+		{23, "destination_bearing_ref", "TM"}, {25, "destination_distance_ref", "KMN"},
 	} {
 		if !ifd.hasTag(field.tag) {
 			continue
@@ -77,6 +79,7 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 		maximum float64
 	}{
 		{2, "latitude_dms", 90}, {4, "longitude_dms", 180},
+		{20, "destination_latitude_dms", 90}, {22, "destination_longitude_dms", 180},
 	} {
 		if !ifd.hasTag(field.tag) {
 			continue
@@ -103,6 +106,7 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 		{6, "altitude_meters", false}, {11, "dop", false}, {13, "speed", false},
 		{31, "horizontal_positioning_error_meters", false},
 		{15, "track_degrees", true}, {17, "image_direction_degrees", true},
+		{24, "destination_bearing_degrees", true}, {26, "destination_distance", false},
 	} {
 		if !ifd.hasTag(field.tag) {
 			continue

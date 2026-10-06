@@ -1534,12 +1534,23 @@
           "gpsTrackDegrees": "移动方向（度）",
           "gpsImageDirectionRef": "图像方向参考",
           "gpsImageDirectionDegrees": "图像方向（度）",
+          "gpsDestinationLatitudeRef": "目的地纬度方位",
+          "gpsDestinationLatitudeDMS": "源目的地纬度（度、分、秒）",
+          "gpsDestinationLongitudeRef": "目的地经度方位",
+          "gpsDestinationLongitudeDMS": "源目的地经度（度、分、秒）",
+          "gpsDestinationBearingRef": "目的地方位角参考",
+          "gpsDestinationBearingDegrees": "目的地方位角（度）",
+          "gpsDestinationDistanceRef": "源目的地距离单位",
+          "gpsDestinationDistance": "源目的地距离",
           "graphModel": "图模型",
           "graphDirected": "有向图",
           "graphNodeCount": "节点数",
           "graphRelationshipCount": "关系数"
         },
         "fieldTooltips": {
+          "gpsDestinationPoint": "保留源目的地经纬度分量，与拍摄位置独立；不计算目的地点或影像覆盖。",
+          "gpsDestinationBearing": "保留指向目的地的源方位角及独立真北／磁北参考；不借用移动方向或图像方向。",
+          "gpsDestinationDistance": "保留源目的地距离及独立单位：千米、英里或海里；不转换单位或计算路线。",
           "gpsMeasureMode": "保留源二维／三维测量方式，不根据海拔或其他字段补值；与测量状态独立。",
           "gpsDOP": "二维测量对应 HDOP，三维测量对应 PDOP；方式缺失时不判定类型，不换算米制误差或定位质量等级。",
           "gpsDifferential": "仅表达源差分修正声明，不推导 RTK fixed / float 或定位质量等级。",
@@ -1589,6 +1600,11 @@
           "K": "千米/小时",
           "M": "英里/小时",
           "N": "节"
+        },
+        "gpsDistanceUnit": {
+          "K": "千米",
+          "M": "英里",
+          "N": "海里"
         },
         "gpsBearingReference": {
           "T": "真北",

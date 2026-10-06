@@ -123,6 +123,39 @@ for (const locale of ['zh-cn', 'en']) {
   })
 
   for (const unit of ['K', 'M', 'N', null]) {
+    test(`shows independent GPS destination labels and distance units (${unit ?? 'missing refs'}) in ${locale}`, async ({ page }) => {
+      const gps = { destination_latitude_dms: [10, 30, 0], destination_longitude_dms: [20, 15, 0], destination_bearing_degrees: 359.99, destination_distance: 0 }
+      if (unit) Object.assign(gps, { destination_latitude_ref: 'S', destination_longitude_ref: 'W', destination_bearing_ref: 'M', destination_distance_ref: unit })
+      await openAttributes(page, locale, {
+        item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+        format_info: { jpeg: { exif_status: 'parsed', exif: { gps } } }
+      })
+      const labels = locale === 'zh-cn'
+        ? ['目的地纬度方位', '源目的地纬度（度、分、秒）', '目的地经度方位', '源目的地经度（度、分、秒）', '目的地方位角参考', '目的地方位角（度）', '源目的地距离单位', '源目的地距离']
+        : ['Destination Latitude Reference', 'Source Destination Latitude (degrees, minutes, seconds)', 'Destination Longitude Reference', 'Source Destination Longitude (degrees, minutes, seconds)', 'Destination Bearing Reference', 'Destination Bearing (degrees)', 'Source Destination Distance Unit', 'Source Destination Distance']
+      for (const [i, key] of ['destination_latitude_ref', 'destination_latitude_dms', 'destination_longitude_ref', 'destination_longitude_dms', 'destination_bearing_ref', 'destination_bearing_degrees', 'destination_distance_ref', 'destination_distance'].entries()) {
+        const field = page.getByText(`EXIF / GPS / ${labels[i]}`, { exact: true })
+        if (key in gps) await expect(field).toBeVisible()
+        else await expect(field).toHaveCount(0)
+      }
+      for (const value of ['10, 30, 0', '20, 15, 0', '359.99', '0']) await expect(page.getByText(value, { exact: true })).toBeVisible()
+      const units = locale === 'zh-cn' ? { K: '千米', M: '英里', N: '海里' } : { K: 'Kilometers', M: 'Miles', N: 'Nautical Miles' }
+      for (const [code, value] of Object.entries(units)) {
+        if (code === unit) await expect(page.getByText(value, { exact: true })).toBeVisible()
+        else await expect(page.getByText(value, { exact: true })).toHaveCount(0)
+      }
+      for (const value of locale === 'zh-cn' ? ['南纬', '西经', '磁北'] : ['South', 'West', 'Magnetic North']) {
+        if (unit) await expect(page.getByText(value, { exact: true })).toBeVisible()
+        else await expect(page.getByText(value, { exact: true })).toHaveCount(0)
+      }
+      await expect(page.getByText(locale === 'zh-cn' ? '节' : 'Knots', { exact: true })).toHaveCount(0)
+      await expect(page.getByText(`EXIF / GPS / ${labels[1]}`, { exact: true })).toHaveAttribute('title', locale === 'zh-cn' ? /与拍摄位置独立/ : /independent of capture location/)
+      await expect(page.getByText(`EXIF / GPS / ${labels[7]}`, { exact: true })).toHaveAttribute('title', locale === 'zh-cn' ? /不转换单位或计算路线/ : /do not convert units or compute a route/)
+      await expect(page.getByText(locale === 'zh-cn' ? '拍摄位置 / 拍摄纬度（度）' : 'Capture Location / Capture Latitude (degrees)', { exact: true })).toHaveCount(0)
+    })
+  }
+
+  for (const unit of ['K', 'M', 'N', null]) {
     test(`shows independent GPS motion sources (${unit ?? 'missing refs'}) in ${locale}`, async ({ page }) => {
       const gps = { speed: 0, track_degrees: 12.5, image_direction_degrees: 359.99 }
       if (unit) Object.assign(gps, { speed_ref: unit, track_ref: 'T', image_direction_ref: 'M' })

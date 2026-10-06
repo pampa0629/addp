@@ -292,7 +292,7 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 
 ### format_info.jpeg
 
-JPEG EXIF GPS 的 `date_stamp` 与 `time_hms` 分别保存源 UTC 日期和时、分、秒。二者完整合法时，可在同一 `format_info.jpeg.exif.gps` 命名空间写入 RFC3339 UTC `date_time_utc`；它只表达 GPS 接收机时间，不声明相机快门时间、时间列或时间范围。部分标签缺失时不补值，闰秒源分量保留但不组合。速度 `speed` / `speed_ref`、移动方向 `track_degrees` / `track_ref` 和图像方向 `image_direction_degrees` / `image_direction_ref` 同样保留在原生 GPS 命名空间；源单位和真北／磁北参考不补值、不转换，两个方向不混用，也不扩展为设备轨迹或相机姿态能力。测量方式 `measure_mode`、精度衰减因子 `dop`、差分修正状态 `differential` 和 `horizontal_positioning_error_meters` 同样只写原生命名空间，不由缺失标签推断测量方式、DOP 类型、米制误差或 RTK 状态，不扩展公共拍摄点结构。精度、合法性及替换规则见 [内置 JPEG GPS 规范](addp内置数据类型与文件格式规范.md#jpeg-gps-拍摄位置)。
+JPEG EXIF GPS 的 `date_stamp` 与 `time_hms` 分别保存源 UTC 日期和时、分、秒。二者完整合法时，可在同一 `format_info.jpeg.exif.gps` 命名空间写入 RFC3339 UTC `date_time_utc`；它只表达 GPS 接收机时间，不声明相机快门时间、时间列或时间范围。部分标签缺失时不补值，闰秒源分量保留但不组合。速度 `speed` / `speed_ref`、移动方向 `track_degrees` / `track_ref` 和图像方向 `image_direction_degrees` / `image_direction_ref` 同样保留在原生 GPS 命名空间；源单位和真北／磁北参考不补值、不转换，两个方向不混用，也不扩展为设备轨迹或相机姿态能力。测量方式 `measure_mode`、精度衰减因子 `dop`、差分修正状态 `differential` 和 `horizontal_positioning_error_meters` 同样只写原生命名空间，不由缺失标签推断测量方式、DOP 类型、米制误差或 RTK 状态，不扩展公共拍摄点结构。目的地源分量 `destination_latitude_dms` / `destination_longitude_dms` 及其方位、`destination_bearing_degrees` / `destination_bearing_ref`、`destination_distance` / `destination_distance_ref` 也仅在该原生命名空间保留；不参与 `capture_location` 生成，不扩展公共目的地或导航能力。精度、合法性及替换规则见 [内置 JPEG GPS 规范](addp内置数据类型与文件格式规范.md#jpeg-gps-拍摄位置)。
 
 ### format_info.tiff
 

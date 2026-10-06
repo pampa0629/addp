@@ -1260,6 +1260,14 @@ JPEG EXIF 摘要通过现有 `MediaInfoProvider` 一次读取提供，由 Meta �
 | GPSImgDirectionRef（16） | `image_direction_ref` | ASCII，2；T / M，真北 / 磁北参考 |
 | GPSImgDirection（17） | `image_direction_degrees` | RATIONAL，1；图像方向（度），0–359.99 |
 | GPSMapDatum（18） | `map_datum` | 有界 ASCII；源大地基准 |
+| GPSDestLatitudeRef（19） | `destination_latitude_ref` | ASCII，2；N / S |
+| GPSDestLatitude（20） | `destination_latitude_dms` | RATIONAL，3；目的地纬度的度、分、秒，分母非零 |
+| GPSDestLongitudeRef（21） | `destination_longitude_ref` | ASCII，2；E / W |
+| GPSDestLongitude（22） | `destination_longitude_dms` | RATIONAL，3；目的地经度的度、分、秒，分母非零 |
+| GPSDestBearingRef（23） | `destination_bearing_ref` | ASCII，2；T / M，目的地方位角的真北 / 磁北参考 |
+| GPSDestBearing（24） | `destination_bearing_degrees` | RATIONAL，1；指向目的地的方位角（度），0–359.99 |
+| GPSDestDistanceRef（25） | `destination_distance_ref` | ASCII，2；K / M / N，千米 / 英里 / 海里 |
+| GPSDestDistance（26） | `destination_distance` | RATIONAL，1；非负源距离，单位由独立参考声明 |
 | GPSDateStamp（29） | `date_stamp` | ASCII，11（含末尾 NULL）；保留有效的 `YYYY:MM:DD` 源日期 |
 | GPSDifferential（30） | `differential` | SHORT，1；源数值 0 / 1，未应用 / 已应用差分修正 |
 | GPSHPositioningError（31） | `horizontal_positioning_error_meters` | RATIONAL，1；非负源水平定位误差（米），分母非零 |
@@ -1272,9 +1280,11 @@ GPS 接收机时间与相机 `DateTimeOriginal` 独立，明确采用 UTC，不�
 
 测量方式、DOP、差分修正状态和水平定位误差分别保留，不补缺失标签。GPSMeasureMode 不等同于 GPSStatus，也不据海拔是否存在推断二维或三维；GPSDOP 在二维测量中表达 HDOP，在三维测量中表达 PDOP，方式缺失时不判定其类型，不换算为米制误差。差分修正源 0 和两个 RATIONAL 源零值均保留；不将差分修正解释为 RTK fixed / float，不给定位质量评级，不计算误差圆或影像覆盖。非法类型、数量、枚举、分母或偏移只省略对应字段并标记 invalid，合法源字段保留，此时仍不生成统一拍摄点或组合 UTC 时间；刷新须清除已移除的源字段。沿用 APP1 总预算与同一 GPS IFD，不新增能力或另一解析路径。
 
+目的地经纬度分量与方位、目的地方位角与参考、目的地距离与单位分别保存为独立源标签；经纬度沿用分、秒与总量约束，纬度不超过 90 度、经度不超过 180 度。合法零值保留，部分标签缺失不补标准默认值，不借用拍摄点经纬度或其他方向参考；K / M / N 为距离单位千米、英里、海里，不是速度单位。只记录源值，不换算单位或真北／磁北，不根据方位角与距离计算目的地点，不生成公共拍摄点、导航路线、设备轨迹或覆盖。非法类型、数量、枚举、分母、范围或偏移只省略对应字段并记 invalid，其他合法源字段保留，并阻止统一拍摄点与组合 UTC 时间；成功刷新须清除已移除的目的地标签。
+
 媒体内容成功描述后，Meta 整体替换此次描述拥有的 `type_info.media`、`capabilities.spatial` 和当前 `format_info.<format>` 命名空间；本次未返回的事实须清除，其他命名空间保留。因此同一 JPEG 移除 EXIF / GPS、失去可用定位或移除基准时，刷新不能沿用旧拍摄位置、旧 SRID 或旧源标签。内容读取或描述失败时返回错误，不将失败当成成功空快照。
 
-只有 EXIF 摘要为 `parsed`、经纬度及各自方位都合法，且未显式声明测量中断（V），才能生成 `capabilities.spatial.capture_location`。源 `map_datum` 为去掉外围空白、忽略大小写的 `WGS-84` 时，拍摄位置的 `srid=4326`；缺失、非法或其他基准不推断 SRID，不转换坐标，合法坐标仍可记录但不可当作 WGS84 上图。不会由 GPS 元数据生成影像覆盖 `extent`、顶层 SRID、像元 transform 或空间字段；海拔源值和海平面参考仅留在原生 GPS 摘要，不混为椭球高。GPS 目的地、卫星信息和处理方法标签尚未支持。定义见 [JEITA/CIPA Exif GPS 标签](https://home.jeita.or.jp/tsc/std-pdf/CP-3451D.pdf)。
+只有 EXIF 摘要为 `parsed`、经纬度及各自方位都合法，且未显式声明测量中断（V），才能生成 `capabilities.spatial.capture_location`。源 `map_datum` 为去掉外围空白、忽略大小写的 `WGS-84` 时，拍摄位置的 `srid=4326`；缺失、非法或其他基准不推断 SRID，不转换坐标，合法坐标仍可记录但不可当作 WGS84 上图。不会由 GPS 元数据生成影像覆盖 `extent`、顶层 SRID、像元 transform 或空间字段；海拔源值和海平面参考仅留在原生 GPS 摘要，不混为椭球高。GPS 卫星信息和处理方法标签尚未支持。定义见 [JEITA/CIPA Exif GPS 标签](https://home.jeita.or.jp/tsc/std-pdf/CP-3451D.pdf)。
 
 JPEG 只扫描图像扫描数据前的 marker segment，总源读取预算为 1 MiB，支持非 seekable 输入及 TIFF 两种字节序。相机字符串与小数秒长度最多 1024 字节；未知或部分未知的拍摄时间不补值。`exif_status` 表示 `absent`（完整检查后没有 EXIF）、`parsed`（支持范围内摘要合法）、`invalid`（EXIF IFD 结构、受支持字段或 marker 非法，包括重复 tag 和 EXIF APP1）、`budget_exceeded`（无法在预算内完成检查）；非法或未完成检查不得被标记为没有 EXIF。非法 EXIF 不阻止已确认的像素尺寸返回，仅保留合法字段；重复 EXIF APP1 不选择其中任意一份。如果标准 JPEG 解码器不能在预算内确认尺寸，则返回解析错误，不输出猜测尺寸。实际 I/O 错误和取消仍返回错误，不吞为缺失元数据。
 

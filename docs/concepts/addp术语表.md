@@ -202,6 +202,7 @@
 | GPS receiver time | GPS 接收机时间 | GPS 元数据记录的 UTC 日期和时间。 | JPEG 的源日期、时分秒与可组合的 UTC 时间保存在 `format_info.jpeg.exif.gps`；不等同于相机快门时间，不补造日期或相机时区。 |
 | GPS direction of movement | GPS 移动方向 | GPS 接收机的移动方向，以度表示。 | 源方向与真北／磁北参考分别保留；不等同于图像方向，不由单张图片推导设备轨迹。 |
 | GPS image direction | GPS 图像方向 | 图像拍摄时的方向，以度表示。 | 与移动方向独立，也不同于像素旋转的 EXIF Orientation；不推导相机姿态或真北／磁北转换。 |
+| GPS destination point | GPS 目的地点 | 源 GPS 元数据记录的目的地位置及指向该目的地的方位角、距离。 | 与拍摄点、移动方向和图像方向独立；只保留源分量及参考，不计算目的地定位、导航路线或影像覆盖。 |
 | GPS measurement mode | GPS 测量方式 | 源定位元数据声明的二维或三维测量方式。 | 不同于 GPS 测量状态；只保留源声明，不根据海拔或其他字段补造。 |
 | GPS DOP | GPS 精度衰减因子 | 源 GPSDOP 参数；二维测量对应 HDOP，三维测量对应 PDOP。 | 方式缺失时不判定 DOP 类型，不换算为米制误差或定位质量等级。 |
 | GPS horizontal positioning error | GPS 水平定位误差 | 源元数据以米记录的水平定位误差。 | 与 DOP、差分修正状态分别保存，不据其生成影像覆盖范围或推导 RTK 状态。 |
