@@ -211,7 +211,8 @@
         "managerConfiguration": "Manager Configuration",
         "transferConfiguration": "Transfer Configuration",
         "monitorConfiguration": "Monitor Configuration",
-        "serviceConfiguration": "Service Configuration"
+        "serviceConfiguration": "Service Configuration",
+        "systemConfiguration": "System configuration"
       },
       "tabs": {
         "inference": "Inference Scenarios",
@@ -613,7 +614,6 @@
         "recentModules": "Platform Module Management",
         "recentCleanup": "System Resource Reclaim",
         "recentConfiguration": "Platform Configuration",
-        "rasterPolicy": "Raster runtime resource policy",
         "hostNodes": "Platform node inventory"
       }
     }

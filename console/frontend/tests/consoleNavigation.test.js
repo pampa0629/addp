@@ -387,3 +387,14 @@ it('orders modeling from entity design to table design and publishing in both sh
   expect(standaloneRoutes).toEqual(routes)
   expect(config).toContain("modeling:     '/modeling/entities'")
 })
+
+
+describe('System configuration ownership', () => {
+  it('exposes one configuration menu and removes the standalone raster page', () => {
+    const menus = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const router = readFileSync(new URL('../../../system/frontend/src/router/index.js', import.meta.url), 'utf8')
+    const layout = readFileSync(new URL('../../../system/frontend/src/components/Layout.vue', import.meta.url), 'utf8')
+    expect(menus.split("index: '/configuration'").length - 1).toBe(1)
+    for (const source of [menus, router, layout]) expect(source).not.toContain('engine-raster-policies')
+  })
+})

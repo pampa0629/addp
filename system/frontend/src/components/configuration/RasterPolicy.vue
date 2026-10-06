@@ -48,8 +48,8 @@
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { useAuthStore } from '../store/auth'
-import { rasterPoliciesAPI } from '../api/rasterPolicies'
+import { useAuthStore } from '../../store/auth'
+import { rasterPoliciesAPI } from '../../api/rasterPolicies'
 
 const { t } = useI18n()
 const auth = useAuthStore()

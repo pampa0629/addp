@@ -31,8 +31,23 @@ func TestSystemRegistrationDeclarationIsValid(t *testing.T) {
 		t.Fatalf("System node identity = %#v", request)
 	}
 	entries := request.ConfigurationManagement.Entries
-	if len(entries) != 1 || entries[0].FrontendRoute != "/system/iam/security" {
+	if len(entries) != 2 {
 		t.Fatalf("unexpected System configuration management route: %+v", entries)
+	}
+	byID := make(map[string]commonconfiguration.ManagementEntry)
+	for _, entry := range entries {
+		if entry.FrontendRoute != "/system/configuration" {
+			t.Fatalf("configuration domains must share the System page: %+v", entry)
+		}
+		byID[entry.ID] = entry
+	}
+	security := byID["system.iam_security_policy"]
+	raster := byID["system.engine_raster_policy"]
+	if security.ReadPermission != "iam.security_policy.read" || len(security.ScopeTypes) != 1 || security.ScopeTypes[0] != commonconfiguration.ScopePlatformOnly {
+		t.Fatalf("security policy declaration changed: %+v", security)
+	}
+	if raster.ReadPermission != "system.engine_raster_policy.read" || raster.UpdatePermission != "system.engine_raster_policy.update" || len(raster.ScopeTypes) != 1 || raster.ScopeTypes[0] != commonconfiguration.ScopePlatformDefaultWithTenantOverride {
+		t.Fatalf("raster policy scope/permissions changed: %+v", raster)
 	}
 }
 

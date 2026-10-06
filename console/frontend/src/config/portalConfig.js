@@ -380,7 +380,6 @@ export const SIDEBAR_MENUS = {
       { index: '/system/modules',      icon: Operation,  label: 'console.menus.system.modules', recentLabel: 'console.menus.system.recentModules', permissions: ['platform.module.read'] },
       { index: '/system/host-nodes', icon: Connection, label: 'console.menus.system.hostNodes', access: [{ context: 'platform', permissions: ['platform.host_node.read'] }] },
       { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', recentLabel: 'console.menus.system.recentEngines', permissions: ['system.engine.read'] },
-      { index: '/system/engine-raster-policies', icon: SetUp, label: 'console.menus.system.rasterPolicy', permissions: ['system.engine_raster_policy.read'] },
       { index: '/configuration',       icon: SetUp,      label: 'console.configuration.title', recentLabel: 'console.menus.system.recentConfiguration' },
       { index: '/system/cleanup',      icon: Refresh,    label: 'console.menus.system.cleanup', recentLabel: 'console.menus.system.recentCleanup', permissions: ['system.cleanup.read'] },
     ],

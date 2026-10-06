@@ -1998,6 +1998,9 @@
         "node_disabled": "The declared node is disabled",
         "source_not_allowed": "This module identity is not allowed on the node"
       }
+    },
+    "configuration": {
+      "title": "Configuration Management"
     }
   },
   "roles": {

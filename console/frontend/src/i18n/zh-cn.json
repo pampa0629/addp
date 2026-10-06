@@ -211,7 +211,8 @@
         "managerConfiguration": "Manager 配置",
         "transferConfiguration": "Transfer 配置",
         "monitorConfiguration": "Monitor 配置",
-        "serviceConfiguration": "Service 配置"
+        "serviceConfiguration": "Service 配置",
+        "systemConfiguration": "System 配置"
       },
       "tabs": {
         "inference": "推理场景",
@@ -613,7 +614,6 @@
         "recentModules": "平台模块管理",
         "recentCleanup": "系统资源回收",
         "recentConfiguration": "平台配置管理",
-        "rasterPolicy": "栅格引擎资源策略",
         "hostNodes": "平台节点台账"
       }
     }

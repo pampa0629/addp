@@ -452,7 +452,7 @@ const handleMenuSelect = (index) => {
 
 function syncRouteToPortal(fullPath) {
   const [pathPart, queryPart] = splitConsoleRoute(fullPath || '/')
-  activeMenu.value = pathPart || '/'
+  activeMenu.value = pathPart === '/system/configuration' ? '/configuration' : pathPart || '/'
 
   const parts = pathPart.split('/').filter(Boolean)
   if (parts.length === 0) {

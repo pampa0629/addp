@@ -1998,6 +1998,9 @@
         "node_disabled": "声明的节点已停用",
         "source_not_allowed": "节点不允许此模块身份关联"
       }
+    },
+    "configuration": {
+      "title": "配置管理"
     }
   },
   "roles": {

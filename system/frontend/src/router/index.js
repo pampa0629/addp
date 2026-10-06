@@ -77,10 +77,10 @@ const routes = [
         meta: { requiresAuth: true, requiredPermissions: ['platform.host_node.read'] }
       },
       {
-        path: 'engine-raster-policies',
-        name: 'EngineRasterPolicies',
-        component: () => import('../views/EngineRasterPolicies.vue'),
-        meta: { requiresAuth: true, requiredPermissions: ['system.engine_raster_policy.read'] }
+        path: 'configuration',
+        name: 'Configuration',
+        component: () => import('../views/Configuration.vue'),
+        meta: { requiresAuth: true, anyPermissions: ['iam.security_policy.read', 'system.engine_raster_policy.read'] }
       },
       {
         path: 'engines',

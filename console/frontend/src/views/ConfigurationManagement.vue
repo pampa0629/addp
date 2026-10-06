@@ -85,6 +85,7 @@ const CONSOLE_MODULE_ROUTES = {
   service: '/configuration/service'
 }
 const ENTRY_LABEL_KEYS = {
+  'system.configuration': 'console.configuration.entries.systemConfiguration',
   'agent.configuration': 'console.configuration.entries.agentConfiguration',
   'copilot.configuration': 'console.configuration.entries.copilotConfiguration',
   'develop.configuration': 'console.configuration.entries.developConfiguration',

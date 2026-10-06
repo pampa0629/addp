@@ -119,3 +119,18 @@ describe('Console page access', () => {
     }
   })
 })
+
+
+describe('System configuration access', () => {
+  it('uses each original read permission and preserves context boundaries', () => {
+    for (const route of ['/configuration', '/system/configuration']) {
+      for (const scope of ['platform', 'tenant']) {
+        expect(matchesNavigationAccess({ route }, scope, ['system.engine_raster_policy.read'])).toBe(true)
+        expect(matchesNavigationAccess({ route }, scope, ['system.engine_raster_policy.update'])).toBe(false)
+      }
+      expect(matchesNavigationAccess({ route }, 'platform', ['iam.security_policy.read'])).toBe(true)
+      expect(matchesNavigationAccess({ route }, 'tenant', ['iam.security_policy.read'])).toBe(false)
+    }
+    expect(consoleRouteAccess('/system/engine-raster-policies')).toBeNull()
+  })
+})

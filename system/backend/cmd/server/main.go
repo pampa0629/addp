@@ -232,9 +232,15 @@ func newSystemRegistrationRequest(serviceURL, instanceID string) *models.ModuleR
 			Entries: []commonconfiguration.ManagementEntry{{
 				ID: "system.iam_security_policy", OwnerModule: "system",
 				ScopeTypes:       []string{commonconfiguration.ScopePlatformOnly},
-				FrontendRoute:    "/system/iam/security",
+				FrontendRoute:    "/system/configuration",
 				ReadPermission:   systemauthorization.PermissionIamSecurityPolicyRead,
 				UpdatePermission: systemauthorization.PermissionIamSecurityPolicyUpdate,
+			}, {
+				ID: "system.engine_raster_policy", OwnerModule: "system",
+				ScopeTypes:       []string{commonconfiguration.ScopePlatformDefaultWithTenantOverride},
+				FrontendRoute:    "/system/configuration",
+				ReadPermission:   systemauthorization.PermissionSystemEngineRasterPolicyRead,
+				UpdatePermission: systemauthorization.PermissionSystemEngineRasterPolicyUpdate,
 			}},
 		},
 	}
