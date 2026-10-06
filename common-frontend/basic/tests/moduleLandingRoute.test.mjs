@@ -2,6 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { allowsConsoleRoute, resolveModuleLandingRoute } from '../src/authorization/consoleRouteAccess.js'
 
+test('node resource list and detail require both Platform owner permissions', () => {
+  const permissions = ['monitor.resource_observation.read', 'platform.host_node.read']
+  for (const route of ['/monitor/node-resources', '/monitor/node-resources/node-id']) {
+    assert.equal(allowsConsoleRoute(route, 'platform', permissions), true)
+    assert.equal(allowsConsoleRoute(route, 'tenant', permissions), false)
+    for (const permission of permissions) assert.equal(allowsConsoleRoute(route, 'platform', [permission]), false)
+  }
+})
+
 test('module landing uses the same tenant page access as Console', () => {
   const paths = ['/dashboard', '/executions', '/alerts', '/notifications']
   assert.equal(resolveModuleLandingRoute('/monitor', paths, 'tenant', ['monitor.statistics.read', 'monitor.execution.read']), '/dashboard')

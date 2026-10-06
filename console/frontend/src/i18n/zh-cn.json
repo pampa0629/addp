@@ -564,7 +564,8 @@
         "recentExecutions": "全域执行记录",
         "recentAlerts": "执行告警事件",
         "recentNotifications": "执行告警通知",
-        "monitoringTargets": "平台监测目标"
+        "monitoringTargets": "平台监测目标",
+        "nodeResources": "平台节点资源"
       },
       "catalog": {
         "label": "企业资源目录",

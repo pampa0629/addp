@@ -63,7 +63,7 @@ monitor/
 详情刷新依据整棵已授权可见树：父执行结束但任一可见子执行仍运行时继续刷新，全部可见执行达到终态才停止；不根据私有步骤引用补查隐藏节点。每次刷新复用 Owner 裁决；返回 403/404 时清空旧树、步骤和事件并显示重新加载入口。异步响应必须属于当前详情请求，不能覆盖关闭后重新打开的页面。
 
 - Monitor 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。
-- 独立访问模块根路径时，AuthContext 加载后依次选择可进入的平台监测目标、仪表盘、执行记录、告警、通知页面；均不可进入时显示无权限。登录后返回根路径也按此顺序选择，显式页面地址保持原样。
+- 独立访问模块根路径时，AuthContext 加载后依次选择可进入的平台节点资源、平台监测目标、仪表盘、执行记录、告警、通知页面；均不可进入时显示无权限。登录后返回根路径也按此顺序选择，显式页面地址保持原样。
 - 执行详情 canonical URL 固定为 `/monitor/executions?execution_id={execution_uuid}`；从列表打开详情使用 `push`，关闭详情清除 `execution_id` 使用 `replace`，浏览器前进/后退必须同步打开或关闭详情。
 - 告警页默认 `incidents` Tab 和通知页默认 `webhook` Tab 从 URL 省略；`rules`、`email` 等非默认稳定 Tab 使用 `tab` query 并以 `replace` 更新。
 
@@ -120,7 +120,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - `internal/resourcequery/` 唯一维护 8 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率、文件系统、磁盘/网络速率尚未发布。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
 - `/settings/resource-query-policy` 沿用模块级 `monitor.configuration.read/update`，仅 Platform User，唯一 `monitor.resource_query_policy` 单例保存 CAS 版本与完整预算。每个查询读一次已提交预算，对新请求热生效；没有环境回退或重启要求。标准平台审计记录安全结果与保存版本，不记录 PromQL、Token 或内部地址。
 - mTLS 查询部署输入独立于节点准入和 collector；关闭或不完整配置不阻断业务。生产只通过标准生命周期的 `metrics-query.yml` 挂载，不增加必需 Infra 依赖。
-- Go T1、Monitor PostgreSQL 及 System IAM Migration T2 沿既有标准入口自动发现；同一个 `platform-node-metrics` suite 已在 `794450a30` 取得扩展后的真实 Hosted T4（run 37485747576），覆盖八项即时/趋势查询、预算 CAS/热生效、权限隔离、中心故障与新样本恢复、停用后不复用历史及独立清理零残留；具体证据见设计 10.22 节。用户资源查询页面、更多指标和生产 T5 仍须分批补齐，该次 Linux VM 通过不代表生产纳管覆盖。
+- Go T1、Monitor PostgreSQL 及 System IAM Migration T2 沿既有标准入口自动发现；同一个 `platform-node-metrics` suite 已在 `794450a30` 取得扩展后的真实 Hosted T4（run 37485747576），覆盖八项即时/趋势查询、预算 CAS/热生效、权限隔离、中心故障与新样本恢复、停用后不复用历史及独立清理零残留；具体证据见设计 10.22 节。用户资源查询页面现已接入 Console（见下文）；更多指标和生产 T5 仍须分批补齐，该次 Linux VM 通过不代表生产纳管覆盖。
 
 ## 平台监测目标管理前端
 
@@ -128,3 +128,10 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - 入口只接受非委托 Platform User，需同时具备 `monitor.monitoring_target.read` 和 `platform.host_node.read`；新建、修改、删除分别消费对应独立 Permission。Context、主体、委托或权限变化同步取消请求并清空列表与草稿，迟到响应不得覆盖新范围。
 - 主体/类别创建后只读，更新/停用与删除携带保存版本。CAS 冲突保留草稿并停止写入，须明确重新加载；启用标记仅表示保存配置，不表示实际采集健康。节点台账导航使用共享 Console bridge。
 - 标准门禁为 `make test-monitor-frontend`、`make test-console-frontend`、`make test-common-frontend` 与 `make test-frontend-ci-registration`。Console 浏览器生命周期自建 Monitor Vite 夹具，CI 安装其锁定依赖；Monitor 前端变更扩散至 Console，后端变更不扩散。无需重启个人开发环境。
+
+## 平台节点资源前端
+
+- Monitor 唯一拥有 `/node-resources` 和 `/node-resources/:node_id`，Console 集成菜单、搜索与真实 iframe；列表 search/page/page_size、详情 range/metric 可恢复，默认值省略。System 台账提供节点列表和详情，选中后读取八项即时资源与单项趋势，不批量扇出查询。
+- 入口仅接受非委托 Platform User，同时具备 `platform.host_node.read` 和 `monitor.resource_observation.read`；上下文、主体、权限或节点变化同步取消请求并清空旧观测。关闭/未配置/不可用/超时/预算及并发超限分别提示，失败不保留旧观测。
+- 首批使用手工刷新，时间明确标注；趋势窗口以本次即时响应的服务端 end 为准。valid 零值有效，stale/no_data/not_connected 不展示为当前数值，曲线保留断点，明细展示原状态与采样/评估时间。不把 Load Average 解释为 CPU 利用率。
+- 图表及数字/时间格式复用 Common Chart 和 Basic 的唯一实现；共享折线最多 1,000 点，null 保留为空点。既有 Workbench 消费者与 Monitor/Console/共享前端标准门禁共同验证，新增测试沿既有自动发现和 CI 登记；确定性页面 T3 不代替真实后端或页面 T4。

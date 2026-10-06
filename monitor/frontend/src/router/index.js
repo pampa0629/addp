@@ -8,6 +8,7 @@ import AlertList from '../views/AlertList.vue'
 import NotificationList from '../views/NotificationList.vue'
 import Login from '../views/Login.vue'
 import MonitoringTargets from '../views/MonitoringTargets.vue'
+import NodeResources from '../views/NodeResources.vue'
 
 const routes = [
   {
@@ -22,8 +23,14 @@ const routes = [
     meta: { handlesForbidden: true },
     beforeEnter: () => {
       const authStore = useAuthStore()
-      return resolveModuleLandingRoute('/monitor', ['/monitoring-targets', '/dashboard', '/executions', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
+      return resolveModuleLandingRoute('/monitor', ['/node-resources', '/monitoring-targets', '/dashboard', '/executions', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
     }
+  },
+  {
+    path: '/node-resources', name: 'NodeResources', component: NodeResources
+  },
+  {
+    path: '/node-resources/:node_id', name: 'NodeResourceDetail', component: NodeResources
   },
   {
     path: '/monitoring-targets', name: 'MonitoringTargets', component: MonitoringTargets

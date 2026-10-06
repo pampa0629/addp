@@ -853,7 +853,7 @@ Monitor 查询证书与 health、collector、节点准入身份分离，私钥�
 
 本轮在测试规范已批准的同一一次性部署与身份范围内执行，未新增角色、接口、suite、夜间调度或启动路线，没有重启个人开发服务。`make test-node-metrics-online-runner` 和 Online CI 登记检查通过；任务文档空白、围栏与链接校验通过。`794450a30` 的既有 Release/T2 中 Monitor metrics 与 Monitor PostgreSQL 两个 Job 均已通过；OceanBase Job 首次因下载 `go-toml/v2@v2.2.4` 的 HTTP/2 `INTERNAL_ERROR` 失败，测试包未编译完成，工作流尚未结束时重跑请求未接受，首次失败不计为通过。工作流结束后仅重跑该独立 Job，第二次完整通过，整套 [Release/T2 run 37484315468](https://github.com/pampa0629/addp/actions/runs/37484315468/attempts/2) 结果为 `success`；没有更换依赖、下载源或放宽门禁。同一提交的 [Platform CI run 37484315115](https://github.com/pampa0629/addp/actions/runs/37484315115) 聚合结果为 `cancelled`：全仓 Go、Monitor/Console 前端 Job 已通过，Platform consistency 与 GeoPython GDAL Job 被取消，未完成项不计为通过。默认 `make test-changed` 因共享工作区其他 Common/模块变更需要的 PostgreSQL、MySQL/OceanBase 等 T2 参数缺失在预检退出，后续未执行，也不计为通过。
 
-本次证据只覆盖该 Linux VM 的八项基础指标与平台权限链路。生产 T5、cAdvisor、更多指标及用户资源查询页面仍未交付；下一批优先把已验收的八项即时/趋势查询接入 Console 节点资源视图，继续明确展示关闭、未配置、陈旧与缺失状态。
+本次证据只覆盖该 Linux VM 的八项基础指标与平台权限链路。当次尚未交付的用户资源查询页面已在后续 10.24 节接入；生产 T5、cAdvisor 和更多指标仍须分批交付。
 
 ### 10.23 平台监测目标管理前端
 
@@ -878,3 +878,28 @@ Console 浏览器门禁新增一个由标准 Playwright 生命周期拥有的真
 | `make test-changed` | 全工作区预检因其他 Owner 的 PostgreSQL、MySQL/OceanBase 等 T2 参数缺失退出，聚合后续门禁未执行，不计为通过；上述本批前端与 T0 专项已单独完成，跨 Owner 未执行项由既有 Release/T2 CI 验证 |
 
 最终桌面和英文窄屏截图已检查，任务范围空白、翻译 JSON 与本地链接验证通过。构建保留既有大包提示。浏览器响应来自受控协议夹具，本批不宣称新增后端资源查询、采集或 Hosted T4 已验收，也没有重启个人 Infra/开发服务。
+
+### 10.24 节点资源视图（已接入并通过确定性验收）
+
+Monitor 唯一拥有节点资源页面，Console 通过 `/monitor/node-resources` 与 `/monitor/node-resources/:node_id` 集成。入口仅接受非委托 Platform User，同时要求 `platform.host_node.read` 与 `monitor.resource_observation.read`；Tenant、Service 和委托身份不能请求节点或观测。节点分页/名称搜索消费 System 已有台账 API，不复制节点实体，也不批量扇出资源请求。选择节点后通过用户授权的 System 详情确认当前主体，再读取八项即时指标；任何身份、上下文、权限或节点变化立即取消请求并清空旧数据。
+
+即时值只展示 `valid` 的有限数值，零是有效值；`stale/no_data/not_connected` 分别显示陈旧/缺失/未接入，保留采样及评估时间供核对，不把最后已知值冒充当前值。关闭、缺配置、不可用、查询超时、预算和并发超限显示独立错误状态，失败后移除旧观测。页面不推断 CPU 利用率、健康分数或内存泄漏。
+
+详情默认近 1 小时内存使用率趋势，支持近 5 分钟、24 小时、7 天及八项目录中的单项切换。`range/metric` 与列表 `search/page/page_size` 进入 canonical URL，默认值省略；详情身份无效或不存在明确报错，不切换其他节点。趋势结束时间采用本次即时响应的服务端 `end`，使用整秒 RFC3339；按返回网格呈现，不在浏览器聚合或补值。手工刷新重新读取当前主体和即时/趋势；首批不增加后台轮询或持久浏览器缓存。
+
+复用 Common Chart 的唯一 `ChartRenderer`：折线有界上限扩至 1,000 点，以覆盖资源 API 的最大网格；柱形仍 500、饼图仍 20。折线/柱形 `null` 保留为空点，折线禁止跨空点连线，饼图拒绝空值；领域适配将陈旧/缺失点映射为 null，原状态和采样时间在明细表保留。主题、语言、尺寸与卸载复用共享图表生命周期，不复制 ECharts 实现。既有 Workbench 消费者一并回归。
+
+实施前确认 T0/T1/T3：`make test-monitor-frontend`、`make test-console-frontend`、`make test-common-frontend`、`make test-workbench-frontend` 与 `make test-frontend-ci-registration`，工作区入口仍运行 `make test-changed` 并单独记录参数预检结果。现有 Node/Playwright 自动发现和 Monitor → Console 依赖登记已覆盖新增用例，无新增依赖、后端接口、Swagger 或必需 Infra；本批不重启个人开发服务。真实后端 T4 证据沿用 10.22 的 API 范围，确定性浏览器夹具不计为真实页面 T4。
+
+2026-10-07 本批标准门禁结果：
+
+| 标准入口 | 当前结果 |
+| --- | --- |
+| `make test-monitor-frontend` | 38 项确定性测试、41 项浏览器回归及构建通过；覆盖八项即时资源、服务端时间窗、URL 恢复、零值/陈旧/缺失、六类查询失败清除、权限与身份/节点切换的迟到响应隔离 |
+| `make test-console-frontend` | 148 项确定性测试、118 项浏览器回归及构建通过；新增真实 Monitor iframe 的单历史、刷新、前进/后退与 Tenant 入口拒绝。首次与本轮 Workbench 共用 4170 测试端口而失败，待其正常退出后串行复验完整通过，不复用或接管个人服务 |
+| `make test-common-frontend` | 147 项通过，含共享空点、1,000 点上限与组合权限；Monitor 的唯一图表/格式化所有权断言归其标准入口 |
+| `make test-workbench-frontend` | 123 项确定性测试、64 项浏览器回归及构建通过，覆盖既有共享图表消费者 |
+| `make test-frontend-ci-registration` | 17 项检查器回归与 21 个前端登记检查通过；现有 Node/Playwright 自动发现覆盖新用例，无需新增 CI 主路径 |
+| `make test-changed` | 退出 2：共享工作区其他 Common/模块变更需要的 PostgreSQL、MySQL/OceanBase 等 T2 连接参数缺失，止于统一预检，后续未执行；不计为通过。当前已提交范围的前端由既有 Platform CI 独立复验；这些未提交跨 owner T2 输入须由各自任务在提交时通过既有 Release/T2 标准门禁验证 |
+
+首次 Monitor 浏览器复验中，创建和更新的两条成功通知同时存在，旧用例的单元素定位失败；修正为核对最新更新通知，并保留实际请求版本/启停/删除断言，完整复验通过，没有改动产品保存语义。桌面及英文窄屏截图已查看，窄屏无横向页面溢出；中英文词条、任务文档围栏/本地链接与空白检查通过。本批复用现有 API 契约，未改后端接口、Swagger、权限或部署输入，没有重启个人开发服务。上述浏览器均使用受控 API 夹具，只计为 T3；下一步优先让同一 Hosted suite 验收真实 Console 登录、节点资源页和查询请求的完整链路。

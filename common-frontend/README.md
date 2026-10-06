@@ -313,6 +313,8 @@ import {
 - `chart/src/ChartRenderer.vue`：展示 `bar | line | pie`，只使用服务已返回的明细值，不在浏览器聚合；
 - `map/src/components/GeoJSONResultRenderer.vue`：只读取 Consumer Descriptor 明确声明的 geometry 字段和 CRS，并可使用显式 label、tooltip 与 `uniform | categorical | continuous` 受控主题样式；不猜测业务字段，不接受原始颜色或任意样式 DSL。
 
+Chart 的折线最多接受 1,000 行、柱形 500 行、饼图 20 行；折线和柱形保留 null 空点，折线不跨空点连线，饼图拒绝 null。资源观测的陈旧或缺失点由 owner 显式传入 null，不在共享图表中推断状态或补值。
+
 Chart 的坐标轴、图例、饼图标签和 tooltip 使用当前 ADDP 主题变量，主题变化后重绘 Canvas。单度量轴设置了显示精度 `precision=p` 时，最小刻度间隔为 `10^-p`；因此精度 0 的全零结果不会把小数刻度重复显示成整数。该约束只影响坐标轴，不舍入或修改服务返回的 series 数据；未指定精度及多度量轴仍使用自动刻度。
 
 柱形图默认在柱形上方常显数值标签（包括零值），沿用字段呈现的单位、精度和当前语言数字格式，文字使用主题正文色；零值标签显示在基线上方，避免与横轴日期重叠。标签不追加状态文案，状态仍只在 tooltip 中显示，不改变原始数据或选择事件。

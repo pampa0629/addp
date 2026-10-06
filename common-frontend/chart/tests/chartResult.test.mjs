@@ -2,6 +2,27 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildChartOption, resultSelectionFromChartEvent, validateChartResult } from '../src/chartResult.mjs'
 
+test('nullable Cartesian observations remain gaps and never become zero', () => {
+  const rows = [{ at: 'A', value: 0 }, { at: 'B', value: null }, { at: 'C', value: 3 }]
+  for (const chart_type of ['line', 'bar']) {
+    const config = { chart_type, dimension: 'at', measures: ['value'] }
+    assert.equal(validateChartResult(rows, config).valid, true)
+    const option = buildChartOption(rows, config)
+    assert.deepEqual(option.series[0].data, [0, null, 3])
+    assert.equal(option.series[0].connectNulls, false)
+    assert.equal(option.series[0].tooltip.valueFormatter(null, 1), '—')
+  }
+  assert.equal(validateChartResult(rows, { chart_type: 'pie', dimension: 'at', measures: ['value'] }).reason, 'invalid_measure')
+})
+
+test('line supports the full bounded 1000-point resource grid while other chart bounds hold', () => {
+  const rows = Array.from({ length: 1000 }, (_, index) => ({ at: index, value: index % 2 ? null : index }))
+  const config = { chart_type: 'line', dimension: 'at', measures: ['value'] }
+  assert.equal(validateChartResult(rows, config).valid, true)
+  assert.equal(validateChartResult([...rows, rows[0]], config).reason, 'result_limit')
+  assert.equal(validateChartResult(rows.slice(0, 501), { ...config, chart_type: 'bar' }).reason, 'result_limit')
+})
+
 test('builds bounded chart options without aggregating service rows', () => {
   const rows = [{ city: 'A', amount: 2 }, { city: 'B', amount: 3 }]
   const config = { chart_type: 'bar', dimension: 'city', measures: ['amount'] }

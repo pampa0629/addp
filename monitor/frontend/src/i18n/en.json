@@ -583,6 +583,70 @@
         "host_resources": "Host resources",
         "container_resources": "Container resources"
       }
+    },
+    "resources": {
+      "title": "Platform node resources",
+      "detailTitle": "Node resource observations",
+      "back": "Back to nodes",
+      "search": "Search node name or address",
+      "empty": "No matching nodes",
+      "node": "Node name",
+      "addresses": "Addresses",
+      "nodeState": "Node status",
+      "view": "View resources",
+      "current": "Current resource metrics",
+      "queriedAt": "Queried at",
+      "sampledAt": "Sampled at",
+      "evaluatedAt": "Evaluated at",
+      "trend": "Resource trend",
+      "metric": "Trend metric",
+      "range": "Time range",
+      "value": "Current valid value",
+      "dataState": "Data state",
+      "evidence": "View sample details",
+      "window": "{start} to {end}, evaluation interval {step} seconds",
+      "gaps": "Stale, missing and disconnected points appear as gaps.",
+      "metrics": {
+        "cores": "CPU logical cores",
+        "memoryTotal": "Total memory",
+        "memoryAvailable": "Available memory",
+        "memoryUsed": "Memory usage",
+        "load1m": "1-minute load average",
+        "load5m": "5-minute load average",
+        "load15m": "15-minute load average",
+        "uptime": "Uptime"
+      },
+      "ranges": {
+        "5m": "Last 5 minutes",
+        "1h": "Last hour",
+        "24h": "Last 24 hours",
+        "7d": "Last 7 days"
+      },
+      "units": {
+        "cores": "cores",
+        "bytes": "B",
+        "percent": "%",
+        "load": "load",
+        "seconds": "seconds"
+      },
+      "states": {
+        "valid": "Valid",
+        "stale": "Stale",
+        "no_data": "Missing",
+        "not_connected": "Not connected"
+      },
+      "errors": {
+        "disabled": "Resource observations are disabled.",
+        "unconfigured": "Resource observations are not fully configured.",
+        "unavailable": "Unable to read resource observations. Refresh later.",
+        "timeout": "Resource query timed out. Refresh later.",
+        "budget": "The query exceeds the current budget. Select a shorter range or contact an administrator.",
+        "busy": "The resource query concurrency limit has been reached. Refresh later.",
+        "notFound": "This node does not exist or is currently inaccessible.",
+        "denied": "Your current identity cannot view platform node resources.",
+        "invalidID": "Invalid node identifier.",
+        "invalidResponse": "The resource response is incomplete. Refresh to try again."
+      }
     }
   }
 }

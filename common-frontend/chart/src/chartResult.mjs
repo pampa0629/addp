@@ -7,7 +7,7 @@ export function validateChartResult(rows, config, hasMore = false) {
   if (!Array.isArray(rows) || !config || !CHART_TYPES.has(config.chart_type)) {
     return { valid: false, reason: 'invalid_config' }
   }
-  const limit = config.chart_type === 'pie' ? 20 : 500
+  const limit = config.chart_type === 'pie' ? 20 : config.chart_type === 'line' ? 1000 : 500
   if (rows.length > limit) return { valid: false, reason: 'result_limit' }
   if (!config.dimension || !Array.isArray(config.measures) || config.measures.length === 0) {
     return { valid: false, reason: 'invalid_config' }
@@ -17,6 +17,8 @@ export function validateChartResult(rows, config, hasMore = false) {
   }
   for (const row of rows) {
     for (const measure of config.measures) {
+      if (row?.[measure] === null && config.chart_type !== 'pie') continue
+      if (row?.[measure] === null) return { valid: false, reason: 'invalid_measure' }
       const value = Number(row?.[measure])
       if (!Number.isFinite(value) || (config.chart_type === 'pie' && value < 0)) {
         return { valid: false, reason: 'invalid_measure' }
@@ -102,7 +104,8 @@ export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
             formatter: ({ dataIndex }) => formatFieldPresentationValue(rows[dataIndex]?.[measure], presentation, locale),
           },
         } : {}),
-        data: rows.map((row) => Number(row?.[measure])),
+        connectNulls: false,
+        data: rows.map((row) => row?.[measure] === null ? null : Number(row?.[measure])),
         tooltip: { valueFormatter: (_value, dataIndex) => formatFieldPresentationValueWithState(rows[dataIndex]?.[measure], presentation, locale) },
       }
     })

@@ -15,7 +15,8 @@ test('registers, updates, disables and deletes using authoritative saved version
   expect(state.writes[0].input).toEqual({ subject: { kind: 'node', node_id: node }, monitor_kind: 'host_resources', source: { type: 'node_exporter', endpoint: 'https://new.test:9443/metrics' }, enabled: true })
   await page.getByTestId('target-enabled').click()
   await page.getByTestId('target-save').click()
-  await expect(page.locator('.el-message')).toContainText('监测目标已保存')
+  // Creation and update notices can coexist; verify the latest update notice.
+  await expect(page.locator('.el-message').last()).toContainText('监测目标已保存')
   await expect(page.getByTestId('target-save')).not.toHaveClass(/is-loading/)
   expect(state.writes[1].input.version).toBe(1)
   expect(state.writes[1].input.enabled).toBe(false)

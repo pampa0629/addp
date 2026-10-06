@@ -564,7 +564,8 @@
         "recentExecutions": "Platform Executions",
         "recentAlerts": "Execution Alerts",
         "recentNotifications": "Execution Alert Notifications",
-        "monitoringTargets": "Platform monitoring targets"
+        "monitoringTargets": "Platform monitoring targets",
+        "nodeResources": "Platform node resources"
       },
       "catalog": {
         "label": "Enterprise Catalog",

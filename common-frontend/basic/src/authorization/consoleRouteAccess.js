@@ -47,6 +47,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/workbench/applications': [tenant('workbench.data_application.read')],
   '/orchestrator/orchestrations': [tenant('orchestrator.workflow.read')],
   '/monitor/dashboard': [tenant('monitor.statistics.read')],
+  '/monitor/node-resources': [platform('monitor.resource_observation.read', 'platform.host_node.read')],
   '/monitor/monitoring-targets': [platform('monitor.monitoring_target.read', 'platform.host_node.read')],
   '/monitor/monitoring-targets/new': [platform('monitor.monitoring_target.read', 'platform.host_node.read', 'monitor.monitoring_target.create')],
   '/monitor/executions': [tenant('monitor.execution.read')],
