@@ -775,6 +775,7 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
 
 test_geopython_native_lifecycle() {
   ROOT_DIR="$ROOT_DIR" TEST_ROOT="$TEST_ROOT" python3 - <<'PY_GEO'
+import json
 import os
 from pathlib import Path
 import socket
@@ -786,15 +787,37 @@ runtime = work / 'engines/geopython-workflow'
 (runtime / 'venv/bin').mkdir(parents=True)
 python = runtime / 'venv/bin/python'
 python.write_text('#!' + sys.executable + '''
-import os, sys
+import json, os, sys
+from pathlib import Path
+work = Path(os.environ['ROOT_DIR'])
 if len(sys.argv)>2 and sys.argv[1]=='-c':
     if 'sys.version_info' in sys.argv[2]: sys.exit(int(os.environ.get('FAIL_PYTHON','0')))
     if 'import api_server' in sys.argv[2]: sys.exit(int(os.environ.get('FAIL_IMPORT','0')))
-if sys.argv[1:3]==['-m','pip']: sys.exit(int(os.environ.get('FAIL_GDAL','0')))
-if sys.argv[1]=='-': sys.exit(int(os.environ.get('FAIL_DRIVERS','0')))
+if sys.argv[1:3]==['-m','pip']:
+    with (work / 'pip-trace').open('a') as trace:
+        trace.write(json.dumps(sys.argv[3:]) + '\\n')
+    if os.environ.get('FAIL_GDAL')=='1': sys.exit(1)
+    if '--force-reinstall' in sys.argv and os.environ.get('KEEP_BROKEN_BINDING')!='1':
+        (work / 'binding-state').write_text('healthy')
+    sys.exit(0)
+if sys.argv[1]=='-':
+    sys.exit(int(os.environ.get('FAIL_DRIVERS','0')) or int((work / 'binding-state').read_text()!='healthy'))
 os.execv(sys.executable,[sys.executable]+sys.argv[1:])
 ''')
 python.chmod(0o755)
+(work / 'binding-state').write_text('healthy')
+(work / 'osgeo').mkdir()
+(work / 'osgeo/__init__.py').write_text('''
+import os
+from pathlib import Path
+state = Path(os.environ['ROOT_DIR'], 'binding-state').read_text()
+if state == 'missing': raise ModuleNotFoundError("No module named 'osgeo'")
+if state == 'unloadable': raise ImportError('Library not loaded: @rpath/libgdal.32.dylib')
+class gdal:
+    @staticmethod
+    def VersionInfo(key): return '3.6.2' if state == 'mismatch' else '3.12.1'
+ogr = osr = object()
+''')
 (runtime / 'api_server.py').write_text('''
 import http.server, os, sys
 assert os.environ['WORKFLOW_BIND_HOST']=='127.0.0.1'
@@ -825,7 +848,7 @@ trap 'kill -TERM "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EX
 addp_dev_owned_listener geopython-workflow-engine "$GEOPYTHON_WORKFLOW_PORT"
 '''
 env=dict(os.environ,SOURCE_ROOT=str(root),ROOT_DIR=str(work),GEOPYTHON_WORKFLOW_PORT=port,
-         GEOPYTHON_WORKFLOW_LOOPBACK_HOST='container-only.invalid')
+         GEOPYTHON_WORKFLOW_LOOPBACK_HOST='container-only.invalid',PYTHONPATH=str(work))
 # The user's Conda-first shell must select the same GDAL toolchain as a clean shell.
 brew_root = work / 'homebrew'
 conda = work / 'conda'
@@ -866,11 +889,32 @@ assert not (work / 'conda-trace').exists(), 'missing Homebrew GDAL used Conda fa
 result=subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True,timeout=15)
 assert result.returncode==0,(result.stdout,result.stderr)
 assert (work/'trace').read_text().splitlines()==['sync']
+pip_trace = work / 'pip-trace'
+assert [json.loads(line) for line in pip_trace.read_text().splitlines()] == [['check']], 'healthy binding must not be reinstalled'
+# A same-version broken ABI cannot be repaired by pip's "already satisfied" path.
+for state in ('missing', 'unloadable', 'mismatch'):
+    (work / 'binding-state').write_text(state)
+    pip_trace.unlink()
+    result=subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True,timeout=15)
+    assert result.returncode==0,(state,result.stdout,result.stderr)
+    calls=[json.loads(line) for line in pip_trace.read_text().splitlines()]
+    assert calls == [['install', '--force-reinstall', '--no-cache-dir', '--no-binary=GDAL', '--no-deps', 'GDAL==3.12.1'], ['check']], (state,calls)
+    assert (work / 'binding-state').read_text()=='healthy',state
+# Rebuild success is insufficient when the resulting binding still cannot load.
+(work / 'binding-state').write_text('unloadable')
+(work/'.dev-pids/geopython-workflow-engine.pid').unlink(missing_ok=True)
+result=subprocess.run(['bash','-c',launcher],env=dict(env,KEEP_BROKEN_BINDING='1'),capture_output=True,text=True,timeout=15)
+assert result.returncode!=0,(result.stdout,result.stderr)
+assert not (work/'.dev-pids/geopython-workflow-engine.pid').exists()
 for name in ('FAIL_SYNC','FAIL_PYTHON','FAIL_IMPORT','FAIL_GDAL','FAIL_DRIVERS','FAIL_START'):
+    (work / 'binding-state').write_text('unloadable' if name=='FAIL_GDAL' else 'healthy')
+    pip_trace.unlink(missing_ok=True)
     (work/'.dev-pids/geopython-workflow-engine.pid').unlink(missing_ok=True)
     result=subprocess.run(['bash','-c',launcher],env=dict(env,**{name:'1'}),capture_output=True,text=True,timeout=15)
     assert result.returncode!=0,(name,result)
     assert not (work/'.dev-pids/geopython-workflow-engine.pid').exists(),name
+    if name=='FAIL_DRIVERS':
+        assert [json.loads(line) for line in pip_trace.read_text().splitlines()] == [['check']], 'missing native capabilities cannot be repaired by reinstalling bindings'
 with socket.socket() as sock:
     sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
     sock.bind(('127.0.0.1',int(port)));sock.listen()
@@ -887,7 +931,7 @@ for failed in ('0','1'):
     result=subprocess.run(['bash','-c',probe],env=dict(env,SCRIPT_DIR=str(helper_dir),GDAL_DATA='original',FAIL_PREPARE=failed),capture_output=True,text=True)
     assert result.returncode==(int(failed)),result
     assert result.stdout.splitlines()==(['prepare'] if failed=='1' else ['prepare','stop','launch']),result
-print('PASS: native GeoPython PID/HTTP ownership, dependencies, GDAL/import failures and foreign port rejection')
+print('PASS: native GeoPython GDAL source repair/reuse, failed repair rejection, PID/HTTP ownership and foreign port rejection')
 PY_GEO
 }
 

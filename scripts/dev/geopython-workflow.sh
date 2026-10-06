@@ -53,7 +53,13 @@ addp_prepare_geopython_workflow() {
   addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'GeoPython Workflow' || return 1
   version=$(gdal-config --version) || return 1
   echo "GeoPython 原生 GDAL: $version ($(command -v gdal-config))"
-  addp_with_python_dependency_lock "$ROOT_DIR" "$python_bin" -m pip install "GDAL==$version" || return 1
+  # Installed package metadata cannot prove that its native library still loads.
+  if ! "$python_bin" -c 'from osgeo import gdal, ogr, osr; import sys; assert gdal.VersionInfo("RELEASE_NAME") == sys.argv[1], "GDAL Python/原生版本不一致"' "$version"; then
+    echo "GeoPython GDAL 绑定不可用，正在从源码重建 $version..."
+    # Never reuse a wheel linked against the previous native library, or upgrade
+    # the already synchronized Python dependencies while repairing the binding.
+    addp_with_python_dependency_lock "$ROOT_DIR" "$python_bin" -m pip install --force-reinstall --no-cache-dir --no-binary=GDAL --no-deps "GDAL==$version" || return 1
+  fi
   "$python_bin" -m pip check || return 1
   "$python_bin" - "$version" <<'PY' || return 1
 from osgeo import gdal, ogr, osr
