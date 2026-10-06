@@ -851,7 +851,7 @@ Monitor 查询证书与 health、collector、节点准入身份分离，私钥�
 | 独立退出清理 | `summary.txt` 的 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`；业务报告的待部署销毁标记必须与该独立摘要联合读取，不能单独报告整体通过 |
 | 安全归档 | 18 个文件无 Secret env/私钥文件，无私钥正文或完整 IAM 不透明凭据；秘密目录由 Hosted 生命周期销毁，核验使用本轮正式 IAM 前缀，不输出凭据内容 |
 
-本轮在测试规范已批准的同一一次性部署与身份范围内执行，未新增角色、接口、suite、夜间调度或启动路线，没有重启个人开发服务。`make test-node-metrics-online-runner` 和 Online CI 登记检查通过；任务文档空白、围栏与链接校验通过。`794450a30` 的既有 Release/T2 中 Monitor metrics 与 Monitor PostgreSQL 两个 Job 均已通过；整仓结果仍待其他 Job 完成，OceanBase Job 因下载 `go-toml/v2@v2.2.4` 的 HTTP/2 `INTERNAL_ERROR` 失败，测试包未编译完成，当前工作流未结束时重跑请求未接受，不计为通过。默认 `make test-changed` 因共享工作区其他 Common/模块变更需要的 PostgreSQL、MySQL/OceanBase 等 T2 参数缺失在预检退出，后续未执行，也不计为通过。
+本轮在测试规范已批准的同一一次性部署与身份范围内执行，未新增角色、接口、suite、夜间调度或启动路线，没有重启个人开发服务。`make test-node-metrics-online-runner` 和 Online CI 登记检查通过；任务文档空白、围栏与链接校验通过。`794450a30` 的既有 Release/T2 中 Monitor metrics 与 Monitor PostgreSQL 两个 Job 均已通过；OceanBase Job 首次因下载 `go-toml/v2@v2.2.4` 的 HTTP/2 `INTERNAL_ERROR` 失败，测试包未编译完成，工作流尚未结束时重跑请求未接受，首次失败不计为通过。工作流结束后仅重跑该独立 Job，第二次完整通过，整套 [Release/T2 run 37484315468](https://github.com/pampa0629/addp/actions/runs/37484315468/attempts/2) 结果为 `success`；没有更换依赖、下载源或放宽门禁。同一提交的 [Platform CI run 37484315115](https://github.com/pampa0629/addp/actions/runs/37484315115) 聚合结果为 `cancelled`：全仓 Go、Monitor/Console 前端 Job 已通过，Platform consistency 与 GeoPython GDAL Job 被取消，未完成项不计为通过。默认 `make test-changed` 因共享工作区其他 Common/模块变更需要的 PostgreSQL、MySQL/OceanBase 等 T2 参数缺失在预检退出，后续未执行，也不计为通过。
 
 本次证据只覆盖该 Linux VM 的八项基础指标与平台权限链路。生产 T5、cAdvisor、更多指标及用户资源查询页面仍未交付；下一批优先把已验收的八项即时/趋势查询接入 Console 节点资源视图，继续明确展示关闭、未配置、陈旧与缺失状态。
 
