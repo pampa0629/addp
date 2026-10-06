@@ -84,6 +84,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Manager | 数据资源与预览子视图 | `locator`、`tab` |
 | Manager | 数据任务工作区 | 分类使用 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个 canonical path；query 只保存 `task_type`、向量化页内 `tab`、`task_id`、`create=1` 及页面定义的创建来源参数，默认页内任务视图省略 `tab` |
 | Develop | SQL、工作流、Notebook 创建或编辑 | `action`、`id` |
+| Monitor | 平台监测目标管理 | 列表 `/monitor/monitoring-targets`、新建 `/monitor/monitoring-targets/new`、详情 `/monitor/monitoring-targets/:id`；query 为 `page/page_size`，默认第 1 页及每页 20 条省略；新建成功 replace 为详情，关闭详情 replace 回列表并保留分页；未保存来源端点不进入 URL |
 | Monitor | 统一执行列表筛选与分页 | `module`、`task_type`、`source_task_id`、`execution_id`、`status`、`trigger_type`、`start_date`、`end_date`、`page`、`page_size`；业务模块不得复制同构列表状态 |
 | Orchestrator | 编排列表任务引用筛选 | `module`、`task_type`、`task_id` 同时提供，三者精确匹配步骤；编辑与执行历史返回保留筛选 |
 | Orchestrator | 编排创建与编辑 | path `/orchestrations/new`、`/orchestrations/:id/edit` |
