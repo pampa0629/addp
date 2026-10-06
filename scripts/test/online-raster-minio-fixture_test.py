@@ -147,12 +147,23 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
 
     def test_seed_retains_source_fingerprints_in_private_directory(self):
         evidence = {'seeded': True, 'source_sha256': {'source.tif': 'source-hash', 'spatial.tif': 'spatial-hash'}}
-        with patch.object(m, 'command', return_value=json.dumps(evidence)) as command:
+        image = 'localhost:5001/addp-geopython-workflow-engine:raster-online'
+        with patch.dict(os.environ, {'ADDP_ONLINE_RASTER_RUNTIME_IMAGE': image}), \
+             patch.object(m, 'command', return_value=json.dumps(evidence)) as command:
             self.assertEqual(m.physical_worker('seed', self.root), evidence)
         path = self.root / 'raster-source-sha256.json'
         self.assertEqual(json.loads(path.read_text()), evidence['source_sha256'])
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertIn(str(self.root) + ':/secrets:ro', command.call_args.args[0])
+        self.assertIn(image, command.call_args.args[0])
+        self.assertNotIn('addp-geopython-workflow-engine:dev', command.call_args.args[0])
+
+    def test_physical_worker_rejects_missing_product_image_before_docker(self):
+        with patch.dict(os.environ, {'ADDP_ONLINE_RASTER_RUNTIME_IMAGE': ''}), \
+             patch.object(m, 'command') as command:
+            with self.assertRaisesRegex(m.FixtureError, 'product Runtime image is required'):
+                m.physical_worker('verify-create', self.root)
+            command.assert_not_called()
 
     def test_partial_start_failure_cleans_both_owned_containers(self):
         def fail(args, **kwargs): raise m.FixtureError('run failed')

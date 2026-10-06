@@ -10,6 +10,7 @@ HOSTED_FIXTURE_CONTAINERS=(addp-raster-source addp-raster-target addp-raster-fix
 RUNTIME_CONTAINER=addp-raster-online-runtime
 RUNTIME_TAG=raster-online
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
+export ADDP_ONLINE_RASTER_RUNTIME_IMAGE="$RUNTIME_IMAGE"
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim)
 registry_owned=0
 stop_online_fixture() {

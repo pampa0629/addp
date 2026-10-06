@@ -20,7 +20,6 @@ import urllib.request
 
 SUITE = 'raster-workflow'
 CONTAINERS = ('addp-raster-source', 'addp-raster-target', 'addp-raster-fixture-worker')
-IMAGE = 'addp-geopython-workflow-engine:dev'
 MINIO_IMAGE = 'addp-minio:RELEASE.2025-10-15T17-29-55Z'
 TRANSFORM = (110, .01, 0, 20.32, 0, -.01)
 SIZE = 256
@@ -342,11 +341,14 @@ def start(root):
 
 
 def physical_worker(action, root):
+    image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '').strip()
+    if not image:
+        raise FixtureError('product Runtime image is required for raster physical verification')
     result = json.loads(command([
         'docker', 'run', '--rm', '--name', CONTAINERS[2], '--label', f'com.addp.online-fixture={SUITE}',
         '--network', 'host', '--entrypoint', 'python',
         '-v', f'{Path(__file__).resolve()}:/fixture.py:ro', '-v', f'{root}:/secrets:ro',
-        IMAGE, '/fixture.py', 'worker-' + action, '/secrets/raster-fixture.json',
+        image, '/fixture.py', 'worker-' + action, '/secrets/raster-fixture.json',
     ]))
     if action == 'seed':
         private_json(root / 'raster-source-sha256.json', result['source_sha256'])

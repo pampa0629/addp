@@ -21,6 +21,8 @@ class HostedRasterGateTest(unittest.TestCase):
             import os, sys
             from pathlib import Path
             action = sys.argv[1]
+            if action == 'seed':
+                assert os.environ['ADDP_ONLINE_RASTER_RUNTIME_IMAGE'] == 'localhost:5001/addp-geopython-workflow-engine:raster-online'
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as stream: stream.write('raster-fixture:' + action + '\\n')
             if action == 'start':
                 for role in ('source', 'target'):
