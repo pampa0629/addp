@@ -7,6 +7,7 @@ import ExecutionList from '../views/ExecutionList.vue'
 import AlertList from '../views/AlertList.vue'
 import NotificationList from '../views/NotificationList.vue'
 import Login from '../views/Login.vue'
+import MonitoringTargets from '../views/MonitoringTargets.vue'
 
 const routes = [
   {
@@ -21,8 +22,17 @@ const routes = [
     meta: { handlesForbidden: true },
     beforeEnter: () => {
       const authStore = useAuthStore()
-      return resolveModuleLandingRoute('/monitor', ['/dashboard', '/executions', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
+      return resolveModuleLandingRoute('/monitor', ['/monitoring-targets', '/dashboard', '/executions', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
     }
+  },
+  {
+    path: '/monitoring-targets', name: 'MonitoringTargets', component: MonitoringTargets
+  },
+  {
+    path: '/monitoring-targets/new', name: 'MonitoringTargetNew', component: MonitoringTargets
+  },
+  {
+    path: '/monitoring-targets/:id', name: 'MonitoringTargetDetail', component: MonitoringTargets
   },
   {
     path: '/dashboard',

@@ -563,7 +563,8 @@
         "recentDashboard": "Execution Monitoring Dashboard",
         "recentExecutions": "Platform Executions",
         "recentAlerts": "Execution Alerts",
-        "recentNotifications": "Execution Alert Notifications"
+        "recentNotifications": "Execution Alert Notifications",
+        "monitoringTargets": "Platform monitoring targets"
       },
       "catalog": {
         "label": "Enterprise Catalog",

@@ -675,6 +675,11 @@ jobs:
         working-directory: system/frontend
         run: npm ci
 
+      - name: Install Monitor dependencies for Console target navigation
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: monitor/frontend
+        run: npm ci
+
       - name: Install Console dependencies for Workbench delivery runtime integration
         if: steps.selection.outputs.run == 'true' && matrix.module == 'workbench'
         working-directory: console/frontend

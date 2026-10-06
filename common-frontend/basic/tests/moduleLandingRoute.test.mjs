@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { resolveModuleLandingRoute } from '../src/authorization/consoleRouteAccess.js'
+import { allowsConsoleRoute, resolveModuleLandingRoute } from '../src/authorization/consoleRouteAccess.js'
 
 test('module landing uses the same tenant page access as Console', () => {
   const paths = ['/dashboard', '/executions', '/alerts', '/notifications']
@@ -23,4 +23,15 @@ test('Transfer standalone root selects the first accessible page', () => {
   ]) {
     assert.equal(resolveModuleLandingRoute('/transfer', paths, 'tenant', permissions), landing)
   }
+})
+
+test('platform monitoring routes require node read and independent create permission', () => {
+  const permissions = ['monitor.monitoring_target.read', 'platform.host_node.read']
+  for (const route of ['/monitor/monitoring-targets', '/monitor/monitoring-targets/target-id']) {
+    assert.equal(allowsConsoleRoute(route, 'platform', permissions), true)
+    assert.equal(allowsConsoleRoute(route, 'tenant', permissions), false)
+    for (const permission of permissions) assert.equal(allowsConsoleRoute(route, 'platform', [permission]), false)
+  }
+  assert.equal(allowsConsoleRoute('/monitor/monitoring-targets/new', 'platform', permissions), false)
+  assert.equal(allowsConsoleRoute('/monitor/monitoring-targets/new', 'platform', [...permissions, 'monitor.monitoring_target.create']), true)
 })

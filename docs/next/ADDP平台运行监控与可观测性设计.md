@@ -770,3 +770,27 @@ System-owned Online 身份准备先执行三员 Bootstrap，分别保存临时�
 - [Platform CI 37462963043](https://github.com/pampa0629/addp/actions/runs/37462963043) 与 [Release/T2 37462963023](https://github.com/pampa0629/addp/actions/runs/37462963023) 完整通过。来源实现的指标 T2 和 System Online fixture PostgreSQL 由前一实现提交的 [Release/T2 37461221654](https://github.com/pampa0629/addp/actions/runs/37461221654) 对应 Job 通过；修复提交未改变这些输入，部分选择性 Job 被跳过，不将跳过计为再次通过。本地默认工作区总门禁的数据库参数预检失败仍单独保留。
 
 本批交付原生 Linux VM 的真实节点来源与平台控制面链路验收，不代表全部生产节点已纳管，也不替代宿主子挂载传播/只读边界、物理身份绑定等完整 T5。suite 继续手工触发。下一批优先实现 Platform 资源查询 API，以可信样本支撑节点总览和趋势页；目标管理页面、生效状态查询、cAdvisor 和租户引擎资源归属仍按各自契约推进，统一告警域收敛仍须单独确认。
+
+### 10.23 平台监测目标管理前端
+
+本批接入已确认的目标管理能力，沿用既有授权与后端契约。唯一页面由 Monitor 拥有，Console 集成 `/monitor/monitoring-targets`、`/monitor/monitoring-targets/new` 和 `/monitor/monitoring-targets/:id`；详情主体、新建动作、分页进入公开 URL，未保存来源端点只留在当前表单。入口要求 Platform Context、`monitor.monitoring_target.read` 与 `platform.host_node.read`；新建另需 create，更新和删除分别检查独立 Permission。页面只接受非委托 User，Tenant 和后台身份不得加载平台数据。
+
+节点身份取自 System 台账，不以端点地址推断节点。表单填写稳定 node_id，并提供已授权 System 节点台账导航；主体与监测类别创建后不可修改，来源只使用既有 node_exporter/host_resources 或 cadvisor/container_resources 配对。启停保存完整配置与原版本，删除也携带原版本；版本冲突保留草稿，停止再次写入，要求用户明确重新加载，不自动重放。列表展示保存配置与保存版本，不把启用标记解释为采集已生效。
+
+上下文、主体或权限变化时同步取消请求、清空列表和表单；迟到的列表、详情和写入回执不得覆盖新身份范围。导航复用共享 Console bridge、路由授权和页面描述；主题与中英文使用共享能力。实施前门禁：Monitor 确定性/浏览器测试和构建，Console 前端门禁与共享授权门禁覆盖菜单、搜索及 Platform/Tenant 路由；现有 `tests/*.test.mjs`、Playwright testDir 和 CI 登记自动发现新增文件，无新依赖、测试库、常驻进程或后端重启。
+
+Console 浏览器门禁新增一个由标准 Playwright 生命周期拥有的真实 Monitor 前端夹具，显式独立回环端口、共享缓存隔离和有界退出。CI Console Job 同次补齐 Monitor 锁定依赖安装；影响矩阵将 Monitor 前端变化扩散至 Console，后端变化不扩散。登记检查核对跨前端 webServer 的 npm 安装步骤，缺失即拒绝，不仅检查模块本身已登记。
+
+本批验证结果：
+
+| 标准入口 | 结果 |
+| --- | --- |
+| `make test-monitor-frontend` | 32 项确定性测试、23 项真实组件浏览器用例及构建通过；覆盖 CAS 冲突保留草稿、显式重载、只读权限、Service/委托/Tenant 拒绝、Context 切换和迟到响应，以及英文与窄屏布局 |
+| `make test-console-frontend` | 148 项确定性测试、116 项浏览器用例及构建通过；真实 Monitor iframe 验证菜单选中、单文档详情导航、刷新恢复、关闭保留分页与 Tenant 拒绝 |
+| `make test-common-frontend` | 144 项测试通过，覆盖共享路由授权与模块根入口选择 |
+| `make test-frontend-ci-registration` | 17 项登记回归及 21 个前端一致性检查通过，覆盖缺失跨前端安装步骤和错误 matrix owner 的拒绝 |
+| 影响矩阵及选择器 | `python3 -m unittest scripts/test/changed-gate_test.py scripts/ci/select-module-gate_test.py`，29 项通过 |
+| `make test-workflow-security` | 工作流安全门禁通过；未改变 Action 版本或放宽检查 |
+| `make test-changed` | 全工作区预检因其他 Owner 的 PostgreSQL、MySQL/OceanBase 等 T2 参数缺失退出，聚合后续门禁未执行，不计为通过；上述本批前端与 T0 专项已单独完成，跨 Owner 未执行项由既有 Release/T2 CI 验证 |
+
+最终桌面和英文窄屏截图已检查，任务范围空白、翻译 JSON 与本地链接验证通过。构建保留既有大包提示。浏览器响应来自受控协议夹具，本批不宣称新增后端资源查询、采集或 Hosted T4 已验收，也没有重启个人 Infra/开发服务。

@@ -16,7 +16,7 @@ export default defineConfig({
     viewport: { width: 1280, height: 800 }
   },
   webServer: [{
-    command: 'ADDP_E2E=1 VITE_ADDP_CONSOLE_PORT=4170 VITE_ADDP_FRONTEND_PORTS=catalog:4190,system:4173,security:4191 npm run dev -- --host 127.0.0.1 --port 4170 --strictPort',
+    command: 'ADDP_E2E=1 VITE_ADDP_CONSOLE_PORT=4170 VITE_ADDP_FRONTEND_PORTS=catalog:4190,system:4173,security:4191,monitor:4192 npm run dev -- --host 127.0.0.1 --port 4170 --strictPort',
     url: 'http://127.0.0.1:4170/e2e/fixtures/auth-fixture.html?role=health',
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
@@ -42,6 +42,12 @@ export default defineConfig({
   }, {
     command: 'ADDP_E2E=1 VITE_ADDP_CONSOLE_PORT=4170 npm --prefix ../../security/frontend run dev -- --host 127.0.0.1 --port 4191 --strictPort',
     url: 'http://127.0.0.1:4191/module-ui/security/login',
+    reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
+    timeout: 30_000
+  }, {
+    command: 'ADDP_E2E=1 VITE_ADDP_CONSOLE_PORT=4170 npm --prefix ../../monitor/frontend run dev -- --host 127.0.0.1 --port 4192 --strictPort',
+    url: 'http://127.0.0.1:4192/module-ui/monitor/login',
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
     timeout: 30_000

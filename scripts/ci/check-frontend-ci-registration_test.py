@@ -118,6 +118,26 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         ))
         self.assertTrue(MODULE.validate_browser_isolation(self.repository))
 
+    def test_cross_frontend_fixture_requires_its_own_locked_ci_installation(self) -> None:
+        self.enable_browser_suite()
+        other = self.repository / "other/frontend"
+        other.mkdir(parents=True)
+        (other / "package.json").write_text('{"scripts":{"dev":"vite"}}')
+        (other / "vite.config.js").write_text(self.vite.read_text().replace("'sample'", "'other'"))
+        for prefix in ("../../other/frontend", "'../../other/frontend'"):
+            self.playwright.write_text("export default defineConfig({\n  use: { baseURL: 'http://127.0.0.1:4198' },\n  webServer: {\n"
+                + f"    command: \"ADDP_E2E=1 npm --prefix {prefix} run dev -- --host 127.0.0.1 --port 4198 --strictPort\",\n"
+                + "    url: 'http://127.0.0.1:4198/login',\n    reuseExistingServer: false,\n"
+                + "    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },\n  }\n})\n")
+            errors = MODULE.validate_registration(self.repository)
+            self.assertTrue(any("other/frontend lacks locked CI dependency installation" in error for error in errors), errors)
+        install = "      - name: Install iframe owner\n        if: matrix.module == 'sample'\n        working-directory: other/frontend\n        run: npm ci\n"
+        original = self.workflow.read_text()
+        self.workflow.write_text(original + install)
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+        self.workflow.write_text(original + install.replace("matrix.module == 'sample'", "matrix.module == 'another'"))
+        self.assertTrue(any("other/frontend lacks locked CI dependency installation" in error for error in MODULE.validate_registration(self.repository)))
+
     def test_browser_failure_evidence_matches_the_gate_and_matrix(self) -> None:
         self.enable_browser_suite()
         original = self.workflow.read_text()

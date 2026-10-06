@@ -7,10 +7,10 @@ import { resolveModuleLandingRoute } from '../../../common-frontend/basic/src/au
 const source = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const routeTable = source.slice(source.indexOf('const routes ='), source.indexOf('const router ='))
 
-function createMonitorRouter(permissions) {
-  const authStore = { contextType: 'tenant', permissions }
-  const routes = new Function('useAuthStore', 'resolveModuleLandingRoute', 'Dashboard', 'ExecutionList', 'AlertList', 'NotificationList', 'Login', `${routeTable}; return routes`)(
-    () => authStore, resolveModuleLandingRoute, {}, {}, {}, {}, {})
+function createMonitorRouter(permissions, contextType = 'tenant') {
+  const authStore = { contextType, permissions }
+  const routes = new Function('useAuthStore', 'resolveModuleLandingRoute', 'Dashboard', 'ExecutionList', 'AlertList', 'NotificationList', 'Login', 'MonitoringTargets', `${routeTable}; return routes`)(
+    () => authStore, resolveModuleLandingRoute, {}, {}, {}, {}, {}, {})
   routes.push({ path: '/forbidden', component: {} })
   return createRouter({ history: createMemoryHistory(), routes })
 }
@@ -29,4 +29,16 @@ test('Monitor root resolves to the first accessible page; direct URLs keep their
   const noAccess = createMonitorRouter([])
   await noAccess.push('/')
   assert.equal(noAccess.currentRoute.value.path, '/forbidden')
+})
+
+test('Platform root selects monitoring targets with both owner permissions', async () => {
+  const permissions = ['monitor.monitoring_target.read', 'platform.host_node.read']
+  const platform = createMonitorRouter(permissions, 'platform')
+  await platform.push('/')
+  assert.equal(platform.currentRoute.value.path, '/monitoring-targets')
+  await platform.push('/monitoring-targets/target-id?page=2')
+  assert.equal(platform.currentRoute.value.fullPath, '/monitoring-targets/target-id?page=2')
+  const tenant = createMonitorRouter(permissions)
+  await tenant.push('/')
+  assert.equal(tenant.currentRoute.value.path, '/forbidden')
 })

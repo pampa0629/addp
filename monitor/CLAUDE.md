@@ -4,7 +4,7 @@
 
 Monitor 模块是 ADDP 的统一执行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 日志链路健康与告警域。
 
-平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 节点台账、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端、应用埋点与资源查询尚未实施，统一告警域收敛仍待明确确认。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
+平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 节点台账、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，应用埋点与资源查询尚未实施，统一告警域收敛仍待明确确认。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
 
 节点来源准入和发现投影内核位于 `backend/internal/metricsdiscovery/`，由 Monitor 唯一维护。已实现受控 CIDR/端口、固定 HTTPS 指标路径、每次发现重新解析 DNS 并固定单一 IP、来源 mTLS 准入、节点当前身份筛选和端点预留预算；只支持 node_exporter 主机来源与通过既定 mTLS 入口的 cAdvisor 节点容器来源。目标持久化、公开 HTTP SD 和独立 Prometheus OAuth 身份已消费此内核：管理请求转发当前 User Token，由 System 对节点再次裁决；目标写事务串行化预算和 CAS，发现读取当前身份而不复制 System 台账。启用目标必须通过 mTLS 准入，停用配置保存和撤除采集意图不依赖指标设施或来源在线。Prometheus 生产模板和正式节点来源已完成真实 Hosted T4，包含权限隔离、发现版本、真实采样及故障恢复；面向用户的资源查询、生效状态查询和生产纳管覆盖仍须交付，不能以一次测试部署宣称生产覆盖。T1 归 `make test-go`，目标事务与 IAM/OAuth 使用现有 PostgreSQL T2 自动发现；设计第 10.15–10.20 节记录边界与接线门禁。
 
@@ -63,7 +63,7 @@ monitor/
 详情刷新依据整棵已授权可见树：父执行结束但任一可见子执行仍运行时继续刷新，全部可见执行达到终态才停止；不根据私有步骤引用补查隐藏节点。每次刷新复用 Owner 裁决；返回 403/404 时清空旧树、步骤和事件并显示重新加载入口。异步响应必须属于当前详情请求，不能覆盖关闭后重新打开的页面。
 
 - Monitor 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。
-- 独立访问模块根路径时，AuthContext 加载后依次选择可进入的仪表盘、执行记录、告警、通知页面；均不可进入时显示无权限。登录后返回根路径也按此顺序选择，显式页面地址保持原样。
+- 独立访问模块根路径时，AuthContext 加载后依次选择可进入的平台监测目标、仪表盘、执行记录、告警、通知页面；均不可进入时显示无权限。登录后返回根路径也按此顺序选择，显式页面地址保持原样。
 - 执行详情 canonical URL 固定为 `/monitor/executions?execution_id={execution_uuid}`；从列表打开详情使用 `push`，关闭详情清除 `execution_id` 使用 `replace`，浏览器前进/后退必须同步打开或关闭详情。
 - 告警页默认 `incidents` Tab 和通知页默认 `webhook` Tab 从 URL 省略；`rules`、`email` 等非默认稳定 Tab 使用 `tab` query 并以 `replace` 更新。
 
@@ -112,3 +112,10 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - `GET /platform/metrics_discovery` 返回原生 HTTP SD 数组；成功空列表与失败分开，不接受分页、调用者标签、query 或正文。保存版本不是实际 Prometheus 生效回执，版本只进入内部发现元数据。
 - 现有 `make test-monitor-postgres` 自动运行目标并发预算和 CAS 回归。`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package iam --test prometheus-credential"` 验证可选身份及撤销；`--package api --test oauth-client-credentials` 使用真实 System OAuth Handler 验证最小平台身份、Tenant 拒绝及旧令牌撤销。两者是既有标准入口的精确选择，CI 仍使用完整门禁，不缩减范围。
 - 指标中心生产模板已接入原生 OAuth2/HTTP SD；控制面 HTTPS origin、独立来源证书和 Secret 文件由部署注入，标准 Infra 预检生成唯一配置。`make test-monitor-metrics` 验证真实 Prometheus 的认证发现、令牌续取、身份标签清理、失败保留旧目标及成功空列表移除；控制面为受控协议夹具，不能替代真实 System/Monitor 部署全链路验收。节点 exporter 部署与生产回执仍待后续实施，具体输入见 `scripts/infra/README.md`。
+
+## 平台监测目标管理前端
+
+- Monitor 唯一拥有 `/monitoring-targets`、`/monitoring-targets/new`、`/monitoring-targets/:id`，Console 使用 `/monitor` 前缀集成真实 iframe；分页与详情由公开 URL 恢复，端点草稿不进入 URL。
+- 入口只接受非委托 Platform User，需同时具备 `monitor.monitoring_target.read` 和 `platform.host_node.read`；新建、修改、删除分别消费对应独立 Permission。Context、主体、委托或权限变化同步取消请求并清空列表与草稿，迟到响应不得覆盖新范围。
+- 主体/类别创建后只读，更新/停用与删除携带保存版本。CAS 冲突保留草稿并停止写入，须明确重新加载；启用标记仅表示保存配置，不表示实际采集健康。节点台账导航使用共享 Console bridge。
+- 标准门禁为 `make test-monitor-frontend`、`make test-console-frontend`、`make test-common-frontend` 与 `make test-frontend-ci-registration`。Console 浏览器生命周期自建 Monitor Vite 夹具，CI 安装其锁定依赖；Monitor 前端变更扩散至 Console，后端变更不扩散。无需重启个人开发环境。

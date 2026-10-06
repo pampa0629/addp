@@ -298,6 +298,7 @@ export const SIDEBAR_MENUS = {
   monitor: {
     label: 'console.menus.monitor.label', icon: DataLine,
     items: [
+      { index: '/monitor/monitoring-targets', icon: Monitor, label: 'console.menus.monitor.monitoringTargets' },
       { index: '/monitor/dashboard',  icon: Monitor, label: 'console.menus.monitor.dashboard', recentLabel: 'console.menus.monitor.recentDashboard' },
       { index: '/monitor/executions', icon: List,    label: 'console.menus.monitor.executions', recentLabel: 'console.menus.monitor.recentExecutions' },
       { index: '/monitor/alerts',     icon: Warning, label: 'console.menus.monitor.alerts', recentLabel: 'console.menus.monitor.recentAlerts' },

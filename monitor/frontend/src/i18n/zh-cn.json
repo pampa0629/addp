@@ -384,8 +384,15 @@
       "suppress_one_hour": "抑制 1 小时",
       "suppress_confirm": "抑制只暂停该告警的后续通知，不会改变运行信号或任务状态。",
       "suppressed": "告警通知已抑制 1 小时",
-      "status_values": { "open": "待处理", "acknowledged": "已确认", "resolved": "已恢复" },
-      "severity_values": { "critical": "严重", "warning": "警告" }
+      "status_values": {
+        "open": "待处理",
+        "acknowledged": "已确认",
+        "resolved": "已恢复"
+      },
+      "severity_values": {
+        "critical": "严重",
+        "warning": "警告"
+      }
     },
     "alert_rule": {
       "title": "通用任务告警规则",
@@ -540,6 +547,41 @@
         "retry_title": "手动重投",
         "retry_confirm": "将使用目标当前的接收地址和签名密钥重投，并复用原投递 ID。接收端可能再次处理该消息，是否继续？",
         "retry_success": "投递已重新进入队列"
+      }
+    },
+    "targets": {
+      "title": "平台监测目标",
+      "refresh": "刷新列表",
+      "create": "登记监测目标",
+      "id": "目标 ID",
+      "node": "节点 ID",
+      "kind": "监测类别",
+      "endpoint": "采集端点",
+      "configState": "采集配置",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "version": "配置版本",
+      "details": "详情",
+      "empty": "暂无监测目标",
+      "notLoaded": "尚未加载监测目标",
+      "endpointHint": "HTTPS 地址，显式端口，路径为 /metrics",
+      "configHint": "启用表示采集配置已开启；实际采集情况以资源观测为准。",
+      "nodeInventory": "查看平台节点台账",
+      "reload": "重新加载配置",
+      "deleteConfirm": "删除此监测目标？",
+      "accessDenied": "当前身份无权查看平台监测目标",
+      "loadFailed": "无法加载监测目标，请稍后重试",
+      "invalidID": "监测目标 ID 无效",
+      "notFound": "监测目标不存在",
+      "conflict": "配置已被修改。草稿已保留，请重新加载后再操作。",
+      "saveFailed": "操作失败，请稍后重试",
+      "invalidForm": "请填写有效的节点 ID 和采集端点",
+      "saving": "正在保存监测目标",
+      "saved": "监测目标已保存",
+      "deleted": "监测目标已删除",
+      "kinds": {
+        "host_resources": "主机资源",
+        "container_resources": "容器资源"
       }
     }
   }

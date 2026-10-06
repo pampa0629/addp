@@ -173,6 +173,7 @@ def validate_browser_isolation(repository: Path) -> list[str]:
 
 
 def validate_registration(repository: Path) -> list[str]:
+    repository = repository.resolve()
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     logical_makefile = re.sub(r"\\\n\s*", " ", makefile)
     jobs = workflow_jobs(repository)
@@ -231,6 +232,28 @@ def validate_registration(repository: Path) -> list[str]:
                 if not entry or not re.search(r"(?m)^\s*playwright:\s*true\s*$", entry.group("body")):
                     errors.append(f"{module}: frontend CI matrix must enable Playwright")
             steps = re.split(r"(?m)^      - ", target_job)
+            # A registered owner does not install the other frontends started by
+            # its real iframe fixtures. Verify their locked CI dependencies too.
+            for config in worktree_files(repository, f"{module}/frontend/playwright.config.*"):
+                source = (repository / config).read_text(encoding="utf-8")
+                for prefix in re.findall(r"\bnpm\s+--prefix\s+['\"]?([^\s'\"]+)['\"]?\s+run\s+dev", source):
+                    dependency = (repository / Path(config).parent / prefix).resolve()
+                    try:
+                        relative = dependency.relative_to(repository).as_posix()
+                    except ValueError:
+                        errors.append(f"{module}: browser fixture dependency is outside the repository")
+                        continue
+                    if relative == f"{module}/frontend":
+                        continue
+                    matching = [step for step in steps if re.search(
+                        rf"(?m)^\s*working-directory:\s*{re.escape(relative)}\s*$", step
+                    ) and re.search(r"(?m)^\s*run:\s*npm ci\s*$", step)]
+                    if matrix_selector:
+                        matching = [step for step in matching if re.search(
+                            rf"matrix\.module\s*==\s*['\"]{re.escape(module)}['\"]", step
+                        )]
+                    if not matching:
+                        errors.append(f"{module}: browser fixture {relative} lacks locked CI dependency installation")
             artifact_steps = [step for step in steps if "actions/upload-artifact@" in step
                               and "playwright-results/" in step]
             if matrix_selector and not artifact_steps:

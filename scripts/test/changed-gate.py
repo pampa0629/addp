@@ -126,6 +126,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if any(path.startswith("system/frontend/") for path in files):
         affected.add("console")
 
+    # Console's iframe browser gate mounts the real Monitor target management page.
+    if any(path.startswith("monitor/frontend/") for path in files):
+        affected.add("console")
+
     # Console's authorization refresh gate mounts real Security enrollment and policy forms.
     if any(path.startswith("security/frontend/") for path in files):
         affected.add("console")

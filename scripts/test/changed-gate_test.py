@@ -145,6 +145,16 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["console", "security"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["security"], MODULE.affected_modules(self.repository, ["security/backend/internal/service/enrollment.go"]))
 
+    def test_monitor_frontend_changes_include_console_target_navigation_gate(self) -> None:
+        for name in ("monitor", "console"):
+            path = self.repository / name / "frontend/package.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for path in ("monitor/frontend/src/views/MonitoringTargets.vue", "monitor/frontend/e2e/monitoring-targets.fixture.js", "monitor/frontend/package-lock.json"):
+            self.assertEqual(["console", "monitor"], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual(["monitor"], MODULE.affected_modules(self.repository, ["monitor/backend/internal/service/resource_observation.go"]))
+
     def test_console_delivery_route_changes_include_workbench_browser_gate(self) -> None:
         console_manifest = self.repository / "console/frontend/package.json"
         console_manifest.parent.mkdir(parents=True)

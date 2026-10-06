@@ -384,8 +384,15 @@
       "suppress_one_hour": "Suppress for 1 Hour",
       "suppress_confirm": "Suppression only pauses subsequent notifications. It does not change the runtime signal or task state.",
       "suppressed": "Alert notifications suppressed for one hour",
-      "status_values": { "open": "Open", "acknowledged": "Acknowledged", "resolved": "Resolved" },
-      "severity_values": { "critical": "Critical", "warning": "Warning" }
+      "status_values": {
+        "open": "Open",
+        "acknowledged": "Acknowledged",
+        "resolved": "Resolved"
+      },
+      "severity_values": {
+        "critical": "Critical",
+        "warning": "Warning"
+      }
     },
     "alert_rule": {
       "title": "Generic Task Alert Rules",
@@ -540,6 +547,41 @@
         "retry_title": "Manual Retry",
         "retry_confirm": "Retry with the destination's current endpoint and signing secret while reusing the original delivery ID? The receiver may process the message again.",
         "retry_success": "Delivery requeued"
+      }
+    },
+    "targets": {
+      "title": "Platform monitoring targets",
+      "refresh": "Refresh list",
+      "create": "Register monitoring target",
+      "id": "Target ID",
+      "node": "Node ID",
+      "kind": "Monitoring category",
+      "endpoint": "Collection endpoint",
+      "configState": "Collection configuration",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "version": "Configuration version",
+      "details": "Details",
+      "empty": "No monitoring targets",
+      "notLoaded": "Monitoring targets have not loaded",
+      "endpointHint": "HTTPS URL with an explicit port and /metrics path",
+      "configHint": "Enabled means collection is configured; resource observations show actual collection.",
+      "nodeInventory": "View platform node inventory",
+      "reload": "Reload configuration",
+      "deleteConfirm": "Delete this monitoring target?",
+      "accessDenied": "This identity cannot view platform monitoring targets",
+      "loadFailed": "Unable to load monitoring targets. Please retry.",
+      "invalidID": "Invalid monitoring target ID",
+      "notFound": "Monitoring target does not exist",
+      "conflict": "Configuration has changed. Your draft is retained; reload before trying again.",
+      "saveFailed": "Operation failed. Please retry.",
+      "invalidForm": "Enter a valid node ID and collection endpoint",
+      "saving": "Saving monitoring target",
+      "saved": "Monitoring target saved",
+      "deleted": "Monitoring target deleted",
+      "kinds": {
+        "host_resources": "Host resources",
+        "container_resources": "Container resources"
       }
     }
   }

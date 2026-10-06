@@ -563,7 +563,8 @@
         "recentDashboard": "执行监控仪表盘",
         "recentExecutions": "全域执行记录",
         "recentAlerts": "执行告警事件",
-        "recentNotifications": "执行告警通知"
+        "recentNotifications": "执行告警通知",
+        "monitoringTargets": "平台监测目标"
       },
       "catalog": {
         "label": "企业资源目录",
