@@ -297,7 +297,7 @@ def validate_cog(input_raster):
 
 
 def translate_cog(source, target, compression='DEFLATE', blocksize=512, overview_resampling='nearest', *,
-                  width=0, height=0, resampling=None, assign_srs=None, callback=None, num_threads='2', gdal_api=gdal):
+                  width=0, height=0, resampling=None, assign_srs=None, callback=None, num_threads='2', use_source_overviews=True, gdal_api=gdal):
     """One GDAL COG encoder shared by workflow persistence and directory mosaics."""
     if compression not in ['DEFLATE', 'LZW', 'ZSTD', 'NONE']:
         raise ValueError('Unsupported COG compression')
@@ -306,8 +306,10 @@ def translate_cog(source, target, compression='DEFLATE', blocksize=512, overview
     _algorithm(overview_resampling)
     result = gdal_api.Translate(str(target), source, options=gdal_api.TranslateOptions(
         format='COG', width=width, height=height, resampleAlg=resampling, outputSRS=assign_srs,
-        callback=callback, creationOptions=[f'COMPRESS={compression}', f'BLOCKSIZE={blocksize}',
-        f'OVERVIEW_RESAMPLING={overview_resampling.upper()}', f'NUM_THREADS={num_threads}']))
+        callback=callback, overviewLevel=None if use_source_overviews else 'NONE',
+        creationOptions=[f'COMPRESS={compression}', f'BLOCKSIZE={blocksize}',
+        f'OVERVIEW_RESAMPLING={overview_resampling.upper()}', f'NUM_THREADS={num_threads}',
+        'OVERVIEWS=AUTO' if use_source_overviews else 'OVERVIEWS=IGNORE_EXISTING']))
     if result is None:
         raise ValueError('GDAL COG conversion failed')
     result.FlushCache()

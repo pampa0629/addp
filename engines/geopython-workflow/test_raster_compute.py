@@ -468,6 +468,28 @@ def _directory_mosaic_profile_task(source, target, epoch, barrier):
             'observed_file_bytes': sum(p.stat().st_size for p in target.rglob('*') if p.is_file())}
 
 
+def _assert_nearest_profile_overviews(dataset):
+    # Compare every pyramid sample with the independently established base grid.
+    for band_index in range(1, dataset.RasterCount + 1):
+        band = dataset.GetRasterBand(band_index)
+        rows, columns = np.arange(band.YSize), np.arange(band.XSize)
+        for level in range(band.GetOverviewCount()):
+            overview = band.GetOverview(level)
+            # NEAREST pyramid levels round top-left positions in the preceding grid.
+            rows = rows[np.floor(np.arange(overview.YSize) * rows.size / overview.YSize + .5).astype(int)]
+            columns = columns[np.floor(np.arange(overview.XSize) * columns.size / overview.XSize + .5).astype(int)]
+            chunk = max(1, 127 * overview.YSize // band.YSize)
+            for start in range(0, overview.YSize, chunk):
+                selected = rows[start:start + chunk]
+                first, end = int(selected.min()), int(selected.max()) + 1
+                expected = np.frombuffer(band.ReadRaster(0, first, band.XSize, end - first,
+                                        buf_type=gdal.GDT_Float64), dtype=np.float64).reshape(end - first, band.XSize)
+                expected = expected[selected[:, None] - first, columns]
+                actual = np.frombuffer(overview.ReadRaster(0, start, overview.XSize, selected.size,
+                                      buf_type=gdal.GDT_Float64), dtype=np.float64).reshape(expected.shape)
+                np.testing.assert_array_equal(actual, expected)
+
+
 def _assert_profile_raster_copy(source, target):
     original, output = gdal.Open(str(source)), gdal.Open(str(target))
     assert (original.RasterXSize, original.RasterYSize, original.RasterCount) == (output.RasterXSize, output.RasterYSize, output.RasterCount)
@@ -483,6 +505,7 @@ def _assert_profile_raster_copy(source, target):
                                                    (source_band.GetMaskBand(), output_band.GetMaskBand(), gdal.GDT_Byte)):
                 assert first_band.ReadRaster(0, row, original.RasterXSize, height, buf_type=dtype) == second_band.ReadRaster(
                     0, row, output.RasterXSize, height, buf_type=dtype)
+    _assert_nearest_profile_overviews(output)
     original = output = None
     with raster_workspace():
         assert validate_cog(raster_load(source_plan(target))) == {'valid': True, 'warnings': [], 'errors': []}
@@ -697,6 +720,58 @@ def test_reprojection_profile_oracle_rejects_nonfirst_band_corruption(tmp_path, 
     band = copied = None
     with pytest.raises(AssertionError):
         _validate_reprojection_profile(source, tampered, report)
+
+
+@pytest.mark.parametrize('fault', ['value', 'nodata'])
+def test_nearest_overview_oracle_rejects_tampered_level(tmp_path, fault):
+    values = np.arange(512 * 512).reshape(512, 512)
+    original = create_raster(tmp_path / 'source.tif', np.stack([values, values + 7]))
+    path = tmp_path / 'pyramid.tif'
+    dataset = gdal.Translate(str(path), str(original), format='GTiff', creationOptions=['TILED=YES'])
+    assert dataset.BuildOverviews('NEAREST', [2, 4]) == 0
+    _assert_nearest_profile_overviews(dataset)
+    band = dataset.GetRasterBand(2).GetOverview(0)
+    band.WriteRaster(0, 0, 1, 1, np.array([-9999 if fault == 'nodata' else 123456],
+                     dtype=np.float64).tobytes(), buf_type=gdal.GDT_Float64)
+    band.FlushCache()
+    with pytest.raises(AssertionError):
+        _assert_nearest_profile_overviews(dataset)
+    dataset = None
+
+
+@pytest.mark.parametrize('downsample', [False, True])
+def test_directory_mosaic_overviews_use_global_base_grid(tmp_path, downsample):
+    # Legitimate AVERAGE source pyramids must not determine a NEAREST global grid.
+    rows, columns = np.indices((514, 514))
+    values = (rows * 37 + columns * 13) % 30001
+    original = create_raster(tmp_path / 'original.tif', np.stack([values, values + 101]))
+    source = tmp_path / 'source'
+    source.mkdir()
+    for y in range(2):
+        for x in range(2):
+            tile = gdal.Translate(str(source / f'{y}{x}.tif'), str(original), format='COG',
+                                  srcWin=[x * 257, y * 257, 257, 257],
+                                  creationOptions=['BLOCKSIZE=128', 'OVERVIEW_RESAMPLING=AVERAGE'])
+            assert tile is not None and tile.GetRasterBand(1).GetOverviewCount() > 0
+            tile = None
+    target = tmp_path / 'mosaic'
+    result = build_raster_mosaic(access_plan={
+        'source': {'root_uri': str(source), 'recursive': True, 'include_patterns': ['*.tif']},
+        'target': {'dataset_root_uri': str(target), 'dataset_name': target.name}},
+        placement={'mode': 'detached'}, cog={'blocksize': 128, 'num_threads': 2},
+        overview={'enabled': True, 'max_pixels': 257 * 257 if downsample else 514 * 514,
+                  'resampling': 'NEAREST'}, tiles={'enabled': False})
+    assert result['status'] == 'success'
+    output = gdal.Open(str(target / 'overviews/overview.cog.tif'))
+    assert (output.RasterXSize, output.RasterYSize) == ((257, 257) if downsample else (514, 514))
+    for index in (1, 2):
+        expected = values + (index - 1) * 101
+        if downsample:
+            expected = expected[1::2, 1::2]
+        band = output.GetRasterBand(index)
+        np.testing.assert_array_equal(read_band_values(band), expected)
+    _assert_nearest_profile_overviews(output)
+    output = None
 
 
 @pytest.mark.parametrize('execution_mode', ['serial', 'parallel'])

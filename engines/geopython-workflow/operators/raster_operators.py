@@ -410,6 +410,7 @@ def _translate_to_cog(
     height: int = 0,
     resampling: str = "",
     callback: Callable[[float, str, Any], int] | None = None,
+    use_source_overviews: bool = True,
 ) -> None:
     compression = str(cog_config.get("compression") or "DEFLATE").upper()
     blocksize = int(cog_config.get("blocksize") or 512)
@@ -429,7 +430,8 @@ def _translate_to_cog(
             Path(target).unlink()
         translate_cog(source, target, compression, blocksize, overview_resampling.lower(),
                       width=int(width or 0), height=int(height or 0), resampling=resampling or None,
-                      assign_srs=output_srs or None, callback=callback, num_threads=num_threads, gdal_api=gdal)
+                      assign_srs=output_srs or None, callback=callback, num_threads=num_threads,
+                      use_source_overviews=use_source_overviews, gdal_api=gdal)
 
 
 def _leaf_retry_attempts(cog_config: Dict[str, Any]) -> int:
@@ -943,6 +945,8 @@ def build_raster_mosaic(
 			vrt_options = gdal.BuildVRTOptions(
 				resampleAlg=str(overview_config.get("resampling") or "AVERAGE"),
 				allowProjectionDifference=False,
+				# Prevent VRT RasterIO from silently sampling each leaf's local pyramid.
+				options=["-oo", "OVERVIEW_LEVEL=NONE"],
 			)
 			vrt_ds = gdal.BuildVRT(vrt_uri, leaf_uris, options=vrt_options)
 			if vrt_ds is None:
@@ -971,6 +975,8 @@ def build_raster_mosaic(
 				width=overview_width,
 				height=overview_height,
 				resampling=str(overview_config.get("resampling") or "AVERAGE"),
+				# Leaf pyramids have local grids/algorithms; generate the global grid from base pixels.
+				use_source_overviews=False,
 				callback=_gdal_progress_callback(
 					emit,
 					"overview",
