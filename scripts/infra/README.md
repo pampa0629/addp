@@ -940,6 +940,14 @@ Online 启动只使用仓库外的 `ADDP_ONLINE_ENV_FILE`；Hosted 在不归档�
 
 启用前将 `ADDP_METRICS_TLS_DIR` 设置为部署方管理的绝对证书目录，内含 `ca.crt`、`server.crt`、`server.key`、`health.crt`、`health.key`。此目录仅存放这五项输入，CA 私钥和其他客户端私钥由各自部署 Owner 在目录外保管。CA 只信任本中心部署客户端；`server.crt` 包含 `localhost` 和 `prometheus` DNS SAN，`health.crt` 具有客户端认证用途。目录和文件须可被容器 UID/GID `65534:65534` 读取，私钥不得通过仓库或 Artifact 分发；标准脚本不生成部署 CA 或证书。错误、过期、不匹配或容器不可读证书由真实 mTLS 启动/探针拒绝。
 
+中心的节点作业通过原生 OAuth2 和 HTTP SD 连接已有 System/Monitor API。部署另外设置 `PROMETHEUS_SYSTEM_URL` 和 `PROMETHEUS_MONITOR_URL`，值为容器可达的规范 HTTPS origin，必须有显式端口，不含路径或尾部斜杠；由受控 TLS 入口分别转发固定 `/api/v1/system/oauth/token` 和 `/api/v1/monitor/platform/metrics_discovery`。不按本机 Backend 首选端口或模块注册 URL 拼接地址，不将发现凭据用于节点指标抓取。
+
+`ADDP_METRICS_DEPLOYMENT_DIR` 指向仓库外的绝对目录，只存放 `control-ca.crt`、`source-ca.crt`、`collector.crt`、`collector.key`、`prometheus-client-secret` 和生成的 `prometheus.yml`。控制面 CA 用于验证 Token/发现服务，来源 CA 用于验证节点 IP SAN；独立 collector 证书只访问来源，不能复用中心健康证书。Secret 文件内容不带尾部换行，须精确匹配 System 部署中的 `PROMETHEUS_SERVICE_CLIENT_SECRET`，不得与日志或业务服务 Secret 相同。部署负责把目录设为容器可遍历、私钥和 Secret 仅向需要的 UID/GID 开放（如目录 `0750`、Secret `0640`，由部署正确设置所有者/组）；生命周期脚本不修改现有私钥权限。
+
+预检从唯一版本化模板和部署输入原子生成 `prometheus.yml`，该文件不含 Secret 值，不得手工编辑。更换控制面地址、信任根或证书后由部署方重新创建中心容器应用，不承诺热更新；目标启停通过成功的 30 秒发现刷新生效，不要求重启业务。发现失败时中心保留上次成功目标列表，紧急阻断依赖凭据撤销和网络边界，不能承诺控制面故障期间即时停采。未填写完整接线输入时只报告可选指标未配置，核心启动仍继续。
+
 中心 API/UI 强制 mTLS，宿主只发布 `127.0.0.1:${PROMETHEUS_PORT:-19090}`。本地冲突沿用端口解析和现有映射，实际值用 `bash scripts/infra/status.sh` 查看；容器间使用 `https://prometheus:9090`。管理员写入、远端写入和 HTTP 重载不开启。独立卷 `prometheus_data` 保留时序块 7 天或 10 GiB，体积淘汰可能缩短历史窗口；WAL 与压缩空间需要额外磁盘容量。镜像版本及 digest、资源预算和固定采集限制统一定义在 `metrics.yml` 及 `prometheus*.yml`。
 
-当前仅采集中心自身指标，Ready 不代表节点或业务引擎已接入。正式目标须由后续 Monitor HTTP SD 与 System 当前对象绑定提供，不支持手工生产静态目标文件。`make test-monitor-metrics` 使用独占临时项目、临时证书及固定镜像，验证真实受控采样和故障恢复，退出清理容器、网络、卷及文件；该夹具不安装个人环境采集器，不证明生产规模或完整 7 天保留窗口。
+中心自身作业与节点 HTTP SD 作业已分别接线，Ready 不代表节点或业务引擎已接入。正式目标只由 Monitor HTTP SD 与 System 当前对象绑定提供，不支持手工生产静态目标文件。`make test-monitor-metrics` 使用独占临时项目、临时证书及固定镜像，验证原生 OAuth/HTTP SD、真实受控采样和故障恢复，退出清理容器、网络、卷及文件；控制面为协议夹具，不证明真实部署全链路、生产规模或完整 7 天保留窗口。
+
+生产平台通过根 Compose 向 System 传递可选指标开关及独立发现 Secret，向 Monitor 传递指标开关与明确 CIDR/端口集合。`scripts/prod/start.sh` 只在选中指标且三个 `MONITOR_METRICS_*_FILE` 是可读绝对文件时合并 `scripts/prod/metrics-platform.yml`，仅向 Monitor 挂载来源准入 CA/客户端证书/私钥，不重复定义服务。未选中或证书缺失不挂载不存在的文件、不创建空证书目录；缺失时报告可选能力未配置并继续业务启动。Monitor 准入证书可独立于 Prometheus collector 管理，两者均不使用中心健康证书。

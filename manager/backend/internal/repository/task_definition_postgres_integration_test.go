@@ -4,15 +4,89 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestIntegrationPostgresManagerProfileActorPersistenceAndReuse(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(managerTileCacheRepositoryIntegrationDSN()), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
+	tenantID := int(time.Now().UnixNano()%100000000 + 970000000)
+	t.Cleanup(func() {
+		if err := db.Where("tenant_id = ? AND module = ? AND task_type = ?", tenantID, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling).Delete(&commonExecution.TaskExecution{}).Error; err != nil {
+			t.Errorf("cleanup profiling executions: %v", err)
+		}
+		var remaining int64
+		if err := db.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ?", tenantID).Count(&remaining).Error; err != nil || remaining != 0 {
+			t.Errorf("profiling fixture residue=%d err=%v", remaining, err)
+		}
+	})
+	repo := NewDataProfileExecutionRepository(db)
+	principalID, membershipID, version := int64(9), int64(12), int64(3)
+	makeExecution := func(key string) *commonExecution.TaskExecution {
+		return &commonExecution.TaskExecution{
+			TenantID: tenantID, ExecutionID: uuid.NewString(), Module: commonExecution.ModuleManager,
+			Source: commonExecution.ModuleManager, TaskType: commonExecution.TaskTypeDataProfiling,
+			Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
+			ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID, IssuedAuthorizationVersion: &version,
+			ExecutionConfig: commonModels.JSONMap{"target_key": key}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		}
+	}
+	key := uuid.NewString()
+	var results [2]*commonExecution.TaskExecution
+	var created [2]bool
+	var failures [2]error
+	var workers sync.WaitGroup
+	for i := range results {
+		workers.Add(1)
+		go func(i int) {
+			defer workers.Done()
+			results[i], created[i], failures[i] = repo.CreateOrReuseActive(context.Background(), key, makeExecution(key))
+		}(i)
+	}
+	workers.Wait()
+	if failures[0] != nil || failures[1] != nil || results[0] == nil || results[1] == nil {
+		t.Fatalf("concurrent enqueue: errors=%v results=%#v", failures, results)
+	}
+	if created[0] == created[1] || results[0].ExecutionID != results[1].ExecutionID {
+		t.Fatal("identical scoped target did not reuse exactly one execution")
+	}
+	stored, err := repo.GetByExecutionID(context.Background(), tenantID, results[0].ExecutionID)
+	if err != nil || stored == nil || stored.ActorPrincipalID == nil || *stored.ActorPrincipalID != principalID ||
+		stored.ActorTenantMembershipID == nil || *stored.ActorTenantMembershipID != membershipID ||
+		stored.IssuedAuthorizationVersion == nil || *stored.IssuedAuthorizationVersion != version {
+		t.Fatalf("persisted actor=%#v err=%v", stored, err)
+	}
+	otherKey := uuid.NewString()
+	other := makeExecution(otherKey)
+	otherPrincipal := int64(10)
+	other.ActorPrincipalID = &otherPrincipal
+	separate, didCreate, err := repo.CreateOrReuseActive(context.Background(), otherKey, other)
+	if err != nil || !didCreate || separate.ExecutionID == stored.ExecutionID {
+		t.Fatalf("different actor target reused: created=%v err=%v", didCreate, err)
+	}
+}
 
 func TestIntegrationPostgresManagerUnifiedTaskDefinitionLifecycle(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {

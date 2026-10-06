@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/addp/common/authorization"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	commonExecution "github.com/addp/common/execution"
@@ -120,12 +122,17 @@ func NewDataProfileService(
 
 func (s *DataProfileService) GetCurrent(
 	ctx context.Context,
-	tenantID uint,
+	authContext authorization.AuthContext,
 	req DataProfileCurrentRequest,
 ) (*DataProfileCurrentResponse, error) {
 	if s == nil || s.profiles == nil || s.executions == nil || s.sampler == nil || s.protectionGate == nil {
 		return nil, ErrDataProfileUnavailable
 	}
+	actor, err := profileActorFromAuthContext(authContext)
+	if err != nil {
+		return nil, err
+	}
+	tenantID := actor.TenantID
 	target, err := s.sampler.ResolveTarget(ctx, tenantID, req.Locator, req.DataProfileSelection)
 	if err != nil {
 		return nil, err
@@ -151,7 +158,7 @@ func (s *DataProfileService) GetCurrent(
 	if err != nil {
 		return nil, ErrDataProfileProtectionRequired
 	}
-	targetKey := profileTargetKey(tenantID, target.Locator, target.Selection, configHash)
+	targetKey := profileTargetKey(actor, target.Locator, target.Selection, configHash)
 	active, err := s.executions.GetActive(ctx, int(tenantID), targetKey)
 	if err != nil {
 		return nil, err
@@ -188,13 +195,17 @@ func (s *DataProfileService) GetCurrent(
 
 func (s *DataProfileService) CreateExecution(
 	ctx context.Context,
-	tenantID uint,
-	userID uint,
+	authContext authorization.AuthContext,
 	req DataProfileExecutionRequest,
 ) (*DataProfileExecutionResponse, error) {
 	if s == nil || s.executions == nil || s.sampler == nil || s.protectionGate == nil {
 		return nil, ErrDataProfileUnavailable
 	}
+	actor, err := profileActorFromAuthContext(authContext)
+	if err != nil {
+		return nil, err
+	}
+	tenantID := actor.TenantID
 	mode := strings.ToLower(strings.TrimSpace(req.Mode))
 	if mode == "" {
 		mode = dataprofile.ModeSample
@@ -221,7 +232,7 @@ func (s *DataProfileService) CreateExecution(
 		return nil, ErrDataProfileProtectionRequired
 	}
 	configHash := dataProfileConfigHash(target.Selection, dataScope, s.budget)
-	targetKey := profileTargetKey(tenantID, target.Locator, target.Selection, configHash)
+	targetKey := profileTargetKey(actor, target.Locator, target.Selection, configHash)
 	now := time.Now().UTC()
 	executionID := uuid.NewString()
 	executionConfig := commonModels.JSONMap{
@@ -244,24 +255,23 @@ func (s *DataProfileService) CreateExecution(
 			"timeout_ms":       s.budget.Timeout.Milliseconds(),
 		},
 	}
-	var triggeredBy *int
-	if userID > 0 {
-		value := int(userID)
-		triggeredBy = &value
-	}
+	triggeredBy := int(actor.PrincipalID)
 	execution := &commonExecution.TaskExecution{
-		TenantID:        int(tenantID),
-		ExecutionID:     executionID,
-		Module:          commonExecution.ModuleManager,
-		TaskType:        commonExecution.TaskTypeDataProfiling,
-		Source:          commonExecution.ModuleManager,
-		Status:          commonExecution.ExecutionStatusPending,
-		Progress:        0,
-		TriggerType:     commonExecution.TriggerTypeManual,
-		TriggeredBy:     triggeredBy,
-		ExecutionConfig: executionConfig,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		TenantID:                   int(tenantID),
+		ExecutionID:                executionID,
+		Module:                     commonExecution.ModuleManager,
+		TaskType:                   commonExecution.TaskTypeDataProfiling,
+		Source:                     commonExecution.ModuleManager,
+		Status:                     commonExecution.ExecutionStatusPending,
+		Progress:                   0,
+		TriggerType:                commonExecution.TriggerTypeManual,
+		TriggeredBy:                &triggeredBy,
+		ActorPrincipalID:           &actor.PrincipalID,
+		ActorTenantMembershipID:    &actor.TenantMembershipID,
+		IssuedAuthorizationVersion: &actor.AuthorizationVersion,
+		ExecutionConfig:            executionConfig,
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
 	}
 	stored, created, err := s.executions.CreateOrReuseActive(ctx, targetKey, execution)
 	if err != nil {
@@ -273,6 +283,46 @@ func (s *DataProfileService) CreateExecution(
 		ProfileConfigHash: configHash,
 		DataScope:         dataScope,
 	}, nil
+}
+
+var (
+	ErrDataProfileActorRequired = errors.New("data profile requires current tenant user authorization provenance")
+	ErrDataProfileActorExpired  = errors.New("data profile user authentication has expired")
+)
+
+// This is provenance, not an Allow decision. System must independently authorize
+// execution source reads before production sampling can be restored.
+type dataProfileActor struct {
+	TenantID             uint  `json:"tenant_id"`
+	PrincipalID          int64 `json:"principal_id"`
+	TenantMembershipID   int64 `json:"tenant_membership_id"`
+	AuthorizationVersion int64 `json:"authorization_version"`
+}
+
+func profileActorFromAuthContext(value authorization.AuthContext) (dataProfileActor, error) {
+	if authorization.ValidateAuthContext(value) != nil || value.Principal.Type != "user" ||
+		value.Context.Type != "tenant" || value.Context.TenantID == nil || value.Context.TenantMembershipID == nil ||
+		value.Delegation != nil || (value.Token.Type != "first_party_access_token" && value.Token.Type != "oauth_access_token") {
+		return dataProfileActor{}, ErrDataProfileActorRequired
+	}
+	if !value.Token.ExpiresAt.After(time.Now().UTC()) {
+		return dataProfileActor{}, ErrDataProfileActorExpired
+	}
+	apiAudience := false
+	for _, audience := range value.Client.Audiences {
+		if audience == "addp.api" {
+			apiAudience = true
+		}
+	}
+	if !apiAudience {
+		return dataProfileActor{}, ErrDataProfileActorRequired
+	}
+	// Shared AuthContext validation has already proved canonical positive int64 IDs.
+	tenantID, _ := strconv.ParseInt(*value.Context.TenantID, 10, 64)
+	principalID, _ := strconv.ParseInt(value.Principal.ID, 10, 64)
+	membershipID, _ := strconv.ParseInt(*value.Context.TenantMembershipID, 10, 64)
+	version, _ := strconv.ParseInt(value.Authorization.AuthorizationVersion, 10, 64)
+	return dataProfileActor{uint(tenantID), principalID, membershipID, version}, nil
 }
 
 func (s *DataProfileService) runExecution(

@@ -1,0 +1,27 @@
+# Selected by the standard production lifecycle only after optional file preflight.
+# No service definition, dependency or business Ready condition is duplicated here.
+services:
+  monitor-backend:
+    environment:
+      MONITOR_METRICS_CA_FILE: /etc/addp/metrics/source-ca.crt
+      MONITOR_METRICS_CLIENT_CERT_FILE: /etc/addp/metrics/admission.crt
+      MONITOR_METRICS_CLIENT_KEY_FILE: /etc/addp/metrics/admission.key
+    volumes:
+      - type: bind
+        source: ${MONITOR_METRICS_CA_FILE}
+        target: /etc/addp/metrics/source-ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MONITOR_METRICS_CLIENT_CERT_FILE}
+        target: /etc/addp/metrics/admission.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MONITOR_METRICS_CLIENT_KEY_FILE}
+        target: /etc/addp/metrics/admission.key
+        read_only: true
+        bind:
+          create_host_path: false

@@ -68,7 +68,7 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
 
     def run_up(self, **values):
         env = dict(os.environ)
-        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "COMPOSE_PROFILES"):
+        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES"):
             env.pop(key, None)
         env.update(PATH=f"{self.bin}:{env['PATH']}", ENV="development", INFRA_FALKORDB_PASSWORD="graph-test", REDIS_PASSWORD="redis-test")
         env.update(values)
@@ -207,7 +207,15 @@ elif a[0]=='compose':
         directory.mkdir()
         for name in ('ca.crt', 'server.crt', 'server.key', 'health.crt', 'health.key'):
             (directory / name).write_text('fixture-only')
-        return str(directory)
+        deployment = self.root / 'deployment'
+        deployment.mkdir()
+        secret = 'fixture-prometheus-' + 'a' * 32
+        for name in ('control-ca.crt', 'source-ca.crt', 'collector.crt', 'collector.key', 'prometheus-client-secret'):
+            (deployment / name).write_text(secret if name == 'prometheus-client-secret' else name)
+        return dict(ADDP_METRICS_TLS_DIR=str(directory), ADDP_METRICS_DEPLOYMENT_DIR=str(deployment),
+                    PROMETHEUS_SERVICE_CLIENT_SECRET=secret,
+                    PROMETHEUS_SYSTEM_URL='https://system.internal:8443',
+                    PROMETHEUS_MONITOR_URL='https://monitor.internal:8443')
 
     def test_disabled_metrics_ignore_bad_ports_and_certificates_and_preserve_volume(self):
         result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
@@ -239,12 +247,24 @@ elif a[0]=='compose':
 
     def test_metrics_start_failure_keeps_core_running(self):
         result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
-                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', ADDP_METRICS_TLS_DIR=self.metrics_certificates(),
+                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', **self.metrics_certificates(),
                              MOCK_FAIL_METRICS_START='1')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         calls = self.calls()
         self.assertLess(next(i for i,a in enumerate(calls) if 'up' in a and 'postgres' in a),
                         next(i for i,a in enumerate(calls) if 'up' in a and 'prometheus' in a))
+        self.assertFalse(any('stop' in a or 'down' in a for a in calls))
+
+    def test_missing_discovery_input_keeps_core_and_does_not_start_center(self):
+        deployment = self.metrics_certificates()
+        deployment.pop('PROMETHEUS_SYSTEM_URL')
+        result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
+                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', **deployment)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('Metrics discovery deployment input is missing or invalid', result.stderr)
+        calls = self.calls()
+        self.assertTrue(any('up' in a and 'postgres' in a for a in calls))
+        self.assertFalse(any('up' in a and 'prometheus' in a for a in calls))
         self.assertFalse(any('stop' in a or 'down' in a for a in calls))
 
     def test_disabled_metrics_never_stop_foreign_container(self):
@@ -255,7 +275,7 @@ elif a[0]=='compose':
 
     def test_logs_failure_does_not_prevent_selected_metrics_start(self):
         result = self.run_up(**self.healthy_docker(), MOCK_FAIL_LOG_BUILD='1',
-                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', ADDP_METRICS_TLS_DIR=self.metrics_certificates())
+                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', **self.metrics_certificates())
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertTrue(any('up' in a and 'prometheus' in a for a in self.calls()))
         self.assertFalse(any('stop' in a or 'down' in a for a in self.calls()))

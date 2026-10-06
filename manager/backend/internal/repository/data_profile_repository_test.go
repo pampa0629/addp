@@ -17,6 +17,32 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestDataProfileExecutionRepositoryPersistsFrozenActor(t *testing.T) {
+	db := newDataProfileRepositoryTestDB(t)
+	repo := NewDataProfileExecutionRepository(db)
+	principalID, membershipID, version := int64(9), int64(12), int64(3)
+	execution := newDataProfileRepositoryTestExecution("execution-1", time.Now().UTC())
+	execution.ActorPrincipalID = &principalID
+	execution.ActorTenantMembershipID = &membershipID
+	execution.IssuedAuthorizationVersion = &version
+	if _, created, err := repo.CreateOrReuseActive(context.Background(), "target-a", execution); err != nil || !created {
+		t.Fatalf("create: created=%v err=%v", created, err)
+	}
+	principalID, membershipID, version = 99, 98, 97
+	stored, err := repo.GetByExecutionID(context.Background(), 7, "execution-1")
+	if err != nil || stored == nil {
+		t.Fatalf("stored execution=%#v err=%v", stored, err)
+	}
+	if stored.ActorPrincipalID == nil || *stored.ActorPrincipalID != 9 ||
+		stored.ActorTenantMembershipID == nil || *stored.ActorTenantMembershipID != 12 ||
+		stored.IssuedAuthorizationVersion == nil || *stored.IssuedAuthorizationVersion != 3 {
+		t.Fatalf("stored provenance=%#v", stored)
+	}
+	if stored.ExecutionAuthorizationID != nil || stored.AuthorizationExpiresAt != nil {
+		t.Fatal("actor source facts incorrectly created execution authorization")
+	}
+}
+
 func TestDataProfileRepositoryReplaceCurrentAtomicallyReplacesFields(t *testing.T) {
 	db := newDataProfileRepositoryTestDB(t)
 	repo := NewDataProfileRepository(db)

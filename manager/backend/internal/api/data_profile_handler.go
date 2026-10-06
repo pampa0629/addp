@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	sharedauth "github.com/addp/common/middleware/auth"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -37,7 +38,8 @@ func (h *DataProfileHandler) SetExecutionEnqueueNotifier(notify func()) {
 // @Param profile_config_hash query string false "服务端返回的条件剖析配置哈希；省略时查询全范围剖析 | Server-issued conditional profile config hash; omit for the all-data profile"
 // @Success 200 {object} service.DataProfileCurrentResponse "当前剖析状态 | Current profiling state"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 403 {object} map[string]interface{} "已纳管资源当前禁止剖析 | Profiling is denied for the managed resource"
+// @Failure 401 {object} map[string]interface{} "缺少可信认证上下文或认证已过期 | Missing trusted authentication context or expired authentication"
+// @Failure 403 {object} map[string]interface{} "主体不支持此入口或已纳管资源禁止剖析 | Principal is not supported by this entry or profiling is denied for the managed resource"
 // @Failure 422 {object} map[string]interface{} "资源不支持剖析 | Resource is not profileable"
 // @Failure 503 {object} map[string]interface{} "剖析服务不可用 | Profiling unavailable"
 // @Failure 500 {object} map[string]interface{} "查询剖析结果失败 | Failed to query profile"
@@ -64,7 +66,12 @@ func (h *DataProfileHandler) GetCurrent(c *gin.Context) {
 		missingLocator(c)
 		return
 	}
-	response, err := h.service.GetCurrent(c.Request.Context(), tenantIDValue(c), req)
+	authContext, exists := sharedauth.AuthContextFromGin(c)
+	if !exists {
+		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
+		return
+	}
+	response, err := h.service.GetCurrent(c.Request.Context(), authContext, req)
 	if err != nil {
 		handleDataProfileError(c, err, manageri18n.MsgDataProfileQueryFailed)
 		return
@@ -74,14 +81,15 @@ func (h *DataProfileHandler) GetCurrent(c *gin.Context) {
 
 // CreateExecution godoc
 // @Summary 创建数据剖析执行 | Create data profiling execution
-// @Description 为指定表格型 data item 创建或复用一次全范围或结构化条件范围的采样剖析 ad-hoc execution；不会创建任务定义，也不接受 SQL。| Create or reuse an all-data or structured-condition sample profiling ad-hoc execution for a tabular data item without creating a task definition or accepting SQL.
+// @Description 为指定表格型 data item 创建或复用一次全范围或结构化条件范围的采样剖析 ad-hoc execution；仅在发起人、租户成员关系及授权版本相同时复用，不接受身份输入、Token 或 SQL。独立执行源授权接通前，采样明确失败。| Create or reuse sample profiling only for the same actor, tenant membership, and authorization version; identity, Token, and SQL inputs are not accepted. Sampling explicitly fails until independent execution source authorization is connected.
 // @Tags Manager
 // @Accept json
 // @Produce json
 // @Param body body service.DataProfileExecutionRequest true "剖析执行请求 | Profiling execution request"
 // @Success 202 {object} service.DataProfileExecutionResponse "执行已受理 | Execution accepted"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 403 {object} map[string]interface{} "已纳管资源当前禁止剖析 | Profiling is denied for the managed resource"
+// @Failure 401 {object} map[string]interface{} "缺少可信认证上下文或认证已过期 | Missing trusted authentication context or expired authentication"
+// @Failure 403 {object} map[string]interface{} "主体不支持此入口或已纳管资源禁止剖析 | Principal is not supported by this entry or profiling is denied for the managed resource"
 // @Failure 422 {object} map[string]interface{} "资源不支持剖析 | Resource is not profileable"
 // @Failure 503 {object} map[string]interface{} "剖析服务不可用 | Profiling unavailable"
 // @Failure 500 {object} map[string]interface{} "创建剖析执行失败 | Failed to create profiling execution"
@@ -110,7 +118,12 @@ func (h *DataProfileHandler) CreateExecution(c *gin.Context) {
 		missingLocator(c)
 		return
 	}
-	response, err := h.service.CreateExecution(c.Request.Context(), tenantIDValue(c), userIDValue(c), req)
+	authContext, exists := sharedauth.AuthContextFromGin(c)
+	if !exists {
+		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
+		return
+	}
+	response, err := h.service.CreateExecution(c.Request.Context(), authContext, req)
 	if err != nil {
 		handleDataProfileError(c, err, manageri18n.MsgDataProfileCreateFailed)
 		return
@@ -123,6 +136,10 @@ func (h *DataProfileHandler) CreateExecution(c *gin.Context) {
 
 func handleDataProfileError(c *gin.Context, err error, fallbackMessage string) {
 	switch {
+	case errors.Is(err, service.ErrDataProfileActorExpired):
+		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
+	case errors.Is(err, service.ErrDataProfileActorRequired):
+		managerError(c, http.StatusForbidden, manageri18n.MsgUnauthorized)
 	case errors.Is(err, service.ErrDataProfileProtectionRequired):
 		protectionRequired(c)
 	case errors.Is(err, service.ErrDataProfileUnsupported):

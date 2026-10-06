@@ -228,13 +228,13 @@ func selectionTargetsChild(selection DataProfileSelection) bool {
 	return selection.ChildName != "" || selection.RefPath != "" || selection.NestedChildPath != ""
 }
 
-func profileTargetKey(tenantID uint, locator string, selection DataProfileSelection, configHash string) string {
+func profileTargetKey(actor dataProfileActor, locator string, selection DataProfileSelection, configHash string) string {
 	payload, _ := json.Marshal(struct {
-		TenantID   uint                 `json:"tenant_id"`
+		Actor      dataProfileActor     `json:"actor"`
 		Locator    string               `json:"locator"`
 		Selection  DataProfileSelection `json:"selection"`
 		ConfigHash string               `json:"profile_config_hash"`
-	}{tenantID, strings.TrimSpace(locator), normalizeDataProfileSelection(selection), strings.TrimSpace(configHash)})
+	}{actor, strings.TrimSpace(locator), normalizeDataProfileSelection(selection), strings.TrimSpace(configHash)})
 	hash := sha256.Sum256(payload)
 	return hex.EncodeToString(hash[:])
 }

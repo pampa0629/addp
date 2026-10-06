@@ -270,7 +270,7 @@ disabled 不尝试发送，不制造设施离线告警；unconfigured 表示已�
 
 ## 十、第一期开工契约（2026-10-05，目标设计，待实施）
 
-本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.16 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
+本节定义第一期的字段、行为及验收边界，按批次实施；已发布范围与实测结果以 10.9–10.17 的批次记录为准，不能把其余目标契约当作已有能力。告警领域调整单独列于 10.7，不因其他部分已细化而视作获得批准。
 
 ### 10.1 节点与实例绑定
 
@@ -652,3 +652,26 @@ Monitor 的 CIDR、端口、来源 CA 和准入客户端证书由部署注入，
 - `make test-changed` 因共享工作区其他 Owner 所需 PostgreSQL、MySQL/OceanBase 等连接参数未提供而在预检退出，后续门禁未执行，不计为通过。此前全 Go 验证遇到其他任务的 Manager 测试失败，最终全入口复跑已通过，不将失败运行算作通过。
 
 本批没有提交、推送或接管个人运行环境；T4/T5、生产 Prometheus OAuth/HTTP SD 配置和节点来源部署未实施、未验收。下一步优先完成这条生产接线并扩展已有指标 T2，验证真实身份签发、目标发现、节点失效移除和抓取结果；统一平台运行告警迁移仍按第 10.7 节等待单独确认。
+
+### 10.17 P1.1 第七批 A：指标中心的原生认证发现接线
+
+中心通过 Prometheus 原生 OAuth2 Client Credentials 调用已有 System Token 路由，固定 `addp-prometheus`、`addp.api` scope/audience 和 Platform Context，再通过唯一 HTTP SD 路由读取 Monitor 投影。不部署令牌代理、不写 Token 文件、不使用静态 Bearer fallback。30 秒发现刷新和 15 秒采样保持既定契约，抓取与发现均关闭重定向；发现失败保留旧目标的行为不能解释为当前有效身份。
+
+部署明确提供 HTTPS 的 `PROMETHEUS_SYSTEM_URL`、`PROMETHEUS_MONITOR_URL`，只填写 origin（显式端口、无凭据、路径、query 或 fragment），分别拼接固定正式 API 路径，不从业务注册 URL 推算内部地址。`ADDP_METRICS_DEPLOYMENT_DIR` 为仓库外绝对目录，提供 `control-ca.crt`、`source-ca.crt`、`collector.crt/key`、`prometheus-client-secret`；后者须与 System 的独立 `PROMETHEUS_SERVICE_CLIENT_SECRET` 一致。中心健康证书仍只用于中心自身，不作为节点采集或控制面凭据。部署负责文件访问权限、信任范围和证书轮换；配置生成仅从版本化模板和当前部署输入产生 `prometheus.yml`，不形成可编辑的第二份事实源。
+
+选择指标中心时要求完整接线输入，缺失只使可选指标启动明确失败，核心 Infra 和业务启动继续；关闭指标时不要求以上输入。发现作业只采集 Monitor 输出的节点来源，预留样本、正文、标签和目标限额随唯一版本化模板生效。控制面身份标签覆盖来源自报字段，并移除伪造的其他 `addp_*` 与 `exported_addp_*` 标签，版本元数据不成为时序身份。Linux 节点 exporter 和节点防护入口独立部署，不因选择中心而自动获取宿主权限。
+
+本批使用既有 `make test-monitor-metrics` 验证固定版本 Prometheus 原生 OAuth/HTTP SD 和 mTLS 的实际传输行为；其控制面响应为受控协议夹具，不能计为真实 System/Monitor 部署全链路或物理资源覆盖。真实 System 凭据签发与当前节点裁决分别已有 Owner PostgreSQL/Handler 门禁，生产全链路仍须独立验收。部署准备、生命周期隔离及 CI 输入登记归现有 T0，新增输入同步登记到现有指标 T2，不增加新服务、数据库或 Workflow。
+
+生产平台的唯一服务定义仍在根 Compose：向 System 显式传递可选指标开关和独立发现 Secret，向 Monitor 传递开关与网络准入集合。标准生产生命周期只在三个准入证书文件完整时合并 `scripts/prod/metrics-platform.yml`；该文件仅增加 Monitor 的只读 Secret 挂载和容器文件路径，不重复定义服务、不增加 Prometheus 启动依赖。未选中或缺文件时不挂载不存在的路径，后者报告能力未配置但继续业务启动。Monitor 准入证书可独立于 Prometheus collector 管理；根 `.env` 中本机文件路径不直接传入容器当成有效路径。
+
+2026-10-06 验证记录：
+
+- `make test-monitor-metrics` 最终复验通过：使用生产配置生成器和唯一模板，真实 Prometheus 完成原生 OAuth 续取、认证 HTTP SD、来源 mTLS 抓取、身份标签防伪、样本限额、来源中断恢复及中心 SIGKILL 后 WAL 样本恢复。503 与 302 分别同时核对新请求状态和发现失败计数；发现失败保留旧目标、重定向不跟随、成功空列表移除目标及恢复发现均有实测证据。退出后自有容器、网络、卷和临时文件清零。
+- `make test-go` 通过全部 22 个 Go 模块。本批未修改 Go/API/数据库契约，未新增迁移或重新签发个人环境凭据；上述协议 T2 的 Token/发现响应仍是夹具，不能代替真实 System/Monitor 全链路验收。
+- 部署配置单元测试七项通过，包含真实 Compose 合并、原生配置生成、错误输入不覆盖既有配置、Secret 独立性、目录私钥边界、健康证书复用拒绝及可选挂载选择。现有 T2 CI 登记检查通过，新增输入进入已有 Owner 门禁，没有新增测试服务或 Workflow。
+- `make test-dev-lifecycle` 最终复验通过，包含全部 43 项 Infra/部署/镜像单元测试及完整生命周期回归。此前一次运行在共享脚本被其他任务同时修改期间读到截断命令而失败；当前文件没有该命令，重新运行完整标准入口通过，不把失败运行计为通过。
+- `make test-platform` 完整通过，覆盖生命周期与设施隔离、构建/CI 登记、在线入口确定性回归、权限目录及 Swagger 路由覆盖。生产 Compose 与证书挂载的最终新增断言另由上述七项部署测试和完整生命周期复验覆盖。
+- `make test-changed` 因全工作区所需 PostgreSQL、MySQL/OceanBase 等测试连接参数缺失而在预检退出，后续门禁未执行，不计为通过；本批按实际范围单独完成上述标准入口验证。未运行的跨 Owner 数据库 T2 由既有 `.github/workflows/release-and-t2-gates.yml` 对应门禁验证，CI 登记检查已确认覆盖；本批没有推送触发 CI，因此不声明这些门禁已通过。
+
+本批没有提交、推送或重启个人服务。节点 exporter 的受控部署、真实 System → Monitor → Prometheus 全链路以及生产生效回执尚未实施、未验收；下一批优先补齐这些来源与验收证据，随后再交付资源查询和页面展示。统一平台运行告警迁移仍按第 10.7 节等待单独确认。

@@ -2,7 +2,7 @@ global:
   scrape_interval: 15s
   scrape_timeout: 5s
 scrape_configs:
-  # Infrastructure self-observation only. Business discovery belongs to Monitor.
+  # Infrastructure self-observation uses only the center health identity.
   - job_name: prometheus
     scheme: https
     honor_labels: false
@@ -18,3 +18,56 @@ scrape_configs:
       min_version: TLS12
     static_configs:
       - targets: [localhost:9090]
+  # Node targets and identity labels belong exclusively to Monitor HTTP SD.
+  - job_name: addp_nodes
+    scheme: https
+    metrics_path: /metrics
+    honor_labels: false
+    follow_redirects: false
+    target_limit: 9
+    sample_limit: 20000
+    body_size_limit: 10MB
+    label_limit: 20
+    label_name_length_limit: 128
+    label_value_length_limit: 512
+    tls_config:
+      ca_file: /etc/prometheus/deployment/source-ca.crt
+      cert_file: /etc/prometheus/deployment/collector.crt
+      key_file: /etc/prometheus/deployment/collector.key
+      min_version: TLS12
+    http_sd_configs:
+      - url: @@MONITOR_URL@@
+        refresh_interval: 30s
+        follow_redirects: false
+        tls_config:
+          ca_file: /etc/prometheus/deployment/control-ca.crt
+          min_version: TLS12
+        oauth2:
+          client_id: addp-prometheus
+          client_secret_file: /etc/prometheus/deployment/prometheus-client-secret
+          scopes: [addp.api]
+          token_url: @@SYSTEM_URL@@
+          endpoint_params:
+            context_type: platform
+            audience: addp.api
+          tls_config:
+            ca_file: /etc/prometheus/deployment/control-ca.crt
+            min_version: TLS12
+    metric_relabel_configs:
+      # Save the three owner labels, remove every source identity, then restore only these.
+      - source_labels: [addp_node_id]
+        target_label: __tmp_addp_node_id
+      - source_labels: [addp_monitor_kind]
+        target_label: __tmp_addp_monitor_kind
+      - source_labels: [addp_source]
+        target_label: __tmp_addp_source
+      - action: labeldrop
+        regex: '(exported_)*addp_.*'
+      - source_labels: [__tmp_addp_node_id]
+        target_label: addp_node_id
+      - source_labels: [__tmp_addp_monitor_kind]
+        target_label: addp_monitor_kind
+      - source_labels: [__tmp_addp_source]
+        target_label: addp_source
+      - action: labeldrop
+        regex: '__tmp_addp_.*'

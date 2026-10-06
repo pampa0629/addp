@@ -5,7 +5,6 @@ services:
       service: prometheus
     ports: ["127.0.0.1::9090"]
     volumes:
-      - ${METRICS_T2_WORK}/prometheus.yml:/etc/prometheus/addp.yml:ro
       - prometheus_data:/prometheus
   metrics-source:
     image: nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
@@ -17,10 +16,10 @@ services:
     cpus: 0.25
     mem_limit: 128m
     tmpfs: ["/tmp:size=16m,mode=1777"]
-    ports: ["127.0.0.1::9443", "127.0.0.1::8080"]
+    ports: ["127.0.0.1::9443", "127.0.0.1::9444", "127.0.0.1::8080"]
     volumes:
       - ${METRICS_T2_WORK}/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ${METRICS_T2_WORK}/source:/source:ro
+      - ${METRICS_T2_WORK}/source:/source
       - ${ADDP_METRICS_TLS_DIR}:/tls:ro
 volumes:
   prometheus_data:

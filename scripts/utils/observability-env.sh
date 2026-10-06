@@ -138,4 +138,16 @@ addp_metrics_preflight() {
       echo "Missing or unreadable metrics certificate file: $name" >&2; return 1;
     }
   done
+  python3 "$PROJECT_ROOT/scripts/infra/generate-metrics-config.py"
+}
+
+addp_metrics_platform_preflight() {
+  addp_metrics_enabled || return 1
+  local name value
+  for name in MONITOR_METRICS_CA_FILE MONITOR_METRICS_CLIENT_CERT_FILE MONITOR_METRICS_CLIENT_KEY_FILE; do
+    value="${!name:-}"
+    [[ "$value" == /* && -f "$value" && -r "$value" ]] || {
+      echo "Missing absolute Monitor admission certificate file: $name" >&2; return 1;
+    }
+  done
 }

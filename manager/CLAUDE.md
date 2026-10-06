@@ -116,6 +116,7 @@ manager/
 - 资源树 node 刷新固定执行 Meta `basic + force`，用于发现当前范围的新 node / item；item 刷新固定执行 known-item `deep + force`，只重建该 item 自身的深层元数据。
 - 表格数据剖析只按 `data_type=table` 和当前内容选择上下文开放；不得按 `item_type`、engine type 或文件扩展名硬编码。首期剖析是 `data_profiling` ad-hoc execution，结果写 Manager 私有表，不写 Meta attributes，不创建 `manager.data_profile_tasks`，也不声明 TaskProvider capability。
 - 数据剖析不得使用当前预览页、分页记录或前端数组计算；采样和指标计算必须走统一 Provider 与服务端预算。刷新失败必须保留上一份成功结果。
+- 剖析入队及活跃／最近执行查询只从可信当前 User AuthContext 获取发起人、租户成员关系与授权版本；冻结共享 execution 来源字段，并按这三项隔离执行复用。不保存 User Token，不把来源事实当作源授权；独立 execution 源授权贯通前保持采样拒绝。
 - 条件剖析只接受结构化 `data_scope`，条件必须由声明支持的 Provider 在采样前执行并安全绑定参数；全范围和条件范围按 `profile_config_hash` 分别保存。Manager 不接受任意 SQL，也不得退回到采样后过滤。已纳入 Security 保护的 DataItem 在条件值保护契约完成前只允许全范围剖析，条件剖析必须拒绝。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_cache_generation`。

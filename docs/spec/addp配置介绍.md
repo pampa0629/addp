@@ -697,3 +697,5 @@ System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资
 `ADDP_OBSERVABILITY_METRICS_ENABLED` 缺省 `false`，只接受 `true/false`，不根据端口探测或证书是否存在推断部署意图。中心采用 `observability-metrics` Profile，与 `observability-logs` 独立；共享生命周期准备只由 `scripts/utils/observability-env.sh` 组织。选择、证书和启动配置随下一次标准 Infra 生命周期生效，不承诺热更新。缺失或故障只影响指标设施，不加入业务 Ready。
 
 `PROMETHEUS_PORT` 首选 `19090`，宿主固定回环发布，开发实际映射由标准入口解析；`ADDP_METRICS_TLS_DIR` 是外部部署证书目录，不是用户可修改的 Monitor 普通配置。启用需要独立 CA、服务器和健康客户端证书；未启用不校验这些专用输入、不创建证书目录。具体文件、用途与容器可读要求见 [Infra 指标中心](../../scripts/infra/README.md#可选指标中心)。运行状态分别报告 Disabled、Unconfigured、Not deployed、Unavailable 或中心 Ready；当前自身采集与业务资源覆盖分别解释。
+
+节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新、15 秒采样及限额由同一版本化模板维护，生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。

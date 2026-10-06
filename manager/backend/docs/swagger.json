@@ -42,7 +42,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "为指定表格型 data item 创建或复用一次全范围或结构化条件范围的采样剖析 ad-hoc execution；不会创建任务定义，也不接受 SQL。| Create or reuse an all-data or structured-condition sample profiling ad-hoc execution for a tabular data item without creating a task definition or accepting SQL.",
+                "description": "为指定表格型 data item 创建或复用一次全范围或结构化条件范围的采样剖析 ad-hoc execution；仅在发起人、租户成员关系及授权版本相同时复用，不接受身份输入、Token 或 SQL。独立执行源授权接通前，采样明确失败。| Create or reuse sample profiling only for the same actor, tenant membership, and authorization version; identity, Token, and SQL inputs are not accepted. Sampling explicitly fails until independent execution source authorization is connected.",
                 "consumes": [
                     "application/json"
                 ],
@@ -78,8 +78,15 @@
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "缺少可信认证上下文或认证已过期 | Missing trusted authentication context or expired authentication",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "403": {
-                        "description": "已纳管资源当前禁止剖析 | Profiling is denied for the managed resource",
+                        "description": "主体不支持此入口或已纳管资源禁止剖析 | Principal is not supported by this entry or profiling is denied for the managed resource",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -176,8 +183,15 @@
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "缺少可信认证上下文或认证已过期 | Missing trusted authentication context or expired authentication",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "403": {
-                        "description": "已纳管资源当前禁止剖析 | Profiling is denied for the managed resource",
+                        "description": "主体不支持此入口或已纳管资源禁止剖析 | Principal is not supported by this entry or profiling is denied for the managed resource",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

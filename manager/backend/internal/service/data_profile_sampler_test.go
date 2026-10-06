@@ -19,10 +19,11 @@ func TestProfileSamplerCannotReuseUncheckedPreview(t *testing.T) {
 }
 
 func TestProfileTargetKeyNormalizesSelection(t *testing.T) {
-	left := profileTargetKey(7, " addp://engine/1/item/a ", DataProfileSelection{
+	actor := dataProfileActor{TenantID: 7, PrincipalID: 9, TenantMembershipID: 12, AuthorizationVersion: 3}
+	left := profileTargetKey(actor, " addp://engine/1/item/a ", DataProfileSelection{
 		ChildName: " Sheet 1 ", RefPath: "/data.csv/", NestedChildPath: "/nested/table/",
 	}, "config")
-	right := profileTargetKey(7, "addp://engine/1/item/a", DataProfileSelection{
+	right := profileTargetKey(actor, "addp://engine/1/item/a", DataProfileSelection{
 		ChildName: "Sheet 1", RefPath: "data.csv", NestedChildPath: "nested/table",
 	}, "config")
 	if left != right {

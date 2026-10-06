@@ -3696,3 +3696,25 @@ Manager 的数据库预览与后台数据剖析共同调用同一 Resolver／数
 - 本轮仅切换 PostgreSQL 表格预览，不宣称其他引擎的所有读取出口或整个数据授权闭环已经完成。源码尚需用户重启加载；涉及 Common，运行验收时由用户执行 `./scripts/dev/restart.sh -all`，AI 不接管服务。
 
 **下一优先项：** 贯通后台剖析的真实发起人 → 独立 execution 授权 → 每次受控计划全来源复核 → 结果提交与读取权限复核。现有 System execution audience 尚未包含 Manager，现有预览检查固定为用户／`data.preview`，不能直接复用为后台授权；剖析恢复必须扩展正式契约及标准门禁，不恢复旧采样或借用 Service Token 放行。
+
+### 26.91 重启核对与剖析执行的可信发起人隔离（2026-10-06）
+
+用户重启后，只读确认 System、Manager 均 Ready，Manager 已加载 §26.90 对应 `fb5d7e504` 构建。本轮不启停应用／Infra，不改账号授权，不修改并行运行监控、GeoPython 和生命周期脚本。数据库验证的来源边界分别列于下文，不能将所有集成门禁统称为隔离业务源。
+
+**本轮推进：**
+
+- 剖析入队及活跃／最近执行查询不再接受独立 `tenantID/userID` 标量，统一消费认证中间件提供的当前租户 User AuthContext。发起人、租户成员关系和授权版本冻结到已有共享 execution 字段；`triggered_by` 不再被当作完整授权来源。
+- 活跃执行的复用键绑定上述来源事实以及租户、资源、内容选择、配置。不同账号、成员关系、授权版本或租户不能复用同一执行；同一授权来源的 Token 正常刷新不造成重复执行。当前账号的活跃／最近执行查询采用同一复用键。
+- 请求体不能指定发起人、成员关系、授权版本或 Token。缺少可信上下文返回 401；认证过期返回 401；不支持的主体／凭据或上下文返回 403，且不解析资源、不入队。没有存储或后台转发 User Token，也没有创建虚假的 Execution Authorization。
+- 已成功的当前剖析结果仍保持原有资源／配置结果与本地保护契约；本轮没有将其改成个人私有结果，也没有宣称其源读取授权已完成。生产采样仍以 `source_authorization_required` 明确拒绝，不覆盖旧成功结果。
+- 先更新 Manager 剖析规范和模块说明，再实现代码与回归；API 双语注释及 Swagger 已同步。测试命中既有 Manager Go 自动发现和 PostgreSQL `TestIntegrationPostgresManager*` 门禁，无新 Permission、迁移、数据库或 CI 入口。
+
+**验证与边界：**
+
+- 标准模块编排发现的 Manager Go T1 全包通过；覆盖来源冻结、不同来源执行隔离、同来源复用、活跃／最近查询范围、规范但不受支持的 Service／Delegated／Resource Ticket、缺失／过期身份、客户端身份输入拒绝与 401／403 映射。
+- `make test-manager-postgres` 通过；新增真实 PostgreSQL 来源字段持久化、同键并发仅创建一次、不同键独立执行及零残留清理回归。只使用状态核实的 `25432/addp_test`，不操作业务库。
+- Swagger 生成、93 个公开路由覆盖与 `git diff --check` 通过。完整 `make test-module MODULE=manager` 在平台层失败：`SwaggerRouteCoverageTest.test_matching_projections_use_each_owner_runtime` 的 Agent／Copilot 夹具超过 15 秒，日志 `/tmp/addp-manager-profile-actor-module.log`；没有放宽限时或修改其他 Owner。此入口不能计为通过；Manager 自身剩余步骤沿用 `module-gate.py` 现有发现／执行函数完成，日志 `/tmp/addp-manager-profile-actor-owner.log`，不新增测试旁路或替代平台结果。
+- 上述 Manager owner 剩余步骤最终退出码 0：Go T1 全包、前端 280 项单测／126 项浏览器测试及生产构建、既有 MongoDB 安全门禁、PostgreSQL 全部门禁通过。MongoDB 门禁复用了既有户外样例，并非独立测试容器；其中现有 Manager 夹具在 `Outdoor.Persons` 为空时会临时插入样例并清理。因此不能以该门禁证明业务源全程只读，也不将其继续用于无源端写入授权的验收；后续应先收敛这一既有夹具的隔离边界。此项发现不意味着允许剖析恢复未授权采样。
+- `make test-changed` 因并行工作区多个 Owner 缺少 T2 环境变量，在预检停止；不代表全工作区通过。真实用户／工具、System／Gateway／Manager 的 T4 未运行，Ready 核对不是授权运行验收。运行新源码无需 AI 接管服务，后续需要时由用户重启 Manager。
+
+**下一优先项：** 扩展 System 的正式 Manager execution 契约，将可信来源与真实 execution、固定 Manager 服务调用方、有界只读效果绑定；随后以同一不可变采样计划的完整 ReadSet 核验当前源授权，并补齐结果提交／读取复核。来源冻结只是前置条件，不能替代源授权，更不能据此恢复未核验采样。

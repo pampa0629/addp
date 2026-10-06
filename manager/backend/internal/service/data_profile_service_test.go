@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/authorization"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/datatype"
@@ -32,7 +33,7 @@ func TestDataProfileServiceGetCurrentMarksStoredResultStale(t *testing.T) {
 	}}
 	profileService := NewDataProfileService(profiles, executions, sampler, &dataProfileServiceTestProtectionGate{})
 
-	response, err := profileService.GetCurrent(context.Background(), 7, DataProfileCurrentRequest{Locator: sampler.target.Locator})
+	response, err := profileService.GetCurrent(context.Background(), profileAuthContextForTest(), DataProfileCurrentRequest{Locator: sampler.target.Locator})
 	if err != nil {
 		t.Fatalf("GetCurrent() error = %v", err)
 	}
@@ -54,7 +55,7 @@ func TestDataProfileServiceRejectsUnsupportedMode(t *testing.T) {
 		&dataProfileServiceTestSampler{},
 		&dataProfileServiceTestProtectionGate{},
 	)
-	_, err := profileService.CreateExecution(context.Background(), 7, 9, DataProfileExecutionRequest{
+	_, err := profileService.CreateExecution(context.Background(), profileAuthContextForTest(), DataProfileExecutionRequest{
 		Locator: "addp://engine/1/item/a",
 		Mode:    "full",
 	})
@@ -74,7 +75,7 @@ func TestDataProfileServiceRejectsConditionalScopeWithoutProviderSupport(t *test
 		}},
 		&dataProfileServiceTestProtectionGate{},
 	)
-	_, err := profileService.CreateExecution(context.Background(), 7, 9, DataProfileExecutionRequest{
+	_, err := profileService.CreateExecution(context.Background(), profileAuthContextForTest(), DataProfileExecutionRequest{
 		Locator: "addp://engine/1/path/public/orders?type=table",
 		DataScope: dataprofile.DataScope{
 			Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd,
@@ -205,7 +206,7 @@ func TestDataProfileServiceRejectsManagedCurrentResultBeforeStoreRead(t *testing
 		&dataProfileServiceTestProtectionGate{managed: true},
 	)
 
-	_, err := profileService.GetCurrent(context.Background(), 7, DataProfileCurrentRequest{Locator: sampler.target.Locator})
+	_, err := profileService.GetCurrent(context.Background(), profileAuthContextForTest(), DataProfileCurrentRequest{Locator: sampler.target.Locator})
 	if !errors.Is(err, ErrDataProfileProtectionRequired) {
 		t.Fatalf("GetCurrent() error = %v, want ErrDataProfileProtectionRequired", err)
 	}
@@ -227,7 +228,7 @@ func TestDataProfileServiceRejectsManagedExecutionBeforeCreation(t *testing.T) {
 		&dataProfileServiceTestProtectionGate{managed: true},
 	)
 
-	_, err := profileService.CreateExecution(context.Background(), 7, 9, DataProfileExecutionRequest{Locator: sampler.target.Locator})
+	_, err := profileService.CreateExecution(context.Background(), profileAuthContextForTest(), DataProfileExecutionRequest{Locator: sampler.target.Locator})
 	if !errors.Is(err, ErrDataProfileProtectionRequired) {
 		t.Fatalf("CreateExecution() error = %v, want ErrDataProfileProtectionRequired", err)
 	}
@@ -260,7 +261,7 @@ func TestDataProfileServiceReturnsProtectedManagedCurrentResult(t *testing.T) {
 		managedDataProfileServiceTestGate(t, target.ItemFingerprint, fields, dataprotection.EffectSuppress),
 	)
 
-	response, err := profileService.GetCurrent(context.Background(), 7, DataProfileCurrentRequest{Locator: target.Locator})
+	response, err := profileService.GetCurrent(context.Background(), profileAuthContextForTest(), DataProfileCurrentRequest{Locator: target.Locator})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,13 +284,13 @@ func TestDataProfileServiceAllowsManagedAllScopeAndRejectsConditionScope(t *test
 		&dataProfileServiceTestProfileStore{}, executions, &dataProfileServiceTestSampler{target: target},
 		managedDataProfileServiceTestGate(t, target.ItemFingerprint, fields, dataprotection.EffectSuppress),
 	)
-	if _, err := profileService.CreateExecution(context.Background(), 7, 9, DataProfileExecutionRequest{Locator: target.Locator}); err != nil {
+	if _, err := profileService.CreateExecution(context.Background(), profileAuthContextForTest(), DataProfileExecutionRequest{Locator: target.Locator}); err != nil {
 		t.Fatalf("all-scope CreateExecution() error = %v", err)
 	}
 	if executions.createCalls != 1 {
 		t.Fatalf("all-scope execution creates = %d", executions.createCalls)
 	}
-	_, err := profileService.CreateExecution(context.Background(), 7, 9, DataProfileExecutionRequest{
+	_, err := profileService.CreateExecution(context.Background(), profileAuthContextForTest(), DataProfileExecutionRequest{
 		Locator: target.Locator,
 		DataScope: dataprofile.DataScope{
 			Kind: dataprofile.DataScopeKindCondition, Logic: dataprofile.DataScopeLogicAnd,
@@ -312,7 +313,7 @@ func TestDataProfileServiceRejectsManagedDenyBeforeExecutionCreation(t *testing.
 		&dataProfileServiceTestProfileStore{}, executions, &dataProfileServiceTestSampler{target: target},
 		managedDataProfileServiceTestGate(t, target.ItemFingerprint, fields, dataprotection.EffectDeny),
 	)
-	if _, err := profileService.CreateExecution(context.Background(), 7, 9, DataProfileExecutionRequest{Locator: target.Locator}); !errors.Is(err, ErrDataProfileProtectionRequired) {
+	if _, err := profileService.CreateExecution(context.Background(), profileAuthContextForTest(), DataProfileExecutionRequest{Locator: target.Locator}); !errors.Is(err, ErrDataProfileProtectionRequired) {
 		t.Fatalf("CreateExecution() error = %v", err)
 	}
 	if executions.createCalls != 0 {
@@ -365,6 +366,132 @@ func TestDataProfileServiceProtectsManagedProfileBeforePersistence(t *testing.T)
 	}
 }
 
+func TestDataProfileServiceFreezesActorAndIsolatesReuse(t *testing.T) {
+	executions := &dataProfileServiceTestExecutionStore{}
+	sampler := &dataProfileServiceTestSampler{target: &DataProfileTarget{Locator: "addp://engine/1/item/a", ItemFingerprint: "item-a", SourceVersion: "v1"}}
+	svc := NewDataProfileService(&dataProfileServiceTestProfileStore{}, executions, sampler, &dataProfileServiceTestProtectionGate{})
+	req := DataProfileExecutionRequest{Locator: sampler.target.Locator}
+	base := profileAuthContextForTest()
+	first, err := svc.CreateExecution(context.Background(), base, req)
+	if err != nil || first.Execution == nil || first.Reused {
+		t.Fatalf("first execution = %#v, %v", first, err)
+	}
+	stored := executions.createdExecution
+	if stored.ActorPrincipalID == nil || *stored.ActorPrincipalID != 9 ||
+		stored.ActorTenantMembershipID == nil || *stored.ActorTenantMembershipID != 12 ||
+		stored.IssuedAuthorizationVersion == nil || *stored.IssuedAuthorizationVersion != 3 ||
+		stored.TriggeredBy == nil || *stored.TriggeredBy != 9 || stored.TenantID != 7 {
+		t.Fatalf("actor provenance was not frozen: %#v", stored)
+	}
+	if stored.ExecutionAuthorizationID != nil || stored.AuthorizationExpiresAt != nil {
+		t.Fatal("provenance was incorrectly promoted to execution authorization")
+	}
+	// Refreshing a user token without changing authorization facts can reuse work.
+	refreshed := profileAuthContextForTest()
+	reused, err := svc.CreateExecution(context.Background(), refreshed, req)
+	if err != nil || !reused.Reused || reused.Execution.ExecutionID != first.Execution.ExecutionID {
+		t.Fatalf("same actor reuse = %#v, %v", reused, err)
+	}
+	firstKey := executions.createdKey
+	for _, tc := range []struct {
+		name   string
+		change func(*authorization.AuthContext)
+	}{
+		{"principal", func(v *authorization.AuthContext) { v.Principal.ID = "10" }},
+		{"membership", func(v *authorization.AuthContext) { id := "13"; v.Context.TenantMembershipID = &id }},
+		{"authorization version", func(v *authorization.AuthContext) { v.Authorization.AuthorizationVersion = "4" }},
+		{"tenant", func(v *authorization.AuthContext) { id := "8"; v.Context.TenantID = &id }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			actor := profileAuthContextForTest()
+			tc.change(&actor)
+			result, err := svc.CreateExecution(context.Background(), actor, req)
+			if err != nil || result.Reused || result.Execution.ExecutionID == first.Execution.ExecutionID || executions.createdKey == firstKey {
+				t.Fatalf("cross-actor reuse = %#v, %v", result, err)
+			}
+			key := executions.createdKey
+			if _, err := svc.GetCurrent(context.Background(), actor, DataProfileCurrentRequest{Locator: req.Locator}); err != nil {
+				t.Fatal(err)
+			}
+			if executions.activeKey != key || executions.latestKey != key {
+				t.Fatal("current execution queries were not scoped to the same actor")
+			}
+		})
+	}
+	// Mutating the detached input after enqueue must not rewrite execution facts.
+	base.Principal.ID = "20"
+	*base.Context.TenantMembershipID = "21"
+	base.Authorization.AuthorizationVersion = "22"
+	if *stored.ActorPrincipalID != 9 || *stored.ActorTenantMembershipID != 12 || *stored.IssuedAuthorizationVersion != 3 {
+		t.Fatal("queued provenance changed with request context")
+	}
+}
+
+func TestDataProfileServiceRejectsUntrustedActorsBeforeResolving(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*authorization.AuthContext)
+	}{
+		{"missing context", func(v *authorization.AuthContext) { *v = authorization.AuthContext{} }},
+		{"missing membership", func(v *authorization.AuthContext) { v.Context.TenantMembershipID = nil }},
+		{"noncanonical principal", func(v *authorization.AuthContext) { v.Principal.ID = "09" }},
+		{"overflow version", func(v *authorization.AuthContext) { v.Authorization.AuthorizationVersion = "9223372036854775808" }},
+		{"expired", func(v *authorization.AuthContext) {
+			v.Token.IssuedAt = time.Now().Add(-time.Hour)
+			v.Token.ExpiresAt = time.Now().Add(-time.Minute)
+		}},
+		{"platform", func(v *authorization.AuthContext) {
+			v.Context = authorization.AuthSessionContext{Type: "platform"}
+			v.Authentication.AssuranceLevel = "aal2"
+		}},
+		{"service", func(v *authorization.AuthContext) {
+			v.Principal.Type = "service_principal"
+			v.Token.Type = "service_access_token"
+		}},
+		{"resource ticket", func(v *authorization.AuthContext) {
+			v.Token.Type = "resource_access_ticket"
+			v.Client.ScopeMode = "restricted"
+			v.Client.Scopes = []string{"resource:read"}
+			v.Client.Audiences = []string{"manager"}
+		}},
+		{"delegated", func(v *authorization.AuthContext) {
+			v.Token.Type = "delegated_access_token"
+			v.Client.ScopeMode = "restricted"
+			v.Client.Scopes = []string{"data.preview"}
+			v.Client.Audiences = []string{"manager"}
+			v.Delegation = &authorization.DelegationFacts{DelegatedByClientID: "addp-web", AgentRunID: "run", ToolCallID: "call"}
+		}},
+		{"wrong audience", func(v *authorization.AuthContext) { v.Client.Audiences = []string{"data.preview"} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			authContext := profileAuthContextForTest()
+			tc.change(&authContext)
+			switch tc.name {
+			case "platform", "service", "resource ticket", "delegated", "wrong audience":
+				if err := authorization.ValidateAuthContext(authContext); err != nil {
+					t.Fatalf("fixture should be canonical before profiling rejects its provenance: %v", err)
+				}
+			}
+			executions := &dataProfileServiceTestExecutionStore{}
+			sampler := &dataProfileServiceTestSampler{}
+			svc := NewDataProfileService(&dataProfileServiceTestProfileStore{}, executions, sampler, &dataProfileServiceTestProtectionGate{})
+			wantError := ErrDataProfileActorRequired
+			if tc.name == "expired" {
+				wantError = ErrDataProfileActorExpired
+			}
+			if _, err := svc.CreateExecution(context.Background(), authContext, DataProfileExecutionRequest{Locator: "item"}); !errors.Is(err, wantError) {
+				t.Fatalf("create error = %v", err)
+			}
+			if _, err := svc.GetCurrent(context.Background(), authContext, DataProfileCurrentRequest{Locator: "item"}); !errors.Is(err, wantError) {
+				t.Fatalf("query error = %v", err)
+			}
+			if sampler.resolveCalls != 0 || executions.createCalls != 0 || executions.activeKey != "" || executions.latestKey != "" {
+				t.Fatal("invalid actor reached metadata or execution repository")
+			}
+		})
+	}
+}
+
 type dataProfileServiceTestProfileStore struct {
 	state        *models.DataProfile
 	profile      *dataprofile.Profile
@@ -385,6 +512,11 @@ func (s *dataProfileServiceTestProfileStore) ReplaceCurrent(_ context.Context, _
 }
 
 type dataProfileServiceTestExecutionStore struct {
+	createdExecution  *commonExecution.TaskExecution
+	createdKey        string
+	activeKey         string
+	latestKey         string
+	activeByKey       map[string]*commonExecution.TaskExecution
 	failedCode        string
 	byID              *commonExecution.TaskExecution
 	createCalls       int
@@ -392,14 +524,25 @@ type dataProfileServiceTestExecutionStore struct {
 	completedMetadata map[string]interface{}
 }
 
-func (s *dataProfileServiceTestExecutionStore) CreateOrReuseActive(context.Context, string, *commonExecution.TaskExecution) (*commonExecution.TaskExecution, bool, error) {
+func (s *dataProfileServiceTestExecutionStore) CreateOrReuseActive(_ context.Context, key string, execution *commonExecution.TaskExecution) (*commonExecution.TaskExecution, bool, error) {
 	s.createCalls++
-	return nil, false, nil
+	s.createdExecution = execution
+	s.createdKey = key
+	if previous := s.activeByKey[key]; previous != nil {
+		return previous, false, nil
+	}
+	if s.activeByKey == nil {
+		s.activeByKey = make(map[string]*commonExecution.TaskExecution)
+	}
+	s.activeByKey[key] = execution
+	return execution, true, nil
 }
-func (s *dataProfileServiceTestExecutionStore) GetActive(context.Context, int, string) (*commonExecution.TaskExecution, error) {
+func (s *dataProfileServiceTestExecutionStore) GetActive(_ context.Context, _ int, key string) (*commonExecution.TaskExecution, error) {
+	s.activeKey = key
 	return nil, nil
 }
-func (s *dataProfileServiceTestExecutionStore) GetLatest(context.Context, int, string) (*commonExecution.TaskExecution, error) {
+func (s *dataProfileServiceTestExecutionStore) GetLatest(_ context.Context, _ int, key string) (*commonExecution.TaskExecution, error) {
+	s.latestKey = key
 	return nil, nil
 }
 func (s *dataProfileServiceTestExecutionStore) GetByExecutionID(context.Context, int, string) (*commonExecution.TaskExecution, error) {
@@ -423,14 +566,31 @@ func (s *dataProfileServiceTestExecutionStore) Timeout(_ context.Context, _ int,
 }
 
 type dataProfileServiceTestSampler struct {
-	target    *DataProfileTarget
-	sample    *DataProfileSample
-	sampleErr error
-	onSample  func()
+	resolveCalls int
+	target       *DataProfileTarget
+	sample       *DataProfileSample
+	sampleErr    error
+	onSample     func()
 }
 
 func (s *dataProfileServiceTestSampler) ResolveTarget(context.Context, uint, string, DataProfileSelection) (*DataProfileTarget, error) {
+	s.resolveCalls++
 	return s.target, nil
+}
+
+func profileAuthContextForTest() authorization.AuthContext {
+	tenantID, membershipID, clientID := "7", "12", "addp-web"
+	now := time.Now().UTC()
+	return authorization.AuthContext{
+		SchemaVersion:  authorization.AuthContextSchemaVersion,
+		Principal:      authorization.AuthPrincipal{Type: "user", ID: "9"},
+		Context:        authorization.AuthSessionContext{Type: "tenant", TenantID: &tenantID, TenantMembershipID: &membershipID},
+		Authentication: authorization.AuthenticationFacts{Methods: []string{"password"}, AssuranceLevel: "aal1", AuthenticatedAt: now},
+		Client:         authorization.ClientConstraints{ClientID: &clientID, Audiences: []string{"addp.api"}, ScopeMode: "unrestricted", Scopes: []string{}},
+		Organization:   authorization.OrganizationContext{Departments: []authorization.DepartmentMembership{}, ProjectGroups: []authorization.ProjectGroupMembership{}},
+		Authorization:  authorization.AuthorizationFacts{AuthorizationVersion: "3", RoleAssignments: []authorization.RoleAssignment{}},
+		Token:          authorization.TokenFacts{Type: "first_party_access_token", IssuedAt: now, ExpiresAt: now.Add(time.Hour)},
+	}
 }
 func (s *dataProfileServiceTestSampler) Sample(context.Context, *DataProfileTarget, dataprofile.DataScope, DataProfileBudget) (*DataProfileSample, error) {
 	if s.onSample != nil {

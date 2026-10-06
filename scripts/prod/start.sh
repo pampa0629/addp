@@ -15,6 +15,9 @@ echo -e "${GREEN}ADDP 生产环境启动脚本${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
+PLATFORM_COMPOSE_FILES=(-f docker-compose.yml)
+platform_compose() { docker compose "${PLATFORM_COMPOSE_FILES[@]}" "$@"; }
+
 connect_business_network() {
   local network="${BUSINESS_DOCKER_NETWORK:-business_business-network}"
 
@@ -24,7 +27,7 @@ connect_business_network() {
   fi
 
   echo -e "${YELLOW}连接 ADDP 服务到 Business 网络 (${network})...${NC}"
-  for container in $(docker compose -f docker-compose.yml ps -q 2>/dev/null) $(docker compose -f docker-compose.runtimes.yml ps -q 2>/dev/null); do
+  for container in $(platform_compose ps -q 2>/dev/null) $(docker compose -f docker-compose.runtimes.yml ps -q 2>/dev/null); do
     if docker inspect "$container" --format '{{json .NetworkSettings.Networks}}' | grep -q "\"${network}\""; then
       continue
     fi
@@ -56,23 +59,31 @@ if ! bash scripts/infra/up.sh; then
   echo 'Optional observability startup failed; core services are ready' >&2
 fi
 bash scripts/prod/wait-infra.sh
+if addp_metrics_enabled; then
+  if addp_metrics_platform_preflight; then
+    PLATFORM_COMPOSE_FILES+=(-f scripts/prod/metrics-platform.yml)
+  else
+    infra_result=1
+    echo 'Monitor metrics admission unconfigured; business startup remains independent' >&2
+  fi
+fi
 # Containers use the fixed internal query endpoint; native development uses the resolved host mapping.
 export LOKI_URL=''
 if addp_runtime_logs_enabled; then export LOKI_URL=http://runtime-log-api:3100; fi
 
 # 第二步：System 先就绪，再启动应用全量服务。
 echo -e "${YELLOW}[2/4] 等待 System Backend 就绪...${NC}"
-docker compose -f docker-compose.yml up -d --wait --wait-timeout 120 system-backend
+platform_compose up -d --wait --wait-timeout 120 system-backend
 
 echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"
-docker compose -f docker-compose.yml up -d --wait --wait-timeout 180
+platform_compose up -d --wait --wait-timeout 180
 
 echo -e "${YELLOW}[4/4] 启动并等待内置 Runtime 就绪...${NC}"
 docker compose -f docker-compose.runtimes.yml up -d --wait --wait-timeout 180
 
 connect_business_network
 
-published_port="$(docker compose -f docker-compose.yml port nginx 80 | sed 's/.*://')"
+published_port="$(platform_compose port nginx 80 | sed 's/.*://')"
 public_origin="${ADDP_PUBLIC_ORIGIN:-$(sed -n 's/^ADDP_PUBLIC_ORIGIN=//p' .env | tail -n 1)}"
 if [ -z "$public_origin" ]; then
   public_origin="http://localhost:${published_port}"
@@ -81,7 +92,7 @@ fi
 echo -e "${GREEN}✓ ADDP 容器部署已启动${NC}"
 echo -e "统一入口: ${public_origin}"
 echo ""
-docker compose -f docker-compose.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
+platform_compose ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
 docker compose -f docker-compose.runtimes.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
 
 exit "$infra_result"

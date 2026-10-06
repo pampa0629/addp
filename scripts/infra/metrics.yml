@@ -18,12 +18,23 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs: ["/tmp:size=16m,mode=1777"]
     volumes:
-      - ./prometheus.yml:/etc/prometheus/addp.yml:ro
+      - type: bind
+        source: ${ADDP_METRICS_DEPLOYMENT_DIR:-/nonexistent/addp-metrics-deployment}/prometheus.yml
+        target: /etc/prometheus/addp.yml
+        read_only: true
+        bind:
+          create_host_path: false
       - ./prometheus-web.yml:/etc/prometheus/web.yml:ro
       - ./prometheus-http.yml:/etc/prometheus/http.yml:ro
       - type: bind
         source: ${ADDP_METRICS_TLS_DIR:-/nonexistent/addp-metrics-tls}
         target: /etc/prometheus/tls
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ADDP_METRICS_DEPLOYMENT_DIR:-/nonexistent/addp-metrics-deployment}
+        target: /etc/prometheus/deployment
         read_only: true
         bind:
           create_host_path: false
