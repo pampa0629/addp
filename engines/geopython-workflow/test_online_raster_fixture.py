@@ -246,6 +246,49 @@ def source_access_plan(path):
         'kind': 'file', 'format': 'tiff', 'access': {'method': 'mounted_path', 'path': str(path)}}}
 
 
+def utility_execution(tmp_path, scene, api_server, case_name):
+    source_name = (fixture.NON_COG_SOURCE if case_name == 'validate-cog-invalid' else
+                   'build-overviews.cog.tif' if case_name == 'info-overviews' else
+                   'to-cog.cog.tif' if case_name == 'validate-cog-valid' else 'source.tif')
+    role = 'target' if source_name.endswith('.cog.tif') else 'source'
+    source = tmp_path / ('utility-source-' + source_name)
+    original = LocalMinio.objects[role, 'raster-' + role, source_name]
+    source.write_bytes(original)
+    definition = scene.utility_workflow('source-locator', 2, case_name)
+    output = tmp_path / (case_name + '.cog.tif')
+    plan = source_access_plan(source)
+    if case_name in fixture.UTILITY_CASES:
+        plan['target'] = {'kind': 'file', 'format': 'tiff', 'name': output.name, 'write_mode': 'create',
+            'access': {'method': 'mounted_path', 'path': str(output)}}
+    if case_name == 'to-cog':
+        params = definition['tasks'][0]['params']
+        options = {key: params[key] for key in ('blocksize', 'overview_resampling')}
+        params.clear()
+        params.update(access_plan=plan, options=options)
+    else:
+        definition['tasks'][0]['params'] = {'access_plan': {key: value for key, value in plan.items() if key != 'target'}}
+        if case_name == 'build-overviews':
+            params = definition['tasks'][-1]['params']
+            for key in ('target_parent_locator', 'target_name', 'write_mode'): params.pop(key)
+            params['access_plan'] = {key: value for key, value in plan.items() if key != 'source'}
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {}, 'runtime': {
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write'] if case_name in fixture.UTILITY_CASES else ['read']}}})
+    assert response.status_code == 202
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/' + response.json['execution_id']).json
+        if status['status'] in ('success', 'failed'): break
+        time.sleep(.01)
+    assert status['status'] == 'success', status
+    assert source.read_bytes() == original
+    result = json.loads(status['result'])
+    if case_name in fixture.UTILITY_CASES:
+        assert result['size_bytes'] == output.stat().st_size > 0
+        LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    return result, output
+
+
 def grid_target(tmp_path, scene, api_server, case_name):
     multiband = case_name in fixture.MULTIBAND_CASES
     joint = case_name.endswith('-joint')
@@ -565,3 +608,70 @@ def test_finite_oracle_rejects_lost_persisted_holes_nodata_and_joint_validity(ph
     LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     with pytest.raises(fixture.FixtureError, match='multiband|NoData'):
         fixture.worker('verify-multiband-average-finite-joint', physical)
+
+
+@pytest.fixture(scope='module')
+def utility_baseline_cache():
+    return {}
+
+
+@pytest.fixture
+def utility_artifacts(physical, tmp_path, monkeypatch, utility_baseline_cache):
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    source_hashes = {key: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items()}
+    if not utility_baseline_cache:
+        multiband_targets(tmp_path, scene, api_server, fixture.MULTIBAND_CASES[-1])
+        utility_baseline_cache.update(sources=source_hashes,
+            targets={key: value for key, value in LocalMinio.objects.items() if key[0] == 'target'})
+    else:
+        # Reuse immutable, already validated baseline bytes only for identical
+        # source fingerprints; each test still computes both utility outputs.
+        assert source_hashes == utility_baseline_cache['sources']
+        LocalMinio.objects.update(utility_baseline_cache['targets'])
+    for case in fixture.UTILITY_CASES:
+        result, output = utility_execution(tmp_path, scene, api_server, case)
+        evidence = fixture.worker('verify-' + case, physical)
+        assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
+        assert evidence['band_valid_pixels'] == [65535, 65535]
+        assert evidence['overview_sizes'] == ([[128, 128], [64, 64]] if case == 'build-overviews' else [[128, 128]])
+    return scene, api_server, physical
+
+
+def test_async_utility_save_reload_info_and_cog_verdicts_match_physical_oracle(utility_artifacts, tmp_path):
+    scene, api_server, physical = utility_artifacts
+    before = {key: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items()}
+    evidence = fixture.worker('verify-utility-queries', physical)
+    for case in fixture.UTILITY_JSON_CASES:
+        result, _ = utility_execution(tmp_path, scene, api_server, case)
+        execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
+        assert scene.validate_utility_json(execution, case, evidence) == result
+    assert {key: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items()} == before
+
+
+@pytest.mark.parametrize('fault', ['base-pixel', 'second-band', 'overview-pixel', 'overview-hole', 'missing-level', 'extra'])
+def test_utility_physical_oracle_rejects_pixels_levels_masks_and_partial_artifacts(utility_artifacts, tmp_path, fault):
+    _, _, physical = utility_artifacts
+    if fault == 'extra':
+        LocalMinio.objects['target', 'raster-target', 'partial-upload.tif'] = b'partial'
+    else:
+        name = 'build-overviews.cog.tif'
+        source = tmp_path / 'corrupt-utility-source.tif'
+        source.write_bytes(LocalMinio.objects['target', 'raster-target', name])
+        edited = tmp_path / 'corrupt-utility.tif'
+        ds = gdal.Translate(str(edited), str(source), format='GTiff', creationOptions=['TILED=YES', 'COPY_SRC_OVERVIEWS=YES'])
+        if fault == 'missing-level':
+            ds.BuildOverviews('NONE', [])
+        else:
+            band = ds.GetRasterBand(2 if fault in ('second-band', 'overview-pixel', 'overview-hole') else 1)
+            if fault.startswith('overview-'): band = band.GetOverview(1)
+            position = 0 if fault == 'overview-hole' else 1
+            band.WriteRaster(position, position, 1, 1, struct.pack('<d', 123), buf_type=gdal.GDT_Float64)
+            band = None
+        ds = None
+        changed = tmp_path / 'corrupt-utility.cog.tif'
+        ds = gdal.Translate(str(changed), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+        ds = None
+        LocalMinio.objects['target', 'raster-target', name] = changed.read_bytes()
+    with pytest.raises(fixture.FixtureError): fixture.worker('verify-utility-queries', physical)

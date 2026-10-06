@@ -152,7 +152,30 @@ def multiband_workflow(source_locator, target_engine_id, case_name):
     ]}
 
 
-def validate_analysis(execution, expectation):
+def utility_workflow(source_locator, target_engine_id, case_name):
+    target = {'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+              'target_name': case_name + '.cog.tif', 'write_mode': 'create'}
+    if case_name == 'to-cog':
+        return {'tasks': [{'id': 'convert', 'operator': 'raster_to_cog', 'depends_on': [], 'params': {
+            'locator': source_locator, **target, 'blocksize': 128, 'overview_resampling': 'nearest'}}]}
+    if case_name == 'build-overviews':
+        return {'tasks': [
+            {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
+            {'id': 'overviews', 'operator': 'raster_build_overviews', 'depends_on': ['load'], 'params': {
+                'input_raster': {'$ref': 'load', 'port': 'default'}, 'levels': [2, 4], 'resampling': 'nearest'}},
+            {'id': 'save', 'operator': 'raster_save', 'depends_on': ['overviews'], 'params': {
+                'input_raster': {'$ref': 'overviews', 'port': 'default'}, **target, 'profile': 'cog', 'blocksize': 128}},
+        ]}
+    if case_name in fixture.UTILITY_JSON_CASES:
+        return {'tasks': [
+            {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
+            {'id': 'analysis', 'operator': 'raster_info' if case_name == 'info-overviews' else 'validate_cog',
+             'depends_on': ['load'], 'params': {'input_raster': {'$ref': 'load', 'port': 'default'}}},
+        ]}
+    raise SuiteError('unknown raster utility case')
+
+
+def transient_result(execution):
     metadata = obj(execution.get('metadata'), 'Develop analysis metadata')
     result = obj(metadata.get('result'), 'Develop analysis result')
     if (execution.get('outputs') or metadata.get('lineage_facts') or result.get('produced_targets')
@@ -161,6 +184,11 @@ def validate_analysis(execution, expectation):
     if obj(result.get('summary'), 'analysis summary').get('has_result') is not True:
         raise SuiteError('Develop did not record its transient analysis result')
     actual = obj(result.get('final_result'), 'analysis JSON preview')
+    return actual
+
+
+def validate_analysis(execution, expectation):
+    actual = transient_result(execution)
 
     def compare(value, expected):
         if isinstance(expected, dict):
@@ -180,6 +208,23 @@ def validate_analysis(execution, expectation):
     return actual
 
 
+def validate_utility_json(execution, case_name, physical_evidence):
+    if case_name == 'info-overviews':
+        crs = physical_evidence.get('crs')
+        if not isinstance(crs, str) or not crs:
+            raise SuiteError('physical raster projection evidence is missing')
+        return validate_analysis(execution, fixture.utility_info_expectation(crs))
+    if case_name not in ('validate-cog-invalid', 'validate-cog-valid'):
+        raise SuiteError('unknown raster utility JSON case')
+    actual = transient_result(execution)
+    valid = case_name == 'validate-cog-valid'
+    if (actual.keys() != {'valid', 'warnings', 'errors'} or actual['valid'] is not valid
+        or any(not isinstance(actual[key], list) or any(not isinstance(value, str) or not value for value in actual[key])
+               for key in ('warnings', 'errors')) or bool(actual['errors']) is valid):
+        raise SuiteError('workflow COG validation disagrees with the known physical layout')
+    return actual
+
+
 def submit(client, engine_id, definition):
     response = obj(client.request('POST', '/api/v1/develop/executions', (200,), {
         'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 180,
@@ -191,10 +236,10 @@ def submit(client, engine_id, definition):
     return value
 
 
-def validate_success(execution, source_locator, target_locator, mode, expectation=None):
+def validate_success(execution, source_locator, target_locator, mode, expectation=None, output_node='save'):
     expectation = expectation or fixture.artifact_expectation()
     metadata = obj(execution.get('metadata'), 'Develop metadata')
-    resource = obj(obj(obj(execution.get('outputs'), 'outputs').get('save'), 'save output').get('resource'), 'resource')
+    resource = obj(obj(obj(execution.get('outputs'), 'outputs').get(output_node), 'target output').get('resource'), 'resource')
     if resource != {'locator': target_locator, 'type': 'object', 'write_mode': mode}:
         raise SuiteError('Develop stable output has the wrong locator/type/write_mode')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
@@ -316,7 +361,7 @@ def physical(repository, env, action):
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
     case_name = action.removeprefix('verify-')
-    expectation = fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
+    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
     if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload
@@ -498,12 +543,68 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
         preserved[name] = native['sha256']
+    utility_cases = []
+    utility_sources = {}
+    non_cog_source = support.find_fixture_item(client, source_engine, 'raster-source/' + fixture.NON_COG_SOURCE, 'non-COG source')
+    for case_name in fixture.UTILITY_CASES:
+        name = case_name + '.cog.tif'
+        locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
+        identifier = submit(client, engine_id, utility_workflow(source_locator, target_engine, case_name))
+        execution = wait_execution(client, 'develop', identifier, timeout)
+        output_node = 'convert' if case_name == 'to-cog' else 'save'
+        facts, scan_id = validate_success(execution, source_locator, locator, 'create', fixture.utility_expectation(), output_node)
+        wait_execution(client, 'meta', scan_id, timeout)
+        monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor utility execution')
+        if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
+            or obj(monitor.get('metadata'), 'Monitor utility metadata').get('lineage_facts') != facts):
+            raise SuiteError('Monitor utility execution differs from Develop status/lineage')
+        native = physical_runner(repository, env, 'verify-' + case_name)
+        expected_levels = [[128, 128], [64, 64]] if case_name == 'build-overviews' else [[128, 128]]
+        artifact = execution['metadata']['result']['final_result']
+        if (native.get('preserved_sha256') != preserved or native.get('overview_sizes') != expected_levels
+            or native.get('band_valid_pixels') != [65535, 65535]
+            or type(artifact.get('size_bytes')) is not int
+            or positive(native.get('size_bytes'), 'physical utility size') != artifact.get('size_bytes')
+            or any(band.get('overviews') != expected_levels for band in artifact['bands'])):
+            raise SuiteError('utility workflow lost physical size, band validity, explicit levels or existing artifacts')
+        graph, browser_report = inspect_output(repository, env, client, source, source_locator,
+            target_engine, name, identifier, case_name, identity, timeout, browser_runner, fixture.utility_expectation(), native)
+        utility_sources[case_name] = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'utility source')
+        if positive(utility_sources[case_name].get('size_bytes'), 'utility DataItem size') != native['size_bytes']:
+            raise SuiteError('utility DataItem size differs from the physical artifact')
+        utility_cases.append({'case_name': case_name, 'execution_id': identifier,
+            'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
+        preserved[name] = native['sha256']
+    for case_name in fixture.UTILITY_JSON_CASES:
+        query_source = non_cog_source if case_name == 'validate-cog-invalid' else utility_sources[
+            'build-overviews' if case_name == 'info-overviews' else 'to-cog']
+        query_locator = support.build_item_locator(source_engine if case_name == 'validate-cog-invalid' else target_engine, query_source)
+        identifier = submit(client, engine_id, utility_workflow(query_locator, target_engine, case_name))
+        execution = wait_execution(client, 'develop', identifier, timeout)
+        native = physical_runner(repository, env, 'verify-utility-queries')
+        if native.get('preserved_sha256') != preserved:
+            raise SuiteError('read-only utility workflow modified an accepted artifact')
+        result = validate_utility_json(execution, case_name, native)
+        monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor utility query')
+        if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
+            or obj(monitor.get('metadata', {}), 'Monitor query metadata').get('lineage_facts')):
+            raise SuiteError('Monitor utility query has invalid status/owner or persistent lineage')
+        browser_report = browser_runner(repository, env, {
+            'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'principal_id': identity['principal_id'],
+            'tenant_id': identity['tenant_id'], 'execution_id': identifier,
+            'source_item_id': query_source['id'], 'source_locator': query_locator,
+            'source_name': query_source['full_name'].rsplit('/', 1)[-1], 'case_name': case_name,
+            'result_kind': 'json', 'expected_result': result,
+        })
+        utility_cases.append({'case_name': case_name, 'execution_id': identifier,
+            'json_result': result, 'physical': native, 'browser': browser_report})
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
+            'utility_cases': utility_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

@@ -21,6 +21,7 @@ class Client:
         self.multiband_source = {'id': 12, 'item_type': 'object', 'full_name': 'raster-source/multiband.tif', 'fingerprint': 'multiband-fp'}
         self.average_source = {'id': 13, 'item_type': 'object', 'full_name': 'raster-source/multiband-average.tif', 'fingerprint': 'average-fp'}
         self.finite_source = {'id': 14, 'item_type': 'object', 'full_name': 'raster-source/multiband-average-finite.tif', 'fingerprint': 'finite-fp'}
+        self.non_cog_source = {'id': 15, 'item_type': 'object', 'full_name': 'raster-source/non-cog.tif', 'fingerprint': 'non-cog-fp'}
         self.targets = {20: self.target}
         for item_id, overlap in [(21, 'first'), (22, 'last')]:
             item = copy.deepcopy(self.target)
@@ -35,6 +36,10 @@ class Client:
             item['attributes']['capabilities']['spatial'] = {'srid': 4326, 'extent': expectation['extent']}
             item['attributes']['format_info']['tiff'] = {'profile': 'cog' if name=='clip-polygon' or 'bilinear' in name or 'fractional' in name or 'finite' in name else 'geotiff',
                 'is_tiled': True, 'has_overviews': name=='clip-polygon' or 'bilinear' in name or 'fractional' in name or 'finite' in name}
+            self.targets[item_id] = item
+        for item_id, name in enumerate(m.fixture.UTILITY_CASES, 36):
+            item = copy.deepcopy(self.target)
+            item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name, size_bytes=1024)
             self.targets[item_id] = item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
@@ -71,18 +76,26 @@ class Client:
             result = {'execution_id': 'source-scan'}
         elif path.startswith('/api/v1/meta/executions/'):
             result = {'status': 'success'}
-        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source, self.multiband_source, self.average_source, self.finite_source]
+        elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source, self.multiband_source, self.average_source, self.finite_source, self.non_cog_source]
         elif path == '/api/v1/meta/engines/2/items': result = list(self.targets.values())
         elif path.startswith('/api/v1/meta/items/'): result = self.targets[int(path.rsplit('/', 1)[1])]
         elif method == 'POST' and path == '/api/v1/develop/executions':
             definition = body['content']['workflow_definition']
             if definition['tasks'][-1]['id'] == 'analysis':
                 identifier = f'run-{len(self.executions) + 1}'
-                case_name = next(name for name in m.fixture.ANALYSIS_CASES
-                    if definition == m.analysis_workflow(definition['tasks'][0]['params']['locator'], name))
+                operator = definition['tasks'][-1]['operator']
+                if operator == 'raster_info':
+                    final_result = m.fixture.utility_info_expectation('physical-wkt')
+                elif operator == 'validate_cog':
+                    valid = 'to-cog.cog.tif' in definition['tasks'][0]['params']['locator']
+                    final_result = {'valid': valid, 'warnings': [], 'errors': [] if valid else ['not tiled']}
+                else:
+                    case_name = next(name for name in m.fixture.ANALYSIS_CASES
+                        if definition == m.analysis_workflow(definition['tasks'][0]['params']['locator'], name))
+                    final_result = m.fixture.analysis_expectations()[case_name]
                 self.executions[identifier] = self.mutate({'execution_id': identifier, 'module': 'develop', 'status': 'success',
                     'metadata': {'result': {'summary': {'has_result': True},
-                        'final_result': m.fixture.analysis_expectations()[case_name]}}})
+                        'final_result': final_result}}})
                 return m.support.Response(200, {'execution_id': identifier}, {})
             mode = definition['tasks'][-1]['params']['write_mode']
             identifier = f'run-{len(self.executions) + 1}'
@@ -91,15 +104,19 @@ class Client:
             target = f'addp://engine/2/path/raster-target/{definition["tasks"][-1]["params"]["target_name"]}?type=object'
             spatial = 'mosaic' in definition['tasks'][-1]['depends_on']
             case_name = definition['tasks'][-1]['params']['target_name'].removesuffix('.cog.tif')
-            expectation = m.fixture.computed_expectation(case_name) if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES else m.fixture.artifact_expectation(spatial)
+            utility = case_name in m.fixture.UTILITY_CASES
+            expectation = m.fixture.utility_expectation() if utility else m.fixture.computed_expectation(case_name) if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES else m.fixture.artifact_expectation(spatial)
             metadata = {} if status == 'failed' else {
-                'outputs': {'save': {'resource': {'locator': target, 'type': 'object', 'write_mode': mode}}},
+                'outputs': {definition['tasks'][-1]['id']: {'resource': {'locator': target, 'type': 'object', 'write_mode': mode}}},
                 'lineage_facts': {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source}],
                                   'outputs': [{'locator': target, 'write_mode': mode}],
                                   'operations': [{'kind': 'derive', 'operator': 'develop', 'input_ports': ['input'], 'output_ports': ['output']}]},
                 'result': {'final_result': {'artifact_type': 'raster', 'format': 'tiff', 'profile': 'cog',
+                                          'size_bytes': 1024,
                                           **{key: value for key, value in expectation.items() if key not in ('valid_pixels', 'band_nodata')},
-                                          'bands': [{'dtype': 'Float64', 'nodata_is_nan': expectation['band_nodata'] is None, 'nodata': expectation['band_nodata']} for _ in range(expectation['band_count'])]},
+                                          'bands': [{'dtype': 'Float64', 'nodata_is_nan': expectation['band_nodata'] is None, 'nodata': expectation['band_nodata'],
+                                                    **({'overviews': [[128, 128], [64, 64]] if case_name == 'build-overviews' else [[128, 128]]} if utility else {})}
+                                                    for _ in range(expectation['band_count'])]},
                            'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'auto-' + identifier}]},
             }
             self.executions[identifier] = self.mutate({'execution_id': identifier, 'module': 'develop', 'status': status, 'metadata': metadata,
@@ -123,6 +140,7 @@ class Client:
             if target_id == 33: source_id = 32
             if target_id == 34: source_id = 14
             if target_id == 35: source_id = 34
+            if target_id in (36, 37): source_id = 10
             result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
                       'status': 'active', 'relation_kind': self.relation_kind, 'evidence': {'execution_id': identifier}}]}
         else:
@@ -145,6 +163,16 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                     'valid_pixels': 65534, 'invalid_pixels': 2, 'overlap': overlap,
                     'baseline_sha256': 'new', 'first_sha256': 'spatial-first'}
         case_name = action.removeprefix('verify-')
+        if case_name in m.fixture.UTILITY_CASES or action == 'verify-utility-queries':
+            preserved = {'result.cog.tif': 'new', 'mosaic-first.cog.tif': 'spatial-first', 'mosaic-last.cog.tif': 'spatial-last'}
+            for prior in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES:
+                preserved[prior + '.cog.tif'] = prior
+            accepted = m.fixture.UTILITY_CASES if action == 'verify-utility-queries' else m.fixture.UTILITY_CASES[:m.fixture.UTILITY_CASES.index(case_name)]
+            for prior in accepted: preserved[prior + '.cog.tif'] = prior
+            return {'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
+                'cog_valid': True, 'has_overviews': True, 'source_unchanged': True, 'valid_pixels': 65535,
+                'band_valid_pixels': [65535, 65535], 'size_bytes': 1024, 'crs': 'physical-wkt',
+                'overview_sizes': [[128, 128], [64, 64]] if case_name != 'to-cog' else [[128, 128]]}
         if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES:
             preserved = {'result.cog.tif': 'new', 'mosaic-first.cog.tif': 'spatial-first', 'mosaic-last.cog.tif': 'spatial-last'}
             cases = m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES
@@ -177,7 +205,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES])
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3)
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -195,6 +223,90 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([case['lineage']['source_item_id'] for case in report['multiband_cases']], [12, 26, 13, 28, 13, 30, 13, 32, 14, 34])
         self.assertEqual([case['lineage']['target_item_id'] for case in report['multiband_cases']], [26, 27, 28, 29, 30, 31, 32, 33, 34, 35])
         self.assertEqual(report['multiband_cases'][1]['browser']['source_name'], 'multiband-alpha.cog.tif')
+
+    def test_utilities_execute_all_remaining_operators_and_read_their_persisted_results(self):
+        report = self.run_scene()
+        cases = report['utility_cases']
+        self.assertEqual([case['case_name'] for case in cases], list(m.fixture.UTILITY_CASES + m.fixture.UTILITY_JSON_CASES))
+        submitted = [body['content']['workflow_definition'] for method, path, body in self.client.calls
+            if method == 'POST' and path == '/api/v1/develop/executions']
+        self.assertEqual({task['operator'] for definition in submitted for task in definition['tasks']}, {
+            'raster_load', 'raster_save', 'raster_info', 'validate_cog', 'raster_to_cog', 'raster_build_overviews',
+            'raster_reproject', 'raster_resample', 'raster_clip', 'raster_mosaic', 'raster_band_math',
+            'raster_statistics', 'raster_histogram'})
+        submitted = submitted[-5:]
+        self.assertEqual([task['operator'] for task in submitted[0]['tasks']],
+            ['raster_load', 'raster_build_overviews', 'raster_save'])
+        self.assertEqual(submitted[0]['tasks'][1]['params']['levels'], [2, 4])
+        self.assertEqual([task['operator'] for task in submitted[1]['tasks']], ['raster_to_cog'])
+        conversion = submitted[1]['tasks'][0]['params']
+        self.assertNotIn('options', conversion, 'Runtime-only options must be derived by Develop')
+        self.assertEqual(conversion['blocksize'], 128)
+        self.assertEqual(conversion['overview_resampling'], 'nearest')
+        self.assertEqual(cases[0]['lineage']['source_item_id'], 10)
+        self.assertEqual(cases[1]['lineage']['source_item_id'], 10)
+        self.assertEqual(cases[2]['browser']['source_item_id'], 36)
+        self.assertEqual(cases[3]['browser']['source_item_id'], 15)
+        self.assertEqual(cases[4]['browser']['source_item_id'], 37)
+        self.assertEqual(cases[2]['json_result']['bands'][1]['overviews'], [[128, 128], [64, 64]])
+        self.assertFalse(cases[3]['json_result']['valid'])
+        self.assertTrue(cases[4]['json_result']['valid'])
+        self.assertTrue(all(case['browser']['result_kind'] == 'json' for case in cases[2:]))
+
+    def test_utility_persistence_rejects_size_levels_second_band_and_prior_artifact_faults(self):
+        for fault in ('declared-size', 'fractional-size', 'physical-size', 'levels', 'counts', 'prior', 'scan', 'output-node', 'item-size', 'item-size-mismatch'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-23':
+                        metadata = execution['metadata']
+                        artifact = metadata['result']['final_result']
+                        if fault == 'declared-size': artifact['size_bytes'] = 1
+                        if fault == 'fractional-size': artifact['size_bytes'] = 1024.0
+                        if fault == 'levels': artifact['bands'][1]['overviews'].pop()
+                        if fault == 'scan': metadata['result']['meta_scan_runs'] = []
+                    if execution['execution_id'] == 'run-24' and fault == 'output-node':
+                        execution['metadata']['outputs']['save'] = execution['metadata']['outputs'].pop('convert')
+                    return execution
+                self.client.mutate = mutate
+                if fault == 'item-size': self.client.targets[36]['size_bytes'] = 0
+                if fault == 'item-size-mismatch': self.client.targets[36]['size_bytes'] = 1025
+                def physical(repo, env, action):
+                    payload = self.physical(repo, env, action)
+                    if action == 'verify-build-overviews':
+                        if fault == 'physical-size': payload['size_bytes'] = 0
+                        if fault == 'counts': payload['band_valid_pixels'][1] = 65536
+                        if fault == 'prior': payload['preserved_sha256']['result.cog.tif'] = 'changed'
+                    return payload
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
+    def test_utility_queries_reject_wrong_facts_cog_verdicts_and_persistent_side_effects(self):
+        for fault in ('info', 'private', 'invalid-valid', 'valid-errors', 'error-shape', 'output', 'scan', 'lineage', 'prior'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def mutate(execution):
+                    metadata = execution['metadata']
+                    if execution['execution_id'] == 'run-25':
+                        actual = metadata['result']['final_result']
+                        if fault == 'info': actual['bands'][1]['nodata'] = 0
+                        if fault == 'private': actual['workspace'] = '/tmp/private'
+                        if fault == 'output': metadata['outputs'] = {'analysis': {'resource': {}}}
+                        if fault == 'scan': metadata['result']['meta_scan_runs'] = [{'status': 'submitted'}]
+                        if fault == 'lineage': metadata['lineage_facts'] = {'inputs': [{}]}
+                    if execution['execution_id'] == 'run-26':
+                        actual = metadata['result']['final_result']
+                        if fault == 'invalid-valid': actual.update(valid=True, errors=[])
+                        if fault == 'error-shape': actual['errors'] = 'not tiled'
+                    if execution['execution_id'] == 'run-27' and fault == 'valid-errors':
+                        metadata['result']['final_result']['errors'] = ['layout corrupted']
+                    return execution
+                self.client.mutate = mutate
+                def physical(repo, env, action):
+                    payload = self.physical(repo, env, action)
+                    if action == 'verify-utility-queries' and fault == 'prior':
+                        payload['preserved_sha256']['to-cog.cog.tif'] = 'changed'
+                    return payload
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
 
     def test_multiband_cases_reject_missing_per_band_counts_partial_alpha_and_reloaded_source(self):
         for fault in ('counts', 'alpha', 'invalid', 'prior', 'source'):

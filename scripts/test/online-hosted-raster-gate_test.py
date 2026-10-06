@@ -56,7 +56,7 @@ class HostedRasterGateTest(unittest.TestCase):
             fi
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
             [ -z "${POSTGRES_PASSWORD:-}" ]
-            [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1200 ]
+            [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1500 ]
             [ "$ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID" = 11 ]
             [ "$ADDP_ONLINE_RASTER_TARGET_ENGINE_ID" = 12 ]
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"

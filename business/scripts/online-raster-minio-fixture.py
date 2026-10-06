@@ -29,10 +29,13 @@ SPATIAL_TRANSFORM = (0, 1, 0, SIZE, 0, -1)
 SPATIAL_NODATA = {0, 127 * SIZE + 127}
 GRID_CASES = ('resample-size', 'resample-resolution', 'clip-polygon')
 MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'multiband-average-joint', 'multiband-bilinear', 'multiband-bilinear-joint', 'multiband-average-fractional', 'multiband-average-fractional-joint', 'multiband-average-finite', 'multiband-average-finite-joint')
+UTILITY_CASES = ('build-overviews', 'to-cog')
+UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
+NON_COG_SOURCE = 'non-cog.tif'
 SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
                 ('multiband-average-finite.tif', False, -9999.))
-ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES)
+ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -78,6 +81,18 @@ def artifact_expectation(spatial=False):
             'extent_srid': 3857 if spatial else 4326, 'transform': list(transform),
             'extent': [transform[0], transform[3] + SIZE * transform[5], transform[0] + SIZE * transform[1], transform[3]],
             'valid_pixels': SIZE * SIZE - (len(SPATIAL_NODATA) if spatial else 1), 'band_nodata': None}
+
+
+def utility_expectation():
+    return {**artifact_expectation(), 'band_count': 2, 'band_nodata': -9999.}
+
+
+def utility_info_expectation(crs):
+    facts = utility_expectation()
+    return {key: value for key, value in facts.items() if key not in ('valid_pixels', 'band_nodata')} | {
+        'crs': crs, 'bands': [{'band': index, 'dtype': 'Float64', 'nodata': -9999.,
+            'nodata_is_nan': False, 'block_size': [128, 128], 'overviews': [[128, 128], [64, 64]]}
+            for index in (1, 2)]}
 
 
 def clip_geometry():
@@ -392,6 +407,16 @@ def worker(action, path):
                 dataset = None
                 clients['source'].fput_object(config['source']['bucket'], name, str(path), content_type='image/tiff')
                 fingerprints[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            # A 256px striped TIFF can satisfy the GDAL layout validator. This
+            # larger strip has a width > 1024 and is definitively non-tiled.
+            path = root / NON_COG_SOURCE
+            dataset = gdal.GetDriverByName('GTiff').Create(str(path), 1025, 1025, 1, gdal.GDT_Byte)
+            dataset.SetGeoTransform(TRANSFORM)
+            dataset.SetProjection(crs.ExportToWkt())
+            dataset.GetRasterBand(1).Fill(7)
+            dataset = None
+            clients['source'].fput_object(config['source']['bucket'], NON_COG_SOURCE, str(path), content_type='image/tiff')
+            fingerprints[NON_COG_SOURCE] = hashlib.sha256(path.read_bytes()).hexdigest()
             return {'seeded': True, 'source_pixels': SIZE * SIZE, 'spatial_source_pixels': SIZE * SIZE, 'target_objects': 0, 'source_sha256': fingerprints}
         if not fingerprint_path.is_file():
             raise FixtureError('source fingerprints are missing')
@@ -422,14 +447,14 @@ def worker(action, path):
         overlap = action.removeprefix('verify-mosaic-') if spatial else None
         target_name = f'mosaic-{overlap}.cog.tif' if spatial else 'result.cog.tif'
 
-        def verify(name, spatial=False, overlap=None, factor=1, grid_case=None):
+        def verify(name, spatial=False, overlap=None, factor=1, grid_case=None, utility_case=None):
             path = root / name
             clients['target'].fget_object(config['target']['bucket'], name, str(path))
             dataset = gdal.Open(str(path))
             warnings, errors, _ = validate(dataset, full_check=True)
             if errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG':
                 raise FixtureError('persisted target is not a valid COG')
-            expectation = computed_expectation(grid_case) if grid_case else artifact_expectation(spatial)
+            expectation = utility_expectation() if utility_case else computed_expectation(grid_case) if grid_case else artifact_expectation(spatial)
             reference = osr.SpatialReference(); reference.ImportFromEPSG(expectation['extent_srid'])
             if (not osr.SpatialReference(dataset.GetProjection()).IsSame(reference)
                 or any(not math.isclose(actual, expected, rel_tol=0, abs_tol=1e-12) for actual, expected in
@@ -444,6 +469,37 @@ def worker(action, path):
                 raise FixtureError('persisted target did not propagate NoData')
             count = expectation['width'] * expectation['height']
             values = struct.unpack(f'<{count}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+            if utility_case:
+                levels = (2, 4) if utility_case == 'build-overviews' else (2,)
+                for index in (1, 2):
+                    current = dataset.GetRasterBand(index)
+                    if current.DataType != gdal.GDT_Float64 or current.GetNoDataValue() != -9999.:
+                        raise FixtureError('utility target lost band dtype/finite NoData')
+                    actual = struct.unpack(f'<{count}d', current.ReadRaster(buf_type=gdal.GDT_Float64))
+                    if actual != source_values(index):
+                        raise FixtureError('utility target changed source band pixels')
+                    mask = current.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte)
+                    if any(value != (0 if position == 0 else 255) for position, value in enumerate(mask)):
+                        raise FixtureError('utility target changed source validity')
+                    if current.GetOverviewCount() != len(levels):
+                        raise FixtureError('utility target lost explicit overview levels')
+                    for level_index, level in enumerate(levels):
+                        overview = current.GetOverview(level_index)
+                        if (overview.XSize, overview.YSize) != (SIZE // level, SIZE // level):
+                            raise FixtureError('utility overview dimensions differ from the explicit grid')
+                        expected = tuple(-9999. if row == column == 0 else float(index * (row * SIZE + column + 1))
+                            for row in range(0, SIZE, level) for column in range(0, SIZE, level))
+                        actual = struct.unpack(f'<{len(expected)}d', overview.ReadRaster(buf_type=gdal.GDT_Float64))
+                        if actual != expected:
+                            raise FixtureError('utility overview pixels differ from independent nearest sampling')
+                        mask = overview.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte)
+                        if any(value != (0 if position == 0 else 255) for position, value in enumerate(mask)):
+                            raise FixtureError('utility overview lost NoData validity')
+                return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': True,
+                    'valid_pixels': SIZE * SIZE - 1, 'band_valid_pixels': [SIZE * SIZE - 1] * 2,
+                    'source_unchanged': True, 'size_bytes': path.stat().st_size,
+                    'overview_sizes': [[SIZE // level] * 2 for level in levels], 'crs': dataset.GetProjection(),
+                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
             if grid_case in MULTIBAND_CASES:
                 joint = grid_case.endswith('-joint')
                 average = 'average' in grid_case
@@ -509,6 +565,29 @@ def worker(action, path):
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
         grid_case = action.removeprefix('verify-')
+        if grid_case in UTILITY_CASES or action == 'verify-utility-queries':
+            path = root / NON_COG_SOURCE
+            clients['source'].fget_object(config['source']['bucket'], NON_COG_SOURCE, str(path))
+            non_cog = gdal.Open(str(path))
+            _, errors, _ = validate(non_cog, full_check=True)
+            if (hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get(NON_COG_SOURCE)
+                or not errors or non_cog.GetRasterBand(1).ReadRaster() != bytes([7]) * (1025 * 1025)):
+                raise FixtureError('negative COG source changed or no longer has an invalid layout')
+            preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
+                'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
+                'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
+            for prior in GRID_CASES + MULTIBAND_CASES:
+                preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', grid_case=prior)['sha256']
+            accepted = UTILITY_CASES if action == 'verify-utility-queries' else UTILITY_CASES[:UTILITY_CASES.index(grid_case)]
+            for prior in accepted:
+                preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', utility_case=prior)['sha256']
+            evidence = verify('build-overviews.cog.tif' if action == 'verify-utility-queries' else grid_case + '.cog.tif',
+                utility_case='build-overviews' if action == 'verify-utility-queries' else grid_case)
+            evidence.update(case_name=grid_case, preserved_sha256=preserved)
+            names = set(preserved) | ({grid_case + '.cog.tif'} if grid_case in UTILITY_CASES else set())
+            if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
+                raise FixtureError('utility target contains unexpected or partial artifacts')
+            return evidence
         if grid_case in GRID_CASES + MULTIBAND_CASES:
             evidence = verify(grid_case + '.cog.tif', grid_case=grid_case)
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
