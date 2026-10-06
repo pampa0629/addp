@@ -75,6 +75,53 @@ for (const locale of ['zh-cn', 'en']) {
     })
   }
 
+  for (const mode of ['2', '3', null]) {
+    test(`shows independent GPS quality sources (${mode ?? 'missing mode'}) in ${locale}`, async ({ page }) => {
+      const gps = { dop: 0, differential: mode === '3' ? 1 : 0, horizontal_positioning_error_meters: 2.5 }
+      if (mode) gps.measure_mode = mode
+      await openAttributes(page, locale, {
+        item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+        format_info: { jpeg: { exif_status: 'parsed', exif: { gps } } }
+      })
+      const labels = locale === 'zh-cn'
+        ? ['测量方式', '源精度衰减因子（DOP）', '差分修正状态', '源水平定位误差（米）']
+        : ['Measurement Mode', 'Source Dilution of Precision (DOP)', 'Differential Correction Status', 'Source Horizontal Positioning Error (m)']
+      const modeField = page.getByText(`EXIF / GPS / ${labels[0]}`, { exact: true })
+      if (mode) await expect(modeField).toBeVisible()
+      else await expect(modeField).toHaveCount(0)
+      for (const label of labels.slice(1)) await expect(page.getByText(`EXIF / GPS / ${label}`, { exact: true })).toBeVisible()
+      for (const code of ['2', '3']) {
+        const value = locale === 'zh-cn' ? (code === '2' ? '二维测量' : '三维测量') : (code === '2' ? '2D Measurement' : '3D Measurement')
+        if (mode === code) await expect(page.getByText(value, { exact: true })).toBeVisible()
+        else await expect(page.getByText(value, { exact: true })).toHaveCount(0)
+      }
+      const correction = locale === 'zh-cn'
+        ? (gps.differential ? '已应用差分修正' : '未应用差分修正')
+        : (gps.differential ? 'Differential Correction Applied' : 'No Differential Correction')
+      await expect(page.getByText(correction, { exact: true })).toBeVisible()
+      await expect(page.getByText('0', { exact: true })).toBeVisible()
+      await expect(page.getByText('2.5', { exact: true })).toBeVisible()
+      await expect(page.getByText(`EXIF / GPS / ${labels[1]}`, { exact: true })).toHaveAttribute('title',
+        locale === 'zh-cn' ? /不换算米制误差/ : /no error in meters/)
+      await expect(page.getByText(`EXIF / GPS / ${labels[2]}`, { exact: true })).toHaveAttribute('title',
+        locale === 'zh-cn' ? /不推导 RTK/ : /no RTK/)
+    })
+  }
+
+  test(`shows partial GPS quality without defaulting correction or error in ${locale}`, async ({ page }) => {
+    await openAttributes(page, locale, {
+      item: { data_type: 'media', format: 'jpeg', layout: 'single' },
+      format_info: { jpeg: { exif_status: 'invalid', exif: { gps: { dop: 1.25 } } } }
+    })
+    await expect(page.getByText(locale === 'zh-cn' ? 'EXIF 无效' : 'Invalid EXIF', { exact: true })).toBeVisible()
+    await expect(page.getByText('1.25', { exact: true })).toBeVisible()
+    for (const label of locale === 'zh-cn'
+      ? ['测量方式', '差分修正状态', '源水平定位误差（米）']
+      : ['Measurement Mode', 'Differential Correction Status', 'Source Horizontal Positioning Error (m)']) {
+      await expect(page.getByText(`EXIF / GPS / ${label}`, { exact: true })).toHaveCount(0)
+    }
+  })
+
   for (const unit of ['K', 'M', 'N', null]) {
     test(`shows independent GPS motion sources (${unit ?? 'missing refs'}) in ${locale}`, async ({ page }) => {
       const gps = { speed: 0, track_degrees: 12.5, image_direction_degrees: 359.99 }

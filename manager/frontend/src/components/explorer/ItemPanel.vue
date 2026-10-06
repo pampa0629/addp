@@ -1014,6 +1014,10 @@ const fieldPathLabelKeys = {
   'format_info.jpeg.exif.gps.date_stamp': 'manager.explorer.attributes.fields.gpsDateStamp',
   'format_info.jpeg.exif.gps.time_hms': 'manager.explorer.attributes.fields.gpsTimeHMS',
   'format_info.jpeg.exif.gps.date_time_utc': 'manager.explorer.attributes.fields.gpsDateTimeUTC',
+  'format_info.jpeg.exif.gps.measure_mode': 'manager.explorer.attributes.fields.gpsMeasureMode',
+  'format_info.jpeg.exif.gps.dop': 'manager.explorer.attributes.fields.gpsDOP',
+  'format_info.jpeg.exif.gps.differential': 'manager.explorer.attributes.fields.gpsDifferential',
+  'format_info.jpeg.exif.gps.horizontal_positioning_error_meters': 'manager.explorer.attributes.fields.gpsHorizontalPositioningErrorMeters',
   'format_info.jpeg.exif.gps.speed_ref': 'manager.explorer.attributes.fields.gpsSpeedRef',
   'format_info.jpeg.exif.gps.speed': 'manager.explorer.attributes.fields.gpsSpeed',
   'format_info.jpeg.exif.gps.track_ref': 'manager.explorer.attributes.fields.gpsTrackRef',
@@ -1023,6 +1027,10 @@ const fieldPathLabelKeys = {
 }
 
 const fieldTooltipKeys = {
+  'format_info.jpeg.exif.gps.measure_mode': 'manager.explorer.attributes.fieldTooltips.gpsMeasureMode',
+  'format_info.jpeg.exif.gps.dop': 'manager.explorer.attributes.fieldTooltips.gpsDOP',
+  'format_info.jpeg.exif.gps.differential': 'manager.explorer.attributes.fieldTooltips.gpsDifferential',
+  'format_info.jpeg.exif.gps.horizontal_positioning_error_meters': 'manager.explorer.attributes.fieldTooltips.gpsHorizontalPositioningError',
   'format_info.jpeg.exif.gps.speed': 'manager.explorer.attributes.fieldTooltips.gpsSpeed',
   'format_info.jpeg.exif.gps.track_degrees': 'manager.explorer.attributes.fieldTooltips.gpsTrack',
   'format_info.jpeg.exif.gps.image_direction_degrees': 'manager.explorer.attributes.fieldTooltips.gpsImageDirection',
@@ -1690,6 +1698,12 @@ const formatAttributeDisplay = (pathParts, value) => {
   }
   if (['format_info.jpeg.exif.gps.latitude_ref', 'format_info.jpeg.exif.gps.longitude_ref'].includes(path)) {
     return formatMappedValue('manager.explorer.attributes.gpsDirection', value)
+  }
+  if (path === 'format_info.jpeg.exif.gps.measure_mode') {
+    return formatMappedValue('manager.explorer.attributes.gpsMeasureMode', value)
+  }
+  if (path === 'format_info.jpeg.exif.gps.differential') {
+    return formatMappedValue('manager.explorer.attributes.gpsDifferential', String(value))
   }
   if (path === 'format_info.jpeg.exif.gps.speed_ref') {
     return formatMappedValue('manager.explorer.attributes.gpsSpeedUnit', value)

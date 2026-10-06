@@ -59,7 +59,7 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 		key, allowed string
 	}{
 		{1, "latitude_ref", "NS"}, {3, "longitude_ref", "EW"}, {9, "status", "AV"},
-		{12, "speed_ref", "KMN"}, {14, "track_ref", "TM"}, {16, "image_direction_ref", "TM"},
+		{10, "measure_mode", "23"}, {12, "speed_ref", "KMN"}, {14, "track_ref", "TM"}, {16, "image_direction_ref", "TM"},
 	} {
 		if !ifd.hasTag(field.tag) {
 			continue
@@ -100,7 +100,8 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 		key   string
 		angle bool
 	}{
-		{6, "altitude_meters", false}, {13, "speed", false},
+		{6, "altitude_meters", false}, {11, "dop", false}, {13, "speed", false},
+		{31, "horizontal_positioning_error_meters", false},
 		{15, "track_degrees", true}, {17, "image_direction_degrees", true},
 	} {
 		if !ifd.hasTag(field.tag) {
@@ -121,6 +122,15 @@ func extractGPSIFD(root *tiffIFD, metadata tiffMetadata, order binary.ByteOrder,
 		valid = valid && ok
 		if ok && value != "" {
 			gps["map_datum"] = value
+		}
+	}
+	if ifd.hasTag(30) {
+		value, ok := ifd.firstLong(30)
+		entry := ifd.tags[30]
+		ok = ok && entry.typ == tiffTypeShort && entry.count == 1 && value <= 1
+		valid = valid && ok
+		if ok {
+			gps["differential"] = int(value)
 		}
 	}
 	clockValid := extractGPSTime(ifd, gps, valid)

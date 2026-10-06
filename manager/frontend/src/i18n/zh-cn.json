@@ -1524,6 +1524,10 @@
           "gpsDateStamp": "源 UTC 日期",
           "gpsTimeHMS": "源 UTC 时间（时、分、秒）",
           "gpsDateTimeUTC": "GPS 接收机时间（UTC）",
+          "gpsMeasureMode": "测量方式",
+          "gpsDOP": "源精度衰减因子（DOP）",
+          "gpsDifferential": "差分修正状态",
+          "gpsHorizontalPositioningErrorMeters": "源水平定位误差（米）",
           "gpsSpeedRef": "源移动速度单位",
           "gpsSpeed": "源移动速度",
           "gpsTrackRef": "移动方向参考",
@@ -1536,6 +1540,10 @@
           "graphRelationshipCount": "关系数"
         },
         "fieldTooltips": {
+          "gpsMeasureMode": "保留源二维／三维测量方式，不根据海拔或其他字段补值；与测量状态独立。",
+          "gpsDOP": "二维测量对应 HDOP，三维测量对应 PDOP；方式缺失时不判定类型，不换算米制误差或定位质量等级。",
+          "gpsDifferential": "仅表达源差分修正声明，不推导 RTK fixed / float 或定位质量等级。",
+          "gpsHorizontalPositioningError": "保留源水平定位误差（米），与 DOP 独立；不计算误差圆或影像覆盖。",
           "gpsSpeed": "保留源速度数值；单位由源移动速度单位独立声明，缺失时不补千米/小时。",
           "gpsTrack": "GPS 接收机的移动方向，与图像方向独立；真北／磁北参考缺失时不补值，不推导设备轨迹。",
           "gpsImageDirection": "图像拍摄时的方向，与移动方向及像素旋转方向独立；真北／磁北参考缺失时不补值，不推导相机姿态。",
@@ -1568,6 +1576,14 @@
           "5": "SOS 和 ISO 感光速度",
           "6": "REI 和 ISO 感光速度",
           "7": "SOS、REI 和 ISO 感光速度"
+        },
+        "gpsMeasureMode": {
+          "2": "二维测量",
+          "3": "三维测量"
+        },
+        "gpsDifferential": {
+          "0": "未应用差分修正",
+          "1": "已应用差分修正"
         },
         "gpsSpeedUnit": {
           "K": "千米/小时",

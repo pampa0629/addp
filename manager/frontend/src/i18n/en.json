@@ -1524,6 +1524,10 @@
           "gpsDateStamp": "Source UTC Date",
           "gpsTimeHMS": "Source UTC Time (hours, minutes, seconds)",
           "gpsDateTimeUTC": "GPS Receiver Time (UTC)",
+          "gpsMeasureMode": "Measurement Mode",
+          "gpsDOP": "Source Dilution of Precision (DOP)",
+          "gpsDifferential": "Differential Correction Status",
+          "gpsHorizontalPositioningErrorMeters": "Source Horizontal Positioning Error (m)",
           "gpsSpeedRef": "Source Speed Unit",
           "gpsSpeed": "Source Speed",
           "gpsTrackRef": "Movement Direction Reference",
@@ -1536,6 +1540,10 @@
           "graphRelationshipCount": "Relationships"
         },
         "fieldTooltips": {
+          "gpsMeasureMode": "Keeps the source 2D/3D measurement mode; altitude or other fields do not supply a missing mode. Independent of measurement status.",
+          "gpsDOP": "HDOP for 2D and PDOP for 3D measurement. A missing mode does not determine the type; no error in meters or quality grade is inferred.",
+          "gpsDifferential": "Only the source differential correction declaration; no RTK fixed/float status or positioning quality grade is inferred.",
+          "gpsHorizontalPositioningError": "Keeps the source horizontal positioning error in meters, independent of DOP; no error circle or image coverage is calculated.",
           "gpsSpeed": "Keeps the source speed value; the source speed unit is independent. A missing unit is not defaulted to km/h.",
           "gpsTrack": "GPS receiver movement direction, independent of image direction. A missing true/magnetic reference is not defaulted; no device trajectory is inferred.",
           "gpsImageDirection": "Direction of the image when captured, independent of movement and pixel rotation. A missing true/magnetic reference is not defaulted; no camera pose is inferred.",
@@ -1568,6 +1576,14 @@
           "5": "SOS and ISO Speed",
           "6": "REI and ISO Speed",
           "7": "SOS, REI and ISO Speed"
+        },
+        "gpsMeasureMode": {
+          "2": "2D Measurement",
+          "3": "3D Measurement"
+        },
+        "gpsDifferential": {
+          "0": "No Differential Correction",
+          "1": "Differential Correction Applied"
         },
         "gpsSpeedUnit": {
           "K": "Kilometers per Hour",
