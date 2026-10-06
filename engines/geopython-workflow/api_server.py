@@ -557,14 +557,45 @@ def register_to_system_with_retry():
 # 主入口
 # ========================================
 
-if __name__ == '__main__':
-    # 启动后台线程注册到 System（不阻塞应用启动）
+def run_runtime():
+    """One HTTP process model for native development and the product image."""
     import threading
-    registration_thread = threading.Thread(target=register_to_system_with_retry, daemon=True)
-    registration_thread.start()
+    from urllib.request import ProxyHandler, build_opener
+    from gunicorn.app.base import BaseApplication
 
-    # 启动 Flask 服务
-    port = int(os.getenv('PORT', 8099))
-    bind_host = os.getenv('WORKFLOW_BIND_HOST', '0.0.0.0')
-    logger.info(f"🚀 Starting GeoPython Workflow on port {port}")
-    app.run(host=bind_host, port=port, debug=False)
+    port = int(os.getenv('PORT', '8099'))
+
+    def register_after_ready():
+        opener = build_opener(ProxyHandler({}))
+        while True:
+            try:
+                with opener.open(f'http://127.0.0.1:{port}/health', timeout=2) as response:
+                    if response.status == 200:
+                        break
+            except OSError:
+                pass
+            time.sleep(1)
+        register_to_system_with_retry()
+
+    def post_worker_init(worker):
+        threading.Thread(target=register_after_ready,
+                         name='geopython-runtime-registration', daemon=True).start()
+
+    class RuntimeApplication(BaseApplication):
+        def load_config(self):
+            for key, value in {
+                'bind': f"{os.getenv('WORKFLOW_BIND_HOST', '0.0.0.0')}:{port}",
+                'workers': 1, 'worker_class': 'gthread', 'threads': 4,
+                'timeout': int(os.getenv('GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT', '7200')),
+                'preload_app': False, 'post_worker_init': post_worker_init,
+            }.items():
+                self.cfg.set(key, value)
+
+        def load(self):
+            return app
+
+    RuntimeApplication().run()
+
+
+if __name__ == '__main__':
+    run_runtime()

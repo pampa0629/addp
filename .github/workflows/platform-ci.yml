@@ -378,13 +378,14 @@ jobs:
         if: steps.selection.outputs.run == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gdal-bin libgdal-dev
+          sudo apt-get install -y gdal-bin libgdal-dev pkg-config unixodbc odbc-mdbtools
 
       - name: Prepare GeoPython test environment
         if: steps.selection.outputs.run == 'true'
         uses: ./.github/actions/prepare-python-gate
         with:
-          venv-path: engines/geopython-workflow/.venv
+          python-version: "3.12"
+          venv-path: engines/geopython-workflow/venv
           cache-dependency-path: |
             engines/geopython-workflow/requirements.txt
             engines/geopython-workflow/requirements-dev.txt
@@ -394,7 +395,7 @@ jobs:
 
       - name: Install matching GDAL bindings
         if: steps.selection.outputs.run == 'true'
-        run: engines/geopython-workflow/.venv/bin/python -m pip install "GDAL==$(gdal-config --version)"
+        run: engines/geopython-workflow/venv/bin/python -m pip install "GDAL==$(gdal-config --version)"
 
       - name: Run GeoPython GDAL tests
         if: steps.selection.outputs.run == 'true'

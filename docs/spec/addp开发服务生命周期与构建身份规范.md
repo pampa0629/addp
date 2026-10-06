@@ -1,6 +1,6 @@
 # ADDP 开发服务生命周期与构建身份规范
 
-本文定义本地开发环境中服务启动、停止、重启、依赖安装、编译和运行版本识别的统一规则。适用于 `scripts/dev/start.sh`、`restart.sh`、`stop.sh`、`keepalive.sh` 以及由这些脚本启动的 Go 服务和 Node 单元。
+本文定义本地开发环境中服务启动、停止、重启、依赖安装、编译和运行版本识别的统一规则。适用于 `scripts/dev/start.sh`、`restart.sh`、`stop.sh`、`keepalive.sh` 以及由这些脚本启动的 Go 服务、Python Runtime 和 Node 单元。
 
 ## 一、生命周期互斥
 
@@ -68,6 +68,8 @@ Model3D 和 Spark Workflow 的宿主机 Python Runtime 在每次启动和局部�
 `npm install` 只允许用于显式的依赖维护流程，由开发者审查并提交 `package.json` 与 `package-lock.json` 的一致变更。Hosted Online 等要求干净构建身份的门禁在安装前后必须保持仓库状态不变，不能通过忽略锁文件改动、关闭仓库清洁检查或在预检前恢复文件来掩盖生命周期污染。
 
 Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境和 OpenJDK 11，与 Business Spark Worker 保持 JVM 主版本一致。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用唯一原生启动入口，按完整 requirements 和 editable `common-python` 同步依赖并执行 `pip check`。全套重启在停止已有服务前完成 Java、Python、依赖和共享地址预检；失败保留已有服务。HTTP 仅绑定 `127.0.0.1`，就绪必须同时验证原生 PID、监听归属和 HTTP 健康检查；`stop.sh` 按原生 PID 停止服务。macOS 使用 `host.docker.internal` 公布 Driver 与回环数据端点，需要在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`；Docker Worker 保留 Docker 内置解析。该方式不依赖 Docker Desktop host networking。生产 Compose 和 Hosted 产品验收使用独立容器入口，仍验证同一应用的镜像默认启动命令。
+
+GeoPython Workflow 本地开发统一使用不继承系统包的 Python 3.12 虚拟环境与原生 GDAL，Python 绑定版本必须与 `gdal-config --version` 一致。PGeo 依赖 MDBTools 与 unixODBC，驱动配置限于 Runtime 自身。GDAL/PROJ 资源目录从原生依赖派生，仅注入该 Runtime；不得继承 Anaconda 的资源目录或插件目录。start/restart 共用原生入口，停止前完成依赖、PGeo/FileGDB/COG 驱动、坐标系和 HTTP 端口归属预检；失败保留已有服务。原生开发与产品镜像统一使用单 Worker、四线程 Gunicorn，监听就绪后在同一 Worker 中异步注册。开发入口不构建镜像，栅格 Hosted T4 使用根产品构建入口及独立 Runtime 所有权。
 
 ## 四、构建身份
 

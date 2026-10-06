@@ -1,7 +1,7 @@
 # GeoPython Workflow Dependencies
 
-# Core spatial computation. Keep NumPy below 2.3 so local GDAL Python bindings
-# inherited from system site-packages remain import-compatible.
+# Core spatial computation. Native GDAL bindings match the installed library;
+# development environments must not inherit system site-packages.
 numpy>=1.26,<2.3
 pandas>=2.0,<3.0
 geopandas>=0.15.0

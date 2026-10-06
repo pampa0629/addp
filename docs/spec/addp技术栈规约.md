@@ -12,6 +12,7 @@
 - **Kafka Connect / Debezium**: `quay.io/debezium/connect:3.6.0.Final`，内置 Kafka Connect 4.3.0；PostgreSQL Connector 3.6.0.Final
 - **有界执行领取**: PostgreSQL `common.task_executions` claim + lease；Cron 只用于 owner scheduler 计算到期 execution
 - **空间计算**: GeoPython Workflow (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
+- **GeoPython 原生开发运行时**: Python 3.12 独立虚拟环境、匹配原生 GDAL 版本的 Python 绑定、unixODBC 与 MDBTools。必须保留 PGeo 只读、OpenFileGDB 读写及 GTiff/COG 能力，资源目录和 ODBC 配置只影响 Runtime 子进程。
 - **Spark 工作流运行时**: PySpark 3.5 + OpenJDK 11；Workflow driver 与 Spark Master/Worker 必须使用相同的 JVM 主版本；JDBC 使用 PostgreSQL `42.7.4`、MySQL Connector/J `8.4.0`。分布式模式下，`SPARK_WORKFLOW_SHARED_HOST` 必须是 Workflow driver 自身和 Spark executor 都可访问的地址，用于公布 driver 地址，并替换本地开发中数据引擎连接的 loopback host。
   - Python Sedona 与 Spark 3.5 shaded JAR 统一为 `1.5.3`，GeoTools wrapper 为 `1.5.3-28.2`。Sedona 1.5.1 将可选 `cdm-core` 错置为必需依赖，干净环境无法从 Maven Central 完成解析；该缺陷已在 1.5.2 后修复，见 [官方版本说明](https://sedona.apache.org/1.5.3/setup/maven-coordinates/)。镜像验证必须经生产 SparkConnector 建立本地会话，完成真实聚合和空间函数，覆盖冷启动依赖解析；不能只测试不加载 Sedona 的裸 SparkSession。
   - 本地开发使用 Python 3.11/3.12 虚拟环境与原生 OpenJDK 11；Java 环境仅注入 Spark 子进程，不改变其他开发模块。

@@ -843,38 +843,16 @@ class GeoPythonPackagedRuntimeTest(unittest.TestCase):
                     if local.is_file():
                         self.assertTrue(copied(local), f"{path.name} imports {name}, missing from the product image")
 
-    def test_start_and_restart_fingerprints_observe_resource_module_changes(self):
+    def test_development_has_one_native_entry_and_no_image_builder(self):
         root = SCRIPT.parents[2]
-        with tempfile.TemporaryDirectory() as temporary:
-            workspace = Path(temporary)
-            subprocess.run(["git", "init", "-q"], cwd=workspace, check=True)
-            for relative in ["engines/geopython-workflow/Dockerfile", "engines/geopython-workflow/requirements.txt",
-                             "engines/geopython-workflow/api_server.py", "engines/geopython-workflow/container_entrypoint.sh",
-                             "engines/geopython-workflow/workflow_engine.py", "engines/geopython-workflow/geometry_batches.py",
-                             "engines/geopython-workflow/raster_resources.py", "common-python/README.md", "common-python/pyproject.toml"]:
-                path = workspace / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(root / relative, path)
-            for relative in ["engines/geopython-workflow/operators", "common-python/addp_common"]:
-                (workspace / relative).mkdir(parents=True)
-            functions = []
-            for relative in ["scripts/dev/start.sh", "scripts/dev/restart.sh"]:
-                source = (root / relative).read_text()
-                match = re.search(r"geopython_workflow_source_fingerprint\(\) \{.*?\n\}", source, re.S)
-                self.assertIsNotNone(match)
-                functions.append(match[0])
-
-            def fingerprint(function):
-                return subprocess.check_output(["bash", "-c", function + "\ngeopython_workflow_source_fingerprint"], cwd=workspace, text=True).strip()
-
-            before = [fingerprint(function) for function in functions]
-            self.assertEqual(before[0], before[1])
-            resource = workspace / "engines/geopython-workflow/raster_resources.py"
-            resource.write_text(resource.read_text() + "\n# changed policy application\n")
-            after = [fingerprint(function) for function in functions]
-            self.assertEqual(after[0], after[1])
-            for old, new in zip(before, after):
-                self.assertNotEqual(old, new, "resource policy changes reused a stale Runtime image")
+        for relative in ('scripts/dev/start.sh', 'scripts/dev/restart.sh'):
+            source = (root / relative).read_text()
+            self.assertIn('source "${SCRIPT_DIR}/geopython-workflow.sh"', source)
+            self.assertNotIn('geopython_workflow_source_fingerprint', source)
+            self.assertNotIn('ensure_geopython_workflow_image', source)
+            self.assertNotIn('--name geopython-workflow-engine', source)
+        entry = (root / 'engines/geopython-workflow/container_entrypoint.sh').read_text()
+        self.assertIn('exec python api_server.py', entry)
 
 
 if __name__ == "__main__":

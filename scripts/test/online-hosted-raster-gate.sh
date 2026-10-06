@@ -6,8 +6,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=raster-workflow
-HOSTED_FIXTURE_CONTAINERS=(addp-raster-source addp-raster-target addp-raster-fixture-worker addp-raster-registry geopython-workflow-engine)
-HOSTED_FIXTURE_IMAGES=(addp-geopython-workflow-engine:dev localhost:5001/python:3.11-slim)
+HOSTED_FIXTURE_CONTAINERS=(addp-raster-source addp-raster-target addp-raster-fixture-worker addp-raster-registry addp-raster-online-runtime)
+RUNTIME_CONTAINER=addp-raster-online-runtime
+RUNTIME_TAG=raster-online
+RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
+HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim)
 registry_owned=0
 stop_online_fixture() {
   local status=0 image
@@ -29,7 +32,7 @@ source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1200
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_TEST_RUN_ID="raster-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
-# Base-image mirror only; Runtime build and startup remain owned by start.sh.
+# Mirror for the independently built product Runtime.
 fixture_owned=1
 registry_owned=1
 run_logged docker run -d --name addp-raster-registry -p 127.0.0.1:5001:5000 registry:2
@@ -45,18 +48,11 @@ infra_owned=1
 run_logged bash scripts/infra/up.sh
 run_logged python3 business/scripts/online-raster-minio-fixture.py start
 application_owned=1
-for start_target in -develop -manager -monitor -geopython-workflow; do
+for start_target in -develop -manager -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
+start_online_geopython_runtime "$RUNTIME_TAG"
 run_logged python3 business/scripts/online-raster-minio-fixture.py seed
-# Prove the running container uses the image built from this checkout.
-image_id=$(docker image inspect -f '{{.Id}}' addp-geopython-workflow-engine:dev)
-[ "$(docker inspect -f '{{.Image}}' geopython-workflow-engine)" = "$image_id" ] ||
-  fail "GeoPython Runtime build identity mismatch"
-source_fingerprint=$(docker image inspect -f '{{ index .Config.Labels "addp.geopython.source-fingerprint" }}' addp-geopython-workflow-engine:dev)
-[ -n "$source_fingerprint" ] && [ "$source_fingerprint" != '<no value>' ] ||
-  fail "GeoPython Runtime source fingerprint is missing"
-printf 'image_id=%s\nsource_fingerprint=%s\ngit_commit=%s\n' "$image_id" "$source_fingerprint" "$(git rev-parse HEAD)" > "$ADDP_ONLINE_ARTIFACT_DIR/raster-runtime-build.txt"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"

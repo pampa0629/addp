@@ -33,7 +33,7 @@ stop_online_spark_image_registry() {
 }
 
 runtime_owned=0
-remove_online_spark_container() {
+remove_online_product_container() {
   local container=$1 status=0
   if docker container inspect "$container" >/dev/null 2>&1; then
     [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-runtime" }}' "$container")" = "$ONLINE_SUITE" ] || return 1
@@ -42,21 +42,21 @@ remove_online_spark_container() {
   fi
   return "$status"
 }
-stop_online_spark_runtime() {
+stop_online_product_runtime() {
   local status=0
   if [ "$runtime_owned" -eq 1 ]; then
     if docker container inspect "$RUNTIME_CONTAINER" >/dev/null 2>&1 &&
       [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-runtime" }}' "$RUNTIME_CONTAINER")" = "$ONLINE_SUITE" ]; then
-      run_logged docker logs "$RUNTIME_CONTAINER" > "$ADDP_ONLINE_ARTIFACT_DIR/${SPARK_RUNTIME_REPORT}-runtime.log" || status=1
+      run_logged docker logs "$RUNTIME_CONTAINER" > "$ADDP_ONLINE_ARTIFACT_DIR/${RUNTIME_REPORT}-runtime.log" || status=1
     fi
-    remove_online_spark_container "$RUNTIME_CONTAINER" || status=1
+    remove_online_product_container "$RUNTIME_CONTAINER" || status=1
   fi
   return "$status"
 }
 
 start_online_spark_runtime() {
-  local tag=$1 image_id attempt
-  SPARK_RUNTIME_REPORT=$2
+  local tag=$1
+  RUNTIME_REPORT=$2
   run_logged make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --tag $tag --verify --jobs 1"
   runtime_owned=1
   export ADDP_ONLINE_SPARK_RUNTIME_URL="http://127.0.0.1:$SPARK_WORKFLOW_PORT"
@@ -65,13 +65,32 @@ start_online_spark_runtime() {
     --label "com.addp.online-runtime=$ONLINE_SUITE" \
     -e "PORT=$SPARK_WORKFLOW_PORT" -e WORKFLOW_BIND_HOST=127.0.0.1 -e SYSTEM_URL -e SPARK_WORKFLOW_SERVICE_CLIENT_SECRET \
     -e HADOOP_USER_NAME -e SPARK_WORKFLOW_SHARED_HOST -e RUNTIME_HOST=127.0.0.1 "$RUNTIME_IMAGE"
+  verify_online_product_runtime '["python","api_server.py"]' "$ADDP_ONLINE_SPARK_RUNTIME_URL/health"
+}
+
+start_online_geopython_runtime() {
+  local tag=$1
+  RUNTIME_REPORT=raster
+  run_logged make build-images IMAGE_BUILD_ARGS="--services geopython-workflow-engine --tag $tag --verify --jobs 1"
+  runtime_owned=1
+  run_logged docker run -d --name "$RUNTIME_CONTAINER" --network host \
+    --label "com.addp.online-runtime=$ONLINE_SUITE" \
+    -e "PORT=$GEOPYTHON_WORKFLOW_PORT" -e WORKFLOW_BIND_HOST=127.0.0.1 \
+    -e SYSTEM_URL -e GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET -e RUNTIME_HOST=127.0.0.1 \
+    -e GEOPYTHON_WORKFLOW_LOOPBACK_HOST=127.0.0.1 "$RUNTIME_IMAGE"
+  verify_online_product_runtime '["sh","container_entrypoint.sh"]' "http://127.0.0.1:$GEOPYTHON_WORKFLOW_PORT/health"
+}
+
+verify_online_product_runtime() {
+  local command=$1 health_url=$2 image_id attempt default_entry
   image_id=$(docker image inspect -f '{{.Id}}' "$RUNTIME_IMAGE")
   [ "$(docker inspect -f '{{.Image}}' "$RUNTIME_CONTAINER")" = "$image_id" ] || fail 'Runtime image identity mismatch'
-  [ "$(docker inspect -f '{{json .Config.Cmd}}' "$RUNTIME_CONTAINER")" = '["python","api_server.py"]' ] || fail 'Runtime default entry mismatch'
-  printf 'image_id=%s\ngit_commit=%s\ndefault_entry=python api_server.py\n' "$image_id" "$(git rev-parse HEAD)" > "$ADDP_ONLINE_ARTIFACT_DIR/${SPARK_RUNTIME_REPORT}-runtime-build.txt"
+  [ "$(docker inspect -f '{{json .Config.Cmd}}' "$RUNTIME_CONTAINER")" = "$command" ] || fail 'Runtime default entry mismatch'
+  default_entry=$(python3 -c 'import json,sys; print(" ".join(json.loads(sys.argv[1])))' "$command")
+  printf 'image_id=%s\ngit_commit=%s\ndefault_entry=%s\n' "$image_id" "$(git rev-parse HEAD)" "$default_entry" > "$ADDP_ONLINE_ARTIFACT_DIR/${RUNTIME_REPORT}-runtime-build.txt"
   for attempt in $(seq 1 120); do
-    if curl -fsS "$ADDP_ONLINE_SPARK_RUNTIME_URL/health" >/dev/null; then break; fi
-    [ "$attempt" -lt 120 ] || fail 'Spark Runtime readiness timed out'
+    if curl -fsS "$health_url" >/dev/null; then break; fi
+    [ "$attempt" -lt 120 ] || fail 'Runtime readiness timed out'
     sleep 1
   done
   [ "$(docker inspect -f '{{.State.Running}}' "$RUNTIME_CONTAINER")" = true ] || fail 'Runtime container exited'
@@ -230,7 +249,7 @@ run_daemon_launcher_logged() {
 
 stop_online_application() {
   local status=0
-  stop_online_spark_runtime || status=1
+  stop_online_product_runtime || status=1
   run_logged bash scripts/dev/stop.sh || status=1
   return "$status"
 }

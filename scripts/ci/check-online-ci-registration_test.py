@@ -142,8 +142,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in (
             (paths[0], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
             (paths[0], 'start_online_spark_runtime online-hdfs hdfs'),
-            (paths[8], 'make build-images'), (paths[8], '${SPARK_RUNTIME_REPORT}-runtime-build.txt'),
-            (paths[8], '${SPARK_RUNTIME_REPORT}-runtime.log'), (paths[8], 'com.addp.online-runtime'),
+            (paths[8], 'make build-images'), (paths[8], '${RUNTIME_REPORT}-runtime-build.txt'),
+            (paths[8], '${RUNTIME_REPORT}-runtime.log'), (paths[8], 'com.addp.online-runtime'),
             (paths[2], 'refusing to delete a foreign container'),
             (paths[3], 'SPARK.worker_evidence'), (paths[7], 'Finished task'), (paths[4], 'login('),
             (paths[5], '$(MAKE) test-hdfs-online-runner'),
@@ -743,7 +743,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
     def test_raster_requires_manual_disposable_profile_and_registered_regressions(self) -> None:
         root = SCRIPT.parents[2]
         files = (
-            "scripts/test/online-gate.py", "scripts/test/online-hosted-raster-gate.sh",
+            "scripts/test/online-gate.py", "scripts/test/online-hosted-raster-gate.sh", "scripts/utils/hosted-online.sh",
             "business/scripts/online-raster-minio-fixture.py", "scripts/test/raster-workflow-online.py",
             "console/frontend/e2e/online/raster-workflow.spec.js", "Makefile",
             ".github/workflows/online-t4-gates.yml",
@@ -755,6 +755,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"raster-workflow"}
         CHECK.validate_raster_workflow_profile(self.repository, registered)
         faults = (
+            ("scripts/utils/hosted-online.sh", "verify_online_product_runtime", "omitted_identity_check"),
+            ("scripts/utils/hosted-online.sh", "stop_online_product_runtime || status=1", "true"),
+            ("scripts/test/online-hosted-raster-gate.sh", "start_online_geopython_runtime", "start_native_runtime"),
             (".github/workflows/online-t4-gates.yml", "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-workflow'", "if: github.event_name == 'schedule'"),
             (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'raster-workflow'", ""),
             ("scripts/test/online-hosted-raster-gate.sh", "online-raster-minio-fixture.py stop", "true"),

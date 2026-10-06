@@ -143,10 +143,10 @@ SPARK_WORKFLOW_PYTHON ?= engines/spark-workflow/venv/bin/python
 test-spark-workflow: ## 运行 Spark Workflow 元数据、租户身份和存储适配确定性测试
 	@cd engines/spark-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(SPARK_WORKFLOW_PYTHON)) -m unittest discover -s . -p 'test_*.py' -v
 
-GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/.venv/bin/python
+GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
-	@cd engines/geopython-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(GEOPYTHON_WORKFLOW_PYTHON)) -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_engine.py test_multiport.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs
+	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_engine.py test_multiport.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
 
 COPILOT_PYTHON ?= copilot/backend/venv/bin/python
 test-copilot: ## 运行 Copilot 后端全量确定性测试
@@ -420,7 +420,7 @@ test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench
 	@bash scripts/test/workbench-postgres-gate.sh
 
 test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial 运行集成门禁
-	@bash scripts/test/arcgis-open-formats-integration-gate.sh
+	@GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash scripts/test/arcgis-open-formats-integration-gate.sh $(ARCGIS_OPEN_FORMATS_ARGS)
 
 test-execution-fixtures: ## 校验统一执行存储测试夹具
 	@python3 scripts/test/schema-ownership-gates_test.py ExecutionFixtureGateTest
@@ -478,6 +478,7 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
 	@bash -n scripts/dev/spark-workflow.sh
+	@bash -n scripts/dev/geopython-workflow.sh
 	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh; do bash -n "$$script" || exit 1; done
 	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/model3d-linux-images_test.py
 	@bash scripts/test/infra-port-resolution.sh

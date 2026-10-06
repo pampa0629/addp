@@ -1521,8 +1521,15 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
         "scripts/test/online-hosted-raster-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite raster-workflow',
             'scripts/test/online-engine-registration.py', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
-            'env -u POSTGRES_PASSWORD make test-online', '-geopython-workflow',
+            'env -u POSTGRES_PASSWORD make test-online', 'start_online_geopython_runtime',
+            'RUNTIME_CONTAINER=addp-raster-online-runtime',
             'online-raster-minio-fixture.py stop',
+        ),
+        "scripts/utils/hosted-online.sh": (
+            'start_online_geopython_runtime', 'verify_online_product_runtime',
+            '--services geopython-workflow-engine --tag $tag --verify --jobs 1',
+            'Runtime image identity mismatch', 'Runtime default entry mismatch',
+            'com.addp.online-runtime', 'stop_online_product_runtime || status=1',
         ),
         "business/scripts/online-raster-minio-fixture.py": (
             "full_check=True", "type=tmpfs,destination=/data", "source_unchanged", "com.addp.online-fixture",
@@ -1571,8 +1578,8 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         ),
         "scripts/utils/hosted-online.sh": (
             "make build-images", "Runtime image identity mismatch", "Runtime default entry mismatch",
-            "${SPARK_RUNTIME_REPORT}-runtime-build.txt", "${SPARK_RUNTIME_REPORT}-runtime.log",
-            "com.addp.online-runtime", "stop_online_spark_runtime || status=1",
+            "${RUNTIME_REPORT}-runtime-build.txt", "${RUNTIME_REPORT}-runtime.log",
+            "com.addp.online-runtime", "stop_online_product_runtime || status=1",
         ),
         "business/scripts/online-hdfs-spark-fixture.sh": (
             'com.addp.online-fixture', '--network host', '--tmpfs /data', '/addp/hdfs/init.py',
@@ -1611,8 +1618,8 @@ def validate_elasticsearch_spark_profile(repository: Path, registered: set[str])
             'make build-images', '--services spark-workflow-engine --tag $tag --verify --jobs 1',
             '--network host', '-e WORKFLOW_BIND_HOST=127.0.0.1',
             'Runtime image identity mismatch', 'Runtime default entry mismatch',
-            '${SPARK_RUNTIME_REPORT}-runtime-build.txt', '${SPARK_RUNTIME_REPORT}-runtime.log',
-            'com.addp.online-runtime', 'stop_online_spark_runtime || status=1',
+            '${RUNTIME_REPORT}-runtime-build.txt', '${RUNTIME_REPORT}-runtime.log',
+            'com.addp.online-runtime', 'stop_online_product_runtime || status=1',
         ),
         'scripts/test/elasticsearch-consumer-flow-online.py': (
             'SPARK.worker_evidence', 'SPARK.runtime_status_evidence', 'spark_cluster_id', 'validate_workflow_nodes',

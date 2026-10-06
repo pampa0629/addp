@@ -35,24 +35,23 @@ class HostedRasterGateTest(unittest.TestCase):
             value = 11 if 'source' in args.descriptor else 12
             with open(args.output, 'w') as stream: stream.write(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={value}\\n')
         ''')
-        self.host._executable('docker', '''
-            #!/usr/bin/env bash
-            case "$1 $2" in
-              'container inspect') [ "${ADDP_TEST_OCCUPIED:-}" = "$3" ]; exit ;;
-              'compose version') exit 0 ;;
-              'image inspect')
-                image=${!#}
-                if [ -f "$ADDP_TEST_GATE_TRACE" ] && grep -Fq "docker:image rm $image" "$ADDP_TEST_GATE_TRACE"; then exit 1; fi
-                if [ -f "$ADDP_TEST_GATE_TRACE" ] && grep -q 'start:-geopython-workflow' "$ADDP_TEST_GATE_TRACE"; then echo sha256:built; exit 0; fi
-                exit 1 ;;
-            esac
-            if [ "$1" = inspect ]; then echo sha256:built; exit 0; fi
-            if [ "$1" = ps ] || [ "${2:-}" = ls ]; then exit 0; fi
-            echo "docker:$*" >> "$ADDP_TEST_GATE_TRACE"
-            [ "${ADDP_TEST_MIRROR_FAIL:-0}" != 1 ] || [ "$1" != pull ]
-        ''')
+        fixture = importlib.import_module('scripts.test.online-hosted-hdfs-gate_test')
+        fixture.install_spark_container_fixture(self.host, 'raster-workflow', 'addp-raster-online-runtime')
+        docker = self.host.bin / 'docker'
+        content = docker.read_text().replace('["python","api_server.py"]', '["sh","container_entrypoint.sh"]')
+        content = content.replace('case "$1 $2" in', '[ "${ADDP_TEST_MIRROR_FAIL:-0}" != 1 ] || [ "$1" != pull ] || exit 1\ncase "$1 $2" in')
+        content = content.replace("*Config.Cmd*) echo", "*Config.Cmd*) [ \"${ADDP_TEST_BAD_ENTRY:-0}\" != 1 ] || { echo '[\"python\",\"other.py\"]'; exit 0; }; echo")
+        content = content.replace("*) echo sha256:runtime-image", "*) [ \"${ADDP_TEST_BAD_IMAGE:-0}\" != 1 ] || { echo sha256:foreign-image; exit 0; }; echo sha256:runtime-image")
+        docker.write_text(content)
+        self.host._write_repository_script('.env.example', 'GEOPYTHON_WORKFLOW_PORT=8099\n')
         self.host._executable('make', '''
             #!/usr/bin/env bash
+            echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = build-images ]; then
+              [ "${ADDP_TEST_BUILD_FAIL:-0}" != 1 ] || exit 1
+              touch "${ADDP_TEST_GATE_TRACE}.image"
+              exit 0
+            fi
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
             [ -z "${POSTGRES_PASSWORD:-}" ]
             [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1200 ]
@@ -79,7 +78,7 @@ class HostedRasterGateTest(unittest.TestCase):
 
     def test_admission_rejects_personal_or_occupied_environment_without_mutation(self):
         for changes in ({'RUNNER_OS': 'macOS'}, {'GITHUB_ACTIONS': 'false'},
-                        {'ADDP_TEST_OCCUPIED': 'addp-raster-source'}, {'ONLINE_SUITE_INPUT': 'other'}):
+                        {'ADDP_TEST_PREEXIST_CONTAINER': 'addp-raster-source'}, {'ONLINE_SUITE_INPUT': 'other'}):
             result = self.run_gate(check=True, **changes)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.host.trace.exists())
@@ -95,9 +94,12 @@ class HostedRasterGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         for step in ('raster-fixture:start', 'raster-fixture:seed', 'start:-develop', 'start:-manager', 'start:-monitor',
-                     'start:-geopython-workflow', 'make:test-online ONLINE_SUITE=raster-workflow',
-                     'application-stop', 'raster-fixture:stop', 'docker:rm -fv addp-raster-registry', 'infra-down'):
+                     'make:build-images IMAGE_BUILD_ARGS=--services geopython-workflow-engine --tag raster-online --verify --jobs 1',
+                     'docker-run:addp-raster-online-runtime', 'make:test-online ONLINE_SUITE=raster-workflow',
+                     'application-stop', 'raster-fixture:stop', 'docker-rm:addp-raster-registry', 'infra-down'):
             self.assertIn(step, trace)
+        self.assertNotIn('start:-geopython-workflow', trace)
+        self.assertIn('docker-rm:addp-raster-online-runtime', trace)
         self.assertLess(trace.index('application-stop'), trace.index('raster-fixture:stop'))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
@@ -109,7 +111,7 @@ class HostedRasterGateTest(unittest.TestCase):
         result = self.run_gate(ADDP_TEST_SUITE_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
         trace = self.host.trace.read_text()
-        for step in ('application-stop', 'raster-fixture:stop', 'docker:rm -fv addp-raster-registry', 'infra-down'):
+        for step in ('application-stop', 'raster-fixture:stop', 'docker-rm:addp-raster-registry', 'infra-down'):
             self.assertIn(step, trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('result=failed', (self.host.artifacts / 'summary.txt').read_text())
@@ -125,7 +127,7 @@ class HostedRasterGateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         trace = self.host.trace.read_text()
         self.assertNotIn('infra-up', trace)
-        self.assertIn('docker:rm -fv addp-raster-registry', trace)
+        self.assertIn('docker-rm:addp-raster-registry', trace)
         self.assertFalse(self.host.secrets.exists())
 
     def test_cleanup_failure_invalidates_successful_business_scene(self):
@@ -137,5 +139,30 @@ class HostedRasterGateTest(unittest.TestCase):
         self.assertIn('infra-down', self.host.trace.read_text())
         self.assertFalse(self.host.secrets.exists())
 
+    def test_product_build_failure_cleans_and_does_not_seed(self):
+        result = self.run_gate(ADDP_TEST_BUILD_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertNotIn('raster-fixture:seed', trace)
+        self.assertIn('application-stop', trace)
+        self.assertIn('infra-down', trace)
+
+
+    def test_product_failures_stop_before_seed_and_clean_owned_runtime(self):
+        for failure in ('ADDP_TEST_RUNTIME_FAIL', 'ADDP_TEST_BAD_ENTRY', 'ADDP_TEST_BAD_IMAGE'):
+            with self.subTest(failure=failure):
+                result = self.run_gate(**{failure: '1'})
+                self.assertNotEqual(result.returncode, 0)
+                trace = self.host.trace.read_text()
+                self.assertNotIn('raster-fixture:seed', trace)
+                self.assertIn('infra-down', trace)
+                self.assertFalse(self.host.secrets.exists())
+                self.host.trace.unlink()
+                shutil.rmtree(self.host.artifacts)
+
+    def test_product_cleanup_failure_is_not_a_pass(self):
+        result = self.run_gate(ADDP_TEST_RUNTIME_CLEANUP_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('cleanup=failed', (self.host.artifacts / 'summary.txt').read_text())
 
 if __name__ == '__main__': unittest.main()

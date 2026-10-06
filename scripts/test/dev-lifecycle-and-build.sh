@@ -366,6 +366,7 @@ for name, args, failed in (
     ("coverage-error", ["-all"], True),
     ("coverage-error-single", ["-system"], True),
     ("spark-prepare-failure", ["-all"], True),
+    ("geopython-prepare-failure", ["-all"], True),
 ):
     root = temporary / ("restart-" + name)
     dev = root / "scripts/dev"
@@ -375,6 +376,8 @@ for name, args, failed in (
     (dev / "ports.sh").write_text('addp_dev_load_saved_ports() { :; }\n')
     (dev / "spark-workflow.sh").write_text('addp_prepare_spark_workflow() { '
         'echo spark-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_SPARK_PREPARE" = 0 ]; }\n')
+    (dev / "geopython-workflow.sh").write_text('addp_prepare_geopython_workflow() { '
+        'echo geopython-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_GEOPYTHON_PREPARE" = 0 ]; }\n')
     (root / ".env").write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
 
     infra = root / "scripts/infra"
@@ -428,6 +431,7 @@ exit "$FAIL_COVERAGE"
         FIXTURE_ROOT=str(root), FAIL_SWAGGER=str(int(name.startswith('swagger-failure'))),
         FAIL_COVERAGE='2' if name.startswith('coverage-error') else '1' if name.startswith('coverage-failure') else '0',
         FAIL_SPARK_PREPARE=str(int(name == 'spark-prepare-failure')),
+        FAIL_GEOPYTHON_PREPARE=str(int(name == 'geopython-prepare-failure')),
         ALLOW_SWAGGER_FAILURE="1", SWAGGER_COVERAGE_WARN_ONLY="1", MEILISEARCH_PORT="17700", SERVICE_HOST="localhost",
     )
     result = subprocess.run(["bash", str(dev / "restart.sh"), *args], env=env,
@@ -440,13 +444,15 @@ exit "$FAIL_COVERAGE"
     assert not any(event.startswith("pkill ") for event in events), \
         "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
     target = "all" if args in ([], ["-all"]) else "system" if args == ["-system"] else "system asset meta"
-    expected = ([] if args == ['-system'] else ['spark-preflight']) + ["stop", "generate " + target]
+    expected = ([] if args == ['-system'] else ['spark-preflight', 'geopython-preflight']) + ["stop", "generate " + target]
     if name.startswith('coverage-'):
         expected += ["generated", "coverage " + target]
     elif not failed:
         expected += ["generated", "coverage " + target, "start"]
     if name == 'spark-prepare-failure':
         expected = ['spark-preflight']
+    if name == 'geopython-prepare-failure':
+        expected = ['spark-preflight', 'geopython-preflight']
     for binary in ("system", "asset", "meta", "meta-worker", "gateway"):
         assert (bins / ("addp-" + binary)).read_text() == "old binary", "restart must preserve " + binary
     assert events == expected, events
@@ -751,6 +757,7 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
         JUPYTER_API_PORT) pidfile=jupyter-api-server ;;
         MODEL3D_WORKFLOW_PORT) pidfile=model3d-workflow-engine ;;
         SPARK_WORKFLOW_PORT) pidfile=spark-workflow-engine ;;
+        GEOPYTHON_WORKFLOW_PORT) pidfile=geopython-workflow-engine ;;
         *) continue ;;
       esac
       printf "%s\n" "$$" > "$ROOT_DIR/.dev-pids/${pidfile}.pid"
@@ -758,12 +765,93 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
       printf "%s=%s\n" "$variable" "$((preferred + 10000))" >> "$ROOT_DIR/.dev-state/ports.env"
       checked=$((checked + 1))
     done < <(addp_dev_port_specs)
-    [ "$checked" -eq 4 ]
+    [ "$checked" -eq 5 ]
     addp_dev_load_saved_ports
     [ "$MATH_WORKFLOW_PORT" -eq 18089 ]
     [ "$JUPYTER_API_PORT" -eq 18097 ]
     [ "$MODEL3D_WORKFLOW_PORT" -eq 18101 ]
   ' || fail "runtime port ownership did not match the startup PID files"
+}
+
+test_geopython_native_lifecycle() {
+  ROOT_DIR="$ROOT_DIR" TEST_ROOT="$TEST_ROOT" python3 - <<'PY_GEO'
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+root = Path(os.environ['ROOT_DIR'])
+work = Path(os.environ['TEST_ROOT']) / 'geopython-native'
+runtime = work / 'engines/geopython-workflow'
+(runtime / 'venv/bin').mkdir(parents=True)
+python = runtime / 'venv/bin/python'
+python.write_text('#!' + sys.executable + '''
+import os, sys
+if len(sys.argv)>2 and sys.argv[1]=='-c':
+    if 'sys.version_info' in sys.argv[2]: sys.exit(int(os.environ.get('FAIL_PYTHON','0')))
+    if 'import api_server' in sys.argv[2]: sys.exit(int(os.environ.get('FAIL_IMPORT','0')))
+if sys.argv[1:3]==['-m','pip']: sys.exit(int(os.environ.get('FAIL_GDAL','0')))
+if sys.argv[1]=='-': sys.exit(int(os.environ.get('FAIL_DRIVERS','0')))
+os.execv(sys.executable,[sys.executable]+sys.argv[1:])
+''')
+python.chmod(0o755)
+(runtime / 'api_server.py').write_text('''
+import http.server, os, sys
+assert os.environ['WORKFLOW_BIND_HOST']=='127.0.0.1'
+assert os.environ['RUNTIME_HOST']=='localhost'
+assert 'GEOPYTHON_WORKFLOW_LOOPBACK_HOST' not in os.environ
+if os.environ.get('FAIL_START')=='1': sys.exit(1)
+http.server.HTTPServer(('127.0.0.1',int(os.environ['PORT'])),http.server.SimpleHTTPRequestHandler).serve_forever()
+''')
+(runtime / 'health').write_text('ok')
+with socket.socket() as sock:
+    sock.bind(('127.0.0.1',0)); port=str(sock.getsockname()[1])
+launcher='''
+set -euo pipefail
+source "$SOURCE_ROOT/scripts/dev/ports.sh"
+source "$SOURCE_ROOT/scripts/dev/geopython-workflow.sh"
+addp_geopython_native_environment() { unset GEOPYTHON_WORKFLOW_LOOPBACK_HOST; }
+addp_sync_python_dependencies() {
+  [ "$1" = "$ROOT_DIR" ] && [ "$2" = "$ROOT_DIR/engines/geopython-workflow" ] || return 2
+  echo sync >> "$ROOT_DIR/trace"
+  [ "${FAIL_SYNC:-0}" = 0 ]
+}
+addp_with_python_dependency_lock() { shift; "$@"; }
+gdal-config() { echo 3.12.1; }
+addp_prepare_geopython_workflow
+addp_launch_geopython_workflow
+pid=$(cat "$ROOT_DIR/.dev-pids/geopython-workflow-engine.pid")
+trap 'kill -TERM "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+addp_dev_owned_listener geopython-workflow-engine "$GEOPYTHON_WORKFLOW_PORT"
+'''
+env=dict(os.environ,SOURCE_ROOT=str(root),ROOT_DIR=str(work),GEOPYTHON_WORKFLOW_PORT=port,
+         GEOPYTHON_WORKFLOW_LOOPBACK_HOST='container-only.invalid')
+result=subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True,timeout=15)
+assert result.returncode==0,(result.stdout,result.stderr)
+assert (work/'trace').read_text().splitlines()==['sync']
+for name in ('FAIL_SYNC','FAIL_PYTHON','FAIL_IMPORT','FAIL_GDAL','FAIL_DRIVERS','FAIL_START'):
+    (work/'.dev-pids/geopython-workflow-engine.pid').unlink(missing_ok=True)
+    result=subprocess.run(['bash','-c',launcher],env=dict(env,**{name:'1'}),capture_output=True,text=True,timeout=15)
+    assert result.returncode!=0,(name,result)
+    assert not (work/'.dev-pids/geopython-workflow-engine.pid').exists(),name
+with socket.socket() as sock:
+    sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+    sock.bind(('127.0.0.1',int(port)));sock.listen()
+    result=subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True,timeout=15)
+    assert result.returncode!=0 and '外部监听者' in result.stderr,result.stderr
+    assert not (work/'.dev-pids/geopython-workflow-engine.pid').exists()
+# Local restart must preserve other runtimes' environment and preflight before stopping.
+restart=(root/'scripts/dev/restart.sh').read_text()
+local_restart=restart[restart.index('restart_geopython_workflow_service()'):restart.index('restart_math_workflow_service()')]
+helper_dir=work/'scripts/dev';helper_dir.mkdir(parents=True)
+(helper_dir/'geopython-workflow.sh').write_text('addp_prepare_geopython_workflow() { export GDAL_DATA=runtime-only; echo prepare; [ "$FAIL_PREPARE" = 0 ]; }\naddp_launch_geopython_workflow() { [ "$GDAL_DATA" = runtime-only ]; echo launch; }\n')
+probe="set -eu\nstop_pidfile_process() { echo stop; }\n"+local_restart+'\nrestart_geopython_workflow_service\n[ "$GDAL_DATA" = original ]\n'
+for failed in ('0','1'):
+    result=subprocess.run(['bash','-c',probe],env=dict(env,SCRIPT_DIR=str(helper_dir),GDAL_DATA='original',FAIL_PREPARE=failed),capture_output=True,text=True)
+    assert result.returncode==(int(failed)),result
+    assert result.stdout.splitlines()==(['prepare'] if failed=='1' else ['prepare','stop','launch']),result
+print('PASS: native GeoPython PID/HTTP ownership, dependencies, GDAL/import failures and foreign port rejection')
+PY_GEO
 }
 
 test_spark_native_lifecycle() {
@@ -902,7 +990,6 @@ import sys
 root = Path(sys.argv[1])
 start = (root / 'scripts/dev/start.sh').read_text()
 for name, variable in (
-    ('geopython-workflow', 'GEOPYTHON_WORKFLOW_PORT'),
     ('pointcloud-workflow', 'POINTCLOUD_WORKFLOW_PORT'),
     ('document-workflow', 'DOCUMENT_WORKFLOW_PORT'),
 ):
@@ -934,7 +1021,7 @@ def function(name):
     return match.group()
 
 helper = function('configure_workflow_container_network')
-for runtime, port in [('geopython', 8099), ('pointcloud', 8102), ('document', 8105)]:
+for runtime, port in [('pointcloud', 8102), ('document', 8105)]:
     fixture = temporary / ('runtime-network-' + runtime)
     fixture.mkdir()
     for hosted, kernel in [('1', 'Linux'), ('0', 'Linux'), ('0', 'Darwin'), ('1', 'Darwin')]:
@@ -960,7 +1047,6 @@ docker() {
 sudo() { [ "$1" = -n ] && [ "$2" = chown ] && [ "$3" = 10001 ] && [ -d "$4" ]; }
 curl() { printf '%s\\n' '{"status":"healthy"}'; }
 addp_dev_remove_owned_container() { :; }
-ensure_geopython_workflow_image() { :; }
 ensure_pointcloud_workflow_image() { :; }
 ensure_document_workflow_image() { :; }
 '''
@@ -989,8 +1075,7 @@ ensure_document_workflow_image() { :; }
         with patch.dict(os.environ, envs), patch('threading.Thread'):
             exec(compile(ast.Module(body=main.body, type_ignores=[]), '<runtime-main>', 'exec'), namespace)
         app.run.assert_called_once_with(host=bind_host, port=int(envs['PORT']), debug=False)
-        loopback_key = {'geopython': 'GEOPYTHON_WORKFLOW_LOOPBACK_HOST',
-                        'pointcloud': 'POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST',
+        loopback_key = {'pointcloud': 'POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST',
                         'document': 'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST'}[runtime]
         if hosted == '1':
             assert args[args.index('--network') + 1] == 'host', args
@@ -1004,30 +1089,7 @@ ensure_document_workflow_image() { :; }
             assert '--add-host=host.docker.internal:host-gateway' in args, args
             assert envs['PORT'] == str(port), envs
             assert envs['SYSTEM_URL'] == 'http://host.docker.internal:18180', envs
-            assert envs[loopback_key] == ('host.docker.internal' if runtime == 'geopython' else 'custom-host'), envs
-        if runtime == 'geopython':
-            assert envs['POSTGRES_HOST'] == ('127.0.0.1' if hosted == '1' else 'host.docker.internal'), envs
-            assert envs['POSTGRES_PORT'] == '25432', envs
-            # GeoPython's Docker CMD uses Gunicorn rather than the Flask main block.
-            commands = fixture / 'commands'
-            commands.mkdir(exist_ok=True)
-            gunicorn_args, health_url = fixture / 'gunicorn-args', fixture / 'health-url'
-            gunicorn = commands / 'gunicorn'
-            gunicorn.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$GUNICORN_ARGS"\n')
-            gunicorn.chmod(0o755)
-            python = commands / 'python'
-            python.write_text('#!' + sys.executable + '\nimport os, sys, urllib.request\nfrom pathlib import Path\n'
-                              'urllib.request.urlopen = lambda url, timeout: Path(os.environ["HEALTH_URL"]).write_text(url)\n'
-                              'if "urllib.request" in sys.argv[2]: exec(sys.argv[2])\n')
-            python.chmod(0o755)
-            environment = {**os.environ, **envs, 'PATH': str(commands) + ':' + os.environ['PATH'],
-                           'GUNICORN_ARGS': str(gunicorn_args), 'HEALTH_URL': str(health_url)}
-            entrypoint = root / 'engines/geopython-workflow/container_entrypoint.sh'
-            result = subprocess.run(['sh', str(entrypoint)], env=environment, capture_output=True, text=True, timeout=10)
-            assert result.returncode == 0, result.stderr
-            gunicorn_cli = gunicorn_args.read_text().splitlines()
-            assert gunicorn_cli[gunicorn_cli.index('--bind') + 1] == f'{bind_host}:{envs["PORT"]}', gunicorn_cli
-            assert health_url.read_text() == f'http://127.0.0.1:{envs["PORT"]}/health'
+            assert envs[loopback_key] == 'custom-host', envs
         if runtime == 'document':
             assert '--read-only' in args and '--cap-drop=ALL' in args, args
             assert '--security-opt=no-new-privileges' in args and '--tmpfs' in args, args
@@ -1741,6 +1803,7 @@ test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid
 test_dev_runtime_owned_listeners_match_pidfiles
 test_spark_native_lifecycle
+test_geopython_native_lifecycle
 test_hosted_runtime_owned_listener
 test_runtime_host_port_advertisement
 test_hosted_runtime_network

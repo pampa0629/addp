@@ -49,7 +49,7 @@ ontology-frontend ONTOLOGY_FE_PORT 5192
 math-workflow-engine MATH_WORKFLOW_PORT 8089
 jupyter-api-server JUPYTER_API_PORT 8097
 spark-workflow-engine SPARK_WORKFLOW_PORT 8098
-geopython-workflow GEOPYTHON_WORKFLOW_PORT 8099
+geopython-workflow-engine GEOPYTHON_WORKFLOW_PORT 8099
 model3d-workflow-engine MODEL3D_WORKFLOW_PORT 8101
 pointcloud-workflow POINTCLOUD_WORKFLOW_PORT 8102
 supermap-workflow SUPERMAP_WORKFLOW_PORT 8103
@@ -69,7 +69,7 @@ addp_dev_owned_listener() {
   local name="$1" port="$2" pidfile owner listener listeners
   pidfile="${ROOT_DIR}/.dev-pids/${name}.pid"
   case "$name" in
-    geopython-workflow|pointcloud-workflow|document-workflow|supermap-workflow)
+    pointcloud-workflow|document-workflow|supermap-workflow)
       local container="${name}-engine" labels mapping mode
       labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || return 1
       [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ] || return 1

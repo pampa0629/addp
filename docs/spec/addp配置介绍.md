@@ -27,7 +27,9 @@ ADDP 的配置按事实来源和生命周期分层管理，不建立由 System �
 
 HDFS 首版固定 Simple 开发实验模式。引擎连接的 `webhdfs_endpoint`、`rpc_uri`、`root_path`、`authentication`、`user` 由插件 `ConnectionSpec` 唯一定义；首版 RPC 必须为具体 `hdfs://host:port`，不支持 HA nameservice。Spark 应用部署以 `HADOOP_USER_NAME` 固定 Hadoop 用户，不能按资源切换共享会话的身份；读取前验证当前 Java UGI 用户与引擎 `user` 一致。Business 的 `HDFS_SHARED_HOST` 和四个监听端口归 `business/.env`，不进入平台普通配置，也不保存到工作流任务。Simple 的用户名声明不构成安全认证。
 
-GeoPython、PointCloud、Document 的 HTTP 监听地址由部署入口通过 `WORKFLOW_BIND_HOST` 注入，默认 `0.0.0.0`，用于普通 bridge/Compose 容器内监听。Hosted Online 原生 Linux 使用宿主网络时，标准开发入口固定注入 `127.0.0.1`，并以 `PORT` 指定实际开发端口；`RUNTIME_HOST` 与 `RUNTIME_PUBLIC_PORT` 仍只负责自注册地址，不用于控制监听。该配置随进程启动生效，不保存到业务配置或根 `.env`。
+PointCloud、Document 的 HTTP 监听地址由部署入口通过 `WORKFLOW_BIND_HOST` 注入，默认 `0.0.0.0`，用于普通 bridge/Compose 容器内监听。Hosted Online 原生 Linux 使用宿主网络时，标准开发入口固定注入 `127.0.0.1`，并以 `PORT` 指定实际开发端口；`RUNTIME_HOST` 与 `RUNTIME_PUBLIC_PORT` 仍只负责自注册地址，不用于控制监听。该配置随进程启动生效，不保存到业务配置或根 `.env`。
+
+GeoPython 原生开发入口固定 HTTP 监听回环与实际 `PORT`，不注入容器的 loopback 地址改写；GDAL/PROJ 路径从原生安装派生，Runtime 专属 `ODBCSYSINI` 存在于 `.dev-state/geopython-odbc`，不会修改系统 ODBC 配置。产品 Compose 使用服务名，Hosted 栅格产品 Runtime 独立使用宿主网络与回环源地址。
 
 Spark Workflow 原生开发启动固定注入 `WORKFLOW_BIND_HOST=127.0.0.1` 与实际 `PORT`，Java 11 只注入 Spark 子进程。`SPARK_WORKFLOW_SHARED_HOST` 声明 Driver/Executor 共用的地址：macOS 默认为 `host.docker.internal`，需在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，容器继续使用 Docker 内置解析；Hosted Linux 为 `127.0.0.1`，普通 Linux 使用路由接口地址。远程部署按实际拓扑显式配置。开发启动不构建镜像，不依赖 Docker Desktop host networking；生产 Compose 按自身网络部署。
 

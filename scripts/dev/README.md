@@ -166,6 +166,8 @@ bash scripts/dev/restart.sh -copilot
 bash scripts/dev/restart.sh -agent
 ```
 
+GeoPython Workflow 使用原生 Python 3.12、GDAL 和 MDBTools/ODBC；准备与启动统一在 `geopython-workflow.sh`，虚拟环境不继承系统包。macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`。局部与全量重启均先预检依赖，再停止旧进程；首次切换须由用户先停掉旧开发容器。开发入口不构建或启动 GeoPython 镜像，产品栅格 Hosted 验收通过根构建入口独立完成。
+
 SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `SUPERMAP_CPP_SDK_PATH` 指向完整 SDK 母版并运行 `bash scripts/build/build-supermap-workflow-base.sh` 构建稳定基础镜像。之后 `restart.sh -supermap-workflow` 和 `restart.sh -all` 根据构建指纹决定是否重新编译当前 C++ 源码并替换 8103 容器，不需要 rebuild 开关，也不挂载宿主机源码或 SDK 目录。
 
 **使用场景**:

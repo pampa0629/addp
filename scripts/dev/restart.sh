@@ -313,99 +313,12 @@ verify_pidfile_process_alive() {
     fi
 }
 
-geopython_workflow_source_fingerprint() {
-    {
-        printf '%s\n' "geopython-workflow-image-v1"
-        while IFS= read -r file; do
-            printf '%s %s\n' "$file" "$(git hash-object "$file")"
-        done < <(
-            {
-                printf '%s\n' \
-                    engines/geopython-workflow/Dockerfile \
-                    engines/geopython-workflow/requirements.txt \
-                    engines/geopython-workflow/api_server.py \
-                    engines/geopython-workflow/container_entrypoint.sh \
-                    engines/geopython-workflow/workflow_engine.py \
-                    engines/geopython-workflow/geometry_batches.py \
-                    engines/geopython-workflow/raster_resources.py \
-                    common-python/README.md \
-                    common-python/pyproject.toml
-                find engines/geopython-workflow/operators common-python/addp_common \
-                    -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
-            } | LC_ALL=C sort
-        )
-    } | git hash-object --stdin
-}
-
-ensure_geopython_workflow_image() {
-    local image="$1"
-    local fingerprint
-    local current_fingerprint
-    fingerprint="$(geopython_workflow_source_fingerprint)"
-    current_fingerprint="$(docker image inspect \
-        -f '{{ index .Config.Labels "addp.geopython.source-fingerprint" }}' \
-        "$image" 2>/dev/null || true)"
-
-    if [ "$current_fingerprint" = "$fingerprint" ]; then
-        echo "  GeoPython Workflow 镜像构建输入未变化，复用现有镜像: $image"
-        return 0
-    fi
-
-    echo "  构建 GeoPython Workflow 镜像（构建输入已变化或镜像不存在）..."
-    docker build \
-        --label "addp.geopython.source-fingerprint=${fingerprint}" \
-        -f engines/geopython-workflow/Dockerfile \
-        -t "$image" \
-        .
-}
-
-restart_geopython_workflow_service() {
-    local port="${GEOPYTHON_WORKFLOW_PORT:-8099}"
-    local image="addp-geopython-workflow-engine:dev"
-    local source_dir="${ROOT_DIR}/business/nfs/data"
-    local container_source_dir="${ROOT_DIR}/business/nfs/data"
-    local system_port="${SYSTEM_BACKEND_PORT:-8180}"
-
-    if ! command -v docker >/dev/null 2>&1; then
-        echo "❌ GeoPython Workflow 需要 Docker runtime 承载 GDAL/OGR"
-        return 1
-    fi
-
-    docker rm -f geopython-workflow-engine >/dev/null 2>&1 || true
-    rm -f .dev-pids/geopython-workflow-engine.pid
-    stop_matching_port_process "$port" "GeoPython Workflow" "python.*api_server\\.py|engines/geopython-workflow"
-    ensure_geopython_workflow_image "$image"
-
-    echo "  启动 GeoPython Workflow Docker runtime..."
-    mkdir -p "${source_dir}" logs .dev-pids
-    docker run -d \
-        --name geopython-workflow-engine \
-        --label com.docker.compose.project=addp-runtimes \
-        --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
-        --label com.docker.compose.service=geopython-workflow-engine \
-        --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
-        --add-host=host.docker.internal:host-gateway \
-        -p "${port}:8099" \
-        -e PORT=8099 \
-        -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
-        -e GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET="${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
-        -e GEOPYTHON_WORKFLOW_LOOPBACK_HOST=host.docker.internal \
-        -e POSTGRES_HOST=host.docker.internal \
-        -e POSTGRES_PORT="${POSTGRES_PORT:-15432}" \
-        -e POSTGRES_USER="${POSTGRES_USER:-addp}" \
-        -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}" \
-        -e POSTGRES_DB="${POSTGRES_DB:-addp}" \
-        -e DB_SCHEMA=develop \
-        -v "${ROOT_DIR}/logs:/app/logs" \
-        -v "${source_dir}:${container_source_dir}" \
-        "$image" > .dev-pids/geopython-workflow-engine.pid
-    wait_http_ready "GeoPython Workflow" "http://localhost:${port}/health"
-    if ! docker ps --filter "name=^/geopython-workflow-engine$" --format '{{.Names}}' | grep -qx "geopython-workflow-engine"; then
-        echo "❌ GeoPython Workflow 容器启动后不存在"
-        echo "   查看日志: docker logs geopython-workflow-engine"
-        return 1
-    fi
-}
+restart_geopython_workflow_service() (
+    source "${SCRIPT_DIR}/geopython-workflow.sh"
+    addp_prepare_geopython_workflow || return 1
+    stop_pidfile_process ".dev-pids/geopython-workflow-engine.pid" "GeoPython Workflow"
+    addp_launch_geopython_workflow
+)
 
 restart_math_workflow_service() {
     local port="${MATH_WORKFLOW_PORT:-8089}"
@@ -767,6 +680,8 @@ echo ""
 if [ "$RESTART_ALL" = true ] || [ ${#ORIGINAL_ARGS[@]} -ne 1 ]; then
     source "${SCRIPT_DIR}/spark-workflow.sh"
     (addp_prepare_spark_workflow) || exit 1
+    source "${SCRIPT_DIR}/geopython-workflow.sh"
+    (addp_prepare_geopython_workflow) || exit 1
 fi
 
 # 1. 统一停止工作区服务，保留 System 供 Go、Python 和 Runtime 完成注销。
