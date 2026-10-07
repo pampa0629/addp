@@ -1,9 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { CONSOLE_ROUTE_ACCESS, consoleRouteAccess } from '@common-ui'
-import { matchesNavigationAccess } from '../src/utils/navigationAccess'
+import { filterSidebarMenus, firstAccessibleModuleRoute, matchesNavigationAccess } from '../src/utils/navigationAccess'
 
 describe('Console page access', () => {
+  it('offers Data Explorer to item readers without granting other Manager pages', async () => {
+    vi.stubGlobal('window', { location: { origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig')
+      const menus = { manager: SIDEBAR_MENUS.manager }
+      const visible = filterSidebarMenus(menus, 'tenant', ['manager.data_item.read']).manager
+      expect(visible.items.map(item => item.index)).toEqual(['/manager/data-explorer'])
+      expect(firstAccessibleModuleRoute(visible)).toBe('/manager/data-explorer')
+      expect(filterSidebarMenus(menus, 'platform', ['manager.data_item.read']).manager.items).toEqual([])
+      expect(filterSidebarMenus(menus, 'tenant', ['manager.content.read']).manager.items).toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
   it('isolates managed node pages to their platform read permission', () => {
     for (const path of ['/system/host-nodes', '/system/host-nodes/10000000-0000-4000-8000-000000000001']) {
       expect(matchesNavigationAccess({ route: path }, 'platform', ['platform.host_node.read'])).toBe(true)

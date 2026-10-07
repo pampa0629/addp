@@ -45,6 +45,7 @@ const independentlyReadablePages = [
   ['/modeling/entities', ['model.entity.read', 'standard.domain.read']],
   ['/quality/plans', ['quality.plan.read']],
   ['/develop/sql', ['develop.task.read', 'meta.catalog.read']],
+  ['/manager/data-explorer', ['manager.data_item.read']],
   ['/manager/data-retrieval', ['manager.search.execute', 'manager.data_item.read']],
   ['/service/query-services', ['service.definition.read']],
   ['/workbench/applications', ['workbench.data_application.read']],
@@ -70,12 +71,15 @@ for (const [path, permissions] of independentlyReadablePages) {
   })
 }
 
-test('retrieval-only Manager account opens its permitted page from the Console card', async ({ page }) => {
+test('Manager item reader with search opens Data Explorer and can navigate to retrieval', async ({ page }) => {
   const businessRequests = await openAsTenant(page, '/', ['manager.search.execute', 'manager.data_item.read'])
   await page.getByText('所有模块', { exact: true }).click()
   const managerCard = page.locator('.module-card').filter({ has: page.getByRole('heading', { name: '数据管理' }) })
   await expect(managerCard).toBeVisible()
   await managerCard.click()
+  await expect(page).toHaveURL(/\/manager\/data-explorer$/)
+  await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/data-explorer$/)
+  await page.locator('.sidebar').getByText('数据检索', { exact: true }).click()
   await expect(page).toHaveURL(/\/manager\/data-retrieval$/)
   await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/data-retrieval$/)
   expect(businessRequests).toEqual([])

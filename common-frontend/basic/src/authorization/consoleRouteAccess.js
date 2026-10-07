@@ -9,7 +9,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/transfer/tasks': [tenant('transfer.task.read')],
   '/transfer/tasks/create': [tenant('transfer.task.create', 'meta.catalog.read')],
   '/meta/scan': [tenant('meta.catalog.read', 'meta.scan_task.read', 'system.engine_catalog.read')],
-  '/manager/data-explorer': [tenant('manager.content.read', 'manager.data_item.read')],
+  '/manager/data-explorer': [tenant('manager.data_item.read')],
   '/manager/data-retrieval': [tenant('manager.search.execute', 'manager.data_item.read')],
   '/manager/tasks/quick-view': [tenant('manager.derived_artifact.read', 'manager.data_item.read')],
   '/manager/tasks/spatial': [tenant('manager.derived_artifact.read', 'manager.data_item.read')],

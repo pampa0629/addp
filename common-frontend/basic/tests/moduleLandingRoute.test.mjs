@@ -2,6 +2,27 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { allowsConsoleRoute, resolveModuleLandingRoute } from '../src/authorization/consoleRouteAccess.js'
 
+test('Manager artifact consumer reaches Data Explorer with its eight permissions', () => {
+  const permissions = [
+    'manager.data_item.read', 'manager.derived_artifact.create',
+    'manager.derived_artifact.delete', 'manager.derived_artifact.read',
+    'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
+    'monitor.execution.read',
+  ]
+  assert.equal(permissions.length, 8)
+  for (const route of ['/manager/data-explorer', '/manager/data-explorer?locator=source']) {
+    assert.equal(allowsConsoleRoute(route, 'tenant', ['manager.data_item.read']), true)
+    assert.equal(allowsConsoleRoute(route, 'tenant', permissions), true)
+    assert.equal(allowsConsoleRoute(route, 'platform', permissions), false)
+    assert.equal(allowsConsoleRoute(route, 'tenant', permissions.filter(key => key !== 'manager.data_item.read')), false)
+    assert.equal(allowsConsoleRoute(route, 'tenant', ['manager.content.read']), false)
+    assert.equal(allowsConsoleRoute(route, 'tenant', ['manager.derived_artifact.read']), false)
+    assert.equal(allowsConsoleRoute(route, 'tenant', []), false)
+  }
+  assert.equal(resolveModuleLandingRoute('/manager', ['/data-explorer', '/tasks/quick-view'], 'tenant', permissions), '/data-explorer')
+  assert.equal(resolveModuleLandingRoute('/manager', ['/data-explorer', '/tasks/quick-view'], 'tenant', ['manager.data_item.read']), '/data-explorer')
+})
+
 test('personal center has one self-service route in tenant and platform contexts', () => {
   for (const context of ['tenant', 'platform']) {
     assert.equal(allowsConsoleRoute('/system/account', context, []), true)

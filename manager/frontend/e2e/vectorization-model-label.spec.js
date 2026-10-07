@@ -68,7 +68,7 @@ test('read-only vectorization page displays a model label without model manageme
   expect(pageErrors).toEqual([])
 })
 
-test('a retrieval-only account opens its accessible Manager landing page', async ({ page }) => {
+test('an item reader with search access opens Data Explorer and can visit retrieval', async ({ page }) => {
   await page.route('**/api/v1/**', route => {
     const path = new URL(route.request().url()).pathname
     if (path === '/api/v1/system/refresh') return json(route, { access_token: 'manager-retrieval-token', expires_in: 3600 })
@@ -85,6 +85,10 @@ test('a retrieval-only account opens its accessible Manager landing page', async
   })
 
   await page.goto('/')
+  await expect(page).toHaveURL(/\/data-explorer$/)
+  await expect(page.locator('.el-result')).toHaveCount(0)
+
+  await page.goto('/data-retrieval')
   await expect(page).toHaveURL(/\/data-retrieval$/)
   await expect(page.locator('.el-result')).toHaveCount(0)
 })
