@@ -18,6 +18,12 @@ def identity(role="platform.system_administrator"):
 
 
 class MetricsProtocolTest(unittest.TestCase):
+    def test_failure_reason_redacts_credentials_and_opaque_tokens(self):
+        with patch.dict(ONLINE.os.environ, ADDP_ONLINE_METRICS_ADMIN_PASSWORD="private-password"):
+            message = ONLINE.failure_reason(ONLINE.SuiteError("private-password addp_at_exampleopaquevalue 123456"))
+            self.assertEqual(message, "[redacted] [redacted] [redacted]")
+            self.assertNotIn("private-password", ONLINE.failure_reason(OSError("private-password")))
+
     def test_native_oauth_token_type_is_case_insensitive(self):
         for token_type in ("bearer", "Bearer", "BEARER"):
             opener = unittest.mock.Mock()

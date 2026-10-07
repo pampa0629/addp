@@ -915,3 +915,7 @@ Monitor 唯一拥有节点资源页面，Console 通过 `/monitor/node-resources
 实施前确认门禁：`make test-node-metrics-online-runner`、`make test-online-runner`、`make test-frontend-ci-registration` 与 `make test-changed`。浏览器用例仅由已有 Online Playwright 配置执行，不加入确定性 T3；Hosted 标准入口在应用启动后准备 Chromium，安装失败也须完成隔离部署清理。既有 Online T4 workflow 和 runner 注册复用；报告缺失、版本不符、缺少截图或浏览器失败均不得计为通过。密码、MFA、Token 不进入报告、截图或命令参数，登录阶段关闭自动失败截图与 trace，退出仍以独立生命周期报告核验凭据销毁和零残留。真实运行结果将在本节记录。
 
 2026-10-07 本地前置门禁：`make test-node-metrics-online-runner` 通过（19 项协议/证据/生命周期测试及 System Metrics fixture 单元测试），`make test-online-runner` 完整通过，`make test-console-frontend` 通过（148 项单元、118 项确定性浏览器回归及构建），`make test-frontend-ci-registration` 通过（17 项回归、21 个前端登记）。Online Playwright 配置成功发现唯一的新用例；加载检查曾发现 CommonJS 转译不接受 `import.meta`，已按既有 runner 的 Console 工作目录确定仓库位置并复验。`make test-changed` 退出 2，其他任务的 T2 连接参数缺失导致统一预检退出，后续未执行，不计为通过。上述结果均不替代真实 Hosted 页面 T4。
+
+首次真实执行 Run 37559331735（提交 `de32f1b02`）未通过，业务报告停在 `platform-resource-query-and-budget`，当次浏览器阶段尚未进入。真实日志显示首个八项即时查询返回 HTTP 200，失败位于响应断言；旧报告未保存具体断言与响应，因此先增加脱敏失败原因、原生采样时间及资源 DTO 证据，再复现，不将启动采样时序假设写成已确认根因。该次退出 `cleanup=passed`、`infra_cleanup=zero_residuals`，失败不计为页面 T4。
+
+同一提交的 Release/T2 Run 37559327731 在既有 System `TestEngineAccessDelegationAgainstPostgres` 失败：旧断言统计全部角色的委派 Permission 绑定为零，与已发布的 000194 专用租户角色模板冲突（实际计数 3）。工作区已有另一任务对该断言的未提交修订，本批不混入提交，当前全仓 T2 不计为通过；Console 与 Monitor 前端远程 CI 已通过。

@@ -8,6 +8,7 @@ import hmac
 import json
 import math
 import os
+import re
 import signal
 import ssl
 import struct
@@ -41,6 +42,16 @@ REQUIRED = {"platform.host_node.create", "platform.host_node.read", "platform.ho
 def require(ok, message):
     if not ok:
         raise SuiteError(message)
+
+
+def failure_reason(error):
+    if not isinstance(error, SuiteError):
+        return "metrics acceptance failed outside a protocol assertion"
+    message = str(error)
+    for key, value in os.environ.items():
+        if any(part in key for part in ("PASSWORD", "TOKEN", "SECRET", "TOTP")) and value:
+            message = message.replace(value, "[redacted]")
+    return re.sub(r"addp_[a-z]+_[A-Za-z0-9_-]+|\b\d{6}\b", "[redacted]", message)[:2000]
 
 
 def totp(secret, at):
@@ -413,7 +424,9 @@ def run(base, directory, report):
     eventually(active, "current saved target version and successful scrape")
     since = time.time()
     report["sampling_observed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since))
-    for metric in ("node_cpu_seconds_total", "node_memory_MemTotal_bytes", "node_load1", "node_disk_reads_completed_total", "node_network_receive_bytes_total", "node_boot_time_seconds"):
+    report["native_sample_times"] = {}
+    native_metrics = ("node_cpu_seconds_total", "node_memory_MemTotal_bytes", "node_load1", "node_disk_reads_completed_total", "node_network_receive_bytes_total", "node_boot_time_seconds")
+    for metric in native_metrics:
         rows = prom.query(metric+expression)
         require(rows and all(math.isfinite(float(row["value"][1])) for row in rows), "missing or invalid resource metric "+metric)
         require(all(row["metric"].get("addp_source") == "node_exporter" and row["metric"].get("addp_monitor_kind") == "host_resources" for row in rows), "resource identity labels mismatch")
@@ -421,6 +434,13 @@ def run(base, directory, report):
     report["stage"] = "platform-resource-query-and-budget"
     for trend in (False, True):
         value = admin.request("GET", resource_path(node, trend), (200,)).payload
+        report["resource_check_mode"] = "trend" if trend else "instant"
+        (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "node-resource-query-check.json").write_text(json.dumps(value))
+        if not trend:
+            for metric in native_metrics:
+                timestamps = prom.query("timestamp("+metric+expression+")")
+                require(timestamps, "missing native sample timestamp")
+                report["native_sample_times"][metric] = sorted({float(row["value"][1]) for row in timestamps})
         assert_resources(value, node, target, trend)
     query_policy = check_query_policy(admin, node)
     report.update(resource_query=True, query_budget_cas_hot_read=True, query_policy_version=query_policy["version"])
@@ -496,7 +516,8 @@ def main():
         require(os.environ.get("ADDP_ONLINE_TEST") == "1", "use make test-online")
         evidence = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "platform-node-metrics.json"
         run(os.environ["GATEWAY_URL"], directory, report)
-    except (OSError, ValueError, KeyError, SuiteError, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError, SuiteError, subprocess.SubprocessError) as error:
+        report["failure_reason"] = failure_reason(error)
         report["result"] = "failed"
         print("Platform node metrics Online acceptance failed; credentials are omitted", file=sys.stderr)
     finally:
