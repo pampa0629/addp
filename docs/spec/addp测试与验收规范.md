@@ -70,7 +70,7 @@ make test-release RELEASE_SUITE=<suite>
 
 T0-T1 必须：
 
-- 不依赖已经启动的 ADDP 服务。
+- 不依赖已经启动的 ADDP 服务。Infra 生命周期单测必须同时隔离容器状态与宿主机监听查询，使用夹具内的端口事实；真实端口探测由专门的端口解析回归覆盖，不能让 mock Docker 与真实 lsof 混合决定启动行为。
 - 不连接开发业务数据库。
 - 可重复执行，失败后不留下外部状态。
 - 需要 Online 条件的测试默认不进入普通语言测试；对应专用门禁显式开启并拒绝意外 Skip。
@@ -382,3 +382,7 @@ Meta PostgreSQL 门禁登记 `TestPreciseNativePostgresScanAgainstPostgres`：�
 ### 平台指标设施独占门禁
 
 `make test-monitor-metrics` 由 Monitor owner 自建 Prometheus 与受控指标源，登记固定镜像 tag/digest、共享部署配置和生命周期输入，随机 Compose project、回环随机宿主端口及私有时序卷。实际验证 mTLS、采样周期与超时、单端点样本越限、断开恢复、SIGKILL 后 WAL 样本重放及退出零残留；临时 CA/私钥仅存在于本轮临时目录。根 `test-integration`、owner T2 自动发现、变更输入选择与 `release-and-t2-gates.yml` 使用同一入口。`test-dev-lifecycle` 验证部署未选择、错误选择、证书缺失和可选启动故障的核心 Infra 隔离。此门禁不替代后续节点绑定、HTTP SD 授权、业务埋点、资源查询及规模验收，不宣称完成 7 天物理保留时间窗验证。
+
+### Manager Raster Mosaic 原生 Runtime 门禁
+
+`make test-raster-mosaic-runtime` 是 Manager-owned Python T1 入口，覆盖已有瓦片渲染单测及真实 GDAL/COG、NumPy、坐标系与瓦片输出。`make test-module MODULE=manager` 自动发现该具名 Runtime 入口；Platform CI 的 Raster Mosaic job 按 Manager 变更选择，使用独立 Python 3.12 环境和匹配原生版本的 GDAL 绑定。共享 GDAL 生命周期修复另由 `make test-dev-lifecycle` 覆盖来源选择、失效绑定重建、环境隔离及停止归属；涉及共享入口时同时运行 `make test-geopython-workflow`。

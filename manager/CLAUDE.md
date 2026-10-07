@@ -155,6 +155,10 @@ manager/
 
 ## 开发与验证
 
+Raster Mosaic Runtime 由 Manager 管理，普通 Manager 启停入口包含该进程。开发环境使用不继承系统包的 Python 3.12 venv 和原生 GDAL；停止后自动重建不合格的 venv，运行期间不得修改环境。GDAL 来源、资源目录和失效绑定重建复用 `scripts/dev/gdal-env.sh`，所需驱动与 NumPy 能力由 Manager 自行检查，不引入 GeoPython 的 MDBTools 配置。
+
+`make test-raster-mosaic-runtime` 覆盖瓦片单测和真实 GDAL/COG 渲染，模块门禁自动发现该入口；测试可通过 `RASTER_MOSAIC_RUNTIME_PYTHON` 指定独立的 Python 环境。
+
 ```bash
 bash scripts/dev/start.sh -manager
 bash scripts/dev/restart.sh -manager

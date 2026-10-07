@@ -1,6 +1,7 @@
 import ast
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -122,6 +123,12 @@ elif a[0]=='compose':
         curl = self.bin / "curl"
         curl.write_text('#!/bin/sh\nexit 0\n')
         curl.chmod(0o755)
+        lsof = self.bin / "lsof"
+        lsof.write_text("#!/bin/sh\n"
+                        "printf '%s\\n' \"$*\" >> "
+                        + shlex.quote(str(self.root / "listener-calls"))
+                        + "\nexit 1\n")
+        lsof.chmod(0o755)
         return dict(MOCK_COMMANDS=str(self.commands), SKIP_POSTGRESQL_INIT="1", SKIP_MINIO_INIT="1", SKIP_MEILISEARCH_INIT="1")
 
     def calls(self):
@@ -145,10 +152,11 @@ elif a[0]=='compose':
                 self.assertFalse(any('up' in a or 'build' in a or 'pull' in a
                                      for a in self.calls()))
 
-    def test_existing_meilisearch_migration_refusal_keeps_healthy_core_available_to_apps(self):
+    def test_dev_reuses_healthy_meilisearch_without_applying_image_changes(self):
         result = self.dev_start_phase(foreign=False,
                                      MOCK_MEILI_IMAGE_ID='sha256:'+'b'*64)
-        self.assertIn('Meilisearch 镜像身份不一致', result.stderr)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('Invalid runtime log secret', result.stderr)
         self.assertIn('BUSINESS_START_REACHED', result.stdout, result.stderr)
         self.assertFalse(any('up' in a or 'build' in a or 'pull' in a
                              or 'stop' in a or 'rm' in a for a in self.calls()))
@@ -173,6 +181,15 @@ elif a[0]=='compose':
         self.assertIn('core services remain running', result.stderr)
         self.assertTrue(any('up' in a and 'postgres' in a for a in self.calls()))
         self.assertFalse(any('up' in a and 'loki' in a for a in self.calls()))
+
+    def test_log_failure_uses_only_fixture_listener_state(self):
+        result = self.run_up(**self.healthy_docker(), MOCK_FAIL_LOG_BUILD="1")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        calls = self.root / "listener-calls"
+        self.assertTrue(calls.is_file(), "Infra fixture must intercept host listener queries")
+        self.assertIn("-iTCP:13100", calls.read_text())
+        self.assertIn("-iTCP:12345", calls.read_text())
+        self.assertNotIn("23100", calls.read_text(), "host listeners must not alter fixture port selection")
 
     def test_log_image_failure_does_not_stop_core(self):
         values = self.healthy_docker()
@@ -284,7 +301,7 @@ elif a[0]=='compose':
         result = self.dev_start_phase(foreign=False)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn('BUSINESS_START_REACHED', result.stdout, result.stderr)
-        self.assertTrue(any('up' in a and 'postgres' in a for a in self.calls()))
+        self.assertFalse(any('up' in a or 'build' in a for a in self.calls()), self.calls())
 
     def test_dev_optional_mapping_failure_reaches_business_start_phase(self):
         result = self.dev_start_phase(foreign=True)

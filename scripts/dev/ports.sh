@@ -65,6 +65,20 @@ addp_dev_saved_port() {
   sed -n "s/^${variable}=//p" "$state" | head -n 1
 }
 
+# 运行进程名称到领域模块的唯一映射，用于局部生命周期范围。
+addp_dev_process_module() {
+  case "$1" in
+    transfer-bounded-worker|transfer-continuous-worker) echo transfer ;;
+    jupyter-api-server) echo jupyter ;;
+    raster-mosaic-runtime) echo manager ;;
+    *-frontend) echo "${1%-frontend}" ;;
+    *-worker) echo "${1%-worker}" ;;
+    copilot-backend|agent-backend) echo "${1%-backend}" ;;
+    *-workflow-engine) echo "${1%-engine}" ;;
+    *) echo "$1" ;;
+  esac
+}
+
 addp_dev_owned_listener() {
   local name="$1" port="$2" pidfile owner listener listeners
   pidfile="${ROOT_DIR}/.dev-pids/${name}.pid"

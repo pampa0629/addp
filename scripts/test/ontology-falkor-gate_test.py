@@ -154,12 +154,12 @@ bash() {
         result = self.run_check(ready=False)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(1, result.stdout.splitlines().count("infra-up"))
-        self.assertNotIn("跳过启动", result.stdout)
+        self.assertNotIn("复用现有容器", result.stdout)
 
     def test_healthy_owner_skips_and_unhealthy_owner_starts_infra(self):
         result = self.run_check()
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assertIn("跳过启动", result.stdout)
+        self.assertIn("复用现有容器", result.stdout)
         self.assertNotIn("infra-up", result.stdout)
         result = self.run_check(ready=False)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)

@@ -34,9 +34,9 @@ def discover_python_modules(repository: Path) -> list[tuple[str, str]]:
     for path in git_files(repository, "*/pyproject.toml", "*/backend/requirements.txt"):
         owner = path.split("/", 1)[0]
         discovered[owner] = (owner, path)
-    # A named engine Make target opts the runtime into the deterministic gate contract.
+    # A named Make target opts an owner runtime into the deterministic gate contract.
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
-    for path in git_files(repository, "engines/*/requirements.txt"):
+    for path in git_files(repository, "*/*/requirements.txt"):
         runtime = Path(path).parent.name
         if make_dependencies(makefile, f"test-{runtime}") is not None:
             discovered[runtime] = (runtime, path)

@@ -143,6 +143,11 @@ SPARK_WORKFLOW_PYTHON ?= engines/spark-workflow/venv/bin/python
 test-spark-workflow: ## 运行 Spark Workflow 元数据、租户身份和存储适配确定性测试
 	@cd engines/spark-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(SPARK_WORKFLOW_PYTHON)) -m unittest discover -s . -p 'test_*.py' -v
 
+RASTER_MOSAIC_RUNTIME_PYTHON ?= manager/raster-mosaic-runtime/venv/bin/python
+.PHONY: test-raster-mosaic-runtime
+test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/COG 验证
+	@ROOT_DIR="$(CURDIR)" RASTER_MOSAIC_RUNTIME_PYTHON="$(abspath $(RASTER_MOSAIC_RUNTIME_PYTHON))" bash -c 'source scripts/dev/gdal-env.sh; addp_gdal_native_environment || exit 1; export ADDP_GDAL_VERSION=$$(gdal-config --version); cd manager/raster-mosaic-runtime; exec "$$RASTER_MOSAIC_RUNTIME_PYTHON" -m unittest -v test_runtime_units test_native_gdal'
+
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
@@ -487,8 +492,10 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
 	@bash -n scripts/dev/spark-workflow.sh
 	@bash -n scripts/dev/geopython-workflow.sh
+	@bash -n scripts/dev/gdal-env.sh
+	@bash -n scripts/dev/raster-mosaic-runtime.sh
 	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh; do bash -n "$$script" || exit 1; done
-	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/model3d-linux-images_test.py
+	@python3 -m unittest scripts/test/gdal-native-lifecycle_test.py scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/model3d-linux-images_test.py
 	@bash scripts/test/infra-port-resolution.sh
 	@bash scripts/test/dev-lifecycle-and-build.sh
 	@cd common && go test ./schema ./repository ./dataprotection/projectionstore
@@ -542,7 +549,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-authorization
 
 .PHONY: test-python-ci-registration
-test-python-ci-registration: ## 校验 Python 模块与已登记引擎 Runtime 的 Make / CI 一致性
+test-python-ci-registration: ## 校验 Python 模块与已登记 owner Runtime 的 Make / CI 一致性
 	@python3 scripts/ci/check-python-ci-registration_test.py
 	@python3 scripts/ci/check-python-ci-registration.py --repository "$(CURDIR)"
 
@@ -732,7 +739,7 @@ test-swagger: ## 校验 Swagger 检查脚本与全模块路由覆盖
 	@bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
-	test-document-workflow test-geopython-workflow test-model3d-workflow test-spark-workflow \
+	test-document-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-spark-workflow \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \

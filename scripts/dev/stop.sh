@@ -10,7 +10,49 @@ source "${SCRIPT_DIR}/lifecycle-lock.sh"
 source "${SCRIPT_DIR}/ports.sh"
 addp_acquire_lifecycle_lock stop "$@"
 
-echo "🛑 停止 ADDP 开发环境"
+STOP_ALL=true
+STOP_MODULES=()
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      echo "用法: $0 [-all | -<模块名> ...]；无参数停止全部，指定模块只停止所属进程"
+      exit 0 ;;
+    -all) ;;
+    -*)
+      module="${arg#-}"
+      found=false
+      while read -r name variable preferred; do
+        if [ "$(addp_dev_process_module "$name")" = "$module" ]; then
+          found=true
+          break
+        fi
+      done < <(addp_dev_port_specs)
+      if [ "$found" != true ]; then
+        echo "❌ 未知模块: $arg" >&2
+        exit 1
+      fi
+      STOP_ALL=false
+      [[ " ${STOP_MODULES[*]} " == *" $module "* ]] || STOP_MODULES+=("$module") ;;
+    *) echo "❌ 未知参数: $arg" >&2; exit 1 ;;
+  esac
+done
+if [ "$STOP_ALL" = false ] && [[ " $* " == *" -all "* ]]; then
+  echo "❌ -all 不能与模块参数同时使用" >&2
+  exit 1
+fi
+
+stop_process_selected() {
+  [ "$STOP_ALL" = true ] && return 0
+  local module
+  module=$(addp_dev_process_module "$1")
+  [[ " ${STOP_MODULES[*]} " == *" $module "* ]]
+}
+
+if [ "$STOP_ALL" = true ]; then
+  echo "🛑 停止 ADDP 开发环境"
+else
+  echo "🛑 局部停止 ADDP 模块: ${STOP_MODULES[*]}"
+fi
 
 # 卸载由 launchd KeepAlive 托管的当前工作区服务，避免进程被杀死后立即重启。
 stop_workspace_launchd_jobs() {
@@ -39,6 +81,20 @@ stop_workspace_launchd_jobs() {
       *"$ROOT_DIR/"*) ;;
       *) continue ;;
     esac
+
+    if [ "$STOP_ALL" = false ]; then
+      local selected=false process_name module
+      # launchd 的 ProgramArguments 保留正式产物路径；不能按作业 label 猜模块。
+      for process_name in $(printf '%s\n' "$job_info" | sed -n 's|.*\.dev-bins/addp-\([a-z0-9-]*\).*|\1|p'); do
+        stop_process_selected "$process_name" && selected=true
+      done
+      for module in "${STOP_MODULES[@]}"; do
+        case "$job_info" in
+          *"$ROOT_DIR/$module/frontend"$'\n'*|*"$ROOT_DIR/$module/frontend "*|*"$ROOT_DIR/$module/frontend\""*|*"$ROOT_DIR/$module/frontend") selected=true ;;
+        esac
+      done
+      [ "$selected" = true ] || continue
+    fi
 
     is_system=false
     case "$job_info" in
@@ -78,7 +134,7 @@ addp_dev_pid_owned_by_workspace() {
 
 # PID 文件和残留监听者合并后，使用相同的分阶段停止流程。
 add_workspace_stop_pid() {
-  local pid="$1" known proc_cmd
+  local pid="$1" known proc_cmd pidfile owner
   [[ "$pid" =~ ^[0-9]+$ ]] || return 0
   for known in "${all_pids[@]}" "${system_pids[@]}"; do
     [ "$pid" != "$known" ] || return 0
@@ -88,6 +144,19 @@ add_workspace_stop_pid() {
     echo -e "${YELLOW}  ⚠️  跳过其他工作区进程 (PID: $pid)${NC}"
     return 0
   fi
+  if [ "$STOP_ALL" = false ]; then
+    # PID 可能已被复用，不能因为所选模块的陈旧 PID 文件而停止其他受管模块。
+    for pidfile in .dev-pids/*.pid; do
+      [ -f "$pidfile" ] || continue
+      stop_process_selected "$(basename "$pidfile" .pid)" && continue
+      owner=$(cat "$pidfile" 2>/dev/null)
+      [[ "$owner" =~ ^[0-9]+$ ]] || continue
+      if [ "$pid" = "$owner" ] || addp_process_is_descendant_of "$pid" "$owner"; then
+        echo -e "${YELLOW}  ⚠️  跳过未选择模块的进程 (PID: $pid)${NC}"
+        return 0
+      fi
+    done
+  fi
   case "$proc_cmd" in
     "$ROOT_DIR/.dev-bins/addp-system"|"$ROOT_DIR/.dev-bins/addp-system "*|.dev-bins/addp-system|.dev-bins/addp-system\ *|./.dev-bins/addp-system|./.dev-bins/addp-system\ *) system_pids+=("$pid") ;;
     *) all_pids+=("$pid") ;;
@@ -96,15 +165,46 @@ add_workspace_stop_pid() {
 }
 
 collect_workspace_listeners() {
-  local ports='' name variable preferred saved listener_pids pid
+  local ports='' name variable preferred saved listener_pids pid raw status=0
   while read -r name variable preferred; do
+    stop_process_selected "$name" || continue
     saved=$(addp_dev_saved_port "$variable")
     ports="${ports:+${ports},}${saved:-${!variable:-$preferred}}"
   done < <(addp_dev_port_specs)
-  listener_pids=$(lsof -nP -a -iTCP:"$ports" -sTCP:LISTEN -Fp 2>/dev/null |
-    sed -n 's/^p\([0-9][0-9]*\)$/\1/p' | sort -u)
+  [ -n "$ports" ] || return 0
+  raw=$(lsof -nP -a -iTCP:"$ports" -sTCP:LISTEN -Fp 2>&1) || status=$?
+  if [ "$status" -ne 0 ] && { [ "$status" -ne 1 ] || [ -n "$raw" ]; }; then
+    echo "❌ 无法查询所选模块的监听端口: $raw" >&2
+    return 1
+  fi
+  listener_pids=$(printf '%s\n' "$raw" | sed -n 's/^p\([0-9][0-9]*\)$/\1/p' | sort -u)
   for pid in $listener_pids; do
     add_workspace_stop_pid "$pid"
+  done
+}
+
+collect_selected_descendants() {
+  [ "$STOP_ALL" = false ] || return 0
+  local snapshot parent pid ppid pidfile index=0
+  snapshot=$(ps -axo pid=,ppid=) || return 1
+  # 前端 PID 是 npm 启动器；其监听进程和其他子进程均属于所选生命周期。
+  local parents=()
+  for pidfile in .dev-pids/*-frontend.pid; do
+    [ -f "$pidfile" ] || continue
+    stop_process_selected "$(basename "$pidfile" .pid)" || continue
+    parent=$(cat "$pidfile" 2>/dev/null)
+    [[ " ${all_pids[*]} " == *" $parent "* ]] || continue
+    parents+=("$parent")
+  done
+  while [ "$index" -lt "${#parents[@]}" ]; do
+    parent="${parents[$index]}"
+    index=$((index + 1))
+    while read -r pid ppid; do
+      [ "$ppid" = "$parent" ] || continue
+      [[ " ${parents[*]} " != *" $pid "* ]] || continue
+      parents+=("$pid")
+      add_workspace_stop_pid "$pid"
+    done <<< "$snapshot"
   done
 }
 
@@ -144,12 +244,14 @@ stop_services_concurrent() {
   if [ -d .dev-pids ]; then
     for pidfile in .dev-pids/*.pid; do
       [ -f "$pidfile" ] || continue
+      stop_process_selected "$(basename "$pidfile" .pid)" || continue
       pid=$(cat "$pidfile" 2>/dev/null)
       add_workspace_stop_pid "$pid"
     done
   fi
   echo -e "${YELLOW}检查工作区残留监听者...${NC}"
-  collect_workspace_listeners
+  collect_workspace_listeners || return 1
+  collect_selected_descendants || return 1
 
   # 保留 System 的 HTTP 和鉴权能力，供其他实例完成注销。
   stop_workspace_launchd_jobs modules || cleanup_failed=true
@@ -157,6 +259,7 @@ stop_services_concurrent() {
 
   local name container labels
   for name in pointcloud-workflow document-workflow supermap-workflow; do
+    stop_process_selected "$name" || continue
     container="${name}-engine"
     labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || continue
     if [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ]; then
@@ -190,20 +293,28 @@ stop_services_concurrent || STOP_STATUS=$?
 echo ""
 echo -e "${YELLOW}清理前端缓存...${NC}"
 
-for frontend_dir in "$ROOT_DIR/console/frontend" "$ROOT_DIR/system/frontend" "$ROOT_DIR/manager/frontend" "$ROOT_DIR/meta/frontend" "$ROOT_DIR/transfer/frontend" "$ROOT_DIR/orchestrator/frontend" "$ROOT_DIR/develop/frontend"; do
+while read -r name variable preferred; do
+  case "$name" in *-frontend) ;; *) continue ;; esac
+  stop_process_selected "$name" || continue
+  frontend_dir="$ROOT_DIR/$(addp_dev_process_module "$name")/frontend"
   if [ -d "$frontend_dir" ]; then
     rm -rf "$frontend_dir/node_modules/.vite" "$frontend_dir/.vite" 2>/dev/null || true
   fi
-done
+done < <(addp_dev_port_specs)
 echo "✓ 前端缓存已清理"
 
 # 保留开发二进制文件（加速重启）
 # 如需清理二进制，请手动删除: rm -rf .dev-bins
 
 # 清理 PID 文件
-if [ -d ".dev-pids" ]; then
-  rm -rf .dev-pids
-  echo "✓ PID 文件已清理"
+if [ "$STOP_STATUS" -eq 0 ] && [ -d ".dev-pids" ]; then
+  for pidfile in .dev-pids/*.pid; do
+    [ -f "$pidfile" ] || continue
+    stop_process_selected "$(basename "$pidfile" .pid)" || continue
+    rm -f "$pidfile"
+  done
+  rmdir .dev-pids 2>/dev/null || true
+  echo "✓ 所选 PID 文件已清理"
 fi
 
 echo ""
@@ -215,5 +326,5 @@ if [ "$STOP_STATUS" -ne 0 ]; then
 fi
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}✓ 所有服务已停止并清理完成${NC}"
+echo -e "${GREEN}✓ 所选服务已停止并清理完成${NC}"
 echo -e "${GREEN}========================================${NC}"

@@ -38,7 +38,7 @@ bash scripts/dev/keepalive.sh restart -orchestrator
 
 常用示例：
 ```bash
-# 重启 Go 模块并保持服务可用；会继承 restart.sh 的全局重启语义
+# 局部重启 Go 模块并保持服务可用
 bash scripts/dev/keepalive.sh restart -orchestrator
 
 # 局部重启扩展服务并保持服务可用；不会停止整套 ADDP 开发环境
@@ -57,7 +57,7 @@ bash scripts/dev/keepalive.sh start -system
 
 - 普通本地终端继续优先使用 `bash scripts/dev/start.sh` 或 `bash scripts/dev/restart.sh`。
 - Codex 等命令结束后会回收后台进程的托管环境，使用 `bash scripts/dev/keepalive.sh ...`。
-- `keepalive.sh restart -<Go模块名>` 会继承 `restart.sh` 的全局停止语义：先停止整套 ADDP 开发环境，再启动指定模块及其依赖。它适合“只需要该模块继续可用”的场景，不适合在用户外部终端已经启动全套服务时由 Codex 接管局部重启。
+- `keepalive.sh restart -<Go模块名>` 继承 `restart.sh` 的局部重启语义，只重启所选模块；但 `keepalive.sh` 退出时仍执行全局 `stop.sh`，并在托管期间持有整个工作区的生命周期锁，因此不适合接管用户外部终端已经运行的全套环境。已有环境需要局部重启时，由用户在原终端执行 `./scripts/dev/restart.sh -<模块名>`。
 - `keepalive.sh restart -geopython-workflow|-math-workflow|-spark-workflow|-jupyter|-copilot|-agent` 会继承扩展服务局部重启语义，只重启对应服务。
 - 如果需要保持全套服务可用，在 Codex 中使用 `bash scripts/dev/keepalive.sh restart -all` 并让该命令持续前台运行；如果只想做一次性验证，运行测试和构建命令即可，不要为了局部 Go 后端改动在 Codex 中执行 `restart -<Go模块名>`。
 - 不要同时在外部终端和 Codex 中并发执行 `restart.sh` / `stop.sh`，因为脚本会按 PID、进程名和端口清理 ADDP 开发服务，两个会话可能互相清理。
@@ -1114,6 +1114,14 @@ make test-go GOFLAGS='-race -p=4 -count=5 -run=^(TestHealthChecker|TestModuleRou
 ```
 
 只修改这份排查文档时，运行 `make test-changed`，由标准入口确定所需检查。
+
+---
+
+## Infra 生命周期单测受真实宿主机监听影响
+
+`infra-runtime-log-lifecycle_test.py` 使用临时仓库和模拟 Docker。若夹具仍调用真实 `lsof`，正在运行的 Loki、Alloy 等服务会改变模拟启动的端口选择，测试行为便取决于宿主机状态。应从命令跟踪确认端口探测来源，不能仅凭重跑通过判断超时已解决，也不能直接延长超时。
+
+夹具必须同时拦截 Docker、HTTP 健康探测与监听查询，并记录所查端口；空闲或占用均由夹具控制。真实宿主机端口解析由 `infra-port-resolution.sh` 专门覆盖。标准验证入口为 `make test-dev-lifecycle`，由 `make test-platform` 和 Platform CI 聚合执行，不启动或停止用户的开发服务。
 
 ---
 

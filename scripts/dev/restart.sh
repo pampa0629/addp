@@ -44,7 +44,8 @@ show_usage() {
   echo "  - 所有 Go 服务统一校验源码、共享依赖、工具链和编译参数"
   echo "  - 构建输入未变化时复用产物，变化或产物缺失时重新编译"
   echo "  - 无参数与 -all 均重新生成全部 Swagger，再校验构建指纹"
-  echo "  - 只指定 Python/扩展服务参数时,仅重启对应服务,不停止整套环境"
+  echo "  - 指定模块时只重启所选模块，保留其他模块和运行中的公共依赖"
+  echo "  - 支持多个模块参数；-all 不能与模块参数混用"
   echo ""
   echo "注意:"
   echo "  - GeoPython Workflow、Math Workflow Engine、Spark 工作流 Engine、PointCloud Workflow Engine、SuperMap Workflow Engine、Jupyter Engine、Copilot 和 Agent 支持局部重启"
@@ -63,7 +64,6 @@ echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ORIGINAL_ARGS=("$@")
 
 cd "${ROOT_DIR}"
 source "${SCRIPT_DIR}/lifecycle-lock.sh"
@@ -144,7 +144,7 @@ for arg in "$@"; do
       ;;
     -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-security|-asset|-ontology|-catalog|-workbench|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-document-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
       module="${arg#-}"  # 移除前导的 -
-      RESTART_MODULES+=("$module")
+      [[ " ${RESTART_MODULES[*]} " == *" $module "* ]] || RESTART_MODULES+=("$module")
       ;;
     *)
       echo "❌ 未知参数: $arg"
@@ -152,6 +152,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [ "$RESTART_ALL" = true ] && [ ${#RESTART_MODULES[@]} -gt 0 ]; then
+  echo "❌ -all 不能与模块参数同时使用" >&2
+  exit 1
+fi
 
 is_python_service_module() {
     case "$1" in
@@ -677,21 +682,22 @@ echo "📦 构建计划: 同步 Swagger，按完整构建指纹复用或编译�
 echo ""
 
 # Validate native Spark prerequisites before stopping the workspace.
-if [ "$RESTART_ALL" = true ] || [ ${#ORIGINAL_ARGS[@]} -ne 1 ]; then
+if [ "$RESTART_ALL" = true ]; then
     source "${SCRIPT_DIR}/spark-workflow.sh"
     (addp_prepare_spark_workflow) || exit 1
     source "${SCRIPT_DIR}/geopython-workflow.sh"
     (addp_prepare_geopython_workflow) || exit 1
 fi
 
-# 1. 统一停止工作区服务，保留 System 供 Go、Python 和 Runtime 完成注销。
-if ! "${SCRIPT_DIR}/stop.sh"; then
-  echo ""
-  echo "❌ 停止现有服务失败，已中断重启"
-  exit 1
+# 全量停止保留原有注销顺序；局部停止在 Swagger 预检成功后执行。
+STOP_ARGS=()
+if [ "$RESTART_ALL" = true ]; then
+  "${SCRIPT_DIR}/stop.sh" || exit 1
+else
+  for module in "${RESTART_MODULES[@]}"; do
+    STOP_ARGS+=("-$module")
+  done
 fi
-echo ""
-echo "✅ 已停止现有服务"
 
 # 2. Swagger 是 Go 构建输入，先生成，再由 start.sh 统一校验产物指纹。
 if [ "$RESTART_ALL" = true ]; then
@@ -711,13 +717,19 @@ elif [ ${#RESTART_MODULES[@]} -gt 0 ]; then
     run_swagger_coverage_check "${SWAGGER_TARGETS[@]}"
   fi
 fi
+if [ "$RESTART_ALL" = false ]; then
+  if ! "${SCRIPT_DIR}/stop.sh" "${STOP_ARGS[@]}"; then
+    echo "❌ 停止所选模块失败，已中断重启" >&2
+    exit 1
+  fi
+fi
 echo "✅ 保留已有产物，启动时校验构建指纹并按需编译"
 echo ""
 
 # 4. 启动服务
 # restart 时跳过 go mod tidy（模块依赖在重启间不会改变，避免网络调用拖慢速度）
 START_ARGS=()
-if [ "$RESTART_ALL" = false ] && [ ${#ORIGINAL_ARGS[@]} -eq 1 ]; then
-  START_ARGS=("${ORIGINAL_ARGS[0]}")
+if [ "$RESTART_ALL" = false ]; then
+  START_ARGS=("${STOP_ARGS[@]}")
 fi
 exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" "${START_ARGS[@]}"

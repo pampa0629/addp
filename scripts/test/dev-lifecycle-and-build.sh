@@ -343,6 +343,237 @@ test_all_go_health_routes_use_module_lifecycle() {
   [ "$found" -eq 1 ] || fail "no Go health routes found"
 }
 
+test_start_selects_module_dependency_union() {
+  python3 - "$ROOT_DIR" <<'PY'
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+source = (Path(sys.argv[1]) / 'scripts/dev/start.sh').read_text()
+selection = source[source.index('# 解析命令行参数'):source.index('# 显示启动计划')]
+script = 'show_usage() { exit 1; }\n' + selection + '''
+for flag in START_SYSTEM_BACKEND START_META_BACKEND START_META_WORKER START_GATEWAY START_CONSOLE START_ASSET_BACKEND START_ASSET_FRONTEND START_QUALITY_BACKEND START_QUALITY_WORKER START_STANDARD_BACKEND START_CATALOG_BACKEND; do
+    echo "$flag=${!flag}"
+done
+'''
+env = dict(os.environ, ADDP_ONLINE_HOST='0')
+for args in (['-asset'], ['-asset', '-quality'], ['-quality', '-asset'], ['-asset', '-meta'], ['-meta', '-asset'], ['-catalog', '-asset'], ['-asset', '-catalog'], ['-asset', '-asset'], ['-catalog']):
+    result = subprocess.run(['bash', '-c', script, '_', *args], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    flags = dict(line.split('=', 1) for line in result.stdout.splitlines())
+    expected = {'START_SYSTEM_BACKEND', 'START_GATEWAY', 'START_CONSOLE'}
+    if '-asset' in args: expected.update(('START_ASSET_BACKEND', 'START_ASSET_FRONTEND'))
+    if '-catalog' in args: expected.add('START_CATALOG_BACKEND')
+    if '-quality' in args: expected.update(('START_QUALITY_BACKEND', 'START_QUALITY_WORKER', 'START_STANDARD_BACKEND'))
+    if any(arg not in ('-catalog', '-asset') for arg in args): expected.update(('START_META_BACKEND', 'START_META_WORKER'))
+    assert {flag for flag, value in flags.items() if value == 'true'} == expected, (args, flags)
+for args in (['-all', '-asset'], ['-asset', '-all'], ['-bogus']):
+    result = subprocess.run(['bash', '-c', script, '_', *args], env=env, capture_output=True, text=True)
+    assert result.returncode != 0, (args, result.stdout)
+print('PASS: start supports module dependency union, order-independent Meta selection, duplicates and invalid argument rejection')
+PY
+}
+
+test_scoped_restart_preserves_other_services() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+
+repository, temporary = map(Path, sys.argv[1:])
+root = (temporary / 'scoped-restart').resolve()
+dev = root / 'scripts/dev'
+dev.mkdir(parents=True)
+for name in ('restart.sh', 'stop.sh', 'ports.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh'):
+    shutil.copy2(repository / 'scripts/dev' / name, dev / name)
+(root / 'scripts/utils').mkdir()
+(root / 'scripts/utils/colors.sh').write_text('YELLOW= RED= GREEN= NC=\n')
+(root / 'scripts/infra').mkdir()
+(root / 'scripts/infra/ports.sh').write_text('addp_infra_ready() { return 0; }\naddp_infra_read_actual_ports() { :; }\n')
+(root / '.dev-pids').mkdir()
+(root / '.dev-state').mkdir()
+(root / 'scripts/swagger').mkdir()
+for name in ('gen-swagger.sh', 'check-route-coverage.sh'):
+    path = root / 'scripts/swagger' / name
+    path.write_text('#!/bin/bash\n[ "${FAIL_SWAGGER:-0}" = 0 ]\n')
+    path.chmod(0o755)
+# Real HTTP listeners and a frontend launcher with a child; all belong to this disposable workspace.
+server = root / 'server.py'
+server.write_text('''
+import http.server, os, signal, subprocess, sys, time
+from pathlib import Path
+receiver = None
+if sys.argv[1] == 'asset':
+    receiver = subprocess.Popen([sys.executable, '-c', "import signal, sys; from pathlib import Path; signal.signal(signal.SIGTERM, lambda *args: (Path('receiver-signalled').touch(), sys.exit(3))); Path('drained-asset').write_text(sys.stdin.read())"], stdin=subprocess.PIPE)
+    Path('log-receiver.pid').write_text(str(receiver.pid))
+def shutdown(*args):
+    if receiver is not None:
+        time.sleep(.1)
+        receiver.stdin.write(b'final deregistration log')
+        receiver.stdin.close()
+        receiver.wait(timeout=2)
+    Path('stopped-' + sys.argv[1]).write_text(str(os.getpid()))
+    sys.exit(0)
+signal.signal(signal.SIGTERM, shutdown)
+http.server.HTTPServer(('127.0.0.1', int(sys.argv[2])), http.server.BaseHTTPRequestHandler).serve_forever()
+''')
+launcher = root / 'launcher.py'
+launcher.write_text('''
+import subprocess, sys, time
+from pathlib import Path
+child = subprocess.Popen([sys.executable, sys.argv[1], sys.argv[2], sys.argv[3]])
+Path('frontend-child.pid').write_text(str(child.pid))
+while True: time.sleep(1)
+''')
+names = ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker')
+ports = {}
+for name in names:
+    if name.endswith('worker'):
+        continue
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        ports[name] = sock.getsockname()[1]
+config = root / 'ports.json'
+config.write_text(json.dumps(ports))
+variables = {'system': 'SYSTEM_BACKEND_PORT', 'manager': 'MANAGER_BACKEND_PORT', 'asset': 'ASSET_BACKEND_PORT',
+             'asset-frontend': 'ASSET_FE_PORT', 'quality': 'QUALITY_BACKEND_PORT', 'meta': 'META_BACKEND_PORT'}
+(root / '.dev-state/ports.env').write_text(''.join(f'{variables[name]}={port}\n' for name, port in ports.items()))
+start = root / 'start.py'
+start.write_text('''
+import json, os, subprocess, sys
+from pathlib import Path
+root = Path(__file__).parent
+ports = json.loads((root / 'ports.json').read_text())
+selected = [arg[1:] for arg in sys.argv[1:]]
+for name in ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality-worker', 'meta', 'meta-worker'):
+    module = name.split('-')[0]
+    if module not in selected: continue
+    pidfile = root / '.dev-pids' / (name + '.pid')
+    if pidfile.exists():
+        os.kill(int(pidfile.read_text()), 0)
+        continue
+    command = [sys.executable, str(root / 'server.py'), name, str(ports[name])] if name in ports else [sys.executable, '-c', 'import time; time.sleep(120)']
+    if name == 'asset-frontend':
+        command = [sys.executable, str(root / 'launcher.py'), str(root / 'server.py'), name, str(ports[name])]
+    proc = subprocess.Popen(command, cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    pidfile.write_text(str(proc.pid))
+''')
+(dev / 'start.sh').write_text('''#!/bin/bash
+set -e
+ROOT_DIR="$FIXTURE_ROOT"
+source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
+addp_acquire_lifecycle_lock start "$@"
+[ "${FAIL_START:-0}" = 0 ] || exit 9
+python3 "$FIXTURE_ROOT/start.py" "$@"
+''')
+(dev / 'start.sh').chmod(0o755)
+tools = root / 'tools'
+tools.mkdir()
+# Never touch host launchd or Docker resources from a test fixture.
+for name in ('launchctl', 'docker'):
+    path = tools / name
+    path.write_text('#!/bin/bash\nexit 1\n')
+    path.chmod(0o755)
+env = {k: v for k, v in os.environ.items() if not k.startswith('ADDP_LIFECYCLE_')}
+env.update(FIXTURE_ROOT=str(root), SERVICE_HOST='localhost', MEILISEARCH_PORT='17700', PATH=str(tools) + os.pathsep + env['PATH'])
+pids = set()
+monitor_stop = threading.Event()
+unavailable = []
+def monitor():
+    while not monitor_stop.is_set():
+        for name in ('system', 'manager'):
+            try: urllib.request.urlopen(f'http://127.0.0.1:{ports[name]}', timeout=.5)
+            except urllib.error.HTTPError: pass
+            except OSError as error: unavailable.append((name, str(error)))
+        monitor_stop.wait(.02)
+def remember():
+    for path in list((root / '.dev-pids').glob('*.pid')) + [root / 'frontend-child.pid', root / 'log-receiver.pid']:
+        if path.exists(): pids.add(int(path.read_text()))
+def ready():
+    for name, port in ports.items():
+        for _ in range(150):
+            try:
+                urllib.request.urlopen(f'http://127.0.0.1:{port}', timeout=.2)
+            except urllib.error.HTTPError:
+                break
+            except OSError:
+                time.sleep(.02)
+            else:
+                break
+        else:
+            raise AssertionError(f'{name} unavailable')
+def snapshot():
+    return {p.name: p.read_text() for p in (root / '.dev-pids').glob('*.pid')}
+try:
+    subprocess.run(['bash', str(dev / 'start.sh'), '-system', '-manager', '-asset', '-quality', '-meta'], env=env, check=True)
+    ready()
+    remember()
+    (root / 'manager/frontend/node_modules/.vite').mkdir(parents=True)
+    marker = root / 'manager/frontend/node_modules/.vite/keep'
+    marker.write_text('keep')
+    before = snapshot()
+    watcher = threading.Thread(target=monitor)
+    watcher.start()
+    # Swagger failure and invalid parameters must leave ALL existing processes in place.
+    for args, extra in ((['-asset'], {'FAIL_SWAGGER': '1'}), (['-asset', '-all'], {}), (['-bogus'], {})):
+        result = subprocess.run(['bash', str(dev / 'restart.sh'), *args], env=dict(env, **extra), capture_output=True, text=True)
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert snapshot() == before, 'preflight failure stopped existing services'
+        ready()
+    for args, selected in ((['-asset', '-asset'], {'asset', 'asset-frontend'}),
+                           (['-quality', '-meta'], {'quality', 'quality-worker', 'meta', 'meta-worker'})):
+        before = snapshot()
+        if 'asset' in selected:
+            # A stale selected PID referencing another live module must never kill that module.
+            (root / '.dev-pids/asset.pid').write_text(before['manager.pid'])
+        old_child = int((root / 'frontend-child.pid').read_text())
+        result = subprocess.run(['bash', str(dev / 'restart.sh'), *args], env=env, capture_output=True, text=True, timeout=30)
+        remember()
+        assert result.returncode == 0, result.stdout + result.stderr
+        after = snapshot()
+        for name in names:
+            if name in selected:
+                assert before[name + '.pid'] != after[name + '.pid'], f'{name} was not restarted'
+            else:
+                assert before[name + '.pid'] == after[name + '.pid'], f'{name} PID changed'
+                os.kill(int(after[name + '.pid']), 0)
+        if 'asset' in selected:
+            assert (root / 'stopped-asset-frontend').read_text() == str(old_child), 'frontend listener child was not terminated'
+            assert not (root / 'receiver-signalled').exists(), 'backend log receiver was terminated before EOF'
+            assert (root / 'drained-asset').read_text() == 'final deregistration log', 'shutdown log was not drained'
+        assert marker.read_text() == 'keep', 'unselected frontend cache removed'
+        ready()
+        assert not (root / '.dev-state/lifecycle.lock').exists(), 'restart leaked lifecycle lock'
+    before = snapshot()
+    result = subprocess.run(['bash', str(dev / 'restart.sh'), '-asset'], env=dict(env, FAIL_START='1'), capture_output=True, text=True, timeout=30)
+    remember()
+    assert result.returncode != 0, result.stdout + result.stderr
+    after = snapshot()
+    for name in names:
+        if name in ('asset', 'asset-frontend'): continue
+        assert after[name + '.pid'] == before[name + '.pid'], 'start failure stopped unrelated module'
+        os.kill(int(after[name + '.pid']), 0)
+    assert not unavailable, ('other services were unavailable during restart', unavailable)
+finally:
+    monitor_stop.set()
+    if 'watcher' in locals(): watcher.join()
+    remember()
+    for pid in pids:
+        try: os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError: pass
+print('PASS: scoped restart preserves other PIDs/HTTP/cache; selected Worker/frontend child exit; preflight failures preserve services')
+PY
+}
+
 test_restart_preserves_cache_and_batches_swagger() {
   python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
 import os
@@ -400,7 +631,7 @@ source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
 addp_acquire_lifecycle_lock start
 [ "$ADDP_HOST_NODE_NAME" = fixture-host-node ]
 [ "$ADDP_HOST_NODE_IPS" = "192.0.2.7,2001:db8::1" ]
-echo start >> "$ROOT_DIR/events"
+echo "start $*" >> "$ROOT_DIR/events"
 ''')
     script("scripts/swagger/gen-swagger.sh", '''
 echo "generate $*" >> "$FIXTURE_ROOT/events"
@@ -444,11 +675,14 @@ exit "$FAIL_COVERAGE"
     assert not any(event.startswith("pkill ") for event in events), \
         "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
     target = "all" if args in ([], ["-all"]) else "system" if args == ["-system"] else "system asset meta"
-    expected = ([] if args == ['-system'] else ['spark-preflight', 'geopython-preflight']) + ["stop", "generate " + target]
+    all_modules = args in ([], ['-all'])
+    expected = (['spark-preflight', 'geopython-preflight', 'stop'] if all_modules else []) + ["generate " + target]
     if name.startswith('coverage-'):
         expected += ["generated", "coverage " + target]
     elif not failed:
-        expected += ["generated", "coverage " + target, "start"]
+        expected += ["generated", "coverage " + target]
+        if not all_modules: expected += ['stop']
+        expected += ['start ' + ('' if all_modules else ' '.join(args))]
     if name == 'spark-prepare-failure':
         expected = ['spark-preflight']
     if name == 'geopython-prepare-failure':
@@ -470,7 +704,7 @@ import subprocess
 import sys
 
 repository, temporary = map(Path, sys.argv[1:])
-for mode in ('pid', 'listeners', 'launchd', 'launchd-failure'):
+for mode in ('pid', 'listeners', 'launchd', 'launchd-failure', 'scoped-launchd', 'scoped-scan-failure'):
     root = temporary / ('stop-order-' + mode)
     (root / 'scripts/dev').mkdir(parents=True)
     (root / 'scripts/utils').mkdir()
@@ -481,7 +715,7 @@ for mode in ('pid', 'listeners', 'launchd', 'launchd-failure'):
     for pid in (101, 102, 103, 105):
         (root / str(pid)).touch()
     if mode != 'listeners':
-        for name, pid in (('system', 101), ('meta-worker', 102), ('manager-backend', 103)):
+        for name, pid in (('system', 101), ('meta-worker', 102), ('manager', 103)):
             (root / '.dev-pids' / (name + '.pid')).write_text(str(pid))
     else:
         # Workers without listeners still use their PID file.
@@ -491,6 +725,7 @@ for mode in ('pid', 'listeners', 'launchd', 'launchd-failure'):
 uname() { printf 'Darwin\n'; }
 sleep() { :; }
 ps() {
+  [ "$1" != -axo ] || return 0
   [ -f "$FIXTURE_ROOT/$2" ] || return 1
   if [[ " $* " == *" -o command= "* ]]; then
     case "$2" in
@@ -510,6 +745,14 @@ lsof() {
     if [ "$4" = 202 ]; then printf 'n/other-workspace\n'; else printf 'n%s\n' "$FIXTURE_ROOT"; fi
   else
     echo "$*" >> "$FIXTURE_ROOT/scans"
+    if [ "$FIXTURE_MODE" = scoped-scan-failure ]; then
+      echo 'fixture listener query failed' >&2
+      return 2
+    fi
+    if [ "$FIXTURE_MODE" = scoped-launchd ]; then
+      printf 'p103\np202\np303\n'
+      return
+    fi
     # Duplicate owned listeners, a foreign listener and an exited listener.
     printf 'p101\np103\np105\np105\np202\np303\n'
   fi
@@ -540,11 +783,12 @@ kill() {
 launchctl() {
   case "$1" in
     list)
-      case "$FIXTURE_MODE" in launchd*) printf '101 0 com.addp.codex.system\n102 0 com.addp.codex.worker\n202 0 com.addp.codex.foreign\n';; esac ;;
+      case "$FIXTURE_MODE" in launchd*|scoped-launchd) printf '101 0 com.addp.codex.system\n102 0 com.addp.codex.worker\n103 0 com.addp.codex.manager\n202 0 com.addp.codex.foreign\n';; esac ;;
     print)
       case "$2" in
         *.system) [ -f "$FIXTURE_ROOT/101" ] && printf '%s/.dev-bins/addp-system\n' "$FIXTURE_ROOT" ;;
         *.worker) [ -f "$FIXTURE_ROOT/102" ] && printf '%s/.dev-bins/addp-meta-worker\n' "$FIXTURE_ROOT" ;;
+        *.manager) [ -f "$FIXTURE_ROOT/103" ] && printf '%s/.dev-bins/addp-manager\n' "$FIXTURE_ROOT" ;;
         *.foreign) printf '/other-workspace/server\n' ;;
       esac ;;
     bootout)
@@ -552,11 +796,13 @@ launchctl() {
       case "$2" in
         *.system) kill 101 ;;
         *.worker) [ "$FIXTURE_MODE" != launchd-failure ] || return 1; finish_module 102 ;;
+        *.manager) kill 103 ;;
         *) echo foreign >> "$FIXTURE_ROOT/failures" ;;
       esac ;;
   esac
 }
 docker() {
+  [ "$FIXTURE_MODE" != scoped-launchd ] || echo docker-unselected >> "$FIXTURE_ROOT/failures"
   case "$1" in
     inspect)
       [ "${@: -1}" = pointcloud-workflow-engine ] || return 1
@@ -574,23 +820,86 @@ docker() {
     (root / '202').touch()
     env = {k: v for k, v in os.environ.items() if not k.startswith('ADDP_LIFECYCLE_')}
     env.update(BASH_ENV=str(hooks), FIXTURE_ROOT=str(root), FIXTURE_MODE=mode)
-    result = subprocess.run(['bash', str(root / 'scripts/dev/stop.sh')],
+    args = ['-manager'] if mode.startswith('scoped-') else []
+    result = subprocess.run(['bash', str(root / 'scripts/dev/stop.sh'), *args],
                             env=env, capture_output=True, text=True, timeout=15)
-    assert (result.returncode != 0) == (mode == 'launchd-failure'), result.stdout + result.stderr
+    assert (result.returncode != 0) == (mode in ('launchd-failure', 'scoped-scan-failure')), result.stdout + result.stderr
     assert not (root / 'failures').exists(), (mode, (root / 'failures').read_text(), result.stdout)
+    if mode == 'scoped-scan-failure':
+        assert not (root / 'events').exists(), 'listener scan failure stopped services'
+        for name in ('system', 'meta-worker', 'manager'): assert (root / '.dev-pids' / (name + '.pid')).exists()
+        assert not (root / '.dev-state/lifecycle.lock').exists()
+        continue
     events = (root / 'events').read_text().splitlines()
-    assert 'deregister 102' in events and 'deregister 105' in events, events
+    if mode == 'scoped-launchd':
+        for pid in (101, 102, 105): assert (root / str(pid)).exists(), ('unselected process stopped', pid, events)
+        for name in ('system', 'meta-worker'): assert (root / '.dev-pids' / (name + '.pid')).exists()
+        assert not (root / '.dev-pids/manager.pid').exists()
+        assert [event for event in events if event.startswith('bootout ')] == ['bootout gui/' + str(os.getuid()) + '/com.addp.codex.manager'], events
+    else:
+        assert 'deregister 102' in events and 'deregister 105' in events, events
     assert any(event == 'signal -KILL 103' for event in events), events
-    assert sum('105' in event and event.startswith('signal ') for event in events) == 1, events
+    assert sum('105' in event and event.startswith('signal ') for event in events) == (0 if mode == 'scoped-launchd' else 1), events
     assert (root / '202').exists(), 'foreign listener was terminated'
     scans = (root / 'scans').read_text().splitlines()
     assert len(scans) == 1 and '-sTCP:LISTEN' in scans[0] and '-Fp' in scans[0], scans
-    assert '-iTCP:8000,8180,8081' in scans[0], scans
+    assert ('-iTCP:8081,5174' if mode == 'scoped-launchd' else '-iTCP:8000,8180,8081') in scans[0], scans
     assert not (root / '.dev-state/lifecycle.lock').exists(), 'stop leaked lifecycle lock'
 print('PASS: System stops last; deregistration, bounded TERM/KILL, Runtime, launchd and foreign listeners')
 PY
 }
 
+
+test_start_reuses_healthy_core_infra() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+root, temporary = map(Path, sys.argv[1:])
+source = (root / 'scripts/dev/start.sh').read_text()
+start = source.index('\n# 1. 启动基础设施\n')
+end = source.index('\nif [ "${ADDP_ONLINE_HOST:-0}" != 1 ]', start)
+phase = source[start:end]
+for logs, metrics in [('false', 'false'), ('true', 'false'), ('false', 'true'), ('true', 'true')]:
+    for mode in ['healthy', 'observability-down', 'invalid-logs', 'invalid-metrics', 'cold', 'core-failed']:
+        workspace = temporary / f'infra-reuse-{logs}-{metrics}-{mode}'
+        scripts = workspace / 'scripts/infra'
+        scripts.mkdir(parents=True)
+        calls = workspace / 'infra-up-calls'
+        (scripts / 'ports.sh').write_text(f'''
+source "{root}/scripts/utils/observability-env.sh"
+addp_infra_ready() {{
+  if [ "${{1:-all}}" = core ]; then
+    [[ "$MODE" != cold && "$MODE" != core-failed ]]
+  else
+    [[ "$MODE" != observability-down ]] || {{ ! addp_runtime_logs_enabled && ! addp_metrics_enabled; }}
+  fi
+}}
+addp_runtime_log_preflight() {{ ! addp_runtime_logs_enabled || [[ "$MODE" != invalid-logs ]]; }}
+addp_metrics_preflight() {{ ! addp_metrics_enabled || [[ "$MODE" != invalid-metrics ]]; }}
+''')
+        (scripts / 'up.sh').write_text('''#!/bin/bash
+printf 'up\n' >> "$ROOT_DIR/infra-up-calls"
+[[ "$MODE" != core-failed ]]
+''')
+        environment = {**os.environ, 'ROOT_DIR': str(workspace), 'MODE': mode,
+                       'ADDP_OBSERVABILITY_LOGS_ENABLED': logs,
+                       'ADDP_OBSERVABILITY_METRICS_ENABLED': metrics}
+        result = subprocess.run(['bash', '-c', 'set -euo pipefail\nYELLOW= GREEN= RED= NC=\n' + phase +
+                                 '\nprintf "optional_result=%s\\n" "$infra_optional_result"\n'],
+                                env=environment, cwd=workspace, capture_output=True, text=True, timeout=5)
+        assert calls.exists() == (mode in ['cold', 'core-failed']), (logs, metrics, mode, result.stdout, result.stderr)
+        assert result.returncode == (1 if mode == 'core-failed' else 0), (mode, result.stdout, result.stderr)
+        if mode != 'core-failed':
+            expected = int((mode == 'observability-down' and 'true' in (logs, metrics)) or
+                           (mode == 'invalid-logs' and logs == 'true') or
+                           (mode == 'invalid-metrics' and metrics == 'true'))
+            assert f'optional_result={expected}' in result.stdout, (mode, result.stdout, result.stderr)
+print('PASS: healthy core Infra is reused across observability selections and failures; cold startup stays explicit')
+PY
+}
 
 test_start_loads_runtime_ownership_in_all_profiles() {
   python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
@@ -816,7 +1125,7 @@ if state == 'unloadable': raise ImportError('Library not loaded: @rpath/libgdal.
 class gdal:
     @staticmethod
     def VersionInfo(key): return '3.6.2' if state == 'mismatch' else '3.12.1'
-ogr = osr = object()
+ogr = osr = gdal_array = object()
 ''')
 (runtime / 'api_server.py').write_text('''
 import http.server, os, sys
@@ -1634,7 +1943,7 @@ for mode in ('empty', 'occupied', 'stale', 'error', 'managed', 'managed-mismatch
 workspace=temporary/'frontend-bind-race'
 workspace.mkdir()
 (workspace/'pids').write_text('fixture:111\n')
-health=source[source.index('# 并发等待所有前端的健康检查'):source.index('echo -e "${GREEN}✓ 所有前端服务已启动')]
+health=source[source.index('# 并发等待所有前端的健康检查'):source.index('echo -e "${GREEN}✓ 本次前端清单全部就绪')]
 script=base+helpers+r'''
 GREEN=
 FRONTEND_CONFIGS=("fixture:8180:unused")
@@ -1879,6 +2188,7 @@ test_parallel_runtime_startup
 test_python_dependency_install_lock
 test_model3d_python_dependency_sync
 test_start_loads_runtime_ownership_in_all_profiles
+test_start_reuses_healthy_core_infra
 test_dev_port_resolution
 test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid
@@ -1892,6 +2202,8 @@ test_compose_public_port_policy
 test_local_stop_rejects_volume_deletion
 test_prod_compose_init_health
 test_restart_preserves_cache_and_batches_swagger
+test_start_selects_module_dependency_union
+test_scoped_restart_preserves_other_services
 test_lifecycle_lock_rejects_concurrent_owner
 test_lifecycle_lock_allows_descendant_inheritance
 test_keepalive_style_cleanup_inherits_and_releases_lock

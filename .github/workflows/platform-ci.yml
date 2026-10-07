@@ -354,6 +354,58 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  raster-mosaic-runtime-tests:
+    name: Raster Mosaic GDAL tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select shared module gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module manager
+
+      - name: Install GDAL system libraries
+        if: steps.selection.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev pkg-config
+
+      - name: Prepare Raster Mosaic test environment
+        if: steps.selection.outputs.run == 'true'
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          python-version: "3.12"
+          venv-path: manager/raster-mosaic-runtime/venv
+          cache-dependency-path: |
+            manager/raster-mosaic-runtime/requirements.txt
+          requirements-file: manager/raster-mosaic-runtime/requirements.txt
+
+      - name: Install matching GDAL bindings
+        if: steps.selection.outputs.run == 'true'
+        run: manager/raster-mosaic-runtime/venv/bin/python -m pip install "GDAL==$(gdal-config --version)"
+
+      - name: Run Raster Mosaic GDAL tests
+        if: steps.selection.outputs.run == 'true'
+        run: make test-raster-mosaic-runtime
+
+      - name: Summarize Raster Mosaic GDAL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Raster Mosaic GDAL tests
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   geopython-workflow-tests:
     name: GeoPython GDAL tests
     runs-on: ubuntu-24.04

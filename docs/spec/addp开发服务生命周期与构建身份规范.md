@@ -16,6 +16,14 @@
 
 全局重启的停止阶段只调用 `stop.sh`，Python 服务与 Go 服务遵循同一注销顺序。`restart.sh` 不得在此之前按进程名强杀 Python、Uvicorn 或其他运行时进程，否则会绕过注销并影响其他工作区。
 
+`restart.sh` 无参数或 `-all` 执行全量重启；指定一个或多个模块时，只停止并重启所选模块所属的 Backend、Worker、Frontend 和显式 Runtime。局部停止统一由 `stop.sh -<模块名> ...` 执行，不扩散到模块依赖，不删除其他模块的 PID、前端缓存或 Runtime 容器，不卸载其他模块的 launchd 作业。进程身份须核验工作区归属，前端启动器及其子进程一并停止；残留监听者仅查询所选模块的端口。
+
+局部重启先完成所选 Go 模块的 Swagger 同步和覆盖检查，再停止所选进程；预检失败保留现有服务。随后由 `start.sh -<模块名> ...` 按所选模块的依赖并集启动，运行中的依赖复用，缺失的依赖补齐。`-all` 不得与模块参数混用，重复模块参数去重；`start.sh` 不替代重启，已运行的进程不会因产物重新编译而自动更新。所选模块停机期间，消费其 API 的功能仍可能短暂不可用，重启 System 或 Gateway 尤其会影响公共能力。
+
+应用启动入口只在核心 Infra 未就绪时调用 `scripts/infra/up.sh`。核心容器健康时必须复用，不因日志或指标能力关闭、配置预检失败、观测容器未就绪而构建镜像或执行 Compose 更新。所选观测能力异常时单独报告、继续启动业务并返回非零；设施修复和部署配置应用由显式 `scripts/infra/up.sh` 管理。
+
+单独选择 Asset 时，启动清单为 Asset Backend/Frontend、System Backend、Gateway 和 Console，不包含 Meta Backend/Worker。Catalog 与 Workbench 为业务操作的运行时软依赖，不随 Asset 隐式启动。多模块选择取各自依赖并集；同时选择 Meta 或其他需要 Meta 的模块时，仍保留其 Meta Backend/Worker。前端启动和就绪输出只描述本次清单，不表示全平台前端被重启。
+
 System 自身的注册、心跳和租约回收任务必须使用进程信号 Context；注册成功后，在退出时取消心跳、完成自身实例注销并等待任务结束，再关闭 HTTP 和数据库资源。取消与注册失败不能遗留后台注册任务。
 
 停止阶段的残留端口检查必须一次批量查询目标 TCP 端口的 LISTEN socket，不得逐端口扫描整张进程文件表，也不得把客户端连接视为端口监听。查询结果按 PID 去重，逐个核验进程身份；非 ADDP 进程只报告、不终止，查询后已退出的进程直接跳过。
@@ -71,6 +79,8 @@ Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境�
 
 GeoPython Workflow 本地开发统一使用不继承系统包的 Python 3.12 虚拟环境与原生 GDAL，Python 绑定版本必须与 `gdal-config --version` 一致。PGeo 依赖 MDBTools 与 unixODBC，驱动配置限于 Runtime 自身。GDAL/PROJ 资源目录从原生依赖派生，仅注入该 Runtime；不得继承 Anaconda 的资源目录或插件目录。start/restart 共用原生入口，停止前完成依赖、PGeo/FileGDB/COG 驱动、坐标系和 HTTP 端口归属预检；失败保留已有服务。原生开发与产品镜像统一使用单 Worker、四线程 Gunicorn，监听就绪后在同一 Worker 中异步注册。开发入口不构建镜像，栅格 Hosted T4 使用根产品构建入口及独立 Runtime 所有权。
 
+Manager Raster Mosaic Runtime 属于 Manager，随 `stop.sh -manager` 停止、随普通 `start/restart -manager` 启动，独立进程验收入口不隐式启动它。本地开发统一使用 Python 3.12 独立虚拟环境，禁止继承系统 site-packages。停止后的准备阶段自动重建不符合该约束的环境；正在运行或端口被占用时不得改写环境。GDAL 来源选择、资源目录派生和失效绑定源码重建由 `scripts/dev/gdal-env.sh` 唯一实现，GeoPython 与 Raster Mosaic 共同调用；各自检查业务所需驱动，Raster Mosaic 仅要求 GTiff/COG、GDAL NumPy 数组和坐标系能力，不依赖 PGeo/MDBTools。每次启动按完整 requirements 同步依赖并执行 pip check，安装使用既有 Python 依赖锁。保留 Manager 主服务的既定启动策略：Raster Mosaic 准备失败明确报告并跳过该 Runtime，不将其计为就绪；启动后须核验 PID、监听归属和健康响应。
+
 ## 四、构建身份
 
 所有由开发脚本构建的 Go 服务必须通过链接参数嵌入以下构建身份：
@@ -113,6 +123,7 @@ GeoPython Workflow 本地开发统一使用不继承系统包的 Python 3.12 虚
 - 构建失败不会覆盖现有正式二进制；
 - 构建期间源码变化会拒绝发布产物；
 - 全量及多模块重启不提前强杀 Python 服务，保留 Go 缓存和源码时间戳，Swagger 生成失败时不启动服务；
+- 单模块及多模块重启只更新所选进程，其他模块和公共依赖的 PID、HTTP 服务、缓存及 Runtime 保持；局部 Swagger 失败保留服务，非法参数在停止前拒绝，所选 Worker、前端子进程和残留监听者全部退出；
 - Swagger 对相同内容复用，源码、共享类型、本地 replace、工具、Go 环境和产物变化均失效；生成失败、输入或产物在校验期间变化不能发布有效缓存，并发命令互斥；
 - 所选 Runtime 启动任务实际并发，工作目录和环境变量相互隔离，失败时仍等待其他任务结束且不进入下一阶段；
 - Python 依赖安装互斥，失败退出后可再次获取安装锁；

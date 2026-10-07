@@ -73,7 +73,13 @@ bash scripts/dev/start.sh -manager
 bash scripts/dev/restart.sh -transfer
 ```
 
-单模块开发时，脚本会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。Meta 用于资源树、元数据扫描和跨模块通用元数据能力。模块自身如有额外依赖，例如 Manager 依赖 Transfer、Model3D Workflow Engine 和 PointCloud Workflow Engine，Develop 依赖 Python/Math/Spark Workflow Engine 和 Jupyter，会在此基础上继续启动。
+`start.sh -<模块名>` 启动所选模块及其依赖，已经运行的受管服务跳过启动。`restart.sh -<模块名>` 只重启所选模块的后端、Worker 和前端，保留其他模块及运行中的依赖；无参数或 `-all` 才全量重启。两个入口均支持多个模块参数，`-all` 不能与模块参数混用。局部重启期间，调用所选模块的功能可能短暂不可用，System、Gateway 属于公共能力，应按影响范围选择重启时机。
+
+核心 Infra 健康时，应用启动和重启直接复用现有容器，不构建 Infra 镜像、不执行 Compose 更新。日志或指标关闭不会触发 Infra 启动；所选观测能力异常会单独提示并返回非零，业务启动继续，需要修复设施时显式运行 `bash scripts/infra/up.sh`。
+
+`-asset` 的启动清单包含 Asset 后端和前端，以及 System 后端、Gateway、Console；不自动启动 Meta 后端或 Worker。Catalog、Workbench 是相关业务操作的运行时软依赖，不随 Asset 隐式启动。重启时只停止并重新启动 Asset；Console 仍在运行时复用，前端就绪检查只覆盖本次清单中的 Asset 和 Console。
+
+单模块开发时，脚本会启动 System Backend、Gateway 和 Console；除 Asset、Catalog、Ontology 外，还会启动 Meta Backend 和 Meta Worker。模块额外依赖按 `start.sh` 的实际选择规则补齐，例如 Manager 依赖 Transfer，Model、Quality 依赖 Standard，Portal 依赖 Asset。Engine Runtime 不随业务模块隐式启动，须使用对应的显式 Runtime 参数。
 
 SuperMap Workflow Engine 使用本地两层镜像。首次安装时，保留完整 SuperMap iObjects C++ SDK 母版，把许可放入 Git 忽略的 `engines/supermap-workflow/vendor/license`，并通过 `SUPERMAP_CPP_SDK_PATH` 显式构建稳定基础镜像：
 
@@ -126,6 +132,8 @@ make test-module MODULE=<模块>
 共享 Go、前端和 Python 代码会根据仓库内真实依赖扩散到消费者。`make test-platform` 负责检查新模块、测试入口、前端、Python 包、PostgreSQL 门禁和产品构建是否完整登记。GitHub Actions 在 `main` push 后和每日定时任务中使用独立 Runner 复验；本地 `start.sh`、`restart.sh`、`git commit` 均不会触发 CI。
 
 GeoPython Workflow 开发环境使用原生 Python 3.12、GDAL、MDBTools 和 unixODBC。macOS 可先执行 `brew install python@3.12 gdal mdbtools pkg-config`；标准入口创建独立 `engines/geopython-workflow/venv`、同步完整依赖并安装与所选原生 `gdal-config --version` 一致的 GDAL Python 绑定；macOS 固定选择 Homebrew 的 GDAL、PROJ 与 pkg-config，启动子进程中的 GDAL 编译命令也使用该来源，不受 Conda base 的 PATH 和资源变量影响，先检查现有 GDAL 绑定能否加载及版本是否匹配；健康绑定直接复用，失效绑定由已有依赖安装锁串行处理，禁用缓存并从源码重建匹配版本，只重建 GDAL 绑定而不升级其他依赖。重建后再检查版本、依赖一致性、PGeo、OpenFileGDB、GTiff、COG 及 EPSG:4326；失败则停止准备，不停止现有服务。GDAL/PROJ 资源与 Runtime 专属 ODBC 配置只注入该子进程。首次迁移先由用户在 Docker Desktop 停止旧 GeoPython 开发容器，再执行 `./scripts/dev/restart.sh -geopython-workflow`；后续 start/restart/stop 只管理本机 PID，产品镜像仍由正式构建和部署入口负责。
+
+Manager 的 Raster Mosaic Runtime 同样使用原生 GDAL 与独立 Python 3.12 环境；`./scripts/dev/restart.sh -manager` 停止所属 Runtime 后，同步完整依赖并自动重建继承系统包的旧环境。不能在 Runtime 运行期间改写该环境。开发入口不以 Docker 镜像兜底；GDAL 来源与绑定修复复用共享入口，Raster Mosaic 不要求 MDBTools。
 
 Spark Workflow 开发环境需要原生 Python 3.11/3.12 虚拟环境和 OpenJDK 11。标准启动与重启入口自动发现 Java 11、创建缺失的虚拟环境，并按完整依赖声明同步；全套重启先预检再停止现有服务。macOS 需在 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，Docker Worker 保留内置解析，确保 Driver 与 Worker 都能访问相同的数据端点和 Driver 动态端口。该方式无需启用 Docker Desktop host networking。修改源码后执行 `./scripts/dev/restart.sh -spark-workflow`；标准停止按本机 PID 退出。产品构建与 Hosted 镜像验收由独立入口负责。
 

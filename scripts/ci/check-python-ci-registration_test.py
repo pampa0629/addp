@@ -43,6 +43,23 @@ class PythonCIRegistrationTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def test_registers_manager_owned_named_runtime(self) -> None:
+        manifest = self.repository / "manager/raster-mosaic-runtime/requirements.txt"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("flask\n")
+        makefile = self.repository / "Makefile"
+        makefile.write_text(makefile.read_text().replace("test: ", "test: test-raster-mosaic-runtime ", 1) + "\ntest-raster-mosaic-runtime:\n\t@true\n")
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(workflow.read_text() + "  raster-tests:\n    steps:\n"
+            "      - run: python3 scripts/ci/select-module-gate.py --module manager\n"
+            "      - uses: ./.github/actions/prepare-python-gate\n"
+            "      - run: make test-raster-mosaic-runtime\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        self.assertIn(("raster-mosaic-runtime", "manager/raster-mosaic-runtime/requirements.txt"), MODULE.discover_python_modules(self.repository))
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+        workflow.write_text(workflow.read_text().replace("--module manager", "--module engines"))
+        self.assertTrue(any("shared module change selector" in error for error in MODULE.validate_registration(self.repository)))
+
     def fastapi_registration(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"
         makefile = self.repository / "Makefile"

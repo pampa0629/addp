@@ -45,9 +45,10 @@ show_usage() {
   echo ""
   echo "说明:"
   echo "  - 指定模块时,会自动启动其依赖的模块"
-  echo "  - 单模块启动统一带上 System Backend、Meta Backend/Worker、Gateway 和 Console"
+  echo "  - 支持多个模块参数，启动其依赖并集；已运行服务跳过启动"
+  echo "  - 单模块启动带上 System Backend、Gateway 和 Console；Meta 按模块依赖选择"
   echo "  - Engine Runtime 不随业务模块隐式启动；请使用对应的显式 Runtime 参数"
-  echo "  - 基础设施(PostgreSQL/Redis/MinIO/Meilisearch)总是会启动"
+  echo "  - 核心 Infra 健康时复用现有容器，未就绪时才调用 Infra 启动入口"
   echo ""
   echo "示例:"
   echo "  $0                # 启动所有模块"
@@ -203,6 +204,7 @@ select_python() {
 
 # 解析命令行参数
 SELECTED_MODULE=""
+SELECTED_MODULES=()
 SELECTED_MODULE_COUNT=0
 START_ALL=true
 EXPLICIT_ALL=false
@@ -220,7 +222,10 @@ for arg in "$@"; do
       ;;
     -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-security|-asset|-ontology|-catalog|-workbench|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-document-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
-      SELECTED_MODULE_COUNT=$((SELECTED_MODULE_COUNT + 1))
+      if [[ " ${SELECTED_MODULES[*]} " != *" $SELECTED_MODULE "* ]]; then
+        SELECTED_MODULES+=("$SELECTED_MODULE")
+      fi
+      SELECTED_MODULE_COUNT=${#SELECTED_MODULES[@]}
       START_ALL=false
       ;;
     --exact-process)
@@ -405,6 +410,11 @@ else
     esac
   else
     # 根据选择的模块设置依赖
+    REQUIRE_META=false
+    for SELECTED_MODULE in "${SELECTED_MODULES[@]}"; do
+    if [ "$SELECTED_MODULE" != "asset" ] && [ "$SELECTED_MODULE" != "catalog" ] && [ "$SELECTED_MODULE" != "ontology" ]; then
+      REQUIRE_META=true
+    fi
     case $SELECTED_MODULE in
     system)
       START_SYSTEM_FRONTEND=true
@@ -583,11 +593,12 @@ else
       START_ONTOLOGY_FRONTEND=true
       ;;
     esac
+    done
 
     # 单模块开发也统一保留 ADDP 基础服务和 Console 入口。
     # 各模块前端和 Console 的 /api 代理都经由 Gateway；资源、任务和审计等通用能力依赖 System/Meta。
     enable_single_module_common_dependencies
-    if [ "$SELECTED_MODULE" = "catalog" ] || [ "$SELECTED_MODULE" = "ontology" ]; then
+    if [ "$REQUIRE_META" = false ]; then
       START_META_BACKEND=false
       START_META_WORKER=false
     fi
@@ -598,7 +609,7 @@ fi
 if [ "$START_ALL" = true ]; then
   echo "🚀 启动 ADDP 开发环境 (所有模块)"
 else
-  echo "🚀 启动 ADDP 开发环境 (模块: ${SELECTED_MODULE} + 依赖)"
+  echo "🚀 启动 ADDP 开发环境 (模块: ${SELECTED_MODULES[*]} + 依赖)"
 fi
 echo ""
 
@@ -901,13 +912,17 @@ export ADDP_RUNTIME_LOG_ROOT="${ADDP_RUNTIME_LOG_ROOT:-${PROJECT_ROOT}/logs/runt
 case "$ADDP_RUNTIME_LOG_ROOT" in /*) ;; *) export ADDP_RUNTIME_LOG_ROOT="${PROJECT_ROOT}/${ADDP_RUNTIME_LOG_ROOT}" ;; esac
 
 # 1. 启动基础设施
-echo -e "${YELLOW}Step 1/7: 启动基础设施（PostgreSQL, Redis, FalkorDB, MinIO, Meilisearch）${NC}"
+echo -e "${YELLOW}Step 1/7: 检查基础设施（PostgreSQL, Redis, FalkorDB, MinIO, Meilisearch）${NC}"
 echo ""
 
 source "${ROOT_DIR}/scripts/infra/ports.sh"
 infra_optional_result=0
-if addp_infra_ready && addp_runtime_logs_enabled && addp_runtime_log_preflight && addp_metrics_enabled && addp_metrics_preflight; then
-  echo -e "${GREEN}✓ ADDP Infra 容器健康，跳过启动${NC}"
+if addp_infra_ready core; then
+  echo -e "${GREEN}✓ 核心 Infra 容器健康，复用现有容器，跳过镜像构建和 Compose 更新${NC}"
+  if ! { addp_runtime_log_preflight && addp_metrics_preflight && addp_infra_ready; }; then
+    infra_optional_result=1
+    echo -e "${YELLOW}⚠️  可选观测设施配置或容器未就绪；继续启动业务，设施修复请显式运行 bash scripts/infra/up.sh${NC}"
+  fi
 else
   echo -e "${YELLOW}启动基础设施服务...${NC}"
   if ! bash "${ROOT_DIR}/scripts/infra/up.sh"; then
@@ -996,7 +1011,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # ============================================================
   # Phase 1: 并行编译所有 Go 服务
   # ============================================================
-  echo "  [1/3] 并行编译后端服务和选定 Worker..."
+  echo "  [1/3] 检查本次后端和 Worker 的构建指纹，按需并行编译..."
 
   # 并行编译后端服务(仅编译需要启动的)
   BUILD_PIDS=()
@@ -1128,7 +1143,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     exit 1
   fi
 
-  echo -e "  ${GREEN}✓ 所有服务编译完成${NC}"
+  echo -e "  ${GREEN}✓ 本次后端和 Worker 的构建产物已就绪${NC}"
 else
   echo -e "${YELLOW}Step 3/5: 跳过后端服务启动${NC}"
 fi
@@ -1421,66 +1436,17 @@ fi
 
 if [ "$START_MANAGER_BACKEND" = true ] && [ "$EXACT_PROCESS" != true ]; then
   echo "启动 Raster Mosaic Runtime..."
-  RASTER_MOSAIC_RUNTIME_DIR="manager/raster-mosaic-runtime"
-  RASTER_MOSAIC_RUNTIME_VENV="${RASTER_MOSAIC_RUNTIME_DIR}/venv"
-  RASTER_MOSAIC_RUNTIME_STARTED=false
-  RASTER_MOSAIC_RUNTIME_NEED_INSTALL=false
-  RASTER_MOSAIC_RUNTIME_CAN_START=true
+  source "${SCRIPT_DIR}/raster-mosaic-runtime.sh"
   if check_service_running "raster-mosaic-runtime" "$RASTER_MOSAIC_RUNTIME_PORT"; then
-    SELECTED_PYTHON=$(select_python)
-    if [ -d "$RASTER_MOSAIC_RUNTIME_VENV" ] &&
-       ! "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" - <<'PY' &> /dev/null
-import flask, numpy, PIL
-from osgeo import gdal
-version = tuple(int(part) for part in numpy.__version__.split(".")[:2])
-if version >= (2, 3):
-    raise SystemExit(1)
-PY
-    then
-      if "$SELECTED_PYTHON" -c "from osgeo import gdal" &> /dev/null; then
-        echo "Raster Mosaic Runtime venv 缺少匹配的 GDAL/NumPy，重建为可继承系统 GDAL 的虚拟环境..."
-        rm -rf "$RASTER_MOSAIC_RUNTIME_VENV"
-      else
-        RASTER_MOSAIC_RUNTIME_NEED_INSTALL=true
-      fi
-    fi
-    if [ ! -d "$RASTER_MOSAIC_RUNTIME_VENV" ]; then
-      $SELECTED_PYTHON -m venv --system-site-packages "$RASTER_MOSAIC_RUNTIME_VENV"
-      RASTER_MOSAIC_RUNTIME_NEED_INSTALL=true
-    elif ! "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" -c "import flask, numpy, PIL" &> /dev/null; then
-      RASTER_MOSAIC_RUNTIME_NEED_INSTALL=true
-    fi
-    if [ "$RASTER_MOSAIC_RUNTIME_NEED_INSTALL" = true ]; then
-      PIP_CMD="$RASTER_MOSAIC_RUNTIME_VENV/bin/python -m pip install"
-      if [ -n "$PIP_INDEX_URL" ]; then
-        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
-        if [ -n "$PIP_TRUSTED_HOST" ]; then
-          PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
-        fi
-      fi
-      if ! $PIP_CMD --upgrade pip || ! $PIP_CMD -r "$RASTER_MOSAIC_RUNTIME_DIR/requirements.txt"; then
-        echo -e "${YELLOW}⚠️  Raster Mosaic Runtime 依赖安装失败，已跳过启动；Manager 主服务继续启动。${NC}"
-        RASTER_MOSAIC_RUNTIME_CAN_START=false
-      fi
-    fi
-    if [ "$RASTER_MOSAIC_RUNTIME_CAN_START" = true ] &&
-       ! "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" -c "from osgeo import gdal" &> /dev/null; then
-      echo -e "${YELLOW}⚠️  Raster Mosaic Runtime 缺少 GDAL Python 绑定(osgeo.gdal)，已跳过启动；Manager 主服务继续启动。${NC}"
-      echo -e "${YELLOW}   提示：macOS 可先执行 brew install gdal，或使用 manager/raster-mosaic-runtime/Dockerfile。${NC}"
-      RASTER_MOSAIC_RUNTIME_CAN_START=false
-    fi
-    if [ "$RASTER_MOSAIC_RUNTIME_CAN_START" = true ]; then
-      PORT="$RASTER_MOSAIC_RUNTIME_PORT" \
-      SYSTEM_URL="${SYSTEM_URL:-http://localhost:${SYSTEM_BACKEND_PORT:-8180}}" \
-        "$RASTER_MOSAIC_RUNTIME_VENV/bin/python" "$RASTER_MOSAIC_RUNTIME_DIR/app.py" \
-        > logs/raster-mosaic-runtime.log 2> logs/raster-mosaic-runtime-stderr.log &
-      RASTER_MOSAIC_RUNTIME_PID=$!
-      echo $RASTER_MOSAIC_RUNTIME_PID > .dev-pids/raster-mosaic-runtime.pid
-      RASTER_MOSAIC_RUNTIME_STARTED=true
+    if (addp_prepare_raster_mosaic_runtime); then
+      (addp_launch_raster_mosaic_runtime) || exit 1
+      RASTER_MOSAIC_RUNTIME_PID=$(cat .dev-pids/raster-mosaic-runtime.pid)
+    else
+      echo -e "${YELLOW}⚠️  Raster Mosaic Runtime 准备失败，已跳过启动；Manager 主服务继续启动。${NC}"
     fi
   else
     RASTER_MOSAIC_RUNTIME_PID=$(cat .dev-pids/raster-mosaic-runtime.pid 2>/dev/null)
-    RASTER_MOSAIC_RUNTIME_STARTED=true
+    addp_wait_raster_mosaic_runtime "$RASTER_MOSAIC_RUNTIME_PID" "$RASTER_MOSAIC_RUNTIME_PORT" || exit 1
   fi
 fi
 
@@ -1511,21 +1477,6 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       done
     ) &
     HEALTH_CHECK_PIDS+=($!)
-    if [ "$RASTER_MOSAIC_RUNTIME_STARTED" = true ]; then
-      (
-        WAIT_COUNT=0
-        until curl -f http://localhost:${RASTER_MOSAIC_RUNTIME_PORT}/health > /dev/null 2>&1; do
-          sleep 1
-          WAIT_COUNT=$((WAIT_COUNT + 1))
-          if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-            echo -e "${RED}✗ Raster Mosaic Runtime 启动超时${NC}"
-            echo "查看日志: tail -f logs/raster-mosaic-runtime.log"
-            exit 1
-          fi
-        done
-      ) &
-      HEALTH_CHECK_PIDS+=($!)
-    fi
   fi
 
   # 并发等待 Meta Backend
@@ -2671,8 +2622,6 @@ ensure_node_modules() {
 # ============================================================
 # 检查是否有任何前端需要启动
 if [ "$START_ONTOLOGY_FRONTEND" = true ] || [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_SECURITY_FRONTEND" = true ] || [ "$START_CATALOG_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ] || [ "$START_GRAPH_FRONTEND" = true ]; then
-  echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
-
   # 动态构建前端配置（格式：名称:端口:目录）
   # 使用普通数组而非关联数组（兼容 Bash 3.2）
   FRONTEND_CONFIGS=()
@@ -2761,7 +2710,13 @@ if [ "$START_ONTOLOGY_FRONTEND" = true ] || [ "$START_CONSOLE" = true ] || [ "$S
     FRONTEND_CONFIGS+=("inference:${INFERENCE_FE_PORT}:inference/frontend")
   fi
 
-  echo "并发启动所有前端..."
+  printf '本次前端清单:'
+  for config in "${FRONTEND_CONFIGS[@]}"; do
+    IFS=':' read -r name port dir <<< "$config"
+    printf ' %s(%s)' "$name" "$port"
+  done
+  printf '\n'
+  echo "启动本次清单中的前端，已运行进程复用..."
   begin_start_listener_batch
 
   # 存储 PIDs（使用临时文件）
@@ -2796,7 +2751,7 @@ done
   end_start_listener_batch
 
 echo ""
-echo "并发等待所有前端就绪..."
+echo "并发检查本次前端清单的就绪状态..."
 
 # 并发等待所有前端的健康检查
 MAX_WAIT=60
@@ -2830,7 +2785,7 @@ for pid in "${HEALTH_CHECK_PIDS[@]}"; do
 done
 
 echo ""
-echo -e "${GREEN}✓ 所有前端服务已启动${NC}"
+echo -e "${GREEN}✓ 本次前端清单全部就绪${NC}"
 
 # 保存前端 PIDs 到 .dev-pids 目录
 while IFS=: read -r name pid; do
