@@ -900,6 +900,8 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 对齐、组合与 `raster_select_bands` 均输出 Float64 数据波段，以 NaN 保存各波段独立的无效性，按既有数值分析规则读取源 mask、NoData、有限值及 alpha 覆盖。alpha 仅用于判断数据有效性，不作为数据波段自动追加，输出不保留透明度大小；合法零及部分透明的有效数据不改变数值。复数数据波段拒绝，数值转换不承诺大整数逐位精度。`raster_select_bands` 使用原输入中从 1 开始的 `bands` 序号，允许重排与重复，但禁止将 alpha 当成数据波段；无需空间定位并保留已有定位及缺失事实。`color_model=multispectral` 默认不声明颜色通道，`rgb` 必须选择恰好三个数据波段，依次标记 Red/Green/Blue，不缩放像元、不自动推荐最佳波段。RGB 文件生成与显示拉伸属于不同职责。栅格信息的逐波段摘要以 `color_interpretation` 返回 GDAL 颜色解释，供消费者核对通道。
 
+`raster_reclassify` 将 `band`（默认 1）选定的数据波段按 `rules` 重分类，输出同网格 Float64 单波段。规则为非空 JSON 数组：精确值使用 `{"value": 1, "class": 10}`，区间使用 `{"min": 0, "max": 10, "class": 1}`，统一左闭右开，`null` 端点表示该侧无界；精确值可单独覆盖区间右端点。规则必须互不重叠且不重复，输入顺序不影响结果；拒绝未知字段、非数值、布尔值及非有限值。有效像元未命中规则时，默认 `unmatched=nodata` 写 NaN，可显式选择 `keep` 保留原值；源 NoData、mask 无效、非有限值及 alpha 覆盖无效的像元始终写 NaN，不能因保留原值而恢复为有效值。alpha 和复数波段不能作为分类数据，合法零与部分透明的有效值正常参与分类。保留源宽高、完整仿射变换、CRS 及定位缺失事实，无需补造 CRS；输出不复制原分类色表或透明度大小，数值转换仍遵循 Float64 精度边界。公开规则参数声明为 `array`、`item_type=object`，由已有参数面板还原 JSON 数组，不接受字符串化规则作为执行输入。沿用 512×512 分块与排序后二分检索，不为重分类增加执行协议或整幅影像读取路径。
+
 裁剪边界必须与输入栅格四角定义的实际覆盖面有正面积交集，不能只比较两者的外接矩形；仅接触边界、栅格完全落在多边形孔洞中、MultiPolygon 各部分均在覆盖面外时均拒绝执行。旋转栅格使用其实际四角覆盖面判定，不能将 extent 矩形的空白角落视为输入数据。多边形转换到源 CRS 必须成功后再判定交集。
 
 `raster_to_cog` 是唯一通用 COG 转换入口，声明 workflow/direct；Manager 通过同一访问计划调用并继续管理 `manager.raster_cog`，旧 TIFF 专用算子及 URI 参数契约删除。`build_raster_mosaic` 继续承担 Manager 目录型业务数据集职责。Develop 业务保存沿用 produced_targets、命名 ResourceLocator 输出、血缘与 Meta scan。图片瓦片与 Service 在线发布不属于本次栅格计算范围。
@@ -924,6 +926,7 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_stack` | 同网格 `input_raster/other_raster` | `raster`，按输入顺序组合的数据波段 |
 | `raster_select_bands` | `input_raster`、`bands`、`color_model=multispectral/rgb` | `raster`，选定的数据波段 |
 | `raster_band_math` | `input_raster`、受限 `expression` | `raster`，Float64 单波段 |
+| `raster_reclassify` | `input_raster`、`rules`、`band`、`unmatched=nodata/keep` | `raster`，同网格 Float64 单波段 |
 | `raster_statistics` | `input_raster`、`band` | `object`，全量有效/无效统计 |
 | `raster_histogram` | `input_raster`、`band`、`bins`、可选 `value_range` | `object`，全量计数及范围外计数 |
 

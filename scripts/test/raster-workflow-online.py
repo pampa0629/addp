@@ -199,6 +199,24 @@ def foundation_workflow(source_locator, reference_locator, target_engine_id, cas
     ]}
 
 
+def reclass_workflow(source_locator, target_engine_id, case_name):
+    if case_name not in fixture.RECLASS_CASES:
+        raise SuiteError('unknown reclassification case')
+    params = {'input_raster': {'$ref': 'load', 'port': 'default'}, 'band': 2,
+              'rules': [{'value': 4, 'class': 0}, {'min': 6, 'max': 1024, 'class': 1},
+                        {'min': 32768, 'max': None, 'class': 2}]}
+    if case_name == 'reclassify-keep':
+        params['unmatched'] = 'keep'
+    return {'tasks': [
+        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
+        {'id': 'classify', 'operator': 'raster_reclassify', 'depends_on': ['load'], 'params': params},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['classify'], 'params': {
+            'input_raster': {'$ref': 'classify', 'port': 'default'},
+            'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+            'target_name': case_name + '.cog.tif', 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}},
+    ]}
+
+
 def transient_result(execution):
     metadata = obj(execution.get('metadata'), 'Develop analysis metadata')
     result = obj(metadata.get('result'), 'Develop analysis result')
@@ -385,7 +403,7 @@ def physical(repository, env, action):
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
     case_name = action.removeprefix('verify-')
-    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
+    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
     if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload
@@ -623,15 +641,22 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         utility_cases.append({'case_name': case_name, 'execution_id': identifier,
             'json_result': result, 'physical': native, 'browser': browser_report})
     foundation_cases = []
+    reclass_cases = []
     reference_source = support.find_fixture_item(client, target_engine, 'raster-target/mosaic-first.cog.tif', 'reference raster')
     reference_locator = support.build_item_locator(target_engine, reference_source)
-    for case_name in fixture.FOUNDATION_CASES:
-        expectation = fixture.foundation_expectation(case_name)
+    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES:
+        reclass = case_name in fixture.RECLASS_CASES
+        case_sources = [(source, source_locator, '')] if reclass else [
+            (spatial_source, spatial_locator, '-spatial'), (reference_source, reference_locator, '-reference')]
+        source_locators = [case_locator for _, case_locator, _ in case_sources]
+        expectation = fixture.computed_expectation(case_name)
         name = case_name + '.cog.tif'
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
-        identifier = submit(client, engine_id, foundation_workflow(spatial_locator, reference_locator, target_engine, case_name))
+        definition = (reclass_workflow(source_locator, target_engine, case_name) if reclass else
+                      foundation_workflow(spatial_locator, reference_locator, target_engine, case_name))
+        identifier = submit(client, engine_id, definition)
         execution = wait_execution(client, 'develop', identifier, timeout)
-        facts, scan_id = validate_success(execution, [spatial_locator, reference_locator], locator, 'create', expectation)
+        facts, scan_id = validate_success(execution, source_locators, locator, 'create', expectation)
         wait_execution(client, 'meta', scan_id, timeout)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor multi-raster execution')
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
@@ -646,7 +671,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             or native.get('color_interpretations') != colors
             or [band.get('color_interpretation') for band in artifact['bands']] != colors
             or any(band.get('overviews') != [[128, 128]] for band in artifact['bands'])
-            or native.get('valid_pixels') != expectation['valid_pixels'] or native.get('invalid_pixels') != 2
+            or native.get('valid_pixels') != expectation['valid_pixels']
+            or native.get('invalid_pixels') != expectation['width'] * expectation['height'] - expectation['valid_pixels']
             or native.get('band_valid_pixels') != [expectation['valid_pixels']] * expectation['band_count']
             or type(artifact.get('size_bytes')) is not int
             or positive(native.get('size_bytes'), 'physical multi-raster size') != artifact['size_bytes']):
@@ -655,13 +681,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if positive(target.get('size_bytes'), 'multi-raster DataItem size') != native['size_bytes']:
             raise SuiteError('multi-raster DataItem size differs from the physical artifact')
         graphs, browsers = [], []
-        for case_source, case_locator, suffix in ((spatial_source, spatial_locator, 'spatial'), (reference_source, reference_locator, 'reference')):
+        for case_source, case_locator, suffix in case_sources:
             graph, report = inspect_output(repository, env, client, case_source, case_locator, target_engine,
-                name, identifier, case_name + '-' + suffix, identity, timeout, browser_runner, expectation, native, [spatial_locator, reference_locator])
+                name, identifier, case_name + suffix, identity, timeout, browser_runner, expectation, native, source_locators)
             graphs.append(graph)
             browsers.append(report)
-        foundation_cases.append({'case_name': case_name, 'execution_id': identifier,
-            'automatic_target_scan_execution_id': scan_id, 'lineage': graphs, 'physical': native, 'browser': browsers})
+        (reclass_cases if reclass else foundation_cases).append({'case_name': case_name, 'execution_id': identifier,
+            'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if reclass else graphs,
+            'physical': native, 'browser': browsers[0] if reclass else browsers})
         preserved[name] = native['sha256']
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
@@ -669,7 +696,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'physical': physical_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
-            'utility_cases': utility_cases, 'foundation_cases': foundation_cases,
+            'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

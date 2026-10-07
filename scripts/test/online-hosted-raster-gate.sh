@@ -29,7 +29,7 @@ stop_online_fixture() {
   return "$status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-# This manual raster scene verifies 29 sequential browsers plus byte/lineage checks.
+# This manual raster scene verifies 31 sequential browsers plus byte/lineage checks.
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1740
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_TEST_RUN_ID="raster-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"

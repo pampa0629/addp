@@ -705,8 +705,8 @@ def _classification_rules(rules):
     return (np.asarray(lower), np.asarray(upper), np.asarray(classes), np.asarray(inclusive))
 
 
-def _reclassify(input_raster, rules, *, unmatched, band=1):
-    """Internal preparation: callers must explicitly choose unmatched handling."""
+def raster_reclassify(input_raster, rules, band=1, unmatched='nodata'):
+    """Classify one data band without changing its grid or reviving invalid pixels."""
     if unmatched not in ('nodata', 'keep'):
         raise ValueError('unmatched must be nodata or keep')
     lower, upper, classes, inclusive = _classification_rules(rules)
@@ -834,6 +834,7 @@ _SPECS = [
     (raster_stack, '栅格波段组合', [_INPUT(), _param('other_raster', 'raster', '追加数据波段的同网格栅格', role='input')], 'raster', ['read']),
     (raster_select_bands, '栅格波段选择', [_INPUT(), _param('bands', 'list[int]', '按顺序选择原始数据波段，序号从 1 开始，可重复'), _param('color_model', 'str', '输出波段颜色解释', 'multispectral', False, enum=['multispectral', 'rgb'])], 'raster', ['read']),
     (raster_band_math, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
+    (raster_reclassify, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_statistics, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_histogram, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
 ]
@@ -849,6 +850,9 @@ for function, label, params, output, effects in _SPECS:
     examples.update({'raster_align': {'reference_raster': {'$ref': 'reference'}},
                      'raster_stack': {'other_raster': {'$ref': 'other'}},
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
+    if name == 'raster_reclassify':
+        examples.update({'rules': [{'min': 0, 'max': 10, 'class': 1}, {'value': 10, 'class': 2}],
+                         'band': 1, 'unmatched': 'nodata'})
     metadata = OperatorMetadata(name=name, type=OperatorType.SPATIAL, category=OperatorCategory.RASTER,
         description=label, brief_description=label, overview=label + '，复用受控访问计划与当前执行内栅格对象。',
         params=params, output_ports=[OutputPort(name='default', type=output, description=label + '结果')],

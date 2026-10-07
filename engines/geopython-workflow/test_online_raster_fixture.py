@@ -246,7 +246,7 @@ def source_access_plan(path):
         'kind': 'file', 'format': 'tiff', 'access': {'method': 'mounted_path', 'path': str(path)}}}
 
 
-def utility_execution(tmp_path, scene, api_server, case_name):
+def single_source_execution(tmp_path, scene, api_server, case_name):
     source_name = (fixture.NON_COG_SOURCE if case_name == 'validate-cog-invalid' else
                    'build-overviews.cog.tif' if case_name == 'info-overviews' else
                    'to-cog.cog.tif' if case_name == 'validate-cog-valid' else 'source.tif')
@@ -254,10 +254,11 @@ def utility_execution(tmp_path, scene, api_server, case_name):
     source = tmp_path / ('utility-source-' + source_name)
     original = LocalMinio.objects[role, 'raster-' + role, source_name]
     source.write_bytes(original)
-    definition = scene.utility_workflow('source-locator', 2, case_name)
+    definition = (scene.reclass_workflow if case_name in fixture.RECLASS_CASES else scene.utility_workflow)(
+        'source-locator', 2, case_name)
     output = tmp_path / (case_name + '.cog.tif')
     plan = source_access_plan(source)
-    if case_name in fixture.UTILITY_CASES:
+    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES:
         plan['target'] = {'kind': 'file', 'format': 'tiff', 'name': output.name, 'write_mode': 'create',
             'access': {'method': 'mounted_path', 'path': str(output)}}
     if case_name == 'to-cog':
@@ -267,13 +268,13 @@ def utility_execution(tmp_path, scene, api_server, case_name):
         params.update(access_plan=plan, options=options)
     else:
         definition['tasks'][0]['params'] = {'access_plan': {key: value for key, value in plan.items() if key != 'target'}}
-        if case_name == 'build-overviews':
+        if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES:
             params = definition['tasks'][-1]['params']
             for key in ('target_parent_locator', 'target_name', 'write_mode'): params.pop(key)
             params['access_plan'] = {key: value for key, value in plan.items() if key != 'source'}
     client = api_server.app.test_client()
     response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {}, 'runtime': {
-        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write'] if case_name in fixture.UTILITY_CASES else ['read']}}})
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write'] if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES else ['read']}}})
     assert response.status_code == 202
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
@@ -283,7 +284,7 @@ def utility_execution(tmp_path, scene, api_server, case_name):
     assert status['status'] == 'success', status
     assert source.read_bytes() == original
     result = json.loads(status['result'])
-    if case_name in fixture.UTILITY_CASES:
+    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES:
         assert result['size_bytes'] == output.stat().st_size > 0
         LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     return result, output
@@ -631,7 +632,7 @@ def utility_artifacts(physical, tmp_path, monkeypatch, utility_baseline_cache):
         assert source_hashes == utility_baseline_cache['sources']
         LocalMinio.objects.update(utility_baseline_cache['targets'])
     for case in fixture.UTILITY_CASES:
-        result, output = utility_execution(tmp_path, scene, api_server, case)
+        result, output = single_source_execution(tmp_path, scene, api_server, case)
         evidence = fixture.worker('verify-' + case, physical)
         assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
         assert evidence['band_valid_pixels'] == [65535, 65535]
@@ -644,7 +645,7 @@ def test_async_utility_save_reload_info_and_cog_verdicts_match_physical_oracle(u
     before = {key: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items()}
     evidence = fixture.worker('verify-utility-queries', physical)
     for case in fixture.UTILITY_JSON_CASES:
-        result, _ = utility_execution(tmp_path, scene, api_server, case)
+        result, _ = single_source_execution(tmp_path, scene, api_server, case)
         execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
         assert scene.validate_utility_json(execution, case, evidence) == result
     assert {key: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items()} == before
@@ -732,6 +733,59 @@ def test_async_multiraster_weighted_rgb_match_independent_physical_oracle(founda
     assert len(evidence['preserved_sha256']) == 19
     assert evidence['invalid_pixels'] == 2
     assert evidence['overview_sizes'] == [[128, 128]]
+
+
+@pytest.fixture
+def reclass_artifacts(foundation_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    preserved = {key[2]: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items() if key[0] == 'target'}
+    for case in fixture.RECLASS_CASES:
+        result, output = single_source_execution(tmp_path, scene, api_server, case)
+        evidence = fixture.worker('verify-' + case, foundation_artifacts)
+        assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
+        assert evidence['preserved_sha256'] == preserved
+        assert evidence['band_valid_pixels'] == [fixture.reclass_expectation(case)['valid_pixels']]
+        preserved[output.name] = evidence['sha256']
+    return foundation_artifacts
+
+
+def test_async_reclassification_default_and_keep_match_physical_oracle(reclass_artifacts):
+    evidence = fixture.worker('verify-reclassify-keep', reclass_artifacts)
+    assert len(evidence['preserved_sha256']) == 21
+    assert evidence['band_valid_pixels'] == [65535]
+    assert evidence['overview_sizes'] == [[128, 128]]
+
+
+@pytest.mark.parametrize('fault', ['gap', 'zero-class', 'source-nodata', 'kept-value', 'overview', 'nodata', 'extra', 'source'])
+def test_reclassification_physical_oracle_rejects_gap_class_validity_and_preservation_faults(reclass_artifacts, tmp_path, fault):
+    if fault == 'extra':
+        LocalMinio.objects['target', 'raster-target', 'partial.tif'] = b'partial'
+    elif fault == 'source':
+        key = ('source', 'raster-source', 'source.tif')
+        LocalMinio.objects[key] += b'changed'
+    else:
+        name = ('reclassify-keep' if fault in ('kept-value', 'source-nodata') else 'reclassify-nodata') + '.cog.tif'
+        source = tmp_path / 'reclass-corrupt-source.tif'
+        source.write_bytes(LocalMinio.objects['target', 'raster-target', name])
+        edited = tmp_path / 'reclass-corrupt.tif'
+        dataset = gdal.Translate(str(edited), str(source), format='GTiff')
+        band = dataset.GetRasterBand(1)
+        if fault == 'nodata':
+            band.DeleteNoDataValue()
+        elif fault == 'overview':
+            dataset.BuildOverviews('NEAREST', [2])
+            band.GetOverview(0).WriteRaster(1, 0, 1, 1, struct.pack('<d', 123.), buf_type=gdal.GDT_Float64)
+        else:
+            position = 1 if fault == 'zero-class' else 0 if fault == 'source-nodata' else 511
+            band.WriteRaster(position % 256, position // 256, 1, 1, struct.pack('<d', 123.), buf_type=gdal.GDT_Float64)
+        band = None
+        dataset = None
+        dataset = gdal.Translate(str(source), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+        dataset = None
+        LocalMinio.objects['target', 'raster-target', name] = source.read_bytes()
+    with pytest.raises(fixture.FixtureError):
+        fixture.worker('verify-reclassify-keep', reclass_artifacts)
 
 
 @pytest.mark.parametrize('fault', ['weighted-pixel', 'rgb-green', 'rgb-hole', 'rgb-colour', 'overview', 'nodata', 'grid', 'extra', 'source'])
