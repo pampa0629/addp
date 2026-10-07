@@ -133,7 +133,8 @@ test('automatic refresh advances the server window without changing URL or fanou
   await page.clock.fastForward(15001)
   await expect.poll(() => resourceReads(state).length).toBe(2)
   await visibleChart(page)
-  expect(state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1).query).toMatchObject({ start: '2026-10-06T23:00:30.000Z', end: '2026-10-07T00:00:30.000Z' })
+  // Observations arrive before their anchored trend; an existing canvas is not completion evidence.
+  await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ start: '2026-10-06T23:00:30.000Z', end: '2026-10-07T00:00:30.000Z' })
   expect(page.url()).toBe(url)
   await page.getByRole('button', { name: '返回节点列表' }).click()
   await expect(page.getByRole('button', { name: '查看资源' })).toHaveCount(2)
