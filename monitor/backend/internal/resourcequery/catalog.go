@@ -68,6 +68,10 @@ var definitions = []Definition{
 	{"node.filesystem.available_bytes", "bytes", 0},
 	{"node.filesystem.used_bytes", "bytes", 0},
 	{"node.filesystem.used_percent", "percent", 0},
+	{"node.filesystem.inodes_total", "inodes", 0},
+	{"node.filesystem.inodes_free", "inodes", 0},
+	{"node.filesystem.inodes_used", "inodes", 0},
+	{"node.filesystem.inodes_used_percent", "percent", 0},
 }
 
 func Catalog() []Definition { return append([]Definition(nil), definitions...) }

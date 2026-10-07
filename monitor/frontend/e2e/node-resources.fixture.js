@@ -8,10 +8,10 @@ export const serverEnd = '2026-10-07T00:00:00Z'
 export function observations(id, keys, trend = false, mode = '', end = serverEnd) {
   const points = key => {
     const item = allResourceMetrics.find(metric => metric.key === key)
-    const filesystemValues = { 'node.filesystem.total_bytes': 100 * 1024 ** 3, 'node.filesystem.free_bytes': 30 * 1024 ** 3, 'node.filesystem.available_bytes': 25 * 1024 ** 3, 'node.filesystem.used_bytes': 70 * 1024 ** 3, 'node.filesystem.used_percent': 100 * 70 / 95 }
+    const filesystemValues = { 'node.filesystem.total_bytes': 100 * 1024 ** 3, 'node.filesystem.free_bytes': 30 * 1024 ** 3, 'node.filesystem.available_bytes': 25 * 1024 ** 3, 'node.filesystem.used_bytes': 70 * 1024 ** 3, 'node.filesystem.used_percent': 100 * 70 / 95, 'node.filesystem.inodes_total': 100, 'node.filesystem.inodes_free': mode === 'inode-empty' ? 100 : 80, 'node.filesystem.inodes_used': mode === 'inode-empty' ? 0 : 20, 'node.filesystem.inodes_used_percent': mode === 'inode-empty' ? 0 : 20 }
     const numeric = filesystemValues[key] ?? (item.unit === 'bytes' ? 17179869184 : item.name === 'uptime' ? 3600 : 0)
     return (trend ? [-30, -15, 0].map(offset => new Date(Date.parse(end) + offset * 1000).toISOString()) : [end]).map((evaluated_at, index) => {
-      const data_state = mode === 'cpu-warmup' && item.name === 'cpuBusy' ? 'no_data' : mode === 'disconnected' ? 'not_connected' : trend && index === 1 ? 'no_data' : !trend && item.name === 'memoryAvailable' ? 'stale' : 'valid'
+      const data_state = mode === 'inode-missing' && key.startsWith('node.filesystem.inodes_') ? 'no_data' : mode === 'cpu-warmup' && item.name === 'cpuBusy' ? 'no_data' : mode === 'disconnected' ? 'not_connected' : trend && index === 1 ? 'no_data' : !trend && item.name === 'memoryAvailable' ? 'stale' : 'valid'
       return { evaluated_at, sampled_at: data_state === 'not_connected' || data_state === 'no_data' ? null : evaluated_at, value: data_state === 'no_data' || data_state === 'not_connected' ? null : numeric, data_state }
     })
   }
@@ -35,7 +35,7 @@ export async function resourceBackend(page, options = {}) {
       if (path.endsWith('/host_nodes')) body = { data: nodes, total: 45, page: Number(url.searchParams.get('page')), page_size: 20 }
       else { body = nodes.find(item => path.endsWith(item.node_id)); if (!body) { status = 404; body = { error: 'not found' } } }
     } else if (path.startsWith('/api/v1/monitor/platform/resource_')) {
-      const trend = path.endsWith('/resource_trends'), mode = trend ? state.trendMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.') ? state.filesystemMode || state.mode : state.mode
+      const trend = path.endsWith('/resource_trends'), mode = trend ? state.trendMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.inodes_') ? state.inodeMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.') ? state.filesystemMode || state.mode : state.mode
       state.reads.push({ path, query: Object.fromEntries(url.searchParams), method: req.method() })
       const id = url.searchParams.get('node_id'), keys = url.searchParams.get('metrics').split(',')
       if (!trend && held && id === node) await held

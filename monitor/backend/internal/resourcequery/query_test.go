@@ -427,3 +427,38 @@ func TestCPUBusyWindowMetadataAndPercentageEvidence(t *testing.T) {
 		}
 	}
 }
+
+func TestInodeBudgetAndStrictIntegerEvidence(t *testing.T) {
+	keys := []string{"node.filesystem.inodes_total", "node.filesystem.inodes_free", "node.filesystem.inodes_used", "node.filesystem.inodes_used_percent"}
+	b := DefaultBudget()
+	dims := Dimensions{"device": "/dev/a", "mountpoint": "/", "fstype": "ext4"}
+	p, err := NewPlan(keys, testTime.Add(-7*24*time.Hour), testTime, testTime, true, nil, b)
+	if err != nil || p.FilesystemGroups != 25 || p.SeriesUpperBound != 100 || p.Points*p.SeriesUpperBound > 20000 {
+		t.Fatal(p, err)
+	}
+	selected, err := NewPlan(keys, testTime.Add(-7*24*time.Hour), testTime, testTime, true, dims, b)
+	if err != nil || selected.SeriesUpperBound != 4 || selected.StepSeconds >= p.StepSeconds {
+		t.Fatal(selected, err)
+	}
+	rows, err := normalize(wire(t, data("", true)), selected, b)
+	if err != nil || len(rows) != 4 || rows[0].Dimensions.identity() != dims.identity() || rows[0].Points[0].DataState != "no_data" {
+		t.Fatal(rows, err)
+	}
+	instant, _ := NewPlan(keys[1:2], testTime, testTime, testTime, false, dims, b)
+	row := func(component, value string) string {
+		labels := dims.Copy()
+		labels["addp_metric"], labels["addp_component"] = keys[1], component
+		encoded, _ := json.Marshal(labels)
+		return `{"metric":` + string(encoded) + `,"value":` + pair(testTime.Unix(), value) + `}`
+	}
+	for _, value := range []string{"10.5", "9007199254740992", "+Inf", "-1", "0", "9007199254740991"} {
+		result, err := normalize(wire(t, data(row("value", value)+","+row("sampled_at", "1800000000")+","+row("observed_at", "1800000000"), false)), instant, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		valid := value == "0" || value == "9007199254740991"
+		if (result[0].Points[0].DataState == "valid") != valid {
+			t.Fatal(value, result)
+		}
+	}
+}

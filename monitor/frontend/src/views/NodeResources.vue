@@ -46,12 +46,14 @@
         <p class="resource-hint">{{ t('monitor.resources.filesystem.hint') }}</p>
         <p v-if="filesystems" class="resource-hint">{{ t('monitor.resources.queriedAt') }}: {{ date(filesystems.queried_at) }}</p>
         <el-alert v-if="filesystemErrorKey" :title="t(filesystemErrorKey)" type="error" show-icon :closable="false" data-testid="resource-filesystem-error" />
-        <el-table v-else :data="mountRows" :empty-text="filesystems ? t(`monitor.resources.states.${filesystems.series[0].points[0].data_state}`) : t('monitor.resources.filesystem.empty')" data-testid="resource-filesystem-table">
+        <el-alert v-if="inodeErrorKey" :title="`${t('monitor.resources.filesystem.inode')}: ${t(inodeErrorKey)}`" type="error" show-icon :closable="false" data-testid="resource-inode-error" />
+        <p v-if="inodes" class="resource-hint">{{ t('monitor.resources.filesystem.inode') }} · {{ t('monitor.resources.queriedAt') }}: {{ date(inodes.queried_at) }}</p>
+        <el-table :data="mountRows" :empty-text="filesystems ? t(`monitor.resources.states.${filesystems.series[0].points[0].data_state}`) : t('monitor.resources.filesystem.empty')" data-testid="resource-filesystem-table">
           <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
           <el-table-column prop="dimensions.mountpoint" :label="t('monitor.resources.filesystem.mountpoint')" min-width="180" show-overflow-tooltip />
           <el-table-column prop="dimensions.fstype" :label="t('monitor.resources.filesystem.type')" min-width="100" show-overflow-tooltip />
-          <el-table-column v-for="metric in filesystemMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
-            <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p><p class="resource-hint">{{ date(row.metrics[metric.key].sampled_at) }}</p></template>
+          <el-table-column v-for="metric in mountMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
+            <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p><p v-if="row.metrics[metric.key]" class="resource-hint">{{ date(row.metrics[metric.key].sampled_at) }}</p></template>
           </el-table-column>
           <el-table-column :label="t('monitor.resources.trend')" width="140" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="selectFilesystem(row)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
         </el-table>
@@ -102,7 +104,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, allResourceMetrics, filesystemRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, allResourceMetrics, filesystemRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -111,10 +113,10 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
 const listQuery = computed(() => { const { range, metric, refresh, device, mountpoint, fstype, ...query } = state.value.query; return query })
-const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null)
-const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
+const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null)
+const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
-const mountRows = computed(() => filesystemRows(filesystems.value))
+const mountRows = computed(() => filesystemRows(filesystems.value, inodes.value))
 const trendMetrics = computed(() => state.value.dimensions.mountpoint ? allResourceMetrics : resourceMetrics)
 const chartRows = computed(() => trend.value ? resourceChartRows(trend.value.series[0]) : [])
 const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
@@ -160,8 +162,8 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
-  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null }
-  errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = '';  evidencePage.value = 1; loading.value = false
+  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null }
+  errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = '';  evidencePage.value = 1; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
   searchText.value = state.value.search
@@ -183,7 +185,7 @@ async function reload({ automatic = false } = {}) {
       const current = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))
       if (ticket !== epoch) return
       instant.value = validateResourceResponse(current, id, keys)
-      filesystems.value = null
+      filesystems.value = null; inodes.value = null
       try {
         const filesystemKeys = filesystemMetrics.map(metric => metric.key)
         const mounts = await request(config => api.instant({ node_id: id, metrics: filesystemKeys.join(',') }, config))
@@ -192,6 +194,17 @@ async function reload({ automatic = false } = {}) {
       } catch (error) {
         if (ticket !== epoch) return
         filesystemErrorKey.value = resourceErrorKey(error)
+        if ([401, 403, 404].includes(error.response?.status)) throw error
+      }
+      inodes.value = null
+      try {
+        const inodeKeys = inodeMetrics.map(metric => metric.key)
+        const observed = await request(config => api.instant({ node_id: id, metrics: inodeKeys.join(',') }, config))
+        if (ticket !== epoch) return
+        inodes.value = validateResourceResponse(observed, id, inodeKeys)
+      } catch (error) {
+        if (ticket !== epoch) return
+        inodeErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
       trend.value = null
@@ -204,12 +217,12 @@ async function reload({ automatic = false } = {}) {
         if (ticket !== epoch) return
         trend.value = null
         trendErrorKey.value = resourceErrorKey(error)
-        if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; errorKey.value = trendErrorKey.value }
+        if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; inodes.value = null; errorKey.value = trendErrorKey.value }
       }
     }
   } catch (error) {
     if (ticket !== epoch) return
-    instant.value = null; trend.value = null; filesystems.value = null
+    instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null }
   } finally { if (ticket === epoch) { loading.value = false; scheduleRefresh() } }

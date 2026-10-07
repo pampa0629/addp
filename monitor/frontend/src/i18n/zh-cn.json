@@ -628,7 +628,11 @@
         "filesystemFree": "空闲容量",
         "filesystemAvailable": "普通用户可用",
         "filesystemUsed": "已用容量",
-        "filesystemUsedPercent": "可用容量使用率"
+        "filesystemUsedPercent": "可用容量使用率",
+        "inodeTotal": "inode 总数",
+        "inodeFree": "空闲 inode",
+        "inodeUsed": "已用 inode",
+        "inodeUsedPercent": "inode 使用率"
       },
       "ranges": {
         "5m": "近 5 分钟",
@@ -641,7 +645,8 @@
         "bytes": "B",
         "percent": "%",
         "load": "负载",
-        "seconds": "秒"
+        "seconds": "秒",
+        "inodes": "个"
       },
       "states": {
         "valid": "有效",
@@ -669,7 +674,8 @@
         "device": "设备",
         "mountpoint": "挂载点",
         "type": "文件系统类型",
-        "viewTrend": "查看趋势"
+        "viewTrend": "查看趋势",
+        "inode": "inode 统计"
       }
     }
   }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, filesystemRows } from '../src/utils/nodeResources.js'
+import { currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, filesystemRows } from '../src/utils/nodeResources.js'
 
 test('node resource trends delegate chart rendering and formatting to the shared owners', () => {
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
@@ -99,4 +99,21 @@ test('filesystem series retain bind mounts and reject incomplete, foreign or fab
   const empty = { ...response, series: filesystemMetrics.map(metric => ({ metric_key: metric.key, dimensions: {}, unit: metric.unit, window_seconds: 0, points: [{ evaluated_at: at, sampled_at: null, value: null, data_state: 'no_data' }] })) }
   assert.equal(validateResourceResponse(empty, 'node-id', keys), empty)
   assert.deepEqual(filesystemRows(empty), [])
+})
+
+
+test('inode observations share mount identity and reject fractional or unsafe counts', () => {
+  const at = '2026-10-07T00:00:00Z', dimensions = { device: '/dev/a', mountpoint: '/', fstype: 'ext4' }
+  const keys = inodeMetrics.map(metric => metric.key)
+  const series = inodeMetrics.map(metric => ({ metric_key: metric.key, dimensions, unit: metric.unit, window_seconds: 0, points: [{ evaluated_at: at, sampled_at: at, value: metric.name === 'inodeTotal' || metric.name === 'inodeFree' ? 100 : 0, data_state: 'valid' }] }))
+  const response = { subject: { kind: 'node', node_id: 'node-id' }, series, end: at, queried_at: at }
+  assert.equal(validateResourceResponse(response, 'node-id', keys), response)
+  assert.equal(filesystemRows(response, null).length, 1)
+  for (const value of [0.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const bad = structuredClone(response); bad.series.find(row => row.unit === 'inodes').points[0].value = value
+    assert.throws(() => validateResourceResponse(bad, 'node-id', keys))
+  }
+  const route = resolveResourceRoute({ metric: 'node.filesystem.inodes_used_percent', ...dimensions }, true)
+  assert.deepEqual(route.dimensions, dimensions)
+  assert.equal(route.invalidDimensions, false)
 })

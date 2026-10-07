@@ -57,11 +57,36 @@ func filesystemExpression(s Scope, key string, dimensions Dimensions) (value, st
 		guard := " and on" + group + " (count by" + group + "(" + raw + ")==1)"
 		return "(max by" + group + "(" + raw + ")" + guard + ")", "(max by" + group + "(timestamp(" + raw + "))" + guard + ")"
 	}
+	deviceError, es := gauge("node_filesystem_device_error")
+	presence = es
+	if strings.HasPrefix(key, "node.filesystem.inodes_") {
+		total, ts := gauge("node_filesystem_files")
+		free, fs := gauge("node_filesystem_files_free")
+		guard := " and on" + group + " (" + deviceError + "==0)" +
+			" and on" + group + " (" + total + ">0)" +
+			" and on" + group + " (" + total + "<=9007199254740991)" +
+			" and on" + group + " (" + total + "==floor(" + total + "))" +
+			" and on" + group + " (" + free + ">=0)" +
+			" and on" + group + " (" + free + "<= on" + group + " " + total + ")" +
+			" and on" + group + " (" + free + "==floor(" + free + "))" +
+			" and on" + group + " (" + ts + "== on" + group + " " + fs + ")" +
+			" and on" + group + " (" + ts + "== on" + group + " " + es + ")"
+		used := "(" + total + " - on" + group + " " + free + ")"
+		switch key {
+		case "node.filesystem.inodes_total":
+			value = total
+		case "node.filesystem.inodes_free":
+			value = free
+		case "node.filesystem.inodes_used":
+			value = used
+		case "node.filesystem.inodes_used_percent":
+			value = "(100 * (" + used + " / on" + group + " " + total + "))"
+		}
+		return "(" + value + guard + ")", "(" + ts + guard + ")", presence
+	}
 	total, ts := gauge("node_filesystem_size_bytes")
 	free, fs := gauge("node_filesystem_free_bytes")
 	available, as := gauge("node_filesystem_avail_bytes")
-	deviceError, es := gauge("node_filesystem_device_error")
-	presence = es
 	guard := " and on" + group + " (" + deviceError + "==0)" +
 		" and on" + group + " (" + total + ">=0)" + " and on" + group + " (" + free + ">=0)" +
 		" and on" + group + " (" + available + ">=0)" + " and on" + group + " (" + free + " <= on" + group + " " + total + ")" +
@@ -82,7 +107,7 @@ func filesystemExpression(s Scope, key string, dimensions Dimensions) (value, st
 		value = used
 	case "node.filesystem.used_percent":
 		denominator := "(" + used + " + on" + group + " " + available + ")"
-		value = "(100 * " + used + " / on" + group + " " + denominator + ")"
+		value = "(100 * (" + used + " / on" + group + " " + denominator + "))"
 		guard += " and on" + group + " (" + denominator + ">0)"
 	}
 	return "(" + value + guard + ")", "(" + ts + guard + ")", presence

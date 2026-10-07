@@ -19,17 +19,23 @@ export const filesystemMetrics = [
   { key: 'node.filesystem.available_bytes', name: 'filesystemAvailable', unit: 'bytes', precision: 0 },
   { key: 'node.filesystem.free_bytes', name: 'filesystemFree', unit: 'bytes', precision: 0 }
 ]
-export const allResourceMetrics = [...resourceMetrics, ...filesystemMetrics]
+export const inodeMetrics = [
+  { key: 'node.filesystem.inodes_used_percent', name: 'inodeUsedPercent', unit: 'percent', precision: 2 },
+  { key: 'node.filesystem.inodes_total', name: 'inodeTotal', unit: 'inodes', precision: 0 },
+  { key: 'node.filesystem.inodes_free', name: 'inodeFree', unit: 'inodes', precision: 0 },
+  { key: 'node.filesystem.inodes_used', name: 'inodeUsed', unit: 'inodes', precision: 0 }
+]
+export const mountMetrics = [...filesystemMetrics, ...inodeMetrics]
+export const allResourceMetrics = [...resourceMetrics, ...mountMetrics]
 const dimensionKeys = ['device', 'mountpoint', 'fstype']
 export function validResourceDimensions(value, allowEmpty = true) {
   return value && typeof value === 'object' && !Array.isArray(value) && ((allowEmpty && Object.keys(value).length === 0) ||
     (Object.keys(value).length === 3 && dimensionKeys.every(key => typeof value[key] === 'string' && value[key].length > 0 && value[key].length <= 4096 && !value[key].includes('\0')) && value.mountpoint.startsWith('/')))
 }
 export function resourceDimensionID(dimensions) { return JSON.stringify(dimensionKeys.map(key => dimensions[key] ?? null)) }
-export function filesystemRows(value) {
-  if (!value) return []
+export function filesystemRows(...values) {
   const rows = new Map()
-  for (const series of value.series) {
+  for (const series of values.filter(Boolean).flatMap(value => value.series)) {
     if (!validResourceDimensions(series.dimensions, false)) continue
     const key = resourceDimensionID(series.dimensions)
     if (!rows.has(key)) rows.set(key, { key, dimensions: series.dimensions, metrics: {} })
@@ -82,13 +88,26 @@ export function validateResourceResponse(value, nodeID, keys, trend = false, dim
     seen.add(series.metric_key + resourceDimensionID(series.dimensions))
     for (const point of series.points) {
       if (!['valid', 'stale', 'no_data', 'not_connected'].includes(point.data_state) || !Number.isFinite(Date.parse(point.evaluated_at)) || (point.sampled_at !== null && !Number.isFinite(Date.parse(point.sampled_at))) || (point.value !== null && (typeof point.value !== 'number' || !Number.isFinite(point.value))) || (point.data_state === 'valid' && (point.value === null || point.sampled_at === null))) throw new Error('invalid_resource_response')
-      if ((point.value !== null && (point.value < 0 || (series.unit === 'percent' && point.value > 100))) || (['no_data', 'not_connected'].includes(point.data_state) && (point.value !== null || point.sampled_at !== null)) || (point.data_state === 'stale' && (point.value === null || point.sampled_at === null)) || (filesystem && Object.keys(series.dimensions).length === 0 && !['no_data', 'not_connected'].includes(point.data_state))) throw new Error('invalid_resource_response')
+      if ((point.value !== null && (point.value < 0 || (series.unit === 'percent' && point.value > 100) || (series.unit === 'inodes' && !Number.isSafeInteger(point.value)))) || (['no_data', 'not_connected'].includes(point.data_state) && (point.value !== null || point.sampled_at !== null)) || (point.data_state === 'stale' && (point.value === null || point.sampled_at === null)) || (filesystem && Object.keys(series.dimensions).length === 0 && !['no_data', 'not_connected'].includes(point.data_state))) throw new Error('invalid_resource_response')
     }
   }
   const metricGroups = keys.map(key => value.series.filter(series => series.metric_key === key).map(series => resourceDimensionID(series.dimensions)).sort())
   if (metricGroups.some((groups, index) => groups.length === 0 || (!keys[index].startsWith('node.filesystem.') && groups.length !== 1))) throw new Error('invalid_resource_response')
   const filesystemGroups = metricGroups.filter((_, index) => keys[index].startsWith('node.filesystem.')).map(groups => JSON.stringify(groups))
   if (new Set(filesystemGroups).size > 1 || value.series.reduce((total, series) => total + series.points.length, 0) > 20000) throw new Error('invalid_resource_response')
+  if (inodeMetrics.every(metric => keys.includes(metric.key))) {
+    for (const group of new Set(value.series.filter(series => series.metric_key === inodeMetrics[0].key).map(series => resourceDimensionID(series.dimensions)))) {
+      const mounted = Object.fromEntries(value.series.filter(series => resourceDimensionID(series.dimensions) === group).map(series => [series.metric_key, series]))
+      for (let i = 0; i < mounted[inodeMetrics[0].key].points.length; i++) {
+        const points = inodeMetrics.map(metric => mounted[metric.key].points[i])
+        if (points.some(point => !point) || new Set(points.map(point => point.data_state)).size !== 1 || new Set(points.map(point => point.sampled_at)).size !== 1) throw new Error('invalid_resource_response')
+        if (['valid', 'stale'].includes(points[0].data_state)) {
+          const [percentage, total, free, used] = points.map(point => point.value)
+          if (total <= 0 || free > total || used !== total - free || Math.abs(percentage - 100 * used / total) > 1e-8) throw new Error('invalid_resource_response')
+        }
+      }
+    }
+  }
   return value
 }
 export function resourceErrorKey(error) {

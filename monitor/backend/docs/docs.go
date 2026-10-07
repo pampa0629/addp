@@ -2763,7 +2763,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定九项标量及五项文件系统容量；文件系统按挂载维度，可用容量使用率为 used/(used+available)；缺少有效证据返回 no_data | Nine scalar and five filesystem metrics; mounts have fixed dimensions and available-capacity usage is used/(used+available); missing evidence returns no_data",
+                "description": "固定九项标量、五项字节容量及四项 inode；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity and four inode metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],
@@ -2880,7 +2880,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定九项标量及五项文件系统容量；文件系统按挂载维度，可用容量使用率为 used/(used+available)；缺少有效证据返回 no_data | Nine scalar and five filesystem metrics; mounts have fixed dimensions and available-capacity usage is used/(used+available); missing evidence returns no_data",
+                "description": "固定九项标量、五项字节容量及四项 inode；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity and four inode metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],

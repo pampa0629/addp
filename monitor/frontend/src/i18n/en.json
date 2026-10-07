@@ -628,7 +628,11 @@
         "filesystemFree": "Free capacity",
         "filesystemAvailable": "Available to non-root",
         "filesystemUsed": "Used capacity",
-        "filesystemUsedPercent": "Available-capacity usage"
+        "filesystemUsedPercent": "Available-capacity usage",
+        "inodeTotal": "Total inodes",
+        "inodeFree": "Free inodes",
+        "inodeUsed": "Used inodes",
+        "inodeUsedPercent": "Inode usage"
       },
       "ranges": {
         "5m": "Last 5 minutes",
@@ -641,7 +645,8 @@
         "bytes": "B",
         "percent": "%",
         "load": "load",
-        "seconds": "seconds"
+        "seconds": "seconds",
+        "inodes": "inodes"
       },
       "states": {
         "valid": "Valid",
@@ -669,7 +674,8 @@
         "device": "Device",
         "mountpoint": "Mountpoint",
         "type": "Filesystem type",
-        "viewTrend": "View trend"
+        "viewTrend": "View trend",
+        "inode": "Inode statistics"
       }
     }
   }

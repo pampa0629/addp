@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { resourceMetrics, filesystemMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { resourceMetrics, filesystemMetrics, inodeMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -142,7 +142,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     save('filesystem-mount-trend-restore')
     const filesystemTable = monitor.getByTestId('resource-filesystem-table')
     await expect(filesystemTable.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
-    const mounts = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.startsWith('node.filesystem.')).at(-1)
+    const mounts = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes('node.filesystem.total_bytes')).at(-1)
     expect(mounts.query.metrics.split(',').sort()).toEqual(filesystemMetrics.map(item => item.key).sort())
     expect(mounts.value.series.every(item => Object.keys(item.dimensions).length === 3)).toBe(true)
     await filesystemTable.getByRole('button', { name: '查看趋势' }).first().click()
@@ -161,9 +161,28 @@ test('platform node resources through real Console password MFA and Monitor ifra
     expect(filesystemTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
     await monitor.getByTestId('resource-filesystems').scrollIntoViewIfNeeded()
     await page.screenshot({ path: resolve(artifact, 'node-resources-filesystem.png'), animations: 'disabled' })
+    save('inode-mount-trend-restore')
+    const inodeReply = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes('node.filesystem.inodes_total')).at(-1)
+    expect(inodeReply.query.metrics.split(',').sort()).toEqual(inodeMetrics.map(item => item.key).sort())
+    const supported = inodeReply.value.series.find(item => item.metric_key === 'node.filesystem.inodes_total' && ['device', 'mountpoint', 'fstype'].every(key => item.dimensions[key] === selected[key]))
+    expect(supported.points[0].data_state).toBe('valid')
+    await monitor.getByTestId('resource-metric').click()
+    await monitor.getByRole('option', { name: 'inode 使用率', exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.get('metric') === 'node.filesystem.inodes_used_percent')
+    await page.reload()
+    monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(monitor.getByTestId('resource-metric')).toContainText('inode 使用率')
+    await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    await Promise.all(pending)
+    const inodeTrend = resources.filter(item => item.query.metrics === 'node.filesystem.inodes_used_percent').at(-1)
+    for (const key of ['device', 'mountpoint', 'fstype']) expect(inodeTrend.query[key]).toBe(selected[key])
+    expect(inodeTrend.value.series).toHaveLength(1)
+    expect(inodeTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
+    await monitor.getByTestId('resource-chart').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: resolve(artifact, 'node-resources-inodes.png'), animations: 'disabled' })
     expect(businessErrors).toEqual([])
     report.resources = resources
-    report.navigation = { list_without_fanout: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true }
+    report.navigation = { list_without_fanout: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true, inode_reload: true }
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     try {

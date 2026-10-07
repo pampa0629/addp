@@ -281,7 +281,8 @@ test('filesystem failure clears its own table while valid scalar cards and trend
   state.filesystemMode = 'budget'
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByTestId('resource-filesystem-error')).toContainText('查询超过当前预算')
-  await expect(page.getByTestId('resource-filesystem-table')).toHaveCount(0)
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('/data')
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('20.00 %')
   await expect(page.getByTestId('resource-cores')).toContainText('0 核')
   await visibleChart(page)
   state.filesystemMode = ''
@@ -297,4 +298,41 @@ test('incomplete filesystem identity shows an error without querying another res
   await expect(page.getByTestId('resource-cores')).toHaveCount(0)
   expect(state.reads).toHaveLength(0)
   expect(new URL(page.url()).searchParams.get('metric')).toBe('node.filesystem.used_percent')
+})
+
+
+test('inode missing statistics remain empty while byte capacity is valid, then valid zero restores with exact trend URL', async ({ page }) => {
+  const state = await resourceBackend(page)
+  state.inodeMode = 'inode-missing'
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  const table = page.getByTestId('resource-filesystem-table')
+  await expect(table).toContainText('73.68 %')
+  await expect(table).toContainText('缺失')
+  state.inodeMode = 'inode-empty'
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(table).toContainText('0.00 %')
+  await table.getByRole('button', { name: '查看趋势' }).click()
+  await page.getByTestId('resource-metric').click()
+  await page.getByRole('option', { name: 'inode 使用率', exact: true }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('metric') === 'node.filesystem.inodes_used_percent' && url.searchParams.get('mountpoint') === '/data')
+  await page.reload()
+  await expect(page.getByTestId('resource-metric')).toContainText('inode 使用率')
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ metrics: 'node.filesystem.inodes_used_percent', device: '/dev/fixture', mountpoint: '/data', fstype: 'ext4' })
+})
+test('inode budget failure clears only inode values and recovery stays in the same refresh lifecycle', async ({ page }) => {
+  const state = await resourceBackend(page)
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('20.00 %')
+  state.inodeMode = 'budget'
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-inode-error')).toContainText('查询超过当前预算')
+  await expect(page.getByTestId('resource-filesystem-table')).not.toContainText('20.00 %')
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('73.68 %')
+  await expect(page.getByTestId('resource-cores')).toContainText('0 核')
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  state.inodeMode = ''
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-inode-error')).toHaveCount(0)
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('20.00 %')
 })

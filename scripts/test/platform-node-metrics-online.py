@@ -34,7 +34,8 @@ METRICS = {"node.cpu.logical_cores": "cores", "node.cpu.busy_percent": "percent"
            "node.load.average_1m": "load", "node.load.average_5m": "load",
            "node.load.average_15m": "load", "node.uptime_seconds": "seconds"}
 FILESYSTEM_METRICS = {"node.filesystem."+key: unit for key, unit in (("total_bytes", "bytes"), ("free_bytes", "bytes"), ("available_bytes", "bytes"), ("used_bytes", "bytes"), ("used_percent", "percent"))}
-ALL_METRICS = dict(METRICS, **FILESYSTEM_METRICS)
+INODE_METRICS = {"node.filesystem."+key: unit for key, unit in (("inodes_total", "inodes"), ("inodes_free", "inodes"), ("inodes_used", "inodes"), ("inodes_used_percent", "percent"))}
+ALL_METRICS = dict(METRICS, **FILESYSTEM_METRICS, **INODE_METRICS)
 REQUIRED = {"platform.host_node.create", "platform.host_node.read", "platform.host_node.update",
             "monitor.monitoring_target.create", "monitor.monitoring_target.read",
             "monitor.monitoring_target.update", "monitor.monitoring_target.delete",
@@ -274,6 +275,7 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
                 sampled = utc_timestamp(sample)
                 require(type(number) in {int, float} and math.isfinite(number) and number >= 0 and sampled <= evaluated, "invalid resource evidence")
                 require(expected[key] != "percent" or number <= 100, "invalid resource percentage")
+                require(expected[key] != "inodes" or (number <= 2**53-1 and number == math.floor(number)), "invalid inode integer")
                 age = (evaluated if trend else queried)-sampled
                 require((state == "valid" and age <= 60) or (state == "stale" and age > 60), "freshness state lacks evidence")
                 valid += int(state == "valid")
@@ -305,6 +307,26 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
                     require(percentage["data_state"] == "valid" and percentage["sampled_at"] == gauges[0]["sampled_at"] and math.isclose(percentage["value"], 100*used/(used+available), rel_tol=1e-9, abs_tol=1e-8), "filesystem non-root percentage mismatch")
 
 
+    if set(INODE_METRICS) <= set(expected):
+        for group in filesystem_groups[0]:
+            mounted = {row["metric_key"]: row for row in rows if tuple(sorted(row["dimensions"].items())) == group}
+            for index in range(count):
+                points = [mounted[key]["points"][index] for key in INODE_METRICS]
+                require(len({point["data_state"] for point in points}) == 1 and len({point["sampled_at"] for point in points}) == 1, "inode capacity spans scrapes or states")
+                if points[0]["data_state"] in {"valid", "stale"}:
+                    total, free, used, percentage = (point["value"] for point in points)
+                    require(total > 0 and free <= total and used == total-free and math.isclose(percentage, 100*used/total, rel_tol=1e-9, abs_tol=1e-8), "inode capacity formula mismatch")
+
+
+def fresh_inode_mounts(value, after=0):
+    """Called only after strict resource validation; unsupported mounts are empty."""
+    groups = {}
+    for row in value["series"]:
+        groups.setdefault(tuple(sorted(row["dimensions"].items())), {})[row["metric_key"]] = row["points"][0]
+    return [dict(dimensions) for dimensions, points in groups.items() if set(points) == set(INODE_METRICS)
+            and all(point["data_state"] == "valid" and utc_timestamp(point["sampled_at"]) > after for point in points.values())]
+
+
 def resource_query_ready(admin, node, target):
     result = admin.request("GET", resource_path(node), (200,))
     require(result.status == 200, "resource readiness query failed")
@@ -322,6 +344,8 @@ def check_query_policy(admin, node):
     require(admin.request("GET", QUERY_POLICY, (200,)).payload == lowered, "conflicting query policy changed state")
     filesystem_failure = admin.request("GET", resource_path(node, keys=FILESYSTEM_METRICS), (422,)).payload
     require(filesystem_failure.get("error_code") == "observability_query_budget_exceeded", "filesystem query ignored hot metric budget")
+    inode_failure = admin.request("GET", resource_path(node, keys=INODE_METRICS), (422,)).payload
+    require(inode_failure.get("error_code") == "observability_query_budget_exceeded", "inode query ignored hot metric budget")
     failure = admin.request("GET", resource_path(node), (422,)).payload
     require(failure.get("error_code") == "observability_query_budget_exceeded", "new query ignored lowered budget")
     key = ["node.memory.total_bytes"]
@@ -347,6 +371,9 @@ def resource_query_after(admin, node, target, after, keys=None):
     result = admin.request("GET", resource_path(node, keys=keys), (200, 503, 504))
     if result.status != 200:
         return False
+    if keys == INODE_METRICS:
+        assert_resources(result.payload, node, target, keys=keys, require_fresh=False)
+        return bool(fresh_inode_mounts(result.payload, after))
     rows = result.payload.get("series", [])
     if len(rows) < len(expected) or not all(row.get("points") and row["points"][0].get("data_state") == "valid" and utc_timestamp(row["points"][0].get("sampled_at")) > after for row in rows):
         return False
@@ -376,7 +403,7 @@ def validate_resource_browser(value, expected, artifacts):
         require(actor["principal"].get("id") == expected[principal], "browser did not use the API phase identity")
     require(value.get("negative_no_business_reads") is True and value.get("navigation") == {
         "list_without_fanout": True, "iframe_preserved": True, "history": True,
-        "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True}, "browser navigation or denial evidence missing")
+        "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True}, "browser navigation or denial evidence missing")
     require(value.get("auto_refresh") == {"natural_timer": True, "server_end_advanced": True,
             "unchanged_url": True, "off_restored": True, "off_no_requests": True}, "browser automatic refresh evidence missing")
     rows = value.get("resources")
@@ -391,13 +418,14 @@ def validate_resource_browser(value, expected, artifacts):
         require(trend or row.get("path") == OBSERVATIONS, "browser resource path mismatch")
         keys = query.get("metrics", "").split(",")
         require((trend and keys in [["node.memory.used_percent"], ["node.cpu.busy_percent"]])
-                or (trend and keys == ["node.filesystem.used_percent"])
-                or (not trend and (set(keys) == set(METRICS) or set(keys) == set(FILESYSTEM_METRICS)) and len(keys) == len(set(keys))), "browser metric request mismatch")
+                or (trend and keys in [["node.filesystem.used_percent"], ["node.filesystem.inodes_used_percent"]])
+                or (not trend and (set(keys) == set(METRICS) or set(keys) == set(FILESYSTEM_METRICS) or set(keys) == set(INODE_METRICS)) and len(keys) == len(set(keys))), "browser metric request mismatch")
         duration = utc_timestamp(query.get("end")) - utc_timestamp(query.get("start")) if trend else 0
         require(not trend or duration in {300, 3600}, "browser range mismatch")
         dims = {key: query[key] for key in ("device", "mountpoint", "fstype") if key in query}
-        require(not dims or (trend and keys == ["node.filesystem.used_percent"] and len(dims) == 3), "browser selector mismatch")
-        assert_resources(resource, expected["node"], expected["target"], trend, keys, range_seconds=duration, dimensions=dims)
+        require(not dims or (trend and keys in [["node.filesystem.used_percent"], ["node.filesystem.inodes_used_percent"]] and len(dims) == 3), "browser selector mismatch")
+        assert_resources(resource, expected["node"], expected["target"], trend, keys, range_seconds=duration, dimensions=dims, require_fresh=trend or set(keys) != set(INODE_METRICS))
+        if not trend and set(keys) == set(INODE_METRICS): require(fresh_inode_mounts(resource), "browser inode table has no supported fresh mount")
         require(resource["policy_version"] == expected["policy_version"], "browser ignored current query budget")
         if trend:
             end = utc_timestamp(query.get("end"))
@@ -407,8 +435,9 @@ def validate_resource_browser(value, expected, artifacts):
         else:
             instants.append(resource)
     require(any(set(row["metric_key"] for row in item["series"]) == set(FILESYSTEM_METRICS) for item in instants), "browser mount table evidence missing")
-    require(len(instants) >= 2 and {("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300)} <= set(trends), "browser restore evidence incomplete")
-    for name in ("list", "detail", "restored", "filesystem"):
+    require(any(set(row["metric_key"] for row in item["series"]) == set(INODE_METRICS) for item in instants), "browser inode table evidence missing")
+    require(len(instants) >= 2 and {("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300)} <= set(trends), "browser restore evidence incomplete")
+    for name in ("list", "detail", "restored", "filesystem", "inodes"):
         screenshot = artifacts / ("node-resources-" + name + ".png")
         require(screenshot.is_file() and screenshot.stat().st_size > 1000
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
@@ -427,7 +456,7 @@ def run_resource_browser(node, target, policy, display_name, admin, security):
     (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
     evidence = artifacts / "node-resources-browser.json"
     evidence.unlink(missing_ok=True)
-    for name in ("list", "detail", "restored", "filesystem"):
+    for name in ("list", "detail", "restored", "filesystem", "inodes"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
     result = subprocess.run(["npm", "run", "test:e2e", "--", "--config=playwright.online.config.js",
                              "e2e/online/platform-node-resources.spec.js",
@@ -499,6 +528,7 @@ def run(base, directory, report):
         for trend in (False, True):
             client.request("GET", resource_path(node, trend), expected)
             client.request("GET", resource_path(node, trend, keys=FILESYSTEM_METRICS), expected)
+            client.request("GET", resource_path(node, trend, keys=INODE_METRICS), expected)
         client.request("GET", QUERY_POLICY, expected)
         client.request("PUT", QUERY_POLICY, expected, {key: value for key, value in query_policy.items() if key != "pending_restart"})
     require(admin.request("GET", QUERY_POLICY, (200,)).payload == query_policy, "denied budget writes changed state")
@@ -550,6 +580,15 @@ def run(base, directory, report):
     assert_resources(history, node, target, trend=True, keys=FILESYSTEM_METRICS, dimensions=selected)
     (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "node-filesystem-query.json").write_text(json.dumps(mount_value))
     report["filesystem_query"] = True
+    inode_value = admin.request("GET", resource_path(node, keys=INODE_METRICS), (200,)).payload
+    assert_resources(inode_value, node, target, keys=INODE_METRICS, require_fresh=False)
+    inode_mounts = fresh_inode_mounts(inode_value)
+    require(inode_mounts, "native inode query has no supported fresh mount")
+    inode_history = admin.request("GET", resource_path(node, True, keys=INODE_METRICS, dimensions=inode_mounts[0]), (200,)).payload
+    assert_resources(inode_history, node, target, trend=True, keys=INODE_METRICS, dimensions=inode_mounts[0])
+    (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "node-inode-query.json").write_text(json.dumps(inode_value))
+    (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "node-inode-trend.json").write_text(json.dumps(inode_history))
+    report["inode_query"] = True
     query_policy = check_query_policy(admin, node)
     report.update(resource_query=True, query_budget_cas_hot_read=True, query_policy_version=query_policy["version"])
     report["stage"] = "console-resource-browser"
@@ -567,6 +606,7 @@ def run(base, directory, report):
         center_action("start")
     eventually(lambda: resource_query_after(admin, node, target, recovery), "new API query evidence after center recovery")
     eventually(lambda: resource_query_after(admin, node, target, recovery, FILESYSTEM_METRICS), "new filesystem evidence after center recovery")
+    eventually(lambda: resource_query_after(admin, node, target, recovery, INODE_METRICS), "new inode evidence after center recovery")
     report["center_query_outage_recovery"] = True
     report["stage"] = "source-outage-recovery"
     source_action("stop")
@@ -591,6 +631,7 @@ def run(base, directory, report):
     for trend in (False, True):
         assert_resources(admin.request("GET", resource_path(node, trend), (200,)).payload, node, trend=trend, disconnected=True)
         assert_resources(admin.request("GET", resource_path(node, trend, keys=FILESYSTEM_METRICS), (200,)).payload, node, trend=trend, keys=FILESYSTEM_METRICS, disconnected=True)
+        assert_resources(admin.request("GET", resource_path(node, trend, keys=INODE_METRICS), (200,)).payload, node, trend=trend, keys=INODE_METRICS, disconnected=True)
     eventually(lambda: not prom.targets(node["node_id"]), "disabled node removal after control recovery")
     resumed_at = time.time()
     node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, version=node["version"])).payload
@@ -599,6 +640,7 @@ def run(base, directory, report):
     # Require this activation's samples and current versions through the user API.
     eventually(lambda: resource_query_after(admin, node, target, resumed_at), "new API resource evidence after node re-enablement")
     eventually(lambda: resource_query_after(admin, node, target, resumed_at, FILESYSTEM_METRICS), "new filesystem evidence after node re-enablement")
+    eventually(lambda: resource_query_after(admin, node, target, resumed_at, INODE_METRICS), "new inode evidence after node re-enablement")
     report["node_query_resume_fresh_samples"] = True
     report["stage"] = "target-disable-and-delete"
     target = admin.request("PUT", target_path, (200,), dict(body, enabled=False, version=target["version"])).payload
@@ -606,6 +648,7 @@ def run(base, directory, report):
     for trend in (False, True):
         assert_resources(admin.request("GET", resource_path(node, trend), (200,)).payload, node, trend=trend, disconnected=True)
         assert_resources(admin.request("GET", resource_path(node, trend, keys=FILESYSTEM_METRICS), (200,)).payload, node, trend=trend, keys=FILESYSTEM_METRICS, disconnected=True)
+        assert_resources(admin.request("GET", resource_path(node, trend, keys=INODE_METRICS), (200,)).payload, node, trend=trend, keys=INODE_METRICS, disconnected=True)
     report["disabled_query_does_not_reuse_history"] = True
     eventually(lambda: not prom.targets(node["node_id"]), "target disable application")
     admin.request("DELETE", target_path, (409,), {"version": 2})

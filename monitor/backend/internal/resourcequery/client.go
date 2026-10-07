@@ -302,7 +302,7 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 						continue
 					}
 				}
-				if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (row.Unit == "percent" && v > 100) {
+				if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (row.Unit == "percent" && v > 100) || (row.Unit == "inodes" && (v > 9007199254740991 || math.Trunc(v) != v)) {
 					continue
 				}
 				sec, fraction := math.Modf(ts)

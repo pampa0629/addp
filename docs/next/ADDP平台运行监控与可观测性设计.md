@@ -1,6 +1,6 @@
 # ADDP 平台运行监控与可观测性设计
 
-状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、节点台账、监测目标及资源查询页面已分批实施并验收。CPU 忙碌率本地门禁及九项完整 Hosted 验收已通过；文件系统容量与挂载趋势的实现、本地门禁及扩展 Hosted 验收已通过；平台告警领域调整仍待确认，生产 T5 未完成（2026-10-07）。
+状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、节点台账、监测目标及资源查询页面已分批实施并验收。CPU 忙碌率本地门禁及九项完整 Hosted 验收已通过；文件系统容量与挂载趋势的实现、本地门禁及扩展 Hosted 验收已通过；inode 余量实施中；平台告警领域调整仍待确认，生产 T5 未完成（2026-10-07）。
 
 用户已确认首期覆盖 ADDP 自身部署节点、服务和明确纳管的业务引擎；监控组件按 Infra 组织、按需部署，其缺失或故障只影响对应观测能力。本文记录目标契约与分批实施证据；可选设施裁剪及资源查询的已验收范围以第十节批次记录为准，不据此宣称所有目标能力或生产部署已完成。
 
@@ -1088,3 +1088,30 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 - 统一报告与浏览器 Run ID 均为 `run-6dd7853e23064e11b178ed851e601a20`；System、Gateway、Monitor 的实际 Git Commit、Build ID 和 Source Fingerprint 已核对至上述实现提交，业务验收耗时 438,960 ms，不作为性能容量承诺。独立退出汇总为 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`。27 个下载产物未发现环境凭据文件、私钥、完整 IAM opaque Token 或 MFA enrollment URI；私有 Playwright 输出未进入上传产物。
 
 本批完成文件系统容量、挂载表与精确趋势及其 T0/T1/T2/T3/T4 验证；inode、磁盘/网络 IO、全局容量汇总、更多纳管部署与生产 T5 尚未完成。建议下一批先补文件系统 inode 余量，区分“字节容量仍有余量”与“无法创建新文件”的资源风险，仍沿当前挂载维度和唯一查询链路。
+
+
+### 10.29 文件系统 inode 余量与趋势（已确认范围，实施中）
+
+2026-10-07 用户继续推进上一批建议的 inode 余量。本批沿现有节点身份、挂载维度、可选指标来源和唯一资源 API，不修改 IAM、生产 Permission、Tenant 归属、采集范围或设施配置。新增四项固定目录：`node.filesystem.inodes_total`、`inodes_free`、`inodes_used`（单位 `inodes`）及 `inodes_used_percent`（单位 `percent`）；总数、空闲数来自锁定 node_exporter v1.12.1 的 `node_filesystem_files`、`node_filesystem_files_free`，已用为同次采样 `total-free`，使用率为 `100*used/total`。inode 是来源报告的容量槽位，不据此计算文件数量。来源见 [Linux statfs 映射](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_linux.go) 和 [指标定义](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_common.go)。
+
+四项共同准入要求：来源 `device_error=0`；总数和空闲数有限、非负、为精确整数且不大于 `2^53-1`；总数必须大于零，空闲不大于总数；总数、空闲与挂载存在证据同次采样。总数为零（例如来源未提供可用统计）、缺失、重复、异常、整数范围越界或采样不一致时四项均为 `no_data`，仍保留已知挂载维度，不猜文件系统类型、不把缺失当零余量或健康。空闲为零且总数有效时明确为满用，已用为零则有效使用率为零。趋势逐点评估当时总量，保持断点和既有新鲜度规则。inode 失效不能使同挂载有效字节容量失效，两者不互作分母。两种百分比均先求已用/分母，再乘 100，避免先乘法的浮点尾差把数学上的 100% 算成越界值；不 clamp，不放宽百分比范围。
+
+所有新键复用文件系统闭合维度与完整精确选择器，四项多挂载参与既有系列上界/总点数预算；目录共 18 项，默认 `max_metrics=12` 不放宽。页面一轮顺序查询九项概览、五项字节容量、四项 inode 和一项选中趋势，不合并为超额请求。两组挂载观测按相同维度在唯一表格组合，分别保留其点状态和采样时间；某组查询失败清除该组旧数据并明确提示，另一组和有效概览继续展示，不拼接异次采样计算派生值。已有挂载表补充 inode 四项，趋势选择与公开 URL 沿用原完整维度规则，不新增路由或第二种表格实现。
+
+实施前门禁识别：Go T1 和锁定 promtool 增加零总量/满用/有效零/整数与非有限值/越界/缺失/重复/同次采样/容量变化/绑定挂载/精确趋势场景；`make test-monitor-metrics` 原探针覆盖 filesystem 测试与真实 exporter，多挂载预算和空值沿既有归一测试；Monitor 前端 T1/T3 扩散到 Console。API 固定目录描述与双语 Swagger同步，既有登记覆盖资源查询、前端、探针和 Online runner 路径；不新增永久入口或工作流。真实 T4 扩展同一 `platform-node-metrics` 隔离部署的四项 inode 即时/精确趋势、真实页面与 URL 恢复、停用历史排除及恢复新样本，沿原正式 MFA User 和最小发现身份，退出全部销毁。只要求来源有有效 inode 统计的挂载证明新鲜值，其他挂载允许明确空值；必须至少有一组四项有效事实与一条所选挂载真实趋势，不能以全空结果报告通过。测试规范同步这一明确范围，生产 T5、自动告警、磁盘/网络 IO 不计为本批完成。
+
+
+2026-10-07 本批本地分层证据：
+
+| 标准入口 | 本批结果 |
+|---|---|
+| `make test-changed` | 工作区已命中多个其他 owner，因跨 owner 数据库变量缺失在预检退出，未计为通过；本批沿下列已登记标准入口分别执行 |
+| `make test-go` | 最终全部已跟踪 Go 模块 T1 通过；外部环境 integration skip 不计为 T2/T4 |
+| `make test-monitor-metrics` | 最终完整通过：22 个 inode、18 个字节容量和 15 个 CPU 原生 promtool 场景；真实 exporter 两组挂载即时/精确趋势、隔离、预算及中断恢复通过，SIGKILL 后历史保留，退出零容器/网络/卷/临时文件残留 |
+| `make test-monitor-postgres` | 18 项仓储/服务集成通过，使用核实的 `addp-postgres:25432` 和标准 `addp_test` |
+| `make test-monitor-frontend` | 43 项单测、53 项 T3 浏览器回归及构建通过；inode 缺失、有效零、URL 恢复及两组挂载错误隔离覆盖 |
+| `make test-console-frontend` | 148 项单测、118 项 T3 浏览器回归及构建通过 |
+| `make test-node-metrics-online-runner` | 30 项 Python 回归及 Go fixture 通过，四项整数/公式/同次采样、支持与不支持统计的挂载、恢复新采样、浏览器证据和敏感产物验证覆盖；不计为真实 T4 |
+| Swagger 生成及 Monitor 路由覆盖 | 双语产物同步，65 个公开路由方法覆盖一致；无新路由或 Permission |
+
+`make test-platform` 最终完整重跑通过平台一致性、共享前端、生命周期、登记、Online 协议及授权/Swagger 门禁。首轮出现九个既有 Infra 生命周期夹具的 10 秒 subprocess 超时，未修改其他 owner 的脚本，首轮失败不计为通过。百分比顺序改正后，原字节容量用例的常量期望与实际逐步浮点计算出现末位差异，已用同一明确顺序的运行时期望重新验证；大容量满用精确 100% 场景仍通过，不 clamp 或放宽合法值。未运行的 Hosted T4、同实现 CI 与生产 T5 不计为本地验证通过。
