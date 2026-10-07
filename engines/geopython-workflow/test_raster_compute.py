@@ -16,6 +16,7 @@ from operators.raster_compute import (
     raster_workspace, raster_load, raster_info, raster_save, raster_to_cog,
     raster_resample, raster_reproject, raster_clip, raster_mosaic,
     raster_band_math, raster_statistics, raster_histogram, raster_build_overviews, validate_cog,
+    raster_align, raster_stack, raster_select_bands,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -1788,6 +1789,187 @@ def test_metadata_has_typed_raster_ports_and_no_old_conversion():
     assert specs['raster_band_math']['parameters'][0]['type'] == 'raster'
     assert specs['raster_to_cog']['execution_modes'] == ['workflow','direct']
     assert specs['raster_save']['effects'] == ['write']
+    for name, inputs in [('raster_align', ['input_raster', 'reference_raster']),
+                         ('raster_stack', ['input_raster', 'other_raster']),
+                         ('raster_select_bands', ['input_raster'])]:
+        spec = specs[name]
+        assert [p['name'] for p in spec['parameters'] if p['type'] == 'raster'] == inputs
+        assert spec['output_ports'][0]['type'] == 'raster'
+        assert spec['execution_modes'] == ['workflow']
+        assert spec['attributes']['resource_groups'] == ['raster']
+
+
+@pytest.mark.parametrize('transform', [(0, 1, 0, 4, 0, -1), (0, 1, 0.25, 4, 0.25, -1)])
+def test_align_exact_reference_grid_and_outside_nodata(tmp_path, transform):
+    values = np.arange(16, dtype=float).reshape(4, 4)
+    source = create_raster(tmp_path / 'source.tif', values, transform=transform)
+    # Shift the reference exactly one source column. Its values/mask do not gate coverage.
+    target_transform = (transform[0] + transform[1], *transform[1:3],
+                        transform[3] + transform[4], *transform[4:])
+    reference = create_raster(tmp_path / 'reference.tif', np.full((4, 4), -9999.), transform=target_transform)
+    expected = np.column_stack([values[:, 1:], np.full(4, np.nan)])
+    before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in [source, reference]}
+    with raster_workspace():
+        aligned = raster_align(raster_load(source_plan(source)), raster_load(source_plan(reference)))
+        dataset = gdal.Open(str(aligned.path))
+        assert dataset.GetGeoTransform() == target_transform
+        assert (dataset.RasterXSize, dataset.RasterYSize) == (4, 4)
+        np.testing.assert_equal(read_band_values(dataset.GetRasterBand(1)), expected)
+        dataset = None
+    assert not aligned.workspace.exists()
+    assert before == {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in before}
+
+
+@pytest.mark.parametrize('algorithm', ['nearest', 'average'])
+def test_align_cross_crs_independent_nodata_alpha_and_zero(tmp_path, algorithm):
+    first = np.array([[0, -9999, 2, 3], [4, 5, 6, 7]], dtype=float)
+    second = np.array([[10, 11, -9999, 13], [14, 15, 16, 17]], dtype=float)
+    alpha = np.array([[128, 255, 255, 0], [255, 255, 255, 255]], dtype=float)
+    source = create_raster(tmp_path / 'source.tif', np.stack([first, second, alpha]),
+                           transform=(0, 1, 0, 2, 0, -1))
+    dataset = gdal.Open(str(source), gdal.GA_Update)
+    dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    dataset = None
+    # Nearest centres in Web Mercator correspond to the lon/lat cells. Average
+    # uses exact source row boundaries, avoiding tiny cross-CRS overlap with row 2.
+    scale = 6378137 * np.pi / 180
+    width = 4 if algorithm == 'nearest' else 2
+    reference_scale = scale if algorithm == 'nearest' else 1
+    reference = create_raster(tmp_path / 'reference.tif', np.ones((2, width)),
+                             transform=(0, reference_scale * 4 / width, 0, reference_scale * 2, 0, -reference_scale),
+                             crs='EPSG:3857' if algorithm == 'nearest' else 'EPSG:4326')
+    with raster_workspace():
+        result = raster_align(raster_load(source_plan(source)), raster_load(source_plan(reference)), algorithm)
+        output = gdal.Open(str(result.path))
+        assert output.RasterCount == 2
+        assert output.GetSpatialRef().IsSame(gdal.Open(str(reference)).GetSpatialRef())
+        if algorithm == 'nearest':
+            expected = np.stack([first, second])
+            expected[(expected == -9999) | np.broadcast_to(alpha == 0, expected.shape)] = np.nan
+        else:
+            expected = np.array([[[0, 2], [4.5, 6.5]], [[10.5, np.nan], [14.5, 16.5]]])
+        for index in range(2):
+            np.testing.assert_allclose(read_band_values(output.GetRasterBand(index + 1)), expected[index],
+                                       rtol=0, atol=0.001, equal_nan=True)
+            assert np.isnan(output.GetRasterBand(index + 1).GetNoDataValue())
+        output = None
+
+
+def test_stack_select_rgb_cog_and_cross_file_weighted_expression(tmp_path):
+    first = np.arange(513 * 515, dtype=float).reshape(513, 515)
+    first[0, 1] = -9999
+    second = np.full(first.shape, 100.)
+    second[1, 0] = -9999
+    sources = [create_raster(tmp_path / 'first.tif', first), create_raster(tmp_path / 'second.tif', second)]
+    hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in sources]
+    with raster_workspace():
+        rasters = [raster_load(source_plan(path)) for path in sources]
+        stacked = raster_stack(*rasters)
+        weighted = raster_band_math(stacked, '0.3*b1+0.7*b2')
+        expected = 0.3 * first + 0.7 * second
+        expected[(first == -9999) | (second == -9999)] = np.nan
+        output = gdal.Open(str(weighted.path))
+        np.testing.assert_allclose(read_band_values(output.GetRasterBand(1)), expected, equal_nan=True)
+        output = None
+        # A non-referenced band's NoData must not invalidate the expression.
+        assert raster_statistics(raster_band_math(stacked, 'b1'))['invalid_count'] == 1
+        rgb = raster_select_bands(stacked, [2, 1, 2], 'rgb')
+        assert [b['color_interpretation'] for b in raster_info(rgb)['bands']] == ['Red', 'Green', 'Blue']
+        target = tmp_path / 'rgb.cog.tif'
+        saved = raster_save(rgb, target_plan(target), profile='cog')
+        assert saved['size_bytes'] == target.stat().st_size > 0
+        reloaded = raster_load(source_plan(target))
+        assert validate_cog(reloaded)['valid']
+        output = gdal.Open(str(target))
+        for index, values in enumerate([second, first, second], 1):
+            expected_band = np.where(values == -9999, np.nan, values)
+            band = output.GetRasterBand(index)
+            np.testing.assert_equal(read_band_values(band), expected_band)
+            assert band.GetColorInterpretation() == [gdal.GCI_RedBand, gdal.GCI_GreenBand, gdal.GCI_BlueBand][index - 1]
+            assert band.GetOverviewCount() > 0
+        output = None
+    assert not rgb.workspace.exists()
+    assert hashes == [hashlib.sha256(path.read_bytes()).hexdigest() for path in sources]
+
+
+def test_select_bands_respects_per_band_mask_alpha_and_missing_georeferencing(tmp_path):
+    values = np.array([[[0, 1, 2, 3]], [[10, 11, 12, 13]], [[128, 255, 0, 255]]], dtype=float)
+    source = create_raster(tmp_path / 'masked.tif', values, transform=None, crs='')
+    dataset = gdal.Open(str(source), gdal.GA_Update)
+    dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    # Internal dataset mask excludes a pixel regardless of its finite data value.
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'):
+        dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+        dataset.GetRasterBand(1).GetMaskBand().WriteRaster(0, 0, 4, 1, bytes([255, 0, 255, 255]))
+    dataset = None
+    with raster_workspace():
+        raster = raster_load(source_plan(source))
+        selected = raster_select_bands(raster, [2, 1])
+        facts = raster_info(selected)
+        assert facts['transform'] == facts['extent'] == [] and facts['crs'] == ''
+        assert facts['band_count'] == 2
+        dataset = gdal.Open(str(selected.path))
+        np.testing.assert_equal(read_band_values(dataset.GetRasterBand(1)), [[10, np.nan, np.nan, 13]])
+        np.testing.assert_equal(read_band_values(dataset.GetRasterBand(2)), [[0, np.nan, np.nan, 3]])
+        dataset = None
+        with pytest.raises(ValueError, match='Alpha'):
+            raster_select_bands(raster, [3])
+
+
+@pytest.mark.parametrize('bands,color_model', [([], 'multispectral'), ([True], 'multispectral'),
+    ([1.0], 'multispectral'), ([0], 'multispectral'), ([99], 'multispectral'),
+    ('1', 'multispectral'), ([1], 'rgb'), ([1, 2], 'rgb'), ([1], 'automatic')])
+def test_select_bands_rejects_invalid_parameters(raster_file, bands, color_model):
+    with raster_workspace(), pytest.raises(ValueError):
+        raster_select_bands(raster_load(source_plan(raster_file)), bands, color_model)
+
+
+@pytest.mark.parametrize('fault', ['size', 'origin', 'rotation', 'crs', 'missing-crs', 'missing-transform', 'singular'])
+def test_stack_rejects_unaligned_grids(tmp_path, fault):
+    first = create_raster(tmp_path / 'first.tif', np.ones((4, 4)))
+    kwargs = {'size': {'array': np.ones((4, 3))}, 'origin': {'transform': (0.5, 1, 0, 4, 0, -1)},
+              'rotation': {'transform': (0, 1, 0.25, 4, 0.25, -1)}, 'crs': {'crs': 'EPSG:3857'},
+              'missing-crs': {'crs': ''}, 'missing-transform': {'transform': None},
+              'singular': {'transform': (0, 1, 1, 4, 1, 1)}}[fault]
+    second = create_raster(tmp_path / 'second.tif', **{'array': np.ones((4, 4)), **kwargs})
+    with raster_workspace(), pytest.raises(ValueError):
+        raster_stack(raster_load(source_plan(first)), raster_load(source_plan(second)))
+
+
+def test_multiraster_dag_summary_and_cleanup(tmp_path, monkeypatch):
+    import operators.raster_compute as compute
+    first = create_raster(tmp_path / 'first.tif', np.ones((4, 4)))
+    second = create_raster(tmp_path / 'second.tif', np.full((4, 4), 3.), transform=(1, 1, 0, 4, 0, -1))
+    target = tmp_path / 'weighted.cog.tif'
+    paths = []
+    original = OPERATORS['raster_load']['function']
+    def tracked(*args, **kwargs):
+        paths.append(compute._WORKSPACE.get())
+        return original(*args, **kwargs)
+    monkeypatch.setitem(OPERATORS['raster_load'], 'function', tracked)
+    tasks = [{'id': name, 'operator': 'raster_load', 'depends_on': [], 'params': {'access_plan': source_plan(path)}}
+             for name, path in [('first', first), ('second', second)]]
+    tasks += [
+        {'id': 'align', 'operator': 'raster_align', 'depends_on': ['first', 'second'], 'params': {
+            'input_raster': {'$ref': 'second'}, 'reference_raster': {'$ref': 'first'}}},
+        {'id': 'stack', 'operator': 'raster_stack', 'depends_on': ['first', 'align'], 'params': {
+            'input_raster': {'$ref': 'first'}, 'other_raster': {'$ref': 'align'}}},
+        {'id': 'math', 'operator': 'raster_band_math', 'depends_on': ['stack'], 'params': {
+            'input_raster': {'$ref': 'stack'}, 'expression': '0.5*b1+0.5*b2'}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['math'], 'params': {
+            'input_raster': {'$ref': 'math'}, 'access_plan': target_plan(target), 'profile': 'cog'}}]
+    result = execute_workflow({'tasks': tasks})
+    assert result['status'] == 'success', result
+    serialized = json.dumps(result)
+    assert all(not path.exists() and str(path) not in serialized for path in paths)
+    output = gdal.Open(str(target))
+    np.testing.assert_equal(read_band_values(output.GetRasterBand(1)), np.tile([np.nan, 2, 2, 2], (4, 1)))
+    output = None
+    target.unlink()
+    tasks[2]['params']['resampling'] = 'unsafe'
+    result = execute_workflow({'tasks': tasks})
+    assert result['status'] == 'failed' and not target.exists()
+    assert all(not path.exists() for path in paths)
 
 
 def test_concurrent_workspaces_are_isolated(raster_file):

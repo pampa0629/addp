@@ -91,6 +91,7 @@ def utility_info_expectation(crs):
     facts = utility_expectation()
     return {key: value for key, value in facts.items() if key not in ('valid_pixels', 'band_nodata')} | {
         'crs': crs, 'bands': [{'band': index, 'dtype': 'Float64', 'nodata': -9999.,
+            'color_interpretation': 'Gray' if index == 1 else 'Undefined',
             'nodata_is_nan': False, 'block_size': [128, 128], 'overviews': [[128, 128], [64, 64]]}
             for index in (1, 2)]}
 

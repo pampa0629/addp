@@ -4,7 +4,9 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 栅格计算
 
-`raster_compute.py` 提供 13 个通用栅格算子：加载、保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、波段计算、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
+`raster_compute.py` 提供 16 个通用栅格算子：加载、保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、波段组合、波段选择、波段计算、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
+
+跨文件计算先用 `raster_align` 按参考栅格精确对齐，再用 `raster_stack` 成对追加数据波段，最后以 `raster_band_math` 计算加权求和等表达式。`raster_select_bands` 可重排波段，选择三个波段并设置 `color_model=rgb` 可生成 RGB 通道标记；不自动选择最佳波段或拉伸像元。三者统一将源 mask、NoData 和 alpha 覆盖转换为各数据波段独立的 NaN，不保留透明度大小。
 
 `raster_to_cog` 是唯一通用 COG 转换入口，支持受控 direct 调用；其余通用栅格算子在工作流中运行。`raster_operators.py` 的 `build_raster_mosaic` 继续服务 Manager 目录型业务数据集，两者复用同一 COG 编码实现。算子契约与使用边界见 [工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md) 和 [栅格专题](../../../docs/next/栅格算子体系后续专题.md)。
 

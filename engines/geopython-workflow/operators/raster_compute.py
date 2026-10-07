@@ -279,6 +279,7 @@ def raster_info(input_raster):
         band = dataset.GetRasterBand(index)
         nodata = band.GetNoDataValue()
         bands.append({'band': index, 'dtype': gdal.GetDataTypeName(band.DataType),
+                      'color_interpretation': gdal.GetColorInterpretationName(band.GetColorInterpretation()),
                       'nodata': nodata if nodata is None or math.isfinite(nodata) else None,
                       'nodata_is_nan': nodata is not None and math.isnan(nodata),
                       'block_size': band.GetBlockSize(),
@@ -632,6 +633,110 @@ def raster_band_math(input_raster, expression):
     return _raster(path)
 
 
+def _grid(dataset):
+    _require_georeferencing(dataset)
+    transform = dataset.GetGeoTransform()
+    if not all(math.isfinite(value) for value in transform) or gdal.InvGeoTransform(transform) is None:
+        raise ValueError('Raster grid must have a finite invertible geotransform')
+    return dataset.RasterXSize, dataset.RasterYSize, transform
+
+
+def _data_indices(dataset):
+    indices = [index for index in range(1, dataset.RasterCount + 1)
+               if dataset.GetRasterBand(index).GetColorInterpretation() != gdal.GCI_AlphaBand]
+    if not indices:
+        raise ValueError('Raster must contain at least one data band')
+    for index in indices:
+        _band(dataset, index)
+    return indices
+
+
+def _numeric_output(grid, count):
+    output = gdal.GetDriverByName('GTiff').Create(
+        str(_path()), grid.RasterXSize, grid.RasterYSize, count, gdal.GDT_Float64,
+        ['TILED=YES', 'COMPRESS=DEFLATE', 'PHOTOMETRIC=MINISBLACK'])
+    transform = grid.GetGeoTransform(can_return_null=True)
+    if transform is not None:
+        output.SetGeoTransform(transform)
+    output.SetProjection(grid.GetProjection())
+    for index in range(1, count + 1):
+        band = output.GetRasterBand(index)
+        band.SetNoDataValue(float('nan'))
+        band.SetColorInterpretation(gdal.GCI_Undefined)
+    return output
+
+
+def _copy_data_bands(sources):
+    """Convert coverage to per-band NaN, keeping at most one 512-square band in memory."""
+    output = _numeric_output(sources[0][0], sum(len(indices) for _, indices in sources))
+    destination_index = 0
+    for dataset, indices in sources:
+        for index in indices:
+            destination_index += 1
+            band = output.GetRasterBand(destination_index)
+            for x, y, arrays, masks in _blocks(dataset, [index]):
+                values = arrays[0].copy()
+                values[~masks[0]] = np.nan
+                band.WriteRaster(x, y, values.shape[1], values.shape[0], values.tobytes(),
+                                 buf_type=gdal.GDT_Float64)
+    band = None
+    output.FlushCache()
+    return output
+
+
+def raster_align(input_raster, reference_raster, resampling='nearest'):
+    dataset, reference = _open(input_raster), _open(reference_raster)
+    _grid(dataset)
+    _grid(reference)
+    algorithm = _algorithm(resampling)
+    source = _copy_data_bands([(dataset, _data_indices(dataset))])
+    output = _numeric_output(reference, source.RasterCount)
+    path = output.GetDescription()
+    # Updating a pre-created dataset retains the complete reference affine grid,
+    # including rotation. Normalize coverage first so each band warps independently.
+    result = gdal.Warp(output, source, options=gdal.WarpOptions(
+        resampleAlg=algorithm, srcAlpha=False, srcNodata=float('nan'), dstNodata=float('nan'),
+        overviewLevel='NONE', errorThreshold=0,
+        warpOptions=['INIT_DEST=NO_DATA', 'UNIFIED_SRC_NODATA=NO']))
+    if not result:
+        raise ValueError('GDAL raster alignment failed')
+    output.FlushCache()
+    output = source = None
+    return _raster(path)
+
+
+def raster_stack(input_raster, other_raster):
+    dataset, other = _open(input_raster), _open(other_raster)
+    if _grid(dataset) != _grid(other) or not _crs(dataset.GetProjection()).IsSame(
+        _crs(other.GetProjection()), ['CRITERION=EQUIVALENT_EXCEPT_AXIS_ORDER_GEOGCRS',
+                                    'IGNORE_DATA_AXIS_TO_SRS_AXIS_MAPPING=YES']):
+        raise ValueError('Raster grids must match; use raster_align before raster_stack')
+    output = _copy_data_bands([(dataset, _data_indices(dataset)), (other, _data_indices(other))])
+    path = output.GetDescription()
+    output = None
+    return _raster(path)
+
+
+def raster_select_bands(input_raster, bands, color_model='multispectral'):
+    dataset = _open(input_raster)
+    if not isinstance(bands, list) or not bands:
+        raise ValueError('bands must be a non-empty list of one-based data band indices')
+    for index in bands:
+        if _band(dataset, index).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            raise ValueError('Alpha is coverage, not a selectable data band')
+    if color_model not in ('multispectral', 'rgb'):
+        raise ValueError('Unsupported color_model')
+    if color_model == 'rgb' and len(bands) != 3:
+        raise ValueError('RGB requires exactly three data bands')
+    output = _copy_data_bands([(dataset, bands)])
+    if color_model == 'rgb':
+        for index, interpretation in enumerate((gdal.GCI_RedBand, gdal.GCI_GreenBand, gdal.GCI_BlueBand), 1):
+            output.GetRasterBand(index).SetColorInterpretation(interpretation)
+    path = output.GetDescription()
+    output = None
+    return _raster(path)
+
+
 def _param(name, kind, description, default=None, required=True, role='param', enum=None):
     return OperatorParam(name=name, data_type=kind, type=role, description=description,
                          required=required, default=default, enum=enum)
@@ -655,6 +760,9 @@ _SPECS = [
     (raster_resample, '栅格重采样', [_INPUT(), _param('size', 'list[int]', '输出宽高', None, False), _param('resolution', 'list[float]', '输出分辨率', None, False), _ALGORITHM()], 'raster', ['read']),
     (raster_clip, '栅格裁剪', [_INPUT(), _param('boundary_crs', 'str', '边界 CRS'), _param('bbox', 'list[float]', '裁剪边界框', None, False), _param('geometry', 'object', 'GeoJSON 面边界', None, False)], 'raster', ['read']),
     (raster_mosaic, '栅格计算镶嵌', [_INPUT(), _param('other_raster', 'raster', '第二个栅格输入端口', role='input'), _param('target_crs', 'str', '目标 CRS'), _param('resolution', 'list[float]', '目标分辨率'), _param('overlap', 'str', '重叠策略', 'last', False, enum=['first', 'last']), _ALGORITHM()], 'raster', ['read']),
+    (raster_align, '栅格网格对齐', [_INPUT(), _param('reference_raster', 'raster', '提供输出 CRS、宽高及仿射网格的参考栅格', role='input'), _ALGORITHM()], 'raster', ['read']),
+    (raster_stack, '栅格波段组合', [_INPUT(), _param('other_raster', 'raster', '追加数据波段的同网格栅格', role='input')], 'raster', ['read']),
+    (raster_select_bands, '栅格波段选择', [_INPUT(), _param('bands', 'list[int]', '按顺序选择原始数据波段，序号从 1 开始，可重复'), _param('color_model', 'str', '输出波段颜色解释', 'multispectral', False, enum=['multispectral', 'rgb'])], 'raster', ['read']),
     (raster_band_math, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_statistics, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_histogram, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
@@ -668,6 +776,9 @@ for function, label, params, output, effects in _SPECS:
     if name in ('raster_save', 'raster_to_cog'):
         examples['access_plan'] = {**examples.get('access_plan', {}), 'schema_version':'addp.workflow.access-plan/v1', 'target':{'kind':'file','format':'tiff','name':'output.tif','write_mode':'create','access':{'method':'mounted_path','path':'/mnt/output.tif'}}}
     examples.update({'raster_reproject':{'target_crs':'EPSG:3857'}, 'raster_resample':{'size':[512,512]}, 'raster_clip':{'boundary_crs':'EPSG:4326','bbox':[110,20,111,21]}, 'raster_band_math':{'expression':'(b2-b1)/(b2+b1)'}, 'raster_mosaic':{'other_raster':{'$ref':'other'},'target_crs':'EPSG:4326','resolution':[0.01,0.01]}}.get(name, {}))
+    examples.update({'raster_align': {'reference_raster': {'$ref': 'reference'}},
+                     'raster_stack': {'other_raster': {'$ref': 'other'}},
+                     'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
     metadata = OperatorMetadata(name=name, type=OperatorType.SPATIAL, category=OperatorCategory.RASTER,
         description=label, brief_description=label, overview=label + '，复用受控访问计划与当前执行内栅格对象。',
         params=params, output_ports=[OutputPort(name='default', type=output, description=label + '结果')],
