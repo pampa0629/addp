@@ -254,11 +254,11 @@ def single_source_execution(tmp_path, scene, api_server, case_name):
     source = tmp_path / ('utility-source-' + source_name)
     original = LocalMinio.objects[role, 'raster-' + role, source_name]
     source.write_bytes(original)
-    definition = (scene.reclass_workflow if case_name in fixture.RECLASS_CASES else scene.utility_workflow)(
+    definition = (scene.aggregate_workflow if case_name in fixture.AGGREGATE_CASES else scene.reclass_workflow if case_name in fixture.RECLASS_CASES else scene.utility_workflow)(
         'source-locator', 2, case_name)
     output = tmp_path / (case_name + '.cog.tif')
     plan = source_access_plan(source)
-    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES:
+    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES:
         plan['target'] = {'kind': 'file', 'format': 'tiff', 'name': output.name, 'write_mode': 'create',
             'access': {'method': 'mounted_path', 'path': str(output)}}
     if case_name == 'to-cog':
@@ -268,13 +268,13 @@ def single_source_execution(tmp_path, scene, api_server, case_name):
         params.update(access_plan=plan, options=options)
     else:
         definition['tasks'][0]['params'] = {'access_plan': {key: value for key, value in plan.items() if key != 'target'}}
-        if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES:
+        if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES:
             params = definition['tasks'][-1]['params']
             for key in ('target_parent_locator', 'target_name', 'write_mode'): params.pop(key)
             params['access_plan'] = {key: value for key, value in plan.items() if key != 'source'}
     client = api_server.app.test_client()
     response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {}, 'runtime': {
-        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write'] if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES else ['read']}}})
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write'] if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES else ['read']}}})
     assert response.status_code == 202
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
@@ -284,7 +284,7 @@ def single_source_execution(tmp_path, scene, api_server, case_name):
     assert status['status'] == 'success', status
     assert source.read_bytes() == original
     result = json.loads(status['result'])
-    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES:
+    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES:
         assert result['size_bytes'] == output.stat().st_size > 0
         LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     return result, output
@@ -755,6 +755,82 @@ def test_async_reclassification_default_and_keep_match_physical_oracle(reclass_a
     assert len(evidence['preserved_sha256']) == 21
     assert evidence['band_valid_pixels'] == [65535]
     assert evidence['overview_sizes'] == [[128, 128]]
+
+
+@pytest.fixture
+def aggregate_artifacts(reclass_artifacts,tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    preserved = {key[2]:hashlib.sha256(value).hexdigest() for key,value in LocalMinio.objects.items() if key[0]=='target'}
+    for case in fixture.AGGREGATE_CASES:
+        result,output = single_source_execution(tmp_path,scene,api_server,case)
+        evidence = fixture.worker('verify-'+case,reclass_artifacts)
+        assert evidence['size_bytes']==result['size_bytes']==output.stat().st_size>0
+        assert evidence['preserved_sha256']==preserved
+        assert evidence['band_valid_pixels']==[4472] and evidence['invalid_pixels']==0
+        assert evidence['overview_sizes']==[[43,26]]
+        preserved[output.name]=evidence['sha256']
+    return reclass_artifacts
+
+
+def test_async_aggregation_partial_groups_and_source_nodata_match_physical_oracle(aggregate_artifacts):
+    evidence = fixture.worker('verify-aggregate-sum',aggregate_artifacts)
+    assert len(evidence['preserved_sha256'])==23
+    assert evidence['valid_pixels']==4472
+    assert list(fixture.aggregate_pixels('aggregate-sum'))[-1]==131072.
+    assert list(fixture.aggregate_pixels('aggregate-mean'))[-1]==131072.
+
+
+def test_aggregation_physical_oracle_rejects_pixels_edge_validity_and_preservation_faults(aggregate_artifacts,tmp_path):
+    baseline = dict(LocalMinio.objects)
+    try:
+        for fault in ['interior','edge','nodata-average','overview','mask','prior','extra','source']:
+            LocalMinio.objects.clear()
+            LocalMinio.objects.update(baseline)
+            if fault=='extra':
+                LocalMinio.objects['target','raster-target','partial.tif']=b'partial'
+            elif fault in ('source','prior'):
+                key = ('source','raster-source','source.tif') if fault=='source' else ('target','raster-target','reclassify-keep.cog.tif')
+                LocalMinio.objects[key]+=b'changed'
+            else:
+                name = 'aggregate-mean.cog.tif'
+                original = tmp_path/'aggregate-original.tif'
+                original.write_bytes(LocalMinio.objects['target','raster-target',name])
+                edited = tmp_path/'aggregate-corrupt.tif'
+                dataset = gdal.Translate(str(edited),str(original),format='GTiff')
+                band = dataset.GetRasterBand(1)
+                x,y = (85,51) if fault=='edge' else (0,0) if fault=='nodata-average' else (1,1)
+                if fault=='mask':
+                    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):
+                        dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+                    mask = bytearray([255]*4472)
+                    mask[87]=0
+                    band.GetMaskBand().WriteRaster(0,0,86,52,bytes(mask),buf_type=gdal.GDT_Byte)
+                elif fault!='overview':
+                    value = next(fixture.aggregate_pixels('aggregate-mean'))*14/15 if fault=='nodata-average' else 123.
+                    band.WriteRaster(x,y,1,1,struct.pack('<d',value),buf_type=gdal.GDT_Float64)
+                dataset.BuildOverviews('NEAREST',[2])
+                if fault=='overview':
+                    band.GetOverview(0).WriteRaster(1,0,1,1,struct.pack('<d',123.),buf_type=gdal.GDT_Float64)
+                band = dataset = None
+                output = gdal.Translate(str(original),str(edited),format='COG',creationOptions=['BLOCKSIZE=128'])
+                output = None
+                LocalMinio.objects['target','raster-target',name]=original.read_bytes()
+            if fault=='prior':
+                evidence=fixture.worker('verify-aggregate-sum',aggregate_artifacts)
+                assert evidence['preserved_sha256']['reclassify-keep.cog.tif'] != hashlib.sha256(
+                    baseline['target','raster-target','reclassify-keep.cog.tif']).hexdigest()
+            else:
+                try:
+                    fixture.worker('verify-aggregate-sum',aggregate_artifacts)
+                except fixture.FixtureError:
+                    pass
+                else:
+                    pytest.fail('Physical oracle accepted corruption: '+fault)
+
+    finally:
+        LocalMinio.objects.clear()
+        LocalMinio.objects.update(baseline)
 
 
 @pytest.mark.parametrize('fault', ['gap', 'zero-class', 'source-nodata', 'kept-value', 'overview', 'nodata', 'extra', 'source'])

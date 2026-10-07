@@ -217,6 +217,23 @@ def reclass_workflow(source_locator, target_engine_id, case_name):
     ]}
 
 
+def aggregate_workflow(source_locator, target_engine_id, case_name):
+    if case_name not in fixture.AGGREGATE_CASES:
+        raise SuiteError('unknown aggregation case')
+    ref = lambda name: {'$ref': name, 'port': 'default'}
+    return {'tasks': [
+        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
+        {'id': 'select', 'operator': 'raster_select_bands', 'depends_on': ['load'], 'params': {'input_raster': ref('load'), 'bands': [2]}},
+        {'id': 'aggregate', 'operator': 'raster_aggregate', 'depends_on': ['select'], 'params': {
+            'input_raster': ref('select'), 'factors': [3, 5], 'method': case_name.removeprefix('aggregate-')}},
+        {'id': 'levels', 'operator': 'raster_build_overviews', 'depends_on': ['aggregate'], 'params': {
+            'input_raster': ref('aggregate'), 'levels': [2], 'resampling': 'nearest'}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['levels'], 'params': {
+            'input_raster': ref('levels'), 'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+            'target_name': case_name + '.cog.tif', 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}},
+    ]}
+
+
 def transient_result(execution):
     metadata = obj(execution.get('metadata'), 'Develop analysis metadata')
     result = obj(metadata.get('result'), 'Develop analysis result')
@@ -642,17 +659,19 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'json_result': result, 'physical': native, 'browser': browser_report})
     foundation_cases = []
     reclass_cases = []
+    aggregate_cases = []
     reference_source = support.find_fixture_item(client, target_engine, 'raster-target/mosaic-first.cog.tif', 'reference raster')
     reference_locator = support.build_item_locator(target_engine, reference_source)
-    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES:
-        reclass = case_name in fixture.RECLASS_CASES
-        case_sources = [(source, source_locator, '')] if reclass else [
+    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES:
+        single = case_name in fixture.RECLASS_CASES + fixture.AGGREGATE_CASES
+        case_sources = [(source, source_locator, '')] if single else [
             (spatial_source, spatial_locator, '-spatial'), (reference_source, reference_locator, '-reference')]
         source_locators = [case_locator for _, case_locator, _ in case_sources]
         expectation = fixture.computed_expectation(case_name)
         name = case_name + '.cog.tif'
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
-        definition = (reclass_workflow(source_locator, target_engine, case_name) if reclass else
+        definition = (aggregate_workflow(source_locator, target_engine, case_name) if case_name in fixture.AGGREGATE_CASES else
+                      reclass_workflow(source_locator, target_engine, case_name) if case_name in fixture.RECLASS_CASES else
                       foundation_workflow(spatial_locator, reference_locator, target_engine, case_name))
         identifier = submit(client, engine_id, definition)
         execution = wait_execution(client, 'develop', identifier, timeout)
@@ -665,12 +684,13 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         native = physical_runner(repository, env, 'verify-' + case_name)
         artifact = execution['metadata']['result']['final_result']
         colors = ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
+        levels = [[expectation['width']//2, expectation['height']//2]]
         if (native.get('case_name') != case_name or native.get('preserved_sha256') != preserved
             or native.get('cog_valid') is not True or native.get('source_unchanged') is not True
-            or native.get('has_overviews') is not True or native.get('overview_sizes') != [[128, 128]]
+            or native.get('has_overviews') is not True or native.get('overview_sizes') != levels
             or native.get('color_interpretations') != colors
             or [band.get('color_interpretation') for band in artifact['bands']] != colors
-            or any(band.get('overviews') != [[128, 128]] for band in artifact['bands'])
+            or any(band.get('overviews') != levels for band in artifact['bands'])
             or native.get('valid_pixels') != expectation['valid_pixels']
             or native.get('invalid_pixels') != expectation['width'] * expectation['height'] - expectation['valid_pixels']
             or native.get('band_valid_pixels') != [expectation['valid_pixels']] * expectation['band_count']
@@ -686,9 +706,10 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 name, identifier, case_name + suffix, identity, timeout, browser_runner, expectation, native, source_locators)
             graphs.append(graph)
             browsers.append(report)
-        (reclass_cases if reclass else foundation_cases).append({'case_name': case_name, 'execution_id': identifier,
-            'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if reclass else graphs,
-            'physical': native, 'browser': browsers[0] if reclass else browsers})
+        cases = aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
+        cases.append({'case_name': case_name, 'execution_id': identifier,
+            'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if single else graphs,
+            'physical': native, 'browser': browsers[0] if single else browsers})
         preserved[name] = native['sha256']
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
@@ -697,6 +718,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'spatial_cases': spatial_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
+            'aggregate_cases': aggregate_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 
