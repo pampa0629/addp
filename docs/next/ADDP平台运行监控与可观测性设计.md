@@ -902,11 +902,11 @@ Monitor 唯一拥有节点资源页面，Console 通过 `/monitor/node-resources
 | `make test-frontend-ci-registration` | 17 项检查器回归与 21 个前端登记检查通过；现有 Node/Playwright 自动发现覆盖新用例，无需新增 CI 主路径 |
 | `make test-changed` | 退出 2：共享工作区其他 Common/模块变更需要的 PostgreSQL、MySQL/OceanBase 等 T2 连接参数缺失，止于统一预检，后续未执行；不计为通过。当前已提交范围的前端由既有 Platform CI 独立复验；这些未提交跨 owner T2 输入须由各自任务在提交时通过既有 Release/T2 标准门禁验证 |
 
-首次 Monitor 浏览器复验中，创建和更新的两条成功通知同时存在，旧用例的单元素定位失败；修正为核对最新更新通知，并保留实际请求版本/启停/删除断言，完整复验通过，没有改动产品保存语义。桌面及英文窄屏截图已查看，窄屏无横向页面溢出；中英文词条、任务文档围栏/本地链接与空白检查通过。本批复用现有 API 契约，未改后端接口、Swagger、权限或部署输入，没有重启个人开发服务。上述浏览器均使用受控 API 夹具，只计为 T3；下一步优先让同一 Hosted suite 验收真实 Console 登录、节点资源页和查询请求的完整链路。
+首次 Monitor 浏览器复验中，创建和更新的两条成功通知同时存在，旧用例的单元素定位失败；修正为核对最新更新通知，并保留实际请求版本/启停/删除断言，完整复验通过，没有改动产品保存语义。桌面及英文窄屏截图已查看，窄屏无横向页面溢出；中英文词条、任务文档围栏/本地链接与空白检查通过。本批复用现有 API 契约，未改后端接口、Swagger、权限或部署输入，没有重启个人开发服务。上述浏览器均使用受控 API 夹具，只计为 T3；后续真实 Console/Monitor 页面验收及证据见 10.25。
 
 提交 `e35135489` 的 Platform CI（Run 37494968877）和 Release/T2（Run 37494968948）均已完成并通过；该提交的页面验收仍属于确定性 T3。
 
-### 10.25 节点资源页面 Hosted 验收（实施中）
+### 10.25 节点资源页面 Hosted 验收（已完成真实验收）
 
 在既有 `platform-node-metrics` 一次性 Linux 部署中增加真实 Console/Monitor iframe 阶段，位于预算恢复后、故障注入前。沿用 10.22 的正式三员 Bootstrap 临时身份与已批准的节点资源读取范围，不授予新权限、不读取 Tenant 业务数据。浏览器自行完成密码及 MFA 登录，以其实际 AuthContext 证明与 API 阶段相同的非委托 Platform 系统管理员；安全管理员通过另一 Browser Context 完成真实 MFA，验证资源入口拒绝且没有节点/资源业务请求。
 
@@ -925,3 +925,18 @@ Monitor 唯一拥有节点资源页面，Console 通过 `/monitor/node-resources
 复验期间的静态检查发现拒绝入口的首次直达会在设置活动分组前返回，Console 不挂载侧栏（`Portal.vue` 的 `access-denied` 分支）；Playwright 对不存在元素做 `not.toContainText` 仍会失败。该拒绝断言改为资源导航项计数为零，同时保留拒绝页、无 iframe、无业务请求及实际安全管理员 MFA/AuthContext 断言，适配合法的无侧栏页面。当前在途 Run 37562119255 仍使用修订前提交，结果须按真实报告记录，不计为修订后覆盖。
 
 Run 37562119255（提交 `9d28d75d1`）复现并确认启动采样时序问题：首个即时响应 end 为 `02:41:31.000Z`、queried_at 为 `2026-10-07T02:41:31.94427321Z`，首次原生采样为 `02:41:31.524Z`，八项均为合法 `no_data`。来源 up 不能证明较早的整秒评估时刻已有样本。验收器保留首次响应及采样时间，先完整校验目录、网格、状态和值/时间关系、节点及目标版本，再仅对合法尚未有效的数据有界等待（既有 100 秒收敛上限）；403、结构错误、版本错误和伪造缺失数值立即失败，等待成功后仍执行原有即时/趋势、预算和浏览器完整断言。产品继续按整秒返回真实缺失，未改后端、权限或指标判定。该失败轮次清理通过且零残留；其 Platform CI Run 37562094514 已通过。下一轮统一覆盖就绪与拒绝入口的验收修订。
+
+2026-10-07 完整复验通过：[Hosted T4 Run 37563564755](https://github.com/pampa0629/addp/actions/runs/37563564755)，源码提交 `b3a64756cb75cd574668151ebfdba71917fe28fc`。标准前置入口 `make test-node-metrics-online-runner` 已通过 21 项确定性协议/证据/生命周期测试及 System Metrics fixture 单元测试；Online Playwright 加载检查通过。该提交的 Platform CI Run 37563538303 完整通过，Console 前端远程复验通过；Release/T2 Run 37563538429 汇总通过，其中未选择的 IAM 验证不能覆盖先前旧迁移断言的失败。
+
+实际报告核查如下：
+
+- `online-report.json`、`platform-node-metrics.json`、`node-resources-browser.json` 均为 passed；Online 与浏览器报告匹配同一 Run ID，API 报告与浏览器输入匹配同一节点及目标 ID。System、Gateway、Monitor 的实际 Build Identity 均匹配上述提交，不借用个人开发服务。
+- 实际浏览器通过密码/MFA 登录，平台系统管理员 Principal 31 与 API 阶段一致、非委托 User、Platform Context、AAL2；独立 Browser Context 的平台安全管理员 Principal 32 完成 MFA 后显示拒绝页，不挂载资源 iframe、不出现资源导航项且节点/资源请求为零。原有 Tenant、Service 与无权限身份拒绝矩阵继续通过。
+- 浏览器采集 8 份真实即时/趋势响应：八项即时资源、近 1 小时默认趋势、切换平均负载及近 5 分钟后刷新恢复、服务端 end 锚定、目录/完整网格/有限数值/状态时间、节点版本 1、目标保存版本 2、预算版本 2 均通过。列表无资源查询扇出，详情保留同一 iframe，前进/后退及 URL 完整状态恢复通过。
+- 预算读写/CAS/热生效、中心/来源/控制面故障恢复、中心故障时 Monitor Ready 与 Tenant 执行查询隔离、新样本恢复、节点/目标停用后不复用历史、目标删除及节点停用全部通过。首次整秒响应若尚无有效样本，由合法结构与身份验证后的有界就绪检查处理；本次初始响应已有有效数据，就绪等待分支由 21 项前置测试覆盖，第三轮真实缺失证据保留，不声称本次实际进入等待分支。
+- 独立 `summary.txt` 为 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`，完成当次身份、部署、卷及私密目录销毁；业务报告中的 awaiting-hosted-deployment-destruction 只表示它在退出清理前生成，须与独立清理报告合并判断。
+- 实际列表、资源详情和近 5 分钟负载恢复三张 PNG 已查看，真实八项数值/状态/时间与恢复后的曲线正常展示。25 个归档文件未检出完整 IAM Token、私钥或凭据文件；Playwright 自动诊断输出位于已销毁的私密目录，公开报告不保存密码、MFA 或 Token。
+
+本次证据只覆盖同一 Hosted Linux VM 的真实开发入口 Console 同源代理与 Monitor iframe，不扩大为生产 Nginx/T5、物理宿主绑定、cAdvisor、CPU 使用率、磁盘/网络资源、自动刷新或统一平台告警的验收。个人环境没有重启。首轮 `make test-changed` 的跨 owner T2 参数预检失败及 System 旧迁移断言的失败仍按各自范围保留，不计为全仓 T2 通过。优先闭合已有 IAM 迁移断言的独立复验，再推进新的资源指标。
+
+交付前再次运行 `make test-changed`，退出 2：共享工作区其他 owner 的 PostgreSQL/MySQL 等 T2 连接条件缺失，止于预检；后续门禁未执行，不计为通过。文档围栏、报告间 Run ID/节点/目标关联和 `git diff --check` 校验通过，最终追加仅更新验收文档及 Monitor 导航说明，未改已验收代码。

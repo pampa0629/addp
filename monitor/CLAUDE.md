@@ -135,3 +135,5 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - 入口仅接受非委托 Platform User，同时具备 `platform.host_node.read` 和 `monitor.resource_observation.read`；上下文、主体、权限或节点变化同步取消请求并清空旧观测。关闭/未配置/不可用/超时/预算及并发超限分别提示，失败不保留旧观测。
 - 首批使用手工刷新，时间明确标注；趋势窗口以本次即时响应的服务端 end 为准。valid 零值有效，stale/no_data/not_connected 不展示为当前数值，曲线保留断点，明细展示原状态与采样/评估时间。不把 Load Average 解释为 CPU 利用率。
 - 图表及数字/时间格式复用 Common Chart 和 Basic 的唯一实现；共享折线最多 1,000 点，null 保留为空点。既有 Workbench 消费者与 Monitor/Console/共享前端标准门禁共同验证，新增测试沿既有自动发现和 CI 登记；确定性页面 T3 不代替真实后端或页面 T4。
+
+- 同一 `platform-node-metrics` Hosted Linux VM 已于 2026-10-07 完成真实 Console/Monitor 节点资源页面 T4（Run 37563564755，代码 `b3a64756c`）：正式密码/MFA、同一非委托 Platform User、八项资源/趋势、单 iframe 历史及刷新恢复、安全管理员入口拒绝与无业务请求、预算及监测故障隔离/恢复、停用后历史排除、退出零残留通过。沿用既有临时身份例外，未增加权限或生产角色；T3 仍独立计量，生产 T5、更多指标及自动刷新未在该次验收范围。细节与失败诊断见设计 10.25。
