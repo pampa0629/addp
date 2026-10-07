@@ -393,7 +393,14 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "raster_generation_requests",
         "range_loaded",
         "map_loaded",
-        "addp.manager-internal-artifact-lineage-browser/v3",
+        "ADDP_ONLINE_MANAGER_BROWSER_PHASE",
+        "generation-entry",
+        "cached-preview",
+        "generation_entry_visible",
+        "model_generation_requests",
+        "anonymous_refresh_401",
+        "failed_business_responses",
+        "addp.manager-internal-artifact-lineage-browser/v4",
     ):
         if fragment not in browser:
             raise RegistrationError(

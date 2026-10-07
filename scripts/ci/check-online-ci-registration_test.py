@@ -867,7 +867,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ".execution-lineage__group .execution-lineage__resource-action "
             "平台内部产物|Platform-internal artifact platform_internal_outputs "
             ".pptx-preview .pdf-preview pptx_page_after_engine_refresh pptx_generation_requests "
-            ".model-preview model_loaded content_loaded .raster-tiff-quick-view raster_generation_requests range_loaded map_loaded addp.manager-internal-artifact-lineage-browser/v3\n",
+            ".model-preview model_loaded content_loaded .raster-tiff-quick-view raster_generation_requests range_loaded map_loaded "
+            "ADDP_ONLINE_MANAGER_BROWSER_PHASE generation-entry cached-preview generation_entry_visible "
+            "model_generation_requests anonymous_refresh_401 failed_business_responses "
+            "addp.manager-internal-artifact-lineage-browser/v4\n",
             encoding="utf-8",
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
@@ -879,6 +882,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (config, "--enable-unsafe-swiftshader", "software WebGL"),
             (owner, "validate_model_glb", "owner contract"),
             (browser, ".model-preview", "browser contract"),
+            (browser, "addp.manager-internal-artifact-lineage-browser/v4", "browser contract"),
+            (browser, "ADDP_ONLINE_MANAGER_BROWSER_PHASE", "browser contract"),
+            (browser, "generation-entry", "browser contract"),
+            (browser, "cached-preview", "browser contract"),
+            (browser, "anonymous_refresh_401", "browser contract"),
+            (browser, "failed_business_responses", "browser contract"),
         ):
             with self.subTest(fragment=fragment):
                 original = file.read_text(encoding="utf-8")
