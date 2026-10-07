@@ -170,7 +170,6 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await monitor.getByRole('option', { name: 'inode 使用率', exact: true }).click()
     await expect(page).toHaveURL(url => url.searchParams.get('metric') === 'node.filesystem.inodes_used_percent')
     await page.reload()
-    monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(monitor.getByTestId('resource-metric')).toContainText('inode 使用率')
     await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
     await Promise.all(pending)

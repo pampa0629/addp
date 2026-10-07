@@ -1115,3 +1115,8 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 | Swagger 生成及 Monitor 路由覆盖 | 双语产物同步，65 个公开路由方法覆盖一致；无新路由或 Permission |
 
 `make test-platform` 最终完整重跑通过平台一致性、共享前端、生命周期、登记、Online 协议及授权/Swagger 门禁。首轮出现九个既有 Infra 生命周期夹具的 10 秒 subprocess 超时，未修改其他 owner 的脚本，首轮失败不计为通过。百分比顺序改正后，原字节容量用例的常量期望与实际逐步浮点计算出现末位差异，已用同一明确顺序的运行时期望重新验证；大容量满用精确 100% 场景仍通过，不 clamp 或放宽合法值。未运行的 Hosted T4、同实现 CI 与生产 T5 不计为本地验证通过。
+
+
+本批首轮 Hosted T4（Run 37608271595，实现 `59ac70e24`）在 `inode-mount-trend-restore` 阶段失败：新增测试在页面重载后向既有 `const monitor` FrameLocator 重新赋值，触发 `Assignment to constant variable`。四项 inode 真实即时/精确趋势已执行通过，但后续完整浏览器与恢复场景尚未完成，因此整轮不计为通过。已确认既有 FrameLocator 按当前 iframe 动态解析，先前多个页面重载已沿同一实例完成；删除冗余重新赋值，沿单一路径完整重跑。首轮退出 `cleanup=passed`、`infra_cleanup=zero_residuals`，身份、角色、生产代码和判断标准不作放宽。
+
+删除冗余赋值后，`make test-console-frontend` 再次完整通过 148 项单测、118 项 T3 浏览器回归及构建；首轮 29 个下载产物未发现环境凭据文件、私钥、完整 opaque Token 或 MFA enrollment URI。同一后端实现 `59ac70e24` 的 Platform CI（Run 37608252171）32 个执行门禁与 Release/T2（Run 37608252141）5 个执行门禁已完整通过；修正后的完整 Hosted T4 另行记录。
