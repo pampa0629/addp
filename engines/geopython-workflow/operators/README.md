@@ -4,11 +4,13 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 栅格计算
 
-`raster_compute.py` 提供 17 个通用栅格算子：加载、保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、波段组合、波段选择、波段计算、重分类、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
+`raster_compute.py` 提供 18 个通用栅格算子：加载、保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、波段组合、波段选择、波段计算、重分类、聚合、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
 
 跨文件计算先用 `raster_align` 按参考栅格精确对齐，再用 `raster_stack` 成对追加数据波段，最后以 `raster_band_math` 计算加权求和等表达式。`raster_select_bands` 可重排波段，选择三个波段并设置 `color_model=rgb` 可生成 RGB 通道标记；不自动选择最佳波段或拉伸像元。三者统一将源 mask、NoData 和 alpha 覆盖转换为各数据波段独立的 NaN，不保留透明度大小。
 
 `raster_reclassify` 对 `band`（默认 1）应用非空 JSON 规则数组，例如 `[{"min":0,"max":10,"class":1},{"value":10,"class":2}]`。区间左闭右开，`null` 端点表示无界，规则重叠或重复时拒绝执行。未命中的有效像元默认设为 NaN，可设置 `unmatched=keep` 保留原值；源无效像元始终无效。输出同网格 Float64 单波段，不复制分类色表，不将 alpha 当作分类数据。无需空间定位，保留源定位缺失事实；在现有参数面板中填写 JSON 数组即可。
+
+`raster_aggregate` 使用必填 `factors=[列倍数,行倍数]` 和 `method=sum/mean/min/max`，按整数像元组逐数据波段计算。忽略无效像元，全无效组输出 NaN；保留边缘不足整块的组，按已有像元计算。有定位时按倍数缩放仿射列、行向量，因此边缘像元的完整空间大小可能使输出范围超出源右侧或底侧。保留定位缺失事实，不插值、不自动添加 alpha 或颜色模型。读取和输出累积均分块，均值通过两遍扫描避免直接求和溢出及微小值直接除以数量下溢。
 
 `raster_to_cog` 是唯一通用 COG 转换入口，支持受控 direct 调用；其余通用栅格算子在工作流中运行。`raster_operators.py` 的 `build_raster_mosaic` 继续服务 Manager 目录型业务数据集，两者复用同一 COG 编码实现。算子契约与使用边界见 [工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md) 和 [栅格专题](../../../docs/next/栅格算子体系后续专题.md)。
 

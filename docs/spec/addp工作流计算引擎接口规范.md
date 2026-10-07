@@ -908,6 +908,10 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 Python Runtime 的领域执行器负责内部对象、资源清理和结果投影；DAG、引用解析和异步状态复用 common-python 的 WorkflowRunner / ExecutionRegistry，不为栅格另建执行核心。
 
+`raster_aggregate` 按必填整数 `factors=[列倍数,行倍数]` 从左上像元开始分组，逐数据波段执行必填 `method=sum/mean/min/max`，输出 Float64。倍数必须为 1–2147483647 的整数，拒绝布尔值与浮点倍数；输出宽高向上取整，边缘不足整块时只使用实际存在的源像元，不补零、不丢弃边缘。源 mask、NoData、非有限值和 alpha 覆盖无效的像元不参与计算，全无效组输出 NaN；合法零和部分透明的有效像元正常参与，各数据波段独立处理。alpha 不作为输出数据波段，不保留原分类色表、颜色模型或透明度大小；复数数据拒绝。求和结果超出 Float64 有限范围时写 NaN；均值先计有效数量及最大绝对值，按该尺度归一化后累加各值除以数量，再恢复尺度，避免直接求和溢出或微小值直接除以数量下溢造成不必要的丢失。
+
+聚合属于原像素网格的整数分组，不调用重采样插值，也不按指定输出尺寸调整分组。保留源原点、CRS 与定位缺失事实；有仿射变换时，列向量乘列倍数、行向量乘行倍数，保持旋转方向。由于输出必须为规则网格，边缘不足整块时最终像元仍具有完整聚合像元的空间大小，输出矩形覆盖范围可超出源右侧或底侧；数值只来自源覆盖内的有效像元。无需补造空间定位。计算复用源 512×512 分块读取，以最多 512×512 输出单元累积单个数据波段，不把大倍数组或整幅影像一次读入内存；均值为两遍分块读取，其余方法为一遍。
+
 加载接受自包含 TIFF、PNG、JPEG，Develop 使用标准格式识别器从源文件名派生格式，实际 driver 必须匹配源格式；外部 sidecar 和伪装的 VRT 拒绝作为通用栅格输入。以下算子的默认输出端口统一为 `default`，显式或省略 `port` 的引用必须得到同一结果。
 
 | 算子 ID | 核心输入及配置 | 输出端口类型 |
@@ -927,6 +931,7 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_select_bands` | `input_raster`、`bands`、`color_model=multispectral/rgb` | `raster`，选定的数据波段 |
 | `raster_band_math` | `input_raster`、受限 `expression` | `raster`，Float64 单波段 |
 | `raster_reclassify` | `input_raster`、`rules`、`band`、`unmatched=nodata/keep` | `raster`，同网格 Float64 单波段 |
+| `raster_aggregate` | `input_raster`、`factors`、`method=sum/mean/min/max` | `raster`，整数分组后的数据波段 |
 | `raster_statistics` | `input_raster`、`band` | `object`，全量有效/无效统计 |
 | `raster_histogram` | `input_raster`、`band`、`bins`、可选 `value_range` | `object`，全量计数及范围外计数 |
 

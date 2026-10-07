@@ -80,10 +80,10 @@ def _require_georeferencing(dataset):
 
 
 def _positive(value, name, integer=False):
+    if integer and (isinstance(value, bool) or not isinstance(value, int) or value > 2**31 - 1):
+        raise ValueError(f'{name} must be a positive integer')
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
         raise ValueError(f'{name} must be positive and finite')
-    if integer and (not isinstance(value, int) or value > 2**31 - 1):
-        raise ValueError(f'{name} must be a positive integer')
     return value
 
 
@@ -485,7 +485,7 @@ def _read_values(band, x, y, width, height):
                          dtype=np.float64).reshape(height,width)
 
 
-def _blocks(dataset, indices):
+def _blocks(dataset, indices, *, window=None):
     bands = [_band(dataset, index) for index in indices]
     alpha = None
     for index in range(1,dataset.RasterCount+1):
@@ -493,9 +493,11 @@ def _blocks(dataset, indices):
         if candidate.GetColorInterpretation() == gdal.GCI_AlphaBand:
             alpha = candidate
             break
-    for y in range(0, dataset.RasterYSize, 512):
-        for x in range(0, dataset.RasterXSize, 512):
-            width, height = min(512, dataset.RasterXSize - x), min(512, dataset.RasterYSize - y)
+    start_x, start_y, span_x, span_y = window or (0, 0, dataset.RasterXSize, dataset.RasterYSize)
+    end_x, end_y = start_x + span_x, start_y + span_y
+    for y in range(start_y, end_y, 512):
+        for x in range(start_x, end_x, 512):
+            width, height = min(512, end_x - x), min(512, end_y - y)
             coverage = None
             if alpha is not None:
                 values = _read_values(alpha,x,y,width,height)
@@ -651,9 +653,10 @@ def _data_indices(dataset):
     return indices
 
 
-def _numeric_output(grid, count):
+def _numeric_output(grid, count, *, size=None):
+    width, height = size or (grid.RasterXSize, grid.RasterYSize)
     output = gdal.GetDriverByName('GTiff').Create(
-        str(_path()), grid.RasterXSize, grid.RasterYSize, count, gdal.GDT_Float64,
+        str(_path()), width, height, count, gdal.GDT_Float64,
         ['TILED=YES', 'COMPRESS=DEFLATE', 'PHOTOMETRIC=MINISBLACK'])
     transform = grid.GetGeoTransform(can_return_null=True)
     if transform is not None:
@@ -664,6 +667,67 @@ def _numeric_output(grid, count):
         band.SetNoDataValue(float('nan'))
         band.SetColorInterpretation(gdal.GCI_Undefined)
     return output
+
+
+def raster_aggregate(input_raster, factors, method):
+    """Reduce integer pixel groups with bounded reads and independent band validity."""
+    factor_x, factor_y = _pair(factors, 'factors', integer=True)
+    if method not in ('sum', 'mean', 'min', 'max'):
+        raise ValueError('method must be sum, mean, min or max')
+    dataset = _open(input_raster)
+    indices = _data_indices(dataset)
+    width = (dataset.RasterXSize + factor_x - 1) // factor_x
+    height = (dataset.RasterYSize + factor_y - 1) // factor_y
+    output = _numeric_output(dataset, len(indices), size=(width, height))
+    transform = dataset.GetGeoTransform(can_return_null=True)
+    if transform is not None:
+        output.SetGeoTransform((transform[0], transform[1] * factor_x, transform[2] * factor_y,
+                                transform[3], transform[4] * factor_x, transform[5] * factor_y))
+    for destination_index, index in enumerate(indices, 1):
+        destination = output.GetRasterBand(destination_index)
+        for oy in range(0, height, 512):
+            for ox in range(0, width, 512):
+                columns, rows = min(512, width - ox), min(512, height - oy)
+                sx, sy = ox * factor_x, oy * factor_y
+                window = (sx, sy, min(columns * factor_x, dataset.RasterXSize - sx),
+                          min(rows * factor_y, dataset.RasterYSize - sy))
+
+                def cells():
+                    for x, y, arrays, masks in _blocks(dataset, [index], window=window):
+                        values, valid = arrays[0], masks[0]
+                        group_x = (np.arange(values.shape[1]) + x - sx) // factor_x
+                        group_y = (np.arange(values.shape[0]) + y - sy) // factor_y
+                        groups = group_y[:, None] * columns + group_x[None, :]
+                        yield groups[valid], values[valid]
+
+                counts = np.zeros(rows * columns, dtype=np.int64)
+                if method == 'mean':
+                    scales = np.zeros(rows * columns, dtype=np.float64)
+                    for groups, values in cells():
+                        np.add.at(counts, groups, 1)
+                        np.maximum.at(scales, groups, np.abs(values))
+                    scales[scales == 0] = 1.0
+                initial = math.inf if method == 'min' else -math.inf if method == 'max' else 0.0
+                reduced = np.full(rows * columns, initial, dtype=np.float64)
+                reduce = np.minimum if method == 'min' else np.maximum if method == 'max' else np.add
+                with np.errstate(over='ignore', invalid='ignore'):
+                    for groups, values in cells():
+                        if method == 'mean':
+                            values = (values / scales[groups]) / counts[groups]
+                        else:
+                            np.add.at(counts, groups, 1)
+                        reduce.at(reduced, groups, values)
+                    if method == 'mean':
+                        # A normalized mean stays in [-1, 1]; contain rounding at the finite limit.
+                        np.clip(reduced, -1.0, 1.0, out=reduced)
+                        reduced *= scales
+                reduced[(counts == 0) | ~np.isfinite(reduced)] = np.nan
+                destination.WriteRaster(ox, oy, columns, rows, reduced.tobytes(), buf_type=gdal.GDT_Float64)
+    destination = None
+    output.FlushCache()
+    path = output.GetDescription()
+    output = None
+    return _raster(path)
 
 
 def _classification_rules(rules):
@@ -835,6 +899,7 @@ _SPECS = [
     (raster_select_bands, '栅格波段选择', [_INPUT(), _param('bands', 'list[int]', '按顺序选择原始数据波段，序号从 1 开始，可重复'), _param('color_model', 'str', '输出波段颜色解释', 'multispectral', False, enum=['multispectral', 'rgb'])], 'raster', ['read']),
     (raster_band_math, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
+    (raster_aggregate, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_statistics, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_histogram, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
 ]
@@ -853,6 +918,8 @@ for function, label, params, output, effects in _SPECS:
     if name == 'raster_reclassify':
         examples.update({'rules': [{'min': 0, 'max': 10, 'class': 1}, {'value': 10, 'class': 2}],
                          'band': 1, 'unmatched': 'nodata'})
+    if name == 'raster_aggregate':
+        examples.update({'factors': [2, 2], 'method': 'mean'})
     metadata = OperatorMetadata(name=name, type=OperatorType.SPATIAL, category=OperatorCategory.RASTER,
         description=label, brief_description=label, overview=label + '，复用受控访问计划与当前执行内栅格对象。',
         params=params, output_ports=[OutputPort(name='default', type=output, description=label + '结果')],

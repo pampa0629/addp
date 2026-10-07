@@ -1,4 +1,5 @@
 import json
+import math
 import hashlib
 import multiprocessing
 import os
@@ -17,7 +18,7 @@ from operators.raster_compute import (
     raster_resample, raster_reproject, raster_clip, raster_mosaic,
     raster_band_math, raster_statistics, raster_histogram, raster_build_overviews, validate_cog,
     raster_align, raster_stack, raster_select_bands,
-    _classification_rules, raster_reclassify,
+    _classification_rules, raster_reclassify, raster_aggregate,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -53,6 +54,137 @@ def create_raster(path, array, transform=(0, 1, 0, 4, 0, -1), crs='EPSG:4326', n
         band = ds.GetRasterBand(index); band.SetNoDataValue(nodata); band.WriteRaster(0, 0, values.shape[1], values.shape[0], values.astype(np.float64).tobytes(), buf_type=gdal.GDT_Float64)
     ds = None
     return path
+
+
+def aggregate_oracle(data, valid, factors, method):
+    fx, fy = factors
+    expected = np.full(((data.shape[0] + fy - 1)//fy, (data.shape[1] + fx - 1)//fx), np.nan)
+    for row in range(expected.shape[0]):
+        for column in range(expected.shape[1]):
+            region = np.s_[row*fy:(row+1)*fy, column*fx:(column+1)*fx]
+            values = data[region][valid[region]].tolist()
+            if values:
+                expected[row, column] = (math.fsum(v/len(values) for v in values) if method == 'mean'
+                    else math.fsum(values) if method == 'sum' else min(values) if method == 'min' else max(values))
+    return expected
+
+
+@pytest.mark.parametrize('method', ['sum', 'mean', 'min', 'max'])
+@pytest.mark.parametrize('transform,crs', [(None, ''), ((3, 2, .5, 7, -.25, -2), 'EPSG:3857')])
+@pytest.mark.parametrize('factors', [[3, 2], [1, 1], [2147483647, 2147483647]])
+def test_aggregate_partial_groups_grid_missing_facts_and_cog(tmp_path, method, transform, crs, factors):
+    data = np.arange(35, dtype=float).reshape(5, 7) - 5
+    data[0:2, 0:3] = -9999
+    data[3, 3], data[4, 6] = np.inf, np.nan
+    path = create_raster(tmp_path/'aggregate.tif', data, transform, crs)
+    before = path.read_bytes()
+    expected = aggregate_oracle(data, np.isfinite(data) & (data != -9999), factors, method)
+    with raster_workspace():
+        result = raster_aggregate(raster_load(source_plan(path)), factors, method)
+        facts = raster_info(result)
+        fx, fy = factors
+        expected_transform = [transform[0], transform[1]*fx, transform[2]*fy,
+                              transform[3], transform[4]*fx, transform[5]*fy] if transform else []
+        assert facts['width'] == expected.shape[1] and facts['height'] == expected.shape[0]
+        assert facts['transform'] == expected_transform and bool(facts['crs']) == bool(crs)
+        target = tmp_path/'aggregate.cog.tif'
+        saved = raster_save(result, target_plan(target), profile='cog', blocksize=128)
+        assert saved['size_bytes'] == target.stat().st_size > 0
+        loaded = raster_load(source_plan(target))
+        assert validate_cog(loaded)['valid']
+        output = gdal.Open(str(loaded.path))
+        band = output.GetRasterBand(1)
+        np.testing.assert_allclose(read_band_values(band), expected, equal_nan=True)
+        np.testing.assert_array_equal(np.frombuffer(band.GetMaskBand().ReadRaster(), dtype=np.uint8).reshape(expected.shape)>0, np.isfinite(expected))
+        assert band.DataType == gdal.GDT_Float64 and np.isnan(band.GetNoDataValue())
+        band = output = None
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('method', ['sum', 'mean', 'min', 'max'])
+def test_aggregate_independent_bands_mask_alpha_and_zero(tmp_path, method):
+    data = np.arange(24, dtype=float).reshape(4,6)
+    other = -data - 1
+    data[0,2] = -9999
+    other[1,2] = np.nan
+    data[2,0] = 0
+    alpha = np.full((4,6),255.)
+    alpha[:2,:2], alpha[2,0], alpha[2,3] = 0, 128, np.inf
+    mask = np.full((4,6),255, dtype=np.uint8)
+    mask[3,5] = 0
+    path = create_raster(tmp_path/'bands.tif', np.stack([data,other,alpha]))
+    ds = gdal.Open(str(path),gdal.GA_Update)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):
+        ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteRaster(0,0,6,4,mask.tobytes())
+    ds = None
+    with raster_workspace():
+        result = raster_aggregate(raster_load(source_plan(path)),[2,2],method)
+        ds = gdal.Open(str(result.path))
+        assert ds.RasterCount == 2
+        for index, values in enumerate([data,other],1):
+            valid = (mask>0) & np.isfinite(alpha) & (alpha>0) & np.isfinite(values) & (values!=-9999)
+            expected = aggregate_oracle(values,valid,[2,2],method)
+            np.testing.assert_allclose(read_band_values(ds.GetRasterBand(index)),expected,equal_nan=True)
+            assert ds.GetRasterBand(index).GetColorInterpretation() != gdal.GCI_AlphaBand
+        ds = None
+
+
+@pytest.mark.parametrize('method', ['sum', 'mean', 'min', 'max'])
+@pytest.mark.parametrize('shape,factors', [((513,1025),[1024,512]), ((7,1027),[1,3]), ((513,517),[3,5])])
+def test_aggregate_streams_large_groups_and_cross_block_boundaries(tmp_path, monkeypatch, method, shape, factors):
+    import operators.raster_compute as compute
+    data = np.arange(np.prod(shape),dtype=float).reshape(shape)%97-48
+    data[::31,::17] = -9999
+    expected = aggregate_oracle(data,data!=-9999,factors,method)
+    path = create_raster(tmp_path/'large.tif',data)
+    read = compute._read_values
+    windows = []
+    def bounded(band,x,y,width,height):
+        windows.append((width,height))
+        assert width<=512 and height<=512
+        return read(band,x,y,width,height)
+    monkeypatch.setattr(compute,'_read_values',bounded)
+    with raster_workspace():
+        result = raster_aggregate(raster_load(source_plan(path)),factors,method)
+        ds = gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),expected,equal_nan=True,atol=1e-10)
+        ds = None
+    assert len(windows)>1
+
+
+@pytest.mark.parametrize('factors', [None, [], [2], [1,2,3], '2', [True,2], [2.,2], [0,2], [-1,2], [2,2**31], [10**400,1], [np.inf,2]])
+def test_aggregate_rejects_invalid_factors(raster_file,factors):
+    with raster_workspace(), pytest.raises(ValueError):
+        raster_aggregate(raster_load(source_plan(raster_file)),factors,'mean')
+
+
+def test_aggregate_rejects_complex_alpha_only_and_invalid_method(tmp_path):
+    for kind in ['complex','alpha']:
+        path = tmp_path/(kind+'.tif')
+        ds = gdal.GetDriverByName('GTiff').Create(str(path),2,2,1,gdal.GDT_CFloat64 if kind=='complex' else gdal.GDT_Float64)
+        if kind=='alpha':
+            ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds = None
+        with raster_workspace(), pytest.raises(ValueError):
+            raster_aggregate(raster_load(source_plan(path)),[2,2],'sum')
+    path = create_raster(tmp_path/'plain.tif',np.ones((2,2)))
+    with raster_workspace(), pytest.raises(ValueError,match='method'):
+        raster_aggregate(raster_load(source_plan(path)),[2,2],'median')
+
+
+@pytest.mark.parametrize('value',[1e308, np.finfo(np.float64).max, np.nextafter(0.,1.), 0.])
+def test_aggregate_mean_avoids_sum_overflow_and_subnormal_underflow(tmp_path,value):
+    path = create_raster(tmp_path/'extreme-values.tif',np.full((3,3),value))
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        result = raster_aggregate(source,[3,3],'mean')
+        ds = gdal.Open(str(result.path))
+        assert read_band_values(ds.GetRasterBand(1))[0,0] == pytest.approx(value,rel=1e-15,abs=0)
+        ds = None
+        if value==1e308:
+            assert raster_statistics(raster_aggregate(source,[3,3],'sum'))['valid_count']==0
 
 
 @pytest.mark.parametrize('rules', [
@@ -225,6 +357,62 @@ def test_reclassify_public_metadata_and_executable_example(raster_file):
     with raster_workspace():
         result = raster_reclassify(**{**example, 'input_raster': raster_load(source_plan(raster_file))})
         assert raster_statistics(result)['valid_count'] == 9
+
+
+def test_aggregate_public_metadata_and_example(raster_file):
+    spec = next(item for item in list_operators() if item['id']=='raster_aggregate')
+    params = {param['name']:param for param in spec['parameters']}
+    assert params['factors']['type']=='array' and params['factors']['item_type']=='integer'
+    assert params['method']['enum']==['sum','mean','min','max']
+    assert all(params[name]['required'] and 'default' not in params[name] for name in ['factors','method'])
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster']
+    assert params['input_raster']['type']=='raster' and spec['output_ports'][0]['type']=='raster'
+    example = spec['detailed_description']['workflow_example']['params']
+    with raster_workspace():
+        result = raster_aggregate(**{**example,'input_raster':raster_load(source_plan(raster_file))})
+        ds = gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),[[13/3,5.5],[11.5,13.5]])
+        ds = None
+
+
+@pytest.mark.parametrize('method',['sum','mean','min','max'])
+def test_aggregate_async_public_dag_cog_and_cleanup(raster_file,tmp_path,monkeypatch,method):
+    import api_server
+    import operators.raster_compute as compute
+    paths = []
+    original = OPERATORS['raster_load']['function']
+    def tracked(*args,**kwargs):
+        paths.append(compute._WORKSPACE.get())
+        return original(*args,**kwargs)
+    monkeypatch.setitem(OPERATORS['raster_load'],'function',tracked)
+    target = tmp_path/'aggregate.cog.tif'
+    before = raster_file.read_bytes()
+    workflow = {'tasks':[
+        {'id':'load','operator':'raster_load','params':{'access_plan':source_plan(raster_file)},'depends_on':[]},
+        {'id':'aggregate','operator':'raster_aggregate','params':{'input_raster':{'$ref':'load'},'factors':[3,2],'method':method},'depends_on':['load']},
+        {'id':'save','operator':'raster_save','params':{'input_raster':{'$ref':'aggregate'},'access_plan':target_plan(target),'profile':'cog','blocksize':128},'depends_on':['aggregate']},
+    ]}
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow',json={'workflow_def':workflow,'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline = time.monotonic()+5
+    while time.monotonic()<deadline:
+        status = client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ['success','failed']:
+            break
+        time.sleep(.01)
+    assert status['status']=='success',status
+    facts = json.loads(status['result'])
+    assert facts['size_bytes']==target.stat().st_size>0
+    assert paths and all(not path.exists() and str(path) not in json.dumps(status) for path in paths)
+    assert str(tmp_path) not in json.dumps(status) and raster_file.read_bytes()==before
+    values = np.arange(1,17,dtype=float).reshape(4,4)
+    expected = aggregate_oracle(values,values!=1,[3,2],method)
+    ds = gdal.Open(str(target))
+    np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),expected,equal_nan=True)
+    ds = None
+    assert client.post('/api/operators/raster_aggregate/invoke',json={'params':{}}).status_code==403
 
 
 @pytest.mark.parametrize('unmatched', [None, 'keep'], ids=['default-nodata', 'keep'])
@@ -2230,13 +2418,14 @@ def test_source_snapshot_and_driver_restriction(raster_file, tmp_path):
 
 @pytest.mark.parametrize('operator,params', [
     ('raster_band_math', {'expression': 'b99'}),
+    ('raster_aggregate', {'factors': [0,2], 'method': 'mean'}),
     ('raster_reclassify', {'rules': [{'min': 0, 'max': 5, 'class': 1}, {'value': 3, 'class': 2}]}),
     ('raster_reclassify', {'rules': '[{"value":2,"class":1}]'}),
     ('raster_clip', {'boundary_crs': 'EPSG:4326', 'geometry': {'type': 'Polygon', 'coordinates': [
         [[-1,-1],[5,-1],[5,5],[-1,5],[-1,-1]],
         [[-0.5,-0.5],[-0.5,4.5],[4.5,4.5],[4.5,-0.5],[-0.5,-0.5]],
     ]}}),
-], ids=['invalid-band', 'overlapping-classes', 'stringified-rules', 'disjoint-clip'])
+], ids=['invalid-band', 'invalid-aggregate', 'overlapping-classes', 'stringified-rules', 'disjoint-clip'])
 def test_failed_dag_cleans_workspace(monkeypatch, raster_file, tmp_path, operator, params):
     from operators.raster_compute import _WORKSPACE
     original = OPERATORS['raster_load']['function']
