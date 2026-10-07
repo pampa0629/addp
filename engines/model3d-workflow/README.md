@@ -30,6 +30,8 @@ export MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/path/to/node
 
 Docker wrapper 从 Runtime 传入的绝对输入、输出路径确定挂载范围：文件挂载其父目录，目录挂载自身，同一路径只挂载一次，以保持贴图等同目录依赖可见。不得仅因目录存在而挂载 `/home`、`/Users`、`/Volumes` 或 `/private` 等宿主机整根目录，避免无关路径触发 Docker Desktop 文件共享错误。三个 wrapper 共用同一挂载逻辑，修改后宿主机 Python Runtime 无需重启即可使用。
 
+修改原生转换器或其 Dockerfile 后，仅重启宿主机 Python Runtime 不会重建 wrapper 使用的镜像。wrapper 默认读取 `localhost:5001/addp-model3d-converter:latest`；独立验证标签构建成功也不会更新该默认标签。需通过根标准入口 `make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --verify --jobs 1 --tag latest"` 更新本地默认镜像，构建和 smoke 检查通过后再从页面重试。下一次 wrapper 调用即使用更新镜像；使用自定义 `MODEL3D_CONVERTER_IMAGE` 时应构建对应注册表与标签。
+
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
 
 ## 启动

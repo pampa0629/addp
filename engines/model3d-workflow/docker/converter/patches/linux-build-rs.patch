@@ -83,3 +83,29 @@ diff --git a/src/osgb23dtile.cpp b/src/osgb23dtile.cpp
 +// Static OSG linking must retain the compressor registration used by compressed OSGB.
 +USE_COMPRESSOR_WRAPPER(ZLibCompressor)
  #endif
+diff --git a/src/mesh_processor.cpp b/src/mesh_processor.cpp
+--- a/src/mesh_processor.cpp
++++ b/src/mesh_processor.cpp
+@@ -208,6 +208,22 @@ bool process_texture(
+                     break;
++                case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
++                case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
++                case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
++                case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
++                    jpeg_buf.resize(static_cast<size_t>(width) * height * 3);
++                    for (int y = 0; y < height; ++y) {
++                        for (int x = 0; x < width; ++x) {
++                            const osg::Vec4 color = img->getColor(x, y, 0);
++                            const size_t offset = (static_cast<size_t>(y) * width + x) * 3;
++                            for (int channel = 0; channel < 3; ++channel) {
++                                jpeg_buf[offset + channel] = static_cast<unsigned char>(
++                                    color[channel] * 255.0f + 0.5f);
++                            }
++                        }
++                    }
++                    break;
+                 default:
+                     break;
+                 }
+             }
+         }
