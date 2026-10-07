@@ -613,7 +613,9 @@
       "evidence": "查看采样明细",
       "window": "{start} 至 {end}，评估间隔 {step} 秒",
       "gaps": "陈旧、缺失及未接入的点显示为断点。",
+      "cpuBusyHint": "最近一分钟各核非空闲时间的平均比例，包含 IO 等待和被虚拟化环境占用的时间；窗口不足时显示无数据。",
       "metrics": {
+        "cpuBusy": "CPU 忙碌率（1 分钟）",
         "cores": "CPU 逻辑核数",
         "memoryTotal": "内存总量",
         "memoryAvailable": "可用内存",

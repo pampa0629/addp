@@ -112,6 +112,13 @@ except urllib.error.HTTPError as err:
 else:
     raise AssertionError('Anonymous HTTP SD was accepted')
 print('Metrics T2: anonymous, foreign client CA and plaintext rejected', flush=True)
+# Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
+subprocess.run(['go', 'test', './internal/resourcequery', '-run',
+                '^TestIntegrationMetricsCPUWindow$', '-count=1', '-v'],
+               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+               env=dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1'),
+               check=True, timeout=60)
+
 
 flags = api('status/flags')
 assert flags['storage.tsdb.retention.time'] == '1w', flags
@@ -258,7 +265,7 @@ query_env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1',
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
                 '^TestIntegrationMetricsResourceQueries$', '-count=1', '-v'],
                cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
-               env=query_env, check=True, timeout=90)
+               env=query_env, check=True, timeout=180)
 print('Metrics T2: native fixed catalog instant/range and source isolation', flush=True)
 
 compose('stop', 'node-exporter')

@@ -613,7 +613,9 @@
       "evidence": "View sample details",
       "window": "{start} to {end}, evaluation interval {step} seconds",
       "gaps": "Stale, missing and disconnected points appear as gaps.",
+      "cpuBusyHint": "Average non-idle time across cores over the last minute, including I/O wait and steal time; incomplete windows show no data.",
       "metrics": {
+        "cpuBusy": "CPU busy (1 minute)",
         "cores": "CPU logical cores",
         "memoryTotal": "Total memory",
         "memoryAvailable": "Available memory",

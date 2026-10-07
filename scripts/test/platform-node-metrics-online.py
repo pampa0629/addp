@@ -29,7 +29,7 @@ DISCOVERY = "/api/v1/monitor/platform/metrics_discovery"
 OBSERVATIONS = "/api/v1/monitor/platform/resource_observations"
 TRENDS = "/api/v1/monitor/platform/resource_trends"
 QUERY_POLICY = "/api/v1/monitor/settings/resource-query-policy"
-METRICS = {"node.cpu.logical_cores": "cores", "node.memory.total_bytes": "bytes",
+METRICS = {"node.cpu.logical_cores": "cores", "node.cpu.busy_percent": "percent", "node.memory.total_bytes": "bytes",
            "node.memory.available_bytes": "bytes", "node.memory.used_percent": "percent",
            "node.load.average_1m": "load", "node.load.average_5m": "load",
            "node.load.average_15m": "load", "node.uptime_seconds": "seconds"}
@@ -207,7 +207,7 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
     seen = set()
     for row in rows:
         key = row.get("metric_key")
-        require(key in expected and key not in seen and row.get("unit") == expected[key] and row.get("window_seconds") == 0, "resource catalog mismatch")
+        require(key in expected and key not in seen and row.get("unit") == expected[key] and row.get("window_seconds") == (60 if key == "node.cpu.busy_percent" else 0), "resource catalog mismatch")
         seen.add(key)
         points = row.get("points")
         require(isinstance(points, list) and len(points) == count, "resource grid truncated")
@@ -222,7 +222,7 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
             elif state in {"valid", "stale"}:
                 sampled = utc_timestamp(sample)
                 require(type(number) in {int, float} and math.isfinite(number) and number >= 0 and sampled <= evaluated, "invalid resource evidence")
-                require(key != "node.memory.used_percent" or number <= 100, "invalid memory percentage")
+                require(expected[key] != "percent" or number <= 100, "invalid resource percentage")
                 age = (evaluated if trend else queried)-sampled
                 require((state == "valid" and age <= 60) or (state == "stale" and age > 60), "freshness state lacks evidence")
                 valid += int(state == "valid")
@@ -312,7 +312,7 @@ def validate_resource_browser(value, expected, artifacts):
         trend = row.get("path") == TRENDS
         require(trend or row.get("path") == OBSERVATIONS, "browser resource path mismatch")
         keys = query.get("metrics", "").split(",")
-        require((trend and keys in [["node.memory.used_percent"], ["node.load.average_1m"]])
+        require((trend and keys in [["node.memory.used_percent"], ["node.cpu.busy_percent"]])
                 or (not trend and len(keys) == len(METRICS) and set(keys) == set(METRICS)), "browser metric request mismatch")
         duration = utc_timestamp(query.get("end")) - utc_timestamp(query.get("start")) if trend else 0
         require(not trend or duration in {300, 3600}, "browser range mismatch")
@@ -325,13 +325,13 @@ def validate_resource_browser(value, expected, artifacts):
             trends.append((keys[0], duration))
         else:
             instants.append(resource)
-    require(len(instants) >= 2 and {("node.memory.used_percent", 3600), ("node.load.average_1m", 300)} <= set(trends), "browser restore evidence incomplete")
+    require(len(instants) >= 2 and {("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300)} <= set(trends), "browser restore evidence incomplete")
     for name in ("list", "detail", "restored"):
         screenshot = artifacts / ("node-resources-" + name + ".png")
         require(screenshot.is_file() and screenshot.stat().st_size > 1000
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
     return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
-            "eight_metrics": True, "trend_server_window": True, "navigation_restore": True,
+            "catalog_metric_count": len(METRICS), "trend_server_window": True, "navigation_restore": True,
             "security_administrator_denied": True, "auto_refresh": True}
 
 
@@ -454,7 +454,7 @@ def run(base, directory, report):
             assert_resources(value, node, target, require_fresh=False)
             if not all(row["points"][0]["data_state"] == "valid" for row in value["series"]):
                 report["initial_resource_query_wait"] = True
-                eventually(lambda: resource_query_ready(admin, node, target), "eight current resource metrics after initial scrape")
+                eventually(lambda: resource_query_ready(admin, node, target), "all current catalog metrics after full-window warmup")
                 value = admin.request("GET", resource_path(node), (200,)).payload
                 (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "node-resource-query-check.json").write_text(json.dumps(value))
         assert_resources(value, node, target, trend)

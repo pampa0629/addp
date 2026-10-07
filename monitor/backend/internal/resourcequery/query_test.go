@@ -77,7 +77,7 @@ func TestPlansAndWhitelistRejectInjectionAndBoundSevenDays(t *testing.T) {
 		t.Fatal(e)
 	}
 	// Timestamp equality is a same-scrape guard on memory and CPU capacity.
-	if !strings.Contains(expression, "timestamp(node_memory_MemAvailable_bytes") || !strings.Contains(expression, "count(node_cpu_seconds_total") || strings.Contains(expression, "rate(") {
+	if !strings.Contains(expression, "timestamp(node_memory_MemAvailable_bytes") || !strings.Contains(expression, "count(node_cpu_seconds_total") || !strings.Contains(expression, "rate(") {
 		t.Fatal(expression)
 	}
 }
@@ -313,5 +313,33 @@ func TestQueryClientRejectsSigningAuthorityAsClientCredential(t *testing.T) {
 			c.Close()
 		}
 		t.Fatal("signing authority accepted as query credential")
+	}
+}
+
+func TestCPUBusyWindowMetadataAndPercentageEvidence(t *testing.T) {
+	p, err := NewPlan([]string{"node.cpu.busy_percent"}, testTime, testTime, testTime, false, DefaultBudget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{"no_data", "not_connected"} {
+		row := Empty(p, state)[0]
+		if row.Unit != "percent" || row.WindowSeconds != 60 || row.Points[0].Value != nil {
+			t.Fatalf("CPU window lost on %s: %+v", state, row)
+		}
+	}
+	for _, value := range []string{"0", "50", "100", "100.01", "-0.01", "NaN", "+Inf"} {
+		raw := data(rawRow("value", pair(testTime.Unix(), value), false)+","+rawRow("sampled_at", pair(testTime.Unix(), strconv.FormatInt(testTime.Unix()-1, 10)), false), false)
+		raw = strings.ReplaceAll(raw, "node.memory.used_percent", "node.cpu.busy_percent")
+		rows, err := normalize(wire(t, raw), p, DefaultBudget())
+		if err != nil {
+			t.Fatal(err)
+		}
+		valid := value == "0" || value == "50" || value == "100"
+		if (rows[0].Points[0].DataState == "valid") != valid || rows[0].WindowSeconds != 60 {
+			t.Fatalf("CPU value %s: %+v", value, rows)
+		}
+		if !valid && rows[0].Points[0].Value != nil {
+			t.Fatal("invalid percent fabricated as finite value")
+		}
 	}
 }

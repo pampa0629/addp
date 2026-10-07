@@ -35,6 +35,7 @@
         <article v-for="metric in resourceMetrics" :key="metric.key" class="resource-card" :data-testid="`resource-${metric.name}`">
           <h4>{{ t(`monitor.resources.metrics.${metric.name}`) }}</h4>
           <strong>{{ formatValue(point(metric.key), metric) }}</strong>
+          <p v-if="metric.windowSeconds" class="resource-hint">{{ t('monitor.resources.cpuBusyHint') }}</p>
           <p>{{ t(`monitor.resources.states.${point(metric.key).data_state}`) }}</p>
           <p>{{ t('monitor.resources.sampledAt') }}: {{ date(point(metric.key).sampled_at) }}</p>
           <p>{{ t('monitor.resources.evaluatedAt') }}: {{ date(point(metric.key).evaluated_at) }}</p>

@@ -965,3 +965,33 @@ Run 37562119255（提交 `9d28d75d1`）复现并确认启动采样时序问题�
 本批完成既有节点资源详情的自动刷新实现与 T0/T1/T3/T4 验证，不代表 CPU 忙碌率、文件系统、磁盘/网络 IO、cAdvisor、全局排行或生产 T5 已完成。下一批优先在同一固定目录和查询路径补齐 CPU 忙碌率，沿已确认一分钟窗口及缺样本规则实施，继续保持 Platform/Tenant 边界；IAM 由对应任务处理，不作为本功能后续开发的前置。
 
 最终收尾仅更新本节验收事实及 Monitor 开发导航，本轮文档的 Markdown 与限定路径空白检查通过，没有改变已验证实现。共享工作区全局 `git diff --check` 发现其他任务的 Model3D 补丁尾随空白（exit 2），未计为本轮路径通过，也未修改该任务文件；默认 `make test-changed` 的共享 T2 环境预检限制仍按上文单独计量。
+
+
+### 10.27 节点 CPU 忙碌率与趋势（本地验收完成，九项 Hosted 范围已确认）
+
+本批沿用唯一固定指标目录、即时/趋势 API、Platform User 权限裁决及节点资源页面，增加 `node.cpu.busy_percent`，单位 `percent`，`window_seconds=60`；目录共九项，仍每项最多一条标量序列。预算、Tenant 边界、独立采集身份和可选 Infra 依赖不变。
+
+忙碌率定义为 `100 × (1 − 各逻辑核 idle 计数器一分钟速率的平均值)`，包含 iowait、steal 等非 idle 时间。每核速率保留十二位小数、聚合百分比保留九位小数，以消除浮点运算将完全空闲误算成极小非零的误差，不通过 clamp 掩盖越界。按各核速率先计算再聚合，使用该历史窗口中的核集合，不借现在核数回算过去。负载平均值继续展示原值，页面明确一分钟窗口和非空闲口径。
+
+完整窗口以固定 15 秒采样为基础：每核在左开右闭的一分钟范围中至少四个真实样本，窗口起点具有同源 idle 样本且距起点不超过 16 秒，最新样本距评估时点不超过 16 秒。16 秒包含一个采样周期及整秒评估的一秒容差，不改变一分钟速率窗口。当前、窗口起点及整个范围内出现过的核集合须完整相同（包括中途短暂新增后移除的核），当前及起点的所有核分别须同次采样；窗口内计数器不得重置，当前值不得小于起点值，主机启动时间在两端保持相同且与 idle 同次采样。缺样本、首次接入预热、核增减、主机重启及异常速率产生 `no_data` 空值，不补零、不将边界外旧值伪装成完整窗口。Prometheus `rate` 本身会外推边界并处理重置，因此其单独返回数值不能作为窗口完整证据；本批增加上述证据准入，并保留真实最新来源时间为 `sampled_at`。参考 [Prometheus rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) 与 [范围向量边界](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors)。
+
+实施前门禁识别：Go T1 及 Monitor owner 门禁自动发现目录/归一回归；现有 `make test-monitor-metrics` 用锁定 Prometheus 的 promtool 验证窗口、重置及核集合情景，并验证真实 node_exporter 即时/趋势；前端沿 `make test-monitor-frontend` 扩散至 `make test-console-frontend`；Online runner 由 `make test-node-metrics-online-runner` 覆盖。现有 CI 路径已登记资源查询目录、Monitor/Console 前端和 Online runner，无需新增组件、入口或工作流。API 目录和双语 Swagger 同批同步。2026-10-07 用户确认继续推进第九项的同一 Hosted 验收，测试规范第 5.2 节同步为九项读取；沿用原有隔离部署、身份、API 与清理边界。
+
+
+2026-10-07 本批本地门禁证据：
+
+| 标准入口 | 本批结果 |
+|---|---|
+| `make test-go` | 最终实现通过全部已跟踪 Go 模块的 T1 门禁；需外部部署的 integration skip 不计为 T2/T4 |
+| `make test-monitor-metrics` | 完整通过；锁定 promtool 的 15 个 CPU 场景、真实 node_exporter 九项即时/趋势、来源范围隔离、中断与恢复、中心 SIGKILL 后历史保留及独立夹具存活均通过；退出容器/网络/卷/临时文件零残留 |
+| `make test-monitor-postgres` | 18 项仓储及服务集成通过，包含目标预算/CAS、查询预算 CAS 与热读取；使用核实的 `addp-postgres:25432` 和标准 `addp_test` |
+| `make test-monitor-frontend` | 40 项单测、48 项浏览器回归及构建通过；CPU 预热空值不影响其他指标、恢复有效零值和 CPU 趋势 URL 重载通过 |
+| `make test-console-frontend` | 148 项单测、118 项浏览器回归及构建通过 |
+| `make test-node-metrics-online-runner` | 22 项 Python 协议/Hosted runner 回归及既有 Go fixture 单测通过；含 CPU 60 秒口径与越界拒绝，不计为真实 T4 |
+| `make test-frontend-ci-registration`、既有 T2 登记检查 | 17 项前端登记及 38 项 T2 登记回归通过，现有路径覆盖本批；没有新增永久入口 |
+| Swagger 生成与 `check-route-coverage.sh monitor` | 双语产物同步，65 个公开路由方法覆盖一致；本批未新增 HTTP 路由或 Permission |
+| `make test-changed` | 跨 owner 数据库参数预检失败（MySQL、OceanBase、PostgreSQL / System IAM DSN）；没有执行后续门禁，不计为通过。上述本批标准门禁独立执行 |
+
+首次 promtool 严格比较暴露浮点边界问题：完全 idle 的结果约为 `1e-14%`；用小数步长 round 又使 `100%` 多出一个浮点尾差。最终采用整数缩放后舍入再除回，严格验证 0/50/100；越界仍返回空值，没有 clamp 兼容分支。首轮新增页面断言把共享格式器的 `0.00 %` 写成 `0%`，已修正断言并完整复跑。最终 15 场景同时验证窗口中途新增又移除的核及其恢复，防止只比较窗口两端而遗漏容量变化。上述诊断失败不计为通过；最后完整门禁通过才构成本批证据。
+
+2026-10-07 用户确认继续推进，测试规范第 5.2 节已将读取范围同步为九项（含 CPU 忙碌率）；原临时身份、API 类型、预算用途、节点对象及生产权限边界不变。Online suite 与真实浏览器消费使用同一九项目录和 CPU 趋势，接下来提交本批实现并执行该 Hosted T4；当前尚无第九项的真实 Hosted 通过证据，历史八项和自动刷新 T4 不替代本批验收。生产 T5 未运行，个人服务与环境没有重启。

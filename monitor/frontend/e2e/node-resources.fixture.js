@@ -9,11 +9,11 @@ export function observations(id, keys, trend = false, mode = '', end = serverEnd
     const item = resourceMetrics.find(metric => metric.key === key)
     const numeric = item.unit === 'bytes' ? 17179869184 : item.name === 'uptime' ? 3600 : 0
     return (trend ? [-30, -15, 0].map(offset => new Date(Date.parse(end) + offset * 1000).toISOString()) : [end]).map((evaluated_at, index) => {
-      const data_state = mode === 'disconnected' ? 'not_connected' : trend && index === 1 ? 'no_data' : !trend && item.name === 'memoryAvailable' ? 'stale' : 'valid'
+      const data_state = mode === 'cpu-warmup' && item.name === 'cpuBusy' ? 'no_data' : mode === 'disconnected' ? 'not_connected' : trend && index === 1 ? 'no_data' : !trend && item.name === 'memoryAvailable' ? 'stale' : 'valid'
       return { evaluated_at, sampled_at: data_state === 'not_connected' || data_state === 'no_data' ? null : evaluated_at, value: data_state === 'no_data' || data_state === 'not_connected' ? null : numeric, data_state }
     })
   }
-  return { subject: { kind: 'node', node_id: id }, end, start: trend ? new Date(Date.parse(end) - 30000).toISOString() : end, queried_at: end, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, unit: resourceMetrics.find(item => item.key === key).unit, window_seconds: 0, points: points(key) })) }
+  return { subject: { kind: 'node', node_id: id }, end, start: trend ? new Date(Date.parse(end) - 30000).toISOString() : end, queried_at: end, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, unit: resourceMetrics.find(item => item.key === key).unit, window_seconds: resourceMetrics.find(item => item.key === key).windowSeconds || 0, points: points(key) })) }
 }
 export async function resourceBackend(page, options = {}) {
   const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', serverEnd, identity: options.identity || identity(resourcePermissions) }

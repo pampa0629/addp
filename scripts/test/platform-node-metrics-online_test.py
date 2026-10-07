@@ -88,7 +88,7 @@ class MetricsProtocolTest(unittest.TestCase):
                 at = "2026-10-06T00:" + ("01:00Z" if offset == 60 else "00:"+f"{offset:02d}"+"Z")
                 points.append({"evaluated_at": at, "sampled_at": None if disconnected else at,
                                "value": None if disconnected else 0, "data_state": "not_connected" if disconnected else "valid"})
-            rows.append({"metric_key": key, "unit": ONLINE.METRICS[key], "window_seconds": 0, "points": points})
+            rows.append({"metric_key": key, "unit": ONLINE.METRICS[key], "window_seconds": 60 if key == "node.cpu.busy_percent" else 0, "points": points})
         return {"subject": {"kind": "node", "node_id": "node-id"}, "node_version": 1,
                 "target_id": "target-id", "target_saved_version": 2, "policy_version": 0,
                 "lookback_seconds": 300, "queried_at": stamp, "start": "2026-10-06T00:00:00Z" if trend else stamp,
@@ -114,6 +114,17 @@ class MetricsProtocolTest(unittest.TestCase):
         client.request.return_value = ONLINE.API.Response(403, self.resource_reply())
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.resource_query_ready(client, node, target)
+
+    def test_cpu_busy_window_and_percentage_cannot_be_forged(self):
+        node, target = {"node_id": "node-id", "version": 1}, {"id": "target-id", "version": 2}
+        value = self.resource_reply(keys=["node.cpu.busy_percent"])
+        ONLINE.assert_resources(value, node, target, keys=["node.cpu.busy_percent"])
+        for window, number in ((0, 0), (15, 0), ("60", 0), (60, 101)):
+            bad = copy.deepcopy(value)
+            bad["series"][0]["window_seconds"] = window
+            bad["series"][0]["points"][0]["value"] = number
+            with self.subTest(window=window, number=number), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_resources(bad, node, target, keys=["node.cpu.busy_percent"])
 
     def test_resource_evidence_accepts_zero_and_rejects_stale_grid_or_forged_missing_values(self):
         node, target = {"node_id": "node-id", "version": 1}, {"id": "target-id", "version": 2}
@@ -195,7 +206,7 @@ class MetricsProtocolTest(unittest.TestCase):
         admin["principal"]["id"], security["principal"]["id"] = "admin-id", "security-id"
         instant = self.resource_reply()
         rows = [{"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(ONLINE.METRICS)}, "value": instant}]
-        for key, span in (("node.memory.used_percent", 3600), ("node.load.average_1m", 300)):
+        for key, span in (("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300)):
             value = self.resource_reply([key], trend=True)
             end = datetime.datetime.fromisoformat(value["end"].replace("Z", "+00:00"))
             start = end - datetime.timedelta(seconds=span)

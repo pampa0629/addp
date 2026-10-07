@@ -242,7 +242,7 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 			v, vok := values[key][i]
 			ts, tok := stamps[key][i]
 			point := &out[rowIndex].Points[i]
-			if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (key == "node.memory.used_percent" && v > 100) {
+			if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (out[rowIndex].Unit == "percent" && v > 100) {
 				continue
 			}
 			sec, fraction := math.Modf(ts)

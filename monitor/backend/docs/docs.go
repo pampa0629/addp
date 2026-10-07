@@ -2763,6 +2763,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics; CPU busy is the one-minute non-idle percentage, with no_data for incomplete windows",
                 "produces": [
                     "application/json"
                 ],
@@ -2861,6 +2862,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics; CPU busy is the one-minute non-idle percentage, with no_data for incomplete windows",
                 "produces": [
                     "application/json"
                 ],

@@ -3,6 +3,7 @@ import { resolveTargetRoute } from './monitoringTargets.js'
 // Domain adaptation of Monitor's fixed scalar catalog, never arbitrary PromQL.
 export const resourceMetrics = [
   { key: 'node.cpu.logical_cores', name: 'cores', unit: 'cores', precision: 0 },
+  { key: 'node.cpu.busy_percent', name: 'cpuBusy', unit: 'percent', precision: 2, windowSeconds: 60 },
   { key: 'node.memory.total_bytes', name: 'memoryTotal', unit: 'bytes', precision: 0 },
   { key: 'node.memory.available_bytes', name: 'memoryAvailable', unit: 'bytes', precision: 0 },
   { key: 'node.memory.used_percent', name: 'memoryUsed', unit: 'percent', precision: 2 },
@@ -40,7 +41,7 @@ export function validateResourceResponse(value, nodeID, keys, trend = false) {
   const seen = new Set()
   for (const series of value.series) {
     const definition = resourceMetrics.find(item => item.key === series.metric_key)
-    if (!definition || !keys.includes(series.metric_key) || seen.has(series.metric_key) || series.unit !== definition.unit || !Array.isArray(series.points) || !series.points.length || series.points.length > (trend ? 1000 : 1)) throw new Error('invalid_resource_response')
+    if (!definition || !keys.includes(series.metric_key) || seen.has(series.metric_key) || series.unit !== definition.unit || series.window_seconds !== (definition.windowSeconds || 0) || !Array.isArray(series.points) || !series.points.length || series.points.length > (trend ? 1000 : 1)) throw new Error('invalid_resource_response')
     seen.add(series.metric_key)
     for (const point of series.points) {
       if (!['valid', 'stale', 'no_data', 'not_connected'].includes(point.data_state) || !Number.isFinite(Date.parse(point.evaluated_at)) || (point.sampled_at !== null && !Number.isFinite(Date.parse(point.sampled_at))) || (point.value !== null && (typeof point.value !== 'number' || !Number.isFinite(point.value))) || (point.data_state === 'valid' && (point.value === null || point.sampled_at === null))) throw new Error('invalid_resource_response')

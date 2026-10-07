@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { identity, node, resourceBackend, resourcePermissions, secondNode, setIdentity } from './node-resources.fixture'
 
-test('lists owner nodes without fanout and opens eight metrics with server-anchored trends', async ({ page }) => {
+test('lists owner nodes without fanout and opens nine metrics with server-anchored trends', async ({ page }) => {
   const state = await resourceBackend(page)
   await page.goto('/node-resources?page=2&search=节点')
   await expect(page.getByRole('button', { name: '查看资源' })).toHaveCount(2)
@@ -15,7 +15,7 @@ test('lists owner nodes without fanout and opens eight metrics with server-ancho
   await expect(page.getByTestId('resource-memoryAvailable')).toContainText('—')
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   const instant = state.reads.find(item => item.path.endsWith('resource_observations'))
-  expect(instant.query.metrics.split(',')).toHaveLength(8)
+  expect(instant.query.metrics.split(',')).toHaveLength(9)
   const trend = state.reads.find(item => item.path.endsWith('resource_trends'))
   expect(trend.query).toMatchObject({ node_id: node, metrics: 'node.memory.used_percent', start: '2026-10-06T23:00:00.000Z', end: '2026-10-07T00:00:00.000Z' })
   await page.getByText('查看采样明细', { exact: true }).click()
@@ -234,4 +234,23 @@ test('context revocation and component unmount stop future automatic reads', asy
   const count = resourceReads(state).length
   await page.clock.fastForward(60001)
   expect(resourceReads(state)).toHaveLength(count)
+})
+
+
+test('CPU minute warmup stays empty while gauges work; recovery restores valid zero and its trend', async ({ page }) => {
+  const state = await resourceBackend(page, { mode: 'cpu-warmup' })
+  await page.goto(`/node-resources/${node}?metric=node.cpu.busy_percent&refresh=off`)
+  await expect(page.getByTestId('resource-cpuBusy')).toContainText('缺失')
+  await expect(page.getByTestId('resource-cpuBusy').locator('strong')).toHaveText('—')
+  await expect(page.getByTestId('resource-cpuBusy')).toContainText('最近一分钟')
+  await expect(page.getByTestId('resource-cores')).toContainText('0 核')
+  await expect(page.getByTestId('resource-metric')).toContainText('CPU 忙碌率（1 分钟）')
+  state.mode = ''
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-cpuBusy')).toContainText('有效')
+  await expect(page.getByTestId('resource-cpuBusy').locator('strong')).toHaveText('0.00 %')
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await page.reload()
+  await expect(page.getByTestId('resource-metric')).toContainText('CPU 忙碌率（1 分钟）')
+  expect(state.reads.filter(item => item.path.endsWith('resource_trends')).every(item => item.query.metrics === 'node.cpu.busy_percent')).toBe(true)
 })

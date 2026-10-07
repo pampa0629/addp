@@ -87,6 +87,7 @@ func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, tim
 
 // Instant godoc
 // @Summary 读取节点即时资源 | Read current node resources
+// @Description 固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics; CPU busy is the one-minute non-idle percentage, with no_data for incomplete windows
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
@@ -109,6 +110,7 @@ func (h *ResourceObservationHandler) Instant(c *gin.Context) { h.query(c, false)
 
 // Trend godoc
 // @Summary 读取节点资源趋势 | Read node resource trends
+// @Description 固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics; CPU busy is the one-minute non-idle percentage, with no_data for incomplete windows
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth

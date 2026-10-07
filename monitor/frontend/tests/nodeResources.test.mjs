@@ -33,7 +33,7 @@ test('zero remains valid; stale and absent samples never become current values o
 })
 test('rejects mismatched subjects, incomplete catalogs and invalid sample evidence', () => {
   const key = 'node.memory.used_percent', time = '2026-10-07T00:00:00Z'
-  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: time, queried_at: time, series: [{ metric_key: key, unit: 'percent', points: [{ evaluated_at: time, sampled_at: time, value: 0, data_state: 'valid' }] }] }
+  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: time, queried_at: time, series: [{ metric_key: key, unit: 'percent', window_seconds: 0, points: [{ evaluated_at: time, sampled_at: time, value: 0, data_state: 'valid' }] }] }
   assert.equal(validateResourceResponse(response, 'node-id', [key]), response)
   assert.throws(() => validateResourceResponse(response, 'other-node', [key]))
   assert.throws(() => validateResourceResponse(response, 'node-id', [key, 'node.cpu.logical_cores']))
@@ -56,5 +56,17 @@ test('detail refresh has a single canonical bounded choice; list never retains i
     const value = resolveResourceRoute({ refresh }, true)
     assert.equal(value.refresh, '15')
     assert.deepEqual(value.query, {})
+  }
+})
+
+test('CPU busy response must prove the fixed one-minute window and preserves valid zero', () => {
+  const at = '2026-10-07T00:00:00Z', key = 'node.cpu.busy_percent'
+  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: at, queried_at: at, series: [{ metric_key: key, unit: 'percent', window_seconds: 60, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] }] }
+  assert.equal(validateResourceResponse(response, 'node-id', [key]), response)
+  assert.equal(currentResourceValue(response.series[0].points[0]), 0)
+  assert.deepEqual(resolveResourceRoute({ metric: key }, true).query, { metric: key })
+  for (const window of [undefined, 0, 15, '60']) {
+    const value = structuredClone(response); value.series[0].window_seconds = window
+    assert.throws(() => validateResourceResponse(value, 'node-id', [key]))
   }
 })

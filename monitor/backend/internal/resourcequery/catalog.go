@@ -52,9 +52,10 @@ type Definition struct {
 	WindowSeconds int    `json:"window_seconds"`
 }
 
-// The eight scalar metrics have a proven output upper bound of one series each.
+// Every fixed scalar metric has an output upper bound of one series.
 var definitions = []Definition{
 	{"node.cpu.logical_cores", "cores", 0},
+	{"node.cpu.busy_percent", "percent", 60},
 	{"node.memory.total_bytes", "bytes", 0},
 	{"node.memory.available_bytes", "bytes", 0},
 	{"node.memory.used_percent", "percent", 0},
@@ -171,6 +172,33 @@ func (p Plan) Expression(s Scope) (string, error) {
 			raw = strings.TrimSuffix(raw, "}") + `,mode="idle"}`
 			guard := ` and (min(timestamp(` + raw + `)) == max(timestamp(` + raw + `)))`
 			value = `(count(` + raw + `)` + guard + `)`
+			stamp = `(min(timestamp(` + raw + `))` + guard + `)`
+		case "node.cpu.busy_percent":
+			raw := strings.TrimSuffix(s.selector("node_cpu_seconds_total"), "}") + `,mode="idle"}`
+			previous := raw + ` offset 1m`
+			// Integer scaling avoids reciprocal rounding of decimal step sizes.
+			rate := `(round(rate(` + raw + `[1m])*1000000000000)/1000000000000)`
+			// Range selectors are left-open: four samples at a 15s cadence,
+			// plus a source witness at the start, prove the full minute.
+			// One second tolerates the API's whole-second evaluation grid.
+			eligible := `(` + rate +
+				` and (count_over_time(` + raw + `[1m])>=4)` +
+				` and (resets(` + raw + `[1m])==0)` +
+				` and (` + raw + `>=` + previous + `)` +
+				` and (timestamp(` + previous + `)>=time()-76)` +
+				` and (timestamp(` + raw + `)>=time()-16)` +
+				` and (` + rate + `>=0) and (` + rate + `<=1))`
+			boot := s.selector("node_boot_time_seconds")
+			guard := ` and (count(` + eligible + `)==count(` + raw + `))` +
+				` and (count(` + raw + `)==count(` + previous + `))` +
+				` and (count(count_over_time(` + raw + `[1m]))==count(` + raw + `))` +
+				` and (min(timestamp(` + raw + `))==max(timestamp(` + raw + `)))` +
+				` and (min(timestamp(` + previous + `))==max(timestamp(` + previous + `)))` +
+				` and (count(` + boot + `)==1) and (count(` + boot + ` offset 1m)==1)` +
+				` and (max(` + boot + `)==max(` + boot + ` offset 1m))` +
+				` and (max(timestamp(` + boot + `))==max(timestamp(` + raw + `)))` +
+				` and (max(timestamp(` + boot + ` offset 1m))==max(timestamp(` + previous + `)))`
+			value = `((round(100*(1-avg(` + eligible + `))*1000000000)/1000000000)` + guard + `)`
 			stamp = `(min(timestamp(` + raw + `))` + guard + `)`
 		case "node.memory.total_bytes":
 			value, stamp = gauge("node_memory_MemTotal_bytes")
