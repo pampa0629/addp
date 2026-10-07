@@ -1,6 +1,6 @@
 # ADDP 平台运行监控与可观测性设计
 
-状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、节点台账、监测目标及资源查询页面已分批实施并验收。CPU 忙碌率本地门禁及九项完整 Hosted 验收已通过；文件系统容量与挂载趋势的实现、本地门禁及扩展 Hosted 验收已通过；inode 余量实施中；平台告警领域调整仍待确认，生产 T5 未完成（2026-10-07）。
+状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、节点台账、监测目标及资源查询页面已分批实施并验收。CPU 忙碌率本地门禁及九项完整 Hosted 验收已通过；文件系统容量与挂载趋势的实现、本地门禁及扩展 Hosted 验收已通过；inode 余量与趋势及其本地/Hosted 验收已通过；平台告警领域调整仍待确认，生产 T5 未完成（2026-10-07）。
 
 用户已确认首期覆盖 ADDP 自身部署节点、服务和明确纳管的业务引擎；监控组件按 Infra 组织、按需部署，其缺失或故障只影响对应观测能力。本文记录目标契约与分批实施证据；可选设施裁剪及资源查询的已验收范围以第十节批次记录为准，不据此宣称所有目标能力或生产部署已完成。
 
@@ -1090,7 +1090,7 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 本批完成文件系统容量、挂载表与精确趋势及其 T0/T1/T2/T3/T4 验证；inode、磁盘/网络 IO、全局容量汇总、更多纳管部署与生产 T5 尚未完成。建议下一批先补文件系统 inode 余量，区分“字节容量仍有余量”与“无法创建新文件”的资源风险，仍沿当前挂载维度和唯一查询链路。
 
 
-### 10.29 文件系统 inode 余量与趋势（已确认范围，实施中）
+### 10.29 文件系统 inode 余量与趋势（实现与本地/Hosted 验收已完成）
 
 2026-10-07 用户继续推进上一批建议的 inode 余量。本批沿现有节点身份、挂载维度、可选指标来源和唯一资源 API，不修改 IAM、生产 Permission、Tenant 归属、采集范围或设施配置。新增四项固定目录：`node.filesystem.inodes_total`、`inodes_free`、`inodes_used`（单位 `inodes`）及 `inodes_used_percent`（单位 `percent`）；总数、空闲数来自锁定 node_exporter v1.12.1 的 `node_filesystem_files`、`node_filesystem_files_free`，已用为同次采样 `total-free`，使用率为 `100*used/total`。inode 是来源报告的容量槽位，不据此计算文件数量。来源见 [Linux statfs 映射](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_linux.go) 和 [指标定义](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_common.go)。
 
@@ -1114,9 +1114,21 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 | `make test-node-metrics-online-runner` | 30 项 Python 回归及 Go fixture 通过，四项整数/公式/同次采样、支持与不支持统计的挂载、恢复新采样、浏览器证据和敏感产物验证覆盖；不计为真实 T4 |
 | Swagger 生成及 Monitor 路由覆盖 | 双语产物同步，65 个公开路由方法覆盖一致；无新路由或 Permission |
 
-`make test-platform` 最终完整重跑通过平台一致性、共享前端、生命周期、登记、Online 协议及授权/Swagger 门禁。首轮出现九个既有 Infra 生命周期夹具的 10 秒 subprocess 超时，未修改其他 owner 的脚本，首轮失败不计为通过。百分比顺序改正后，原字节容量用例的常量期望与实际逐步浮点计算出现末位差异，已用同一明确顺序的运行时期望重新验证；大容量满用精确 100% 场景仍通过，不 clamp 或放宽合法值。未运行的 Hosted T4、同实现 CI 与生产 T5 不计为本地验证通过。
+`make test-platform` 最终完整重跑通过平台一致性、共享前端、生命周期、登记、Online 协议及授权/Swagger 门禁。首轮出现九个既有 Infra 生命周期夹具的 10 秒 subprocess 超时，未修改其他 owner 的脚本，首轮失败不计为通过。百分比顺序改正后，原字节容量用例的常量期望与实际逐步浮点计算出现末位差异，已用同一明确顺序的运行时期望重新验证；大容量满用精确 100% 场景仍通过，不 clamp 或放宽合法值。本地门禁不作为 Hosted T4 或 CI 的通过证据；后文单独记录真实执行结果，生产 T5 未运行。
 
 
 本批首轮 Hosted T4（Run 37608271595，实现 `59ac70e24`）在 `inode-mount-trend-restore` 阶段失败：新增测试在页面重载后向既有 `const monitor` FrameLocator 重新赋值，触发 `Assignment to constant variable`。四项 inode 真实即时/精确趋势已执行通过，但后续完整浏览器与恢复场景尚未完成，因此整轮不计为通过。已确认既有 FrameLocator 按当前 iframe 动态解析，先前多个页面重载已沿同一实例完成；删除冗余重新赋值，沿单一路径完整重跑。首轮退出 `cleanup=passed`、`infra_cleanup=zero_residuals`，身份、角色、生产代码和判断标准不作放宽。
 
 删除冗余赋值后，`make test-console-frontend` 再次完整通过 148 项单测、118 项 T3 浏览器回归及构建；首轮 29 个下载产物未发现环境凭据文件、私钥、完整 opaque Token 或 MFA enrollment URI。同一后端实现 `59ac70e24` 的 Platform CI（Run 37608252171）32 个执行门禁与 Release/T2（Run 37608252141）5 个执行门禁已完整通过；修正后的完整 Hosted T4 另行记录。
+
+
+2026-10-07 本批最终真实 Hosted T4 与 CI 证据：
+
+- 修正提交 `86853c844ad8ca6a515416f63527e84c04e72de4` 的 [Hosted platform-node-metrics T4，Run 37610515534](https://github.com/pampa0629/addp/actions/runs/37610515534) 完整通过；唯一执行的 Linux 节点 suite 于 `10:55:41–11:15:16 UTC` 运行，其他 suite 的 skipped 不计为通过。同提交 [Platform CI，Run 37610486715](https://github.com/pampa0629/addp/actions/runs/37610486715) 32 个执行门禁、[Release/T2，Run 37610486689](https://github.com/pampa0629/addp/actions/runs/37610486689) 3 个执行门禁均通过；本批后端、页面、指标探针和 runner 与 `59ac70e24` 无差异，其完整指标/PostgreSQL T2 仍以该实现的 5 个执行门禁记录，不把修正提交未执行项计为通过。
+- 当前节点返回 6 个挂载、24 条 inode 序列：根目录、`/boot` 和三个 tmpfs 挂载均有四项有效统计；`/boot/efi` 的 vfat 来源无有效 inode 总数，四项明确为 `no_data` 且字节容量继续有效。严格校验整数精度、闭合维度、单位、同次采样、已用差值和百分比，不根据类型填充统计或相加为物理数量。API 四项即时及精确挂载 60 秒趋势通过。
+- 根挂载 `/dev/root`、`/`、`ext4` 的首次 inode 样本时间为 `2026-10-07T11:09:20.056999921Z`：总数 19,529,728、空闲 18,109,635、已用 1,420,093、使用率约 7.2714428%。浏览器目录为 18 项，概览/字节/inode/单项趋势分别读取，40 次资源响应均通过严格协议复核，仍保留 12 项单次指标预算。节点版本 1、保存目标版本 2、查询预算版本 2 与当次页面一致。
+- 根挂载 inode 五分钟趋势为 1 条序列、21 个评估点、15 秒步长，其中 8 个有效点；最后有效值约 7.2722723%，采样时间 `2026-10-07T11:10:05.056999921Z`，早期缺失点明确保留断点。完整三维选择器及 inode 指标 URL 重载、自然刷新与关闭后重载、真实曲线均通过；已查看当次 inode 曲线及挂载表截图。缺失/有效零、异常整数、挂载族错误隔离与大容量满用等由 T1/T2/T3 单独证明，不冒充这轮真实场景故障注入。
+- 正式密码/MFA 登录、API 与浏览器同一平台系统管理员、安全管理员入口拒绝且无业务读取、独立最小发现身份的 OAuth grant 均已核对；未注入 Token、拦截业务 API 或修改 IAM。CAS 预算与热读取、中心/来源/发现控制中断恢复通过，中心及节点恢复明确证明四项 inode 来自恢复之后的新采样；节点与目标停用后的即时/趋势均排除既有 inode 历史，移除与全部清理通过。
+- 统一报告及浏览器 Run ID 均为 `run-0e70d3567fd34d7d9eded1e04598fa33`；干净仓库、System/Gateway/Monitor 的 Git Commit、Build ID 与 Source Fingerprint 已核对至上述修正提交。业务验收耗时 434,459 ms，不作为性能容量承诺。独立汇总为 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`；30 个下载产物未发现环境凭据文件、私钥、完整 opaque Token 或 MFA enrollment URI，私有 Playwright 输出未上传。
+
+本批完成 inode 总数、空闲、已用、使用率与精确挂载趋势，以及本地分层和真实 Hosted T4 验收。跨 owner 默认 `test-changed` 预检失败、首轮平台超时与首轮 T4 脚本失败均保留，不改记为通过；生产 T5、自动告警、磁盘/网络 IO 和全局容量汇总仍未完成。建议下一批接入磁盘读写吞吐与趋势，复用既有 diskstats 来源，先明确块设备维度与文件系统挂载的区别。
