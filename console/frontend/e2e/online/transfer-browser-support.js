@@ -40,6 +40,12 @@ export function isAnonymousRefreshConsoleError(message, businessStarted) {
   }
 }
 
+export function isAnonymousRefreshResponse(response, businessStarted) {
+  return !businessStarted && response.status() === 401 &&
+    response.request().method() === 'POST' &&
+    new URL(response.url()).pathname === '/api/v1/system/refresh'
+}
+
 export async function login(page, username, password, redirect) {
   const expectedRedirect = new URL(redirect, 'http://addp.invalid')
   let browserAccessToken = ''

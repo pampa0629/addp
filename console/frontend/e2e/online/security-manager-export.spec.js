@@ -2,7 +2,7 @@ import { expect, request, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { identity, isAnonymousRefreshConsoleError, json, login } from './transfer-browser-support.js'
+import { identity, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
 test('protected Manager export retains its verified initiator and opens in Monitor', async ({ page }) => {
   const names = [
@@ -29,8 +29,7 @@ test('protected Manager export retains its verified initiator and opens in Monit
   })
   page.on('response', response => {
     const path = new URL(response.url()).pathname
-    if (!businessStarted && path === '/api/v1/system/refresh' &&
-        response.request().method() === 'POST' && response.status() === 401) anonymousRefresh401 += 1
+    if (isAnonymousRefreshResponse(response, businessStarted)) anonymousRefresh401 += 1
     if (businessStarted && path.startsWith('/api/v1/') && response.status() >= 400) {
       failedResponses.push({ path, status: response.status() })
     }

@@ -1,12 +1,19 @@
 import { expect, test } from '@playwright/test'
-import { isAnonymousRefreshConsoleError } from './online/transfer-browser-support.js'
+import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse } from './online/transfer-browser-support.js'
 
 test('only the native anonymous refresh 401 is an expected initialization diagnostic', async ({ page }) => {
   const messages = []
+  const responses = []
   page.on('console', message => {
     if (message.type() === 'error') messages.push(message)
   })
-  await page.route('**/api/v1/system/refresh', route => route.fulfill({ status: 401, json: { error: 'authentication_required' } }))
+  page.on('response', response => {
+    if (new URL(response.url()).pathname.startsWith('/api/v1/system/')) responses.push(response)
+  })
+  await page.route('**/api/v1/system/refresh*', route => route.fulfill({
+    status: Number(new URL(route.request().url()).searchParams.get('status') || 401),
+    json: { error: 'authentication_required' }
+  }))
   await page.route('**/api/v1/system/auth/context', route => route.fulfill({ status: 401, json: { error: 'authentication_required' } }))
   await page.goto('/e2e/fixtures/auth-fixture.html?role=health')
   await page.evaluate(async () => {
@@ -19,6 +26,16 @@ test('only the native anonymous refresh 401 is an expected initialization diagno
   expect(isAnonymousRefreshConsoleError(refresh, false)).toBe(true)
   expect(isAnonymousRefreshConsoleError(refresh, true)).toBe(false)
   expect(isAnonymousRefreshConsoleError(context, false)).toBe(false)
+  await page.evaluate(async () => {
+    await fetch('/api/v1/system/refresh')
+    await fetch('/api/v1/system/refresh?status=403', { method: 'POST' })
+    await fetch('/api/v1/system/refresh?status=500', { method: 'POST' })
+  })
+  await expect.poll(() => responses.length).toBe(5)
+  expect(responses.map(response => isAnonymousRefreshResponse(response, false)))
+    .toEqual([true, false, false, false, false])
+  expect(responses.map(response => isAnonymousRefreshResponse(response, true)))
+    .toEqual([false, false, false, false, false])
 })
 
 test('direct module ports redirect before refresh and all top-level pages share strict cookie rotation', async ({ context, page }) => {

@@ -425,7 +425,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
                     "models": [{**model, "generation_entry_visible": True} for model in evidence["models"]],
-                    "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_warnings": 0}
+                    "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_warnings": 0,
+                    "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
             "schema_version": "addp.manager-internal-artifact-lineage-browser/v4",
             "phase": evidence.get("phase", "cached-preview"),
@@ -448,6 +449,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "models": [{**model, "model_loaded": True, "content_loaded": True} for model in evidence["models"]],
             "gpu_performance_warnings": 0,
             "browser_warning_errors": 0,
+            "failed_business_responses": 0,
+            "anonymous_refresh_401": 0,
         }
 
     def test_direct_runtime_execution_id_is_optional_and_only_reported_when_present(self):
@@ -925,6 +928,25 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             mutate(report)
             with self.assertRaisesRegex(SUITE.SuiteError, "report contract mismatch"):
                 SUITE.validate_browser_report(report, run_id="run-1", **evidence)
+
+    def test_browser_report_keeps_anonymous_diagnostics_and_rejects_business_failures(self):
+        for phase in ("generation-entry", "cached-preview"):
+            models = self.browser_models()
+            if phase == "generation-entry":
+                models = [{key: model[key] for key in ("format", "locator", "item_id")} for model in models]
+            evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                        "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
+                        "raster": self.browser_raster(), "phase": phase}
+            report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
+            report["anonymous_refresh_401"] = 1
+            SUITE.validate_browser_report(report, run_id="run-1", **evidence)
+            for mutate in (lambda value: value.update(anonymous_refresh_401=2),
+                           lambda value: value.pop("anonymous_refresh_401"),
+                           lambda value: value.update(failed_business_responses=1)):
+                invalid = copy.deepcopy(report)
+                mutate(invalid)
+                with self.assertRaises(SUITE.SuiteError):
+                    SUITE.validate_browser_report(invalid, run_id="run-1", **evidence)
 
     def test_generation_entry_failure_prevents_model_writes_and_preserves_cleanup(self):
         client = FakeGatewayClient()

@@ -70,3 +70,5 @@ Console 通过共享 `useConsoleUnsavedChangesGuard` 拦截活动 iframe 有未�
 Elasticsearch 正式 T4 浏览器用例 `e2e/online/elasticsearch-consumer-flow.spec.js` 通过真实 Console 登录同一普通用户，覆盖 Meta 重扫及稳定索引身份、Manager 文档分页与空索引、Develop Monaco 编辑器的 ES DSL 执行。多行 JSON 使用浏览器剪贴板和粘贴键输入，核对实际预检请求的完整查询及允许结果，避免逐字输入触发括号自动补全；执行结果读取页面自身的轮询响应并核对同一 execution_id，不使用整页导航前捕获的旧令牌。对应编辑器输入与执行响应回归由 `make test-develop-frontend` 验证；真实部署用例只由 Hosted Online 专用部署执行，产出四张截图和同一身份的报告，不计入确定性前端夹具 T3。
 
 Manager 的 `manager-internal-artifact-lineage` Hosted suite 使用同一普通消费身份分两阶段验证 DAE／3DS：生成前检查真实 Console 中的 `generate_model_3d_glb` 入口；API 生成完成后再检查 ready GLB 的缓存消费、内容与渲染，此时生成按钮必须消失且浏览器不得重复生成。两个阶段共用现有 Playwright 用例和报告校验，点云、PPTX、COG 及领域清理断言保持完整。`make test-manager-online-runner` 验证阶段顺序、报告完整性和失败清理；真实链路仍由原 Hosted suite 验收。
+
+浏览器验收复用现有认证测试 helper 区分匿名初始化与已认证消费：首次登录前，无 Refresh Cookie 的 `POST /api/v1/system/refresh` 401 单独计入报告，最多一次；首个带 Token 的认证上下文请求起，任何 API 失败仍使验收失败。其他匿名 API 错误、刷新 403／500、登录后的刷新 401 及非原生匿名刷新诊断的 warning／error 均不得排除。

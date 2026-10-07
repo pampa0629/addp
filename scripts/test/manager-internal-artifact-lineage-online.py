@@ -711,17 +711,20 @@ def validate_browser_report(
         "raster": {**raster, "range_loaded": True, "map_loaded": True},
         "models": [{**model, "model_loaded": True, "content_loaded": True} for model in models],
         "browser_warning_errors": 0,
+        "failed_business_responses": 0,
     }
     if phase == "generation-entry":
         expected = {key: expected[key] for key in (
             "schema_version", "phase", "suite", "run_id", "result",
-            "model_generation_requests", "browser_warning_errors",
+            "model_generation_requests", "browser_warning_errors", "failed_business_responses",
         )}
         expected["models"] = [{**model, "generation_entry_visible": True} for model in models]
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
         raise SuiteError("Manager lineage browser report contract mismatch: " + ", ".join(mismatches))
     non_negative_int(payload.get("gpu_performance_warnings"), "browser GPU performance warning count")
+    if non_negative_int(payload.get("anonymous_refresh_401"), "browser anonymous refresh count") > 1:
+        raise SuiteError("Manager lineage browser has repeated anonymous refresh failures")
     return payload
 
 

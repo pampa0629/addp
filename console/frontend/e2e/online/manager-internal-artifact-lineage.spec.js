@@ -1,6 +1,7 @@
 import { expect, request, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
 const requiredNames = [
   'ADDP_ONLINE_ARTIFACT_DIR',
@@ -26,38 +27,6 @@ function environment() {
   const missing = requiredNames.filter(name => !process.env[name])
   if (missing.length > 0) throw new Error(`missing Online environment: ${missing.join(', ')}`)
   return Object.fromEntries(requiredNames.map(name => [name, process.env[name]]))
-}
-
-async function json(response, operation) {
-  const payload = await response.json()
-  if (!response.ok()) {
-    throw new Error(`${operation} returned HTTP ${response.status()} (${payload?.error_code || 'unknown'})`)
-  }
-  return payload
-}
-
-async function login(page, username, password, redirect) {
-  const expectedRedirect = new URL(redirect, 'http://addp.invalid')
-  let browserAccessToken = ''
-  page.on('request', requestEvent => {
-    if (!requestEvent.url().endsWith('/api/v1/system/auth/context')) return
-    browserAccessToken = (requestEvent.headers().authorization || '').replace(/^Bearer\s+/i, '')
-  })
-  await page.goto(`/login?redirect=${encodeURIComponent(redirect)}`)
-  await page.locator('input[autocomplete="username"]').fill(username)
-  await page.locator('input[autocomplete="current-password"]').fill(password)
-  await page.locator('button.auth-login-primary').click()
-  const contextStep = page.locator('.auth-login-contexts')
-  const needsContext = await contextStep.waitFor({ state: 'visible', timeout: 5000 })
-    .then(() => true)
-    .catch(() => false)
-  if (needsContext) await contextStep.locator('button.auth-login-primary').click()
-  if (await page.locator('input[autocomplete="one-time-code"]').isVisible().catch(() => false)) {
-    throw new Error('the dedicated Online browser user must not require MFA')
-  }
-  await page.waitForURL(url => url.pathname === expectedRedirect.pathname && url.search === expectedRedirect.search)
-  await expect.poll(() => browserAccessToken, { timeout: 20_000 }).not.toBe('')
-  return browserAccessToken
 }
 
 test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load through Console', async ({ page }) => {
@@ -90,12 +59,17 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
   const browserMessages = []
   let gpuPerformanceWarnings = 0
   const failedBusinessResponses = []
+  let businessStarted = false
+  let anonymousRefresh401 = 0
   let pptxGenerationRequests = 0
   let modelGenerationRequests = 0
   let rasterGenerationRequests = 0
   let managerEngineRequests = 0
   page.on('request', requestEvent => {
     const pathname = new URL(requestEvent.url()).pathname
+    if (pathname === '/api/v1/system/auth/context' && requestEvent.headers().authorization) {
+      businessStarted = true
+    }
     if (requestEvent.method() === 'POST' && pathname === '/api/v1/manager/quick-view/actions') {
       const action = requestEvent.postDataJSON()?.action
       if (action === 'generate_pptx_pdf') pptxGenerationRequests += 1
@@ -107,6 +81,7 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
     }
   })
   page.on('console', message => {
+    if (isAnonymousRefreshConsoleError(message, businessStarted)) return
     if (message.type() === 'warning' && /^\[\.WebGL-0x[0-9a-f]+\]GL Driver Message \(OpenGL, Performance, GL_CLOSE_PATH_NV, High\): GPU stall due to ReadPixels(?: \(this message will no longer repeat\))?$/.test(message.text())) {
       gpuPerformanceWarnings += 1
       return
@@ -118,6 +93,10 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
   page.on('pageerror', error => browserMessages.push({ type: 'pageerror', text: error.message }))
   page.on('response', response => {
     const pathname = new URL(response.url()).pathname
+    if (isAnonymousRefreshResponse(response, businessStarted)) {
+      anonymousRefresh401 += 1
+      return
+    }
     if (pathname.startsWith('/api/v1/') && response.status() >= 400) {
       failedBusinessResponses.push({ pathname, status: response.status() })
     }
@@ -134,6 +113,7 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
       env.ADDP_ONLINE_TEST_USER_PASSWORD,
       executionPath
     )
+    businessStarted = true
     const browserAPI = await request.newContext({
       baseURL: env.GATEWAY_URL,
       extraHTTPHeaders: { Authorization: `Bearer ${browserAccessToken}` }
@@ -160,12 +140,14 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
       expect(modelGenerationRequests).toBe(0)
       expect(failedBusinessResponses).toEqual([])
       expect(browserMessages).toEqual([])
+      expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
           schema_version: 'addp.manager-internal-artifact-lineage-browser/v4', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
-          browser_warning_errors: 0, gpu_performance_warnings: gpuPerformanceWarnings
+          browser_warning_errors: 0, failed_business_responses: 0,
+          anonymous_refresh_401: anonymousRefresh401, gpu_performance_warnings: gpuPerformanceWarnings
         })}\n`, 'utf8')
       return
     }
@@ -237,6 +219,7 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
     expect(modelGenerationRequests).toBe(0)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
+    expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
       schema_version: 'addp.manager-internal-artifact-lineage-browser/v4',
@@ -259,7 +242,9 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
       raster: { ...raster, range_loaded: true, map_loaded: true },
       models: modelEvidence,
       gpu_performance_warnings: gpuPerformanceWarnings,
-      browser_warning_errors: 0
+      browser_warning_errors: 0,
+      failed_business_responses: 0,
+      anonymous_refresh_401: anonymousRefresh401
     }
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
