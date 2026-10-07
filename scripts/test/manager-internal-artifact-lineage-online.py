@@ -626,7 +626,7 @@ def generate_raster_cog(client, raster, tenant_id, timeout, physical):
             or result.get('item_fingerprint') != raster.item['fingerprint'] or result.get('status') != 'ready'
             or runtime.get('mode') != 'direct' or runtime.get('operator') != 'raster_to_cog'
             or runtime.get('engine_type') != 'geopython_workflow'
-            or not runtime.get('execution_id')):
+            or not isinstance(runtime.get('execution_id', ''), str)):
         raise SuiteError('Manager COG must preserve its direct Runtime generation identity')
     positive_int(runtime.get('engine_id'), 'raster Runtime engine id')
     ready = _object(client.request('GET', f'/api/v1/manager/quick-view/capability?{query}', (200,)).payload, 'ready raster capability')
@@ -659,9 +659,11 @@ def generate_raster_cog(client, raster, tenant_id, timeout, physical):
             raise SuiteError('Manager COG Range bytes or headers differ from the complete object')
     client.request('GET', url, (416,), headers={'Range': f'bytes={size}-'})
     raster.artifact = {'storage_domain': 'addp-infra', 'range_bytes': 64, 'preview_url': url, 'size_bytes': size, 'sha256': hashlib.sha256(full.raw).hexdigest(),
-        'runtime_execution_id': runtime['execution_id'], 'mode': 'direct',
+        'runtime_engine_id': runtime['engine_id'], 'runtime_operator': runtime['operator'], 'mode': 'direct',
         'physical_request': {'locator': facts['outputs'][0]['locator'], 'tenant_id': tenant_id,
             'fingerprint': raster.item['fingerprint'], 'size_bytes': size, 'sha256': hashlib.sha256(full.raw).hexdigest()}}
+    if runtime.get('execution_id'):
+        raster.artifact['runtime_execution_id'] = runtime['execution_id']
     evidence = physical('verify', raster.artifact['physical_request'])
     if (evidence.get('cog_valid') is not True or evidence.get('source_unchanged') is not True
             or evidence.get('pixels_verified') != 131072 or evidence.get('size_bytes') != size
@@ -1005,6 +1007,7 @@ def run_scenario(
             "cleanup": {"raster_cog": raster.cleanup, "point_cloud": pointcloud_cleanup, "pptx_pdf": pptx_cleanup, **{model.format: model.cleanup for model in model_fixtures}},
         }
     finally:
+        scenario_error = sys.exception()
         cleanup_errors: list[str] = []
         try:
             # Recover owned output locators even when generation validation failed.
@@ -1084,7 +1087,10 @@ def run_scenario(
             except SuiteError as error:
                 cleanup_errors.append(str(error))
         if cleanup_errors:
-            raise SuiteError("Manager lineage cleanup failed: " + "; ".join(cleanup_errors))
+            message = "Manager lineage cleanup failed: " + "; ".join(cleanup_errors)
+            if isinstance(scenario_error, SuiteError):
+                message = f"{scenario_error}; {message}"
+            raise SuiteError(message) from scenario_error
 
 
 def required_environment() -> dict[str, str]:

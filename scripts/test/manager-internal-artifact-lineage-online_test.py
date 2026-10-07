@@ -162,7 +162,7 @@ class FakeGatewayClient:
             rows = [{**raster, 'status': 'ready', 'last_execution_id': 'raster-direct', 'size_bytes': len(self.cog),
                 'width': 256, 'height': 256, 'band_count': 2, 'source_srid': 4326,
                 'extent': [110., 17.76, 112.56, 20.32], 'extent_srid': 4326,
-                'metadata': {'workflow_runtime': {'engine_type': 'geopython_workflow', 'engine_id': 77, 'mode': 'direct', 'operator': 'raster_to_cog', 'execution_id': 'runtime-direct'}}}] if raster['result_exists'] else []
+                'metadata': {'workflow_runtime': {'engine_type': 'geopython_workflow', 'engine_id': 77, 'mode': 'direct', 'operator': 'raster_to_cog', 'execution_id': ''}}}] if raster['result_exists'] else []
             return response(200, {'data': rows, 'total': len(rows)})
         if parsed_raster.path == '/api/v1/manager/quick-view/capability' and raster_query.get('locator') == [raster['locator']]:
             return response(200, {'available_actions': ['generate_raster_cog'], 'preferred_mode': self.raster_mode,
@@ -440,6 +440,48 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "gpu_performance_warnings": 0,
             "browser_warning_errors": 0,
         }
+
+    def test_direct_runtime_execution_id_is_optional_and_only_reported_when_present(self):
+        for runtime_id in (None, "", "runtime-diagnostic-1"):
+            with self.subTest(runtime_id=runtime_id):
+                client = FakeGatewayClient()
+                raster = SUITE.ArtifactFixture('raster', {'id': 95, 'fingerprint': 'e'*64}, client.raster['locator'])
+                original = client._request
+                def changed(method, path, body, headers):
+                    value = original(method, path, body, headers)
+                    if '/raster_cog?' in path and value.payload.get('data'):
+                        runtime = value.payload['data'][0]['metadata']['workflow_runtime']
+                        if runtime_id is None:
+                            runtime.pop('execution_id')
+                        else:
+                            runtime['execution_id'] = runtime_id
+                    return value
+                def physical(action, request):
+                    return {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': 131072,
+                            'sha256': request['sha256'], 'size_bytes': request['size_bytes']}
+                with mock.patch.object(client, '_request', side_effect=changed):
+                    SUITE.generate_raster_cog(client, raster, 42, 1, physical)
+                    SUITE.cleanup_managed_artifact(client, raster, 1, 'raster_cog', SUITE.RASTER_TASK_TYPE)
+                self.assertEqual(raster.artifact['runtime_engine_id'], 77)
+                if runtime_id:
+                    self.assertEqual(raster.artifact['runtime_execution_id'], runtime_id)
+                else:
+                    self.assertNotIn('runtime_execution_id', raster.artifact)
+
+    def test_cleanup_failure_preserves_the_original_raster_assertion(self):
+        client = FakeGatewayClient()
+        original = client._request
+        def changed(method, path, body, headers):
+            if method == 'DELETE' and path == '/api/v1/manager/pptx_pdf/302':
+                raise SUITE.SuiteError('injected PPTX cleanup failure')
+            value = original(method, path, body, headers)
+            if '/raster_cog?' in path and value.payload.get('data'):
+                value.payload['data'][0]['metadata']['workflow_runtime']['mode'] = 'workflow'
+            return value
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(SUITE, 'GatewayClient', return_value=client), mock.patch.object(client, '_request', side_effect=changed):
+                with self.assertRaisesRegex(SUITE.SuiteError, 'direct Runtime.*cleanup failed:.*PPTX cleanup failure'):
+                    SUITE.run_scenario(Path('/repository'), scenario_environment(directory))
 
     def test_raster_rejects_size_range_or_direct_identity_mismatches(self):
         for kind in ('size', 'range', 'mode', 'extent', 'physical'):
