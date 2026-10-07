@@ -17,6 +17,7 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_PPTX_ITEM_ID',
   'ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT',
   'ADDP_ONLINE_MANAGER_MODELS_JSON',
+  'ADDP_ONLINE_MANAGER_BROWSER_PHASE',
   'ADDP_ONLINE_MANAGER_RASTER_JSON',
   'GATEWAY_URL'
 ]
@@ -71,10 +72,13 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
   const raster = JSON.parse(env.ADDP_ONLINE_MANAGER_RASTER_JSON)
   expect(Number.isInteger(raster.item_id) && raster.item_id > 0).toBe(true)
   expect(raster.preview_url).toMatch(/^\/api\/v1\/manager\/raster_cog\/[1-9][0-9]*\/content$/)
+  const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
+  expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
   expect(models.map(model => model.format)).toEqual(['dae', '3ds'])
   for (const model of models) {
     expect(Number.isInteger(model.item_id) && model.item_id > 0).toBe(true)
+    if (phase === 'generation-entry') continue
     expect(Number.isInteger(model.result_id) && model.result_id > 0).toBe(true)
     expect(model.preview_url).toBe(`/api/v1/manager/model_3d_glb/${model.result_id}/content`)
   }
@@ -139,6 +143,33 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
     expect(String(browserIdentity?.context?.tenant_id)).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
     await browserAPI.dispose()
 
+    if (phase === 'generation-entry') {
+      const modelEvidence = []
+      for (const model of models) {
+        await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`)
+        const modelFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
+        const generate = modelFrame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })
+        await expect(generate).toBeVisible()
+        await expect(generate).toBeEnabled()
+        await expect(modelFrame.locator('.model-preview')).toHaveCount(0)
+        await modelFrame.locator('.preview-panel').screenshot({
+          path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-generation-entry.png`)
+        })
+        modelEvidence.push({ ...model, generation_entry_visible: true })
+      }
+      expect(modelGenerationRequests).toBe(0)
+      expect(failedBusinessResponses).toEqual([])
+      expect(browserMessages).toEqual([])
+      writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
+        `${JSON.stringify({
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v4', phase,
+          suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
+          result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
+          browser_warning_errors: 0, gpu_performance_warnings: gpuPerformanceWarnings
+        })}\n`, 'utf8')
+      return
+    }
+
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const lineage = frame.locator('.execution-lineage')
     await expect(lineage).toBeVisible()
@@ -193,13 +224,13 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
       )
       await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`)
       const modelFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
-      await expect(modelFrame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })).toBeVisible()
       const preview = modelFrame.locator('.model-preview')
       await expect(preview).toBeVisible({ timeout: 60_000 })
       await expect(preview.locator('canvas')).toBeVisible()
       const response = await contentResponse
       expect((await response.body()).subarray(0, 4).toString('ascii')).toBe('glTF')
       await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
+      await expect(modelFrame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })).toHaveCount(0)
       await preview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-preview.png`) })
       modelEvidence.push({ ...model, model_loaded: true, content_loaded: true })
     }
@@ -208,7 +239,8 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
     expect(browserMessages).toEqual([])
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v3',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v4',
+      phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
       result: 'passed',
@@ -230,7 +262,7 @@ test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load thr
       browser_warning_errors: 0
     }
     writeFileSync(
-      resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'manager-internal-artifact-lineage-browser.json'),
+      resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
       `${JSON.stringify(report)}\n`,
       'utf8'
     )

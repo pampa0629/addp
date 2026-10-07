@@ -420,8 +420,15 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 for format_name, model in client.models.items()]
 
     def browser_report(self, environment, evidence):
+        if evidence.get("phase") == "generation-entry":
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v4",
+                    "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
+                    "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
+                    "models": [{**model, "generation_entry_visible": True} for model in evidence["models"]],
+                    "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_warnings": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v3",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v4",
+            "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
             "result": "passed",
@@ -562,6 +569,9 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
         def browser(repository, environment, **evidence):
             browser_calls.append((repository, evidence))
+            generated = any(method == "POST" and path == "/api/v1/manager/quick-view/actions"
+                            and model["task_exists"] for method, path in client.calls for model in client.models.values())
+            self.assertEqual(generated, evidence["phase"] == "cached-preview")
             return self.browser_report(environment, evidence)
 
         with tempfile.TemporaryDirectory() as artifact_dir:
@@ -603,6 +613,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertEqual(client.model_modes, {"dae": "basic_preview", "3ds": "basic_preview"})
         self.assertEqual(client.pptx_capability_calls, 3)
         self.assertEqual(browser_calls[0][1]["pptx_page_count"], 3)
+        self.assertEqual([call[1]["phase"] for call in browser_calls], ["generation-entry", "cached-preview"])
+        self.assertTrue(report["browser"]["generation_entry"]["models"][1]["generation_entry_visible"])
         self.assertLess(
             client.calls.index(("DELETE", "/api/v1/manager/pptx_pdf/302")),
             client.calls.index(("DELETE", "/api/v1/manager/tasks/pptx_pdf_generation/202")),
@@ -611,7 +623,9 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def test_browser_failure_still_deletes_all_results_and_tasks(self) -> None:
         client = FakeGatewayClient()
 
-        def browser(*_args, **_kwargs):
+        def browser(_repository, environment, **evidence):
+            if evidence["phase"] == "generation-entry":
+                return self.browser_report(environment, evidence)
             raise SUITE.SuiteError("injected browser failure")
 
         with tempfile.TemporaryDirectory() as artifact_dir:
@@ -898,6 +912,33 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with self.assertRaisesRegex(SUITE.SuiteError, "report contract mismatch"):
                 SUITE.validate_browser_report(report, run_id="run-1", **evidence)
 
+    def test_generation_entry_report_rejects_missing_or_wrong_model_and_generation(self):
+        models = [{key: model[key] for key in ("format", "locator", "item_id")} for model in self.browser_models()]
+        evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
+                    "raster": self.browser_raster(), "phase": "generation-entry"}
+        for mutate in (lambda report: report["models"][0].update(generation_entry_visible=False),
+                       lambda report: report["models"].pop(),
+                       lambda report: report["models"][1].update(item_id=999),
+                       lambda report: report.update(model_generation_requests=1)):
+            report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
+            mutate(report)
+            with self.assertRaisesRegex(SUITE.SuiteError, "report contract mismatch"):
+                SUITE.validate_browser_report(report, run_id="run-1", **evidence)
+
+    def test_generation_entry_failure_prevents_model_writes_and_preserves_cleanup(self):
+        client = FakeGatewayClient()
+        def browser(_repository, environment, **evidence):
+            report = self.browser_report(environment, evidence)
+            report["models"][1]["generation_entry_visible"] = False
+            return report
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(SUITE, "GatewayClient", return_value=client):
+            with self.assertRaisesRegex(SUITE.SuiteError, "report contract mismatch"):
+                SUITE.run_scenario(Path("/repository"), scenario_environment(directory), browser)
+        self.assertFalse(client.pptx_result_exists or client.pptx_task_exists)
+        self.assertFalse(client.raster["result_exists"] or client.raster["task_exists"])
+        self.assertTrue(all(not model["task_exists"] for model in client.models.values()))
+
     def test_browser_runner_uses_frontend_working_directory_and_current_report_contract(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster()}
@@ -908,12 +949,12 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 self.assertEqual(args[0][:4], ["npm", "exec", "--", "playwright"])
                 self.assertIn("--config=playwright.online.config.js", args[0])
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_MODELS_JSON"]), evidence["models"])
-                Path(directory, "manager-internal-artifact-lineage-browser.json").write_text(json.dumps(self.browser_report(environment, evidence)))
+                Path(directory, "manager-internal-artifact-lineage-browser-cached-preview.json").write_text(json.dumps(self.browser_report(environment, evidence)))
                 return mock.Mock(returncode=0)
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v3")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v4")
 
 
 if __name__ == "__main__":

@@ -685,10 +685,14 @@ def validate_browser_report(
     pptx_page_count: int,
     models: list[dict[str, object]],
     raster: dict[str, object],
+    phase: str = "cached-preview",
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
+    if phase not in {"generation-entry", "cached-preview"}:
+        raise SuiteError("unknown Manager browser phase")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v3",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v4",
+        "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
         "result": "passed",
@@ -708,6 +712,12 @@ def validate_browser_report(
         "models": [{**model, "model_loaded": True, "content_loaded": True} for model in models],
         "browser_warning_errors": 0,
     }
+    if phase == "generation-entry":
+        expected = {key: expected[key] for key in (
+            "schema_version", "phase", "suite", "run_id", "result",
+            "model_generation_requests", "browser_warning_errors",
+        )}
+        expected["models"] = [{**model, "generation_entry_visible": True} for model in models]
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
         raise SuiteError("Manager lineage browser report contract mismatch: " + ", ".join(mismatches))
@@ -728,9 +738,10 @@ def run_browser(
     pptx_page_count: int,
     models: list[dict[str, object]],
     raster: dict[str, object],
+    phase: str = "cached-preview",
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
-    report_path = artifact_dir / "manager-internal-artifact-lineage-browser.json"
+    report_path = artifact_dir / f"manager-internal-artifact-lineage-browser-{phase}.json"
     report_path.unlink(missing_ok=True)
     browser_environment = dict(environment)
     browser_environment.update(
@@ -743,6 +754,7 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_PPTX_ITEM_ID": str(pptx_item_id),
             "ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT": str(pptx_page_count),
             "ADDP_ONLINE_MANAGER_MODELS_JSON": json.dumps(models),
+            "ADDP_ONLINE_MANAGER_BROWSER_PHASE": phase,
             "ADDP_ONLINE_MANAGER_RASTER_JSON": json.dumps(raster),
         }
     )
@@ -763,7 +775,7 @@ def run_browser(
     if result.returncode != 0:
         raise SuiteError(f"Manager lineage browser acceptance exited with status {result.returncode}")
     if not report_path.is_file():
-        raise SuiteError("Playwright did not write manager-internal-artifact-lineage-browser.json")
+        raise SuiteError("Playwright did not write the Manager browser phase report")
     return validate_browser_report(
         json.loads(report_path.read_text(encoding="utf-8")),
         run_id=environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -774,6 +786,7 @@ def run_browser(
         pptx_page_count=pptx_page_count,
         models=models,
         raster=raster,
+        phase=phase,
     )
 
 
@@ -962,6 +975,23 @@ def run_scenario(
             raise SuiteError('Manager PDF physical evidence is incomplete')
 
         generate_raster_cog(client, raster, tenant_id, timeout, physical)
+        browser_arguments = dict(
+            execution_id=pointcloud_execution_id, item_id=pointcloud_item_id,
+            source_name=Path(environment["ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT"]).name,
+            output_name=pointcloud_output_name, pptx_item_locator=pptx_locator,
+            pptx_item_id=pptx_item_id, pptx_page_count=pptx_page_count,
+            raster={"locator": raster.locator, "item_id": raster.item["id"], "preview_url": raster.artifact["preview_url"]},
+        )
+        browser_models = [{"format": model.format, "locator": model.locator,
+                           "item_id": model.item["id"]} for model in model_fixtures]
+        entry_evidence: dict[str, object] = {}
+        if browser_runner is not None:
+            entry_evidence = browser_runner(repository, environment, **browser_arguments,
+                                           models=browser_models, phase="generation-entry")
+            validate_browser_report(entry_evidence, run_id=environment["ADDP_ONLINE_TEST_RUN_ID"],
+                                    **{key: value for key, value in browser_arguments.items()
+                                       if key not in {"source_name", "pptx_item_locator"}},
+                                    models=browser_models, phase="generation-entry")
         for model in model_fixtures:
             generate_model_glb(client, model, tenant_id, timeout)
         browser_models = [{
@@ -971,19 +1001,9 @@ def run_scenario(
         } for model in model_fixtures]
         browser_evidence: dict[str, object] = {}
         if browser_runner is not None:
-            browser_evidence = browser_runner(
-                repository,
-                environment,
-                execution_id=pointcloud_execution_id,
-                item_id=pointcloud_item_id,
-                source_name=Path(environment["ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT"]).name,
-                output_name=pointcloud_output_name,
-                pptx_item_locator=pptx_locator,
-                pptx_item_id=pptx_item_id,
-                pptx_page_count=pptx_page_count,
-                models=browser_models,
-                raster={"locator": raster.locator, "item_id": raster.item["id"], "preview_url": raster.artifact["preview_url"]},
-            )
+            browser_evidence = browser_runner(repository, environment, **browser_arguments,
+                                             models=browser_models, phase="cached-preview")
+        browser_evidence["generation_entry"] = entry_evidence
         return {
             "schema_version": "addp.manager-internal-artifact-lineage/v3",
             "suite": "manager-internal-artifact-lineage",
