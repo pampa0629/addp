@@ -288,20 +288,17 @@ class FakeGatewayClient:
                 return response(200)
             if parsed.path == "/api/v1/manager/preview-state" and query.get("locator") == [model["locator"]]:
                 return response(200, {"preferred_mode": self.model_modes[format_name]})
-        if path == "/api/v1/manager/point_cloud_copc_tasks?page=1&page_size=100":
-            return response(200, {"data": [], "total": 0})
+        if path == "/api/v1/manager/tasks?task_type=point_cloud_copc_generation&page=1&page_size=100":
+            return response(200, {"items": [], "total": 0})
         if path.startswith("/api/v1/manager/point_cloud_copc?item_fingerprint="):
             data = [{"id": 301}] if self.pointcloud_result_exists else []
             return response(200, {"data": data, "total": len(data)})
-        if path == "/api/v1/manager/point_cloud_copc_tasks" and method == "POST":
-            self._assert_task_request(body)
-            self.pointcloud_task_exists = True
-            return response(201, {"id": 201})
-        if path == "/api/v1/manager/tasks/point_cloud_copc_generation/201/execute":
-            if not self.pointcloud_task_exists:
-                raise AssertionError("task must exist before execution")
-            self.pointcloud_result_exists = True
-            return response(202, {"execution_id": "manager-execution-1"})
+        if path == "/api/v1/manager/quick-view/actions" and method == "POST" and body.get("locator") == self.pointcloud_locator:
+            if body != {"locator": self.pointcloud_locator, "action": "generate_point_cloud_copc"}:
+                raise AssertionError(f"unexpected PointCloud action body: {body!r}")
+            self.pointcloud_task_exists = self.pointcloud_result_exists = True
+            return response(202, {"task_type": SUITE.POINTCLOUD_TASK_TYPE,
+                                  "task_id": 201, "execution_id": "manager-execution-1"})
         if path == "/api/v1/manager/executions/manager-execution-1":
             return response(200, self.lineage_execution(SUITE.POINTCLOUD_TASK_TYPE))
         if path == "/api/v1/monitor/executions/by-execution-id/manager-execution-1":
@@ -367,10 +364,10 @@ class FakeGatewayClient:
         if path == "/api/v1/manager/point_cloud_copc/301" and method == "DELETE":
             self.pointcloud_result_exists = False
             return response(200)
-        if path == "/api/v1/manager/point_cloud_copc_tasks/201" and method == "DELETE":
+        if path == "/api/v1/manager/tasks/point_cloud_copc_generation/201" and method == "DELETE":
             self.pointcloud_task_exists = False
-            return response(200)
-        if path == "/api/v1/manager/point_cloud_copc_tasks/201" and method == "GET":
+            return response(204)
+        if path == "/api/v1/manager/tasks/point_cloud_copc_generation/201" and method == "GET":
             return response(200 if self.pointcloud_task_exists else 404)
         raise AssertionError(f"unexpected request {method} {path} body={body!r}")
 
@@ -383,19 +380,6 @@ class FakeGatewayClient:
             "force": True,
         }:
             raise AssertionError(f"unexpected Meta scan body: {body!r}")
-
-    def _assert_task_request(self, body):
-        source = body["config"]["source"]
-        expected = {
-            "item_locator": self.pointcloud_locator,
-            "source_engine_id": 27,
-            "item_fingerprint": self.pointcloud_fingerprint,
-            "item_id": self.pointcloud_item_id,
-            "format": "las",
-            "source_size_bytes": 128,
-        }
-        if source != expected:
-            raise AssertionError(f"unexpected PointCloud source: {source!r}")
 
 
 def scenario_environment(artifact_dir: str):

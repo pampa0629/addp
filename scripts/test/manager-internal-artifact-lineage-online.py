@@ -267,10 +267,10 @@ def build_item_locator(engine_id: int, item: Mapping[str, object]) -> str:
 
 def assert_no_existing_resources(client: GatewayClient, fingerprint: str) -> None:
     tasks = _object(
-        client.request("GET", "/api/v1/manager/point_cloud_copc_tasks?page=1&page_size=100", (200,)).payload,
+        client.request("GET", f"/api/v1/manager/tasks?task_type={POINTCLOUD_TASK_TYPE}&page=1&page_size=100", (200,)).payload,
         "PointCloud task list",
     )
-    for task in _array(tasks.get("data"), "PointCloud task list data"):
+    for task in _array(tasks.get("items"), "PointCloud task list items"):
         if not isinstance(task, dict):
             continue
         config = task.get("config")
@@ -801,7 +801,7 @@ def run_scenario(
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
     pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
     pointcloud_fingerprint = str(pointcloud_item["fingerprint"])
-    pointcloud_size_bytes = positive_int(pointcloud_item.get("size_bytes"), "point-cloud fixture size_bytes")
+    positive_int(pointcloud_item.get("size_bytes"), "point-cloud fixture size_bytes")
     pointcloud_locator = build_item_locator(engine_id, pointcloud_item)
     pptx_item_id = positive_int(pptx_item.get("id"), "PPTX fixture id")
     pptx_fingerprint = str(pptx_item["fingerprint"])
@@ -817,38 +817,16 @@ def run_scenario(
     pointcloud_cleanup = {"result_deleted": False, "task_deleted": False, "content_unavailable": False, "residual_resources": -1}
     pptx_cleanup = {"result_deleted": False, "task_deleted": False, "content_unavailable": False, "residual_resources": -1}
     try:
-        task = _object(
-            client.request(
-                "POST",
-                "/api/v1/manager/point_cloud_copc_tasks",
-                (201,),
-                {
-                    "name": f"Online Manager lineage {environment['ADDP_ONLINE_TEST_RUN_ID']}",
-                    "description": "Dedicated T4 Business MinIO to Manager infra lineage acceptance",
-                    "config": {
-                        "source": {
-                            "item_locator": pointcloud_locator,
-                            "source_engine_id": engine_id,
-                            "item_fingerprint": pointcloud_fingerprint,
-                            "item_id": pointcloud_item_id,
-                            "format": "las",
-                            "source_size_bytes": pointcloud_size_bytes,
-                        }
-                    },
-                },
-            ).payload,
-            "created PointCloud task",
-        )
-        pointcloud_task_id = positive_int(task.get("id"), "created PointCloud task id")
         started = _object(
             client.request(
-                "POST",
-                f"/api/v1/manager/tasks/{POINTCLOUD_TASK_TYPE}/{pointcloud_task_id}/execute",
-                (202,),
-                {"trigger_type": "manual", "source": "manager"},
+                "POST", "/api/v1/manager/quick-view/actions", (202,),
+                {"locator": pointcloud_locator, "action": "generate_point_cloud_copc"},
             ).payload,
-            "PointCloud execution start",
+            "PointCloud generation start",
         )
+        if started.get("task_type") != POINTCLOUD_TASK_TYPE:
+            raise SuiteError("PointCloud generation returned an unexpected task type")
+        pointcloud_task_id = positive_int(started.get("task_id"), "PointCloud task id")
         execution_id_value = started.get("execution_id")
         if not isinstance(execution_id_value, str) or not execution_id_value:
             raise SuiteError("PointCloud execution_id is missing")
@@ -1080,8 +1058,8 @@ def run_scenario(
                 cleanup_errors.append(str(error))
         if pointcloud_task_id is not None:
             try:
-                client.request("DELETE", f"/api/v1/manager/point_cloud_copc_tasks/{pointcloud_task_id}", (200,))
-                client.request("GET", f"/api/v1/manager/point_cloud_copc_tasks/{pointcloud_task_id}", (404,))
+                client.request("DELETE", f"/api/v1/manager/tasks/{POINTCLOUD_TASK_TYPE}/{pointcloud_task_id}", (204,))
+                client.request("GET", f"/api/v1/manager/tasks/{POINTCLOUD_TASK_TYPE}/{pointcloud_task_id}", (404,))
                 pointcloud_cleanup["task_deleted"] = True
             except SuiteError as error:
                 cleanup_errors.append(str(error))
