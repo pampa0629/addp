@@ -178,14 +178,12 @@ CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
 	  AND NOT EXISTS (SELECT 1 FROM system.engine_access_deny_releases release WHERE release.deny_id = d.deny_id)
      ) THEN 'explicit_deny'
      WHEN EXISTS (
-	SELECT 1 FROM system.engine_access_fulfillment_outcomes o
-	JOIN system.engine_access_grants g ON g.request_id = o.request_id
-	JOIN recipients r ON r.recipient_type = o.binding->>'recipient_type'
-	  AND r.recipient_id = (o.binding->>'recipient_id')::bigint
-	WHERE o.tenant_id = input.tenant_id AND o.engine_id = target.engine_id AND o.catalog_path = target.path
-	  AND o.outcome = 'accepted' AND o.binding->>'action' = 'read' AND g.granted_at <= input.observed_at
-	  AND ((o.expiry_mode = 'until_revoked' AND o.grant_expires_at IS NULL)
-	       OR (o.expiry_mode = 'at_time' AND o.grant_expires_at > input.observed_at))
+	SELECT 1 FROM system.engine_access_grants g
+	JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
+	WHERE g.tenant_id = input.tenant_id AND g.engine_id = target.engine_id AND g.catalog_path = target.path
+	  AND g.action = 'read' AND g.granted_at <= input.observed_at
+	  AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
+	       OR (g.expiry_mode = 'at_time' AND g.expires_at > input.observed_at))
 	  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations revocation WHERE revocation.request_id = g.request_id)
      ) THEN 'grant'
      ELSE 'no_grant' END AS reason

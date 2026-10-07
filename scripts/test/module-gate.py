@@ -162,6 +162,13 @@ def discover_modules(repository: Path) -> set[str]:
     return modules
 
 
+def platform_step(repository: Path) -> Step:
+    # Platform contracts also invoke Go unit tests. Do not let a module's
+    # explicit T2 opt-ins turn those tests into an unlocked database reset.
+    return Step("platform T0", ("make", "test-platform"), repository,
+                excluded_environment=GO_T1_EXCLUDED_ENVIRONMENT)
+
+
 def plan_module(repository: Path, module: str, include_platform: bool = True) -> list[Step]:
     if not re.fullmatch(r"[a-z][a-z0-9-]*", module):
         raise ModuleGateError("MODULE must be a lowercase ADDP module name")
@@ -173,7 +180,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     steps = []
     if include_platform:
-        steps.append(Step("platform T0", ("make", "test-platform"), repository))
+        steps.append(platform_step(repository))
 
     go_modules = []
     for path in repository_files(repository, "go.mod", "*/go.mod", "*/*/go.mod"):

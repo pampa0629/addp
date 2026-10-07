@@ -18,15 +18,15 @@ import (
 var ErrGrantRevocationConflict = errors.Join(commonapi.ErrConflict, errors.New("grant already revoked with different parameters"))
 var ErrGrantRevocationExpired = errors.Join(commonapi.ErrConflict, errors.New("grant has expired; revocation is unnecessary"))
 
-func checkGrantRevocationExpiry(outcome fulfillmentOutcome, now time.Time) error {
-	switch outcome.ExpiryMode {
+func checkGrantRevocationExpiry(grant sourceGrant, now time.Time) error {
+	switch grant.ExpiryMode {
 	case shared.SharingExpiryUntilRevoked:
-		if outcome.GrantExpiresAt == nil {
+		if grant.ExpiresAt == nil {
 			return nil
 		}
 	case shared.SharingExpiryAtTime:
-		if outcome.GrantExpiresAt != nil {
-			if !now.Before(*outcome.GrantExpiresAt) {
+		if grant.ExpiresAt != nil {
+			if !now.Before(*grant.ExpiresAt) {
 				return ErrGrantRevocationExpired
 			}
 			return nil
@@ -35,16 +35,16 @@ func checkGrantRevocationExpiry(outcome fulfillmentOutcome, now time.Time) error
 	return errors.New("invalid immutable Grant expiry")
 }
 
-func (r *Repository) checkGrantRevocationExpiry(ctx context.Context, outcome fulfillmentOutcome) error {
+func (r *Repository) checkGrantRevocationExpiry(ctx context.Context, grant sourceGrant) error {
 	now, err := r.wallClock(ctx)
 	if err != nil {
 		return err
 	}
-	return checkGrantRevocationExpiry(outcome, now)
+	return checkGrantRevocationExpiry(grant, now)
 }
 
 // GrantRevocation is withdrawal history, not a Deny or a current access verdict.
-// Target, recipient and expiry remain in the original immutable fulfillment.
+// Target, recipient and expiry remain in the canonical immutable Grant.
 type GrantRevocation struct {
 	RequestID             uuid.UUID `gorm:"type:uuid;primaryKey" json:"request_id"`
 	RevokedByPrincipalID  int64     `json:"revoked_by_principal_id,string" swaggertype:"string"`
@@ -82,19 +82,17 @@ func (s *Service) RevokeGrant(ctx context.Context, input RevokeGrantInput) (*Gra
 	var result *GrantRevocation
 	err := s.withEngineManagementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessGrantRevoke, false,
 		func(tx *Repository, check func() error) error {
-			var outcome fulfillmentOutcome
+			var grant sourceGrant
 			// Missing, not yet issued and other-tenant/engine requests all stay hidden.
-			err := tx.db.WithContext(ctx).Table("system.engine_access_fulfillment_outcomes AS o").
-				Joins("JOIN system.engine_access_grants AS g ON g.request_id = o.request_id").
-				Where("o.request_id = ? AND o.tenant_id = ? AND o.engine_id = ?", input.RequestID, input.Actor.TenantID, input.EngineID).
-				Select("o.*").Take(&outcome).Error
+			err := tx.db.WithContext(ctx).Where("request_id = ? AND tenant_id = ? AND engine_id = ?",
+				input.RequestID, input.Actor.TenantID, input.EngineID).Take(&grant).Error
 			if qualificationErr := check(); qualificationErr != nil {
 				return qualificationErr
 			}
 			if err != nil {
 				return mapError(err)
 			}
-			if err := tx.lockFulfillmentTarget(ctx, input.Actor.TenantID, outcome.CatalogPath); err != nil {
+			if err := tx.lockFulfillmentTarget(ctx, input.Actor.TenantID, grant.CatalogPath); err != nil {
 				return err
 			}
 			if err := check(); err != nil {
@@ -113,7 +111,7 @@ func (s *Service) RevokeGrant(ctx context.Context, input RevokeGrantInput) (*Gra
 			}
 			// Recover committed withdrawal history above before checking the Grant's
 			// natural expiry. The original five-minute acceptance window is irrelevant.
-			if err := tx.checkGrantRevocationExpiry(ctx, outcome); err != nil {
+			if err := tx.checkGrantRevocationExpiry(ctx, grant); err != nil {
 				return err
 			}
 			row := &GrantRevocation{RequestID: input.RequestID, RevokedByPrincipalID: input.Actor.PrincipalID,
@@ -137,7 +135,7 @@ func (s *Service) RevokeGrant(ctx context.Context, input RevokeGrantInput) (*Gra
 			if err := check(); err != nil {
 				return err
 			}
-			if err := tx.checkGrantRevocationExpiry(ctx, outcome); err != nil {
+			if err := tx.checkGrantRevocationExpiry(ctx, grant); err != nil {
 				return err
 			}
 			result = row

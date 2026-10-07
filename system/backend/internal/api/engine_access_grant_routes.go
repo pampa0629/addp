@@ -20,8 +20,18 @@ func RegisterEngineAccessGrantRoutes(api *gin.RouterGroup, runtime *IAMRuntime, 
 	if err != nil {
 		return err
 	}
+	create, err := middleware.NewIAMPermissionGuard(authorization.PermissionSystemEngineAccessGrantCreate)
+	if err != nil {
+		return err
+	}
+	read, err := middleware.NewIAMPermissionGuard(authorization.PermissionSystemEngineAccessGrantRead)
+	if err != nil {
+		return err
+	}
 	routes := api.Group("/engines/:id/access_grants")
 	routes.Use(runtime.Authentication, runtime.UserAccessCredential, tenant)
+	routes.POST("", create, handler.Create)
+	routes.GET("", read, handler.List)
 	routes.POST("/:request_id/revoke", revoke, handler.Revoke)
 	return nil
 }

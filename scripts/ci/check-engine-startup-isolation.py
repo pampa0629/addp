@@ -154,11 +154,16 @@ def validate_workflow_runtime_image_contract(repository: Path) -> list[str]:
 
     for relative in ("scripts/dev/start.sh", "scripts/dev/restart.sh"):
         source = (repository / relative).read_text(encoding="utf-8")
-        for runtime in ("Document",):
-            if common_runtime_module not in source:
-                errors.append(
-                    f"{relative} {runtime} image fingerprint does not include {common_runtime_module}"
-                )
+        if "document-workflow.sh" not in source or "ensure_document_workflow_image" in source:
+            errors.append(f"{relative} does not use the unique Document native helper")
+    helper = repository / "scripts/dev/document-workflow.sh"
+    if not helper.is_file():
+        errors.append("scripts/dev/document-workflow.sh is missing")
+    else:
+        source = helper.read_text(encoding="utf-8")
+        for function in ("addp_sync_python_dependencies", "addp_python_dependency_fingerprint"):
+            if function not in source:
+                errors.append(f"Document native helper does not use {function}")
     return errors
 
 

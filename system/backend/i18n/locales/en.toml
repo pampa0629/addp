@@ -307,6 +307,23 @@ other = "Allow only the current Catalog tenant runtime to request acceptance, ex
 [permissions.system.engine_access_grant.revoke.name]
 other = "Revoke a specific source-data Grant"
 
+[permissions.system.engine_access_grant.create.name]
+other = "Directly grant source-data read access"
+[permissions.system.engine_access_grant.create.description]
+other = "Explicitly issue read access for an exact independently approved ordinary table with effective engine delegation; no Catalog required and no automatic data access"
+[permissions.system.engine_access_grant.read.name]
+other = "View source-data Grant history"
+[permissions.system.engine_access_grant.read.description]
+other = "View issuance, expiry and revocation history with effective engine delegation; history access grants neither handling nor data read access"
+[system.engine_access_grant_command_conflict]
+other = "Parameters differ from the original Grant issuance; consult the original record"
+[system.engine_access_grant_approval_changed]
+other = "The approval mode or version changed; no new Grant was issued. Refresh the target information"
+[system.engine_access_grant_expiry_elapsed]
+other = "The Grant expiry is no longer future; no new Grant was issued. Select an explicit valid expiry"
+[system.engine_access_grant_source_unavailable]
+other = "Source table structure could not be verified; no new Grant was issued. Check the engine connection"
+
 [permissions.system.engine_access_deny.create.name]
 other = "Establish a source read Deny"
 [permissions.system.engine_access_deny.create.description]

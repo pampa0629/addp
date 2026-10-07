@@ -76,6 +76,7 @@ T0-T1 必须：
 - 不连接开发业务数据库。
 - 可重复执行，失败后不留下外部状态。
 - 需要 Online 条件的测试默认不进入普通语言测试；对应专用门禁显式开启并拒绝意外 Skip。
+- 模块门禁执行平台 T0 和 Go T1 时必须移除 `*_POSTGRES_TEST_DSN`、`ADDP_*_INTEGRATION` 等 T2 显式开关；只在对应 T2 步骤保留调用方提供的条件，避免平台内嵌单元测试绕过 owner 锁并清理共享测试库。
 - 模块生命周期公共契约必须在 T1 覆盖 `starting → registered`、`registered → recovering → registered`、确定性拒绝进入 `failed`、取消后 `stopped` 与限时注销。
 - Backend 路由测试必须证明 `/health/live` 不触发外部调用，`/health/ready` 只在自身必需 Infra 和 System 注册都就绪时返回 200，业务路由在 Not Ready 时返回 `503 module_not_ready`。
 - Worker/Scheduler 测试必须证明未注册或 `recovering` 时不领取新工作，恢复后无需重启进程即继续领取。

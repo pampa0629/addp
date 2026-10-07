@@ -23,6 +23,13 @@ func (f grantServiceFunc) RevokeGrant(ctx context.Context, input engineaccess.Re
 	return f(ctx, input)
 }
 
+func (f grantServiceFunc) CreateIndependentGrant(context.Context, engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
+	panic("unexpected grant creation")
+}
+func (f grantServiceFunc) ListSourceGrants(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantView, int64, error) {
+	panic("unexpected grant listing")
+}
+
 func grantTestRouter(t *testing.T, projection *shared.AuthContext, service engineAccessGrantService) *gin.Engine {
 	t.Helper()
 	authentication, err := middleware.NewIAMAuthenticationMiddleware(iamActorResolver{authContext: projection})

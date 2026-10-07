@@ -16,6 +16,9 @@
           <template #default="{ row }">{{ t(`system.engine.dataAuthorization.modes.${row.mode}`) }}</template>
         </el-table-column>
         <el-table-column prop="version" :label="t('system.engine.dataAuthorization.version')" width="90" />
+        <el-table-column v-if="canGrant" min-width="160">
+          <template #default="{ row }"><el-button v-if="row.mode === 'independent'" data-testid="source-grant-open" link type="primary" :disabled="engine.lifecycle_state !== 'active'" @click="grantRequirement = row">{{ t('system.engine.sourceGrants.create') }}</el-button></template>
+        </el-table-column>
       </el-table>
       <el-pagination layout="prev, pager, next, total" :total="total" :page-size="10" :current-page="page" :disabled="saving" @current-change="changePage" />
     </template>
@@ -46,7 +49,7 @@
         <el-button type="primary" data-testid="approval-initialize" :disabled="!!existing" :loading="saving" @click="initialize">{{ t('system.engine.dataAuthorization.saveMode') }}</el-button>
       </el-form>
     </template>
-    <el-alert type="info" :closable="false" :title="t('system.engine.dataAuthorization.accessPending')" />
+    <EngineSourceGrants :engine="engine" :requirement="grantRequirement" @close="grantRequirement = null" />
   </section>
 </template>
 
@@ -58,12 +61,15 @@ import { ResourceTreePicker, serializeEngineApprovalInitialization } from '@comm
 import { enginesAPI } from '../../api/engines'
 import { useAuthStore } from '../../store/auth'
 import { approvalPathLabel, approvalTargetFromSelection, approvalTargetsEqual, createApprovalCatalogAdapter, isApprovalTable } from '../../utils/engineApprovalCatalog'
+import EngineSourceGrants from './EngineSourceGrants.vue'
 
 const props = defineProps({ engine: { type: Object, required: true } })
 const auth = useAuthStore(), { t } = useI18n()
 const canRead = computed(() => auth.hasPermission('system.engine_access_approval_requirement.read'))
 const canInitialize = computed(() => auth.hasPermission('system.engine_access_approval_requirement.initialize'))
 const canBrowse = computed(() => auth.hasPermission('system.engine_catalog.read'))
+const canGrant = computed(() => auth.hasPermission('system.engine_access_grant.create'))
+const grantRequirement = ref(null)
 const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error = ref(''), saving = ref(false), saved = ref(false)
 const selection = ref(null), target = ref(null), savedRow = ref(null), generation = ref(0)
 const form = reactive({ mode: '', reason: '' })
@@ -120,6 +126,7 @@ watch(() => [props.engine.id, auth.authContext?.principal?.id, auth.authContext?
   auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version,
   canRead.value, canInitialize.value, canBrowse.value, props.engine.lifecycle_state, props.engine.connection_status], () => {
   generation.value++; rows.value = []; total.value = 0; page.value = 1; selection.value = target.value = savedRow.value = null
+  grantRequirement.value = null
   loading.value = saving.value = saved.value = false; form.mode = ''; form.reason = ''; error.value = ''
   load()
 }, { immediate: true })

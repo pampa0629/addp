@@ -1823,7 +1823,8 @@ const availableDetailTabs = computed(() => {
   }
   if (hasSelectedCapabilitiesView.value) tabs.push('capabilities')
   if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
-  if (['read', 'initialize'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`))) tabs.push('data-authorization')
+  if (['read', 'initialize'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`)) ||
+    ['create', 'read', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_grant.${action}`))) tabs.push('data-authorization')
   return tabs
 })
 

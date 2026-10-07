@@ -73,6 +73,8 @@ Model3D、Spark Workflow 和 GeoPython Workflow 的宿主机 Python Runtime 在�
 
 PointCloud Workflow 原生开发使用独立 Conda 前缀 `engines/pointcloud-workflow/venv`，固定 Python 3.12、PDAL core/E57 2.10.2，并将所有传递原生库留在该前缀。start/restart 共用唯一原生入口；完整 Python 依赖沿用平台安装锁和指纹，原生包声明与真实加载、驱动及三点 COPC 转换共同作为准备门禁。运行中环境只读校验，不能就地更新依赖。HTTP 回环监听按原生 PID 和端口归属验证；stop 只管理原生进程，开发入口不构建镜像。Hosted Manager T4 同样使用原生入口；生产 Compose 使用产品镜像。首次迁移由用户清理旧开发容器和普通 Python venv，不在生命周期内保留容器备选路径。
 
+Document Workflow 原生开发只处理可信文件，以非 root 开发用户运行；venv、profile 和工作目录不是文件沙箱。Python 3.12 venv、官方 LibreOffice 26.8.0.3 和固定 Noto CJK 字体属于独立 Runtime；官方包与字体按 SHA-256 校验后安装到工作区私有目录，Fontconfig 不继承系统字体配置。start/restart 共用唯一准备入口，依赖同步复用平台安装锁和指纹，运行中只读校验，实际中文 PPTX 转 PDF 作为停止前预检。HTTP 只监听回环并核对原生 PID/监听归属；stop 删除开发容器路径。Hosted Manager 使用同一原生入口；生产镜像继续执行非 root、只读文件系统与能力限制。首次迁移由用户清理旧 Document 开发容器。
+
 所有由开发生命周期启动的 Node 单元必须提交 `package-lock.json`。锁文件是不可变构建输入，启动和重启统一通过 `scripts/dev/node-dependencies.sh` 执行 `npm ci`；缺少锁文件必须立即失败，不得在生命周期内退回 `npm install`、生成锁文件或静默采用未锁定依赖。
 
 `npm install` 只允许用于显式的依赖维护流程，由开发者审查并提交 `package.json` 与 `package-lock.json` 的一致变更。Hosted Online 等要求干净构建身份的门禁在安装前后必须保持仓库状态不变，不能通过忽略锁文件改动、关闭仓库清洁检查或在预检前恢复文件来掩盖生命周期污染。

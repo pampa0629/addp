@@ -811,8 +811,8 @@ docker() {
   [ "$FIXTURE_MODE" != scoped-launchd ] || echo docker-unselected >> "$FIXTURE_ROOT/failures"
   case "$1" in
     inspect)
-      [ "${@: -1}" = document-workflow-engine ] || return 1
-      printf 'addp-runtimes|document-workflow-engine|%s\n' "$FIXTURE_ROOT" ;;
+      [ "${@: -1}" = supermap-workflow-engine ] || return 1
+      printf 'addp-runtimes|supermap-workflow-engine|%s\n' "$FIXTURE_ROOT" ;;
     stop)
       [ -f "$FIXTURE_ROOT/101" ] || echo container-unavailable >> "$FIXTURE_ROOT/failures"
       echo "docker $*" >> "$FIXTURE_ROOT/events"
@@ -1327,7 +1327,7 @@ for kernel, hosted, explicit, expected in [('Darwin','0','','host.docker.interna
     result=subprocess.run(['bash','-c',script],env=dict(env,KERNEL=kernel,ADDP_ONLINE_HOSTED=hosted,SPARK_WORKFLOW_SHARED_HOST=explicit),capture_output=True,text=True)
     assert result.returncode==0 and result.stdout.strip()==expected,result
 helper=(root/'scripts/dev/spark-workflow.sh').read_text()
-assert 'docker ' not in helper and 'make build-images' not in helper
+assert 'docker run' not in helper and 'docker build' not in helper and 'make build-images' not in helper
 assert 'addp_sync_python_dependencies' in helper and 'exec "$runtime_dir/venv/bin/python" api_server.py' in helper
 assert 'addp_start_spark_workflow' in (root/'scripts/dev/start.sh').read_text()
 restart=(root/'scripts/dev/restart.sh').read_text()
@@ -1352,8 +1352,8 @@ test_hosted_runtime_owned_listener() {
       if [ "$1" = port ]; then printf "%s\n" "8102/tcp -> 0.0.0.0:18102"; return; fi
       case "$3" in
         *Config.Labels*)
-          if [ "$mock_labels" = owned ]; then printf "addp-runtimes|document-workflow-engine|%s\n" "$ROOT_DIR";
-          else printf "foreign|document-workflow-engine|%s\n" "$ROOT_DIR"; fi ;;
+          if [ "$mock_labels" = owned ]; then printf "addp-runtimes|supermap-workflow-engine|%s\n" "$ROOT_DIR";
+          else printf "foreign|supermap-workflow-engine|%s\n" "$ROOT_DIR"; fi ;;
         *State.Running*) printf "%s\n" true ;;
         *NetworkMode*) printf "%s\n" "$mock_mode" ;;
         *State.Pid*) printf "%s\n" "$$" ;;
@@ -1363,133 +1363,37 @@ test_hosted_runtime_owned_listener() {
     }
     lsof() { if [ "$mock_foreign" = 1 ]; then printf "%s\n" 1; else printf "%s\n" "$$"; fi; }
     sudo() { [ "$1" = -n ] && [ "$2" = lsof ] || return 2; shift; "$@"; }
-    addp_dev_owned_listener document-workflow 18102
+    addp_dev_owned_listener supermap-workflow 18102
     mock_port=8102
-    if addp_dev_owned_listener document-workflow 18102; then exit 11; fi
+    if addp_dev_owned_listener supermap-workflow 18102; then exit 11; fi
     mock_port=18102 mock_bind=0.0.0.0
-    if addp_dev_owned_listener document-workflow 18102; then exit 12; fi
+    if addp_dev_owned_listener supermap-workflow 18102; then exit 12; fi
     mock_bind=127.0.0.1 mock_foreign=1
-    if addp_dev_owned_listener document-workflow 18102; then exit 13; fi
+    if addp_dev_owned_listener supermap-workflow 18102; then exit 13; fi
     mock_foreign=0 mock_labels=foreign
-    if addp_dev_owned_listener document-workflow 18102; then exit 14; fi
+    if addp_dev_owned_listener supermap-workflow 18102; then exit 14; fi
     mock_labels=owned ADDP_ONLINE_HOSTED=0
-    if addp_dev_owned_listener document-workflow 18102; then exit 15; fi
+    if addp_dev_owned_listener supermap-workflow 18102; then exit 15; fi
     mock_mode=bridge
-    addp_dev_owned_listener document-workflow 18102
+    addp_dev_owned_listener supermap-workflow 18102
   ' || fail "Hosted Runtime ownership must match network, binding, port, labels and listener PID"
 }
 
 test_runtime_host_port_advertisement() {
-  python3 - "$ROOT_DIR" <<'PY'
+  python3 - "$ROOT_DIR" <<'PYTEST'
 from pathlib import Path
 import sys
-
 root = Path(sys.argv[1])
-start = (root / 'scripts/dev/start.sh').read_text()
-for name, variable in (
-    ('document-workflow', 'DOCUMENT_WORKFLOW_PORT'),
-):
-    assert f'-e RUNTIME_PUBLIC_PORT="${{{variable}}}"' in start, (name, variable)
-    source = (root / f'engines/{name}/api_server.py').read_text()
-    assert 'runtime_advertised_port(port)' in source, name
+helper = (root / 'scripts/dev/document-workflow.sh').read_text()
+assert 'WORKFLOW_BIND_HOST=127.0.0.1' in helper
+assert 'RUNTIME_PUBLIC_PORT' in helper and 'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST' in helper
+assert 'docker run' not in helper and 'docker build' not in helper
+assert 'addp_prepare_document_workflow' in (root / 'scripts/dev/start.sh').read_text()
+assert 'addp_prepare_document_workflow' in (root / 'scripts/dev/restart.sh').read_text()
 supermap = (root / 'scripts/dev/supermap-workflow.sh').read_text()
 assert 'ADDP_DEV_PORTS_RESOLVED' in supermap
-print('PASS: container Runtime host ports reach System registration')
-PY
-}
-
-test_hosted_runtime_network() {
-  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
-from pathlib import Path
-import ast
-import os
-import re
-import subprocess
-import sys
-import threading
-from unittest.mock import Mock, patch
-
-root, temporary = map(Path, sys.argv[1:])
-source = (root / 'scripts/dev/start.sh').read_text()
-def function(name):
-    match = re.search(r'^' + name + r'\(\) \{.*?^\}', source, re.M | re.S)
-    assert match, f'missing startup function: {name}'
-    return match.group()
-
-helper = function('configure_workflow_container_network')
-for runtime, port in [('document', 8105)]:
-    fixture = temporary / ('runtime-network-' + runtime)
-    fixture.mkdir()
-    for hosted, kernel in [('1', 'Linux'), ('0', 'Linux'), ('0', 'Darwin'), ('1', 'Darwin')]:
-        arguments = fixture / 'arguments'
-        arguments.unlink(missing_ok=True)
-        public_port = port + 10000
-        env = {**os.environ, 'ROOT_DIR': str(fixture), 'ARGUMENTS': str(arguments),
-               'ADDP_ONLINE_HOSTED': hosted, 'MOCK_KERNEL': kernel,
-               runtime.upper() + '_WORKFLOW_PORT': str(public_port),
-               'SYSTEM_BACKEND_PORT': '18180', 'POSTGRES_PORT': '25432',
-               'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST': 'custom-host'}
-        mocks = '''
-set -euo pipefail
-RED= GREEN= YELLOW= NC=
-uname() { printf '%s\\n' "$MOCK_KERNEL"; }
-docker() {
-  [ "$1" = run ] || return 2
-  if [ "$2" = --rm ]; then [ "$3" = --entrypoint ] && [ "$4" = id ] || return 2; printf '%s\\n' 10001; return; fi
-  printf '%s\\n' "$@" > "$ARGUMENTS"
-  printf '%s\\n' mock-container
-}
-sudo() { [ "$1" = -n ] && [ "$2" = chown ] && [ "$3" = 10001 ] && [ -d "$4" ]; }
-curl() { printf '%s\\n' '{"status":"healthy"}'; }
-addp_dev_remove_owned_container() { :; }
-ensure_document_workflow_image() { :; }
-'''
-        script = mocks + helper + '\n' + function('start_' + runtime + '_workflow_engine_process')
-        script += '\nstart_' + runtime + '_workflow_engine_process\n'
-        result = subprocess.run(['bash', '-c', script], cwd=fixture, env=env,
-                                text=True, capture_output=True, timeout=10)
-        if hosted == '1' and kernel != 'Linux':
-            assert result.returncode != 0, result
-            assert not arguments.exists(), 'unsupported host must fail before docker run'
-            continue
-        assert result.returncode == 0, (runtime, hosted, kernel, result.stdout, result.stderr)
-        args = arguments.read_text().splitlines()
-        envs = {args[i + 1].split('=', 1)[0]: args[i + 1].split('=', 1)[1]
-                for i, arg in enumerate(args[:-1]) if arg == '-e'}
-        assert envs['RUNTIME_PUBLIC_PORT'] == str(public_port), envs
-        bind_host = '127.0.0.1' if hosted == '1' else '0.0.0.0'
-        assert envs['WORKFLOW_BIND_HOST'] == bind_host, envs
-        # Execute the production main block without opening sockets or registering a real engine.
-        module = ast.parse((root / f'engines/{runtime}-workflow/api_server.py').read_text())
-        main = next(node for node in module.body if isinstance(node, ast.If)
-                    and ast.unparse(node.test) == "__name__ == '__main__'")
-        app = Mock()
-        namespace = {'app': app, 'os': os, 'threading': threading, 'logger': Mock(),
-                     'register_to_system_with_retry': lambda: None, 'list_operators': lambda: []}
-        with patch.dict(os.environ, envs), patch('threading.Thread'):
-            exec(compile(ast.Module(body=main.body, type_ignores=[]), '<runtime-main>', 'exec'), namespace)
-        app.run.assert_called_once_with(host=bind_host, port=int(envs['PORT']), debug=False)
-        loopback_key = 'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST'
-        if hosted == '1':
-            assert args[args.index('--network') + 1] == 'host', args
-            assert '-p' not in args and not any(arg.startswith('--add-host') for arg in args), args
-            assert envs['PORT'] == str(public_port), envs
-            assert envs['SYSTEM_URL'] == 'http://127.0.0.1:18180', envs
-            assert envs[loopback_key] == '127.0.0.1', envs
-        else:
-            assert '--network' not in args, args
-            assert args[args.index('-p') + 1] == f'{public_port}:{port}', args
-            assert '--add-host=host.docker.internal:host-gateway' in args, args
-            assert envs['PORT'] == str(port), envs
-            assert envs['SYSTEM_URL'] == 'http://host.docker.internal:18180', envs
-            assert envs[loopback_key] == 'custom-host', envs
-        if runtime == 'document':
-            assert '--read-only' in args and '--cap-drop=ALL' in args, args
-            assert '--security-opt=no-new-privileges' in args and '--tmpfs' in args, args
-        assert 'com.docker.compose.project=addp-runtimes' in args, args
-        assert 'com.docker.compose.project.working_dir=' + str(fixture) in args, args
-print('PASS: Hosted Linux Runtime network, ports, service access, ownership and Document restrictions')
-PY
+print('PASS: Document native ports and SuperMap container ownership')
+PYTEST
 }
 
 test_compose_public_port_policy() {
@@ -2283,7 +2187,6 @@ test_spark_native_lifecycle
 test_geopython_native_lifecycle
 test_hosted_runtime_owned_listener
 test_runtime_host_port_advertisement
-test_hosted_runtime_network
 test_compose_public_port_policy
 test_local_stop_rejects_volume_deletion
 test_prod_compose_init_health

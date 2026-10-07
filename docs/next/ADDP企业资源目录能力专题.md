@@ -2565,6 +2565,10 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 
 本次页面验证：`make test-common-frontend`、`make test-catalog-frontend` 退出码 0，Catalog 139 个单元测试和生产构建通过。`make test-module MODULE=system` 的平台 T0、System Go T1、前端 109 个单元测试、87 个浏览器用例及生产构建通过；PostgreSQL 的 IAM、OAuth、API、迁移、engineaccess 和仓储包通过，随后指标在线夹具创建会话报“认证时间不能晚于当前时间”，组合入口退出非零。使用同一标准入口 `scripts/test/system-iam-postgres-gate.sh --package online-fixture` 单独重跑失败包，退出码 0；没有修改指标实现或跳过断言，不把原组合入口记为成功。另跑 `make test-system-runtime-log` 退出码 0，并确认隔离资源清理完成。页面按结构化路径内容比较响应，不依赖 JSON 字段顺序；该正常数据库返回场景已由单元和浏览器用例覆盖。`git diff --check` 通过，人工查看页面截图确认长表单可滚动、页脚可操作。未接管或重启用户服务，未执行真实独立授权 T4，不宣称已形成独立读取闭环。
 
+2026-10-07 统一 Grant 底座补充：`000195` 将精确目标、接收主体、动作、期限、批准要求版本和操作者来源收拢到同一 `engine_access_grants`。原 Catalog 签发编号、签发时间、回执、撤销及审计保留；数据库从可信 accepted 回执投影规则，不重新签发或续期。独立来源要求显式 independent 配置及其当前版本，不创建 Catalog 回执，也不建立第二份授权表。原读取和撤销消费者直接使用该统一 Grant；Catalog 办理历史查询明确过滤 Catalog 来源，不能把独立来源当成办理结果。该底座没有开放独立批准的公开授予／列表或页面，不发布无人消费的新 Permission，不把仓储夹具的读取成功描述为正式独立授权闭环。
+
+本轮验证：全仓 `make test-go`、标准 System PostgreSQL 门禁的 `--package engineaccess` 和 `--package migration` 均退出 0，随后完整 `make test-system-iam-postgres` 退出 0，覆盖 IAM、OAuth、API、全部迁移、engineaccess、仓储及 Online owner 测试夹具。无 Catalog 回执的账号／部门／项目组 Grant 通过同一读取及指定撤销链路，批准配置本身不放行，错误版本拒绝，无关账号不能读取，独立签发不能投影为 Catalog 办理历史；前向迁移验证原签发、回执、撤销和审计不变，重复执行不重新授权。首次并行验证发现模块门禁将 T2 DSN 传入平台单元测试，造成未持有 owner 锁的测试重置同一库；现由 `make test-module`、`make test-changed` 共同消费单一平台步骤的环境隔离，两个脚本各 21 项回归通过，真实迁移串行复跑通过。`make test-module MODULE=system` 在无关开发生命周期预检回归中停止，不计为总门禁通过；`make test-changed` 因其他 owner 缺少 T2 连接条件在预检停止，不计为工作区总门禁通过。日志分别为 `/tmp/addp-unified-grant-go.log`、`/tmp/addp-unified-grant-full-iam.log`、`/tmp/addp-unified-grant-system-module-current.log`、`/tmp/addp-unified-grant-changed.log`。最终 `git diff --check` 通过。未接管用户服务，未运行真实独立授权 T4，也未修改业务源。
+
 ### 26.41 生产核清接口、共享客户端与 Catalog 故障恢复消费者（2026-10-02，恢复子链路已实施，首次受理与 Grant 尚未接通）
 
 本轮先接通 §26.38 工作包中的故障恢复部分，避免将新受理发布建立在只能内部调用的恢复原语上。先同步授权上下文规范 5.5.5、企业资源目录实现规范和 System IAM 迁移说明；这里只消费已提交的原请求，不创建新办理或实际内容授权。
@@ -4008,3 +4012,26 @@ Manager 的数据库预览与后台数据剖析共同调用同一 Resolver／数
 - `git diff --check` 对本轮前端与预览规范改动通过；用户只需刷新页面，无需为本轮前端改动重启后端。
 
 **下一优先项：** 用同一账号和已授权活动表验证剖析创建、执行及结果读取，再以未授权目标验证拒绝；先完成正常使用闭环，不扩展特殊源端并发场景。
+
+### 26.104 无 Catalog 的单表只读授权首版（2026-10-07）
+
+用户要求优先落实未部署 Catalog 时的数据权限控制。源数据 Grant 仍归 System，不采用全租户默认公开；独立批准和 Catalog 业务确认共享同一不可变 Grant 存储、读取裁决及撤销事实，不创建第二套 ACL。
+
+- 000195 把既有 Catalog 签发的精确规则迁入唯一 Grant 存储，保留原签发编号、时间、受理和撤销关系；独立来源不伪造 Catalog 回执。000196 只登记独立创建／读取授权记录的功能权限，不默认分配内置角色或账号，不创建委派、Grant 或授权版本变更。
+- 正式 `POST /api/v1/system/engines/:id/access_grants` 要求当前租户 User 的创建权限与有效引擎管理委派，精确普通表已有 independent 批准要求且版本匹配。当前有效账号、部门和项目组可成为接收方，动作仅 read；明确选择指定到期或直到撤销，并填写原因。源端只读取结构，不读样本、不写数据，不依赖 Meta 扫描或企业 Catalog。资格及依据在正式事务中复核，Grant 和高风险审计同事务写入。
+- 同路径 `GET` 分页读取当前租户及引擎的两类来源签发历史与撤销事实，要求独立读取权限和当前委派。未知写入结果只有用户明确确认才以原编号原参数重试，不延长、恢复或重新授予。已有撤销接口收回一份 Grant，不产生 Deny，不影响其他有效授权。
+- System → 引擎详情 → 数据授权：首次为未配置的普通表选择 System 独立批准；已配置独立批准的表旁提供“授予读取权限”。接收方复用有权查询的 IAM 候选，不能手填编号，切换接收方类型不会退出表单；明确期限及原因后确认摘要再签发。同页提供统一签发历史及撤销入口。已经属于 Catalog 批准的表不显示独立签发按钮，首次配置不能覆盖已有模式。
+- 管理委派只决定谁能办理，功能权限只决定能用哪些功能，两者都不自动赋予操作者读取数据的权限。接收方实际使用 Manager 仍须对应功能权限及当前有效 Grant；签发或历史展示不代表导出、修改数据或全部消费者已经通过真实验收。
+- 新增 API／事务回归沿用既有 Go、System IAM PostgreSQL 与 Swagger／Manifest 门禁；页面回归由 System 前端自动发现，目标序列化由 common-frontend 唯一持有，并扩散验证 Catalog 消费者。没有新增测试数据库、测试服务或 Workflow，不启停用户服务，不修改真实账号或源端。
+
+**下一优先项：** 完成首版门禁后，由用户重启 System；显式为实际办理账号配置功能权限及目标引擎委派，选择一张未配置批准方式的普通表，体验独立授予、接收方预览和撤销后的拒绝。已有 Catalog 批准的活动表不作为初始化覆盖的测试对象。
+
+**已取得的验证证据：**
+
+- `make test-go` 退出码 0，日志 `/tmp/addp-independent-grant-go-final.log`；`make test-authorization` 退出码 0，日志 `/tmp/addp-independent-grant-authorization-final.log`。System Swagger 已生成，213 个公开路由方法覆盖一致。共享目标序列化及授权查询批量读取避免新增双轨实现和逐条撤销记录查询。
+- `make test-system-frontend` 最终退出码 0：22 个文件、111 项单元测试、91 项浏览器交互及构建通过，日志 `/tmp/addp-independent-grant-frontend-final.log`。首轮新增重试用例因同名确认窗口退出动画造成定位歧义失败，等待窗口关闭后完整复验通过，没有放宽业务断言。
+- `make test-common-frontend`、`make test-catalog-frontend` 退出码 0，后者 23 个文件、139 项测试及构建通过；`make test-frontend-ci-registration` 退出码 0，17 项检查通过。日志分别为 `/tmp/addp-independent-grant-common-frontend.log`、`/tmp/addp-independent-grant-catalog-frontend.log`、`/tmp/addp-independent-grant-ci-registration.log`。
+- 标准 `system-iam-postgres-gate.sh --package engineaccess` 退出码 0、无 Skip：证明独立批准、正式签发、原参恢复、当前规则读取及撤销，不需要 Catalog 回执；同时验证缺功能权限／缺委派不能签发，源结构检查不持 IAM 锁。日志 `/tmp/addp-independent-grant-pg.log`。
+- 完整 `make test-system-iam-postgres` 首次在迁移 Runner 的旧数量断言失败（System 权限由 157 增加到 159），不计为完整通过。同步精确数量并增加两项权限无默认角色绑定的真实数据库断言后，标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test catalog-integrity'` 退出码 0、无 Skip，日志 `/tmp/addp-independent-grant-migration-final.log`；原整包其他已执行用例没有新增失败，未到达的后续包不计为通过。
+- `make test-changed` 退出码 2：并行工作区涉及多个 owner，缺少其他 owner 的安全 T2 连接，在预检停止；日志 `/tmp/addp-independent-grant-changed-final.log`。首轮带合法 IAM DSN 的 `make test-module MODULE=system` 在平台开发启动脚本 T0 的 preflight 断言失败，日志 `/tmp/addp-independent-grant-module.log`，不修改并行 owner 的启动实现。真实 User／Gateway／System／Manager 源读取 T4 未运行，不用浏览器夹具冒充真实运行闭环。
+- 最终带合法 IAM DSN 的 `make test-module MODULE=system` 再次在同一 preflight T0 断言失败，日志 `/tmp/addp-independent-grant-module-final.log`；不能计为模块总门禁通过。最终 `git diff --check` 退出码 0。未提交或推送仍未满足全量门禁的改动。

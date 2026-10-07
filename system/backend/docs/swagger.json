@@ -2351,6 +2351,196 @@
                 ]
             }
         },
+        "/engines/{id}/access_grants": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前租户用户需独立读取权限及有效引擎管理委派；同时显示独立批准和 Catalog 来源、期限与撤销历史，停用引擎仍可查看。不是当前访问裁决，不读取源端 | Current Tenant User needs history-read permission and effective engine delegation. Lists independent and Catalog issuance, expiry and revocation history, including disabled engines. Not a current access verdict; no source IO",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据授权 | Source Data Grants"
+                ],
+                "summary": "查看源数据授权历史 | List source-data Grant history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "签发及撤销历史 | Issuance and revocation history",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantView"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_grant.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前 Tenant User 需独立授予权限及有效引擎管理委派；精确普通表的批准要求必须为 independent 且与原版本匹配。不要求企业 Catalog 或 Meta 编目，结构核验只读且不读取样本 | Current Tenant User needs creation permission and effective engine delegation. Exact ordinary table approval must be independent at the expected version. No enterprise Catalog or Meta cataloging; structure verification is read-only without sampling\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据授权 | Source Data Grants"
+                ],
+                "summary": "显式签发独立只读授权 | Issue explicit independent read access",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "显式命令、精确表、批准版本、接收方、只读动作、期限与原因 | Explicit command, exact table, approval version, recipient, read action, expiry and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateIndependentEngineAccessGrantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已提交的签发历史，不是访问凭据 | Committed issuance history, not an access credential",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantView"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_grant.create"
+                ]
+            }
+        },
         "/engines/{id}/access_grants/{request_id}/revoke": {
             "post": {
                 "security": [
@@ -2379,7 +2569,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "原办理 UUID | Original fulfillment UUID",
+                        "description": "授权签发命令 UUID | Grant issuance command UUID",
                         "name": "request_id",
                         "in": "path",
                         "required": true
@@ -13795,6 +13985,64 @@
                 }
             }
         },
+        "github_com_addp_system_internal_engineaccess.SourceGrantView": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "approval_mode": {
+                    "type": "string"
+                },
+                "catalog_path": {
+                    "type": "object"
+                },
+                "catalog_request_id": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "expiry_mode": {
+                    "type": "string"
+                },
+                "granted_at": {
+                    "type": "string"
+                },
+                "operator_membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "operator_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recipient_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "recipient_type": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "requirement_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "revocation": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.GrantRevocation"
+                }
+            }
+        },
         "github_com_addp_system_internal_engineaccess.SourceReadCheck": {
             "type": "object",
             "properties": {
@@ -15795,6 +16043,50 @@
             "type": "object",
             "properties": {
                 "task_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.CreateIndependentEngineAccessGrantRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "read"
+                    ]
+                },
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "expiry_mode": {
+                    "type": "string",
+                    "enum": [
+                        "at_time",
+                        "until_revoked"
+                    ]
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recipient_id": {
+                    "type": "string"
+                },
+                "recipient_type": {
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "department",
+                        "project_group"
+                    ]
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "requirement_version": {
                     "type": "string"
                 }
             }

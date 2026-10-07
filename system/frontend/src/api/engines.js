@@ -1,6 +1,9 @@
 import client from './client'
 
 export const enginesAPI = {
+  createSourceGrant: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants`, payload, { headers: { 'Content-Type': 'application/json' } }),
+  listSourceGrants: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_grants`, { params }),
+  revokeSourceGrant: (id, requestID, reason) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants/${encodeURIComponent(requestID)}/revoke`, { reason }),
   listApprovalRequirements: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_approval_requirements`, { params }),
   initializeApprovalRequirement: (id, serializedPayload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_approval_requirements`, serializedPayload, { headers: { 'Content-Type': 'application/json' } }),
   listCatalogChildren: (id, path = { segments: [] }) => client.post(`/system/engines/${encodeURIComponent(id)}/catalog/children`, { path }),

@@ -50,7 +50,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			return Actor{TenantID: runtime.TenantID, PrincipalID: user.PrincipalID, MembershipID: user.MembershipID,
 				AuthorizationVersion: current.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}, delegation
 		}
-		issue := func(t *testing.T, binding shared.SharingFulfillmentBinding) *fulfillmentGrant {
+		issue := func(t *testing.T, binding shared.SharingFulfillmentBinding) *sourceGrant {
 			t.Helper()
 			id := uuid.New()
 			if _, err := acceptor.AcceptFulfillment(ctx, runtime, id, binding); err != nil {
@@ -78,7 +78,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				}
 			}
 		}
-		finiteGrant := func(t *testing.T) (*fulfillmentGrant, time.Time) {
+		finiteGrant := func(t *testing.T) (*sourceGrant, time.Time) {
 			t.Helper()
 			var expires time.Time
 			if err := db.Raw("SELECT clock_timestamp() + interval '1.5 seconds'").Scan(&expires).Error; err != nil {
@@ -277,7 +277,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			if _, err := service.RevokeGrant(ctx, input); !errors.Is(err, ErrGrantRevocationConflict) {
 				t.Fatalf("different revoker=%v", err)
 			}
-			for _, g := range []*fulfillmentGrant{personal, other, groupGrant} {
+			for _, g := range []*sourceGrant{personal, other, groupGrant} {
 				b := base
 				if g == groupGrant {
 					b = binding

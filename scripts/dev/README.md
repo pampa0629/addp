@@ -24,6 +24,7 @@ scripts/dev/
 ├── stop-exact-process.sh # 仅供 addp-online T4 精确停止正式进程
 ├── restart.sh         # 智能重启服务；纯扩展服务参数支持局部重启
 ├── keepalive.sh       # 托管命令环境前台保活入口
+├── document-workflow.sh # Document 原生依赖准备、中文转换预检与 PID 启动
 ├── modtidy.sh         # 清理 Go 模块依赖
 ├── clean.sh           # 清理开发环境编译产物
 └── install-frontend-deps.sh # 安装前端依赖
@@ -175,7 +176,7 @@ SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `S
 - 服务异常需要重置
 - 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
 - PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；局部重启先验证依赖、驱动和真实 COPC 写入，再按 PID 重启。开发入口不构建镜像，首次迁移需先移走旧普通 venv 并停止旧开发容器。
-- Document Workflow 使用 Docker runtime 绑定 LibreOffice，局部重启会按构建指纹重建并替换该 runtime 容器
+- Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先验证三页中文 PDF 转换，再按 PID 重启。开发态只处理可信文件，首次迁移需先停止、删除旧开发容器；生产保留容器隔离。
 
 **重要**: `restart.sh` 不会重启基础设施容器(PostgreSQL, Redis, MinIO, Meilisearch)
 - 原因: 避免 pgvector 等扩展需要重新编译安装

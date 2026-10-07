@@ -152,6 +152,8 @@ PointCloud Workflow 开发服务使用独立 Conda 前缀，首次启动需要�
 
 首次迁移先由用户停止、删除旧 PointCloud 开发容器，并将已有普通 Python venv 移出 `engines/pointcloud-workflow/venv`；随后执行 `./scripts/dev/restart.sh -pointcloud-workflow`。原生环境运行中需要更新依赖时，应先通过 `stop.sh -pointcloud-workflow` 停止，再启动。产品 Compose 仍使用正式镜像。
 
+Document Workflow 开发态只处理可信文件，使用独立 Python 3.12 venv、私有官方 LibreOffice 26.8.0.3 与固定中文字体。首次准备按 SHA-256 下载/安装，不改系统应用或字体；macOS arm64/x86_64 与 Linux x86_64 使用同一原生路线，Linux 系统库由开发环境提供。用户先停止、删除旧 Document 开发容器，再执行 `./scripts/dev/restart.sh -document-workflow`。原生进程以开发用户权限运行，生产 Compose 继续保留容器隔离。
+
 点云 COPC artifact 统一使用 ADDP infra MinIO 配置。原生开发直接访问 access plan 中的宿主机实际端点；产品 Compose 使用其 Docker 网络端点。
 
 `supermap-workflow-engine` 使用 Docker runtime 承载 Linux arm64 SuperMap SDK，不依赖宿主机 Linux OS。私有组件只保存在 Git 忽略的 `engines/supermap-workflow/vendor/` 并进入稳定基础镜像；日常代码镜像每次重启都重新编译。可选变量：

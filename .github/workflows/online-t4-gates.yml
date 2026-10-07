@@ -543,6 +543,14 @@ jobs:
           activate-environment: ""
           auto-activate-base: false
 
+      - name: Install Document native system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1 libcairo2 libcups2t64 libdbus-1-3 libnspr4 libnss3 \
+            libsm6 libx11-6 libxext6 libxinerama1 libxrender1 libxcb1 libxslt1.1 \
+            libgpgme11t64 libgpgmepp6t64
+
       - name: Validate Hosted Manager readiness
         env:
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}

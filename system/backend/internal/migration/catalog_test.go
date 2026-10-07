@@ -14,8 +14,47 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 194 {
-		t.Fatalf("LatestVersion = %d, want 194", catalog.LatestVersion)
+	if catalog.LatestVersion != 196 {
+		t.Fatalf("LatestVersion = %d, want 196", catalog.LatestVersion)
+	}
+}
+
+func TestIndependentGrantPermissionsPublishNoImplicitAuthority(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000196_independent_source_grant_permissions.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(data)
+	for _, required := range []string{"'system.engine_access_grant.create'", "'system.engine_access_grant.read'", "ARRAY['tenant']::text[]", "'high', false"} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"INSERT INTO system.role", "INSERT INTO system.engine_access", "UPDATE system.role", "tenant.administrator"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("implicit authority: %q", forbidden)
+		}
+	}
+}
+
+func TestUnifiedSourceGrantMigrationHasOneRuleStoreAndExplicitProvenance(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000195_unified_source_grants.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(data)
+	for _, required := range []string{"ALTER TABLE system.engine_access_grants", "DROP CONSTRAINT engine_access_grants_request_id_fkey",
+		"catalog_request_id = request_id", "NEW.approval_mode = 'catalog'", "NEW.approval_mode = 'independent'",
+		"r.mode = 'independent' AND r.version = NEW.requirement_version", "NEW.granted_at := clock_timestamp()",
+		"g.expires_at > NEW.revoked_at", "ENABLE TRIGGER trg_engine_access_grant_immutable"} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("unified Grant migration lost %q", required)
+		}
+	}
+	for _, forbidden := range []string{"CREATE TABLE", "INSERT INTO system.permissions", "INSERT INTO system.role", "DEFAULT 'catalog'", "DEFAULT 'independent'", "SET granted_at", "SET revoked_at"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("migration introduces a parallel rule/default authority or rewrites history: %q", forbidden)
+		}
 	}
 }
 

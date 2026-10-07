@@ -5,9 +5,10 @@ const permissions = ['system.engine.read', 'system.engine_access_approval_requir
 const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }] }
 const schemaPath = { ...rootPath, segments: [...rootPath.segments, { term: 'schema', kind: 'namespace', name: 'outdoor' }] }
 const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities' }] }
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false } = {}) {
   const writes = [], reads = []
-  let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: 'catalog', version: 1, catalog_path: tablePath }] : []
+  let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: tablePath }] : []
+  let grants = [], failedGrant = false
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/**', async route => {
@@ -20,6 +21,20 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/users/me')) return reply({ id: '1', display_name: 'Administrator' })
     if (path.endsWith('/auth/context')) return reply({ principal: { id: '1', principal_type: 'user' }, context: { type: 'tenant', tenant_id: '2', tenant_membership_id: '4' },
       authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '2' }, permissions: allowed }] } })
+    if (path.endsWith('/tenant/memberships')) return reply({ data: [{ id: '34', principal_id: '33', principal_type: 'user', display_name: 'Outdoor reader', username: 'outdoor', status: 'active', principal_status: 'active' }], total_pages: 1 })
+    if (path.endsWith('/access_grants')) {
+      reads.push(path)
+      if (request.method() === 'GET') return reply({ data: grants, total: grants.length, page: 1, page_size: 20, total_pages: 1 })
+      const body = request.postDataJSON(); writes.push({ path, body })
+      if (grantFailure && !failedGrant) { failedGrant = true; return reply({ error: '签发结果未知，请按原命令核对' }, 503) }
+      grants = [{ ...body, approval_mode: 'independent', engine_id: '2', granted_at: '2026-10-07T00:00:00Z', revocation: null }]
+      return reply(grants[0], 201)
+    }
+    if (path.includes('/access_grants/') && path.endsWith('/revoke')) {
+      const body = request.postDataJSON(); writes.push({ path, body })
+      const revocation = { request_id: grants[0].request_id, revoked_at: '2026-10-07T01:00:00Z', reason: body.reason }
+      grants[0] = { ...grants[0], revocation }; return reply(revocation)
+    }
     if (path.endsWith('/access_approval_requirements')) {
       if (request.method() === 'GET') { reads.push(path); return denied ? reply({ error: '本引擎管理委派不足' }, 403) : reply({ data: rows, total: rows.length, page: 1, page_size: 10, total_pages: 1 }) }
       const body = request.postDataJSON(); writes.push({ path, body })
@@ -154,4 +169,68 @@ test('without configuration permission the data-authorization tab restores to ba
   await expect(page).toHaveURL('http://127.0.0.1:4173/engines/2')
   await expect(page.getByTestId('engine-data-authorization')).toHaveCount(0)
   expect(reads).toEqual([]); expect(writes).toEqual([])
+})
+
+const grantPermissions = [...permissions, 'system.engine_access_grant.create', 'system.engine_access_grant.read', 'system.engine_access_grant.revoke', 'iam.tenant_membership.read']
+async function grantDraft(page) {
+  await page.getByTestId('source-grant-open').click()
+  const dialog = page.getByRole('dialog', { name: '授予读取权限', exact: true })
+  await dialog.locator('.iam-member-select__member').click()
+  await page.getByRole('option').filter({ hasText: 'Outdoor reader' }).click()
+  await page.getByTestId('source-grant-expiry').click()
+  await page.getByRole('option', { name: '长期有效，直到撤销', exact: true }).click()
+  await page.getByTestId('source-grant-reason').fill('Explicit read permission')
+}
+async function confirmGrant(page) {
+  await page.getByTestId('source-grant-confirm').click()
+  const confirm = page.getByRole('dialog').filter({ hasText: '即将授予 Outdoor reader' })
+  await expect(confirm).toBeVisible()
+  await confirm.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(confirm).toBeHidden()
+}
+test('independent read issuance and revocation use an explicit recipient without Catalog', async ({ page }, testInfo) => {
+  const { writes, reads } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  await page.goto('/engines/2?tab=data-authorization')
+  await expect(page.getByTestId('source-grant-open')).toBeVisible()
+  expect(writes).toEqual([])
+  await grantDraft(page)
+  await page.screenshot({ path: testInfo.outputPath('independent-read-grant.png') })
+  expect(writes).toEqual([])
+  await confirmGrant(page)
+  const history = page.getByTestId('engine-source-grants')
+  await expect(history).toContainText('只读授权已签发')
+  await expect(history).toContainText('账号 · 33')
+  expect(writes[0].body).toMatchObject({ catalog_path: tablePath, requirement_version: '1', recipient_id: '33', recipient_type: 'user', action: 'read', expiry_mode: 'until_revoked', expires_at: null })
+  expect(writes).toHaveLength(1)
+  await page.getByTestId('source-grant-revoke').click()
+  await page.getByTestId('source-grant-revoke-reason').fill('Read access no longer needed')
+  await page.getByTestId('source-grant-revoke-confirm').click()
+  await expect(history).toContainText('已撤销')
+  await expect(page.getByTestId('source-grant-revoke')).toHaveCount(0)
+  expect(writes).toHaveLength(2)
+  expect(reads.every(path => path.startsWith('/api/v1/system/'))).toBe(true)
+})
+test('unknown issuance retains one immutable command and only retries after confirmation', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent', grantFailure: true })
+  await page.goto('/engines/2?tab=data-authorization'); await grantDraft(page); await confirmGrant(page)
+  await expect(page.getByRole('dialog', { name: '授予读取权限', exact: true })).toContainText('签发结果未知')
+  expect(writes).toHaveLength(1)
+  await confirmGrant(page)
+  await expect(page.getByTestId('engine-source-grants')).toContainText('已找回原命令的签发历史')
+  expect(writes).toHaveLength(2); expect(writes[1].body).toEqual(writes[0].body)
+})
+test('Catalog approval never exposes independent issuance', async ({ page }) => {
+  await fixture(page, { allowed: grantPermissions, existing: 'catalog' })
+  await page.goto('/engines/2?tab=data-authorization')
+  await expect(page.getByTestId('engine-data-authorization')).toContainText('Catalog 业务确认')
+  await expect(page.getByTestId('source-grant-open')).toHaveCount(0)
+})
+test('changing to an unauthorized recipient type keeps the form open and never calls its API', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('source-grant-open').click()
+  await page.getByTestId('source-grant-recipient-type').click()
+  await page.getByRole('option', { name: '部门', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '授予读取权限', exact: true })).toContainText('读取此类接收方候选需要')
+  await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
+  expect(writes).toEqual([])
 })

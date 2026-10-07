@@ -176,7 +176,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(fmt.Errorf("注册引擎授权管理委派路由失败: %w", err))
 	}
 	if err := RegisterEngineAccessGrantRoutes(api, runtime, &EngineAccessGrantHandler{
-		service: engineaccess.NewService(engineaccess.NewRepository(db), nil),
+		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability).
+			WithIndependentTargetVerifier(service.NewIndependentGrantTargetVerifier(engineService)),
 	}); err != nil {
 		panic(fmt.Errorf("register engine grant routes: %w", err))
 	}

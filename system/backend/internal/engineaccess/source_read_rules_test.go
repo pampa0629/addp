@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,5 +98,16 @@ func TestSourceReadObservationFailsClosedForPartialOrMixedResults(t *testing.T) 
 	}
 	if result, err := sourceReadObservation(paths, base); err != nil || !result.Covered {
 		t.Fatalf("complete set=%+v %v", result, err)
+	}
+}
+
+func TestSourceReadRulesConsumeOnlyCanonicalGrantFacts(t *testing.T) {
+	if strings.Contains(currentSourceReadRulesSQL, "fulfillment_outcomes") || strings.Contains(currentSourceReadRulesSQL, "binding->") {
+		t.Fatal("source read rules must not reconstruct authorization from Catalog receipt history")
+	}
+	for _, fact := range []string{"g.catalog_path = target.path", "g.recipient_type", "g.recipient_id", "g.action = 'read'", "g.expires_at", "engine_access_grant_revocations"} {
+		if !strings.Contains(currentSourceReadRulesSQL, fact) {
+			t.Fatalf("canonical Grant observation lost %s", fact)
+		}
 	}
 }

@@ -301,7 +301,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if err := NewRepository(tx).lockFulfillmentTarget(ctx, runtime.TenantID, path); err != nil {
 				t.Fatal(err)
 			}
-			if err := tx.Create(&fulfillmentGrant{RequestID: id}).Error; err != nil {
+			if err := tx.Create(&sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog}).Error; err != nil {
 				t.Fatal(err)
 			}
 			request := sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}}
@@ -331,6 +331,88 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			stopDead()
 			if result, err := repo.readCurrentSourceRules(deadCtx, request); result != nil || err == nil {
 				t.Fatalf("database failure became Allow=%+v %v", result, err)
+			}
+		})
+		t.Run("independent origins use the same rules and withdrawal without receipts", func(t *testing.T) {
+			// Storage/consumer contract only: no public independent command or
+			// permission is claimed. These facts belong to this disposable fixture.
+			for _, kind := range []string{"user", "department", "project_group"} {
+				t.Run(kind, func(t *testing.T) {
+					user, _ := newUser(t, time.Hour)
+					recipientID := user.PrincipalID
+					switch kind {
+					case "department":
+						d, err := organizations.CreateDepartment(ctx, iam.CreateDepartmentInput{TenantID: runtime.TenantID, ActorPrincipalID: adminID, Code: "independent_department", Name: "Independent department"})
+						if err != nil {
+							t.Fatal(err)
+						}
+						if _, err := organizations.CreateDepartmentMembership(ctx, iam.CreateDepartmentMembershipInput{TenantID: runtime.TenantID, DepartmentID: d.ID, TenantMembershipID: user.MembershipID, ActorPrincipalID: adminID, MembershipType: "primary", RelationRole: "member"}); err != nil {
+							t.Fatal(err)
+						}
+						recipientID = d.ID
+					case "project_group":
+						g, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: runtime.TenantID, ActorPrincipalID: adminID, Code: "independent_group", Name: "Independent group"})
+						if err != nil {
+							t.Fatal(err)
+						}
+						if _, err := organizations.CreateProjectGroupMembership(ctx, iam.CreateProjectGroupMembershipInput{TenantID: runtime.TenantID, ProjectGroupID: g.ID, TenantMembershipID: user.MembershipID, ActorPrincipalID: adminID, RelationRole: "member"}); err != nil {
+							t.Fatal(err)
+						}
+						recipientID = g.ID
+					}
+					user = refresh(t, user)
+					path := engineplugin.TabularItemPath(base.Path.EngineID, "schema", "public", "independent_"+kind)
+					encoded, err := shared.EncodeSharingTarget(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					actorType, actorContext := iam.PrincipalTypeUser, iam.ContextTypeTenant
+					if err := repo.transaction(ctx, func(tx *Repository) error {
+						_, err := tx.changeApprovalRequirement(ctx, approvalRequirementChange{TenantID: runtime.TenantID, Path: path, Mode: approvalModeIndependent, Reason: "Explicit storage fixture arrangement",
+							Audit: iam.AuditMetadata{PrincipalID: &actor.PrincipalID, PrincipalType: &actorType, ContextType: &actorContext, TenantID: &runtime.TenantID}}, func(*Repository) error { return nil })
+						return err
+					}); err != nil {
+						t.Fatal(err)
+					}
+					if result := read(t, user, path); result.Covered {
+						t.Fatal("approval configuration alone granted access")
+					}
+					reason := "Explicit independent storage fixture"
+					row := &sourceGrant{RequestID: uuid.New(), ApprovalMode: approvalModeIndependent,
+						TenantID: runtime.TenantID, EngineID: int64(path.EngineID), CatalogPath: encoded,
+						RecipientType: kind, RecipientID: recipientID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked,
+						RequirementVersion: 1, OperatorPrincipalID: actor.PrincipalID, OperatorMembershipID: actor.MembershipID,
+						OperatorAuthorizationVersion: actor.AuthorizationVersion, Reason: &reason}
+					bad := *row
+					bad.RequirementVersion++
+					if err := repo.insertSourceGrant(ctx, &bad); err == nil {
+						t.Fatal("mismatched independent requirement accepted")
+					}
+					if err := repo.insertSourceGrant(ctx, row); err != nil {
+						t.Fatal(err)
+					}
+					var receipts int64
+					if err := db.Model(&fulfillmentOutcome{}).Where("request_id = ?", row.RequestID).Count(&receipts).Error; err != nil || receipts != 0 {
+						t.Fatalf("independent grant fabricated receipt: %d %v", receipts, err)
+					}
+					if row.CatalogRequestID != nil || row.GrantedAt.IsZero() {
+						t.Fatalf("invalid independent projection: %+v", row)
+					}
+					if _, err := repo.findFulfillmentGrant(ctx, row.RequestID); !errors.Is(err, gorm.ErrRecordNotFound) {
+						t.Fatalf("independent issuance was exposed as Catalog fulfillment history: %v", err)
+					}
+					if result := read(t, user, path); !result.Covered {
+						t.Fatalf("canonical independent Allow missing: %+v", result)
+					}
+					outsider, _ := newUser(t, time.Hour)
+					if read(t, outsider, path).Covered {
+						t.Fatal("independent grant leaked to unrelated user")
+					}
+					revoke(t, row.RequestID)
+					if result := read(t, user, path); result.Covered || result.Targets[0].Reason != "no_grant" {
+						t.Fatalf("independent withdrawal failed: %+v", result)
+					}
+				})
 			}
 		})
 		exerciseSourceReadCredentials(t, db, base.Path, newUser, grant, roles, runtime.TenantID, adminID, deny, revoke)

@@ -2,9 +2,16 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
-import { serializeEngineApprovalInitialization } from '../src/utils/engineApprovalInitialization.mjs'
+import { serializeEngineApprovalInitialization, serializeEngineCatalogTarget } from '../src/utils/engineApprovalInitialization.mjs'
 
 const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ term: 'table', kind: 'table', name: 'a"b/中文' }] }
+test('direct grants reuse the same structured target serializer', () => {
+  assert.match(serializeEngineCatalogTarget(target), /"engine_id":9007199254740993,/)
+  const root = resolve(import.meta.dirname, '../../..')
+  const grant = readFileSync(resolve(root, 'system/frontend/src/utils/independentGrant.js'), 'utf8')
+  assert.match(grant, /serializeEngineCatalogTarget.*from '@common-ui'/)
+  assert.doesNotMatch(grant, /Number\(.*engine_id/)
+})
 test('both explicit modes use one lossless numeric path serializer', () => {
   for (const mode of ['catalog', 'independent']) {
     const body = serializeEngineApprovalInitialization(target, mode, ' Reason "quoted" ')

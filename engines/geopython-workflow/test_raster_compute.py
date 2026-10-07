@@ -17,6 +17,7 @@ from operators.raster_compute import (
     raster_resample, raster_reproject, raster_clip, raster_mosaic,
     raster_band_math, raster_statistics, raster_histogram, raster_build_overviews, validate_cog,
     raster_align, raster_stack, raster_select_bands,
+    _classification_rules, _reclassify,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -52,6 +53,157 @@ def create_raster(path, array, transform=(0, 1, 0, 4, 0, -1), crs='EPSG:4326', n
         band = ds.GetRasterBand(index); band.SetNoDataValue(nodata); band.WriteRaster(0, 0, values.shape[1], values.shape[0], values.astype(np.float64).tobytes(), buf_type=gdal.GDT_Float64)
     ds = None
     return path
+
+
+@pytest.mark.parametrize('rules', [
+    None, {}, [], '[]', [1], [None],
+    [{'value': 1}], [{'value': 1, 'class': 2, 'extra': 3}],
+    [{'min': 1, 'class': 2}], [{'min': 2, 'max': 2, 'class': 1}],
+    [{'min': 3, 'max': 2, 'class': 1}],
+    [{'value': True, 'class': 2}], [{'value': '1', 'class': 2}],
+    [{'value': None, 'class': 2}], [{'value': float('nan'), 'class': 2}],
+    [{'value': float('inf'), 'class': 2}], [{'value': 10**400, 'class': 2}],
+    [{'value': 1, 'class': False}], [{'value': 1, 'class': None}],
+    [{'value': 1, 'class': '2'}], [{'value': 1, 'class': float('nan')}],
+    [{'min': False, 'max': 2, 'class': 1}],
+    [{'min': 1, 'max': float('inf'), 'class': 1}],
+    [{'value': 1, 'class': 2}, {'value': 1, 'class': 3}],
+    [{'min': 0, 'max': 2, 'class': 1}, {'min': 1, 'max': 3, 'class': 2}],
+    [{'min': 0, 'max': 2, 'class': 1}, {'value': 0, 'class': 2}],
+    [{'min': 0, 'max': 2, 'class': 1}, {'value': 1, 'class': 2}],
+    [{'min': None, 'max': None, 'class': 1}, {'value': 1, 'class': 2}],
+])
+def test_reclassify_rejects_invalid_rules(rules):
+    with pytest.raises(ValueError):
+        _classification_rules(rules)
+
+
+@pytest.mark.parametrize('unmatched', ['nodata', 'keep'])
+def test_reclassify_boundaries_unordered_rules_and_source_hash(tmp_path, unmatched):
+    values = np.array([[-2, -1, 0, 1, 2, 3, 4, 5, -9999, np.nan, np.inf]])
+    path = create_raster(tmp_path / 'classes.tif', values)
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    rules = [{'value': 2, 'class': 0}, {'min': 4, 'max': None, 'class': 9},
+             {'min': 0, 'max': 2, 'class': 10}, {'min': None, 'max': -1, 'class': -5}]
+    expected = np.array([[-5, -1 if unmatched == 'keep' else np.nan, 10, 10, 0,
+                          3 if unmatched == 'keep' else np.nan, 9, 9, np.nan, np.nan, np.nan]])
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        for ordered in [rules, list(reversed(rules))]:
+            classified = _reclassify(source, ordered, unmatched=unmatched)
+            dataset = gdal.Open(str(classified.path))
+            assert dataset.RasterCount == 1
+            assert dataset.GetGeoTransform() == (0, 1, 0, 4, 0, -1)
+            np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1)), expected, equal_nan=True)
+            assert np.isnan(dataset.GetRasterBand(1).GetNoDataValue())
+            dataset = None
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize('transform,crs', [(None, ''), ((3, 2, .5, 7, -.25, -2), 'EPSG:3857')])
+def test_reclassify_selected_band_validity_and_cog(tmp_path, transform, crs):
+    data = np.array([[0, 1, 2, 3], [4, 5, -9999, 7]], dtype=float)
+    alpha = np.array([[128, 0, 255, np.nan], [255, 255, 255, 255]], dtype=float)
+    path = create_raster(tmp_path / 'validity.tif', np.stack([data * 2, data, alpha]), transform, crs)
+    dataset = gdal.Open(str(path), gdal.GA_Update)
+    dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'):
+        dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+    dataset.GetRasterBand(2).GetMaskBand().WriteRaster(0, 0, 4, 2, bytes([255]*4 + [0,255,255,255]))
+    dataset = None
+    target = tmp_path / 'result.cog.tif'
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        result = _reclassify(source, [{'min': None, 'max': None, 'class': 0}], unmatched='keep', band=2)
+        facts = raster_info(result)
+        assert facts['transform'] == (list(transform) if transform else [])
+        assert bool(facts['crs']) == bool(crs)
+        saved = raster_save(result, target_plan(target), profile='cog', blocksize=128)
+        assert saved['size_bytes'] == target.stat().st_size > 0
+        reloaded = raster_load(source_plan(target))
+        assert validate_cog(reloaded)['valid']
+        dataset = gdal.Open(str(reloaded.path))
+        expected = np.array([[0, np.nan, 0, np.nan], [np.nan, 0, np.nan, 0]])
+        np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1)), expected, equal_nan=True)
+        assert dataset.GetRasterBand(1).DataType == gdal.GDT_Float64
+        dataset = None
+        with pytest.raises(ValueError, match='Alpha'):
+            _reclassify(source, [{'value': 1, 'class': 1}], unmatched='nodata', band=3)
+
+
+def test_reclassify_binary_lookup_matches_independent_oracle_across_blocks(tmp_path, monkeypatch):
+    import operators.raster_compute as compute
+    values = np.random.default_rng(19).uniform(-100, 100, (513, 1025))
+    values[0, 0] = -9999
+    rules = [{'min': float(lo), 'max': float(lo + .25), 'class': index}
+             for index, lo in enumerate(np.arange(-100, 100, 1))]
+    rules += [{'value': 0.5, 'class': -1}]
+    values[512, 1024] = .5
+    expected = np.full(values.shape, np.nan)
+    for rule in rules:
+        matched = values == rule['value'] if 'value' in rule else (values >= rule['min']) & (values < rule['max'])
+        expected[matched & (values != -9999)] = rule['class']
+    path = create_raster(tmp_path / 'blocks.tif', values)
+    windows = []
+    read = compute._read_values
+    def tracked_read(band, x, y, width, height):
+        windows.append((width, height))
+        return read(band, x, y, width, height)
+    monkeypatch.setattr(compute, '_read_values', tracked_read)
+    with raster_workspace():
+        result = _reclassify(raster_load(source_plan(path)), list(reversed(rules)), unmatched='nodata')
+        dataset = gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1)), expected, equal_nan=True)
+        dataset = None
+    assert len(windows) == 6 and all(width <= 512 and height <= 512 for width, height in windows)
+
+
+def test_reclassify_explicit_policy_and_no_public_registration(raster_file):
+    assert 'raster_reclassify' not in {operator['id'] for operator in list_operators()}
+    with raster_workspace():
+        source = raster_load(source_plan(raster_file))
+        with pytest.raises(TypeError, match='unmatched'):
+            _reclassify(source, [{'value': 1, 'class': 1}])
+        with pytest.raises(ValueError, match='unmatched'):
+            _reclassify(source, [{'value': 1, 'class': 1}], unmatched='invalid')
+        for band in [0, True, 1.5, 3]:
+            with pytest.raises(ValueError, match='band'):
+                _reclassify(source, [{'value': 1, 'class': 1}], unmatched='nodata', band=band)
+
+
+def test_reclassify_adjacent_intervals_and_float_boundaries(tmp_path):
+    values = np.array([[np.nextafter(0., -np.inf), 0, np.nextafter(1., -np.inf),
+                        1, np.nextafter(1., np.inf), np.nextafter(2., -np.inf), 2]])
+    path = create_raster(tmp_path / 'edges.tif', values)
+    rules = [{'min': 0, 'max': 1, 'class': 10}, {'min': 1, 'max': 2, 'class': 20},
+             {'value': 2, 'class': 30}]
+    with raster_workspace():
+        result = _reclassify(raster_load(source_plan(path)), rules, unmatched='nodata')
+        dataset = gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1)),
+                                   [[np.nan, 10, 10, 20, 20, 20, 30]], equal_nan=True)
+        dataset = None
+
+
+@pytest.mark.parametrize('unmatched', ['nodata', 'keep'])
+def test_reclassify_all_invalid_pixels_remain_invalid(tmp_path, unmatched):
+    path = create_raster(tmp_path / 'invalid.tif', np.array([[-9999, np.nan, np.inf, -np.inf]]))
+    with raster_workspace():
+        result = _reclassify(raster_load(source_plan(path)),
+                            [{'min': None, 'max': None, 'class': 1}], unmatched=unmatched)
+        stats = raster_statistics(result)
+        assert stats['valid_count'] == 0 and stats['invalid_count'] == 4
+
+
+def test_reclassify_rejects_complex_band(tmp_path):
+    path = tmp_path / 'complex.tif'
+    dataset = gdal.GetDriverByName('GTiff').Create(str(path), 1, 1, 1, gdal.GDT_CFloat64)
+    dataset.GetRasterBand(1).WriteRaster(0, 0, 1, 1, np.array([1 + 2j], dtype=np.complex128).tobytes(),
+                                       buf_type=gdal.GDT_CFloat64)
+    dataset = None
+    with raster_workspace():
+        with pytest.raises(ValueError, match='Complex'):
+            _reclassify(raster_load(source_plan(path)), [{'value': 1, 'class': 2}], unmatched='nodata')
 
 
 @pytest.fixture

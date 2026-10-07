@@ -506,13 +506,14 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
+	@bash -n scripts/dev/document-workflow.sh
 	@bash -n scripts/dev/pointcloud-workflow.sh
 	@bash -n scripts/dev/spark-workflow.sh
 	@bash -n scripts/dev/geopython-workflow.sh
 	@bash -n scripts/dev/gdal-env.sh
 	@bash -n scripts/dev/raster-mosaic-runtime.sh
 	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh; do bash -n "$$script" || exit 1; done
-	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/gdal-native-lifecycle_test.py scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/model3d-linux-images_test.py
+	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/document-native-lifecycle_test.py scripts/test/gdal-native-lifecycle_test.py scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/model3d-linux-images_test.py
 	@bash scripts/test/infra-port-resolution.sh
 	@bash scripts/test/dev-lifecycle-and-build.sh
 	@cd common && go test ./schema ./repository ./dataprotection/projectionstore

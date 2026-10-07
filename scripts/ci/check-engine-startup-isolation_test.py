@@ -32,7 +32,7 @@ class EngineStartupIsolationCheckTest(unittest.TestCase):
       ;;
 esac
 pointcloud-workflow common-python/addp_common/module_lifecycle.py
-document-workflow common-python/addp_common/module_lifecycle.py
+document-workflow.sh
 """,
             "docker-compose.yml": f"""services:
   manager-backend:
@@ -68,7 +68,8 @@ func main() {
 }
 """,
             "common/client/system_service.go": "func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) *ModuleRegistrationLifecycle { return nil }\n",
-            "scripts/dev/restart.sh": "pointcloud-workflow document-workflow common-python/addp_common/module_lifecycle.py\n",
+            "scripts/dev/restart.sh": "pointcloud-workflow document-workflow.sh\n",
+            "scripts/dev/document-workflow.sh": "addp_sync_python_dependencies addp_python_dependency_fingerprint\n",
             "engines/pointcloud-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
             "engines/document-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
             "common-python/addp_common/module_lifecycle.py": "\n",
@@ -156,14 +157,20 @@ registrationDone := client.RegisterAndHeartbeat(ctx, request)
             errors,
         )
 
-    def test_rejects_document_fingerprint_missing_common_runtime_module(self) -> None:
+    def test_rejects_document_restart_without_native_helper(self) -> None:
         root = self.repository()
         (root / "scripts/dev/restart.sh").write_text("#!/bin/bash\n", encoding="utf-8")
         errors = CHECKER.validate(root)
         self.assertTrue(
-            any("module_lifecycle.py" in error and "restart.sh" in error for error in errors),
+            any("native helper" in error and "restart.sh" in error for error in errors),
             errors,
         )
+
+    def test_rejects_document_native_helper_without_dependency_fingerprint(self) -> None:
+        root = self.repository()
+        (root / "scripts/dev/document-workflow.sh").write_text("addp_sync_python_dependencies\n")
+        errors = CHECKER.validate(root)
+        self.assertTrue(any("addp_python_dependency_fingerprint" in error for error in errors), errors)
 
     def test_rejects_document_image_missing_common_runtime_module(self) -> None:
         root = self.repository()

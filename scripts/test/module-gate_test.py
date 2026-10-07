@@ -340,6 +340,21 @@ class ModuleGateTest(unittest.TestCase):
         self.assertEqual("kept", environment["UNRELATED_TEST_FLAG"])
         self.assertEqual("off", environment["GOWORK"])
 
+    def test_platform_environment_excludes_t2_opt_ins_but_t2_retains_them(self) -> None:
+        steps = MODULE.plan_module(self.repository, "sample")
+        base = {
+            "ADDP_SYSTEM_POSTGRES_TEST_DSN": "postgres://system-test",
+            "SAMPLE_POSTGRES_TEST_DSN": "postgres://sample-test",
+            "ADDP_POSTGRES_INTEGRATION": "1",
+            "UNRELATED_TEST_FLAG": "kept",
+        }
+        environment = MODULE.step_environment(steps[0], base)
+        self.assertNotIn("ADDP_SYSTEM_POSTGRES_TEST_DSN", environment)
+        self.assertNotIn("SAMPLE_POSTGRES_TEST_DSN", environment)
+        self.assertNotIn("ADDP_POSTGRES_INTEGRATION", environment)
+        self.assertEqual("kept", environment["UNRELATED_TEST_FLAG"])
+        self.assertEqual(base, MODULE.step_environment(steps[-1], base))
+
     def test_rejects_unknown_module(self) -> None:
         with self.assertRaisesRegex(MODULE.ModuleGateError, "unknown MODULE"):
             MODULE.plan_module(self.repository, "missing")

@@ -15,7 +15,7 @@ engines/
 ├── math-workflow/    # 数学工作流参考实现，默认端口 8089，开发环境自动启动服务但需手动注册
 ├── model3d-workflow/ # 三维模型转换运行时，默认端口 8101，开发环境自动启动并自注册，需配置 MODEL3D_CONVERTER_BIN 指向可执行文件路径
 ├── pointcloud-workflow/ # 点云处理运行时，默认端口 8102；绑定 engine runtime 内部 PDAL 后自注册，POINTCLOUD_PDAL_BIN 不指向宿主机全局命令
-├── document-workflow/ # 文档转换运行时，默认端口 8105；镜像内固定 LibreOffice 与字体
+├── document-workflow/ # 文档转换运行时，默认端口 8105；开发态私有官方 LibreOffice 与字体；生产镜像保留隔离
 ├── supermap-workflow/ # 超图 iObjects C++ 工作流运行时，默认端口 8103；通过 Docker 绑定 SuperMap C++ SDK 和许可，不提交 SDK 到仓库
 ├── jupyter/          # 无头 Notebook Runtime API，默认端口 8097
 ├── duckdb/           # DuckDB 联邦查询 Runtime，默认端口 8104

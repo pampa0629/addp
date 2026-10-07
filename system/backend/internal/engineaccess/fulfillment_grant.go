@@ -11,17 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
-
-// Issuance history references the immutable accepted binding. It is NOT a
-// current access decision, a token, or a copy of Catalog's business approval.
-type fulfillmentGrant struct {
-	RequestID uuid.UUID `gorm:"type:uuid;primaryKey"`
-	GrantedAt time.Time
-}
-
-func (fulfillmentGrant) TableName() string { return "system.engine_access_grants" }
 
 // Public failures reference the same arbitration sentinels, not a second path.
 var (
@@ -30,7 +20,7 @@ var (
 	ErrFulfillmentBindingConflict = errFulfillmentBinding
 )
 
-func grantHistory(row *fulfillmentGrant) *shared.SharingFulfillmentGrant {
+func grantHistory(row *sourceGrant) *shared.SharingFulfillmentGrant {
 	if row == nil {
 		return nil
 	}
@@ -54,20 +44,20 @@ func (s *Service) ResolveFulfillmentGrant(ctx context.Context, actor Fulfillment
 	return &shared.SharingFulfillmentGrantLookup{Found: row != nil, Grant: grantHistory(row)}, nil
 }
 
-func (r *Repository) findFulfillmentGrant(ctx context.Context, id uuid.UUID) (*fulfillmentGrant, error) {
-	var grant fulfillmentGrant
-	if err := r.db.WithContext(ctx).Where("request_id = ?", id).Take(&grant).Error; err != nil {
+func (r *Repository) findFulfillmentGrant(ctx context.Context, id uuid.UUID) (*sourceGrant, error) {
+	var grant sourceGrant
+	if err := r.db.WithContext(ctx).Where("request_id = ? AND approval_mode = ? AND catalog_request_id = ?", id, approvalModeCatalog, id).Take(&grant).Error; err != nil {
 		return nil, err
 	}
 	return &grant, nil
 }
 
-func (r *Repository) readFulfillmentGrant(ctx context.Context, request fulfillmentRequest) (*fulfillmentGrant, error) {
+func (r *Repository) readFulfillmentGrant(ctx context.Context, request fulfillmentRequest) (*sourceGrant, error) {
 	path, binding, err := request.encode()
 	if err != nil {
 		return nil, err
 	}
-	var result *fulfillmentGrant
+	var result *sourceGrant
 	err = r.readCommitted(ctx, func(tx *Repository) error {
 		row, err := tx.findFulfillment(ctx, request, path, binding)
 		if err != nil {
@@ -90,7 +80,7 @@ func (r *Repository) readFulfillmentGrant(ctx context.Context, request fulfillme
 // expose neither history nor binding errors until current caller checks pass.
 func (s *Service) resolveAcceptedGrant(ctx context.Context, actor FulfillmentRuntimeActor, id uuid.UUID,
 	binding shared.SharingFulfillmentBinding,
-) (*fulfillmentGrant, error) {
+) (*sourceGrant, error) {
 	request, err := recoveryRequest(actor, id, binding)
 	if err != nil {
 		return nil, err
@@ -125,7 +115,7 @@ func grantWindow(row *fulfillmentOutcome, now time.Time) error {
 // checks only the current machine caller and the complete original binding.
 func (s *Service) writeAcceptedGrant(ctx context.Context, actor FulfillmentRuntimeActor, id uuid.UUID,
 	binding shared.SharingFulfillmentBinding,
-) (*fulfillmentGrant, error) {
+) (*sourceGrant, error) {
 	request, err := recoveryRequest(actor, id, binding)
 	if err != nil {
 		return nil, err
@@ -227,9 +217,9 @@ func (s *Service) writeAcceptedGrant(ctx context.Context, actor FulfillmentRunti
 		if err := check(); err != nil {
 			return err
 		}
-		grant := &fulfillmentGrant{RequestID: id}
+		grant := &sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog}
 		// The insert trigger sets database wall time and checks the window again.
-		if err := tx.db.WithContext(ctx).Clauses(clause.Returning{}).Create(grant).Error; err != nil {
+		if err := tx.insertSourceGrant(ctx, grant); err != nil {
 			return err
 		}
 		principalType, contextType := iam.PrincipalTypeServicePrincipal, iam.ContextTypeTenant

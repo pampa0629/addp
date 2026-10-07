@@ -307,6 +307,23 @@ other = "仅供 Catalog 当前租户运行身份调用源读取授权首次受�
 [permissions.system.engine_access_grant.revoke.name]
 other = "撤销指定源数据授权"
 
+[permissions.system.engine_access_grant.create.name]
+other = "直接授予源数据读取权限"
+[permissions.system.engine_access_grant.create.description]
+other = "结合有效引擎管理委派，对独立批准的精确普通表显式签发只读授权；不要求 Catalog，不自动取得数据读取权"
+[permissions.system.engine_access_grant.read.name]
+other = "查看源数据授权历史"
+[permissions.system.engine_access_grant.read.description]
+other = "结合有效引擎管理委派查看签发、期限和撤销历史；查看历史不授予办理或数据读取权"
+[system.engine_access_grant_command_conflict]
+other = "本次参数与原授权签发记录不一致，请查看原记录"
+[system.engine_access_grant_approval_changed]
+other = "批准方式或版本已变化，未签发新授权；请刷新目标信息"
+[system.engine_access_grant_expiry_elapsed]
+other = "授权期限已不在未来，未签发新授权；请明确选择有效期限"
+[system.engine_access_grant_source_unavailable]
+other = "暂时无法核验源表结构，未签发新授权；请检查引擎连接"
+
 [permissions.system.engine_access_deny.create.name]
 other = "建立源读取拒绝规则"
 [permissions.system.engine_access_deny.create.description]

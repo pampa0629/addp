@@ -1,0 +1,21 @@
+{
+  "version": "26.8.0.3",
+  "packages": {
+    "Darwin-arm64": {
+      "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/26.8.0.3/mac/aarch64/LibreOffice_26.8.0.3_MacOS_aarch64.dmg",
+      "sha256": "8858d8058da4f862f47559486814e65efc27294da67c5e4bb56b006b1ee59f89"
+    },
+    "Darwin-x86_64": {
+      "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/26.8.0.3/mac/x86_64/LibreOffice_26.8.0.3_MacOS_x86-64.dmg",
+      "sha256": "2dcbce4894e01bc1ecd594658e2cbda70ff7bfcd0b310f35d38887797172d09e"
+    },
+    "Linux-x86_64": {
+      "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/26.8.0.3/deb/x86_64/LibreOffice_26.8.0.3_Linux_x86-64_deb.tar.gz",
+      "sha256": "d0a6031a3837e48f9854e6d2da6489b9fadbd814afa4741fa32a197741663a22"
+    }
+  },
+  "font": {
+    "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+    "sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b"
+  }
+}

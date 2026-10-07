@@ -54,7 +54,7 @@ model3d-workflow-engine MODEL3D_WORKFLOW_PORT 8101
 pointcloud-workflow-engine POINTCLOUD_WORKFLOW_PORT 8102
 supermap-workflow SUPERMAP_WORKFLOW_PORT 8103
 duckdb DUCKDB_RUNTIME_PORT 8104
-document-workflow DOCUMENT_WORKFLOW_PORT 8105
+document-workflow-engine DOCUMENT_WORKFLOW_PORT 8105
 raster-mosaic-runtime RASTER_MOSAIC_RUNTIME_PORT 8291
 EOF
 }
@@ -83,7 +83,7 @@ addp_dev_owned_listener() {
   local name="$1" port="$2" pidfile owner listener listeners
   pidfile="${ROOT_DIR}/.dev-pids/${name}.pid"
   case "$name" in
-    document-workflow|supermap-workflow)
+    supermap-workflow)
       local container="${name}-engine" labels mapping mode
       labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || return 1
       [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ] || return 1

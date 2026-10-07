@@ -666,6 +666,76 @@ def _numeric_output(grid, count):
     return output
 
 
+def _classification_rules(rules):
+    """Compile disjoint exact values and half-open intervals for binary lookup."""
+    def number(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError('Classification values must be finite numbers')
+        try:
+            result = float(value)
+        except OverflowError as exc:
+            raise ValueError('Classification values must be finite numbers') from exc
+        if not math.isfinite(result):
+            raise ValueError('Classification values must be finite numbers')
+        return result
+
+    if not isinstance(rules, list) or not rules:
+        raise ValueError('rules must be a non-empty array')
+    compiled = []
+    for rule in rules:
+        if not isinstance(rule, dict):
+            raise ValueError('Each classification rule must be an object')
+        if set(rule) == {'value', 'class'}:
+            lower = upper = number(rule['value'])
+            inclusive = True
+        elif set(rule) == {'min', 'max', 'class'}:
+            lower = -math.inf if rule['min'] is None else number(rule['min'])
+            upper = math.inf if rule['max'] is None else number(rule['max'])
+            if lower >= upper:
+                raise ValueError('Classification intervals require min < max')
+            inclusive = False
+        else:
+            raise ValueError('Rule must specify value/class or min/max/class only')
+        compiled.append((lower, upper, number(rule['class']), inclusive))
+    compiled.sort(key=lambda item: (item[0], item[1]))
+    for previous, current in zip(compiled, compiled[1:]):
+        if previous[1] > current[0] or (previous[1] == current[0] and previous[3]):
+            raise ValueError('Classification rules must not overlap or duplicate')
+    lower, upper, classes, inclusive = zip(*compiled)
+    return (np.asarray(lower), np.asarray(upper), np.asarray(classes), np.asarray(inclusive))
+
+
+def _reclassify(input_raster, rules, *, unmatched, band=1):
+    """Internal preparation: callers must explicitly choose unmatched handling."""
+    if unmatched not in ('nodata', 'keep'):
+        raise ValueError('unmatched must be nodata or keep')
+    lower, upper, classes, inclusive = _classification_rules(rules)
+    dataset = _open(input_raster)
+    selected = _band(dataset, band)
+    if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise ValueError('Alpha is coverage, not a classification data band')
+    output = _numeric_output(dataset, 1)
+    destination = output.GetRasterBand(1)
+    for x, y, arrays, masks in _blocks(dataset, [band]):
+        source, valid = arrays[0], masks[0]
+        values = source[valid]
+        indices = np.searchsorted(lower, values, side='right') - 1
+        positions = np.maximum(indices, 0)
+        matched = (indices >= 0) & ((values < upper[positions]) |
+                                    (inclusive[positions] & (values == upper[positions])))
+        classified = values.copy() if unmatched == 'keep' else np.full(values.shape, np.nan)
+        classified[matched] = classes[positions[matched]]
+        result = np.full(source.shape, np.nan)
+        result[valid] = classified
+        destination.WriteRaster(x, y, result.shape[1], result.shape[0], result.tobytes(),
+                                buf_type=gdal.GDT_Float64)
+    destination = None
+    output.FlushCache()
+    path = output.GetDescription()
+    output = None
+    return _raster(path)
+
+
 def _copy_data_bands(sources):
     """Convert coverage to per-band NaN, keeping at most one 512-square band in memory."""
     output = _numeric_output(sources[0][0], sum(len(indices) for _, indices in sources))

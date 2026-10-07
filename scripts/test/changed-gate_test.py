@@ -68,6 +68,16 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common/client/system.go"]),
         )
 
+    def test_changed_platform_uses_the_same_t2_environment_isolation(self) -> None:
+        step = MODULE.plan_changed(self.repository, ["sample/backend/example.go"])[0]
+        self.assertEqual(MODULE.MODULE_GATE.platform_step(self.repository), step)
+        environment = MODULE.MODULE_GATE.step_environment(step, {
+            "ADDP_SYSTEM_POSTGRES_TEST_DSN": "postgres://test",
+            "ADDP_POSTGRES_INTEGRATION": "1",
+            "UNRELATED_TEST_FLAG": "kept",
+        })
+        self.assertEqual({"UNRELATED_TEST_FLAG": "kept"}, environment)
+
     def test_owned_compose_change_selects_declared_gate_owner(self) -> None:
         path = self.repository / "scripts/test/sample-graph-gate.sh"
         path.parent.mkdir(parents=True, exist_ok=True)

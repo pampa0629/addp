@@ -1098,6 +1098,41 @@
       "versionConflict": "Another administrator updated the policy; the latest version has been loaded"
     },
     "engine": {
+      "sourceGrants": {
+        "history": "Read-grant records",
+        "boundary": "Approval mode determines who approves; a grant specifies who may read. These are issuance and revocation records, not a current access decision. Reading still requires function permission, current membership, validity and deny checks.",
+        "create": "Grant read access",
+        "recipient": "Recipient",
+        "recipientType": "Recipient type",
+        "types": {
+          "user": "Account",
+          "department": "Department",
+          "project_group": "Project group"
+        },
+        "expiry": "Read validity",
+        "at_time": "Specific expiration time",
+        "until_revoked": "Valid until revoked",
+        "reason": "Reason",
+        "state": "Record status",
+        "states": {
+          "issued": "Issued",
+          "expired": "Expired",
+          "revoked": "Revoked"
+        },
+        "command": "Issuance command ID",
+        "revoke": "Revoke grant",
+        "readRequired": "Reading grant records requires the grant-read permission and an effective delegation for this engine.",
+        "candidatesRequired": "Recipient selection requires the corresponding membership or organization-read permission. Contact an administrator; IDs cannot be entered manually.",
+        "failed": "The outcome is unconfirmed. Refresh to check; an issuance may be retried with its original command. Do not assume access was granted.",
+        "retry": "Retry original command",
+        "confirmBody": "Grant {recipient} read-only access to {target}. Validity: {expiry}. This is not a management delegation and does not grant export or write access.",
+        "created": "Read grant issued. Actual reading still requires the relevant function permission and current access conditions.",
+        "historyRecovered": "Original issuance history recovered, without renewal or reissuance. Check its record status.",
+        "invalid": "Select an eligible recipient, explicit validity and a reason. A specific expiration must be in the future.",
+        "invalidReason": "Enter a revocation reason (up to 2000 characters).",
+        "revokeBoundary": "Only this grant is revoked, without adding a deny. Other effective grants may still permit reading.",
+        "revoked": "This read grant is revoked; issuance history is retained."
+      },
       "dataAuthorization": {
         "title": "Data authorization",
         "boundary": "Approval mode defines how table access is approved. Management delegation defines who may handle grants; a data grant defines who may read. None replaces another.",
@@ -1119,7 +1154,6 @@
         "confirmBody": "Configure {target} to use {mode}. This only sets the approval mode; it does not grant data reading to any account.",
         "saved": "Approval mode saved. No data reading permission has been granted.",
         "failed": "No reliable result was obtained. Refresh to check; this page never automatically retries or claims configuration took effect.",
-        "accessPending": "This page currently configures approval mode. Independent access-grant operations are not yet available. Saving configuration does not change existing data grants.",
         "modes": { "independent": "System independent approval", "catalog": "Catalog business confirmation" },
         "descriptions": {
           "independent": "Approved by a person with independent approval permission and effective engine management delegation. Catalog deployment or cataloging is not required.",

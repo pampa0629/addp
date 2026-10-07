@@ -29,8 +29,7 @@ func TestGrantRevocationRejectsInvalidCommandBeforeDatabase(t *testing.T) {
 
 func TestGrantRevocationUsesNaturalExpiryNotAcceptanceWindow(t *testing.T) {
 	expires := time.Date(2026, 10, 3, 0, 10, 0, 0, time.UTC)
-	window := expires.Add(-5 * time.Minute)
-	outcome := fulfillmentOutcome{ExpiryMode: shared.SharingExpiryAtTime, GrantExpiresAt: &expires, Deadline: &window}
+	grant := sourceGrant{ExpiryMode: shared.SharingExpiryAtTime, ExpiresAt: &expires}
 	for _, tc := range []struct {
 		name string
 		now  time.Time
@@ -42,18 +41,18 @@ func TestGrantRevocationUsesNaturalExpiryNotAcceptanceWindow(t *testing.T) {
 		{"after natural expiry", expires.Add(time.Nanosecond), ErrGrantRevocationExpired},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := checkGrantRevocationExpiry(outcome, tc.now); !errors.Is(err, tc.want) {
+			if err := checkGrantRevocationExpiry(grant, tc.now); !errors.Is(err, tc.want) {
 				t.Fatalf("expiry=%v want=%v", err, tc.want)
 			}
 		})
 	}
-	outcome.ExpiryMode, outcome.GrantExpiresAt = shared.SharingExpiryUntilRevoked, nil
-	if err := checkGrantRevocationExpiry(outcome, expires.Add(100*365*24*time.Hour)); err != nil {
+	grant.ExpiryMode, grant.ExpiresAt = shared.SharingExpiryUntilRevoked, nil
+	if err := checkGrantRevocationExpiry(grant, expires.Add(100*365*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	for _, invalid := range []fulfillmentOutcome{
+	for _, invalid := range []sourceGrant{
 		{}, {ExpiryMode: shared.SharingExpiryAtTime},
-		{ExpiryMode: shared.SharingExpiryUntilRevoked, GrantExpiresAt: &expires},
+		{ExpiryMode: shared.SharingExpiryUntilRevoked, ExpiresAt: &expires},
 	} {
 		if err := checkGrantRevocationExpiry(invalid, expires); err == nil || errors.Is(err, ErrGrantRevocationExpired) {
 			t.Fatalf("invalid immutable expiry was treated as a valid Grant: %v", err)

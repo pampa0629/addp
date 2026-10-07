@@ -179,7 +179,7 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
 
 
 def plan_changed(repository: Path, files: list[str]) -> list:
-    steps = [MODULE_GATE.Step("platform T0", ("make", "test-platform"), repository)]
+    steps = [MODULE_GATE.platform_step(repository)]
     seen = {(steps[0].command, steps[0].cwd)}
     for module in affected_modules(repository, files):
         for step in MODULE_GATE.plan_module(repository, module, include_platform=False):

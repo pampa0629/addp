@@ -32,7 +32,7 @@ show_usage() {
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -model3d-workflow  重启 Model3D Workflow Engine (Python 服务)"
   echo "  -pointcloud-workflow 重启 PointCloud Workflow Engine (原生 Python/PDAL runtime)"
-  echo "  -document-workflow 重启 Document Workflow Engine (Docker runtime)"
+  echo "  -document-workflow 重启 Document Workflow Engine (原生 Python/LibreOffice runtime)"
   echo "  -supermap-workflow 重启 SuperMap Workflow Engine (C++ Docker runtime，需先构建基础镜像)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -agent       重启 Agent Backend (Python 服务)"
@@ -364,93 +364,11 @@ restart_pointcloud_workflow_service() {
     addp_launch_pointcloud_workflow
 }
 
-document_workflow_source_fingerprint() {
-    {
-        printf '%s\n' "document-workflow-image-v1"
-        while IFS= read -r file; do
-            printf '%s %s\n' "$file" "$(git hash-object "$file")"
-        done < <(
-            {
-                printf '%s\n' \
-                    engines/document-workflow/Dockerfile \
-                    engines/document-workflow/requirements.txt \
-                    engines/document-workflow/api_server.py \
-                    engines/document-workflow/operators.py \
-                    common-python/pyproject.toml \
-                    common-python/README.md \
-                    common-python/addp_common/__init__.py \
-                    common-python/addp_common/module_lifecycle.py \
-                    common-python/addp_common/workflow_access.py
-                find common-python/addp_common/client common-python/addp_common/workflow_runtime \
-                    -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
-            } | LC_ALL=C sort
-        )
-    } | git hash-object --stdin
-}
-
-ensure_document_workflow_image() {
-    local image="$1"
-    local fingerprint
-    local current_fingerprint
-    fingerprint="$(document_workflow_source_fingerprint)"
-    current_fingerprint="$(docker image inspect -f '{{ index .Config.Labels "addp.document.source-fingerprint" }}' "$image" 2>/dev/null || true)"
-    if [ "$current_fingerprint" = "$fingerprint" ]; then
-        echo "  Document Workflow Engine 镜像构建输入未变化，复用现有镜像: $image"
-        return 0
-    fi
-    docker build --label "addp.document.source-fingerprint=${fingerprint}" -f engines/document-workflow/Dockerfile -t "$image" .
-}
-
 restart_document_workflow_service() {
-    local port="${DOCUMENT_WORKFLOW_PORT:-8105}"
-    local image="${DOCUMENT_WORKFLOW_IMAGE:-addp-document-workflow-engine:dev}"
-    local source_dir="${DOCUMENT_DATA_HOST_PATH:-${ROOT_DIR}/business/nfs/data}"
-    local container_source_dir="${DOCUMENT_DATA_CONTAINER_PATH:-${ROOT_DIR}/business/nfs/data}"
-    local work_dir="${DOCUMENT_WORK_HOST_PATH:-${ROOT_DIR}/data/document-work}"
-    local system_port="${SYSTEM_BACKEND_PORT:-8180}"
-    command -v docker >/dev/null 2>&1 || { echo "❌ Document Workflow Engine 需要 Docker runtime 承载 LibreOffice"; return 1; }
-    docker rm -f document-workflow-engine >/dev/null 2>&1 || true
-    stop_matching_port_process "$port" "Document Workflow Engine" "python.*api_server\\.py|engines/document-workflow"
-    ensure_document_workflow_image "$image"
-    mkdir -p "$work_dir" .dev-pids
-    docker run -d \
-        --name document-workflow-engine \
-        --label com.docker.compose.project=addp-runtimes \
-        --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
-        --label com.docker.compose.service=document-workflow-engine \
-        --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
-        --read-only \
-        --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
-        --cap-drop=ALL \
-        --security-opt=no-new-privileges \
-        --add-host=host.docker.internal:host-gateway \
-        -p "${port}:8105" \
-        -e PORT=8105 \
-        -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
-        -e DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET="${DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
-        -e DOCUMENT_LIBREOFFICE_BIN=/usr/bin/soffice \
-        -e DOCUMENT_WORK_DIR=/work/document \
-        -e DOCUMENT_CONVERSION_CONCURRENCY="${DOCUMENT_CONVERSION_CONCURRENCY:-1}" \
-        -e DOCUMENT_CONVERSION_TIMEOUT_SECONDS="${DOCUMENT_CONVERSION_TIMEOUT_SECONDS:-600}" \
-        -e DOCUMENT_OBJECT_STORE_LOOPBACK_HOST="${DOCUMENT_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}" \
-        -e RUNTIME_HOST=localhost \
-        -v "${ROOT_DIR}/logs:/app/logs" \
-        -v "${work_dir}:/work/document" \
-        -v "${ROOT_DIR}/engines/document-workflow/api_server.py:/app/api_server.py:ro" \
-        -v "${ROOT_DIR}/engines/document-workflow/operators.py:/app/operators.py:ro" \
-        -v "${source_dir}:${container_source_dir}:ro" \
-        "$image" > .dev-pids/document-workflow-engine.pid
-    local wait_count=0
-    while ! curl -s "http://localhost:${port}/health" | grep -q '"status":"healthy"'; do
-        if ! docker ps --filter "name=^/document-workflow-engine$" --format '{{.Names}}' | grep -qx document-workflow-engine; then
-            docker logs --tail 100 document-workflow-engine 2>&1 || true
-            return 1
-        fi
-        sleep 1
-        wait_count=$((wait_count + 1))
-        [ "$wait_count" -lt 90 ] || { docker logs --tail 100 document-workflow-engine 2>&1 || true; return 1; }
-    done
-    echo "  ✓ Document Workflow Engine Docker runtime 已启动"
+    source "$ROOT_DIR/scripts/dev/document-workflow.sh"
+    addp_prepare_document_workflow || return 1
+    stop_pidfile_process ".dev-pids/document-workflow-engine.pid" "Document Workflow Engine"
+    addp_launch_document_workflow
 }
 
 restart_supermap_workflow_service() {
@@ -578,6 +496,8 @@ if [ "$RESTART_ALL" = true ]; then
     (addp_prepare_geopython_workflow) || exit 1
     source "${SCRIPT_DIR}/pointcloud-workflow.sh"
     (addp_prepare_pointcloud_workflow) || exit 1
+    source "${SCRIPT_DIR}/document-workflow.sh"
+    (addp_prepare_document_workflow) || exit 1
 fi
 
 # 全量停止保留原有注销顺序；局部停止在 Swagger 预检成功后执行。

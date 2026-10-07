@@ -1724,25 +1724,6 @@ start_runtime_duckdb() (
   echo ""
 )
 
-# PointCloud、Document 容器共用部署网络契约；Hosted 必须能访问回环发布的 Infra/Business。
-configure_workflow_container_network() {
-  local public_port="$1" internal_port="$2"
-  WORKFLOW_CONTAINER_HOST=host.docker.internal
-  WORKFLOW_CONTAINER_BIND_HOST=0.0.0.0
-  WORKFLOW_CONTAINER_PORT="$internal_port"
-  WORKFLOW_CONTAINER_NETWORK_ARGS=(--add-host=host.docker.internal:host-gateway -p "${public_port}:${internal_port}")
-  if [ "${ADDP_ONLINE_HOSTED:-}" = "1" ]; then
-    if [ "$(uname -s)" != "Linux" ]; then
-      echo "Hosted Runtime 宿主网络只支持原生 Linux Runner" >&2
-      return 1
-    fi
-    WORKFLOW_CONTAINER_HOST=127.0.0.1
-    WORKFLOW_CONTAINER_BIND_HOST=127.0.0.1
-    WORKFLOW_CONTAINER_PORT="$public_port"
-    WORKFLOW_CONTAINER_NETWORK_ARGS=(--network host)
-  fi
-}
-
 start_runtime_geopython() (
   source "${SCRIPT_DIR}/geopython-workflow.sh"
   addp_prepare_geopython_workflow || exit 1
@@ -1937,129 +1918,14 @@ start_runtime_pointcloud() (
 )
 
 start_runtime_document() (
-  echo -e "${BLUE}Step 4.44/5: 启动 Document Workflow Engine${NC}"
-
-document_workflow_source_fingerprint() {
-  {
-    printf '%s\n' "document-workflow-image-v1"
-    while IFS= read -r file; do
-      printf '%s %s\n' "$file" "$(git hash-object "$file")"
-    done < <(
-      {
-        printf '%s\n' \
-          engines/document-workflow/Dockerfile \
-          engines/document-workflow/requirements.txt \
-          engines/document-workflow/api_server.py \
-          engines/document-workflow/operators.py \
-          common-python/pyproject.toml \
-          common-python/README.md \
-          common-python/addp_common/__init__.py \
-          common-python/addp_common/module_lifecycle.py \
-          common-python/addp_common/workflow_access.py
-        find common-python/addp_common/client common-python/addp_common/workflow_runtime \
-          -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
-      } | LC_ALL=C sort
-    )
-  } | git hash-object --stdin
-}
-
-ensure_document_workflow_image() {
-  local image="$1"
-  local fingerprint
-  local current_fingerprint
-  fingerprint="$(document_workflow_source_fingerprint)"
-  current_fingerprint="$(docker image inspect -f '{{ index .Config.Labels "addp.document.source-fingerprint" }}' "$image" 2>/dev/null || true)"
-  if [ "$current_fingerprint" = "$fingerprint" ]; then
-    echo "Document Workflow Engine 镜像构建输入未变化，复用现有镜像: $image"
-    return 0
-  fi
-  echo "构建 Document Workflow Engine 镜像..."
-  docker build --label "addp.document.source-fingerprint=${fingerprint}" -f engines/document-workflow/Dockerfile -t "$image" .
-}
-
-start_document_workflow_engine_process() {
-  command -v docker >/dev/null 2>&1 || { echo -e "${RED}✗ Document Workflow Engine 需要 Docker runtime 承载 LibreOffice${NC}"; exit 1; }
-  local image="${DOCUMENT_WORKFLOW_IMAGE:-addp-document-workflow-engine:dev}"
-  local source_dir="${DOCUMENT_DATA_HOST_PATH:-${ROOT_DIR}/business/nfs/data}"
-  local container_source_dir="${DOCUMENT_DATA_CONTAINER_PATH:-${ROOT_DIR}/business/nfs/data}"
-  local work_dir="${DOCUMENT_WORK_HOST_PATH:-${ROOT_DIR}/data/document-work}"
-  local system_port="${SYSTEM_BACKEND_PORT:-8180}"
-  configure_workflow_container_network "$DOCUMENT_WORKFLOW_PORT" 8105 || return 1
-  local object_store_host="${DOCUMENT_OBJECT_STORE_LOOPBACK_HOST:-$WORKFLOW_CONTAINER_HOST}"
-  if [ "${ADDP_ONLINE_HOSTED:-}" = "1" ]; then object_store_host="$WORKFLOW_CONTAINER_HOST"; fi
-  ensure_document_workflow_image "$image"
-  addp_dev_remove_owned_container document-workflow-engine
-  mkdir -p "$work_dir" .dev-pids
-  if [ "${ADDP_ONLINE_HOSTED:-}" = "1" ]; then
-    local runtime_uid
-    runtime_uid=$(docker run --rm --entrypoint id "$image" -u) || return 1
-    [[ "$runtime_uid" =~ ^[0-9]+$ ]] && [ "$runtime_uid" -gt 0 ] || return 1
-    sudo -n chown "$runtime_uid" "$work_dir" || return 1
-  fi
-  DOCUMENT_WORKFLOW_PID=$(
-    docker run -d \
-      --name document-workflow-engine \
-      --label com.docker.compose.project=addp-runtimes \
-      --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
-      --label com.docker.compose.service=document-workflow-engine \
-      --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
-      --read-only \
-      --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
-      --cap-drop=ALL \
-      --security-opt=no-new-privileges \
-      "${WORKFLOW_CONTAINER_NETWORK_ARGS[@]}" \
-      -e PORT="${WORKFLOW_CONTAINER_PORT}" \
-      -e WORKFLOW_BIND_HOST="${WORKFLOW_CONTAINER_BIND_HOST}" \
-      -e RUNTIME_PUBLIC_PORT="${DOCUMENT_WORKFLOW_PORT}" \
-      -e SYSTEM_URL="http://${WORKFLOW_CONTAINER_HOST}:${system_port}" \
-      -e DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET="${DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
-      -e DOCUMENT_LIBREOFFICE_BIN=/usr/bin/soffice \
-      -e DOCUMENT_WORK_DIR=/work/document \
-      -e DOCUMENT_CONVERSION_CONCURRENCY="${DOCUMENT_CONVERSION_CONCURRENCY:-1}" \
-      -e DOCUMENT_CONVERSION_TIMEOUT_SECONDS="${DOCUMENT_CONVERSION_TIMEOUT_SECONDS:-600}" \
-      -e DOCUMENT_OBJECT_STORE_LOOPBACK_HOST="${object_store_host}" \
-      -e RUNTIME_HOST=localhost \
-      -v "${ROOT_DIR}/logs:/app/logs" \
-      -v "${work_dir}:/work/document" \
-      -v "${ROOT_DIR}/engines/document-workflow/api_server.py:/app/api_server.py:ro" \
-      -v "${ROOT_DIR}/engines/document-workflow/operators.py:/app/operators.py:ro" \
-      -v "${source_dir}:${container_source_dir}:ro" \
-      "$image"
-  )
-  echo "$DOCUMENT_WORKFLOW_PID" > .dev-pids/document-workflow-engine.pid
-  echo -n "  等待服务就绪"
-  local wait_count=0
-  while ! curl -s "http://localhost:${DOCUMENT_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; do
-    if ! docker ps --filter "name=^/document-workflow-engine$" --format '{{.Names}}' | grep -qx document-workflow-engine; then
-      echo -e " ${RED}✗${NC}"
-      docker logs --tail 100 document-workflow-engine 2>&1 || true
-      exit 1
-    fi
-    sleep 1
-    echo -n "."
-    wait_count=$((wait_count + 1))
-    [ "$wait_count" -lt 90 ] || { echo -e " ${RED}✗${NC}"; docker logs --tail 100 document-workflow-engine 2>&1 || true; exit 1; }
-  done
-  echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Document Workflow Engine 就绪 (http://localhost:${DOCUMENT_WORKFLOW_PORT})${NC}"
-}
-
-if curl -s "http://localhost:${DOCUMENT_WORKFLOW_PORT}/health" 2>/dev/null | grep -q '"service":"document-workflow-engine"'; then
-  DOCUMENT_WORKFLOW_PID=$(cat .dev-pids/document-workflow-engine.pid 2>/dev/null || true)
-  if docker ps --filter "name=^/document-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx document-workflow-engine && curl -s "http://localhost:${DOCUMENT_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; then
-    echo -e "${GREEN}✓ Document Workflow Engine 已在运行 (${DOCUMENT_WORKFLOW_PID:-document-workflow-engine})${NC}"
-  elif ! docker ps --filter "name=^/document-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx document-workflow-engine; then
-    echo -e "${RED}✗ ${DOCUMENT_WORKFLOW_PORT} 上运行着非受管 Document Workflow Engine，请先停止该进程${NC}"
-    exit 1
+  echo -e "${BLUE}Step 4.44/5: 启动原生 Document Workflow Engine${NC}"
+  source "$ROOT_DIR/scripts/dev/document-workflow.sh"
+  addp_prepare_document_workflow || exit 1
+  if addp_dev_owned_listener document-workflow-engine "$DOCUMENT_WORKFLOW_PORT"; then
+    echo '✓ 复用当前工作区的原生 Document 服务'
   else
-    start_document_workflow_engine_process
+    addp_launch_document_workflow || exit 1
   fi
-elif check_service_running "document-workflow-engine" "$DOCUMENT_WORKFLOW_PORT"; then
-  start_document_workflow_engine_process
-else
-  start_document_workflow_engine_process
-fi
-  echo ""
 )
 
 start_runtime_supermap() (
@@ -2762,7 +2628,7 @@ echo "  GeoPython Workflow: logs/geopython-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
 echo "  Model3D Workflow Engine: logs/model3d-workflow-engine.log"
 echo "  PointCloud Workflow Engine: tail -f logs/pointcloud-workflow-engine.log"
-echo "  Document Workflow Engine: docker logs document-workflow-engine"
+echo "  Document Workflow Engine: tail -f logs/document-workflow-engine.log"
 echo "  SuperMap Workflow Engine: docker logs supermap-workflow-engine"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"

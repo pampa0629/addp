@@ -90,6 +90,16 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				t.Fatalf("lookup=%+v %v", lookup, err)
 			}
 			assertCount(t, id, 1)
+			canonical, err := issuer.repository.findFulfillmentGrant(ctx, id)
+			if err != nil || canonical.CatalogRequestID == nil || *canonical.CatalogRequestID != id ||
+				canonical.TenantID != actor.TenantID || canonical.EngineID != int64(base.Path.EngineID) ||
+				canonical.RecipientType != base.RecipientType || canonical.RecipientID != base.RecipientID ||
+				canonical.Action != base.Action || canonical.RequirementVersion != base.RequirementVersion ||
+				canonical.OperatorPrincipalID != base.Operator.PrincipalID || canonical.OperatorMembershipID != base.Operator.MembershipID ||
+				canonical.OperatorAuthorizationVersion != base.Operator.AuthorizationVersion ||
+				!shared.EqualSharingExpiry(canonical.ExpiryMode, canonical.ExpiresAt, base.ExpiryMode, base.ExpiresAt) {
+				t.Fatalf("Catalog rule parameters did not reach the canonical Grant: %+v %v", canonical, err)
+			}
 			changed := base
 			changed.RecipientID++
 			if result, err := issuer.ResolveFulfillmentGrant(ctx, actor, id, changed); result != nil || !errors.Is(err, ErrFulfillmentBindingConflict) {
@@ -144,7 +154,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "engine_access_request|"+id.String()).Error; err != nil {
 				t.Fatal(err)
 			}
-			if err := tx.Create(&fulfillmentGrant{RequestID: id}).Error; err != nil {
+			if err := tx.Create(&sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog}).Error; err != nil {
 				t.Fatal(err)
 			}
 			if g, err := NewRepository(tx).readFulfillmentGrant(ctx, request); g != nil || !errors.Is(err, errFulfillmentBinding) {
@@ -189,7 +199,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				t.Fatalf("single connection lookup=%+v %v", g, err)
 			}
 			err = NewRepository(db).readCommitted(ctx, func(tx *Repository) error {
-				return tx.db.Create(&fulfillmentGrant{RequestID: uuid.New()}).Error
+				return tx.db.Create(&sourceGrant{RequestID: uuid.New(), ApprovalMode: approvalModeCatalog}).Error
 			})
 			if err == nil || !strings.Contains(err.Error(), "read-only transaction") {
 				t.Fatalf("history transaction allows writes: %v", err)
@@ -220,7 +230,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 		t.Run("concurrent same parameters issue once without owner IO", func(t *testing.T) {
 			id := prepare(t, base)
 			type response struct {
-				grant *fulfillmentGrant
+				grant *sourceGrant
 				err   error
 			}
 			results := make(chan response, 6)
@@ -294,7 +304,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			if g, err := issuer.IssueFulfillmentGrant(ctx, actor, id, base); g != nil || !errors.Is(err, commonapi.ErrConflict) || !errors.Is(err, ErrFulfillmentAlreadyClosed) {
 				t.Fatalf("closed issued=%+v %v", g, err)
 			}
-			if err := db.Create(&fulfillmentGrant{RequestID: id}).Error; err == nil {
+			if err := db.Create(&sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog}).Error; err == nil {
 				t.Fatal("database accepted closed receipt")
 			}
 			assertCount(t, id, 0)
@@ -512,7 +522,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				t.Fatalf("wait escaped window: %v", err)
 			}
 			// Even a backdated direct insert is rejected by the database trigger.
-			if err := db.Create(&fulfillmentGrant{RequestID: id, GrantedAt: expires.Add(-time.Minute)}).Error; err == nil {
+			if err := db.Create(&sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog, GrantedAt: expires.Add(-time.Minute)}).Error; err == nil {
 				t.Fatal("backdated grant escaped window")
 			}
 			assertCount(t, id, 0)

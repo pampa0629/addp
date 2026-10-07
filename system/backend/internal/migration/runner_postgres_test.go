@@ -5623,8 +5623,22 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 20 || systemPermissionCount != 157 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 157", ownerCount, systemPermissionCount)
+	if ownerCount != 20 || systemPermissionCount != 159 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 159", ownerCount, systemPermissionCount)
+	}
+	var explicitGrantPermissions, implicitGrantBindings int
+	if err := db.QueryRow(`SELECT count(*) FROM system.permissions
+		WHERE permission_key IN ('system.engine_access_grant.create','system.engine_access_grant.read')
+		  AND allowed_scope_types = ARRAY['tenant']::text[] AND tenant_customizable AND NOT delegable AND status='active'
+		  AND risk_level = CASE WHEN permission_key='system.engine_access_grant.create' THEN 'high' ELSE 'low' END`).Scan(&explicitGrantPermissions); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions r JOIN system.permissions p ON p.id=r.permission_id
+		WHERE p.permission_key IN ('system.engine_access_grant.create','system.engine_access_grant.read')`).Scan(&implicitGrantBindings); err != nil {
+		t.Fatal(err)
+	}
+	if explicitGrantPermissions != 2 || implicitGrantBindings != 0 {
+		t.Fatalf("explicit grant permissions=%d, implicit bindings=%d; want 2, 0", explicitGrantPermissions, implicitGrantBindings)
 	}
 
 	var obsoletePermissionCount, apiConsumerPermissionCount int
