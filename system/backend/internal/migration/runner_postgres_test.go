@@ -5626,19 +5626,27 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if ownerCount != 20 || systemPermissionCount != 159 {
 		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 159", ownerCount, systemPermissionCount)
 	}
-	var explicitGrantPermissions, implicitGrantBindings int
+	var explicitGrantPermissions, implicitGrantBindings, authorizerGrantBindings int
 	if err := db.QueryRow(`SELECT count(*) FROM system.permissions
 		WHERE permission_key IN ('system.engine_access_grant.create','system.engine_access_grant.read')
 		  AND allowed_scope_types = ARRAY['tenant']::text[] AND tenant_customizable AND NOT delegable AND status='active'
 		  AND risk_level = CASE WHEN permission_key='system.engine_access_grant.create' THEN 'high' ELSE 'low' END`).Scan(&explicitGrantPermissions); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions r JOIN system.permissions p ON p.id=r.permission_id
-		WHERE p.permission_key IN ('system.engine_access_grant.create','system.engine_access_grant.read')`).Scan(&implicitGrantBindings); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id
+		JOIN system.roles r ON r.id=rp.role_id
+		WHERE p.permission_key IN ('system.engine_access_grant.create','system.engine_access_grant.read')
+		AND r.role_key <> 'tenant.source_data_authorizer'`).Scan(&implicitGrantBindings); err != nil {
 		t.Fatal(err)
 	}
-	if explicitGrantPermissions != 2 || implicitGrantBindings != 0 {
-		t.Fatalf("explicit grant permissions=%d, implicit bindings=%d; want 2, 0", explicitGrantPermissions, implicitGrantBindings)
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id
+		JOIN system.roles r ON r.id=rp.role_id
+		WHERE p.permission_key IN ('system.engine_access_grant.create','system.engine_access_grant.read')
+		AND r.role_key = 'tenant.source_data_authorizer'`).Scan(&authorizerGrantBindings); err != nil {
+		t.Fatal(err)
+	}
+	if explicitGrantPermissions != 2 || implicitGrantBindings != 0 || authorizerGrantBindings != 2 {
+		t.Fatalf("grant permissions=%d, other bindings=%d, authorizer bindings=%d; want 2, 0, 2", explicitGrantPermissions, implicitGrantBindings, authorizerGrantBindings)
 	}
 
 	var obsoletePermissionCount, apiConsumerPermissionCount int

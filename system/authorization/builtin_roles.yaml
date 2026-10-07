@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 117
+manifest_version: 118
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -1126,6 +1126,23 @@ roles:
       - system.engine_catalog.read
       - system.engine_descriptor.read
       - system.execution_authorization.execute
+  - key: tenant.source_data_authorizer
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.source_data_authorizer.name
+    description_i18n_key: roles.tenant.source_data_authorizer.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [user]
+    permissions:
+      - iam.department.read
+      - iam.project_group.read
+      - iam.tenant_membership.read
+      - system.engine.read
+      - system.engine_access_approval_requirement.initialize
+      - system.engine_access_approval_requirement.read
+      - system.engine_access_grant.create
+      - system.engine_access_grant.read
+      - system.engine_access_grant.revoke
+      - system.engine_catalog.read
   - key: tenant.spark_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.spark_runtime.name

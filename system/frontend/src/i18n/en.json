@@ -2286,6 +2286,10 @@
         "name": "Graph Engineer",
         "description": "Manages ontologies, graphs, build tasks, analysis, and reviews."
       },
+      "source_data_authorizer": {
+        "name": "Source Data Authorizer",
+        "description": "Configures table approval modes, issues independent read grants, reads history, and revokes grants within an active engine management delegation; selects users, departments, or project groups without automatically gaining data read or delegation management access."
+      },
       "engine_access_delegation_administrator": {
         "name": "Engine Access Delegation Administrator",
         "description": "Reads, creates, and revokes engine access management delegations tenant-wide, with engine and active tenant account candidate access; grants neither data access nor access fulfillment authority."

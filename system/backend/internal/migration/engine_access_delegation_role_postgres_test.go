@@ -11,6 +11,17 @@ import (
 )
 
 func TestEngineAccessDelegationRoleForwardMigrationAgainstPostgres(t *testing.T) {
+	exerciseEngineAccessRolePublication(t, "000194_engine_access_delegation_administrator.up.sql", "tenant.engine_access_delegation_administrator",
+		"iam.tenant_membership.read,system.engine.read,system.engine_access_delegation.create,system.engine_access_delegation.read,system.engine_access_delegation.revoke")
+}
+
+func TestSourceDataAuthorizerRoleForwardMigrationAgainstPostgres(t *testing.T) {
+	exerciseEngineAccessRolePublication(t, "000197_source_data_authorizer.up.sql", "tenant.source_data_authorizer",
+		"iam.department.read,iam.project_group.read,iam.tenant_membership.read,system.engine.read,system.engine_access_approval_requirement.initialize,system.engine_access_approval_requirement.read,system.engine_access_grant.create,system.engine_access_grant.read,system.engine_access_grant.revoke,system.engine_catalog.read")
+}
+
+func exerciseEngineAccessRolePublication(t *testing.T, migrationFile, roleKey, want string) {
+	t.Helper()
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL database")
@@ -26,7 +37,7 @@ func TestEngineAccessDelegationRoleForwardMigrationAgainstPostgres(t *testing.T)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	before, through := migrationFilesBeforeAndThrough(t, "000194_engine_access_delegation_administrator.up.sql")
+	before, through := migrationFilesBeforeAndThrough(t, migrationFile)
 	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -37,14 +48,17 @@ func TestEngineAccessDelegationRoleForwardMigrationAgainstPostgres(t *testing.T)
 		var value string
 		if err := db.QueryRow(`SELECT jsonb_build_object(
 		    'roles', (SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM system.roles r
-		              WHERE r.role_key <> 'tenant.engine_access_delegation_administrator'),
+		              WHERE r.role_key <> $1),
 		    'bindings', (SELECT jsonb_agg(to_jsonb(b) ORDER BY b.role_id, b.permission_id)
 		                 FROM system.role_permissions b JOIN system.roles r ON r.id = b.role_id
-		                 WHERE r.role_key <> 'tenant.engine_access_delegation_administrator'),
+		                 WHERE r.role_key <> $1),
 		    'assignments', (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM system.role_assignments a),
 		    'principals', (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM system.principals p),
-		    'sessions', (SELECT jsonb_agg(to_jsonb(f) ORDER BY f.id) FROM system.refresh_token_families f)
-		)::text`).Scan(&value); err != nil {
+		    'sessions', (SELECT jsonb_agg(to_jsonb(f) ORDER BY f.id) FROM system.refresh_token_families f),
+		    'delegations', (SELECT jsonb_agg(to_jsonb(d) ORDER BY d.id) FROM system.engine_access_delegations d),
+		    'grants', (SELECT jsonb_agg(to_jsonb(g) ORDER BY g.request_id) FROM system.engine_access_grants g),
+		    'requirements', (SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM system.engine_access_approval_requirements r)
+		)::text`, roleKey).Scan(&value); err != nil {
 			t.Fatal(err)
 		}
 		return value
@@ -60,17 +74,17 @@ func TestEngineAccessDelegationRoleForwardMigrationAgainstPostgres(t *testing.T)
 
 	var roleCount, assignmentCount int
 	if err := db.QueryRow(`SELECT count(*) FROM system.roles
-	    WHERE tenant_id IS NULL AND role_key = 'tenant.engine_access_delegation_administrator'
+	    WHERE tenant_id IS NULL AND role_key = $1
 	      AND role_type = 'tenant_builtin' AND status = 'active' AND immutable
 	      AND allowed_scope_types = ARRAY['tenant']::text[]
 	      AND allowed_principal_types = ARRAY['user']::text[]
-	      AND name_i18n_key = 'roles.tenant.engine_access_delegation_administrator.name'
-	      AND description_i18n_key = 'roles.tenant.engine_access_delegation_administrator.description'`).Scan(&roleCount); err != nil {
+	      AND name_i18n_key = 'roles.' || $1 || '.name'
+	      AND description_i18n_key = 'roles.' || $1 || '.description'`, roleKey).Scan(&roleCount); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`SELECT count(*) FROM system.role_assignments a
 	    JOIN system.roles r ON r.id = a.role_id
-	    WHERE r.role_key = 'tenant.engine_access_delegation_administrator'`).Scan(&assignmentCount); err != nil {
+	    WHERE r.role_key = $1`, roleKey).Scan(&assignmentCount); err != nil {
 		t.Fatal(err)
 	}
 	if roleCount != 1 || assignmentCount != 0 {
@@ -80,13 +94,12 @@ func TestEngineAccessDelegationRoleForwardMigrationAgainstPostgres(t *testing.T)
 	if err := db.QueryRow(`SELECT string_agg(p.permission_key, ',' ORDER BY p.permission_key COLLATE "C")
 	    FROM system.role_permissions b JOIN system.roles r ON r.id = b.role_id
 	    JOIN system.permissions p ON p.id = b.permission_id
-	    WHERE r.role_key = 'tenant.engine_access_delegation_administrator'
-	      AND b.source_type = 'product' AND p.status = 'active'`).Scan(&permissions); err != nil {
+	    WHERE r.role_key = $1
+	      AND b.source_type = 'product' AND p.status = 'active'`, roleKey).Scan(&permissions); err != nil {
 		t.Fatal(err)
 	}
-	const want = "iam.tenant_membership.read,system.engine.read,system.engine_access_delegation.create,system.engine_access_delegation.read,system.engine_access_delegation.revoke"
 	if permissions != want {
-		t.Fatalf("delegation administrator permissions = %q, want %q", permissions, want)
+		t.Fatalf("%s permissions = %q, want %q", roleKey, permissions, want)
 	}
 	// A subsequent startup is a no-op, not a second publication or an assignment.
 	if err := runner.Run(ctx); err != nil {

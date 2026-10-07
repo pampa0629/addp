@@ -96,14 +96,27 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var infrastructureRoleID int64
+	var infrastructureRoleID, sourceDataAuthorizerRoleID int64
 	for _, role := range roles {
 		if role.RoleKey == "tenant.infrastructure_administrator" {
 			infrastructureRoleID = role.ID
 		}
+		if role.RoleKey == "tenant.source_data_authorizer" {
+			sourceDataAuthorizerRoleID = role.ID
+		}
 	}
 	if infrastructureRoleID == 0 {
 		t.Fatal("infrastructure administrator role is missing")
+	}
+	if sourceDataAuthorizerRoleID == 0 {
+		t.Fatal("source data authorizer role is missing")
+	}
+	_, err = roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.ID, RoleIDs: []int64{sourceDataAuthorizerRoleID},
+		ScopeType: "tenant", Reason: "source data authorizer self assignment test", ActorPrincipalID: created.PrincipalID, AssuranceLevel: AssuranceLevelAAL1,
+	})
+	if !errors.Is(err, ErrStepUpRequired) {
+		t.Fatalf("AAL1 source data authorizer self assignment error = %v, want step-up required", err)
 	}
 	_, err = roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.ID, RoleIDs: []int64{infrastructureRoleID},
@@ -180,6 +193,23 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	})
 	if err != nil || len(assignments) != 1 || assignments[0].RoleKey != "tenant.infrastructure_administrator" {
 		t.Fatalf("AAL2 high-risk self assignment = %#v err=%v", assignments, err)
+	}
+	authorizerAssignments, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.ID, RoleIDs: []int64{sourceDataAuthorizerRoleID},
+		ScopeType: "tenant", Reason: "source data authorizer self assignment after step-up", ActorPrincipalID: created.PrincipalID, AssuranceLevel: AssuranceLevelAAL2,
+		StepUpExpiresAt: &stepUpExpiresAt,
+	})
+	if err != nil || len(authorizerAssignments) != 1 || authorizerAssignments[0].RoleKey != "tenant.source_data_authorizer" {
+		t.Fatalf("AAL2 source data authorizer self assignment = %#v err=%v", authorizerAssignments, err)
+	}
+	for _, table := range []string{"engine_access_delegations", "engine_access_grants", "engine_access_approval_requirements"} {
+		var count int64
+		if err := db.Table("system." + table).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("role self assignment implicitly created %d rows in %s", count, table)
+		}
 	}
 	refreshedSession, err := tokenService.RotateBrowserRefreshToken(ctx, RotateBrowserRefreshTokenInput{
 		RefreshToken: steppedUpSession.RefreshToken,

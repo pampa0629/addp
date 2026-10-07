@@ -186,7 +186,7 @@ case "$TEST_FILTER" in
             echo "catalog-integrity test requires --package migration" >&2
             exit 2
         fi
-        test_pattern='^Test(Runner|EngineAccessDelegationRoleForwardMigration)AgainstPostgres$'
+        test_pattern='^Test(Runner|EngineAccessDelegationRoleForwardMigration|SourceDataAuthorizerRoleForwardMigration)AgainstPostgres$'
         ;;
     standard-collection-removal)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

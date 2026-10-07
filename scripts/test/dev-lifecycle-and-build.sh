@@ -599,6 +599,7 @@ for name, args, failed in (
     ("spark-prepare-failure", ["-all"], True),
     ("geopython-prepare-failure", ["-all"], True),
     ("pointcloud-prepare-failure", ["-all"], True),
+    ("document-prepare-failure", ["-all"], True),
 ):
     root = temporary / ("restart-" + name)
     dev = root / "scripts/dev"
@@ -612,6 +613,8 @@ for name, args, failed in (
         'echo geopython-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_GEOPYTHON_PREPARE" = 0 ]; }\n')
     (dev / "pointcloud-workflow.sh").write_text('addp_prepare_pointcloud_workflow() { '
         'echo pointcloud-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_POINTCLOUD_PREPARE" = 0 ]; }\n')
+    (dev / "document-workflow.sh").write_text('addp_prepare_document_workflow() { '
+        'echo document-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_DOCUMENT_PREPARE" = 0 ]; }\n')
     (root / ".env").write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
 
     infra = root / "scripts/infra"
@@ -667,6 +670,7 @@ exit "$FAIL_COVERAGE"
         FAIL_SPARK_PREPARE=str(int(name == 'spark-prepare-failure')),
         FAIL_GEOPYTHON_PREPARE=str(int(name == 'geopython-prepare-failure')),
         FAIL_POINTCLOUD_PREPARE=str(int(name == 'pointcloud-prepare-failure')),
+        FAIL_DOCUMENT_PREPARE=str(int(name == 'document-prepare-failure')),
         ALLOW_SWAGGER_FAILURE="1", SWAGGER_COVERAGE_WARN_ONLY="1", MEILISEARCH_PORT="17700", SERVICE_HOST="localhost",
     )
     result = subprocess.run(["bash", str(dev / "restart.sh"), *args], env=env,
@@ -680,7 +684,7 @@ exit "$FAIL_COVERAGE"
         "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
     target = "all" if args in ([], ["-all"]) else "system" if args == ["-system"] else "system asset meta"
     all_modules = args in ([], ['-all'])
-    expected = (['spark-preflight', 'geopython-preflight', 'pointcloud-preflight', 'stop'] if all_modules else []) + ["generate " + target]
+    expected = (['spark-preflight', 'geopython-preflight', 'pointcloud-preflight', 'document-preflight', 'stop'] if all_modules else []) + ["generate " + target]
     if name.startswith('coverage-'):
         expected += ["generated", "coverage " + target]
     elif not failed:
@@ -693,11 +697,13 @@ exit "$FAIL_COVERAGE"
         expected = ['spark-preflight', 'geopython-preflight']
     if name == 'pointcloud-prepare-failure':
         expected = ['spark-preflight', 'geopython-preflight', 'pointcloud-preflight']
+    if name == 'document-prepare-failure':
+        expected = ['spark-preflight', 'geopython-preflight', 'pointcloud-preflight', 'document-preflight']
     for binary in ("system", "asset", "meta", "meta-worker", "gateway"):
         assert (bins / ("addp-" + binary)).read_text() == "old binary", "restart must preserve " + binary
     assert events == expected, events
     assert not (root / ".dev-state/lifecycle.lock").exists(), "restart leaked its lock"
-print("PASS: restart preserves cache, batches Swagger and stops on Swagger generation or coverage failure")
+print("PASS: restart preserves cache, batches Swagger and stops before shutdown on native Runtime preparation failure")
 PY
 }
 

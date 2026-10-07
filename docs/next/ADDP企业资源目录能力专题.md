@@ -4035,3 +4035,22 @@ Manager 的数据库预览与后台数据剖析共同调用同一 Resolver／数
 - 完整 `make test-system-iam-postgres` 首次在迁移 Runner 的旧数量断言失败（System 权限由 157 增加到 159），不计为完整通过。同步精确数量并增加两项权限无默认角色绑定的真实数据库断言后，标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test catalog-integrity'` 退出码 0、无 Skip，日志 `/tmp/addp-independent-grant-migration-final.log`；原整包其他已执行用例没有新增失败，未到达的后续包不计为通过。
 - `make test-changed` 退出码 2：并行工作区涉及多个 owner，缺少其他 owner 的安全 T2 连接，在预检停止；日志 `/tmp/addp-independent-grant-changed-final.log`。首轮带合法 IAM DSN 的 `make test-module MODULE=system` 在平台开发启动脚本 T0 的 preflight 断言失败，日志 `/tmp/addp-independent-grant-module.log`，不修改并行 owner 的启动实现。真实 User／Gateway／System／Manager 源读取 T4 未运行，不用浏览器夹具冒充真实运行闭环。
 - 最终带合法 IAM DSN 的 `make test-module MODULE=system` 再次在同一 preflight T0 断言失败，日志 `/tmp/addp-independent-grant-module-final.log`；不能计为模块总门禁通过。最终 `git diff --check` 退出码 0。未提交或推送仍未满足全量门禁的改动。
+
+### 26.105 两账号安排与源数据授权办理员角色（2026-10-07）
+
+用户认可由现有 `addp-owner` 兼任授权办理、`outdoor开发者` 接收并使用具体数据，不增加第三个账号。兼任不合并功能权限、引擎委派和数据读取权限三个事实。
+
+- 000197 发布内置角色 `tenant.source_data_authorizer`（源数据授权办理员），仅允许 Tenant Scope 的 User；精确组合批准要求读取／初始化、独立只读 Grant 创建／历史读取／撤销、引擎结构目录和账号／部门／项目组候选读取，共十项功能权限。不包含委派管理、Catalog 业务确认／履约、Explicit Deny、数据预览、导出或写入。
+- 发布只增加角色模板及其 Permission 绑定，不自动分配账号，不改变已有角色、主体版本、会话、管理委派、批准要求或 Grant。管理员可以通过正常角色分配给自己安排该角色，自我分配仍需现有 MFA 增强认证，不提供旁路。
+- 获得角色后仍须显式取得目标引擎的有效管理委派。角色或委派均不自动取得数据读取权；独立批准表的具体接收方、期限及原因须由操作者确认后签发。已有 Catalog 批准安排不因兼任而被覆盖，也不从独立角色推导 Catalog 确认或履约资格。
+- 本轮不调整真实账号分配、现有委派或数据授权，不启停服务。完成本轮验证后需用户重启 System 发布迁移，再由 `addp-owner` 自行完成 MFA 角色分配；随后明确其引擎委派范围和期限，选择未配置批准方式的真实普通表验证授予、读取及撤销。
+
+**已取得的验证证据：**
+
+- `make test-authorization` 退出码 0，新增专门角色的精确权限、Scope、Principal 限制及其他内置角色不扩权的断言通过；Permission 数量仍为 488，Role 数量为 74。日志 `/tmp/addp-source-authorizer-authorization.log`。
+- `make test-system-frontend` 退出码 0：22 个文件、111 项单元测试、91 项浏览器测试及构建通过，角色中英文词条由既有前端覆盖检查验证。日志 `/tmp/addp-source-authorizer-frontend.log`。
+- 标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test catalog-integrity'` 退出码 0、无 Skip；验证专门模板向前发布、旧角色／账号／会话／委派／Grant 不变、无默认角色分配及重复启动无副作用。日志 `/tmp/addp-source-authorizer-migration.log`。
+- `make test-system-iam-runner` 修订角色发布过滤断言后退出码 0，9 项标准入口回归通过。日志 `/tmp/addp-source-authorizer-iam-runner-final.log`。新增 PostgreSQL 回归由既有完整 IAM T2 自动发现，原 `catalog-integrity` 入口同时覆盖新角色，不新增数据库或 Workflow。
+- `make test-go` 最终退出码 0，全仓 Go T1 通过；首轮迁移目录的最新版本断言仍为 196，已同步为 197，首轮结果不计为通过。最终日志 `/tmp/addp-source-authorizer-go-final.log`。
+- 完整 `make test-system-iam-postgres` 退出码 0、无 Skip，IAM、OAuth、公开 API、全部迁移、源数据授权、Repository 和在线夹具七个包均通过；新增 MFA 回归验证自我分配源数据授权办理员在 AAL1 被拒绝、有效增强认证后成功，且不隐式建立委派、批准要求或 Grant。日志 `/tmp/addp-source-authorizer-iam.log`。这些测试只操作标准 `addp_iam_test`，不代表真实账号已赋权或真实 Manager 读取闭环已验收。
+- 带合法 IAM DSN 的 `make test-module MODULE=system` 在平台 T0 的两项并行 Infra Runtime Log Lifecycle 测试失败，尚未进入后续模块步骤，不计为模块总门禁通过。日志 `/tmp/addp-source-authorizer-module.log`；不修改无关基础设施实现。

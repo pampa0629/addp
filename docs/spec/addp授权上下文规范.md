@@ -349,7 +349,7 @@ Manager 剖析结果读取另使用固定同步入口 `POST /api/v1/system/engin
 
 首次初始化的唯一公开入口为 `POST /api/v1/system/engines/:id/access_approval_requirements`，只接受精确 `catalog_path`、必填 `mode=catalog|independent` 与非空 `reason`，建立版本 1。遗漏或未知模式拒绝，不保留固定 Catalog 模式的旧请求契约。请求不接受版本、租户、操作账号或承接人字段，不递归作用于父路径。当前 Tenant User 必须同时具有 `system.engine_access_approval_requirement.initialize` 与该 Engine 的有效管理委派；System 在同一事务内锁定当前身份、读取有效 Tenant Scope Permission、锁定引擎及委派，再进入精确目标边界，等待后按数据库墙钟重新核验期限，并与审计原子提交。首次配置不是已有要求的交接，不指定承接人、不授予独立批准 Permission 或内容访问权。已存在要求均返回 409，不覆盖、不自动增加版本；不得用此入口在两种模式之间切换。
 
-管理读取使用同一路径的分页 GET 和 `/:requirement_id` 详情 GET，要求独立 `system.engine_access_approval_requirement.read` 及当前有效引擎管理委派，不接受 `tenant_id`。它只读取当前 Tenant、当前 Engine 的权威要求，不返回连接信息、责任副本或内容授权。两个 Permission 均仅允许 Tenant Scope、不可委托、可由租户自定义角色显式分配，不默认授予内置角色。不存在批准要求仍不是独立批准许可。上述入口不建立 Catalog 责任、不完成跨数据库纳管协调、不签发 Grant；Catalog 不可达不影响初始化或管理读取。
+管理读取使用同一路径的分页 GET 和 `/:requirement_id` 详情 GET，要求独立 `system.engine_access_approval_requirement.read` 及当前有效引擎管理委派，不接受 `tenant_id`。它只读取当前 Tenant、当前 Engine 的权威要求，不返回连接信息、责任副本或内容授权。两个 Permission 均仅允许 Tenant Scope、不可委托；可通过租户自定义角色或专门的源数据授权办理员模板显式分配，不扩张已有管理员角色。不存在批准要求仍不是独立批准许可。上述入口不建立 Catalog 责任、不完成跨数据库纳管协调、不签发 Grant；Catalog 不可达不影响初始化或管理读取。
 
 办理所需的最小观察（2026-10-03 已确认）使用 `POST /api/v1/system/engines/:id/access_handling_requirement`。结构化路径可能超过安全 URL 长度，因此使用只读 POST，正文只接受路径 `version` 和完整 `segments`，Engine ID 唯一从路径参数取得；不接受 Tenant、操作者、批准模式或预期版本。当前 Tenant User 必须同时具备独立 `system.engine_access_fulfillment.create` 和该引擎的有效管理委派，按现有身份→引擎／委派锁及数据库墙钟复核。仅查询一个精确叶子，不枚举引擎要求、不继承父路径、不初始化缺失要求，缺失返回 404。响应仅含当前 `mode` 和无损十进制字符串 `requirement_version`；既有配置读取权限不因该入口放宽。观察不创建业务决定、待核清、受理、Grant 或批准要求变更审计，沿用 HTTP 请求审计但不保存正文；不是资格凭据。正式提交仍核验当前权限、完整目标及原预期版本，冲突不自动换版本重试。
 
@@ -389,7 +389,7 @@ Catalog 后台仅消费已提交且未核清的原请求，逐项调用该主路
 
 同一个命令 UUID 仅允许原操作者、同引擎、同目标、同接收方、同动作、同期限、同批准版本及同原因重试；当前授予 Permission 和管理委派仍须有效。同参返回原签发事实，不续期、不撤销或恢复，不要求历史接收方或源表仍有效；不同参返回 409，跨 Tenant 或引擎隐藏为 404。历史恢复不以操作者当前授权版本等于签发时版本为条件，但当前请求身份必须有效。首次签发提交前按数据库墙钟复核期限与接收主体。
 
-`GET /api/v1/system/engines/:id/access_grants` 使用独立 `system.engine_access_grant.read` 和有效管理委派，默认第 1 页、20 条、最多 100 条，按签发时间倒序及 UUID 稳定分页；返回本引擎同一 Grant 存储中的独立批准及 Catalog 来源记录、原目标／接收方／期限／操作者与撤销事实。列表是签发历史，不是当前访问 Allow；失效身份、Deny、功能权限和安全策略仍由读取时裁决。停用引擎允许查看历史和通过已有 `/access_grants/:request_id/revoke` 明确撤销；不允许新授予。两项新 Permission 不自动授予任何角色或账号；现有 System T1、IAM PostgreSQL T2、Swagger 与授权清单门禁覆盖该接口切片。
+`GET /api/v1/system/engines/:id/access_grants` 使用独立 `system.engine_access_grant.read` 和有效管理委派，默认第 1 页、20 条、最多 100 条，按签发时间倒序及 UUID 稳定分页；返回本引擎同一 Grant 存储中的独立批准及 Catalog 来源记录、原目标／接收方／期限／操作者与撤销事实。列表是签发历史，不是当前访问 Allow；失效身份、Deny、功能权限和安全策略仍由读取时裁决。停用引擎允许查看历史和通过已有 `/access_grants/:request_id/revoke` 明确撤销；不允许新授予。000196 仅登记两项新 Permission，000197 将其组合进专门的源数据授权办理员模板；不自动分配账号，也不扩张其他角色；现有 System T1、IAM PostgreSQL T2、Swagger 与授权清单门禁覆盖该接口切片。
 
 2026-10-07 已确认：Catalog 是可选治理模块，缺少 Catalog 不取消源数据权限检查，也不应强制用户为了访问数据先完成企业编目。System 的引擎详情提供“数据授权”入口，首次配置与日常授权分开表达。独立授予和历史读取采用上述正式接口，已有安排的退出／交接仍须独立落实。
 

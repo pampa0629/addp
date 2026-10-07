@@ -29,7 +29,7 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		defer cancel()
 		permissions := []string{"system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.read"}
 		var defaults int64
-		if err := db.Raw(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key LIKE 'system.engine_access_approval_requirement.%'`).Scan(&defaults).Error; err != nil || defaults != 0 {
+		if err := db.Raw(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id JOIN system.roles r ON r.id=rp.role_id WHERE p.permission_key LIKE 'system.engine_access_approval_requirement.%' AND r.role_key <> 'tenant.source_data_authorizer'`).Scan(&defaults).Error; err != nil || defaults != 0 {
 			t.Fatalf("implicit default grant=%d err=%v", defaults, err)
 		}
 		roles := iam.NewTenantRoleService(identity, time.Now)

@@ -32,7 +32,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.prometheus_runtime", []string{"monitor.metrics_discovery.read"})
 	for _, role := range roles {
 		for _, key := range role.Permissions {
-			if key == "system.engine_access_grant.create" || key == "system.engine_access_grant.read" {
+			if (key == "system.engine_access_grant.create" || key == "system.engine_access_grant.read") && role.Key != "tenant.source_data_authorizer" {
 				t.Fatalf("built-in role %q unexpectedly grants independent source Grant permission %q", role.Key, key)
 			}
 			if key == "monitor.metrics_discovery.read" && role.Key != "platform.prometheus_runtime" {
@@ -47,13 +47,13 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "system.engine_access_deny.create" || key == "system.engine_access_deny.release" {
 				t.Fatalf("built-in role %q unexpectedly grants source Deny command %q", role.Key, key)
 			}
-			if key == "system.engine_access_grant.revoke" {
+			if key == "system.engine_access_grant.revoke" && role.Key != "tenant.source_data_authorizer" {
 				t.Fatalf("built-in role %q unexpectedly grants source Grant revocation", role.Key)
 			}
 			if key == "system.engine_access_fulfillment.execute" && role.Key != "tenant.catalog_runtime" {
 				t.Fatalf("built-in role %q unexpectedly grants Catalog recovery", role.Key)
 			}
-			if key == "system.engine_access_approval_requirement.initialize" || key == "system.engine_access_approval_requirement.read" {
+			if (key == "system.engine_access_approval_requirement.initialize" || key == "system.engine_access_approval_requirement.read") && role.Key != "tenant.source_data_authorizer" {
 				t.Fatalf("built-in role %q unexpectedly grants approval requirement permission %q", role.Key, key)
 			}
 			if key == "catalog.sharing_decision.create" {
@@ -64,9 +64,17 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 		}
 	}
-	if len(roles) != 73 {
-		t.Fatalf("role count = %d, want 73", len(roles))
+	if len(roles) != 74 {
+		t.Fatalf("role count = %d, want 74", len(roles))
 	}
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.source_data_authorizer", []string{"user"})
+	assertRepositoryRoleScopes(t, roles, "tenant.source_data_authorizer", []string{"tenant"})
+	assertRepositoryRolePermissions(t, roles, "tenant.source_data_authorizer", []string{
+		"iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "system.engine.read",
+		"system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.read",
+		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
+		"system.engine_catalog.read",
+	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.engine_access_delegation_administrator", []string{"user"})
 	assertRepositoryRoleScopes(t, roles, "tenant.engine_access_delegation_administrator", []string{"tenant"})
 	assertRepositoryRolePermissions(t, roles, "tenant.engine_access_delegation_administrator", []string{
