@@ -41,6 +41,10 @@ class Client:
             item = copy.deepcopy(self.target)
             item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name, size_bytes=1024)
             self.targets[item_id] = item
+        for item_id, name in enumerate(m.fixture.FOUNDATION_CASES, 38):
+            item = copy.deepcopy(self.targets[21])
+            item.update(id=item_id, full_name=f'raster-target/{name}.cog.tif', fingerprint=name, size_bytes=1024)
+            self.targets[item_id] = item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
                             {'role_key': 'online.raster_workflow', 'permissions': sorted(m.PERMISSIONS)}]}}
@@ -100,23 +104,24 @@ class Client:
             mode = definition['tasks'][-1]['params']['write_mode']
             identifier = f'run-{len(self.executions) + 1}'
             status = 'failed' if identifier == 'run-2' else 'success'
-            source = definition['tasks'][0]['params']['locator']
+            sources = [task['params']['locator'] for task in definition['tasks'] if task['operator'] in ('raster_load', 'raster_to_cog')]
             target = f'addp://engine/2/path/raster-target/{definition["tasks"][-1]["params"]["target_name"]}?type=object'
             spatial = 'mosaic' in definition['tasks'][-1]['depends_on']
             case_name = definition['tasks'][-1]['params']['target_name'].removesuffix('.cog.tif')
             utility = case_name in m.fixture.UTILITY_CASES
-            expectation = m.fixture.utility_expectation() if utility else m.fixture.computed_expectation(case_name) if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES else m.fixture.artifact_expectation(spatial)
+            expectation = m.fixture.utility_expectation() if utility else m.fixture.computed_expectation(case_name) if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.FOUNDATION_CASES else m.fixture.artifact_expectation(spatial)
             metadata = {} if status == 'failed' else {
                 'outputs': {definition['tasks'][-1]['id']: {'resource': {'locator': target, 'type': 'object', 'write_mode': mode}}},
-                'lineage_facts': {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source}],
+                'lineage_facts': {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source} for source in sources],
                                   'outputs': [{'locator': target, 'write_mode': mode}],
                                   'operations': [{'kind': 'derive', 'operator': 'develop', 'input_ports': ['input'], 'output_ports': ['output']}]},
                 'result': {'final_result': {'artifact_type': 'raster', 'format': 'tiff', 'profile': 'cog',
                                           'size_bytes': 1024,
                                           **{key: value for key, value in expectation.items() if key not in ('valid_pixels', 'band_nodata')},
                                           'bands': [{'dtype': 'Float64', 'nodata_is_nan': expectation['band_nodata'] is None, 'nodata': expectation['band_nodata'],
-                                                    **({'overviews': [[128, 128], [64, 64]] if case_name == 'build-overviews' else [[128, 128]]} if utility else {})}
-                                                    for _ in range(expectation['band_count'])]},
+                                                    **({'overviews': [[128, 128], [64, 64]] if case_name == 'build-overviews' else [[128, 128]]} if utility else {}),
+                                                    **({'color_interpretation': (['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray'])[index], 'overviews': [[128, 128]]} if case_name in m.fixture.FOUNDATION_CASES else {})}
+                                                    for index in range(expectation['band_count'])]},
                            'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'auto-' + identifier}]},
             }
             self.executions[identifier] = self.mutate({'execution_id': identifier, 'module': 'develop', 'status': status, 'metadata': metadata,
@@ -143,6 +148,10 @@ class Client:
             if target_id in (36, 37): source_id = 10
             result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
                       'status': 'active', 'relation_kind': self.relation_kind, 'evidence': {'execution_id': identifier}}]}
+            if target_id in (38, 39):
+                result['edges'] = [{'source': {'item_id': source_id}, 'target': {'item_id': target_id},
+                    'status': 'active', 'relation_kind': self.relation_kind,
+                    'evidence': {'execution_id': 'run-' + str(target_id - 10)}} for source_id in (11, 21)]
         else:
             raise AssertionError(f'unexpected API: {method} {path}')
         return m.support.Response(200, result, {})
@@ -173,6 +182,15 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 'cog_valid': True, 'has_overviews': True, 'source_unchanged': True, 'valid_pixels': 65535,
                 'band_valid_pixels': [65535, 65535], 'size_bytes': 1024, 'crs': 'physical-wkt',
                 'overview_sizes': [[128, 128], [64, 64]] if case_name != 'to-cog' else [[128, 128]]}
+        if case_name in m.fixture.FOUNDATION_CASES:
+            preserved = {'result.cog.tif': 'new', 'mosaic-first.cog.tif': 'spatial-first', 'mosaic-last.cog.tif': 'spatial-last'}
+            for prior in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES + m.fixture.FOUNDATION_CASES[:m.fixture.FOUNDATION_CASES.index(case_name)]:
+                preserved[prior + '.cog.tif'] = prior
+            return {'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
+                'cog_valid': True, 'has_overviews': True, 'source_unchanged': True, 'valid_pixels': 65534,
+                'invalid_pixels': 2, 'band_valid_pixels': [65534] * m.fixture.foundation_expectation(case_name)['band_count'],
+                'color_interpretations': ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray'],
+                'size_bytes': 1024, 'overview_sizes': [[128, 128]]}
         if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES:
             preserved = {'result.cog.tif': 'new', 'mosaic-first.cog.tif': 'spatial-first', 'mosaic-last.cog.tif': 'spatial-last'}
             cases = m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES
@@ -205,7 +223,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3)
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -233,8 +251,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual({task['operator'] for definition in submitted for task in definition['tasks']}, {
             'raster_load', 'raster_save', 'raster_info', 'validate_cog', 'raster_to_cog', 'raster_build_overviews',
             'raster_reproject', 'raster_resample', 'raster_clip', 'raster_mosaic', 'raster_band_math',
-            'raster_statistics', 'raster_histogram'})
-        submitted = submitted[-5:]
+            'raster_statistics', 'raster_histogram', 'raster_align', 'raster_stack', 'raster_select_bands'})
+        submitted = submitted[-(len(m.fixture.UTILITY_CASES + m.fixture.UTILITY_JSON_CASES) + len(m.fixture.FOUNDATION_CASES)):-len(m.fixture.FOUNDATION_CASES)]
         self.assertEqual([task['operator'] for task in submitted[0]['tasks']],
             ['raster_load', 'raster_build_overviews', 'raster_save'])
         self.assertEqual(submitted[0]['tasks'][1]['params']['levels'], [2, 4])
@@ -252,6 +270,74 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertFalse(cases[3]['json_result']['valid'])
         self.assertTrue(cases[4]['json_result']['valid'])
         self.assertTrue(all(case['browser']['result_kind'] == 'json' for case in cases[2:]))
+
+    def test_multiraster_binds_both_engines_and_every_source_in_console(self):
+        report = self.run_scene()
+        cases = report['foundation_cases']
+        self.assertEqual([case['case_name'] for case in cases], list(m.fixture.FOUNDATION_CASES))
+        for case in cases:
+            self.assertEqual([edge['source_item_id'] for edge in case['lineage']], [11, 21])
+            self.assertEqual([browser['source_item_id'] for browser in case['browser']], [11, 21])
+            self.assertEqual(len({browser['case_name'] for browser in case['browser']}), 2)
+            self.assertTrue(all(edge['execution_id'] == case['execution_id'] for edge in case['lineage']))
+            self.assertEqual(case['physical']['size_bytes'], 1024)
+        submitted = [body['content']['workflow_definition'] for method, path, body in self.client.calls
+            if method == 'POST' and path == '/api/v1/develop/executions'][-2:]
+        self.assertEqual([task['operator'] for task in submitted[0]['tasks']],
+            ['raster_load', 'raster_load', 'raster_align', 'raster_select_bands', 'raster_stack', 'raster_band_math', 'raster_save'])
+        self.assertEqual(submitted[0]['tasks'][5]['params']['expression'], '0.25*b1+0.75*b2')
+        self.assertEqual(submitted[1]['tasks'][5]['params']['bands'], [1, 2, 1])
+        self.assertEqual(submitted[1]['tasks'][5]['params']['color_model'], 'rgb')
+        self.assertEqual(submitted[0]['tasks'][1]['params']['locator'], cases[0]['browser'][1]['source_locator'])
+
+    def test_multiraster_rejects_missing_extra_duplicate_sources_and_wrong_execution_edge(self):
+        for fault in ('missing', 'extra', 'duplicate', 'edge-missing', 'edge-execution'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS'] = '.01'
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-28':
+                        inputs = execution['metadata']['lineage_facts']['inputs']
+                        if fault == 'missing': inputs.pop()
+                        if fault == 'extra': inputs.append({'locator': 'extra-locator'})
+                        if fault == 'duplicate': inputs[1] = copy.deepcopy(inputs[0])
+                    return execution
+                self.client.mutate = mutate
+                original = self.client.request
+                def request(method, path, expected, body=None):
+                    response = original(method, path, expected, body)
+                    if path.startswith('/api/v1/meta/lineage/graph?') and 'item_id=38&' in path:
+                        if fault == 'edge-missing': response.payload['edges'].pop()
+                        if fault == 'edge-execution': response.payload['edges'][1]['evidence']['execution_id'] = 'another-run'
+                    return response
+                self.client.request = request
+                with self.assertRaises(m.SuiteError): self.run_scene()
+
+    def test_multiraster_rejects_size_channel_validity_source_and_preservation_faults(self):
+        for fault in ('declared-size', 'fractional-size', 'physical-size', 'item-size', 'counts', 'colour', 'levels', 'summary-colour', 'summary-levels', 'source', 'prior'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def mutate(execution):
+                    if execution['execution_id'] == 'run-29':
+                        artifact = execution['metadata']['result']['final_result']
+                        if fault == 'declared-size': artifact['size_bytes'] = 1
+                        if fault == 'fractional-size': artifact['size_bytes'] = 1024.0
+                        if fault == 'summary-colour': artifact['bands'][1]['color_interpretation'] = 'Undefined'
+                        if fault == 'summary-levels': artifact['bands'][1]['overviews'] = []
+                    return execution
+                self.client.mutate = mutate
+                if fault == 'item-size': self.client.targets[39]['size_bytes'] = 1025
+                def physical(repo, env, action):
+                    payload = self.physical(repo, env, action)
+                    if action == 'verify-multiraster-rgb':
+                        if fault == 'physical-size': payload['size_bytes'] = 0
+                        if fault == 'counts': payload['band_valid_pixels'][1] = 65536
+                        if fault == 'colour': payload['color_interpretations'].reverse()
+                        if fault == 'levels': payload['overview_sizes'] = []
+                        if fault == 'source': payload['source_unchanged'] = False
+                        if fault == 'prior': payload['preserved_sha256']['multiraster-weighted.cog.tif'] = 'changed'
+                    return payload
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
 
     def test_utility_persistence_rejects_size_levels_second_band_and_prior_artifact_faults(self):
         for fault in ('declared-size', 'fractional-size', 'physical-size', 'levels', 'counts', 'prior', 'scan', 'output-node', 'item-size', 'item-size-mismatch'):
@@ -521,7 +607,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertNotIn('outputs', monitor)
         professional['metadata']['outputs'] = professional.pop('outputs')
         with self.assertRaises(m.SuiteError):
-            m.validate_success(professional, '', '', 'create')
+            m.validate_success(professional, [], '', 'create')
 
     def test_duplicate_create_requires_exact_owner_execution_target_and_failure(self):
         with tempfile.TemporaryDirectory() as directory:

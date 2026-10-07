@@ -7,7 +7,7 @@ test('栅格 Console 执行状态、持久成果血缘及分析 JSON 一致', as
   const evidence = JSON.parse(process.env.ADDP_ONLINE_RASTER_EVIDENCE || '{}')
   const analysis = evidence.result_kind === 'json'
   const required = ['run_id', 'principal_id', 'tenant_id', 'execution_id', 'source_item_id', 'source_locator', 'case_name', 'source_name']
-  required.push(...(analysis ? ['expected_result'] : ['target_item_id', 'target_locator', 'target_name']))
+  required.push(...(analysis ? ['expected_result'] : ['target_item_id', 'target_locator', 'target_name', 'source_locators']))
   for (const field of required) {
     expect(evidence[field], `missing raster evidence ${field}`).toBeTruthy()
   }
@@ -53,17 +53,18 @@ test('栅格 Console 执行状态、持久成果血缘及分析 JSON 一致', as
       await expect(resultPage.locator('.workflow-final-result-value')).toHaveCount(0)
       await preview.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `raster-workflow-${evidence.case_name}-json.png`) })
     } else {
-      expect(execution.metadata.lineage_facts.inputs.map(input => input.locator)).toEqual([evidence.source_locator])
+      expect(evidence.source_locators).toContain(evidence.source_locator)
+      expect(execution.metadata.lineage_facts.inputs.map(input => input.locator).sort()).toEqual([...evidence.source_locators].sort())
       expect(execution.metadata.lineage_facts.outputs.map(output => output.locator)).toEqual([evidence.target_locator])
       const lineage = frame.locator('.execution-lineage')
       await expect(lineage).toBeVisible()
       const groups = lineage.locator('.execution-lineage__group')
       await expect(groups).toHaveCount(2)
-      await expect(groups.nth(0).locator('.execution-lineage__card')).toHaveCount(1)
+      await expect(groups.nth(0).locator('.execution-lineage__card')).toHaveCount(evidence.source_locators.length)
       await expect(groups.nth(1).locator('.execution-lineage__card')).toHaveCount(1)
       await expect(groups.nth(0)).toContainText(evidence.source_name)
       await expect(groups.nth(1)).toContainText(evidence.target_name)
-      await expect(groups.nth(0).locator('.execution-lineage__resource-action')).toHaveCount(1)
+      await expect(groups.nth(0).locator('.execution-lineage__resource-action')).toHaveCount(evidence.source_locators.length)
       await expect(groups.nth(1).locator('.execution-lineage__resource-action')).toHaveCount(0)
 
       const query = new URLSearchParams({ subject_kind: 'data_item', item_id: String(evidence.target_item_id), direction: 'upstream' })

@@ -677,6 +677,100 @@ def test_utility_physical_oracle_rejects_pixels_levels_masks_and_partial_artifac
     with pytest.raises(fixture.FixtureError): fixture.worker('verify-utility-queries', physical)
 
 
+def foundation_execution(tmp_path, scene, api_server, case_name):
+    definition = scene.foundation_workflow('source-locator', 'reference-locator', 2, case_name)
+    sources = []
+    for task, role, name in ((definition['tasks'][0], 'source', 'spatial.tif'),
+                             (definition['tasks'][1], 'target', 'mosaic-first.cog.tif')):
+        source = tmp_path / (case_name + '-' + name)
+        original = LocalMinio.objects[role, 'raster-' + role, name]
+        source.write_bytes(original)
+        task['params'] = {'access_plan': source_access_plan(source)}
+        sources.append((source, original))
+    output = tmp_path / (case_name + '.cog.tif')
+    params = definition['tasks'][-1]['params']
+    for key in ('target_parent_locator', 'target_name', 'write_mode'):
+        params.pop(key)
+    params['access_plan'] = {'schema_version': 'addp.workflow.access-plan/v1', 'target': {
+        'kind': 'file', 'format': 'tiff', 'name': output.name, 'write_mode': 'create',
+        'access': {'method': 'mounted_path', 'path': str(output)}}}
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {}, 'runtime': {
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write']}}})
+    assert response.status_code == 202
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/' + response.json['execution_id']).json
+        if status['status'] in ('success', 'failed'):
+            break
+        time.sleep(.01)
+    assert status['status'] == 'success', status
+    assert all(source.read_bytes() == original for source, original in sources)
+    result = json.loads(status['result'])
+    assert result['size_bytes'] == output.stat().st_size > 0
+    LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
+    return result, output
+
+
+@pytest.fixture
+def foundation_artifacts(utility_artifacts, tmp_path):
+    scene, api_server, physical = utility_artifacts
+    preserved = {key[2]: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items() if key[0] == 'target'}
+    for case in fixture.FOUNDATION_CASES:
+        result, output = foundation_execution(tmp_path, scene, api_server, case)
+        evidence = fixture.worker('verify-' + case, physical)
+        assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
+        assert evidence['preserved_sha256'] == preserved
+        assert evidence['band_valid_pixels'] == [65534] * result['band_count']
+        assert evidence['color_interpretations'] == (['Red', 'Green', 'Blue'] if case == 'multiraster-rgb' else ['Gray'])
+        preserved[output.name] = evidence['sha256']
+    return physical
+
+
+def test_async_multiraster_weighted_rgb_match_independent_physical_oracle(foundation_artifacts):
+    evidence = fixture.worker('verify-multiraster-rgb', foundation_artifacts)
+    assert len(evidence['preserved_sha256']) == 19
+    assert evidence['invalid_pixels'] == 2
+    assert evidence['overview_sizes'] == [[128, 128]]
+
+
+@pytest.mark.parametrize('fault', ['weighted-pixel', 'rgb-green', 'rgb-hole', 'rgb-colour', 'overview', 'nodata', 'grid', 'extra', 'source'])
+def test_multiraster_physical_oracle_rejects_value_colour_mask_grid_and_source_faults(foundation_artifacts, tmp_path, fault):
+    if fault == 'extra':
+        LocalMinio.objects['target', 'raster-target', 'partial.tif'] = b'partial'
+    elif fault == 'source':
+        key = ('source', 'raster-source', 'spatial.tif')
+        LocalMinio.objects[key] = LocalMinio.objects[key] + b'changed'
+    else:
+        name = 'multiraster-weighted.cog.tif' if fault == 'weighted-pixel' else 'multiraster-rgb.cog.tif'
+        source = tmp_path / 'multiraster-corrupt-source.tif'
+        source.write_bytes(LocalMinio.objects['target', 'raster-target', name])
+        edited = tmp_path / 'multiraster-corrupt.tif'
+        ds = gdal.Translate(str(edited), str(source), format='GTiff', creationOptions=['TILED=YES', 'COPY_SRC_OVERVIEWS=YES'])
+        if fault == 'rgb-colour':
+            ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_BlueBand)
+            ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_RedBand)
+        elif fault == 'nodata':
+            ds.GetRasterBand(2).DeleteNoDataValue()
+        elif fault == 'grid':
+            transform = list(ds.GetGeoTransform())
+            transform[0] += 1
+            ds.SetGeoTransform(transform)
+        else:
+            band = ds.GetRasterBand(2 if fault in ('rgb-green', 'rgb-hole', 'overview') else 1)
+            if fault == 'overview': band = band.GetOverview(0)
+            position = 0 if fault == 'rgb-hole' else 1
+            band.WriteRaster(position, position, 1, 1, struct.pack('<d', 123), buf_type=gdal.GDT_Float64)
+            band = None
+        ds = None
+        changed = tmp_path / 'multiraster-corrupt.cog.tif'
+        ds = gdal.Translate(str(changed), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+        ds = None
+        LocalMinio.objects['target', 'raster-target', name] = changed.read_bytes()
+    with pytest.raises(fixture.FixtureError):
+        fixture.worker('verify-multiraster-rgb', foundation_artifacts)
+
+
 class ManagerLocalMinio(LocalMinio):
     def stat_object(self, bucket, name):
         from minio.error import S3Error

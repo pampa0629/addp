@@ -30,12 +30,13 @@ SPATIAL_NODATA = {0, 127 * SIZE + 127}
 GRID_CASES = ('resample-size', 'resample-resolution', 'clip-polygon')
 MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'multiband-average-joint', 'multiband-bilinear', 'multiband-bilinear-joint', 'multiband-average-fractional', 'multiband-average-fractional-joint', 'multiband-average-finite', 'multiband-average-finite-joint')
 UTILITY_CASES = ('build-overviews', 'to-cog')
+FOUNDATION_CASES = ('multiraster-weighted', 'multiraster-rgb')
 UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
 NON_COG_SOURCE = 'non-cog.tif'
 SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
                 ('multiband-average-finite.tif', False, -9999.))
-ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES) + ('verify-utility-queries',)
+ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -252,7 +253,25 @@ def multiband_expectation(case_name):
     return result
 
 
+def foundation_expectation(case_name):
+    if case_name not in FOUNDATION_CASES:
+        raise FixtureError('unknown multi-raster case')
+    return {**artifact_expectation(True), 'band_count': 3 if case_name == 'multiraster-rgb' else 1}
+
+
+def foundation_pixels(case_name, band=1, level=1):
+    """Independent source-cell and first-mosaic seam oracle; no GDAL computation."""
+    for row in range(0, SIZE, level):
+        for column in range(0, SIZE, level):
+            position = row * SIZE + column
+            factor = 3 if column >= 160 else 1
+            yield None if position in SPATIAL_NODATA else float((position + 1) * (
+                .25 + .75 * factor if case_name == 'multiraster-weighted' else factor if band == 2 else 1))
+
+
 def computed_expectation(case_name):
+    if case_name in FOUNDATION_CASES:
+        return foundation_expectation(case_name)
     return multiband_expectation(case_name) if case_name in MULTIBAND_CASES else grid_expectation(case_name)
 
 
@@ -507,6 +526,33 @@ def worker(action, path):
                     'source_unchanged': True, 'size_bytes': path.stat().st_size,
                     'overview_sizes': [[SIZE // level] * 2 for level in levels], 'crs': dataset.GetProjection(),
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+            if grid_case in FOUNDATION_CASES:
+                colors = ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
+                counts = []
+                for index in range(1, dataset.RasterCount + 1):
+                    current = dataset.GetRasterBand(index)
+                    if (current.DataType != gdal.GDT_Float64 or current.GetNoDataValue() is None
+                        or not math.isnan(current.GetNoDataValue())
+                        or gdal.GetColorInterpretationName(current.GetColorInterpretation()) != colors[index - 1]
+                        or current.GetOverviewCount() != 1):
+                        raise FixtureError('multi-raster target lost dtype/NaN/colour/overview')
+                    for level, sampled in ((1, current), (2, current.GetOverview(0))):
+                        if (sampled.XSize, sampled.YSize) != (SIZE // level, SIZE // level):
+                            raise FixtureError('multi-raster overview grid differs from nearest oracle')
+                        expected = list(foundation_pixels(grid_case, index, level))
+                        actual = struct.unpack(f'<{len(expected)}d', sampled.ReadRaster(buf_type=gdal.GDT_Float64))
+                        if any(not math.isnan(value) if wanted is None else value != wanted
+                               for value, wanted in zip(actual, expected)):
+                            raise FixtureError('multi-raster pixels/NaN differ from independent oracle')
+                        mask = sampled.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte)
+                        if any(value != (0 if wanted is None else 255) for value, wanted in zip(mask, expected)):
+                            raise FixtureError('multi-raster mask differs from independent oracle')
+                    counts.append(SIZE * SIZE - len(SPATIAL_NODATA))
+                return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': True,
+                    'valid_pixels': counts[0], 'invalid_pixels': len(SPATIAL_NODATA), 'band_valid_pixels': counts,
+                    'color_interpretations': colors, 'overview_sizes': [[128, 128]],
+                    'source_unchanged': True, 'size_bytes': path.stat().st_size,
+                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
             if grid_case in MULTIBAND_CASES:
                 joint = grid_case.endswith('-joint')
                 average = 'average' in grid_case
@@ -594,6 +640,19 @@ def worker(action, path):
             names = set(preserved) | ({grid_case + '.cog.tif'} if grid_case in UTILITY_CASES else set())
             if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
                 raise FixtureError('utility target contains unexpected or partial artifacts')
+            return evidence
+        if grid_case in FOUNDATION_CASES:
+            preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
+                'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
+                'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
+            for prior in GRID_CASES + MULTIBAND_CASES + FOUNDATION_CASES[:FOUNDATION_CASES.index(grid_case)]:
+                preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', grid_case=prior)['sha256']
+            for prior in UTILITY_CASES:
+                preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', utility_case=prior)['sha256']
+            evidence = verify(grid_case + '.cog.tif', grid_case=grid_case)
+            evidence.update(case_name=grid_case, preserved_sha256=preserved)
+            if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != set(preserved) | {grid_case + '.cog.tif'}:
+                raise FixtureError('multi-raster target contains unexpected or partial artifacts')
             return evidence
         if grid_case in GRID_CASES + MULTIBAND_CASES:
             evidence = verify(grid_case + '.cog.tif', grid_case=grid_case)
