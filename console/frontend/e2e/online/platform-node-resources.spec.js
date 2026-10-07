@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { resourceMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { resourceMetrics, filesystemMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -139,9 +139,31 @@ test('platform node resources through real Console password MFA and Monitor ifra
     expect(resources.filter(item => item.path.endsWith('resource_observations')).length).toBe(offCount)
     report.auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true, off_restored: true, off_no_requests: true }
     await page.screenshot({ path: resolve(artifact, 'node-resources-restored.png'), animations: 'disabled' })
+    save('filesystem-mount-trend-restore')
+    const filesystemTable = monitor.getByTestId('resource-filesystem-table')
+    await expect(filesystemTable.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
+    const mounts = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.startsWith('node.filesystem.')).at(-1)
+    expect(mounts.query.metrics.split(',').sort()).toEqual(filesystemMetrics.map(item => item.key).sort())
+    expect(mounts.value.series.every(item => Object.keys(item.dimensions).length === 3)).toBe(true)
+    await filesystemTable.getByRole('button', { name: '查看趋势' }).first().click()
+    await expect(page).toHaveURL(url => url.searchParams.get('metric') === 'node.filesystem.used_percent' && Boolean(url.searchParams.get('mountpoint')) && Boolean(url.searchParams.get('device')) && Boolean(url.searchParams.get('fstype')))
+    await expect(monitor.getByTestId('resource-selected-mount')).toBeVisible()
+    await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    await page.reload()
+    await expect(monitor.getByTestId('resource-selected-mount')).toBeVisible()
+    await expect(monitor.getByTestId('resource-metric')).toContainText('可用容量使用率')
+    await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    await Promise.all(pending)
+    const selected = Object.fromEntries(new URL(page.url()).searchParams)
+    const filesystemTrend = resources.filter(item => item.query.metrics === 'node.filesystem.used_percent').at(-1)
+    for (const key of ['device', 'mountpoint', 'fstype']) expect(filesystemTrend.query[key]).toBe(selected[key])
+    expect(filesystemTrend.value.series).toHaveLength(1)
+    expect(filesystemTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
+    await monitor.getByTestId('resource-filesystems').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: resolve(artifact, 'node-resources-filesystem.png'), animations: 'disabled' })
     expect(businessErrors).toEqual([])
     report.resources = resources
-    report.navigation = { list_without_fanout: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true }
+    report.navigation = { list_without_fanout: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true }
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     try {

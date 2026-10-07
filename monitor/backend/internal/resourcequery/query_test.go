@@ -28,7 +28,7 @@ const testNode = "11111111-1111-4111-8111-111111111111"
 
 func plan(t *testing.T, trend bool) Plan {
 	t.Helper()
-	p, e := NewPlan([]string{"node.memory.used_percent"}, testTime.Add(-30*time.Second), testTime, testTime, trend, DefaultBudget())
+	p, e := NewPlan([]string{"node.memory.used_percent"}, testTime.Add(-30*time.Second), testTime, testTime, trend, nil, DefaultBudget())
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -36,37 +36,39 @@ func plan(t *testing.T, trend bool) Plan {
 }
 func TestPlansAndWhitelistRejectInjectionAndBoundSevenDays(t *testing.T) {
 	for _, keys := range [][]string{nil, {"up"}, {"node.memory.used_percent", "node.memory.used_percent"}, {`node.memory.used_percent} or up{`}} {
-		if _, e := NewPlan(keys, testTime, testTime, testTime, false, DefaultBudget()); !errors.Is(e, ErrInvalid) {
+		if _, e := NewPlan(keys, testTime, testTime, testTime, false, nil, DefaultBudget()); !errors.Is(e, ErrInvalid) {
 			t.Fatalf("keys=%q err=%v", keys, e)
 		}
 	}
 	keys := []string{}
 	for _, d := range Catalog() {
-		keys = append(keys, d.Key)
+		if !d.Filesystem() {
+			keys = append(keys, d.Key)
+		}
 	}
 	zone := time.FixedZone("offset", 8*3600)
-	utcPlan, e := NewPlan([]string{"node.load.average_1m"}, testTime.Add(-time.Minute).In(zone), testTime.In(zone), testTime, true, DefaultBudget())
+	utcPlan, e := NewPlan([]string{"node.load.average_1m"}, testTime.Add(-time.Minute).In(zone), testTime.In(zone), testTime, true, nil, DefaultBudget())
 	if e != nil || utcPlan.Start.Location() != time.UTC || utcPlan.End.Location() != time.UTC {
 		t.Fatal("response timeline not normalized to UTC", e)
 	}
-	p, e := NewPlan(keys, testTime.Add(-7*24*time.Hour), testTime, testTime, true, DefaultBudget())
+	p, e := NewPlan(keys, testTime.Add(-7*24*time.Hour), testTime, testTime, true, nil, DefaultBudget())
 	if e != nil || p.Points > 1000 || p.Points*len(keys) > 20000 || p.StepSeconds%15 != 0 {
 		t.Fatalf("plan=%+v err=%v", p, e)
 	}
-	if _, e := NewPlan(keys, testTime.Add(-7*24*time.Hour-time.Second), testTime, testTime, true, DefaultBudget()); !errors.Is(e, ErrBudget) {
+	if _, e := NewPlan(keys, testTime.Add(-7*24*time.Hour-time.Second), testTime, testTime, true, nil, DefaultBudget()); !errors.Is(e, ErrBudget) {
 		t.Fatal(e)
 	}
 	tiny := DefaultBudget()
 	tiny.MaxTotalPoints = 2
-	if _, e := NewPlan(keys, testTime, testTime, testTime, false, tiny); !errors.Is(e, ErrBudget) {
+	if _, e := NewPlan(keys, testTime, testTime, testTime, false, nil, tiny); !errors.Is(e, ErrBudget) {
 		t.Fatal("instant output budget bypass", e)
 	}
-	if _, e := NewPlan(keys, testTime.Add(time.Second), testTime.Add(time.Minute), testTime, true, DefaultBudget()); !errors.Is(e, ErrInvalid) {
+	if _, e := NewPlan(keys, testTime.Add(time.Second), testTime.Add(time.Minute), testTime, true, nil, DefaultBudget()); !errors.Is(e, ErrInvalid) {
 		t.Fatal(e)
 	}
 	b := DefaultBudget()
 	b.MaxTotalPoints = 2
-	if _, e := NewPlan(keys, testTime.Add(-time.Minute), testTime, testTime, true, b); !errors.Is(e, ErrBudget) {
+	if _, e := NewPlan(keys, testTime.Add(-time.Minute), testTime, testTime, true, nil, b); !errors.Is(e, ErrBudget) {
 		t.Fatal(e)
 	}
 	expression, e := p.Expression(Scope{NodeID: testNode, Instance: `127.0.0.1:9100"} or up{`})
@@ -152,6 +154,88 @@ func TestRejectForeignDuplicateMisalignedAndOverBudgetResponses(t *testing.T) {
 	}
 	if _, e := normalize(wire(t, data(row+","+row+","+row, false)), p, DefaultBudget()); !errors.Is(e, ErrBudget) {
 		t.Fatal(e)
+	}
+}
+
+func TestFilesystemPlansBudgetDimensionsAndMissingEvidence(t *testing.T) {
+	keys := []string{"node.filesystem.total_bytes", "node.filesystem.free_bytes", "node.filesystem.available_bytes", "node.filesystem.used_bytes", "node.filesystem.used_percent"}
+	b := DefaultBudget()
+	dims := Dimensions{"device": "/dev/a", "mountpoint": "/data space\t", "fstype": "ext4"}
+	all, err := NewPlan(keys, testTime.Add(-7*24*time.Hour), testTime, testTime, true, nil, b)
+	if err != nil || all.FilesystemGroups != 20 || all.SeriesUpperBound != 100 || all.Points*all.SeriesUpperBound > 20000 {
+		t.Fatal(all, err)
+	}
+	selected, err := NewPlan(keys, testTime.Add(-7*24*time.Hour), testTime, testTime, true, dims, b)
+	if err != nil || selected.FilesystemGroups != 1 || selected.SeriesUpperBound != 5 || selected.StepSeconds >= all.StepSeconds {
+		t.Fatal(selected, err)
+	}
+	for _, dimensions := range []Dimensions{{"device": "a"}, {"device": "a", "mountpoint": "relative", "fstype": "x"}, {"device": "a", "mountpoint": "/", "fstype": "x", "extra": "secret"}} {
+		if _, err := NewPlan(keys, testTime, testTime, testTime, false, dimensions, b); !errors.Is(err, ErrInvalid) {
+			t.Fatal(dimensions, err)
+		}
+	}
+	if _, err := NewPlan([]string{"node.load.average_1m"}, testTime, testTime, testTime, false, dims, b); !errors.Is(err, ErrInvalid) {
+		t.Fatal(err)
+	}
+	if _, err := NewPlan(append(keys, "node.cpu.logical_cores"), testTime, testTime, testTime, false, nil, Budget{MaxMetrics: 12, MaxSeries: 5, MaxPointsPerSeries: 1000, MaxTotalPoints: 20000, MaxRangeSeconds: 604800, TimeoutSeconds: 5, SubjectConcurrency: 2, ProcessConcurrency: 8}); !errors.Is(err, ErrBudget) {
+		t.Fatal(err)
+	}
+	rows, err := normalize(wire(t, data("", true)), selected, b)
+	if err != nil || len(rows) != 5 || rows[0].Dimensions.identity() != dims.identity() || rows[0].Points[0].Value != nil {
+		t.Fatal(rows, err)
+	}
+}
+
+func TestFilesystemNormalizeMountUnionFailuresAndStrictScope(t *testing.T) {
+	key := "node.filesystem.used_percent"
+	b := DefaultBudget()
+	b.MaxSeries = 2
+	p, err := NewPlan([]string{key}, testTime.Add(-30*time.Second), testTime, testTime, true, nil, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dim := Dimensions{"device": "/dev/a", "mountpoint": "/", "fstype": "ext4"}
+	makeRow := func(component string, dimensions Dimensions, samples string) string {
+		labels := dimensions.Copy()
+		labels["addp_metric"], labels["addp_component"] = key, component
+		encoded, _ := json.Marshal(labels)
+		return `{"metric":` + string(encoded) + `,"values":` + samples + `}`
+	}
+	first := "[" + pair(testTime.Unix()-30, "1799999970") + "]"
+	last := "[" + pair(testTime.Unix(), "1800000000") + "]"
+	root := makeRow("value", dim, "["+pair(testTime.Unix()-30, "0")+"]") + "," + makeRow("sampled_at", dim, first) + "," + makeRow("observed_at", dim, first)
+	bind := dim.Copy()
+	bind["mountpoint"] = "/bind"
+	// A known mount with a failing statfs emits only presence, never a false zero.
+	rows, err := normalize(wire(t, data(root+","+makeRow("observed_at", bind, last), true)), p, b)
+	if err != nil || len(rows) != 2 {
+		t.Fatal(rows, err)
+	}
+	for _, row := range rows {
+		if row.Dimensions["mountpoint"] == "/" {
+			if row.Points[0].Value == nil || *row.Points[0].Value != 0 || row.Points[1].Value != nil {
+				t.Fatal(row)
+			}
+		} else if row.Points[2].Value != nil || row.Points[2].DataState != "no_data" {
+			t.Fatal(row)
+		}
+	}
+	third := dim.Copy()
+	third["mountpoint"] = "/third"
+	if _, err := normalize(wire(t, data(root+","+makeRow("observed_at", bind, last)+","+makeRow("observed_at", third, last), true)), p, b); !errors.Is(err, ErrBudget) {
+		t.Fatal("historical mount union bypass", err)
+	}
+	selected, _ := NewPlan([]string{key}, p.Start, p.End, testTime, true, dim, b)
+	if _, err := normalize(wire(t, data(makeRow("observed_at", bind, last), true)), selected, b); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("foreign mount accepted", err)
+	}
+	if _, err := normalize(wire(t, data(root+","+makeRow("observed_at", dim, first), true)), p, b); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("duplicate evidence accepted", err)
+	}
+	foreign := dim.Copy()
+	foreign["device_error"] = "secret error"
+	if _, err := normalize(wire(t, data(makeRow("observed_at", foreign, last), true)), p, b); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("private label leaked", err)
 	}
 }
 func TestLimiterNoQueueAndHotBudgetDecrease(t *testing.T) {
@@ -317,7 +401,7 @@ func TestQueryClientRejectsSigningAuthorityAsClientCredential(t *testing.T) {
 }
 
 func TestCPUBusyWindowMetadataAndPercentageEvidence(t *testing.T) {
-	p, err := NewPlan([]string{"node.cpu.busy_percent"}, testTime, testTime, testTime, false, DefaultBudget())
+	p, err := NewPlan([]string{"node.cpu.busy_percent"}, testTime, testTime, testTime, false, nil, DefaultBudget())
 	if err != nil {
 		t.Fatal(err)
 	}

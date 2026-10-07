@@ -41,11 +41,27 @@
           <p>{{ t('monitor.resources.evaluatedAt') }}: {{ date(point(metric.key).evaluated_at) }}</p>
         </article>
       </section>
+      <section v-if="instant" class="resource-filesystems" data-testid="resource-filesystems">
+        <h3>{{ t('monitor.resources.filesystem.title') }}</h3>
+        <p class="resource-hint">{{ t('monitor.resources.filesystem.hint') }}</p>
+        <p v-if="filesystems" class="resource-hint">{{ t('monitor.resources.queriedAt') }}: {{ date(filesystems.queried_at) }}</p>
+        <el-alert v-if="filesystemErrorKey" :title="t(filesystemErrorKey)" type="error" show-icon :closable="false" data-testid="resource-filesystem-error" />
+        <el-table v-else :data="mountRows" :empty-text="filesystems ? t(`monitor.resources.states.${filesystems.series[0].points[0].data_state}`) : t('monitor.resources.filesystem.empty')" data-testid="resource-filesystem-table">
+          <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="dimensions.mountpoint" :label="t('monitor.resources.filesystem.mountpoint')" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="dimensions.fstype" :label="t('monitor.resources.filesystem.type')" min-width="100" show-overflow-tooltip />
+          <el-table-column v-for="metric in filesystemMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
+            <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p><p class="resource-hint">{{ date(row.metrics[metric.key].sampled_at) }}</p></template>
+          </el-table-column>
+          <el-table-column :label="t('monitor.resources.trend')" width="140" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="selectFilesystem(row)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
+        </el-table>
+      </section>
       <section v-if="instant" class="resource-trend">
         <div class="resource-toolbar">
           <h3>{{ t('monitor.resources.trend') }}</h3>
+          <span v-if="state.dimensions.mountpoint" class="resource-hint" data-testid="resource-selected-mount">{{ state.dimensions.mountpoint }} · {{ state.dimensions.fstype }} · {{ state.dimensions.device }}</span>
           <el-select :model-value="state.metric" :aria-label="t('monitor.resources.metric')" data-testid="resource-metric" @update:model-value="value => selectTrend('metric', value)">
-            <el-option v-for="metric in resourceMetrics" :key="metric.key" :value="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" />
+            <el-option v-for="metric in trendMetrics" :key="metric.key" :value="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" />
           </el-select>
           <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" data-testid="resource-range" @update:model-value="value => selectTrend('range', value)">
             <el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" />
@@ -86,7 +102,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, allResourceMetrics, filesystemRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -94,10 +110,12 @@ const canRead = computed(() => auth.contextType === 'platform' && auth.authConte
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
-const listQuery = computed(() => { const { range, metric, refresh, ...query } = state.value.query; return query })
-const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null)
-const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
-const selectedMetric = computed(() => resourceMetrics.find(item => item.key === state.value.metric))
+const listQuery = computed(() => { const { range, metric, refresh, device, mountpoint, fstype, ...query } = state.value.query; return query })
+const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null)
+const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
+const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
+const mountRows = computed(() => filesystemRows(filesystems.value))
+const trendMetrics = computed(() => state.value.dimensions.mountpoint ? allResourceMetrics : resourceMetrics)
 const chartRows = computed(() => trend.value ? resourceChartRows(trend.value.series[0]) : [])
 const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
 const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, presentation(selectedMetric.value)] }))
@@ -113,7 +131,12 @@ function formatValue(value, metric) { return formatFieldPresentationValue(curren
 function navigate(path, query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function search() { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace') }
-function selectTrend(key, value) { return navigate(route.path, { ...state.value.query, [key]: value }, 'replace') }
+function selectTrend(key, value) {
+  const query = { ...state.value.query, [key]: value }
+  if (key === 'metric' && !value.startsWith('node.filesystem.')) for (const dimension of ['device', 'mountpoint', 'fstype']) delete query[dimension]
+  return navigate(route.path, query, 'replace')
+}
+function selectFilesystem(row) { return navigate(route.path, { ...state.value.query, ...row.dimensions, metric: 'node.filesystem.used_percent' }, 'replace') }
 function invalidChart() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 function stopRefresh() { window.clearTimeout(refreshTimer); refreshTimer = null }
 function invalidate() { stopRefresh(); epoch++; for (const controller of pending) controller.abort(); pending.clear() }
@@ -137,12 +160,13 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
-  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null }
-  errorKey.value = ''; trendErrorKey.value = ''; evidencePage.value = 1; loading.value = false
+  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null }
+  errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = '';  evidencePage.value = 1; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
   searchText.value = state.value.search
   const id = nodeID.value
+  if (state.value.invalidDimensions) { errorKey.value = 'monitor.resources.errors.invalidMount'; return }
   if (id && !isTargetUUID(id)) { errorKey.value = 'monitor.resources.errors.invalidID'; return }
   loading.value = true
   try {
@@ -159,22 +183,33 @@ async function reload({ automatic = false } = {}) {
       const current = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))
       if (ticket !== epoch) return
       instant.value = validateResourceResponse(current, id, keys)
+      filesystems.value = null
+      try {
+        const filesystemKeys = filesystemMetrics.map(metric => metric.key)
+        const mounts = await request(config => api.instant({ node_id: id, metrics: filesystemKeys.join(',') }, config))
+        if (ticket !== epoch) return
+        filesystems.value = validateResourceResponse(mounts, id, filesystemKeys)
+      } catch (error) {
+        if (ticket !== epoch) return
+        filesystemErrorKey.value = resourceErrorKey(error)
+        if ([401, 403, 404].includes(error.response?.status)) throw error
+      }
       trend.value = null
       try {
-        const params = trendParameters(id, state.value.metric, state.value.range, current.end)
+        const params = trendParameters(id, state.value.metric, state.value.range, current.end, state.value.dimensions)
         const history = await request(config => api.trend(params, config))
         if (ticket !== epoch) return
-        trend.value = validateResourceResponse(history, id, [state.value.metric], true)
+        trend.value = validateResourceResponse(history, id, [state.value.metric], true, state.value.dimensions)
       } catch (error) {
         if (ticket !== epoch) return
         trend.value = null
         trendErrorKey.value = resourceErrorKey(error)
-        if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; errorKey.value = trendErrorKey.value }
+        if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; errorKey.value = trendErrorKey.value }
       }
     }
   } catch (error) {
     if (ticket !== epoch) return
-    instant.value = null; trend.value = null
+    instant.value = null; trend.value = null; filesystems.value = null
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null }
   } finally { if (ticket === epoch) { loading.value = false; scheduleRefresh() } }
@@ -196,7 +231,7 @@ onBeforeUnmount(() => { disposed = true; document.removeEventListener('visibilit
 .resource-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
 .resource-card { min-width: 0; border: 1px solid var(--addp-border-color); border-radius: 8px; padding: 16px; background: var(--addp-bg-primary); overflow-wrap: anywhere; }
 .resource-card strong { display: block; margin-top: 12px; font-size: 22px; }
-.resource-trend { margin-top: 24px; }
+.resource-trend, .resource-filesystems { margin-top: 24px; }
 .resource-chart { display: flex; min-width: 0; }
 .el-alert { margin: 16px 0; }
 @media (max-width: 600px) { .node-resources { padding: 12px; } .resource-cards { grid-template-columns: 1fr; } }

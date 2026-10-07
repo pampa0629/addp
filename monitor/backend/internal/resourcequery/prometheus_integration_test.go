@@ -36,7 +36,9 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	defer c.Close()
 	keys := []string{}
 	for _, d := range Catalog() {
-		keys = append(keys, d.Key)
+		if !d.Filesystem() {
+			keys = append(keys, d.Key)
+		}
 	}
 	b := DefaultBudget()
 	scope := Scope{NodeID: testNode, Instance: os.Getenv("ADDP_METRICS_QUERY_INSTANCE")}
@@ -45,7 +47,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	var now time.Time
 	for {
 		now = time.Now().UTC().Truncate(time.Second)
-		p, err := NewPlan(keys, now, now, now, false, b)
+		p, err := NewPlan(keys, now, now, now, false, nil, b)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -66,7 +68,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 	for _, trend := range []bool{false, true} {
-		p, e := NewPlan(keys, now.Add(-30*time.Second), now, now, trend, b)
+		p, e := NewPlan(keys, now.Add(-30*time.Second), now, now, trend, nil, b)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -81,7 +83,40 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 			}
 		}
 	}
-	p, e := NewPlan(keys, now, now, now, false, b)
+
+	filesystemKeys := []string{}
+	for _, d := range Catalog() {
+		if d.Filesystem() {
+			filesystemKeys = append(filesystemKeys, d.Key)
+		}
+	}
+	files, err := NewPlan(filesystemKeys, now, now, now, false, nil, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounts, err := c.Query(context.Background(), files, scope, b)
+	if err != nil || len(mounts) < len(filesystemKeys) {
+		t.Fatal("native filesystem query", mounts, err)
+	}
+	for _, row := range mounts {
+		if row.Dimensions.Validate() != nil || len(row.Dimensions) != 3 || row.Points[0].DataState != "valid" {
+			t.Fatal("native filesystem evidence", row)
+		}
+	}
+	selected, err := NewPlan(filesystemKeys, now.Add(-30*time.Second), now, now, true, mounts[0].Dimensions, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := c.Query(context.Background(), selected, scope, b)
+	if err != nil || len(history) != len(filesystemKeys) {
+		t.Fatal("native mount trend", err)
+	}
+	for _, row := range history {
+		if row.Dimensions.identity() != mounts[0].Dimensions.identity() || row.Points[len(row.Points)-1].DataState != "valid" {
+			t.Fatal(row)
+		}
+	}
+	p, e := NewPlan(keys, now, now, now, false, nil, b)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -104,7 +139,7 @@ func TestIntegrationMetricsCPUWindow(t *testing.T) {
 		t.Skip("requires standard Monitor metrics T2 gate")
 	}
 	scope := Scope{NodeID: testNode, Instance: "fixture:9100"}
-	p, err := NewPlan([]string{"node.cpu.busy_percent"}, testTime, testTime, testTime, false, DefaultBudget())
+	p, err := NewPlan([]string{"node.cpu.busy_percent"}, testTime, testTime, testTime, false, nil, DefaultBudget())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,21 +193,136 @@ func TestIntegrationMetricsCPUWindow(t *testing.T) {
 			"input_series":     inputs,
 			"promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": item.at, "exp_samples": expected}}})
 	}
+	runPromtoolCases(t, "cpu", tests)
+	t.Logf("pinned promtool passed %d CPU window/reset/topology scenarios", len(scenarios))
+}
+
+func runPromtoolCases(t *testing.T, name string, tests []any) {
+	t.Helper()
 	payload, err := json.Marshal(map[string]any{"rule_files": []any{}, "evaluation_interval": "15s", "tests": tests})
 	if err != nil {
 		t.Fatal(err)
 	}
 	work := os.Getenv("METRICS_T2_WORK")
-	path := filepath.Join(work, "source", "cpu-query-tests.yml")
+	filename := name + "-query-tests.yml"
+	path := filepath.Join(work, "source", filename)
 	if err = os.WriteFile(path, payload, 0644); err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(path)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", "compose", "--env-file", "/dev/null", "-p", os.Getenv("METRICS_T2_PROJECT"), "-f", os.Getenv("METRICS_T2_COMPOSE"), "run", "--rm", "--no-deps", "--volume", filepath.Join(work, "source")+":/cpu-tests:ro", "--entrypoint", "/bin/promtool", "prometheus", "test", "rules", "/cpu-tests/cpu-query-tests.yml")
+	cmd := exec.CommandContext(ctx, "docker", "compose", "--env-file", "/dev/null", "-p", os.Getenv("METRICS_T2_PROJECT"), "-f", os.Getenv("METRICS_T2_COMPOSE"), "run", "--rm", "--no-deps", "--volume", filepath.Join(work, "source")+":/query-tests:ro", "--entrypoint", "/bin/promtool", "prometheus", "test", "rules", "/query-tests/"+filename)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("native CPU window scenarios: %v\n%s", err, output)
+		t.Fatalf("native %s scenarios: %v\n%s", name, err, output)
 	}
-	t.Logf("pinned promtool passed %d CPU window/reset/topology scenarios", len(scenarios))
+}
+
+func TestIntegrationMetricsFilesystem(t *testing.T) {
+	if os.Getenv("ADDP_METRICS_QUERY_INTEGRATION") != "1" {
+		t.Skip("requires standard Monitor metrics T2 gate")
+	}
+	scope := Scope{NodeID: testNode, Instance: "fixture:9100"}
+	keys := []string{"node.filesystem.total_bytes", "node.filesystem.free_bytes", "node.filesystem.available_bytes", "node.filesystem.used_bytes", "node.filesystem.used_percent"}
+	p, err := NewPlan(keys, testTime, testTime, testTime, false, nil, DefaultBudget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	expression, err := p.Expression(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dim := `,device="/dev/a",mountpoint="/",fstype="ext4"}`
+	raw := func(name, labels string) string { return strings.TrimSuffix(scope.selector(name), "}") + labels }
+	inputs := func(total, free, available, deviceError string) []any {
+		out := []any{}
+		for _, row := range [][2]string{{"node_filesystem_size_bytes", total}, {"node_filesystem_free_bytes", free}, {"node_filesystem_avail_bytes", available}, {"node_filesystem_device_error", deviceError}} {
+			out = append(out, map[string]any{"series": raw(row[0], dim), "values": row[1]})
+		}
+		return out
+	}
+	expected := func(at float64, values []float64) []any {
+		out := []any{}
+		for i, key := range keys {
+			components := []struct {
+				k string
+				v float64
+			}{{"observed_at", at}}
+			if values != nil {
+				components = append(components, struct {
+					k string
+					v float64
+				}{"value", values[i]}, struct {
+					k string
+					v float64
+				}{"sampled_at", at})
+			}
+			for _, component := range components {
+				out = append(out, map[string]any{"labels": fmt.Sprintf(`{addp_component=%q,addp_metric=%q,device="/dev/a",mountpoint="/",fstype="ext4"}`, component.k, key), "value": component.v})
+			}
+		}
+		return out
+	}
+	type scenario struct {
+		name, total, free, available, deviceError, at string
+		values                                        []float64
+	}
+	scenarios := []scenario{
+		{"reserved non-root capacity", "100 100 100", "30 30 30", "25 25 25", "0 0 0", "30s", []float64{100, 30, 25, 70, 100 * 70.0 / 95}},
+		{"valid zero usage", "100 100 100", "100 100 100", "95 95 95", "0 0 0", "30s", []float64{100, 100, 95, 0, 0}},
+		{"full capacity", "100 100 100", "0 0 0", "0 0 0", "0 0 0", "30s", []float64{100, 0, 0, 100, 100}},
+		{"invalid available", "100 100 100", "30 30 30", "31 31 31", "0 0 0", "30s", nil},
+		{"invalid free", "100 100 100", "101 101 101", "25 25 25", "0 0 0", "30s", nil},
+		{"negative capacity", "100 100 100", "30 30 30", "-1 -1 -1", "0 0 0", "30s", nil},
+		{"nonfinite capacity", "+Inf +Inf +Inf", "30 30 30", "25 25 25", "0 0 0", "30s", nil},
+		{"statfs error", "100 100 100", "30 30 30", "25 25 25", "1 1 1", "30s", nil},
+		{"statfs capacity absent", "_ _ _", "_ _ _", "_ _ _", "1 1 1", "30s", nil},
+		{"same scrape required", "100 100 100", "30 30 _", "25 25 25", "0 0 0", "30s", nil},
+		{"historical capacity", "100 200 200", "30 130 130", "25 125 125", "0 0 0", "0s", []float64{100, 30, 25, 70, 100 * 70.0 / 95}},
+		{"changed capacity", "100 200 200", "30 130 130", "25 125 125", "0 0 0", "30s", []float64{200, 130, 125, 70, 100 * 70.0 / 195}},
+	}
+	tests := []any{}
+	for _, item := range scenarios {
+		at, _ := time.ParseDuration(item.at)
+		tests = append(tests, map[string]any{"name": item.name, "interval": "15s", "input_series": inputs(item.total, item.free, item.available, item.deviceError), "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": item.at, "exp_samples": expected(at.Seconds(), item.values)}}})
+	}
+	// Source duplication is rejected even after its private error label is dropped.
+	duplicate := inputs("100 100 100", "30 30 30", "25 25 25", "0 0 0")
+	duplicate = append(duplicate, map[string]any{"series": raw("node_filesystem_size_bytes", strings.TrimSuffix(dim, "}")+`,private="duplicate"}`), "values": "100 100 100"})
+	tests = append(tests, map[string]any{"name": "duplicate source series", "interval": "15s", "input_series": duplicate, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": expected(30, nil)}}})
+
+	bindInputs := inputs("100 100 100", "30 30 30", "25 25 25", "0 0 0")
+	bindExpected := expected(30, []float64{100, 30, 25, 70, 100 * 70.0 / 95})
+	for _, raw := range inputs("100 100 100", "30 30 30", "25 25 25", "0 0 0") {
+		row := raw.(map[string]any)
+		row["series"] = strings.Replace(row["series"].(string), `mountpoint="/"`, `mountpoint="/bind"`, 1)
+		bindInputs = append(bindInputs, row)
+	}
+	for _, raw := range expected(30, []float64{100, 30, 25, 70, 100 * 70.0 / 95}) {
+		row := raw.(map[string]any)
+		row["labels"] = strings.Replace(row["labels"].(string), `mountpoint="/"`, `mountpoint="/bind"`, 1)
+		bindExpected = append(bindExpected, row)
+	}
+	tests = append(tests, map[string]any{"name": "bind mounts are separate observations", "interval": "15s", "input_series": bindInputs, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": bindExpected}}})
+	exact, err := NewPlan(keys, testTime, testTime, testTime, false, Dimensions{"device": "/dev/a", "mountpoint": "/", "fstype": "ext4"}, DefaultBudget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exactExpression, err := exact.Expression(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests = append(tests, map[string]any{"name": "exact mount does not include bind sibling", "interval": "15s", "input_series": bindInputs, "promql_expr_test": []any{map[string]any{"expr": exactExpression, "eval_time": "30s", "exp_samples": expected(30, []float64{100, 30, 25, 70, 100 * 70.0 / 95})}}})
+	zeroExpected := expected(30, []float64{0, 0, 0, 0, 0})
+	zeroRows := []any{}
+	for _, raw := range zeroExpected {
+		row := raw.(map[string]any)
+		if !strings.Contains(row["labels"].(string), `addp_metric="node.filesystem.used_percent"`) || strings.Contains(row["labels"].(string), `addp_component="observed_at"`) {
+			zeroRows = append(zeroRows, row)
+		}
+	}
+	tests = append(tests, map[string]any{"name": "zero denominator is absent, zero capacity remains valid", "interval": "15s", "input_series": inputs("0 0 0", "0 0 0", "0 0 0", "0 0 0"), "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": zeroRows}}})
+	tests = append(tests, map[string]any{"name": "unmounted source creates gaps", "interval": "15s", "input_series": inputs("100 stale _", "30 stale _", "25 stale _", "0 stale _"), "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": []any{}}}})
+	runPromtoolCases(t, "filesystem", tests)
+	t.Logf("pinned promtool passed %d filesystem capacity/evidence scenarios", len(tests))
 }

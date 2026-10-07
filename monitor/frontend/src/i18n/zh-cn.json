@@ -623,7 +623,12 @@
         "load1m": "1 分钟平均负载",
         "load5m": "5 分钟平均负载",
         "load15m": "15 分钟平均负载",
-        "uptime": "运行时长"
+        "uptime": "运行时长",
+        "filesystemTotal": "总容量",
+        "filesystemFree": "空闲容量",
+        "filesystemAvailable": "普通用户可用",
+        "filesystemUsed": "已用容量",
+        "filesystemUsedPercent": "可用容量使用率"
       },
       "ranges": {
         "5m": "近 5 分钟",
@@ -654,7 +659,17 @@
         "notFound": "节点不存在或当前不可访问。",
         "denied": "当前身份无权查看平台节点资源。",
         "invalidID": "节点标识无效。",
-        "invalidResponse": "资源响应不完整，无法展示，请重新刷新。"
+        "invalidResponse": "资源响应不完整，无法展示，请重新刷新。",
+        "invalidMount": "挂载选择无效，请返回节点列表重新选择。"
+      },
+      "filesystem": {
+        "title": "文件系统挂载",
+        "hint": "按挂载点展示容量；绑定挂载、内存及网络文件系统的容量不作物理总量汇总。",
+        "empty": "暂无有效挂载证据",
+        "device": "设备",
+        "mountpoint": "挂载点",
+        "type": "文件系统类型",
+        "viewTrend": "查看趋势"
       }
     }
   }

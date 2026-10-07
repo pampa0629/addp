@@ -100,7 +100,7 @@ func TestResourceRoutesRejectTenantMachineDelegatedAndMissingPermission(t *testi
 func TestResourceQueryParsingStrictAndPolicyCAS(t *testing.T) {
 	identity := targetAPIIdentity("user", "addp-web", "first_party_access_token", "monitor.resource_observation.read")
 	router := resourceAPIRouter(t, identity)
-	for _, query := range []string{"node_id=x&metrics=y&query=up", "node_id=x&metrics=y&node_id=z", "node_id=x&metrics=y&step=1", "node_id=x&metrics=y&start=bad", "node_id=x;metrics=y"} {
+	for _, query := range []string{"node_id=x&metrics=y&query=up", "node_id=x&metrics=y&node_id=z", "node_id=x&metrics=y&step=1", "node_id=x&metrics=y&start=bad", "node_id=x;metrics=y", "node_id=x&metrics=y&device=a", "node_id=x&metrics=y&device=a&mountpoint=relative&fstype=x", "node_id=x&metrics=y&device=a&device=b&mountpoint=%2F&fstype=x"} {
 		req := httptest.NewRequest("GET", "/api/v1/monitor/platform/resource_observations?"+query, nil)
 		req.Header.Set("Authorization", "Bearer addp_at_user")
 		w := httptest.NewRecorder()

@@ -324,6 +324,10 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_monitor_internal_resourcequery.Dimensions:
+    additionalProperties:
+      type: string
+    type: object
   github_com_addp_monitor_internal_resourcequery.Point:
     properties:
       data_state:
@@ -337,6 +341,11 @@ definitions:
     type: object
   github_com_addp_monitor_internal_resourcequery.Series:
     properties:
+      dimensions:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions'
+        description: 标量为空对象；文件系统仅设备、挂载点、类型三项 | Empty for scalars; exactly device,
+          mountpoint and fstype for mounts.
       metric_key:
         type: string
       points:
@@ -3447,19 +3456,34 @@ paths:
       - monitor.monitoring_target.update
   /platform/resource_observations:
     get:
-      description: 固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics;
-        CPU busy is the one-minute non-idle percentage, with no_data for incomplete
-        windows
+      description: 固定九项标量及五项文件系统容量；文件系统按挂载维度，可用容量使用率为 used/(used+available)；缺少有效证据返回
+        no_data | Nine scalar and five filesystem metrics; mounts have fixed dimensions
+        and available-capacity usage is used/(used+available); missing evidence returns
+        no_data
       parameters:
       - description: 节点 UUID | Node UUID
         in: query
         name: node_id
         required: true
         type: string
-      - description: 逗号分隔的固定目录键 | Comma separated fixed catalog keys
+      - description: 逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most
+          twelve
         in: query
         name: metrics
         required: true
+        type: string
+      - description: 文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint
+          and fstype
+        in: query
+        name: device
+        type: string
+      - description: 文件系统挂载点精确值 | Exact filesystem mountpoint
+        in: query
+        name: mountpoint
+        type: string
+      - description: 文件系统类型精确值 | Exact filesystem type
+        in: query
+        name: fstype
         type: string
       produces:
       - application/json
@@ -3514,19 +3538,34 @@ paths:
       - monitor.resource_observation.read
   /platform/resource_trends:
     get:
-      description: 固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics;
-        CPU busy is the one-minute non-idle percentage, with no_data for incomplete
-        windows
+      description: 固定九项标量及五项文件系统容量；文件系统按挂载维度，可用容量使用率为 used/(used+available)；缺少有效证据返回
+        no_data | Nine scalar and five filesystem metrics; mounts have fixed dimensions
+        and available-capacity usage is used/(used+available); missing evidence returns
+        no_data
       parameters:
       - description: 节点 UUID | Node UUID
         in: query
         name: node_id
         required: true
         type: string
-      - description: 逗号分隔的固定目录键 | Comma separated fixed catalog keys
+      - description: 逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most
+          twelve
         in: query
         name: metrics
         required: true
+        type: string
+      - description: 文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint
+          and fstype
+        in: query
+        name: device
+        type: string
+      - description: 文件系统挂载点精确值 | Exact filesystem mountpoint
+        in: query
+        name: mountpoint
+        type: string
+      - description: 文件系统类型精确值 | Exact filesystem type
+        in: query
+        name: fstype
         type: string
       - description: 整秒 RFC3339 开始时间 | Whole-second RFC3339 start
         in: query

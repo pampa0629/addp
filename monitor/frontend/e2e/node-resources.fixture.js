@@ -1,19 +1,21 @@
-import { resourceMetrics } from '../src/utils/nodeResources'
+import { allResourceMetrics } from '../src/utils/nodeResources'
 import { identity, node, setIdentity } from './monitoring-targets.fixture'
 export { identity, node, setIdentity }
 export const secondNode = '15daeb87-b7bf-434b-a8ea-598c82e266d4'
 export const resourcePermissions = ['platform.host_node.read', 'monitor.resource_observation.read']
+export const mount = { device: '/dev/fixture', mountpoint: '/data', fstype: 'ext4' }
 export const serverEnd = '2026-10-07T00:00:00Z'
 export function observations(id, keys, trend = false, mode = '', end = serverEnd) {
   const points = key => {
-    const item = resourceMetrics.find(metric => metric.key === key)
-    const numeric = item.unit === 'bytes' ? 17179869184 : item.name === 'uptime' ? 3600 : 0
+    const item = allResourceMetrics.find(metric => metric.key === key)
+    const filesystemValues = { 'node.filesystem.total_bytes': 100 * 1024 ** 3, 'node.filesystem.free_bytes': 30 * 1024 ** 3, 'node.filesystem.available_bytes': 25 * 1024 ** 3, 'node.filesystem.used_bytes': 70 * 1024 ** 3, 'node.filesystem.used_percent': 100 * 70 / 95 }
+    const numeric = filesystemValues[key] ?? (item.unit === 'bytes' ? 17179869184 : item.name === 'uptime' ? 3600 : 0)
     return (trend ? [-30, -15, 0].map(offset => new Date(Date.parse(end) + offset * 1000).toISOString()) : [end]).map((evaluated_at, index) => {
       const data_state = mode === 'cpu-warmup' && item.name === 'cpuBusy' ? 'no_data' : mode === 'disconnected' ? 'not_connected' : trend && index === 1 ? 'no_data' : !trend && item.name === 'memoryAvailable' ? 'stale' : 'valid'
       return { evaluated_at, sampled_at: data_state === 'not_connected' || data_state === 'no_data' ? null : evaluated_at, value: data_state === 'no_data' || data_state === 'not_connected' ? null : numeric, data_state }
     })
   }
-  return { subject: { kind: 'node', node_id: id }, end, start: trend ? new Date(Date.parse(end) - 30000).toISOString() : end, queried_at: end, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, unit: resourceMetrics.find(item => item.key === key).unit, window_seconds: resourceMetrics.find(item => item.key === key).windowSeconds || 0, points: points(key) })) }
+  return { subject: { kind: 'node', node_id: id }, end, start: trend ? new Date(Date.parse(end) - 30000).toISOString() : end, queried_at: end, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, dimensions: key.startsWith('node.filesystem.') && mode !== 'disconnected' ? mount : {}, unit: allResourceMetrics.find(item => item.key === key).unit, window_seconds: allResourceMetrics.find(item => item.key === key).windowSeconds || 0, points: points(key) })) }
 }
 export async function resourceBackend(page, options = {}) {
   const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', serverEnd, identity: options.identity || identity(resourcePermissions) }
@@ -33,7 +35,7 @@ export async function resourceBackend(page, options = {}) {
       if (path.endsWith('/host_nodes')) body = { data: nodes, total: 45, page: Number(url.searchParams.get('page')), page_size: 20 }
       else { body = nodes.find(item => path.endsWith(item.node_id)); if (!body) { status = 404; body = { error: 'not found' } } }
     } else if (path.startsWith('/api/v1/monitor/platform/resource_')) {
-      const trend = path.endsWith('/resource_trends'), mode = trend ? state.trendMode || state.mode : state.mode
+      const trend = path.endsWith('/resource_trends'), mode = trend ? state.trendMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.') ? state.filesystemMode || state.mode : state.mode
       state.reads.push({ path, query: Object.fromEntries(url.searchParams), method: req.method() })
       const id = url.searchParams.get('node_id'), keys = url.searchParams.get('metrics').split(',')
       if (!trend && held && id === node) await held

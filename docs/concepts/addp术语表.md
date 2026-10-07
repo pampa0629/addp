@@ -579,6 +579,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | observability capability | 观测能力 | 可独立选择部署的指标、集中日志或追踪能力。 | 组件属于 Infra，但不是所有模块的必需依赖；关闭与故障必须分别表达。 |
 | resource observation | 资源观测 | 带对象身份、来源、采样时间和单位的资源指标事实。 | CPU/内存、执行槽位、实例租约分别解释；无数据或过期不等于零负载或正常。 |
 | node CPU busy percentage | 节点 CPU 忙碌率 | 同一节点一分钟窗口内各逻辑核非 idle 时间比例的平均值。 | 包含 iowait、steal 等非 idle 状态，不等于进程 CPU、Load Average 或健康评分；窗口不足、核集合改变或计数器重置时不生成有效值。 |
+| filesystem mount observation | 文件系统挂载观测 | 同一节点来源按设备、挂载点及文件系统类型区分的容量事实。 | 不等于物理磁盘或卷身份；绑定挂载与共享文件系统不能相加为物理总容量，不按路径推断租户归属。 |
+| filesystem available-capacity usage | 文件系统可用容量使用率 | 已用容量占已用与普通用户可用容量之和的百分比；已用为同次采样总量减空闲。 | 采用非特权可用容量分母，保留空间使其区别于已用占总量的比例；分母为零或采样不一致时无有效值。 |
 | service quality metric | 服务质量指标 | 请求量、错误率、延迟分布等应用服务行为指标。 | 接口采用规范化 route；不使用完整 URL、请求正文或用户身份作为指标标签。 |
 | distributed trace | 分布式追踪 | 由 Trace/Span 与上下文传播描述的一次跨服务调用过程。 | request_id、trace_id 和 execution 身份不互相替代；缺失或采样不能证明没有调用关系。 |
 | observed call relationship | 观测调用关系 | 从明确配置或实际追踪得到的服务、引擎之间的调用关系。 | 注明来源、窗口和覆盖范围；与部署关联、数据血缘分别表达，不能仅凭关系染色确认根因。 |

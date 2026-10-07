@@ -52,7 +52,7 @@ type Definition struct {
 	WindowSeconds int    `json:"window_seconds"`
 }
 
-// Every fixed scalar metric has an output upper bound of one series.
+// Scalar metrics have one series; filesystem metrics share controlled mount dimensions.
 var definitions = []Definition{
 	{"node.cpu.logical_cores", "cores", 0},
 	{"node.cpu.busy_percent", "percent", 60},
@@ -63,22 +63,30 @@ var definitions = []Definition{
 	{"node.load.average_5m", "load", 0},
 	{"node.load.average_15m", "load", 0},
 	{"node.uptime_seconds", "seconds", 0},
+	{"node.filesystem.total_bytes", "bytes", 0},
+	{"node.filesystem.free_bytes", "bytes", 0},
+	{"node.filesystem.available_bytes", "bytes", 0},
+	{"node.filesystem.used_bytes", "bytes", 0},
+	{"node.filesystem.used_percent", "percent", 0},
 }
 
 func Catalog() []Definition { return append([]Definition(nil), definitions...) }
 
 type Plan struct {
-	Metrics     []Definition
-	Start, End  time.Time
-	StepSeconds int64
-	Points      int
-	Trend       bool
+	Metrics          []Definition
+	Start, End       time.Time
+	StepSeconds      int64
+	Points           int
+	Trend            bool
+	Dimensions       Dimensions
+	SeriesUpperBound int
+	FilesystemGroups int
 }
 
-func NewPlan(keys []string, start, end, now time.Time, trend bool, b Budget) (Plan, error) {
+func NewPlan(keys []string, start, end, now time.Time, trend bool, dimensions Dimensions, b Budget) (Plan, error) {
 	start, end, now = start.UTC(), end.UTC(), now.UTC()
 	p := Plan{Start: start, End: end, Trend: trend, StepSeconds: MinimumStepSeconds, Points: 1}
-	if b.Validate() != nil || len(keys) == 0 {
+	if b.Validate() != nil || len(keys) == 0 || dimensions.Validate() != nil {
 		return p, ErrInvalid
 	}
 	if len(keys) > b.MaxMetrics || len(keys) > b.MaxSeries {
@@ -102,12 +110,35 @@ func NewPlan(keys []string, start, end, now time.Time, trend bool, b Budget) (Pl
 			return p, ErrInvalid
 		}
 	}
+	scalar, filesystem := 0, 0
+	for _, d := range p.Metrics {
+		if d.Filesystem() {
+			filesystem++
+		} else {
+			scalar++
+		}
+	}
+	if len(dimensions) != 0 && filesystem == 0 {
+		return p, ErrInvalid
+	}
+	p.Dimensions = dimensions.Copy()
+	p.SeriesUpperBound = scalar
+	if filesystem > 0 {
+		p.FilesystemGroups = (b.MaxSeries - scalar) / filesystem
+		if len(dimensions) != 0 {
+			p.FilesystemGroups = 1
+		}
+		if p.FilesystemGroups < 1 {
+			return p, ErrBudget
+		}
+		p.SeriesUpperBound += p.FilesystemGroups * filesystem
+	}
 	if end.IsZero() || end.Nanosecond() != 0 || end.After(now) || end.Unix() < 0 {
 		return p, ErrInvalid
 	}
 	if !trend {
 		p.Start = end
-		if len(keys) > b.MaxTotalPoints {
+		if p.SeriesUpperBound > b.MaxTotalPoints {
 			return p, ErrBudget
 		}
 		return p, nil
@@ -120,7 +151,7 @@ func NewPlan(keys []string, start, end, now time.Time, trend bool, b Budget) (Pl
 		return p, ErrBudget
 	}
 	limit := b.MaxPointsPerSeries
-	if total := b.MaxTotalPoints / len(keys); total < limit {
+	if total := b.MaxTotalPoints / p.SeriesUpperBound; total < limit {
 		limit = total
 	}
 	if limit < 2 {
@@ -133,7 +164,7 @@ func NewPlan(keys []string, start, end, now time.Time, trend bool, b Budget) (Pl
 	step = (step + MinimumStepSeconds - 1) / MinimumStepSeconds * MinimumStepSeconds
 	p.StepSeconds = step
 	p.Points = int(span/step) + 1
-	if p.Points > b.MaxPointsPerSeries || p.Points*len(keys) > b.MaxTotalPoints {
+	if p.Points > b.MaxPointsPerSeries || p.Points*p.SeriesUpperBound > b.MaxTotalPoints {
 		return p, ErrBudget
 	}
 	return p, nil
@@ -161,69 +192,76 @@ func (p Plan) Expression(s Scope) (string, error) {
 	parts := make([]string, 0, len(p.Metrics)*2)
 	for _, d := range p.Metrics {
 		var value, stamp string
-		gauge := func(name string) (string, string) {
-			raw := s.selector(name)
-			guard := ` and (count(` + raw + `)==1)`
-			return `(max(` + raw + `)` + guard + `)`, `(max(timestamp(` + raw + `))` + guard + `)`
+		components := []struct{ k, v string }{}
+		if d.Filesystem() {
+			value, stamp, presence := filesystemExpression(s, d.Key, p.Dimensions)
+			components = append(components, struct{ k, v string }{"value", value}, struct{ k, v string }{"sampled_at", stamp}, struct{ k, v string }{"observed_at", presence})
+		} else {
+			gauge := func(name string) (string, string) {
+				raw := s.selector(name)
+				guard := ` and (count(` + raw + `)==1)`
+				return `(max(` + raw + `)` + guard + `)`, `(max(timestamp(` + raw + `))` + guard + `)`
+			}
+			switch d.Key {
+			case "node.cpu.logical_cores":
+				raw := s.selector("node_cpu_seconds_total")
+				raw = strings.TrimSuffix(raw, "}") + `,mode="idle"}`
+				guard := ` and (min(timestamp(` + raw + `)) == max(timestamp(` + raw + `)))`
+				value = `(count(` + raw + `)` + guard + `)`
+				stamp = `(min(timestamp(` + raw + `))` + guard + `)`
+			case "node.cpu.busy_percent":
+				raw := strings.TrimSuffix(s.selector("node_cpu_seconds_total"), "}") + `,mode="idle"}`
+				previous := raw + ` offset 1m`
+				// Integer scaling avoids reciprocal rounding of decimal step sizes.
+				rate := `(round(rate(` + raw + `[1m])*1000000000000)/1000000000000)`
+				// Range selectors are left-open: four samples at a 15s cadence,
+				// plus a source witness at the start, prove the full minute.
+				// One second tolerates the API's whole-second evaluation grid.
+				eligible := `(` + rate +
+					` and (count_over_time(` + raw + `[1m])>=4)` +
+					` and (resets(` + raw + `[1m])==0)` +
+					` and (` + raw + `>=` + previous + `)` +
+					` and (timestamp(` + previous + `)>=time()-76)` +
+					` and (timestamp(` + raw + `)>=time()-16)` +
+					` and (` + rate + `>=0) and (` + rate + `<=1))`
+				boot := s.selector("node_boot_time_seconds")
+				guard := ` and (count(` + eligible + `)==count(` + raw + `))` +
+					` and (count(` + raw + `)==count(` + previous + `))` +
+					` and (count(count_over_time(` + raw + `[1m]))==count(` + raw + `))` +
+					` and (min(timestamp(` + raw + `))==max(timestamp(` + raw + `)))` +
+					` and (min(timestamp(` + previous + `))==max(timestamp(` + previous + `)))` +
+					` and (count(` + boot + `)==1) and (count(` + boot + ` offset 1m)==1)` +
+					` and (max(` + boot + `)==max(` + boot + ` offset 1m))` +
+					` and (max(timestamp(` + boot + `))==max(timestamp(` + raw + `)))` +
+					` and (max(timestamp(` + boot + ` offset 1m))==max(timestamp(` + previous + `)))`
+				value = `((round(100*(1-avg(` + eligible + `))*1000000000)/1000000000)` + guard + `)`
+				stamp = `(min(timestamp(` + raw + `))` + guard + `)`
+			case "node.memory.total_bytes":
+				value, stamp = gauge("node_memory_MemTotal_bytes")
+			case "node.memory.available_bytes":
+				value, stamp = gauge("node_memory_MemAvailable_bytes")
+			case "node.memory.used_percent":
+				total, ts := gauge("node_memory_MemTotal_bytes")
+				avail, as := gauge("node_memory_MemAvailable_bytes")
+				guard := ` and (` + total + ` > 0) and (` + avail + ` >= 0) and (` + avail + ` <= ` + total + `) and (` + ts + ` == ` + as + `)`
+				value = `((100*(1-` + avail + `/` + total + `))` + guard + `)`
+				stamp = `(` + ts + guard + `)`
+			case "node.load.average_1m":
+				value, stamp = gauge("node_load1")
+			case "node.load.average_5m":
+				value, stamp = gauge("node_load5")
+			case "node.load.average_15m":
+				value, stamp = gauge("node_load15")
+			case "node.uptime_seconds":
+				boot, ts := gauge("node_boot_time_seconds")
+				value = `(time()-` + boot + `)`
+				stamp = ts
+			default:
+				return "", ErrInvalid
+			}
+			components = append(components, struct{ k, v string }{"value", value}, struct{ k, v string }{"sampled_at", stamp})
 		}
-		switch d.Key {
-		case "node.cpu.logical_cores":
-			raw := s.selector("node_cpu_seconds_total")
-			raw = strings.TrimSuffix(raw, "}") + `,mode="idle"}`
-			guard := ` and (min(timestamp(` + raw + `)) == max(timestamp(` + raw + `)))`
-			value = `(count(` + raw + `)` + guard + `)`
-			stamp = `(min(timestamp(` + raw + `))` + guard + `)`
-		case "node.cpu.busy_percent":
-			raw := strings.TrimSuffix(s.selector("node_cpu_seconds_total"), "}") + `,mode="idle"}`
-			previous := raw + ` offset 1m`
-			// Integer scaling avoids reciprocal rounding of decimal step sizes.
-			rate := `(round(rate(` + raw + `[1m])*1000000000000)/1000000000000)`
-			// Range selectors are left-open: four samples at a 15s cadence,
-			// plus a source witness at the start, prove the full minute.
-			// One second tolerates the API's whole-second evaluation grid.
-			eligible := `(` + rate +
-				` and (count_over_time(` + raw + `[1m])>=4)` +
-				` and (resets(` + raw + `[1m])==0)` +
-				` and (` + raw + `>=` + previous + `)` +
-				` and (timestamp(` + previous + `)>=time()-76)` +
-				` and (timestamp(` + raw + `)>=time()-16)` +
-				` and (` + rate + `>=0) and (` + rate + `<=1))`
-			boot := s.selector("node_boot_time_seconds")
-			guard := ` and (count(` + eligible + `)==count(` + raw + `))` +
-				` and (count(` + raw + `)==count(` + previous + `))` +
-				` and (count(count_over_time(` + raw + `[1m]))==count(` + raw + `))` +
-				` and (min(timestamp(` + raw + `))==max(timestamp(` + raw + `)))` +
-				` and (min(timestamp(` + previous + `))==max(timestamp(` + previous + `)))` +
-				` and (count(` + boot + `)==1) and (count(` + boot + ` offset 1m)==1)` +
-				` and (max(` + boot + `)==max(` + boot + ` offset 1m))` +
-				` and (max(timestamp(` + boot + `))==max(timestamp(` + raw + `)))` +
-				` and (max(timestamp(` + boot + ` offset 1m))==max(timestamp(` + previous + `)))`
-			value = `((round(100*(1-avg(` + eligible + `))*1000000000)/1000000000)` + guard + `)`
-			stamp = `(min(timestamp(` + raw + `))` + guard + `)`
-		case "node.memory.total_bytes":
-			value, stamp = gauge("node_memory_MemTotal_bytes")
-		case "node.memory.available_bytes":
-			value, stamp = gauge("node_memory_MemAvailable_bytes")
-		case "node.memory.used_percent":
-			total, ts := gauge("node_memory_MemTotal_bytes")
-			avail, as := gauge("node_memory_MemAvailable_bytes")
-			guard := ` and (` + total + ` > 0) and (` + avail + ` >= 0) and (` + avail + ` <= ` + total + `) and (` + ts + ` == ` + as + `)`
-			value = `((100*(1-` + avail + `/` + total + `))` + guard + `)`
-			stamp = `(` + ts + guard + `)`
-		case "node.load.average_1m":
-			value, stamp = gauge("node_load1")
-		case "node.load.average_5m":
-			value, stamp = gauge("node_load5")
-		case "node.load.average_15m":
-			value, stamp = gauge("node_load15")
-		case "node.uptime_seconds":
-			boot, ts := gauge("node_boot_time_seconds")
-			value = `(time()-` + boot + `)`
-			stamp = ts
-		default:
-			return "", ErrInvalid
-		}
-		for _, component := range []struct{ k, v string }{{"value", value}, {"sampled_at", stamp}} {
+		for _, component := range components {
 			parts = append(parts, fmt.Sprintf(`label_replace(label_replace(%s,"addp_metric",%s,"",""),"addp_component",%s,"","")`, component.v, strconv.Quote(d.Key), strconv.Quote(component.k)))
 		}
 	}

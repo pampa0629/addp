@@ -142,8 +142,8 @@ class MetricsProtocolTest(unittest.TestCase):
             for offset in (0, 15, 30, 45, 60) if trend else (60,):
                 at = "2026-10-06T00:" + ("01:00Z" if offset == 60 else "00:"+f"{offset:02d}"+"Z")
                 points.append({"evaluated_at": at, "sampled_at": None if disconnected else at,
-                               "value": None if disconnected else 0, "data_state": "not_connected" if disconnected else "valid"})
-            rows.append({"metric_key": key, "unit": ONLINE.METRICS[key], "window_seconds": 60 if key == "node.cpu.busy_percent" else 0, "points": points})
+                               "value": None if disconnected else {"node.filesystem.total_bytes":100,"node.filesystem.free_bytes":30,"node.filesystem.available_bytes":25,"node.filesystem.used_bytes":70,"node.filesystem.used_percent":100*70/95}.get(key,0), "data_state": "not_connected" if disconnected else "valid"})
+            rows.append({"metric_key": key, "dimensions": {"device": "/dev/a", "mountpoint": "/data", "fstype": "ext4"} if key.startswith("node.filesystem.") and not disconnected else {}, "unit": ONLINE.ALL_METRICS[key], "window_seconds": 60 if key == "node.cpu.busy_percent" else 0, "points": points})
         return {"subject": {"kind": "node", "node_id": "node-id"}, "node_version": 1,
                 "target_id": "target-id", "target_saved_version": 2, "policy_version": 0,
                 "lookback_seconds": 300, "queried_at": stamp, "start": "2026-10-06T00:00:00Z" if trend else stamp,
@@ -200,6 +200,15 @@ class MetricsProtocolTest(unittest.TestCase):
             stopped["series"][0]["points"][0]["value"] = 0
             with self.assertRaises(ONLINE.SuiteError):
                 ONLINE.assert_resources(stopped, node, trend=trend, disconnected=True)
+
+    def test_filesystem_protocol_rejects_duplicate_or_private_mount_dimensions(self):
+        node, target = {"node_id": "node-id", "version": 1}, {"id": "target-id", "version": 2}
+        value = self.resource_reply(ONLINE.FILESYSTEM_METRICS)
+        ONLINE.assert_resources(value, node, target, keys=ONLINE.FILESYSTEM_METRICS)
+        for mutation in (lambda v: v["series"][0].update(dimensions={}), lambda v: v["series"][0]["dimensions"].update(private="secret"), lambda v: v["series"].append(v["series"][0]), lambda v: v["series"][0]["dimensions"].update(mountpoint="/foreign")):
+            bad = copy.deepcopy(value); mutation(bad)
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_resources(bad, node, target, keys=ONLINE.FILESYSTEM_METRICS)
 
     def test_budget_verifies_cas_hot_consumption_and_restoration(self):
         initial = {"version": 0, "max_metrics": 12, "pending_restart": False}
@@ -261,7 +270,7 @@ class MetricsProtocolTest(unittest.TestCase):
         admin["principal"]["id"], security["principal"]["id"] = "admin-id", "security-id"
         instant = self.resource_reply()
         rows = [{"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(ONLINE.METRICS)}, "value": instant}]
-        for key, span in (("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300)):
+        for key, span in (("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300)):
             value = self.resource_reply([key], trend=True)
             end = datetime.datetime.fromisoformat(value["end"].replace("Z", "+00:00"))
             start = end - datetime.timedelta(seconds=span)
@@ -269,15 +278,18 @@ class MetricsProtocolTest(unittest.TestCase):
             value["start"] = stamp(start)
             value["series"][0]["points"] = [{"evaluated_at": stamp(start+datetime.timedelta(seconds=index*15)),
                 "sampled_at": stamp(start+datetime.timedelta(seconds=index*15)), "value": 0, "data_state": "valid"} for index in range(span//15+1)]
-            rows.append({"path": ONLINE.TRENDS, "query": {"node_id": "node-id", "metrics": key, "start": value["start"], "end": value["end"]}, "value": value})
+            query = {"node_id": "node-id", "metrics": key, "start": value["start"], "end": value["end"]}
+            if key.startswith("node.filesystem."): query.update(value["series"][0]["dimensions"])
+            rows.append({"path": ONLINE.TRENDS, "query": query, "value": value})
         rows.append(copy.deepcopy(rows[0]))
+        rows.append({"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(ONLINE.FILESYSTEM_METRICS)}, "value": self.resource_reply(ONLINE.FILESYSTEM_METRICS)})
         report = {"schema_version": "addp.node-resources-browser/v1", "result": "passed", "stage": "complete", "run_id": "unique-run",
                   "identity": admin, "negative_identity": security, "negative_no_business_reads": True, "resources": rows,
                   "auto_refresh": {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True, "off_restored": True, "off_no_requests": True},
-                  "navigation": {"list_without_fanout": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True}}
+                  "navigation": {"list_without_fanout": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True}}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
-            for name in ("list", "detail", "restored"):
+            for name in ("list", "detail", "restored", "filesystem"):
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
             mutations = [lambda v: v.update(result="failed"), lambda v: v.update(run_id="other-run"),

@@ -110,7 +110,7 @@ test('invalid node or mismatched response is an error instead of another node', 
 })
 
 
-const resourceReads = state => state.reads.filter(item => item.path.endsWith('resource_observations'))
+const resourceReads = state => state.reads.filter(item => item.path.endsWith('resource_observations') && !item.query.metrics.startsWith('node.filesystem.'))
 const visibleChart = page => expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
 async function visibility(page, hidden) {
   await page.evaluate(hidden => {
@@ -254,4 +254,47 @@ test('CPU minute warmup stays empty while gauges work; recovery restores valid z
   await page.reload()
   await expect(page.getByTestId('resource-metric')).toContainText('CPU 忙碌率（1 分钟）')
   expect(state.reads.filter(item => item.path.endsWith('resource_trends')).every(item => item.query.metrics === 'node.cpu.busy_percent')).toBe(true)
+})
+
+test('filesystem table selects an exact mount, restores its trend and keeps one bounded refresh cycle', async ({ page }) => {
+  const state = await resourceBackend(page)
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  await visibleChart(page)
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('/data')
+  await page.getByTestId('resource-filesystem-table').getByRole('button', { name: '查看趋势' }).click()
+  await expect(page).toHaveURL(url => url.searchParams.get('device') === '/dev/fixture' && url.searchParams.get('mountpoint') === '/data' && url.searchParams.get('fstype') === 'ext4' && url.searchParams.get('metric') === 'node.filesystem.used_percent')
+  await visibleChart(page)
+  await page.reload()
+  await visibleChart(page)
+  await expect(page.getByTestId('resource-selected-mount')).toContainText('/data')
+  await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ device: '/dev/fixture', mountpoint: '/data', fstype: 'ext4', metrics: 'node.filesystem.used_percent' })
+  await page.getByTestId('resource-metric').click()
+  await page.getByRole('option', { name: 'CPU 忙碌率（1 分钟）', exact: true }).click()
+  await visibleChart(page)
+  expect(new URL(page.url()).searchParams.has('mountpoint')).toBe(false)
+})
+
+test('filesystem failure clears its own table while valid scalar cards and trends remain usable', async ({ page }) => {
+  const state = await resourceBackend(page)
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  await visibleChart(page)
+  state.filesystemMode = 'budget'
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-filesystem-error')).toContainText('查询超过当前预算')
+  await expect(page.getByTestId('resource-filesystem-table')).toHaveCount(0)
+  await expect(page.getByTestId('resource-cores')).toContainText('0 核')
+  await visibleChart(page)
+  state.filesystemMode = ''
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('/data')
+})
+
+
+test('incomplete filesystem identity shows an error without querying another resource', async ({ page }) => {
+  const state = await resourceBackend(page)
+  await page.goto(`/node-resources/${node}?metric=node.filesystem.used_percent&device=partial`)
+  await expect(page.getByTestId('resource-error')).toContainText('挂载选择无效')
+  await expect(page.getByTestId('resource-cores')).toHaveCount(0)
+  expect(state.reads).toHaveLength(0)
+  expect(new URL(page.url()).searchParams.get('metric')).toBe('node.filesystem.used_percent')
 })

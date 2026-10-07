@@ -52,19 +52,28 @@ func resourceError(c *gin.Context, err error) {
 	}
 	c.JSON(status, gin.H{"error": i18n.T(c, key), "error_code": code})
 }
-func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, time.Time, bool) {
+func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, time.Time, resourcequery.Dimensions, bool) {
 	if c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 || len(c.Request.URL.RawQuery) > 4096 {
 		resourceError(c, resourcequery.ErrInvalid)
-		return "", nil, time.Time{}, time.Time{}, false
+		return "", nil, time.Time{}, time.Time{}, nil, false
 	}
 	q, e := url.ParseQuery(c.Request.URL.RawQuery)
 	invalid := e != nil
 	for key, values := range q {
-		if len(values) != 1 || values[0] == "" || (key != "node_id" && key != "metrics" && (!trend || (key != "start" && key != "end"))) {
+		if len(values) != 1 || values[0] == "" || (key != "node_id" && key != "metrics" && key != "device" && key != "mountpoint" && key != "fstype" && (!trend || (key != "start" && key != "end"))) {
 			invalid = true
 		}
 	}
 	if q.Get("node_id") == "" || q.Get("metrics") == "" || len(c.Request.URL.RawQuery) > 4096 {
+		invalid = true
+	}
+	dimensions := resourcequery.Dimensions{}
+	for _, key := range []string{"device", "mountpoint", "fstype"} {
+		if q.Has(key) {
+			dimensions[key] = q.Get(key)
+		}
+	}
+	if dimensions.Validate() != nil {
 		invalid = true
 	}
 	var start, end time.Time
@@ -80,19 +89,22 @@ func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, tim
 	}
 	if invalid {
 		resourceError(c, resourcequery.ErrInvalid)
-		return "", nil, start, end, false
+		return "", nil, start, end, nil, false
 	}
-	return q.Get("node_id"), strings.Split(q.Get("metrics"), ","), start, end, true
+	return q.Get("node_id"), strings.Split(q.Get("metrics"), ","), start, end, dimensions, true
 }
 
 // Instant godoc
 // @Summary 读取节点即时资源 | Read current node resources
-// @Description 固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics; CPU busy is the one-minute non-idle percentage, with no_data for incomplete windows
+// @Description 固定九项标量及五项文件系统容量；文件系统按挂载维度，可用容量使用率为 used/(used+available)；缺少有效证据返回 no_data | Nine scalar and five filesystem metrics; mounts have fixed dimensions and available-capacity usage is used/(used+available); missing evidence returns no_data
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
 // @Param node_id query string true "节点 UUID | Node UUID"
-// @Param metrics query string true "逗号分隔的固定目录键 | Comma separated fixed catalog keys"
+// @Param metrics query string true "逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most twelve"
+// @Param device query string false "文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint and fstype"
+// @Param mountpoint query string false "文件系统挂载点精确值 | Exact filesystem mountpoint"
+// @Param fstype query string false "文件系统类型精确值 | Exact filesystem type"
 // @Success 200 {object} service.ResourceObservationResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -110,12 +122,15 @@ func (h *ResourceObservationHandler) Instant(c *gin.Context) { h.query(c, false)
 
 // Trend godoc
 // @Summary 读取节点资源趋势 | Read node resource trends
-// @Description 固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics; CPU busy is the one-minute non-idle percentage, with no_data for incomplete windows
+// @Description 固定九项标量及五项文件系统容量；文件系统按挂载维度，可用容量使用率为 used/(used+available)；缺少有效证据返回 no_data | Nine scalar and five filesystem metrics; mounts have fixed dimensions and available-capacity usage is used/(used+available); missing evidence returns no_data
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
 // @Param node_id query string true "节点 UUID | Node UUID"
-// @Param metrics query string true "逗号分隔的固定目录键 | Comma separated fixed catalog keys"
+// @Param metrics query string true "逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most twelve"
+// @Param device query string false "文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint and fstype"
+// @Param mountpoint query string false "文件系统挂载点精确值 | Exact filesystem mountpoint"
+// @Param fstype query string false "文件系统类型精确值 | Exact filesystem type"
 // @Param start query string true "整秒 RFC3339 开始时间 | Whole-second RFC3339 start"
 // @Param end query string true "整秒 RFC3339 结束时间 | Whole-second RFC3339 end"
 // @Success 200 {object} service.ResourceObservationResponse
@@ -134,7 +149,7 @@ func (h *ResourceObservationHandler) Instant(c *gin.Context) { h.query(c, false)
 func (h *ResourceObservationHandler) Trend(c *gin.Context) { h.query(c, true) }
 
 func (h *ResourceObservationHandler) query(c *gin.Context, trend bool) {
-	node, keys, start, end, ok := resourceQuery(c, trend)
+	node, keys, start, end, dimensions, ok := resourceQuery(c, trend)
 	if !ok {
 		return
 	}
@@ -143,7 +158,7 @@ func (h *ResourceObservationHandler) query(c *gin.Context, trend bool) {
 		c.Status(http.StatusUnauthorized)
 		return
 	}
-	value, err := h.service.Query(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), node, targetToken(c), keys, start, end, trend)
+	value, err := h.service.Query(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), node, targetToken(c), keys, start, end, trend, dimensions)
 	if err != nil {
 		resourceError(c, err)
 		return

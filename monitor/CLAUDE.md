@@ -117,7 +117,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 ## Platform 节点基础资源查询
 
 - 唯一读取接口 `/platform/resource_observations`、`/platform/resource_trends` 使用 `monitor.resource_observation.read`；System 连续迁移 000193 仅给平台系统管理员发布该权限，采集服务与 Tenant 身份无此能力。当前请求内转发 User Token，由 System 裁决节点；读取当前启用目标及受控解析端点，节点/目标停用返回 `not_connected`，不查历史作为当前值。
-- `internal/resourcequery/` 唯一维护 9 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、一分钟 CPU 忙碌率、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率须证明一分钟完整窗口及核集合/启动时间一致，缺样本或计数器重置返回空值；文件系统、磁盘/网络速率尚未发布。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
+- `internal/resourcequery/` 唯一维护 9 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、一分钟 CPU 忙碌率、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率须证明一分钟完整窗口及核集合/启动时间一致，缺样本或计数器重置返回空值；文件系统容量与挂载趋势已沿同一 API 实施（见下文），磁盘/网络速率尚未发布。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
 - `/settings/resource-query-policy` 沿用模块级 `monitor.configuration.read/update`，仅 Platform User，唯一 `monitor.resource_query_policy` 单例保存 CAS 版本与完整预算。每个查询读一次已提交预算，对新请求热生效；没有环境回退或重启要求。标准平台审计记录安全结果与保存版本，不记录 PromQL、Token 或内部地址。
 - mTLS 查询部署输入独立于节点准入和 collector；关闭或不完整配置不阻断业务。生产只通过标准生命周期的 `metrics-query.yml` 挂载，不增加必需 Infra 依赖。
 - Go T1、Monitor PostgreSQL 及 System IAM Migration T2 沿既有标准入口自动发现；同一个 `platform-node-metrics` suite 已在 `794450a30` 取得扩展后的真实 Hosted T4（run 37485747576），覆盖八项即时/趋势查询、预算 CAS/热生效、权限隔离、中心故障与新样本恢复、停用后不复用历史及独立清理零残留；具体证据见设计 10.22 节。用户资源查询页面现已接入 Console（见下文）；更多指标和生产 T5 仍须分批补齐，该次 Linux VM 通过不代表生产纳管覆盖。
@@ -141,3 +141,5 @@ bash scripts/swagger/check-route-coverage.sh monitor
 节点资源详情自动刷新已在实现提交 `1ce34d770` 完成真实 Hosted T4（Run 37566181124）：自然 15 秒计时、服务端 end 前进、URL 不变、关闭后刷新恢复及 16 秒无定时请求通过；同提交 Platform CI 全部通过，退出零残留。隐藏/恢复、慢请求、撤权和卸载由 T3 单独覆盖；完整证据见设计 10.26，生产 T5 与更多指标仍待分批实施。
 
 CPU 忙碌率及趋势新增固定 `node.cpu.busy_percent`（percent，60 秒窗口），本地 Go/真实 Prometheus/PostgreSQL/前端门禁及 15 个窗口/核集合场景已通过。九项读取范围经用户确认，沿用原隔离身份与权限边界；实现提交 `5bb4173cf` 的完整 Hosted T4（Run 37573777193）及 Platform CI（Run 37573754535）已通过，真实页面、两次同一采集身份 grant、节点/目标恢复和停用历史排除、独立清理零残留均已复核。初始全空响应的有界等待实际收敛，CPU 单独预热/恢复零值由 T3 单独证明；26 项 runner 回归覆盖凭据寿命和拒绝语义。首轮凭据过期与旧 CI 异步断言失败不计为通过；完整证据见设计 10.27。文件系统/IO 与生产 T5 仍待后续批次，默认 test-changed 跨 owner 数据库预检失败未改记为成功。
+
+文件系统容量与趋势沿设计 10.28 的已确认口径实施：新增五个 `node.filesystem.*` 目录键，使用率为 `used/(used+available)`；系列必填受控 `dimensions`，标量为 `{}`，挂载只含设备、挂载点和类型。既有资源 API 接受完整三项精确选择器，不开放任意标签或 PromQL。多挂载与历史挂载的序列上界参与步长和总点数预算，超限返回 422。详情依次读取九项概览、五项挂载表与一项趋势，挂载错误不清除有效概览；精确挂载与刷新选项由同一公开 URL 恢复。固定 node_exporter 排除规则显式写入唯一部署配置；不按挂载行求物理容量总量，不修改 IAM 或 Tenant 归属。最新本地 `test-changed`、Go、真实指标 T2、PostgreSQL、前端和 Online runner 已通过；扩展 Hosted T4 待执行。证据按设计 10.28 分层计量，未完成不能冒充通过。

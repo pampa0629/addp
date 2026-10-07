@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -61,22 +62,32 @@ type Point struct {
 	DataState   string     `json:"data_state"`
 }
 type Series struct {
-	MetricKey     string  `json:"metric_key"`
-	Unit          string  `json:"unit"`
-	WindowSeconds int     `json:"window_seconds"`
-	Points        []Point `json:"points"`
+	MetricKey string `json:"metric_key"`
+	// 标量为空对象；文件系统仅设备、挂载点、类型三项 | Empty for scalars; exactly device, mountpoint and fstype for mounts.
+	Dimensions    Dimensions `json:"dimensions"`
+	Unit          string     `json:"unit"`
+	WindowSeconds int        `json:"window_seconds"`
+	Points        []Point    `json:"points"`
 }
 
 func Empty(p Plan, state string) []Series {
 	out := make([]Series, 0, len(p.Metrics))
 	for _, d := range p.Metrics {
-		row := Series{MetricKey: d.Key, Unit: d.Unit, WindowSeconds: d.WindowSeconds, Points: make([]Point, p.Points)}
-		for i := range row.Points {
-			row.Points[i] = Point{EvaluatedAt: p.Start.Add(time.Duration(int64(i)*p.StepSeconds) * time.Second), DataState: state}
+		row := emptySeries(p, d, Dimensions{}, state)
+		if d.Filesystem() {
+			row.Dimensions = p.Dimensions.Copy()
 		}
 		out = append(out, row)
 	}
 	return out
+}
+
+func emptySeries(p Plan, d Definition, dimensions Dimensions, state string) Series {
+	row := Series{MetricKey: d.Key, Dimensions: dimensions.Copy(), Unit: d.Unit, WindowSeconds: d.WindowSeconds, Points: make([]Point, p.Points)}
+	for i := range row.Points {
+		row.Points[i] = Point{EvaluatedAt: p.Start.Add(time.Duration(int64(i)*p.StepSeconds) * time.Second), DataState: state}
+	}
+	return row
 }
 
 type sample [2]json.RawMessage
@@ -177,23 +188,48 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 	if data.Data.ResultType != expected || data.Data.Result == nil {
 		return nil, ErrUnavailable
 	}
-	if len(data.Data.Result) > 2*b.MaxSeries || len(data.Data.Result) > 2*len(p.Metrics) {
+
+	wireBound := 0
+	definitions := map[string]Definition{}
+	for _, d := range p.Metrics {
+		definitions[d.Key] = d
+		if d.Filesystem() {
+			wireBound += 3 * p.FilesystemGroups
+		} else {
+			wireBound += 2
+		}
+	}
+	if len(data.Data.Result) > wireBound {
 		return nil, ErrBudget
 	}
-	out := Empty(p, "no_data")
-	indexes := map[string]int{}
-	for i, d := range p.Metrics {
-		indexes[d.Key] = i
+	groups := map[string]Dimensions{}
+	if len(p.Dimensions) > 0 {
+		groups[p.Dimensions.identity()] = p.Dimensions.Copy()
 	}
 	seen := map[string]bool{}
 	values := map[string]map[int]float64{}
 	stamps := map[string]map[int]float64{}
+	observations := map[string]map[int]float64{}
 	count := 0
 	for _, row := range data.Data.Result {
 		key, component := row.Metric["addp_metric"], row.Metric["addp_component"]
-		_, known := indexes[key]
-		identity := key + ":" + component
-		if !known || len(row.Metric) != 2 || (component != "value" && component != "sampled_at") || seen[identity] || len(row.Histograms) > 0 || len(row.Histogram) > 0 {
+		d, known := definitions[key]
+		dimensions := Dimensions{}
+		if d.Filesystem() {
+			dimensions = Dimensions{"device": row.Metric["device"], "mountpoint": row.Metric["mountpoint"], "fstype": row.Metric["fstype"]}
+			if len(row.Metric) != 5 || dimensions.Validate() != nil || (len(p.Dimensions) > 0 && dimensions.identity() != p.Dimensions.identity()) {
+				return nil, ErrUnavailable
+			}
+			groups[dimensions.identity()] = dimensions
+			if len(groups) > p.FilesystemGroups {
+				return nil, ErrBudget
+			}
+		} else if len(row.Metric) != 2 {
+			return nil, ErrUnavailable
+		}
+		seriesID := key + "\x00" + dimensions.identity()
+		identity := seriesID + "\x00" + component
+		if !known || (component != "value" && component != "sampled_at" && !(d.Filesystem() && component == "observed_at")) || seen[identity] || len(row.Histograms) > 0 || len(row.Histogram) > 0 {
 			return nil, ErrUnavailable
 		}
 		seen[identity] = true
@@ -209,14 +245,16 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 			samples = []sample{*row.Value}
 		}
 		count += len(samples)
-		if len(samples) > b.MaxPointsPerSeries || count > 2*b.MaxTotalPoints {
+		if len(samples) > b.MaxPointsPerSeries || count > 3*b.MaxTotalPoints {
 			return nil, ErrBudget
 		}
 		target := values
 		if component == "sampled_at" {
 			target = stamps
+		} else if component == "observed_at" {
+			target = observations
 		}
-		target[key] = map[int]float64{}
+		target[seriesID] = map[int]float64{}
 		last := -1
 		for _, pair := range samples {
 			var at float64
@@ -234,26 +272,51 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 			if e != nil {
 				return nil, ErrUnavailable
 			}
-			target[key][index] = value
+			target[seriesID][index] = value
 		}
 	}
-	for key, rowIndex := range indexes {
-		for i := range out[rowIndex].Points {
-			v, vok := values[key][i]
-			ts, tok := stamps[key][i]
-			point := &out[rowIndex].Points[i]
-			if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (out[rowIndex].Unit == "percent" && v > 100) {
-				continue
-			}
-			sec, fraction := math.Modf(ts)
-			stamp := time.Unix(int64(sec), int64(fraction*1e9)).UTC()
-			point.SampledAt = &stamp
-			point.Value = &v
-			point.DataState = "valid"
-			if point.EvaluatedAt.Sub(stamp) > time.Duration(FreshnessSeconds)*time.Second {
-				point.DataState = "stale"
+	groupIDs := []string{}
+	for id := range groups {
+		groupIDs = append(groupIDs, id)
+	}
+	sort.Strings(groupIDs)
+	out := []Series{}
+	for _, d := range p.Metrics {
+		dimensions := []Dimensions{{}}
+		if d.Filesystem() && len(groupIDs) > 0 {
+			dimensions = nil
+			for _, id := range groupIDs {
+				dimensions = append(dimensions, groups[id])
 			}
 		}
+		for _, dimension := range dimensions {
+			row := emptySeries(p, d, dimension, "no_data")
+			id := d.Key + "\x00" + dimension.identity()
+			for i := range row.Points {
+				v, vok := values[id][i]
+				ts, tok := stamps[id][i]
+				point := &row.Points[i]
+				if d.Filesystem() {
+					witness, observed := observations[id][i]
+					if !observed || witness != ts {
+						continue
+					}
+				}
+				if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (row.Unit == "percent" && v > 100) {
+					continue
+				}
+				sec, fraction := math.Modf(ts)
+				stamp := time.Unix(int64(sec), int64(fraction*1e9)).UTC()
+				point.SampledAt, point.Value, point.DataState = &stamp, &v, "valid"
+				if point.EvaluatedAt.Sub(stamp) > time.Duration(FreshnessSeconds)*time.Second {
+					point.DataState = "stale"
+				}
+			}
+			out = append(out, row)
+		}
+	}
+	if len(out) > p.SeriesUpperBound || len(out) > b.MaxSeries || len(out)*p.Points > b.MaxTotalPoints {
+		return nil, ErrBudget
 	}
 	return out, nil
 }

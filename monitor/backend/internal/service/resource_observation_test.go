@@ -95,7 +95,7 @@ func TestResourceQueryCurrentUserScopeStoppedTargetsAndHotBudget(t *testing.T) {
 	policies := &resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}
 	svc := NewResourceObservationService(policies, targets, nodes, backend, true, resourceSourcePolicy(t))
 	query := func() (ResourceObservationResponse, error) {
-		return svc.Query(context.Background(), "user-1", node, "addp_at_current_user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false)
+		return svc.Query(context.Background(), "user-1", node, "addp_at_current_user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false, nil)
 	}
 	r, e := query()
 	if e != nil || backend.calls != 1 || backend.scope.NodeID != node || backend.scope.Instance != "127.0.0.1:9100" || r.TargetSavedVersion != 2 || r.NodeVersion != 3 || r.Series[0].Points[0].DataState != "no_data" {
@@ -128,7 +128,7 @@ func TestResourceQueryCurrentUserScopeStoppedTargetsAndHotBudget(t *testing.T) {
 	if e != nil || updated.PendingRestart || updated.Version != 1 {
 		t.Fatal(updated, e)
 	}
-	if _, e := svc.Query(context.Background(), "user-1", node, "token", []string{"node.memory.used_percent", "node.load.average_1m"}, time.Time{}, time.Time{}, false); !errors.Is(e, resourcequery.ErrBudget) {
+	if _, e := svc.Query(context.Background(), "user-1", node, "token", []string{"node.memory.used_percent", "node.load.average_1m"}, time.Time{}, time.Time{}, false, nil); !errors.Is(e, resourcequery.ErrBudget) {
 		t.Fatal("hot budget not applied", e)
 	}
 	svc.enabled = false
@@ -203,7 +203,7 @@ func TestResourceConcurrencyAdmissionPrecedesConfigurationRead(t *testing.T) {
 	node := uuid.NewString()
 	for i := 0; i < 8; i++ {
 		go func(i int) {
-			_, e := service.Query(ctx, fmt.Sprint(i), node, "user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false)
+			_, e := service.Query(ctx, fmt.Sprint(i), node, "user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false, nil)
 			done <- e
 		}(i)
 	}
@@ -214,7 +214,7 @@ func TestResourceConcurrencyAdmissionPrecedesConfigurationRead(t *testing.T) {
 			t.Fatal("configuration read did not start")
 		}
 	}
-	_, e := service.Query(context.Background(), "extra", node, "user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false)
+	_, e := service.Query(context.Background(), "extra", node, "user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false, nil)
 	if !errors.Is(e, resourcequery.ErrBusy) {
 		t.Fatal("configuration queued before admission", e)
 	}

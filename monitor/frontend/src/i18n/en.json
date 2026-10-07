@@ -623,7 +623,12 @@
         "load1m": "1-minute load average",
         "load5m": "5-minute load average",
         "load15m": "15-minute load average",
-        "uptime": "Uptime"
+        "uptime": "Uptime",
+        "filesystemTotal": "Total capacity",
+        "filesystemFree": "Free capacity",
+        "filesystemAvailable": "Available to non-root",
+        "filesystemUsed": "Used capacity",
+        "filesystemUsedPercent": "Available-capacity usage"
       },
       "ranges": {
         "5m": "Last 5 minutes",
@@ -654,7 +659,17 @@
         "notFound": "This node does not exist or is currently inaccessible.",
         "denied": "Your current identity cannot view platform node resources.",
         "invalidID": "Invalid node identifier.",
-        "invalidResponse": "The resource response is incomplete. Refresh to try again."
+        "invalidResponse": "The resource response is incomplete. Refresh to try again.",
+        "invalidMount": "Invalid mount selection. Return to the node list to select a mount."
+      },
+      "filesystem": {
+        "title": "Filesystem mounts",
+        "hint": "Capacity by mount. Bind mounts, memory and network filesystems are not summed as physical capacity.",
+        "empty": "No filesystem mount evidence",
+        "device": "Device",
+        "mountpoint": "Mountpoint",
+        "type": "Filesystem type",
+        "viewTrend": "View trend"
       }
     }
   }

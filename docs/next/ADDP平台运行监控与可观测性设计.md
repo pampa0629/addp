@@ -1,6 +1,6 @@
 # ADDP 平台运行监控与可观测性设计
 
-状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、节点台账、监测目标及资源查询页面已分批实施并验收。CPU 忙碌率本地门禁及九项完整 Hosted 验收已通过；平台告警领域调整仍待确认，生产 T5 未完成（2026-10-07）。
+状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、节点台账、监测目标及资源查询页面已分批实施并验收。CPU 忙碌率本地门禁及九项完整 Hosted 验收已通过；文件系统容量与挂载趋势的实现和本地门禁已完成，扩展 Hosted 验收待执行；平台告警领域调整仍待确认，生产 T5 未完成（2026-10-07）。
 
 用户已确认首期覆盖 ADDP 自身部署节点、服务和明确纳管的业务引擎；监控组件按 Infra 组织、按需部署，其缺失或故障只影响对应观测能力。本文记录目标契约与分批实施证据；可选设施裁剪及资源查询的已验收范围以第十节批次记录为准，不据此宣称所有目标能力或生产部署已完成。
 
@@ -1015,21 +1015,21 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 
 本批已完成九项节点资源的 CPU 忙碌率、趋势及 T0/T1/T2/T3/T4 证据闭合。生产 T5、文件系统/磁盘/网络 IO、容器归属及统一平台告警仍未完成；默认 `make test-changed` 的跨 owner 数据库预检失败单独计量，不因本批标准入口通过而改记为成功。下一步优先细化文件系统的设备/挂载点维度、排除规则及多序列预算，再交付磁盘容量与趋势。最终收尾只同步本节和 Monitor 导航的验收事实，不改变已验证实现。
 
-### 10.28 文件系统容量与趋势（契约草案，待确认展示口径）
+### 10.28 文件系统容量与趋势（口径已确认，实施中）
 
 本批延续已确认的平台节点资源观测范围，由节点 node_exporter 提供文件系统事实、Monitor 查询和展示；不修改 IAM、System 节点台账或 Tenant 数据权限。这里展示的是文件系统挂载视图，不建立物理磁盘、卷或分区台账。设备名不是全局身份，同一文件系统可能有多个绑定挂载，也可能被多个节点访问；不把各行相加作为节点或平台的物理总容量，不根据挂载路径推断租户归属。
 
-实施前有两处会改变业务结果的口径需要确认，其余技术边界如下。该草案不表示新增指标已发布或测试范围已经扩展。
+2026-10-07 用户在解释两种容量口径与挂载范围后确认继续，采用全部已准入挂载和非特权可用容量分母；同一 Hosted suite 增加五项容量及挂载趋势读取。以下为实施契约，完成情况与验证证据另行追加。
 
 **一、挂载维度与采集范围**
 
 每条观测使用既有 `node_id` 与来源中的 `device`、`mountpoint`、`fstype` 共同区分。同设备的不同挂载点分别展示，保留来源字符串，不把路径规整成另一份身份。该组合只区分当前和历史观测序列，不保证设备路径复用后仍是同一块物理磁盘。
 
-建议沿用锁定 node_exporter v1.12.1 的默认排除范围，并在唯一部署配置中显式固定对应规则：排除 `/dev`、`/proc`、`/sys`、运行凭据及 Docker/容器存储内部子目录，排除 proc、sysfs、overlay 等来源定义的文件系统类型；不另行硬编码 ext4/xfs 类型白名单。来源默认仍允许 tmpfs 和网络文件系统，因此建议表格保留这些挂载并展示类型，不能把其容量标为本机物理磁盘容量。若首期只要本地持久文件系统，需要另行确定如何识别远端、内存及特殊文件系统，不能仅靠设备名是否以 `/dev/` 开头判断。固定版本的 [Linux 排除规则与 statfs 实现](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_linux.go) 和 [文件系统指标定义](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_common.go) 是本批字段来源。
+沿用锁定 node_exporter v1.12.1 的默认排除范围，并在唯一部署配置中显式固定对应规则：排除 `/dev`、`/proc`、`/sys`、运行凭据及 Docker/容器存储内部子目录，排除 proc、sysfs、overlay 等来源定义的文件系统类型；不另行硬编码 ext4/xfs 类型白名单。来源默认仍允许 tmpfs 和网络文件系统，因此表格保留这些挂载并展示类型，不能把其容量标为本机物理磁盘容量。若首期只要本地持久文件系统，需要另行确定如何识别远端、内存及特殊文件系统，不能仅靠设备名是否以 `/dev/` 开头判断。固定版本的 [Linux 排除规则与 statfs 实现](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_linux.go) 和 [文件系统指标定义](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_common.go) 是本批字段来源。
 
 **二、容量指标与使用率口径**
 
-建议首期固定新增以下五项，不在本批引入 inode、磁盘 IO 或物理容量汇总：
+首期固定新增以下五项，不在本批引入 inode、磁盘 IO 或物理容量汇总：
 
 | 目录键 | 单位 | 口径 |
 | --- | --- | --- |
@@ -1037,9 +1037,9 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 | `node.filesystem.free_bytes` | bytes | `node_filesystem_free_bytes`，包括保留空间在内的空闲容量 |
 | `node.filesystem.available_bytes` | bytes | `node_filesystem_avail_bytes`，普通用户可用容量 |
 | `node.filesystem.used_bytes` | bytes | 同次采样的 `total - free` |
-| `node.filesystem.used_percent` | percent | 建议 `100 * used / (used + available)`，页面明确标注“可用容量使用率” |
+| `node.filesystem.used_percent` | percent | `100 * used / (used + available)`，页面明确标注“可用容量使用率” |
 
-使用率建议采用 GNU `df` 的非特权可用容量分母，但保留小数，不采用其整数向上取整的显示方式。另一种合理口径是 `100 * used / total`，应标注“总容量占用率”；两者因保留空间而不同，不能混用。例如总量 100 GiB、空闲 30 GiB、普通用户可用 25 GiB，已用均为 70 GiB，两种比例分别为 73.68% 与 70%。[GNU Coreutils 使用率计算](https://github.com/coreutils/coreutils/blob/master/src/df.c) 明确使用 `used + available` 作为分母。
+使用率采用 GNU `df` 的非特权可用容量分母，但保留小数，不采用其整数向上取整的显示方式。另一种合理口径是 `100 * used / total`，应标注“总容量占用率”；两者因保留空间而不同，不能混用。例如总量 100 GiB、空闲 30 GiB、普通用户可用 25 GiB，已用均为 70 GiB，两种比例分别为 73.68% 与 70%。[GNU Coreutils 使用率计算](https://github.com/coreutils/coreutils/blob/master/src/df.c) 明确使用 `used + available` 作为分母。
 
 容量及派生值必须属于同一节点、同一挂载维度、同次来源采样；趋势在每个评估点使用当时的容量，不能使用当前总量回算历史。采样值有限且满足 `0 <= available <= free <= total` 才生成有效容量；使用率分母为零时返回 `no_data`，不伪造 0 或做 clamp。来源 `device_error` 表示挂载已知但容量读取失败时保留挂载维度和空值；不公开其原始错误字符串，也不把读失败当成挂载不存在。
 
@@ -1057,4 +1057,21 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 
 实施前确认现有登记覆盖：资源查询目录及唯一 node-metrics 部署文件归 `make test-monitor-metrics`（T1/T2、锁定 promtool 与真实来源）；服务与预算复用 `make test-monitor-postgres`；页面沿 `make test-monitor-frontend` 的 T1/T3 扩散至 `make test-console-frontend`，登记由 `make test-frontend-ci-registration` 检查。API 同步双语 Swagger 和路由覆盖；Online 协议回归归 `make test-node-metrics-online-runner`，真实链路沿既有 Hosted `platform-node-metrics` suite。不新增永久入口或工作流。
 
-必须覆盖重复/绑定挂载、未知标签、保留空间差异、异常与缺失值、容量变化、挂载出现/消失、挂载错误、预算溢出与长窗口步长、精确选择器及 URL 恢复、自动刷新与概览隔离。T2 使用本轮独立来源容器，不冒充物理宿主容量证据；真实 Hosted T4 仅在同一一次性节点增加五项容量及挂载趋势读取，原身份、预算用途、租户隔离与全部销毁要求不变。现行测试规范的管理员例外仍仅覆盖九项，新增读取须在用户确认本批范围后同步该规范，再执行 Hosted。生产 T5、物理宿主挂载、inode、磁盘 IO、网络 IO 和全局容量汇总不计为本批完成。
+必须覆盖重复/绑定挂载、未知标签、保留空间差异、异常与缺失值、容量变化、挂载出现/消失、挂载错误、预算溢出与长窗口步长、精确选择器及 URL 恢复、自动刷新与概览隔离。T2 使用本轮独立来源容器，不冒充物理宿主容量证据；真实 Hosted T4 仅在同一一次性节点增加五项容量及挂载趋势读取，原身份、预算用途、租户隔离与全部销毁要求不变。测试规范的同一隔离验收例外同步增加这五项容量读取，不改变生产身份或其他 suite。生产 T5、物理宿主挂载、inode、磁盘 IO、网络 IO 和全局容量汇总不计为本批完成。
+
+
+2026-10-07 本批本地门禁证据：
+
+| 标准入口 | 本批结果 |
+|---|---|
+| `make test-changed` | 最终完整通过平台 T0、Console/Monitor T1/T3/构建及 Monitor 指标、PostgreSQL T2；启动时登记命中的 owner 为 Console、Monitor。其他任务随后出现的工作区改动不纳入本批交付或证据 |
+| `make test-go` | 全部已跟踪 Go 模块 T1 通过；外部环境 integration skip 不计为 T2/T4 |
+| `make test-monitor-metrics` | 单独与默认入口均通过；17 个文件系统容量/挂载证据场景及 15 个 CPU 场景、真实 exporter 九项标量与五项容量即时/精确挂载趋势、范围隔离、中断恢复与 SIGKILL 后历史保留通过；退出容器/网络/卷/临时文件零残留 |
+| `make test-monitor-postgres` | 18 项仓储及服务集成通过，包括目标预算/CAS、查询预算 CAS 与热读取；使用核实的 `addp-postgres:25432` 和标准 `addp_test` |
+| `make test-monitor-frontend` | 最新 42 项单测、51 项浏览器回归及构建通过；挂载 URL 恢复、无效选择器拒绝、概览与挂载失败隔离、精确趋势、自动刷新与身份变化覆盖；桌面和窄屏截图复核 |
+| `make test-console-frontend` | 最新 148 项单测、118 项浏览器回归及构建通过 |
+| `make test-node-metrics-online-runner` | 27 项 Python 协议/Hosted runner 回归及既有 Go fixture 单测通过，涵盖完整五项容量公式、闭合维度、挂载恢复、浏览器证据与敏感产物拒绝；不计为真实 T4 |
+| 前端、T2、Online CI 登记检查 | 现有标准登记覆盖本批路径，检查通过；没有新增永久入口或工作流 |
+| Swagger 生成与 Monitor 路由覆盖 | 双语产物同步，65 个公开路由方法覆盖一致；未新增 HTTP 路由或 Permission |
+
+早期默认入口因缺少 Monitor 测试 DSN 在预检退出，补齐实际连接后发现部署断言把两条带值的 filesystem 排除参数误计为采集器，已改为精确无值采集器白名单并单独校验排除规则。前端旧用例把新增挂载查询误计为概览刷新、预算提示文案断言不一致，也已修正并完整复跑；这些失败不计为通过。路由规范核对发现不完整挂载参数不能静默退回内存对象，已先同步规范，再实现明确错误且不发出节点资源查询的回归。上述最终标准入口覆盖当前交付实现；Hosted T4 尚未运行，不复用上一批九项指标的通过证据。

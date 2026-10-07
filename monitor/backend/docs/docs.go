@@ -2763,7 +2763,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics; CPU busy is the one-minute non-idle percentage, with no_data for incomplete windows",
+                "description": "固定九项标量及五项文件系统容量；文件系统按挂载维度，可用容量使用率为 used/(used+available)；缺少有效证据返回 no_data | Nine scalar and five filesystem metrics; mounts have fixed dimensions and available-capacity usage is used/(used+available); missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],
@@ -2781,10 +2781,28 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "逗号分隔的固定目录键 | Comma separated fixed catalog keys",
+                        "description": "逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most twelve",
                         "name": "metrics",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint and fstype",
+                        "name": "device",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件系统挂载点精确值 | Exact filesystem mountpoint",
+                        "name": "mountpoint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件系统类型精确值 | Exact filesystem type",
+                        "name": "fstype",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2862,7 +2880,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定九项节点指标；CPU 忙碌率为一分钟非空闲比例，完整窗口不足返回 no_data | Nine fixed node metrics; CPU busy is the one-minute non-idle percentage, with no_data for incomplete windows",
+                "description": "固定九项标量及五项文件系统容量；文件系统按挂载维度，可用容量使用率为 used/(used+available)；缺少有效证据返回 no_data | Nine scalar and five filesystem metrics; mounts have fixed dimensions and available-capacity usage is used/(used+available); missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],
@@ -2880,10 +2898,28 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "逗号分隔的固定目录键 | Comma separated fixed catalog keys",
+                        "description": "逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most twelve",
                         "name": "metrics",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint and fstype",
+                        "name": "device",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件系统挂载点精确值 | Exact filesystem mountpoint",
+                        "name": "mountpoint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件系统类型精确值 | Exact filesystem type",
+                        "name": "fstype",
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -4407,6 +4443,12 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_resourcequery.Dimensions": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "github_com_addp_monitor_internal_resourcequery.Point": {
             "type": "object",
             "properties": {
@@ -4427,6 +4469,14 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_resourcequery.Series": {
             "type": "object",
             "properties": {
+                "dimensions": {
+                    "description": "标量为空对象；文件系统仅设备、挂载点、类型三项 | Empty for scalars; exactly device, mountpoint and fstype for mounts.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions"
+                        }
+                    ]
+                },
                 "metric_key": {
                     "type": "string"
                 },

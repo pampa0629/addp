@@ -79,7 +79,7 @@ func (s *ResourceObservationService) UpdatePolicy(ctx context.Context, input Res
 	row, err := s.policies.Save(ctx, models.ResourceQueryPolicy{Budget: input.Budget, UpdatedBy: user}, input.Version)
 	return ResourceQueryPolicyResponse{Version: row.Version, Budget: row.Budget}, err
 }
-func (s *ResourceObservationService) Query(ctx context.Context, principal, node, token string, keys []string, start, end time.Time, trend bool) (ResourceObservationResponse, error) {
+func (s *ResourceObservationService) Query(ctx context.Context, principal, node, token string, keys []string, start, end time.Time, trend bool, dimensions resourcequery.Dimensions) (ResourceObservationResponse, error) {
 	result := ResourceObservationResponse{Subject: metricsdiscovery.NodeSubject{Kind: "node", NodeID: node}}
 	// This timeout includes current-user authorization, target lookup and transport.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -105,7 +105,7 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 	if !trend {
 		end = now.Truncate(time.Second)
 	}
-	plan, err := resourcequery.NewPlan(keys, start, end, now, trend, cfg.Budget)
+	plan, err := resourcequery.NewPlan(keys, start, end, now, trend, dimensions, cfg.Budget)
 	if err != nil {
 		return result, err
 	}

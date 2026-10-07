@@ -290,8 +290,13 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
             '/host', '/etc/addp/node-metrics/web.yml', '/etc/addp/node-metrics/tls/ca.crt',
             '/etc/addp/node-metrics/tls/server.crt', '/etc/addp/node-metrics/tls/server.key'})
         self.assertIn('--collector.disable-defaults', source['command'])
-        self.assertEqual(sum(c.startswith('--collector.') and c != '--collector.disable-defaults'
-                             for c in source['command']), 10)
+        collectors = {c for c in source['command'] if c.startswith('--collector.')
+                      and c != '--collector.disable-defaults' and '=' not in c}
+        self.assertEqual(collectors, {'--collector.'+name for name in (
+            'cpu', 'meminfo', 'loadavg', 'filesystem', 'diskstats', 'netdev',
+            'netstat', 'stat', 'uname', 'time')})
+        self.assertIn('--collector.filesystem.mount-points-exclude=^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($$|/)', source['command'])
+        self.assertIn('--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$$', source['command'])
 
 
 if __name__ == '__main__':

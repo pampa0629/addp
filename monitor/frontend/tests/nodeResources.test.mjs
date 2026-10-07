@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse } from '../src/utils/nodeResources.js'
+import { currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, filesystemRows } from '../src/utils/nodeResources.js'
 
 test('node resource trends delegate chart rendering and formatting to the shared owners', () => {
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
@@ -33,7 +33,7 @@ test('zero remains valid; stale and absent samples never become current values o
 })
 test('rejects mismatched subjects, incomplete catalogs and invalid sample evidence', () => {
   const key = 'node.memory.used_percent', time = '2026-10-07T00:00:00Z'
-  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: time, queried_at: time, series: [{ metric_key: key, unit: 'percent', window_seconds: 0, points: [{ evaluated_at: time, sampled_at: time, value: 0, data_state: 'valid' }] }] }
+  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: time, queried_at: time, series: [{ metric_key: key, dimensions: {}, unit: 'percent', window_seconds: 0, points: [{ evaluated_at: time, sampled_at: time, value: 0, data_state: 'valid' }] }] }
   assert.equal(validateResourceResponse(response, 'node-id', [key]), response)
   assert.throws(() => validateResourceResponse(response, 'other-node', [key]))
   assert.throws(() => validateResourceResponse(response, 'node-id', [key, 'node.cpu.logical_cores']))
@@ -61,7 +61,7 @@ test('detail refresh has a single canonical bounded choice; list never retains i
 
 test('CPU busy response must prove the fixed one-minute window and preserves valid zero', () => {
   const at = '2026-10-07T00:00:00Z', key = 'node.cpu.busy_percent'
-  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: at, queried_at: at, series: [{ metric_key: key, unit: 'percent', window_seconds: 60, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] }] }
+  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: at, queried_at: at, series: [{ metric_key: key, dimensions: {}, unit: 'percent', window_seconds: 60, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] }] }
   assert.equal(validateResourceResponse(response, 'node-id', [key]), response)
   assert.equal(currentResourceValue(response.series[0].points[0]), 0)
   assert.deepEqual(resolveResourceRoute({ metric: key }, true).query, { metric: key })
@@ -69,4 +69,34 @@ test('CPU busy response must prove the fixed one-minute window and preserves val
     const value = structuredClone(response); value.series[0].window_seconds = window
     assert.throws(() => validateResourceResponse(value, 'node-id', [key]))
   }
+})
+
+test('filesystem URL selects a complete exact mount and scalar/list navigation clears it', () => {
+  const dimensions = { device: '/dev/a " or up{', mountpoint: '/data space\t', fstype: 'ext4' }
+  const query = { metric: 'node.filesystem.used_percent', ...dimensions, range: '7d', refresh: 'off' }
+  assert.deepEqual(resolveResourceRoute(query, true).query, query)
+  assert.deepEqual(resolveResourceRoute(query).dimensions, {})
+  assert.deepEqual(resolveResourceRoute({ ...query, metric: 'node.load.average_1m' }, true).dimensions, {})
+  const incomplete = resolveResourceRoute({ metric: query.metric, device: dimensions.device }, true)
+  assert.equal(incomplete.metric, query.metric)
+  assert.equal(incomplete.invalidDimensions, true)
+  assert.deepEqual(incomplete.query, { metric: query.metric, device: dimensions.device })
+  assert.deepEqual(trendParameters('node', query.metric, '7d', '2026-10-07T00:00:00Z', dimensions).device, dimensions.device)
+})
+
+test('filesystem series retain bind mounts and reject incomplete, foreign or fabricated dimensions', () => {
+  const at = '2026-10-07T00:00:00Z', dimensions = { device: '/dev/a', mountpoint: '/', fstype: 'ext4' }
+  const keys = filesystemMetrics.map(metric => metric.key)
+  const series = filesystemMetrics.flatMap(metric => ['/', '/bind'].map(mountpoint => ({ metric_key: metric.key, dimensions: { ...dimensions, mountpoint }, unit: metric.unit, window_seconds: 0, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] })))
+  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: at, queried_at: at, series }
+  assert.equal(validateResourceResponse(response, 'node-id', keys), response)
+  assert.equal(filesystemRows(response).length, 2)
+  for (const mutate of [value => value.series[0].dimensions = {}, value => value.series.push(value.series[0]), value => value.series[0].dimensions.private = 'secret', value => value.series.pop(), value => delete value.series[0].dimensions]) {
+    const bad = structuredClone(response); mutate(bad)
+    assert.throws(() => validateResourceResponse(bad, 'node-id', keys))
+  }
+  assert.throws(() => validateResourceResponse(response, 'node-id', keys, false, dimensions))
+  const empty = { ...response, series: filesystemMetrics.map(metric => ({ metric_key: metric.key, dimensions: {}, unit: metric.unit, window_seconds: 0, points: [{ evaluated_at: at, sampled_at: null, value: null, data_state: 'no_data' }] })) }
+  assert.equal(validateResourceResponse(empty, 'node-id', keys), empty)
+  assert.deepEqual(filesystemRows(empty), [])
 })
