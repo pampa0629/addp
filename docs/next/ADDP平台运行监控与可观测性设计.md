@@ -1132,3 +1132,22 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 - 统一报告及浏览器 Run ID 均为 `run-0e70d3567fd34d7d9eded1e04598fa33`；干净仓库、System/Gateway/Monitor 的 Git Commit、Build ID 与 Source Fingerprint 已核对至上述修正提交。业务验收耗时 434,459 ms，不作为性能容量承诺。独立汇总为 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`；30 个下载产物未发现环境凭据文件、私钥、完整 opaque Token 或 MFA enrollment URI，私有 Playwright 输出未上传。
 
 本批完成 inode 总数、空闲、已用、使用率与精确挂载趋势，以及本地分层和真实 Hosted T4 验收。跨 owner 默认 `test-changed` 预检失败、首轮平台超时与首轮 T4 脚本失败均保留，不改记为通过；生产 T5、自动告警、磁盘/网络 IO 和全局容量汇总仍未完成。建议下一批接入磁盘读写吞吐与趋势，复用既有 diskstats 来源，先明确块设备维度与文件系统挂载的区别。
+
+
+### 10.31 Docker Desktop VM 本地节点验证（2026-10-07）
+
+用户确认继续支持把承载 Business 与 Infra 的 Docker Desktop Linux VM 作为本地测试节点。沿用 System 的 `virtual` 节点、Monitor 目标准入、唯一 node_exporter 来源、Prometheus HTTP SD 和既有资源页面；不新增身份、API、指标协议或业务启动依赖。VM 整体消耗不等于某个容器或引擎消耗，在 Mac 上直接运行的模块也不能绑定到该 VM。
+
+唯一 `scripts/infra/node-metrics.py` 入口根据本地 Engine 的实际系统信息选择部署环境：原生 Linux 保留宿主内核一致性和 5.12+ 门槛；macOS 上的本地 Docker Desktop Linux Engine 使用受限 VM 部署层。仍要求显式启用、规范监听 IP:端口、独立三文件 mTLS 目录与仓库 Owner；远程 Engine、非 Linux Engine 和未知运行环境拒绝。Docker Desktop 首批只启用 cpu、meminfo、loadavg、stat、uname、time 六个采集器，使用容器的内核全局 `/proc`，验证其 CPU 核数、内存总量及内核与 Docker Engine 的 VM 事实一致，不以采集容器的 CPU/内存额度充当节点容量。
+
+Desktop 层使用独立 bridge 网络和显式宿主发布，不开启 host 网络/PID，不挂载宿主根、Docker Socket，不增加 capability 或 privileged。当前不能证明 VM 全局语义的 filesystem、diskstats、netdev、netstat 禁用；磁盘字节/inode 目录仍沿唯一 API 返回缺失事实，不把容器根目录、Mac 文件共享或容器网卡伪装成 VM 全局资源。内部路径与采集器开关由入口计算并覆盖，不作为新的 `.env` 部署键。正式目标地址仍由部署方提供，应能同时被 Monitor 和 Prometheus 访问；仅宿主回环发布只证明本机来源访问，不证明容器中的中心可以采集。
+
+实施前门禁：部署选择/路径覆盖/端口映射/权限和拒绝场景归既有 `make test-dev-lifecycle`；真实六采集器、VM 容量对照、独立 mTLS、缺失族、唯一 HTTP SD 采样及恢复归 `make test-monitor-metrics`，复用独占来源并重新部署为受限层，不增加第二条指标链路。新增部署层登记到该 T2 的输入清单，现有 Release/T2 Job 和 Platform 生命周期 CI 覆盖；`make test-node-metrics-online-runner` 复核原生 Linux Hosted 链路配置未受影响。默认 `make test-changed` 仍运行，其他 Owner 的未运行门禁不计为本批通过。本地实际 Docker Desktop 结果与 Linux CI 结果分别记录，受限采集不替代原生 Linux T4/T5 或正式开发环境持续纳管。
+
+本批本地实际验证：`make test-monitor-metrics` 完整退出 0，部署配置 19 项回归通过；锁定 promtool 的 CPU 15 项、文件系统字节 18 项和 inode 22 项场景通过，完整来源与受限来源的即时/趋势及作用域隔离均通过。Docker Desktop Engine 为 `6.10.14-linuxkit`，真实六采集器全部成功，CPU 18 核、内存 67,304,611,840 字节与 Engine 一致；采集容器仍为 0.25 CPU/256 MiB。四个禁用族没有输出，文件系统字节/inode 即时及趋势明确无数据；独立采集/准入 mTLS、匿名/错误客户端拒绝、HTTP SD 采样、来源故障/恢复后新样本、中心 SIGKILL 后历史样本重放及退出容器/网络/卷/文件零残留均通过。CI 同一 T2 Job 调整为 15 分钟，容纳新增的一分钟窗口和来源恢复阶段；登记回归 38 项及实际登记检查通过。
+
+首轮真实 exporter 因不支持 `--collector.*=true` 参数失败，已改为入口计算统一启用/禁用前缀并完整重跑通过；未新增兼容参数或放宽断言。`make test-dev-lifecycle` 的 73 项 Python 回归通过，但后续共享工作区 Runtime restart 夹具的事件序列断言失败，整条入口不计为通过；该阶段未调用节点采集入口，本批不修改其他 Owner 的 Runtime 工作。默认 `make test-changed` 在其他 Owner 缺少 PostgreSQL/MySQL 等测试连接参数的统一预检阶段退出，后续跨 Owner 门禁未执行，不计为通过。原生 Linux Hosted runner、远程 CI 及持续部署的状态单独记录，不以本地 T2 代替。
+
+当前个人开发部署尚未接通：根 `.env` 的指标中心、来源、HTTPS 控制面和独立采集/准入/查询凭据输入均未配置，节点和目标台账仍为空。本轮未写入开发库、修改 `.env`、重启个人服务或把临时 T2 数据冒充资源页面持续数据。下一步先确定复用已有 HTTPS 入口/证书还是准备独立本地开发部署输入，再登记 VM 节点和目标、接通持续指标中心与正式页面；System/Monitor 的配置生效重启遵守仓库要求由用户执行。
+
+最终原生 Hosted runner 确定性复核：`make test-node-metrics-online-runner` 30 项协议/身份/生命周期回归及 System Online fixture 单测通过。新增 Desktop 能力没有再次执行真实 Hosted T4；远程 CI 尚待本批提交触发，不计为已通过。

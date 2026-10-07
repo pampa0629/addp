@@ -1,5 +1,6 @@
 """Real scrape, admission, mTLS, persistence and owned outage checks."""
 import json
+import math
 import os
 import re
 import ssl
@@ -14,11 +15,13 @@ WORK = Path(os.environ['METRICS_T2_WORK'])
 TLS = Path(os.environ['ADDP_METRICS_TLS_DIR'])
 PROJECT = os.environ['METRICS_T2_PROJECT']
 FILE = os.environ['METRICS_T2_COMPOSE']
+FILES = [FILE]
 
 
 def compose(*args):
+    flags = [flag for path in FILES for flag in ('-f', path)]
     return subprocess.check_output(['docker', 'compose', '--env-file', '/dev/null', '-p', PROJECT,
-                                    '-f', FILE, *args], text=True).strip()
+                                    *flags, *args], text=True).strip()
 
 
 def port(service, internal):
@@ -261,6 +264,7 @@ query_env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1',
                  MONITOR_PROMETHEUS_URL=base, MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'),
                  MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
                  MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'),
+                 ADDP_METRICS_QUERY_NODE_ID=projection[0]['labels']['addp_node_id'],
                  ADDP_METRICS_QUERY_INSTANCE=node_instance)
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
                 '^TestIntegrationMetricsResourceQueries$', '-count=1', '-v'],
@@ -275,6 +279,79 @@ assert get(base + '/-/ready')
 compose('start', 'node-exporter')
 eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 1')),
            'node exporter recovery')
+
+# Reuse the same owned source and mTLS template, now with the Desktop VM
+# deployment layer. A new projected node identity keeps the prior full-source
+# history out of this limited-view check; this remains a T2 protocol fixture.
+FILES.append(str(Path(__file__).resolve().parents[1] / 'infra/node-metrics-desktop.yml'))
+os.environ.update(ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector',
+                  ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1', ADDP_NODE_METRICS_PUBLISH_PORT='0')
+compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter')
+limited = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'node-exporter')], text=True))[0]
+assert limited['HostConfig']['NetworkMode'] != 'host' and limited['HostConfig']['PidMode'] != 'host'
+assert limited['HostConfig']['ReadonlyRootfs'] and limited['HostConfig']['CapDrop'] == ['ALL']
+assert not limited['HostConfig']['Privileged'] and limited['Config']['User'] == '65534:65534'
+assert len(limited['Mounts']) == 4 and all(not m['RW'] and m['Source'] != '/' for m in limited['Mounts'])
+assert limited['HostConfig']['Memory'] == 256 * 1024**2
+assert limited['HostConfig']['NanoCpus'] == 250_000_000
+assert len(limited['HostConfig']['PortBindings']['9100/tcp']) == 1
+limited_ip = next(iter(limited['NetworkSettings']['Networks'].values()))['IPAddress']
+extensions = WORK / 'node-extensions'
+extensions.write_text('subjectAltName=DNS:localhost,IP:' + limited_ip + '\nextendedKeyUsage=serverAuth\n')
+subprocess.run(['openssl', 'x509', '-req', '-in', str(WORK / 'source-server.csr'),
+                '-CA', str(deployment / 'source-ca.crt'), '-CAkey', str(WORK / 'source-ca.key'),
+                '-CAserial', str(WORK / 'source-ca.srl'), '-days', '1', '-extfile', str(extensions),
+                '-out', str(WORK / 'node-tls/server.crt')], check=True, capture_output=True)
+# Recreate to apply an atomically replaced certificate bind mount.
+compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter')
+node_base = 'https://localhost:' + port('node-exporter', 9100)
+eventually(lambda: b'node_memory_MemTotal_bytes' in get(node_base + '/metrics', source_context),
+           'limited VM exporter serves kernel-global metrics')
+raw = get(node_base + '/metrics', source_context).decode()
+collectors = dict(re.findall(r'^node_scrape_collector_success\{collector="([^"]+)"\} (\S+)$', raw, re.M))
+assert set(collectors) == {'cpu', 'meminfo', 'loadavg', 'stat', 'uname', 'time'}, collectors
+assert all(value == '1' for value in collectors.values()), collectors
+assert not re.search(r'^node_(?:filesystem_|disk_|network_|netstat_)', raw, re.M)
+engine = json.loads(subprocess.check_output(['docker', 'info', '--format', '{{json .}}'], text=True))
+cores = re.findall(r'^node_cpu_seconds_total\{cpu="([^"]+)",mode="idle"\} (\S+)$', raw, re.M)
+assert len(cores) == engine['NCPU'], 'collector CPU quota was substituted for Engine capacity'
+memory = float(re.search(r'^node_memory_MemTotal_bytes (\S+)$', raw, re.M).group(1))
+assert abs(memory - engine['MemTotal']) <= 4096 and memory > limited['HostConfig']['Memory']
+assert f'release="{engine["KernelVersion"]}"' in raw
+for metric in ('node_load1', 'node_load5', 'node_load15', 'node_boot_time_seconds'):
+    value = float(re.search(r'^' + metric + r' (\S+)$', raw, re.M).group(1))
+    assert math.isfinite(value) and value >= 0
+for ctx in (source_anonymous, source_health, foreign_source):
+    rejected(node_base + '/metrics', ctx)
+assert b'node_cpu_seconds_total' in get(node_base + '/metrics', admission)
+print(f'Metrics T2: limited Engine={engine["OperatingSystem"]}, kernel={engine["KernelVersion"]}, '
+      f'cores={len(cores)}, memory_bytes={int(memory)}; container quota=0.25 CPU/256 MiB', flush=True)
+
+node_instance = limited_ip + ':9100'
+projection[0]['targets'] = [node_instance]
+projection[0]['labels']['addp_node_id'] = '22222222-2222-4222-8222-222222222222'
+discovery_text(json.dumps(projection))
+def limited_samples():
+    selector = '{job="addp_nodes",addp_node_id="' + projection[0]['labels']['addp_node_id'] + '"}'
+    return (job_is_up('addp_nodes', '1') and len(query('node_memory_MemTotal_bytes' + selector)) == 1
+            and not query('node_filesystem_size_bytes' + selector))
+eventually(limited_samples, 'limited VM metrics enter the sole HTTP SD job without filesystem samples')
+query_env.update(ADDP_METRICS_QUERY_NODE_ID=projection[0]['labels']['addp_node_id'],
+                 ADDP_METRICS_QUERY_INSTANCE=node_instance, ADDP_METRICS_QUERY_RESTRICTED_VM='1')
+subprocess.run(['go', 'test', './internal/resourcequery', '-run',
+                '^TestIntegrationMetricsResourceQueries$', '-count=1', '-v'],
+               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+               env=query_env, check=True, timeout=180)
+compose('stop', 'node-exporter')
+eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 0')),
+           'limited VM source outage')
+assert get(base + '/-/ready')
+restarted_at = time.time()
+compose('start', 'node-exporter')
+eventually(lambda: limited_samples() and
+           float(query('timestamp(node_memory_MemTotal_bytes{job="addp_nodes",addp_node_id="' +
+                       projection[0]['labels']['addp_node_id'] + '"})')[0]['value'][1]) >= restarted_at,
+           'limited VM source recovery with a new sample')
 discovery_text(original_discovery)
 eventually(valid_sample, 'fixture scope restored after real exporter checks')
 # Only the disposable metrics center is killed; a separate fixture route stays live.

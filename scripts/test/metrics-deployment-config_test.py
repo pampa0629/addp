@@ -37,7 +37,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         for path in ('monitor/backend/internal/resourcequery/client.go',
                      'monitor/backend/internal/resourcequery/deleted-or-future.go',
                      'monitor/backend/internal/config/config.go',
-                     'scripts/prod/metrics-query.yml'):
+                     'scripts/prod/metrics-query.yml',
+                     'scripts/infra/node-metrics-desktop.yml'):
             self.assertTrue(gate_module.gate_input_covers(inputs, path), path)
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         job = re.search(r'^  monitor-metrics:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
@@ -210,14 +211,18 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             node_config.deployment(dict(self.env, ADDP_NODE_METRICS_TLS_DIR=str(ROOT)))
 
-    def test_native_linux_boundary_rejects_desktop_remote_and_old_kernel(self):
-        node_config.native_host('Linux', '6.8.0', 'unix:///var/run/docker.sock', 'Ubuntu 24.04')
-        for args in (('Darwin', '6.8.0', 'unix:///var/run/docker.sock', 'Docker Desktop'),
+    def test_environment_selection_uses_engine_facts_and_rejects_unknown_remote_old_kernel(self):
+        self.assertEqual(node_config.deployment_runtime('Linux', '6.8.0', 'unix:///var/run/docker.sock', 'Ubuntu 24.04'), 'linux')
+        self.assertEqual(node_config.deployment_runtime('Darwin', '6.10.14-linuxkit', 'unix:///Users/owner/docker.sock', 'Docker Desktop'), 'desktop')
+        for args in (('Darwin', '6.8.0', 'unix:///var/run/docker.sock', 'Ubuntu'),
                      ('Linux', '6.8.0', 'unix:///var/run/docker.sock', 'Docker Desktop'),
+                     ('Windows', '6.8.0', 'unix:///var/run/docker.sock', 'Docker Desktop'),
+                     ('Darwin', '5.11.0', 'unix:///var/run/docker.sock', 'Docker Desktop'),
+                     ('Darwin', '6.10.0', 'ssh://owner@node', 'Docker Desktop'),
                      ('Linux', '6.8.0', 'ssh://owner@node', 'Ubuntu'),
                      ('Linux', '5.11.0', 'unix:///var/run/docker.sock', 'Ubuntu')):
             with self.subTest(args=args), self.assertRaises(ValueError):
-                node_config.native_host(*args)
+                node_config.deployment_runtime(*args)
 
     def test_context_precedence_ownership_and_certificate_independent_stop(self):
         from unittest.mock import patch
@@ -246,7 +251,8 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
     def test_native_launch_overrides_untrusted_root_paths_and_profiles(self):
         from unittest.mock import patch
         values = dict(self.env, DOCKER_HOST='unix:///var/run/docker.sock',
-                      ADDP_NODE_METRICS_ROOTFS='/wrong', COMPOSE_PROFILES='unexpected')
+                      ADDP_NODE_METRICS_ROOTFS='/wrong', ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector',
+                      COMPOSE_PROFILES='unexpected')
         info = {'KernelVersion': '6.8.0', 'OperatingSystem': 'Ubuntu', 'OSType': 'linux'}
         with patch.object(node_config, 'docker_json', return_value=info), \
                 patch.object(node_config.platform, 'system', return_value='Linux'), \
@@ -258,10 +264,94 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
             env = execute.call_args.kwargs['env']
             self.assertEqual(env['ADDP_NODE_METRICS_ROOTFS'], '/host')
             self.assertEqual(env['ADDP_NODE_METRICS_PROCFS'], '/host/proc')
+            self.assertEqual(env['ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX'], '--collector')
             self.assertNotIn('COMPOSE_PROFILES', env)
+
+    def test_desktop_launch_overrides_paths_collectors_and_maps_explicit_ipv6_port(self):
+        from unittest.mock import patch
+        values = dict(self.env, DOCKER_HOST='unix:///Users/owner/docker.sock',
+                      ADDP_NODE_METRICS_LISTEN='[::1]:19100',
+                      ADDP_NODE_METRICS_ROOTFS='/host', ADDP_NODE_METRICS_PROCFS='/host/proc',
+                      ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--collector', ADDP_NODE_METRICS_PUBLISH_PORT='9999',
+                      COMPOSE_PROFILES='unexpected')
+        info = {'KernelVersion': '6.10.14-linuxkit', 'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'}
+        with patch.object(node_config, 'docker_json', return_value=info), \
+                patch.object(node_config.platform, 'system', return_value='Darwin'), \
+                patch.object(node_config.subprocess, 'check_output', return_value=''), \
+                patch.object(node_config.subprocess, 'run') as execute:
+            node_config.run('up', values)
+            self.assertIn(str(ROOT / 'scripts/infra/node-metrics-desktop.yml'), execute.call_args.args[0])
+            env = execute.call_args.kwargs['env']
+            self.assertEqual(env['ADDP_NODE_METRICS_LISTEN'], ':9100')
+            self.assertEqual(env['ADDP_NODE_METRICS_PUBLISH_IP'], '::1')
+            self.assertEqual(env['ADDP_NODE_METRICS_PUBLISH_PORT'], '19100')
+            self.assertEqual(env['ADDP_NODE_METRICS_ROOTFS'], '/')
+            self.assertEqual(env['ADDP_NODE_METRICS_PROCFS'], '/proc')
+            self.assertEqual(env['ADDP_NODE_METRICS_SYSFS'], '/sys')
+            self.assertEqual(env['ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX'], '--no-collector')
+            self.assertNotIn('COMPOSE_PROFILES', env)
+
+    def test_desktop_stop_does_not_require_valid_listen_or_certificates(self):
+        from unittest.mock import patch
+        context = [{'Endpoints': {'docker': {'Host': 'unix:///Users/owner/docker.sock'}}}]
+        with patch.object(node_config, 'docker_json', return_value=context), \
+                patch.object(node_config.platform, 'system', return_value='Darwin'), \
+                patch.object(node_config.subprocess, 'check_output', return_value=''), \
+                patch.object(node_config.subprocess, 'run') as execute:
+            node_config.run('down', {'ADDP_NODE_METRICS_LISTEN': 'invalid', 'ADDP_NODE_METRICS_TLS_DIR': '/missing'})
+            self.assertEqual(execute.call_args.args[0][-1], 'down')
+            self.assertNotIn('--volumes', execute.call_args.args[0])
+
+    def test_native_kernel_mismatch_and_non_linux_engine_do_not_launch(self):
+        from unittest.mock import patch
+        for system, engine_os, kernel, kind in (
+                ('Linux', 'Ubuntu', '6.8.1', 'linux'),
+                ('Darwin', 'Docker Desktop', '6.10.14-linuxkit', 'windows')):
+            with self.subTest(system=system), \
+                    patch.object(node_config, 'docker_json', return_value={
+                        'OperatingSystem': engine_os, 'KernelVersion': kernel, 'OSType': kind}), \
+                    patch.object(node_config.platform, 'system', return_value=system), \
+                    patch.object(node_config.platform, 'release', return_value='6.8.0'), \
+                    patch.object(node_config.subprocess, 'run') as execute:
+                with self.assertRaises(ValueError):
+                    node_config.run('up', dict(self.env, DOCKER_HOST='unix:///var/run/docker.sock'))
+                execute.assert_not_called()
+
+    def test_desktop_compose_has_only_kernel_global_collectors_and_no_host_privileges(self):
+        env = dict(os.environ, **self.env)
+        env.update(ADDP_NODE_METRICS_OWNER=str(ROOT),
+                   ADDP_NODE_METRICS_LISTEN=':9100', ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1',
+                   ADDP_NODE_METRICS_PUBLISH_PORT='19100', ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector',
+                   ADDP_NODE_METRICS_ROOTFS='/', ADDP_NODE_METRICS_PROCFS='/proc',
+                   ADDP_NODE_METRICS_SYSFS='/sys')
+        value = subprocess.run(['docker', 'compose', '--env-file', '/dev/null',
+                                '-f', str(ROOT / 'scripts/infra/node-metrics.yml'),
+                                '-f', str(ROOT / 'scripts/infra/node-metrics-desktop.yml'),
+                                'config', '--format', 'json'], env=env, capture_output=True,
+                               text=True, check=True, timeout=15)
+        services = json.loads(value.stdout)['services']
+        self.assertEqual(set(services), {'node-exporter'})
+        source = services['node-exporter']
+        self.assertNotEqual(source.get('network_mode'), 'host')
+        self.assertNotEqual(source.get('pid'), 'host')
+        self.assertFalse(source.get('privileged', False))
+        self.assertEqual(source['cap_drop'], ['ALL'])
+        self.assertTrue(source['read_only'])
+        self.assertEqual(source['user'], '65534:65534')
+        self.assertEqual(len(source['ports']), 1)
+        self.assertEqual(source['ports'][0]['host_ip'], '127.0.0.1')
+        self.assertEqual(source['ports'][0]['published'], '19100')
+        self.assertEqual(source['ports'][0]['target'], 9100)
+        self.assertEqual(len(source['volumes']), 4)
+        self.assertTrue(all(m['read_only'] and m['source'] != '/' for m in source['volumes']))
+        for collector in ('filesystem', 'diskstats', 'netdev', 'netstat'):
+            self.assertIn('--no-collector.' + collector, source['command'])
+        for collector in ('cpu', 'meminfo', 'loadavg', 'stat', 'uname', 'time'):
+            self.assertIn('--collector.' + collector, source['command'])
 
     def test_production_compose_has_sole_host_source_and_readonly_mounts(self):
         env = dict(os.environ, **self.env, ADDP_NODE_METRICS_OWNER=str(ROOT),
+                   ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--collector',
                    ADDP_NODE_METRICS_ROOTFS='/host', ADDP_NODE_METRICS_PROCFS='/host/proc',
                    ADDP_NODE_METRICS_SYSFS='/host/sys')
         value = subprocess.run(['docker', 'compose', '--env-file', '/dev/null',

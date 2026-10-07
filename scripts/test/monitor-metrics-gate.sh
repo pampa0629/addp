@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
+# ADDP_T2_INPUT_FILES=scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-metrics-t2.XXXXXX")
 COMPOSE_PROJECT="addp-metrics-t2-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 COMPOSE_FILE="$ROOT_DIR/scripts/test/docker-compose.monitor-metrics-t2.yml"
@@ -12,6 +13,7 @@ export METRICS_T2_WORK="$WORK_DIR" ADDP_METRICS_TLS_DIR="$WORK_DIR/tls"
 export ADDP_METRICS_DEPLOYMENT_DIR="$WORK_DIR/deployment"
 export ADDP_NODE_METRICS_TLS_DIR="$WORK_DIR/node-tls"
 export ADDP_NODE_METRICS_LISTEN=:9100 ADDP_NODE_METRICS_ROOTFS=/ ADDP_NODE_METRICS_PROCFS=/proc ADDP_NODE_METRICS_SYSFS=/sys ADDP_NODE_METRICS_OWNER=t2
+export ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX=--collector
 export PROMETHEUS_SYSTEM_URL=https://metrics-source:9444 PROMETHEUS_MONITOR_URL=https://metrics-source:9444
 export PROMETHEUS_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 compose(){ docker compose --env-file /dev/null -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }

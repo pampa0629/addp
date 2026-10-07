@@ -1,4 +1,4 @@
-"""Explicit native-Linux node metrics lifecycle; never called by center startup."""
+"""Explicit Linux node / Docker Desktop VM metrics; independent of the center."""
 import argparse
 import ipaddress
 import json
@@ -44,11 +44,16 @@ def deployment(env):
     return directory
 
 
-def native_host(system, kernel, endpoint, docker_os):
+def deployment_runtime(system, kernel, endpoint, docker_os):
     version = re.match(r'^(\d+)\.(\d+)', kernel)
-    if (system != 'Linux' or not version or tuple(map(int, version.groups())) < (5, 12)
-            or not endpoint.startswith('unix:///') or 'desktop' in docker_os.lower()):
-        raise ValueError('Node metrics requires native Linux 5.12+ and a local Docker Engine')
+    if (not version or tuple(map(int, version.groups())) < (5, 12)
+            or not endpoint.startswith('unix:///')):
+        raise ValueError('Node metrics requires Linux 5.12+ and a local Docker Engine')
+    if system == 'Darwin' and docker_os == 'Docker Desktop':
+        return 'desktop'
+    if system == 'Linux' and 'desktop' not in docker_os.lower():
+        return 'linux'
+    raise ValueError('Unsupported node metrics deployment environment')
 
 
 def docker_json(*args):
@@ -66,10 +71,12 @@ def run(action, env):
         endpoint = context[0]['Endpoints']['docker']['Host']
     if not endpoint.startswith('unix:///'):
         raise ValueError('Node metrics lifecycle requires a local Docker endpoint')
+    runtime = 'desktop' if platform.system() == 'Darwin' else 'linux'
     if action == 'up':
         info = docker_json('info', '--format', '{{json .}}')
-        native_host(platform.system(), info['KernelVersion'], endpoint, info['OperatingSystem'])
-        if info['OSType'] != 'linux' or info['KernelVersion'] != platform.release():
+        runtime = deployment_runtime(platform.system(), info['KernelVersion'], endpoint, info['OperatingSystem'])
+        if (info['OSType'] != 'linux'
+                or runtime == 'linux' and info['KernelVersion'] != platform.release()):
             raise ValueError('Node metrics Docker Engine must share the current Linux kernel')
     ids = subprocess.check_output(['docker', 'ps', '-aq', '--filter',
                                   'label=com.docker.compose.project=' + PROJECT], text=True).split()
@@ -77,18 +84,29 @@ def run(action, env):
         for item in docker_json('inspect', *ids):
             if item['Config']['Labels'].get('io.addp.node-metrics.owner') != str(ROOT):
                 raise ValueError('Node metrics project belongs to another workspace')
-    values = dict(env, ADDP_NODE_METRICS_OWNER=str(ROOT), ADDP_NODE_METRICS_ROOTFS='/host',
-                  ADDP_NODE_METRICS_PROCFS='/host/proc', ADDP_NODE_METRICS_SYSFS='/host/sys')
+    desktop = runtime == 'desktop'
+    values = dict(env, ADDP_NODE_METRICS_OWNER=str(ROOT),
+                  ADDP_NODE_METRICS_ROOTFS='/' if desktop else '/host',
+                  ADDP_NODE_METRICS_PROCFS='/proc' if desktop else '/host/proc',
+                  ADDP_NODE_METRICS_SYSFS='/sys' if desktop else '/host/sys',
+                  ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector' if desktop else '--collector')
+    if desktop:
+        listen = env['ADDP_NODE_METRICS_LISTEN'] if action == 'up' else '127.0.0.1:9100'
+        address, port = listen.rsplit(':', 1)
+        values.update(ADDP_NODE_METRICS_LISTEN=':9100',
+                      ADDP_NODE_METRICS_PUBLISH_IP=address.strip('[]'),
+                      ADDP_NODE_METRICS_PUBLISH_PORT=port)
     # Do not inherit arbitrary profile activation or source paths from the caller.
     values.pop('COMPOSE_PROFILES', None)
     args = ['docker', 'compose', '--env-file', '/dev/null', '-p', PROJECT,
             '-f', str(ROOT / 'scripts/infra/node-metrics.yml'),
-            '-f', str(ROOT / 'scripts/infra/node-metrics-linux.yml')]
+            '-f', str(ROOT / f'scripts/infra/node-metrics-{runtime}.yml')]
     commands = {'up': ['up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter'],
                 'down': ['down'], 'status': ['ps']}
     subprocess.run(args + commands[action], env=values, check=True)
     if action == 'up':
-        print('Node metrics: deployed; source readiness and Monitor admission require mTLS verification')
+        scope = 'Docker Desktop VM (kernel-global metrics only)' if desktop else 'native Linux node'
+        print(f'Node metrics: deployed {scope}; source readiness and Monitor admission require mTLS verification')
 
 
 if __name__ == '__main__':
@@ -98,4 +116,4 @@ if __name__ == '__main__':
     try:
         run(args.action, os.environ)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
-        sys.exit('Node metrics deployment rejected; check native host, explicit inputs and project ownership')
+        sys.exit('Node metrics deployment rejected; check deployment environment, explicit inputs and project ownership')

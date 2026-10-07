@@ -385,7 +385,7 @@ Meta PostgreSQL 门禁登记 `TestPreciseNativePostgresScanAgainstPostgres`：�
 
 ### 平台指标设施独占门禁
 
-`make test-monitor-metrics` 由 Monitor owner 自建 Prometheus 与受控指标源，登记固定镜像 tag/digest、共享部署配置和生命周期输入，随机 Compose project、回环随机宿主端口及私有时序卷。实际验证 mTLS、采样周期与超时、单端点样本越限、断开恢复、SIGKILL 后 WAL 样本重放及退出零残留；临时 CA/私钥仅存在于本轮临时目录。根 `test-integration`、owner T2 自动发现、变更输入选择与 `release-and-t2-gates.yml` 使用同一入口。`test-dev-lifecycle` 验证部署未选择、错误选择、证书缺失和可选启动故障的核心 Infra 隔离。此门禁不替代后续节点绑定、HTTP SD 授权、业务埋点、资源查询及规模验收，不宣称完成 7 天物理保留时间窗验证。
+`make test-monitor-metrics` 由 Monitor owner 自建 Prometheus 与受控指标源，登记固定镜像 tag/digest、共享部署配置和生命周期输入，随机 Compose project、回环随机宿主端口及私有时序卷。实际验证 mTLS、采样周期与超时、单端点样本越限、断开恢复、SIGKILL 后 WAL 样本重放及退出零残留；同一来源还重新部署为 Docker Desktop 受限层，验证六采集器、Engine CPU/内存/内核对照、禁用文件系统/磁盘/网络族、mTLS 与唯一 HTTP SD 查询和恢复。本地 macOS 执行证明 Desktop VM 采集，Linux CI 证明受限层语义，不冒充 Desktop 环境或完整 Linux 节点验收；临时 CA/私钥仅存在于本轮临时目录。根 `test-integration`、owner T2 自动发现、变更输入选择与 `release-and-t2-gates.yml` 使用同一入口。`test-dev-lifecycle` 验证部署未选择、错误选择、证书缺失和可选启动故障的核心 Infra 隔离。此门禁不替代后续节点绑定、HTTP SD 授权、业务埋点、资源查询及规模验收，不宣称完成 7 天物理保留时间窗验证。
 
 ### Manager Raster Mosaic 原生 Runtime 门禁
 

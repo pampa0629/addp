@@ -10,7 +10,7 @@ Monitor 模块是 ADDP 的统一执行监控中心，负责查询和展示各模
 
 ## 技术栈与端口
 
-Linux node_exporter 的独立受控部署由 `scripts/infra/node-metrics.py` 拥有，中心或业务启动不会自动调用。生产与独占 T2 复用同一固定镜像、采集器白名单和原生 mTLS 模板；T2 不挂载宿主根、不使用 host 命名空间；手工 Hosted T4 `platform-node-metrics` 已于 2026-10-06 在 Linux VM 首次通过（Run 37463003308），生产宿主权限/物理身份绑定的完整 T5 仍待取得；平台/租户越权、原生发现、生效采样和退出清理由 `make test-node-metrics-online-runner` 及 System Online fixture PostgreSQL 门禁先行覆盖。具体边界见设计第 10.18–10.20 节和 Infra README；不把 exporter 成功响应视为物理节点绑定证据。
+Linux node_exporter 的独立受控部署由 `scripts/infra/node-metrics.py` 拥有，中心或业务启动不会自动调用。同一入口支持原生 Linux 完整节点视图及 macOS Docker Desktop VM 的受限内核全局视图；Desktop 仅六采集器，不发布文件系统、磁盘 IO 或网卡/TCP 族，台账使用 `virtual` 且不能代表 Mac 本机或单个容器。生产与独占 T2 复用同一固定镜像、采集器白名单和原生 mTLS 模板；T2 不挂载宿主根、不使用 host 命名空间；手工 Hosted T4 `platform-node-metrics` 已于 2026-10-06 在 Linux VM 首次通过（Run 37463003308），生产宿主权限/物理身份绑定的完整 T5 仍待取得；平台/租户越权、原生发现、生效采样和退出清理由 `make test-node-metrics-online-runner` 及 System Online fixture PostgreSQL 门禁先行覆盖。具体边界见设计第 10.18–10.20 节和 Infra README；不把 exporter 成功响应视为物理节点绑定证据。
 
 - 后端：Go + Gin + GORM，默认端口 `8100`，环境变量 `MONITOR_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus + ECharts，开发端口 `5179`，启动脚本环境变量 `MONITOR_FE_PORT`。

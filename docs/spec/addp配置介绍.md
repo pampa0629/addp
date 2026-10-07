@@ -703,7 +703,7 @@ System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资
 节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新、15 秒采样及限额由同一版本化模板维护，生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。
 
 
-主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。正式入口只支持本机原生 Linux Docker，明确拒绝 Docker Desktop 与远程 Engine；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../scripts/infra/README.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
+主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。同一正式入口支持本机原生 Linux Docker，以及 macOS 上的本地 Docker Desktop Linux VM；后者只发布已验证的 CPU、内存、负载和启动时间等内核全局事实，不提供磁盘/网卡全局指标。仍拒绝远程 Engine 和未知环境；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../scripts/infra/README.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
 
 
 Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 部署输入；不复用采集、节点准入或中心健康证书。缺配置只使资源 API 返回能力未配置，不影响原有 Ready。端点/证书随服务生命周期生效；查询预算是 Monitor 平台普通配置 `/settings/resource-query-policy`，版本/CAS 保存后对新请求立即生效，不通过环境变量配置或回退；在途请求保留开始时的预算版本。具体保护上限和指标目录见 [运行监控设计](../next/ADDP平台运行监控与可观测性设计.md#1021-platform-节点资源查询第一批契约)。

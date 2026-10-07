@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Invoked only by the owned Prometheus T2 gate, while its native node source is active.
+// Invoked only by the owned Prometheus T2 gate, for full and restricted sources.
 func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	if os.Getenv("ADDP_METRICS_QUERY_INTEGRATION") != "1" {
 		t.Skip("requires standard Monitor metrics T2 gate")
@@ -41,7 +41,8 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		}
 	}
 	b := DefaultBudget()
-	scope := Scope{NodeID: testNode, Instance: os.Getenv("ADDP_METRICS_QUERY_INSTANCE")}
+	scope := Scope{NodeID: os.Getenv("ADDP_METRICS_QUERY_NODE_ID"), Instance: os.Getenv("ADDP_METRICS_QUERY_INSTANCE")}
+	restricted := os.Getenv("ADDP_METRICS_QUERY_RESTRICTED_VM") == "1"
 	// Gauges can be valid after one scrape; counters require a whole minute.
 	deadline := time.Now().Add(100 * time.Second)
 	var now time.Time
@@ -98,6 +99,32 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		mounts, err := c.Query(context.Background(), files, scope, b)
 		if err != nil || len(mounts) < len(filesystemKeys) {
 			t.Fatal("native filesystem query", mounts, err)
+		}
+		if restricted {
+			if len(mounts) != len(filesystemKeys) {
+				t.Fatal("restricted source fabricated mount identities", mounts)
+			}
+			for _, row := range mounts {
+				if len(row.Dimensions) != 0 || row.Points[0].DataState != "no_data" || row.Points[0].Value != nil {
+					t.Fatal("restricted source leaked filesystem data", row)
+				}
+			}
+			trend, err := NewPlan(filesystemKeys, now.Add(-30*time.Second), now, now, true, nil, b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			history, err := c.Query(context.Background(), trend, scope, b)
+			if err != nil || len(history) != len(filesystemKeys) {
+				t.Fatal("restricted filesystem trend", err)
+			}
+			for _, row := range history {
+				for _, point := range row.Points {
+					if point.DataState != "no_data" || point.Value != nil || point.SampledAt != nil {
+						t.Fatal("restricted source fabricated history", row)
+					}
+				}
+			}
+			continue
 		}
 		valid := map[string]int{}
 		selectedDims := Dimensions{}

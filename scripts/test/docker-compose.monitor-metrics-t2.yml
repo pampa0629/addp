@@ -3,7 +3,11 @@ services:
     extends:
       file: ../infra/node-metrics.yml
       service: node-exporter
-    ports: ["127.0.0.1::9100"]
+    ports:
+      - target: 9100
+        published: "0"
+        host_ip: 127.0.0.1
+        protocol: tcp
   prometheus:
     extends:
       file: ../infra/metrics.yml
