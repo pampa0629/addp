@@ -135,7 +135,7 @@ test('password confirmation, server error, and successful sign-out use the exist
   await expect(dialog).toBeVisible()
   fail = false
   await dialog.getByRole('button', { name: '修改密码', exact: true }).click()
-  await expect(page).toHaveURL(/\/login$/)
+  await expect(page).toHaveURL(/\/login\?redirect=%2Faccount%3Ftab%3Dsecurity$/)
   expect(requests).toBe(2)
 })
 

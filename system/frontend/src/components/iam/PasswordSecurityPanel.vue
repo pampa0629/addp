@@ -18,14 +18,12 @@
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 
 const { t } = useI18n()
-const router = useRouter()
 const authStore = useAuthStore()
 const visible = ref(false)
 const submitting = ref(false)
@@ -49,7 +47,6 @@ async function submit() {
     reset()
     ElMessage.success(t('system.iam.account.passwordChanged'))
     await authStore.logout()
-    await router.replace({ name: 'Login' })
   } catch (error) {
     if (!disposed) ElMessage.error(error.response?.data?.error || t('system.iam.account.changePasswordFailed'))
   } finally { submitting.value = false }
