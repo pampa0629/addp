@@ -11,6 +11,7 @@ export const resourceMetrics = [
   { key: 'node.load.average_15m', name: 'load15m', unit: 'load', precision: 2 },
   { key: 'node.uptime_seconds', name: 'uptime', unit: 'seconds', precision: 0 }
 ]
+export const resourceRefreshOptions = ['15', '10', '30', '60', 'off']
 export const resourceRanges = { '5m': 300, '1h': 3600, '24h': 86400, '7d': 604800 }
 const defaultMetric = 'node.memory.used_percent'
 export function resolveResourceRoute(query = {}, detail = false) {
@@ -18,8 +19,9 @@ export function resolveResourceRoute(query = {}, detail = false) {
   const search = typeof query.search === 'string' ? query.search.trim().slice(0, 200) : ''
   const range = detail && typeof query.range === 'string' && Object.hasOwn(resourceRanges, query.range) ? query.range : '1h'
   const metric = detail && resourceMetrics.some(item => item.key === query.metric) ? query.metric : defaultMetric
-  const canonical = { ...pagination.query, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}) }
-  return { page: pagination.page, pageSize: pagination.pageSize, search, range, metric, query: canonical,
+  const refresh = detail && typeof query.refresh === 'string' && resourceRefreshOptions.includes(query.refresh) ? query.refresh : '15'
+  const canonical = { ...pagination.query, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(detail && refresh !== '15' ? { refresh } : {}) }
+  return { page: pagination.page, pageSize: pagination.pageSize, search, range, metric, refresh, query: canonical,
     changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
 }
 export function trendParameters(nodeID, metric, range, serverEnd) {

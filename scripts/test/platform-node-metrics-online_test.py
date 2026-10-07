@@ -207,6 +207,7 @@ class MetricsProtocolTest(unittest.TestCase):
         rows.append(copy.deepcopy(rows[0]))
         report = {"schema_version": "addp.node-resources-browser/v1", "result": "passed", "stage": "complete", "run_id": "unique-run",
                   "identity": admin, "negative_identity": security, "negative_no_business_reads": True, "resources": rows,
+                  "auto_refresh": {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True, "off_restored": True, "off_no_requests": True},
                   "navigation": {"list_without_fanout": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True}}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
@@ -222,7 +223,8 @@ class MetricsProtocolTest(unittest.TestCase):
                          lambda v: v["resources"][1]["query"].update(end="2026-10-06T00:01:01Z"),
                          lambda v: v["resources"][1]["value"]["series"][0]["points"].pop(),
                          lambda v: v["resources"][0]["value"]["series"][0]["points"][0].update(value=float("nan")),
-                         lambda v: v.update(resources=[])]
+                         lambda v: v.update(resources=[]), lambda v: v.pop("auto_refresh"),
+                         lambda v: v["auto_refresh"].update(off_no_requests=False)]
             for mutation in mutations:
                 bad = copy.deepcopy(report); mutation(bad)
                 with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):

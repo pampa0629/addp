@@ -4,21 +4,21 @@ export { identity, node, setIdentity }
 export const secondNode = '15daeb87-b7bf-434b-a8ea-598c82e266d4'
 export const resourcePermissions = ['platform.host_node.read', 'monitor.resource_observation.read']
 export const serverEnd = '2026-10-07T00:00:00Z'
-export function observations(id, keys, trend = false, mode = '') {
+export function observations(id, keys, trend = false, mode = '', end = serverEnd) {
   const points = key => {
     const item = resourceMetrics.find(metric => metric.key === key)
     const numeric = item.unit === 'bytes' ? 17179869184 : item.name === 'uptime' ? 3600 : 0
-    return (trend ? ['2026-10-06T23:59:30Z', '2026-10-06T23:59:45Z', serverEnd] : [serverEnd]).map((evaluated_at, index) => {
+    return (trend ? [-30, -15, 0].map(offset => new Date(Date.parse(end) + offset * 1000).toISOString()) : [end]).map((evaluated_at, index) => {
       const data_state = mode === 'disconnected' ? 'not_connected' : trend && index === 1 ? 'no_data' : !trend && item.name === 'memoryAvailable' ? 'stale' : 'valid'
       return { evaluated_at, sampled_at: data_state === 'not_connected' || data_state === 'no_data' ? null : evaluated_at, value: data_state === 'no_data' || data_state === 'not_connected' ? null : numeric, data_state }
     })
   }
-  return { subject: { kind: 'node', node_id: id }, end: serverEnd, start: trend ? '2026-10-06T23:59:30Z' : serverEnd, queried_at: serverEnd, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, unit: resourceMetrics.find(item => item.key === key).unit, window_seconds: 0, points: points(key) })) }
+  return { subject: { kind: 'node', node_id: id }, end, start: trend ? new Date(Date.parse(end) - 30000).toISOString() : end, queried_at: end, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, unit: resourceMetrics.find(item => item.key === key).unit, window_seconds: 0, points: points(key) })) }
 }
 export async function resourceBackend(page, options = {}) {
-  const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', identity: options.identity || identity(resourcePermissions) }
+  const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', serverEnd, identity: options.identity || identity(resourcePermissions) }
   let release
-  const held = options.holdInstant ? new Promise(resolve => { release = resolve }) : null
+  let held = options.holdInstant ? new Promise(resolve => { release = resolve }) : null
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.locale || 'zh-cn')
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/**', async route => {
@@ -37,7 +37,7 @@ export async function resourceBackend(page, options = {}) {
       state.reads.push({ path, query: Object.fromEntries(url.searchParams), method: req.method() })
       const id = url.searchParams.get('node_id'), keys = url.searchParams.get('metrics').split(',')
       if (!trend && held && id === node) await held
-      body = observations(id, keys, trend, mode)
+      body = observations(id, keys, trend, mode, state.serverEnd)
       if (['disabled', 'unconfigured', 'unavailable', 'timeout', 'budget', 'busy', 'denied'].includes(mode)) {
         const codes = { disabled: [409, 'observability_capability_disabled'], unconfigured: [503, 'observability_capability_unconfigured'], unavailable: [503, 'observability_backend_unavailable'], timeout: [504, 'observability_query_timeout'], budget: [422, 'observability_query_budget_exceeded'], busy: [429, 'observability_query_concurrency_exceeded'], denied: [403, 'permission_denied'] }
         const result = codes[mode]; status = result[0]; body = { error_code: result[1], error: mode }
@@ -46,5 +46,5 @@ export async function resourceBackend(page, options = {}) {
     } else throw new Error(`Unexpected resource fixture API ${path}`)
     await route.fulfill({ status, json: body })
   })
-  return Object.assign(state, { release: () => release?.() })
+  return Object.assign(state, { hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null } })
 }

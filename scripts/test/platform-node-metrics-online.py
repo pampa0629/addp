@@ -301,6 +301,8 @@ def validate_resource_browser(value, expected, artifacts):
     require(value.get("negative_no_business_reads") is True and value.get("navigation") == {
         "list_without_fanout": True, "iframe_preserved": True, "history": True,
         "metric_reload": True, "range_reload": True, "server_window": True}, "browser navigation or denial evidence missing")
+    require(value.get("auto_refresh") == {"natural_timer": True, "server_end_advanced": True,
+            "unchanged_url": True, "off_restored": True, "off_no_requests": True}, "browser automatic refresh evidence missing")
     rows = value.get("resources")
     require(isinstance(rows, list) and 4 <= len(rows) <= 30, "browser resource evidence missing or unbounded")
     instants, trends = [], []
@@ -330,7 +332,7 @@ def validate_resource_browser(value, expected, artifacts):
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
     return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
             "eight_metrics": True, "trend_server_window": True, "navigation_restore": True,
-            "security_administrator_denied": True}
+            "security_administrator_denied": True, "auto_refresh": True}
 
 
 def run_resource_browser(node, target, policy, display_name, admin, security):

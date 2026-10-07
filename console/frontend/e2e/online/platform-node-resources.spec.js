@@ -111,6 +111,33 @@ test('platform node resources through real Console password MFA and Monitor ifra
       expect(anchor).toBeTruthy()
       expect([300_000, 3_600_000]).toContain(Date.parse(item.query.end) - Date.parse(item.query.start))
     }
+    save('natural-auto-refresh-and-off-restore')
+    const beforeAuto = resources.filter(item => item.path.endsWith('resource_observations')).length
+    const priorEnd = resources.filter(item => item.path.endsWith('resource_observations')).at(-1).value.end
+    const refreshURL = page.url()
+    await expect(monitor.getByTestId('resource-refresh')).toContainText('每 15 秒')
+    const autoInstant = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('resource_observations') && response.ok())
+    const autoTrend = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('resource_trends') && response.ok())
+    await autoInstant
+    await autoTrend
+    await Promise.all(pending)
+    expect(resources.filter(item => item.path.endsWith('resource_observations')).length).toBeGreaterThan(beforeAuto)
+    expect(Date.parse(resources.filter(item => item.path.endsWith('resource_observations')).at(-1).value.end)).toBeGreaterThan(Date.parse(priorEnd))
+    expect(page.url()).toBe(refreshURL)
+    await monitor.getByTestId('resource-refresh').click()
+    await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()
+    await expect(page).toHaveURL(url => matchesRedirectURL(url, new URL(`/monitor/node-resources/${expected.node.node_id}?range=5m&metric=node.load.average_1m&refresh=off`, process.env.CONSOLE_URL)))
+    await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    await page.reload()
+    await expect(monitor.getByTestId('resource-refresh')).toContainText('关闭自动刷新')
+    await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    await Promise.all(pending)
+    const offCount = resources.filter(item => item.path.endsWith('resource_observations')).length
+    // Natural wall clock: no injected timer or intercepted API in Hosted T4.
+    await new Promise(done => setTimeout(done, 16_000))
+    await Promise.all(pending)
+    expect(resources.filter(item => item.path.endsWith('resource_observations')).length).toBe(offCount)
+    report.auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true, off_restored: true, off_no_requests: true }
     await page.screenshot({ path: resolve(artifact, 'node-resources-restored.png'), animations: 'disabled' })
     expect(businessErrors).toEqual([])
     report.resources = resources
