@@ -1122,6 +1122,7 @@ from pathlib import Path
 state = Path(os.environ['ROOT_DIR'], 'binding-state').read_text()
 if state == 'missing': raise ModuleNotFoundError("No module named 'osgeo'")
 if state == 'unloadable': raise ImportError('Library not loaded: @rpath/libgdal.32.dylib')
+if state == 'missing-array': raise ImportError("cannot import name '_gdal_array'")
 class gdal:
     @staticmethod
     def VersionInfo(key): return '3.6.2' if state == 'mismatch' else '3.12.1'
@@ -1201,13 +1202,13 @@ assert (work/'trace').read_text().splitlines()==['sync']
 pip_trace = work / 'pip-trace'
 assert [json.loads(line) for line in pip_trace.read_text().splitlines()] == [['check']], 'healthy binding must not be reinstalled'
 # A same-version broken ABI cannot be repaired by pip's "already satisfied" path.
-for state in ('missing', 'unloadable', 'mismatch'):
+for state in ('missing', 'unloadable', 'mismatch', 'missing-array'):
     (work / 'binding-state').write_text(state)
     pip_trace.unlink()
     result=subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True,timeout=15)
     assert result.returncode==0,(state,result.stdout,result.stderr)
     calls=[json.loads(line) for line in pip_trace.read_text().splitlines()]
-    assert calls == [['install', '--force-reinstall', '--no-cache-dir', '--no-binary=GDAL', '--no-deps', 'GDAL==3.12.1'], ['check']], (state,calls)
+    assert calls == [['install', '--no-deps', 'setuptools>=67', 'wheel'], ['install', '--force-reinstall', '--no-cache-dir', '--no-binary=GDAL', '--no-build-isolation', '--no-deps', 'GDAL==3.12.1'], ['check']], (state,calls)
     assert (work / 'binding-state').read_text()=='healthy',state
 # Rebuild success is insufficient when the resulting binding still cannot load.
 (work / 'binding-state').write_text('unloadable')

@@ -31,9 +31,12 @@ addp_prepare_gdal_binding() {
   # Installed package metadata cannot prove that its native library still loads.
   if ! "$python_bin" -c 'from osgeo import gdal, gdal_array, ogr, osr; import sys; assert gdal.VersionInfo("RELEASE_NAME") == sys.argv[1], "GDAL Python/原生版本不一致"' "$version"; then
     echo "${label} GDAL 绑定不可用，正在从源码重建 $version..."
+    # Build against the runtime's NumPy headers so array support cannot silently
+    # disappear in an isolated build environment or a previously cached wheel.
+    addp_with_python_dependency_lock "$ROOT_DIR" "$python_bin" -m pip install --no-deps 'setuptools>=67' wheel || return 1
     # Never reuse a wheel linked against the previous native library, or upgrade
     # the already synchronized Python dependencies while repairing the binding.
-    addp_with_python_dependency_lock "$ROOT_DIR" "$python_bin" -m pip install --force-reinstall --no-cache-dir --no-binary=GDAL --no-deps "GDAL==$version" || return 1
+    addp_with_python_dependency_lock "$ROOT_DIR" "$python_bin" -m pip install --force-reinstall --no-cache-dir --no-binary=GDAL --no-build-isolation --no-deps "GDAL==$version" || return 1
   fi
   "$python_bin" -m pip check || return 1
   "$python_bin" -c 'from osgeo import gdal, gdal_array, ogr, osr; import sys; assert gdal.VersionInfo("RELEASE_NAME") == sys.argv[1], "GDAL Python/原生版本不一致"' "$version"

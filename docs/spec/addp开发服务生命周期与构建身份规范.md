@@ -81,6 +81,8 @@ GeoPython Workflow 本地开发统一使用不继承系统包的 Python 3.12 虚
 
 Manager Raster Mosaic Runtime 属于 Manager，随 `stop.sh -manager` 停止、随普通 `start/restart -manager` 启动，独立进程验收入口不隐式启动它。本地开发统一使用 Python 3.12 独立虚拟环境，禁止继承系统 site-packages。停止后的准备阶段自动重建不符合该约束的环境；正在运行或端口被占用时不得改写环境。GDAL 来源选择、资源目录派生和失效绑定源码重建由 `scripts/dev/gdal-env.sh` 唯一实现，GeoPython 与 Raster Mosaic 共同调用；各自检查业务所需驱动，Raster Mosaic 仅要求 GTiff/COG、GDAL NumPy 数组和坐标系能力，不依赖 PGeo/MDBTools。每次启动按完整 requirements 同步依赖并执行 pip check，安装使用既有 Python 依赖锁。保留 Manager 主服务的既定启动策略：Raster Mosaic 准备失败明确报告并跳过该 Runtime，不将其计为就绪；启动后须核验 PID、监听归属和健康响应。
 
+GDAL 绑定重建必须先准备 setuptools 与 wheel，并使用已同步的 Runtime NumPy 和 `--no-build-isolation` 从源码编译，禁止复用缓存 wheel；否则 GDAL 包可能安装成功但缺少 `_gdal_array`。编译工具安装和绑定重建均使用既有依赖锁，完成后重新检查数组绑定、版本和 pip 依赖。Linux CI 与原生开发共用此入口，不能另走直接 `pip install GDAL` 的准备路径。
+
 ## 四、构建身份
 
 所有由开发脚本构建的 Go 服务必须通过链接参数嵌入以下构建身份：

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import socket
 import shutil
 import subprocess
@@ -9,6 +10,19 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class GDALCIPreparationTests(unittest.TestCase):
+    def test_both_ci_runtimes_use_shared_binding_repair(self):
+        workflow = (ROOT / ".github/workflows/platform-ci.yml").read_text()
+        for job in ("raster-mosaic-runtime-tests", "geopython-workflow-tests"):
+            with self.subTest(job=job):
+                block = re.split(r"\n  (?=\S)", workflow.split("\n  " + job + ":\n", 1)[1], maxsplit=1)[0]
+                self.assertIn("source scripts/dev/lifecycle-lock.sh", block)
+                self.assertIn("source scripts/dev/gdal-env.sh", block)
+                self.assertIn("addp_gdal_native_environment", block)
+                self.assertIn("addp_prepare_gdal_binding", block)
+                self.assertNotIn('-m pip install "GDAL==', block)
 
 
 class RasterNativeLifecycleTests(unittest.TestCase):
