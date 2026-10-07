@@ -589,8 +589,8 @@ def raster_physical(repository, environment, action, request):
     result = subprocess.run([sys.executable, str(repository / 'business/scripts/online-raster-minio-fixture.py'),
         'manager-' + action, str(request_path)], env=environment, capture_output=True, text=True, check=False)
     if result.returncode:
-        raise SuiteError('Manager raster physical verification failed')
-    return _object(json.loads(result.stdout), 'Manager raster physical evidence')
+        raise SuiteError('Manager artifact physical verification failed')
+    return _object(json.loads(result.stdout), 'Manager artifact physical evidence')
 
 
 def generate_raster_cog(client, raster, tenant_id, timeout, physical):
@@ -816,6 +816,8 @@ def run_scenario(
     pptx_task_id: int | None = None
     pptx_result_id: int | None = None
     pptx_execution_id = ""
+    pptx_physical_request = None
+    pptx_physical_evidence = {}
     pointcloud_cleanup = {"result_deleted": False, "task_deleted": False, "content_unavailable": False, "residual_resources": -1}
     pptx_cleanup = {"result_deleted": False, "task_deleted": False, "content_unavailable": False, "residual_resources": -1}
     try:
@@ -951,6 +953,14 @@ def run_scenario(
         if not pptx_content.raw.startswith(b"%PDF") or len(pptx_content.raw) > 64:
             raise SuiteError("PPTX PDF Range response is not a bounded PDF prefix")
 
+        pptx_physical_request = {'locator': pptx_manager_facts['outputs'][0]['locator'],
+            'tenant_id': tenant_id, 'fingerprint': pptx_fingerprint, 'size_bytes': pptx_size_bytes}
+        pptx_physical_evidence = physical('pdf-verify', pptx_physical_request)
+        if (pptx_physical_evidence.get('object_present') is not True
+                or pptx_physical_evidence.get('source_unchanged') is not True
+                or pptx_physical_evidence.get('size_bytes') != pptx_size_bytes):
+            raise SuiteError('Manager PDF physical evidence is incomplete')
+
         generate_raster_cog(client, raster, tenant_id, timeout, physical)
         for model in model_fixtures:
             generate_model_glb(client, model, tenant_id, timeout)
@@ -998,7 +1008,7 @@ def run_scenario(
             "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 5, "outputs": 5, "manager_monitor_equal": True},
             "artifacts": {
                 "point_cloud": {"name": pointcloud_output_name, "range_bytes": len(pointcloud_content.raw), "storage_domain": "addp-infra"},
-                "pptx_pdf": {"page_count": pptx_page_count, "size_bytes": pptx_size_bytes, "range_bytes": len(pptx_content.raw), "storage_domain": "addp-infra", "cache_reused": True},
+                "pptx_pdf": {"page_count": pptx_page_count, "size_bytes": pptx_size_bytes, "range_bytes": len(pptx_content.raw), "storage_domain": "addp-infra", "cache_reused": True, "physical": pptx_physical_evidence},
                 **{model.format: model.artifact for model in model_fixtures},
             },
             "raster_cog": {"task_id": raster.task_id, "execution_id": raster.execution_id, "result_id": raster.result_id,
@@ -1037,6 +1047,17 @@ def run_scenario(
                 pptx_cleanup["result_deleted"] = True
                 client.request("GET", f"/api/v1/manager/pptx_pdf/{pptx_result_id}/content", (404,))
                 pptx_cleanup["content_unavailable"] = True
+                if pptx_physical_request is None:
+                    raise SuiteError('Manager PDF cleanup has no owned physical reference')
+                deleted = physical('pdf-deleted', pptx_physical_request)
+                if deleted != {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}:
+                    raise SuiteError('Manager PDF physical deletion was not verified')
+                pptx_cleanup.update(deleted)
+                capability = _object(client.request('GET', '/api/v1/manager/quick-view/capability?' +
+                    urllib.parse.urlencode({'locator': pptx_locator}), (200,)).payload, 'deleted PPTX capability')
+                if _object(capability.get('pptx_pdf'), 'deleted PPTX result').get('result_id'):
+                    raise SuiteError('deleted PPTX result is still active')
+                pptx_cleanup['result_unavailable'] = True
             except SuiteError as error:
                 cleanup_errors.append(str(error))
         if pptx_task_id is not None:
@@ -1044,6 +1065,18 @@ def run_scenario(
                 client.request("DELETE", f"/api/v1/manager/tasks/{PPTX_TASK_TYPE}/{pptx_task_id}", (204,))
                 client.request("GET", f"/api/v1/manager/tasks/{PPTX_TASK_TYPE}/{pptx_task_id}", (404,))
                 pptx_cleanup["task_deleted"] = True
+                preserved_item = find_fixture_item(client, engine_id, pptx_full_name, 'preserved PPTX')
+                if preserved_item['id'] != pptx_item_id or preserved_item['fingerprint'] != pptx_fingerprint:
+                    raise SuiteError('PPTX cleanup changed the source DataItem')
+                execution = _object(client.request('GET', '/api/v1/manager/executions/' +
+                    urllib.parse.quote(pptx_execution_id), (200,)).payload, 'preserved PPTX execution')
+                facts = validate_lineage(execution, item_locator=pptx_locator, item_id=pptx_item_id,
+                    fingerprint=pptx_fingerprint, tenant_id=tenant_id, task_type=PPTX_TASK_TYPE,
+                    output_prefix='document-preview', output_suffix='.pdf', output_label='PDF')
+                monitor = _object(client.request('GET', '/api/v1/monitor/executions/by-execution-id/' +
+                    urllib.parse.quote(pptx_execution_id), (200,)).payload, 'preserved Monitor PPTX execution')
+                validate_monitor_lineage(monitor, facts)
+                pptx_cleanup.update(source_item_preserved=True, execution_preserved=True)
             except SuiteError as error:
                 cleanup_errors.append(str(error))
         if pptx_task_id is not None or pptx_result_id is not None:

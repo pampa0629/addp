@@ -400,7 +400,9 @@ def scenario_environment(artifact_dir: str):
 class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def setUp(self):
         def physical(repository, environment, action, request):
-            if action == 'deleted':
+            if action == 'pdf-verify':
+                return {'object_present': True, 'source_unchanged': True, 'source_sha256': 'e' * 64, 'size_bytes': request['size_bytes']}
+            if action in ('deleted', 'pdf-deleted'):
                 return {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
             return {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': 131072,
                     'size_bytes': request['size_bytes'], 'sha256': request['sha256']}
@@ -517,6 +519,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             return value
         deletes = []
         def physical(action, request):
+            if action.startswith('pdf-'):
+                return SUITE.raster_physical(Path('/repository'), {}, action, request)
             deletes.append((action, request))
             return {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
         with tempfile.TemporaryDirectory() as directory:
@@ -526,6 +530,22 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertEqual([action for action, _ in deletes], ['deleted'])
         self.assertIn('/tenant_42/cog/', deletes[0][1]['locator'])
         self.assertFalse(client.raster['task_exists'] or client.raster['result_exists'])
+
+    def test_pdf_physical_cleanup_cannot_be_replaced_by_teardown(self):
+        for evidence in ({'object_deleted': False, 'source_unchanged': True, 'residual_objects': 0},
+                         {'object_deleted': True, 'source_unchanged': False, 'residual_objects': 0},
+                         {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 1}):
+            client = FakeGatewayClient()
+            oracle = SUITE.raster_physical
+            def physical(action, request):
+                if action == 'pdf-deleted':
+                    return evidence
+                return oracle(Path('/repository'), {}, action, request)
+            with self.subTest(evidence=evidence), tempfile.TemporaryDirectory() as directory:
+                with mock.patch.object(SUITE, 'GatewayClient', return_value=client):
+                    with self.assertRaisesRegex(SUITE.SuiteError, 'PDF physical deletion'):
+                        SUITE.run_scenario(Path('/repository'), scenario_environment(directory), physical_runner=physical)
+                self.assertFalse(client.pptx_result_exists or client.pptx_task_exists)
 
     def test_raster_browser_evidence_is_mandatory(self):
         evidence = {'execution_id': 'execution-1', 'item_id': 91, 'output_name': 'source.copc.laz',
@@ -565,7 +585,9 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "residual_resources": 0,
         }
         self.assertEqual(report["cleanup"]["point_cloud"], expected_cleanup)
-        self.assertEqual(report["cleanup"]["pptx_pdf"], expected_cleanup)
+        self.assertEqual(report["cleanup"]["pptx_pdf"], {**expected_cleanup,
+            "object_deleted": True, "source_unchanged": True, "residual_objects": 0,
+            "result_unavailable": True, "source_item_preserved": True, "execution_preserved": True})
         for format_name, model in client.models.items():
             self.assertEqual(report["cleanup"][format_name], {**expected_cleanup, "preview_mode_restored": True})
             self.assertFalse(model["task_exists"])
@@ -579,7 +601,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertFalse(client.pptx_result_exists)
         self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
         self.assertEqual(client.model_modes, {"dae": "basic_preview", "3ds": "basic_preview"})
-        self.assertEqual(client.pptx_capability_calls, 2)
+        self.assertEqual(client.pptx_capability_calls, 3)
         self.assertEqual(browser_calls[0][1]["pptx_page_count"], 3)
         self.assertLess(
             client.calls.index(("DELETE", "/api/v1/manager/pptx_pdf/302")),

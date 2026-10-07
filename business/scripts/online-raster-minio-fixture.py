@@ -634,7 +634,7 @@ def manager_physical(action, request=None):
     if (os.environ.get('ADDP_ONLINE_HOSTED') != '1'
             or os.environ.get('ONLINE_SUITE') != 'manager-internal-artifact-lineage'):
         raise FixtureError('Manager raster physical verification requires its Hosted owner')
-    if action not in ('seed', 'verify', 'deleted'):
+    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted'):
         raise FixtureError('unknown Manager physical action')
     root = environment()
     image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '')
@@ -648,6 +648,12 @@ def manager_physical(action, request=None):
                 'secret_key': os.environ['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],
                 'bucket': os.environ['ADDP_ONLINE_MANAGER_MINIO_BUCKET'],
                 'object': os.environ['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']},
+            'pptx': {'endpoint': '127.0.0.1:' + os.environ['ADDP_ONLINE_MANAGER_MINIO_PORT'],
+                'access_key': os.environ['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],
+                'secret_key': os.environ['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],
+                'bucket': os.environ['ADDP_ONLINE_MANAGER_MINIO_BUCKET'],
+                'object': os.environ['ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT'],
+                'sha256': hashlib.sha256((Path(__file__).resolve().parents[1] / 'fixtures/manager/addp_online_preview_fixture.pptx').read_bytes()).hexdigest()},
             'infra': {'endpoint': '127.0.0.1:' + os.environ['MINIO_API_PORT'],
                 'access_key': os.environ['MINIO_ROOT_USER'], 'secret_key': os.environ['MINIO_ROOT_PASSWORD']},
         })
@@ -663,7 +669,60 @@ def manager_physical(action, request=None):
     return result
 
 
+def manager_pdf_worker(action, path):
+    """Observe PDF cleanup before disposable Infra teardown; never delete objects."""
+    from minio import Minio
+    from minio.error import S3Error
+    from urllib.parse import urlsplit, parse_qs, unquote
+    root = Path(path).parent
+    config = json.loads(Path(path).read_text())
+    request = json.loads((root / 'manager-raster-request.json').read_text())
+    parsed = urlsplit(request['locator'])
+    prefix = f"/manager/tenant_{request['tenant_id']}/document-preview/{request['fingerprint']}/"
+    if (parsed.scheme != 'addp-infra' or parsed.netloc != 'minio'
+            or not parsed.path.startswith(prefix) or not parsed.path.endswith('.pdf')
+            or parse_qs(parsed.query) != {'type': ['object']}):
+        raise FixtureError('Manager PDF output is not owned by this run')
+    key = unquote(parsed.path.removeprefix('/manager/'))
+    if any(part in ('', '.', '..') for part in key.split('/')):
+        raise FixtureError('Manager PDF output contains unsafe segments')
+    clients = {role: Minio(config[role]['endpoint'], access_key=config[role]['access_key'],
+        secret_key=config[role]['secret_key'], secure=False) for role in ('pptx', 'infra')}
+    source = config['pptx']
+    stream = clients['pptx'].get_object(source['bucket'], source['object'])
+    try:
+        source_hash = hashlib.sha256(stream.read()).hexdigest()
+    finally:
+        stream.close(); stream.release_conn()
+    if source_hash != source['sha256']:
+        raise FixtureError('Manager source PPTX changed')
+    if action == 'pdf-deleted':
+        try:
+            clients['infra'].stat_object('manager', key)
+        except S3Error as error:
+            if error.code != 'NoSuchKey': raise
+        else:
+            raise FixtureError('deleted Manager PDF still exists physically')
+        if list(clients['infra'].list_objects('manager', prefix=key, recursive=True)):
+            raise FixtureError('Manager PDF cleanup left residual objects')
+        return {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+    if action != 'pdf-verify':
+        raise FixtureError('unknown Manager PDF physical action')
+    size = clients['infra'].stat_object('manager', key).size
+    stream = clients['infra'].get_object('manager', key)
+    try:
+        header = stream.read(4)
+    finally:
+        stream.close(); stream.release_conn()
+    if size != request['size_bytes'] or header != b'%PDF':
+        raise FixtureError('Manager PDF physical size or header mismatch')
+    return {'object_present': True, 'source_unchanged': True, 'source_sha256': source_hash,
+            'size_bytes': size}
+
+
 def manager_worker(action, path):
+    if action.startswith('pdf-'):
+        return manager_pdf_worker(action, path)
     from minio import Minio
     from minio.error import S3Error
     from osgeo import gdal, osr

@@ -1,17 +1,69 @@
+import hashlib
+import importlib.util
+import io
 import json
 import os
 import re
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 import xml.etree.ElementTree as ET
 import zlib
 from pathlib import Path
 
 
 SCRIPT = Path(__file__).parents[2] / "business/scripts/online-manager-minio-fixture.sh"
+
+
+class ManagerPDFPhysicalFixtureTest(unittest.TestCase):
+    def test_pdf_observer_requires_real_object_absence_and_preserves_source(self):
+        path = SCRIPT.with_name('online-raster-minio-fixture.py')
+        spec = importlib.util.spec_from_file_location('manager_pdf_fixture', path)
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        class S3Error(Exception):
+            code = 'NoSuchKey'
+        class Stream(io.BytesIO):
+            def release_conn(self): pass
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = {'pptx': {'endpoint': 'source', 'access_key': 'test', 'secret_key': 'test',
+                'bucket': 'business', 'object': 'source.pptx', 'sha256': hashlib.sha256(b'source').hexdigest()},
+                'infra': {'endpoint': 'infra', 'access_key': 'test', 'secret_key': 'test'}}
+            (root / 'config.json').write_text(json.dumps(config))
+            request = {'locator': 'addp-infra://minio/manager/tenant_7/document-preview/fp/slides.pdf?type=object',
+                'tenant_id': 7, 'fingerprint': 'fp', 'size_bytes': 4}
+            (root / 'manager-raster-request.json').write_text(json.dumps(request))
+            present, source, residual = True, b'source', []
+            def stat_object(bucket, key):
+                if not present: raise S3Error()
+                return SimpleNamespace(size=4)
+            source_client = SimpleNamespace(get_object=lambda *args: Stream(source))
+            infra_client = SimpleNamespace(stat_object=stat_object,
+                get_object=lambda *args: Stream(b'%PDF'), list_objects=lambda *args, **kwargs: residual)
+            sdk = SimpleNamespace(Minio=lambda endpoint, **kwargs: source_client if endpoint == 'source' else infra_client)
+            with mock.patch.dict(sys.modules, {'minio': sdk, 'minio.error': SimpleNamespace(S3Error=S3Error)}):
+                verified = module.manager_pdf_worker('pdf-verify', root / 'config.json')
+                self.assertTrue(verified['object_present'])
+                with self.assertRaisesRegex(module.FixtureError, 'still exists physically'):
+                    module.manager_pdf_worker('pdf-deleted', root / 'config.json')
+                present = False
+                self.assertEqual(module.manager_pdf_worker('pdf-deleted', root / 'config.json'),
+                    {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0})
+                residual = [SimpleNamespace(object_name='unexpected')]
+                with self.assertRaisesRegex(module.FixtureError, 'residual objects'):
+                    module.manager_pdf_worker('pdf-deleted', root / 'config.json')
+                source = b'changed'
+                with self.assertRaisesRegex(module.FixtureError, 'source PPTX changed'):
+                    module.manager_pdf_worker('pdf-deleted', root / 'config.json')
+                request['tenant_id'] = 8
+                (root / 'manager-raster-request.json').write_text(json.dumps(request))
+                with self.assertRaisesRegex(module.FixtureError, 'not owned'):
+                    module.manager_pdf_worker('pdf-deleted', root / 'config.json')
 
 
 class OnlineManagerMinIOFixtureTest(unittest.TestCase):
