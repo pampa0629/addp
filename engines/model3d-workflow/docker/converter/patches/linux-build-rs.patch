@@ -73,3 +73,13 @@ index d27160b..c6e04d4 100644
              "x86_64-pc-windows-msvc" => build_win_msvc(),
              "aarch64-apple-darwin" => build_macos(),
              "x86_64-apple-darwin" => build_macos_x86_64(),
+diff --git a/src/osgb23dtile.cpp b/src/osgb23dtile.cpp
+--- a/src/osgb23dtile.cpp
++++ b/src/osgb23dtile.cpp
+@@ -52,4 +52,6 @@ USE_OSGPLUGIN(tga)
+ USE_OSGPLUGIN(jpeg)
+ USE_OSGPLUGIN(png)
+ USE_SERIALIZER_WRAPPER_LIBRARY(osg)
++// Static OSG linking must retain the compressor registration used by compressed OSGB.
++USE_COMPRESSOR_WRAPPER(ZLibCompressor)
+ #endif

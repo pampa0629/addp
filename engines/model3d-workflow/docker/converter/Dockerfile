@@ -45,6 +45,20 @@ RUN --mount=type=cache,target=/root/.cache/vcpkg \
     --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release -vv
 
+COPY tests/osgb_compression_smoke.cpp /tmp/osgb_compression_smoke.cpp
+RUN set -eu; \
+    case "$TARGETARCH" in amd64) triplet=x64-linux ;; arm64) triplet=arm64-linux ;; *) exit 1 ;; esac; \
+    library_root=$(find -L target/release/build -type d -path "*/vcpkg_installed/${triplet}" -print -quit); \
+    test -n "$library_root"; \
+    c++ -std=c++17 /tmp/osgb_compression_smoke.cpp -o /tmp/osgb-compression-smoke \
+      -I"$library_root/include" -L"$library_root/lib" -L"$library_root/lib/osgPlugins-3.6.5" \
+      -Wl,--start-group -losgdb_osg -losgdb_serializers_osg -losgUtil -losgDB -losg -lOpenThreads \
+      -Wl,--end-group -lz -lGL -lpthread -ldl; \
+    /tmp/osgb-compression-smoke generate /tmp/compressed-triangle.osgb; \
+    target/release/_3dtile -f gltf -i /tmp/compressed-triangle.osgb -o /tmp/compressed-triangle.glb; \
+    /tmp/osgb-compression-smoke verify /tmp/compressed-triangle.glb; \
+    rm /tmp/osgb-compression-smoke /tmp/compressed-triangle.osgb /tmp/compressed-triangle.glb
+
 RUN mkdir -p /out \
   && cp target/release/_3dtile /out/_3dtile \
   && cp -r target/release/gdal /out/gdal \
