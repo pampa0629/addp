@@ -1098,6 +1098,34 @@
       "versionConflict": "策略已被其他管理员更新，已重新加载"
     },
     "engine": {
+      "dataAuthorization": {
+        "title": "数据授权",
+        "boundary": "批准方式决定本表由谁批准访问。授权管理委派指定谁能办理，实际数据授权指定谁能读取；三者互不替代。",
+        "configurations": "已配置的批准方式",
+        "initialize": "首次配置批准方式",
+        "target": "数据表",
+        "mode": "批准方式",
+        "version": "版本",
+        "reason": "配置原因",
+        "pickTable": "选择数据表",
+        "selectMode": "请选择批准方式",
+        "saveMode": "保存批准方式",
+        "tableOnly": "直接浏览引擎中的普通表，无需先扫描或编目。仅配置选中表，不包括视图、整个库或未来新增的表。",
+        "readRequired": "查看配置需要批准方式读取权限及本引擎的有效授权管理委派。",
+        "browseRequired": "选择数据表需要引擎目录浏览权限，请联系权限管理员配置。",
+        "unsupported": "当前引擎不可浏览或编号无法安全表示；请先确认引擎处于启用、在线状态。",
+        "exists": "本表已配置为“{mode}”。首次配置不能覆盖已有安排。",
+        "invalid": "请选择普通数据表、明确批准方式并填写配置原因。",
+        "confirmBody": "将“{target}”配置为“{mode}”。本次只配置批准方式，不授予任何账号数据读取权限。",
+        "saved": "批准方式已保存，尚未授予任何数据读取权限。",
+        "failed": "未取得可靠结果。请刷新核对，页面不会自动重试或宣称配置已生效。",
+        "accessPending": "本页当前提供批准方式配置，独立授予访问权的操作尚未开放。保存配置不改变现有数据授权。",
+        "modes": { "independent": "System 独立批准", "catalog": "Catalog 业务确认" },
+        "descriptions": {
+          "independent": "由具备独立批准功能权限和本引擎有效管理委派的人员批准，不要求部署 Catalog 或先完成编目。",
+          "catalog": "新授权需要 Catalog 中当前业务负责人的有效共享确认；Catalog 失联时不会自动改成独立批准。"
+        }
+      },
       "delegations": {
         "title": "授权管理委派",
         "created": "管理委派已创建；尚未授予任何数据读取权限。",

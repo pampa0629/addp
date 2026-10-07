@@ -217,9 +217,11 @@ const uri = buildLocator({
 
 资源树请求统一复用 `createAPIClient()` 和宿主已绑定的 AuthStore，支持 401 刷新与单次重试；正常模块路由守卫负责先初始化会话。选择器不创建独立 AuthSession，iframe 内不直接刷新 Cookie。
 
+System 的批准方式配置通过 `adapter` 复用此组件，候选来自实时 Engine Catalog 而非 Meta 扫描；`mode="any"` 配合精确表叶子过滤，不伪造 Meta item ID。结构化源路径来自 Provider 原始事实，locator 仅用于统一选择交互。批准方式初始化请求的无损数值路径序列化统一由 `serializeEngineApprovalInitialization` 提供；Catalog 和 System 不维护两套实现。
+
 稳定约束：
 
-- `mode="item"` 选择已有 data item，`mode="node"` 选择已有资源节点，`mode="any"` 仅用于确有混合选择语义的场景。
+- `mode="item"` 选择已有 data item，`mode="node"` 选择已有资源节点，`mode="any"` 用于混合选择或 Provider 实时目录的精确叶子选择。实时目录必须通过 `selectable-filter` 限制可选叶子，并由适配器保留完整源目标，不补造 Meta 身份。
 - 已有资源选择结果以 `selection.identity.locator` 作为唯一资源身份；`display` 只用于 UI 展示，`raw.node` 只作为调用方补充读取事实的原始材料。
 - `initialLocator` 回显走 Meta resource-tree ancestors API。回显目标不满足当前 `mode` 或 `selectableFilter` 时，只允许展开和高亮，不应回填为有效 selection。
 - 对明确不应出现的资源，优先通过 `nodeFilter` 直接过滤掉；`selectableFilter` 仅在需要保留上下文但禁止选择时使用。

@@ -1180,35 +1180,17 @@ skip pointcloud_workflow registration because PDAL is not bound
 
 ### 根因
 
-点云 COPC 转换依赖 `pointcloud_workflow` 运行时内置的 PDAL。开发环境不要求、也不应要求宿主机全局安装 PDAL；如果 `pointcloud-workflow` 被按宿主机 Python 服务启动，默认找不到 engine runtime 内部 PDAL，`/health` 会返回 `degraded`，并跳过向 System 自注册。此时 Manager 无法通过 `WorkflowRuntimeProvider` 找到 `las_to_copc` / `laz_to_copc` / `e57_to_copc` / `pcd_to_copc` / `xyz_to_copc` direct operator。
+点云 COPC 转换依赖运行时独立环境内的 PDAL。普通 Python venv 只隔离 Python 包，不能提供 PDAL/E57 的原生库。开发入口统一创建独立 Conda 前缀并验证实际驱动和 COPC 转换；不得手工指向系统 `pdal`，也不得继承 Conda base 的 GDAL/PROJ 插件和资源路径。
 
-### 正确处理
-
-使用 Docker runtime 启动或重启点云引擎：
+首次迁移由用户停止、删除旧 PointCloud 开发容器，将原有普通 Python venv 移出 `engines/pointcloud-workflow/venv`，再运行：
 
 ```bash
-bash scripts/dev/restart.sh -pointcloud-workflow
-curl http://localhost:8102/health
+./scripts/dev/restart.sh -pointcloud-workflow
 ```
 
-健康检查应包含：
+检查 `logs/pointcloud-workflow-engine.log` 与实际端口 `/health`；System 中该引擎应为 `online`，连接信息为宿主机实际端口。环境更新失败、原生库无法加载或插件缺失时，准备门禁阻止启动。已有服务运行时禁止就地改依赖；先停止该 Runtime，再重新准备。PDAL 与原生包声明见运行时 README。
 
-```json
-{
-  "status": "healthy",
-  "conversion_ready": true,
-  "dependencies": {
-    "pdal": {
-      "path": "/opt/conda/bin/pdal",
-      "available": true
-    }
-  }
-}
-```
-
-System 中 `pointcloud_workflow` 应为 `online`，且连接信息应指向宿主机可访问的 `localhost:8102`。如果 Manager 与 infra MinIO 运行在宿主机开发态，点云容器会将 `localhost:19000` 这类对象存储 endpoint 改写为 `host.docker.internal:19000`，生产或 Compose 网络中的非 localhost endpoint 不受影响。点云 COPC 写入不是纯流式写；当前 PDAL 2.10.2 实测 `writers.copc` 不能可靠直接写 `/vsis3/` 目标，因此运行时会先写 `POINTCLOUD_WORK_DIR` 下的受控工作文件，再上传到 Manager infra MinIO。大点云转换必须给 `POINTCLOUD_WORK_HOST_PATH` / `POINTCLOUD_WORK_DIR` / `CPL_TMPDIR` 配置容量足够的工作目录。
-
----
+COPC 始终先写入 `POINTCLOUD_WORK_HOST_PATH` 指定的受控工作目录，再按 access plan 上传；大文件需要足够磁盘空间。
 
 ## Document 镜像下载 Debian 依赖失败，阻断全量启动
 

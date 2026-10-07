@@ -1,4 +1,4 @@
-.PHONY: test-raster-online-runner test-frontend-ci-registration help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-node-dependencies test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-integration-hosted test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: test-raster-online-runner test-frontend-ci-registration help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-node-dependencies test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-integration-hosted test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-pointcloud-workflow test-pointcloud-native test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status infra-backup infra-restore-drill infra-cloud-backup test-infra-backup prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -128,6 +128,14 @@ test-agent-eval-release:
 COMMON_PYTHON ?= common-python/.venv/bin/python
 test-common-python: ## 运行 common-python 全量测试
 	@cd common-python && $(abspath $(COMMON_PYTHON)) -m pytest -q
+
+POINTCLOUD_WORKFLOW_PYTHON ?= engines/pointcloud-workflow/.venv/bin/python
+POINTCLOUD_NATIVE_PYTHON ?= engines/pointcloud-workflow/venv/bin/python
+test-pointcloud-workflow: ## 运行 PointCloud HTTP/算子确定性测试
+	@cd engines/pointcloud-workflow && $(abspath $(POINTCLOUD_WORKFLOW_PYTHON)) -m pytest -q tests
+
+test-pointcloud-native: ## 验证独立 PDAL 原生环境与五种格式真实 COPC 转换
+	@ROOT_DIR="$(CURDIR)" POINTCLOUD_NATIVE_PYTHON="$(abspath $(POINTCLOUD_NATIVE_PYTHON))" bash -c 'set -e; source scripts/dev/pointcloud-workflow.sh; prefix=$$(dirname "$$(dirname "$$POINTCLOUD_NATIVE_PYTHON")"); addp_pointcloud_native_environment "$$prefix"; "$$POINTCLOUD_NATIVE_PYTHON" engines/pointcloud-workflow/native_check.py "$$prefix"; cd engines/pointcloud-workflow; exec "$$POINTCLOUD_NATIVE_PYTHON" -m pytest -q native_tests'
 
 DOCUMENT_WORKFLOW_PYTHON ?= engines/document-workflow/.venv/bin/python
 test-document-workflow: ## 运行 Document Workflow Engine 确定性测试
@@ -498,12 +506,13 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
+	@bash -n scripts/dev/pointcloud-workflow.sh
 	@bash -n scripts/dev/spark-workflow.sh
 	@bash -n scripts/dev/geopython-workflow.sh
 	@bash -n scripts/dev/gdal-env.sh
 	@bash -n scripts/dev/raster-mosaic-runtime.sh
 	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh; do bash -n "$$script" || exit 1; done
-	@python3 -m unittest scripts/test/gdal-native-lifecycle_test.py scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/model3d-linux-images_test.py
+	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/gdal-native-lifecycle_test.py scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/model3d-linux-images_test.py
 	@bash scripts/test/infra-port-resolution.sh
 	@bash scripts/test/dev-lifecycle-and-build.sh
 	@cd common && go test ./schema ./repository ./dataprotection/projectionstore
@@ -747,7 +756,7 @@ test-swagger: ## 校验 Swagger 检查脚本与全模块路由覆盖
 	@bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
-	test-document-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-supermap-workflow test-spark-workflow \
+	test-document-workflow test-pointcloud-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-supermap-workflow test-spark-workflow \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \

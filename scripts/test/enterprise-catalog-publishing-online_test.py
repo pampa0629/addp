@@ -485,7 +485,8 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                 writes = [(path, body) for path, body in client.writes if path.endswith("/access_approval_requirements")]
                 self.assertEqual(len(writes), int(initialized))
                 if writes:
-                    self.assertEqual(set(writes[0][1]), {"catalog_path", "reason"})
+                    self.assertEqual(set(writes[0][1]), {"catalog_path", "mode", "reason"})
+                    self.assertEqual(writes[0][1]["mode"], "catalog")
                     self.assertEqual(writes[0][1]["catalog_path"], client.target)
 
     def test_existing_independent_mode_is_not_overwritten_or_prepared(self) -> None:

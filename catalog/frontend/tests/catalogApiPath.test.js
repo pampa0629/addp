@@ -17,22 +17,23 @@ import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 import { transferEntryResponsibilities } from '../src/api/catalog'
 import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
-import { serializeApprovalInitialization } from '../src/utils/sharingConfirmation'
+import { serializeEngineApprovalInitialization } from '../../../common-frontend/basic/src/utils/engineApprovalInitialization.mjs'
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('serializes the existing numeric path contract losslessly, including quoted names, under the User client', async () => {
     const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ term: 'table', kind: 'table', name: 'a"b' }] }
-    const body = serializeApprovalInitialization(target, ' Configure "approval" ')
+    const body = serializeEngineApprovalInitialization(target, 'catalog', ' Configure "approval" ')
     expect(body).toContain('"engine_id":9007199254740993,')
     expect(body).not.toContain('9007199254740992')
     expect(JSON.parse(body).catalog_path.segments).toEqual(target.segments)
     expect(JSON.parse(body).reason).toBe('Configure "approval"')
+    expect(JSON.parse(body).mode).toBe('catalog')
     await initializeSharingRequirement(target, body)
     expect(client.post).toHaveBeenCalledWith('/system/engines/9007199254740993/access_approval_requirements', body, { headers: { 'Content-Type': 'application/json' } })
-    expect(() => serializeApprovalInitialization({ ...target, engine_id: '1,"mode":"independent"' }, 'Configure')).toThrow()
-    expect(() => serializeApprovalInitialization(target, ' ')).toThrow()
+    expect(() => serializeEngineApprovalInitialization({ ...target, engine_id: '1,"mode":"independent"' }, 'catalog', 'Configure')).toThrow()
+    expect(() => serializeEngineApprovalInitialization(target, 'catalog', ' ')).toThrow()
   })
 
   it('observes only the exact target under the User client before a separate explicit preparation command', async () => {

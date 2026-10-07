@@ -27,7 +27,7 @@ const renderer = createRenderer({
   remove(node) { const index = node.parent?.children.indexOf(node); if (index >= 0) node.parent.children.splice(index, 1); node.parent = null },
   parentNode: node => node.parent, nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1],
 })
-const controls = ['alert', 'card', 'form', 'form-item', 'select', 'option', 'date-picker', 'input', 'button', 'descriptions', 'descriptions-item', 'pagination', 'empty']
+const controls = ['alert', 'card', 'form', 'form-item', 'select', 'option', 'date-picker', 'input', 'button', 'descriptions', 'descriptions-item', 'pagination', 'empty', 'steps', 'step']
 const rowContext = Symbol('table-row')
 const mounted = []
 const id = 'cc0a8000-6000-4000-8000-800000000001'
@@ -40,8 +40,8 @@ const flatten = node => [node, ...node.children.flatMap(flatten)]
 async function settle() { for (let i = 0; i < 5; i++) { await Promise.resolve(); await nextTick() } }
 function mount(decisionID = '', requestID = '') {
   const state = reactive({ entry, decisionID, requestID })
-  const recordDecision = vi.fn(async value => { state.decisionID = value })
-  const recordRequest = vi.fn(async value => { state.requestID = value })
+  const recordDecision = vi.fn(async value => { state.decisionID = value; state.requestID = '' })
+  const recordRequest = vi.fn(async (value, decisionID) => { state.decisionID = decisionID; state.requestID = value })
   const root = { children: [] }
   const app = renderer.createApp({ render: () => h(SharingPanel, { ...state, recordDecision, recordRequest }) })
   app.provide(ssrContextKey, { modules: new Set() })
@@ -75,6 +75,106 @@ beforeEach(() => {
   fixtures.api.observeSharingRequirement.mockResolvedValue({ mode: 'catalog', requirement_version: '9007199254740993' })
 })
 afterEach(() => { mounted.splice(0).forEach(app => app.unmount()); vi.unstubAllGlobals() })
+
+describe('task-oriented sharing guidance', () => {
+  it('selects the viewed confirmation only from authoritative handling candidates, using reads alone', async () => {
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    const view = mount(decision.id); await settle()
+    expect(view.button('sharing-decision-select').props.modelValue).toBe(decision.id)
+    expect(view.button('sharing-current-selected')).toBeDefined()
+    expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledExactlyOnceWith(decision.target)
+    expect(view.button('sharing-prepare').props.disabled).toBe(false)
+    expect(view.button('sharing-progress-status').text).toBe('catalog.sharing.progress.awaitingHandling')
+    expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
+  })
+  it('does not substitute confirmation details when the handling candidate excludes it', async () => {
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    fixtures.api.listSharingDecisions.mockResolvedValue({ data: [], total: 0 })
+    const view = mount(decision.id); await settle()
+    expect(view.button('sharing-decision-select').props.modelValue).toBe('')
+    expect(fixtures.api.observeSharingRequirement).not.toHaveBeenCalled()
+    expect(view.button('sharing-prepare').props.disabled).toBe(true)
+    expect(view.nodes().some(node => node.text?.includes('catalog.sharing.next.askHandler'))).toBe(true)
+  })
+  it('guides a confirmation-only user to a qualified handler without loading handling candidates', async () => {
+    fixtures.auth.permissions = ['catalog.entry.read', 'catalog.sharing_decision.create']
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    const view = mount(decision.id); await settle()
+    expect(view.nodes().some(node => node.text?.includes('catalog.sharing.next.askHandler'))).toBe(true)
+    expect(fixtures.api.listSharingDecisions).not.toHaveBeenCalled()
+    expect(view.button('sharing-prepare')).toBeUndefined()
+  })
+  it('keeps issuance separate from acceptance and clears progress on a result query failure', async () => {
+    fixtures.auth.permissions = ['catalog.entry.read', 'catalog.sharing_decision.create']
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    const result = { request_id: id, decision_id: decision.id, state: 'accepted' }
+    fixtures.api.listSharingConfirmationResults.mockResolvedValueOnce({ data: [result], total: 1 })
+      .mockResolvedValueOnce({ data: [{ ...result, granted_at: '2026-10-07T00:00:00Z' }], total: 1 })
+      .mockRejectedValueOnce(new Error('offline'))
+    const view = mount(decision.id); await settle()
+    const status = () => view.button('sharing-progress-status').text
+    expect(status()).toBe('catalog.sharing.progress.issuing')
+    await view.button('sharing-refresh-results').props.onClick(); await settle()
+    expect(status()).toBe('catalog.sharing.progress.issued')
+    await view.button('sharing-refresh-results').props.onClick(); await settle()
+    expect(status()).toBe('catalog.sharing.progress.unavailable')
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+  })
+  it('shows an exact routed request through authorized confirmation results without requiring handling permission', async () => {
+    fixtures.auth.permissions = ['catalog.entry.read', 'catalog.sharing_decision.create']
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    fixtures.api.listSharingConfirmationResults.mockResolvedValue({ data: [{ request_id: id, decision_id: decision.id,
+      state: 'accepted', granted_at: '2026-10-07T00:00:00Z' }], total: 1 })
+    const view = mount(decision.id, id); await settle()
+    expect(view.button('sharing-progress-status').text).toBe('catalog.sharing.progress.issued')
+    expect(fixtures.api.getSharingRequest).not.toHaveBeenCalled()
+    expect(fixtures.api.listSharingDecisions).not.toHaveBeenCalled()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+  })
+  it('ignores late auto-selection after switching confirmations', async () => {
+    let resolve
+    fixtures.api.getSharingDecision.mockImplementation(async (_, value) => ({ ...decision, id: value }))
+    fixtures.api.listSharingDecisions.mockReturnValueOnce(new Promise(done => { resolve = done }))
+      .mockResolvedValue({ data: [], total: 0 })
+    const view = mount(decision.id); await settle()
+    view.state.decisionID = id; await settle()
+    resolve({ data: [decision], total: 1 }); await settle()
+    expect(view.button('sharing-decision-select').props.modelValue).toBe('')
+    expect(fixtures.api.observeSharingRequirement).not.toHaveBeenCalled()
+  })
+  it('records the chosen confirmation and request together without losing the frozen retry command', async () => {
+    fixtures.api.getSharingDecision.mockImplementation(async (_, value) => ({ ...decision, id: value }))
+    fixtures.api.prepareSharingRequest.mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ request_id: id, state: 'accepted' })
+    fixtures.api.getSharingRequest.mockResolvedValue({ request_id: id, decision_id: decision.id, state: 'accepted' })
+    const view = mount(id); await settle()
+    view.button('sharing-decision-select').props['onUpdate:modelValue'](decision.id)
+    await settle(); await view.button('sharing-decision-select').props.onChange(); await settle()
+    await view.button('sharing-prepare').props.onClick(); await settle()
+    expect(view.state.decisionID).toBe(decision.id)
+    expect(view.state.requestID).toBe(id)
+    expect(view.button('sharing-new-confirmation').props.disabled).toBe(true)
+    const original = fixtures.api.prepareSharingRequest.mock.calls[0][1]
+    await view.button('sharing-retry-request').props.onClick(); await settle()
+    expect(fixtures.api.prepareSharingRequest.mock.calls[1][1]).toBe(original)
+    expect(view.button('sharing-new-confirmation').props.disabled).toBe(false)
+    expect(view.button('sharing-progress-status').text).toBe('catalog.sharing.progress.issuing')
+  })
+  it('clears the old routed request and signed result when a different confirmation opens', async () => {
+    fixtures.api.listSharingConfirmations.mockResolvedValue({ data: [decision], total: 1 })
+    fixtures.api.getSharingDecision.mockImplementation(async (_, value) => ({ ...decision, id: value }))
+    fixtures.api.getSharingRequest.mockResolvedValue({ request_id: id, decision_id: id, state: 'accepted', granted_at: '2026-10-07T00:00:00Z' })
+    const view = mount(id, id); await settle()
+    expect(view.button('sharing-progress-status').text).toBe('catalog.sharing.progress.issued')
+    await view.button('sharing-open-confirmation').props.onClick(); await settle()
+    expect(view.state.requestID).toBe('')
+    expect(view.state.decisionID).toBe(decision.id)
+    expect(view.button('sharing-query-request')).toBeUndefined()
+    expect(view.button('sharing-progress-status').text).toBe('catalog.sharing.progress.awaitingHandling')
+  })
+})
 
 describe('actual sharing panel commands and recovery', () => {
   it('finds confirmation history from an ordinary entry URL and opens authoritative results without fulfillment permission or a new command', async () => {
@@ -140,6 +240,7 @@ describe('actual sharing panel commands and recovery', () => {
     await view.button('sharing-initialize').props.onClick(); await settle()
     expect(fixtures.api.initializeSharingRequirement).toHaveBeenCalledTimes(1)
     expect(fixtures.api.initializeSharingRequirement.mock.calls[0][1]).toContain('"engine_id":9007199254740993,')
+    expect(JSON.parse(fixtures.api.initializeSharingRequirement.mock.calls[0][1]).mode).toBe('catalog')
     expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledTimes(2)
     expect(view.button('sharing-prepare').props.disabled).toBe(false)
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
@@ -184,7 +285,7 @@ describe('actual sharing panel commands and recovery', () => {
     expect(view.button('sharing-prepare').props.disabled).toBe(false)
     const submit = view.button('sharing-prepare').props.onClick
     await Promise.all([submit(), submit()]); await settle()
-    expect(view.recordRequest).toHaveBeenCalledExactlyOnceWith(id)
+    expect(view.recordRequest).toHaveBeenCalledExactlyOnceWith(id, decision.id)
     expect(view.state.requestID).toBe(id)
     expect(fixtures.api.prepareSharingRequest).toHaveBeenCalledTimes(1)
     const payload = fixtures.api.prepareSharingRequest.mock.calls[0][1]

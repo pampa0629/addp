@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
-HOSTED_FIXTURE_CONTAINERS=(business-minio addp-manager-online-registry pointcloud-workflow-engine document-workflow-engine addp-manager-raster-runtime addp-manager-raster-verifier)
+HOSTED_FIXTURE_CONTAINERS=(business-minio addp-manager-online-registry document-workflow-engine addp-manager-raster-runtime addp-manager-raster-verifier)
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(business)
 RUNTIME_CONTAINER=addp-manager-raster-runtime
 RUNTIME_TAG=manager-raster-online

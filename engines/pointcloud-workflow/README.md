@@ -17,42 +17,48 @@ PCD / XYZ 转换仍以 PDAL 为唯一执行路线。为覆盖 NFS 样例和常�
 - `pcd_to_copc` 会在临时目录中规范化 legacy PCD header 的 `VERSION .x` / `VERSION 0.0-0.6` 写法为 PDAL 可读取的 `VERSION 0.7`，不修改源文件。
 - `xyz_to_copc` 显式使用 `readers.text`，按空白分隔的 `X Y Z` 三列读取。
 
-容器运行时默认使用镜像内的 `/opt/conda/bin/pdal`。如需覆盖 PDAL 可执行文件路径，必须指向 engine runtime 内部绑定的绝对路径，不能只写 `pdal` 这类依赖系统 `PATH` 的命令名，也不要指向宿主机全局安装路径。
+开发运行时使用独立 Conda 前缀 `engines/pointcloud-workflow/venv`，其中同时安装 Python 3.12、`libpdal-core=2.10.2` 和 `libpdal-e57=2.10.2`。PDAL 及其 GDAL、PROJ、E57 原生库属于该运行时；不安装到 Conda base，不继承 Homebrew 原生库或其他环境的资源、插件路径。生产 Compose 仍使用正式产品镜像中的 `/opt/conda/bin/pdal`。
 
-COPC 写入不是纯流式写。运行时默认使用 `/work/pointcloud` 作为 `POINTCLOUD_WORK_DIR` 和 `CPL_TMPDIR`，开发脚本和 Compose 会把该目录挂载为可配置的宿主机目录 `${POINTCLOUD_WORK_HOST_PATH:-data/pointcloud-work}`。大点云转换时应把该目录放在容量足够的磁盘或卷上。
+## 开发启动
 
-COPC 生成默认向 PDAL `writers.copc` 传入 `threads=4`，可通过容器环境变量 `POINTCLOUD_COPC_THREADS` 调整，运行时会限制在 `1..8`。该参数只控制单个 COPC 转换任务内部的压缩/写入并行度，不改变 Manager 任务调度并发。进度回调发送间隔默认 5 秒，可通过 `POINTCLOUD_PROGRESS_INTERVAL_SECONDS` 调整到 `1..60` 秒。
-
-## 启动
-
-推荐使用开发脚本或容器镜像启动运行时，镜像内置 PDAL：
+先安装 Conda（推荐 Miniforge），使 `conda` 可执行文件可用，再执行标准入口：
 
 ```bash
 bash scripts/dev/start.sh -pointcloud-workflow
 bash scripts/dev/restart.sh -pointcloud-workflow
 ```
 
-开发脚本会启动 `pointcloud-workflow-engine` 容器，并将 `${POINTCLOUD_DATA_HOST_PATH:-business/nfs/data}` 挂载到容器内同一路径，使 Manager 传入的 NFS 本地文件路径可被容器直接读取。`${POINTCLOUD_WORK_HOST_PATH:-data/pointcloud-work}` 会挂载为 `/work/pointcloud`，供 PDAL/GDAL 临时随机写使用。容器向 System 注册实际开发端口，供宿主机上的 Manager 后端调用。
+两者共用 `scripts/dev/pointcloud-workflow.sh`，按 `native-packages.txt` 创建/同步独立环境，再复用平台 Python 依赖安装锁、完整 requirements、editable `common-python` 与依赖指纹。启动前检查 Python/PDAL 版本、LAS、E57、PCD、text、COPC 驱动、资源目录，并实际转换三个 XYZ 点及读取 COPC 点数。失败不启动服务。已有原生进程运行时只校验环境，不修改依赖；依赖需变化时先在终端停止该 Runtime，再启动。
 
-普通本地开发默认设置 `POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST=host.docker.internal`。运行时仅把 access plan 中对象存储端点的 loopback 主机名替换为该值，原端口、协议、凭据和路径保持不变；宿主机发布端口必须可由该容器访问。Hosted Online 原生 Linux 使用宿主网络，通过 `WORKFLOW_BIND_HOST=127.0.0.1` 只监听回环地址与 `POINTCLOUD_WORKFLOW_PORT`，System 和对象存储均通过 `127.0.0.1` 访问，Business 与 Infra MinIO 仍各自只发布回环端口。端口与部署模式的完整契约见 [端口分配规范](../../docs/spec/addp端口分配.md)。
+HTTP 仅监听 `127.0.0.1` 与已分配的 `POINTCLOUD_WORKFLOW_PORT`，按原生 PID 和监听归属判定就绪。System 与对象存储端点按宿主机实际地址直接访问，不进行容器 host gateway 改写。NFS 源文件直接读取本机路径；工作目录为 `${POINTCLOUD_WORK_HOST_PATH:-data/pointcloud-work}`，COPC 仍先写受控临时文件，再按 access plan 发布到目标存储。目录应有足够磁盘空间。
 
-开发启动和重启脚本会根据 Dockerfile、Python 依赖、运行时代码以及 PointCloud 实际使用的 `common-python` 子包计算构建指纹。镜像先按 `common-python/pyproject.toml` 和 PointCloud 依赖安装第三方包，再安装公共源码；公共源码变化不会使第三方依赖层失效。指纹与现有开发镜像一致时直接复用；构建输入变化或镜像不存在时才重新构建 PointCloud Workflow Engine 镜像。
+首次迁移需由用户停止并删除旧 `pointcloud-workflow-engine` 开发容器；若已有普通 Python venv，先将其移出上述前缀再启动。开发入口拒绝使用非 Conda 前缀，也不会删除未知环境或接管外部监听者。此后的 start/restart/stop 仅管理原生进程。日志为 `logs/pointcloud-workflow-engine.log`。
+
+当前已有旧开发容器和普通 venv 的工作区，首次切换由用户在终端执行（旧 venv 移到临时目录保留）：
+
+```bash
+docker stop pointcloud-workflow-engine
+docker rm pointcloud-workflow-engine
+pointcloud_backup=$(mktemp -d /tmp/addp-pointcloud-old.XXXXXX)
+mv engines/pointcloud-workflow/venv "$pointcloud_backup/venv"
+./scripts/dev/restart.sh -pointcloud-workflow
+```
+
+`POINTCLOUD_COPC_THREADS` 默认 4，限制为 `1..8`；进度回调间隔 `POINTCLOUD_PROGRESS_INTERVAL_SECONDS` 默认 5 秒，限制为 `1..60`。运行时专属 PDAL 绝对路径由开发入口注入。
+
+## 产品部署
 
 ```bash
 docker compose up -d pointcloud-workflow-engine
 ```
 
-仅调试 HTTP runtime 时可以直接运行 Python 服务；该方式不会提供 PDAL，除非显式绑定 engine runtime 内部的 PDAL 路径，因此 `/health` 会返回 `degraded` 且不会自注册到 System。开发和端到端验证应使用上面的容器路线：
-
-```bash
-cd engines/pointcloud-workflow
-pip install -r requirements.txt
-PORT=8102 python api_server.py
-```
+产品镜像继续由根构建入口维护，与原生开发入口分离，不作为开发启动的备选路线。
 
 ## 测试
 
 ```bash
-python -m pip install -r engines/pointcloud-workflow/requirements-dev.txt
-PYTHONPATH=common-python:engines/pointcloud-workflow:engines/docs pytest engines/pointcloud-workflow
+make test-pointcloud-workflow
+make test-pointcloud-native
 ```
+
+前者运行 HTTP/算子确定性测试；后者使用独立 PDAL 验证五种格式的真实 COPC 转换与原生依赖预检。两者均已登记 Platform CI；Hosted Manager T4 使用同一原生准备入口。

@@ -19,18 +19,84 @@ with open(sys.argv[1], "a") as lock:
 PY
 }
 
-# 宿主机 Python Runtime 按完整声明同步依赖；启动与局部重启共用。
-addp_sync_python_dependencies() {
+# 输入和实际安装环境共同决定是否可复用；不依赖源码时间戳。
+addp_python_dependency_fingerprint() {
+  local project_root="$1" runtime_dir="$2"
+  "$runtime_dir/venv/bin/python" - "$project_root" "$runtime_dir" <<'PY'
+import hashlib
+import importlib.metadata
+import json
+from pathlib import Path
+import shlex
+import sys
+
+root, runtime = map(Path, sys.argv[1:])
+files = set()
+
+def collect_requirements(path):
+    path = path.resolve()
+    if path in files:
+        return
+    files.add(path)
+    for line in path.read_text().replace('\\\n', '').splitlines():
+        parts = shlex.split(line, comments=True)
+        if not parts:
+            continue
+        option = parts[0]
+        if option in ('-r', '-c', '--requirement', '--constraint'):
+            collect_requirements(path.parent / parts[1])
+        elif option.startswith(('--requirement=', '--constraint=')):
+            collect_requirements(path.parent / option.split('=', 1)[1])
+        elif option.startswith(('-r', '-c')):
+            collect_requirements(path.parent / option[2:])
+
+collect_requirements(runtime / 'requirements.txt')
+common = root / 'common-python'
+files.update((common / 'pyproject.toml', common / 'README.md'))
+files.update(path for path in (common / 'addp_common').rglob('*')
+             if path.is_file() and '__pycache__' not in path.parts
+             and path.suffix not in ('.pyc', '.pyo'))
+inputs = [('python-dependencies-v1',)]
+inputs.extend((str(path), hashlib.sha256(path.read_bytes()).hexdigest())
+              for path in sorted(files))
+packages = sorted((dist.metadata['Name'] or '', dist.version,
+                   str(dist.locate_file('')), dist.requires or [],
+                   dist.read_text('direct_url.json') or '')
+                  for dist in importlib.metadata.distributions())
+environment = (sys.executable, sys.prefix, sys.base_prefix, sys.version, packages)
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+print(digest(inputs) + ':' + digest(environment))
+PY
+}
+
+addp_python_dependencies_current() {
+  local runtime_dir="$1" fingerprint="$2" label="$3"
+  local fingerprint_file="$runtime_dir/venv/.addp-dependency-fingerprint"
+  if [ -f "$fingerprint_file" ] &&
+     [ "$(cat "$fingerprint_file")" = "$fingerprint" ] &&
+     "$runtime_dir/venv/bin/python" -m pip check >/dev/null 2>&1; then
+    echo "✓ $label Python 依赖未变化，跳过安装"
+    return 0
+  fi
+  return 1
+}
+
+# 仅失效环境进入安装锁；锁内重查，避免等待者重复安装。
+addp_install_python_dependencies() {
   local project_root="$1"
   local runtime_dir="$2"
   local label="$3"
   local python_bin="$runtime_dir/venv/bin/python"
+  local fingerprint_file="$runtime_dir/venv/.addp-dependency-fingerprint"
+  local fingerprint installed_fingerprint temporary
   local pip_args=(-m pip install -r "$runtime_dir/requirements.txt" -e "$project_root/common-python")
 
-  if [ ! -x "$python_bin" ]; then
-    echo "✗ $label 虚拟环境不存在或不可执行，请先使用 start.sh 创建环境" >&2
-    return 1
-  fi
+  fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir") || return 1
+  addp_python_dependencies_current "$runtime_dir" "$fingerprint" "$label" && return 0
+  rm -f "$fingerprint_file" || return 1
 
   if [ -n "${PIP_INDEX_URL:-}" ]; then
     pip_args+=(-i "$PIP_INDEX_URL")
@@ -40,12 +106,39 @@ addp_sync_python_dependencies() {
   fi
 
   echo "同步 $label Python 依赖..."
-  if ! addp_with_python_dependency_lock "$project_root" "$python_bin" "${pip_args[@]}" ||
+  if ! "$python_bin" "${pip_args[@]}" ||
      ! "$python_bin" -m pip check; then
     echo "✗ $label Python 依赖同步失败" >&2
     return 1
   fi
+  installed_fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir") || return 1
+  if [ "${fingerprint%%:*}" != "${installed_fingerprint%%:*}" ]; then
+    echo "✗ $label 依赖输入在安装期间变化，请重新执行" >&2
+    return 1
+  fi
+  temporary=$(mktemp "$fingerprint_file.XXXXXX") || return 1
+  if ! printf '%s\n' "$installed_fingerprint" > "$temporary" ||
+     ! mv -f "$temporary" "$fingerprint_file"; then
+    rm -f "$temporary"
+    return 1
+  fi
   echo "✓ $label Python 依赖同步完成"
+}
+
+# 宿主机 Python Runtime 按完整声明检查与同步；启动和重启共用。
+addp_sync_python_dependencies() {
+  local project_root="$1" runtime_dir="$2" label="$3" fingerprint
+  if [ ! -x "$runtime_dir/venv/bin/python" ]; then
+    echo "✗ $label 虚拟环境不存在或不可执行，请先使用 start.sh 创建环境" >&2
+    return 1
+  fi
+  fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir") || return 1
+  addp_python_dependencies_current "$runtime_dir" "$fingerprint" "$label" && return 0
+  addp_with_python_dependency_lock "$project_root" bash -c '
+    source "$1"
+    shift
+    addp_install_python_dependencies "$@"
+  ' _ "${BASH_SOURCE[0]}" "$project_root" "$runtime_dir" "$label"
 }
 
 addp_process_is_descendant_of() {

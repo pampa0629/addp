@@ -93,8 +93,9 @@ func (r *Repository) requireCatalogApproval(ctx context.Context, request fulfill
 }
 
 // Called only on the owner's transaction repository. verify must recheck local
-// prelocked governance/delegation facts and, for independent mode, the current
-// successor qualification. It must not acquire earlier locks or perform IO.
+// prelocked governance/delegation facts and, for handoff to independent mode,
+// the current successor qualification. First configuration has no successor
+// and does not qualify anyone to approve or read data. No earlier locks or IO.
 // nil cannot initialize or change a requirement. Public initialization supplies
 // current local IAM/delegation checks; handoff has no public consumer yet.
 func (r *Repository) changeApprovalRequirement(ctx context.Context, input approvalRequirementChange, verify func(*Repository) error) (*approvalRequirement, error) {
@@ -104,7 +105,8 @@ func (r *Repository) changeApprovalRequirement(ctx context.Context, input approv
 	audit := input.Audit
 	if input.TenantID <= 0 || input.ExpectedVersion < 0 || !validReason(input.Reason) || verify == nil ||
 		(input.Mode != approvalModeCatalog && input.Mode != approvalModeIndependent) ||
-		(input.Mode == approvalModeIndependent && input.SuccessorPrincipalID <= 0) ||
+		(input.ExpectedVersion == 0 && input.SuccessorPrincipalID != 0) ||
+		(input.Mode == approvalModeIndependent && input.ExpectedVersion > 0 && input.SuccessorPrincipalID <= 0) ||
 		(input.Mode == approvalModeCatalog && input.SuccessorPrincipalID != 0) ||
 		audit.PrincipalID == nil || *audit.PrincipalID <= 0 || audit.PrincipalType == nil || *audit.PrincipalType != iam.PrincipalTypeUser ||
 		audit.ContextType == nil || *audit.ContextType != iam.ContextTypeTenant || audit.TenantID == nil || *audit.TenantID != input.TenantID {
@@ -158,7 +160,7 @@ func (r *Repository) changeApprovalRequirement(ctx context.Context, input approv
 	}
 	details := map[string]any{"engine_id": row.EngineID, "catalog_path": input.Path, "mode": row.Mode,
 		"previous_version": input.ExpectedVersion, "version": row.Version, "reason": strings.TrimSpace(input.Reason)}
-	if input.Mode == approvalModeIndependent {
+	if input.Mode == approvalModeIndependent && input.ExpectedVersion > 0 {
 		details["successor_principal_id"] = input.SuccessorPrincipalID
 	}
 	err = iam.NewAuditWriter(r.identity()).Write(ctx, iam.AuditEvent{Metadata: audit,

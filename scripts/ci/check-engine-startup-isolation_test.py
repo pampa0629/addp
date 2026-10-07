@@ -156,7 +156,7 @@ registrationDone := client.RegisterAndHeartbeat(ctx, request)
             errors,
         )
 
-    def test_rejects_pointcloud_fingerprint_missing_common_runtime_module(self) -> None:
+    def test_rejects_document_fingerprint_missing_common_runtime_module(self) -> None:
         root = self.repository()
         (root / "scripts/dev/restart.sh").write_text("#!/bin/bash\n", encoding="utf-8")
         errors = CHECKER.validate(root)

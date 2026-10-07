@@ -144,7 +144,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 - 只指定扩展服务参数时：只重启对应扩展服务，不停止整套 ADDP 环境。
 - `-all`、无参数和指定 Go 模块参数保留已有二进制及 Go 包缓存。Swagger 同步后，统一比较完整构建指纹：源码、共享依赖、嵌入资源、Go 版本、平台或构建参数变化才重新编译。服务进程仍全部按所选范围重启，未变化产物保留构建身份，新进程具有新的启动时间。
 - Swagger 对未变化的 Go 工作区输入和完整产物复用文档，输入或产物变化时重新生成；FastAPI 实时导出。需要生成的模块批量并行执行，并输出耗时，路由覆盖校验仍执行。所有生成任务结束后才进入编译，因为 `docs.go` 本身参与 Go 编译，不能与同一模块的生成任务同时执行。
-- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。Python 依赖安装单独加锁，避免同时写入共享 `common-python` 元数据，已安装环境的检查和启动仍可并行。
+- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。Python 依赖安装单独加锁，避免同时写入共享 `common-python` 元数据，已安装环境的检查和启动仍可并行。Spark、GeoPython 和 Model3D 仅在依赖输入或安装环境指纹变化、记录缺失或 `pip check` 失败时重新安装；相同输入且依赖一致时输出“依赖未变化，跳过安装”。首次使用该机制仍需同步一次并生成成功记录，全量重启后续启动阶段复用该记录。
 - Go 后端和前端在各自启动阶段各查询一次 TCP LISTEN 快照，命中占用后实时复核；单项启动实时查询。端口冲突和扫描失败会中断启动，新进程退出不能被其他监听者的 HTTP 成功响应掩盖。
 - 重启编排和缓存保留通过 `make test-dev-lifecycle` 验证，并纳入 `make test-platform` / Platform CI。
 
@@ -174,7 +174,7 @@ SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `S
 - 修改代码后需要重启
 - 服务异常需要重置
 - 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
-- PointCloud Workflow 使用 Docker runtime 承载 PDAL，局部重启会重建并替换该 runtime 容器
+- PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；局部重启先验证依赖、驱动和真实 COPC 写入，再按 PID 重启。开发入口不构建镜像，首次迁移需先移走旧普通 venv 并停止旧开发容器。
 - Document Workflow 使用 Docker runtime 绑定 LibreOffice，局部重启会按构建指纹重建并替换该 runtime 容器
 
 **重要**: `restart.sh` 不会重启基础设施容器(PostgreSQL, Redis, MinIO, Meilisearch)

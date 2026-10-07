@@ -1098,6 +1098,34 @@
       "versionConflict": "Another administrator updated the policy; the latest version has been loaded"
     },
     "engine": {
+      "dataAuthorization": {
+        "title": "Data authorization",
+        "boundary": "Approval mode defines how table access is approved. Management delegation defines who may handle grants; a data grant defines who may read. None replaces another.",
+        "configurations": "Configured approval modes",
+        "initialize": "Configure approval mode for the first time",
+        "target": "Data table",
+        "mode": "Approval mode",
+        "version": "Version",
+        "reason": "Configuration reason",
+        "pickTable": "Select a data table",
+        "selectMode": "Select an approval mode",
+        "saveMode": "Save approval mode",
+        "tableOnly": "Browse ordinary tables directly without scanning or cataloging. Only the selected table is configured, not views, the entire database or future tables.",
+        "readRequired": "Reading configuration requires approval-mode read permission and effective engine management delegation.",
+        "browseRequired": "Selecting tables requires engine catalog read permission. Contact your permission administrator.",
+        "unsupported": "The engine cannot be browsed or its ID cannot be safely represented. Confirm that the engine is active and online.",
+        "exists": "This table already uses {mode}. Initial configuration cannot override an existing arrangement.",
+        "invalid": "Select an ordinary table, explicitly choose an approval mode and enter a configuration reason.",
+        "confirmBody": "Configure {target} to use {mode}. This only sets the approval mode; it does not grant data reading to any account.",
+        "saved": "Approval mode saved. No data reading permission has been granted.",
+        "failed": "No reliable result was obtained. Refresh to check; this page never automatically retries or claims configuration took effect.",
+        "accessPending": "This page currently configures approval mode. Independent access-grant operations are not yet available. Saving configuration does not change existing data grants.",
+        "modes": { "independent": "System independent approval", "catalog": "Catalog business confirmation" },
+        "descriptions": {
+          "independent": "Approved by a person with independent approval permission and effective engine management delegation. Catalog deployment or cataloging is not required.",
+          "catalog": "New grants require a valid sharing confirmation from the current Catalog business owner. A Catalog outage never automatically switches to independent approval."
+        }
+      },
       "delegations": {
         "title": "Access Management Delegations",
         "created": "Management delegation created; no data read permission has been granted.",

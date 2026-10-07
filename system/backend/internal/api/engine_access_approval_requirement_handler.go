@@ -26,6 +26,7 @@ type EngineAccessApprovalRequirementHandler struct {
 
 type InitializeEngineAccessApprovalRequirementRequest struct {
 	CatalogPath engineplugin.EngineCatalogPath `json:"catalog_path" binding:"required"`
+	Mode        string                         `json:"mode" binding:"required,oneof=catalog independent" enums:"catalog,independent"`
 	Reason      string                         `json:"reason" binding:"required"`
 }
 
@@ -72,14 +73,14 @@ func (h *EngineAccessApprovalRequirementHandler) HandlingRequirement(c *gin.Cont
 }
 
 // Initialize godoc
-// @Summary 初始化源目标 Catalog 批准要求 | Initialize Catalog approval requirement for a source target
-// @Description 当前用户需独立初始化权限和有效引擎管理委派；只新建精确目标的 Catalog 要求，不覆盖已有要求，不授予内容访问 | Requires independent initialization permission and current engine management delegation; creates only the exact target's Catalog requirement without replacing existing facts or granting content access
+// @Summary 首次配置源目标批准方式 | Configure the approval mode for a source target for the first time
+// @Description 当前用户需独立初始化权限和有效引擎管理委派；必须明确选择 catalog 或 independent，仅新建精确目标要求。已有要求返回 409，不切换模式、不授予批准资格或内容访问；不依赖 Catalog 在线 | Requires initialization permission and current engine management delegation. Explicit catalog or independent mode creates only an exact target requirement. Existing facts return 409; no mode switch, approval qualification or content grant. Catalog availability is not required
 // @Tags 源授权批准要求 | Source Access Approval Requirements
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "引擎 ID | Engine ID"
-// @Param request body InitializeEngineAccessApprovalRequirementRequest true "精确源路径与原因 | Exact source path and reason"
+// @Param request body InitializeEngineAccessApprovalRequirementRequest true "精确源路径、明确批准方式与原因 | Exact source path, explicit approval mode and reason"
 // @Success 201 {object} engineaccess.ApprovalRequirementView "已初始化 | Initialized"
 // @Failure 400,401,403,404,409,500 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
@@ -91,12 +92,12 @@ func (h *EngineAccessApprovalRequirementHandler) Initialize(c *gin.Context) {
 		return
 	}
 	var request InitializeEngineAccessApprovalRequirementRequest
-	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil || (request.Mode != "catalog" && request.Mode != "independent") {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return
 	}
 	row, err := h.service.InitializeApprovalRequirement(c.Request.Context(), engineaccess.InitializeApprovalRequirementInput{
-		Actor: actor, EngineID: engineID, CatalogPath: request.CatalogPath, Reason: request.Reason,
+		Actor: actor, EngineID: engineID, CatalogPath: request.CatalogPath, Mode: request.Mode, Reason: request.Reason,
 		Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
 	if err != nil {
 		respondApprovalRequirementError(c, err)

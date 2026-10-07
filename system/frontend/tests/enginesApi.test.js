@@ -21,6 +21,18 @@ describe('engines API', () => {
     client.post.mockReset()
   })
 
+  it('uses explicit approval configuration and live discovery APIs without Meta or grant writes', async () => {
+    const body = '{"catalog_path":{"engine_id":9007199254740993,"version":"v1","segments":[]},"mode":"independent","reason":"Configure"}'
+    await enginesAPI.listApprovalRequirements('9007199254740993', { page: 2, page_size: 10 })
+    await enginesAPI.initializeApprovalRequirement('9007199254740993', body)
+    await enginesAPI.listCatalogChildren('2', { version: 'v1', engine_id: 2, segments: [] })
+    expect(client.get).toHaveBeenCalledWith('/system/engines/9007199254740993/access_approval_requirements', { params: { page: 2, page_size: 10 } })
+    expect(client.post.mock.calls).toEqual([
+      ['/system/engines/9007199254740993/access_approval_requirements', body, { headers: { 'Content-Type': 'application/json' } }],
+      ['/system/engines/2/catalog/children', { path: { version: 'v1', engine_id: 2, segments: [] } }]
+    ])
+  })
+
   it('uses the canonical delegation endpoints and preserves explicit write parameters', async () => {
     const create = { tenant_membership_id: '9007199254740993', expires_at: '2099-01-01T00:00:00Z', reason: 'Delegate' }
     const revoke = { version: 7, reason: 'Revoke' }

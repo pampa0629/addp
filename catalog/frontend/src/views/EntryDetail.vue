@@ -820,15 +820,16 @@ async function changeDetailTab(tab) {
 
 async function recordSharingDecision(id) {
   const query = { ...route.query, tab: 'sharing' }
+  delete query.sharing_request_id
   if (id) query.sharing_decision_id = id
   else delete query.sharing_decision_id
   await navigateConsoleModuleRoute(router, 'catalog', { path: route.path,
     query }, { history: 'replace' })
 }
 
-async function recordSharingRequest(id) {
+async function recordSharingRequest(id, decisionID) {
   await navigateConsoleModuleRoute(router, 'catalog', { path: route.path,
-    query: { ...route.query, tab: 'sharing', sharing_request_id: id } }, { history: 'replace' })
+    query: { ...route.query, tab: 'sharing', sharing_decision_id: decisionID, sharing_request_id: id } }, { history: 'replace' })
 }
 
 async function handleMoreAction(command) {

@@ -189,7 +189,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	change := func(path engineplugin.EngineCatalogPath, mode string, version int64, verify func(*Repository) error) (*approvalRequirement, error) {
 		input := approvalRequirementChange{TenantID: tenant.ID, Path: path, Mode: mode, ExpectedVersion: version, Reason: "Explicit fixture handoff",
 			Audit: iam.AuditMetadata{PrincipalID: &user.ID, PrincipalType: &actorType, ContextType: &actorContext, TenantID: &tenant.ID}}
-		if mode == approvalModeIndependent {
+		if mode == approvalModeIndependent && version > 0 {
 			input.SuccessorPrincipalID = user.ID
 		}
 		var row *approvalRequirement
@@ -719,14 +719,15 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	})
 	t.Run("requirement mutation needs owner transaction actor and qualification verification", func(t *testing.T) {
 		input := approvalRequirementChange{TenantID: tenant.ID, Path: engineplugin.TabularItemPath(engine.ID, "schema", "public", "qualification_checks"),
-			Mode: approvalModeIndependent, SuccessorPrincipalID: user.ID, Reason: "Explicit initialization",
+			Mode: approvalModeIndependent, Reason: "Explicit initialization",
 			Audit: iam.AuditMetadata{PrincipalID: &user.ID, PrincipalType: &actorType, ContextType: &actorContext, TenantID: &tenant.ID}}
 		if _, err := repo.changeApprovalRequirement(ctx, input, verified); !errors.Is(err, errApprovalRequirementInput) {
 			t.Fatalf("nontransactional requirement mutation: %v", err)
 		}
 		for _, mutate := range []func(*approvalRequirementChange){
-			func(v *approvalRequirementChange) { v.SuccessorPrincipalID = 0 },
-			func(v *approvalRequirementChange) { v.Mode = approvalModeCatalog },
+			func(v *approvalRequirementChange) { v.SuccessorPrincipalID = user.ID },
+			func(v *approvalRequirementChange) { v.ExpectedVersion = 1 },
+			func(v *approvalRequirementChange) { v.Mode = "unknown" },
 			func(v *approvalRequirementChange) { v.Audit.PrincipalID = nil },
 			func(v *approvalRequirementChange) { v.Audit.PrincipalType = nil },
 			func(v *approvalRequirementChange) { v.Audit.ContextType = nil },

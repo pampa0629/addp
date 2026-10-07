@@ -31,6 +31,34 @@ export function sharingEligibility(entry, auth) {
   }
 }
 
+// Explain only the selected record. These labels are not access decisions.
+export function sharingProgress({ decisionID = '', requestID = '', confirmation, request, candidate,
+  loading = false, error = false, results = [], resultsPage = 1, canCreate = false, canHandle = false }) {
+  const state = (status, step, next = status) => ({ status, step, next })
+  if (loading) return state('checking', -1)
+  if (error) return state('unavailable', -1)
+  let outcome
+  if (requestID) {
+    outcome = request || results.find(row => row.request_id === requestID)
+    if (!outcome) return state('unavailable', -1)
+    if (outcome.request_id !== requestID || (decisionID && outcome.decision_id !== decisionID)) return state('mismatch', -1)
+  } else if (decisionID) {
+    if (confirmation?.id !== decisionID && candidate?.id !== decisionID) return state('unavailable', -1)
+    if (resultsPage !== 1) return state('history', -1)
+    if (results.some(row => row.decision_id !== decisionID)) return state('mismatch', -1)
+    outcome = results[0]
+    if (!outcome) return state('awaitingHandling', 1, canHandle ? 'handle' : 'askHandler')
+  } else {
+    if (candidate) return state('awaitingHandling', 1, 'handle')
+    return canCreate ? state('awaitingConfirmation', 0, 'confirm') : state('chooseConfirmation', 0)
+  }
+  if (outcome.state === 'accepted' && outcome.granted_at) return state('issued', 3)
+  if (outcome.state === 'accepted') return state('issuing', 2)
+  if (outcome.state === 'pending') return state('processing', 1)
+  if (outcome.state === 'closed') return state('closed', 1)
+  return state('unavailable', -1)
+}
+
 // Capture one explicit confirmation. Never regenerate its ID/parameters on a
 // transport retry; never accept a rounded numeric version or manual recipient.
 export function captureSharingConfirmation(entry, form, recipientOptions, decisionID, now = Date.now()) {
@@ -60,13 +88,4 @@ export function captureSharingRequest(candidate, requirement, requestID) {
   validateHandlingRequirement(candidate, requirement)
   if (!canonicalSharingUUID(requestID)) throw new Error('invalidHandlingRequirement')
   return Object.freeze({ request_id: requestID, decision_id: candidate.id, requirement_version: requirement.requirement_version })
-}
-
-// The existing System configuration API expects a numeric engine_id. Emit the
-// validated decimal token directly; Number() would round large int64 IDs.
-export function serializeApprovalInitialization(target, reason) {
-  reason = typeof reason === 'string' ? reason.trim() : ''
-  if (!isSharingInt64(target?.engine_id) || !target?.version || !Array.isArray(target?.segments) || !target.segments.length ||
-      !reason || Array.from(reason).length > 2000) throw new Error('invalidInitialization')
-  return `{"catalog_path":{"engine_id":${target.engine_id},"version":${JSON.stringify(target.version)},"segments":${JSON.stringify(target.segments)}},"reason":${JSON.stringify(reason)}}`
 }

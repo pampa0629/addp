@@ -148,15 +148,11 @@ MODEL3D_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
 
 单 OSGB 快显生成的 GLB artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `model3d_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `model3d-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发时，推荐使用宿主机 Python runtime 加 Docker `_3dtile` wrapper，Manager 与 runtime 统一访问 `localhost:19000`。
 
-`pointcloud-workflow-engine` 使用 Docker runtime 承载 PDAL，不依赖宿主机安装 PDAL。开发模式下 `start.sh -manager` 或 `start.sh -pointcloud-workflow` 会自动构建并启动 `addp-pointcloud-workflow-engine:dev`，默认把 `business/nfs/data` 作为只读点云源目录挂入容器，并把 `data/pointcloud-work` 作为容器内工作目录。可通过以下变量覆盖：
+PointCloud Workflow 开发服务使用独立 Conda 前缀，首次启动需要可用的 Conda。`start.sh -manager` 或 `start.sh -pointcloud-workflow` 按运行时 `native-packages.txt` 安装 Python 3.12、PDAL core/E57 2.10.2，同步 Python 依赖并验证实际 COPC 转换，然后启动回环监听的原生进程。全部原生库和资源目录属于该环境，不受 Homebrew 升级或 Conda base 的资源变量影响。NFS 源文件直接使用宿主机路径，工作目录通过 `POINTCLOUD_WORK_HOST_PATH` 配置（默认 `data/pointcloud-work`）。
 
-```bash
-POINTCLOUD_DATA_HOST_PATH=./business/nfs/data
-POINTCLOUD_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
-POINTCLOUD_WORK_HOST_PATH=./data/pointcloud-work
-```
+首次迁移先由用户停止、删除旧 PointCloud 开发容器，并将已有普通 Python venv 移出 `engines/pointcloud-workflow/venv`；随后执行 `./scripts/dev/restart.sh -pointcloud-workflow`。原生环境运行中需要更新依赖时，应先通过 `stop.sh -pointcloud-workflow` 停止，再启动。产品 Compose 仍使用正式镜像。
 
-点云 COPC artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `pointcloud_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `pointcloud-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发时，PointCloud Workflow 容器通过 `host.docker.internal:${MINIO_API_PORT:-19000}` 访问宿主机 infra MinIO。
+点云 COPC artifact 统一使用 ADDP infra MinIO 配置。原生开发直接访问 access plan 中的宿主机实际端点；产品 Compose 使用其 Docker 网络端点。
 
 `supermap-workflow-engine` 使用 Docker runtime 承载 Linux arm64 SuperMap SDK，不依赖宿主机 Linux OS。私有组件只保存在 Git 忽略的 `engines/supermap-workflow/vendor/` 并进入稳定基础镜像；日常代码镜像每次重启都重新编译。可选变量：
 

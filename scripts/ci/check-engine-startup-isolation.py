@@ -154,7 +154,7 @@ def validate_workflow_runtime_image_contract(repository: Path) -> list[str]:
 
     for relative in ("scripts/dev/start.sh", "scripts/dev/restart.sh"):
         source = (repository / relative).read_text(encoding="utf-8")
-        for runtime in ("PointCloud", "Document"):
+        for runtime in ("Document",):
             if common_runtime_module not in source:
                 errors.append(
                     f"{relative} {runtime} image fingerprint does not include {common_runtime_module}"

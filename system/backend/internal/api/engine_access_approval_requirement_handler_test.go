@@ -77,9 +77,13 @@ func TestApprovalRequirementRoutesRejectUnqualifiedContextsAndBodyAuthority(t *t
 	auth.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "1", RoleKey: "custom.governance", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute),
 		Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: auth.Context.TenantID}, Permissions: permissions}}
 	router := approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
-	for _, field := range []string{"tenant_id", "principal_id", "mode", "version", "successor_principal_id"} {
+	for _, field := range []string{"tenant_id", "principal_id", "version", "successor_principal_id"} {
 		engineDelegationTestRequest(t, router, "POST", path, map[string]any{field: "1"}, 400)
 	}
+	for _, mode := range []any{nil, "", "Catalog", "unknown", 1} {
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"mode": mode, "reason": "Explicit configuration"}, 400)
+	}
+	engineDelegationTestRequest(t, router, "POST", path, map[string]any{"reason": "Missing mode"}, 400)
 	engineDelegationTestRequest(t, router, "GET", path+"?tenant_id=2", nil, 400)
 	engineDelegationTestRequest(t, router, "POST", path+"?tenant_id=2", nil, 400)
 	engineDelegationTestRequest(t, router, "GET", path+"/invalid", nil, 400)
@@ -95,6 +99,37 @@ func TestApprovalRequirementRoutesRejectUnqualifiedContextsAndBodyAuthority(t *t
 	router = approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
 	engineDelegationTestRequest(t, router, "POST", path, nil, 403)
 	engineDelegationTestRequest(t, router, "GET", path, nil, 403)
+}
+
+type initializationRequirementFixture struct {
+	unusedApprovalRequirementService
+	t    *testing.T
+	mode string
+}
+
+func (f initializationRequirementFixture) InitializeApprovalRequirement(_ context.Context, input engineaccess.InitializeApprovalRequirementInput) (*engineaccess.ApprovalRequirementView, error) {
+	if input.Mode != f.mode || input.EngineID != 9007199254740993 || int64(input.CatalogPath.EngineID) != input.EngineID || input.Actor.PrincipalID <= 0 {
+		f.t.Fatalf("initialization lost explicit mode, authenticated actor or target: %+v", input)
+	}
+	return &engineaccess.ApprovalRequirementView{ID: uuid.New(), Mode: input.Mode, Version: 1, EngineID: input.EngineID}, nil
+}
+
+func TestApprovalRequirementInitializationPreservesExplicitModeAndExactTarget(t *testing.T) {
+	auth := testIAMActorContext("tenant")
+	auth.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "1", RoleKey: "custom.governance", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute),
+		Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: auth.Context.TenantID}, Permissions: []string{"system.engine_access_approval_requirement.initialize"}}}
+	target := engineplugin.TabularItemPath(9007199254740993, "schema", "public", "exact.table")
+	for _, mode := range []string{"catalog", "independent"} {
+		t.Run(mode, func(t *testing.T) {
+			router := approvalRequirementTestRouter(t, initializationRequirementFixture{t: t, mode: mode}, &auth)
+			response := engineDelegationTestRequest(t, router, "POST", "/api/v1/system/engines/9007199254740993/access_approval_requirements",
+				InitializeEngineAccessApprovalRequirementRequest{CatalogPath: target, Mode: mode, Reason: "Explicit configuration"}, 201)
+			var result engineaccess.ApprovalRequirementView
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Mode != mode || result.Version != 1 || result.EngineID != int64(target.EngineID) {
+				t.Fatalf("configuration response=%+v err=%v", result, err)
+			}
+		})
+	}
 }
 
 func TestHandlingRequirementRejectsUnqualifiedContextsAndInvalidTargets(t *testing.T) {

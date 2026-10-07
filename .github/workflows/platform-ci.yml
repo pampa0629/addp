@@ -449,6 +449,73 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  pointcloud-workflow-tests:
+    name: PointCloud native PDAL tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select shared module gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module engines
+
+      - name: Prepare PointCloud deterministic test environment
+        if: steps.selection.outputs.run == 'true'
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          python-version: "3.12"
+          venv-path: engines/pointcloud-workflow/.venv
+          cache-dependency-path: |
+            engines/pointcloud-workflow/requirements-dev.txt
+            engines/pointcloud-workflow/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: engines/pointcloud-workflow/requirements-dev.txt
+          editable-install: ./common-python
+
+      - name: Run PointCloud deterministic tests
+        if: steps.selection.outputs.run == 'true'
+        run: make test-pointcloud-workflow
+
+      - name: Install isolated Conda tool
+        if: steps.selection.outputs.run == 'true'
+        uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167 # v3.3.0
+        with:
+          miniforge-version: "25.3.1-0"
+          activate-environment: ""
+          auto-activate-base: false
+
+      - name: Prepare native PointCloud runtime
+        if: steps.selection.outputs.run == 'true'
+        run: |
+          export ROOT_DIR="$PWD"
+          source scripts/dev/ports.sh
+          source scripts/dev/lifecycle-lock.sh
+          source scripts/dev/pointcloud-workflow.sh
+          addp_prepare_pointcloud_workflow
+          engines/pointcloud-workflow/venv/bin/python -m pip install -r engines/pointcloud-workflow/requirements-dev.txt
+
+      - name: Run real five-format COPC conversions
+        if: steps.selection.outputs.run == 'true'
+        run: make test-pointcloud-native
+
+      - name: Summarize PointCloud gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: PointCloud native PDAL tests
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   geopython-workflow-tests:
     name: GeoPython GDAL tests
     runs-on: ubuntu-24.04

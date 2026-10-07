@@ -411,7 +411,8 @@
     <el-dialog
       v-model="detailsVisible"
       :title="t('system.engine.dialog.details', { name: selectedEngine?.name || '' })"
-      width="920px"
+      class="addp-dialog"
+      width="min(920px, calc(100vw - 24px))"
       destroy-on-close
       @closed="handleDetailsClosed"
     >
@@ -566,6 +567,9 @@
           <el-tab-pane v-if="availableDetailTabs.includes('delegations')" :label="t('system.engine.delegations.title')" name="delegations">
             <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
           </el-tab-pane>
+          <el-tab-pane v-if="availableDetailTabs.includes('data-authorization')" :label="t('system.engine.dataAuthorization.title')" name="data-authorization">
+            <EngineDataAuthorization v-if="detailTab === 'data-authorization'" :key="selectedEngine.id" :engine="selectedEngine" />
+          </el-tab-pane>
         </el-tabs>
       </div>
       <template #footer>
@@ -707,6 +711,7 @@ import { useAuthStore } from '../store/auth'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
 import EngineAccessDelegations from '../components/engines/EngineAccessDelegations.vue'
+import EngineDataAuthorization from '../components/engines/EngineDataAuthorization.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -1818,6 +1823,7 @@ const availableDetailTabs = computed(() => {
   }
   if (hasSelectedCapabilitiesView.value) tabs.push('capabilities')
   if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
+  if (['read', 'initialize'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`))) tabs.push('data-authorization')
   return tabs
 })
 

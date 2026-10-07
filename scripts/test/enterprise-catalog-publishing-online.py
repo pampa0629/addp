@@ -661,7 +661,7 @@ def fixture_approval_requirement(
         raise SuiteError("duplicate exact fixture approval requirements")
     initialized = not matches
     requirement = matches[0] if matches else _object(client.request("POST", route, (201,), {
-        "catalog_path": target, "reason": f"Initialize dedicated Online Catalog fixture for {run_id}",
+        "catalog_path": target, "mode": "catalog", "reason": f"Initialize dedicated Online Catalog fixture for {run_id}",
     }).payload, "initialized approval requirement")
     if (requirement.get("engine_id") != str(engine_id) or requirement.get("catalog_path") != target
             or requirement.get("mode") != "catalog"):

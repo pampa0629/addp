@@ -30,6 +30,7 @@ type InitializeApprovalRequirementInput struct {
 	Actor       Actor
 	EngineID    int64
 	CatalogPath engineplugin.EngineCatalogPath
+	Mode        string
 	Reason      string
 	Audit       iam.AuditMetadata
 }
@@ -179,7 +180,8 @@ func hasCurrentTenantPermission(rows []iam.RoleAssignmentPermissionProjection, t
 }
 
 func (s *Service) InitializeApprovalRequirement(ctx context.Context, input InitializeApprovalRequirementInput) (*ApprovalRequirementView, error) {
-	if input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || !validReason(input.Reason) {
+	if input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || !validReason(input.Reason) ||
+		(input.Mode != approvalModeCatalog && input.Mode != approvalModeIndependent) {
 		return nil, commonapi.ErrBadRequest
 	}
 	if _, err := encodeFulfillmentPath(input.CatalogPath); err != nil {
@@ -194,7 +196,7 @@ func (s *Service) InitializeApprovalRequirement(ctx context.Context, input Initi
 			audit.PrincipalID, audit.PrincipalType = &actor.PrincipalID, &principalType
 			audit.TenantID, audit.ContextType = &actor.TenantID, &contextType
 			row, err := tx.changeApprovalRequirement(ctx, approvalRequirementChange{TenantID: actor.TenantID,
-				Path: input.CatalogPath, Mode: approvalModeCatalog, ExpectedVersion: 0, Reason: input.Reason, Audit: audit},
+				Path: input.CatalogPath, Mode: input.Mode, ExpectedVersion: 0, Reason: input.Reason, Audit: audit},
 				func(*Repository) error { return check() })
 			if errors.Is(err, errApprovalRequirementVersion) {
 				return ErrApprovalRequirementExists

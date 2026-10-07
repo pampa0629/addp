@@ -1,0 +1,4 @@
+python=3.12
+pip
+libpdal-core=2.10.2
+libpdal-e57=2.10.2

@@ -509,8 +509,8 @@ DUCKDB_EXTENSION_DIRECTORY=.cache/duckdb/extensions
 # 容器 Runtime 访问登记为 loopback 的业务 Engine 时使用；根 Compose 固定为 host.docker.internal，本地二进制留空。
 DUCKDB_SOURCE_LOOPBACK_HOST=
 # PointCloud Workflow 容器访问登记为 loopback 的对象存储时，仅替换主机名并保留原端口。
-# 本地 Docker runtime 使用 host.docker.internal；空值表示不改写。
-POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST=host.docker.internal
+# 原生开发入口清除该值并直接使用端点；容器需要宿主网关时才显式设置 host.docker.internal。
+POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST=
 
 # 内置模块各自独立的 Confidential OAuth Client Secret，长度 32-72 字节且不得复用。
 # System 启动时仅保存 BCrypt Hash；各模块只读取自己的 Secret。

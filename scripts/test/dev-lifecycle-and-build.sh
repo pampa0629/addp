@@ -598,6 +598,7 @@ for name, args, failed in (
     ("coverage-error-single", ["-system"], True),
     ("spark-prepare-failure", ["-all"], True),
     ("geopython-prepare-failure", ["-all"], True),
+    ("pointcloud-prepare-failure", ["-all"], True),
 ):
     root = temporary / ("restart-" + name)
     dev = root / "scripts/dev"
@@ -609,6 +610,8 @@ for name, args, failed in (
         'echo spark-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_SPARK_PREPARE" = 0 ]; }\n')
     (dev / "geopython-workflow.sh").write_text('addp_prepare_geopython_workflow() { '
         'echo geopython-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_GEOPYTHON_PREPARE" = 0 ]; }\n')
+    (dev / "pointcloud-workflow.sh").write_text('addp_prepare_pointcloud_workflow() { '
+        'echo pointcloud-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_POINTCLOUD_PREPARE" = 0 ]; }\n')
     (root / ".env").write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
 
     infra = root / "scripts/infra"
@@ -663,6 +666,7 @@ exit "$FAIL_COVERAGE"
         FAIL_COVERAGE='2' if name.startswith('coverage-error') else '1' if name.startswith('coverage-failure') else '0',
         FAIL_SPARK_PREPARE=str(int(name == 'spark-prepare-failure')),
         FAIL_GEOPYTHON_PREPARE=str(int(name == 'geopython-prepare-failure')),
+        FAIL_POINTCLOUD_PREPARE=str(int(name == 'pointcloud-prepare-failure')),
         ALLOW_SWAGGER_FAILURE="1", SWAGGER_COVERAGE_WARN_ONLY="1", MEILISEARCH_PORT="17700", SERVICE_HOST="localhost",
     )
     result = subprocess.run(["bash", str(dev / "restart.sh"), *args], env=env,
@@ -676,7 +680,7 @@ exit "$FAIL_COVERAGE"
         "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
     target = "all" if args in ([], ["-all"]) else "system" if args == ["-system"] else "system asset meta"
     all_modules = args in ([], ['-all'])
-    expected = (['spark-preflight', 'geopython-preflight', 'stop'] if all_modules else []) + ["generate " + target]
+    expected = (['spark-preflight', 'geopython-preflight', 'pointcloud-preflight', 'stop'] if all_modules else []) + ["generate " + target]
     if name.startswith('coverage-'):
         expected += ["generated", "coverage " + target]
     elif not failed:
@@ -687,6 +691,8 @@ exit "$FAIL_COVERAGE"
         expected = ['spark-preflight']
     if name == 'geopython-prepare-failure':
         expected = ['spark-preflight', 'geopython-preflight']
+    if name == 'pointcloud-prepare-failure':
+        expected = ['spark-preflight', 'geopython-preflight', 'pointcloud-preflight']
     for binary in ("system", "asset", "meta", "meta-worker", "gateway"):
         assert (bins / ("addp-" + binary)).read_text() == "old binary", "restart must preserve " + binary
     assert events == expected, events
@@ -805,8 +811,8 @@ docker() {
   [ "$FIXTURE_MODE" != scoped-launchd ] || echo docker-unselected >> "$FIXTURE_ROOT/failures"
   case "$1" in
     inspect)
-      [ "${@: -1}" = pointcloud-workflow-engine ] || return 1
-      printf 'addp-runtimes|pointcloud-workflow-engine|%s\n' "$FIXTURE_ROOT" ;;
+      [ "${@: -1}" = document-workflow-engine ] || return 1
+      printf 'addp-runtimes|document-workflow-engine|%s\n' "$FIXTURE_ROOT" ;;
     stop)
       [ -f "$FIXTURE_ROOT/101" ] || echo container-unavailable >> "$FIXTURE_ROOT/failures"
       echo "docker $*" >> "$FIXTURE_ROOT/events"
@@ -1346,8 +1352,8 @@ test_hosted_runtime_owned_listener() {
       if [ "$1" = port ]; then printf "%s\n" "8102/tcp -> 0.0.0.0:18102"; return; fi
       case "$3" in
         *Config.Labels*)
-          if [ "$mock_labels" = owned ]; then printf "addp-runtimes|pointcloud-workflow-engine|%s\n" "$ROOT_DIR";
-          else printf "foreign|pointcloud-workflow-engine|%s\n" "$ROOT_DIR"; fi ;;
+          if [ "$mock_labels" = owned ]; then printf "addp-runtimes|document-workflow-engine|%s\n" "$ROOT_DIR";
+          else printf "foreign|document-workflow-engine|%s\n" "$ROOT_DIR"; fi ;;
         *State.Running*) printf "%s\n" true ;;
         *NetworkMode*) printf "%s\n" "$mock_mode" ;;
         *State.Pid*) printf "%s\n" "$$" ;;
@@ -1357,19 +1363,19 @@ test_hosted_runtime_owned_listener() {
     }
     lsof() { if [ "$mock_foreign" = 1 ]; then printf "%s\n" 1; else printf "%s\n" "$$"; fi; }
     sudo() { [ "$1" = -n ] && [ "$2" = lsof ] || return 2; shift; "$@"; }
-    addp_dev_owned_listener pointcloud-workflow 18102
+    addp_dev_owned_listener document-workflow 18102
     mock_port=8102
-    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 11; fi
+    if addp_dev_owned_listener document-workflow 18102; then exit 11; fi
     mock_port=18102 mock_bind=0.0.0.0
-    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 12; fi
+    if addp_dev_owned_listener document-workflow 18102; then exit 12; fi
     mock_bind=127.0.0.1 mock_foreign=1
-    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 13; fi
+    if addp_dev_owned_listener document-workflow 18102; then exit 13; fi
     mock_foreign=0 mock_labels=foreign
-    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 14; fi
+    if addp_dev_owned_listener document-workflow 18102; then exit 14; fi
     mock_labels=owned ADDP_ONLINE_HOSTED=0
-    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 15; fi
+    if addp_dev_owned_listener document-workflow 18102; then exit 15; fi
     mock_mode=bridge
-    addp_dev_owned_listener pointcloud-workflow 18102
+    addp_dev_owned_listener document-workflow 18102
   ' || fail "Hosted Runtime ownership must match network, binding, port, labels and listener PID"
 }
 
@@ -1381,7 +1387,6 @@ import sys
 root = Path(sys.argv[1])
 start = (root / 'scripts/dev/start.sh').read_text()
 for name, variable in (
-    ('pointcloud-workflow', 'POINTCLOUD_WORKFLOW_PORT'),
     ('document-workflow', 'DOCUMENT_WORKFLOW_PORT'),
 ):
     assert f'-e RUNTIME_PUBLIC_PORT="${{{variable}}}"' in start, (name, variable)
@@ -1412,7 +1417,7 @@ def function(name):
     return match.group()
 
 helper = function('configure_workflow_container_network')
-for runtime, port in [('pointcloud', 8102), ('document', 8105)]:
+for runtime, port in [('document', 8105)]:
     fixture = temporary / ('runtime-network-' + runtime)
     fixture.mkdir()
     for hosted, kernel in [('1', 'Linux'), ('0', 'Linux'), ('0', 'Darwin'), ('1', 'Darwin')]:
@@ -1423,7 +1428,6 @@ for runtime, port in [('pointcloud', 8102), ('document', 8105)]:
                'ADDP_ONLINE_HOSTED': hosted, 'MOCK_KERNEL': kernel,
                runtime.upper() + '_WORKFLOW_PORT': str(public_port),
                'SYSTEM_BACKEND_PORT': '18180', 'POSTGRES_PORT': '25432',
-               'POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST': 'custom-host',
                'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST': 'custom-host'}
         mocks = '''
 set -euo pipefail
@@ -1438,7 +1442,6 @@ docker() {
 sudo() { [ "$1" = -n ] && [ "$2" = chown ] && [ "$3" = 10001 ] && [ -d "$4" ]; }
 curl() { printf '%s\\n' '{"status":"healthy"}'; }
 addp_dev_remove_owned_container() { :; }
-ensure_pointcloud_workflow_image() { :; }
 ensure_document_workflow_image() { :; }
 '''
         script = mocks + helper + '\n' + function('start_' + runtime + '_workflow_engine_process')
@@ -1466,8 +1469,7 @@ ensure_document_workflow_image() { :; }
         with patch.dict(os.environ, envs), patch('threading.Thread'):
             exec(compile(ast.Module(body=main.body, type_ignores=[]), '<runtime-main>', 'exec'), namespace)
         app.run.assert_called_once_with(host=bind_host, port=int(envs['PORT']), debug=False)
-        loopback_key = {'pointcloud': 'POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST',
-                        'document': 'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST'}[runtime]
+        loopback_key = 'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST'
         if hosted == '1':
             assert args[args.index('--network') + 1] == 'host', args
             assert '-p' not in args and not any(arg.startswith('--add-host') for arg in args), args
@@ -1708,7 +1710,16 @@ preparation = source[start:source.index('\nensure_model3d_node_dependencies', st
 workspace = temporary/'model3d workspace with spaces'
 engine = workspace/'engines/model3d-workflow'
 engine.mkdir(parents=True)
-(workspace/'common-python').mkdir()
+common = workspace/'common-python'
+(common/'addp_common').mkdir(parents=True)
+(common/'pyproject.toml').write_text('[project]\nname = "addp-common"\n')
+(common/'README.md').write_text('Shared runtime package')
+(common/'addp_common/__init__.py').write_text('__version__ = "1.0.0"\n')
+site = workspace/'site'
+site.mkdir()
+metadata = site/'fixture-1.0.dist-info'
+metadata.mkdir()
+(metadata/'METADATA').write_text('Name: fixture\nVersion: 1.0\n')
 requirements = engine/'requirements.txt'
 requirements.write_text('Flask==3.0.0\nPillow==12.3.0\n')
 fake_python = workspace/'fake-python'
@@ -1726,8 +1737,15 @@ elif args[:3] == ['-m', 'pip', 'install']:
     if os.environ.get('FAIL_INSTALL') == '1': sys.exit(17)
     requirement = pathlib.Path(args[args.index('-r')+1])
     (root/'installed.txt').write_text(requirement.read_text())
+    if os.environ.get('CHANGE_INPUT') == '1':
+        (root/'common-python/README.md').write_text('changed during install')
+    if os.environ.get('SLOW_INSTALL') == '1':
+        import time
+        time.sleep(0.2)
 elif args[:3] == ['-m', 'pip', 'check']:
     if os.environ.get('FAIL_CHECK') == '1': sys.exit(19)
+elif args[:1] == ['-']:
+    os.execv(sys.executable, [sys.executable] + args)
 elif args == ['--version']:
     print('Python 3.11')
 elif args[:1] == ['-c']:
@@ -1747,7 +1765,7 @@ printf 'ready\\n' > "$ROOT_DIR/prepared"
 )
 start_runtime_model3d
 '''
-environment = dict(os.environ, ROOT_DIR=str(workspace), PIP_INDEX_URL='https://index.example/simple', PIP_TRUSTED_HOST='index.example')
+environment = dict(os.environ, ROOT_DIR=str(workspace), PYTHONPATH=str(site), PIP_INDEX_URL='https://index.example/simple', PIP_TRUSTED_HOST='index.example')
 calls = workspace/'calls.jsonl'
 prepared = workspace/'prepared'
 
@@ -1766,6 +1784,68 @@ installs = [args for args in arguments if args[:3] == ['-m', 'pip', 'install']]
 assert len(installs) == 1, arguments
 assert installs[0] == ['-m', 'pip', 'install', '-r', str(requirements), '-e', str(workspace/'common-python'), '-i', environment['PIP_INDEX_URL'], '--trusted-host', environment['PIP_TRUSTED_HOST']], installs
 
+fingerprint = engine/'venv/.addp-dependency-fingerprint'
+# 全量 restart 的预检与 start 重复调用、后续重启均不能再次安装。
+result, arguments = run()
+assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
+assert not any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), 'unchanged dependencies reinstalled'
+assert '依赖未变化，跳过安装' in result.stdout, result.stdout
+assert fingerprint.is_file(), 'successful sync did not persist fingerprint'
+
+# 共享包声明、源码、增删包文件与已安装版本或来源变化均失效。
+for path, contents in (
+    (common/'pyproject.toml', '[project]\nname = "addp-common"\nversion = "1.1.0"\n'),
+    (common/'addp_common/__init__.py', '__version__ = "1.1.0"\n'),
+    (common/'addp_common/new_module.py', 'VALUE = 1\n'),
+    (common/'README.md', 'Updated build metadata'),
+    (metadata/'METADATA', 'Name: fixture\nVersion: 2.0\n'),
+    (metadata/'direct_url.json', '{"url": "file:///other-source", "dir_info": {"editable": true}}'),
+):
+    path.write_text(contents)
+    result, arguments = run()
+    assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
+    assert sum(args[:3] == ['-m', 'pip', 'install'] for args in arguments) == 1, path
+(common/'addp_common/new_module.py').unlink()
+result, arguments = run()
+assert result.returncode == 0 and any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), arguments
+(metadata/'METADATA').unlink()
+result, arguments = run()
+assert result.returncode == 0 and any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), arguments
+
+# requirements 的引用文件也属于输入，不能只检查顶层文件。
+nested = engine/'extra.txt'
+nested.write_text('Flask==3.0.0\n')
+requirements.write_text('-r extra.txt\nPillow==12.3.0\n')
+for value in ('Flask==3.0.0\n', 'Flask==3.1.0\n'):
+    nested.write_text(value)
+    result, arguments = run()
+    assert result.returncode == 0 and any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), arguments
+
+# 指纹相同但 pip check 失败，不能跳过安装或留下成功记录。
+result, arguments = run(FAIL_CHECK='1')
+assert result.returncode != 0 and any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), arguments
+assert not fingerprint.exists(), 'unhealthy cached environment kept successful record'
+result, arguments = run()
+assert result.returncode == 0 and fingerprint.exists(), result.stdout+result.stderr
+
+# 安装期间输入变化不能发布混合快照。
+fingerprint.unlink()
+result, arguments = run(CHANGE_INPUT='1')
+assert result.returncode != 0 and not fingerprint.exists(), result.stdout+result.stderr
+assert '依赖输入在安装期间变化' in result.stderr, result.stderr
+
+# 同一 venv 并发请求须在锁内重查，只安装一次。
+calls.unlink()
+sync = f'source "{root}/scripts/dev/lifecycle-lock.sh"; addp_sync_python_dependencies "$ROOT_DIR" "{engine}" Model3D'
+processes = [subprocess.Popen(['bash', '-c', sync], env=dict(environment, SLOW_INSTALL='1'),
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(4)]
+for process in processes:
+    stdout, stderr = process.communicate(timeout=20)
+    assert process.returncode == 0, stdout+stderr
+arguments = [json.loads(line) for line in calls.read_text().splitlines()]
+assert sum(args[:3] == ['-m', 'pip', 'install'] for args in arguments) == 1, arguments
+assert fingerprint.exists()
+
 # 已有 venv 且旧 import 检查通过，也必须同步新增或升级的 Pillow 声明。
 requirements.write_text('Flask==3.0.0\nPillow==12.4.0\n')
 (workspace/'installed.txt').write_text('Flask==3.0.0\n')
@@ -1773,17 +1853,21 @@ result, arguments = run()
 assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
 assert (workspace/'installed.txt').read_text() == requirements.read_text(), 'existing venv skipped changed dependency declarations'
 assert not any(args[:2] == ['-m', 'venv'] for args in arguments), arguments
-assert arguments[-1] == ['-m', 'pip', 'check'], arguments
+assert ['-m', 'pip', 'check'] in arguments, arguments
 
+fingerprint.unlink(missing_ok=True)
 result, arguments = run(FAIL_INSTALL='1')
 assert result.returncode != 0 and not prepared.exists(), result.stdout+result.stderr
 assert not any(args[:3] == ['-m', 'pip', 'check'] for args in arguments), arguments
+assert not fingerprint.exists(), 'failed install left valid cache'
 result, arguments = run(FAIL_CHECK='1')
 assert result.returncode != 0 and not prepared.exists(), result.stdout+result.stderr
 
+assert not fingerprint.exists(), 'failed check left valid cache'
+
 # 局部重启也执行同一同步函数，安装失败不能继续启动进程。
 restart_source = (root/'scripts/dev/restart.sh').read_text()
-restart_function = restart_source[restart_source.index('restart_model3d_workflow_service() {'):restart_source.index('pointcloud_workflow_source_fingerprint() {')]
+restart_function = restart_source[restart_source.index('restart_model3d_workflow_service() {'):restart_source.index('restart_pointcloud_workflow_service() {')]
 runner = f'''
 set -eu
 cd "$ROOT_DIR"
@@ -1799,7 +1883,8 @@ restart_model3d_workflow_service
 '''
 result, arguments = run()
 assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
-assert arguments[-1] == ['-m', 'pip', 'check'], arguments
+assert ['-m', 'pip', 'check'] in arguments, arguments
+fingerprint.unlink(missing_ok=True)
 result, arguments = run(FAIL_INSTALL='1')
 assert result.returncode != 0 and not prepared.exists(), result.stdout+result.stderr
 result, arguments = run(PIP_INDEX_URL='', PIP_TRUSTED_HOST='')
@@ -1809,7 +1894,7 @@ assert len(installs) == 1 and '-i' not in installs[0] and '--trusted-host' not i
 (engine/'venv/bin/python').unlink()
 result, arguments = run()
 assert result.returncode != 0 and not prepared.exists() and not arguments, result.stdout+result.stderr
-print('PASS: Model3D start/restart syncs full declarations in new/existing venv; failures block startup')
+print('PASS: Python dependency sync reuses healthy environments and invalidates changed inputs/packages; failures block start/restart')
 PY
 }
 
@@ -2180,6 +2265,7 @@ print('PASS: per-module Worker ordering, independent progress, dead/timeout Back
 PY
 }
 
+test_model3d_python_dependency_sync
 test_stop_keeps_system_available_for_deregistration
 test_worker_backend_readiness_order
 test_swagger_incremental_generation
@@ -2187,7 +2273,6 @@ test_start_batches_listening_ports
 test_frontend_dependencies_precede_health_wait
 test_parallel_runtime_startup
 test_python_dependency_install_lock
-test_model3d_python_dependency_sync
 test_start_loads_runtime_ownership_in_all_profiles
 test_start_reuses_healthy_core_infra
 test_dev_port_resolution

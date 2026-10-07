@@ -258,7 +258,7 @@ stop_services_concurrent() {
   stop_pid_group "模块、Worker 和前端" "${all_pids[@]}"
 
   local name container labels
-  for name in pointcloud-workflow document-workflow supermap-workflow; do
+  for name in document-workflow supermap-workflow; do
     stop_process_selected "$name" || continue
     container="${name}-engine"
     labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || continue

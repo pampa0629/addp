@@ -1,12 +1,30 @@
 package engineaccess
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 )
+
+func TestApprovalRequirementInitializationRejectsMissingOrUnknownModeBeforeStorage(t *testing.T) {
+	service := &Service{}
+	for _, mode := range []string{"", "Catalog", "unknown", " independent "} {
+		t.Run(mode, func(t *testing.T) {
+			_, err := service.InitializeApprovalRequirement(context.Background(), InitializeApprovalRequirementInput{
+				EngineID: 1, CatalogPath: engineplugin.TabularItemPath(1, "schema", "public", "table"), Mode: mode, Reason: "Explicit configuration",
+			})
+			if !errors.Is(err, commonapi.ErrBadRequest) {
+				t.Fatalf("invalid mode %q reached storage: %v", mode, err)
+			}
+		})
+	}
+}
 
 func TestApprovalRequirementPermissionUsesCurrentTenantScopeAndExpiry(t *testing.T) {
 	now := time.Now().UTC()

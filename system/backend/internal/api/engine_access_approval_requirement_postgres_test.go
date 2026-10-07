@@ -55,7 +55,7 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		}
 		refreshActor()
 		target := engineplugin.TabularItemPath(engine.ID, "schema", "public", "governance.target")
-		input := engineaccess.InitializeApprovalRequirementInput{Actor: actor, EngineID: int64(engine.ID), CatalogPath: target, Reason: "Explicit Catalog governance"}
+		input := engineaccess.InitializeApprovalRequirementInput{Actor: actor, EngineID: int64(engine.ID), CatalogPath: target, Mode: "catalog", Reason: "Explicit Catalog governance"}
 		if _, err := service.InitializeApprovalRequirement(ctx, input); !errors.Is(err, commonapi.ErrForbidden) {
 			t.Fatalf("permission without delegation=%v", err)
 		}
@@ -75,16 +75,16 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 			Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: &tenant}, SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute), Permissions: permissions}}
 		router := approvalRequirementTestRouter(t, service, &projection)
 		path := fmt.Sprintf("/api/v1/system/engines/%d/access_approval_requirements", engine.ID)
-		response := engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "reason": input.Reason}, 201)
+		response := engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "mode": "catalog", "reason": input.Reason}, 201)
 		var initialized engineaccess.ApprovalRequirementView
 		if err := json.Unmarshal(response.Body.Bytes(), &initialized); err != nil || initialized.ID == uuid.Nil || initialized.Mode != "catalog" || initialized.Version != 1 {
 			t.Fatalf("initialized=%+v err=%v", initialized, err)
 		}
-		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "reason": "Overwrite"}, 409)
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "mode": "independent", "reason": "Overwrite"}, 409)
 		engineDelegationTestRequest(t, router, "GET", path+"/"+initialized.ID.String(), nil, 200)
 		projection.Authorization.RoleAssignments[0].Permissions = permissions[1:]
 		engineDelegationTestRequest(t, router, "GET", path, nil, 200)
-		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "reason": input.Reason}, 403)
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "mode": "catalog", "reason": input.Reason}, 403)
 		projection.Authorization.RoleAssignments[0].Permissions = permissions[:1]
 		engineDelegationTestRequest(t, router, "GET", path, nil, 403)
 		projection.Authorization.RoleAssignments[0].Permissions = permissions
@@ -186,6 +186,31 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		}
 		if facts != 2 {
 			t.Fatal("audit failure left a partial requirement")
+		}
+		// No Catalog connection or source access is involved in first independent
+		// configuration. The same authority writes an arrangement, never a Grant.
+		var grantsBefore, grantsAfter int64
+		if err := db.Table("system.engine_access_grants").Count(&grantsBefore).Error; err != nil {
+			t.Fatal(err)
+		}
+		independentTarget := engineplugin.TabularItemPath(engine.ID, "schema", "public", "independent.target")
+		response = engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": independentTarget, "mode": "independent", "reason": "No Catalog approval required"}, 201)
+		var independent engineaccess.ApprovalRequirementView
+		if err := json.Unmarshal(response.Body.Bytes(), &independent); err != nil || independent.Mode != "independent" || independent.Version != 1 {
+			t.Fatalf("independent configuration=%+v err=%v", independent, err)
+		}
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": independentTarget, "mode": "catalog", "reason": "Must not replace independent mode"}, 409)
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": independentTarget, "reason": "Missing explicit mode"}, 400)
+		if err := db.Table("system.engine_access_grants").Count(&grantsAfter).Error; err != nil || grantsAfter != grantsBefore {
+			t.Fatalf("configuration created Grant: before=%d after=%d err=%v", grantsBefore, grantsAfter, err)
+		}
+		var details map[string]any
+		var auditDetails string
+		if err := db.Table("system.audit_logs").Select("details").Where("event_name=? AND entity_id=?", "system.engine_access_approval_requirement.changed", independent.ID.String()).Scan(&auditDetails).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(auditDetails), &details); err != nil || details["mode"] != "independent" || details["successor_principal_id"] != nil {
+			t.Fatalf("first configuration invented a handoff successor: %v err=%v", details, err)
 		}
 		if _, err := service.Revoke(ctx, engineaccess.RevokeInput{Actor: actor, EngineID: int64(engine.ID), ID: delegation.ID, Version: delegation.Version,
 			Reason: "End fixture administration"}); err != nil {

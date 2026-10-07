@@ -69,7 +69,9 @@ Go 二进制不得直接编译到 `.dev-bins/addp-*` 正式路径。统一流程
 
 ## 三、运行时依赖构建输入
 
-Model3D 和 Spark Workflow 的宿主机 Python Runtime 在每次启动和局部重启时，必须复用同一依赖同步函数，通过既有 Python 安装互斥锁，按各自的 `requirements.txt` 和 editable `common-python` 同步依赖，再执行 `pip check`。已有虚拟环境或少量模块可导入不能作为跳过同步的依据；依赖新增、版本调整和共享包依赖变化必须在实际启动环境生效。任一步失败立即阻止 Runtime 启动，不进入服务就绪等待。
+Model3D、Spark Workflow 和 GeoPython Workflow 的宿主机 Python Runtime 在每次启动和重启时，必须复用同一依赖同步函数。每个 venv 在 `.addp-dependency-fingerprint` 保存上次成功同步的输入与安装环境指纹：输入覆盖完整 `requirements.txt`、`common-python` 的构建声明、README 和包源码；环境覆盖 Python 解释器身份、已安装包版本、依赖元数据和 editable 来源。只有指纹相同且 `pip check` 通过时才跳过安装；已有虚拟环境或少量模块可导入不能单独作为复用依据。无记录、输入变化、包缺失、包版本或来源变化及依赖检查失败时，通过既有 Python 安装互斥锁重新检查并安装完整 requirements 与 editable `common-python`，避免并发调用重复安装。仅在安装和 `pip check` 成功、输入在安装期间未变化后，原子写入新指纹；失败必须撤销本次同步记录并阻止启动。各 Runtime 继续执行已有导入与原生依赖预检。全量重启的停止前预检和随后启动使用同一记录，健康且未变化的环境不重复安装。
+
+PointCloud Workflow 原生开发使用独立 Conda 前缀 `engines/pointcloud-workflow/venv`，固定 Python 3.12、PDAL core/E57 2.10.2，并将所有传递原生库留在该前缀。start/restart 共用唯一原生入口；完整 Python 依赖沿用平台安装锁和指纹，原生包声明与真实加载、驱动及三点 COPC 转换共同作为准备门禁。运行中环境只读校验，不能就地更新依赖。HTTP 回环监听按原生 PID 和端口归属验证；stop 只管理原生进程，开发入口不构建镜像。Hosted Manager T4 同样使用原生入口；生产 Compose 使用产品镜像。首次迁移由用户清理旧开发容器和普通 Python venv，不在生命周期内保留容器备选路径。
 
 所有由开发生命周期启动的 Node 单元必须提交 `package-lock.json`。锁文件是不可变构建输入，启动和重启统一通过 `scripts/dev/node-dependencies.sh` 执行 `npm ci`；缺少锁文件必须立即失败，不得在生命周期内退回 `npm install`、生成锁文件或静默采用未锁定依赖。
 
@@ -129,7 +131,7 @@ GDAL 绑定重建必须先准备 setuptools 与 wheel，并使用已同步的 Ru
 - Swagger 对相同内容复用，源码、共享类型、本地 replace、工具、Go 环境和产物变化均失效；生成失败、输入或产物在校验期间变化不能发布有效缓存，并发命令互斥；
 - 所选 Runtime 启动任务实际并发，工作目录和环境变量相互隔离，失败时仍等待其他任务结束且不进入下一阶段；
 - Python 依赖安装互斥，失败退出后可再次获取安装锁；
-- Model3D 已有虚拟环境按完整依赖声明同步，新环境、声明变化及安装失败均有回归覆盖；
+- Python Runtime 首次同步、相同输入重复调用跳过安装、声明和共享包变化、安装环境变化、依赖检查失败、并发重查及失败后缓存撤销均有回归覆盖；Model3D start/restart 共用该入口；
 - Go/前端批次各扫描一次监听端口，正确处理 IPv4/IPv6、重复记录和已退出监听者；扫描失败及端口冲突必须阻断启动；
 - 其他监听者返回 HTTP 200 时，本次启动进程已退出仍必须判定失败；
 - 有锁文件的 Node 单元只执行 `npm ci`，安装前后锁文件内容不变；
