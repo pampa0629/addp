@@ -1661,6 +1661,112 @@
             }
         },
         "/entries/{id}/sharing_decisions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "条目可见且具有独立确认权限；原确认人读本人记录，当前业务负责人复核全部历史，先过滤后分页。不发起办理或授予数据访问 | Requires entry visibility and independent confirmation permission. Original confirmers read own records; the current business owner reviews all history, filtered before pagination. Does not initiate fulfillment or grant data access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "查找共享确认历史 | Find sharing confirmation history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码，默认 1 | Page, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量，默认 20，最多 100 | Page size, default 20, maximum 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "可复核的确认历史 | Reviewable confirmation history",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionResult"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数、身份或读取范围错误 | Invalid parameters, identity or read scope",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "参数、身份或读取范围错误 | Invalid parameters, identity or read scope",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "参数、身份或读取范围错误 | Invalid parameters, identity or read scope",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "参数、身份或读取范围错误 | Invalid parameters, identity or read scope",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "参数、身份或读取范围错误 | Invalid parameters, identity or read scope",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.sharing_decision.create"
+                ]
+            },
             "post": {
                 "security": [
                     {
@@ -1766,14 +1872,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅返回当前可见条目下由当前 User 确认的原记录；历史读取不要求仍为业务负责人。不重新确认、不延长到期时间、不返回 System Grant 或受理状态 | Return only the current User's original decision under a currently visible entry. Historical reads do not require current business ownership. No reconfirmation, expiry extension, System Grant or acceptance state is produced",
+                "description": "当前可见条目下，原确认人读取本人历史，当前业务负责人可复核全部历史；均须独立共享确认权限。读取不重新确认、不要求办理权、不延长期限、不返回源数据 | Under a currently visible entry, the original confirmer may read own history and the current business owner may review all history, both with independent confirmation permission. No reconfirmation, fulfillment permission requirement, expiry extension or source data",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Catalog Sharing"
                 ],
-                "summary": "读取本人共享确认记录 | Read own sharing confirmation record",
+                "summary": "读取共享确认记录 | Read a sharing confirmation record",
                 "parameters": [
                     {
                         "type": "string",
@@ -1819,7 +1925,136 @@
                         }
                     },
                     "404": {
-                        "description": "条目或本人记录不存在或不可见 | Entry or own record missing or invisible",
+                        "description": "条目或范围内记录不存在或不可见 | Entry or in-scope record missing or invisible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.sharing_decision.create"
+                ]
+            }
+        },
+        "/entries/{id}/sharing_decisions/{decision_id}/fulfillments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "原确认人或当前业务负责人在条目可见及独立确认权限内，只读查询 System 原受理及签发历史。granted_at 不表达当前访问 Allow；依赖失败返回错误，不伪装为 pending。查询不提交、关闭、核清或签发 | Original confirmer or current business owner, with entry visibility and independent confirmation permission, reads System's original acceptance and issuance history. Granted_at is not a current access Allow; dependency failures never become pending. Does not submit, close, settle or issue",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "复核共享确认的办理及签发历史 | Review fulfillment and issuance history for a sharing decision",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "确认 UUID | Decision UUID",
+                        "name": "decision_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码，默认 1 | Page, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量，默认 20，最多 100 | Page size, default 20, maximum 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "只读历史，不代表当前数据访问权 | Read-only history, not current data access",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentHistory"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求、范围、绑定或依赖错误 | Request, scope, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "请求、范围、绑定或依赖错误 | Request, scope, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "请求、范围、绑定或依赖错误 | Request, scope, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "请求、范围、绑定或依赖错误 | Request, scope, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "请求、范围、绑定或依赖错误 | Request, scope, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "请求、范围、绑定或依赖错误 | Request, scope, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "请求、范围、绑定或依赖错误 | Request, scope, binding or dependency error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2085,7 +2320,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "原请求及只读权威结果，不是 Grant | Original request and read-only authoritative outcome, not a Grant",
+                        "description": "原请求、受理及可空签发历史，不代表当前访问 Allow | Original request, acceptance and nullable historical grant time, not a current access Allow",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentHistory"
                         }
@@ -5263,6 +5498,11 @@
                         "at_time",
                         "until_revoked"
                     ]
+                },
+                "granted_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
                 },
                 "recipient_id": {
                     "type": "string",

@@ -78,7 +78,178 @@ func seedFulfillmentHistory(t *testing.T, db *gorm.DB) (models.Entry, *models.Fu
 }
 
 func TestSharingFulfillmentHistoryIsOwnCurrentAndReadOnly(t *testing.T) {
-	exerciseSharingFulfillmentHistory(t, openSharingPreparationTestDB(t))
+	db := openSharingPreparationTestDB(t)
+	exerciseSharingFulfillmentHistory(t, db)
+	exerciseSharingBusinessReview(t, db)
+}
+
+func exerciseSharingBusinessReview(t *testing.T, db *gorm.DB) {
+	t.Run("business review reads exact cross-operator history without granting or handling", func(t *testing.T) {
+		entry, check, binding := seedFulfillmentHistory(t, db)
+		ctx := context.Background()
+		s := NewEntryService(db, nil, nil)
+		permissions := []string{"catalog.entry.read", "catalog.inventory.read", "catalog.sharing_decision.create"}
+		auth := authtest.NewTenantUserAuthContext("7", "40", permissions)
+		// The original request belongs to another operator, not the confirmer.
+		if binding.Operator.PrincipalID == 40 {
+			t.Fatal("fixture must cover another operator")
+		}
+		recorded := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+		deadline, granted := recorded.Add(5*time.Minute), recorded.Add(time.Minute)
+		state, grantFound, failure := "accepted", true, ""
+		calls := 0
+		var before func()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			var actual authorization.SharingFulfillmentBinding
+			prefix := "/api/v1/system/runtime/engine-access-fulfillments/" + check.RequestID.String()
+			if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer fixture-catalog-runtime" || json.NewDecoder(r.Body).Decode(&actual) != nil || !equalSharingFulfillmentBinding(actual, binding) {
+				t.Error("review replaced original binding or runtime identity")
+				w.WriteHeader(500)
+				return
+			}
+			if db.Dialector.Name() == "postgres" {
+				if err := db.Transaction(func(tx *gorm.DB) error {
+					return tx.Exec("SELECT id FROM catalog.entries WHERE id=? FOR UPDATE NOWAIT", entry.ID).Error
+				}); err != nil {
+					t.Errorf("review locked across networking: %v", err)
+				}
+			}
+			if before != nil {
+				before()
+			}
+			if failure == "offline" {
+				w.WriteHeader(503)
+				return
+			}
+			switch r.URL.Path {
+			case prefix + "/resolve":
+				lookup := authorization.SharingFulfillmentLookup{Found: state != "pending"}
+				if lookup.Found {
+					lookup.Resolution = &authorization.SharingFulfillmentResolution{RequestID: check.RequestID, TenantID: 7, Binding: actual, Outcome: state, RecordedAt: recorded}
+					if state == "accepted" {
+						lookup.Resolution.Deadline = &deadline
+					}
+					if failure == "binding" {
+						lookup.Resolution.Binding.RequirementVersion++
+					}
+				}
+				_ = json.NewEncoder(w).Encode(lookup)
+			case prefix + "/grant/resolve":
+				lookup := authorization.SharingFulfillmentGrantLookup{Found: grantFound}
+				if grantFound {
+					lookup.Grant = &authorization.SharingFulfillmentGrant{RequestID: check.RequestID, GrantedAt: granted}
+					if failure == "grant-binding" {
+						lookup.Grant.RequestID = uuid.New()
+					}
+					if failure == "grant-window" {
+						lookup.Grant.GrantedAt = deadline.Add(time.Second)
+					}
+				}
+				_ = json.NewEncoder(w).Encode(lookup)
+			default:
+				t.Errorf("review attempted mutation %s", r.URL.Path)
+				w.WriteHeader(500)
+			}
+		}))
+		defer server.Close()
+		s.WithSharingFulfillmentClient(client.NewSystemFulfillmentClient(server.URL, recoveryRuntimeTestTokens{}, server.Client()))
+		get := func(current authorization.AuthContext) ([]SharingFulfillmentHistory, int64, error) {
+			return s.ListSharingDecisionFulfillments(ctx, 7, EntryAccess{Inventory: true}, entry.ID, binding.DecisionID, current, 1, 20)
+		}
+		var auditsBefore int64
+		db.Model(&models.AuditEvent{}).Where("catalog_entry_id=?", entry.ID).Count(&auditsBefore)
+		rows, total, err := get(auth)
+		if err != nil || total != 1 || len(rows) != 1 || rows[0].GrantedAt == nil || !rows[0].GrantedAt.Equal(granted) || rows[0].State != "accepted" {
+			t.Fatalf("confirmer review=%+v total=%d err=%v", rows, total, err)
+		}
+		for _, outcome := range []string{"pending", "closed", "accepted"} {
+			state, grantFound = outcome, false
+			rows, _, err = get(auth)
+			if err != nil || len(rows) != 1 || rows[0].State != outcome || rows[0].GrantedAt != nil {
+				t.Fatalf("%s review=%+v err=%v", outcome, rows, err)
+			}
+		}
+		state, grantFound = "accepted", true
+		for _, bad := range []string{"offline", "binding", "grant-binding", "grant-window"} {
+			failure = bad
+			if rows, _, err := get(auth); rows != nil || !errors.Is(err, ErrReferenceValidationUnavailable) {
+				t.Fatalf("%s forged result=%+v err=%v", bad, rows, err)
+			}
+		}
+		failure = ""
+		beforeCalls := calls
+		other := authtest.NewTenantUserAuthContext("7", "51", permissions)
+		if _, _, err := get(other); !errors.Is(err, ErrEntryNotFound) {
+			t.Fatalf("unrelated review: %v", err)
+		}
+		denied := authtest.NewTenantUserAuthContext("7", "40", []string{"catalog.entry.read", "catalog.entry.update"})
+		if _, _, err := get(denied); !errors.Is(err, ErrSharingConfirmationForbidden) {
+			t.Fatalf("curation substituted confirmation: %v", err)
+		}
+		machine := auth
+		machine.Principal.Type = "service_principal"
+		if _, _, err := get(machine); !errors.Is(err, ErrSharingConfirmationForbidden) {
+			t.Fatalf("service used human review: %v", err)
+		}
+		if _, _, err := s.ListSharingDecisionFulfillments(ctx, 8, EntryAccess{Inventory: true}, entry.ID, binding.DecisionID, authtest.NewTenantUserAuthContext("8", "40", permissions), 1, 20); !errors.Is(err, ErrEntryNotFound) {
+			t.Fatalf("cross tenant: %v", err)
+		}
+		if calls != beforeCalls {
+			t.Fatal("denied review reached System")
+		}
+		until := time.Now().Add(time.Hour)
+		auth.Authorization.RoleAssignments[0].ValidUntil = &until
+		before = func() { until = time.Now().Add(-time.Second) }
+		if rows, _, err := get(auth); rows != nil || !errors.Is(err, ErrSharingConfirmationForbidden) {
+			t.Fatalf("expired permission leaked review=%+v err=%v", rows, err)
+		}
+		before = nil
+		auth.Authorization.RoleAssignments[0].ValidUntil = nil
+		for _, invalid := range [][2]int{{0, 20}, {1, 101}} {
+			if _, _, err := s.ListSharingDecisions(ctx, 7, EntryAccess{Inventory: true}, entry.ID, auth, invalid[0], invalid[1]); !errors.Is(err, ErrInvalidEntryUpdate) {
+				t.Fatalf("invalid review page accepted: %v", err)
+			}
+		}
+		var stored models.FulfillmentCheck
+		db.Where("request_id=?", check.RequestID).Take(&stored)
+		var auditsAfter int64
+		db.Model(&models.AuditEvent{}).Where("catalog_entry_id=?", entry.ID).Count(&auditsAfter)
+		if stored.ResolvedAt != nil || stored.GrantReconciledAt != nil || auditsBefore != auditsAfter {
+			t.Fatal("review settled request or appended audit")
+		}
+		// Clear protection explicitly as a fixture, then simulate a new owner.
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			_, err := resolveSharingFulfillment(ctx, tx, 7, entry.ID, check.RequestID, binding)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.Responsibility{}).Where("catalog_entry_id=? AND role=?", entry.ID, "business_owner").Update("subject_id", 51).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := get(other); err != nil {
+			t.Fatalf("new owner cannot review old sharing: %v", err)
+		}
+		if original, err := s.GetSharingDecision(ctx, 7, EntryAccess{Inventory: true}, entry.ID, binding.DecisionID, other); err != nil || original.ConfirmedBy != 40 {
+			t.Fatalf("new owner cannot read original confirmation: %+v %v", original, err)
+		}
+		if _, _, err := get(auth); err != nil {
+			t.Fatalf("former owner lost own history: %v", err)
+		}
+		listed, count, err := s.ListSharingDecisions(ctx, 7, EntryAccess{Inventory: true}, entry.ID, other, 1, 1)
+		if err != nil || count != 1 || len(listed) != 1 || listed[0].ConfirmedBy != 40 {
+			t.Fatalf("owner list=%+v count=%d err=%v", listed, count, err)
+		}
+		before = func() {
+			if err := db.Model(&models.Responsibility{}).Where("catalog_entry_id=? AND role=?", entry.ID, "business_owner").Update("status", "needs_transfer").Error; err != nil {
+				t.Error(err)
+			}
+		}
+		if rows, _, err := get(other); rows != nil || !errors.Is(err, ErrEntryNotFound) {
+			t.Fatalf("stale owner review=%+v err=%v", rows, err)
+		}
+	})
 }
 
 func exerciseSharingFulfillmentHistory(t *testing.T, db *gorm.DB) {
@@ -145,6 +316,14 @@ func exerciseSharingFulfillmentHistory(t *testing.T, db *gorm.DB) {
 		deadline := recorded.Add(5 * time.Minute) // Historical expiry does not become a new window.
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			calls++
+			if r.URL.Path == "/api/v1/system/runtime/engine-access-fulfillments/"+check.RequestID.String()+"/grant/resolve" {
+				var actual authorization.SharingFulfillmentBinding
+				if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer fixture-catalog-runtime" || json.NewDecoder(r.Body).Decode(&actual) != nil || !equalSharingFulfillmentBinding(actual, binding) {
+					t.Error("invalid grant lookup")
+				}
+				_ = json.NewEncoder(w).Encode(authorization.SharingFulfillmentGrantLookup{Found: false})
+				return
+			}
 			if r.Method != http.MethodPost || r.URL.Path != "/api/v1/system/runtime/engine-access-fulfillments/"+check.RequestID.String()+"/resolve" || r.Header.Get("Authorization") != "Bearer fixture-catalog-runtime" || r.Header.Get("X-Tenant-ID") != "" {
 				t.Errorf("unexpected mutation/credential/target: %s %s", r.Method, r.URL.Path)
 				w.WriteHeader(500)

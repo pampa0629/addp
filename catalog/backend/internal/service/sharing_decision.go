@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,21 +112,88 @@ func (s *EntryService) GetSharingDecision(ctx context.Context, tenantID int64, a
 	if s == nil || s.db == nil || entryID == uuid.Nil || decisionID == uuid.Nil {
 		return nil, ErrInvalidEntryUpdate
 	}
-	var entry models.Entry
-	if err := s.visibleEntriesQuery(ctx, tenantID, access).Where("entries.id = ?", entryID).Take(&entry).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrEntryNotFound
-		}
-		return nil, err
-	}
 	var row models.SharingDecision
-	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND catalog_entry_id = ? AND id = ? AND confirmed_by = ?", tenantID, entryID, decisionID, principal).Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrEntryNotFound
-		}
+	err = s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, func(local *EntryService, owner bool) error {
+		return sharingBasisReadError(local.sharingHistoryQuery(ctx, tenantID, entryID, principal, owner).Where("id = ?", decisionID).Take(&row).Error)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return sharingDecisionResult(row)
+}
+
+// History review is distinct from a new confirmation or fulfillment command.
+// Count and page share a read-only snapshot; ownership is re-read, not inferred
+// from an old decision, a browser flag, or the curation permission.
+func (s *EntryService) readSharingHistorySnapshot(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID,
+	auth authorization.AuthContext, read func(*EntryService, bool) error,
+) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		local := *s
+		local.db = tx
+		now := time.Now().UTC()
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+				return err
+			}
+		}
+		if !sharingPermissionsAt(auth, now) {
+			return ErrSharingConfirmationForbidden
+		}
+		current := access
+		current.Inventory = access.Inventory && sharingUserPermissionsAt(auth, now, catalogauthorization.PermissionCatalogInventoryRead)
+		var entry models.Entry
+		if err := local.visibleEntriesQuery(ctx, tenantID, current).Where("entries.id = ?", entryID).Take(&entry).Error; err != nil {
+			return sharingBasisReadError(err)
+		}
+		var owners int64
+		if err := tx.Model(&models.Responsibility{}).Where("tenant_id = ? AND catalog_entry_id = ? AND role = ? AND subject_type = ? AND subject_id = ? AND status = ?",
+			tenantID, entryID, "business_owner", "user", auth.Principal.ID, "active").Count(&owners).Error; err != nil {
+			return err
+		}
+		return read(&local, owners > 0)
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+}
+
+func (s *EntryService) sharingHistoryQuery(ctx context.Context, tenantID int64, entryID uuid.UUID, principal int64, owner bool) *gorm.DB {
+	query := s.db.WithContext(ctx).Model(&models.SharingDecision{}).Where("tenant_id = ? AND catalog_entry_id = ?", tenantID, entryID)
+	if !owner {
+		query = query.Where("confirmed_by = ?", principal)
+	}
+	return query
+}
+
+func (s *EntryService) ListSharingDecisions(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID,
+	auth authorization.AuthContext, page, size int,
+) ([]SharingDecisionResult, int64, error) {
+	principal, _, _, err := sharingConfirmer(auth, tenantID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if s == nil || s.db == nil || entryID == uuid.Nil || page <= 0 || size <= 0 || size > 100 || page-1 > math.MaxInt/size {
+		return nil, 0, ErrInvalidEntryUpdate
+	}
+	rows := make([]SharingDecisionResult, 0)
+	var total int64
+	err = s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, func(local *EntryService, owner bool) error {
+		query := func() *gorm.DB { return local.sharingHistoryQuery(ctx, tenantID, entryID, principal, owner) }
+		if err := query().Count(&total).Error; err != nil {
+			return err
+		}
+		var decisions []models.SharingDecision
+		if err := query().Order("created_at DESC, id DESC").Offset((page - 1) * size).Limit(size).Find(&decisions).Error; err != nil {
+			return err
+		}
+		for _, decision := range decisions {
+			result, err := sharingDecisionResult(decision)
+			if err != nil {
+				return err
+			}
+			rows = append(rows, *result)
+		}
+		return nil
+	})
+	return rows, total, err
 }
 
 func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, input SharingDecisionInput, auth authorization.AuthContext) (*SharingDecisionResult, bool, error) {

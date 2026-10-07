@@ -122,8 +122,14 @@ func TestEngineAccessDelegationAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	var builtinBindings int64
-	if err := db.Raw(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id = rp.permission_id WHERE p.permission_key LIKE 'system.engine_access_delegation.%'`).Scan(&builtinBindings).Error; err != nil || builtinBindings != 0 {
-		t.Fatalf("migration implicitly granted built-in roles: count=%d err=%v", builtinBindings, err)
+	// Migration 000194 publishes the dedicated role template; existing roles must keep their grants.
+	// The migration gate verifies that template's exact permissions and absence of automatic assignments.
+	if err := db.Raw(`SELECT count(*) FROM system.role_permissions rp
+		JOIN system.permissions p ON p.id = rp.permission_id
+		JOIN system.roles r ON r.id = rp.role_id
+		WHERE p.permission_key LIKE 'system.engine_access_delegation.%'
+		  AND r.role_key <> 'tenant.engine_access_delegation_administrator'`).Scan(&builtinBindings).Error; err != nil || builtinBindings != 0 {
+		t.Fatalf("migration implicitly expanded existing roles: count=%d err=%v", builtinBindings, err)
 	}
 	roleService := iam.NewTenantRoleService(identity, time.Now)
 	permissions := []string{"system.engine_access_delegation.create", "system.engine_access_delegation.read", "system.engine_access_delegation.revoke"}

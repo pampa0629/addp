@@ -1363,6 +1363,20 @@
           "emptyGeometryCount": "空几何数"
         }
       },
+      "previewFailure": {
+        "forbidden": {
+          "title": "无权读取此数据项",
+          "description": "当前账号没有此数据项的有效读取权限。请联系授权管理员核对功能权限和数据授权。"
+        },
+        "unavailable": {
+          "title": "预览服务暂时不可用",
+          "description": "暂时无法完成读取，请稍后重试。这不表示数据为空或没有读取权限。"
+        },
+        "failed": {
+          "title": "数据预览失败",
+          "description": "未能加载预览，请重新选择数据项后重试；若仍失败，请联系管理员。"
+        }
+      },
       "emptyPreview": {
         "database": "展开数据库并选择集合查看数据",
         "schema": "展开 Schema 并选择表查看数据",

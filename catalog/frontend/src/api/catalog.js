@@ -40,6 +40,14 @@ export async function getSharingDecision(id, decisionID) {
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_decisions/${encodeURIComponent(decisionID)}`)
 }
 
+export async function listSharingConfirmations(id, params) {
+  return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_decisions`, { params })
+}
+
+export async function listSharingConfirmationResults(id, decisionID, params) {
+  return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_decisions/${encodeURIComponent(decisionID)}/fulfillments`, { params })
+}
+
 export async function listSharingRequests(id, params) {
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_fulfillments`, { params })
 }

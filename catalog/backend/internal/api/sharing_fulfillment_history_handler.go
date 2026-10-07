@@ -1,6 +1,7 @@
 package api
 
 import (
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -37,20 +38,8 @@ func (h *Handler) ListSharingFulfillments(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, service.ErrInvalidEntryUpdate)
 		return
 	}
-	query, err := url.ParseQuery(c.Request.URL.RawQuery)
+	page, size, err := sharingPagination(c)
 	if err != nil {
-		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
-		return
-	}
-	for key, values := range query {
-		if (key != "page" && key != "page_size") || len(values) != 1 || values[0] == "" {
-			respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
-			return
-		}
-	}
-	page, pageErr := strconv.Atoi(c.DefaultQuery("page", "1"))
-	size, sizeErr := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if pageErr != nil || sizeErr != nil {
 		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
 		return
 	}
@@ -63,6 +52,24 @@ func (h *Handler) ListSharingFulfillments(c *gin.Context) {
 	commonapi.RespondPaginated(c, rows, total, page, size)
 }
 
+func sharingPagination(c *gin.Context) (int, int, error) {
+	query, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil {
+		return 0, 0, service.ErrInvalidPage
+	}
+	for key, values := range query {
+		if (key != "page" && key != "page_size") || len(values) != 1 || values[0] == "" {
+			return 0, 0, service.ErrInvalidPage
+		}
+	}
+	page, pageErr := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, sizeErr := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if pageErr != nil || sizeErr != nil || page <= 0 || size <= 0 || size > 100 || page-1 > math.MaxInt/size {
+		return 0, 0, service.ErrInvalidPage
+	}
+	return page, size, nil
+}
+
 // GetSharingFulfillment godoc
 // @Summary 只读查询本人原办理结果 | Read my original fulfillment outcome
 // @Description 按持久完整绑定读取 System 权威结果；仅本人、当前条目可见、独立办理权及原引擎当前管理范围。pending 表示权威未找到，不等于关闭；accepted 是历史受理而非 Grant。查询不提交、关闭或延长窗口 | Resolve the persisted exact binding against System; requires original operator, current entry visibility, independent fulfillment permission and original-engine management scope. Pending means authoritatively not found, not closed; accepted is historical acceptance, not a Grant. Never submits, closes or renews the window
@@ -71,7 +78,7 @@ func (h *Handler) ListSharingFulfillments(c *gin.Context) {
 // @Security BearerAuth
 // @Param id path string true "条目 UUID | Entry UUID"
 // @Param request_id path string true "原请求 UUID，由本人原请求列表取得 | Original request UUID from my request list"
-// @Success 200 {object} service.SharingFulfillmentHistory "原请求及只读权威结果，不是 Grant | Original request and read-only authoritative outcome, not a Grant"
+// @Success 200 {object} service.SharingFulfillmentHistory "原请求、受理及可空签发历史，不代表当前访问 Allow | Original request, acceptance and nullable historical grant time, not a current access Allow"
 // @Failure 400,401,403,404,409,500,503 {object} map[string]interface{} "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["catalog.entry.read","system.engine_access_fulfillment.create"]

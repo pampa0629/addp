@@ -299,6 +299,13 @@
       <el-empty :description="t('manager.explorer.selectDataToPreview')" />
     </div>
 
+    <!-- 请求失败不是空数据；持久展示直到重新请求或改选资源。 -->
+    <div v-else-if="store.previewError" class="empty-state" role="alert" data-testid="preview-failure">
+      <el-empty :description="t(`manager.explorer.previewFailure.${previewFailureKind}.title`)">
+        <p>{{ t(`manager.explorer.previewFailure.${previewFailureKind}.description`) }}</p>
+      </el-empty>
+    </div>
+
     <!-- 无预览数据 -->
     <div v-else-if="!previewData && !showQuickViewRenderer && !showModel3DTaskPrompt" class="empty-state">
       <el-empty :description="emptyDescription" />
@@ -577,6 +584,12 @@ const props = defineProps({
 
 const emit = defineEmits(['page-change', 'navigate', 'child-change'])
 const store = useExplorerStore()
+const previewFailureKind = computed(() => {
+  const status = store.previewError?.status
+  if (status === 403) return 'forbidden'
+  if (status === 0 || [502, 503, 504].includes(status)) return 'unavailable'
+  return 'failed'
+})
 const activeMultiRefPath = ref('')
 const activeGraphSampleKey = ref('')
 const activeGraphSampleKind = ref('')

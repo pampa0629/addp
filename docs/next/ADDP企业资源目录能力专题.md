@@ -3971,10 +3971,12 @@ Manager 的数据库预览与后台数据剖析共同调用同一 Resolver／数
 - 精确权限只有 `system.engine_access_delegation.read/create/revoke`、`system.engine.read` 和 `iam.tenant_membership.read`，仅允许 Tenant Scope 的 User。
 - 角色模板不扩张旧角色、不创建任何角色分配或引擎管理委派、不授予源数据读取。业务共享确认、批准要求初始化、实际办理、Grant 撤销与 Explicit Deny 仍分别授权。
 - 新增 PostgreSQL 回归证明旧角色／绑定、主体授权版本、角色分配及会话不变，角色精确包含上述五项权限，重复迁移启动无副作用。完整 IAM T2 默认自动发现；既有 `--package migration --test catalog-integrity` 同时执行专职角色发布回归和完整目录校验，不新增并行验证路线。
-- 用户已明确确认将该角色在当前 Tenant 范围长期分配给当前账号 `addp-owner`（ADDP 开发管理员），直到显式撤销。此为正常 IAM 角色分配，不通过迁移回填；角色分配仍按既有规则推进授权版本并使旧会话失效。
-- 当前正式服务的角色列表尚未发布新角色，账号赋权尚未执行。必须先由用户重启 System 加载迁移，再通过现有 IAM 入口确认账号与 Tenant 并分配；不能把代码完成、角色模板发布或前端夹具通过解释为真实账号已赋权。
+- 用户已明确确认将该角色在当前 Tenant 范围长期分配给当前账号 `addp-owner`（ADDP 开发管理员），直到显式撤销。此为正常 IAM 角色分配，不通过迁移回填；角色分配推进授权版本并使旧访问令牌失效。按现行登录规范，仍有效且未撤销的 Refresh Token Family 可自动推进版本并加载新权限，不要求为普通角色变更退出后重新登录。
+- 用户重启后，新角色已在正式服务中发布；通过正常 IAM 角色分配表单准备精确的一项角色，用户确认正式提交并自行完成高风险 MFA 验证。随后角色分配页面确认 `addp-owner` 的新角色为“租户／当前生效／长期有效”。没有修改原有角色，也未通过数据库直接赋权。
+- 同一浏览器随后打开 Business PostgreSQL（引擎 2）详情，已出现“授权管理委派”标签；实际委派列表读取成功并显示 0 条，创建表单可见。只验证入口和读取，没有创建具体委派、批准要求或源数据 Grant；该结果不等于完整数据授权办理验收。截图 `/tmp/addp-delegation-role-assigned.jpg`、`/tmp/addp-engine-delegation-entry-verified.jpg`。
+- 普通角色变更与具体引擎委派变更不能混同：当前引擎访问控制实现对具体委派创建／撤销仍推进接收主体授权版本并撤销其 Token Family，因此委派页面要求接收账号重新登录的提示对应此领域操作，并非普通角色分配的要求。
 
-**下一优先项：** 完成角色门禁后由用户执行 `./scripts/dev/restart.sh -system`；迁移加载后给 `addp-owner` 显式分配该角色并重新登录，核实引擎详情出现“授权管理委派”，再继续正常单表授权体验。
+**下一优先项：** 明确目标引擎的办理账号、委派未来到期时间和原因后，显式创建管理委派；再以户外域一张真实 PostgreSQL 普通表验证业务确认、正式办理及接收账号允许／无授权账号拒绝。创建具体委派前仍须确认精确的账号、目标和期限，不能从角色分配推导默认接收方或默认引擎授权。
 
 **验证记录：**
 
@@ -3984,4 +3986,21 @@ Manager 的数据库预览与后台数据剖析共同调用同一 Resolver／数
 - 实际连接已先用 `scripts/infra/status.sh` 核实为本工作区 `25432/addp_iam_test`。首次完整 migration package 运行因新断言误用数据库默认字符串排序失败；改为显式 `C` 排序后，既有标准入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test catalog-integrity'` 退出码 0，角色向前发布与完整目录回归均通过，没有 Skip。日志 `/tmp/addp-delegation-role-catalog-integrity.log`；首轮日志 `/tmp/addp-delegation-role-migration.log` 不计为整包通过。
 - `make test-changed` 退出码 2：共享测试清单与并行工作区改动扩大 owner 选择，多项 T2 安全连接条件缺失，在预检停止，不计为工作区总门禁通过。日志 `/tmp/addp-delegation-role-changed.log`。本角色的迁移与前端由已有 System IAM／Platform CI 门禁覆盖，不新增 Workflow。
 - `make test-module MODULE=system` 退出码 2，在其先行 `test-platform` 的 Hosted Orchestrator 夹具中有 5 项失败，尚未执行后续模块步骤；不能计为 System 全模块通过。本次导入本机 `.env` 后运行，与干净环境不一致；干净环境通过标准 `make test-orchestrator-online-runner` 复验，60 项全部通过。不修改无关在线验收逻辑。日志 `/tmp/addp-delegation-role-system.log`、`/tmp/addp-delegation-role-online-runner-recheck.log`。
-- 补跑 `make test-go` 首次发现迁移目录的最新版本断言仍为 193，已同步为 194；最终 `make test-go` 退出码 0，全仓 Go T1 通过。日志 `/tmp/addp-delegation-role-go-final.log`。真实 PostgreSQL 仍以上述定向 T2 为准；未执行真实账号赋权或服务 T4。
+- 补跑 `make test-go` 首次发现迁移目录的最新版本断言仍为 193，已同步为 194；最终 `make test-go` 退出码 0，全仓 Go T1 通过。日志 `/tmp/addp-delegation-role-go-final.log`。真实 PostgreSQL 仍以上述定向 T2 为准；当时未执行真实账号赋权或服务 T4，后续真实角色分配与委派入口验证以上述补录为准，不扩展为全链路验收。
+
+### 26.103 正常读取允许／拒绝体验与持久预览错误提示（2026-10-07）
+
+继续首版正常授权体验。本轮只修复 Manager 前端错误状态，不新增或撤销角色、管理委派、批准要求、Grant 或 Deny，不写源数据，不启停服务。
+
+- 原实现仅在预览失败时弹出短暂消息，消息消失后页面退回“暂无可预览数据”。现在保留当前请求的失败状态：403 明确提示“无权读取此数据项”，提醒核对功能权限与数据授权；网络失败及 502／503／504 提示服务暂时不可用，其他错误提示预览失败。成功空结果与请求失败分别展示，不从 403 猜测具体缺少哪一条 Grant。
+- 新请求、清空预览和切换资源会清除旧错误；迟到的旧请求不得覆盖当前资源状态。根预览和容器 child 使用同一请求身份检查，不新增读取路线或自动授权重试。
+- 在用户已登录的 Chrome 无痕窗口以 `outdoor开发者` 复验：选择引擎 2 的 `outdoor.ods_outdoor_persons`（item 10）持续显示读取拒绝；切换到已有读取授权的 `outdoor.ods_outdoor_activities`（item 8）后错误消失，正常显示 6 个字段及 20／2,383 行。这是当前两个目标的真实预览体验，不代表剖析、导出或其他引擎已获验收。截图 `/tmp/addp-outdoor-persons-read-denied-message.png`、`/tmp/addp-outdoor-activities-preview-after-denial-fix.png`。
+
+**验证与 CI：**
+
+- `make test-manager-frontend` 最终退出码 0：69 个文件、286 项单元测试、148 项浏览器测试及生产构建通过。新增单元回归覆盖失败状态、空结果、迟到拒绝和 child 清理；浏览器回归覆盖中英文 403／503／500、刷新保留提示及切换到成功空表。初次新增浏览器夹具未加载表格插件，导致切换后的空表断言失败；修正夹具加载现有表格插件并返回正式 PreviewResult 后，完整门禁通过，未修改生产渲染协议。最终日志 `/tmp/addp-manager-preview-failure-gate.log`。
+- `make test-frontend-ci-registration` 退出码 0，17 项检查通过，21 个前端登记一致；新增测试由既有 Manager 前端 Job 自动发现，无需新增 Workflow。日志 `/tmp/addp-manager-preview-failure-ci-registration.log`。
+- `make test-module MODULE=manager` 因缺少 `MANAGER_POSTGRES_TEST_DSN` 在 T2 预检停止，不计为模块总门禁通过。日志 `/tmp/addp-manager-module-preview-failure-gate.log`。本轮未修改后端、数据库或 API 契约，既有 Manager PostgreSQL CI 门禁继续负责 T2；未运行全平台真实在线验收，不以浏览器夹具替代授权权威验证。
+- `git diff --check` 对本轮前端与预览规范改动通过；用户只需刷新页面，无需为本轮前端改动重启后端。
+
+**下一优先项：** 用同一账号和已授权活动表验证剖析创建、执行及结果读取，再以未授权目标验证拒绝；先完成正常使用闭环，不扩展特殊源端并发场景。

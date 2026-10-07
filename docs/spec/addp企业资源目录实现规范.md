@@ -154,7 +154,7 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 
 新决定在 Catalog 自有事务按条目→当前来源→责任顺序核对版本与来源依据，写入不可变决定及审计并递增条目 version；依赖模块读取在本地事务前完成，不持本地锁进行网络调用。决定绑定完整源路径、当前来源绑定及版本、负责人关系 ID、确认人的 Principal／Tenant Membership／授权版本、接收主体、用途及期限；不保存 Token、Role 或可编辑责任副本。同编号、同确认人、同业务参数重试返回原决定，不再递增版本或审计；换参冲突。该记录不能替代后续正式受理时的当前责任与接收主体核验。
 
-`GET /entries/:id/sharing_decisions/:decision_id` 使用相同功能权限，仅返回当前可见条目下由当前 User 确认的不可变原记录，不进行再次确认、不延期、不返回 System Grant 或受理状态。历史读取不要求 User 仍为当前业务负责人；未找到、跨租户、他人记录或不可见统一 404。生产入口不创建待核清事实、不冻结责任；待核清只在后续真实办理准备时建立。已提交原请求的 System 核清／关闭、可信正式准备、首次受理和 Catalog 自动签发续办已接通；执行侧读取仍须另行贯通后才能宣称数据访问闭环。
+`GET /entries/:id/sharing_decisions/:decision_id` 使用相同功能权限，返回当前可见条目下的不可变原记录：原确认人可读取本人历史，当前有效业务负责人可复核本条目的全部历史。不进行再次确认、不延期、不返回 System Grant 或受理状态；办理及签发历史通过决定下的专用只读结果列表查询。原确认人的历史读取不要求仍为当前业务负责人；未找到、跨租户、超出复核范围或不可见统一 404。生产入口不创建待核清事实、不冻结责任；待核清只在后续真实办理准备时建立。已提交原请求的 System 核清／关闭、可信正式准备、首次受理和 Catalog 自动签发续办已接通；执行侧读取仍须另行贯通后才能宣称数据访问闭环。
 
 共享接收方选择（2026-10-03 已确认）：`GET /entries/:id/sharing_recipient_candidates` 与业务确认使用相同的两个独立功能权限，并核验当前 Tenant User 是本条目的有效业务负责人；条目须可见、active、未弃用且具有 active Meta DataItem 来源。`recipient_type=user|project_group`、`search`、`page`、`page_size` 使用有界分页（每页最多 50 项）。允许选择本 Tenant 的有效账号或项目组，包括确认人未加入的项目组；只返回类型、稳定字符串 ID、名称、编码和状态，不返回成员、角色或数据。System 通过既有专用 Catalog Runtime 组织候选提供最小事实，Catalog 不复制组织；网络调用不持 Catalog 锁，返回前复核同一来源、同一责任关系、可见性和权限期限。候选不是共享决定、批准依据或数据访问权，正式提交仍须重新核验。通用 `/reference-candidates` 不新增项目组枚举，`/me/project-groups` 仍只表达本人有效成员关系；不得借组织管理权限或手填 ID 绕过这一入口。
 
@@ -205,6 +205,12 @@ Meta 和专业来源新建条目时显式写入 `false`；完整责任替换路�
 人类界面（2026-10-03）：数据项详情通过“共享确认与请求” Tab 组合专用接收方候选、显式业务确认、本人原确认查询、正式办理和本人原办理请求查询，不新建独立入口或可编辑决定副本。确认表单要求接收方下拉选择、明确有效期模式和用途；新确认需要当前业务负责人及独立确认 Permission，编目权限不能替代。页面先固定同一次决定编号与参数，再将编号写入公开 URL，随后发送 POST；通信不确定后只允许原参数显式重试。重载按 URL 编号 GET 查询，不从浏览器重构或自动发送决定；本地丢失原参数时不能假造原重试。办理人从本条目分页候选选择决定，以本人 User Token 将原结构化目标交给 System 的 `POST /engines/:id/access_handling_requirement` 只读观察，只有明确的 `catalog` 模式及字符串版本才可显式提交。原请求编号、决定编号及预期版本固定一次，提交前保存原请求编号到公开 URL；重复点击及显式同参重试不换编号、不补新版本，刷新仅查询原请求。批准要求缺失、资格不足或不可达不自动初始化，也不让用户手填 ID 或版本。原请求的列表及结果均只读，查询错误清除旧结果但不伪装为 pending；accepted 不表示实际 Grant 生效。
 
 2026-10-04 自动签发续办：`fulfillment_checks.grant_reconciled_at` 是一次性本地调度终结时间，必须已有 `resolved_at` 且不早于它。两个标记不可清除或改写，原绑定和创建时间始终不可变；新标记不参与责任／来源依据保护，不进入用户 DTO、搜索或授权判定。旧记录新增字段保持 NULL，由恢复消费者查证。前台受理核清后与后台扫描调用同一续办命令；已核清受理但尚未核清自动处理的记录也必须扫描。原回执为 accepted 时先读签发历史，明确未找到才按原参签发；closed、已有签发历史、或签发明确返回原窗口到期／原请求关闭才终结调度。其他失败保留待续办。复用现有一分钟宽限、100 条游标分页、单项 30 秒边界，不刷新原窗口、不保存第二份 Grant、不在历史 GET 中执行续办、不门控 Ready。完整边界见授权上下文规范 5.5.3。
+
+共享历史复核（2026-10-07 已确认）：`GET /entries/:id/sharing_decisions` 提供稳定分页的确认历史，详情仍使用同一路径下的决定编号 GET。两者要求当前 Tenant User、条目可见、`catalog.entry.read` 与 `catalog.sharing_decision.create`；原确认人可读本人记录，当前有效业务负责人可复核本条目的全部历史。仅编目权限、部门或项目组关系不取得该读取资格；移交后的原确认人仍可读本人历史，接任负责人不需要原办理人的功能权限或引擎委派才能复核。过滤在计数和分页之前完成，不以当前来源或原确认期限排除历史。
+
+`GET /entries/:id/sharing_decisions/:decision_id/fulfillments` 在同一复核资格内分页查询该决定对应的办理及签发历史。Catalog 只读本地不可变请求绑定，事务外按完整绑定向 System 查询原受理结果及签发历史，返回前再次核验条目可见性、当前读取权限和责任资格。列表中 `pending` 仅表示 System 明确未找到受理结果，`accepted/closed` 表示历史受理／关闭；可空 `granted_at` 只表示签发历史，不代表当前访问 Allow、未被撤销或安全条件已满足。依赖或绑定失败返回错误，不伪装为未办理、未签发或当前有权限。不创建请求、不关闭、不核清、不签发、不写审计或 Grant 副本。本人原办理结果查询复用同一权威结果解析，并展示签发历史；原办理人的读取守卫不放宽。
+
+共享 Tab 在普通进入条目时加载上述确认列表，选择记录后同步公开 URL 并只读查询原确认及其办理结果；新确认表单与历史记录入口分开。当前业务负责人可以复核他人的历史确认，其他确认人员只看到本人记录。确认、受理和签发分别展示，页面不把历史签发称为当前数据访问已授权。
 
 ### 3.3 个人目录视图、收藏与关注
 
@@ -613,7 +619,9 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | GET | `/reference-candidates` | 按名称分页查询当前可建立语义或责任关联的 owner 候选 |
 | GET | `/entries/:id/sharing_recipient_candidates` | 当前业务负责人按本条目资格选择同 Tenant 的有效账号或项目组最小显示摘要 |
 | POST | `/entries/:id/sharing_decisions` | 显式确认普通只读共享，保存不可变业务决定；不授予源访问 |
-| GET | `/entries/:id/sharing_decisions/:decision_id` | 当前 User 读取本人在可见条目下的原决定 |
+| GET | `/entries/:id/sharing_decisions` | 原确认人分页读取本人记录；当前业务负责人复核本条目全部历史 |
+| GET | `/entries/:id/sharing_decisions/:decision_id` | 在上述复核资格内读取原决定，不重新确认 |
+| GET | `/entries/:id/sharing_decisions/:decision_id/fulfillments` | 动态只读查询原办理及签发历史，不表达当前访问 Allow |
 | GET | `/entries/:id/sharing_decision_candidates` | 有源办理资格的当前 User 读取仍有效的决定摘要，精确解析其接收方名称 |
 | POST | `/entries/:id/sharing_fulfillments` | 根据持久决定和批准要求版本正式准备并触发 System 首次受理；不等于 Grant 已生效 |
 | GET | `/entries/:id/sharing_fulfillments` | 按本人当前原引擎管理范围过滤、分页找回本人原办理请求；不提交或核清 |

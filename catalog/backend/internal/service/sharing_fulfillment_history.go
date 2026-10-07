@@ -36,6 +36,7 @@ type SharingFulfillmentHistory struct {
 	State      string     `json:"state" enums:"pending,accepted,closed"`
 	RecordedAt *time.Time `json:"recorded_at" format:"date-time" extensions:"x-nullable"`
 	Deadline   *time.Time `json:"deadline" format:"date-time" extensions:"x-nullable"`
+	GrantedAt  *time.Time `json:"granted_at" format:"date-time" extensions:"x-nullable"`
 }
 
 const originalFulfillmentEngine = "CAST(request_binding -> 'path' ->> 'engine_id' AS BIGINT)"
@@ -188,24 +189,9 @@ func (s *EntryService) GetSharingFulfillment(ctx context.Context, tenantID int64
 	if err := s.checkFulfillmentHistoryScope(ctx, tenantID, int64(binding.Path.EngineID), operator, userToken); err != nil {
 		return nil, err
 	}
-	if s.sharingFulfillment == nil {
-		return nil, ErrReferenceValidationUnavailable
-	}
-	lookup, err := s.sharingFulfillment.WithTenantID(uint(tenantID)).Resolve(ctx, requestID, binding)
-	if err != nil || lookup == nil || lookup.Found != (lookup.Resolution != nil) {
-		return nil, ErrReferenceValidationUnavailable
-	}
-	result := &SharingFulfillmentHistory{SharingFulfillmentRequest: view, State: "pending"}
-	if lookup.Found {
-		resolution := lookup.Resolution
-		if _, err := runtimeFulfillmentResolution(resolution); err != nil || resolution.RequestID != requestID || resolution.TenantID != tenantID || !equalSharingFulfillmentBinding(binding, resolution.Binding) {
-			return nil, ErrReferenceValidationUnavailable
-		}
-		if resolution.Outcome == "accepted" && (resolution.Deadline.After(resolution.RecordedAt.Add(5*time.Minute)) ||
-			(binding.ExpiresAt != nil && resolution.Deadline.After(*binding.ExpiresAt))) {
-			return nil, ErrReferenceValidationUnavailable
-		}
-		result.State, result.RecordedAt, result.Deadline = resolution.Outcome, &resolution.RecordedAt, resolution.Deadline
+	result, err := s.resolveSharingHistory(ctx, tenantID, check)
+	if err != nil {
+		return nil, err
 	}
 	// Current qualification is distinct from the immutable original operator.
 	// A version change is not permission to replay with altered parameters.
@@ -219,9 +205,100 @@ func (s *EntryService) GetSharingFulfillment(ctx context.Context, tenantID int64
 	if err != nil || !equalSharingFulfillmentBinding(current, binding) || !check.CreatedAt.Equal(view.CreatedAt) {
 		return nil, ErrSharingDecisionConflict
 	}
-	if !lookup.Found && check.ResolvedAt != nil {
+	if result.State == "pending" && check.ResolvedAt != nil {
 		return nil, ErrReferenceValidationUnavailable
 	}
 	// No prepare, close, audit, local settlement write or source Grant here.
 	return result, nil
+}
+
+// A single read-only authority projection serves both the original operator
+// and business review. Its callers enforce their distinct human scopes before
+// and after networking. A historical signature is never a current access Allow.
+func (s *EntryService) resolveSharingHistory(ctx context.Context, tenantID int64, check models.FulfillmentCheck) (*SharingFulfillmentHistory, error) {
+	view, binding, err := fulfillmentRequestView(check)
+	if err != nil {
+		return nil, err
+	}
+	if s.sharingFulfillment == nil {
+		return nil, ErrReferenceValidationUnavailable
+	}
+	remote := s.sharingFulfillment.WithTenantID(uint(tenantID))
+	lookup, err := remote.Resolve(ctx, check.RequestID, binding)
+	if err != nil || lookup == nil || lookup.Found != (lookup.Resolution != nil) {
+		return nil, ErrReferenceValidationUnavailable
+	}
+	result := &SharingFulfillmentHistory{SharingFulfillmentRequest: view, State: "pending"}
+	if !lookup.Found {
+		if check.ResolvedAt != nil {
+			return nil, ErrReferenceValidationUnavailable
+		}
+		return result, nil
+	}
+	resolution := lookup.Resolution
+	if _, err := runtimeFulfillmentResolution(resolution); err != nil || resolution.RequestID != check.RequestID || resolution.TenantID != tenantID || !equalSharingFulfillmentBinding(binding, resolution.Binding) {
+		return nil, ErrReferenceValidationUnavailable
+	}
+	if resolution.Outcome == "accepted" && (resolution.Deadline.After(resolution.RecordedAt.Add(5*time.Minute)) || (binding.ExpiresAt != nil && resolution.Deadline.After(*binding.ExpiresAt))) {
+		return nil, ErrReferenceValidationUnavailable
+	}
+	result.State, result.RecordedAt, result.Deadline = resolution.Outcome, &resolution.RecordedAt, resolution.Deadline
+	if result.State == "accepted" {
+		grant, err := remote.ResolveGrant(ctx, check.RequestID, binding)
+		if err != nil || grant == nil || grant.Found != (grant.Grant != nil) {
+			return nil, ErrReferenceValidationUnavailable
+		}
+		if grant.Found {
+			if grant.Grant.RequestID != check.RequestID || grant.Grant.GrantedAt.Before(resolution.RecordedAt) || grant.Grant.GrantedAt.After(*resolution.Deadline) {
+				return nil, ErrReferenceValidationUnavailable
+			}
+			result.GrantedAt = &grant.Grant.GrantedAt
+		}
+	}
+	return result, nil
+}
+
+func (s *EntryService) ListSharingDecisionFulfillments(ctx context.Context, tenantID int64, access EntryAccess, entryID, decisionID uuid.UUID,
+	auth authorization.AuthContext, page, size int,
+) ([]SharingFulfillmentHistory, int64, error) {
+	principal, _, _, err := sharingConfirmer(auth, tenantID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if s == nil || s.db == nil || entryID == uuid.Nil || decisionID == uuid.Nil || page <= 0 || size <= 0 || size > 100 || page-1 > math.MaxInt/size {
+		return nil, 0, ErrInvalidEntryUpdate
+	}
+	var checks []models.FulfillmentCheck
+	var total int64
+	var decision models.SharingDecision
+	read := func(local *EntryService, owner bool) error {
+		if err := local.sharingHistoryQuery(ctx, tenantID, entryID, principal, owner).Where("id = ?", decisionID).Take(&decision).Error; err != nil {
+			return sharingBasisReadError(err)
+		}
+		query := func() *gorm.DB {
+			return local.db.WithContext(ctx).Model(&models.FulfillmentCheck{}).Where("tenant_id = ? AND catalog_entry_id = ? AND request_binding ->> 'decision_id' = ?", tenantID, entryID, decisionID.String())
+		}
+		if err := query().Count(&total).Error; err != nil {
+			return err
+		}
+		return query().Order("created_at DESC, request_id DESC").Offset((page - 1) * size).Limit(size).Find(&checks).Error
+	}
+	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, read); err != nil {
+		return nil, 0, err
+	}
+	results := make([]SharingFulfillmentHistory, 0, len(checks))
+	for _, check := range checks {
+		result, err := s.resolveSharingHistory(ctx, tenantID, check)
+		if err != nil {
+			return nil, 0, err
+		}
+		results = append(results, *result)
+	}
+	// Do not expose results if ownership or visibility changed during networking.
+	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, func(local *EntryService, owner bool) error {
+		return sharingBasisReadError(local.sharingHistoryQuery(ctx, tenantID, entryID, principal, owner).Where("id = ?", decisionID).Take(&decision).Error)
+	}); err != nil {
+		return nil, 0, err
+	}
+	return results, total, nil
 }

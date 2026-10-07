@@ -23,6 +23,7 @@ export function sharingEligibility(entry, auth) {
     item.role === 'business_owner' && item.subject_type === 'user' && item.status === 'active' && item.subject_id === principal.id
   ))
   return {
+    owner,
     confirm,
     create: confirm && owner && entry?.entry_status === 'active' && entry?.governance_status !== 'deprecated' &&
       entry?.entry_type === 'data_item' && entry?.source?.source_module === 'meta' && entry?.source?.source_status === 'active',

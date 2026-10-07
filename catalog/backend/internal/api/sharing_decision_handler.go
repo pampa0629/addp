@@ -86,9 +86,9 @@ func (h *Handler) CreateSharingDecision(c *gin.Context) {
 	c.JSON(status, result)
 }
 
-// GetSharingDecision reads the caller's immutable confirmation without reconfirming.
-// @Summary 读取本人共享确认记录 | Read own sharing confirmation record
-// @Description 仅返回当前可见条目下由当前 User 确认的原记录；历史读取不要求仍为业务负责人。不重新确认、不延长到期时间、不返回 System Grant 或受理状态 | Return only the current User's original decision under a currently visible entry. Historical reads do not require current business ownership. No reconfirmation, expiry extension, System Grant or acceptance state is produced
+// GetSharingDecision reviews an immutable confirmation without reconfirming.
+// @Summary 读取共享确认记录 | Read a sharing confirmation record
+// @Description 当前可见条目下，原确认人读取本人历史，当前业务负责人可复核全部历史；均须独立共享确认权限。读取不重新确认、不要求办理权、不延长期限、不返回源数据 | Under a currently visible entry, the original confirmer may read own history and the current business owner may review all history, both with independent confirmation permission. No reconfirmation, fulfillment permission requirement, expiry extension or source data
 // @Tags Catalog Sharing
 // @Produce json
 // @Param id path string true "条目 UUID | Entry UUID"
@@ -97,7 +97,7 @@ func (h *Handler) CreateSharingDecision(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "参数无效 | Invalid parameters"
 // @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
 // @Failure 403 {object} map[string]interface{} "缺少独立功能权限 | Missing independent functional permissions"
-// @Failure 404 {object} map[string]interface{} "条目或本人记录不存在或不可见 | Entry or own record missing or invisible"
+// @Failure 404 {object} map[string]interface{} "条目或范围内记录不存在或不可见 | Entry or in-scope record missing or invisible"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["catalog.entry.read","catalog.sharing_decision.create"]
 // @Router /entries/{id}/sharing_decisions/{decision_id} [get]
@@ -110,7 +110,7 @@ func (h *Handler) GetSharingDecision(c *gin.Context) {
 		return
 	}
 	id, err := parseCanonicalUUID(c.Param("id"))
-	if err != nil {
+	if err != nil || c.Request.URL.RawQuery != "" {
 		respondError(c, http.StatusBadRequest, service.ErrInvalidEntryUpdate)
 		return
 	}
@@ -125,4 +125,84 @@ func (h *Handler) GetSharingDecision(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// ListSharingDecisions godoc
+// @Summary 查找共享确认历史 | Find sharing confirmation history
+// @Description 条目可见且具有独立确认权限；原确认人读本人记录，当前业务负责人复核全部历史，先过滤后分页。不发起办理或授予数据访问 | Requires entry visibility and independent confirmation permission. Original confirmers read own records; the current business owner reviews all history, filtered before pagination. Does not initiate fulfillment or grant data access
+// @Tags Catalog Sharing
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "条目 UUID | Entry UUID"
+// @Param page query int false "页码，默认 1 | Page, default 1" default(1)
+// @Param page_size query int false "每页数量，默认 20，最多 100 | Page size, default 20, maximum 100" default(20)
+// @Success 200 {object} object{data=[]service.SharingDecisionResult,total=int64,page=int,page_size=int,total_pages=int} "可复核的确认历史 | Reviewable confirmation history"
+// @Failure 400,401,403,404,500 {object} map[string]interface{} "参数、身份或读取范围错误 | Invalid parameters, identity or read scope"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read","catalog.sharing_decision.create"]
+// @Router /entries/{id}/sharing_decisions [get]
+func (h *Handler) ListSharingDecisions(c *gin.Context) {
+	tenant, ok := commonAuth.TenantIDFromGin(c)
+	auth, authenticated := commonAuth.AuthContextFromGin(c)
+	if !ok || !authenticated {
+		respondError(c, http.StatusUnauthorized, service.ErrUserPrincipalRequired)
+		return
+	}
+	id, err := parseCanonicalUUID(c.Param("id"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidEntryUpdate)
+		return
+	}
+	page, size, err := sharingPagination(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	rows, total, err := h.entries.ListSharingDecisions(c.Request.Context(), tenant, entryAccess(c), id, auth, page, size)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	commonapi.RespondPaginated(c, rows, total, page, size)
+}
+
+// ListSharingDecisionFulfillments godoc
+// @Summary 复核共享确认的办理及签发历史 | Review fulfillment and issuance history for a sharing decision
+// @Description 原确认人或当前业务负责人在条目可见及独立确认权限内，只读查询 System 原受理及签发历史。granted_at 不表达当前访问 Allow；依赖失败返回错误，不伪装为 pending。查询不提交、关闭、核清或签发 | Original confirmer or current business owner, with entry visibility and independent confirmation permission, reads System's original acceptance and issuance history. Granted_at is not a current access Allow; dependency failures never become pending. Does not submit, close, settle or issue
+// @Tags Catalog Sharing
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "条目 UUID | Entry UUID"
+// @Param decision_id path string true "确认 UUID | Decision UUID"
+// @Param page query int false "页码，默认 1 | Page, default 1" default(1)
+// @Param page_size query int false "每页数量，默认 20，最多 100 | Page size, default 20, maximum 100" default(20)
+// @Success 200 {object} object{data=[]service.SharingFulfillmentHistory,total=int64,page=int,page_size=int,total_pages=int} "只读历史，不代表当前数据访问权 | Read-only history, not current data access"
+// @Failure 400,401,403,404,409,500,503 {object} map[string]interface{} "请求、范围、绑定或依赖错误 | Request, scope, binding or dependency error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read","catalog.sharing_decision.create"]
+// @Router /entries/{id}/sharing_decisions/{decision_id}/fulfillments [get]
+func (h *Handler) ListSharingDecisionFulfillments(c *gin.Context) {
+	tenant, ok := commonAuth.TenantIDFromGin(c)
+	auth, authenticated := commonAuth.AuthContextFromGin(c)
+	if !ok || !authenticated {
+		respondError(c, http.StatusUnauthorized, service.ErrUserPrincipalRequired)
+		return
+	}
+	id, err := parseCanonicalUUID(c.Param("id"))
+	decisionID, decisionErr := parseCanonicalUUID(c.Param("decision_id"))
+	if err != nil || decisionErr != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidEntryUpdate)
+		return
+	}
+	page, size, err := sharingPagination(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	rows, total, err := h.entries.ListSharingDecisionFulfillments(c.Request.Context(), tenant, entryAccess(c), id, decisionID, auth, page, size)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	commonapi.RespondPaginated(c, rows, total, page, size)
 }

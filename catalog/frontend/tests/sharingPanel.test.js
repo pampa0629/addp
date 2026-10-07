@@ -5,7 +5,7 @@ import SharingPanel from '../src/components/SharingPanel.vue'
 
 const fixtures = vi.hoisted(() => ({ auth: null, api: Object.fromEntries([
   'createSharingDecision', 'getSharingDecision', 'listSharingRecipients', 'listSharingRequests', 'getSharingRequest',
-  'listSharingDecisions', 'observeSharingRequirement', 'prepareSharingRequest', 'initializeSharingRequirement'
+  'listSharingDecisions', 'observeSharingRequirement', 'prepareSharingRequest', 'initializeSharingRequirement', 'listSharingConfirmations', 'listSharingConfirmationResults'
 ].map(name => [name, vi.fn()])) }))
 vi.mock('../src/store/auth', () => ({ useAuthStore: () => fixtures.auth }))
 vi.mock('../src/api/catalog', () => fixtures.api)
@@ -68,6 +68,8 @@ beforeEach(() => {
     permissions: ['catalog.entry.read', 'catalog.sharing_decision.create', 'system.engine_access_fulfillment.create'],
     hasPermission(permission) { return this.permissions.includes(permission) } })
   fixtures.api.listSharingRequests.mockResolvedValue({ data: [], total: 0 })
+  fixtures.api.listSharingConfirmations.mockResolvedValue({ data: [], total: 0 })
+  fixtures.api.listSharingConfirmationResults.mockResolvedValue({ data: [], total: 0 })
   fixtures.api.listSharingRecipients.mockResolvedValue({ data: [{ id: '60', recipient_type: 'user', name: 'B', status: 'active' }] })
   fixtures.api.listSharingDecisions.mockResolvedValue({ data: [decision], total: 1 })
   fixtures.api.observeSharingRequirement.mockResolvedValue({ mode: 'catalog', requirement_version: '9007199254740993' })
@@ -75,6 +77,49 @@ beforeEach(() => {
 afterEach(() => { mounted.splice(0).forEach(app => app.unmount()); vi.unstubAllGlobals() })
 
 describe('actual sharing panel commands and recovery', () => {
+  it('finds confirmation history from an ordinary entry URL and opens authoritative results without fulfillment permission or a new command', async () => {
+    fixtures.auth.permissions = ['catalog.entry.read', 'catalog.sharing_decision.create']
+    fixtures.api.listSharingConfirmations.mockResolvedValue({ data: [decision], total: 21 })
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    fixtures.api.listSharingConfirmationResults.mockResolvedValue({ data: [{ request_id: id, decision_id: decision.id, state: 'accepted', granted_at: '2026-10-07T04:00:00Z' }], total: 1 })
+    const view = mount(); await settle()
+    expect(fixtures.api.listSharingConfirmations).toHaveBeenCalledWith('entry', { page: 1, page_size: 20 })
+    await view.button('sharing-open-confirmation').props.onClick(); await settle()
+    expect(view.recordDecision).toHaveBeenCalledWith(decision.id)
+    expect(fixtures.api.getSharingDecision).toHaveBeenCalledWith('entry', decision.id)
+    expect(fixtures.api.listSharingConfirmationResults).toHaveBeenCalledWith('entry', decision.id, { page: 1, page_size: 20 })
+    expect(view.button('sharing-prepare')).toBeUndefined()
+    expect(view.nodes().find(node => node.props?.['data-testid'] === 'sharing-results').props.data[0].granted_at).toBeTruthy()
+    const paging = view.nodes().find(node => node.props?.['data-testid'] === 'sharing-confirmation-pagination')
+    await paging.props.onCurrentChange(2); await settle()
+    expect(fixtures.api.listSharingConfirmations).toHaveBeenLastCalledWith('entry', { page: 2, page_size: 20 })
+    expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    await view.button('sharing-new-confirmation').props.onClick(); await settle()
+    expect(view.state.decisionID).toBe('')
+    expect(view.button('sharing-confirm')).toBeDefined()
+  })
+  it('clears issuance results on refresh failure instead of claiming no request or current access', async () => {
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    fixtures.api.listSharingConfirmationResults.mockResolvedValueOnce({ data: [{ request_id: id, decision_id: decision.id, state: 'accepted', granted_at: '2026-10-07T04:00:00Z' }], total: 1 }).mockRejectedValue(new Error('offline'))
+    const view = mount(decision.id); await settle()
+    await view.button('sharing-refresh-results').props.onClick(); await settle()
+    expect(view.nodes().find(node => node.props?.['data-testid'] === 'sharing-results').props.data).toEqual([])
+    expect(view.nodes().some(node => node.props?.title === 'catalog.sharing.queryFailed')).toBe(true)
+    expect(view.nodes().some(node => node.props?.description === 'catalog.sharing.noResults')).toBe(false)
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+  })
+  it('ignores old confirmation lists and results after confirmation permission is withdrawn', async () => {
+    let resolveList, resolveResults
+    fixtures.api.listSharingConfirmations.mockReturnValueOnce(new Promise(done => { resolveList = done })).mockResolvedValue({ data: [], total: 0 })
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    fixtures.api.listSharingConfirmationResults.mockReturnValue(new Promise(done => { resolveResults = done }))
+    const view = mount(decision.id); await settle()
+    fixtures.auth.permissions = []; await settle()
+    resolveList({ data: [decision], total: 1 }); resolveResults({ data: [{ decision_id: decision.id, state: 'accepted' }], total: 1 }); await settle()
+    expect(view.nodes().some(node => node.props?.['data-testid'] === 'sharing-confirmations' || node.props?.['data-testid'] === 'sharing-results')).toBe(false)
+    expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
+  })
   const decisionDropdown = view => view.nodes().find(node => node.tag === 'select' && node.props.placeholder === 'catalog.sharing.selectDecision')
   async function selectDecision(view) {
     const dropdown = decisionDropdown(view)
@@ -200,7 +245,7 @@ describe('actual sharing panel commands and recovery', () => {
     fixtures.auth.permissions = ['catalog.entry.read', 'catalog.sharing_decision.create']; await settle()
     resolve({ mode: 'catalog', requirement_version: '1' }); await pending; await settle()
     expect(view.button('sharing-prepare')).toBeUndefined()
-    expect(view.nodes().some(node => node.tag === 'table')).toBe(false)
+    expect(view.nodes().some(node => node.tag === 'table' && !node.props['data-testid'])).toBe(false)
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
   })
   it.each([{ mode: 'independent', requirement_version: '1' }, { mode: 'catalog', requirement_version: 1 }, { mode: 'catalog', requirement_version: '0' }])('rejects an unusable requirement without a new command: %j', async requirement => {

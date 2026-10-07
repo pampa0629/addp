@@ -16,7 +16,7 @@ import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules
 import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 import { transferEntryResponsibilities } from '../src/api/catalog'
-import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement } from '../src/api/catalog'
+import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
 import { serializeApprovalInitialization } from '../src/utils/sharingConfirmation'
 
 describe('catalog frontend API paths', () => {
@@ -53,11 +53,15 @@ describe('catalog frontend API paths', () => {
     await createSharingDecision('entry/id', payload)
     await listSharingRecipients('entry/id', { recipient_type: 'project_group', page: 1 })
     await getSharingDecision('entry/id', 'decision/id')
+    await listSharingConfirmations('entry/id', { page: 1, page_size: 20 })
+    await listSharingConfirmationResults('entry/id', 'decision/id', { page: 2, page_size: 20 })
     await listSharingRequests('entry/id', { page: 2, page_size: 20 })
     await getSharingRequest('entry/id', 'request/id')
     expect(client.post).toHaveBeenCalledExactlyOnceWith('/catalog/entries/entry%2Fid/sharing_decisions', payload)
     expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_recipient_candidates', { params: { recipient_type: 'project_group', page: 1 } })
     expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_decisions/decision%2Fid')
+    expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_decisions', { params: { page: 1, page_size: 20 } })
+    expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_decisions/decision%2Fid/fulfillments', { params: { page: 2, page_size: 20 } })
     expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_fulfillments', { params: { page: 2, page_size: 20 } })
     expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_fulfillments/request%2Fid')
   })

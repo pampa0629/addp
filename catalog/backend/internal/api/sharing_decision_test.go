@@ -223,12 +223,32 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	}
 	request(http.MethodPost, path, strings.TrimSuffix(longBody, "}")+`,"expires_at":null}`, http.StatusOK)
 	request(http.MethodGet, path+"/"+longID.String(), "", http.StatusOK)
+	var decisionPage struct {
+		Data  []service.SharingDecisionResult `json:"data"`
+		Total int64                           `json:"total"`
+	}
+	listed := request(http.MethodGet, path+"?page=1&page_size=1", "", http.StatusOK)
+	if err := json.Unmarshal([]byte(listed), &decisionPage); err != nil || decisionPage.Total != 2 || len(decisionPage.Data) != 1 {
+		t.Fatalf("confirmation history=%s err=%v", listed, err)
+	}
+	request(http.MethodGet, path+"/"+longID.String()+"/fulfillments", "", http.StatusOK)
+	for _, query := range []string{"?page=0", "?page_size=101", "?page=1&page=2", "?unknown=1", "?page=", "?page=%zz"} {
+		request(http.MethodGet, path+query, "", http.StatusBadRequest)
+		request(http.MethodGet, path+"/"+longID.String()+"/fulfillments"+query, "", http.StatusBadRequest)
+	}
 	user = "41"
+	listed = request(http.MethodGet, path, "", http.StatusOK)
+	if err := json.Unmarshal([]byte(listed), &decisionPage); err != nil || decisionPage.Total != 0 || len(decisionPage.Data) != 0 {
+		t.Fatalf("other confirmer history leaked: %s", listed)
+	}
+	request(http.MethodGet, path+"/"+longID.String()+"/fulfillments", "", http.StatusNotFound)
 	request(http.MethodGet, path+"/"+decisionID.String(), "", http.StatusNotFound)
 	tenant = "8"
 	request(http.MethodGet, path+"/"+decisionID.String(), "", http.StatusNotFound)
 	tenant, user = "7", "40"
 	permissions = []string{"catalog.entry.read"}
+	request(http.MethodGet, path, "", http.StatusForbidden)
+	request(http.MethodGet, path+"/"+longID.String()+"/fulfillments", "", http.StatusForbidden)
 	request(http.MethodGet, path+"/"+decisionID.String(), "", http.StatusForbidden)
 	candidatesPath := "/api/v1/catalog/entries/" + id.String() + "/sharing_decision_candidates"
 	request(http.MethodGet, candidatesPath, "", http.StatusForbidden)

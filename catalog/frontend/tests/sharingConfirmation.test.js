@@ -32,10 +32,10 @@ describe('explicit human sharing confirmation', () => {
     expect(() => captureSharingRequest({ ...candidate, target: { ...candidate.target, engine_id: 9007199254740993 } }, requirement, id)).toThrow()
   })
   it('keeps read, confirmation and fulfillment permissions independent of curation and responsibility', () => {
-    expect(sharingEligibility(entry, auth(['catalog.entry.read', 'catalog.entry.update']))).toEqual({ confirm: false, create: false, history: false })
-    expect(sharingEligibility(entry, auth(['catalog.entry.read', 'catalog.sharing_decision.create']))).toEqual({ confirm: true, create: true, history: false })
-    expect(sharingEligibility(entry, auth(['catalog.entry.read', 'system.engine_access_fulfillment.create']))).toEqual({ confirm: false, create: false, history: true })
-    expect(sharingEligibility({ ...entry, governance_status: 'deprecated' }, auth(['catalog.entry.read', 'catalog.sharing_decision.create', 'system.engine_access_fulfillment.create']))).toEqual({ confirm: true, create: false, history: true })
+    expect(sharingEligibility(entry, auth(['catalog.entry.read', 'catalog.entry.update']))).toEqual({ owner: true, confirm: false, create: false, history: false })
+    expect(sharingEligibility(entry, auth(['catalog.entry.read', 'catalog.sharing_decision.create']))).toEqual({ owner: true, confirm: true, create: true, history: false })
+    expect(sharingEligibility(entry, auth(['catalog.entry.read', 'system.engine_access_fulfillment.create']))).toEqual({ owner: true, confirm: false, create: false, history: true })
+    expect(sharingEligibility({ ...entry, governance_status: 'deprecated' }, auth(['catalog.entry.read', 'catalog.sharing_decision.create', 'system.engine_access_fulfillment.create']))).toEqual({ owner: true, confirm: true, create: false, history: true })
     const another = auth(['catalog.entry.read', 'catalog.sharing_decision.create']); another.authContext.principal.id = '51'
     expect(sharingEligibility(entry, another)).toMatchObject({ confirm: true, create: false })
   })

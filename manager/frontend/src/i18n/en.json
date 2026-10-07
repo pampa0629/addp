@@ -1363,6 +1363,20 @@
           "emptyGeometryCount": "Empty Geometries"
         }
       },
+      "previewFailure": {
+        "forbidden": {
+          "title": "No permission to read this data item",
+          "description": "Your account does not have effective read access to this data item. Contact an authorization administrator to check functional permissions and data grants."
+        },
+        "unavailable": {
+          "title": "Preview service temporarily unavailable",
+          "description": "The read request could not be completed. Please try again later. This does not mean the data is empty or read access is denied."
+        },
+        "failed": {
+          "title": "Data preview failed",
+          "description": "The preview could not be loaded. Select the data item again to retry. If the problem persists, contact an administrator."
+        }
+      },
       "emptyPreview": {
         "database": "Expand the database and select a collection to preview data",
         "schema": "Expand the schema and select a table to preview data",

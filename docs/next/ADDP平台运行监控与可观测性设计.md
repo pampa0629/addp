@@ -1014,3 +1014,47 @@ Hosted 验收期间，同提交 Platform CI 的 Monitor T3 暴露既有自动刷
 - 已查看九项页面恢复截图，显示有效 CPU 卡片、采样/评估时间、CPU 趋势选择和关闭刷新状态；趋势曲线的数据及恢复由实际响应和浏览器 DOM 断言验证。独立退出汇总 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`；25 个下载产物未发现环境凭据文件、私钥、完整 opaque Token 或 MFA enrollment URI，私有 Playwright 登录输出没有上传。
 
 本批已完成九项节点资源的 CPU 忙碌率、趋势及 T0/T1/T2/T3/T4 证据闭合。生产 T5、文件系统/磁盘/网络 IO、容器归属及统一平台告警仍未完成；默认 `make test-changed` 的跨 owner 数据库预检失败单独计量，不因本批标准入口通过而改记为成功。下一步优先细化文件系统的设备/挂载点维度、排除规则及多序列预算，再交付磁盘容量与趋势。最终收尾只同步本节和 Monitor 导航的验收事实，不改变已验证实现。
+
+### 10.28 文件系统容量与趋势（契约草案，待确认展示口径）
+
+本批延续已确认的平台节点资源观测范围，由节点 node_exporter 提供文件系统事实、Monitor 查询和展示；不修改 IAM、System 节点台账或 Tenant 数据权限。这里展示的是文件系统挂载视图，不建立物理磁盘、卷或分区台账。设备名不是全局身份，同一文件系统可能有多个绑定挂载，也可能被多个节点访问；不把各行相加作为节点或平台的物理总容量，不根据挂载路径推断租户归属。
+
+实施前有两处会改变业务结果的口径需要确认，其余技术边界如下。该草案不表示新增指标已发布或测试范围已经扩展。
+
+**一、挂载维度与采集范围**
+
+每条观测使用既有 `node_id` 与来源中的 `device`、`mountpoint`、`fstype` 共同区分。同设备的不同挂载点分别展示，保留来源字符串，不把路径规整成另一份身份。该组合只区分当前和历史观测序列，不保证设备路径复用后仍是同一块物理磁盘。
+
+建议沿用锁定 node_exporter v1.12.1 的默认排除范围，并在唯一部署配置中显式固定对应规则：排除 `/dev`、`/proc`、`/sys`、运行凭据及 Docker/容器存储内部子目录，排除 proc、sysfs、overlay 等来源定义的文件系统类型；不另行硬编码 ext4/xfs 类型白名单。来源默认仍允许 tmpfs 和网络文件系统，因此建议表格保留这些挂载并展示类型，不能把其容量标为本机物理磁盘容量。若首期只要本地持久文件系统，需要另行确定如何识别远端、内存及特殊文件系统，不能仅靠设备名是否以 `/dev/` 开头判断。固定版本的 [Linux 排除规则与 statfs 实现](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_linux.go) 和 [文件系统指标定义](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/filesystem_common.go) 是本批字段来源。
+
+**二、容量指标与使用率口径**
+
+建议首期固定新增以下五项，不在本批引入 inode、磁盘 IO 或物理容量汇总：
+
+| 目录键 | 单位 | 口径 |
+| --- | --- | --- |
+| `node.filesystem.total_bytes` | bytes | `node_filesystem_size_bytes`，文件系统总容量 |
+| `node.filesystem.free_bytes` | bytes | `node_filesystem_free_bytes`，包括保留空间在内的空闲容量 |
+| `node.filesystem.available_bytes` | bytes | `node_filesystem_avail_bytes`，普通用户可用容量 |
+| `node.filesystem.used_bytes` | bytes | 同次采样的 `total - free` |
+| `node.filesystem.used_percent` | percent | 建议 `100 * used / (used + available)`，页面明确标注“可用容量使用率” |
+
+使用率建议采用 GNU `df` 的非特权可用容量分母，但保留小数，不采用其整数向上取整的显示方式。另一种合理口径是 `100 * used / total`，应标注“总容量占用率”；两者因保留空间而不同，不能混用。例如总量 100 GiB、空闲 30 GiB、普通用户可用 25 GiB，已用均为 70 GiB，两种比例分别为 73.68% 与 70%。[GNU Coreutils 使用率计算](https://github.com/coreutils/coreutils/blob/master/src/df.c) 明确使用 `used + available` 作为分母。
+
+容量及派生值必须属于同一节点、同一挂载维度、同次来源采样；趋势在每个评估点使用当时的容量，不能使用当前总量回算历史。采样值有限且满足 `0 <= available <= free <= total` 才生成有效容量；使用率分母为零时返回 `no_data`，不伪造 0 或做 clamp。来源 `device_error` 表示挂载已知但容量读取失败时保留挂载维度和空值；不公开其原始错误字符串，也不把读失败当成挂载不存在。
+
+**三、唯一 API 与多序列预算**
+
+沿用既有即时和趋势 API、当前 User 节点授权及 Monitor-owned CAS 查询预算，不新增文件系统专用路由或任意 PromQL 入口。系列增加必填的受控 `dimensions`：原九项标量为 `{}`；有效文件系统系列只允许 `device`、`mountpoint`、`fstype` 三项。查询可提供完整的三项精确选择器，必须一起出现且请求包含文件系统指标；不支持正则、自定义标签或不完整选择器。没有挂载证据时，文件系统目录返回带空维度的全空状态系列，页面展示缺失状态，不生成虚构的挂载行；已有精确选择器的空结果保留其已知维度。
+
+预算不因新增维度而放宽。设一次请求包含 `S` 个标量和 `F` 个文件系统目录键：无精确选择器时，允许的挂载组上限为 `floor((max_series - S) / F)`，输出序列上界据此在请求前确定；精确选择器的挂载组上限为 1。趋势步长按序列上界和 `max_total_points` 提前规划，再检查实际结果的挂载组、序列及点数；历史窗口中出现过的挂载也计入，不能只按当前挂载数量预算。预算不足返回既有 422，不静默截断或自动只选第一个挂载。Prometheus 内部值、采样时间及挂载存在证据分别计入有界传输校验，公开输出预算仍按观测系列计量。
+
+默认预算 `max_metrics=12`、`max_series=100` 保持不变。原九项和新增五项不合并成超额的十四项请求；页面一轮依次查询九项概览、五项文件系统表及当前选中的一项趋势。文件系统表的独立预算或来源错误不能清除已经有效的概览；身份、权限及节点变化仍取消整轮并拒绝迟到响应。
+
+**四、页面、验收与未完成范围**
+
+既有节点资源详情增加挂载表，展示设备、挂载点、类型、总量、已用、空闲、普通用户可用、所选使用率及采样状态。选择一行查看趋势时携带完整维度；URL 恢复使用同一精确选择器，趋势仍锚定本轮服务端 end，不猜根挂载或默认第一行。复用现有刷新生命周期、主题、格式器和共享图表。
+
+实施前确认现有登记覆盖：资源查询目录及唯一 node-metrics 部署文件归 `make test-monitor-metrics`（T1/T2、锁定 promtool 与真实来源）；服务与预算复用 `make test-monitor-postgres`；页面沿 `make test-monitor-frontend` 的 T1/T3 扩散至 `make test-console-frontend`，登记由 `make test-frontend-ci-registration` 检查。API 同步双语 Swagger 和路由覆盖；Online 协议回归归 `make test-node-metrics-online-runner`，真实链路沿既有 Hosted `platform-node-metrics` suite。不新增永久入口或工作流。
+
+必须覆盖重复/绑定挂载、未知标签、保留空间差异、异常与缺失值、容量变化、挂载出现/消失、挂载错误、预算溢出与长窗口步长、精确选择器及 URL 恢复、自动刷新与概览隔离。T2 使用本轮独立来源容器，不冒充物理宿主容量证据；真实 Hosted T4 仅在同一一次性节点增加五项容量及挂载趋势读取，原身份、预算用途、租户隔离与全部销毁要求不变。现行测试规范的管理员例外仍仅覆盖九项，新增读取须在用户确认本批范围后同步该规范，再执行 Hosted。生产 T5、物理宿主挂载、inode、磁盘 IO、网络 IO 和全局容量汇总不计为本批完成。

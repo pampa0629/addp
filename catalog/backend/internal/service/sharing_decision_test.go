@@ -34,7 +34,7 @@ func (r *fakeSharingTargetResolver) ResolveSharingTarget(_ context.Context, tena
 }
 
 func sharingAuth() authorization.AuthContext {
-	return authtest.NewTenantUserAuthContext("7", "40", []string{"catalog.entry.read", "catalog.sharing_decision.create"})
+	return authtest.NewTenantUserAuthContext("7", "40", []string{"catalog.entry.read", "catalog.inventory.read", "catalog.sharing_decision.create"})
 }
 
 func seedSharingEntry(t *testing.T, db *gorm.DB) (models.Entry, SharingDecisionInput) {

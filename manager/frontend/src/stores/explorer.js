@@ -50,6 +50,7 @@ export const useExplorerStore = defineStore('explorer', {
 
     // 预览数据
     previewData: null,
+    previewError: null,
     activeChildPreviewData: null,
     previewLoading: false,
     childPreviewLoading: false,
@@ -380,6 +381,14 @@ export const useExplorerStore = defineStore('explorer', {
       const normalizedNestedChildPath = nestedChildPath || ''
       const isChildPreview = Boolean(normalizedChildName)
       const requestSeq = isChildPreview ? ++this.childPreviewRequestSeq : ++this.previewRequestSeq
+      const isCurrentRequest = () => (
+        requestSeq === (isChildPreview ? this.childPreviewRequestSeq : this.previewRequestSeq) &&
+        this.selectedLocator === locator &&
+        this.selectedChildName === normalizedChildName &&
+        this.selectedChildKey === normalizedChildKey &&
+        this.selectedRefPath === normalizedRefPath &&
+        this.selectedNestedChildPath === normalizedNestedChildPath
+      )
 
       this.selectedLocator = locator
       this.pagination.page = page
@@ -387,6 +396,7 @@ export const useExplorerStore = defineStore('explorer', {
       this.selectedChildKey = normalizedChildKey
       this.selectedRefPath = normalizedRefPath
       this.selectedNestedChildPath = normalizedNestedChildPath
+      this.previewError = null
       if (isChildPreview) {
         this.activeChildPreviewData = null
         this.childPreviewLoading = true
@@ -437,25 +447,13 @@ export const useExplorerStore = defineStore('explorer', {
         // createAPIClient 已经抽取过 HTTP response.data，这里只在确实存在 PreviewResult.data 时再拆包。
         const preview = response?.preview_type && response?.data ? response.data : (response?.data || response)
         if (isChildPreview) {
-          if (
-            requestSeq !== this.childPreviewRequestSeq ||
-            this.selectedLocator !== locator ||
-            this.selectedChildName !== normalizedChildName ||
-            this.selectedRefPath !== normalizedRefPath ||
-            this.selectedNestedChildPath !== normalizedNestedChildPath
-          ) {
+          if (!isCurrentRequest()) {
             return null
           }
           this.activeChildPreviewData = preview
           return preview
         }
-        if (
-          requestSeq !== this.previewRequestSeq ||
-          this.selectedLocator !== locator ||
-          this.selectedChildName !== normalizedChildName ||
-          this.selectedRefPath !== normalizedRefPath ||
-          this.selectedNestedChildPath !== normalizedNestedChildPath
-        ) {
+        if (!isCurrentRequest()) {
           return null
         }
         this.previewData = preview
@@ -465,6 +463,8 @@ export const useExplorerStore = defineStore('explorer', {
         }
         return this.previewData
       } catch (error) {
+        if (!isCurrentRequest()) return null
+        this.previewError = { status: error.response?.status || 0 }
         console.error('加载预览失败:', error)
         throw error
       } finally {
@@ -584,6 +584,7 @@ export const useExplorerStore = defineStore('explorer', {
       this.selectedRefPath = ''
       this.selectedNestedChildPath = ''
       this.previewData = null
+      this.previewError = null
       this.activeChildPreviewData = null
       this.previewLoading = false
       this.childPreviewLoading = false

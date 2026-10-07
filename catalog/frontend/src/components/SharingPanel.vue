@@ -2,6 +2,22 @@
   <section class="sharing-panel" data-testid="catalog-sharing-panel">
     <el-alert type="info" :closable="false" show-icon :title="t('catalog.sharing.boundary')" />
     <el-card v-if="eligibility.confirm" shadow="never">
+      <template #header><div class="record-heading"><strong>{{ t('catalog.sharing.confirmationsTitle') }}</strong>
+        <el-button data-testid="sharing-refresh-history" :loading="confirmationsLoading" @click="loadConfirmations">{{ t('catalog.common.refresh') }}</el-button>
+      </div></template>
+      <el-alert type="info" :closable="false" :title="t('catalog.sharing.reviewScope')" />
+      <el-alert v-if="confirmationsError" type="error" :closable="false" :title="confirmationsError" />
+      <el-table data-testid="sharing-confirmations" :data="confirmations" v-loading="confirmationsLoading">
+        <el-table-column prop="id" :label="t('catalog.sharing.decisionID')" min-width="240" />
+        <el-table-column :label="t('catalog.sharing.recipient')" min-width="130"><template #default="{ row }">{{ t(`catalog.sharing.${row.recipient_type}`) }} · {{ row.recipient_id }}</template></el-table-column>
+        <el-table-column :label="t('catalog.sharing.confirmedAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column>
+        <el-table-column :label="t('catalog.sharing.expiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
+        <el-table-column width="140"><template #default="{ row }"><el-button data-testid="sharing-open-confirmation" link type="primary" :disabled="saving || (!!attempt && !confirmation)" @click="openConfirmation(row.id)">{{ t('catalog.sharing.viewConfirmation') }}</el-button></template></el-table-column>
+      </el-table>
+      <el-empty v-if="!confirmationsLoading && !confirmationsError && !confirmationTotal" :description="t('catalog.sharing.noConfirmations')" />
+      <el-pagination data-testid="sharing-confirmation-pagination" layout="prev, pager, next, total" :current-page="confirmationPage" :page-size="20" :total="confirmationTotal" @current-change="changeConfirmationPage" />
+    </el-card>
+    <el-card v-if="eligibility.confirm" shadow="never">
       <template #header><strong>{{ t('catalog.sharing.confirmTitle') }}</strong></template>
       <el-alert v-if="!eligibility.create" type="info" :closable="false" :title="t('catalog.sharing.ownerRequired')" />
       <el-alert v-if="confirmationError" type="error" :closable="false" :title="confirmationError" />
@@ -39,13 +55,29 @@
       <div v-if="decisionID" class="record-heading">
         <span class="break-all">{{ t('catalog.sharing.decisionID') }}: {{ decisionID }}</span>
         <el-button data-testid="sharing-query-confirmation" :loading="confirmationLoading" @click="refreshConfirmation">{{ t('catalog.sharing.refreshConfirmation') }}</el-button>
+        <el-button v-if="eligibility.create" data-testid="sharing-new-confirmation" :disabled="saving || (!!attempt && !confirmation)" @click="openConfirmation('')">{{ t('catalog.sharing.newConfirmation') }}</el-button>
       </div>
       <el-descriptions v-if="confirmation" :column="1" border>
+        <el-descriptions-item :label="t('catalog.sharing.confirmedAt')">{{ formatTime(confirmation.created_at) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.target')">{{ targetLabel(confirmation.target) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.recipient')">{{ t(`catalog.sharing.${confirmation.recipient_type}`) }} · {{ confirmation.recipient_id }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.expiry')">{{ expiryLabel(confirmation) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.reason')">{{ confirmation.reason }}</el-descriptions-item>
       </el-descriptions>
+      <template v-if="confirmation">
+        <div class="record-heading"><strong>{{ t('catalog.sharing.resultsTitle') }}</strong>
+          <el-button data-testid="sharing-refresh-results" :loading="resultsLoading" @click="loadConfirmationResults">{{ t('catalog.common.refresh') }}</el-button></div>
+        <el-alert type="info" :closable="false" :title="t('catalog.sharing.issuanceBoundary')" />
+        <el-alert v-if="resultsError" type="error" :closable="false" :title="resultsError" />
+        <el-table data-testid="sharing-results" :data="results" v-loading="resultsLoading">
+          <el-table-column prop="request_id" :label="t('catalog.sharing.requestID')" min-width="240" />
+          <el-table-column :label="t('catalog.sharing.acceptance')" min-width="240"><template #default="{ row }">{{ t(`catalog.sharing.state.${row.state}`) }}</template></el-table-column>
+          <el-table-column :label="t('catalog.sharing.recordedAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.recorded_at) }}</template></el-table-column>
+          <el-table-column :label="t('catalog.sharing.issuance')" min-width="210"><template #default="{ row }">{{ row.granted_at ? t('catalog.sharing.issued') + ' · ' + formatTime(row.granted_at) : t('catalog.sharing.noIssuance') }}</template></el-table-column>
+        </el-table>
+        <el-empty v-if="!resultsLoading && !resultsError && !resultsTotal" :description="t('catalog.sharing.noResults')" />
+        <el-pagination data-testid="sharing-results-pagination" layout="prev, pager, next, total" :current-page="resultsPage" :page-size="20" :total="resultsTotal" @current-change="changeResultsPage" />
+      </template>
     </el-card>
 
     <el-card v-if="eligibility.history" shadow="never">
@@ -110,7 +142,9 @@
           <el-descriptions-item :label="t('catalog.sharing.target')">{{ targetLabel(request.target) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.recordedAt')">{{ formatTime(request.recorded_at) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.deadline')">{{ formatTime(request.deadline) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.sharing.issuance')">{{ request.granted_at ? t('catalog.sharing.issued') + ' · ' + formatTime(request.granted_at) : t('catalog.sharing.noIssuance') }}</el-descriptions-item>
         </el-descriptions>
+        <el-alert type="info" :closable="false" :title="t('catalog.sharing.issuanceBoundary')" />
       </div>
     </el-card>
     <el-empty v-if="!eligibility.confirm && !eligibility.history" :description="t('catalog.sharing.noPermission')" />
@@ -121,7 +155,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
-import { createSharingDecision, getSharingDecision, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
+import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
 import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, validateHandlingRequirement, serializeApprovalInitialization } from '../utils/sharingConfirmation'
 
 const props = defineProps({ entry: { type: Object, required: true }, decisionID: { type: String, default: '' }, recordDecision: { type: Function, required: true }, requestID: { type: String, default: '' }, recordRequest: { type: Function, required: true } })
@@ -140,6 +174,9 @@ const recipients = ref([]), recipientLoading = ref(false), recipientError = ref(
 const attempt = ref(null), saving = ref(false), confirmation = ref(null), confirmationError = ref(''), confirmationLoading = ref(false)
 const history = ref([]), page = ref(1), total = ref(0), historyLoading = ref(false), historyError = ref('')
 const request = ref(null), requestLoading = ref(false), requestError = ref('')
+const confirmations = ref([]), confirmationPage = ref(1), confirmationTotal = ref(0), confirmationsLoading = ref(false), confirmationsError = ref('')
+const results = ref([]), resultsPage = ref(1), resultsTotal = ref(0), resultsLoading = ref(false), resultsError = ref('')
+let confirmationsSequence = 0, resultsSequence = 0
 let generation = 0, recipientSequence = 0, historySequence = 0, requestSequence = 0, confirmationSequence = 0, candidateSequence = 0, requirementSequence = 0
 const message = error => error?.response?.data?.error || t('catalog.sharing.queryFailed')
 const formatTime = value => value ? new Date(value).toLocaleString(locale.value) : '—'
@@ -241,7 +278,7 @@ async function submitConfirmation() {
     await props.recordDecision(attempt.value.decision_id)
     if (epoch !== generation) return
     const result = await createSharingDecision(props.entry.id, attempt.value)
-    if (epoch === generation) confirmation.value = result
+    if (epoch === generation) { confirmation.value = result; loadConfirmations(); loadConfirmationResults() }
   } catch (error) { if (epoch === generation) confirmationError.value = message(error) }
   finally { if (epoch === generation) saving.value = false }
 }
@@ -250,12 +287,46 @@ async function refreshConfirmation() {
   if (!props.decisionID || !eligibility.value.confirm) return
   const seq = ++confirmationSequence, epoch = generation
   confirmation.value = null; confirmationError.value = ''; confirmationLoading.value = true
+  clearConfirmationResults(); resultsPage.value = 1
   try {
     const result = await getSharingDecision(props.entry.id, props.decisionID)
-    if (seq === confirmationSequence && epoch === generation) confirmation.value = result
+    if (result.id !== props.decisionID) throw new Error('invalid confirmation response')
+    if (seq === confirmationSequence && epoch === generation) { confirmation.value = result; loadConfirmationResults() }
   } catch (error) { if (seq === confirmationSequence && epoch === generation) confirmationError.value = message(error) }
   finally { if (seq === confirmationSequence && epoch === generation) confirmationLoading.value = false }
 }
+
+async function loadConfirmations() {
+  if (!eligibility.value.confirm) return
+  const seq = ++confirmationsSequence, epoch = generation
+  confirmations.value = []; confirmationTotal.value = 0; confirmationsError.value = ''; confirmationsLoading.value = true
+  try {
+    const result = await listSharingConfirmations(props.entry.id, { page: confirmationPage.value, page_size: 20 })
+    if (seq === confirmationsSequence && epoch === generation) { confirmations.value = result.data; confirmationTotal.value = result.total }
+  } catch (error) { if (seq === confirmationsSequence && epoch === generation) confirmationsError.value = message(error) }
+  finally { if (seq === confirmationsSequence && epoch === generation) confirmationsLoading.value = false }
+}
+function changeConfirmationPage(value) { confirmationPage.value = value; loadConfirmations() }
+async function openConfirmation(id) {
+  if (saving.value || (attempt.value && !confirmation.value)) return
+  if (id && id === props.decisionID) { await refreshConfirmation(); return }
+  await props.recordDecision(id)
+}
+function clearConfirmationResults() {
+  resultsSequence++; results.value = []; resultsTotal.value = 0; resultsLoading.value = false; resultsError.value = ''
+}
+async function loadConfirmationResults() {
+  if (!eligibility.value.confirm || !confirmation.value || confirmation.value.id !== props.decisionID) return
+  const id = props.decisionID, seq = ++resultsSequence, epoch = generation
+  results.value = []; resultsTotal.value = 0; resultsError.value = ''; resultsLoading.value = true
+  try {
+    const result = await listSharingConfirmationResults(props.entry.id, id, { page: resultsPage.value, page_size: 20 })
+    if (result.data.some(row => row.decision_id !== id || !['pending', 'accepted', 'closed'].includes(row.state))) throw new Error('invalid result binding')
+    if (seq === resultsSequence && epoch === generation) { results.value = result.data; resultsTotal.value = result.total }
+  } catch (error) { if (seq === resultsSequence && epoch === generation) resultsError.value = message(error) }
+  finally { if (seq === resultsSequence && epoch === generation) resultsLoading.value = false }
+}
+function changeResultsPage(value) { resultsPage.value = value; loadConfirmationResults() }
 
 async function loadHistory() {
   if (!eligibility.value.history) return
@@ -285,8 +356,10 @@ async function loadRequest(id) {
   finally { if (seq === requestSequence && epoch === generation) requestLoading.value = false }
 }
 
-watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id, auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, eligibility.value.confirm, eligibility.value.create, eligibility.value.history, canPrepare.value, canInitialize.value], () => {
+watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id, auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, eligibility.value.owner, eligibility.value.confirm, eligibility.value.create, eligibility.value.history, canPrepare.value, canInitialize.value], () => {
   generation++; attempt.value = null; confirmation.value = null; request.value = null; recipients.value = []; history.value = []; total.value = 0
+  confirmations.value = []; confirmationTotal.value = 0; confirmationPage.value = 1; confirmationsError.value = ''; confirmationsLoading.value = false
+  clearConfirmationResults(); resultsPage.value = 1
   recipientLoading.value = saving.value = confirmationLoading.value = requestLoading.value = historyLoading.value = false
   confirmationError.value = recipientError.value = requestError.value = historyError.value = ''
   candidates.value = []; candidateTotal.value = 0; candidatePage.value = 1; selectedDecision.value = ''; requirement.value = null; handlingAttempt.value = null
@@ -294,10 +367,16 @@ watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.
   initializing.value = false; initializationReason.value = ''
   page.value = 1
   if (eligibility.value.history) loadHistory()
+  if (eligibility.value.confirm) loadConfirmations()
   if (eligibility.value.confirm && props.decisionID) refreshConfirmation()
   if (eligibility.value.history && props.requestID) loadRequest(props.requestID)
 }, { immediate: true })
-watch(() => props.decisionID, () => { if (!saving.value) refreshConfirmation() })
+watch(() => props.decisionID, value => {
+  if (saving.value) return
+  confirmationSequence++; confirmation.value = null; confirmationError.value = ''; confirmationLoading.value = false; clearConfirmationResults()
+  if (attempt.value && value !== attempt.value.decision_id) attempt.value = null
+  if (value) refreshConfirmation()
+})
 watch(() => props.requestID, value => {
   if (handlingSaving.value) return
   if (handlingAttempt.value && value !== handlingAttempt.value.request_id) {
