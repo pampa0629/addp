@@ -474,6 +474,7 @@ func TestModel3DGLBOperatorForFormat(t *testing.T) {
 		{formatName: "ifc", operator: "ifc_to_glb"},
 		{formatName: "dae", operator: "dae_to_glb"},
 		{formatName: "3ds", operator: "3ds_to_glb"},
+		{formatName: "skp", operator: "skp_to_glb"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.formatName, func(t *testing.T) {
@@ -673,6 +674,15 @@ func TestExchangeModelQuickViewRequiresGLBArtifact(t *testing.T) {
 		if isSourceModel3DDirectPreview(&Model3DGLBSource{Format: sourceFormat}) {
 			t.Fatalf("%s must use generated GLB", sourceFormat)
 		}
+	}
+}
+
+func TestSketchUpQuickViewUsesSingleFileAndGLBArtifact(t *testing.T) {
+	if !isModel3DGLBTaskSourceFormat("skp") || !isModel3DQuickViewSourceFormat("skp", "single") || isModel3DQuickViewSourceFormat("skp", "multi") || isModel3DQuickViewSourceFormat("skp", "") {
+		t.Fatal("SKP must use the single-file GLB task route")
+	}
+	if model3DGLBUsesDirectorySource("skp") || isSourceModel3DDirectPreview(&Model3DGLBSource{Format: "skp"}) {
+		t.Fatal("SKP must not expose its directory or bypass GLB generation")
 	}
 }
 

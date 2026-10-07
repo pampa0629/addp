@@ -6,6 +6,7 @@ import json
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,7 @@ DEFAULT_IFC_CONVERTER_BIN = str(ENGINE_ROOT / "scripts" / "converters" / "IfcCon
 IFC_CONVERTER_ENV = "MODEL3D_IFC_CONVERTER_BIN"
 GAUSSIAN_SPLAT_CONVERTER_SCRIPT = str(ENGINE_ROOT / "create_ksplat.mjs")
 GAUSSIAN_SPLAT_NODE_ENV = "MODEL3D_GAUSSIAN_SPLAT_NODE_BIN"
+SKP_CONVERTER_SCRIPT = str(ENGINE_ROOT / "skp_converter.py")
 TILE_EXTENSIONS = {".b3dm", ".i3dm", ".pnts", ".cmpt", ".glb", ".gltf"}
 TILESET_REF = "tileset.json"
 
@@ -393,12 +395,15 @@ def list_operators() -> list[dict[str, Any]]:
     ]
     # The static exchange formats use the existing mesh operator contract.
     template = next(op for op in operators if op["name"] == "stl_to_glb")
-    for source_format in ("dae", "3ds"):
+    for source_format in ("dae", "3ds", "skp"):
         op = copy.deepcopy(template)
         op["id"] = op["name"] = f"{source_format}_to_glb"
         op["display_name"] = f"{source_format.upper()} 转 GLB"
         op["description"] = f"将 {source_format.upper()} 静态网格与 PNG/JPEG 漫反射贴图转换为自包含 GLB。"
         op["parameters"][0]["description"] = "源模型资源目录与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。"
+        if source_format == "skp":
+            op["description"] = "将 SketchUp 静态网格、组件变换和内嵌贴图转换为自包含 GLB。"
+            op["parameters"][0]["description"] = "源 SKP 单文件与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。"
         operators.insert(-2, op)
     return operators
 
@@ -427,6 +432,8 @@ def invoke_operator(
         return obj_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "stl_to_glb":
         return stl_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name == "skp_to_glb":
+        return skp_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name in {"dae_to_glb", "3ds_to_glb"}:
         return _mesh_model_to_glb(params, source_label=name.removesuffix("_to_glb"), runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "ifc_to_glb":
@@ -536,6 +543,7 @@ def _single_model_to_glb(
     runner: CommandRunner | None,
     env: dict[str, str] | None,
     timeout_seconds: int | None,
+    command_factory: Callable[[str, str], list[str]] | None = None,
 ) -> dict[str, Any]:
     access_plan = require_access_plan(params)
     file_name = target_name(access_plan)
@@ -545,9 +553,14 @@ def _single_model_to_glb(
 
     try:
         source_path = str(_stage_model_source(access_plan, temp_dir))
-        converter = _converter_bin(env)
-        command = [converter, "-f", converter_format, "-i", source_path, "-o", str(target_file)]
-        result = _run_converter(command, runner=runner, env=env, timeout_seconds=timeout_seconds)
+        if command_factory is None:
+            converter = _converter_bin(env)
+            command = [converter, "-f", converter_format, "-i", source_path, "-o", str(target_file)]
+            result = _run_converter(command, runner=runner, env=env, timeout_seconds=timeout_seconds)
+        else:
+            command = command_factory(source_path, str(target_file))
+            converter = command[1]
+            result = _run_executable(command, runner=runner, env_name="", timeout_seconds=timeout_seconds)
         if not target_file.is_file():
             raise ConverterError(
                 "OUTPUT_NOT_FOUND",
@@ -556,7 +569,7 @@ def _single_model_to_glb(
                 http_status=500,
             )
 
-        _validate_glb_artifact(target_file)
+        _validate_glb_artifact(target_file, basic_static=source_label == "SKP")
         publish_result = publish_target_file(target_file, access_plan)
         return {
             "glb_uri": _published_uri(publish_result),
@@ -571,6 +584,23 @@ def _single_model_to_glb(
         }
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def skp_to_glb(
+    params: dict[str, Any],
+    *,
+    runner: CommandRunner | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    plan = require_access_plan(params)
+    if plan["source"]["kind"] != "file" or plan_source_format(plan) != "skp":
+        raise ConverterError("UNSUPPORTED_MODEL_SOURCE", "Source model is outside supported conversion scope", details="SKP requires a file/skp access plan")
+    return _single_model_to_glb(
+        params, source_label="SKP", converter_format="glb", runner=runner,
+        env=env, timeout_seconds=timeout_seconds,
+        command_factory=lambda source, target: [sys.executable, SKP_CONVERTER_SCRIPT, source, target],
+    )
 
 
 def gltf_to_glb(

@@ -125,6 +125,7 @@ func model3DWorkflowAdapterSpecs() map[string]workflowOperatorAdapterSpec {
 		"fbx_to_glb":            conversionAdapterSpec("fbx_to_glb", "FBX 模型", "fbx", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
 		"obj_to_glb":            conversionAdapterSpec("obj_to_glb", "OBJ 模型", "obj", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
 		"stl_to_glb":            conversionAdapterSpec("stl_to_glb", "STL 模型", "stl", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"skp_to_glb":            conversionAdapterSpec("skp_to_glb", "SketchUp 模型", "skp", "file", "file", []string{"model_3d"}, "glb", "file", ".glb", "model/gltf-binary", nil),
 		"ifc_to_glb":            conversionAdapterSpec("ifc_to_glb", "IFC 模型", "ifc", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", []commonModels.ParameterDescriptor{{Name: "center_model", Type: "boolean", Required: false, Default: true, Description: "转换时将 BIM 模型居中"}}),
 		"osgb_scene_to_3dtiles": conversionAdapterSpec("osgb_scene_to_3dtiles", "OSGB Scene", "osgb_scene", "directory", "directory", nil, "3dtiles", "directory", "", "", nil),
 		"gaussian_splat_to_ksplat": conversionAdapterSpec("gaussian_splat_to_ksplat", "Gaussian Splat", "ply", "file", "file", []string{"gaussian_splat"}, "ksplat", "file", ".ksplat", "application/vnd.gaussian-ksplat", []commonModels.ParameterDescriptor{

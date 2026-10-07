@@ -47,7 +47,7 @@ RUN python -m pip install --no-cache-dir --no-build-isolation --no-deps /common-
 COPY engines/model3d-workflow/package.json engines/model3d-workflow/package-lock.json /app/
 RUN npm ci --omit=dev
 
-COPY engines/model3d-workflow/api_server.py engines/model3d-workflow/operators.py engines/model3d-workflow/glb_validation.py engines/model3d-workflow/exchange_model.py engines/model3d-workflow/create_ksplat.mjs /app/
+COPY engines/model3d-workflow/api_server.py engines/model3d-workflow/operators.py engines/model3d-workflow/glb_validation.py engines/model3d-workflow/exchange_model.py engines/model3d-workflow/skp_converter.py engines/model3d-workflow/create_ksplat.mjs /app/
 COPY --from=converter /opt/addp/model3d-workflow/bin/ /opt/addp/model3d-workflow/bin/
 
 EXPOSE 8101

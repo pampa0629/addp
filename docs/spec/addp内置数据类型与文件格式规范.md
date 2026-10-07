@@ -72,6 +72,7 @@
 | FBX | `single` | `model_3d` | `fbx` | FBX 单体网格模型；快显通过 GLB artifact 实现 |
 | DAE / Collada | `single` | `model_3d` | `dae` | Collada 1.4.0 / 1.4.1；摘要记录版本、单位、上轴、网格和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
 | 3DS | `single` | `model_3d` | `3ds` | 3DS chunk 模型；摘要记录网格、顶点、三角面、材质和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
+| SKP | `single` | `model_3d` | `skp` | SketchUp 原生文件；格式身份识别，静态网格经 Model3D 生成自包含 GLB 快显 |
 | IFC | `single` | `model_3d` | `ifc` | IFC BIM 模型；第一阶段支持识别和轻量 BIM 摘要 |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
 | OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
@@ -436,6 +437,14 @@ ADDP 生成的 S3M 数据集统一使用 `config/scene.scp`，detector 通过 de
 `format_info.s3m` 保存 `manifest_ref`、`manifest_encoding`、`version`、`file_type`、`root_tile_count`、`tile_extension` 和位置摘要；稳定的分块场景语义进入 `type_info.model_3d.model_kind=tiled_scene`。Manager 返回 `preview_material=url + frontend_renderer=s3m`，使用路径型受控资源 URL 保持 SCP 相对引用可访问；Cesium 和 S3M renderer 只在该预览组件挂载时动态加载。
 
 SuperMap Workflow 的 `osgb_scene_to_s3m` 固定使用 `ObliquePhotogrammetryBuilder` 生成 S3M 3.01 / S3MB，纹理压缩为 DXT，几何压缩为 Draco，目标 CRS 固定为 `EPSG:4326`。Builder 保留瓦片局部坐标；运行时使用 SuperMap `CoordSysTranslator` 把 JSON SCP 的 `position` 与 `geoBounds` 从源 EPSG 规范化到 WGS84，`position.unit` 固定为 `Degree`。源投影坐标转换不交给 Manager 前端猜测或硬编码。Manager 必须从 manifest 和受管结果元数据获取实际版本、CRS、纹理压缩、几何压缩和瓦片扩展名，不得将 S3M 硬编码为 legacy XML / `.s3m`；不得把 renderer 状态、浏览器能力或受控 URL 写回 Meta attributes。
+
+## SKP
+
+SKP 按 `.skp` 扩展名识别为 `format=skp + data_type=model_3d + layout=single`。Common 只注册静态格式身份，不加载 SketchUp SDK 或重型解析器，不从扩展名推断几何数量、材质、单位或 CRS；没有实际解析事实时省略 `type_info.model_3d` 与 `format_info.skp`。
+
+Manager 通过 Model3D Runtime 的 `skp_to_glb` 生成私有 GLB artifact，复用现有源授权、单文件访问计划、任务与统一发布校验。唯一转换路线是运行时内的 MIT 许可 OpenSKP Python 1.3.0 → GLB 2.0，不依赖 SuperMap、SketchUp 桌面软件或宿主机 SDK。解析在独立子进程内执行并受现有转换超时控制；只发布自包含 GLB，不发布转换器产生的 JSON 或缩略图 sidecar。OpenSKP 的 GLB 导出接口使用毫米坐标，发布前通过统一场景根缩放为 glTF 的米坐标，保持 Y 上轴、组件节点与相对变换。
+
+首期范围是静态三角网格、组件／群组的实例变换、基本材质和可解码的内嵌 PNG/JPEG 贴图。不得把快显成功解释为 SketchUp 原生编辑语义、动态组件行为、场景动画、标注、孤立线段或全部文件版本支持。OpenSKP 1.3.0 的 GLB 导出未应用源可见性状态，首期明确拒绝含隐藏组件、隐藏面或关闭图层的模型，不把隐藏几何错误地显示为可见。库的旧版解析存在已知缺口，只有实际解析和 GLB 校验成功的输入才能登记 ready；空场景、损坏输入、解析错误、缺失已引用的贴图或非法 GLB 均明确失败，不能覆盖已有快显。依据：[OpenSKP 项目与版本范围](https://github.com/iamahsanmehmood/openskp)、[固定 Python 发行版](https://pypi.org/project/openskp/1.3.0/)。
 
 ## SGM
 

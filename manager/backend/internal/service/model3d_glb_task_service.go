@@ -434,7 +434,7 @@ func normalizeModel3DGLBSource(config commonModels.JSONMap) (Model3DGLBSourceCon
 
 func isModel3DGLBTaskSourceFormat(sourceFormat string) bool {
 	switch strings.ToLower(strings.TrimSpace(sourceFormat)) {
-	case string(format.FormatOSGB), string(format.FormatGLTF), string(format.FormatFBX), string(format.FormatOBJ), string(format.FormatSTL), string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS), string(format.FormatSGM):
+	case string(format.FormatOSGB), string(format.FormatGLTF), string(format.FormatFBX), string(format.FormatOBJ), string(format.FormatSTL), string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS), string(format.FormatSGM), string(format.FormatSKP):
 		return true
 	default:
 		return false

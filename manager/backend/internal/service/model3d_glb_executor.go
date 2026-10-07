@@ -278,6 +278,8 @@ func model3DGLBOperatorForFormat(sourceFormat string) (operatorName string, norm
 		return "dae_to_glb", string(format.FormatDAE), nil
 	case format.Format3DS:
 		return "3ds_to_glb", string(format.Format3DS), nil
+	case format.FormatSKP:
+		return "skp_to_glb", string(format.FormatSKP), nil
 	case format.FormatIFC:
 		return "ifc_to_glb", string(format.FormatIFC), nil
 	default:

@@ -210,7 +210,7 @@
 | Collada / DAE | Collada 三维交换格式 | 以 XML 描述几何、场景、材质及资源引用的三维交换格式，文件扩展名为 `.dae`。 | ADDP 使用 `format=dae`、`data_type=model_3d`、`layout=single`；首期转换为静态 GLB。 |
 | 3DS | 3DS 三维模型格式 | 以二进制 chunk 存储网格、材质和关键帧等内容的三维模型格式。 | ADDP 使用 `format=3ds`、`data_type=model_3d`、`layout=single`；不与 3D Tiles 或 S3M 混用。 |
 | MAX | 3ds Max 原生场景格式 | Autodesk 3ds Max 保存完整场景的原生文件格式，扩展名为 `.max`。 | 与 `.3ds` 交换格式不同；尚未接入原生解析和快显，不能把导出后的 FBX 支持记为 MAX 原生支持。 |
-| SKP | SketchUp 原生模型格式 | SketchUp 保存三维模型的原生文件格式，扩展名为 `.skp`。 | 尚未接入 ADDP 格式插件；SDK 声明接口不等同于当前运行平台已提供可执行解析器。 |
+| SKP | SketchUp 原生模型格式 | SketchUp 保存三维模型的原生文件格式，扩展名为 `.skp`。 | 按单文件注册格式身份，静态模型通过 Model3D Runtime 的 OpenSKP 1.3.0 路线生成 GLB；不声明全部 SKP 版本、隐藏内容或动态组件支持。 |
 | SGM | SuperMap Global Model | SuperMap 提供的三维模型存储格式，扩展名为 `.sgm`。 | 与 S3M 是不同格式；首期按单文件注册格式身份，几何读取由 SuperMap Runtime 承担，浏览器快显通过 OSGB 中间产物生成 GLB 2.0；不按 S3M manifest 或瓦片规则探测。 |
 | point_cloud | 点云数据 | 以三维点集合、点属性、空间范围和抽样 / LOD 预览为核心消费对象的数据类型。 | 覆盖 LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree 等；点属性不是普通表字段，不能仅因可列化而归为 `table`。 |
 | gaussian_splat | 高斯泼溅数据 | 以三维高斯基元、尺度、旋转、不透明度和视角相关颜色为核心消费对象的数据类型。 | 覆盖 3D Gaussian Splatting PLY 以及后续 `.splat`、`.ksplat`、`.spz` 等格式；不是普通点云，也不走传统 mesh / GLB 模型路线。 |

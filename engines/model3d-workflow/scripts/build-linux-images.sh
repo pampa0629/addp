@@ -69,6 +69,10 @@ import operators
 import struct
 import subprocess
 import tempfile
+from openskp import create
+from skp_converter import convert
+from glb_validation import validate_glb
+import trimesh
 
 status = operators.converter_status()
 if not status.get("available"):
@@ -92,6 +96,18 @@ with tempfile.TemporaryDirectory() as tmp:
         raise SystemExit(completed.stderr or completed.stdout or "KSplat smoke conversion failed")
     if not target.is_file() or target.stat().st_size == 0:
         raise SystemExit("KSplat smoke conversion produced no output")
+
+    skp = Path(tmp) / "panel.skp"
+    glb = Path(tmp) / "panel.glb"
+    builder = create()
+    builder.add_face([(0, 0, 0), (1, 0, 0), (1, 1, 0)])
+    builder.save(str(skp))
+    convert(skp, glb)
+    validate_glb(glb, basic_static=True)
+    scene = trimesh.load(glb, force="scene")
+    if abs(scene.extents[0] - 0.0254) > 1e-6 or abs(scene.extents[2] - 0.0254) > 1e-6:
+        raise SystemExit("SKP smoke conversion has incorrect metre scale")
+    print("SKP parser, GLB publication validation and metre scale smoke passed")
 PY
 
 echo "Built images:"

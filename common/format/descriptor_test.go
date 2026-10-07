@@ -80,6 +80,7 @@ func TestDescriptorsKeepOnlyStaticFactsForBuiltinFormats(t *testing.T) {
 		{FormatDAE, datatype.Model3D, LayoutSingle},
 		{Format3DS, datatype.Model3D, LayoutSingle},
 		{FormatSGM, datatype.Model3D, LayoutSingle},
+		{FormatSKP, datatype.Model3D, LayoutSingle},
 		{FormatIFC, datatype.Model3D, LayoutSingle},
 		{FormatPLY, datatype.Model3D, LayoutSingle},
 		{FormatSplat, datatype.GaussianSplat, LayoutSingle},

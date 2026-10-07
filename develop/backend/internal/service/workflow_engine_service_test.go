@@ -888,6 +888,7 @@ func TestConversionAdaptersDeriveAccessPlanV1(t *testing.T) {
 		{"model3d_workflow", "fbx_to_glb", "models/scene.fbx", "scene.glb", "directory", "file", "scene.fbx", "fbx"},
 		{"model3d_workflow", "obj_to_glb", "models/scene.obj", "scene.glb", "directory", "file", "scene.obj", "obj"},
 		{"model3d_workflow", "stl_to_glb", "models/scene.stl", "scene.glb", "file", "file", "", "stl"},
+		{"model3d_workflow", "skp_to_glb", "models/scene.SKP", "scene.glb", "file", "file", "", "skp"},
 		{"model3d_workflow", "ifc_to_glb", "models/building.ifc", "building.glb", "file", "file", "", "ifc"},
 		{"model3d_workflow", "osgb_scene_to_3dtiles", "scenes/site_a", "site_a", "directory", "directory", "", "osgb_scene"},
 		{"model3d_workflow", "gaussian_splat_to_ksplat", "models/cloud.splat", "cloud.ksplat", "file", "file", "", "splat"},
