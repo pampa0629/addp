@@ -136,4 +136,4 @@ DAE 的 XML 解析器直接拒绝 DTD 和实体声明，UTF-8 / UTF-16 下执行
 
 所有单体 GLB 快显发布前还校验场景与节点：默认场景（未声明时为第一个场景）必须能引用到网格；节点索引、父子层级及变换必须有效。循环、多父节点、空白场景、非有限变换和非法四元数不能发布为成功。合法单位缩放、上轴转换、平移及负缩放保持原样，沿用转换器与统一 GLB 发布路线。
 
-SKP 真实解析与转换回归自动进入同一 `make test-model3d-workflow`：自建 SKP 包含共享组件和内嵌贴图，验证米制尺寸、Y 上轴、实例共享、实际贴图像素、源文件不变，以及隐藏内容／损坏输入拒绝和旧产物保留。根 `make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --verify --jobs 1 --tag <独立验证标签>"` 还在生产 Runtime 镜像内生成并转换 SKP，检查 GLB 与米制尺寸。2026-10-07 的 Linux ARM64 构建及转换通过；amd64 由现有镜像构建门禁验证，Manager 页面与真实存储链路尚待验收。
+SKP 真实解析与转换回归自动进入同一 `make test-model3d-workflow`：自建 SKP 包含共享组件和内嵌贴图，验证米制尺寸、Y 上轴、实例共享、实际贴图像素、源文件不变，以及隐藏内容／损坏输入拒绝和旧产物保留。根 `make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --verify --jobs 1 --tag <独立验证标签>"` 还在生产 Runtime 镜像内生成并转换 SKP，检查 GLB 与米制尺寸。2026-10-07 的 Linux ARM64 构建及转换通过；amd64 由现有镜像构建门禁验证，本地 Business NFS 的 Manager 页面端到端验收已通过：`3d/skp/static-textured-cubes.skp`（Meta item 20245，9421 字节）经快显任务 8 发布 4312 字节的 GLB 2.0，两个共享组件实例及内嵌彩色贴图显示、旋转正常，产物尺寸符合米制约定。S3 源与 Hosted T4 尚待验证。
