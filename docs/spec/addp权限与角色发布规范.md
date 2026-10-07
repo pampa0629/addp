@@ -113,6 +113,8 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 平台三员 Role 只允许 User Principal，必须互斥，不存在全权合并角色。Runtime Role 只允许 Service Principal，不得授予 User。具体 `allowed_principal_types`、`allowed_scope_types` 和 Permission 集合以 `system/authorization/builtin_roles.yaml` 为准。
 
+引擎授权委派管理员（`tenant.engine_access_delegation_administrator`）是专职 Tenant Management Role，只允许当前 Tenant Scope 的 User。它提供授权管理委派的读取、创建和撤销能力，并包含页面所需的引擎管理读取与租户账号候选读取。发布只增加角色模板，不自动分配给已有账号，也不扩张租户管理员、基础设施管理员等既有 Role。角色分配必须由有权人员通过正常 IAM 路径显式操作；该角色不授予源数据读取、业务共享确认、批准要求初始化、实际授权办理、Grant 撤销或 Explicit Deny，不与引擎管理委派混为一谈。
+
 普通 User 的本地密码和 MFA Credential 重置分别使用 `iam.local_account.reset` 与 `iam.mfa_credential.reset`，只授予 Platform Security Administrator。两者都不得作用于任何有效 Platform Role 持有人；平台三员凭据整体失效时只允许离线灾难恢复，不能扩大普通用户重置 Permission 绕过三员治理。
 
 Tenant 自定义 Role：

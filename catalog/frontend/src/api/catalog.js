@@ -59,6 +59,12 @@ export async function prepareSharingRequest(id, payload) {
 	return client.post(`/catalog/entries/${encodeURIComponent(id)}/sharing_fulfillments`, payload)
 }
 
+export async function initializeSharingRequirement(target, serializedPayload) {
+	return client.post(`/system/engines/${encodeURIComponent(target.engine_id)}/access_approval_requirements`, serializedPayload, {
+		headers: { 'Content-Type': 'application/json' }
+	})
+}
+
 export async function getSharingRequest(id, requestID) {
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_fulfillments/${encodeURIComponent(requestID)}`)
 }

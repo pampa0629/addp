@@ -5,7 +5,7 @@ import SharingPanel from '../src/components/SharingPanel.vue'
 
 const fixtures = vi.hoisted(() => ({ auth: null, api: Object.fromEntries([
   'createSharingDecision', 'getSharingDecision', 'listSharingRecipients', 'listSharingRequests', 'getSharingRequest',
-  'listSharingDecisions', 'observeSharingRequirement', 'prepareSharingRequest'
+  'listSharingDecisions', 'observeSharingRequirement', 'prepareSharingRequest', 'initializeSharingRequirement'
 ].map(name => [name, vi.fn()])) }))
 vi.mock('../src/store/auth', () => ({ useAuthStore: () => fixtures.auth }))
 vi.mock('../src/api/catalog', () => fixtures.api)
@@ -82,6 +82,42 @@ describe('actual sharing panel commands and recovery', () => {
     dropdown.props['onUpdate:modelValue'](decision.id); await settle()
     await dropdown.props.onChange(); await settle()
   }
+  it('requires independent initialization permission and an explicit reason, then reobserves before enabling preparation', async () => {
+    fixtures.auth.permissions.push('system.engine_access_approval_requirement.initialize')
+    fixtures.api.observeSharingRequirement.mockRejectedValueOnce({ response: { status: 404, data: { error: 'Not found' } } })
+      .mockResolvedValue({ mode: 'catalog', requirement_version: '8' })
+    fixtures.api.initializeSharingRequirement.mockResolvedValue({ version: 1 })
+    const view = mount(); await settle(); await selectDecision(view)
+    expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
+    await view.button('sharing-initialize').props.onClick(); await settle()
+    expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
+    view.button('sharing-initialize-reason').props['onUpdate:modelValue']('Configure approval')
+    await view.button('sharing-initialize').props.onClick(); await settle()
+    expect(fixtures.api.initializeSharingRequirement).toHaveBeenCalledTimes(1)
+    expect(fixtures.api.initializeSharingRequirement.mock.calls[0][1]).toContain('"engine_id":9007199254740993,')
+    expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledTimes(2)
+    expect(view.button('sharing-prepare').props.disabled).toBe(false)
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+  })
+  it('never initializes automatically on 403 or network failure and hides initialization without its separate permission', async () => {
+    fixtures.api.observeSharingRequirement.mockRejectedValue({ response: { status: 403 } })
+    const view = mount(); await settle(); await selectDecision(view)
+    expect(view.button('sharing-initialize')).toBeUndefined()
+    expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
+    expect(view.button('sharing-prepare').props.disabled).toBe(true)
+  })
+  it('retains configuration failure without preparing or automatically retrying a conflicting initialization', async () => {
+    fixtures.auth.permissions.push('system.engine_access_approval_requirement.initialize')
+    fixtures.api.observeSharingRequirement.mockRejectedValue({ response: { status: 404 } })
+    fixtures.api.initializeSharingRequirement.mockRejectedValue({ response: { status: 409, data: { error: 'Already configured' } } })
+    const view = mount(); await settle(); await selectDecision(view)
+    view.button('sharing-initialize-reason').props['onUpdate:modelValue']('Configure approval')
+    await view.button('sharing-initialize').props.onClick(); await settle()
+    expect(fixtures.api.initializeSharingRequirement).toHaveBeenCalledTimes(1)
+    expect(view.button('sharing-initialize-reason').props.modelValue).toBe('Configure approval')
+    expect(view.button('sharing-prepare').props.disabled).toBe(true)
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+  })
   it('allows a separately qualified handler to prepare without business-owner or confirmation permission', async () => {
     fixtures.auth.authContext.principal.id = '70'
     fixtures.auth.permissions = ['catalog.entry.read', 'system.engine_access_fulfillment.create']

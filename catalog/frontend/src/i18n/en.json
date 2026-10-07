@@ -1,6 +1,10 @@
 {
   "catalog": {
     "sharing": {
+      "initialize": "Initialize this table's approval requirement",
+      "initializeReason": "Initialization reason",
+      "initializeBoundary": "Explicitly initialize Catalog business approval only if this table has no requirement. A failed query does not establish absence. Existing configuration is never overwritten; insufficient permission is rejected. This does not grant data access.",
+      "invalidInitialization": "Select a valid sharing confirmation and enter an initialization reason.",
       "title": "Sharing confirmations and requests",
       "boundary": "Business confirmation and fulfillment acceptance do not mean data access has been granted.",
       "confirmTitle": "Ordinary read-only sharing confirmation",

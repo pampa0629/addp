@@ -16,10 +16,24 @@ import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules
 import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 import { transferEntryResponsibilities } from '../src/api/catalog'
-import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, prepareSharingRequest } from '../src/api/catalog'
+import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement } from '../src/api/catalog'
+import { serializeApprovalInitialization } from '../src/utils/sharingConfirmation'
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('serializes the existing numeric path contract losslessly, including quoted names, under the User client', async () => {
+    const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ term: 'table', kind: 'table', name: 'a"b' }] }
+    const body = serializeApprovalInitialization(target, ' Configure "approval" ')
+    expect(body).toContain('"engine_id":9007199254740993,')
+    expect(body).not.toContain('9007199254740992')
+    expect(JSON.parse(body).catalog_path.segments).toEqual(target.segments)
+    expect(JSON.parse(body).reason).toBe('Configure "approval"')
+    await initializeSharingRequirement(target, body)
+    expect(client.post).toHaveBeenCalledWith('/system/engines/9007199254740993/access_approval_requirements', body, { headers: { 'Content-Type': 'application/json' } })
+    expect(() => serializeApprovalInitialization({ ...target, engine_id: '1,"mode":"independent"' }, 'Configure')).toThrow()
+    expect(() => serializeApprovalInitialization(target, ' ')).toThrow()
+  })
 
   it('observes only the exact target under the User client before a separate explicit preparation command', async () => {
     const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ name: 'root' }, { name: 'table' }] }

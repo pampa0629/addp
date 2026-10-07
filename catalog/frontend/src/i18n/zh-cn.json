@@ -1,6 +1,10 @@
 {
   "catalog": {
     "sharing": {
+      "initialize": "初始化本表批准要求",
+      "initializeReason": "初始化原因",
+      "initializeBoundary": "若本表尚未配置批准要求，可显式初始化为 Catalog 业务批准。查询失败不代表配置不存在；已有配置不会被覆盖，权限不足时会拒绝。此操作不授予数据访问。",
+      "invalidInitialization": "请选择有效共享确认并填写初始化原因。",
       "title": "共享确认与请求",
       "boundary": "业务确认与办理受理均不等于数据访问已经授权生效。",
       "confirmTitle": "普通只读共享确认",

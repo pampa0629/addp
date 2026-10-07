@@ -60,3 +60,12 @@ export function captureSharingRequest(candidate, requirement, requestID) {
   if (!canonicalSharingUUID(requestID)) throw new Error('invalidHandlingRequirement')
   return Object.freeze({ request_id: requestID, decision_id: candidate.id, requirement_version: requirement.requirement_version })
 }
+
+// The existing System configuration API expects a numeric engine_id. Emit the
+// validated decimal token directly; Number() would round large int64 IDs.
+export function serializeApprovalInitialization(target, reason) {
+  reason = typeof reason === 'string' ? reason.trim() : ''
+  if (!isSharingInt64(target?.engine_id) || !target?.version || !Array.isArray(target?.segments) || !target.segments.length ||
+      !reason || Array.from(reason).length > 2000) throw new Error('invalidInitialization')
+  return `{"catalog_path":{"engine_id":${target.engine_id},"version":${JSON.stringify(target.version)},"segments":${JSON.stringify(target.segments)}},"reason":${JSON.stringify(reason)}}`
+}

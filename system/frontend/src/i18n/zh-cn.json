@@ -1077,6 +1077,19 @@
       "versionConflict": "策略已被其他管理员更新，已重新加载"
     },
     "engine": {
+      "delegations": {
+        "title": "授权管理委派",
+        "created": "管理委派已创建；尚未授予任何数据读取权限。",
+        "boundary": "指定谁可以办理本引擎的源数据授权。委派不授予数据读取权；办理人员仍需对应的功能权限。委派变更后，接收账号的旧会话失效，需要重新登录。",
+        "account": "接收账号", "state": "当前有效性", "expiresAt": "委派到期时间（本地时区）", "reason": "原因",
+        "refresh": "刷新委派", "refreshMembers": "刷新账号候选", "create": "创建管理委派", "revoke": "撤销委派", "confirmRevoke": "确认撤销委派",
+        "revokeBoundary": "撤销的是今后的授权办理资格，不会撤销已经授予的数据读取权限。",
+        "readRequired": "查看委派及历史需要独立的委派读取权限。",
+        "membersRequired": "选择账号需要租户成员读取权限；请联系权限管理员配置，不能手填账号编号。",
+        "invalid": "请选择有效账号、填写原因和未来到期时间；委派不能超过该账号的租户成员有效期。",
+        "invalidReason": "请填写撤销原因。", "failed": "操作未取得可靠结果，草稿已保留。请刷新核对，页面不会自动重试。",
+        "states": { "effective": "有效", "expired": "已到期", "revoked": "已撤销", "unavailable": "当前不可用" }
+      },
       "recentDetailTitle": "数据引擎",
       "title": "引擎管理",
       "typeNfs": "NFS 文件系统",
@@ -2176,6 +2189,10 @@
       "graph_engineer": {
         "name": "图谱工程师",
         "description": "管理本体、图谱、构建任务、分析和审核。"
+      },
+      "engine_access_delegation_administrator": {
+        "name": "引擎授权委派管理员",
+        "description": "在租户范围内查看、创建和撤销引擎授权管理委派，并读取引擎及有效租户账号候选；不授予数据访问或实际授权办理权。"
       },
       "infrastructure_administrator": {
         "name": "租户基础设施管理员",

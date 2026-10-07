@@ -563,6 +563,9 @@
             </div>
           </el-tab-pane>
 
+          <el-tab-pane v-if="availableDetailTabs.includes('delegations')" :label="t('system.engine.delegations.title')" name="delegations">
+            <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
+          </el-tab-pane>
         </el-tabs>
       </div>
       <template #footer>
@@ -703,6 +706,7 @@ import { hasEngineAddressChanged, switchStorageEngineType } from '../utils/engin
 import { useAuthStore } from '../store/auth'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
+import EngineAccessDelegations from '../components/engines/EngineAccessDelegations.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -1813,6 +1817,7 @@ const availableDetailTabs = computed(() => {
     tabs.push('connection')
   }
   if (hasSelectedCapabilitiesView.value) tabs.push('capabilities')
+  if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
   return tabs
 })
 
@@ -1961,6 +1966,7 @@ onMounted(() => {
 })
 
 watch(() => [route.params.id, route.query.tab], restoreEngineDetails)
+watch(availableDetailTabs, restoreDetailTab)
 
 onUnmounted(() => {
 	engineRefreshStopped = true

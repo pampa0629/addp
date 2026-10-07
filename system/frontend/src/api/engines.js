@@ -1,6 +1,9 @@
 import client from './client'
 
 export const enginesAPI = {
+  listAccessDelegations: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_delegations`, { params }),
+  createAccessDelegation: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_delegations`, payload),
+  revokeAccessDelegation: (id, delegationID, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_delegations/${encodeURIComponent(delegationID)}/revoke`, payload),
   listTypes: () => client.get('/system/engine-types'),
 
   create: (data) => {

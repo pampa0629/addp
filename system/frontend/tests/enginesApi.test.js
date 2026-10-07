@@ -11,13 +11,24 @@ import {
 
 vi.mock('../src/api/client', () => ({
   default: {
-    get: vi.fn()
+    get: vi.fn(), post: vi.fn()
   }
 }))
 
 describe('engines API', () => {
   beforeEach(() => {
     client.get.mockReset()
+    client.post.mockReset()
+  })
+
+  it('uses the canonical delegation endpoints and preserves explicit write parameters', async () => {
+    const create = { tenant_membership_id: '9007199254740993', expires_at: '2099-01-01T00:00:00Z', reason: 'Delegate' }
+    const revoke = { version: 7, reason: 'Revoke' }
+    await enginesAPI.listAccessDelegations('2', { page: 2, page_size: 10 })
+    await enginesAPI.createAccessDelegation('2', create)
+    await enginesAPI.revokeAccessDelegation('2', '3', revoke)
+    expect(client.get).toHaveBeenCalledWith('/system/engines/2/access_delegations', { params: { page: 2, page_size: 10 } })
+    expect(client.post.mock.calls).toEqual([['/system/engines/2/access_delegations', create], ['/system/engines/2/access_delegations/3/revoke', revoke]])
   })
 
   it('requests the complete filtered engine array without pagination parameters', async () => {

@@ -36,7 +36,11 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 
 幂等 Grant 签发（2026-10-03）：000182 的 `system.engine_access_grants` 仅保存唯一原办理编号与数据库签发时刻，精确参数继续引用不可变受理回执。`engineaccess.IssueFulfillmentGrant` 经唯一 `writeAcceptedGrant` 路径核验当前机器、原办理人版本／权限、引擎管理委派与接收主体，按身份→引擎／委派→原请求→精确目标排序，写入和审计原子提交。锁等待和审计等待跨过原窗口都回滚；已有签发的同参重试只恢复原历史，不要求原操作人仍有效、不延长任何期限。不重新调用 Catalog 或用后续批准要求否定已经受理的同次请求。唯一 HTTP 入口为 `POST /runtime/engine-access-fulfillments/:request_id/grant`，历史查询为同路径的 `POST /grant/resolve`；固定 Catalog Tenant Service 与既有 `.execute`，不新增默认授权。窗口过期、关闭和绑定冲突返回稳定 409 错误码，响应仅证明签发历史，不含当前访问允许标记。Catalog 前后台自动消费已接通；Explicit Deny 和执行侧裁决尚未贯通；指定 Grant 撤销由 000183 与独立撤销 API 维护，000184 前向收紧自然到期后的首次撤销。已确认：到期后的首次撤销返回 409、不写新事实及撤销成功审计；到期前已撤销的原参重试仍在当前资格有效时返回原历史，长期有效仍可撤销。不得声称源数据访问已经生效。
 
-精确目标批准要求初始化（2026-10-02）：User 在当前 Tenant Context 中通过 `POST /api/v1/system/engines/:id/access_approval_requirements` 显式建立版本 1 的 `catalog` 要求；只接受完整结构化路径和原因，不接受模式、版本或操作者身份。独立 `system.engine_access_approval_requirement.initialize` 与当前引擎管理委派取交集；读取使用独立 `.read` 与当前委派。两项权限由 000174 登记，均不默认分配给内置角色。身份 → 引擎／委派 → 精确目标锁，等待后按数据库墙钟再核验资格，配置和审计同事务。重复初始化返回 409，不覆盖既有模式，也不创建 Grant。退出、重新启用及实际 Grant 消费者仍未开放；可信跨模块首次受理已接通，不存在批准要求不能视为独立批准。此入口不依赖 Catalog 在线，没有前端配置入口。
+精确目标批准要求初始化（2026-10-02）：User 在当前 Tenant Context 中通过 `POST /api/v1/system/engines/:id/access_approval_requirements` 显式建立版本 1 的 `catalog` 要求；只接受完整结构化路径和原因，不接受模式、版本或操作者身份。独立 `system.engine_access_approval_requirement.initialize` 与当前引擎管理委派取交集；读取使用独立 `.read` 与当前委派。两项权限由 000174 登记，均不默认分配给内置角色。身份 → 引擎／委派 → 精确目标锁，等待后按数据库墙钟再核验资格，配置和审计同事务。重复初始化返回 409，不覆盖既有模式，也不创建 Grant。可信跨模块首次受理已接通，不存在批准要求不能视为独立批准。API 不依赖 Catalog 在线；2026-10-06 的前端入口复用 Catalog 已选有效共享确认的完整目标，单独填写原因显式初始化，不根据观察失败自动写入；成功后重新只读观察版本，不将初始化响应当作 Grant。
+
+引擎详情的 `tab=delegations` 提供管理委派分页查询、创建和撤销，分别要求 `system.engine_access_delegation.read/create/revoke`；进入引擎详情仍需 `system.engine.read`。接收账号复用 `TenantMemberSelect` 和有权读取的有效 Tenant Membership 候选，不手填 ID；创建要求显式未来到期时间及原因，不自动分配角色或数据读取权。管理委派变更会撤销接收账号的旧会话；撤销管理委派不撤销既有源数据 Grant。无权限的 Tab 规范化为基础信息，草稿不写入 URL 或浏览器存储。
+
+引擎授权委派管理员内置角色只包含委派读取／创建／撤销、`system.engine.read` 与 `iam.tenant_membership.read`，仅允许 Tenant Scope 的 User；通过正常 IAM 角色分配显式授予，不回填已有账号、不改写其他管理员角色。角色本身不授予数据访问，也不自动生成委派。
 
 内部业务确认资格（2026-10-02）：首次受理还须从 owner 业务决定获取原确认人的身份引用，与办理人及接收账号共同去重升序共享锁定。确认人的历史授权版本只作审计，实时核验原 Tenant Membership、当前身份及 `catalog.entry.read`／`catalog.sharing_decision.create` 的有效 Tenant Scope 授权；原办理人仍严格匹配请求版本。权限和成员自然到期在业务核验后按数据库墙钟复核。历史核清及未受理关闭不重新要求确认资格；内部入参不构成可信 owner 证明；正式 Runtime 受理在数据库锁外通过独立 `addp-system` Tenant Service OAuth 反查 Catalog 原责任依据，事务内核验独立办理 Permission。后续签发接口只消费本域已经受理的精确请求，不提供新的独立批准入口。
 
@@ -470,7 +474,7 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 - 平台节点台账唯一使用 `/host-nodes` 和 `/host-nodes/:node_id`，仅 Platform User、`platform.host_node.read`；创建与更新另需对应权限。检索和分页使用 `search/page/page_size`，默认第 1 页、每页 20 条省略，共享导航桥同步 Console。详情新读取版本后完整提交，409 保留草稿，不自动重试；实例节点展示共用 `ModuleInstanceNode`，只对当前有效绑定提供节点详情入口。
 - IAM 左侧导航按业务大类固定为 `/iam/organization`、`/iam/accounts`、`/iam/roles`、`/iam/application-access`、`/iam/security` 五个页面；具体管理对象使用页内稳定 `tab`，默认 Tab 省略，无权限或无效 Tab 规范化为该分类下的首个可用值。
 - `/iam/organization` 承载租户、部门和项目组；`/iam/accounts` 承载用户账号、用户邀请和平台身份变更；`/iam/roles` 承载角色定义和用户账号角色分配；`/iam/application-access` 分别承载 API 消费方、外部 OAuth 应用、租户服务账号和平台运行账号，其中平台运行账号只读、租户服务账号可管理且 Service Principal 角色入口只存在于此；`/iam/security` 承载 IAM 平台安全策略以及当前 Context 审计。当前 User 的 MFA 与凭据安全只由右上角“我的账号”进入 `/account/security`，不属于任一 IAM 管理页 Tab。
-- 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略。
+- 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities|delegations`，默认基础信息省略；管理委派按对应权限显示，不使用第二条详情路由。
 - 审计入口唯一使用 `/iam/security?tab=audit`，审计范围由当前 Platform 或 Tenant Context 决定，并支持 `module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id` 稳定筛选；资源回收不再跳转不存在的 `Logs` route。
 - 模块管理唯一使用 `/modules`；页面只对持有 `platform.module.read` 的 Platform User 显示，启停还要求 `platform.module.update`。
 - 服务实例使用 `tab=instances`，组合筛选、时间依据、时段及分页使用 `docs/spec/addp前端路由与可恢复状态规范.md` 中的唯一 query 契约；默认 UP 和登记时间依据省略，全部状态显式为 `status=all`。时间依据选择后立即查询，保留其余筛选和时段并回到第 1 页；重置恢复 UP、登记时间、全部时间和默认分页。筛选和分页由现有 System 导航桥 replace 到 Console 或 standalone URL，刷新、分享和历史导航从 URL 恢复；未应用输入不写入地址栏。System 前端门禁覆盖 standalone，Console 前端门禁加载真实 System 页面覆盖 iframe 同步与刷新。

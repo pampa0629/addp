@@ -314,6 +314,7 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 - 已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也必须使用新版本向前迁移；
 - Quality 域引用权限的已执行 `000149` 保持原始摘要；后续域读取授权与服务身份刷新使用 `000150`。回归测试须从原始 149 已执行状态升级，校验历史摘要保持不变及重复启动幂等，不能只验证空库迁移。
 - Permission/Role Catalog 变化由聚合器生成确定性输入，再进入新的向前 migration；
+- `000194` 发布专职 `tenant.engine_access_delegation_administrator` 模板，只允许 Tenant Scope 的 User，并组合委派读取／创建／撤销、引擎管理读取与租户账号候选读取。角色 Manifest 117 同步；不改写旧角色、不新增任何 Assignment、不生成管理委派或数据 Grant。账号赋权仍走正常 IAM API 并执行原有授权版本与会话撤销规则。
 - 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
 - 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；
 - migration 内不得访问 Redis、HTTP、外部 IdP、密钥服务或其他模块数据库。

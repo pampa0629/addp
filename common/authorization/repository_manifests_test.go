@@ -56,14 +56,23 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "catalog.sharing_decision.create" {
 				t.Fatalf("built-in role %q unexpectedly grants business confirmation", role.Key)
 			}
-			if key == "system.engine_access_delegation.create" || key == "system.engine_access_delegation.read" || key == "system.engine_access_delegation.revoke" {
+			if (key == "system.engine_access_delegation.create" || key == "system.engine_access_delegation.read" || key == "system.engine_access_delegation.revoke") && role.Key != "tenant.engine_access_delegation_administrator" {
 				t.Fatalf("built-in role %q unexpectedly grants management delegation permission %q", role.Key, key)
 			}
 		}
 	}
-	if len(roles) != 72 {
-		t.Fatalf("role count = %d, want 72", len(roles))
+	if len(roles) != 73 {
+		t.Fatalf("role count = %d, want 73", len(roles))
 	}
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.engine_access_delegation_administrator", []string{"user"})
+	assertRepositoryRoleScopes(t, roles, "tenant.engine_access_delegation_administrator", []string{"tenant"})
+	assertRepositoryRolePermissions(t, roles, "tenant.engine_access_delegation_administrator", []string{
+		"iam.tenant_membership.read",
+		"system.engine.read",
+		"system.engine_access_delegation.create",
+		"system.engine_access_delegation.read",
+		"system.engine_access_delegation.revoke",
+	})
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
 	}

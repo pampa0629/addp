@@ -55,7 +55,7 @@
       <template v-if="canPrepare && !requestID">
         <el-form label-position="top" @submit.prevent="submitRequest">
           <el-form-item :label="t('catalog.sharing.selectDecision')" required>
-            <el-select v-model="selectedDecision" filterable :loading="candidateLoading" :disabled="handlingSaving || !!handlingAttempt"
+            <el-select v-model="selectedDecision" filterable :loading="candidateLoading" :disabled="initializing || handlingSaving || !!handlingAttempt"
               :placeholder="t('catalog.sharing.selectDecision')" @visible-change="visible => visible && loadCandidates()" @change="observeRequirement">
               <el-option v-for="option in candidates" :key="option.id" :value="option.id" :label="candidateLabel(option)" />
             </el-select>
@@ -67,8 +67,15 @@
           <el-descriptions-item :label="t('catalog.sharing.recipient')">{{ candidateLabel(selectedCandidate) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.expiry')">{{ expiryLabel(selectedCandidate) }}</el-descriptions-item>
         </el-descriptions>
-        <el-button v-if="selectedCandidate" data-testid="sharing-observe-requirement" :disabled="!!handlingAttempt" :loading="requirementLoading" @click="observeRequirement">{{ t('catalog.sharing.observeRequirement') }}</el-button>
+        <el-button v-if="selectedCandidate" data-testid="sharing-observe-requirement" :disabled="initializing || !!handlingAttempt" :loading="requirementLoading" @click="observeRequirement">{{ t('catalog.sharing.observeRequirement') }}</el-button>
         <p v-if="requirement">{{ t('catalog.sharing.observedVersion', { version: requirement.requirement_version }) }}</p>
+        <el-form v-if="canInitialize && selectedCandidate && !requirement && !requirementLoading && !handlingAttempt" label-position="top" @submit.prevent="initializeRequirement">
+          <el-alert type="info" :closable="false" :title="t('catalog.sharing.initializeBoundary')" />
+          <el-form-item :label="t('catalog.sharing.initializeReason')" required>
+            <el-input v-model="initializationReason" data-testid="sharing-initialize-reason" type="textarea" maxlength="2000" :disabled="initializing" />
+          </el-form-item>
+          <el-button data-testid="sharing-initialize" :loading="initializing" @click="initializeRequirement">{{ t('catalog.sharing.initialize') }}</el-button>
+        </el-form>
         <el-button data-testid="sharing-prepare" type="primary" :disabled="!requirement || requirementLoading" :loading="handlingSaving" @click="submitRequest">{{ t('catalog.sharing.prepare') }}</el-button>
       </template>
       <el-alert v-else-if="!requestID" type="info" :closable="false" :title="t('catalog.sharing.noNewHandling')" />
@@ -114,8 +121,8 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
-import { createSharingDecision, getSharingDecision, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, prepareSharingRequest } from '../api/catalog'
-import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, validateHandlingRequirement } from '../utils/sharingConfirmation'
+import { createSharingDecision, getSharingDecision, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
+import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, validateHandlingRequirement, serializeApprovalInitialization } from '../utils/sharingConfirmation'
 
 const props = defineProps({ entry: { type: Object, required: true }, decisionID: { type: String, default: '' }, recordDecision: { type: Function, required: true }, requestID: { type: String, default: '' }, recordRequest: { type: Function, required: true } })
 const { t, locale } = useI18n()
@@ -125,6 +132,8 @@ const canPrepare = computed(() => eligibility.value.history && props.entry?.entr
   props.entry?.entry_type === 'data_item' && props.entry?.source?.source_module === 'meta' && props.entry?.source?.source_status === 'active')
 const candidates = ref([]), candidatePage = ref(1), candidateTotal = ref(0), candidateLoading = ref(false), selectedDecision = ref('')
 const selectedCandidate = computed(() => candidates.value.find(item => item.id === selectedDecision.value))
+const canInitialize = computed(() => canPrepare.value && auth.hasPermission('system.engine_access_approval_requirement.initialize'))
+const initializationReason = ref(''), initializing = ref(false)
 const requirement = ref(null), requirementLoading = ref(false), handlingAttempt = ref(null), handlingSaving = ref(false), handlingError = ref(''), handlingSucceeded = ref(false)
 const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
 const recipients = ref([]), recipientLoading = ref(false), recipientError = ref('')
@@ -139,7 +148,7 @@ const targetLabel = target => (target?.segments || []).map(segment => segment.na
 const candidateLabel = row => `${row.recipient_name || t(`catalog.sharing.${row.recipient_type}`)} · ${row.recipient_id} · ${formatTime(row.confirmed_at)}`
 
 async function loadCandidates() {
-  if (!canPrepare.value || handlingAttempt.value || props.requestID) return
+  if (!canPrepare.value || initializing.value || handlingAttempt.value || props.requestID) return
   const seq = ++candidateSequence, epoch = generation
   candidates.value = []; candidateTotal.value = 0; selectedDecision.value = ''; requirement.value = null; requirementSequence++
   candidateLoading.value = true; requirementLoading.value = false; handlingError.value = ''
@@ -164,6 +173,23 @@ async function observeRequirement() {
     if (seq === requirementSequence && epoch === generation) requirement.value = result
   } catch (error) { if (seq === requirementSequence && epoch === generation) handlingError.value = error.message === 'invalidHandlingRequirement' ? t('catalog.sharing.invalidRequirement') : message(error) }
   finally { if (seq === requirementSequence && epoch === generation) requirementLoading.value = false }
+}
+
+async function initializeRequirement() {
+  if (initializing.value || !canInitialize.value || requirement.value || requirementLoading.value || handlingAttempt.value || props.requestID) return
+  const candidate = selectedCandidate.value
+  let payload
+  try { payload = serializeApprovalInitialization(candidate?.target, initializationReason.value) }
+  catch { handlingError.value = t('catalog.sharing.invalidInitialization'); return }
+  const epoch = generation, decision = selectedDecision.value
+  initializing.value = true; handlingError.value = ''
+  try {
+    await initializeSharingRequirement(candidate.target, payload)
+    // A configuration response is not a handling version or a Grant. Reobserve
+    // the selected target through the existing qualification boundary.
+    if (epoch === generation && decision === selectedDecision.value) await observeRequirement()
+  } catch (error) { if (epoch === generation && decision === selectedDecision.value) handlingError.value = message(error) }
+  finally { if (epoch === generation) initializing.value = false }
 }
 
 async function submitRequest() {
@@ -259,12 +285,13 @@ async function loadRequest(id) {
   finally { if (seq === requestSequence && epoch === generation) requestLoading.value = false }
 }
 
-watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id, auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, eligibility.value.confirm, eligibility.value.create, eligibility.value.history, canPrepare.value], () => {
+watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id, auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, eligibility.value.confirm, eligibility.value.create, eligibility.value.history, canPrepare.value, canInitialize.value], () => {
   generation++; attempt.value = null; confirmation.value = null; request.value = null; recipients.value = []; history.value = []; total.value = 0
   recipientLoading.value = saving.value = confirmationLoading.value = requestLoading.value = historyLoading.value = false
   confirmationError.value = recipientError.value = requestError.value = historyError.value = ''
   candidates.value = []; candidateTotal.value = 0; candidatePage.value = 1; selectedDecision.value = ''; requirement.value = null; handlingAttempt.value = null
   candidateLoading.value = requirementLoading.value = handlingSaving.value = handlingSucceeded.value = false; handlingError.value = ''
+  initializing.value = false; initializationReason.value = ''
   page.value = 1
   if (eligibility.value.history) loadHistory()
   if (eligibility.value.confirm && props.decisionID) refreshConfirmation()

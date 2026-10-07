@@ -225,7 +225,7 @@ Portal 是同步 BFF 和消费界面，只展示 Asset 返回的履约状态；�
 
 引擎授权管理委派的第一阶段契约：
 
-- 办理资格分别使用 `system.engine_access_delegation.create/read/revoke`，只接受当前 Tenant 的 User 和 Tenant Scope。通过既有自定义 Role 与 Role Assignment 显式分配，不自动加入内置 Role、不回填现有账号。
+- 委派管理资格分别使用 `system.engine_access_delegation.create/read/revoke`，只接受当前 Tenant 的 User 和 Tenant Scope。产品提供专职内置 Role `tenant.engine_access_delegation_administrator`（引擎授权委派管理员），组合上述三项权限、引擎管理读取及有效租户账号候选读取；通过既有 Role Assignment 显式分配，也允许按既有规则定制 Role。不向其他内置管理员 Role 加入这些委派权限、不回填现有账号。该 Role 不包含业务共享确认、批准要求初始化、实际授权办理、Grant 撤销或 Explicit Deny，也不产生引擎管理委派或源数据读取权。
 - 每份委派只绑定一个当前 Tenant 的有效 Engine 和一个有效 User Tenant Membership。管理范围为该 Engine，不包含内容读取、写入、DDL 或转委派；后续访问规则仍须逐项选定逻辑资源并验证业务依据。
 - 创建必须提供非空原因与未来的 `expires_at`；不使用默认期限、不创建永久委派，期限不得超过目标 Membership 的有效期。尚未确认期限上限，不据此扩展普通读取 Grant 的期限。新建资格只面向具备实时目录能力的引擎，不根据引擎类型猜测能力。
 - 唯一管理路径为 `GET/POST /api/v1/system/engines/:id/access_delegations`、`GET /api/v1/system/engines/:id/access_delegations/:delegation_id` 和 `POST .../:delegation_id/revoke`。撤销要求正整数 `version` 与原因，冲突返回 `resource_version_conflict`；无更新、恢复、续期或物理删除路线。

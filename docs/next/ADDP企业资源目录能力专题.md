@@ -3934,3 +3934,54 @@ Manager 的数据库预览与后台数据剖析共同调用同一 Resolver／数
 3. 确认行数、样本量、字段统计和部分采样提示符合实际；再显式应用字段条件，确认范围与结果分开保存。无授权账号应明确被拒绝，不以服务身份兜底。
 
 **下一优先项：** 先以户外域的一张真实 PostgreSQL 普通表完成上述页面允许／拒绝体验，修复正常链路的阻塞；不要重新把并发源端 DDL 增强作为体验前置。
+
+### 26.101 首版授权办理前置配置页面（2026-10-06）
+
+继续复用 System 的现有权威接口，补齐正常单表办理需要的配置入口，不改变权限或模块边界。
+
+- System 引擎详情增加授权管理委派：按姓名选择有效租户账号，显式填写未来到期时间和原因；独立读取、创建、撤销权限分别控制操作。复用租户账号选择器，不自动授予角色或数据读取权，不将管理委派默认为永久。
+- Catalog 共享办理中，在选择共享确认的精确源目标后，具有独立初始化权限的人员可显式初始化该目标的 Catalog 批准要求。失败观察不等于要求缺失；页面不依据一般 404、403 或网络错误自动写入。初始化只新增配置，已有要求由 System 拒绝覆盖，成功后重新观察版本再办理。
+- 源路径来自现有有效确认，不手填表名或将 ResourceLocator 冒充完整路径；数字引擎 ID 序列化不得经过浮点转换。业务确认、管理委派、批准要求与实际数据授权分别呈现。
+- T1 使用实际组件交互／客户端契约回归；T3 沿用 `make test-system-frontend`、`make test-catalog-frontend` 与受影响 Console 前端门禁，新增文件由既有自动发现覆盖。工作区总门禁为 `make test-changed`，真实服务页面 T4 另行报告，不自行启停服务。
+
+**本轮验证结果：**
+
+- `make test-catalog-frontend` 退出码 0：23 个测试文件、123 项测试及生产构建通过；覆盖显式初始化、独立权限、失败保留草稿、不自动办理和引擎 ID 无损序列化。日志 `/tmp/addp-access-catalog-frontend.log`。
+- `make test-system-frontend` 退出码 0：20 个测试文件、104 项单元测试、72 项浏览器测试及生产构建通过，含新增 5 项委派页面交互用例。日志 `/tmp/addp-access-system-frontend.log`。
+- `make test-frontend-ci-registration` 退出码 0，确认既有 Platform CI 的前端门禁自动发现本轮测试，无需新增 Workflow。日志 `/tmp/addp-access-frontend-registration.log`。
+- `make test-platform` 退出码 0，平台一致性、共享所有权、CI 登记、授权清单和 Swagger 覆盖门禁通过。Online 分发器的模拟回归不计为真实 T4。日志 `/tmp/addp-access-platform.log`；最终 `git diff --check` 退出码 0。
+- 最终 `make test-console-frontend` 退出码 0：24 个测试文件、148 项单元测试、116 项浏览器测试及生产构建通过。早期运行因另一并行会话占用固定测试端口而停止；等待其自行释放后通过唯一标准入口复验，不停止对方进程，也不复用其服务。日志 `/tmp/addp-access-console-frontend.log`。
+- `make test-changed` 退出码 2：缺少 `CATALOG_POSTGRES_TEST_DSN`、`ADDP_SYSTEM_POSTGRES_TEST_DSN`，在 T2 预检停止，不能计为工作区总门禁通过。本轮未修改后端、迁移或 HTTP 契约；隔离 PostgreSQL 回归继续由既有 Catalog／System IAM T2 Job 验证。日志 `/tmp/addp-access-changed.log`。
+- 实际服务的 User／Gateway／System／Manager Worker T4 未运行，页面夹具不证明真实授权已完成。不自行启停 ADDP／Infra，也未对真实账号初始化或授权；本轮前端改动不需要重启后端，刷新页面即可加载。
+
+**正常体验顺序：**
+
+1. 权限管理员通过现有 IAM 角色分配显式配置功能权限：委派管理账号选择 26.102 的专职内置角色（也允许按规范定制角色），包含 `system.engine.read`、`system.engine_access_delegation.read/create/revoke` 及 `iam.tenant_membership.read`；实际办理账号需要 `catalog.entry.read`、`system.engine_access_fulfillment.create` 和本次初始化使用的 `system.engine_access_approval_requirement.initialize`。不能按管理员名字自动放行。
+2. System → 引擎管理 → 目标引擎详情 → 授权管理委派，选择办理账号、未来到期时间及原因。接收账号重新登录，加载委派变更后的有效会话。
+3. Catalog → 数据项详情 → 共享确认与请求，由具备独立确认权限的当前业务负责人选择接收方、授权期限和用途，显式确认。业务负责人本人不因承担责任而自动成为办理人。
+4. 办理账号选择本条目的有效确认；已有 Catalog 要求时直接核验版本并办理，尚无配置时显式填写初始化原因。初始化成功后重新核验，点击正式提交；初始化不是授予读取权，受理结果也不是当前访问裁决。
+5. 用接收账号在 Manager 体验目标 PostgreSQL 普通表预览／剖析；还须配置对应 Manager 功能权限。用无 Grant 的另一账号对同表验证拒绝。此真实链路尚未由本轮前端夹具证明，不在真实账号上自动初始化或授权。
+
+**下一优先项：** 以户外域一张已扫描的真实 PostgreSQL 普通表验证上述完整正常流程，先确认授权接收账号允许、无授权账号拒绝，再处理体验中出现的正常链路阻塞；暂不扩展特殊源端并发或新增授权管理页面。
+
+### 26.102 专职引擎授权委派管理员角色（2026-10-07）
+
+用户确认提供内置角色，避免使用者为这一完整职责自行拼装权限；仍由权限管理员显式分配，不自动升级已有账号。唯一角色清单发布 `tenant.engine_access_delegation_administrator`，中文名“引擎授权委派管理员”，Manifest 117 与向前迁移 `000194` 同步。
+
+- 精确权限只有 `system.engine_access_delegation.read/create/revoke`、`system.engine.read` 和 `iam.tenant_membership.read`，仅允许 Tenant Scope 的 User。
+- 角色模板不扩张旧角色、不创建任何角色分配或引擎管理委派、不授予源数据读取。业务共享确认、批准要求初始化、实际办理、Grant 撤销与 Explicit Deny 仍分别授权。
+- 新增 PostgreSQL 回归证明旧角色／绑定、主体授权版本、角色分配及会话不变，角色精确包含上述五项权限，重复迁移启动无副作用。完整 IAM T2 默认自动发现；既有 `--package migration --test catalog-integrity` 同时执行专职角色发布回归和完整目录校验，不新增并行验证路线。
+- 用户已明确确认将该角色在当前 Tenant 范围长期分配给当前账号 `addp-owner`（ADDP 开发管理员），直到显式撤销。此为正常 IAM 角色分配，不通过迁移回填；角色分配仍按既有规则推进授权版本并使旧会话失效。
+- 当前正式服务的角色列表尚未发布新角色，账号赋权尚未执行。必须先由用户重启 System 加载迁移，再通过现有 IAM 入口确认账号与 Tenant 并分配；不能把代码完成、角色模板发布或前端夹具通过解释为真实账号已赋权。
+
+**下一优先项：** 完成角色门禁后由用户执行 `./scripts/dev/restart.sh -system`；迁移加载后给 `addp-owner` 显式分配该角色并重新登录，核实引擎详情出现“授权管理委派”，再继续正常单表授权体验。
+
+**验证记录：**
+
+- `make test-authorization` 退出码 0，角色清单、精确权限／Scope／Principal 限制、生成产物与 Swagger 授权覆盖通过；现有目录增加一个角色，权限总量不变。日志 `/tmp/addp-delegation-role-authorization.log`。
+- `make test-system-frontend` 退出码 0：20 个文件、104 项单元测试、75 项浏览器测试及生产构建通过，内置角色中英文词条由现有清单覆盖测试自动核验。日志 `/tmp/addp-delegation-role-frontend.log`。
+- `make test-system-iam-runner` 退出码 0，9 项标准门禁回归通过；`make test-frontend-ci-registration` 退出码 0，17 项检查与 21 个前端登记通过。日志分别为 `/tmp/addp-delegation-role-iam-runner.log`、`/tmp/addp-delegation-role-frontend-ci.log`。
+- 实际连接已先用 `scripts/infra/status.sh` 核实为本工作区 `25432/addp_iam_test`。首次完整 migration package 运行因新断言误用数据库默认字符串排序失败；改为显式 `C` 排序后，既有标准入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test catalog-integrity'` 退出码 0，角色向前发布与完整目录回归均通过，没有 Skip。日志 `/tmp/addp-delegation-role-catalog-integrity.log`；首轮日志 `/tmp/addp-delegation-role-migration.log` 不计为整包通过。
+- `make test-changed` 退出码 2：共享测试清单与并行工作区改动扩大 owner 选择，多项 T2 安全连接条件缺失，在预检停止，不计为工作区总门禁通过。日志 `/tmp/addp-delegation-role-changed.log`。本角色的迁移与前端由已有 System IAM／Platform CI 门禁覆盖，不新增 Workflow。
+- `make test-module MODULE=system` 退出码 2，在其先行 `test-platform` 的 Hosted Orchestrator 夹具中有 5 项失败，尚未执行后续模块步骤；不能计为 System 全模块通过。本次导入本机 `.env` 后运行，与干净环境不一致；干净环境通过标准 `make test-orchestrator-online-runner` 复验，60 项全部通过。不修改无关在线验收逻辑。日志 `/tmp/addp-delegation-role-system.log`、`/tmp/addp-delegation-role-online-runner-recheck.log`。
+- 补跑 `make test-go` 首次发现迁移目录的最新版本断言仍为 193，已同步为 194；最终 `make test-go` 退出码 0，全仓 Go T1 通过。日志 `/tmp/addp-delegation-role-go-final.log`。真实 PostgreSQL 仍以上述定向 T2 为准；未执行真实账号赋权或服务 T4。

@@ -128,6 +128,15 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package migration", result.stderr)
 
+    def test_catalog_integrity_filter_covers_role_publication_and_full_catalog(self):
+        result = self.run_gate(arguments=("--test", "catalog-integrity"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        self.assertIn("./internal/migration -run ^Test(Runner|EngineAccessDelegationRoleForwardMigration)AgainstPostgres$", trace)
+        result = self.run_gate(arguments=("--package", "iam", "--test", "catalog-integrity"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package migration", result.stderr)
+
     def test_terminated_gate_releases_lock(self):
         first = self.start_holder()
         os.killpg(first.pid, signal.SIGTERM)

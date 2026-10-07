@@ -12,6 +12,7 @@ describe('tenant member selector ownership', () => {
     const serviceAccounts = source('../src/components/iam/ServicePrincipalAccountsPanel.vue')
     const userAccounts = source('../src/components/iam/TenantUserAccountsPanel.vue')
     const selector = source('../src/components/iam/TenantMemberSelect.vue')
+    const engineDelegations = source('../src/components/engines/EngineAccessDelegations.vue')
 
     expect(roleAssignments).toContain('<TenantMemberSelect')
     expect(roleAssignments).toContain("principal_type: fixedMember.value?.principal_type || 'user'")
@@ -24,5 +25,7 @@ describe('tenant member selector ownership', () => {
     expect(selector).toContain('<TenantMemberIdentity')
     expect(roleAssignments).not.toContain('v-for="member in membershipOptions"')
     expect(audit).not.toContain('v-for="member in membershipOptions"')
+    expect(engineDelegations).toContain('<TenantMemberSelect')
+    expect(engineDelegations).not.toContain('v-for="member in members"')
   })
 })
