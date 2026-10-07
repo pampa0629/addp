@@ -1,4 +1,7 @@
 import copy
+import datetime
+import tempfile
+from pathlib import Path
 import importlib
 import io
 import json
@@ -156,6 +159,65 @@ class MetricsProtocolTest(unittest.TestCase):
             client.request.return_value = ONLINE.API.Response(200, dict(value, **change))
             with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.resource_query_after(client, node, target, sampled-1)
+
+    def test_browser_report_binds_real_identity_versions_server_time_and_screenshots(self):
+        expected = {"run_id": "unique-run", "node": {"node_id": "node-id", "version": 1},
+                    "target": {"id": "target-id", "version": 2}, "policy_version": 0,
+                    "admin_id": "admin-id", "security_id": "security-id"}
+        admin, security = identity(), identity("platform.security_administrator")
+        admin["principal"]["id"], security["principal"]["id"] = "admin-id", "security-id"
+        instant = self.resource_reply()
+        rows = [{"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(ONLINE.METRICS)}, "value": instant}]
+        for key, span in (("node.memory.used_percent", 3600), ("node.load.average_1m", 300)):
+            value = self.resource_reply([key], trend=True)
+            end = datetime.datetime.fromisoformat(value["end"].replace("Z", "+00:00"))
+            start = end - datetime.timedelta(seconds=span)
+            stamp = lambda at: at.isoformat().replace("+00:00", "Z")
+            value["start"] = stamp(start)
+            value["series"][0]["points"] = [{"evaluated_at": stamp(start+datetime.timedelta(seconds=index*15)),
+                "sampled_at": stamp(start+datetime.timedelta(seconds=index*15)), "value": 0, "data_state": "valid"} for index in range(span//15+1)]
+            rows.append({"path": ONLINE.TRENDS, "query": {"node_id": "node-id", "metrics": key, "start": value["start"], "end": value["end"]}, "value": value})
+        rows.append(copy.deepcopy(rows[0]))
+        report = {"schema_version": "addp.node-resources-browser/v1", "result": "passed", "stage": "complete", "run_id": "unique-run",
+                  "identity": admin, "negative_identity": security, "negative_no_business_reads": True, "resources": rows,
+                  "navigation": {"list_without_fanout": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True}}
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            for name in ("list", "detail", "restored"):
+                (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
+            self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
+            mutations = [lambda v: v.update(result="failed"), lambda v: v.update(run_id="other-run"),
+                         lambda v: v["identity"]["principal"].update(id="foreign"),
+                         lambda v: v["negative_identity"].update(context={"type": "tenant", "tenant_id": "2"}),
+                         lambda v: v.update(negative_no_business_reads=False), lambda v: v["navigation"].update(history=False),
+                         lambda v: v["resources"][0]["value"].update(policy_version=1),
+                         lambda v: v["resources"][1]["value"].update(target_saved_version=1),
+                         lambda v: v["resources"][1]["query"].update(end="2026-10-06T00:01:01Z"),
+                         lambda v: v["resources"][1]["value"]["series"][0]["points"].pop(),
+                         lambda v: v["resources"][0]["value"]["series"][0]["points"][0].update(value=float("nan")),
+                         lambda v: v.update(resources=[])]
+            for mutation in mutations:
+                bad = copy.deepcopy(report); mutation(bad)
+                with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_resource_browser(bad, expected, artifacts)
+            (artifacts / "node-resources-detail.png").unlink()
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_resource_browser(report, expected, artifacts)
+
+    def test_browser_failure_cannot_reuse_report_or_leak_subprocess_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            evidence = artifacts / "node-resources-browser.json"
+            evidence.write_text('{"result":"passed"}')
+            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
+                 patch.object(ONLINE.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout="sensitive", stderr="sensitive")), \
+                 patch("sys.stdout", new_callable=io.StringIO) as output:
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.run_resource_browser({"node_id": "node", "version": 1}, {"id": "target", "version": 2}, {"version": 0}, "node", {"principal": {"id": "admin"}}, {"principal": {"id": "security"}})
+                self.assertFalse(evidence.exists())
+                self.assertNotIn("sensitive", output.getvalue())
+                value = json.loads((artifacts / "node-resources-browser-input.json").read_text())
+                self.assertEqual(set(value["node"]), {"node_id", "version"})
 
     def test_center_fault_requires_hosted_boundary_and_owned_infra_identity(self):
         with patch.object(ONLINE.FIXTURE, "boundary", side_effect=ValueError("personal")), patch.object(ONLINE.FIXTURE, "command") as command:

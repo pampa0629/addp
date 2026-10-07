@@ -25,7 +25,7 @@ stop_online_fixture() {
   return "$status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-export MONITOR_URL=http://127.0.0.1:8100
+export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 # Core Infra is created independently; metrics preparation and startup follow.
 infra_owned=1
 run_logged env ADDP_OBSERVABILITY_METRICS_ENABLED=false ADDP_OBSERVABILITY_LOGS_ENABLED=false bash scripts/infra/up.sh
@@ -41,6 +41,7 @@ run_logged python3 scripts/test/platform-node-metrics-fixture.py query
 source "$ADDP_ONLINE_SECRET_DIR/metrics.env"
 application_owned=1
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -monitor
+run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite platform-node-metrics --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

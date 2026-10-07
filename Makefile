@@ -451,7 +451,8 @@ test-elasticsearch-online-runner: ## 验证 ES Spark T4 场景、物理夹具与
 	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py scripts/test/online-hosted-elasticsearch-gate_test.py scripts/test/online-elasticsearch-consumer-fixture_test.py
 
 .PHONY: test-node-metrics-online-runner
-test-node-metrics-online-runner: ## 验证节点指标 Online 身份边界与 Hosted 清理
+test-node-metrics-online-runner: ## 验证节点指标 Online 身份边界、浏览器证据与 Hosted 清理
+	@node --check console/frontend/e2e/online/platform-node-resources.spec.js
 	@bash -n scripts/test/online-hosted-node-metrics-gate.sh
 	@python3 -m unittest scripts/test/platform-node-metrics-online_test.py scripts/test/platform-node-metrics-fixture_test.py scripts/test/online-hosted-node-metrics-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run Metrics -count=1

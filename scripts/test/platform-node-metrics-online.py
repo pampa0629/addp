@@ -178,7 +178,7 @@ def utc_timestamp(value):
     return parsed.timestamp()
 
 
-def assert_resources(value, node, target=None, trend=False, keys=None, disconnected=False):
+def assert_resources(value, node, target=None, trend=False, keys=None, disconnected=False, range_seconds=60):
     expected = METRICS if keys is None else {key: METRICS[key] for key in keys}
     require(value.get("subject") == {"kind": "node", "node_id": node["node_id"]}, "query node identity mismatch")
     require(value.get("node_version") == node["version"], "query node version mismatch")
@@ -189,7 +189,7 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
     queried, start, end = (utc_timestamp(value.get(key)) for key in ("queried_at", "start", "end"))
     step = value.get("step_seconds")
     require(start <= end <= queried and type(step) is int, "invalid query evaluation interval")
-    require((trend and end-start == 60 and step >= 15 and step % 15 == 0) or (not trend and start == end), "invalid query grid")
+    require((trend and end-start == range_seconds and step >= 15 and step % 15 == 0) or (not trend and start == end), "invalid query grid")
     count = int((end-start)//step)+1 if trend else 1
     rows = value.get("series")
     require(isinstance(rows, list) and len(rows) == len(expected), "missing or excess resource series")
@@ -272,13 +272,79 @@ def assert_discovery(client, target, node_version):
     require(all(labels.get(k) == v for k, v in expected.items()), "discovery is not bound to current identity/config versions")
 
 
+def validate_resource_browser(value, expected, artifacts):
+    require(value.get("schema_version") == "addp.node-resources-browser/v1" and value.get("result") == "passed"
+            and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "browser result mismatch")
+    for field, principal, role in (("identity", "admin_id", "platform.system_administrator"),
+                                    ("negative_identity", "security_id", "platform.security_administrator")):
+        actor = value.get(field, {})
+        platform_identity(actor, role)
+        require(actor["principal"].get("id") == expected[principal], "browser did not use the API phase identity")
+    require(value.get("negative_no_business_reads") is True and value.get("navigation") == {
+        "list_without_fanout": True, "iframe_preserved": True, "history": True,
+        "metric_reload": True, "range_reload": True, "server_window": True}, "browser navigation or denial evidence missing")
+    rows = value.get("resources")
+    require(isinstance(rows, list) and 4 <= len(rows) <= 30, "browser resource evidence missing or unbounded")
+    instants, trends = [], []
+    for row in rows:
+        query, resource = row.get("query", {}), row.get("value", {})
+        require(query.get("node_id") == expected["node"]["node_id"], "browser requested another node")
+        trend = row.get("path") == TRENDS
+        require(trend or row.get("path") == OBSERVATIONS, "browser resource path mismatch")
+        keys = query.get("metrics", "").split(",")
+        require((trend and keys in [["node.memory.used_percent"], ["node.load.average_1m"]])
+                or (not trend and len(keys) == len(METRICS) and set(keys) == set(METRICS)), "browser metric request mismatch")
+        duration = utc_timestamp(query.get("end")) - utc_timestamp(query.get("start")) if trend else 0
+        require(not trend or duration in {300, 3600}, "browser range mismatch")
+        assert_resources(resource, expected["node"], expected["target"], trend, keys, range_seconds=duration)
+        require(resource["policy_version"] == expected["policy_version"], "browser ignored current query budget")
+        if trend:
+            end = utc_timestamp(query.get("end"))
+            require(end == utc_timestamp(resource["end"])
+                    and any(utc_timestamp(item["end"]) == end for item in instants), "browser trend lacks server anchor")
+            trends.append((keys[0], duration))
+        else:
+            instants.append(resource)
+    require(len(instants) >= 2 and {("node.memory.used_percent", 3600), ("node.load.average_1m", 300)} <= set(trends), "browser restore evidence incomplete")
+    for name in ("list", "detail", "restored"):
+        screenshot = artifacts / ("node-resources-" + name + ".png")
+        require(screenshot.is_file() and screenshot.stat().st_size > 1000
+                and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
+    return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
+            "eight_metrics": True, "trend_server_window": True, "navigation_restore": True,
+            "security_administrator_denied": True}
+
+
+def run_resource_browser(node, target, policy, display_name, admin, security):
+    artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
+    expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node": node, "target": {"id": target["id"], "version": target["version"]},
+                "display_name": display_name, "policy_version": policy["version"],
+                "admin_id": admin["principal"]["id"], "security_id": security["principal"]["id"]}
+    # Store only the subject/version facts needed by the page, never target TLS/credentials.
+    expected["node"] = {"node_id": node["node_id"], "version": node["version"]}
+    (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
+    evidence = artifacts / "node-resources-browser.json"
+    evidence.unlink(missing_ok=True)
+    for name in ("list", "detail", "restored"):
+        (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
+    result = subprocess.run(["npm", "run", "test:e2e", "--", "--config=playwright.online.config.js",
+                             "e2e/online/platform-node-resources.spec.js",
+                             "--output=" + str(Path(os.environ["ADDP_ONLINE_SECRET_DIR"]) / "node-resource-browser-output")], cwd=FIXTURE.ROOT / "console/frontend",
+                            env=dict(os.environ), capture_output=True, text=True, timeout=240)
+    # Playwright may print assertions from login; never forward credential-bearing output.
+    require(result.returncode == 0, "resource browser failed; inspect sanitized stage report")
+    require(evidence.is_file(), "resource browser report missing")
+    return validate_resource_browser(json.loads(evidence.read_text()), expected, artifacts)
+
+
 def run(base, directory, report):
     report["stage"] = "platform-login-mfa"
     admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
     security = login(base, "ADDP_ONLINE_METRICS_SECURITY")
     admin_identity = admin.request("GET", "/api/v1/system/auth/context", (200,)).payload
     platform_identity(admin_identity, "platform.system_administrator")
-    platform_identity(security.request("GET", "/api/v1/system/auth/context", (200,)).payload, "platform.security_administrator")
+    security_identity = security.request("GET", "/api/v1/system/auth/context", (200,)).payload
+    platform_identity(security_identity, "platform.security_administrator")
     report["stage"] = "collector-identity"
     machine = machine_client(base)
     service_identity(machine.request("GET", "/api/v1/system/auth/context", (200,)).payload)
@@ -358,6 +424,8 @@ def run(base, directory, report):
         assert_resources(value, node, target, trend)
     query_policy = check_query_policy(admin, node)
     report.update(resource_query=True, query_budget_cas_hot_read=True, query_policy_version=query_policy["version"])
+    report["stage"] = "console-resource-browser"
+    report["resource_browser"] = run_resource_browser(node, target, query_policy, node_input["display_name"], admin_identity, security_identity)
     report["stage"] = "center-query-outage-recovery"
     center_action("stop")
     try:

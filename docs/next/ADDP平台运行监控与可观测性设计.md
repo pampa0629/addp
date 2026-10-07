@@ -903,3 +903,15 @@ Monitor 唯一拥有节点资源页面，Console 通过 `/monitor/node-resources
 | `make test-changed` | 退出 2：共享工作区其他 Common/模块变更需要的 PostgreSQL、MySQL/OceanBase 等 T2 连接参数缺失，止于统一预检，后续未执行；不计为通过。当前已提交范围的前端由既有 Platform CI 独立复验；这些未提交跨 owner T2 输入须由各自任务在提交时通过既有 Release/T2 标准门禁验证 |
 
 首次 Monitor 浏览器复验中，创建和更新的两条成功通知同时存在，旧用例的单元素定位失败；修正为核对最新更新通知，并保留实际请求版本/启停/删除断言，完整复验通过，没有改动产品保存语义。桌面及英文窄屏截图已查看，窄屏无横向页面溢出；中英文词条、任务文档围栏/本地链接与空白检查通过。本批复用现有 API 契约，未改后端接口、Swagger、权限或部署输入，没有重启个人开发服务。上述浏览器均使用受控 API 夹具，只计为 T3；下一步优先让同一 Hosted suite 验收真实 Console 登录、节点资源页和查询请求的完整链路。
+
+提交 `e35135489` 的 Platform CI（Run 37494968877）和 Release/T2（Run 37494968948）均已完成并通过；该提交的页面验收仍属于确定性 T3。
+
+### 10.25 节点资源页面 Hosted 验收（实施中）
+
+在既有 `platform-node-metrics` 一次性 Linux 部署中增加真实 Console/Monitor iframe 阶段，位于预算恢复后、故障注入前。沿用 10.22 的正式三员 Bootstrap 临时身份与已批准的节点资源读取范围，不授予新权限、不读取 Tenant 业务数据。浏览器自行完成密码及 MFA 登录，以其实际 AuthContext 证明与 API 阶段相同的非委托 Platform 系统管理员；安全管理员通过另一 Browser Context 完成真实 MFA，验证资源入口拒绝且没有节点/资源业务请求。
+
+页面验收读取真实 System 节点列表与详情、八项即时指标和单项趋势，核对节点/目标/预算版本、指标目录、有限数值、完整网格和服务端时间窗。验证 Console 地址与真实 iframe 的单历史、前进/后退、趋势选择及刷新恢复，并保存认证完成后的页面截图和不含凭据的资源响应证据。浏览器不拦截 API、不注入 Token、不替换 MFA；生成验证码复用现有 RFC6238 实现，并等待新时间步避免重放。同一 suite 的 API 故障恢复与 Platform/Tenant/Service 拒绝矩阵继续执行。
+
+实施前确认门禁：`make test-node-metrics-online-runner`、`make test-online-runner`、`make test-frontend-ci-registration` 与 `make test-changed`。浏览器用例仅由已有 Online Playwright 配置执行，不加入确定性 T3；Hosted 标准入口在应用启动后准备 Chromium，安装失败也须完成隔离部署清理。既有 Online T4 workflow 和 runner 注册复用；报告缺失、版本不符、缺少截图或浏览器失败均不得计为通过。密码、MFA、Token 不进入报告、截图或命令参数，登录阶段关闭自动失败截图与 trace，退出仍以独立生命周期报告核验凭据销毁和零残留。真实运行结果将在本节记录。
+
+2026-10-07 本地前置门禁：`make test-node-metrics-online-runner` 通过（19 项协议/证据/生命周期测试及 System Metrics fixture 单元测试），`make test-online-runner` 完整通过，`make test-console-frontend` 通过（148 项单元、118 项确定性浏览器回归及构建），`make test-frontend-ci-registration` 通过（17 项回归、21 个前端登记）。Online Playwright 配置成功发现唯一的新用例；加载检查曾发现 CommonJS 转译不接受 `import.meta`，已按既有 runner 的 Console 工作目录确定仓库位置并复验。`make test-changed` 退出 2，其他任务的 T2 连接参数缺失导致统一预检退出，后续未执行，不计为通过。上述结果均不替代真实 Hosted 页面 T4。
