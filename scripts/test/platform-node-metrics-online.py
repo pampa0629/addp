@@ -109,7 +109,7 @@ def service_identity(identity):
     require(permissions(identity) == {"monitor.metrics_discovery.read"}, "Prometheus identity exceeds discovery scope")
 
 
-def machine_client(base):
+def machine_token(base):
     credentials = "addp-prometheus:"+os.environ["PROMETHEUS_SERVICE_CLIENT_SECRET"]
     request = urllib.request.Request(base+"/api/v1/system/oauth/token", method="POST",
         data=urllib.parse.urlencode({"grant_type": "client_credentials", "scope": "addp.api", "context_type": "platform", "audience": "addp.api"}).encode(),
@@ -121,7 +121,45 @@ def machine_client(base):
     require(isinstance(token_type, str) and token_type.lower() == "bearer" and result.get("scope") == "addp.api", "invalid native OAuth response")
     token = result.get("access_token")
     require(isinstance(token, str) and token.startswith("addp_at_"), "missing native OAuth token")
-    return API.GatewayClient(base, token, 10)
+    lifetime = result.get("expires_in")
+    require(type(lifetime) is int and lifetime > 0, "invalid native OAuth token lifetime")
+    return token, lifetime
+
+
+class CollectorClient(API.GatewayClient):
+    """Keep this suite's fixed collector identity current through long fault phases."""
+    def __init__(self, base):
+        super().__init__(base, "", 10)
+        self.principal_id = None
+        self.grant_count = 0
+        self.renew_at = 0
+        self.renew()
+
+    def renew(self):
+        started = time.monotonic()
+        # Never send the previous credential if grant or identity verification fails.
+        self.token = ""
+        token, lifetime = machine_token(self.base_url)
+        candidate = API.GatewayClient(self.base_url, token, self.timeout)
+        identity = candidate.request("GET", "/api/v1/system/auth/context", (200,)).payload
+        service_identity(identity)
+        principal_id = identity["principal"].get("id")
+        require(isinstance(principal_id, str) and principal_id, "missing collector principal identity")
+        require(self.principal_id in {None, principal_id}, "collector principal changed during acceptance")
+        self.principal_id = principal_id
+        self.renew_at = started + lifetime - min(self.timeout, lifetime / 2)
+        require(time.monotonic() < self.renew_at, "collector grant exhausted before identity verification")
+        self.token = token
+        self.grant_count += 1
+
+    def request(self, *args, **kwargs):
+        if time.monotonic() >= self.renew_at:
+            self.renew()
+        return super().request(*args, **kwargs)
+
+
+def machine_client(base):
+    return CollectorClient(base)
 
 
 class Prometheus:
@@ -367,7 +405,7 @@ def run(base, directory, report):
     platform_identity(security_identity, "platform.security_administrator")
     report["stage"] = "collector-identity"
     machine = machine_client(base)
-    service_identity(machine.request("GET", "/api/v1/system/auth/context", (200,)).payload)
+    report["collector_principal_id"] = machine.principal_id
     report["stage"] = "tenant-platform-isolation"
     primary, foreign = int(os.environ["ADDP_ONLINE_TEST_TENANT_ID"]), int(os.environ["ADDP_ONLINE_METRICS_FOREIGN_TENANT_ID"])
     require(primary > 1 and foreign > 1 and primary != foreign, "distinct nondefault Tenant identities required")
@@ -516,7 +554,7 @@ def run(base, directory, report):
     admin.request("DELETE", target_path, (204,), {"version": target["version"]})
     admin.request("GET", target_path, (404,))
     admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"]))
-    report.update(source_outage_recovery=True, control_outage_recovery=True, node_and_target_removal=True,
+    report.update(collector_grant_count=machine.grant_count, source_outage_recovery=True, control_outage_recovery=True, node_and_target_removal=True,
                   cleanup="awaiting-hosted-deployment-destruction", result="passed", stage="complete")
 
 

@@ -17,6 +17,14 @@ def identity(role="platform.system_administrator"):
             "authorization": {"role_assignments": [{"role_key": role, "permissions": sorted(ONLINE.REQUIRED) if role.endswith("system_administrator") else []}]}}
 
 
+def collector_identity():
+    value = identity("system.metrics_discovery")
+    value.update(principal={"type": "service_principal", "id": "collector-id"},
+                 token={"type": "service_access_token"}, client={"client_id": "addp-prometheus"})
+    value["authorization"]["role_assignments"][0]["permissions"] = ["monitor.metrics_discovery.read"]
+    return value
+
+
 class MetricsProtocolTest(unittest.TestCase):
     def test_failure_reason_redacts_credentials_and_opaque_tokens(self):
         with patch.dict(ONLINE.os.environ, ADDP_ONLINE_METRICS_ADMIN_PASSWORD="private-password"):
@@ -27,12 +35,59 @@ class MetricsProtocolTest(unittest.TestCase):
     def test_native_oauth_token_type_is_case_insensitive(self):
         for token_type in ("bearer", "Bearer", "BEARER"):
             opener = unittest.mock.Mock()
-            opener.open.return_value = io.BytesIO(json.dumps({"access_token": "addp_at_test-only", "token_type": token_type, "scope": "addp.api"}).encode())
-            with self.subTest(token_type=token_type), patch.dict(ONLINE.os.environ, PROMETHEUS_SERVICE_CLIENT_SECRET="test-only-secret"), patch.object(ONLINE.urllib.request, "build_opener", return_value=opener):
+            opener.open.return_value = io.BytesIO(json.dumps({"access_token": "addp_at_test-only", "token_type": token_type, "scope": "addp.api", "expires_in": 300}).encode())
+            with self.subTest(token_type=token_type), patch.dict(ONLINE.os.environ, PROMETHEUS_SERVICE_CLIENT_SECRET="test-only-secret"), patch.object(ONLINE.urllib.request, "build_opener", return_value=opener), patch.object(ONLINE.API.GatewayClient, "request", return_value=ONLINE.API.Response(200, collector_identity())):
                 client = ONLINE.machine_client("http://127.0.0.1:8000")
                 self.assertEqual(client.token, "addp_at_test-only")
                 form = ONLINE.urllib.parse.parse_qs(opener.open.call_args.args[0].data.decode())
                 self.assertEqual(form, {"grant_type": ["client_credentials"], "scope": ["addp.api"], "audience": ["addp.api"], "context_type": ["platform"]})
+
+    def test_collector_renews_before_expiry_and_rechecks_the_same_identity(self):
+        used = []
+        def request(client, method, path, expected, **kwargs):
+            used.append((path, client.token))
+            return ONLINE.API.Response(200, collector_identity() if path.endswith("auth/context") else [])
+        with patch.object(ONLINE, "machine_token", side_effect=[("addp_at_first", 300), ("addp_at_next", 300)]) as grant, patch.object(ONLINE.time, "monotonic", return_value=100) as clock, patch.object(ONLINE.API.GatewayClient, "request", autospec=True, side_effect=request):
+            client = ONLINE.machine_client("http://127.0.0.1:8000")
+            clock.return_value = 389
+            client.request("GET", ONLINE.DISCOVERY, (200,), response_type=list)
+            self.assertEqual(grant.call_count, 1)
+            clock.return_value = 390
+            client.request("GET", ONLINE.DISCOVERY, (200,), response_type=list)
+            self.assertEqual(grant.call_count, 2)
+            self.assertEqual(client.grant_count, 2)
+            self.assertEqual(used, [("/api/v1/system/auth/context", "addp_at_first"), (ONLINE.DISCOVERY, "addp_at_first"), ("/api/v1/system/auth/context", "addp_at_next"), (ONLINE.DISCOVERY, "addp_at_next")])
+
+    def test_collector_rejects_changed_or_expanded_identity_before_business_request(self):
+        changes = [lambda v: v["principal"].update(id="other-id"),
+                   lambda v: v["authorization"]["role_assignments"][0]["permissions"].append("platform.host_node.read"),
+                   lambda v: v.update(context={"type": "tenant", "tenant_id": "2"})]
+        for change in changes:
+            bad = collector_identity(); change(bad)
+            with self.subTest(change=change), patch.object(ONLINE, "machine_token", side_effect=[("addp_at_first", 300), ("addp_at_next", 300)]), patch.object(ONLINE.time, "monotonic", return_value=100) as clock, patch.object(ONLINE.API.GatewayClient, "request", side_effect=[ONLINE.API.Response(200, collector_identity()), ONLINE.API.Response(200, bad)]) as request:
+                client = ONLINE.machine_client("http://127.0.0.1:8000")
+                clock.return_value = 390
+                with self.assertRaises(ONLINE.SuiteError):client.request("GET", ONLINE.DISCOVERY, (200,), response_type=list)
+                self.assertEqual(client.token, "")
+                self.assertEqual(request.call_count, 2)
+                self.assertTrue(all(call.args[1].endswith("auth/context") for call in request.call_args_list))
+
+    def test_collector_does_not_retry_authentication_failure_or_failed_grant(self):
+        with patch.object(ONLINE, "machine_token", side_effect=[("addp_at_first", 300), ONLINE.SuiteError("grant denied")]) as grant, patch.object(ONLINE.time, "monotonic", return_value=100) as clock, patch.object(ONLINE.API.GatewayClient, "request", side_effect=[ONLINE.API.Response(200, collector_identity()), ONLINE.SuiteError("HTTP 401")]) as request:
+            client = ONLINE.machine_client("http://127.0.0.1:8000")
+            with self.assertRaisesRegex(ONLINE.SuiteError, "401"):client.request("GET", ONLINE.DISCOVERY, (200,), response_type=list)
+            self.assertEqual(grant.call_count, 1)
+            clock.return_value = 390
+            with self.assertRaisesRegex(ONLINE.SuiteError, "grant denied"):client.request("GET", ONLINE.DISCOVERY, (200,), response_type=list)
+            self.assertEqual(client.token, "")
+            self.assertEqual(request.call_count, 2)
+
+    def test_native_oauth_requires_positive_integer_lifetime(self):
+        for lifetime in [None, 0, -1, True, "300"]:
+            opener = unittest.mock.Mock()
+            opener.open.return_value = io.BytesIO(json.dumps({"access_token": "addp_at_test-only", "token_type": "bearer", "scope": "addp.api", "expires_in": lifetime}).encode())
+            with self.subTest(lifetime=lifetime), patch.dict(ONLINE.os.environ, PROMETHEUS_SERVICE_CLIENT_SECRET="test-only-secret"), patch.object(ONLINE.urllib.request, "build_opener", return_value=opener), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.machine_token("http://127.0.0.1:8000")
 
     def test_rfc6238_sha1_vectors_use_six_digits(self):
         secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
