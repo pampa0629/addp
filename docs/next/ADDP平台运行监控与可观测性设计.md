@@ -942,7 +942,7 @@ Run 37562119255（提交 `9d28d75d1`）复现并确认启动采样时序问题�
 交付前再次运行 `make test-changed`，退出 2：共享工作区其他 owner 的 PostgreSQL/MySQL 等 T2 连接条件缺失，止于预检；后续门禁未执行，不计为通过。文档围栏、报告间 Run ID/节点/目标关联和 `git diff --check` 校验通过，最终追加仅更新验收文档及 Monitor 导航说明，未改已验收代码。
 
 
-### 10.26 节点资源详情自动刷新（实施中）
+### 10.26 节点资源详情自动刷新（已完成真实验收）
 
 沿第 10.5 节已确认刷新契约，下一批只扩展 Monitor 节点资源详情交互：默认每轮完成后等待 15 秒，提供 10/15/30/60 秒和关闭选项，最短 10 秒；这里控制页面查询，不修改 15 秒采样周期。节点列表继续只读取台账，不向各节点扇出资源请求。公开 URL 使用唯一 `refresh=10|30|60|off`，默认 15 省略；仅详情接受，返回列表时移除。切换刷新选项 replace 当前历史项，后台刷新不改变 URL 或创建历史。
 
@@ -952,4 +952,16 @@ Run 37562119255（提交 `9d28d75d1`）复现并确认启动采样时序问题�
 
 测试及 CI 影响在实施前确认：T1 URL 解析归 `make test-monitor-frontend` 自动发现；T3 同入口新增时间控制下的连续刷新、隐藏/恢复、关闭/恢复 URL、慢请求无重叠、故障清空与恢复、撤权和卸载停止回归；Monitor 前端变更沿既有登记扩散至 `make test-console-frontend`，登记由 `make test-frontend-ci-registration` 校验。T4 扩展同一 `platform-node-metrics` Hosted suite，真实 MFA/同一临时非委托 Platform User 读取权限不变，验证自然计时自动刷新及关闭选择恢复，沿 `make test-node-metrics-online-runner` 校验安全产物协议。本批不增加 HTTP API、迁移、角色、部署输入或组件，不修改 IAM 工作。交付前运行以上 owner 门禁与默认 `make test-changed`；当前已有 T4 证据不能代替新增交互验收。
 
-实施与本地验证：`make test-monitor-frontend` 最终通过 39 项单元测试、47 项确定性浏览器测试及构建；首次新增浏览器用例将虚拟时钟安装在页面创建定时器之后，且卸载用例查找了 standalone 不存在的菜单，导致六项用例失败。改为导航前安装时钟、通过实际浏览器历史导航卸载后完整复跑通过；慢请求夹具在请求前设置失败事实，没有改变生产计时或添加测试分支。`make test-node-metrics-online-runner` 21 项协议/Hosted/身份测试及 Go 夹具检查通过；`make test-frontend-ci-registration` 17 项检查通过，21 个前端登记完整。`make test-changed` 因共享工作区其他 owner 的 T2 环境参数缺失停在预检（exit 2），未计为通过；本批不接管这些工作。`make test-console-frontend` 完整通过 148 项单元测试、118 项浏览器测试及构建；中英文截图与窄屏无溢出检查完成。新增真实 Hosted T4 尚待本批最终结果。
+实施与本地验证：`make test-monitor-frontend` 最终通过 39 项单元测试、47 项确定性浏览器测试及构建；首次新增浏览器用例将虚拟时钟安装在页面创建定时器之后，且卸载用例查找了 standalone 不存在的菜单，导致六项用例失败。改为导航前安装时钟、通过实际浏览器历史导航卸载后完整复跑通过；慢请求夹具在请求前设置失败事实，没有改变生产计时或添加测试分支。`make test-node-metrics-online-runner` 21 项协议/Hosted/身份测试及 Go 夹具检查通过；`make test-frontend-ci-registration` 17 项检查通过，21 个前端登记完整。`make test-changed` 因共享工作区其他 owner 的 T2 环境参数缺失停在预检（exit 2），未计为通过；本批不接管这些工作。`make test-console-frontend` 完整通过 148 项单元测试、118 项浏览器测试及构建；中英文截图与窄屏无溢出检查完成。新增真实 Hosted T4 结果见下文。
+
+2026-10-07 真实验收完成：实现提交 `1ce34d77050ca656a61387df1cd213fe0c746c14` 的 [Hosted T4 Run 37566181124](https://github.com/pampa0629/addp/actions/runs/37566181124) 已通过；同提交 [Platform CI Run 37566169065](https://github.com/pampa0629/addp/actions/runs/37566169065) 全部通过，含 Monitor、Console、平台一致性、Go workspace 与产品构建。T4 的实际 gate、产物上传、独立汇总步骤均成功。
+
+- 使用正式密码与真实 MFA 的同一临时非委托 Platform User；安全管理员独立 MFA，资源入口拒绝且未发出节点/资源业务请求。原有 API 身份隔离、预算 CAS/热生效、中心/来源/控制面故障恢复、节点重新启用后的新样本、停用后排除历史和删除清理仍通过。没有扩大角色或测试身份的读取范围。
+- 浏览器真实收到 14 次资源响应，八项即时及 1h/5m 趋势通过当前严格协议复核；节点版本 1、目标保存/应用版本 2、查询预算版本 2 一致。默认 15 秒按自然时间触发新一轮，服务端 end 前进且公开 URL 未变化；选择 `refresh=off` 后完整刷新恢复关闭选项，再等待 16 秒没有新的即时资源请求。该阶段未拦截 API、注入 Token 或修改浏览器时钟。隐藏/可见、慢请求、撤权与卸载的时间控制回归属于上述 T3，不冒充本次自然计时 T4。
+- 本次初始 API 八项都为合法 `no_data`，`initial_resource_query_wait=true`，原有有界就绪等待在真实环境收敛，随后严格新鲜度验证通过。此前 10.25 的成功轮未执行该分支；本次追加了真实分支证据，没有放宽 DTO、版本、时间网格或有效值要求。
+- 统一 Online 报告和浏览器报告的 Run ID 均为 `run-a1c219920d844c779726d80e8fb68821`；API 与浏览器输入的节点/目标 ID 一致。System、Gateway、Monitor 的实际 Build ID、Source Fingerprint 和 Git Commit 均核对至上述实现提交；业务场景耗时 244,837 ms，不作为性能容量承诺。
+- 已查看当次恢复截图，Console 同 origin 的真实 Monitor iframe 展示关闭选项、手工刷新、八项有效资源与 5 分钟负载曲线；独立退出汇总为 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`。25 个下载产物未发现环境凭据文件、私钥、完整 IAM opaque Token 或 MFA enrollment URI；私有 Playwright 输出没有进入上传产物。
+
+本批完成既有节点资源详情的自动刷新实现与 T0/T1/T3/T4 验证，不代表 CPU 忙碌率、文件系统、磁盘/网络 IO、cAdvisor、全局排行或生产 T5 已完成。下一批优先在同一固定目录和查询路径补齐 CPU 忙碌率，沿已确认一分钟窗口及缺样本规则实施，继续保持 Platform/Tenant 边界；IAM 由对应任务处理，不作为本功能后续开发的前置。
+
+最终收尾仅更新本节验收事实及 Monitor 开发导航，本轮文档的 Markdown 与限定路径空白检查通过，没有改变已验证实现。共享工作区全局 `git diff --check` 发现其他任务的 Model3D 补丁尾随空白（exit 2），未计为本轮路径通过，也未修改该任务文件；默认 `make test-changed` 的共享 T2 环境预检限制仍按上文单独计量。
