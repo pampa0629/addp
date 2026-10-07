@@ -919,3 +919,5 @@ Monitor 唯一拥有节点资源页面，Console 通过 `/monitor/node-resources
 首次真实执行 Run 37559331735（提交 `de32f1b02`）未通过，业务报告停在 `platform-resource-query-and-budget`，当次浏览器阶段尚未进入。真实日志显示首个八项即时查询返回 HTTP 200，失败位于响应断言；旧报告未保存具体断言与响应，因此先增加脱敏失败原因、原生采样时间及资源 DTO 证据，再复现，不将启动采样时序假设写成已确认根因。该次退出 `cleanup=passed`、`infra_cleanup=zero_residuals`，失败不计为页面 T4。
 
 同一提交的 Release/T2 Run 37559327731 在既有 System `TestEngineAccessDelegationAgainstPostgres` 失败：旧断言统计全部角色的委派 Permission 绑定为零，与已发布的 000194 专用租户角色模板冲突（实际计数 3）。工作区已有另一任务对该断言的未提交修订，本批不混入提交，当前全仓 T2 不计为通过；Console 与 Monitor 前端远程 CI 已通过。
+
+诊断 Run 37560758272（提交 `4eb5461f7`）通过八项即时/趋势查询与预算 CAS，实际首次样本时间为 `02:22:20.973Z`，趋势 end 为 `02:22:21Z`，最后一格八项均有效、此前缺失格完整保留。随后浏览器完成密码/MFA、真实节点列表与八项卡片、图表及单 iframe 历史导航，失败于验收用例按字符串顺序匹配 `range/metric`：实际 URL 为 `metric=…&range=5m`，状态与期望一致。改用既有 `matchesRedirectURL` 按路径及排序后的完整参数核对，不放宽身份、参数值、网格或资源版本断言；待下一轮完整复验。本次仍为失败，清理通过且零残留；首次即时响应失败的具体原因未取得，启动时序仍只是待验证假设。诊断提交的 Platform CI Run 37560733598 已通过；Release/T2 Run 37560733597 汇总通过但 IAM 实际验证跳过，不能替代上次失败的 IAM 复验。

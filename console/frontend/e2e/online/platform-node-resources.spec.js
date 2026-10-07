@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { resourceMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
-import { json } from './transfer-browser-support.js'
+import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
 test.use({ screenshot: 'off', trace: 'off' })
@@ -97,7 +97,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
     await monitor.getByTestId('resource-range').click()
     await monitor.getByRole('option', { name: '近 5 分钟', exact: true }).click()
-    await expect(page).toHaveURL(new RegExp(`/monitor/node-resources/${expected.node.node_id}\\?range=5m&metric=node.load.average_1m$`))
+    await expect(page).toHaveURL(url => matchesRedirectURL(url, new URL(`/monitor/node-resources/${expected.node.node_id}?range=5m&metric=node.load.average_1m`, process.env.CONSOLE_URL)))
     await page.reload()
     await expect(monitor.getByTestId('resource-range')).toContainText('近 5 分钟')
     await expect(monitor.getByTestId('resource-metric')).toContainText('1 分钟平均负载')
