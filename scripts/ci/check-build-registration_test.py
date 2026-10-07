@@ -172,6 +172,18 @@ class BuildRegistrationTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
+    def test_cmake_tests_require_root_and_ci_registration(self):
+        self._write("engines/native/CMakeLists.txt", "project(native LANGUAGES CXX)\n")
+        errors = MODULE.validate_registration(self.repository)
+        self.assertIn("engines/native/CMakeLists.txt: Makefile target test-native is missing", errors)
+        self.assertIn("engines/native/CMakeLists.txt: root test dependency test-native is missing", errors)
+        self.assertIn("engines/native/CMakeLists.txt: Platform CI target test-native is missing", errors)
+        makefile = self.repository / "Makefile"
+        makefile.write_text(makefile.read_text() + "\ntest: test-native\ntest-native:\n\t@true\n")
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(workflow.read_text() + "  native-tests:\n    steps:\n      - name: Native unit tests\n        run: make test-native\n")
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
     def test_rejects_frontend_hardcoded_node_version(self):
         self._write("sample/frontend/Dockerfile", self.frontend_definition().replace("${NODE_VERSION}","18"))
         self.assertTrue(any("root NODE_VERSION" in error for error in MODULE.validate_registration(self.repository)))

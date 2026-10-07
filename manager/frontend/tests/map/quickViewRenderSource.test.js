@@ -12,12 +12,12 @@ import {
 } from '../../src/utils/quickViewRenderSource.js'
 
 describe('quickViewRenderSource', () => {
-  it.each(['dae', '3ds'])('loads capability for %s metadata before a renderable preview exists', format => {
+  it.each(['dae', '3ds', 'sgm'])('loads capability for %s metadata before a renderable preview exists', format => {
     const previewData = { object: { attributes: { item: { data_type: 'model_3d', format, layout: 'single' } }, content: { kind: 'unsupported' } } }
     expect(isModel3DQuickViewSource(previewData)).toBe(true)
   })
 
-  it.each(['DAE', '3DS'])('loads capability for a %s file node before metadata is available', extension => {
+  it.each(['DAE', '3DS', 'SGM'])('loads capability for a %s file node before metadata is available', extension => {
     expect(isModel3DQuickViewSource({}, {}, `models/model.${extension}`)).toBe(true)
   })
 

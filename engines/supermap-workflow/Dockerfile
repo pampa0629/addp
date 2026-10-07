@@ -40,7 +40,8 @@ RUN cmake -S . -B /build/output -G Ninja \
       -DBUILD_TESTING=ON \
   && env LD_PRELOAD=/lib/aarch64-linux-gnu/libfreetype.so.6 \
       cmake --build /build/output --parallel \
-  && ctest --test-dir /build/output --output-on-failure
+  && env LD_PRELOAD=/lib/aarch64-linux-gnu/libfreetype.so.6 \
+      ctest --test-dir /build/output --output-on-failure
 
 FROM ${RUNTIME_IMAGE} AS runtime
 

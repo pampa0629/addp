@@ -38,6 +38,7 @@ SuperMap C++ SDK、native `.so` 和许可文件不进入 ADDP 代码仓库。完
 - `vector.query`
 - `dataset.save`
 - `osgb_scene_to_s3m`
+- `sgm_to_osgb`
 
 这些算子运行在同一个 C++ 进程和同一次执行上下文内，DAG 边上传递 `UGDataSource`、`UGDatasetVector` 等对象的类型化共享句柄；输出到外部时再写入 UDBX 数据源。
 
@@ -48,6 +49,8 @@ HTTP 层使用独立线程池，确保长时间 SuperMap 算子执行期间，`/
 `datasource.open_postgis` 只打开已有 SuperMap SDX+ for PostGIS 空间表所在数据源，不调用 SuperMap `create`，因此不会主动创建 SuperMap `sm*` 系统表。`datasource.enable_postgis` 是 direct-only 高危算子，用于 System 引擎管理入口显式启用 SuperMap SDX+ for PostGIS 空间工作区，可能在目标 PostgreSQL 数据库中创建 SuperMap 系统表，不进入 Develop 工作流画布。`datasource.open_postgresql` 与 `datasource.enable_postgresql` 对应实现完全不同的 SuperMap SDX+ for PostgreSQL，二者不得在同一 PostgreSQL 实例并存；SDK 固定使用 `sdx` schema，table session 对 Point 的物理 `SmX/SmY` 与其他类型的私有 Geometry 存储统一输出为 `SmGeometry` EWKB。`datasource.upgrade_udbx` 同样是 direct-only 高危算子：它先以 SQLite 只读检查 UDBX 的 SuperMap 系统表与 `SmRegister` 关键字段，再以可写方式打开原文件，由当前 iObjects C++ SDK 完成原位 schema 升级，关闭后再次检查并返回是否发生变更。它不得在 `datasource.open` 或其他普通读取链路中隐式执行；调用方必须先备份文件并记录审计信息。`locator` 只属于 Develop/UI 的资源选择契约；调用 runtime 前，Develop Backend 必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。
 
 `osgb_scene_to_s3m` 同时支持 workflow 和 direct 模式，输入输出统一使用 `addp.workflow.access-plan/v1`。源当前接受 NFS `mounted_path`，运行时按访问计划中的 `server + export_path + nfs_version` 动态挂载；源目录必须包含 `metadata.xml` 与 `Data/Tile_*/Tile_*.osgb`。目标支持 NFS `mounted_path` 与 MinIO/S3 `object_store`：对象存储目标先在本地临时目录完成转换，再递归发布。算子在可写临时目录中镜像 OSGB 场景层级，先调用 `UGOSGBCacheBuilder::GenerateOSGBConfigFile` 生成源 SCP，再使用 `UGObliquePhotogrammetryBuilder::ProcessOSGB` 构建 S3M 3.01：纹理压缩固定为 DXT，几何压缩固定为 Draco，文件类型固定为 S3MB，存储类型固定为 `PURE_FILES`。Builder 保留瓦片局部坐标，运行时随后用 SuperMap `UGRefTranslator` 将 JSON manifest 的 `position` 与 `geoBounds` 从源 EPSG 规范化到 EPSG:4326。发布前必须验证 `version=3.01`、`crs=epsg:4326`、`position.unit=Degree`、位置经纬度范围、`s3m:TextureCompressionType=DXT`、`s3m:VertexCompressionType=DRACO` 及所有根瓦片存在。当前输出为 `config/scene.scp + config/Data/**/*.s3mb`，manifest 中的 `./Data/...` 相对 `config/scene.scp` 解析。Develop workflow 结果是业务存储中的 `format=s3m + layout=whole` 数据集并触发 Meta scan；Manager direct 结果写入 Manager infra MinIO 并由 Manager 维护生命周期。
+
+`sgm_to_osgb` 同时支持 workflow 与 direct：访问计划接受单文件 `file/sgm` 源、`file/osgb` 目标，两端复用 NFS `mounted_path` 和 MinIO/S3 `object_store` 访问能力，目标只允许 `create/replace`。算子在私有目录读取完整骨架、导出 OSGB 并重读核验顶点和三角面数量，验证成功后才发布；`create` 不覆盖已有对象。Common 的 SGM 插件仅声明格式身份，不加载 SDK。Manager 依次调用本算子及 Model3D `osgb_to_glb`，中间 OSGB 不形成业务 item；Develop 单独使用时发布业务 OSGB。当前 SDK 的厂商样例通过真实转换回归，其他版本、复杂材质及动画需另行验证，不将其计为全部支持。
 
 UDBX 升级调试示例：
 
@@ -143,6 +146,14 @@ SUPERMAP_WORKFLOW_MEMORY_LIMIT=8g
 工作流算子由 Manager、Meta、Develop 等调用方实时从 `/api/operators` 发现。只修改 SuperMap C++ 代码时，无需重启 System、Manager 或 Meta；局部重启 SuperMap Workflow 即可。
 
 ## 验证
+
+不依赖厂商 SDK 的协议、算子目录和资源主机测试使用 `make test-supermap-workflow`，已登记根 `make test`、模块自动发现和 Platform CI。该入口需要 CMake、C++20 编译器与 nlohmann-json 开发包，构建目录位于操作系统临时目录并自动清理。
+
+SGM 原生转换和发布边界由镜像构建阶段的 `sgm-conversion-test` 验证；SDK 样例只从外部构建上下文读取，不进入代码仓库。标准入口：
+
+```bash
+make build-images IMAGE_BUILD_ARGS="--services supermap-workflow-engine --verify --jobs 1 --tag <独立验证标签>"
+```
 
 健康检查：
 

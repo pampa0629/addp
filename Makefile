@@ -134,6 +134,14 @@ test-document-workflow: ## 运行 Document Workflow Engine 确定性测试
 	@cd engines/document-workflow && $(abspath $(DOCUMENT_WORKFLOW_PYTHON)) -m pytest -q tests
 
 MODEL3D_WORKFLOW_PYTHON ?= engines/model3d-workflow/.venv/bin/python
+.PHONY: test-supermap-workflow
+test-supermap-workflow: ## 运行不加载厂商 SDK 的 SuperMap 协议、算子目录和资源主机测试
+	@set -eu; work_dir=$$(mktemp -d "$${TMPDIR:-/tmp}/addp-supermap-unit.XXXXXX"); \
+		trap 'rm -rf "$$work_dir"' EXIT; \
+		cmake -S engines/supermap-workflow -B "$$work_dir" -DSUPERMAP_SDK_ROOT= -DBUILD_TESTING=ON; \
+		cmake --build "$$work_dir" --parallel; \
+		ctest --test-dir "$$work_dir" --output-on-failure
+
 .PHONY: test-model3d-workflow
 test-model3d-workflow: ## 运行 Model3D Runtime 格式边界和 GLB 发布校验测试
 	@cd engines/model3d-workflow && $(abspath $(MODEL3D_WORKFLOW_PYTHON)) -m pytest -q tests
@@ -739,7 +747,7 @@ test-swagger: ## 校验 Swagger 检查脚本与全模块路由覆盖
 	@bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
-	test-document-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-spark-workflow \
+	test-document-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-supermap-workflow test-spark-workflow \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \

@@ -267,6 +267,44 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  supermap-workflow-core-tests:
+    name: SuperMap Workflow protocol tests (without vendor SDK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select shared module gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module engines
+
+      - name: Prepare C++ protocol dependencies
+        if: steps.selection.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake nlohmann-json3-dev
+
+      - name: Run SuperMap Workflow protocol tests
+        if: steps.selection.outputs.run == 'true'
+        run: make test-supermap-workflow
+
+      - name: Summarize SuperMap Workflow protocol gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: SuperMap Workflow protocol tests (without vendor SDK)
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   model3d-workflow-tests:
     name: Model3D Workflow tests
     runs-on: ubuntu-24.04

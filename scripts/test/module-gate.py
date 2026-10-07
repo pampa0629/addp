@@ -152,6 +152,8 @@ def discover_modules(repository: Path) -> set[str]:
             "*/frontend/package.json",
             "*/pyproject.toml",
             "*/backend/requirements.txt",
+            "*/CMakeLists.txt",
+            "*/*/CMakeLists.txt",
         )
         if not path.startswith("scripts/test/")
     }
@@ -219,6 +221,13 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
         target = f"test-{runtime}"
         if make_target(makefile, target) is not None:
             steps.append(Step(f"{module} Python T1 ({runtime})", ("make", target), repository))
+
+    for path in repository_files(repository, f"{module}/CMakeLists.txt", f"{module}/*/CMakeLists.txt"):
+        runtime = Path(path).parent.name
+        target = f"test-{runtime}"
+        if make_target(makefile, target) is None:
+            raise ModuleGateError(f"Makefile target {target} is missing for {path}")
+        steps.append(Step(f"{module} C++ T1 ({runtime})", ("make", target), repository))
 
     integration_scripts = sorted(set(hosted_t2_scripts(repository)) | set(owned_t2_scripts(repository)))
     registered_targets: set[str] = set()

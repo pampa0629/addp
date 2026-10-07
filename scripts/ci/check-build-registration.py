@@ -705,6 +705,18 @@ def validate_registration(repository: Path) -> list[str]:
         errors.append("Makefile target test-go must report the failing Go module to CI")
     if "ADDP_CI_SUMMARY_FILE" not in image_script:
         errors.append("build-images.sh must report selected and failed images to CI")
+    logical_makefile = re.sub(r"\\\n\s*", " ", makefile)
+    root_test = re.search(r"(?m)^test\s*:([^\n]*)", logical_makefile)
+    root_dependencies = root_test.group(1).split() if root_test else []
+    platform_workflow = platform_workflow_path.read_text(encoding="utf-8")
+    for manifest in repository_files(repository, "*/CMakeLists.txt", "*/*/CMakeLists.txt"):
+        target = "test-" + Path(manifest).parent.name
+        if make_recipe(makefile, target) is None:
+            errors.append(f"{manifest}: Makefile target {target} is missing")
+        if target not in root_dependencies:
+            errors.append(f"{manifest}: root test dependency {target} is missing")
+        if not re.search(rf"(?m)^\s*run: make {re.escape(target)}\s*$", platform_workflow):
+            errors.append(f"{manifest}: Platform CI target {target} is missing")
     for target in sorted(RETIRED_MAKE_TARGETS):
         if make_recipe(makefile, target) is not None:
             errors.append(f"Makefile retired target still exists: {target}")

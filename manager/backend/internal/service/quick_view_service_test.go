@@ -626,6 +626,7 @@ func TestQuickViewCapabilityUsesReadyModel3DGLBForSupportedSourceFormats(t *test
 		{format: "gltf", fullName: "3d/gltf/scene/scene.gltf", fileName: "scene.glb"},
 		{format: "fbx", fullName: "3d/fbx/gunsfbx/gunsfbx.fbx", fileName: "gunsfbx.glb"},
 		{format: "obj", fullName: "3d/obj/AssaultRifle/AssaultRifle_01.obj", fileName: "AssaultRifle_01.glb"},
+		{format: "sgm", fullName: "3d/sgm/compass.SGM", fileName: "compass.glb"},
 	} {
 		t.Run(tc.format, func(t *testing.T) {
 			db := newTileCacheTaskServiceTestDB(t)

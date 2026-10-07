@@ -35,6 +35,7 @@ if(SUPERMAP_SDK_ROOT)
     src/main/cpp/operator_runtime.cpp
     src/main/cpp/runtime_access.cpp
     src/main/cpp/s3m_runtime.cpp
+    src/main/cpp/sgm_runtime.cpp
     src/main/cpp/supermap_runtime.cpp
     src/main/cpp/table_session_runtime.cpp
     src/main/cpp/udbx_runtime.cpp
@@ -66,6 +67,7 @@ if(SUPERMAP_SDK_ROOT)
       SuGeneralization
       SuGeometry
       SuGeometryConverter
+      SuFileParser
       SuGraphicsQT
       SuGraphics
       SuDrawing
@@ -139,6 +141,16 @@ if(BUILD_TESTING)
   add_test(NAME resource-host-test COMMAND resource-host-test)
 
   if(SUPERMAP_SDK_ROOT)
+    add_executable(sgm-conversion-test src/test/cpp/sgm_conversion_test.cpp)
+    target_link_libraries(sgm-conversion-test PRIVATE addp_supermap_runtime)
+    target_compile_options(sgm-conversion-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    set_property(TARGET sgm-conversion-test PROPERTY CXX_STANDARD 17)
+    add_test(NAME sgm-conversion-test COMMAND sgm-conversion-test
+      "${CMAKE_CURRENT_SOURCE_DIR}/config/operators.json"
+      "${SUPERMAP_SDK_ROOT}/bin/bin/Resource/compass.SGM")
+    set_tests_properties(sgm-conversion-test PROPERTIES ENVIRONMENT
+      "LD_LIBRARY_PATH=${SUPERMAP_SDK_ROOT}/bin/bin;QT_QPA_PLATFORM=offscreen")
+
     add_executable(supermap-runtime-test-driver src/test/cpp/runtime_test_driver.cpp)
     target_link_libraries(supermap-runtime-test-driver PRIVATE addp_supermap_runtime)
     target_compile_options(

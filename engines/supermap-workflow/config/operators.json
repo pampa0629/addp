@@ -1606,7 +1606,44 @@
       "output_ports": [
         {"name": "result", "type": "object", "description": "中止及清理结果。", "is_default": true}
       ]
+    },
+    {
+      "id": "sgm_to_osgb",
+      "name": "sgm_to_osgb",
+      "display_name": "SGM 转 OSGB",
+      "engine_type": "supermap_workflow",
+      "category": "三维模型",
+      "category_path": [
+        "三维模型"
+      ],
+      "description": "使用 SuperMap iObjects C++ 读取单体 SGM，核验几何并发布 OSGB 模型。",
+      "brief_description": "SGM 转 OSGB",
+      "execution_modes": [
+        "workflow",
+        "direct"
+      ],
+      "effects": [
+        "read",
+        "write"
+      ],
+      "parameters": [
+        {
+          "name": "access_plan",
+          "type": "object",
+          "param_type": "param",
+          "required": true,
+          "description": "ADDP 工作流资源访问计划。"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "osgb",
+          "type": "model_3d",
+          "description": "OSGB 模型发布摘要。",
+          "is_default": true
+        }
+      ]
     }
   ],
-  "count": 33
+  "count": 34
 }

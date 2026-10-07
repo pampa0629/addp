@@ -1236,6 +1236,23 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 	capability.CanUseQuickView = false
 	capability.Status = QuickViewStatusUnavailable
 	capability.UnavailableReason = "requires_glb_generation"
+	if model3D.Format == string(format.FormatSGM) {
+		if s.workflowEngines == nil {
+			capability.UnavailableReason = "workflow_engine_discovery_unavailable"
+		} else {
+			engines, listErr := s.workflowEngines.ListWorkflowEngines(identity.TenantID)
+			if listErr != nil {
+				capability.UnavailableReason = "workflow_engine_list_failed"
+			} else {
+				for _, name := range []string{"sgm_to_osgb", "osgb_to_glb"} {
+					if _, _, resolveErr := dbbridge.ResolveDirectWorkflowOperator(ctx, engines, dbbridge.DirectWorkflowOperatorSelector{OperatorName: name}); resolveErr != nil {
+						capability.UnavailableReason = "operator_unavailable"
+						break
+					}
+				}
+			}
+		}
+	}
 	capability.RenderSource = ""
 	capability.RecommendedMode = models.PreviewModeBasicPreview
 	capability.QuickView = QuickViewRenderInfo{}
@@ -2966,7 +2983,7 @@ func isModel3DQuickViewSourceFormat(itemFormat, itemLayout string) bool {
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
 	case string(format.FormatSTL):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
-	case string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS):
+	case string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS), string(format.FormatSGM):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
 	default:
 		return false

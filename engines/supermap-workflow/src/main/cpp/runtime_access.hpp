@@ -30,6 +30,11 @@ class WorkflowAccessFile {
 };
 
 WorkflowAccessFile resolve_workflow_file(const addp::workflow::Json& access);
+WorkflowAccessFile make_workflow_temporary_file(const std::string& filename);
+void publish_workflow_file(
+    const std::filesystem::path& source,
+    const addp::workflow::Json& access,
+    const std::string& write_mode);
 void publish_workflow_directory(
     const std::filesystem::path& source_root,
     const addp::workflow::Json& access,

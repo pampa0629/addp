@@ -665,3 +665,7 @@ func TestExchangeModelQuickViewRequiresGLBArtifact(t *testing.T) {
 		}
 	}
 }
+
+func (s *recordingModel3DGLBObjectStore) RemoveObject(context.Context, string, string, minio.RemoveObjectOptions) error {
+	return nil
+}

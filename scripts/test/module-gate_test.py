@@ -69,6 +69,17 @@ class ModuleGateTest(unittest.TestCase):
 
         self.assertIn(("make", "test-runtime"), [step.command for step in steps])
 
+    def test_cmake_runtime_requires_registered_standard_entry(self) -> None:
+        manifest = self.repository / "native" / "runtime" / "CMakeLists.txt"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("project(sample LANGUAGES CXX)\n", encoding="utf-8")
+        with self.assertRaisesRegex(MODULE.ModuleGateError, "test-runtime is missing"):
+            MODULE.plan_module(self.repository, "native")
+        makefile = self.repository / "Makefile"
+        makefile.write_text(makefile.read_text() + "test-runtime:\n\t@true\n")
+        steps = MODULE.plan_module(self.repository, "native", include_platform=False)
+        self.assertEqual([step.command for step in steps], [("make", "test-runtime")])
+
     def test_discovers_owner_with_only_an_owned_service_gate(self) -> None:
         gate = self.repository / 'scripts/test/business-redis-gate.sh'
         gate.write_text('#!/bin/bash\n# ADDP_T2_OWNED_SERVICES=redis\n')

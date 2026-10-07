@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/engineaccess"
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -23,6 +24,7 @@ type model3DGLBObjectStore interface {
 	BucketExists(ctx context.Context, bucketName string) (bool, error)
 	MakeBucket(ctx context.Context, bucketName string, opts minio.MakeBucketOptions) error
 	StatObject(ctx context.Context, bucketName string, objectName string, opts minio.StatObjectOptions) (minio.ObjectInfo, error)
+	RemoveObject(ctx context.Context, bucketName string, objectName string, opts minio.RemoveObjectOptions) error
 }
 
 type ManagerModel3DGLBExecutor struct {
@@ -64,7 +66,7 @@ func NewManagerModel3DGLBExecutor(
 	}
 }
 
-func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Model3DGLBExecutionRequest) (*Model3DGLBExecutionResult, error) {
+func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Model3DGLBExecutionRequest) (output *Model3DGLBExecutionResult, buildErr error) {
 	if e == nil || e.systemClient == nil || e.workflowEngines == nil || e.objectStore == nil {
 		return nil, errors.New("model 3d GLB generation executor is not fully configured")
 	}
@@ -92,6 +94,54 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	if err != nil {
 		return nil, fmt.Errorf("prepare model 3d GLB target access: %w", err)
 	}
+	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, operatorName)
+	if err != nil {
+		return nil, err
+	}
+	var sgmStage commonModels.JSONMap
+	if sourceFormat == string(format.FormatSGM) {
+		executionID, err := uuid.Parse(req.ExecutionID)
+		if err != nil {
+			return nil, fmt.Errorf("SGM conversion requires a valid execution ID: %w", err)
+		}
+		sgmEngine, sgmOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, "sgm_to_osgb")
+		if err != nil {
+			return nil, err
+		}
+		intermediateObject := fmt.Sprintf("tenant_%d/model3d-quick-view/tmp/%s/model.osgb", req.Task.TenantID, executionID.String())
+		intermediateAccess, err := workflowaccess.ResolveObjectStoreTarget(plugin.ConnectionInfo{
+			"endpoint": e.minioEndpoint, "access_key": e.minioAccessKey, "secret_key": e.minioSecretKey, "use_ssl": e.minioUseSSL,
+		}, bucket, intermediateObject, workflowaccess.KindFile)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			if err := e.objectStore.RemoveObject(cleanupCtx, bucket, intermediateObject, minio.RemoveObjectOptions{}); err != nil {
+				output = nil
+				buildErr = errors.Join(buildErr, fmt.Errorf("clean temporary SGM OSGB: %w", err))
+			}
+		}()
+		sgmPlan, err := workflowaccess.New(sourcePlan, workflowaccess.Target{
+			Kind: workflowaccess.KindFile, Format: "osgb", Name: "model.osgb", WriteMode: workflowaccess.WriteModeCreate,
+			ContentType: "application/octet-stream", Access: intermediateAccess,
+		})
+		if err != nil {
+			return nil, err
+		}
+		sgmResult, err := dbbridge.InvokeOperator(ctx, &sgmEngine, sgmOperator.Name, plugin.OperatorInvokeRequest{
+			Params: map[string]interface{}{"access_plan": sgmPlan.JSONMap()}, Timeout: e.invokeTimeout,
+		})
+		if err != nil || sgmResult == nil || (sgmResult.Status != "" && sgmResult.Status != "success") {
+			return nil, operatorInvokeError("invoke SGM to OSGB operator", sgmResult, err)
+		}
+		sgmStage = commonModels.JSONMap{
+			"access_plan": sgmPlan.AuditJSONMap(), "engine_id": sgmEngine.ID, "operator": sgmOperator.Name,
+			"execution_id": sgmResult.ExecutionID, "facts": operatorInvokeJSONFacts(sgmResult),
+		}
+		sourcePlan = workflowaccess.Source{Kind: workflowaccess.KindFile, Format: "osgb", Access: intermediateAccess}
+	}
 	accessPlan, err := workflowaccess.New(
 		sourcePlan,
 		workflowaccess.Target{
@@ -101,10 +151,6 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	)
 	if err != nil {
 		return nil, fmt.Errorf("build model 3d GLB access plan: %w", err)
-	}
-	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, operatorName)
-	if err != nil {
-		return nil, err
 	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
@@ -155,6 +201,9 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 	}
 	if invokeResult.ExecutionTimeMs != nil {
 		result.Metadata["workflow_runtime"].(commonModels.JSONMap)["execution_time_ms"] = *invokeResult.ExecutionTimeMs
+	}
+	if sgmStage != nil {
+		result.Metadata["sgm_conversion"] = sgmStage
 	}
 	return result, nil
 }
@@ -209,8 +258,8 @@ func model3DGLBUsesDirectorySource(sourceFormat string) bool {
 
 func model3DGLBOperatorForFormat(sourceFormat string) (operatorName string, normalizedFormat string, err error) {
 	switch format.NormalizeFormat(sourceFormat) {
-	case format.FormatOSGB:
-		return "osgb_to_glb", string(format.FormatOSGB), nil
+	case format.FormatOSGB, format.FormatSGM:
+		return "osgb_to_glb", string(format.NormalizeFormat(sourceFormat)), nil
 	case format.FormatGLTF:
 		return "gltf_to_glb", string(format.FormatGLTF), nil
 	case format.FormatFBX:

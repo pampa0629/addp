@@ -412,7 +412,7 @@ func normalizeModel3DGLBSource(config commonModels.JSONMap) (Model3DGLBSourceCon
 		return Model3DGLBSourceConfig{}, errors.New("model 3d GLB config.source requires item_locator, source_engine_id and item_fingerprint")
 	}
 	if !isModel3DGLBTaskSourceFormat(source.Format) {
-		return Model3DGLBSourceConfig{}, errors.New("model 3d GLB config.source.format must be osgb, gltf, fbx, obj, stl or ifc")
+		return Model3DGLBSourceConfig{}, errors.New("model 3d GLB config.source.format is not supported")
 	}
 	loc, err := resourcetree.ParseURI(source.ItemLocator)
 	if err != nil {
@@ -434,7 +434,7 @@ func normalizeModel3DGLBSource(config commonModels.JSONMap) (Model3DGLBSourceCon
 
 func isModel3DGLBTaskSourceFormat(sourceFormat string) bool {
 	switch strings.ToLower(strings.TrimSpace(sourceFormat)) {
-	case string(format.FormatOSGB), string(format.FormatGLTF), string(format.FormatFBX), string(format.FormatOBJ), string(format.FormatSTL), string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS):
+	case string(format.FormatOSGB), string(format.FormatGLTF), string(format.FormatFBX), string(format.FormatOBJ), string(format.FormatSTL), string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS), string(format.FormatSGM):
 		return true
 	default:
 		return false

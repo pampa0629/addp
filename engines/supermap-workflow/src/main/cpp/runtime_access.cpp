@@ -302,7 +302,8 @@ void download_object(
 void upload_object(
     const ObjectStoreConfig& config,
     const std::string& object,
-    const std::filesystem::path& source) {
+    const std::filesystem::path& source,
+    bool create_only = false) {
   ensure_curl_initialized();
   CURL* request = curl_easy_init();
   if (request == nullptr) {
@@ -314,8 +315,14 @@ void upload_object(
     throw std::runtime_error("failed to open workflow artifact for upload");
   }
   std::array<char, CURL_ERROR_SIZE> error_buffer {};
+  curl_slist* headers = nullptr;
   try {
     configure_s3_request(request, config, object, error_buffer.data());
+    if (create_only) {
+      headers = curl_slist_append(headers, "If-None-Match: *");
+      if (headers == nullptr) throw std::runtime_error("failed to allocate create-only upload header");
+      curl_easy_setopt(request, CURLOPT_HTTPHEADER, headers);
+    }
     curl_easy_setopt(request, CURLOPT_UPLOAD, 1L);
     curl_easy_setopt(request, CURLOPT_READDATA, input);
     curl_easy_setopt(
@@ -327,11 +334,13 @@ void upload_object(
     std::fclose(input);
     input = nullptr;
     check_s3_result(request, code, error_buffer.data(), "upload");
+    curl_slist_free_all(headers);
     curl_easy_cleanup(request);
   } catch (...) {
     if (input != nullptr) {
       std::fclose(input);
     }
+    curl_slist_free_all(headers);
     curl_easy_cleanup(request);
     throw;
   }
@@ -726,6 +735,44 @@ WorkflowAccessFile resolve_workflow_file(const Json& access) {
   }
   throw std::invalid_argument(
       "workflow file access method must be mounted_path or object_store");
+}
+
+WorkflowAccessFile make_workflow_temporary_file(const std::string& filename) {
+  if (filename.empty() || std::filesystem::path(filename).filename() != filename ||
+      filename == "." || filename == "..") {
+    throw std::invalid_argument("temporary workflow filename must be a basename");
+  }
+  const auto root = create_temporary_directory("addp-supermap-workflow-output-");
+  return WorkflowAccessFile(root / filename, root);
+}
+
+void publish_workflow_file(
+    const std::filesystem::path& source, const Json& access, const std::string& write_mode) {
+  if (!std::filesystem::is_regular_file(source) || std::filesystem::file_size(source) == 0) {
+    throw std::invalid_argument("workflow publish source must be a non-empty file");
+  }
+  if (write_mode != "create" && write_mode != "replace") {
+    throw std::invalid_argument("workflow file write_mode must be create or replace");
+  }
+  const auto method = connection_string(access, "method", true);
+  if (method == "object_store") {
+    const auto object = trim_slashes(connection_string(access, "object", true));
+    if (object.empty() || std::filesystem::path(object).filename().empty()) {
+      throw std::invalid_argument("object_store file target requires an object");
+    }
+    upload_object(object_store_config(access), object, source, write_mode == "create");
+    return;
+  }
+  if (method != "mounted_path") {
+    throw std::invalid_argument("workflow file access method must be mounted_path or object_store");
+  }
+  const auto target = resolve_workflow_mounted_path(access);
+  if (target.empty() || target.filename().empty()) {
+    throw std::invalid_argument("workflow file target requires a filename");
+  }
+  if (!target.parent_path().empty()) std::filesystem::create_directories(target.parent_path());
+  std::filesystem::copy_file(source, target, write_mode == "replace"
+      ? std::filesystem::copy_options::overwrite_existing : std::filesystem::copy_options::none);
 }
 
 void publish_workflow_directory(

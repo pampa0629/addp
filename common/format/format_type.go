@@ -72,6 +72,7 @@ const (
 	FormatFBX       FormatType = "fbx"
 	FormatDAE       FormatType = "dae"
 	Format3DS       FormatType = "3ds"
+	FormatSGM       FormatType = "sgm"
 	FormatIFC       FormatType = "ifc"
 	FormatPLY       FormatType = "ply"
 	FormatSplat     FormatType = "splat"

@@ -437,6 +437,14 @@ ADDP 生成的 S3M 数据集统一使用 `config/scene.scp`，detector 通过 de
 
 SuperMap Workflow 的 `osgb_scene_to_s3m` 固定使用 `ObliquePhotogrammetryBuilder` 生成 S3M 3.01 / S3MB，纹理压缩为 DXT，几何压缩为 Draco，目标 CRS 固定为 `EPSG:4326`。Builder 保留瓦片局部坐标；运行时使用 SuperMap `CoordSysTranslator` 把 JSON SCP 的 `position` 与 `geoBounds` 从源 EPSG 规范化到 WGS84，`position.unit` 固定为 `Degree`。源投影坐标转换不交给 Manager 前端猜测或硬编码。Manager 必须从 manifest 和受管结果元数据获取实际版本、CRS、纹理压缩、几何压缩和瓦片扩展名，不得将 S3M 硬编码为 legacy XML / `.s3m`；不得把 renderer 状态、浏览器能力或受控 URL 写回 Meta attributes。
 
+## SGM
+
+SGM（SuperMap Global Model）按 `.sgm` 扩展名识别为 `format=sgm + data_type=model_3d + layout=single`，与 S3M 不同。首期 Common 仅注册格式身份，不在 Go 进程加载超图 SDK，不从后缀推断几何数量、材质或 CRS。
+
+Manager 的 `model_3d_glb_generation` 在同一次 execution 中串行调用 SuperMap `sgm_to_osgb` 和 Model3D `osgb_to_glb`。生成前须发现两个支持 direct 的算子；已有 ready GLB 的读取不依赖 Runtime 在线。中间 OSGB 写入执行专属的 Manager infra 对象，执行返回时尝试清理，不扫描成业务 item；最终 GLB 通过现有统一发布校验后登记 `manager.model_3d_glb`。SGM 源、派生 OSGB 和 GLB 不共用格式身份，也不对浏览器开放 OSGB 解析路线。
+
+`sgm_to_osgb` 只接受单体 `file/sgm` 输入，完整读取骨架后导出 OSGB，并重读校验非空几何及顶点/三角面数量一致。SGM 生成任务不提供标准取消；终态删除暂不能可靠覆盖 RPC 超时后的迟到写入或进程退出，临时前缀过期回收待确认。首期不声明动画、所有材质类型或全部文件版本支持；有 SDK 读取、导出或最终 GLB 校验错误时明确失败，不能将残缺产物登记 ready。
+
 ## OSGB
 
 ### 识别与组织

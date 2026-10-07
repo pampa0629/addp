@@ -2,6 +2,7 @@
 #include "resource_host.hpp"
 #include "runtime_access.hpp"
 #include "s3m_runtime.hpp"
+#include "sgm_runtime.hpp"
 #include "udbx_runtime.hpp"
 
 #include <algorithm>
@@ -264,7 +265,7 @@ std::string storage_for(const std::string& operator_id) {
   static const std::set<std::string> datasource_storage = {
       "dataset.project",        "dataset.save",          "datasource.create",
       "datasource.open",        "datasource.open_postgis", "datasource.open_postgresql",
-      "osgb_scene_to_s3m",     "overlay.clip",          "overlay.erase",
+      "osgb_scene_to_s3m",     "sgm_to_osgb", "overlay.clip",          "overlay.erase",
       "overlay.intersect",     "overlay.union",         "vector.buffer",
       "vector.dissolve",       "vector.feature_envelope", "vector.filter",
       "vector.inner_point",    "vector.merge",          "vector.spatial_filter",
@@ -322,6 +323,10 @@ OperatorRuntime::OperatorRuntime(addp::workflow::OperatorCatalog catalog)
             optional_string(params, "alias", "supermap_sdx_postgresql"))->summary();
       });
   direct_handlers_.emplace("osgb_scene_to_s3m", convert_osgb_scene_to_s3m);
+  direct_handlers_.emplace("sgm_to_osgb", convert_sgm_to_osgb);
+  handlers_.emplace("sgm_to_osgb", [](const ResolvedParams& params, ExecutionContext&) -> RuntimeValue {
+    return convert_sgm_to_osgb(Json{{"access_plan", required_object(params, "access_plan")}});
+  });
   for (const std::string operator_id : {
            "table.delete",
            "table.read_open",

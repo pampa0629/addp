@@ -58,7 +58,7 @@ make test-release RELEASE_SUITE=<suite>
 约束如下：
 
 - `make test-changed` 与 CI 共用 owner 影响计算；共享代码改动按真实依赖扩散到已登记消费者。
-- `make test-module` 自动发现模块的 Go、Python、前端与基础设施门禁，不维护第二份模块清单。
+- `make test-module` 自动发现模块的 Go、Python、CMake/C++、前端与基础设施门禁，不维护第二份模块清单。
 - `make test-integration` 严格串行调用 owner 的 T2 事实入口，不复制测试逻辑。
 - `test-online` 与 `test-release` 必须显式选择已实现的 suite；未实现能力不得以占位 suite 登记。
 - 不提供跨 T0-T5 的 `test-all`。T4 与 T5 的身份、基础设施和安全前置条件不同，完整认证由 CI 分别编排标准入口并分别报告。
@@ -67,6 +67,8 @@ make test-release RELEASE_SUITE=<suite>
 ## 四、T0-T3 确定性与基础设施边界
 
 ### 4.1 T0-T1
+
+SuperMap Workflow 的协议、算子目录及资源主机测试使用根 `make test-supermap-workflow`，通过临时构建目录运行不加载厂商 SDK 的 CTest，依赖 CMake、C++20 编译器和 nlohmann-json 开发包。CMake owner 必须同时登记根 `make test` 依赖及 Platform CI 调用，由构建登记检查和模块门禁核对。真实 SGM 读取、OSGB 导出和发布边界仍由受控 SDK 镜像构建阶段的 `sgm-conversion-test` 验证；公开协议门禁不代表 SDK 转换或 T4 已通过。
 
 T0-T1 必须：
 

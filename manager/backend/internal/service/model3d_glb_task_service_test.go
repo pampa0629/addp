@@ -179,7 +179,7 @@ func TestModel3DGLBTaskRejectsUnsupportedSource(t *testing.T) {
 	if err == nil {
 		t.Fatal("normalize model 3d GLB config error is nil, want unsupported source rejection")
 	}
-	if got := err.Error(); got != "model 3d GLB config.source.format must be osgb, gltf, fbx, obj, stl or ifc" {
+	if got := err.Error(); got != "model 3d GLB config.source.format is not supported" {
 		t.Fatalf("error = %q, want source format rejection", got)
 	}
 }

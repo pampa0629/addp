@@ -38,6 +38,7 @@ import (
 	_ "github.com/addp/common/format/plugins/pmtiles"
 	_ "github.com/addp/common/format/plugins/rastermosaic"
 	_ "github.com/addp/common/format/plugins/s3m"
+	_ "github.com/addp/common/format/plugins/sgm"
 	_ "github.com/addp/common/format/plugins/shapefile"
 	_ "github.com/addp/common/format/plugins/splat"
 	_ "github.com/addp/common/format/plugins/sqlite"
