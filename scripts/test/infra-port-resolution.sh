@@ -220,6 +220,8 @@ case "$1" in
     shift 3
     [[ "$1" == --profile && "$2" == observability-metrics ]] || exit 2
     shift 2
+    [[ "$1" == --profile && "$2" == observability-metrics-control ]] || exit 2
+    shift 2
     [[ "$1" == -f && "$2" == docker-compose.infra.yml ]] || exit 2
     shift 2
     case "$1" in
