@@ -94,6 +94,27 @@ class MetricsProtocolTest(unittest.TestCase):
                 "lookback_seconds": 300, "queried_at": stamp, "start": "2026-10-06T00:00:00Z" if trend else stamp,
                 "end": stamp, "step_seconds": 15 if trend else 0, "series": rows}
 
+    def test_initial_resource_readiness_waits_for_data_without_hiding_schema_or_identity_errors(self):
+        node, target = {"node_id": "node-id", "version": 1}, {"id": "target-id", "version": 2}
+        missing = self.resource_reply()
+        for row in missing["series"]:
+            row["points"][0].update(data_state="no_data", sampled_at=None, value=None)
+        client = unittest.mock.Mock()
+        client.request.return_value = ONLINE.API.Response(200, missing)
+        self.assertFalse(ONLINE.resource_query_ready(client, node, target))
+        self.assertEqual(client.request.call_args.args[2], (200,))
+        client.request.return_value = ONLINE.API.Response(200, self.resource_reply())
+        self.assertTrue(ONLINE.resource_query_ready(client, node, target))
+        for mutation in (lambda v: v.update(node_version=2), lambda v: v.update(target_saved_version=1),
+                         lambda v: v["series"].pop(), lambda v: v["series"][0]["points"][0].update(value=0)):
+            bad = copy.deepcopy(missing); mutation(bad)
+            client.request.return_value = ONLINE.API.Response(200, bad)
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.resource_query_ready(client, node, target)
+        client.request.return_value = ONLINE.API.Response(403, self.resource_reply())
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.resource_query_ready(client, node, target)
+
     def test_resource_evidence_accepts_zero_and_rejects_stale_grid_or_forged_missing_values(self):
         node, target = {"node_id": "node-id", "version": 1}, {"id": "target-id", "version": 2}
         for trend in (False, True):

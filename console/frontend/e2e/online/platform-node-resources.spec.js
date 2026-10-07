@@ -124,7 +124,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       report.negative_identity = await login(negative, 'ADDP_ONLINE_METRICS_SECURITY', expected.security_id, 'platform.security_administrator')
       await expect(negative.locator('.el-result')).toBeVisible()
       await expect(negative.locator('iframe[data-testid="module-iframe"]')).toHaveCount(0)
-      await expect(negative.locator('.sidebar')).not.toContainText('平台节点资源')
+      await expect(negative.locator('.sidebar .el-menu-item').filter({ hasText: '平台节点资源' })).toHaveCount(0)
       expect(nodeReads).toBe(0)
       report.negative_no_business_reads = true
     } finally { await negativeContext.close() }

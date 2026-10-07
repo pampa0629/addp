@@ -189,7 +189,7 @@ def utc_timestamp(value):
     return parsed.timestamp()
 
 
-def assert_resources(value, node, target=None, trend=False, keys=None, disconnected=False, range_seconds=60):
+def assert_resources(value, node, target=None, trend=False, keys=None, disconnected=False, range_seconds=60, require_fresh=True):
     expected = METRICS if keys is None else {key: METRICS[key] for key in keys}
     require(value.get("subject") == {"kind": "node", "node_id": node["node_id"]}, "query node identity mismatch")
     require(value.get("node_version") == node["version"], "query node version mismatch")
@@ -228,8 +228,15 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
                 valid += int(state == "valid")
             else:
                 require(state == "no_data" and sample is None and number is None, "missing evidence became a value")
-        if not disconnected:
+        if not disconnected and require_fresh:
             require(valid > 0, "metric has no fresh resource evidence")
+
+
+def resource_query_ready(admin, node, target):
+    result = admin.request("GET", resource_path(node), (200,))
+    require(result.status == 200, "resource readiness query failed")
+    assert_resources(result.payload, node, target, require_fresh=False)
+    return all(row["points"][0]["data_state"] == "valid" for row in result.payload["series"])
 
 
 def check_query_policy(admin, node):
@@ -441,6 +448,13 @@ def run(base, directory, report):
                 timestamps = prom.query("timestamp("+metric+expression+")")
                 require(timestamps, "missing native sample timestamp")
                 report["native_sample_times"][metric] = sorted({float(row["value"][1]) for row in timestamps})
+            (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "node-resource-query-initial.json").write_text(json.dumps(value))
+            assert_resources(value, node, target, require_fresh=False)
+            if not all(row["points"][0]["data_state"] == "valid" for row in value["series"]):
+                report["initial_resource_query_wait"] = True
+                eventually(lambda: resource_query_ready(admin, node, target), "eight current resource metrics after initial scrape")
+                value = admin.request("GET", resource_path(node), (200,)).payload
+                (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "node-resource-query-check.json").write_text(json.dumps(value))
         assert_resources(value, node, target, trend)
     query_policy = check_query_policy(admin, node)
     report.update(resource_query=True, query_budget_cas_hot_read=True, query_policy_version=query_policy["version"])
