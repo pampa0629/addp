@@ -22,6 +22,10 @@ function exportAudit(path, params) {
 }
 
 export const iamAPI = {
+  self: {
+    organization: () => client.get('/system/users/me/organization'),
+    changePassword: (data) => client.put('/system/users/me/password', data)
+  },
   mfa: {
     status: () => client.get('/system/auth/mfa'),
     beginEnrollment: (currentPassword) => client.post('/system/auth/mfa/totp-enrollments', {

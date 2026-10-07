@@ -12565,6 +12565,56 @@ const docTemplate = `{
                 "x-addp-auth-mode": "self"
             }
         },
+        "/users/me/organization": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只返回第一方当前用户在当前租户的有效部门和项目组成员关系及最小显示信息；无需组织管理权限；平台上下文返回空组织。组织角色不授予管理或数据权限 | Returns only the first-party current user's effective memberships and minimal display facts in the current tenant, without organization management permissions. Platform context has no organization. Relationship roles grant no management or data permissions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "当前用户 | Current User"
+                ],
+                "summary": "查询本人组织归属 | Get current user's organization",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCurrentOrganizationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "self"
+            }
+        },
         "/users/me/password": {
             "put": {
                 "security": [
@@ -16417,10 +16467,87 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMCurrentDepartmentResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "membership_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMCurrentOrganizationReference"
+                    }
+                },
+                "relation_role": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMCurrentLocalAccountResponse": {
             "type": "object",
             "properties": {
                 "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCurrentOrganizationReference": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCurrentOrganizationResponse": {
+            "type": "object",
+            "properties": {
+                "departments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMCurrentDepartmentResponse"
+                    }
+                },
+                "project_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.IAMCurrentProjectGroupResponse"
+                    }
+                },
+                "tenant": {
+                    "$ref": "#/definitions/internal_api.IAMCurrentOrganizationReference"
+                }
+            }
+        },
+        "internal_api.IAMCurrentProjectGroupResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "relation_role": {
                     "type": "string"
                 }
             }

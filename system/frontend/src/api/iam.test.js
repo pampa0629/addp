@@ -14,6 +14,11 @@ import { iamAPI } from './iam'
 describe('IAM management API contract', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('current organization never sends a client-selected identity', () => {
+    iamAPI.self.organization()
+    expect(client.get).toHaveBeenCalledWith('/system/users/me/organization')
+  })
+
   it('collects all assignment pages with member and validity filters without returning partial failures', async () => {
     const filters = { membership_id: '9', principal_type: 'user', effective_state: 'effective' }
     client.get.mockResolvedValueOnce({ data: [{ id: '1' }], total_pages: 2 })

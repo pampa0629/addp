@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -177,10 +178,58 @@ func TestIAMUserSelfHandlerContract(t *testing.T) {
 
 }
 
+func TestIAMCurrentOrganizationContract(t *testing.T) {
+	service := &fakeIAMUserSelfService{organization: &iam.CurrentUserOrganization{
+		Tenant: &iam.CurrentOrganizationReference{ID: 7, Name: "Outdoor", Code: "outdoor"},
+		Departments: []iam.CurrentDepartmentMembership{{
+			CurrentOrganizationReference: iam.CurrentOrganizationReference{ID: 9, Name: "户外部", Code: "outdoor_dept"},
+			Path:                         []iam.CurrentOrganizationReference{{ID: 9, Name: "户外部", Code: "outdoor_dept"}},
+			MembershipType:               "primary", RelationRole: "leader",
+		}},
+		ProjectGroups: []iam.CurrentProjectGroupMembership{{CurrentOrganizationReference: iam.CurrentOrganizationReference{ID: 11, Name: "Research", Code: "research"}, RelationRole: "coordinator"}},
+	}}
+	router := newIAMUserSelfTestRouter(t, service, false)
+	headers := map[string]string{"Authorization": "Bearer current-user-token"}
+	response := performIAMJSONRequest(t, router, http.MethodGet, "/api/v1/system/users/me/organization", nil, headers)
+	var organization IAMCurrentOrganizationResponse
+	decodeIAMResponse(t, response, &organization)
+	if response.Code != http.StatusOK || service.organizationToken != "current-user-token" || response.Header().Get("Cache-Control") != "no-store" ||
+		organization.Tenant.ID != "7" || len(organization.Departments) != 1 || organization.Departments[0].Path[0].Name != "户外部" ||
+		organization.Departments[0].MembershipType != "primary" || organization.ProjectGroups[0].RelationRole != "coordinator" {
+		t.Fatalf("organization status=%d body=%s", response.Code, response.Body.String())
+	}
+	service.organizationToken = ""
+	for _, query := range []string{"user_id=other", "tenant_id=8", "department_id=9"} {
+		response := performIAMJSONRequest(t, router, http.MethodGet, "/api/v1/system/users/me/organization?"+query, nil, headers)
+		if response.Code != http.StatusBadRequest || service.organizationToken != "" {
+			t.Fatalf("client identity override accepted: %s", query)
+		}
+	}
+	unauthorized := performIAMJSONRequest(t, router, http.MethodGet, "/api/v1/system/users/me/organization", nil, nil)
+	if unauthorized.Code != http.StatusUnauthorized || service.organizationToken != "" {
+		t.Fatal("missing bearer accepted")
+	}
+	service.organization = &iam.CurrentUserOrganization{}
+	empty := performIAMJSONRequest(t, router, http.MethodGet, "/api/v1/system/users/me/organization", nil, headers)
+	var fields map[string]json.RawMessage
+	decodeIAMResponse(t, empty, &fields)
+	if string(fields["tenant"]) != "null" || string(fields["departments"]) != "[]" || string(fields["project_groups"]) != "[]" {
+		t.Fatalf("empty organization = %s", empty.Body.String())
+	}
+	service.organizationErr = errors.New("database unavailable")
+	failure := performIAMJSONRequest(t, router, http.MethodGet, "/api/v1/system/users/me/organization", nil, headers)
+	if failure.Code != http.StatusInternalServerError {
+		t.Fatalf("failure disguised as empty organization: %s", failure.Body.String())
+	}
+}
+
 type fakeIAMUserSelfService struct {
-	profileToken string
-	profile      *iam.CurrentUserProfile
-	profileErr   error
+	organizationToken string
+	organization      *iam.CurrentUserOrganization
+	organizationErr   error
+	profileToken      string
+	profile           *iam.CurrentUserProfile
+	profileErr        error
 
 	rotationToken   string
 	currentPassword string
@@ -226,6 +275,7 @@ func newIAMUserSelfTestRouter(
 	router.Use(requestidmiddleware.RequestIDMiddleware())
 	router.Use(i18nmiddleware.I18nMiddleware())
 	router.GET("/api/v1/system/users/me", handler.Me)
+	router.GET("/api/v1/system/users/me/organization", handler.Organization)
 	router.PUT("/api/v1/system/users/me/password", handler.ChangePassword)
 	return router
 }
@@ -240,4 +290,9 @@ func assertJSONHasNullField(t *testing.T, data []byte, field string) {
 	if !exists || string(value) != "null" {
 		t.Fatalf("field %s = %s", field, value)
 	}
+}
+
+func (service *fakeIAMUserSelfService) ResolveCurrentUserOrganization(_ context.Context, token string) (*iam.CurrentUserOrganization, error) {
+	service.organizationToken = token
+	return service.organization, service.organizationErr
 }

@@ -75,9 +75,9 @@
         </span>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item @click="$emit('navigate', '/system/account/security')">
+            <el-dropdown-item @click="$emit('navigate', '/system/account')">
               <el-icon><User /></el-icon>
-              {{ t('console.myAccount') }}
+              {{ t('console.personalCenter') }}
             </el-dropdown-item>
             <el-dropdown-item divided @click="$emit('logout')">
               <el-icon><SwitchButton /></el-icon>

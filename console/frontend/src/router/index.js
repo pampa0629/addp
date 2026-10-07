@@ -47,7 +47,7 @@ const routes = [
       const authStore = useAuthStore()
       const visibleMenu = filterSidebarMenus({ [module]: menu }, authStore.contextType, authStore.permissions)[module]
       const landing = firstAccessibleModuleRoute(visibleMenu)
-      if (!landing && module === 'system') return '/system/account/security'
+      if (!landing && module === 'system') return '/system/account'
       return landing && landing !== to.path ? landing : true
     }
   },

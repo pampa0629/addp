@@ -22,9 +22,9 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="handleMyAccount">
+              <el-dropdown-item @click="handlePersonalCenter">
                 <el-icon><User /></el-icon>
-                {{ t('system.layout.myAccount') }}
+                {{ t('system.layout.personalCenter') }}
               </el-dropdown-item>
               <el-dropdown-item divided @click="handleLogout">
                 <el-icon><SwitchButton /></el-icon>
@@ -165,7 +165,7 @@ const iamPageIcons = {
 }
 const iamPageIcon = page => iamPageIcons[page] || Lock
 const sidebarWidth = computed(() => isCompactViewport.value ? '64px' : '200px')
-const handleMyAccount = () => router.push({ name: 'AccountSecurity' })
+const handlePersonalCenter = () => router.push({ name: 'PersonalCenter' })
 const handleLogout = () => {
   authStore.logout()
   ElMessage.success(t('system.layout.logoutSuccess'))

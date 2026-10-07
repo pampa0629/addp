@@ -42,6 +42,7 @@ type IAMPasswordRotationResponse struct {
 
 type iamUserSelfService interface {
 	ResolveCurrentUserProfile(context.Context, string) (*iam.CurrentUserProfile, error)
+	ResolveCurrentUserOrganization(context.Context, string) (*iam.CurrentUserOrganization, error)
 	RotateCurrentPassword(
 		context.Context,
 		string,
@@ -49,6 +50,92 @@ type iamUserSelfService interface {
 		string,
 		iam.AuditMetadata,
 	) (*iam.PasswordRotationResult, error)
+}
+
+type IAMCurrentOrganizationReference struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+type IAMCurrentDepartmentResponse struct {
+	IAMCurrentOrganizationReference
+	Path           []IAMCurrentOrganizationReference `json:"path"`
+	MembershipType string                            `json:"membership_type"`
+	RelationRole   string                            `json:"relation_role"`
+}
+
+type IAMCurrentProjectGroupResponse struct {
+	IAMCurrentOrganizationReference
+	RelationRole string `json:"relation_role"`
+}
+
+type IAMCurrentOrganizationResponse struct {
+	Tenant        *IAMCurrentOrganizationReference `json:"tenant"`
+	Departments   []IAMCurrentDepartmentResponse   `json:"departments"`
+	ProjectGroups []IAMCurrentProjectGroupResponse `json:"project_groups"`
+}
+
+// Organization godoc
+// @Summary 查询本人组织归属 | Get current user's organization
+// @Description 只返回第一方当前用户在当前租户的有效部门和项目组成员关系及最小显示信息；无需组织管理权限；平台上下文返回空组织。组织角色不授予管理或数据权限 | Returns only the first-party current user's effective memberships and minimal display facts in the current tenant, without organization management permissions. Platform context has no organization. Relationship roles grant no management or data permissions
+// @Tags 当前用户 | Current User
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} IAMCurrentOrganizationResponse
+// @Failure 400 {object} IAMErrorResponse
+// @Failure 401 {object} IAMErrorResponse
+// @Failure 403 {object} IAMErrorResponse
+// @Failure 500 {object} IAMErrorResponse
+// @x-addp-auth-mode "self"
+// @Router /users/me/organization [get]
+func (h *IAMUserSelfHandler) Organization(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if c.Request.URL.RawQuery != "" {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	token := iamBearerToken(c.GetHeader("Authorization"))
+	if token == "" {
+		respondIAMError(c, commonapi.ErrUnauthorized)
+		return
+	}
+	organization, err := h.service.ResolveCurrentUserOrganization(c.Request.Context(), token)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if organization == nil {
+		respondIAMError(c, errors.New("invalid current organization"))
+		return
+	}
+	mapReference := func(ref iam.CurrentOrganizationReference) IAMCurrentOrganizationReference {
+		return IAMCurrentOrganizationReference{ID: strconv.FormatInt(ref.ID, 10), Name: ref.Name, Code: ref.Code}
+	}
+	response := IAMCurrentOrganizationResponse{
+		Departments:   make([]IAMCurrentDepartmentResponse, 0, len(organization.Departments)),
+		ProjectGroups: make([]IAMCurrentProjectGroupResponse, 0, len(organization.ProjectGroups)),
+	}
+	if organization.Tenant != nil {
+		ref := mapReference(*organization.Tenant)
+		response.Tenant = &ref
+	}
+	for _, department := range organization.Departments {
+		path := make([]IAMCurrentOrganizationReference, 0, len(department.Path))
+		for _, ref := range department.Path {
+			path = append(path, mapReference(ref))
+		}
+		response.Departments = append(response.Departments, IAMCurrentDepartmentResponse{
+			IAMCurrentOrganizationReference: mapReference(department.CurrentOrganizationReference),
+			Path:                            path, MembershipType: department.MembershipType, RelationRole: department.RelationRole,
+		})
+	}
+	for _, group := range organization.ProjectGroups {
+		response.ProjectGroups = append(response.ProjectGroups, IAMCurrentProjectGroupResponse{
+			IAMCurrentOrganizationReference: mapReference(group.CurrentOrganizationReference), RelationRole: group.RelationRole,
+		})
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 type IAMUserSelfHandler struct {

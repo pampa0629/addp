@@ -50,7 +50,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Iphone, Lock } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
@@ -68,12 +68,14 @@ const code = ref('')
 const enrollment = ref(null)
 const submitting = ref(false)
 const qrCanvas = ref()
+let disposed = false
 
 async function loadStatus() {
   try {
-    status.value = await iamAPI.mfa.status()
+    const result = await iamAPI.mfa.status()
+    if (!disposed) status.value = result
   } catch (error) {
-    ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))
+    if (!disposed) ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))
   }
 }
 
@@ -93,13 +95,16 @@ async function beginEnrollment() {
   if (!currentPassword.value || submitting.value) return
   submitting.value = true
   try {
-    enrollment.value = await iamAPI.mfa.beginEnrollment(currentPassword.value)
+    const result = await iamAPI.mfa.beginEnrollment(currentPassword.value)
+    if (disposed) return
+    enrollment.value = result
     currentPassword.value = ''
     phase.value = 'verify'
     await nextTick()
+    if (disposed) return
     await QRCode.toCanvas(qrCanvas.value, enrollment.value.otpauth_uri, { width: 208, margin: 1 })
   } catch (error) {
-    ElMessage.error(error.response?.data?.error || t('system.iam.security.enrollmentFailed'))
+    if (!disposed) ElMessage.error(error.response?.data?.error || t('system.iam.security.enrollmentFailed'))
   } finally {
     submitting.value = false
   }
@@ -110,20 +115,25 @@ async function completeEnrollment() {
   submitting.value = true
   try {
     const session = await iamAPI.mfa.completeEnrollment(enrollment.value.enrollment_token, code.value)
+    if (disposed) return
     authStore.setToken(session.access_token, session.expires_in)
     await authStore.fetchAuthContext()
+    if (disposed) return
     status.value = { totp_enrolled: true }
     visible.value = false
     ElMessage.success(t('system.iam.security.enabledSuccess'))
   } catch (error) {
-    code.value = ''
-    ElMessage.error(error.response?.data?.error || t('system.iam.security.invalidCode'))
+    if (!disposed) {
+      code.value = ''
+      ElMessage.error(error.response?.data?.error || t('system.iam.security.invalidCode'))
+    }
   } finally {
     submitting.value = false
   }
 }
 
 onMounted(loadStatus)
+onBeforeUnmount(() => { disposed = true; reset() })
 </script>
 
 <style scoped>

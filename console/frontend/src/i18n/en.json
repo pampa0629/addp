@@ -1,7 +1,6 @@
 {
   "console": {
     "title": "All Domain Data Platform",
-    "myAccount": "My Account",
     "logout": "Logout",
     "sessionExpired": "Session expired, please login again",
     "logoutSuccess": "Logged out successfully",
@@ -618,6 +617,7 @@
         "recentConfiguration": "Platform Configuration",
         "hostNodes": "Platform node inventory"
       }
-    }
+    },
+    "personalCenter": "Personal Center"
   }
 }

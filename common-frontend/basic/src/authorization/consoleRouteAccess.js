@@ -84,7 +84,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/system/engines': [tenant('system.engine.read')],
   '/system/configuration': [anyOf('platform', 'iam.security_policy.read', 'system.engine_raster_policy.read'), tenant('system.engine_raster_policy.read')],
   '/system/cleanup': [tenant('system.cleanup.read')],
-  '/system/account/security': [{ context: 'any' }],
+  '/system/account': [{ context: 'any' }],
   '/configuration': [
     platform('iam.security_policy.read'),
     platform('system.engine_raster_policy.read'),
@@ -150,6 +150,7 @@ export function consoleRouteAccess(path) {
   if (pathname === '/ontology/ontologies/new') return [tenant('ontology.revision.update')]
   if (/^\/ontology\/ontologies\/[^/]+\/trial$/.test(pathname)) return [tenant('ontology.semantic.read')]
   if (CONSOLE_ROUTE_ACCESS[pathname]) return CONSOLE_ROUTE_ACCESS[pathname]
+  if (pathname.startsWith('/system/account/')) return null
   if (pathname.startsWith('/configuration/')) return null
   const parent = Object.keys(CONSOLE_ROUTE_ACCESS)
     .filter(route => pathname.startsWith(`${route}/`))

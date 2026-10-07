@@ -108,6 +108,102 @@ func TestUserSelfServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("current local user profile = %#v", profile)
 	}
 
+	t.Run("organization is scoped to current member and current effective facts", func(t *testing.T) {
+		user := createContextSelectionUser(t, ctx, identityService, "organization-self", audit)
+		otherUser := createContextSelectionUser(t, ctx, identityService, "organization-other", audit)
+		currentTenant := createContextSelectionTenant(t, ctx, membershipService, "organization-self", audit)
+		foreignTenant := createContextSelectionTenant(t, ctx, membershipService, "organization-foreign", audit)
+		member := establishContextSelectionMembership(t, ctx, membershipService, currentTenant.ID, user.PrincipalID, audit).Membership
+		otherMember := establishContextSelectionMembership(t, ctx, membershipService, currentTenant.ID, otherUser.PrincipalID, audit).Membership
+		orgService := NewOrganizationService(repository, now)
+		createDepartment := func(tenantID int64, code string, parentID *int64) *Department {
+			t.Helper()
+			department, err := orgService.CreateDepartment(ctx, CreateDepartmentInput{TenantID: tenantID, ActorPrincipalID: user.PrincipalID, Code: code, Name: code, ParentID: parentID, Audit: audit})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return department
+		}
+		root := createDepartment(currentTenant.ID, "root", nil)
+		child := createDepartment(currentTenant.ID, "outdoor", &root.ID)
+		additional := createDepartment(currentTenant.ID, "additional", nil)
+		foreign := createDepartment(foreignTenant.ID, "foreign", nil)
+		if _, err := orgService.CreateDepartmentMembership(ctx, CreateDepartmentMembershipInput{TenantID: currentTenant.ID, DepartmentID: child.ID, TenantMembershipID: member.ID, ActorPrincipalID: user.PrincipalID, MembershipType: DepartmentMembershipTypePrimary, RelationRole: DepartmentRelationRoleLeader, Audit: audit}); err != nil {
+			t.Fatal(err)
+		}
+		additionalMembership, err := orgService.CreateDepartmentMembership(ctx, CreateDepartmentMembershipInput{TenantID: currentTenant.ID, DepartmentID: additional.ID, TenantMembershipID: member.ID, ActorPrincipalID: user.PrincipalID, MembershipType: DepartmentMembershipTypeAdditional, RelationRole: DepartmentRelationRoleMember, Audit: audit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Another account's relationship cannot enter this user's result, even in the same tenant.
+		if _, err := orgService.CreateDepartmentMembership(ctx, CreateDepartmentMembershipInput{TenantID: currentTenant.ID, DepartmentID: root.ID, TenantMembershipID: otherMember.ID, ActorPrincipalID: user.PrincipalID, MembershipType: DepartmentMembershipTypePrimary, RelationRole: DepartmentRelationRoleMember, Audit: audit}); err != nil {
+			t.Fatal(err)
+		}
+		group, err := orgService.CreateProjectGroup(ctx, CreateProjectGroupInput{TenantID: currentTenant.ID, ActorPrincipalID: user.PrincipalID, Code: "research", Name: "Research", Audit: audit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := orgService.CreateProjectGroupMembership(ctx, CreateProjectGroupMembershipInput{TenantID: currentTenant.ID, ProjectGroupID: group.ID, TenantMembershipID: member.ID, ActorPrincipalID: user.PrincipalID, RelationRole: ProjectGroupRelationRoleCoordinator, Audit: audit}); err != nil {
+			t.Fatal(err)
+		}
+		login := func() *IssuedBrowserSession {
+			return loginLocalUserSession(t, ctx, loginService, "organization-self", "context-selection-password", audit)
+		}
+		session := login()
+		organization, err := selfService.ResolveCurrentUserOrganization(ctx, session.AccessToken)
+		if err != nil || organization.Tenant.ID != currentTenant.ID || len(organization.Departments) != 2 || len(organization.ProjectGroups) != 1 {
+			t.Fatalf("organization=%#v err=%v", organization, err)
+		}
+		for _, department := range organization.Departments {
+			if department.ID == foreign.ID || department.ID == root.ID {
+				t.Fatal("foreign or ancestor department exposed as membership")
+			}
+			if department.ID == child.ID && (len(department.Path) != 2 || department.Path[0].ID != root.ID || department.Path[1].Name != "outdoor" || department.MembershipType != "primary" || department.RelationRole != "leader") {
+				t.Fatalf("department = %#v", department)
+			}
+		}
+		if organization.ProjectGroups[0].RelationRole != "coordinator" {
+			t.Fatalf("project role = %#v", organization.ProjectGroups)
+		}
+		if _, err := orgService.DisableDepartment(ctx, ChangeDepartmentStatusInput{TenantID: currentTenant.ID, DepartmentID: child.ID, Version: child.Version, ActorPrincipalID: user.PrincipalID, Reason: "disabled", Audit: audit}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := selfService.ResolveCurrentUserOrganization(ctx, session.AccessToken); !errors.Is(err, commonapi.ErrUnauthorized) {
+			t.Fatalf("stale authorization accepted: %v", err)
+		}
+		if _, err := orgService.CloseProjectGroup(ctx, CloseProjectGroupInput{TenantID: currentTenant.ID, ProjectGroupID: group.ID, Version: group.Version, ActorPrincipalID: user.PrincipalID, Reason: "completed", Audit: audit}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := orgService.CloseDepartmentMembership(ctx, CloseOrganizationMembershipInput{TenantID: currentTenant.ID, OrganizationID: additional.ID, MembershipID: additionalMembership.ID, Version: additionalMembership.Version, ActorPrincipalID: user.PrincipalID, Reason: "ended", Audit: audit}); err != nil {
+			t.Fatal(err)
+		}
+		organization, err = selfService.ResolveCurrentUserOrganization(ctx, login().AccessToken)
+		if err != nil || len(organization.Departments) != 0 || len(organization.ProjectGroups) != 0 {
+			t.Fatalf("inactive relationships leaked: organization=%#v err=%v", organization, err)
+		}
+		foreignMember := establishContextSelectionMembership(t, ctx, membershipService, foreignTenant.ID, user.PrincipalID, audit).Membership
+		if _, err := orgService.CreateDepartmentMembership(ctx, CreateDepartmentMembershipInput{TenantID: foreignTenant.ID, DepartmentID: foreign.ID, TenantMembershipID: foreignMember.ID, ActorPrincipalID: user.PrincipalID, MembershipType: DepartmentMembershipTypePrimary, RelationRole: DepartmentRelationRoleMember, Audit: audit}); err != nil {
+			t.Fatal(err)
+		}
+		for _, membershipID := range []int64{member.ID, foreignMember.ID} {
+			challenge := beginMultiContextSelection(t, ctx, selectionService, user.PrincipalID, SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: currentTime}, audit)
+			selected, err := selectionService.ConsumeContextSelection(ctx, ConsumeContextSelectionInput{SelectionTicket: challenge.Challenge.SelectionTicket, Choice: ContextSelectionChoice{Type: ContextTypeTenant, TenantMembershipID: &membershipID}, Audit: audit})
+			if err != nil {
+				t.Fatal(err)
+			}
+			organization, err := selfService.ResolveCurrentUserOrganization(ctx, selected.AccessToken)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if membershipID == member.ID && (organization.Tenant.ID != currentTenant.ID || len(organization.Departments) != 0) {
+				t.Fatalf("another tenant's relationship leaked: %#v", organization)
+			}
+			if membershipID == foreignMember.ID && (organization.Tenant.ID != foreignTenant.ID || len(organization.Departments) != 1 || organization.Departments[0].ID != foreign.ID) {
+				t.Fatalf("context was not respected: %#v", organization)
+			}
+		}
+	})
+
 	t.Run("external user profile does not require a local account", func(t *testing.T) {
 		var externalPrincipalID int64
 		err := repository.Transaction(ctx, func(tx *Repository) error {

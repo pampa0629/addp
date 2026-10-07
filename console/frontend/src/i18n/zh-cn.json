@@ -1,7 +1,6 @@
 {
   "console": {
     "title": "全域数据平台",
-    "myAccount": "我的账号",
     "logout": "退出登录",
     "sessionExpired": "登录已过期，请重新登录",
     "logoutSuccess": "已退出登录",
@@ -618,6 +617,7 @@
         "recentConfiguration": "平台配置管理",
         "hostNodes": "平台节点台账"
       }
-    }
+    },
+    "personalCenter": "个人中心"
   }
 }

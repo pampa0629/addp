@@ -98,7 +98,7 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
       })
     }
     if (authStore.isAuthenticated && checkPageAccess && !to.meta?.handlesForbidden && to.name !== 'AccessDenied' && !isPublic) {
-      const route = to.path === '/' && modulePrefix === 'system' ? '/system/account/security' :
+      const route = to.path === '/' && modulePrefix === 'system' ? '/system/account' :
         modulePrefix === 'portal' ? to.path :
           `/${modulePrefix}${to.path === '/' ? '' : to.path}`
       if (!allowsConsoleRoute(route, authStore.contextType, authStore.permissions)) {

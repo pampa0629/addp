@@ -103,9 +103,9 @@ export const SEARCH_INDEX = [
     keywords: ['账号', '用户', '邀请', 'account', 'user', 'invitation']
   },
   {
-    labelKey: 'console.myAccount', module: 'system', route: '/system/account/security',
+    labelKey: 'console.personalCenter', module: 'system', route: '/system/account',
     access: [{ context: 'any' }],
-    keywords: ['我的账号', '安全设置', '多因素认证', '身份验证器', 'my account', 'security settings', 'MFA', 'TOTP']
+    keywords: ['个人中心', '我的账号', '组织归属', '我的部门', '我的项目组', '账号安全', '多因素认证', 'personal center', 'my account', 'department', 'project group', 'MFA', 'TOTP']
   },
   {
     labelKey: 'console.menus.system.iamRoles', module: 'system', route: '/system/iam/roles',

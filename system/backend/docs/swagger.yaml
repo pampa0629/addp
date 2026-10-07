@@ -2573,9 +2573,59 @@ definitions:
       invitation_url:
         type: string
     type: object
+  internal_api.IAMCurrentDepartmentResponse:
+    properties:
+      code:
+        type: string
+      id:
+        type: string
+      membership_type:
+        type: string
+      name:
+        type: string
+      path:
+        items:
+          $ref: '#/definitions/internal_api.IAMCurrentOrganizationReference'
+        type: array
+      relation_role:
+        type: string
+    type: object
   internal_api.IAMCurrentLocalAccountResponse:
     properties:
       username:
+        type: string
+    type: object
+  internal_api.IAMCurrentOrganizationReference:
+    properties:
+      code:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_api.IAMCurrentOrganizationResponse:
+    properties:
+      departments:
+        items:
+          $ref: '#/definitions/internal_api.IAMCurrentDepartmentResponse'
+        type: array
+      project_groups:
+        items:
+          $ref: '#/definitions/internal_api.IAMCurrentProjectGroupResponse'
+        type: array
+      tenant:
+        $ref: '#/definitions/internal_api.IAMCurrentOrganizationReference'
+    type: object
+  internal_api.IAMCurrentProjectGroupResponse:
+    properties:
+      code:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      relation_role:
         type: string
     type: object
   internal_api.IAMCurrentUserResponse:
@@ -12976,6 +13026,42 @@ paths:
       security:
       - BearerAuth: []
       summary: 查询当前用户资料 | Get current user profile
+      tags:
+      - 当前用户 | Current User
+      x-addp-auth-mode: self
+  /users/me/organization:
+    get:
+      description: 只返回第一方当前用户在当前租户的有效部门和项目组成员关系及最小显示信息；无需组织管理权限；平台上下文返回空组织。组织角色不授予管理或数据权限
+        | Returns only the first-party current user's effective memberships and minimal
+        display facts in the current tenant, without organization management permissions.
+        Platform context has no organization. Relationship roles grant no management
+        or data permissions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMCurrentOrganizationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询本人组织归属 | Get current user's organization
       tags:
       - 当前用户 | Current User
       x-addp-auth-mode: self

@@ -105,6 +105,7 @@ func RegisterIAMRoutes(
 	users.Use(runtime.Authentication, runtime.FirstPartyCredential)
 	{
 		users.GET("/me", runtime.UserSelfHandler.Me)
+		users.GET("/me/organization", runtime.UserSelfHandler.Organization)
 		users.PUT("/me/password", runtime.UserSelfHandler.ChangePassword)
 	}
 

@@ -473,7 +473,7 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 
 - 平台节点台账唯一使用 `/host-nodes` 和 `/host-nodes/:node_id`，仅 Platform User、`platform.host_node.read`；创建与更新另需对应权限。检索和分页使用 `search/page/page_size`，默认第 1 页、每页 20 条省略，共享导航桥同步 Console。详情新读取版本后完整提交，409 保留草稿，不自动重试；实例节点展示共用 `ModuleInstanceNode`，只对当前有效绑定提供节点详情入口。
 - IAM 左侧导航按业务大类固定为 `/iam/organization`、`/iam/accounts`、`/iam/roles`、`/iam/application-access`、`/iam/security` 五个页面；具体管理对象使用页内稳定 `tab`，默认 Tab 省略，无权限或无效 Tab 规范化为该分类下的首个可用值。
-- `/iam/organization` 承载租户、部门和项目组；`/iam/accounts` 承载用户账号、用户邀请和平台身份变更；`/iam/roles` 承载角色定义和用户账号角色分配；`/iam/application-access` 分别承载 API 消费方、外部 OAuth 应用、租户服务账号和平台运行账号，其中平台运行账号只读、租户服务账号可管理且 Service Principal 角色入口只存在于此；`/iam/security` 承载 IAM 平台安全策略以及当前 Context 审计。当前 User 的 MFA 与凭据安全只由右上角“我的账号”进入 `/account/security`，不属于任一 IAM 管理页 Tab。
+- `/iam/organization` 承载租户、部门和项目组；`/iam/accounts` 承载用户账号、用户邀请和平台身份变更；`/iam/roles` 承载角色定义和用户账号角色分配；`/iam/application-access` 分别承载 API 消费方、外部 OAuth 应用、租户服务账号和平台运行账号，其中平台运行账号只读、租户服务账号可管理且 Service Principal 角色入口只存在于此；`/iam/security` 承载 IAM 平台安全策略以及当前 Context 审计。当前 User 由右上角“个人中心”进入唯一 `/account` 页面，分类查看基本信息、当前租户下本人组织归属与账号安全，不属于任一 IAM 管理页 Tab；`GET /users/me/organization` 是只读自服务，不要求组织管理权限，不枚举他人或跨租户组织。
 - 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities|delegations`，默认基础信息省略；管理委派按对应权限显示，不使用第二条详情路由。
 - 审计入口唯一使用 `/iam/security?tab=audit`，审计范围由当前 Platform 或 Tenant Context 决定，并支持 `module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id` 稳定筛选；资源回收不再跳转不存在的 `Logs` route。
 - 模块管理唯一使用 `/modules`；页面只对持有 `platform.module.read` 的 Platform User 显示，启停还要求 `platform.module.update`。

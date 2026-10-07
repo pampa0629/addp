@@ -34,6 +34,7 @@ console/frontend/
 - Transfer 有任务读取权限时，Console 侧栏只显示“传输任务”，创建操作由任务列表的主按钮进入；仅有创建权限且具备 `meta.catalog.read` 时，侧栏以“创建传输任务”作为模块入口。创建页对前者保持任务列表菜单选中，对后者保持创建菜单选中；直接地址仍按各页面 Permission 校验。
 - Ontology 的具体入口为“领域本体 → 领域本体建模”（`/ontology/ontologies`），仅当前 Tenant 且具有 `ontology.revision.read` 时显示；权限过滤后没有可见子项的模块不渲染空父菜单，不自动扩张角色权限。
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。
+- 右上角账号菜单只提供一个“个人中心”入口 `/system/account`，由 System 页面分类展示基本信息、组织归属和账号安全。无需 IAM 管理 Permission；分类以 `tab=organization|security` 恢复，默认基本信息省略 query。Console 不复制组织成员事实或个人页面逻辑。
 - AuthContext 刷新期间清空旧候选权限，隐藏并保留当前路由 iframe；加载失败提供重试。同一 Principal、Context 和 Tenant Membership 重新获得当前页权限后恢复原实例，权限撤销、身份或上下文改变、退出及跨页导航卸载旧实例。`make test-console-frontend` 覆盖未保存草稿、故障重试和身份隔离；真实 Nginx T4 必须确认 iframe 实例及内存状态未因刷新丢失。
 - 模块管理查询恢复浏览器回归加载真实 System 前端，验证 Console 地址栏同步不重载 iframe、刷新和新标签恢复组合筛选与分页、单历史及前进/后退。Console 门禁和 CI 同时准备 System 锁定依赖；System 前端改动自动触发该宿主门禁。
 - Security 认证刷新回归加载真实纳管和字段策略表单，以 `Outdoor.Persons`、`userInfo.phone` 为资源与字段样例，验证资源选择、算法参数和调整依据在权限重新确认后保留；HTTP 响应使用确定性夹具，不写开发数据库。Console 门禁和 CI 同时准备 Security 锁定依赖，Security 前端改动自动触发宿主门禁。

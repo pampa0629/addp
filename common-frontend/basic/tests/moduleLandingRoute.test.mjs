@@ -2,6 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { allowsConsoleRoute, resolveModuleLandingRoute } from '../src/authorization/consoleRouteAccess.js'
 
+test('personal center has one self-service route in tenant and platform contexts', () => {
+  for (const context of ['tenant', 'platform']) {
+    assert.equal(allowsConsoleRoute('/system/account', context, []), true)
+    assert.equal(allowsConsoleRoute('/system/account?tab=organization', context, []), true)
+    assert.equal(allowsConsoleRoute('/system/account?tab=security', context, []), true)
+    assert.equal(allowsConsoleRoute('/system/account/security', context, []), false)
+    assert.equal(allowsConsoleRoute('/system/iam/organization', context, []), false)
+  }
+})
+
 test('node resource list and detail require both Platform owner permissions', () => {
   const permissions = ['monitor.resource_observation.read', 'platform.host_node.read']
   for (const route of ['/monitor/node-resources', '/monitor/node-resources/node-id']) {

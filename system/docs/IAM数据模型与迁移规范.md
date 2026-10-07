@@ -292,7 +292,11 @@ System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把
 
 页面表达业务大类，页内 `tab` 表达该类中的具体管理对象或流程。Tab 必须继续按当前 AuthContext 类型和 Permission 过滤；某个页面在当前上下文中没有任何可用 Tab 时，Console 左侧入口和 System standalone 导航都必须隐藏，直接访问也不得绕过 Context 与 Permission Guard。
 
-当前 User 的凭据与 MFA 是跨 Tenant Context 的全局自服务对象，不是租户账号管理对象。它的唯一页面为 `/account/security`，由 Console 和 System standalone 右上角“我的账号”入口打开，不得再作为 `/iam/accounts` 内的 Tab。页面标题使用“我的账号”，当前功能分组使用“安全设置”，TOTP 功能使用“多因素认证”。
+当前 User 的个人自服务唯一页面为 `/account`，由 Console 和 System standalone 右上角“个人中心”入口打开，不作为任何 IAM 管理页的 Tab。页面分为“基本信息”“组织归属”“账号安全”；默认基本信息省略 query，其他分类分别使用 `?tab=organization`、`?tab=security`，刷新和历史导航恢复当前分类。基本信息展示账号和当前租户，顶部摘要可进入组织归属。凭据与 MFA 是跨 Tenant Context 的全局自服务对象；组织归属只表达当前 Tenant 下本人的有效成员关系。组织角色不授予管理功能或数据权限。
+
+`GET /api/v1/system/users/me/organization` 是第一方当前 User 的只读自服务接口，复用浏览器会话权威验证和有效组织成员关系查询，不要求组织管理 Permission，不接受 User、Tenant、Membership 或组织 ID 参数。响应直接返回 `tenant`（最小 ID、名称、编码；Platform Context 为 null）、`departments` 和 `project_groups` 数组。部门包含最小 ID、名称、编码、由根到本部门的名称路径、主／附加关系与本人组织角色；项目组包含最小 ID、名称、编码与本人组内角色。查询在同一只读可重复读事务中验证会话、解析当前 Tenant Membership 和显示名称，不复制组织事实、不将名称加入 Token 或 AuthContext。仅返回有效直接部门／项目组关系，停用部门、关闭项目组与已结束关系不进入当前归属；祖先仅用于路径展示，不推导成员资格。平台上下文返回空数组，不枚举租户组织。响应禁止缓存；失效会话、机器或 OAuth 身份拒绝，依赖故障明确报错，不能伪装为无归属。
+
+个人中心的页面测试覆盖无管理权限用户的入口、组织显示、空状态／错误重试、分类刷新与历史、语言切换及身份变更后迟到响应隔离。后端契约与 PostgreSQL 成员隔离／生命周期回归由现有 System 门禁自动发现，Console 宿主导航及共享路由权限门禁同步覆盖新单一路由；旧 `/account/security` 路由删除。
 
 IAM 管理页页头必须用业务语言表达当前作用范围和会话认证状态：Tenant Context 显示“当前租户：名称（编码）”，Platform Context 显示“当前管理范围：平台”；不得向用户展示 `租户上下文 #<id>` 等内部标识。AAL 按“基础认证”“多因素认证”等语义展示，原始协议值只作为辅助说明。Tenant 名称和编码使用现有 `context-options` 权威结果，不得根据 Tenant ID 猜测或建立第二套查询。
 
