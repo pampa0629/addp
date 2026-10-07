@@ -981,3 +981,12 @@ Docker Desktop 台账必须使用 `virtual` 类型并明确命名为 Linux VM；
 原生开发由标准环境加载传给 Monitor；生产通过唯一 `scripts/prod/start.sh` 在输入完整时添加 `metrics-query.yml` 的三项只读挂载，不增加中心启动依赖。未填写查询 origin 时不挂载，资源 API 报能力未配置；填写 origin 但证书缺失时生产脚本报告可选观测失败，业务仍继续启动。仅恢复同一中心的连接不重启业务；修改端点或证书须按服务生命周期由运维生效。
 
 首批读取 8 个节点基础量的即时值及趋势，预算位于模块级 `/settings/resource-query-policy`；查询参数、权限和验收边界见平台运行监控设计 10.21。CPU 忙碌率、磁盘和网络速率尚未发布。
+
+
+### 指标控制面的可选私有 TLS 转发
+
+本地独立 TLS 入口由同一标准 `bash scripts/infra/up.sh --metrics` 管理，仅调和指标服务，使用既有 `addp-network`；不会启动、构建、初始化或重建核心和日志设施，也不生成日志凭据。默认不带参数仍为全量标准入口。再次执行指标入口会重新创建所选指标容器以应用生成配置和证书；保留中心时序卷，不能视为热更新。设置 `ADDP_OBSERVABILITY_METRICS_ENABLED=true`、`ADDP_METRICS_CONTROL_ENABLED=true`、外部 `ADDP_METRICS_CONTROL_DIR` 和明确 `ADDP_METRICS_CONTROL_GATEWAY_URL=http://host.docker.internal:实际Gateway端口`；两个发现 origin 均使用 `https://metrics-control:9444`。入口只在 `addp-network` 提供 TLS，不发布宿主端口；其 CA 放入中心 deployment/control-ca.crt。目录仅含 `server.crt/server.key/nginx.conf`，标准脚本不签发证书。版本化模板仅转发 Token POST 和发现 GET，拒绝其他路径、方法及查询参数；Authorization 保留，访问日志关闭，资源为 0.25 CPU/128 MiB，UID/GID 65534、只读文件系统、移除全部 capability。上游 HTTP 属于明确的受控本地网络边界，不能替代生产 TLS 验收。
+
+关闭入口时不校验入口输入，停止当前 Owner 的入口容器；关闭中心也停止入口并保留中心数据卷。状态 Running 只证明容器运行，Token/发现接通须经真实请求验证；业务仍不依赖该入口。现有外部 HTTPS 控制面部署不需要选择此转发容器。
+
+个人 macOS Docker Desktop 的新建凭据可以采用完整路径隔离：Owner 私有 0700 外层目录，容器仅只读挂载各自 0755 子目录，所需新建叶子文件设为容器 UID 65534 可读，其他本机用户无法穿过外层目录。CA 私钥与原生 Monitor 查询/准入私钥另存 0700 目录及 0600 文件，不挂载到中心或入口；不得递归放宽已有目录与私钥权限。此布局仅用于个人开发验证，生产密钥 Owner/组与权限按独立 T5 验收。来源使用明确且同时可达的 Mac IP，IP 改变后需重新签发 SAN 并通过正式目标准入更新，不能自动沿用旧绑定。

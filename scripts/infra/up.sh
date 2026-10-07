@@ -18,6 +18,12 @@ cd "${PROJECT_ROOT}"
 COMPOSE_FILES=(-f docker-compose.infra.yml)
 BUILD_REPOSITORY_POSTGRES_IMAGE=false
 CORE_SERVICES=(postgres redis falkordb minio meilisearch redpanda redpanda-init kafka-connect)
+METRICS_ONLY=false
+case "$#:${1-}" in
+  0:) ;;
+  1:--metrics) METRICS_ONLY=true ;;
+  *) echo 'Usage: bash scripts/infra/up.sh [--metrics]' >&2; exit 2 ;;
+esac
 
 compose() {
   # Inactive optional profiles are still interpolated by Compose. Their unused
@@ -27,6 +33,79 @@ compose() {
     metrics) LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
     *) PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose "${COMPOSE_FILES[@]}" "$@" ;;
   esac
+}
+
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo -e "${RED}✗ docker 未安装或不可用${NC}"
+    exit 1
+  fi
+
+  if ! docker compose version >/dev/null 2>&1; then
+    echo -e "${RED}✗ docker compose 不可用，请安装 Docker Desktop 或 docker-compose 插件${NC}"
+    exit 1
+  fi
+}
+
+stop_metrics_control() {
+  local container
+  container=$(compose ps -aq metrics-control) || return 1
+  if [[ -n "$container" ]]; then
+    addp_infra_verify_container metrics-control "$container" || return 1
+    compose stop metrics-control || return 1
+  fi
+}
+
+start_metrics() {
+  local ADDP_INFRA_PORT_SCOPE=metrics
+  addp_metrics_preflight || return 1
+  addp_infra_resolve_ports || return 1
+  local image
+  if [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" == true ]]; then
+    if docker inspect addp-metrics-control >/dev/null 2>&1; then
+      addp_infra_verify_container metrics-control addp-metrics-control || return 1
+    fi
+    image=$(compose config --images metrics-control) || return 1
+    if ! docker image inspect "$image" >/dev/null 2>&1; then docker pull "$image" || return 1; fi
+    compose run --rm --no-deps --entrypoint nginx metrics-control -t || return 1
+    compose up -d --force-recreate metrics-control || return 1
+  else
+    stop_metrics_control || return 1
+  fi
+  image=$(compose config --images prometheus) || return 1
+  if ! docker image inspect "$image" >/dev/null 2>&1; then docker pull "$image" || return 1; fi
+  compose run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/addp.yml || return 1
+  compose run --rm --no-deps --entrypoint /bin/promtool prometheus check web-config /etc/prometheus/web.yml || return 1
+  compose up -d --force-recreate --wait --wait-timeout 90 prometheus || return 1
+  addp_infra_read_actual_ports || return 1
+  [[ -n "${PROMETHEUS_PORT:-}" ]] || return 1
+  curl -fsS --max-time 5 --cacert "$ADDP_METRICS_TLS_DIR/ca.crt" --cert "$ADDP_METRICS_TLS_DIR/health.crt" --key "$ADDP_METRICS_TLS_DIR/health.key" "https://localhost:${PROMETHEUS_PORT}/-/ready" >/dev/null || return 1
+  echo "Prometheus center Ready (localhost:${PROMETHEUS_PORT}); resource coverage requires Monitor verification"
+}
+
+reconcile_metrics() {
+  local optional_result=0 container
+  if addp_metrics_enabled; then
+    if ! start_metrics; then
+      echo 'Metrics center unavailable; core services remain running' >&2
+      optional_result=1
+    fi
+  elif [[ "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" == false ]]; then
+    container=$(compose ps -aq prometheus) || { optional_result=1; container=''; }
+    if [[ -n "$container" ]]; then
+      if addp_infra_verify_container prometheus "$container"; then
+        compose stop prometheus || optional_result=1
+      else
+        optional_result=1
+      fi
+    fi
+    stop_metrics_control || optional_result=1
+    echo 'Metrics center disabled; retained data volume preserved'
+  else
+    echo 'Metrics center unconfigured: ADDP_OBSERVABILITY_METRICS_ENABLED must be true or false' >&2
+    optional_result=1
+  fi
+  return "$optional_result"
 }
 
 echo -e "${BLUE}========================================${NC}"
@@ -42,7 +121,18 @@ if [[ "${ADDP_ONLINE_HOST:-0}" == 1 ]]; then
 else
   RUNTIME_ENV_FILE="$PROJECT_ROOT/.env"
 fi
-addp_prepare_observability_env "$RUNTIME_ENV_FILE"
+if [[ "$METRICS_ONLY" == true ]]; then
+  addp_prepare_observability_env "$RUNTIME_ENV_FILE" metrics
+else
+  addp_prepare_observability_env "$RUNTIME_ENV_FILE"
+fi
+
+if [[ "$METRICS_ONLY" == true ]]; then
+  require_docker
+  source "${SCRIPT_DIR}/ports.sh"
+  reconcile_metrics
+  exit "$?"
+fi
 
 if [ -z "${INFRA_FALKORDB_PASSWORD:-}" ]; then
   echo -e "${RED}✗ 请设置独立的 INFRA_FALKORDB_PASSWORD${NC}"
@@ -116,16 +206,7 @@ if [ -z "${DOCKER_DEFAULT_PLATFORM:-}" ]; then
     fi
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo -e "${RED}✗ docker 未安装或不可用${NC}"
-  exit 1
-fi
-
-if ! docker compose version >/dev/null 2>&1; then
-  echo -e "${RED}✗ docker compose 不可用，请安装 Docker Desktop 或 docker-compose 插件${NC}"
-  exit 1
-fi
-
+require_docker
 source "${SCRIPT_DIR}/ports.sh"
 echo -e "${YELLOW}▶ 解析 ADDP Infra 宿主机端口${NC}"
 ADDP_INFRA_PORT_SCOPE=core addp_infra_resolve_ports
@@ -415,39 +496,5 @@ else
   echo 'Central runtime logs unconfigured: ADDP_OBSERVABILITY_LOGS_ENABLED must be true or false' >&2
   optional_result=1
 fi
-start_metrics() {
-  local ADDP_INFRA_PORT_SCOPE=metrics
-  addp_metrics_preflight || return 1
-  addp_infra_resolve_ports || return 1
-  local image
-  image=$(compose config --images prometheus) || return 1
-  if ! docker image inspect "$image" >/dev/null 2>&1; then docker pull "$image" || return 1; fi
-  compose run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/addp.yml || return 1
-  compose run --rm --no-deps --entrypoint /bin/promtool prometheus check web-config /etc/prometheus/web.yml || return 1
-  compose up -d --wait --wait-timeout 90 prometheus || return 1
-  addp_infra_read_actual_ports || return 1
-  [[ -n "${PROMETHEUS_PORT:-}" ]] || return 1
-  curl -fsS --max-time 5 --cacert "$ADDP_METRICS_TLS_DIR/ca.crt" --cert "$ADDP_METRICS_TLS_DIR/health.crt" --key "$ADDP_METRICS_TLS_DIR/health.key" "https://localhost:${PROMETHEUS_PORT}/-/ready" >/dev/null || return 1
-  echo "Prometheus center Ready (localhost:${PROMETHEUS_PORT}); business resource targets not yet connected"
-}
-
-if addp_metrics_enabled; then
-  if ! start_metrics; then
-    echo 'Metrics center unavailable; core services remain running' >&2
-    optional_result=1
-  fi
-elif [[ "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" == false ]]; then
-  container=$(compose ps -aq prometheus) || { optional_result=1; container=''; }
-  if [[ -n "$container" ]]; then
-    if addp_infra_verify_container prometheus "$container"; then
-      compose stop prometheus || optional_result=1
-    else
-      optional_result=1
-    fi
-  fi
-  echo 'Metrics center disabled; retained data volume preserved'
-else
-  echo 'Metrics center unconfigured: ADDP_OBSERVABILITY_METRICS_ENABLED must be true or false' >&2
-  optional_result=1
-fi
+reconcile_metrics || optional_result=1
 exit "$optional_result"

@@ -14,13 +14,13 @@ FILES = ('control-ca.crt', 'source-ca.crt', 'collector.crt', 'collector.key',
          'prometheus-client-secret')
 
 
-def origin(value):
+def origin(value, scheme="https"):
     if not value or len(value) > 512 or not value.isascii() or any(c.isspace() for c in value):
-        raise ValueError('Metrics control origin must be canonical HTTPS with explicit port')
+        raise ValueError('Metrics origin must be canonical with explicit port')
     parsed = urlsplit(value)
-    if (parsed.scheme != 'https' or parsed.username is not None or parsed.password is not None
+    if (parsed.scheme != scheme or parsed.username is not None or parsed.password is not None
             or parsed.path or parsed.query or parsed.fragment or '%' in value or '@' in value):
-        raise ValueError('Metrics control origin must contain only HTTPS authority')
+        raise ValueError('Metrics origin must contain only the selected scheme and authority')
     host, port = parsed.hostname, parsed.port
     if not host or not port:
         raise ValueError('Metrics control origin requires a host and explicit port')
@@ -41,12 +41,52 @@ def origin(value):
                for label in host.split('.')):
             raise ValueError('Metrics control origin has invalid DNS labels')
         authority = f'{host}:{port}'
-    if value != 'https://' + authority:
+    if value != scheme + '://' + authority:
         raise ValueError('Metrics control origin is not canonical')
     return value
 
 
+def control_config(env, root):
+    selected = env.get('ADDP_METRICS_CONTROL_ENABLED', 'false')
+    if selected == 'false':
+        return None
+    if selected != 'true':
+        raise ValueError('ADDP_METRICS_CONTROL_ENABLED must be true or false')
+    directory = Path(env.get('ADDP_METRICS_CONTROL_DIR', ''))
+    if (not directory.is_absolute() or not directory.is_dir()
+            or directory.resolve().is_relative_to(root.resolve())):
+        raise ValueError('Metrics control directory must exist outside repository')
+    if any(p.name not in {'server.crt', 'server.key', 'nginx.conf'} for p in directory.iterdir()):
+        raise ValueError('Metrics control directory contains unexpected files')
+    for name in ('server.crt', 'server.key'):
+        file = directory / name
+        if file.is_symlink() or not file.is_file() or not 0 < file.stat().st_size <= 1 << 20:
+            raise ValueError('Missing regular metrics control certificate file')
+        with file.open('rb') as stream:
+            stream.read(1)
+    for name in ('SYSTEM', 'MONITOR'):
+        if env.get('PROMETHEUS_' + name + '_URL') != 'https://metrics-control:9444':
+            raise ValueError('Selected private control entry requires its exact HTTPS origin')
+    upstream = origin(env.get('ADDP_METRICS_CONTROL_GATEWAY_URL', ''), scheme='http')
+    template = (root / 'scripts/infra/metrics-control.conf').read_text()
+    return directory / 'nginx.conf', template.replace('@@GATEWAY_URL@@', upstream)
+
+
+def atomic_config(path, content):
+    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.metrics-', delete=False) as output:
+        pending = Path(output.name)
+        try:
+            os.chmod(pending, 0o644)  # Public addresses and paths only.
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+            pending.replace(path)
+        finally:
+            pending.unlink(missing_ok=True)
+
+
 def render(env, root=ROOT):
+    control = control_config(env, root)
     directory = Path(env.get('ADDP_METRICS_DEPLOYMENT_DIR', ''))
     if (not directory.is_absolute() or not directory.is_dir()
             or directory.resolve().is_relative_to(root.resolve())):
@@ -78,16 +118,9 @@ def render(env, root=ROOT):
     for name, path in (('SYSTEM', '/api/v1/system/oauth/token'),
                        ('MONITOR', '/api/v1/monitor/platform/metrics_discovery')):
         config = config.replace('@@' + name + '_URL@@', json.dumps(origin(env.get('PROMETHEUS_' + name + '_URL', '')) + path))
-    with tempfile.NamedTemporaryFile(mode='w', dir=directory, prefix='.prometheus-', delete=False) as output:
-        pending = Path(output.name)
-        try:
-            os.chmod(pending, 0o644)  # Contains paths and public origins, never a secret.
-            output.write(config)
-            output.flush()
-            os.fsync(output.fileno())
-            pending.replace(directory / 'prometheus.yml')
-        finally:
-            pending.unlink(missing_ok=True)
+    if control:
+        atomic_config(*control)
+    atomic_config(directory / 'prometheus.yml', config)
 
 
 if __name__ == '__main__':

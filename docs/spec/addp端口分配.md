@@ -329,3 +329,6 @@ make ports-validate
 日志查询代理内部端口 3100、本地宿主首选 13100（`LOKI_PORT`）；Alloy 内部和宿主首选 12345（`ALLOY_PORT`）。两者宿主机仅绑定回环地址，真实映射由标准 Infra 入口解析。Loki 存储端点只位于专用内部网络，不映射宿主端口。
 
 Elasticsearch Business 首选宿主机端口为 `9200`，仅绑定 `127.0.0.1`，实际端口由 `business/scripts/ports.sh` 解析并保存到 `business/.business-state/ports.env`。容器服务端口为 `9200`；T2 夹具使用 Docker 分配的独占回环端口。
+
+
+可选 Infra 指标控制面 TLS 转发容器内部固定 `9444`，仅 `addp-network` 使用 `https://metrics-control:9444`，不发布宿主端口，不参与宿主端口避让。上游 Gateway 实际 origin 由部署方显式指定。Docker Desktop 来源采用明确 Mac 发布 IP:端口，仍要求 Monitor 和中心同时可达，不自动选择端口。

@@ -73,6 +73,70 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 config.render(dict(self.env, PROMETHEUS_MONITOR_URL=value))
             self.assertEqual((self.directory / 'prometheus.yml').read_bytes(), before)
 
+    def control_inputs(self):
+        # Different mount directory; only centre files belong in deployment.
+        directory = Path(self.temp.name + '-control')
+        directory.mkdir()
+        self.addCleanup(lambda: __import__('shutil').rmtree(directory))
+        for name in ('server.crt', 'server.key'):
+            (directory / name).write_text(name)
+        return dict(self.env, ADDP_METRICS_CONTROL_ENABLED='true',
+                    ADDP_METRICS_CONTROL_DIR=str(directory),
+                    ADDP_METRICS_CONTROL_GATEWAY_URL='http://host.docker.internal:8000',
+                    PROMETHEUS_SYSTEM_URL='https://metrics-control:9444',
+                    PROMETHEUS_MONITOR_URL='https://metrics-control:9444')
+
+    def test_private_control_selection_generation_and_rejection_are_atomic(self):
+        env = self.control_inputs()
+        config.render(env)
+        control = Path(env['ADDP_METRICS_CONTROL_DIR']) / 'nginx.conf'
+        original = control.read_bytes()
+        prometheus = (self.directory / 'prometheus.yml').read_bytes()
+        text = original.decode()
+        self.assertNotIn(self.secret, text)
+        self.assertIn('proxy_set_header Authorization $http_authorization;', text)
+        self.assertIn('access_log off;', text)
+        self.assertEqual(text.count('proxy_pass http://host.docker.internal:8000;'), 2)
+        self.assertIn('location / { return 404; }', text)
+        for values in ({'ADDP_METRICS_CONTROL_ENABLED': 'yes'},
+                       {'ADDP_METRICS_CONTROL_DIR': str(ROOT)},
+                       {'ADDP_METRICS_CONTROL_GATEWAY_URL': 'http://host:80/path'},
+                       {'ADDP_METRICS_CONTROL_GATEWAY_URL': 'http://HOST:80'},
+                       {'ADDP_METRICS_CONTROL_GATEWAY_URL': 'http://user:pass@host:80'},
+                       {'PROMETHEUS_MONITOR_URL': 'https://other:9444'}):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                config.render(dict(env, **values))
+            self.assertEqual(control.read_bytes(), original)
+            self.assertEqual((self.directory / 'prometheus.yml').read_bytes(), prometheus)
+        (control.parent / 'ca.key').write_text('private-signing-key')
+        with self.assertRaises(ValueError):
+            config.render(env)
+        config.render(dict(self.env, ADDP_METRICS_CONTROL_ENABLED='false',
+                           ADDP_METRICS_CONTROL_DIR='invalid', ADDP_METRICS_CONTROL_GATEWAY_URL='invalid'))
+        self.assertEqual(control.read_bytes(), original)
+
+    def test_control_profile_is_explicit_and_has_no_host_port_or_business_dependency(self):
+        root = (ROOT / 'docker-compose.infra.yml').read_text()
+        service = root.split('  metrics-control:\n', 1)[1].split('  prometheus:', 1)[0]
+        self.assertNotIn('ports:', service)
+        self.assertIn('profiles: [observability-metrics-control]', service)
+        template = (ROOT / 'scripts/infra/metrics-control.yml').read_text()
+        self.assertNotIn('ports:', template)
+        self.assertNotIn('depends_on:', template)
+        for key in ('65534:65534', 'read_only: true', 'cap_drop: [ALL]', 'cpus: 0.25', 'mem_limit: 128m'):
+            self.assertIn(key, template)
+        for metrics, control, selected in (('false', 'true', False), ('true', 'false', False), ('true', 'true', True)):
+            env = dict(os.environ, ADDP_OBSERVABILITY_LOGS_ENABLED='false',
+                       ADDP_OBSERVABILITY_METRICS_ENABLED=metrics, ADDP_METRICS_CONTROL_ENABLED=control)
+            result = subprocess.run(['bash', '-c', 'source scripts/utils/observability-env.sh; addp_observability_profiles; printf "%s" "${COMPOSE_PROFILES-}"'],
+                                    cwd=ROOT, env=env, capture_output=True, text=True, check=True)
+            self.assertEqual('observability-metrics-control' in result.stdout, selected)
+        gate = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
+        for name in ('scripts/infra/metrics-control.conf', 'scripts/infra/metrics-control.yml'):
+            self.assertIn(name, gate.splitlines()[3])
+        down = (ROOT / 'scripts/infra/down.sh').read_text()
+        self.assertIn('--profile observability-metrics-control', down)
+
     def test_secret_missing_mismatched_or_shared_is_rejected(self):
         for values in ({'PROMETHEUS_SERVICE_CLIENT_SECRET': ''},
                        {'PROMETHEUS_SERVICE_CLIENT_SECRET': 'b' * 32},

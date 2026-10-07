@@ -67,13 +67,13 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         self.secrets.mkdir(mode=0o700)
         self.envfile = self.secrets / "runtime.env"
 
-    def run_up(self, **values):
+    def run_up(self, cli=(), **values):
         env = dict(os.environ)
-        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES"):
+        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES"):
             env.pop(key, None)
         env.update(PATH=f"{self.bin}:{env['PATH']}", ENV="development", INFRA_FALKORDB_PASSWORD="graph-test", REDIS_PASSWORD="redis-test")
         env.update(values)
-        return subprocess.run(["bash", "scripts/infra/up.sh"], cwd=self.repo, env=env,
+        return subprocess.run(["bash", "scripts/infra/up.sh", *cli], cwd=self.repo, env=env,
                               capture_output=True, text=True, timeout=10)
 
     def healthy_docker(self):
@@ -95,12 +95,14 @@ elif a[0]=='inspect':
     service=container.removeprefix('addp-')
     logs=service in ('loki','alloy','runtime-log-api','runtime-log-observer','runtime-log-store-init')
     if logs and os.environ.get('MOCK_EXISTING_LOGS')!='1': sys.exit(1)
+    if service=='metrics-control' and os.environ.get('MOCK_EXISTING_CONTROL')!='1': sys.exit(1)
     if service=='prometheus' and os.environ.get('MOCK_EXISTING_METRICS')!='1' and not Path(os.environ['MOCK_COMMANDS']).with_suffix('.metrics-started').exists(): sys.exit(1)
     if '--format' in a:
         fmt=a[a.index('--format')+1]
         if 'com.docker.compose.project' in fmt:
             root=str(Path.cwd()) if os.environ.get('MOCK_FOREIGN_LOGS')!='1' or not logs else '/foreign'
             if service=='prometheus' and os.environ.get('MOCK_FOREIGN_METRICS')=='1': root='/foreign'
+            if service=='metrics-control' and os.environ.get('MOCK_FOREIGN_CONTROL')=='1': root='/foreign'
             print('addp-infra|'+service+'|'+root)
         elif 'ExitCode' in fmt: print('exited:0')
         elif 'State.Running' in fmt: print('true:healthy' if 'Health' in fmt else 'true')
@@ -111,7 +113,7 @@ elif a[0]=='port':
     print('127.0.0.1:'+{'5432':'15432','6379':('16479' if a[1]=='addp-falkordb' else '16379'),'9000':'19000','9001':'19001','7700':'17700','9092':'19092','8083':'18083','3100':'13100','12345':'12345','9090':'19090'}[internal])
 elif a[0]=='compose':
     if 'ps' in a and '-aq' in a:
-        key='MOCK_EXISTING_METRICS' if a[-1]=='prometheus' else 'MOCK_EXISTING_LOGS'
+        key={'prometheus':'MOCK_EXISTING_METRICS','metrics-control':'MOCK_EXISTING_CONTROL'}.get(a[-1],'MOCK_EXISTING_LOGS')
         if os.environ.get(key)=='1': print('addp-'+a[-1])
     if 'up' in a and 'prometheus' in a and os.environ.get('MOCK_FAIL_METRICS_START')=='1': sys.exit(72)
     if 'up' in a and 'prometheus' in a: Path(os.environ['MOCK_COMMANDS']).with_suffix('.metrics-started').touch()
@@ -204,6 +206,69 @@ elif a[0]=='compose':
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertTrue(any('up' in a and 'postgres' in a for a in self.calls()))
         self.assertFalse(any('stop' in a for a in self.calls()))
+
+    def test_disabled_metrics_stop_only_owned_control_and_preserve_core(self):
+        result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
+                             MOCK_EXISTING_CONTROL='1')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        stopped = [a[-1] for a in self.calls() if 'stop' in a]
+        self.assertEqual(stopped, ['metrics-control'])
+        self.commands.unlink()
+        result = self.run_up(**self.healthy_docker(), ADDP_OBSERVABILITY_LOGS_ENABLED='false',
+                             MOCK_EXISTING_CONTROL='1', MOCK_FOREIGN_CONTROL='1')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse(any('stop' in a for a in self.calls()))
+
+    def test_control_input_failure_keeps_core_and_does_not_start_center(self):
+        result = self.run_up(**self.healthy_docker(), **self.metrics_certificates(),
+                             ADDP_OBSERVABILITY_LOGS_ENABLED='false',
+                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', ADDP_METRICS_CONTROL_ENABLED='true')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertTrue(any('up' in a and 'postgres' in a for a in self.calls()))
+        self.assertFalse(any('up' in a and ('metrics-control' in a or 'prometheus' in a) for a in self.calls()))
+
+    def test_selected_control_refuses_foreign_owner_before_start(self):
+        deployment = self.metrics_certificates()
+        control = self.root / 'control'
+        control.mkdir()
+        for name in ('server.crt', 'server.key'):
+            (control / name).write_text(name)
+        deployment.update(PROMETHEUS_SYSTEM_URL='https://metrics-control:9444',
+                          PROMETHEUS_MONITOR_URL='https://metrics-control:9444')
+        result = self.run_up(**self.healthy_docker(), **deployment,
+                             ADDP_OBSERVABILITY_LOGS_ENABLED='false',
+                             ADDP_OBSERVABILITY_METRICS_ENABLED='true', ADDP_METRICS_CONTROL_ENABLED='true',
+                             ADDP_METRICS_CONTROL_DIR=str(control), ADDP_METRICS_CONTROL_GATEWAY_URL='http://host.internal:8000',
+                             MOCK_EXISTING_CONTROL='1', MOCK_FOREIGN_CONTROL='1')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse(any(('up' in a or 'run' in a) and 'metrics-control' in a for a in self.calls()))
+        self.assertFalse(any('stop' in a for a in self.calls()))
+
+    def test_metrics_only_uses_no_core_log_build_init_or_secret_generation(self):
+        result = self.run_up(**self.healthy_docker(), **self.metrics_certificates(),
+                             cli=('--metrics',), ADDP_OBSERVABILITY_METRICS_ENABLED='true')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.repo / '.env').exists())
+        calls = self.calls()
+        self.assertTrue(any('up' in a and 'prometheus' in a for a in calls))
+        for command in calls:
+            if command[0] == 'compose' and any(action in command for action in ('up', 'run', 'build', 'exec', 'stop')):
+                self.assertFalse(any(service in command for service in
+                                     ('postgres', 'redis', 'falkordb', 'minio', 'meilisearch', 'redpanda',
+                                      'kafka-connect', 'loki', 'alloy', 'runtime-log-pruner', 'runtime-log-observer')),
+                                 command)
+            self.assertNotIn('build', command)
+
+    def test_metrics_only_disabled_and_unknown_arguments_do_not_create_credentials(self):
+        result = self.run_up(**self.healthy_docker(), cli=('--metrics',))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.repo / '.env').exists())
+        self.assertFalse(any('up' in a or 'build' in a for a in self.calls()))
+        for cli in (('--unknown',), ('--metrics', '--unknown')):
+            result = self.run_up(cli=cli)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn('Usage:', result.stderr)
+            self.assertFalse((self.repo / '.env').exists())
 
     def test_profiles_follow_explicit_independent_selection(self):
         for logs, metrics, expected in (

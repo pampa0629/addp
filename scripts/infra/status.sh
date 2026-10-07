@@ -162,12 +162,29 @@ case "${ADDP_OBSERVABILITY_METRICS_ENABLED-false}" in
     elif ! ADDP_INFRA_PORT_SCOPE=metrics addp_infra_read_actual_ports || [[ -z "${PROMETHEUS_PORT:-}" ]]; then
       echo '- Metrics center: Not deployed'
     elif curl -fsS --max-time 3 --cacert "$ADDP_METRICS_TLS_DIR/ca.crt" --cert "$ADDP_METRICS_TLS_DIR/health.crt" --key "$ADDP_METRICS_TLS_DIR/health.key" "https://localhost:${PROMETHEUS_PORT}/-/ready" >/dev/null 2>&1; then
-      echo '- Metrics center: Ready (business resource targets not yet connected)'
+      echo '- Metrics center: Ready (resource coverage requires Monitor verification)'
     else
       echo '- Metrics center: Unavailable'
     fi ;;
   *) echo '- Metrics center: Unconfigured (invalid deployment selection)' ;;
 esac
+
+if ! addp_metrics_enabled || [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" == false ]]; then
+  echo '- Metrics control TLS: Disabled'
+elif [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" != true ]]; then
+  echo '- Metrics control TLS: Unconfigured (invalid selection)'
+else
+  control_container=$(docker compose -f docker-compose.infra.yml ps -aq metrics-control 2>/dev/null || true)
+  if [[ -z "$control_container" ]]; then
+    echo '- Metrics control TLS: Not deployed'
+  elif ! addp_infra_verify_container metrics-control "$control_container" >/dev/null 2>&1; then
+    echo '- Metrics control TLS: Unavailable (ownership)'
+  elif [[ "$(docker inspect --format '{{.State.Running}}' "$control_container")" == true ]]; then
+    echo '- Metrics control TLS: Running (API forwarding not yet verified)'
+  else
+    echo '- Metrics control TLS: Unavailable'
+  fi
+fi
 
 if ! addp_runtime_logs_enabled; then
   case "${ADDP_OBSERVABILITY_LOGS_ENABLED-true}" in

@@ -1,0 +1,25 @@
+services:
+  metrics-control:
+    image: nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
+    user: "65534:65534"
+    entrypoint: [nginx, -g, "daemon off;"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.25
+    mem_limit: 128m
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes:
+      - type: bind
+        source: ${ADDP_METRICS_CONTROL_DIR:-/nonexistent/addp-metrics-control}/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${ADDP_METRICS_CONTROL_DIR:-/nonexistent/addp-metrics-control}
+        target: /tls
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped

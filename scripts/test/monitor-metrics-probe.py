@@ -40,7 +40,7 @@ context = ssl.create_default_context(cafile=str(TLS / 'ca.crt'))
 context.load_cert_chain(str(TLS / 'health.crt'), str(TLS / 'health.key'))
 base = 'https://localhost:' + port('prometheus', 9090)
 source = 'https://localhost:' + port('metrics-source', 9443)
-control = 'https://localhost:' + port('metrics-source', 9444)
+control = 'https://localhost:' + port('metrics-control', 9444)
 deployment = Path(os.environ['ADDP_METRICS_DEPLOYMENT_DIR'])
 original_metrics = (WORK / 'source/metrics').read_text()
 source_context = ssl.create_default_context(cafile=str(deployment / 'source-ca.crt'))
@@ -94,6 +94,29 @@ def rejected(url, ctx):
     raise AssertionError('Unauthenticated access accepted: ' + url)
 
 
+# Production TLS forwarder uses the same hard resource/network boundary in T2.
+forwarder = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'metrics-control')], text=True))[0]
+assert forwarder['Config']['User'] == '65534:65534'
+assert forwarder['HostConfig']['ReadonlyRootfs'] and forwarder['HostConfig']['CapDrop'] == ['ALL']
+assert not forwarder['HostConfig']['Privileged']
+assert forwarder['HostConfig']['NanoCpus'] == 250_000_000
+assert forwarder['HostConfig']['Memory'] == 128 * 1024**2
+assert all(not m['RW'] for m in forwarder['Mounts'])
+control_context = ssl.create_default_context(cafile=str(deployment / 'control-ca.crt'))
+for path, method, expected in (('/metrics', 'GET', 404),
+                               ('/api/v1/system/oauth/token', 'GET', 405),
+                               ('/api/v1/monitor/platform/metrics_discovery', 'POST', 405),
+                               ('/api/v1/monitor/platform/metrics_discovery?x=1', 'GET', 400),
+                               ('/api/v1/monitor/platform/metrics_discovery', 'GET', 401)):
+    request = urllib.request.Request(control + path, method=method)
+    try:
+        urllib.request.urlopen(request, context=control_context, timeout=5)
+    except urllib.error.HTTPError as error:
+        assert error.code == expected, (path, error.code)
+    else:
+        raise AssertionError('Control forwarder accepted forbidden request')
+print('Metrics T2: private TLS forwarding rejects paths, methods, queries and anonymous discovery', flush=True)
+
 assert get(base + '/-/ready')
 assert get(source + '/metrics', source_context)
 anonymous = ssl.create_default_context(cafile=str(TLS / 'ca.crt'))
@@ -108,12 +131,6 @@ source_health = ssl.create_default_context(cafile=str(deployment / 'source-ca.cr
 source_health.load_cert_chain(str(TLS / 'health.crt'), str(TLS / 'health.key'))
 rejected(source + '/metrics', source_anonymous)
 rejected(source + '/metrics', source_health)
-try:
-    get(control + '/api/v1/monitor/platform/metrics_discovery', anonymous)
-except urllib.error.HTTPError as err:
-    assert err.code == 401, err.code
-else:
-    raise AssertionError('Anonymous HTTP SD was accepted')
 print('Metrics T2: anonymous, foreign client CA and plaintext rejected', flush=True)
 # Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',

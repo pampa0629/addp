@@ -272,6 +272,14 @@ services:
       retries: 12
       start_period: 30s
 
+  metrics-control:
+    profiles: [observability-metrics-control]
+    extends:
+      file: scripts/infra/metrics-control.yml
+      service: metrics-control
+    container_name: addp-metrics-control
+    networks: [addp-network]
+
   prometheus:
     profiles: [observability-metrics]
     extends:

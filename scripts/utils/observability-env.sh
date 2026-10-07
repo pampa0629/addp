@@ -39,7 +39,10 @@ addp_observability_profiles() {
   unset COMPOSE_PROFILES
   local profiles=()
   if addp_runtime_logs_enabled; then profiles+=(observability-logs); fi
-  if addp_metrics_enabled; then profiles+=(observability-metrics); fi
+  if addp_metrics_enabled; then
+    profiles+=(observability-metrics)
+    if [[ "${ADDP_METRICS_CONTROL_ENABLED-false}" == true ]]; then profiles+=(observability-metrics-control); fi
+  fi
   if (( ${#profiles[@]} )); then
     local IFS=,
     export COMPOSE_PROFILES="${profiles[*]}"
@@ -67,6 +70,10 @@ PYBOUNDARY
     set -a
     source "$runtime_env_file" || return 1
     set +a
+  fi
+  if [[ "${2-}" == metrics ]]; then
+    addp_observability_profiles
+    return 0
   fi
   if [[ "${ENV:-development}" != production ]]; then
     python3 - "$runtime_env_file" <<'PYLOGENV' || echo 'Runtime log configuration preparation failed; core startup remains independent' >&2

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter
+# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
+# ADDP_T2_INPUT_FILES=scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -14,7 +14,9 @@ export ADDP_METRICS_DEPLOYMENT_DIR="$WORK_DIR/deployment"
 export ADDP_NODE_METRICS_TLS_DIR="$WORK_DIR/node-tls"
 export ADDP_NODE_METRICS_LISTEN=:9100 ADDP_NODE_METRICS_ROOTFS=/ ADDP_NODE_METRICS_PROCFS=/proc ADDP_NODE_METRICS_SYSFS=/sys ADDP_NODE_METRICS_OWNER=t2
 export ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX=--collector
-export PROMETHEUS_SYSTEM_URL=https://metrics-source:9444 PROMETHEUS_MONITOR_URL=https://metrics-source:9444
+export PROMETHEUS_SYSTEM_URL=https://metrics-control:9444 PROMETHEUS_MONITOR_URL=https://metrics-control:9444
+export ADDP_METRICS_CONTROL_ENABLED=true ADDP_METRICS_CONTROL_DIR="$WORK_DIR/control"
+export ADDP_METRICS_CONTROL_GATEWAY_URL=http://metrics-source:8081
 export PROMETHEUS_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 compose(){ docker compose --env-file /dev/null -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
 cleanup(){
@@ -41,13 +43,13 @@ cleanup(){
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-mkdir -m 755 "$WORK_DIR/tls" "$WORK_DIR/source" "$WORK_DIR/deployment" "$WORK_DIR/node-tls"
+mkdir -m 755 "$WORK_DIR/tls" "$WORK_DIR/source" "$WORK_DIR/deployment" "$WORK_DIR/node-tls" "$WORK_DIR/control"
 # A one-run CA and deployer client; never install these in a personal environment.
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Metrics-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/ca.key" -out "$ADDP_METRICS_TLS_DIR/ca.crt" >/dev/null 2>&1
 for identity in server health; do
   openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$identity" -keyout "$ADDP_METRICS_TLS_DIR/$identity.key" -out "$WORK_DIR/$identity.csr" >/dev/null 2>&1
   if [[ "$identity" == server ]]; then
-    printf 'subjectAltName=DNS:localhost,DNS:prometheus,DNS:metrics-source\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/extensions"
+    printf 'subjectAltName=DNS:localhost,DNS:prometheus,DNS:metrics-source,DNS:metrics-control\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/extensions"
   else
     printf 'extendedKeyUsage=clientAuth\n' >"$WORK_DIR/extensions"
   fi
@@ -62,7 +64,6 @@ printf 'extendedKeyUsage=clientAuth\n' >"$WORK_DIR/query-extensions"
 openssl x509 -req -in "$WORK_DIR/query.csr" -CA "$ADDP_METRICS_TLS_DIR/ca.crt" -CAkey "$WORK_DIR/ca.key" -CAserial "$ADDP_METRICS_TLS_DIR/ca.srl" -days 1 -extfile "$WORK_DIR/query-extensions" -out "$WORK_DIR/query-tls/client.crt" >/dev/null 2>&1
 chmod 600 "$WORK_DIR/query-tls/client.key"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=Untrusted -keyout "$WORK_DIR/untrusted.key" -out "$WORK_DIR/untrusted.crt" >/dev/null 2>&1
-cp "$ADDP_METRICS_TLS_DIR/ca.crt" "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Source-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/source-ca.key" -out "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" >/dev/null 2>&1
 for identity in source-server collector admission; do
   openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$identity" -keyout "$WORK_DIR/$identity.key" -out "$WORK_DIR/$identity.csr" >/dev/null 2>&1
@@ -88,6 +89,12 @@ printf '%s' "$PROMETHEUS_SERVICE_CLIENT_SECRET" >"$ADDP_METRICS_DEPLOYMENT_DIR/p
 chmod 644 "$ADDP_METRICS_DEPLOYMENT_DIR/prometheus-client-secret"
 touch "$WORK_DIR/source/requests.log"
 chmod 666 "$WORK_DIR/source/requests.log"
+# Control-plane trust is separate from center query/health and node source trust.
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Control-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/control-ca.key" -out "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt" >/dev/null 2>&1
+openssl req -new -newkey rsa:2048 -nodes -subj /CN=metrics-control -keyout "$ADDP_METRICS_CONTROL_DIR/server.key" -out "$WORK_DIR/control.csr" >/dev/null 2>&1
+printf 'subjectAltName=DNS:localhost,DNS:metrics-control\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/control-extensions"
+openssl x509 -req -in "$WORK_DIR/control.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/control-ca.crt" -CAkey "$WORK_DIR/control-ca.key" -set_serial 1 -days 1 -extfile "$WORK_DIR/control-extensions" -out "$ADDP_METRICS_CONTROL_DIR/server.crt" >/dev/null 2>&1
+chmod 644 "$ADDP_METRICS_CONTROL_DIR/server.key"
 python3 "$ROOT_DIR/scripts/infra/generate-metrics-config.py"
 cat >"$WORK_DIR/nginx.conf" <<'CONFIG'
 worker_processes 1;
@@ -115,6 +122,7 @@ http {
   # Controlled protocol fixture, not a System identity issuer or Monitor implementation.
   server {
     listen 9444 ssl;
+    listen 8081;
     ssl_certificate /tls/server.crt;
     ssl_certificate_key /tls/server.key;
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -167,6 +175,7 @@ Path(sys.argv[3]).write_text('subjectAltName=DNS:localhost,IP:'+address+'\nexten
 CONFIG
 openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/source/server.crt" >/dev/null 2>&1
 compose exec -T metrics-source nginx -s reload
-compose up -d --wait --wait-timeout 90 prometheus metrics-source
+compose run --rm --no-deps --entrypoint nginx metrics-control -t
+compose up -d --wait --wait-timeout 90 prometheus metrics-source metrics-control
 export METRICS_T2_PROJECT="$COMPOSE_PROJECT" METRICS_T2_COMPOSE="$COMPOSE_FILE"
 python3 "$ROOT_DIR/scripts/test/monitor-metrics-probe.py"

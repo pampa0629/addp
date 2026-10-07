@@ -191,7 +191,10 @@ addp_infra_read_actual_ports() {
 }
 
 addp_infra_apply_endpoints() {
+  # A scoped capability must not require or rewrite unrelated endpoint inputs.
+  [[ "${ADDP_INFRA_PORT_SCOPE:-all}" == metrics ]] && return 0
   if addp_runtime_logs_enabled && [ -n "${LOKI_PORT:-}" ]; then export LOKI_URL="http://127.0.0.1:${LOKI_PORT}"; else export LOKI_URL=""; fi
+  [[ "${ADDP_INFRA_PORT_SCOPE:-all}" == logs ]] && return 0
   local host="${SERVICE_HOST:-localhost}"
   export INFRA_FALKORDB_ADDRESS="127.0.0.1:${FALKORDB_PORT}"
   export MEILISEARCH_URL="http://${host}:${MEILISEARCH_PORT}"
