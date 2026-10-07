@@ -17,6 +17,13 @@ spec.loader.exec_module(m)
 
 
 class RasterPhysicalFixtureTest(unittest.TestCase):
+    def test_manager_physical_refuses_non_hosted_owner_or_unknown_action_before_mutation(self):
+        for values, action in (({}, 'seed'),
+                ({'ADDP_ONLINE_HOSTED': '1', 'ONLINE_SUITE': 'manager-internal-artifact-lineage'}, 'unknown')):
+            with self.subTest(action=action), patch.dict(os.environ, values, clear=True), patch.object(m, 'command') as command:
+                with self.assertRaises(m.FixtureError): m.manager_physical(action)
+                command.assert_not_called()
+
     def test_analysis_oracle_counts_boundaries_and_outside_range_independently(self):
         results = m.analysis_expectations()
         self.assertEqual(results['statistics-band-2']['mean'], 65538)

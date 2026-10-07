@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
 import struct
 import subprocess
@@ -20,6 +22,7 @@ from typing import Any, Callable, Iterable, Mapping
 TERMINAL_STATUSES = {"success", "failed", "timeout", "cancelled"}
 POINTCLOUD_TASK_TYPE = "point_cloud_copc_generation"
 PPTX_TASK_TYPE = "pptx_pdf_generation"
+RASTER_TASK_TYPE = "raster_cog_generation"
 MODEL_TASK_TYPE = "model_3d_glb_generation"
 LINEAGE_SCHEMA = "addp.lineage-facts/v1"
 REQUIRED_PERMISSIONS = {
@@ -53,7 +56,7 @@ class Response:
 
 
 @dataclass
-class ModelFixture:
+class ArtifactFixture:
     format: str
     item: dict[str, object]
     locator: str
@@ -396,7 +399,7 @@ def validate_monitor_lineage(
                 raise SuiteError("Monitor lineage resource differs from Owner safe projection")
 
 
-def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, format_name: str) -> ModelFixture:
+def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, format_name: str) -> ArtifactFixture:
     full_name = f"{bucket}/model3d/{format_name}/model.{format_name}"
     item = find_fixture_item(client, engine_id, full_name, format_name.upper())
     attributes = _object(item.get("attributes"), f"{format_name} attributes")
@@ -425,7 +428,7 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
         source = _object(_object(task.get("config"), "model task config").get("source"), "model task source")
         if source.get("item_fingerprint") == item["fingerprint"]:
             raise SuiteError(f"a stale {format_name} task exists for the dedicated fixture")
-    return ModelFixture(format_name, item, build_item_locator(engine_id, item))
+    return ArtifactFixture(format_name, item, build_item_locator(engine_id, item))
 
 
 def validate_model_glb(raw: bytes) -> dict[str, object]:
@@ -483,7 +486,7 @@ def validate_model_glb(raw: bytes) -> dict[str, object]:
     raise SuiteError("fixture GLB must contain a textured three-vertex mesh")
 
 
-def generate_model_glb(client: GatewayClient, model: ModelFixture, tenant_id: int, timeout: float) -> None:
+def generate_model_glb(client: GatewayClient, model: ArtifactFixture, tenant_id: int, timeout: float) -> None:
     query = urllib.parse.urlencode({"locator": model.locator})
     capability = _object(client.request("GET", f"/api/v1/manager/quick-view/capability?{query}", (200,)).payload, "initial model capability")
     if "generate_model_3d_glb" not in _array(capability.get("available_actions"), "initial model actions"):
@@ -525,7 +528,7 @@ def generate_model_glb(client: GatewayClient, model: ModelFixture, tenant_id: in
     client.request("PATCH", "/api/v1/manager/preview-state/preferred-mode", (200,), {"locator": model.locator, "preferred_mode": "map_quick_view"})
 
 
-def cleanup_model_glb(client: GatewayClient, model: ModelFixture, timeout: float) -> None:
+def cleanup_managed_artifact(client: GatewayClient, model: ArtifactFixture, timeout: float, resource="model_3d_glb", task_type=MODEL_TASK_TYPE) -> None:
     restore_error: SuiteError | None = None
     if model.mode_changed:
         try:
@@ -533,7 +536,7 @@ def cleanup_model_glb(client: GatewayClient, model: ModelFixture, timeout: float
             query = urllib.parse.urlencode({"locator": model.locator})
             state = _object(client.request("GET", f"/api/v1/manager/preview-state?{query}", (200,)).payload, "restored model preview state")
             if state.get("preferred_mode") != model.previous_mode:
-                raise SuiteError("model preview mode restoration was not verified")
+                raise SuiteError("artifact preview mode restoration was not verified")
         except SuiteError as error:
             restore_error = error
     model.cleanup["preview_mode_restored"] = restore_error is None
@@ -545,37 +548,128 @@ def cleanup_model_glb(client: GatewayClient, model: ModelFixture, timeout: float
         raise SuiteError(f"{model.format} execution identity is unknown; task retained")
     deadline = time.monotonic() + timeout
     while True:
-        execution = _object(client.request("GET", f"/api/v1/manager/executions/{urllib.parse.quote(model.execution_id)}", (200,)).payload, "model cleanup execution")
+        execution = _object(client.request("GET", f"/api/v1/manager/executions/{urllib.parse.quote(model.execution_id)}", (200,)).payload, "artifact cleanup execution")
         if execution.get("status") in TERMINAL_STATUSES:
             break
         if time.monotonic() >= deadline:
             raise SuiteError(f"{model.format} execution is still active; resources retained")
         time.sleep(1)
     query = urllib.parse.urlencode({"task_id": model.task_id, "page": 1, "page_size": 100})
-    results = _object(client.request("GET", f"/api/v1/manager/model_3d_glb?{query}", (200,)).payload, "model cleanup results")
-    rows = _array(results.get("data"), "model cleanup result rows")
-    if non_negative_int(results.get("total"), "model cleanup total") != len(rows):
-        raise SuiteError("model cleanup must inspect all results")
+    results = _object(client.request("GET", f"/api/v1/manager/{resource}?{query}", (200,)).payload, "artifact cleanup results")
+    rows = _array(results.get("data"), "artifact cleanup result rows")
+    if non_negative_int(results.get("total"), "artifact cleanup total") != len(rows):
+        raise SuiteError("artifact cleanup must inspect all results")
     for value in rows:
-        result = _object(value, "model cleanup result")
+        result = _object(value, "artifact cleanup result")
         if result.get("task_id") != model.task_id or result.get("item_fingerprint") != model.item["fingerprint"]:
-            raise SuiteError("model cleanup result is not owned by this run")
-        result_id = positive_int(result.get("id"), "model cleanup result id")
-        client.request("DELETE", f"/api/v1/manager/model_3d_glb/{result_id}", (200,))
-        client.request("GET", f"/api/v1/manager/model_3d_glb/{result_id}/content", (404,))
+            raise SuiteError("artifact cleanup result is not owned by this run")
+        result_id = positive_int(result.get("id"), "artifact cleanup result id")
+        client.request("DELETE", f"/api/v1/manager/{resource}/{result_id}", (200,))
+        client.request("GET", f"/api/v1/manager/{resource}/{result_id}/content", (404,))
     model.cleanup["result_deleted"] = True
     model.cleanup["content_unavailable"] = True
-    task_path = f"/api/v1/manager/tasks/{MODEL_TASK_TYPE}/{model.task_id}"
+    task_path = f"/api/v1/manager/tasks/{task_type}/{model.task_id}"
     client.request("DELETE", task_path, (204,))
     client.request("GET", task_path, (404,))
     model.cleanup["task_deleted"] = True
-    remaining = _object(client.request("GET", f"/api/v1/manager/model_3d_glb?{query}", (200,)).payload, "model residual results")
-    residual = non_negative_int(remaining.get("total"), "model residual result total")
+    remaining = _object(client.request("GET", f"/api/v1/manager/{resource}?{query}", (200,)).payload, "artifact residual results")
+    residual = non_negative_int(remaining.get("total"), "artifact residual result total")
     model.cleanup["residual_resources"] = residual
     if residual:
-        raise SuiteError(f"{model.format} GLB cleanup has {residual} residual results")
+        raise SuiteError(f"{model.format} artifact cleanup has {residual} residual results")
     if restore_error:
         raise restore_error
+
+
+def raster_physical(repository, environment, action, request):
+    secret_root = Path(environment['ADDP_ONLINE_SECRET_DIR'])
+    request_path = secret_root / 'manager-raster-oracle.json'
+    request_path.write_text(json.dumps(request))
+    request_path.chmod(0o600)
+    result = subprocess.run([sys.executable, str(repository / 'business/scripts/online-raster-minio-fixture.py'),
+        'manager-' + action, str(request_path)], env=environment, capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise SuiteError('Manager raster physical verification failed')
+    return _object(json.loads(result.stdout), 'Manager raster physical evidence')
+
+
+def generate_raster_cog(client, raster, tenant_id, timeout, physical):
+    query = urllib.parse.urlencode({'locator': raster.locator})
+    capability = _object(client.request('GET', f'/api/v1/manager/quick-view/capability?{query}', (200,)).payload, 'initial raster capability')
+    if 'generate_raster_cog' not in _array(capability.get('available_actions'), 'raster actions'):
+        raise SuiteError('raster capability must declare generate_raster_cog')
+    raster.previous_mode = str(capability.get('preferred_mode'))
+    if raster.previous_mode not in {'basic_preview', 'map_quick_view'}:
+        raise SuiteError('raster preferred mode is invalid')
+    started = _object(client.request('POST', '/api/v1/manager/quick-view/actions', (202,), {
+        'locator': raster.locator, 'action': 'generate_raster_cog',
+    }).payload, 'raster COG start')
+    raster.task_id = positive_int(started.get('task_id'), 'raster task id')
+    raster.execution_id = str(started.get('execution_id') or '')
+    if started.get('task_type') != RASTER_TASK_TYPE or not raster.execution_id:
+        raise SuiteError('raster generation identity is invalid')
+    execution = wait_for_manager_execution(client, raster.execution_id, time.monotonic() + timeout, 'Raster COG')
+    facts = validate_lineage(execution, item_locator=raster.locator, item_id=raster.item['id'],
+        fingerprint=raster.item['fingerprint'], tenant_id=tenant_id, task_type=RASTER_TASK_TYPE,
+        output_prefix='cog', output_suffix='.cog.tif', output_label='COG')
+    monitor = _object(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{raster.execution_id}', (200,)).payload, 'Monitor raster execution')
+    validate_monitor_lineage(monitor, facts)
+    query_results = urllib.parse.urlencode({'task_id': raster.task_id, 'page': 1, 'page_size': 100})
+    results = _object(client.request('GET', f'/api/v1/manager/raster_cog?{query_results}', (200,)).payload, 'raster COG results')
+    rows = _array(results.get('data'), 'raster COG result rows')
+    if len(rows) != 1 or results.get('total') != 1:
+        raise SuiteError('raster generation must produce exactly one COG')
+    result = _object(rows[0], 'raster COG result')
+    raster.result_id = positive_int(result.get('id'), 'raster result id')
+    runtime = _object(_object(result.get('metadata'), 'raster metadata').get('workflow_runtime'), 'raster Runtime audit')
+    if (result.get('task_id') != raster.task_id or result.get('last_execution_id') != raster.execution_id
+            or result.get('item_fingerprint') != raster.item['fingerprint'] or result.get('status') != 'ready'
+            or runtime.get('mode') != 'direct' or runtime.get('operator') != 'raster_to_cog'
+            or runtime.get('engine_type') != 'geopython_workflow'
+            or not runtime.get('execution_id')):
+        raise SuiteError('Manager COG must preserve its direct Runtime generation identity')
+    positive_int(runtime.get('engine_id'), 'raster Runtime engine id')
+    ready = _object(client.request('GET', f'/api/v1/manager/quick-view/capability?{query}', (200,)).payload, 'ready raster capability')
+    url = f'/api/v1/manager/raster_cog/{raster.result_id}/content'
+    raster_facts = _object(ready.get('raster'), 'ready raster facts')
+    if (ready.get('can_use_quick_view') is not True or ready.get('render_source') != 'client_cog_render'
+            or _object(ready.get('quick_view'), 'ready raster render info').get('preview_url') != url
+            or raster_facts.get('profile') != 'cog' or raster_facts.get('client_read_mode') != 'range'
+            or any(raster_facts.get(k) != v or result.get(k) != v for k,v in {
+                'width': 256, 'height': 256, 'band_count': 2, 'source_srid': 4326}.items())):
+        raise SuiteError('ready raster capability must match the persisted COG facts')
+    for value in (result, raster_facts, _object(ready['quick_view'], 'raster render facts')):
+        extent = _array(value.get('extent'), 'raster extent')
+        if (value.get('extent_srid') != 4326 or len(extent) != 4
+                or any(not isinstance(actual, (float, int)) or isinstance(actual, bool)
+                       or not math.isclose(actual, expected, rel_tol=0, abs_tol=1e-9)
+                       for actual, expected in zip(extent, [110., 17.76, 112.56, 20.32]))):
+            raise SuiteError('Manager COG persisted and rendering extents differ from its grid')
+    size = positive_int(result.get('size_bytes'), 'raster COG size')
+    full = client.request('GET', url, (200,), headers={'Accept': 'image/tiff'})
+    full_headers = {k.lower():v for k,v in full.headers.items()}
+    if size != len(full.raw) or raster_facts.get('size_bytes') != size or full_headers.get('content-length') != str(size):
+        raise SuiteError('Manager COG result, capability and HTTP sizes differ')
+    for header in ('bytes=0-63', 'bytes=-64'):
+        ranged = client.request('GET', url, (206,), headers={'Accept': 'image/tiff', 'Range': header})
+        h = {k.lower():v for k,v in ranged.headers.items()}
+        start = 0 if header == 'bytes=0-63' else size - 64
+        if (ranged.raw != full.raw[start:start+64] or h.get('content-range') != f'bytes {start}-{start+63}/{size}'
+                or h.get('content-length') != '64' or h.get('accept-ranges') != 'bytes'):
+            raise SuiteError('Manager COG Range bytes or headers differ from the complete object')
+    client.request('GET', url, (416,), headers={'Range': f'bytes={size}-'})
+    raster.artifact = {'storage_domain': 'addp-infra', 'range_bytes': 64, 'preview_url': url, 'size_bytes': size, 'sha256': hashlib.sha256(full.raw).hexdigest(),
+        'runtime_execution_id': runtime['execution_id'], 'mode': 'direct',
+        'physical_request': {'locator': facts['outputs'][0]['locator'], 'tenant_id': tenant_id,
+            'fingerprint': raster.item['fingerprint'], 'size_bytes': size, 'sha256': hashlib.sha256(full.raw).hexdigest()}}
+    evidence = physical('verify', raster.artifact['physical_request'])
+    if (evidence.get('cog_valid') is not True or evidence.get('source_unchanged') is not True
+            or evidence.get('pixels_verified') != 131072 or evidence.get('size_bytes') != size
+            or evidence.get('sha256') != raster.artifact['sha256']):
+        raise SuiteError('Manager COG physical evidence is incomplete')
+    raster.artifact['physical'] = evidence
+    client.request('PATCH', '/api/v1/manager/preview-state/preferred-mode', (200,), {'locator': raster.locator, 'preferred_mode': 'map_quick_view'})
+    raster.mode_changed = True
 
 
 def validate_browser_report(
@@ -588,10 +682,11 @@ def validate_browser_report(
     pptx_item_id: int,
     pptx_page_count: int,
     models: list[dict[str, object]],
+    raster: dict[str, object],
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v2",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v3",
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
         "result": "passed",
@@ -606,6 +701,8 @@ def validate_browser_report(
         "pptx_page_after_engine_refresh": 2,
         "pptx_generation_requests": 0,
         "model_generation_requests": 0,
+        "raster_generation_requests": 0,
+        "raster": {**raster, "range_loaded": True, "map_loaded": True},
         "models": [{**model, "model_loaded": True, "content_loaded": True} for model in models],
         "browser_warning_errors": 0,
     }
@@ -628,6 +725,7 @@ def run_browser(
     pptx_item_id: int,
     pptx_page_count: int,
     models: list[dict[str, object]],
+    raster: dict[str, object],
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
     report_path = artifact_dir / "manager-internal-artifact-lineage-browser.json"
@@ -643,6 +741,7 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_PPTX_ITEM_ID": str(pptx_item_id),
             "ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT": str(pptx_page_count),
             "ADDP_ONLINE_MANAGER_MODELS_JSON": json.dumps(models),
+            "ADDP_ONLINE_MANAGER_RASTER_JSON": json.dumps(raster),
         }
     )
     result = subprocess.run(
@@ -672,6 +771,7 @@ def run_browser(
         pptx_item_id=pptx_item_id,
         pptx_page_count=pptx_page_count,
         models=models,
+        raster=raster,
     )
 
 
@@ -679,6 +779,7 @@ def run_scenario(
     repository: Path,
     environment: dict[str, str],
     browser_runner: Callable[..., dict[str, object]] | None = None,
+    physical_runner: Callable[..., dict[str, object]] | None = None,
 ) -> dict[str, object]:
     tenant_id = positive_int(environment["ADDP_ONLINE_TEST_TENANT_ID"], "ADDP_ONLINE_TEST_TENANT_ID")
     engine_id = positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID")
@@ -695,6 +796,9 @@ def run_scenario(
     pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
     pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
     model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds")]
+    raster_item = find_fixture_item(client, engine_id, f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']}", "raster")
+    raster = ArtifactFixture("raster", raster_item, build_item_locator(engine_id, raster_item))
+    physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
     pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
     pointcloud_fingerprint = str(pointcloud_item["fingerprint"])
     pointcloud_size_bytes = positive_int(pointcloud_item.get("size_bytes"), "point-cloud fixture size_bytes")
@@ -867,6 +971,7 @@ def run_scenario(
         if not pptx_content.raw.startswith(b"%PDF") or len(pptx_content.raw) > 64:
             raise SuiteError("PPTX PDF Range response is not a bounded PDF prefix")
 
+        generate_raster_cog(client, raster, tenant_id, timeout, physical)
         for model in model_fixtures:
             generate_model_glb(client, model, tenant_id, timeout)
         browser_models = [{
@@ -887,9 +992,10 @@ def run_scenario(
                 pptx_item_id=pptx_item_id,
                 pptx_page_count=pptx_page_count,
                 models=browser_models,
+                raster={"locator": raster.locator, "item_id": raster.item["id"], "preview_url": raster.artifact["preview_url"]},
             )
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v2",
+            "schema_version": "addp.manager-internal-artifact-lineage/v3",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -901,6 +1007,7 @@ def run_scenario(
             "sources": {
                 "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
                 "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},
+                "raster": {"item_id": raster.item["id"], "fingerprint": raster.item["fingerprint"], "locator": raster.locator},
                 **{model.format: {"item_id": model.item["id"], "fingerprint": model.item["fingerprint"], "locator": model.locator} for model in model_fixtures},
             },
             "created": {
@@ -908,20 +1015,39 @@ def run_scenario(
                 "pptx_pdf": {"task_id": pptx_task_id, "execution_id": pptx_execution_id, "result_id": pptx_result_id},
                 **{model.format: {"task_id": model.task_id, "execution_id": model.execution_id, "result_id": model.result_id} for model in model_fixtures},
             },
-            "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 4, "outputs": 4, "manager_monitor_equal": True},
+            "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 5, "outputs": 5, "manager_monitor_equal": True},
             "artifacts": {
                 "point_cloud": {"name": pointcloud_output_name, "range_bytes": len(pointcloud_content.raw), "storage_domain": "addp-infra"},
                 "pptx_pdf": {"page_count": pptx_page_count, "size_bytes": pptx_size_bytes, "range_bytes": len(pptx_content.raw), "storage_domain": "addp-infra", "cache_reused": True},
                 **{model.format: model.artifact for model in model_fixtures},
             },
+            "raster_cog": {"task_id": raster.task_id, "execution_id": raster.execution_id, "result_id": raster.result_id,
+                **{k:v for k,v in raster.artifact.items() if k != "physical_request"}},
             "browser": browser_evidence,
-            "cleanup": {"point_cloud": pointcloud_cleanup, "pptx_pdf": pptx_cleanup, **{model.format: model.cleanup for model in model_fixtures}},
+            "cleanup": {"raster_cog": raster.cleanup, "point_cloud": pointcloud_cleanup, "pptx_pdf": pptx_cleanup, **{model.format: model.cleanup for model in model_fixtures}},
         }
     finally:
         cleanup_errors: list[str] = []
+        try:
+            # Recover owned output locators even when generation validation failed.
+            request = raster.artifact.get('physical_request')
+            if request is None and raster.execution_id:
+                execution = _object(client.request('GET', f'/api/v1/manager/executions/{raster.execution_id}', (200,)).payload, 'raster cleanup execution')
+                if execution.get('status') == 'success':
+                    facts = validate_lineage(execution, item_locator=raster.locator, item_id=raster.item['id'], fingerprint=raster.item['fingerprint'],
+                        tenant_id=tenant_id, task_type=RASTER_TASK_TYPE, output_prefix='cog', output_suffix='.cog.tif', output_label='COG')
+                    request = {'locator': facts['outputs'][0]['locator'], 'tenant_id': tenant_id, 'fingerprint': raster.item['fingerprint']}
+            cleanup_managed_artifact(client, raster, timeout, 'raster_cog', RASTER_TASK_TYPE)
+            if request is not None:
+                deleted = physical('deleted', request)
+                if deleted != {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}:
+                    raise SuiteError('Manager COG physical deletion was not verified')
+                raster.cleanup.update(deleted)
+        except SuiteError as error:
+            cleanup_errors.append(str(error))
         for model in reversed(model_fixtures):
             try:
-                cleanup_model_glb(client, model, timeout)
+                cleanup_managed_artifact(client, model, timeout)
             except SuiteError as error:
                 cleanup_errors.append(str(error))
         if pptx_result_id is not None:
@@ -995,6 +1121,9 @@ def required_environment() -> dict[str, str]:
         "ADDP_ONLINE_MANAGER_MINIO_BUCKET",
         "ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT",
         "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT",
+        "ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT",
+        "ADDP_ONLINE_SECRET_DIR",
+        "ADDP_ONLINE_RASTER_RUNTIME_IMAGE",
         "CONSOLE_URL",
         "GATEWAY_URL",
     )

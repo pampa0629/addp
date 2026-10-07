@@ -83,11 +83,20 @@ class FakeGatewayClient:
                           "locator": f"addp://engine/27/path/addp-online/model3d/{format_name}/model.{format_name}?type=object&item_id={item_id}"}
             for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"))
         }
+        self.raster = {'id': 305, 'item_id': 95, 'task_id': 205, 'result_id': 305, 'fingerprint': 'e'*64,
+            'item_fingerprint': 'e'*64, 'task_exists': False, 'result_exists': False,
+            'locator': 'addp://engine/27/path/addp-online/raster/source.tif?type=object&item_id=95'}
+        self.cog = b'II*\0' + bytes(range(256))
+        self.raster_mode = 'basic_preview'
         self.glb = textured_glb()
         self.model_modes = {"dae": "basic_preview", "3ds": "basic_preview"}
 
     def lineage_execution(self, task_type, format_name=None):
-        if task_type == SUITE.MODEL_TASK_TYPE:
+        if task_type == SUITE.RASTER_TASK_TYPE:
+            model = self.raster
+            item_id = model['item_id']; fingerprint = model['fingerprint']; locator = model['locator']
+            output = f'addp-infra://minio/manager/tenant_42/cog/{fingerprint}/source.cog.tif?type=object'
+        elif task_type == SUITE.MODEL_TASK_TYPE:
             model = self.models[format_name]
             item_id = model["item_id"]
             fingerprint = model["fingerprint"]
@@ -146,6 +155,54 @@ class FakeGatewayClient:
         return execution
 
     def _request(self, method, path, body, headers):
+        raster = self.raster
+        parsed_raster = urllib.parse.urlsplit(path)
+        raster_query = urllib.parse.parse_qs(parsed_raster.query)
+        if path == '/api/v1/manager/raster_cog?' + urllib.parse.urlencode({'task_id': raster['task_id'], 'page': 1, 'page_size': 100}):
+            rows = [{**raster, 'status': 'ready', 'last_execution_id': 'raster-direct', 'size_bytes': len(self.cog),
+                'width': 256, 'height': 256, 'band_count': 2, 'source_srid': 4326,
+                'extent': [110., 17.76, 112.56, 20.32], 'extent_srid': 4326,
+                'metadata': {'workflow_runtime': {'engine_type': 'geopython_workflow', 'engine_id': 77, 'mode': 'direct', 'operator': 'raster_to_cog', 'execution_id': 'runtime-direct'}}}] if raster['result_exists'] else []
+            return response(200, {'data': rows, 'total': len(rows)})
+        if parsed_raster.path == '/api/v1/manager/quick-view/capability' and raster_query.get('locator') == [raster['locator']]:
+            return response(200, {'available_actions': ['generate_raster_cog'], 'preferred_mode': self.raster_mode,
+                'can_use_quick_view': raster['result_exists'], 'render_source': 'client_cog_render',
+                'quick_view': {'preview_url': '/api/v1/manager/raster_cog/305/content', 'extent': [110., 17.76, 112.56, 20.32], 'extent_srid': 4326},
+                'raster': {'width': 256, 'height': 256, 'band_count': 2, 'source_srid': 4326,
+                'extent': [110., 17.76, 112.56, 20.32], 'extent_srid': 4326,
+                    'size_bytes': len(self.cog), 'profile': 'cog', 'client_read_mode': 'range'}})
+        if path == '/api/v1/manager/quick-view/actions' and method == 'POST' and body.get('locator') == raster['locator']:
+            if body != {'locator': raster['locator'], 'action': 'generate_raster_cog'}:
+                raise AssertionError('raster action must only contain source locator and action')
+            raster['task_exists'] = raster['result_exists'] = True
+            return response(202, {'task_type': SUITE.RASTER_TASK_TYPE, 'task_id': 205, 'execution_id': 'raster-direct'})
+        if path == '/api/v1/manager/executions/raster-direct':
+            return response(200, self.lineage_execution(SUITE.RASTER_TASK_TYPE))
+        if path == '/api/v1/monitor/executions/by-execution-id/raster-direct':
+            return response(200, self.monitor_execution(SUITE.RASTER_TASK_TYPE))
+        if path == '/api/v1/manager/raster_cog/305/content':
+            if not raster['result_exists']: return response(404)
+            range_value = (headers or {}).get('Range')
+            if range_value == f'bytes={len(self.cog)}-': return response(416)
+            if range_value:
+                start = 0 if range_value == 'bytes=0-63' else len(self.cog) - 64
+                return SUITE.Response(206, {}, {'Content-Length': '64', 'Accept-Ranges': 'bytes',
+                    'Content-Range': f'bytes {start}-{start+63}/{len(self.cog)}'}, self.cog[start:start+64])
+            return SUITE.Response(200, {}, {'Content-Length': str(len(self.cog))}, self.cog)
+        if path == '/api/v1/manager/raster_cog/305' and method == 'DELETE':
+            raster['result_exists'] = False
+            return response(200)
+        if path == f'/api/v1/manager/tasks/{SUITE.RASTER_TASK_TYPE}/205':
+            if method == 'DELETE':
+                raster['task_exists'] = False
+                return response(204)
+            return response(200 if raster['task_exists'] else 404)
+        if path == '/api/v1/manager/preview-state/preferred-mode' and body.get('locator') == raster['locator']:
+            self.raster_mode = body['preferred_mode']
+            return response(200)
+        if parsed_raster.path == '/api/v1/manager/preview-state' and raster_query.get('locator') == [raster['locator']]:
+            return response(200, {'preferred_mode': self.raster_mode})
+
         if path == "/api/v1/system/auth/context":
             return response(200, {
                 "principal": {"type": "user", "id": "51"},
@@ -177,6 +234,8 @@ class FakeGatewayClient:
                     "fingerprint": self.pptx_fingerprint,
                     "size_bytes": 16575,
                 },
+                {'id': 95, 'full_name': 'addp-online/raster/source.tif', 'item_type': 'object',
+                 'fingerprint': 'e'*64, 'size_bytes': 1000},
             ] + [{
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
                 "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": 1024,
@@ -348,12 +407,26 @@ def scenario_environment(artifact_dir: str):
         "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID": "27",
         "ADDP_ONLINE_MANAGER_MINIO_BUCKET": "addp-online",
         "ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT": "pointcloud/pdal_las12_format0.las",
+        "ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT": "raster/source.tif",
         "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT": "document/addp_online_preview_fixture.pptx",
         "GATEWAY_URL": "http://127.0.0.1:8000",
     }
 
 
 class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
+    def setUp(self):
+        def physical(repository, environment, action, request):
+            if action == 'deleted':
+                return {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+            return {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': 131072,
+                    'size_bytes': request['size_bytes'], 'sha256': request['sha256']}
+        patch = mock.patch.object(SUITE, 'raster_physical', side_effect=physical)
+        patch.start(); self.addCleanup(patch.stop)
+
+    def browser_raster(self):
+        return {'locator': FakeGatewayClient().raster['locator'], 'item_id': 95,
+                'preview_url': '/api/v1/manager/raster_cog/305/content'}
+
     def browser_models(self):
         client = FakeGatewayClient()
         return [{"format": format_name, "locator": model["locator"], "item_id": model["item_id"],
@@ -362,7 +435,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def browser_report(self, environment, evidence):
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v2",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v3",
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
             "result": "passed",
@@ -377,10 +450,65 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "pptx_page_after_engine_refresh": 2,
             "pptx_generation_requests": 0,
             "model_generation_requests": 0,
+            "raster_generation_requests": 0,
+            "raster": {**evidence["raster"], "range_loaded": True, "map_loaded": True},
             "models": [{**model, "model_loaded": True, "content_loaded": True} for model in evidence["models"]],
             "gpu_performance_warnings": 0,
             "browser_warning_errors": 0,
         }
+
+    def test_raster_rejects_size_range_or_direct_identity_mismatches(self):
+        for kind in ('size', 'range', 'mode', 'extent', 'physical'):
+            with self.subTest(kind=kind):
+                client = FakeGatewayClient()
+                raster = SUITE.ArtifactFixture('raster', {'id': 95, 'fingerprint': 'e'*64}, client.raster['locator'])
+                original = client._request
+                def changed(method, path, body, headers):
+                    value = original(method, path, body, headers)
+                    if '/raster_cog?' in path and value.payload.get('data'):
+                        if kind == 'size': value.payload['data'][0]['size_bytes'] += 1
+                        if kind == 'mode': value.payload['data'][0]['metadata']['workflow_runtime']['mode'] = 'workflow'
+                        if kind == 'extent': value.payload['data'][0]['extent'][0] = 109.
+                    if kind == 'range' and path.endswith('/raster_cog/305/content') and value.status == 206:
+                        value.raw = b'corrupt'
+                    return value
+                def physical(action, request):
+                    return {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': 131072,
+                            'sha256': request['sha256'], 'size_bytes': request['size_bytes'] + (kind == 'physical')}
+                with mock.patch.object(client, '_request', side_effect=changed):
+                    with self.assertRaises(SUITE.SuiteError):
+                        SUITE.generate_raster_cog(client, raster, 42, 1, physical)
+                    SUITE.cleanup_managed_artifact(client, raster, 1, 'raster_cog', SUITE.RASTER_TASK_TYPE)
+                self.assertFalse(client.raster['task_exists'] or client.raster['result_exists'])
+
+    def test_raster_generation_failure_recovers_owned_locator_for_physical_delete(self):
+        client = FakeGatewayClient()
+        original = client._request
+        def bad_runtime(method, path, body, headers):
+            value = original(method, path, body, headers)
+            if '/raster_cog?' in path and value.payload.get('data'):
+                value.payload['data'][0]['metadata']['workflow_runtime']['mode'] = 'workflow'
+            return value
+        deletes = []
+        def physical(action, request):
+            deletes.append((action, request))
+            return {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(SUITE, 'GatewayClient', return_value=client), mock.patch.object(client, '_request', side_effect=bad_runtime):
+                with self.assertRaisesRegex(SUITE.SuiteError, 'direct Runtime'):
+                    SUITE.run_scenario(Path('/repository'), scenario_environment(directory), physical_runner=physical)
+        self.assertEqual([action for action, _ in deletes], ['deleted'])
+        self.assertIn('/tenant_42/cog/', deletes[0][1]['locator'])
+        self.assertFalse(client.raster['task_exists'] or client.raster['result_exists'])
+
+    def test_raster_browser_evidence_is_mandatory(self):
+        evidence = {'execution_id': 'execution-1', 'item_id': 91, 'output_name': 'source.copc.laz',
+                    'pptx_item_id': 92, 'pptx_page_count': 3, 'models': self.browser_models(), 'raster': self.browser_raster()}
+        for field in ('range_loaded', 'map_loaded'):
+            report = self.browser_report({'ADDP_ONLINE_TEST_RUN_ID': 'run-1'}, evidence)
+            report['raster'][field] = False
+            with self.assertRaisesRegex(SUITE.SuiteError, 'raster'):
+                SUITE.validate_browser_report(report, run_id='run-1', **evidence)
 
     def test_runs_all_owner_routes_and_verifies_zero_residual_resources(self) -> None:
         client = FakeGatewayClient()
@@ -396,9 +524,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                     Path("/repository"), scenario_environment(artifact_dir), browser
                 )
 
-        self.assertEqual(report["lineage"]["inputs"], 4)
-        self.assertEqual(report["lineage"]["outputs"], 4)
+        self.assertEqual(report["lineage"]["inputs"], 5)
+        self.assertEqual(report["lineage"]["outputs"], 5)
         self.assertTrue(report["artifacts"]["pptx_pdf"]["cache_reused"])
+        self.assertEqual(report['raster_cog']['mode'], 'direct')
+        self.assertTrue(report['raster_cog']['physical']['cog_valid'])
+        self.assertTrue(report['cleanup']['raster_cog']['object_deleted'])
+        self.assertEqual(report['cleanup']['raster_cog']['residual_objects'], 0)
+        self.assertFalse(client.raster['task_exists'] or client.raster['result_exists'])
         expected_cleanup = {
             "result_deleted": True,
             "task_deleted": True,
@@ -493,7 +626,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
         with mock.patch.object(client, "_request", side_effect=active):
             with self.assertRaisesRegex(SUITE.SuiteError, "still active; resources retained"):
-                SUITE.cleanup_model_glb(client, model, 0)
+                SUITE.cleanup_managed_artifact(client, model, 0)
         self.assertFalse(any(method == "DELETE" for method, _ in client.calls))
         self.assertEqual(model.cleanup["residual_resources"], -1)
 
@@ -511,7 +644,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
         with mock.patch.object(client, "_request", side_effect=foreign):
             with self.assertRaisesRegex(SUITE.SuiteError, "not owned by this run"):
-                SUITE.cleanup_model_glb(client, model, 0)
+                SUITE.cleanup_managed_artifact(client, model, 0)
         self.assertFalse(any(method == "DELETE" for method, _ in client.calls))
         self.assertEqual(model.cleanup["residual_resources"], -1)
 
@@ -526,7 +659,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             return original(method, path, body, headers)
         with mock.patch.object(client, "_request", side_effect=wrong_state):
             with self.assertRaisesRegex(SUITE.SuiteError, "restoration was not verified"):
-                SUITE.cleanup_model_glb(client, model, 1)
+                SUITE.cleanup_managed_artifact(client, model, 1)
         self.assertFalse(client.models["dae"]["task_exists"] or client.models["dae"]["result_exists"])
         self.assertFalse(model.cleanup["preview_mode_restored"])
         self.assertEqual(model.cleanup["residual_resources"], 0)
@@ -663,7 +796,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
-            "models": self.browser_models(),
+            "models": self.browser_models(), "raster": self.browser_raster(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         validated = SUITE.validate_browser_report(
@@ -675,6 +808,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             pptx_item_id=92,
             pptx_page_count=3,
             models=evidence["models"],
+            raster=evidence["raster"],
         )
         self.assertEqual(validated, report)
 
@@ -685,7 +819,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
-            "models": self.browser_models(),
+            "models": self.browser_models(), "raster": self.browser_raster(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         report["pptx_page_after_engine_refresh"] = 1
@@ -699,11 +833,12 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 pptx_item_id=92,
                 pptx_page_count=3,
                 models=evidence["models"],
+            raster=evidence["raster"],
             )
 
     def test_browser_model_report_must_match_both_artifacts_and_loaded_content(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster()}
         for change in (
             lambda report: report.pop("models"),
             lambda report: report["models"][0].update(result_id=999),
@@ -717,7 +852,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_browser_runner_uses_frontend_working_directory_and_current_report_contract(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster()}
         with tempfile.TemporaryDirectory() as directory:
             environment = {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "run-1"}
             def browser(*args, **kwargs):
@@ -730,7 +865,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v2")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v3")
 
 
 if __name__ == "__main__":

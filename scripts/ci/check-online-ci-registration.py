@@ -297,6 +297,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     for fragment in (
         'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
         'MODEL3D_CONVERTER_PLATFORM=linux/amd64',
+        'start_online_geopython_runtime',
+        'online-raster-minio-fixture.py manager-seed',
+        'RUNTIME_CONTAINER=addp-manager-raster-runtime',
         'scripts/build/build-images.sh --verify',
         '-meta -manager -monitor -pointcloud-workflow -document-workflow -model3d-workflow',
         'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID',
@@ -362,7 +365,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "model_3d_glb_generation",
         "/api/v1/manager/model_3d_glb/",
         "validate_model_glb",
-        "cleanup_model_glb",
+        "cleanup_managed_artifact",
+        "generate_raster_cog",
+        "raster_to_cog",
+        "raster_physical",
     ):
         if fragment not in owner:
             raise RegistrationError(
@@ -383,7 +389,11 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         ".model-preview",
         "model_loaded",
         "content_loaded",
-        "addp.manager-internal-artifact-lineage-browser/v2",
+        ".raster-tiff-quick-view",
+        "raster_generation_requests",
+        "range_loaded",
+        "map_loaded",
+        "addp.manager-internal-artifact-lineage-browser/v3",
     ):
         if fragment not in browser:
             raise RegistrationError(

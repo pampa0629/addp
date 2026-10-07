@@ -17,6 +17,7 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_PPTX_ITEM_ID',
   'ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT',
   'ADDP_ONLINE_MANAGER_MODELS_JSON',
+  'ADDP_ONLINE_MANAGER_RASTER_JSON',
   'GATEWAY_URL'
 ]
 
@@ -58,7 +59,7 @@ async function login(page, username, password, redirect) {
   return browserAccessToken
 }
 
-test('Manager lineage, cached PPTX and textured DAE/3DS GLB load through Console', async ({ page }) => {
+test('Manager lineage, cached PPTX, direct COG and textured DAE/3DS GLB load through Console', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
   if (!Number.isInteger(itemID) || itemID <= 0) throw new Error('Manager lineage item ID must be positive')
@@ -66,6 +67,10 @@ test('Manager lineage, cached PPTX and textured DAE/3DS GLB load through Console
   const pptxPageCount = Number(env.ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT)
   if (!Number.isInteger(pptxItemID) || pptxItemID <= 0) throw new Error('Manager PPTX item ID must be positive')
   if (pptxPageCount !== 3) throw new Error('Manager PPTX fixture must have exactly 3 pages')
+  test.setTimeout(240_000)
+  const raster = JSON.parse(env.ADDP_ONLINE_MANAGER_RASTER_JSON)
+  expect(Number.isInteger(raster.item_id) && raster.item_id > 0).toBe(true)
+  expect(raster.preview_url).toMatch(/^\/api\/v1\/manager\/raster_cog\/[1-9][0-9]*\/content$/)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
   expect(models.map(model => model.format)).toEqual(['dae', '3ds'])
   for (const model of models) {
@@ -83,12 +88,14 @@ test('Manager lineage, cached PPTX and textured DAE/3DS GLB load through Console
   const failedBusinessResponses = []
   let pptxGenerationRequests = 0
   let modelGenerationRequests = 0
+  let rasterGenerationRequests = 0
   let managerEngineRequests = 0
   page.on('request', requestEvent => {
     const pathname = new URL(requestEvent.url()).pathname
     if (requestEvent.method() === 'POST' && pathname === '/api/v1/manager/quick-view/actions') {
       const action = requestEvent.postDataJSON()?.action
       if (action === 'generate_pptx_pdf') pptxGenerationRequests += 1
+      if (action === 'generate_raster_cog') rasterGenerationRequests += 1
       if (action === 'generate_model_3d_glb') modelGenerationRequests += 1
     }
     if (requestEvent.method() === 'GET' && pathname === '/api/v1/manager/engines') {
@@ -162,6 +169,23 @@ test('Manager lineage, cached PPTX and textured DAE/3DS GLB load through Console
     await expect(currentPageInput).toHaveValue('2')
     expect(pptxGenerationRequests).toBe(0)
 
+    const cogResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === raster.preview_url && response.status() === 206
+      && Boolean(response.request().headers().range)
+    )
+    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(raster.locator)}`)
+    const rasterFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const rasterPreview = rasterFrame.locator('.raster-tiff-quick-view')
+    await expect(rasterPreview).toBeVisible({ timeout: 60_000 })
+    await expect(rasterPreview.locator('canvas')).toBeVisible()
+    const cogRange = await cogResponse
+    expect((await cogRange.body()).length).toBeGreaterThan(0)
+    expect(cogRange.headers()['content-range']).toMatch(/^bytes [0-9]+-[0-9]+\/[0-9]+$/)
+    await expect(rasterPreview.locator('.loading-overlay')).toHaveCount(0, { timeout: 60_000 })
+    await expect(rasterPreview.locator('.map-empty')).toHaveCount(0)
+    await rasterPreview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'raster-cog-preview.png') })
+    expect(rasterGenerationRequests).toBe(0)
+
     const modelEvidence = []
     for (const model of models) {
       const contentResponse = page.waitForResponse(response =>
@@ -184,7 +208,7 @@ test('Manager lineage, cached PPTX and textured DAE/3DS GLB load through Console
     expect(browserMessages).toEqual([])
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v2',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v3',
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
       result: 'passed',
@@ -199,6 +223,8 @@ test('Manager lineage, cached PPTX and textured DAE/3DS GLB load through Console
       pptx_page_after_engine_refresh: 2,
       pptx_generation_requests: pptxGenerationRequests,
       model_generation_requests: modelGenerationRequests,
+      raster_generation_requests: rasterGenerationRequests,
+      raster: { ...raster, range_loaded: true, map_loaded: true },
       models: modelEvidence,
       gpu_performance_warnings: gpuPerformanceWarnings,
       browser_warning_errors: 0

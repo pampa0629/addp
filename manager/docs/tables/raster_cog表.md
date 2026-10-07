@@ -39,9 +39,10 @@ raster COG 的生成任务定义写入 `manager.task_definitions`，TaskProvider
       "access_method": "mounted_path"
     }
   },
-  "geopython_workflow": {
+  "workflow_runtime": {
     "engine_id": 99,
     "engine_name": "GeoPython Workflow",
+    "engine_type": "geopython_workflow",
     "execution_id": "py-1",
     "operator": "raster_to_cog",
     "mode": "direct",

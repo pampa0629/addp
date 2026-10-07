@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Own two disposable physical MinIO fixtures; never call platform APIs."""
+"""Own disposable physical raster fixtures; never call platform APIs."""
 from __future__ import annotations
 
 import hashlib
@@ -370,6 +370,26 @@ def physical_worker(action, root):
     return result
 
 
+def write_source_raster(path, name, spatial, source_nodata):
+    from osgeo import gdal, osr
+    multiband = name.startswith('multiband')
+    pixel_formula = average_pixels if name.startswith('multiband-average') else multiband_pixels
+    band_count = 3 if multiband else 2
+    dataset = gdal.GetDriverByName('GTiff').Create(str(path), SIZE, SIZE, band_count, gdal.GDT_Float64)
+    dataset.SetGeoTransform(SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
+    dataset.SetProjection(crs.ExportToWkt())
+    for index in range(1, band_count + 1):
+        values = tuple(source_nodata if value is None else value for value in pixel_formula(index, source=True)) if multiband else source_values(index, spatial)
+        band = dataset.GetRasterBand(index)
+        band.SetNoDataValue(source_nodata)
+        if multiband and index == 3: band.SetColorInterpretation(gdal.GCI_AlphaBand)
+        band.WriteRaster(0, 0, SIZE, SIZE, struct.pack(f'<{len(values)}d', *values), buf_type=gdal.GDT_Float64)
+        band = None
+    dataset = None
+    return crs
+
+
 def worker(action, path):
     # GDAL stays in the Runtime image; the verifier never imports production operators.
     from minio import Minio
@@ -390,21 +410,7 @@ def worker(action, path):
             fingerprints = {}
             for name, spatial, source_nodata in SOURCE_FILES:
                 path = root / name
-                multiband = name.startswith('multiband')
-                pixel_formula = average_pixels if name.startswith('multiband-average') else multiband_pixels
-                band_count = 3 if multiband else 2
-                dataset = gdal.GetDriverByName('GTiff').Create(str(path), SIZE, SIZE, band_count, gdal.GDT_Float64)
-                dataset.SetGeoTransform(SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
-                crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
-                dataset.SetProjection(crs.ExportToWkt())
-                for index in range(1, band_count + 1):
-                    values = tuple(source_nodata if value is None else value for value in pixel_formula(index, source=True)) if multiband else source_values(index, spatial)
-                    band = dataset.GetRasterBand(index)
-                    band.SetNoDataValue(source_nodata)
-                    if multiband and index == 3: band.SetColorInterpretation(gdal.GCI_AlphaBand)
-                    band.WriteRaster(0, 0, SIZE, SIZE, struct.pack(f'<{len(values)}d', *values), buf_type=gdal.GDT_Float64)
-                    band = None
-                dataset = None
+                crs = write_source_raster(path, name, spatial, source_nodata)
                 clients['source'].fput_object(config['source']['bucket'], name, str(path), content_type='image/tiff')
                 fingerprints[name] = hashlib.sha256(path.read_bytes()).hexdigest()
             # A 256px striped TIFF can satisfy the GDAL layout validator. This
@@ -623,9 +629,118 @@ def worker(action, path):
         return evidence
 
 
+def manager_physical(action, request=None):
+    """Use the product GDAL image against this Hosted suite's owned MinIO objects."""
+    if (os.environ.get('ADDP_ONLINE_HOSTED') != '1'
+            or os.environ.get('ONLINE_SUITE') != 'manager-internal-artifact-lineage'):
+        raise FixtureError('Manager raster physical verification requires its Hosted owner')
+    if action not in ('seed', 'verify', 'deleted'):
+        raise FixtureError('unknown Manager physical action')
+    root = environment()
+    image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '')
+    if not image:
+        raise FixtureError('product Runtime image is required for Manager raster verification')
+    config_path = root / 'manager-raster-fixture.json'
+    if action == 'seed':
+        private_json(config_path, {
+            'source': {'endpoint': '127.0.0.1:' + os.environ['ADDP_ONLINE_MANAGER_MINIO_PORT'],
+                'access_key': os.environ['ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY'],
+                'secret_key': os.environ['ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY'],
+                'bucket': os.environ['ADDP_ONLINE_MANAGER_MINIO_BUCKET'],
+                'object': os.environ['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']},
+            'infra': {'endpoint': '127.0.0.1:' + os.environ['MINIO_API_PORT'],
+                'access_key': os.environ['MINIO_ROOT_USER'], 'secret_key': os.environ['MINIO_ROOT_PASSWORD']},
+        })
+    request_file = root / 'manager-raster-request.json'
+    request_file.unlink(missing_ok=True)
+    private_json(request_file, request or {})
+    result = json.loads(command(['docker', 'run', '--rm', '--name', 'addp-manager-raster-verifier',
+        '--label', 'com.addp.online-fixture=manager-internal-artifact-lineage', '--network', 'host',
+        '--entrypoint', 'python', '-v', f'{Path(__file__).resolve()}:/fixture.py:ro',
+        '-v', f'{root}:/secrets:ro', image, '/fixture.py', 'manager-worker-' + action, '/secrets/manager-raster-fixture.json']))
+    if action == 'seed':
+        private_json(root / 'manager-raster-source.json', result)
+    return result
+
+
+def manager_worker(action, path):
+    from minio import Minio
+    from minio.error import S3Error
+    from osgeo import gdal, osr
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    from urllib.parse import urlsplit, parse_qs, unquote
+    gdal.UseExceptions()
+    root = Path(path).parent
+    config = json.loads(Path(path).read_text())
+    clients = {role: Minio(entry['endpoint'], access_key=entry['access_key'], secret_key=entry['secret_key'], secure=False)
+               for role, entry in config.items()}
+    source = config['source']
+    with tempfile.TemporaryDirectory(prefix='manager-cog-physical-') as directory:
+        source_path = Path(directory) / 'source.tif'
+        if action == 'seed':
+            write_source_raster(source_path, 'source.tif', False, -9999.)
+            clients['source'].fput_object(source['bucket'], source['object'], str(source_path), content_type='image/tiff')
+            return {'sha256': hashlib.sha256(source_path.read_bytes()).hexdigest(), 'size_bytes': source_path.stat().st_size}
+        clients['source'].fget_object(source['bucket'], source['object'], str(source_path))
+        seeded = json.loads((root / 'manager-raster-source.json').read_text())
+        if hashlib.sha256(source_path.read_bytes()).hexdigest() != seeded['sha256']:
+            raise FixtureError('Manager source changed')
+        request = json.loads((root / 'manager-raster-request.json').read_text())
+        parsed = urlsplit(request['locator'])
+        prefix = f"/manager/tenant_{request['tenant_id']}/cog/{request['fingerprint']}/"
+        if (parsed.scheme != 'addp-infra' or parsed.netloc != 'minio' or not parsed.path.startswith(prefix)
+                or parse_qs(parsed.query) != {'type': ['object']} or not parsed.path.endswith('.cog.tif')):
+            raise FixtureError('Manager raster output is not owned by this run')
+        key = unquote(parsed.path.removeprefix('/manager/'))
+        if any(part in ('', '.', '..') for part in key.split('/')):
+            raise FixtureError('Manager output contains unsafe segments')
+        if action == 'deleted':
+            try:
+                clients['infra'].stat_object('manager', key)
+            except S3Error as error:
+                if error.code != 'NoSuchKey': raise
+            else:
+                raise FixtureError('deleted Manager COG still exists physically')
+            if list(clients['infra'].list_objects('manager', prefix=key, recursive=True)):
+                raise FixtureError('Manager COG cleanup left residual objects')
+            return {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+        if action != 'verify':
+            raise FixtureError('unknown Manager physical action')
+        target = Path(directory) / 'result.tif'
+        actual_size = clients['infra'].stat_object('manager', key).size
+        clients['infra'].fget_object('manager', key, str(target))
+        raw = target.read_bytes()
+        if actual_size != request['size_bytes'] or len(raw) != actual_size or hashlib.sha256(raw).hexdigest() != request['sha256']:
+            raise FixtureError('Manager COG physical size or HTTP hash mismatch')
+        dataset = gdal.Open(str(target))
+        if dataset is None or (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (SIZE, SIZE, 2):
+            raise FixtureError('Manager COG dimensions changed')
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
+        crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        if not dataset.GetSpatialRef().IsSame(crs) or tuple(dataset.GetGeoTransform()) != TRANSFORM:
+            raise FixtureError('Manager COG CRS or grid changed')
+        _, errors, _ = validate(dataset, full_check=True)
+        if errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG':
+            raise FixtureError('Manager artifact is not a valid COG')
+        for index in (1, 2):
+            band = dataset.GetRasterBand(index)
+            values = struct.unpack(f'<{SIZE * SIZE}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+            mask = band.GetMaskBand().ReadRaster()
+            if (band.DataType != gdal.GDT_Float64 or band.GetNoDataValue() != -9999.
+                    or values != source_values(index) or mask != bytes([0] + [255] * (SIZE * SIZE - 1))):
+                raise FixtureError('Manager COG pixels, dtype or NoData changed')
+        return {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': SIZE * SIZE * 2,
+                'size_bytes': actual_size, 'sha256': request['sha256']}
+
+
 def main():
     action = sys.argv[1]
-    if action.startswith('worker-'):
+    if action.startswith('manager-worker-'):
+        result = manager_worker(action.removeprefix('manager-worker-'), sys.argv[2])
+    elif action.startswith('manager-'):
+        request = json.loads(Path(sys.argv[2]).read_text()) if len(sys.argv) == 3 else None
+        result = manager_physical(action.removeprefix('manager-'), request)
+    elif action.startswith('worker-'):
         if action.removeprefix('worker-') not in ACTIONS:
             raise FixtureError('unknown worker action')
         result = worker(action.removeprefix('worker-'), sys.argv[2])

@@ -858,7 +858,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
-            'validate_model_glb cleanup_model_glb\n',
+            'validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -867,7 +867,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ".execution-lineage__group .execution-lineage__resource-action "
             "平台内部产物|Platform-internal artifact platform_internal_outputs "
             ".pptx-preview .pdf-preview pptx_page_after_engine_refresh pptx_generation_requests "
-            ".model-preview model_loaded content_loaded addp.manager-internal-artifact-lineage-browser/v2\n",
+            ".model-preview model_loaded content_loaded .raster-tiff-quick-view raster_generation_requests range_loaded map_loaded addp.manager-internal-artifact-lineage-browser/v3\n",
             encoding="utf-8",
         )
         config = self.repository / "console/frontend/playwright.online.config.js"

@@ -675,3 +675,104 @@ def test_utility_physical_oracle_rejects_pixels_levels_masks_and_partial_artifac
         ds = None
         LocalMinio.objects['target', 'raster-target', name] = changed.read_bytes()
     with pytest.raises(fixture.FixtureError): fixture.worker('verify-utility-queries', physical)
+
+
+class ManagerLocalMinio(LocalMinio):
+    def stat_object(self, bucket, name):
+        from minio.error import S3Error
+        key = (self.endpoint, bucket, name)
+        if key not in self.objects:
+            raise S3Error('NoSuchKey', 'missing', name, '', '', None)
+        return type('Stat', (), {'size': len(self.objects[key])})
+
+    def list_objects(self, bucket, prefix='', **kwargs):
+        return [value for value in super().list_objects(bucket, **kwargs) if value.object_name.startswith(prefix)]
+
+
+@pytest.fixture
+def manager_physical(tmp_path):
+    config = tmp_path / 'manager-raster-fixture.json'
+    config.write_text(json.dumps({
+        'source': {'endpoint': 'source', 'bucket': 'business', 'object': 'raster/source.tif', 'access_key': 'test', 'secret_key': 'test'},
+        'infra': {'endpoint': 'infra', 'access_key': 'test', 'secret_key': 'test'},
+    }))
+    LocalMinio.objects = {}
+    with patch('minio.Minio', ManagerLocalMinio):
+        seeded = fixture.manager_worker('seed', config)
+        fixture.private_json(tmp_path / 'manager-raster-source.json', seeded)
+        yield config
+
+
+def manager_target(config, *, cog=True, corrupt=None):
+    source = config.parent / 'source.tif'
+    source.write_bytes(LocalMinio.objects['source', 'business', 'raster/source.tif'])
+    dataset = gdal.Open(str(source), gdal.GA_Update)
+    if corrupt == 'pixels':
+        band = dataset.GetRasterBand(2)
+        band.WriteRaster(255, 255, 1, 1, struct.pack('<d', -2.), buf_type=gdal.GDT_Float64)
+        band = None
+    elif corrupt == 'nodata':
+        dataset.GetRasterBand(1).SetNoDataValue(-1.)
+    elif corrupt == 'grid':
+        dataset.SetGeoTransform((109, .01, 0, 20.32, 0, -.01))
+    elif corrupt == 'crs':
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
+        dataset.SetProjection(crs.ExportToWkt())
+    dataset = None
+    output = config.parent / 'result.tif'
+    result = gdal.Translate(str(output), str(source), format='COG' if cog else 'GTiff',
+                            creationOptions=['BLOCKSIZE=128', 'COMPRESS=DEFLATE'] if cog else [])
+    result = None
+    raw = output.read_bytes()
+    fingerprint = 'e' * 64
+    key = f'tenant_42/cog/{fingerprint}/source.cog.tif'
+    LocalMinio.objects['infra', 'manager', key] = raw
+    request = {'tenant_id': 42, 'fingerprint': fingerprint,
+               'locator': f'addp-infra://minio/manager/{key}?type=object',
+               'size_bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+    fixture.private_json(config.parent / 'manager-raster-request.json', request)
+    return request, key
+
+
+def test_manager_cog_physical_bytes_and_delete(manager_physical):
+    request, key = manager_target(manager_physical)
+    evidence = fixture.manager_worker('verify', manager_physical)
+    assert evidence == {'cog_valid': True, 'source_unchanged': True, 'pixels_verified': 131072,
+                        'size_bytes': request['size_bytes'], 'sha256': request['sha256']}
+    with pytest.raises(fixture.FixtureError, match='still exists physically'):
+        fixture.manager_worker('deleted', manager_physical)
+    del LocalMinio.objects['infra', 'manager', key]
+    assert fixture.manager_worker('deleted', manager_physical) == {
+        'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}
+
+
+@pytest.mark.parametrize('corrupt', ['pixels', 'nodata', 'grid', 'crs'])
+def test_manager_cog_rejects_corrupted_raster(manager_physical, corrupt):
+    manager_target(manager_physical, corrupt=corrupt)
+    with pytest.raises(fixture.FixtureError, match='changed'):
+        fixture.manager_worker('verify', manager_physical)
+
+
+@pytest.mark.parametrize('field', ['size_bytes', 'sha256', 'locator'])
+def test_manager_cog_rejects_size_hash_or_foreign_locator(manager_physical, field):
+    request, _ = manager_target(manager_physical)
+    request[field] = request[field] + 1 if field == 'size_bytes' else 'foreign'
+    (manager_physical.parent / 'manager-raster-request.json').unlink()
+    fixture.private_json(manager_physical.parent / 'manager-raster-request.json', request)
+    with pytest.raises(fixture.FixtureError):
+        fixture.manager_worker('verify', manager_physical)
+
+
+def test_manager_cog_rejects_source_modification(manager_physical):
+    manager_target(manager_physical)
+    LocalMinio.objects['source', 'business', 'raster/source.tif'] += b'changed'
+    with pytest.raises(fixture.FixtureError, match='source changed'):
+        fixture.manager_worker('verify', manager_physical)
+    with pytest.raises(fixture.FixtureError, match='source changed'):
+        fixture.manager_worker('deleted', manager_physical)
+
+
+def test_manager_cog_rejects_non_cog_layout(manager_physical):
+    manager_target(manager_physical, cog=False)
+    with pytest.raises(fixture.FixtureError, match='not a valid COG'):
+        fixture.manager_worker('verify', manager_physical)

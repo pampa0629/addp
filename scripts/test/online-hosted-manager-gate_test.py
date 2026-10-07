@@ -72,6 +72,28 @@ class HostedManagerGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "npm:$*" >> "$ADDP_TEST_GATE_TRACE"
         ''')
+        importlib.import_module('scripts.test.online-hosted-hdfs-gate_test').install_spark_container_fixture(
+            self.host, 'manager-internal-artifact-lineage', 'addp-manager-raster-runtime')
+        docker = self.host.bin / 'docker'
+        docker.write_text(docker.read_text().replace('["python","api_server.py"]', '["sh","container_entrypoint.sh"]')
+                          .replace('ADDP_TEST_PREEXIST_CONTAINER', 'ADDP_TEST_EXISTING_CONTAINER'))
+        self.host._write_repository_script('business/scripts/online-raster-minio-fixture.py', """
+            import os, sys
+            assert sys.argv[1] == 'manager-seed'
+            assert os.environ['ADDP_ONLINE_RASTER_RUNTIME_IMAGE'].endswith(':manager-raster-online')
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as stream: stream.write('raster-seed\\n')
+            if os.environ.get('ADDP_TEST_RASTER_SEED_FAIL') == '1': sys.exit(1)
+        """)
+        self.host._write_repository_script('.env.example', 'GEOPYTHON_WORKFLOW_PORT=8099\n')
+        self.host._executable('make', """
+            #!/usr/bin/env bash
+            echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = build-images ]; then
+              touch "${ADDP_TEST_GATE_TRACE}.image"
+              exit 0
+            fi
+            [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
+        """)
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
         subprocess.run(["git", "commit", "-qm", "test fixture"], cwd=self.host.repository, check=True)
 
@@ -95,6 +117,15 @@ class HostedManagerGateTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0, result.stderr)
                 self.assertFalse(self.host.trace.exists())
 
+    def test_raster_seed_failure_still_removes_product_runtime_and_credentials(self):
+        result = self.run_gate(ADDP_TEST_RASTER_SEED_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn("docker-rm:addp-manager-raster-runtime", trace)
+        self.assertIn("source-fixture:stop", trace)
+        self.assertIn("infra-down", trace)
+        self.assertFalse(self.host.secrets.exists())
+
     def test_readiness_does_not_start_any_service(self):
         result = self.run_gate(check=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -105,7 +136,7 @@ class HostedManagerGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
-        for item in ("source-fixture:start", "start:-meta", "start:-manager", "start:-monitor", "start:-pointcloud-workflow", "start:-document-workflow", "start:-model3d-workflow",
+        for item in ("raster-seed", "docker-run:addp-manager-raster-runtime", "source-fixture:start", "start:-meta", "start:-manager", "start:-monitor", "start:-pointcloud-workflow", "start:-document-workflow", "start:-model3d-workflow",
                      "make:test-online ONLINE_SUITE=manager-internal-artifact-lineage", "application-stop", "source-fixture:stop", "infra-down"):
             self.assertIn(item, trace)
         self.assertLess(trace.index("application-stop"), trace.index("source-fixture:stop"))
@@ -134,7 +165,7 @@ class HostedManagerGateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         trace = self.host.trace.read_text()
         self.assertNotIn("infra-up", trace)
-        self.assertIn("docker:rm -fv addp-manager-online-registry", trace)
+        self.assertIn("docker-rm:addp-manager-online-registry", trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("result=failed", (self.host.artifacts / "summary.txt").read_text())
 
