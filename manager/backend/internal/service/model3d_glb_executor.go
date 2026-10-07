@@ -18,6 +18,7 @@ import (
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
 )
 
 type model3DGLBObjectStore interface {
@@ -25,6 +26,8 @@ type model3DGLBObjectStore interface {
 	MakeBucket(ctx context.Context, bucketName string, opts minio.MakeBucketOptions) error
 	StatObject(ctx context.Context, bucketName string, objectName string, opts minio.StatObjectOptions) (minio.ObjectInfo, error)
 	RemoveObject(ctx context.Context, bucketName string, objectName string, opts minio.RemoveObjectOptions) error
+	GetBucketLifecycle(ctx context.Context, bucketName string) (*lifecycle.Configuration, error)
+	GetBucketVersioning(ctx context.Context, bucketName string) (minio.BucketVersioningConfiguration, error)
 }
 
 type ManagerModel3DGLBExecutor struct {
@@ -108,7 +111,10 @@ func (e *ManagerModel3DGLBExecutor) BuildModel3DGLB(ctx context.Context, req Mod
 		if err != nil {
 			return nil, err
 		}
-		intermediateObject := fmt.Sprintf("tenant_%d/model3d-quick-view/tmp/%s/model.osgb", req.Task.TenantID, executionID.String())
+		if err := e.verifySGMTemporaryExpiration(ctx, bucket); err != nil {
+			return nil, err
+		}
+		intermediateObject := fmt.Sprintf("temp/model3d-sgm/tenant_%d/%s/model.osgb", req.Task.TenantID, executionID.String())
 		intermediateAccess, err := workflowaccess.ResolveObjectStoreTarget(plugin.ConnectionInfo{
 			"endpoint": e.minioEndpoint, "access_key": e.minioAccessKey, "secret_key": e.minioSecretKey, "use_ssl": e.minioUseSSL,
 		}, bucket, intermediateObject, workflowaccess.KindFile)
@@ -291,6 +297,35 @@ func (e *ManagerModel3DGLBExecutor) ensureTargetBucket(ctx context.Context, buck
 		return fmt.Errorf("create model 3d GLB bucket: %w", err)
 	}
 	return nil
+}
+
+// Infra owns lifecycle configuration. Verify it on every SGM invocation without
+// read-modify-writing the bucket's rules. Immediate cleanup cannot cover a late
+// remote upload after HTTP cancellation or a Manager process exit.
+func (e *ManagerModel3DGLBExecutor) verifySGMTemporaryExpiration(ctx context.Context, bucket string) error {
+	versioning, err := e.objectStore.GetBucketVersioning(ctx, bucket)
+	if err != nil {
+		return fmt.Errorf("check SGM temporary bucket versioning: %w", err)
+	}
+	if versioning.Status != "" {
+		return errors.New("SGM temporary bucket must be unversioned for permanent object expiration")
+	}
+	config, err := e.objectStore.GetBucketLifecycle(ctx, bucket)
+	if err != nil {
+		return fmt.Errorf("check SGM temporary object expiration: %w", err)
+	}
+	if config != nil {
+		for _, rule := range config.Rules {
+			filter := rule.RuleFilter
+			if rule.Status == "Enabled" && rule.Prefix == "" && filter.Prefix == "temp/" &&
+				filter.And.IsEmpty() && filter.Tag.IsEmpty() &&
+				filter.ObjectSizeLessThan == 0 && filter.ObjectSizeGreaterThan == 0 &&
+				rule.Expiration.Days == 7 && rule.Expiration.Date.IsZero() {
+				return nil
+			}
+		}
+	}
+	return errors.New("SGM temporary objects require the Infra temp/ 7-day expiration rule on the target bucket")
 }
 
 func (e *ManagerModel3DGLBExecutor) selectDirectWorkflowRuntime(ctx context.Context, tenantID uint, operatorName string) (commonModels.Engine, commonModels.OperatorDescriptor, error) {

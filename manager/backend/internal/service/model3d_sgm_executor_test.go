@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,12 +11,15 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
 )
 
 type sgmObjectStore struct {
@@ -23,6 +27,16 @@ type sgmObjectStore struct {
 	removed          []string
 	cleanupErr       error
 	cleanupCancelled bool
+	expirationErr    error
+	versioningStatus string
+}
+
+func (s *sgmObjectStore) GetBucketLifecycle(context.Context, string) (*lifecycle.Configuration, error) {
+	return &lifecycle.Configuration{Rules: []lifecycle.Rule{{Status: "Enabled", RuleFilter: lifecycle.Filter{Prefix: "temp/"}, Expiration: lifecycle.Expiration{Days: 7}}}}, s.expirationErr
+}
+
+func (s *sgmObjectStore) GetBucketVersioning(context.Context, string) (minio.BucketVersioningConfiguration, error) {
+	return minio.BucketVersioningConfiguration{Status: s.versioningStatus}, nil
 }
 
 func (s *sgmObjectStore) RemoveObject(ctx context.Context, bucket, object string, _ minio.RemoveObjectOptions) error {
@@ -32,7 +46,7 @@ func (s *sgmObjectStore) RemoveObject(ctx context.Context, bucket, object string
 }
 
 func TestSGMQuickViewPipelineAndCleanup(t *testing.T) {
-	for _, scenario := range []string{"success", "sgm_failure", "glb_failure", "missing_sgm", "missing_glb", "cleanup_failure", "cancelled"} {
+	for _, scenario := range []string{"success", "sgm_failure", "glb_failure", "missing_sgm", "missing_glb", "cleanup_failure", "cancelled", "lifecycle_failure", "versioning_enabled"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -109,6 +123,12 @@ func TestSGMQuickViewPipelineAndCleanup(t *testing.T) {
 			if scenario == "cleanup_failure" {
 				store.cleanupErr = errors.New("delete rejected")
 			}
+			if scenario == "lifecycle_failure" {
+				store.expirationErr = errors.New("policy read rejected")
+			}
+			if scenario == "versioning_enabled" {
+				store.versioningStatus = "Enabled"
+			}
 			executor := NewManagerModel3DGLBExecutor(newTestSystemClient(system.URL), recordingWorkflowLister{engines: []commonModels.Engine{sgmEngine, glbEngine}}, store, "minio:9000", "ak-private", "sk-private", false, "manager", 0)
 			executionID := uuid.NewString()
 			result, err := executor.BuildModel3DGLB(ctx, Model3DGLBExecutionRequest{Task: &models.Model3DGLBTask{TenantID: 7}, ExecutionID: executionID, Config: Model3DGLBExecutionConfig{Source: Model3DGLBSourceConfig{ItemLocator: "addp://engine/26/path/models/compass.SGM?type=file&item_id=77", SourceEngineID: 26, ItemFingerprint: "sgm-fp", Format: "sgm"}, Result: Model3DGLBResultConfig{StorageRef: `{"type":"object","provider":"addp_object_storage","bucket":"manager","object":"model3d/preview.glb"}`, FileName: "preview.glb"}}})
@@ -126,13 +146,13 @@ func TestSGMQuickViewPipelineAndCleanup(t *testing.T) {
 			} else if err == nil || result != nil {
 				t.Fatalf("failure must not return result: %+v %v", result, err)
 			}
-			if strings.HasPrefix(scenario, "missing_") {
+			if strings.HasPrefix(scenario, "missing_") || scenario == "lifecycle_failure" || scenario == "versioning_enabled" {
 				if len(calls) != 0 || len(store.removed) != 0 {
-					t.Fatal("unavailable runtime must not invoke conversion")
+					t.Fatal("failed preflight must not invoke conversion or delete any object")
 				}
 				return
 			}
-			expected := "manager/tenant_7/model3d-quick-view/tmp/" + executionID + "/model.osgb"
+			expected := "manager/temp/model3d-sgm/tenant_7/" + executionID + "/model.osgb"
 			if len(store.removed) != 1 || store.removed[0] != expected || store.cleanupCancelled {
 				t.Fatalf("cleanup=%v cancelled=%v", store.removed, store.cleanupCancelled)
 			}
@@ -147,6 +167,97 @@ func TestSGMQuickViewPipelineAndCleanup(t *testing.T) {
 			}
 			if firstTarget["bucket"] != "manager" || firstTarget["object"] != secondSource["object"] || firstTarget["endpoint"] != secondSource["endpoint"] {
 				t.Fatal("stages do not share the same infra OSGB")
+			}
+		})
+	}
+}
+
+// Exercise the actual MinIO SDK's XML contract. Policy verification is read-only
+// and must reject filters which leave some late uploads outside expiration.
+func TestSGMTemporaryExpirationMinIOContract(t *testing.T) {
+	for _, scenario := range []string{"valid", "other_rules", "missing", "disabled", "wrong_prefix", "wrong_days", "tagged", "and_filter", "size_less", "size_greater", "fixed_date", "versioned", "suspended", "versioning_denied", "lifecycle_denied", "lifecycle_absent"} {
+		t.Run(scenario, func(t *testing.T) {
+			rule := lifecycle.Rule{ID: "infra-temp", Status: "Enabled", RuleFilter: lifecycle.Filter{Prefix: "temp/"}, Expiration: lifecycle.Expiration{Days: 7}}
+			versioning := minio.BucketVersioningConfiguration{}
+			switch scenario {
+			case "disabled":
+				rule.Status = "Disabled"
+			case "wrong_prefix":
+				rule.RuleFilter.Prefix = "tenant_7/model3d-quick-view/tmp/"
+			case "wrong_days":
+				rule.Expiration.Days = 30
+			case "tagged":
+				rule.RuleFilter.Tag = lifecycle.Tag{Key: "cleanup", Value: "yes"}
+			case "and_filter":
+				rule.RuleFilter.And = lifecycle.And{Prefix: "temp/", Tags: []lifecycle.Tag{{Key: "cleanup", Value: "yes"}}}
+			case "size_less":
+				rule.RuleFilter.And = lifecycle.And{Prefix: "temp/", ObjectSizeLessThan: 1000}
+			case "size_greater":
+				rule.RuleFilter.And = lifecycle.And{Prefix: "temp/", ObjectSizeGreaterThan: 1000}
+			case "fixed_date":
+				rule.Expiration = lifecycle.Expiration{Date: lifecycle.ExpirationDate{Time: time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)}}
+			case "versioned":
+				versioning.Status = "Enabled"
+			case "suspended":
+				versioning.Status = "Suspended"
+			}
+			config := lifecycle.Configuration{Rules: []lifecycle.Rule{rule}}
+			if scenario == "missing" {
+				config.Rules = nil
+			}
+			if scenario == "other_rules" {
+				config.Rules = append(config.Rules, lifecycle.Rule{ID: "another-owner", Status: "Enabled", RuleFilter: lifecycle.Filter{Prefix: "exports/"}, Expiration: lifecycle.Expiration{Days: 30}})
+			}
+			var reads []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/xml")
+				if r.Method != http.MethodGet || r.URL.Path != "/manager-private/" {
+					t.Errorf("policy verification must only read the precise bucket: %s %s", r.Method, r.URL)
+					http.Error(w, "unexpected request", http.StatusBadRequest)
+					return
+				}
+				if r.URL.Query().Has("versioning") {
+					reads = append(reads, "versioning")
+					if scenario == "versioning_denied" {
+						w.WriteHeader(http.StatusForbidden)
+						_, _ = w.Write([]byte("<Error><Code>AccessDenied</Code></Error>"))
+						return
+					}
+					_ = xml.NewEncoder(w).Encode(versioning)
+					return
+				}
+				if r.URL.Query().Has("lifecycle") {
+					reads = append(reads, "lifecycle")
+					if scenario == "lifecycle_denied" || scenario == "lifecycle_absent" {
+						code := "AccessDenied"
+						status := http.StatusForbidden
+						if scenario == "lifecycle_absent" {
+							code = "NoSuchLifecycleConfiguration"
+							status = http.StatusNotFound
+						}
+						w.WriteHeader(status)
+						_, _ = w.Write([]byte("<Error><Code>" + code + "</Code></Error>"))
+						return
+					}
+					_ = xml.NewEncoder(w).Encode(config)
+					return
+				}
+				t.Errorf("unexpected policy query: %s", r.URL)
+				w.WriteHeader(http.StatusBadRequest)
+			}))
+			defer server.Close()
+			client, err := minio.New(strings.TrimPrefix(server.URL, "http://"), &minio.Options{Creds: credentials.NewStaticV4("test-key", "test-secret", ""), Region: "us-east-1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			executor := &ManagerModel3DGLBExecutor{objectStore: client}
+			err = executor.verifySGMTemporaryExpiration(context.Background(), "manager-private")
+			wantValid := scenario == "valid" || scenario == "other_rules"
+			if (err == nil) != wantValid {
+				t.Fatalf("policy verification err=%v wantValid=%v reads=%v", err, wantValid, reads)
+			}
+			if len(reads) == 0 || reads[0] != "versioning" {
+				t.Fatalf("bucket versioning not verified first: %v", reads)
 			}
 		})
 	}

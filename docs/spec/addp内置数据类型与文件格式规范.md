@@ -443,7 +443,9 @@ SGM（SuperMap Global Model）按 `.sgm` 扩展名识别为 `format=sgm + data_t
 
 Manager 的 `model_3d_glb_generation` 在同一次 execution 中串行调用 SuperMap `sgm_to_osgb` 和 Model3D `osgb_to_glb`。生成前须发现两个支持 direct 的算子；已有 ready GLB 的读取不依赖 Runtime 在线。中间 OSGB 写入执行专属的 Manager infra 对象，执行返回时尝试清理，不扫描成业务 item；最终 GLB 通过现有统一发布校验后登记 `manager.model_3d_glb`。SGM 源、派生 OSGB 和 GLB 不共用格式身份，也不对浏览器开放 OSGB 解析路线。
 
-`sgm_to_osgb` 只接受单体 `file/sgm` 输入，完整读取骨架后导出 OSGB，并重读校验非空几何及顶点/三角面数量一致。SGM 生成任务不提供标准取消；终态删除暂不能可靠覆盖 RPC 超时后的迟到写入或进程退出，临时前缀过期回收待确认。首期不声明动画、所有材质类型或全部文件版本支持；有 SDK 读取、导出或最终 GLB 校验错误时明确失败，不能将残缺产物登记 ready。
+`sgm_to_osgb` 只接受单体 `file/sgm` 输入，完整读取骨架后导出 OSGB，并重读校验非空几何及顶点/三角面数量一致。临时对象固定为 `temp/model3d-sgm/tenant_<tenant_id>/<execution_uuid>/model.osgb`，复用 Infra 初始化入口为 `manager` 桶设置的 `temp/` 7 天过期规则。转换前只读核实目标桶的版本控制状态为空，且存在已启用、无标签或大小限制的 `temp/` 7 天过期规则；读取失败或规则缺失时拒绝转换，不由执行器修改桶策略。正常终态立即删除精确对象；HTTP 超时后的迟到写入及进程退出遗留由 MinIO 生命周期扫描异步回收，7 天是对象年龄阈值，不是精确删除时刻。规则需在执行及回收期间保持有效。
+
+SGM 生成任务不提供标准取消。首期不声明动画、所有材质类型或全部文件版本支持；有 SDK 读取、导出或最终 GLB 校验错误时明确失败，不能将残缺产物登记 ready。
 
 ## OSGB
 

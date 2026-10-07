@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
 )
 
 const testModel3DWorkflowEngineType = "tenant_model3d_workflow"
@@ -498,6 +500,14 @@ func (s *recordingModel3DGLBObjectStore) BucketExists(context.Context, string) (
 
 func (s *recordingModel3DGLBObjectStore) MakeBucket(context.Context, string, minio.MakeBucketOptions) error {
 	return nil
+}
+
+func (s *recordingModel3DGLBObjectStore) GetBucketLifecycle(context.Context, string) (*lifecycle.Configuration, error) {
+	return nil, errors.New("non-SGM conversion must not read lifecycle configuration")
+}
+
+func (s *recordingModel3DGLBObjectStore) GetBucketVersioning(context.Context, string) (minio.BucketVersioningConfiguration, error) {
+	return minio.BucketVersioningConfiguration{}, errors.New("non-SGM conversion must not read versioning configuration")
 }
 
 func (s *recordingModel3DGLBObjectStore) StatObject(_ context.Context, bucket string, object string, _ minio.StatObjectOptions) (minio.ObjectInfo, error) {
