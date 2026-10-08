@@ -65,6 +65,9 @@ var definitions = []Definition{
 	{"node.uptime_seconds", "seconds", 0},
 	{"node.disk.read_bytes_per_second", "bytes_per_second", 60},
 	{"node.disk.write_bytes_per_second", "bytes_per_second", 60},
+	{"node.disk.io_busy_percent", "percent", 60},
+	{"node.disk.read_mean_duration_milliseconds", "milliseconds", 60},
+	{"node.disk.write_mean_duration_milliseconds", "milliseconds", 60},
 	{"node.network.receive_bytes_per_second", "bytes_per_second", 60},
 	{"node.network.transmit_bytes_per_second", "bytes_per_second", 60},
 	{"node.filesystem.total_bytes", "bytes", 0},
@@ -220,7 +223,7 @@ func (p Plan) Expression(s Scope) (string, error) {
 			value, stamp, presence := filesystemExpression(s, d.Key, p.Dimensions)
 			components = append(components, struct{ k, v string }{"value", value}, struct{ k, v string }{"sampled_at", stamp}, struct{ k, v string }{"observed_at", presence})
 		} else if d.Disk() || d.Network() {
-			value, stamp, presence := deviceRateExpression(s, d.Key, p.Dimensions)
+			value, stamp, presence := deviceObservationExpression(s, d.Key, p.Dimensions)
 			components = append(components, struct{ k, v string }{"value", value}, struct{ k, v string }{"sampled_at", stamp}, struct{ k, v string }{"observed_at", presence})
 		} else {
 			gauge := func(name string) (string, string) {

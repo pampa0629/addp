@@ -100,7 +100,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	}
 
 	for _, family := range [][]string{
-		{"node.disk.read_bytes_per_second", "node.disk.write_bytes_per_second"},
+		{"node.disk.read_bytes_per_second", "node.disk.write_bytes_per_second", "node.disk.io_busy_percent", "node.disk.read_mean_duration_milliseconds", "node.disk.write_mean_duration_milliseconds"},
 		{"node.network.receive_bytes_per_second", "node.network.transmit_bytes_per_second"},
 	} {
 		deviceKeys := family
@@ -150,7 +150,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 						t.Fatal("restricted device history fabricated", row)
 					}
 				}
-			} else if row.Dimensions.identity() != selectedDevice.identity() || row.Points[len(row.Points)-1].DataState != "valid" {
+			} else if row.Dimensions.identity() != selectedDevice.identity() || (row.Unit != "milliseconds" && row.Points[len(row.Points)-1].DataState != "valid") {
 				t.Fatal("selected device trend", row)
 			}
 		}

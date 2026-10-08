@@ -652,7 +652,10 @@
         "diskRead": "Disk read throughput",
         "diskWrite": "Disk write throughput",
         "networkReceive": "Network receive throughput",
-        "networkTransmit": "Network transmit throughput"
+        "networkTransmit": "Network transmit throughput",
+        "diskBusy": "IO busy time",
+        "diskReadDuration": "Mean read duration",
+        "diskWriteDuration": "Mean write duration"
       },
       "ranges": {
         "5m": "Last 5 minutes",
@@ -667,7 +670,8 @@
         "load": "",
         "seconds": "seconds",
         "inodes": "inodes",
-        "bytes_per_second": "B/s"
+        "bytes_per_second": "B/s",
+        "milliseconds": "ms"
       },
       "states": {
         "valid": "Valid",
@@ -700,8 +704,8 @@
       },
       "loadHint": "System load average counts runnable tasks and tasks in uninterruptible wait (often I/O). It is not a percentage, CPU utilization, or memory usage.",
       "disk": {
-        "title": "Disk throughput",
-        "hint": "Average read/write rates over a complete minute, per device. Disks, partitions and device mapping layers are not added together.",
+        "title": "Disk IO",
+        "hint": "Per-device throughput, IO busy time and mean read/write duration over a complete minute. Mean duration includes queueing and processing; no completed requests means no data. Busy time does not prove saturation. Device layers are never summed; incomplete windows and resets remain missing.",
         "empty": "No disk throughput data. The source must enable disk collection and provide a complete one-minute window."
       },
       "network": {

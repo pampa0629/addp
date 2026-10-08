@@ -35,7 +35,7 @@ METRICS = {"node.cpu.logical_cores": "cores", "node.cpu.busy_percent": "percent"
            "node.load.average_15m": "load", "node.uptime_seconds": "seconds"}
 FILESYSTEM_METRICS = {"node.filesystem."+key: unit for key, unit in (("total_bytes", "bytes"), ("free_bytes", "bytes"), ("available_bytes", "bytes"), ("used_bytes", "bytes"), ("used_percent", "percent"))}
 INODE_METRICS = {"node.filesystem."+key: unit for key, unit in (("inodes_total", "inodes"), ("inodes_free", "inodes"), ("inodes_used", "inodes"), ("inodes_used_percent", "percent"))}
-DISK_METRICS = {"node.disk."+key: "bytes_per_second" for key in ("read_bytes_per_second", "write_bytes_per_second")}
+DISK_METRICS = {"node.disk."+key: unit for key, unit in (("read_bytes_per_second", "bytes_per_second"), ("write_bytes_per_second", "bytes_per_second"), ("io_busy_percent", "percent"), ("read_mean_duration_milliseconds", "milliseconds"), ("write_mean_duration_milliseconds", "milliseconds"))}
 NETWORK_METRICS = {"node.network."+key: "bytes_per_second" for key in ("receive_bytes_per_second", "transmit_bytes_per_second")}
 DEVICE_RATE_FAMILIES = (DISK_METRICS, NETWORK_METRICS)
 ALL_METRICS = dict(METRICS, **FILESYSTEM_METRICS, **INODE_METRICS, **DISK_METRICS, **NETWORK_METRICS)
@@ -287,7 +287,7 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
             else:
                 require(state == "no_data" and sample is None and number is None, "missing evidence became a value")
         if not disconnected and require_fresh:
-            require(valid > 0, "metric has no fresh resource evidence")
+            require(valid > 0 or expected[key] == "milliseconds", "metric has no fresh resource evidence")
 
     groups = [{identity for metric, identity in seen if metric == key} for key in expected]
     require(all(groups), "missing resource catalog key")
@@ -333,7 +333,7 @@ def fresh_resource_groups(value, keys, after=0):
     for row in value["series"]:
         groups.setdefault(tuple(sorted(row["dimensions"].items())), {})[row["metric_key"]] = row["points"][0]
     return [dict(dimensions) for dimensions, points in groups.items() if dimensions and set(points) == set(keys)
-            and all(point["data_state"] == "valid" and utc_timestamp(point["sampled_at"]) > after for point in points.values())]
+            and all((point["data_state"] == "valid" and utc_timestamp(point["sampled_at"]) > after) or (ALL_METRICS[key] == "milliseconds" and point["data_state"] == "no_data") for key, point in points.items())]
 
 
 def resource_query_ready(admin, node, target):
@@ -420,8 +420,8 @@ def validate_resource_browser(value, expected, artifacts):
     require(value.get("auto_refresh") == {"natural_timer": True, "server_end_advanced": True,
             "unchanged_url": True, "off_restored": True, "off_no_requests": True}, "browser automatic refresh evidence missing")
     rows = value.get("resources")
-    # Six reads per complete round; 16 navigation/refresh rounds plus four bounded timer rounds.
-    require(isinstance(rows, list) and 8 <= len(rows) <= 120, "browser resource evidence missing or unbounded")
+    # Six reads per complete round; 22 navigation/refresh rounds plus four bounded timer rounds.
+    require(isinstance(rows, list) and 8 <= len(rows) <= 156, "browser resource evidence missing or unbounded")
     instants, trends = [], []
     for row in rows:
         query, resource = row.get("query", {}), row.get("value", {})
@@ -454,7 +454,7 @@ def validate_resource_browser(value, expected, artifacts):
     require(any(set(row["metric_key"] for row in item["series"]) == set(INODE_METRICS) for item in instants), "browser inode table evidence missing")
     require(any(set(row["metric_key"] for row in item["series"]) == set(DISK_METRICS) for item in instants), "browser disk table evidence missing")
     require(any(set(row["metric_key"] for row in item["series"]) == set(NETWORK_METRICS) for item in instants), "browser network table evidence missing")
-    require(value.get("presentation") == {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True}, "browser quantity display evidence missing")
+    require(value.get("presentation") == {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}, "browser quantity display evidence missing")
     require(len(instants) >= 2 and {("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300), *((key, 300) for key in ALL_METRICS if key in DISK_METRICS or key in NETWORK_METRICS)} <= set(trends), "browser restore evidence incomplete")
     for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
         screenshot = artifacts / ("node-resources-" + name + ".png")
@@ -462,7 +462,7 @@ def validate_resource_browser(value, expected, artifacts):
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
     return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
             "catalog_metric_count": len(ALL_METRICS), "trend_server_window": True, "navigation_restore": True,
-            "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "quantity_display": True}
+            "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "disk_timing_trends": True, "quantity_display": True}
 
 
 def run_resource_browser(node, target, policy, display_name, admin, security):

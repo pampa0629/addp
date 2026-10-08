@@ -1282,3 +1282,19 @@ Hosted 归档证据：`online-report.json` 的预检和三个后端构建均对�
 最终清理及边界：外层 `summary.txt` 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals；内层 awaiting-hosted-deployment-destruction 是外层销毁前记录，不能单独充当清理成功。下载归档共 36 个文件，无 .env/.pem/.key，私钥、JWT、OTP URI 与 Bearer 值模式扫描无命中。本轮完成原生 Linux 接口收发吞吐及趋势的真实 T4，不将该数据冒充个人 Desktop VM 数据；Desktop 的 netdev 仍未启用，网络区域应显示采集缺失说明。个人 Monitor 后端须由用户执行 `./scripts/dev/restart.sh -monitor` 加载新增目录，本轮未自行重启个人应用或 Infra。生产 T5 未执行，完整模块入口失败与跨 Owner 默认预检失败仍分别保留。
 
 归档后仅补充本节与 Monitor 模块说明，默认 `make test-changed` 再次因并行共享认证等改动扩散所需的 PostgreSQL/MySQL 连接条件缺失在预检退出 2，后续门禁未执行，不计为通过。本批证据文档未改变上述已验收的源码输入；最后 `git diff --check` 通过，提交仅包含本批两份文档的验收记录。
+
+### 10.38 磁盘 IO 时间观测（2026-10-08，用户确认继续）
+
+在既有磁盘 device 族加入三项固定目录：`node.disk.io_busy_percent`（percent）、`node.disk.read_mean_duration_milliseconds` 与 `node.disk.write_mean_duration_milliseconds`（milliseconds），均为完整一分钟窗口，目录共 25 项。忙碌时间占比为 `100 * rate(node_disk_io_time_seconds_total[1m])`，沿内核活动时间统计口径，不能据此宣称设备已经饱和；多队列并发时内核计量可少计，不能作为精确物理忙碌时间。平均读取/写入耗时为 `1000 * rate(对应累计读写秒数[1m]) / rate(对应完成次数[1m])`；包含排队与处理，不命名为纯等待或 CPU iowait。依据 [Linux 内核 iostats](https://www.kernel.org/doc/html/latest/admin-guide/iostats.html) 与锁定 [node_exporter v1.12.1 diskstats](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/diskstats_linux.go)。
+
+复用唯一设备计数器完整窗口校验：四个内部采样和一分钟前的边界见证、当前/边界同次启动时间、来源唯一、计数器非负且未重置。派生平均耗时要求时间与完成次数在当前及边界的采样时间分别一致、两者窗口证据均合格且完成速率大于零；无完成请求时返回已知 device 的 no_data，真实零耗时但有完成请求可以为有效零。忙碌占比仅接受有限的 0–100 值，不将异常截断成合法值。磁盘五项保持独立点状态，不因无读请求而抹去有效忙碌或写入值；前端在同一磁盘表与精确设备趋势呈现百分比和 ms，不新增页面、请求族、权限、数据库或任意 PromQL。Desktop 仍禁用 diskstats，不扩大受限采集范围。
+
+实施前门禁识别：Monitor Go T1 验证目录/单位、同族维度预算与归一；既有 metrics T2 的锁定 promtool 增加忙碌上下界、零活动、有请求零耗时、无请求、重置、窗口缺失、重复/异步来源等时间场景，实际完整/受限 exporter 验证磁盘五项、精确趋势及跨节点隔离。Monitor 前端 T1/T3、Console 前端、Online runner 沿现有自动发现与登记扩展，API 双语 Swagger 同步目录 25 项。真实 Hosted T4 扩展同一 suite 的三项时间即时/趋势、单位与 URL 恢复、故障后新样本和停用历史排除；不为验收施加磁盘压力，某设备无完成读写时允许相应耗时空值，其非零分母/零分母语义由确定性 T2 分别证明。平台身份沿此前限定例外，生产 IAM 不变；默认 `make test-changed`、明确 Owner 的模块门禁及各标准分项分别计量，未执行 T4/T5 不计为通过。
+
+本批真实页面证据上限同次调整为 156 个资源响应：详情仍为五族即时加一项趋势，原 16 轮导航增加三项时间指标各两轮选择/刷新，共 22 轮，另保留最多四轮自然计时余量。超过上限失败，API 查询预算不变。
+
+本地分项验证：`make test-go` 完整 22 个 Go 模块通过；`make test-monitor-postgres` 在标准状态入口核实的 `addp-postgres:25432/addp_test` 返回 0，未创建其他 database。Monitor 前端最终复跑 47 项单测、61 项浏览器回归及构建通过；Console 155 项单测、123 项浏览器回归及构建通过；Online runner 的 32 个测试组、浏览器语法及 System Metrics 夹具 Go 测试通过。Monitor Swagger 生成及 65 个公开路由覆盖通过，现有目录发现和 metrics T2 场景登记覆盖新增文件，无新增入口或 workflow。
+
+失败与修复分别保留：首轮时间场景使用小数累计增量出现 IEEE 浮点消减末位差异，改为等价的整数增量夹具后保持原公式及比较精度；第二轮重复完成次数来源在时间对齐表达式触发多对多匹配，修正为按 device 聚合时间见证，来源唯一性仍由原完整窗口校验拒绝，不允许重复来源产生有效值。第三轮原生窗口全部通过，随后既有 mTLS 抓取就绪检查超时，整条指标入口未通过；同期完整平台入口有三项原 10 秒进程超时。Monitor 前端中间复跑的隐藏/恢复用例在新趋势返回前读取旧趋势锚点，改为等待同一既有断言收敛，最终全量通过；未放宽时间或断言。默认 `make test-changed` 因并行其他 Owner 必需连接条件缺失在预检退出，后续门禁未执行。完整 Monitor 标准入口随后按原条件串行复验，取得结果后单独记录。
+
+最终标准 `make test-module MODULE=monitor` 串行完整返回 0，覆盖平台 T0、Monitor Go T1、47 项前端单测/61 项浏览器回归及构建、独占 metrics T2 和实际 Monitor PostgreSQL T2。metrics T2 保持原超时及断言，21 个 IO 时间、11 个磁盘、11 个网络、15 个 CPU、18 个文件系统容量及 22 个 inode 原生场景全部通过；完整来源返回 18 个磁盘设备及所选设备五项趋势、11 个网络接口，受限来源返回零磁盘/接口和空值。Desktop 真实 Engine 18 核、67,304,611,840 bytes 与容器 0.25 CPU/256 MiB 配额区分通过；来源恢复取得新采样，中心 SIGKILL 后历史保留，临时容器/网络/卷/文件零残留。PostgreSQL 仍使用标准核实的 `addp_test`，整条模块门禁成功不改写前述失败尝试和默认跨 Owner 预检失败。真实 Hosted T4、当前实现 CI 与生产 T5 尚未在此记录时取得结果。

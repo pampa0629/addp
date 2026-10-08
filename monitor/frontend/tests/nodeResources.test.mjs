@@ -157,9 +157,22 @@ test('network observations require one interface and complete minute evidence, a
     const bad = structuredClone(reply); Object.assign(bad.series[0], patch)
     assert.throws(() => validateResourceResponse(bad, 'node-id', keys))
   }
-  const disk = { ...reply, series: diskMetrics.map(metric => ({ ...series[0], metric_key: metric.key })) }
+  const disk = { ...reply, series: diskMetrics.map(metric => ({ ...series[0], metric_key: metric.key, unit: metric.unit })) }
   assert.equal(resourceDimensionRows(reply, disk).length, 2)
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
-  assert.equal((source.match(/v-for="family in rateSections"/g) || []).length, 1)
+  assert.equal((source.match(/v-for="family in deviceSections"/g) || []).length, 1)
   assert.doesNotMatch(source, /function selectDisk|function selectNetwork/)
+})
+
+
+test('disk timing preserves valid idle busy and unknown duration with exact ms route', () => {
+  const at = '2026-10-08T00:00:00Z', dims = { device: 'sda' }
+  const series = diskMetrics.map(metric => ({ metric_key: metric.key, dimensions: dims, unit: metric.unit, window_seconds: 60, points: [{ evaluated_at: at, sampled_at: metric.unit === 'milliseconds' ? null : at, value: metric.unit === 'milliseconds' ? null : 0, data_state: metric.unit === 'milliseconds' ? 'no_data' : 'valid' }] }))
+  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: at, queried_at: at, series }
+  assert.equal(validateResourceResponse(response, 'node-id', diskMetrics.map(metric => metric.key)), response)
+  const metric = diskMetrics.find(metric => metric.name === 'diskReadDuration')
+  assert.equal(resolveResourceRoute({ metric: metric.key, device: 'sda', range: '5m' }, true).metric, metric.key)
+  assert.equal(currentResourceValue(series[3].points[0]), null)
+  series[2].points[0].value = 101
+  assert.throws(() => validateResourceResponse(response, 'node-id', diskMetrics.map(metric => metric.key)), /invalid_resource_response/)
 })

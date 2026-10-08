@@ -652,7 +652,10 @@
         "diskRead": "磁盘读取吞吐",
         "diskWrite": "磁盘写入吞吐",
         "networkReceive": "网络接收吞吐",
-        "networkTransmit": "网络发送吞吐"
+        "networkTransmit": "网络发送吞吐",
+        "diskBusy": "IO 忙碌时间占比",
+        "diskReadDuration": "平均读取耗时",
+        "diskWriteDuration": "平均写入耗时"
       },
       "ranges": {
         "5m": "近 5 分钟",
@@ -667,7 +670,8 @@
         "load": "",
         "seconds": "秒",
         "inodes": "个",
-        "bytes_per_second": "B/s"
+        "bytes_per_second": "B/s",
+        "milliseconds": "ms"
       },
       "states": {
         "valid": "有效",
@@ -700,8 +704,8 @@
       },
       "loadHint": "系统平均负载：运行或等待 CPU，以及不可中断等待（常见于 I/O）的任务数量平均值；不是百分比，也不是 CPU 或内存使用率。",
       "disk": {
-        "title": "磁盘读写吞吐",
-        "hint": "完整一分钟的平均读写速率，按设备展示；不叠加磁盘、分区或设备映射层。",
+        "title": "磁盘 IO",
+        "hint": "按设备展示完整一分钟的读写吞吐、IO 忙碌时间占比和平均读写耗时。平均耗时包含排队与处理，无完成请求时无数据；忙碌占比不代表设备饱和度。不跨设备层汇总，窗口不足或重置时保留缺失。",
         "empty": "暂无磁盘吞吐数据；采集源需启用磁盘采集并形成完整一分钟窗口。"
       },
       "network": {

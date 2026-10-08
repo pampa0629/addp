@@ -28,7 +28,10 @@ export const inodeMetrics = [
 export const mountMetrics = [...filesystemMetrics, ...inodeMetrics]
 export const diskMetrics = [
   { key: 'node.disk.read_bytes_per_second', name: 'diskRead', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 },
-  { key: 'node.disk.write_bytes_per_second', name: 'diskWrite', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 }
+  { key: 'node.disk.write_bytes_per_second', name: 'diskWrite', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 },
+  { key: 'node.disk.io_busy_percent', name: 'diskBusy', unit: 'percent', precision: 2, windowSeconds: 60 },
+  { key: 'node.disk.read_mean_duration_milliseconds', name: 'diskReadDuration', unit: 'milliseconds', precision: 2, windowSeconds: 60 },
+  { key: 'node.disk.write_mean_duration_milliseconds', name: 'diskWriteDuration', unit: 'milliseconds', precision: 2, windowSeconds: 60 }
 ]
 export const networkMetrics = [
   { key: 'node.network.receive_bytes_per_second', name: 'networkReceive', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 },

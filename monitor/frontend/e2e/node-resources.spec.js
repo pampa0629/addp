@@ -197,7 +197,7 @@ test('hidden details pause, cancel late observations and resume once immediately
   await visibility(page, false)
   await expect.poll(() => resourceReads(state).length).toBe(3)
   await visibleChart(page)
-  expect(state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1).query.end).toBe('2026-10-07T00:01:00.000Z')
+  await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query.end).toBe('2026-10-07T00:01:00.000Z')
 })
 test('slow automatic requests do not overlap and failures clear old readings before recovery', async ({ page }) => {
   const state = await resourceBackend(page)
@@ -399,3 +399,29 @@ for (const [family, device, firstMetric, secondMetric, secondLabel, emptyLabel] 
     await expect(table).toHaveCount(0)
   })
 }
+
+
+test('disk IO timing uses percent and ms and restores all three exact device trends', async ({ page }) => {
+  const state = await resourceBackend(page)
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  const table = page.getByTestId('resource-disk-table')
+  await expect(table).toContainText('0.00 %')
+  await expect(table).toContainText('2.50 ms')
+  await expect(page.getByTestId('resource-disks')).toContainText('包含排队与处理')
+  await table.getByRole('button', { name: '查看趋势' }).click()
+  for (const [label, key] of [['IO 忙碌时间占比', 'node.disk.io_busy_percent'], ['平均读取耗时', 'node.disk.read_mean_duration_milliseconds'], ['平均写入耗时', 'node.disk.write_mean_duration_milliseconds']]) {
+    await page.getByTestId('resource-metric').click()
+    await page.getByRole('option', { name: label, exact: true }).click()
+    await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ metrics: key, device: 'sda' })
+    await page.reload()
+    await expect(page.getByTestId('resource-metric')).toContainText(label)
+    await expect(page.getByTestId('resource-selected-device')).toHaveText('sda')
+    await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  }
+  state.diskMode = 'disk-idle'
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(table).toContainText('0.00 %')
+  await expect(table.locator('strong').filter({ hasText: '—' })).toHaveCount(2)
+  await expect(table).not.toContainText('0.00 ms')
+  await expect(page.getByTestId('resource-cores')).toContainText('0 核')
+})

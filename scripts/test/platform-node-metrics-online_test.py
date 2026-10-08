@@ -343,6 +343,23 @@ class MetricsProtocolTest(unittest.TestCase):
                 self.check_device_protocol(family)
                 self.check_device_recovery(family)
 
+    def test_idle_disk_timing_is_unknown_without_weakening_busy_or_unit_evidence(self):
+        node, target = {"node_id": "node-id", "version": 1}, {"id": "target-id", "version": 2}
+        value = self.resource_reply(ONLINE.DISK_METRICS)
+        for row in value["series"]:
+            if row["unit"] == "milliseconds":
+                row["points"][0].update(data_state="no_data", sampled_at=None, value=None)
+        ONLINE.assert_resources(value, node, target, keys=ONLINE.DISK_METRICS)
+        self.assertEqual(ONLINE.fresh_resource_groups(value, ONLINE.DISK_METRICS), [{"device": "sda"}])
+        wrong_unit = copy.deepcopy(value)
+        wrong_unit["series"][-1]["unit"] = "seconds"
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.assert_resources(wrong_unit, node, target, keys=ONLINE.DISK_METRICS)
+        value["series"][2]["points"][0].update(data_state="no_data", sampled_at=None, value=None)
+        self.assertEqual(ONLINE.fresh_resource_groups(value, ONLINE.DISK_METRICS), [])
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.assert_resources(value, node, target, keys=ONLINE.DISK_METRICS)
+
     def test_browser_report_binds_real_identity_versions_server_time_and_screenshots(self):
         expected = {"run_id": "unique-run", "node": {"node_id": "node-id", "version": 1},
                     "target": {"id": "target-id", "version": 2}, "policy_version": 0,
@@ -371,7 +388,7 @@ class MetricsProtocolTest(unittest.TestCase):
                   "identity": admin, "negative_identity": security, "negative_no_business_reads": True, "resources": rows,
                   "auto_refresh": {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True, "off_restored": True, "off_no_requests": True},
                   "navigation": {"list_without_fanout": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True},
-                  "presentation": {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True}}
+                  "presentation": {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
@@ -386,10 +403,14 @@ class MetricsProtocolTest(unittest.TestCase):
                          lambda v: v["resources"][1]["query"].update(end="2026-10-06T00:01:01Z"),
                          lambda v: v["resources"][1]["value"]["series"][0]["points"].pop(),
                          lambda v: v["resources"][0]["value"]["series"][0]["points"][0].update(value=float("nan")),
-                         lambda v: v.update(resources=[]), lambda v: v.update(resources=[v["resources"][0]]*121), lambda v: v.pop("auto_refresh"),
+                         lambda v: v.update(resources=[]), lambda v: v.update(resources=[v["resources"][0]]*157), lambda v: v.pop("auto_refresh"),
                          lambda v: v["auto_refresh"].update(off_no_requests=False),
                          lambda v: v["navigation"].pop("disk_reload"), lambda v: v["presentation"].update(disk_rate_units=False),
                          lambda v: v["navigation"].pop("network_reload"), lambda v: v["presentation"].update(network_rate_units=False),
+                         lambda v: v["presentation"].update(disk_timing_units=False),
+                         lambda v: v.update(resources=[row for row in v["resources"] if row["query"]["metrics"] != "node.disk.io_busy_percent"]),
+                         lambda v: v.update(resources=[row for row in v["resources"] if row["query"]["metrics"] != "node.disk.read_mean_duration_milliseconds"]),
+                         lambda v: v.update(resources=[row for row in v["resources"] if row["query"]["metrics"] != "node.disk.write_mean_duration_milliseconds"]),
                          lambda v: v.update(resources=[row for row in v["resources"] if row["query"]["metrics"] != "node.network.transmit_bytes_per_second"]),
                          lambda v: v.update(resources=[row for row in v["resources"] if row["query"]["metrics"] != "node.disk.write_bytes_per_second"])]
             for mutation in mutations:

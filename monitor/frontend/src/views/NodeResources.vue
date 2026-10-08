@@ -68,7 +68,7 @@
         </el-table>
       </section>
       <template v-if="instant">
-        <section v-for="family in rateSections" :key="family.name" class="resource-filesystems" :data-testid="`resource-${family.name}s`">
+        <section v-for="family in deviceSections" :key="family.name" class="resource-filesystems" :data-testid="`resource-${family.name}s`">
           <h3>{{ t(`monitor.resources.${family.name}.title`) }}</h3>
           <p class="resource-hint">{{ t(`monitor.resources.${family.name}.hint`) }}</p>
           <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
@@ -77,7 +77,7 @@
             <el-table-column v-for="metric in family.metrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
               <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p></template>
             </el-table-column>
-            <el-table-column :label="t('monitor.resources.trend')" width="140"><template #default="{ row }"><el-button text type="primary" @click="selectDeviceRate(row, family.metrics[0].key)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
+            <el-table-column :label="t('monitor.resources.trend')" width="140"><template #default="{ row }"><el-button text type="primary" @click="selectDeviceObservation(row, family.metrics[0].key)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
           </el-table>
         </section>
       </template>
@@ -144,8 +144,8 @@ const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), tr
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
-const rateFamilies = [{ name: 'disk', metrics: diskMetrics, value: disks, error: diskErrorKey }, { name: 'network', metrics: networkMetrics, value: networks, error: networkErrorKey }]
-const rateSections = computed(() => rateFamilies.map(family => ({ name: family.name, metrics: family.metrics, rows: resourceDimensionRows(family.value.value), errorKey: family.error.value })))
+const deviceFamilies = [{ name: 'disk', metrics: diskMetrics, value: disks, error: diskErrorKey }, { name: 'network', metrics: networkMetrics, value: networks, error: networkErrorKey }]
+const deviceSections = computed(() => deviceFamilies.map(family => ({ name: family.name, metrics: family.metrics, rows: resourceDimensionRows(family.value.value), errorKey: family.error.value })))
 const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? state.value.metric.startsWith('node.network.') ? networkMetrics : diskMetrics : [])])
 const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...(trend.value?.series[0].points.map(point => currentResourceValue(point) ?? 0) || []))) : null)
 const chartRows = computed(() => trend.value ? resourceChartRows(trend.value.series[0]).map(row => ({ ...row, value: row.value === null ? null : row.value / (chartScale.value?.divisor || 1) })) : [])
@@ -178,7 +178,7 @@ function selectTrend(key, value) {
   return navigate(route.path, query, 'replace')
 }
 function selectFilesystem(row) { return navigate(route.path, { ...state.value.query, ...row.dimensions, metric: 'node.filesystem.used_percent' }, 'replace') }
-function selectDeviceRate(row, metric) { const { mountpoint, fstype, ...query } = state.value.query; return navigate(route.path, { ...query, ...row.dimensions, metric }, 'replace') }
+function selectDeviceObservation(row, metric) { const { mountpoint, fstype, ...query } = state.value.query; return navigate(route.path, { ...query, ...row.dimensions, metric }, 'replace') }
 function invalidChart() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 function stopRefresh() { window.clearTimeout(refreshTimer); refreshTimer = null }
 function invalidate() { stopRefresh(); epoch++; for (const controller of pending) controller.abort(); pending.clear() }
@@ -248,7 +248,7 @@ async function reload({ automatic = false } = {}) {
         inodeErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
-      for (const family of rateFamilies) {
+      for (const family of deviceFamilies) {
         try {
           const keys = family.metrics.map(metric => metric.key)
           const observed = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))

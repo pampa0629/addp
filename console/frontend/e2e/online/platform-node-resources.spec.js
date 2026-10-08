@@ -188,7 +188,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     expect(inodeTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
     await monitor.getByTestId('resource-chart').scrollIntoViewIfNeeded()
     await page.screenshot({ path: resolve(artifact, 'node-resources-inodes.png'), animations: 'disabled' })
-    for (const [family, metrics, secondLabel] of [['disk', diskMetrics, '磁盘写入吞吐'], ['network', networkMetrics, '网络发送吞吐']]) {
+    for (const [family, metrics] of [['disk', diskMetrics], ['network', networkMetrics]]) {
       save(`${family}-device-trend-restore`)
       const table = monitor.getByTestId(`resource-${family}-table`)
       await expect(table.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
@@ -204,15 +204,20 @@ test('platform node resources through real Console password MFA and Monitor ifra
       const deviceRow = deviceRows.nth(deviceIndex)
       await expect(deviceRow).toHaveCount(1)
       const rateValues = deviceRow.locator('strong')
-      await expect(rateValues).toHaveCount(2)
+      await expect(rateValues).toHaveCount(metrics.length)
       for (let index = 0; index < 2; index++) await expect(rateValues.nth(index)).toHaveText(/\d[\d,.]* (?:B|KiB|MiB|GiB|TiB|PiB)\/s$/)
       report.presentation[`${family}_rate_units`] = true
+      if (family === 'disk') {
+        await expect(rateValues.nth(2)).toHaveText(/\d[\d,.]* %$/)
+        for (const index of [3, 4]) await expect(rateValues.nth(index)).toHaveText(/^(?:—|\d[\d,.]* ms)$/)
+        report.presentation.disk_timing_units = true
+      }
       await deviceRow.getByRole('button', { name: '查看趋势' }).click()
       await expect(page).toHaveURL(url => url.searchParams.get('metric') === metrics[0].key && url.searchParams.get('device') === device && !url.searchParams.has('mountpoint') && !url.searchParams.has('fstype'))
       for (const metric of metrics) {
         if (metric !== metrics[0]) {
           await monitor.getByTestId('resource-metric').click()
-          await monitor.getByRole('option', { name: secondLabel, exact: true }).click()
+          await monitor.getByRole('option', { name: ({diskRead: '磁盘读取吞吐', diskWrite: '磁盘写入吞吐', diskBusy: 'IO 忙碌时间占比', diskReadDuration: '平均读取耗时', diskWriteDuration: '平均写入耗时', networkReceive: '网络接收吞吐', networkTransmit: '网络发送吞吐'})[metric.name], exact: true }).click()
         }
         await page.reload()
         await expect(page).toHaveURL(url => url.searchParams.get('metric') === metric.key && url.searchParams.get('device') === device && url.searchParams.get('range') === '5m' && url.searchParams.get('refresh') === 'off' && !url.searchParams.has('mountpoint') && !url.searchParams.has('fstype'))
@@ -223,7 +228,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
         expect(deviceTrend.query.device).toBe(device)
         expect(deviceTrend.value.series).toHaveLength(1)
         expect(deviceTrend.value.series[0].dimensions).toEqual({ device })
-        expect(deviceTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
+        if (metric.unit !== 'milliseconds') expect(deviceTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
       }
       await monitor.getByTestId('resource-chart').scrollIntoViewIfNeeded()
       await page.screenshot({ path: resolve(artifact, `node-resources-${family}s.png`), animations: 'disabled' })

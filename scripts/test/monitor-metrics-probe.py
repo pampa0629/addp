@@ -134,7 +134,7 @@ rejected(source + '/metrics', source_health)
 print('Metrics T2: anonymous, foreign client CA and plaintext rejected', flush=True)
 # Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
-                '^TestIntegrationMetrics(CPUWindow|DiskWindow|NetworkWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
+                '^TestIntegrationMetrics(CPUWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
                cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
                env=dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1'),
                check=True, timeout=60)
