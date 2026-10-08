@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -154,7 +154,12 @@ test('platform node resources through real Console password MFA and Monitor ifra
     const mounts = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes('node.filesystem.total_bytes')).at(-1)
     expect(mounts.query.metrics.split(',').sort()).toEqual(filesystemMetrics.map(item => item.key).sort())
     expect(mounts.value.series.every(item => Object.keys(item.dimensions).length === 3)).toBe(true)
-    await filesystemTable.getByRole('button', { name: '查看趋势' }).first().click()
+    const mountInodes = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes('node.filesystem.inodes_total')).at(-1)
+    const observedMounts = resourceDimensionRows(mounts.value, mountInodes.value)
+    const supportedMountIndex = observedMounts.findIndex(row => [...filesystemMetrics, ...inodeMetrics].every(metric => row.metrics[metric.key]?.data_state === 'valid'))
+    expect(supportedMountIndex).toBeGreaterThanOrEqual(0)
+    const supportedMount = observedMounts[supportedMountIndex].dimensions
+    await filesystemTable.locator('.el-table__body tr').nth(supportedMountIndex).getByRole('button', { name: '查看趋势' }).click()
     await expect(page).toHaveURL(url => url.searchParams.get('metric') === 'node.filesystem.used_percent' && Boolean(url.searchParams.get('mountpoint')) && Boolean(url.searchParams.get('device')) && Boolean(url.searchParams.get('fstype')))
     await expect(monitor.getByTestId('resource-selected-mount')).toBeVisible()
     await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
@@ -164,6 +169,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
     await Promise.all(pending)
     const selected = Object.fromEntries(new URL(page.url()).searchParams)
+    for (const key of ['device', 'mountpoint', 'fstype']) expect(selected[key]).toBe(supportedMount[key])
     const filesystemTrend = resources.filter(item => item.query.metrics === 'node.filesystem.used_percent').at(-1)
     for (const key of ['device', 'mountpoint', 'fstype']) expect(filesystemTrend.query[key]).toBe(selected[key])
     expect(filesystemTrend.value.series).toHaveLength(1)
@@ -195,7 +201,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await Promise.all(pending)
       const deviceReply = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes(metrics[0].key)).at(-1)
       expect(deviceReply.query.metrics.split(',').sort()).toEqual(metrics.map(item => item.key).sort())
-      const device = deviceReply.value.series.find(row => row.metric_key === metrics[0].key && row.points[0].data_state === 'valid' && deviceReply.value.series.some(other => other.metric_key === metrics[1].key && other.dimensions.device === row.dimensions.device && other.points[0].data_state === 'valid'))?.dimensions.device
+      const device = resourceDimensionRows(deviceReply.value).find(row => metrics.filter(metric => metric.unit !== 'milliseconds').every(metric => row.metrics[metric.key]?.data_state === 'valid'))?.dimensions.device
       expect(device).toBeTruthy()
       const deviceRows = table.locator('.el-table__body tr')
       const deviceNames = await deviceRows.locator('td:first-child').allTextContents()
