@@ -55,8 +55,11 @@ for lifecycle_script in "$ROOT_DIR/scripts/dev/start.sh" "$ROOT_DIR/scripts/dev/
 done
 grep -Fq 'addp_install_node_dependencies "$dir"' "$ROOT_DIR/scripts/dev/start.sh" ||
   fail "start.sh does not use the shared Node dependency policy"
-grep -Fq 'addp_install_node_dependencies "$dir"' "$ROOT_DIR/scripts/dev/restart.sh" ||
-  fail "restart.sh does not use the shared Node dependency policy"
+grep -Fq 'exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" "${START_ARGS[@]}"' "$ROOT_DIR/scripts/dev/restart.sh" ||
+  fail "restart.sh does not delegate dependency installation to start.sh"
+if grep -Fq 'addp_install_node_dependencies' "$ROOT_DIR/scripts/dev/restart.sh"; then
+  fail "restart.sh duplicates dependency installation owned by start.sh"
+fi
 if rg -n '\(cd "\$dir" && npm (ci|install)' \
   "$ROOT_DIR/scripts/dev/start.sh" "$ROOT_DIR/scripts/dev/restart.sh"; then
   fail "lifecycle scripts bypass the shared Node dependency policy"
