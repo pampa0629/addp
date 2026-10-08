@@ -1,6 +1,6 @@
 # ADDP 平台运行监控与可观测性设计
 
-状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、节点台账、监测目标及资源查询页面已分批实施并验收。CPU 忙碌率本地门禁及九项完整 Hosted 验收已通过；文件系统容量与挂载趋势的实现、本地门禁及扩展 Hosted 验收已通过；inode 余量与趋势及其本地/Hosted 验收已通过；平台告警领域调整仍待确认，生产 T5 未完成（2026-10-07）。
+状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、平台主机管理、采集配置及主机监控页面已分批实施并验收。九项概览、文件系统容量与 inode、磁盘吞吐与 IO 时间、网络接口收发的固定目录共 25 项，本地标准门禁与原生 Linux Hosted 验收已通过；平台告警领域调整仍待确认，生产 T5 未完成（2026-10-09）。
 
 用户已确认首期覆盖 ADDP 自身部署节点、服务和明确纳管的业务引擎；监控组件按 Infra 组织、按需部署，其缺失或故障只影响对应观测能力。本文记录目标契约与分批实施证据；可选设施裁剪及资源查询的已验收范围以第十节批次记录为准，不据此宣称所有目标能力或生产部署已完成。
 
@@ -1304,3 +1304,13 @@ Hosted 归档证据：`online-report.json` 的预检和三个后端构建均对�
 首次 Hosted T4（Run 37803649252）在 `inode-mount-trend-restore` 失败，不能计为通过：脚本默认选择文件系统第一行 `/dev/nvme0n1p15`、`/boot/efi`、vfat，其字节容量有效但 inode 正式返回 no_data。截图与归档 API 响应确认该缺失符合已有 inode 口径，失败为页面验收选样假设，不改生产查询或把 EFI inode 伪造为有效。首次五项磁盘与两项网络 API 读取、预算 CAS/热生效及身份隔离已执行成功，但新增时间指标页面阶段尚未到达；外层清理 passed、infra_cleanup=zero_residuals。修复沿既有唯一 `resourceDimensionRows` 合并实际响应，容量/inode 趋势验收选择两组均有有效证据的同一挂载，精确三维度 URL 和有效趋势断言保持；磁盘选择同样要求拟验证的吞吐/忙碌指标有效，平均耗时无完成请求仍可空值。没有足够有效观测仍失败，不放宽断言、不按固定设备名或文件系统类型筛选、不生成负载。
 
 首次实现提交的 [Platform CI（Run 37803606968）](https://github.com/pampa0629/addp/actions/runs/37803606968) 33 项任务全部成功，Monitor 前端实际执行 61 项浏览器回归及构建通过。选样修复只涉及既有 Console T4 脚本，生产 Monitor 实现未变；最小充分复验 `make test-node-metrics-online-runner` 的 32 个测试组、浏览器语法和 System Metrics 夹具返回 0，`make test-console-frontend` 的 155 项单测、123 项浏览器回归及构建返回 0。修复不新增请求轮次，156 个响应上限及同一设备/挂载有效趋势、身份和单位断言保持，后续沿同一 Hosted suite 重跑。
+
+修复提交 `839ef8338e932e244b7a6bb25a2fde14e87eafc0` 推送后再次核实远端 SHA，再调度 [Hosted T4（Run 37808051558）](https://github.com/pampa0629/addp/actions/runs/37808051558)。首次失败归档共 33 个文件，无 .env/.pem/.key，私钥、JWT、OTP URI 及 Bearer 值模式扫描无命中；失败记录和零残留清理不代替页面验收成功。修复后的默认 `make test-changed` 再次因混合工作区其他 Owner 所需数据库连接条件缺失在预检返回 2，未执行部分不计为通过；本批分项与模块成功仍分别计量。
+
+修复后的真实 Hosted T4 与归档复核于 2026-10-09（Asia/Shanghai）完成：Run 37808051558 的外层报告、suite 和浏览器均为 passed；预检与 System/Gateway/Monitor 三个构建均对应完整提交 `839ef8338e932e244b7a6bb25a2fde14e87eafc0`。同一提交的 [Platform CI（Run 37808006295）](https://github.com/pampa0629/addp/actions/runs/37808006295) 33 项任务成功，[Release/T2（Run 37808006338）](https://github.com/pampa0629/addp/actions/runs/37808006338) 工作流成功；该修复只改页面验收脚本，Monitor PostgreSQL/metrics 实际执行证据继续引用生产实现提交的 Run 37803604603，路径跳过不另计为重跑。
+
+下载后重新执行同一脚本的 `validate_resource_browser`，25 项固定目录、正式密码/MFA、身份拒绝、预算 CAS/热生效、自动刷新、服务端窗口、精确挂载/设备和 URL 恢复、五项磁盘及两项网络趋势全部闭合。浏览器共 102 个资源响应，低于 156 上限；三条新增 IO 时间趋势均为 sda 单设备、21 个评估点、5 个有效点，接入前空值保留断点。该次原生即时读写为约 20 KiB/s、3.55 MiB/s，忙碌占比 0.286666667%，平均读取 0.194805 ms、平均写入 1.516129 ms；这些是当次 Hosted 主机观测，不作为个人 Desktop VM 的数据。七张 PNG 齐全，人工复核平均写入趋势纵轴 ms、容量 15.61 GiB、时长“13分钟55秒钟”和无百分比的系统负载数量；挂载/inode 页面当前选择真实根 ext4，EFI 的缺失仍按原规则保留。
+
+控制面、中心查询、来源中断及恢复取得新样本；同一采集主体完成两次正式 grant，节点/目标停用不复用历史，最终删除通过。外层 `summary.txt` 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals；内层 awaiting-hosted-deployment-destruction 只是外层销毁前的记录。下载归档共 36 个文件，无 .env/.pem/.key，私钥、JWT、OTP URI 和 Bearer 值模式扫描无命中。首次失败与默认跨 Owner 预检失败继续单独保留；生产 T5 未执行。个人 Monitor 加载三项新目录仍须用户标准重启，本轮没有重启个人应用或 Infra，Desktop diskstats/netdev 等受限范围保持。
+
+归档后仅追加本节事实、文档状态与 Monitor 模块说明；默认 `make test-changed` 仍因并行其他 Owner 的必需连接输入缺失在预检返回 2，未执行部分不计为通过。证据文档没有改变上述已验证源码输入，最终 `git diff --check` 返回 0；本次证据提交只包含这两份文档。
