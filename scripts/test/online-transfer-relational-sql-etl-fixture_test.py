@@ -63,7 +63,7 @@ case "$1" in
         fi
         [[ "$input" != *"countDocuments"* ]] || echo 3
         exit 0 ;;
-      *" -Atc "*|*" -c "*) ;;
+      *" -Atc "*|*" -c "*) printf 'query:%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG" ;;
       *) input=$(cat)
          printf 'stdin:%s\n' "$input" >> "$ADDP_TEST_FIXTURE_LOG"
          if [[ "$input" == *"ALTER TABLE"* ]]; then
@@ -76,6 +76,8 @@ case "$1" in
          fi ;;
     esac
     case " $* " in
+      *"information_schema.columns"*"addp_wide"*) echo "${ADDP_TEST_WIDE_COLUMNS:-500}" ;;
+      *"differences"*) echo "${ADDP_TEST_WIDE_DIFFERENCES:-0}" ;;
       *"string_agg(column_name"*"addp_online_transfer_multi_query_target"*) echo 'id,combined_label,combined_amount' ;;
       *"addp_online_transfer_multi_query_target"*) echo "${ADDP_TEST_MULTI_VALUES:-3|north:active|600.50;3|north:active|600.50;4|east:active|801.50;4|east:active|801.50}" ;;
       *"string_agg(column_name"*"addp_online_transfer_mongodb_ods"*) echo 'activity_id,activity_status,activity_date_raw,activity_level_raw,leader_person_id,leader_nickname_snapshot' ;;
@@ -125,6 +127,14 @@ esac
         return subprocess.run(['bash', 'business/scripts/online-transfer-relational-sql-etl-fixture.sh', action],
                               cwd=self.root, env=environment, capture_output=True, text=True, timeout=20)
 
+    def test_rejects_incomplete_wide_schema_or_rows(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        for override in ({'ADDP_TEST_WIDE_COLUMNS': '499'}, {'ADDP_TEST_WIDE_DIFFERENCES': '1'}):
+            result = self.run_fixture('verify', **override)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('wide target', result.stderr)
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+
     def test_owns_projection_filter_verification_and_cleanup(self):
         for action in ('start', 'status', 'evolve', 'verify', 'stop'):
             result = self.run_fixture(action)
@@ -132,7 +142,9 @@ esac
         commands = self.log.read_text()
         self.assertIn('CREATE TABLE public.addp_online_transfer_sql_etl_source', commands)
         self.assertIn("(3, 'north', 'active', 300.25, 'hidden-3')", commands)
-        self.assertIn('GRANT SELECT ON public.addp_online_transfer_sql_etl_source', commands)
+        self.assertIn('GRANT SELECT ON public.addp_online_transfer_sql_etl_source, public.addp_wide_source', commands)
+        self.assertIn('generate_series(0,499)', commands)
+        self.assertIn('EXCEPT ALL', commands)
         self.assertIn('GRANT USAGE, CREATE ON SCHEMA public TO transfer_writer', commands)
         self.assertNotIn('GRANT ALL', commands)
         self.assertIn('--tmpfs /var/lib/postgresql/data', commands)

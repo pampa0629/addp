@@ -28,6 +28,57 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(hosted.count(verify), 1, "the Hosted lifecycle owns complete physical verification")
         self.assertLess(hosted.index('make test-online "ONLINE_SUITE=$ONLINE_SUITE"'), hosted.index(verify))
 
+    def test_wide_transfers_use_automatic_targets_and_one_bounded_overview(self):
+        items = [{"id": i, "node_id": 9, "full_name": "public." + name, "item_type": "table"}
+                 for i, name in enumerate((ONLINE.WIDE_SOURCE, ONLINE.WIDE_TARGET, ONLINE.WIDE_DOWNSTREAM), 1)]
+        hashes = {1: 'source', 2: 'middle', 3: 'target'}
+        calls = []
+        def execute(client, task, deadline, owned):
+            calls.append(task)
+            hop = len(calls)
+            owned.append(hop)
+            return hop, {"execution_id": f'run-{hop}', "records_read": 2, "records_written": 2, "metadata": {"lineage_facts": {
+                "schema_version": "addp.lineage-facts/v1", "inputs": [{"port": "source", "schema_snapshot": {"hash": hashes[hop], "fields": [{}]}}],
+                "outputs": [{"port": "target", "schema_snapshot": {"hash": hashes[hop+1], "fields": [{}]}}],
+                "operations": [{"field_lineage_status": "complete"}]}}}
+        client = Mock()
+        client.request.return_value.payload = {"fixture": True}
+        owned = []
+        with patch.object(ONLINE, "find_item", return_value=items[0]), patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=execute), patch.object(ONLINE, "wait_transfer_target", side_effect=items[1:]), patch.object(ONLINE, "validate_wide_graph") as validate:
+            report = ONLINE.run_wide_lineage(client, 7, 'fixture', 30, owned)
+        self.assertEqual(owned, [1, 2])
+        self.assertEqual(report['item_ids'], [1, 2, 3])
+        self.assertEqual(report['execution_ids'], ['run-1', 'run-2'])
+        self.assertEqual([task['config']['target']['name'] for task in calls], [ONLINE.WIDE_TARGET, ONLINE.WIDE_DOWNSTREAM])
+        for task in calls:
+            self.assertTrue(task['auto_scan_metadata'])
+            mappings = task['config']['transforms'][0]['fields']
+            self.assertEqual([field['source'] for field in mappings], list(ONLINE.WIDE_FIELDS))
+            self.assertEqual([field['target'] for field in mappings], list(ONLINE.WIDE_FIELDS))
+        method, path, statuses = client.request.call_args.args
+        self.assertEqual(method, 'GET')
+        self.assertIn('subject_kind=data_item', path)
+        self.assertIn('granularity=field', path)
+        self.assertNotIn('limit=', path)
+        self.assertEqual(client.request.call_count, 1)
+        validate.assert_called_once_with({"fixture": True}, 7, [1, 2, 3], hashes, ['run-1', 'run-2'])
+
+    def test_wide_graph_rejects_truncation_missing_fields_and_wrong_execution(self):
+        ids, hashes, executions = [1, 2, 3], {1: 'source', 2: 'middle', 3: 'target'}, ['first', 'hop']
+        nodes = [{"kind": "field_ref", "item_id": item, "engine_id": 7, "field_name": field, "schema_snapshot_hash": hashes[item]} for item in ids for field in ONLINE.WIDE_FIELDS]
+        edges = [{"granularity": "field", "status": "active", "transformation": "direct",
+                  "source": nodes[i * 500 + column], "target": nodes[(i + 1) * 500 + column], "evidence": {"execution_id": executions[i]}}
+                 for i in range(2) for column in range(500)]
+        graph = {"subject": {"kind": "data_item", "item_id": 3, "schema_snapshot_hash": 'target'}, "granularity": "field",
+                 "field_lineage_status": "complete", "truncated": False, "nodes": nodes, "edges": edges}
+        self.assertIs(ONLINE.validate_wide_graph(graph, 7, ids, hashes, executions), graph)
+        for broken in (dict(graph, truncated=True), dict(graph, nodes=nodes[:-1]), dict(graph, edges=edges[:-1])):
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_wide_graph(broken, 7, ids, hashes, executions)
+        edges[-1]["evidence"]["execution_id"] = 'wrong-run'
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'execution mappings'):
+            ONLINE.validate_wide_graph(graph, 7, ids, hashes, executions)
+
     def test_registered_browser_spec_parses(self):
         browser = SCRIPT.parents[2] / "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js"
         result = subprocess.run(["node", "--check", str(browser)], capture_output=True, text=True)
@@ -130,17 +181,18 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 )
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_TRANSFER_FIELD_LINEAGE"]), {"target_item_id": 11})
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE"]), {"target_item_id": 12})
+                self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_WIDE_FIELD_LINEAGE"]), {"target_item_id": 14})
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 
             with patch.dict(ONLINE.os.environ, environment, clear=False), patch.object(
                 ONLINE.subprocess, "run", side_effect=fake_run
             ):
-                self.assertEqual(ONLINE.run_browser(root, environment, name, {"target_item_id": 11}, {"target_item_id": 12}, {"target_item_id": 13}), payload)
+                self.assertEqual(ONLINE.run_browser(root, environment, name, {"target_item_id": 11}, {"target_item_id": 12}, {"target_item_id": 13}, {"target_item_id": 14}), payload)
 
     @staticmethod
     def browser_report(name: str) -> dict[str, object]:
         return {
-            "schema_version": "addp.transfer-relational-sql-etl-browser/v5",
+            "schema_version": "addp.transfer-relational-sql-etl-browser/v6",
             "suite": "transfer-relational-sql-etl",
             "run_id": "run-123",
             "result": "passed",
@@ -159,11 +211,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "manager_mongodb_field_graph_verified": True,
             "manager_orchestrated_field_graph_verified": True,
             "manager_evolved_schema_verified": True,
+            "manager_wide_field_graph_verified": True,
         }
 
     def test_browser_proofs_and_current_report_version_are_required(self):
         name = ONLINE.task_name("run-123")
-        for key in ("manager_field_graph_verified", "query_field_lineage_verified", "manager_mongodb_field_graph_verified", "manager_orchestrated_field_graph_verified", "manager_evolved_schema_verified"):
+        for key in ("manager_field_graph_verified", "query_field_lineage_verified", "manager_mongodb_field_graph_verified", "manager_orchestrated_field_graph_verified", "manager_evolved_schema_verified", "manager_wide_field_graph_verified"):
             with self.subTest(key=key):
                 report = self.browser_report(name)
                 report[key] = False
@@ -281,13 +334,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual((fields[1]["source"], fields[1]["target"]), ("region", "region_name"))
         self.assertEqual((fields[2]["precision"], fields[2]["scale"]), (8, 2))
         self.assertEqual((fields[3]["source"], fields[3]["default"]), ("", "online"))
-        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi"})
+        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop"})
 
     def test_cleanup_selection_is_limited_to_the_exact_run_family(self):
         name = ONLINE.task_name("run-123")
         names = sorted(ONLINE.owned_task_names(name)) + [ONLINE.task_name("another-run"), name + "_unrelated"]
         client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload={"items": [{"id": index + 1, "name": value} for index, value in enumerate(names)], "total": len(names)}))
-        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), [1, 2, 3, 4, 5, 6])
+        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), [1, 2, 3, 4, 5, 6, 7, 8])
 
     def test_online_identity_requires_lineage_and_manager_permissions(self):
         self.assertFalse(any(key.startswith("system.engine.") for key in ONLINE.REQUIRED_PERMISSIONS))
@@ -334,13 +387,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(full_name, item["full_name"])
             return item
         output = io.StringIO()
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v6")
-        self.assertEqual(report["created_resources"], 9)
-        self.assertEqual(report["deleted_resources"], 9)
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v7")
+        self.assertEqual(report["created_resources"], 11)
+        self.assertEqual(report["deleted_resources"], 11)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
 

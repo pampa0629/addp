@@ -28,6 +28,7 @@ const requiredNames = [
   'ADDP_ONLINE_TRANSFER_FIELD_LINEAGE',
   'ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE',
   'ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE',
+  'ADDP_ONLINE_WIDE_FIELD_LINEAGE',
   'GATEWAY_URL'
 ]
 
@@ -294,6 +295,89 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-orchestrated-dwd-field-lineage.png'), fullPage: true })
 }
 
+async function verifyWideLineage(page, env) {
+  const wide = JSON.parse(env.ADDP_ONLINE_WIDE_FIELD_LINEAGE)
+  let requests = 0
+  const urls = []
+  const count = request => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/v1/meta/lineage/graph' && url.searchParams.get('item_id') === String(wide.target_item_id) && url.searchParams.get('granularity') === 'field') {
+      requests++
+      urls.push(url)
+    }
+  }
+  page.on('request', count)
+  const started = Date.now()
+  try {
+    const { graph, frame } = await managerFieldGraph(page, wide.target_locator, wide.target_item_id, 'field_0000')
+    const timings = { requestAndInitialRenderMs: Date.now() - started }
+    expect(graph.nodes).toHaveLength(1500)
+    expect(graph.edges).toHaveLength(1000)
+    expect(graph.subject.schema_snapshot_hash).toBe(wide.schema_snapshot_hash)
+    expect(urls[0].searchParams.has('limit')).toBe(false)
+    const expectedNodes = wide.item_ids.flatMap(id => Array.from({ length: 500 }, (_, i) => `${id}:field_${String(i).padStart(4, '0')}`)).sort()
+    expect(graph.nodes.map(node => `${node.item_id}:${node.field_name}`).sort()).toEqual(expectedNodes)
+    const expectedEdges = wide.execution_ids.flatMap((id, hop) => Array.from({ length: 500 }, (_, i) => {
+      const field = `field_${String(i).padStart(4, '0')}`
+      return `${wide.item_ids[hop]}:${field}:${wide.item_ids[hop + 1]}:${field}:${id}`
+    })).sort()
+    expect(graph.edges.map(edge => `${edge.source.item_id}:${edge.source.field_name}:${edge.target.item_id}:${edge.target.field_name}:${edge.evidence.execution_id}`).sort()).toEqual(expectedEdges)
+    for (const node of graph.nodes) expect(node.schema_snapshot_hash).toBe(wide.schema_hashes[node.item_id])
+    const canvas = frame.locator('.lineage-canvas canvas').first()
+    const search = frame.getByRole('textbox', { name: '搜索字段', exact: true })
+    for (const field of ['field_0000', 'field_0249', 'field_0499']) {
+      const focusStarted = Date.now()
+      await search.fill(field.toUpperCase())
+      await expect(frame.locator('.lineage-field-options button')).toHaveCount(2)
+      await frame.getByRole('button', { name: field, exact: true }).click()
+      await expect(frame.locator('.lineage-inspector strong')).toHaveText(field)
+      const selected = graph.nodes.find(node => node.item_id === wide.target_item_id && node.field_name === field)
+      const focus = lineageFieldConnections(graph.edges, lineageNodeId(selected))
+      expect(focus.fields.size).toBe(3)
+      expect(focus.connections.size).toBe(2)
+      await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => row.text === field).at(-1)?.fontSize).toBeGreaterThanOrEqual(11)
+      timings[`${field}FocusMs`] = Date.now() - focusStarted
+      await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `transfer-wide-${field}-focus.png`), fullPage: true })
+    }
+    await search.fill('field_0000')
+    await frame.getByRole('button', { name: 'field_0000', exact: true }).click()
+    const rootName = graph.nodes.find(node => node.item_id === wide.target_item_id).name
+    const before = await lineageCanvasText(canvas)
+    const header = before.find(row => row.text === rootName || (row.text.endsWith('…') && rootName.startsWith(row.text.slice(0, -1))))
+    expect(header).toBeTruthy()
+    const fieldBefore = before.find(row => row.text === 'field_0000' && Math.abs(row.x - header.x) < 1)
+    expect(fieldBefore).toBeTruthy()
+    await dragLineageTable(page, canvas, header.text, -35, 30)
+    await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => row.text === 'field_0000' && Math.abs(row.x - fieldBefore.x + 35) < 1)?.y).toBeCloseTo(fieldBefore.y + 30, 1)
+    const geometry = await lineageCanvasSnapshot(canvas)
+    const moved = geometry.rows.find(row => row.text === 'field_0000' && Math.abs(row.x - fieldBefore.x + 35) < 1)
+    expect(moved.x).toBeCloseTo(fieldBefore.x - 35, 1)
+    const scale = moved.fontSize / FIELD_FONT_SIZE
+    expect(geometry.paths.some(points => points.some(point => point.command === 'bezierCurveTo') &&
+      Math.abs(points.at(-1).x - moved.x + 12 * scale) < 2 && Math.abs(points.at(-1).y - moved.y) < 2)).toBe(true)
+    await search.fill('')
+    await showFieldOverview(frame)
+    const layoutStarted = Date.now()
+    await frame.getByRole('button', { name: '自动布局', exact: true }).click()
+    await expect(frame.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_\d{4}$/.test(row.text)).length).toBe(1500)
+    timings.autoLayoutAndDrawMs = Date.now() - layoutStarted
+    const box = await canvas.boundingBox()
+    const rows = (await lineageCanvasText(canvas)).filter(row => /^field_\d{4}$/.test(row.text))
+    for (const row of rows) {
+      expect(row.x).toBeGreaterThanOrEqual(0)
+      expect(row.x + row.width).toBeLessThanOrEqual(box.width + 1)
+      expect(row.y).toBeGreaterThanOrEqual(0)
+      expect(row.y).toBeLessThanOrEqual(box.height)
+    }
+    expect(requests).toBe(1)
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-layout.json'), JSON.stringify({ ...timings, graphRequests: requests, nodes: graph.nodes.length, edges: graph.edges.length, geometry, rows }, null, 2))
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-lineage.png'), fullPage: true })
+  } finally {
+    page.off('request', count)
+  }
+}
+
 test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page }) => {
   test.setTimeout(360_000)
   await observeLineageCanvas(page)
@@ -435,6 +519,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     expect(mappingsPayload?.map(mapping => mapping.source)).toEqual(['id', 'region', 'amount'])
     expect(taskPayload?.config?.target?.policy?.apply_mode).toBe('replace')
     await verifyManagerLineage(page, api, env, execution)
+    await verifyWideLineage(page, env)
 
     await json(await api.delete(`/api/v1/transfer/task-definitions/${taskID}`), 'delete Transfer task')
     const deleted = await api.get(`/api/v1/transfer/task-definitions/${taskID}`)
@@ -450,7 +535,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-relational-sql-etl-browser.json'),
       `${JSON.stringify({
-        schema_version: 'addp.transfer-relational-sql-etl-browser/v5',
+        schema_version: 'addp.transfer-relational-sql-etl-browser/v6',
         suite: 'transfer-relational-sql-etl',
         run_id: env.ADDP_ONLINE_TEST_RUN_ID,
         result: 'passed',
@@ -468,7 +553,8 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
         query_field_lineage_verified: true,
         manager_mongodb_field_graph_verified: true,
         manager_orchestrated_field_graph_verified: true,
-        manager_evolved_schema_verified: true
+        manager_evolved_schema_verified: true,
+        manager_wide_field_graph_verified: true
       })}\n`,
       'utf8'
     )

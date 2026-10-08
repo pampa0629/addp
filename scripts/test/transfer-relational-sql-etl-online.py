@@ -39,6 +39,10 @@ TARGET_TABLE = "addp_online_transfer_sql_etl_target"
 NATIVE_TARGET = "addp_online_transfer_field_lineage_target"
 MULTI_TARGET = "addp_online_transfer_multi_query_target"
 NATIVE_DOWNSTREAM = "addp_online_transfer_field_lineage_downstream"
+WIDE_SOURCE = "addp_wide_source"
+WIDE_TARGET = "addp_wide_target"
+WIDE_DOWNSTREAM = "addp_wide_downstream"
+WIDE_FIELDS = tuple(f"field_{i:04d}" for i in range(500))
 MONGODB_SOURCE = "transfer_fixture.activities"
 MONGODB_TARGET = "addp_online_transfer_mongodb_ods"
 MONGODB_FIELDS = (
@@ -71,7 +75,7 @@ def task_name(run_id: str) -> str:
 
 
 def owned_task_names(name: str) -> set[str]:
-    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi"}
+    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop"}
 
 
 def native_task(name: str, source_locator: str, parent_locator: str, target: str, region_source: str, region_target: str) -> dict[str, object]:
@@ -255,6 +259,76 @@ def run_multi_source_lineage(client, engine_id, source, native, name, timeout, o
             "input_schema_hashes": {"base": hashes["base"], "mapped": hashes["mapped"]}, "target_schema_hash": hashes["target"],
             "multiple_origins_verified": True, "cte_join_union_verified": True,
             "exact_field_mappings_verified": True, "graph_snapshots_verified": True}
+
+
+def validate_wide_graph(payload, engine_id, item_ids, hashes, execution_ids):
+    graph = _object(payload, "wide field graph")
+    subject = _object(graph.get("subject"), "wide graph subject")
+    if (graph.get("granularity") != "field" or graph.get("truncated") or graph.get("field_lineage_status") != "complete"
+            or subject.get("kind") != "data_item" or subject.get("item_id") != item_ids[-1]
+            or subject.get("schema_snapshot_hash") != hashes[item_ids[-1]]):
+        raise SuiteError("wide field graph subject/status mismatch")
+    nodes = _array(graph.get("nodes"), "wide nodes")
+    edges = _array(graph.get("edges"), "wide edges")
+    expected_nodes = {(item, field) for item in item_ids for field in WIDE_FIELDS}
+    actual_nodes = {(node.get("item_id"), node.get("field_name")) for node in nodes}
+    if len(nodes) != 1500 or actual_nodes != expected_nodes:
+        raise SuiteError("wide field graph must contain all 1500 precise field nodes")
+    for node in nodes:
+        if node.get("kind") != "field_ref" or node.get("engine_id") != engine_id or node.get("schema_snapshot_hash") != hashes[node["item_id"]]:
+            raise SuiteError("wide field node engine/snapshot mismatch")
+    expected_edges = {(item_ids[i], field, item_ids[i+1], field, execution_ids[i]) for i in range(2) for field in WIDE_FIELDS}
+    actual_edges = set()
+    for edge in edges:
+        source, target = edge["source"], edge["target"]
+        if edge.get("status") != "active" or edge.get("granularity") != "field" or edge.get("transformation") != "direct":
+            raise SuiteError("wide field edge must be active direct evidence")
+        for endpoint in (source, target):
+            if endpoint.get("engine_id") != engine_id or endpoint.get("schema_snapshot_hash") != hashes.get(endpoint.get("item_id")):
+                raise SuiteError("wide field edge engine/snapshot mismatch")
+        actual_edges.add((source.get("item_id"), source.get("field_name"), target.get("item_id"), target.get("field_name"), edge.get("evidence", {}).get("execution_id")))
+    if len(edges) != 1000 or actual_edges != expected_edges:
+        raise SuiteError("wide field graph must contain all 1000 exact execution mappings")
+    return graph
+
+
+def run_wide_lineage(client, engine_id, name, timeout, owned_ids):
+    source = find_item(client, engine_id, f"public.{WIDE_SOURCE}", "table")
+    parent = f"addp://engine/{engine_id}/path/public?type=schema&node_id={positive_int(source.get('node_id'), 'wide source schema')}"
+    item_ids, hashes, execution_ids = [positive_int(source.get("id"), "wide source item")], {}, []
+    for suffix, target_name in (("_wide", WIDE_TARGET), ("_wide_hop", WIDE_DOWNSTREAM)):
+        task = native_task(name + suffix, SUPPORT.build_item_locator(engine_id, source), parent, target_name, "region", "region")
+        task["config"]["transforms"][0]["fields"] = [{"source": field, "target": field, "target_type": "bigint", "nullable": False} for field in WIDE_FIELDS]
+        _, execution = SUPPORT.create_and_run_task(client, task, time.monotonic() + timeout, owned_ids)
+        if execution.get("records_read") != 2 or execution.get("records_written") != 2:
+            raise SuiteError("wide transfer must read/write exactly two rows")
+        source_hash, target_hash = execution_schema_hashes(execution)
+        if item_ids[-1] in hashes and hashes[item_ids[-1]] != source_hash:
+            raise SuiteError("wide hop changed its frozen input schema")
+        hashes[item_ids[-1]] = source_hash
+        target = wait_transfer_target(client, engine_id, f"public.{target_name}", timeout)
+        item_ids.append(positive_int(target.get("id"), "wide target item"))
+        hashes[item_ids[-1]] = target_hash
+        identifier = execution.get("execution_id")
+        if not isinstance(identifier, str) or not identifier:
+            raise SuiteError("wide execution id missing")
+        execution_ids.append(identifier)
+        source = target
+    query = urllib.parse.urlencode({"subject_kind": "data_item", "granularity": "field", "item_id": item_ids[-1], "direction": "both", "depth": 2})
+    deadline, last_error = time.monotonic() + timeout, "collector has not converged"
+    while time.monotonic() < deadline:
+        started = time.monotonic()
+        graph = client.request("GET", "/api/v1/meta/lineage/graph?" + query, (200,)).payload
+        elapsed = time.monotonic() - started
+        try:
+            validate_wide_graph(graph, engine_id, item_ids, hashes, execution_ids)
+            return {"target_locator": SUPPORT.build_item_locator(engine_id, source), "target_item_id": item_ids[-1], "item_ids": item_ids,
+                    "schema_hashes": hashes, "execution_ids": execution_ids, "field_count": 500, "node_count": 1500, "edge_count": 1000,
+                    "query_seconds": elapsed, "schema_snapshot_hash": hashes[item_ids[-1]]}
+        except SuiteError as error:
+            last_error = str(error)
+        time.sleep(1)
+    raise SuiteError("wide graph did not converge: " + last_error)
 
 
 def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, object], name: str, timeout: float, owned_ids: list[int]) -> dict[str, object]:
@@ -794,7 +868,7 @@ def suite_task_ids(client: GatewayClient, exact_name: str | None = None) -> list
 def validate_browser_report(report: object, run_id: str, tenant_id: str, expected_task_name: str) -> dict[str, object]:
     payload = _object(report, "Transfer relational SQL ETL browser report")
     expected = {
-        "schema_version": "addp.transfer-relational-sql-etl-browser/v5",
+        "schema_version": "addp.transfer-relational-sql-etl-browser/v6",
         "suite": "transfer-relational-sql-etl",
         "run_id": run_id,
         "result": "passed",
@@ -813,6 +887,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
         "manager_mongodb_field_graph_verified": True,
         "manager_orchestrated_field_graph_verified": True,
         "manager_evolved_schema_verified": True,
+        "manager_wide_field_graph_verified": True,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
@@ -820,7 +895,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
     return payload
 
 
-def run_browser(repository: Path, environment: Mapping[str, str], expected_task_name: str, lineage: dict[str, object], mongodb_lineage: dict[str, object], orchestrated_lineage: dict[str, object]) -> dict[str, object]:
+def run_browser(repository: Path, environment: Mapping[str, str], expected_task_name: str, lineage: dict[str, object], mongodb_lineage: dict[str, object], orchestrated_lineage: dict[str, object], wide_lineage: dict[str, object]) -> dict[str, object]:
     artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     report_path = artifact_dir / "transfer-relational-sql-etl-browser.json"
     report_path.unlink(missing_ok=True)
@@ -834,6 +909,7 @@ def run_browser(repository: Path, environment: Mapping[str, str], expected_task_
             "ADDP_ONLINE_TRANSFER_FIELD_LINEAGE": json.dumps(lineage),
             "ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE": json.dumps(mongodb_lineage),
             "ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE": json.dumps(orchestrated_lineage),
+            "ADDP_ONLINE_WIDE_FIELD_LINEAGE": json.dumps(wide_lineage),
         }
     )
     result = subprocess.run(
@@ -917,8 +993,9 @@ def main() -> int:
 
         chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
 
+        wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
-        browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain)
+        browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide)
         multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
@@ -927,7 +1004,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v6",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v7",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -941,8 +1018,9 @@ def main() -> int:
             "mongodb_field_lineage": mongodb_lineage,
             "orchestrated_field_lineage": chain,
             "multi_source_field_lineage": multi,
-            "created_resources": 9,
-            "deleted_resources": 9,
+            "wide_field_lineage": wide,
+            "created_resources": 11,
+            "deleted_resources": 11,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))

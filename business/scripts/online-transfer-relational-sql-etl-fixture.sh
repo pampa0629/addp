@@ -12,6 +12,9 @@ NATIVE_DOWNSTREAM=addp_online_transfer_field_lineage_downstream
 MONGODB_TARGET=addp_online_transfer_mongodb_ods
 DIM_TARGET=addp_online_transfer_dim_activity
 DWD_TARGET=addp_online_transfer_dwd_activity
+WIDE_SOURCE=addp_wide_source
+WIDE_TARGET=addp_wide_target
+WIDE_DOWNSTREAM=addp_wide_downstream
 
 fail() {
   echo "Online Transfer relational SQL ETL fixture failed: $*" >&2
@@ -90,6 +93,9 @@ PY_DESCRIPTOR
 
 reset_fixture() {
   postgres_sql <<SQL >/dev/null
+DROP TABLE IF EXISTS public.${WIDE_DOWNSTREAM};
+DROP TABLE IF EXISTS public.${WIDE_TARGET};
+DROP TABLE IF EXISTS public.${WIDE_SOURCE};
 DROP TABLE IF EXISTS public.${TARGET_TABLE};
 DROP TABLE IF EXISTS public.${MULTI_TARGET};
 DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM};
@@ -97,6 +103,15 @@ DROP TABLE IF EXISTS public.${NATIVE_TARGET};
 DROP TABLE IF EXISTS public.${SOURCE_TABLE};
 DROP TABLE IF EXISTS public.${DWD_TARGET};
 DROP TABLE IF EXISTS public.${DIM_TARGET};
+DO \$wide\$
+DECLARE columns_sql text; values_sql text;
+BEGIN
+  SELECT string_agg(format('%I bigint NOT NULL', 'field_' || lpad(i::text, 4, '0')), ',' ORDER BY i),
+         string_agg(i::text, ',' ORDER BY i)
+    INTO columns_sql, values_sql FROM generate_series(0,499) i;
+  EXECUTE 'CREATE TABLE public.${WIDE_SOURCE} (' || columns_sql || ')';
+  EXECUTE 'INSERT INTO public.${WIDE_SOURCE} VALUES (' || values_sql || '),(' || values_sql || ')';
+END; \$wide\$;
 CREATE TABLE public.${DIM_TARGET} (activity_id text PRIMARY KEY, activity_date date NOT NULL);
 CREATE TABLE public.${DWD_TARGET} (activity_id text PRIMARY KEY, activity_date date NOT NULL, person_nickname text NOT NULL, intensity text NOT NULL);
 CREATE TABLE public.${SOURCE_TABLE} (
@@ -117,6 +132,12 @@ SQL
 
 verify_fixture() {
   local values columns
+  for wide_table in "$WIDE_TARGET" "$WIDE_DOWNSTREAM"; do
+    columns=$(postgres_sql -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='$wide_table' AND data_type='bigint' AND is_nullable='NO'")
+    [ "$columns" = 500 ] || fail "wide target must retain 500 non-null bigint columns: $wide_table"
+    values=$(postgres_sql -Atc "SELECT COUNT(*) FROM ((SELECT to_jsonb(t) FROM public.$wide_table t EXCEPT ALL SELECT to_jsonb(s) FROM public.$WIDE_SOURCE s) UNION ALL (SELECT to_jsonb(s) FROM public.$WIDE_SOURCE s EXCEPT ALL SELECT to_jsonb(t) FROM public.$wide_table t)) differences")
+    [ "$values" = 0 ] || fail "wide target complete row multiset differs: $wide_table"
+  done
   values=$(postgres_sql -Atc "SELECT string_agg(CONCAT_WS('|', id, combined_label, combined_amount), ';' ORDER BY id, combined_label) FROM public.${MULTI_TARGET}")
   [ "$values" = '3|north:active|600.50;3|north:active|600.50;4|east:active|801.50;4|east:active|801.50' ] || fail "multi-source CTE/JOIN/UNION rows differ: $values"
   columns=$(postgres_sql -Atc "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema='public' AND table_name='${MULTI_TARGET}'")
@@ -180,7 +201,7 @@ case "$action" in
 CREATE ROLE transfer_writer LOGIN PASSWORD :'writer_password';
 GRANT CONNECT ON DATABASE transfer_fixture TO transfer_writer;
 GRANT USAGE, CREATE ON SCHEMA public TO transfer_writer;
-GRANT SELECT ON public.addp_online_transfer_sql_etl_source TO transfer_writer;
+GRANT SELECT ON public.addp_online_transfer_sql_etl_source, public.addp_wide_source TO transfer_writer;
 GRANT SELECT, INSERT, DELETE ON public.addp_online_transfer_dim_activity, public.addp_online_transfer_dwd_activity TO transfer_writer;
 SQL
     then
