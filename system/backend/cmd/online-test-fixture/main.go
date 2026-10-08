@@ -58,6 +58,14 @@ var securityInitializerPermissions = []string{
 	"security.sensitive_data_type.read", "security.sensitive_data_type.create", "security.detector.read", "security.detector.create",
 }
 
+// Source authorization is preparation-only; the owner consumer receives exact
+// table read Grants, never the ability to issue Grants or manage delegations.
+var securitySourceInitializerPermissions = []string{
+	"system.engine_access_approval_requirement.initialize",
+	"system.engine_access_delegation.create",
+	"system.engine_access_grant.create",
+}
+
 var transferLineagePermissions = []string{
 	"monitor.execution.read",
 	"develop.task.create", "develop.task.read", "develop.task.execute", "develop.task.delete",
@@ -429,6 +437,12 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"] = initializer.AccessToken
+		sourceInitializer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-security-source-initializer", securitySourceInitializerPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = sourceInitializer.AccessToken
 	}
 	if needsEngineProvisioner(*suite) {
 		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
@@ -697,6 +711,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID",
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
+		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID",
 		"ADDP_ONLINE_PARENT_ASSIGNMENT_ID",

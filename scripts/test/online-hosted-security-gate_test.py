@@ -35,6 +35,7 @@ class HostedSecurityGateTest(unittest.TestCase):
                 cat > "$argument" <<'EOF'
             export ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN=engine-token
             export ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN=initializer-token
+            export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN=source-initializer-token
             export ADDP_ONLINE_TEST_TENANT_ID=2
             export ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
             export ADDP_ONLINE_TEST_USER_USERNAME=external-online-consumer
@@ -60,6 +61,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             import os, sys
             assert sys.argv[1:] == ['--initialize']
             assert os.environ['ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN'] == 'initializer-token'
+            assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-initializer-token'
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('initialize\\n')
             sys.exit(1 if os.environ.get('ADDP_TEST_INITIALIZE_FAIL') == '1' else 0)
         ''')
@@ -68,6 +70,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             set -euo pipefail
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
             [ -z "${ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN:-}" ]
+            [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ]
             [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 17 ]
             [ "$ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID" = 23 ]
             [ "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" = consumer-token ]

@@ -114,6 +114,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, rasterWorkflowPermissions...)
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
+	allPermissions = append(allPermissions, securitySourceInitializerPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
 		if !exists {
@@ -217,6 +218,7 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID":    "86",
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN":   "addp_at_engine",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN": "addp_at_security_initializer",
+		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN":   "addp_at_source_initializer",
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":     "addp_at_foreign",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":             "84",
 		"ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN":  "addp_at_raster_platform",
@@ -247,6 +249,9 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	}
 	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN='addp_at_security_initializer'\n") {
 		t.Fatal("fixture environment omitted the exported Security initialization token")
+	}
+	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='addp_at_source_initializer'\n") {
+		t.Fatal("fixture environment omitted the separate source initialization token")
 	}
 	for _, value := range []string{"addp_at_admin", "addp_at_creator", "addp_at_reader", "addp_at_foreign", "84", "86", "external-online-public-reader", "reader'\"'\"'quoted-password"} {
 		if !strings.Contains(string(content), value) {
@@ -395,6 +400,14 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	for _, key := range []string{"security.classification.create", "security.grade.create", "security.detector.create", "system.engine.create"} {
 		if contains(permissions, key) {
 			t.Fatalf("preparation permission leaked into consumer: %s", key)
+		}
+	}
+	if len(securitySourceInitializerPermissions) != 3 {
+		t.Fatal("source initializer must have only its three formal command qualifications")
+	}
+	for _, key := range securitySourceInitializerPermissions {
+		if contains(permissions, key) || contains(securityInitializerPermissions, key) || contains(consumerPermissions, key) {
+			t.Fatalf("source preparation permission leaked: %s", key)
 		}
 	}
 }

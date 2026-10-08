@@ -481,6 +481,72 @@ class ManagerExportBrowserTest(unittest.TestCase):
 
 
 class HostedGovernanceInitializationTest(unittest.TestCase):
+    def source_clients(self):
+        authorizer = Mock()
+        authorizer.request.side_effect = lambda method, path, expected, body=None: ONLINE.SUPPORT.Response(
+            200, {"principal": {"type": "user", "id": "8"},
+                  "context": {"type": "tenant", "tenant_id": "2"}}) if method == "GET" else ONLINE.SUPPORT.Response(
+                      201, dict(body, engine_id=str(body["catalog_path"]["engine_id"]), approval_mode="independent", revocation=None))
+        consumer = Mock()
+        consumer.request.return_value = ONLINE.SUPPORT.Response(200, {
+            "principal": {"type": "user", "id": "7"},
+            "context": {"type": "tenant", "tenant_id": "2"},
+            "token": {"type": "first_party_access_token"},
+            "authorization": {"role_assignments": [{"role_key": "online.security", "permissions": sorted(ONLINE.REQUIRED_PERMISSIONS)}]}})
+        return authorizer, consumer
+
+    def test_source_grants_cover_only_four_exact_tables_for_the_consumer(self):
+        authorizer, consumer = self.source_clients()
+        ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture")
+        writes = [call for call in authorizer.request.call_args_list if call.args[0] == "POST"]
+        self.assertEqual(len(writes), 4)
+        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 4)
+        actual = set()
+        for call in writes:
+            body = call.args[3]
+            engine = body["catalog_path"]["engine_id"]
+            self.assertEqual(call.args[1], f"/api/v1/system/engines/{engine}/access_grants")
+            self.assertEqual(call.args[2], (201,))
+            self.assertEqual(body["catalog_path"]["version"], "catalog.path/v1")
+            root, namespace, table = body["catalog_path"]["segments"]
+            self.assertEqual(root, {"term": "server", "kind": "server", "name": ""})
+            self.assertEqual(namespace["kind"], "namespace")
+            self.assertEqual(table["term"], "table")
+            self.assertEqual(table["kind"], "table")
+            self.assertEqual(body["recipient_type"], "user")
+            self.assertEqual(body["recipient_id"], "7")
+            self.assertEqual(body["action"], "read")
+            self.assertEqual(body["requirement_version"], "1")
+            self.assertIs(body["initialize_approval"], True)
+            self.assertEqual(body["expiry_mode"], "until_revoked")
+            actual.add((engine, namespace["term"], namespace["name"], table["name"]))
+        self.assertEqual(actual, {
+            (17, "schema", "addp_online_security", "spatial_algorithm_source"),
+            (17, "schema", "addp_online_security", "spatial_algorithm_transfer"),
+            (17, "schema", "addp_online_security", "mysql_email_transfer"),
+            (23, "database", "security_fixture", "customers"),
+        })
+
+    def test_source_preparation_rejects_wrong_tenant_and_self_grant_before_writing(self):
+        for tenant, principal in (("9", "8"), ("2", "7")):
+            authorizer, consumer = self.source_clients()
+            authorizer.request.side_effect = None
+            authorizer.request.return_value = ONLINE.SUPPORT.Response(200, {
+                "principal": {"type": "user", "id": principal},
+                "context": {"type": "tenant", "tenant_id": tenant}})
+            with self.subTest(tenant=tenant, principal=principal), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture")
+            self.assertTrue(all(call.args[0] == "GET" for call in authorizer.request.call_args_list))
+
+    def test_source_preparation_rejects_a_mismatched_issuance_without_continuing(self):
+        authorizer, consumer = self.source_clients()
+        context = authorizer.request("GET", "unused", (200,))
+        authorizer.reset_mock()
+        authorizer.request.side_effect = [context, ONLINE.SUPPORT.Response(201, {"recipient_id": "8"})]
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture")
+        self.assertEqual(sum(call.args[0] == "POST" for call in authorizer.request.call_args_list), 1)
+
     def test_initialization_rejects_personal_environment(self):
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.require_hosted_initialization({})

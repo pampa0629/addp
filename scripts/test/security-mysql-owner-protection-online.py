@@ -1118,6 +1118,48 @@ def require_hosted_initialization(environment: Mapping[str, str]) -> None:
             raise SuiteError("Security initialization requires disposable Hosted Online: " + key)
 
 
+def initialize_source_grants(
+    authorizer: GatewayClient, consumer: GatewayClient, tenant_id: int,
+    postgres_engine_id: int, mysql_engine_id: int, mysql_database: str,
+) -> None:
+    """Prepare precise reads through System's sole independent Grant command."""
+    identity = validate_user_identity(consumer, tenant_id)
+    context = _object(authorizer.request("GET", "/api/v1/system/auth/context", (200,)).payload,
+                      "source initializer AuthContext")
+    principal = _object(context.get("principal"), "source initializer principal")
+    scope = _object(context.get("context"), "source initializer context")
+    if (principal.get("type") != "user" or scope.get("type") != "tenant"
+            or scope.get("tenant_id") != str(tenant_id)
+            or principal.get("id") == identity["principal_id"]):
+        raise SuiteError("source initializer must be a separate User in the disposable Tenant")
+    targets = [
+        (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_SOURCE),
+        (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_TARGET),
+        (postgres_engine_id, "schema", TARGET_SCHEMA, TARGET_TABLE),
+        (mysql_engine_id, "database", mysql_database, SOURCE_TABLE),
+    ]
+    for engine_id, namespace_term, namespace, table in targets:
+        body = {
+            "request_id": str(uuid.uuid4()),
+            "catalog_path": {"version": "catalog.path/v1", "engine_id": engine_id, "segments": [
+                {"term": "server", "kind": "server", "name": ""},
+                {"term": namespace_term, "kind": "namespace", "name": namespace},
+                {"term": "table", "kind": "table", "name": table},
+            ]},
+            "requirement_version": "1", "initialize_approval": True,
+            "recipient_type": "user", "recipient_id": identity["principal_id"],
+            "action": "read", "expiry_mode": "until_revoked",
+            "reason": "Disposable Security four-owner exact table read acceptance",
+        }
+        issued = _object(authorizer.request("POST", f"/api/v1/system/engines/{engine_id}/access_grants",
+                                           (201,), body).payload, "source Grant issuance")
+        expected = {key: body[key] for key in (
+            "request_id", "catalog_path", "requirement_version", "recipient_type", "recipient_id", "action", "expiry_mode")}
+        expected.update(engine_id=str(engine_id), approval_mode="independent", revocation=None)
+        if any(issued.get(key) != value for key, value in expected.items()):
+            raise SuiteError("source Grant issuance does not match its exact consumer and table")
+
+
 def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
     context = _object(
         client.request("GET", "/api/v1/system/auth/context", (200,)).payload,
@@ -1218,7 +1260,7 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--initialize", action="store_true", help="initialize fresh Hosted governance through formal APIs")
+    parser.add_argument("--initialize", action="store_true", help="initialize fresh Hosted governance and exact table read Grants through formal APIs")
     arguments = parser.parse_args()
     signal.signal(signal.SIGTERM, handle_termination)
     if arguments.initialize:
@@ -1226,7 +1268,15 @@ def main() -> int:
         initialize_governance(GatewayClient(required_environment("GATEWAY_URL"),
             required_environment("ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"), 30),
             positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"))
-        print("Disposable Security governance is ready")
+        initialize_source_grants(
+            GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), 30),
+            GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), 30),
+            positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"),
+            positive_int(required_environment("ADDP_ONLINE_TEST_ENGINE_ID"), "PostgreSQL Engine id"),
+            positive_int(required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID"), "MySQL Engine id"),
+            required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE"),
+        )
+        print("Disposable Security governance and four exact table read Grants are ready")
         return 0
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")

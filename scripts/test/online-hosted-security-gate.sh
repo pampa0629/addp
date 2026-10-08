@@ -34,5 +34,5 @@ run_logged python3 scripts/test/online-engine-registration.py \
 source "$ADDP_ONLINE_SECRET_DIR/mysql-engine.env"
 export ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
 run_logged python3 scripts/test/security-mysql-owner-protection-online.py --initialize
-unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN
+unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
