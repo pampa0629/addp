@@ -408,12 +408,19 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
         "data_type": "model_3d", "format": format_name, "layout": "single",
     }.items()):
         raise SuiteError(f"{format_name} fixture must be scanned as model_3d/single")
-    format_info = _object(attributes.get("format_info"), f"{format_name} format_info")
-    native = _object(format_info.get(format_name), f"{format_name} native metadata")
-    if native.get("texture_refs") != ["texture.png"] or native.get("scan_complete") is not True:
-        raise SuiteError(f"{format_name} scan must preserve its declared PNG texture")
-    if format_name == "dae" and native.get("unit_meter") != 0.01:
-        raise SuiteError("DAE fixture must preserve centimeter units")
+    if format_name in {"dae", "3ds", "ifc"}:
+        format_info = _object(attributes.get("format_info"), f"{format_name} format_info")
+        native = _object(format_info.get(format_name), f"{format_name} native metadata")
+        if native.get("scan_complete") is not True:
+            raise SuiteError(f"{format_name} metadata scan must be complete")
+        if format_name in {"dae", "3ds"} and native.get("texture_refs") != ["texture.png"]:
+            raise SuiteError(f"{format_name} scan must preserve its declared PNG texture")
+        if format_name == "dae" and native.get("unit_meter") != 0.01:
+            raise SuiteError("DAE fixture must preserve centimeter units")
+        if format_name == "ifc" and (native.get("schema_identifiers") != ["IFC4"]
+                or native.get("schema_version") != "IFC4" or native.get("entity_count") != 16
+                or _object(native.get("entity_type_counts"), "IFC entity types").get("IFCBUILDINGELEMENTPROXY") != 1):
+            raise SuiteError("IFC fixture must preserve its IFC4 schema and 16-entity BIM summary")
     query = urllib.parse.urlencode({"item_fingerprint": item["fingerprint"], "page": 1, "page_size": 100})
     results = _object(client.request("GET", f"/api/v1/manager/model_3d_glb?{query}", (200,)).payload, "initial model results")
     if non_negative_int(results.get("total"), "initial model result total") != 0:
@@ -431,7 +438,9 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
     return ArtifactFixture(format_name, item, build_item_locator(engine_id, item))
 
 
-def validate_model_glb(raw: bytes) -> dict[str, object]:
+def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
+    if format_name not in {"dae", "3ds", "ifc", "osgb"}:
+        raise SuiteError("unexpected model fixture format")
     if not 20 <= len(raw) <= 2 * 1024 * 1024:
         raise SuiteError("fixture GLB content must be nonempty and bounded to 2 MiB")
     magic, version, total = struct.unpack_from("<4sII", raw)
@@ -449,41 +458,128 @@ def validate_model_glb(raw: bytes) -> dict[str, object]:
     buffers = _array(doc.get("buffers"), "fixture GLB buffers")
     if len(buffers) != 1 or "uri" in _object(buffers[0], "fixture GLB buffer"):
         raise SuiteError("fixture GLB must not depend on external buffers")
-    images = _array(doc.get("images"), "fixture GLB images")
-    if len(images) != 1:
-        raise SuiteError("fixture GLB must preserve exactly one embedded PNG image")
-    image = _object(images[0], "fixture GLB image")
+    declared_size = positive_int(buffers[0].get("byteLength"), "fixture buffer length")
+    if not declared_size <= len(binary) <= declared_size + 3:
+        raise SuiteError("fixture embedded buffer length differs from BIN chunk")
     views = _array(doc.get("bufferViews"), "fixture GLB bufferViews")
-    image_view = non_negative_int(image.get("bufferView"), "fixture PNG bufferView")
-    if image_view >= len(views) or "uri" in image or image.get("mimeType") != "image/png":
-        raise SuiteError("fixture GLB image must be an embedded PNG bufferView")
-    view = _object(views[image_view], "fixture PNG bufferView")
-    start = non_negative_int(view.get("byteOffset", 0), "fixture PNG offset")
-    length = positive_int(view.get("byteLength"), "fixture PNG length")
-    if view.get("buffer") != 0 or start + length > len(binary) or binary[start:start + 8] != b"\x89PNG\r\n\x1a\n":
-        raise SuiteError("fixture PNG bufferView must contain real embedded PNG bytes")
-    textures = _array(doc.get("textures"), "fixture GLB textures")
-    materials = _array(doc.get("materials"), "fixture GLB materials")
-    accessors = _array(doc.get("accessors"), "fixture GLB accessors")
-    meshes = _array(doc.get("meshes"), "fixture GLB meshes")
-    for mesh in meshes:
-        for primitive in _array(_object(mesh, "fixture mesh").get("primitives"), "fixture primitives"):
-            primitive = _object(primitive, "fixture primitive")
-            attributes = _object(primitive.get("attributes"), "fixture vertex attributes")
-            position_index = non_negative_int(attributes.get("POSITION"), "fixture POSITION accessor")
-            material_index = non_negative_int(primitive.get("material"), "fixture primitive material")
-            if position_index >= len(accessors) or material_index >= len(materials):
-                raise SuiteError("fixture GLB mesh references invalid accessors or materials")
-            position = _object(accessors[position_index], "fixture POSITION")
-            material = _object(materials[material_index], "fixture material")
-            pbr = _object(material.get("pbrMetallicRoughness"), "fixture PBR material")
-            texture = _object(pbr.get("baseColorTexture"), "fixture diffuse texture")
-            texture_index = non_negative_int(texture.get("index"), "fixture diffuse texture index")
-            if texture_index >= len(textures) or _object(textures[texture_index], "fixture texture").get("source") != 0:
-                raise SuiteError("fixture diffuse material must use the embedded PNG")
-            if position.get("type") == "VEC3" and position.get("componentType") == 5126 and position.get("count") == 3 and "TEXCOORD_0" in attributes:
-                return {"vertex_count": 3, "embedded_images": 1, "image_mime_type": "image/png", "size_bytes": len(raw)}
-    raise SuiteError("fixture GLB must contain a textured three-vertex mesh")
+    def view_bytes(index):
+        index = non_negative_int(index, "fixture bufferView index")
+        if index >= len(views):
+            raise SuiteError("fixture bufferView index is out of bounds")
+        view = _object(views[index], "fixture bufferView")
+        start = non_negative_int(view.get("byteOffset", 0), "fixture bufferView offset")
+        length = positive_int(view.get("byteLength"), "fixture bufferView length")
+        if view.get("buffer") != 0 or start + length > declared_size:
+            raise SuiteError("fixture bufferView exceeds embedded bytes")
+        return binary[start:start + length], view
+    images = _array(doc.get("images", []), "fixture GLB images")
+    mime_type = "image/jpeg" if format_name == "osgb" else "image/png"
+    image_count = 0 if format_name == "ifc" else 1
+    if len(images) != image_count:
+        raise SuiteError(f"fixture GLB must preserve exactly {image_count} embedded images")
+    for image in images:
+        image = _object(image, "fixture image")
+        if "uri" in image or image.get("mimeType") != mime_type:
+            raise SuiteError("fixture image must use the expected embedded image bufferView")
+        image_bytes, _ = view_bytes(image.get("bufferView"))
+        signature = b"\xff\xd8\xff" if format_name == "osgb" else b"\x89PNG\r\n\x1a\n"
+        if not image_bytes.startswith(signature):
+            raise SuiteError("fixture image bufferView must contain real encoded image bytes")
+    textures = _array(doc.get("textures", []), "fixture textures")
+    materials = _array(doc.get("materials"), "fixture materials")
+    accessors = _array(doc.get("accessors"), "fixture accessors")
+    meshes = _array(doc.get("meshes"), "fixture meshes")
+    if len(meshes) != 1:
+        raise SuiteError("fixture must retain exactly one mesh")
+    primitives = _array(_object(meshes[0], "fixture mesh").get("primitives"), "fixture primitives")
+    if len(primitives) != 1:
+        raise SuiteError("fixture must retain exactly one primitive")
+    primitive = _object(primitives[0], "fixture primitive")
+    attributes = _object(primitive.get("attributes"), "fixture attributes")
+    def accessor(index):
+        index = non_negative_int(index, "fixture accessor index")
+        if index >= len(accessors):
+            raise SuiteError("fixture accessor index is out of bounds")
+        return _object(accessors[index], "fixture accessor")
+    position = accessor(attributes.get("POSITION"))
+    expected_vertices = 24 if format_name == "ifc" else 3
+    if (position.get("type") != "VEC3" or position.get("componentType") != 5126
+            or position.get("count") != expected_vertices or primitive.get("mode", 4) != 4):
+        raise SuiteError("fixture mesh must preserve its triangle geometry and vertex count")
+    position_bytes, position_view = view_bytes(position.get("bufferView"))
+    offset = non_negative_int(position.get("byteOffset", 0), "fixture POSITION offset")
+    stride = positive_int(position_view.get("byteStride", 12), "fixture POSITION stride")
+    if stride < 12 or offset + (expected_vertices - 1) * stride + 12 > len(position_bytes):
+        raise SuiteError("fixture POSITION bytes are truncated")
+    points = [struct.unpack_from("<3f", position_bytes, offset + i * stride) for i in range(expected_vertices)]
+    if not all(math.isfinite(value) for point in points for value in point):
+        raise SuiteError("fixture POSITION must contain finite coordinates")
+    # Positions are mesh-local: Assimp retains DAE centimeters and puts the
+    # meter conversion on the scene root. Verify dimensions after scene transforms.
+    nodes = _array(doc.get("nodes"), "fixture nodes")
+    scenes = _array(doc.get("scenes"), "fixture scenes")
+    if len(scenes) != 1:
+        raise SuiteError("fixture must retain exactly one scene")
+    identity = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.]
+    world_points = []
+    def visit(index, parent, ancestors):
+        index = non_negative_int(index, "fixture node index")
+        if index >= len(nodes) or index in ancestors:
+            raise SuiteError("fixture scene contains an invalid node or cycle")
+        node = _object(nodes[index], "fixture node")
+        if any(key in node for key in ("translation", "rotation", "scale")):
+            raise SuiteError("fixture converters must encode transforms as matrices")
+        local = _array(node.get("matrix", identity), "fixture node matrix")
+        if len(local) != 16 or any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in local):
+            raise SuiteError("fixture node matrix must contain sixteen finite numbers")
+        world = [sum(parent[k * 4 + row] * local[column * 4 + k] for k in range(4))
+                 for column in range(4) for row in range(4)]
+        if "mesh" in node:
+            if node["mesh"] != 0:
+                raise SuiteError("fixture node must reference its only mesh")
+            world_points.extend(tuple(sum(world[k * 4 + axis] * point[k] for k in range(3)) + world[12 + axis]
+                                      for axis in range(3)) for point in points)
+        for child in _array(node.get("children", []), "fixture node children"):
+            visit(child, world, ancestors | {index})
+    for node_index in _array(_object(scenes[0], "fixture scene").get("nodes"), "fixture scene roots"):
+        visit(node_index, identity, set())
+    if len(world_points) != expected_vertices:
+        raise SuiteError("fixture scene must render its only mesh exactly once")
+    extent = [max(point[axis] for point in world_points) - min(point[axis] for point in world_points) for axis in range(3)]
+    expected_extent = [1., 1., 1.] if format_name == "ifc" else [1., 1., 0.] if format_name == "osgb" else [1., 2., 0.]
+    if any(not math.isclose(actual, expected, abs_tol=1e-5) for actual, expected in zip(sorted(extent), sorted(expected_extent))):
+        raise SuiteError("fixture geometry extent must preserve its source dimensions")
+    if "indices" in primitive:
+        indices = accessor(primitive["indices"])
+        expected_indices = 36 if format_name == "ifc" else 3
+        if indices.get("count") != expected_indices or indices.get("type") != "SCALAR":
+            raise SuiteError("fixture triangle index count changed")
+        index_bytes, _ = view_bytes(indices.get("bufferView"))
+        index_encoding = {5121: "B", 5123: "H", 5125: "I"}.get(indices.get("componentType"))
+        if index_encoding is None:
+            raise SuiteError("fixture triangle indices must use unsigned integers")
+        index_offset = non_negative_int(indices.get("byteOffset", 0), "fixture index offset")
+        index_length = expected_indices * struct.calcsize(index_encoding)
+        if index_offset + index_length > len(index_bytes):
+            raise SuiteError("fixture triangle index bytes are truncated")
+        decoded_indices = struct.unpack_from("<" + str(expected_indices) + index_encoding, index_bytes, index_offset)
+        if any(index >= expected_vertices for index in decoded_indices):
+            raise SuiteError("fixture triangle index exceeds vertex count")
+    elif format_name == "ifc":
+        raise SuiteError("IFC cube must preserve its twelve indexed triangles")
+    if image_count:
+        if "TEXCOORD_0" not in attributes or accessor(attributes["TEXCOORD_0"]).get("count") != expected_vertices:
+            raise SuiteError("fixture textured mesh must preserve UV coordinates")
+        material_index = non_negative_int(primitive.get("material"), "fixture material index")
+        if material_index >= len(materials):
+            raise SuiteError("fixture material index is out of bounds")
+        material = _object(materials[material_index], "fixture material")
+        texture = _object(_object(material.get("pbrMetallicRoughness"), "fixture PBR").get("baseColorTexture"), "fixture diffuse texture")
+        texture_index = non_negative_int(texture.get("index"), "fixture texture index")
+        if texture_index >= len(textures) or _object(textures[texture_index], "fixture texture").get("source") != 0:
+            raise SuiteError("fixture diffuse material must use the embedded image")
+    return {"vertex_count": expected_vertices, "extent": extent, "embedded_images": image_count,
+            "image_mime_type": mime_type if image_count else None, "size_bytes": len(raw)}
 
 
 def generate_model_glb(client: GatewayClient, model: ArtifactFixture, tenant_id: int, timeout: float) -> None:
@@ -523,7 +619,7 @@ def generate_model_glb(client: GatewayClient, model: ArtifactFixture, tenant_id:
     if not ranged.raw.startswith(b"glTF") or len(ranged.raw) != 64:
         raise SuiteError("model GLB Range response must be a 64-byte GLB prefix")
     content = client.request("GET", expected_url, (200,), headers={"Accept": "model/gltf-binary"})
-    model.artifact = {**validate_model_glb(content.raw), "range_bytes": len(ranged.raw), "storage_domain": "addp-infra", "preview_url": expected_url}
+    model.artifact = {**validate_model_glb(content.raw, model.format), "range_bytes": len(ranged.raw), "storage_domain": "addp-infra", "preview_url": expected_url}
     model.mode_changed = True
     client.request("PATCH", "/api/v1/manager/preview-state/preferred-mode", (200,), {"locator": model.locator, "preferred_mode": "map_quick_view"})
 
@@ -817,7 +913,7 @@ def run_scenario(
     scan_execution_id = wait_for_meta_scan(client, engine_id, deadline)
     pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
     pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
-    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds")]
+    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds", "ifc", "osgb")]
     raster_item = find_fixture_item(client, engine_id, f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']}", "raster")
     raster = ArtifactFixture("raster", raster_item, build_item_locator(engine_id, raster_item))
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
@@ -1032,7 +1128,7 @@ def run_scenario(
                 "pptx_pdf": {"task_id": pptx_task_id, "execution_id": pptx_execution_id, "result_id": pptx_result_id},
                 **{model.format: {"task_id": model.task_id, "execution_id": model.execution_id, "result_id": model.result_id} for model in model_fixtures},
             },
-            "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 5, "outputs": 5, "manager_monitor_equal": True},
+            "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 3 + len(model_fixtures), "outputs": 3 + len(model_fixtures), "manager_monitor_equal": True},
             "artifacts": {
                 "point_cloud": {"name": pointcloud_output_name, "range_bytes": len(pointcloud_content.raw), "storage_domain": "addp-infra"},
                 "pptx_pdf": {"page_count": pptx_page_count, "size_bytes": pptx_size_bytes, "range_bytes": len(pptx_content.raw), "storage_domain": "addp-infra", "cache_reused": True, "physical": pptx_physical_evidence},

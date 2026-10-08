@@ -263,7 +263,7 @@ bash scripts/online-tidb-consumer-fixture.sh stop
 
 ### scripts/online-manager-minio-fixture.sh - Manager 内部产物血缘 T4 Fixture
 
-该入口要求 `ADDP_ONLINE_HOST=1`：Manager 内部产物套件由 GitHub Hosted Linux x86_64 运行，混合检索套件仍由 macOS 专用 Runner 运行。它通过 `business/minio` Compose service 管理独立 Business MinIO，用 Python 标准库在临时目录确定性生成 LAS 1.2 三点 EPSG:3857 夹具，并发布仓库已跟踪的 3 页 PPTX；Hosted 套件无需本机 NFS 样例或永久 Engine Instance，退出时销毁业务容器、网络和数据卷。只有混合检索套件额外发布专用部署中的 JPG。模型夹具由脚本在操作系统临时目录用 Python 标准库确定性生成：`model3d/dae/model.dae` 和 `model3d/3ds/model.3ds` 各包含一个带 UV 的静态三角形，并引用同目录的 `texture.png`；两者不引入外部下载或长期二进制样例。DAE 使用厘米单位，生成后的两类模型均为 1 × 2 的三角形。模型 object 路径固定为该专用夹具的协议，不增加部署配置。脚本只接受仓库外 `ADDP_ONLINE_MANAGER_MINIO_*` 变量，不读取或生成 `business/.env`，也不接触 Manager infra MinIO。个人开发环境不得调用该脚本。
+该入口要求 `ADDP_ONLINE_HOST=1`：Manager 内部产物套件由 GitHub Hosted Linux x86_64 运行，混合检索套件仍由 macOS 专用 Runner 运行。它通过 `business/minio` Compose service 管理独立 Business MinIO，用 Python 标准库在临时目录确定性生成 LAS 1.2 三点 EPSG:3857 夹具，并发布仓库已跟踪的 3 页 PPTX；Hosted 套件无需本机 NFS 样例或永久 Engine Instance，退出时销毁业务容器、网络和数据卷。只有混合检索套件额外发布专用部署中的 JPG。模型夹具由脚本在操作系统临时目录用 Python 标准库确定性生成：`model3d/dae/model.dae` 和 `model3d/3ds/model.3ds` 各包含一个带 UV 的静态三角形，并引用同目录的 `texture.png`；两者不引入外部下载。IFC 与单体 OSGB 使用 `business/fixtures/manager/addp_online_model_fixture.*` 自有夹具：IFC 来源于 Model3D 原生预检的 IFC4 米制立方体；OSGB 由现有 `docker/converter/tests/osgb_compression_smoke.cpp` 的 `generate ... dxt5` 生成，保留 zlib 压缩、8 × 8 红色 DXT5 贴图和带 UV 的三角形，不使用第三方数据或开发容器。DAE 使用厘米单位，生成后的两类模型均为 1 × 2 的三角形。模型 object 路径固定为该专用夹具的协议，不增加部署配置。脚本只接受仓库外 `ADDP_ONLINE_MANAGER_MINIO_*` 变量，不读取或生成 `business/.env`，也不接触 Manager infra MinIO。个人开发环境不得调用该脚本。
 
 ```bash
 bash scripts/online-manager-minio-fixture.sh start

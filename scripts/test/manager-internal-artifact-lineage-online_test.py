@@ -23,12 +23,12 @@ def response(status, payload=None, *, raw=b""):
     return SUITE.Response(status, payload if payload is not None else {}, {}, raw)
 
 
-def textured_glb():
+def fixture_glb(format_name="dae"):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
     png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">2I5B", 1, 1, 8, 2, 0, 0, 0))
            + chunk(b"IDAT", zlib.compress(b"\x00\xff\x40\x20")) + chunk(b"IEND", b""))
-    binary = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 2, 0) + struct.pack("<6f", 0, 0, 1, 0, 0, 1) + png
+    binary = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1 if format_name == "osgb" else 2, 0) + struct.pack("<6f", 0, 0, 1, 0, 0, 1) + png
     doc = {
         "asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
         "buffers": [{"byteLength": len(binary)}],
@@ -38,6 +38,21 @@ def textured_glb():
         "images": [{"bufferView": 2, "mimeType": "image/png"}], "textures": [{"source": 0}],
         "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
     }
+    if format_name == "osgb":
+        # Minimal encoded-image signature is sufficient for the runner unit fixture;
+        # Hosted T4 and native converter tests consume and render real JPEG bytes.
+        binary = binary[:60] + b"\xff\xd8\xff\xe0fixture-jpeg"
+        doc["images"][0]["mimeType"] = "image/jpeg"
+        doc["bufferViews"][2]["byteLength"] = len(binary) - 60
+    elif format_name == "ifc":
+        points = [(x, y, z) for z in (0., 1.) for y in (-.5, .5) for x in (-.5, .5)] * 3
+        binary = b"".join(struct.pack("<3f", *point) for point in points) + struct.pack("<36I", *([0, 1, 2] * 12))
+        doc.pop("images"); doc.pop("textures")
+        doc["materials"] = [{"pbrMetallicRoughness": {"baseColorFactor": [.7, .7, .7, 1.]}}]
+        doc["bufferViews"] = [{"buffer": 0, "byteLength": 288}, {"buffer": 0, "byteOffset": 288, "byteLength": 144}]
+        doc["accessors"] = [{"bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3"}, {"bufferView": 1, "componentType": 5125, "count": 36, "type": "SCALAR"}]
+        doc["meshes"][0]["primitives"][0] = {"attributes": {"POSITION": 0}, "indices": 1, "material": 0}
+    doc["buffers"][0]["byteLength"] = len(binary)
     encoded = json.dumps(doc).encode()
     encoded += b" " * (-len(encoded) % 4)
     binary += b"\0" * (-len(binary) % 4)
@@ -81,15 +96,15 @@ class FakeGatewayClient:
             format_name: {"item_id": item_id, "task_id": item_id + 110, "result_id": item_id + 210,
                           "fingerprint": fingerprint * 64, "task_exists": False, "result_exists": False,
                           "locator": f"addp://engine/27/path/addp-online/model3d/{format_name}/model.{format_name}?type=object&item_id={item_id}"}
-            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"))
+            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"), ("ifc", 96, "f"), ("osgb", 97, "g"))
         }
         self.raster = {'id': 305, 'item_id': 95, 'task_id': 205, 'result_id': 305, 'fingerprint': 'e'*64,
             'item_fingerprint': 'e'*64, 'task_exists': False, 'result_exists': False,
             'locator': 'addp://engine/27/path/addp-online/raster/source.tif?type=object&item_id=95'}
         self.cog = b'II*\0' + bytes(range(256))
         self.raster_mode = 'basic_preview'
-        self.glb = textured_glb()
-        self.model_modes = {"dae": "basic_preview", "3ds": "basic_preview"}
+        self.glbs = {fmt: fixture_glb(fmt) for fmt in self.models}
+        self.model_modes = dict.fromkeys(self.models, "basic_preview")
 
     def lineage_execution(self, task_type, format_name=None):
         if task_type == SUITE.RASTER_TASK_TYPE:
@@ -240,7 +255,7 @@ class FakeGatewayClient:
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
                 "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": 1024,
                 "attributes": {"item": {"data_type": "model_3d", "format": format_name, "layout": "single"},
-                               "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01}}},
+                               "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01, "schema_identifiers": ["IFC4"], "schema_version": "IFC4", "entity_count": 16, "entity_type_counts": {"IFCBUILDINGELEMENTPROXY": 1}}} if format_name != "osgb" else {}},
             } for format_name, model in self.models.items()])
         parsed = urllib.parse.urlsplit(path)
         query = urllib.parse.parse_qs(parsed.query)
@@ -274,7 +289,7 @@ class FakeGatewayClient:
             if path == f"/api/v1/manager/model_3d_glb/{model['result_id']}/content":
                 if not model["result_exists"]:
                     return response(404)
-                return response(206 if headers.get("Range") else 200, raw=self.glb[:64] if headers.get("Range") else self.glb)
+                return response(206 if headers.get("Range") else 200, raw=self.glbs[format_name][:64] if headers.get("Range") else self.glbs[format_name])
             if path == f"/api/v1/manager/model_3d_glb/{model['result_id']}" and method == "DELETE":
                 model["result_exists"] = False
                 return response(200)
@@ -609,8 +624,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                     Path("/repository"), scenario_environment(artifact_dir), browser
                 )
 
-        self.assertEqual(report["lineage"]["inputs"], 5)
-        self.assertEqual(report["lineage"]["outputs"], 5)
+        self.assertEqual(report["lineage"]["inputs"], 7)
+        self.assertEqual(report["lineage"]["outputs"], 7)
         self.assertTrue(report["artifacts"]["pptx_pdf"]["cache_reused"])
         self.assertEqual(report['raster_cog']['mode'], 'direct')
         self.assertTrue(report['raster_cog']['physical']['cog_valid'])
@@ -632,14 +647,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             self.assertFalse(model["task_exists"])
             self.assertFalse(model["result_exists"])
             self.assertEqual(client.model_modes[format_name], "basic_preview")
-            self.assertEqual(report["artifacts"][format_name]["embedded_images"], 1)
-            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 3)
+            self.assertEqual(report["artifacts"][format_name]["embedded_images"], 0 if format_name == "ifc" else 1)
+            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 24 if format_name == "ifc" else 3)
         self.assertFalse(client.pointcloud_task_exists)
         self.assertFalse(client.pointcloud_result_exists)
         self.assertFalse(client.pptx_task_exists)
         self.assertFalse(client.pptx_result_exists)
         self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
-        self.assertEqual(client.model_modes, {"dae": "basic_preview", "3ds": "basic_preview"})
+        self.assertEqual(client.model_modes, dict.fromkeys(client.models, "basic_preview"))
         self.assertEqual(client.pptx_capability_calls, 3)
         self.assertEqual(browser_calls[0][1]["pptx_page_count"], 3)
         self.assertEqual([call[1]["phase"] for call in browser_calls], ["generation-entry", "cached-preview"])
@@ -669,7 +684,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertFalse(client.pptx_task_exists)
         self.assertFalse(client.pptx_result_exists)
         self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
-        self.assertEqual(client.model_modes, {"dae": "basic_preview", "3ds": "basic_preview"})
+        self.assertEqual(client.model_modes, dict.fromkeys(client.models, "basic_preview"))
 
     def test_rejects_missing_scanned_texture_before_manager_writes(self):
         client = FakeGatewayClient()
@@ -678,7 +693,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         def missing_texture(method, path, body, headers):
             result = original(method, path, body, headers)
             if path == "/api/v1/meta/engines/27/items":
-                result.payload[-1]["attributes"]["format_info"]["3ds"]["texture_refs"] = []
+                next(item for item in result.payload if item.get("attributes", {}).get("item", {}).get("format") == "3ds")["attributes"]["format_info"]["3ds"]["texture_refs"] = []
             return result
 
         with mock.patch.object(client, "_request", side_effect=missing_texture), mock.patch.object(SUITE, "GatewayClient", return_value=client):
@@ -700,7 +715,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 SUITE.run_scenario(Path("/repository"), scenario_environment("/tmp"))
         self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
         self.assertFalse(client.pptx_task_exists or client.pptx_result_exists or client.pointcloud_task_exists or client.pointcloud_result_exists)
-        self.assertEqual(client.model_modes, {"dae": "basic_preview", "3ds": "basic_preview"})
+        self.assertEqual(client.model_modes, dict.fromkeys(client.models, "basic_preview"))
 
     def test_active_execution_is_retained_and_cannot_report_zero_residuals(self):
         client = FakeGatewayClient()
@@ -756,17 +771,64 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertEqual(model.cleanup["residual_resources"], 0)
 
     def test_glb_requires_a_textured_mesh_and_embedded_image(self):
-        self.assertEqual(SUITE.validate_model_glb(textured_glb())["embedded_images"], 1)
+        self.assertEqual(SUITE.validate_model_glb(fixture_glb(), "dae")["embedded_images"], 1)
         for change, reason in (
-            (lambda doc: doc.update(images=[]), "exactly one embedded PNG"),
-            (lambda doc: doc["images"][0].update(uri="texture.png"), "embedded PNG bufferView"),
+            (lambda doc: doc.update(images=[]), "exactly 1 embedded images"),
+            (lambda doc: doc["images"][0].update(uri="texture.png"), "embedded image bufferView"),
             (lambda doc: doc["buffers"][0].update(uri="mesh.bin"), "external buffers"),
-            (lambda doc: doc["accessors"][0].update(count=0), "textured three-vertex mesh"),
-            (lambda doc: doc["meshes"][0]["primitives"][0]["attributes"].pop("TEXCOORD_0"), "textured three-vertex mesh"),
-            (lambda doc: doc["textures"][0].update(source=1), "must use the embedded PNG"),
+            (lambda doc: doc["accessors"][0].update(count=0), "triangle geometry and vertex count"),
+            (lambda doc: doc["meshes"][0]["primitives"][0]["attributes"].pop("TEXCOORD_0"), "preserve UV coordinates"),
+            (lambda doc: doc["textures"][0].update(source=1), "must use the embedded image"),
         ):
             with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
-                SUITE.validate_model_glb(alter_glb(textured_glb(), change))
+                SUITE.validate_model_glb(alter_glb(fixture_glb(), change), "dae")
+
+    def test_ifc_and_osgb_require_format_specific_real_geometry(self):
+        for format_name, count, images in (("ifc", 24, 0), ("osgb", 3, 1)):
+            with self.subTest(format_name=format_name):
+                artifact = SUITE.validate_model_glb(fixture_glb(format_name), format_name)
+                self.assertEqual(artifact["vertex_count"], count)
+                self.assertEqual(artifact["embedded_images"], images)
+                with self.assertRaisesRegex(SUITE.SuiteError, "exceeds embedded bytes"):
+                    SUITE.validate_model_glb(alter_glb(fixture_glb(format_name), lambda doc: doc["bufferViews"][0].update(byteLength=99999)), format_name)
+                with self.assertRaisesRegex(SUITE.SuiteError, "source dimensions"):
+                    raw = fixture_glb(format_name)
+                    json_size = struct.unpack_from("<I", raw, 12)[0]
+                    mutated = bytearray(raw)
+                    struct.pack_into("<f", mutated, 28 + json_size, 100.)
+                    SUITE.validate_model_glb(bytes(mutated), format_name)
+
+    def test_scene_transforms_are_applied_to_geometry_dimensions(self):
+        raw = fixture_glb()
+        def centimeter_root(doc):
+            doc["nodes"] = [{"matrix": [.01, 0, 0, 0, 0, .01, 0, 0, 0, 0, .01, 0, 0, 0, 0, 1], "children": [1]}, {"mesh": 0}]
+        scaled = bytearray(alter_glb(raw, centimeter_root))
+        json_size = struct.unpack_from("<I", scaled, 12)[0]
+        struct.pack_into("<9f", scaled, 28 + json_size, 0, 0, 0, 100, 0, 0, 0, 200, 0)
+        self.assertEqual(SUITE.validate_model_glb(bytes(scaled), "dae")["extent"], [1., 2., 0.])
+        with self.assertRaisesRegex(SUITE.SuiteError, "source dimensions"):
+            SUITE.validate_model_glb(alter_glb(raw, centimeter_root), "dae")
+        with self.assertRaisesRegex(SUITE.SuiteError, "invalid node or cycle"):
+            SUITE.validate_model_glb(alter_glb(raw, lambda doc: doc["nodes"][0].update(children=[0])), "dae")
+        with self.assertRaisesRegex(SUITE.SuiteError, "index exceeds vertex count"):
+            indexed = bytearray(fixture_glb("ifc"))
+            json_size = struct.unpack_from("<I", indexed, 12)[0]
+            struct.pack_into("<I", indexed, 28 + json_size + 288, 100)
+            SUITE.validate_model_glb(bytes(indexed), "ifc")
+
+    def test_ifc_schema_mismatch_is_rejected_before_manager_writes(self):
+        client = FakeGatewayClient()
+        original = client._request
+        def invalid_schema(method, path, body, headers):
+            result = original(method, path, body, headers)
+            if path == "/api/v1/meta/engines/27/items":
+                item = next(item for item in result.payload if item.get("attributes", {}).get("item", {}).get("format") == "ifc")
+                item["attributes"]["format_info"]["ifc"]["schema_version"] = "IFC2X3"
+            return result
+        with mock.patch.object(client, "_request", side_effect=invalid_schema):
+            with self.assertRaisesRegex(SUITE.SuiteError, "IFC4 schema"):
+                SUITE.prepare_model_fixture(client, 27, "addp-online", "ifc")
+        self.assertFalse(any(method == "POST" for method, _ in client.calls))
 
     def execution(self, output_locator: str | None = None):
         return {

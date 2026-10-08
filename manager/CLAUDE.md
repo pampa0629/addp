@@ -22,7 +22,7 @@ Manager 的一次性数据库 item 导出通过 Common 强类型 Client 直接�
 
 Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lineage_facts` 写入 `addp.lineage-facts/v1` 事实：输入使用执行时已冻结的 ResourceLocator、item ID 和 fingerprint，业务输出使用目标 ResourceLocator，Manager 私有快显产物使用 `addp-infra://` Locator；触发的 Meta scan execution ID 写入 `meta_scan_refs`。任务服务只提供自身输入输出事实，统一结构由 Manager service 公共构造器生成，不得各自拼装 JSON。清理 execution 不表达数据派生血缘；Manager 调用 Transfer 的导入导出由 Transfer execution 作为唯一血缘 owner，Manager 不重复写入。
 
-跨模块验收使用唯一 T4 suite `manager-internal-artifact-lineage`：专用 Business MinIO 的 LAS、多页 PPTX、带 PNG 漫反射贴图的 DAE 与 3DS 经同一次 Meta scan，通过 Manager `point_cloud_copc_generation`、`pptx_pdf_generation`、`model_3d_glb_generation` 及各自真实 Runtime 发布 infra 产物，并由 Monitor、Data Explorer 和正式清理 API 形成完整证据；不得用数据库夹具、伪 Runtime 或前端 mock 代替该链路。DAE、3DS 必须核对 `model_3d/single` 分类、关联贴图、GLB 内嵌图像与非空网格、Console 加载完成及删除后的内容 404。
+跨模块验收使用唯一 T4 suite `manager-internal-artifact-lineage`：专用 Business MinIO 的 LAS、多页 PPTX、带 PNG 漫反射贴图的 DAE 与 3DS、自有 IFC4 米制立方体和 zlib/DXT5 压缩的单体 OSGB 经同一次 Meta scan，通过 Manager `point_cloud_copc_generation`、`pptx_pdf_generation`、`model_3d_glb_generation` 及各自真实 Runtime 发布 infra 产物，并由 Monitor、Data Explorer 和正式清理 API 形成完整证据；不得用数据库夹具、伪 Runtime 或前端 mock 代替该链路。四种模型必须核对 `model_3d/single` 分类、自包含 GLB 与真实几何；DAE/3DS 另核对关联贴图和内嵌 PNG，IFC 核对 schema、实体摘要和米制立方体，OSGB 核对内嵌 JPEG 与 UV。全部格式核对 Console 加载完成及删除后的内容 404。
 
 混合检索跨模块验收使用独立 T4 suite `manager-hybrid-search`：专用 Business MinIO Fixture 幂等发布仓库内确定性 JPG，真实 Meta scan 建立全文索引，Manager 通过预置 `semantic_search_embedding` 场景绑定调用 Inference Model Profile 完成图片和查询文本向量化，并由真实 pgvector 与 Meilisearch 验证统一 RRF 排名、去重和分页。专用 Runner 的 Model Profile 与场景绑定是长期前置事实，suite 不创建或改写 Provider、Deployment、Profile、Credential 或绑定；每轮只创建并经 Manager 正式 API 删除该图片的 embedding 结果。
 

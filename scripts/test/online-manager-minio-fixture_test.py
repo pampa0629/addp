@@ -84,6 +84,9 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         (self.business / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
         (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
+        for format_name in ("ifc", "osgb"):
+            source = SCRIPT.parents[2] / f"business/fixtures/manager/addp_online_model_fixture.{format_name}"
+            shutil.copy2(source, self.business / "fixtures/manager" / source.name)
         (self.business / "nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg").write_bytes(b"JPEG fixture")
         self._executable("uname", '#!/bin/bash\nif [ "$1" = -m ]; then echo x86_64; else echo "${ADDP_TEST_OS:-Darwin}"; fi\n')
         self._executable(
@@ -127,13 +130,13 @@ case "$1" in
           esac
         done
         ;;
-      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*)
+      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*|*" cp --quiet /fixture/ifc/"*|*" cp --quiet /fixture/osgb/"*)
         mount=""
         source=""
         for argument in "$@"; do
           case "$argument" in
             *:/fixture:ro) mount="${argument%:/fixture:ro}" ;;
-            /fixture/dae/*|/fixture/3ds/*) source="${argument#/fixture/}" ;;
+            /fixture/dae/*|/fixture/3ds/*|/fixture/ifc/*|/fixture/osgb/*) source="${argument#/fixture/}" ;;
           esac
         done
         mkdir -p "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/$(dirname "$source")"
@@ -225,6 +228,13 @@ esac
         self.assertEqual(len(las), offset + 3 * 20)
         self.assertEqual(struct.unpack_from("<iii", las, offset + 20), (100, 100, 50))
         self.assertEqual(struct.unpack_from("<16H", las, 281)[11], 3857)
+        ifc = baseline["ifc/model.ifc"].decode()
+        self.assertIn("FILE_SCHEMA(('IFC4'))", ifc)
+        self.assertIn("#6=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.)", ifc)
+        self.assertEqual(sum(line.startswith('#') for line in ifc.splitlines()), 16)
+        osgb = baseline["osgb/model.osgb"]
+        self.assertEqual(osgb[24:28], b"zlib")
+        self.assertIn(b"osg::Geometry", zlib.decompress(osgb[28:], wbits=31))
         dae = ET.fromstring(baseline["dae/model.dae"])
         ns = "{http://www.collada.org/2005/11/COLLADASchema}"
         self.assertEqual(dae.tag, ns + "COLLADA")
@@ -267,6 +277,17 @@ esac
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
         self.assertIn("down --volumes --remove-orphans", self.log.read_text())
         self.assertFalse(self.state.exists())
+
+    def test_missing_tracked_model_source_rejected_before_docker(self):
+        for format_name in ("ifc", "osgb"):
+            source = self.business / f"fixtures/manager/addp_online_model_fixture.{format_name}"
+            content = source.read_bytes()
+            source.unlink()
+            result = self.run_fixture("start")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("fixture source is missing", result.stderr)
+            self.assertFalse(self.log.exists())
+            source.write_bytes(content)
 
     def test_hosted_profile_rejects_non_github_environment_before_docker(self) -> None:
         result = self.run_fixture("start", ADDP_TEST_OS="Linux", ADDP_ONLINE_HOSTED="1", GITHUB_ACTIONS="false")
