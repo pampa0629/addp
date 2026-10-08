@@ -582,6 +582,8 @@ def cleanup_managed_artifact(client: GatewayClient, model: ArtifactFixture, time
 
 
 def raster_physical(repository, environment, action, request):
+    artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR']) / f'manager-artifact-physical-{action}.json'
+    artifact.unlink(missing_ok=True)
     secret_root = Path(environment['ADDP_ONLINE_SECRET_DIR'])
     request_path = secret_root / 'manager-raster-oracle.json'
     request_path.write_text(json.dumps(request))
@@ -590,7 +592,9 @@ def raster_physical(repository, environment, action, request):
         'manager-' + action, str(request_path)], env=environment, capture_output=True, text=True, check=False)
     if result.returncode:
         raise SuiteError('Manager artifact physical verification failed')
-    return _object(json.loads(result.stdout), 'Manager artifact physical evidence')
+    evidence = _object(json.loads(result.stdout), 'Manager artifact physical evidence')
+    artifact.write_text(json.dumps(evidence, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    return evidence
 
 
 def generate_raster_cog(client, raster, tenant_id, timeout, physical):

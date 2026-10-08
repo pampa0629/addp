@@ -445,7 +445,7 @@ const renderPage = async (pageNum, token = currentLoadToken) => {
     if (pageCache.has(cacheKey)) {
       const cachedImageData = pageCache.get(cacheKey)
       const canvas = canvasRef.value
-      const context = canvas.getContext('2d')
+      const context = canvas.getContext('2d', { willReadFrequently: true })
 
       // 恢复画布尺寸
       canvas.width = cachedImageData.width
@@ -467,7 +467,7 @@ const renderPage = async (pageNum, token = currentLoadToken) => {
     const viewport = page.getViewport({ scale: scale.value })
 
     const canvas = canvasRef.value
-    const context = canvas.getContext('2d')
+    const context = canvas.getContext('2d', { willReadFrequently: true })
 
     canvas.width = viewport.width
     canvas.height = viewport.height

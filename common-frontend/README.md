@@ -300,6 +300,7 @@ import {
 - **TablePreview** - 表格数据预览，支持空间字段渲染
 - **ImagePreview** - 图片预览；普通 TIFF 消费 `object.attributes.format_info.tiff` 的完整页目录，经同源平台 `object.content.url` 的 `storage-stream` Range 地址按页解码，缺少页目录时提示深度刷新。最长输出边 1024 像素，源页上限 1600 万像素，页切换与卸载取消旧请求；原始下载仍为整个 TIFF。GeoTIFF 空间预览归既有地图组件。
 - **MarkdownPreview / OfficePreview / PptxPreview / PdfPreview** - 文档预览组件；OfficePreview 统一处理 DOC、DOCX、RTF、WPS。旧式 DOC/WPS 与 RTF 解析器由 `common-frontend/basic` 单点维护并按需加载，DOCX 使用宿主直接声明的 `mammoth` 依赖；不得依赖仓库外本地路径或运行时远程资源
+- `PdfPreview` 用 `ImageData` 缓存页面，创建和恢复画布均声明 `willReadFrequently: true`，使反复像素读取匹配 2D context 配置。Manager 确定性浏览器门禁覆盖三页绘制、不同页图像、原图缓存恢复和零 warning／error；真实 PPTX PDF 仍由原 Manager Hosted suite 验收。
 
 地图预览、CRS registry、底图 profile 和 GCJ-02 展示适配规则见 [Map 前端组件说明](./map/README.md)。
 

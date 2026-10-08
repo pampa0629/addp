@@ -397,6 +397,32 @@ def scenario_environment(artifact_dir: str):
     }
 
 
+class ManagedArtifactPhysicalEvidenceTest(unittest.TestCase):
+    def test_physical_observations_are_retained_without_credentials_or_false_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            environment = {'ADDP_ONLINE_SECRET_DIR': directory, 'ADDP_ONLINE_ARTIFACT_DIR': directory,
+                           'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'private-token'}
+            request = {'locator': 'addp-infra://minio/manager/owned.pdf?type=object'}
+            for action, evidence in (
+                ('pdf-verify', {'object_present': True, 'source_sha256': 'a' * 64, 'size_bytes': 123}),
+                ('pdf-deleted', {'object_deleted': True, 'source_unchanged': True, 'residual_objects': 0}),
+                ('deleted', {'object_deleted': False, 'source_unchanged': True, 'residual_objects': 1}),
+            ):
+                with self.subTest(action=action), mock.patch.object(SUITE.subprocess, 'run') as run:
+                    run.return_value.returncode = 0
+                    run.return_value.stdout = json.dumps(evidence)
+                    self.assertEqual(SUITE.raster_physical(Path('/repository'), environment, action, request), evidence)
+                    artifact = Path(directory) / f'manager-artifact-physical-{action}.json'
+                    self.assertEqual(json.loads(artifact.read_text()), evidence)
+                    self.assertNotIn('private-token', artifact.read_text())
+                    self.assertNotIn('locator', artifact.read_text())
+            with mock.patch.object(SUITE.subprocess, 'run') as run:
+                run.return_value.returncode = 1
+                with self.assertRaisesRegex(SUITE.SuiteError, 'physical verification failed'):
+                    SUITE.raster_physical(Path('/repository'), environment, 'pdf-deleted', request)
+                self.assertFalse((Path(directory) / 'manager-artifact-physical-pdf-deleted.json').exists())
+
+
 class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def setUp(self):
         def physical(repository, environment, action, request):
