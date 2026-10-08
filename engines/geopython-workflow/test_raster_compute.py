@@ -1847,6 +1847,223 @@ def test_alpha_clip_reproject_mosaic_save_preserves_valid_pixels(
     assert {path.name for path in tmp_path.iterdir()}=={'source.tif','other.tif','result.tif'}
 
 
+@pytest.mark.parametrize('mode', [None, 'inside', 'outside'])
+def test_clip_mode_metadata_and_bbox(raster_file, mode):
+    spec = next(item for item in list_operators() if item['id'] == 'raster_clip')
+    param = next(p for p in spec['parameters'] if p['name'] == 'mode')
+    assert param['enum'] == ['inside', 'outside'] and param['default'] == 'inside'
+    assert spec['execution_modes'] == ['workflow'] and spec['attributes']['resource_groups'] == ['raster']
+    with raster_workspace():
+        source = raster_load(source_plan(raster_file))
+        result = raster_clip(source, 'EPSG:4326', bbox=[1,1,3,3], **({} if mode is None else {'mode': mode}))
+        ds = gdal.Open(str(result.path))
+        if mode == 'outside':
+            expected = np.arange(1,17,dtype=float).reshape(4,4)
+            expected[0,0] = np.nan
+            expected[1:3,1:3] = np.nan
+            assert raster_info(result)['transform'] == raster_info(source)['transform']
+            assert (ds.RasterXSize,ds.RasterYSize) == (4,4)
+        else:
+            expected = np.array([[6,7],[10,11]],dtype=float)
+        np.testing.assert_equal(read_band_values(ds.GetRasterBand(1)),expected)
+        ds = None
+
+
+@pytest.mark.parametrize('rotation', [0, .25])
+@pytest.mark.parametrize('kind', ['hole', 'islands', 'disjoint', 'cover'])
+def test_outside_clip_polygon_complement_and_rotated_grid(tmp_path, rotation, kind):
+    transform = (0,1,rotation,4,rotation,-1)
+    def ring(x0,y0,x1,y1):
+        return [[transform[0]+x*transform[1]+y*transform[2], transform[3]+x*transform[4]+y*transform[5]]
+                for x,y in [(x0,y0),(x1,y0),(x1,y1),(x0,y1),(x0,y0)]]
+    if kind == 'hole':
+        geometry = {'type':'Polygon','coordinates':[ring(0,0,4,4),list(reversed(ring(1,1,3,3)))]}
+        retained = np.zeros((4,4),dtype=bool); retained[1:3,1:3] = True
+    elif kind == 'islands':
+        geometry = {'type':'MultiPolygon','coordinates':[[ring(0,0,1,4)],[ring(3,0,4,4)]]}
+        retained = np.ones((4,4),dtype=bool); retained[:,[0,3]] = False
+    else:
+        geometry = {'type':'Polygon','coordinates':[ring(10,10,12,12) if kind == 'disjoint' else ring(-1,-1,5,5)]}
+        retained = np.full((4,4),kind == 'disjoint')
+    values = np.arange(16,dtype=float).reshape(4,4)
+    values[0,3] = -9999
+    source = create_raster(tmp_path/'source.tif', values, transform=transform)
+    original = source.read_bytes()
+    valid = retained & (values != -9999)
+    expected = np.where(valid,values,np.nan)
+    with raster_workspace():
+        result = raster_clip(raster_load(source_plan(source)),'EPSG:4326',geometry=geometry,mode='outside')
+        ds = gdal.Open(str(result.path))
+        assert ds.GetGeoTransform() == transform and ds.RasterCount == 2
+        np.testing.assert_equal(read_band_values(ds.GetRasterBand(1)),expected)
+        np.testing.assert_equal(read_band_values(ds.GetRasterBand(2)),valid*255)
+        ds = None
+        stats = raster_statistics(result)
+        assert stats['valid_count'] == int(valid.sum()) and stats['invalid_count'] == 16-int(valid.sum())
+        target = tmp_path/'outside.cog.tif'
+        saved = raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert saved['size_bytes'] == target.stat().st_size > 0
+        loaded = raster_load(source_plan(target))
+        assert validate_cog(loaded)['valid'] and raster_statistics(loaded) == stats
+        persisted = gdal.Open(str(loaded.path))
+        np.testing.assert_equal(read_band_values(persisted.GetRasterBand(1)),expected)
+        assert persisted.GetGeoTransform() == transform
+        persisted = None
+    assert not result.workspace.exists() and source.read_bytes() == original
+
+
+@pytest.mark.parametrize('boundary_kind', ['bbox','geometry'])
+def test_outside_clip_different_boundary_crs(tmp_path,boundary_kind):
+    # Independently map longitude/latitude to spherical Web Mercator.
+    radius = 6378137.
+    points = [[radius*math.radians(x),radius*math.log(math.tan(math.pi/4+math.radians(y)/2))]
+              for x,y in [(1,1),(3,1),(3,3),(1,3),(1,1)]]
+    boundary = {'bbox':[points[0][0],points[0][1],points[2][0],points[2][1]]} if boundary_kind == 'bbox' else {
+        'geometry':{'type':'Polygon','coordinates':[points]}}
+    values = np.arange(16,dtype=float).reshape(4,4)
+    source = create_raster(tmp_path/'source.tif',values)
+    with raster_workspace():
+        result = raster_clip(raster_load(source_plan(source)),'EPSG:3857',mode='outside',**boundary)
+        expected = values.copy(); expected[1:3,1:3] = np.nan
+        ds = gdal.Open(str(result.path))
+        np.testing.assert_equal(read_band_values(ds.GetRasterBand(1)),expected)
+        assert ds.GetGeoTransform() == (0,1,0,4,0,-1)
+        ds = None
+
+
+@pytest.mark.parametrize('nodata', [-9999, float('nan')],ids=['finite','nan'])
+def test_outside_clip_independent_nodata_mask_alpha_and_zero(tmp_path,nodata):
+    first = np.arange(16,dtype=float).reshape(4,4)
+    second = first+100
+    first[0,1],second[0,2] = nodata,nodata
+    first[3,0],second[3,1] = np.inf,np.nan
+    alpha = np.full((4,4),255.); alpha[1,0],alpha[0,0] = 0,128
+    source = create_raster(tmp_path/'source.tif',np.stack([first,second,alpha]),nodata=nodata)
+    ds = gdal.Open(str(source),gdal.GA_Update)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    mask = np.full((4,4),255,dtype=np.uint8); mask[3,3] = 0
+    ds.GetRasterBand(1).GetMaskBand().WriteRaster(0,0,4,4,mask.tobytes())
+    ds = None
+    originals = {p:p.read_bytes() for p in tmp_path.iterdir()}
+    retained = mask.astype(bool) & (alpha>0); retained[1:3,1:3] = False
+    expected = [np.where(retained & np.isfinite(v) & (v != nodata),v,np.nan) for v in [first,second]]
+    with raster_workspace():
+        result = raster_clip(raster_load(source_plan(source)),'EPSG:4326',bbox=[1,1,3,3],mode='outside')
+        target = tmp_path/'independent.cog.tif'
+        saved = raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert saved['size_bytes'] == target.stat().st_size > 0
+        ds = gdal.Open(str(target))
+        assert ds.RasterCount == 3
+        for index,values in enumerate(expected,1):
+            np.testing.assert_equal(read_band_values(ds.GetRasterBand(index)),values)
+            assert np.isnan(ds.GetRasterBand(index).GetNoDataValue())
+        np.testing.assert_equal(read_band_values(ds.GetRasterBand(3)),np.logical_or(*[np.isfinite(v) for v in expected])*255)
+        assert read_band_values(ds.GetRasterBand(1))[0,0] == 0
+        ds = None
+    assert all(p.read_bytes() == content for p,content in originals.items())
+
+
+def test_outside_clip_center_rule_and_bounded_reads(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    source = create_raster(tmp_path/'large.tif',np.ones((517,513)),transform=(0,1,0,517,0,-1))
+    original = compute._read_values
+    reads = []
+    def read(band,x,y,width,height):
+        reads.append((width,height))
+        assert width<=512 and height<=512
+        return original(band,x,y,width,height)
+    monkeypatch.setattr(compute,'_read_values',read)
+    with raster_workspace():
+        result = raster_clip(raster_load(source_plan(source)),'EPSG:4326',bbox=[.1,516.1,.4,516.4],mode='outside')
+        assert raster_statistics(result)['valid_count'] == 517*513  # Intersects a pixel but misses its center.
+        ds = gdal.Open(str(result.path))
+        assert (ds.RasterXSize,ds.RasterYSize) == (513,517)
+        ds = None
+    assert reads and (1,5) in reads
+
+
+@pytest.mark.parametrize('params', [
+    {'mode':'invalid','bbox':[1,1,3,3]}, {'mode':True,'bbox':[1,1,3,3]},
+    {'mode':'outside'}, {'mode':'outside','bbox':[1,1,3,3],'geometry':{}},
+    {'mode':'outside','bbox':[3,1,1,3]}, {'mode':'outside','geometry':{'type':'Point','coordinates':[1,1]}},
+    {'mode':'outside','geometry':{'type':'Polygon','coordinates':[[[0,0],[3,3],[3,0],[0,3],[0,0]]]}}
+])
+def test_outside_clip_rejects_invalid_configuration(raster_file,params):
+    with raster_workspace(),pytest.raises(ValueError):
+        raster_clip(raster_load(source_plan(raster_file)),'EPSG:4326',**params)
+
+
+@pytest.mark.parametrize('transform,crs',[(None,'EPSG:4326'),((0,1,0,4,0,-1),''),((0,1,2,4,2,4),'EPSG:4326')])
+def test_outside_clip_rejects_missing_or_singular_grid(tmp_path,transform,crs):
+    source = create_raster(tmp_path/'source.tif',np.ones((4,4)),transform=transform,crs=crs)
+    with raster_workspace(),pytest.raises(ValueError):
+        raster_clip(raster_load(source_plan(source)),'EPSG:4326',bbox=[1,1,3,3],mode='outside')
+
+
+def test_outside_clip_async_public_dag_cog_and_cleanup(raster_file,tmp_path,monkeypatch):
+    import api_server
+    import operators.raster_compute as compute
+    paths = []
+    original = OPERATORS['raster_load']['function']
+    def tracked(*args,**kwargs):
+        paths.append(compute._WORKSPACE.get())
+        return original(*args,**kwargs)
+    monkeypatch.setitem(OPERATORS['raster_load'],'function',tracked)
+    target = tmp_path/'outside.cog.tif'
+    before = raster_file.read_bytes()
+    workflow = {'tasks':[
+        {'id':'load','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(raster_file)}},
+        {'id':'clip','operator':'raster_clip','depends_on':['load'],'params':{'input_raster':{'$ref':'load'},'boundary_crs':'EPSG:4326','bbox':[1,1,3,3],'mode':'outside'}},
+        {'id':'save','operator':'raster_save','depends_on':['clip'],'params':{'input_raster':{'$ref':'clip'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}},
+    ]}
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow',json={'workflow_def':workflow,'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code == 202,response.json
+    deadline = time.monotonic()+5
+    while time.monotonic()<deadline:
+        status = client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ['success','failed']: break
+        time.sleep(.01)
+    assert status['status'] == 'success',status
+    facts = json.loads(status['result'])
+    assert facts['size_bytes'] == target.stat().st_size > 0
+    ds = gdal.Open(str(target))
+    expected = np.arange(1,17,dtype=float).reshape(4,4); expected[0,0] = np.nan; expected[1:3,1:3] = np.nan
+    np.testing.assert_equal(read_band_values(ds.GetRasterBand(1)),expected)
+    ds = None
+    assert paths and all(not p.exists() and str(p) not in json.dumps(status) for p in paths)
+    assert raster_file.read_bytes() == before
+    assert client.post('/api/operators/raster_clip/invoke',json={'params':{}}).status_code == 403
+
+
+@pytest.mark.parametrize('alpha',[False,True],ids=['complex-data','complex-alpha'])
+def test_outside_clip_rejects_complex_bands(tmp_path,alpha):
+    path = tmp_path/'complex.tif'
+    ds = gdal.GetDriverByName('GTiff').Create(str(path),4,4,2,gdal.GDT_CFloat64)
+    ds.SetGeoTransform((0,1,0,4,0,-1))
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(4326); ds.SetProjection(crs.ExportToWkt())
+    if alpha: ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds = None
+    with raster_workspace(),pytest.raises(ValueError,match='Complex'):
+        raster_clip(raster_load(source_plan(path)),'EPSG:4326',bbox=[1,1,3,3],mode='outside')
+
+
+@pytest.mark.parametrize('native_exceptions',[False,True])
+@pytest.mark.parametrize('kind',['bbox','geometry'])
+def test_outside_clip_rejects_failed_boundary_transform(tmp_path,native_exceptions,kind):
+    source = create_raster(tmp_path/'mercator.tif',np.ones((4,4)),crs='EPSG:3857')
+    boundary = {'bbox':[0,94,1,95]} if kind == 'bbox' else {
+        'geometry':{'type':'Polygon','coordinates':[[[0,94],[1,94],[1,95],[0,95],[0,94]]]}}
+    previous = osr.GetUseExceptions()
+    (osr.UseExceptions if native_exceptions else osr.DontUseExceptions)()
+    try:
+        with raster_workspace(),pytest.raises(ValueError,match='transform'):
+            raster_clip(raster_load(source_plan(source)),'EPSG:4326',mode='outside',**boundary)
+    finally:
+        (osr.UseExceptions if previous else osr.DontUseExceptions)()
+
+
 def test_clip_and_mosaic(raster_file, tmp_path):
     right = create_raster(tmp_path / 'right.tif', np.full((2, 4, 4), 100.0), transform=(2,1,0,4,0,-1))
     with raster_workspace():
@@ -2419,13 +2636,15 @@ def test_source_snapshot_and_driver_restriction(raster_file, tmp_path):
 @pytest.mark.parametrize('operator,params', [
     ('raster_band_math', {'expression': 'b99'}),
     ('raster_aggregate', {'factors': [0,2], 'method': 'mean'}),
+    ('raster_clip', {'boundary_crs': 'EPSG:4326', 'bbox': [1,1,3,3], 'mode': 'invalid'}),
+    ('raster_clip', {'boundary_crs': 'EPSG:4326', 'bbox': [1,1,3,3], 'mode': 'outside', 'geometry': {}}),
     ('raster_reclassify', {'rules': [{'min': 0, 'max': 5, 'class': 1}, {'value': 3, 'class': 2}]}),
     ('raster_reclassify', {'rules': '[{"value":2,"class":1}]'}),
     ('raster_clip', {'boundary_crs': 'EPSG:4326', 'geometry': {'type': 'Polygon', 'coordinates': [
         [[-1,-1],[5,-1],[5,5],[-1,5],[-1,-1]],
         [[-0.5,-0.5],[-0.5,4.5],[4.5,4.5],[4.5,-0.5],[-0.5,-0.5]],
     ]}}),
-], ids=['invalid-band', 'invalid-aggregate', 'overlapping-classes', 'stringified-rules', 'disjoint-clip'])
+], ids=['invalid-band', 'invalid-aggregate', 'invalid-clip-mode', 'ambiguous-outside-boundary', 'overlapping-classes', 'stringified-rules', 'disjoint-clip'])
 def test_failed_dag_cleans_workspace(monkeypatch, raster_file, tmp_path, operator, params):
     from operators.raster_compute import _WORKSPACE
     original = OPERATORS['raster_load']['function']

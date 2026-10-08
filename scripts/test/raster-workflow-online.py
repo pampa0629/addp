@@ -420,7 +420,7 @@ def physical(repository, env, action):
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
     case_name = action.removeprefix('verify-')
-    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
+    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
     if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload

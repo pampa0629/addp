@@ -170,6 +170,21 @@ class Client:
 
 
 class RasterWorkflowOnlineTest(unittest.TestCase):
+    def test_physical_adapter_dispatches_aggregation_expectation(self):
+        import json
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        for case in m.fixture.AGGREGATE_CASES:
+            payload = {'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 4472}
+            with self.subTest(case=case), patch.object(m.subprocess, 'run', return_value=CompletedProcess([],0,json.dumps(payload),'')):
+                self.assertEqual(m.physical(Path('.'), {}, 'verify-'+case), payload)
+            # A full-source count cannot satisfy a smaller aggregation grid.
+            for wrong in (65535, 4471, True):
+                invalid = {**payload, 'valid_pixels': wrong}
+                with self.subTest(case=case,count=wrong), patch.object(m.subprocess, 'run', return_value=CompletedProcess([],0,json.dumps(invalid),'')):
+                    with self.assertRaises(m.SuiteError):
+                        m.physical(Path('.'), {}, 'verify-'+case)
+
     def setUp(self):
         self.client = Client()
         self.env = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID': '1',

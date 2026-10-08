@@ -409,25 +409,7 @@ def _require_clip_intersection(dataset, shape):
         raise ValueError('Clip boundary does not intersect raster with positive area')
 
 
-def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None):
-    if (bbox is None) == (geometry is None):
-        raise ValueError('Specify exactly one of bbox or geometry')
-    crs = _crs(boundary_crs)
-    dataset = _open(input_raster)
-    _require_georeferencing(dataset)
-    if bbox is not None:
-        if not isinstance(bbox, list) or len(bbox) != 4 or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in bbox) or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
-            raise ValueError('bbox must be finite [xmin, ymin, xmax, ymax]')
-        transformed = osr.CoordinateTransformation(crs, _crs(dataset.GetProjection())).TransformBounds(*bbox, 21)
-        extent = raster_info(input_raster)['extent']
-        bounds = [max(transformed[0], extent[0]), max(transformed[1], extent[1]), min(transformed[2], extent[2]), min(transformed[3], extent[3])]
-        if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
-            raise ValueError('Clip boundary does not intersect raster')
-        _require_clip_intersection(dataset, _polygon([
-            (bounds[0],bounds[1]), (bounds[2],bounds[1]),
-            (bounds[2],bounds[3]), (bounds[0],bounds[3]),
-        ]))
-        return _warped([dataset], outputBounds=bounds)
+def _clip_shape(geometry, crs, dataset):
     if not isinstance(geometry, dict) or geometry.get('type') not in ['Polygon', 'MultiPolygon']:
         raise ValueError('geometry must be a GeoJSON Polygon or MultiPolygon')
     shape = ogr.CreateGeometryFromJson(json.dumps(geometry))
@@ -440,6 +422,90 @@ def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None):
         raise ValueError('Clip geometry cannot be transformed to raster CRS') from error
     if transform_error != 0:
         raise ValueError('Clip geometry cannot be transformed to raster CRS')
+    return shape
+
+
+def _clip_bounds(bbox, crs, dataset):
+    if not isinstance(bbox, list) or len(bbox) != 4 or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in bbox) or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]:
+        raise ValueError('bbox must be finite [xmin, ymin, xmax, ymax]')
+    try:
+        transformed = osr.CoordinateTransformation(crs, _crs(dataset.GetProjection())).TransformBounds(*bbox, 21)
+    except RuntimeError as error:
+        raise ValueError('Clip bbox cannot be transformed to raster CRS') from error
+    if not all(math.isfinite(v) for v in transformed) or transformed[0] >= transformed[2] or transformed[1] >= transformed[3]:
+        raise ValueError('Clip bbox cannot be transformed to raster CRS')
+    return transformed
+
+
+def _clip_outside(dataset, shape):
+    width, height, transform = _grid(dataset)
+    indices = _data_indices(dataset)
+    for index in range(1, dataset.RasterCount + 1):
+        _band(dataset, index)
+    # File-backed coverage retains the exact source grid, including rotation.
+    mask = gdal.GetDriverByName('GTiff').Create(
+        str(_path()), width, height, 1, gdal.GDT_Byte, ['TILED=YES', 'COMPRESS=DEFLATE'])
+    mask.SetGeoTransform(transform)
+    mask.SetProjection(dataset.GetProjection())
+    mask.GetRasterBand(1).Fill(0)
+    boundary = ogr.GetDriverByName('Memory').CreateDataSource('')
+    layer = boundary.CreateLayer('boundary', _crs(dataset.GetProjection()), ogr.wkbUnknown)
+    feature = ogr.Feature(layer.GetLayerDefn())
+    feature.SetGeometry(shape)
+    layer.CreateFeature(feature)
+    if gdal.RasterizeLayer(mask, [1], layer, burn_values=[1]) != 0:
+        raise ValueError('Clip boundary rasterization failed')
+    feature = layer = boundary = None
+    output = _numeric_output(dataset, len(indices) + 1)
+    alpha = output.GetRasterBand(len(indices) + 1)
+    alpha.SetColorInterpretation(gdal.GCI_AlphaBand)
+    for output_index, source_index in enumerate(indices, 1):
+        band = output.GetRasterBand(output_index)
+        for x, y, arrays, masks in _blocks(dataset, [source_index]):
+            values = arrays[0].copy()
+            outside = _read_values(mask.GetRasterBand(1), x, y, values.shape[1], values.shape[0]) == 0
+            values[~(masks[0] & outside)] = np.nan
+            band.WriteRaster(x, y, values.shape[1], values.shape[0], values.tobytes(), buf_type=gdal.GDT_Float64)
+    # Overall alpha must not replace independent per-band NoData validity.
+    for y in range(0, height, 512):
+        for x in range(0, width, 512):
+            span_x, span_y = min(512, width-x), min(512, height-y)
+            coverage = np.zeros((span_y, span_x), dtype=bool)
+            for index in range(1, len(indices) + 1):
+                coverage |= np.isfinite(_read_values(output.GetRasterBand(index), x, y, span_x, span_y))
+            alpha.WriteRaster(x, y, span_x, span_y, (coverage*255).astype(np.float64).tobytes(), buf_type=gdal.GDT_Float64)
+    path = output.GetDescription()
+    alpha = band = output = mask = None
+    return _raster(path)
+
+
+def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None, mode='inside'):
+    if mode not in ('inside', 'outside'):
+        raise ValueError('mode must be inside or outside')
+    if (bbox is None) == (geometry is None):
+        raise ValueError('Specify exactly one of bbox or geometry')
+    crs = _crs(boundary_crs)
+    dataset = _open(input_raster)
+    _require_georeferencing(dataset)
+    if bbox is not None:
+        transformed = _clip_bounds(bbox, crs, dataset)
+        if mode == 'outside':
+            return _clip_outside(dataset, _polygon([
+                (transformed[0], transformed[1]), (transformed[2], transformed[1]),
+                (transformed[2], transformed[3]), (transformed[0], transformed[3]),
+            ]))
+        extent = raster_info(input_raster)['extent']
+        bounds = [max(transformed[0], extent[0]), max(transformed[1], extent[1]), min(transformed[2], extent[2]), min(transformed[3], extent[3])]
+        if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
+            raise ValueError('Clip boundary does not intersect raster')
+        _require_clip_intersection(dataset, _polygon([
+            (bounds[0],bounds[1]), (bounds[2],bounds[1]),
+            (bounds[2],bounds[3]), (bounds[0],bounds[3]),
+        ]))
+        return _warped([dataset], outputBounds=bounds)
+    shape = _clip_shape(geometry, crs, dataset)
+    if mode == 'outside':
+        return _clip_outside(dataset, shape)
     _require_clip_intersection(dataset, shape)
     cutline_path = _path('.geojson')
     driver = ogr.GetDriverByName('GeoJSON')
@@ -892,7 +958,7 @@ _SPECS = [
     (raster_build_overviews, '栅格金字塔', [_INPUT(), _param('levels', 'list[int]', '递增金字塔倍率', [2, 4, 8, 16], False), _ALGORITHM()], 'raster', ['read']),
     (raster_reproject, '栅格重投影', [_INPUT(), _param('target_crs', 'str', '目标 CRS'), _param('resolution', 'list[float]', '目标分辨率', None, False), _ALGORITHM()], 'raster', ['read']),
     (raster_resample, '栅格重采样', [_INPUT(), _param('size', 'list[int]', '输出宽高', None, False), _param('resolution', 'list[float]', '输出分辨率', None, False), _ALGORITHM()], 'raster', ['read']),
-    (raster_clip, '栅格裁剪', [_INPUT(), _param('boundary_crs', 'str', '边界 CRS'), _param('bbox', 'list[float]', '裁剪边界框', None, False), _param('geometry', 'object', 'GeoJSON 面边界', None, False)], 'raster', ['read']),
+    (raster_clip, '栅格裁剪', [_INPUT(), _param('boundary_crs', 'str', '边界 CRS'), _param('bbox', 'list[float]', '裁剪边界框', None, False), _param('geometry', 'object', 'GeoJSON 面边界', None, False), _param('mode', 'str', '保留区域内或区域外；区域外保留源完整网格', 'inside', False, enum=['inside', 'outside'])], 'raster', ['read']),
     (raster_mosaic, '栅格计算镶嵌', [_INPUT(), _param('other_raster', 'raster', '第二个栅格输入端口', role='input'), _param('target_crs', 'str', '目标 CRS'), _param('resolution', 'list[float]', '目标分辨率'), _param('overlap', 'str', '重叠策略', 'last', False, enum=['first', 'last']), _ALGORITHM()], 'raster', ['read']),
     (raster_align, '栅格网格对齐', [_INPUT(), _param('reference_raster', 'raster', '提供输出 CRS、宽高及仿射网格的参考栅格', role='input'), _ALGORITHM()], 'raster', ['read']),
     (raster_stack, '栅格波段组合', [_INPUT(), _param('other_raster', 'raster', '追加数据波段的同网格栅格', role='input')], 'raster', ['read']),

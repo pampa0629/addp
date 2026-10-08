@@ -894,6 +894,8 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 多边形裁剪保留 alpha 波段，数据波段输出 Float64，并以 NaN 表达边界外、孔洞及源无效像元；拒绝复数波段，避免转换时丢失虚部。后续数值分析必须继续排除这些像元，不能把透明区域的填充值计入统计。裁剪按输入像元网格取边界范围，不把裁剪边界当作重新指定网格。
 
+`raster_clip` 使用唯一的 `mode=inside/outside` 参数选择保留侧，默认 `inside`。区域内模式继续按边界范围裁剪；区域外模式保留源宽高、CRS 和完整六参数仿射网格（包括旋转），不重投影或插值。边界转换到源 CRS 后，在源网格上以 GDAL 默认像元中心规则栅格化，将边界覆盖的像元设为 NaN；Polygon 孔洞及 MultiPolygon 各部分以外的原有效像元保留。bbox 沿用已有 CRS 转换后的边界框语义。区域外模式允许边界不相交（保留原有效数据）或完全覆盖源（全无效成果）；不按剩余有效数据缩小输出范围。无效源 mask、NoData、非有限值及 alpha 覆盖不能被恢复，数据波段独立判断有效性，合法零及有效的部分透明像元保留原数值。输出为 Float64 数据波段及末尾 alpha，alpha 以 255/0 表达至少一个数据波段有效/全部无效，不保留源透明度大小、色表或颜色模型；复数及缺少可信空间定位的输入拒绝。mask 使用执行目录内同网格 Byte 文件，数据与 mask 按最多 512×512 分块读写；不新增整幅像元数组、公开 mask 或第二个裁剪算子。
+
 多波段空间变换保留各数据波段独立的 NoData 有效性：一个波段无效时，其他有效波段仍可参与计算，整体 alpha 有效不能替代各波段的有效性。带 alpha 的输出必须保留数据波段的 NoData 声明及无效像元，不能将初始化零值当作有效数据。NoData 与 alpha 同时存在时，在统一目标网格上用各波段自身的 GDAL Warp 覆盖恢复 NoData，有限 NoData 与 NaN 使用相同的波段有效性规则，不能按像元值是否为零推断有效性；这些内部波段视图和覆盖成果只存在于执行工作目录。
 
 多栅格数值计算采用显式对齐、波段组合、既有波段表达式这一条路径。`raster_align` 以 `reference_raster` 的 CRS、宽高及完整六参数仿射变换定义输出网格，保留旋转；参考栅格的像元值、mask 和 NoData 不参与计算。源范围之外填 NaN，源范围超出参考网格时裁去；不自动取交集或并集。源与参考均须有可信 CRS 和有限、可逆的 geotransform。对齐仍使用 GDAL Warp，直接写入预建的参考网格，不引入另一种插值实现。
@@ -904,7 +906,7 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 `raster_reclassify` 将 `band`（默认 1）选定的数据波段按 `rules` 重分类，输出同网格 Float64 单波段。规则为非空 JSON 数组：精确值使用 `{"value": 1, "class": 10}`，区间使用 `{"min": 0, "max": 10, "class": 1}`，统一左闭右开，`null` 端点表示该侧无界；精确值可单独覆盖区间右端点。规则必须互不重叠且不重复，输入顺序不影响结果；拒绝未知字段、非数值、布尔值及非有限值。有效像元未命中规则时，默认 `unmatched=nodata` 写 NaN，可显式选择 `keep` 保留原值；源 NoData、mask 无效、非有限值及 alpha 覆盖无效的像元始终写 NaN，不能因保留原值而恢复为有效值。alpha 和复数波段不能作为分类数据，合法零与部分透明的有效值正常参与分类。保留源宽高、完整仿射变换、CRS 及定位缺失事实，无需补造 CRS；输出不复制原分类色表或透明度大小，数值转换仍遵循 Float64 精度边界。公开规则参数声明为 `array`、`item_type=object`，由已有参数面板还原 JSON 数组，不接受字符串化规则作为执行输入。沿用 512×512 分块与排序后二分检索，不为重分类增加执行协议或整幅影像读取路径。
 
-裁剪边界必须与输入栅格四角定义的实际覆盖面有正面积交集，不能只比较两者的外接矩形；仅接触边界、栅格完全落在多边形孔洞中、MultiPolygon 各部分均在覆盖面外时均拒绝执行。旋转栅格使用其实际四角覆盖面判定，不能将 extent 矩形的空白角落视为输入数据。多边形转换到源 CRS 必须成功后再判定交集。
+区域内裁剪边界必须与输入栅格四角定义的实际覆盖面有正面积交集，不能只比较两者的外接矩形；仅接触边界、栅格完全落在多边形孔洞中、MultiPolygon 各部分均在覆盖面外时均拒绝执行。旋转栅格使用其实际四角覆盖面判定，不能将 extent 矩形的空白角落视为输入数据。多边形转换到源 CRS 必须成功后再判定交集；区域外模式不要求正面积交集，但仍验证边界及转换。
 
 `raster_to_cog` 是唯一通用 COG 转换入口，声明 workflow/direct；Manager 通过同一访问计划调用并继续管理 `manager.raster_cog`，旧 TIFF 专用算子及 URI 参数契约删除。`build_raster_mosaic` 继续承担 Manager 目录型业务数据集职责。Develop 业务保存沿用 produced_targets、命名 ResourceLocator 输出、血缘与 Meta scan。图片瓦片与 Service 在线发布不属于本次栅格计算范围。
 
@@ -926,7 +928,7 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_build_overviews` | `input_raster`、递增 `levels`、`resampling` | `raster` |
 | `raster_reproject` | `input_raster`、`target_crs`、可选 `resolution`、`resampling` | `raster` |
 | `raster_resample` | `input_raster`、互斥 `size/resolution`、`resampling` | `raster` |
-| `raster_clip` | `input_raster`、互斥 `bbox/geometry`、`boundary_crs` | `raster` |
+| `raster_clip` | `input_raster`、互斥 `bbox/geometry`、`boundary_crs`、`mode=inside/outside` | `raster` |
 | `raster_mosaic` | `input_raster/other_raster`、`target_crs`、`resolution`、`overlap=first/last`、`resampling` | `raster` |
 | `raster_align` | `input_raster/reference_raster`、`resampling` | `raster`，参考网格的 Float64 数据波段 |
 | `raster_stack` | 同网格 `input_raster/other_raster` | `raster`，按输入顺序组合的数据波段 |
