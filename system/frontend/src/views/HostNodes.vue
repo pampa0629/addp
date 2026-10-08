@@ -53,21 +53,30 @@
             <el-input v-model="form.addressText" type="textarea" :rows="3" :placeholder="t('system.hostNodes.addressHint')" data-testid="node-addresses" />
           </el-form-item>
           <el-form-item :label="t('system.hostNodes.state')"><el-switch v-model="form.enabled" :active-text="t('system.hostNodes.enabled')" :inactive-text="t('system.hostNodes.disabled')" :aria-label="t('system.hostNodes.state')" data-testid="node-enabled" /></el-form-item>
-          <el-form-item :label="t('system.hostNodes.bindings')">
-            <div class="node-bindings">
-              <p class="node-hint">{{ t('system.hostNodes.bindingHint') }}</p>
-              <div v-for="(binding, index) in form.bindings" :key="index" class="node-binding-row">
-                <el-input v-model="binding.module_name" :placeholder="t('system.hostNodes.module')" :aria-label="t('system.hostNodes.moduleAt', { index: index + 1 })" maxlength="50" />
-                <code class="node-client" :title="`addp-${binding.module_name.trim()}`">{{ `addp-${binding.module_name.trim()}` }}</code>
-                <el-button v-if="canWrite" :aria-label="t('system.hostNodes.removeAt', { index: index + 1 })" @click="form.bindings.splice(index, 1)">{{ t('system.hostNodes.remove') }}</el-button>
-              </div>
-              <el-button v-if="canWrite" :disabled="form.bindings.length >= 64" data-testid="node-add-binding" @click="form.bindings.push({ module_name: '' })">{{ t('system.hostNodes.addBinding') }}</el-button>
-            </div>
-          </el-form-item>
+          <el-collapse v-model="advancedSections">
+            <el-collapse-item name="bindings" :title="t('system.hostNodes.advanced')">
+              <el-alert v-if="moduleError" :title="t(moduleError)" type="warning" :closable="false" />
+              <el-form-item :label="t('system.hostNodes.bindings')">
+                <div class="node-bindings">
+                  <p class="node-hint">{{ t('system.hostNodes.bindingHint') }}</p>
+                  <div v-for="(binding, index) in form.bindings" :key="index" class="node-binding-row">
+                    <el-select v-if="canReadModules" v-model="binding.module_name" filterable :disabled="!modulesLoaded" :loading="modulesLoading" :aria-label="t('system.hostNodes.moduleAt', { index: index + 1 })">
+                      <el-option v-for="module in bindingCandidates(binding)" :key="module.module_name" :value="module.module_name" :label="module.module_name" />
+                    </el-select>
+                    <el-input v-else :model-value="binding.module_name" readonly />
+
+                    <el-button v-if="canWrite && canReadModules && modulesLoaded" :aria-label="t('system.hostNodes.removeAt', { index: index + 1 })" @click="form.bindings.splice(index, 1)">{{ t('system.hostNodes.remove') }}</el-button>
+                  </div>
+                  <el-button v-if="canWrite && canReadModules && modulesLoaded" :disabled="form.bindings.length >= 64" data-testid="node-add-binding" @click="form.bindings.push({ module_name: '' })">{{ t('system.hostNodes.addBinding') }}</el-button>
+                </div>
+              </el-form-item>
+            </el-collapse-item>
+          </el-collapse>
           <p v-if="!creating" class="node-hint">{{ t('system.hostNodes.version', { version: node.version }) }}</p>
         </el-form>
       </div>
       <template #footer>
+        <el-button v-if="!creating && node && canMonitor" @click="openConsoleRoute(`/monitor/node-resources/${node.node_id}`)">{{ t('system.hostNodes.monitor') }}</el-button>
         <el-button ref="closeButton" :disabled="saving" @click="closeDialog">{{ t('common.close') }}</el-button>
         <el-button v-if="!creating" :disabled="saving || detailLoading" @click="loadDetail">{{ t('system.hostNodes.reload') }}</el-button>
         <el-button v-if="canWrite && formReady" type="primary" :loading="saving" data-testid="node-save" @click="save">{{ t('common.save') }}</el-button>
@@ -82,8 +91,9 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
+import { StatusAnnouncer, useConsolePageDescriptor, openConsoleRoute } from '@common-ui'
 import { useAuthStore } from '../store/auth'
+import { modulesAPI } from '../api/modules'
 import { hostNodesAPI } from '../api/hostNodes'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveHostNodesRouteState } from '../utils/routeState'
@@ -94,6 +104,9 @@ const canRead = computed(() => auth.contextType === 'platform' && auth.hasPermis
 const canCreate = computed(() => canRead.value && auth.hasPermission('platform.host_node.create'))
 const canUpdate = computed(() => canRead.value && auth.hasPermission('platform.host_node.update'))
 const canWrite = computed(() => creating.value ? canCreate.value : canUpdate.value)
+const canReadModules = computed(() => canRead.value && auth.hasPermission('platform.module.read'))
+const canMonitor = computed(() => canRead.value && auth.hasPermission('monitor.resource_observation.read'))
+const advancedSections = ref([]), moduleCandidates = ref([]), modulesLoaded = ref(false), modulesLoading = ref(false), moduleError = ref('')
 const state = computed(() => resolveHostNodesRouteState(route.query))
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const rows = ref([]), total = ref(0), searchDraft = ref(''), listLoaded = ref(false), listLoading = ref(false), listError = ref('')
@@ -113,6 +126,23 @@ useConsolePageDescriptor(router, 'system', {
   ready: computed(() => Boolean(node.value) && !creating.value)
 })
 
+function bindingCandidates(binding) {
+  return binding.module_name && !moduleCandidates.value.some(module => module.module_name === binding.module_name) ? [{ module_name: binding.module_name }, ...moduleCandidates.value] : moduleCandidates.value
+}
+async function loadModuleCandidates() {
+  if (!canReadModules.value) { moduleError.value = 'system.hostNodes.modulesDenied'; return }
+  if (modulesLoaded.value || modulesLoading.value) return
+  const epoch = generation
+  modulesLoading.value = true; moduleError.value = ''
+  try {
+    const response = await modulesAPI.list()
+    if (epoch !== generation) return
+    if (!Array.isArray(response.modules) || response.modules.some(module => typeof module.module_name !== 'string' || !/^[a-z][a-z0-9_-]{0,49}$/u.test(module.module_name))) throw new Error('invalid_modules')
+    moduleCandidates.value = response.modules; modulesLoaded.value = true
+  } catch { if (epoch === generation) moduleError.value = 'system.hostNodes.modulesFailed' }
+  finally { if (epoch === generation) modulesLoading.value = false }
+}
+watch(advancedSections, sections => { if (sections.includes('bindings')) loadModuleCandidates() })
 function populate(value) {
   node.value = value
   Object.assign(form, { display_name: value.display_name, node_kind: value.node_kind, addressText: value.addresses.join('\n'), enabled: value.enabled,
@@ -212,7 +242,7 @@ async function save() {
   } finally { if (epoch === generation) saving.value = false }
 }
 watch([() => route.fullPath, identity], async () => {
-  generation++; creating.value = false; saving.value = false; node.value = null; formReady.value = false
+  generation++; advancedSections.value = []; moduleCandidates.value = []; modulesLoaded.value = false; modulesLoading.value = false; moduleError.value = ''; creating.value = false; saving.value = false; node.value = null; formReady.value = false
   detailLoading.value = false; listLoading.value = false; detailError.value = ''; saveError.value = ''; statusMessage.value = ''
   rows.value = []; listLoaded.value = false; searchDraft.value = state.value.search
   if (!canRead.value) return

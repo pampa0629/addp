@@ -134,7 +134,7 @@ rejected(source + '/metrics', source_health)
 print('Metrics T2: anonymous, foreign client CA and plaintext rejected', flush=True)
 # Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
-                '^TestIntegrationMetrics(CPUWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
+                '^TestIntegrationMetrics(CPUWindow|DiskWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
                cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
                env=dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1'),
                check=True, timeout=60)
@@ -302,7 +302,7 @@ eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance +
 # history out of this limited-view check; this remains a T2 protocol fixture.
 FILES.append(str(Path(__file__).resolve().parents[1] / 'infra/node-metrics-desktop.yml'))
 os.environ.update(ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector',
-                  ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1', ADDP_NODE_METRICS_PUBLISH_PORT='0')
+                  ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1', ADDP_NODE_METRICS_PUBLISH_PORT=port('node-exporter', 9100))
 compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter')
 limited = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'node-exporter')], text=True))[0]
 assert limited['HostConfig']['NetworkMode'] != 'host' and limited['HostConfig']['PidMode'] != 'host'
@@ -314,7 +314,7 @@ assert limited['HostConfig']['NanoCpus'] == 250_000_000
 assert len(limited['HostConfig']['PortBindings']['9100/tcp']) == 1
 limited_ip = next(iter(limited['NetworkSettings']['Networks'].values()))['IPAddress']
 extensions = WORK / 'node-extensions'
-extensions.write_text('subjectAltName=DNS:localhost,IP:' + limited_ip + '\nextendedKeyUsage=serverAuth\n')
+extensions.write_text('subjectAltName=DNS:localhost,DNS:host.docker.internal,IP:127.0.0.1,IP:' + limited_ip + '\nextendedKeyUsage=serverAuth\n')
 subprocess.run(['openssl', 'x509', '-req', '-in', str(WORK / 'source-server.csr'),
                 '-CA', str(deployment / 'source-ca.crt'), '-CAkey', str(WORK / 'source-ca.key'),
                 '-CAserial', str(WORK / 'source-ca.srl'), '-days', '1', '-extfile', str(extensions),
@@ -345,6 +345,15 @@ print(f'Metrics T2: limited Engine={engine["OperatingSystem"]}, kernel={engine["
       f'cores={len(cores)}, memory_bytes={int(memory)}; container quota=0.25 CPU/256 MiB', flush=True)
 
 node_instance = limited_ip + ':9100'
+if __import__('platform').system() == 'Darwin' and engine['OperatingSystem'] == 'Docker Desktop':
+    # Exercise the production transformation through an actual loopback publish.
+    loopback_port = port('node-exporter', 9100)
+    os.environ['ADDP_METRICS_DESKTOP_LOOPBACK_PORT'] = loopback_port
+    subprocess.run(['python3', str(Path(__file__).resolve().parents[1] / 'infra/generate-metrics-config.py')], check=True)
+    compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90', 'prometheus')
+    base = 'https://localhost:' + port('prometheus', 9090)
+    node_instance = '127.0.0.1:' + loopback_port
+    print('Metrics T2: Desktop source uses loopback publish and the sole host transport, without LAN addressing', flush=True)
 projection[0]['targets'] = [node_instance]
 projection[0]['labels']['addp_node_id'] = '22222222-2222-4222-8222-222222222222'
 discovery_text(json.dumps(projection))
@@ -353,7 +362,7 @@ def limited_samples():
     return (job_is_up('addp_nodes', '1') and len(query('node_memory_MemTotal_bytes' + selector)) == 1
             and not query('node_filesystem_size_bytes' + selector))
 eventually(limited_samples, 'limited VM metrics enter the sole HTTP SD job without filesystem samples')
-query_env.update(ADDP_METRICS_QUERY_NODE_ID=projection[0]['labels']['addp_node_id'],
+query_env.update(MONITOR_PROMETHEUS_URL=base, ADDP_METRICS_QUERY_NODE_ID=projection[0]['labels']['addp_node_id'],
                  ADDP_METRICS_QUERY_INSTANCE=node_instance, ADDP_METRICS_QUERY_RESTRICTED_VM='1')
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
                 '^TestIntegrationMetricsResourceQueries$', '-count=1', '-v'],
@@ -365,6 +374,7 @@ eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance +
 assert get(base + '/-/ready')
 restarted_at = time.time()
 compose('start', 'node-exporter')
+assert port('node-exporter', 9100) == os.environ['ADDP_NODE_METRICS_PUBLISH_PORT'], 'limited source changed its explicit published port'
 eventually(lambda: limited_samples() and
            float(query('timestamp(node_memory_MemTotal_bytes{job="addp_nodes",addp_node_id="' +
                        projection[0]['labels']['addp_node_id'] + '"})')[0]['value'][1]) >= restarted_at,

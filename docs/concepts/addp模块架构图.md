@@ -60,7 +60,7 @@ graph TB
         Orchestrator[Orchestrator Backend<br/>任务编排<br/>:8084]
         Develop[Develop Backend<br/>数据开发<br/>:8185]
         Service[Service Backend<br/>数据服务<br/>:8086]
-        Monitor[Monitor Backend<br/>执行监控<br/>:8100]
+        Monitor[Monitor Backend<br/>运行监控<br/>:8100]
         Quality[Quality Backend<br/>数据质量<br/>:8182]
         Inference[Inference Backend<br/>统一 AI 推理<br/>:8191]
         Standard[Standard Backend<br/>数据标准<br/>:8110]
@@ -277,7 +277,7 @@ graph TB
 | **Orchestrator** | 任务编排:跨模块任务编排调度 | 8084 / 8084 | Go, Gin, Cron |
 | **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8185 / 8185 | Go, Gin, Monaco Editor |
 | **Service** | 数据服务:服务发布(空间OGC标准与非空间)、外部服务注册 | 8086 / 8086 | Go, Gin, OGC 标准 |
-| **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
+| **Monitor** | 运行监控:任务执行记录、统计分析与平台主机资源观测 | 8100 / 8100 | Go, Gin, PostgreSQL |
 | **Model** | 数据建模：业务实体、逻辑模型、模型关系、公共/一致性维度、维度层级和指标实现；冻结采用的 Standard 修订 | 8181 / 8181 | Go, Gin, GORM, Vue 3 |
 | **Quality** | 数据质量：基于确定资源、组件和标准修订管理规则应用、检查任务、符合性结果、质量评分和问题治理 | 8182 / 8182 | Go, Gin, GORM |
 | **Quality Worker** | Quality 有界字段检查与数据校验执行器，独立进程 | - | Go, PostgreSQL claim/lease |
@@ -473,7 +473,7 @@ graph TB
 
 ## Monitor 模块
 
-Monitor 模块当前提供**统一执行监控**及独立的 Platform 日志链路健康与告警。2026-10-04 已确认扩展平台运行观测，覆盖 ADDP 节点、运行实例和明确纳管引擎的资源、服务质量与关联诊断；该扩展尚未实施，依赖矩阵与分期见 [平台运行监控与可观测性设计](../next/ADDP平台运行监控与可观测性设计.md)。
+Monitor 模块当前提供**统一运行监控**及独立的 Platform 日志链路健康与告警。2026-10-04 已确认扩展平台运行观测，覆盖 ADDP 节点、运行实例和明确纳管引擎的资源、服务质量与关联诊断；主机资源观测与独立可选指标设施已分批实施；实例资源、引擎专业指标、拓扑及追踪仍待实施，依赖矩阵与分期见 [平台运行监控与可观测性设计](../next/ADDP平台运行监控与可观测性设计.md)。
 
 ```mermaid
 graph TB
@@ -1189,14 +1189,14 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 **更新日期**: 2026-08-26
 **作者**: ADDP 开发团队
 
-## 平台运行观测扩展（2026-10-04 已确认目标，待实施）
+## 平台运行观测扩展（2026-10-04 已确认目标，分批实施）
 
 - System 拥有纳管节点稳定身份和部署关联，以及已有模块/实例/引擎登记；Monitor 拥有监测目标、策略、查询、拓扑投影、告警与通知，不复制实例租约或引擎生命周期。
 - Prometheus、Loki、Tempo 和节点采集设施按 Infra 组织；指标、日志、追踪分别选择。SDK 和公共埋点随应用构建，业务主路径不等待遥测确认。
 - 可选观测设施和 Monitor 不进入其他业务模块的启动、Ready 或 Gateway 路由条件；Monitor 整体 Ready 不包含可选观测后端，执行查询与资源/日志/追踪请求分别处理错误。
 - 未启用、配置缺失、设施故障、目标未接入、无样本、过期与不支持分别表达；未知观测不改变任务、租约或引擎事实，也不能恢复告警。
 - 首期平台资源视图不授予 Tenant 数据、SQL、任务结果或主机管理权。集中日志正文保持下述 System 授权主路径。
-- 现有日志属于标准 Infra 组合；按需裁剪尚须改造启动/停止/状态、配置校验、测试和 CI。本节不提供已可运行的裁剪命令。详细契约见 [平台运行监控与可观测性设计](../next/ADDP平台运行监控与可观测性设计.md)。
+- 日志、指标设施已按显式部署开关组织；实际覆盖仍须来源部署与授权验收。详细契约见 [平台运行监控与可观测性设计](../next/ADDP平台运行监控与可观测性设计.md)。
 
 ## 模块服务运行日志边界
 

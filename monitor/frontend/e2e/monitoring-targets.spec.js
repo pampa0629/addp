@@ -5,9 +5,10 @@ import { backend, id, identity, node, permissions, setIdentity } from './monitor
 test('registers, updates, disables and deletes using authoritative saved versions', async ({ page }) => {
   const state = await backend(page)
   await page.goto('/monitoring-targets')
-  await page.getByRole('button', { name: '登记监测目标', exact: true }).click()
+  await page.getByRole('button', { name: '新增采集配置', exact: true }).click()
   await expect(page).toHaveURL(/\/monitoring-targets\/new$/)
-  await page.getByTestId('target-node').fill(node)
+  await page.getByTestId('target-node').click()
+  await page.getByRole('option', { name: '测试主机', exact: true }).click()
   await page.getByTestId('target-endpoint').fill('https://new.test:9443/metrics')
   await page.getByTestId('target-save').click()
   await expect(page).toHaveURL(new RegExp(`/monitoring-targets/${id}$`))
@@ -47,7 +48,7 @@ test('read-only access exposes no write actions', async ({ page }) => {
   await expect(page.getByTestId('target-endpoint')).toHaveValue('https://node.test:9443/metrics')
   await expect(page.getByTestId('target-save')).toHaveCount(0)
   await expect(page.getByTestId('target-delete')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '登记监测目标' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '新增采集配置' })).toHaveCount(0)
 })
 for (const [name, value] of [
   ['tenant', identity(permissions, { type: 'tenant', tenant_id: '7' })],
@@ -82,7 +83,7 @@ test('English page restores canonical pagination and fits a narrow viewport', as
   await backend(page, { locale: 'en' })
   await page.goto('/monitoring-targets?page=02&endpoint=untrusted')
   await expect(page).toHaveURL(/\/monitoring-targets$/)
-  await expect(page.getByRole('heading', { name: 'Platform monitoring targets' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Collection settings' })).toBeVisible()
   await expect(page.locator('.el-pagination__total')).toContainText('Total')
   await page.screenshot({ path: join(tmpdir(), 'addp-monitor-targets-desktop.png'), animations: 'disabled' })
   await page.setViewportSize({ width: 620, height: 700 })
@@ -90,4 +91,22 @@ test('English page restores canonical pagination and fits a narrow viewport', as
   await expect(page.getByTestId('target-endpoint')).toHaveValue('https://node.test:9443/metrics')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   await page.screenshot({ path: join(tmpdir(), 'addp-monitor-targets-narrow.png'), animations: 'disabled' })
+})
+
+test('a host handoff resolves the authoritative name and does not create configuration until save', async ({ page }) => {
+  const state = await backend(page)
+  await page.goto(`/monitoring-targets/new?node_id=${node}`)
+  await expect(page.getByTestId('target-node')).toContainText('测试主机')
+  expect(state.writes).toHaveLength(0)
+  await page.getByTestId('target-endpoint').fill('https://new.test:9443/metrics')
+  await page.getByTestId('target-save').click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0].input.subject.node_id).toBe(node)
+})
+test('unavailable System host evidence cannot submit a copied reference', async ({ page }) => {
+  const state = await backend(page, { hostUnavailable: true })
+  await page.goto(`/monitoring-targets/new?node_id=${node}`)
+  await expect(page.getByRole('alert').filter({ hasText: '无法读取主机' })).toBeVisible()
+  await expect(page.getByTestId('target-save')).toHaveCount(0)
+  expect(state.writes).toHaveLength(0)
 })

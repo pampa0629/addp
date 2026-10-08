@@ -2,11 +2,11 @@ export const targetKinds = { host_resources: 'node_exporter', container_resource
 export function isTargetUUID(value) {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value) && !/^0{8}-0{4}-0{4}-0{4}-0{12}$/u.test(value)
 }
-export function resolveTargetRoute(query = {}) {
+export function resolveTargetRoute(query = {}, creating = false) {
   const integer = (value, max, fallback) => typeof value === 'string' && /^[1-9][0-9]*$/u.test(value) && Number(value) <= max ? Number(value) : fallback
   const page = integer(query.page, 1000000, 1)
   const pageSize = integer(query.page_size, 100, 20)
-  const canonical = { ...(page === 1 ? {} : { page: String(page) }), ...(pageSize === 20 ? {} : { page_size: String(pageSize) }) }
+  const canonical = { ...(creating && isTargetUUID(query.node_id) ? { node_id: query.node_id } : {}), ...(page === 1 ? {} : { page: String(page) }), ...(pageSize === 20 ? {} : { page_size: String(pageSize) }) }
   return { page, pageSize, query: canonical, changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
 }
 export function targetInput(form, target) {

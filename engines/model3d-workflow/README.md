@@ -43,6 +43,8 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/native_setup.p
 
 准备成功后由用户在自己的终端运行 `./scripts/dev/restart.sh -model3d-workflow`。全量重启也在停止现有服务之前执行同一准备与转换预检。
 
+2026-10-08 本地页面验收：已运行的 macOS 原生 Runtime 经 Manager 正式快显入口完成 Business NFS 的 DAE、带贴图 3DS、IFC 建筑及单体 OSGB 转换。四个任务均为成功、结果可用，浏览器实际显示几何；3DS 彩色贴图与 OSGB 地表贴图可见，旋转和缩放可操作。OSGB execution `a15774db-d803-424c-8d23-ef5fe11413a7` 的 Monitor 详情记录源 item 766 与平台内部 GLB 产物。此验收不代替暂缓的正式门禁、Linux 产品构建和 Hosted T4。
+
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
 
 SKP 使用固定的 MIT 许可 `openskp[textures]==1.3.0`，在当前 Python Runtime 的独立子进程中执行 `skp_converter.py`，不调用 SuperMap、SketchUp 桌面 SDK 或 Assimp。输入为单文件，贴图须已内嵌；导出的毫米坐标通过统一场景根缩放为米，保持 Y 上轴和实例变换。只发布经过统一校验的 GLB，临时 JSON 与缩略图不会发布。首期不声明动态组件、动画、标注、孤立线段或全部 SKP 版本支持；固定版本的导出器未应用可见性，含隐藏组件、隐藏面或关闭图层的模型明确拒绝，避免发布错误场景。解析失败、空场景、缺失贴图和非法 GLB 保留旧产物。项目与发行版依据见平台内置格式规范。

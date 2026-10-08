@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, filesystemRows } from '../src/utils/nodeResources.js'
+import { validateCollection, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, resourceDimensionRows } from '../src/utils/nodeResources.js'
 
 test('node resource trends delegate chart rendering and formatting to the shared owners', () => {
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
@@ -90,7 +90,7 @@ test('filesystem series retain bind mounts and reject incomplete, foreign or fab
   const series = filesystemMetrics.flatMap(metric => ['/', '/bind'].map(mountpoint => ({ metric_key: metric.key, dimensions: { ...dimensions, mountpoint }, unit: metric.unit, window_seconds: 0, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] })))
   const response = { subject: { kind: 'node', node_id: 'node-id' }, end: at, queried_at: at, series }
   assert.equal(validateResourceResponse(response, 'node-id', keys), response)
-  assert.equal(filesystemRows(response).length, 2)
+  assert.equal(resourceDimensionRows(response).length, 2)
   for (const mutate of [value => value.series[0].dimensions = {}, value => value.series.push(value.series[0]), value => value.series[0].dimensions.private = 'secret', value => value.series.pop(), value => delete value.series[0].dimensions]) {
     const bad = structuredClone(response); mutate(bad)
     assert.throws(() => validateResourceResponse(bad, 'node-id', keys))
@@ -98,7 +98,7 @@ test('filesystem series retain bind mounts and reject incomplete, foreign or fab
   assert.throws(() => validateResourceResponse(response, 'node-id', keys, false, dimensions))
   const empty = { ...response, series: filesystemMetrics.map(metric => ({ metric_key: metric.key, dimensions: {}, unit: metric.unit, window_seconds: 0, points: [{ evaluated_at: at, sampled_at: null, value: null, data_state: 'no_data' }] })) }
   assert.equal(validateResourceResponse(empty, 'node-id', keys), empty)
-  assert.deepEqual(filesystemRows(empty), [])
+  assert.deepEqual(resourceDimensionRows(empty), [])
 })
 
 
@@ -108,7 +108,7 @@ test('inode observations share mount identity and reject fractional or unsafe co
   const series = inodeMetrics.map(metric => ({ metric_key: metric.key, dimensions, unit: metric.unit, window_seconds: 0, points: [{ evaluated_at: at, sampled_at: at, value: metric.name === 'inodeTotal' || metric.name === 'inodeFree' ? 100 : 0, data_state: 'valid' }] }))
   const response = { subject: { kind: 'node', node_id: 'node-id' }, series, end: at, queried_at: at }
   assert.equal(validateResourceResponse(response, 'node-id', keys), response)
-  assert.equal(filesystemRows(response, null).length, 1)
+  assert.equal(resourceDimensionRows(response, null).length, 1)
   for (const value of [0.5, Number.MAX_SAFE_INTEGER + 1]) {
     const bad = structuredClone(response); bad.series.find(row => row.unit === 'inodes').points[0].value = value
     assert.throws(() => validateResourceResponse(bad, 'node-id', keys))
@@ -116,4 +116,30 @@ test('inode observations share mount identity and reject fractional or unsafe co
   const route = resolveResourceRoute({ metric: 'node.filesystem.inodes_used_percent', ...dimensions }, true)
   assert.deepEqual(route.dimensions, dimensions)
   assert.equal(route.invalidDimensions, false)
+})
+
+test('collection evidence separates source failure from unsupported coverage and rejects stale success', () => {
+  const at = '2026-10-08T00:00:00Z'
+  assert.equal(validateCollection({ state: 'failed', sampled_at: at, filesystem: 'unknown' }, at).state, 'failed')
+  assert.equal(validateCollection({ state: 'collecting', sampled_at: at, filesystem: 'not_collected' }, at).filesystem, 'not_collected')
+  assert.throws(() => validateCollection({ state: 'failed', sampled_at: at, filesystem: 'not_collected' }, at))
+  assert.throws(() => validateCollection({ state: 'collecting', sampled_at: '2026-10-07T00:00:00Z', filesystem: 'available' }, at))
+  assert.throws(() => validateCollection(undefined, at))
+})
+
+
+test('disk selectors use only device and reject foreign dimensions or incomplete device families', () => {
+  const at = '2026-10-08T00:00:00Z', dimensions = { device: 'nvme0n1' }
+  const query = { metric: diskMetrics[0].key, ...dimensions, range: '5m' }
+  assert.deepEqual(resolveResourceRoute(query, true).query, query)
+  assert.equal(resolveResourceRoute({ ...query, mountpoint: '/' }, true).invalidDimensions, true)
+  assert.equal(resolveResourceRoute({ metric: diskMetrics[0].key }, true).invalidDimensions, true)
+  const keys = diskMetrics.map(metric => metric.key)
+  const response = { subject: { kind: 'node', node_id: 'node-id' }, end: at, queried_at: at, series: diskMetrics.map(metric => ({ metric_key: metric.key, dimensions, unit: metric.unit, window_seconds: 60, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] })) }
+  assert.equal(validateResourceResponse(response, 'node-id', keys, false, dimensions), response)
+  assert.equal(resourceDimensionRows(response).length, 1)
+  for (const change of [bad => bad.series[0].dimensions = {}, bad => bad.series[0].dimensions = { device: 'other' }, bad => bad.series[0].dimensions.mountpoint = '/', bad => bad.series[0].window_seconds = 15, bad => bad.series[0].points[0].value = -1]) {
+    const bad = structuredClone(response); change(bad)
+    assert.throws(() => validateResourceResponse(bad, 'node-id', keys, false, dimensions))
+  }
 })

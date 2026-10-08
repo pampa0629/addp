@@ -6,7 +6,7 @@ test('platform monitoring menu opens the real iframe and preserves a single Cons
   await page.goto('/monitor/monitoring-targets?page=2')
   const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(monitor.getByRole('button', { name: '详情', exact: true })).toBeVisible()
-  await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('平台监测目标')
+  await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('采集配置')
   const frame = page.frames().find(frame => frame.parentFrame())
   const documentID = await frame.evaluate(() => performance.timeOrigin)
   await monitor.getByRole('button', { name: '详情', exact: true }).click()

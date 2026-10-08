@@ -44,7 +44,7 @@ export { default as ScheduleConfig } from './components/ScheduleConfig.vue'
 export { default as ScheduleDisplay } from './components/ScheduleDisplay.vue'
 
 // Utils
-export { formatBytes, formatDate, safeStringify } from './utils/formatters'
+export { formatBytes, scaleByteValue, formatDurationSeconds, formatDate, safeStringify } from './utils/formatters'
 export * from './utils/schedule'
 export * from './utils/index'
 export * from './utils/exportSession'

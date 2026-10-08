@@ -74,7 +74,7 @@ func Empty(p Plan, state string) []Series {
 	out := make([]Series, 0, len(p.Metrics))
 	for _, d := range p.Metrics {
 		row := emptySeries(p, d, Dimensions{}, state)
-		if d.Filesystem() {
+		if d.Grouped() {
 			row.Dimensions = p.Dimensions.Copy()
 		}
 		out = append(out, row)
@@ -145,40 +145,48 @@ func (c *Client) Query(ctx context.Context, p Plan, s Scope, b Budget) ([]Series
 	} else {
 		q.Set("time", p.End.Format(time.RFC3339))
 	}
+	data, err := c.read(ctx, endpoint, q)
+	if err != nil {
+		return nil, err
+	}
+	return normalize(data, p, b)
+}
+
+func (c *Client) read(ctx context.Context, endpoint string, q url.Values) (envelope, error) {
+	var data envelope
 	req, err := http.NewRequestWithContext(ctx, "GET", c.origin+endpoint+"?"+q.Encode(), nil)
 	if err != nil {
-		return nil, ErrUnavailable
+		return data, ErrUnavailable
 	}
 	req.Header.Set("Accept", "application/json")
 	response, err := c.http.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return data, ctx.Err()
 		}
-		return nil, ErrUnavailable
+		return data, ErrUnavailable
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return data, ctx.Err()
 		}
-		return nil, ErrUnavailable
+		return data, ErrUnavailable
 	}
 	if len(body) > responseLimit {
-		return nil, ErrBudget
+		return data, ErrBudget
 	}
-	var data envelope
 	if json.Unmarshal(body, &data) != nil {
-		return nil, ErrUnavailable
+		return data, ErrUnavailable
 	}
 	if data.Status == "error" && data.ErrorType == "timeout" {
-		return nil, context.DeadlineExceeded
+		return data, context.DeadlineExceeded
 	}
 	if response.StatusCode != 200 || data.Status != "success" || len(data.Warnings) > 0 || len(data.Infos) > 0 {
-		return nil, ErrUnavailable
+		return data, ErrUnavailable
 	}
-	return normalize(data, p, b)
+	return data, nil
 }
 func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 	expected := "vector"
@@ -193,8 +201,8 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 	definitions := map[string]Definition{}
 	for _, d := range p.Metrics {
 		definitions[d.Key] = d
-		if d.Filesystem() {
-			wireBound += 3 * p.FilesystemGroups
+		if d.Grouped() {
+			wireBound += 3 * p.GroupLimit(d)
 		} else {
 			wireBound += 2
 		}
@@ -202,9 +210,19 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 	if len(data.Data.Result) > wireBound {
 		return nil, ErrBudget
 	}
-	groups := map[string]Dimensions{}
+	groups := map[string]map[string]Dimensions{"filesystem": {}, "disk": {}}
+	family := func(d Definition) string {
+		if d.Disk() {
+			return "disk"
+		}
+		return "filesystem"
+	}
 	if len(p.Dimensions) > 0 {
-		groups[p.Dimensions.identity()] = p.Dimensions.Copy()
+		for _, d := range p.Metrics {
+			if d.Grouped() {
+				groups[family(d)][p.Dimensions.identity()] = p.Dimensions.Copy()
+			}
+		}
 	}
 	seen := map[string]bool{}
 	values := map[string]map[int]float64{}
@@ -215,13 +233,15 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 		key, component := row.Metric["addp_metric"], row.Metric["addp_component"]
 		d, known := definitions[key]
 		dimensions := Dimensions{}
-		if d.Filesystem() {
-			dimensions = Dimensions{"device": row.Metric["device"], "mountpoint": row.Metric["mountpoint"], "fstype": row.Metric["fstype"]}
-			if len(row.Metric) != 5 || dimensions.Validate() != nil || (len(p.Dimensions) > 0 && dimensions.identity() != p.Dimensions.identity()) {
+		if d.Grouped() {
+			for _, key := range d.DimensionKeys() {
+				dimensions[key] = row.Metric[key]
+			}
+			if len(row.Metric) != 2+len(d.DimensionKeys()) || dimensions.Validate() != nil || (len(p.Dimensions) > 0 && dimensions.identity() != p.Dimensions.identity()) {
 				return nil, ErrUnavailable
 			}
-			groups[dimensions.identity()] = dimensions
-			if len(groups) > p.FilesystemGroups {
+			groups[family(d)][dimensions.identity()] = dimensions
+			if len(groups[family(d)]) > p.GroupLimit(d) {
 				return nil, ErrBudget
 			}
 		} else if len(row.Metric) != 2 {
@@ -229,7 +249,7 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 		}
 		seriesID := key + "\x00" + dimensions.identity()
 		identity := seriesID + "\x00" + component
-		if !known || (component != "value" && component != "sampled_at" && !(d.Filesystem() && component == "observed_at")) || seen[identity] || len(row.Histograms) > 0 || len(row.Histogram) > 0 {
+		if !known || (component != "value" && component != "sampled_at" && !(d.Grouped() && component == "observed_at")) || seen[identity] || len(row.Histograms) > 0 || len(row.Histogram) > 0 {
 			return nil, ErrUnavailable
 		}
 		seen[identity] = true
@@ -275,18 +295,18 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 			target[seriesID][index] = value
 		}
 	}
-	groupIDs := []string{}
-	for id := range groups {
-		groupIDs = append(groupIDs, id)
-	}
-	sort.Strings(groupIDs)
 	out := []Series{}
 	for _, d := range p.Metrics {
 		dimensions := []Dimensions{{}}
-		if d.Filesystem() && len(groupIDs) > 0 {
+		if d.Grouped() && len(groups[family(d)]) > 0 {
+			ids := []string{}
+			for id := range groups[family(d)] {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
 			dimensions = nil
-			for _, id := range groupIDs {
-				dimensions = append(dimensions, groups[id])
+			for _, id := range ids {
+				dimensions = append(dimensions, groups[family(d)][id])
 			}
 		}
 		for _, dimension := range dimensions {
@@ -296,7 +316,7 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 				v, vok := values[id][i]
 				ts, tok := stamps[id][i]
 				point := &row.Points[i]
-				if d.Filesystem() {
+				if d.Grouped() {
 					witness, observed := observations[id][i]
 					if !observed || witness != ts {
 						continue

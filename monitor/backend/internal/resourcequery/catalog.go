@@ -52,7 +52,7 @@ type Definition struct {
 	WindowSeconds int    `json:"window_seconds"`
 }
 
-// Scalar metrics have one series; filesystem metrics share controlled mount dimensions.
+// Scalars have one series; grouped families retain their closed observation dimensions.
 var definitions = []Definition{
 	{"node.cpu.logical_cores", "cores", 0},
 	{"node.cpu.busy_percent", "percent", 60},
@@ -63,6 +63,8 @@ var definitions = []Definition{
 	{"node.load.average_5m", "load", 0},
 	{"node.load.average_15m", "load", 0},
 	{"node.uptime_seconds", "seconds", 0},
+	{"node.disk.read_bytes_per_second", "bytes_per_second", 60},
+	{"node.disk.write_bytes_per_second", "bytes_per_second", 60},
 	{"node.filesystem.total_bytes", "bytes", 0},
 	{"node.filesystem.free_bytes", "bytes", 0},
 	{"node.filesystem.available_bytes", "bytes", 0},
@@ -85,6 +87,7 @@ type Plan struct {
 	Dimensions       Dimensions
 	SeriesUpperBound int
 	FilesystemGroups int
+	DiskGroups       int
 }
 
 func NewPlan(keys []string, start, end, now time.Time, trend bool, dimensions Dimensions, b Budget) (Plan, error) {
@@ -114,28 +117,36 @@ func NewPlan(keys []string, start, end, now time.Time, trend bool, dimensions Di
 			return p, ErrInvalid
 		}
 	}
-	scalar, filesystem := 0, 0
+	scalar, filesystem, disk := 0, 0, 0
 	for _, d := range p.Metrics {
 		if d.Filesystem() {
 			filesystem++
+		} else if d.Disk() {
+			disk++
 		} else {
 			scalar++
 		}
 	}
-	if len(dimensions) != 0 && filesystem == 0 {
+	if len(dimensions) > 0 && ((len(dimensions) == 1 && (disk == 0 || filesystem > 0)) || (len(dimensions) == 3 && (filesystem == 0 || disk > 0))) {
 		return p, ErrInvalid
 	}
 	p.Dimensions = dimensions.Copy()
 	p.SeriesUpperBound = scalar
-	if filesystem > 0 {
-		p.FilesystemGroups = (b.MaxSeries - scalar) / filesystem
-		if len(dimensions) != 0 {
-			p.FilesystemGroups = 1
+	if filesystem+disk > 0 {
+		groups := (b.MaxSeries - scalar) / (filesystem + disk)
+		if len(dimensions) > 0 {
+			groups = 1
 		}
-		if p.FilesystemGroups < 1 {
+		if groups < 1 {
 			return p, ErrBudget
 		}
-		p.SeriesUpperBound += p.FilesystemGroups * filesystem
+		if filesystem > 0 {
+			p.FilesystemGroups = groups
+		}
+		if disk > 0 {
+			p.DiskGroups = groups
+		}
+		p.SeriesUpperBound += groups * (filesystem + disk)
 	}
 	if end.IsZero() || end.Nanosecond() != 0 || end.After(now) || end.Unix() < 0 {
 		return p, ErrInvalid
@@ -199,6 +210,9 @@ func (p Plan) Expression(s Scope) (string, error) {
 		components := []struct{ k, v string }{}
 		if d.Filesystem() {
 			value, stamp, presence := filesystemExpression(s, d.Key, p.Dimensions)
+			components = append(components, struct{ k, v string }{"value", value}, struct{ k, v string }{"sampled_at", stamp}, struct{ k, v string }{"observed_at", presence})
+		} else if d.Disk() {
+			value, stamp, presence := diskExpression(s, d.Key, p.Dimensions)
 			components = append(components, struct{ k, v string }{"value", value}, struct{ k, v string }{"sampled_at", stamp}, struct{ k, v string }{"observed_at", presence})
 		} else {
 			gauge := func(name string) (string, string) {

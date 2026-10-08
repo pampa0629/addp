@@ -6,6 +6,8 @@
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
+# Test-owned transport starts dynamically, then the probe pins its assigned port.
+export ADDP_METRICS_DESKTOP_LOOPBACK_PORT= ADDP_NODE_METRICS_PUBLISH_PORT=0
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-metrics-t2.XXXXXX")
 COMPOSE_PROJECT="addp-metrics-t2-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 COMPOSE_FILE="$ROOT_DIR/scripts/test/docker-compose.monitor-metrics-t2.yml"

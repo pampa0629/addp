@@ -5636,7 +5636,7 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id
 		JOIN system.roles r ON r.id=rp.role_id
 		WHERE p.permission_key IN ('system.engine_access_grant.create','system.engine_access_grant.read')
-		AND r.role_key <> 'tenant.source_data_authorizer'`).Scan(&implicitGrantBindings); err != nil {
+		AND r.role_key NOT IN ('tenant.source_data_authorizer', 'tenant.engine_access_delegation_administrator')`).Scan(&implicitGrantBindings); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id

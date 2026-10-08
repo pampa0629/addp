@@ -117,10 +117,17 @@
         </el-table-column>
 
         <!-- 操作列 -->
-        <el-table-column :label="t('system.engine.columns.actions')" width="340" fixed="right">
+        <el-table-column :label="t('system.engine.columns.actions')" width="410" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" :disabled="['deleting', 'deleted'].includes(row.lifecycle_state)" @click="testConnection(row)">{{ t('system.engine.actions.test') }}</el-button>
             <el-button size="small" @click="viewEngineDetails(row)">{{ t('system.engine.actions.detail') }}</el-button>
+            <el-button
+              v-if="availableAuthorizationTabs.length"
+              size="small"
+              :disabled="['deleting', 'deleted'].includes(row.lifecycle_state)"
+              data-testid="engine-authorization-open"
+              @click="viewEngineAuthorization(row)"
+            >{{ t('system.engine.actions.authorization') }}</el-button>
             <el-button
 			v-if="row.lifecycle_state === 'deleted' && authStore.hasPermission('system.engine.update')"
 				size="small"
@@ -407,10 +414,10 @@
       </template>
     </el-dialog>
 
-    <!-- 引擎详情弹窗 -->
+    <!-- 同一引擎对象按公开子视图展示详情或授权，授权不再嵌入详情。 -->
     <el-dialog
       v-model="detailsVisible"
-      :title="t('system.engine.dialog.details', { name: selectedEngine?.name || '' })"
+      :title="t(isAuthorizationView ? 'system.engine.dialog.authorization' : 'system.engine.dialog.details', { name: selectedEngine?.name || '' })"
       class="addp-dialog"
       width="min(920px, calc(100vw - 24px))"
       destroy-on-close
@@ -418,7 +425,7 @@
     >
       <div v-loading="detailsLoading" style="min-height: 300px">
         <el-empty v-if="detailError" :description="detailError" />
-        <el-tabs v-else-if="selectedEngine" v-model="detailTab" type="border-card" @tab-change="selectDetailTab">
+        <el-tabs v-else-if="selectedEngine && !isAuthorizationView" v-model="detailTab" type="border-card" @tab-change="selectDetailTab">
           <!-- 基本信息标签页 -->
           <el-tab-pane name="basic" :label="t('system.engine.dialog.detailTabs.basic')">
             <el-descriptions :column="2" border>
@@ -564,11 +571,13 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane v-if="availableDetailTabs.includes('delegations')" :label="t('system.engine.delegations.title')" name="delegations">
-            <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
-          </el-tab-pane>
-          <el-tab-pane v-if="availableDetailTabs.includes('data-authorization')" :label="t('system.engine.dataAuthorization.title')" name="data-authorization">
+        </el-tabs>
+        <el-tabs v-else-if="selectedEngine" v-model="detailTab" type="border-card" @tab-change="selectDetailTab">
+          <el-tab-pane v-if="availableAuthorizationTabs.includes('data-authorization')" :label="t('system.engine.dataAuthorization.title')" name="data-authorization">
             <EngineDataAuthorization v-if="detailTab === 'data-authorization'" :key="selectedEngine.id" :engine="selectedEngine" />
+          </el-tab-pane>
+          <el-tab-pane v-if="availableAuthorizationTabs.includes('delegations')" :label="t('system.engine.delegations.navigationTitle')" name="delegations">
+            <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
           </el-tab-pane>
         </el-tabs>
       </div>
@@ -799,14 +808,15 @@ const extensionRuntimeStatusTagType = computed(() => {
 // 引擎详情弹窗相关
 const detailsVisible = ref(false)
 const selectedEngine = ref(null)
+const detailTab = ref('basic')
+const isAuthorizationView = computed(() => ['data-authorization', 'delegations'].includes(detailTab.value))
 useConsolePageDescriptor(router, 'system', {
-  title: computed(() => t('system.engine.recentDetailTitle')),
+  title: computed(() => t(isAuthorizationView.value ? 'system.engine.recentAuthorizationTitle' : 'system.engine.recentDetailTitle')),
   subject: computed(() => selectedEngine.value?.name || ''),
   ready: computed(() => Boolean(route.params.id && selectedEngine.value?.name))
 })
 const detailsLoading = ref(false)
 const detailError = ref('')
-const detailTab = ref('basic')
 const jsonViewVisible = ref(false)
 
 const form = ref({
@@ -1816,15 +1826,21 @@ const resetDeletionDialog = () => {
 	deletionAssessing.value = false
 }
 
+const availableAuthorizationTabs = computed(() => {
+  const tabs = []
+  if (['read', 'initialize'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`)) ||
+    ['create', 'read', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_grant.${action}`))) tabs.push('data-authorization')
+  if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
+  return tabs
+})
+
 const availableDetailTabs = computed(() => {
   const tabs = ['basic']
   if (selectedEngine.value?.connection_info && Object.keys(selectedEngine.value.connection_info).length > 0) {
     tabs.push('connection')
   }
   if (hasSelectedCapabilitiesView.value) tabs.push('capabilities')
-  if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
-  if (['read', 'initialize'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`)) ||
-    ['create', 'read', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_grant.${action}`))) tabs.push('data-authorization')
+  tabs.push(...availableAuthorizationTabs.value)
   return tabs
 })
 
@@ -1881,6 +1897,16 @@ const viewEngineDetails = async (row) => {
   await navigateSystemRoute(router, {
     name: 'EngineDetail',
     params: { id: String(row.id) }
+  })
+}
+
+const viewEngineAuthorization = async (row) => {
+  const tab = availableAuthorizationTabs.value[0]
+  if (!tab) return
+  await navigateSystemRoute(router, {
+    name: 'EngineDetail',
+    params: { id: String(row.id) },
+    query: { tab }
   })
 }
 

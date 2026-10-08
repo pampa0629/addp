@@ -69,6 +69,7 @@ type CreateIndependentGrantInput struct {
 	RequestID                  uuid.UUID
 	CatalogPath                engineplugin.EngineCatalogPath
 	RequirementVersion         int64
+	InitializeApproval         bool
 	RecipientType              string
 	RecipientID                int64
 	Action, ExpiryMode, Reason string
@@ -80,7 +81,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 	path, err := shared.EncodeSharingTarget(input.CatalogPath)
 	expires, expiryErr := shared.NormalizeSharingExpiry(input.ExpiryMode, input.ExpiresAt)
 	segments := input.CatalogPath.Segments
-	if err != nil || expiryErr != nil || input.RequestID == uuid.Nil || input.RequirementVersion <= 0 ||
+	if err != nil || expiryErr != nil || input.RequestID == uuid.Nil || input.RequirementVersion <= 0 || (input.InitializeApproval && input.RequirementVersion != 1) ||
 		input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || len(segments) < 2 ||
 		segments[len(segments)-1].Term != "table" || segments[len(segments)-1].Kind != "table" ||
 		input.RecipientID <= 0 || !oneOfRecipient(input.RecipientType) || input.Action != "read" || !validReason(input.Reason) {
@@ -92,13 +93,13 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 		RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: input.Action,
 		ExpiryMode: input.ExpiryMode, ExpiresAt: expires, RequirementVersion: input.RequirementVersion,
 		OperatorPrincipalID: input.Actor.PrincipalID, OperatorMembershipID: input.Actor.MembershipID,
-		OperatorAuthorizationVersion: input.Actor.AuthorizationVersion, Reason: &reason}, nil
+		OperatorAuthorizationVersion: input.Actor.AuthorizationVersion, Reason: &reason, InitializedApproval: input.InitializeApproval}, nil
 }
 
 func sameIndependentGrant(a, b *sourceGrant) bool {
 	return a.ApprovalMode == approvalModeIndependent && a.CatalogRequestID == nil &&
 		a.RequestID == b.RequestID && a.TenantID == b.TenantID && a.EngineID == b.EngineID && equalJSON(a.CatalogPath, b.CatalogPath) &&
-		a.RequirementVersion == b.RequirementVersion && a.RecipientType == b.RecipientType && a.RecipientID == b.RecipientID &&
+		a.RequirementVersion == b.RequirementVersion && a.InitializedApproval == b.InitializedApproval && a.RecipientType == b.RecipientType && a.RecipientID == b.RecipientID &&
 		a.Action == b.Action && a.OperatorPrincipalID == b.OperatorPrincipalID && a.OperatorMembershipID == b.OperatorMembershipID &&
 		a.Reason != nil && b.Reason != nil && *a.Reason == *b.Reason &&
 		shared.EqualSharingExpiry(a.ExpiryMode, a.ExpiresAt, b.ExpiryMode, b.ExpiresAt)
@@ -146,6 +147,11 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 	// current operator qualification, not a running source or current recipient.
 	err = s.withEngineManagementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessGrantCreate, false,
 		func(tx *Repository, check func() error) error {
+			if input.InitializeApproval {
+				if err := tx.checkInitializationPermission(ctx, input.Actor); err != nil {
+					return err
+				}
+			}
 			prior, err := tx.matchIndependentGrant(ctx, row)
 			if qualificationErr := check(); qualificationErr != nil {
 				return qualificationErr
@@ -189,9 +195,34 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 			if err := tx.lockFulfillmentTarget(ctx, row.TenantID, row.CatalogPath); err != nil {
 				return err
 			}
+			if input.InitializeApproval {
+				audit := input.Audit
+				principalType, contextType := iam.PrincipalTypeUser, iam.ContextTypeTenant
+				audit.PrincipalID, audit.PrincipalType = &input.Actor.PrincipalID, &principalType
+				audit.TenantID, audit.ContextType = &input.Actor.TenantID, &contextType
+				_, err := tx.changeApprovalRequirement(ctx, approvalRequirementChange{TenantID: row.TenantID,
+					Path: input.CatalogPath, Mode: approvalModeIndependent, ExpectedVersion: 0, Reason: input.Reason, Audit: audit},
+					func(*Repository) error {
+						if err := check(); err != nil {
+							return err
+						}
+						return tx.checkInitializationPermission(ctx, input.Actor)
+					})
+				if errors.Is(err, errApprovalRequirementVersion) {
+					return ErrIndependentGrantBasis
+				}
+				if err != nil {
+					return err
+				}
+			}
 			checkNew := func() error {
 				if err := check(); err != nil {
 					return err
+				}
+				if input.InitializeApproval {
+					if err := tx.checkInitializationPermission(ctx, input.Actor); err != nil {
+						return err
+					}
 				}
 				engine, err := tx.engine(ctx, row.TenantID, row.EngineID, false)
 				if err != nil {
@@ -248,6 +279,23 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 		return nil, err
 	}
 	return result, nil
+}
+
+// Called only with the operator IAM facts locked by the management scope.
+func (r *Repository) checkInitializationPermission(ctx context.Context, actor Actor) error {
+	now, err := r.wallClock(ctx)
+	if err != nil {
+		return err
+	}
+	rows, err := r.identity().ListEffectiveRoleAssignmentPermissions(ctx, actor.PrincipalID,
+		iam.PrincipalTypeUser, iam.ContextTypeTenant, &actor.TenantID, &actor.MembershipID, now)
+	if err != nil {
+		return err
+	}
+	if !hasCurrentTenantPermission(rows, actor.TenantID, authorization.PermissionSystemEngineAccessApprovalRequirementInitialize, now) {
+		return commonapi.ErrForbidden
+	}
+	return nil
 }
 
 func (r *Repository) listSourceGrants(ctx context.Context, tenantID, engineID int64, page, size int) ([]SourceGrantView, int64, error) {

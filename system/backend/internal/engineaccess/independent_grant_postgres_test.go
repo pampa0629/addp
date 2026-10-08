@@ -73,6 +73,39 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		}
 		receiver, _ := newUser(t, time.Hour)
 		input := CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: path, RequirementVersion: basis.Version, RecipientType: "user", RecipientID: receiver.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit standalone read access"}
+		t.Run("administrator handles without granting itself access", func(t *testing.T) {
+			administrator := qualify(t, false)
+			adminRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.engine_grant_administrator", Name: "Authorization administrator fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_delegation.create"}, ActorPrincipalID: adminID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: administrator.MembershipID, RoleIDs: []int64{adminRole.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit administrator qualification"}); err != nil {
+				t.Fatal(err)
+			}
+			p, err := iam.NewRepository(db).GetPrincipal(ctx, administrator.PrincipalID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			administrator.AuthorizationVersion = p.AuthorizationVersion
+			copy := input
+			copy.Actor, copy.RequestID = administrator, uuid.New()
+			if _, err := service.CreateIndependentGrant(ctx, copy); err != nil {
+				t.Fatalf("administrator requires self-delegation: %v", err)
+			}
+			var delegations int64
+			if err := db.Model(&Delegation{}).Where("tenant_membership_id = ?", administrator.MembershipID).Count(&delegations).Error; err != nil || delegations != 0 {
+				t.Fatalf("manufactured self-delegation: %d %v", delegations, err)
+			}
+			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: userProvenance{PrincipalID: administrator.PrincipalID, MembershipID: administrator.MembershipID, AuthorizationVersion: administrator.AuthorizationVersion}, Targets: []engineplugin.EngineCatalogPath{path}})
+			if err != nil || result == nil || result.Targets[0].Reason != "no_grant" {
+				t.Fatalf("administrator automatically gained read access: %+v %v", result, err)
+			}
+			// Leave the outer read-before-issuance assertion independent of this fixture.
+			if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: administrator, EngineID: copy.EngineID, RequestID: copy.RequestID, Reason: "Fixture completed"}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		calls = 0
 		assertRead := func(want string) {
 			t.Helper()
 			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{path}})
@@ -93,6 +126,67 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		if calls != 0 {
 			t.Fatal("unqualified command inspected source")
 		}
+		t.Run("first configuration requires its separate permission before source IO", func(t *testing.T) {
+			user, expires := newUser(t, time.Hour)
+			seedDelegation(t, user.MembershipID, expires.Add(-time.Second))
+			onlyGrant, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.grant_without_initialization", Name: "Grant only", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_grant.create"}, ActorPrincipalID: adminID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{onlyGrant.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "No initialization authority"}); err != nil {
+				t.Fatal(err)
+			}
+			principal, err := iam.NewRepository(db).GetPrincipal(ctx, user.PrincipalID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := input
+			first.Actor = Actor{TenantID: tenantID, PrincipalID: user.PrincipalID, MembershipID: user.MembershipID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}
+			first.RequestID, first.InitializeApproval, first.RequirementVersion = uuid.New(), true, 1
+			first.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "unauthorized_initialization")
+			if _, err := service.CreateIndependentGrant(ctx, first); !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("missing initialization permission: %v", err)
+			}
+			if calls != 0 {
+				t.Fatal("missing initialization permission inspected the source")
+			}
+		})
+		t.Run("first configuration and Grant are one atomic command", func(t *testing.T) {
+			first := input
+			first.RequestID = uuid.New()
+			first.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "atomic_first_authorization")
+			first.RequirementVersion, first.InitializeApproval = 1, true
+			failed := first
+			past := time.Now().Add(-time.Minute)
+			failed.ExpiryMode, failed.ExpiresAt = shared.SharingExpiryAtTime, &past
+			if _, err := service.CreateIndependentGrant(ctx, failed); !errors.Is(err, ErrIndependentGrantExpiry) {
+				t.Fatalf("bad first grant: %v", err)
+			}
+			encoded, err := shared.EncodeSharingTarget(first.CatalogPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewRepository(db).approvalRequirement(ctx, tenantID, first.EngineID, encoded); !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("failed Grant left approval behind: %v", err)
+			}
+			issued, err := service.CreateIndependentGrant(ctx, first)
+			if err != nil || issued == nil {
+				t.Fatalf("atomic initialization: %+v %v", issued, err)
+			}
+			if _, err := service.CreateIndependentGrant(ctx, first); err != nil {
+				t.Fatalf("original command recovery: %v", err)
+			}
+			changed := first
+			changed.InitializeApproval = false
+			if _, err := service.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrIndependentGrantConflict) {
+				t.Fatalf("initialization intent was not bound: %v", err)
+			}
+			changed = first
+			changed.RequestID = uuid.New()
+			if _, err := service.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrIndependentGrantBasis) {
+				t.Fatalf("existing approval overwritten: %v", err)
+			}
+		})
 		for _, mutate := range []func(*CreateIndependentGrantInput){func(i *CreateIndependentGrantInput) { i.RequirementVersion++ }, func(i *CreateIndependentGrantInput) {
 			i.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "missing_approval")
 		}} {

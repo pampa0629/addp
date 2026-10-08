@@ -12,10 +12,12 @@ describe('independent read-grant command capture', () => {
   it('captures immutable lossless identifiers, explicit validity and one exact target', () => {
     const captured = captureIndependentGrant('2', requirement, form, candidates)
     const body = JSON.parse(captured.payload)
-    expect(body).toEqual({ request_id: captured.requestID, requirement_version: '1', recipient_type: 'user', recipient_id: candidates[0].id,
+    expect(body).toEqual({ request_id: captured.requestID, requirement_version: '1', initialize_approval: false, recipient_type: 'user', recipient_id: candidates[0].id,
       action: 'read', expiry_mode: 'until_revoked', expires_at: null, reason: 'Explicit read', catalog_path: { ...path, engine_id: 2 } })
     expect(Object.isFrozen(captured)).toBe(true)
     expect(captured.recipientLabel).toBe(candidates[0].name)
+    expect(JSON.parse(captureIndependentGrant('2', { ...requirement, initialize_approval: true }, form, candidates).payload).initialize_approval).toBe(true)
+    expect(() => captureIndependentGrant('2', { ...requirement, version: '2', initialize_approval: true }, form, candidates)).toThrow()
     expect(captureIndependentGrant('2', requirement, { ...form, recipientType: 'department' }, candidates).payload).toContain('"recipient_type":"department"')
   })
   it('requires current candidates, exact independent target, valid version and explicit expiry', () => {

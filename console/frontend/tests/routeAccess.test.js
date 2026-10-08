@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
 import { CONSOLE_ROUTE_ACCESS, consoleRouteAccess } from '@common-ui'
 import { filterSidebarMenus, firstAccessibleModuleRoute, matchesNavigationAccess } from '../src/utils/navigationAccess'
 
@@ -26,13 +25,40 @@ describe('Console page access', () => {
       expect(matchesNavigationAccess({ route: path }, 'platform', ['platform.host_node.create'])).toBe(false)
     }
   })
-  it('has one rule for every navigable menu page', () => {
-    const source = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
-    const pages = [...source.matchAll(/index: '(\/[^']+)'/g)].map(match => match[1])
-    for (const page of pages.filter(path => !['/system/iam', '/manager/tasks'].includes(path))) {
-      expect(consoleRouteAccess(page), page).toBeTruthy()
+  it('has one rule for every navigable menu page', async () => {
+    vi.stubGlobal('window', { location: { origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig')
+      function check(item) {
+        if (item.children) { item.children.forEach(check); return }
+        expect(consoleRouteAccess(item.index), item.index).toBeTruthy()
+      }
+      for (const menu of Object.values(SIDEBAR_MENUS)) {
+        if (menu.items) menu.items.forEach(check)
+        else check(menu)
+      }
+      expect(Object.keys(CONSOLE_ROUTE_ACCESS).length).toBeGreaterThan(60)
+    } finally {
+      vi.unstubAllGlobals()
     }
-    expect(Object.keys(CONSOLE_ROUTE_ACCESS).length).toBeGreaterThan(60)
+  })
+  it('keeps collection settings under platform advanced settings with both read permissions', async () => {
+    vi.stubGlobal('window', { location: { origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig')
+      const menus = { monitor: SIDEBAR_MENUS.monitor }
+      const permissions = ['monitor.monitoring_target.read', 'platform.host_node.read']
+      const advanced = filterSidebarMenus(menus, 'platform', permissions).monitor.items
+      expect(advanced).toHaveLength(1)
+      expect(advanced[0].label).toBe('console.menus.monitor.advanced')
+      expect(advanced[0].children.map(item => item.index)).toEqual(['/monitor/monitoring-targets'])
+      expect(filterSidebarMenus(menus, 'tenant', permissions).monitor.items).toEqual([])
+      for (const permission of permissions) {
+        expect(filterSidebarMenus(menus, 'platform', [permission]).monitor.items).toEqual([])
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('keeps create-only Transfer accounts on the create page', () => {

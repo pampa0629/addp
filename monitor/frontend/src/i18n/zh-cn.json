@@ -1,7 +1,7 @@
 {
   "monitor": {
     "login": {
-      "title": "执行监控登录",
+      "title": "运行监控登录",
       "username_placeholder": "请输入用户名",
       "password_placeholder": "请输入密码",
       "username_required": "请输入用户名",
@@ -550,13 +550,17 @@
       }
     },
     "targets": {
-      "title": "平台监测目标",
+      "moreNodes": "加载更多主机",
+      "nodeLoadingFailed": "无法读取主机，请重试",
+      "nodeMissing": "主机信息不可用，请重新选择或刷新",
+      "nodeSearch": "搜索主机名称或地址",
+      "title": "采集配置",
       "refresh": "刷新列表",
-      "create": "登记监测目标",
+      "create": "新增采集配置",
       "id": "目标 ID",
-      "node": "节点 ID",
+      "node": "主机",
       "kind": "监测类别",
-      "endpoint": "采集端点",
+      "endpoint": "采集地址",
       "configState": "采集配置",
       "enabled": "已启用",
       "disabled": "已停用",
@@ -566,16 +570,16 @@
       "notLoaded": "尚未加载监测目标",
       "endpointHint": "HTTPS 地址，显式端口，路径为 /metrics",
       "configHint": "启用表示采集配置已开启；实际采集情况以资源观测为准。",
-      "nodeInventory": "查看平台节点台账",
+      "nodeInventory": "查看平台主机管理",
       "reload": "重新加载配置",
       "deleteConfirm": "删除此监测目标？",
-      "accessDenied": "当前身份无权查看平台监测目标",
+      "accessDenied": "当前身份无权查看采集配置",
       "loadFailed": "无法加载监测目标，请稍后重试",
       "invalidID": "监测目标 ID 无效",
       "notFound": "监测目标不存在",
       "conflict": "配置已被修改。草稿已保留，请重新加载后再操作。",
       "saveFailed": "操作失败，请稍后重试",
-      "invalidForm": "请填写有效的节点 ID 和采集端点",
+      "invalidForm": "请选择主机并填写有效的采集地址",
       "saving": "正在保存监测目标",
       "saved": "监测目标已保存",
       "deleted": "监测目标已删除",
@@ -585,14 +589,26 @@
       }
     },
     "resources": {
-      "title": "平台节点资源",
-      "detailTitle": "节点资源观测",
-      "back": "返回节点列表",
-      "search": "搜索节点名称或地址",
-      "empty": "没有符合条件的节点",
-      "node": "节点名称",
+      "collection": {
+        "not_connected": "尚未开启主机采集，请配置采集来源。",
+        "no_sample": "正在等待采集证据，请检查采集配置是否已经生效。",
+        "collecting": "采集连接正常",
+        "failed": "采集失败。请检查采集地址、网络连接和证书；当前缺值不代表零负载。",
+        "stale": "采集证据已过期，当前数据不能作为实时状态。",
+        "not_collected": "当前采集源未提供文件系统指标。",
+        "filesystem_failed": "文件系统采集失败，请检查采集源权限及运行状态。",
+        "waiting": "当前采集成功；部分指标尚未形成有效样本或完整统计窗口。"
+      },
+      "configure": "配置采集",
+      "sampling": "采样说明",
+      "title": "主机监控",
+      "detailTitle": "主机资源观测",
+      "back": "返回主机列表",
+      "search": "搜索主机名称或地址",
+      "empty": "没有符合条件的主机",
+      "node": "主机名称",
       "addresses": "地址",
-      "nodeState": "节点状态",
+      "nodeState": "管理状态",
       "view": "查看资源",
       "current": "当前资源指标",
       "refreshInterval": "刷新间隔",
@@ -620,9 +636,9 @@
         "memoryTotal": "内存总量",
         "memoryAvailable": "可用内存",
         "memoryUsed": "内存使用率",
-        "load1m": "1 分钟平均负载",
-        "load5m": "5 分钟平均负载",
-        "load15m": "15 分钟平均负载",
+        "load1m": "系统平均负载（1 分钟）",
+        "load5m": "系统平均负载（5 分钟）",
+        "load15m": "系统平均负载（15 分钟）",
         "uptime": "运行时长",
         "filesystemTotal": "总容量",
         "filesystemFree": "空闲容量",
@@ -632,7 +648,9 @@
         "inodeTotal": "inode 总数",
         "inodeFree": "空闲 inode",
         "inodeUsed": "已用 inode",
-        "inodeUsedPercent": "inode 使用率"
+        "inodeUsedPercent": "inode 使用率",
+        "diskRead": "磁盘读取吞吐",
+        "diskWrite": "磁盘写入吞吐"
       },
       "ranges": {
         "5m": "近 5 分钟",
@@ -644,9 +662,10 @@
         "cores": "核",
         "bytes": "B",
         "percent": "%",
-        "load": "负载",
+        "load": "",
         "seconds": "秒",
-        "inodes": "个"
+        "inodes": "个",
+        "bytes_per_second": "B/s"
       },
       "states": {
         "valid": "有效",
@@ -661,11 +680,11 @@
         "timeout": "资源查询超时，请稍后刷新。",
         "budget": "查询超过当前预算，请选择更短时间范围或联系管理员。",
         "busy": "资源查询并发已达上限，请稍后刷新。",
-        "notFound": "节点不存在或当前不可访问。",
-        "denied": "当前身份无权查看平台节点资源。",
-        "invalidID": "节点标识无效。",
+        "notFound": "主机不存在或当前不可访问。",
+        "denied": "当前身份无权查看主机监控。",
+        "invalidID": "主机标识无效。",
         "invalidResponse": "资源响应不完整，无法展示，请重新刷新。",
-        "invalidMount": "挂载选择无效，请返回节点列表重新选择。"
+        "invalidDimensions": "资源维度选择无效，请返回主机列表重新选择。"
       },
       "filesystem": {
         "title": "文件系统挂载",
@@ -676,6 +695,12 @@
         "type": "文件系统类型",
         "viewTrend": "查看趋势",
         "inode": "inode 统计"
+      },
+      "loadHint": "系统平均负载：运行或等待 CPU，以及不可中断等待（常见于 I/O）的任务数量平均值；不是百分比，也不是 CPU 或内存使用率。",
+      "disk": {
+        "title": "磁盘读写吞吐",
+        "hint": "完整一分钟的平均读写速率，按设备展示；不叠加磁盘、分区或设备映射层。",
+        "empty": "暂无磁盘吞吐数据；采集源需启用磁盘采集并形成完整一分钟窗口。"
       }
     }
   }

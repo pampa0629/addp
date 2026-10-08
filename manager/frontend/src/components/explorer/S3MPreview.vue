@@ -12,7 +12,7 @@ import { useI18n } from 'vue-i18n'
 import { getAccessToken } from '@common-ui'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { s3mCameraFitDistanceForBox } from '@/lib/supermap-s3m/three/S3MThreeCamera.js'
+import { cameraFitDistanceForBox } from '@/utils/scene3dCamera.js'
 import S3MThreeLayer from '@/lib/supermap-s3m/three/S3MThreeLayer.js'
 import {
   isThreeS3MViewState,
@@ -140,7 +140,7 @@ function fitCameraToLayer(targetLayer) {
   const sphere = box.getBoundingSphere(new THREE.Sphere())
   const radius = Math.max(sphere.radius, 1)
   const viewDirection = new THREE.Vector3(1.15, -1.55, 1.25).normalize()
-  const distance = s3mCameraFitDistanceForBox(
+  const distance = cameraFitDistanceForBox(
     box,
     viewDirection,
     new THREE.Vector3(0, 0, 1),

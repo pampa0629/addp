@@ -41,6 +41,20 @@ async function fixture(page, { allowed = permissions, conflict = false } = {}) {
   return { writes, reads }
 }
 
+test('delegation-only permission enters handlers from the list without exposing data authorization', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: ['system.engine.read', 'system.engine_access_delegation.read'] })
+  await page.goto('/engines')
+  await page.getByTestId('engine-authorization-open').click()
+  await expect(page).toHaveURL('http://127.0.0.1:4173/engines/2?tab=delegations')
+  const dialog = page.getByRole('dialog', { name: '引擎授权 - 授权验证 PostgreSQL', exact: true })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('tab', { name: '委托授权', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('tab', { name: '数据授权', exact: true })).toHaveCount(0)
+  await expect(dialog.getByRole('tab', { name: '基本信息', exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('engine-access-delegations')).toContainText('办理账号 B')
+  expect(writes).toEqual([])
+})
+
 test('delegation tab restores from URL, validates the draft, selects an account and submits only explicit fields', async ({ page }, testInfo) => {
   const { writes } = await fixture(page)
   await page.goto('/engines/2?tab=delegations')
@@ -100,5 +114,6 @@ test('without delegation permissions an invalid delegation tab canonicalizes to 
   await page.goto('/engines/2?tab=delegations')
   await expect(page).toHaveURL('http://127.0.0.1:4173/engines/2')
   await expect(page.getByTestId('engine-access-delegations')).toHaveCount(0)
+  await expect(page.getByTestId('engine-authorization-open')).toHaveCount(0)
   expect(reads).toEqual([])
 })

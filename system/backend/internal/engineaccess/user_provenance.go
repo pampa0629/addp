@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
@@ -78,6 +79,7 @@ type lockedManagementScope struct {
 	tenantID, engineID, membershipID int64
 	engine                           *models.Engine
 	delegation                       *Delegation
+	administratorPermissions         []iam.RoleAssignmentPermissionProjection
 }
 
 // IAM must already be locked. SHARE permits concurrent checks for independent
@@ -88,10 +90,26 @@ func (r *Repository) lockManagementScope(ctx context.Context, tenantID, engineID
 	}
 	scope := &lockedManagementScope{tenantID: tenantID, engineID: engineID, membershipID: membershipID,
 		engine: &models.Engine{}, delegation: &Delegation{}}
-	err := r.db.WithContext(ctx).Table("system.engines").
+	member, err := r.identity().GetTenantMembershipByID(ctx, membershipID)
+	if err != nil || member.TenantID != tenantID {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) && !errors.Is(err, commonapi.ErrNotFound) {
+			return nil, err
+		}
+		return nil, commonapi.ErrForbidden
+	}
+	now, err := r.wallClock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scope.administratorPermissions, err = r.identity().ListEffectiveRoleAssignmentPermissions(ctx, member.PrincipalID,
+		iam.PrincipalTypeUser, iam.ContextTypeTenant, &tenantID, &membershipID, now)
+	if err != nil {
+		return nil, err
+	}
+	err = r.db.WithContext(ctx).Table("system.engines").
 		Where("tenant_id = ? AND id = ?", tenantID, engineID).
 		Clauses(clause.Locking{Strength: "SHARE"}).Take(scope.engine).Error
-	if err == nil {
+	if err == nil && !scope.isAdministrator(now) {
 		err = r.db.WithContext(ctx).
 			Where("tenant_id = ? AND engine_id = ? AND tenant_membership_id = ? AND status = 'active' AND expires_at > clock_timestamp()",
 				tenantID, engineID, membershipID).
@@ -122,11 +140,21 @@ func (s *lockedManagementScope) checkManagement(now time.Time) error {
 	if s == nil || s.tenantID <= 0 || s.engineID <= 0 || s.membershipID <= 0 ||
 		s.engine == nil || s.engine.TenantID == nil || int64(*s.engine.TenantID) != s.tenantID ||
 		int64(s.engine.ID) != s.engineID ||
-		(s.engine.LifecycleState != models.EngineLifecycleActive && s.engine.LifecycleState != models.EngineLifecycleDisabled) ||
-		s.delegation == nil || s.delegation.ID <= 0 || s.delegation.TenantID != s.tenantID ||
+		(s.engine.LifecycleState != models.EngineLifecycleActive && s.engine.LifecycleState != models.EngineLifecycleDisabled) {
+		return commonapi.ErrForbidden
+	}
+	if s.isAdministrator(now) {
+		return nil
+	}
+	if s.delegation == nil || s.delegation.ID <= 0 || s.delegation.TenantID != s.tenantID ||
 		s.delegation.EngineID != s.engineID || s.delegation.TenantMembershipID != s.membershipID ||
 		s.delegation.Status != "active" || s.delegation.GrantedAt.After(now) || !s.delegation.ExpiresAt.After(now) {
 		return commonapi.ErrForbidden
 	}
 	return nil
+}
+
+func (s *lockedManagementScope) isAdministrator(now time.Time) bool {
+	return hasCurrentTenantPermission(s.administratorPermissions, s.tenantID,
+		authorization.PermissionSystemEngineAccessDelegationCreate, now)
 }

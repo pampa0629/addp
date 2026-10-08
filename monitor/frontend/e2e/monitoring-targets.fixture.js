@@ -17,6 +17,11 @@ export async function backend(page, options = {}) {
     if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = options.identity || identity()
+    else if (path.startsWith('/api/v1/system/platform/host_nodes')) {
+      const host = { node_id: node, display_name: '测试主机', addresses: ['node.test'], enabled: true, version: 1 }
+      body = path.endsWith('/host_nodes') ? { data: [host], total: 1, page: 1, page_size: 20 } : host
+      if (options.hostUnavailable) { status = 503; body = { error: 'host unavailable' } }
+    }
     else if (path.startsWith('/api/v1/monitor/platform/monitoring_targets')) {
       if (req.method() === 'GET') {
         reads.push(path)

@@ -1,22 +1,4 @@
-/**
- * 格式化字节大小
- */
-export function formatBytes(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-'
-  let bytes = Number(value)
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  let index = 0
-  while (Math.abs(bytes) >= 1024 && index < units.length - 1) {
-    bytes /= 1024
-    index++
-  }
-  const formatted = Math.abs(bytes) >= 100
-    ? bytes.toFixed(0)
-    : Math.abs(bytes) >= 10
-      ? bytes.toFixed(1)
-      : bytes.toFixed(2)
-  return `${formatted} ${units[index]}`
-}
+export { formatBytes } from '../../../basic/src/utils/formatters.js'
 
 /**
  * 格式化日期时间

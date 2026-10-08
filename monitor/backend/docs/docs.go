@@ -2763,7 +2763,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定九项标量、五项字节容量及四项 inode；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity and four inode metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
+                "description": "即时响应附带当前采集状态 collection；抓取成功不等于指标或业务健康。| Instant responses include current collection evidence, not metric or business health. 固定九项标量、五项字节容量、四项 inode 和两项按 device 的一分钟磁盘读写吞吐；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode and two per-device one-minute disk throughput metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],
@@ -2788,7 +2788,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint and fstype",
+                        "description": "磁盘设备精确值；文件系统还需挂载点与类型 | Exact disk device; filesystem selection also requires mountpoint and fstype",
                         "name": "device",
                         "in": "query"
                     },
@@ -2880,7 +2880,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定九项标量、五项字节容量及四项 inode；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity and four inode metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
+                "description": "固定九项标量、五项字节容量、四项 inode 和两项按 device 的一分钟磁盘读写吞吐；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode and two per-device one-minute disk throughput metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],
@@ -2905,7 +2905,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint and fstype",
+                        "description": "磁盘设备精确值；文件系统还需挂载点与类型 | Exact disk device; filesystem selection also requires mountpoint and fstype",
                         "name": "device",
                         "in": "query"
                     },
@@ -4443,6 +4443,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_resourcequery.Collection": {
+            "type": "object",
+            "properties": {
+                "filesystem": {
+                    "type": "string"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_resourcequery.Dimensions": {
             "type": "object",
             "additionalProperties": {
@@ -5218,6 +5232,9 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_service.ResourceObservationResponse": {
             "type": "object",
             "properties": {
+                "collection": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Collection"
+                },
                 "end": {
                     "type": "string"
                 },

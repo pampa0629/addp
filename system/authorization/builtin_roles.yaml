@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 118
+manifest_version: 119
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -754,11 +754,19 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [user]
     permissions:
+      - iam.department.read
+      - iam.project_group.read
       - iam.tenant_membership.read
       - system.engine.read
+      - system.engine_access_approval_requirement.initialize
+      - system.engine_access_approval_requirement.read
       - system.engine_access_delegation.create
       - system.engine_access_delegation.read
       - system.engine_access_delegation.revoke
+      - system.engine_access_grant.create
+      - system.engine_access_grant.read
+      - system.engine_access_grant.revoke
+      - system.engine_catalog.read
   - key: tenant.geopython_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.geopython_runtime.name

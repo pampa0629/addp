@@ -2197,6 +2197,8 @@ definitions:
         - at_time
         - until_revoked
         type: string
+      initialize_approval:
+        type: boolean
       reason:
         type: string
       recipient_id:
@@ -5779,8 +5781,8 @@ paths:
       - system.engine.update
   /engines/{id}/access_approval_requirements:
     get:
-      description: 当前租户及当前管理委派范围内的配置事实，不包含连接信息或内容授权 | Configuration facts in the current
-        tenant and management delegation, without connection information or content
+      description: 当前租户及当前管理资格范围内的配置事实，不包含连接信息或内容授权 | Configuration facts in the current
+        tenant and management qualification, without connection information or content
         grants
       parameters:
       - description: 引擎 ID | Engine ID
@@ -5847,12 +5849,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: 当前用户需独立初始化权限和有效引擎管理委派；必须明确选择 catalog 或 independent，仅新建精确目标要求。已有要求返回
+      description: 当前用户需独立初始化权限及管理资格（授权管理员或本引擎受托办理人）；必须明确选择 catalog 或 independent，仅新建精确目标要求。已有要求返回
         409，不切换模式、不授予批准资格或内容访问；不依赖 Catalog 在线 | Requires initialization permission
-        and current engine management delegation. Explicit catalog or independent
-        mode creates only an exact target requirement. Existing facts return 409;
-        no mode switch, approval qualification or content grant. Catalog availability
-        is not required
+        and administrator or delegated engine handler qualification. Explicit catalog
+        or independent mode creates only an exact target requirement. Existing facts
+        return 409; no mode switch, approval qualification or content grant. Catalog
+        availability is not required
       parameters:
       - description: 引擎 ID | Engine ID
         in: path
@@ -5908,9 +5910,9 @@ paths:
       - system.engine_access_approval_requirement.initialize
   /engines/{id}/access_approval_requirements/{requirement_id}:
     get:
-      description: 按当前租户及引擎隔离，并核验当前管理委派；不存在及跨租户均返回 404 | Scoped to current tenant
-        and engine with current delegation checks; missing and cross-tenant IDs return
-        404
+      description: 按当前租户及引擎隔离，并核验授权管理员或本引擎受托办理资格；不存在及跨租户均返回 404 | Scoped to current
+        tenant and engine with current administrator or delegated engine handler qualification
+        checks; missing and cross-tenant IDs return 404
       parameters:
       - description: 引擎 ID | Engine ID
         in: path
@@ -6315,10 +6317,11 @@ paths:
       - system.engine_access_deny.release
   /engines/{id}/access_grants:
     get:
-      description: 当前租户用户需独立读取权限及有效引擎管理委派；同时显示独立批准和 Catalog 来源、期限与撤销历史，停用引擎仍可查看。不是当前访问裁决，不读取源端
-        | Current Tenant User needs history-read permission and effective engine delegation.
-        Lists independent and Catalog issuance, expiry and revocation history, including
-        disabled engines. Not a current access verdict; no source IO
+      description: 当前租户用户需独立读取权限及管理资格（授权管理员或本引擎受托办理人）；同时显示独立批准和 Catalog 来源、期限与撤销历史，停用引擎仍可查看。不是当前访问裁决，不读取源端
+        | Current Tenant User needs history-read permission and administrator or delegated
+        engine handler qualification. Lists independent and Catalog issuance, expiry
+        and revocation history, including disabled engines. Not a current access verdict;
+        no source IO
       parameters:
       - description: 引擎 ID | Engine ID
         in: path
@@ -6385,8 +6388,9 @@ paths:
       consumes:
       - application/json
       description: |-
-        当前 Tenant User 需独立授予权限及有效引擎管理委派；精确普通表的批准要求必须为 independent 且与原版本匹配。不要求企业 Catalog 或 Meta 编目，结构核验只读且不读取样本 | Current Tenant User needs creation permission and effective engine delegation. Exact ordinary table approval must be independent at the expected version. No enterprise Catalog or Meta cataloging; structure verification is read-only without sampling
+        当前 Tenant User 需独立授予权限及管理资格（当前租户授权管理员或本引擎受托办理人）；精确普通表的批准要求必须为 independent 且与原版本匹配。不要求企业 Catalog 或 Meta 编目，结构核验只读且不读取样本 | Current Tenant User needs creation permission and management qualification (current-tenant authorization administrator or delegated engine handler). Exact ordinary table approval must be independent at the expected version. No enterprise Catalog or Meta cataloging; structure verification is read-only without sampling
         同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy
+        授权管理员不需委托自己，受托办理员需有效引擎委托。initialize_approval=true 须额外具有首次配置权限且版本为 1；首次配置与 Grant 原子提交，不覆盖已有要求 | Authorization administrators need no self-delegation; handlers need an effective engine delegation. initialize_approval=true additionally requires initialization permission and version 1; configuration and Grant commit atomically without overwriting an existing basis
       parameters:
       - description: 引擎 ID | Engine ID
         in: path
@@ -6442,6 +6446,8 @@ paths:
       tags:
       - 源数据授权 | Source Data Grants
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - system.engine_access_approval_requirement.initialize
       x-addp-required-permissions:
       - system.engine_access_grant.create
   /engines/{id}/access_grants/{request_id}/revoke:
@@ -6449,7 +6455,7 @@ paths:
       consumes:
       - application/json
       description: |-
-        当前租户用户须同时具备有效引擎管理委派和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权 | Current tenant user needs an effective engine management delegation and independent revocation Permission, even for disabled engines. Withdraws only this Grant; identical retries return original history without affecting independent Grants
+        当前租户用户须同时具备管理资格（授权管理员或本引擎受托办理人）和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权 | Current tenant user needs administrator or delegated engine handler qualification and independent revocation Permission, even for disabled engines. Withdraws only this Grant; identical retries return original history without affecting independent Grants
         自然到期后首次撤销返回 409 engine_access_grant_expired，不写撤销事实；到期前已撤销的同参重试仍须当前资格有效并返回原记录。长期有效仍可撤销，五分钟办理窗口不限制撤销 | First revocation after natural expiry returns 409 engine_access_grant_expired without writing history; retries of an earlier revocation require current qualification and return the original record. Until-revoked Grants remain revocable; the five-minute fulfillment window does not limit revocation
       parameters:
       - description: 引擎 ID | Engine ID
@@ -6511,11 +6517,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: 只读结构化查询。仅本人办理权限和当前引擎管理委派，不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本
-        | Read-only structured query under current human handling permission and engine
-        delegation. No configuration enumeration, initialization or access grant;
-        the version is a lossless string and formal submission rechecks the original
-        expected version
+      description: 只读结构化查询。仅本人办理权限及管理资格（授权管理员或本引擎受托办理人），不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本
+        | Read-only structured query under current human handling permission and administrator
+        or delegated engine handler qualification. No configuration enumeration, initialization
+        or access grant; the version is a lossless string and formal submission rechecks
+        the original expected version
       parameters:
       - description: 引擎 ID，唯一来源 | Engine ID, sole source
         in: path

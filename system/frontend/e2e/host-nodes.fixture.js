@@ -1,7 +1,7 @@
 export const HOST_NODE_ID = '10000000-0000-4000-8000-000000000001'
 export const HOST_NODE_OTHER_ID = '10000000-0000-4000-8000-000000000002'
 
-export async function mockHostNodesAPI(page, { scope = 'platform', permissions = ['platform.host_node.read', 'platform.host_node.create', 'platform.host_node.update'], conflict = false, detailFailure = 0, language = 'zh-cn' } = {}) {
+export async function mockHostNodesAPI(page, { scope = 'platform', permissions = ['platform.module.read', 'platform.host_node.read', 'platform.host_node.create', 'platform.host_node.update'], conflict = false, detailFailure = 0, language = 'zh-cn' } = {}) {
   const calls = [], writes = []
   let node = { node_id: HOST_NODE_ID, display_name: 'Node A', node_kind: 'virtual', addresses: ['node-a.local'], enabled: true,
     allowed_module_bindings: [{ module_name: 'manager', client_id: 'addp-manager' }], version: 7,
@@ -37,7 +37,7 @@ export async function mockHostNodesAPI(page, { scope = 'platform', permissions =
       if (path.endsWith(HOST_NODE_OTHER_ID)) return reply({ ...node, node_id: HOST_NODE_OTHER_ID, display_name: 'Node B' })
       return reply(node)
     }
-    if (path.endsWith('/platform/modules')) return reply({ modules: [{ id: 1, module_name: 'manager', enabled: true, version: 1, instances: [] }] })
+    if (path.endsWith('/platform/modules')) return reply({ modules: ['manager', 'transfer'].map((module_name, i) => ({ id: i + 1, module_name, enabled: true, version: 1, instances: [] })) })
     if (path.endsWith('/platform/module-instances')) return reply({ data: ['bound', 'rejected', 'unbound'].map((state, i) => ({ instance_id: `binding-${state}`, module_name: 'manager', role: 'backend',
       status: 'up', lease_expires_at: '2099-01-01T00:00:00Z', host_node_name: 'legacy-display-only', node_id: state === 'bound' ? HOST_NODE_ID : '',
       declared_node_id: state === 'unbound' ? '' : HOST_NODE_ID, node_binding_state: state, node_binding_reason: state === 'rejected' ? 'node_disabled' : '', id: i + 1 })), total: 3, page: 1, page_size: 10 })

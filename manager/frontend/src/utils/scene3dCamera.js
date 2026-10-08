@@ -1,12 +1,13 @@
 import * as THREE from 'three'
 
-export function s3mCameraFitDistanceForBox(
+export function cameraFitDistanceForBox(
   box,
   cameraDirection,
   cameraUp,
   verticalFovDegrees,
   aspect,
-  margin = 1.12
+  margin = 1.12,
+  target = box?.getCenter(new THREE.Vector3())
 ) {
   if (!box || box.isEmpty()) return null
   const verticalFov = THREE.MathUtils.degToRad(Number(verticalFovDegrees))
@@ -22,7 +23,7 @@ export function s3mCameraFitDistanceForBox(
   const right = new THREE.Vector3().crossVectors(cameraUp, direction).normalize()
   if (right.lengthSq() === 0) return null
   const viewUp = new THREE.Vector3().crossVectors(direction, right).normalize()
-  const center = box.getCenter(new THREE.Vector3())
+  const center = target
   const min = box.min
   const max = box.max
   const tanVertical = Math.tan(verticalFov / 2)

@@ -1,18 +1,15 @@
 /**
  * ADDP 前端共享工具函数
  */
+import { formatBytes } from './formatters.js'
 
 /**
  * 格式化文件大小
  * @param {number} bytes - 字节数
- * @returns {string} 格式化后的大小（如 "1.5 MB"）
+ * @returns {string} IEC 1024 进制大小（如 "1.50 MiB"）
  */
 export function formatFileSize(bytes) {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
+  return formatBytes(bytes, 2)
 }
 
 /**

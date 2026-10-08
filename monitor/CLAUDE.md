@@ -2,9 +2,9 @@
 
 ## 模块定位
 
-Monitor 模块是 ADDP 的统一执行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 日志链路健康与告警域。
+Monitor 模块是 ADDP 的统一运行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 日志链路健康与告警域。
 
-平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 节点台账、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，应用埋点尚未实施；节点基础资源查询首批已接入（见文末范围），统一告警域收敛仍待明确确认。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
+平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 平台主机管理、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，应用埋点尚未实施；节点基础资源查询首批已接入（见文末范围），统一告警域收敛仍待明确确认。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
 
 节点来源准入和发现投影内核位于 `backend/internal/metricsdiscovery/`，由 Monitor 唯一维护。已实现受控 CIDR/端口、固定 HTTPS 指标路径、每次发现重新解析 DNS 并固定单一 IP、来源 mTLS 准入、节点当前身份筛选和端点预留预算；只支持 node_exporter 主机来源与通过既定 mTLS 入口的 cAdvisor 节点容器来源。目标持久化、公开 HTTP SD 和独立 Prometheus OAuth 身份已消费此内核：管理请求转发当前 User Token，由 System 对节点再次裁决；目标写事务串行化预算和 CAS，发现读取当前身份而不复制 System 台账。启用目标必须通过 mTLS 准入，停用配置保存和撤除采集意图不依赖指标设施或来源在线。Prometheus 生产模板和正式节点来源已完成真实 Hosted T4，包含权限隔离、发现版本、真实采样及故障恢复；资源查询的生效状态查询、后续指标与生产纳管覆盖仍须交付，不能以一次测试部署宣称生产覆盖。T1 归 `make test-go`，目标事务与 IAM/OAuth 使用现有 PostgreSQL T2 自动发现；设计第 10.15–10.20 节记录边界与接线门禁。
 
@@ -117,7 +117,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 ## Platform 节点基础资源查询
 
 - 唯一读取接口 `/platform/resource_observations`、`/platform/resource_trends` 使用 `monitor.resource_observation.read`；System 连续迁移 000193 仅给平台系统管理员发布该权限，采集服务与 Tenant 身份无此能力。当前请求内转发 User Token，由 System 裁决节点；读取当前启用目标及受控解析端点，节点/目标停用返回 `not_connected`，不查历史作为当前值。
-- `internal/resourcequery/` 唯一维护 9 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、一分钟 CPU 忙碌率、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率须证明一分钟完整窗口及核集合/启动时间一致，缺样本或计数器重置返回空值；文件系统容量与挂载趋势已沿同一 API 实施（见下文），磁盘/网络速率尚未发布。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
+- `internal/resourcequery/` 唯一维护 9 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、一分钟 CPU 忙碌率、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率须证明一分钟完整窗口及核集合/启动时间一致，缺样本或计数器重置返回空值；文件系统容量与挂载趋势已沿同一 API 实施（见下文），磁盘读写吞吐按 device 沿同一 API 实施（见下文），网络速率尚未发布。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
 - `/settings/resource-query-policy` 沿用模块级 `monitor.configuration.read/update`，仅 Platform User，唯一 `monitor.resource_query_policy` 单例保存 CAS 版本与完整预算。每个查询读一次已提交预算，对新请求热生效；没有环境回退或重启要求。标准平台审计记录安全结果与保存版本，不记录 PromQL、Token 或内部地址。
 - mTLS 查询部署输入独立于节点准入和 collector；关闭或不完整配置不阻断业务。生产只通过标准生命周期的 `metrics-query.yml` 挂载，不增加必需 Infra 依赖。
 - Go T1、Monitor PostgreSQL 及 System IAM Migration T2 沿既有标准入口自动发现；同一个 `platform-node-metrics` suite 已在 `794450a30` 取得扩展后的真实 Hosted T4（run 37485747576），覆盖八项即时/趋势查询、预算 CAS/热生效、权限隔离、中心故障与新样本恢复、停用后不复用历史及独立清理零残留；具体证据见设计 10.22 节。用户资源查询页面现已接入 Console（见下文）；更多指标和生产 T5 仍须分批补齐，该次 Linux VM 通过不代表生产纳管覆盖。
@@ -126,7 +126,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 
 - Monitor 唯一拥有 `/monitoring-targets`、`/monitoring-targets/new`、`/monitoring-targets/:id`，Console 使用 `/monitor` 前缀集成真实 iframe；分页与详情由公开 URL 恢复，端点草稿不进入 URL。
 - 入口只接受非委托 Platform User，需同时具备 `monitor.monitoring_target.read` 和 `platform.host_node.read`；新建、修改、删除分别消费对应独立 Permission。Context、主体、委托或权限变化同步取消请求并清空列表与草稿，迟到响应不得覆盖新范围。
-- 主体/类别创建后只读，更新/停用与删除携带保存版本。CAS 冲突保留草稿并停止写入，须明确重新加载；启用标记仅表示保存配置，不表示实际采集健康。节点台账导航使用共享 Console bridge。
+- 主体/类别创建后只读，更新/停用与删除携带保存版本。CAS 冲突保留草稿并停止写入，须明确重新加载；启用标记仅表示保存配置，不表示实际采集健康。平台主机管理导航使用共享 Console bridge。
 - 标准门禁为 `make test-monitor-frontend`、`make test-console-frontend`、`make test-common-frontend` 与 `make test-frontend-ci-registration`。Console 浏览器生命周期自建 Monitor Vite 夹具，CI 安装其锁定依赖；Monitor 前端变更扩散至 Console，后端变更不扩散。无需重启个人开发环境。
 
 ## 平台节点资源前端
@@ -146,3 +146,12 @@ CPU 忙碌率及趋势新增固定 `node.cpu.busy_percent`（percent，60 秒窗
 
 
 文件系统 inode 沿设计 10.29 实施：四个 `node.filesystem.inodes_*` 固定键，共用设备/挂载点/类型及原精确选择器。总数、空闲数来自既有 filesystem collector，同次采样派生已用和使用率；零总数、整数范围/精度异常、缺失及 statfs 错误保留已知维度与空值。字节容量与 inode 独立查询、独立提示，唯一挂载表组合两组点事实；不按挂载汇总物理数量。目录共 18 项，12 项请求预算不放宽；页面顺序读取九项概览、五项字节容量、四项 inode 及单项趋势。锁定 promtool 与既有 T2 探针增加 inode 情景，真实 Hosted T4 沿同一 suite 扩展 inode 读取与 URL 恢复，本地 22 个 inode/18 个字节容量/15 个 CPU 原生场景、43 项 Monitor 单测/53 项 T3 及完整指标/PostgreSQL门禁通过；修正实现 `86853c844` 的 Hosted T4（Run 37610515534）与 Platform CI（Run 37610486715）完整通过。真实六挂载/24 条 inode 序列，其中五挂载有效、EFI 明确空值，完整 URL/趋势、恢复新采样、停用历史排除和清理零残留已复核；首次浏览器测试冗余赋值失败已记录并修正。默认跨 owner 预检失败不计为通过，生产 T5 与 IO 未完成，证据见设计 10.29。
+
+## 主机接入与采集状态（2026-10-08）
+
+用户入口统一为 System「平台主机管理」、Monitor「运行监控 → 主机监控」与「高级设置 → 采集配置」。内部 HostNode、MonitoringTarget 和既有路由保持唯一职责。采集配置从当前用户有权读取的 System 主机列表选择名称，不复制主机身份；资源详情直接携带该主机进入采集配置。System 的允许服务模块绑定名单放在高级设置，从已有模块定义中选择，不代表实际部署关联。
+
+即时资源查询增加有界 `collection` 证据：未接入、无样本、采集中、失败与陈旧；只有新鲜成功的 up 才判断文件系统采集器是否提供。趋势不附带当前采集状态。固定查询与资源查询复用同一 mTLS Client 和请求期限，不查询全中心目标列表。Desktop VM 的六采集器不提供文件系统、inode、磁盘 IO 或网卡族；不能用容器配额冒充 VM 容量。部署自动登记尚待可信身份和正式调用契约，本批不修改 IAM，也不保存管理员 Token。
+
+
+资源展示及磁盘吞吐沿设计 10.35：字节显示 IEC 容量单位，时长显示经过的天/小时/分钟，load average 为系统任务数量平均值，无百分比或“负载”单位后缀。共享 formatBytes/formatDurationSeconds 唯一维护展示换算，API 原始单位不变。目录共 20 项；新增 node.disk.read_bytes_per_second / write_bytes_per_second 为完整一分钟平均 B/s，以 device 单维度查询与展示，文件系统仍为 device/mountpoint/fstype 三维度，不混合选择、不跨设备层叠加。概览、文件系统、inode、磁盘及趋势沿原请求预算分别读取；采集缺失和窗口不足保留空值。Desktop 六采集器仍不启用 diskstats；原生完整来源由既有 diskstats 提供。标准 metrics T2 的 promtool 场景选择及真实完整/受限来源查询同步覆盖磁盘目录。

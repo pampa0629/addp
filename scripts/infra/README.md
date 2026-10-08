@@ -967,7 +967,9 @@ python3 scripts/infra/node-metrics.py down
 
 同一入口根据本地 Engine 事实选择部署层，不新增 `.env` 开关。原生 Linux 要求内核 5.12+、Docker Engine 与当前宿主内核一致；采用 host 网络/PID 和宿主根目录只读 rslave 挂载，显式从 `/host/proc`、`/host/sys` 读取，启用十个资源采集器。macOS 的 Docker Desktop Linux VM 采用 `node-metrics-desktop.yml`：独立 bridge 网络，按显式 IP:端口发布来源；只启用 cpu、meminfo、loadavg、stat、uname、time 六个内核全局采集器，使用 `/proc`、`/sys`，不挂载宿主根、Docker Socket，不用 host 网络/PID。不发布 filesystem、diskstats、netdev、netstat；当前磁盘字节/inode API 对该来源明确无数据。仍拒绝远程 Docker Endpoint、非 Linux Engine、旧内核和未知环境。两层共用同一固定官方镜像 tag/digest、原生 mTLS、0.25 CPU/256 MiB、非 root、只读容器文件系统与全部 capability 移除。节点源能读取宿主资源属于明确部署权限，不由中心开关授予。证书替换和配置变更通过再次执行节点 `up` 重建生效；密钥文件 inode 替换不会自动更新既有文件 bind mount，不能承诺热轮换。生产宿主子挂载的实际只读状态与传播仍需 Linux 验收；配置声明和内核门槛不能替代运行检查。
 
-Docker Desktop 台账必须使用 `virtual` 类型并明确命名为 Linux VM；指标反映 VM 中所有工作负载的合计，不能当作 Mac 本机或某个引擎消耗。在 Mac 直接运行的模块不归该节点。`ADDP_NODE_METRICS_LISTEN` 在 Desktop 模式表示宿主发布 IP:端口，来源内部固定监听 9100；正式监测目标必须同时对 Monitor 和 Prometheus 可达，不能把 Mac 回环地址直接当作中心容器的回环地址。服务器 IP SAN 对应正式目标准入解析出的地址，端口不自动避让。
+Docker Desktop 主机登记必须使用 `virtual` 类型并明确命名为 Linux VM；指标反映 VM 中所有工作负载的合计，不能当作 Mac 本机或某个引擎消耗。在 Mac 直接运行的模块不归该节点。`ADDP_NODE_METRICS_LISTEN` 在 Desktop 模式表示宿主发布 IP:端口，来源内部固定监听 9100；正式监测目标必须同时对 Monitor 和 Prometheus 可达，不能把 Mac 回环地址直接当作中心容器的回环地址。服务器 IP SAN 对应正式目标准入解析出的地址，端口不自动避让。
+
+macOS 本地验证需要避免 DHCP 地址变化时，可显式将 `ADDP_NODE_METRICS_LISTEN=127.0.0.1:19091`、`MONITOR_METRICS_ALLOWED_CIDRS=127.0.0.1/32` 与 `ADDP_METRICS_DESKTOP_LOOPBACK_PORT=19091` 配为同一端口。正式目标使用 `https://127.0.0.1:19091/metrics`；中心唯一 Job 将该显式回环地址转换为 `host.docker.internal:19091`，同时保留原地址作为 `instance`，确保宿主准入与中心查询沿同一作用域。仅 macOS、本地 unix Docker Desktop Engine 接受该输入，缺省不启用转换；来源证书必须同时含 `127.0.0.1` IP SAN 与 `host.docker.internal` DNS SAN，仍使用独立 mTLS，不设置证书名称覆盖。此地址表示采集访问入口，不能作为 VM 物理网卡地址或身份依据。端口冲突必须处理原占用，不自动避让。配置与证书准备完成后，由部署方分别执行节点 `up`、Monitor 标准重启及中心 `up.sh --metrics`，再更新已有目标；保留原节点和目标身份，不建立重复记录。
 
 固定项目 `addp-node-metrics` 使用仓库绝对路径 Owner 标签，异工作区同名容器存在时拒绝操作。`down/status` 不校验已失效的来源证书或当前开关，不依赖中心，不删除业务容器、网络或卷。启动成功只说明来源容器运行；部署方仍需通过独立 mTLS 验证来源，再用 Monitor 正式目标接口完成准入，来源部署不会自动创建 System 节点、目标或发现标签。端口与来源错误只影响这个独立入口。
 

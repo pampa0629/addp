@@ -14,6 +14,7 @@ type ResourceQueryPolicyStore interface {
 	Save(context.Context, models.ResourceQueryPolicy, uint64) (models.ResourceQueryPolicy, error)
 }
 type ResourceBackend interface {
+	Collection(context.Context, resourcequery.Scope, time.Time, resourcequery.Budget) (resourcequery.Collection, error)
 	Query(context.Context, resourcequery.Plan, resourcequery.Scope, resourcequery.Budget) ([]resourcequery.Series, error)
 }
 type ResourceQueryPolicyInput struct {
@@ -26,6 +27,7 @@ type ResourceQueryPolicyResponse struct {
 	PendingRestart bool `json:"pending_restart"`
 }
 type ResourceObservationResponse struct {
+	Collection         *resourcequery.Collection    `json:"collection,omitempty"`
 	Subject            metricsdiscovery.NodeSubject `json:"subject"`
 	LookbackSeconds    int64                        `json:"lookback_seconds"`
 	NodeVersion        int64                        `json:"node_version"`
@@ -138,6 +140,9 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 		return result, metricsdiscovery.ErrUnconfigured
 	}
 	result.Series = resourcequery.Empty(plan, "not_connected")
+	if !trend {
+		result.Collection = &resourcequery.Collection{State: "not_connected", Filesystem: "unknown"}
+	}
 	if ref.Enabled {
 		rows, err := s.targets.Snapshot(ctx)
 		if err != nil {
@@ -163,7 +168,15 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 				return result, err
 			}
 			result.TargetID, result.TargetSavedVersion = target.ID, target.Version
-			result.Series, err = s.backend.Query(ctx, plan, resourcequery.Scope{NodeID: node, Instance: resolved.Address}, cfg.Budget)
+			scope := resourcequery.Scope{NodeID: node, Instance: resolved.Address}
+			if !trend {
+				collection, collectionErr := s.backend.Collection(ctx, scope, now.Truncate(time.Second), cfg.Budget)
+				if collectionErr != nil {
+					return result, collectionErr
+				}
+				result.Collection = &collection
+			}
+			result.Series, err = s.backend.Query(ctx, plan, scope, cfg.Budget)
 			if err != nil {
 				return result, err
 			}
@@ -177,6 +190,10 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 		return result, resourcequery.ErrUnavailable
 	}
 	if !trend {
+		if result.Collection.SampledAt != nil && result.QueriedAt.Sub(*result.Collection.SampledAt) > time.Duration(resourcequery.FreshnessSeconds)*time.Second {
+			result.Collection.State = "stale"
+			result.Collection.Filesystem = "unknown"
+		}
 		for i := range result.Series {
 			for j := range result.Series[i].Points {
 				point := &result.Series[i].Points[j]

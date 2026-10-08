@@ -51,9 +51,9 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.workbench.dataApplications', module: 'workbench', route: '/workbench/applications', keywords: ['数据应用', '数据服务消费', '动态查询', '可视化', '联动', '应用发布', '组合展示', 'workbench', 'service consumer', 'data application', 'application revision'] },
   // 任务编排
   { labelKey: 'console.menus.orchestrator.orchestrations', module: 'orchestrator', route: '/orchestrator/orchestrations', keywords: ['编排任务', '工作流编排', 'orchestration', 'dag'] },
-  // 执行监控
-  { labelKey: 'console.menus.monitor.monitoringTargets', module: 'monitor', route: '/monitor/monitoring-targets', keywords: ['监测目标', '采集来源', 'monitoring targets', 'metrics'] },
-  { labelKey: 'console.menus.monitor.nodeResources', module: 'monitor', route: '/monitor/node-resources', keywords: ['节点资源', '内存', '负载', 'node resources', 'memory', 'load'] },
+  // 运行监控
+  { labelKey: 'console.menus.monitor.monitoringTargets', module: 'monitor', route: '/monitor/monitoring-targets', keywords: ['采集配置', '采集来源', 'monitoring targets', 'metrics'] },
+  { labelKey: 'console.menus.monitor.nodeResources', module: 'monitor', route: '/monitor/node-resources', keywords: ['主机监控', '内存', '负载', 'node resources', 'memory', 'load'] },
   { labelKey: 'console.menus.monitor.dashboard',   module: 'monitor', route: '/monitor/dashboard',  keywords: ['监控仪表盘', '监控', '运行状态', 'monitor', 'dashboard'] },
   { labelKey: 'console.menus.monitor.executions',  module: 'monitor', route: '/monitor/executions', keywords: ['执行记录', '任务历史', 'execution history'] },
   { labelKey: 'console.menus.monitor.transferExecutions', module: 'monitor', route: '/monitor/executions?module=transfer&task_type=sync', keywords: ['传输执行', '传输执行记录', 'transfer execution'] },

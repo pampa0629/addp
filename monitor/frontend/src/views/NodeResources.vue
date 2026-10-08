@@ -30,15 +30,23 @@
         <p>{{ node.node_id }} · {{ t(node.enabled ? 'common.enabled' : 'common.disabled') }}</p>
         <p v-if="instant">{{ t('monitor.resources.queriedAt') }}: {{ date(instant.queried_at) }}</p>
       </section>
+      <p v-if="instant" class="resource-hint">{{ t('monitor.resources.loadHint') }}</p>
+      <el-alert v-if="instant && collectionMessage" :title="t(collectionMessage)" :type="instant.collection.state === 'failed' ? 'error' : 'warning'" show-icon :closable="false" data-testid="resource-collection-status" />
+      <el-button v-if="canConfigure && instant" @click="configureCollection">{{ t('monitor.resources.configure') }}</el-button>
       <p v-if="loading" role="status">{{ t('common.loading') }}</p>
       <section v-if="instant" class="resource-cards" :aria-label="t('monitor.resources.current')">
         <article v-for="metric in resourceMetrics" :key="metric.key" class="resource-card" :data-testid="`resource-${metric.name}`">
           <h4>{{ t(`monitor.resources.metrics.${metric.name}`) }}</h4>
           <strong>{{ formatValue(point(metric.key), metric) }}</strong>
-          <p v-if="metric.windowSeconds" class="resource-hint">{{ t('monitor.resources.cpuBusyHint') }}</p>
+
           <p>{{ t(`monitor.resources.states.${point(metric.key).data_state}`) }}</p>
-          <p>{{ t('monitor.resources.sampledAt') }}: {{ date(point(metric.key).sampled_at) }}</p>
-          <p>{{ t('monitor.resources.evaluatedAt') }}: {{ date(point(metric.key).evaluated_at) }}</p>
+          <el-collapse>
+            <el-collapse-item :title="t('monitor.resources.sampling')" name="sampling">
+              <p v-if="metric.windowSeconds" class="resource-hint">{{ t('monitor.resources.cpuBusyHint') }}</p>
+              <p>{{ t('monitor.resources.sampledAt') }}: {{ date(point(metric.key).sampled_at) }}</p>
+              <p>{{ t('monitor.resources.evaluatedAt') }}: {{ date(point(metric.key).evaluated_at) }}</p>
+            </el-collapse-item>
+          </el-collapse>
         </article>
       </section>
       <section v-if="instant" class="resource-filesystems" data-testid="resource-filesystems">
@@ -48,6 +56,7 @@
         <el-alert v-if="filesystemErrorKey" :title="t(filesystemErrorKey)" type="error" show-icon :closable="false" data-testid="resource-filesystem-error" />
         <el-alert v-if="inodeErrorKey" :title="`${t('monitor.resources.filesystem.inode')}: ${t(inodeErrorKey)}`" type="error" show-icon :closable="false" data-testid="resource-inode-error" />
         <p v-if="inodes" class="resource-hint">{{ t('monitor.resources.filesystem.inode') }} · {{ t('monitor.resources.queriedAt') }}: {{ date(inodes.queried_at) }}</p>
+        <el-alert v-if="instant.collection.filesystem === 'not_collected' || instant.collection.filesystem === 'failed'" :title="t(instant.collection.filesystem === 'not_collected' ? 'monitor.resources.collection.not_collected' : 'monitor.resources.collection.filesystem_failed')" type="info" :closable="false" data-testid="resource-filesystem-capability" />
         <el-table :data="mountRows" :empty-text="filesystems ? t(`monitor.resources.states.${filesystems.series[0].points[0].data_state}`) : t('monitor.resources.filesystem.empty')" data-testid="resource-filesystem-table">
           <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
           <el-table-column prop="dimensions.mountpoint" :label="t('monitor.resources.filesystem.mountpoint')" min-width="180" show-overflow-tooltip />
@@ -58,10 +67,23 @@
           <el-table-column :label="t('monitor.resources.trend')" width="140" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="selectFilesystem(row)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
         </el-table>
       </section>
+      <section v-if="instant" class="resource-filesystems" data-testid="resource-disks">
+        <h3>{{ t('monitor.resources.disk.title') }}</h3>
+        <p class="resource-hint">{{ t('monitor.resources.disk.hint') }}</p>
+        <el-alert v-if="diskErrorKey" :title="t(diskErrorKey)" type="error" :closable="false" data-testid="resource-disk-error" />
+        <el-table v-if="!diskErrorKey" :data="diskRows" :empty-text="t('monitor.resources.disk.empty')" data-testid="resource-disk-table">
+          <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" />
+          <el-table-column v-for="metric in diskMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
+            <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p></template>
+          </el-table-column>
+          <el-table-column :label="t('monitor.resources.trend')" width="140"><template #default="{ row }"><el-button text type="primary" @click="selectDisk(row)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
+        </el-table>
+      </section>
       <section v-if="instant" class="resource-trend">
         <div class="resource-toolbar">
           <h3>{{ t('monitor.resources.trend') }}</h3>
           <span v-if="state.dimensions.mountpoint" class="resource-hint" data-testid="resource-selected-mount">{{ state.dimensions.mountpoint }} · {{ state.dimensions.fstype }} · {{ state.dimensions.device }}</span>
+          <span v-if="state.dimensions.device && !state.dimensions.mountpoint" class="resource-hint" data-testid="resource-selected-device">{{ state.dimensions.device }}</span>
           <el-select :model-value="state.metric" :aria-label="t('monitor.resources.metric')" data-testid="resource-metric" @update:model-value="value => selectTrend('metric', value)">
             <el-option v-for="metric in trendMetrics" :key="metric.key" :value="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" />
           </el-select>
@@ -100,27 +122,32 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useConsolePageDescriptor } from '@common-ui'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
+import { formatBytes, scaleByteValue, formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, allResourceMetrics, filesystemRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { validateCollection, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, allResourceMetrics, resourceDimensionRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.resource_observation.read') && auth.hasPermission('platform.host_node.read'))
+const canConfigure = computed(() => canRead.value && auth.hasPermission('monitor.monitoring_target.read') && (instant.value?.target_id || auth.hasPermission('monitor.monitoring_target.create')))
+const collectionMessage = computed(() => !instant.value ? '' : instant.value.collection.state !== 'collecting' ? `monitor.resources.collection.${instant.value.collection.state}` : instant.value.series.some(series => series.points[0].data_state === 'no_data') ? 'monitor.resources.collection.waiting' : '')
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
 const listQuery = computed(() => { const { range, metric, refresh, device, mountpoint, fstype, ...query } = state.value.query; return query })
-const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null)
-const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
+const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null)
+const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
-const mountRows = computed(() => filesystemRows(filesystems.value, inodes.value))
-const trendMetrics = computed(() => state.value.dimensions.mountpoint ? allResourceMetrics : resourceMetrics)
-const chartRows = computed(() => trend.value ? resourceChartRows(trend.value.series[0]) : [])
-const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
-const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, presentation(selectedMetric.value)] }))
+const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
+const diskRows = computed(() => resourceDimensionRows(disks.value))
+const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? diskMetrics : [])])
+const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...(trend.value?.series[0].points.map(point => currentResourceValue(point) ?? 0) || []))) : null)
+const chartRows = computed(() => trend.value ? resourceChartRows(trend.value.series[0]).map(row => ({ ...row, value: row.value === null ? null : row.value / (chartScale.value?.divisor || 1) })) : [])
+const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: metric.unit === 'load' ? '' : t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
+const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { ...presentation(selectedMetric.value), ...(chartScale.value ? { unit: chartScale.value.unit + (selectedMetric.value.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }] }))
 const evidenceRows = computed(() => trend.value?.series[0].points.slice((evidencePage.value - 1) * 20, evidencePage.value * 20) || [])
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'monitor.resources.refreshManual' : refreshBlocked.value ? 'monitor.resources.refreshStopped' : !pageVisible.value ? 'monitor.resources.refreshPaused' : 'monitor.resources.refreshAutomatic')
@@ -129,16 +156,26 @@ const pending = new Set()
 useConsolePageDescriptor(router, 'monitor', { title: computed(() => t('monitor.resources.detailTitle')), subject: computed(() => node.value?.display_name || ''), ready: computed(() => Boolean(node.value)) })
 function date(value) { return formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value) }
 function point(key) { return instant.value.series.find(series => series.metric_key === key).points[0] }
-function formatValue(value, metric) { return formatFieldPresentationValue(currentResourceValue(value), presentation(metric), locale.value) }
+function formatValue(value, metric) {
+  const numeric = currentResourceValue(value)
+  if (numeric === null) return '—'
+  if (['bytes', 'bytes_per_second'].includes(metric.unit)) return formatBytes(numeric, 2, locale.value) + (metric.unit === 'bytes_per_second' ? '/s' : '')
+  if (metric.unit === 'seconds') return formatDurationSeconds(numeric, locale.value)
+  return formatFieldPresentationValue(numeric, presentation(metric), locale.value)
+}
 function navigate(path, query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
+function configureCollection() {
+  return instant.value.target_id ? navigate(`/monitoring-targets/${instant.value.target_id}`, {}) : navigate('/monitoring-targets/new', { node_id: nodeID.value })
+}
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function search() { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace') }
 function selectTrend(key, value) {
   const query = { ...state.value.query, [key]: value }
-  if (key === 'metric' && !value.startsWith('node.filesystem.')) for (const dimension of ['device', 'mountpoint', 'fstype']) delete query[dimension]
+  if (key === 'metric' && !value.startsWith('node.filesystem.') && !value.startsWith('node.disk.')) for (const dimension of ['device', 'mountpoint', 'fstype']) delete query[dimension]
   return navigate(route.path, query, 'replace')
 }
 function selectFilesystem(row) { return navigate(route.path, { ...state.value.query, ...row.dimensions, metric: 'node.filesystem.used_percent' }, 'replace') }
+function selectDisk(row) { const { mountpoint, fstype, ...query } = state.value.query; return navigate(route.path, { ...query, ...row.dimensions, metric: diskMetrics[0].key }, 'replace') }
 function invalidChart() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 function stopRefresh() { window.clearTimeout(refreshTimer); refreshTimer = null }
 function invalidate() { stopRefresh(); epoch++; for (const controller of pending) controller.abort(); pending.clear() }
@@ -162,13 +199,13 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
-  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null }
-  errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = '';  evidencePage.value = 1; loading.value = false
+  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null }
+  errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = ''; diskErrorKey.value = '';  evidencePage.value = 1; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
   searchText.value = state.value.search
   const id = nodeID.value
-  if (state.value.invalidDimensions) { errorKey.value = 'monitor.resources.errors.invalidMount'; return }
+  if (state.value.invalidDimensions) { errorKey.value = 'monitor.resources.errors.invalidDimensions'; return }
   if (id && !isTargetUUID(id)) { errorKey.value = 'monitor.resources.errors.invalidID'; return }
   loading.value = true
   try {
@@ -184,8 +221,9 @@ async function reload({ automatic = false } = {}) {
       const keys = resourceMetrics.map(metric => metric.key)
       const current = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))
       if (ticket !== epoch) return
+      validateCollection(current.collection, current.queried_at)
       instant.value = validateResourceResponse(current, id, keys)
-      filesystems.value = null; inodes.value = null
+      filesystems.value = null; inodes.value = null; disks.value = null
       try {
         const filesystemKeys = filesystemMetrics.map(metric => metric.key)
         const mounts = await request(config => api.instant({ node_id: id, metrics: filesystemKeys.join(',') }, config))
@@ -196,7 +234,7 @@ async function reload({ automatic = false } = {}) {
         filesystemErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
-      inodes.value = null
+      inodes.value = null; disks.value = null
       try {
         const inodeKeys = inodeMetrics.map(metric => metric.key)
         const observed = await request(config => api.instant({ node_id: id, metrics: inodeKeys.join(',') }, config))
@@ -205,6 +243,16 @@ async function reload({ automatic = false } = {}) {
       } catch (error) {
         if (ticket !== epoch) return
         inodeErrorKey.value = resourceErrorKey(error)
+        if ([401, 403, 404].includes(error.response?.status)) throw error
+      }
+      try {
+        const diskKeys = diskMetrics.map(metric => metric.key)
+        const observed = await request(config => api.instant({ node_id: id, metrics: diskKeys.join(',') }, config))
+        if (ticket !== epoch) return
+        disks.value = validateResourceResponse(observed, id, diskKeys)
+      } catch (error) {
+        if (ticket !== epoch) return
+        diskErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
       trend.value = null
@@ -217,12 +265,12 @@ async function reload({ automatic = false } = {}) {
         if (ticket !== epoch) return
         trend.value = null
         trendErrorKey.value = resourceErrorKey(error)
-        if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; inodes.value = null; errorKey.value = trendErrorKey.value }
+        if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; inodes.value = null; disks.value = null; errorKey.value = trendErrorKey.value }
       }
     }
   } catch (error) {
     if (ticket !== epoch) return
-    instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null
+    instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null }
   } finally { if (ticket === epoch) { loading.value = false; scheduleRefresh() } }

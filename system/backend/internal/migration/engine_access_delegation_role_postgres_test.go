@@ -20,6 +20,79 @@ func TestSourceDataAuthorizerRoleForwardMigrationAgainstPostgres(t *testing.T) {
 		"iam.department.read,iam.project_group.read,iam.tenant_membership.read,system.engine.read,system.engine_access_approval_requirement.initialize,system.engine_access_approval_requirement.read,system.engine_access_grant.create,system.engine_access_grant.read,system.engine_access_grant.revoke,system.engine_catalog.read")
 }
 
+func TestEngineAuthorizationAdministratorForwardMigrationAgainstPostgres(t *testing.T) {
+	exerciseEngineAccessRolePublication(t, "000198_engine_authorization_administrator.up.sql", "tenant.engine_access_delegation_administrator",
+		"iam.department.read,iam.project_group.read,iam.tenant_membership.read,system.engine.read,system.engine_access_approval_requirement.initialize,system.engine_access_approval_requirement.read,system.engine_access_delegation.create,system.engine_access_delegation.read,system.engine_access_delegation.revoke,system.engine_access_grant.create,system.engine_access_grant.read,system.engine_access_grant.revoke,system.engine_catalog.read")
+}
+
+func TestEngineAuthorizationAdministratorAssignedSessionRefreshAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("requires System PostgreSQL gate")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	before, through := migrationFilesBeforeAndThrough(t, "000198_engine_authorization_administrator.up.sql")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	user, tenant := seedInitializedMigrationTenant(t, db, "engine-admin-migration", "Engine admin migration")
+	if _, err := db.Exec(`INSERT INTO system.role_assignments(principal_id,role_id,scope_type,tenant_id,status,valid_from,source_type)
+	    SELECT $1,id,'tenant',$2,'active',now(),'bootstrap' FROM system.roles WHERE tenant_id IS NULL AND role_key='tenant.engine_access_delegation_administrator'`, user, tenant); err != nil {
+		t.Fatal(err)
+	}
+	var membership, priorVersion, family int64
+	if err := db.QueryRow(`SELECT m.id,p.authorization_version FROM system.tenant_memberships m JOIN system.principals p ON p.id=m.principal_id WHERE p.id=$1 AND m.tenant_id=$2`, user, tenant).Scan(&membership, &priorVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO system.refresh_token_families(principal_id,context_type,tenant_membership_id,issued_authorization_version,client_id,auth_type,audiences,scopes,authentication_methods,assurance_level,authenticated_at,expires_at)
+	    VALUES($1,'tenant',$2,$3,'addp-web','first_party',ARRAY['addp.api'],ARRAY[]::text[],ARRAY['password'],'aal1',now()-interval '1 minute',now()+interval '1 hour') RETURNING id`, user, membership, priorVersion).Scan(&family); err != nil {
+		t.Fatal(err)
+	}
+	var priorAssignments int
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_assignments`).Scan(&priorAssignments); err != nil {
+		t.Fatal(err)
+	}
+	runner := &Runner{DSN: dsn, FS: through, Root: DefaultMigrationsRoot}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var currentVersion int64
+	var reason string
+	var assignments, delegations, grants int
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id=$1`, user).Scan(&currentVersion); err != nil {
+		t.Fatal(err)
+	}
+	if currentVersion <= priorVersion {
+		t.Fatal("changed administrator permissions did not advance authorization version")
+	}
+	if err := db.QueryRow(`SELECT revoked_reason FROM system.refresh_token_families WHERE id=$1 AND revoked_at IS NOT NULL`, family).Scan(&reason); err != nil || reason != "authorization_catalog_changed" {
+		t.Fatalf("old session remains usable: %s %v", reason, err)
+	}
+	if err := db.QueryRow(`SELECT (SELECT count(*) FROM system.role_assignments),(SELECT count(*) FROM system.engine_access_delegations),(SELECT count(*) FROM system.engine_access_grants)`).Scan(&assignments, &delegations, &grants); err != nil {
+		t.Fatal(err)
+	}
+	if assignments != priorAssignments || delegations != 0 || grants != 0 {
+		t.Fatalf("migration manufactured access: %d %d %d", assignments, delegations, grants)
+	}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var repeatedVersion int64
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id=$1`, user).Scan(&repeatedVersion); err != nil || repeatedVersion != currentVersion {
+		t.Fatalf("second startup changed authorization: %d %v", repeatedVersion, err)
+	}
+}
+
 func exerciseEngineAccessRolePublication(t *testing.T, migrationFile, roleKey, want string) {
 	t.Helper()
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")

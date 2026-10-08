@@ -57,7 +57,7 @@ import {
   isGeospatialFormat
 } from '@addp/common-frontend'
 
-const size = formatFileSize(1024000) // "1.00 MB"
+const size = formatFileSize(1024000) // "1,000.00 KiB"
 const format = detectFormatByExtension('data.shp') // "shapefile"
 const isGeo = isGeospatialFormat('shapefile') // true
 ```
@@ -767,3 +767,5 @@ MIT
 默认全部展开，每层缩进 16px；搜索按名称路径与编码匹配并展示完整路径，选中框仅显示名称，悬停显示路径。`show-code` 仅在候选行显示编码；默认插槽用于“全部”等非业务域选项。远程分页入口使用 `businessDomainReferenceOptions(items)` 将 owner 返回的 `domain_path` 转换为展示选项，通过 `remote`、`remote-method` 使用 owner 的搜索，仍由同一组件展示层级与路径；分页缺少父选项时显示完整路径。
 
 测试由 `make test-common-frontend` 自动发现，消费模块浏览器回归由原有前端门禁负责，CI 无需新建任务。
+
+资源数量展示复用 `basic/src/utils/formatters.js`：`scaleByteValue` 返回唯一 IEC 1024 进制量级、值和除数，`formatBytes` 可指定精度及当前语言；Map 的字节格式化入口转发此实现，`formatFileSize` 同样委托。`formatDurationSeconds` 将非负秒数转换为当前语言的日/小时/分钟/秒，最多三个非零分量，不依赖时区。Monitor 容量曲线使用一个固定量级，不改写 API 的 bytes 原值。

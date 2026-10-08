@@ -96,13 +96,13 @@ func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, tim
 
 // Instant godoc
 // @Summary 读取节点即时资源 | Read current node resources
-// @Description 固定九项标量、五项字节容量及四项 inode；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity and four inode metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data
+// @Description 即时响应附带当前采集状态 collection；抓取成功不等于指标或业务健康。| Instant responses include current collection evidence, not metric or business health. 固定九项标量、五项字节容量、四项 inode 和两项按 device 的一分钟磁盘读写吞吐；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode and two per-device one-minute disk throughput metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
 // @Param node_id query string true "节点 UUID | Node UUID"
 // @Param metrics query string true "逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most twelve"
-// @Param device query string false "文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint and fstype"
+// @Param device query string false "磁盘设备精确值；文件系统还需挂载点与类型 | Exact disk device; filesystem selection also requires mountpoint and fstype"
 // @Param mountpoint query string false "文件系统挂载点精确值 | Exact filesystem mountpoint"
 // @Param fstype query string false "文件系统类型精确值 | Exact filesystem type"
 // @Success 200 {object} service.ResourceObservationResponse
@@ -122,13 +122,13 @@ func (h *ResourceObservationHandler) Instant(c *gin.Context) { h.query(c, false)
 
 // Trend godoc
 // @Summary 读取节点资源趋势 | Read node resource trends
-// @Description 固定九项标量、五项字节容量及四项 inode；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity and four inode metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data
+// @Description 固定九项标量、五项字节容量、四项 inode 和两项按 device 的一分钟磁盘读写吞吐；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode and two per-device one-minute disk throughput metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
 // @Param node_id query string true "节点 UUID | Node UUID"
 // @Param metrics query string true "逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most twelve"
-// @Param device query string false "文件系统设备精确值，与挂载点和类型一起提供 | Exact filesystem device; requires mountpoint and fstype"
+// @Param device query string false "磁盘设备精确值；文件系统还需挂载点与类型 | Exact disk device; filesystem selection also requires mountpoint and fstype"
 // @Param mountpoint query string false "文件系统挂载点精确值 | Exact filesystem mountpoint"
 // @Param fstype query string false "文件系统类型精确值 | Exact filesystem type"
 // @Param start query string true "整秒 RFC3339 开始时间 | Whole-second RFC3339 start"

@@ -21,7 +21,8 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
     if (!(form.expiresAt instanceof Date) || !Number.isFinite(form.expiresAt.getTime()) || form.expiresAt.getTime() <= now) throw new Error('invalidGrant')
     expiresAt = form.expiresAt.toISOString()
   }
-  const fields = { request_id: crypto.randomUUID(), requirement_version: decimal(requirement.version), recipient_type: form.recipientType,
+  if (requirement.initialize_approval && String(requirement.version) !== '1') throw new Error('invalidGrant')
+  const fields = { request_id: crypto.randomUUID(), requirement_version: decimal(requirement.version), initialize_approval: requirement.initialize_approval === true, recipient_type: form.recipientType,
     recipient_id: decimal(candidate.id), action: 'read', expiry_mode: form.expiryMode, expires_at: expiresAt, reason }
   const encoded = JSON.stringify(fields)
   return Object.freeze({ requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,

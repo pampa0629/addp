@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 )
@@ -138,5 +139,36 @@ func TestManagementScopePredicate(t *testing.T) {
 	}
 	if err := (*lockedManagementScope)(nil).checkManagement(now); !errors.Is(err, commonapi.ErrForbidden) {
 		t.Fatal("nil withdrawal scope must fail closed")
+	}
+}
+
+func TestAdministratorManagementScopeNeedsCurrentTenantPermission(t *testing.T) {
+	now := time.Now().UTC()
+	tenant := uint(9)
+	tenantID := int64(9)
+	until := now.Add(time.Minute)
+	scope := &lockedManagementScope{tenantID: 9, engineID: 10, membershipID: 8,
+		engine: &models.Engine{ID: 10, TenantID: &tenant, LifecycleState: models.EngineLifecycleActive},
+		administratorPermissions: []iam.RoleAssignmentPermissionProjection{{
+			PermissionKey: authorization.PermissionSystemEngineAccessDelegationCreate,
+			ScopeType:     "tenant", TenantID: &tenantID, ValidFrom: now, ValidUntil: &until,
+		}}}
+	if err := scope.check(now); err != nil {
+		t.Fatalf("administrator should not need self-delegation: %v", err)
+	}
+	if scope.delegation != nil {
+		t.Fatal("administrator qualification must not manufacture delegation")
+	}
+	if err := scope.check(until); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatalf("expired administrator qualified: %v", err)
+	}
+	tenantID++
+	if err := scope.check(now); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatalf("another tenant permission qualified: %v", err)
+	}
+	tenantID--
+	scope.administratorPermissions[0].PermissionKey = authorization.PermissionSystemEngineAccessGrantCreate
+	if err := scope.check(now); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatalf("handling permission without management scope qualified: %v", err)
 	}
 }

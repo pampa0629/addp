@@ -26,17 +26,25 @@ export const inodeMetrics = [
   { key: 'node.filesystem.inodes_used', name: 'inodeUsed', unit: 'inodes', precision: 0 }
 ]
 export const mountMetrics = [...filesystemMetrics, ...inodeMetrics]
-export const allResourceMetrics = [...resourceMetrics, ...mountMetrics]
+export const diskMetrics = [
+  { key: 'node.disk.read_bytes_per_second', name: 'diskRead', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 },
+  { key: 'node.disk.write_bytes_per_second', name: 'diskWrite', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 }
+]
+export const allResourceMetrics = [...resourceMetrics, ...mountMetrics, ...diskMetrics]
 const dimensionKeys = ['device', 'mountpoint', 'fstype']
 export function validResourceDimensions(value, allowEmpty = true) {
   return value && typeof value === 'object' && !Array.isArray(value) && ((allowEmpty && Object.keys(value).length === 0) ||
     (Object.keys(value).length === 3 && dimensionKeys.every(key => typeof value[key] === 'string' && value[key].length > 0 && value[key].length <= 4096 && !value[key].includes('\0')) && value.mountpoint.startsWith('/')))
 }
 export function resourceDimensionID(dimensions) { return JSON.stringify(dimensionKeys.map(key => dimensions[key] ?? null)) }
-export function filesystemRows(...values) {
+export function validDiskDimensions(value, allowEmpty = true) {
+  return value && typeof value === 'object' && !Array.isArray(value) && ((allowEmpty && Object.keys(value).length === 0) ||
+    (Object.keys(value).length === 1 && typeof value.device === 'string' && value.device.length > 0 && value.device.length <= 4096 && !value.device.includes('\0')))
+}
+export function resourceDimensionRows(...values) {
   const rows = new Map()
   for (const series of values.filter(Boolean).flatMap(value => value.series)) {
-    if (!validResourceDimensions(series.dimensions, false)) continue
+    if (!validResourceDimensions(series.dimensions, false) && !validDiskDimensions(series.dimensions, false)) continue
     const key = resourceDimensionID(series.dimensions)
     if (!rows.has(key)) rows.set(key, { key, dimensions: series.dimensions, metrics: {} })
     rows.get(key).metrics[series.metric_key] = series.points[0]
@@ -58,7 +66,12 @@ export function resolveResourceRoute(query = {}, detail = false) {
     if (validResourceDimensions(selected, false)) dimensions = selected
     else invalidDimensions = true
   }
-  if (hasDimensions && !metric.startsWith('node.filesystem.')) invalidDimensions = true
+  if (metric.startsWith('node.disk.')) {
+    const selected = Object.fromEntries(dimensionKeys.filter(key => Object.hasOwn(query, key)).map(key => [key, query[key]]))
+    if (validDiskDimensions(selected, false)) dimensions = selected
+    else invalidDimensions = true
+  }
+  if (hasDimensions && !metric.startsWith('node.filesystem.') && !metric.startsWith('node.disk.')) invalidDimensions = true
   const canonicalDimensions = invalidDimensions ? Object.fromEntries(dimensionKeys.filter(key => Object.hasOwn(query, key)).map(key => [key, query[key]])) : dimensions
   const refresh = detail && typeof query.refresh === 'string' && resourceRefreshOptions.includes(query.refresh) ? query.refresh : '15'
   const canonical = { ...pagination.query, ...canonicalDimensions, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(detail && refresh !== '15' ? { refresh } : {}) }
@@ -80,21 +93,21 @@ export function validateResourceResponse(value, nodeID, keys, trend = false, dim
   if (value?.subject?.kind !== 'node' || value.subject.node_id !== nodeID || !Array.isArray(value.series) || value.series.length < keys.length || value.series.length > 100 || !Number.isFinite(Date.parse(value.end)) || !Number.isFinite(Date.parse(value.queried_at))) throw new Error('invalid_resource_response')
   const seen = new Set()
   for (const series of value.series) {
-    if (!validResourceDimensions(series.dimensions)) throw new Error('invalid_resource_response')
+    if (!validResourceDimensions(series.dimensions) && !validDiskDimensions(series.dimensions)) throw new Error('invalid_resource_response')
     const definition = allResourceMetrics.find(item => item.key === series.metric_key)
     if (!definition || !keys.includes(series.metric_key) || seen.has(series.metric_key + resourceDimensionID(series.dimensions)) || series.unit !== definition.unit || series.window_seconds !== (definition.windowSeconds || 0) || !Array.isArray(series.points) || !series.points.length || series.points.length > (trend ? 1000 : 1)) throw new Error('invalid_resource_response')
-    const filesystem = series.metric_key.startsWith('node.filesystem.')
-    if (!validResourceDimensions(series.dimensions) || (!filesystem && Object.keys(series.dimensions).length) || (Object.keys(dimensions).length && filesystem && resourceDimensionID(series.dimensions) !== resourceDimensionID(dimensions))) throw new Error('invalid_resource_response')
+    const filesystem = series.metric_key.startsWith('node.filesystem.'), disk = series.metric_key.startsWith('node.disk.'), grouped = filesystem || disk
+    if (!(disk ? validDiskDimensions(series.dimensions) : validResourceDimensions(series.dimensions)) || (!grouped && Object.keys(series.dimensions).length) || (Object.keys(dimensions).length && grouped && resourceDimensionID(series.dimensions) !== resourceDimensionID(dimensions))) throw new Error('invalid_resource_response')
     seen.add(series.metric_key + resourceDimensionID(series.dimensions))
     for (const point of series.points) {
       if (!['valid', 'stale', 'no_data', 'not_connected'].includes(point.data_state) || !Number.isFinite(Date.parse(point.evaluated_at)) || (point.sampled_at !== null && !Number.isFinite(Date.parse(point.sampled_at))) || (point.value !== null && (typeof point.value !== 'number' || !Number.isFinite(point.value))) || (point.data_state === 'valid' && (point.value === null || point.sampled_at === null))) throw new Error('invalid_resource_response')
-      if ((point.value !== null && (point.value < 0 || (series.unit === 'percent' && point.value > 100) || (series.unit === 'inodes' && !Number.isSafeInteger(point.value)))) || (['no_data', 'not_connected'].includes(point.data_state) && (point.value !== null || point.sampled_at !== null)) || (point.data_state === 'stale' && (point.value === null || point.sampled_at === null)) || (filesystem && Object.keys(series.dimensions).length === 0 && !['no_data', 'not_connected'].includes(point.data_state))) throw new Error('invalid_resource_response')
+      if ((point.value !== null && (point.value < 0 || (series.unit === 'percent' && point.value > 100) || (series.unit === 'inodes' && !Number.isSafeInteger(point.value)))) || (['no_data', 'not_connected'].includes(point.data_state) && (point.value !== null || point.sampled_at !== null)) || (point.data_state === 'stale' && (point.value === null || point.sampled_at === null)) || (grouped && Object.keys(series.dimensions).length === 0 && !['no_data', 'not_connected'].includes(point.data_state))) throw new Error('invalid_resource_response')
     }
   }
   const metricGroups = keys.map(key => value.series.filter(series => series.metric_key === key).map(series => resourceDimensionID(series.dimensions)).sort())
-  if (metricGroups.some((groups, index) => groups.length === 0 || (!keys[index].startsWith('node.filesystem.') && groups.length !== 1))) throw new Error('invalid_resource_response')
-  const filesystemGroups = metricGroups.filter((_, index) => keys[index].startsWith('node.filesystem.')).map(groups => JSON.stringify(groups))
-  if (new Set(filesystemGroups).size > 1 || value.series.reduce((total, series) => total + series.points.length, 0) > 20000) throw new Error('invalid_resource_response')
+  if (metricGroups.some((groups, index) => groups.length === 0 || (!keys[index].startsWith('node.filesystem.') && !keys[index].startsWith('node.disk.') && groups.length !== 1))) throw new Error('invalid_resource_response')
+  const families = ['node.filesystem.', 'node.disk.'].map(prefix => metricGroups.filter((_, index) => keys[index].startsWith(prefix)).map(groups => JSON.stringify(groups)))
+  if (families.some(groups => new Set(groups).size > 1) || value.series.reduce((total, series) => total + series.points.length, 0) > 20000) throw new Error('invalid_resource_response')
   if (inodeMetrics.every(metric => keys.includes(metric.key))) {
     for (const group of new Set(value.series.filter(series => series.metric_key === inodeMetrics[0].key).map(series => resourceDimensionID(series.dimensions)))) {
       const mounted = Object.fromEntries(value.series.filter(series => resourceDimensionID(series.dimensions) === group).map(series => [series.metric_key, series]))
@@ -119,4 +132,13 @@ export function resourceErrorKey(error) {
   }
   const status = error.response?.status
   return `monitor.resources.errors.${names[code] || (status === 404 ? 'notFound' : status === 401 || status === 403 ? 'denied' : error.message === 'invalid_resource_response' ? 'invalidResponse' : 'unavailable')}`
+}
+
+export function validateCollection(value, queriedAt) {
+  const states = ['not_connected', 'no_sample', 'collecting', 'failed', 'stale']
+  if (!value || !states.includes(value.state) || !['unknown', 'available', 'failed', 'not_collected'].includes(value.filesystem)) throw new Error('invalid_resource_response')
+  const sampled = Date.parse(value.sampled_at), observed = Date.parse(queriedAt)
+  const hasSample = ['collecting', 'failed', 'stale'].includes(value.state)
+  if (!Number.isFinite(observed) || (hasSample ? !Number.isFinite(sampled) || sampled > observed : value.sampled_at !== null) || (value.state !== 'collecting' && value.filesystem !== 'unknown') || (value.state === 'stale' ? observed - sampled <= 60000 : hasSample && observed - sampled > 60000)) throw new Error('invalid_resource_response')
+  return value
 }

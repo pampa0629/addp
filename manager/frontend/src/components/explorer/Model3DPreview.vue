@@ -18,6 +18,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
+import { cameraFitDistanceForBox } from '@/utils/scene3dCamera.js'
 
 const props = defineProps({
   data: {
@@ -180,24 +181,26 @@ function updateModelBounds(object) {
   const maxDim = Math.max(size.x, size.y, size.z, 1)
   modelBoundingRadius = Math.max(size.length() / 2, maxDim / 2, 1)
   modelBoundingCenter.copy(center)
-  return { center, size, maxDim }
+  return { box, center, size }
 }
 
 function fitCamera(object) {
   if (!object || !camera || !controls) return
+  resize()
   const bounds = updateModelBounds(object)
   if (!bounds) return
-  const { center, size, maxDim } = bounds
-  const distance = maxDim / (2 * Math.tan((camera.fov * Math.PI) / 360))
+  const { box, center, size } = bounds
   const terrainView = shouldUseTerrainCamera(size)
   const offset = terrainView
-    ? terrainCameraOffset(size, distance)
-    : new THREE.Vector3(distance * 0.75, distance * 0.55, distance * 1.15)
+    ? new THREE.Vector3(0.85, 0.34, 1.15)
+    : new THREE.Vector3(0.75, 0.55, 1.15)
   const target = terrainView
     ? terrainCameraTarget(center, size, offset)
     : center
+  const distance = cameraFitDistanceForBox(box, offset, new THREE.Vector3(0, 1, 0), camera.fov, camera.aspect, 1.12, target)
+  if (!distance) return
   camera.up.set(0, 1, 0)
-  camera.position.copy(center).add(offset)
+  camera.position.copy(target).addScaledVector(offset.normalize(), distance)
   controls.minDistance = MIN_CAMERA_DISTANCE
   controls.maxDistance = Infinity
   controls.target.copy(target)
@@ -241,11 +244,6 @@ function shouldUseTerrainCamera(size) {
   const dimensions = [Math.abs(size.x), Math.abs(size.y), Math.abs(size.z)].sort((a, b) => a - b)
   const maxDim = Math.max(dimensions[2], 1)
   return dimensions[0] / maxDim < 0.18 && dimensions[1] / maxDim > 0.25
-}
-
-function terrainCameraOffset(size, distance) {
-  const viewDistance = distance * 0.82
-  return new THREE.Vector3(viewDistance * 0.85, viewDistance * 0.34, viewDistance * 1.15)
 }
 
 function terrainCameraTarget(center, size, offset) {

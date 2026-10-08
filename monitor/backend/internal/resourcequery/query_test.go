@@ -42,7 +42,7 @@ func TestPlansAndWhitelistRejectInjectionAndBoundSevenDays(t *testing.T) {
 	}
 	keys := []string{}
 	for _, d := range Catalog() {
-		if !d.Filesystem() {
+		if !d.Grouped() {
 			keys = append(keys, d.Key)
 		}
 	}

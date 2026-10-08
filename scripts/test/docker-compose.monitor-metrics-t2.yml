@@ -5,7 +5,7 @@ services:
       service: node-exporter
     ports:
       - target: 9100
-        published: "0"
+        published: "${ADDP_NODE_METRICS_PUBLISH_PORT:-0}"
         host_ip: 127.0.0.1
         protocol: tcp
   prometheus:

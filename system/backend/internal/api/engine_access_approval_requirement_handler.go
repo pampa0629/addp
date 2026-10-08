@@ -37,7 +37,7 @@ type EngineAccessHandlingRequirementRequest struct {
 
 // HandlingRequirement godoc
 // @Summary 观察精确目标的当前批准要求 | Observe the exact target's current approval requirement
-// @Description 只读结构化查询。仅本人办理权限和当前引擎管理委派，不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本 | Read-only structured query under current human handling permission and engine delegation. No configuration enumeration, initialization or access grant; the version is a lossless string and formal submission rechecks the original expected version
+// @Description 只读结构化查询。仅本人办理权限及管理资格（授权管理员或本引擎受托办理人），不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本 | Read-only structured query under current human handling permission and administrator or delegated engine handler qualification. No configuration enumeration, initialization or access grant; the version is a lossless string and formal submission rechecks the original expected version
 // @Tags 源授权办理 | Source Access Fulfillment
 // @Accept json
 // @Produce json
@@ -74,7 +74,7 @@ func (h *EngineAccessApprovalRequirementHandler) HandlingRequirement(c *gin.Cont
 
 // Initialize godoc
 // @Summary 首次配置源目标批准方式 | Configure the approval mode for a source target for the first time
-// @Description 当前用户需独立初始化权限和有效引擎管理委派；必须明确选择 catalog 或 independent，仅新建精确目标要求。已有要求返回 409，不切换模式、不授予批准资格或内容访问；不依赖 Catalog 在线 | Requires initialization permission and current engine management delegation. Explicit catalog or independent mode creates only an exact target requirement. Existing facts return 409; no mode switch, approval qualification or content grant. Catalog availability is not required
+// @Description 当前用户需独立初始化权限及管理资格（授权管理员或本引擎受托办理人）；必须明确选择 catalog 或 independent，仅新建精确目标要求。已有要求返回 409，不切换模式、不授予批准资格或内容访问；不依赖 Catalog 在线 | Requires initialization permission and administrator or delegated engine handler qualification. Explicit catalog or independent mode creates only an exact target requirement. Existing facts return 409; no mode switch, approval qualification or content grant. Catalog availability is not required
 // @Tags 源授权批准要求 | Source Access Approval Requirements
 // @Accept json
 // @Produce json
@@ -108,7 +108,7 @@ func (h *EngineAccessApprovalRequirementHandler) Initialize(c *gin.Context) {
 
 // List godoc
 // @Summary 查询引擎源授权批准要求 | List source access approval requirements for an engine
-// @Description 当前租户及当前管理委派范围内的配置事实，不包含连接信息或内容授权 | Configuration facts in the current tenant and management delegation, without connection information or content grants
+// @Description 当前租户及当前管理资格范围内的配置事实，不包含连接信息或内容授权 | Configuration facts in the current tenant and management qualification, without connection information or content grants
 // @Tags 源授权批准要求 | Source Access Approval Requirements
 // @Produce json
 // @Security BearerAuth
@@ -136,7 +136,7 @@ func (h *EngineAccessApprovalRequirementHandler) List(c *gin.Context) {
 
 // Get godoc
 // @Summary 读取源授权批准要求 | Get a source access approval requirement
-// @Description 按当前租户及引擎隔离，并核验当前管理委派；不存在及跨租户均返回 404 | Scoped to current tenant and engine with current delegation checks; missing and cross-tenant IDs return 404
+// @Description 按当前租户及引擎隔离，并核验授权管理员或本引擎受托办理资格；不存在及跨租户均返回 404 | Scoped to current tenant and engine with current administrator or delegated engine handler qualification checks; missing and cross-tenant IDs return 404
 // @Tags 源授权批准要求 | Source Access Approval Requirements
 // @Produce json
 // @Security BearerAuth

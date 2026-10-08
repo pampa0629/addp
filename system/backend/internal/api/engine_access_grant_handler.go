@@ -35,6 +35,7 @@ type CreateIndependentEngineAccessGrantRequest struct {
 	RequestID          string                         `json:"request_id"`
 	CatalogPath        engineplugin.EngineCatalogPath `json:"catalog_path"`
 	RequirementVersion string                         `json:"requirement_version"`
+	InitializeApproval bool                           `json:"initialize_approval"`
 	RecipientType      string                         `json:"recipient_type" enums:"user,department,project_group"`
 	RecipientID        string                         `json:"recipient_id"`
 	Action             string                         `json:"action" enums:"read"`
@@ -45,8 +46,9 @@ type CreateIndependentEngineAccessGrantRequest struct {
 
 // Create godoc
 // @Summary 显式签发独立只读授权 | Issue explicit independent read access
-// @Description 当前 Tenant User 需独立授予权限及有效引擎管理委派；精确普通表的批准要求必须为 independent 且与原版本匹配。不要求企业 Catalog 或 Meta 编目，结构核验只读且不读取样本 | Current Tenant User needs creation permission and effective engine delegation. Exact ordinary table approval must be independent at the expected version. No enterprise Catalog or Meta cataloging; structure verification is read-only without sampling
+// @Description 当前 Tenant User 需独立授予权限及管理资格（当前租户授权管理员或本引擎受托办理人）；精确普通表的批准要求必须为 independent 且与原版本匹配。不要求企业 Catalog 或 Meta 编目，结构核验只读且不读取样本 | Current Tenant User needs creation permission and management qualification (current-tenant authorization administrator or delegated engine handler). Exact ordinary table approval must be independent at the expected version. No enterprise Catalog or Meta cataloging; structure verification is read-only without sampling
 // @Description 同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy
+// @Description 授权管理员不需委托自己，受托办理员需有效引擎委托。initialize_approval=true 须额外具有首次配置权限且版本为 1；首次配置与 Grant 原子提交，不覆盖已有要求 | Authorization administrators need no self-delegation; handlers need an effective engine delegation. initialize_approval=true additionally requires initialization permission and version 1; configuration and Grant commit atomically without overwriting an existing basis
 // @Tags 源数据授权 | Source Data Grants
 // @Accept json
 // @Produce json
@@ -57,6 +59,7 @@ type CreateIndependentEngineAccessGrantRequest struct {
 // @Failure 400,401,403,404,409,500,503 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_grant.create"]
+// @x-addp-conditional-permissions ["system.engine_access_approval_requirement.initialize"]
 // @Router /engines/{id}/access_grants [post]
 func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 	actor, engineID, ok := approvalRequirementActor(c)
@@ -76,7 +79,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 		return
 	}
 	row, err := h.service.CreateIndependentGrant(c.Request.Context(), engineaccess.CreateIndependentGrantInput{
-		Actor: actor, EngineID: engineID, RequestID: id, CatalogPath: request.CatalogPath, RequirementVersion: version,
+		Actor: actor, EngineID: engineID, RequestID: id, CatalogPath: request.CatalogPath, RequirementVersion: version, InitializeApproval: request.InitializeApproval,
 		RecipientType: request.RecipientType, RecipientID: recipientID, Action: request.Action,
 		ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason,
 		Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
@@ -89,7 +92,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 
 // List godoc
 // @Summary 查看源数据授权历史 | List source-data Grant history
-// @Description 当前租户用户需独立读取权限及有效引擎管理委派；同时显示独立批准和 Catalog 来源、期限与撤销历史，停用引擎仍可查看。不是当前访问裁决，不读取源端 | Current Tenant User needs history-read permission and effective engine delegation. Lists independent and Catalog issuance, expiry and revocation history, including disabled engines. Not a current access verdict; no source IO
+// @Description 当前租户用户需独立读取权限及管理资格（授权管理员或本引擎受托办理人）；同时显示独立批准和 Catalog 来源、期限与撤销历史，停用引擎仍可查看。不是当前访问裁决，不读取源端 | Current Tenant User needs history-read permission and administrator or delegated engine handler qualification. Lists independent and Catalog issuance, expiry and revocation history, including disabled engines. Not a current access verdict; no source IO
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json
 // @Security BearerAuth
@@ -165,7 +168,7 @@ func respondIndependentGrantError(c *gin.Context, err error) {
 
 // Revoke godoc
 // @Summary 撤销指定源数据 Grant | Revoke a specific source-data Grant
-// @Description 当前租户用户须同时具备有效引擎管理委派和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权 | Current tenant user needs an effective engine management delegation and independent revocation Permission, even for disabled engines. Withdraws only this Grant; identical retries return original history without affecting independent Grants
+// @Description 当前租户用户须同时具备管理资格（授权管理员或本引擎受托办理人）和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权 | Current tenant user needs administrator or delegated engine handler qualification and independent revocation Permission, even for disabled engines. Withdraws only this Grant; identical retries return original history without affecting independent Grants
 // @Tags 源数据授权撤销 | Source Data Grant Revocation
 // @Description 自然到期后首次撤销返回 409 engine_access_grant_expired，不写撤销事实；到期前已撤销的同参重试仍须当前资格有效并返回原记录。长期有效仍可撤销，五分钟办理窗口不限制撤销 | First revocation after natural expiry returns 409 engine_access_grant_expired without writing history; retries of an earlier revocation require current qualification and return the original record. Until-revoked Grants remain revocable; the five-minute fulfillment window does not limit revocation
 // @Accept json

@@ -113,6 +113,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Catalog | 数据项共享确认与原办理请求 | 详情使用 `tab=sharing`；`sharing_decision_id`／`sharing_request_id` 分别为原确认／原请求 UUID，显式提交前 replace 保存。刷新仅 GET 找回原记录；不把版本、命令正文、审批凭据或待提交参数写入 URL，也不从 URL 恢复 POST |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |
 | System | IAM 分类页面、页内对象与审计筛选 | path `/iam/organization\|accounts\|roles\|application-access\|security`、`tab`、`event_name`、`result`、`risk_level`、`module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id`、`page` |
+| System | 引擎详情与独立授权窗口 | 对象唯一 path `/engines/:id`；详情使用 `tab=connection\|capabilities`，默认基础信息省略；授权操作与详情并列，使用 `tab=data-authorization\|delegations` 区分数据授权和办理人员，详情不再包含授权页签；无权使用的子视图规范化为基础信息 |
 | System | 模块管理服务实例筛选与分页 | path `/modules`，实例视图使用 `tab=instances`；`module_name`、`registered_host`、`node_name`、`role`、`status`、`stop_reason`、`time_basis`、`time_period`、`time_from`、`time_to`、`page`、`page_size` |
 | Standard | 标准文档详情 | path `/documents/:id`；列表筛选 query 原样保留 |
 | Standard | 数据元确定修订 | path `/elements/:id`、`revision_id`；显式指定后必须精确读取，失败不切换其他修订 |

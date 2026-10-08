@@ -6,7 +6,7 @@ test('node resource navigation preserves the real Monitor iframe and one Console
   await page.goto('/monitor/node-resources?page=2')
   const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(monitor.getByRole('button', { name: '查看资源' })).toHaveCount(2)
-  await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('平台节点资源')
+  await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('主机监控')
   const frame = page.frames().find(frame => frame.parentFrame())
   const documentID = await frame.evaluate(() => performance.timeOrigin)
   await monitor.getByRole('button', { name: '查看资源' }).first().click()

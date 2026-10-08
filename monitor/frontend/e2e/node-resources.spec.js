@@ -3,6 +3,22 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { identity, node, resourceBackend, resourcePermissions, secondNode, setIdentity } from './node-resources.fixture'
 
+test('resource quantities use binary capacity and elapsed time while load is not a percent', async ({ page }) => {
+  const state = await resourceBackend(page)
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+  await expect(page.getByTestId('resource-uptime')).toContainText('1小时')
+  const load = page.getByTestId('resource-load1m')
+  await expect(load).toContainText('系统平均负载（1 分钟）')
+  await expect(load.locator('strong')).toHaveText('0.00')
+  await expect(page.getByText('系统平均负载：运行或等待 CPU，以及不可中断等待（常见于 I/O）的任务数量平均值；不是百分比，也不是 CPU 或内存使用率。', { exact: true })).toBeVisible()
+  await page.getByTestId('resource-metric').click()
+  await page.getByRole('option', { name: '内存总量', exact: true }).click()
+  await page.getByText('查看采样明细', { exact: true }).click()
+  await expect(page.getByTestId('resource-evidence')).toContainText('16.00 GiB')
+  expect(state.reads.find(item => item.path.endsWith('resource_trends') && item.query.metrics === 'node.memory.total_bytes')).toBeTruthy()
+})
+
 test('lists owner nodes without fanout and opens nine metrics with server-anchored trends', async ({ page }) => {
   const state = await resourceBackend(page)
   await page.goto('/node-resources?page=2&search=节点')
@@ -21,7 +37,7 @@ test('lists owner nodes without fanout and opens nine metrics with server-anchor
   await page.getByText('查看采样明细', { exact: true }).click()
   await expect(page.getByTestId('resource-evidence')).toContainText('缺失')
   await page.screenshot({ path: join(tmpdir(), 'addp-node-resources-desktop.png'), animations: 'disabled' })
-  await page.getByRole('button', { name: '返回节点列表' }).click()
+  await page.getByRole('button', { name: '返回主机列表' }).click()
   await expect(page.getByTestId('resource-search')).toHaveValue('节点')
 })
 test('canonical detail restores metric and range on reload; no endpoint or token enters URL', async ({ page }) => {
@@ -31,7 +47,7 @@ test('canonical detail restores metric and range on reload; no endpoint or token
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   expect(state.reads.find(item => item.path.endsWith('resource_trends')).query.start).toBe('2026-09-30T00:00:00.000Z')
   await page.reload()
-  await expect(page.getByTestId('resource-metric')).toContainText('1 分钟平均负载')
+  await expect(page.getByTestId('resource-metric')).toContainText('系统平均负载（1 分钟）')
   await expect(page.getByTestId('resource-range')).toContainText('近 7 天')
 })
 for (const mode of ['disabled', 'unconfigured', 'unavailable', 'timeout', 'budget', 'busy']) test(`${mode} refresh clears old metrics and has a distinct state`, async ({ page }) => {
@@ -72,7 +88,7 @@ test('navigation to another node discards the previous delayed response', async 
   const state = await resourceBackend(page, { holdInstant: true })
   await page.goto(`/node-resources/${node}`)
   await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_observations')).length).toBe(1)
-  await page.getByRole('button', { name: '返回节点列表' }).click()
+  await page.getByRole('button', { name: '返回主机列表' }).click()
   await page.getByRole('button', { name: '查看资源' }).nth(1).click()
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   state.release()
@@ -102,7 +118,7 @@ test('disconnected points stay empty; English narrow layout has no horizontal ov
 test('invalid node or mismatched response is an error instead of another node', async ({ page }) => {
   const state = await resourceBackend(page, { mode: 'invalid' })
   await page.goto('/node-resources/not-a-uuid')
-  await expect(page.getByTestId('resource-error')).toContainText('节点标识无效')
+  await expect(page.getByTestId('resource-error')).toContainText('主机标识无效')
   expect(state.reads).toHaveLength(0)
   await page.goto(`/node-resources/${node}`)
   await expect(page.getByTestId('resource-error')).toContainText('资源响应不完整')
@@ -110,7 +126,7 @@ test('invalid node or mismatched response is an error instead of another node', 
 })
 
 
-const resourceReads = state => state.reads.filter(item => item.path.endsWith('resource_observations') && !item.query.metrics.startsWith('node.filesystem.'))
+const resourceReads = state => state.reads.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.startsWith('node.cpu.logical_cores'))
 const visibleChart = page => expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
 async function visibility(page, hidden) {
   await page.evaluate(hidden => {
@@ -136,7 +152,7 @@ test('automatic refresh advances the server window without changing URL or fanou
   // Observations arrive before their anchored trend; an existing canvas is not completion evidence.
   await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ start: '2026-10-06T23:00:30.000Z', end: '2026-10-07T00:00:30.000Z' })
   expect(page.url()).toBe(url)
-  await page.getByRole('button', { name: '返回节点列表' }).click()
+  await page.getByRole('button', { name: '返回主机列表' }).click()
   await expect(page.getByRole('button', { name: '查看资源' })).toHaveCount(2)
   await page.clock.fastForward(60001)
   expect(resourceReads(state)).toHaveLength(2)
@@ -243,6 +259,7 @@ test('CPU minute warmup stays empty while gauges work; recovery restores valid z
   await page.goto(`/node-resources/${node}?metric=node.cpu.busy_percent&refresh=off`)
   await expect(page.getByTestId('resource-cpuBusy')).toContainText('缺失')
   await expect(page.getByTestId('resource-cpuBusy').locator('strong')).toHaveText('—')
+  await page.getByTestId('resource-cpuBusy').getByText('采样说明', { exact: true }).click()
   await expect(page.getByTestId('resource-cpuBusy')).toContainText('最近一分钟')
   await expect(page.getByTestId('resource-cores')).toContainText('0 核')
   await expect(page.getByTestId('resource-metric')).toContainText('CPU 忙碌率（1 分钟）')
@@ -294,7 +311,7 @@ test('filesystem failure clears its own table while valid scalar cards and trend
 test('incomplete filesystem identity shows an error without querying another resource', async ({ page }) => {
   const state = await resourceBackend(page)
   await page.goto(`/node-resources/${node}?metric=node.filesystem.used_percent&device=partial`)
-  await expect(page.getByTestId('resource-error')).toContainText('挂载选择无效')
+  await expect(page.getByTestId('resource-error')).toContainText('资源维度选择无效')
   await expect(page.getByTestId('resource-cores')).toHaveCount(0)
   expect(state.reads).toHaveLength(0)
   expect(new URL(page.url()).searchParams.get('metric')).toBe('node.filesystem.used_percent')
@@ -335,4 +352,42 @@ test('inode budget failure clears only inode values and recovery stays in the sa
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByTestId('resource-inode-error')).toHaveCount(0)
   await expect(page.getByTestId('resource-filesystem-table')).toContainText('20.00 %')
+})
+
+test('reports a collection failure without presenting it as zero load or unsupported filesystem', async ({ page }) => {
+  await resourceBackend(page, { mode: 'collection-failed' })
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  await expect(page.getByTestId('resource-collection-status')).toContainText('采集失败')
+  await expect(page.getByTestId('resource-filesystem-capability')).toHaveCount(0)
+})
+test('successful restricted source explains uncollected filesystem separately', async ({ page }) => {
+  await resourceBackend(page, { mode: 'filesystem-uncollected' })
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  await expect(page.getByTestId('resource-filesystem-capability')).toContainText('未提供文件系统指标')
+  await expect(page.getByTestId('resource-collection-status')).toHaveCount(0)
+})
+
+
+test('disk throughput selects a device, restores its trend and isolates missing collection', async ({ page }) => {
+  const state = await resourceBackend(page)
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  const table = page.getByTestId('resource-disk-table')
+  await expect(table).toContainText('sda')
+  await expect(table).toContainText('2.00 KiB/s')
+  await table.getByRole('button', { name: '查看趋势' }).click()
+  await expect(page.getByTestId('resource-selected-device')).toHaveText('sda')
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  const reads = state.reads.filter(item => item.path.endsWith('resource_trends'))
+  expect(reads.at(-1).query).toMatchObject({ metrics: 'node.disk.read_bytes_per_second', device: 'sda' })
+  expect(reads.at(-1).query.mountpoint).toBeUndefined()
+  await page.reload()
+  await expect(page.getByTestId('resource-selected-device')).toHaveText('sda')
+  state.diskMode = 'disk-missing'
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(table).toContainText('暂无磁盘吞吐数据')
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+  state.diskMode = 'denied'
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-cores')).toHaveCount(0)
+  await expect(table).toHaveCount(0)
 })

@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('metrics_config', ROOT / 'scripts/infra/generate-metrics-config.py')
@@ -35,6 +36,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         script = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
         inputs = re.search(r'^# ADDP_T2_INPUT_FILES=(.+)$', script, re.M).group(1).split()
         for path in ('monitor/backend/internal/resourcequery/client.go',
+                     'monitor/backend/internal/resourcequery/disk.go',
+                     'monitor/backend/internal/resourcequery/disk_test.go',
                      'monitor/backend/internal/resourcequery/deleted-or-future.go',
                      'monitor/backend/internal/config/config.go',
                      'scripts/prod/metrics-query.yml',
@@ -45,6 +48,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('uses: actions/setup-go@', job)
         self.assertIn('go-version-file: common/go.mod', job)
         self.assertLess(job.index('uses: actions/setup-go@'), job.index('run: make test-monitor-metrics'))
+        probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
+        self.assertIn('CPUWindow|DiskWindow|Filesystem|FilesystemInodes', probe)
 
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):
         config.render(self.env)
@@ -60,6 +65,27 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         config.render(self.env)
         self.assertEqual((self.directory / 'prometheus.yml').read_text(), data)
         self.assertEqual(sorted(p.name for p in self.directory.iterdir()), sorted((*config.FILES, 'prometheus.yml')))
+
+    def test_desktop_loopback_rules_keep_the_original_identity_and_exact_port(self):
+        env = dict(self.env, ADDP_METRICS_DESKTOP_LOOPBACK_PORT='19091')
+        replies = [json.dumps([{'Endpoints': {'docker': {'Host': 'unix:///local/docker.sock'}}}]),
+                   json.dumps({'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'})]
+        with mock.patch.object(config.platform, 'system', return_value='Darwin'), mock.patch.object(config.subprocess, 'check_output', side_effect=replies):
+            config.render(env)
+        data = (self.directory / 'prometheus.yml').read_text()
+        self.assertIn('target_label: instance', data)
+        self.assertIn('host.docker.internal:19091', data)
+        self.assertIn('127\\\\.0\\\\.0\\\\.1:19091', data)
+        self.assertEqual(data.count('job_name: addp_nodes'), 1)
+        self.assertNotIn('server_name:', data)
+        before = data
+        for port in ('019091', '0', '65536', '19091\n', '19091:123'):
+            with self.assertRaises(ValueError): config.render(dict(env, ADDP_METRICS_DESKTOP_LOOPBACK_PORT=port))
+        with mock.patch.object(config.platform, 'system', return_value='Linux'), self.assertRaises(ValueError): config.render(env)
+        with mock.patch.object(config.platform, 'system', return_value='Darwin'), self.assertRaises(ValueError): config.render(dict(env, DOCKER_HOST='tcp://remote:2376'))
+        self.assertEqual((self.directory / 'prometheus.yml').read_text(), before)
+        config.render(self.env)
+        self.assertNotIn('relabel_configs:\n      - source_labels: [__address__]', (self.directory / 'prometheus.yml').read_text())
 
     def test_rejects_ambiguous_origins_without_replacing_valid_config(self):
         config.render(self.env)

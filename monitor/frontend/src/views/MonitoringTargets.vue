@@ -8,7 +8,7 @@
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
     <el-table v-loading="loading" :data="rows" border stripe>
       <el-table-column prop="id" :label="t('monitor.targets.id')" min-width="220" show-overflow-tooltip />
-      <el-table-column :label="t('monitor.targets.node')" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.subject.node_id }}</template></el-table-column>
+      <el-table-column :label="t('monitor.targets.node')" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ nodeNames[row.subject.node_id] || t('monitor.targets.nodeMissing') }}</template></el-table-column>
       <el-table-column :label="t('monitor.targets.kind')" min-width="160"><template #default="{ row }">{{ t(`monitor.targets.kinds.${row.monitor_kind}`) }}</template></el-table-column>
       <el-table-column :label="t('monitor.targets.endpoint')" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.source.endpoint }}</template></el-table-column>
       <el-table-column :label="t('monitor.targets.configState')" width="160"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ t(row.enabled ? 'monitor.targets.enabled' : 'monitor.targets.disabled') }}</el-tag></template></el-table-column>
@@ -22,8 +22,16 @@
       <div v-loading="detailLoading">
         <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" show-icon />
         <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon data-testid="target-save-error" />
-        <el-form v-if="formReady" label-position="top" :disabled="!canWrite || saving || conflicted" @submit.prevent>
-          <el-form-item :label="t('monitor.targets.node')"><el-input ref="nodeInput" v-model="form.node_id" :readonly="!creating" maxlength="36" data-testid="target-node" /></el-form-item>
+        <el-form v-if="formReady" label-position="top" :disabled="!(creating ? canCreate : canRead && auth.hasPermission('monitor.monitoring_target.update')) || saving || conflicted" @submit.prevent>
+          <el-form-item :label="t('monitor.targets.node')">
+            <el-select v-if="creating" ref="nodeInput" v-model="form.node_id" filterable remote :remote-method="searchNodes" :loading="nodesLoading" :placeholder="t('monitor.targets.nodeSearch')" :aria-label="t('monitor.targets.node')" data-testid="target-node" @change="selectNode">
+              <el-option v-for="host in selectableNodes" :key="host.node_id" :value="host.node_id" :label="host.display_name" />
+            </el-select>
+            <el-input v-else :model-value="selectedNode?.display_name || t('monitor.targets.nodeMissing')" readonly data-testid="target-node" />
+            <p v-if="selectedNode" class="target-hint">{{ selectedNode.addresses.join(', ') }}</p>
+            <el-button v-if="creating && nodeOptions.length < nodesTotal" text :loading="nodesLoading" @click="loadNodes(nodeSearch, nodesPage + 1)">{{ t('monitor.targets.moreNodes') }}</el-button>
+            <el-alert v-if="nodesError" :title="t(nodesError)" type="error" :closable="false" />
+          </el-form-item>
           <el-form-item :label="t('monitor.targets.kind')"><el-select v-model="form.monitor_kind" :disabled="!creating" :aria-label="t('monitor.targets.kind')"><el-option v-for="kind in Object.keys(targetKinds)" :key="kind" :value="kind" :label="t(`monitor.targets.kinds.${kind}`)" /></el-select></el-form-item>
           <el-form-item :label="t('monitor.targets.endpoint')"><el-input ref="endpointInput" v-model="form.endpoint" maxlength="512" :placeholder="t('monitor.targets.endpointHint')" data-testid="target-endpoint" /></el-form-item>
           <el-form-item :label="t('monitor.targets.configState')"><el-switch v-model="form.enabled" :active-text="t('monitor.targets.enabled')" :inactive-text="t('monitor.targets.disabled')" :aria-label="t('monitor.targets.configState')" data-testid="target-enabled" /></el-form-item>
@@ -53,6 +61,7 @@ import { ElMessage } from 'element-plus'
 import { openConsoleRoute, StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 import { monitoringTargetsAPI as api } from '../api/monitoringTargets'
+import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { isTargetUUID, resolveTargetRoute, targetInput, targetKinds } from '../utils/monitoringTargets'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
@@ -62,11 +71,15 @@ const canCreate = computed(() => canRead.value && auth.hasPermission('monitor.mo
 const creating = computed(() => route.name === 'MonitoringTargetNew')
 const targetID = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
 const dialogOpen = computed(() => creating.value || Boolean(targetID.value))
-const canWrite = computed(() => creating.value ? canCreate.value : canRead.value && auth.hasPermission('monitor.monitoring_target.update'))
+const canWrite = computed(() => Boolean(selectedNode.value) && (creating.value ? canCreate.value : canRead.value && auth.hasPermission('monitor.monitoring_target.update')))
 const canRemove = computed(() => !creating.value && canRead.value && auth.hasPermission('monitor.monitoring_target.delete'))
-const state = computed(() => resolveTargetRoute(route.query))
+const state = computed(() => resolveTargetRoute(route.query, creating.value))
 const rows = ref([]), total = ref(0), loading = ref(false), loaded = ref(false), listError = ref('')
 const target = ref(null), formReady = ref(false), detailLoading = ref(false), detailError = ref(''), saveError = ref(''), saving = ref(false), conflicted = ref(false), statusMessage = ref('')
+const selectedNode = ref(null), nodeOptions = ref([]), nodesLoading = ref(false), nodesError = ref('')
+const nodeNames = ref({})
+let nodesTicket = 0, nodesPage = 1, nodesTotal = 0, nodeSearch = ''
+const selectableNodes = computed(() => selectedNode.value && !nodeOptions.value.some(host => host.node_id === selectedNode.value.node_id) ? [selectedNode.value, ...nodeOptions.value] : nodeOptions.value)
 const nodeInput = ref(null), endpointInput = ref(null), closeButton = ref(null), pageHeading = ref(null)
 const form = reactive({ node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true })
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
@@ -88,7 +101,7 @@ function navigate(path, query = state.value.query, history = 'push') { return na
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function closeDialog() { if (!saving.value) return navigate('/monitoring-targets', state.value.query, 'replace') }
 function openNodes() { return openConsoleRoute('/system/host-nodes') }
-function resetForm() { Object.assign(form, { node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true }); formReady.value = false; target.value = null }
+function resetForm() { Object.assign(form, { node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true }); formReady.value = false; target.value = null; selectedNode.value = null }
 function populate(value) {
   target.value = value
   Object.assign(form, { node_id: value.subject.node_id, monitor_kind: value.monitor_kind, endpoint: value.source.endpoint, enabled: value.enabled })
@@ -96,10 +109,31 @@ function populate(value) {
 }
 async function focusForm() {
   await nextTick()
-  if (canWrite.value && formReady.value && !conflicted.value) (creating.value ? nodeInput.value : endpointInput.value)?.focus()
+  if ((creating.value ? canCreate.value : canWrite.value) && formReady.value && !conflicted.value) (creating.value ? nodeInput.value : endpointInput.value)?.focus()
   else closeButton.value?.$el?.focus()
 }
 async function restoreFocus() { await nextTick(); if (canRead.value && !dialogOpen.value) pageHeading.value?.focus() }
+async function readNode(id) {
+  const host = await request(config => hostsAPI.node(id, config))
+  if (host?.node_id !== id || !isTargetUUID(id) || typeof host.display_name !== 'string' || !host.display_name.trim() || !Array.isArray(host.addresses) || host.addresses.some(address => typeof address !== 'string')) throw new Error('invalid_host')
+  return host
+}
+async function loadNodes(search = '', page = 1) {
+  if (!canRead.value || !creating.value) return
+  const generation = epoch, ticket = ++nodesTicket
+  nodesLoading.value = true; nodesError.value = ''
+  if (page === 1) nodeOptions.value = []
+  try {
+    const result = await request(config => hostsAPI.nodes({ page, page_size: 20, ...(search.trim() ? { search: search.trim() } : {}) }, config))
+    if (generation !== epoch || ticket !== nodesTicket) return
+    if (!Array.isArray(result.data) || !Number.isSafeInteger(result.total) || result.total < 0 || result.data.some(host => !isTargetUUID(host.node_id) || typeof host.display_name !== 'string' || !Array.isArray(host.addresses))) throw new Error('invalid_hosts')
+    nodeOptions.value = page === 1 ? result.data : [...nodeOptions.value, ...result.data.filter(host => !nodeOptions.value.some(current => current.node_id === host.node_id))]
+    nodesTotal = result.total; nodesPage = page; nodeSearch = search
+  } catch { if (generation === epoch && ticket === nodesTicket) nodesError.value = 'monitor.targets.nodeLoadingFailed' }
+  finally { if (generation === epoch && ticket === nodesTicket) nodesLoading.value = false }
+}
+function searchNodes(search) { return loadNodes(search, 1) }
+function selectNode(id) { nodesError.value = ''; selectedNode.value = nodeOptions.value.find(host => host.node_id === id) || (selectedNode.value?.node_id === id ? selectedNode.value : null) }
 async function loadList() {
   if (!canRead.value) return
   const generation = epoch, ticket = ++listTicket
@@ -108,6 +142,13 @@ async function loadList() {
     const value = await request(config => api.list({ page: state.value.page, page_size: state.value.pageSize }, config))
     if (generation !== epoch || ticket !== listTicket) return
     rows.value = value.data; total.value = value.total; loaded.value = true
+    const names = {}
+    for (let i = 0; i < value.data.length; i += 4) {
+      const batch = await Promise.allSettled(value.data.slice(i, i + 4).map(row => readNode(row.subject.node_id)))
+      if (generation !== epoch || ticket !== listTicket) return
+      batch.forEach((result, index) => { if (result.status === 'fulfilled') names[value.data[i + index].subject.node_id] = result.value.display_name })
+    }
+    nodeNames.value = names
   } catch { if (generation === epoch && ticket === listTicket) listError.value = t('monitor.targets.loadFailed') }
   finally { if (generation === epoch && ticket === listTicket) loading.value = false }
 }
@@ -120,7 +161,11 @@ async function loadDetail() {
   try {
     const value = await request(config => api.get(id, config))
     if (generation !== epoch || ticket !== detailTicket) return
-    populate(value); await focusForm()
+    populate(value); formReady.value = false
+    const host = await readNode(value.subject.node_id)
+    if (generation !== epoch || ticket !== detailTicket) return
+    selectedNode.value = host
+    formReady.value = true; await focusForm()
   } catch (error) { if (generation === epoch && ticket === detailTicket) detailError.value = t(error.response?.status === 404 ? 'monitor.targets.notFound' : 'monitor.targets.loadFailed') }
   finally { if (generation === epoch && ticket === detailTicket) detailLoading.value = false }
 }
@@ -137,8 +182,8 @@ async function save() {
     const value = await request(config => isCreate ? api.create(body, config) : api.update(id, body, config))
     if (generation !== epoch) return
     ElMessage.success(t('monitor.targets.saved'))
-    if (isCreate) await navigate(`/monitoring-targets/${value.id}`, state.value.query, 'replace')
-    else { populate(value); await loadList() }
+    if (isCreate) { const { node_id, ...query } = state.value.query; await navigate(`/monitoring-targets/${value.id}`, query, 'replace') }
+    else { const host = selectedNode.value; populate(value); selectedNode.value = host; await loadList() }
   } catch (error) { if (generation === epoch) writeError(error) }
   finally { if (generation === epoch) { saving.value = false; statusMessage.value = '' } }
 }
@@ -155,12 +200,24 @@ async function remove() {
   finally { if (generation === epoch) { saving.value = false; statusMessage.value = '' } }
 }
 watch([() => route.fullPath, identity], async () => {
-  invalidate(); resetForm()
+  invalidate(); resetForm(); nodesTicket++; nodeOptions.value = []; nodeNames.value = {}; nodesError.value = ''; nodesLoading.value = false; nodesTotal = 0; nodesPage = 1
   rows.value = []; total.value = 0; loaded.value = false; loading.value = false; detailLoading.value = false
   listError.value = ''; detailError.value = ''; saveError.value = ''; statusMessage.value = ''; saving.value = false; conflicted.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
-  if (creating.value) formReady.value = canCreate.value
+  if (creating.value) {
+    formReady.value = canCreate.value
+    const generation = epoch
+    await loadNodes()
+    if (generation !== epoch) return
+    if (state.value.query.node_id) {
+      try {
+        const host = await readNode(state.value.query.node_id)
+        if (generation !== epoch) return
+        selectedNode.value = host; form.node_id = host.node_id
+      } catch { if (generation === epoch) nodesError.value = 'monitor.targets.nodeLoadingFailed' }
+    }
+  }
   await Promise.all([loadList(), creating.value ? Promise.resolve() : loadDetail()])
 }, { immediate: true, flush: 'sync' })
 onBeforeUnmount(invalidate)

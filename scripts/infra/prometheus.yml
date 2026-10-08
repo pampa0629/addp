@@ -53,7 +53,7 @@ scrape_configs:
           tls_config:
             ca_file: /etc/prometheus/deployment/control-ca.crt
             min_version: TLS12
-    metric_relabel_configs:
+@@DESKTOP_LOOPBACK@@    metric_relabel_configs:
       # Save the three owner labels, remove every source identity, then restore only these.
       - source_labels: [addp_node_id]
         target_label: __tmp_addp_node_id

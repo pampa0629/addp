@@ -11,20 +11,41 @@ import (
 type Dimensions map[string]string
 
 func (d Definition) Filesystem() bool { return strings.HasPrefix(d.Key, "node.filesystem.") }
+func (d Definition) Disk() bool       { return strings.HasPrefix(d.Key, "node.disk.") }
+func (d Definition) Grouped() bool    { return d.Filesystem() || d.Disk() }
+func (d Definition) DimensionKeys() []string {
+	if d.Filesystem() {
+		return []string{"device", "mountpoint", "fstype"}
+	}
+	if d.Disk() {
+		return []string{"device"}
+	}
+	return nil
+}
+func (p Plan) GroupLimit(d Definition) int {
+	if d.Disk() {
+		return p.DiskGroups
+	}
+	return p.FilesystemGroups
+}
 func (d Dimensions) Validate() error {
 	if len(d) == 0 {
 		return nil
 	}
-	if len(d) != 3 {
+	if len(d) != 3 && len(d) != 1 {
 		return ErrInvalid
 	}
-	for _, key := range []string{"device", "mountpoint", "fstype"} {
+	keys := []string{"device"}
+	if len(d) == 3 {
+		keys = append(keys, "mountpoint", "fstype")
+	}
+	for _, key := range keys {
 		value := d[key]
 		if value == "" || len(value) > 4096 || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
 			return ErrInvalid
 		}
 	}
-	if !strings.HasPrefix(d["mountpoint"], "/") {
+	if len(d) == 3 && !strings.HasPrefix(d["mountpoint"], "/") {
 		return ErrInvalid
 	}
 	return nil

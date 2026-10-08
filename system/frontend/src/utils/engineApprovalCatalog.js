@@ -16,6 +16,35 @@ export function isApprovalTable(node) {
     entry.path?.version === 'catalog.path/v1' && leaf?.term === 'table' && leaf.kind === 'table'
 }
 
+export function isApprovalSelection(node) {
+  const entry = node?.metadata?.catalog_entry
+  return isApprovalTable(node) || (entry?.role === 'branch' && entry.path?.segments?.length > 1)
+}
+
+// A namespace is a discovery shortcut, never an authorization target.
+// Return only a complete bounded snapshot; failures discard the whole selection.
+export async function collectApprovalTargets(selection, engineID, adapter, limit = 200) {
+  const targets = [], visited = new Set(), root = selection?.raw?.node
+  if (!isApprovalSelection(root)) throw new Error('invalidCatalogTarget')
+  async function visit(node, parent) {
+    const entry = node?.metadata?.catalog_entry, path = entry?.path
+    const key = JSON.stringify(path)
+    if (!path || String(path.engine_id) !== String(engineID) || visited.has(key) || path.segments.length > 64 ||
+      (parent && (path.segments.length !== parent.segments.length + 1 || !parent.segments.every((part, index) =>
+        ['term', 'kind', 'name'].every(field => part[field] === path.segments[index]?.[field]))))) throw new Error('invalidCatalogTarget')
+    visited.add(key)
+    if (isApprovalTable(node)) {
+      targets.push(approvalTargetFromSelection({ raw: { node } }, engineID))
+      if (targets.length > limit) throw new Error('tooManyTargets')
+    } else if (entry.role === 'branch') {
+      const children = await adapter.getNodeChildren(node)
+      for (const child of children) await visit(child, path)
+    }
+  }
+  await visit(root)
+  return targets
+}
+
 export function approvalTargetFromSelection(selection, engineID) {
   const entry = selection?.raw?.node?.metadata?.catalog_entry
   const id = safePickerEngineID(engineID)

@@ -157,7 +157,7 @@
         "manager": "Manager - 数据管理",
         "meta": "Meta - 元数据",
         "model": "Model - 数据建模",
-        "monitor": "Monitor - 执行监控",
+        "monitor": "Monitor - 运行监控",
         "orchestrator": "Orchestrator - 工作流编排",
         "portal": "Portal - 资产门户",
         "quality": "Quality - 数据质量",
@@ -245,7 +245,7 @@
           "name": "数据传输"
         },
         "monitor": {
-          "name": "执行监控"
+          "name": "运行监控"
         },
         "service": {
           "name": "数据服务"
@@ -423,8 +423,8 @@
         "desc": "工作流编排、任务调度、执行管理"
       },
       "monitor": {
-        "label": "执行监控",
-        "desc": "任务执行监控、统计分析、健康检查"
+        "label": "运行监控",
+        "desc": "任务运行监控、统计分析、健康检查"
       },
       "catalog": {
         "label": "企业资源目录",
@@ -546,7 +546,7 @@
         "orchestrations": "编排任务"
       },
       "monitor": {
-        "label": "执行监控",
+        "label": "运行监控",
         "dashboard": "监控仪表盘",
         "executions": "执行记录",
         "transferExecutions": "传输执行记录",
@@ -559,12 +559,13 @@
         "modelExecutions": "数据建模执行记录",
         "alerts": "告警事件",
         "notifications": "告警通知",
-        "recentDashboard": "执行监控仪表盘",
+        "recentDashboard": "运行监控仪表盘",
         "recentExecutions": "全域执行记录",
         "recentAlerts": "执行告警事件",
         "recentNotifications": "执行告警通知",
-        "monitoringTargets": "平台监测目标",
-        "nodeResources": "平台节点资源"
+        "advanced": "高级设置",
+        "monitoringTargets": "采集配置",
+        "nodeResources": "主机监控"
       },
       "catalog": {
         "label": "企业资源目录",
@@ -615,7 +616,7 @@
         "recentModules": "平台模块管理",
         "recentCleanup": "系统资源回收",
         "recentConfiguration": "平台配置管理",
-        "hostNodes": "平台节点台账"
+        "hostNodes": "平台主机管理"
       }
     },
     "personalCenter": "个人中心"

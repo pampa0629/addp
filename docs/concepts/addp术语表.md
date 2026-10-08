@@ -498,7 +498,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Authentication Assurance Level (AAL) | 认证保证等级 | 当前 User 会话基于已完成认证方式得出的认证可信程度。 | 属于当前 Token Family 的不可变认证事实，不是 Tenant 配置、User 的永久等级或权限大小；当前产品签发 AAL1 和 AAL2，AAL3 仅为协议预留。 |
 | Permission | 权限 | ADDP 产品定义的稳定、最小功能动作。 | Tenant 可以组合 Permission 创建 Role，但不能创造任意 Permission 字符串。 |
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
-| Source Data Authorizer | 源数据授权办理员 | 配置精确表批准方式、办理独立只读授权、查询签发历史并撤销授权的内置功能角色。 | 使用 `tenant.source_data_authorizer`，仅 Tenant Scope 的 User；办理须另有目标引擎的有效管理委派。角色不自动赋予数据访问、创建委派或绕过 Catalog 业务确认。可以由现有管理员兼任，不要求新建账号。 |
+| Source Data Authorizer | 源数据授权办理员 | 配置精确表批准方式、办理直接只读授权、查询签发历史并撤销授权的内置功能角色。 | 使用 `tenant.source_data_authorizer`，仅 Tenant Scope 的 User；办理须另有目标引擎的有效委托或显式授权管理员资格。角色不自动赋予数据访问、创建委托或绕过 Catalog 业务批准。可以由现有管理员兼任，不要求新建账号。 |
 | Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层与命名规范。质量执行策略由 Quality 管理。 |
 | Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
@@ -513,7 +513,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | automatic fulfillment reconciliation | 自动办理核清 | Catalog 查询 System 原办理及签发事实后，结束本次自动签发恢复调度的本地事实。 | 以 `fulfillment_checks.grant_reconciled_at` 一次性记录；须已完成受理核清 `resolved_at`，且时间不早于它。原请求关闭、已签发或 System 明确原窗口到期／关闭均可终结，因此不代表签发成功或当前允许访问。不得复制 Grant、清除标记、重开请求或刷新原窗口；受理核清仍独立解除责任与来源保护，不等候自动办理核清。 |
 | business responsibility establishment evidence | 业务责任建立依据 | Catalog 对企业条目是否曾明确保存有效业务负责人的不可回退历史依据。 | 首次保存有效 `business_owner` 即建立，不以完成编目为前提；仅分配部门或业务域不算，模块部署或注册也不算。撤销编目、责任移交或失效不清除此依据。旧历史不足时保留未知，不等同从未建立；不是新的治理阶段、当前资格证明或数据授权，也不是禁止用户明确退出 Catalog 的永久锁定。 |
 | authorization fulfillment | 授权办理 | 具备办理功能和目标管理范围的主体，将有效业务或接入授权依据落实为资源访问规则，或执行规则撤销的行为。 | 办理权限不等于业务批准权；业务责任人、数据管理员和技术维护者不因承担责任自动获得办理或内容访问权。 |
-| engine access management delegation | 引擎授权管理委派 | System 引擎访问控制领域将一个明确 Engine 的有限授权管理资格，显式委派给当前 Tenant 的有效用户成员。 | 独立于 Role Assignment、Catalog 责任和内容访问 Grant；必须指定到期时间与原因，可撤销，不允许转委派。首版不包含 namespace 递归、写入、DDL 或整库读取。 |
+| engine access management delegation | 引擎授权管理委托 | System 引擎访问控制领域将一个明确 Engine 的有限授权管理资格，显式委托给当前 Tenant 的有效用户成员。 | 独立于 Role Assignment、Catalog 责任和内容访问 Grant；必须指定到期时间与原因，可撤销，不允许转委托。授权管理员在其有效租户管理权限范围内可直接办理，无须委托自己；受托人仍需独立办理功能权限。namespace 仅批量展开本次明确选中的现有目标，不产生递归、未来资源、写入或 DDL 授权。 |
 | onboarding authorization authority | 接入授权主体 | 接入阶段被显式授予限定引擎资源管理范围、可办理有限初始访问授权的主体。 | 临时接入只向指定账号或项目组授予明确选中资源的限时只读，不包含全租户公开、写入或 DDL；批准方式以 System 的精确目标要求为准，明确启用 Catalog 确认后，新增共享与扩大权限须由业务责任人确认。仅保存责任不切换批准方式。不是新的 IAM 身份或永久业务负责人；管理委派与内容访问授权独立，不能从引擎登记动作推导。长期独立批准不套用临时接入期限。 |
 | Resource Scope Binding | 资源作用域绑定 | owner 模块将资源实例显式关联到 Department 或 Project Group Scope 的事实。 | 只用于判断 scoped Role Assignment 是否覆盖资源；不直接授予 Permission 或 Resource Grant。 |
 | Resource Policy | 资源策略 | owner 模块基于资源生命周期、归属、可见级别、密级和业务条件执行的版本化授权规则。 | 第一阶段使用 owner 代码和结构化字段，不引入任意表达式 DSL 或中央策略引擎。 |
@@ -554,6 +554,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 
 ## 模块注册与运行
 
+
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | module definition | 模块定义 | System 按稳定 `module_name` 保存的持久模块身份、路由声明和业务模块的管理员启用意图。 | 进程离线不删除；业务模块的管理员写操作使用聚合根 `version` 做并发控制。System 与 Gateway 定义的 `enabled` 固定为 true。 |
@@ -574,12 +575,14 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
-| managed host node | 纳管节点 | System 维护稳定 node_id 的物理机或虚拟机身份，以及基础台账。 | 名称和 IP 是属性；不由 registered_host、容器主机名或服务 URL 推算，不等同 Engine Instance。平台节点 API 创建 UUID，enabled 表示纳管意图而非在线状态。 |
+| managed host node | 纳管节点 | System 维护稳定 node_id 的物理机或虚拟机身份及基础信息；用户入口称“平台主机管理”。 | 名称和 IP 是属性；不由 registered_host、容器主机名或服务 URL 推算，不等同 Engine Instance。平台节点 API 创建 UUID，enabled 表示纳管意图而非在线状态。 |
 | deployment association | 部署关联 | 受信部署环境明确提供的节点、容器、运行实例或引擎之间的承载关系。 | 保存来源与有效时间；模块实例首次声明固定，当前 node_id 必须经节点允许集合裁定，declared_node_id 仅为历史声明。无证据时不回填历史，不参与 Ready、路由或执行所有权。 |
-| monitoring target | 监测目标 | Monitor 管理的被观测对象引用、监测类别和采集端点配置。 | 不替代节点、模块实例或引擎登记；引擎已登记不代表已接入资源监测。 |
+| monitoring target | 监测目标 | Monitor 管理的被观测对象引用、监测类别和采集端点配置；用户高级入口称“采集配置”。 | 不替代节点、模块实例或引擎登记；引擎已登记不代表已接入资源监测。 |
 | observability capability | 观测能力 | 可独立选择部署的指标、集中日志或追踪能力。 | 组件属于 Infra，但不是所有模块的必需依赖；关闭与故障必须分别表达。 |
 | resource observation | 资源观测 | 带对象身份、来源、采样时间和单位的资源指标事实。 | CPU/内存、执行槽位、实例租约分别解释；无数据或过期不等于零负载或正常。 |
 | node CPU busy percentage | 节点 CPU 忙碌率 | 同一节点一分钟窗口内各逻辑核非 idle 时间比例的平均值。 | 包含 iowait、steal 等非 idle 状态，不等于进程 CPU、Load Average 或健康评分；窗口不足、核集合改变或计数器重置时不生成有效值。 |
+| system load average | 系统平均负载 | Linux 运行或等待 CPU（R 状态）及不可中断等待（D 状态，常见于 I/O）的任务平均数量，提供 1、5、15 分钟窗口。 | 不是百分比、CPU 或内存使用率，不按核数直接换算 CPU 使用率。 |
+| disk throughput observation | 磁盘吞吐观测 | 同一节点来源按 device 区分的一分钟读写字节速率。 | 不代表物理磁盘身份或饱和度；不跨磁盘、分区、设备映射层相加，窗口不足或计数器重置无有效值。 |
 | filesystem mount observation | 文件系统挂载观测 | 同一节点来源按设备、挂载点及文件系统类型区分的容量事实。 | 不等于物理磁盘或卷身份；绑定挂载与共享文件系统不能相加为物理总容量，不按路径推断租户归属。 |
 | filesystem available-capacity usage | 文件系统可用容量使用率 | 已用容量占已用与普通用户可用容量之和的百分比；已用为同次采样总量减空闲。 | 采用非特权可用容量分母，保留空间使其区别于已用占总量的比例；分母为零或采样不一致时无有效值。 |
 | filesystem inode observation | 文件系统 inode 观测 | 文件系统报告的 inode 总数、空闲数及同次采样的使用情况。 | 不等于文件数量或字节容量；总数为零、超出精确整数范围或采样异常时无有效值，不能按文件系统类型猜测或按挂载重复汇总。 |

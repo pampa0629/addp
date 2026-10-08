@@ -710,3 +710,6 @@ Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_
 
 
 本地可选指标 TLS 转发由 `ADDP_METRICS_CONTROL_ENABLED=false` 显式选择，仅在指标中心也启用时生效。`ADDP_METRICS_CONTROL_DIR` 为仓库外服务器证书目录，`ADDP_METRICS_CONTROL_GATEWAY_URL` 为明确的规范 HTTP origin（含端口、无路径）；标准预检生成 nginx.conf，不签发证书。选中此入口后两个 `PROMETHEUS_*_URL` 均须为 `https://metrics-control:9444`，中心信任该入口独立 CA。关闭入口时由部署方提供原有 HTTPS 控制面输入，不校验入口专用目录或上游；关闭中心也停止其可选转发服务。入口只转发 Token POST 与指标发现 GET，不发布宿主端口，不参与业务 Ready。HTTP 上游属于受控开发网络部署边界，生产 TLS 和密钥权限须独立验收。
+
+
+macOS 本地 Docker Desktop 的稳定指标访问可显式配置 `ADDP_METRICS_DESKTOP_LOOPBACK_PORT`，其值必须与来源回环发布端口一致。来源监听 `127.0.0.1:<端口>`，Monitor 只准入 `127.0.0.1/32`；中心唯一 HTTP SD Job 将该确切端口的传输地址映射到 `host.docker.internal`，instance 仍保留 Monitor 的规范来源地址。叶子证书须包含两种访问名称，mTLS 身份与信任根不变。缺省不转换，非 macOS、本地 unix Engine 之外或非 Docker Desktop 拒绝；不放宽通配监听、自动改端口或读取任意目标。配置经标准 Infra 生命周期生效，来源与 Monitor 配置分别经原入口生效，不重启业务模块。

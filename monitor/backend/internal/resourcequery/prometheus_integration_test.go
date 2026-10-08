@@ -36,7 +36,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	defer c.Close()
 	keys := []string{}
 	for _, d := range Catalog() {
-		if !d.Filesystem() {
+		if !d.Grouped() {
 			keys = append(keys, d.Key)
 		}
 	}
@@ -68,6 +68,20 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 	}
+	collection, err := c.Collection(context.Background(), scope, now, b)
+	expectedFilesystem := "available"
+	if restricted {
+		expectedFilesystem = "not_collected"
+	}
+	if err != nil || collection.State != "collecting" || collection.Filesystem != expectedFilesystem || collection.SampledAt == nil {
+		t.Fatalf("real source collection=%+v error=%v", collection, err)
+	}
+	otherScope := scope
+	otherScope.NodeID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+	otherCollection, err := c.Collection(context.Background(), otherScope, now, b)
+	if err != nil || otherCollection.State != "no_sample" || otherCollection.Filesystem != "unknown" {
+		t.Fatalf("collection scope leaked: %+v %v", otherCollection, err)
+	}
 	for _, trend := range []bool{false, true} {
 		p, e := NewPlan(keys, now.Add(-30*time.Second), now, now, trend, nil, b)
 		if e != nil {
@@ -84,6 +98,70 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 			}
 		}
 	}
+
+	diskKeys := []string{"node.disk.read_bytes_per_second", "node.disk.write_bytes_per_second"}
+	disks, err := NewPlan(diskKeys, now, now, now, false, nil, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	devices, err := c.Query(context.Background(), disks, scope, b)
+	if err != nil || len(devices) < len(diskKeys) {
+		t.Fatal("native disk query", devices, err)
+	}
+	selectedDevice := Dimensions{}
+	for _, row := range devices {
+		point := row.Points[0]
+		if restricted {
+			if len(row.Dimensions) != 0 || point.DataState != "no_data" || point.Value != nil {
+				t.Fatal("restricted source fabricated disk data", row)
+			}
+		} else {
+			if len(row.Dimensions) != 1 || row.Dimensions.Validate() != nil {
+				t.Fatal("invalid disk dimensions", row)
+			}
+			if point.DataState == "valid" {
+				selectedDevice = row.Dimensions
+			}
+		}
+	}
+	if !restricted && len(selectedDevice) != 1 {
+		t.Fatal("native source has no valid disk rate", devices)
+	}
+	diskTrend, err := NewPlan(diskKeys, now.Add(-30*time.Second), now, now, true, selectedDevice, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diskHistory, err := c.Query(context.Background(), diskTrend, scope, b)
+	if err != nil || len(diskHistory) != len(diskKeys) {
+		t.Fatal("disk trend", diskHistory, err)
+	}
+	for _, row := range diskHistory {
+		if restricted {
+			for _, point := range row.Points {
+				if point.DataState != "no_data" || point.Value != nil || point.SampledAt != nil {
+					t.Fatal("restricted disk history fabricated", row)
+				}
+			}
+		} else if row.Dimensions.identity() != selectedDevice.identity() || row.Points[len(row.Points)-1].DataState != "valid" {
+			t.Fatal("selected device trend", row)
+		}
+	}
+	foreignDisks, err := c.Query(context.Background(), disks, otherScope, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range foreignDisks {
+		if row.Points[0].DataState != "no_data" || len(row.Dimensions) != 0 {
+			t.Fatal("disk scope leaked", row)
+		}
+	}
+	deviceCount := 0
+	for _, row := range devices {
+		if row.MetricKey == diskKeys[0] && len(row.Dimensions) == 1 {
+			deviceCount++
+		}
+	}
+	t.Logf("disk throughput: restricted=%v, devices=%d, selected trend series=%d", restricted, deviceCount, len(diskHistory))
 
 	for _, inode := range []bool{false, true} {
 		filesystemKeys := []string{}
@@ -235,13 +313,13 @@ func TestIntegrationMetricsCPUWindow(t *testing.T) {
 			"input_series":     inputs,
 			"promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": item.at, "exp_samples": expected}}})
 	}
-	runPromtoolCases(t, "cpu", tests)
+	runPromtoolCases(t, "cpu", tests, false)
 	t.Logf("pinned promtool passed %d CPU window/reset/topology scenarios", len(scenarios))
 }
 
-func runPromtoolCases(t *testing.T, name string, tests []any) {
+func runPromtoolCases(t *testing.T, name string, tests []any, fuzzy bool) {
 	t.Helper()
-	payload, err := json.Marshal(map[string]any{"rule_files": []any{}, "evaluation_interval": "15s", "tests": tests})
+	payload, err := json.Marshal(map[string]any{"rule_files": []any{}, "evaluation_interval": "15s", "fuzzy_compare": fuzzy, "tests": tests})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +445,7 @@ func TestIntegrationMetricsFilesystem(t *testing.T) {
 	}
 	tests = append(tests, map[string]any{"name": "zero denominator is absent, zero capacity remains valid", "interval": "15s", "input_series": inputs("0 0 0", "0 0 0", "0 0 0", "0 0 0"), "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": zeroRows}}})
 	tests = append(tests, map[string]any{"name": "unmounted source creates gaps", "interval": "15s", "input_series": inputs("100 stale _", "30 stale _", "25 stale _", "0 stale _"), "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": []any{}}}})
-	runPromtoolCases(t, "filesystem", tests)
+	runPromtoolCases(t, "filesystem", tests, false)
 	t.Logf("pinned promtool passed %d filesystem capacity/evidence scenarios", len(tests))
 }
 
@@ -453,6 +531,6 @@ func TestIntegrationMetricsFilesystemInodes(t *testing.T) {
 	exactExpression, _ := exact.Expression(scope)
 	tests = append(tests, map[string]any{"name": "exact inode mount selector", "interval": "15s", "input_series": bind, "promql_expr_test": []any{map[string]any{"expr": exactExpression, "eval_time": "30s", "exp_samples": expected(30, []float64{100, 80, 20, 20})}}})
 	tests = append(tests, map[string]any{"name": "unmounted inode creates gaps", "interval": "15s", "input_series": inputs("100 stale _", "80 stale _", "0 stale _"), "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": "30s", "exp_samples": []any{}}}})
-	runPromtoolCases(t, "filesystem-inodes", tests)
+	runPromtoolCases(t, "filesystem-inodes", tests, false)
 	t.Logf("pinned promtool passed %d inode capacity/evidence scenarios", len(tests))
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { approvalTargetFromSelection, approvalTargetsEqual, createApprovalCatalogAdapter, isApprovalTable, safePickerEngineID } from '../src/utils/engineApprovalCatalog'
+import { approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalTable, safePickerEngineID } from '../src/utils/engineApprovalCatalog'
 
 const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }] }
 const root = { name: '', path: rootPath, role: 'branch', term: 'server', kind: 'server' }
@@ -7,6 +7,21 @@ const namespace = { name: '户外', path: { ...rootPath, segments: [...rootPath.
 const table = { name: 'a/b', path: { ...rootPath, segments: [...namespace.path.segments, { term: 'table', kind: 'table', name: 'a/b' }] }, role: 'leaf', term: 'table', kind: 'table' }
 const engine = { id: '2', name: 'Database', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }
 describe('System live-catalog protocol adapter', () => {
+  it('expands a namespace into existing tables, never the parent, views or future tables', async () => {
+    const api = vi.fn().mockResolvedValueOnce({ nodes: [root] }).mockResolvedValueOnce({ nodes: [namespace] }).mockResolvedValueOnce({ nodes: [table, { ...table, kind: 'view', path: { ...table.path, segments: [...namespace.path.segments, { term: 'table', kind: 'view', name: 'view' }] } }] })
+    const adapter = createApprovalCatalogAdapter(engine, api), node = await adapter.getTreeRoot()
+    const targets = await collectApprovalTargets({ raw: { node: node.children[0] } }, '2', adapter)
+    expect(targets).toEqual([{ ...table.path, engine_id: '2' }])
+    await expect(collectApprovalTargets({ raw: { node } }, '2', adapter)).rejects.toThrow()
+  })
+  it('rejects over-limit or failed discovery without returning a partial list', async () => {
+    const wrap = entry => ({ metadata: { catalog_entry: entry } })
+    const selection = { raw: { node: wrap(namespace) } }
+    const adapter = { getNodeChildren: vi.fn().mockResolvedValue([wrap(table)]) }
+    await expect(collectApprovalTargets(selection, '2', adapter, 0)).rejects.toThrow('tooManyTargets')
+    adapter.getNodeChildren.mockRejectedValue(new Error('unavailable'))
+    await expect(collectApprovalTargets(selection, '2', adapter)).rejects.toThrow('unavailable')
+  })
   it('compares target facts independently of JSON object key ordering', () => {
     const reordered = { ...table.path, engine_id: '2', segments: table.path.segments.map(segment => ({ kind: segment.kind, name: segment.name, term: segment.term })) }
     expect(approvalTargetsEqual(reordered, table.path)).toBe(true)

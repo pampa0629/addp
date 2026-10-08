@@ -81,6 +81,15 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil || fields["recipient_id"] != "9007199254740993" || fields["requirement_version"] != "1" {
 		t.Fatalf("lossy IDs: %s %v", response.Body.String(), err)
 	}
+	first := body()
+	first["initialize_approval"] = true
+	initializer := independentGrantTestService{create: func(input engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
+		if !input.InitializeApproval {
+			t.Fatal("lost first-authorization intent")
+		}
+		return &engineaccess.SourceGrantView{RequestID: id}, nil
+	}}
+	engineDelegationTestRequest(t, grantTestRouter(t, &projection, initializer), "POST", path, first, 201)
 	engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "GET", path+"?page=2&page_size=10", nil, 200)
 	for _, failure := range []struct {
 		err    error

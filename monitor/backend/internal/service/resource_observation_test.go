@@ -48,12 +48,18 @@ func (n *resourceNodes) GetHostNodeForUser(_ context.Context, id, token string) 
 func (n *resourceNodes) AuthorizeHostNodesForUser(context.Context, string) error { return n.err }
 
 type resourceBackend struct {
-	validAge *time.Duration
-	calls    int
-	scope    resourcequery.Scope
-	err      error
+	validAge    *time.Duration
+	calls       int
+	collections int
+	scope       resourcequery.Scope
+	err         error
 }
 
+func (b *resourceBackend) Collection(_ context.Context, scope resourcequery.Scope, _ time.Time, _ resourcequery.Budget) (resourcequery.Collection, error) {
+	b.collections++
+	b.scope = scope
+	return resourcequery.Collection{State: "no_sample", Filesystem: "unknown"}, b.err
+}
 func (b *resourceBackend) Query(_ context.Context, p resourcequery.Plan, s resourcequery.Scope, _ resourcequery.Budget) ([]resourcequery.Series, error) {
 	b.calls++
 	b.scope = s
@@ -98,22 +104,22 @@ func TestResourceQueryCurrentUserScopeStoppedTargetsAndHotBudget(t *testing.T) {
 		return svc.Query(context.Background(), "user-1", node, "addp_at_current_user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false, nil)
 	}
 	r, e := query()
-	if e != nil || backend.calls != 1 || backend.scope.NodeID != node || backend.scope.Instance != "127.0.0.1:9100" || r.TargetSavedVersion != 2 || r.NodeVersion != 3 || r.Series[0].Points[0].DataState != "no_data" {
+	if e != nil || backend.calls != 1 || backend.collections != 1 || r.Collection.State != "no_sample" || backend.scope.NodeID != node || backend.scope.Instance != "127.0.0.1:9100" || r.TargetSavedVersion != 2 || r.NodeVersion != 3 || r.Series[0].Points[0].DataState != "no_data" {
 		t.Fatalf("query=%+v err=%v", r, e)
 	}
 	nodes.enabled = false
 	r, e = query()
-	if e != nil || backend.calls != 1 || r.Series[0].Points[0].DataState != "not_connected" {
+	if e != nil || backend.calls != 1 || backend.collections != 1 || r.Collection.State != "not_connected" || r.Series[0].Points[0].DataState != "not_connected" {
 		t.Fatal("stopped node queried historical samples")
 	}
 	nodes.enabled = true
 	targets.rows[0].Enabled = false
 	r, e = query()
-	if e != nil || backend.calls != 1 || r.Series[0].Points[0].DataState != "not_connected" {
+	if e != nil || backend.calls != 1 || backend.collections != 1 || r.Collection.State != "not_connected" || r.Series[0].Points[0].DataState != "not_connected" {
 		t.Fatal("stopped target queried")
 	}
 	nodes.err = &client.SystemAPIError{StatusCode: 403}
-	if _, e = query(); e == nil || backend.calls != 1 {
+	if _, e = query(); e == nil || backend.calls != 1 || backend.collections != 1 {
 		t.Fatal("owner denial bypassed")
 	}
 	nodes.err = nil

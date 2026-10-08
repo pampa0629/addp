@@ -1,7 +1,7 @@
 {
   "monitor": {
     "login": {
-      "title": "Execution Monitor Login",
+      "title": "Runtime Monitor Login",
       "username_placeholder": "Enter username",
       "password_placeholder": "Enter password",
       "username_required": "Please enter username",
@@ -550,13 +550,17 @@
       }
     },
     "targets": {
-      "title": "Platform monitoring targets",
+      "moreNodes": "Load more hosts",
+      "nodeLoadingFailed": "Unable to read hosts. Retry.",
+      "nodeMissing": "Host information is unavailable. Select again or refresh.",
+      "nodeSearch": "Search host name or address",
+      "title": "Collection settings",
       "refresh": "Refresh list",
-      "create": "Register monitoring target",
+      "create": "Add collection settings",
       "id": "Target ID",
-      "node": "Node ID",
+      "node": "Host",
       "kind": "Monitoring category",
-      "endpoint": "Collection endpoint",
+      "endpoint": "Collection address",
       "configState": "Collection configuration",
       "enabled": "Enabled",
       "disabled": "Disabled",
@@ -566,7 +570,7 @@
       "notLoaded": "Monitoring targets have not loaded",
       "endpointHint": "HTTPS URL with an explicit port and /metrics path",
       "configHint": "Enabled means collection is configured; resource observations show actual collection.",
-      "nodeInventory": "View platform node inventory",
+      "nodeInventory": "View platform host management",
       "reload": "Reload configuration",
       "deleteConfirm": "Delete this monitoring target?",
       "accessDenied": "This identity cannot view platform monitoring targets",
@@ -575,7 +579,7 @@
       "notFound": "Monitoring target does not exist",
       "conflict": "Configuration has changed. Your draft is retained; reload before trying again.",
       "saveFailed": "Operation failed. Please retry.",
-      "invalidForm": "Enter a valid node ID and collection endpoint",
+      "invalidForm": "Select a host and enter a valid collection address",
       "saving": "Saving monitoring target",
       "saved": "Monitoring target saved",
       "deleted": "Monitoring target deleted",
@@ -585,14 +589,26 @@
       }
     },
     "resources": {
-      "title": "Platform node resources",
-      "detailTitle": "Node resource observations",
-      "back": "Back to nodes",
-      "search": "Search node name or address",
-      "empty": "No matching nodes",
-      "node": "Node name",
+      "collection": {
+        "not_connected": "Host collection is not enabled. Configure a collection source.",
+        "no_sample": "Waiting for collection evidence. Check whether settings have taken effect.",
+        "collecting": "Collection connection is working",
+        "failed": "Collection failed. Check the collection address, network and certificates. Missing values do not mean zero load.",
+        "stale": "Collection evidence has expired. Current data cannot indicate real-time status.",
+        "not_collected": "This collection source does not provide filesystem metrics.",
+        "filesystem_failed": "Filesystem collection failed. Check source permissions and status.",
+        "waiting": "The latest collection succeeded. Some metrics do not yet have valid samples or a complete measurement window."
+      },
+      "configure": "Configure collection",
+      "sampling": "Sampling details",
+      "title": "Host monitoring",
+      "detailTitle": "Host monitoring details",
+      "back": "Back to hosts",
+      "search": "Search host name or address",
+      "empty": "No matching hosts",
+      "node": "Host name",
       "addresses": "Addresses",
-      "nodeState": "Node status",
+      "nodeState": "Management state",
       "view": "View resources",
       "current": "Current resource metrics",
       "refreshInterval": "Refresh interval",
@@ -620,9 +636,9 @@
         "memoryTotal": "Total memory",
         "memoryAvailable": "Available memory",
         "memoryUsed": "Memory usage",
-        "load1m": "1-minute load average",
-        "load5m": "5-minute load average",
-        "load15m": "15-minute load average",
+        "load1m": "System load average (1 min)",
+        "load5m": "System load average (5 min)",
+        "load15m": "System load average (15 min)",
         "uptime": "Uptime",
         "filesystemTotal": "Total capacity",
         "filesystemFree": "Free capacity",
@@ -632,7 +648,9 @@
         "inodeTotal": "Total inodes",
         "inodeFree": "Free inodes",
         "inodeUsed": "Used inodes",
-        "inodeUsedPercent": "Inode usage"
+        "inodeUsedPercent": "Inode usage",
+        "diskRead": "Disk read throughput",
+        "diskWrite": "Disk write throughput"
       },
       "ranges": {
         "5m": "Last 5 minutes",
@@ -644,9 +662,10 @@
         "cores": "cores",
         "bytes": "B",
         "percent": "%",
-        "load": "load",
+        "load": "",
         "seconds": "seconds",
-        "inodes": "inodes"
+        "inodes": "inodes",
+        "bytes_per_second": "B/s"
       },
       "states": {
         "valid": "Valid",
@@ -661,11 +680,11 @@
         "timeout": "Resource query timed out. Refresh later.",
         "budget": "The query exceeds the current budget. Select a shorter range or contact an administrator.",
         "busy": "The resource query concurrency limit has been reached. Refresh later.",
-        "notFound": "This node does not exist or is currently inaccessible.",
-        "denied": "Your current identity cannot view platform node resources.",
-        "invalidID": "Invalid node identifier.",
+        "notFound": "This host does not exist or is currently inaccessible.",
+        "denied": "Your current identity cannot view platform host resources.",
+        "invalidID": "Invalid host identifier.",
         "invalidResponse": "The resource response is incomplete. Refresh to try again.",
-        "invalidMount": "Invalid mount selection. Return to the node list to select a mount."
+        "invalidDimensions": "Invalid resource dimensions. Return to the host list to select a resource."
       },
       "filesystem": {
         "title": "Filesystem mounts",
@@ -676,6 +695,12 @@
         "type": "Filesystem type",
         "viewTrend": "View trend",
         "inode": "Inode statistics"
+      },
+      "loadHint": "System load average counts runnable tasks and tasks in uninterruptible wait (often I/O). It is not a percentage, CPU utilization, or memory usage.",
+      "disk": {
+        "title": "Disk throughput",
+        "hint": "Average read/write rates over a complete minute, per device. Disks, partitions and device mapping layers are not added together.",
+        "empty": "No disk throughput data. The source must enable disk collection and provide a complete one-minute window."
       }
     }
   }

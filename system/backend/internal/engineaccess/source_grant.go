@@ -30,6 +30,7 @@ type sourceGrant struct {
 	OperatorMembershipID         int64
 	OperatorAuthorizationVersion int64
 	Reason                       *string
+	InitializedApproval          bool
 }
 
 func (sourceGrant) TableName() string { return "system.engine_access_grants" }

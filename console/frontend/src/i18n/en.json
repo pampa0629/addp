@@ -157,7 +157,7 @@
         "manager": "Manager - Data Management",
         "meta": "Meta - Metadata",
         "model": "Model - Data Modeling",
-        "monitor": "Monitor - Execution Monitor",
+        "monitor": "Monitor - Runtime Monitor",
         "orchestrator": "Orchestrator - Workflow Orchestration",
         "portal": "Portal - Asset Portal",
         "quality": "Quality - Data Quality",
@@ -245,7 +245,7 @@
           "name": "Data Transfer"
         },
         "monitor": {
-          "name": "Execution Monitor"
+          "name": "Runtime Monitor"
         },
         "service": {
           "name": "Data Services"
@@ -423,7 +423,7 @@
         "desc": "Workflow orchestration, task scheduling, execution management"
       },
       "monitor": {
-        "label": "Execution Monitor",
+        "label": "Runtime Monitor",
         "desc": "Task monitoring, statistics, health checks"
       },
       "catalog": {
@@ -546,7 +546,7 @@
         "orchestrations": "Orchestrations"
       },
       "monitor": {
-        "label": "Execution Monitor",
+        "label": "Runtime Monitor",
         "dashboard": "Dashboard",
         "executions": "Executions",
         "transferExecutions": "Transfer Executions",
@@ -559,12 +559,13 @@
         "modelExecutions": "Data Modeling Executions",
         "alerts": "Alerts",
         "notifications": "Alert Notifications",
-        "recentDashboard": "Execution Monitoring Dashboard",
+        "recentDashboard": "Runtime Monitoring Dashboard",
         "recentExecutions": "Platform Executions",
         "recentAlerts": "Execution Alerts",
         "recentNotifications": "Execution Alert Notifications",
-        "monitoringTargets": "Platform monitoring targets",
-        "nodeResources": "Platform node resources"
+        "advanced": "Advanced settings",
+        "monitoringTargets": "Collection settings",
+        "nodeResources": "Host monitoring"
       },
       "catalog": {
         "label": "Enterprise Catalog",
@@ -615,7 +616,7 @@
         "recentModules": "Platform Module Management",
         "recentCleanup": "System Resource Reclaim",
         "recentConfiguration": "Platform Configuration",
-        "hostNodes": "Platform node inventory"
+        "hostNodes": "Platform host management"
       }
     },
     "personalCenter": "Personal Center"

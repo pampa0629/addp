@@ -1,21 +1,42 @@
 /**
  * 格式化字节大小
  */
-export function formatBytes(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-'
-  let bytes = Number(value)
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+export function scaleByteValue(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
+  let bytes = value
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']
   let index = 0
   while (Math.abs(bytes) >= 1024 && index < units.length - 1) {
     bytes /= 1024
     index++
   }
-  const formatted = Math.abs(bytes) >= 100
-    ? bytes.toFixed(0)
-    : Math.abs(bytes) >= 10
-      ? bytes.toFixed(1)
-      : bytes.toFixed(2)
-  return `${formatted} ${units[index]}`
+  return { value: bytes, unit: units[index], divisor: 1024 ** index }
+}
+
+export function formatBytes(value, precision = null, locale = 'zh-CN') {
+  const numeric = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
+  const scaled = scaleByteValue(numeric)
+  if (!scaled) return '-'
+  const bytes = scaled.value
+  const digits = Number.isInteger(precision) ? precision : Math.abs(bytes) >= 100
+    ? 0
+    : Math.abs(bytes) >= 10 ? 1 : 2
+  const formatted = new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(bytes)
+  return `${formatted} ${scaled.unit}`
+}
+
+// Elapsed time, independent of time zones; does not represent a date or clock.
+export function formatDurationSeconds(value, locale = 'zh-CN') {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER) return '-'
+  let remaining = Math.floor(value)
+  const parts = []
+  for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60], ['second', 1]]) {
+    const count = Math.floor(remaining / size)
+    remaining %= size
+    if (count || (unit === 'second' && !parts.length)) parts.push(new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(count))
+    if (parts.length === 3) break
+  }
+  return parts.join(' ')
 }
 
 /**

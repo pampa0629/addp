@@ -4,6 +4,8 @@ import hmac
 import ipaddress
 import json
 import os
+import platform
+import subprocess
 import re
 import sys
 import tempfile
@@ -44,6 +46,33 @@ def origin(value, scheme="https"):
     if value != scheme + '://' + authority:
         raise ValueError('Metrics control origin is not canonical')
     return value
+
+
+def desktop_loopback_rules(env):
+    port = env.get('ADDP_METRICS_DESKTOP_LOOPBACK_PORT', '')
+    if not port:
+        return ''
+    if not re.fullmatch(r'[1-9][0-9]{0,4}', port) or int(port) > 65535:
+        raise ValueError('Desktop loopback port must be canonical')
+    if platform.system() != 'Darwin':
+        raise ValueError('Desktop loopback transport requires macOS Docker Desktop')
+    endpoint = env.get('DOCKER_HOST') if not env.get('DOCKER_CONTEXT') else None
+    if not endpoint:
+        contexts = json.loads(subprocess.check_output(['docker', 'context', 'inspect'], text=True))
+        endpoint = contexts[0]['Endpoints']['docker']['Host']
+    if not endpoint.startswith('unix:///'):
+        raise ValueError('Desktop loopback transport requires a local Engine')
+    info = json.loads(subprocess.check_output(['docker', 'info', '--format', '{{json .}}'], text=True))
+    if info.get('OperatingSystem') != 'Docker Desktop' or info.get('OSType') != 'linux':
+        raise ValueError('Desktop loopback transport requires Docker Desktop Linux Engine')
+    # Preserve the canonical Monitor source scope before changing only transport.
+    return ('    relabel_configs:\n'
+            '      - source_labels: [__address__]\n'
+            '        target_label: instance\n'
+            '      - source_labels: [__address__]\n'
+            '        regex: ' + json.dumps(r'127\.0\.0\.1:' + port) + '\n'
+            '        target_label: __address__\n'
+            '        replacement: ' + json.dumps('host.docker.internal:' + port) + '\n')
 
 
 def control_config(env, root):
@@ -114,7 +143,7 @@ def render(env, root=ROOT):
     health = Path(env.get('ADDP_METRICS_TLS_DIR', '')) / 'health.crt'
     if health.is_file() and health.read_bytes() == content['collector.crt']:
         raise ValueError('Metrics collector must not reuse the center health certificate')
-    config = (root / 'scripts/infra/prometheus.yml').read_text()
+    config = (root / 'scripts/infra/prometheus.yml').read_text().replace('@@DESKTOP_LOOPBACK@@', desktop_loopback_rules(env))
     for name, path in (('SYSTEM', '/api/v1/system/oauth/token'),
                        ('MONITOR', '/api/v1/monitor/platform/metrics_discovery')):
         config = config.replace('@@' + name + '_URL@@', json.dumps(origin(env.get('PROMETHEUS_' + name + '_URL', '')) + path))
