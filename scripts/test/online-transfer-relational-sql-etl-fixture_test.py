@@ -25,6 +25,7 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self.secrets.mkdir(mode=0o700)
         shutil.copy2(SCRIPT, self.root / 'business/scripts/online-transfer-relational-sql-etl-fixture.sh')
         self._executable('uname', '#!/bin/bash\n[ "$1" != -s ] || { echo "${ADDP_TEST_OS:-Linux}"; exit; }\necho x86_64\n')
+        self._executable('sleep', '#!/bin/bash\nexit 0\n')
         self._executable('docker', '''#!/bin/bash
 printf 'docker:%s:%s\n' "$1" "${2:-}" >> "$ADDP_TEST_FIXTURE_LOG"
 state=$ADDP_TEST_POSTGRES_STATE
@@ -37,6 +38,7 @@ case "$1" in
     [ -f "$state" ] || exit 1
     case "$*" in
       *com.addp.online-fixture*) cat "$state" ;;
+      *"MongoDB state:"*) echo 'MongoDB state: running=false exit=14 oom=false' ;;
       *) echo true ;;
     esac
     ;;
@@ -52,12 +54,18 @@ case "$1" in
     if [ "$state" = "$ADDP_TEST_MONGODB_STATE" ] && [ "${ADDP_TEST_MONGODB_REMOVE_FAIL:-0}" = 1 ]; then exit 0; fi
     [ "${ADDP_TEST_REMOVE_FAIL:-0}" = 1 ] || rm -f "$state"
     ;;
+  logs)
+    echo 'WiredTiger error: SECRET_MARKER'
+    ;;
   exec)
     [ -f "$state" ] || exit 1
     case " $* " in
       *pg_isready*) exit 0 ;;
       *mongosh*) input=$(cat)
         printf 'mongodb-stdin:%s\n' "$input" >> "$ADDP_TEST_FIXTURE_LOG"
+        if [[ "$input" == *"ping: 1"* ]] && [ "${ADDP_TEST_MONGODB_READY_FAIL:-0}" = 1 ]; then
+          echo 'MongoNetworkError: ECONNREFUSED SECRET_MARKER' >&2; exit 1
+        fi
         if [[ "$input" == *"createUser"* ]] && [ "${ADDP_TEST_MONGODB_SEED_FAIL:-0}" = 1 ]; then
           echo SECRET_MARKER >&2; exit 1
         fi
@@ -254,6 +262,21 @@ esac
         result = self.run_fixture('start', ADDP_TEST_MONGODB_SEED_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('SECRET_MARKER', result.stdout + result.stderr)
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+        self.assertFalse(self.postgres_state.exists())
+        self.assertFalse(self.mongodb_state.exists())
+
+    def test_readiness_failure_reports_only_safe_categories_and_cleans_both_containers(self):
+        result = self.run_fixture('start', ADDP_TEST_MONGODB_READY_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('MongoDB state: running=false exit=14 oom=false', result.stderr)
+        self.assertIn('mongodb-readiness-error.log: connection-refused', result.stderr)
+        self.assertIn('mongodb-startup.log: storage-error', result.stderr)
+        self.assertNotIn('SECRET_MARKER', result.stdout + result.stderr)
+        for name in ('mongodb-readiness-error.log', 'mongodb-startup.log'):
+            path = self.secrets / name
+            self.assertIn('SECRET_MARKER', path.read_text())
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(self.run_fixture('stop').returncode, 0)
         self.assertFalse(self.postgres_state.exists())
         self.assertFalse(self.mongodb_state.exists())

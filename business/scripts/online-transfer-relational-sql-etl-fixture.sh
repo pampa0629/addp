@@ -53,6 +53,29 @@ mongodb_shell() {
     docker exec -i -e TRANSFER_MONGODB_PASSWORD "$mongodb_container" mongosh --quiet --file /dev/stdin
 }
 
+mongodb_readiness_diagnostics() {
+  # Keep raw driver/container output in the non-archived secret directory.
+  # Only fixed error categories and non-secret process state reach CI logs.
+  docker inspect --format 'MongoDB state: running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$mongodb_container" >&2 || true
+  docker logs "$mongodb_container" >"$ADDP_ONLINE_SECRET_DIR/mongodb-startup.log" 2>&1 || true
+  python3 - "$ADDP_ONLINE_SECRET_DIR" <<'PY_DIAGNOSTICS'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1])
+for name in ('mongodb-readiness-error.log', 'mongodb-startup.log'):
+    content = (root / name).read_text(errors='replace').lower()
+    categories = [label for label, markers in (
+        ('connection-refused', ('econnrefused', 'connection refused')),
+        ('authentication-failed', ('authentication failed', 'fixture authentication failed')),
+        ('missing-file', ('enoent', 'no such file or directory')),
+        ('permission-denied', ('eacces', 'permission denied', 'operation not permitted')),
+        ('storage-full', ('no space left on device',)),
+        ('illegal-instruction', ('illegal instruction',)),
+        ('storage-error', ('wiredtiger error',)),
+    ) if any(marker in content for marker in markers)]
+    print(f'MongoDB diagnostic {name}: {",".join(categories) or "unclassified"}', file=sys.stderr)
+PY_DIAGNOSTICS
+}
+
 start_mongodb() {
   export TRANSFER_MONGODB_PASSWORD MONGO_INITDB_ROOT_PASSWORD
   TRANSFER_MONGODB_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
@@ -62,13 +85,16 @@ start_mongodb() {
     -e MONGO_INITDB_ROOT_USERNAME=fixture_root -e MONGO_INITDB_ROOT_PASSWORD mongo:7.0 >/dev/null
   ready=0
   for _ in $(seq 1 60); do
-    if mongodb_shell >/dev/null 2>&1 <<'JS'
+    if mongodb_shell >/dev/null 2>"$ADDP_ONLINE_SECRET_DIR/mongodb-readiness-error.log" <<'JS'
 if (db.getSiblingDB('admin').runCommand({ping: 1}).ok !== 1) throw Error('not ready');
 JS
     then ready=1; break; fi
     sleep 1
   done
-  [ "$ready" = 1 ] || fail "source MongoDB did not become ready"
+  if [ "$ready" != 1 ]; then
+    mongodb_readiness_diagnostics
+    fail "source MongoDB did not become ready"
+  fi
   if ! mongodb_shell >/dev/null 2>"$ADDP_ONLINE_SECRET_DIR/mongodb-fixture-error.log" <<'JS'
 const fixture = db.getSiblingDB('transfer_fixture');
 fixture.activities.insertMany([
