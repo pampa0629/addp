@@ -663,7 +663,10 @@ def validate_registration(repository: Path) -> list[str]:
         if image not in images:
             errors.append(f"{path}: image registration {image} is missing")
 
-    available_dockerfiles = set(repository_files(repository, "*Dockerfile*"))
+    available_dockerfiles = {
+        path for path in repository_files(repository, "*Dockerfile*")
+        if not path.endswith(".dockerignore")
+    }
     for path in sorted(available_dockerfiles):
         dockerfile_path = repository / path
         if not dockerfile_path.is_file():

@@ -660,6 +660,11 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_dockerfile_ignore_rules_are_not_image_build_entries(self) -> None:
+        for path in ("sample/backend/Dockerfile.prebuilt.dockerignore", "sample/frontend/Dockerfile.dockerignore"):
+            self._write(path, "**\n")
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
     def test_rejects_unclassified_dockerfile(self) -> None:
         self._write("legacy/Dockerfile", "FROM scratch\n")
         subprocess.run(
