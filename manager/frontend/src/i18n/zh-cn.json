@@ -1,5 +1,16 @@
 {
   "manager": {
+    "model3DUnit": {
+      "label": "MAX 源单位",
+      "defaultMeters": "未选择时默认米（m）",
+      "mm": "毫米（mm）",
+      "cm": "厘米（cm）",
+      "m": "米（m）",
+      "km": "千米（km）",
+      "in": "英寸（in）",
+      "ft": "英尺（ft）",
+      "mi": "英里（mi）"
+    },
     "common": {
       "currentResultOverwriteTitle": "确认覆盖当前结果",
       "currentResultOverwriteConfirm": "已有当前结果。继续执行将覆盖当前结果记录和 Manager 管理的快显数据，是否继续？",

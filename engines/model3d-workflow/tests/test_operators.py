@@ -68,7 +68,7 @@ def test_operator_metadata_contract_and_modes():
     ops = list_operators()
     assert [operator["name"] for operator in ops] == [
         "osgb_to_glb", "gltf_to_glb", "fbx_to_glb", "obj_to_glb", "stl_to_glb", "ifc_to_glb",
-        "dae_to_glb", "3ds_to_glb", "skp_to_glb", "osgb_scene_to_3dtiles", "gaussian_splat_to_ksplat",
+        "dae_to_glb", "3ds_to_glb", "skp_to_glb", "max_to_glb", "osgb_scene_to_3dtiles", "gaussian_splat_to_ksplat",
     ]
     assert_operator_metadata_contract(ops, expected_engine_type="model3d_workflow")
     assert all(operator["execution_modes"] == ["workflow", "direct"] for operator in ops)

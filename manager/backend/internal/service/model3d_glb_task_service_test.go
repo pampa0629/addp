@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -43,6 +44,41 @@ func TestModel3DGLBTaskNormalizesSingleOSGBConfig(t *testing.T) {
 	result, ok := asJSONMap(config["result"])
 	if !ok || stringFromConfig(result["file_name"]) != "tile.glb" {
 		t.Fatalf("normalized result = %#v, want GLB result", config["result"])
+	}
+}
+
+func TestMAXTaskPreservesUserUnitAndAllowsOmittedDefault(t *testing.T) {
+	for _, value := range []interface{}{nil, "", "mm", "cm", "m", "km", "in", "ft", "mi", "meters", true} {
+		t.Run(fmt.Sprint(value), func(t *testing.T) {
+			options := commonModels.JSONMap{}
+			if value != nil {
+				options["source_unit"] = value
+			}
+			config := commonModels.JSONMap{
+				"source":  commonModels.JSONMap{"item_locator": "addp://engine/26/path/model.max?type=file&item_id=77", "source_engine_id": uint(26), "item_fingerprint": "max-source", "format": "max"},
+				"options": options,
+			}
+			cfg, err := normalizeModel3DGLBTaskConfig(config, "manager", 7)
+			if value == "meters" || value == true {
+				if err == nil {
+					t.Fatal("invalid MAX unit was accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Source.Format != "max" || cfg.Options["source_unit"] != value {
+				t.Fatalf("MAX options changed: %#v", cfg)
+			}
+			operator, formatName, err := model3DGLBOperatorForFormat("MAX")
+			if err != nil || operator != "max_to_glb" || formatName != "max" || !model3DGLBUsesDirectorySource("max") {
+				t.Fatal("MAX runtime access route is not registered")
+			}
+			if !isModel3DQuickViewSourceFormat("max", "single") {
+				t.Fatal("MAX single model cannot generate quick view")
+			}
+		})
 	}
 }
 

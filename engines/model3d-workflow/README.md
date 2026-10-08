@@ -12,19 +12,22 @@
 - `dae_to_glb`：Collada 1.4.0 / 1.4.1 静态模型及 PNG/JPEG 漫反射贴图转换为自包含 GLB。
 - `3ds_to_glb`：3DS 静态网格及 PNG/JPEG 漫反射贴图转换为自包含 GLB。
 - `skp_to_glb`：SketchUp 单文件中的静态网格、组件变换及内嵌 PNG/JPEG 贴图转换为自包含 GLB。
+- `max_to_glb`：MAX 静态网格、节点变换及明确声明的漫反射贴图转换为自包含 GLB。
 - `ifc_to_glb`：IFC BIM 模型转换为持久化 GLB。
 - `osgb_scene_to_3dtiles`：一套 OSGB 倾斜摄影数据集转换为 3D Tiles，支持 NFS/localfs/MinIO/S3 source 输出到 NFS/localfs/MinIO/S3 target。
 - `gaussian_splat_to_ksplat`：`gaussian_splat` 的 `ply` / `splat` 源转换为持久化 `.ksplat` 文件。源格式已经是 `ksplat` 时直接读取，不进入转换算子。
 
 Runtime Operator Spec 统一消费 `addp.workflow.access-plan/v1`。Manager direct 调用选择 infra 目标并登记私有快显 artifact；Develop workflow 调用保存公开 ResourceLocator 参数、选择业务目标，并在成功后触发 Meta scan。Runtime 不解析 ADDP locator，也不决定产物归属。
 
-运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 使用绑定的 `_3dtile`，普通 mesh 模型使用 Assimp；IFC 使用专用 IfcConvert，默认传入 `--center-model`。高斯泼溅继续使用运行时内置 Node 脚本与现有锁定依赖。转换器必须绑定当前部署中的真实原生文件，不从系统 PATH 搜索。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile`、`assimp` 或 `IfcConvert` 这类依赖系统 `PATH` 的命令名：
+运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 使用绑定的 `_3dtile`，普通 mesh 模型使用 Assimp；IFC 使用专用 IfcConvert，默认传入 `--center-model`。MAX 通过引擎内部的 Blender 子进程转换，不增加 Blender 服务。高斯泼溅继续使用运行时内置 Node 脚本与现有锁定依赖。转换器必须绑定当前部署中的真实原生文件，不从系统 PATH 搜索。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile`、`assimp` 或 `IfcConvert` 这类依赖系统 `PATH` 的命令名：
 
 ```bash
 export MODEL3D_CONVERTER_BIN=/path/to/_3dtile
 export MODEL3D_MESH_CONVERTER_BIN=/path/to/assimp
 export MODEL3D_IFC_CONVERTER_BIN=/path/to/IfcConvert
 export MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/path/to/node
+export MODEL3D_BLENDER_BIN=/path/to/Blender
+export MODEL3D_MAX_ADDON_PATH=/path/to/max-importer/source
 ```
 
 开发环境绑定私有工具包的绝对可执行文件路径；容器内绑定 `/opt/addp/model3d-workflow/bin/` 的原生转换器。
@@ -37,6 +40,7 @@ macOS Apple Silicon 开发态使用 `.dev-state/model3d-native/<指纹>/` 中的
 
 ```bash
 engines/model3d-workflow/venv/bin/python engines/model3d-workflow/native_setup.py prepare .dev-state/model3d-native
+engines/model3d-workflow/venv/bin/python engines/model3d-workflow/blender_setup.py prepare .dev-state/model3d-blender
 ```
 
 工具包完整性损坏时不会覆盖旧缓存或使用其他转换器：先停止该 Runtime，把报错中的单个指纹目录移出 `.dev-state/model3d-native`，再执行准备命令重建；下载、固定提交源码和 vcpkg 二进制缓存仍可复用。
@@ -49,12 +53,25 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/native_setup.p
 
 SKP 使用固定的 MIT 许可 `openskp[textures]==1.3.0`，在当前 Python Runtime 的独立子进程中执行 `skp_converter.py`，不调用 SuperMap、SketchUp 桌面 SDK 或 Assimp。输入为单文件，贴图须已内嵌；导出的毫米坐标通过统一场景根缩放为米，保持 Y 上轴和实例变换。只发布经过统一校验的 GLB，临时 JSON 与缩略图不会发布。首期不声明动态组件、动画、标注、孤立线段或全部 SKP 版本支持；固定版本的导出器未应用可见性，含隐藏组件、隐藏面或关闭图层的模型明确拒绝，避免发布错误场景。解析失败、空场景、缺失贴图和非法 GLB 保留旧产物。项目与发行版依据见平台内置格式规范。
 
+
+MAX 的工具版本与校验值集中在 `blender-assets.json`。macOS arm64 使用私有工具包内的 Blender 4.5.3；Linux 产品镜像使用 Debian Trixie 的 Blender 4.3.2 和显式安装的 NumPy。两者均使用固定提交的 `io_scene_max` 1.9.2。安装时校验下载归档，保留上游源码及许可：仓库 LICENSE、源码 GPL 许可声明和插件 manifest 的 GPL-3.0-or-later 声明均原样保留。开发工具包逐文件校验完整性，转换不向包内写入 Python 缓存。
+
+MAX 首期覆盖静态网格、实例变换、基础颜色和漫反射图片，不声明动画、骨架或第三方渲染器材质保真。单个 MAX 文件的解析预算为 64 MiB。固定导入器目前不能可靠识别原始系统单位：用户可选择 `options.source_unit`（`mm/cm/m/km/in/ft/mi`）；未选则默认米 `m`。Manager 的 MAX 生成入口提供同一选项，缺省值无需用户确认。结果 `conversion` 记录实际单位、`unit_source=user|default` 与米制换算系数，不把默认米说成自动识别。
+
+外部贴图必须通过 `options.texture_files` 明确映射，key 是 MAX 内保存的 bitmap 引用，value 是输入目录内的相对文件路径。不会读取原电脑绝对路径或猜测同名图片。当前 Manager 页面只提供单位选择，尚未提供外部贴图声明控件；带外部贴图的 MAX 可通过 Develop/direct 算子参数传入映射。缺失贴图、解析错误及不支持的贴图通道会使转换失败，保留旧产物。内置回归样例来自 `tests/fixtures/max/ATTRIBUTION.txt` 所列的 CC-BY-SA-3.0 模型，纹理是 ADDP 自建测试图片。
+
+MAX 的确定性测试由 `make test-model3d-workflow` 自动发现，开发生命周期由 `make test-dev-lifecycle` 验证。正式 Linux 镜像构建入口为：
+
+```bash
+make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify --jobs 1'
+```
+
+现有 Product binary build CI 会按受影响路径选择 Model3D 镜像，构建后用真实 Blender 检查静态 GLB、贴图、默认米与手选毫米的 1000 倍比例、源文件不变及失败时旧产物保留。此检查不代替真实业务源、Manager 页面与 Monitor 的 T4 验收。
+
 ## 启动
 
 ```bash
-cd engines/model3d-workflow
-pip install -r requirements.txt
-PORT=8101 python api_server.py
+./scripts/dev/restart.sh -model3d-workflow
 ```
 
 ## Linux amd64 / arm64 容器
@@ -62,8 +79,7 @@ PORT=8101 python api_server.py
 本节仅用于 Linux 产品镜像构建和 Hosted 产品验收；本机开发使用前述私有原生工具包。
 
 ```bash
-cd engines/model3d-workflow
-./scripts/build-linux-images.sh
+make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify --jobs 1'
 ```
 
 统一构建入口按宿主机 CPU 选择 `linux/amd64` 或 `linux/arm64`，也可通过 `MODEL3D_DOCKER_PLATFORM` 显式选择这两种架构；其他平台直接拒绝。GitHub Hosted Ubuntu x86_64 使用 amd64，不通过 QEMU 运行 arm64 转换器。IfcConvert 固定同一上游版本，按 Docker 目标架构下载官方二进制；两个架构共用一个 Dockerfile 和 Linux 构建 patch。
@@ -71,7 +87,7 @@ cd engines/model3d-workflow
 该脚本会构建两个镜像（以下为 arm64 示例，amd64 使用相应 tag）：
 
 - `addp/model3d-converter:linux-arm64`：基于 `fanvanzh/3dtiles` 源码构建 对应目标架构的 `_3dtile`，并应用 ADDP 的 Linux patch，同时绑定同架构 `IfcConvert`。
-- `addp/model3d-workflow:linux-arm64`：内置 Python `model3d_workflow` runtime、Linux arm64 `_3dtile`、`IfcConvert` 和 `assimp`。
+- `addp/model3d-workflow:linux-arm64`：内置 Python `model3d_workflow` runtime、Linux arm64 `_3dtile`、`IfcConvert`、`assimp` 和 Blender/MAX 导入器。
 
 Linux 静态 OSG 显式注册 zlib compressor，以读取超图等工具导出的压缩 OSGB。Converter 镜像构建在复制生产产物前，用自建三角形生成 zlib 压缩 OSGB、调用同一 `_3dtile` 转换，再校验 GLB 2.0 及顶点/三角面数量；该构建门禁不依赖 SuperMap SDK 或许可。
 
@@ -86,6 +102,8 @@ MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
 MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
 MODEL3D_IFC_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/IfcConvert
 MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/usr/bin/node
+MODEL3D_BLENDER_BIN=/usr/bin/blender
+MODEL3D_MAX_ADDON_PATH=/opt/addp/model3d-workflow/max-importer/source
 GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
 PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
 OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5

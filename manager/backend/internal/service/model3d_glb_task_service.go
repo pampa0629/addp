@@ -392,7 +392,28 @@ func normalizeModel3DGLBTaskConfig(config commonModels.JSONMap, bucket string, t
 		options = commonModels.JSONMap{}
 	}
 	config["options"] = options
+	if source.Format == string(format.FormatMAX) {
+		if value, exists := options["source_unit"]; exists {
+			unit, ok := value.(string)
+			if !ok {
+				return Model3DGLBExecutionConfig{}, errors.New("MAX source_unit must be a string")
+			}
+			if err := ValidateMAXSourceUnit(unit); err != nil {
+				return Model3DGLBExecutionConfig{}, err
+			}
+		}
+	}
 	return Model3DGLBExecutionConfig{Source: source, Result: result, Options: options}, nil
+}
+
+// ValidateMAXSourceUnit permits an omitted unit; the Runtime records default metres.
+func ValidateMAXSourceUnit(unit string) error {
+	switch unit {
+	case "", "mm", "cm", "m", "km", "in", "ft", "mi":
+		return nil
+	default:
+		return errors.New("MAX source_unit must be mm, cm, m, km, in, ft or mi")
+	}
 }
 
 func normalizeModel3DGLBSource(config commonModels.JSONMap) (Model3DGLBSourceConfig, error) {
@@ -434,7 +455,7 @@ func normalizeModel3DGLBSource(config commonModels.JSONMap) (Model3DGLBSourceCon
 
 func isModel3DGLBTaskSourceFormat(sourceFormat string) bool {
 	switch strings.ToLower(strings.TrimSpace(sourceFormat)) {
-	case string(format.FormatOSGB), string(format.FormatGLTF), string(format.FormatFBX), string(format.FormatOBJ), string(format.FormatSTL), string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS), string(format.FormatSGM), string(format.FormatSKP):
+	case string(format.FormatOSGB), string(format.FormatGLTF), string(format.FormatFBX), string(format.FormatOBJ), string(format.FormatSTL), string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS), string(format.FormatSGM), string(format.FormatSKP), string(format.FormatMAX):
 		return true
 	default:
 		return false

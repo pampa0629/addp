@@ -20,6 +20,7 @@ class Model3DNativeLifecycleTests(unittest.TestCase):
         (self.runtime / "venv/bin").mkdir(parents=True)
         (self.runtime / "venv/bin/python").symlink_to(sys.executable)
         (self.runtime / "native_setup.py").write_text("import sys; print('/private/tools') if sys.argv[1] == 'environment' else None\n")
+        (self.runtime / "blender_setup.py").write_text("import sys; print('/private/blender') if sys.argv[1] == 'environment' else None\n")
 
     def shell(self, code, **environment):
         return subprocess.run(["bash", "-c", 'set -euo pipefail; source "$SOURCE_ROOT/scripts/dev/model3d-workflow.sh"; ' + code],

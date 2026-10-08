@@ -1,5 +1,5 @@
 ARG CONVERTER_IMAGE=addp/model3d-converter:linux-arm64
-ARG PYTHON_IMAGE=python:3.12-slim
+ARG PYTHON_IMAGE=python:3.12-slim-trixie
 FROM ${CONVERTER_IMAGE} AS converter
 
 FROM ${PYTHON_IMAGE}
@@ -9,6 +9,8 @@ ENV PYTHONUNBUFFERED=1
 ENV MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
 ENV MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
 ENV MODEL3D_IFC_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/IfcConvert
+ENV MODEL3D_BLENDER_BIN=/usr/bin/blender
+ENV MODEL3D_MAX_ADDON_PATH=/opt/addp/model3d-workflow/max-importer/source
 ENV MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/usr/bin/node
 ENV GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
 ENV PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
@@ -17,7 +19,9 @@ ENV PORT=8101
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+    blender=4.3.2+dfsg-2 python3-numpy=1:2.2.4+ds-1 \
     ca-certificates assimp-utils libgl1 libglu1-mesa libx11-6 libxrandr2 libxi6 libxxf86vm1 nodejs npm \
   && rm -rf /var/lib/apt/lists/*
 
@@ -47,7 +51,10 @@ RUN python -m pip install --no-cache-dir --no-build-isolation --no-deps /common-
 COPY engines/model3d-workflow/package.json engines/model3d-workflow/package-lock.json /app/
 RUN npm ci --omit=dev
 
-COPY engines/model3d-workflow/api_server.py engines/model3d-workflow/operators.py engines/model3d-workflow/glb_validation.py engines/model3d-workflow/exchange_model.py engines/model3d-workflow/skp_converter.py engines/model3d-workflow/create_ksplat.mjs /app/
+COPY engines/model3d-workflow/blender_setup.py engines/model3d-workflow/blender-assets.json engines/model3d-workflow/native_setup.py /app/
+RUN python blender_setup.py install-addon /opt/addp/model3d-workflow/max-importer
+COPY engines/model3d-workflow/api_server.py engines/model3d-workflow/operators.py engines/model3d-workflow/glb_validation.py engines/model3d-workflow/exchange_model.py engines/model3d-workflow/skp_converter.py engines/model3d-workflow/max_converter.py engines/model3d-workflow/create_ksplat.mjs /app/
+COPY engines/model3d-workflow/tests/fixtures/max/ /app/max-fixture/
 COPY --from=converter /opt/addp/model3d-workflow/bin/ /opt/addp/model3d-workflow/bin/
 
 EXPOSE 8101

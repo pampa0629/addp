@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "blender_macos": {
+    "version": "4.5.3",
+    "url": "https://download.blender.org/release/Blender4.5/blender-4.5.3-macos-arm64.dmg",
+    "sha256": "73ea841053b55404bb3a71a9a22366f1f8821787fe5c899f8b55a7fff929d01b"
+  },
+  "blender_debian": "4.3.2+dfsg-2",
+  "numpy_debian": "1:2.2.4+ds-1",
+  "max_importer": {
+    "version": "1.9.2",
+    "commit": "37db107126f956f7219152671443080360565691",
+    "url": "https://codeload.github.com/nrgsille76/io_scene_max/zip/37db107126f956f7219152671443080360565691",
+    "sha256": "ea112b0663cf9db27dde8e5ff22de03d73bb9c02d2402ca424e5fdf893a1ea88"
+  }
+}

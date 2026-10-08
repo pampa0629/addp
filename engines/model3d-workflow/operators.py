@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from exchange_model import validate_source
 from glb_validation import read_glb as _read_glb, validate_glb
+from max_converter import conversion_options
 
 from addp_common.workflow_access import (
     publish_target_directory,
@@ -35,6 +36,9 @@ IFC_CONVERTER_ENV = "MODEL3D_IFC_CONVERTER_BIN"
 GAUSSIAN_SPLAT_CONVERTER_SCRIPT = str(ENGINE_ROOT / "create_ksplat.mjs")
 GAUSSIAN_SPLAT_NODE_ENV = "MODEL3D_GAUSSIAN_SPLAT_NODE_BIN"
 SKP_CONVERTER_SCRIPT = str(ENGINE_ROOT / "skp_converter.py")
+MAX_CONVERTER_SCRIPT = str(ENGINE_ROOT / "max_converter.py")
+BLENDER_ENV = "MODEL3D_BLENDER_BIN"
+MAX_ADDON_ENV = "MODEL3D_MAX_ADDON_PATH"
 TILE_EXTENSIONS = {".b3dm", ".i3dm", ".pnts", ".cmpt", ".glb", ".gltf"}
 TILESET_REF = "tileset.json"
 
@@ -74,7 +78,11 @@ def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
     mesh_converter_available = _executable_available(mesh_converter)
     ifc_converter_available = _executable_available(ifc_converter)
     gaussian_splat_converter_available = _gaussian_splat_converter_available(gaussian_splat_node)
-    available = converter_available and mesh_converter_available and ifc_converter_available and gaussian_splat_converter_available
+    values = env if env is not None else os.environ
+    blender = _text(values.get(BLENDER_ENV))
+    max_addon = _text(values.get(MAX_ADDON_ENV))
+    max_available = _executable_available(blender) and Path(max_addon).is_absolute() and Path(max_addon, "import_max.py").is_file()
+    available = converter_available and mesh_converter_available and ifc_converter_available and gaussian_splat_converter_available and max_available
     details = [
         detail
         for detail in [
@@ -82,6 +90,7 @@ def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
             "" if mesh_converter_available else _executable_unavailable_detail(MESH_CONVERTER_ENV, mesh_converter),
             "" if ifc_converter_available else _executable_unavailable_detail(IFC_CONVERTER_ENV, ifc_converter),
             "" if gaussian_splat_converter_available else _gaussian_splat_converter_unavailable_detail(gaussian_splat_node),
+            "" if max_available else "MAX conversion requires engine-owned Blender and the pinned MAX importer",
         ]
         if detail
     ]
@@ -92,6 +101,7 @@ def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
         "available": available,
         "binding": "model3d_workflow",
         "details": "; ".join(details),
+        "max_converter": {"path": blender, "addon_path": max_addon, "available": max_available},
         "mesh_converter": {
             "name": "assimp",
             "env": MESH_CONVERTER_ENV,
@@ -392,7 +402,7 @@ def list_operators() -> list[dict[str, Any]]:
     ]
     # The static exchange formats use the existing mesh operator contract.
     template = next(op for op in operators if op["name"] == "stl_to_glb")
-    for source_format in ("dae", "3ds", "skp"):
+    for source_format in ("dae", "3ds", "skp", "max"):
         op = copy.deepcopy(template)
         op["id"] = op["name"] = f"{source_format}_to_glb"
         op["display_name"] = f"{source_format.upper()} 转 GLB"
@@ -401,6 +411,10 @@ def list_operators() -> list[dict[str, Any]]:
         if source_format == "skp":
             op["description"] = "将 SketchUp 静态网格、组件变换和内嵌贴图转换为自包含 GLB。"
             op["parameters"][0]["description"] = "源 SKP 单文件与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。"
+        if source_format == "max":
+            op["description"] = "将 MAX 静态网格转换为自包含 GLB；无法识别单位且未选择时默认米。"
+            op["parameters"][0]["description"] = "源 MAX 文件（外部贴图需目录输入）与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。"
+            op["parameters"][1]["description"] = "source_unit 可选 mm/cm/m/km/in/ft/mi，缺省米；texture_files 显式映射 bitmap 引用到源目录内的相对图片路径。"
         operators.insert(-2, op)
     return operators
 
@@ -431,6 +445,8 @@ def invoke_operator(
         return stl_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "skp_to_glb":
         return skp_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name == "max_to_glb":
+        return max_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name in {"dae_to_glb", "3ds_to_glb"}:
         return _mesh_model_to_glb(params, source_label=name.removesuffix("_to_glb"), runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "ifc_to_glb":
@@ -541,6 +557,7 @@ def _single_model_to_glb(
     env: dict[str, str] | None,
     timeout_seconds: int | None,
     command_factory: Callable[[str, str], list[str]] | None = None,
+    conversion_facts_suffix: str | None = None,
 ) -> dict[str, Any]:
     access_plan = require_access_plan(params)
     file_name = target_name(access_plan)
@@ -566,9 +583,18 @@ def _single_model_to_glb(
                 http_status=500,
             )
 
-        _validate_glb_artifact(target_file, basic_static=source_label == "SKP")
+        _validate_glb_artifact(target_file, basic_static=source_label in {"SKP", "MAX"})
+        conversion_facts = {}
+        if conversion_facts_suffix:
+            try:
+                conversion_facts = json.loads(target_file.with_suffix(conversion_facts_suffix).read_text())
+            except (OSError, ValueError) as error:
+                raise ConverterError("INVALID_CONVERSION_FACTS", "Missing or invalid conversion facts", details=str(error)) from error
+            if not isinstance(conversion_facts, dict):
+                raise ConverterError("INVALID_CONVERSION_FACTS", "Invalid conversion facts")
         publish_result = publish_target_file(target_file, access_plan)
         return {
+            **({"conversion": conversion_facts} if conversion_facts_suffix else {}),
             "glb_uri": _published_uri(publish_result),
             "glb_ref": _published_ref(publish_result),
             "size_bytes": publish_result["uploaded_bytes"],
@@ -598,6 +624,32 @@ def skp_to_glb(
         env=env, timeout_seconds=timeout_seconds,
         command_factory=lambda source, target: [sys.executable, SKP_CONVERTER_SCRIPT, source, target],
     )
+
+
+def max_to_glb(params, *, runner=None, env=None, timeout_seconds=None):
+    plan = require_access_plan(params)
+    if plan_source_format(plan) != "max" or plan["source"]["kind"] not in {"file", "directory"}:
+        raise ConverterError("UNSUPPORTED_MODEL_SOURCE", "MAX requires a file or directory/max access plan")
+    options = params.get("options", {})
+    try:
+        conversion_options(options)
+    except ValueError as error:
+        raise ConverterError("INVALID_MAX_OPTIONS", "Invalid MAX conversion options", details=str(error)) from error
+    values = env if env is not None else os.environ
+    blender, addon = _text(values.get(BLENDER_ENV)), _text(values.get(MAX_ADDON_ENV))
+    if runner is None and (not Path(addon).is_absolute() or not Path(addon, "import_max.py").is_file()):
+        raise ConverterError("CONVERTER_UNAVAILABLE", "Engine-owned MAX importer is unavailable", http_status=503)
+    def command(source, target):
+        configuration = Path(target).with_suffix(".max-options.json")
+        configuration.write_text(json.dumps(options))
+        return [blender, "--background", "--factory-startup", "--disable-autoexec", "--python-exit-code", "7",
+                "--python-expr", "import sys; sys.dont_write_bytecode = True", "--python", MAX_CONVERTER_SCRIPT,
+                "--", source, target, str(configuration), addon]
+    result = _single_model_to_glb(params, source_label="MAX", converter_format="glb", runner=runner,
+                                  env=env, timeout_seconds=timeout_seconds, command_factory=command,
+                                  conversion_facts_suffix=".max-facts.json")
+    result["converter"] = blender
+    return result
 
 
 def gltf_to_glb(
@@ -992,7 +1044,9 @@ def _stage_model_source(access_plan: dict[str, Any], work_dir: Path) -> Path:
     entrypoint = _text(source.get("entrypoint"))
     if not entrypoint:
         raise ConverterError("INVALID_PARAMS", "directory source requires access_plan.source.entrypoint")
-    path = root / entrypoint
+    path = (root / entrypoint).resolve()
+    if Path(entrypoint).is_absolute() or not path.is_relative_to(root.resolve()):
+        raise ConverterError("SOURCE_OUTSIDE_INPUT", "model source entrypoint escapes the input directory")
     if not path.is_file():
         raise ConverterError("SOURCE_NOT_FOUND", "model source entrypoint was not found", details=str(path), http_status=404)
     return path

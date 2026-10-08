@@ -85,7 +85,8 @@ def download(asset, cache):
     os.close(handle)
     pending = Path(filename)
     try:
-        with urllib.request.urlopen(asset["url"], timeout=120) as response, pending.open("wb") as stream:
+        request = urllib.request.Request(asset["url"], headers={"User-Agent": "Mozilla/5.0 ADDP-Model3D"})
+        with urllib.request.urlopen(request, timeout=120) as response, pending.open("wb") as stream:
             shutil.copyfileobj(response, stream)
         if digest(pending, algorithm) != expected:
             raise RuntimeError("download checksum mismatch: " + asset["url"])

@@ -74,6 +74,7 @@ const (
 	Format3DS       FormatType = "3ds"
 	FormatSGM       FormatType = "sgm"
 	FormatSKP       FormatType = "skp"
+	FormatMAX       FormatType = "max"
 	FormatIFC       FormatType = "ifc"
 	FormatPLY       FormatType = "ply"
 	FormatSplat     FormatType = "splat"

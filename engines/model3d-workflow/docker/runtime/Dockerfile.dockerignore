@@ -5,6 +5,11 @@
 !engines/model3d-workflow/requirements.txt
 !engines/model3d-workflow/package.json
 !engines/model3d-workflow/package-lock.json
+!engines/model3d-workflow/blender-assets.json
+!engines/model3d-workflow/tests/
+!engines/model3d-workflow/tests/fixtures/
+!engines/model3d-workflow/tests/fixtures/max/
+!engines/model3d-workflow/tests/fixtures/max/**
 !common-python/
 !common-python/pyproject.toml
 !common-python/README.md

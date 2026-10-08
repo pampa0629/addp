@@ -2,7 +2,7 @@
 # Unique native development path; source after port and dependency helpers.
 
 addp_model3d_native_environment() {
-  local prefix python_bin="$ROOT_DIR/engines/model3d-workflow/venv/bin/python"
+  local prefix blender_prefix python_bin="$ROOT_DIR/engines/model3d-workflow/venv/bin/python"
   unset PYTHONHOME PYTHONPATH CONDA_PREFIX CONDA_DEFAULT_ENV
   unset GDAL_DRIVER_PATH GDAL_DATA PROJ_DATA PROJ_LIB OSG_LIBRARY_PATH
   unset LD_LIBRARY_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH CMAKE_PREFIX_PATH PKG_CONFIG_PATH
@@ -14,6 +14,9 @@ addp_model3d_native_environment() {
   export MODEL3D_CONVERTER_BIN="$prefix/bin/_3dtile"
   export MODEL3D_MESH_CONVERTER_BIN="$prefix/bin/assimp" MODEL3D_IFC_CONVERTER_BIN="$prefix/bin/IfcConvert"
   export GDAL_DATA="$prefix/bin/gdal" PROJ_DATA="$prefix/bin/proj" OSG_LIBRARY_PATH="$prefix/bin/osgPlugins-3.6.5"
+  blender_prefix=$("$python_bin" "$ROOT_DIR/engines/model3d-workflow/blender_setup.py" environment "$ROOT_DIR/.dev-state/model3d-blender") || return 1
+  export MODEL3D_BLENDER_BIN="$blender_prefix/Blender.app/Contents/MacOS/Blender"
+  export MODEL3D_MAX_ADDON_PATH="$blender_prefix/max-importer/source"
   export MODEL3D_GAUSSIAN_SPLAT_NODE_BIN
   MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=$(command -v node) || { echo '✗ Model3D 需要 Node.js' >&2; return 1; }
   export PYTHONNOUSERSITE=1
@@ -43,6 +46,9 @@ addp_prepare_model3d_workflow() (
     "$python_bin" "$runtime_dir/native_setup.py" current "$ROOT_DIR/.dev-state/model3d-native" || {
       echo '✗ Model3D 原生工具需要准备或更新，请先执行 README 的独立工具准备命令；不得修改活动 Python 环境' >&2; return 1;
     }
+    "$python_bin" "$runtime_dir/blender_setup.py" current "$ROOT_DIR/.dev-state/model3d-blender" || {
+      echo '✗ Model3D Blender 工具需要准备或更新，请先执行 README 的独立工具准备命令' >&2; return 1;
+    }
     fingerprint=$(addp_python_dependency_fingerprint "$ROOT_DIR" "$runtime_dir") || return 1
     addp_python_dependencies_current "$runtime_dir" "$fingerprint" 'Model3D' || {
       echo '✗ Model3D Python 依赖需要更新，请先停止该 Runtime 再启动' >&2; return 1;
@@ -61,6 +67,7 @@ addp_prepare_model3d_workflow() (
     ' _ "$ROOT_DIR" || return 1
     addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'Model3D' || return 1
     "$python_bin" "$runtime_dir/native_setup.py" prepare "$ROOT_DIR/.dev-state/model3d-native" || return 1
+    "$python_bin" "$runtime_dir/blender_setup.py" prepare "$ROOT_DIR/.dev-state/model3d-blender" || return 1
   fi
   addp_model3d_python_current "$python_bin" || return 1
   if [ ! -d "$runtime_dir/node_modules/@mkkellogg/gaussian-splats-3d" ]; then

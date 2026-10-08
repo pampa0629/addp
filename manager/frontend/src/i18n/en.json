@@ -1,5 +1,16 @@
 {
   "manager": {
+    "model3DUnit": {
+      "label": "MAX source unit",
+      "defaultMeters": "Defaults to metres (m)",
+      "mm": "Millimetres (mm)",
+      "cm": "Centimetres (cm)",
+      "m": "Metres (m)",
+      "km": "Kilometres (km)",
+      "in": "Inches (in)",
+      "ft": "Feet (ft)",
+      "mi": "Miles (mi)"
+    },
     "common": {
       "currentResultOverwriteTitle": "Confirm Current Result Overwrite",
       "currentResultOverwriteConfirm": "A current result already exists. Continuing will replace its record and Manager-managed quick-view data. Continue?",

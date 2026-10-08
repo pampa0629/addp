@@ -35,7 +35,7 @@ export function isModel3DQuickViewSource(previewData = {}, node = {}, selectedNo
   if (dataType === 'model_3d' && format === 'osgb' && (!layout || layout === 'single')) return true
   if (dataType === 'model_3d' && format === 'gltf' && layout === 'multi') return true
   if (dataType === 'model_3d' && ['fbx', 'obj', 'stl', 'ifc', 'dae', '3ds', 'sgm'].includes(format) && (!layout || layout === 'single')) return true
-  if (dataType === 'model_3d' && format === 'skp' && layout === 'single') return true
+  if (dataType === 'model_3d' && ['skp', 'max'].includes(format) && layout === 'single') return true
   if (['osgb', 'gltf', 'fbx', 'obj', 'stl', 'ifc', 'dae', '3ds', 'sgm'].includes(format)) return true
   return /\.(osgb|gltf|fbx|obj|stl|ifc|dae|3ds|sgm)$/i.test(String(selectedNodePath || ''))
 }

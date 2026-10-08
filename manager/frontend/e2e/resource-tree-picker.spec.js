@@ -182,7 +182,7 @@ for (const [type, rows] of [
   })
 }
 
-for (const format of ['dae', '3ds']) {
+for (const format of ['dae', '3ds', 'max']) {
   test(`offers GLB generation for an unsupported direct ${format.toUpperCase()} preview`, async ({ page }) => {
     const locator = `addp://engine/12/path/doc/model.${format}?type=file&item_id=1203`
     const backend = await installMockBackend(page, { exchangeModel: { format, locator } })
@@ -190,6 +190,25 @@ for (const format of ['dae', '3ds']) {
 
     await expect.poll(() => backend.capabilityLocators).toContain(locator)
     await expect(page.getByRole('button', { name: '生成 GLB 快显', exact: true })).toBeVisible()
+  })
+}
+
+for (const unit of ['', 'mm']) {
+  test(`MAX GLB generation ${unit ? 'uses selected millimetres' : 'allows default metres without a selection'}`, async ({ page }) => {
+    const locator = 'addp://engine/12/path/doc/model.max?type=file&item_id=1203'
+    const backend = await installMockBackend(page, { exchangeModel: { format: 'max', locator } })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+    const selector = page.getByRole('combobox', { name: 'MAX 源单位' })
+    await expect(selector).toBeVisible()
+    await expect(page.getByText('未选择时默认米（m）', { exact: true })).toBeVisible()
+    if (unit) {
+      await page.getByText('未选择时默认米（m）', { exact: true }).click()
+      await page.getByRole('option', { name: '毫米（mm）', exact: true }).click()
+    }
+    await page.getByRole('button', { name: '生成 GLB 快显', exact: true }).click()
+    await expect.poll(() => backend.quickViewActions).toEqual([{
+      locator, action: 'generate_model_3d_glb', ...(unit ? { source_unit: unit } : {})
+    }])
   })
 }
 

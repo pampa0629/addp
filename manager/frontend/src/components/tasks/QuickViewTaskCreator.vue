@@ -41,6 +41,9 @@
           :title="capabilityError || t(`manager.quickViewCreator.${emptyReason}`)"
         />
       </el-form-item>
+      <el-form-item v-if="sourceFormat === 'max' && selectedAction === 'generate_model_3d_glb' && !isRebind" :label="t('manager.model3DUnit.label')">
+        <Model3DSourceUnitSelect v-model="sourceUnit" />
+      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -65,6 +68,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ResourceTreePicker } from '@addp/common-frontend'
 import { quickViewAPI } from '@/api/quickView'
+import Model3DSourceUnitSelect from './Model3DSourceUnitSelect.vue'
 import { rebindDerivedTask } from '@/api/derivedTasks'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
@@ -87,6 +91,8 @@ const { t } = useI18n()
 const router = useRouter()
 const confirmCurrentResult = useCurrentResultConfirmation()
 const sourceSelection = ref(null)
+const sourceFormat = ref('')
+const sourceUnit = ref('')
 const options = ref([])
 const selectedAction = ref('')
 const detecting = ref(false)
@@ -116,6 +122,8 @@ const hasCurrentResult = computed(() => (
 function reset() {
   detectionSequence += 1
   sourceSelection.value = null
+  sourceFormat.value = ''
+  sourceUnit.value = ''
   options.value = []
   selectedAction.value = ''
   detecting.value = false
@@ -136,6 +144,8 @@ watch(sourceSelection, async selection => {
   const sequence = ++detectionSequence
   applyOptions([])
   capabilityError.value = ''
+  sourceFormat.value = ''
+  sourceUnit.value = ''
   emptyReason.value = 'unsupported'
   if (!selection) return
   if (isRebind.value) return
@@ -144,6 +154,7 @@ watch(sourceSelection, async selection => {
   try {
     const capability = await quickViewAPI.getQuickViewCapabilityByLocator(sourceLocator.value)
     if (sequence !== detectionSequence) return
+    sourceFormat.value = capability?.model_3d?.format || ''
     applyOptions(generationOptionsForCapability(capability, props.taskType))
     emptyReason.value = quickViewCreationEmptyReason(capability, props.taskType)
     currentResultTaskType.value = currentQuickViewResultTaskType(capability, props.taskType)
@@ -181,7 +192,7 @@ async function submit() {
     const response = await confirmCurrentResult(payload => quickViewAPI.executeQuickViewAction(
       sourceLocator.value,
       selectedAction.value,
-      toQuickViewExistingResultPayload(payload)
+      { ...toQuickViewExistingResultPayload(payload), ...(sourceFormat.value === 'max' && selectedAction.value === 'generate_model_3d_glb' && sourceUnit.value ? { source_unit: sourceUnit.value } : {}) }
     ))
     const result = response?.data ?? response
     const taskType = result?.task_type || quickViewTaskTypeForAction(selectedAction.value)

@@ -12,16 +12,16 @@ import {
 } from '../../src/utils/quickViewRenderSource.js'
 
 describe('quickViewRenderSource', () => {
-  it.each(['dae', '3ds', 'sgm', 'skp'])('loads capability for %s metadata before a renderable preview exists', format => {
+  it.each(['dae', '3ds', 'sgm', 'skp', 'max'])('loads capability for %s metadata before a renderable preview exists', format => {
     const previewData = { object: { attributes: { item: { data_type: 'model_3d', format, layout: 'single' } }, content: { kind: 'unsupported' } } }
     expect(isModel3DQuickViewSource(previewData)).toBe(true)
   })
 
-  it('requires authoritative single-model identity for SKP capability', () => {
-    expect(isModel3DQuickViewSource({}, {}, 'models/model.SKP')).toBe(false)
-    expect(isModel3DQuickViewSource({ object: { attributes: { item: { data_type: 'model_3d', format: 'skp' } } } })).toBe(false)
-    expect(isModel3DQuickViewSource({ object: { attributes: { item: { data_type: 'model_3d', format: 'skp', layout: 'multi' } } } })).toBe(false)
-    expect(isModel3DQuickViewSource({ object: { attributes: { item: { data_type: 'document', format: 'skp', layout: 'single' } } } })).toBe(false)
+  it.each(['skp', 'max'])('requires authoritative single-model identity for %s capability', format => {
+    expect(isModel3DQuickViewSource({}, {}, `models/model.${format.toUpperCase()}`)).toBe(false)
+    expect(isModel3DQuickViewSource({ object: { attributes: { item: { data_type: 'model_3d', format } } } })).toBe(false)
+    expect(isModel3DQuickViewSource({ object: { attributes: { item: { data_type: 'model_3d', format, layout: 'multi' } } } })).toBe(false)
+    expect(isModel3DQuickViewSource({ object: { attributes: { item: { data_type: 'document', format, layout: 'single' } } } })).toBe(false)
   })
 
   it.each(['DAE', '3DS', 'SGM'])('loads capability for a %s file node before metadata is available', extension => {

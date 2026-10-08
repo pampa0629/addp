@@ -924,3 +924,38 @@ func TestApplyTileResponseHeadersExposesRealtimeTimeoutRecommendation(t *testing
 		t.Fatalf("expose headers = %q, want tile recommendation headers exposed", got)
 	}
 }
+
+func TestMAXQuickViewCreationPersistsUnitAndReusesSourceTask(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	repo := repository.NewModel3DGLBRepository(db)
+	handler := &QuickViewHandler{model3DGLBTaskSvc: service.NewModel3DGLBTaskService(repo)}
+	capability := &service.QuickViewCapability{
+		TenantID: 7, ItemFingerprint: "fp-max-unit",
+		Locator:    "addp://engine/26/path/3d/model.max?type=file&item_id=10441",
+		SourceKind: service.QuickViewSourceKindModel3D,
+	}
+	source := service.QuickViewSource{EngineID: 26, Model3D: &service.Model3DGLBSource{Format: "max", SourceSizeBytes: 1234}}
+	var previousID uint
+	for _, unit := range []string{"", "mm", "m", ""} {
+		taskType, id, err := handler.createQuickViewTask(context.Background(), 1, service.QuickViewActionGenerateModel3DGLB, capability, source, unit)
+		if err != nil || taskType != commonExecution.TaskTypeModel3DGLBGeneration {
+			t.Fatalf("create MAX unit %q: type=%s error=%v", unit, taskType, err)
+		}
+		if previousID != 0 && id != previousID {
+			t.Fatalf("unit change created another source task: %d vs %d", id, previousID)
+		}
+		previousID = id
+		task, err := repo.GetTaskByItemFingerprint(context.Background(), 7, "fp-max-unit")
+		if err != nil {
+			t.Fatal(err)
+		}
+		options, _ := asJSONMap(task.Config["options"])
+		value, exists := options["source_unit"]
+		if unit == "" && exists {
+			t.Fatalf("default unit falsely recorded as user choice: %#v", options)
+		}
+		if unit != "" && value != unit {
+			t.Fatalf("unit selection lost on persistence: %#v", options)
+		}
+	}
+}

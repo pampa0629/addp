@@ -73,6 +73,7 @@
 | DAE / Collada | `single` | `model_3d` | `dae` | Collada 1.4.0 / 1.4.1；摘要记录版本、单位、上轴、网格和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
 | 3DS | `single` | `model_3d` | `3ds` | 3DS chunk 模型；摘要记录网格、顶点、三角面、材质和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
 | SKP | `single` | `model_3d` | `skp` | SketchUp 原生文件；格式身份识别，静态网格经 Model3D 生成自包含 GLB 快显 |
+| MAX | `single` | `model_3d` | `max` | 3ds Max 原生场景；格式身份识别，支持范围内的静态网格经 Model3D 生成 GLB 快显 |
 | IFC | `single` | `model_3d` | `ifc` | IFC BIM 模型；第一阶段支持识别和轻量 BIM 摘要 |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
 | OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
@@ -437,6 +438,16 @@ ADDP 生成的 S3M 数据集统一使用 `config/scene.scp`，detector 通过 de
 `format_info.s3m` 保存 `manifest_ref`、`manifest_encoding`、`version`、`file_type`、`root_tile_count`、`tile_extension` 和位置摘要；稳定的分块场景语义进入 `type_info.model_3d.model_kind=tiled_scene`。Manager 返回 `preview_material=url + frontend_renderer=s3m`，使用路径型受控资源 URL 保持 SCP 相对引用可访问；Cesium 和 S3M renderer 只在该预览组件挂载时动态加载。
 
 SuperMap Workflow 的 `osgb_scene_to_s3m` 固定使用 `ObliquePhotogrammetryBuilder` 生成 S3M 3.01 / S3MB，纹理压缩为 DXT，几何压缩为 Draco，目标 CRS 固定为 `EPSG:4326`。Builder 保留瓦片局部坐标；运行时使用 SuperMap `CoordSysTranslator` 把 JSON SCP 的 `position` 与 `geoBounds` 从源 EPSG 规范化到 WGS84，`position.unit` 固定为 `Degree`。源投影坐标转换不交给 Manager 前端猜测或硬编码。Manager 必须从 manifest 和受管结果元数据获取实际版本、CRS、纹理压缩、几何压缩和瓦片扩展名，不得将 S3M 硬编码为 legacy XML / `.s3m`；不得把 renderer 状态、浏览器能力或受控 URL 写回 Meta attributes。
+
+## MAX
+
+MAX 按 `.max` 扩展名识别为 `format=max + data_type=model_3d + layout=single`。Common 不加载 Blender 或原生场景解析器，不推断几何、单位、CRS 或关联贴图事实。Manager 调用 Model3D 的 `max_to_glb`；Blender 是 Runtime 内部按任务启动的子进程，无独立服务、端口或宿主机全局安装要求。固定导入器为 `io_scene_max` 1.9.2（提交 `37db107126f956f7219152671443080360565691`）；保留上游源码、许可和作者声明。macOS ARM64 使用私有官方 Blender 4.5.3；Linux 产品镜像使用 Debian Blender 4.3.2 与其 Python NumPy 依赖。
+
+首期支持导入器可解析的静态网格、实例变换和基础颜色，不声明原生编辑语义、动画、骨架、修改器或复杂材质保真。外部基础颜色图片须通过转换选项 `texture_files` 显式映射源 bitmap 引用到访问计划目录内的相对路径；入口模型和贴图均不得越出输入目录；不递归猜图，不读取原文件记录的宿主机绝对路径。未声明的必需贴图、路径越界、图片解码失败、导入器报告的对象错误、空网格或非法 GLB 明确失败；失败不得覆盖旧产物。贴图随 GLB 内嵌，不新增 Meta related refs 的推测事实。
+
+单位选择按「可靠解析出的源单位 → 用户选择 → 默认米」处理。当前固定导入器尚不能可靠解析 MAX 系统单位，不能把 Blender 的默认 `METRIC` 状态视为源声明，因此使用 `options.source_unit`，缺省为 `m`。可选 `mm`、`cm`、`m`、`km`、`in`、`ft`、`mi`，统一换算为 glTF 米坐标，保留非均匀缩放、轴向和相对变换。转换结果记录 `source_unit`、`unit_source=user|default` 和 `scale_to_meters`；该结果属于转换事实，不写成源文件元数据。Manager 快显动作的可选 `source_unit` 仅适用于 MAX 的 `generate_model_3d_glb`，保存到既有任务 `options`；不提交时可直接按默认米生成，界面允许用户修改并明确提示默认值。
+
+确定性单位、路径和发布边界进入 `make test-model3d-workflow`；真实 MAX、贴图和单位换算进入既有 Linux 产品镜像构建的 smoke，macOS 原生预检核对 Blender 和导入器。Manager、Common 的格式和快显契约沿用标准模块门禁。以上不替代真实 Manager 页面和 Hosted T4 验收。
 
 ## SKP
 

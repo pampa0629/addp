@@ -1,0 +1,6 @@
+horsewalk02.max: 0 A.D. project contributors; shared by Stanislas Dolcini (StanleySweet).
+Source: https://github.com/nrgsille76/io_scene_max/issues/1
+Original download: https://github.com/user-attachments/files/15525512/horses.zip
+Licence: CC-BY-SA-3.0 https://creativecommons.org/licenses/by-sa/3.0/legalcode
+The original MAX is unchanged. Animation and skeleton fidelity are not part of the static conversion test.
+texture.png is an ADDP-generated deterministic test image; it is not the original 0 A.D. texture.

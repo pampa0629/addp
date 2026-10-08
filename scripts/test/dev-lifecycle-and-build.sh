@@ -1665,7 +1665,7 @@ elif args[:3] == ['-m', 'pip', 'check']:
     if os.environ.get('FAIL_CHECK') == '1': sys.exit(19)
 elif args[:1] == ['-']:
     os.execv(sys.executable, [sys.executable] + args)
-elif args and args[0].endswith('native_setup.py'):
+elif args and args[0].endswith(('native_setup.py', 'blender_setup.py')):
     pass
 elif args == ['--version']:
     print('Python 3.12')

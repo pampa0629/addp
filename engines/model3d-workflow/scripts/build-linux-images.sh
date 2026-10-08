@@ -108,6 +108,53 @@ with tempfile.TemporaryDirectory() as tmp:
     if abs(scene.extents[0] - 0.0254) > 1e-6 or abs(scene.extents[2] - 0.0254) > 1e-6:
         raise SystemExit("SKP smoke conversion has incorrect metre scale")
     print("SKP parser, GLB publication validation and metre scale smoke passed")
+
+    import json
+    import hashlib
+    import io
+    from PIL import Image
+    from operators import ConverterError
+    fixture = Path('/app/max-fixture')
+    max_source = fixture / 'horsewalk02.max'
+    source_hash = hashlib.sha256(max_source.read_bytes()).hexdigest()
+    textures = json.loads((fixture / 'textures.json').read_text())
+    extents = []
+    for unit in ('', 'mm'):
+        target = Path(tmp) / ('max-default.glb' if not unit else 'max-mm.glb')
+        plan = {'schema_version': 'addp.workflow.access-plan/v1',
+                'source': {'kind': 'directory', 'format': 'max', 'entrypoint': max_source.name,
+                           'access': {'method': 'mounted_path', 'path': str(fixture)}},
+                'target': {'kind': 'file', 'format': 'glb', 'name': target.name, 'write_mode': 'create',
+                           'access': {'method': 'mounted_path', 'path': str(target)}}}
+        options = {'texture_files': textures}
+        if unit: options['source_unit'] = unit
+        result = operators.invoke_operator('max_to_glb', {'access_plan': plan, 'options': options}, timeout_seconds=60)
+        facts = result['conversion']
+        if facts['unit_source'] != ('user' if unit else 'default') or facts['source_unit'] != (unit or 'm'):
+            raise SystemExit('MAX conversion did not audit source unit provenance')
+        doc = validate_glb(target, basic_static=True)
+        if len(doc.get('images', [])) != 1:
+            raise SystemExit('MAX base-color texture was lost')
+        doc, chunks = operators._read_glb(target)
+        view = doc['bufferViews'][doc['images'][0]['bufferView']]
+        image = Image.open(io.BytesIO(chunks[1][1][view.get('byteOffset', 0):view.get('byteOffset', 0)+view['byteLength']]))
+        if image.size != (4, 4) or image.convert('RGB').getpixel((0, 0)) != (220, 30, 60):
+            raise SystemExit('MAX embedded texture differs from declared input')
+        extents.append(trimesh.load(target, force='scene').extents)
+    if any(abs(a / b - 1000) > .01 for a, b in zip(*extents)):
+        raise SystemExit('MAX default metre and selected millimetre scale differ incorrectly')
+    if hashlib.sha256(max_source.read_bytes()).hexdigest() != source_hash:
+        raise SystemExit('MAX source was modified')
+    plan['target']['write_mode'] = 'replace'
+    previous = target.read_bytes()
+    try:
+        operators.invoke_operator('max_to_glb', {'access_plan': plan}, timeout_seconds=60)
+    except ConverterError:
+        if target.read_bytes() != previous:
+            raise SystemExit('MAX missing texture replaced the previous artifact')
+    else:
+        raise SystemExit('MAX missing texture was silently accepted')
+    print('MAX static GLB, declared texture, default/user units and old-artifact preservation smoke passed')
 PY
 
 echo "Built images:"

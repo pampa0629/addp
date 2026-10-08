@@ -2828,7 +2828,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.",
+                "description": "前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8648,6 +8648,19 @@ const docTemplate = `{
                 },
                 "locator": {
                     "type": "string"
+                },
+                "source_unit": {
+                    "description": "MAX 原始单位，缺省米 | MAX source unit, defaults to metres",
+                    "type": "string",
+                    "enum": [
+                        "mm",
+                        "cm",
+                        "m",
+                        "km",
+                        "in",
+                        "ft",
+                        "mi"
+                    ]
                 }
             }
         },

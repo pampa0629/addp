@@ -36,7 +36,7 @@ def test_health(client):
     data = response.get_json()
     assert data["status"] in {"healthy", "degraded"}
     assert data["service"] == "model3d-workflow-engine"
-    assert data["operators_count"] == 11
+    assert data["operators_count"] == 12
     assert "conversion_ready" in data
     assert data["dependencies"]["converter"]["binding"] == "model3d_workflow"
 
@@ -46,7 +46,7 @@ def test_get_operators(client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "success"
-    assert data["count"] == 11
+    assert data["count"] == 12
     assert_operator_metadata_contract(data["operators"], expected_engine_type="model3d_workflow")
 
 
@@ -174,7 +174,7 @@ def test_converter_unavailable_response(client, tmp_path, monkeypatch):
     assert data["error_code"] == "CONVERTER_UNAVAILABLE"
 
 
-def test_register_to_system_posts_model3d_workflow_payload(monkeypatch):
+def test_register_to_system_posts_model3d_workflow_payload(monkeypatch, tmp_path):
     import addp_common.client
     import api_server
 
@@ -190,6 +190,12 @@ def test_register_to_system_posts_model3d_workflow_payload(monkeypatch):
     monkeypatch.setenv("PORT", "8101")
     monkeypatch.setenv("MODEL3D_CONVERTER_BIN", sys.executable)
     monkeypatch.setenv("MODEL3D_IFC_CONVERTER_BIN", sys.executable)
+    monkeypatch.setenv("MODEL3D_MESH_CONVERTER_BIN", sys.executable)
+    monkeypatch.setenv("MODEL3D_BLENDER_BIN", sys.executable)
+    addon = tmp_path / "source"
+    addon.mkdir()
+    (addon / "import_max.py").write_text("# engine-bound test fixture")
+    monkeypatch.setenv("MODEL3D_MAX_ADDON_PATH", str(addon))
 
     assert api_server.register_to_system() is True
     assert calls == [(

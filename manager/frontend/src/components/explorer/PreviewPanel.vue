@@ -95,6 +95,12 @@
             {{ t('manager.explorer.vectorized') }}
           </el-tag>
 
+          <Model3DSourceUnitSelect
+            v-if="showModel3DGLBGenerationAction && objectCanonicalFormat === 'max'"
+            v-model="model3DSourceUnit"
+            size="small"
+            style="width: 190px"
+          />
           <el-button
             v-if="showModel3DGLBGenerationAction"
             size="small"
@@ -500,6 +506,7 @@ import { downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } fro
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
+import Model3DSourceUnitSelect from '@/components/tasks/Model3DSourceUnitSelect.vue'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
 import FlatGeobufQuickView from '@/components/map/FlatGeobufQuickView.vue'
@@ -558,9 +565,10 @@ const { t } = useI18n()
 const router = useRouter()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 
-const executeConfirmedQuickViewAction = (locator, action) => executeWithCurrentResultConfirmation(payload => (
-  quickViewAPI.executeQuickViewAction(locator, action, toQuickViewExistingResultPayload(payload))
+const executeConfirmedQuickViewAction = (locator, action, options = {}) => executeWithCurrentResultConfirmation(payload => (
+  quickViewAPI.executeQuickViewAction(locator, action, { ...toQuickViewExistingResultPayload(payload), ...options })
 ))
+const model3DSourceUnit = ref('')
 
 const loadKeyValue = async selection => {
  const response = await client.get('/manager/preview', { params: { locator: props.selectedNode?.locator, page: 1, page_size: 20, ...selection } })
@@ -2128,7 +2136,8 @@ const handleGenerateModel3DGLB = async () => {
   }
   model3DGLBGenerationLoading.value = true
   try {
-    const execution = await executeConfirmedQuickViewAction(locator, 'generate_model_3d_glb')
+    const execution = await executeConfirmedQuickViewAction(locator, 'generate_model_3d_glb',
+      model3DSourceUnit.value ? { source_unit: model3DSourceUnit.value } : {})
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateModel3DGLBSubmitted'))
     if (executionID) {
@@ -2447,6 +2456,8 @@ const model3DTaskPromptSizeText = computed(() => {
 const model3DTaskPromptPath = computed(() => {
   return objectData.value?.path || props.selectedNode?.path || props.selectedNode?.label || '-'
 })
+
+watch(() => props.selectedNode?.locator, () => { model3DSourceUnit.value = '' })
 
 const objectCanonicalFormat = computed(() => {
   return String(
