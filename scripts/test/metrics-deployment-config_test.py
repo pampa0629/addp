@@ -36,7 +36,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         script = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
         inputs = re.search(r'^# ADDP_T2_INPUT_FILES=(.+)$', script, re.M).group(1).split()
         for path in ('monitor/backend/internal/resourcequery/client.go',
-                     'monitor/backend/internal/resourcequery/disk.go',
+                     'monitor/backend/internal/resourcequery/device_rate.go',
                      'monitor/backend/internal/resourcequery/disk_test.go',
                      'monitor/backend/internal/resourcequery/deleted-or-future.go',
                      'monitor/backend/internal/config/config.go',
@@ -49,7 +49,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('go-version-file: common/go.mod', job)
         self.assertLess(job.index('uses: actions/setup-go@'), job.index('run: make test-monitor-metrics'))
         probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
-        self.assertIn('CPUWindow|DiskWindow|Filesystem|FilesystemInodes', probe)
+        self.assertIn('CPUWindow|DiskWindow|NetworkWindow|Filesystem|FilesystemInodes', probe)
 
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):
         config.render(self.env)

@@ -5,11 +5,18 @@ import (
 	"strings"
 )
 
-// A device is an observation dimension, not a physical disk or mount identity.
-func diskExpression(s Scope, key string, dimensions Dimensions) (value, stamp, presence string) {
-	name := "node_disk_read_bytes_total"
-	if key == "node.disk.write_bytes_per_second" {
+// Device names identify source observations, never physical disks or NIC capacity.
+func deviceRateExpression(s Scope, key string, dimensions Dimensions) (value, stamp, presence string) {
+	var name string
+	switch key {
+	case "node.disk.read_bytes_per_second":
+		name = "node_disk_read_bytes_total"
+	case "node.disk.write_bytes_per_second":
 		name = "node_disk_written_bytes_total"
+	case "node.network.receive_bytes_per_second":
+		name = "node_network_receive_bytes_total"
+	case "node.network.transmit_bytes_per_second":
+		name = "node_network_transmit_bytes_total"
 	}
 	raw := s.selector(name)
 	if len(dimensions) > 0 {
@@ -18,7 +25,7 @@ func diskExpression(s Scope, key string, dimensions Dimensions) (value, stamp, p
 	previous := raw + ` offset 1m`
 	rate := `rate(` + raw + `[1m])`
 	// One minute, unchanged source boot and one series per device. No summation
-	// across device-mapper layers, partitions or different devices.
+	// across device-mapper layers, partitions, bridges or network interfaces.
 	boot := s.selector("node_boot_time_seconds")
 	bootGuard := ` and on() (count(` + boot + `)==1) and on() (count(` + boot + ` offset 1m)==1)` +
 		` and on() (max(` + boot + `)==max(` + boot + ` offset 1m))`

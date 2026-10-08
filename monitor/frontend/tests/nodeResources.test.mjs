@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { validateCollection, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, resourceDimensionRows } from '../src/utils/nodeResources.js'
+import { validateCollection, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows } from '../src/utils/nodeResources.js'
 
 test('node resource trends delegate chart rendering and formatting to the shared owners', () => {
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
@@ -142,4 +142,24 @@ test('disk selectors use only device and reject foreign dimensions or incomplete
     const bad = structuredClone(response); change(bad)
     assert.throws(() => validateResourceResponse(bad, 'node-id', keys, false, dimensions))
   }
+})
+
+
+test('network observations require one interface and complete minute evidence, and never merge with disk devices', () => {
+  const at = '2026-10-07T00:00:00Z', dims = { device: 'eth0' }
+  const series = networkMetrics.map(metric => ({ metric_key: metric.key, dimensions: dims, unit: metric.unit, window_seconds: 60, points: [{ evaluated_at: at, sampled_at: at, value: 0, data_state: 'valid' }] }))
+  const reply = { subject: { kind: 'node', node_id: 'node-id' }, end: at, queried_at: at, series }
+  const keys = networkMetrics.map(metric => metric.key)
+  assert.equal(validateResourceResponse(reply, 'node-id', keys), reply)
+  const query = { metric: keys[0], device: 'eth0', range: '5m' }
+  assert.deepEqual(resolveResourceRoute(query, true).query, query)
+  for (const patch of [{ window_seconds: 0 }, { dimensions: { device: 'eth0', mountpoint: '/' } }, { unit: 'percent' }]) {
+    const bad = structuredClone(reply); Object.assign(bad.series[0], patch)
+    assert.throws(() => validateResourceResponse(bad, 'node-id', keys))
+  }
+  const disk = { ...reply, series: diskMetrics.map(metric => ({ ...series[0], metric_key: metric.key })) }
+  assert.equal(resourceDimensionRows(reply, disk).length, 2)
+  const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
+  assert.equal((source.match(/v-for="family in rateSections"/g) || []).length, 1)
+  assert.doesNotMatch(source, /function selectDisk|function selectNetwork/)
 })

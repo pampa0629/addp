@@ -63,7 +63,7 @@ type Point struct {
 }
 type Series struct {
 	MetricKey string `json:"metric_key"`
-	// 标量为空对象；文件系统仅设备、挂载点、类型三项 | Empty for scalars; exactly device, mountpoint and fstype for mounts.
+	// 标量为空对象；磁盘及网络仅 device；文件系统为三项 | Empty for scalars; device for disk/network; device, mountpoint and fstype for mounts.
 	Dimensions    Dimensions `json:"dimensions"`
 	Unit          string     `json:"unit"`
 	WindowSeconds int        `json:"window_seconds"`
@@ -210,8 +210,11 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 	if len(data.Data.Result) > wireBound {
 		return nil, ErrBudget
 	}
-	groups := map[string]map[string]Dimensions{"filesystem": {}, "disk": {}}
+	groups := map[string]map[string]Dimensions{"filesystem": {}, "disk": {}, "network": {}}
 	family := func(d Definition) string {
+		if d.Network() {
+			return "network"
+		}
 		if d.Disk() {
 			return "disk"
 		}

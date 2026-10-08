@@ -368,26 +368,34 @@ test('successful restricted source explains uncollected filesystem separately', 
 })
 
 
-test('disk throughput selects a device, restores its trend and isolates missing collection', async ({ page }) => {
-  const state = await resourceBackend(page)
-  await page.goto(`/node-resources/${node}?refresh=off`)
-  const table = page.getByTestId('resource-disk-table')
-  await expect(table).toContainText('sda')
-  await expect(table).toContainText('2.00 KiB/s')
-  await table.getByRole('button', { name: '查看趋势' }).click()
-  await expect(page.getByTestId('resource-selected-device')).toHaveText('sda')
-  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
-  const reads = state.reads.filter(item => item.path.endsWith('resource_trends'))
-  expect(reads.at(-1).query).toMatchObject({ metrics: 'node.disk.read_bytes_per_second', device: 'sda' })
-  expect(reads.at(-1).query.mountpoint).toBeUndefined()
-  await page.reload()
-  await expect(page.getByTestId('resource-selected-device')).toHaveText('sda')
-  state.diskMode = 'disk-missing'
-  await page.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(table).toContainText('暂无磁盘吞吐数据')
-  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
-  state.diskMode = 'denied'
-  await page.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(page.getByTestId('resource-cores')).toHaveCount(0)
-  await expect(table).toHaveCount(0)
-})
+for (const [family, device, firstMetric, secondMetric, secondLabel, emptyLabel] of [
+  ['disk', 'sda', 'node.disk.read_bytes_per_second', 'node.disk.write_bytes_per_second', '磁盘写入吞吐', '暂无磁盘吞吐数据'],
+  ['network', 'eth0', 'node.network.receive_bytes_per_second', 'node.network.transmit_bytes_per_second', '网络发送吞吐', '暂无网络吞吐数据']
+]) {
+  test(`${family} throughput restores a device, isolates missing collection and clears denied data`, async ({ page }) => {
+    const state = await resourceBackend(page)
+    await page.goto(`/node-resources/${node}?refresh=off`)
+    const table = page.getByTestId(`resource-${family}-table`)
+    await expect(table).toContainText(device)
+    await expect(table).toContainText('2.00 KiB/s')
+    await table.getByRole('button', { name: '查看趋势' }).click()
+    await expect(page.getByTestId('resource-selected-device')).toHaveText(device)
+    await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    const reads = state.reads.filter(item => item.path.endsWith('resource_trends'))
+    expect(reads.at(-1).query).toMatchObject({ metrics: firstMetric, device: device })
+    expect(reads.at(-1).query.mountpoint).toBeUndefined()
+    await page.reload()
+    await expect(page.getByTestId('resource-selected-device')).toHaveText(device)
+    await page.getByTestId('resource-metric').click()
+    await page.getByRole('option', { name: secondLabel, exact: true }).click()
+    await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ metrics: secondMetric, device })
+    state[`${family}Mode`] = `${family}-missing`
+    await page.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(table).toContainText(emptyLabel)
+    await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+    state[`${family}Mode`] = 'denied'
+    await page.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(page.getByTestId('resource-cores')).toHaveCount(0)
+    await expect(table).toHaveCount(0)
+  })
+}

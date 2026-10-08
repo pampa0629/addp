@@ -2763,7 +2763,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "即时响应附带当前采集状态 collection；抓取成功不等于指标或业务健康。| Instant responses include current collection evidence, not metric or business health. 固定九项标量、五项字节容量、四项 inode 和两项按 device 的一分钟磁盘读写吞吐；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode and two per-device one-minute disk throughput metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
+                "description": "即时响应附带当前采集状态 collection；抓取成功不等于指标或业务健康。| Instant responses include current collection evidence, not metric or business health. 固定九项标量、五项字节容量、四项 inode 和两项磁盘读写及两项网络收发的一分钟吞吐（按 device）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode and two disk and two network per-device one-minute throughput metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],
@@ -2788,7 +2788,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "磁盘设备精确值；文件系统还需挂载点与类型 | Exact disk device; filesystem selection also requires mountpoint and fstype",
+                        "description": "磁盘设备或网络接口精确值；限定时不混合分组族，文件系统还需挂载点与类型 | Exact disk device or network interface; selected grouped families cannot mix; filesystem also requires mountpoint and fstype",
                         "name": "device",
                         "in": "query"
                     },
@@ -2880,7 +2880,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定九项标量、五项字节容量、四项 inode 和两项按 device 的一分钟磁盘读写吞吐；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode and two per-device one-minute disk throughput metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
+                "description": "固定九项标量、五项字节容量、四项 inode 和两项磁盘读写及两项网络收发的一分钟吞吐（按 device）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode and two disk and two network per-device one-minute throughput metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total or missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],
@@ -2905,7 +2905,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "磁盘设备精确值；文件系统还需挂载点与类型 | Exact disk device; filesystem selection also requires mountpoint and fstype",
+                        "description": "磁盘设备或网络接口精确值；限定时不混合分组族，文件系统还需挂载点与类型 | Exact disk device or network interface; selected grouped families cannot mix; filesystem also requires mountpoint and fstype",
                         "name": "device",
                         "in": "query"
                     },
@@ -4484,7 +4484,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "dimensions": {
-                    "description": "标量为空对象；文件系统仅设备、挂载点、类型三项 | Empty for scalars; exactly device, mountpoint and fstype for mounts.",
+                    "description": "标量为空对象；磁盘及网络仅 device；文件系统为三项 | Empty for scalars; device for disk/network; device, mountpoint and fstype for mounts.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions"

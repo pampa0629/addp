@@ -117,7 +117,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 ## Platform 节点基础资源查询
 
 - 唯一读取接口 `/platform/resource_observations`、`/platform/resource_trends` 使用 `monitor.resource_observation.read`；System 连续迁移 000193 仅给平台系统管理员发布该权限，采集服务与 Tenant 身份无此能力。当前请求内转发 User Token，由 System 裁决节点；读取当前启用目标及受控解析端点，节点/目标停用返回 `not_connected`，不查历史作为当前值。
-- `internal/resourcequery/` 唯一维护 9 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、一分钟 CPU 忙碌率、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率须证明一分钟完整窗口及核集合/启动时间一致，缺样本或计数器重置返回空值；文件系统容量与挂载趋势已沿同一 API 实施（见下文），磁盘读写吞吐按 device 沿同一 API 实施（见下文），网络速率尚未发布。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
+- `internal/resourcequery/` 唯一维护 9 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、一分钟 CPU 忙碌率、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率须证明一分钟完整窗口及核集合/启动时间一致，缺样本或计数器重置返回空值；文件系统容量与挂载趋势已沿同一 API 实施（见下文），磁盘读写吞吐按 device 沿同一 API 实施（见下文），网络接口收发速率按 device 沿同一 API 实施（见下文）。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
 - `/settings/resource-query-policy` 沿用模块级 `monitor.configuration.read/update`，仅 Platform User，唯一 `monitor.resource_query_policy` 单例保存 CAS 版本与完整预算。每个查询读一次已提交预算，对新请求热生效；没有环境回退或重启要求。标准平台审计记录安全结果与保存版本，不记录 PromQL、Token 或内部地址。
 - mTLS 查询部署输入独立于节点准入和 collector；关闭或不完整配置不阻断业务。生产只通过标准生命周期的 `metrics-query.yml` 挂载，不增加必需 Infra 依赖。
 - Go T1、Monitor PostgreSQL 及 System IAM Migration T2 沿既有标准入口自动发现；同一个 `platform-node-metrics` suite 已在 `794450a30` 取得扩展后的真实 Hosted T4（run 37485747576），覆盖八项即时/趋势查询、预算 CAS/热生效、权限隔离、中心故障与新样本恢复、停用后不复用历史及独立清理零残留；具体证据见设计 10.22 节。用户资源查询页面现已接入 Console（见下文）；更多指标和生产 T5 仍须分批补齐，该次 Linux VM 通过不代表生产纳管覆盖。
@@ -156,4 +156,7 @@ CPU 忙碌率及趋势新增固定 `node.cpu.busy_percent`（percent，60 秒窗
 
 资源展示及磁盘吞吐沿设计 10.35：字节显示 IEC 容量单位，时长显示经过的天/小时/分钟，load average 为系统任务数量平均值，无百分比或“负载”单位后缀。共享 formatBytes/formatDurationSeconds 唯一维护展示换算，API 原始单位不变。目录共 20 项；新增 node.disk.read_bytes_per_second / write_bytes_per_second 为完整一分钟平均 B/s，以 device 单维度查询与展示，文件系统仍为 device/mountpoint/fstype 三维度，不混合选择、不跨设备层叠加。概览、文件系统、inode、磁盘及趋势沿原请求预算分别读取；采集缺失和窗口不足保留空值。Desktop 六采集器仍不启用 diskstats；原生完整来源由既有 diskstats 提供。标准 metrics T2 的 promtool 场景选择及真实完整/受限来源查询同步覆盖磁盘目录。
 
-磁盘原生页面验收沿设计 10.36 完成：实现 `5c490bf5c` 的 Hosted T4（Run 37740681212）及 Platform CI（Run 37740647211，33 项任务）均通过。本地 32 项 Online runner 回归、Console 150 项单测/119 项浏览器回归及构建、完整 `make test-platform` 重跑通过；默认跨 Owner `test-changed` 预检失败单独保留。Hosted 实际设备 sda 的读写即时值及两条精确设备趋势有效，IEC 速率/容量、经过时长、系统负载数量、真实密码/MFA、URL 恢复、故障后新样本和停用历史排除已复核；六张截图齐全，外层销毁报告零残留且归档无凭据文件或敏感值模式命中。Desktop 受限来源的磁盘空值仍属部署边界；网卡吞吐和生产 T5 尚未完成。
+磁盘原生页面验收沿设计 10.36 完成：实现 `5c490bf5c` 的 Hosted T4（Run 37740681212）及 Platform CI（Run 37740647211，33 项任务）均通过。本地 32 项 Online runner 回归、Console 150 项单测/119 项浏览器回归及构建、完整 `make test-platform` 重跑通过；默认跨 Owner `test-changed` 预检失败单独保留。Hosted 实际设备 sda 的读写即时值及两条精确设备趋势有效，IEC 速率/容量、经过时长、系统负载数量、真实密码/MFA、URL 恢复、故障后新样本和停用历史排除已复核；六张截图齐全，外层销毁报告零残留且归档无凭据文件或敏感值模式命中。Desktop 受限来源的磁盘空值仍属部署边界；网卡吞吐的本批实施与验收见下文，生产 T5 尚未完成。
+
+
+网络接口吞吐沿设计 10.37 实施：新增 node.network.receive_bytes_per_second / transmit_bytes_per_second，目录共 22 项，固定完整一分钟 B/s。网络与磁盘共用唯一设备计数器校验及表格/趋势交互，分组目录按族独立，不把同名磁盘设备和接口关联；各接口单独展示，不汇总桥接、虚拟或回环，不推断物理接口容量。缺窗口、重置、重复或缺失证据保留空值。原生 Linux 来源沿现有 host 网络命名空间；Desktop 受限来源仍不启用 netdev。既有指标 T2、Monitor/Console 前端和 Hosted 同一 suite 扩展网络读取、精确接口恢复、身份拒绝及故障恢复，生产 IAM 不变；本批 22 模块 Go、Monitor PostgreSQL、完整/受限 metrics T2、Monitor 46 单测/60 浏览器回归、Console 155 单测/123 浏览器回归及构建、31 个 Online runner 测试组与 Swagger 覆盖通过。完整模块入口在平台 Online 宿主脚本的两个 5 秒超时退出，39 项宿主脚本原断言独立复跑通过，整条平台门禁重试中；跨 Owner 默认 test-changed 预检失败单独保留。真实 Hosted T4 取得结果后再记录，生产 T5 未执行。

@@ -12,17 +12,21 @@ type Dimensions map[string]string
 
 func (d Definition) Filesystem() bool { return strings.HasPrefix(d.Key, "node.filesystem.") }
 func (d Definition) Disk() bool       { return strings.HasPrefix(d.Key, "node.disk.") }
-func (d Definition) Grouped() bool    { return d.Filesystem() || d.Disk() }
+func (d Definition) Network() bool    { return strings.HasPrefix(d.Key, "node.network.") }
+func (d Definition) Grouped() bool    { return d.Filesystem() || d.Disk() || d.Network() }
 func (d Definition) DimensionKeys() []string {
 	if d.Filesystem() {
 		return []string{"device", "mountpoint", "fstype"}
 	}
-	if d.Disk() {
+	if d.Disk() || d.Network() {
 		return []string{"device"}
 	}
 	return nil
 }
 func (p Plan) GroupLimit(d Definition) int {
+	if d.Network() {
+		return p.NetworkGroups
+	}
 	if d.Disk() {
 		return p.DiskGroups
 	}

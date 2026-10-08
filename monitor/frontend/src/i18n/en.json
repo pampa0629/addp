@@ -650,7 +650,9 @@
         "inodeUsed": "Used inodes",
         "inodeUsedPercent": "Inode usage",
         "diskRead": "Disk read throughput",
-        "diskWrite": "Disk write throughput"
+        "diskWrite": "Disk write throughput",
+        "networkReceive": "Network receive throughput",
+        "networkTransmit": "Network transmit throughput"
       },
       "ranges": {
         "5m": "Last 5 minutes",
@@ -701,6 +703,12 @@
         "title": "Disk throughput",
         "hint": "Average read/write rates over a complete minute, per device. Disks, partitions and device mapping layers are not added together.",
         "empty": "No disk throughput data. The source must enable disk collection and provide a complete one-minute window."
+      },
+      "network": {
+        "title": "Network interface throughput",
+        "interface": "Network interface",
+        "hint": "Average receive and transmit rates over a full minute, per interface. Bridges, virtual and loopback interfaces are not summed; rates do not indicate link utilization.",
+        "empty": "No network throughput data. The source must collect network interfaces over a full minute."
       }
     }
   }

@@ -67,18 +67,20 @@
           <el-table-column :label="t('monitor.resources.trend')" width="140" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="selectFilesystem(row)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
         </el-table>
       </section>
-      <section v-if="instant" class="resource-filesystems" data-testid="resource-disks">
-        <h3>{{ t('monitor.resources.disk.title') }}</h3>
-        <p class="resource-hint">{{ t('monitor.resources.disk.hint') }}</p>
-        <el-alert v-if="diskErrorKey" :title="t(diskErrorKey)" type="error" :closable="false" data-testid="resource-disk-error" />
-        <el-table v-if="!diskErrorKey" :data="diskRows" :empty-text="t('monitor.resources.disk.empty')" data-testid="resource-disk-table">
-          <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" />
-          <el-table-column v-for="metric in diskMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
-            <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p></template>
-          </el-table-column>
-          <el-table-column :label="t('monitor.resources.trend')" width="140"><template #default="{ row }"><el-button text type="primary" @click="selectDisk(row)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
-        </el-table>
-      </section>
+      <template v-if="instant">
+        <section v-for="family in rateSections" :key="family.name" class="resource-filesystems" :data-testid="`resource-${family.name}s`">
+          <h3>{{ t(`monitor.resources.${family.name}.title`) }}</h3>
+          <p class="resource-hint">{{ t(`monitor.resources.${family.name}.hint`) }}</p>
+          <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
+          <el-table v-if="!family.errorKey" :data="family.rows" :empty-text="t(`monitor.resources.${family.name}.empty`)" :data-testid="`resource-${family.name}-table`">
+            <el-table-column prop="dimensions.device" :label="t(family.name === 'network' ? 'monitor.resources.network.interface' : 'monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
+            <el-table-column v-for="metric in family.metrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
+              <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p></template>
+            </el-table-column>
+            <el-table-column :label="t('monitor.resources.trend')" width="140"><template #default="{ row }"><el-button text type="primary" @click="selectDeviceRate(row, family.metrics[0].key)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
+          </el-table>
+        </section>
+      </template>
       <section v-if="instant" class="resource-trend">
         <div class="resource-toolbar">
           <h3>{{ t('monitor.resources.trend') }}</h3>
@@ -127,7 +129,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { validateCollection, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, allResourceMetrics, resourceDimensionRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { validateCollection, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -138,12 +140,13 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
 const listQuery = computed(() => { const { range, metric, refresh, device, mountpoint, fstype, ...query } = state.value.query; return query })
-const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null)
-const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
+const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
+const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
-const diskRows = computed(() => resourceDimensionRows(disks.value))
-const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? diskMetrics : [])])
+const rateFamilies = [{ name: 'disk', metrics: diskMetrics, value: disks, error: diskErrorKey }, { name: 'network', metrics: networkMetrics, value: networks, error: networkErrorKey }]
+const rateSections = computed(() => rateFamilies.map(family => ({ name: family.name, metrics: family.metrics, rows: resourceDimensionRows(family.value.value), errorKey: family.error.value })))
+const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? state.value.metric.startsWith('node.network.') ? networkMetrics : diskMetrics : [])])
 const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...(trend.value?.series[0].points.map(point => currentResourceValue(point) ?? 0) || []))) : null)
 const chartRows = computed(() => trend.value ? resourceChartRows(trend.value.series[0]).map(row => ({ ...row, value: row.value === null ? null : row.value / (chartScale.value?.divisor || 1) })) : [])
 const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: metric.unit === 'load' ? '' : t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
@@ -171,11 +174,11 @@ function changePage(page) { return navigate(route.path, { ...state.value.query, 
 function search() { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace') }
 function selectTrend(key, value) {
   const query = { ...state.value.query, [key]: value }
-  if (key === 'metric' && !value.startsWith('node.filesystem.') && !value.startsWith('node.disk.')) for (const dimension of ['device', 'mountpoint', 'fstype']) delete query[dimension]
+  if (key === 'metric' && !value.startsWith('node.filesystem.') && !value.startsWith('node.disk.') && !value.startsWith('node.network.')) for (const dimension of ['device', 'mountpoint', 'fstype']) delete query[dimension]
   return navigate(route.path, query, 'replace')
 }
 function selectFilesystem(row) { return navigate(route.path, { ...state.value.query, ...row.dimensions, metric: 'node.filesystem.used_percent' }, 'replace') }
-function selectDisk(row) { const { mountpoint, fstype, ...query } = state.value.query; return navigate(route.path, { ...query, ...row.dimensions, metric: diskMetrics[0].key }, 'replace') }
+function selectDeviceRate(row, metric) { const { mountpoint, fstype, ...query } = state.value.query; return navigate(route.path, { ...query, ...row.dimensions, metric }, 'replace') }
 function invalidChart() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 function stopRefresh() { window.clearTimeout(refreshTimer); refreshTimer = null }
 function invalidate() { stopRefresh(); epoch++; for (const controller of pending) controller.abort(); pending.clear() }
@@ -199,8 +202,8 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
-  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null }
-  errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = ''; diskErrorKey.value = '';  evidencePage.value = 1; loading.value = false
+  if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null }
+  errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = ''; diskErrorKey.value = ''; networkErrorKey.value = '';  evidencePage.value = 1; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
   searchText.value = state.value.search
@@ -223,7 +226,7 @@ async function reload({ automatic = false } = {}) {
       if (ticket !== epoch) return
       validateCollection(current.collection, current.queried_at)
       instant.value = validateResourceResponse(current, id, keys)
-      filesystems.value = null; inodes.value = null; disks.value = null
+      filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
       try {
         const filesystemKeys = filesystemMetrics.map(metric => metric.key)
         const mounts = await request(config => api.instant({ node_id: id, metrics: filesystemKeys.join(',') }, config))
@@ -234,7 +237,7 @@ async function reload({ automatic = false } = {}) {
         filesystemErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
-      inodes.value = null; disks.value = null
+      inodes.value = null; disks.value = null; networks.value = null
       try {
         const inodeKeys = inodeMetrics.map(metric => metric.key)
         const observed = await request(config => api.instant({ node_id: id, metrics: inodeKeys.join(',') }, config))
@@ -245,15 +248,17 @@ async function reload({ automatic = false } = {}) {
         inodeErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
-      try {
-        const diskKeys = diskMetrics.map(metric => metric.key)
-        const observed = await request(config => api.instant({ node_id: id, metrics: diskKeys.join(',') }, config))
-        if (ticket !== epoch) return
-        disks.value = validateResourceResponse(observed, id, diskKeys)
-      } catch (error) {
-        if (ticket !== epoch) return
-        diskErrorKey.value = resourceErrorKey(error)
-        if ([401, 403, 404].includes(error.response?.status)) throw error
+      for (const family of rateFamilies) {
+        try {
+          const keys = family.metrics.map(metric => metric.key)
+          const observed = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))
+          if (ticket !== epoch) return
+          family.value.value = validateResourceResponse(observed, id, keys)
+        } catch (error) {
+          if (ticket !== epoch) return
+          family.error.value = resourceErrorKey(error)
+          if ([401, 403, 404].includes(error.response?.status)) throw error
+        }
       }
       trend.value = null
       try {
@@ -265,12 +270,12 @@ async function reload({ automatic = false } = {}) {
         if (ticket !== epoch) return
         trend.value = null
         trendErrorKey.value = resourceErrorKey(error)
-        if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; inodes.value = null; disks.value = null; errorKey.value = trendErrorKey.value }
+        if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null; errorKey.value = trendErrorKey.value }
       }
     }
   } catch (error) {
     if (ticket !== epoch) return
-    instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null
+    instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null }
   } finally { if (ticket === epoch) { loading.value = false; scheduleRefresh() } }

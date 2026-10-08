@@ -73,13 +73,20 @@ func TestDiskDimensionsBudgetAndNormalization(t *testing.T) {
 }
 
 func TestIntegrationMetricsDiskWindow(t *testing.T) {
+	testDeviceRateWindow(t, "disk", "node.disk.read_bytes_per_second", "node.disk.write_bytes_per_second", "node_disk_read_bytes_total", "node_disk_written_bytes_total", "sda")
+}
+func TestIntegrationMetricsNetworkWindow(t *testing.T) {
+	testDeviceRateWindow(t, "network", "node.network.receive_bytes_per_second", "node.network.transmit_bytes_per_second", "node_network_receive_bytes_total", "node_network_transmit_bytes_total", "eth0")
+}
+
+func testDeviceRateWindow(t *testing.T, family, first, second, rawFirst, rawSecond, device string) {
 	if os.Getenv("ADDP_METRICS_QUERY_INTEGRATION") != "1" {
 		t.Skip("requires standard Monitor metrics T2 gate")
 	}
 	scope := Scope{NodeID: testNode, Instance: "fixture:9100"}
-	raw := strings.TrimSuffix(scope.selector("node_disk_read_bytes_total"), "}") + `,device="sda"}`
+	raw := strings.TrimSuffix(scope.selector(rawFirst), "}") + fmt.Sprintf(`,device=%q}`, device)
 	boot := scope.selector("node_boot_time_seconds")
-	p, err := NewPlan([]string{"node.disk.read_bytes_per_second"}, testTime, testTime, testTime, false, Dimensions{"device": "sda"}, DefaultBudget())
+	p, err := NewPlan([]string{first}, testTime, testTime, testTime, false, Dimensions{"device": device}, DefaultBudget())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,14 +115,14 @@ func TestIntegrationMetricsDiskWindow(t *testing.T) {
 	tests := []any{}
 	for _, item := range cases {
 		at, _ := time.ParseDuration(item.at)
-		expected := []any{map[string]any{"labels": `{addp_component="observed_at",addp_metric="node.disk.read_bytes_per_second",device="sda"}`, "value": at.Seconds()}}
+		expected := []any{map[string]any{"labels": fmt.Sprintf(`{addp_component="observed_at",addp_metric=%q,device=%q}`, first, device), "value": at.Seconds()}}
 		if item.valid {
 			for _, component := range []string{"value", "sampled_at"} {
 				v := item.value
 				if component == "sampled_at" {
 					v = at.Seconds()
 				}
-				expected = append(expected, map[string]any{"labels": fmt.Sprintf(`{addp_component=%q,addp_metric="node.disk.read_bytes_per_second",device="sda"}`, component), "value": v})
+				expected = append(expected, map[string]any{"labels": fmt.Sprintf(`{addp_component=%q,addp_metric=%q,device=%q}`, component, first, device), "value": v})
 			}
 		}
 		inputs := []any{map[string]any{"series": raw, "values": item.values}, map[string]any{"series": boot, "values": item.boot}}
@@ -123,7 +130,7 @@ func TestIntegrationMetricsDiskWindow(t *testing.T) {
 			inputs = append(inputs, map[string]any{"series": strings.TrimSuffix(raw, "}") + `,variant="duplicate"}`, "values": item.values})
 		}
 		if item.name == "read rate" {
-			writePlan, e := NewPlan([]string{"node.disk.write_bytes_per_second"}, testTime, testTime, testTime, false, Dimensions{"device": "sda"}, DefaultBudget())
+			writePlan, e := NewPlan([]string{second}, testTime, testTime, testTime, false, Dimensions{"device": device}, DefaultBudget())
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -137,14 +144,54 @@ func TestIntegrationMetricsDiskWindow(t *testing.T) {
 				for k, v := range sample.(map[string]any) {
 					copy[k] = v
 				}
-				copy["labels"] = strings.Replace(copy["labels"].(string), "node.disk.read_bytes_per_second", "node.disk.write_bytes_per_second", 1)
+				copy["labels"] = strings.Replace(copy["labels"].(string), first, second, 1)
 				writeExpected = append(writeExpected, copy)
 			}
-			tests = append(tests, map[string]any{"name": "write rate", "interval": "15s", "input_series": []any{map[string]any{"series": strings.Replace(raw, "node_disk_read_bytes_total", "node_disk_written_bytes_total", 1), "values": item.values}, map[string]any{"series": boot, "values": item.boot}}, "promql_expr_test": []any{map[string]any{"expr": writeExpression, "eval_time": item.at, "exp_samples": writeExpected}}})
+			tests = append(tests, map[string]any{"name": "write rate", "interval": "15s", "input_series": []any{map[string]any{"series": strings.Replace(raw, rawFirst, rawSecond, 1), "values": item.values}, map[string]any{"series": boot, "values": item.boot}}, "promql_expr_test": []any{map[string]any{"expr": writeExpression, "eval_time": item.at, "exp_samples": writeExpected}}})
 		}
 		tests = append(tests, map[string]any{"name": item.name, "interval": "15s", "input_series": inputs, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": item.at, "exp_samples": expected}}})
 	}
 	// Prometheus rates have last-bit rounding; labels, absence and series counts remain exact.
-	runPromtoolCases(t, "disk", tests, true)
-	t.Logf("pinned promtool passed %d disk window/reset/device scenarios", len(tests))
+	runPromtoolCases(t, family, tests, true)
+	t.Logf("pinned promtool passed %d %s window/reset/device scenarios", len(tests), family)
+}
+
+func TestNetworkFamilyIsolationAndBudget(t *testing.T) {
+	keys := []string{"node.network.receive_bytes_per_second", "node.network.transmit_bytes_per_second"}
+	p, err := NewPlan(keys, testTime, testTime, testTime, false, Dimensions{"device": "eth0"}, DefaultBudget())
+	if err != nil || p.NetworkGroups != 1 || p.SeriesUpperBound != 2 {
+		t.Fatal(p, err)
+	}
+	rows := []string{}
+	for _, key := range keys {
+		for _, component := range []string{"value", "sampled_at", "observed_at"} {
+			v := float64(testTime.Unix())
+			if component == "value" {
+				v = 0
+			}
+			rows = append(rows, fmt.Sprintf(`{"metric":{"addp_metric":%q,"addp_component":%q,"device":"eth0"},"value":[%d,%q]}`, key, component, testTime.Unix(), fmt.Sprint(v)))
+		}
+	}
+	body := `{"status":"success","data":{"resultType":"vector","result":[` + strings.Join(rows, ",") + `]}}`
+	out, err := normalize(wire(t, body), p, DefaultBudget())
+	if err != nil || len(out) != 2 || out[0].Points[0].Value == nil || *out[0].Points[0].Value != 0 || out[0].Points[0].DataState != "valid" {
+		t.Fatal(out, err)
+	}
+	mixedKeys := append(append([]string{}, keys...), "node.disk.read_bytes_per_second", "node.filesystem.total_bytes")
+	if _, err := NewPlan(mixedKeys[:3], testTime, testTime, testTime, false, Dimensions{"device": "eth0"}, DefaultBudget()); !errors.Is(err, ErrInvalid) {
+		t.Fatal("selected disk/network families mixed", err)
+	}
+	mixed, err := NewPlan(mixedKeys, testTime, testTime, testTime, false, nil, DefaultBudget())
+	if err != nil || mixed.NetworkGroups != 25 || mixed.DiskGroups != 25 || mixed.FilesystemGroups != 25 || mixed.SeriesUpperBound != 100 {
+		t.Fatal(mixed, err)
+	}
+	grouped, err := normalize(wire(t, body), mixed, DefaultBudget())
+	if err != nil || len(grouped) != 4 || len(grouped[2].Dimensions) != 0 || len(grouped[3].Dimensions) != 0 {
+		t.Fatal("network interfaces polluted other families", grouped, err)
+	}
+	for _, bad := range []string{strings.Replace(body, `"eth0"`, `"foreign"`, 1), strings.Replace(body, `"device":"eth0"`, `"device":"eth0","private":"secret"`, 1)} {
+		if _, err := normalize(wire(t, bad), p, DefaultBudget()); !errors.Is(err, ErrUnavailable) {
+			t.Fatal("unscoped network labels accepted", err)
+		}
+	}
 }

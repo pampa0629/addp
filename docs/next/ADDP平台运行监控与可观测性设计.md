@@ -1256,3 +1256,19 @@ Hosted 归档证据：`online-report.json` 的预检和三个后端构建均对�
 最终清理由 Hosted 外层生命周期报告确认：`summary.txt` 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals，包含应用、夹具、来源、Infra 和凭据目录销毁；套件中较早记录的 awaiting-hosted-deployment-destruction 只表示当时尚未执行外层销毁。下载归档不含 .env、.pem、.key 文件，私钥、JWT、OTP URI 和 Bearer 值模式扫描无命中。该证据完成原生 Linux 磁盘读写的真实页面 T4，不将其设备或样本冒充个人 Desktop 数据，不扩大受限采集器，也不计为生产 T5。
 
 归档后仅补充本节及 Monitor 模块说明，再运行默认 `make test-changed`：当前并行共享认证前端改动扩散到多个 Owner，因 PostgreSQL/MySQL 等必需连接输入缺失在预检退出 2，未执行部分不计为通过。本批文档未改变先前已验证的验收脚本输入，保留上述本地、当前实现 CI 和真实 Hosted 分层证据；最终 `git diff --check` 返回 0。
+
+### 10.37 网络接口收发吞吐（2026-10-08，用户确认继续）
+
+沿现有 node_exporter netdev 来源发布 `node.network.receive_bytes_per_second` 与 `node.network.transmit_bytes_per_second`，目录共 22 项。接收/发送以当前节点的网络接口为参照，单位 bytes_per_second，展示 IEC B/s、KiB/s、MiB/s；完整一分钟速率共用磁盘的计数器窗口、重复来源、启动时间及采样时间证据校验。零速率有效，窗口不足、计数器重置或接口证据缺失保留空值；不据此计算链路利用率、推断物理网卡或识别租户。依据锁定 [node_exporter v1.12.1 netdev 实现](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/netdev_linux.go)。
+
+网络接口沿既有 device 维度和精确 query；目录键确定所属族，文件系统、磁盘与网络分别维护维度组。未限定设备可混合指标，按三族共同组数上界计入既有序列/点数预算；限定设备时只允许一个分组族，不能用同名 device 将磁盘和网络关联。保留来源提供的接口名称，不按命名前缀推断物理接口或隐式过滤，逐接口展示且不求总和，避免桥接/虚拟/回环的重复计量。接口表、速率单位、趋势选择和公开 URL 恢复沿唯一设备吞吐交互实现；各区域错误独立，撤权和身份切换统一清空。原生 Linux 使用现有 host 网络命名空间；Desktop 仍关闭 netdev，不扩大受限 VM 采集范围。
+
+实施前门禁：Monitor Go T1 覆盖三族预算、精确设备隔离和闭合响应；既有 metrics T2 新增网络原生窗口/重置情景并验证完整/受限来源、精确接口趋势和跨节点隔离；Monitor 前端 T1/T3 及 Console iframe 门禁覆盖单位、缺失、错误、刷新恢复和唯一交互。Swagger 同步固定目录与 device 描述。现有自动发现覆盖 Monitor 文件；metrics T2 的原生窗口测试选择同次加入网络情景，Online runner 和已登记 Hosted suite 扩展两项网络读取、恢复新样本、停用历史排除与真实页面证据，沿此前已确认的临时身份例外，不改生产 IAM。默认 `make test-changed`、明确 Owner 的 `make test-module MODULE=monitor`、`make test-console-frontend`、`make test-node-metrics-online-runner` 分别报告；未执行 Hosted T4 或生产 T5 不计为通过。
+
+该 suite 页面证据上限随网络族收敛为 120 个资源响应：每个完整详情刷新轮次固定五族即时查询和一项趋势；同一导航验收共 16 轮，并为自然定时刷新保留最多四轮有界余量。超过上限即失败，API 的单次查询预算不变。
+
+本批前端及入口分项证据：`make test-monitor-frontend` 的 46 项单元测试、60 项浏览器回归和构建返回 0；`make test-console-frontend` 的 155 项单元测试、123 项浏览器回归和构建返回 0；最终 `make test-node-metrics-online-runner` 的 31 个测试组（两个设备族共用协议/恢复回归）及 System Metrics 夹具测试返回 0。新增网络表和两条精确接口趋势、公开 URL 恢复、区域缺失与权限拒绝清空、三族维度隔离分别覆盖。Monitor Swagger 已生成，65 个公开路由覆盖一致。默认 `make test-changed` 因并行其他 Owner 所需连接参数缺失在预检退出 2，不计为通过。首轮 Monitor 完整入口在平台生命周期登记断言仍使用旧 promtool 测试选择时失败；同次更新网络测试选择及登记断言后重跑，结果待取得后记录，不移除登记检查。
+
+后端分项 `make test-go` 完整通过 22 个 Go 模块，包含当前 Monitor 资源目录、API、预算和三族规范化；`make test-monitor-postgres` 在实际核实的 `addp-postgres:25432/addp_test` 返回 0，未创建其他 database。完整 `make test-module MODULE=monitor` 第二轮在平台 T0 的 Online 宿主脚本两项既有回归触发原 5 秒超时，退出 2，未进入后续 Monitor 步骤；随后沿 `scripts/test/online-host-gate_test.py` 原断言复跑 39 项返回 0，未改脚本或延长超时。整条平台门禁再次复验，指标 T2 继续执行；两者取得完整结果前不计为通过。
+
+最终指标分项 `make test-monitor-metrics` 返回 0：11 个网络窗口/重置场景、11 个磁盘、15 个 CPU、18 个字节容量及 22 个 inode 场景通过；完整采集夹具的 11 个接口具备有界即时组、精确接口的两条趋势及跨节点隔离，18 个磁盘设备回归正常。该夹具不作为个人 Desktop VM 网络命名空间证明。实际 Docker Desktop 受限阶段返回零网络/磁盘设备及空值，没有伪造零速率；六采集器、唯一宿主传输、新样本恢复正常。中心 SIGKILL 后先前样本重放、独立夹具可用及零容器/网络/卷/临时文件残留均通过。整条平台门禁重试仍在运行，真实 Hosted T4 尚未执行，生产 T5 未执行。

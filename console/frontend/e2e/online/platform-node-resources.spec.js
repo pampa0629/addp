@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -93,7 +93,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await expect(monitor.getByTestId(`resource-${name}`).locator('strong')).toHaveText(/^[\d,.]+$/)
     }
     await expect(monitor.getByText(/系统平均负载：.*不是百分比/)).toBeVisible()
-    report.presentation = { iec_capacity: true, elapsed_uptime: true, system_load_count: true, disk_rate_units: false }
+    report.presentation = { iec_capacity: true, elapsed_uptime: true, system_load_count: true, disk_rate_units: false, network_rate_units: false }
     await page.screenshot({ path: resolve(artifact, 'node-resources-detail.png'), animations: 'disabled' })
     save('history-and-trend-restore')
     await page.goBack()
@@ -188,47 +188,49 @@ test('platform node resources through real Console password MFA and Monitor ifra
     expect(inodeTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
     await monitor.getByTestId('resource-chart').scrollIntoViewIfNeeded()
     await page.screenshot({ path: resolve(artifact, 'node-resources-inodes.png'), animations: 'disabled' })
-    save('disk-device-read-write-trend-restore')
-    const disks = monitor.getByTestId('resource-disk-table')
-    await expect(disks.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
-    await Promise.all(pending)
-    const diskReply = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes('node.disk.read_bytes_per_second')).at(-1)
-    expect(diskReply.query.metrics.split(',').sort()).toEqual(diskMetrics.map(item => item.key).sort())
-    const device = diskReply.value.series.find(row => row.metric_key === diskMetrics[0].key && row.points[0].data_state === 'valid' && diskReply.value.series.some(other => other.metric_key === diskMetrics[1].key && other.dimensions.device === row.dimensions.device && other.points[0].data_state === 'valid'))?.dimensions.device
-    expect(device).toBeTruthy()
-    const diskRows = disks.locator('.el-table__body tr')
-    const deviceNames = await diskRows.locator('td:first-child').allTextContents()
-    const deviceIndex = deviceNames.findIndex(name => name.trim() === device)
-    expect(deviceIndex).toBeGreaterThanOrEqual(0)
-    const diskRow = diskRows.nth(deviceIndex)
-    await expect(diskRow).toHaveCount(1)
-    const rateValues = diskRow.locator('strong')
-    await expect(rateValues).toHaveCount(2)
-    for (let index = 0; index < 2; index++) await expect(rateValues.nth(index)).toHaveText(/\d[\d,.]* (?:B|KiB|MiB|GiB|TiB|PiB)\/s$/)
-    report.presentation.disk_rate_units = true
-    await diskRow.getByRole('button', { name: '查看趋势' }).click()
-    await expect(page).toHaveURL(url => url.searchParams.get('metric') === diskMetrics[0].key && url.searchParams.get('device') === device && !url.searchParams.has('mountpoint') && !url.searchParams.has('fstype'))
-    for (const metric of diskMetrics) {
-      if (metric !== diskMetrics[0]) {
-        await monitor.getByTestId('resource-metric').click()
-        await monitor.getByRole('option', { name: '磁盘写入吞吐', exact: true }).click()
-      }
-      await page.reload()
-      await expect(page).toHaveURL(url => url.searchParams.get('metric') === metric.key && url.searchParams.get('device') === device && url.searchParams.get('range') === '5m' && url.searchParams.get('refresh') === 'off' && !url.searchParams.has('mountpoint') && !url.searchParams.has('fstype'))
-      await expect(monitor.getByTestId('resource-selected-device')).toHaveText(device)
-      await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    for (const [family, metrics, secondLabel] of [['disk', diskMetrics, '磁盘写入吞吐'], ['network', networkMetrics, '网络发送吞吐']]) {
+      save(`${family}-device-trend-restore`)
+      const table = monitor.getByTestId(`resource-${family}-table`)
+      await expect(table.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
       await Promise.all(pending)
-      const diskTrend = resources.filter(item => item.query.metrics === metric.key).at(-1)
-      expect(diskTrend.query.device).toBe(device)
-      expect(diskTrend.value.series).toHaveLength(1)
-      expect(diskTrend.value.series[0].dimensions).toEqual({ device })
-      expect(diskTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
+      const deviceReply = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes(metrics[0].key)).at(-1)
+      expect(deviceReply.query.metrics.split(',').sort()).toEqual(metrics.map(item => item.key).sort())
+      const device = deviceReply.value.series.find(row => row.metric_key === metrics[0].key && row.points[0].data_state === 'valid' && deviceReply.value.series.some(other => other.metric_key === metrics[1].key && other.dimensions.device === row.dimensions.device && other.points[0].data_state === 'valid'))?.dimensions.device
+      expect(device).toBeTruthy()
+      const deviceRows = table.locator('.el-table__body tr')
+      const deviceNames = await deviceRows.locator('td:first-child').allTextContents()
+      const deviceIndex = deviceNames.findIndex(name => name.trim() === device)
+      expect(deviceIndex).toBeGreaterThanOrEqual(0)
+      const deviceRow = deviceRows.nth(deviceIndex)
+      await expect(deviceRow).toHaveCount(1)
+      const rateValues = deviceRow.locator('strong')
+      await expect(rateValues).toHaveCount(2)
+      for (let index = 0; index < 2; index++) await expect(rateValues.nth(index)).toHaveText(/\d[\d,.]* (?:B|KiB|MiB|GiB|TiB|PiB)\/s$/)
+      report.presentation[`${family}_rate_units`] = true
+      await deviceRow.getByRole('button', { name: '查看趋势' }).click()
+      await expect(page).toHaveURL(url => url.searchParams.get('metric') === metrics[0].key && url.searchParams.get('device') === device && !url.searchParams.has('mountpoint') && !url.searchParams.has('fstype'))
+      for (const metric of metrics) {
+        if (metric !== metrics[0]) {
+          await monitor.getByTestId('resource-metric').click()
+          await monitor.getByRole('option', { name: secondLabel, exact: true }).click()
+        }
+        await page.reload()
+        await expect(page).toHaveURL(url => url.searchParams.get('metric') === metric.key && url.searchParams.get('device') === device && url.searchParams.get('range') === '5m' && url.searchParams.get('refresh') === 'off' && !url.searchParams.has('mountpoint') && !url.searchParams.has('fstype'))
+        await expect(monitor.getByTestId('resource-selected-device')).toHaveText(device)
+        await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+        await Promise.all(pending)
+        const deviceTrend = resources.filter(item => item.query.metrics === metric.key).at(-1)
+        expect(deviceTrend.query.device).toBe(device)
+        expect(deviceTrend.value.series).toHaveLength(1)
+        expect(deviceTrend.value.series[0].dimensions).toEqual({ device })
+        expect(deviceTrend.value.series[0].points.some(point => point.data_state === 'valid')).toBe(true)
+      }
+      await monitor.getByTestId('resource-chart').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: resolve(artifact, `node-resources-${family}s.png`), animations: 'disabled' })
     }
-    await monitor.getByTestId('resource-chart').scrollIntoViewIfNeeded()
-    await page.screenshot({ path: resolve(artifact, 'node-resources-disks.png'), animations: 'disabled' })
     expect(businessErrors).toEqual([])
     report.resources = resources
-    report.navigation = { list_without_fanout: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true, inode_reload: true, disk_reload: true }
+    report.navigation = { list_without_fanout: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true, inode_reload: true, disk_reload: true, network_reload: true }
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     try {

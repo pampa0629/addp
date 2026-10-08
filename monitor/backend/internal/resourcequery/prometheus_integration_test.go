@@ -99,69 +99,79 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		}
 	}
 
-	diskKeys := []string{"node.disk.read_bytes_per_second", "node.disk.write_bytes_per_second"}
-	disks, err := NewPlan(diskKeys, now, now, now, false, nil, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	devices, err := c.Query(context.Background(), disks, scope, b)
-	if err != nil || len(devices) < len(diskKeys) {
-		t.Fatal("native disk query", devices, err)
-	}
-	selectedDevice := Dimensions{}
-	for _, row := range devices {
-		point := row.Points[0]
-		if restricted {
-			if len(row.Dimensions) != 0 || point.DataState != "no_data" || point.Value != nil {
-				t.Fatal("restricted source fabricated disk data", row)
-			}
-		} else {
-			if len(row.Dimensions) != 1 || row.Dimensions.Validate() != nil {
-				t.Fatal("invalid disk dimensions", row)
-			}
-			if point.DataState == "valid" {
-				selectedDevice = row.Dimensions
-			}
+	for _, family := range [][]string{
+		{"node.disk.read_bytes_per_second", "node.disk.write_bytes_per_second"},
+		{"node.network.receive_bytes_per_second", "node.network.transmit_bytes_per_second"},
+	} {
+		deviceKeys := family
+		devicePlan, err := NewPlan(deviceKeys, now, now, now, false, nil, b)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !restricted && len(selectedDevice) != 1 {
-		t.Fatal("native source has no valid disk rate", devices)
-	}
-	diskTrend, err := NewPlan(diskKeys, now.Add(-30*time.Second), now, now, true, selectedDevice, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	diskHistory, err := c.Query(context.Background(), diskTrend, scope, b)
-	if err != nil || len(diskHistory) != len(diskKeys) {
-		t.Fatal("disk trend", diskHistory, err)
-	}
-	for _, row := range diskHistory {
-		if restricted {
-			for _, point := range row.Points {
-				if point.DataState != "no_data" || point.Value != nil || point.SampledAt != nil {
-					t.Fatal("restricted disk history fabricated", row)
+		devices, err := c.Query(context.Background(), devicePlan, scope, b)
+		if err != nil || len(devices) < len(deviceKeys) {
+			t.Fatal("native device rate query", devices, err)
+		}
+		selectedDevice := Dimensions{}
+		for _, row := range devices {
+			point := row.Points[0]
+			if restricted {
+				if len(row.Dimensions) != 0 || point.DataState != "no_data" || point.Value != nil {
+					t.Fatal("restricted source fabricated device rate data", row)
+				}
+			} else {
+				if len(row.Dimensions) != 1 || row.Dimensions.Validate() != nil {
+					t.Fatal("invalid device dimensions", row)
+				}
+				if point.DataState == "valid" {
+					for _, other := range devices {
+						if other.MetricKey != row.MetricKey && other.Dimensions.identity() == row.Dimensions.identity() && other.Points[0].DataState == "valid" {
+							selectedDevice = row.Dimensions
+						}
+					}
 				}
 			}
-		} else if row.Dimensions.identity() != selectedDevice.identity() || row.Points[len(row.Points)-1].DataState != "valid" {
-			t.Fatal("selected device trend", row)
 		}
-	}
-	foreignDisks, err := c.Query(context.Background(), disks, otherScope, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range foreignDisks {
-		if row.Points[0].DataState != "no_data" || len(row.Dimensions) != 0 {
-			t.Fatal("disk scope leaked", row)
+		if !restricted && len(selectedDevice) != 1 {
+			t.Fatal("native source has no valid device rate", devices)
 		}
-	}
-	deviceCount := 0
-	for _, row := range devices {
-		if row.MetricKey == diskKeys[0] && len(row.Dimensions) == 1 {
-			deviceCount++
+		deviceTrend, err := NewPlan(deviceKeys, now.Add(-30*time.Second), now, now, true, selectedDevice, b)
+		if err != nil {
+			t.Fatal(err)
 		}
+		deviceHistory, err := c.Query(context.Background(), deviceTrend, scope, b)
+		if err != nil || len(deviceHistory) != len(deviceKeys) {
+			t.Fatal("device trend", deviceHistory, err)
+		}
+		for _, row := range deviceHistory {
+			if restricted {
+				for _, point := range row.Points {
+					if point.DataState != "no_data" || point.Value != nil || point.SampledAt != nil {
+						t.Fatal("restricted device history fabricated", row)
+					}
+				}
+			} else if row.Dimensions.identity() != selectedDevice.identity() || row.Points[len(row.Points)-1].DataState != "valid" {
+				t.Fatal("selected device trend", row)
+			}
+		}
+		foreignDevices, err := c.Query(context.Background(), devicePlan, otherScope, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range foreignDevices {
+			if row.Points[0].DataState != "no_data" || len(row.Dimensions) != 0 {
+				t.Fatal("device scope leaked", row)
+			}
+		}
+		deviceCount := 0
+		for _, row := range devices {
+			if row.MetricKey == deviceKeys[0] && len(row.Dimensions) == 1 {
+				deviceCount++
+			}
+		}
+		t.Logf("%s: restricted=%v, devices=%d, selected trend series=%d", deviceKeys[0], restricted, deviceCount, len(deviceHistory))
+
 	}
-	t.Logf("disk throughput: restricted=%v, devices=%d, selected trend series=%d", restricted, deviceCount, len(diskHistory))
 
 	for _, inode := range []bool{false, true} {
 		filesystemKeys := []string{}
