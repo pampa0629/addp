@@ -250,23 +250,7 @@ require_service_python() {
     fi
 }
 
-ensure_model3d_node_dependencies() {
-    local dir="engines/model3d-workflow"
-    if [ ! -f "$dir/package.json" ]; then
-        return 0
-    fi
-    if [ -d "$dir/node_modules/@mkkellogg/gaussian-splats-3d" ]; then
-        echo "  Model3D Workflow Node 依赖已存在，跳过安装"
-        return 0
-    fi
-    if ! command -v npm >/dev/null 2>&1; then
-        echo "❌ Model3D Workflow 需要 npm 安装高斯泼溅 KSplat 转换依赖"
-        return 1
-    fi
-    echo "  安装 Model3D Workflow Node 依赖..."
-    addp_install_node_dependencies "$dir" --omit=dev
-    echo "  ✓ Model3D Workflow Node 依赖安装完成"
-}
+
 
 wait_http_ready() {
     local label="$1"
@@ -341,20 +325,10 @@ restart_math_workflow_service() {
 }
 
 restart_model3d_workflow_service() {
-    local port="${MODEL3D_WORKFLOW_PORT:-8101}"
+    source "$ROOT_DIR/scripts/dev/model3d-workflow.sh"
+    addp_prepare_model3d_workflow || return 1
     stop_pidfile_process ".dev-pids/model3d-workflow-engine.pid" "Model3D Workflow Engine"
-    stop_matching_port_process "$port" "Model3D Workflow Engine" "python.*api_server\\.py|engines/model3d-workflow"
-    addp_sync_python_dependencies "$ROOT_DIR" "$ROOT_DIR/engines/model3d-workflow" "Model3D" || return 1
-    ensure_model3d_node_dependencies
-    echo "  启动 Model3D Workflow Engine..."
-    (
-        cd engines/model3d-workflow
-        export PORT="$port"
-        export MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET="${MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET:-}"
-        start_background_process "." ".dev-pids/model3d-workflow-engine.pid" "logs/model3d-workflow-engine.log" "logs/model3d-workflow-engine-stderr.log" ./venv/bin/python api_server.py
-    )
-    wait_http_ready "Model3D Workflow Engine" "http://localhost:${port}/health"
-    verify_pidfile_process_alive ".dev-pids/model3d-workflow-engine.pid" "Model3D Workflow Engine" "logs/model3d-workflow-engine.log" "logs/model3d-workflow-engine-stderr.log"
+    addp_launch_model3d_workflow
 }
 
 restart_pointcloud_workflow_service() {
@@ -498,6 +472,8 @@ if [ "$RESTART_ALL" = true ]; then
     (addp_prepare_pointcloud_workflow) || exit 1
     source "${SCRIPT_DIR}/document-workflow.sh"
     (addp_prepare_document_workflow) || exit 1
+    source "${SCRIPT_DIR}/model3d-workflow.sh"
+    (addp_prepare_model3d_workflow) || exit 1
 fi
 
 # 全量停止保留原有注销顺序；局部停止在 Swagger 预检成功后执行。

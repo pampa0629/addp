@@ -137,7 +137,7 @@ Manager 的 Raster Mosaic Runtime 同样使用原生 GDAL 与独立 Python 3.12 
 
 Spark Workflow 开发环境需要原生 Python 3.11/3.12 虚拟环境和 OpenJDK 11。标准启动与重启入口自动发现 Java 11、创建缺失的虚拟环境，并按完整依赖声明同步；全套重启先预检再停止现有服务。macOS 需在 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，Docker Worker 保留内置解析，确保 Driver 与 Worker 都能访问相同的数据端点和 Driver 动态端口。该方式无需启用 Docker Desktop host networking。修改源码后执行 `./scripts/dev/restart.sh -spark-workflow`；标准停止按本机 PID 退出。产品构建与 Hosted 镜像验收由独立入口负责。
 
-`model3d-workflow-engine` 使用专用镜像构建链路：先构建绑定 `_3dtile` 的 `addp-model3d-converter`，再构建内置转换器的 `addp-model3d-workflow-engine`。当前转换器构建一次只支持一个 Linux 平台，Apple Silicon 本机优先使用默认的 `linux/arm64` 容器路径。
+`model3d-workflow-engine` 使用专用镜像构建链路：先构建绑定 `_3dtile` 的 `addp-model3d-converter`，再构建内置转换器的 `addp-model3d-workflow-engine`。产品转换器一次构建一个 Linux 平台；macOS Apple Silicon 开发态使用私有原生工具包，见 Model3D README。
 
 `model3d-workflow-engine` 运行在 Docker 中时，NFS/localfs 数据根目录必须挂载进 runtime 容器，并且 Manager 传给 operator 的本地路径必须在容器内可见。Compose 默认提供：
 
@@ -146,7 +146,7 @@ MODEL3D_DATA_HOST_PATH=./business/nfs/data
 MODEL3D_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
 ```
 
-单 OSGB 快显生成的 GLB artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `model3d_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `model3d-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发时，推荐使用宿主机 Python runtime 加 Docker `_3dtile` wrapper，Manager 与 runtime 统一访问 `localhost:19000`。
+单 OSGB 快显生成的 GLB artifact 统一使用 ADDP infra MinIO 配置，不单独配置 `model3d_workflow` 专用 MinIO endpoint。Docker Compose 部署时，Manager 与 `model3d-workflow-engine` 同在 Compose 网络内，统一使用 infra MinIO 的 `minio:9000`；macOS 本机开发使用宿主机 Python Runtime 与私有原生转换器，Manager 与 Runtime 统一访问实际 Infra MinIO 宿主机端口。
 
 PointCloud Workflow 开发服务使用独立 Conda 前缀，首次启动需要可用的 Conda。`start.sh -manager` 或 `start.sh -pointcloud-workflow` 按运行时 `native-packages.txt` 安装 Python 3.12、PDAL core/E57 2.10.2，同步 Python 依赖并验证实际 COPC 转换，然后启动回环监听的原生进程。全部原生库和资源目录属于该环境，不受 Homebrew 升级或 Conda base 的资源变量影响。NFS 源文件直接使用宿主机路径，工作目录通过 `POINTCLOUD_WORK_HOST_PATH` 配置（默认 `data/pointcloud-work`）。
 

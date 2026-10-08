@@ -99,24 +99,6 @@ export SECURITY_FE_PORT="${SECURITY_FE_PORT:-5191}"
 export ONTOLOGY_BACKEND_PORT="${ONTOLOGY_BACKEND_PORT:-8195}"
 export ONTOLOGY_FE_PORT="${ONTOLOGY_FE_PORT:-5192}"
 
-ensure_model3d_node_dependencies() {
-  local dir="engines/model3d-workflow"
-  if [ ! -f "$dir/package.json" ]; then
-    return 0
-  fi
-  if [ -d "$dir/node_modules/@mkkellogg/gaussian-splats-3d" ]; then
-    echo "Model3D Workflow Node 依赖已存在，跳过安装"
-    return 0
-  fi
-  if ! command -v npm >/dev/null 2>&1; then
-    echo -e "${RED}✗ Model3D Workflow 需要 npm 安装高斯泼溅 KSplat 转换依赖${NC}"
-    exit 1
-  fi
-  echo "安装 Model3D Workflow Node 依赖..."
-  addp_install_node_dependencies "$dir" --omit=dev
-  echo -e "${GREEN}✓ Model3D Workflow Node 依赖安装完成${NC}"
-}
-
 # 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
 generate_service_urls() {
     local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality security asset ontology catalog workbench portal agent graph inference)
@@ -1826,82 +1808,16 @@ fi
 )
 
 start_runtime_model3d() (
-  echo -e "${BLUE}Step 4.3/5: 启动 Model3D Workflow Engine${NC}"
-
-MODEL3D_ENGINE_DIR="$ROOT_DIR/engines/model3d-workflow"
-MODEL3D_PYTHON="$MODEL3D_ENGINE_DIR/venv/bin/python"
-if [ ! -x "$MODEL3D_PYTHON" ]; then
-    echo "首次启动，创建 Python 虚拟环境..."
-    SELECTED_PYTHON=$(select_python)
-    PYTHON_VER=$("$SELECTED_PYTHON" --version)
-    echo "  使用 $PYTHON_VER"
-    if ! "$SELECTED_PYTHON" -m venv "$MODEL3D_ENGINE_DIR/venv"; then
-        echo -e "${RED}✗ Model3D Python 虚拟环境创建失败${NC}"
-        exit 1
-    fi
-fi
-
-if ! addp_sync_python_dependencies "$ROOT_DIR" "$MODEL3D_ENGINE_DIR" "Model3D"; then
-    exit 1
-fi
-
-ensure_model3d_node_dependencies
-
-start_model3d_workflow_engine_process() {
-  echo "启动 Model3D Workflow Engine..."
-  cd engines/model3d-workflow
-
-  export PORT=$MODEL3D_WORKFLOW_PORT
-  export MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET=${MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET:-""}
-
-  ./venv/bin/python api_server.py > ../../logs/model3d-workflow-engine.log 2> ../../logs/model3d-workflow-engine-stderr.log &
-  MODEL3D_WORKFLOW_PID=$!
-  echo $MODEL3D_WORKFLOW_PID > ../../.dev-pids/model3d-workflow-engine.pid
-  cd ../..
-
-  echo -e "${GREEN}✓ Model3D Workflow Engine 已启动 (PID: $MODEL3D_WORKFLOW_PID)${NC}"
-
-  echo -n "  等待服务就绪"
-  MAX_WAIT=60
-  WAIT_COUNT=0
-  while ! curl -fsS --max-time 2 http://localhost:${MODEL3D_WORKFLOW_PORT}/health > /dev/null 2>&1; do
-    sleep 1
-    echo -n "."
-    WAIT_COUNT=$((WAIT_COUNT + 1))
-    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-      echo -e " ${RED}✗${NC}"
-      echo -e "${RED}✗ Model3D Workflow Engine 启动超时（60秒）${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/model3d-workflow-engine.log${NC}"
-      echo -e "${YELLOW}或检查错误: tail -f logs/model3d-workflow-engine-stderr.log${NC}"
-      exit 1
-    fi
-  done
-  echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Model3D Workflow Engine 就绪 (http://localhost:${MODEL3D_WORKFLOW_PORT})${NC}"
-}
-
-if curl -s "http://localhost:${MODEL3D_WORKFLOW_PORT}/health" 2>/dev/null | grep -q '"service":"model3d-workflow-engine"'; then
-  MODEL3D_WORKFLOW_PID=$(cat .dev-pids/model3d-workflow-engine.pid 2>/dev/null || true)
-  if [ -n "$MODEL3D_WORKFLOW_PID" ] && ps -p "$MODEL3D_WORKFLOW_PID" > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Model3D Workflow Engine 已在运行 (PID: $MODEL3D_WORKFLOW_PID)${NC}"
-  elif docker ps --filter "name=^/model3d-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx "model3d-workflow-engine"; then
-    echo -e "${YELLOW}⚠️  检测到 Docker 版 Model3D Workflow Engine 正占用 ${MODEL3D_WORKFLOW_PORT}${NC}"
-    echo -e "${YELLOW}   dev 模式需要宿主机 Python runtime，以便与 Manager 统一访问 infra MinIO localhost:${MINIO_API_PORT:-19000}${NC}"
-    echo "  停止 Docker 版 Model3D Workflow Engine..."
-    addp_dev_remove_owned_container model3d-workflow-engine
-    rm -f .dev-pids/model3d-workflow-engine.pid
-    echo -e "${GREEN}✓ Docker 版 Model3D Workflow Engine 已停止，继续启动宿主机 runtime${NC}"
-    start_model3d_workflow_engine_process
+  echo -e "${BLUE}Step 4.3/5: 启动原生 Model3D Workflow Engine${NC}"
+  source "$ROOT_DIR/scripts/dev/model3d-workflow.sh"
+  addp_prepare_model3d_workflow || exit 1
+  if addp_dev_owned_listener model3d-workflow-engine "$MODEL3D_WORKFLOW_PORT"; then
+    curl --noproxy '*' --max-time 2 -fsS "http://127.0.0.1:$MODEL3D_WORKFLOW_PORT/health" |
+      python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("status") == "healthy" else 1)' || exit 1
+    echo '✓ 复用当前工作区的原生 Model3D 服务'
   else
-    echo -e "${GREEN}✓ Model3D Workflow Engine 已在运行 (http://localhost:${MODEL3D_WORKFLOW_PORT})${NC}"
+    addp_launch_model3d_workflow || exit 1
   fi
-elif check_service_running "model3d-workflow-engine" "$MODEL3D_WORKFLOW_PORT"; then
-  start_model3d_workflow_engine_process
-else
-  MODEL3D_WORKFLOW_PID=$(cat .dev-pids/model3d-workflow-engine.pid 2>/dev/null)
-  echo -e "${GREEN}✓ Model3D Workflow Engine 已在运行 (PID: $MODEL3D_WORKFLOW_PID)${NC}"
-fi
-  echo ""
 )
 
 start_runtime_pointcloud() (

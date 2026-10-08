@@ -1615,11 +1615,14 @@ import sys
 
 root, temporary = map(Path, sys.argv[1:])
 source = (root/'scripts/dev/start.sh').read_text()
-start = source.index('start_runtime_model3d() (')
-preparation = source[start:source.index('\nensure_model3d_node_dependencies', start)]
+assert 'source \"$ROOT_DIR/scripts/dev/model3d-workflow.sh\"' in source
 workspace = temporary/'model3d workspace with spaces'
 engine = workspace/'engines/model3d-workflow'
 engine.mkdir(parents=True)
+(engine/'node_modules/@mkkellogg/gaussian-splats-3d').mkdir(parents=True)
+helper = workspace/'scripts/dev/model3d-workflow.sh'
+helper.parent.mkdir(parents=True)
+helper.write_text((root/'scripts/dev/model3d-workflow.sh').read_text())
 common = workspace/'common-python'
 (common/'addp_common').mkdir(parents=True)
 (common/'pyproject.toml').write_text('[project]\nname = "addp-common"\n')
@@ -1656,8 +1659,10 @@ elif args[:3] == ['-m', 'pip', 'check']:
     if os.environ.get('FAIL_CHECK') == '1': sys.exit(19)
 elif args[:1] == ['-']:
     os.execv(sys.executable, [sys.executable] + args)
+elif args and args[0].endswith('native_setup.py'):
+    pass
 elif args == ['--version']:
-    print('Python 3.11')
+    print('Python 3.12')
 elif args[:1] == ['-c']:
     pass # 旧入口的 Flask/common import 成功，但不代表 Pillow 已安装。
 else:
@@ -1666,14 +1671,17 @@ else:
 fake_python.chmod(0o755)
 runner = f'''
 set -eu
-BLUE= RED= GREEN= NC=
 cd "$ROOT_DIR"
 source "{root}/scripts/dev/lifecycle-lock.sh"
-select_python() {{ printf '%s\\n' "$ROOT_DIR/fake-python"; }}
-{preparation}
-printf 'ready\\n' > "$ROOT_DIR/prepared"
-)
-start_runtime_model3d
+source "{root}/scripts/dev/model3d-workflow.sh"
+addp_dev_port_busy() {{ return 1; }}
+docker() {{ return 1; }}
+addp_model3d_native_environment() {{ :; }}
+addp_model3d_python_current() {{ :; }}
+python3.12() {{ "$ROOT_DIR/fake-python" "$@"; }}
+export -f python3.12
+addp_prepare_model3d_workflow
+printf 'ready\n' > "$ROOT_DIR/prepared"
 '''
 environment = dict(os.environ, ROOT_DIR=str(workspace), PYTHONPATH=str(site), PIP_INDEX_URL='https://index.example/simple', PIP_TRUSTED_HOST='index.example')
 calls = workspace/'calls.jsonl'
@@ -1775,36 +1783,11 @@ assert result.returncode != 0 and not prepared.exists(), result.stdout+result.st
 
 assert not fingerprint.exists(), 'failed check left valid cache'
 
-# 局部重启也执行同一同步函数，安装失败不能继续启动进程。
+# 局部重启与全量启动共用准备，且准备发生在停止之前。
 restart_source = (root/'scripts/dev/restart.sh').read_text()
 restart_function = restart_source[restart_source.index('restart_model3d_workflow_service() {'):restart_source.index('restart_pointcloud_workflow_service() {')]
-runner = f'''
-set -eu
-cd "$ROOT_DIR"
-source "{root}/scripts/dev/lifecycle-lock.sh"
-stop_pidfile_process() {{ :; }}
-stop_matching_port_process() {{ :; }}
-ensure_model3d_node_dependencies() {{ :; }}
-start_background_process() {{ printf 'ready\\n' > "$ROOT_DIR/prepared"; }}
-wait_http_ready() {{ :; }}
-verify_pidfile_process_alive() {{ :; }}
-{restart_function}
-restart_model3d_workflow_service
-'''
-result, arguments = run()
-assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
-assert ['-m', 'pip', 'check'] in arguments, arguments
-fingerprint.unlink(missing_ok=True)
-result, arguments = run(FAIL_INSTALL='1')
-assert result.returncode != 0 and not prepared.exists(), result.stdout+result.stderr
-result, arguments = run(PIP_INDEX_URL='', PIP_TRUSTED_HOST='')
-assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
-installs = [args for args in arguments if args[:3] == ['-m', 'pip', 'install']]
-assert len(installs) == 1 and '-i' not in installs[0] and '--trusted-host' not in installs[0], installs
-(engine/'venv/bin/python').unlink()
-result, arguments = run()
-assert result.returncode != 0 and not prepared.exists() and not arguments, result.stdout+result.stderr
-print('PASS: Python dependency sync reuses healthy environments and invalidates changed inputs/packages; failures block start/restart')
+assert restart_function.index('addp_prepare_model3d_workflow') < restart_function.index('stop_pidfile_process')
+assert 'addp_launch_model3d_workflow' in restart_function
 PY
 }
 

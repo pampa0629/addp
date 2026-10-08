@@ -379,3 +379,5 @@ bash scripts/dev/start.sh
 - [docs/STARTUP_ORDER.md](../../docs/STARTUP_ORDER.md) - 服务启动顺序详解
 
 Backend 独占所属模块迁移；Worker 初始化不执行平台 schema DDL。全量启动按模块等待 `/health/ready` 后启动该模块 Worker，各模块仍并行。公共执行与心跳表由 System Backend 初始化，单独 Worker 只读检查 schema 版本。数据库结构变化须同步递增 owner 的 `SchemaVersion`。
+
+Model3D Workflow 的 macOS Apple Silicon 开发启动与重启共用 `model3d-workflow.sh`，绑定 `.dev-state/model3d-native` 的固定版本私有工具包，不使用开发 Docker 转换 wrapper。首次准备需要 Conda、Rust 1.92.0、CMake 4.4.0 和 Xcode Command Line Tools，后续复用已验证缓存。产品构建与 Hosted 验收保留正式 Linux Runtime 镜像。

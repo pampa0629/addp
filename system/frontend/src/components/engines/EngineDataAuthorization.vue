@@ -122,9 +122,9 @@ async function initialize() {
   } catch (e) { if (epoch === generation.value && e !== 'cancel' && e !== 'close') error.value = message(e) }
   finally { if (epoch === generation.value) saving.value = false }
 }
-watch(() => [props.engine.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id,
-  auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version,
-  canRead.value, canInitialize.value, canBrowse.value, props.engine.lifecycle_state, props.engine.connection_status], () => {
+watch([() => props.engine.id, () => auth.authContext?.principal?.id, () => auth.authContext?.context?.tenant_id,
+  () => auth.authContext?.context?.tenant_membership_id, () => auth.authContext?.authorization?.authorization_version,
+  canRead, canInitialize, canBrowse, () => props.engine.lifecycle_state, () => props.engine.connection_status], () => {
   generation.value++; rows.value = []; total.value = 0; page.value = 1; selection.value = target.value = savedRow.value = null
   grantRequirement.value = null
   loading.value = saving.value = saved.value = false; form.mode = ''; form.reason = ''; error.value = ''

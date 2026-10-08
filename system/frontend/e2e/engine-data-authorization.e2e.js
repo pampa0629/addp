@@ -84,6 +84,36 @@ async function confirm(page) {
   await dialog.getByRole('button', { name: '确定', exact: true }).click()
 }
 
+async function refreshEngineProjection(page) {
+  const response = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/engines'))
+  await page.clock.runFor(10000)
+  await response
+}
+
+async function refreshSameAuthorization(page) {
+  await page.evaluate(async () => (await import('/src/store/auth.js')).useAuthStore().fetchAuthContext())
+}
+
+test('unchanged engine and authorization refreshes preserve the approval draft; a new authorization version clears it', async ({ page }) => {
+  await page.clock.install()
+  const { writes } = await fixture(page)
+  await page.goto('/engines/2?tab=data-authorization'); await draft(page)
+  const panel = page.getByTestId('engine-data-authorization')
+  await refreshEngineProjection(page)
+  await expect(page.getByTestId('approval-reason')).toHaveValue('Explicit table approval arrangement')
+  await expect(page.getByTestId('approval-mode')).toContainText('System 独立批准')
+  await expect(panel.getByRole('treeitem', { name: 'outdoor', exact: true })).toHaveAttribute('aria-expanded', 'true')
+  await refreshSameAuthorization(page)
+  await expect(page.getByTestId('approval-reason')).toHaveValue('Explicit table approval arrangement')
+  await page.evaluate(async () => {
+    const store = (await import('/src/store/auth.js')).useAuthStore()
+    store.authContext = { ...store.authContext, authorization: { ...store.authContext.authorization, authorization_version: '2' } }
+  })
+  await expect(page.getByTestId('approval-reason')).toHaveValue('')
+  await expect(panel.getByRole('treeitem', { name: 'outdoor', exact: true })).toHaveAttribute('aria-expanded', 'false')
+  expect(writes).toEqual([])
+})
+
 test('selects an unscanned table, explicitly configures independent approval and never writes a grant', async ({ page }, testInfo) => {
   const { writes, reads } = await fixture(page)
   await page.goto('/engines/2?tab=data-authorization')
@@ -188,6 +218,27 @@ async function confirmGrant(page) {
   await confirm.getByRole('button', { name: '确定', exact: true }).click()
   await expect(confirm).toBeHidden()
 }
+test('unchanged engine and authorization refreshes preserve the read grant draft; losing create permission closes it', async ({ page }) => {
+  await page.clock.install()
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  await page.goto('/engines/2?tab=data-authorization'); await grantDraft(page)
+  const dialog = page.getByRole('dialog', { name: '授予读取权限', exact: true })
+  await refreshEngineProjection(page)
+  await expect(dialog).toBeVisible()
+  await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+  await refreshSameAuthorization(page)
+  await expect(dialog).toBeVisible()
+  await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+  await page.evaluate(async () => {
+    const store = (await import('/src/store/auth.js')).useAuthStore()
+    const context = JSON.parse(JSON.stringify(store.authContext))
+    context.authorization.role_assignments[0].permissions = context.authorization.role_assignments[0].permissions.filter(permission => permission !== 'system.engine_access_grant.create')
+    store.authContext = context
+  })
+  await expect(dialog).toBeHidden()
+  await expect(page.getByTestId('source-grant-open')).toHaveCount(0)
+  expect(writes).toEqual([])
+})
 test('independent read issuance and revocation use an explicit recipient without Catalog', async ({ page }, testInfo) => {
   const { writes, reads } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
   await page.goto('/engines/2?tab=data-authorization')

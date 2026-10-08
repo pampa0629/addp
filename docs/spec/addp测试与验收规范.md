@@ -81,6 +81,8 @@ T0-T1 必须：
 - Backend 路由测试必须证明 `/health/live` 不触发外部调用，`/health/ready` 只在自身必需 Infra 和 System 注册都就绪时返回 200，业务路由在 Not Ready 时返回 `503 module_not_ready`。
 - Worker/Scheduler 测试必须证明未注册或 `recovering` 时不领取新工作，恢复后无需重启进程即继续领取。
 
+Model3D 原生安装的下载完整性、私有资源隔离和损坏缓存拒绝由现有 `make test-model3d-workflow` 自动发现；开发生命周期契约纳入 `make test-dev-lifecycle`。Linux 产品与 macOS 原生共用 IfcConvert 版本清单及 Cargo.lock。Manager Hosted T4 启动正式 Model3D Runtime 镜像并验证镜像身份和默认入口，退出按当次标签删除容器，不调用开发 wrapper；对应编排和登记检查沿用既有 Online suite。原生真实转换预检属于开发准备，不代替上述正式门禁。
+
 ### 4.2 T2
 
 T2 使用真实但可丢弃的基础设施，并满足：

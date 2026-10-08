@@ -29,11 +29,8 @@ from addp_common.workflow_access import (
 
 ENGINE_TYPE = "model3d_workflow"
 ENGINE_ROOT = Path(__file__).resolve().parent
-DEFAULT_CONVERTER_BIN = str(ENGINE_ROOT / "scripts" / "converters" / "_3dtile")
 CONVERTER_ENV = "MODEL3D_CONVERTER_BIN"
-DEFAULT_MESH_CONVERTER_BIN = str(ENGINE_ROOT / "scripts" / "converters" / "assimp")
 MESH_CONVERTER_ENV = "MODEL3D_MESH_CONVERTER_BIN"
-DEFAULT_IFC_CONVERTER_BIN = str(ENGINE_ROOT / "scripts" / "converters" / "IfcConvert")
 IFC_CONVERTER_ENV = "MODEL3D_IFC_CONVERTER_BIN"
 GAUSSIAN_SPLAT_CONVERTER_SCRIPT = str(ENGINE_ROOT / "create_ksplat.mjs")
 GAUSSIAN_SPLAT_NODE_ENV = "MODEL3D_GAUSSIAN_SPLAT_NODE_BIN"
@@ -1073,17 +1070,17 @@ def _handle_command_result(result: CommandResult) -> CommandResult:
 
 def _converter_bin(env: dict[str, str] | None) -> str:
     values = env if env is not None else os.environ
-    return _text(values.get(CONVERTER_ENV)) or DEFAULT_CONVERTER_BIN
+    return _text(values.get(CONVERTER_ENV))
 
 
 def _mesh_converter_bin(env: dict[str, str] | None) -> str:
     values = env if env is not None else os.environ
-    return _text(values.get(MESH_CONVERTER_ENV)) or DEFAULT_MESH_CONVERTER_BIN
+    return _text(values.get(MESH_CONVERTER_ENV))
 
 
 def _ifc_converter_bin(env: dict[str, str] | None) -> str:
     values = env if env is not None else os.environ
-    return _text(values.get(IFC_CONVERTER_ENV)) or DEFAULT_IFC_CONVERTER_BIN
+    return _text(values.get(IFC_CONVERTER_ENV))
 
 
 def _gaussian_splat_node_bin(env: dict[str, str] | None) -> str:

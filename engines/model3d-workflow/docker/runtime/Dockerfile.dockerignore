@@ -1,0 +1,13 @@
+**
+!engines/
+!engines/model3d-workflow/
+!engines/model3d-workflow/*.py
+!engines/model3d-workflow/requirements.txt
+!engines/model3d-workflow/package.json
+!engines/model3d-workflow/package-lock.json
+!common-python/
+!common-python/pyproject.toml
+!common-python/README.md
+!common-python/addp_common/
+!common-python/addp_common/**
+common-python/**/__pycache__/

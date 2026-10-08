@@ -44,7 +44,7 @@ docker build \
   --build-arg THREE_DTILES_REF="${THREE_DTILES_REF}" \
   -f "${ENGINE_DIR}/docker/converter/Dockerfile" \
   -t "${CONVERTER_IMAGE}" \
-  "${ENGINE_DIR}/docker/converter"
+  "${ROOT_DIR}"
 
 echo "Smoke checking converter image"
 docker run --rm --platform "${PLATFORM}" "${CONVERTER_IMAGE}" --help >/dev/null

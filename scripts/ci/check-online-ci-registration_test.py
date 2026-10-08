@@ -838,10 +838,6 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         self.workflow.write_text(self.workflow.read_text().replace("first-suite", "manager-internal-artifact-lineage").replace(
             "if: github.event_name == 'workflow_dispatch'", "if: github.event_name == 'workflow_dispatch' && inputs.suite != 'manager-internal-artifact-lineage'")
             + job, encoding="utf-8")
-        for name in ("_3dtile", "assimp", "IfcConvert", "docker-converter.sh"):
-            wrapper = self.repository / "engines/model3d-workflow/scripts/converters" / name
-            wrapper.parent.mkdir(parents=True, exist_ok=True)
-            wrapper.write_text("tracked converter wrapper\n")
         fixture = self.repository / "business/scripts/online-manager-minio-fixture.sh"
         fixture.parent.mkdir(parents=True, exist_ok=True)
         fixture.write_text(
@@ -877,7 +873,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         config.write_text("--use-gl=angle --use-angle=swiftshader-webgl --enable-unsafe-swiftshader\n", encoding="utf-8")
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
-            (hosted, "-model3d-workflow", "Hosted profile"),
+            (hosted, "start_online_model3d_runtime", "Hosted profile"),
             (fixture, "texture.png", "fixture contract"),
             (config, "--enable-unsafe-swiftshader", "software WebGL"),
             (owner, "validate_model_glb", "owner contract"),

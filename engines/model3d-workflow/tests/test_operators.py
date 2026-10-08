@@ -75,12 +75,14 @@ def test_operator_metadata_contract_and_modes():
     assert all(operator["effects"] == ["read", "write"] for operator in ops)
 
 
-def test_converter_status_defaults_to_bound_binaries():
+def test_converter_status_requires_explicit_engine_bound_binaries():
     status = converter_status(env={})
     assert status["binding"] == "model3d_workflow"
-    assert status["path"].endswith("engines/model3d-workflow/scripts/converters/_3dtile")
-    assert status["mesh_converter"]["path"].endswith("engines/model3d-workflow/scripts/converters/assimp")
-    assert status["ifc_converter"]["path"].endswith("engines/model3d-workflow/scripts/converters/IfcConvert")
+    assert not status["available"]
+    assert status["path"] == ""
+    assert status["mesh_converter"]["path"] == ""
+    assert status["ifc_converter"]["path"] == ""
+    assert not (operators.ENGINE_ROOT / "scripts/converters").exists()
 
 
 def test_gaussian_splat_to_ksplat_uses_v1_plan(tmp_path):

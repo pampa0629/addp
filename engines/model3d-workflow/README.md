@@ -18,7 +18,7 @@
 
 Runtime Operator Spec 统一消费 `addp.workflow.access-plan/v1`。Manager direct 调用选择 infra 目标并登记私有快显 artifact；Develop workflow 调用保存公开 ResourceLocator 参数、选择业务目标，并在成功后触发 Meta scan。Runtime 不解析 ADDP locator，也不决定产物归属。
 
-运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 默认使用 `engines/model3d-workflow/scripts/converters/_3dtile`，glTF / FBX / OBJ / STL / DAE / 3DS 这类 mesh 模型转 GLB 默认使用 `engines/model3d-workflow/scripts/converters/assimp`。IFC 已由 common format 识别为 `data_type=model_3d + format=ifc + layout=single`，BIM 语义不进入 mesh converter，`ifc_to_glb` 默认使用 `engines/model3d-workflow/scripts/converters/IfcConvert`。glTF / FBX / OBJ / STL / DAE / 3DS 生成的 GLB artifact 必须自包含；其中 glTF / FBX / OBJ 必须嵌入纹理，避免前端从原始源目录相对加载贴图。IFC 生成 GLB 时默认传入 `--center-model`，避免大坐标直接影响前端初始观察。`gaussian_splat_to_ksplat` 使用运行时内置 Node 脚本 `create_ksplat.mjs` 和 `@mkkellogg/gaussian-splats-3d` 生成 `.ksplat`，不调用 mesh / OSGB / IFC 转换器；生成时优先使用 `options.scene_center`，否则由 `options.bounds_3d` / `options.sampled_bounds_3d` 推导中心，并默认使用 `section_size=262144`、`block_size=5.0`、`bucket_size=256` 组织 KSplat section，让渐进加载尽量先显示模型中心区域。`.ksplat` 源已经是前端目标渲染格式，不进入该 operator；其视角状态由 `manager.preview_state` 保存。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile`、`assimp` 或 `IfcConvert` 这类依赖系统 `PATH` 的命令名：
+运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 使用绑定的 `_3dtile`，普通 mesh 模型使用 Assimp；IFC 使用专用 IfcConvert，默认传入 `--center-model`。高斯泼溅继续使用运行时内置 Node 脚本与现有锁定依赖。转换器必须绑定当前部署中的真实原生文件，不从系统 PATH 搜索。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile`、`assimp` 或 `IfcConvert` 这类依赖系统 `PATH` 的命令名：
 
 ```bash
 export MODEL3D_CONVERTER_BIN=/path/to/_3dtile
@@ -27,11 +27,21 @@ export MODEL3D_IFC_CONVERTER_BIN=/path/to/IfcConvert
 export MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/path/to/node
 ```
 
-开发环境的三个 wrapper 及共享 Docker 调用脚本必须受 Git 版本管理，不依赖被忽略的本机 `bin/` 目录；容器内继续绑定 `/opt/addp/model3d-workflow/bin/` 的原生转换器。
+开发环境绑定私有工具包的绝对可执行文件路径；容器内绑定 `/opt/addp/model3d-workflow/bin/` 的原生转换器。
 
-Docker wrapper 从 Runtime 传入的绝对输入、输出路径确定挂载范围：文件挂载其父目录，目录挂载自身，同一路径只挂载一次，以保持贴图等同目录依赖可见。不得仅因目录存在而挂载 `/home`、`/Users`、`/Volumes` 或 `/private` 等宿主机整根目录，避免无关路径触发 Docker Desktop 文件共享错误。三个 wrapper 共用同一挂载逻辑，修改后宿主机 Python Runtime 无需重启即可使用。
+macOS Apple Silicon 开发态使用 `.dev-state/model3d-native/<指纹>/` 中的私有工具包，不调用 Docker wrapper。`scripts/dev/model3d-workflow.sh` 是 start/restart 共用的唯一准备与启动实现，Python 使用隔离的 3.12 venv。工具包固定现有 3dtiles 源码、vcpkg baseline、Cargo.lock、ADDP patch、Assimp 5.2.5 与官方 IfcConvert 0.8.4-e8eb5e4。版本更新改变指纹；运行中发现依赖漂移时先拒绝，不能修改活动环境或偷偷使用旧工具。
 
-修改原生转换器或其 Dockerfile 后，仅重启宿主机 Python Runtime 不会重建 wrapper 使用的镜像。wrapper 默认读取 `localhost:5001/addp-model3d-converter:latest`；独立验证标签构建成功也不会更新该默认标签。需通过根标准入口 `make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --verify --jobs 1 --tag latest"` 更新本地默认镜像，构建和 smoke 检查通过后再从页面重试。下一次 wrapper 调用即使用更新镜像；使用自定义 `MODEL3D_CONVERTER_IMAGE` 时应构建对应注册表与标签。
+首次安装需要 Conda、Rust 1.92.0、CMake 4.4.0 和 Xcode Command Line Tools。原生依赖只装入私有 Conda 前缀，OSGB 第三方库静态链接，GDAL/PROJ 资源随包提供。首次冷构建耗时较长，安装过程记录到工具包构建日志；后续启动校验缓存并做真实转换预检，不重复编译。当前只验证 Darwin arm64；其他开发平台明确拒绝，不能以容器回退替代未验证的原生安装。
+
+开发工具准备（不启动、停止或注册服务）：
+
+```bash
+engines/model3d-workflow/venv/bin/python engines/model3d-workflow/native_setup.py prepare .dev-state/model3d-native
+```
+
+工具包完整性损坏时不会覆盖旧缓存或使用其他转换器：先停止该 Runtime，把报错中的单个指纹目录移出 `.dev-state/model3d-native`，再执行准备命令重建；下载、固定提交源码和 vcpkg 二进制缓存仍可复用。
+
+准备成功后由用户在自己的终端运行 `./scripts/dev/restart.sh -model3d-workflow`。全量重启也在停止现有服务之前执行同一准备与转换预检。
 
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
 
@@ -47,7 +57,7 @@ PORT=8101 python api_server.py
 
 ## Linux amd64 / arm64 容器
 
-Apple Silicon 本机优先使用 Docker Desktop 的 Linux arm64 后端运行 `model3d_workflow`，不要在 macOS host 上原生构建或执行 `_3dtile`。
+本节仅用于 Linux 产品镜像构建和 Hosted 产品验收；本机开发使用前述私有原生工具包。
 
 ```bash
 cd engines/model3d-workflow
@@ -97,7 +107,7 @@ MODEL3D_DATA_HOST_PATH=./business/nfs/data
 MODEL3D_DATA_CONTAINER_PATH=/Users/pampa/code/addp/business/nfs/data
 ```
 
-三维模型 GLB 和高斯泼溅 KSplat 快显 artifact 由 `model3d_workflow` 直接上传到 Manager infra MinIO。MinIO endpoint 统一来自 ADDP infra MinIO 配置，不为 `model3d_workflow` 另设专用 endpoint。Docker Compose 部署时，Manager 与 runtime 同在 Compose 网络内，统一使用 `minio:9000`；macOS 本机开发时，推荐使用宿主机 Python runtime 加 Docker `_3dtile` / `assimp` wrapper，Manager 与 runtime 统一访问 `localhost:19000`。
+三维模型 GLB 和高斯泼溅 KSplat 快显 artifact 由 `model3d_workflow` 直接上传到 Manager infra MinIO。MinIO endpoint 统一来自 ADDP infra MinIO 配置，不为 `model3d_workflow` 另设专用 endpoint。Docker Compose 部署时，Manager 与 runtime 同在 Compose 网络内，统一使用 `minio:9000`；macOS 本机开发使用宿主机 Python Runtime 与私有原生转换器，Manager 与 Runtime 统一访问实际 Infra MinIO 宿主机端口。
 
 OSGB Scene 的对象存储 source 由运行时 staging：先递归下载到本地临时 workspace，再调用 `_3dtile`。对象存储 target 由运行时发布：转换器先输出到本地临时 workspace，再递归上传到 MinIO/S3，并最后上传 `tileset.json`。
 

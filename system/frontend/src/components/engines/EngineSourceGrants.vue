@@ -143,9 +143,9 @@ watch(() => props.requirement, () => {
   generation++; attempt.value = null; saving.value = false; formError.value = ''; form.recipientType = 'user'; form.recipientID = ''; form.expiryMode = ''; form.expiresAt = null; form.reason = ''
   loadCandidates(); load()
 })
-watch(() => [props.engine.id, props.engine.lifecycle_state, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id,
-  auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, canRead.value, canCreate.value, canRevoke.value,
-  ...['iam.tenant_membership.read', 'iam.department.read', 'iam.project_group.read'].map(permission => auth.hasPermission(permission))], () => {
+watch([() => props.engine.id, () => props.engine.lifecycle_state, () => auth.authContext?.principal?.id, () => auth.authContext?.context?.tenant_id,
+  () => auth.authContext?.context?.tenant_membership_id, () => auth.authContext?.authorization?.authorization_version, canRead, canCreate, canRevoke,
+  ...['iam.tenant_membership.read', 'iam.department.read', 'iam.project_group.read'].map(permission => () => auth.hasPermission(permission))], () => {
   generation++; attempt.value = null; candidates.value = []; members.value = []; rows.value = []; total.value = 0; page.value = 1
   saving.value = revoking.value = loading.value = false; revokeVisible.value = false; error.value = formError.value = success.value = ''; emit('close'); load()
 }, { immediate: true })

@@ -64,8 +64,9 @@ class HostedManagerGateTest(unittest.TestCase):
         self.host._write_repository_script("scripts/build/build-images.sh", '''
             #!/usr/bin/env bash
             echo "build:$*" >> "$ADDP_TEST_GATE_TRACE"
-            [ "$MODEL3D_CONVERTER_PLATFORM" = linux/amd64 ]
-            [ "${ADDP_TEST_BUILD_FAIL:-0}" != 1 ]
+            [ "$MODEL3D_DOCKER_PLATFORM" = linux/amd64 ]
+            [ "${ADDP_TEST_BUILD_FAIL:-0}" != 1 ] || exit 1
+            touch "${ADDP_TEST_GATE_TRACE}.image"
         ''')
         self.host._executable("curl", "#!/usr/bin/env bash\nexit 0\n")
         self.host._executable("npm", '''
@@ -76,7 +77,8 @@ class HostedManagerGateTest(unittest.TestCase):
             self.host, 'manager-internal-artifact-lineage', 'addp-manager-raster-runtime')
         docker = self.host.bin / 'docker'
         docker.write_text(docker.read_text().replace('["python","api_server.py"]', '["sh","container_entrypoint.sh"]')
-                          .replace('ADDP_TEST_PREEXIST_CONTAINER', 'ADDP_TEST_EXISTING_CONTAINER'))
+                          .replace('ADDP_TEST_PREEXIST_CONTAINER', 'ADDP_TEST_EXISTING_CONTAINER')
+                          .replace("echo '[\"sh\",\"container_entrypoint.sh\"]'", "if [ \"$4\" = addp-manager-model3d-runtime ]; then echo '[\"python\",\"api_server.py\"]'; else echo '[\"sh\",\"container_entrypoint.sh\"]'; fi"))
         self.host._write_repository_script('business/scripts/online-raster-minio-fixture.py', """
             import os, sys
             assert sys.argv[1] == 'manager-seed'
@@ -84,7 +86,7 @@ class HostedManagerGateTest(unittest.TestCase):
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as stream: stream.write('raster-seed\\n')
             if os.environ.get('ADDP_TEST_RASTER_SEED_FAIL') == '1': sys.exit(1)
         """)
-        self.host._write_repository_script('.env.example', 'GEOPYTHON_WORKFLOW_PORT=8099\n')
+        self.host._write_repository_script('.env.example', 'GEOPYTHON_WORKFLOW_PORT=8099\nMODEL3D_WORKFLOW_PORT=8101\n')
         self.host._executable('make', """
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
@@ -123,6 +125,7 @@ class HostedManagerGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         self.assertIn("docker-rm:addp-manager-raster-runtime", trace)
         self.assertIn("source-fixture:stop", trace)
+        self.assertIn("docker-rm:addp-manager-model3d-runtime", trace)
         self.assertIn("infra-down", trace)
         self.assertFalse(self.host.secrets.exists())
 
@@ -136,7 +139,7 @@ class HostedManagerGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
-        for item in ("raster-seed", "docker-run:addp-manager-raster-runtime", "source-fixture:start", "start:-meta", "start:-manager", "start:-monitor", "start:-pointcloud-workflow", "start:-document-workflow", "start:-model3d-workflow",
+        for item in ("raster-seed", "docker-run:addp-manager-raster-runtime", "source-fixture:start", "start:-meta", "start:-manager", "start:-monitor", "start:-pointcloud-workflow", "start:-document-workflow", "docker-run:addp-manager-model3d-runtime",
                      "make:test-online ONLINE_SUITE=manager-internal-artifact-lineage", "application-stop", "source-fixture:stop", "infra-down"):
             self.assertIn(item, trace)
         self.assertLess(trace.index("application-stop"), trace.index("source-fixture:stop"))

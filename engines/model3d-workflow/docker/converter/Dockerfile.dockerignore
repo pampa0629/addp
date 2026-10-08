@@ -1,0 +1,8 @@
+**
+!engines/
+!engines/model3d-workflow/
+!engines/model3d-workflow/docker/
+!engines/model3d-workflow/docker/converter/
+!engines/model3d-workflow/docker/converter/**
+!engines/model3d-workflow/native-assets.json
+!engines/model3d-workflow/native_setup.py

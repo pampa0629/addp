@@ -1,4 +1,4 @@
-ARG RUST_IMAGE=rust:1.90.0-bookworm
+ARG RUST_IMAGE=rust:1.92.0-bookworm
 FROM ${RUST_IMAGE} AS builder
 
 ARG THREE_DTILES_REPO=https://github.com/fanvanzh/3dtiles.git
@@ -11,7 +11,7 @@ ENV VCPKG_ROOT=/opt/vcpkg
 ENV PATH=/opt/vcpkg:${PATH}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git patch \
+    ca-certificates curl git patch python3 \
     build-essential cmake make zip unzip tar pkg-config \
     autoconf autoconf-archive automake libtool linux-libc-dev \
     libgl1-mesa-dev libglu1-mesa-dev \
@@ -27,7 +27,7 @@ RUN cd /src/3dtiles \
   && git submodule sync --recursive \
   && git submodule update --init --recursive --depth 1
 
-COPY patches/linux-build-rs.patch /tmp/linux-build-rs.patch
+COPY engines/model3d-workflow/docker/converter/patches/linux-build-rs.patch /tmp/linux-build-rs.patch
 RUN cd /src/3dtiles && patch -p1 < /tmp/linux-build-rs.patch
 
 RUN git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg \
@@ -35,17 +35,18 @@ RUN git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg \
   && git checkout "${VCPKG_COMMIT}" \
   && ./bootstrap-vcpkg.sh
 
-COPY vcpkg-overlays/ /opt/addp/vcpkg-overlays/
+COPY engines/model3d-workflow/docker/converter/vcpkg-overlays/ /opt/addp/vcpkg-overlays/
 ENV VCPKG_OVERLAY_PORTS=/opt/addp/vcpkg-overlays
 
+COPY engines/model3d-workflow/docker/converter/Cargo.lock /src/3dtiles/Cargo.lock
 WORKDIR /src/3dtiles
 ENV CARGO_TERM_COLOR=always
 ENV VCPKG_HAS_BEEN_INSTALLED=1
 RUN --mount=type=cache,target=/root/.cache/vcpkg \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo build --release -vv
+    cargo build --locked --release -vv
 
-COPY tests/osgb_compression_smoke.cpp /tmp/osgb_compression_smoke.cpp
+COPY engines/model3d-workflow/docker/converter/tests/osgb_compression_smoke.cpp /tmp/osgb_compression_smoke.cpp
 RUN set -eu; \
     case "$TARGETARCH" in amd64) triplet=x64-linux ;; arm64) triplet=arm64-linux ;; *) exit 1 ;; esac; \
     library_root=$(find -L target/release/build -type d -path "*/vcpkg_installed/${triplet}" -print -quit); \
@@ -70,17 +71,14 @@ RUN mkdir -p /out \
   && cp -r target/release/gdal /out/gdal \
   && cp -r target/release/proj /out/proj \
   && cp -r target/release/osgPlugins-3.6.5 /out/osgPlugins-3.6.5
+COPY engines/model3d-workflow/native-assets.json engines/model3d-workflow/native_setup.py /tmp/addp-model3d/
 RUN case "$TARGETARCH" in \
       amd64) ifc_platform=linux64 ;; \
       arm64) ifc_platform=linuxarm64 ;; \
       *) echo "unsupported IfcConvert target: $TARGETARCH" >&2; exit 1 ;; \
     esac \
-  && mkdir -p /tmp/ifcconvert \
-  && curl -fL "https://s3.amazonaws.com/ifcopenshell-builds/IfcConvert-v0.8.4-bf4aa8c-${ifc_platform}.zip" -o /tmp/ifcconvert/IfcConvert.zip \
-  && unzip -q /tmp/ifcconvert/IfcConvert.zip -d /tmp/ifcconvert \
-  && cp /tmp/ifcconvert/IfcConvert /out/IfcConvert \
-  && chmod +x /out/IfcConvert \
-  && rm -rf /tmp/ifcconvert
+  && python3 /tmp/addp-model3d/native_setup.py install-ifc /out --platform "$ifc_platform" \
+  && rm -rf /out/downloads
 
 FROM debian:bookworm-slim AS runtime
 

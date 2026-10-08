@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "platform": "Darwin-arm64",
+  "rust": "1.92.0",
+  "cmake": "4.4.0",
+  "3dtiles": {
+    "url": "https://github.com/fanvanzh/3dtiles.git",
+    "commit": "acbcf603f33fdfe3c34b704a8b019c4fd32a8376"
+  },
+  "vcpkg": {
+    "url": "https://github.com/microsoft/vcpkg.git",
+    "commit": "84bab45d415d22042bd0b9081aea57f362da3f35"
+  },
+  "assimp": {
+    "url": "https://github.com/assimp/assimp.git",
+    "commit": "9519a62dd20799c5493c638d1ef5a6f484e5faf1",
+    "version": "5.2.5"
+  },
+  "vcpkg_tool": {
+    "url": "https://github.com/microsoft/vcpkg-tool/releases/download/2025-12-05/vcpkg-macos",
+    "sha512": "6182b12fc106d9ea0e1737ed673c52e525ba861706d00932c373b0fb224d6e20c5e227440b1fabae0c3b40e0c904c46845ec7e7f4411ea749b2d9280a2165176"
+  },
+  "conda_packages": [
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/assimp-5.2.5-h276577b_0.tar.bz2",
+      "sha256": "debec3cffc8ecf0b51372ca61cba093a53cbf898784ffb6780791930eeb3633d"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/autoconf-2.71-pl5321hcd07c0c_1.conda",
+      "sha256": "15894a699360f1599049744ea1dd649d70c3380c3fab76f2f55ef6edfa4db566"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/autoconf-archive-2021.02.19-hce30654_0.tar.bz2",
+      "sha256": "5f3624448bacd2e2990c285447a34258f949f49e9784278225e51d10975b7eea"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/automake-1.16.5-pl5321hce30654_0.tar.bz2",
+      "sha256": "7e8f7d4ac459f06abe67faa3e14bc4a147b598e2bf8c2fae9bb0a56282cf94d4"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/boost-cpp-1.78.0-h00df5ed_4.conda",
+      "sha256": "b0cc17649597df5139461338a90a7480de92118a9d2c04a9d3aa56df3199968d"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/bzip2-1.0.8-h4e30115_10.conda",
+      "sha256": "8ec22f0ba25cbfc2e64d70cf29459eccd7ffdf6436f6a6ff15bbfef799f7d4f6"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/icu-73.2-hc8870d7_0.conda",
+      "sha256": "ff9cd0c6cd1349954c801fb443c94192b637e1b414514539f3c49c56a39f51b1"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/libcxx-23.1.3-h55c6f16_0.conda",
+      "sha256": "2d9d31172d7919bd276a8d1be338de567dd5afdd181e8d3d3d8c2d8695e09de2"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/libiconv-1.18-he4c29f2_3.conda",
+      "sha256": "689a14968267f2f97c07112fca5636e7d756036b9aee969911267c20bd3eea1f"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/liblzma-5.8.3-h8088a28_1.conda",
+      "sha256": "23d0630046a3e8b164d8f80f2b74ed2605af2e7050ab9913018056402fae4311"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/liblzma-devel-5.8.3-h8088a28_1.conda",
+      "sha256": "dc1b1369813f946ac40207222f439f40f6c4c9b5eac6746f61676d819b247282"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/libtool-2.4.7-h00cdb27_1.conda",
+      "sha256": "62cf0dbbeef99a5589b741780d16b44e970931b90c4b0754b29ad203d8e86827"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/libzlib-1.2.13-hfb2fe0b_6.conda",
+      "sha256": "8b29a2386d99b8f58178951dcf19117b532cd9c4aa07623bf1667eae99755d32"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/m4-1.4.21-h84a0fba_0.conda",
+      "sha256": "2b8222694c7be372bde7ff3b971b7f606b22d01fc5ab106259192cf6a2461855"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/perl-5.44.0-1_hb001647_perl5.conda",
+      "sha256": "d68a8d9a8f329e46920d7750b495f613e093fa40736d00a227b727f5898804bb"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/pkg-config-0.29.2-he0b766d_1013.conda",
+      "sha256": "a9be4e8eddb816ab4e8fe1836ed140012cd2008ef3fa28fa21bd2c89db3455bb"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/xz-5.8.3-hd0f0c4f_1.conda",
+      "sha256": "f83d8ac2c553ba4898c42646a3697e19071b061032f802a83c9b8d7a613775ef"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/xz-gpl-tools-5.8.3-hd0f0c4f_1.conda",
+      "sha256": "7a1b1ef6c5a46e45dc0148873878927d4271ffd7b7bd13ca48351b937b45947d"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/xz-tools-5.8.3-h8088a28_1.conda",
+      "sha256": "aea9831ac6909a6d6624289acf04e4d336345eb77bc89a7380a82d848bb9be0f"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.2.13-hfb2fe0b_6.conda",
+      "sha256": "c09c9cb6de86d87b9267a6331c74cc8fb05bae5ee7749070a5e8883c3eff5424"
+    },
+    {
+      "url": "https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.6-hb46c0d2_0.conda",
+      "sha256": "2d4fd1ff7ee79cd954ca8e81abf11d9d49954dd1fef80f27289e2402ae9c2e09"
+    }
+  ],
+  "ifc_version": "0.8.4-e8eb5e4",
+  "ifc_packages": {
+    "macosm164": {
+      "url": "https://s3.amazonaws.com/ifcopenshell-builds/IfcConvert-v0.8.4-e8eb5e4-macosm164.zip",
+      "sha256": "a92480188087de1ccc969cb54cbcaea19d870e9601ef5623f6ff01095a6b4711"
+    },
+    "linux64": {
+      "url": "https://s3.amazonaws.com/ifcopenshell-builds/IfcConvert-v0.8.4-e8eb5e4-linux64.zip",
+      "sha256": "891d1de019753220e9eff3c82e6262b4e20810974d210469e7cc7abaf3fca32c"
+    },
+    "linuxarm64": {
+      "url": "https://s3.amazonaws.com/ifcopenshell-builds/IfcConvert-v0.8.4-e8eb5e4-linuxarm64.zip",
+      "sha256": "f7d1a69e0f487c8eae901675bbbaf55ccb973905456a8816e4571b535f8c0051"
+    }
+  }
+}

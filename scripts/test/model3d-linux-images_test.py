@@ -14,44 +14,10 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
-    def test_converter_mounts_only_input_output_directories(self):
-        with tempfile.TemporaryDirectory(prefix='addp-model3d-mounts-') as directory:
-            root = Path(directory)
-            for name, source in {
-                'docker': '#!/usr/bin/env python3\nimport json, os, sys\nfrom pathlib import Path\nPath(os.environ["ADDP_TEST_TRACE"]).write_text(json.dumps(sys.argv[1:]))\n',
-            }.items():
-                command = root / name
-                command.write_text(source)
-                command.chmod(0o755)
-            source_directory = root / '模型 source'
-            source_directory.mkdir()
-            source_file = source_directory / 'model.dae'
-            source_file.write_text('model fixture')
-            output_directory = root / 'output directory'
-            output_directory.mkdir()
-            for source in (source_directory, source_file):
-                for converter in ('_3dtile', 'assimp', 'IfcConvert'):
-                    with self.subTest(source=source, converter=converter):
-                        env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', ADDP_TEST_TRACE=str(root / 'trace'))
-                        command = ROOT / 'engines/model3d-workflow/scripts/converters' / converter
-                        output = output_directory / 'model.glb'
-                        result = subprocess.run(['bash', str(command), str(source), str(output), '--help'], env=env, capture_output=True)
-                        self.assertEqual(result.returncode, 0, result.stderr)
-                        args = json.loads((root / 'trace').read_text())
-                        mounts = [args[index + 1] for index, arg in enumerate(args) if arg == '-v']
-                        self.assertEqual(mounts, [f'{source_directory}:{source_directory}', f'{output_directory}:{output_directory}'])
-                        self.assertEqual(args[-3:], [str(source), str(output), '--help'])
-                        # Files sharing a directory need one mount; help requires none.
-                        same_directory = source_directory / 'out.glb'
-                        result = subprocess.run(['bash', str(command), str(source), str(same_directory)], env=env, capture_output=True)
-                        self.assertEqual(result.returncode, 0, result.stderr)
-                        args = json.loads((root / 'trace').read_text())
-                        self.assertEqual(args.count('-v'), 1)
-
     def test_tinygltf_overlay_pins_verified_source_and_installs_header(self):
         converter = ROOT / 'engines/model3d-workflow/docker/converter'
         dockerfile = (converter / 'Dockerfile').read_text()
-        self.assertIn('COPY vcpkg-overlays/ /opt/addp/vcpkg-overlays/', dockerfile)
+        self.assertIn('COPY engines/model3d-workflow/docker/converter/vcpkg-overlays/ /opt/addp/vcpkg-overlays/', dockerfile)
         self.assertIn('ENV VCPKG_OVERLAY_PORTS=/opt/addp/vcpkg-overlays', dockerfile)
         self.assertLess(dockerfile.index('ENV VCPKG_OVERLAY_PORTS='), dockerfile.index('cargo build'))
         port = converter / 'vcpkg-overlays/tinygltf'
@@ -98,6 +64,16 @@ include("''' + (port / 'portfile.cmake').as_posix() + '''")
             self.assertEqual((root / 'package/include/tiny_gltf.h').read_text(), '#include <nlohmann/json.hpp>\n')
             self.assertEqual((root / 'package/share/tinygltf/copyright').read_text(), 'tinygltf license fixture')
 
+    def test_product_context_and_cache_include_version_and_native_build_inputs(self):
+        converter = ROOT / 'engines/model3d-workflow/docker/converter'
+        self.assertIn('!engines/model3d-workflow/native-assets.json', (converter / 'Dockerfile.dockerignore').read_text())
+        self.assertIn('!engines/model3d-workflow/docker/converter/**', (converter / 'Dockerfile.dockerignore').read_text())
+        self.assertIn('!common-python/addp_common/**', (converter.parent / 'runtime/Dockerfile.dockerignore').read_text())
+        builder = (ROOT / 'scripts/build/build-images.sh').read_text()
+        block = builder[builder.index('        model3d-workflow-engine)'):builder.index('        pointcloud-workflow-engine|document-workflow-engine)')]
+        for extension in ('*.json', '*.lock', '*.cpp', '*.cmake', '*.dockerignore'):
+            self.assertIn(extension, block)
+
     def run_build(self, architecture, platform=None, fail_build=False):
         with tempfile.TemporaryDirectory(prefix='addp-model3d-build-') as temporary:
             root = Path(temporary)
@@ -135,26 +111,6 @@ include("''' + (port / 'portfile.cmake').as_posix() + '''")
                 self.assertIn('IfcConvert', trace)
                 self.assertIn('--entrypoint python', trace)
 
-    def test_converter_wrappers_use_native_platform_unless_explicitly_selected(self):
-        with tempfile.TemporaryDirectory(prefix='addp-model3d-wrapper-') as directory:
-            root = Path(directory)
-            docker = root / 'docker'
-            docker.write_text('#!/bin/bash\nprintf "%s\n" "$*" > "$ADDP_TEST_TRACE"\n')
-            docker.chmod(0o755)
-            env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', ADDP_TEST_TRACE=str(root / 'trace'))
-            env.pop('MODEL3D_CONVERTER_PLATFORM', None)
-            for name in ('_3dtile', 'assimp', 'IfcConvert'):
-                command = ROOT / 'engines/model3d-workflow/scripts/converters' / name
-                result = subprocess.run(['bash', str(command), '--help'], env=env, capture_output=True)
-                self.assertEqual(result.returncode, 0)
-                native_trace = (root / 'trace').read_text()
-                self.assertNotIn('--platform', native_trace)
-                self.assertIn('--entrypoint /', native_trace)
-                self.assertIn(name + ' ', native_trace)
-                explicit = dict(env, MODEL3D_CONVERTER_PLATFORM='linux/amd64')
-                result = subprocess.run(['bash', str(command), '--help'], env=explicit, capture_output=True)
-                self.assertEqual(result.returncode, 0)
-                self.assertIn('--platform=linux/amd64', (root / 'trace').read_text())
 
     def test_invalid_platforms_reject_before_docker(self):
         for target in ('linux/386', 'windows/amd64', 'linux/amd64,linux/arm64'):

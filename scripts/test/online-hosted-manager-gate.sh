@@ -6,13 +6,23 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
-HOSTED_FIXTURE_CONTAINERS=(business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
+HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(business)
 RUNTIME_CONTAINER=addp-manager-raster-runtime
 RUNTIME_TAG=manager-raster-online
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
 export ADDP_ONLINE_RASTER_RUNTIME_IMAGE="$RUNTIME_IMAGE"
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim 127.0.0.1:5001/addp-model3d-converter:online 127.0.0.1:5001/addp-model3d-workflow-engine:online)
+start_online_model3d_runtime() (
+  RUNTIME_CONTAINER=addp-manager-model3d-runtime
+  RUNTIME_IMAGE=127.0.0.1:5001/addp-model3d-workflow-engine:online
+  RUNTIME_REPORT=model3d
+  run_logged docker run -d --name "$RUNTIME_CONTAINER" --network host \
+    --label "com.addp.online-runtime=$ONLINE_SUITE" \
+    -e "PORT=$MODEL3D_WORKFLOW_PORT" -e WORKFLOW_BIND_HOST=127.0.0.1 \
+    -e SYSTEM_URL -e MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET -e RUNTIME_HOST=127.0.0.1 "$RUNTIME_IMAGE"
+  verify_online_product_runtime '["python","api_server.py"]' "http://127.0.0.1:$MODEL3D_WORKFLOW_PORT/health"
+)
 stop_online_fixture() {
   local cleanup_status=0 image
   if docker container inspect addp-manager-raster-verifier >/dev/null 2>&1; then
@@ -22,6 +32,7 @@ stop_online_fixture() {
       cleanup_status=1
     fi
   fi
+  remove_online_product_container addp-manager-model3d-runtime || cleanup_status=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh stop || cleanup_status=1
   run_logged docker rm -fv addp-manager-online-registry || cleanup_status=1
   if docker container inspect addp-manager-online-registry >/dev/null 2>&1; then
@@ -36,8 +47,7 @@ stop_online_fixture() {
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
-export MODEL3D_CONVERTER_PLATFORM=linux/amd64
-export MODEL3D_CONVERTER_IMAGE=127.0.0.1:5001/addp-model3d-converter:online
+export MODEL3D_DOCKER_PLATFORM=linux/amd64
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/manager-engine.json"
 export ADDP_ONLINE_MANAGER_MINIO_PORT=59002 ADDP_ONLINE_MANAGER_MINIO_CONSOLE_PORT=59003
 export ADDP_ONLINE_MANAGER_MINIO_BUCKET=addp-online
@@ -62,9 +72,10 @@ infra_owned=1
 run_logged bash scripts/infra/up.sh
 run_logged bash business/scripts/online-manager-minio-fixture.sh start
 application_owned=1
-for start_target in -meta -manager -monitor -pointcloud-workflow -document-workflow -model3d-workflow; do
+for start_target in -meta -manager -monitor -pointcloud-workflow -document-workflow; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
+start_online_model3d_runtime
 start_online_geopython_runtime "$RUNTIME_TAG"
 export ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT=raster/source.tif
 run_logged python3 business/scripts/online-raster-minio-fixture.py manager-seed

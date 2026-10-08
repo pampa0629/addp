@@ -436,8 +436,8 @@ check_service_changed() {
         model3d-workflow-engine)
             # Model3D runtime packages Python source plus converter Dockerfiles/patches/scripts.
             local model3d_time
-            model3d_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" -o -name "*.patch" -o -name "*.sh" ')' \
-                -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
+            model3d_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" -o -name "*.patch" -o -name "*.sh" -o -name "*.cpp" -o -name "*.cmake" -o -name "*.json" -o -name "*.lock" -o -name "*.dockerignore" ')' \
+                -not -path "*/venv/*" -not -path "*/.venv/*" -not -path "*/node_modules/*" -not -path "*/__pycache__/*" 2>/dev/null | \
                 xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
             local common_time
             common_time=$(common_python_latest_time)
