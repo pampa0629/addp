@@ -1236,3 +1236,15 @@ Desktop 层使用独立 bridge 网络和显式宿主发布，不开启 host 网�
 完整入口单独报告：首轮 `make test-module MODULE=monitor` 的平台 T0、Monitor Go T1 与前端 T1/T3 已完成，但在磁盘浮点精确比较退出，整条入口不计为通过；修复后重跑对应完整指标 T2、Go T1 和独立 PostgreSQL T2，通过分项覆盖，未再次运行整条模块入口。默认 `make test-changed` 仍因工作区跨 owner 的外部测试连接条件不完整在预检拒绝，不把未执行部分计为通过；不修改并行 IAM 或 Manager 变更，本轮不提交混合工作区，不宣称 Hosted T4 或生产 T5 已执行。
 
 个人运行验收：Safari 在 2026-10-08 12:53:54（Asia/Shanghai）显示真实内存总量 62.68 GiB、可用内存 41.45 GiB、主机运行时长 3 天 7 小时 59 分钟，三个系统平均负载已去掉后缀并附数量口径说明。随后 Mac 锁屏，未取得新截图或磁盘后端的个人页面验收；已告知用户仅需在自己的终端执行 `./scripts/dev/restart.sh -monitor` 加载磁盘目录，AI 没有重启个人服务。当前 Desktop 的 diskstats 仍未启用，重启后预期为空值说明，不能把独占完整来源的设备数据作为个人受限来源数据。
+
+用户确认重启后，2026-10-08 14:01:51 至 14:03:24（Asia/Shanghai）经原生 Safari、已登录的正式平台系统管理员复验同一主机资源页：九项基础指标均有效，内存总量 62.68 GiB、可用内存约 41.9 GiB，运行时长按“3天 9小时 7分钟”显示；三个系统平均负载无单位后缀，页面持续展示任务数量说明。自动刷新查询时间推进，内存总量趋势的纵轴为 GiB、曲线约 62.68 GiB，展开后的真实历史采样明细同样显示 62.68 GiB。磁盘目录重启后不再产生查询错误，正确返回空设备及未采集说明；文件系统与 inode 保持来源未提供的说明。保存原生页面截图到系统临时目录，完成本批个人受限来源页面验收；没有操作内置浏览器、调整身份权限或扩大 Desktop 采集器范围。原生 Linux 磁盘真实页面的 Hosted T4 及生产 T5 仍未执行，前述分项门禁与完整入口限制分别保留。
+
+此次仅追加运行验收事实后，默认 `make test-changed` 返回 0：按当时工作区识别到的并行 Business 改动，执行平台 T0（包含共享前端 156 项测试、Swagger 和各入口登记）及 Business Redis 独占 T2 的 5 项回归，全部通过。该成功仅覆盖此刻变更选择，不等同于重跑前批 Monitor 整条模块门禁；Monitor 的代码验证仍引用上述分项证据。追加结果后 `git diff --check` 通过。
+
+### 10.36 磁盘吞吐的原生 Linux 页面验收（2026-10-08，用户确认继续）
+
+沿既有 `platform-node-metrics` Hosted Linux 一次性部署补齐两个磁盘吞吐指标，继续使用此前确认的正式密码/MFA 临时平台系统管理员，仅读取当次节点资源并验证原预算接口；Prometheus 的独立最小权限身份、生产权限和 Desktop 受限采集范围不变。即时结果按 device 分组，至少一个设备须具有完整一分钟窗口的有效读写速率；精确设备的读写趋势、Console URL 刷新恢复、容量 IEC 单位/经过时长/系统负载数量展示、无权限主体拒绝、中心恢复后的新样本、节点与目标停用后的历史排除分别验证。允许不同设备缺失，不把缺失率或零吞吐当成有负载；不跨设备求和，也不自行生成磁盘压力。
+
+实施前门禁识别：本批只修改既有验收脚本及文档，不修改生产 API、IAM、采集器或业务实现。`make test-node-metrics-online-runner` 验证报告闭合校验与设备/窗口/身份/缺失反例；平台 T0 既有 `make test-online-runner` 自动聚合，Hosted T4 由已登记的 `online-t4-gates.yml` 同一 suite 执行并归档截图、响应及清理证据，无需新增入口或 workflow。默认 `make test-changed` 与 Console owner 门禁仍分别按实际输入和环境报告；真实 Hosted 执行完成前不计为已通过。
+
+本地首批验证：最终 `make test-node-metrics-online-runner` 的 32 项回归、浏览器脚本语法和 System Metrics 夹具 Go 测试返回 0；`make test-console-frontend` 重跑的 150 项单测、119 项浏览器回归和构建返回 0。Console 首次执行因并行夹具占用 4173 端口失败，释放后沿同一入口重跑，无端口绕行或放宽配置。默认 `make test-changed` 因并行其他 Owner 缺少 PostgreSQL 测试连接条件在预检退出；首次 `make test-platform` 在既有 `test_logs_failure_does_not_prevent_selected_metrics_start` 的 10 秒进程超时失败（86 项中 1 项错误），不计为通过，未改动该夹具或延长超时。提交只包含本批验收脚本及规范，不含并行 IAM、Model3D、栅格或共享格式改动；真实 T4 和完整平台门禁分别取得结果后再记录。
