@@ -14,6 +14,9 @@ import uuid
 import xml.etree.ElementTree as ET
 
 import numpy as np
+import geopandas as gpd
+from shapely import from_wkb, make_valid
+from shapely.geometry import MultiPolygon
 from osgeo import gdal, ogr, osr
 from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate as validate_layout
 from addp_common.workflow_access import (
@@ -582,6 +585,70 @@ def _blocks(dataset, indices, *, window=None):
             yield x, y, arrays, masks
 
 
+def _footprint_parts(geometry):
+    parts = []
+    pending = [make_valid(geometry)]
+    while pending:
+        current = pending.pop()
+        if current.is_empty:
+            continue
+        if current.geom_type == 'Polygon':
+            parts.append(current)
+        elif current.geom_type in ('MultiPolygon', 'GeometryCollection'):
+            pending.extend(current.geoms)
+    return parts
+
+
+def raster_footprint(input_raster, bands=None, validity='any'):
+    if validity not in ('any', 'all'):
+        raise ValueError('validity must be any or all')
+    dataset = _open(input_raster)
+    width, height, transform = _grid(dataset)
+    data_indices = _data_indices(dataset)
+    if bands is None:
+        bands = data_indices
+    if (not isinstance(bands, list) or not bands or
+        any(isinstance(index, bool) or not isinstance(index, int) or index not in data_indices for index in bands) or
+        len(set(bands)) != len(bands)):
+        raise ValueError('bands must contain distinct one-based data band indices')
+    for index in range(1, dataset.RasterCount + 1):
+        if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            _band(dataset, index)
+    mask = gdal.GetDriverByName('GTiff').Create(
+        str(_path()), width, height, 1, gdal.GDT_Byte, ['TILED=YES', 'COMPRESS=DEFLATE'])
+    mask.SetGeoTransform(transform)
+    mask.SetProjection(dataset.GetProjection())
+    mask_band = mask.GetRasterBand(1)
+    valid_count = 0
+    for y in range(0, height, 512):
+        for x in range(0, width, 512):
+            span_x, span_y = min(512, width-x), min(512, height-y)
+            coverage = np.full((span_y, span_x), validity == 'all', dtype=bool)
+            for index in bands:
+                valid = next(_blocks(dataset, [index], window=(x, y, span_x, span_y)))[3][0]
+                if validity == 'any':
+                    coverage |= valid
+                else:
+                    coverage &= valid
+            valid_count += int(np.count_nonzero(coverage))
+            mask_band.WriteRaster(x, y, span_x, span_y, coverage.astype(np.uint8).tobytes(), buf_type=gdal.GDT_Byte)
+    mask.FlushCache()
+    vector = ogr.GetDriverByName('GPKG').CreateDataSource(str(_path('.gpkg')))
+    layer = vector.CreateLayer('footprint', _crs(dataset.GetProjection()), ogr.wkbPolygon)
+    if gdal.Polygonize(mask_band, mask_band, layer, -1, []) != 0:
+        raise ValueError('Footprint polygonization failed')
+    polygons = []
+    for feature in layer:
+        polygons.extend(_footprint_parts(from_wkb(bytes(feature.GetGeometryRef().ExportToWkb()))))
+    feature = layer = vector = mask_band = mask = None
+    polygons = _footprint_parts(MultiPolygon(polygons)) if polygons else []
+    if valid_count and not polygons:
+        raise ValueError('Raster grid cannot represent a polygonal footprint')
+    result = gpd.GeoDataFrame(geometry=[MultiPolygon(polygons)] if polygons else [], crs=dataset.GetProjection())
+    dataset = None
+    return result
+
+
 def raster_statistics(input_raster, band=1):
     dataset = _open(input_raster)
     _band(dataset, band)
@@ -966,6 +1033,7 @@ _SPECS = [
     (raster_band_math, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_aggregate, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
+    (raster_footprint, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
     (raster_statistics, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_histogram, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
 ]
@@ -984,6 +1052,8 @@ for function, label, params, output, effects in _SPECS:
     if name == 'raster_reclassify':
         examples.update({'rules': [{'min': 0, 'max': 10, 'class': 1}, {'value': 10, 'class': 2}],
                          'band': 1, 'unmatched': 'nodata'})
+    if name == 'raster_footprint':
+        examples.update({'validity': 'any'})
     if name == 'raster_aggregate':
         examples.update({'factors': [2, 2], 'method': 'mean'})
     metadata = OperatorMetadata(name=name, type=OperatorType.SPATIAL, category=OperatorCategory.RASTER,

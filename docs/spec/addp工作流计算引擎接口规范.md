@@ -912,6 +912,10 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 Python Runtime 的领域执行器负责内部对象、资源清理和结果投影；DAG、引用解析和异步状态复用 common-python 的 WorkflowRunner / ExecutionRegistry，不为栅格另建执行核心。
 
+`raster_footprint` 提取有效像元覆盖的真实面轮廓，接收当前 DAG 的 `raster` 端口，输出既有 `GeoDataFrame` 端口。`bands` 省略时选择所有数据波段；显式选择须为非空、无重复的原始一基数据波段序号，alpha 不可作为数据选择。`validity=any/all` 默认 `any`（所选波段有效范围的并集），`all` 为交集。NoData、无效 mask、非有限数值、无效 alpha 均排除；合法零与部分透明的有效值仍参与。必须具备可信源 CRS 与有限可逆六参数仿射网格，复数数据及复数 alpha 拒绝，不补造定位。
+
+轮廓按源完整像元方格的边界生成，采用四邻接，保留孔洞、分离面片、旋转及源 CRS，不自动做凸包、填孔、简化、重投影或插值。结果仅含 active geometry 列；非空结果为一条 MultiPolygon，全无效输入为带源 CRS 的空几何批。Polygonize 产生的自接触边界做面拓扑规范化，仅保留面部分，不扩张像元覆盖范围；无法表达面覆盖的数值定位拒绝。源像元按最多 512×512 分块、逐数据波段计算有效性，在执行目录内写 Byte 掩膜并用文件矢量化，临时栅格/矢量文件均随 execution 清理。源读取与 mask 计算不构造整幅数组；轮廓几何规模随有效边界复杂度增长，不能把块缓存预算解释为几何或进程总内存上限。该算子 workflow-only、read、资源组 raster；仅计算和 JSON 预览不生成持久输出、derive 或 Meta scan，保存另由已有受控矢量保存节点完成。extent 四角摘要仍保留原职责，不替代轮廓。
+
 `raster_aggregate` 按必填整数 `factors=[列倍数,行倍数]` 从左上像元开始分组，逐数据波段执行必填 `method=sum/mean/min/max`，输出 Float64。倍数必须为 1–2147483647 的整数，拒绝布尔值与浮点倍数；输出宽高向上取整，边缘不足整块时只使用实际存在的源像元，不补零、不丢弃边缘。源 mask、NoData、非有限值和 alpha 覆盖无效的像元不参与计算，全无效组输出 NaN；合法零和部分透明的有效像元正常参与，各数据波段独立处理。alpha 不作为输出数据波段，不保留原分类色表、颜色模型或透明度大小；复数数据拒绝。求和结果超出 Float64 有限范围时写 NaN；均值先计有效数量及最大绝对值，按该尺度归一化后累加各值除以数量，再恢复尺度，避免直接求和溢出或微小值直接除以数量下溢造成不必要的丢失。
 
 聚合属于原像素网格的整数分组，不调用重采样插值，也不按指定输出尺寸调整分组。保留源原点、CRS 与定位缺失事实；有仿射变换时，列向量乘列倍数、行向量乘行倍数，保持旋转方向。由于输出必须为规则网格，边缘不足整块时最终像元仍具有完整聚合像元的空间大小，输出矩形覆盖范围可超出源右侧或底侧；数值只来自源覆盖内的有效像元。无需补造空间定位。计算复用源 512×512 分块读取，以最多 512×512 输出单元累积单个数据波段，不把大倍数组或整幅影像一次读入内存；均值为两遍分块读取，其余方法为一遍。
@@ -936,6 +940,7 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_band_math` | `input_raster`、受限 `expression` | `raster`，Float64 单波段 |
 | `raster_reclassify` | `input_raster`、`rules`、`band`、`unmatched=nodata/keep` | `raster`，同网格 Float64 单波段 |
 | `raster_aggregate` | `input_raster`、`factors`、`method=sum/mean/min/max` | `raster`，整数分组后的数据波段 |
+| `raster_footprint` | `input_raster`、`bands`、`validity=any/all`（默认 any） | `GeoDataFrame`，源 CRS、MultiPolygon 或空几何批 |
 | `raster_statistics` | `input_raster`、`band` | `object`，全量有效/无效统计 |
 | `raster_histogram` | `input_raster`、`band`、`bins`、可选 `value_range` | `object`，全量计数及范围外计数 |
 

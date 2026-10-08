@@ -18,7 +18,7 @@ from operators.raster_compute import (
     raster_resample, raster_reproject, raster_clip, raster_mosaic,
     raster_band_math, raster_statistics, raster_histogram, raster_build_overviews, validate_cog,
     raster_align, raster_stack, raster_select_bands,
-    _classification_rules, raster_reclassify, raster_aggregate,
+    _classification_rules, raster_reclassify, raster_aggregate, raster_footprint,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -2775,3 +2775,162 @@ def test_raster_http_bounded_admission_direct_sharing_and_policy_failure(monkeyp
         while api_server.raster_resources.admission.snapshot()['running'] and time.monotonic() < deadline:
             time.sleep(.01)
         assert api_server.raster_resources.admission.snapshot()['running'] == 0
+
+
+@pytest.mark.parametrize('pattern', ['hole', 'islands', 'diagonal', 'pinch', 'checkerboard', 'full', 'empty'])
+@pytest.mark.parametrize('transform', [(0, 1, 0, 4, 0, -1), (10, 2, .5, 20, .25, -3)])
+def test_footprint_exact_pixel_union_holes_and_four_connectivity(tmp_path, pattern, transform):
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    valid = np.ones((4, 4), dtype=bool)
+    if pattern == 'hole': valid[1:3, 1:3] = False
+    elif pattern == 'islands': valid[:] = False; valid[0, 0] = valid[3, 3] = True
+    elif pattern == 'diagonal': valid = np.eye(4, dtype=bool)
+    elif pattern == 'pinch': valid[1, 1] = valid[2, 2] = False
+    elif pattern == 'checkerboard': valid = np.indices((4, 4)).sum(axis=0) % 2 == 0
+    elif pattern == 'empty': valid[:] = False
+    source = create_raster(tmp_path / 'source.tif', np.where(valid, 0., -9999.), transform=transform)
+    before = source.read_bytes()
+    def point(x, y):
+        return (transform[0] + x * transform[1] + y * transform[2], transform[3] + x * transform[4] + y * transform[5])
+    expected = unary_union([Polygon([point(x, y), point(x+1, y), point(x+1, y+1), point(x, y+1)])
+        for y in range(4) for x in range(4) if valid[y, x]])
+    with raster_workspace():
+        loaded = raster_load(source_plan(source))
+        workspace = loaded.workspace
+        result = raster_footprint(loaded)
+        assert result.crs.to_epsg() == 4326 and list(result.columns) == ['geometry']
+        assert len(result) == int(valid.any())
+        if valid.any():
+            geometry = result.geometry.iloc[0]
+            assert geometry.geom_type == 'MultiPolygon' and geometry.is_valid
+            assert geometry.symmetric_difference(expected).area == pytest.approx(0, abs=1e-12)
+            assert geometry.area == pytest.approx(valid.sum() * abs(transform[1]*transform[5]-transform[2]*transform[4]))
+            if pattern == 'hole': assert sum(len(part.interiors) for part in geometry.geoms) == 1
+            if pattern == 'diagonal': assert len(geometry.geoms) == 4
+        assert any(path.suffix == '.gpkg' for path in workspace.iterdir())
+    assert not workspace.exists() and source.read_bytes() == before
+
+
+@pytest.mark.parametrize('nodata', [-9999., float('nan')], ids=['finite', 'nan'])
+@pytest.mark.parametrize('validity,bands', [('any', None), ('all', None), ('any', [1]), ('all', [2])])
+def test_footprint_independent_band_nodata_mask_alpha_zero(tmp_path, nodata, validity, bands):
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+    first = np.zeros((4, 4)); second = np.full((4, 4), 2.)
+    first[0, 1], second[0, 2] = nodata, nodata
+    first[3, 0], second[3, 1] = np.inf, np.nan
+    alpha = np.full((4, 4), 255.); alpha[1, 0], alpha[0, 0], alpha[3, 2] = 0, 128, np.inf
+    source = create_raster(tmp_path / 'source.tif', np.stack([first, second, alpha]), nodata=nodata)
+    ds = gdal.Open(str(source), gdal.GA_Update)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'):
+        ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    mask = np.full((4, 4), 255, dtype=np.uint8); mask[3, 3] = 0
+    ds.GetRasterBand(1).GetMaskBand().WriteRaster(0, 0, 4, 4, mask.tobytes()); ds = None
+    before = source.read_bytes()
+    base = mask.astype(bool) & np.isfinite(alpha) & (alpha > 0)
+    selected = [first, second] if bands is None else [first if bands == [1] else second]
+    masks = [base & np.isfinite(values) & (values != nodata) for values in selected]
+    valid = np.logical_or.reduce(masks) if validity == 'any' else np.logical_and.reduce(masks)
+    expected = unary_union([box(x, 3-y, x+1, 4-y) for y in range(4) for x in range(4) if valid[y, x]])
+    with raster_workspace():
+        result = raster_footprint(raster_load(source_plan(source)), bands=bands, validity=validity)
+        assert result.geometry.iloc[0].equals(expected)
+    assert source.read_bytes() == before
+
+
+@pytest.mark.parametrize('params', [{'validity': 'unknown'}, {'validity': True}, {'bands': []}, {'bands': [1, 1]},
+    {'bands': [0]}, {'bands': [True]}, {'bands': [1.0]}, {'bands': [4]}, {'bands': '1'}, {'bands': [3]}])
+def test_footprint_rejects_invalid_selection(tmp_path, params):
+    source = create_raster(tmp_path / 'source.tif', np.ones((3, 4, 4)))
+    ds = gdal.Open(str(source), gdal.GA_Update); ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand); ds = None
+    with raster_workspace():
+        loaded = raster_load(source_plan(source))
+        workspace = loaded.workspace
+        with pytest.raises(ValueError): raster_footprint(loaded, **params)
+    assert not workspace.exists()
+
+
+@pytest.mark.parametrize('defect', ['crs', 'transform', 'singular', 'nonfinite', 'complex-data', 'complex-alpha', 'alpha-only'])
+def test_footprint_rejects_untrustworthy_grid_and_complex_input(tmp_path, defect):
+    from operators.raster_compute import _raster, _WORKSPACE
+    with raster_workspace():
+        workspace = _WORKSPACE.get()
+        source = workspace / 'source.tif'
+        dtype = gdal.GDT_CFloat64 if defect.startswith('complex') else gdal.GDT_Float64
+        ds = gdal.GetDriverByName('GTiff').Create(str(source), 4, 4, 2 if defect == 'complex-alpha' else 1, dtype)
+        if defect != 'crs': ds.SetProjection(_crs_wkt_for_footprint(4326))
+        if defect != 'transform': ds.SetGeoTransform((0, 1, 2, 4, .5, 1) if defect == 'singular' else (0, float('nan'), 0, 4, 0, -1) if defect == 'nonfinite' else (0, 1, 0, 4, 0, -1))
+        if defect in ('complex-alpha', 'alpha-only'): ds.GetRasterBand(ds.RasterCount).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds = None
+        with pytest.raises(ValueError): raster_footprint(_raster(source))
+
+
+def test_footprint_bounded_reads_preserve_cross_block_and_corner_cells(tmp_path, monkeypatch):
+    import operators.raster_compute as compute
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+    values = np.full((517, 513), -9999.)
+    values[510:515, 509:513] = 0.; values[0, 0] = 1
+    source = create_raster(tmp_path / 'source.tif', values, transform=(0, 1, 0, 517, 0, -1))
+    expected = unary_union([box(509, 2, 513, 7), box(0, 516, 1, 517)])
+    original = compute._read_values; reads = []
+    def read(band, x, y, width, height):
+        reads.append((width, height)); assert width <= 512 and height <= 512
+        return original(band, x, y, width, height)
+    monkeypatch.setattr(compute, '_read_values', read)
+    with raster_workspace():
+        result = raster_footprint(raster_load(source_plan(source)))
+        assert result.geometry.iloc[0].equals(expected)
+    assert (1, 5) in reads
+
+
+@pytest.mark.parametrize('invalid', [False, True], ids=['success', 'failed'])
+def test_footprint_metadata_vector_port_and_async_vector_composition(tmp_path, monkeypatch, invalid):
+    import api_server
+    spec = next(item for item in list_operators() if item['id'] == 'raster_footprint')
+    assert spec['output_ports'][0]['type'] == 'GeoDataFrame'
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert spec['attributes']['resource_groups'] == ['raster']
+    params = {item['name']: item for item in spec['parameters']}
+    assert params['validity']['default'] == 'any' and params['validity']['enum'] == ['any', 'all']
+    source = create_raster(tmp_path / 'source.tif', np.ones((4, 4)), crs='EPSG:3857')
+    before = source.read_bytes()
+    definition = {'tasks': [
+        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'access_plan': source_plan(source)}},
+        {'id': 'footprint', 'operator': 'raster_footprint', 'depends_on': ['load'], 'params': {'input_raster': {'$ref': 'load'}}},
+        {'id': 'area', 'operator': 'get_area', 'depends_on': ['footprint'], 'params': {'input_gdf': {'$ref': 'footprint'}}},
+    ]}
+    if invalid: definition['tasks'][1]['params']['validity'] = 'unknown'
+    paths = []
+    import workflow_engine
+    original = workflow_engine._execute_operator
+    def execute(name, params):
+        if name == 'raster_footprint': paths.append(params['input_raster'].workspace)
+        return original(name, params)
+    monkeypatch.setattr(workflow_engine, '_execute_operator', execute)
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {}, 'runtime': {
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read']}}})
+    assert response.status_code == 202
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/' + response.json['execution_id']).json
+        if status['status'] in ('success', 'failed'): break
+        time.sleep(.01)
+    assert status['status'] == ('failed' if invalid else 'success'), status
+    assert paths and all(not path.exists() for path in paths) and source.read_bytes() == before
+    if not invalid:
+        result = json.loads(status['result'])
+        assert result['type'] == 'FeatureCollection' and result['features'][0]['geometry']['type'] == 'MultiPolygon'
+        from pyproj import CRS
+        assert CRS.from_user_input(result['crs']['properties']['name']).to_epsg() == 3857
+        assert result['features'][0]['properties']['area'] == 16
+    assert client.post('/api/operators/raster_footprint/invoke', json={'params': {}}).status_code == 403
+
+
+def _crs_wkt_for_footprint(code):
+    reference = osr.SpatialReference()
+    reference.ImportFromEPSG(code)
+    return reference.ExportToWkt()

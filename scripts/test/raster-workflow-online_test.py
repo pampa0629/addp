@@ -8,6 +8,15 @@ import urllib.parse
 m = importlib.import_module('scripts.test.raster-workflow-online')
 
 
+def footprint_result(case_name):
+    # Hand-written expected boundary for independent missing/transparent source cells.
+    ring = ([(0, 0), (4, 0), (4, 2), (6, 2), (6, 0), (256, 0), (256, 256), (0, 256), (0, 0)]
+        if case_name == 'footprint-any' else [(6, 0), (256, 0), (256, 256), (0, 256), (0, 2), (6, 2), (6, 0)])
+    coordinates = [[110 + x*.01, 20.32-y*.01] for x, y in ring]
+    return {'type': 'FeatureCollection', 'features': [{'id': '0', 'type': 'Feature', 'properties': {},
+        'geometry': {'type': 'MultiPolygon', 'coordinates': [[coordinates]]}}]}
+
+
 class Client:
     def __init__(self):
         self.calls = []
@@ -101,6 +110,9 @@ class Client:
                 operator = definition['tasks'][-1]['operator']
                 if operator == 'raster_info':
                     final_result = m.fixture.utility_info_expectation('physical-wkt')
+                elif operator == 'raster_footprint':
+                    case_name = 'footprint-all' if definition['tasks'][-1]['params'].get('validity') == 'all' else 'footprint-any'
+                    final_result = footprint_result(case_name)
                 elif operator == 'validate_cog':
                     valid = 'to-cog.cog.tif' in definition['tasks'][0]['params']['locator']
                     final_result = {'valid': valid, 'warnings': [], 'errors': [] if valid else ['not tiled']}
@@ -207,7 +219,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual(case['physical']['color_interpretations'], ['Gray', 'Undefined', 'Alpha'])
         self.assertEqual(len(case['physical']['preserved_sha256']), 24)
         definition = [body['content']['workflow_definition'] for method, path, body in self.client.calls
-            if method == 'POST' and path == '/api/v1/develop/executions'][-1]
+            if method == 'POST' and path == '/api/v1/develop/executions' and any(task['operator'] == 'raster_clip' and task['params'].get('mode') == 'outside' for task in body['content']['workflow_definition']['tasks'])][-1]
         self.assertEqual([task['operator'] for task in definition['tasks']],
             ['raster_load', 'raster_clip', 'raster_build_overviews', 'raster_save'])
         self.assertEqual(definition['tasks'][1]['params']['mode'], 'outside')
@@ -235,6 +247,67 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                         if fault == 'levels': payload['overview_sizes'] = [[64, 64]]
                         if fault == 'source': payload['source_unchanged'] = False
                         if fault == 'prior': payload['preserved_sha256']['aggregate-sum.cog.tif'] = 'changed'
+                    return payload
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
+    def test_footprint_default_union_explicit_intersection_and_readonly_browser(self):
+        cases = self.run_scene()['footprint_cases']
+        self.assertEqual([item['case_name'] for item in cases], ['footprint-any', 'footprint-all'])
+        for case in cases:
+            self.assertEqual(case['browser']['source_item_id'], 12)
+            self.assertEqual(case['browser']['result_kind'], 'json')
+            self.assertEqual(case['browser']['expected_result'], case['json_result'])
+            self.assertEqual(len(case['physical']['preserved_sha256']), 24)
+        definitions = [body['content']['workflow_definition'] for method, path, body in self.client.calls
+            if method == 'POST' and path == '/api/v1/develop/executions'][-2:]
+        self.assertNotIn('validity', definitions[0]['tasks'][-1]['params'])
+        self.assertEqual(definitions[1]['tasks'][-1]['params']['validity'], 'all')
+
+    def test_footprint_oracle_accepts_equivalent_ring_start_and_orientation(self):
+        for case in m.fixture.FOOTPRINT_CASES:
+            result = footprint_result(case)
+            ring = result['features'][0]['geometry']['coordinates'][0][0]
+            ring = list(reversed(ring[:-1]))
+            ring = ring[2:] + ring[:2]
+            result['features'][0]['geometry']['coordinates'][0][0] = ring + [ring[0]]
+            execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
+            self.assertEqual(m.validate_footprint(execution, case), result)
+
+    def test_footprint_rejects_invalid_coverage_grid_area_schema_and_side_effects(self):
+        for fault in ('wrong-rule', 'wrong-cells', 'crs', 'extent', 'off-grid', 'diagonal', 'unclosed', 'nonfinite', 'bool', 'crs-grid', 'type', 'properties', 'scan', 'output', 'lineage'):
+            with self.subTest(fault=fault):
+                result = footprint_result('footprint-any')
+                geometry = result['features'][0]['geometry']
+                ring = geometry['coordinates'][0][0]
+                execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
+                if fault == 'wrong-rule': execution['metadata']['result']['final_result'] = footprint_result('footprint-all')
+                if fault == 'crs': result['crs'] = {'type': 'name', 'properties': {'name': 'EPSG:3857'}}
+                if fault == 'wrong-cells':
+                    for index in (1, 2): ring[index][0] = 110.02
+                    for index in (3, 4): ring[index][0] = 110.04
+                if fault == 'extent': geometry['coordinates'] = footprint_result('footprint-any')['features'][0]['geometry']['coordinates']; geometry['coordinates'][0][0] = [[110,20.32],[112.56,20.32],[112.56,17.76],[110,17.76],[110,20.32]]
+                if fault == 'off-grid': ring[2][0] += .005
+                if fault == 'diagonal': ring[2][0] += .01
+                if fault == 'unclosed': ring.pop()
+                if fault == 'nonfinite': ring[2][0] = float('nan')
+                if fault == 'bool': ring[2][0] = True
+                if fault == 'crs-grid': ring[2][0] = 200
+                if fault == 'type': geometry['type'] = 'Polygon'
+                if fault == 'properties': result['features'][0]['properties'] = {'pixels': 65532}
+                if fault == 'scan': execution['metadata']['result']['meta_scan_runs'] = [{}]
+                if fault == 'output': execution['outputs'] = {'unexpected': {}}
+                if fault == 'lineage': execution['metadata']['lineage_facts'] = {'inputs': []}
+                with self.assertRaises(m.SuiteError): m.validate_footprint(execution, 'footprint-any')
+
+    def test_footprint_rejects_changes_to_last_and_prior_cog(self):
+        for fault in ('last', 'prior'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def physical(repo, env, action):
+                    payload = self.physical(repo, env, action)
+                    if len(self.client.executions) == 35 and action == 'verify-clip-outside':
+                        if fault == 'last': payload['sha256'] = 'changed'
+                        else: payload['preserved_sha256']['aggregate-sum.cog.tif'] = 'changed'
                     return payload
                 with self.assertRaises(m.SuiteError): self.run_scene(physical)
 
@@ -304,7 +377,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES])
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES] + ['verify-clip-outside'] * 2)
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -332,8 +405,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual({task['operator'] for definition in submitted for task in definition['tasks']}, {
             'raster_load', 'raster_save', 'raster_info', 'validate_cog', 'raster_to_cog', 'raster_build_overviews',
             'raster_reproject', 'raster_resample', 'raster_clip', 'raster_mosaic', 'raster_band_math',
-            'raster_statistics', 'raster_histogram', 'raster_align', 'raster_stack', 'raster_select_bands', 'raster_reclassify', 'raster_aggregate'})
+            'raster_statistics', 'raster_histogram', 'raster_align', 'raster_stack', 'raster_select_bands', 'raster_reclassify', 'raster_aggregate', 'raster_footprint'})
         tail = len(m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES)
+        submitted = submitted[:-len(m.fixture.FOOTPRINT_CASES)]
         submitted = submitted[-(len(m.fixture.UTILITY_CASES + m.fixture.UTILITY_JSON_CASES) + tail):-tail]
         self.assertEqual([task['operator'] for task in submitted[0]['tasks']],
             ['raster_load', 'raster_build_overviews', 'raster_save'])
@@ -409,7 +483,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             self.assertEqual(case['physical']['overview_sizes'],[[43,26]])
             self.assertEqual(case['browser']['source_locators'],[case['browser']['source_locator']])
         definitions = [body['content']['workflow_definition'] for method,path,body in self.client.calls
-            if method=='POST' and path=='/api/v1/develop/executions'][-3:-1]
+            if method=='POST' and path=='/api/v1/develop/executions' and any(task['operator'] == 'raster_aggregate' for task in body['content']['workflow_definition']['tasks'])]
         for definition,method in zip(definitions,['mean','sum']):
             self.assertEqual([task['operator'] for task in definition['tasks']],
                 ['raster_load','raster_select_bands','raster_aggregate','raster_build_overviews','raster_save'])

@@ -255,6 +255,68 @@ def outside_workflow(source_locator, target_engine_id, case_name):
     ]}
 
 
+def footprint_workflow(source_locator, case_name):
+    if case_name not in fixture.FOOTPRINT_CASES:
+        raise SuiteError('unknown footprint case')
+    params = {'input_raster': {'$ref': 'load', 'port': 'default'}}
+    if case_name == 'footprint-all':
+        params['validity'] = 'all'
+    return {'tasks': [
+        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
+        {'id': 'analysis', 'operator': 'raster_footprint', 'depends_on': ['load'], 'params': params},
+    ]}
+
+
+def validate_footprint(execution, case_name):
+    actual = transient_result(execution)
+    if actual.get('type') != 'FeatureCollection' or actual.get('crs') is not None or len(array(actual.get('features'), 'footprint features')) != 1:
+        raise SuiteError('footprint must contain one geometry feature')
+    feature = obj(actual['features'][0], 'footprint feature')
+    geometry = obj(feature.get('geometry'), 'footprint geometry')
+    if feature.get('type') != 'Feature' or feature.get('properties') != {} or geometry.get('type') != 'MultiPolygon':
+        raise SuiteError('footprint lost its geometry-only MultiPolygon contract')
+    polygons = []
+    area = 0
+    for polygon in array(geometry.get('coordinates'), 'footprint polygons'):
+        rings = []
+        for ring in array(polygon, 'footprint rings'):
+            vertices = []
+            for point in array(ring, 'footprint vertices'):
+                if (not isinstance(point, list) or len(point) != 2 or
+                    any(type(value) not in (int, float) or not math.isfinite(value) for value in point)):
+                    raise SuiteError('footprint coordinates must be finite pairs')
+                pixel = [(point[0]-110)/.01, (20.32-point[1])/.01]
+                if any(not math.isclose(value, round(value), rel_tol=0, abs_tol=1e-8) or
+                       not 0 <= round(value) <= fixture.SIZE for value in pixel):
+                    raise SuiteError('footprint boundary left the source pixel grid')
+                vertices.append(tuple(round(value) for value in pixel))
+            if len(vertices) < 4 or vertices[0] != vertices[-1]:
+                raise SuiteError('footprint ring must be closed')
+            if any(a[0] != b[0] and a[1] != b[1] for a, b in zip(vertices, vertices[1:])):
+                raise SuiteError('footprint boundary cut through source cells')
+            rings.append(vertices)
+        if not rings:
+            raise SuiteError('footprint polygon has no exterior')
+        areas = [abs(sum(a[0]*b[1]-b[0]*a[1] for a, b in zip(ring, ring[1:]))) / 2 for ring in rings]
+        area += areas[0] - sum(areas[1:])
+        polygons.append(rings)
+    def inside(x, y, ring):
+        covered = False
+        for a, b in zip(ring, ring[1:]):
+            if (a[1] > y) != (b[1] > y) and x < (b[0]-a[0]) * (y-a[1]) / (b[1]-a[1]) + a[0]:
+                covered = not covered
+        return covered
+    expected = list(fixture.footprint_pixels(case_name))
+    if area != sum(expected):
+        raise SuiteError('footprint area differs from independent valid pixel count')
+    for position, wanted in enumerate(expected):
+        x, y = position % fixture.SIZE + .5, position // fixture.SIZE + .5
+        covered = any(inside(x, y, rings[0]) and not any(inside(x, y, ring) for ring in rings[1:]) for rings in polygons)
+        if covered != wanted:
+            raise SuiteError('footprint coverage differs from independent source validity')
+    return actual
+
+
 def transient_result(execution):
     metadata = obj(execution.get('metadata'), 'Develop analysis metadata')
     result = obj(metadata.get('result'), 'Develop analysis result')
@@ -734,6 +796,30 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if single else graphs,
             'physical': native, 'browser': browsers[0] if single else browsers})
         preserved[name] = native['sha256']
+    footprint_cases = []
+    footprint_source = support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'footprint source')
+    footprint_locator = support.build_item_locator(source_engine, footprint_source)
+    for case_name in fixture.FOOTPRINT_CASES:
+        identifier = submit(client, engine_id, footprint_workflow(footprint_locator, case_name))
+        execution = wait_execution(client, 'develop', identifier, timeout)
+        result = validate_footprint(execution, case_name)
+        monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor footprint execution')
+        if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
+            or obj(monitor.get('metadata', {}), 'Monitor footprint metadata').get('lineage_facts')):
+            raise SuiteError('Monitor footprint has invalid status/owner or persistent lineage')
+        native = physical_runner(repository, env, 'verify-clip-outside')
+        final_name = fixture.OUTSIDE_CASES[-1] + '.cog.tif'
+        if (native.get('sha256') != preserved[final_name] or native.get('preserved_sha256') !=
+            {name: digest for name, digest in preserved.items() if name != final_name}):
+            raise SuiteError('footprint execution changed an accepted artifact')
+        report = browser_runner(repository, env, {
+            'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'principal_id': identity['principal_id'],
+            'tenant_id': identity['tenant_id'], 'execution_id': identifier,
+            'source_item_id': footprint_source['id'], 'source_locator': footprint_locator,
+            'source_name': 'multiband.tif', 'case_name': case_name, 'result_kind': 'json', 'expected_result': result,
+        })
+        footprint_cases.append({'case_name': case_name, 'execution_id': identifier,
+            'json_result': result, 'physical': native, 'browser': report})
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
@@ -741,7 +827,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'spatial_cases': spatial_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
-            'aggregate_cases': aggregate_cases, 'outside_cases': outside_cases,
+            'aggregate_cases': aggregate_cases, 'outside_cases': outside_cases, 'footprint_cases': footprint_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

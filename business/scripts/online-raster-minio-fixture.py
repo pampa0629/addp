@@ -34,6 +34,7 @@ FOUNDATION_CASES = ('multiraster-weighted', 'multiraster-rgb')
 RECLASS_CASES = ('reclassify-nodata', 'reclassify-keep')
 AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum')
 OUTSIDE_CASES = ('clip-outside',)
+FOOTPRINT_CASES = ('footprint-any', 'footprint-all')
 UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
 NON_COG_SOURCE = 'non-cog.tif'
 SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
@@ -306,6 +307,16 @@ def aggregate_pixels(case_name, band=1, level=1):
                       for x in range(column*3, min((column+1)*3, SIZE)) if y*SIZE+x != 0]
             total = math.fsum(values)
             yield total/len(values) if case_name == 'aggregate-mean' else total
+
+
+def footprint_pixels(case_name):
+    """Independent source cell indices: separate missing bands and transparent cell."""
+    if case_name not in FOOTPRINT_CASES:
+        raise FixtureError('unknown footprint case')
+    for row in range(SIZE):
+        for column in range(SIZE):
+            cell = (row // 2) * (SIZE // 2) + column // 2
+            yield cell != 2 and (case_name == 'footprint-any' or cell not in (0, 1))
 
 
 def outside_pixels(case_name, band=1, level=1):

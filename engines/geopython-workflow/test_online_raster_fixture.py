@@ -249,13 +249,16 @@ def source_access_plan(path):
 def single_source_execution(tmp_path, scene, api_server, case_name):
     source_name = (fixture.NON_COG_SOURCE if case_name == 'validate-cog-invalid' else
                    'build-overviews.cog.tif' if case_name == 'info-overviews' else
-                   'to-cog.cog.tif' if case_name == 'validate-cog-valid' else 'source.tif')
+                   'to-cog.cog.tif' if case_name == 'validate-cog-valid' else 'multiband.tif' if case_name in fixture.FOOTPRINT_CASES else 'source.tif')
     role = 'target' if source_name.endswith('.cog.tif') else 'source'
     source = tmp_path / ('utility-source-' + source_name)
     original = LocalMinio.objects[role, 'raster-' + role, source_name]
     source.write_bytes(original)
-    definition = (scene.outside_workflow if case_name in fixture.OUTSIDE_CASES else scene.aggregate_workflow if case_name in fixture.AGGREGATE_CASES else scene.reclass_workflow if case_name in fixture.RECLASS_CASES else scene.utility_workflow)(
-        'source-locator', 2, case_name)
+    if case_name in fixture.FOOTPRINT_CASES:
+        definition = scene.footprint_workflow('source-locator', case_name)
+    else:
+        definition = (scene.outside_workflow if case_name in fixture.OUTSIDE_CASES else scene.aggregate_workflow if case_name in fixture.AGGREGATE_CASES else scene.reclass_workflow if case_name in fixture.RECLASS_CASES else scene.utility_workflow)(
+            'source-locator', 2, case_name)
     output = tmp_path / (case_name + '.cog.tif')
     plan = source_access_plan(source)
     if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES:
@@ -1078,3 +1081,17 @@ def test_outside_physical_oracle_rejects_hole_coverage_alpha_masks_and_preservat
     finally:
         LocalMinio.objects.clear()
         LocalMinio.objects.update(baseline)
+
+
+
+def test_async_footprint_union_intersection_geojson_match_independent_cells(outside_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    baseline = dict(LocalMinio.objects)
+    for case in fixture.FOOTPRINT_CASES:
+        result, _ = single_source_execution(tmp_path, scene, api_server, case)
+        execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
+        assert scene.validate_footprint(execution, case) == result
+        assert sum(fixture.footprint_pixels(case)) == (65532 if case == 'footprint-any' else 65524)
+        assert fixture.worker('verify-clip-outside', outside_artifacts)['valid_pixels'] == 53247
+        assert LocalMinio.objects == baseline
