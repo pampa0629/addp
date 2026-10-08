@@ -99,7 +99,8 @@ class SpatialClient:
             columns = {"value_a": {"1": "###########", "2": "#####", "3": "###", "4": None, "5": None},
                        "value_b": constant, "value_c": hashed}
         return [{"id": key, **{field: values[key] for field, values in columns.items()},
-                 "location_point": {"type": "Point", "coordinates": [100 + int(key), 20 + int(key)]}}
+                 "location_point": f"POINT({100 + int(key)} {20 + int(key)})" if owner in {"manager", "transfer"} else
+                     {"type": "Point", "coordinates": [100 + int(key), 20 + int(key)]}}
                 for key in sorted(ONLINE.EXPECTED_IDS)]
 
     def request(self, method, path, expected, body=None):
@@ -227,7 +228,7 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(ONLINE.SuiteError, "duplicated"):
             ONLINE.assert_spatial_rows(rows, "transfer", expected)
         rows = client.rows("transfer")
-        rows[0]["location_point"]["coordinates"] = [0, 0]
+        rows[0]["location_point"] = "POINT(0 0)"
         with self.assertRaisesRegex(ONLINE.SuiteError, "coordinates"):
             ONLINE.assert_spatial_rows(rows, "transfer", expected)
 
@@ -237,6 +238,17 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         raw = struct.pack("<BIIdd", 1, 0x20000001, 3857, 101, 21)
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.point_coordinates(raw.hex())
+
+    def test_point_coordinates_accept_current_manager_wkt_and_reject_invalid_geometry(self):
+        for text, expected in (("POINT(101 21)", (101, 21)),
+                               ("POINT(-101.5 2.1e1)", (-101.5, 21))):
+            with self.subTest(text=text):
+                self.assertEqual(ONLINE.point_coordinates(text), expected)
+        for text in ("POINT Z(101 21 5)", "POINT(101 21 5)", "POINT EMPTY",
+                     "POINT(nan 21)", "POINT(101 inf)", "LINESTRING(101 21,102 22)",
+                     "POINT(101 21)extra"):
+            with self.subTest(text=text), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.point_coordinates(text)
 
     def test_cleanup_refuses_to_overwrite_external_baseline_change_but_deletes_service(self):
         client = SpatialClient()

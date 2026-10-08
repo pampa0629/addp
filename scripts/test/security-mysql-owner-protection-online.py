@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
+import re
 import struct
 import os
 import signal
@@ -729,7 +731,16 @@ def spatial_expected(algorithm: str, parameters: Mapping[str, object]) -> dict[s
 
 
 def point_coordinates(value: object) -> tuple[float, float]:
-    # Owner protocols expose geometry as GeoJSON or native hexadecimal EWKB.
+    # Current Manager table preview uses WKT; other owner protocols expose
+    # GeoJSON or native hexadecimal EWKB. All must preserve the same 2D Point.
+    if isinstance(value, str) and (match := re.fullmatch(r"POINT\s*\(([^()]*)\)", value)):
+        try:
+            coordinates = tuple(float(part) for part in match[1].split())
+            if len(coordinates) == 2 and all(math.isfinite(part) for part in coordinates):
+                return coordinates
+        except ValueError:
+            pass
+        raise SuiteError("spatial output must contain a two-dimensional Point")
     if isinstance(value, str) and value.startswith("{"):
         value = json.loads(value)
     if isinstance(value, dict) and value.get("type") == "Point":
@@ -768,7 +779,11 @@ def assert_spatial_rows(rows: Iterable[Mapping[str, object]], owner: str,
         for field, values in expected.items():
             if row.get(field) != values[key] or (key == "4" and field not in row):
                 raise SuiteError(f"{owner} returned an unexpected protected value for {field}")
-        if point_coordinates(row.get("location_point")) != (100 + int(key), 20 + int(key)):
+        try:
+            coordinates = point_coordinates(row.get("location_point"))
+        except SuiteError as error:
+            raise SuiteError(f"{owner} spatial row {key}: {error}") from error
+        if coordinates != (100 + int(key), 20 + int(key)):
             raise SuiteError(f"{owner} changed the spatial coordinates")
     return {"rows": 5, "protected_fields": sorted(expected), "coordinates_preserved": True,
             "null_preserved": True}
