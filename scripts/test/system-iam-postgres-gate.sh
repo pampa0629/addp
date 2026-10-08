@@ -79,7 +79,9 @@ run_without_skips() {
     log_name=$(printf '%s' "$package" | tr '/.' '__')
     log_path="$WORK_DIR/$log_name.log"
 
-    go test "$package" -run "$pattern" -count=1 -v 2>&1 | tee "$log_path"
+    # Full forward-migration replay can exceed Go's default 10-minute package
+    # budget. Keep every package bounded; CI separately bounds the whole job.
+    go test "$package" -run "$pattern" -count=1 -timeout=20m -v 2>&1 | tee "$log_path"
     if grep -q -- '--- SKIP:' "$log_path"; then
         echo "PostgreSQL release gate refuses skipped tests in $package" >&2
         exit 1

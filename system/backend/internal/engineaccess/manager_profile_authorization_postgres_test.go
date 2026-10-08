@@ -51,8 +51,14 @@ func exerciseManagerProfileAuthorization(t *testing.T, db *gorm.DB, path plugin.
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Browser authentication uses the database wall clock. The host and
+		// Docker VM clocks need not coincide, even for an immediately used value.
+		var authenticatedAt time.Time
+		if err := db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&authenticatedAt).Error; err != nil {
+			t.Fatal(err)
+		}
 		choice, err := selection.BeginContextSelection(ctx, iam.BeginContextSelectionInput{PrincipalID: user.PrincipalID,
-			Authentication: iam.SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: time.Now().UTC()}})
+			Authentication: iam.SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: authenticatedAt}})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import shutil
+import shlex
 import signal
 import subprocess
 import tempfile
@@ -110,6 +111,15 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertNotEqual(failed.returncode, 0)
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_full_gate_sets_a_finite_timeout_for_every_package(self):
+        result = self.run_gate(arguments=("--package", ""))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = (self.root / "trace-1").read_text().splitlines()
+        self.assertTrue(commands)
+        for command in commands:
+            arguments = shlex.split(command)
+            self.assertEqual(arguments.count("-timeout=20m"), 1, command)
 
     def test_coordination_filter_preserves_complete_default_discovery(self):
         result = self.run_gate(arguments=("--test", "engine-access-coordination"))

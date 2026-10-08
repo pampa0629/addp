@@ -101,6 +101,10 @@ bash -c 'source scripts/infra/ports.sh && addp_infra_verify_container postgres a
 
 System IAM 标准门禁在首次重置 Schema 前获取宿主机级文件锁 `/tmp/addp-system-iam-postgres-gate.lock`，覆盖完整运行及其子进程，跨 checkout 和 `--package` 选择互斥。另一轮仍在运行时立即失败，不开始数据库操作；进程退出后由操作系统释放锁，锁文件保持原位，不能通过删除锁文件解除占用。该边界同样用于独占 CI Runner；分包验证也必须串行运行。
 
+该门禁对每个 Go 测试包显式设置 20 分钟上限。完整 Migration 回归会反复重放历史版本，累计运行可能超过 Go 默认的 10 分钟包级超时；单个迁移阶段仍保留自身期限，CI Job 仍以 30 分钟限制整轮运行，不通过拆包、跳过场景或取消超时规避完整验收。
+
+Manager 剖析执行授权的 PostgreSQL 夹具从同一数据库的 `clock_timestamp()` 读取认证时间，与正式 Browser 会话的墙钟校验一致，避免主机与 Docker VM 时钟差触发“认证时间在未来”；正式拒绝未来认证时间的规则保持不变。
+
 需要一次验证全部已登记基础设施集成门禁时，先显式配置各 owner 门禁要求的安全连接变量，再运行 `make test-integration`。该入口严格串行调用 PostgreSQL 和 MongoDB 模块级门禁，避免 `addp_test` 或 `addp_iam_test` 被并发重置；PostgreSQL 门禁不会创建新 database，也不会连接 `addp` 开发业务库。Manager MongoDB 门禁读取 `Outdoor/Persons`；目标为空时只创建一条确定性夹具，并在退出时恢复原状态。
 
 Manager 统一派生任务表、语义唯一约束、资源绑定与资源回收生命周期使用 `addp_test` 验证：
