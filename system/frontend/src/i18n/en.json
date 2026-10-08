@@ -848,6 +848,7 @@
           "ontology": "Ontology",
           "operation": "Operation",
           "permission": "Permission",
+          "platform_definition": "Platform Capability Definition",
           "platform_identity_change": "Platform Identity Change",
           "platform_role_change": "Platform Role Change",
           "policy": "Security Policy",

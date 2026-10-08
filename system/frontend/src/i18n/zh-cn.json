@@ -848,6 +848,7 @@
           "ontology": "本体",
           "operation": "操作记录",
           "permission": "权限",
+          "platform_definition": "平台能力定义",
           "platform_identity_change": "平台身份变更",
           "platform_role_change": "平台角色变更",
           "policy": "安全策略",

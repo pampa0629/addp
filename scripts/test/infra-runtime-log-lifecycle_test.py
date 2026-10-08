@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 KEYS = ("LOKI_READ_TOKEN", "LOKI_WRITE_TOKEN", "LOKI_S3_SECRET_KEY", "LOG_OBSERVER_SERVICE_CLIENT_SECRET")
@@ -67,10 +68,14 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         self.secrets.mkdir(mode=0o700)
         self.envfile = self.secrets / "runtime.env"
 
-    def run_up(self, cli=(), **values):
+    def fixture_environment(self):
         env = dict(os.environ)
-        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES"):
+        for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "ADDP_METRICS_DESKTOP_LOOPBACK_PORT", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES"):
             env.pop(key, None)
+        return env
+
+    def run_up(self, cli=(), **values):
+        env = self.fixture_environment()
         env.update(PATH=f"{self.bin}:{env['PATH']}", ENV="development", INFRA_FALKORDB_PASSWORD="graph-test", REDIS_PASSWORD="redis-test")
         env.update(values)
         return subprocess.run(["bash", "scripts/infra/up.sh", *cli], cwd=self.repo, env=env,
@@ -259,6 +264,20 @@ elif a[0]=='compose':
                                  command)
             self.assertNotIn('build', command)
 
+    def test_metrics_fixture_ignores_parent_control_and_desktop_transport(self):
+        with mock.patch.dict(os.environ, {
+                'ADDP_METRICS_CONTROL_ENABLED': 'true',
+                'ADDP_METRICS_CONTROL_DIR': str(self.root / 'ambient-control'),
+                'ADDP_METRICS_CONTROL_GATEWAY_URL': 'http://ambient.invalid:8000',
+                'ADDP_METRICS_DESKTOP_LOOPBACK_PORT': '19091'}):
+            result = self.run_up(**self.healthy_docker(), **self.metrics_certificates(),
+                                 cli=('--metrics',), ADDP_OBSERVABILITY_METRICS_ENABLED='true')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.calls()
+        self.assertTrue(any('up' in a and 'prometheus' in a for a in calls))
+        self.assertFalse(any('up' in a and 'metrics-control' in a for a in calls))
+        self.assertFalse(any(a[0] in ('context', 'info') for a in calls))
+
     def test_metrics_only_disabled_and_unknown_arguments_do_not_create_credentials(self):
         result = self.run_up(**self.healthy_docker(), cli=('--metrics',))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -275,8 +294,10 @@ elif a[0]=='compose':
                 ('false', 'false', ''), ('true', 'false', 'observability-logs'),
                 ('false', 'true', 'observability-metrics'),
                 ('true', 'true', 'observability-logs,observability-metrics')):
-            with self.subTest(logs=logs, metrics=metrics):
-                env = dict(os.environ, ADDP_OBSERVABILITY_LOGS_ENABLED=logs,
+            with self.subTest(logs=logs, metrics=metrics), mock.patch.dict(
+                    os.environ, ADDP_METRICS_CONTROL_ENABLED='true'):
+                env = self.fixture_environment()
+                env.update(ADDP_OBSERVABILITY_LOGS_ENABLED=logs,
                            ADDP_OBSERVABILITY_METRICS_ENABLED=metrics, COMPOSE_PROFILES='unselected')
                 result = subprocess.run(['bash', '-c',
                     'source scripts/utils/observability-env.sh; addp_observability_profiles; printf "%s" "${COMPOSE_PROFILES-}"'],
@@ -378,17 +399,16 @@ elif a[0]=='compose':
         values = self.healthy_docker()
         values.update(ENV="production", ADDP_HOST_NODE_NAME="fixture-node", ADDP_OBSERVABILITY_LOGS_ENABLED="true", MOCK_EXISTING_LOGS="1", MOCK_FOREIGN_LOGS=str(int(foreign)))
         values.update(extra)
-        env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", **values)
+        env = self.fixture_environment()
+        env.update(PATH=f"{self.bin}:{env['PATH']}", **values)
         env.update(ROOT_DIR=str(self.repo.resolve()), PROJECT_ROOT=str(self.repo.resolve()), INFRA_FALKORDB_PASSWORD="graph-test", REDIS_PASSWORD="redis-test", ADDP_ONLINE_HOST="0")
-        for key in KEYS: env.pop(key, None)
         source=(ROOT/'scripts/dev/start.sh').read_text()
         phase=source[source.index('source "${ROOT_DIR}/scripts/infra/ports.sh"'):source.index('# Runtime 容器归属与清理')]
         result=subprocess.run(['bash','-c','set -euo pipefail\nGREEN= YELLOW= RED= NC=\n'+phase+'\necho BUSINESS_START_REACHED\nexit "$infra_optional_result"'],cwd=self.repo,env=env,capture_output=True,text=True,timeout=10)
         return result
 
     def test_compose_profiles_render_without_unselected_secrets(self):
-        env = dict(os.environ)
-        for key in (*KEYS, 'LOKI_S3_ACCESS_KEY', 'COMPOSE_PROFILES'): env.pop(key, None)
+        env = self.fixture_environment()
         env.update(INFRA_FALKORDB_PASSWORD='graph-test', INFRA_KAFKA_ADMIN_PASSWORD='admin-test', INFRA_KAFKA_CONNECT_PASSWORD='connect-test', INFRA_KAFKA_TRANSFER_PASSWORD='transfer-test')
         args=['docker','compose','--env-file','/dev/null','-f',str(ROOT/'docker-compose.infra.yml'),'config','--format','json']
         for selected in (False, True):
@@ -477,9 +497,10 @@ elif a[0]=='compose':
     def test_force_does_not_authorize_personal_volume_deletion(self):
         docker = self.bin / "docker"
         docker.write_text("#!/bin/sh\nif [ \"$1 $2\" = \"compose version\" ]; then exit 0; fi\nexit 99\n")
+        env = self.fixture_environment()
+        env.update(PATH=f"{self.bin}:{env['PATH']}", GITHUB_ACTIONS="false", ADDP_ONLINE_HOST="0")
         result = subprocess.run(["bash", "scripts/infra/down.sh", "--volumes", "--force"], cwd=self.repo,
-                                env=dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
-                                         GITHUB_ACTIONS="false", ADDP_ONLINE_HOST="0"),
+                                env=env,
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("禁止删除", result.stderr)
