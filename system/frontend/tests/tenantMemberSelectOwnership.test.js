@@ -6,6 +6,14 @@ function source(relativePath) {
 }
 
 describe('tenant member selector ownership', () => {
+  it('reuses the IAM identity renderer for grant recipients in history and revocation', () => {
+    const grants = source('../src/components/engines/EngineSourceGrants.vue')
+    const recipient = source('../src/components/engines/EngineGrantRecipient.vue')
+    expect(grants.match(/<EngineGrantRecipient\b/g)).toHaveLength(2)
+    expect(recipient).toContain('<TenantMemberIdentity')
+    expect(recipient).toContain("from '../iam/TenantMemberIdentity.vue'")
+    expect(grants).not.toContain('revokeRow?.recipient_id')
+  })
   it('keeps user assignment and service-account assignment on distinct page entries', () => {
     const roleAssignments = source('../src/components/iam/TenantRoleAssignmentsPanel.vue')
     const audit = source('../src/components/iam/AuditPanel.vue')

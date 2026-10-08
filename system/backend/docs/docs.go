@@ -1825,6 +1825,97 @@ const docTemplate = `{
                 "x-addp-required-permissions": [
                     "system.engine_access_approval_requirement.read"
                 ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "需独立更新权限及当前引擎管理资格；切到 independent 还需本人直接授权权限，并将本人记为当次承接人。目标派生自当前租户及引擎内的原记录；正整数版本匹配才可切换。同模式不递增版本或追加切换审计。既有 Grant 和已受理请求不变，不发放读取权，不依据 Catalog 存活自动切换 | Requires update permission and current engine management qualification. Independent mode additionally requires the actor's Grant creation permission and records this actor as the handoff successor. Target derives from the tenant and engine scoped record; a positive matching version is required. Same mode does not advance the version or add a change audit. Existing Grants and accepted requests remain unchanged; no read access or availability-based switching",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源授权批准要求 | Source Access Approval Requirements"
+                ],
+                "summary": "显式切换源目标批准方式 | Explicitly change a source target's approval mode",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "批准要求 UUID | Approval requirement UUID",
+                        "name": "requirement_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前版本、目标方式与切换原因 | Current version, desired mode and change reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.UpdateEngineAccessApprovalRequirementRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "批准要求，不是读取授权 | Approval requirement, not a read grant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_approval_requirement.update"
+                ]
             }
         },
         "/engines/{id}/access_delegations": {
@@ -8704,6 +8795,73 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/platform-definition-publication-checks": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定 Ontology Platform Service 身份核验当前发布权限；仅回显能力修订摘要及机器主体，不签发凭据，不表示发布或激活成功 | Check current publication permission for the fixed Ontology Platform Service; echo only the capability/revision/digest binding and machine identity, without issuing a credential or claiming publication or activation",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 发布授权 | Runtime Publication Authorization"
+                ],
+                "summary": "核验平台定义发布身份 | Check platform definition publisher",
+                "parameters": [
+                    {
+                        "description": "能力修订摘要 | Capability revision and digest",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.PlatformPublicationCheck"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.PlatformPublicationObservation"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.platform_definition.publish"
+                ]
+            }
+        },
         "/runtime/security-access-actors/resolve": {
             "post": {
                 "security": [
@@ -13050,6 +13208,49 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/authorization.ProjectGroupMembership"
                     }
+                }
+            }
+        },
+        "authorization.PlatformPublicationCheck": {
+            "type": "object",
+            "properties": {
+                "capability": {
+                    "type": "string"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorization.PlatformPublicationObservation": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string"
+                },
+                "capability": {
+                    "type": "string"
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "context_type": {
+                    "type": "string"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "principal_type": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "string"
                 }
             }
         },
@@ -18716,6 +18917,30 @@ const docTemplate = `{
             "properties": {
                 "connection_info": {
                     "$ref": "#/definitions/github_com_addp_system_internal_models.ConnectionInfo"
+                }
+            }
+        },
+        "internal_api.UpdateEngineAccessApprovalRequirementRequest": {
+            "type": "object",
+            "required": [
+                "mode",
+                "reason",
+                "version"
+            ],
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "catalog",
+                        "independent"
+                    ]
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },

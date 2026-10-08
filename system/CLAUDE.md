@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+批准方式显式切换（2026-10-08）：`PUT /api/v1/system/engines/:id/access_approval_requirements/:requirement_id` 是已有精确目标安排的唯一更新入口，只接受正整数 `version`、`mode` 和原因，目标及当次承接人从原记录和当前用户派生。独立 `.update` 功能权限与当前引擎管理资格取交集；000200 默认仅加入引擎授权管理员模板，并推进已分配人员的授权版本、撤销旧会话。普通源数据授权办理员不默认获此权限。切到直接批准还核验本人 `.engine_access_grant.create`，记录本人为当次承接人，但不授予读取权、不成为永久唯一审批人。事务复用身份→引擎／委派→精确目标锁；等待及审计后按数据库墙钟重核资格，版本冲突返回 409，同模式不递增版本或追加切换审计。跨租户／引擎返回 404。切换不改既有 Grant、撤销关系、旧业务决定或已受理原请求。前端已有表的批准方式旁提供切换、原因及确认；失败保留输入，须显式只读刷新核对后再确认，不自动补版本或重试。下文“已有要求不可覆盖”仅限定首次初始化，不能阻止此显式更新。
+
 > IAM 概念与平台契约以 `docs/concepts/addp账号与权限体系图.md`、`docs/spec/addp授权上下文规范.md`、`docs/spec/addp权限与角色发布规范.md` 和 `docs/spec/addp OAuth授权规范.md` 为准；System 数据与协议实现以 `system/docs/IAM数据模型与迁移规范.md` 和 `system/docs/OAuth与Fosite实现说明.md` 为准。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
 
 > Enterprise Catalog（企业资源目录）由独立 Catalog 模块拥有。System 只提供 Tenant、Department、Project Group、User、成员关系、AuthContext、模块注册和 `addp-catalog` 服务身份，不保存 CatalogEntry、业务语义关联、责任关系或企业目录搜索投影。
@@ -102,6 +104,12 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 - `GET /api/v1/system/runtime/observability-identities` 只允许固定 `addp-monitor` 的非委托 Platform Service Access Token 与 `system.observability_identity.read`，不允许 User、Gateway、日志观测器或 Tenant Context。该 Permission 只授予 `platform.monitor_runtime`。
 - 只读可重复读事务返回启用节点的 UUID/版本与有效节点绑定、启用模块、UP 且未过期的 Backend/Worker/Scheduler/Ingress 实例身份和租约时间；不含台账地址、业务 URL、Metadata、Engine Connection 或凭据。不持久化新副本，不续租，不参与业务 Ready。
 - 节点上限 1,000、带节点声明的当前候选实例上限 10,000、响应上限 4 MiB、总超时 5 秒。超限/控制面失败返回 503，超时 504；无成功空快照兜底或截断。真实空数组为 200，所有投影响应禁止缓存。Common 的唯一服务 Client 校验完整性、时间、重复身份、节点引用与响应体预算。
+
+## 平台本体机器发布核验
+
+- `POST /api/v1/system/runtime/platform-definition-publication-checks` 复用 IAM 认证、Service 凭据、Platform、固定 `addp-ontology` Client 和 `ontology.platform_definition.publish` 守卫；Permission 由 Ontology Manifest 拥有，迁移 `000201` 仅扩展 `platform.ontology_runtime`，不扩张管理员或 Tenant Role。
+- 请求只包含 `capability`、正数 BIGINT 字符串 `revision` 和小写 SHA-256 `digest`，正文最大 2 KiB；拒绝 query、未知字段、重复键、大小写别名、Tenant/主体/定义载荷。成功只返回同一绑定及当前机器主体/授权版本，禁止缓存，不签发票据或执行凭据，不记录定义副本，不表示发布或激活成功。
+- 生产发布器仍需在各阶段重新核验并完成 Ontology 的内容、并发与激活检查；本切片未装配自动发布器。Common SDK 与 Ontology Authorizer 的 T1 由既有 Go 门禁发现，真实前向迁移与角色范围回归由 `system-iam-postgres-gate.sh --package migration` 自动发现，不新增 CI 路径。
 
 ## 常用命令
 
@@ -493,6 +501,8 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 
 
 签发结果只读找回（2026-10-03）：`engineaccess.ResolveFulfillmentGrant` 经唯一 `resolveAcceptedGrant` 路径只观察已提交签发历史，原完整绑定匹配和当前 Runtime 资格均须通过；未找到不是关闭或授权许可。受理与签发历史共用自有只读事务边界，拒绝暴露调用事务自身未提交记录，不取仲裁锁，先结束历史读取再开始资格事务。签发入口复用此找回路径，但新签发仍在权威写事务内查重与重新核验。HTTP 查询未找到返回 `found=false` 且省略 `grant`；找到仅返回原编号和签发时刻，不能把历史当作执行侧当前访问裁决。
+
+授权记录的接收方展示：稳定账号／组织编号仍是 Grant 绑定依据，页面通过当前 Tenant 的 IAM 读取接口解析名称，账号复用 `TenantMemberIdentity`，部门与项目组展示名称和编码。历史解析不限定为有效候选，不能把已停用账号误当作不存在；授予表单仍只接受当前有效候选。名称读取遵守独立成员／组织查询 Permission，缺少权限、查询失败或查无对象时明确提示并保留类型与编号供核对；不隐藏授权记录、不扩大读取权限。授权列表与撤销摘要复用同一展示，切换身份、租户、权限或引擎后清除旧名称。
 
 ## 模块实例运行日志
 

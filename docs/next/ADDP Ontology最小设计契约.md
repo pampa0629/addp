@@ -1,6 +1,6 @@
 # ADDP Ontology 最小设计契约
 
-更新日期：2026-10-03。
+更新日期：2026-10-08。
 
 状态：独立 Ontology 的原生语义内核、PG 修订/发布服务、FalkorDB 投影适配和单机 Infra、System 内部任务授权、投影执行/激活及失败批次显式重建、常驻 Backend、管理 HTTP 入口与 Console 建模页面已实现，范围与标准验证入口见 [模块说明](../../ontology/CLAUDE.md)。两个原生定义只读 Agent Tool 已交付，并于 2026-09-18 完成本地真实用户的建模、发布激活和 Agent 读取联调；这不是业务实例查询验收，也不替代隔离部署的正式 T4。真实 T4 首跑被公共 Infra 的 MinIO 镜像拉取失败阻塞，未进入本体断言；该验收暂缓，不算通过。当前不调整 Graph，后续另行讨论其职责迁移。本文的目标设计不代表功能均已实现。
 
@@ -23,7 +23,7 @@ Console 数据治理组提供独立 Ontology 入口，不改动 Graph。原生�
 - CEL-Go 执行有限、确定性的分类条件；关系语义由 Ontology 服务明确实现，不交给 LLM 自行推断。
 - 用户业务数据留在原业务库，访问仍走拥有该能力的正式 owner。
 - Agent 保留现有 Skill、Tool Manifest、ToolExecutor、Python SDK、Gateway 和委托身份链路。
-- 按层推进：已有 Tenant 原生定义保留，下一切片优先落实平台能力语义，以 Agent 创建 MongoDB → PostgreSQL 的 Outdoor Transfer 任务验收；领域数据绑定随后实施。不以导入全平台文档为前置条件。
+- 按层推进：已有 Tenant 原生定义保留，下一切片优先落实平台能力语义，以 Agent 理解和复核 Transfer 配置验收；当前个人联调改用 PostgreSQL → MySQL，不访问正在进行数据安全开发的 Outdoor。具体源身份须由用户确认，不将近似表名自动替换；草稿确认、任务创建和实际运行分别验收，不扩大用户操作授权。领域数据绑定随后实施，不以导入全平台文档为前置条件。
 
 不纳入首版：完整 RDF/OWL 推理、任意递归规则、任意 CEL 到 SQL/Cypher 的自动编译、通用 GraphRAG、全量业务实例复制、另建 Python/Java 本体服务，以及新的中心 Tool 服务。
 
@@ -33,7 +33,7 @@ Console 数据治理组提供独立 Ontology 入口，不改动 Graph。原生�
 
 | 层次 | 回答的问题 | 权威来源与当前边界 |
 | --- | --- | --- |
-| 平台能力语义 | 用户意图对应 ADDP 的哪些功能、Skill 和 Tool？ | 平台概念文档、模块接口契约、Skill 与 Tool Manifest；结合 System 当前模块登记及运行时实际可用性、用户权限判断。已实现首个代码发布的 Transfer 能力定义，PG/FalkorDB 平台本体管理尚未实现；不能把 Tenant 定义当作平台定义，也不以建设平台本体为领域建模前置。 |
+| 平台能力语义 | 用户意图对应 ADDP 的哪些功能、Skill 和 Tool？ | 平台概念文档、模块接口契约、Skill 与 Tool Manifest；结合 System 当前模块登记及运行时实际可用性、用户权限判断。已有 Transfer 创建能力定义、不可变 PG 修订及内部安全发布内核；启动自动发布、运行消费切换和管理员查看尚未接入。不能把 Tenant 定义当作平台定义，也不以建设平台本体为领域建模前置。 |
 | 租户领域语义 | 业务对象、关系、口径和规则是什么？ | Ontology 自有定义与明确引用的专业 owner。Standard、Model 可提供业务定义；Meta 提供结构事实，Quality 提供规则与检查结果，Catalog 提供企业身份、责任及治理关联。各类来源按专业含义消费，不自动转换为可编辑本体定义。 |
 | 运行时业务事实 | 本次授权读取中，具体对象处于什么状态？ | 数据读取 owner 的实际结果，绑定对象身份、时点、范围和完整性。业务数据留在原库；事实随读取变化，不写入本体定义包，也不要求复制到 FalkorDB。 |
 
@@ -49,13 +49,104 @@ Ontology 不假设除 System 之外的任何业务模块已经部署或被用户
 
 ### 1.3 平台 Transfer 首个切片
 
-平台定义由 Ontology 唯一提供，与代码版本一起发布，具有独立 `platform_definition` 标识、修订与内容摘要；不使用 Tenant=0，不走租户定义的编辑发布 API。当前只读定义包不是 PG/FalkorDB 平台本体发布管理，后者尚未实施；先验证其对真实 Agent 操作的价值，不新增一套管理生命周期。定义只描述概念、关系、前置条件和效果，不复制权限表、API 地址或数据库凭据。Tool 名及 owner 由唯一 Manifest 核对，Skill 负责执行步骤，原 owner 继续提供事实与校验。
+2026-10-08 确认：先按平台定义随代码维护、发布后不可编辑的路线推进，不实现平台管理员在线修订；是否引入在线修订另行讨论。Git 是代码和依据的版本来源，不是新增 Infra，也不是管理员操作本体的必要工具。平台定义不使用 Tenant 身份，平台发布准入与 Tenant 管理权限分开设计。
+
+平台定义由 Ontology 唯一提供，与代码版本一起发布，具有独立 `platform_definition` 标识、修订与内容摘要；不使用 Tenant=0，不走租户定义的编辑发布 API。当前 Agent 的只读定义包消费仍不同于 PG/FalkorDB 正式运行消费；内部发布内核见 1.10，启动发布与消费切换尚未接入，不新增管理员在线编辑生命周期。定义只描述概念、关系、前置条件和效果，不复制权限表、API 地址或数据库凭据。Tool 名及 owner 由唯一 Manifest 核对，Skill 负责执行步骤，原 owner 继续提供事实与校验。
 
 `platform.capability.context` 读取确定能力的有界上下文。首个能力为 `transfer.task.create`：持久化任务定义不等于启动 execution，不等于已经写入目标数据。Agent 先读取此上下文，再经 System/Meta/Manager 的正式 Tool 确认可访问引擎、源资源、结构事实和目标父节点；其他模块缺席只阻断本次任务，不成为 Ontology Ready 前置。Catalog、Standard、Model、Quality 和租户本体不参与该验收前置。
 
 创建 Tool 仅开放 `bounded + snapshot + native table` 的无计划任务；请求不开放调度、启动、continuous 或任意连接配置。MongoDB 嵌套结构需要明确一文档一行或单数组元素一行，源侧标准只读 MQL 负责整形，目标字段映射消费实际查询输出，不自动递归摊平。信息不足先澄清，展示完整配置并经用户确认后调用唯一 Transfer 创建 API；元数据写操作不要求 owner 执行审批，但不继承运行授权，不自动重发结果不确定的创建请求。
 
 验收必须分别证明：平台定义被实际读取；源和目标来自可信 owner；创建成功返回真实任务身份且为 idle/stopped、无启用计划；未生成 execution、未写业务数据。离线契约和受控 HTTP 测试不代替真实 Agent/LLM/用户身份验收；真实链路尚未运行时明确列为待验收。
+
+### 1.4 平台语义的多源依据与唯一所有权（目标契约）
+
+2026-10-08 确认：平台本体不是全量文档索引、数据库表结构镜像或接口清单。多种来源分别证明操作含义、公开能力、实现结构或当前实例事实；确认后的结构化定义及语义来源引用由 Ontology 唯一管理。下表以 Transfer 为例，不表示来源采集和新发布链路已经实现。
+
+| 来源或存储 | 能证明的内容 | 纳入方式与边界 |
+| --- | --- | --- |
+| 正式概念与规范 Markdown | 模块职责、概念含义、操作条件、效果、保证及限制 | 引用确定文档版本和章节；草案、历史分析及演示不是默认权威依据，不把整篇文本自动提升为本体规则 |
+| owner 公开 API 契约、Tool Manifest、能力声明 | 请求/输出结构、操作开放范围、Tool owner 及调用要求 | 按各自职责引用并校验；owner API 存在不代表已开放 Agent Tool，Manifest 不替代服务端校验 |
+| 仓库内的模型、迁移及行为测试 | 实现对象、存储字段、约束、关联及可验证行为 | 用于概念到实现的对应和变更影响核对；不是每张表一个类、每个字段一个属性，不从枚举或方法名猜完整业务语义 |
+| PG `transfer` schema 的实际记录及 `common.task_executions` | 某个任务配置、状态、已提交位置及某次运行结果 | 属于实例事实，仍由 Transfer 等 owner 管理；运行消费只走正式 Client SDK/API，不跨 schema 直读，不复制进平台定义 |
+| `ontology/backend/internal/platform/transfer.json` | 当前整理后的 Transfer 创建能力语义 | 是可审查的定义发布源，不是独立数据库，也不是原始依据的替代物；当前直接内嵌读取，目标发布链路见 5.1.1 |
+| PG `ontology` schema | 本模块正式定义、来源捕获、修订、审计及激活事实 | 平台和 Tenant 定义的权威存储，作用域和权限分离；已有平台不可变记录及内部发布激活内核（1.8–1.10），平台启动发布与运行消费尚未接入，来源捕获仍待实现；不能套用 Tenant 表及发布准入 |
+| Infra FalkorDB | 确定修订生成的成员及关系投影 | 无独立编辑权、无第二个当前版本指针；不是业务实例主库或自动规则推理器 |
+
+`transfer.transfer_tasks.config` 是某个传输任务的具体配置，不是“传输任务”这一平台概念的定义。概念解释可以不依赖 Transfer 已部署，当前任务与运行结果则必须在授权和确定观察范围内向 owner 获取。数据库物理位置相同，不消除模块所有权边界。
+
+### 1.5 Transfer 概念、来源与事实入口映射（目标契约）
+
+正式语义依据为 [Transfer 基本概念及配置](../../transfer/docs/transfer-基本概念及配置说明.md) 与 [任务语义与同步模式](../../transfer/docs/transfer-任务语义与同步模式.md)。结构依据为 [数据库架构](../../transfer/docs/数据库架构.md)、[模型](../../transfer/backend/internal/models/task.go) 及 owner 迁移；公开路由以 [Transfer Router](../../transfer/backend/internal/api/router.go) 和其契约为准。下表中的 API 均使用 `/api/v1/transfer` 前缀；列出公开 API 仅说明事实 owner，不给 Agent 开放这些接口或委托权限。
+
+| 概念或操作 | 正式语义依据 | 实现对应（仅供来源追溯） | 公开契约与运行时事实入口 | 必须表达的边界 |
+| --- | --- | --- | --- | --- |
+| 传输任务定义 | 基本概念 1.1；任务语义第 1、5 节 | `TransferTask` / `transfer.transfer_tasks` | `/task-definitions/{id}`；当前已开放 `transfer.task.create` Tool 的受限创建 | 固定 `task_type=sync`；具体任务配置不是本体定义，创建不等于运行 |
+| 一次执行 | 基本概念 1.2；任务语义第 5 节 | `common.task_executions`，由 Transfer 管理其 execution | `/executions/{execution_id}`；任务历史 `/task-definitions/{id}/executions` | execution 与任务身份不同；一次性 execution 可以没有任务定义，任务 idle 不证明执行成功 |
+| 执行边界、装载及变化识别 | 任务语义第 2–4 节 | 任务配置 `runtime.boundary`、`load.mode` 及变化识别配置 | `/capabilities` 与确定任务详情；引擎 Provider 能力另向其 owner 获取 | bounded/continuous、snapshot/incremental 相互区分；watermark 不等于 CDC，不能识别物理删除；当前支持范围必须核实 |
+| 源、目标、字段映射及行粒度 | 基本概念 2.2–2.3；任务语义第 1 节 | source/target endpoint、标准查询及 `field_mapping` | Meta/Manager 正式资源目录与事实 Tool；Transfer 配置和 owner 校验 | 目标父节点与名称不冒充已有源；实际查询输出才是映射输入，复杂加工属于 Develop |
+| 目标写入策略 | 任务语义 2.5、4.1–4.2 | `target.policy.apply_mode`、稳定键及 Provider 校验 | `/capabilities`、任务详情及所选引擎能力 | replace、append、upsert 与删除传播效果不同；“同步”不能默认覆盖目标 |
+| 调度与暂停/恢复 | 任务语义 2.4、6.4；正式任务 API | owner scheduler、`schedule/enabled`、continuous `desired_state` | `/task-definitions/{id}/pause`、`resume` 及任务/执行详情 | bounded 只控制已有定时调度，不中断 active execution，手动任务不能暂停调度；continuous 停止应用并按条件恢复，CDC Pause 不停止捕获 |
+| 失败重试与恢复位置 | 任务语义第 4–6 节 | `ExecutionService.RetryExecution`、`sync_states`、目标 apply ledger | `/executions/{execution_id}/retry` 及安全执行诊断 | bounded snapshot replace 重试从头执行，append 拒绝；checkpoint 不等于 committed position，不把所有重试称为断点续传 |
+| 停止、结构变化与删除 | 任务语义 5.1、6.4、第 7 节 | capture generation、schema change request、task-owned cleanup | `/task-definitions/{id}/stop`、`schema-change`、`schema-change/approve` 及删除 API | CDC Stop 不可逆且需明确确认；审批不自动 Resume；删除任务不等于删除目标业务数据，不能泛化为所有 continuous 任务的相同效果 |
+
+增量位置、运行时 lease、fencing、capture 和 dead-letter 私有字段主要是实现依据；仅把与用户可见条件、风险和解释有关的语义纳入定义。它们不因存在于 `transfer` schema 就变成 Agent 可读属性，不开放任意私表查询。
+
+### 1.6 来源追溯与变更维护（目标契约）
+
+- 每个重要概念、关系、操作条件和效果关联来源 owner、来源类别、稳定身份与引用位置、用途、确定版本和内容摘要。Git 来源固定提交及文件/章节；公开契约固定契约身份和确定版本/摘要。行号或可变路径只能辅助定位，不能作为唯一版本证据。
+- 按需捕获最小、只读的语义依据和公开结构，不保存业务实例、凭据或私有运行数据。来源捕获不是另一份可编辑定义，也不替代 owner 当前授权。平台语义来源引用与 Tenant 本体数据绑定的模型、授权及用途不同，不能混为一套字段映射。
+- 文档证明意图和正式含义，公开契约证明交互边界，实现与测试证明实际行为；没有一类来源可以覆盖所有事实。发生矛盾时先由 owner 核清并同步规范与实现，阻断依赖该冲突的发布，不让模型静默选择或拼接。
+- Transfer 改变公开操作、配置语义、条件、效果、支持范围或保证时，同次更新相关规范、平台定义及来源引用、实际受影响的 Skill/Tool 和验收；纯内部重构或性能优化经核对不改变语义时，不强制新增本体修订。表/代码变化检测只能提示影响，不能自动判定业务含义或发布未经确认的定义。
+- 平台定义由平台开发者在 Git 中维护，发布到 PG 后不可独立编辑；Tenant 原生定义继续由 Tenant 管理入口编辑发布。复用可适用的摘要、投影、审计及激活机制，不强行把操作前置条件塞进现有 Tenant CEL 分类模型，也不在 Transfer 保存第二份平台本体。
+- 运行消费区分“语义已知”“owner 当前支持”“本次授权可执行”。平台定义绑定所依据的公开契约；消费依赖该能力的请求时核实当前 owner 与契约适用性，未匹配或无法核实不能推测执行，也不能自动改用旧定义。其他业务模块缺席不影响 Ontology 自有功能的 Ready。
+
+现有测试覆盖平台定义引用 Tool/owner/Skill 等基础一致性、已开放创建切片及 1.7 的静态编译/恢复，尚未覆盖完整来源追溯、契约漂移和平台发布链路。后续实施必须沿标准入口补齐 T0 引用/影响选择、T1 语义边界与漂移拒绝、T2 平台作用域/不可变修订/投影激活及 T4 真实 Agent 消费证据；创建成功但无 execution、暂停不冒充取消、重试不冒充续传等应由 owner 行为断言和 Agent 场景分别证明，不能只检查提示词包含某句话。
+
+### 1.7 平台定义编译与不可变快照切片
+
+平台能力定义使用独立的编译与恢复入口，不复用要求 Tenant 身份的原生 CEL 内核。编译只校验静态定义，不读取其他模块、业务数据或 IAM，不授予发布权限，也不证明定义与当前 owner 契约一致。
+
+- 来源 JSON 必须是单个对象，拒绝未知字段、重复键、非法 UTF-8、尾随值、超限嵌套和超限内容。概念身份唯一、名称包含中英文；关系必须引用已声明概念且不能重复；操作 Tool 必须与能力身份一致；输入、效果、排除效果和要求身份不得重复，效果与排除效果不得重叠。引用真实 Tool/owner/Skill 的跨 owner 核验继续由既有 Manifest 契约测试负责，不能由纯编译器猜测。
+- `addp.platform-definition/v1` 快照固定平台编译器版本及规范化定义，来源中的 `digest` 必须为空，由编译器计算整个快照的 SHA-256。调用方不能提交 Tenant、Actor、凭据、运行可用性或自报摘要。成员数组保留声明顺序，JSON 对象键规范化；改变定义或编译契约需发布新修订，不能重解释历史修订。
+- 来源最多 64 KiB、JSON 嵌套最多 32 层；能力上下文最多 32 KiB、32 个概念、64 条关系、16 项要求，每项操作输入/效果/排除效果及每项要求的 Tool 最多 32 个。普通身份和 Skill 最多 64 字节，点分能力/Tool/效果身份最多 128 字节；每个概念名称最多 16 种语言，每个名称和语言键最多 512 字节且非空；修订必须为正数且不超过 PG BIGINT 正数上界。限制由平台编译契约固定，不通过用户参数放宽。当前上下文输出字段与权限契约不变，Transfer 定义修订提升为 2，以区分绑定编译契约的快照摘要。
+- 恢复只接受当前快照契约/编译器版本、完全一致的规范化内容和摘要；损坏、非规范内容或旧编译器版本明确拒绝，不自动升级，不退回文件重算。输出与序列化内容无可变别名，调用方修改上下文不能改变快照。
+- 当前代码发布读取也经过同一编译入口，删除直接反序列化并返回未经校验定义的路径。快照不是 published、图 ready 或平台发布授权凭证；PG 内部记录、机器准入与投影发布内核见 1.8–1.10，来源捕获和管理员查看页面尚未实现。
+
+该切片只修改 Ontology 内部定义编译和既有输出的内容摘要，不增加 API、权限、数据库迁移或依赖。沿 `make test-module MODULE=ontology` 的 Go T1 自动发现编译/恢复测试，既有 T0、前端 T1/T3 和 Tenant PG/FalkorDB T2 继续验证模块回归；不将 Tenant T2 当作平台发布管理或真实 Agent T4 已通过。
+
+### 1.8 平台能力定义的 PG 不可变记录切片
+
+当前以能力身份（例如 `transfer.task.create`）作为修订聚合边界，不把单项能力定义称为整个 Transfer 模块的完整本体。平台修订独立存储在 `ontology.platform_capabilities`、`platform_revisions` 和 `platform_revision_events`，不含 Tenant 或 Membership，不借用租户表。记录切片只推进 last_revision，不表示激活；1.10 在头表独立增加 active 指针与 activation_version。
+
+- 唯一内部存入命令接受已编译快照、可信平台主体事实和调用方观察到的最后修订。主体必须为 platform 上下文，记录 principal ID/type 与 authorization version；这些事实不是鉴权器。未来入口须先验证真实身份及平台操作授权，本切片不增加 HTTP 入口、IAM 权限、自动导入或执行委托。
+- 锁定能力头后精确比较最后修订基线，新修订必须严格增大但不要求连续：首次部署可直接记录 Transfer 修订 2，无须伪造修订 1。重复或回退修订、过期基线均拒绝，不以相同摘要掩盖重复命令。修订、头更新及 record 审计在同一事务中完成；失败全部回滚。
+- 保存完整规范化快照的 TEXT 原字节及 SHA-256，而非重新序列化的 JSONB。数据库核对摘要及载荷中的能力/修订身份；修订与审计拒绝 UPDATE/DELETE。读取确定修订再次经过同一 Restore 路径检查契约、规范化字节、摘要及身份，损坏明确拒绝。
+- 存入不等于发布、图构建或激活，不生成 `common.task_executions`，不写 FalkorDB。当前 Agent 仍唯一消费经 Compile 校验的代码定义；存储切片暂不挂到运行消费上，不新增 PG 失败后回退文件的双轨路线。正式发布链路完成时再一次性切换消费来源并删除运行时文件读取。
+
+迁移 004 将 Ontology schema 提升到 4，保持既有 Tenant 修订和激活事实。T1 覆盖数据库访问前拒绝，T2 复用 `TestPostgresRevisionLifecycle/platform_revision_storage` 与迁移升级测试，验证并发基线、不可变保护、审计回滚及作用域隔离。现有模块入口、PostgreSQL CI Job 自动覆盖，无新增数据库、依赖或测试脚本；标准命令为 `make test-module MODULE=ontology` 和 `make test-ontology-postgres`。
+
+### 1.9 平台自动发布的机器授权边界
+
+2026-10-08 确认：平台定义随代码部署自动发布，由固定 `addp-ontology` Platform Service 身份执行；管理员只读查看，不接收用户上传定义或在线修改。目标链路为校验、不可变记录、图构建、复核与激活；失败不切换当前版本。平台链路不能借用 Tenant 执行授权或伪造 Tenant=0。
+
+本切片先落实真实机器准入：Ontology 拥有不可委托、不可租户定制的 `ontology.platform_definition.publish`，仅内置 `platform.ontology_runtime` 持有。System 唯一 `POST /api/v1/system/runtime/platform-definition-publication-checks` 通过现有 IAM 认证、Service 凭据、Platform Context、Permission 与固定 Client 守卫核验当前调用；只接受能力身份、正数 BIGINT 修订字符串和 SHA-256 摘要，不接受 Tenant、主体、凭据、定义载荷或图地址。
+
+成功只回显绑定和当前机器主体/授权版本，响应不可缓存，不签发发布票据或执行凭据，也不表示已记录、构图或激活。Ontology 通过 Common System Client SDK 每次重新核验；结果只供当次主体审计，不能作为后续阶段的长期授权。正式发布器在存入、构图和激活前仍需再次核验当前机器权限，并另行保证并发基线与故障保护。System 不判断定义内容或保存平台定义副本。
+
+机器准入切片尚不装配启动发布器，不改变 Agent 的唯一消费来源。T0/T1 纳入既有授权、Swagger 和 Go 门禁；前向 IAM 迁移及角色版本回归由现有 System IAM PostgreSQL T2 自动发现，标准入口为 `make test-authorization`、`make test-go`、`make test-system-iam-postgres`。没有新增外部依赖、数据库或 CI 路径。
+
+### 1.10 平台同步发布内核
+
+部署发布是固定机器身份的一次有界同步操作，不是 Tenant 后台任务，不引入另一套任务队列。调用前完成静态编译；存入、构图、激活三个阶段分别重新核验机器权限。PG 行锁内不调用 System 或 FalkorDB。已有能力/修订只允许复用字节及摘要完全一致的不可变记录，同身份不同内容拒绝；不得放宽原始 Store 的重复记录约束。
+
+每次调用分配新的 generation，PG `platform_projections` 记录确定修订、摘要、激活版本基线及 building/ready/failed/superseded 状态。能力头保存当前发布 generation、active 修订/generation 和单调递增 activation_version；FalkorDB 不保存生效指针。新的尝试在锁定同一能力头后取代旧 building 尝试，使旧尝试不能迟到激活。中断尝试不自动重放、不在取消路径删除图；后续调用使用新 generation，旧图清理另行实施。该指针是发布 fencing，不是 IAM 授权票据或执行租约。
+
+平台图使用独立 `ontology:p:` 物理命名空间。当前投影只包含概念、各语言名称及显式概念关系；操作条件、效果、前置 Tool 等仍完整保存在 PG 快照中，不把结构投影冒充完整推理引擎。复用唯一 Build/Verify 适配，校验全部成员、边、摘要和数量，不覆盖既有 generation。
+
+激活事务统一按能力头、不可变修订、投影加锁，核对最后记录修订、当前发布 generation、building 状态、摘要及 activation_version 基线；只允许最新记录修订激活，拒绝旧部署回滚。ready、active 指针和机器审计同事务提交，审计失败全部回滚。任何构图、校验、撤权、取消、并发冲突或审计失败都不切换旧 active。失败后的 PG 状态收敛也遵守原调用取消，不以后台补写伪装成功；进程中断可能暂留 building，由下一次调用取代。
+
+本轮内核不装配自动启动发布、不提供新 HTTP 入口、不切换 Agent 消费、不新增管理员写权限。T1 自动发现发布顺序与拒绝测试；T2 纳入既有 `TestPostgresRevisionLifecycle`、`TestPostgresProjectionRuntime` 和 `TestFalkorIntegration` 选择器，覆盖迁移、事务、并发 fencing、真实图及失败保留旧版本。标准入口为 `make test-module MODULE=ontology`，现有 Ontology PostgreSQL/FalkorDB CI Job 覆盖，无新增依赖或数据库。
 
 ## 2. 术语与唯一事实所有权
 
@@ -178,7 +269,32 @@ PG 保存 Ontology 身份、工作修订、不可变发布内容、依赖捕获�
 
 规则求值从 PG 的确定修订加载权威定义；图查询返回成员身份和关系，必须能核对修订和摘要。禁止在 PG 与图中分别编辑规则，也不维护两个“当前版本”指针。
 
+#### 5.1.1 平台定义与 Tenant 定义的存储分工（目标契约）
+
+当前平台 Transfer 接口直接读取内嵌 `transfer.json`，Tenant 修订存于 PG，并由 PG 的确定修订生成 FalkorDB 投影；两者尚未接入同一发布机制。当前 Tenant Agent 定义接口从 PG 加载权威定义并核对激活绑定，不是直接查询 FalkorDB。
+
+目标分工为：Git 管平台定义发布源及语义来源引用，PG 管运行时完整发布内容、来源捕获、契约绑定、不可变修订、审计、构建状态与唯一激活指针，FalkorDB 管派生关系投影。平台定义和 Tenant 定义共享这一存储原则，但具有明确隔离的身份、作用域、管理权限及编写入口；当前 Tenant 表和内核不接受平台身份。平台不可变记录已有独立存储切片（1.8），发布授权、投影与激活尚未接入，不使用 Tenant=0 或给各 Tenant 复制一份平台定义。
+
+```mermaid
+flowchart TD
+    Sources[正式文档、公开契约、模型及迁移] --> Definition[Git 平台定义与来源引用]
+    Definition --> Validate[确认语义并校验发布包]
+    Validate --> PG[PG 不可变修订与构建意图]
+    PG --> Graph[FalkorDB 独立 generation 投影]
+    Graph --> Verify[校验投影与准入条件]
+    Verify --> Active[PG 原子激活修订与 generation]
+    Active --> API[Ontology 有界语义接口]
+    API --> Agent[Agent 理解与复核]
+    Agent --> Owner[经正式 Tool/API 获取 owner 当前实例事实]
+```
+
+图是派生产物，不保存第二份完整规则或业务实例；PG 定义读取与图关系查询承担不同职责，不是彼此失败时的兜底。每次消费固定修订、摘要及相关投影身份，更新不使同一请求混用版本；所需图不可用时明确失败。新投影失败不切换激活指针，既有定义也只有在当前 owner 契约仍适用时才能执行消费；缺少发布内容不得回退内嵌文件。
+
+平台发布链路正式切换时，删除当前运行时直接读取内嵌 JSON 的路径，保留文件仅作为发布输入；不得形成“先读 PG、失败读文件”或“图失败换 PG 图查询”的兼容分支。平台发布授权和与部署中 owner 的契约核验仍需实现，不能把现有 Tenant 发布权限、T2 或本地联调证据当作已经覆盖。
+
 ### 5.2 发布主路径
+
+以下为当前 Tenant 原生定义的发布主路径。平台定义按 5.1.1 经 Git 审查后发布，可复用已验证的投影与激活机制，但不能直接套用 Tenant Actor、草稿管理 API 或发布权限。
 
 定义生命周期沿用 `draft → in_review → published → withdrawn`；只有草稿可改，退回审核恢复草稿。`published` 表示内容已冻结，不等于其图投影已经可用。
 

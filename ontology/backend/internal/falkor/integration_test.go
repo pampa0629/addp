@@ -96,6 +96,39 @@ func TestFalkorIntegration(t *testing.T) {
 			t.Fatalf("tampering accepted: %v", err)
 		}
 	})
+	t.Run("platform_projection_round_trip_and_full_verification", func(t *testing.T) {
+		p, err := PlanPlatform(platformFixture(t), uuid.NewString())
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, p.key)
+		if err := c.Build(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Verify(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Build(ctx, p); !errors.Is(err, ErrRejected) {
+			t.Fatal(err)
+		}
+		if _, err := c.query(ctx, p.key, "CREATE (:Definition {id:'extra',kind:'name',name:'多余'}) RETURN 1", nil, false, MaxQueryTime); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Verify(ctx, p); !errors.Is(err, ErrProtocol) {
+			t.Fatal("extra node accepted", err)
+		}
+		maximum, err := PlanPlatform(maximumPlatformFixture(t), uuid.NewString())
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, maximum.key)
+		if err := c.Build(ctx, maximum); err != nil {
+			t.Fatal("maximum platform graph", err)
+		}
+		if err := c.Verify(ctx, maximum); err != nil {
+			t.Fatal("maximum platform verification", err)
+		}
+	})
 	t.Run("maximum_definition_size", func(t *testing.T) {
 		d := semantic.Definition{Scope: semantic.Scope{TenantID: 101, OntologyID: "limits", Revision: 1}}
 		for i := 0; i < 64; i++ {

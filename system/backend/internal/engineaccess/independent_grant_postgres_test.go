@@ -210,6 +210,34 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			t.Fatalf("issue=%+v %v", issued, err)
 		}
 		assertRead("grant")
+		t.Run("mode changes preserve issued read access", func(t *testing.T) {
+			modeActor := qualify(t, true)
+			updateRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.approval_mode_update", Name: "Explicit mode update fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_approval_requirement.update"}, ActorPrincipalID: adminID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: modeActor.MembershipID, RoleIDs: []int64{updateRole.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit mode update permission"}); err != nil {
+				t.Fatal(err)
+			}
+			principal, err := iam.NewRepository(db).GetPrincipal(ctx, modeActor.PrincipalID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			modeActor.AuthorizationVersion = principal.AuthorizationVersion
+			beforeChange := calls
+			version := basis.Version
+			for _, mode := range []string{"catalog", "independent"} {
+				updated, err := service.UpdateApprovalRequirement(ctx, UpdateApprovalRequirementInput{Actor: modeActor, EngineID: input.EngineID, ID: basis.ID, Version: version, Mode: mode, Reason: "Explicit change without revoking existing access"})
+				if err != nil || updated == nil || updated.Mode != mode || updated.Version != version+1 {
+					t.Fatalf("mode=%s update=%+v err=%v", mode, updated, err)
+				}
+				version = updated.Version
+				assertRead("grant")
+			}
+			if calls != beforeChange {
+				t.Fatal("mode update performed source inspection")
+			}
+		})
 		beforeRetry := calls
 		service.WithIndependentTargetVerifier(nil)
 		retried, err := service.CreateIndependentGrant(ctx, input)

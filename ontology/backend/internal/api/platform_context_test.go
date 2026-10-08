@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/authorization"
@@ -47,6 +48,10 @@ func TestPlatformContextUsesSeparateDefinitionAndExactDelegation(t *testing.T) {
 				}
 				if context.KnowledgeKind != "platform_definition" || context.Availability != "not_observed" || len(context.Digest) != 64 {
 					t.Fatalf("context=%+v", context)
+				}
+				expected, err := platform.TransferContext()
+				if err != nil || !reflect.DeepEqual(context, expected) {
+					t.Fatalf("API did not consume the compiled release: %v", err)
 				}
 			}
 		})

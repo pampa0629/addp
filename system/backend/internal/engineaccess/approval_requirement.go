@@ -97,7 +97,7 @@ func (r *Repository) requireCatalogApproval(ctx context.Context, request fulfill
 // the current successor qualification. First configuration has no successor
 // and does not qualify anyone to approve or read data. No earlier locks or IO.
 // nil cannot initialize or change a requirement. Public initialization supplies
-// current local IAM/delegation checks; handoff has no public consumer yet.
+// current local IAM/delegation checks; public updates also check the successor.
 func (r *Repository) changeApprovalRequirement(ctx context.Context, input approvalRequirementChange, verify func(*Repository) error) (*approvalRequirement, error) {
 	if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); !ok {
 		return nil, errApprovalRequirementInput
@@ -135,6 +135,9 @@ func (r *Repository) changeApprovalRequirement(ctx context.Context, input approv
 	// another clock read between its expiry check and the write.
 	if err := verify(r); err != nil {
 		return nil, err
+	}
+	if !creating && row.Mode == input.Mode {
+		return row, nil
 	}
 	if creating {
 		row = &approvalRequirement{ID: uuid.New(), TenantID: input.TenantID, EngineID: int64(input.Path.EngineID),

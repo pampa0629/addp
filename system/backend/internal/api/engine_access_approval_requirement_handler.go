@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	commonapi "github.com/addp/common/api"
 	commonauthorization "github.com/addp/common/authorization"
@@ -16,6 +17,7 @@ import (
 
 type engineAccessApprovalRequirementService interface {
 	InitializeApprovalRequirement(context.Context, engineaccess.InitializeApprovalRequirementInput) (*engineaccess.ApprovalRequirementView, error)
+	UpdateApprovalRequirement(context.Context, engineaccess.UpdateApprovalRequirementInput) (*engineaccess.ApprovalRequirementView, error)
 	ListApprovalRequirements(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.ApprovalRequirementView, int64, error)
 	GetApprovalRequirement(context.Context, engineaccess.Actor, int64, uuid.UUID) (*engineaccess.ApprovalRequirementView, error)
 	GetHandlingRequirement(context.Context, engineaccess.Actor, engineplugin.EngineCatalogPath) (*engineaccess.HandlingRequirementView, error)
@@ -28,6 +30,50 @@ type InitializeEngineAccessApprovalRequirementRequest struct {
 	CatalogPath engineplugin.EngineCatalogPath `json:"catalog_path" binding:"required"`
 	Mode        string                         `json:"mode" binding:"required,oneof=catalog independent" enums:"catalog,independent"`
 	Reason      string                         `json:"reason" binding:"required"`
+}
+
+type UpdateEngineAccessApprovalRequirementRequest struct {
+	Version int64  `json:"version" binding:"required,gte=1"`
+	Mode    string `json:"mode" binding:"required,oneof=catalog independent" enums:"catalog,independent"`
+	Reason  string `json:"reason" binding:"required"`
+}
+
+// Update godoc
+// @Summary 显式切换源目标批准方式 | Explicitly change a source target's approval mode
+// @Description 需独立更新权限及当前引擎管理资格；切到 independent 还需本人直接授权权限，并将本人记为当次承接人。目标派生自当前租户及引擎内的原记录；正整数版本匹配才可切换。同模式不递增版本或追加切换审计。既有 Grant 和已受理请求不变，不发放读取权，不依据 Catalog 存活自动切换 | Requires update permission and current engine management qualification. Independent mode additionally requires the actor's Grant creation permission and records this actor as the handoff successor. Target derives from the tenant and engine scoped record; a positive matching version is required. Same mode does not advance the version or add a change audit. Existing Grants and accepted requests remain unchanged; no read access or availability-based switching
+// @Tags 源授权批准要求 | Source Access Approval Requirements
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "引擎 ID | Engine ID"
+// @Param requirement_id path string true "批准要求 UUID | Approval requirement UUID"
+// @Param request body UpdateEngineAccessApprovalRequirementRequest true "当前版本、目标方式与切换原因 | Current version, desired mode and change reason"
+// @Success 200 {object} engineaccess.ApprovalRequirementView "批准要求，不是读取授权 | Approval requirement, not a read grant"
+// @Failure 400,401,403,404,409,500 {object} IAMErrorResponse "请求失败 | Request failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine_access_approval_requirement.update"]
+// @Router /engines/{id}/access_approval_requirements/{requirement_id} [put]
+func (h *EngineAccessApprovalRequirementHandler) Update(c *gin.Context) {
+	actor, engineID, ok := approvalRequirementActor(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("requirement_id"))
+	var request UpdateEngineAccessApprovalRequirementRequest
+	if err != nil || id == uuid.Nil || id.String() != c.Param("requirement_id") ||
+		c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil ||
+		request.Version <= 0 || (request.Mode != "catalog" && request.Mode != "independent") || strings.TrimSpace(request.Reason) == "" {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	row, err := h.service.UpdateApprovalRequirement(c.Request.Context(), engineaccess.UpdateApprovalRequirementInput{
+		Actor: actor, EngineID: engineID, ID: id, Version: request.Version, Mode: request.Mode, Reason: request.Reason,
+		Audit: iamAuditMetadataWithStatus(c, http.StatusOK)})
+	if err != nil {
+		respondApprovalRequirementError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, row)
 }
 
 type EngineAccessHandlingRequirementRequest struct {
@@ -183,6 +229,11 @@ func approvalRequirementActor(c *gin.Context) (engineaccess.Actor, int64, bool) 
 }
 
 func respondApprovalRequirementError(c *gin.Context, err error) {
+	if errors.Is(err, engineaccess.ErrApprovalRequirementVersion) {
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, "system.engine_access_approval_requirement.version_conflict"),
+			"error_code": "resource_version_conflict"})
+		return
+	}
 	if errors.Is(err, engineaccess.ErrApprovalRequirementExists) {
 		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, "system.engine_access_approval_requirement.already_initialized"),
 			"error_code": "engine_access_approval_requirement_already_initialized"})

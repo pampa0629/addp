@@ -230,9 +230,13 @@ const authorizationIdentity = computed(() => {
 })
 async function retryAuthorization() {
   try {
-    await authStore.initializeSession({ force: true })
+    if (authStore.token && authStore.sessionStatus === 'authenticated') {
+      await authStore.refreshAuthorization()
+    } else {
+      await authStore.initializeSession({ force: true })
+    }
   } catch {
-    // Shared session initialization owns failure classification; retain the hidden draft for retry.
+    // Shared authentication owns failure classification; retain the hidden draft for retry.
   }
 }
 const recentContextKey = computed(() => authStore.contextType === 'tenant'

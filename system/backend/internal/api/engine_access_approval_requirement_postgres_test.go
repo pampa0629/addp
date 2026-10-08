@@ -27,9 +27,9 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 	t.Run("approval requirement production API", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		permissions := []string{"system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.read"}
+		permissions := []string{"system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.read", "system.engine_access_approval_requirement.update"}
 		var defaults int64
-		if err := db.Raw(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id JOIN system.roles r ON r.id=rp.role_id WHERE p.permission_key LIKE 'system.engine_access_approval_requirement.%' AND r.role_key <> 'tenant.source_data_authorizer'`).Scan(&defaults).Error; err != nil || defaults != 0 {
+		if err := db.Raw(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id JOIN system.roles r ON r.id=rp.role_id WHERE p.permission_key LIKE 'system.engine_access_approval_requirement.%' AND r.role_key NOT IN ('tenant.source_data_authorizer','tenant.engine_access_delegation_administrator')`).Scan(&defaults).Error; err != nil || defaults != 0 {
 			t.Fatalf("implicit default grant=%d err=%v", defaults, err)
 		}
 		roles := iam.NewTenantRoleService(identity, time.Now)
@@ -56,8 +56,10 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		refreshActor()
 		target := engineplugin.TabularItemPath(engine.ID, "schema", "public", "governance.target")
 		input := engineaccess.InitializeApprovalRequirementInput{Actor: actor, EngineID: int64(engine.ID), CatalogPath: target, Mode: "catalog", Reason: "Explicit Catalog governance"}
-		if _, err := service.InitializeApprovalRequirement(ctx, input); !errors.Is(err, commonapi.ErrForbidden) {
-			t.Fatalf("permission without delegation=%v", err)
+		// This fixture has engine-administrator qualification via delegation.create.
+		// It must not need a redundant self-delegation merely to manage requirements.
+		if _, _, err := service.ListApprovalRequirements(ctx, actor, int64(engine.ID), 1, 20); err != nil {
+			t.Fatalf("administrator without self-delegation=%v", err)
 		}
 		delegation, err := service.Create(ctx, engineaccess.CreateInput{Actor: actor, EngineID: int64(engine.ID), TenantMembershipID: actor.MembershipID,
 			ExpiresAt: time.Now().Add(time.Hour), Reason: "Explicit fixture target administration"})
@@ -212,17 +214,20 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		if err := json.Unmarshal([]byte(auditDetails), &details); err != nil || details["mode"] != "independent" || details["successor_principal_id"] != nil {
 			t.Fatalf("first configuration invented a handoff successor: %v err=%v", details, err)
 		}
+		actor = exerciseApprovalRequirementUpdates(t, db, identity, service, actor, engine, foreignEngine, initialized)
+		input.Actor = actor
+		projection.Authorization.AuthorizationVersion = strconv.FormatInt(actor.AuthorizationVersion, 10)
 		if _, err := service.Revoke(ctx, engineaccess.RevokeInput{Actor: actor, EngineID: int64(engine.ID), ID: delegation.ID, Version: delegation.Version,
 			Reason: "End fixture administration"}); err != nil {
 			t.Fatal(err)
 		}
 		refreshActor()
 		input.Actor = actor
-		if _, err := service.InitializeApprovalRequirement(ctx, input); !errors.Is(err, commonapi.ErrForbidden) {
-			t.Fatalf("revoked management delegation=%v", err)
+		if _, err := service.InitializeApprovalRequirement(ctx, input); !errors.Is(err, engineaccess.ErrApprovalRequirementExists) {
+			t.Fatalf("revoked redundant delegation removed administrator qualification=%v", err)
 		}
-		if _, _, err := service.ListApprovalRequirements(ctx, actor, int64(engine.ID), 1, 20); !errors.Is(err, commonapi.ErrForbidden) {
-			t.Fatalf("revoked management delegation read=%v", err)
+		if _, _, err := service.ListApprovalRequirements(ctx, actor, int64(engine.ID), 1, 20); err != nil {
+			t.Fatalf("administrator read after redundant delegation revocation=%v", err)
 		}
 		delegation, err = service.Create(ctx, engineaccess.CreateInput{Actor: actor, EngineID: int64(engine.ID), TenantMembershipID: actor.MembershipID,
 			ExpiresAt: time.Now().Add(time.Hour), Reason: "Separate functional revocation fixture"})
@@ -250,6 +255,108 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 }
 
 type approvalRequirementWaitContextKey struct{}
+
+func exerciseApprovalRequirementUpdates(t *testing.T, db *gorm.DB, identity *iam.Repository, service *engineaccess.Service,
+	actor engineaccess.Actor, engine, foreignEngine models.Engine, current engineaccess.ApprovalRequirementView) engineaccess.Actor {
+	t.Helper()
+	ctx := context.Background()
+	input := engineaccess.UpdateApprovalRequirementInput{Actor: actor, EngineID: int64(engine.ID), ID: current.ID, Version: current.Version,
+		Mode: "independent", Reason: "Explicit handoff to direct approval"}
+	if _, err := service.UpdateApprovalRequirement(ctx, input); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatalf("update permission alone accepted independent successor: %v", err)
+	}
+	roles := iam.NewTenantRoleService(identity, time.Now)
+	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: actor.TenantID, RoleKey: "custom.source_grant_successor", Name: "Direct successor fixture",
+		ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_grant.create"}, ActorPrincipalID: actor.PrincipalID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stepUp := time.Now().Add(time.Minute)
+	if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: actor.TenantID, MembershipID: actor.MembershipID,
+		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Explicit direct successor", ActorPrincipalID: actor.PrincipalID,
+		AssuranceLevel: iam.AssuranceLevelAAL2, StepUpExpiresAt: &stepUp}); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := identity.GetPrincipal(ctx, actor.PrincipalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor.AuthorizationVersion = principal.AuthorizationVersion
+	input.Actor = actor
+	var grantsBefore string
+	if err := db.Raw(`SELECT coalesce(jsonb_agg(to_jsonb(g) ORDER BY request_id)::text,'[]') FROM system.engine_access_grants g`).Scan(&grantsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.UpdateApprovalRequirement(ctx, input)
+	if err != nil || updated.Version != 2 || updated.Mode != "independent" || updated.ID != current.ID {
+		t.Fatalf("explicit change=%+v %v", updated, err)
+	}
+	var auditDetails string
+	if err := db.Table("system.audit_logs").Select("details").Where("event_name=? AND entity_id=?", "system.engine_access_approval_requirement.changed", current.ID.String()).Order("id DESC").Limit(1).Scan(&auditDetails).Error; err != nil {
+		t.Fatal(err)
+	}
+	var details map[string]any
+	if err := json.Unmarshal([]byte(auditDetails), &details); err != nil || details["successor_principal_id"] != float64(actor.PrincipalID) {
+		t.Fatalf("successor not derived from current actor: %v %v", details, err)
+	}
+	if _, err := service.UpdateApprovalRequirement(ctx, input); !errors.Is(err, engineaccess.ErrApprovalRequirementVersion) {
+		t.Fatalf("old version retry changed arrangement: %v", err)
+	}
+	input.Version = 2
+	var auditsBefore, auditsAfter int64
+	db.Table("system.audit_logs").Where("event_name='system.engine_access_approval_requirement.changed'").Count(&auditsBefore)
+	if row, err := service.UpdateApprovalRequirement(ctx, input); err != nil || row.Version != 2 {
+		t.Fatalf("same-mode update=%+v %v", row, err)
+	}
+	db.Table("system.audit_logs").Where("event_name='system.engine_access_approval_requirement.changed'").Count(&auditsAfter)
+	if auditsAfter != auditsBefore {
+		t.Fatal("same mode created change audit")
+	}
+	foreign := input
+	foreign.EngineID = int64(foreignEngine.ID)
+	if _, err := service.UpdateApprovalRequirement(ctx, foreign); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("cross-tenant update exposed record: %v", err)
+	}
+	missing := input
+	missing.ID = uuid.New()
+	if _, err := service.UpdateApprovalRequirement(ctx, missing); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("unknown record update=%v", err)
+	}
+	input.Mode = "catalog"
+	invalidStatus := 99
+	failedAudit := input
+	failedAudit.Audit.HTTPStatus = &invalidStatus
+	if _, err := service.UpdateApprovalRequirement(ctx, failedAudit); err == nil {
+		t.Fatal("failed audit committed mode switch")
+	}
+	// Two administrators using one displayed version cannot overwrite each other.
+	outcomes := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, err := service.UpdateApprovalRequirement(ctx, input); outcomes <- err }()
+	}
+	wg.Wait()
+	close(outcomes)
+	success, conflict := 0, 0
+	for err := range outcomes {
+		if err == nil {
+			success++
+		} else if errors.Is(err, engineaccess.ErrApprovalRequirementVersion) {
+			conflict++
+		} else {
+			t.Fatal(err)
+		}
+	}
+	if success != 1 || conflict != 1 {
+		t.Fatalf("update serialization: %d success %d conflict", success, conflict)
+	}
+	var grantsAfter string
+	if err := db.Raw(`SELECT coalesce(jsonb_agg(to_jsonb(g) ORDER BY request_id)::text,'[]') FROM system.engine_access_grants g`).Scan(&grantsAfter).Error; err != nil || grantsBefore != grantsAfter {
+		t.Fatalf("mode switch mutated grants: %s -> %s %v", grantsBefore, grantsAfter, err)
+	}
+	return actor
+}
 
 // Wait on the real target advisory lock, not a service mock or host sleep.
 // Qualification is valid before waiting and expires before that lock is freed.

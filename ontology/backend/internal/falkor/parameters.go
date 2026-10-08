@@ -10,7 +10,7 @@ import (
 )
 
 var parameterName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
-var graphKeyPattern = regexp.MustCompile(`^ontology:t[1-9][0-9]*:[a-z][a-z0-9_]{0,63}:r[1-9][0-9]*:g[0-9a-f]{32}$`)
+var graphKeyPattern = regexp.MustCompile(`^ontology:(t[1-9][0-9]*:[a-z][a-z0-9_]{0,63}|p:[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+):r[1-9][0-9]*:g[0-9a-f]{32}$`)
 
 // Encode a deliberately small Cypher literal subset, never fmt.Sprint on data.
 // Keys are validated identifiers, strings use JSON double-quote escaping,

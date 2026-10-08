@@ -1828,7 +1828,7 @@ const resetDeletionDialog = () => {
 
 const availableAuthorizationTabs = computed(() => {
   const tabs = []
-  if (['read', 'initialize'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`)) ||
+  if (['read', 'initialize', 'update'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`)) ||
     ['create', 'read', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_grant.${action}`))) tabs.push('data-authorization')
   if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
   return tabs
@@ -1846,6 +1846,7 @@ const availableDetailTabs = computed(() => {
 
 const restoreDetailTab = async () => {
   if (!route.params.id || !selectedEngine.value) return
+  if (!authStore.authContext || authStore.authContextLoadPromise) return
   const routeState = resolveEngineDetailRouteState(availableDetailTabs.value, route.query)
   detailTab.value = routeState.activeTab
   if (routeState.changed) {
@@ -1999,7 +2000,7 @@ onMounted(() => {
 })
 
 watch(() => [route.params.id, route.query.tab], restoreEngineDetails)
-watch(availableDetailTabs, restoreDetailTab)
+watch([availableDetailTabs, () => Boolean(authStore.authContextLoadPromise)], restoreDetailTab)
 
 onUnmounted(() => {
 	engineRefreshStopped = true

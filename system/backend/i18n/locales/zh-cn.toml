@@ -50,6 +50,9 @@ other = "Notebook 会话授权已失效或无权使用"
 [system.auth.internal_error]
 other = "认证服务暂时不可用"
 
+[system.platform_publication.invalid]
+other = "平台发布的能力、修订或摘要无效"
+
 [system.engine_catalog.control_plane_failed]
 other = "目录控制面暂时不可用"
 
@@ -420,3 +423,5 @@ other = "观测身份快照超过规定预算。"
 
 ["system.observability_identity.timeout"]
 other = "观测身份快照读取超时。"
+[system.engine_access_approval_requirement.version_conflict]
+other = "批准方式已被更新，请刷新核对后再确认切换。"

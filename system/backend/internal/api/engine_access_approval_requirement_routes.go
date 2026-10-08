@@ -24,6 +24,10 @@ func RegisterEngineAccessApprovalRequirementRoutes(api *gin.RouterGroup, runtime
 	if err != nil {
 		return err
 	}
+	update, err := middleware.NewIAMPermissionGuard(authorization.PermissionSystemEngineAccessApprovalRequirementUpdate)
+	if err != nil {
+		return err
+	}
 	routes := api.Group("/engines/:id/access_approval_requirements")
 	handling, err := middleware.NewIAMPermissionGuard(authorization.PermissionSystemEngineAccessFulfillmentCreate)
 	if err != nil {
@@ -34,5 +38,6 @@ func RegisterEngineAccessApprovalRequirementRoutes(api *gin.RouterGroup, runtime
 	routes.GET("", read, handler.List)
 	routes.GET("/:requirement_id", read, handler.Get)
 	routes.POST("", initialize, handler.Initialize)
+	routes.PUT("/:requirement_id", update, handler.Update)
 	return nil
 }

@@ -10,7 +10,29 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
+	"github.com/google/uuid"
 )
+
+func TestApprovalRequirementUpdateRejectsInvalidCommandBeforeStorage(t *testing.T) {
+	service := &Service{}
+	valid := UpdateApprovalRequirementInput{EngineID: 1, ID: uuid.New(), Version: 1, Mode: "catalog", Reason: "Explicit change"}
+	for name, mutate := range map[string]func(*UpdateApprovalRequirementInput){
+		"missing id":       func(i *UpdateApprovalRequirementInput) { i.ID = uuid.Nil },
+		"zero version":     func(i *UpdateApprovalRequirementInput) { i.Version = 0 },
+		"negative version": func(i *UpdateApprovalRequirementInput) { i.Version = -1 },
+		"missing engine":   func(i *UpdateApprovalRequirementInput) { i.EngineID = 0 },
+		"unknown mode":     func(i *UpdateApprovalRequirementInput) { i.Mode = "unknown" },
+		"missing reason":   func(i *UpdateApprovalRequirementInput) { i.Reason = " " },
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := valid
+			mutate(&input)
+			if _, err := service.UpdateApprovalRequirement(context.Background(), input); !errors.Is(err, commonapi.ErrBadRequest) {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func TestApprovalRequirementInitializationRejectsMissingOrUnknownModeBeforeStorage(t *testing.T) {
 	service := &Service{}
@@ -62,6 +84,8 @@ func TestEngineManagementPermissionsDoNotImplyOtherActions(t *testing.T) {
 	now := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
 	tenantID := int64(7)
 	permissions := []string{
+		authorization.PermissionSystemEngineAccessApprovalRequirementUpdate,
+		authorization.PermissionSystemEngineAccessGrantCreate,
 		authorization.PermissionSystemEngineAccessApprovalRequirementInitialize,
 		authorization.PermissionSystemEngineAccessApprovalRequirementRead,
 		authorization.PermissionSystemEngineAccessGrantRevoke,

@@ -77,6 +77,8 @@ engine, err := client.GetEngine(engineID)
 connInfo := engine.ConnectionInfo
 ```
 
+Platform 机器调用不能使用 `WithTenantID` 后的客户端。Ontology 的平台定义发布核验通过未绑定 Tenant 的 `SystemServiceClient.CheckPlatformPublication` 发起，仅使用 Platform Service Token，绑定能力、修订和摘要，校验固定 Client 与机器主体并限制响应大小。该方法不缓存结果，不签发发布凭据；它是当次 IAM 权限观察，不是定义入库、图构建或激活操作。具体边界见 [Ontology 设计契约 1.9](../next/ADDP%20Ontology最小设计契约.md)。
+
 **关键设计原则**:
 
 - 最小外部依赖 (仅 Go 标准库)

@@ -34,7 +34,7 @@
       <el-button :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       <el-table :data="rows" v-loading="loading">
         <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>
-        <el-table-column :label="t('system.engine.sourceGrants.recipient')" min-width="160"><template #default="{ row }">{{ t(`system.engine.sourceGrants.types.${row.recipient_type}`) }} · {{ row.recipient_id }}</template></el-table-column>
+        <el-table-column :label="t('system.engine.sourceGrants.recipient')" min-width="220"><template #default="{ row }"><EngineGrantRecipient :type="row.recipient_type" :id="row.recipient_id" v-bind="recipientPresentation(row)" /></template></el-table-column>
         <el-table-column :label="t('system.engine.dataAuthorization.mode')" min-width="150"><template #default="{ row }">{{ t(`system.engine.dataAuthorization.modes.${row.approval_mode}`) }}</template></el-table-column>
         <el-table-column :label="t('system.engine.sourceGrants.expiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
         <el-table-column :label="t('system.engine.sourceGrants.state')" min-width="110"><template #default="{ row }">{{ t(`system.engine.sourceGrants.states.${state(row)}`) }}</template></el-table-column>
@@ -45,7 +45,8 @@
     </template>
     <el-alert v-else type="info" :closable="false" :title="t('system.engine.sourceGrants.readRequired')" />
     <el-dialog v-model="revokeVisible" class="addp-dialog" append-to-body width="min(600px, calc(100vw - 24px))" :title="t('system.engine.sourceGrants.revoke')" :close-on-click-modal="!revoking" :close-on-press-escape="!revoking" :show-close="!revoking" @opened="revokeCancel?.$el?.focus()">
-      <p>{{ approvalPathLabel(revokeRow?.catalog_path) }} · {{ revokeRow?.recipient_id }}</p>
+      <p>{{ approvalPathLabel(revokeRow?.catalog_path) }}</p>
+      <EngineGrantRecipient v-if="revokeRow" :type="revokeRow.recipient_type" :id="revokeRow.recipient_id" v-bind="recipientPresentation(revokeRow)" />
       <el-alert type="warning" :closable="false" :title="t('system.engine.sourceGrants.revokeBoundary')" />
       <el-alert v-if="revokeError" type="error" :closable="false" :title="revokeError" />
       <el-form label-position="top"><el-form-item :label="t('system.engine.sourceGrants.reason')" required><el-input v-model="revokeReason" data-testid="source-grant-revoke-reason" type="textarea" maxlength="2000" :disabled="revoking" /></el-form-item></el-form>
@@ -65,6 +66,7 @@ import { useAuthStore } from '../../store/auth'
 import { approvalPathLabel } from '../../utils/engineApprovalCatalog'
 import { captureIndependentGrant } from '../../utils/independentGrant'
 import TenantMemberSelect from '../iam/TenantMemberSelect.vue'
+import EngineGrantRecipient from './EngineGrantRecipient.vue'
 
 const props = defineProps({ engine: { type: Object, required: true }, requirements: { type: Array, default: () => [] } })
 const recipientTypeSelect = ref(null), revokeCancel = ref(null)
@@ -72,9 +74,15 @@ const emit = defineEmits(['close', 'busy', 'issued']), auth = useAuthStore(), { 
 const canCreate = computed(() => auth.hasPermission('system.engine_access_grant.create'))
 const canRead = computed(() => auth.hasPermission('system.engine_access_grant.read'))
 const canRevoke = computed(() => auth.hasPermission('system.engine_access_grant.revoke'))
+const recipientSources = {
+  user: { permission: 'iam.tenant_membership.read', api: iamAPI.memberships, id: 'principal_id' },
+  department: { permission: 'iam.department.read', api: iamAPI.departments, id: 'id' },
+  project_group: { permission: 'iam.project_group.read', api: iamAPI.projectGroups, id: 'id' }
+}
 const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
-const canReadCandidates = computed(() => auth.hasPermission(({ user: 'iam.tenant_membership.read', department: 'iam.department.read', project_group: 'iam.project_group.read' })[form.recipientType]))
+const canReadCandidates = computed(() => auth.hasPermission(recipientSources[form.recipientType]?.permission))
 const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error = ref(''), success = ref('')
+const recipientNames = ref({})
 const candidates = ref([]), members = ref([]), candidateLoading = ref(false), formError = ref(''), saving = ref(false), attempt = ref(null)
 const outcomes = ref([])
 const revokeVisible = ref(false), revokeRow = ref(null), revokeReason = ref(''), revokeError = ref(''), revoking = ref(false)
@@ -83,15 +91,38 @@ const message = e => e?.response?.data?.error || t('system.engine.sourceGrants.f
 const formatTime = value => new Date(value).toLocaleString(locale.value)
 const expiryLabel = row => row.expiry_mode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(row.expires_at)
 const state = row => row.revocation ? 'revoked' : row.expires_at && new Date(row.expires_at).getTime() <= Date.now() ? 'expired' : 'issued'
+function recipientPresentation(row) {
+  const names = recipientNames.value[row.recipient_type]
+  const identity = names?.items?.[String(row.recipient_id)]
+  return { identity, status: identity ? 'ready' : names?.status === 'ready' ? 'unavailable' : names?.status || 'loading' }
+}
+async function loadRecipientNames(history, epoch, seq) {
+  const kinds = [...new Set(history.map(row => row.recipient_type))]
+  await Promise.all(kinds.map(async kind => {
+    const source = recipientSources[kind]
+    if (!source) return
+    recipientNames.value[kind] = { status: auth.hasPermission(source.permission) ? 'loading' : 'forbidden' }
+    if (!auth.hasPermission(source.permission)) return
+    try {
+      // History includes inactive recipients; eligibility belongs to the grant form, not this display.
+      const items = await source.api.listAll(kind === 'user' ? { principal_type: 'user' } : {})
+      if (epoch !== generation || seq !== readSequence) return
+      recipientNames.value[kind] = { status: 'ready', items: Object.fromEntries(items.map(item => [String(item[source.id]), item])) }
+    } catch {
+      if (epoch === generation && seq === readSequence) recipientNames.value[kind] = { status: 'failed' }
+    }
+  }))
+}
 async function load() {
   if (!canRead.value) return
   const epoch = generation, seq = ++readSequence
-  loading.value = true; error.value = ''; rows.value = []; total.value = 0
+  loading.value = true; error.value = ''; rows.value = []; total.value = 0; recipientNames.value = {}
   try {
     const result = await enginesAPI.listSourceGrants(props.engine.id, { page: page.value, page_size: 20 })
     if (epoch !== generation || seq !== readSequence) return
     if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total) || result.total < 0) throw new Error('invalidHistory')
     rows.value = result.data; total.value = result.total
+    await loadRecipientNames(result.data, epoch, seq)
   } catch (e) { if (epoch === generation && seq === readSequence) error.value = message(e) }
   finally { if (epoch === generation && seq === readSequence) loading.value = false }
 }
@@ -102,7 +133,7 @@ async function loadCandidates() {
   if (!props.requirements.length || !canCreate.value || !canReadCandidates.value) return
   candidateLoading.value = true
   try {
-    const result = await (kind === 'user' ? iamAPI.memberships : kind === 'department' ? iamAPI.departments : iamAPI.projectGroups).listAll({ status: 'active', ...(kind === 'user' ? { principal_type: 'user' } : {}) })
+    const result = await recipientSources[kind].api.listAll({ status: 'active', ...(kind === 'user' ? { principal_type: 'user' } : {}) })
     if (epoch !== generation || seq !== candidateSequence) return
     if (kind === 'user') {
       members.value = result.filter(item => item.principal_type === 'user' && item.status === 'active' && item.principal_status === 'active' && !item.ended_at && (!item.expires_at || new Date(item.expires_at).getTime() > Date.now()))
@@ -166,8 +197,8 @@ watch(() => JSON.stringify(props.requirements), () => {
 })
 watch([() => props.engine.id, () => props.engine.lifecycle_state, () => auth.authContext?.principal?.id, () => auth.authContext?.context?.tenant_id,
   () => auth.authContext?.context?.tenant_membership_id, () => auth.authContext?.authorization?.authorization_version, canRead, canCreate, canRevoke,
-  ...['iam.tenant_membership.read', 'iam.department.read', 'iam.project_group.read'].map(permission => () => auth.hasPermission(permission))], () => {
-  generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; total.value = 0; page.value = 1
+  ...Object.values(recipientSources).map(source => () => auth.hasPermission(source.permission))], () => {
+  generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; recipientNames.value = {}; total.value = 0; page.value = 1
   saving.value = revoking.value = loading.value = false; revokeVisible.value = false; error.value = formError.value = success.value = ''; emit('close'); load()
 }, { immediate: true })
 watch([saving, attempt], () => emit('busy', saving.value || !!attempt.value), { immediate: true })

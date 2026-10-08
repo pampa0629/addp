@@ -133,6 +133,34 @@ definitions:
           $ref: '#/definitions/authorization.ProjectGroupMembership'
         type: array
     type: object
+  authorization.PlatformPublicationCheck:
+    properties:
+      capability:
+        type: string
+      digest:
+        type: string
+      revision:
+        type: string
+    type: object
+  authorization.PlatformPublicationObservation:
+    properties:
+      authorization_version:
+        type: string
+      capability:
+        type: string
+      client_id:
+        type: string
+      context_type:
+        type: string
+      digest:
+        type: string
+      principal_id:
+        type: string
+      principal_type:
+        type: string
+      revision:
+        type: string
+    type: object
   authorization.ProjectGroupMembership:
     properties:
       membership_id:
@@ -3924,6 +3952,23 @@ definitions:
     required:
     - connection_info
     type: object
+  internal_api.UpdateEngineAccessApprovalRequirementRequest:
+    properties:
+      mode:
+        enum:
+        - catalog
+        - independent
+        type: string
+      reason:
+        type: string
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - mode
+    - reason
+    - version
+    type: object
   models.AuditLogCreateRequest:
     properties:
       context_type:
@@ -5959,6 +6004,73 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_access_approval_requirement.read
+    put:
+      consumes:
+      - application/json
+      description: 需独立更新权限及当前引擎管理资格；切到 independent 还需本人直接授权权限，并将本人记为当次承接人。目标派生自当前租户及引擎内的原记录；正整数版本匹配才可切换。同模式不递增版本或追加切换审计。既有
+        Grant 和已受理请求不变，不发放读取权，不依据 Catalog 存活自动切换 | Requires update permission and
+        current engine management qualification. Independent mode additionally requires
+        the actor's Grant creation permission and records this actor as the handoff
+        successor. Target derives from the tenant and engine scoped record; a positive
+        matching version is required. Same mode does not advance the version or add
+        a change audit. Existing Grants and accepted requests remain unchanged; no
+        read access or availability-based switching
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 批准要求 UUID | Approval requirement UUID
+        in: path
+        name: requirement_id
+        required: true
+        type: string
+      - description: 当前版本、目标方式与切换原因 | Current version, desired mode and change reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateEngineAccessApprovalRequirementRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 批准要求，不是读取授权 | Approval requirement, not a read grant
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 显式切换源目标批准方式 | Explicitly change a source target's approval mode
+      tags:
+      - 源授权批准要求 | Source Access Approval Requirements
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_approval_requirement.update
   /engines/{id}/access_delegations:
     get:
       description: 当前租户的管理资格及历史，不返回连接凭据或内容授权 | Current tenant management qualification
@@ -10615,6 +10727,52 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.observability_identity.read
+  /runtime/platform-definition-publication-checks:
+    post:
+      consumes:
+      - application/json
+      description: 固定 Ontology Platform Service 身份核验当前发布权限；仅回显能力修订摘要及机器主体，不签发凭据，不表示发布或激活成功
+        | Check current publication permission for the fixed Ontology Platform Service;
+        echo only the capability/revision/digest binding and machine identity, without
+        issuing a credential or claiming publication or activation
+      parameters:
+      - description: 能力修订摘要 | Capability revision and digest
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.PlatformPublicationCheck'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/authorization.PlatformPublicationObservation'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核验平台定义发布身份 | Check platform definition publisher
+      tags:
+      - Runtime 发布授权 | Runtime Publication Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - ontology.platform_definition.publish
   /runtime/security-access-actors/resolve:
     post:
       consumes:

@@ -50,6 +50,9 @@ other = "The Notebook session authorization is unavailable or forbidden"
 [system.auth.internal_error]
 other = "The authentication service is temporarily unavailable"
 
+[system.platform_publication.invalid]
+other = "The platform publication binding is invalid"
+
 [system.engine_catalog.control_plane_failed]
 other = "The catalog control plane is temporarily unavailable"
 
@@ -420,3 +423,5 @@ other = "The observability identity snapshot exceeds its configured budget."
 
 ["system.observability_identity.timeout"]
 other = "The observability identity snapshot timed out."
+[system.engine_access_approval_requirement.version_conflict]
+other = "The approval mode has changed. Refresh and review it before confirming again."

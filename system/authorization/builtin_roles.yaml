@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 119
+manifest_version: 120
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -164,6 +164,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - ontology.platform_definition.publish
       - system.runtime_registry.update
   - key: platform.orchestrator_runtime
     role_type: platform_builtin
@@ -760,6 +761,7 @@ roles:
       - system.engine.read
       - system.engine_access_approval_requirement.initialize
       - system.engine_access_approval_requirement.read
+      - system.engine_access_approval_requirement.update
       - system.engine_access_delegation.create
       - system.engine_access_delegation.read
       - system.engine_access_delegation.revoke

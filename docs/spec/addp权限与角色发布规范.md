@@ -113,7 +113,7 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 平台三员 Role 只允许 User Principal，必须互斥，不存在全权合并角色。Runtime Role 只允许 Service Principal，不得授予 User。具体 `allowed_principal_types`、`allowed_scope_types` 和 Permission 集合以 `system/authorization/builtin_roles.yaml` 为准。
 
-引擎授权委派管理员（`tenant.engine_access_delegation_administrator`）是专职 Tenant Management Role，只允许当前 Tenant Scope 的 User。它提供授权管理委派的读取、创建和撤销能力，并包含页面所需的引擎管理读取与租户账号候选读取。发布只增加角色模板，不自动分配给已有账号，也不扩张租户管理员、基础设施管理员等既有 Role。角色分配必须由有权人员通过正常 IAM 路径显式操作；该角色不授予源数据读取、业务共享确认、批准要求初始化、实际授权办理、Grant 撤销或 Explicit Deny，不与引擎管理委派混为一谈。
+引擎授权管理员（`tenant.engine_access_delegation_administrator`）是专职 Tenant Management Role，只允许当前 Tenant Scope 的 User。它提供委派管理、批准要求读取／初始化／显式切换、独立只读 Grant 创建／历史读取／撤销及页面候选读取。当前租户有效的委派创建 Permission 表达管理员管理范围，管理员无需委托自己；每项操作仍独立核验功能 Permission。切换权限 `system.engine_access_approval_requirement.update` 默认仅组合进此模板，不组合进源数据授权办理员或其他角色。切到直接批准还核验操作人自己的授权办理资格，防止无人承接。角色不授予数据内容读取、业务共享确认或 Explicit Deny，不自动分配账号，不创建委派或 Grant；模板扩展沿现有 IAM 发布机制推进已分配主体授权版本并撤销旧会话。
 
 源数据授权办理员（`tenant.source_data_authorizer`）只允许 Tenant Scope 的 User，组合精确表批准要求的读取／首次配置、独立只读 Grant 的创建／历史读取／撤销，以及页面所需的引擎管理读取、实时结构目录和账号／部门／项目组候选读取。每项正式办理仍须匹配目标引擎的有效管理委派；角色不自动创建委派，不提供委派管理、业务共享确认、Catalog 履约、Explicit Deny 或数据内容读取／导出／写入。发布仅增加模板，不给已有账号分配，不扩张其他角色。具备角色分配权限的账号可以给自己分配该高风险角色，但须完成现有 MFA 增强认证；自我分配不豁免审计、会话失效或引擎委派核验。小团队可由同一管理员兼任委派管理和授权办理，另一个账号仅作为数据接收方，无需增加专职账号。
 

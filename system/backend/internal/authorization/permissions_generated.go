@@ -95,6 +95,7 @@ const (
 	PermissionSystemEngineUpdate                              = "system.engine.update"
 	PermissionSystemEngineAccessApprovalRequirementInitialize = "system.engine_access_approval_requirement.initialize"
 	PermissionSystemEngineAccessApprovalRequirementRead       = "system.engine_access_approval_requirement.read"
+	PermissionSystemEngineAccessApprovalRequirementUpdate     = "system.engine_access_approval_requirement.update"
 	PermissionSystemEngineAccessDelegationCreate              = "system.engine_access_delegation.create"
 	PermissionSystemEngineAccessDelegationRead                = "system.engine_access_delegation.read"
 	PermissionSystemEngineAccessDelegationRevoke              = "system.engine_access_delegation.revoke"
@@ -212,6 +213,7 @@ var permissionKeys = [...]string{
 	"system.engine.update",
 	"system.engine_access_approval_requirement.initialize",
 	"system.engine_access_approval_requirement.read",
+	"system.engine_access_approval_requirement.update",
 	"system.engine_access_delegation.create",
 	"system.engine_access_delegation.read",
 	"system.engine_access_delegation.revoke",

@@ -1026,6 +1026,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.engine_access_approval_requirement.read.name
     description_i18n_key: permissions.system.engine_access_approval_requirement.read.description
+  - key: system.engine_access_approval_requirement.update
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_access_approval_requirement.update.name
+    description_i18n_key: permissions.system.engine_access_approval_requirement.update.description
   - key: system.engine_access_delegation.create
     allowed_scope_types: [tenant]
     risk_level: high

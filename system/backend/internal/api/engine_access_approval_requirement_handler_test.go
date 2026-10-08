@@ -16,6 +16,10 @@ import (
 
 type unusedApprovalRequirementService struct{}
 
+func (unusedApprovalRequirementService) UpdateApprovalRequirement(context.Context, engineaccess.UpdateApprovalRequirementInput) (*engineaccess.ApprovalRequirementView, error) {
+	panic("denied update reached service")
+}
+
 func (unusedApprovalRequirementService) GetHandlingRequirement(context.Context, engineaccess.Actor, engineplugin.EngineCatalogPath) (*engineaccess.HandlingRequirementView, error) {
 	panic("denied request reached handling observation")
 }
@@ -71,6 +75,7 @@ func TestApprovalRequirementRoutesRejectUnqualifiedContextsAndBodyAuthority(t *t
 			engineDelegationTestRequest(t, router, "GET", path, nil, 403)
 			engineDelegationTestRequest(t, router, "GET", path+"/"+id, nil, 403)
 			engineDelegationTestRequest(t, router, "POST", path, nil, 403)
+			engineDelegationTestRequest(t, router, "PUT", path+"/"+id, nil, 403)
 		})
 	}
 	auth := testIAMActorContext("tenant")
@@ -87,7 +92,8 @@ func TestApprovalRequirementRoutesRejectUnqualifiedContextsAndBodyAuthority(t *t
 	engineDelegationTestRequest(t, router, "GET", path+"?tenant_id=2", nil, 400)
 	engineDelegationTestRequest(t, router, "POST", path+"?tenant_id=2", nil, 400)
 	engineDelegationTestRequest(t, router, "GET", path+"/invalid", nil, 400)
-	for _, op := range []struct{ method, suffix string }{{"PUT", "/" + id}, {"DELETE", "/" + id}, {"POST", "/" + id + "/exit"}, {"POST", "/" + id + "/restore"}} {
+	engineDelegationTestRequest(t, router, "PUT", path+"/"+id, nil, 403)
+	for _, op := range []struct{ method, suffix string }{{"DELETE", "/" + id}, {"POST", "/" + id + "/exit"}, {"POST", "/" + id + "/restore"}} {
 		engineDelegationTestRequest(t, router, op.method, path+op.suffix, nil, 404)
 	}
 	auth.Authorization.RoleAssignments[0].Scope.Type = "department"
@@ -99,6 +105,47 @@ func TestApprovalRequirementRoutesRejectUnqualifiedContextsAndBodyAuthority(t *t
 	router = approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
 	engineDelegationTestRequest(t, router, "POST", path, nil, 403)
 	engineDelegationTestRequest(t, router, "GET", path, nil, 403)
+}
+
+type updateRequirementFixture struct {
+	unusedApprovalRequirementService
+	t  *testing.T
+	id uuid.UUID
+}
+
+func (f updateRequirementFixture) UpdateApprovalRequirement(_ context.Context, input engineaccess.UpdateApprovalRequirementInput) (*engineaccess.ApprovalRequirementView, error) {
+	if input.ID != f.id || input.Version != 9007199254740993 || input.EngineID != 9007199254740993 || input.Mode != "independent" || input.Actor.PrincipalID <= 0 {
+		f.t.Fatalf("update changed the authenticated actor or original identity/version: %+v", input)
+	}
+	return &engineaccess.ApprovalRequirementView{ID: input.ID, EngineID: input.EngineID, Version: input.Version + 1, Mode: input.Mode}, nil
+}
+
+func TestApprovalRequirementUpdateRejectsBodyAuthorityAndPreservesVersion(t *testing.T) {
+	auth := testIAMActorContext("tenant")
+	auth.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "1", RoleKey: "custom.mode_admin", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute),
+		Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: auth.Context.TenantID}, Permissions: []string{"system.engine_access_approval_requirement.update"}}}
+	id := uuid.New()
+	path := "/api/v1/system/engines/9007199254740993/access_approval_requirements/" + id.String()
+	router := approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
+	for _, version := range []any{nil, 0, -1, "1", 1.5} {
+		engineDelegationTestRequest(t, router, "PUT", path, map[string]any{"version": version, "mode": "independent", "reason": "Explicit change"}, 400)
+	}
+	for _, field := range []string{"engine_id", "catalog_path", "tenant_id", "principal_id", "successor_principal_id"} {
+		engineDelegationTestRequest(t, router, "PUT", path, map[string]any{"version": 1, "mode": "independent", "reason": "Explicit change", field: "1"}, 400)
+	}
+	for _, mode := range []any{nil, "", "Independent", "unknown", 1} {
+		engineDelegationTestRequest(t, router, "PUT", path, map[string]any{"version": 1, "mode": mode, "reason": "Explicit change"}, 400)
+	}
+	body := map[string]any{"version": int64(9007199254740993), "mode": "independent", "reason": "Explicit change"}
+	engineDelegationTestRequest(t, router, "PUT", path+"?anything=1", body, 400)
+	engineDelegationTestRequest(t, router, "PUT", "/api/v1/system/engines/1/access_approval_requirements/"+uuid.Nil.String(), body, 400)
+	router = approvalRequirementTestRouter(t, updateRequirementFixture{t: t, id: id}, &auth)
+	engineDelegationTestRequest(t, router, "PUT", path, body, 200)
+	department := "5"
+	auth.Authorization.RoleAssignments[0].Scope.Type = "department"
+	auth.Authorization.RoleAssignments[0].Scope.DepartmentID = &department
+	router = approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
+	engineDelegationTestRequest(t, router, "PUT", path, body, 403)
 }
 
 type initializationRequirementFixture struct {

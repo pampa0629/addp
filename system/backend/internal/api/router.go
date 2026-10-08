@@ -213,6 +213,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterObservabilityIdentityRoute(api, runtime, moduleRegistryHandler); err != nil {
 		panic(fmt.Errorf("注册观测身份投影路由失败: %w", err))
 	}
+	if err := RegisterPlatformPublicationCheckRoute(api, runtime); err != nil {
+		panic(fmt.Errorf("注册平台定义发布核验路由失败: %w", err))
+	}
 	serviceInternalHandler := NewInternalHandler(apiConsumerService)
 	platformContext, err := middleware.NewIAMServiceContextGuard("platform")
 	if err != nil {

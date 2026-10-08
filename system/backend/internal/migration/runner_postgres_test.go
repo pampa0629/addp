@@ -5623,8 +5623,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 20 || systemPermissionCount != 159 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 159", ownerCount, systemPermissionCount)
+	if ownerCount != 20 || systemPermissionCount != 160 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 160", ownerCount, systemPermissionCount)
 	}
 	var explicitGrantPermissions, implicitGrantBindings, authorizerGrantBindings int
 	if err := db.QueryRow(`SELECT count(*) FROM system.permissions

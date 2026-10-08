@@ -2,13 +2,7 @@
 // or the Tool Manifest's authorization and execution contracts.
 package platform
 
-import (
-	"crypto/sha256"
-	_ "embed"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-)
+import _ "embed"
 
 //go:embed transfer.json
 var transferDefinition []byte
@@ -54,15 +48,9 @@ type Context struct {
 // TransferContext returns an independent immutable-release value on each read.
 // Availability is deliberately not inferred from a static definition.
 func TransferContext() (Context, error) {
-	var result Context
-	if err := json.Unmarshal(transferDefinition, &result); err != nil {
-		return result, fmt.Errorf("decode platform definition: %w", err)
-	}
-	canonical, err := json.Marshal(result)
+	snapshot, err := Compile(transferDefinition)
 	if err != nil {
-		return result, err
+		return Context{}, err
 	}
-	digest := sha256.Sum256(canonical)
-	result.Digest = hex.EncodeToString(digest[:])
-	return result, nil
+	return snapshot.Context()
 }

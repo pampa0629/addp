@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/execution"
 	"github.com/addp/ontology/internal/falkor"
 	"github.com/addp/ontology/internal/models"
+	"github.com/addp/ontology/internal/platform"
 	"github.com/addp/ontology/internal/repository"
 	"github.com/addp/ontology/internal/semantic"
 	"github.com/google/uuid"
@@ -127,6 +128,55 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 	if err := db.Where("generation=?", next.Generation).First(&failed).Error; err != nil || failed.Status != "failed" {
 		t.Fatal("rebuild overwrote failed predecessor")
 	}
+	t.Run("platform_publication_real_graph", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		machine := platformMachineActor()
+		auth := testPlatformAuthorizer(func(ctx context.Context, _ *platform.Snapshot) (models.PlatformActor, error) {
+			return machine, ctx.Err()
+		})
+		platformRepo := repository.NewPlatformRevisionRepository(db)
+		newPublisher := func(g ProjectionGraph) *PlatformPublisher {
+			t.Helper()
+			p, err := NewPlatformPublisher(platformRepo, g, auth)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return p
+		}
+		capability := "transfer.task.real_graph"
+		first, err := newPublisher(graph).Publish(ctx, platformTestSnapshot(t, capability, 2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		secondSnapshot := platformTestSnapshot(t, capability, 3)
+		second, err := newPublisher(rejectVerifiedProjection{graph}).Publish(ctx, secondSnapshot)
+		if err == nil || second == nil || second.Status != "failed" {
+			t.Fatal("graph failure activated", second, err)
+		}
+		head, err := platformRepo.Head(ctx, machine, capability)
+		if err != nil || head.ActiveGeneration == nil || *head.ActiveGeneration != first.Generation || head.ActivationVersion != 1 {
+			t.Fatal("graph failure lost old version", head, err)
+		}
+		rebuilt, err := newPublisher(graph).Publish(ctx, secondSnapshot)
+		if err != nil || rebuilt.Generation == second.Generation || rebuilt.Status != "ready" {
+			t.Fatal(rebuilt, err)
+		}
+		plan, err := falkor.PlanPlatform(secondSnapshot, rebuilt.Generation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := graph.Verify(ctx, plan); err != nil {
+			t.Fatal(err)
+		}
+		head, err = platformRepo.Head(ctx, machine, capability)
+		if err != nil || head.ActiveGeneration == nil || *head.ActiveGeneration != rebuilt.Generation || head.ActiveRevision == nil || *head.ActiveRevision != 3 || head.ActivationVersion != 2 {
+			t.Fatal(head, err)
+		}
+		if err := db.Where("generation=?", second.Generation).First(second).Error; err != nil || second.Status != "failed" {
+			t.Fatal("failed graph history rewritten", second, err)
+		}
+	})
 }
 
 type rejectVerifiedProjection struct{ *falkor.Client }

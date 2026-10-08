@@ -14,8 +14,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 488 {
-		t.Fatalf("descriptor count = %d, want 488", len(descriptors))
+	if len(descriptors) != 490 {
+		t.Fatalf("descriptor count = %d, want 490", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -32,6 +32,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.prometheus_runtime", []string{"monitor.metrics_discovery.read"})
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if key == PlatformDefinitionPublishPermission && role.Key != "platform.ontology_runtime" {
+				t.Fatalf("built-in role %q unexpectedly grants platform publication", role.Key)
+			}
+			if key == "system.engine_access_approval_requirement.update" && role.Key != "tenant.engine_access_delegation_administrator" {
+				t.Fatalf("built-in role %q unexpectedly grants approval mode changes", role.Key)
+			}
 			if (key == "system.engine_access_grant.create" || key == "system.engine_access_grant.read") && role.Key != "tenant.source_data_authorizer" && role.Key != "tenant.engine_access_delegation_administrator" {
 				t.Fatalf("built-in role %q unexpectedly grants independent source Grant permission %q", role.Key, key)
 			}
@@ -82,6 +88,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"iam.tenant_membership.read",
 		"system.engine.read",
 		"system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.read",
+		"system.engine_access_approval_requirement.update",
 		"system.engine_access_delegation.create",
 		"system.engine_access_delegation.read",
 		"system.engine_access_delegation.revoke",
@@ -99,7 +106,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})
 	assertRepositoryRolePermissions(t, roles, "tenant.ontology_runtime", []string{"system.execution_authorization.execute"})
-	assertRepositoryRolePermissions(t, roles, "platform.ontology_runtime", []string{"system.runtime_registry.update"})
+	assertRepositoryRolePermissions(t, roles, "platform.ontology_runtime", []string{PlatformDefinitionPublishPermission, "system.runtime_registry.update"})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.ontology_runtime", []string{"service_principal"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.ontology_runtime", []string{"service_principal"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.duckdb_runtime", []string{"service_principal"})

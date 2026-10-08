@@ -52,11 +52,11 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 		}
 		refresh()
 		target := engineplugin.TabularItemPath(engine.ID, "schema", "public", "governance.target")
-		if _, err := service.GetHandlingScope(ctx, actor, int64(engine.ID)); !errors.Is(err, commonapi.ErrForbidden) {
-			t.Fatalf("permission without delegation=%v", err)
+		if _, err := service.GetHandlingScope(ctx, actor, int64(engine.ID)); err != nil {
+			t.Fatalf("administrator without self-delegation=%v", err)
 		}
-		if _, err := service.GetHandlingRequirement(ctx, actor, target); !errors.Is(err, commonapi.ErrForbidden) {
-			t.Fatalf("observation permission without delegation=%v", err)
+		if _, err := service.GetHandlingRequirement(ctx, actor, target); err != nil {
+			t.Fatalf("administrator observation without self-delegation=%v", err)
 		}
 		delegation, err := service.Create(ctx, engineaccess.CreateInput{Actor: actor, EngineID: int64(engine.ID), TenantMembershipID: actor.MembershipID, ExpiresAt: time.Now().Add(time.Hour), Reason: "Explicit handler management scope"})
 		if err != nil {
@@ -80,7 +80,7 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 			t.Fatal(err)
 		}
 		requirement, err := service.GetHandlingRequirement(ctx, actor, target)
-		if err != nil || requirement.Mode != "catalog" || requirement.RequirementVersion != 1 {
+		if err != nil || requirement.Mode != "catalog" || requirement.RequirementVersion != 3 {
 			t.Fatalf("exact observation=%+v err=%v", requirement, err)
 		}
 		neighbour := engineplugin.TabularItemPath(engine.ID, "schema", "other", "unknown.target")
@@ -108,7 +108,7 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 		minimalRoute := fmt.Sprintf("/api/v1/system/engines/%d/access_handling_requirement", engine.ID)
 		minimal := engineDelegationTestRequest(t, minimalRouter, "POST", minimalRoute, EngineAccessHandlingRequirementRequest{Version: target.Version, Segments: target.Segments}, 200)
 		var observation map[string]any
-		if err := json.Unmarshal(minimal.Body.Bytes(), &observation); err != nil || len(observation) != 2 || observation["mode"] != "catalog" || observation["requirement_version"] != "1" {
+		if err := json.Unmarshal(minimal.Body.Bytes(), &observation); err != nil || len(observation) != 2 || observation["mode"] != "catalog" || observation["requirement_version"] != "3" {
 			t.Fatalf("minimal contract=%v err=%v", observation, err)
 		}
 		response := engineDelegationTestRequest(t, router, "GET", fmt.Sprintf("/api/v1/system/engines/%d/access_handling_scope", engine.ID), nil, 200)

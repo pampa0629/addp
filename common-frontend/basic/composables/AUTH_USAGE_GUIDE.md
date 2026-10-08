@@ -80,6 +80,8 @@ router.beforeEach(createAuthGuard(useAuthStore, {
 - 认证失败才进入登录页；
 - 网络故障标记会话初始化错误，不把用户错误地当作已退出。
 
+已初始化会话的 Token 更新也会重新读取 AuthContext。共享守卫在页面权限判断前等待当前读取，若请求被替换则继续等待最新请求；网络故障或事实尚未取得时取消导航，不把加载状态判为权限拒绝。页面根据权限调整标签或 query 时，应在 AuthContext 存在且无读取任务后执行，并在读取完成后重新判断。不得通过保留旧候选权限解决刷新竞态。
+
 ## 四、API 请求
 
 优先通过 `createAPIClient()` 创建 Axios 客户端：

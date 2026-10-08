@@ -26,6 +26,20 @@ func TestEngineAuthorizationAdministratorForwardMigrationAgainstPostgres(t *test
 }
 
 func TestEngineAuthorizationAdministratorAssignedSessionRefreshAgainstPostgres(t *testing.T) {
+	exerciseEngineAdministratorSessionRefresh(t, "000198_engine_authorization_administrator.up.sql")
+}
+
+func TestEngineApprovalModeUpdateAssignedSessionRefreshAgainstPostgres(t *testing.T) {
+	exerciseEngineAdministratorSessionRefresh(t, "000200_engine_approval_mode_update.up.sql")
+}
+
+func TestEngineApprovalModeUpdateForwardMigrationAgainstPostgres(t *testing.T) {
+	exerciseEngineAccessRolePublication(t, "000200_engine_approval_mode_update.up.sql", "tenant.engine_access_delegation_administrator",
+		"iam.department.read,iam.project_group.read,iam.tenant_membership.read,system.engine.read,system.engine_access_approval_requirement.initialize,system.engine_access_approval_requirement.read,system.engine_access_approval_requirement.update,system.engine_access_delegation.create,system.engine_access_delegation.read,system.engine_access_delegation.revoke,system.engine_access_grant.create,system.engine_access_grant.read,system.engine_access_grant.revoke,system.engine_catalog.read")
+}
+
+func exerciseEngineAdministratorSessionRefresh(t *testing.T, migrationFile string) {
+	t.Helper()
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("requires System PostgreSQL gate")
@@ -39,7 +53,7 @@ func TestEngineAuthorizationAdministratorAssignedSessionRefreshAgainstPostgres(t
 	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
 		t.Fatal(err)
 	}
-	before, through := migrationFilesBeforeAndThrough(t, "000198_engine_authorization_administrator.up.sql")
+	before, through := migrationFilesBeforeAndThrough(t, migrationFile)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {

@@ -14,6 +14,7 @@ import (
 )
 
 var ErrApprovalRequirementExists = errors.Join(commonapi.ErrConflict, errors.New("approval requirement already initialized"))
+var ErrApprovalRequirementVersion = errors.Join(commonapi.ErrConflict, errApprovalRequirementVersion)
 
 // ApprovalRequirementView is System's configuration fact, not a Grant or a
 // copy of Catalog responsibility. IAM/engine IDs retain decimal precision.
@@ -33,6 +34,88 @@ type InitializeApprovalRequirementInput struct {
 	Mode        string
 	Reason      string
 	Audit       iam.AuditMetadata
+}
+
+type UpdateApprovalRequirementInput struct {
+	Actor    Actor
+	EngineID int64
+	ID       uuid.UUID
+	Version  int64
+	Mode     string
+	Reason   string
+	Audit    iam.AuditMetadata
+}
+
+// The exact target and successor are owner facts, never supplied by the caller.
+// Existing Grants and accepted requests are not rewritten by this command.
+func (s *Service) UpdateApprovalRequirement(ctx context.Context, input UpdateApprovalRequirementInput) (*ApprovalRequirementView, error) {
+	if input.EngineID <= 0 || input.ID == uuid.Nil || input.Version <= 0 || !validReason(input.Reason) ||
+		(input.Mode != approvalModeCatalog && input.Mode != approvalModeIndependent) {
+		return nil, commonapi.ErrBadRequest
+	}
+	var result *ApprovalRequirementView
+	err := s.withApprovalRequirementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessApprovalRequirementUpdate,
+		func(tx *Repository, check func() error) error {
+			current, err := tx.getApprovalRequirement(ctx, input.Actor.TenantID, input.EngineID, input.ID)
+			if err != nil {
+				return err
+			}
+			var path engineplugin.EngineCatalogPath
+			if err := json.Unmarshal(current.CatalogPath, &path); err != nil {
+				return err
+			}
+			actor := input.Actor
+			var successor int64
+			verify := check
+			if input.Mode == approvalModeIndependent {
+				successor = actor.PrincipalID
+				now, err := tx.wallClock(ctx)
+				if err != nil {
+					return err
+				}
+				permissions, err := tx.identity().ListEffectiveRoleAssignmentPermissions(ctx, actor.PrincipalID,
+					iam.PrincipalTypeUser, iam.ContextTypeTenant, &actor.TenantID, &actor.MembershipID, now)
+				if err != nil {
+					return err
+				}
+				verify = func() error {
+					if err := check(); err != nil {
+						return err
+					}
+					now, err := tx.wallClock(ctx)
+					if err != nil {
+						return err
+					}
+					if !hasCurrentTenantPermission(permissions, actor.TenantID, authorization.PermissionSystemEngineAccessGrantCreate, now) {
+						return commonapi.ErrForbidden
+					}
+					return check()
+				}
+			}
+			audit := input.Audit
+			principalType, contextType := iam.PrincipalTypeUser, iam.ContextTypeTenant
+			audit.PrincipalID, audit.PrincipalType = &actor.PrincipalID, &principalType
+			audit.TenantID, audit.ContextType = &actor.TenantID, &contextType
+			row, err := tx.changeApprovalRequirement(ctx, approvalRequirementChange{TenantID: actor.TenantID,
+				Path: path, Mode: input.Mode, ExpectedVersion: input.Version, SuccessorPrincipalID: successor, Reason: input.Reason, Audit: audit},
+				func(*Repository) error { return verify() })
+			if errors.Is(err, errApprovalRequirementVersion) {
+				return ErrApprovalRequirementVersion
+			}
+			if err != nil {
+				return err
+			}
+			// Audit writes can wait too. Expired authority rolls back the whole change.
+			if err := verify(); err != nil {
+				return err
+			}
+			result = approvalRequirementView(row)
+			return nil
+		})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // A single target observation, not an engine configuration resource. A

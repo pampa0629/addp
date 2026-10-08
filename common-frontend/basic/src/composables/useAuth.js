@@ -90,6 +90,22 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
     const requiresAuth = to.matched.some((record) => record.meta?.requiresAuth !== false)
     const isPublic = to.name === loginRouteName
 
+    if (authStore.isAuthenticated && checkPageAccess && !isPublic && !to.meta?.handlesForbidden) {
+      // Token rotation clears candidate permissions; only the current authority may decide access.
+      while (authStore.authContextLoadPromise) {
+        const token = authStore.token
+        const requestId = authStore.authContextRequestId
+        try {
+          await authStore.authContextLoadPromise
+        } catch (error) {
+          if (token !== authStore.token || requestId !== authStore.authContextRequestId) continue
+          if (!isAuthenticationFailure(error)) return next(false)
+          authStore.clearLocalSession()
+        }
+      }
+      if (authStore.isAuthenticated && !authStore.contextType) return next(false)
+    }
+
     if (authStore.isAuthenticated && isPublic) return next(homeRoute)
     if (!authStore.isAuthenticated && requiresAuth && !isPublic) {
       return next({
