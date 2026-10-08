@@ -348,6 +348,8 @@ GET /api/v1/meta/lineage/graph
 
 节点可以包含 `data_item`、`published_service`、`execution` 和 `field_ref`，但资源身份和执行身份必须保持不同。`data_item` 节点必须返回所属 `engine_id` 和 System 当前的 `engine_name`，用于在同名 schema / table、跨引擎派生等场景中明确资源边界；共享前端不得解析 locator 或调用其他模块补猜引擎名称。边必须返回 relation kind、granularity、evidence summary 和时间状态。
 
+字段图的每条边只投影对应观察中的 `execution_id`、`write_mode`、`field_lineage_status` 和 `transformation` 证据摘要；缺失值不补造。整份 operation 的 `field_mappings` 与结构快照仍由不可变执行／观察事实保留，不重复放入每条字段边的响应。批量取证在数据库查询中只读取这些摘要和观察时间，避免宽表按字段数平方重复传输和解码。500 列、两跳、1500 节点与 1000 条边的标准宽表夹具完整 JSON 响应应小于 4 MiB；不得通过丢弃节点、关系或证据身份满足该预算。
+
 当前图响应必须保持结构闭合：每条 edge 的 source 和 target 都必须存在于同一响应的 nodes 中。当前已软删除的 data item 不进入 nodes，其相关 `stale` 投影也不进入当前 edges；历史证据通过 observation 和后续历史视图查询，不得以缺失端点的边混入当前图。
 
 图查询以当前主体为根，`upstream` 只沿输入方向追溯，`downstream` 只沿输出方向展开，`both` 为这两种有向遍历的并集；遍历中不能改变方向进入共同上游的其他产物或共同下游的其他输入。其他主体之间真实存在的事实继续保留，不能因为不在当前视图中而删除。每条资源派生或服务依赖边计一层，`depth=0` 只返回主体（数据项主体的字段粒度返回根结构字段）；服务是下游终点，以服务为主体时可沿依赖继续追溯数据项。租户和未删除端点约束在每一层遍历时执行。超出节点或边上限时保留根及已连通部分，并返回 `truncated=true`。

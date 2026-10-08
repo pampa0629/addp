@@ -613,12 +613,23 @@ func TestFieldLineageWideOverviewAgainstPostgres(t *testing.T) {
 	if queries != 3 {
 		t.Fatalf("%d proof queries, want one root query and one batch per hop", queries)
 	}
+	encoded, err := json.Marshal(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("wide graph response: %d bytes", len(encoded))
+	if len(encoded) > 4*1024*1024 {
+		t.Fatalf("wide graph response is %d bytes; must stay within 4 MiB without dropping nodes or edges", len(encoded))
+	}
 	for i, name := range names {
 		if graph.Nodes[i].FieldName != name || graph.Nodes[i].ItemID == nil || *graph.Nodes[i].ItemID != items[2].ID {
 			t.Fatalf("missing or reordered root field %q", name)
 		}
 	}
 	for _, edge := range graph.Edges {
+		if _, exists := edge.Evidence["field_mappings"]; exists {
+			t.Fatal("field edge repeats the operation's full field mappings")
+		}
 		id, ok := edge.Evidence["execution_id"].(string)
 		if !ok || !executions[id] || edge.Source.FieldName != edge.Target.FieldName || edge.Transformation != "direct" {
 			t.Fatalf("wrong edge identity or evidence: %+v", edge)

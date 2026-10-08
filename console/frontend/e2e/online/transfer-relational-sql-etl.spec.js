@@ -313,6 +313,9 @@ async function verifyWideLineage(page, env) {
     const timings = { requestAndInitialRenderMs: Date.now() - started }
     expect(graph.nodes).toHaveLength(1500)
     expect(graph.edges).toHaveLength(1000)
+    const responseBytes = Buffer.byteLength(JSON.stringify(graph), 'utf8')
+    expect(responseBytes).toBeLessThan(4 * 1024 * 1024)
+    for (const edge of graph.edges) expect(edge.evidence).not.toHaveProperty('field_mappings')
     expect(graph.subject.schema_snapshot_hash).toBe(wide.schema_snapshot_hash)
     expect(urls[0].searchParams.has('limit')).toBe(false)
     const expectedNodes = wide.item_ids.flatMap(id => Array.from({ length: 500 }, (_, i) => `${id}:field_${String(i).padStart(4, '0')}`)).sort()
@@ -371,7 +374,7 @@ async function verifyWideLineage(page, env) {
       expect(row.y).toBeLessThanOrEqual(box.height)
     }
     expect(requests).toBe(1)
-    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-layout.json'), JSON.stringify({ ...timings, graphRequests: requests, nodes: graph.nodes.length, edges: graph.edges.length, geometry, rows }, null, 2))
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-layout.json'), JSON.stringify({ ...timings, responseBytes, graphRequests: requests, nodes: graph.nodes.length, edges: graph.edges.length, geometry, rows }, null, 2))
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-lineage.png'), fullPage: true })
   } finally {
     page.off('request', count)

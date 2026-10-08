@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -242,9 +244,15 @@ func (s *LineageService) fieldLineageEvidence(ctx context.Context, tenantID uint
 	for _, relation := range relations {
 		ids = append(ids, relation.ID)
 	}
-	// Graph edges need the immutable evidence and its observation time, not full schema snapshots.
+	// Project the edge's scalar proof in SQL. Full operation mappings and schema
+	// snapshots belong to immutable facts, not every edge in the graph response.
 	query := s.db.WithContext(ctx).Table("meta.lineage_observations AS o").
-		Select("o.evidence, o.observed_at, r.id AS relation_id, ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY o.observed_at DESC, o.id DESC) AS evidence_rank").
+		Select(`o.evidence ->> 'execution_id' AS execution_id,
+			o.evidence ->> 'write_mode' AS write_mode,
+			o.evidence ->> 'field_lineage_status' AS field_lineage_status,
+			o.evidence ->> 'transformation' AS transformation,
+			o.observed_at, r.id AS relation_id,
+			ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY o.observed_at DESC, o.id DESC) AS evidence_rank`).
 		Joins(`JOIN meta.lineage_item_relations AS r ON r.tenant_id = o.tenant_id
 			AND r.granularity = o.granularity AND r.relation_kind = o.relation_kind
 			AND r.source_item_id = o.source_item_id AND r.target_item_id = o.target_item_id
@@ -255,15 +263,28 @@ func (s *LineageService) fieldLineageEvidence(ctx context.Context, tenantID uint
 		query = query.Where("o.observed_at <= ?", *request.AsOf)
 	}
 	var observations []struct {
-		models.LineageObservation
-		RelationID uint `gorm:"column:relation_id"`
+		RelationID         uint
+		ObservedAt         time.Time
+		ExecutionID        *string
+		WriteMode          *string
+		FieldLineageStatus *string
+		Transformation     *string
 	}
 	if err := s.db.WithContext(ctx).Table("(?) AS ranked_evidence", query).
 		Where("evidence_rank = 1").Find(&observations).Error; err != nil {
 		return nil, err
 	}
 	for _, observation := range observations {
-		result[observation.RelationID] = observation.LineageObservation
+		evidence := commonModels.JSONMap{}
+		for key, value := range map[string]*string{
+			"execution_id": observation.ExecutionID, "write_mode": observation.WriteMode,
+			"field_lineage_status": observation.FieldLineageStatus, "transformation": observation.Transformation,
+		} {
+			if value != nil {
+				evidence[key] = *value
+			}
+		}
+		result[observation.RelationID] = models.LineageObservation{Evidence: evidence, ObservedAt: observation.ObservedAt}
 	}
 	return result, nil
 }

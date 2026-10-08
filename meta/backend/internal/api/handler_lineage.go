@@ -86,7 +86,7 @@ func (h *Handler) RecordServicePublication(c *gin.Context) {
 
 // GetLineageGraph 查询数据项或已发布服务版本的血缘图。
 // @Summary 查询数据血缘图 | Get lineage graph
-// @Description 按数据项、精确字段引用或已发布服务版本查询血缘关系 | Query lineage for a data item, exact field reference or published service revision
+// @Description 按数据项、精确字段引用或已发布服务版本查询血缘关系；字段边只返回执行 ID、写入模式、字段状态和转换摘要，不重复整份 operation 字段映射 | Query lineage for a data item, exact field reference or published service revision; field edges expose execution ID, write mode, field status and transformation summaries without full operation mappings
 // @Tags Meta Lineage
 // @Produce json
 // @Param subject_kind query string true "主体类型：data_item、field_ref 或 published_service | Subject kind: data_item, field_ref or published_service"

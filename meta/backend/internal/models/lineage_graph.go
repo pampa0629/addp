@@ -70,11 +70,12 @@ type LineageNode struct {
 }
 
 type LineageEdge struct {
-	Transformation string                 `json:"transformation,omitempty"`
-	Source         LineageNode            `json:"source"`
-	Target         LineageNode            `json:"target"`
-	RelationKind   string                 `json:"relation_kind"`
-	Granularity    string                 `json:"granularity"`
+	Transformation string      `json:"transformation,omitempty"`
+	Source         LineageNode `json:"source"`
+	Target         LineageNode `json:"target"`
+	RelationKind   string      `json:"relation_kind"`
+	Granularity    string      `json:"granularity"`
+	// 字段边只返回执行 ID、写入模式、字段状态和转换摘要，不重复整份字段映射 | Field edges expose execution ID, write mode, field status and transformation summaries without full operation mappings.
 	Evidence       map[string]interface{} `json:"evidence,omitempty"`
 	Status         string                 `json:"status"`
 	LastObservedAt time.Time              `json:"last_observed_at"`
