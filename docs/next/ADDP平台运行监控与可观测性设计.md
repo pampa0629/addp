@@ -1248,3 +1248,11 @@ Desktop 层使用独立 bridge 网络和显式宿主发布，不开启 host 网�
 实施前门禁识别：本批只修改既有验收脚本及文档，不修改生产 API、IAM、采集器或业务实现。`make test-node-metrics-online-runner` 验证报告闭合校验与设备/窗口/身份/缺失反例；平台 T0 既有 `make test-online-runner` 自动聚合，Hosted T4 由已登记的 `online-t4-gates.yml` 同一 suite 执行并归档截图、响应及清理证据，无需新增入口或 workflow。默认 `make test-changed` 与 Console owner 门禁仍分别按实际输入和环境报告；真实 Hosted 执行完成前不计为已通过。
 
 本地首批验证：最终 `make test-node-metrics-online-runner` 的 32 项回归、浏览器脚本语法和 System Metrics 夹具 Go 测试返回 0；`make test-console-frontend` 重跑的 150 项单测、119 项浏览器回归和构建返回 0。Console 首次执行因并行夹具占用 4173 端口失败，释放后沿同一入口重跑，无端口绕行或放宽配置。默认 `make test-changed` 因并行其他 Owner 缺少 PostgreSQL 测试连接条件在预检退出；首次 `make test-platform` 在既有 `test_logs_failure_does_not_prevent_selected_metrics_start` 的 10 秒进程超时失败（86 项中 1 项错误），不计为通过，未改动该夹具或延长超时。提交只包含本批验收脚本及规范，不含并行 IAM、Model3D、栅格或共享格式改动；真实 T4 和完整平台门禁分别取得结果后再记录。
+
+平台门禁后续结果：沿原入口独立重跑 `make test-platform` 完整返回 0，未更改生命周期断言或超时；实现提交 `5c490bf5c` 的 [Platform CI（Run 37740647211）](https://github.com/pampa0629/addp/actions/runs/37740647211) 33 项任务全部成功。先前误在推送完成前调度的 Run 37740340253 指向旧提交，已取消，不计为本批验收；推送完成并核验提交后调度 [Hosted T4（Run 37740681212）](https://github.com/pampa0629/addp/actions/runs/37740681212)，真实验收及归档复核均通过。工作区默认 `test-changed` 的跨 Owner 预检失败仍单独保留，不由本次平台门禁或 CI 成功替代。
+
+Hosted 归档证据：`online-report.json` 的预检和三个后端构建均对应完整提交 `5c490bf5c0ce6bfa6382fa22b3195a3e80c474b5`，suite 和浏览器报告均为 passed。原生来源返回设备 `sda` 的两条有效磁盘速率，首次即时值分别为 8,556.088888888888 B/s 和 233,938.48888888885 B/s；浏览器分别恢复近五分钟的读、写趋势，每条 21 个评估点，其中 5 个有效点，接入前缺失保留断点。六张 PNG 归档完整；人工查看磁盘截图的表格为 29.78 KiB/s、378.84 KiB/s，写入曲线使用 KiB/s，均为该次实时查询值。概览截图显示内存 15.61 GiB、时长“14分钟 38秒钟”，系统平均负载按无单位的任务数量展示。下载后重新执行既有报告闭合校验，目录 20 项、真实密码/MFA、作用域及身份、自动刷新、服务端窗口、文件系统/inode/磁盘 URL 恢复全部通过；中心恢复和节点恢复取得新磁盘样本，停用查询不复用历史数据。
+
+最终清理由 Hosted 外层生命周期报告确认：`summary.txt` 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals，包含应用、夹具、来源、Infra 和凭据目录销毁；套件中较早记录的 awaiting-hosted-deployment-destruction 只表示当时尚未执行外层销毁。下载归档不含 .env、.pem、.key 文件，私钥、JWT、OTP URI 和 Bearer 值模式扫描无命中。该证据完成原生 Linux 磁盘读写的真实页面 T4，不将其设备或样本冒充个人 Desktop 数据，不扩大受限采集器，也不计为生产 T5。
+
+归档后仅补充本节及 Monitor 模块说明，再运行默认 `make test-changed`：当前并行共享认证前端改动扩散到多个 Owner，因 PostgreSQL/MySQL 等必需连接输入缺失在预检退出 2，未执行部分不计为通过。本批文档未改变先前已验证的验收脚本输入，保留上述本地、当前实现 CI 和真实 Hosted 分层证据；最终 `git diff --check` 返回 0。

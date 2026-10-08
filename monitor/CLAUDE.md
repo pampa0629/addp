@@ -155,3 +155,5 @@ CPU 忙碌率及趋势新增固定 `node.cpu.busy_percent`（percent，60 秒窗
 
 
 资源展示及磁盘吞吐沿设计 10.35：字节显示 IEC 容量单位，时长显示经过的天/小时/分钟，load average 为系统任务数量平均值，无百分比或“负载”单位后缀。共享 formatBytes/formatDurationSeconds 唯一维护展示换算，API 原始单位不变。目录共 20 项；新增 node.disk.read_bytes_per_second / write_bytes_per_second 为完整一分钟平均 B/s，以 device 单维度查询与展示，文件系统仍为 device/mountpoint/fstype 三维度，不混合选择、不跨设备层叠加。概览、文件系统、inode、磁盘及趋势沿原请求预算分别读取；采集缺失和窗口不足保留空值。Desktop 六采集器仍不启用 diskstats；原生完整来源由既有 diskstats 提供。标准 metrics T2 的 promtool 场景选择及真实完整/受限来源查询同步覆盖磁盘目录。
+
+磁盘原生页面验收沿设计 10.36 完成：实现 `5c490bf5c` 的 Hosted T4（Run 37740681212）及 Platform CI（Run 37740647211，33 项任务）均通过。本地 32 项 Online runner 回归、Console 150 项单测/119 项浏览器回归及构建、完整 `make test-platform` 重跑通过；默认跨 Owner `test-changed` 预检失败单独保留。Hosted 实际设备 sda 的读写即时值及两条精确设备趋势有效，IEC 速率/容量、经过时长、系统负载数量、真实密码/MFA、URL 恢复、故障后新样本和停用历史排除已复核；六张截图齐全，外层销毁报告零残留且归档无凭据文件或敏感值模式命中。Desktop 受限来源的磁盘空值仍属部署边界；网卡吞吐和生产 T5 尚未完成。
