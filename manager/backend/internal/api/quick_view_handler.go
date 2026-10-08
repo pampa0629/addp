@@ -150,10 +150,11 @@ func (h *QuickViewHandler) GetPreviewStateByLocator(c *gin.Context) {
 }
 
 type ExecuteQuickViewActionRequest struct {
-	Locator              string `json:"locator" binding:"required"`
-	Action               string `json:"action" binding:"required"`
-	ExistingResultAction string `json:"existing_result_action,omitempty" enums:"overwrite"`
-	SourceUnit           string `json:"source_unit,omitempty" enums:"mm,cm,m,km,in,ft,mi"` // MAX 原始单位，缺省米 | MAX source unit, defaults to metres
+	Locator              string            `json:"locator" binding:"required"`
+	Action               string            `json:"action" binding:"required"`
+	ExistingResultAction string            `json:"existing_result_action,omitempty" enums:"overwrite"`
+	SourceUnit           string            `json:"source_unit,omitempty" enums:"mm,cm,m,km,in,ft,mi"` // MAX 原始单位，缺省米 | MAX source unit, defaults to metres
+	TextureFiles         map[string]string `json:"texture_files,omitempty"`                           // MAX bitmap 引用到模型目录内图片相对路径 | MAX bitmap references mapped to image paths relative to the model directory
 }
 
 type ExecuteQuickViewActionResponse struct {
@@ -207,7 +208,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 
 // ExecuteQuickViewAction 执行 locator 快显动作
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
-// @Description 前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.
+// @Description 前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）和外部贴图声明 texture_files。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres and texture_files declares external images. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -244,6 +245,26 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 		return
 	}
 
+	if err := service.ValidateMAXSourceUnit(req.SourceUnit); err != nil {
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
+		return
+	}
+	model3DOptions := commonModels.JSONMap{}
+	if req.SourceUnit != "" {
+		model3DOptions["source_unit"] = req.SourceUnit
+	}
+	if len(req.TextureFiles) > 0 {
+		textures := commonModels.JSONMap{}
+		for reference, relativePath := range req.TextureFiles {
+			textures[reference] = relativePath
+		}
+		if err := service.ValidateMAXTextureFiles(textures); err != nil {
+			managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
+			return
+		}
+		model3DOptions["texture_files"] = textures
+	}
+
 	tenantID := tenantIDFromContext(c)
 	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), tenantID, locator)
 	if err != nil {
@@ -261,15 +282,11 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	}
 
 	userID := userIDValue(c)
-	if req.SourceUnit != "" && (action != service.QuickViewActionGenerateModel3DGLB || source.Model3D == nil || source.Model3D.Format != "max") {
-		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, "source_unit is only supported for MAX GLB generation")
+	if (req.SourceUnit != "" || len(req.TextureFiles) > 0) && (action != service.QuickViewActionGenerateModel3DGLB || source.Model3D == nil || source.Model3D.Format != "max") {
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, "source_unit and texture_files are only supported for MAX GLB generation")
 		return
 	}
-	if err := service.ValidateMAXSourceUnit(req.SourceUnit); err != nil {
-		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
-		return
-	}
-	taskType, taskID, err := h.createQuickViewTask(c.Request.Context(), userID, action, capability, source, req.SourceUnit)
+	taskType, taskID, err := h.createQuickViewTask(c.Request.Context(), userID, action, capability, source, model3DOptions)
 	var executionID string
 	if err == nil {
 		executionID, err = h.executeQuickViewTask(c.Request.Context(), taskType, taskID, capability.TenantID, overwriteExistingResult)
@@ -386,7 +403,7 @@ func (h *QuickViewHandler) RebindManagedQuickViewTask(c *gin.Context) {
 		quickViewLocatorError(c, err)
 		return
 	}
-	createdTaskType, replacementID, err := h.createQuickViewTask(c.Request.Context(), userIDValue(c), action, capability, source, "")
+	createdTaskType, replacementID, err := h.createQuickViewTask(c.Request.Context(), userIDValue(c), action, capability, source, nil)
 	if err != nil {
 		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgTaskRebindFailed, err.Error())
 		return
@@ -912,7 +929,7 @@ func (h *QuickViewHandler) createQuickViewTask(
 	action string,
 	capability *service.QuickViewCapability,
 	source service.QuickViewSource,
-	sourceUnit string,
+	model3DOptions commonModels.JSONMap,
 ) (string, uint, error) {
 	if capability == nil {
 		return "", 0, errors.New("quick view capability is required")
@@ -958,8 +975,8 @@ func (h *QuickViewHandler) createQuickViewTask(
 		task.Name = quickViewActionTaskName("三维模型 GLB 快显", capability)
 		task.Config, err = model3DGLBTaskConfigFromQuickView(capability, source)
 		if err == nil {
-			if sourceUnit != "" {
-				task.Config["options"] = commonModels.JSONMap{"source_unit": sourceUnit}
+			if len(model3DOptions) > 0 {
+				task.Config["options"] = model3DOptions.Clone()
 			}
 			err = h.model3DGLBTaskSvc.Create(ctx, task)
 		}
@@ -1054,7 +1071,7 @@ func (h *QuickViewHandler) createAndExecuteQuickViewTask(
 	source service.QuickViewSource,
 	overwriteExistingResult bool,
 ) (uint, string, error) {
-	taskType, taskID, err := h.createQuickViewTask(ctx, userID, action, capability, source, "")
+	taskType, taskID, err := h.createQuickViewTask(ctx, userID, action, capability, source, nil)
 	if err != nil {
 		return taskID, "", err
 	}

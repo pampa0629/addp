@@ -212,6 +212,47 @@ for (const unit of ['', 'mm']) {
   })
 }
 
+test('MAX texture dialog validates declarations and submits them with default units', async ({ page }) => {
+  const locator = 'addp://engine/12/path/doc/model.max?type=file&item_id=1203'
+  const backend = await installMockBackend(page, { exchangeModel: { format: 'max', locator } })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+  await page.getByRole('button', { name: '外部贴图（0）' }).click()
+  const dialog = page.getByRole('dialog', { name: 'MAX 外部贴图' })
+  await dialog.getByRole('button', { name: '添加贴图' }).click()
+  const save = dialog.getByRole('button', { name: '保存', exact: true })
+  await expect(save).toBeDisabled()
+  await dialog.getByRole('textbox', { name: '第 1 项贴图引用' }).fill('C:\\old\\brick.png')
+  await dialog.getByRole('textbox', { name: '第 1 项图片路径' }).fill('../brick.png')
+  await expect(save).toBeDisabled()
+  await dialog.getByRole('textbox', { name: '第 1 项图片路径' }).fill('textures/brick.png')
+  await save.click()
+  await expect(page.getByRole('button', { name: '外部贴图（1）' })).toBeVisible()
+  await page.getByRole('button', { name: '生成 GLB 快显', exact: true }).click()
+  await expect.poll(() => backend.quickViewActions).toEqual([{
+    locator, action: 'generate_model_3d_glb', texture_files: { 'C:\\old\\brick.png': 'textures/brick.png' }
+  }])
+})
+
+test('MAX task creation reuses conversion controls and keeps cancelled texture edits out of the request', async ({ page }) => {
+  const locator = 'addp://engine/12/path/doc/model.max?type=file&item_id=1203'
+  const backend = await installMockBackend(page, { exchangeModel: { format: 'max', locator } })
+  await page.goto('/tasks/quick-view?task_type=model_3d_glb_generation&create=1')
+  const creator = page.getByRole('dialog', { name: '新建快显任务' })
+  await chooseEngine(page, creator, NFS_ENGINE.name)
+  await treeNodeContent(creator, 'model.max').click()
+  await creator.getByText('未选择时默认米（m）', { exact: true }).click()
+  await page.getByRole('option', { name: '毫米（mm）', exact: true }).click()
+  await creator.getByRole('button', { name: '外部贴图（0）' }).click()
+  const textures = page.getByRole('dialog', { name: 'MAX 外部贴图' })
+  await textures.getByRole('button', { name: '添加贴图' }).click()
+  await textures.getByRole('textbox', { name: '第 1 项贴图引用' }).fill('old.png')
+  await textures.getByRole('textbox', { name: '第 1 项图片路径' }).fill('textures/old.png')
+  await textures.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(creator.getByRole('button', { name: '外部贴图（0）' })).toBeVisible()
+  await creator.getByRole('button', { name: '生成并执行', exact: true }).click()
+  await expect.poll(() => backend.quickViewActions).toEqual([{ locator, action: 'generate_model_3d_glb', source_unit: 'mm' }])
+})
+
 test('selects a spatial table through the shared picker and applies capability facts', async ({ page }) => {
   const backend = await installMockBackend(page)
   await page.goto('/tasks/spatial?task_type=vector_tile_set_generation&create=1')
@@ -671,6 +712,7 @@ async function installMockBackend(page, options = {}) {
           source_kind: 'model_3d',
           source_engine_id: NFS_ENGINE.id,
           item_fingerprint: `fingerprint-${exchangeModel.format}`,
+          model_3d: { format: exchangeModel.format },
           can_use_quick_view: false,
           available_actions: ['generate_model_3d_glb']
         })

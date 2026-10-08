@@ -41,8 +41,8 @@
           :title="capabilityError || t(`manager.quickViewCreator.${emptyReason}`)"
         />
       </el-form-item>
-      <el-form-item v-if="sourceFormat === 'max' && selectedAction === 'generate_model_3d_glb' && !isRebind" :label="t('manager.model3DUnit.label')">
-        <Model3DSourceUnitSelect v-model="sourceUnit" />
+      <el-form-item v-if="sourceFormat === 'max' && selectedAction === 'generate_model_3d_glb' && !isRebind" :label="t('manager.maxTextures.optionsLabel')">
+        <MAXConversionOptions :key="sourceLocator" v-model="maxOptions" />
       </el-form-item>
     </el-form>
 
@@ -68,7 +68,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ResourceTreePicker } from '@addp/common-frontend'
 import { quickViewAPI } from '@/api/quickView'
-import Model3DSourceUnitSelect from './Model3DSourceUnitSelect.vue'
+import MAXConversionOptions from './MAXConversionOptions.vue'
 import { rebindDerivedTask } from '@/api/derivedTasks'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
@@ -92,7 +92,7 @@ const router = useRouter()
 const confirmCurrentResult = useCurrentResultConfirmation()
 const sourceSelection = ref(null)
 const sourceFormat = ref('')
-const sourceUnit = ref('')
+const maxOptions = ref({})
 const options = ref([])
 const selectedAction = ref('')
 const detecting = ref(false)
@@ -123,7 +123,7 @@ function reset() {
   detectionSequence += 1
   sourceSelection.value = null
   sourceFormat.value = ''
-  sourceUnit.value = ''
+  maxOptions.value = {}
   options.value = []
   selectedAction.value = ''
   detecting.value = false
@@ -145,7 +145,7 @@ watch(sourceSelection, async selection => {
   applyOptions([])
   capabilityError.value = ''
   sourceFormat.value = ''
-  sourceUnit.value = ''
+  maxOptions.value = {}
   emptyReason.value = 'unsupported'
   if (!selection) return
   if (isRebind.value) return
@@ -192,7 +192,7 @@ async function submit() {
     const response = await confirmCurrentResult(payload => quickViewAPI.executeQuickViewAction(
       sourceLocator.value,
       selectedAction.value,
-      { ...toQuickViewExistingResultPayload(payload), ...(sourceFormat.value === 'max' && selectedAction.value === 'generate_model_3d_glb' && sourceUnit.value ? { source_unit: sourceUnit.value } : {}) }
+      { ...toQuickViewExistingResultPayload(payload), ...(sourceFormat.value === 'max' && selectedAction.value === 'generate_model_3d_glb' ? maxOptions.value : {}) }
     ))
     const result = response?.data ?? response
     const taskType = result?.task_type || quickViewTaskTypeForAction(selectedAction.value)

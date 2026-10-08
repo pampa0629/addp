@@ -445,6 +445,8 @@ MAX 按 `.max` 扩展名识别为 `format=max + data_type=model_3d + layout=sing
 
 首期支持导入器可解析的静态网格、实例变换和基础颜色，不声明原生编辑语义、动画、骨架、修改器或复杂材质保真。外部基础颜色图片须通过转换选项 `texture_files` 显式映射源 bitmap 引用到访问计划目录内的相对路径；入口模型和贴图均不得越出输入目录；不递归猜图，不读取原文件记录的宿主机绝对路径。未声明的必需贴图、路径越界、图片解码失败、导入器报告的对象错误、空网格或非法 GLB 明确失败；失败不得覆盖旧产物。贴图随 GLB 内嵌，不新增 Meta related refs 的推测事实。
 
+Manager 的数据探查和任务创建入口复用同一 MAX 转换选项组件。用户可声明「模型内保存的完整 bitmap 引用 → 模型所在目录内的图片相对路径」，通过现有快显动作的可选 `texture_files` 提交；仅 MAX 的 GLB 生成允许该字段。单位和贴图声明共同保存到同一任务的 `options`，再次提交替换上次选项；未声明贴图时不自动补图。页面拒绝重复引用；空引用、空路径、绝对路径、父目录跳转、反斜杠、冒号与 NUL 均拒绝；Runtime 仍负责实际文件存在性、符号链接范围和图片解码校验。
+
 单位选择按「可靠解析出的源单位 → 用户选择 → 默认米」处理。当前固定导入器尚不能可靠解析 MAX 系统单位，不能把 Blender 的默认 `METRIC` 状态视为源声明，因此使用 `options.source_unit`，缺省为 `m`。可选 `mm`、`cm`、`m`、`km`、`in`、`ft`、`mi`，统一换算为 glTF 米坐标，保留非均匀缩放、轴向和相对变换。转换结果记录 `source_unit`、`unit_source=user|default` 和 `scale_to_meters`；该结果属于转换事实，不写成源文件元数据。Manager 快显动作的可选 `source_unit` 仅适用于 MAX 的 `generate_model_3d_glb`，保存到既有任务 `options`；不提交时可直接按默认米生成，界面允许用户修改并明确提示默认值。
 
 确定性单位、路径和发布边界进入 `make test-model3d-workflow`；真实 MAX、贴图和单位换算进入既有 Linux 产品镜像构建的 smoke，macOS 原生预检核对 Blender 和导入器。Manager、Common 的格式和快显契约沿用标准模块门禁。以上不替代真实 Manager 页面和 Hosted T4 验收。

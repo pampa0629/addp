@@ -62,7 +62,7 @@ MAX 的工具版本与校验值集中在 `blender-assets.json`。macOS arm64 使
 
 MAX 首期覆盖静态网格、实例变换、基础颜色和漫反射图片，不声明动画、骨架或第三方渲染器材质保真。单个 MAX 文件的解析预算为 64 MiB。固定导入器目前不能可靠识别原始系统单位：用户可选择 `options.source_unit`（`mm/cm/m/km/in/ft/mi`）；未选则默认米 `m`。Manager 的 MAX 生成入口提供同一选项，缺省值无需用户确认。结果 `conversion` 记录实际单位、`unit_source=user|default` 与米制换算系数，不把默认米说成自动识别。
 
-外部贴图必须通过 `options.texture_files` 明确映射，key 是 MAX 内保存的 bitmap 引用，value 是输入目录内的相对文件路径。不会读取原电脑绝对路径或猜测同名图片。当前 Manager 页面只提供单位选择，尚未提供外部贴图声明控件；带外部贴图的 MAX 可通过 Develop/direct 算子参数传入映射。缺失贴图、解析错误及不支持的贴图通道会使转换失败，保留旧产物。内置回归样例来自 `tests/fixtures/max/ATTRIBUTION.txt` 所列的 CC-BY-SA-3.0 模型，纹理是 ADDP 自建测试图片。
+外部贴图必须通过 `options.texture_files` 明确映射，key 是 MAX 内保存的 bitmap 引用，value 是输入目录内的相对文件路径。不会读取原电脑绝对路径或猜测同名图片。Manager 的数据探查和任务创建入口提供相同的单位及外部贴图声明组件；声明传入既有快显动作并保存到任务 options，Develop/direct 算子沿用同一映射。缺失贴图、解析错误及不支持的贴图通道会使转换失败，保留旧产物。内置回归样例来自 `tests/fixtures/max/ATTRIBUTION.txt` 所列的 CC-BY-SA-3.0 模型，纹理是 ADDP 自建测试图片。
 
 MAX 的确定性测试由 `make test-model3d-workflow` 自动发现，开发生命周期由 `make test-dev-lifecycle` 验证。正式 Linux 镜像构建入口为：
 

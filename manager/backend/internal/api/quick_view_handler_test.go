@@ -30,6 +30,9 @@ func TestExecuteQuickViewActionRejectsLegacyAndInvalidExistingResultAction(t *te
 	for _, body := range []string{
 		`{"locator":"addp://engine/1/path/public/roads?type=table&item_id=1","action":"generate_vector_tile_cache","confirm_existing_result":true}`,
 		`{"locator":"addp://engine/1/path/public/roads?type=table&item_id=1","action":"generate_vector_tile_cache","existing_result_action":"keep"}`,
+		`{"locator":"addp://engine/1/path/model.max?type=file&item_id=1","action":"generate_model_3d_glb","texture_files":{"brick":"../brick.png"}}`,
+		`{"locator":"addp://engine/1/path/model.max?type=file&item_id=1","action":"generate_model_3d_glb","texture_files":{"brick":123}}`,
+		`{"locator":"addp://engine/1/path/model.max?type=file&item_id=1","action":"generate_model_3d_glb","texture_files":{"":"brick.png"}}`,
 	} {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/quick-view/actions", strings.NewReader(body))
@@ -937,7 +940,12 @@ func TestMAXQuickViewCreationPersistsUnitAndReusesSourceTask(t *testing.T) {
 	source := service.QuickViewSource{EngineID: 26, Model3D: &service.Model3DGLBSource{Format: "max", SourceSizeBytes: 1234}}
 	var previousID uint
 	for _, unit := range []string{"", "mm", "m", ""} {
-		taskType, id, err := handler.createQuickViewTask(context.Background(), 1, service.QuickViewActionGenerateModel3DGLB, capability, source, unit)
+		taskType, id, err := handler.createQuickViewTask(context.Background(), 1, service.QuickViewActionGenerateModel3DGLB, capability, source, func() commonModels.JSONMap {
+			if unit == "" {
+				return nil
+			}
+			return commonModels.JSONMap{"source_unit": unit}
+		}())
 		if err != nil || taskType != commonExecution.TaskTypeModel3DGLBGeneration {
 			t.Fatalf("create MAX unit %q: type=%s error=%v", unit, taskType, err)
 		}
@@ -956,6 +964,38 @@ func TestMAXQuickViewCreationPersistsUnitAndReusesSourceTask(t *testing.T) {
 		}
 		if unit != "" && value != unit {
 			t.Fatalf("unit selection lost on persistence: %#v", options)
+		}
+	}
+}
+
+func TestMAXQuickViewCreationReplacesTextureDeclarationsOnSameTask(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	repo := repository.NewModel3DGLBRepository(db)
+	handler := &QuickViewHandler{model3DGLBTaskSvc: service.NewModel3DGLBTaskService(repo)}
+	capability := &service.QuickViewCapability{TenantID: 7, ItemFingerprint: "fp-max-textures", Locator: "addp://engine/26/path/3d/model.max?type=file&item_id=10441", SourceKind: service.QuickViewSourceKindModel3D}
+	source := service.QuickViewSource{EngineID: 26, Model3D: &service.Model3DGLBSource{Format: "max", SourceSizeBytes: 1234}}
+	var previousID uint
+	for _, image := range []string{"textures/brick.png", "textures/new.png", ""} {
+		options := commonModels.JSONMap{"source_unit": "mm"}
+		if image != "" {
+			options["texture_files"] = commonModels.JSONMap{"C:\\old\\brick.png": image}
+		}
+		_, id, err := handler.createQuickViewTask(context.Background(), 1, service.QuickViewActionGenerateModel3DGLB, capability, source, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if previousID != 0 && id != previousID {
+			t.Fatal("texture changes must reuse the source task")
+		}
+		previousID = id
+		task, err := repo.GetTaskByItemFingerprint(context.Background(), 7, "fp-max-textures")
+		if err != nil {
+			t.Fatal(err)
+		}
+		persisted, _ := asJSONMap(task.Config["options"])
+		textures, _ := asJSONMap(persisted["texture_files"])
+		if persisted["source_unit"] != "mm" || (image != "" && textures["C:\\old\\brick.png"] != image) || (image == "" && len(textures) != 0) {
+			t.Fatalf("stale options: %#v", persisted)
 		}
 	}
 }

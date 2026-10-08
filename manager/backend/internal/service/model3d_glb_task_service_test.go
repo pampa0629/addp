@@ -82,6 +82,38 @@ func TestMAXTaskPreservesUserUnitAndAllowsOmittedDefault(t *testing.T) {
 	}
 }
 
+func TestMAXTaskRejectsInvalidTextureDeclarationsBeforeExecution(t *testing.T) {
+	for _, value := range []interface{}{
+		commonModels.JSONMap{"C:\\textures\\brick.png": "textures/brick.png"},
+		commonModels.JSONMap{},
+		nil, []string{"brick.png"},
+		commonModels.JSONMap{"": "brick.png"},
+		commonModels.JSONMap{"brick": ""},
+		commonModels.JSONMap{"brick": 1},
+		commonModels.JSONMap{"brick": "/brick.png"},
+		commonModels.JSONMap{"brick": "../brick.png"},
+		commonModels.JSONMap{"brick": "sub/../brick.png"},
+		commonModels.JSONMap{"brick": "sub\\brick.png"},
+		commonModels.JSONMap{"brick": "https://example.org/brick.png"},
+		commonModels.JSONMap{"brick": "\x00.png"},
+		commonModels.JSONMap{"brick": "."},
+	} {
+		config := commonModels.JSONMap{
+			"source":  commonModels.JSONMap{"item_locator": "addp://engine/26/path/model.max?type=file&item_id=77", "source_engine_id": uint(26), "item_fingerprint": "max-source", "format": "max"},
+			"options": commonModels.JSONMap{"texture_files": value},
+		}
+		cfg, err := normalizeModel3DGLBTaskConfig(config, "manager", 7)
+		textures, _ := asJSONMap(value)
+		valid := textures != nil && (len(textures) == 0 || textures["C:\\textures\\brick.png"] == "textures/brick.png")
+		if valid && (err != nil || cfg.Options["texture_files"] == nil) {
+			t.Fatalf("valid mapping lost: %#v: %v", value, err)
+		}
+		if !valid && err == nil {
+			t.Fatalf("invalid mapping accepted: %#v", value)
+		}
+	}
+}
+
 func TestModel3DGLBTaskNormalizesMultiGLTFConfig(t *testing.T) {
 	config := commonModels.JSONMap{
 		"source": commonModels.JSONMap{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -393,6 +394,15 @@ func normalizeModel3DGLBTaskConfig(config commonModels.JSONMap, bucket string, t
 	}
 	config["options"] = options
 	if source.Format == string(format.FormatMAX) {
+		if value, exists := options["texture_files"]; exists {
+			textures, ok := asJSONMap(value)
+			if !ok || textures == nil {
+				return Model3DGLBExecutionConfig{}, errors.New("MAX texture_files must map bitmap references to relative input paths")
+			}
+			if err := ValidateMAXTextureFiles(textures); err != nil {
+				return Model3DGLBExecutionConfig{}, err
+			}
+		}
 		if value, exists := options["source_unit"]; exists {
 			unit, ok := value.(string)
 			if !ok {
@@ -404,6 +414,25 @@ func normalizeModel3DGLBTaskConfig(config commonModels.JSONMap, bucket string, t
 		}
 	}
 	return Model3DGLBExecutionConfig{Source: source, Result: result, Options: options}, nil
+}
+
+// ValidateMAXTextureFiles checks declarations without inventing source metadata or reading files.
+func ValidateMAXTextureFiles(textures commonModels.JSONMap) error {
+	for reference, value := range textures {
+		relativePath, ok := value.(string)
+		if strings.TrimSpace(reference) == "" || !ok || strings.TrimSpace(relativePath) == "" {
+			return errors.New("MAX texture_files requires nonempty bitmap references and image paths")
+		}
+		if path.IsAbs(relativePath) || path.Clean(relativePath) == "." || strings.ContainsAny(relativePath, "\\:\x00") {
+			return errors.New("MAX image paths must stay within the model directory")
+		}
+		for _, part := range strings.Split(relativePath, "/") {
+			if part == ".." {
+				return errors.New("MAX image paths must stay within the model directory")
+			}
+		}
+	}
+	return nil
 }
 
 // ValidateMAXSourceUnit permits an omitted unit; the Runtime records default metres.

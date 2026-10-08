@@ -1,5 +1,20 @@
 {
   "manager": {
+    "maxTextures": {
+      "optionsLabel": "MAX 转换选项",
+      "button": "外部贴图（{count}）",
+      "title": "MAX 外部贴图",
+      "description": "填写模型内保存的贴图引用，以及对应图片相对于模型所在目录的路径。图片须位于该目录内；不填写时不会自动查找贴图。",
+      "reference": "模型内的完整贴图引用",
+      "path": "图片相对路径，例如 textures/brick.png",
+      "referenceLabel": "第 {index} 项贴图引用",
+      "pathLabel": "第 {index} 项图片路径",
+      "removeLabel": "删除第 {index} 项贴图",
+      "add": "添加贴图",
+      "incomplete": "请填写每项贴图引用和图片路径。",
+      "duplicate": "同一个贴图引用只能声明一次。",
+      "outsideDirectory": "图片路径必须位于模型目录内，不允许绝对路径、父目录、反斜杠或冒号。"
+    },
     "model3DUnit": {
       "label": "MAX 源单位",
       "defaultMeters": "未选择时默认米（m）",

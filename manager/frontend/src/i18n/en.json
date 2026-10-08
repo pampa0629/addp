@@ -1,5 +1,20 @@
 {
   "manager": {
+    "maxTextures": {
+      "optionsLabel": "MAX conversion options",
+      "button": "External textures ({count})",
+      "title": "MAX external textures",
+      "description": "Enter the bitmap reference stored in the model and the image path relative to the model directory. Images must remain in that directory; no textures are searched automatically.",
+      "reference": "Exact bitmap reference in the model",
+      "path": "Relative image path, e.g. textures/brick.png",
+      "referenceLabel": "Texture reference {index}",
+      "pathLabel": "Image path {index}",
+      "removeLabel": "Remove texture {index}",
+      "add": "Add texture",
+      "incomplete": "Enter a reference and image path for each texture.",
+      "duplicate": "Each bitmap reference may be declared only once.",
+      "outsideDirectory": "Image paths must stay inside the model directory. Absolute paths, parent paths, backslashes and colons are not allowed."
+    },
     "model3DUnit": {
       "label": "MAX source unit",
       "defaultMeters": "Defaults to metres (m)",
