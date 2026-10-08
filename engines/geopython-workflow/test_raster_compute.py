@@ -1941,9 +1941,13 @@ def test_outside_clip_independent_nodata_mask_alpha_and_zero(tmp_path,nodata):
     source = create_raster(tmp_path/'source.tif',np.stack([first,second,alpha]),nodata=nodata)
     ds = gdal.Open(str(source),gdal.GA_Update)
     ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
-    ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'):
+        ds.CreateMaskBand(gdal.GMF_PER_DATASET)
     mask = np.full((4,4),255,dtype=np.uint8); mask[3,3] = 0
     ds.GetRasterBand(1).GetMaskBand().WriteRaster(0,0,4,4,mask.tobytes())
+    ds = None
+    ds = gdal.Open(str(source))
+    assert ds.GetFileList() == [str(source)]
     ds = None
     originals = {p:p.read_bytes() for p in tmp_path.iterdir()}
     retained = mask.astype(bool) & (alpha>0); retained[1:3,1:3] = False

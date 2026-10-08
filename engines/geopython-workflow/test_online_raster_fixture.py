@@ -254,11 +254,11 @@ def single_source_execution(tmp_path, scene, api_server, case_name):
     source = tmp_path / ('utility-source-' + source_name)
     original = LocalMinio.objects[role, 'raster-' + role, source_name]
     source.write_bytes(original)
-    definition = (scene.aggregate_workflow if case_name in fixture.AGGREGATE_CASES else scene.reclass_workflow if case_name in fixture.RECLASS_CASES else scene.utility_workflow)(
+    definition = (scene.outside_workflow if case_name in fixture.OUTSIDE_CASES else scene.aggregate_workflow if case_name in fixture.AGGREGATE_CASES else scene.reclass_workflow if case_name in fixture.RECLASS_CASES else scene.utility_workflow)(
         'source-locator', 2, case_name)
     output = tmp_path / (case_name + '.cog.tif')
     plan = source_access_plan(source)
-    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES:
+    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES:
         plan['target'] = {'kind': 'file', 'format': 'tiff', 'name': output.name, 'write_mode': 'create',
             'access': {'method': 'mounted_path', 'path': str(output)}}
     if case_name == 'to-cog':
@@ -268,13 +268,13 @@ def single_source_execution(tmp_path, scene, api_server, case_name):
         params.update(access_plan=plan, options=options)
     else:
         definition['tasks'][0]['params'] = {'access_plan': {key: value for key, value in plan.items() if key != 'target'}}
-        if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES:
+        if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES:
             params = definition['tasks'][-1]['params']
             for key in ('target_parent_locator', 'target_name', 'write_mode'): params.pop(key)
             params['access_plan'] = {key: value for key, value in plan.items() if key != 'source'}
     client = api_server.app.test_client()
     response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {}, 'runtime': {
-        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write'] if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES else ['read']}}})
+        'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write'] if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES else ['read']}}})
     assert response.status_code == 202
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
@@ -284,7 +284,7 @@ def single_source_execution(tmp_path, scene, api_server, case_name):
     assert status['status'] == 'success', status
     assert source.read_bytes() == original
     result = json.loads(status['result'])
-    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES:
+    if case_name in fixture.UTILITY_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES:
         assert result['size_bytes'] == output.stat().st_size > 0
         LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     return result, output
@@ -1000,3 +1000,81 @@ def test_manager_cog_rejects_non_cog_layout(manager_physical):
     manager_target(manager_physical, cog=False)
     with pytest.raises(fixture.FixtureError, match='not a valid COG'):
         fixture.manager_worker('verify', manager_physical)
+
+
+@pytest.fixture
+def outside_artifacts(aggregate_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    preserved = {key[2]: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items() if key[0] == 'target'}
+    result, output = single_source_execution(tmp_path, scene, api_server, 'clip-outside')
+    evidence = fixture.worker('verify-clip-outside', aggregate_artifacts)
+    assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
+    assert evidence['preserved_sha256'] == preserved and len(preserved) == 24
+    assert evidence['band_valid_pixels'] == [53247, 53247]
+    assert evidence['invalid_pixels'] == 12289
+    assert evidence['color_interpretations'] == ['Gray', 'Undefined', 'Alpha']
+    assert evidence['overview_sizes'] == [[128, 128]]
+    assert result['width'] == result['height'] == 256 and result['band_count'] == 3
+    assert result['transform'] == list(fixture.TRANSFORM)
+    assert len([key for key in LocalMinio.objects if key[0] == 'target']) == 25
+    return aggregate_artifacts
+
+
+def test_async_outside_clipping_hole_alpha_full_grid_match_physical_oracle(outside_artifacts):
+    evidence = fixture.worker('verify-clip-outside', outside_artifacts)
+    assert evidence['valid_pixels'] == 53247
+    pixels = list(fixture.outside_pixels('clip-outside'))
+    assert pixels[0] is None
+    assert pixels[80 * 256 + 80] is None
+    assert pixels[120 * 256 + 120] == 120 * 256 + 121
+    assert pixels[20 * 256 + 20] == 20 * 256 + 21
+
+
+def test_outside_physical_oracle_rejects_hole_coverage_alpha_masks_and_preservation(outside_artifacts, tmp_path):
+    baseline = dict(LocalMinio.objects)
+    try:
+        for fault in ('inside', 'hole', 'source-nodata', 'alpha', 'band-two', 'overview', 'mask', 'grid', 'prior', 'extra', 'source'):
+            LocalMinio.objects.clear()
+            LocalMinio.objects.update(baseline)
+            name = 'clip-outside.cog.tif'
+            if fault == 'extra':
+                LocalMinio.objects['target', 'raster-target', 'partial.tif'] = b'partial'
+            elif fault in ('source', 'prior'):
+                key = ('source', 'raster-source', 'source.tif') if fault == 'source' else ('target', 'raster-target', 'aggregate-sum.cog.tif')
+                LocalMinio.objects[key] += b'changed'
+            else:
+                original = tmp_path / 'outside-original.tif'
+                original.write_bytes(baseline['target', 'raster-target', name])
+                edited = tmp_path / 'outside-corrupt.tif'
+                dataset = gdal.Translate(str(edited), str(original), format='GTiff')
+                band = dataset.GetRasterBand(3 if fault == 'alpha' else 2 if fault == 'band-two' else 1)
+                x, y = (80, 80) if fault == 'inside' else (120, 120) if fault == 'hole' else (0, 0) if fault == 'source-nodata' else (20, 20)
+                if fault == 'mask':
+                    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'):
+                        dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+                    mask = bytearray([255] * (256 * 256))
+                    mask[20 * 256 + 20] = 0
+                    band.GetMaskBand().WriteRaster(0, 0, 256, 256, bytes(mask), buf_type=gdal.GDT_Byte)
+                elif fault == 'grid':
+                    dataset.SetGeoTransform((110, .02, 0, 20.32, 0, -.01))
+                elif fault != 'overview':
+                    value = float('nan') if fault == 'hole' else 0. if fault == 'alpha' else 123.
+                    band.WriteRaster(x, y, 1, 1, struct.pack('<d', value), buf_type=gdal.GDT_Float64)
+                dataset.BuildOverviews('NEAREST', [2])
+                if fault == 'overview':
+                    band.GetOverview(0).WriteRaster(10, 10, 1, 1, struct.pack('<d', 123.), buf_type=gdal.GDT_Float64)
+                band = dataset = None
+                output = gdal.Translate(str(original), str(edited), format='COG', creationOptions=['BLOCKSIZE=128'])
+                output = None
+                LocalMinio.objects['target', 'raster-target', name] = original.read_bytes()
+            if fault == 'prior':
+                evidence = fixture.worker('verify-clip-outside', outside_artifacts)
+                assert evidence['preserved_sha256']['aggregate-sum.cog.tif'] != hashlib.sha256(
+                    baseline['target', 'raster-target', 'aggregate-sum.cog.tif']).hexdigest()
+            else:
+                with pytest.raises(fixture.FixtureError):
+                    fixture.worker('verify-clip-outside', outside_artifacts)
+    finally:
+        LocalMinio.objects.clear()
+        LocalMinio.objects.update(baseline)
