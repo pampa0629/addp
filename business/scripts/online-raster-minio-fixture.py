@@ -34,13 +34,14 @@ FOUNDATION_CASES = ('multiraster-weighted', 'multiraster-rgb')
 RECLASS_CASES = ('reclassify-nodata', 'reclassify-keep')
 AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum')
 OUTSIDE_CASES = ('clip-outside',)
+UPDATE_CASES = ('update-valid',)
 FOOTPRINT_CASES = ('footprint-any', 'footprint-all')
 UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
 NON_COG_SOURCE = 'non-cog.tif'
 SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
                 ('multiband-average-finite.tif', False, -9999.))
-ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES) + ('verify-utility-queries',)
+ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -337,7 +338,28 @@ def outside_expectation(case_name):
     return {**artifact_expectation(), 'band_count': 3, 'valid_pixels': SIZE * SIZE - 1 - (128 * 128 - 64 * 64)}
 
 
+def update_pixels(case_name, band=1, level=1):
+    """Independent base/patch integer coverage; invalid patch cells keep the base."""
+    if case_name not in UPDATE_CASES or band not in (1,2):
+        raise FixtureError('unknown update case or data band')
+    for row in range(0,SIZE,level):
+        for column in range(0,SIZE,level):
+            position=row*SIZE+column
+            cell=(row//2)*(SIZE//2)+column//2
+            if row<128 and column<128 and cell not in (band-1,2):
+                yield 0. if cell==4 else float(band*(cell+1))
+            else:
+                yield None if position==0 else float(band*(position+1))
+
+
+def update_expectation(case_name):
+    if case_name not in UPDATE_CASES: raise FixtureError('unknown update case')
+    return {**artifact_expectation(), 'band_count':2, 'band_valid_pixels':[65535,65536]}
+
+
 def computed_expectation(case_name):
+    if case_name in UPDATE_CASES:
+        return update_expectation(case_name)
     if case_name in OUTSIDE_CASES:
         return outside_expectation(case_name)
     if case_name in AGGREGATE_CASES:
@@ -600,8 +622,8 @@ def worker(action, path):
                     'source_unchanged': True, 'size_bytes': path.stat().st_size,
                     'overview_sizes': [[SIZE // level] * 2 for level in levels], 'crs': dataset.GetProjection(),
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
-            if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES:
-                colors = ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
+            if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES:
+                colors = ['Gray', 'Undefined'] if grid_case in UPDATE_CASES else ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
                 label = 'outside clipping' if grid_case in OUTSIDE_CASES else 'aggregation' if grid_case in AGGREGATE_CASES else 'reclassification' if grid_case in RECLASS_CASES else 'multi-raster'
                 counts = []
                 for index in range(1, dataset.RasterCount + 1):
@@ -614,7 +636,7 @@ def worker(action, path):
                     for level, sampled in ((1, current), (2, current.GetOverview(0))):
                         if (sampled.XSize, sampled.YSize) != (expectation['width'] // level, expectation['height'] // level):
                             raise FixtureError(f'{label} overview grid differs from nearest oracle')
-                        pixels = outside_pixels if grid_case in OUTSIDE_CASES else aggregate_pixels if grid_case in AGGREGATE_CASES else reclass_pixels if grid_case in RECLASS_CASES else foundation_pixels
+                        pixels = update_pixels if grid_case in UPDATE_CASES else outside_pixels if grid_case in OUTSIDE_CASES else aggregate_pixels if grid_case in AGGREGATE_CASES else reclass_pixels if grid_case in RECLASS_CASES else foundation_pixels
                         expected = list(pixels(grid_case, index, level))
                         actual = struct.unpack(f'<{len(expected)}d', sampled.ReadRaster(buf_type=gdal.GDT_Float64))
                         if any(not math.isnan(value) if wanted is None else
@@ -625,7 +647,7 @@ def worker(action, path):
                         if any(value != (0 if wanted is None else 255) for value, wanted in zip(mask, expected)):
                             raise FixtureError(f'{label} mask differs from independent oracle')
                     if grid_case not in OUTSIDE_CASES or index != 3:
-                        counts.append(expectation['valid_pixels'])
+                        counts.append(expectation['band_valid_pixels'][index-1] if grid_case in UPDATE_CASES else expectation['valid_pixels'])
                 return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': True,
                     'valid_pixels': counts[0], 'invalid_pixels': expectation['width'] * expectation['height'] - counts[0], 'band_valid_pixels': counts,
                     'color_interpretations': colors, 'overview_sizes': [[expectation['width']//2, expectation['height']//2]],
@@ -719,11 +741,11 @@ def worker(action, path):
             if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
                 raise FixtureError('utility target contains unexpected or partial artifacts')
             return evidence
-        if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES:
+        if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES:
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                 'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                 'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
-            cases = FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES
+            cases = FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES
             for prior in GRID_CASES + MULTIBAND_CASES + cases[:cases.index(grid_case)]:
                 preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', grid_case=prior)['sha256']
             for prior in UTILITY_CASES:

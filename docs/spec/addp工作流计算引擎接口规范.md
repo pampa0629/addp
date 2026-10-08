@@ -900,6 +900,8 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 多栅格数值计算采用显式对齐、波段组合、既有波段表达式这一条路径。`raster_align` 以 `reference_raster` 的 CRS、宽高及完整六参数仿射变换定义输出网格，保留旋转；参考栅格的像元值、mask 和 NoData 不参与计算。源范围之外填 NaN，源范围超出参考网格时裁去；不自动取交集或并集。源与参考均须有可信 CRS 和有限、可逆的 geotransform。对齐仍使用 GDAL Warp，直接写入预建的参考网格，不引入另一种插值实现。
 
+`raster_update(input_raster, update_raster)` 按位置逐数据波段局部更新：更新源的有效像元覆盖基底，无效更新像元保留基底原有效值，二者均无效时写 NaN。两端须有可信 CRS、完全相同的宽高和六参数仿射网格（包含旋转）、语义等价的 CRS，以及相同数量的数据波段；不同网格先显式使用 `raster_align`，波段重排先使用 `raster_select_bands`。不隐式重采样、扩大基底范围或按波段名匹配。多个更新源通过双输入节点串联，后一次有效更新优先。输出为基底网格的 Float64 数据波段，不保留 alpha 透明度大小、色表或颜色模型；逐波段排除 NoData、mask、非有限值和透明区域，合法零及部分透明有效值不缩放。复数及 alpha-only 输入拒绝。沿用 512×512 分块、execution 私有新文件、workflow-only/read/raster 准入及既有保存节点；不改写基底、更新源或已保存资源，局部更新与保存节点的整文件 replace 是不同职责。
+
 `raster_stack` 要求两个输入的宽高、六参数仿射变换完全一致且 CRS 语义等价，拒绝缺失定位或未对齐输入；先追加 `input_raster` 的全部数据波段，再追加 `other_raster` 的全部数据波段。多幅输入通过成对组合节点串联，沿用现有 `raster` 端口和 DAG 引用，无新的数组端口协议。随后 `raster_band_math` 的 `b1/b2/...` 按组合结果顺序计算，跨文件加权求和也使用同一受限表达式；一个引用波段无效则该表达式像元无效，未引用波段不影响结果。
 
 对齐、组合与 `raster_select_bands` 均输出 Float64 数据波段，以 NaN 保存各波段独立的无效性，按既有数值分析规则读取源 mask、NoData、有限值及 alpha 覆盖。alpha 仅用于判断数据有效性，不作为数据波段自动追加，输出不保留透明度大小；合法零及部分透明的有效数据不改变数值。复数数据波段拒绝，数值转换不承诺大整数逐位精度。`raster_select_bands` 使用原输入中从 1 开始的 `bands` 序号，允许重排与重复，但禁止将 alpha 当成数据波段；无需空间定位并保留已有定位及缺失事实。`color_model=multispectral` 默认不声明颜色通道，`rgb` 必须选择恰好三个数据波段，依次标记 Red/Green/Blue，不缩放像元、不自动推荐最佳波段。RGB 文件生成与显示拉伸属于不同职责。栅格信息的逐波段摘要以 `color_interpretation` 返回 GDAL 颜色解释，供消费者核对通道。

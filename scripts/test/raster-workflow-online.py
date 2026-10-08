@@ -234,6 +234,26 @@ def aggregate_workflow(source_locator, target_engine_id, case_name):
     ]}
 
 
+def update_workflow(base_locator, patch_locator, target_engine_id, case_name):
+    if case_name not in fixture.UPDATE_CASES: raise SuiteError('unknown update case')
+    ref=lambda name: {'$ref':name,'port':'default'}
+    return {'tasks':[
+        {'id':'base','operator':'raster_load','depends_on':[],'params':{'locator':base_locator}},
+        {'id':'patch','operator':'raster_load','depends_on':[],'params':{'locator':patch_locator}},
+        {'id':'clip','operator':'raster_clip','depends_on':['patch'],'params':{
+            'input_raster':ref('patch'),'boundary_crs':'EPSG:4326','bbox':[110,19.04,111.28,20.32]}},
+        {'id':'align','operator':'raster_align','depends_on':['clip','base'],'params':{
+            'input_raster':ref('clip'),'reference_raster':ref('base'),'resampling':'nearest'}},
+        {'id':'update','operator':'raster_update','depends_on':['base','align'],'params':{
+            'input_raster':ref('base'),'update_raster':ref('align')}},
+        {'id':'levels','operator':'raster_build_overviews','depends_on':['update'],'params':{
+            'input_raster':ref('update'),'levels':[2],'resampling':'nearest'}},
+        {'id':'save','operator':'raster_save','depends_on':['levels'],'params':{
+            'input_raster':ref('levels'),'target_parent_locator':f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+            'target_name':case_name+'.cog.tif','write_mode':'create','profile':'cog','blocksize':128}},
+    ]}
+
+
 def outside_workflow(source_locator, target_engine_id, case_name):
     if case_name not in fixture.OUTSIDE_CASES:
         raise SuiteError('unknown outside clipping case')
@@ -503,7 +523,7 @@ def physical(repository, env, action):
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
     case_name = action.removeprefix('verify-')
-    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
+    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
     if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload
@@ -744,17 +764,23 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     reclass_cases = []
     aggregate_cases = []
     outside_cases = []
+    update_cases = []
+    patch_source = support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'update source')
+    patch_locator = support.build_item_locator(source_engine, patch_source)
     reference_source = support.find_fixture_item(client, target_engine, 'raster-target/mosaic-first.cog.tif', 'reference raster')
     reference_locator = support.build_item_locator(target_engine, reference_source)
-    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES:
+    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES:
         single = case_name in fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES
         case_sources = [(source, source_locator, '')] if single else [
             (spatial_source, spatial_locator, '-spatial'), (reference_source, reference_locator, '-reference')]
+        if case_name in fixture.UPDATE_CASES:
+            case_sources = [(source,source_locator,'-base'),(patch_source,patch_locator,'-patch')]
         source_locators = [case_locator for _, case_locator, _ in case_sources]
         expectation = fixture.computed_expectation(case_name)
         name = case_name + '.cog.tif'
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
-        definition = (outside_workflow(source_locator, target_engine, case_name) if case_name in fixture.OUTSIDE_CASES else
+        definition = (update_workflow(source_locator, patch_locator, target_engine, case_name) if case_name in fixture.UPDATE_CASES else
+                      outside_workflow(source_locator, target_engine, case_name) if case_name in fixture.OUTSIDE_CASES else
                       aggregate_workflow(source_locator, target_engine, case_name) if case_name in fixture.AGGREGATE_CASES else
                       reclass_workflow(source_locator, target_engine, case_name) if case_name in fixture.RECLASS_CASES else
                       foundation_workflow(spatial_locator, reference_locator, target_engine, case_name))
@@ -768,7 +794,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('Monitor multi-raster execution differs from Develop status/lineage')
         native = physical_runner(repository, env, 'verify-' + case_name)
         artifact = execution['metadata']['result']['final_result']
-        colors = ['Gray', 'Undefined', 'Alpha'] if case_name in fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
+        colors = ['Gray', 'Undefined'] if case_name in fixture.UPDATE_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
         levels = [[expectation['width']//2, expectation['height']//2]]
         if (native.get('case_name') != case_name or native.get('preserved_sha256') != preserved
             or native.get('cog_valid') is not True or native.get('source_unchanged') is not True
@@ -778,7 +804,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             or any(band.get('overviews') != levels for band in artifact['bands'])
             or native.get('valid_pixels') != expectation['valid_pixels']
             or native.get('invalid_pixels') != expectation['width'] * expectation['height'] - expectation['valid_pixels']
-            or native.get('band_valid_pixels') != [expectation['valid_pixels']] * (expectation['band_count'] - (case_name in fixture.OUTSIDE_CASES))
+            or native.get('band_valid_pixels') != expectation.get('band_valid_pixels', [expectation['valid_pixels']] * (expectation['band_count'] - (case_name in fixture.OUTSIDE_CASES)))
             or type(artifact.get('size_bytes')) is not int
             or positive(native.get('size_bytes'), 'physical multi-raster size') != artifact['size_bytes']):
             raise SuiteError('multi-raster physical size, bands, colour, validity or preservation evidence differs')
@@ -791,7 +817,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 name, identifier, case_name + suffix, identity, timeout, browser_runner, expectation, native, source_locators)
             graphs.append(graph)
             browsers.append(report)
-        cases = outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
+        cases = update_cases if case_name in fixture.UPDATE_CASES else outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
         cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if single else graphs,
             'physical': native, 'browser': browsers[0] if single else browsers})
@@ -807,8 +833,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
             or obj(monitor.get('metadata', {}), 'Monitor footprint metadata').get('lineage_facts')):
             raise SuiteError('Monitor footprint has invalid status/owner or persistent lineage')
-        native = physical_runner(repository, env, 'verify-clip-outside')
-        final_name = fixture.OUTSIDE_CASES[-1] + '.cog.tif'
+        native = physical_runner(repository, env, 'verify-' + fixture.UPDATE_CASES[-1])
+        final_name = fixture.UPDATE_CASES[-1] + '.cog.tif'
         if (native.get('sha256') != preserved[final_name] or native.get('preserved_sha256') !=
             {name: digest for name, digest in preserved.items() if name != final_name}):
             raise SuiteError('footprint execution changed an accepted artifact')
@@ -827,7 +853,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'spatial_cases': spatial_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
-            'aggregate_cases': aggregate_cases, 'outside_cases': outside_cases, 'footprint_cases': footprint_cases,
+            'aggregate_cases': aggregate_cases, 'outside_cases': outside_cases, 'update_cases': update_cases, 'footprint_cases': footprint_cases,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

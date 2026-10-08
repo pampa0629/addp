@@ -972,12 +972,40 @@ def raster_align(input_raster, reference_raster, resampling='nearest'):
     return _raster(path)
 
 
-def raster_stack(input_raster, other_raster):
-    dataset, other = _open(input_raster), _open(other_raster)
+def _require_same_grid(dataset, other):
     if _grid(dataset) != _grid(other) or not _crs(dataset.GetProjection()).IsSame(
         _crs(other.GetProjection()), ['CRITERION=EQUIVALENT_EXCEPT_AXIS_ORDER_GEOGCRS',
                                     'IGNORE_DATA_AXIS_TO_SRS_AXIS_MAPPING=YES']):
-        raise ValueError('Raster grids must match; use raster_align before raster_stack')
+        raise ValueError('Raster grids must match; use raster_align before combining rasters')
+
+
+def raster_update(input_raster, update_raster):
+    dataset, update = _open(input_raster), _open(update_raster)
+    _require_same_grid(dataset, update)
+    indices, update_indices = _data_indices(dataset), _data_indices(update)
+    if len(indices) != len(update_indices):
+        raise ValueError('Raster update inputs must have the same data band count')
+    output = _numeric_output(dataset, len(indices))
+    for destination_index, (base_index, update_index) in enumerate(zip(indices, update_indices), 1):
+        destination = output.GetRasterBand(destination_index)
+        for x, y, arrays, masks in _blocks(dataset, [base_index]):
+            values = arrays[0].copy()
+            values[~masks[0]] = np.nan
+            height, width = values.shape
+            _, _, updates, update_masks = next(_blocks(
+                update, [update_index], window=(x, y, width, height)))
+            values[update_masks[0]] = updates[0][update_masks[0]]
+            destination.WriteRaster(x, y, width, height, values.tobytes(), buf_type=gdal.GDT_Float64)
+    destination = None
+    output.FlushCache()
+    path = output.GetDescription()
+    output = None
+    return _raster(path)
+
+
+def raster_stack(input_raster, other_raster):
+    dataset, other = _open(input_raster), _open(other_raster)
+    _require_same_grid(dataset, other)
     output = _copy_data_bands([(dataset, _data_indices(dataset)), (other, _data_indices(other))])
     path = output.GetDescription()
     output = None
@@ -1028,6 +1056,7 @@ _SPECS = [
     (raster_clip, '栅格裁剪', [_INPUT(), _param('boundary_crs', 'str', '边界 CRS'), _param('bbox', 'list[float]', '裁剪边界框', None, False), _param('geometry', 'object', 'GeoJSON 面边界', None, False), _param('mode', 'str', '保留区域内或区域外；区域外保留源完整网格', 'inside', False, enum=['inside', 'outside'])], 'raster', ['read']),
     (raster_mosaic, '栅格计算镶嵌', [_INPUT(), _param('other_raster', 'raster', '第二个栅格输入端口', role='input'), _param('target_crs', 'str', '目标 CRS'), _param('resolution', 'list[float]', '目标分辨率'), _param('overlap', 'str', '重叠策略', 'last', False, enum=['first', 'last']), _ALGORITHM()], 'raster', ['read']),
     (raster_align, '栅格网格对齐', [_INPUT(), _param('reference_raster', 'raster', '提供输出 CRS、宽高及仿射网格的参考栅格', role='input'), _ALGORITHM()], 'raster', ['read']),
+    (raster_update, '栅格局部更新', [_INPUT(), _param('update_raster', 'raster', '仅用有效像元覆盖基底的同网格更新源', role='input')], 'raster', ['read']),
     (raster_stack, '栅格波段组合', [_INPUT(), _param('other_raster', 'raster', '追加数据波段的同网格栅格', role='input')], 'raster', ['read']),
     (raster_select_bands, '栅格波段选择', [_INPUT(), _param('bands', 'list[int]', '按顺序选择原始数据波段，序号从 1 开始，可重复'), _param('color_model', 'str', '输出波段颜色解释', 'multispectral', False, enum=['multispectral', 'rgb'])], 'raster', ['read']),
     (raster_band_math, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
@@ -1048,6 +1077,7 @@ for function, label, params, output, effects in _SPECS:
     examples.update({'raster_reproject':{'target_crs':'EPSG:3857'}, 'raster_resample':{'size':[512,512]}, 'raster_clip':{'boundary_crs':'EPSG:4326','bbox':[110,20,111,21]}, 'raster_band_math':{'expression':'(b2-b1)/(b2+b1)'}, 'raster_mosaic':{'other_raster':{'$ref':'other'},'target_crs':'EPSG:4326','resolution':[0.01,0.01]}}.get(name, {}))
     examples.update({'raster_align': {'reference_raster': {'$ref': 'reference'}},
                      'raster_stack': {'other_raster': {'$ref': 'other'}},
+                     'raster_update': {'update_raster': {'$ref': 'update'}},
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
     if name == 'raster_reclassify':
         examples.update({'rules': [{'min': 0, 'max': 10, 'class': 1}, {'value': 10, 'class': 2}],

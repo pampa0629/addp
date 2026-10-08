@@ -4,9 +4,11 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 栅格计算
 
-`raster_compute.py` 提供 19 个通用栅格算子：加载、保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、波段组合、波段选择、波段计算、重分类、聚合、有效像元轮廓、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
+`raster_compute.py` 提供 20 个通用栅格算子：加载、保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、局部更新、波段组合、波段选择、波段计算、重分类、聚合、有效像元轮廓、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
 
 跨文件计算先用 `raster_align` 按参考栅格精确对齐，再用 `raster_stack` 成对追加数据波段，最后以 `raster_band_math` 计算加权求和等表达式。`raster_select_bands` 可重排波段，选择三个波段并设置 `color_model=rgb` 可生成 RGB 通道标记；不自动选择最佳波段或拉伸像元。三者统一将源 mask、NoData 和 alpha 覆盖转换为各数据波段独立的 NaN，不保留透明度大小。
+
+`raster_update(input_raster, update_raster)` 保持基底网格，逐数据波段用更新源有效像元覆盖，更新源无效时保留基底原值，二者均无效时输出 NaN。输入须同宽高、同六参数仿射网格、等价 CRS 和等数据波段数；先用 `raster_align` 对齐、用 `raster_select_bands` 重排，多个来源通过节点顺序串联，后一次有效更新优先。结果为新的 Float64 数据波段，不改写源，不保留 alpha 大小或颜色模型；合法零和部分透明有效值按原数值更新。只支持 workflow，输出继续由 `raster_save` 持久化。
 
 `raster_reclassify` 对 `band`（默认 1）应用非空 JSON 规则数组，例如 `[{"min":0,"max":10,"class":1},{"value":10,"class":2}]`。区间左闭右开，`null` 端点表示无界，规则重叠或重复时拒绝执行。未命中的有效像元默认设为 NaN，可设置 `unmatched=keep` 保留原值；源无效像元始终无效。输出同网格 Float64 单波段，不复制分类色表，不将 alpha 当作分类数据。无需空间定位，保留源定位缺失事实；在现有参数面板中填写 JSON 数组即可。
 

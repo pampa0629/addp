@@ -681,11 +681,9 @@ def test_utility_physical_oracle_rejects_pixels_levels_masks_and_partial_artifac
     with pytest.raises(fixture.FixtureError): fixture.worker('verify-utility-queries', physical)
 
 
-def foundation_execution(tmp_path, scene, api_server, case_name):
-    definition = scene.foundation_workflow('source-locator', 'reference-locator', 2, case_name)
+def multisource_execution(tmp_path, api_server, case_name, definition, bindings):
     sources = []
-    for task, role, name in ((definition['tasks'][0], 'source', 'spatial.tif'),
-                             (definition['tasks'][1], 'target', 'mosaic-first.cog.tif')):
+    for task, (role,name) in zip(definition['tasks'], bindings):
         source = tmp_path / (case_name + '-' + name)
         original = LocalMinio.objects[role, 'raster-' + role, name]
         source.write_bytes(original)
@@ -715,6 +713,12 @@ def foundation_execution(tmp_path, scene, api_server, case_name):
     LocalMinio.objects['target', 'raster-target', output.name] = output.read_bytes()
     return result, output
 
+
+
+def foundation_execution(tmp_path, scene, api_server, case_name):
+    return multisource_execution(tmp_path, api_server, case_name,
+        scene.foundation_workflow('source-locator','reference-locator',2,case_name),
+        [('source','spatial.tif'),('target','mosaic-first.cog.tif')])
 
 @pytest.fixture
 def foundation_artifacts(utility_artifacts, tmp_path):
@@ -1084,7 +1088,7 @@ def test_outside_physical_oracle_rejects_hole_coverage_alpha_masks_and_preservat
 
 
 
-def test_async_footprint_union_intersection_geojson_match_independent_cells(outside_artifacts, tmp_path):
+def verify_native_footprints(physical,tmp_path,last_case):
     scene = importlib.import_module('scripts.test.raster-workflow-online')
     import api_server
     baseline = dict(LocalMinio.objects)
@@ -1093,5 +1097,49 @@ def test_async_footprint_union_intersection_geojson_match_independent_cells(outs
         execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
         assert scene.validate_footprint(execution, case) == result
         assert sum(fixture.footprint_pixels(case)) == (65532 if case == 'footprint-any' else 65524)
-        assert fixture.worker('verify-clip-outside', outside_artifacts)['valid_pixels'] == 53247
+        assert fixture.worker('verify-'+last_case, physical)['valid_pixels'] == fixture.computed_expectation(last_case)['valid_pixels']
         assert LocalMinio.objects == baseline
+
+
+
+def test_async_footprint_union_intersection_geojson_match_independent_cells(outside_artifacts,tmp_path):
+    verify_native_footprints(outside_artifacts,tmp_path,'clip-outside')
+
+
+def test_async_update_local_aligned_patch_and_independent_pixel_oracle(outside_artifacts,tmp_path):
+    scene=importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    case='update-valid'
+    baseline=dict(LocalMinio.objects)
+    result,output=multisource_execution(tmp_path,api_server,case,
+        scene.update_workflow('base-locator','patch-locator',2,case),
+        [('source','source.tif'),('source','multiband.tif')])
+    evidence=fixture.worker('verify-'+case,outside_artifacts)
+    assert evidence['band_valid_pixels']==[65535,65536]
+    assert evidence['color_interpretations']==['Gray','Undefined']
+    assert evidence['overview_sizes']==[[128,128]]
+    assert len(evidence['preserved_sha256'])==25
+    assert evidence['size_bytes']==result['size_bytes']==output.stat().st_size>0
+    assert result['width']==result['height']==256 and result['band_count']==2
+    assert result['transform']==list(fixture.TRANSFORM)
+    assert all(LocalMinio.objects[key]==value for key,value in baseline.items())
+    assert len([key for key in LocalMinio.objects if key[0]=='target'])==26
+    verify_native_footprints(outside_artifacts,tmp_path,case)
+    # Reject removal of valid base data at a transparent/independently missing
+    # update cell and wrong overview values using the same real byte verifier.
+    key=('target','raster-target',case+'.cog.tif')
+    original=LocalMinio.objects[key]
+    for fault in ('transparent','independent-band','overview'):
+        edited=tmp_path/'update-corrupt.tif'
+        ds=gdal.Translate(str(edited),str(output),format='GTiff')
+        band=ds.GetRasterBand(2 if fault=='independent-band' else 1)
+        x,y=(2,0) if fault=='independent-band' else (4,0)
+        if fault!='overview': band.WriteRaster(x,y,1,1,struct.pack('<d',float('nan')),buf_type=gdal.GDT_Float64)
+        ds.BuildOverviews('NEAREST',[2])
+        if fault=='overview': band.GetOverview(0).WriteRaster(20,20,1,1,struct.pack('<d',123.),buf_type=gdal.GDT_Float64)
+        band=ds=None
+        corrupt=tmp_path/'update-corrupt.cog.tif'
+        ds=gdal.Translate(str(corrupt),str(edited),format='COG',creationOptions=['BLOCKSIZE=128']); ds=None
+        LocalMinio.objects[key]=corrupt.read_bytes()
+        with pytest.raises(fixture.FixtureError): fixture.worker('verify-'+case,outside_artifacts)
+        LocalMinio.objects[key]=original

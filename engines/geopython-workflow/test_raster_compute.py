@@ -17,7 +17,7 @@ from operators.raster_compute import (
     raster_workspace, raster_load, raster_info, raster_save, raster_to_cog,
     raster_resample, raster_reproject, raster_clip, raster_mosaic,
     raster_band_math, raster_statistics, raster_histogram, raster_build_overviews, validate_cog,
-    raster_align, raster_stack, raster_select_bands,
+    raster_align, raster_stack, raster_select_bands, raster_update,
     _classification_rules, raster_reclassify, raster_aggregate, raster_footprint,
 )
 from workflow_engine import execute_workflow
@@ -2934,3 +2934,153 @@ def _crs_wkt_for_footprint(code):
     reference = osr.SpatialReference()
     reference.ImportFromEPSG(code)
     return reference.ExportToWkt()
+
+
+@pytest.mark.parametrize('nodata', [-9999., float('nan')], ids=['finite', 'nan'])
+@pytest.mark.parametrize('transform', [(0,1,0,2,0,-1), (3,2,.5,8,-.25,-2)])
+def test_update_independent_validity_zero_alpha_masks_and_cog(tmp_path, nodata, transform):
+    base = create_raster(tmp_path/'base.tif', np.array([
+        [[10,nodata,12,13],[14,15,16,17]],
+        [[20,21,nodata,23],[24,25,26,27]],
+        [[255,255,255,255],[0,128,255,255]],
+    ]), transform=transform, nodata=nodata)
+    patch = create_raster(tmp_path/'patch.tif', np.array([
+        [[nodata,0,102,np.nan],[104,nodata,np.inf,107]],
+        [[200,nodata,202,203],[204,205,206,nodata]],
+        [[255,128,0,255],[128,255,255,0]],
+    ]), transform=transform, nodata=nodata)
+    for path in (base,patch):
+        ds=gdal.Open(str(path),gdal.GA_Update)
+        ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds=None
+    originals={p:p.read_bytes() for p in (base,patch)}
+    expected=np.array([[[10,0,12,13],[104,15,16,17]],
+                       [[200,21,np.nan,203],[204,25,206,27]]])
+    with raster_workspace():
+        loaded, update = raster_load(source_plan(base)), raster_load(source_plan(patch))
+        ds=gdal.Open(str(update.path),gdal.GA_Update)
+        assert ds.CreateMaskBand(gdal.GMF_PER_DATASET)==0
+        ds.GetRasterBand(1).GetMaskBand().WriteRaster(0,0,4,2,bytes([255]*5+[0]+[255]*2))
+        ds=None
+        private={p:p.read_bytes() for p in update.path.parent.glob(update.path.name+'*')}
+        result=raster_update(loaded,update)
+        ds=gdal.Open(str(result.path))
+        assert ds.RasterCount==2 and ds.GetGeoTransform()==transform
+        for index in (1,2):
+            band=ds.GetRasterBand(index)
+            np.testing.assert_allclose(read_band_values(band),expected[index-1],equal_nan=True)
+            assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+            assert band.GetColorInterpretation()!=gdal.GCI_AlphaBand
+        band=ds=None
+        target=tmp_path/'updated.cog.tif'
+        saved=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert saved['size_bytes']==target.stat().st_size>0
+        reread=raster_load(source_plan(target))
+        assert validate_cog(reread)['valid']
+        ds=gdal.Open(str(reread.path))
+        for index in (1,2):
+            band=ds.GetRasterBand(index)
+            np.testing.assert_allclose(read_band_values(band),expected[index-1],equal_nan=True)
+            assert band.GetMaskBand().ReadRaster()==bytes(255 if math.isfinite(v) else 0 for v in expected[index-1].flat)
+        band=ds=None
+        assert all(p.read_bytes()==b for p,b in private.items())
+    assert all(p.read_bytes()==b for p,b in originals.items())
+
+
+@pytest.mark.parametrize('fault', ['width','transform','rotation','crs','missing-crs','missing-grid','singular','nonfinite','bands','complex','alpha-only'])
+def test_update_rejects_grid_and_band_mismatch(tmp_path,fault):
+    base=create_raster(tmp_path/'base.tif',np.ones((2,3)))
+    values=np.ones((2,4) if fault=='width' else (2,2,3) if fault=='bands' else (2,3))
+    transform=(0,1,0,4,0,-1)
+    transform={'transform':(1,1,0,4,0,-1),'rotation':(0,1,.1,4,0,-1),
+               'missing-grid':None,'singular':(0,1,1,4,1,1),
+               'nonfinite':(0,float('nan'),0,4,0,-1)}.get(fault,transform)
+    patch=create_raster(tmp_path/'patch.tif',values,transform=transform,
+                        crs='' if fault=='missing-crs' else 'EPSG:3857' if fault=='crs' else 'EPSG:4326')
+    if fault=='complex':
+        converted=gdal.Translate(str(tmp_path/'complex.tif'),str(patch),outputType=gdal.GDT_CFloat64)
+        converted=None; patch=tmp_path/'complex.tif'
+    if fault=='alpha-only':
+        ds=gdal.Open(str(patch),gdal.GA_Update); ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand); ds=None
+    with raster_workspace():
+        loaded,update=raster_load(source_plan(base)),raster_load(source_plan(patch))
+        with pytest.raises(ValueError): raster_update(loaded,update)
+
+
+def test_update_chained_priority_and_bounded_reads(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    original=compute._read_values
+    reads=[]
+    def bounded(band,x,y,width,height):
+        assert width<=512 and height<=512
+        reads.append((width,height))
+        return original(band,x,y,width,height)
+    monkeypatch.setattr(compute,'_read_values',bounded)
+    base=create_raster(tmp_path/'base.tif',np.full((513,1025),7.))
+    first=np.full((513,1025),-9999.); first[511:513,511:513]=11
+    second=np.full((513,1025),-9999.); second[512,512]=0; second[-1,-1]=13
+    paths=[base,create_raster(tmp_path/'first.tif',first),create_raster(tmp_path/'second.tif',second)]
+    originals={p:p.read_bytes() for p in paths}
+    with raster_workspace():
+        a,b,c=[raster_load(source_plan(p)) for p in paths]
+        result=raster_update(raster_update(a,b),c)
+        ds=gdal.Open(str(result.path)); band=ds.GetRasterBand(1)
+        expected=np.full((513,1025),7.); expected[511:513,511:513]=11; expected[512,512]=0; expected[-1,-1]=13
+        np.testing.assert_array_equal(read_band_values(band),expected)
+        band=ds=None
+    assert len(reads)>12 and all(p.read_bytes()==b for p,b in originals.items())
+
+
+@pytest.mark.parametrize('invalid',[False,True])
+def test_update_workflow_metadata_async_save_and_cleanup(tmp_path,monkeypatch,invalid):
+    import api_server
+    import operators.raster_compute as compute
+    base=create_raster(tmp_path/'base.tif',np.full((2,3),10.))
+    patch=create_raster(tmp_path/'patch.tif',np.ones((2,4)) if invalid else np.array([[-9999,0,22],[23,-9999,25.]]))
+    target=tmp_path/'result.tif'
+    spec=next(item for item in list_operators() if item['id']=='raster_update')
+    assert [p['name'] for p in spec['parameters'] if p['type']=='raster']==['input_raster','update_raster']
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['output_ports'][0]['type']=='raster' and spec['attributes']['resource_groups']==['raster']
+    tasks=[{'id':'base','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(base)}},
+           {'id':'patch','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(patch)}},
+           {'id':'update','operator':'raster_update','depends_on':['base','patch'],
+            'params':{'input_raster':{'$ref':'base'},'update_raster':{'$ref':'patch'}}},
+           {'id':'save','operator':'raster_save','depends_on':['update'],
+            'params':{'input_raster':{'$ref':'update'},'access_plan':target_plan(target),'profile':'cog'}}]
+    # Use the same owner test HTTP entry as other real asynchronous DAG cases.
+    client=api_server.app.test_client()
+    import workflow_engine
+    paths=[]
+    original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='raster_update': paths.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},
+        'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'): break
+        time.sleep(.01)
+    assert status['status']==('failed' if invalid else 'success'),status
+    if not invalid:
+        result=json.loads(status['result']); assert result['size_bytes']==target.stat().st_size>0
+        ds=gdal.Open(str(target)); band=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(read_band_values(band),[[10,0,22],[23,10,25]])
+        band=ds=None
+    assert paths and all(not path.exists() for path in paths)
+    assert client.post('/api/operators/raster_update/invoke',json={'params':{}}).status_code==403
+
+
+@pytest.mark.parametrize('base_valid',[False,True])
+def test_update_all_invalid_patch_keeps_base_validity(tmp_path,base_valid):
+    base=create_raster(tmp_path/'base.tif',np.full((2,3),7. if base_valid else -9999.))
+    patch=create_raster(tmp_path/'patch.tif',np.full((2,3),float('nan')),nodata=float('nan'))
+    with raster_workspace():
+        result=raster_update(raster_load(source_plan(base)),raster_load(source_plan(patch)))
+        ds=gdal.Open(str(result.path)); band=ds.GetRasterBand(1)
+        np.testing.assert_allclose(read_band_values(band),np.full((2,3),7. if base_valid else np.nan),equal_nan=True)
+        band=ds=None
