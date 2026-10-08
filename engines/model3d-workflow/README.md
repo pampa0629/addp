@@ -47,7 +47,11 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/blender_setup.
 
 准备成功后由用户在自己的终端运行 `./scripts/dev/restart.sh -model3d-workflow`。全量重启也在停止现有服务之前执行同一准备与转换预检。
 
-2026-10-08 本地页面验收：已运行的 macOS 原生 Runtime 经 Manager 正式快显入口完成 Business NFS 的 DAE、带贴图 3DS、IFC 建筑及单体 OSGB 转换。四个任务均为成功、结果可用，浏览器实际显示几何；3DS 彩色贴图与 OSGB 地表贴图可见，旋转和缩放可操作。OSGB execution `a15774db-d803-424c-8d23-ef5fe11413a7` 的 Monitor 详情记录源 item 766 与平台内部 GLB 产物。此验收不代替暂缓的正式门禁、Linux 产品构建和 Hosted T4。
+2026-10-08 本地页面验收：已运行的 macOS 原生 Runtime 经 Manager 正式快显入口完成 Business NFS 的 DAE、带贴图 3DS、IFC 建筑及单体 OSGB 转换。四个任务均为成功、结果可用，浏览器实际显示几何；3DS 彩色贴图与 OSGB 地表贴图可见，旋转和缩放可操作。OSGB execution `a15774db-d803-424c-8d23-ef5fe11413a7` 的 Monitor 详情记录源 item 766 与平台内部 GLB 产物。此记录证明本机页面链路；产品与 Hosted 验收独立记录如下。
+
+2026-10-08 产品与 Hosted 验收：提交 `95428d6e3fec29d72c6f1c8634b1252eeae8e2fb` 的 Linux arm64 标准镜像构建、本次 [Linux x86_64 Hosted Manager T4](https://github.com/pampa0629/addp/actions/runs/37742891117) 及同一提交的 [Product binary build](https://github.com/pampa0629/addp/actions/runs/37742303485/job/113195593339) 均通过。两种架构的产品构建覆盖压缩 OSGB、DXT1/DXT1A/DXT3/DXT5 贴图、SKP 米制缩放，以及 MAX 静态 GLB、声明贴图、默认米／手选毫米和失败保留旧产物。Hosted 使用正式 Model3D 产品镜像的默认入口；普通租户 User 经 System/Gateway/Meta/Manager/Monitor 完成真实资源与产物链路，DAE／3DS 的 GLB 及内嵌 PNG 校验、生成入口和缓存预览两项浏览器用例均通过。五类产物（DAE、3DS、点云、PPTX、栅格）的 Manager 与 Monitor 血缘一致，产物回收和 Infra 清理为零残留。Hosted 三维格式覆盖 DAE／3DS；IFC 与单体 OSGB 的页面验证范围为上述 macOS 本地验收。
+
+同轮确定性门禁通过：`make test-model3d-workflow`（272 项）、`make test-manager-online-runner`（47 项）及 `make test-dev-lifecycle`（86 项 Python 测试和后续 Shell／Go 检查）。开发生命周期首轮有三个 Infra 夹具超时，独立诊断及完整重跑通过。ARM64 构建曾遇到镜像和官方文件下载中断，使用相同版本与标准入口重试后完整通过；本轮未修改或重启开发服务。
 
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
 
