@@ -143,6 +143,10 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ## 六、会话与令牌
 
+源数据当前授权关系从 `engine_access_grants` 与不可变撤销事实实时派生，按 Tenant、精确目标、接收方类型／编号及动作聚合，不新增可变 ACL 表。新签发在唯一持久路径拒绝有效关系重复，Catalog 与直接批准共用该约束；历史重复不删除。关系撤销在既有精确目标事务锁内收回全部有效记录，每条撤销保存同次收回的编号集合，用于审计和原命令恢复；旧签发、到期和撤销时刻不修改。当前列表与历史列表分别承担管理和追溯职责，均不代表最终读取裁决。契约见《addp授权上下文规范》5.5.6。
+
+迁移 `000202_source_grant_relations` 的前向升级和重复运行由既有 System IAM PostgreSQL 门禁自动发现，并纳入 `engine-access-coordination` 分组。局部验证使用 `bash scripts/test/system-iam-postgres-gate.sh --package migration --test source-grant-relations`；仍须指定经过标准基础设施脚本验证的 `addp_iam_test` DSN，不使用开发数据库。
+
 ### 引擎访问控制领域的管理委派
 
 `system.engine_access_delegations` 由 System 引擎访问控制领域独立维护，不是 Role Assignment 或全平台中央 ACL。它绑定同 Tenant 的 Engine 和 User Membership，保存显式到期时间、授予原因／操作者／时间、版本，以及撤销原因／操作者／时间；无源端写入、无默认角色授权、无 Catalog 副本。只允许创建、读取和版本化撤销；授权范围及接口以 `docs/spec/addp授权上下文规范.md` 5.5.2 为准。

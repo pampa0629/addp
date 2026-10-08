@@ -14,16 +14,7 @@ import (
 
 func platformFixture(t *testing.T) *platform.Snapshot {
 	t.Helper()
-	d, err := platform.TransferContext()
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.Digest = ""
-	data, err := json.Marshal(d)
-	if err != nil {
-		t.Fatal(err)
-	}
-	snapshot, err := platform.Compile(data)
+	snapshot, err := platform.CompileTransferRelease()
 	if err != nil {
 		t.Fatal(err)
 	}

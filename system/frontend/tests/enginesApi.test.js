@@ -43,6 +43,20 @@ describe('engines API', () => {
     expect(client.post.mock.calls).toEqual([['/system/engines/2/access_delegations', create], ['/system/engines/2/access_delegations/3/revoke', revoke]])
   })
 
+  it('separates current relations from immutable history and withdraws by an anchor', async () => {
+    const params = { page: 2, page_size: 20 }
+    await enginesAPI.listSourceGrants('2', params)
+    await enginesAPI.listSourceGrantHistory('2', params)
+    await enginesAPI.revokeSourceGrant('2', 'anchor-id', 'Withdraw the relation')
+    expect(client.get.mock.calls).toEqual([
+      ['/system/engines/2/access_grants', { params }],
+      ['/system/engines/2/access_grants/history', { params }]
+    ])
+    expect(client.post.mock.calls).toEqual([
+      ['/system/engines/2/access_grants/anchor-id/revoke', { reason: 'Withdraw the relation' }]
+    ])
+  })
+
   it('requests the complete filtered engine array without pagination parameters', async () => {
     client.get.mockResolvedValue([])
 

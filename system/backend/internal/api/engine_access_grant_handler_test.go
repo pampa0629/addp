@@ -29,6 +29,9 @@ func (f grantServiceFunc) CreateIndependentGrant(context.Context, engineaccess.C
 func (f grantServiceFunc) ListSourceGrants(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantView, int64, error) {
 	panic("unexpected grant listing")
 }
+func (f grantServiceFunc) ListSourceGrantRelations(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantRelation, int64, error) {
+	panic("unexpected relation listing")
+}
 
 func grantTestRouter(t *testing.T, projection *shared.AuthContext, service engineAccessGrantService) *gin.Engine {
 	t.Helper()

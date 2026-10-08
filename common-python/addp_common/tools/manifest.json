@@ -1013,6 +1013,55 @@
       }
     },
     {
+      "name": "platform.capabilities.list",
+      "version": "1.0.0",
+      "description": "读取已激活平台能力的完整语义目录，供自然语言选择操作；空目录或未匹配不能猜测能力，定义不表示当前模块可用或用户有业务权限。",
+      "owner": "ontology",
+      "risk": "read",
+      "approval": {"mode": "none"},
+      "auth": {"type": "delegated_access_token", "audience": "ontology", "required_scopes": ["platform.capabilities.list"], "required_permissions": ["ontology.semantic.read"]},
+      "permission_enforced_by": "owner",
+      "audit": {"mode": "owner"},
+      "result_ref": {"mode": "none"},
+      "limits": {"max_bytes": 131072},
+      "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
+      "input_schema": {"type": "object", "properties": {}, "additionalProperties": false},
+      "output_schema": {
+        "type": "object", "required": ["schema_version", "capabilities"],
+        "properties": {
+          "schema_version": {"const": "addp.platform-capability-catalog/v1"},
+          "capabilities": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/context"}}
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "context": {
+            "type": "object",
+            "required": ["schema_version", "knowledge_kind", "capability", "revision", "digest", "availability", "concepts", "relations", "operation", "requirements"],
+            "properties": {
+              "schema_version": {"const": "addp.platform-capability-context/v1"},
+              "knowledge_kind": {"const": "platform_definition"},
+              "capability": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$", "maxLength": 128},
+              "revision": {"type": "integer", "minimum": 1},
+              "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+              "availability": {"const": "not_observed"},
+              "concepts": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"type": "object"}},
+              "relations": {"type": "array", "maxItems": 64, "items": {"type": "object"}},
+              "operation": {
+                "type": "object", "required": ["owner", "skill", "tool", "inputs_required", "effects", "excluded_effects"],
+                "properties": {
+                  "owner": {"type": "string", "minLength": 1}, "skill": {"type": "string", "minLength": 1}, "tool": {"type": "string", "minLength": 1},
+                  "inputs_required": {"type": "array", "maxItems": 32, "items": {"type": "string"}},
+                  "effects": {"type": "array", "maxItems": 32, "items": {"type": "string"}},
+                  "excluded_effects": {"type": "array", "maxItems": 32, "items": {"type": "string"}}
+                }, "additionalProperties": false
+              },
+              "requirements": {"type": "array", "maxItems": 16, "items": {"type": "object"}}
+            }, "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
       "name": "transfer.task.create",
       "version": "1.0.0",
       "description": "在用户确认完整配置后创建 bounded snapshot native-table Transfer 任务，返回真实任务身份。只保存定义，不启动、调度、扫描或写业务数据；结果不确定时禁止自动重试。",

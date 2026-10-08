@@ -145,9 +145,18 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 			return p
 		}
 		capability := "transfer.task.real_graph"
-		first, err := newPublisher(graph).Publish(ctx, platformTestSnapshot(t, capability, 2))
-		if err != nil {
+		firstSnapshot := platformTestSnapshot(t, capability, 2)
+		if err := newPublisher(graph).PublishOnReady(ctx, func() bool { return true }, func() (*platform.Snapshot, error) { return firstSnapshot, nil }); err != nil {
 			t.Fatal(err)
+		}
+		reader := NewPlatformRevisionService(platformRepo)
+		got, err := reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || got.Revision != 2 || got.Digest != firstSnapshot.Digest() {
+			t.Fatal("startup publication not readable", got, err)
+		}
+		firstHead, err := platformRepo.Head(ctx, machine, capability)
+		if err != nil || firstHead.ActiveGeneration == nil {
+			t.Fatal(firstHead, err)
 		}
 		secondSnapshot := platformTestSnapshot(t, capability, 3)
 		second, err := newPublisher(rejectVerifiedProjection{graph}).Publish(ctx, secondSnapshot)
@@ -155,8 +164,12 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 			t.Fatal("graph failure activated", second, err)
 		}
 		head, err := platformRepo.Head(ctx, machine, capability)
-		if err != nil || head.ActiveGeneration == nil || *head.ActiveGeneration != first.Generation || head.ActivationVersion != 1 {
+		if err != nil || head.ActiveGeneration == nil || *head.ActiveGeneration != *firstHead.ActiveGeneration || head.ActivationVersion != 1 {
 			t.Fatal("graph failure lost old version", head, err)
+		}
+		got, err = reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || got.Revision != 2 || got.Digest != firstSnapshot.Digest() {
+			t.Fatal("failed graph changed runtime context", got, err)
 		}
 		rebuilt, err := newPublisher(graph).Publish(ctx, secondSnapshot)
 		if err != nil || rebuilt.Generation == second.Generation || rebuilt.Status != "ready" {
@@ -175,6 +188,10 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 		}
 		if err := db.Where("generation=?", second.Generation).First(second).Error; err != nil || second.Status != "failed" {
 			t.Fatal("failed graph history rewritten", second, err)
+		}
+		got, err = reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || got.Revision != 3 || got.Digest != secondSnapshot.Digest() {
+			t.Fatal("rebuilt publication not readable", got, err)
 		}
 	})
 }

@@ -68,7 +68,7 @@ Skill 的唯一入口，必须包含元数据、触发边界、执行步骤、�
 
 reference 不能复制正式规范全文。稳定平台概念仍以 `docs/concepts/` 和 `docs/spec/` 为事实源。
 
-`agents/` 保存宿主装配元数据。`openai.yaml` 服务 Codex 展示与触发，`addp.yaml` 只声明 ADDP Runtime 所需 Tool 和迭代上限；二者不得复制正文。
+`agents/` 保存宿主装配元数据。`openai.yaml` 服务 Codex 展示与触发，`addp.yaml` 声明 ADDP Runtime 所需 Tool、迭代上限和是否经平台语义选择；二者不得复制正文。`platform_routed=true` 表示该任务领域必须先消费 Ontology 已激活能力目录，由定义引用选择 Skill，不能从描述直接路由；它不是能力映射、权限或可用性声明。
 
 `agents/addp.yaml` 可以声明 `required_skills` 组合其他 Skill 的方法正文。组合只影响 Runtime 注入的指导，不继承依赖 Skill 的 Tool 权限；每个 Skill 必须独立声明自己的最小 `required_tools` 白名单。
 

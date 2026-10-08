@@ -46,11 +46,12 @@ func (r *Repository) checkGrantRevocationExpiry(ctx context.Context, grant sourc
 // GrantRevocation is withdrawal history, not a Deny or a current access verdict.
 // Target, recipient and expiry remain in the canonical immutable Grant.
 type GrantRevocation struct {
-	RequestID             uuid.UUID `gorm:"type:uuid;primaryKey" json:"request_id"`
-	RevokedByPrincipalID  int64     `json:"revoked_by_principal_id,string" swaggertype:"string"`
-	RevokedByMembershipID int64     `json:"revoked_by_membership_id,string" swaggertype:"string"`
-	RevokedAt             time.Time `json:"revoked_at"`
-	Reason                string    `json:"reason"`
+	RequestID             uuid.UUID   `gorm:"type:uuid;primaryKey" json:"request_id"`
+	RevokedByPrincipalID  int64       `json:"revoked_by_principal_id,string" swaggertype:"string"`
+	RevokedByMembershipID int64       `json:"revoked_by_membership_id,string" swaggertype:"string"`
+	RevokedAt             time.Time   `json:"revoked_at"`
+	Reason                string      `json:"reason"`
+	RevokedRequestIDs     []uuid.UUID `gorm:"type:jsonb;serializer:json" json:"revoked_request_ids"`
 }
 
 func (GrantRevocation) TableName() string { return "system.engine_access_grant_revocations" }
@@ -114,10 +115,27 @@ func (s *Service) RevokeGrant(ctx context.Context, input RevokeGrantInput) (*Gra
 			if err := tx.checkGrantRevocationExpiry(ctx, grant); err != nil {
 				return err
 			}
-			row := &GrantRevocation{RequestID: input.RequestID, RevokedByPrincipalID: input.Actor.PrincipalID,
-				RevokedByMembershipID: input.Actor.MembershipID, Reason: input.Reason}
-			if err := tx.db.WithContext(ctx).Clauses(clause.Returning{}).Create(row).Error; err != nil {
-				return mapError(err)
+			grants, err := tx.activeRelationGrants(ctx, grant)
+			if err != nil {
+				return err
+			}
+			ids := make([]uuid.UUID, 0, len(grants))
+			for _, item := range grants {
+				ids = append(ids, item.RequestID)
+			}
+			var row *GrantRevocation
+			for _, item := range grants {
+				withdrawal := &GrantRevocation{RequestID: item.RequestID, RevokedByPrincipalID: input.Actor.PrincipalID,
+					RevokedByMembershipID: input.Actor.MembershipID, Reason: input.Reason, RevokedRequestIDs: ids}
+				if err := tx.db.WithContext(ctx).Clauses(clause.Returning{}).Create(withdrawal).Error; err != nil {
+					return mapError(err)
+				}
+				if item.RequestID == input.RequestID {
+					row = withdrawal
+				}
+			}
+			if row == nil {
+				return ErrGrantRevocationExpired
 			}
 			audit := input.Audit
 			actor := input.Actor
@@ -128,6 +146,7 @@ func (s *Service) RevokeGrant(ctx context.Context, input RevokeGrantInput) (*Gra
 				Metadata: audit, EventName: "system.engine_access_grant.revoked", Result: iam.AuditResultSucceeded,
 				RiskLevel: iam.AuditRiskHigh, ModuleName: "system", EntityType: "engine_access_grant", EntityID: input.RequestID.String(),
 				Details: map[string]any{"request_id": input.RequestID, "engine_id": input.EngineID,
+					"revoked_request_ids": ids, "recipient_type": grant.RecipientType, "recipient_id": grant.RecipientID,
 					"revoked_by_membership_id": actor.MembershipID, "reason": row.Reason},
 			}); err != nil {
 				return err

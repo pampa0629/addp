@@ -45,12 +45,14 @@ type Context struct {
 	Requirements  []Requirement `json:"requirements"`
 }
 
-// TransferContext returns an independent immutable-release value on each read.
-// Availability is deliberately not inferred from a static definition.
-func TransferContext() (Context, error) {
-	snapshot, err := Compile(transferDefinition)
-	if err != nil {
-		return Context{}, err
-	}
-	return snapshot.Context()
+const CatalogMaxItems = 32
+const CatalogMaxBytes = 128 * 1024
+
+type Catalog struct {
+	SchemaVersion string    `json:"schema_version"`
+	Capabilities  []Context `json:"capabilities"`
 }
+
+// CompileTransferRelease is the deployment-only source entry. Runtime semantic
+// reads restore the authoritative active PG revision, never this embedded file.
+func CompileTransferRelease() (*Snapshot, error) { return Compile(transferDefinition) }

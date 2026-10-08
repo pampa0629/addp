@@ -5,7 +5,7 @@ const permissions = ['system.engine.read', 'system.engine_access_approval_requir
 const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }] }
 const schemaPath = { ...rootPath, segments: [...rootPath.segments, { term: 'schema', kind: 'namespace', name: 'outdoor' }] }
 const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities' }] }
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn' } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn' } = {}) {
   const writes = [], reads = []
   let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: tablePath }] : []
   let grants = [...history], failedGrant = false, failedChange = false
@@ -32,10 +32,25 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       reads.push(path)
       return reply({ data: [], total: 0, page: 1, page_size: 10, total_pages: 1 })
     }
+    if (path.endsWith('/access_grants/history')) {
+      reads.push(request.url())
+      const query = new URL(request.url()).searchParams, page = Number(query.get('page') || 1), size = Number(query.get('page_size') || 20)
+      return reply({ data: grants.slice((page - 1) * size, page * size), total: grants.length, page, page_size: size, total_pages: Math.ceil(grants.length / size) })
+    }
     if (path.endsWith('/access_grants')) {
-      reads.push(path)
-      if (request.method() === 'GET') return reply({ data: grants, total: grants.length, page: 1, page_size: 20, total_pages: 1 })
+      reads.push(request.url())
+      if (request.method() === 'GET') {
+        const grouped = new Map()
+        for (const grant of grants.filter(item => !item.revocation && (!item.expires_at || new Date(item.expires_at) > new Date()))) {
+          const key = JSON.stringify([grant.catalog_path, grant.recipient_type, grant.recipient_id])
+          const previous = grouped.get(key)
+          grouped.set(key, { ...grant, grant_count: (previous?.grant_count || 0) + 1 })
+        }
+        const current = [...grouped.values()], query = new URL(request.url()).searchParams, page = Number(query.get('page') || 1), size = Number(query.get('page_size') || 20)
+        return reply({ data: current.slice((page - 1) * size, page * size), total: current.length, page, page_size: size, total_pages: Math.ceil(current.length / size) })
+      }
       const body = request.postDataJSON(); writes.push({ path, body })
+      if (grantDuplicate) return reply({ error: '该接收方已有此数据的有效读取授权，未重复发放', error_code: 'engine_access_grant_relation_exists' }, 409)
       if (conflict) return reply({ error: '本表已有批准安排，不能覆盖' }, 409)
       if (grantFailure && !failedGrant) { failedGrant = true; return reply({ error: '签发结果未知，请按原命令核对' }, 503) }
       const grant = { ...body, approval_mode: 'independent', engine_id: '2', granted_at: '2026-10-07T00:00:00Z', revocation: null }
@@ -45,8 +60,12 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     }
     if (path.includes('/access_grants/') && path.endsWith('/revoke')) {
       const body = request.postDataJSON(); writes.push({ path, body })
-      const revocation = { request_id: grants[0].request_id, revoked_at: '2026-10-07T01:00:00Z', reason: body.reason }
-      grants[0] = { ...grants[0], revocation }; return reply(revocation)
+      const id = path.split('/').at(-2), anchor = grants.find(item => item.request_id === id)
+      const same = item => JSON.stringify([item.catalog_path, item.recipient_type, item.recipient_id]) === JSON.stringify([anchor.catalog_path, anchor.recipient_type, anchor.recipient_id])
+      const ids = grants.filter(item => same(item) && !item.revocation).map(item => item.request_id)
+      const revocation = { request_id: id, revoked_at: '2026-10-07T01:00:00Z', reason: body.reason, revoked_request_ids: ids }
+      grants = grants.map(item => same(item) && !item.revocation ? { ...item, revocation: { ...revocation, request_id: item.request_id } } : item)
+      return reply(revocation)
     }
     if (path.includes('/access_approval_requirements/')) {
       if (request.method() === 'GET') { reads.push(path); return reply(rows[0]) }
@@ -374,6 +393,8 @@ test('existing direct approval grants and revokes an explicit recipient without 
   await expect(page.getByRole('dialog', { name: '撤销授权', exact: true })).toContainText('Outdoor reader')
   await page.getByTestId('source-grant-revoke-reason').fill('Read access no longer needed')
   await page.getByTestId('source-grant-revoke-confirm').click()
+  await expect(page.getByRole('dialog', { name: '撤销授权', exact: true })).toBeHidden()
+  await history.getByText('授权历史', { exact: true }).click()
   await expect(history).toContainText('已撤销')
   expect(writes).toHaveLength(2)
 })
@@ -474,6 +495,51 @@ test('without authorization permission the route restores to basic details', asy
   await expect(page.getByTestId('engine-authorization-open')).toHaveCount(0)
   expect(reads).toEqual([]); expect(writes).toEqual([])
 })
+test('definite duplicate rejection does not keep an automatic original-command retry', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent', grantDuplicate: true, history: [historicalGrant()] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectData(page); await grantDraft(page); await confirmGrant(page)
+  await expect(page.getByTestId('source-grant-outcomes')).toContainText('未重复发放')
+  await expect(page.getByTestId('source-grant-confirm')).toHaveText('授予读取权限')
+  expect(writes).toHaveLength(1)
+})
+
+test('current relations collapse duplicates and withdraw every personal grant, not organization grants', async ({ page }) => {
+  const personal = [1, 2].map(index => ({ ...historicalGrant(), request_id: `personal-${index}` }))
+  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'iam.department.read'], history: [...personal, historicalGrant('department')] })
+  await page.goto('/engines/2?tab=data-authorization')
+  const panel = page.getByTestId('engine-source-grants')
+  await expect(panel.getByRole('row').filter({ hasText: 'Outdoor reader' })).toHaveCount(1)
+  await expect(panel.getByRole('row').filter({ hasText: 'Outdoor reader' })).toContainText('2')
+  await panel.getByRole('row').filter({ hasText: 'Outdoor reader' }).getByTestId('source-grant-revoke').click()
+  const dialog = page.getByRole('dialog', { name: '撤销授权', exact: true })
+  await expect(dialog).toContainText('全部有效授权')
+  await expect(dialog).toContainText('部门或项目组')
+  await dialog.getByTestId('source-grant-revoke-reason').fill('Withdraw the complete personal relation')
+  await dialog.getByTestId('source-grant-revoke-confirm').click()
+  await expect(dialog).toBeHidden()
+  await expect(panel.getByRole('row').filter({ hasText: 'Outdoor reader' })).toHaveCount(0)
+  await expect(panel.getByRole('row').filter({ hasText: 'Outdoor department' })).toHaveCount(1)
+  await panel.getByText('授权历史', { exact: true }).click()
+  await expect(panel.getByRole('row').filter({ hasText: '已撤销' })).toHaveCount(2)
+  await expect(panel.getByTestId('source-grant-revoke')).toHaveCount(0)
+  expect(writes).toHaveLength(1)
+})
+
+test('authorization history page two stays selected while loading', async ({ page }) => {
+  const history = Array.from({ length: 25 }, (_, index) => ({ ...historicalGrant(), request_id: `page-${index}` }))
+  const { reads } = await fixture(page, { allowed: grantPermissions, history })
+  await page.goto('/engines/2?tab=data-authorization')
+  const panel = page.getByTestId('engine-source-grants')
+  await panel.getByText('授权历史', { exact: true }).click()
+  await expect(panel).toContainText('page-19')
+  await panel.locator('.el-pager').getByText('2', { exact: true }).click()
+  await expect(panel).toContainText('page-24')
+  await expect(panel).not.toContainText('page-0')
+  const historyReads = reads.filter(url => url.includes('/access_grants/history'))
+  expect(new URL(historyReads.at(-1)).searchParams.get('page')).toBe('2')
+})
+
 test('unauthorized recipient type never loads candidates or issues grants', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page)

@@ -14,8 +14,8 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 201 {
-		t.Fatalf("LatestVersion = %d, want 201", catalog.LatestVersion)
+	if catalog.LatestVersion != 202 {
+		t.Fatalf("LatestVersion = %d, want 202", catalog.LatestVersion)
 	}
 }
 
@@ -33,6 +33,24 @@ func TestIndependentGrantPermissionsPublishNoImplicitAuthority(t *testing.T) {
 	for _, forbidden := range []string{"INSERT INTO system.role", "INSERT INTO system.engine_access", "UPDATE system.role", "tenant.administrator"} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("implicit authority: %q", forbidden)
+		}
+	}
+}
+
+func TestSourceGrantRelationsUseOneRuleStoreAndPreserveHistory(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000202_source_grant_relations.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(data)
+	for _, required := range []string{"revoked_request_ids", "AFTER INSERT ON system.engine_access_grants", "engine_access_grant_relation_exists", "g.recipient_type = NEW.recipient_type", "g.recipient_id = NEW.recipient_id", "g.action = NEW.action", "ENABLE TRIGGER trg_engine_access_grant_revocation_immutable"} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"CREATE TABLE", "DELETE FROM", "UPDATE system.engine_access_grants", "INSERT INTO system.role", "INSERT INTO system.permissions"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("unexpected second authority or history mutation: %q", forbidden)
 		}
 	}
 }

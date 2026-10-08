@@ -77,6 +77,8 @@ func (h *EngineAccessFulfillmentGrantHandler) Resolve(c *gin.Context) {
 func respondFulfillmentGrantError(c *gin.Context, err error) {
 	var code, message string
 	switch {
+	case errors.Is(err, engineaccess.ErrGrantRelationExists):
+		code, message = "engine_access_grant_relation_exists", modulei18n.MsgGrantRelationExists
 	case errors.Is(err, engineaccess.ErrGrantWindowExpired):
 		code, message = "engine_access_grant_window_expired", modulei18n.MsgGrantWindowExpired
 	case errors.Is(err, engineaccess.ErrFulfillmentAlreadyClosed):

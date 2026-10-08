@@ -31,6 +31,33 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			if _, err := acceptor.AcceptFulfillment(ctx, actor, id, binding); err != nil {
 				t.Fatal(err)
 			}
+			// Independent scenarios no longer leave an active duplicate relation
+			// behind. Cleanup uses the production withdrawal command, not deletion.
+			t.Cleanup(func() {
+				g, err := issuer.repository.findSourceGrant(ctx, id)
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return
+				}
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if _, err := issuer.repository.findGrantRevocation(ctx, id); err == nil {
+					return
+				}
+				p, err := iam.NewRepository(db).GetPrincipal(ctx, base.Operator.PrincipalID)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				_, err = issuer.RevokeGrant(ctx, RevokeGrantInput{Actor: Actor{TenantID: actor.TenantID,
+					PrincipalID: base.Operator.PrincipalID, MembershipID: base.Operator.MembershipID,
+					AuthorizationVersion: p.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)},
+					EngineID: g.EngineID, RequestID: id, Reason: "Close isolated issuance fixture"})
+				if err != nil && !errors.Is(err, ErrGrantRevocationExpired) {
+					t.Error(err)
+				}
+			})
 			return id
 		}
 		assertCount := func(t *testing.T, id uuid.UUID, want int64) {
@@ -90,6 +117,11 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				t.Fatalf("lookup=%+v %v", lookup, err)
 			}
 			assertCount(t, id, 1)
+			duplicate := prepare(t, base)
+			if _, err := issuer.IssueFulfillmentGrant(ctx, actor, duplicate, base); !errors.Is(err, ErrGrantRelationExists) {
+				t.Fatalf("Catalog duplicate=%v", err)
+			}
+			assertCount(t, duplicate, 0)
 			canonical, err := issuer.repository.findFulfillmentGrant(ctx, id)
 			if err != nil || canonical.CatalogRequestID == nil || *canonical.CatalogRequestID != id ||
 				canonical.TenantID != actor.TenantID || canonical.EngineID != int64(base.Path.EngineID) ||

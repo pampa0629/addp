@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,8 +16,9 @@ import (
 )
 
 type independentGrantTestService struct {
-	create func(engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error)
-	list   func(engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantView, int64, error)
+	create    func(engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error)
+	list      func(engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantView, int64, error)
+	relations func(engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantRelation, int64, error)
 }
 
 func (s independentGrantTestService) CreateIndependentGrant(_ context.Context, input engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
@@ -24,6 +26,9 @@ func (s independentGrantTestService) CreateIndependentGrant(_ context.Context, i
 }
 func (s independentGrantTestService) ListSourceGrants(_ context.Context, a engineaccess.Actor, id int64, page, size int) ([]engineaccess.SourceGrantView, int64, error) {
 	return s.list(a, id, page, size)
+}
+func (s independentGrantTestService) ListSourceGrantRelations(_ context.Context, a engineaccess.Actor, id int64, page, size int) ([]engineaccess.SourceGrantRelation, int64, error) {
+	return s.relations(a, id, page, size)
 }
 func (s independentGrantTestService) RevokeGrant(context.Context, engineaccess.RevokeGrantInput) (*engineaccess.GrantRevocation, error) {
 	panic("unexpected revocation")
@@ -90,11 +95,21 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 		return &engineaccess.SourceGrantView{RequestID: id}, nil
 	}}
 	engineDelegationTestRequest(t, grantTestRouter(t, &projection, initializer), "POST", path, first, 201)
-	engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "GET", path+"?page=2&page_size=10", nil, 200)
+	engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "GET", path+"/history?page=2&page_size=10", nil, 200)
+	qualified.relations = func(a engineaccess.Actor, engineID int64, page, size int) ([]engineaccess.SourceGrantRelation, int64, error) {
+		if a.PrincipalID <= 0 || engineID != 1 || page != 1 || size != 20 {
+			t.Fatal("lost relation list scope")
+		}
+		return []engineaccess.SourceGrantRelation{{RequestID: id, RecipientID: 9007199254740993, GrantCount: 2}}, 1, nil
+	}
+	relations := engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "GET", path, nil, 200)
+	if !strings.Contains(relations.Body.String(), `"grant_count":2`) {
+		t.Fatal(relations.Body.String())
+	}
 	for _, failure := range []struct {
 		err    error
 		status int
-	}{{commonapi.ErrForbidden, 403}, {engineaccess.ErrIndependentGrantConflict, 409}, {engineaccess.ErrIndependentGrantBasis, 409}, {engineaccess.ErrIndependentGrantExpiry, 409}, {engineaccess.ErrIndependentGrantSourceUnavailable, 503}} {
+	}{{commonapi.ErrForbidden, 403}, {engineaccess.ErrGrantRelationExists, 409}, {engineaccess.ErrIndependentGrantConflict, 409}, {engineaccess.ErrIndependentGrantBasis, 409}, {engineaccess.ErrIndependentGrantExpiry, 409}, {engineaccess.ErrIndependentGrantSourceUnavailable, 503}} {
 		s := independentGrantTestService{create: func(engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
 			return nil, failure.err
 		}}

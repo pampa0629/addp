@@ -17,6 +17,7 @@ import (
 	"github.com/addp/ontology/internal/api"
 	"github.com/addp/ontology/internal/config"
 	"github.com/addp/ontology/internal/falkor"
+	"github.com/addp/ontology/internal/platform"
 	"github.com/addp/ontology/internal/repository"
 	"github.com/addp/ontology/internal/service"
 	"github.com/google/uuid"
@@ -86,8 +87,17 @@ func run() error {
 		return err
 	}
 	lifecycle := modulelifecycle.NewBusiness("ontology", client.ModuleRuntimeRoleBackend, readyCheck("postgres", sqlDB.PingContext), readyCheck("falkordb", graph.Health))
+	platformRepo := repository.NewPlatformRevisionRepository(db)
+	platformAuthorizer, err := service.NewSystemPlatformPublicationAuthorizer(system)
+	if err != nil {
+		return err
+	}
+	platformPublisher, err := service.NewPlatformPublisher(platformRepo, graph, platformAuthorizer)
+	if err != nil {
+		return err
+	}
 	issuer := client.NewSystemExecutionAuthorizationClient(cfg.SystemURL, &http.Client{Timeout: 20 * time.Second})
-	router := api.SetupRouter(cfg.SystemURL, lifecycle, service.NewRevisionService(repo), issuer)
+	router := api.SetupRouter(cfg.SystemURL, lifecycle, service.NewRevisionService(repo), service.NewPlatformRevisionService(platformRepo), issuer)
 	listener, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		return errors.New("ontology listener failed")
@@ -100,9 +110,23 @@ func run() error {
 	registration := system.RegisterAndHeartbeatWithMetadata(ctx, "ontology", serviceURL, "/ontology", map[string]interface{}{"module": "ontology"})
 	lifecycle.AttachRegistration(registration)
 	modulelifecycle.CancelRuntimeOnFatal(registration, stop)
+	canWork := func() bool { _, ready := lifecycle.Readiness(ctx); return ready }
+	publicationDone := make(chan struct{})
+	go func() {
+		defer close(publicationDone)
+		// Publication failure is local to platform definitions. Do not disable
+		// Tenant authoring or log definition payloads and authorization facts.
+		if err := platformPublisher.PublishOnReady(ctx, canWork, platform.CompileTransferRelease); err != nil {
+			if ctx.Err() == nil {
+				log.Print("ontology platform publication failed; inspect platform publication records before retrying")
+			}
+			return
+		}
+		log.Print("ontology platform publication completed")
+	}()
 	workerDone := make(chan error, 1)
 	go func() {
-		workerDone <- supervisor.Run(ctx, func() bool { _, ready := lifecycle.Readiness(ctx); return ready })
+		workerDone <- supervisor.Run(ctx, canWork)
 	}()
 	<-ctx.Done()
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -111,6 +135,7 @@ func run() error {
 		_ = server.Close()
 	}
 	<-workerDone
+	<-publicationDone
 	<-registration.Done()
 	if err := <-serverDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return errors.New("ontology HTTP server failed")

@@ -425,3 +425,5 @@ other = "观测身份快照超过规定预算。"
 other = "观测身份快照读取超时。"
 [system.engine_access_approval_requirement.version_conflict]
 other = "批准方式已被更新，请刷新核对后再确认切换。"
+[system.engine_access_grant_relation_exists]
+other = "该接收方已有此数据的有效读取授权，未重复发放。请在当前授权中管理；变更期限须明确收回原关系并按当前批准方式重新授予。"

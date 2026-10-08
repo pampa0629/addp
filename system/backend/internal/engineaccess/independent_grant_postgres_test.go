@@ -210,6 +210,155 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			t.Fatalf("issue=%+v %v", issued, err)
 		}
 		assertRead("grant")
+		t.Run("relation rejects another command even with changed validity", func(t *testing.T) {
+			duplicate := input
+			duplicate.RequestID = uuid.New()
+			if _, err := service.CreateIndependentGrant(ctx, duplicate); !errors.Is(err, ErrGrantRelationExists) {
+				t.Fatalf("duplicate=%v", err)
+			}
+			expires := time.Now().Add(time.Hour)
+			duplicate.RequestID, duplicate.ExpiryMode, duplicate.ExpiresAt = uuid.New(), shared.SharingExpiryAtTime, &expires
+			if _, err := service.CreateIndependentGrant(ctx, duplicate); !errors.Is(err, ErrGrantRelationExists) {
+				t.Fatalf("silent validity change=%v", err)
+			}
+			relations, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, relation := range relations {
+				if relation.RequestID == input.RequestID {
+					found = relation.GrantCount == 1
+				}
+			}
+			if !found {
+				t.Fatalf("current relation=%+v", relations)
+			}
+		})
+		t.Run("concurrent new commands issue only one relation", func(t *testing.T) {
+			path := engineplugin.TabularItemPath(base.EngineID, "schema", "public", "concurrent_relation")
+			basis, err := service.InitializeApprovalRequirement(ctx, InitializeApprovalRequirementInput{Actor: actor, EngineID: input.EngineID, CatalogPath: path, Mode: "independent", Reason: "Concurrency fixture"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			concurrent := NewService(NewRepository(db), func(*models.Engine) bool { return true }).WithIndependentTargetVerifier(independentVerifierFunc(func(c context.Context, tenant int64, p engineplugin.EngineCatalogPath) (int64, error) {
+				e, err := NewRepository(db).engine(c, tenant, int64(p.EngineID), false)
+				if err != nil {
+					return 0, err
+				}
+				return e.Version, nil
+			}))
+			type outcome struct {
+				row *SourceGrantView
+				err error
+			}
+			results := make(chan outcome, 2)
+			for i := 0; i < 2; i++ {
+				command := input
+				command.RequestID, command.CatalogPath, command.RequirementVersion = uuid.New(), path, basis.Version
+				go func() { row, err := concurrent.CreateIndependentGrant(ctx, command); results <- outcome{row, err} }()
+			}
+			var issued *SourceGrantView
+			duplicates := 0
+			var failures []error
+			issuedCount := 0
+			for i := 0; i < 2; i++ {
+				result := <-results
+				if result.err == nil {
+					issuedCount++
+					issued = result.row
+				} else if errors.Is(result.err, ErrGrantRelationExists) {
+					duplicates++
+				} else {
+					failures = append(failures, result.err)
+				}
+			}
+			if issued == nil || issuedCount != 1 || duplicates != 1 || len(failures) != 0 {
+				t.Fatalf("concurrency did not converge: issued=%d duplicate=%d errors=%v", issuedCount, duplicates, failures)
+			}
+			if _, err := concurrent.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: input.EngineID, RequestID: issued.RequestID, Reason: "Close concurrency fixture"}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		t.Run("legacy duplicates withdraw together and old retries leave new grants intact", func(t *testing.T) {
+			original := input
+			original.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "legacy_relation")
+			original.RequestID, original.RequirementVersion, original.InitializeApproval = uuid.New(), 1, true
+			first, err := service.CreateIndependentGrant(ctx, original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			legacy := original
+			legacy.RequestID, legacy.InitializeApproval = uuid.New(), false
+			row, err := prepareIndependentGrant(legacy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Simulate a pre-202 duplicate only in the standard isolated fixture.
+			// The production command must reject it; never disable immutable guards.
+			if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				if err := tx.Exec("ALTER TABLE system.engine_access_grants DISABLE TRIGGER trg_source_grant_relation").Error; err != nil {
+					return err
+				}
+				if err := NewRepository(tx).insertSourceGrant(ctx, row); err != nil {
+					return err
+				}
+				return tx.Exec("ALTER TABLE system.engine_access_grants ENABLE TRIGGER trg_source_grant_relation").Error
+			}); err != nil {
+				t.Fatal(err)
+			}
+			relations, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, relation := range relations {
+				if relation.RequestID == row.RequestID {
+					found = relation.GrantCount == 2
+				}
+			}
+			if !found {
+				t.Fatalf("legacy grouping=%+v", relations)
+			}
+			withdraw := RevokeGrantInput{Actor: actor, EngineID: input.EngineID, RequestID: first.RequestID, Reason: "Withdraw complete legacy relation"}
+			result, err := service.RevokeGrant(ctx, withdraw)
+			if err != nil || len(result.RevokedRequestIDs) != 2 {
+				t.Fatalf("withdraw=%+v %v", result, err)
+			}
+			for _, id := range []uuid.UUID{first.RequestID, row.RequestID} {
+				if _, err := service.repository.findGrantRevocation(ctx, id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fresh := legacy
+			fresh.RequestID = uuid.New()
+			if _, err := service.CreateIndependentGrant(ctx, fresh); err != nil {
+				t.Fatal(err)
+			}
+			if retry, err := service.RevokeGrant(ctx, withdraw); err != nil || !retry.RevokedAt.Equal(result.RevokedAt) {
+				t.Fatalf("old retry=%+v %v", retry, err)
+			}
+			if _, err := service.repository.findGrantRevocation(ctx, fresh.RequestID); !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("old retry touched new grant: %v", err)
+			}
+			current, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found = false
+			for _, relation := range current {
+				if relation.RequestID == fresh.RequestID {
+					found = relation.GrantCount == 1
+				}
+			}
+			if !found {
+				t.Fatalf("new relation=%+v", current)
+			}
+			withdraw.RequestID = fresh.RequestID
+			if _, err := service.RevokeGrant(ctx, withdraw); err != nil {
+				t.Fatal(err)
+			}
+		})
 		t.Run("mode changes preserve issued read access", func(t *testing.T) {
 			modeActor := qualify(t, true)
 			updateRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.approval_mode_update", Name: "Explicit mode update fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_approval_requirement.update"}, ActorPrincipalID: adminID})

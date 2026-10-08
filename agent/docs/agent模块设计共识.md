@@ -29,6 +29,8 @@ Agent 保留产品、路由和持久状态边界，唯一执行内核采用 Deer
 
 ## 二、唯一交互协议
 
+平台语义任务使用唯一的两阶段选择：初始模型只识别是否需要平台能力目录；Runtime 用 `platform.capabilities.list` 读取 Ontology 已激活定义后，模型才选择 capability，再由定义中的 Skill/Tool 引用装配领域执行。`platform_routed=true` 的 Skill 禁止从描述直接选中；目录失败不能退回旧路由。当前仅 Transfer 创建领域启用，普通对话和其他 Skill 不产生 Ontology 依赖。业务字段、资源身份与写入策略仍由正式事实和必要用户确认约束，不要求用户输入内部步骤。详细边界见 Ontology 最小设计契约 1.12。
+
 Agent 后端唯一流式接口是：
 
 ```text

@@ -14,6 +14,7 @@ import (
 	commoni18n "github.com/addp/common/middleware/i18n"
 	modulei18n "github.com/addp/ontology/i18n"
 	"github.com/addp/ontology/internal/models"
+	"github.com/addp/ontology/internal/platform"
 	"github.com/addp/ontology/internal/repository"
 	"github.com/addp/ontology/internal/semantic"
 	"github.com/addp/ontology/internal/service"
@@ -38,8 +39,14 @@ type RevisionCommands interface {
 }
 
 type Handler struct {
-	revisions RevisionCommands
-	issuer    service.ExecutionAuthorizationIssuer
+	revisions           RevisionCommands
+	issuer              service.ExecutionAuthorizationIssuer
+	platformDefinitions PlatformContextReader
+}
+
+type PlatformContextReader interface {
+	PlatformCapabilityContext(context.Context, string) (platform.Context, error)
+	PlatformCapabilities(context.Context) (platform.Catalog, error)
 }
 
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)

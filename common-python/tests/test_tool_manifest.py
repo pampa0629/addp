@@ -27,6 +27,7 @@ def test_manifest_has_unique_stage_two_tools():
         "ontology.classes.list",
         "ontology.class.context",
         "platform.capability.context",
+        "platform.capabilities.list",
         "transfer.task.create",
     ]
     assert get_tool("workflow.run").risk == "write"
@@ -52,6 +53,7 @@ def test_manifest_has_unique_stage_two_tools():
         "ontology.classes.list": ["ontology.semantic.read"],
         "ontology.class.context": ["ontology.semantic.read"],
         "platform.capability.context": ["ontology.semantic.read"],
+        "platform.capabilities.list": ["ontology.semantic.read"],
         "transfer.task.create": ["transfer.task.create"],
     }
     for tool in manifest.tools:

@@ -105,9 +105,12 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `ontology.classes.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `ontology.class.context` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `platform.capability.context` | Ontology | `ontology.semantic.read` | read | none | none | 32 KiB |
+| `platform.capabilities.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `transfer.task.create` | Transfer | `transfer.task.create` | write | none | none | 256 KiB |
 
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
+
+`platform.capabilities.list` 无输入参数，返回同一只读 PG 快照中完整核验的已激活平台定义目录，最多 32 项、128 KiB；未激活不列出，空数组不等于运行模块不存在或用户无业务权限。超限和损坏明确失败，不截断、换源或跳过成员。Agent 先用其语义选择能力，再经定义引用和当前 Manifest 校验 Skill/Tool 装配；HTTP 地址和权限仍属于 Manifest/SDK/owner，不复制进本体。目录调用必须有 AgentRun/ToolCall 委托及步骤审计；失败不能退回静态 Skill 描述选择平台能力。
 
 本体读取和 Manager 搜索沿用 API 规范的 `{error, error_code}` owner 错误体；ToolExecutor 按 owner 的正式错误契约转换为统一 ToolExecutionError，只有 Manifest 声明的错误码和对应公开消息可以透传。不能要求 owner HTTP API 返回 Runtime 私有的嵌套错误结构；未声明的错误码和正文不得透传。
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/addp/ontology/internal/models"
@@ -16,9 +17,65 @@ func platformTestActor() models.PlatformActor {
 	return models.PlatformActor{ContextType: "platform", PrincipalID: 11, PrincipalType: "user", AuthorizationVersion: 7}
 }
 
+func TestPlatformCatalogRestoreAndBudgets(t *testing.T) {
+	ctx := context.Background()
+	makeRecord := func(snapshot *platform.Snapshot) models.PlatformRevision {
+		t.Helper()
+		definition, err := snapshot.Context()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return models.PlatformRevision{Capability: definition.Capability, Revision: definition.Revision, Digest: snapshot.Digest(), Payload: string(snapshot.CanonicalJSON())}
+	}
+	base := makeRecord(platformTestSnapshot(t, "transfer.task.create", 2))
+	empty, err := platformCatalog(ctx, nil)
+	if err != nil || empty.Capabilities == nil || len(empty.Capabilities) != 0 {
+		t.Fatal(empty, err)
+	}
+	got, err := platformCatalog(ctx, []models.PlatformRevision{base})
+	if err != nil || len(got.Capabilities) != 1 || got.Capabilities[0].Digest != base.Digest {
+		t.Fatal(got, err)
+	}
+	bad := base
+	bad.Payload = " " + bad.Payload
+	if _, err := platformCatalog(ctx, []models.PlatformRevision{base, bad}); !errors.Is(err, repository.ErrIntegrity) {
+		t.Fatal("corruption produced partial success", err)
+	}
+	if _, err := platformCatalog(ctx, make([]models.PlatformRevision, platform.CatalogMaxItems+1)); !errors.Is(err, ErrResultTooLarge) {
+		t.Fatal(err)
+	}
+	definition, _ := platformTestSnapshot(t, "transfer.task.large", 3).Context()
+	definition.Digest = ""
+	for i := range definition.Concepts {
+		definition.Concepts[i].Name["en"] = strings.Repeat("x", 512)
+		definition.Concepts[i].Name["zh-cn"] = strings.Repeat("x", 512)
+	}
+	encoded, _ := json.Marshal(definition)
+	large, err := platform.Compile(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]models.PlatformRevision, platform.CatalogMaxItems)
+	for i := range records {
+		records[i] = makeRecord(large)
+	}
+	if _, err := platformCatalog(ctx, records); !errors.Is(err, ErrResultTooLarge) {
+		t.Fatal("byte budget not enforced", err)
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(nil)).PlatformCapabilities(canceled); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
 func platformTestSnapshot(t *testing.T, capability string, revision uint64) *platform.Snapshot {
 	t.Helper()
-	definition, err := platform.TransferContext()
+	release, err := platform.CompileTransferRelease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := release.Context()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +146,12 @@ func TestPlatformCommandsRejectBeforeDatabaseAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.Head(canceled, actor, "transfer.task.create"); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if _, err := s.PlatformCapabilityContext(canceled, "transfer.task.create"); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if _, err := s.PlatformCapabilityContext(ctx, "Transfer.task.create"); !errors.Is(err, repository.ErrInvalid) {
 		t.Fatal(err)
 	}
 }

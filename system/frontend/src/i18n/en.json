@@ -1100,8 +1100,11 @@
     },
     "engine": {
       "sourceGrants": {
-        "history": "Read-grant records",
-        "boundary": "Approval mode determines who approves; a grant specifies who may read. These are issuance and revocation records, not a current access decision. Reading still requires function permission, current membership, validity and deny checks.",
+        "current": "Current authorizations",
+        "history": "Authorization history",
+        "sourceCount": "Active records",
+        "revokeCount": "Withdraw all active Grants in this relation (currently {count} records), not just one record.",
+        "boundary": "Current authorizations group data and recipients; history is retained separately. Personal, department and project-group Grants are distinct sources. Actual reading still requires function permission, current membership, validity and Deny checks.",
         "create": "Grant read access",
         "recipient": "Recipient",
         "recipientType": "Recipient type",
@@ -1133,14 +1136,14 @@
         "candidatesRequired": "Recipient selection requires the corresponding membership or organization-read permission. Contact an administrator; IDs cannot be entered manually.",
         "failed": "The outcome is unconfirmed. Refresh to check; an issuance may be retried with its original command. Do not assume access was granted.",
         "retry": "Retry original command",
-        "partialFailure": "Some table outcomes remain unconfirmed. Review the individual results; retry only processes unsuccessful original commands.",
+        "partialFailure": "Some Grants were not issued; review each outcome. Existing Grants are not duplicated. Only unconfirmed original commands can be retried. To change validity, explicitly withdraw the current relation and obtain approval again.",
         "confirmBody": "Grant {recipient} read-only access to {target}. Validity: {expiry}. This is not a management delegation and does not grant export or write access.",
         "created": "Read grant issued. Actual reading still requires the relevant function permission and current access conditions.",
         "historyRecovered": "Original issuance history recovered, without renewal or reissuance. Check its record status.",
         "invalid": "Select an eligible recipient, explicit validity and a reason. A specific expiration must be in the future.",
         "invalidReason": "Enter a revocation reason (up to 2000 characters).",
-        "revokeBoundary": "Only this grant is revoked, without adding a deny. Other effective grants may still permit reading.",
-        "revoked": "This read grant is revoked; issuance history is retained."
+        "revokeBoundary": "Withdraw all active read Grants for this data and recipient, retaining history and adding no Deny. Personal withdrawal leaves department and project-group Grants intact; other sources may still permit reading.",
+        "revoked": "This read authorization relation is withdrawn; history is retained. Other personal or organization sources are unchanged."
       },
       "dataAuthorization": {
         "title": "Data authorization",
@@ -1183,7 +1186,7 @@
         "confirmBody": "Configure {target} to use {mode}. This only sets the approval mode; it does not grant data reading to any account.",
         "saved": "Approval mode saved. No data reading permission has been granted.",
         "failed": "No reliable result was obtained. Refresh to check; this page never automatically retries or claims configuration took effect.",
-        "modes": { "independent": "Direct approval", "catalog": "Business approval" },
+        "modes": { "independent": "Direct approval", "catalog": "Business approval", "mixed": "Direct / business approval" },
         "descriptions": {
           "independent": "Approved by a person with independent approval permission and effective engine management delegation. Catalog deployment or cataloging is not required.",
           "catalog": "New grants require a valid sharing confirmation from the current Catalog business owner. A Catalog outage never automatically switches to independent approval."

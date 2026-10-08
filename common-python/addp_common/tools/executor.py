@@ -50,6 +50,7 @@ class ToolExecutor:
             "ontology.classes.list": self._ontology_classes_list,
             "ontology.class.context": self._ontology_class_context,
             "platform.capability.context": self._platform_capability_context,
+            "platform.capabilities.list": self._platform_capabilities_list,
             "transfer.task.create": self._transfer_task_create,
         }
 
@@ -171,6 +172,10 @@ class ToolExecutor:
     async def _platform_capability_context(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(OntologyClient, delegated_token) as client:
             return await client.platform_capability_context(arguments["capability"])
+
+    async def _platform_capabilities_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(OntologyClient, delegated_token) as client:
+            return await client.platform_capabilities()
 
     async def _transfer_task_create(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(TransferClient, delegated_token) as client:

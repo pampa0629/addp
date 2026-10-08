@@ -425,3 +425,5 @@ other = "The observability identity snapshot exceeds its configured budget."
 other = "The observability identity snapshot timed out."
 [system.engine_access_approval_requirement.version_conflict]
 other = "The approval mode has changed. Refresh and review it before confirming again."
+[system.engine_access_grant_relation_exists]
+other = "This recipient already has an active read grant for this data; no duplicate was issued. Manage the current relation. To change validity, explicitly withdraw it and obtain approval under the current requirements."

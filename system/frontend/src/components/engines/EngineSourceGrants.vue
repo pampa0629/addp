@@ -30,7 +30,10 @@
       <div><el-button :disabled="saving" @click="closeGrant">{{ t('common.cancel') }}</el-button><el-button type="primary" data-testid="source-grant-confirm" :loading="saving" :disabled="!canCreate || !canReadCandidates" @click="create">{{ t(attempt ? 'system.engine.sourceGrants.retry' : 'system.engine.sourceGrants.create') }}</el-button></div>
     </div>
     <template v-if="canRead">
-      <h3>{{ t('system.engine.sourceGrants.history') }}</h3>
+      <el-radio-group v-model="listMode" data-testid="source-grant-list-mode" @change="changeListMode">
+        <el-radio-button value="current">{{ t('system.engine.sourceGrants.current') }}</el-radio-button>
+        <el-radio-button value="history">{{ t('system.engine.sourceGrants.history') }}</el-radio-button>
+      </el-radio-group>
       <el-button :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       <el-table :data="rows" v-loading="loading">
         <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>
@@ -38,8 +41,9 @@
         <el-table-column :label="t('system.engine.dataAuthorization.mode')" min-width="150"><template #default="{ row }">{{ t(`system.engine.dataAuthorization.modes.${row.approval_mode}`) }}</template></el-table-column>
         <el-table-column :label="t('system.engine.sourceGrants.expiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
         <el-table-column :label="t('system.engine.sourceGrants.state')" min-width="110"><template #default="{ row }">{{ t(`system.engine.sourceGrants.states.${state(row)}`) }}</template></el-table-column>
-        <el-table-column :label="t('system.engine.sourceGrants.command')" prop="request_id" min-width="220" show-overflow-tooltip />
-        <el-table-column v-if="canRevoke" width="100"><template #default="{ row }"><el-button v-if="state(row) === 'issued'" data-testid="source-grant-revoke" link type="danger" @click="openRevoke(row)">{{ t('system.engine.sourceGrants.revoke') }}</el-button></template></el-table-column>
+        <el-table-column v-if="listMode === 'current'" :label="t('system.engine.sourceGrants.sourceCount')" min-width="120"><template #default="{ row }">{{ row.grant_count }}</template></el-table-column>
+        <el-table-column v-else :label="t('system.engine.sourceGrants.command')" prop="request_id" min-width="220" show-overflow-tooltip />
+        <el-table-column v-if="canRevoke && listMode === 'current'" width="100"><template #default="{ row }"><el-button data-testid="source-grant-revoke" link type="danger" @click="openRevoke(row)">{{ t('system.engine.sourceGrants.revoke') }}</el-button></template></el-table-column>
       </el-table>
       <el-pagination layout="prev, pager, next, total" :total="total" :page-size="20" :current-page="page" @current-change="changePage" />
     </template>
@@ -48,6 +52,7 @@
       <p>{{ approvalPathLabel(revokeRow?.catalog_path) }}</p>
       <EngineGrantRecipient v-if="revokeRow" :type="revokeRow.recipient_type" :id="revokeRow.recipient_id" v-bind="recipientPresentation(revokeRow)" />
       <el-alert type="warning" :closable="false" :title="t('system.engine.sourceGrants.revokeBoundary')" />
+      <p>{{ t('system.engine.sourceGrants.revokeCount', { count: revokeRow?.grant_count }) }}</p>
       <el-alert v-if="revokeError" type="error" :closable="false" :title="revokeError" />
       <el-form label-position="top"><el-form-item :label="t('system.engine.sourceGrants.reason')" required><el-input v-model="revokeReason" data-testid="source-grant-revoke-reason" type="textarea" maxlength="2000" :disabled="revoking" /></el-form-item></el-form>
       <template #footer><el-button ref="revokeCancel" :disabled="revoking" @click="revokeVisible = false">{{ t('common.cancel') }}</el-button><el-button type="danger" data-testid="source-grant-revoke-confirm" :loading="revoking" :disabled="!canRevoke" @click="revoke">{{ t('system.engine.sourceGrants.revoke') }}</el-button></template>
@@ -82,6 +87,7 @@ const recipientSources = {
 const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
 const canReadCandidates = computed(() => auth.hasPermission(recipientSources[form.recipientType]?.permission))
 const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error = ref(''), success = ref('')
+const listMode = ref('current')
 const recipientNames = ref({})
 const candidates = ref([]), members = ref([]), candidateLoading = ref(false), formError = ref(''), saving = ref(false), attempt = ref(null)
 const outcomes = ref([])
@@ -116,9 +122,12 @@ async function loadRecipientNames(history, epoch, seq) {
 async function load() {
   if (!canRead.value) return
   const epoch = generation, seq = ++readSequence
-  loading.value = true; error.value = ''; rows.value = []; total.value = 0; recipientNames.value = {}
+  // Preserve total while loading: resetting it makes Element Plus clamp page 2
+  // to page 1 and issue a competing request before the response arrives.
+  loading.value = true; error.value = ''; rows.value = []; recipientNames.value = {}
   try {
-    const result = await enginesAPI.listSourceGrants(props.engine.id, { page: page.value, page_size: 20 })
+    const list = listMode.value === 'history' ? enginesAPI.listSourceGrantHistory : enginesAPI.listSourceGrants
+    const result = await list(props.engine.id, { page: page.value, page_size: 20 })
     if (epoch !== generation || seq !== readSequence) return
     if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total) || result.total < 0) throw new Error('invalidHistory')
     rows.value = result.data; total.value = result.total
@@ -126,7 +135,8 @@ async function load() {
   } catch (e) { if (epoch === generation && seq === readSequence) error.value = message(e) }
   finally { if (epoch === generation && seq === readSequence) loading.value = false }
 }
-function changePage(value) { page.value = value; load() }
+function changePage(value) { if (value === page.value) return; page.value = value; load() }
+function changeListMode() { page.value = 1; load() }
 async function loadCandidates() {
   const epoch = generation, seq = ++candidateSequence, kind = form.recipientType
   candidates.value = []; members.value = []; form.recipientID = ''; candidateLoading.value = false; formError.value = ''
@@ -153,9 +163,10 @@ async function create() {
     const first = captured[0]
     await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
     if (epoch !== generation || !canCreate.value) return
+    if (!recovering) outcomes.value = []
     attempt.value = captured
     for (const command of captured) {
-      if (outcomes.value.some(row => row.requestID === command.requestID && row.done)) continue
+      if (outcomes.value.some(row => row.requestID === command.requestID && (row.done || row.terminal))) continue
       let outcome
       try {
         const result = await enginesAPI.createSourceGrant(props.engine.id, command.payload)
@@ -164,7 +175,7 @@ async function create() {
         outcome = { ...command, done: true, error: '', recovered: recovering || !!result.revocation }
       } catch (e) {
         if (epoch !== generation) return
-        outcome = { ...command, done: false, error: message(e) }
+        outcome = { ...command, done: false, terminal: e?.response?.data?.error_code === 'engine_access_grant_relation_exists', error: message(e) }
       }
       outcomes.value = [...outcomes.value.filter(row => row.requestID !== command.requestID), outcome]
       if (!canCreate.value) return
@@ -172,12 +183,17 @@ async function create() {
     if (outcomes.value.every(row => row.done)) {
       success.value = t(recovering ? 'system.engine.sourceGrants.historyRecovered' : 'system.engine.sourceGrants.created')
       saving.value = false; emit('close'); emit('issued')
-    } else formError.value = t('system.engine.sourceGrants.partialFailure')
+    } else {
+      formError.value = t('system.engine.sourceGrants.partialFailure')
+      // A definite duplicate rejection is not an unknown issuance. Do not keep
+      // an immutable retry command that could later grant after withdrawal.
+      if (outcomes.value.every(row => row.done || row.terminal)) attempt.value = null
+    }
     await load()
   } catch (e) { if (epoch === generation && e !== 'cancel' && e !== 'close') formError.value = e?.message === 'invalidGrant' || e?.message === 'invalidEngineCatalogTarget' ? t('system.engine.sourceGrants.invalid') : message(e) }
   finally { if (epoch === generation) saving.value = false }
 }
-function openRevoke(row) { if (!canRevoke.value) return; revokeRow.value = row; revokeReason.value = ''; revokeError.value = ''; revokeVisible.value = true }
+function openRevoke(row) { if (!canRevoke.value || listMode.value !== 'current') return; revokeRow.value = row; revokeReason.value = ''; revokeError.value = ''; revokeVisible.value = true }
 async function revoke() {
   if (revoking.value || !canRevoke.value || !revokeRow.value) return
   const reason = revokeReason.value.trim(), row = revokeRow.value, epoch = generation
@@ -186,7 +202,7 @@ async function revoke() {
   try {
     const result = await enginesAPI.revokeSourceGrant(props.engine.id, row.request_id, reason)
     if (epoch !== generation) return
-    if (result?.request_id !== row.request_id || !result.revoked_at) throw new Error('invalidRevocation')
+    if (result?.request_id !== row.request_id || !result.revoked_at || !Array.isArray(result.revoked_request_ids) || !result.revoked_request_ids.includes(row.request_id)) throw new Error('invalidRevocation')
     revokeVisible.value = false; success.value = t('system.engine.sourceGrants.revoked'); await load()
   } catch (e) { if (epoch === generation) revokeError.value = message(e) }
   finally { if (epoch === generation) revoking.value = false }

@@ -50,6 +50,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			return Actor{TenantID: runtime.TenantID, PrincipalID: user.PrincipalID, MembershipID: user.MembershipID,
 				AuthorizationVersion: current.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}, delegation
 		}
+		cleanupActor, _ := qualified(t, 0)
 		issue := func(t *testing.T, binding shared.SharingFulfillmentBinding) *sourceGrant {
 			t.Helper()
 			id := uuid.New()
@@ -60,6 +61,16 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() {
+				if _, err := service.repository.findGrantRevocation(ctx, id); err == nil {
+					return
+				}
+				_, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: cleanupActor, EngineID: g.EngineID,
+					RequestID: id, Reason: "Close isolated withdrawal fixture"})
+				if err != nil && !errors.Is(err, ErrGrantRevocationExpired) {
+					t.Error(err)
+				}
+			})
 			return g
 		}
 		inputFor := func(actor Actor, id uuid.UUID) RevokeGrantInput {
@@ -235,7 +246,10 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 		t.Run("personal withdrawal leaves group and other personal Grants unchanged", func(t *testing.T) {
 			actor, _ := qualified(t, 0)
 			personal := issue(t, base)
-			other := issue(t, base)
+			otherRecipient, _ := newOperator(t, time.Hour)
+			otherBinding := base
+			otherBinding.RecipientID = otherRecipient.PrincipalID
+			other := issue(t, otherBinding)
 			organizations := iam.NewOrganizationService(iam.NewRepository(db), time.Now)
 			group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: runtime.TenantID,
 				ActorPrincipalID: adminID, Code: "withdrawal_fixture_group", Name: "Withdrawal fixture group"})
@@ -281,6 +295,9 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				b := base
 				if g == groupGrant {
 					b = binding
+				}
+				if g == other {
+					b = otherBinding
 				}
 				recovered, err := service.IssueFulfillmentGrant(ctx, runtime, g.RequestID, b)
 				if err != nil || recovered == nil || !recovered.GrantedAt.Equal(g.GrantedAt) {
@@ -539,8 +556,8 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			defer tx.Rollback()
 			row.RevokedByMembershipID, row.RevokedAt = actor.MembershipID, time.Unix(1, 0)
 			if err := tx.Raw(`INSERT INTO system.engine_access_grant_revocations
-				(request_id,revoked_by_principal_id,revoked_by_membership_id,revoked_at,reason)
-				VALUES (?,?,?,?,?) RETURNING *`, row.RequestID, row.RevokedByPrincipalID, row.RevokedByMembershipID, row.RevokedAt, row.Reason).Scan(row).Error; err != nil {
+				(request_id,revoked_by_principal_id,revoked_by_membership_id,revoked_at,reason,revoked_request_ids)
+				VALUES (?,?,?,?,?,jsonb_build_array(?::uuid)) RETURNING *`, row.RequestID, row.RevokedByPrincipalID, row.RevokedByMembershipID, row.RevokedAt, row.Reason, row.RequestID).Scan(row).Error; err != nil {
 				t.Fatal(err)
 			}
 			if row.RevokedAt.Before(g.GrantedAt) {

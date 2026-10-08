@@ -52,6 +52,42 @@ def test_platform_definition_references_real_tools_and_owner_skill():
     assert "tenant_id" not in context
 
 
+def test_platform_catalog_contract_and_delegated_sdk():
+    context = json.loads((ROOT / "ontology/backend/internal/platform/transfer.json").read_text())
+    context["digest"] = "a" * 64
+    catalog = {"schema_version": "addp.platform-capability-catalog/v1", "capabilities": [context]}
+    definition = get_tool("platform.capabilities.list")
+    validator = Draft202012Validator(definition.output_schema)
+    assert not list(validator.iter_errors(catalog))
+    assert not list(validator.iter_errors({**catalog, "capabilities": []}))
+    assert list(validator.iter_errors({**catalog, "capabilities": [context] * 33}))
+    assert list(Draft202012Validator(definition.input_schema).iter_errors({"query": "transfer"}))
+    invalid = copy.deepcopy(catalog)
+    invalid["capabilities"][0]["operation"]["endpoint"] = "/private"
+    assert list(validator.iter_errors(invalid))
+
+    async def run():
+        executor = ToolExecutor("http://gateway", "user-token")
+        async def issue(tool, *, agent_run_id, tool_call_id):
+            assert tool.name == "platform.capabilities.list"
+            assert tool.auth.required_scopes == ["platform.capabilities.list"]
+            assert (agent_run_id, tool_call_id) == ("run", "catalog")
+            return "addp_dat_catalog"
+        executor._issue_delegated_token = issue
+        def owner(request):
+            assert request.url.path == "/api/v1/ontology/platform/capabilities"
+            assert request.headers["Authorization"] == "Bearer addp_dat_catalog"
+            return httpx.Response(200, json=catalog)
+        def client_factory(client_type, token):
+            assert client_type is OntologyClient and token == "addp_dat_catalog"
+            client = client_type("http://gateway", user_token=token)
+            client._client._transport = httpx.MockTransport(owner)
+            return client
+        executor._client = client_factory
+        return await executor.call("platform.capabilities.list", {}, agent_run_id="run", tool_call_id="catalog")
+    assert asyncio.run(run()) == catalog
+
+
 def test_transfer_create_schema_rejects_schedules_credentials_and_other_modes():
     validator = Draft202012Validator(get_tool("transfer.task.create").input_schema)
     valid = task_arguments()

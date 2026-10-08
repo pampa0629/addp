@@ -32,6 +32,7 @@ func RegisterEngineAccessGrantRoutes(api *gin.RouterGroup, runtime *IAMRuntime, 
 	routes.Use(runtime.Authentication, runtime.UserAccessCredential, tenant)
 	routes.POST("", create, handler.Create)
 	routes.GET("", read, handler.List)
+	routes.GET("/history", read, handler.History)
 	routes.POST("/:request_id/revoke", revoke, handler.Revoke)
 	return nil
 }

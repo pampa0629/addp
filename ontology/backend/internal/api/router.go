@@ -18,7 +18,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisions RevisionCommands, issuer service.ExecutionAuthorizationIssuer) *gin.Engine {
+func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisions RevisionCommands, platformDefinitions PlatformContextReader, issuer service.ExecutionAuthorizationIssuer) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), commoni18n.I18nMiddleware())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -26,7 +26,8 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 	router.Use(lifecycle.RequireReady())
 	api := router.Group("/api/v1/ontology")
 	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}), commonauth.MustNewContextGuard("tenant"))
-	h := &Handler{revisions: revisions, issuer: issuer}
+	h := &Handler{revisions: revisions, platformDefinitions: platformDefinitions, issuer: issuer}
+	api.GET("/platform/capabilities", semanticBoundary("platform.capabilities.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.PlatformCapabilities)
 	api.GET("/platform/capabilities/:capability", semanticBoundary("platform.capability.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.PlatformCapabilityContext)
 	api.GET("/ontologies/:ontology_id/semantic/classes", semanticBoundary("ontology.classes.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ListClasses)
 	api.GET("/ontologies/:ontology_id/semantic/classes/:class_id", semanticBoundary("ontology.class.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ClassContext)

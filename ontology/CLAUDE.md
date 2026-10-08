@@ -4,7 +4,7 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 
 ## 已确认的设计与依赖边界
 
-2026-10-03 明确三层：平台能力语义辅助 Agent 选择功能，租户领域语义说明业务概念与规则，运行时业务事实支撑具体对象判断。当前覆盖原生 Tenant 定义、手工假设性试算及首个代码发布的平台 Transfer 能力定义；PG/FalkorDB 平台本体管理、专业来源引用、本体数据绑定和可信业务事实求值仍未实现。
+2026-10-03 明确三层：平台能力语义辅助 Agent 选择功能，租户领域语义说明业务概念与规则，运行时业务事实支撑具体对象判断。当前覆盖原生 Tenant 定义、手工假设性试算及首个平台 Transfer 能力定义的部署发布和 PG 消费；平台管理员查看、专业来源引用、本体数据绑定和可信业务事实求值仍未实现。
 
 Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 System 外，不假定任何业务模块存在或被用户使用。Meta、Standard、Model、Quality、Catalog、Manager、Develop、Service、Agent 等只在使用其能力的请求中经正式 Client SDK/API 协作，不进入启动/Ready 检查。远端不可达、无权限、没有内容和版本变化按 owner 契约明确表达，不自动换源、不把错误当作无数据。
 
@@ -12,7 +12,9 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
-平台能力的 PG 内部记录使用独立的 `platform_capabilities`、`platform_revisions`、`platform_revision_events`，迁移 004。严格比较最后修订基线，允许代码部署跳过修订号；完整规范化 TEXT 快照、摘要和平台主体审计同事务存入，修订/审计不可更新或删除。记录本身不是授权或发布入口，不使用 Tenant Actor。迁移 005/schema 5 增加同步平台发布投影及审计、机器发布 generation fencing 和 active 指针；尚未装配启动自动导入或运行消费切换，也不提供在线编辑。测试复用现有 PostgreSQL 门禁及 from 1/2/3/4 升级测试，详见设计契约 1.8–1.10。
+平台能力目录 `GET /platform/capabilities` / `platform.capabilities.list` 从同一只读 PG 快照列出完整核验的 active 定义，按 capability 升序，最多 32 项和 128 KiB；未激活不列出，空目录为成功空数组，损坏或超限整次失败，不截断/跳过/换源。沿用 `ontology.semantic.read` 和精确委托，拒绝 query、不缓存、不证明业务操作权限。Agent 以目录语义选择能力，再核对 Skill/Tool 装配；当前仅 Transfer 创建，真实短输入验收待重启后执行。门禁沿用 Go、Ontology PostgreSQL、Agent eval、授权与 Swagger 标准入口，无新增依赖或 CI Job。详见设计契约 1.12。
+
+平台能力的 PG 内部记录使用独立的 `platform_capabilities`、`platform_revisions`、`platform_revision_events`，迁移 004。严格比较最后修订基线，允许代码部署跳过修订号；完整规范化 TEXT 快照、摘要和平台主体审计同事务存入，修订/审计不可更新或删除。记录本身不是授权或发布入口，不使用 Tenant Actor。迁移 005/schema 5 增加同步平台发布投影及审计、机器发布 generation fencing 和 active 指针；启动自动发布及唯一 PG active 消费已装配，不提供在线编辑。测试复用现有 PostgreSQL 门禁及 from 1/2/3/4 升级测试，详见设计契约 1.8–1.11。
 
 `internal/platform` 唯一管理代码发布的 Transfer 能力定义，包含概念、关系、前置条件、效果、修订与摘要。2026-10-08 确认先不提供平台管理员在线修订。定义经唯一 `Compile` 路径严格校验，形成绑定 `addp.platform-definition/v1` 与编译器版本的不可变快照；`Restore` 拒绝损坏、非规范及旧版本内容，不自动升级或退回源文件。Transfer 修订 2 的摘要绑定完整快照，限制与测试范围见设计契约 1.7；快照不是平台发布授权、PG published 或图 ready 凭证。`platform.capability.context` 通过 `GET /platform/capabilities/transfer.task.create` 返回 `knowledge_kind=platform_definition`；不伪造 Tenant 本体或运行可用性，不查询业务数据。现有 `ontology.semantic.read` 与精确 Tool scope 控制读取。定义中的 Tool/Skill 引用由 Manifest 和根 Skill 校验，不复制权限、HTTP 地址或凭据。
 
@@ -65,7 +67,7 @@ Console `/ontology/ontologies/:ontology_id/trial` 提供当前激活规则试算
 - `Build` 原子保留空 generation，拒绝覆盖已有图；分阶段写入后由 `Verify` 比较摘要、完整成员/边集合及总数。失败可能留下部分图，不能据此激活；清理必须由后续 PG owner 核实引用与 lease 后协调，不在取消路径直接删除仍可能写入的图。
 - 适配不是授权器。执行器在构建前核实授权和租约，在激活前再次核实取消、撤回、授权、lease/fencing 和激活基线。网络授权调用不能置于 PG 行锁事务中；owner 统一按本体头、修订、投影、execution 加锁，最后终态写入再次核实数据库时间。当前不提供任意 Cypher API，也没有跳过准入直接图写入的旁路。
 
-System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修订、摘要与 generation；`addp-ontology` 的 Tenant Runtime 只有 `system.execution_authorization.execute`，Platform Runtime 只有自身模块注册权限。消费接口验证当前 running attempt/token 和 User 授权版本，不能消费引擎连接。System 启动需要独立 `ONTOLOGY_SERVICE_CLIENT_SECRET`。
+System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修订、摘要与 generation；`addp-ontology` 的 Tenant Runtime 只有 `system.execution_authorization.execute`，Platform Runtime 只有自身模块注册及固定平台定义发布权限。执行授权消费接口验证当前 running attempt/token 和 User 授权版本，不能消费引擎连接。平台定义发布不借用 Tenant 执行授权。System 启动需要独立 `ONTOLOGY_SERVICE_CLIENT_SECRET`。
 
 ### 管理 API 与部署
 
@@ -79,8 +81,9 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 - `INFRA_FALKORDB_ADDRESS` 宿主默认 `127.0.0.1:16479`，容器为 `falkordb:6379`；只读取独立 `INFRA_FALKORDB_PASSWORD`。构建、Compose、`start.sh -ontology`、`restart.sh -ontology` 已登记；前端开发端口 `5192`、Docker `8123:80`，Console 数据治理组入口 `/ontology/ontologies`。
 - 若本机已有忽略提交的 `go.work`，使用 `go work use ./ontology/backend` 纳入模块后再生成 Swagger/开发构建；T1 同时校验生成文档中的原生定义字段，拒绝只保留路由但请求类型变成空对象的假覆盖。
 - System 向前迁移 `000153` 登记 read/update 与 Platform Runtime，`000201` 仅为 `platform.ontology_runtime` 增加 `ontology.platform_definition.publish`；既有角色绑定触发器推进授权版本，不修改已发布迁移。Ontology owner 使用 schema v5。
-- 平台机器发布核验复用 Common System Client SDK，只接受已编译能力修订摘要；System 固定 `addp-ontology` Platform Service 凭据和发布权限，不接受 User/Tenant/委托凭据，不缓存授权观察。内部 Authorizer 尚未装配启动发布器，不表示发布激活完成，管理员无发布权限。详见设计契约 1.9。
-- `PlatformPublisher.Publish` 是最多 45 秒的内部同步机器入口：记录前、构图前、激活前均重新核验，同身份修订仅复用精确字节/摘要。每次使用新 generation；新尝试取代旧 building fence，旧尝试不能迟到激活；只激活最后记录修订，阻止旧部署回滚。复用唯一 Falkor Build/Verify，平台图使用 `ontology:p:`，包含概念、多语言名称及显式关系；完整操作契约仍在 PG。ready、active 和审计同事务提交，失败保留旧版本，取消不后台补写；没有 Tenant execution、自动重放或取消路径删图。PG `platform_publication` 子测试与 Falkor 门禁的 `platform_publication_real_graph` 自动覆盖，尚未接启动或 Agent 消费，详见 1.10。
+- 平台机器发布核验复用 Common System Client SDK，只接受已编译能力修订摘要；System 固定 `addp-ontology` Platform Service 凭据和发布权限，不接受 User/Tenant/委托凭据，不缓存授权观察。启动发布器已装配该 Authorizer，管理员无发布权限。详见设计契约 1.9、1.11。
+- `PlatformPublisher.Publish` 是最多 45 秒的内部同步机器入口：记录前、构图前、激活前均重新核验，同身份修订仅复用精确字节/摘要。每次使用新 generation；新尝试取代旧 building fence，旧尝试不能迟到激活；只激活最后记录修订，阻止旧部署回滚。复用唯一 Falkor Build/Verify，平台图使用 `ontology:p:`，包含概念、多语言名称及显式关系；完整操作契约仍在 PG。ready、active 和审计同事务提交，失败保留旧版本，取消不后台补写；没有 Tenant execution、自动重放或取消路径删图。PG `platform_publication` 子测试与 Falkor 门禁的 `platform_publication_real_graph` 自动覆盖，详见 1.10。
+- 启动先绑定 HTTP 并发起 System 注册，独立且退出时等待的 `PublishOnReady` 编译部署包、等待既有 Ready 后只发布一次；失败只记安全日志，不阻断 Tenant 功能，不自动重放。`GET /platform/capabilities/{capability}` 唯一消费 PG active：只读可重复读事务核对头、ready generation、摘要及激活基线，再 Restore；没有记录 404，尚未激活 409，损坏 500。响应字段及 32 KiB 限制不变，成功不可缓存，删除运行读取源 JSON 的旧方法。真实 System/Gateway/Agent 验收仍待加载新服务后进行，详见 1.11。
 
 ### 标准门禁
 

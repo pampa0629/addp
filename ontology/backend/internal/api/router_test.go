@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/authorization/authtest"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/ontology/internal/models"
+	"github.com/addp/ontology/internal/platform"
 	"github.com/addp/ontology/internal/repository"
 	"github.com/addp/ontology/internal/semantic"
 	"github.com/addp/ontology/internal/service"
@@ -21,22 +22,45 @@ import (
 
 type fakeCommands struct {
 	RevisionCommands
-	actor        models.Actor
-	scope        semantic.Scope
-	version      uint64
-	action       string
-	definition   semantic.Definition
-	err          error
-	admissionErr error
-	token        string
-	generation   string
-	calls        int
-	page         models.ListPage
-	trialFacts   map[string]semantic.Fact
+	actor           models.Actor
+	scope           semantic.Scope
+	version         uint64
+	action          string
+	definition      semantic.Definition
+	err             error
+	admissionErr    error
+	token           string
+	generation      string
+	calls           int
+	page            models.ListPage
+	trialFacts      map[string]semantic.Fact
+	platformCalls   int
+	platformContext platform.Context
+	platformErr     error
 }
 
 const generation = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 const executionID = "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+func (f *fakeCommands) PlatformCapabilityContext(_ context.Context, capability string) (platform.Context, error) {
+	f.platformCalls++
+	if f.platformErr != nil {
+		return platform.Context{}, f.platformErr
+	}
+	if capability != f.platformContext.Capability {
+		return platform.Context{}, repository.ErrNotFound
+	}
+	return f.platformContext, nil
+}
+
+func (f *fakeCommands) PlatformCapabilities(_ context.Context) (platform.Catalog, error) {
+	f.platformCalls++
+	items := []platform.Context{}
+	if f.platformContext.Capability != "" {
+		items = append(items, f.platformContext)
+	}
+	return platform.Catalog{SchemaVersion: "addp.platform-capability-catalog/v1", Capabilities: items}, f.platformErr
+}
 
 func (f *fakeCommands) record(a models.Actor, s semantic.Scope, version uint64) (*models.Revision, error) {
 	f.calls++
@@ -96,7 +120,7 @@ func testRouter(t *testing.T, f *fakeCommands, ac authorization.AuthContext, rea
 	}))
 	t.Cleanup(system.Close)
 	lifecycle := modulelifecycle.NewStandalone("ontology", modulelifecycle.StaticCheck("test", ready, "test_unavailable"))
-	return SetupRouter(system.URL, lifecycle, f, nil)
+	return SetupRouter(system.URL, lifecycle, f, f, nil)
 }
 func perform(r http.Handler, method, path, body, token, lang string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()

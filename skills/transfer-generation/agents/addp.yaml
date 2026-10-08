@@ -1,4 +1,5 @@
 schema: addp.skill-runtime/v1
+platform_routed: true
 required_skills:
   - data-discovery
 required_tools:

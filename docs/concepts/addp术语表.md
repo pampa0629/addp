@@ -503,7 +503,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属；创建即启用，关闭后不可恢复。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
-| Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。源数据撤销针对指定 Grant，只收回这一授权来源；其他独立有效 Grant 不受影响。自然到期不是主动撤销，到期后不追加首次撤销；到期前已撤销的同参数重试仍可在当前资格有效时找回原记录。对精确资源动作无条件禁止访问使用 Explicit Deny，不借撤销个人 Grant 删除项目组 Grant。 |
+| Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。源数据日常管理按授权关系聚合，撤销收回该关系全部有效 Grant，保留每份历史；个人撤销不删除部门／项目组 Grant。自然到期不是主动撤销，到期后不追加首次撤销；原撤销同参数重试只恢复历史，不收回后来新授予。无条件禁止精确资源动作使用 Explicit Deny。 |
+| source data authorization relation | 源数据授权关系 | 同租户、精确源目标、接收方类型／编号与动作对应的当前有效授权来源集合。 | 从 System 不可变 Grant 与撤销事实派生，不是第二份 ACL 或访问凭据；有效期未结束且未撤销的存量重复合并展示，新命令不重复发放。个人、部门和项目组是不同关系。当前关系存在不替代实际读取时的功能权限、主体资格、Deny 和安全检查。 |
 | source data authorization authority | 源数据授权权威 | 同一源数据逻辑资源访问规则的唯一维护方。 | 由 System 的引擎访问控制领域承担，不是 System IAM 的全平台中央 ACL；精确源规则统一保存在不可变 Grant，Catalog 回执仅作为一种批准来源，不是另一份读取规则。访问模块消费同一权威裁决，不分别维护源数据授权副本；专业业务对象的授权仍归各自 owner。 |
 | source data authorization target | 源数据授权目标 | 在 Tenant 边界内，以已登记 Engine 身份和完整结构化 EngineCatalogPath 确定的源数据逻辑资源。 | 不是物理对象每次创建的身份；没有在 ADDP 中改变资源绑定或授权时，外部同名重建仍按同一逻辑资源处理。不同 Engine 或路径是不同目标，不随 Catalog 重绑自动转移规则；指纹、Meta 行 ID 和 CatalogEntry ID 不代替当前有效访问规则。 |
 | source authorization approval requirement | 源数据授权批准要求 | System 引擎访问控制领域针对一个精确源数据目标保存的、新授权所需批准依据的版本化事实。 | 首次显式选择业务批准或直接批准；已有安排通过同一要求资源的版本化更新明确切换，不影响既有 Grant。切换需独立更新 Permission 与当前引擎管理资格，默认仅引擎授权管理员持有；切到直接批准还须当前操作人具备直接授权能力，并记录为当次承接人。不复制 Catalog 责任人、部门或责任历史，不是 Resource Grant，也不因保存业务负责人、模块注册、停用或失联自动切换。承接人只用于当前资格核验和审计，不构成永久唯一审批人或第二份账号白名单，不因此获得内容读取权。未建立权威事实不等于已允许直接批准；首次配置需独立初始化 Permission 与当前引擎管理资格，不能由编目维护权推导。 |
@@ -661,8 +662,9 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | domain ontology | 领域本体 | Tenant 对领域类、属性、关系特征和分类条件形成的显式语义体系。 | 目标由 Ontology 管理自有事实并引用 Standard、Model 权威定义；不要求 RDF/OWL，不复制业务数据。 |
-| platform capability semantics | 平台能力语义 | ADDP 平台概念、功能、操作及其关联的语义说明，用于将用户意图对应到 Skill、Tool 和模块能力。 | 已有随代码发布的 Transfer 创建能力定义，以及内部 PG 修订与 FalkorDB 安全发布内核；启动自动发布和运行消费切换尚未接入。定义中的能力必须结合当前模块可用性和用户权限判断，不能据此认定可执行。 |
-| platform ontology | 平台本体 | 对 ADDP 平台概念、关系、操作条件、效果与限制进行显式组织并版本化发布的语义定义。 | 由 Ontology 管理；平台开发者在 Git 中维护，PG 管理运行时权威修订与激活，FalkorDB 保存派生投影。独立于 Tenant 本体，不使用 Tenant=0，也不保存具体业务任务或执行实例。当前有 Transfer 最小定义及内部发布内核，尚未完成自动部署发布、消费切换与管理员查看。 |
+| platform capability semantics | 平台能力语义 | ADDP 平台概念、功能、操作及其关联的语义说明，用于将用户意图对应到 Skill、Tool 和模块能力。 | 已有随代码发布的 Transfer 创建能力定义、内部 PG 修订、FalkorDB 安全发布与启动自动发布；运行消费唯一读取 PG active，Agent 经平台能力目录选择相应 Skill/Tool。定义中的能力必须结合当前模块可用性和用户权限判断，不能据此认定可执行；真实短输入链路待验收。 |
+| platform ontology | 平台本体 | 对 ADDP 平台概念、关系、操作条件、效果与限制进行显式组织并版本化发布的语义定义。 | 由 Ontology 管理；平台开发者在 Git 中维护，PG 管理运行时权威修订与激活，FalkorDB 保存派生投影。独立于 Tenant 本体，不使用 Tenant=0，也不保存具体业务任务或执行实例。当前有 Transfer 最小定义、启动部署发布及唯一 PG active 消费；管理员查看与真实 Agent 发布消费验收尚未完成。 |
+| platform capability catalog | 平台能力目录 | 从同一运行时读取快照中列出的已激活平台能力语义集合，用于理解用户目标与选择操作。 | Ontology 提供已核验定义，Agent 根据语义选择能力并校验其 Skill/Tool 引用；不是 HTTP 接口清单、授权目录或运行时可用性证明。只纳入已发布能力，不能据未匹配判断整个模块不存在。 |
 | semantic source reference | 语义来源引用 | 将语义定义成员与其正式规范、公开契约或实现依据连接起来的可追溯引用，记录来源 owner、身份、用途及确定版本或内容摘要。 | 不等于本体数据绑定，不授予数据访问权；表结构是实现依据而非自动生成本体的充分条件，来源副本不可独立编辑。目标契约见 Ontology 最小设计契约 1.4–1.6，平台来源引用尚未实现。 |
 | tenant domain semantics | 租户领域语义 | Tenant 明确建设或从专业 owner 引用的业务概念、关系、口径和规则。 | 可在 Ontology 自有建模，也可引用 Standard、Model 等 owner；Meta 结构、Quality 结果和 Catalog 责任是相关专业事实，不自动成为本体定义。其他业务模块均不是领域本体建模的前置。 |
 | runtime business fact | 运行时业务事实 | 在确定授权、读取时点和观察范围内，由数据读取 owner 提供的具体对象值、状态或关系观察。 | 必须保留对象身份、来源与覆盖范围；动态事实不属于本体定义修订，不要求复制到 Infra 图库。未读取、无权限和未完整观察不能当作不存在。 |

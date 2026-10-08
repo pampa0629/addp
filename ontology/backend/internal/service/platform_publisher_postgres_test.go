@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"github.com/addp/ontology/internal/models"
 	"github.com/addp/ontology/internal/platform"
 	"github.com/addp/ontology/internal/repository"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -51,6 +54,115 @@ func testPlatformPublication(t *testing.T, db *gorm.DB) {
 	if err := db.Model(&models.Projection{}).Count(&tenantProjectionsBefore).Error; err != nil {
 		t.Fatal(err)
 	}
+	t.Run("runtime_reads_only_active_pg_snapshot", func(t *testing.T) {
+		capability := "transfer.task.runtime_read"
+		reader := NewPlatformRevisionService(repo)
+		if _, err := reader.PlatformCapabilityContext(ctx, capability); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatal(err)
+		}
+		snapshot := platformTestSnapshot(t, capability, 7)
+		if _, err := repo.Store(ctx, actor, snapshot, 0); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reader.PlatformCapabilityContext(ctx, capability); !errors.Is(err, repository.ErrNotActive) {
+			t.Fatal("record alone became active", err)
+		}
+		catalog, err := reader.PlatformCapabilities(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range catalog.Capabilities {
+			if item.Capability == capability {
+				t.Fatal("inactive definition entered catalog")
+			}
+		}
+		if err := publisher(testPlatformGraph{}, auth).PublishOnReady(ctx, func() bool { return true }, func() (*platform.Snapshot, error) { return snapshot, nil }); err != nil {
+			t.Fatal(err)
+		}
+		want, _ := snapshot.Context()
+		got, err := reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("wrong PG snapshot", got, err)
+		}
+		catalog, err = reader.PlatformCapabilities(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for i, item := range catalog.Capabilities {
+			if i > 0 && catalog.Capabilities[i-1].Capability >= item.Capability {
+				t.Fatal("catalog not deterministically ordered")
+			}
+			if item.Capability == capability {
+				found = reflect.DeepEqual(item, want)
+			}
+		}
+		if !found {
+			t.Fatal("active definition not consumed by catalog")
+		}
+		got.Concepts[0].Name["en"] = "mutated"
+		got, err = reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("shared mutable read", err)
+		}
+		next := platformTestSnapshot(t, capability, 8)
+		if _, err := repo.Store(ctx, actor, next, 7); err != nil {
+			t.Fatal(err)
+		}
+		got, err = reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("latest record replaced active", err)
+		}
+		g := testPlatformGraph{verify: func(context.Context, *falkor.Projection) error { return falkor.ErrProtocol }}
+		if _, err := publisher(g, auth).Publish(ctx, next); err == nil {
+			t.Fatal("verification failure published")
+		}
+		got, err = reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("failed candidate replaced active", err)
+		}
+		if _, err := publisher(testPlatformGraph{}, auth).Publish(ctx, next); err != nil {
+			t.Fatal(err)
+		}
+		got, err = reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || got.Revision != 8 || got.Digest != next.Digest() {
+			t.Fatal("new active invisible", got, err)
+		}
+	})
+	t.Run("runtime_rejects_corrupt_active_snapshot_without_source_fallback", func(t *testing.T) {
+		// A privileged fixture installs a valid-hash but noncanonical record.
+		// No triggers or integrity constraints are bypassed.
+		capability := "transfer.task.corrupt_runtime"
+		snapshot := platformTestSnapshot(t, capability, 2)
+		payload := " " + string(snapshot.CanonicalJSON())
+		hash := sha256.Sum256([]byte(payload))
+		digest := hex.EncodeToString(hash[:])
+		if err := db.Create(&models.PlatformCapability{Capability: capability, LastRevision: 2}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&models.PlatformRevision{Capability: capability, Revision: 2, Payload: payload, Digest: digest}).Error; err != nil {
+			t.Fatal(err)
+		}
+		generation := uuid.NewString()
+		if err := db.Create(&models.PlatformProjection{Capability: capability, Revision: 2, Digest: digest, Generation: generation, Status: "building"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.PlatformCapability{}).Where("capability=?", capability).Update("publish_generation", generation).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.PlatformProjection{}).Where("generation=?", generation).Update("status", "ready").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.PlatformCapability{}).Where("capability=?", capability).Updates(map[string]any{"active_revision": 2, "active_generation": generation, "activation_version": 1}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewPlatformRevisionService(repo).PlatformCapabilityContext(ctx, capability); !errors.Is(err, repository.ErrIntegrity) {
+			t.Fatal("corrupt active exposed", err)
+		}
+		if _, err := NewPlatformRevisionService(repo).PlatformCapabilities(ctx); !errors.Is(err, repository.ErrIntegrity) {
+			t.Fatal("corrupt active skipped in catalog", err)
+		}
+	})
 	t.Run("exact_release_reuse_and_three_fresh_checks", func(t *testing.T) {
 		snapshot := platformTestSnapshot(t, "transfer.task.publish", 2)
 		stages := []string{}

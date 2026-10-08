@@ -3,7 +3,11 @@ package platform
 import "testing"
 
 func TestPlatformDefinitionIsBoundedAndIndependentOfTenant(t *testing.T) {
-	a, err := TransferContext()
+	snapshot, err := CompileTransferRelease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := snapshot.Context()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +27,7 @@ func TestPlatformDefinitionIsBoundedAndIndependentOfTenant(t *testing.T) {
 		}
 	}
 	a.Concepts[0].Name["en"] = "mutated"
-	b, err := TransferContext()
+	b, err := snapshot.Context()
 	if err != nil || b.Concepts[0].Name["en"] == "mutated" || a.Digest != b.Digest {
 		t.Fatal("read modified the published definition")
 	}

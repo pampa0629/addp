@@ -12,6 +12,8 @@ Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话�
 
 平台级 Tool、交互和评测契约分别以 `docs/spec/addp智能体Tool开放规范.md`、`docs/spec/addp智能体交互协议规范.md`、`docs/spec/addp智能体评测规范.md` 为事实源；本文只记录 Agent 模块实现和运行约束。
 
+平台语义选择：`platform_routed=true` 的任务领域先识别是否需查询目录，再用 `platform.capabilities.list` 读取 Ontology 已激活定义，LLM 根据概念/条件/效果选择 capability，Runtime 核验 owner、Skill 与 Tool 白名单后才进入领域 Harness。不接受模型直接选择该 Skill，不从空目录选择首项，目录失败终止相关 run；普通对话及其他 Skill 不依赖 Ontology。当前仅 Transfer 创建切片启用。`tests/test_platform_routing.py` 用短业务输入验证消费与拒绝边界，是脚本化模型 T1，不宣称真实 LLM 或 T4 已验收。
+
 ## 目录结构
 
 ```

@@ -25,13 +25,11 @@ func (platformPublicationTokenSource) PlatformToken(context.Context) (string, er
 }
 
 func TestPlatformPublicationAuthorizerChecksEachExactSnapshotWithoutTenantIdentity(t *testing.T) {
-	definition, err := platform.TransferContext()
+	snapshot, err := platform.CompileTransferRelease()
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition.Digest = ""
-	source, _ := json.Marshal(definition)
-	snapshot, err := platform.Compile(source)
+	definition, err := snapshot.Context()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,6 +26,7 @@ class AgentState(TypedDict):
     # 路由决策（由 _route_node 填充）
     routed_skill: Optional[str]   # 技能名称；None 表示无需技能
     direct_reply: Optional[str]   # 无需技能时的直接回复内容（来自同一次 LLM 调用）
+    needs_platform_semantics: NotRequired[bool]
 
 
 class TaskContext(TypedDict):
@@ -51,6 +52,10 @@ class RouteDecision(BaseModel):
             "如果不需要技能则为 null。"
         ),
     )
+    needs_platform_semantics: bool = Field(
+        default=False,
+        description="用户目标属于平台语义任务领域时为 true，此时 skill 和 direct_reply 都为 null，必须先读取平台能力目录。",
+    )
     direct_reply: Optional[str] = Field(
         default=None,
         description=(
@@ -58,3 +63,8 @@ class RouteDecision(BaseModel):
             "如果 skill 不为 null，此字段为 null。"
         ),
     )
+
+
+class PlatformRouteDecision(BaseModel):
+    capability: Optional[str] = Field(default=None, description="从 owner 返回的目录选择唯一能力身份；不能编造，无匹配或有歧义时为 null。")
+    direct_reply: Optional[str] = Field(default=None, description="不能选择唯一能力时，用中文解释支持边界或询问业务意图；选中能力时为 null。")
