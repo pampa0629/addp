@@ -1272,3 +1272,13 @@ Hosted 归档证据：`online-report.json` 的预检和三个后端构建均对�
 后端分项 `make test-go` 完整通过 22 个 Go 模块，包含当前 Monitor 资源目录、API、预算和三族规范化；`make test-monitor-postgres` 在实际核实的 `addp-postgres:25432/addp_test` 返回 0，未创建其他 database。完整 `make test-module MODULE=monitor` 第二轮在平台 T0 的 Online 宿主脚本两项既有回归触发原 5 秒超时，退出 2，未进入后续 Monitor 步骤；随后沿 `scripts/test/online-host-gate_test.py` 原断言复跑 39 项返回 0，未改脚本或延长超时。整条平台门禁再次复验，指标 T2 继续执行；两者取得完整结果前不计为通过。
 
 最终指标分项 `make test-monitor-metrics` 返回 0：11 个网络窗口/重置场景、11 个磁盘、15 个 CPU、18 个字节容量及 22 个 inode 场景通过；完整采集夹具的 11 个接口具备有界即时组、精确接口的两条趋势及跨节点隔离，18 个磁盘设备回归正常。该夹具不作为个人 Desktop VM 网络命名空间证明。实际 Docker Desktop 受限阶段返回零网络/磁盘设备及空值，没有伪造零速率；六采集器、唯一宿主传输、新样本恢复正常。中心 SIGKILL 后先前样本重放、独立夹具可用及零容器/网络/卷/临时文件残留均通过。整条平台门禁重试仍在运行，真实 Hosted T4 尚未执行，生产 T5 未执行。
+
+平台门禁后续结果：在原断言和原超时下独立重跑 `make test-platform` 完整返回 0，包含当前 Online runner 聚合、授权/常量一致性及全模块 Swagger 路由覆盖。之前完整模块入口的失败保留，不改记为该入口已通过；当前平台 T0、22 模块 Go T1、Monitor PostgreSQL/metrics T2、Monitor 前端 T1/T3 与构建、Console 前端及 Online runner 分项组合已取得成功证据。实现已以 `193c0e82e50211e0821d1dad9d6f531acbcfdc2c` 推送 main；核验远端相同 SHA 后调度既有 Hosted suite，真实结果取得后另行记录，不把调度或进行中计为通过。
+
+当前实现 CI 及 T4：上述完整提交的 [Platform CI（Run 37791001755）](https://github.com/pampa0629/addp/actions/runs/37791001755) 成功，已核对 Go 工作区、平台一致性、Console 前端与 Monitor 前端实际执行步骤；[Release/T2（Run 37791001784）](https://github.com/pampa0629/addp/actions/runs/37791001784) 成功，Monitor PostgreSQL 与独立指标生命周期步骤均实际执行，不把其他按路径跳过的 Owner 门禁计为本批执行。[Hosted T4（Run 37791100970）](https://github.com/pampa0629/addp/actions/runs/37791100970) 成功，归档预检及 System/Gateway/Monitor 构建均对应完整提交 `193c0e82e50211e0821d1dad9d6f531acbcfdc2c`；suite、真实浏览器与下载后的既有闭合校验均为 passed，固定目录 22 项、密码/MFA、身份隔离、预算 CAS/热生效、自动刷新、URL 恢复、故障后新样本与停用后历史排除分别通过。
+
+网络实际证据：原生 Linux 来源即时返回 16 个接口、32 条收发序列，包含桥接、虚拟与回环，不据名称推断物理接口或汇总吞吐。浏览器选择 `br-cbcd2c334a5a` 的接收、发送趋势，各有 21 个评估点、5 个有效点；有效零速率显示为 0.00 B/s，接入前空值保留断点，未生成流量或把零速率解释为缺失。页面网络区域同时展示其他接口的 B/s、KiB/s 数值，发送趋势纵轴为 B/s；概览显示内存 15.61 GiB、时长“15分钟 59秒钟”，系统平均负载为无单位任务数量。84 个真实资源响应低于 120 上限，七张 PNG 归档齐全，网络及概览截图已人工复核。
+
+最终清理及边界：外层 `summary.txt` 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals；内层 awaiting-hosted-deployment-destruction 是外层销毁前记录，不能单独充当清理成功。下载归档共 36 个文件，无 .env/.pem/.key，私钥、JWT、OTP URI 与 Bearer 值模式扫描无命中。本轮完成原生 Linux 接口收发吞吐及趋势的真实 T4，不将该数据冒充个人 Desktop VM 数据；Desktop 的 netdev 仍未启用，网络区域应显示采集缺失说明。个人 Monitor 后端须由用户执行 `./scripts/dev/restart.sh -monitor` 加载新增目录，本轮未自行重启个人应用或 Infra。生产 T5 未执行，完整模块入口失败与跨 Owner 默认预检失败仍分别保留。
+
+归档后仅补充本节与 Monitor 模块说明，默认 `make test-changed` 再次因并行共享认证等改动扩散所需的 PostgreSQL/MySQL 连接条件缺失在预检退出 2，后续门禁未执行，不计为通过。本批证据文档未改变上述已验收的源码输入；最后 `git diff --check` 通过，提交仅包含本批两份文档的验收记录。
