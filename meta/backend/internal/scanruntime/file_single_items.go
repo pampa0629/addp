@@ -38,6 +38,9 @@ func (s *FilesystemCatalogRuntime) scanSingleFileItem(input fileSingleItemScanIn
 		s.log.Warn("查询文件对象失败", "path", input.file.Path, "error", findErr)
 	}
 	if itemExists && !input.force && !fileItemNeedsScan(existingItem, input.file, input.isDeepScan) {
+		if s.indexer != nil {
+			s.indexer.IndexTechnicalMetadata(input.ctx, input.resource, input.tenantID, input.parentNode, existingItem)
+		}
 		return fullName, true, scanflow.ExtractionCounts{}, findErr
 	}
 

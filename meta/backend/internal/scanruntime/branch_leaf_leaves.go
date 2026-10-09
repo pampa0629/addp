@@ -91,6 +91,9 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		}
 
 		if existingItem != nil && !needsUpdate {
+			if s.indexer != nil {
+				s.indexer.IndexTechnicalMetadata(ctx, resource, tenantID, branchNode, existingItem)
+			}
 			totalItems++
 			continue
 		}
@@ -153,6 +156,11 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			sizeBytes = 0
 		}
 
+		if itemType == "collection" && !strings.EqualFold(scanDepth, "deep") && existingItem != nil {
+			// Basic scans refresh catalog summaries without discarding registered deep structure.
+			attrs = cloneJSONMap(existingItem.Attributes)
+			rowCount = existingItem.RowCount
+		}
 		if attrs == nil {
 			attrs = models.JSONMap{}
 		}
@@ -170,11 +178,14 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			rowCount = existingItem.RowCount
 		}
 
-		_, err := s.repo.UpsertItemWithDepth(tenantID, resource.ID, branchNode, itemType, itemName, fullName, attrs, rowCount, &sizeBytes, nil, scanDepth)
+		item, err := s.repo.UpsertItemWithDepth(tenantID, resource.ID, branchNode, itemType, itemName, fullName, attrs, rowCount, &sizeBytes, nil, scanDepth)
 		if err != nil {
 			s.log.Warn("保存 branch leaf 元数据失败", "branch", branchName, "item", itemName, "item_type", itemType, "error", err)
 			failures.Add(branchName+"."+itemName, err)
 			continue
+		}
+		if s.indexer != nil {
+			s.indexer.IndexTechnicalMetadata(ctx, resource, tenantID, branchNode, item)
 		}
 
 		totalItems++

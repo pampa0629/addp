@@ -45,6 +45,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     }
     if (path.endsWith('/access_grants/inspection')) {
       const body = request.postDataJSON(); inspections.push(body)
+      if (typeof body.catalog_path?.engine_id !== 'number' || typeof body.account_id !== 'string') return reply({ error: '无效的请求参数' }, 400)
       if (inspectionDenied) return reply({ error: '本引擎管理资格不足', error_code: 'forbidden' }, 403)
       return reply({ account_id: body.account_id, catalog_path: body.catalog_path, observed_at: '2026-10-09T08:00:00Z', rule_covered: inspectionReason === 'grant', reason: inspectionReason,
         sources: ['grant', 'explicit_deny'].includes(inspectionReason) ? ['user', 'department', 'project_group'].map(recipient_type => ({ recipient_type, recipient_id: '33', expiry_mode: 'until_revoked', expires_at: null, grant_count: 1 })) : [] })
@@ -135,7 +136,7 @@ test('account inspection reuses the selected exact table and shows all three sou
   await expect(panel.getByTestId('inspection-sources')).toContainText('Outdoor reader')
   await expect(panel.getByTestId('inspection-sources')).toContainText('Outdoor department')
   await expect(panel.getByTestId('inspection-sources')).toContainText('Outdoor team')
-  expect(inspections).toEqual([{ account_id: '33', catalog_path: { ...tablePath, engine_id: '2' } }])
+  expect(inspections).toEqual([{ account_id: '33', catalog_path: tablePath }])
   expect(writes).toEqual([])
   await panel.screenshot({ path: '/tmp/addp-account-inspection.jpg' })
   await panel.getByTestId('inspection-account').hover()

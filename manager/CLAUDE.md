@@ -82,6 +82,8 @@ manager/
 
 ## 核心 API
 
+内容索引写入使用同一 fingerprint 下的两类独立快照：`technical_metadata` 只更新技术字段，`extracted_content` 经原有保护后只更新正文及派生字段；两者通过 Meilisearch 部分文档更新并存，重复与交错提交不互相覆盖。所属字段必须包含空值以清除旧事实；入站 `payload_kind` 不写为合并文档类别。投递持久化、保护版本检查、任务关联和终态核查保持同一正式路线。正文请求的名称与类型只用于身份上下文；技术／正文时间分别为 `projection_time`／`content_projection_time`。单项索引删除使用正式删除接口的 `document_id` 作用域，不得用 schema 清理替代。
+
 路由前缀：`/api/v1/manager`。
 
 - 数据探查：`GET /engines`；资源树事实读取、搜索和刷新统一使用 Meta `/api/v1/meta/resource-tree/:engine_id...`。

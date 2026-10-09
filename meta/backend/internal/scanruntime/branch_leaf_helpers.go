@@ -26,6 +26,10 @@ func (s *BranchLeafRuntime) softDeleteMissingItemsByType(tenantID, engineID, bra
 			)
 			if err := s.db.Delete(&item).Error; err != nil {
 				failures.Add(item.FullName, err)
+				continue
+			}
+			if s.indexer != nil {
+				s.indexer.DeleteItemFromIndex(tenantID, engineID, item.Fingerprint)
 			}
 		}
 	}

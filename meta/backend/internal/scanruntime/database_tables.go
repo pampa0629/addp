@@ -97,6 +97,9 @@ func (s *DatabaseRuntime) scanTables(
 		}
 
 		if existingItem != nil && !needsUpdate {
+			if s.tableIndexer != nil {
+				s.tableIndexer.IndexTechnicalMetadata(ctx, resource, tenantID, schemaNode, existingItem)
+			}
 			s.log.Debug("表未变化，跳过更新",
 				"schema", schemaName,
 				"table", tableInfo.Name,
@@ -139,8 +142,8 @@ func (s *DatabaseRuntime) scanTables(
 			"item_id", item.ID,
 		)
 
-		if isDeepScan && s.tableIndexer != nil {
-			s.tableIndexer.IndexTableContent(ctx, resource, tenantID, schemaName, tableInfo, fields, item)
+		if s.tableIndexer != nil {
+			s.tableIndexer.IndexTechnicalMetadata(ctx, resource, tenantID, schemaNode, item)
 		}
 
 		totalTables++
@@ -231,9 +234,10 @@ func (s *DatabaseRuntime) deleteRemovedTables(
 					"error", err,
 				)
 				failures.Add(schemaName+"."+tableName, err)
+				continue
 			}
 			if s.tableIndexer != nil {
-				s.tableIndexer.DeleteTablesFromIndex(tenantID, engineID, schemaName)
+				s.tableIndexer.DeleteItemFromIndex(tenantID, engineID, item.Fingerprint)
 			}
 		}
 	}

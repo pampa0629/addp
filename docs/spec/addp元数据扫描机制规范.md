@@ -399,6 +399,18 @@ Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 
 Deep 扫描完成状态不写入 `attributes`。`attributes` 只表达从数据源抽取出的稳定事实，例如字段、children、文档结构、媒体信息、空间能力、正文抽取状态和索引引用；不表达“本次 deep scan 已经补齐完成”这类扫描过程状态。不得新增或继续使用 `metadata_extracted`、`deep_metadata_ready` 等 attributes 标记判断 deep 是否完成。
 
+### DataItem 技术元数据搜索投影
+
+Manager 独占全文搜索索引。所有已登记 DataItem 均应能按技术事实搜索，不按数据库厂商、catalog leaf 类型或扫描深度划分搜索资格。Meta 对 table、collection、graph、index、keyspace、topic、object、file 等 item 的 basic / deep 扫描落库和 known-item 单项刷新完成后，使用统一技术投影构造器，经 Manager 正式内容客户端提交；未变化而跳过更新的 item 也从当前已登记事实重新提交，不额外读取源记录或采样。引擎根、schema、database、bucket、目录等 node 不作为 DataItem 搜索文档。
+
+技术投影只通过明确字段白名单包含 fingerprint、引擎身份、catalog item 类型、名称、完整定位、所属命名空间或存储路径，以及已登记的字段名称、类型、注释和规模等事实。不传递完整 attributes、样本、原始记录、字段值或统计分布，不额外调用内容读取或采样 Provider。Meta 不再保留关系表、MongoDB 集合各自的投影构造路线；内容深度扫描使用同一技术事实构造器提交技术快照，再由既有内容路线独立提交正文快照。Manager 继续负责载荷校验、持久投递、保护出口和 Meilisearch 任务终态核查。Manager 是运行时软依赖；提交失败记录告警，不把元数据扫描完成解释为搜索索引已经完成。
+
+同一 fingerprint 的技术信息与正文信息必须并存，分别按完整快照幂等更新。正式 `PUT /api/v1/manager/runtime/content-documents/{document_id}` 以 `payload_kind` 选择字段归属；它是入站载荷类别，不是合并后文档的类别。技术快照覆盖名称、路径、类型、结构和规模字段，正文快照经原有 Security 保护后只覆盖正文、预览、内容 hash、标题、作者、关键词、标签、正文统计与正文派生 metadata。每个快照必须显式更新所属字段的空值，以清除该部分已失效的值；不得覆盖另一部分，提交顺序不得影响两部分并存的结果。身份字段固定为 fingerprint、Tenant 和 engine_id；正文请求中的名称与 catalog 类型只作为请求身份上下文，不更新技术字段。技术与正文的投影时间分别保存为 `projection_time` 和 `content_projection_time`。Meta 深度文件扫描分别提交已登记技术事实与正文，不把完整 attributes 作为正文 metadata 重复发送；basic 或未变化路径只提交技术快照。重复提交可能产生新的持久投递记录，但不能新增搜索文档或累积旧字段、旧正文。
+
+源条目消失后的索引删除必须按 fingerprint 精确作用于目标 DataItem；删除一个关系表时不得删除整个 schema 的有效投影。范围清理只用于明确的范围删除操作，不得作为单项删除的替代路径。
+
+历史集合补索引使用已有 `POST /api/v1/meta/scan/run/manual`：以精确 collection locator 放入 `targets`，选择 `basic + force=true`。已有集合的 basic 扫描保留已登记的深度结构，只更新 catalog 轻量事实并提交搜索投影，不扩大到所属 database，不清理兄弟 item，不改变祖先扫描状态。此操作会创建一次扫描 execution、更新目标 item 的扫描时间并在 Manager 登记投递；实施前须说明目标和影响范围并获得确认。item selector 的单项刷新仍为 deep，会调用既有动态 schema 采样，不能作为无采样补索引路线。补录后必须核对 Manager 投递终态及同租户、同引擎搜索结果，不能以 execution 成功代替索引验收。
+
 ## Scanned Depth
 
 `meta_node` 和 `meta_item` 使用 `scanned_depth` 字段记录已完成扫描深度。
@@ -601,7 +613,7 @@ item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。�
 
 Manager 预览前的 deep 补齐与 item 刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；item 刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。node 刷新不执行 deep 增强，只重新发现范围内的资源树与 data item 身份。
 
-刷新按钮的语义是强制 Meta 按当前目标类型重新生成事实：node 使用 basic 重新发现身份，item 使用 deep 重建已知 item 的深层事实。是否重建全文索引、content hash、access index 等派生事实只由 item deep scan 和对应 provider 根据规则统一处理，Manager 不应绕过 Meta 直接写搜索索引或局部 attributes。
+刷新按钮的语义是强制 Meta 按当前目标类型重新生成事实：node 使用 basic 重新发现身份，item 使用 deep 重建已知 item 的深层事实。内容提取的全文投影、content hash、access index 等派生事实由 item deep scan 和对应 provider 根据规则统一处理；所有 DataItem 的无值技术元数据投影也由 basic 扫描或未变化跳过路径从已登记事实提交。Manager 不应绕过 Meta 扫描链路读取源内容或写局部 attributes；搜索投影仍由 Manager 正式内容接口独占落索引。
 
 Manager 刷新目标必须是当前选中的 engine / node / item，不能默认全 engine。
 

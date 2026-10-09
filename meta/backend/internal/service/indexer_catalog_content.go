@@ -2,31 +2,15 @@ package service
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
-	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/resourcetree"
 	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/scanresource"
 )
 
-func splitCatalogResourcePath(value string) (dir, name string) {
-	value = strings.Trim(value, "/")
-	if value == "" {
-		return "", ""
-	}
-	idx := strings.LastIndex(value, "/")
-	if idx < 0 {
-		return "", value
-	}
-	return value[:idx+1], value[idx+1:]
-}
-
-func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource scanresource.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string, textTruncated bool) bool {
+func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID uint, item *models.MetaItem, extractedText string, textTruncated bool) bool {
 	if s.contentIndex == nil || resource == nil || item == nil {
 		return false
 	}
@@ -48,46 +32,20 @@ func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *comm
 	truncatedContent := metatext.TruncateRunes(plainText, metatext.DocumentContentRuneLimit)
 	contentPreview := metatext.PreviewText(truncatedContent, metatext.DocumentPreviewRuneLimit)
 
-	dir, _ := splitCatalogResourcePath(catalogResource.Path)
-	dataItemType := strings.TrimSpace(item.ItemType)
-	if dataItemType == "" {
-		dataItemType = "item"
-	}
-
-	document := commonClient.ManagerContentDocument{
-		DocumentID:       item.Fingerprint,
-		PayloadKind:      commonClient.ManagerContentPayloadExtractedContent,
-		ContentHash:      stringFromStandardAttributes(metadata, "storage", "content_hash"),
-		Locator:          metaItemLocator(engineID, resource.EngineType, dataItemType, fullName, &item.ID),
-		EngineID:         engineID,
-		EngineName:       resource.Name,
-		EngineType:       resource.EngineType,
-		DataItemType:     dataItemType,
-		Name:             item.Name,
-		FullName:         fullName,
-		Bucket:           catalogResource.RootName,
-		Path:             dir,
-		Metadata:         metadata,
-		SizeBytes:        item.SizeBytes,
-		DataUpdatedAt:    catalogResource.LastModified,
-		Content:          truncatedContent,
-		ContentPreview:   contentPreview,
-		ContentTruncated: textTruncated,
-		ProjectionTime:   time.Now().UTC(),
-	}
+	document := commonClient.ManagerContentDocument{DocumentID: item.Fingerprint, EngineID: resource.ID, DataItemType: item.ItemType, Name: item.Name, ProjectionTime: time.Now().UTC()}
+	document.PayloadKind = commonClient.ManagerContentPayloadExtractedContent
+	document.ContentHash = stringFromStandardAttributes(metadata, "storage", "content_hash")
+	document.Content = truncatedContent
+	document.ContentPreview = contentPreview
+	document.ContentTruncated = textTruncated
 
 	if len(tags) > 0 {
 		document.Tags = tags
 	}
-	document.ContentType = commonJSON.String(metadata, "storage", "content_type")
-
-	if value := stringFromStandardAttributes(metadata, "item", "format"); value != "" {
-		document.DocumentType = value
-	}
 	if value := stringFromStandardAttributes(metadata, "type_info.document", "title"); value != "" {
 		document.Title = value
 	}
-	if value := stringFromStandardAttributes(metadata, "format_info."+document.DocumentType, "author"); value != "" {
+	if value := stringFromStandardAttributes(metadata, "format_info."+stringFromStandardAttributes(metadata, "item", "format"), "author"); value != "" {
 		document.Author = value
 	}
 	if keywords := stringSliceFromStandardAttributes(metadata, "capabilities.extraction", "keywords"); len(keywords) > 0 {
@@ -107,16 +65,8 @@ func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *comm
 	}
 
 	if err := s.contentIndex.WithTenantID(tenantID).UpsertDocument(ctx, document); err != nil {
-		s.log.Warn("提交 Manager 内容投影失败", "fingerprint", item.Fingerprint, "root", catalogResource.RootName, "path", catalogResource.Path, "error", err)
+		s.log.Warn("提交 Manager 内容投影失败", "fingerprint", item.Fingerprint, "full_name", item.FullName, "error", err)
 		return false
 	}
 	return true
-}
-
-func metaItemLocator(engineID uint, engineType, itemType, fullName string, itemID *uint) string {
-	loc := resourcetree.LocatorFromFullName(engineID, engineType, itemType, fullName, itemID)
-	if loc == nil {
-		return ""
-	}
-	return loc.ToURI()
 }

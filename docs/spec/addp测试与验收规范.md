@@ -99,7 +99,7 @@ T2 使用真实但可丢弃的基础设施，并满足：
 - 每个场景只清理自己拥有的 Schema 或带唯一运行标识的事实，并验证零残留。
 - 门禁拒绝意外 Skip，避免“命令成功但测试未运行”。
 - Common PostgreSQL 的默认 `make test-common-postgres` 保持完整门禁，同时覆盖表写入准备、安全列演进和空间结构拒绝。真实低权限账号必须在没有数据库级 CREATE 权限时完成已有 schema 下的建表与 upsert 准备；缺失 schema 仍须按数据库权限拒绝或创建，测试结束清理本轮 schema、账号及授权并验证零残留。仅验证查询读取集合及输出血缘时，可在同样的显式测试连接条件下运行 `bash scripts/test/common-postgres-gate.sh --test query-read-set`；该分组包含真实资源改名及同名重建的定位身份案例，保留数据库身份检查、Skip 拒绝和场景清理。分组结果只证明所选范围，不替代完整 T2 门禁；CI 继续使用无分组选项的默认入口。
-- Manager 派生任务定义、语义唯一约束、资源绑定与资源回收的持久化契约由 `make test-manager-postgres` 在真实 PostgreSQL 中覆盖；同一门禁的 Service 用例依赖 PostGIS，验证生成目标的 3857 类型声明、2D／Z／M／ZM 保留、空目标校验、未声明旧目标拒绝及无内容 SELECT 权限的目录核验，清理自建 Schema 与事务内角色并核对零残留。该门禁只允许本地 `addp_test` 或 CI 随 Job 销毁的 disposable database；CI 复用固定摘要的 PostGIS 15-3.4 镜像。
+- Manager 派生任务定义、语义唯一约束、资源绑定与资源回收的持久化契约由 `make test-manager-postgres` 在真实 PostgreSQL 中覆盖；同一门禁的 Service 用例依赖 PostGIS，验证生成目标的 3857 类型声明、2D／Z／M／ZM 保留、空目标校验、未声明旧目标拒绝及无内容 SELECT 权限的目录核验，清理自建 Schema 与事务内角色并核对零残留。该门禁只允许本地 `addp_test` 或 CI 随 Job 销毁的 disposable database；CI 复用固定摘要的 PostGIS 15-3.4 镜像。同一门禁使用独占 Meilisearch 验证技术与正文快照任意顺序并存、重复提交、空值清除及单指纹删除；本地标准脚本自动创建临时容器并在退出时删除，CI 使用随 Job 销毁的固定摘要 Service，禁止连接开发内容索引。
 - Orchestrator 的独立进程故障回归归入既有 `make test-orchestrator-postgres`：测试进程运行正式监督器，在提交与等待阶段分别强制终止持有租约的运行者，再由新进程验证过期失败收敛、不重发请求、旧租约写入拒绝、子执行引用保留及唯一终态事件。HTTP Provider 是受控夹具，因此不作为 T4 真实拓扑验收。Go 测试自动发现和现有 Hosted PostgreSQL Job 覆盖同一入口，无新增基础设施依赖；子进程和当次数据库事实必须在成功、失败路径清理并核对残留。
 
 ### 4.3 T3

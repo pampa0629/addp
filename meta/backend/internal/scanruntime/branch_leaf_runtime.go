@@ -9,15 +9,17 @@ import (
 	commonModels "github.com/addp/common/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanprocessor"
 	"gorm.io/gorm"
 )
 
 // BranchLeafRuntime 扫描 root branch -> catalog leaf，并把 leaf 投影为 Meta item。
 // 动态 schema 与图型引擎共享这一层级，但 leaf 事实仍由插件和 catalog model 决定。
 type BranchLeafRuntime struct {
-	db   *gorm.DB
-	log  *slog.Logger
-	repo *metaRepo.ScanRepository // 数据访问层
+	db      *gorm.DB
+	log     *slog.Logger
+	repo    *metaRepo.ScanRepository // 数据访问层
+	indexer scanprocessor.TechnicalMetadataIndexer
 }
 
 type branchLeafScanCatalog struct {
@@ -29,11 +31,12 @@ type branchLeafScanCatalog struct {
 	branchTerm       string
 }
 
-func NewBranchLeafRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanRepository) *BranchLeafRuntime {
+func NewBranchLeafRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanRepository, indexer scanprocessor.TechnicalMetadataIndexer) *BranchLeafRuntime {
 	return &BranchLeafRuntime{
-		db:   db,
-		log:  log,
-		repo: repo,
+		db:      db,
+		log:     log,
+		repo:    repo,
+		indexer: indexer,
 	}
 }
 

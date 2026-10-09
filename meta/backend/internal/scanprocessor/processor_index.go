@@ -8,12 +8,16 @@ import (
 	"github.com/addp/meta/internal/scanresource"
 )
 
-func (p Processor) indexDeepAsset(ctx context.Context, input *input, item *models.MetaItem, extraction documentExtractionResult, isDeepScan bool) scanflow.ExtractionCounts {
+func (p Processor) indexItemProjections(ctx context.Context, input *input, item *models.MetaItem, extraction documentExtractionResult, isDeepScan bool) scanflow.ExtractionCounts {
 	counts := extraction.Counts
-	if !isDeepScan || p.indexer == nil {
+	if p.indexer == nil {
 		return counts
 	}
-	indexed := p.indexer.IndexCatalogContent(ctx, input.Resource, input.TenantID, input.EngineID, catalogResource(input), input.IndexRelativePath, input.FullName, item, extraction.Text, extraction.Truncated)
+	p.indexer.IndexTechnicalMetadata(ctx, input.Resource, input.TenantID, input.ParentNode, item)
+	if !isDeepScan {
+		return counts
+	}
+	indexed := p.indexer.IndexCatalogContent(ctx, input.Resource, input.TenantID, item, extraction.Text, extraction.Truncated)
 	if extraction.Text != "" {
 		if indexed {
 			counts.Indexed++

@@ -6,6 +6,7 @@ import (
 	"github.com/addp/meta/internal/metaenrich"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanadapter"
+	"github.com/addp/meta/internal/scanprocessor"
 	"gorm.io/gorm"
 )
 
@@ -38,12 +39,12 @@ func NewRuntimes(
 	db *gorm.DB,
 	log *slog.Logger,
 	repo *metaRepo.ScanRepository,
-	indexer RuntimeIndexer,
+	indexer scanprocessor.AssetIndexer,
 ) *Runtimes {
 	runtimes := &Runtimes{
 		Database:          NewDatabaseRuntime(db, log, repo, indexer),
-		BranchLeaf:        NewBranchLeafRuntime(db, log, repo),
-		DirectLeaf:        NewDirectLeafRuntime(log, repo),
+		BranchLeaf:        NewBranchLeafRuntime(db, log, repo, indexer),
+		DirectLeaf:        NewDirectLeafRuntime(log, repo, indexer),
 		ObjectCatalog:     NewObjectStorageCatalogRuntime(db, log, repo, indexer),
 		FilesystemCatalog: NewFilesystemCatalogRuntime(db, log, repo, indexer),
 		ItemRefresh:       NewItemRefreshRuntime(repo, indexer, log),

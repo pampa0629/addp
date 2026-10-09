@@ -117,6 +117,9 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 		}
 
 		if itemExists && !needsUpdate {
+			if s.indexer != nil {
+				s.indexer.IndexTechnicalMetadata(ctx, resource, tenantID, currentParent, existingItem)
+			}
 			s.log.Debug("对象未变化，跳过更新",
 				"bucket", catalogResource.RootName,
 				"path", catalogResource.Path,

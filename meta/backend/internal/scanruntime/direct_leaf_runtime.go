@@ -13,16 +13,18 @@ import (
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanprocessor"
 )
 
 // DirectLeafRuntime 扫描 root -> leaf catalog，并把 leaf 直接投影到结构 root 下。
 type DirectLeafRuntime struct {
-	log  *slog.Logger
-	repo *metaRepo.ScanRepository
+	log     *slog.Logger
+	repo    *metaRepo.ScanRepository
+	indexer scanprocessor.TechnicalMetadataIndexer
 }
 
-func NewDirectLeafRuntime(log *slog.Logger, repo *metaRepo.ScanRepository) *DirectLeafRuntime {
-	return &DirectLeafRuntime{log: log, repo: repo}
+func NewDirectLeafRuntime(log *slog.Logger, repo *metaRepo.ScanRepository, indexer scanprocessor.TechnicalMetadataIndexer) *DirectLeafRuntime {
+	return &DirectLeafRuntime{log: log, repo: repo, indexer: indexer}
 }
 
 func (s *DirectLeafRuntime) ScanRoot(
@@ -133,11 +135,27 @@ func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.Engine
 			continue
 		}
 		keepFingerprints = append(keepFingerprints, item.Fingerprint)
+		if s.indexer != nil {
+			s.indexer.IndexTechnicalMetadata(ctx, resource, tenantID, rootNode, item)
+		}
 	}
 
 	if err := failures.Err(); target == nil && err == nil {
-		if err := s.repo.SoftDeleteItemsNotInList(rootNode.ID, keepFingerprints); err != nil {
+		existing, err := s.repo.GetItemsByNode(rootNode.ID)
+		if err != nil {
+			failures.Add(resource.Name, err)
+		} else if err := s.repo.SoftDeleteItemsNotInList(rootNode.ID, keepFingerprints); err != nil {
 			failures.Add(resource.Name, fmt.Errorf("failed to delete missing direct catalog leaves: %w", err))
+		} else if s.indexer != nil {
+			keep := make(map[string]bool, len(keepFingerprints))
+			for _, fingerprint := range keepFingerprints {
+				keep[fingerprint] = true
+			}
+			for _, item := range existing {
+				if !keep[item.Fingerprint] {
+					s.indexer.DeleteItemFromIndex(tenantID, resource.ID, item.Fingerprint)
+				}
+			}
 		}
 	}
 	if scanErr := failures.Err(); scanErr != nil {

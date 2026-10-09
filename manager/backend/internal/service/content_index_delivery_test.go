@@ -68,7 +68,7 @@ func TestContentDeliveryTimeoutRecoversKnownTaskWithoutResending(t *testing.T) {
 	svc, db := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case req.Method == http.MethodPost && req.URL.Path == "/indexes/content/documents":
+		case req.Method == http.MethodPut && req.URL.Path == "/indexes/content/documents":
 			writes.Add(1)
 			correlation = req.URL.Query().Get("customMetadata")
 			if correlation == "" {
@@ -170,7 +170,7 @@ func TestContentDeliveryRejectsReusedTaskIdentityAndDifferentEndpoint(t *testing
 	at := "2026-10-04T00:00:00Z"
 	svc, db := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if req.Method == http.MethodPost {
+		if req.Method == http.MethodPut {
 			w.WriteHeader(http.StatusAccepted)
 			fmt.Fprintf(w, `{"taskUid":1,"indexUid":"content","type":"documentAdditionOrUpdate","enqueuedAt":%q}`, at)
 			return

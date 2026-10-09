@@ -1,10 +1,13 @@
 import client from './client'
+import { serializeEngineCatalogTarget } from '@common-ui'
 
 export const enginesAPI = {
   createSourceGrant: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants`, payload, { headers: { 'Content-Type': 'application/json' } }),
   listSourceGrants: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_grants`, { params }),
   listSourceGrantHistory: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_grants/history`, { params }),
-  inspectSourceGrants: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants/inspection`, payload),
+  inspectSourceGrants: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants/inspection`,
+    `{"account_id":${JSON.stringify(payload.account_id)},"catalog_path":${serializeEngineCatalogTarget(payload.catalog_path)}}`,
+    { headers: { 'Content-Type': 'application/json' } }),
   revokeSourceGrant: (id, requestID, reason) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants/${encodeURIComponent(requestID)}/revoke`, { reason }),
   listApprovalRequirements: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_approval_requirements`, { params }),
   getApprovalRequirement: (id, requirementID) => client.get(`/system/engines/${encodeURIComponent(id)}/access_approval_requirements/${encodeURIComponent(requirementID)}`),

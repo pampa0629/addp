@@ -21,12 +21,12 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 | **Copilot 后端** | `query_agent_api.py` | 查询生成 API 端点；只在请求的当前 Query Engine 内发现资源，确认后按引擎 capability 生成候选查询语言 |
 | **Develop 后端** | `notebook_copilot_service.go` | Notebook Session 候选粗筛、缺失角色补充检索、候选确认和 Catalog facts 重新校验 |
 | **Copilot 后端** | `notebook_agent_api.py`、`notebook_service.py` | Notebook 输入角色理解、候选语义排序和受控 Python/GeoPandas 单元生成；不执行代码、不做租户级搜索 |
-| **Copilot 后端** | `resource_intent_chain.py`、`resource_discovery.py`、`resource_recommendation_chain.py` | 查询与工作流共享的资源确认；明确 Catalog scope 时执行 `resource.children.list → data.preview`，无范围时提取跨语言检索词并执行 `data.search → resource.ancestors.get → data.preview`，最后由 LLM 对已验证候选排序并标记推荐项，不过滤仍然合理的候选 |
-| **Copilot 后端** | `workflow_pipeline.py` | 消费已确认资源事实，协调算子筛选、生成、验证全流程 |
+| **Copilot 后端** | `resource_intent_chain.py`、`resource_discovery.py`、`resource_recommendation_chain.py` | 查询与工作流共享的资源确认；明确 Catalog scope 时执行 `resource.children.list → resource.facts.get`，无范围时提取跨语言检索词并执行 `data.search → resource.ancestors.get → resource.facts.get`，最后由 LLM 对已验证候选排序并标记推荐项，不过滤仍然合理的候选 |
+| **Copilot 后端** | `workflow_service.py` | 消费已确认资源事实，协调算子筛选、生成、验证全流程 |
 | **Copilot 后端** | `operator_selection_chain.py` | LLM Chain；从全量算子列表中筛选 3-8 个最相关算子 |
 | **Copilot 后端** | `workflow_generation_chain.py` | LLM Chain；根据选定算子的 Public Operator Spec 生成完整 DAG JSON |
 | **Copilot 后端** | `workflow_validation_chain.py` | 四层验证；结构、唯一性、依赖关系、参数合法性 |
-| **Copilot 后端** | `develop_tools.py` | LangChain Tools；封装对 Develop 后端算子 API 的调用（发现 + 详情） |
+| **Copilot 后端** | `operator_catalog.py` | 通过共享 Develop Client 获取公开算子目录与详情 |
 | **工作流引擎** | `geopython-workflow` / `spark-workflow` / `math-workflow` | 暴露 `/api/operators` 端点；提供算子元数据（参数定义、输出定义、workflow_example） |
 | **LLM 服务** | 通义千问 / OpenAI / Claude / Ollama | 执行算子筛选、工作流生成、自动修复等推理任务 |
 
@@ -34,7 +34,7 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 
 1. Develop 前端提交自然语言、当前 `engine_id`、当前 `query_language`、具体 data item locator 和可选 `current_query`。MongoDB 用户可以只选择 database；已有 MQL 时，Develop 提取全部 collection 引用并在当前 database 的 Owner Engine Catalog 中解析为具体 locator；编辑器为空时首次提交 `resources=[] + resource_scope_locator=<database locator>`。scope locator 不进入资源事实或查询执行参数。
 2. Copilot 通过 `engine.list` 验证当前用户可访问该 Query Engine，并校验查询语言属于 `capabilities.compute.query.languages`。
-3. 已提交具体 data item locator 时执行 `resource.ancestors.get` 与 `data.preview`；MQL 已声明 collection 时必须提交 Develop 自动解析得到的全部 collection 资源，不能用 `resources=[]` 绕过字段事实；编辑器为空且提交 scope 时提取独立输入角色，通过 `resource.children.list` 枚举直接子资源并逐一 `data.preview`；没有 scope 的资源发现才使用 `data.search` 粗筛并校验 ancestor 和预览事实。
+3. 已提交具体 data item locator 时执行 `resource.ancestors.get` 与 `resource.facts.get`；MQL 已声明 collection 时必须提交 Develop 自动解析得到的全部 collection 资源，不能用 `resources=[]` 绕过字段事实；编辑器为空且提交 scope 时，通过 `resource.children.list` 确定性枚举直接子资源并逐一 `resource.facts.get`，不调用模型提取输入角色或搜索词；没有 scope 的资源发现才使用 `data.search` 粗筛并校验 ancestor 和结构事实。
 4. 同一角色多候选时通过结构化 `clarifications[]` 返回全部候选给用户单选；候选不得来自其他 Engine 或 scope。MongoDB 只选 database 且编辑器为空时，Copilot 返回 Owner 已验证的该 database 直接 collection 候选，再由 Develop 通用澄清弹窗要求用户确认。
 5. 用户确认后，Copilot 先形成结构化 Query Plan。Plan 的 `collections`、`field_paths`、`operations`、`result_keys`、`assumptions` 固定为字符串数组；collection 使用资源事实提供的规范查询名，operation 使用平台枚举。Plan 或强类型 MQL 语义计划中，凡计算规则、统计对象、时间范围、聚合维度、实体匹配、字段映射、去重、空值或分母等会改变结果的必需语义无法唯一确定时，必须返回结构化 `clarifications[]`，不得猜测或按用户措辞编写页面特例。Develop 以 `clarification_answers` 继续原请求；答案成为确定性约束，编译器必须验证最终计划与答案一致。强类型 MQL 计划的 `count_distinct_array_elements` 可表达数组展开、元素过滤、分组字段和复合去重字段，编译器按固定顺序生成 `$unwind -> $match -> $group` 管道；`count_distinct_documents` 可表达按文档标量字段分组、按文档身份去重的计数，编译器固定生成非空身份过滤与两级 `$group`；`count_distinct_document_and_array_elements` 可表达文档标量分支与数组元素分支的去重并集，编译器固定生成数组展开、`$unionWith`、非空身份过滤和两级去重。模型不得直接编写这些 pipeline。计划闭合后，再仅根据当前引擎类型、查询语言、已验证 collection、可查询字段路径、几何列、CRS 和允许的编辑器已有查询生成候选查询文本及参数定义；生成后校验只读命令、collection、字段路径、参数引用/定义一致性和计划覆盖，候选最多受限重生成一次。MongoDB 候选不得以记录键枚举绕过已验证字段路径。MongoDB database 只作为 Develop 执行范围；不得硬编码 PostgreSQL、schema、geometry 字段或空间函数。
 6. Develop 前端仅按澄清的 `control` 渲染资源选择、单选、多选、文本或说明，不解释具体业务指标；可恢复澄清不得使用 Toast。语义闭合后，前端把同一响应中的 `query` 与 `query_parameters[]` 原子写入 Monaco Editor 和参数面板，不自动保存或执行。用户执行时继续进入 Develop preflight、效果授权、高风险确认与统一 execution API。
@@ -78,7 +78,7 @@ sequenceDiagram
             LLM-->>Copilot: 返回未尝试的新技术名
             Copilot->>GW: 只为缺失角色补充一次 data.search
         end
-        Copilot->>GW: 7. ToolExecutor 请求 resource.ancestors.get 与 data.preview
+        Copilot->>GW: 7. ToolExecutor 请求 resource.ancestors.get 与 resource.facts.get
         GW->>Meta: 校验 locator 与祖先链
         GW->>Manager: 获取受限字段、几何列和 CRS
         Copilot->>LLM: 基于业务意图和已验证事实排序并推荐候选
@@ -163,14 +163,15 @@ sequenceDiagram
     participant Gen as WorkflowGenerationChain
     participant Val as WorkflowValidationChain
     participant Fix as WorkflowAutoFix
-    participant DevTools as develop_tools.py
+    participant Executor as common-python ToolExecutor
+    participant Catalog as OperatorCatalogService
     participant LLM as LLM服务
 
     API->>Discovery: resources[] 为空时 discover(query)
-    Discovery->>DevTools: ToolExecutor → data.search
-    DevTools-->>Discovery: locator 候选
-    Discovery->>DevTools: resource.ancestors.get + data.preview
-    DevTools-->>Discovery: 规范 locator、祖先链和受限预览事实
+    Discovery->>Executor: ToolExecutor → data.search
+    Executor-->>Discovery: locator 候选
+    Discovery->>Executor: ToolExecutor 调用 resource.ancestors.get + resource.facts.get
+    Executor-->>Discovery: 规范 locator、祖先链和受限结构事实
     Discovery->>LLM: 对已验证粗筛候选做语义排序和推荐
     LLM-->>Discovery: 返回候选集合中已有 locator 的顺序与推荐项
     Discovery-->>API: 保留全部候选并附加推荐事实，等待前端确认
@@ -179,8 +180,8 @@ sequenceDiagram
     rect rgb(240,255,240)
         note right of WorkflowService: 阶段2 算子筛选
         WorkflowService->>Sel: select(query, resources, workflow_engine_id)
-        Sel->>DevTools: OperatorCatalogService → 按 workflow_engine_id 获取算子列表
-        DevTools-->>Sel: 算子列表（简要信息）
+        Sel->>Catalog: OperatorCatalogService → 按 workflow_engine_id 获取算子列表
+        Catalog-->>Sel: 算子列表（简要信息）
         Sel->>LLM: 从全量算子中筛选 3-8 个<br/>（附带分类和简介）
         LLM-->>Sel: 选定算子名称列表
         Sel-->>WorkflowService: ["load", "buffer", "save"] 等
@@ -189,11 +190,11 @@ sequenceDiagram
     rect rgb(255,248,240)
         note right of WorkflowService: 阶段3 工作流生成
         WorkflowService->>Gen: generate(query, resources, operators, workflow_engine_id)
-        Gen->>DevTools: OperatorCatalogService（并发批量）<br/>获取每个选定算子的详情
-        DevTools-->>Gen: 算子详情（parameters, public_parameters, output_ports）
+        Gen->>Catalog: OperatorCatalogService（并发批量）<br/>获取每个选定算子的详情
+        Catalog-->>Gen: 算子详情（parameters, public_parameters, output_ports）
         Gen->>LLM: 生成工作流 DAG<br/>（只使用 public_parameters 中的非 UI 参数和已确认 locator）
         LLM-->>Gen: 工作流 JSON 字符串
-        Gen->>Gen: 清理 markdown 标记、解析 JSON
+        Gen->>Gen: 按结构化响应契约解析 JSON
         Gen-->>WorkflowService: Workflow 对象
     end
 
@@ -255,7 +256,7 @@ Develop前端（用户选择引擎）
 ### 数据源事实约定
 
 - Manager 混合检索只负责语义匹配，搜索结果的 `locator` 必须是由 Meta 事实建立的已有资源身份。
-- Copilot 的资源发现阶段先从需求提取独立输入数据意图；中文或其他自然语言资源名必须补充常用英文技术名，再对每个输入使用共享 `ToolExecutor` 依次调用 `data.search`、`resource.ancestors.get` 和 `data.preview`。某个角色首轮零召回时，只把该角色、已尝试检索词和零召回事实反馈给 LLM，过滤重复词后受限补充一次搜索；已召回角色不得重复发现。只有 ancestors 返回的 `target_locator` 与搜索 locator 一致、且预览返回受限字段/空间事实时，候选才进入 LLM 语义排序。LLM 只能对候选集合中已有的 locator 排序和标记推荐项，不得删除仍然合理的候选；歧义判断基于全部已验证候选。同一输入角色存在多个候选时，前端必须展示引擎、逻辑全名、locator、数据类型和空间事实，并要求用户选择一个；只有单一候选可以默认选中。
+- Copilot 的资源发现阶段先从需求提取独立输入数据意图；中文或其他自然语言资源名必须补充常用英文技术名，再对每个输入使用共享 `ToolExecutor` 依次调用 `data.search`、`resource.ancestors.get` 和 `resource.facts.get`。某个角色首轮零召回时，只把该角色、已尝试检索词和零召回事实反馈给 LLM，过滤重复词后受限补充一次搜索；已召回角色不得重复发现。只有 ancestors 返回的 `target_locator` 与搜索 locator 一致、且资源事实接口返回受限字段/空间事实时，候选才进入 LLM 语义排序。LLM 只能对候选集合中已有的 locator 排序和标记推荐项，不得删除仍然合理的候选；歧义判断基于全部已验证候选。同一输入角色存在多个候选时，前端必须展示引擎、逻辑全名、locator、数据类型和空间事实，并要求用户选择一个；只有单一候选可以默认选中。
 - Copilot 不得根据 `engine_id + schema/table/bucket/path` 自行拼接 locator，也不得从已删除的 Develop catalog 查询路径推导资源身份。
 - 未找到候选、候选不唯一、置信度不足或 Meta 无法校验 locator 时，ResourceResolutionService 必须返回 `need_clarification`，不得继续调用工作流生成 LLM。
 - 工作流生成后必须再校验资源事实：所有 `load.locator` 和 `save.target_parent_locator` 都必须来自本次已验证数据源上下文。LLM 新增任何未验证 locator 时统一返回 `need_clarification`，不进入自动修复。

@@ -86,10 +86,13 @@ func (d ManagerContentDocument) Validate() error {
 	}
 	switch d.PayloadKind {
 	case ManagerContentPayloadTechnicalMetadata:
-		if d.Content != "" || d.ContentPreview != "" || d.ContentTruncated || d.Title != "" || d.Author != "" || len(d.Keywords) > 0 || d.WordCount != 0 || d.PageCount != 0 || d.CreatedDate != nil || d.ModifiedDate != nil || len(d.Metadata) > 0 || len(d.Tags) > 0 {
+		if d.ContentHash != "" || d.Content != "" || d.ContentPreview != "" || d.ContentTruncated || d.Title != "" || d.Author != "" || len(d.Keywords) > 0 || d.WordCount != 0 || d.PageCount != 0 || d.CreatedDate != nil || d.ModifiedDate != nil || len(d.Metadata) > 0 || len(d.Tags) > 0 {
 			return errors.New("Manager technical metadata document contains extracted content")
 		}
 	case ManagerContentPayloadExtractedContent:
+		if d.EngineName != "" || d.EngineType != "" || d.Locator != "" || d.FullName != "" || d.Description != "" || d.Schema != "" || d.TableKind != "" || len(d.Fields) > 0 || d.RowCount != nil || d.Bucket != "" || d.Path != "" || d.SizeBytes != nil || d.ContentType != "" || d.DocumentType != "" || d.DataUpdatedAt != nil {
+			return errors.New("Manager extracted content document contains technical metadata")
+		}
 	default:
 		return errors.New("Manager content document payload kind is invalid")
 	}
@@ -109,6 +112,7 @@ func (c *ManagerContentClient) UpsertDocument(ctx context.Context, document Mana
 }
 
 type ManagerContentDeleteScope struct {
+	DocumentID   string
 	EngineID     uint
 	DataItemType string
 	Schema       string
@@ -122,6 +126,9 @@ func (c *ManagerContentClient) DeleteDocuments(ctx context.Context, scope Manage
 	}
 	query := url.Values{}
 	query.Set("engine_id", strconv.FormatUint(uint64(scope.EngineID), 10))
+	if value := strings.TrimSpace(scope.DocumentID); value != "" {
+		query.Set("document_id", value)
+	}
 	if value := strings.TrimSpace(scope.DataItemType); value != "" {
 		query.Set("data_item_type", value)
 	}

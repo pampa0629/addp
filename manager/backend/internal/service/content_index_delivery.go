@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -60,21 +59,14 @@ func (s *HybridSearchService) UpsertContentDocument(ctx context.Context, tenantI
 		if document.ProjectionTime.IsZero() {
 			document.ProjectionTime = time.Now().UTC()
 		}
-		encoded, err := json.Marshal(document)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(encoded, &payload); err != nil {
-			return err
-		}
-		payload["id"], payload["tenant_id"] = document.DocumentID, tenantID
+		payload = contentSnapshotPayload(tenantID, document)
 		return s.deliveries.Register(ctx, tx, s.epoch, op)
 	})
 	if err != nil {
 		return err
 	}
 	// No PostgreSQL transaction is held while calling Meilisearch.
-	task, err := s.client.Index(s.contentIndex).AddDocumentsWithContext(ctx, []map[string]interface{}{payload}, &meilisearch.DocumentOptions{TaskCustomMetadata: op.TaskCorrelation, SkipCreation: true})
+	task, err := s.client.Index(s.contentIndex).UpdateDocumentsWithContext(ctx, []map[string]interface{}{payload}, &meilisearch.DocumentOptions{TaskCustomMetadata: op.TaskCorrelation, SkipCreation: true})
 	if err := s.recordContentReceipt(ctx, op, task, err); err != nil {
 		return err
 	}

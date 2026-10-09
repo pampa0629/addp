@@ -29,7 +29,7 @@ func TestDirectLeafRuntimeScansRootLeavesAndDeletesMissingItems(t *testing.T) {
 			{Name: "ignored", Role: plugin.EngineCatalogRoleBranch},
 		},
 	}
-	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo)
+	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 41, Name: "Business Kafka", EngineType: enginePlugin.Type()}
 
 	items, err := runtime.ScanRoot(context.Background(), enginePlugin, resource, 1, models.ScannedDepthBasic, true)
@@ -163,7 +163,7 @@ func TestIntegrationElasticsearchMappingScan(t *testing.T) {
 	repo := metaRepo.NewScanRepository(db)
 	p := &es.ElasticsearchPlugin{}
 	resource := &commonModels.Engine{ID: 91, Name: "ES T2", EngineType: p.Type(), ConnectionInfo: commonModels.ConnectionInfo{"endpoint": os.Getenv("ELASTICSEARCH_ENDPOINT"), "user": os.Getenv("ELASTICSEARCH_READER_USER"), "password": os.Getenv("ELASTICSEARCH_READER_PASSWORD")}}
-	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo)
+	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	count, err := runtime.ScanRoot(context.Background(), p, resource, 1, models.ScannedDepthDeep, true)
 	if err != nil || count != 2 {
 		t.Fatal(count, err)
@@ -193,7 +193,7 @@ func TestDirectLeafFactsFailurePreservesPreviouslyScannedItems(t *testing.T) {
 	db := metatest.OpenMetadataDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	p := &directLeafFactsTestPlugin{directLeafRuntimeTestPlugin: directLeafRuntimeTestPlugin{entries: []plugin.EngineCatalogEntry{directLeafRuntimeTestEntry(41, "orders", "topic"), directLeafRuntimeTestEntry(41, "events", "topic")}}}
-	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo)
+	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 41, Name: "facts test", EngineType: p.Type()}
 	if _, err := runtime.ScanRoot(context.Background(), p, resource, 1, models.ScannedDepthDeep, true); err != nil {
 		t.Fatal(err)

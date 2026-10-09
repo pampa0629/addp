@@ -5582,6 +5582,10 @@ paths:
         in: query
         name: path_prefix
         type: string
+      - description: 限定单个指纹 | Restrict to one fingerprint
+        in: query
+        name: document_id
+        type: string
       responses:
         "204":
           description: No Content
@@ -5607,11 +5611,11 @@ paths:
     put:
       consumes:
       - application/json
-      description: 仅 addp-meta 可覆盖当前 Tenant 的显式内容投影；持久登记并核验保护版本，外部任务确认成功才返回 204；超时或未决提交返回
-        503，不表示任务取消 | Only addp-meta may replace an explicit tenant content projection;
-        persist delivery and verify protection version, return 204 only for proven
-        external success; timeout or uncertain submission returns 503 and does not
-        imply cancellation
+      description: 仅 addp-meta 可分别覆盖当前 Tenant 的技术或正文完整快照，保留另一部分；持久登记并核验保护版本，外部任务确认成功才返回
+        204；超时或未决提交返回 503，不表示任务取消 | Only addp-meta may replace owned technical or
+        extracted content snapshot fields while retaining the other snapshot; persist
+        delivery and verify protection version, return 204 only for proven external
+        success; timeout or uncertain submission returns 503 and does not imply cancellation
       parameters:
       - description: DataItem fingerprint
         in: path

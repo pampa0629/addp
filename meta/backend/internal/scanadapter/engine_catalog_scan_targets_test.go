@@ -3,10 +3,13 @@ package scanadapter_test
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"reflect"
@@ -14,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
@@ -25,6 +29,7 @@ import (
 	"github.com/addp/meta/internal/scanadapter"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanruntime"
+	"github.com/addp/meta/internal/service"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -124,6 +129,7 @@ func TestPreciseCatalogScanAgainstPostgres(t *testing.T) {
 }
 
 func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
+	t.Run("collection content projection", func(t *testing.T) { testCollectionContentProjection(t, openDB(t)) })
 	cases := []struct {
 		name  string
 		model plugin.EngineCatalogModelSpec
@@ -132,6 +138,8 @@ func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 		{"table", plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema), "table"},
 		{"collection", plugin.DynamicSchemaCatalogModel(), "collection"},
 		{"graph", plugin.GraphCatalogModel(), "graph"},
+		{"index", plugin.EngineCatalogModelSpec{PathVersion: plugin.EngineCatalogPathVersion, RootTerm: plugin.EngineCatalogTermService, Levels: []plugin.EngineCatalogLevelSpec{{Term: "index", Kinds: []string{"index"}, Role: plugin.EngineCatalogRoleLeaf}}}, "index"},
+		{"keyspace", plugin.EngineCatalogModelSpec{PathVersion: plugin.EngineCatalogPathVersion, RootTerm: plugin.EngineCatalogTermServer, Levels: []plugin.EngineCatalogLevelSpec{{Term: "keyspace", Kinds: []string{"keyspace"}, Role: plugin.EngineCatalogRoleLeaf}}}, "keyspace"},
 		{"topic", plugin.EngineCatalogModelSpec{PathVersion: plugin.EngineCatalogPathVersion, RootTerm: plugin.EngineCatalogTermService, Levels: []plugin.EngineCatalogLevelSpec{{Term: "topic", Kinds: []string{"topic"}, Role: plugin.EngineCatalogRoleLeaf}}}, "topic"},
 	}
 	for _, tc := range cases {
@@ -140,7 +148,7 @@ func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 			repo := metaRepo.NewScanRepository(db)
 			p := &preciseCatalogPlugin{preciseCatalogBasePlugin: preciseCatalogBasePlugin{engineType: "precise-" + tc.name, model: tc.model}}
 			resource := &commonModels.Engine{ID: 91, EngineType: p.Type(), Name: "source"}
-			parts := []string{"A"}
+			parts := []string{"A.v2"}
 			if len(tc.model.Levels) > 1 {
 				parts = []string{"sales.v2", "A"}
 			}
@@ -150,7 +158,7 @@ func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 				t.Fatal(err)
 			}
 			last := path.Segments[len(path.Segments)-1]
-			p.entries = []plugin.EngineCatalogEntry{{Name: "A", Path: path, Term: last.Term, Kind: last.Kind, Role: plugin.EngineCatalogRoleLeaf}}
+			p.entries = []plugin.EngineCatalogEntry{{Name: parts[len(parts)-1], Path: path, Term: last.Term, Kind: last.Kind, Role: plugin.EngineCatalogRoleLeaf}}
 			root, err := metaRepo.EnsureEngineCatalogRootNode(repo, 91, resource, p)
 			if err != nil {
 				t.Fatal(err)
@@ -185,11 +193,63 @@ func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 				t.Fatal(err)
 			}
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
-			d := scanadapter.NewEngineCatalogScanDispatcher(db, repo, log, scanruntime.NewDatabaseRuntime(db, log, repo, nil), scanruntime.NewBranchLeafRuntime(db, log, repo), scanruntime.NewDirectLeafRuntime(log, repo), nil)
+			var projections []commonClient.ManagerContentDocument
+			var deleted []string
+			manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					deleted = append(deleted, r.URL.Query().Get("document_id"))
+					if r.URL.Query().Get("schema") != "" {
+						t.Error("single missing item deleted whole namespace")
+					}
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				var doc commonClient.ManagerContentDocument
+				if err := json.NewDecoder(r.Body).Decode(&doc); err != nil {
+					t.Error(err)
+				}
+				projections = append(projections, doc)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer manager.Close()
+			client := commonClient.NewManagerContentClient(manager.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "tenant-91", nil }), manager.Client())
+			runtimes := scanruntime.NewRuntimes(db, log, repo, service.NewIndexerService(client, log))
+			d := scanadapter.NewEngineCatalogScanDispatcher(db, repo, log, runtimes.Database, runtimes.BranchLeaf, runtimes.DirectLeaf, nil)
 			req := scanflow.DispatchRequest{Context: context.Background(), Resource: resource, EnginePlugin: p, TenantID: 91, Targets: []string{loc.ToURI()}, ScanDepth: "deep", Force: true}
 			result, err := d.Dispatch(req)
 			if err != nil || result.Items != 1 || result.CatalogNodes != 0 {
 				t.Fatalf("exact scan: %+v %v", result, err)
+			}
+			if len(projections) != 1 || projections[0].DataItemType != tc.typ || projections[0].PayloadKind != commonClient.ManagerContentPayloadTechnicalMetadata {
+				t.Fatalf("%s deep scan projections=%+v", tc.name, projections)
+			}
+			projectedLocator, err := resourcetree.ParseURI(projections[0].Locator)
+			if err != nil || !reflect.DeepEqual(projectedLocator.Path, parts) {
+				t.Fatalf("projection split a registered name: %s %v", projections[0].Locator, err)
+			}
+			for _, force := range []bool{true, false} {
+				req.ScanDepth, req.Force = "basic", force
+				before := len(projections)
+				if _, err := d.Dispatch(req); err != nil {
+					t.Fatal(err)
+				}
+				if len(projections) != before+1 {
+					t.Fatalf("%s basic force=%v failed to project saved facts", tc.name, force)
+				}
+			}
+			req.ScanDepth, req.Force = "deep", true
+			if tc.typ != "graph" {
+				item, found, err := repo.FindItemByFullName(91, 91, strings.Join(parts, "."))
+				if err != nil || !found {
+					t.Fatalf("registered item: found=%v error=%v", found, err)
+				}
+				before := len(projections)
+				if _, err := runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(t.Context(), p, resource, 91, item.ID); err != nil {
+					t.Fatal(err)
+				}
+				if len(projections) != before+1 || projections[before].DataItemType != tc.typ {
+					t.Fatalf("%s single-item refresh failed to project registered facts", tc.name)
+				}
 			}
 			for _, call := range p.calls {
 				if call != "resolve:"+path.StringPath() && call != "facts:"+path.StringPath() && call != "sample:"+path.StringPath() {
@@ -211,8 +271,12 @@ func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 				t.Fatal("leaf scan changed sibling")
 			}
 			p.failFacts = true
+			projectionCount := len(projections)
 			if _, err := d.Dispatch(req); err == nil {
 				t.Fatal("leaf failure reported success")
+			}
+			if len(projections) != projectionCount {
+				t.Fatal("failed source description submitted a projection")
 			}
 			p.failFacts = false
 			after = nil
@@ -259,12 +323,16 @@ func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 				req.Targets = nil
 			}
 			p.calls = nil
+			deleted = nil
 			if _, err := d.Dispatch(req); err != nil {
 				t.Fatal(err)
 			}
 			var count int64
 			if err := db.Model(&models.MetaItem{}).Where("name = ?", "B").Count(&count).Error; err != nil || count != 0 {
 				t.Fatalf("full scan failed to clean missing sibling: %d %v", count, err)
+			}
+			if len(deleted) != 1 || deleted[0] != siblingBefore.Fingerprint {
+				t.Fatalf("missing sibling deletion scope=%v want=%s", deleted, siblingBefore.Fingerprint)
 			}
 			if len(parts) > 1 && (len(p.calls) == 0 || p.calls[0] != "list:"+parts[0]) {
 				t.Fatalf("branch name truncated: %v", p.calls)

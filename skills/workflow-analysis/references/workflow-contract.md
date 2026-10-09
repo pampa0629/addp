@@ -24,7 +24,7 @@
 ## 资源参数
 
 - 读取已有资源时使用 `locator`。
-- 创建新资源时使用 `target_parent_locator + target_name`，并按 Public Operator Spec 提供 `write_mode`。
+- 创建新资源时使用 `target_parent_locator + target_name`；写入模式的参数名、可选值和必填性完全按 Public Operator Spec，不固定为 `write_mode` 或 `mode`。用户未确认保存目标时不生成保存任务。
 - 不构造尚不存在资源的虚拟 locator。
 - 不在 definition 中保存 `connection_info`、密码或其他执行期连接事实。
 

@@ -1043,7 +1043,7 @@ jobs:
           status: ${{ job.status }}
 
   manager-postgres:
-    name: Manager task lifecycle and geometry declarations (PostgreSQL 15 / PostGIS 3.4)
+    name: Manager lifecycle, geometry and content snapshots (PostgreSQL / PostGIS / Meilisearch)
     needs: selection
     if: needs.selection.outputs.manager == 'true'
     runs-on: ubuntu-24.04
@@ -1062,6 +1062,13 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      meilisearch:
+        image: getmeili/meilisearch:v1.54.3@sha256:e68913ab7d6f5b159529e472cfd362ce3c741fafd3c127961b2142abbe41b3c9
+        env:
+          MEILI_MASTER_KEY: addp-ci-manager-snapshots-test-key
+          MEILI_NO_ANALYTICS: "true"
+        ports:
+          - 7700:7700
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1076,6 +1083,8 @@ jobs:
 
       - name: Run Manager PostgreSQL gate
         env:
+          MANAGER_MEILISEARCH_TEST_URL: http://127.0.0.1:7700
+          MANAGER_MEILISEARCH_TEST_KEY: addp-ci-manager-snapshots-test-key
           MANAGER_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_manager_disposable?sslmode=disable
         run: make test-manager-postgres
 

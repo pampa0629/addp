@@ -27,7 +27,7 @@ import (
 
 type ItemRefreshRuntime struct {
 	repo               *metaRepo.ScanRepository
-	indexer            RuntimeIndexer
+	indexer            scanprocessor.AssetIndexer
 	log                *slog.Logger
 	containerInspector metaenrich.ContainerInspector
 }
@@ -98,7 +98,7 @@ func (r *ItemRefreshRuntime) ReadDocumentSecuritySampleByIDWithPlugin(
 	return sample, nil
 }
 
-func NewItemRefreshRuntime(repo *metaRepo.ScanRepository, indexer RuntimeIndexer, log *slog.Logger) *ItemRefreshRuntime {
+func NewItemRefreshRuntime(repo *metaRepo.ScanRepository, indexer scanprocessor.AssetIndexer, log *slog.Logger) *ItemRefreshRuntime {
 	return &ItemRefreshRuntime{
 		repo:    repo,
 		indexer: indexer,
@@ -299,6 +299,9 @@ func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(
 	)
 	if err != nil {
 		return scanprocessor.Result{}, true, err
+	}
+	if r.indexer != nil {
+		r.indexer.IndexTechnicalMetadata(ctx, resource, tenantID, &parentNode, refreshed)
 	}
 	return scanprocessor.Result{Item: refreshed, Fields: fieldCount}, true, nil
 }
@@ -517,7 +520,7 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 	}
 
 	if r.indexer != nil {
-		r.indexer.IndexTableContent(ctx, resource, tenantID, schemaName, tableInfo, tableInfo.Fields, refreshed)
+		r.indexer.IndexTechnicalMetadata(ctx, resource, tenantID, &parentNode, refreshed)
 	}
 
 	return scanprocessor.Result{Item: refreshed, Fields: len(tableInfo.Fields)}, true, nil
@@ -584,6 +587,9 @@ func (r *ItemRefreshRuntime) refreshKnownDirectCatalogLeafFactsItem(
 	)
 	if err != nil {
 		return scanprocessor.Result{}, true, err
+	}
+	if r.indexer != nil {
+		r.indexer.IndexTechnicalMetadata(ctx, resource, tenantID, &parentNode, refreshed)
 	}
 	return scanprocessor.Result{Item: refreshed}, true, nil
 }

@@ -75,3 +75,14 @@ func TestManagerContentDocumentSeparatesTechnicalMetadataAndExtractedContent(t *
 		t.Fatalf("extracted content validation failed: %v", err)
 	}
 }
+
+func TestManagerContentDocumentRejectsCrossSnapshotFields(t *testing.T) {
+	tech := ManagerContentDocument{DocumentID: "id", PayloadKind: ManagerContentPayloadTechnicalMetadata, EngineID: 1, DataItemType: "table", Name: "table", ContentHash: "body-hash"}
+	if tech.Validate() == nil {
+		t.Fatal("technical snapshot accepted body hash")
+	}
+	body := ManagerContentDocument{DocumentID: "id", PayloadKind: ManagerContentPayloadExtractedContent, EngineID: 1, DataItemType: "table", Name: "context", Description: "technical comment"}
+	if body.Validate() == nil {
+		t.Fatal("body snapshot accepted technical fields")
+	}
+}

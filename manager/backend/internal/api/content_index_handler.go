@@ -33,7 +33,7 @@ func NewContentIndexHandler(search contentIndexer) *ContentIndexHandler {
 
 // UpsertDocument godoc
 // @Summary 写入技术内容检索投影 | Upsert technical content search projection
-// @Description 仅 addp-meta 可覆盖当前 Tenant 的显式内容投影；持久登记并核验保护版本，外部任务确认成功才返回 204；超时或未决提交返回 503，不表示任务取消 | Only addp-meta may replace an explicit tenant content projection; persist delivery and verify protection version, return 204 only for proven external success; timeout or uncertain submission returns 503 and does not imply cancellation
+// @Description 仅 addp-meta 可分别覆盖当前 Tenant 的技术或正文完整快照，保留另一部分；持久登记并核验保护版本，外部任务确认成功才返回 204；超时或未决提交返回 503，不表示任务取消 | Only addp-meta may replace owned technical or extracted content snapshot fields while retaining the other snapshot; persist delivery and verify protection version, return 204 only for proven external success; timeout or uncertain submission returns 503 and does not imply cancellation
 // @Tags Manager Runtime
 // @Accept json
 // @Param document_id path string true "DataItem fingerprint"
@@ -87,6 +87,7 @@ func (h *ContentIndexHandler) UpsertDocument(c *gin.Context) {
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.content_index.update"]
+// @Param document_id query string false "限定单个指纹 | Restrict to one fingerprint"
 // @Router /runtime/content-documents [delete]
 func (h *ContentIndexHandler) DeleteEngineDocuments(c *gin.Context) {
 	engineID, err := strconv.ParseUint(strings.TrimSpace(c.Query("engine_id")), 10, 64)
@@ -99,7 +100,7 @@ func (h *ContentIndexHandler) DeleteEngineDocuments(c *gin.Context) {
 		return
 	}
 	scope := service.ContentDocumentDeleteScope{
-		EngineID: uint(engineID), DataItemType: strings.TrimSpace(c.Query("data_item_type")),
+		DocumentID: strings.TrimSpace(c.Query("document_id")), EngineID: uint(engineID), DataItemType: strings.TrimSpace(c.Query("data_item_type")),
 		Schema: strings.TrimSpace(c.Query("schema")), Bucket: strings.TrimSpace(c.Query("bucket")),
 		PathPrefix: strings.TrimSpace(c.Query("path_prefix")),
 	}

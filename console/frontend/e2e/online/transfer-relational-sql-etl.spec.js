@@ -12,6 +12,9 @@ import {
   waitForExecution
 } from './transfer-browser-support.js'
 
+// Canvas transform scaling can place an 11px label just below 11 in floating point.
+const CANVAS_FONT_EPSILON = 1e-6
+
 const requiredNames = [
   'ADDP_ONLINE_REPOSITORY',
   'ADDP_ONLINE_ARTIFACT_DIR',
@@ -285,7 +288,7 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   const box = await canvas.boundingBox()
   const fieldRows = (await lineageCanvasText(canvas)).filter(isFieldLabel)
   for (const row of fieldRows) {
-    expect(row.fontSize).toBeGreaterThanOrEqual(11)
+    expect(row.fontSize).toBeGreaterThanOrEqual(11 - CANVAS_FONT_EPSILON)
     expect(row.x).toBeGreaterThanOrEqual(0)
     expect(row.x + row.width).toBeLessThanOrEqual(box.width)
     expect(row.y).toBeGreaterThan(row.fontSize)
@@ -338,7 +341,7 @@ async function verifyWideLineage(page, env) {
       const focus = lineageFieldConnections(graph.edges, lineageNodeId(selected))
       expect(focus.fields.size).toBe(3)
       expect(focus.connections.size).toBe(2)
-      await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => row.text === field).at(-1)?.fontSize).toBeGreaterThanOrEqual(11)
+      await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => row.text === field).at(-1)?.fontSize).toBeGreaterThanOrEqual(11 - CANVAS_FONT_EPSILON)
       timings[`${field}FocusMs`] = Date.now() - focusStarted
       await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `transfer-wide-${field}-focus.png`), fullPage: true })
     }

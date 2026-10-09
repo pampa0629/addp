@@ -46,7 +46,7 @@ func ProtectContentIndexDocument(document *commonClient.ManagerContentDocument, 
 
 func maskContentIndexStrings(document *commonClient.ManagerContentDocument, decision dataprotection.Decision) error {
 	var err error
-	for _, target := range []*string{&document.Content, &document.ContentPreview, &document.Title, &document.Author, &document.Description} {
+	for _, target := range []*string{&document.Content, &document.ContentPreview, &document.Title, &document.Author} {
 		*target, err = dataprotection.MaskPhoneOccurrences(*target, decision)
 		if err != nil {
 			return ErrRequired

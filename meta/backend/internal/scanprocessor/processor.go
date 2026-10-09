@@ -16,11 +16,16 @@ import (
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
-	"github.com/addp/meta/internal/scanresource"
 )
 
 type AssetIndexer interface {
-	IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource scanresource.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string, textTruncated bool) bool
+	TechnicalMetadataIndexer
+	IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID uint, item *models.MetaItem, extractedText string, textTruncated bool) bool
+}
+
+type TechnicalMetadataIndexer interface {
+	DeleteItemFromIndex(tenantID, engineID uint, fingerprint string)
+	IndexTechnicalMetadata(ctx context.Context, resource *commonModels.Engine, tenantID uint, parent *models.MetaNode, item *models.MetaItem) bool
 }
 
 type input struct {
@@ -116,6 +121,15 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 		}
 		attrs = enrichedAttrs
 	} else {
+		existing, found, err := p.repo.FindItemByFullName(input.TenantID, input.EngineID, input.FullName)
+		if err != nil {
+			return Result{}, err
+		}
+		if found && existing.ScannedDepth == models.ScannedDepthDeep {
+			preserved := metaattr.Normalize(existing.Attributes)
+			metaattr.MergeStandardAttributes(preserved, attrs)
+			attrs = preserved
+		}
 		metaitem.ApplyContainerSummary(attrs, input.Detected)
 	}
 
@@ -135,7 +149,7 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	counts := p.indexDeepAsset(ctx, &input, item, extraction, isDeepScan)
+	counts := p.indexItemProjections(ctx, &input, item, extraction, isDeepScan)
 
 	return Result{Item: item, Fields: len(input.Detected.Fields), Extraction: counts}, nil
 }

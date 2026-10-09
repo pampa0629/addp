@@ -9,6 +9,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanprocessor"
 	"gorm.io/gorm"
 )
 
@@ -17,8 +18,8 @@ import (
 type DatabaseRuntime struct {
 	db           *gorm.DB
 	log          *slog.Logger
-	repo         *metaRepo.ScanRepository // 数据访问层
-	tableIndexer TableAssetIndexer        // 索引能力
+	repo         *metaRepo.ScanRepository               // 数据访问层
+	tableIndexer scanprocessor.TechnicalMetadataIndexer // 索引能力
 }
 
 type databaseScanCatalog struct {
@@ -29,7 +30,7 @@ type databaseScanCatalog struct {
 }
 
 // NewDatabaseRuntime 创建数据库扫描运行时。
-func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanRepository, tableIndexer TableAssetIndexer) *DatabaseRuntime {
+func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanRepository, tableIndexer scanprocessor.TechnicalMetadataIndexer) *DatabaseRuntime {
 	return &DatabaseRuntime{
 		db:           db,
 		log:          log,

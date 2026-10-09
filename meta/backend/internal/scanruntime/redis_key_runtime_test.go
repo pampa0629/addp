@@ -35,7 +35,7 @@ func TestIntegrationRedisKeyspaceScanStableAndPrunesOldKeys(t *testing.T) {
 	repo := metaRepo.NewScanRepository(db)
 	p := &redisplugin.RedisPlugin{}
 	resource := &commonModels.Engine{ID: 42, Name: "Redis", EngineType: "redis", ConnectionInfo: commonModels.ConnectionInfo{"host": host, "port": n, "database": 0, "user": "addp_business_reader", "password": os.Getenv("BUSINESS_REDIS_READER_PASSWORD")}}
-	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo)
+	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	ctx := context.Background()
 	count, err := runtime.ScanRoot(ctx, p, resource, 1, models.ScannedDepthDeep, true)
 	if err != nil || count != 1 {

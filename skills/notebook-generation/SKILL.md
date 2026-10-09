@@ -16,10 +16,10 @@ description: 基于 ADDP 当前 Notebook Session 已授权的数据引擎和 Cat
 
 ## 代码约束
 
-- 使用具体 Engine 的原生门面，如 `engines.client(engine_id).table(...)`、`sql(...)`、`collection(...)` 或 `graph(...)`。
+- 本生成场景使用具体 Engine 的原生表门面 `engines.client(engine_id).table(...)`。其他门面的存在不代表 Notebook Copilot 已支持对应分析生成。
 - Notebook Copilot 的表分析统一使用 `table(...).to_pandas(...)`；空间表使用共享 `table(...).to_geopandas(...)`。不得生成 `engine.sql(...)`，查询语言生成应进入查询工作台。
 - 不假定 PostgreSQL、`public`、`geom`、`geometry`、字段名、表名或 CRS；全部从已验证事实推导。
-- 完整读取必须给出显式 `memory_limit`；查询必须给出 `max_rows` 和 `timeout`。
+- 表读取必须给出显式 `memory_limit`，门面参数来自已验证的 Engine descriptor 和 Catalog path，由 Copilot 按原生门面契约生成及校验，不在 Skill 中维护各引擎签名副本。
 - 距离和面积计算必须使用适合的投影坐标系。可能重叠的同类图形先合并，避免重复计量。
 - 最终 DataFrame 列名、图例和坐标轴等用户可见标签跟随用户请求语言；面积、距离等指标在标签中标明单位，不直接展示 `area_sqm`、`area_hectares` 等内部英文标识。
 - 不使用 `requests`、`httpx`、数据库驱动、连接信息、ResourceLocator 或环境变量绕过 Session 门面。

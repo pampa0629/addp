@@ -17,6 +17,21 @@ ADDP Skill 是面向一类可复用任务的知识与工作方法包，负责说
 
 Skill 不执行 ADDP 业务逻辑。真实操作统一通过 Tool Adapter、Python SDK 和 owner 模块正式 API 完成。
 
+### Skill、Copilot 与共享实现的边界
+
+Skill 描述完成一类任务的方法，由 Agent Runtime 组织资源发现、用户澄清、能力调用和结果跟踪。Copilot 是固定场景的领域生成服务，接收上下文并返回候选结果；当前不加载或执行完整任务 Skill，也不增加动态 Skill 路由。例如 `workflow-analysis` 调用 `workflow.draft.generate`，后者由 Copilot 提供，Copilot 不能再执行同一 Skill 而递归调用自己。
+
+知识和实现按职责保持唯一来源：
+
+| 内容 | 唯一归属 | 消费方式 |
+| --- | --- | --- |
+| 任务步骤、发现方法、澄清时机、调用与审批顺序 | 根目录 `skills/` | Agent Runtime 按需加载；领域 Skill 通过 `required_skills` 组合共用方法 |
+| Tool 输入输出、资源事实与公开算子契约 | Tool Manifest、对应规范及事实 owner | Skill 引用，Copilot 和 Runtime 通过共享类型、SDK 与 ToolExecutor 消费 |
+| 固定生成步骤的输入组织、响应格式及模型指令 | Copilot 领域生成服务 | 根据当前场景和已验证事实构造提示词，不复制完整任务 Skill |
+| 字段、只读性、参数和资源范围的确定性校验 | 对应生成服务、编译器或业务 owner | 在代码边界执行；提示词不能替代校验与授权 |
+
+同一约束可以在任务入口和生成入口分别提醒，但不能形成不同的事实来源。审查重复时先判断是否承担相同职责：能由代码验证的规则交给确定性校验器；真正需要由多个模型消费者维护的同一生成知识，才提炼为共享来源。只有它构成独立、可复用的任务方法时才形成 Skill，不为一次模型调用新增薄包装 Skill，也不依靠截取完整 Skill 的某一段来拼装 Copilot 提示词。
+
 `workflow-analysis` 是合适的 Skill；“铁路占耕地面积计算”是该 Skill 的评测场景，不得建立为独立 Skill。
 
 ## 二、唯一目录
@@ -42,12 +57,17 @@ skills/
 ├── notebook-generation/
 │   ├── SKILL.md
 │   └── agents/addp.yaml
-└── transfer-generation/
+├── transfer-generation/
+│   ├── SKILL.md
+│   └── agents/addp.yaml
+└── ontology-exploration/
     ├── SKILL.md
     └── agents/addp.yaml
 ```
 
 平台级 Skill 只位于根目录 `skills/`。原 `agent/backend/skills/` 已删除，不保留运行时私有 Skill 事实源。
+
+Skill 属于平台共享知识资产，目录独立于编程语言和宿主运行时，不移入 Go `common/` 或 Python 包。多个 Python 消费者确实需要相同的加载、依赖解析或校验代码时，才将这部分通用实现提取到 `common-python`；只有 Agent 消费时保留现有模块实现，不预先新增共享加载器。
 
 每个 Skill 是独立目录，目录名与 `SKILL.md` front matter 中的 `name` 一致，使用小写连字符命名。
 
@@ -115,7 +135,8 @@ required_skills:
   - data-discovery
 required_tools:
   - data.search
-  - data.preview
+  - resource.ancestors.get
+  - resource.facts.get
   - workflow.operators.list
   - workflow.validate
   - workflow.run
@@ -162,7 +183,7 @@ max_iterations: 8
 ## 执行步骤
 
 1. 调用 `data.search` 查找候选数据。
-2. 调用 `data.preview` 检查字段与能力。
+2. 调用 `resource.ancestors.get → resource.facts.get` 确认输入身份和字段事实；能力来自对应引擎和公开算子契约。
 3. 调用 `workflow.operators.list` 取得公开算子契约。
 4. 生成并调用 `workflow.validate` 校验候选 workflow。
 5. 展示 DAG 和关键参数。

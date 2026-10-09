@@ -90,6 +90,8 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 
 动态 schema 记录集合的 attributes 写入使用 `BuildDynamicSchemaAttributes` / `ApplyDynamicSchemaStatistics` 这条路径；字段画像写入 `type_info.table.fields`，采样和索引事实分别写入 `capabilities.statistics` / `capabilities.indexing`，不得写入 `type_info.document` 或新增 `type_info.collection`。
 
+所有 DataItem 的 basic / deep 扫描（含未变化跳过）与现有单项刷新共用 Indexer 的技术元数据投影构造器，经 Manager 正式客户端提交，不发送 attributes 或任何样本值；深度扫描分别提交技术快照与正文快照，正文请求不夹带技术字段或完整 attributes。不得保留 table / collection 的独立投影路线。集合 basic 扫描保留已有深度结构；历史缺投递集合经确认后使用精确 collection locator 的 `basic + force` manual execution 补录，不改用 deep 单项刷新采样。投递告警与 Meta 扫描完成分开核查，详见元数据扫描机制规范。
+
 ### 主要扫描链路
 
 对象存储 catalog scan：

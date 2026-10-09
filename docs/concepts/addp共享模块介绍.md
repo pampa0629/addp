@@ -1,3 +1,7 @@
+## 平台共享知识资产
+
+共享体系同时包含代码库和知识资产。平台级 Skill 的唯一目录是仓库根目录 `skills/`，保存任务方法、参考资料和宿主装配声明；它独立于 Go `common/`、`common-frontend` 和 `common-python`。通用 SDK、ToolExecutor 和资源模型由现有共享代码库提供。Skill 加载、依赖解析和校验代码只有出现多个相同契约的 Python 消费者时才提取到 `common-python`，不为目录统一提前增加抽象。Copilot 当前按固定场景生成候选结果，不执行完整任务 Skill。具体知识归属见 [ADDP Skill 规范](../skills/addp-Skill规范.md)。
+
 ## Common 模块
 
 `common` 模块提供共享代码,避免**所有其他后端模块**之间的重复 (Manager、Meta、Transfer、Orchestrator、Develop 和 GeoPython Workflow 集成)。

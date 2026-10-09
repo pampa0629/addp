@@ -588,6 +588,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 func (s *HybridSearchService) Close() {}
 
 type ContentDocumentDeleteScope struct {
+	DocumentID   string
 	EngineID     uint
 	DataItemType string
 	Schema       string
@@ -604,7 +605,7 @@ func (s *HybridSearchService) DeleteContentDocuments(ctx context.Context, tenant
 	}
 	filters := []string{fmt.Sprintf("tenant_id = %d", tenantID), fmt.Sprintf("engine_id = %d", scope.EngineID)}
 	for field, value := range map[string]string{
-		"data_item_type": scope.DataItemType, "schema": scope.Schema, "bucket": scope.Bucket,
+		"document_id": scope.DocumentID, "data_item_type": scope.DataItemType, "schema": scope.Schema, "bucket": scope.Bucket,
 	} {
 		if value = strings.TrimSpace(value); value != "" {
 			filters = append(filters, fmt.Sprintf("%s = '%s'", field, strings.ReplaceAll(value, "'", "\\'")))

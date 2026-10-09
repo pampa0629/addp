@@ -2,9 +2,14 @@ package scanadapter_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/meta/internal/service"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"strings"
@@ -134,7 +139,22 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			}
 			p.target = targetPath.StringPath()
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
-			contentScanner := scanruntime.NewRuntimeEngineCatalogContentScanner(scanruntime.NewObjectStorageCatalogRuntime(db, log, repo, nil), scanruntime.NewFilesystemCatalogRuntime(db, log, repo, nil))
+			var projections []commonClient.ManagerContentDocument
+			manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var doc commonClient.ManagerContentDocument
+				if err := json.NewDecoder(r.Body).Decode(&doc); err != nil {
+					t.Error(err)
+				}
+				if err := doc.Validate(); err != nil {
+					t.Error(err)
+				}
+				projections = append(projections, doc)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer manager.Close()
+			client := commonClient.NewManagerContentClient(manager.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "tenant-961", nil }), manager.Client())
+			indexer := service.NewIndexerService(client, log)
+			contentScanner := scanruntime.NewRuntimeEngineCatalogContentScanner(scanruntime.NewObjectStorageCatalogRuntime(db, log, repo, indexer), scanruntime.NewFilesystemCatalogRuntime(db, log, repo, indexer))
 			dispatcher := scanadapter.NewEngineCatalogScanDispatcher(db, repo, log, nil, nil, nil, contentScanner)
 			req := scanflow.DispatchRequest{Context: t.Context(), Resource: resource, EnginePlugin: p, TenantID: 961, CatalogPaths: []string{scope}, ScanDepth: "basic", Force: true}
 			// A first exact scan must create only its own item and structural parents.
@@ -189,9 +209,20 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			for _, depth := range []string{"basic", "deep", "deep"} {
 				req.ScanDepth = depth
 				p.opened = nil
+				projections = nil
 				result, err := dispatcher.Dispatch(req)
 				if err != nil || result.Items != 1 {
 					t.Fatalf("precise %s scan: %+v %v", depth, result, err)
+				}
+				expected := 1
+				if depth == "deep" {
+					expected = 2
+				}
+				if len(projections) != expected || projections[0].PayloadKind != commonClient.ManagerContentPayloadTechnicalMetadata {
+					t.Fatalf("%s projections=%+v", depth, projections)
+				}
+				if depth == "deep" && projections[1].PayloadKind != commonClient.ManagerContentPayloadExtractedContent {
+					t.Fatal("missing separate body snapshot")
 				}
 				item := readItem("A.csv")
 				if item.SizeBytes == nil || *item.SizeBytes != size || commonJSON.Int64(item.Attributes, "storage", "total_size") != size {
@@ -228,9 +259,29 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 					t.Fatal("deep content scan skipped enhancement")
 				}
 			}
+			deepItem := readItem("A.csv")
+			deepFields := commonJSON.Section(deepItem.Attributes, "type_info.table")["fields"]
+			if deepFields == nil {
+				t.Fatal("deep scan did not register structure")
+			}
+			for _, force := range []bool{true, false} {
+				req.ScanDepth, req.Force = "basic", force
+				projections, p.opened = nil, nil
+				if _, err := dispatcher.Dispatch(req); err != nil {
+					t.Fatal(err)
+				}
+				current := readItem("A.csv")
+				if len(p.opened) != 0 || len(projections) != 1 || projections[0].PayloadKind != commonClient.ManagerContentPayloadTechnicalMetadata || len(projections[0].Fields) != 2 || !reflect.DeepEqual(deepFields, commonJSON.Section(current.Attributes, "type_info.table")["fields"]) || current.ScannedDepth != models.ScannedDepthDeep {
+					t.Fatalf("basic/unchanged scan lost structure or read content: %+v opened=%v", projections, p.opened)
+				}
+			}
+			projections = nil
 			p.fail = true
 			if _, err := dispatcher.Dispatch(req); err == nil {
 				t.Fatal("unavailable exact source reported success")
+			}
+			if len(projections) != 0 {
+				t.Fatal("failed source submitted projection")
 			}
 			var after []models.MetaNode
 			if err := db.Where("tenant_id = ? AND engine_id = ?", 961, resource.ID).Order("id").Find(&after).Error; err != nil {

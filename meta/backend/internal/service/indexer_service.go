@@ -21,21 +21,24 @@ type IndexerService struct {
 }
 
 func NewIndexerService(contentIndex *commonClient.ManagerContentClient, log *slog.Logger) *IndexerService {
+	if log == nil {
+		log = slog.Default()
+	}
 	return &IndexerService{
 		contentIndex: contentIndex,
 		log:          log,
 	}
 }
 
-// DeleteTablesFromIndex 从索引中删除表
-func (s *IndexerService) DeleteTablesFromIndex(tenantID, engineID uint, schemaName string) {
-	if s.contentIndex == nil || schemaName == "" {
+// DeleteItemFromIndex 仅删除一个登记指纹的完整搜索文档。
+func (s *IndexerService) DeleteItemFromIndex(tenantID, engineID uint, fingerprint string) {
+	if s.contentIndex == nil || fingerprint == "" {
 		return
 	}
 	if err := s.contentIndex.WithTenantID(tenantID).DeleteDocuments(context.Background(), commonClient.ManagerContentDeleteScope{
-		EngineID: engineID, DataItemType: "table", Schema: schemaName,
+		EngineID: engineID, DocumentID: fingerprint,
 	}); err != nil {
-		s.log.Warn("删除表索引失败", "schema", schemaName, "engine_id", engineID, "error", err)
+		s.log.Warn("删除单项索引失败", "fingerprint", fingerprint, "engine_id", engineID, "error", err)
 	}
 }
 
