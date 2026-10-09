@@ -586,6 +586,25 @@
       "kinds": {
         "host_resources": "主机资源",
         "container_resources": "容器资源"
+      },
+      "collection": {
+        "title": "最近采集结果",
+        "refresh": "刷新采集状态",
+        "savedConfig": "以下结果对应已保存的配置；草稿尚未生效。",
+        "denied": "当前身份无权查看采集结果。",
+        "unsupported": "暂不提供容器资源目标的采集结果。",
+        "disabled": "已保存的采集配置已停用。",
+        "loading": "正在读取采集结果…",
+        "changed": "配置已更新，无法关联当前结果；请重新加载配置。",
+        "metricHint": "抓取成功不代表所有指标都有数据；请在主机监控中查看各项指标。",
+        "resources": "查看主机监控",
+        "states": {
+          "not_connected": "主机未接入采集",
+          "no_sample": "暂无抓取证据",
+          "collecting": "最近抓取成功",
+          "failed": "最近抓取失败",
+          "stale": "采集证据已过期"
+        }
       }
     },
     "resources": {

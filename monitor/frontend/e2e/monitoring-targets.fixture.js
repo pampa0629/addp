@@ -5,8 +5,11 @@ export function identity(keys = permissions, context = { type: 'platform' }, pri
   return { principal: { id: 'fixture-user', type: principal }, context, delegation, authorization: { role_assignments: [{ scope: context, permissions: keys }] } }
 }
 export async function backend(page, options = {}) {
-  let target = { id, version: 1, subject: { kind: 'node', node_id: node }, monitor_kind: 'host_resources', source: { type: 'node_exporter', endpoint: 'https://node.test:9443/metrics' }, enabled: true }
+  let target = { id, version: 1, subject: { kind: 'node', node_id: node }, monitor_kind: options.kind || 'host_resources', source: { type: options.kind === 'container_resources' ? 'cadvisor' : 'node_exporter', endpoint: 'https://node.test:9443/metrics' }, enabled: options.enabled !== false }
   const writes = [], reads = []
+  const collectionReads = []
+  let collectionMode = options.collectionMode || 'collecting', collectionRelease
+  const collectionHeld = options.holdCollection ? new Promise(resolve => { collectionRelease = resolve }) : null
   let conflict = options.conflict, release = null
   const held = options.holdList ? new Promise(resolve => { release = resolve }) : null
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.locale || 'zh-cn')
@@ -21,6 +24,18 @@ export async function backend(page, options = {}) {
       const host = { node_id: node, display_name: '测试主机', addresses: ['node.test'], enabled: true, version: 1 }
       body = path.endsWith('/host_nodes') ? { data: [host], total: 1, page: 1, page_size: 20 } : host
       if (options.hostUnavailable) { status = 503; body = { error: 'host unavailable' } }
+    }
+    else if (path === '/api/v1/monitor/platform/resource_observations') {
+      collectionReads.push(Object.fromEntries(url.searchParams))
+      const current = target, mode = collectionMode, queried_at = '2026-10-09T00:00:00Z'
+      const sampled_at = ['collecting', 'failed', 'stale'].includes(mode) ? (mode === 'stale' ? '2026-10-08T23:58:00Z' : queried_at) : null
+      body = { subject: { kind: 'node', node_id: node }, end: queried_at, queried_at,
+        ...(mode === 'not_connected' ? {} : { target_id: mode === 'wrong-target' ? node : current.id, target_saved_version: current.version + (mode === 'wrong-version' ? 1 : 0) }),
+        collection: { state: ['wrong-target', 'wrong-version', 'unavailable', 'denied'].includes(mode) ? 'collecting' : mode, sampled_at: ['wrong-target', 'wrong-version', 'unavailable', 'denied'].includes(mode) ? queried_at : sampled_at, filesystem: 'unknown' },
+        series: [{ metric_key: 'node.memory.total_bytes', unit: 'bytes', window_seconds: 0, dimensions: {}, points: [{ evaluated_at: queried_at, sampled_at: queried_at, value: 1024 ** 3, data_state: 'valid' }] }] }
+      if (mode === 'not_connected') Object.assign(body.series[0].points[0], { sampled_at: null, value: null, data_state: 'not_connected' })
+      if (mode === 'unavailable' || mode === 'denied') { status = mode === 'denied' ? 403 : 503; body = { error_code: mode === 'denied' ? 'permission_denied' : 'observability_backend_unavailable' } }
+      if (collectionHeld) await collectionHeld
     }
     else if (path.startsWith('/api/v1/monitor/platform/monitoring_targets')) {
       if (req.method() === 'GET') {
@@ -39,7 +54,7 @@ export async function backend(page, options = {}) {
     } else throw new Error(`Unexpected target fixture API ${path}`)
     await route.fulfill({ status, contentType: 'application/json', ...(status === 204 ? {} : { body: JSON.stringify(body) }) })
   })
-  return { writes, reads, release: () => release?.() }
+  return { writes, reads, collectionReads, setCollectionMode: value => { collectionMode = value }, releaseCollection: () => collectionRelease?.(), release: () => release?.() }
 }
 export async function setIdentity(page, value) {
   await page.evaluate(next => { document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').authContext = next }, value)

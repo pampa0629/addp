@@ -110,3 +110,135 @@ test('unavailable System host evidence cannot submit a copied reference', async 
   await expect(page.getByTestId('target-save')).toHaveCount(0)
   expect(state.writes).toHaveLength(0)
 })
+
+const observingIdentity = () => identity([...permissions, 'monitor.resource_observation.read'])
+for (const locale of ['zh-cn', 'en']) test(`${locale} collection evidence stays beside settings and refreshes without saving a draft`, async ({ page }) => {
+  const state = await backend(page, { locale, identity: observingIdentity() })
+  await page.goto(`/monitoring-targets/${id}`)
+  const panel = page.getByTestId('target-collection')
+  const names = locale === 'en'
+    ? ['Latest scrape succeeded', 'Latest scrape failed', 'Collection evidence is stale', 'No scrape evidence yet', 'Host collection is not connected']
+    : ['最近抓取成功', '最近抓取失败', '采集证据已过期', '暂无抓取证据', '主机未接入采集']
+  const refresh = panel.getByRole('button', { name: locale === 'en' ? 'Refresh collection status' : '刷新采集状态', exact: true })
+  await expect(panel).toContainText(names[0])
+  await expect(panel).toContainText(locale === 'en' ? 'does not mean every metric has data' : '不代表所有指标都有数据')
+  expect(state.collectionReads).toEqual([{ node_id: node, metrics: 'node.memory.total_bytes' }])
+  await page.getByTestId('target-endpoint').fill('https://draft.test:9443/metrics')
+  await page.getByTestId('target-enabled').click()
+  await expect(panel).toContainText(locale === 'en' ? 'the draft has not taken effect' : '草稿尚未生效')
+  for (const [index, mode] of ['failed', 'stale', 'no_sample', 'not_connected'].entries()) {
+    state.setCollectionMode(mode)
+    await refresh.click()
+    await expect(panel).toContainText(names[index + 1])
+    await expect(panel).not.toContainText(names[0])
+    await expect(page.getByTestId('target-endpoint')).toHaveValue('https://draft.test:9443/metrics')
+  }
+  await page.setViewportSize({ width: 620, height: 700 })
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+  expect(state.writes).toHaveLength(0)
+  await page.getByTestId('target-save').click()
+  await expect(panel).toContainText(locale === 'en' ? 'saved collection settings are disabled' : '已保存的采集配置已停用')
+  await expect(refresh).toHaveCount(0)
+  expect(state.collectionReads).toHaveLength(5)
+})
+
+test('collection failure clears success, preserves configuration editing and can recover', async ({ page }) => {
+  const state = await backend(page, { identity: observingIdentity() })
+  await page.goto(`/monitoring-targets/${id}`)
+  const panel = page.getByTestId('target-collection')
+  await expect(panel).toContainText('最近抓取成功')
+  await page.getByTestId('target-endpoint').fill('https://draft.test:9443/metrics')
+  for (const [mode, text] of [['unavailable', '无法读取资源观测'], ['denied', '当前身份无权查看主机监控']]) {
+    state.setCollectionMode(mode)
+    await panel.getByRole('button', { name: '刷新采集状态' }).click()
+    await expect(panel.getByRole('alert')).toContainText(text)
+    await expect(panel).not.toContainText('最近抓取成功')
+    await expect(page.getByTestId('target-save')).toBeEnabled()
+    await expect(page.getByTestId('target-endpoint')).toHaveValue('https://draft.test:9443/metrics')
+  }
+  state.setCollectionMode('collecting')
+  await panel.getByRole('button', { name: '刷新采集状态' }).click()
+  await expect(panel).toContainText('最近抓取成功')
+  await expect(panel.getByRole('alert')).toHaveCount(0)
+  expect(state.writes).toHaveLength(0)
+})
+
+for (const mode of ['wrong-target', 'wrong-version']) test(`${mode} cannot attribute evidence to the displayed saved settings`, async ({ page }) => {
+  const state = await backend(page, { identity: observingIdentity(), collectionMode: mode })
+  await page.goto(`/monitoring-targets/${id}`)
+  const panel = page.getByTestId('target-collection')
+  await expect(panel.getByRole('alert')).toContainText('请重新加载配置')
+  await expect(panel).not.toContainText('最近抓取成功')
+  state.setCollectionMode('collecting')
+  await page.getByRole('button', { name: '重新加载配置' }).click()
+  await expect(panel).toContainText('最近抓取成功')
+  expect(state.writes).toHaveLength(0)
+})
+
+for (const [name, options, text] of [
+  ['no observation permission', {}, '当前身份无权查看采集结果'],
+  ['disabled settings', { identity: observingIdentity(), enabled: false }, '已保存的采集配置已停用'],
+  ['container settings', { identity: observingIdentity(), kind: 'container_resources' }, '暂不提供容器资源目标的采集结果']
+]) test(`${name} does not query host collection`, async ({ page }) => {
+  const state = await backend(page, options)
+  await page.goto(`/monitoring-targets/${id}`)
+  const panel = page.getByTestId('target-collection')
+  await expect(panel).toContainText(text)
+  await expect(panel.getByRole('button', { name: '刷新采集状态' })).toHaveCount(0)
+  expect(state.collectionReads).toHaveLength(0)
+  await expect(page.getByTestId('target-endpoint')).toHaveValue('https://node.test:9443/metrics')
+})
+
+test('list and new settings never request collection evidence', async ({ page }) => {
+  const state = await backend(page, { identity: observingIdentity() })
+  await page.goto('/monitoring-targets')
+  await expect(page.locator('.el-pagination__total')).toBeVisible()
+  await page.getByRole('button', { name: '新增采集配置', exact: true }).click()
+  await expect(page.getByTestId('target-endpoint')).toBeVisible()
+  await expect(page.getByTestId('target-collection')).toHaveCount(0)
+  expect(state.collectionReads).toHaveLength(0)
+})
+
+test('revoked observation access cancels a delayed result without blocking settings', async ({ page }) => {
+  const state = await backend(page, { identity: observingIdentity(), holdCollection: true })
+  await page.goto(`/monitoring-targets/${id}`)
+  const panel = page.getByTestId('target-collection')
+  await expect(panel).toContainText('正在读取采集结果')
+  await expect(page.getByTestId('target-save')).toBeEnabled()
+  await setIdentity(page, identity())
+  await expect(panel).toContainText('当前身份无权查看采集结果')
+  state.releaseCollection()
+  await expect(page.getByTestId('target-endpoint')).toHaveValue('https://node.test:9443/metrics')
+  await expect(panel).not.toContainText('最近抓取成功')
+  expect(state.collectionReads).toHaveLength(1)
+  expect(state.writes).toHaveLength(0)
+})
+
+test('an enabled settings save refreshes evidence for the new version and ignores the previous request', async ({ page }) => {
+  const state = await backend(page, { identity: observingIdentity(), holdCollection: true })
+  await page.goto(`/monitoring-targets/${id}`)
+  const panel = page.getByTestId('target-collection')
+  await expect(panel).toContainText('正在读取采集结果')
+  await page.getByTestId('target-endpoint').fill('https://updated.test:9443/metrics')
+  await page.getByTestId('target-save').click()
+  await expect.poll(() => state.collectionReads.length).toBe(2)
+  state.releaseCollection()
+  await expect(panel).toContainText('最近抓取成功')
+  await expect(panel.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByTestId('target-endpoint')).toHaveValue('https://updated.test:9443/metrics')
+  expect(state.writes).toHaveLength(1)
+  expect(state.writes[0].input.version).toBe(1)
+})
+
+test('a settings reader with observation access can refresh evidence without write controls', async ({ page }) => {
+  const state = await backend(page, { identity: identity(['platform.host_node.read', 'monitor.monitoring_target.read', 'monitor.resource_observation.read']) })
+  await page.goto(`/monitoring-targets/${id}`)
+  const panel = page.getByTestId('target-collection')
+  await expect(panel).toContainText('最近抓取成功')
+  state.setCollectionMode('failed')
+  await panel.getByRole('button', { name: '刷新采集状态' }).click()
+  await expect(panel).toContainText('最近抓取失败')
+  await expect(page.getByTestId('target-save')).toHaveCount(0)
+  await expect(page.getByTestId('target-delete')).toHaveCount(0)
+  expect(state.writes).toHaveLength(0)
+})

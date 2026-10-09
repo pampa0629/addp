@@ -36,7 +36,27 @@
           <el-form-item :label="t('monitor.targets.endpoint')"><el-input ref="endpointInput" v-model="form.endpoint" maxlength="512" :placeholder="t('monitor.targets.endpointHint')" data-testid="target-endpoint" /></el-form-item>
           <el-form-item :label="t('monitor.targets.configState')"><el-switch v-model="form.enabled" :active-text="t('monitor.targets.enabled')" :inactive-text="t('monitor.targets.disabled')" :aria-label="t('monitor.targets.configState')" data-testid="target-enabled" /></el-form-item>
         </el-form>
-        <p class="target-hint">{{ t('monitor.targets.configHint') }}</p>
+        <section v-if="!creating && formReady" class="target-collection" aria-labelledby="target-collection-heading" data-testid="target-collection">
+          <div class="target-collection-toolbar">
+            <h3 id="target-collection-heading">{{ t('monitor.targets.collection.title') }}</h3>
+            <el-button v-if="canObserve && target.enabled && target.monitor_kind === 'host_resources'" :loading="collectionLoading" @click="loadCollection">{{ t('monitor.targets.collection.refresh') }}</el-button>
+          </div>
+          <p v-if="draftChanged" class="target-hint">{{ t('monitor.targets.collection.savedConfig') }}</p>
+          <p v-if="!canObserve" role="status">{{ t('monitor.targets.collection.denied') }}</p>
+          <p v-else-if="target.monitor_kind !== 'host_resources'" role="status">{{ t('monitor.targets.collection.unsupported') }}</p>
+          <p v-else-if="!target.enabled" role="status">{{ t('monitor.targets.collection.disabled') }}</p>
+          <p v-else-if="collectionLoading" role="status">{{ t('monitor.targets.collection.loading') }}</p>
+          <el-alert v-else-if="collectionError" :title="t(collectionError)" type="warning" :closable="false" show-icon />
+          <template v-else-if="collection">
+            <p role="status"><strong>{{ t(`monitor.targets.collection.states.${collection.collection.state}`) }}</strong></p>
+            <p v-if="collection.collection.state !== 'collecting'" class="target-hint">{{ t(`monitor.resources.collection.${collection.collection.state}`) }}</p>
+            <p v-if="collection.collection.state === 'collecting'" class="target-hint">{{ t('monitor.targets.collection.metricHint') }}</p>
+            <p>{{ t('monitor.resources.sampledAt') }}: {{ collection.collection.sampled_at ? formatDateTime(collection.collection.sampled_at) : '—' }}</p>
+            <p>{{ t('monitor.resources.queriedAt') }}: {{ formatDateTime(collection.queried_at) }}</p>
+          </template>
+          <el-button v-if="canObserve && target.monitor_kind === 'host_resources'" text type="primary" @click="navigate(`/node-resources/${target.subject.node_id}`, {})">{{ t('monitor.targets.collection.resources') }}</el-button>
+        </section>
+        <p v-if="creating" class="target-hint">{{ t('monitor.targets.configHint') }}</p>
         <el-button text type="primary" @click="openNodes">{{ t('monitor.targets.nodeInventory') }}</el-button>
       </div>
       <template #footer>
@@ -64,10 +84,13 @@ import { monitoringTargetsAPI as api } from '../api/monitoringTargets'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { isTargetUUID, resolveTargetRoute, targetInput, targetKinds } from '../utils/monitoringTargets'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
+import { validateCollection, validateResourceResponse, resourceErrorKey } from '../utils/nodeResources'
+import { formatDateTime } from '../../../../common-frontend/basic/src/utils/formatters.js'
 
 const { t } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.monitoring_target.read') && auth.hasPermission('platform.host_node.read'))
 const canCreate = computed(() => canRead.value && auth.hasPermission('monitor.monitoring_target.create'))
+const canObserve = computed(() => canRead.value && auth.hasPermission('monitor.resource_observation.read'))
 const creating = computed(() => route.name === 'MonitoringTargetNew')
 const targetID = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
 const dialogOpen = computed(() => creating.value || Boolean(targetID.value))
@@ -76,12 +99,15 @@ const canRemove = computed(() => !creating.value && canRead.value && auth.hasPer
 const state = computed(() => resolveTargetRoute(route.query, creating.value))
 const rows = ref([]), total = ref(0), loading = ref(false), loaded = ref(false), listError = ref('')
 const target = ref(null), formReady = ref(false), detailLoading = ref(false), detailError = ref(''), saveError = ref(''), saving = ref(false), conflicted = ref(false), statusMessage = ref('')
+const collection = ref(null), collectionLoading = ref(false), collectionError = ref('')
+let collectionTicket = 0, collectionController = null
 const selectedNode = ref(null), nodeOptions = ref([]), nodesLoading = ref(false), nodesError = ref('')
 const nodeNames = ref({})
 let nodesTicket = 0, nodesPage = 1, nodesTotal = 0, nodeSearch = ''
 const selectableNodes = computed(() => selectedNode.value && !nodeOptions.value.some(host => host.node_id === selectedNode.value.node_id) ? [selectedNode.value, ...nodeOptions.value] : nodeOptions.value)
 const nodeInput = ref(null), endpointInput = ref(null), closeButton = ref(null), pageHeading = ref(null)
 const form = reactive({ node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true })
+const draftChanged = computed(() => target.value && (form.endpoint !== target.value.source.endpoint || form.enabled !== target.value.enabled))
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 let epoch = 0, listTicket = 0, detailTicket = 0
 const pending = new Set()
@@ -101,8 +127,13 @@ function navigate(path, query = state.value.query, history = 'push') { return na
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function closeDialog() { if (!saving.value) return navigate('/monitoring-targets', state.value.query, 'replace') }
 function openNodes() { return openConsoleRoute('/system/host-nodes') }
-function resetForm() { Object.assign(form, { node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true }); formReady.value = false; target.value = null; selectedNode.value = null }
+function clearCollection() {
+  collectionTicket++; collectionController?.abort(); collectionController = null
+  collection.value = null; collectionError.value = ''; collectionLoading.value = false
+}
+function resetForm() { clearCollection(); Object.assign(form, { node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true }); formReady.value = false; target.value = null; selectedNode.value = null }
 function populate(value) {
+  clearCollection()
   target.value = value
   Object.assign(form, { node_id: value.subject.node_id, monitor_kind: value.monitor_kind, endpoint: value.source.endpoint, enabled: value.enabled })
   formReady.value = true
@@ -165,9 +196,32 @@ async function loadDetail() {
     const host = await readNode(value.subject.node_id)
     if (generation !== epoch || ticket !== detailTicket) return
     selectedNode.value = host
-    formReady.value = true; await focusForm()
+    formReady.value = true; void loadCollection(); await focusForm()
   } catch (error) { if (generation === epoch && ticket === detailTicket) detailError.value = t(error.response?.status === 404 ? 'monitor.targets.notFound' : 'monitor.targets.loadFailed') }
   finally { if (generation === epoch && ticket === detailTicket) detailLoading.value = false }
+}
+async function loadCollection() {
+  clearCollection()
+  const saved = target.value
+  if (!canObserve.value || !formReady.value || creating.value || !saved?.enabled || saved.monitor_kind !== 'host_resources') return
+  const generation = epoch, ticket = collectionTicket, controller = new AbortController()
+  collectionController = controller; pending.add(controller); collectionLoading.value = true
+  try {
+    const metrics = ['node.memory.total_bytes']
+    const value = await hostsAPI.instant({ node_id: saved.subject.node_id, metrics: metrics.join(',') }, { signal: controller.signal })
+    if (generation !== epoch || ticket !== collectionTicket) return
+    validateCollection(value.collection, value.queried_at)
+    validateResourceResponse(value, saved.subject.node_id, metrics)
+    if (value.target_id && (value.target_id !== saved.id || value.target_saved_version !== saved.version)) {
+      collectionError.value = 'monitor.targets.collection.changed'; return
+    }
+    if (!value.target_id && value.collection.state !== 'not_connected') throw new Error('invalid_resource_response')
+    collection.value = value
+  } catch (error) { if (generation === epoch && ticket === collectionTicket) collectionError.value = resourceErrorKey(error) }
+  finally {
+    pending.delete(controller)
+    if (generation === epoch && ticket === collectionTicket) { collectionLoading.value = false; collectionController = null }
+  }
 }
 function writeError(error) {
   conflicted.value = !creating.value && error.response?.data?.error_code === 'resource_version_conflict'
@@ -183,7 +237,7 @@ async function save() {
     if (generation !== epoch) return
     ElMessage.success(t('monitor.targets.saved'))
     if (isCreate) { const { node_id, ...query } = state.value.query; await navigate(`/monitoring-targets/${value.id}`, query, 'replace') }
-    else { const host = selectedNode.value; populate(value); selectedNode.value = host; await loadList() }
+    else { const host = selectedNode.value; populate(value); selectedNode.value = host; void loadCollection(); await loadList() }
   } catch (error) { if (generation === epoch) writeError(error) }
   finally { if (generation === epoch) { saving.value = false; statusMessage.value = '' } }
 }
@@ -230,6 +284,10 @@ onBeforeUnmount(invalidate)
 .target-toolbar h2 { flex: 1; }
 .target-pagination { margin-top: 16px; overflow-x: auto; }
 .target-hint { color: var(--addp-text-secondary); margin: 12px 0; }
+.target-collection { margin: 12px 0; padding: 12px; border: 1px solid var(--addp-border-color); border-radius: 4px; }
+.target-collection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.target-collection-toolbar h3 { flex: 1; margin: 0; }
+.target-collection p { overflow-wrap: anywhere; }
 .el-alert { margin-bottom: 12px; }
 :deep(.el-dialog__footer) { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 :deep(.el-dialog__footer .el-button + .el-button) { margin-left: 0; }

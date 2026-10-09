@@ -586,6 +586,25 @@
       "kinds": {
         "host_resources": "Host resources",
         "container_resources": "Container resources"
+      },
+      "collection": {
+        "title": "Latest collection result",
+        "refresh": "Refresh collection status",
+        "savedConfig": "These results belong to the saved settings; the draft has not taken effect.",
+        "denied": "You do not have permission to view collection results.",
+        "unsupported": "Collection results are not yet available for container resource targets.",
+        "disabled": "The saved collection settings are disabled.",
+        "loading": "Loading collection results…",
+        "changed": "The settings have changed and these results cannot be matched. Reload the settings.",
+        "metricHint": "A successful scrape does not mean every metric has data. Check individual metrics in Host monitoring.",
+        "resources": "View host monitoring",
+        "states": {
+          "not_connected": "Host collection is not connected",
+          "no_sample": "No scrape evidence yet",
+          "collecting": "Latest scrape succeeded",
+          "failed": "Latest scrape failed",
+          "stale": "Collection evidence is stale"
+        }
       }
     },
     "resources": {
