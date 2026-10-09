@@ -428,7 +428,10 @@ test('disk IO timing uses percent and ms and restores all three exact device tre
   const table = page.getByTestId('resource-disk-table')
   await expect(table).toContainText('0.00 %')
   await expect(table).toContainText('2.50 ms')
-  await expect(page.getByTestId('resource-disks')).toContainText('包含排队与处理')
+  await expect(table.getByRole('columnheader').filter({ hasText: '平均读取耗时' })).toContainText('每次读取的平均耗时')
+  await table.getByRole('button', { name: '平均读取耗时说明', exact: true }).click()
+  await expect(page.getByRole('tooltip')).toContainText('包含排队与处理时间')
+  await table.getByRole('button', { name: '平均读取耗时说明', exact: true }).click()
   await table.getByRole('button', { name: '查看趋势' }).click()
   for (const [label, key] of [['IO 忙碌时间占比', 'node.disk.io_busy_percent'], ['平均读取耗时', 'node.disk.read_mean_duration_milliseconds'], ['平均写入耗时', 'node.disk.write_mean_duration_milliseconds']]) {
     await page.getByTestId('resource-metric').click()
@@ -464,6 +467,30 @@ for (const locale of ['zh-cn', 'en']) {
     const names = rows.locator('td:first-child .cell')
     await expect(names).toHaveText(['z-active', 'nbd2', 'nbd10', 'a-stale', 'b-missing'])
     await expect(page.getByTestId('resource-disks')).toContainText(locale === 'en' ? 'Devices with IO activity appear first; all devices remain listed.' : '有 IO 活动的设备优先显示，全部设备均保留。')
+    const descriptions = locale === 'en' ? [
+      ['Disk read throughput', 'Data read per second', 'Average data read per second over the last complete minute'],
+      ['Disk write throughput', 'Data written per second', 'Average data written per second over the last complete minute'],
+      ['IO busy time', 'Time with IO in progress', 'This alone does not prove saturation'],
+      ['Mean read duration', 'Average time per read', 'No completed reads'],
+      ['Mean write duration', 'Average time per write', 'No completed writes']
+    ] : [
+      ['磁盘读取吞吐', '每秒读取的数据量', '最近完整一分钟内，每秒平均读取的数据量'],
+      ['磁盘写入吞吐', '每秒写入的数据量', '最近完整一分钟内，每秒平均写入的数据量'],
+      ['IO 忙碌时间占比', '有 IO 活动的时间占比', '该比例不能单独判定设备饱和度'],
+      ['平均读取耗时', '每次读取的平均耗时', '没有完成读取请求'],
+      ['平均写入耗时', '每次写入的平均耗时', '没有完成写入请求']
+    ]
+    for (const [index, [label, summary, detail]] of descriptions.entries()) {
+      const header = table.getByRole('columnheader').filter({ hasText: label })
+      await expect(header.getByText(summary, { exact: true })).toBeVisible()
+      const help = header.getByRole('button', { name: locale === 'en' ? `About ${label}` : `${label}说明`, exact: true })
+      if (index === 0) { await help.focus(); await help.press('Space') }
+      else await help.click()
+      await expect(page.getByRole('tooltip').filter({ hasText: detail })).toBeVisible()
+      await help.click()
+      await expect(page.getByRole('tooltip').filter({ hasText: detail })).not.toBeVisible()
+    }
+    await expect(page.getByTestId('resource-disks')).not.toContainText(locale === 'en' ? 'Device layers are never summed' : '按设备展示完整一分钟的读写吞吐')
     await expect(rows.nth(3)).toContainText(locale === 'en' ? 'Stale' : '陈旧')
     await expect(rows.nth(4)).toContainText('—')
     await rows.first().getByRole('button', { name: locale === 'en' ? 'View trend' : '查看趋势' }).click()
@@ -477,5 +504,10 @@ for (const locale of ['zh-cn', 'en']) {
     await page.reload()
     await expect(names).toHaveText(['nbd2', 'nbd10', 'z-active', 'a-stale', 'b-missing'])
     await expect(page.getByTestId('resource-selected-device')).toHaveText('z-active')
+    await page.setViewportSize({ width: 620, height: 800 })
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+    const writeHelp = table.getByRole('button', { name: locale === 'en' ? 'About Mean write duration' : '平均写入耗时说明', exact: true })
+    await writeHelp.click()
+    await expect(page.getByRole('tooltip').filter({ hasText: locale === 'en' ? 'No completed writes' : '没有完成写入请求' })).toBeVisible()
   })
 }

@@ -703,12 +703,34 @@
         "inode": "Inode statistics"
       },
       "loadValue": "About {value}",
+      "metricHelp": "About {metric}",
       "loadSummary": "Average number of running or waiting tasks, not a percentage.",
       "loadHint": "Tasks are processes or threads that are running, waiting for CPU, or in uninterruptible wait (often I/O). The 1, 5 and 15 minute values are smoothed averages, so decimals are normal. Interpret them alongside CPU utilization; dividing by core count does not give CPU utilization.",
       "disk": {
         "title": "Disk IO",
         "orderHint": "Devices with IO activity appear first; all devices remain listed.",
-        "hint": "Per-device throughput, IO busy time and mean read/write duration over a complete minute. Mean duration includes queueing and processing; no completed requests means no data. Busy time does not prove saturation. Device layers are never summed; incomplete windows and resets remain missing.",
+        "columns": {
+          "diskRead": {
+            "summary": "Data read per second",
+            "detail": "Average data read per second over the last complete minute, per device. Devices are not summed; incomplete windows or counter resets remain missing."
+          },
+          "diskWrite": {
+            "summary": "Data written per second",
+            "detail": "Average data written per second over the last complete minute, per device. Devices are not summed; incomplete windows or counter resets remain missing."
+          },
+          "diskBusy": {
+            "summary": "Time with IO in progress",
+            "detail": "Percentage of the last complete minute during which the device had IO requests in progress. This alone does not prove saturation; interpret it alongside throughput and duration. Incomplete windows or counter resets remain missing."
+          },
+          "diskReadDuration": {
+            "summary": "Average time per read",
+            "detail": "Average time per completed read request over the last complete minute, including queueing and processing. No completed reads, incomplete windows or counter resets display “—”, not 0 ms."
+          },
+          "diskWriteDuration": {
+            "summary": "Average time per write",
+            "detail": "Average time per completed write request over the last complete minute, including queueing and processing. No completed writes, incomplete windows or counter resets display “—”, not 0 ms."
+          }
+        },
         "empty": "No disk throughput data. The source must enable disk collection and provide a complete one-minute window."
       },
       "network": {

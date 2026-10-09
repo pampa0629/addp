@@ -70,12 +70,23 @@
       <template v-if="instant">
         <section v-for="family in deviceSections" :key="family.name" class="resource-filesystems" :data-testid="`resource-${family.name}s`">
           <h3>{{ t(`monitor.resources.${family.name}.title`) }}</h3>
-          <p class="resource-hint">{{ t(`monitor.resources.${family.name}.hint`) }}</p>
+          <p v-if="family.name === 'network'" class="resource-hint">{{ t('monitor.resources.network.hint') }}</p>
           <p v-if="family.name === 'disk' && family.rows.length" class="resource-hint">{{ t('monitor.resources.disk.orderHint') }}</p>
           <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
           <el-table v-if="!family.errorKey" :data="family.rows" row-key="key" :empty-text="t(`monitor.resources.${family.name}.empty`)" :data-testid="`resource-${family.name}-table`">
             <el-table-column prop="dimensions.device" :label="t(family.name === 'network' ? 'monitor.resources.network.interface' : 'monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
             <el-table-column v-for="metric in family.metrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
+              <template #header>
+                <div class="resource-metric-heading">
+                  <span>{{ t(`monitor.resources.metrics.${metric.name}`) }}</span>
+                  <el-popover v-if="family.name === 'disk'" trigger="click" placement="top" :width="280" :content="t(`monitor.resources.disk.columns.${metric.name}.detail`)">
+                    <template #reference>
+                      <el-button text circle size="small" :aria-label="t('monitor.resources.metricHelp', { metric: t(`monitor.resources.metrics.${metric.name}`) })"><el-icon><InfoFilled /></el-icon></el-button>
+                    </template>
+                  </el-popover>
+                </div>
+                <p v-if="family.name === 'disk'" class="resource-hint resource-column-summary">{{ t(`monitor.resources.disk.columns.${metric.name}.summary`) }}</p>
+              </template>
               <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p></template>
             </el-table-column>
             <el-table-column :label="t('monitor.resources.trend')" width="140"><template #default="{ row }"><el-button text type="primary" @click="selectDeviceObservation(row, family.metrics[0].key)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
@@ -123,6 +134,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { InfoFilled } from '@element-plus/icons-vue'
 import { useConsolePageDescriptor } from '@common-ui'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
 import { formatBytes, scaleByteValue, formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
@@ -303,6 +315,9 @@ onBeforeUnmount(() => { disposed = true; document.removeEventListener('visibilit
 .resource-card { min-width: 0; border: 1px solid var(--addp-border-color); border-radius: 8px; padding: 16px; background: var(--addp-bg-primary); overflow-wrap: anywhere; }
 .resource-card strong { display: block; margin-top: 12px; font-size: 22px; }
 .resource-trend, .resource-filesystems { margin-top: 24px; }
+.resource-metric-heading { display: flex; align-items: center; gap: 4px; }
+.resource-metric-heading .el-button { flex-shrink: 0; }
+.resource-column-summary { font-weight: 400; line-height: 1.4; margin: 4px 0 0; }
 .resource-chart { display: flex; min-width: 0; }
 .el-alert { margin: 16px 0; }
 @media (max-width: 600px) { .node-resources { padding: 12px; } .resource-cards { grid-template-columns: 1fr; } }
