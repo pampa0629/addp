@@ -12,7 +12,7 @@
 
 **重要**: 必须先启动基础设施服务 (PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch 等)。FalkorDB 是 Ontology 的私有 Infra，已有环境须在根 `.env` 配置独立的 `INFRA_FALKORDB_PASSWORD`。
 
-**旧搜索卷升级例外**：源码现固定 Meilisearch `1.54.3`；已有 `1.7.6` 数据卷不能通过下面的普通启动命令直接升级。应先完成 dump、独立新卷导入与回滚验证；Infra 备份默认不包含 Meilisearch，仅显式提供已成功导出的 dump 与任务 UID 时校验收录，不自动导出。标准入口与隔离演练见 [Infra 备份说明](../../scripts/infra/README.md#本地-infra-备份与隔离恢复演练)。操作边界见[企业资源目录专题 §26.79](../next/ADDP企业资源目录能力专题.md#2679-旧-meilisearch-卷的迁移回滚与验收方案2026-10-05待确认执行窗口)，未经确认不得启停旧实例或切换卷。新建无历史数据的环境不受此例外影响。
+**旧搜索卷升级例外**：源码现固定 Meilisearch `1.54.3`；已有 `1.7.6` 数据卷不能通过下面的普通启动命令直接升级。应先完成 dump、独立新卷导入与回滚验证；Infra 备份默认不包含 Meilisearch，仅显式提供已成功导出的 dump 与任务 UID 时校验收录，不自动导出。标准入口与隔离演练见 [Infra 备份说明](../../scripts/infra/README.md#本地-infra-备份与隔离恢复演练)。操作边界见[旧 Meilisearch 卷迁移与回滚](../../scripts/infra/README.md#旧-meilisearch-卷迁移与回滚)，未经确认不得启停旧实例或切换卷。新建无历史数据的环境不受此例外影响。
 
 ```bash
 # 从项目根目录

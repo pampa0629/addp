@@ -64,6 +64,7 @@ from services.interactions import (
     InteractionStateError,
     create_clarification,
     create_owner_approval,
+    format_resume_display,
     format_resume_message,
     resolve_interaction,
 )
@@ -201,7 +202,7 @@ async def _save_user_input(
                     role="user",
                     content=resume_text,
                     protocol_message_id=f"resume:{interaction.id}",
-                    parts=bounded_message_parts([{"type": "text", "text": resume_text}]),
+                    parts=bounded_message_parts([{"type": "text", "text": format_resume_display(interaction)}]),
                 )
             )
             resolved_interactions.append(interaction)
@@ -909,7 +910,7 @@ async def retry_chat(
 @router.get(
     "/sessions/{session_id}/messages",
     summary="获取会话消息 | List Session Messages",
-    description="只返回当前 Tenant 内当前用户拥有的会话消息。",
+    description="只返回当前 Tenant 内当前用户拥有的会话消息；澄清回复只展示服务端确认的选项名称，不输出运行时候选事实。 | Returns messages owned by the current user and Tenant; clarification replies show only the server-confirmed option label, not runtime candidate facts.",
     dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
     openapi_extra={
         "x-addp-auth-mode": "permission",
@@ -937,22 +938,28 @@ async def get_messages(session_id: int, request: Request, db: AsyncSession = Dep
             Interaction.tenant_id == int(request.state.tenant_id),
         )
     )
-    interaction_status = {
-        str(interaction.id): interaction.status for interaction in interaction_result.scalars().all()
-    }
+    interactions = {str(interaction.id): interaction for interaction in interaction_result.scalars().all()}
+    resume_interactions = {f"resume:{key}": interaction for key, interaction in interactions.items()}
 
     response = []
     for message in messages:
         parts = copy.deepcopy(message.parts or [])
+        content = message.content
+        interaction = resume_interactions.get(message.protocol_message_id) if message.role == "user" else None
+        if interaction is not None:
+            content = format_resume_display(interaction)
+            parts = bounded_message_parts([{"type": "text", "text": content}])
         for part in parts:
             if part.get("type") == "interaction_ref":
-                part["status"] = interaction_status.get(part.get("interaction_id"), part.get("status"))
+                linked = interactions.get(part.get("interaction_id"))
+                if linked is not None:
+                    part["status"] = linked.status
         response.append(
             {
                 "id": message.id,
                 "protocol_message_id": message.protocol_message_id,
                 "role": message.role,
-                "content": message.content,
+                "content": content,
                 "parts": parts,
                 "created_at": message.created_at.isoformat(),
             }

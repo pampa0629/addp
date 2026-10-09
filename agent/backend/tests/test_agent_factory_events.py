@@ -8,6 +8,7 @@ from agents.checkpoint import capture_owner_facts, new_checkpoint
 from agents.main_agent import _build_routing_system_prompt
 from graph.factory import AgentFactory
 from tests.harness_fixtures import HarnessTestModel, harness_tools
+from tests.test_platform_conditions import platform_fixture
 
 
 class _FakeTool:
@@ -323,6 +324,16 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                         calls.append(self.name)
                         return "{}"
 
+                class ContextTool:
+                    name = "platform__capability__context"
+                    metadata = {"addp_tool_name": "platform.capability.context"}
+
+                    async def ainvoke(self, args):
+                        self_context.assertEqual(args, {"capability": "transfer.task.create"})
+                        return json.dumps(platform_fixture()[0])
+
+                self_context = self
+
                 responses = [
                     _ScriptedResponse(tool_calls=[
                         {"id": "search", "name": "data__search", "args": {"query": "Outdoor"}},
@@ -333,13 +344,14 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                 ]
                 llm = _ScriptedLLM(responses)
                 events = await self._run_workflow_events(
-                    tools=[SearchTool(), ForbiddenTool("resource.children.list"), ForbiddenTool("transfer.task.create")],
+                    tools=[ContextTool(), SearchTool(), ForbiddenTool("resource.children.list"), ForbiddenTool("transfer.task.create")],
                     responses=responses, llm=llm,
-                    allowed_tool_names=["data.search", "resource.children.list", "transfer.task.create"],
+                    allowed_tool_names=["platform.capability.context", "data.search", "resource.children.list", "transfer.task.create"],
                 )
                 self.assertEqual(calls, [])
                 self.assertEqual(len(llm.messages), 1)
-                self.assertEqual([event.kind for event in events], ["tool_start", "tool_result", "run_failed"])
+                self.assertEqual([event.payload["tool_name"] for event in events if event.kind == "tool_start"], ["platform.capability.context", "data.search"])
+                self.assertEqual([event.kind for event in events[-3:]], ["tool_start", "tool_result", "run_failed"])
                 failure = events[-1].payload
                 self.assertEqual(failure["error_code"], code)
                 self.assertEqual(failure["message"], "公开搜索失败")

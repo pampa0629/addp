@@ -2109,7 +2109,7 @@
     },
     "/api/v1/agent/sessions/{session_id}/messages": {
       "get": {
-        "description": "只返回当前 Tenant 内当前用户拥有的会话消息。",
+        "description": "只返回当前 Tenant 内当前用户拥有的会话消息；澄清回复只展示服务端确认的选项名称，不输出运行时候选事实。 | Returns messages owned by the current user and Tenant; clarification replies show only the server-confirmed option label, not runtime candidate facts.",
         "operationId": "get_messages_api_v1_agent_sessions__session_id__messages_get",
         "parameters": [
           {

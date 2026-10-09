@@ -795,6 +795,9 @@
       }
     },
     "retrieval": {
+      "matchedFields": "Matched fields ({count})",
+      "expandFields": "Show all",
+      "collapseFields": "Show less",
       "title": "Data Retrieval",
       "subtitle": "Supports keyword full-text search and vector semantic search to intelligently locate data assets",
       "searchHistory": "Search History",

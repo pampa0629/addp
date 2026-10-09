@@ -172,7 +172,7 @@ Skill Runtime 装配用 `platform_routed=true` 声明该任务领域必须经平
 
 平台定义唯一描述概念、操作条件、效果和支持边界；Skill 保留获取事实、补齐缺口与组织交互的方法，不维护另一份条件清单。Transfer 发布修订 3 在既有概念/关系结构中定义各个 `inputs_required` 条件的含义及 `requires` 关系，不新增 API 字段、权限或编辑入口。接口编码和参数 Schema 仍由 Tool Manifest/SDK/Transfer owner 管理，权限仍由 System 与 owner 裁决。
 
-Agent 在当前 Harness 调用内成功读取 `platform.capability.context` 后才允许复核或创建；上下文失败不能使用 checkpoint 中的旧定义。Runtime 按返回的条件身份调用有限的条件适配器；未知条件明确拒绝，不交给模型自行忽略。核验源有正式结构事实、目标父节点由 owner 返回、边界/装载/写入策略符合条件，以及直接字段映射有依据。当前查询整形适配仅覆盖 Skill 已有的 MQL 显式直接投影和可选单次数组展开，拒绝复杂表达式或其他查询语言；它不替代 Provider 的正式查询分析和 Transfer 后端校验，不执行查询、不读取样本、不声称扫描结构完整覆盖业务值。
+Agent 在当前 Harness 调用内成功读取 `platform.capability.context` 后才允许复核或创建。具有 Transfer 创建 Tool 的 Harness 每次进入（包括 Interaction 恢复）时，由 Runtime 经白名单内的正式 Tool 主动读取当前能力，记录同一 AgentRun 的调用审计和检查点，再交给模型；不依赖模型记住刷新，不复用 checkpoint 中的旧定义。读取失败终止该次调用，不调用模型或写 Tool；新修订仍使旧复核指纹失效。Runtime 按返回的条件身份调用有限的条件适配器；未知条件明确拒绝，不交给模型自行忽略。核验源有正式结构事实、目标父节点由 owner 返回、边界/装载/写入策略符合条件，以及直接字段映射有依据。当前查询整形适配仅覆盖 Skill 已有的 MQL 显式直接投影和可选单次数组展开，拒绝复杂表达式或其他查询语言；它不替代 Provider 的正式查询分析和 Transfer 后端校验，不执行查询、不读取样本、不声称扫描结构完整覆盖业务值。
 
 `request_clarification` 的 `transfer_create_review` 原因要求 `operation_review={tool,arguments}` 和 confirm/cancel 两个选项。Runtime 先校验条件及 Manifest，再追加确切参数的规范化 JSON 到复核提示中；仅保存参数与能力修订/摘要绑定的指纹，选项身份由服务端生成，模型不能通过普通候选伪造已复核状态。正式 Interaction 回答才写入 confirmed；创建前重新核验全部条件和指纹。任务参数、语义摘要或 owner 结构事实变化都要求重新复核。提交前消费确认并持久化检查点，响应丢失或失败不自动重用确认。此复核是配置确认，不是新的 Owner 审批或权限授予。
 

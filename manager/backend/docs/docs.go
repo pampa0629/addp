@@ -3939,7 +3939,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页 | Execute full-text and vector semantic retrieval, then deduplicate, rank with symmetric RRF, and paginate the fused candidates",
+                "description": "执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页；field_matches 保留实际命中的已登记字段定义与高亮，纯向量命中不声明字段匹配 | Execute full-text and vector semantic retrieval, then deduplicate, rank with symmetric RRF, and paginate; field_matches preserves matched registered definitions and highlights, without claiming field matches for vector-only hits",
                 "produces": [
                     "application/json"
                 ],
@@ -8217,6 +8217,13 @@ const docTemplate = `{
                 "engine_type": {
                     "type": "string"
                 },
+                "field_matches": {
+                    "description": "实际命中的已登记字段 | Matched registered fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_service.SearchFieldMatch"
+                    }
+                },
                 "file_name": {
                     "type": "string"
                 },
@@ -8288,6 +8295,27 @@ const docTemplate = `{
                 },
                 "word_count": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.SearchFieldMatch": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "highlights": {
+                    "description": "name / data_type / comment 的实际高亮 | Actual highlights",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

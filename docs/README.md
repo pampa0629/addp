@@ -133,7 +133,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 2. [企业资源目录体系图](concepts/addp企业资源目录体系图.md)：确认 Meta、Standard、Catalog、Manager、Asset、Portal 的事实所有权和端到端主线。
 3. [企业资源目录实现规范](spec/addp企业资源目录实现规范.md)：确认身份、来源变化、状态机、权限、API、搜索和迁移约束。
 4. [账号与权限体系](concepts/addp账号与权限体系图.md)：确认 Department、Project Group、User 和 AuthContext。
-5. [企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)：查看阶段清单、决策记录和当前推进状态。
+5. [企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)：查看尚未完成的设计、验收和后续工作；稳定契约以正式文档为准。
 
 ## 数据安全与隐私保护主题
 

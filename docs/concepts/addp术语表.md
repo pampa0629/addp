@@ -618,7 +618,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | full-text index | 全文索引 | 面向关键词检索的外部搜索索引。 | 例如 Meilisearch 中的资产记录；与 `access_index` 不同，不用于 range read 或表格分页定位。 |
 | technical metadata search projection | 技术元数据搜索投影 | 只包含 DataItem 身份、名称、路径、类型、结构、字段定义和规模等 Meta 技术事实的可重建搜索投影。 | 所有已登记 DataItem 使用同一技术投影规则，经 Manager 正式接口提交，索引身份固定为 fingerprint；不包含数据行、字段值、文件正文、正文预览或正文派生属性，它不是 Security `search_index` 数据出口动作。 |
 | content search projection | 数据内容搜索投影 | 包含文件正文、正文预览、数据值或其派生摘要、关键词、作者等内容信息的可重建搜索投影。 | 与同 fingerprint 的技术元数据搜索投影并存，两类快照各自幂等覆盖所属字段；属于 Security `search_index` 数据出口，已纳管 DataItem 必须命中本地有效投影和独立执行器，缺失时失效关闭。 |
-| persistent index delivery record | 持久索引投递记录 | Owner 保存的外部索引操作身份、投递阶段、外部任务编号及核查结果，用于跨请求、跨进程恢复和证明派生结果收敛。 | 不保存正文或凭据，不是用户审批、资源授权或业务任务；接受入队不等于操作完成，响应丢失的未决记录不得按超时自动视为完成。Manager 的接入进度见企业资源目录能力专题。 |
+| persistent index delivery record | 持久索引投递记录 | Owner 保存的外部索引操作身份、投递阶段、外部任务编号及核查结果，用于跨请求、跨进程恢复和证明派生结果收敛。 | 不保存正文或凭据，不是用户审批、资源授权或业务任务；接受入队不等于操作完成，响应丢失的未决记录不得按超时自动视为完成。发送关联、终态核查与出口隔离遵循《数据安全与隐私保护实现规范》第九节。 |
 | index delivery correlation | 索引投递关联标记 | 发出请求前持久绑定投递 UUID、并随外部请求保存到任务的非敏感技术标记。 | 仅用于认回原任务，不是幂等键、访问授权或完成回执；未曾发送标记的历史记录不能回填为已关联。 |
 | capability | 能力 | 引擎、当前进程格式实现或数据项呈现的能力。 | engine capability、format descriptor / provider status、item capability 含义不同。 |
 | official-media technical fixture | 官方介质技术夹具 | 使用固定厂商介质、完整性摘要和 disposable 生命周期验证原生运行时、驱动协议与 SQL 边界的技术环境。 | 夹具自身不调用 System API，也不替代 Provider 准入与 capability 声明；独立 Provider 已准入后，夹具可作为技术验证 Engine Instance 的数据面。 |

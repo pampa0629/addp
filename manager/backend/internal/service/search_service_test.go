@@ -1,9 +1,49 @@
 package service
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
+
+func TestMapMeilisearchHitPreservesActualFieldMatches(t *testing.T) {
+	t.Parallel()
+	var hit map[string]interface{}
+	if err := json.Unmarshal([]byte(`{
+  "document_id":"collection", "name":"Outdoors",
+  "fields":[
+    {"name":"aamember","data_type":"json","comment":"participants"},
+    {"name":"leader.nickname","data_type":"string","comment":"Team participant"},
+    {"name":"unmatched","data_type":"string"},
+    {"name":"literal.<mark>source</mark>","data_type":"string"}
+  ],
+  "_formatted":{"fields":[
+    {"name":"<mark>aamember</mark>","data_type":"json","comment":"participants"},
+    {"name":"leader.nickname","data_type":"string","comment":"Team <mark>participant</mark>"},
+    {"name":"unmatched","data_type":"string"},
+    {"name":"literal.<mark>source</mark>","data_type":"string"}
+  ]}
+}`), &hit); err != nil {
+		t.Fatal(err)
+	}
+	doc := mapMeilisearchHit(hit)
+	want := []SearchFieldMatch{
+		{Name: "aamember", DataType: "json", Comment: "participants", Highlights: map[string]string{"name": "<mark>aamember</mark>"}},
+		{Name: "leader.nickname", DataType: "string", Comment: "Team participant", Highlights: map[string]string{"comment": "Team <mark>participant</mark>"}},
+	}
+	if !reflect.DeepEqual(doc.FieldMatches, want) {
+		t.Fatalf("field matches=%+v, want %+v", doc.FieldMatches, want)
+	}
+	// Fusion retains keyword evidence; a vector-only result cannot fabricate it.
+	fused := fuseSearchDocuments([]SearchDocument{doc}, 1, []VectorDocument{{DocumentID: "collection"}, {DocumentID: "semantic-only"}}, 1, 10)
+	if !reflect.DeepEqual(fused.Hits[0].FieldMatches, want) || len(fused.Hits[1].FieldMatches) != 0 {
+		t.Fatalf("fusion changed field evidence: %+v", fused.Hits)
+	}
+	delete(hit, "_formatted")
+	if len(mapMeilisearchHit(hit).FieldMatches) != 0 {
+		t.Fatal("unformatted definitions reported as matches")
+	}
+}
 
 func TestFuseSearchDocumentsRewardsHybridMatchesAndDeduplicates(t *testing.T) {
 	t.Parallel()

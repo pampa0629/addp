@@ -1,4 +1,9 @@
 {
+  "agentUi": {
+    "clarification": {
+      "details": "View configuration details"
+    }
+  },
   "engine": {
     "term": {
       "index": "Index",

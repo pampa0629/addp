@@ -102,6 +102,8 @@ flowchart LR
 
 Catalog 可以保存专业资源的最小“已观察摘要”用于列表、搜索和离线展示，但该摘要是可重建投影，不是专业事实源。Meta 和 Standard 不保存 `catalog_entry_id` 反向投影。
 
+Catalog 的语义关联与治理能力是平台语义体系的一部分，不等同于完整语义层或指标执行平台。Standard 定义可复用语义和指标，Model 维护业务与逻辑模型，Meta 提供物理事实，Catalog 维护资源应用关系；统一语义查询、计划编译与指标执行必须形成各自明确的消费契约，不能由目录搜索、同域共现或已有固定 SQL 推断。跨模块查询能力应从真实用例推进，不为补齐概念预建独立 Semantic Runtime。
+
 Security 与 Catalog 是 Meta 事实的并行消费者，不构成先后流程：Catalog 消费全量可恢复变化建立企业目录身份，Security 只精确读取显式纳管目标的必要事实。Security 事实直接绑定 owner 稳定专业资源引用；Catalog 建档后通过 SourceBinding 联邦展示，不要求 Security 将事实迁移或改绑到 CatalogEntry ID。Catalog 不存在不得阻止 Manager 等 Owner 执行已生效的保护投影。
 
 ## 四、自动建档与生命周期
@@ -213,4 +215,4 @@ AssetCategory 的父子关系不是独立关联实体，而是目录节点聚合
 - [ADDP 核心概念关系图](addp核心概念关系图.md)
 - [ADDP 模块架构图](addp模块架构图.md)
 - [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)
-- [企业资源目录与 Catalog 模块专题](../next/ADDP企业资源目录能力专题.md)
+- [企业资源目录能力专题：剩余工作](../next/ADDP企业资源目录能力专题.md)

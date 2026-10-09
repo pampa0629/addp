@@ -104,6 +104,8 @@ GET /api/v1/agent/runs/{agent_run_id}/events?after={sequence}
 
 `content` 仅保留纯文本搜索和上下文用途，不能重新承担结构化结果。客户端必须按 parts 顺序渲染；未知类型不得执行，可降级为安全文本或跳过。
 
+澄清恢复的模型上下文与用户可见消息分别投影：候选事实和复核身份保留在 Interaction、检查点及受限上下文中，聊天气泡只显示服务端已确认的选项名称。消息历史以同一用户、同一租户内的 Interaction 重建该展示，不解析消息正文来提取候选事实，也不改变原始确认或审计。创建复核的完整参数必须可查看；`ClarificationChoice` 中的围栏代码块默认折叠，展开后按原文显示，折叠不改变确认值、指纹或提交内容。
+
 ## 六、ResultRef、Interaction 与 Presentation
 
 ### 6.1 ResultRef

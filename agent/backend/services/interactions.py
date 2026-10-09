@@ -235,6 +235,13 @@ async def cancel_pending_interactions(db: AsyncSession, *, agent_run_id: UUID) -
     await db.flush()
 
 
+def format_resume_display(interaction: Interaction) -> str:
+    """Project a confirmed choice for the UI, not the runtime candidate facts."""
+    if interaction.kind == "clarification" and isinstance(interaction.answer, dict):
+        return str(interaction.answer.get("label") or interaction.answer.get("value") or "")
+    return format_resume_message(interaction)
+
+
 def format_resume_message(interaction: Interaction) -> str:
     answer = interaction.answer
     if interaction.kind == "owner_approval" and isinstance(answer, dict):

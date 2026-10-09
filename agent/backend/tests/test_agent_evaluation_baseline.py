@@ -494,6 +494,62 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == names[1])
             self.assertEqual(result.payload["error_code"], "platform_condition_unsatisfied")
 
+    async def test_review_resume_refreshes_context_before_direct_create(self):
+        definition, _, _, arguments, checkpoint = platform_fixture()
+        identity = prepare_review(arguments, checkpoint)
+        confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
+        model = _ScriptedLLM([
+            _Response(tool_calls=[_tool_call("transfer.task.create", arguments, "create")]),
+            _Response(content="created"),
+        ])
+        events = await self._run_factory(
+            agent_run_id="direct-review-resume", checkpoint=checkpoint,
+            tools=[_Tool("platform.capability.context", definition), _Tool("transfer.task.create", {"id": 41, "status": "idle"})],
+            allowed_tools=["platform.capability.context", "transfer.task.create"],
+            responses=[], llm=model,
+        )
+        starts = [event.payload for event in events if event.kind == "tool_start"]
+        self.assertEqual([event["tool_name"] for event in starts], ["platform.capability.context", "transfer.task.create"])
+        self.assertEqual(starts[0]["args"], {"capability": "transfer.task.create"})
+        self.assertNotEqual(starts[0]["tool_call_id"], starts[1]["tool_call_id"])
+        result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == "transfer.task.create")
+        self.assertFalse(result.payload["is_error"])
+        self.assertIn(definition["digest"], model.inputs[0][1])
+
+    async def test_initial_context_failure_never_reaches_model_or_create(self):
+        _, _, _, arguments, checkpoint = platform_fixture()
+        identity = prepare_review(arguments, checkpoint)
+        confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
+        model = _ScriptedLLM([_Response(tool_calls=[_tool_call("transfer.task.create", arguments)])])
+        class ForbiddenCreate(_Tool):
+            async def ainvoke(self, _args):
+                raise AssertionError("failed context read reached owner")
+        events = await self._run_factory(
+            agent_run_id="initial-context-failure", checkpoint=checkpoint,
+            tools=[_Tool("platform.capability.context", {"error": {"code": "owner_api_unavailable", "message": "unavailable"}}), ForbiddenCreate("transfer.task.create", {})],
+            allowed_tools=["platform.capability.context", "transfer.task.create"], responses=[], llm=model,
+        )
+        self.assertEqual(model.inputs, [])
+        self.assertFalse(any(event.kind == "tool_start" and event.payload["tool_name"] == "transfer.task.create" for event in events))
+        self.assertEqual(next(event.payload["error_code"] for event in events if event.kind == "run_failed"), "owner_api_unavailable")
+
+    async def test_resumed_context_revision_change_invalidates_review(self):
+        definition, _, _, arguments, checkpoint = platform_fixture()
+        identity = prepare_review(arguments, checkpoint)
+        confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
+        definition = {**definition, "revision": definition["revision"] + 1, "digest": "b" * 64}
+        class ForbiddenCreate(_Tool):
+            async def ainvoke(self, _args):
+                raise AssertionError("old review reached owner")
+        events = await self._run_factory(
+            agent_run_id="changed-context-resume", checkpoint=checkpoint,
+            tools=[_Tool("platform.capability.context", definition), ForbiddenCreate("transfer.task.create", {})],
+            allowed_tools=["platform.capability.context", "transfer.task.create"],
+            responses=[_Response(tool_calls=[_tool_call("transfer.task.create", arguments)]), _Response(content="review again")],
+        )
+        result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == "transfer.task.create")
+        self.assertIn("user_review", result.payload["content"])
+
     async def test_transfer_target_clarification_restores_source_schema(self):
         source = "addp://engine/9/path/outdoor/routes?type=collection&item_id=66"
         target = "addp://engine/12/path/public"

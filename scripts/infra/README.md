@@ -724,6 +724,23 @@ make infra-restore-drill BACKUP_DIR=/绝对路径/ADDP-backups/实际备份目�
 
 `make test-infra-backup` 是不连接开发服务的 T1 校验逻辑测试，已由 `make test-platform` 和 Platform CI 覆盖；真实恢复必须另行执行 `make infra-restore-drill`，不能用 T1 通过代替导入成功。演练失败后会尝试清理全部本轮容器；任何清理失败均报告失败，不输出零残留成功。
 
+#### 旧 Meilisearch 卷迁移与回滚
+
+已有低版本搜索卷采用唯一流程：旧实例导出、独立新卷导入验证、正式切换；原卷保留作回滚，不同时提供新旧两套服务。dump 创建、停服、切卷及索引重建分别需要明确操作范围和窗口，普通 `up.sh` 不承担迁移。ADDP 应用重启由用户在自己的终端操作。
+
+| 阶段 | 必须完成的检查 |
+| --- | --- |
+| 冻结与盘点 | 停止 Manager、Catalog、Asset 等索引生产者，暂停相关保护变化；重新核对端点、镜像、卷归属、各索引主键与设置、文档身份、Manager 持久出口及投递。完整分页证明外部任务已终结，不能删历史或取消任务绕过。 |
+| 备份 | 核验旧实例 dump 任务成功，按上述标准入口收录产物与摘要；停止旧搜索实例后保全一致性卷副本和可启动的旧镜像，在隔离环境验证同版本恢复。新版本不得挂载原卷。 |
+| 独立导入 | 核验目标镜像的完整版本、架构和 digest，在独立空卷导入，备份只读挂载，不接入开发 Owner 自动投递。核对全部索引、主键、设置、文档及任务历史；内容差异仅按上述显式选项处理，不能称为无损恢复。 |
+| 分层验收 | 逐项核对原任务 UID、完整入队时间、种类、索引、状态及关联标记；不为旧任务补造标记。三个 Owner 分别核验租户、目录可见性、资产上架及当前内容保护；健康检查或搜索命中不能替代这些负例。 |
+| 切换与恢复 | 在确认窗口只切换 Meilisearch 服务，先保持生产者冻结核对新端点和卷，再由 Owner 正常恢复清理及投递。Manager 核清历史和保护清理后才开放搜索；任何不确定结果继续隔离，不手改记录解封。 |
+| 保留与收口 | 保留旧镜像、旧卷、dump、摘要和切换后回执，明确备份保留期；只清理本次拥有的演练资源。真实响应丢失、进程退出和同一原任务恢复须另由标准故障验收证明，导入成功不替代 T4。 |
+
+应用恢复会结束生产者冻结。已有 dump 只代表其导出时点；恢复后若产生新任务，正式切换前须重新冻结并更新快照，不能把旧 dump 当作最新完整历史。
+
+切换前仍处于冻结窗口时失败，可以恢复旧镜像及未经新版本改写的旧卷；新源码不退回无标记发送，Manager 搜索继续隔离。切换后已有新投递时，旧卷缺少这些更新，直接回滚不能称为无损：先冻结、保存新卷及新回执，保持出口隔离，再依据当前专业事实和保护规则恢复投影；重建须另行确认范围，不盲目重发未决请求。回滚搜索不得回退当前 IAM 或删除投递证据，旧索引可启动也不代表内容符合当前保护状态。
+
 本机网盘备份使用 `make infra-cloud-backup BACKUP_ROOT=/Users/pampa/addp-backups EXPORT_ROOT=/Users/pampa/addp-cloud-encrypted PRIVATE_ROOT=/Users/pampa/.config/addp/backup`。入口先只读生成上述 Infra 快照，在无宿主机端口和持久卷的隔离容器中恢复核对，再用 age 收件人公钥生成 `.tar.age`，解密流并逐文件核对 SHA-256，最后才原子移入网盘客户端监视的本地目录；脚本本身不将明文快照或私钥放入该目录。`.sha256` 是加密文件的校验值，`last-run.json` 仅记在私有目录。失败时保留本地快照供检查，不上传不完整归档，也不自动删除已有备份。
 
 当前这台 Mac 的用户级 `launchd` 任务 `/Users/pampa/Library/LaunchAgents/com.addp.infra-backup.plist` 每天本地时间 02:00 执行上述 Make 入口，日志在 `/Users/pampa/.config/addp/backup/`。百度网盘“文件夹自动备份”将本地 `/Users/pampa/addp-cloud-encrypted` 自动上传至云端 `/addp备份/addp-cloud-encrypted/`。任务需要该用户已登录、Docker/Infra 正在运行且网盘客户端可上传；电脑关机时不会补跑。原始 age 私钥保存在 `/Users/pampa/.config/addp/backup/identity.txt`（0600）；应用户要求，无独立恢复密码的副本已放在同步目录的 `addp-recovery-identity.txt`，并在网盘目录中确认可见。持有该网盘目录访问权的人因此也能解密其中的归档；如需恢复网盘侧的保密性，应删除云端及同步目录中的私钥副本，改由独立于网盘的安全介质保管。网盘客户端当前提示每月文件夹备份额度 10 GB；超额、离线或登录过期时，本地成功不代表云端成功，需核对传输记录和云端文件。此流程仍仅覆盖上一段列出的 Infra 数据。
@@ -832,7 +849,7 @@ docker logs minio
 
 已有 `1.7.6` 持久卷**不得只改镜像后重启**。[官方迁移指南](https://www.meilisearch.com/docs/resources/migration/updating) 明确 `--upgrade-db` 不支持低于 `1.12` 的数据库，因此需先确认 dump 迁移及恢复步骤：停止各 Owner 写入，保留旧版本可启动的卷备份与任务历史，核查 Manager 持久投递；备份验证成功后才在独立新卷导入并验证三个 Owner。任务身份／历史必须逐项验证，不能假定 dump 保留原回执或把编号复用当作成功。尚无编号的旧提交若无法证明收敛，保持隔离；受控重建另行确认。普通启动入口不得代替显式授权的迁移操作。
 
-当前 Compose 固定 `1.54.3` 的多架构 registry digest，唯一挂载命名卷 `meilisearch_data_v1543`（默认物理名称 `addp-infra_meilisearch_data_v1543`）。旧物理卷 `addp-infra_meilisearch_data` 不再被当前 Compose 引用；它和原镜像保留作回滚，不删除、不改名，也不由新版本打开。正式迁移只操作 Meilisearch 服务，不启动或重启 ADDP 应用。执行结果与未完成的运行验收记录在企业资源目录专题中。
+当前 Compose 固定 `1.54.3` 的多架构 registry digest，唯一挂载命名卷 `meilisearch_data_v1543`（默认物理名称 `addp-infra_meilisearch_data_v1543`）。旧物理卷 `addp-infra_meilisearch_data` 不再被当前 Compose 引用；它和原镜像保留作回滚，不删除、不改名，也不由新版本打开。正式迁移只操作 Meilisearch 服务，不启动或重启 ADDP 应用。尚待完成的 Owner 与故障验收见[企业资源目录能力专题](../../docs/next/ADDP企业资源目录能力专题.md)。
 
 普通 `infra/up.sh` 在构建／拉取／启动容器之前，必须核对当前工作区已有 Meilisearch 容器与 Compose 所选镜像的实际 Image ID；不同、归属不明或身份无法核实均拒绝自动替换，不能把 `docker compose up -d` 的幂等性当作数据库可升级证明。该检查保护仍保留原容器的环境，不证明脱离容器的历史卷可以直接使用；删除旧容器不能代替迁移。应用 `restart.sh` 可能间接调用该入口，因此目标隔离导入成功后仍须先完成正式新卷导入、验收与切换，不能直接全量重启完成升级。
 
@@ -840,7 +857,7 @@ docker logs minio
 
 新建无历史数据的部署直接使用固定版本；Owner 初始化和恢复单测通过，不等于现有开发卷已迁移，也不等于真实故障 T4 通过。
 
-具体执行阶段、冻结条件、任务身份对账与回滚边界见[企业资源目录专题 §26.79](../../docs/next/ADDP企业资源目录能力专题.md#2679-旧-meilisearch-卷的迁移回滚与验收方案2026-10-05待确认执行窗口)。`make infra-backup` **默认不包含 Meilisearch**；仅显式传入既有成功 dump 和任务 UID 时收录，不能以 PostgreSQL／MinIO 备份成功代替搜索恢复验证。实际 dump、停服、迁移导入及卷切换须另行确认操作窗口；普通 `up.sh` 不是旧索引卷迁移入口。
+具体执行阶段、冻结条件、任务身份对账与回滚边界见[旧 Meilisearch 卷迁移与回滚](#旧-meilisearch-卷迁移与回滚)。`make infra-backup` **默认不包含 Meilisearch**；仅显式传入既有成功 dump 和任务 UID 时收录，不能以 PostgreSQL／MinIO 备份成功代替搜索恢复验证。实际 dump、停服、迁移导入及卷切换须另行确认操作窗口；普通 `up.sh` 不是旧索引卷迁移入口。
 
 ```bash
 # 检查容器状态

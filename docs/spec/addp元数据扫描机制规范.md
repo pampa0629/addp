@@ -413,6 +413,14 @@ Manager 正式 Upsert 必须允许首次创建搜索文档，不得设置会跳�
 
 历史集合补索引使用已有 `POST /api/v1/meta/scan/run/manual`：以精确 collection locator 放入 `targets`，选择 `basic + force=true`。已有集合的 basic 扫描保留已登记的深度结构，只更新 catalog 轻量事实并提交搜索投影，不扩大到所属 database，不清理兄弟 item，不改变祖先扫描状态。此操作会创建一次扫描 execution、更新目标 item 的扫描时间并在 Manager 登记投递；实施前须说明目标和影响范围并获得确认。item selector 的单项刷新仍为 deep，会调用既有动态 schema 采样，不能作为无采样补索引路线。补录后必须核对 Manager 投递终态及同租户、同引擎搜索结果，不能以 execution 成功代替索引验收。
 
+### 技术投影的检索消费与覆盖边界
+
+当前结构字段投影只读取已登记的 `type_info.table.fields`。graph、keyspace、topic 等 item 接入统一名称与路径投影，不代表它们全部具备关系表字段模型；Neo4j 的 `type_info.graph` 标签、关系及属性尚未作为搜索结构投影。扫描代码覆盖、历史投递覆盖和结构可检索范围必须分别说明，不能相互替代。
+
+Manager `GET /search` 的 `results[].field_matches` 只包含搜索服务实际高亮命中的已登记字段，保留 `name`、`data_type`、`comment` 与对应 `highlights`。不返回未命中的完整结构，不新增业务行读取或采样，不由前端按关键词猜测命中；纯向量命中不声明字段命中。页面展示字段上下文，较多字段按需展开；源文本先转义，仅允许无属性的 `mark` 标签表达高亮，不执行源字段中的 HTML。
+
+可选 `engine_id` 在 Manager 全文和向量查询中同时生效，调用方不得先全局截断再过滤。技术投影仍按现有载荷职责处理，正文仍执行既有 Security 保护，字段展示不改变权限或保护路线。验证沿用 Meta/Manager PostgreSQL、Manager 前端、Go 及 Swagger 标准门禁，不增加独立索引写入或目录枚举兜底。
+
 ## Scanned Depth
 
 `meta_node` 和 `meta_item` 使用 `scanned_depth` 字段记录已完成扫描深度。

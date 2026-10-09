@@ -1,4 +1,9 @@
 {
+  "agentUi": {
+    "clarification": {
+      "details": "查看配置详情"
+    }
+  },
   "engine": {
     "term": {
       "index": "索引",

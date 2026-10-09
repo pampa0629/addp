@@ -441,6 +441,14 @@ Manager 节点详情分别展示最近范围扫描状态、已完成扫描深度
 
 部署后重启 Meta Backend 与 Worker，只对受影响文件执行条目刷新并核对类型和 children；无需重新扫描整个 bucket，也不要直接修改业务元数据表。验证入口为 `META_POSTGRES_TEST_DSN=<addp_test连接> make test-module MODULE=meta`，已有 Meta Go T1 自动发现统一入口的容器类型矩阵与 known-item 刷新持久化用例。
 
+### Meta 已登记 DataItem，但 Manager 搜索不到
+
+元数据持久化、搜索投递和外部索引完成是三个不同事实。曾出现 MongoDB collection 扫描保存 Meta 后遗漏 Manager 技术投影提交，关系表却可检索；同样的症状也可能来自租户／引擎过滤、投递失败或搜索出口隔离，不能只凭 Meta 中存在条目就认定索引已完成。
+
+先只读核对当前 Tenant、Engine、fingerprint、名称及已登记结构，再沿正式 Manager 投递记录核对关联、外部任务终态和出口状态，最后用同租户、同引擎搜索验证。无投递记录时检查扫描、未变化路径及单项刷新是否调用统一技术投影；有投递而未收敛时按持久投递恢复契约排查，不清空记录、盲目重发或手工解除隔离。
+
+修复遵循[元数据扫描机制规范](../spec/addp元数据扫描机制规范.md#dataitem-技术元数据搜索投影)：Meta 只提交已登记技术事实，Manager 独占索引；技术与正文分别幂等更新并存。历史集合补录使用规范中的精确 `basic + force=true` 正式入口，先说明范围并确认，不用可能采样的 deep 单项刷新代替。禁止直接写 Meilisearch、在 Agent 增加枚举兜底或绕过 Security。复验走 Meta/Manager PostgreSQL 与 Manager 前端标准门禁；扫描 execution 成功不代替索引终态和实际召回。
+
 ### 1. Transfer 写出 Shapefile 后资源树看不到 `.prj`
 
 #### 问题现象

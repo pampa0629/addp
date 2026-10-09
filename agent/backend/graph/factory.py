@@ -4,6 +4,7 @@ import asyncio
 import copy
 import json
 import logging
+import uuid
 from typing import Any, AsyncIterator
 
 from deerflow.agents import create_deerflow_agent
@@ -266,17 +267,47 @@ class AgentFactory:
         # Each Harness invocation must observe its own successful context read.
         # Persisted capability data cannot substitute for a failed owner read.
         checkpoint["observed"]["platform_capabilities"] = {}
+        tool_map = {stable_tool_name(tool): tool for tool in create_agent_tools(
+            task_context["token"], task_context["agent_run_id"],
+        )}
+        if set(allowed_tool_names) - tool_map.keys():
+            raise ValueError("agent_skill_tool_not_found")
+        if CREATE_TOOL in allowed_tool_names:
+            name = "platform.capability.context"
+            if name not in allowed_tool_names:
+                raise ValueError("agent_skill_tool_not_found")
+            # Fresh semantics are a Runtime precondition, not an LLM reminder.
+            # Use the same scoped adapter and audited events as model calls.
+            call_id = str(uuid.uuid4())
+            yield AgentEvent(kind="checkpoint", payload={"checkpoint": copy.deepcopy(checkpoint), "facts": {}})
+            yield AgentEvent(kind="tool_start", payload={"tool_call_id": call_id, "tool_name": name, "args": {"capability": CREATE_TOOL}})
+            message = await tool_map[name].ainvoke({
+                "name": tool_map[name].name, "args": {"capability": CREATE_TOOL},
+                "id": call_id, "type": "tool_call",
+            })
+            result = json.loads(message.content)
+            error = result.get("error")
+            source = None
+            if error:
+                source = "owner" if error["code"] in {"owner_api_error", "owner_api_unavailable", "invalid_owner_response"} else "tool"
+            yield AgentEvent(kind="tool_result", payload={
+                "tool_call_id": call_id, "tool_name": name, "content": message.content,
+                "is_error": bool(error), "error_source": source,
+                "error_code": error["code"] if error else None,
+            })
+            if error:
+                yield AgentEvent(kind="run_failed", payload={"error_source": source, "error_code": error["code"], "message": error.get("message", error["code"])})
+                return
+            facts = capture_owner_facts(name, result, checkpoint)
+            if CREATE_TOOL not in checkpoint["observed"]["platform_capabilities"]:
+                raise RuntimeError("invalid_owner_response")
+            yield AgentEvent(kind="checkpoint", payload={"tool_call_id": call_id, "checkpoint": copy.deepcopy(checkpoint), "facts": facts})
         human_input = task_context["user_request"]
         if task_context["context_summary"]:
             human_input = f"对话背景：\n{task_context['context_summary']}\n\n用户请求：{human_input}"
         persisted = checkpoint_prompt(checkpoint)
         if persisted:
             human_input = f"{human_input}\n\n{persisted}"
-        tool_map = {stable_tool_name(tool): tool for tool in create_agent_tools(
-            task_context["token"], task_context["agent_run_id"],
-        )}
-        if set(allowed_tool_names) - tool_map.keys():
-            raise ValueError("agent_skill_tool_not_found")
         tools = [tool_map[name] for name in allowed_tool_names] + [_clarification_tool()]
         boundary = _PlatformBoundary(tools, checkpoint, max_iterations)
         loop_detection = LoopDetectionMiddleware()

@@ -14,7 +14,7 @@ Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话�
 
 平台语义选择：`platform_routed=true` 的任务领域先识别是否需查询目录，再用 `platform.capabilities.list` 读取 Ontology 已激活定义，LLM 根据概念/条件/效果选择 capability，Runtime 核验 owner、Skill 与 Tool 白名单后才进入领域 Harness。不接受模型直接选择该 Skill，不从空目录选择首项，目录失败终止相关 run；普通对话及其他 Skill 不依赖 Ontology。当前仅 Transfer 创建切片启用。`tests/test_platform_routing.py` 用短业务输入验证消费与拒绝边界，是脚本化模型 T1，不宣称真实 LLM 或 T4 已验收。
 
-Transfer 创建条件以运行时 `platform.capability.context` 返回的定义为准，`agents/platform_conditions.py` 只实现有限条件适配，不读取代码 JSON 或复制另一套条件清单。每次 Harness 调用及上下文刷新均要求成功的新读取。正式 ResourceFacts 刷新替换原结构快照，不保留新响应缺失的旧字段。完整配置复核通过 Runtime 私有 `request_clarification` 的 `transfer_create_review` 完成，指纹绑定确切参数、本体修订/摘要与 owner 事实；变化后重新确认。创建前消费确认，checkpoint 经 AG-UI 消费者事务提交并内部回执后才调用 owner；提交失败或回执前取消不调用 owner，已经发出的调用不承诺撤销。仍只创建 idle/stopped 任务，不执行。详见设计契约 1.13；脚本化门禁覆盖条件、复核绑定和提交屏障，不代替真实对话验收。
+Transfer 创建条件以运行时 `platform.capability.context` 返回的定义为准，`agents/platform_conditions.py` 只实现有限条件适配，不读取代码 JSON 或复制另一套条件清单。每次具有创建 Tool 的 Harness 调用（包括澄清恢复），Runtime 先通过白名单内的正式 Tool 读取当前能力并保存调用审计与检查点，再交给模型；读取失败终止，不依赖模型记住刷新。模型后续主动刷新也先清空旧上下文，失败不能沿用旧结果。正式 ResourceFacts 刷新替换原结构快照，不保留新响应缺失的旧字段。完整配置复核通过 Runtime 私有 `request_clarification` 的 `transfer_create_review` 完成，指纹绑定确切参数、本体修订/摘要与 owner 事实；变化后重新确认。创建前消费确认，checkpoint 经 AG-UI 消费者事务提交并内部回执后才调用 owner；提交失败或回执前取消不调用 owner，已经发出的调用不承诺撤销。仍只创建 idle/stopped 任务，不执行。详见设计契约 1.13；脚本化门禁覆盖条件、复核绑定和提交屏障，不代替真实对话验收。
 
 ## 目录结构
 
@@ -141,6 +141,8 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 评测 Schema、门禁、比较和正式发布资格的完整规则见 `docs/spec/addp智能体评测规范.md`；本文不另设评测契约。
 
 `messages` 不再使用 `result_type + result_data`。表现内容通过 `presentation_ref` 引用 A2UI Surface，澄清状态通过 `interaction_ref` 引用 `agent.interactions`。
+
+澄清恢复时，`content` 保留模型需要的受限上下文，`parts` 只展示服务端确认的选项名称；消息历史从当前用户/Tenant 的 Interaction 重建同一展示，不把候选事实和复核指纹作为聊天正文输出。共享 `ClarificationChoice` 默认折叠围栏代码块，完整创建参数可展开查看，确认值和 Runtime 校验不变。
 
 ## 协议约束
 

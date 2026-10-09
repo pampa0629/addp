@@ -81,6 +81,15 @@ type SearchDocument struct {
 	ModifiedDate   string                 `json:"modified_date,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 	Highlights     map[string][]string    `json:"highlights,omitempty"`
+	FieldMatches   []SearchFieldMatch     `json:"field_matches,omitempty"` // 实际命中的已登记字段 | Matched registered fields
+}
+
+// SearchFieldMatch preserves the registered definition around a keyword match.
+type SearchFieldMatch struct {
+	Name       string            `json:"name"`
+	DataType   string            `json:"data_type,omitempty"`
+	Comment    string            `json:"comment,omitempty"`
+	Highlights map[string]string `json:"highlights"` // name / data_type / comment 的实际高亮 | Actual highlights
 }
 
 // VectorDocument 表示向量检索结果
@@ -322,7 +331,7 @@ func (s *HybridSearchService) SearchDocuments(
 	searchReq := &meilisearch.SearchRequest{
 		Query:                 query,
 		Filter:                filter,
-		AttributesToHighlight: []string{"name", "title", "full_name", "content_preview", "description", "tags", "keywords", "author"},
+		AttributesToHighlight: []string{"name", "title", "full_name", "content_preview", "description", "tags", "keywords", "author", "fields.name", "fields.data_type", "fields.comment"},
 		HighlightPreTag:       "<mark>",
 		HighlightPostTag:      "</mark>",
 		Offset:                0,
@@ -896,6 +905,7 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 			}
 		}
 		doc.Highlights = highlights
+		doc.FieldMatches = matchedSearchFields(hitMap["fields"], formatted["fields"])
 	}
 
 	return doc

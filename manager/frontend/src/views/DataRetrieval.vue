@@ -137,7 +137,21 @@
             </span>
           </div>
 
-          <div v-if="getSnippet(item)" class="result-snippet" v-html="getSnippet(item)" />
+          <div v-if="item.field_matches?.length" class="result-fields">
+            <div class="field-matches-header">
+              <span>{{ t('manager.retrieval.matchedFields', { count: item.field_matches.length }) }}</span>
+              <el-button v-if="item.field_matches.length > fieldMatchLimit" text size="small" @click="toggleFields(item.document_id)">
+                {{ expandedFields[item.document_id] ? t('manager.retrieval.collapseFields') : t('manager.retrieval.expandFields') }}
+              </el-button>
+            </div>
+            <div v-for="(field, index) in visibleFields(item)" :key="index" class="field-match">
+              <span class="field-name" v-html="retrievalFieldText(field, 'name')" />
+              <span v-if="field.data_type" class="field-type" v-html="retrievalFieldText(field, 'data_type')" />
+              <span v-if="field.comment" class="field-comment" v-html="retrievalFieldText(field, 'comment')" />
+            </div>
+          </div>
+
+          <div v-if="retrievalSnippet(item)" class="result-snippet" v-html="retrievalSnippet(item)" />
 
           <div class="result-extra" v-if="item.metadata && item.metadata.description">
             {{ t('manager.retrieval.description') }}{{ item.metadata.description }}
@@ -170,7 +184,7 @@ import { useI18n } from 'vue-i18n'
 import { formatLocatorDisplayPath, parseLocator } from '@addp/common-frontend'
 import searchAPI from '@/api/search'
 import { dataExplorerAPI } from '@/api/dataExplorer'
-import { retrievalResultPath } from '@/utils/dataRetrievalPresentation'
+import { retrievalResultPath, retrievalFieldText, retrievalSnippet } from '@/utils/dataRetrievalPresentation'
 import { normalizeEngineCatalog, resolveEngineName } from '@/utils/enginePresentation'
 
 const { t } = useI18n()
@@ -188,15 +202,11 @@ const historyLoading = ref(false)
 const historyItems = ref([])
 const engines = ref([])
 const historyLimit = 10
-
-const highlightOrder = [
-  'content',
-  'content_preview',
-  'metadata.summary',
-  'metadata.tags',
-  'title',
-  'file_name'
-]
+const fieldMatchLimit = 5
+const expandedFields = ref({})
+const toggleFields = id => { expandedFields.value[id] = !expandedFields.value[id] }
+const visibleFields = item => expandedFields.value[item.document_id]
+  ? item.field_matches : item.field_matches.slice(0, fieldMatchLimit)
 
 const loadHistory = async () => {
   historyLoading.value = true
@@ -318,6 +328,7 @@ const fetchResults = async () => {
     // API client 已经自动提取了第一层 data，所以这里直接用 response.data
     const payload = response.data || {}
     results.value = Array.isArray(payload.results) ? payload.results : []
+    expandedFields.value = {}
     total.value = Number(payload.total || 0)
     page.value = Number(payload.page || page.value || 1)
     pageSize.value = Number(payload.page_size || pageSize.value || 10)
@@ -346,33 +357,11 @@ const handlePageSizeChange = async (size) => {
 const resetSearch = () => {
   keyword.value = ''
   results.value = []
+  expandedFields.value = {}
   total.value = 0
   page.value = 1
   pageSize.value = 10
   hasSearched.value = false
-}
-
-const escapeHtml = (input = '') => {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-const getSnippet = (item = {}) => {
-  const highlights = item.highlights || {}
-  for (const key of highlightOrder) {
-    const fragments = highlights[key]
-    if (Array.isArray(fragments) && fragments.length > 0) {
-      return fragments[0]
-    }
-  }
-  if (item.content_preview) {
-    return escapeHtml(item.content_preview.slice(0, 200))
-  }
-  return ''
 }
 
 const formatResource = (item = {}) => {
@@ -695,6 +684,40 @@ const hasLocator = (item = {}) => {
   border-radius: 6px;
   max-height: 120px;
   overflow: hidden;
+}
+
+.result-fields {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--addp-bg-secondary);
+  font-size: 13px;
+}
+
+.field-matches-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: var(--addp-text-secondary);
+}
+
+.field-match {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+.field-name { color: var(--addp-text-primary); font-weight: 600; }
+.field-type { color: var(--addp-text-tertiary); }
+.field-comment { color: var(--addp-text-secondary); }
+.result-fields :deep(mark) {
+  background: var(--el-color-warning-light-8);
+  color: var(--addp-text-primary);
+  border-radius: 2px;
+  padding: 0 2px;
 }
 
 .result-snippet mark {

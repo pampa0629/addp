@@ -795,6 +795,9 @@
       }
     },
     "retrieval": {
+      "matchedFields": "命中字段（{count}）",
+      "expandFields": "展开全部",
+      "collapseFields": "收起",
       "title": "数据检索",
       "subtitle": "支持关键词全文检索与向量语义检索，智能定位数据资产",
       "searchHistory": "搜索历史",

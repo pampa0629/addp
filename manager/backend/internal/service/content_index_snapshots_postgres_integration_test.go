@@ -112,6 +112,44 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			exerciseContentSnapshots(t, svc, id, first, func() map[string]interface{} { return read(t, id) })
 		})
 	}
+	t.Run("registered_field_matches", func(t *testing.T) {
+		doc := commonClient.ManagerContentDocument{
+			DocumentID: "field-search", PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata,
+			EngineID: 11, DataItemType: "collection", Name: "Outdoors", FullName: "Outdoor.Outdoors",
+			Fields: []commonClient.ManagerContentField{
+				{Name: "aaMembers", DataType: "array", Comment: "Participants"},
+				{Name: "leader.nickname", DataType: "string", Comment: "Team participant"},
+				{Name: "unmatched", DataType: "integer"},
+			},
+		}
+		if err := svc.UpsertContentDocument(ctx, 7, doc); err != nil {
+			t.Fatal(err)
+		}
+		tenantID, engineID := uint(7), uint(11)
+		for _, query := range []string{"aamember", "AAMEMBER", "aamembe", "aamemebr", "participant", "string"} {
+			result, err := svc.SearchDocuments(ctx, &tenantID, &engineID, query, 1, 10)
+			if err != nil || len(result.Hits) != 1 || len(result.Hits[0].FieldMatches) == 0 {
+				t.Fatalf("query=%q result=%+v error=%v", query, result, err)
+			}
+			for _, field := range result.Hits[0].FieldMatches {
+				if field.Name == "unmatched" {
+					t.Fatalf("unmatched field reported for %q", query)
+				}
+			}
+			if query != "participant" && query != "string" && (len(result.Hits[0].FieldMatches) != 1 || result.Hits[0].FieldMatches[0].Name != "aaMembers" || result.Hits[0].FieldMatches[0].DataType != "array") {
+				t.Fatalf("query=%q lost the actual field definition: %+v", query, result.Hits[0].FieldMatches)
+			}
+		}
+		for _, scope := range [][2]uint{{8, 11}, {7, 12}} {
+			result, err := svc.SearchDocuments(ctx, &scope[0], &scope[1], "aamember", 1, 10)
+			if err != nil || result.Total != 0 || len(result.Hits) != 0 {
+				t.Fatalf("scope=%v returned unrelated fields: %+v %v", scope, result, err)
+			}
+		}
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 11, DocumentID: doc.DocumentID}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	// A successful complete snapshot replaces the nested metadata object as well.
 	content := commonClient.ManagerContentDocument{DocumentID: "item-false", PayloadKind: commonClient.ManagerContentPayloadExtractedContent, EngineID: 9, DataItemType: "object", Name: "context", Metadata: map[string]interface{}{"old": "obsolete", "kept": "old"}}
 	if err := svc.UpsertContentDocument(ctx, 7, content); err != nil {

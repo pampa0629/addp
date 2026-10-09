@@ -3,6 +3,9 @@ import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 
 import A2UISurface from '../src/a2ui/A2UISurface.vue'
+import ClarificationChoice from '../src/a2ui/components/ClarificationChoice.vue'
+import zhCnMessages from '../../basic/src/i18n/zh-cn.json'
+import enMessages from '../../basic/src/i18n/en.json'
 
 const ElButtonStub = {
   props: ['disabled'],
@@ -38,6 +41,43 @@ const presentationI18n = createI18n({
 })
 
 describe('ADDP A2UI renderer', () => {
+  it('folds exact review details without changing confirmation and follows the current language', async () => {
+    const answer = { label: '确认创建', value: 'review-fingerprint', candidate: { operation_review: { revision: 3 } } }
+    const exact = '{"name":"demo","config":{"source":{"locator":"addp://engine/11/path/Outdoor/Outdoors"}}}'
+    const dispatchAction = vi.fn()
+    const i18n = createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': zhCnMessages, en: enMessages } })
+    const wrapper = mount(ClarificationChoice, {
+      props: { context: {
+        componentModel: { properties: { interactionId: 'review-1', prompt: `仅创建，不运行。\n\`\`\`json\n${exact}\n\`\`\``, options: [answer] }, onUpdated: { subscribe: () => ({ unsubscribe() {} }) } },
+        dispatchAction,
+      } },
+      global: { plugins: [i18n], stubs: { 'el-button': ElButtonStub } },
+    })
+    expect(wrapper.get('.clarification-prompt').text()).toBe('仅创建，不运行。')
+    expect(wrapper.get('details').attributes('open')).toBeUndefined()
+    expect(wrapper.get('pre').text()).toBe(exact)
+    expect(wrapper.get('summary').text()).toBe('查看配置详情')
+    i18n.global.locale.value = 'en'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('summary').text()).toBe('View configuration details')
+    await wrapper.get('button').trigger('click')
+    expect(dispatchAction).toHaveBeenCalledWith({ event: { name: 'interaction.submit', context: { interactionId: 'review-1', answer } } })
+  })
+
+  it('treats prompt and detail markup as text and preserves ordinary choices', () => {
+    const prompt = '<img src=x onerror=alert(1)>\n```json\n<script>alert(1)</script>\n```\n继续确认'
+    const wrapper = mount(ClarificationChoice, {
+      props: { context: {
+        componentModel: { properties: { prompt, options: [] }, onUpdated: { subscribe: () => ({ unsubscribe() {} }) } }, dispatchAction: vi.fn(),
+      } },
+      global: { plugins: [createI18n({ legacy: false, messages: { 'zh-cn': zhCnMessages }, locale: 'zh-cn' })] },
+    })
+    expect(wrapper.find('script').exists()).toBe(false)
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.get('pre').text()).toBe('<script>alert(1)</script>')
+    expect(wrapper.findAll('.clarification-prompt').at(-1).text()).toBe('继续确认')
+  })
+
   it('renders clarification options and dispatches a validated action', async () => {
     const operations = [
       {
@@ -65,7 +105,7 @@ describe('ADDP A2UI renderer', () => {
 
     const wrapper = mount(A2UISurface, {
       props: { operations },
-      global: { stubs: { 'el-button': ElButtonStub } }
+      global: { plugins: [presentationI18n], stubs: { 'el-button': ElButtonStub } }
     })
     await wrapper.get('button').trigger('click')
     await vi.waitFor(() => expect(wrapper.emitted('action')).toHaveLength(1))
