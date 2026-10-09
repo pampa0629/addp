@@ -290,7 +290,11 @@ MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：�
 
 2026-10-05，字段曲线、拖拽与全屏 Hosted 复验[运行 37276985688](https://github.com/pampa0629/addp/actions/runs/37276985688) 已通过，验证源码为 `7665c0b612d83d31a9a418d94af070d321e1bd79`。真实 MongoDB → PostgreSQL ODS → DIM → DWD 整表图绘制 13 个字段、9 条水平三次贝塞尔连线，820×667px 画布内最小字段字号为 13.96px。目标表向左、向下各拖拽 30px 后，昵称字段的曲线端点偏差为 0.85px，满足 2px 精度要求；自动布局、收起/展开、搜索定位及 Console iframe 原生全屏进出均通过。Canvas 观察工具等待绘制帧后统一读取文字和连线，保留原有位移及端点断言，修正适应窗口后读取旧帧坐标的验收时序。三轮编排、九个实际子执行、结构演进与冻结历史取证、独立物理行集合及列类型检查同时通过；八个临时定义删除，部署清理通过、Infra 零残留。同源码 [Platform CI 37276976663](https://github.com/pampa0629/addp/actions/runs/37276976663) 的 24 个门禁任务实际执行通过，另 6 个按路径条件跳过；Manager 在 Linux Runner 上通过 279 项单元测试、96 项浏览器测试及构建。
 
-Transfer 多来源查询扩展沿用 `transfer-relational-sql-etl` 手工 Hosted T4 与既有最小权限身份。在原生源及已完成 replace 的映射表上声明两个 query.inputs，由真实 CTE、JOIN 与 UNION ALL 生成四行结果；冻结每个原始来源结构，验证一个结果字段同时来自两张表的精确 derived 映射、仅用于 JOIN 的字段不产生值来源边、Meta 自动采集及三层冻结结构一致性。Business Fixture 独立核对目标完整行集合与列顺序；整套物理结果验证由 Hosted 生命周期在浏览器与多来源场景全部完成后统一执行，浏览器不提前调用同一验证入口。新增任务进入既有本轮定义清理，报告使用 v6。Transfer PostgreSQL T2 同时覆盖三个输入（含只参与行筛选的来源）、查询改名、类型转换和完整物理行集合。扩展须有新的真实 Hosted 通过证据，不能由此前单来源或 Develop 多来源结果代替。
+Transfer 多来源查询扩展沿用 `transfer-relational-sql-etl` 手工 Hosted T4 与既有最小权限身份。在原生源及已完成 replace 的映射表上声明两个 query.inputs，由真实 CTE、JOIN 与 UNION ALL 生成四行结果；冻结每个原始来源结构，验证一个结果字段同时来自两张表的精确 derived 映射、仅用于 JOIN 的字段不产生值来源边、Meta 自动采集及三层冻结结构一致性。Business Fixture 独立核对目标完整行集合与列顺序；整套物理结果验证由 Hosted 生命周期在浏览器与多来源场景全部完成后统一执行，浏览器不提前调用同一验证入口。新增任务进入既有本轮定义清理；包含 500 列宽表场景的 suite 报告使用 v7，浏览器报告使用 v6。Transfer PostgreSQL T2 同时覆盖三个输入（含只参与行筛选的来源）、查询改名、类型转换和完整物理行集合。扩展须有新的真实 Hosted 通过证据，不能由此前单来源或 Develop 多来源结果代替。
+
+2026-10-10，包含 500 列宽表、多来源查询及预览按需读取的 Hosted T4 [运行 37953565525](https://github.com/pampa0629/addp/actions/runs/37953565525) 完整通过，验证源码为 `3b66c60d93d380ee85551ef5e88e98c39a5bc075`。两次真实 Transfer 将 500 列原表写入目标表及下游表；两跳字段图完整返回 1500 个字段节点、1000 条关系，逐项核对三张表的结构哈希及两次执行 UUID。响应为 1,871,025 字节，API 查询耗时约 172ms；浏览器请求及首次绘制约 4.69 秒，自动布局及绘制约 1.48 秒。首、中、末字段搜索聚焦、拖拽与曲线端点、全图适应窗口均通过；自动布局后再次定位末字段约 1.48 秒，恢复至少 11px 的可读字号，整个交互仅请求一次字段图。截图与 `transfer-wide-field-layout.json` 同时归档。这些时间仅为本轮独占 Runner 的观察值，不代表并发性能目标。
+
+同一套验收同时通过 MongoDB 嵌套字段到 ODS 的自动采集与重跑、三轮编排及九个实际子执行、目标结构改名和类型演进、冻结历史取证，以及 CTE / JOIN / UNION ALL 多来源精确映射。Manager 血缘查看未触发隐式样本读取，浏览器未出现非预期失败响应。浏览器及多来源场景完成后，标准 Hosted 生命周期独立核对宽表完整行多重集合、两张目标表各 500 个非空 bigint 列，以及 ODS / DIM / DWD 和多来源目标的物理数据及类型；11 个临时定义全部删除并确认 404，业务容器、平台 Infra 和凭据目录清理通过，零残留。相同源码的 [Platform CI 37953544971](https://github.com/pampa0629/addp/actions/runs/37953544971) 33 个任务通过，Manager 在 Linux 上通过 306 项单元测试、156 项浏览器测试及构建；[Release/T2 37953544949](https://github.com/pampa0629/addp/actions/runs/37953544949) 的 Manager 内容索引首次文档创建门禁失败，不能计为通过，也不由本次血缘 T4 结果代替。
 
 ### 6.2 图数据库评估边界
 
@@ -406,7 +410,7 @@ Service 发布事实同时传递人类可读的 `service_name` 和单调递增�
 3. Develop 成功事实落库后立即通知 Meta；周期 collector 负责漏采和失败重试。
 4. Meta 统一图查询 API、租户 / 权限校验和 `common-frontend/graph` 查看器已具备。
 5. Service 发布版本的 `serve` 依赖事实已纳入模型和 API 契约。
-6. 字段级首期的执行证据、时态投影、整表字段图与 Provider 可证明的单来源查询已通过上述 Hosted T4；支持边界以 6.1 为准。
+6. 字段级首期的执行证据、时态投影、整表字段图、500 列宽表及 Provider 可证明的单来源和多来源查询已通过上述 Hosted T4；支持边界以 6.1 为准。
 
 后续能力必须先更新本规范和术语表，再单一路线实现：
 
