@@ -109,3 +109,19 @@ diff --git a/src/mesh_processor.cpp b/src/mesh_processor.cpp
                  }
              }
          }
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -470,9 +470,11 @@ fn convert_gltf(src: &str, dest: &str) {
+     }
+     unsafe {
++        let source = CString::new(src).unwrap();
+         let c_str = CString::new(dest).unwrap();
+-        let ret = osgb::osgb2glb(src.as_ptr(), c_str.as_ptr() as *const u8);
++        let ret = osgb::osgb2glb(source.as_ptr() as *const u8, c_str.as_ptr() as *const u8);
+         if !ret {
+             error!("convert failed");
++            std::process::exit(1);
+         } else {
+             info!("task over");
+         }

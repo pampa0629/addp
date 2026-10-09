@@ -51,6 +51,8 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/blender_setup.
 
 2026-10-08 产品与 Hosted 验收：提交 `95428d6e3fec29d72c6f1c8634b1252eeae8e2fb` 的 Linux arm64 标准镜像构建、本次 [Linux x86_64 Hosted Manager T4](https://github.com/pampa0629/addp/actions/runs/37742891117) 及同一提交的 [Product binary build](https://github.com/pampa0629/addp/actions/runs/37742303485/job/113195593339) 均通过。两种架构的产品构建覆盖压缩 OSGB、DXT1/DXT1A/DXT3/DXT5 贴图、SKP 米制缩放，以及 MAX 静态 GLB、声明贴图、默认米／手选毫米和失败保留旧产物。Hosted 使用正式 Model3D 产品镜像的默认入口；普通租户 User 经 System/Gateway/Meta/Manager/Monitor 完成真实资源与产物链路，DAE／3DS 的 GLB 及内嵌 PNG 校验、生成入口和缓存预览两项浏览器用例均通过。五类产物（DAE、3DS、点云、PPTX、栅格）的 Manager 与 Monitor 血缘一致，产物回收和 Infra 清理为零残留。Hosted 三维格式覆盖 DAE／3DS；IFC 与单体 OSGB 的页面验证范围为上述 macOS 本地验收。
 
+2026-10-09 复核 IFC／单体 OSGB Hosted 扩展验收：[运行 37788054702](https://github.com/pampa0629/addp/actions/runs/37788054702) 在 OSGB 生成阶段失败，生成入口浏览器检查通过，退出清理及 Infra 零残留通过；缓存预览未执行，不能计为七类产物验收通过。标准产品构建已追加最终 Runtime 中的压缩 OSGB 和多种暂存路径长度验证，复现了上游 Rust → C++ 输入路径未转为 NUL 终止字符串的越界读取。现有统一转换器补丁改用 `CString` 并在转换失败时返回非零；产品与 macOS 原生工具包消费同一补丁，不增加备用转换路线。Linux ARM64 标准产品构建的修复前长路径回归失败，修复后九种路径长度、无效 OSGB 的非零退出及旧产物保留均通过；Model3D 272 项、Manager Online runner 51 项和构建登记门禁通过。macOS 私有工具包的真实重建与修复后的 Hosted 链路尚未验证，不能由 ARM64 产品构建替代。
+
 同轮确定性门禁通过：`make test-model3d-workflow`（272 项）、`make test-manager-online-runner`（47 项）及 `make test-dev-lifecycle`（86 项 Python 测试和后续 Shell／Go 检查）。开发生命周期首轮有三个 Infra 夹具超时，独立诊断及完整重跑通过。ARM64 构建曾遇到镜像和官方文件下载中断，使用相同版本与标准入口重试后完整通过；本轮未修改或重启开发服务。
 
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。

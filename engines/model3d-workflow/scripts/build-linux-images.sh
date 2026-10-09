@@ -63,7 +63,9 @@ docker build \
 echo "Smoke checking runtime image"
 docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/_3dtile "${RUNTIME_IMAGE}" --help >/dev/null
 docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/IfcConvert "${RUNTIME_IMAGE}" --version >/dev/null
-docker run -i --rm --platform "${PLATFORM}" --entrypoint python "${RUNTIME_IMAGE}" - <<'PY'
+docker run -i --rm --platform "${PLATFORM}" \
+  -v "${ROOT_DIR}/business/fixtures/manager/addp_online_model_fixture.osgb:/fixture/model.osgb:ro" \
+  --entrypoint python "${RUNTIME_IMAGE}" - <<'PY'
 from pathlib import Path
 import operators
 import struct
@@ -79,6 +81,41 @@ if not status.get("available"):
     raise SystemExit(f"model3d workflow converters are unavailable: {status.get('details')}")
 
 with tempfile.TemporaryDirectory() as tmp:
+    # Object-store staging yields longer paths than a direct mounted fixture.
+    # Exercise allocation boundaries at the Rust/C converter interface.
+    for padding in (0, 1, 7, 8, 15, 16, 31, 32, 63):
+        osgb_source = Path(tmp) / ('staged-' + 'x' * padding) / 'source' / 'model.osgb'
+        osgb_source.parent.mkdir(parents=True)
+        osgb_source.write_bytes(Path('/fixture/model.osgb').read_bytes())
+        osgb_target = Path(tmp) / f'osgb-{padding}.glb'
+        osgb_plan = {'schema_version': 'addp.workflow.access-plan/v1',
+                     'source': {'kind': 'file', 'format': 'osgb',
+                                'access': {'method': 'mounted_path', 'path': str(osgb_source)}},
+                     'target': {'kind': 'file', 'format': 'glb', 'name': osgb_target.name,
+                                'write_mode': 'create',
+                                'access': {'method': 'mounted_path', 'path': str(osgb_target)}}}
+        try:
+            operators.invoke_operator('osgb_to_glb', {'access_plan': osgb_plan}, timeout_seconds=60)
+        except (operators.ConverterError, UnicodeDecodeError):
+            diagnostic = subprocess.run([operators._converter_bin(None), '-f', 'gltf', '-i', str(osgb_source),
+                                         '-o', str(Path(tmp) / 'diagnostic.glb')], capture_output=True)
+            print('OSGB converter diagnostic:', diagnostic.returncode, diagnostic.stdout, diagnostic.stderr, flush=True)
+            raise
+        validate_glb(osgb_target)
+    previous_osgb = osgb_target.read_bytes()
+    invalid_osgb = Path(tmp) / 'invalid.osgb'
+    invalid_osgb.write_bytes(b'not an OSGB file')
+    osgb_plan['source']['access']['path'] = str(invalid_osgb)
+    osgb_plan['target']['write_mode'] = 'replace'
+    try:
+        operators.invoke_operator('osgb_to_glb', {'access_plan': osgb_plan}, timeout_seconds=60)
+    except operators.ConverterError as error:
+        if error.error_code != 'EXECUTION_FAILED' or osgb_target.read_bytes() != previous_osgb:
+            raise SystemExit('OSGB failed conversion did not report nonzero exit and preserve the previous artifact')
+    else:
+        raise SystemExit('invalid OSGB was silently accepted')
+    print('Final Runtime compressed OSGB, staged paths and failure preservation smoke passed')
+
     source = Path(tmp) / "tiny.splat"
     target = Path(tmp) / "tiny.ksplat"
     record = bytearray(32)

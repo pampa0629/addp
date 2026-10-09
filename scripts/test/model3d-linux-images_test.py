@@ -110,6 +110,7 @@ include("''' + (port / 'portfile.cmake').as_posix() + '''")
                 self.assertIn(f'addp/model3d-workflow:linux-{target}', trace)
                 self.assertIn('IfcConvert', trace)
                 self.assertIn('--entrypoint python', trace)
+                self.assertIn('/fixture/model.osgb:ro', trace)
 
 
     def test_invalid_platforms_reject_before_docker(self):
