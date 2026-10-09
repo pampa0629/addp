@@ -70,6 +70,8 @@ MAX 首期覆盖静态网格、实例变换、基础颜色和漫反射图片，�
 
 外部贴图必须通过 `options.texture_files` 明确映射，key 是 MAX 内保存的 bitmap 引用，value 是输入目录内的相对文件路径。不会读取原电脑绝对路径或猜测同名图片。Manager 的数据探查和任务创建入口提供相同的单位及外部贴图声明组件；声明传入既有快显动作并保存到任务 options，Develop/direct 算子沿用同一映射。缺失贴图、解析错误及不支持的贴图通道会使转换失败，保留旧产物。内置回归样例来自 `tests/fixtures/max/ATTRIBUTION.txt` 所列的 CC-BY-SA-3.0 模型，纹理是 ADDP 自建测试图片。
 
+2026-10-09 本地 Business NFS 的 MAX 页面验收通过：`3d/max/horsewalk02/horsewalk02.max` 经 Manager 任务 11 生成 28016 字节 GLB，未选单位时审计为默认米，五个静态网格、声明的红色贴图、旋转及刷新后的缓存预览正常，源文件不变；Monitor 核对输入／输出血缘。详细记录见 [Manager 预览说明](../../manager/docs/三维模型、点云与高斯泼溅预览说明.md)。该本地结果不替代上述 Hosted T4。
+
 MAX 的确定性测试由 `make test-model3d-workflow` 自动发现，开发生命周期由 `make test-dev-lifecycle` 验证。正式 Linux 镜像构建入口为：
 
 ```bash
