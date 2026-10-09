@@ -45,7 +45,7 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/blender_setup.
 
 工具包完整性损坏时不会覆盖旧缓存或使用其他转换器：先停止该 Runtime，把报错中的单个指纹目录移出 `.dev-state/model3d-native`，再执行准备命令重建；下载、固定提交源码和 vcpkg 二进制缓存仍可复用。
 
-准备成功后由用户在自己的终端运行 `./scripts/dev/restart.sh -model3d-workflow`。全量重启也在停止现有服务之前执行同一准备与转换预检。
+准备成功后由用户在自己的终端运行 `./scripts/dev/restart.sh -model3d-workflow`。全量和局部重启均先通过 stop.sh 停止所选服务，再由 start.sh 执行同一准备与转换验证；准备失败的服务不启动，入口返回非零。
 
 2026-10-08 本地页面验收：已运行的 macOS 原生 Runtime 经 Manager 正式快显入口完成 Business NFS 的 DAE、带贴图 3DS、IFC 建筑及单体 OSGB 转换。四个任务均为成功、结果可用，浏览器实际显示几何；3DS 彩色贴图与 OSGB 地表贴图可见，旋转和缩放可操作。OSGB execution `a15774db-d803-424c-8d23-ef5fe11413a7` 的 Monitor 详情记录源 item 766 与平台内部 GLB 产物。此记录证明本机页面链路；产品与 Hosted 验收独立记录如下。
 

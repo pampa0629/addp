@@ -42,9 +42,12 @@ active AS MATERIALIZED (
 )
  SELECT * FROM relations`
 
-func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, engineID int64, page, size int) ([]SourceGrantRelation, int64, error) {
+func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, engineID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantRelation, int64, error) {
 	if page <= 0 || size <= 0 || size > 100 || page > int(^uint(0)>>1)/size {
 		return nil, 0, commonapi.ErrBadRequest
+	}
+	if err := filter.Validate(); err != nil {
+		return nil, 0, err
 	}
 	rows := make([]SourceGrantRelation, 0)
 	var total int64
@@ -56,12 +59,16 @@ func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, eng
 				Items json.RawMessage
 				Total int64
 			}
-			query := `WITH current_relations AS (` + currentGrantRelationsSQL + `), page AS (
- SELECT * FROM current_relations ORDER BY granted_at DESC, request_id DESC LIMIT ? OFFSET ?)
+			predicate, args := filter.predicate()
+			query := `WITH current_relations AS (` + currentGrantRelationsSQL + `), filtered AS (
+ SELECT * FROM current_relations WHERE ` + predicate + `), page AS (
+ SELECT * FROM filtered ORDER BY granted_at DESC, request_id DESC LIMIT ? OFFSET ?)
  SELECT COALESCE((SELECT jsonb_agg(to_jsonb(p) || jsonb_build_object('recipient_id', p.recipient_id::text)
  ORDER BY p.granted_at DESC, p.request_id DESC) FROM page p), '[]'::jsonb) AS items,
- (SELECT count(*) FROM current_relations) AS total`
-			if err := tx.db.WithContext(ctx).Raw(query, actor.TenantID, engineID, size, (page-1)*size).Scan(&result).Error; err != nil {
+ (SELECT count(*) FROM filtered) AS total`
+			parameters := append([]any{actor.TenantID, engineID}, args...)
+			parameters = append(parameters, size, (page-1)*size)
+			if err := tx.db.WithContext(ctx).Raw(query, parameters...).Scan(&result).Error; err != nil {
 				return err
 			}
 			if err := json.Unmarshal(result.Items, &rows); err != nil {

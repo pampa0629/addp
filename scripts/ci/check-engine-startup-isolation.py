@@ -152,10 +152,14 @@ def validate_workflow_runtime_image_contract(repository: Path) -> list[str]:
                 "common-python/addp_common/module_lifecycle.py"
             )
 
-    for relative in ("scripts/dev/start.sh", "scripts/dev/restart.sh"):
-        source = (repository / relative).read_text(encoding="utf-8")
-        if "document-workflow.sh" not in source or "ensure_document_workflow_image" in source:
-            errors.append(f"{relative} does not use the unique Document native helper")
+    start = (repository / "scripts/dev/start.sh").read_text(encoding="utf-8")
+    if "document-workflow.sh" not in start or "ensure_document_workflow_image" in start:
+        errors.append("scripts/dev/start.sh does not use the unique Document native helper")
+    restart = (repository / "scripts/dev/restart.sh").read_text(encoding="utf-8")
+    if 'exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" "${START_ARGS[@]}"' not in restart:
+        errors.append("scripts/dev/restart.sh does not delegate Runtime preparation to start.sh")
+    if "addp_prepare_document_workflow" in restart or "ensure_document_workflow_image" in restart:
+        errors.append("scripts/dev/restart.sh duplicates Document Runtime preparation")
     helper = repository / "scripts/dev/document-workflow.sh"
     if not helper.is_file():
         errors.append("scripts/dev/document-workflow.sh is missing")

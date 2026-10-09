@@ -1100,6 +1100,25 @@
     },
     "engine": {
       "sourceGrants": {
+        "inspection": {
+          "title": "Account grant inspection",
+          "boundary": "Select one table above and an account to inspect personal, department and project-group sources. Rule coverage is not final access; actual reads still require function permissions and security checks.",
+          "selectTable": "Select one table in the resource tree above, not a schema or node",
+          "query": "Inspect grant sources",
+          "observedAt": "Observed at",
+          "noSources": "No currently effective grant sources",
+          "reasons": {
+            "grant": "Source rules covered: effective grants exist with no matching source Deny",
+            "no_grant": "Source rules not covered: no effective personal or organization grant",
+            "explicit_deny": "Source Deny matched: grants do not override this restriction",
+            "source_unavailable": "Account or tenant membership is currently invalid",
+            "target_unavailable": "Engine is currently unavailable"
+          }
+        },
+        "tableSearch": "Search table name or schema / node path",
+        "accountFilter": "Recipient account",
+        "allAccounts": "All accounts (search name or username)",
+        "accountFilterBoundary": "Selecting an account shows only Grants made directly to it. Department and project-group Grants are separate sources and are not expanded by this account filter.",
         "current": "Current authorizations",
         "history": "Authorization history",
         "sourceCount": "Active records",

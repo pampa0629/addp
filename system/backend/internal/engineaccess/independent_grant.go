@@ -298,8 +298,10 @@ func (r *Repository) checkInitializationPermission(ctx context.Context, actor Ac
 	return nil
 }
 
-func (r *Repository) listSourceGrants(ctx context.Context, tenantID, engineID int64, page, size int) ([]SourceGrantView, int64, error) {
+func (r *Repository) listSourceGrants(ctx context.Context, tenantID, engineID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantView, int64, error) {
 	query := r.db.WithContext(ctx).Model(&sourceGrant{}).Where("tenant_id = ? AND engine_id = ?", tenantID, engineID)
+	predicate, args := filter.predicate()
+	query = query.Where(predicate, args...)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -330,16 +332,19 @@ func (r *Repository) listSourceGrants(ctx context.Context, tenantID, engineID in
 	return views, total, nil
 }
 
-func (s *Service) ListSourceGrants(ctx context.Context, actor Actor, engineID int64, page, size int) ([]SourceGrantView, int64, error) {
+func (s *Service) ListSourceGrants(ctx context.Context, actor Actor, engineID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantView, int64, error) {
 	if page <= 0 || size <= 0 || size > 100 || page > int(^uint(0)>>1)/size {
 		return nil, 0, commonapi.ErrBadRequest
+	}
+	if err := filter.Validate(); err != nil {
+		return nil, 0, err
 	}
 	var rows []SourceGrantView
 	var total int64
 	err := s.withEngineManagementScope(ctx, actor, engineID, authorization.PermissionSystemEngineAccessGrantRead, false,
 		func(tx *Repository, check func() error) error {
 			var err error
-			rows, total, err = tx.listSourceGrants(ctx, actor.TenantID, engineID, page, size)
+			rows, total, err = tx.listSourceGrants(ctx, actor.TenantID, engineID, page, size, filter)
 			if err != nil {
 				return err
 			}

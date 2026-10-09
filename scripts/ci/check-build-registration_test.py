@@ -862,9 +862,13 @@ class GeoPythonPackagedRuntimeTest(unittest.TestCase):
 
     def test_development_has_one_native_entry_and_no_image_builder(self):
         root = SCRIPT.parents[2]
+        start = (root / 'scripts/dev/start.sh').read_text()
+        self.assertIn('source "${SCRIPT_DIR}/geopython-workflow.sh"', start)
+        restart = (root / 'scripts/dev/restart.sh').read_text()
+        self.assertIn('exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" "${START_ARGS[@]}"', restart)
+        self.assertNotIn('addp_prepare_geopython_workflow', restart)
         for relative in ('scripts/dev/start.sh', 'scripts/dev/restart.sh'):
             source = (root / relative).read_text()
-            self.assertIn('source "${SCRIPT_DIR}/geopython-workflow.sh"', source)
             self.assertNotIn('geopython_workflow_source_fingerprint', source)
             self.assertNotIn('ensure_geopython_workflow_image', source)
             self.assertNotIn('--name geopython-workflow-engine', source)

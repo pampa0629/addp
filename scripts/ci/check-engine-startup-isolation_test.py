@@ -68,7 +68,7 @@ func main() {
 }
 """,
             "common/client/system_service.go": "func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) *ModuleRegistrationLifecycle { return nil }\n",
-            "scripts/dev/restart.sh": "pointcloud-workflow document-workflow.sh\n",
+            "scripts/dev/restart.sh": 'exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" "${START_ARGS[@]}"\n',
             "scripts/dev/document-workflow.sh": "addp_sync_python_dependencies addp_python_dependency_fingerprint\n",
             "engines/pointcloud-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
             "engines/document-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
@@ -157,14 +157,21 @@ registrationDone := client.RegisterAndHeartbeat(ctx, request)
             errors,
         )
 
-    def test_rejects_document_restart_without_native_helper(self) -> None:
+    def test_rejects_restart_without_standard_start_entry(self) -> None:
         root = self.repository()
         (root / "scripts/dev/restart.sh").write_text("#!/bin/bash\n", encoding="utf-8")
         errors = CHECKER.validate(root)
         self.assertTrue(
-            any("native helper" in error and "restart.sh" in error for error in errors),
+            any("delegate Runtime preparation" in error and "restart.sh" in error for error in errors),
             errors,
         )
+
+    def test_rejects_restart_with_duplicate_runtime_preparation(self) -> None:
+        root = self.repository()
+        restart = root / "scripts/dev/restart.sh"
+        restart.write_text(restart.read_text() + "addp_prepare_document_workflow\n")
+        errors = CHECKER.validate(root)
+        self.assertTrue(any("duplicates Document" in error for error in errors), errors)
 
     def test_rejects_document_native_helper_without_dependency_fingerprint(self) -> None:
         root = self.repository()

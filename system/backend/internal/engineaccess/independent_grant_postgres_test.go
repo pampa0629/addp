@@ -210,6 +210,59 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			t.Fatalf("issue=%+v %v", issued, err)
 		}
 		assertRead("grant")
+		t.Run("table and account filters precede pagination and preserve history", func(t *testing.T) {
+			other, _ := newUser(t, time.Hour)
+			commands := []CreateIndependentGrantInput{}
+			for _, table := range []string{"filter_%户外", "filter_X户外"} {
+				command := input
+				command.RequestID, command.CatalogPath = uuid.New(), engineplugin.TabularItemPath(base.EngineID, "schema", "public", table)
+				command.RequirementVersion, command.InitializeApproval = 1, true
+				if _, err := service.CreateIndependentGrant(ctx, command); err != nil {
+					t.Fatal(err)
+				}
+				commands = append(commands, command)
+			}
+			command := commands[0]
+			command.RequestID, command.RecipientID, command.InitializeApproval = uuid.New(), other.PrincipalID, false
+			if _, err := service.CreateIndependentGrant(ctx, command); err != nil {
+				t.Fatal(err)
+			}
+			commands = append(commands, command)
+			for _, test := range []struct {
+				filter SourceGrantFilter
+				count  int64
+			}{
+				{SourceGrantFilter{TableSearch: "FILTER_"}, 3},
+				{SourceGrantFilter{TableSearch: "%户外"}, 2},
+				{SourceGrantFilter{TableSearch: "filter_", AccountID: receiver.PrincipalID}, 2},
+				{SourceGrantFilter{TableSearch: "%户外", AccountID: receiver.PrincipalID}, 1},
+				{SourceGrantFilter{AccountID: other.PrincipalID}, 1},
+				{SourceGrantFilter{TableSearch: "not_present"}, 0},
+			} {
+				for page := 1; page <= int(test.count)+1; page++ {
+					current, total, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, page, 1, test.filter)
+					history, historicalTotal, historyErr := service.ListSourceGrants(ctx, actor, input.EngineID, page, 1, test.filter)
+					wantLength := 0
+					if int64(page) <= test.count {
+						wantLength = 1
+					}
+					if err != nil || historyErr != nil || total != test.count || historicalTotal != test.count || len(current) != wantLength || len(history) != wantLength {
+						t.Fatalf("filter=%+v page=%d current=%+v total=%d history=%+v total=%d errors=%v/%v", test.filter, page, current, total, history, historicalTotal, err, historyErr)
+					}
+				}
+			}
+			for _, command := range commands {
+				if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: input.EngineID, RequestID: command.RequestID, Reason: "Filter fixture finished"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			filter := SourceGrantFilter{TableSearch: "%户外", AccountID: receiver.PrincipalID}
+			current, total, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 1, filter)
+			history, historicalTotal, historyErr := service.ListSourceGrants(ctx, actor, input.EngineID, 1, 1, filter)
+			if err != nil || historyErr != nil || total != 0 || len(current) != 0 || historicalTotal != 1 || len(history) != 1 || history[0].Revocation == nil {
+				t.Fatalf("withdrawn filtered relation did not preserve history: %v %v %d/%d %+v", err, historyErr, total, historicalTotal, history)
+			}
+		})
 		t.Run("relation rejects another command even with changed validity", func(t *testing.T) {
 			duplicate := input
 			duplicate.RequestID = uuid.New()
@@ -221,7 +274,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			if _, err := service.CreateIndependentGrant(ctx, duplicate); !errors.Is(err, ErrGrantRelationExists) {
 				t.Fatalf("silent validity change=%v", err)
 			}
-			relations, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100)
+			relations, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100, SourceGrantFilter{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -307,7 +360,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}); err != nil {
 				t.Fatal(err)
 			}
-			relations, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100)
+			relations, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100, SourceGrantFilter{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -319,6 +372,12 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 			if !found {
 				t.Fatalf("legacy grouping=%+v", relations)
+			}
+			filter := SourceGrantFilter{TableSearch: "legacy_relation", AccountID: receiver.PrincipalID}
+			filtered, relationTotal, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 1, filter)
+			history, historyTotal, historyErr := service.ListSourceGrants(ctx, actor, input.EngineID, 2, 1, filter)
+			if err != nil || historyErr != nil || relationTotal != 1 || len(filtered) != 1 || filtered[0].GrantCount != 2 || historyTotal != 2 || len(history) != 1 {
+				t.Fatalf("filtered legacy grouping/history: %+v %d/%d %v/%v", filtered, relationTotal, historyTotal, err, historyErr)
 			}
 			withdraw := RevokeGrantInput{Actor: actor, EngineID: input.EngineID, RequestID: first.RequestID, Reason: "Withdraw complete legacy relation"}
 			result, err := service.RevokeGrant(ctx, withdraw)
@@ -341,7 +400,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			if _, err := service.repository.findGrantRevocation(ctx, fresh.RequestID); !errors.Is(err, gorm.ErrRecordNotFound) {
 				t.Fatalf("old retry touched new grant: %v", err)
 			}
-			current, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100)
+			current, _, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 100, SourceGrantFilter{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -398,7 +457,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		if _, err := service.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrIndependentGrantConflict) {
 			t.Fatalf("changed command: %v", err)
 		}
-		rows, total, err := service.ListSourceGrants(ctx, actor, input.EngineID, 1, 100)
+		rows, total, err := service.ListSourceGrants(ctx, actor, input.EngineID, 1, 100, SourceGrantFilter{})
 		if err != nil || total < int64(len(rows)) || len(rows) == 0 {
 			t.Fatalf("list: %+v %d %v", rows, total, err)
 		}

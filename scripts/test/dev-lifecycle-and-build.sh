@@ -583,133 +583,144 @@ import subprocess
 import sys
 
 repository, temporary = map(Path, sys.argv[1:])
-for name, args, failed in (
-    ("all", ["-all"], False),
-    ("default", [], False),
-    ("selected", ["-system", "-asset", "-meta"], False),
-    ("single", ["-system"], False),
-    ("swagger-failure", ["-all"], True),
-    ("swagger-failure-single", ["-system"], True),
-    ("swagger-failure-legacy-override", ["-all"], True),
-    ("coverage-failure", ["-all"], True),
-    ("coverage-failure-single", ["-system"], True),
-    ("coverage-failure-selected", ["-system", "-asset", "-meta"], True),
-    ("coverage-error", ["-all"], True),
-    ("coverage-error-single", ["-system"], True),
-    ("spark-prepare-failure", ["-all"], True),
-    ("geopython-prepare-failure", ["-all"], True),
-    ("pointcloud-prepare-failure", ["-all"], True),
-    ("document-prepare-failure", ["-all"], True),
-    ("model3d-prepare-failure", ["-all"], True),
-):
-    root = temporary / ("restart-" + name)
-    dev = root / "scripts/dev"
-    dev.mkdir(parents=True)
-    for filename in ("restart.sh", "lifecycle-lock.sh", "node-dependencies.sh", "jupyter-env.sh"):
-        shutil.copy2(repository / "scripts/dev" / filename, dev / filename)
-    (dev / "ports.sh").write_text('addp_dev_load_saved_ports() { :; }\n')
-    (dev / "spark-workflow.sh").write_text('addp_prepare_spark_workflow() { '
-        'echo spark-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_SPARK_PREPARE" = 0 ]; }\n')
-    (dev / "geopython-workflow.sh").write_text('addp_prepare_geopython_workflow() { '
-        'echo geopython-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_GEOPYTHON_PREPARE" = 0 ]; }\n')
-    (dev / "pointcloud-workflow.sh").write_text('addp_prepare_pointcloud_workflow() { '
-        'echo pointcloud-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_POINTCLOUD_PREPARE" = 0 ]; }\n')
-    (dev / "document-workflow.sh").write_text('addp_prepare_document_workflow() { '
-        'echo document-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_DOCUMENT_PREPARE" = 0 ]; }\n')
-    (dev / "model3d-workflow.sh").write_text('addp_prepare_model3d_workflow() { '
-        'echo model3d-preflight >> "$FIXTURE_ROOT/events"; [ "$FAIL_MODEL3D_PREPARE" = 0 ]; }\n')
-    (root / ".env").write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
+runtimes = ('spark-workflow', 'geopython-workflow', 'pointcloud-workflow', 'document-workflow', 'model3d-workflow',
+            'math-workflow', 'supermap-workflow', 'jupyter', 'copilot', 'agent', 'duckdb')
+cases = [(name, args, failure) for name, args, failure in (
+    ('all', ['-all'], ''), ('default', [], ''),
+    ('selected', ['-system', '-asset', '-meta'], ''), ('single', ['-system'], ''),
+    ('mixed', ['-system', '-pointcloud-workflow', '-pointcloud-workflow'], ''),
+    ('runtime-union', ['-pointcloud-workflow', '-document-workflow'], ''),
+    ('swagger-failure', ['-all'], 'swagger'), ('swagger-failure-single', ['-system'], 'swagger'),
+    ('swagger-failure-legacy-override', ['-all'], 'swagger'),
+    ('coverage-failure', ['-all'], 'coverage'), ('coverage-failure-single', ['-system'], 'coverage'),
+    ('coverage-failure-selected', ['-system', '-asset', '-meta'], 'coverage'),
+    ('coverage-error', ['-all'], 'coverage-error'), ('coverage-error-single', ['-system'], 'coverage-error'),
+    ('stop-failure-all', ['-all'], 'stop'),
+)]
+for runtime in runtimes:
+    cases += [(runtime, ['-' + runtime], ''),
+              (runtime + '-stop-failure', ['-' + runtime], 'stop'),
+              (runtime + '-prepare-failure', ['-' + runtime], runtime)]
+for runtime in runtimes[:5]:
+    cases.append((runtime + '-prepare-failure-all', ['-all'], runtime))
 
-    infra = root / "scripts/infra"
+for name, args, failure in cases:
+    root = temporary / ('restart-' + name)
+    dev = root / 'scripts/dev'
+    dev.mkdir(parents=True)
+    for filename in ('restart.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh'):
+        shutil.copy2(repository / 'scripts/dev' / filename, dev / filename)
+    (dev / 'ports.sh').write_text('addp_dev_load_saved_ports() { :; }\n')
+    (root / '.env').write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
+    infra = root / 'scripts/infra'
     infra.mkdir(parents=True)
-    (infra / "ports.sh").write_text('addp_infra_ready() { return 1; }\n')
+    (infra / 'ports.sh').write_text('addp_infra_ready() { return 0; }\naddp_infra_read_actual_ports() { :; }\n')
 
     def script(relative, body):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("#!/bin/bash\nset -e\n" + body)
+        path.write_text('#!/bin/bash\nset -e\n' + body)
         path.chmod(0o755)
 
-    # Real restart orchestration, but no process termination, service or database access.
-    script("tools/pkill", 'echo "pkill $*" >> "$FIXTURE_ROOT/events"\n')
-    script("tools/go", 'echo "$*" >> "$FIXTURE_ROOT/go-calls"\n')
-    script("scripts/dev/stop.sh", 'echo stop >> "$FIXTURE_ROOT/events"\n')
-    script("scripts/dev/start.sh", '''
+    # Every Runtime starts active with changed dependency inputs. Preparation must
+    # reject mutation until the shared stop entry removes its active marker.
+    for runtime in runtimes:
+        (root / (runtime + '.active')).touch()
+        function = 'addp_prepare_' + runtime.replace('-', '_')
+        script('scripts/dev/' + runtime + '.sh', f'''
+{function}() {{
+  echo "prepare {runtime}" >> "$FIXTURE_ROOT/events"
+  [ ! -f "$FIXTURE_ROOT/{runtime}.active" ] || {{ echo 'active dependency drift' >&2; return 8; }}
+  [ "$FAIL_PHASE" != '{runtime}' ] || return 9
+  echo "sync {runtime}" >> "$FIXTURE_ROOT/events"
+}}
+''')
+    script('tools/pkill', 'echo "pkill $*" >> "$FIXTURE_ROOT/events"\n')
+    script('tools/go', 'echo "$*" >> "$FIXTURE_ROOT/go-calls"\n')
+    script('scripts/dev/stop.sh', '''
 ROOT_DIR="$FIXTURE_ROOT"
 source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
-addp_acquire_lifecycle_lock start
-[ "$ADDP_HOST_NODE_NAME" = fixture-host-node ]
-[ "$ADDP_HOST_NODE_IPS" = "192.0.2.7,2001:db8::1" ]
-echo "start $*" >> "$ROOT_DIR/events"
+addp_acquire_lifecycle_lock stop "$@"
+echo "stop $*" >> "$ROOT_DIR/events"
+[ "$FAIL_PHASE" != stop ] || exit 6
+if [ $# -eq 0 ]; then rm -f "$ROOT_DIR/"*.active; else
+  for arg in "$@"; do rm -f "$ROOT_DIR/${arg#-}.active"; done
+fi
 ''')
-    script("scripts/swagger/gen-swagger.sh", '''
+    script('scripts/dev/start.sh', '''
+ROOT_DIR="$FIXTURE_ROOT"
+source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
+addp_acquire_lifecycle_lock start "$@"
+[ "$ADDP_HOST_NODE_NAME" = fixture-host-node ]
+[ "$ADDP_HOST_NODE_IPS" = '192.0.2.7,2001:db8::1' ]
+echo "start $*" >> "$ROOT_DIR/events"
+if [ $# -eq 0 ]; then set -- $FIXTURE_RUNTIMES; fi
+for arg in "$@"; do
+  runtime="${arg#-}"
+  if [ -f "$ROOT_DIR/scripts/dev/$runtime.sh" ]; then
+    source "$ROOT_DIR/scripts/dev/$runtime.sh"
+    "addp_prepare_${runtime//-/_}"
+    echo "launch $runtime" >> "$ROOT_DIR/events"
+  fi
+done
+''')
+    script('scripts/swagger/gen-swagger.sh', '''
 echo "generate $*" >> "$FIXTURE_ROOT/events"
-if [ "$FAIL_SWAGGER" = 1 ]; then exit 7; fi
+[ "$FAIL_PHASE" != swagger ] || exit 7
 echo generated >> "$FIXTURE_ROOT/events"
 ''')
-    script("scripts/swagger/check-route-coverage.sh", '''
+    script('scripts/swagger/check-route-coverage.sh', '''
 echo "coverage $*" >> "$FIXTURE_ROOT/events"
-exit "$FAIL_COVERAGE"
+case "$FAIL_PHASE" in coverage) exit 1;; coverage-error) exit 2;; esac
 ''')
     sources = []
-    for module in ("system/backend", "asset/backend", "meta/backend", "common", "gateway"):
-        source = root / module / "source.go"
+    for module in ('system/backend', 'asset/backend', 'meta/backend', 'common', 'gateway'):
+        source = root / module / 'source.go'
         source.parent.mkdir(parents=True, exist_ok=True)
-        source.write_text("package fixture\n")
+        source.write_text('package fixture\n')
         os.utime(source, (1_600_000_000, 1_600_000_000))
         sources.append(source)
-    bins = root / ".dev-bins"
+    bins = root / '.dev-bins'
     bins.mkdir()
-    for binary in ("system", "asset", "meta", "meta-worker", "gateway"):
-        (bins / ("addp-" + binary)).write_text("old binary")
-    env = os.environ.copy()
-    for key in list(env):
-        if key.startswith("ADDP_LIFECYCLE_"):
-            del env[key]
-    env.update(
-        PATH=str(root / "tools") + os.pathsep + env["PATH"],
-        FIXTURE_ROOT=str(root), FAIL_SWAGGER=str(int(name.startswith('swagger-failure'))),
-        FAIL_COVERAGE='2' if name.startswith('coverage-error') else '1' if name.startswith('coverage-failure') else '0',
-        FAIL_SPARK_PREPARE=str(int(name == 'spark-prepare-failure')),
-        FAIL_GEOPYTHON_PREPARE=str(int(name == 'geopython-prepare-failure')),
-        FAIL_POINTCLOUD_PREPARE=str(int(name == 'pointcloud-prepare-failure')),
-        FAIL_DOCUMENT_PREPARE=str(int(name == 'document-prepare-failure')),
-        FAIL_MODEL3D_PREPARE=str(int(name == 'model3d-prepare-failure')),
-        ALLOW_SWAGGER_FAILURE="1", SWAGGER_COVERAGE_WARN_ONLY="1", MEILISEARCH_PORT="17700", SERVICE_HOST="localhost",
-    )
-    result = subprocess.run(["bash", str(dev / "restart.sh"), *args], env=env,
+    for binary in ('system', 'asset', 'meta', 'meta-worker', 'gateway'):
+        (bins / ('addp-' + binary)).write_text('old binary')
+    env = {k: v for k, v in os.environ.items() if not k.startswith('ADDP_LIFECYCLE_')}
+    env.update(PATH=str(root / 'tools') + os.pathsep + env['PATH'], FIXTURE_ROOT=str(root),
+               FIXTURE_RUNTIMES=' '.join(runtimes), FAIL_PHASE=failure,
+               ALLOW_SWAGGER_FAILURE='1', SWAGGER_COVERAGE_WARN_ONLY='1',
+               MEILISEARCH_PORT='17700', SERVICE_HOST='localhost')
+    result = subprocess.run(['bash', str(dev / 'restart.sh'), *args], env=env,
                             text=True, capture_output=True, timeout=30)
-    assert (result.returncode != 0) == failed, result.stdout + result.stderr
-    assert not (root / "go-calls").exists(), "restart must not clear the global Go cache"
-    assert all(source.stat().st_mtime_ns == 1_600_000_000_000_000_000 for source in sources), \
-        "restart must not touch source timestamps"
-    events = (root / "events").read_text().splitlines()
-    assert not any(event.startswith("pkill ") for event in events), \
-        "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
-    target = "all" if args in ([], ["-all"]) else "system" if args == ["-system"] else "system asset meta"
+    assert (result.returncode != 0) == bool(failure), (name, result.stdout + result.stderr)
+    assert not (root / 'go-calls').exists(), 'restart must not clear the global Go cache'
+    assert all(p.stat().st_mtime_ns == 1_600_000_000_000_000_000 for p in sources), 'source timestamps changed'
+    events = (root / 'events').read_text().splitlines()
     all_modules = args in ([], ['-all'])
-    expected = (['spark-preflight', 'geopython-preflight', 'pointcloud-preflight', 'document-preflight', 'model3d-preflight', 'stop'] if all_modules else []) + ["generate " + target]
-    if name.startswith('coverage-'):
-        expected += ["generated", "coverage " + target]
-    elif not failed:
-        expected += ["generated", "coverage " + target]
-        if not all_modules: expected += ['stop']
-        expected += ['start ' + ('' if all_modules else ' '.join(args))]
-    if name == 'spark-prepare-failure':
-        expected = ['spark-preflight']
-    if name == 'geopython-prepare-failure':
-        expected = ['spark-preflight', 'geopython-preflight']
-    if name == 'pointcloud-prepare-failure':
-        expected = ['spark-preflight', 'geopython-preflight', 'pointcloud-preflight']
-    if name == 'document-prepare-failure':
-        expected = ['spark-preflight', 'geopython-preflight', 'pointcloud-preflight', 'document-preflight']
-    if name == 'model3d-prepare-failure':
-        expected = ['spark-preflight', 'geopython-preflight', 'pointcloud-preflight', 'document-preflight', 'model3d-preflight']
-    for binary in ("system", "asset", "meta", "meta-worker", "gateway"):
-        assert (bins / ("addp-" + binary)).read_text() == "old binary", "restart must preserve " + binary
-    assert events == expected, events
-    assert not (root / ".dev-state/lifecycle.lock").exists(), "restart leaked its lock"
-print("PASS: restart preserves cache, batches Swagger and stops before shutdown on native Runtime preparation failure")
+    selected = list(dict.fromkeys(arg[1:] for arg in args)) if not all_modules else list(runtimes)
+    swagger = 'all' if all_modules else ' '.join(module for module in selected if module in ('system', 'asset', 'meta'))
+    stop = 'stop ' + ('' if all_modules else ' '.join('-' + module for module in selected))
+    expected = [stop] if all_modules else []
+    if not (all_modules and failure == 'stop'):
+        if swagger:
+            expected += ['generate ' + swagger]
+            if failure != 'swagger': expected += ['generated', 'coverage ' + swagger]
+        if failure not in ('swagger', 'coverage', 'coverage-error'):
+            if not all_modules: expected += [stop]
+            if failure != 'stop':
+                expected += ['start ' + ('' if all_modules else ' '.join('-' + module for module in selected))]
+                for runtime in selected:
+                    if runtime not in runtimes: continue
+                    expected += ['prepare ' + runtime]
+                    if failure == runtime: break
+                    expected += ['sync ' + runtime, 'launch ' + runtime]
+    assert events == expected, (name, events, expected)
+    stopped = failure not in ('swagger', 'coverage', 'coverage-error', 'stop') or (all_modules and failure != 'stop')
+    for runtime in runtimes:
+        assert (root / (runtime + '.active')).exists() == (not (stopped and runtime in selected)), (name, runtime)
+    for binary in ('system', 'asset', 'meta', 'meta-worker', 'gateway'):
+        assert (bins / ('addp-' + binary)).read_text() == 'old binary'
+    assert not (root / '.dev-state/lifecycle.lock').exists(), 'restart leaked its lock'
+print('PASS: full/scoped restart stops before dependency sync; stop/prepare failures, deduplication, cache and unrelated runtimes')
 PY
 }
 
@@ -1249,16 +1260,6 @@ with socket.socket() as sock:
     result=subprocess.run(['bash','-c',launcher],env=env,capture_output=True,text=True,timeout=15)
     assert result.returncode!=0 and '外部监听者' in result.stderr,result.stderr
     assert not (work/'.dev-pids/geopython-workflow-engine.pid').exists()
-# Local restart must preserve other runtimes' environment and preflight before stopping.
-restart=(root/'scripts/dev/restart.sh').read_text()
-local_restart=restart[restart.index('restart_geopython_workflow_service()'):restart.index('restart_math_workflow_service()')]
-helper_dir=work/'scripts/dev';helper_dir.mkdir(parents=True)
-(helper_dir/'geopython-workflow.sh').write_text('addp_prepare_geopython_workflow() { export GDAL_DATA=runtime-only; echo prepare; [ "$FAIL_PREPARE" = 0 ]; }\naddp_launch_geopython_workflow() { [ "$GDAL_DATA" = runtime-only ]; echo launch; }\n')
-probe="set -eu\nstop_pidfile_process() { echo stop; }\n"+local_restart+'\nrestart_geopython_workflow_service\n[ "$GDAL_DATA" = original ]\n'
-for failed in ('0','1'):
-    result=subprocess.run(['bash','-c',probe],env=dict(env,SCRIPT_DIR=str(helper_dir),GDAL_DATA='original',FAIL_PREPARE=failed),capture_output=True,text=True)
-    assert result.returncode==(int(failed)),result
-    assert result.stdout.splitlines()==(['prepare'] if failed=='1' else ['prepare','stop','launch']),result
 print('PASS: native GeoPython GDAL source repair/reuse, failed repair rejection, PID/HTTP ownership and foreign port rejection')
 PY_GEO
 }
@@ -1343,8 +1344,8 @@ assert 'docker run' not in helper and 'docker build' not in helper and 'make bui
 assert 'addp_sync_python_dependencies' in helper and 'exec "$runtime_dir/venv/bin/python" api_server.py' in helper
 assert 'addp_start_spark_workflow' in (root/'scripts/dev/start.sh').read_text()
 restart=(root/'scripts/dev/restart.sh').read_text()
-assert 'addp_launch_spark_workflow' in restart
-assert restart.index('(addp_prepare_spark_workflow) || exit 1') < restart.index('if ! "${SCRIPT_DIR}/stop.sh"')
+assert 'addp_prepare_spark_workflow' not in restart
+assert 'exec env SKIP_MODTIDY=1' in restart
 assert 'supermap-workflow spark-workflow;' not in (root/'scripts/dev/stop.sh').read_text()
 print('PASS: native Spark PID/HTTP ownership, dependency/import/DNS failures and one shared address')
 PY_SPARK
@@ -1401,7 +1402,7 @@ assert 'WORKFLOW_BIND_HOST=127.0.0.1' in helper
 assert 'RUNTIME_PUBLIC_PORT' in helper and 'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST' in helper
 assert 'docker run' not in helper and 'docker build' not in helper
 assert 'addp_prepare_document_workflow' in (root / 'scripts/dev/start.sh').read_text()
-assert 'addp_prepare_document_workflow' in (root / 'scripts/dev/restart.sh').read_text()
+assert 'addp_prepare_document_workflow' not in (root / 'scripts/dev/restart.sh').read_text()
 supermap = (root / 'scripts/dev/supermap-workflow.sh').read_text()
 assert 'ADDP_DEV_PORTS_RESOLVED' in supermap
 print('PASS: Document native ports and SuperMap container ownership')
@@ -1709,7 +1710,7 @@ assert len(installs) == 1, arguments
 assert installs[0] == ['-m', 'pip', 'install', '-r', str(requirements), '-e', str(workspace/'common-python'), '-i', environment['PIP_INDEX_URL'], '--trusted-host', environment['PIP_TRUSTED_HOST']], installs
 
 fingerprint = engine/'venv/.addp-dependency-fingerprint'
-# 全量 restart 的预检与 start 重复调用、后续重启均不能再次安装。
+# 后续启动与重启的准备入口均复用成功记录，不能再次安装。
 result, arguments = run()
 assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
 assert not any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), 'unchanged dependencies reinstalled'
@@ -1789,11 +1790,10 @@ assert result.returncode != 0 and not prepared.exists(), result.stdout+result.st
 
 assert not fingerprint.exists(), 'failed check left valid cache'
 
-# 局部重启与全量启动共用准备，且准备发生在停止之前。
+# 局部与全量重启均交回标准 start 入口，依赖准备发生在停止之后。
 restart_source = (root/'scripts/dev/restart.sh').read_text()
-restart_function = restart_source[restart_source.index('restart_model3d_workflow_service() {'):restart_source.index('restart_pointcloud_workflow_service() {')]
-assert restart_function.index('addp_prepare_model3d_workflow') < restart_function.index('stop_pidfile_process')
-assert 'addp_launch_model3d_workflow' in restart_function
+assert 'addp_prepare_model3d_workflow' not in restart_source
+assert 'exec env SKIP_MODTIDY=1' in restart_source
 PY
 }
 

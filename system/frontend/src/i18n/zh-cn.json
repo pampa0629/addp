@@ -1100,6 +1100,25 @@
     },
     "engine": {
       "sourceGrants": {
+        "inspection": {
+          "title": "账号授权核查",
+          "boundary": "选中上方的一张表并选择账号，核查个人、部门及项目组授权来源。源规则覆盖不代表最终可访问，实际读取仍需满足功能权限和安全要求。",
+          "selectTable": "请先在上方资源树选中一张表（不是 schema 或节点）",
+          "query": "核查授权来源",
+          "observedAt": "核查时间",
+          "noSources": "没有当前有效的授权来源",
+          "reasons": {
+            "grant": "源规则覆盖：存在有效授权，未命中源拒绝规则",
+            "no_grant": "源规则未覆盖：没有有效个人、部门或项目组授权",
+            "explicit_deny": "命中源拒绝规则：即使有授权来源，源规则仍不允许读取",
+            "source_unavailable": "账号或租户成员关系当前无效",
+            "target_unavailable": "引擎当前不可用"
+          }
+        },
+        "tableSearch": "搜索表名或 schema / 节点路径",
+        "accountFilter": "接收账号",
+        "allAccounts": "全部账号（可按名称或用户名搜索）",
+        "accountFilterBoundary": "选择账号时，仅显示直接授予该账号的记录；部门、项目组授权是独立来源，不在此账号筛选中展开。",
         "current": "当前授权",
         "history": "授权历史",
         "sourceCount": "有效记录数",

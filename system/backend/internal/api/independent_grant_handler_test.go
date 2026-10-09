@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -16,19 +17,24 @@ import (
 )
 
 type independentGrantTestService struct {
+	inspect   func(engineaccess.Actor, int64, int64, engineplugin.EngineCatalogPath) (*engineaccess.SourceGrantInspection, error)
 	create    func(engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error)
-	list      func(engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantView, int64, error)
-	relations func(engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantRelation, int64, error)
+	list      func(engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error)
+	relations func(engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error)
+}
+
+func (s independentGrantTestService) InspectSourceGrants(_ context.Context, a engineaccess.Actor, engineID, accountID int64, path engineplugin.EngineCatalogPath) (*engineaccess.SourceGrantInspection, error) {
+	return s.inspect(a, engineID, accountID, path)
 }
 
 func (s independentGrantTestService) CreateIndependentGrant(_ context.Context, input engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
 	return s.create(input)
 }
-func (s independentGrantTestService) ListSourceGrants(_ context.Context, a engineaccess.Actor, id int64, page, size int) ([]engineaccess.SourceGrantView, int64, error) {
-	return s.list(a, id, page, size)
+func (s independentGrantTestService) ListSourceGrants(_ context.Context, a engineaccess.Actor, id int64, page, size int, filter engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error) {
+	return s.list(a, id, page, size, filter)
 }
-func (s independentGrantTestService) ListSourceGrantRelations(_ context.Context, a engineaccess.Actor, id int64, page, size int) ([]engineaccess.SourceGrantRelation, int64, error) {
-	return s.relations(a, id, page, size)
+func (s independentGrantTestService) ListSourceGrantRelations(_ context.Context, a engineaccess.Actor, id int64, page, size int, filter engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error) {
+	return s.relations(a, id, page, size, filter)
 }
 func (s independentGrantTestService) RevokeGrant(context.Context, engineaccess.RevokeGrantInput) (*engineaccess.GrantRevocation, error) {
 	panic("unexpected revocation")
@@ -43,7 +49,7 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	unused := independentGrantTestService{create: func(engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
 		t.Fatal("invalid request reached service")
 		return nil, nil
-	}, list: func(engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantView, int64, error) {
+	}, list: func(engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error) {
 		t.Fatal("invalid request reached service")
 		return nil, 0, nil
 	}}
@@ -70,12 +76,17 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	for _, suffix := range []string{"?page=0", "?page=01", "?page_size=101", "?page=1&page=2", "?tenant_id=2", "?page=1;page_size=2", "?unknown=1"} {
 		engineDelegationTestRequest(t, grantTestRouter(t, &projection, unused), "GET", path+suffix, nil, 400)
 	}
+	for _, suffix := range []string{"?account_id=0", "?account_id=01", "?account_id=-1", "?account_id=9223372036854775808", "?account_id=33&account_id=34", "?table_search=", "?table_search=%20", "?table_search=a&table_search=b", "?table_search=%00", "?table_search=%FF", "?table_search=" + strings.Repeat("a", 201)} {
+		for _, route := range []string{path, path + "/history"} {
+			engineDelegationTestRequest(t, grantTestRouter(t, &projection, unused), "GET", route+suffix, nil, 400)
+		}
+	}
 	qualified := independentGrantTestService{create: func(input engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
 		if input.RecipientID != 9007199254740993 || input.EngineID != 1 || input.RequestID != id || input.Actor.PrincipalID <= 0 || input.Actor.MembershipID <= 0 || input.RequirementVersion != 1 {
 			t.Fatalf("lost provenance: %+v", input)
 		}
 		return &engineaccess.SourceGrantView{RequestID: id, RecipientID: input.RecipientID, RequirementVersion: input.RequirementVersion, ApprovalMode: "independent"}, nil
-	}, list: func(a engineaccess.Actor, engineID int64, page, size int) ([]engineaccess.SourceGrantView, int64, error) {
+	}, list: func(a engineaccess.Actor, engineID int64, page, size int, filter engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error) {
 		if a.PrincipalID <= 0 || engineID != 1 || page != 2 || size != 10 {
 			t.Fatalf("lost list scope: %+v %d %d %d", a, engineID, page, size)
 		}
@@ -96,7 +107,7 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	}}
 	engineDelegationTestRequest(t, grantTestRouter(t, &projection, initializer), "POST", path, first, 201)
 	engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "GET", path+"/history?page=2&page_size=10", nil, 200)
-	qualified.relations = func(a engineaccess.Actor, engineID int64, page, size int) ([]engineaccess.SourceGrantRelation, int64, error) {
+	qualified.relations = func(a engineaccess.Actor, engineID int64, page, size int, filter engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error) {
 		if a.PrincipalID <= 0 || engineID != 1 || page != 1 || size != 20 {
 			t.Fatal("lost relation list scope")
 		}
@@ -105,6 +116,29 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	relations := engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "GET", path, nil, 200)
 	if !strings.Contains(relations.Body.String(), `"grant_count":2`) {
 		t.Fatal(relations.Body.String())
+	}
+	for _, query := range []string{"table_search=" + url.QueryEscape(" 户外_% / 表 "), "account_id=9007199254740993", "table_search=orders&account_id=9007199254740993"} {
+		assertFilter := func(filter engineaccess.SourceGrantFilter) {
+			if strings.Contains(query, "account_id=") && filter.AccountID != 9007199254740993 {
+				t.Fatalf("lossy account filter: %+v", filter)
+			}
+			if strings.Contains(query, "table_search=") && filter.TableSearch != "orders" && filter.TableSearch != "户外_% / 表" {
+				t.Fatalf("lost table filter: %+v", filter)
+			}
+		}
+		filtered := independentGrantTestService{
+			list: func(_ engineaccess.Actor, _ int64, _, _ int, f engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error) {
+				assertFilter(f)
+				return []engineaccess.SourceGrantView{}, 0, nil
+			},
+			relations: func(_ engineaccess.Actor, _ int64, _, _ int, f engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error) {
+				assertFilter(f)
+				return []engineaccess.SourceGrantRelation{}, 0, nil
+			},
+		}
+		for _, route := range []string{path, path + "/history"} {
+			engineDelegationTestRequest(t, grantTestRouter(t, &projection, filtered), "GET", route+"?"+query, nil, 200)
+		}
 	}
 	for _, failure := range []struct {
 		err    error

@@ -40,7 +40,7 @@
         <el-button v-for="path in businessTargets" :key="JSON.stringify(path)" :disabled="busy || !catalogAvailable || !existing(path)" @click="openBusiness(path)">{{ t('system.engine.dataAuthorization.openBusiness') }} · {{ approvalPathLabel(path) }}</el-button>
       </template>
     </template>
-    <EngineSourceGrants :engine="engine" :requirements="directRequirements" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant" />
+    <EngineSourceGrants :engine="engine" :requirements="directRequirements" :inspection-target="inspectionTarget" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant" />
     <el-collapse v-if="canRead"><el-collapse-item :title="t('system.engine.dataAuthorization.configurations')">
       <el-table :data="rows.slice((page - 1) * 10, page * 10)">
         <el-table-column :label="t('system.engine.dataAuthorization.target')"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>
@@ -87,7 +87,7 @@ import { ResourceTreePicker, serializeEngineApprovalInitialization, openConsoleR
 import { enginesAPI } from '../../api/engines'
 import client from '../../api/client'
 import { useAuthStore } from '../../store/auth'
-import { approvalPathLabel, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalSelection } from '../../utils/engineApprovalCatalog'
+import { approvalPathLabel, approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalSelection } from '../../utils/engineApprovalCatalog'
 import EngineSourceGrants from './EngineSourceGrants.vue'
 
 const props = defineProps({ engine: { type: Object, required: true } })
@@ -99,6 +99,10 @@ const canGrant = computed(() => auth.hasPermission('system.engine_access_grant.c
 const canBrowse = computed(() => auth.hasPermission('system.engine_catalog.read'))
 const rows = ref([]), page = ref(1), loading = ref(false), ready = ref(false), error = ref(''), saving = ref(false), selecting = ref(false), grantBusy = ref(false)
 const selection = ref(null), targets = ref([]), mode = ref(''), reason = ref(''), generation = ref(0), catalogAvailable = ref(false)
+const inspectionTarget = computed(() => {
+  if (!ready.value || !canBrowse.value) return null
+  try { return approvalTargetFromSelection(selection.value, props.engine.id) } catch { return null }
+})
 const change = ref(null), changed = ref(false)
 const operating = computed(() => saving.value || selecting.value || grantBusy.value)
 const busy = computed(() => operating.value || !!change.value)

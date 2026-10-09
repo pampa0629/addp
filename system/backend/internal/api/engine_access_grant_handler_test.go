@@ -10,6 +10,7 @@ import (
 	"time"
 
 	shared "github.com/addp/common/authorization"
+	engineplugin "github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
@@ -19,6 +20,10 @@ import (
 
 type grantServiceFunc func(context.Context, engineaccess.RevokeGrantInput) (*engineaccess.GrantRevocation, error)
 
+func (f grantServiceFunc) InspectSourceGrants(context.Context, engineaccess.Actor, int64, int64, engineplugin.EngineCatalogPath) (*engineaccess.SourceGrantInspection, error) {
+	panic("unexpected grant inspection")
+}
+
 func (f grantServiceFunc) RevokeGrant(ctx context.Context, input engineaccess.RevokeGrantInput) (*engineaccess.GrantRevocation, error) {
 	return f(ctx, input)
 }
@@ -26,10 +31,10 @@ func (f grantServiceFunc) RevokeGrant(ctx context.Context, input engineaccess.Re
 func (f grantServiceFunc) CreateIndependentGrant(context.Context, engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
 	panic("unexpected grant creation")
 }
-func (f grantServiceFunc) ListSourceGrants(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantView, int64, error) {
+func (f grantServiceFunc) ListSourceGrants(context.Context, engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error) {
 	panic("unexpected grant listing")
 }
-func (f grantServiceFunc) ListSourceGrantRelations(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantRelation, int64, error) {
+func (f grantServiceFunc) ListSourceGrantRelations(context.Context, engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error) {
 	panic("unexpected relation listing")
 }
 

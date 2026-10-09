@@ -17,7 +17,7 @@ bash scripts/dev/restart.sh -document-workflow
 
 开发态通过 `scripts/dev/document-workflow.sh` 统一准备和启动。Python 3.12 使用独立 `venv`，完整依赖沿用平台安装锁与指纹。官方 LibreOffice 26.8.0.3 和 Noto CJK Sans 2.004 下载包逐项核对 SHA-256，安装到 `.dev-state/document-native`，不依赖宿主机全局 LibreOffice 或系统字体。私有 Fontconfig 配置绑定包内字体与固定中文字体；每次转换仍使用独立 profile。原生包当前支持 macOS arm64/x86_64 和 Linux x86_64；Linux 需要发行版提供的图形/字体系统库，Hosted Runner 由既有环境准备入口安装。
 
-start/restart/stop 只管理原生 PID。准备失败在停止旧进程之前退出，运行中的依赖只允许校验；需要更新时先停止再启动。首次迁移由用户停止并删除旧 `document-workflow-engine` 开发容器，脚本不会接管该容器，也不保留开发镜像备选路径。直接使用 NFS 的宿主机路径，通过回环地址访问 System 和对象存储；不需要 Docker host gateway 改写。
+start/restart/stop 只管理原生 PID。普通 start 对运行中的依赖只允许校验；restart 先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、验证真实转换并启动。准备失败的服务不启动，入口返回非零。首次迁移由用户停止并删除旧 `document-workflow-engine` 开发容器，脚本不会接管该容器，也不保留开发镜像备选路径。直接使用 NFS 的宿主机路径，通过回环地址访问 System 和对象存储；不需要 Docker host gateway 改写。
 
 主要配置：
 

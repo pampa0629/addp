@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
@@ -76,7 +77,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			return requestID
 		}
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID, RoleKey: "custom.rule_fixture", Name: "Explicit rule commands", ScopeTypes: []string{"tenant"},
-			PermissionKeys: []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
+			PermissionKeys: []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_grant.revoke", "system.engine_access_grant.read"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,6 +88,64 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 		}
 		commandUser = refresh(t, commandUser)
 		actor := Actor{TenantID: runtime.TenantID, PrincipalID: commandUser.PrincipalID, MembershipID: commandUser.MembershipID, AuthorizationVersion: commandUser.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}
+		inspect := func(t *testing.T, user userProvenance, reason string, kinds ...string) {
+			t.Helper()
+			observation, err := service.InspectSourceGrants(ctx, actor, int64(base.Path.EngineID), user.PrincipalID, base.Path)
+			if err != nil || observation == nil || observation.Reason != reason || observation.RuleCovered != (reason == "grant") || observation.ObservedAt.IsZero() || observation.AccountID != user.PrincipalID || len(observation.Sources) != len(kinds) {
+				t.Fatalf("inspection=%+v want=%s kinds=%v err=%v", observation, reason, kinds, err)
+			}
+			for _, kind := range kinds {
+				found := false
+				for _, source := range observation.Sources {
+					if source.RecipientType == kind && source.RecipientID > 0 && source.GrantCount > 0 {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("missing source %s: %+v", kind, observation.Sources)
+				}
+			}
+		}
+		t.Run("inspection management boundary and canonical target", func(t *testing.T) {
+			user, expiry := newUser(t, time.Hour)
+			inspect(t, user, "no_grant")
+			for _, target := range []engineplugin.EngineCatalogPath{{}, engineplugin.TabularItemPath(base.Path.EngineID+1, "schema", "public", "wrong_engine"), {EngineID: base.Path.EngineID, Version: base.Path.Version, Segments: base.Path.Segments[:2]}} {
+				if result, err := service.InspectSourceGrants(ctx, actor, int64(base.Path.EngineID), user.PrincipalID, target); result != nil || !errors.Is(err, commonapi.ErrBadRequest) {
+					t.Fatalf("bad target=%+v %v", result, err)
+				}
+			}
+			if result, err := service.InspectSourceGrants(ctx, actor, int64(base.Path.EngineID), -1, base.Path); result != nil || !errors.Is(err, commonapi.ErrBadRequest) {
+				t.Fatalf("bad account=%+v %v", result, err)
+			}
+			if result, err := service.InspectSourceGrants(ctx, actor, int64(base.Path.EngineID), 9223372036854775807, base.Path); result != nil || !errors.Is(err, commonapi.ErrNotFound) {
+				t.Fatalf("unknown account=%+v %v", result, err)
+			}
+			unqualified := Actor{TenantID: runtime.TenantID, PrincipalID: user.PrincipalID, MembershipID: user.MembershipID, AuthorizationVersion: user.AuthorizationVersion, TokenExpiresAt: expiry}
+			if result, err := service.InspectSourceGrants(ctx, unqualified, int64(base.Path.EngineID), commandUser.PrincipalID, base.Path); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("unqualified read=%+v %v", result, err)
+			}
+			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Read permission without management"}); err != nil {
+				t.Fatal(err)
+			}
+			unqualified.AuthorizationVersion = refresh(t, user).AuthorizationVersion
+			if result, err := service.InspectSourceGrants(ctx, unqualified, int64(base.Path.EngineID), commandUser.PrincipalID, base.Path); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("read permission alone=%+v %v", result, err)
+			}
+			// An existing account outside this tenant remains indistinguishable
+			// from an unknown account to this management reader.
+			outside := &iam.Principal{PrincipalType: iam.PrincipalTypeUser, Status: iam.PrincipalStatusActive, AuthorizationVersion: 1}
+			if err := identity.Transaction(ctx, func(tx *iam.Repository) error {
+				if err := tx.CreatePrincipal(ctx, outside); err != nil {
+					return err
+				}
+				return tx.CreateUser(ctx, &iam.User{ID: outside.ID, DisplayName: "Outside selected tenant"})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if result, err := service.InspectSourceGrants(ctx, actor, int64(base.Path.EngineID), outside.ID, base.Path); result != nil || !errors.Is(err, commonapi.ErrNotFound) {
+				t.Fatalf("outside account=%+v %v", result, err)
+			}
+		})
 		deny := func(t *testing.T, kind string, id int64, expiry *time.Time) uuid.UUID {
 			t.Helper()
 			input := CreateDenyInput{Actor: actor, EngineID: int64(base.Path.EngineID), DenyID: uuid.New(), CatalogPath: base.Path, RecipientType: kind, RecipientID: id, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit precise restriction"}
@@ -153,6 +212,9 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 						reason = "target_unavailable"
 					}
 					assert(t, refresh(t, user), reason)
+					if mutation.table != "system.engines" {
+						inspect(t, user, "source_unavailable")
+					}
 				}()
 			}
 			user = refresh(t, user)
@@ -207,9 +269,12 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			assert(t, stale, "source_unavailable")
 			assert(t, user, "grant")
 			personal := grant(t, "user", user.PrincipalID, nil)
+			inspect(t, user, "grant", "project_group", "user")
 			revoke(t, personal)
+			inspect(t, user, "grant", "project_group")
 			assert(t, user, "grant") // Another independent Allow remains.
 			denyID := deny(t, "user", user.PrincipalID, nil)
+			inspect(t, user, "explicit_deny", "project_group")
 			assert(t, user, "explicit_deny")
 			release(t, denyID)
 			assert(t, user, "grant")
@@ -220,6 +285,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				t.Fatal(err)
 			}
 			assert(t, refresh(t, user), "no_grant")
+			inspect(t, user, "no_grant")
 			if _, err := organizations.CreateProjectGroupMembership(ctx, iam.CreateProjectGroupMembershipInput{TenantID: runtime.TenantID, ProjectGroupID: group.ID, TenantMembershipID: user.MembershipID, ActorPrincipalID: adminID, RelationRole: "member"}); err != nil {
 				t.Fatal(err)
 			}
@@ -246,12 +312,14 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			deny(t, "department", parent.ID, nil)
 			user = refresh(t, user)
 			assert(t, user, "grant")
+			inspect(t, user, "grant", "user")
 			deny(t, "department", child.ID, nil)
 			assert(t, user, "explicit_deny")
 			if _, err := organizations.DisableDepartment(ctx, iam.ChangeDepartmentStatusInput{TenantID: runtime.TenantID, DepartmentID: child.ID, Version: child.Version, ActorPrincipalID: adminID, Reason: "Disable recipient department"}); err != nil {
 				t.Fatal(err)
 			}
 			assert(t, refresh(t, user), "grant")
+			inspect(t, user, "grant", "user")
 		})
 		t.Run("database expiry of Grant and Deny", func(t *testing.T) {
 			waitUntil := func(expires time.Time) {
@@ -268,8 +336,10 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			expires := now.Add(900 * time.Millisecond)
 			grant(t, "user", user.PrincipalID, &expires)
 			assert(t, user, "grant")
+			inspect(t, user, "grant", "user")
 			waitUntil(expires)
 			assert(t, user, "no_grant")
+			inspect(t, user, "no_grant")
 			grant(t, "user", user.PrincipalID, nil)
 			now, err = repo.wallClock(ctx)
 			if err != nil {
@@ -326,6 +396,10 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			assert(t, user, "grant")
 			if err := db.Table("system.audit_logs").Count(&after).Error; err != nil || before != after {
 				t.Fatalf("read wrote audit %d -> %d %v", before, after, err)
+			}
+			inspect(t, user, "grant", "user")
+			if err := db.Table("system.audit_logs").Count(&after).Error; err != nil || before != after {
+				t.Fatalf("inspection wrote audit %d -> %d %v", before, after, err)
 			}
 			deadCtx, stopDead := context.WithCancel(ctx)
 			stopDead()
@@ -390,6 +464,10 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 					}
 					if err := repo.insertSourceGrant(ctx, row); err != nil {
 						t.Fatal(err)
+					}
+					observation, err := service.InspectSourceGrants(ctx, actor, int64(path.EngineID), user.PrincipalID, path)
+					if err != nil || observation == nil || !observation.RuleCovered || len(observation.Sources) != 1 || observation.Sources[0].RecipientType != kind || observation.Sources[0].RecipientID != recipientID || observation.Sources[0].GrantCount != 1 || observation.Sources[0].ExpiryMode != shared.SharingExpiryUntilRevoked || observation.Sources[0].ExpiresAt != nil {
+						t.Fatalf("independent inspection=%+v %v", observation, err)
 					}
 					var receipts int64
 					if err := db.Model(&fulfillmentOutcome{}).Where("request_id = ?", row.RequestID).Count(&receipts).Error; err != nil || receipts != 0 {

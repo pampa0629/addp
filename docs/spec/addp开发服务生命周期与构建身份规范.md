@@ -16,6 +16,8 @@
 
 全局重启的停止阶段只调用 `stop.sh`，Python 服务与 Go 服务遵循同一注销顺序。`restart.sh` 不得在此之前按进程名强杀 Python、Uvicorn 或其他运行时进程，否则会绕过注销并影响其他工作区。
 
+全量重启按 `stop.sh → Swagger 同步与覆盖检查 → start.sh` 执行；局部重启在所选 Go 模块的 Swagger 检查通过后，统一按 `stop.sh -<模块> ... → start.sh -<模块> ...` 执行，扩展服务也使用这两个标准入口。依赖安装、环境创建、原生工具准备和真实转换验证属于停止后的启动准备，不能在停止前调用完整 Runtime prepare。停止失败时不得继续准备或启动；准备失败的服务不得启动，入口返回非零，不恢复旧进程；此前成功启动的其他服务可能已经运行。停服前仅可执行不会修改运行环境的参数、配置和归属检查。
+
 `restart.sh` 无参数或 `-all` 执行全量重启；指定一个或多个模块时，只停止并重启所选模块所属的 Backend、Worker、Frontend 和显式 Runtime。局部停止统一由 `stop.sh -<模块名> ...` 执行，不扩散到模块依赖，不删除其他模块的 PID、前端缓存或 Runtime 容器，不卸载其他模块的 launchd 作业。进程身份须核验工作区归属，前端启动器及其子进程一并停止；残留监听者仅查询所选模块的端口。
 
 局部重启先完成所选 Go 模块的 Swagger 同步和覆盖检查，再停止所选进程；预检失败保留现有服务。随后由 `start.sh -<模块名> ...` 按所选模块的依赖并集启动，运行中的依赖复用，缺失的依赖补齐。`-all` 不得与模块参数混用，重复模块参数去重；`start.sh` 不替代重启，已运行的进程不会因产物重新编译而自动更新。所选模块停机期间，消费其 API 的功能仍可能短暂不可用，重启 System 或 Gateway 尤其会影响公共能力。
@@ -69,19 +71,19 @@ Go 二进制不得直接编译到 `.dev-bins/addp-*` 正式路径。统一流程
 
 ## 三、运行时依赖构建输入
 
-Model3D、Spark Workflow 和 GeoPython Workflow 的宿主机 Python Runtime 在每次启动和重启时，必须复用同一依赖同步函数。每个 venv 在 `.addp-dependency-fingerprint` 保存上次成功同步的输入与安装环境指纹：输入覆盖完整 `requirements.txt`、`common-python` 的构建声明、README 和包源码；环境覆盖 Python 解释器身份、已安装包版本、依赖元数据和 editable 来源。只有指纹相同且 `pip check` 通过时才跳过安装；已有虚拟环境或少量模块可导入不能单独作为复用依据。无记录、输入变化、包缺失、包版本或来源变化及依赖检查失败时，通过既有 Python 安装互斥锁重新检查并安装完整 requirements 与 editable `common-python`，避免并发调用重复安装。仅在安装和 `pip check` 成功、输入在安装期间未变化后，原子写入新指纹；失败必须撤销本次同步记录并阻止启动。各 Runtime 继续执行已有导入与原生依赖预检。全量重启的停止前预检和随后启动使用同一记录，健康且未变化的环境不重复安装。
+Model3D、Spark Workflow、GeoPython Workflow、PointCloud Workflow 和 Document Workflow 的宿主机 Python Runtime 在每次启动和重启时，必须复用同一依赖同步函数。每个 venv 在 `.addp-dependency-fingerprint` 保存上次成功同步的输入与安装环境指纹：输入覆盖完整 `requirements.txt`、`common-python` 的构建声明、README 和包源码；环境覆盖 Python 解释器身份、已安装包版本、依赖元数据和 editable 来源。只有指纹相同且 `pip check` 通过时才跳过安装；已有虚拟环境或少量模块可导入不能单独作为复用依据。无记录、输入变化、包缺失、包版本或来源变化及依赖检查失败时，通过既有 Python 安装互斥锁重新检查并安装完整 requirements 与 editable `common-python`，避免并发调用重复安装。仅在安装和 `pip check` 成功、输入在安装期间未变化后，原子写入新指纹；失败必须撤销本次同步记录并阻止启动。各 Runtime 继续执行已有导入与原生依赖预检。重启先停止所选服务，再由 start 执行唯一准备入口；健康且未变化的环境仍按成功记录跳过安装。
 
 PointCloud Workflow 原生开发使用独立 Conda 前缀 `engines/pointcloud-workflow/venv`，固定 Python 3.12、PDAL core/E57 2.10.2，并将所有传递原生库留在该前缀。start/restart 共用唯一原生入口；完整 Python 依赖沿用平台安装锁和指纹，原生包声明与真实加载、驱动及三点 COPC 转换共同作为准备门禁。运行中环境只读校验，不能就地更新依赖。HTTP 回环监听按原生 PID 和端口归属验证；stop 只管理原生进程，开发入口不构建镜像。Hosted Manager T4 同样使用原生入口；生产 Compose 使用产品镜像。首次迁移由用户清理旧开发容器和普通 Python venv，不在生命周期内保留容器备选路径。
 
-Document Workflow 原生开发只处理可信文件，以非 root 开发用户运行；venv、profile 和工作目录不是文件沙箱。Python 3.12 venv、官方 LibreOffice 26.8.0.3 和固定 Noto CJK 字体属于独立 Runtime；官方包与字体按 SHA-256 校验后安装到工作区私有目录，Fontconfig 不继承系统字体配置。start/restart 共用唯一准备入口，依赖同步复用平台安装锁和指纹，运行中只读校验，实际中文 PPTX 转 PDF 作为停止前预检。HTTP 只监听回环并核对原生 PID/监听归属；stop 删除开发容器路径。Hosted Manager 使用同一原生入口；生产镜像继续执行非 root、只读文件系统与能力限制。首次迁移由用户清理旧 Document 开发容器。
+Document Workflow 原生开发只处理可信文件，以非 root 开发用户运行；venv、profile 和工作目录不是文件沙箱。Python 3.12 venv、官方 LibreOffice 26.8.0.3 和固定 Noto CJK 字体属于独立 Runtime；官方包与字体按 SHA-256 校验后安装到工作区私有目录，Fontconfig 不继承系统字体配置。start/restart 共用唯一准备入口，依赖同步复用平台安装锁和指纹，运行中只读校验，实际中文 PPTX 转 PDF 作为停止后的启动准备验证。HTTP 只监听回环并核对原生 PID/监听归属；stop 删除开发容器路径。Hosted Manager 使用同一原生入口；生产镜像继续执行非 root、只读文件系统与能力限制。首次迁移由用户清理旧 Document 开发容器。
 
 所有由开发生命周期启动的 Node 单元必须提交 `package-lock.json`。锁文件是不可变构建输入，启动和重启统一通过 `scripts/dev/node-dependencies.sh` 执行 `npm ci`；缺少锁文件必须立即失败，不得在生命周期内退回 `npm install`、生成锁文件或静默采用未锁定依赖。
 
 `npm install` 只允许用于显式的依赖维护流程，由开发者审查并提交 `package.json` 与 `package-lock.json` 的一致变更。Hosted Online 等要求干净构建身份的门禁在安装前后必须保持仓库状态不变，不能通过忽略锁文件改动、关闭仓库清洁检查或在预检前恢复文件来掩盖生命周期污染。
 
-Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境和 OpenJDK 11，与 Business Spark Worker 保持 JVM 主版本一致。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用唯一原生启动入口，按完整 requirements 和 editable `common-python` 同步依赖并执行 `pip check`。全套重启在停止已有服务前完成 Java、Python、依赖和共享地址预检；失败保留已有服务。HTTP 仅绑定 `127.0.0.1`，就绪必须同时验证原生 PID、监听归属和 HTTP 健康检查；`stop.sh` 按原生 PID 停止服务。macOS 使用 `host.docker.internal` 公布 Driver 与回环数据端点，需要在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`；Docker Worker 保留 Docker 内置解析。该方式不依赖 Docker Desktop host networking。生产 Compose 和 Hosted 产品验收使用独立容器入口，仍验证同一应用的镜像默认启动命令。
+Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境和 OpenJDK 11，与 Business Spark Worker 保持 JVM 主版本一致。`start.sh -spark-workflow` 与 `restart.sh -spark-workflow` 共用唯一原生启动入口，按完整 requirements 和 editable `common-python` 同步依赖并执行 `pip check`。全套与局部重启均先停止所选服务，再完成 Java、Python、依赖和共享地址验证；准备失败的服务不启动，入口返回非零。HTTP 仅绑定 `127.0.0.1`，就绪必须同时验证原生 PID、监听归属和 HTTP 健康检查；`stop.sh` 按原生 PID 停止服务。macOS 使用 `host.docker.internal` 公布 Driver 与回环数据端点，需要在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`；Docker Worker 保留 Docker 内置解析。该方式不依赖 Docker Desktop host networking。生产 Compose 和 Hosted 产品验收使用独立容器入口，仍验证同一应用的镜像默认启动命令。
 
-GeoPython Workflow 本地开发统一使用不继承系统包的 Python 3.12 虚拟环境与原生 GDAL，Python 绑定版本必须与 `gdal-config --version` 一致。PGeo 依赖 MDBTools 与 unixODBC，驱动配置限于 Runtime 自身。GDAL/PROJ 资源目录从原生依赖派生，仅注入该 Runtime；不得继承 Anaconda 的资源目录或插件目录。start/restart 共用原生入口，停止前完成依赖、PGeo/FileGDB/COG 驱动、坐标系和 HTTP 端口归属预检；失败保留已有服务。原生开发与产品镜像统一使用单 Worker、四线程 Gunicorn，监听就绪后在同一 Worker 中异步注册。开发入口不构建镜像，栅格 Hosted T4 使用根产品构建入口及独立 Runtime 所有权。
+GeoPython Workflow 本地开发统一使用不继承系统包的 Python 3.12 虚拟环境与原生 GDAL，Python 绑定版本必须与 `gdal-config --version` 一致。PGeo 依赖 MDBTools 与 unixODBC，驱动配置限于 Runtime 自身。GDAL/PROJ 资源目录从原生依赖派生，仅注入该 Runtime；不得继承 Anaconda 的资源目录或插件目录。start/restart 共用原生入口，重启先停止所选服务，再完成依赖、PGeo/FileGDB/COG 驱动、坐标系和 HTTP 端口归属验证；准备失败的服务不启动，入口返回非零。原生开发与产品镜像统一使用单 Worker、四线程 Gunicorn，监听就绪后在同一 Worker 中异步注册。开发入口不构建镜像，栅格 Hosted T4 使用根产品构建入口及独立 Runtime 所有权。
 
 Manager Raster Mosaic Runtime 属于 Manager，随 `stop.sh -manager` 停止、随普通 `start/restart -manager` 启动，独立进程验收入口不隐式启动它。本地开发统一使用 Python 3.12 独立虚拟环境，禁止继承系统 site-packages。停止后的准备阶段自动重建不符合该约束的环境；正在运行或端口被占用时不得改写环境。GDAL 来源选择、资源目录派生和失效绑定源码重建由 `scripts/dev/gdal-env.sh` 唯一实现，GeoPython 与 Raster Mosaic 共同调用；各自检查业务所需驱动，Raster Mosaic 仅要求 GTiff/COG、GDAL NumPy 数组和坐标系能力，不依赖 PGeo/MDBTools。每次启动按完整 requirements 同步依赖并执行 pip check，安装使用既有 Python 依赖锁。保留 Manager 主服务的既定启动策略：Raster Mosaic 准备失败明确报告并跳过该 Runtime，不将其计为就绪；启动后须核验 PID、监听归属和健康响应。
 
@@ -126,6 +128,7 @@ GDAL 绑定重建必须先准备 setuptools 与 wheel，并使用已同步的 Ru
 - System 自身收到退出信号后记录 `graceful`，心跳和清理协程结束；
 - 同一工作区的第二个生命周期操作会立即失败并显示锁持有者；
 - `restart -> stop -> start` 能继承同一锁；
+- 全量和各扩展服务的局部重启在依赖输入变化时均先停止再同步依赖，停止失败不得进入准备，准备失败不得启动该服务，未选 Runtime 的环境和进程保持；
 - 构建失败不会覆盖现有正式二进制；
 - 构建期间源码变化会拒绝发布产物；
 - 全量及多模块重启不提前强杀 Python 服务，保留 Go 缓存和源码时间戳，Swagger 生成失败时不启动服务；

@@ -134,8 +134,9 @@ addp_launch_pointcloud_workflow
         for source in (start, restart):
             self.assertNotIn('ensure_pointcloud_workflow_image', source)
             self.assertNotIn('pointcloud_workflow_source_fingerprint', source)
-            self.assertIn('scripts/dev/pointcloud-workflow.sh', source.replace('${SCRIPT_DIR}/', '$ROOT_DIR/scripts/dev/'))
-        self.assertIn('(addp_prepare_pointcloud_workflow) || exit 1', restart)
+        self.assertIn('scripts/dev/pointcloud-workflow.sh', start)
+        self.assertIn('exec env SKIP_MODTIDY=1', restart)
+        self.assertNotIn('addp_prepare_pointcloud_workflow', restart)
         self.assertNotIn('for name in pointcloud-workflow ', stop)
         self.assertIn('pointcloud-workflow-engine POINTCLOUD_WORKFLOW_PORT', (ROOT / 'scripts/dev/ports.sh').read_text())
         workflow = (ROOT / '.github/workflows/platform-ci.yml').read_text()

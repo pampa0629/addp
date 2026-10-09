@@ -31,9 +31,8 @@ class Model3DNativeLifecycleTests(unittest.TestCase):
         start = (ROOT / 'scripts/dev/start.sh').read_text()
         restart = (ROOT / 'scripts/dev/restart.sh').read_text()
         self.assertIn('source "$ROOT_DIR/scripts/dev/model3d-workflow.sh"', start)
-        self.assertIn('source "$ROOT_DIR/scripts/dev/model3d-workflow.sh"', restart)
-        scoped = restart[restart.index('restart_model3d_workflow_service() {'):restart.index('restart_pointcloud_workflow_service() {')]
-        self.assertLess(scoped.index('addp_prepare_model3d_workflow'), scoped.index('stop_pidfile_process'))
+        self.assertNotIn('addp_prepare_model3d_workflow', restart)
+        self.assertIn('exec env SKIP_MODTIDY=1', restart)
         hosted = (ROOT / 'scripts/test/online-hosted-manager-gate.sh').read_text()
         self.assertIn('start_online_model3d_runtime', hosted)
         self.assertNotIn('-document-workflow -model3d-workflow', hosted)

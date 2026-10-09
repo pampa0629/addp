@@ -30,12 +30,47 @@
       <div><el-button :disabled="saving" @click="closeGrant">{{ t('common.cancel') }}</el-button><el-button type="primary" data-testid="source-grant-confirm" :loading="saving" :disabled="!canCreate || !canReadCandidates" @click="create">{{ t(attempt ? 'system.engine.sourceGrants.retry' : 'system.engine.sourceGrants.create') }}</el-button></div>
     </div>
     <template v-if="canRead">
+      <div class="grant-form" data-testid="source-grant-inspection">
+        <h3>{{ t('system.engine.sourceGrants.inspection.title') }}</h3>
+        <p class="filter-hint">{{ t('system.engine.sourceGrants.inspection.boundary') }}</p>
+        <p data-testid="inspection-target">{{ inspectionTarget ? approvalPathLabel(inspectionTarget) : t('system.engine.sourceGrants.inspection.selectTable') }}</p>
+        <el-form label-position="top" @submit.prevent="inspect">
+          <el-form-item :label="t('system.engine.sourceGrants.accountFilter')">
+            <TenantMemberSelect v-model="inspectionAccount" data-testid="inspection-account" :members="filterMembers" principal-type="user" value-field="principal_id" stringify-value :disabled="!canReadAccounts || recipientNames.user?.status !== 'ready'" :loading="recipientNames.user?.status === 'loading'" :current-membership-id="auth.authContext?.context?.tenant_membership_id" />
+          </el-form-item>
+          <el-button data-testid="inspection-query" native-type="submit" type="primary" :loading="inspecting" :disabled="!inspectionTarget || !inspectionAccount || !canReadAccounts || loading || saving || revoking">{{ t('system.engine.sourceGrants.inspection.query') }}</el-button>
+        </el-form>
+        <el-alert v-if="inspectionError" data-testid="inspection-error" type="error" :closable="false" :title="inspectionError" />
+        <template v-if="inspection">
+          <el-alert data-testid="inspection-result" :type="inspection.rule_covered ? 'success' : 'warning'" :closable="false" :title="t(`system.engine.sourceGrants.inspection.reasons.${inspection.reason}`)" />
+          <p>{{ t('system.engine.sourceGrants.inspection.observedAt') }}：{{ formatTime(inspection.observed_at) }}</p>
+          <el-table :data="inspection.sources" data-testid="inspection-sources" :empty-text="t('system.engine.sourceGrants.inspection.noSources')">
+            <el-table-column :label="t('system.engine.sourceGrants.recipient')" min-width="220"><template #default="{ row }"><EngineGrantRecipient :type="row.recipient_type" :id="row.recipient_id" v-bind="recipientPresentation(row, inspectionNames)" /></template></el-table-column>
+            <el-table-column :label="t('system.engine.sourceGrants.expiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
+            <el-table-column :label="t('system.engine.sourceGrants.sourceCount')" min-width="100" prop="grant_count" />
+          </el-table>
+        </template>
+      </div>
       <el-radio-group v-model="listMode" data-testid="source-grant-list-mode" @change="changeListMode">
         <el-radio-button value="current">{{ t('system.engine.sourceGrants.current') }}</el-radio-button>
         <el-radio-button value="history">{{ t('system.engine.sourceGrants.history') }}</el-radio-button>
       </el-radio-group>
+      <el-form class="grant-filters" label-position="top" data-testid="source-grant-filters" @submit.prevent="applyFilters">
+        <el-form-item :label="t('system.engine.dataAuthorization.target')">
+          <el-input v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter" :placeholder="t('system.engine.sourceGrants.tableSearch')" maxlength="200" clearable />
+        </el-form-item>
+        <el-form-item :label="t('system.engine.sourceGrants.accountFilter')">
+          <TenantMemberSelect v-model="filterDraft.accountID" data-testid="source-grant-account-filter" :members="filterMembers" principal-type="user" value-field="principal_id" stringify-value :disabled="!canReadAccounts || recipientNames.user?.status !== 'ready'" :loading="recipientNames.user?.status === 'loading'" :placeholder="t('system.engine.sourceGrants.allAccounts')" :current-membership-id="auth.authContext?.context?.tenant_membership_id" />
+        </el-form-item>
+        <div class="filter-actions">
+          <el-button type="primary" native-type="submit" data-testid="source-grant-filter-query">{{ t('common.search') }}</el-button>
+          <el-button data-testid="source-grant-filter-reset" @click="resetFilters">{{ t('common.reset') }}</el-button>
+        </div>
+      </el-form>
+      <p class="filter-hint">{{ t('system.engine.sourceGrants.accountFilterBoundary') }}</p>
+      <el-alert v-if="!canReadAccounts || recipientNames.user?.status === 'failed'" type="warning" :closable="false" :title="t(`system.engine.sourceGrants.recipientNames.${canReadAccounts ? 'failed' : 'forbidden'}`)" />
       <el-button :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
-      <el-table :data="rows" v-loading="loading">
+      <el-table :data="rows" v-loading="loading" data-testid="source-grant-list">
         <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>
         <el-table-column :label="t('system.engine.sourceGrants.recipient')" min-width="220"><template #default="{ row }"><EngineGrantRecipient :type="row.recipient_type" :id="row.recipient_id" v-bind="recipientPresentation(row)" /></template></el-table-column>
         <el-table-column :label="t('system.engine.dataAuthorization.mode')" min-width="150"><template #default="{ row }">{{ t(`system.engine.dataAuthorization.modes.${row.approval_mode}`) }}</template></el-table-column>
@@ -68,12 +103,12 @@ import { StatusAnnouncer } from '@common-ui'
 import { enginesAPI } from '../../api/engines'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
-import { approvalPathLabel } from '../../utils/engineApprovalCatalog'
+import { approvalPathLabel, approvalTargetsEqual } from '../../utils/engineApprovalCatalog'
 import { captureIndependentGrant } from '../../utils/independentGrant'
 import TenantMemberSelect from '../iam/TenantMemberSelect.vue'
 import EngineGrantRecipient from './EngineGrantRecipient.vue'
 
-const props = defineProps({ engine: { type: Object, required: true }, requirements: { type: Array, default: () => [] } })
+const props = defineProps({ engine: { type: Object, required: true }, requirements: { type: Array, default: () => [] }, inspectionTarget: { type: Object, default: null } })
 const recipientTypeSelect = ref(null), revokeCancel = ref(null)
 const emit = defineEmits(['close', 'busy', 'issued']), auth = useAuthStore(), { t, locale } = useI18n()
 const canCreate = computed(() => auth.hasPermission('system.engine_access_grant.create'))
@@ -88,7 +123,13 @@ const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', 
 const canReadCandidates = computed(() => auth.hasPermission(recipientSources[form.recipientType]?.permission))
 const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error = ref(''), success = ref('')
 const listMode = ref('current')
+const filterDraft = reactive({ tableSearch: '', accountID: '' })
+const appliedFilters = ref({})
+const filterMembers = ref([])
+const canReadAccounts = computed(() => auth.hasPermission(recipientSources.user.permission))
 const recipientNames = ref({})
+const inspectionAccount = ref(''), inspection = ref(null), inspectionNames = ref({}), inspectionError = ref(''), inspecting = ref(false)
+let inspectionSequence = 0
 const candidates = ref([]), members = ref([]), candidateLoading = ref(false), formError = ref(''), saving = ref(false), attempt = ref(null)
 const outcomes = ref([])
 const revokeVisible = ref(false), revokeRow = ref(null), revokeReason = ref(''), revokeError = ref(''), revoking = ref(false)
@@ -97,37 +138,66 @@ const message = e => e?.response?.data?.error || t('system.engine.sourceGrants.f
 const formatTime = value => new Date(value).toLocaleString(locale.value)
 const expiryLabel = row => row.expiry_mode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(row.expires_at)
 const state = row => row.revocation ? 'revoked' : row.expires_at && new Date(row.expires_at).getTime() <= Date.now() ? 'expired' : 'issued'
-function recipientPresentation(row) {
-  const names = recipientNames.value[row.recipient_type]
+function recipientPresentation(row, cache = recipientNames.value) {
+  const names = cache[row.recipient_type]
   const identity = names?.items?.[String(row.recipient_id)]
   return { identity, status: identity ? 'ready' : names?.status === 'ready' ? 'unavailable' : names?.status || 'loading' }
 }
+async function fetchRecipientNames(kind) {
+  const source = recipientSources[kind]
+  if (!source || !auth.hasPermission(source.permission)) return { status: 'forbidden' }
+  try {
+    const items = await source.api.listAll(kind === 'user' ? { principal_type: 'user' } : {})
+    return { status: 'ready', items: Object.fromEntries(items.map(item => [String(item[source.id]), item])), members: items }
+  } catch { return { status: 'failed' } }
+}
 async function loadRecipientNames(history, epoch, seq) {
-  const kinds = [...new Set(history.map(row => row.recipient_type))]
+  const kinds = [...new Set(['user', ...history.map(row => row.recipient_type)])]
   await Promise.all(kinds.map(async kind => {
     const source = recipientSources[kind]
     if (!source) return
     recipientNames.value[kind] = { status: auth.hasPermission(source.permission) ? 'loading' : 'forbidden' }
     if (!auth.hasPermission(source.permission)) return
-    try {
-      // History includes inactive recipients; eligibility belongs to the grant form, not this display.
-      const items = await source.api.listAll(kind === 'user' ? { principal_type: 'user' } : {})
-      if (epoch !== generation || seq !== readSequence) return
-      recipientNames.value[kind] = { status: 'ready', items: Object.fromEntries(items.map(item => [String(item[source.id]), item])) }
-    } catch {
-      if (epoch === generation && seq === readSequence) recipientNames.value[kind] = { status: 'failed' }
-    }
+    // Include inactive history identities; eligibility belongs to the grant form.
+    const names = await fetchRecipientNames(kind)
+    if (epoch !== generation || seq !== readSequence) return
+    recipientNames.value[kind] = names
+    if (kind === 'user' && names.status === 'ready') filterMembers.value = names.members
   }))
+}
+function clearInspection() { inspectionSequence++; inspection.value = null; inspectionNames.value = {}; inspectionError.value = ''; inspecting.value = false }
+async function inspect() {
+  if (!canRead.value || !canReadAccounts.value || !props.inspectionTarget || !inspectionAccount.value || inspecting.value) return
+  clearInspection()
+  const epoch = generation, seq = inspectionSequence, account = inspectionAccount.value, target = { ...props.inspectionTarget, segments: props.inspectionTarget.segments.map(segment => ({ ...segment })) }
+  const current = () => epoch === generation && seq === inspectionSequence
+  inspecting.value = true
+  try {
+    const result = await enginesAPI.inspectSourceGrants(props.engine.id, { account_id: account, catalog_path: target })
+    if (!current()) return
+    if (result?.account_id !== account || !approvalTargetsEqual(result.catalog_path, target) || !Array.isArray(result.sources) ||
+      !['grant', 'no_grant', 'explicit_deny', 'source_unavailable', 'target_unavailable'].includes(result.reason) ||
+      result.rule_covered !== (result.reason === 'grant') || !Number.isFinite(new Date(result.observed_at).getTime())) throw new Error('invalidInspection')
+    inspection.value = result
+    await Promise.all([...new Set(result.sources.map(source => source.recipient_type))].map(async kind => {
+      if (!current()) return
+      inspectionNames.value[kind] = { status: 'loading' }
+      const names = await fetchRecipientNames(kind)
+      if (current()) inspectionNames.value[kind] = names
+    }))
+  } catch (e) { if (current()) inspectionError.value = message(e) }
+  finally { if (current()) inspecting.value = false }
 }
 async function load() {
   if (!canRead.value) return
+  clearInspection()
   const epoch = generation, seq = ++readSequence
   // Preserve total while loading: resetting it makes Element Plus clamp page 2
   // to page 1 and issue a competing request before the response arrives.
   loading.value = true; error.value = ''; rows.value = []; recipientNames.value = {}
   try {
     const list = listMode.value === 'history' ? enginesAPI.listSourceGrantHistory : enginesAPI.listSourceGrants
-    const result = await list(props.engine.id, { page: page.value, page_size: 20 })
+    const result = await list(props.engine.id, { page: page.value, page_size: 20, ...appliedFilters.value })
     if (epoch !== generation || seq !== readSequence) return
     if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total) || result.total < 0) throw new Error('invalidHistory')
     rows.value = result.data; total.value = result.total
@@ -137,6 +207,12 @@ async function load() {
 }
 function changePage(value) { if (value === page.value) return; page.value = value; load() }
 function changeListMode() { page.value = 1; load() }
+function applyFilters() {
+  const tableSearch = filterDraft.tableSearch.trim()
+  appliedFilters.value = { ...(tableSearch ? { table_search: tableSearch } : {}), ...(filterDraft.accountID ? { account_id: filterDraft.accountID } : {}) }
+  page.value = 1; load()
+}
+function resetFilters() { filterDraft.tableSearch = ''; filterDraft.accountID = ''; applyFilters() }
 async function loadCandidates() {
   const epoch = generation, seq = ++candidateSequence, kind = form.recipientType
   candidates.value = []; members.value = []; form.recipientID = ''; candidateLoading.value = false; formError.value = ''
@@ -215,10 +291,13 @@ watch([() => props.engine.id, () => props.engine.lifecycle_state, () => auth.aut
   () => auth.authContext?.context?.tenant_membership_id, () => auth.authContext?.authorization?.authorization_version, canRead, canCreate, canRevoke,
   ...Object.values(recipientSources).map(source => () => auth.hasPermission(source.permission))], () => {
   generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; recipientNames.value = {}; total.value = 0; page.value = 1
+  clearInspection(); inspectionAccount.value = ''
+  filterDraft.tableSearch = ''; filterDraft.accountID = ''; appliedFilters.value = {}; filterMembers.value = []
   saving.value = revoking.value = loading.value = false; revokeVisible.value = false; error.value = formError.value = success.value = ''; emit('close'); load()
 }, { immediate: true })
 watch([saving, attempt], () => emit('busy', saving.value || !!attempt.value), { immediate: true })
-onBeforeUnmount(() => { generation++ })
+watch([() => JSON.stringify(props.inspectionTarget), inspectionAccount], clearInspection, { flush: 'sync' })
+onBeforeUnmount(() => { generation++; clearInspection() })
 </script>
 
 <style scoped>
@@ -226,5 +305,10 @@ onBeforeUnmount(() => { generation++ })
 h3 { margin: 0; }
 .el-select { width: 100%; }
 .grant-form { display: grid; gap: 16px; }
+.grant-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.grant-filters .el-form-item { flex: 1 1 260px; min-width: 0; margin-bottom: 0; }
+.grant-filters :deep(.iam-member-select) { min-width: 0; }
+.filter-actions { display: flex; padding-bottom: 1px; }
+.filter-hint { margin: 0; color: var(--addp-text-secondary); }
 p { overflow-wrap: anywhere; }
 </style>

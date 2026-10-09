@@ -22,8 +22,53 @@ import (
 type engineAccessGrantService interface {
 	RevokeGrant(context.Context, engineaccess.RevokeGrantInput) (*engineaccess.GrantRevocation, error)
 	CreateIndependentGrant(context.Context, engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error)
-	ListSourceGrants(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantView, int64, error)
-	ListSourceGrantRelations(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.SourceGrantRelation, int64, error)
+	ListSourceGrants(context.Context, engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error)
+	ListSourceGrantRelations(context.Context, engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error)
+	InspectSourceGrants(context.Context, engineaccess.Actor, int64, int64, engineplugin.EngineCatalogPath) (*engineaccess.SourceGrantInspection, error)
+}
+
+type InspectSourceGrantsRequest struct {
+	AccountID   string                         `json:"account_id"`
+	CatalogPath engineplugin.EngineCatalogPath `json:"catalog_path"`
+}
+
+// Inspect godoc
+// @Summary 核查账号的源数据授权来源 | Inspect an account's source-data grant sources
+// @Description 当前租户用户须授权读取权限及引擎管理资格；选择同租户账号和精确普通表，使用实际读取的唯一源规则展开当前有效个人、部门及项目组授权。拒绝仅返回固定命中结论，不返回规则正文或编号 | Current Tenant User needs grant-read permission and engine management qualification. Uses the actual-read rule query to inspect current personal, department and project-group sources for a same-tenant account and exact ordinary table. Deny is exposed only as a fixed reason, never its body or ID
+// @Description 只读观察不连接源库、不授权、不核验接收方实际会话、功能或 Security；rule_covered 不是实际访问许可，响应不可缓存 | Read-only observation never connects to the source or issues access, and does not validate the recipient's real session, function permissions or Security. rule_covered is not actual access; response is not cacheable
+// @Tags 源数据授权 | Source Data Grants
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "引擎 ID | Engine ID"
+// @Param request body InspectSourceGrantsRequest true "账号与精确表 | Account and exact table"
+// @Success 200 {object} engineaccess.SourceGrantInspection "当次源规则观察 | Current source-rule observation"
+// @Failure 400,401,403,404,500 {object} IAMErrorResponse "请求失败 | Request failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine_access_grant.read"]
+// @Router /engines/{id}/access_grants/inspection [post]
+func (h *EngineAccessGrantHandler) Inspect(c *gin.Context) {
+	actor, engineID, ok := approvalRequirementActor(c)
+	if !ok {
+		return
+	}
+	var request InspectSourceGrantsRequest
+	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	accountID, err := parseIAMDecimalID(request.AccountID)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	result, err := h.service.InspectSourceGrants(c.Request.Context(), actor, engineID, accountID, request.CatalogPath)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, result)
 }
 
 type EngineAccessGrantHandler struct{ service engineAccessGrantService }
@@ -94,6 +139,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 
 // List godoc
 // @Summary 查看当前源数据授权关系 | List current source-data authorization relations
+// @Description 表名和账号条件取交集，完整结果筛选后计数及分页；账号只匹配个人授权，不展开组织来源 | Table and account filters intersect before counting and pagination; account matches personal Grants only, not organization sources
 // @Description 按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json
@@ -101,6 +147,8 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 // @Param id path string true "引擎 ID | Engine ID"
 // @Param page query int false "页码，默认 1 | Page, default 1"
 // @Param page_size query int false "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100"
+// @Param table_search query string false "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters"
+// @Param account_id query string false "接收账号 Principal ID，规范正整数十进制字符串 | Recipient account Principal ID, canonical positive decimal string"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantRelation,total=int64,page=int,page_size=int,total_pages=int} "当前关系 | Current relations"
 // @Failure 400,401,403,404,500 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
@@ -112,6 +160,7 @@ func (h *EngineAccessGrantHandler) List(c *gin.Context) {
 
 // History godoc
 // @Summary 查看源数据授权历史 | List source-data Grant history
+// @Description 表名和账号条件取交集，完整结果筛选后计数及分页；包含已停用账号的历史个人授权，不展开组织来源 | Table and account filters intersect before counting and pagination; includes inactive-account personal history, not organization sources
 // @Description 当前租户用户需读取权限及管理资格；保留所有原签发、到期与撤销事实，包含直接和业务批准，不代表当前可访问 | Current tenant user needs read permission and management qualification. Preserves original issuance, expiry and revocation for direct and business approvals; not current access Allow
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json
@@ -119,6 +168,8 @@ func (h *EngineAccessGrantHandler) List(c *gin.Context) {
 // @Param id path string true "引擎 ID | Engine ID"
 // @Param page query int false "页码，默认 1 | Page, default 1"
 // @Param page_size query int false "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100"
+// @Param table_search query string false "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters"
+// @Param account_id query string false "接收账号 Principal ID，规范正整数十进制字符串 | Recipient account Principal ID, canonical positive decimal string"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantView,total=int64,page=int,page_size=int,total_pages=int} "签发及撤销历史 | Issuance and revocation history"
 // @Failure 400,401,403,404,500 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
@@ -137,8 +188,28 @@ func (h *EngineAccessGrantHandler) list(c *gin.Context, history bool) {
 		return
 	}
 	page, size := 1, 20
+	filter := engineaccess.SourceGrantFilter{}
 	for key, values := range query {
-		if (key != "page" && key != "page_size") || len(values) != 1 {
+		if len(values) != 1 {
+			err = commonapi.ErrBadRequest
+			break
+		}
+		if key == "table_search" {
+			filter.TableSearch = strings.TrimSpace(values[0])
+			if filter.TableSearch == "" {
+				err = commonapi.ErrBadRequest
+				break
+			}
+			continue
+		}
+		if key == "account_id" {
+			filter.AccountID, err = parseIAMDecimalID(values[0])
+			if err != nil {
+				break
+			}
+			continue
+		}
+		if key != "page" && key != "page_size" {
 			err = commonapi.ErrBadRequest
 			break
 		}
@@ -156,6 +227,9 @@ func (h *EngineAccessGrantHandler) list(c *gin.Context, history bool) {
 	if size > 100 || page > int(^uint(0)>>1)/size {
 		err = commonapi.ErrBadRequest
 	}
+	if validationErr := filter.Validate(); validationErr != nil {
+		err = validationErr
+	}
 	if err != nil {
 		respondIAMError(c, err)
 		return
@@ -163,9 +237,9 @@ func (h *EngineAccessGrantHandler) list(c *gin.Context, history bool) {
 	var rows any
 	var total int64
 	if history {
-		rows, total, err = h.service.ListSourceGrants(c.Request.Context(), actor, engineID, page, size)
+		rows, total, err = h.service.ListSourceGrants(c.Request.Context(), actor, engineID, page, size, filter)
 	} else {
-		rows, total, err = h.service.ListSourceGrantRelations(c.Request.Context(), actor, engineID, page, size)
+		rows, total, err = h.service.ListSourceGrantRelations(c.Request.Context(), actor, engineID, page, size, filter)
 	}
 	if err != nil {
 		respondIAMError(c, err)

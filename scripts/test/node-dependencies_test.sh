@@ -49,10 +49,8 @@ if addp_install_node_dependencies "$TEST_ROOT/missing" 2>/dev/null; then
   fail "directory without package.json was accepted"
 fi
 
-for lifecycle_script in "$ROOT_DIR/scripts/dev/start.sh" "$ROOT_DIR/scripts/dev/restart.sh"; do
-  grep -Fq 'source "${SCRIPT_DIR}/node-dependencies.sh"' "$lifecycle_script" ||
-    fail "$(basename "$lifecycle_script") does not source the shared Node dependency policy"
-done
+grep -Fq 'source "${SCRIPT_DIR}/node-dependencies.sh"' "$ROOT_DIR/scripts/dev/start.sh" ||
+  fail "start.sh does not source the shared Node dependency policy"
 grep -Fq 'addp_install_node_dependencies "$dir"' "$ROOT_DIR/scripts/dev/start.sh" ||
   fail "start.sh does not use the shared Node dependency policy"
 grep -Fq 'exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" "${START_ARGS[@]}"' "$ROOT_DIR/scripts/dev/restart.sh" ||

@@ -115,8 +115,8 @@ func (r *Repository) readCurrentSourceRules(ctx context.Context, request sourceR
 	return result, nil
 }
 
-// Only called inside the observation's own read-only transaction. The trusted
-// credential adapter uses this same query, not a second source-rule algorithm.
+// The trusted credential adapter and qualified management inspection reuse the
+// same rule CTEs; management observations never become credential evidence.
 func (r *Repository) queryCurrentSourceRules(ctx context.Context, request sourceReadRequest, paths []engineplugin.EngineCatalogPath, batch json.RawMessage) (*sourceReadRules, error) {
 	var rows []sourceReadRuleRow
 	if err := r.db.WithContext(ctx).Raw(currentSourceReadRulesSQL, request.TenantID,
@@ -138,7 +138,11 @@ WITH input AS MATERIALIZED (
 	SELECT ?::bigint AS tenant_id, ?::bigint AS principal_id,
 	       ?::bigint AS membership_id, ?::bigint AS authorization_version,
 	       ?::jsonb AS targets, clock_timestamp() AS observed_at
-), targets AS (
+)` + sourceReadRuleCTEs + ` SELECT position, observed_at, reason FROM rules ORDER BY position`
+
+// Both actual reads and management inspection consume these exact predicates.
+// The caller supplies input from trusted credential resolution or IAM lookup.
+const sourceReadRuleCTEs = `, targets AS (
 	SELECT target.value AS path, target.ordinality AS position,
 	       (target.value->>'engine_id')::bigint AS engine_id
 	FROM input, jsonb_array_elements(input.targets) WITH ORDINALITY AS target(value, ordinality)
@@ -163,7 +167,16 @@ WITH input AS MATERIALIZED (
 	JOIN system.project_group_memberships m ON m.tenant_id = s.tenant_id
 	  AND m.tenant_membership_id = s.membership_id AND m.status = 'active'
 	JOIN system.project_groups g ON g.tenant_id = m.tenant_id AND g.id = m.project_group_id AND g.status = 'active'
-)
+), matched_grants AS MATERIALIZED (
+	SELECT g.*, target.position FROM targets target CROSS JOIN input
+	JOIN system.engine_access_grants g ON g.tenant_id = input.tenant_id
+	  AND g.engine_id = target.engine_id AND g.catalog_path = target.path
+	JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
+	WHERE g.action = 'read' AND g.granted_at <= input.observed_at
+	  AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
+	       OR (g.expiry_mode = 'at_time' AND g.expires_at > input.observed_at))
+	  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations revocation WHERE revocation.request_id = g.request_id)
+), rules AS (
 SELECT target.position, input.observed_at,
 CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
      WHEN NOT EXISTS (SELECT 1 FROM system.engines e WHERE e.tenant_id = input.tenant_id
@@ -177,14 +190,6 @@ CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
 	       OR (d.expiry_mode = 'at_time' AND d.expires_at > input.observed_at))
 	  AND NOT EXISTS (SELECT 1 FROM system.engine_access_deny_releases release WHERE release.deny_id = d.deny_id)
      ) THEN 'explicit_deny'
-     WHEN EXISTS (
-	SELECT 1 FROM system.engine_access_grants g
-	JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
-	WHERE g.tenant_id = input.tenant_id AND g.engine_id = target.engine_id AND g.catalog_path = target.path
-	  AND g.action = 'read' AND g.granted_at <= input.observed_at
-	  AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
-	       OR (g.expiry_mode = 'at_time' AND g.expires_at > input.observed_at))
-	  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations revocation WHERE revocation.request_id = g.request_id)
-     ) THEN 'grant'
+     WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
      ELSE 'no_grant' END AS reason
-FROM targets target CROSS JOIN input ORDER BY target.position`
+FROM targets target CROSS JOIN input)`

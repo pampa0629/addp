@@ -28,7 +28,7 @@ bash scripts/dev/start.sh -pointcloud-workflow
 bash scripts/dev/restart.sh -pointcloud-workflow
 ```
 
-两者共用 `scripts/dev/pointcloud-workflow.sh`，按 `native-packages.txt` 创建/同步独立环境，再复用平台 Python 依赖安装锁、完整 requirements、editable `common-python` 与依赖指纹。启动前检查 Python/PDAL 版本、LAS、E57、PCD、text、COPC 驱动、资源目录，并实际转换三个 XYZ 点及读取 COPC 点数。失败不启动服务。已有原生进程运行时只校验环境，不修改依赖；依赖需变化时先在终端停止该 Runtime，再启动。
+两者共用 `scripts/dev/pointcloud-workflow.sh`，按 `native-packages.txt` 创建/同步独立环境，再复用平台 Python 依赖安装锁、完整 requirements、editable `common-python` 与依赖指纹。启动前检查 Python/PDAL 版本、LAS、E57、PCD、text、COPC 驱动、资源目录，并实际转换三个 XYZ 点及读取 COPC 点数。失败不启动服务。已有原生进程运行时只校验环境，不修改依赖；依赖需变化时可在终端执行 restart，标准入口会先通过 stop.sh 停止所选 Runtime，再由 start.sh 同步依赖、验证原生能力并启动；准备失败的 Runtime 不启动，入口返回非零。
 
 HTTP 仅监听 `127.0.0.1` 与已分配的 `POINTCLOUD_WORKFLOW_PORT`，按原生 PID 和监听归属判定就绪。System 与对象存储端点按宿主机实际地址直接访问，不进行容器 host gateway 改写。NFS 源文件直接读取本机路径；工作目录为 `${POINTCLOUD_WORK_HOST_PATH:-data/pointcloud-work}`，COPC 仍先写受控临时文件，再按 access plan 发布到目标存储。目录应有足够磁盘空间。
 

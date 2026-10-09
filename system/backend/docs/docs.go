@@ -2456,7 +2456,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification",
+                "description": "表名和账号条件取交集，完整结果筛选后计数及分页；账号只匹配个人授权，不展开组织来源 | Table and account filters intersect before counting and pagination; account matches personal Grants only, not organization sources\n按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification",
                 "produces": [
                     "application/json"
                 ],
@@ -2482,6 +2482,18 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100",
                         "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters",
+                        "name": "table_search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "接收账号 Principal ID，规范正整数十进制字符串 | Recipient account Principal ID, canonical positive decimal string",
+                        "name": "account_id",
                         "in": "query"
                     }
                 ],
@@ -2649,7 +2661,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前租户用户需读取权限及管理资格；保留所有原签发、到期与撤销事实，包含直接和业务批准，不代表当前可访问 | Current tenant user needs read permission and management qualification. Preserves original issuance, expiry and revocation for direct and business approvals; not current access Allow",
+                "description": "表名和账号条件取交集，完整结果筛选后计数及分页；包含已停用账号的历史个人授权，不展开组织来源 | Table and account filters intersect before counting and pagination; includes inactive-account personal history, not organization sources\n当前租户用户需读取权限及管理资格；保留所有原签发、到期与撤销事实，包含直接和业务批准，不代表当前可访问 | Current tenant user needs read permission and management qualification. Preserves original issuance, expiry and revocation for direct and business approvals; not current access Allow",
                 "produces": [
                     "application/json"
                 ],
@@ -2675,6 +2687,18 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100",
                         "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters",
+                        "name": "table_search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "接收账号 Principal ID，规范正整数十进制字符串 | Recipient account Principal ID, canonical positive decimal string",
+                        "name": "account_id",
                         "in": "query"
                     }
                 ],
@@ -2703,6 +2727,86 @@ const docTemplate = `{
                                     "type": "integer"
                                 }
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_grant.read"
+                ]
+            }
+        },
+        "/engines/{id}/access_grants/inspection": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前租户用户须授权读取权限及引擎管理资格；选择同租户账号和精确普通表，使用实际读取的唯一源规则展开当前有效个人、部门及项目组授权。拒绝仅返回固定命中结论，不返回规则正文或编号 | Current Tenant User needs grant-read permission and engine management qualification. Uses the actual-read rule query to inspect current personal, department and project-group sources for a same-tenant account and exact ordinary table. Deny is exposed only as a fixed reason, never its body or ID\n只读观察不连接源库、不授权、不核验接收方实际会话、功能或 Security；rule_covered 不是实际访问许可，响应不可缓存 | Read-only observation never connects to the source or issues access, and does not validate the recipient's real session, function permissions or Security. rule_covered is not actual access; response is not cacheable",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据授权 | Source Data Grants"
+                ],
+                "summary": "核查账号的源数据授权来源 | Inspect an account's source-data grant sources",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "账号与精确表 | Account and exact table",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.InspectSourceGrantsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次源规则观察 | Current source-rule observation",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspection"
                         }
                     },
                     "400": {
@@ -14302,6 +14406,61 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_engineaccess.SourceGrantInspection": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "grant",
+                        "no_grant",
+                        "explicit_deny",
+                        "source_unavailable",
+                        "target_unavailable"
+                    ]
+                },
+                "rule_covered": {
+                    "type": "boolean"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspectionSource"
+                    }
+                }
+            }
+        },
+        "github_com_addp_system_internal_engineaccess.SourceGrantInspectionSource": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "expiry_mode": {
+                    "type": "string"
+                },
+                "grant_count": {
+                    "type": "integer"
+                },
+                "recipient_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "recipient_type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_engineaccess.SourceGrantRelation": {
             "type": "object",
             "properties": {
@@ -18942,6 +19101,17 @@ const docTemplate = `{
                 },
                 "reason": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.InspectSourceGrantsRequest": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },

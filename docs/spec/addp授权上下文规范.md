@@ -335,6 +335,12 @@ Manager 剖析结果读取另使用固定同步入口 `POST /api/v1/system/engin
 
 #### 5.5.5 批准要求、可选治理与明确交接
 
+账号授权核查是源规则的只读管理观察，不是实际访问裁决。System 在既有引擎授权入口提供 `POST /engines/:id/access_grants/inspection`，仅接受一张精确普通表的 `catalog_path` 和规范十进制字符串 `account_id`；操作人仍须当前 Tenant User、`system.engine_access_grant.read` 与本引擎管理资格。选中账号只用于定位同租户对象，不作为可信调用来源；主体、成员关系和授权版本由 System 权威库取得。其他租户或不存在的账号返回 404。
+
+核查与实际读取复用唯一源规则查询，在同一个已提交快照和数据库观察时刻展开账号当前有效的个人、部门、项目组来源，排除已撤销和已到期 Grant，并按接收主体合并重复来源，显示有效期及记录数量。响应只返回 `account_id`、规范目标、`observed_at`、`rule_covered`、固定 `reason`（`grant|no_grant|explicit_deny|source_unavailable|target_unavailable`）及 `sources`。拒绝优先，但仍可展示命中的有效 Grant 来源供管理员排查；不返回拒绝规则正文、编号、原因或操作者。名称解析仍须既有独立 IAM 读取权限。
+
+核查不读取源表、不持久化授权、不产生凭据或可缓存 Allow；返回 `Cache-Control: no-store`。`rule_covered=true` 只说明本表源规则覆盖，不能替代接收账号实际会话、功能权限、Client 条件、Provider 完整读取集合或 Security 检查。普通数据使用者不因此取得核查他人的资格。页面选中另一表、账号或身份变化后清除旧观察，须重新显式核查；列表的账号筛选继续仅匹配直接个人授权，不与此功能混用。
+
 本节是 2026-10-01 已确认的架构补充。批准要求的首次初始化、管理读取、显式切换、正式准备与跨模块首次受理已按下述契约实施。退出业务批准或重新启用业务批准通过同一显式切换入口办理；表级 Grant 仍单独签发，不以初始化、切换或受理接口代替实际授权生效。
 
 批准要求针对 `Tenant + Engine + 完整 EngineCatalogPath`，不针对整个平台注册历史，不递归扩展为整库，也不因 CatalogEntry 重绑把旧目标要求搬到新目标。同一目标只能有一份 System 权威批准要求；Catalog 不保存第二份可编辑要求。

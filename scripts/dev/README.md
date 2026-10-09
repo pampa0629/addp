@@ -140,18 +140,18 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 **功能**: 智能重启服务。
 
-- 无参数、`-all` 或指定 Go 模块时：保持原有全局重启语义，先 `stop.sh` 再 `start.sh`。
+- 无参数或 `-all` 时先 `stop.sh`，再同步 Swagger 并执行 `start.sh`；指定模块时只停止并启动所选模块。
 - 全局重启通过 `stop.sh` 统一停止 Python、Go 和 Runtime，保留 System 供注销；只有优雅退出超时后才强制终止工作区所属进程。
-- 只指定扩展服务参数时：只重启对应扩展服务，不停止整套 ADDP 环境。
+- 所有局部重启统一通过 `stop.sh -<模块> ...` 停止所选服务，再通过 `start.sh -<模块> ...` 启动；运行中的公共依赖复用，缺失的依赖由启动入口补齐。停止失败时不进入准备和启动阶段。
 - `-all`、无参数和指定 Go 模块参数保留已有二进制及 Go 包缓存。Swagger 同步后，统一比较完整构建指纹：源码、共享依赖、嵌入资源、Go 版本、平台或构建参数变化才重新编译。服务进程仍全部按所选范围重启，未变化产物保留构建身份，新进程具有新的启动时间。
 - Swagger 对未变化的 Go 工作区输入和完整产物复用文档，输入或产物变化时重新生成；FastAPI 实时导出。需要生成的模块批量并行执行，并输出耗时，路由覆盖校验仍执行。所有生成任务结束后才进入编译，因为 `docs.go` 本身参与 Go 编译，不能与同一模块的生成任务同时执行。
-- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。Python 依赖安装单独加锁，避免同时写入共享 `common-python` 元数据，已安装环境的检查和启动仍可并行。Spark、GeoPython 和 Model3D 仅在依赖输入或安装环境指纹变化、记录缺失或 `pip check` 失败时重新安装；相同输入且依赖一致时输出“依赖未变化，跳过安装”。首次使用该机制仍需同步一次并生成成功记录，全量重启后续启动阶段复用该记录。
+- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。Python 依赖安装单独加锁，避免同时写入共享 `common-python` 元数据，已安装环境的检查和启动仍可并行。Spark、GeoPython 和 Model3D 仅在依赖输入或安装环境指纹变化、记录缺失或 `pip check` 失败时重新安装；相同输入且依赖一致时输出“依赖未变化，跳过安装”。首次使用该机制仍需同步一次并生成成功记录，后续启动复用该记录。所有依赖同步与原生转换验证均在所选服务停止后进行；准备失败的服务不启动，入口返回非零。
 - Go 后端和前端在各自启动阶段各查询一次 TCP LISTEN 快照，命中占用后实时复核；单项启动实时查询。端口冲突和扫描失败会中断启动，新进程退出不能被其他监听者的 HTTP 成功响应掩盖。
 - 重启编排和缓存保留通过 `make test-dev-lifecycle` 验证，并纳入 `make test-platform` / Platform CI。
 
 **实现**:
 ```bash
-# 全局重启
+# 局部重启 Manager
 bash scripts/dev/restart.sh -manager
 
 # 局部重启扩展服务
@@ -167,7 +167,7 @@ bash scripts/dev/restart.sh -copilot
 bash scripts/dev/restart.sh -agent
 ```
 
-GeoPython Workflow 使用原生 Python 3.12、GDAL 和 MDBTools/ODBC；准备与启动统一在 `geopython-workflow.sh`，虚拟环境不继承系统包。macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`。局部与全量重启均先预检依赖，再停止旧进程；首次切换须由用户先停掉旧开发容器。开发入口不构建或启动 GeoPython 镜像，产品栅格 Hosted 验收通过根构建入口独立完成。
+GeoPython Workflow 使用原生 Python 3.12、GDAL 和 MDBTools/ODBC；准备与启动统一在 `geopython-workflow.sh`，虚拟环境不继承系统包。macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`。局部与全量重启均先通过 stop.sh 停止所选服务，再准备依赖并验证原生能力；首次切换须由用户先停掉旧开发容器。开发入口不构建或启动 GeoPython 镜像，产品栅格 Hosted 验收通过根构建入口独立完成。
 
 SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `SUPERMAP_CPP_SDK_PATH` 指向完整 SDK 母版并运行 `bash scripts/build/build-supermap-workflow-base.sh` 构建稳定基础镜像。之后 `restart.sh -supermap-workflow` 和 `restart.sh -all` 根据构建指纹决定是否重新编译当前 C++ 源码并替换 8103 容器，不需要 rebuild 开关，也不挂载宿主机源码或 SDK 目录。
 
@@ -175,8 +175,8 @@ SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `S
 - 修改代码后需要重启
 - 服务异常需要重置
 - 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
-- PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；局部重启先验证依赖、驱动和真实 COPC 写入，再按 PID 重启。开发入口不构建镜像，首次迁移需先移走旧普通 venv 并停止旧开发容器。
-- Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先验证三页中文 PDF 转换，再按 PID 重启。开发态只处理可信文件，首次迁移需先停止、删除旧开发容器；生产保留容器隔离。
+- PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 同步依赖、验证驱动和真实 COPC 写入并启动。开发入口不构建镜像，首次迁移需先移走旧普通 venv 并停止旧开发容器。
+- Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、验证三页中文 PDF 转换并启动。开发态只处理可信文件，首次迁移需先停止、删除旧开发容器；生产保留容器隔离。
 
 **重要**: `restart.sh` 不会重启基础设施容器(PostgreSQL, Redis, MinIO, Meilisearch)
 - 原因: 避免 pgvector 等扩展需要重新编译安装
