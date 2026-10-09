@@ -209,7 +209,7 @@
 | model_3d | 三维模型数据 | 以三维空间对象、场景、网格、构件或三维可视化结构为核心消费对象的数据类型。 | 覆盖 GLB / glTF、单 OSGB、OSGB Scene 倾斜摄影、S3M、3D Tiles 场景、IFC / Revit BIM 等；具体子形态由 `type_info.model_3d.model_kind`、format、layout 和 capabilities 表达。 |
 | Collada / DAE | Collada 三维交换格式 | 以 XML 描述几何、场景、材质及资源引用的三维交换格式，文件扩展名为 `.dae`。 | ADDP 使用 `format=dae`、`data_type=model_3d`、`layout=single`；首期转换为静态 GLB。 |
 | 3DS | 3DS 三维模型格式 | 以二进制 chunk 存储网格、材质和关键帧等内容的三维模型格式。 | ADDP 使用 `format=3ds`、`data_type=model_3d`、`layout=single`；不与 3D Tiles 或 S3M 混用。 |
-| MAX | 3ds Max 原生场景格式 | Autodesk 3ds Max 保存完整场景的原生文件格式，扩展名为 `.max`。 | 与 `.3ds` 交换格式不同；尚未接入原生解析和快显，不能把导出后的 FBX 支持记为 MAX 原生支持。 |
+| MAX | 3ds Max 原生场景格式 | Autodesk 3ds Max 保存完整场景的原生文件格式，扩展名为 `.max`。 | 与 `.3ds` 交换格式不同；按单文件注册格式身份，由 Model3D Runtime 内部的固定 Blender／io_scene_max 路线转换支持范围内的静态网格为 GLB，外部贴图须显式声明，源单位由用户选择或默认米；不声明动画、骨架或第三方渲染器材质保真。 |
 | SKP | SketchUp 原生模型格式 | SketchUp 保存三维模型的原生文件格式，扩展名为 `.skp`。 | 按单文件注册格式身份，静态模型通过 Model3D Runtime 的 OpenSKP 1.3.0 路线生成 GLB；不声明全部 SKP 版本、隐藏内容或动态组件支持。 |
 | SGM | SuperMap Global Model | SuperMap 提供的三维模型存储格式，扩展名为 `.sgm`。 | 与 S3M 是不同格式；首期按单文件注册格式身份，几何读取由 SuperMap Runtime 承担，浏览器快显通过 OSGB 中间产物生成 GLB 2.0；不按 S3M manifest 或瓦片规则探测。 |
 | point_cloud | 点云数据 | 以三维点集合、点属性、空间范围和抽样 / LOD 预览为核心消费对象的数据类型。 | 覆盖 LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree 等；点属性不是普通表字段，不能仅因可列化而归为 `table`。 |
