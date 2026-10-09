@@ -914,10 +914,7 @@ def run_browser(repository: Path, environment: Mapping[str, str], expected_task_
     )
     result = subprocess.run(
         [
-            "npm",
-            "run",
-            "test:e2e",
-            "--",
+            "npm", "exec", "--", "playwright", "test",
             "--config=playwright.online.config.js",
             "e2e/online/transfer-relational-sql-etl.spec.js",
         ],

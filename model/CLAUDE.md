@@ -356,7 +356,7 @@ draft ⇄ approved
 
 维度关联改动沿用现有自动发现门禁：`make test-module MODULE=model` 覆盖平台一致性、Go 单元、前端路由及交互、PostgreSQL 事务测试；其中数据库测试需配置上述测试 DSN。`make test-model-frontend` 包含关系入口唯一所有权、URL 恢复、审批只读、原位更新和冲突保留测试；CI 继续使用已登记的 Model 前端与 PostgreSQL 作业。
 
-Model 确定性浏览器门禁只在失败时保留截图与 Playwright trace；trace 可用于查看页面快照、请求响应及浏览器错误。产物统一写入 `RUNNER_TEMP`（本地未设置时使用操作系统临时目录）下的 `addp-model-playwright-results/`，不进入仓库。Model 前端 CI Job 在失败时上传该目录，保留 14 天；重跑前应先复制需要保留的本地产物，因为 Playwright 会清空同一输出目录。排查使用失败输出中的 `playwright show-trace` 命令，不通过增加重试或放宽断言超时掩盖偶发失败。
+Model 确定性浏览器门禁只在失败时保留截图与 Playwright trace；trace 可用于查看页面快照、请求响应及浏览器错误。产物写入操作系统临时目录（CI 通过 `TMPDIR=RUNNER_TEMP` 指向 Runner 目录）下当轮独立的 `addp-model-playwright-results-*/`，不进入仓库。Model 前端 CI Job 在失败时上传该目录，保留 14 天；每轮使用独立目录，重跑不覆盖此前失败产物；成功退出时删除当轮目录。排查使用失败输出中的 `playwright show-trace` 命令，不通过增加重试或放宽断言超时掩盖偶发失败。
 
 指标修订的引用服务弹窗和撤回确认弹窗只在打开、翻页或显式刷新时查询引用服务。403 后重载授权不得自动再次查询，避免拒绝请求与令牌轮换形成循环；失去读取权限时立即清除已有结果，未完成请求也不得写入无权限界面。令牌续期中的授权重载不取消原有查询，最终结果仍按当前读取权限展示。该行为由 `make test-model-frontend` 的可控授权重载与续期用例覆盖。
 

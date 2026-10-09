@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI } from './module-query.fixture'
 
@@ -6,7 +7,7 @@ async function fulfillJSON(route, status, body) {
     status,
     contentType: 'application/json',
     headers: {
-      'access-control-allow-origin': 'http://127.0.0.1:4173',
+      'access-control-allow-origin': browserTestOrigin('system'),
       'access-control-allow-credentials': 'true',
       'access-control-allow-headers': 'authorization,content-type',
       'access-control-allow-methods': 'GET,PUT,POST,OPTIONS'

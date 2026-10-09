@@ -21,6 +21,8 @@ npm --prefix common-frontend test
 
 ### 浏览器测试隔离
 
+确定性浏览器门禁通过 `scripts/test/frontend-browser-gate.mjs` 和共享 `withBrowserTestIsolation` 统一隔离当轮端口、代理、地址与输出目录。模块在 `package.json` 声明 `addpBrowserTest.fixtures`，不得复制启动、端口分配或缓存清理逻辑；浏览器断言使用 `browserTestOrigin`。继续使用原有 `make test-<owner>-frontend` / `npm run test:e2e` 入口。
+
 Vite 配置直接导入 `basic/src/utils/viteTestIsolation.mjs`，以 `defineConfig(withFrontendTestIsolation(模块名, 配置对象))` 包装。`ADDP_E2E=1` 时统一关闭 HMR，使用模块和进程独立的临时依赖缓存，并在 Vite 关闭、进程正常退出及收到 `SIGTERM` / `SIGINT` 时清理；普通开发返回原配置。Playwright 每个 `webServer` 显式传入该标记、回环地址、独立端口与 `--strictPort`，且不得复用现有服务；配置带正数超时的 `gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 }`，避免 Playwright 默认强制结束进程而留下缓存。隔离逻辑及清理测试归共享库，配置接入检查归平台 T0。
 
 ## 使用

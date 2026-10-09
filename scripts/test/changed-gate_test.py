@@ -68,6 +68,11 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common/client/system.go"]),
         )
 
+    def test_shared_browser_launcher_selects_its_package_consumers(self) -> None:
+        package = self.repository / 'other/frontend/package.json'
+        package.write_text('{"scripts":{"test:e2e":"node ../../scripts/test/frontend-browser-gate.mjs"}}')
+        self.assertEqual(['other'], MODULE.affected_modules(self.repository, ['scripts/test/frontend-browser-gate.mjs']))
+
     def test_changed_platform_uses_the_same_t2_environment_isolation(self) -> None:
         step = MODULE.plan_changed(self.repository, ["sample/backend/example.go"])[0]
         self.assertEqual(MODULE.MODULE_GATE.platform_step(self.repository), step)

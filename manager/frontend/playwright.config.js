@@ -1,27 +1,17 @@
 import { defineConfig } from '@playwright/test'
-import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { withBrowserTestIsolation } from '../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 
-export default defineConfig({
+export default defineConfig(withBrowserTestIsolation('manager', {
   testDir: './e2e',
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
   reporter: 'line',
-  outputDir: resolve(tmpdir(), 'addp-manager-playwright-results'),
   use: {
-    baseURL: 'http://127.0.0.1:4174',
     headless: true,
     screenshot: 'only-on-failure',
     viewport: { width: 1280, height: 800 },
     actionTimeout: 10_000
   },
-  expect: { timeout: 10_000 },
-  webServer: {
-    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4174 --strictPort --base /',
-    url: 'http://127.0.0.1:4174',
-    reuseExistingServer: false,
-    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
-    timeout: 30_000
-  }
-})
+  expect: { timeout: 10_000 }
+}))

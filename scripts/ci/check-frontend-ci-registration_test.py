@@ -60,7 +60,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         self.write_isolated_fixture()
         path = self.repository / "sample/frontend/package.json"
         package = json.loads(path.read_text())
-        package["scripts"]["test:e2e"] = "playwright test"
+        package["scripts"]["test:e2e"] = MODULE.BROWSER_LAUNCHER
         path.write_text(json.dumps(package), encoding="utf-8")
         makefile = self.repository / "Makefile"
         makefile.write_text(makefile.read_text() + "\t@cd sample/frontend && npm run test:e2e\n", encoding="utf-8")
@@ -78,7 +78,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
                 "        if: failure() && matrix.playwright == true && steps.selection.outputs.run == 'true'\n"
                 "        uses: actions/upload-artifact@fixed-test-ref\n"
                 "        with:\n"
-                "          path: ${{ runner.temp }}/addp-${{ matrix.module }}-playwright-results/\n"
+                "          path: ${{ runner.temp }}/addp-${{ matrix.module }}-playwright-results-*/\n"
             ),
             encoding="utf-8",
         )
@@ -94,14 +94,13 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         )
         self.playwright = frontend / "playwright.config.js"
         self.playwright.write_text(
-            "export default defineConfig({\n  use: { baseURL: 'http://127.0.0.1:4199' },\n  webServer: {\n"
-            "    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4199 --strictPort',\n"
-            "    url: 'http://127.0.0.1:4199/login',\n"
-            "    reuseExistingServer: false,\n    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },\n  }\n})\n"
+            "import { withBrowserTestIsolation } from '../../common-frontend/basic/src/utils/browserTestIsolation.mjs'\n"
+            "export default defineConfig(withBrowserTestIsolation('sample', {\n  use: { headless: true },\n}))\n"
         )
         package_path = frontend / "package.json"
         package = json.loads(package_path.read_text())
         package["scripts"]["dev"] = "vite"
+        package["addpBrowserTest"] = {"fixtures": [{"module": "sample", "readyPath": "/login", "base": "/"}]}
         package_path.write_text(json.dumps(package))
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
@@ -124,13 +123,12 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         other.mkdir(parents=True)
         (other / "package.json").write_text('{"scripts":{"dev":"vite"}}')
         (other / "vite.config.js").write_text(self.vite.read_text().replace("'sample'", "'other'"))
-        for prefix in ("../../other/frontend", "'../../other/frontend'"):
-            self.playwright.write_text("export default defineConfig({\n  use: { baseURL: 'http://127.0.0.1:4198' },\n  webServer: {\n"
-                + f"    command: \"ADDP_E2E=1 npm --prefix {prefix} run dev -- --host 127.0.0.1 --port 4198 --strictPort\",\n"
-                + "    url: 'http://127.0.0.1:4198/login',\n    reuseExistingServer: false,\n"
-                + "    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },\n  }\n})\n")
-            errors = MODULE.validate_registration(self.repository)
-            self.assertTrue(any("other/frontend lacks locked CI dependency installation" in error for error in errors), errors)
+        package_path = self.repository / "sample/frontend/package.json"
+        package = json.loads(package_path.read_text())
+        package["addpBrowserTest"]["fixtures"].append({"module": "other", "readyPath": "/login"})
+        package_path.write_text(json.dumps(package))
+        errors = MODULE.validate_registration(self.repository)
+        self.assertTrue(any("other/frontend lacks locked CI dependency installation" in error for error in errors), errors)
         install = "      - name: Install iframe owner\n        if: matrix.module == 'sample'\n        working-directory: other/frontend\n        run: npm ci\n"
         original = self.workflow.read_text()
         self.workflow.write_text(original + install)
@@ -156,21 +154,15 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         self.enable_browser_suite()
         subprocess.run(["git", "reset", "-q", "--", "sample/frontend/playwright.config.js"], cwd=self.repository, check=True)
         self.assertEqual([], MODULE.validate_browser_isolation(self.repository))
-        self.playwright.write_text(self.playwright.read_text().replace("reuseExistingServer: false", "reuseExistingServer: true"))
+        self.playwright.write_text(self.playwright.read_text().replace("headless: true", "headless: true, webServer: {}"))
         self.assertTrue(MODULE.validate_browser_isolation(self.repository))
 
     def test_rejects_unsafe_browser_isolation(self) -> None:
         cases = [
-            ("playwright", "ADDP_E2E=1 ", "", "ADDP_E2E=1"),
-            ("playwright", "ADDP_E2E=1 ", "ADDP_E2E=1 ADDP_E2E=0 ", "ADDP_E2E=1"),
-            ("playwright", "--strictPort'", "--strictPort && npm run dev'", "single Vite fixture"),
-            ("playwright", " --strictPort", "", "--strictPort"),
-            ("playwright", "reuseExistingServer: false", "reuseExistingServer: true", "must not reuse"),
-            ("playwright", "gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },", "", "bounded SIGTERM"),
-            ("playwright", "--port 4199", "--port 5199", "distinct from development"),
-            ("playwright", "127.0.0.1:4199", "127.0.0.1:4200", "URL must match"),
-            ("playwright", "--host 127.0.0.1", "--host 0.0.0.0", "loopback"),
-            ("playwright", "baseURL: 'http://127.0.0.1:4199'", "baseURL: 'http://127.0.0.1:5199'", "browser baseURL"),
+            ("playwright", "withBrowserTestIsolation('sample', {", "{", "shared withBrowserTestIsolation"),
+            ("playwright", "headless: true", "headless: true, baseURL: 'http://127.0.0.1:4199'", "overrides"),
+            ("playwright", "headless: true", "headless: true, webServer: {}", "overrides"),
+            ("playwright", "headless: true", "headless: true, outputDir: '/tmp/shared'", "overrides"),
             ("vite", "withFrontendTestIsolation('sample', {", "{", "shared withFrontendTestIsolation"),
             ("vite", "server: {", "server: { hmr: isE2E ? false : true,", "test HMR"),
             ("vite", "server: {", "cacheDir: 'node_modules/.vite-e2e', server: {", "module-owned"),
@@ -188,11 +180,45 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         other.mkdir(parents=True)
         (other / "package.json").write_text('{"scripts":{"dev":"vite"}}')
         (other / "vite.config.js").write_text('export default defineConfig({})')
-        self.playwright.write_text(self.playwright.read_text().replace(
-            "ADDP_E2E=1 npm run dev", "ADDP_E2E=1 npm --prefix ../../other/frontend run dev"
-        ))
+        package_path = self.repository / "sample/frontend/package.json"
+        package = json.loads(package_path.read_text())
+        package["addpBrowserTest"]["fixtures"].append({"module": "other", "readyPath": "/"})
+        package_path.write_text(json.dumps(package))
         self.assertTrue(any("shared withFrontendTestIsolation" in error
                             for error in MODULE.validate_browser_isolation(self.repository)))
+
+    def test_rejects_legacy_launcher_and_fixed_origins(self) -> None:
+        self.enable_browser_suite()
+        package_path = self.repository / "sample/frontend/package.json"
+        package = json.loads(package_path.read_text())
+        package["scripts"]["test:e2e"] = "playwright test"
+        package_path.write_text(json.dumps(package))
+        self.assertTrue(any("shared frontend-browser-gate launcher" in error for error in MODULE.validate_registration(self.repository)))
+        package["scripts"]["test:e2e"] = MODULE.BROWSER_LAUNCHER
+        package_path.write_text(json.dumps(package))
+        tests = self.repository / "sample/frontend/e2e"
+        tests.mkdir()
+        (tests / "fixed.spec.js").write_text("page.goto('http://127.0.0.1:4199/login')")
+        self.assertTrue(any("fixed browser fixture origins" in error for error in MODULE.validate_registration(self.repository)))
+
+    def test_rejects_invalid_or_duplicate_fixture_declarations(self) -> None:
+        self.enable_browser_suite()
+        package_path = self.repository / "sample/frontend/package.json"
+        package = json.loads(package_path.read_text())
+        for fixtures in [[], [{"module": "sample", "readyPath": "//external.invalid/"}],
+                         [{"module": 123, "readyPath": "/"}],
+                         [{"module": "sample", "readyPath": "/", "port": 4199}],
+                         [{"module": "sample", "readyPath": "/"}] * 2]:
+            package["addpBrowserTest"]["fixtures"] = fixtures
+            package_path.write_text(json.dumps(package))
+            self.assertTrue(MODULE.validate_registration(self.repository), fixtures)
+
+    def test_online_cannot_borrow_the_deterministic_launcher(self) -> None:
+        self.enable_browser_suite()
+        path = self.repository / 'scripts/test/sample-online.py'
+        path.parent.mkdir(parents=True)
+        path.write_text('["npm", "run", "test:e2e", "--", "--config=playwright.online.config.js"]')
+        self.assertTrue(any('Online must use explicit Playwright' in error for error in MODULE.validate_registration(self.repository)))
 
     def test_rejects_missing_browser_config(self) -> None:
         self.enable_browser_suite()

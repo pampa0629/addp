@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse } from './online/transfer-browser-support.js'
 
@@ -46,7 +47,7 @@ test('direct module ports redirect before refresh and all top-level pages share 
   let releaseRefresh
   const concurrentRefresh = new Promise(resolve => { releaseRefresh = resolve })
   const refreshOrigins = []
-  await context.addCookies([{ name: 'fixture_refresh', value: 'refresh-0', url: 'http://127.0.0.1:4170', httpOnly: true, sameSite: 'Lax' }])
+  await context.addCookies([{ name: 'fixture_refresh', value: 'refresh-0', url: browserTestOrigin('console'), httpOnly: true, sameSite: 'Lax' }])
   await context.route('**/e2e/auth-api/**', async route => {
     if (new URL(route.request().url()).pathname.endsWith('/logout')) {
       logouts++
@@ -81,8 +82,8 @@ test('direct module ports redirect before refresh and all top-level pages share 
 
   const independent = await context.newPage()
   const initialRefreshes = refreshes
-  await independent.goto('http://127.0.0.1:4173/module-ui/system/e2e/fixtures/browser-session.html?tab=details#section')
-  await expect(independent).toHaveURL('http://127.0.0.1:4170/module-ui/system/e2e/fixtures/browser-session.html?tab=details#section')
+  await independent.goto(`${browserTestOrigin('system')}/module-ui/system/e2e/fixtures/browser-session.html?tab=details#section`)
+  await expect(independent).toHaveURL(`${browserTestOrigin('console')}/module-ui/system/e2e/fixtures/browser-session.html?tab=details#section`)
   await expect(independent.getByTestId('status')).toHaveText('authenticated')
   await expect(independent.getByTestId('token')).toHaveText('access-1')
   expect(refreshes).toBe(initialRefreshes)
@@ -96,7 +97,7 @@ test('direct module ports redirect before refresh and all top-level pages share 
   await expect(embedded.getByTestId('token')).toHaveText('access-2')
   expect(refreshes).toBe(2)
   expect(reuseDetected).toBe(false)
-  expect(new Set(refreshOrigins)).toEqual(new Set(['http://127.0.0.1:4170']))
+  expect(new Set(refreshOrigins)).toEqual(new Set([browserTestOrigin('console')]))
   await independent.reload()
   await expect(independent.getByTestId('token')).toHaveText('access-2')
   expect(refreshes).toBe(2)

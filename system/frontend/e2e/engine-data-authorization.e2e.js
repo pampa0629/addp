@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 
 const permissions = ['system.engine.read', 'system.engine_access_approval_requirement.read',
@@ -18,7 +19,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
-    const headers = { 'access-control-allow-origin': request.headers().origin || 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true',
+    const headers = { 'access-control-allow-origin': request.headers().origin || browserTestOrigin('system'), 'access-control-allow-credentials': 'true',
       'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,OPTIONS' }
     const reply = (json, status = 200) => route.fulfill({ json, status, headers })
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
@@ -204,7 +205,7 @@ test('list authorization action opens a separate window with permission-specific
   await page.goto('/engines')
   const row = page.getByRole('row').filter({ hasText: '授权验证 PostgreSQL' })
   await row.getByTestId('engine-authorization-open').click()
-  await expect(page).toHaveURL('http://127.0.0.1:4173/engines/2?tab=data-authorization')
+  await expect(page).toHaveURL(`${browserTestOrigin('system')}/engines/2?tab=data-authorization`)
   const dialog = page.getByRole('dialog', { name: '引擎授权 - 授权验证 PostgreSQL', exact: true })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('tab', { name: '数据授权', exact: true })).toBeVisible()
@@ -213,14 +214,14 @@ test('list authorization action opens a separate window with permission-specific
   await expect(page.getByTestId('engine-access-delegations')).toHaveCount(0)
   expect(reads.some(path => path.endsWith('/access_delegations'))).toBe(false)
   await dialog.getByRole('tab', { name: '委托授权', exact: true }).click()
-  await expect(page).toHaveURL('http://127.0.0.1:4173/engines/2?tab=delegations')
+  await expect(page).toHaveURL(`${browserTestOrigin('system')}/engines/2?tab=delegations`)
   await expect(page.getByTestId('engine-access-delegations')).toBeVisible()
   await expect(page.getByTestId('engine-data-authorization')).toHaveCount(0)
   await page.reload()
   await expect(page.getByRole('dialog', { name: '引擎授权 - 授权验证 PostgreSQL', exact: true })).toBeVisible()
   await expect(page.getByTestId('engine-access-delegations')).toBeVisible()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(page).toHaveURL('http://127.0.0.1:4173/engines')
+  await expect(page).toHaveURL(`${browserTestOrigin('system')}/engines`)
   await row.getByRole('button', { name: '详情', exact: true }).click()
   await expect(page.getByRole('dialog', { name: '引擎详情 - 授权验证 PostgreSQL', exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: '基本信息', exact: true })).toBeVisible()
@@ -446,7 +447,7 @@ test('first direct approval and read grant use one explicit command without Cata
   expect(writes[0].path).toMatch(/access_grants$/)
   expect(writes[0].body).toMatchObject({ catalog_path: tablePath, initialize_approval: true, requirement_version: '1',
     recipient_id: '33', recipient_type: 'user', action: 'read', expiry_mode: 'until_revoked', expires_at: null })
-  expect(reads.every(path => new URL(path, 'http://127.0.0.1:4173').pathname.startsWith('/api/v1/system/'))).toBe(true)
+  expect(reads.every(path => new URL(path, browserTestOrigin('system')).pathname.startsWith('/api/v1/system/'))).toBe(true)
   await selectData(page)
   await expect(page.getByTestId('approval-mode')).toHaveCount(0)
   await grantDraft(page); await confirmGrant(page)
@@ -586,7 +587,7 @@ test('management scope denial is visible and never initializes as a fallback', a
 test('without authorization permission the route restores to basic details', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: ['system.engine.read'] })
   await page.goto('/engines/2?tab=data-authorization')
-  await expect(page).toHaveURL('http://127.0.0.1:4173/engines/2')
+  await expect(page).toHaveURL(`${browserTestOrigin('system')}/engines/2`)
   await expect(page.getByTestId('engine-data-authorization')).toHaveCount(0)
   await expect(page.getByTestId('engine-authorization-open')).toHaveCount(0)
   expect(reads).toEqual([]); expect(writes).toEqual([])

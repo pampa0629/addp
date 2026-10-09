@@ -477,7 +477,7 @@ def run_resource_browser(node, target, policy, display_name, admin, security):
     evidence.unlink(missing_ok=True)
     for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
-    result = subprocess.run(["npm", "run", "test:e2e", "--", "--config=playwright.online.config.js",
+    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
                              "e2e/online/platform-node-resources.spec.js",
                              "--output=" + str(Path(os.environ["ADDP_ONLINE_SECRET_DIR"]) / "node-resource-browser-output")], cwd=FIXTURE.ROOT / "console/frontend",
                             env=dict(os.environ), capture_output=True, text=True, timeout=240)

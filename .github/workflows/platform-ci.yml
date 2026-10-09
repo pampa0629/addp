@@ -712,7 +712,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: model-browser-failure-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/addp-model-playwright-results/
+          path: ${{ runner.temp }}/addp-model-playwright-results-*/
           if-no-files-found: ignore
           retention-days: 14
 
@@ -873,7 +873,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.module }}-browser-failure-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/addp-${{ matrix.module }}-playwright-results/
+          path: ${{ runner.temp }}/addp-${{ matrix.module }}-playwright-results-*/
           if-no-files-found: ignore
           retention-days: 14
 

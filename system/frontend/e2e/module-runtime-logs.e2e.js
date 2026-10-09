@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI } from './module-query.fixture'
 
@@ -12,7 +13,7 @@ async function fixture(page, status = 'up') {
     queries.push(query)
     const held = pending; pending = null
     if (held) await held
-    const headers = { 'access-control-allow-origin': route.request().headers().origin || 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true' }
+    const headers = { 'access-control-allow-origin': route.request().headers().origin || browserTestOrigin('system'), 'access-control-allow-credentials': 'true' }
     if (failure) return route.fulfill({ status: failureStatus, headers, json: { error: failureText } })
     const entries = empty ? [] : [{ timestamp: '2026-10-01T11:59:00Z', entry_id: `entry-${queries.length}`, level: 'unknown', channel: 'stderr', message: '<img src=x onerror="window.logExecuted=true">'+query.keyword, stack: 'Traceback\nValueError: failure' }]
     return route.fulfill({ headers, json: { entries, returned: entries.length, queried_at: '2026-10-01T12:00:00Z', collection_state: 'unknown', has_more: more && query.cursor !== 'older-2', next_cursor: more ? (query.cursor ? 'older-2' : 'older-1') : '', from: query.from, to: query.to, outside_retention: retention } })

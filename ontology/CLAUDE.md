@@ -91,7 +91,7 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 
 前端复用共享认证、主题、国际化、导航和离页保护；类型/属性/关系/规则编辑同一原生 definition，服务端独占校验与 CEL 编译。页面提供列表、修订历史、创建/保存/审核/发布/撤回及失败投影重建。精确 version 冲突或结果不确定时锁定后续写入且不覆盖编辑，显式重新加载后才解除；发布受理与当前 active 指针分开显示。原生成员移除只修改本地草稿，不级联删除引用，保存时由后端拒绝悬空引用。
 
-`make test-ontology-frontend` 执行 T1 状态/请求契约、T3 独占 `4192` 的 Playwright 受控 API 场景以及生产构建，不调用个人 Gateway。CI 的 Platform frontend matrix 已登记同一入口并安装 Chromium；模块门禁自动发现新前端。独立登录复用 AuthLoginFlow，支持 MFA 和上下文选择；平台上下文不提供建模权限。
+`make test-ontology-frontend` 执行 T1 状态/请求契约、T3 当轮独立回环端口的 Playwright 受控 API 场景以及生产构建，不调用个人 Gateway。CI 的 Platform frontend matrix 已登记同一入口并安装 Chromium；模块门禁自动发现新前端。独立登录复用 AuthLoginFlow，支持 MFA 和上下文选择；平台上下文不提供建模权限。
 
 后端模块：`github.com/addp/ontology`，Go 1.24.2。规则上限是版本化内核契约的一部分，不通过用户选项关闭；修改上限或表达式语义须升级契约版本。
 

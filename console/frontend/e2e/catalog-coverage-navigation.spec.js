@@ -1,6 +1,7 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 
-const consoleURL = 'http://127.0.0.1:4170'
+const consoleURL = browserTestOrigin('console')
 const dimensions = [
   'business_definition', 'primary_domain', 'accountable_department', 'business_owner',
   'data_steward', 'glossary', 'component_standard_mapping'

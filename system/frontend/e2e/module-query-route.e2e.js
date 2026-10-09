@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI, moduleQueryLink } from './module-query.fixture'
 
@@ -14,7 +15,7 @@ test('instance freshness tracks successful results, preserves stale data during 
     const requestedMode = mode
     if (requestedMode === 'pending') await new Promise(resolve => { release = resolve })
     const headers = {
-      'access-control-allow-origin': route.request().headers().origin || 'http://127.0.0.1:4173',
+      'access-control-allow-origin': route.request().headers().origin || browserTestOrigin('system'),
       'access-control-allow-credentials': 'true'
     }
     if (requestedMode === 'failure') return route.fulfill({ status: 503, headers, json: { error: '查询暂时不可用' } })
@@ -196,7 +197,7 @@ test('offline time finds an old registration, queries immediately and removes it
     })
     return route.fulfill({
       headers: {
-        'access-control-allow-origin': route.request().headers().origin || 'http://127.0.0.1:4173',
+        'access-control-allow-origin': route.request().headers().origin || browserTestOrigin('system'),
         'access-control-allow-credentials': 'true'
       },
       json: { data, total: data.length, page: Number(params.page), page_size: Number(params.page_size) }

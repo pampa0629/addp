@@ -6,9 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "test": "node --test tests/*.test.js",
-    "test:e2e": "playwright test",
+    "test:e2e": "node ../../scripts/test/frontend-browser-gate.mjs",
     "preview": "vite preview",
-    "test:e2e:routes": "playwright test --grep-invert 'responsive orchestration dialogs'"
+    "test:e2e:routes": "node ../../scripts/test/frontend-browser-gate.mjs --grep-invert 'responsive orchestration dialogs'"
   },
   "dependencies": {
     "@addp/common-frontend": "file:../../common-frontend",
@@ -28,5 +28,14 @@
     "@playwright/test": "1.61.1",
     "@vitejs/plugin-vue": "5.2.1",
     "vite": "6.0.5"
+  },
+  "addpBrowserTest": {
+    "fixtures": [
+      {
+        "module": "orchestrator",
+        "readyPath": "/",
+        "base": "/"
+      }
+    ]
   }
 }

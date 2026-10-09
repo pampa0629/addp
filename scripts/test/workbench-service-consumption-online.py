@@ -1011,10 +1011,7 @@ def run_browser(
     )
     result = subprocess.run(
         [
-            "npm",
-            "run",
-            "test:e2e",
-            "--",
+            "npm", "exec", "--", "playwright", "test",
             "--config=playwright.online.config.js",
             "e2e/online/workbench-service-consumption.spec.js",
         ],

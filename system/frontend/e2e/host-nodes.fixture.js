@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 export const HOST_NODE_ID = '10000000-0000-4000-8000-000000000001'
 export const HOST_NODE_OTHER_ID = '10000000-0000-4000-8000-000000000002'
 
@@ -10,7 +11,7 @@ export async function mockHostNodesAPI(page, { scope = 'platform', permissions =
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/system/**', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
-    const headers = { 'access-control-allow-origin': request.headers().origin || 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true',
+    const headers = { 'access-control-allow-origin': request.headers().origin || browserTestOrigin('system'), 'access-control-allow-credentials': 'true',
       'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,OPTIONS' }
     const reply = (json, status = 200) => route.fulfill({ json, status, headers })
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })

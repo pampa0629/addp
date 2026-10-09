@@ -1,7 +1,8 @@
+import { browserTestOrigin } from '../../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 // In-memory API boundary for browser tests. No request reaches a running ADDP service.
 export const applicationID = '38ef4190-0101-4000-8000-000000000001'
 export const applicationPath = `/module-ui/workbench/applications/${applicationID}`
-export const runtimePath = `http://127.0.0.1:4170/data-apps/${applicationID}`
+export const runtimePath = `${browserTestOrigin('console')}/data-apps/${applicationID}`
 const copy = value => structuredClone(value)
 const option = (value, zh, en) => ({ value, labels: { 'zh-cn': zh, en } })
 const grainOptions = [option('total', '全期', 'Total'), option('month', '按月', 'Monthly')]

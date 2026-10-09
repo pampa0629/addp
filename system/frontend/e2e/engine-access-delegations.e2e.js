@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 
 const permissions = ['system.engine.read', 'system.engine_access_delegation.read', 'system.engine_access_delegation.create',
@@ -10,7 +11,7 @@ async function fixture(page, { allowed = permissions, conflict = false } = {}) {
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/system/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
-    const headers = { 'access-control-allow-origin': request.headers().origin || 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true',
+    const headers = { 'access-control-allow-origin': request.headers().origin || browserTestOrigin('system'), 'access-control-allow-credentials': 'true',
       'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,OPTIONS' }
     const reply = (json, status = 200) => route.fulfill({ json, status, headers })
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
@@ -45,7 +46,7 @@ test('delegation-only permission enters handlers from the list without exposing 
   const { writes } = await fixture(page, { allowed: ['system.engine.read', 'system.engine_access_delegation.read'] })
   await page.goto('/engines')
   await page.getByTestId('engine-authorization-open').click()
-  await expect(page).toHaveURL('http://127.0.0.1:4173/engines/2?tab=delegations')
+  await expect(page).toHaveURL(`${browserTestOrigin('system')}/engines/2?tab=delegations`)
   const dialog = page.getByRole('dialog', { name: '引擎授权 - 授权验证 PostgreSQL', exact: true })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('tab', { name: '委托授权', exact: true })).toBeVisible()
@@ -112,7 +113,7 @@ test('a revocation conflict retains the reason and never automatically retries',
 test('without delegation permissions an invalid delegation tab canonicalizes to basic details', async ({ page }) => {
   const { reads } = await fixture(page, { allowed: ['system.engine.read'] })
   await page.goto('/engines/2?tab=delegations')
-  await expect(page).toHaveURL('http://127.0.0.1:4173/engines/2')
+  await expect(page).toHaveURL(`${browserTestOrigin('system')}/engines/2`)
   await expect(page.getByTestId('engine-access-delegations')).toHaveCount(0)
   await expect(page.getByTestId('engine-authorization-open')).toHaveCount(0)
   expect(reads).toEqual([])

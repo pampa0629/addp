@@ -1253,7 +1253,7 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
     report_path.unlink(missing_ok=True)
     browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator)
     result = subprocess.run(
-        ["npm", "run", "test:e2e", "--", "--config=playwright.online.config.js",
+        ["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
          "e2e/online/security-manager-export.spec.js"],
         cwd=repository / "console/frontend", env=browser_environment, text=True, capture_output=True,
     )

@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 
 const DOMAINS = [
@@ -176,7 +177,7 @@ test('preserves the business-domain URL state across entity detail navigation', 
 })
 
 test('preserves an unsaved entity draft when another page advances the resource version', async ({ browser }) => {
-  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4182' })
+  const context = await browser.newContext({ baseURL: browserTestOrigin('model') })
   const backend = await installMockBackend(context, {
     concurrentEntity: true,
     permissions: [...DEFAULT_PERMISSIONS, 'model.entity.update']
@@ -219,7 +220,7 @@ test('preserves an unsaved entity draft when another page advances the resource 
 })
 
 test('preserves an unsaved logical-table draft when another page advances the aggregate version', async ({ browser }) => {
-  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:4182' })
+  const context = await browser.newContext({ baseURL: browserTestOrigin('model') })
   const backend = await installMockBackend(context, {
     concurrentLogicalTable: true,
     permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update']

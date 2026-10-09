@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { HOST_NODE_ID, mockHostNodesAPI } from '../../../system/frontend/e2e/host-nodes.fixture'
 
@@ -16,7 +17,7 @@ test('node details use the Console address, restore filters, and keep one iframe
   await page.reload()
   await expect(system.getByTestId('node-name')).toHaveValue('Node A')
   await system.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(page).toHaveURL('http://127.0.0.1:4170/system/host-nodes?search=Node&page=2')
+  await expect(page).toHaveURL(`${browserTestOrigin('console')}/system/host-nodes?search=Node&page=2`)
   await expect(system.getByRole('textbox', { name: '搜索主机名称或地址' })).toHaveValue('Node')
   await expect(system.getByRole('textbox', { name: '搜索主机名称或地址' })).toBeFocused()
   expect(calls.filter(call => call.path.endsWith('/host_nodes')).at(-1).query).toEqual({ search: 'Node', page: '2', page_size: '20' })

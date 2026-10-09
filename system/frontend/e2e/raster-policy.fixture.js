@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 export async function mockRaster(page, { scope = 'platform', writable = true, unavailable = false, conflict = false, empty = false, shrunk = false, permissions, language = 'zh-cn', engines = [{ id: 1, name: 'GeoPython' }], cacheByEngine = {} } = {}) {
   const writes = []
   let value = {
@@ -17,7 +18,7 @@ export async function mockRaster(page, { scope = 'platform', writable = true, un
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/system/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
-    const headers = { 'access-control-allow-origin': request.headers().origin || 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true',
+    const headers = { 'access-control-allow-origin': request.headers().origin || browserTestOrigin('system'), 'access-control-allow-credentials': 'true',
       'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,OPTIONS' }
     const reply = (json, status = 200) => route.fulfill({ json, status, headers })
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })

@@ -1,14 +1,19 @@
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
-import { rmSync } from 'node:fs'
+import { basename, resolve } from 'node:path'
+import { rmSync, writeFileSync } from 'node:fs'
 
 // Build-time only: every deterministic browser fixture uses this single policy.
 export function withFrontendTestIsolation(moduleName, config) {
   if (process.env.ADDP_E2E !== '1') return config
   if (!/^[a-z][a-z0-9-]*$/.test(moduleName)) throw new Error('Invalid frontend module name')
 
-  const cacheDir = resolve(tmpdir(), `addp-${moduleName}-vite-test-${process.pid}`)
-  const cleanup = () => rmSync(cacheDir, { recursive: true, force: true })
+  const run = process.env.ADDP_BROWSER_RUN ? JSON.parse(process.env.ADDP_BROWSER_RUN) : undefined
+  const cacheDir = resolve(run?.runtimeDir || tmpdir(), `addp-${moduleName}-vite-test-${process.pid}`)
+  const pidFile = run && resolve(run.runtimeDir, `${process.pid}.pid`)
+  const cleanup = () => {
+    rmSync(cacheDir, { recursive: true, force: true })
+    if (pidFile) rmSync(pidFile, { force: true })
+  }
   let shutdown
   process.once('exit', cleanup)
   return {
@@ -18,6 +23,10 @@ export function withFrontendTestIsolation(moduleName, config) {
     plugins: [...(config.plugins || []), {
       name: 'addp-frontend-test-isolation',
       configureServer(server) {
+        if (pidFile) {
+          process.title = `addp-browser-${basename(run.runtimeDir)}-${process.pid}`
+          writeFileSync(pidFile, moduleName)
+        }
         let closing = false
         shutdown = async () => {
           if (closing) return

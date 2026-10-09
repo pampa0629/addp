@@ -128,7 +128,7 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 make test-system-frontend
 ```
 
-System 前端 HMR 复用实际 HTTP 监听端口。浏览器测试通过 CLI 使用独立端口 `4173`，设置 `ADDP_E2E=1` 并使用共享 `withFrontendTestIsolation`；测试关闭 HMR，依赖缓存按模块和进程隔离到操作系统临时目录，退出时清理。不得另外绑定开发端口 `5173` 或覆盖开发服务缓存。
+System 前端 HMR 复用实际 HTTP 监听端口。浏览器测试经共享启动器分配当轮独立回环端口和结果目录，地址统一由 `browserTestOrigin('system')` 获取；设置 `ADDP_E2E=1` 并使用共享 `withFrontendTestIsolation` 关闭 HMR，将依赖缓存与 PID 记录隔离到当轮临时运行目录，退出时清理。不得占用开发端口、复用开发服务或覆盖开发缓存。
 
 ## 项目结构
 

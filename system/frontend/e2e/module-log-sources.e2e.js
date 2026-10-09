@@ -1,10 +1,11 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI } from './module-query.fixture'
 
 test('unregistered sources use trusted capture times and the existing log drawer', async ({ page }) => {
   await mockModuleQueryAPI(page, { logPermission: true })
   const queries = [], logs = []
-  const headers = { 'access-control-allow-origin': 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true' }
+  const headers = { 'access-control-allow-origin': browserTestOrigin('system'), 'access-control-allow-credentials': 'true' }
   let failure = false
   await page.route('**/api/v1/system/platform/module-log-sources?*', route => {
     if (route.request().method() === 'OPTIONS') return route.fallback()
@@ -54,7 +55,7 @@ test('module read permission does not expose unregistered log sources', async ({
 
 test('source diagnostics distinguish stale observation and recovery', async ({ page }) => {
   await mockModuleQueryAPI(page, { logPermission: true })
-  const headers = { 'access-control-allow-origin': 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true' }
+  const headers = { 'access-control-allow-origin': browserTestOrigin('system'), 'access-control-allow-credentials': 'true' }
   let code = 'observer_stale'
   await page.route('**/api/v1/system/platform/module-log-sources?*', route => {
     if (route.request().method() === 'OPTIONS') return route.fallback()

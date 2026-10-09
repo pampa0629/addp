@@ -28,7 +28,9 @@ export default defineConfig(withFrontendTestIsolation('console', {
     },
     proxy: {
       ...(IS_E2E ? {
-        '/e2e/service-fixture': { target: 'http://127.0.0.1:4180', changeOrigin: true }
+        ...(process.env.VITE_ADDP_SERVICE_FIXTURE_ORIGIN ? {
+          '/e2e/service-fixture': { target: process.env.VITE_ADDP_SERVICE_FIXTURE_ORIGIN, changeOrigin: true }
+        } : {})
       } : {}),
       ...createModuleFrontendProxies(),
       '/api': {

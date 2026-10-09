@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI, moduleQueryLink } from '../../../system/frontend/e2e/module-query.fixture'
 
@@ -62,7 +63,7 @@ test('Console module instance links synchronize without reloading the iframe and
   await page.goBack()
   await expect(list.getByText('page-2-0', { exact: true })).toBeVisible()
   await list.getByRole('button', { name: '重置', exact: true }).click()
-  await expect(page).toHaveURL('http://127.0.0.1:4170/system/modules?tab=instances')
+  await expect(page).toHaveURL(`${browserTestOrigin('console')}/system/modules?tab=instances`)
   await expect.poll(() => queries.at(-1)).toEqual({ page: '1', page_size: '10', status: 'up' })
   expect(errors).toEqual([])
 })

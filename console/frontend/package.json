@@ -7,7 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run tests",
-    "test:e2e": "playwright test"
+    "test:e2e": "node ../../scripts/test/frontend-browser-gate.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
@@ -27,5 +27,34 @@
     "typescript": "^5.3.0",
     "vite": "6.0.5",
     "vitest": "3.2.4"
+  },
+  "addpBrowserTest": {
+    "fixtures": [
+      {
+        "module": "console",
+        "readyPath": "/e2e/fixtures/auth-fixture.html?role=health"
+      },
+      {
+        "module": "service",
+        "readyPath": "/e2e/service-fixture/e2e/query-form.html",
+        "base": "/e2e/service-fixture/"
+      },
+      {
+        "module": "catalog",
+        "readyPath": "/module-ui/catalog/login"
+      },
+      {
+        "module": "system",
+        "readyPath": "/module-ui/system/login"
+      },
+      {
+        "module": "security",
+        "readyPath": "/module-ui/security/login"
+      },
+      {
+        "module": "monitor",
+        "readyPath": "/module-ui/monitor/login"
+      }
+    ]
   }
 }

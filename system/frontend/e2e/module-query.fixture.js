@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 export async function mockModuleQueryAPI(page, { logPermission = false, pipelinePermission = false, pipelineManagement = true, now = Date.now } = {}) {
   const queries = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
@@ -6,7 +7,7 @@ export async function mockModuleQueryAPI(page, { logPermission = false, pipeline
     const request = route.request()
     const url = new URL(request.url())
     const headers = {
-      'access-control-allow-origin': request.headers().origin || 'http://127.0.0.1:4173',
+      'access-control-allow-origin': request.headers().origin || browserTestOrigin('system'),
       'access-control-allow-credentials': 'true',
       'access-control-allow-headers': 'authorization,content-type',
       'access-control-allow-methods': 'GET,POST,OPTIONS'

@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { HOST_NODE_ID, HOST_NODE_OTHER_ID, mockHostNodesAPI } from './host-nodes.fixture'
 
@@ -65,7 +66,7 @@ test('read permission exposes a read-only inventory without create or save contr
 for (const scope of ['platform', 'tenant']) test(`unauthorized ${scope} entry makes no node request`, async ({ page }) => {
   const { calls } = await mockHostNodesAPI(page, { scope, permissions: scope === 'tenant' ? ['platform.host_node.read'] : [] })
   await page.goto(`/host-nodes/${HOST_NODE_ID}`)
-  await expect(page).toHaveURL('http://127.0.0.1:4173/forbidden')
+  await expect(page).toHaveURL(`${browserTestOrigin('system')}/forbidden`)
   await expect(page.getByTestId('host-nodes')).toHaveCount(0)
   expect(calls).toEqual([])
 })

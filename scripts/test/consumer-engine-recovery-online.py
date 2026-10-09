@@ -148,10 +148,7 @@ def run_browser(repository: Path, environment: dict[str, str]) -> dict[str, obje
     browser_environment["ADDP_ONLINE_REPOSITORY"] = str(repository)
     result = subprocess.run(
         [
-            "npm",
-            "run",
-            "test:e2e",
-            "--",
+            "npm", "exec", "--", "playwright", "test",
             "--config=playwright.online.config.js",
             "e2e/online/consumer-engine-recovery.spec.js",
         ],

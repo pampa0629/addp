@@ -1,3 +1,4 @@
+import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI } from './module-query.fixture'
 
@@ -15,7 +16,7 @@ async function fixture(page, { destinations = [], deliveries = [], deliveryTotal
   let failure = false, conflict = false, acknowledged = false, deploymentState = 'enabled'
   await page.route('**/api/v1/monitor/platform/**', async route => {
     const req = route.request(), path = new URL(req.url()).pathname
-    const headers = { 'access-control-allow-origin': req.headers().origin || 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS' }
+    const headers = { 'access-control-allow-origin': req.headers().origin || browserTestOrigin('system'), 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS' }
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const reply = (json, status = 200) => route.fulfill({ headers, json, status })
     const body = req.postDataJSON(); requests.push({ path, query: Object.fromEntries(new URL(req.url()).searchParams), method: req.method(), body })

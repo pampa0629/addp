@@ -573,6 +573,6 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 
 文本类型与责任人收敛的验证复用 `make test-standard-frontend`、Standard Go 测试和 `make test-standard-postgres`；PostgreSQL 门禁覆盖字段删除、类型规范化、约束与历史快照保持及迁移幂等性。Model 对应使用 `make test-model-frontend`、Model Go 测试和 `make test-model-postgres`，Copilot 使用 `make test-copilot`。上述入口已登记到现有 CI 模块门禁。
 
-Standard 浏览器门禁使用独立的 Vite 依赖缓存，测试模式关闭 HMR，避免测试端口 4181 占用或连接开发端口 5181。日常开发模式继续保留热更新；验证沿用 `make test-standard-frontend`。
+Standard 浏览器门禁使用独立的 Vite 依赖缓存，测试模式关闭 HMR，测试端口由共享启动器按轮次分配，不占用或连接开发端口 5181。日常开发模式继续保留热更新；验证沿用 `make test-standard-frontend`。
 
 文档文件 T2 纳入唯一 `make test-standard-postgres`：复用 Infra 的 MinIO Dockerfile 构建独立临时实例，验证真实上传、替换、下载、草稿删除，以及发布后撤回仍可按历史修订下载。测试对自身对象执行清理并验证空前缀，数据库夹具随事务回滚且检查零残留；门禁在正常、失败及中断退出时仅销毁自己的 Compose 项目、临时卷与构建镜像，不操作现有 Infra / Business MinIO。

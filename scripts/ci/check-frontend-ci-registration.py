@@ -10,7 +10,6 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
 
 class RegistrationError(RuntimeError):
@@ -74,101 +73,76 @@ def workflow_jobs(repository: Path) -> list[str]:
 ISOLATION_IMPORT = "../../common-frontend/basic/src/utils/viteTestIsolation.mjs"
 
 
+BROWSER_LAUNCHER = "node ../../scripts/test/frontend-browser-gate.mjs"
+BROWSER_IMPORT = "../../common-frontend/basic/src/utils/browserTestIsolation.mjs"
+
+
+def browser_fixtures(repository: Path, module: str) -> list[dict]:
+    package = json.loads((repository / module / "frontend/package.json").read_text())
+    declaration = package.get("addpBrowserTest")
+    fixtures = declaration.get("fixtures", []) if isinstance(declaration, dict) else []
+    return fixtures if isinstance(fixtures, list) else []
+
+
 def validate_browser_isolation(repository: Path) -> list[str]:
-    """Check literal deterministic fixture recipes without launching Node or services."""
+    """Check the single shared browser path and every declared Vite owner."""
     repository = repository.resolve()
     errors = []
     config_paths = worktree_files(repository, "*/frontend/playwright.config.*")
     for module in discover_frontends(repository):
         package = json.loads((repository / module / "frontend/package.json").read_text())
-        if any(name == "test:e2e" and "playwright test" in command
-               for name, command in package.get("scripts", {}).items()):
-            if not any(path.startswith(f"{module}/frontend/") for path in config_paths):
-                errors.append(f"{module}: deterministic Playwright config is missing")
-    development_ports = set()
-    for path in git_files(repository, "*/frontend/vite.config.*"):
-        development_ports.update(int(port) for port in re.findall(
-            r"process\.env\.[A-Z_]+_FE_PORT\s*\|\|\s*(\d+)",
-            (repository / path).read_text(encoding="utf-8"),
-        ))
-    for path in config_paths:
-        source = (repository / path).read_text(encoding="utf-8")
-        servers = list(re.finditer(
-            r"command:\s*(['\"])(?P<command>[^\n]*?)\1\s*,(?P<body>.*?)^\s*}",
-            source, re.M | re.S,
-        ))
-        if not servers or len(servers) != len(re.findall(r"\bcommand\s*:", source)):
-            errors.append(f"{path}: each deterministic webServer must use a literal npm fixture recipe")
+        scripts = {name: command for name, command in package.get("scripts", {}).items() if name.startswith("test:e2e")}
+        if not scripts:
             continue
-        ports = set()
-        for server in servers:
-            label = f"{path}: {server.group('command')}"
+        if any(not command.startswith(BROWSER_LAUNCHER) or any(token in {"&&", ";", "|", "||", "&"} for token in shlex.split(command)) for command in scripts.values()):
+            errors.append(f"{module}: browser scripts must use the shared frontend-browser-gate launcher")
+        configs = [path for path in config_paths if path.startswith(f"{module}/frontend/")]
+        if not configs:
+            errors.append(f"{module}: deterministic Playwright config is missing")
+        for path in configs:
+            source = (repository / path).read_text()
+            if not re.search(rf"import\s*{{\s*withBrowserTestIsolation\s*}}\s*from\s*['\"]{re.escape(BROWSER_IMPORT)}['\"]", source) or not re.search(rf"export default defineConfig\(withBrowserTestIsolation\(['\"]{re.escape(module)}['\"],\s*{{", source):
+                errors.append(f"{path}: must use shared withBrowserTestIsolation")
+            if re.search(r"\b(?:webServer|baseURL|outputDir|projects)\s*:", source):
+                errors.append(f"{path}: browser isolation overrides are forbidden")
+        fixtures = browser_fixtures(repository, module)
+        if not isinstance(fixtures, list) or not fixtures:
+            errors.append(f"{module}: browser fixtures must be declared")
+            continue
+        owners = set()
+        for fixture in fixtures:
+            if not isinstance(fixture, dict):
+                errors.append(f"{module}: invalid browser fixture")
+                continue
+            owner = fixture.get("module", "")
+            ready = fixture.get("readyPath", "")
+            base = fixture.get("base", "/")
+            if not isinstance(owner, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", owner) or owner in owners or set(fixture) - {"module", "base", "readyPath"} or not isinstance(ready, str) or not ready.startswith("/") or ready.startswith("//") or not isinstance(base, str) or not re.fullmatch(r"/[a-z0-9/-]*", base):
+                errors.append(f"{module}: invalid or duplicate browser fixture")
+                continue
+            owners.add(owner)
+            frontend = repository / owner / "frontend"
             try:
-                tokens = shlex.split(server.group('command'))
-                npm_index = tokens.index("npm")
-                environment = dict(token.split("=", 1) for token in tokens[:npm_index] if "=" in token)
-                if environment.get("ADDP_E2E") != "1":
-                    raise ValueError("webServer must explicitly set ADDP_E2E=1")
-                if any(token in {"&&", ";", "|", "||", "&"} for token in tokens):
-                    raise ValueError("webServer must launch only its single Vite fixture")
-                arguments = tokens[npm_index + 1:]
-                frontend = repository / Path(path).parent
-                if arguments[:1] == ["--prefix"]:
-                    frontend = (frontend / arguments[1]).resolve()
-                    arguments = arguments[2:]
-                if arguments[:3] != ["run", "dev", "--"]:
-                    raise ValueError("webServer must use npm run dev with explicit Vite CLI arguments")
-                if "--strictPort" not in arguments:
-                    raise ValueError("webServer must set --strictPort")
-                host = arguments[arguments.index("--host") + 1]
-                port = int(arguments[arguments.index("--port") + 1])
-                if host != "127.0.0.1" or not 1 <= port <= 65535:
-                    raise ValueError("webServer must bind an explicit loopback port")
-                if port in development_ports or port in ports:
-                    raise ValueError("webServer port must be distinct from development and sibling fixtures")
-                ports.add(port)
-                body = server.group("body")
-                url_match = re.search(r"url:\s*['\"]([^'\"]+)['\"]", body)
-                if url_match is None:
-                    raise ValueError("webServer must declare its readiness URL")
-                url = urlparse(url_match.group(1))
-                if url.scheme != "http" or url.hostname != host or url.port != port:
-                    raise ValueError("webServer URL must match its CLI host and port")
-                if not re.search(r"reuseExistingServer:\s*false\b", body):
-                    raise ValueError("webServer must not reuse an existing server")
-                if not re.search(
-                    r"gracefulShutdown:\s*{\s*signal:\s*['\"]SIGTERM['\"],\s*timeout:\s*[1-9]\d*\s*}", body,
-                ):
-                    raise ValueError("webServer must declare bounded SIGTERM graceful shutdown")
-                relative_frontend = frontend.relative_to(repository)
-                if len(relative_frontend.parts) != 2 or relative_frontend.parts[1] != "frontend":
-                    raise ValueError("webServer must start an ADDP frontend owner")
-                package = json.loads((frontend / "package.json").read_text(encoding="utf-8"))
-                if not re.match(r"^vite(?:\s|$)", package.get("scripts", {}).get("dev", "")):
+                owner_package = json.loads((frontend / "package.json").read_text())
+                if not re.match(r"^vite(?:\s|$)", owner_package.get("scripts", {}).get("dev", "")):
                     raise ValueError("fixture dev script must directly launch Vite")
-                vite = (frontend / "vite.config.js").read_text(encoding="utf-8")
-                module = relative_frontend.parts[0]
-                if not re.search(
-                    rf"import\s*{{\s*withFrontendTestIsolation\s*}}\s*from\s*['\"]{re.escape(ISOLATION_IMPORT)}['\"]",
-                    vite,
-                ) or not re.search(
-                    rf"export default defineConfig\((?:withModuleFrontend\(['\"]{re.escape(module)}['\"],\s*)?withFrontendTestIsolation\(['\"]{re.escape(module)}['\"],\s*{{",
-                    vite,
-                ):
+                vite = (frontend / "vite.config.js").read_text()
+                if not re.search(rf"import\s*{{\s*withFrontendTestIsolation\s*}}\s*from\s*['\"]{re.escape(ISOLATION_IMPORT)}['\"]", vite) or not re.search(rf"export default defineConfig\((?:withModuleFrontend\(['\"]{re.escape(owner)}['\"],\s*)?withFrontendTestIsolation\(['\"]{re.escape(owner)}['\"],\s*{{", vite):
                     raise ValueError("Vite config must use the shared withFrontendTestIsolation owner")
                 if re.search(r"\bhmr\s*:\s*(?:process\.env\.ADDP_E2E|!?isE2E|!?IS_E2E|!?testing)\b", vite):
                     raise ValueError("module-owned Vite test HMR branches are forbidden")
                 if re.search(r"\bcacheDir\s*:", vite):
                     raise ValueError("module-owned Vite cache isolation is forbidden")
-            except (ValueError, IndexError, OSError, json.JSONDecodeError) as error:
-                errors.append(f"{label}: {error}")
-        base_url = re.search(r"baseURL:\s*['\"]([^'\"]+)['\"]", source)
-        try:
-            url = urlparse(base_url.group(1) if base_url else "")
-            if url.scheme != "http" or url.hostname != "127.0.0.1" or url.port not in ports:
-                raise ValueError("browser baseURL must use a declared loopback fixture port")
-        except ValueError as error:
-            errors.append(f"{path}: {error}")
+            except (ValueError, OSError, json.JSONDecodeError) as error:
+                errors.append(f"{module}: fixture {owner}: {error}")
+        if module not in owners:
+            errors.append(f"{module}: browser fixtures must include their owner")
+        for path in (repository / module / "frontend/e2e").rglob("*"):
+            if path.is_file() and "online" not in path.parts and path.suffix in {".js", ".mjs"} and re.search(r"(?:127\.0\.0\.1|localhost):41\d{2}\b", path.read_text()):
+                errors.append(f"{path.relative_to(repository)}: fixed browser fixture origins are forbidden")
+    for path in (repository / 'scripts/test').glob('*online.py'):
+        if re.search(r'"npm",\s*"run",\s*"test:e2e"', path.read_text()):
+            errors.append(f"{path.relative_to(repository)}: Online must use explicit Playwright, not the deterministic browser launcher")
     return errors
 
 
@@ -213,7 +187,7 @@ def validate_registration(repository: Path) -> list[str]:
         package = json.loads((repository / module / "frontend/package.json").read_text(encoding="utf-8"))
         browser_scripts = [
             name for name, command in package.get("scripts", {}).items()
-            if name.startswith("test:e2e") and "playwright test" in command
+            if name.startswith("test:e2e")
         ]
         if browser_scripts:
             recipe = re.search(rf"(?m)^{re.escape(target)}:[^\n]*\n(?P<body>(?:[\t ][^\n]*\n|\n)*)", makefile)
@@ -234,28 +208,24 @@ def validate_registration(repository: Path) -> list[str]:
             steps = re.split(r"(?m)^      - ", target_job)
             # A registered owner does not install the other frontends started by
             # its real iframe fixtures. Verify their locked CI dependencies too.
-            for config in worktree_files(repository, f"{module}/frontend/playwright.config.*"):
-                source = (repository / config).read_text(encoding="utf-8")
-                for prefix in re.findall(r"\bnpm\s+--prefix\s+['\"]?([^\s'\"]+)['\"]?\s+run\s+dev", source):
-                    dependency = (repository / Path(config).parent / prefix).resolve()
-                    try:
-                        relative = dependency.relative_to(repository).as_posix()
-                    except ValueError:
-                        errors.append(f"{module}: browser fixture dependency is outside the repository")
-                        continue
-                    if relative == f"{module}/frontend":
-                        continue
-                    matching = [step for step in steps if re.search(
-                        rf"(?m)^\s*working-directory:\s*{re.escape(relative)}\s*$", step
-                    ) and re.search(r"(?m)^\s*run:\s*npm ci\s*$", step)]
-                    if matrix_selector:
-                        matching = [step for step in matching if re.search(
-                            rf"matrix\.module\s*==\s*['\"]{re.escape(module)}['\"]", step
-                        )]
-                    if not matching:
-                        errors.append(f"{module}: browser fixture {relative} lacks locked CI dependency installation")
+            for fixture in browser_fixtures(repository, module):
+                if not isinstance(fixture, dict):
+                    continue
+                owner = fixture.get("module", "")
+                if owner == module or not isinstance(owner, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", owner):
+                    continue
+                relative = f"{owner}/frontend"
+                matching = [step for step in steps if re.search(
+                    rf"(?m)^\s*working-directory:\s*{re.escape(relative)}\s*$", step
+                ) and re.search(r"(?m)^\s*run:\s*npm ci\s*$", step)]
+                if matrix_selector:
+                    matching = [step for step in matching if re.search(
+                        rf"matrix\.module\s*==\s*['\"]{re.escape(module)}['\"]", step
+                    )]
+                if not matching:
+                    errors.append(f"{module}: browser fixture {relative} lacks locked CI dependency installation")
             artifact_steps = [step for step in steps if "actions/upload-artifact@" in step
-                              and "playwright-results/" in step]
+                              and "playwright-results-*/" in step]
             if matrix_selector and not artifact_steps:
                 errors.append(f"{module}: frontend Playwright matrix must upload browser failure evidence")
             for artifact_step in artifact_steps:

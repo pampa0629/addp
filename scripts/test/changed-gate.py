@@ -95,6 +95,9 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     }
     roots = {path.split("/", 1)[0] for path in files if "/" in path}
 
+    if "scripts/test/frontend-browser-gate.mjs" in files:
+        affected.update(file_consumers(repository, "*/frontend/package.json", "frontend-browser-gate.mjs"))
+
     # Owned disposable service definitions are gate inputs, regardless of their
     # filename. Resolve their owner from the gate declaration, not a DB list.
     for script in MODULE_GATE.repository_files(repository, "scripts/test/*-gate.sh"):

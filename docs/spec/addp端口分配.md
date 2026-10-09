@@ -93,7 +93,7 @@ DAMENG_PORT=5236
 
 ## Reserved Policy（保留规则）
 
-Ontology Backend 使用 `8195`（开发/容器内部一致），经 Gateway `/api/v1/ontology` 访问。Ontology Frontend 开发首选端口为 `5192`，根 Compose 内部监听 `80`，经 Nginx `/ontology/` 访问，不单独发布宿主机端口；Console 入口 `/ontology/ontologies`。确定性浏览器测试独占回环 `4192`，不复用开发服务。
+Ontology Backend 使用 `8195`（开发/容器内部一致），经 Gateway `/api/v1/ontology` 访问。Ontology Frontend 开发首选端口为 `5192`，根 Compose 内部监听 `80`，经 Nginx `/ontology/` 访问，不单独发布宿主机端口；Console 入口 `/ontology/ontologies`。确定性浏览器测试使用共享启动器分配的当轮独立回环端口，不复用开发服务。
 
 - **System MinIO 首选 19000/19001**，Business 侧不得主动配置为这两个首选端口。
 - **Business MinIO 首选 9002/9003**，System 侧不得占用这两个首选端口。
@@ -332,3 +332,7 @@ Elasticsearch Business 首选宿主机端口为 `9200`，仅绑定 `127.0.0.1`�
 
 
 可选 Infra 指标控制面 TLS 转发容器内部固定 `9444`，仅 `addp-network` 使用 `https://metrics-control:9444`，不发布宿主端口，不参与宿主端口避让。上游 Gateway 实际 origin 由部署方显式指定。Docker Desktop 来源采用明确 Mac 发布 IP:端口，仍要求 Monitor 和中心同时可达，不自动选择端口。稳定本地访问使用显式回环发布端口和 ADDP_METRICS_DESKTOP_LOOPBACK_PORT 的同端口宿主通道转换；不新增端口或第二个目标。
+
+## 确定性浏览器测试
+
+T3 Vite 夹具不占用模块开发端口，也不使用固定的 41xx 端口表。共享浏览器启动器为每轮申请临时回环端口并持有端口租约，统一注入 Console 代理、模块重定向和测试地址；实际绑定冲突直接失败，不复用占用者。退出后释放当轮租约与运行资源。Online T4 的显式部署端口保持其独立约束。
