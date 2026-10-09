@@ -93,6 +93,14 @@ export function trendParameters(nodeID, metric, range, serverEnd, dimensions = {
 export function currentResourceValue(point) {
   return point?.data_state === 'valid' && typeof point.value === 'number' && Number.isFinite(point.value) ? point.value : null
 }
+export function sortDiskResourceRows(rows) {
+  const activityMetrics = diskMetrics.filter(metric => metric.unit !== 'milliseconds')
+  const activityOrder = row => {
+    const values = activityMetrics.map(metric => currentResourceValue(row.metrics[metric.key]))
+    return values.some(value => value !== null && value > 0) ? 0 : values.every(value => value === 0) ? 1 : 2
+  }
+  return [...rows].sort((left, right) => activityOrder(left) - activityOrder(right) || left.dimensions.device.localeCompare(right.dimensions.device, 'en', { numeric: true }))
+}
 export function resourceChartRows(series) {
   return series.points.map(point => ({ evaluated_at: point.evaluated_at, value: currentResourceValue(point) }))
 }

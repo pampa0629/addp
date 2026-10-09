@@ -20,7 +20,7 @@ export function observations(id, keys, trend = false, mode = '', end = serverEnd
   return { ...(trend ? {} : { collection }), subject: { kind: 'node', node_id: id }, end, start: trend ? new Date(Date.parse(end) - 30000).toISOString() : end, queried_at: end, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, dimensions: key.startsWith('node.filesystem.') && !['disconnected', 'filesystem-uncollected'].includes(mode) ? mount : (key.startsWith('node.disk.') || key.startsWith('node.network.')) && !['disconnected', 'disk-missing', 'network-missing', 'collection-failed'].includes(mode) ? { device: key.startsWith('node.network.') ? 'eth0' : 'sda' } : {}, unit: allResourceMetrics.find(item => item.key === key).unit, window_seconds: allResourceMetrics.find(item => item.key === key).windowSeconds || 0, points: points(key) })) }
 }
 export async function resourceBackend(page, options = {}) {
-  const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', serverEnd, identity: options.identity || identity(resourcePermissions) }
+  const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', diskDevices: options.diskDevices, serverEnd, identity: options.identity || identity(resourcePermissions) }
   let release
   let held = options.holdInstant ? new Promise(resolve => { release = resolve }) : null
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.locale || 'zh-cn')
@@ -42,6 +42,13 @@ export async function resourceBackend(page, options = {}) {
       const id = url.searchParams.get('node_id'), keys = url.searchParams.get('metrics').split(',')
       if (!trend && held && id === node) await held
       body = observations(id, keys, trend, mode, state.serverEnd)
+      if (state.diskDevices && keys.every(key => key.startsWith('node.disk.'))) {
+        const devices = trend ? state.diskDevices.filter(device => device.device === url.searchParams.get('device')) : state.diskDevices
+        body.series = body.series.flatMap(series => devices.map(device => ({ ...series, dimensions: { device: device.device }, points: series.points.map(point => {
+          const observed = device.points[allResourceMetrics.find(metric => metric.key === series.metric_key).name] || point
+          return { ...point, ...observed, sampled_at: ['no_data', 'not_connected'].includes(observed.data_state) ? null : point.evaluated_at }
+        }) })))
+      }
       if (['disabled', 'unconfigured', 'unavailable', 'timeout', 'budget', 'busy', 'denied'].includes(mode)) {
         const codes = { disabled: [409, 'observability_capability_disabled'], unconfigured: [503, 'observability_capability_unconfigured'], unavailable: [503, 'observability_backend_unavailable'], timeout: [504, 'observability_query_timeout'], budget: [422, 'observability_query_budget_exceeded'], busy: [429, 'observability_query_concurrency_exceeded'], denied: [403, 'permission_denied'] }
         const result = codes[mode]; status = result[0]; body = { error_code: result[1], error: mode }

@@ -707,6 +707,7 @@
       "loadHint": "Tasks are processes or threads that are running, waiting for CPU, or in uninterruptible wait (often I/O). The 1, 5 and 15 minute values are smoothed averages, so decimals are normal. Interpret them alongside CPU utilization; dividing by core count does not give CPU utilization.",
       "disk": {
         "title": "Disk IO",
+        "orderHint": "Devices with IO activity appear first; all devices remain listed.",
         "hint": "Per-device throughput, IO busy time and mean read/write duration over a complete minute. Mean duration includes queueing and processing; no completed requests means no data. Busy time does not prove saturation. Device layers are never summed; incomplete windows and resets remain missing.",
         "empty": "No disk throughput data. The source must enable disk collection and provide a complete one-minute window."
       },

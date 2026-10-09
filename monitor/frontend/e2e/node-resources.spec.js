@@ -446,3 +446,36 @@ test('disk IO timing uses percent and ms and restores all three exact device tre
   await expect(table).not.toContainText('0.00 ms')
   await expect(page.getByTestId('resource-cores')).toContainText('0 核')
 })
+
+for (const locale of ['zh-cn', 'en']) {
+  test(`disk activity order retains every device and the selected trend after refresh (${locale})`, async ({ page }) => {
+    const point = (value, data_state = 'valid') => ({ value, data_state })
+    const device = (name, read, write, busy) => ({ device: name, points: { diskRead: read, diskWrite: write, diskBusy: busy } })
+    const state = await resourceBackend(page, { locale, diskDevices: [
+      device('nbd10', point(0), point(0), point(0)),
+      device('a-stale', point(9000, 'stale'), point(0), point(0)),
+      device('z-active', point(2048), point(2048), point(0.5)),
+      device('nbd2', point(0), point(0), point(0)),
+      device('b-missing', point(null, 'no_data'), point(null, 'no_data'), point(null, 'no_data'))
+    ] })
+    await page.goto(`/node-resources/${node}?refresh=off`)
+    const table = page.getByTestId('resource-disk-table')
+    const rows = table.locator('.el-table__body-wrapper tbody tr')
+    const names = rows.locator('td:first-child .cell')
+    await expect(names).toHaveText(['z-active', 'nbd2', 'nbd10', 'a-stale', 'b-missing'])
+    await expect(page.getByTestId('resource-disks')).toContainText(locale === 'en' ? 'Devices with IO activity appear first; all devices remain listed.' : '有 IO 活动的设备优先显示，全部设备均保留。')
+    await expect(rows.nth(3)).toContainText(locale === 'en' ? 'Stale' : '陈旧')
+    await expect(rows.nth(4)).toContainText('—')
+    await rows.first().getByRole('button', { name: locale === 'en' ? 'View trend' : '查看趋势' }).click()
+    await expect(page.getByTestId('resource-selected-device')).toHaveText('z-active')
+    state.diskDevices[2].points = device('', point(0), point(0), point(0)).points
+    state.diskDevices[3].points = device('', point(4096), point(0), point(0.2)).points
+    await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+    await expect(names).toHaveText(['nbd2', 'nbd10', 'z-active', 'a-stale', 'b-missing'])
+    await expect(page.getByTestId('resource-selected-device')).toHaveText('z-active')
+    await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query.device).toBe('z-active')
+    await page.reload()
+    await expect(names).toHaveText(['nbd2', 'nbd10', 'z-active', 'a-stale', 'b-missing'])
+    await expect(page.getByTestId('resource-selected-device')).toHaveText('z-active')
+  })
+}
