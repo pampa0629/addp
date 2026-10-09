@@ -287,7 +287,13 @@ export const metricImplementationAPI = {
 }
 const serviceClient = refreshAuthorizationOnForbidden(createAPIClient(() => useAuthStore(), { moduleName: 'Service' }))
 export const metricServiceAPI = {
- references: (implementationId, revisionId, page, limit) => serviceClient.get('/service/query', { params: { metric_implementation_id: implementationId, metric_revision_id: revisionId, page, limit } }),
+ references: async (implementationId, revisionId, page, limit) => {
+  const result = await serviceClient.get('/service/query', { params: { metric_implementation_id: implementationId, metric_revision_id: revisionId, page, limit } })
+  // Token renewal loads authorization independently of the retried query.
+  // Both dialogs must evaluate its result against the completed context.
+  await useAuthStore().authContextLoadPromise
+  return result
+ },
  get: id => serviceClient.get(`/service/query/${id}`),
  create: data => serviceClient.post('/service/query', data),
  search: search => serviceClient.get('/service/query', {params:{search,limit:100,page:1}}),

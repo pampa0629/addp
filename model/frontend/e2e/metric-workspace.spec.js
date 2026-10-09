@@ -670,11 +670,19 @@ test('refresh after rebind reduces pages without falsely reporting no references
 });
 
 test('reference dialog survives token renewal and authorization reload', async ({page}) => {
-  const backend=await installBackend(page,{referenceExpired:true});
+  const options = { referenceExpired: true };
+  const backend=await installBackend(page,options);
   backend.item.revisions.push(publishedRevision());
   await page.goto('/metric-implementations/1?revision_id=10');
+  await expect(page.getByRole('heading', { name: '当前主领队活动次数' })).toBeVisible();
+  const authorization = pauseAuthorizationReload(options);
+  const recoveredQuery = page.waitForResponse(response => response.url().includes('/service/query?') && response.status() === 200);
   await page.getByRole('button',{name:'引用此修订的服务',exact:true}).click();
   const dialog=page.getByRole('dialog');
+  await authorization.requested;
+  await recoveredQuery;
+  await expect(dialog.getByRole('button', { name: '刷新', exact: true })).toHaveClass(/is-loading/);
+  authorization.release();
   await expect(dialog.getByRole('button',{name:'Bound service 0',exact:true})).toBeVisible();
   expect(backend.referenceReads.length).toBeGreaterThan(1);
   await expect(dialog.getByText('没有读取服务定义的权限')).toHaveCount(0);
@@ -801,7 +809,14 @@ test('withdrawal waits for the count, ignores cancelled responses and survives t
   options.beforeReference = null;
   options.referenceCount = 2;
   options.referenceExpired = true;
+  const authorization = pauseAuthorizationReload(options);
+  const recoveredQuery = page.waitForResponse(response => response.url().includes('/service/query?') && response.status() === 200);
   await entry.click();
+  await authorization.requested;
+  await recoveredQuery;
+  await expect(dialog).toContainText('正在查询引用服务数量');
+  await expect(dialog.getByRole('button', { name: '确认撤回', exact: true })).toBeDisabled();
+  authorization.release();
   await expect(dialog).toContainText('2 个服务引用');
   options.referenceCount = 99;
   const late = page.waitForResponse(response => response.url().includes('/service/query?') && response.status() === 200);
