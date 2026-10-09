@@ -409,6 +409,8 @@ Manager 独占全文搜索索引。所有已登记 DataItem 均应能按技术�
 
 源条目消失后的索引删除必须按 fingerprint 精确作用于目标 DataItem；删除一个关系表时不得删除整个 schema 的有效投影。范围清理只用于明确的范围删除操作，不得作为单项删除的替代路径。
 
+Manager 正式 Upsert 必须允许首次创建搜索文档，不得设置会跳过新文档的 `skipCreation=true`。同一 Upsert 请求明确指定既有主键 `id`，避免索引意外丢失时从多个身份字段推断主键。索引意外丢失时，接受 Meilisearch 随本次写入创建索引；该行为只写入本次快照，不自动补录历史 DataItem，也不表示完整索引恢复。历史补录和完整恢复仍按明确范围确认后执行。保护版本、持久投递登记、任务关联和终态核查保持原有要求。
+
 历史集合补索引使用已有 `POST /api/v1/meta/scan/run/manual`：以精确 collection locator 放入 `targets`，选择 `basic + force=true`。已有集合的 basic 扫描保留已登记的深度结构，只更新 catalog 轻量事实并提交搜索投影，不扩大到所属 database，不清理兄弟 item，不改变祖先扫描状态。此操作会创建一次扫描 execution、更新目标 item 的扫描时间并在 Manager 登记投递；实施前须说明目标和影响范围并获得确认。item selector 的单项刷新仍为 deep，会调用既有动态 schema 采样，不能作为无采样补索引路线。补录后必须核对 Manager 投递终态及同租户、同引擎搜索结果，不能以 execution 成功代替索引验收。
 
 ## Scanned Depth

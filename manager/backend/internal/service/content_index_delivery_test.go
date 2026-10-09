@@ -346,8 +346,8 @@ func TestContentDeliveryLostResponseRecoversOriginalCorrelatedTask(t *testing.T)
 		case "/indexes/content/documents":
 			writes.Add(1)
 			marker = req.URL.Query().Get("customMetadata")
-			if marker == "" || req.URL.Query().Get("skipCreation") != "true" {
-				t.Error("uncorrelated or implicitly recreating submission")
+			if marker == "" || req.Method != http.MethodPut || req.URL.Query().Get("primaryKey") != "id" || req.URL.Query().Get("skipCreation") == "true" {
+				t.Error("uncorrelated submission or first document creation disabled")
 			}
 			w.WriteHeader(503) // accepted externally, receipt lost
 		case "/tasks":

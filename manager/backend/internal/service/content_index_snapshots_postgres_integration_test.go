@@ -138,6 +138,24 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	if err != nil || stats.NumberOfDocuments != 1 {
 		t.Fatalf("unexpected document count after exact delete: %+v %v", stats, err)
 	}
+	// Losing the index permits only this new write, not historical recovery.
+	task, err = client.DeleteIndexWithContext(ctx, index)
+	wait(ctx, task, err)
+	recreated := commonClient.ManagerContentDocument{DocumentID: "after-index-loss", PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "collection", Name: "new-collection"}
+	if err := svc.UpsertContentDocument(ctx, 7, recreated); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, recreated.DocumentID)["name"] != recreated.Name {
+		t.Fatal("missing new document after index loss")
+	}
+	info, err := client.GetIndexWithContext(ctx, index)
+	if err != nil || info.PrimaryKey != "id" {
+		t.Fatalf("recreated index identity: %+v %v", info, err)
+	}
+	stats, err = client.Index(index).GetStatsWithContext(ctx, nil)
+	if err != nil || stats.NumberOfDocuments != 1 {
+		t.Fatalf("index loss restored unexpected historical content: %+v %v", stats, err)
+	}
 	var unresolved int64
 	if err := db.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND status <> ?", index, repository.IndexDeliverySucceeded).Count(&unresolved).Error; err != nil || unresolved != 0 {
 		t.Fatalf("unresolved delivery: %d %v", unresolved, err)

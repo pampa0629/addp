@@ -66,7 +66,9 @@ func (s *HybridSearchService) UpsertContentDocument(ctx context.Context, tenantI
 		return err
 	}
 	// No PostgreSQL transaction is held while calling Meilisearch.
-	task, err := s.client.Index(s.contentIndex).UpdateDocumentsWithContext(ctx, []map[string]interface{}{payload}, &meilisearch.DocumentOptions{TaskCustomMetadata: op.TaskCorrelation, SkipCreation: true})
+	// Preserve Manager's canonical document identity if the index is recreated.
+	primaryKey := "id"
+	task, err := s.client.Index(s.contentIndex).UpdateDocumentsWithContext(ctx, []map[string]interface{}{payload}, &meilisearch.DocumentOptions{PrimaryKey: &primaryKey, TaskCustomMetadata: op.TaskCorrelation})
 	if err := s.recordContentReceipt(ctx, op, task, err); err != nil {
 		return err
 	}
