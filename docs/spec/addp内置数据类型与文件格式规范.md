@@ -457,7 +457,7 @@ SKP 按 `.skp` 扩展名识别为 `format=skp + data_type=model_3d + layout=sing
 
 Manager 通过 Model3D Runtime 的 `skp_to_glb` 生成私有 GLB artifact，复用现有源授权、单文件访问计划、任务与统一发布校验。唯一转换路线是运行时内的 MIT 许可 OpenSKP Python 1.3.0 → GLB 2.0，不依赖 SuperMap、SketchUp 桌面软件或宿主机 SDK。解析在独立子进程内执行并受现有转换超时控制；只发布自包含 GLB，不发布转换器产生的 JSON 或缩略图 sidecar。OpenSKP 的 GLB 导出接口使用毫米坐标，发布前通过统一场景根缩放为 glTF 的米坐标，保持 Y 上轴、组件节点与相对变换。
 
-SKP 的 Manager Hosted T4 复用既有 `manager-internal-artifact-lineage` suite，以自有英寸三角形、两个组件实例和内嵌彩色 PNG 验证真实 Meta 身份扫描、Manager 生成、米制尺寸、贴图、缓存消费、Monitor 血缘及零残留清理；该扩展在实际 Hosted 运行通过前不计为已验收。
+SKP 的 Manager Hosted T4 复用既有 `manager-internal-artifact-lineage` suite，以自有英寸三角形、两个组件实例和内嵌彩色 PNG 验证真实 Meta 身份扫描、Manager 生成、米制尺寸、贴图、缓存消费、Monitor 血缘及零残留清理；2026-10-09 的 [Hosted 运行 37884331256，attempt 2](https://github.com/pampa0629/addp/actions/runs/37884331256/attempts/2) 已通过该范围；截图复核两个彩色三角形，GLB 保留两个共享网格实例和 `[0.0762, 0, 0.0508]` 米制尺寸，八类产物血缘一致且清理零残留。
 
 首期范围是静态三角网格、组件／群组的实例变换、基本材质和可解码的内嵌 PNG/JPEG 贴图。不得把快显成功解释为 SketchUp 原生编辑语义、动态组件行为、场景动画、标注、孤立线段或全部文件版本支持。OpenSKP 1.3.0 的 GLB 导出未应用源可见性状态，首期明确拒绝含隐藏组件、隐藏面或关闭图层的模型，不把隐藏几何错误地显示为可见。库的旧版解析存在已知缺口，只有实际解析和 GLB 校验成功的输入才能登记 ready；空场景、损坏输入、解析错误、缺失已引用的贴图或非法 GLB 均明确失败，不能覆盖已有快显。依据：[OpenSKP 项目与版本范围](https://github.com/iamahsanmehmood/openskp)、[固定 Python 发行版](https://pypi.org/project/openskp/1.3.0/)。
 
