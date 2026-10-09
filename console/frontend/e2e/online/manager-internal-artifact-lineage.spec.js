@@ -29,7 +29,7 @@ function environment() {
   return Object.fromEntries(requiredNames.map(name => [name, process.env[name]]))
 }
 
-test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB GLB load through Console', async ({ page }) => {
+test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP GLB load through Console', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
   if (!Number.isInteger(itemID) || itemID <= 0) throw new Error('Manager lineage item ID must be positive')
@@ -44,7 +44,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB GLB load thr
   const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
   expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
-  expect(models.map(model => model.format)).toEqual(['dae', '3ds', 'ifc', 'osgb'])
+  expect(models.map(model => model.format)).toEqual(['dae', '3ds', 'ifc', 'osgb', 'skp'])
   for (const model of models) {
     expect(Number.isInteger(model.item_id) && model.item_id > 0).toBe(true)
     if (phase === 'generation-entry') continue

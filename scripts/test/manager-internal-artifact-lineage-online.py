@@ -408,6 +408,9 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
         "data_type": "model_3d", "format": format_name, "layout": "single",
     }.items()):
         raise SuiteError(f"{format_name} fixture must be scanned as model_3d/single")
+    if format_name == "skp" and (_object(attributes.get("format_info", {}), "SKP format_info").get("skp") is not None
+            or _object(attributes.get("type_info", {}), "SKP type_info").get("model_3d") is not None):
+        raise SuiteError("SKP identity scan must not invent native metadata before Runtime parsing")
     if format_name in {"dae", "3ds", "ifc"}:
         format_info = _object(attributes.get("format_info"), f"{format_name} format_info")
         native = _object(format_info.get(format_name), f"{format_name} native metadata")
@@ -439,7 +442,7 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
 
 
 def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
-    if format_name not in {"dae", "3ds", "ifc", "osgb"}:
+    if format_name not in {"dae", "3ds", "ifc", "osgb", "skp"}:
         raise SuiteError("unexpected model fixture format")
     if not 20 <= len(raw) <= 2 * 1024 * 1024:
         raise SuiteError("fixture GLB content must be nonempty and bounded to 2 MiB")
@@ -485,6 +488,8 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         signature = b"\xff\xd8\xff" if format_name == "osgb" else b"\x89PNG\r\n\x1a\n"
         if not image_bytes.startswith(signature):
             raise SuiteError("fixture image bufferView must contain real encoded image bytes")
+        if format_name == "skp" and hashlib.sha256(image_bytes).hexdigest() != "3168c3aa8cd3338d29b9ca74ee6794a2290b69d4da04d0869788187cb6ac4cf3":
+            raise SuiteError("SKP fixture must preserve its embedded four-color PNG")
     textures = _array(doc.get("textures", []), "fixture textures")
     materials = _array(doc.get("materials"), "fixture materials")
     accessors = _array(doc.get("accessors"), "fixture accessors")
@@ -527,9 +532,14 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         if index >= len(nodes) or index in ancestors:
             raise SuiteError("fixture scene contains an invalid node or cycle")
         node = _object(nodes[index], "fixture node")
-        if any(key in node for key in ("translation", "rotation", "scale")):
-            raise SuiteError("fixture converters must encode transforms as matrices")
+        if any(key in node for key in ("translation", "rotation")) or ("scale" in node and format_name != "skp"):
+            raise SuiteError("fixture converters must encode transforms as matrices or SKP root scale")
         local = _array(node.get("matrix", identity), "fixture node matrix")
+        if "scale" in node:
+            if "matrix" in node or node["scale"] != [0.001] * 3:
+                raise SuiteError("SKP fixture must use its millimetres-to-metres root scale")
+            local = list(identity)
+            local[0] = local[5] = local[10] = 0.001
         if len(local) != 16 or any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in local):
             raise SuiteError("fixture node matrix must contain sixteen finite numbers")
         world = [sum(parent[k * 4 + row] * local[column * 4 + k] for k in range(4))
@@ -543,10 +553,15 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
             visit(child, world, ancestors | {index})
     for node_index in _array(_object(scenes[0], "fixture scene").get("nodes"), "fixture scene roots"):
         visit(node_index, identity, set())
-    if len(world_points) != expected_vertices:
-        raise SuiteError("fixture scene must render its only mesh exactly once")
+    expected_instances = 2 if format_name == "skp" else 1
+    if len(world_points) != expected_vertices * expected_instances:
+        raise SuiteError(f"fixture scene must render its only mesh exactly {expected_instances} times")
     extent = [max(point[axis] for point in world_points) - min(point[axis] for point in world_points) for axis in range(3)]
     expected_extent = [1., 1., 1.] if format_name == "ifc" else [1., 1., 0.] if format_name == "osgb" else [1., 2., 0.]
+    if format_name == "skp":
+        expected_extent = [0.0762, 0., 0.0508]
+        if any(not math.isclose(a, b, abs_tol=1e-6) for a, b in zip(extent, expected_extent)):
+            raise SuiteError("SKP fixture must preserve inch-to-metre dimensions, instance translation and Y-up axes")
     if any(not math.isclose(actual, expected, abs_tol=1e-5) for actual, expected in zip(sorted(extent), sorted(expected_extent))):
         raise SuiteError("fixture geometry extent must preserve its source dimensions")
     if "indices" in primitive:
@@ -570,6 +585,16 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
     if image_count:
         if "TEXCOORD_0" not in attributes or accessor(attributes["TEXCOORD_0"]).get("count") != expected_vertices:
             raise SuiteError("fixture textured mesh must preserve UV coordinates")
+        uv = accessor(attributes["TEXCOORD_0"])
+        uv_bytes, uv_view = view_bytes(uv.get("bufferView"))
+        uv_offset = non_negative_int(uv.get("byteOffset", 0), "fixture UV offset")
+        uv_stride = positive_int(uv_view.get("byteStride", 8), "fixture UV stride")
+        if (uv.get("type") != "VEC2" or uv.get("componentType") != 5126 or uv_stride < 8
+                or uv_offset + (expected_vertices - 1) * uv_stride + 8 > len(uv_bytes)):
+            raise SuiteError("fixture UV coordinates must have bounded float VEC2 bytes")
+        if not all(math.isfinite(value) for i in range(expected_vertices)
+                   for value in struct.unpack_from("<2f", uv_bytes, uv_offset + i * uv_stride)):
+            raise SuiteError("fixture UV coordinates must be finite")
         material_index = non_negative_int(primitive.get("material"), "fixture material index")
         if material_index >= len(materials):
             raise SuiteError("fixture material index is out of bounds")
@@ -579,7 +604,7 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         if texture_index >= len(textures) or _object(textures[texture_index], "fixture texture").get("source") != 0:
             raise SuiteError("fixture diffuse material must use the embedded image")
     return {"vertex_count": expected_vertices, "extent": extent, "embedded_images": image_count,
-            "image_mime_type": mime_type if image_count else None, "size_bytes": len(raw)}
+            "instance_count": expected_instances, "image_mime_type": mime_type if image_count else None, "size_bytes": len(raw)}
 
 
 def generate_model_glb(client: GatewayClient, model: ArtifactFixture, tenant_id: int, timeout: float) -> None:
@@ -913,7 +938,7 @@ def run_scenario(
     scan_execution_id = wait_for_meta_scan(client, engine_id, deadline)
     pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
     pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
-    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds", "ifc", "osgb")]
+    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds", "ifc", "osgb", "skp")]
     raster_item = find_fixture_item(client, engine_id, f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']}", "raster")
     raster = ArtifactFixture("raster", raster_item, build_item_locator(engine_id, raster_item))
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))

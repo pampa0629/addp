@@ -9,7 +9,7 @@ REPOSITORY_DIR=$(cd "${BUSINESS_DIR}/.." && pwd -P)
 PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_preview_fixture.pptx"
 HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
 MC_IMAGE=addp-minio:RELEASE.2025-10-15T17-29-55Z
-MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb)
+MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp)
 
 fail() {
   echo "Online Manager MinIO fixture failed: $*" >&2
@@ -84,7 +84,7 @@ fi
 fixture_object_count=$(printf '%s\n' "${fixture_objects[@]}" | sort -u | wc -l | tr -d ' ')
 [ "$fixture_object_count" = "${#fixture_objects[@]}" ] || fail "Manager fixture object keys must be distinct"
 [ -f "$PPTX_FIXTURE_SOURCE" ] || fail "fixture source is missing: $PPTX_FIXTURE_SOURCE"
-for format in ifc osgb; do
+for format in ifc osgb skp; do
   source="${BUSINESS_DIR}/fixtures/manager/addp_online_model_fixture.${format}"
   [ -f "$source" ] || fail "fixture source is missing: $source"
 done
@@ -211,7 +211,7 @@ seed_fixture() {
   MODEL_FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-online-model3d.XXXXXX")
   trap 'rm -rf "$MODEL_FIXTURE_DIR"' EXIT
   generate_fixtures "$MODEL_FIXTURE_DIR"
-  for format in ifc osgb; do
+  for format in ifc osgb skp; do
     mkdir -p "$MODEL_FIXTURE_DIR/$format"
     cp "${BUSINESS_DIR}/fixtures/manager/addp_online_model_fixture.${format}" "$MODEL_FIXTURE_DIR/$format/model.$format"
   done

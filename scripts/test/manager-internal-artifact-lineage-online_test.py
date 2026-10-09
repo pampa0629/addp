@@ -52,6 +52,12 @@ def fixture_glb(format_name="dae"):
         doc["bufferViews"] = [{"buffer": 0, "byteLength": 288}, {"buffer": 0, "byteOffset": 288, "byteLength": 144}]
         doc["accessors"] = [{"bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3"}, {"bufferView": 1, "componentType": 5125, "count": 36, "type": "SCALAR"}]
         doc["meshes"][0]["primitives"][0] = {"attributes": {"POSITION": 0}, "indices": 1, "material": 0}
+    elif format_name == "skp":
+        texture = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000004000000040802000000269309290000001b49444154789c63b8236723b24543ceedce872d724c0c4800370700e91e052fb0efe4d10000000049454e44ae426082")
+        binary = struct.pack("<9f", 0, 0, 0, 25.4, 0, 0, 0, 0, -50.8) + struct.pack("<6f", 0, 0, 1, 0, 0, 1) + texture
+        doc["bufferViews"][2]["byteLength"] = len(texture)
+        shift = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 50.8, 0., 0., 1.]
+        doc["nodes"] = [{"scale": [0.001] * 3, "children": [1, 2]}, {"mesh": 0}, {"mesh": 0, "matrix": shift}]
     doc["buffers"][0]["byteLength"] = len(binary)
     encoded = json.dumps(doc).encode()
     encoded += b" " * (-len(encoded) % 4)
@@ -96,7 +102,7 @@ class FakeGatewayClient:
             format_name: {"item_id": item_id, "task_id": item_id + 110, "result_id": item_id + 210,
                           "fingerprint": fingerprint * 64, "task_exists": False, "result_exists": False,
                           "locator": f"addp://engine/27/path/addp-online/model3d/{format_name}/model.{format_name}?type=object&item_id={item_id}"}
-            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"), ("ifc", 96, "f"), ("osgb", 97, "g"))
+            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"), ("ifc", 96, "f"), ("osgb", 97, "g"), ("skp", 98, "h"))
         }
         self.raster = {'id': 305, 'item_id': 95, 'task_id': 205, 'result_id': 305, 'fingerprint': 'e'*64,
             'item_fingerprint': 'e'*64, 'task_exists': False, 'result_exists': False,
@@ -255,7 +261,7 @@ class FakeGatewayClient:
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
                 "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": 1024,
                 "attributes": {"item": {"data_type": "model_3d", "format": format_name, "layout": "single"},
-                               "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01, "schema_identifiers": ["IFC4"], "schema_version": "IFC4", "entity_count": 16, "entity_type_counts": {"IFCBUILDINGELEMENTPROXY": 1}}} if format_name != "osgb" else {}},
+                               "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01, "schema_identifiers": ["IFC4"], "schema_version": "IFC4", "entity_count": 16, "entity_type_counts": {"IFCBUILDINGELEMENTPROXY": 1}}} if format_name not in {"osgb", "skp"} else {}},
             } for format_name, model in self.models.items()])
         parsed = urllib.parse.urlsplit(path)
         query = urllib.parse.parse_qs(parsed.query)
@@ -624,8 +630,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                     Path("/repository"), scenario_environment(artifact_dir), browser
                 )
 
-        self.assertEqual(report["lineage"]["inputs"], 7)
-        self.assertEqual(report["lineage"]["outputs"], 7)
+        self.assertEqual(report["lineage"]["inputs"], 8)
+        self.assertEqual(report["lineage"]["outputs"], 8)
         self.assertTrue(report["artifacts"]["pptx_pdf"]["cache_reused"])
         self.assertEqual(report['raster_cog']['mode'], 'direct')
         self.assertTrue(report['raster_cog']['physical']['cog_valid'])
@@ -815,6 +821,40 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             json_size = struct.unpack_from("<I", indexed, 12)[0]
             struct.pack_into("<I", indexed, 28 + json_size + 288, 100)
             SUITE.validate_model_glb(bytes(indexed), "ifc")
+
+    def test_skp_requires_metre_scale_shared_instances_and_embedded_colors(self):
+        raw = fixture_glb("skp")
+        artifact = SUITE.validate_model_glb(raw, "skp")
+        self.assertEqual(artifact["instance_count"], 2)
+        self.assertEqual(artifact["vertex_count"], 3)
+        self.assertEqual(artifact["embedded_images"], 1)
+        for change, reason in (
+            (lambda doc: doc["nodes"][0].update(scale=[1.] * 3), "root scale"),
+            (lambda doc: doc["nodes"][0].update(children=[1]), "exactly 2 times"),
+            (lambda doc: doc["nodes"][2]["matrix"].__setitem__(12, 0.), "instance translation"),
+            (lambda doc: doc["bufferViews"][1].update(byteLength=8), "bounded float VEC2"),
+        ):
+            with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
+                SUITE.validate_model_glb(alter_glb(raw, change), "skp")
+        damaged_texture = bytearray(raw)
+        json_size = struct.unpack_from("<I", raw, 12)[0]
+        damaged_texture[28 + json_size + 80] ^= 1
+        with self.assertRaisesRegex(SUITE.SuiteError, "four-color PNG"):
+            SUITE.validate_model_glb(bytes(damaged_texture), "skp")
+
+    def test_skp_identity_scan_rejects_invented_parsing_facts_before_writes(self):
+        client = FakeGatewayClient()
+        original = client._request
+        def invented_metadata(method, path, body, headers):
+            result = original(method, path, body, headers)
+            if path == "/api/v1/meta/engines/27/items":
+                item = next(item for item in result.payload if item.get("attributes", {}).get("item", {}).get("format") == "skp")
+                item["attributes"]["format_info"]["skp"] = {"scan_complete": True}
+            return result
+        with mock.patch.object(client, "_request", side_effect=invented_metadata):
+            with self.assertRaisesRegex(SUITE.SuiteError, "must not invent native metadata"):
+                SUITE.prepare_model_fixture(client, 27, "addp-online", "skp")
+        self.assertFalse(any(method == "POST" for method, _ in client.calls))
 
     def test_ifc_schema_mismatch_is_rejected_before_manager_writes(self):
         client = FakeGatewayClient()

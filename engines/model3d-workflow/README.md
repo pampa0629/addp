@@ -53,6 +53,8 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/blender_setup.
 
 2026-10-09 复核 IFC／单体 OSGB Hosted 扩展验收：[运行 37788054702](https://github.com/pampa0629/addp/actions/runs/37788054702) 在 OSGB 生成阶段失败，生成入口浏览器检查通过，退出清理及 Infra 零残留通过；缓存预览未执行，不能计为七类产物验收通过。标准产品构建已追加最终 Runtime 中的压缩 OSGB 和多种暂存路径长度验证，复现了上游 Rust → C++ 输入路径未转为 NUL 终止字符串的越界读取。现有统一转换器补丁改用 `CString` 并在转换失败时返回非零；产品与 macOS 原生工具包消费同一补丁，不增加备用转换路线。Linux ARM64 标准产品构建的修复前长路径回归失败，修复后九种路径长度、无效 OSGB 的非零退出及旧产物保留均通过；Model3D 272 项、Manager Online runner 51 项和构建登记门禁通过。macOS 私有工具包通过标准 `native_setup.py prepare` 重建为指纹 `621681c3cf634777`，内置 OSGB／OBJ／IFC 转换预检通过；同一压缩 OSGB 夹具的九种暂存路径、无效输入非零退出及旧产物保留也通过。本轮未重启开发服务。修复已提交为 `245ac18c57dad63fc1c4be612f57a0e7454af691`；[Hosted 复验 37867825873](https://github.com/pampa0629/addp/actions/runs/37867825873) 已通过 Linux x86_64 正式产品链路：四种模型（DAE／3DS／IFC／OSGB）的 GLB、几何及声明贴图校验通过，生成入口与缓存预览两项浏览器用例通过，IFC 立方体和 OSGB 红色贴图三角形截图已复核。七类产物（四种模型、点云、PPTX、栅格）的七项输入／输出血缘一致，Manager／Monitor 事实相等；派生产物回收及 Infra 清理均零残留。同一代码提交的 Product binary build 通过；Platform CI 整轮因 GeoPython Job 被取消而为 cancelled，不计为整轮通过。
 
+2026-10-09 SKP Hosted 扩展已接入同一 Manager suite：Business 自有英寸三角形的两个实例使用同一内嵌彩色 PNG，Runtime 原生实测生成的 GLB 尺寸为 `[0.0762, 0, 0.0508]` 米，保留共享网格、实例位移与贴图。Meta 只核对格式身份，不伪造 SKP 解析事实；生成入口、缓存消费、Manager／Monitor 血缘与领域清理均沿用现有主路径，完整报告扩为八项输入／输出。`make test-manager-online-runner` 的 53 项测试和完整 `make test-online-runner` 均通过；真实 Hosted SKP 链路尚待执行，不计为 T4 已通过。
+
 同轮确定性门禁通过：`make test-model3d-workflow`（272 项）、`make test-manager-online-runner`（47 项）及 `make test-dev-lifecycle`（86 项 Python 测试和后续 Shell／Go 检查）。开发生命周期首轮有三个 Infra 夹具超时，独立诊断及完整重跑通过。ARM64 构建曾遇到镜像和官方文件下载中断，使用相同版本与标准入口重试后完整通过；本轮未修改或重启开发服务。
 
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
