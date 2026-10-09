@@ -376,9 +376,15 @@ async function verifyWideLineage(page, env) {
       expect(row.y).toBeGreaterThanOrEqual(0)
       expect(row.y).toBeLessThanOrEqual(box.height)
     }
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-lineage.png'), fullPage: true })
+    const refocusStarted = Date.now()
+    await search.fill('FIELD_0499')
+    await frame.getByRole('button', { name: 'field_0499', exact: true }).click()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => row.text === 'field_0499').at(-1)?.fontSize).toBeGreaterThanOrEqual(11 - CANVAS_FONT_EPSILON)
+    timings.refocusAfterLayoutMs = Date.now() - refocusStarted
     expect(requests).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-layout.json'), JSON.stringify({ ...timings, responseBytes, graphRequests: requests, nodes: graph.nodes.length, edges: graph.edges.length, geometry, rows }, null, 2))
-    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-lineage.png'), fullPage: true })
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-after-layout-focus.png'), fullPage: true })
   } finally {
     page.off('request', count)
   }

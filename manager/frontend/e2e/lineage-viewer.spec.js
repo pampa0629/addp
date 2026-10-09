@@ -319,6 +319,12 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
       expect((await lineageCanvasText(canvas)).find(row => row.text === `field_3.${column}`).fontSize).toBeCloseTo(11, 5)
       timings[`locateColumn${column}Ms`] = Date.now() - started
     }
+    // Locating after an overview must restore readable text without another query.
+    await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    await locate(columnCount - 1)
+    await page.getByRole('button', { name: '自动布局', exact: true }).click()
+    await expect(page.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+    await locate(Math.floor(columnCount / 2) - 1)
     await page.getByRole('button', { name: '收起字段', exact: true }).click()
     await locate(columnCount - 2)
     await expect(page.locator('.lineage-field-status')).toContainText('没有关联字段')

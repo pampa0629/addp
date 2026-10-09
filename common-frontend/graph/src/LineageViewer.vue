@@ -158,6 +158,7 @@ const LINEAGE_EDGE_TYPE = 'addp-lineage-link'
 const NODE_WIDTH = 280
 const NODE_HEIGHT = 108
 const FIT_PADDING = 48
+const FIELD_READABLE_ZOOM = 11 / FIELD_FONT_SIZE
 
 const { t, locale } = useI18n()
 const props = defineProps({
@@ -741,6 +742,7 @@ async function selectField(node, locate = false) {
   if (!instance || graphInstance.value !== instance) return
   const table = instance.getNodes().find(item => item.getModel()._fields.some(field => nodeId(field) === nodeId(node)))
   if (!table) return
+  if (instance.getZoom() < FIELD_READABLE_ZOOM) instance.zoomTo(FIELD_READABLE_ZOOM)
   const model = table.getModel()
   const index = model._fields.findIndex(field => nodeId(field) === nodeId(node))
   const point = instance.getCanvasByPoint(model.x, model.y - model.size[1] / 2 + FIELD_HEADER_HEIGHT + (index + 0.5) * FIELD_ROW_HEIGHT)
@@ -903,8 +905,8 @@ async function renderGraph(preserveView = false) {
     if (!item) {
       fitView()
       // Keep field text readable on entry; fit-view remains an explicit overview.
-      if (isFieldGraph.value && graphInstance.value.getZoom() < 11 / FIELD_FONT_SIZE) {
-        graphInstance.value.zoomTo(11 / FIELD_FONT_SIZE)
+      if (isFieldGraph.value && graphInstance.value.getZoom() < FIELD_READABLE_ZOOM) {
+        graphInstance.value.zoomTo(FIELD_READABLE_ZOOM)
         const root = graphInstance.value.getNodes().find(node => node.getModel()._isSubject)
         if (root) graphInstance.value.focusItem(root, false)
       }
