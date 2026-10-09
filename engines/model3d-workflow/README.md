@@ -64,6 +64,8 @@ SKP 使用固定的 MIT 许可 `openskp[textures]==1.3.0`，在当前 Python Run
 
 MAX 的 Manager Hosted T4 扩展复用 `manager-internal-artifact-lineage`，从专用 Business MinIO 读取未修改的 CC-BY-SA-3.0 马模型及 ADDP 自建 4 × 4 RGB `(220,30,60)` 贴图。页面验证默认米、手选毫米和显式 bitmap 映射；正式生成声明 `source_unit=mm`，核对转换审计、五个静态网格、十二个 primitive、444 个顶点、米制场景尺寸和实际内嵌贴图像素，不固定跨 Blender 版本的 PNG 编码哈希。Meta 仅识别 MAX 格式身份；六种模型与点云、PPTX、栅格共同核对九项输入／输出血缘、缓存加载和零残留清理。确定性入口仍为 `make test-manager-online-runner` 与 `make test-online-runner`；真实验收仍为现有 Hosted suite，实际运行通过前不计为 T4 通过。
 
+2026-10-09 的 [MAX Hosted 首轮 37937857350](https://github.com/pampa0629/addp/actions/runs/37937857350) 在生成入口选择单位时失败：Element Plus 的默认米 placeholder 覆盖只读 combobox，点击超时，尚未执行 MAX 生成与缓存预览；领域清理通过、Infra 零残留。提交 `232410485f4a65e5278b238cab893482a1a12c0c` 将验收点击定位改为页面可见的默认米 placeholder，沿用原单位选择与转换路线；`make test-manager-online-runner` 的 57 项测试及 Manager 默认米／手选毫米两项浏览器用例通过。[Hosted 复验 37951204666](https://github.com/pampa0629/addp/actions/runs/37951204666) 已启动，结果待核对，不计为 T4 通过。
+
 MAX 的工具版本与校验值集中在 `blender-assets.json`。macOS arm64 使用私有工具包内的 Blender 4.5.3；Linux 产品镜像使用 Debian Trixie 的 Blender 4.3.2 和显式安装的 NumPy。两者均使用固定提交的 `io_scene_max` 1.9.2。安装时校验下载归档，保留上游源码及许可：仓库 LICENSE、源码 GPL 许可声明和插件 manifest 的 GPL-3.0-or-later 声明均原样保留。开发工具包逐文件校验完整性，转换不向包内写入 Python 缓存。
 
 MAX 首期覆盖静态网格、实例变换、基础颜色和漫反射图片，不声明动画、骨架或第三方渲染器材质保真。单个 MAX 文件的解析预算为 64 MiB。固定导入器目前不能可靠识别原始系统单位：用户可选择 `options.source_unit`（`mm/cm/m/km/in/ft/mi`）；未选则默认米 `m`。Manager 的 MAX 生成入口提供同一选项，缺省值无需用户确认。结果 `conversion` 记录实际单位、`unit_source=user|default` 与米制换算系数，不把默认米说成自动识别。
@@ -156,7 +158,7 @@ bash scripts/build/build-images.sh --services model3d-workflow-engine --force
 - `${REGISTRY}/addp-model3d-converter:${IMAGE_TAG}`
 - `${REGISTRY}/addp-model3d-workflow-engine:${IMAGE_TAG}`
 
-随后 `scripts/local/start.sh` 和 `scripts/prod/start.sh` 会通过 `docker-compose.yml` 启动 `model3d-workflow-engine`，端口为 `8101`，服务启动后自动向 System 注册 `model3d_workflow` 引擎。Manager 只通过 common engine 的 `WorkflowRuntimeProvider` 调用 `osgb_to_glb`、`gltf_to_glb`、`fbx_to_glb`、`obj_to_glb`、`stl_to_glb`、`dae_to_glb`、`3ds_to_glb`、`skp_to_glb`、`ifc_to_glb`、`osgb_scene_to_3dtiles` 和 `gaussian_splat_to_ksplat`，不直接调用 `_3dtile`、`assimp`、`IfcConvert` 或其他转换器。
+随后 `scripts/local/start.sh` 和 `scripts/prod/start.sh` 会通过 `docker-compose.yml` 启动 `model3d-workflow-engine`，端口为 `8101`，服务启动后自动向 System 注册 `model3d_workflow` 引擎。Manager 只通过 common engine 的 `WorkflowRuntimeProvider` 调用 `osgb_to_glb`、`gltf_to_glb`、`fbx_to_glb`、`obj_to_glb`、`stl_to_glb`、`dae_to_glb`、`3ds_to_glb`、`skp_to_glb`、`max_to_glb`、`ifc_to_glb`、`osgb_scene_to_3dtiles` 和 `gaussian_splat_to_ksplat`，不直接调用 `_3dtile`、`assimp`、`IfcConvert` 或其他转换器。
 
 ## 测试
 
