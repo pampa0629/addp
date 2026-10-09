@@ -22,16 +22,17 @@ engines/
 
 ## 本地开发运行方式
 
-支持 macOS 的开发服务采用原生进程；产品构建与 Hosted 产品验收独立使用镜像。Infra 与 Business 保留现有容器部署用途。当前开发启动盘点如下，待调整项尚未改动生命周期：
+支持 macOS 的开发服务采用原生进程；产品构建与 Hosted 产品验收独立使用镜像。Infra 与 Business 保留现有容器部署用途。当前开发启动盘点如下，实际入口以 `scripts/dev/start.sh`、各 Runtime 的共享准备脚本及模块 README 为准：
 
 | Runtime | 当前开发启动 | 依赖支持与后续工作 |
 | --- | --- | --- |
 | Spark Workflow | 原生 Python 3.11/3.12 + OpenJDK 11 | 已统一标准启动、重启、停止；macOS 配置本机 `host.docker.internal` 映射，Worker 使用 Docker 内置解析 |
 | GeoPython Workflow | 原生 Python 3.12 + GDAL + MDBTools/ODBC | 独立 venv；GDAL 绑定与原生库同版本；产品栅格 T4 独立构建和启动镜像 |
-| PointCloud Workflow | Docker | [PDAL 支持 macOS 环境](https://pdal.org/en/stable/quickstart.html)；建议在 Runtime 独立环境安装 PDAL，继续使用 `POINTCLOUD_PDAL_BIN`，预检 COPC、LAS、E57、PCD、text 驱动及可写临时目录 |
-| Document Workflow | Docker | [LibreOffice 支持 Intel 与 Apple Silicon macOS](https://hr.libreoffice.org/get-help/install-howto/macos/)；可继续用 `DOCUMENT_LIBREOFFICE_BIN` 绑定原生程序，现有转换已为每次执行创建独立 profile，仍需验证中文字体与多页 PPTX 转 PDF |
+| PointCloud Workflow | 原生 Python 3.12 + 独立 Conda PDAL 2.10.2 | 已统一原生生命周期；GDAL、PROJ、E57 库随 Runtime 环境隔离，预检 COPC、LAS、E57、PCD、text 驱动及实际转换；详见 `pointcloud-workflow/README.md` |
+| Document Workflow | 原生 Python 3.12 + 私有 LibreOffice 与中文字体 | 已统一原生生命周期；官方包校验 SHA-256，每次转换使用独立 profile，真实 PPTX 转 PDF 纳入准备预检；详见 `document-workflow/README.md` |
 | SuperMap Workflow | Docker，当前接入 Linux ARM64 C++ SDK | 先核对同版本 SDK 的 macOS 支持及许可；不能从当前 Linux 制品推断厂商仅支持 Linux |
-| Math、Model3D、DuckDB、Jupyter | 原生进程 | 保持当前标准生命周期；Model3D 的外部转换器依赖另行核对平台范围 |
+| Model3D Workflow | 原生 Python + 私有转换工具包 | 当前开发安装支持 macOS arm64；转换器版本与完整性由私有包校验，删除开发 Docker wrapper；详见 `model3d-workflow/README.md` |
+| Math、DuckDB、Jupyter | 原生进程 | 沿用各自标准生命周期与依赖准备入口 |
 
 ### GeoPython 原生开发
 
