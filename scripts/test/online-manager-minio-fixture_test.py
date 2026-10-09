@@ -84,9 +84,10 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         (self.business / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
         (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
-        for format_name in ("ifc", "osgb", "skp"):
+        for format_name in ("ifc", "osgb", "skp", "max"):
             source = SCRIPT.parents[2] / f"business/fixtures/manager/addp_online_model_fixture.{format_name}"
             shutil.copy2(source, self.business / "fixtures/manager" / source.name)
+        shutil.copy2(SCRIPT.parents[2] / "business/fixtures/manager/addp_online_max_texture.png", self.business / "fixtures/manager/addp_online_max_texture.png")
         (self.business / "nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg").write_bytes(b"JPEG fixture")
         self._executable("uname", '#!/bin/bash\nif [ "$1" = -m ]; then echo x86_64; else echo "${ADDP_TEST_OS:-Darwin}"; fi\n')
         self._executable(
@@ -130,13 +131,13 @@ case "$1" in
           esac
         done
         ;;
-      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*|*" cp --quiet /fixture/ifc/"*|*" cp --quiet /fixture/osgb/"*|*" cp --quiet /fixture/skp/"*)
+      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*|*" cp --quiet /fixture/ifc/"*|*" cp --quiet /fixture/osgb/"*|*" cp --quiet /fixture/skp/"*|*" cp --quiet /fixture/max/"*)
         mount=""
         source=""
         for argument in "$@"; do
           case "$argument" in
             *:/fixture:ro) mount="${argument%:/fixture:ro}" ;;
-            /fixture/dae/*|/fixture/3ds/*|/fixture/ifc/*|/fixture/osgb/*|/fixture/skp/*) source="${argument#/fixture/}" ;;
+            /fixture/dae/*|/fixture/3ds/*|/fixture/ifc/*|/fixture/osgb/*|/fixture/skp/*|/fixture/max/*) source="${argument#/fixture/}" ;;
           esac
         done
         mkdir -p "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/$(dirname "$source")"
@@ -205,7 +206,7 @@ esac
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.las fixture/addp-online/pointcloud/pdal_las12_format0.las", commands)
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.pptx fixture/addp-online/document/addp_online_preview_fixture.pptx", commands)
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.jpg fixture/addp-online/hybrid-search/purple-gaming-light-gun.jpg", commands)
-        for model_object in ("dae/model.dae", "dae/texture.png", "3ds/model.3ds", "3ds/texture.png", "ifc/model.ifc", "osgb/model.osgb", "skp/model.skp"):
+        for model_object in ("dae/model.dae", "dae/texture.png", "3ds/model.3ds", "3ds/texture.png", "ifc/model.ifc", "osgb/model.osgb", "skp/model.skp", "max/model.max", "max/texture.png"):
             self.assertIn(f"cp --quiet /fixture/{model_object} fixture/addp-online/model3d/{model_object}", commands)
             self.assertIn(f"stat fixture/addp-online/model3d/{model_object}", commands)
         for directory in re.findall(r"-v (\S+):/fixture:ro", commands):
@@ -235,6 +236,8 @@ esac
         osgb = baseline["osgb/model.osgb"]
         self.assertEqual(osgb[24:28], b"zlib")
         self.assertIn(b"osg::Geometry", zlib.decompress(osgb[28:], wbits=31))
+        self.assertEqual(baseline["max/model.max"], (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_model_fixture.max").read_bytes())
+        self.assertEqual(baseline["max/texture.png"], (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_max_texture.png").read_bytes())
         self.assertEqual(baseline["skp/model.skp"], (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_model_fixture.skp").read_bytes())
         dae = ET.fromstring(baseline["dae/model.dae"])
         ns = "{http://www.collada.org/2005/11/COLLADASchema}"
@@ -280,7 +283,7 @@ esac
         self.assertFalse(self.state.exists())
 
     def test_missing_tracked_model_source_rejected_before_docker(self):
-        for format_name in ("ifc", "osgb", "skp"):
+        for format_name in ("ifc", "osgb", "skp", "max"):
             source = self.business / f"fixtures/manager/addp_online_model_fixture.{format_name}"
             content = source.read_bytes()
             source.unlink()
@@ -289,6 +292,13 @@ esac
             self.assertIn("fixture source is missing", result.stderr)
             self.assertFalse(self.log.exists())
             source.write_bytes(content)
+
+    def test_missing_max_texture_rejected_before_docker(self):
+        (self.business / 'fixtures/manager/addp_online_max_texture.png').unlink()
+        result = self.run_fixture('start')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('MAX texture fixture source is missing', result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_hosted_profile_rejects_non_github_environment_before_docker(self) -> None:
         result = self.run_fixture("start", ADDP_TEST_OS="Linux", ADDP_ONLINE_HOSTED="1", GITHUB_ACTIONS="false")
