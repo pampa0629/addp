@@ -151,7 +151,7 @@ CPU 忙碌率及趋势新增固定 `node.cpu.busy_percent`（percent，60 秒窗
 
 用户入口统一为 System「平台主机管理」、Monitor「运行监控 → 主机监控」与「高级设置 → 采集配置」。内部 HostNode、MonitoringTarget 和既有路由保持唯一职责。采集配置从当前用户有权读取的 System 主机列表选择名称，不复制主机身份；资源详情直接携带该主机进入采集配置。System 的允许服务模块绑定名单放在高级设置，从已有模块定义中选择，不代表实际部署关联。
 
-即时资源查询增加有界 `collection` 证据：未接入、无样本、采集中、失败与陈旧；只有新鲜成功的 up 才判断文件系统采集器是否提供。趋势不附带当前采集状态。固定查询与资源查询复用同一 mTLS Client 和请求期限，不查询全中心目标列表。Desktop VM 的七采集器提供内核块设备 IO，不提供文件系统、inode 或网卡族；不能用容器配额冒充 VM 容量。部署自动登记尚待可信身份和正式调用契约，本批不修改 IAM，也不保存管理员 Token。
+即时资源查询增加有界 `collection` 证据：未接入、无样本、采集中、失败与陈旧；只有新鲜成功的 up 才判断文件系统与网络接口采集器是否提供；两类证据须唯一且与 up 同次抓取，否则为 unknown。即时 collection 的 filesystem/network 均必需；各资源区域使用自己的当前响应就地解释缺值，吞吐缺值不直接认定为窗口不足。趋势不附带当前采集状态。固定查询与资源查询复用同一 mTLS Client 和请求期限，不查询全中心目标列表。Desktop VM 的七采集器提供内核块设备 IO，不提供文件系统、inode 或网卡族；不能用容器配额冒充 VM 容量。部署自动登记尚待可信身份和正式调用契约，本批不修改 IAM，也不保存管理员 Token。
 
 
 资源展示及磁盘吞吐沿设计 10.35：字节显示 IEC 容量单位，时长显示经过的天/小时/分钟，load average 为系统任务数量平均值，无百分比或“负载”单位后缀。共享 formatBytes/formatDurationSeconds 唯一维护展示换算，API 原始单位不变。目录共 20 项；新增 node.disk.read_bytes_per_second / write_bytes_per_second 为完整一分钟平均 B/s，以 device 单维度查询与展示，文件系统仍为 device/mountpoint/fstype 三维度，不混合选择、不跨设备层叠加。概览、文件系统、inode、磁盘及趋势沿原请求预算分别读取；采集缺失和窗口不足保留空值。Desktop 六采集器仍不启用 diskstats；原生完整来源由既有 diskstats 提供。标准 metrics T2 的 promtool 场景选择及真实完整/受限来源查询同步覆盖磁盘目录。

@@ -614,8 +614,6 @@
         "collecting": "Collection connection is working",
         "failed": "Collection failed. Check the collection address, network and certificates. Missing values do not mean zero load.",
         "stale": "Collection evidence has expired. Current data cannot indicate real-time status.",
-        "not_collected": "This collection source does not provide filesystem metrics.",
-        "filesystem_failed": "Filesystem collection failed. Check source permissions and status.",
         "waiting": "The latest collection succeeded. Some metrics do not yet have valid samples or a complete measurement window."
       },
       "configure": "Configure collection",
@@ -715,12 +713,15 @@
       "filesystem": {
         "title": "Filesystem mounts",
         "hint": "Capacity by mount. Bind mounts, memory and network filesystems are not summed as physical capacity.",
-        "empty": "No filesystem mount data available.",
+        "empty": "Filesystem collection succeeded, but no usable mount data is available.",
         "device": "Device",
         "mountpoint": "Mountpoint",
         "type": "Filesystem type",
         "viewTrend": "View trend",
-        "inode": "Inode statistics"
+        "inode": "Inode statistics",
+        "notCollected": "The current source does not provide filesystem metrics.",
+        "collectorFailed": "Filesystem collection failed. Check source permissions and runtime status.",
+        "unknown": "No filesystem data. Collection coverage has not been confirmed."
       },
       "loadValue": "About {value}",
       "metricHelp": "About {metric}",
@@ -751,13 +752,17 @@
             "detail": "Average time per completed write request over the last complete minute, including queueing and processing. No completed writes, incomplete windows or counter resets display “—”, not 0 ms."
           }
         },
-        "empty": "No disk throughput data. The source must enable disk collection and provide a complete one-minute window."
+        "empty": "No disk throughput data. A continuous one-minute counter window is required. Check for interrupted collection, missing samples or counter reset.",
+        "unknown": "No disk throughput data. The cause is unconfirmed; check disk collection and a continuous one-minute counter window."
       },
       "network": {
         "title": "Network interface throughput",
         "interface": "Network interface",
         "hint": "Average receive and transmit rates over a full minute, per interface. Bridges, virtual and loopback interfaces are not summed; rates do not indicate link utilization.",
-        "empty": "No network throughput data. The source must collect network interfaces over a full minute."
+        "empty": "No network throughput data. Interface collection succeeded, but no valid rate samples are available. A continuous one-minute counter window is required; missing samples, reboot or counter reset can also prevent calculation.",
+        "notCollected": "The current source does not provide network interface metrics. Waiting will not produce throughput data.",
+        "collectorFailed": "Network interface collection failed. Check source permissions and runtime status.",
+        "unknown": "No network throughput data. Interface collection coverage has not been confirmed."
       }
     }
   }

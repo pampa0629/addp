@@ -49,6 +49,7 @@ func (n *resourceNodes) AuthorizeHostNodesForUser(context.Context, string) error
 
 type resourceBackend struct {
 	validAge    *time.Duration
+	evidence    *resourcequery.Collection
 	calls       int
 	collections int
 	scope       resourcequery.Scope
@@ -58,7 +59,10 @@ type resourceBackend struct {
 func (b *resourceBackend) Collection(_ context.Context, scope resourcequery.Scope, _ time.Time, _ resourcequery.Budget) (resourcequery.Collection, error) {
 	b.collections++
 	b.scope = scope
-	return resourcequery.Collection{State: "no_sample", Filesystem: "unknown"}, b.err
+	if b.evidence != nil {
+		return *b.evidence, b.err
+	}
+	return resourcequery.Collection{State: "no_sample", Filesystem: "unknown", Network: "unknown"}, b.err
 }
 func (b *resourceBackend) Query(_ context.Context, p resourcequery.Plan, s resourcequery.Scope, _ resourcequery.Budget) ([]resourcequery.Series, error) {
 	b.calls++
@@ -229,5 +233,26 @@ func TestResourceConcurrencyAdmissionPrecedesConfigurationRead(t *testing.T) {
 		if e := <-done; !errors.Is(e, context.Canceled) {
 			t.Fatal(e)
 		}
+	}
+}
+
+func TestResourceQueryExpiryClearsAllCollectorEvidence(t *testing.T) {
+	node := uuid.NewString()
+	now := time.Now().UTC().Truncate(time.Second)
+	sampled := now.Add(-59 * time.Second)
+	backend := &resourceBackend{evidence: &resourcequery.Collection{State: "collecting", SampledAt: &sampled, Filesystem: "available", Network: "available"}}
+	targets := &targetTestStore{rows: []metricsdiscovery.NodeTarget{{ID: uuid.NewString(), Version: 1, Subject: metricsdiscovery.NodeSubject{Kind: "node", NodeID: node}, MonitorKind: "host_resources", Source: metricsdiscovery.NodeSource{Type: "node_exporter", Endpoint: "https://127.0.0.1:9100/metrics"}, Enabled: true}}}
+	svc := NewResourceObservationService(&resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}, targets, &resourceNodes{enabled: true}, backend, true, resourceSourcePolicy(t))
+	calls := 0
+	svc.now = func() time.Time {
+		calls++
+		if calls == 1 {
+			return now
+		}
+		return now.Add(2 * time.Second)
+	}
+	result, err := svc.Query(context.Background(), "user", node, "addp_at_current_user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false, nil)
+	if err != nil || result.Collection.State != "stale" || result.Collection.Filesystem != "unknown" || result.Collection.Network != "unknown" {
+		t.Fatalf("expired coverage retained: %+v %v", result.Collection, err)
 	}
 }

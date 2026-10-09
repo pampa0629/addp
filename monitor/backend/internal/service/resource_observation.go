@@ -141,7 +141,7 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 	}
 	result.Series = resourcequery.Empty(plan, "not_connected")
 	if !trend {
-		result.Collection = &resourcequery.Collection{State: "not_connected", Filesystem: "unknown"}
+		result.Collection = &resourcequery.Collection{State: "not_connected", Filesystem: "unknown", Network: "unknown"}
 	}
 	if ref.Enabled {
 		rows, err := s.targets.Snapshot(ctx)
@@ -193,6 +193,7 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 		if result.Collection.SampledAt != nil && result.QueriedAt.Sub(*result.Collection.SampledAt) > time.Duration(resourcequery.FreshnessSeconds)*time.Second {
 			result.Collection.State = "stale"
 			result.Collection.Filesystem = "unknown"
+			result.Collection.Network = "unknown"
 		}
 		for i := range result.Series {
 			for j := range result.Series[i].Points {

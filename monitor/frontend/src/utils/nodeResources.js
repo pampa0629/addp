@@ -151,9 +151,20 @@ export function resourceErrorKey(error) {
 
 export function validateCollection(value, queriedAt) {
   const states = ['not_connected', 'no_sample', 'collecting', 'failed', 'stale']
-  if (!value || !states.includes(value.state) || !['unknown', 'available', 'failed', 'not_collected'].includes(value.filesystem)) throw new Error('invalid_resource_response')
+  if (!value || !states.includes(value.state) || ['filesystem', 'network'].some(key => !['unknown', 'available', 'failed', 'not_collected'].includes(value[key]))) throw new Error('invalid_resource_response')
   const sampled = Date.parse(value.sampled_at), observed = Date.parse(queriedAt)
   const hasSample = ['collecting', 'failed', 'stale'].includes(value.state)
-  if (!Number.isFinite(observed) || (hasSample ? !Number.isFinite(sampled) || sampled > observed : value.sampled_at !== null) || (value.state !== 'collecting' && value.filesystem !== 'unknown') || (value.state === 'stale' ? observed - sampled <= 60000 : hasSample && observed - sampled > 60000)) throw new Error('invalid_resource_response')
+  if (!Number.isFinite(observed) || (hasSample ? !Number.isFinite(sampled) || sampled > observed : value.sampled_at !== null) || (value.state !== 'collecting' && ['filesystem', 'network'].some(key => value[key] !== 'unknown')) || (value.state === 'stale' ? observed - sampled <= 60000 : hasSample && observed - sampled > 60000)) throw new Error('invalid_resource_response')
   return value
+}
+
+// Only explain causes established by current collection evidence. A missing rate
+// alone cannot distinguish warm-up, reset, reboot or incomplete counter samples.
+export function resourceMissingMessage(collection, family) {
+  if (!collection) return ''
+  if (collection.state !== 'collecting') return `monitor.resources.collection.${collection.state}`
+  const coverage = collection[family]
+  if (coverage === 'not_collected') return `monitor.resources.${family}.notCollected`
+  if (coverage === 'failed') return `monitor.resources.${family}.collectorFailed`
+  return `monitor.resources.${family}.${coverage === 'available' ? 'empty' : 'unknown'}`
 }

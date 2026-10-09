@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { validateCollection, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows } from '../src/utils/nodeResources.js'
+import { validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows } from '../src/utils/nodeResources.js'
 
 test('node resource trends delegate chart rendering and formatting to the shared owners', () => {
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
@@ -120,10 +120,10 @@ test('inode observations share mount identity and reject fractional or unsafe co
 
 test('collection evidence separates source failure from unsupported coverage and rejects stale success', () => {
   const at = '2026-10-08T00:00:00Z'
-  assert.equal(validateCollection({ state: 'failed', sampled_at: at, filesystem: 'unknown' }, at).state, 'failed')
-  assert.equal(validateCollection({ state: 'collecting', sampled_at: at, filesystem: 'not_collected' }, at).filesystem, 'not_collected')
-  assert.throws(() => validateCollection({ state: 'failed', sampled_at: at, filesystem: 'not_collected' }, at))
-  assert.throws(() => validateCollection({ state: 'collecting', sampled_at: '2026-10-07T00:00:00Z', filesystem: 'available' }, at))
+  assert.equal(validateCollection({ state: 'failed', sampled_at: at, filesystem: 'unknown', network: 'unknown' }, at).state, 'failed')
+  assert.equal(validateCollection({ state: 'collecting', sampled_at: at, filesystem: 'not_collected', network: 'not_collected' }, at).filesystem, 'not_collected')
+  assert.throws(() => validateCollection({ state: 'failed', sampled_at: at, filesystem: 'not_collected', network: 'not_collected' }, at))
+  assert.throws(() => validateCollection({ state: 'collecting', sampled_at: '2026-10-07T00:00:00Z', filesystem: 'available', network: 'available' }, at))
   assert.throws(() => validateCollection(undefined, at))
 })
 
@@ -198,4 +198,15 @@ test('disk timing preserves valid idle busy and unknown duration with exact ms r
   assert.equal(currentResourceValue(series[3].points[0]), null)
   series[2].points[0].value = 101
   assert.throws(() => validateResourceResponse(response, 'node-id', diskMetrics.map(metric => metric.key)), /invalid_resource_response/)
+})
+
+
+test('per-section explanations use collection evidence without claiming why a counter window is invalid', () => {
+  for (const family of ['filesystem', 'network']) {
+    for (const state of ['not_connected', 'no_sample', 'failed', 'stale']) assert.equal(resourceMissingMessage({ state, [family]: 'unknown' }, family), `monitor.resources.collection.${state}`)
+    for (const [coverage, key] of [['not_collected', 'notCollected'], ['failed', 'collectorFailed'], ['available', 'empty'], ['unknown', 'unknown']]) assert.equal(resourceMissingMessage({ state: 'collecting', [family]: coverage }, family), `monitor.resources.${family}.${key}`)
+  }
+  const at = '2026-10-08T00:00:00Z'
+  for (const network of [undefined, null, 'unsupported', 'available']) assert.throws(() => validateCollection({ state: 'failed', sampled_at: at, filesystem: 'unknown', network }, at))
+  assert.equal(resourceMissingMessage(null, 'network'), '')
 })

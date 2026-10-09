@@ -128,7 +128,7 @@ test('disconnected points stay empty; English narrow layout has no horizontal ov
   await page.goto(`/node-resources/${node}`)
   await expect(page.getByTestId('resource-cores')).toContainText('Not connected')
   await expect(page.getByTestId('resource-cores')).toContainText('—')
-  await expect(page.getByTestId('resource-filesystem-empty')).toHaveText('No filesystem mount data available.')
+  await expect(page.getByTestId('resource-filesystem-empty')).toContainText('Host collection is not enabled')
   await expect(page.getByTestId('resource-filesystem-table')).toHaveCount(0)
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   state.mode = 'load-active'
@@ -385,7 +385,7 @@ test('reports a collection failure without presenting it as zero load or unsuppo
   await expect(page.getByTestId('resource-filesystem-capability')).toHaveCount(0)
   await expect(page.getByTestId('resource-filesystem-table')).toContainText('/data')
   await expect(page.getByTestId('resource-filesystem-table')).toContainText('缺失')
-  await expect(page.getByTestId('resource-filesystem-empty')).toHaveCount(0)
+  await expect(page.getByTestId('resource-filesystem-empty')).toContainText('采集失败')
 })
 for (const locale of ['zh-cn', 'en']) test(`empty resource sections are compact and restore tables without hiding known missing rows (${locale})`, async ({ page }) => {
   const state = await resourceBackend(page, { mode: 'filesystem-uncollected', locale })
@@ -418,7 +418,7 @@ for (const locale of ['zh-cn', 'en']) test(`empty resource sections are compact 
     const table = page.getByTestId(`resource-${family}-table`)
     await expect(table).toContainText(subject)
     await expect(table).toContainText(locale === 'en' ? 'Missing' : '缺失')
-    await expect(page.getByTestId(`resource-${family}-empty`)).toHaveCount(0)
+    await expect(page.getByTestId(`resource-${family}-empty`)).toBeVisible()
   }
   state.filesystemMode = 'budget'; state.inodeMode = 'budget'; state.diskMode = 'budget'; state.networkMode = 'budget'
   await refresh.click()
@@ -608,3 +608,62 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(page.getByRole('tooltip').filter({ hasText: locale === 'en' ? 'No completed writes' : '没有完成写入请求' })).toBeVisible()
   })
 }
+
+for (const locale of ['zh-cn', 'en']) test(`network explains collector evidence locally and recovers without treating zero as missing (${locale})`, async ({ page }) => {
+  const state = await resourceBackend(page, { locale })
+  state.networkMode = 'network-uncollected'
+  await page.setViewportSize({ width: 620, height: 800 })
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  const message = page.getByTestId('resource-network-empty')
+  const refresh = page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true })
+  await expect(message).toContainText(locale === 'en' ? 'Waiting will not produce' : '等待不会产生')
+  await expect(page.getByTestId('resource-collection-status')).toHaveCount(0)
+  for (const [mode, text] of [['network-failed', locale === 'en' ? 'collection failed' : '采集失败'], ['network-unknown', locale === 'en' ? 'has not been confirmed' : '尚不能确认'], ['network-missing', locale === 'en' ? 'collection succeeded' : '采集成功']]) {
+    state.networkMode = mode
+    await refresh.click()
+    await expect(message).toContainText(text)
+  }
+  state.networkCollection = { state: 'stale', network: 'unknown', filesystem: 'unknown', sampled_at: '2026-10-06T23:58:59Z' }
+  await refresh.click()
+  await expect(message).toContainText(locale === 'en' ? 'expired' : '已过期')
+  state.networkCollection = { state: 'no_sample', network: 'unknown', filesystem: 'unknown', sampled_at: null }
+  await refresh.click()
+  await expect(message).toContainText(locale === 'en' ? 'Waiting for collection evidence' : '等待采集证据')
+  state.networkCollection = { state: 'failed', network: 'unknown', filesystem: 'unknown', sampled_at: state.serverEnd }
+  await refresh.click()
+  await expect(message).toContainText(locale === 'en' ? 'Collection failed' : '采集失败')
+  state.networkMode = ''; state.networkCollection = { state: 'collecting', network: 'failed', filesystem: 'available', sampled_at: state.serverEnd }
+  await refresh.click()
+  await expect(message).toContainText(locale === 'en' ? 'collection failed' : '采集失败')
+  await expect(page.getByTestId('resource-network-table')).toContainText('2.00 KiB/s')
+  state.networkCollection = null; state.networkMode = 'device-no-data'
+  await refresh.click()
+  await expect(page.getByTestId('resource-network-table')).toContainText('eth0')
+  await expect(message).toContainText(locale === 'en' ? 'counter reset' : '计数重置')
+  state.networkMode = ''
+  await refresh.click()
+  await expect(message).toHaveCount(0)
+  await expect(page.getByTestId('resource-network-table')).toContainText('2.00 KiB/s')
+  state.networkMode = 'network-idle'
+  await refresh.click()
+  await expect(message).toHaveCount(0)
+  await expect(page.getByTestId('resource-network-table')).toContainText('0.00 B/s')
+  expect((await page.getByTestId('resource-networks').boundingBox()).width).toBeLessThanOrEqual(620)
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+})
+
+test('invalid section evidence clears previous network state and preserves independent resource readings', async ({ page }) => {
+  const state = await resourceBackend(page)
+  state.networkMode = 'network-uncollected'
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  await expect(page.getByTestId('resource-network-empty')).toContainText('未提供网络接口指标')
+  state.networkCollection = { network: undefined }
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-network-error')).toBeVisible()
+  await expect(page.getByTestId('resource-network-empty')).toHaveCount(0)
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+  state.networkCollection = null; state.networkMode = ''
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-network-error')).toHaveCount(0)
+  await expect(page.getByTestId('resource-network-table')).toContainText('eth0')
+})

@@ -244,6 +244,18 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
     if target is not None:
         require(value.get("target_id") == target["id"] and value.get("target_saved_version") == target["version"], "query target saved version mismatch")
     queried, start, end = (utc_timestamp(value.get(key)) for key in ("queried_at", "start", "end"))
+    if not trend:
+        collection = value.get("collection")
+        require(isinstance(collection, dict) and collection.get("state") in {"not_connected", "no_sample", "collecting", "failed", "stale"}, "invalid collection state")
+        state = collection["state"]
+        for family in ("filesystem", "network"):
+            require(collection.get(family) in {"unknown", "available", "failed", "not_collected"}, "invalid collector coverage")
+            require(state == "collecting" or collection[family] == "unknown", "failed collection retained collector coverage")
+        if state in {"collecting", "failed", "stale"}:
+            sampled = utc_timestamp(collection.get("sampled_at"))
+            require(sampled <= queried and ((queried-sampled > 60) if state == "stale" else (queried-sampled <= 60)), "invalid collection freshness")
+        else:
+            require(collection.get("sampled_at") is None, "unobserved collection contains sample")
     step = value.get("step_seconds")
     require(start <= end <= queried and type(step) is int, "invalid query evaluation interval")
     require((trend and end-start == range_seconds and step >= 15 and step % 15 == 0) or (not trend and start == end), "invalid query grid")

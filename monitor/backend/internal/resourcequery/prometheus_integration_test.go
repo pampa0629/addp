@@ -81,13 +81,13 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	if restricted {
 		expectedFilesystem = "not_collected"
 	}
-	if err != nil || collection.State != "collecting" || collection.Filesystem != expectedFilesystem || collection.SampledAt == nil {
+	if err != nil || collection.State != "collecting" || collection.Filesystem != expectedFilesystem || collection.Network != expectedFilesystem || collection.SampledAt == nil {
 		t.Fatalf("real source collection=%+v error=%v", collection, err)
 	}
 	otherScope := scope
 	otherScope.NodeID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 	otherCollection, err := c.Collection(context.Background(), otherScope, now, b)
-	if err != nil || otherCollection.State != "no_sample" || otherCollection.Filesystem != "unknown" {
+	if err != nil || otherCollection.State != "no_sample" || otherCollection.Filesystem != "unknown" || otherCollection.Network != "unknown" {
 		t.Fatalf("collection scope leaked: %+v %v", otherCollection, err)
 	}
 	for _, trend := range []bool{false, true} {

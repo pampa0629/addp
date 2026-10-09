@@ -96,7 +96,7 @@ func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, tim
 
 // Instant godoc
 // @Summary 读取节点即时资源 | Read current node resources
-// @Description 即时响应附带当前采集状态 collection；抓取成功不等于指标或业务健康。| Instant responses include current collection evidence, not metric or business health. 固定九项标量、五项字节容量、四项 inode 和两项磁盘读写、三项磁盘 IO 时间及两项网络收发（按 device，一分钟窗口）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零、平均 IO 耗时无完成请求或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode, two disk throughput, three disk IO timing and two network per-device one-minute metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total, no completed IO for mean duration or missing evidence returns no_data
+// @Description 即时响应附带当前采集状态 collection 及文件系统/网络采集器证据；抓取成功不等于指标或业务健康。| Instant responses include current collection and filesystem/network collector evidence, not metric or business health. 固定九项标量、五项字节容量、四项 inode 和两项磁盘读写、三项磁盘 IO 时间及两项网络收发（按 device，一分钟窗口）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零、平均 IO 耗时无完成请求或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode, two disk throughput, three disk IO timing and two network per-device one-minute metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total, no completed IO for mean duration or missing evidence returns no_data
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth

@@ -16,10 +16,11 @@ type Collection struct {
 	State      string     `json:"state"`
 	SampledAt  *time.Time `json:"sampled_at"`
 	Filesystem string     `json:"filesystem"`
+	Network    string     `json:"network" enums:"available,failed,not_collected,unknown"`
 }
 
 func (c *Client) Collection(ctx context.Context, scope Scope, at time.Time, budget Budget) (Collection, error) {
-	result := Collection{State: "no_sample", Filesystem: "unknown"}
+	result := Collection{State: "no_sample", Filesystem: "unknown", Network: "unknown"}
 	if scope.Validate() != nil || budget.Validate() != nil || at.IsZero() || at.Nanosecond() != 0 {
 		return result, ErrInvalid
 	}
@@ -29,14 +30,18 @@ func (c *Client) Collection(ctx context.Context, scope Scope, at time.Time, budg
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(budget.TimeoutSeconds)*time.Second)
 	defer cancel()
 	up := scope.selector("up")
-	fs := strings.TrimSuffix(scope.selector("node_scrape_collector_success"), "}") + `,collector="filesystem"}`
 	expressions := []struct{ key, expression string }{
 		{"up_count", "count(" + up + ") or vector(0)"},
 		{"up", "max(" + up + ")"},
 		{"sampled_at", "max(timestamp(" + up + "))"},
-		{"filesystem_count", "count(" + fs + ") or vector(0)"},
-		{"filesystem", "max(" + fs + ")"},
-		{"filesystem_sampled_at", "max(timestamp(" + fs + "))"},
+	}
+	for _, collector := range []struct{ key, name string }{{"filesystem", "filesystem"}, {"network", "netdev"}} {
+		selector := strings.TrimSuffix(scope.selector("node_scrape_collector_success"), "}") + `,collector=` + strconv.Quote(collector.name) + `}`
+		expressions = append(expressions, []struct{ key, expression string }{
+			{collector.key + "_count", "count(" + selector + ") or vector(0)"},
+			{collector.key, "max(" + selector + ")"},
+			{collector.key + "_sampled_at", "max(timestamp(" + selector + "))"},
+		}...)
 	}
 	parts := make([]string, 0, len(expressions))
 	for _, v := range expressions {
@@ -50,12 +55,12 @@ func (c *Client) Collection(ctx context.Context, scope Scope, at time.Time, budg
 }
 
 func normalizeCollection(data envelope, at time.Time) (Collection, error) {
-	result := Collection{State: "no_sample", Filesystem: "unknown"}
-	if data.Data.ResultType != "vector" || data.Data.Result == nil || len(data.Data.Result) > 6 {
+	result := Collection{State: "no_sample", Filesystem: "unknown", Network: "unknown"}
+	if data.Data.ResultType != "vector" || data.Data.Result == nil || len(data.Data.Result) > 9 {
 		return result, ErrUnavailable
 	}
 	values := map[string]float64{}
-	allowed := map[string]bool{"up_count": true, "up": true, "sampled_at": true, "filesystem_count": true, "filesystem": true, "filesystem_sampled_at": true}
+	allowed := map[string]bool{"up_count": true, "up": true, "sampled_at": true, "filesystem_count": true, "filesystem": true, "filesystem_sampled_at": true, "network_count": true, "network": true, "network_sampled_at": true}
 	for _, row := range data.Data.Result {
 		key := row.Metric["signal"]
 		_, duplicate := values[key]
@@ -97,25 +102,33 @@ func normalizeCollection(data envelope, at time.Time) (Collection, error) {
 		return result, nil
 	}
 	result.State = "collecting"
-	fsCount, known := values["filesystem_count"]
-	if !known || math.Trunc(fsCount) != fsCount {
-		return result, ErrUnavailable
+	var err error
+	result.Filesystem, err = collectorEvidence(values, "filesystem", stamp)
+	if err != nil {
+		return result, err
 	}
-	if fsCount == 0 {
-		result.Filesystem = "not_collected"
-		return result, nil
+	result.Network, err = collectorEvidence(values, "network", stamp)
+	return result, err
+}
+
+func collectorEvidence(values map[string]float64, key string, stamp float64) (string, error) {
+	count, known := values[key+"_count"]
+	if !known || math.Trunc(count) != count {
+		return "unknown", ErrUnavailable
 	}
-	if fsCount != 1 {
-		return result, nil
+	if count == 0 {
+		return "not_collected", nil
 	}
-	success, known := values["filesystem"]
-	fsStamp, sameScrape := values["filesystem_sampled_at"]
-	if !known || (success != 0 && success != 1) || !sameScrape || fsStamp != stamp {
-		return result, nil
+	if count != 1 {
+		return "unknown", nil
 	}
-	result.Filesystem = "failed"
+	success, known := values[key]
+	collectorStamp, sameScrape := values[key+"_sampled_at"]
+	if !known || (success != 0 && success != 1) || !sameScrape || collectorStamp != stamp {
+		return "unknown", nil
+	}
 	if success == 1 {
-		result.Filesystem = "available"
+		return "available", nil
 	}
-	return result, nil
+	return "failed", nil
 }

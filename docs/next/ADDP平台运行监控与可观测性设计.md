@@ -1417,3 +1417,19 @@ Desktop 保持 bridge 网络、独立 PID/挂载命名空间、非 root、cap_dr
 个人原生 Safari 复核：现有 Docker Desktop 主机目标版本 2 的详情，在采集开关下直接显示最近抓取成功、采样时间和查询时间；手动刷新后采样时间从 23:39:16 更新到 23:40:01（Asia/Shanghai），查询时间同步更新。旁边的主机监控入口打开同一节点；浏览器返回配置详情后重新取得 23:42:46 的抓取证据，再返回原资源页仍保留近五分钟范围、1 分钟负载指标及每 15 秒刷新设置。实际布局已通过截图核对，没有顶部全局长段说明。本轮只读取、刷新和导航，没有保存/删除/修改配置，没有操作内置浏览器、读取凭据或重启服务。
 
 本批最终验证：make test-monitor-frontend 返回 0，48 项单测、78 项浏览器回归及构建通过；make test-console-frontend 返回 0，155 项单测、123 项浏览器回归及构建通过。新增回归覆盖中英文五态、620 像素无横向溢出、刷新保留草稿、查询失败恢复、无观测权限不请求、停用/容器/列表/新建不请求、目标或保存版本错配拒绝、只读用户独立刷新、撤权后拒绝迟到结果、保存新版本后取消旧请求并取得新结果。首轮 Monitor 为 76 项回归通过，补齐新版本保存和只读刷新两项、精简重复成功说明后重新完整执行上述最终门禁；首轮 Console 也成功，不以中途输入替代最终结果。默认 make test-changed 识别 57 项混合工作区文件和共享依赖扩散，在必需 T2 数据库参数预检退出 2，后续门禁未执行，不计为全工作区通过。没有改后端契约或采集部署，未重跑后端 T2、Hosted T4 或生产 T5；本批前端由已有 Platform CI 门禁继续复验。
+
+上一批采集配置详情实现 `8b0eb4f93` 的 Platform CI（Run 37954651969）、Release/T2（Run 37954652097）和 Quality frontend smoke（Run 37954652054）已于本轮只读复核为 completed/success；该证据只对应 10.45，不作为下面新增采集证据契约的验收。
+
+### 10.46 文件系统与网络区域的缺值说明
+
+沿已确认的就地解释和采集证据边界，即时接口的 collection 增加必需 network 字段，与 filesystem 同为 available、failed、not_collected、unknown。Monitor 在既有一次有界查询中读取当前同节点、同端点的 netdev 采集器数量、成功值与采样时间，最多九行固定信号；采集器必须唯一且与最新成功 up 同一次抓取，重复、时间错配或证据不足只返回 unknown。整体失败、过期、未发现或未接入时两类采集器状态都为 unknown，不以旧成功覆盖新故障。不增加路由、权限、部署组件或任意 PromQL，不改变 Desktop 禁用文件系统和网络采集的范围。
+
+文件系统与网络区域直接说明当前抓取失败、过期、等待证据、尚未接入、来源未提供该类指标或该采集器失败。各区域消费自己的即时响应证据，不借用更早的标量查询状态。采集器成功但无有效吞吐时，只说明暂无有效吞吐样本及需要连续一分钟计数；计数重置、重启、缺失或时间错配也可能导致缺值，不能将其断言为窗口不足。未知时明确尚不能确认原因，不从主机名称或空值猜测。已知设备/挂载即使所有值缺失仍保留表格，旁边展示原因；有效零值不显示缺值说明，但来源未提供指标或采集器失败的当前证据继续展示，不因先前窗口中仍有有效值而隐藏。已有独立查询错误优先，取消/撤权/身份变化继续清除证据。说明与查看采集配置入口留在对应区域，不新增顶部说明。
+
+实施前门禁：后端有界归一和服务过期清除归 make test-go 的 T1；同一真实 Prometheus 的完整来源与 Desktop 受限来源归 make test-monitor-metrics 的 T2，确认 netdev available / not_collected 与跨节点隔离。既有 make test-monitor-postgres 不因只读字段变化新增数据库依赖。Monitor 中英文状态、局部证据与零值/恢复/错误由 make test-monitor-frontend 的 T1/T3 验证，Console 消费沿 make test-console-frontend。Swagger 生成和路由覆盖同步；根入口、既有 owner 自动发现和 Release/T2 输入已包含 resourcequery、前端与标准脚本，不增加 CI 路线。默认 make test-changed 单独计量。后端契约改变后由用户执行 ./scripts/dev/restart.sh -monitor，个人原生 Safari 复核另行记录；未运行的 Hosted T4 / 生产 T5 不计为通过。
+
+2026-10-10 本批本地验证：最终 make test-go 返回 0，22 个 Go 模块的依赖一致性与 T1 通过，包含新鲜度跨查询期限失效时清除两类采集器证据。make test-monitor-metrics 返回 0，完整 node_exporter 来源的 network 为 available，真实 Docker Desktop 受限来源为 not_collected，跨节点无样本仍为 unknown；既有完整/受限即时及趋势、来源故障与新样本恢复、中心 SIGKILL 后历史重放及退出容器/网络/卷/文件零残留通过。最终 make test-monitor-frontend 返回 0，49 项单测、81 项浏览器回归及构建通过，包含局部状态不借用标量成功、中英文、620 像素无溢出、保留已知缺值设备、合法零值、失败后恢复、陈旧/等待/未知状态及非法新字段清除。make test-console-frontend 返回 0，155 项单测、123 项浏览器回归及构建通过；make test-node-metrics-online-runner 返回 0，33 项协议/夹具/Hosted 生命周期回归及既有 Go Metrics fixture 检查通过。Swagger 已重新生成，65 个公开路由方法覆盖一致。前端补充采集器失败但既有窗口仍有有效值的保留场景后完整复跑，以上采用最终输入结果，不混用初轮 78 项结果。
+
+默认 make test-changed 在当时 63 项混合工作区变更、21 个受影响模块的 T2 参数预检退出 2，后续未执行，不计为全工作区通过。未修改数据库、目标事务或身份权限，未另行重跑 Monitor PostgreSQL 门禁；既有 Release/T2 owner Job 承担独立复验。不执行个人服务重启，当前开发后端仍需用户重启 Monitor 后才能提供 network 字段，个人 Safari 页面尚未复核；本批没有新 Hosted T4 或生产 T5 通过证据。
+
+本批 make test-platform 最终返回 0，包含现有前端/T2/Release CI 登记、Online runner、授权目录一致性和全部 Swagger 路由覆盖。它证明静态与确定性协议门禁通过，不替代真实 Hosted T4 或个人 Safari 验收。

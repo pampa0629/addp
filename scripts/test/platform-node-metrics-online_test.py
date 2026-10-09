@@ -147,7 +147,20 @@ class MetricsProtocolTest(unittest.TestCase):
         return {"subject": {"kind": "node", "node_id": "node-id"}, "node_version": 1,
                 "target_id": "target-id", "target_saved_version": 2, "policy_version": 0,
                 "lookback_seconds": 300, "queried_at": stamp, "start": "2026-10-06T00:00:00Z" if trend else stamp,
-                "end": stamp, "step_seconds": 15 if trend else 0, "series": rows}
+                "end": stamp, "step_seconds": 15 if trend else 0, "series": rows,
+                **({} if trend else {"collection": {"state": "not_connected" if disconnected else "collecting", "sampled_at": None if disconnected else stamp, "filesystem": "unknown" if disconnected else "available", "network": "unknown" if disconnected else "available"}})}
+
+    def test_resource_collection_requires_network_evidence_and_rejects_old_success(self):
+        node = {"node_id": "node-id", "version": 1}
+        for mutation in (lambda c: c.pop("network"), lambda c: c.update(network="unexpected"),
+                         lambda c: c.update(state="failed"), lambda c: c.update(sampled_at="2026-10-05T00:00:00Z")):
+            value = self.resource_reply()
+            mutation(value["collection"])
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_resources(value, node)
+        value = self.resource_reply()
+        value["collection"].update(state="failed", filesystem="unknown", network="unknown")
+        ONLINE.assert_resources(value, node)
 
     def test_initial_resource_readiness_waits_for_data_without_hiding_schema_or_identity_errors(self):
         node, target = {"node_id": "node-id", "version": 1}, {"id": "target-id", "version": 2}

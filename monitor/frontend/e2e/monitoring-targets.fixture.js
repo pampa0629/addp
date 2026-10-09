@@ -31,7 +31,7 @@ export async function backend(page, options = {}) {
       const sampled_at = ['collecting', 'failed', 'stale'].includes(mode) ? (mode === 'stale' ? '2026-10-08T23:58:00Z' : queried_at) : null
       body = { subject: { kind: 'node', node_id: node }, end: queried_at, queried_at,
         ...(mode === 'not_connected' ? {} : { target_id: mode === 'wrong-target' ? node : current.id, target_saved_version: current.version + (mode === 'wrong-version' ? 1 : 0) }),
-        collection: { state: ['wrong-target', 'wrong-version', 'unavailable', 'denied'].includes(mode) ? 'collecting' : mode, sampled_at: ['wrong-target', 'wrong-version', 'unavailable', 'denied'].includes(mode) ? queried_at : sampled_at, filesystem: 'unknown' },
+        collection: { state: ['wrong-target', 'wrong-version', 'unavailable', 'denied'].includes(mode) ? 'collecting' : mode, sampled_at: ['wrong-target', 'wrong-version', 'unavailable', 'denied'].includes(mode) ? queried_at : sampled_at, filesystem: 'unknown', network: 'unknown' },
         series: [{ metric_key: 'node.memory.total_bytes', unit: 'bytes', window_seconds: 0, dimensions: {}, points: [{ evaluated_at: queried_at, sampled_at: queried_at, value: 1024 ** 3, data_state: 'valid' }] }] }
       if (mode === 'not_connected') Object.assign(body.series[0].points[0], { sampled_at: null, value: null, data_state: 'not_connected' })
       if (mode === 'unavailable' || mode === 'denied') { status = mode === 'denied' ? 403 : 503; body = { error_code: mode === 'denied' ? 'permission_denied' : 'observability_backend_unavailable' } }

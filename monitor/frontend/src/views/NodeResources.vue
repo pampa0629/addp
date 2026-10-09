@@ -57,8 +57,8 @@
         <el-alert v-if="inodeErrorKey" :title="`${t('monitor.resources.filesystem.inode')}: ${t(inodeErrorKey)}`" type="error" show-icon :closable="false" data-testid="resource-inode-error" />
         <p v-if="mountRows.length && inodes" class="resource-hint">{{ t('monitor.resources.filesystem.inode') }} · {{ t('monitor.resources.queriedAt') }}: {{ date(inodes.queried_at) }}</p>
         <div class="resource-empty-status" data-testid="resource-filesystem-status">
-          <el-alert v-if="instant.collection.filesystem === 'not_collected' || instant.collection.filesystem === 'failed'" :title="t(instant.collection.filesystem === 'not_collected' ? 'monitor.resources.collection.not_collected' : 'monitor.resources.collection.filesystem_failed')" type="info" :closable="false" data-testid="resource-filesystem-capability" />
-          <p v-if="!loading && !mountRows.length && !filesystemErrorKey && !inodeErrorKey && !['not_collected', 'failed'].includes(instant.collection.filesystem)" class="resource-hint" role="status" data-testid="resource-filesystem-empty">{{ t('monitor.resources.filesystem.empty') }}</p>
+          <el-alert v-if="!loading && filesystemMissingMessage && ['not_collected', 'failed'].includes(filesystems?.collection.filesystem)" :title="t(filesystemMissingMessage)" type="info" :closable="false" data-testid="resource-filesystem-capability" />
+          <p v-else-if="!loading && filesystemMissingMessage" class="resource-hint" role="status" data-testid="resource-filesystem-empty">{{ t(filesystemMissingMessage) }}</p>
           <el-button v-if="!loading && !mountRows.length && !filesystemErrorKey && !inodeErrorKey && canConfigure" text type="primary" @click="configureCollection">{{ t(instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure') }}</el-button>
         </div>
         <el-table v-if="mountRows.length" :data="mountRows" data-testid="resource-filesystem-table">
@@ -77,9 +77,9 @@
           <p v-if="family.name === 'network' && family.rows.length" class="resource-hint">{{ t('monitor.resources.network.hint') }}</p>
           <p v-if="family.name === 'disk' && family.rows.length" class="resource-hint">{{ t('monitor.resources.disk.orderHint') }}</p>
           <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
-          <div v-if="!loading && !family.errorKey && !family.rows.length" class="resource-empty-status" :data-testid="`resource-${family.name}-status`">
-            <p class="resource-hint" role="status" :data-testid="`resource-${family.name}-empty`">{{ t(`monitor.resources.${family.name}.empty`) }}</p>
-            <el-button v-if="canConfigure" text type="primary" @click="configureCollection">{{ t(instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure') }}</el-button>
+          <div v-if="!loading && !family.errorKey && family.missingMessage" class="resource-empty-status" :data-testid="`resource-${family.name}-status`">
+            <p class="resource-hint" role="status" :data-testid="`resource-${family.name}-empty`">{{ t(family.missingMessage) }}</p>
+            <el-button v-if="!family.rows.length && canConfigure" text type="primary" @click="configureCollection">{{ t(instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure') }}</el-button>
           </div>
           <el-table v-if="!family.errorKey && family.rows.length" :data="family.rows" row-key="key" :data-testid="`resource-${family.name}-table`">
             <el-table-column prop="dimensions.device" :label="t(family.name === 'network' ? 'monitor.resources.network.interface' : 'monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
@@ -150,7 +150,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { validateCollection, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -165,10 +165,11 @@ const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), tr
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
+const filesystemMissingMessage = computed(() => !filesystemErrorKey.value && !inodeErrorKey.value && (['not_collected', 'failed'].includes(filesystems.value?.collection.filesystem) || !mountRows.value.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(filesystems.value?.collection, 'filesystem') : '')
 const deviceFamilies = [{ name: 'disk', metrics: diskMetrics, value: disks, error: diskErrorKey }, { name: 'network', metrics: networkMetrics, value: networks, error: networkErrorKey }]
 const deviceSections = computed(() => deviceFamilies.map(family => {
   const rows = resourceDimensionRows(family.value.value)
-  return { name: family.name, metrics: family.metrics, rows: family.name === 'disk' ? sortDiskResourceRows(rows) : rows, errorKey: family.error.value }
+  return { name: family.name, metrics: family.metrics, rows: family.name === 'disk' ? sortDiskResourceRows(rows) : rows, errorKey: family.error.value, missingMessage: (['not_collected', 'failed'].includes(family.value.value?.collection[family.name]) || !rows.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(family.value.value?.collection, family.name) : '' }
 }))
 const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? state.value.metric.startsWith('node.network.') ? networkMetrics : diskMetrics : [])])
 const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...(trend.value?.series[0].points.map(point => currentResourceValue(point) ?? 0) || []))) : null)
@@ -257,6 +258,7 @@ async function reload({ automatic = false } = {}) {
         const filesystemKeys = filesystemMetrics.map(metric => metric.key)
         const mounts = await request(config => api.instant({ node_id: id, metrics: filesystemKeys.join(',') }, config))
         if (ticket !== epoch) return
+        validateCollection(mounts.collection, mounts.queried_at)
         filesystems.value = validateResourceResponse(mounts, id, filesystemKeys)
       } catch (error) {
         if (ticket !== epoch) return
@@ -268,6 +270,7 @@ async function reload({ automatic = false } = {}) {
         const inodeKeys = inodeMetrics.map(metric => metric.key)
         const observed = await request(config => api.instant({ node_id: id, metrics: inodeKeys.join(',') }, config))
         if (ticket !== epoch) return
+        validateCollection(observed.collection, observed.queried_at)
         inodes.value = validateResourceResponse(observed, id, inodeKeys)
       } catch (error) {
         if (ticket !== epoch) return
@@ -279,6 +282,7 @@ async function reload({ automatic = false } = {}) {
           const keys = family.metrics.map(metric => metric.key)
           const observed = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))
           if (ticket !== epoch) return
+          validateCollection(observed.collection, observed.queried_at)
           family.value.value = validateResourceResponse(observed, id, keys)
         } catch (error) {
           if (ticket !== epoch) return
