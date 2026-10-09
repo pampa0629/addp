@@ -339,7 +339,7 @@ export const useExplorerStore = defineStore('explorer', {
     },
 
     /**
-     * 刷新数据项（等待 Meta 扫描完成后，重新拉取预览和 item 元数据）
+     * 刷新数据项元数据，数据预览由当前视图按需读取。
      */
     async refreshItem(locator) {
       this.refreshingLocators.add(locator)
@@ -350,18 +350,6 @@ export const useExplorerStore = defineStore('explorer', {
           params: { locator }
         })
 
-        if (this.selectedLocator !== locator) {
-          return response
-        }
-
-        await this.loadPreview(
-          locator,
-          this.pagination.page,
-          this.selectedChildName,
-          this.selectedRefPath,
-          this.selectedNestedChildPath,
-          this.selectedChildKey
-        )
         return response
       } catch (error) {
         console.error('刷新数据项失败:', error)

@@ -109,7 +109,7 @@ const props = defineProps({
 })
 
 // Emits
-const emit = defineEmits(['node-select'])
+const emit = defineEmits(['node-select', 'item-refreshed'])
 
 const store = useExplorerStore()
 const resourceTreeRef = ref(null)
@@ -278,6 +278,7 @@ const handleNodeAction = async ({ node, action }) => {
       } else {
         startScanStatus(t('manager.explorer.scanSubmitting'), t('manager.explorer.scanSubmitting'), 5)
         await store.refreshItem(locator)
+        emit('item-refreshed', locator)
       }
       completeScanStatus()
       ElMessage.success(t('manager.explorer.scanCompleted'))

@@ -17,6 +17,74 @@ const locator = 'addp://engine/9/path/public/current?type=table&item_id=3'
 const node = id => ({ kind: 'data_item', item_id: id, name: id === 3 ? 'current' : `source_${id}`, full_name: `public.table_${id}`, engine_id: 9, engine_name: 'Lineage PostgreSQL', item_type: 'table' })
 const edge = (source, target) => ({ source: node(source), target: node(target), relation_kind: 'derive', granularity: 'item' })
 
+for (const status of [200, 403]) {
+  test(`lineage reads metadata until preview is requested (HTTP ${status})`, async ({ page }) => {
+    const previewRequests = []
+    let refreshes = 0
+    let metadataRequests = 0
+    let graphRequests = 0
+    await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+    await page.route('**/plugins/manifest.json', route => json(route, { scripts: ['/plugins/table-preview.js'] }))
+    await page.route('**/api/v1/**', route => {
+      const url = new URL(route.request().url()), path = url.pathname
+      if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
+      if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'lineage-e2e', local_account: { username: 'lineage-e2e' } })
+      if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
+      if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
+      if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
+      if (path.endsWith('/meta/items/3')) { metadataRequests++; return json(route, { ...node(3), attributes: { item: { data_type: 'table' }, type_info: { table: { fields: [{ name: 'id', type: 'bigint' }] } } } }) }
+      if (path.endsWith('/meta/lineage/graph')) { graphRequests++; return json(route, { subject: node(3), nodes: [node(1), node(3)], edges: [edge(1, 3)] }) }
+      if (path.endsWith('/items/refresh')) { refreshes++; return json(route, { status: 'success' }) }
+      if (path.endsWith('/manager/preview')) {
+        previewRequests.push(url.searchParams.get('locator'))
+        return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(status === 403 ? { error: 'Read grant required' } : { preview_type: 'table', data: { mode: 'table', columns: ['id'], rows: [{ id: 42 }], total: 1 } }) })
+      }
+      return json(route, {})
+    })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    await expect(page.locator('.lineage-canvas canvas')).toBeVisible()
+    expect(previewRequests).toEqual([])
+    // A table's profiling capability comes from Meta, without sampling it first.
+    await expect(page.getByRole('tab', { name: '剖析', exact: true })).toBeVisible()
+    await page.getByRole('tab', { name: '属性', exact: true }).click()
+    await expect(page.getByRole('tab', { name: '属性', exact: true })).toHaveAttribute('aria-selected', 'true')
+    expect(previewRequests).toEqual([])
+    await page.getByRole('tab', { name: '血缘', exact: true }).click()
+    await expect(page.locator('.lineage-canvas canvas')).toBeVisible()
+    const currentRow = page.locator('.el-tree-node__content').filter({ hasText: /^\s*current\s*$/ })
+    const metadataBeforeRefresh = metadataRequests
+    const graphsBeforeRefresh = graphRequests
+    await currentRow.hover()
+    await currentRow.locator('.node-action').click()
+    await expect.poll(() => refreshes).toBe(1)
+    await expect(page.locator('.el-message--success').filter({ hasText: '完成' })).toBeVisible()
+    await expect.poll(() => metadataRequests).toBe(metadataBeforeRefresh + 1)
+    await expect.poll(() => graphRequests).toBe(graphsBeforeRefresh + 1)
+    expect(previewRequests).toEqual([])
+    await page.getByRole('tab', { name: '预览', exact: true }).click()
+    if (status === 403) await expect(page.getByTestId('preview-failure')).toContainText('无权读取此数据项')
+    else await expect(page.locator('.preview-panel .el-table__body')).toContainText('42')
+    expect(previewRequests).toEqual([locator])
+    await currentRow.hover()
+    await currentRow.locator('.node-action').click()
+    await expect.poll(() => refreshes).toBe(2)
+    await expect.poll(() => previewRequests.length).toBe(2)
+    if (status === 403) await expect(page.getByTestId('preview-failure')).toBeVisible()
+    else await expect(page.locator('.preview-panel .el-table__body')).toContainText('42')
+    await page.getByRole('tab', { name: '血缘', exact: true }).click()
+    await expect(page).toHaveURL(/tab=lineage$/)
+    await page.getByRole('menuitem', { name: '数据检索', exact: true }).click()
+    await expect(page).toHaveURL(/data-retrieval$/)
+    await page.goBack()
+    await expect(page.locator('.lineage-canvas canvas')).toBeVisible()
+    expect(previewRequests).toEqual([locator, locator])
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+    if (status === 403) await expect(page.getByTestId('preview-failure')).toBeVisible()
+    else await expect(page.locator('.preview-panel .el-table__body')).toContainText('42')
+    expect(previewRequests).toEqual([locator, locator, locator])
+  })
+}
+
 test('canvas observations wait for queued text and path repaint', async ({ page }) => {
   await observeLineageCanvas(page)
   await page.goto('about:blank')

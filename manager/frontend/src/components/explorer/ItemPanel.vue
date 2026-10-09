@@ -126,6 +126,7 @@
           @page-change="$emit('page-change', $event)"
           @navigate="$emit('navigate', $event)"
           @child-change="$emit('child-change', $event)"
+          @item-refreshed="$emit('item-refreshed', $event)"
         />
       </div>
 
@@ -398,6 +399,10 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 
 const props = defineProps({
+  metadataRevision: {
+    type: Number,
+    default: 0
+  },
   activeTab: {
     type: String,
     default: 'preview'
@@ -432,7 +437,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['page-change', 'navigate', 'child-change', 'tab-change', 'open-catalog', 'refresh-preview'])
+const emit = defineEmits(['page-change', 'navigate', 'child-change', 'tab-change', 'open-catalog', 'refresh-preview', 'item-refreshed'])
 
 const profileVisited = ref(false)
 const jsonDialogVisible = ref(false)
@@ -492,6 +497,7 @@ const expandLineage = async ({ item_id, direction }) => {
   await loadLineage()
 }
 watch(lineageDepth, () => { resetLineageExpansion(); loadLineage() })
+watch(() => props.metadataRevision, () => { resetLineageExpansion(); loadLineage() })
 
 const openLineageTab = () => {
   lineageVisited.value = true
@@ -631,7 +637,8 @@ const loadFallbackItemMeta = async (itemId) => {
 watch([
   selectedItemId,
   () => props.previewData?.item_meta,
-  () => props.loading
+  () => props.loading,
+  () => props.metadataRevision
 ], ([itemId, previewItemMeta, loading], [previousItemId] = []) => {
   if (itemId !== previousItemId) {
     itemMetaRequestSeq += 1
@@ -699,12 +706,11 @@ const selectedContentActive = computed(() => Boolean(
 ))
 const profileSupported = computed(() => {
   const preview = props.profilePreviewData || props.previewData
-  if (!preview || String(preview.mode || '').toLowerCase() !== 'table') return false
-  if (String(preview.preview_kind || '').toLowerCase().startsWith('graph_')) return false
-  if (selectedContentActive.value) return true
-  const itemAttribute = Array.isArray(preview.item_meta?.attributes)
-    ? preview.item_meta.attributes.find(attribute => attribute?.key === 'item')?.value
-    : null
+  if (selectedContentActive.value) {
+    return String(preview?.mode || '').toLowerCase() === 'table' &&
+      !String(preview?.preview_kind || '').toLowerCase().startsWith('graph_')
+  }
+  const itemAttribute = itemMeta.value?.attributes?.find(attribute => attribute?.key === 'item')?.value
   return String(itemAttribute?.data_type || '').trim().toLowerCase() === 'table'
 })
 
@@ -749,8 +755,8 @@ watch([
   itemMeta,
   itemMetaLoading
 ], ([loading, tab, preview, supportsProfile, metadata, metadataLoading]) => {
-  if (loading || !preview) return
-  if ((tab === 'profile' && !supportsProfile) || (tab === 'attributes' && !metadata && !metadataLoading)) {
+  if (loading || metadataLoading) return
+  if ((tab === 'profile' && (preview || metadata) && !supportsProfile) || (tab === 'attributes' && !metadata)) {
     emit('tab-change', 'preview')
   }
 })

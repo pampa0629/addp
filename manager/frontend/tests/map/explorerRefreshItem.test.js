@@ -64,7 +64,7 @@ describe('explorer refreshItem', () => {
     expect(mocks.getTree).not.toHaveBeenCalled()
     expect(store.engineTrees[9]).toBe(cachedTree)
     expect(store.engineTreeDepths[9]).toBe(4)
-    expect(store.loadPreview).toHaveBeenCalledWith(locator, 1, '', '', '', '')
+    expect(store.loadPreview).not.toHaveBeenCalled()
   })
 
   it('keeps engine context on the catalog root instead of copying it into resource nodes', async () => {

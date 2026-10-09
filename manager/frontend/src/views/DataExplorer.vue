@@ -18,6 +18,7 @@
           ref="treeRef"
           :loading="store.loadingEngines"
           @node-select="handleNodeSelect"
+          @item-refreshed="handleItemRefreshed"
         />
       </div>
 
@@ -71,6 +72,7 @@
         <ItemPanel
           v-else
           :active-tab="activeTab"
+          :metadata-revision="itemMetadataRevision"
           :selected-node="selectedPreviewNode"
           :preview-data="store.previewData"
           :profile-preview-data="store.activeChildPreviewData || store.previewData"
@@ -83,6 +85,7 @@
           @tab-change="handleTabChange"
           @open-catalog="handleOpenCatalog"
           @refresh-preview="handlePreviewRefresh"
+          @item-refreshed="handleItemRefreshed"
         />
       </div>
     </div>
@@ -120,6 +123,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useExplorerStore()
 const activeTab = ref(resolveDataExplorerRouteState(route.query).tab)
+const itemMetadataRevision = ref(0)
 const ENGINE_STATUS_REFRESH_INTERVAL_MS = 15000
 let engineStatusTimer = 0
 let engineInitializationPromise = null
@@ -228,6 +232,8 @@ const replaceDataExplorerRoute = async (locator, tab = activeTab.value) => {
 const handleNodeSelect = async ({ node, locator }, options = {}) => {
   try {
     const loc = parseLocator(locator)
+    store.clearPreview()
+    store.selectNodeContext(node, locator)
     if (options.updateRoute !== false) {
       activeTab.value = 'preview'
       await replaceDataExplorerRoute(locator, activeTab.value)
@@ -238,12 +244,9 @@ const handleNodeSelect = async ({ node, locator }, options = {}) => {
     }
 
     if (loc.itemId) {
-      if (!store.isEngineAvailable(loc.engineId)) {
-        store.selectNodeContext(node, locator)
-        store.clearPreview()
-        return
+      if (activeTab.value === 'preview' && store.isEngineAvailable(loc.engineId)) {
+        await store.loadPreview(locator, 1)
       }
-      await store.loadPreview(locator, 1)
     }
   } catch (error) {
     console.error('加载节点数据失败:', error)
@@ -280,7 +283,7 @@ const handleSearchResultSelect = async (result) => {
 
 // 事件处理：分页变化
 const handlePageChange = async (payload) => {
-  if (!store.selectedLocator || selectedEngineUnavailable.value) return
+  if (!store.selectedLocator || !parseLocator(store.selectedLocator)?.itemId || selectedEngineUnavailable.value) return
   const page = typeof payload === 'object' ? payload?.page || 1 : payload
   const pageSize = typeof payload === 'object' ? Number(payload?.pageSize || 0) : 0
   if (pageSize > 0) {
@@ -295,6 +298,13 @@ const handlePageChange = async (payload) => {
 }
 
 const handlePreviewRefresh = () => handlePageChange({ page: store.pagination.page, pageSize: store.pagination.pageSize })
+
+const handleItemRefreshed = (locator) => {
+  if (locator !== store.selectedLocator) return
+  if (activeTab.value === 'preview') return handlePreviewRefresh()
+  if (activeTab.value === 'lineage' || activeTab.value === 'attributes') store.clearPreview()
+  itemMetadataRevision.value += 1
+}
 
 const handleChildChange = async (payload) => {
   const childName = typeof payload === 'string' ? payload : payload?.childName
@@ -316,7 +326,6 @@ const handleChildChange = async (payload) => {
 
 const handleTabChange = async (tab) => {
   const normalizedTab = normalizeDataExplorerTab(tab)
-  activeTab.value = normalizedTab
   await replaceDataExplorerRoute(store.selectedLocator, normalizedTab)
 }
 
@@ -432,6 +441,10 @@ onMounted(async () => {
   engineStatusTimer = window.setInterval(refreshEngineStatuses, ENGINE_STATUS_REFRESH_INTERVAL_MS)
   try {
     await ensureEnginesLoaded()
+    if (activeTab.value === 'preview' && store.selectedLocator === route.query.locator &&
+        !store.previewData && !store.previewError && !store.previewLoading) {
+      await handlePreviewRefresh()
+    }
   } catch {
     // ensureEnginesLoaded 统一展示一次初始化错误；状态轮询会继续恢复。
   }
@@ -445,7 +458,9 @@ onBeforeUnmount(() => {
 })
 
 watch(() => route.query, async (query) => {
+  if (route.name !== 'DataExplorer') return
   const routeState = resolveDataExplorerRouteState(query)
+  const previousTab = activeTab.value
   activeTab.value = routeState.tab
   if (routeState.changed) {
     const location = { name: 'DataExplorer', query: routeState.query }
@@ -453,10 +468,16 @@ watch(() => route.query, async (query) => {
       await navigateManagerRoute(router, location, { history: 'replace' })
     }
   }
+  // 节点定位负责首次预览；同一资源的视图切换（含浏览器历史恢复）在这里读取。
+  if (routeState.tab === 'preview' && previousTab !== 'preview' &&
+      store.selectedLocator === query.locator) {
+    await handlePreviewRefresh()
+  }
 }, { immediate: true })
 
 // 监听 locator 变化，根据标准资源身份定位和选中对象。
 watch(() => route.query.locator, async (locator) => {
+  if (route.name !== 'DataExplorer') return
   const targetLocator = String(locator || '').trim()
   if (!targetLocator) {
     return

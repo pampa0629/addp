@@ -590,7 +590,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['page-change', 'navigate', 'child-change'])
+const emit = defineEmits(['page-change', 'navigate', 'child-change', 'item-refreshed'])
 const store = useExplorerStore()
 const previewFailureKind = computed(() => {
   const status = store.previewError?.status
@@ -1143,8 +1143,10 @@ const handlePreviewAdvisoryRefresh = async () => {
     return
   }
   refreshingPreviewItem.value = true
+  const locator = props.selectedNode.locator
   try {
-    await store.refreshItem(props.selectedNode.locator)
+    await store.refreshItem(locator)
+    emit('item-refreshed', locator)
     ElMessage.success(t('manager.explorer.refreshSuccess'))
   } catch (error) {
     ElMessage.error(t('manager.explorer.refreshFailed', { error: error?.message || error }))
