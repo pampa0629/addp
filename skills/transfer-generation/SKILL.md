@@ -5,7 +5,7 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 
 # Transfer 任务生成与创建
 
-先读取平台能力语义，再复用数据发现方法确认唯一源资源和真实目标父节点。当前创建只支持 bounded snapshot native-table；可以保存任务定义，不能启动、定时执行或写业务数据。不要求用户已有领域本体、Standard、Model、Quality 或 Catalog 内容。
+先读取平台能力语义，再复用数据发现方法确认源资源和真实目标父节点。条件、效果和支持边界以 `platform.capability.context` 为唯一语义来源；本 Skill 只说明获取事实、补齐缺口和组织交互的方法。不要求用户已有领域本体、Standard、Model、Quality 或 Catalog 内容。
 
 ## 核心流程
 
@@ -13,9 +13,9 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 2. 用 `engine.list` 确认用户可访问的源/目标引擎。按 `data-discovery` 只搜索源侧数据项，必要时限定源 engine_id；多个集合或引擎候选等待用户选择。搜索失败时明确报告并终止当前运行，不能把失败当作零召回，也不能静默改用源目录枚举来继续生成或创建。
 3. 通过 `resource.ancestors.get → resource.facts.get` 确认源身份和最新结构，不用样本猜 Schema。缺扫描事实则要求补扫描，不能读取原始行兜底。
 4. 用 `resource.children.list(engine_id=<目标>)` 从 owner 返回的真实根节点开始逐层浏览；后续父 locator 只取自返回结果。让用户确认目标 `parent_locator + name`，目标尚不存在时不能把它当成已有输入搜索。不可假定 PostgreSQL schema 是 public。
-5. 确认 bounded/snapshot、显式 apply_mode（replace/append/upsert）、必要 keys、目标字段及类型。MongoDB 嵌套字段必须先确认行粒度；只读 MQL `$project`/单次 `$unwind` 明确整形，field_mapping 只引用实际查询输出。不能递归摊平、多数组猜粒度或凭业务名猜字段。复杂计算交给 Develop，不伪造本次 Tool 能力。
+5. 根据能力定义逐项补齐运行边界、装载、写入策略、目标字段及类型。有嵌套字段时让用户决定行粒度，再用明确的 MQL `$project`/单次 `$unwind` 表达；配置编码只覆盖直接字段引用，不生成复杂表达式。复杂计算交给 Develop，不伪造本次 Tool 能力。
 6. 如需名称、描述或直接字段映射辅助，可调用 `transfer.draft.generate`；调用前由本步骤的 Owner Tool 确认资源和字段并提交完整上下文。Copilot 不再代替 Agent 访问资源，不申请二次委托，只产生草稿；结果不是授权或资源真实性证明，不负责创建，且不能覆盖用户确定的 endpoint/边界/策略。没有资源时 Tool 只返回意图检索词，由 Agent 继续调用 Owner Tool，不把检索词当作候选身份。已有完整确认配置时不必调用 Copilot。
-7. 展示任务名、源、目标、行粒度、字段映射、运行边界、装载和目标策略，用 clarification 请用户明确确认创建。未确认不调用写 Tool；只要用户要求草稿就停在草稿。
+7. 展示业务配置摘要后，调用 `request_clarification`：`reason="transfer_create_review"`，`operation_review={"tool":"transfer.task.create","arguments":<完整创建参数>}`，options 提供 value 为 `confirm` 和 `cancel` 的两个选项及用户语言的标签。Runtime 核验条件、追加确切参数并绑定指纹。恢复后提交同一配置，不能改字段、查询、策略、名称或批大小；有修改先重新复核。只要求草稿时不进入此步骤。
 8. 确认后调用 `transfer.task.create`，只提交 Manifest 接受的 name/description/config/batch_size。成功必须返回真实 ID、idle/stopped、无计划；报告“任务已创建，尚未运行”，给出 Transfer 页面入口。不宣称数据已同步，不调用其他执行 Tool。创建响应不确定或失败时不自动重发，要求用户到 Transfer 核对。
 
 ## 配置编码要求
@@ -26,15 +26,9 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 - 可选 `transfer.draft.generate` 的 `resources[]` 使用已确认的 `ResourceFact`，必须包含 `role + locator`；源用途可明确为 `role="source"`。不要直接提交搜索候选，也不要混入 `name`、`item_type`、`row_grain`、`project_fields`。行粒度与投影通过正式 `source.query` 表达，不是资源事实字段。
 - 草稿调用中的 `task` 使用 `name/description/task_type/config` 层级，`task_type="sync"`。`runtime/load/source/target/transforms` 全部放入 `task.config`，写入策略放在 `task.config.target.policy`，字段映射放在 `task.config.transforms` 的 `field_mapping` 中；源查询放在 `task.config.source.query`。不能把创建 Tool 的顶层 `config` 参数误当作草稿调用的 `task`，也不能自造顶层 `field_mapping`。缺少目标或配置时先澄清，不让 Copilot 猜测。
 
-## 必须澄清
+## 补齐条件
 
-- 未识别出唯一源资源；
-- 目标父节点、目标名称或目标引擎未确认；
-- bounded/continuous、snapshot/incremental 或目标写入策略未确定；
-- 字段映射引用了不存在的源字段；
-- 用户要求立即运行、continuous、incremental 或定时计划，但当前创建 Tool 不提供这些能力；
-- MongoDB 嵌套结构的行粒度和查询输出字段没有明确；
-- 草稿与创建配置的字段、类型或目标策略不一致。
+以当前能力的 `operation.inputs_required` 及对应概念含义检查缺口。缺少用户业务决定时逐项澄清；缺少 owner 事实时先取事实。用户目标超出 `effects` 或落入 `excluded_effects` 时解释本次能力边界，不能缩减用户目标后继续创建。Runtime 返回 `platform_condition_unsatisfied` 时按条件身份补齐，不重复调用写 Tool，也不把程序拒绝当作创建成功。
 
 ## 验证
 

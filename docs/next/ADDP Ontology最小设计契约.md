@@ -168,6 +168,20 @@ Skill Runtime 装配用 `platform_routed=true` 声明该任务领域必须经平
 
 目录读取记录为现有 Tool step，选择后的 Skill 沿用现有 run state；本切片不新增专门的能力选择审计或版本绑定。验证使用现有授权、Swagger、Go/Python T1、Ontology PostgreSQL T2 与 Agent 评测入口；不新增权限、基础设施或 CI Job。确定性短输入测试证明代码消费链路，真实 LLM 的短输入验收须另行记录，不能用脚本化模型替代。
 
+### 1.13 平台语义条件与配置复核
+
+平台定义唯一描述概念、操作条件、效果和支持边界；Skill 保留获取事实、补齐缺口与组织交互的方法，不维护另一份条件清单。Transfer 发布修订 3 在既有概念/关系结构中定义各个 `inputs_required` 条件的含义及 `requires` 关系，不新增 API 字段、权限或编辑入口。接口编码和参数 Schema 仍由 Tool Manifest/SDK/Transfer owner 管理，权限仍由 System 与 owner 裁决。
+
+Agent 在当前 Harness 调用内成功读取 `platform.capability.context` 后才允许复核或创建；上下文失败不能使用 checkpoint 中的旧定义。Runtime 按返回的条件身份调用有限的条件适配器；未知条件明确拒绝，不交给模型自行忽略。核验源有正式结构事实、目标父节点由 owner 返回、边界/装载/写入策略符合条件，以及直接字段映射有依据。当前查询整形适配仅覆盖 Skill 已有的 MQL 显式直接投影和可选单次数组展开，拒绝复杂表达式或其他查询语言；它不替代 Provider 的正式查询分析和 Transfer 后端校验，不执行查询、不读取样本、不声称扫描结构完整覆盖业务值。
+
+`request_clarification` 的 `transfer_create_review` 原因要求 `operation_review={tool,arguments}` 和 confirm/cancel 两个选项。Runtime 先校验条件及 Manifest，再追加确切参数的规范化 JSON 到复核提示中；仅保存参数与能力修订/摘要绑定的指纹，选项身份由服务端生成，模型不能通过普通候选伪造已复核状态。正式 Interaction 回答才写入 confirmed；创建前重新核验全部条件和指纹。任务参数、语义摘要或 owner 结构事实变化都要求重新复核。提交前消费确认并持久化检查点，响应丢失或失败不自动重用确认。此复核是配置确认，不是新的 Owner 审批或权限授予。
+
+确认消费使用既有 checkpoint 事件的进程内提交回执：AG-UI 适配层完成数据库事务、再次检查客户端断开和运行取消后才回执，Harness 等待回执成功后调用写 Tool；持久化失败或回执前取消不调用 owner。回执后已发出的 owner 调用不承诺撤销。回执不进入 HTTP、数据库 payload 或事件回放。每次重新读取平台上下文前清空旧观察，刷新失败不能沿用同次 Harness 内较早的成功结果。
+
+正式 ResourceFacts 刷新替换该资源原观察快照，不把新响应缺失的字段、查询名或旧搜索元数据合并回来；结构缺失明确补充事实，不能用旧结构通过创建条件。正式快照取得后只能由后续正式快照替换，搜索、目录与预览不能覆盖或补写它，从而保留完整事实来源。
+
+沿已有 Agent eval、平台定义 Go T1 与授权契约门禁验证源/目标伪造、未知条件、未复核、变更后复核失效、同一确认重复写入及非 Transfer 路径不受影响；沿既有 Ontology T2 验证新修订发布。没有新增外部依赖、标准入口或 CI Job，个人环境需用户重启后另做真实短输入联调。
+
 ## 2. 术语与唯一事实所有权
 
 新增术语见[术语表](../concepts/addp术语表.md)的“领域本体（目标设计）”。以下职责是目标边界，不表示现有接口已经支持。

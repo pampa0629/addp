@@ -2,7 +2,8 @@ import copy
 import json
 from typing import Any
 
-from addp_common.tools import preview_resource_fact
+from jsonschema import Draft202012Validator
+from addp_common.tools import get_tool, preview_resource_fact
 
 
 CHECKPOINT_SCHEMA = "addp.agent-checkpoint/v1"
@@ -18,8 +19,8 @@ def validate_checkpoint_size(checkpoint: dict[str, Any]) -> None:
 def new_checkpoint() -> dict[str, Any]:
     return {
         "schema": CHECKPOINT_SCHEMA,
-        "observed": {"workflow_engines": {}, "resources": {}},
-        "confirmed": {"workflow_engine": None, "resources": {}},
+        "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}},
+        "confirmed": {"workflow_engine": None, "resources": {}, "operation_reviews": {}},
     }
 
 
@@ -41,6 +42,11 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
         checkpoint["confirmed"]["workflow_engine"] = copy.deepcopy(confirmed["workflow_engine"])
     if isinstance(confirmed_resources, dict):
         checkpoint["confirmed"]["resources"] = copy.deepcopy(confirmed_resources)
+    for key in ("platform_capabilities", "operation_reviews"):
+        if isinstance(observed.get(key), dict):
+            checkpoint["observed"][key] = copy.deepcopy(observed[key])
+    if isinstance(confirmed.get("operation_reviews"), dict):
+        checkpoint["confirmed"]["operation_reviews"] = copy.deepcopy(confirmed["operation_reviews"])
     return checkpoint
 
 
@@ -87,7 +93,7 @@ def _compact_preview_fact(result: dict[str, Any]) -> tuple[str, dict[str, Any]] 
 
 def _compact_formal_resource_fact(value: dict[str, Any], locator: str) -> dict[str, Any]:
     """投影正式 ResourceFacts；不沿任意嵌套对象寻找可持久化事实。"""
-    fact: dict[str, Any] = {"locator": locator}
+    fact: dict[str, Any] = {"locator": locator, "fact_tool": "resource.facts.get"}
     for key in (
         "engine_name", "source_engine_type", "item_type", "data_type", "full_name",
         "item_fingerprint", "scanned_depth", "schema_coverage", "geometry_column", "geometry_type", "crs",
@@ -128,8 +134,11 @@ def _merge_resource_fact(
     locator: str,
     fact: dict[str, Any],
     delta: list[dict[str, Any]],
+    *, replace: bool = False,
 ) -> None:
-    merged = {**resources.get(locator, {}), **fact}
+    if not replace and resources.get(locator, {}).get("fact_tool") == "resource.facts.get":
+        return  # Discovery/preview evidence cannot rewrite a formal snapshot.
+    merged = fact if replace else {**resources.get(locator, {}), **fact}
     if resources.get(locator) == merged:
         return
     resources[locator] = merged
@@ -142,6 +151,12 @@ def capture_owner_facts(tool_name: str, result: Any, checkpoint: dict[str, Any])
 
     if isinstance(result, dict) and isinstance(result.get("error"), dict):
         return {}
+
+    if tool_name == "platform.capability.context" and isinstance(result, dict):
+        if not list(Draft202012Validator(get_tool(tool_name).output_schema).iter_errors(result)):
+            capability = result["capability"]
+            observed["platform_capabilities"][capability] = copy.deepcopy(result)
+            return {"platform_capabilities": [copy.deepcopy(result)]}
 
     if tool_name == "engine.list":
         for value in result if isinstance(result, list) else []:
@@ -197,7 +212,8 @@ def capture_owner_facts(tool_name: str, result: Any, checkpoint: dict[str, Any])
         locator = result.get("locator")
         if isinstance(locator, str) and locator.startswith("addp://"):
             fact = _compact_formal_resource_fact(result, locator)
-            _merge_resource_fact(observed["resources"], locator, fact, delta["resources"])
+            # A new formal snapshot must not retain fields absent from it.
+            _merge_resource_fact(observed["resources"], locator, fact, delta["resources"], replace=True)
 
     return {key: facts for key, facts in delta.items() if facts}
 
@@ -209,6 +225,8 @@ def canonicalize_clarification_options(
 ) -> list[dict[str, Any]]:
     canonical: list[dict[str, Any]] = []
     observed = checkpoint["observed"]
+    if any(isinstance(option.get("candidate"), dict) and "operation_review" in option["candidate"] for option in options):
+        raise ValueError("operation_review_requires_runtime_preparation")
     if "workflow_engine" in reason:
         for option in options:
             value = option.get("value")
@@ -250,6 +268,16 @@ def confirm_selection(checkpoint: dict[str, Any], answer: Any) -> None:
     if not isinstance(answer, dict):
         return
     candidate = answer.get("candidate") if isinstance(answer.get("candidate"), dict) else {}
+    if "operation_review" in candidate:
+        review = candidate["operation_review"]
+        tool = review.get("tool") if isinstance(review, dict) else None
+        if checkpoint["observed"]["operation_reviews"].get(tool) != review:
+            raise ValueError("operation_review_not_observed")
+        if answer.get("value") == review["fingerprint"]:
+            checkpoint["confirmed"]["operation_reviews"][tool] = copy.deepcopy(review)
+        else:
+            checkpoint["confirmed"]["operation_reviews"].pop(tool, None)
+        return
     locator = resource_locator(candidate)
     if locator:
         fact = checkpoint["observed"]["resources"].get(locator)
@@ -269,7 +297,7 @@ def confirm_selection(checkpoint: dict[str, Any], answer: Any) -> None:
 def checkpoint_prompt(checkpoint: dict[str, Any]) -> str:
     observed = checkpoint["observed"]
     confirmed = checkpoint["confirmed"]
-    if not any((observed["workflow_engines"], observed["resources"], confirmed["workflow_engine"], confirmed["resources"])):
+    if not any(observed.values()) and not any(confirmed.values()):
         return ""
     return "本 AgentRun 已持久化的受信任状态：\n" + json.dumps(
         {"observed": observed, "confirmed": confirmed},

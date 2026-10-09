@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.checkpoint import canonicalize_clarification_options, capture_owner_facts, checkpoint_prompt, normalize_checkpoint
 from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
+from agents.platform_conditions import CREATE_TOOL, REVIEW_REASON, prepare_review, review_json, validate_create
 from graph.state import TaskContext
 from protocol.a2ui import preview_presentations
 from tools.langchain_tools import create_agent_tools, stable_tool_name
@@ -39,6 +40,7 @@ class ClarificationRequest(BaseModel):
     prompt: str = Field(description="需要用户回答的单个明确问题")
     reason: str = Field(description="稳定澄清原因")
     options: list[ClarificationOption] = Field(min_length=1, description="基于 owner 事实的候选选项")
+    operation_review: dict[str, Any] | None = Field(default=None, description="transfer_create_review 时提交 {tool,arguments}，options 的 value 使用 confirm/cancel；Runtime 生成确切参数复核及指纹")
 
 
 async def _request_clarification(**_: Any) -> str:
@@ -65,6 +67,8 @@ def _runtime_instructions() -> str:
 - `workflow.run` 返回 `approval_required` 时当前 run 必须暂停，不能重试或把客户端确认当作批准。
 - 恢复消息提供 approval_id 和 request_fingerprint 时，再次调用 `workflow.run` 且只提交这两个字段。
 - `data.search` 的服务、委托或响应失败终止当前运行，不是零召回，不能重复搜索或切换目录枚举、样本读取、扫描；不解除保护隔离。
+- Transfer 配置复核必须使用 reason=transfer_create_review、operation_review={tool:"transfer.task.create",arguments:<完整创建参数>} 和 confirm/cancel 两个选项。Runtime 展示确切参数并绑定指纹；普通文字或其他澄清不构成配置复核。
+- 提交创建时参数必须与复核完全一致；参数或本体/结构事实变化后重新复核。平台条件错误先补齐缺口，不反复尝试写 Tool。
 """
 
 
@@ -117,6 +121,24 @@ class _PlatformBoundary(AgentMiddleware):
                 return self._clarify(call)
             if call["name"] not in self.names:
                 return self._error(call, name, "tool_not_allowed", "错误：工具不在该 Skill 的白名单内")
+            if name == "platform.capability.context":
+                self.checkpoint["observed"]["platform_capabilities"] = {}
+                _emit("checkpoint", tool_call_id=call["id"], checkpoint=copy.deepcopy(self.checkpoint), facts={})
+            if name == CREATE_TOOL:
+                try:
+                    validate_create(call["args"], self.checkpoint)
+                except ValueError as exc:
+                    return self._error(call, name, "platform_condition_unsatisfied", str(exc))
+                # Consume before any owner side effect; uncertain responses do
+                # not leave a reusable confirmation for another write.
+                self.checkpoint["confirmed"]["operation_reviews"].pop(CREATE_TOOL, None)
+                committed = asyncio.get_running_loop().create_future()
+                get_stream_writer()(AgentEvent(
+                    kind="checkpoint",
+                    payload={"tool_call_id": call["id"], "checkpoint": copy.deepcopy(self.checkpoint), "facts": {}},
+                    checkpoint_committed=committed,
+                ))
+                await committed
             try:
                 message = await handler(request)
             except Exception as exc:
@@ -157,9 +179,27 @@ class _PlatformBoundary(AgentMiddleware):
     def _clarify(self, call):
         try:
             args = ClarificationRequest.model_validate(call["args"])
-            options = canonicalize_clarification_options(
-                args.reason, [option.model_dump() for option in args.options], self.checkpoint,
-            )
+            if args.reason == REVIEW_REASON:
+                review = args.operation_review
+                if not isinstance(review, dict) or set(review) != {"tool", "arguments"} or review["tool"] != CREATE_TOOL:
+                    raise ValueError("invalid_operation_review")
+                supplied = {option.value: option for option in args.options}
+                if len(args.options) != 2 or set(supplied) != {"confirm", "cancel"}:
+                    raise ValueError("invalid_operation_review_choices")
+                identity = prepare_review(review["arguments"], self.checkpoint)
+                options = [
+                    {"label": supplied[key].label, "value": identity["fingerprint"] if key == "confirm" else "cancel",
+                     "candidate": {"operation_review": identity}}
+                    for key in ("confirm", "cancel")
+                ]
+                args.prompt += review_json(review["arguments"])
+                _emit("checkpoint", tool_call_id=call["id"], checkpoint=copy.deepcopy(self.checkpoint), facts={})
+            else:
+                if args.operation_review is not None:
+                    raise ValueError("invalid_operation_review_reason")
+                options = canonicalize_clarification_options(
+                    args.reason, [option.model_dump() for option in args.options], self.checkpoint,
+                )
         except ValidationError:
             return self._error(call, "request_clarification", "invalid_clarification_request", "澄清请求结构无效")
         except ValueError as exc:
@@ -223,6 +263,9 @@ class AgentFactory:
         if max_iterations < 1:
             raise ValueError("invalid_agent_iteration_limit")
         checkpoint = normalize_checkpoint(task_context.get("checkpoint"))
+        # Each Harness invocation must observe its own successful context read.
+        # Persisted capability data cannot substitute for a failed owner read.
+        checkpoint["observed"]["platform_capabilities"] = {}
         human_input = task_context["user_request"]
         if task_context["context_summary"]:
             human_input = f"对话背景：\n{task_context['context_summary']}\n\n用户请求：{human_input}"

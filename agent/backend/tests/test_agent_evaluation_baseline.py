@@ -1,12 +1,17 @@
+import asyncio
 import json
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from langgraph.errors import NodeCancelledError
+
 from graph.factory import AgentFactory
 from tests.harness_fixtures import HarnessTestModel, harness_tools
 from agents.checkpoint import confirm_selection, normalize_checkpoint
+from agents.platform_conditions import prepare_review
+from tests.test_platform_conditions import platform_fixture
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -401,24 +406,28 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
     async def test_platform_transfer_create_is_not_execution(self):
         scenario = load_scenario(SCENARIOS_ROOT / "platform-transfer-create")
         names = ["platform.capability.context", "engine.list", "resource.facts.get", "resource.children.list", "transfer.task.create"]
+        definition, source, target, arguments, checkpoint = platform_fixture()
+        identity = prepare_review(arguments, checkpoint)
+        confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
         # Scripted LLM verifies the runtime contract, not real model planning.
         results = [
-            {"knowledge_kind": "platform_definition", "capability": "transfer.task.create", "availability": "not_observed"},
+            definition,
             [
                 {"id": 1, "name": "MongoDB fixture", "engine_type": "mongodb", "lifecycle_state": "active", "connection_status": "unknown"},
                 {"id": 2, "name": "PG fixture", "engine_type": "postgresql", "lifecycle_state": "active", "connection_status": "unknown"},
             ],
-            {"locator": "addp://engine/1/path/Outdoor/Activities?type=collection"},
-            {"locator": "addp://engine/2/path/demo?type=schema", "children": []},
+            source,
+            target,
             {"id": 41, "name": "Outdoor fixture", "status": "idle", "desired_state": "stopped", "enabled": False, "schedule": ""},
         ]
         events = await self._run_factory(
             agent_run_id="run-platform-transfer",
             tools=[_Tool(name, result) for name, result in zip(names, results)],
-            responses=[_Response(tool_calls=[_tool_call(name, call_id=f"call-{index}")]) for index, name in enumerate(names)]
+            responses=[_Response(tool_calls=[_tool_call(name, arguments if name == "transfer.task.create" else {}, call_id=f"call-{index}")]) for index, name in enumerate(names)]
             + [_Response(content="任务 41 已创建，尚未执行。")],
             allowed_tools=names,
             skill_name="transfer-generation",
+            checkpoint=checkpoint,
         )
         phase = phase_from_events("create", "run-platform-transfer", "completed", events,
                                   owner_effects={"tasks_created": 1, "approvals_created": 0, "executions_created": 0, "business_rows_written": 0},
@@ -432,6 +441,58 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         phase["tools"] = [tool for tool in phase["tools"] if tool["name"] != "platform.capability.context"]
         with self.assertRaises(EvaluationFailure):
             evaluate_trace(scenario, trace)
+
+    async def test_transfer_review_is_runtime_bound_and_creation_consumes_it(self):
+        definition, _, _, arguments, checkpoint = platform_fixture()
+        names = ["platform.capability.context", "transfer.task.create"]
+        context_tool = _Tool(names[0], definition)
+        create_tool = _Tool(names[1], {"id": 41, "status": "idle", "desired_state": "stopped"})
+        events = await self._run_factory(
+            agent_run_id="review-run", tools=[context_tool, create_tool], allowed_tools=names,
+            checkpoint=checkpoint, responses=[
+                _Response(tool_calls=[_tool_call(names[0])]),
+                _Response(tool_calls=[_tool_call("request_clarification", {
+                    "prompt": "请复核", "reason": "transfer_create_review",
+                    "operation_review": {"tool": names[1], "arguments": arguments},
+                    "options": [{"label": "确认", "value": "confirm"}, {"label": "取消", "value": "cancel"}],
+                })]),
+            ],
+        )
+        interaction = next(event.payload for event in events if event.kind == "interaction_required")
+        self.assertIn(json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":")), interaction["prompt"])
+        checkpoint = normalize_checkpoint([event.payload["checkpoint"] for event in events if event.kind == "checkpoint"][-1])
+        confirm_selection(checkpoint, interaction["candidates"][0])
+        resumed = await self._run_factory(
+            agent_run_id="review-run", tools=[context_tool, create_tool], allowed_tools=names,
+            checkpoint=checkpoint, responses=[
+                _Response(tool_calls=[_tool_call(names[0])]),
+                _Response(tool_calls=[_tool_call(names[1], arguments, "create-1")]),
+                _Response(tool_calls=[_tool_call(names[1], arguments, "create-2")]),
+                _Response(content="done"),
+            ],
+        )
+        creations = [event for event in resumed if event.kind == "tool_result" and event.payload["tool_name"] == names[1]]
+        self.assertEqual(len(creations), 2)
+        self.assertFalse(creations[0].payload["is_error"])
+        self.assertTrue(creations[1].payload["is_error"])
+        self.assertEqual(creations[1].payload["error_code"], "platform_condition_unsatisfied")
+
+    async def test_transfer_creation_without_current_context_or_review_never_reaches_owner(self):
+        definition, _, _, arguments, checkpoint = platform_fixture()
+        names = ["platform.capability.context", "transfer.task.create"]
+        class ForbiddenCreate(_Tool):
+            async def ainvoke(self, _args):
+                raise AssertionError("unreviewed write reached owner")
+        for read_context in (False, True):
+            responses = ([_Response(tool_calls=[_tool_call(names[0])])] if read_context else []) + [
+                _Response(tool_calls=[_tool_call(names[1], arguments)]), _Response(content="blocked"),
+            ]
+            events = await self._run_factory(
+                agent_run_id="unreviewed-run", tools=[_Tool(names[0], definition), ForbiddenCreate(names[1], {})],
+                allowed_tools=names, checkpoint=checkpoint, responses=responses,
+            )
+            result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == names[1])
+            self.assertEqual(result.payload["error_code"], "platform_condition_unsatisfied")
 
     async def test_transfer_target_clarification_restores_source_schema(self):
         source = "addp://engine/9/path/outdoor/routes?type=collection&item_id=66"
@@ -480,7 +541,80 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored["observed"]["resources"][source]["query_names"]["collection"], "routes")
         self.assertFalse(any(event.kind in {"tool_start", "interaction_required"} for event in resumed))
 
-    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis", checkpoint=None, llm=None):
+    async def test_failed_context_refresh_cannot_reuse_previous_success(self):
+        definition, _, _, arguments, checkpoint = platform_fixture()
+        identity = prepare_review(arguments, checkpoint)
+        confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
+
+        class ContextRefresh(_Tool):
+            calls = 0
+
+            async def ainvoke(self, _args):
+                self.calls += 1
+                return json.dumps(definition if self.calls == 1 else {"error": {"code": "owner_unavailable"}})
+
+        class ForbiddenCreate(_Tool):
+            async def ainvoke(self, _args):
+                raise AssertionError("stale context reached owner")
+
+        events = await self._run_factory(
+            agent_run_id="failed-context-refresh", checkpoint=checkpoint,
+            tools=[ContextRefresh("platform.capability.context", {}), ForbiddenCreate("transfer.task.create", {})],
+            allowed_tools=["platform.capability.context", "transfer.task.create"],
+            responses=[
+                _Response(tool_calls=[_tool_call("platform.capability.context", call_id="context-1")]),
+                _Response(tool_calls=[_tool_call("platform.capability.context", call_id="context-2")]),
+                _Response(tool_calls=[_tool_call("transfer.task.create", arguments, "create")]),
+                _Response(content="blocked"),
+            ],
+        )
+        result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == "transfer.task.create")
+        self.assertIn("platform_context", result.payload["content"])
+
+    async def test_create_waits_for_persisted_consumption_and_cancellation_prevents_write(self):
+        definition, _, _, arguments, checkpoint = platform_fixture()
+        identity = prepare_review(arguments, checkpoint)
+        confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
+
+        class CountingCreate(_Tool):
+            calls = 0
+
+            async def ainvoke(self, args):
+                self.calls += 1
+                return await super().ainvoke(args)
+
+        for cancel in (False, True):
+            create = CountingCreate("transfer.task.create", {"id": 41, "status": "idle"})
+            acknowledgements = []
+
+            async def persist(event):
+                await asyncio.sleep(0)  # Let the producer reach its commit barrier.
+                self.assertEqual(create.calls, 0)
+                self.assertNotIn("transfer.task.create", event.payload["checkpoint"]["confirmed"]["operation_reviews"])
+                acknowledgements.append(event)
+                if cancel:
+                    event.checkpoint_committed.cancel()
+                else:
+                    event.checkpoint_committed.set_result(None)
+
+            run = self._run_factory(
+                agent_run_id="commit-barrier", checkpoint=checkpoint,
+                tools=[_Tool("platform.capability.context", definition), create],
+                allowed_tools=["platform.capability.context", "transfer.task.create"],
+                responses=[_Response(tool_calls=[_tool_call("platform.capability.context")]),
+                           _Response(tool_calls=[_tool_call("transfer.task.create", arguments, "create")]),
+                           _Response(content="done")],
+                checkpoint_consumer=persist,
+            )
+            if cancel:
+                with self.assertRaises(NodeCancelledError):
+                    await run
+            else:
+                await run
+            self.assertEqual(len(acknowledgements), 1)
+            self.assertEqual(create.calls, 0 if cancel else 1)
+
+    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis", checkpoint=None, llm=None, checkpoint_consumer=None):
         context = {
             "skill_name": skill_name,
             "user_request": "评测请求",
@@ -495,15 +629,20 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             patch("graph.factory.create_agent_tools", return_value=harness_tools(tools)),
             patch("graph.factory.get_llm", return_value=HarnessTestModel(source=llm or _ScriptedLLM(responses))),
         ):
-            return [
-                event
-                async for event in AgentFactory.run(
+            events = []
+            async for event in AgentFactory.run(
                     task_context=context,
                     skill_body="评测 Skill",
                     allowed_tool_names=allowed_tools,
                     max_iterations=len(llm.responses) if llm is not None else len(responses),
-                )
-            ]
+                ):
+                events.append(event)
+                if event.checkpoint_committed is not None:
+                    if checkpoint_consumer is None:
+                        event.checkpoint_committed.set_result(None)  # Controlled persistence consumer.
+                    else:
+                        await checkpoint_consumer(event)
+            return events
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
   "schema_version": "addp.platform-capability-context/v1",
   "knowledge_kind": "platform_definition",
   "capability": "transfer.task.create",
-  "revision": 2,
+  "revision": 3,
   "digest": "",
   "availability": "not_observed",
   "concepts": [
@@ -13,7 +13,14 @@
     {"id": "load_mode", "name": {"zh-cn": "装载模式", "en": "Load mode"}},
     {"id": "apply_policy", "name": {"zh-cn": "目标写入策略", "en": "Target apply policy"}},
     {"id": "field_mapping", "name": {"zh-cn": "实际输出到目标字段的映射", "en": "Actual output to target field mapping"}},
-    {"id": "execution", "name": {"zh-cn": "一次实际运行", "en": "An actual execution"}}
+    {"id": "execution", "name": {"zh-cn": "一次实际运行", "en": "An actual execution"}},
+    {"id": "confirmed_source", "name": {"zh-cn": "源身份唯一，并有正式 owner 返回的结构事实", "en": "Unique source identity with formal owner schema facts"}},
+    {"id": "confirmed_target_parent_and_name", "name": {"zh-cn": "真实目标父节点和明确的目标名称", "en": "Observed target parent and explicit target name"}},
+    {"id": "bounded", "name": {"zh-cn": "有界的一次性执行边界", "en": "Bounded one-time runtime boundary"}},
+    {"id": "snapshot", "name": {"zh-cn": "快照装载模式", "en": "Snapshot load mode"}},
+    {"id": "explicit_apply_policy", "name": {"zh-cn": "明确目标写入策略，upsert 键必须属于映射后的目标字段", "en": "Explicit apply policy; upsert keys must be mapped target fields"}},
+    {"id": "confirmed_row_grain_and_fields", "name": {"zh-cn": "按真实结构直接映射字段，查询与行粒度随完整配置复核", "en": "Schema-grounded direct field mapping; review query and row grain with the full configuration"}},
+    {"id": "user_review", "name": {"zh-cn": "用户确认确切配置；参数、能力修订或结构事实变化后重新确认", "en": "User reviews exact configuration; changed arguments, capability revision or schema facts require a new review"}}
   ],
   "relations": [
     {"from": "transfer_task", "kind": "reads_from", "to": "source"},
@@ -22,7 +29,14 @@
     {"from": "transfer_task", "kind": "has", "to": "load_mode"},
     {"from": "target", "kind": "has", "to": "apply_policy"},
     {"from": "transfer_task", "kind": "has", "to": "field_mapping"},
-    {"from": "execution", "kind": "runs", "to": "transfer_task"}
+    {"from": "execution", "kind": "runs", "to": "transfer_task"},
+    {"from": "transfer_task", "kind": "requires", "to": "confirmed_source"},
+    {"from": "transfer_task", "kind": "requires", "to": "confirmed_target_parent_and_name"},
+    {"from": "transfer_task", "kind": "requires", "to": "bounded"},
+    {"from": "transfer_task", "kind": "requires", "to": "snapshot"},
+    {"from": "transfer_task", "kind": "requires", "to": "explicit_apply_policy"},
+    {"from": "transfer_task", "kind": "requires", "to": "confirmed_row_grain_and_fields"},
+    {"from": "transfer_task", "kind": "requires", "to": "user_review"}
   ],
   "operation": {
     "owner": "transfer",

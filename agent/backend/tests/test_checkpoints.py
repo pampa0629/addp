@@ -182,7 +182,8 @@ class AgentCheckpointTests(unittest.TestCase):
         delta = capture_owner_facts("resource.facts.get", result, checkpoint)
         restored = normalize_checkpoint(checkpoint)
         fact = restored["observed"]["resources"][locator]
-        self.assertEqual(fact["name"], "routes")
+        self.assertNotIn("name", fact)  # Formal snapshots replace discovery metadata.
+        self.assertEqual(fact["full_name"], "outdoor.routes")
         self.assertEqual(fact["source_engine_type"], "mongodb")
         self.assertEqual(fact["query_names"], {"database": "outdoor", "collection": "routes"})
         self.assertEqual(fact["fields"], [{

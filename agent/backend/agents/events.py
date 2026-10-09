@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -21,6 +22,9 @@ class AgentEvent:
 
     kind: AgentEventKind
     payload: dict[str, Any] = field(default_factory=dict)
+    # Only internal checkpoint events may request a transaction acknowledgement.
+    # Never serialized in AG-UI, checkpoint payloads or replay events.
+    checkpoint_committed: asyncio.Future[None] | None = field(default=None, repr=False, compare=False)
 
 
 def text_event(delta: str) -> AgentEvent:

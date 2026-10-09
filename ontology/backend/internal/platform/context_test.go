@@ -11,7 +11,7 @@ func TestPlatformDefinitionIsBoundedAndIndependentOfTenant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.KnowledgeKind != "platform_definition" || a.Availability != "not_observed" || a.Revision != 2 || len(a.Digest) != 64 || a.Operation.Tool != a.Capability {
+	if a.KnowledgeKind != "platform_definition" || a.Availability != "not_observed" || a.Revision != 3 || len(a.Digest) != 64 || a.Operation.Tool != a.Capability {
 		t.Fatalf("invalid platform binding: %+v", a)
 	}
 	ids := map[string]bool{}
@@ -24,6 +24,18 @@ func TestPlatformDefinitionIsBoundedAndIndependentOfTenant(t *testing.T) {
 	for _, relation := range a.Relations {
 		if !ids[relation.From] || !ids[relation.To] || relation.Kind == "" {
 			t.Fatalf("dangling relation: %+v", relation)
+		}
+	}
+	for _, condition := range a.Operation.InputsRequired {
+		if !ids[condition] {
+			t.Fatalf("condition has no semantic concept: %s", condition)
+		}
+		found := false
+		for _, relation := range a.Relations {
+			found = found || relation == (Relation{From: "transfer_task", Kind: "requires", To: condition})
+		}
+		if !found {
+			t.Fatalf("condition has no requires relation: %s", condition)
 		}
 	}
 	a.Concepts[0].Name["en"] = "mutated"

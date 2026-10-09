@@ -1,3 +1,4 @@
+import asyncio
 import json
 import unittest
 import uuid
@@ -67,6 +68,92 @@ class _MessageDB:
 
 
 class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
+    async def test_checkpoint_consumption_acknowledges_only_after_commit(self):
+        from agents.events import AgentEvent
+        from api.chat import _persist_checkpoint_event
+
+        committed = asyncio.get_running_loop().create_future()
+        order = []
+
+        class Transaction(_Transaction):
+            async def __aexit__(inner, *_args):
+                self.assertFalse(committed.done())
+                order.append("commit")
+                return False
+
+        db = SimpleNamespace(begin=lambda: Transaction())
+
+        async def update(*_args, **_kwargs):
+            self.assertFalse(committed.done())
+            order.append("update")
+
+        event = AgentEvent(kind="checkpoint", payload={"tool_call_id": "create", "checkpoint": {}, "facts": {}}, checkpoint_committed=committed)
+        with (patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(db)),
+              patch("api.chat.update_run_checkpoint", new=AsyncMock(side_effect=update)),
+              patch("api.chat.attach_step_facts", new=AsyncMock()) as facts):
+            await _persist_checkpoint_event(
+                event, uuid.uuid4(), {"create": uuid.uuid4()},
+                request=SimpleNamespace(is_disconnected=AsyncMock(return_value=False)),
+                cancellation_signal=asyncio.Event(),
+            )
+        self.assertEqual(order, ["update", "commit"])
+        self.assertTrue(committed.done())
+        self.assertIsNone(committed.result())
+        facts.assert_awaited_once()
+
+    async def test_checkpoint_update_or_commit_failure_cancels_write_barrier(self):
+        from agents.events import AgentEvent
+        from api.chat import _persist_checkpoint_event
+
+        for stage in ("update", "commit", "cancel"):
+            committed = asyncio.get_running_loop().create_future()
+
+            class Transaction(_Transaction):
+                async def __aexit__(inner, *_args):
+                    if stage == "commit":
+                        raise RuntimeError("fixture_commit_failure")
+                    return False
+
+            failure = asyncio.CancelledError() if stage == "cancel" else RuntimeError("fixture_update_failure") if stage == "update" else None
+            update = AsyncMock(side_effect=failure)
+            db = SimpleNamespace(begin=lambda: Transaction())
+            event = AgentEvent(kind="checkpoint", payload={"checkpoint": {}}, checkpoint_committed=committed)
+            with (patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(db)),
+                  patch("api.chat.update_run_checkpoint", new=update),
+                  self.assertRaises(asyncio.CancelledError if stage == "cancel" else RuntimeError)):
+                await _persist_checkpoint_event(
+                    event, uuid.uuid4(), {},
+                    request=SimpleNamespace(is_disconnected=AsyncMock(return_value=False)),
+                    cancellation_signal=asyncio.Event(),
+                )
+            self.assertTrue(committed.cancelled())
+
+    async def test_cancellation_or_disconnect_during_commit_never_acknowledges_write(self):
+        from agents.events import AgentEvent
+        from api.chat import _persist_checkpoint_event
+
+        for disconnected in (False, True):
+            committed = asyncio.get_running_loop().create_future()
+            signal = asyncio.Event()
+
+            class Transaction(_Transaction):
+                async def __aexit__(inner, *_args):
+                    if not disconnected:
+                        signal.set()
+                    return False
+
+            event = AgentEvent(kind="checkpoint", payload={"checkpoint": {}}, checkpoint_committed=committed)
+            db = SimpleNamespace(begin=lambda: Transaction())
+            with (patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(db)),
+                  patch("api.chat.update_run_checkpoint", new=AsyncMock()),
+                  self.assertRaises(ConnectionAbortedError if disconnected else asyncio.CancelledError)):
+                await _persist_checkpoint_event(
+                    event, uuid.uuid4(), {},
+                    request=SimpleNamespace(is_disconnected=AsyncMock(return_value=disconnected)),
+                    cancellation_signal=signal,
+                )
+            self.assertTrue(committed.cancelled())
+
     async def test_search_failure_is_visible_persisted_and_never_completed(self):
         from ag_ui.core import RunAgentInput
         from agents.events import AgentEvent

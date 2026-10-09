@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.main_agent import stream_agent_response
 from agents.context import HISTORY_MESSAGE_LIMIT, build_context_window
+from agents.events import AgentEvent
 from authorization_permissions_generated import (
     AGENT_RUN_CREATE,
     AGENT_RUN_EXECUTE,
@@ -258,6 +259,37 @@ async def _load_agent_history(db: AsyncSession, session_id: int) -> tuple[list[d
     return messages, int(total_result.scalar_one())
 
 
+async def _persist_checkpoint_event(
+    event: AgentEvent, agent_run_id: UUID, tool_steps: dict,
+    *, request: Request, cancellation_signal: asyncio.Event,
+) -> None:
+    """Acknowledge only after commit; the Harness waits before an owner write."""
+    committed = event.checkpoint_committed
+    try:
+        tool_call_id = str(event.payload.get("tool_call_id") or "")
+        async with AsyncSessionLocal() as run_db:
+            async with run_db.begin():
+                await update_run_checkpoint(
+                    run_db, agent_run_id=agent_run_id, checkpoint=event.payload["checkpoint"],
+                )
+                if tool_call_id in tool_steps:
+                    await attach_step_facts(
+                        run_db, step_id=tool_steps[tool_call_id], facts=event.payload.get("facts") or {},
+                    )
+        if committed is not None:
+            disconnected = await request.is_disconnected()
+            if cancellation_signal.is_set():
+                raise asyncio.CancelledError
+            if disconnected:
+                raise ConnectionAbortedError("client_disconnected")
+    except BaseException:
+        if committed is not None and not committed.done():
+            committed.cancel()
+        raise
+    if committed is not None and not committed.done():
+        committed.set_result(None)
+
+
 async def _save_assistant_message(
     *,
     session_id: int,
@@ -418,6 +450,8 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 forced_skill_name=(agent_run.skill_name if resumed_from_interaction else None),
             ):
                 if await request.is_disconnected():
+                    if event.checkpoint_committed is not None and not event.checkpoint_committed.done():
+                        event.checkpoint_committed.cancel()
                     async with AsyncSessionLocal() as run_db:
                         async with run_db.begin():
                             await set_run_status(
@@ -452,6 +486,8 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                             await refresh_run_metrics(run_db, agent_run_id=agent_run_id)
                     return
                 if cancellation_signal.is_set():
+                    if event.checkpoint_committed is not None and not event.checkpoint_committed.done():
+                        event.checkpoint_committed.cancel()
                     return
 
                 if event.kind == "text":
@@ -540,20 +576,10 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     continue
 
                 if event.kind == "checkpoint":
-                    tool_call_id = str(event.payload.get("tool_call_id") or "")
-                    async with AsyncSessionLocal() as run_db:
-                        async with run_db.begin():
-                            await update_run_checkpoint(
-                                run_db,
-                                agent_run_id=agent_run_id,
-                                checkpoint=event.payload["checkpoint"],
-                            )
-                            if tool_call_id in tool_steps:
-                                await attach_step_facts(
-                                    run_db,
-                                    step_id=tool_steps[tool_call_id],
-                                    facts=event.payload.get("facts") or {},
-                                )
+                    await _persist_checkpoint_event(
+                        event, agent_run_id, tool_steps,
+                        request=request, cancellation_signal=cancellation_signal,
+                    )
                     continue
 
                 if event.kind == "result_ref":
@@ -802,6 +828,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 )
             )
         except Exception as exc:
+            client_disconnected = isinstance(exc, ConnectionAbortedError)
             logger.error(
                 "智能体运行失败: session_id=%s run_id=%s error_type=%s",
                 session_id,
@@ -814,11 +841,14 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                         run_db,
                         agent_run_id=agent_run_id,
                         status="failed",
-                        error_source="runtime",
-                        error_code="runtime_exception",
+                        error_source="client" if client_disconnected else "runtime",
+                        error_code="client_disconnected" if client_disconnected else "runtime_exception",
                         error_message=str(exc),
                     )
-            yield await emit(RunErrorEvent(message="智能体运行失败", code=type(exc).__name__))
+            yield await emit(RunErrorEvent(
+                message="客户端流连接已断开，请重试该 AgentRun" if client_disconnected else "智能体运行失败",
+                code="ClientDisconnected" if client_disconnected else type(exc).__name__,
+            ))
         finally:
             run_cancellation_registry.release(agent_run_id, cancellation_signal)
 

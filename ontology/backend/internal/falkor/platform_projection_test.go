@@ -56,10 +56,11 @@ func TestPlatformPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	q, err := PlanPlatform(snapshot, generation)
-	if err != nil || !reflect.DeepEqual(p, q) || !strings.HasPrefix(p.key, "ontology:p:transfer.task.create:r2:g") || strings.Contains(p.key, "t0:") {
+	d, _ := snapshot.Context()
+	prefix := fmt.Sprintf("ontology:p:%s:r%d:g", d.Capability, d.Revision)
+	if err != nil || !reflect.DeepEqual(p, q) || !strings.HasPrefix(p.key, prefix) || strings.Contains(p.key, "t0:") {
 		t.Fatal("unstable or unscoped plan", p, err)
 	}
-	d, _ := snapshot.Context()
 	if len(p.nodes) != len(d.Concepts)*3 || len(p.edges) != len(d.Relations)+len(d.Concepts)*2 {
 		t.Fatal("missing concept/name/relation")
 	}
