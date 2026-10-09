@@ -1332,3 +1332,6 @@ Desktop 保持 bridge 网络、独立 PID/挂载命名空间、非 root、cap_dr
 标准完整模块入口未通过，不以分项结果代替：首次因整体导入个人 .env 的 metrics=true 触发端口夹具的未隔离输入退出，已在原夹具补充清除指标开关，携带完整个人 .env 的同一标准脚本复验通过；该脚本沿原 Makefile 的 test-dev-lifecycle 和既有 Platform CI，不新增入口。第二次在已有 Infra 生命周期用例的 10 秒超时退出，同一用例原断言/原超时独立复验通过，根因尚未确认。第三次先通过完整平台 T0（含 CI 登记）、Monitor Go T1、47 项前端单测/61 项浏览器回归及构建，随后指标 T2 的首轮资源读取在约 3 秒返回 backend unavailable，Desktop 阶段未运行。增加仅 T2 的中心 TLS 握手失败诊断后，最终独占指标门禁完整通过，没有复现该失败；不将时长当作已确认的 TLS 超时根因，不放宽生产预算或测试断言。默认 make test-changed 仍在跨 Owner 数据库参数预检退出。上述失败分别保留；新的 CI、个人七采集器应用与生产 T5 不计为已通过。
 
 个人运行边界：原生 Safari 已核对重启后同一 VM 主机的九项概览有效，容量为 GiB、时长为经过时间、负载为任务数量，磁盘五项目录正常加载但没有设备数据。只读 inspect 确认个人来源仍为旧六采集器，故新增配置尚未应用；AI 未重启个人来源、Monitor、中心或业务，也未操作内置浏览器。用户在自己的终端导出已有三个节点输入并经 python3 scripts/infra/node-metrics.py up 重建原来源后，再取得完整一分钟窗口，复验真实个人磁盘页；不重建节点或目标身份。
+
+
+提交与 CI 边界：实现和上述本地证据已提交为 4acd466e7。git push origin main 在 github.com:443 连接约 75 秒后失败；API 域名可访问，但不能据此计为 Git 推送成功。按 GitHub 官方 SSH-over-443 方式，以官方 API 发布的主机公钥写入当次临时 known_hosts 并保持严格校验，服务可达但既有公钥认证被拒绝；未修改永久 Git/SSH/网络配置或添加认证密钥。CI 未触发，Platform CI 与 release-and-t2-gates 的 monitor-metrics/monitor-postgres 仍待成功推送后验证；此状态不改写本地独占 metrics 和 PostgreSQL 的通过，也不将完整本地模块入口计为通过。个人七采集器应用和 Safari 磁盘页面验收仍待用户标准入口操作。
