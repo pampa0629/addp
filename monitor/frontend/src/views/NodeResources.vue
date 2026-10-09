@@ -51,13 +51,14 @@
       </section>
       <section v-if="instant" class="resource-filesystems" data-testid="resource-filesystems">
         <h3>{{ t('monitor.resources.filesystem.title') }}</h3>
-        <p class="resource-hint">{{ t('monitor.resources.filesystem.hint') }}</p>
-        <p v-if="filesystems" class="resource-hint">{{ t('monitor.resources.queriedAt') }}: {{ date(filesystems.queried_at) }}</p>
+        <p v-if="mountRows.length" class="resource-hint">{{ t('monitor.resources.filesystem.hint') }}</p>
+        <p v-if="mountRows.length && filesystems" class="resource-hint">{{ t('monitor.resources.queriedAt') }}: {{ date(filesystems.queried_at) }}</p>
         <el-alert v-if="filesystemErrorKey" :title="t(filesystemErrorKey)" type="error" show-icon :closable="false" data-testid="resource-filesystem-error" />
         <el-alert v-if="inodeErrorKey" :title="`${t('monitor.resources.filesystem.inode')}: ${t(inodeErrorKey)}`" type="error" show-icon :closable="false" data-testid="resource-inode-error" />
-        <p v-if="inodes" class="resource-hint">{{ t('monitor.resources.filesystem.inode') }} · {{ t('monitor.resources.queriedAt') }}: {{ date(inodes.queried_at) }}</p>
+        <p v-if="mountRows.length && inodes" class="resource-hint">{{ t('monitor.resources.filesystem.inode') }} · {{ t('monitor.resources.queriedAt') }}: {{ date(inodes.queried_at) }}</p>
         <el-alert v-if="instant.collection.filesystem === 'not_collected' || instant.collection.filesystem === 'failed'" :title="t(instant.collection.filesystem === 'not_collected' ? 'monitor.resources.collection.not_collected' : 'monitor.resources.collection.filesystem_failed')" type="info" :closable="false" data-testid="resource-filesystem-capability" />
-        <el-table :data="mountRows" :empty-text="filesystems ? t(`monitor.resources.states.${filesystems.series[0].points[0].data_state}`) : t('monitor.resources.filesystem.empty')" data-testid="resource-filesystem-table">
+        <p v-if="!loading && !mountRows.length && !filesystemErrorKey && !inodeErrorKey && !['not_collected', 'failed'].includes(instant.collection.filesystem)" class="resource-hint" role="status" data-testid="resource-filesystem-empty">{{ t('monitor.resources.filesystem.empty') }}</p>
+        <el-table v-if="mountRows.length" :data="mountRows" data-testid="resource-filesystem-table">
           <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
           <el-table-column prop="dimensions.mountpoint" :label="t('monitor.resources.filesystem.mountpoint')" min-width="180" show-overflow-tooltip />
           <el-table-column prop="dimensions.fstype" :label="t('monitor.resources.filesystem.type')" min-width="100" show-overflow-tooltip />
@@ -70,10 +71,11 @@
       <template v-if="instant">
         <section v-for="family in deviceSections" :key="family.name" class="resource-filesystems" :data-testid="`resource-${family.name}s`">
           <h3>{{ t(`monitor.resources.${family.name}.title`) }}</h3>
-          <p v-if="family.name === 'network'" class="resource-hint">{{ t('monitor.resources.network.hint') }}</p>
+          <p v-if="family.name === 'network' && family.rows.length" class="resource-hint">{{ t('monitor.resources.network.hint') }}</p>
           <p v-if="family.name === 'disk' && family.rows.length" class="resource-hint">{{ t('monitor.resources.disk.orderHint') }}</p>
           <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
-          <el-table v-if="!family.errorKey" :data="family.rows" row-key="key" :empty-text="t(`monitor.resources.${family.name}.empty`)" :data-testid="`resource-${family.name}-table`">
+          <p v-if="!loading && !family.errorKey && !family.rows.length" class="resource-hint" role="status" :data-testid="`resource-${family.name}-empty`">{{ t(`monitor.resources.${family.name}.empty`) }}</p>
+          <el-table v-if="!family.errorKey && family.rows.length" :data="family.rows" row-key="key" :data-testid="`resource-${family.name}-table`">
             <el-table-column prop="dimensions.device" :label="t(family.name === 'network' ? 'monitor.resources.network.interface' : 'monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
             <el-table-column v-for="metric in family.metrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
               <template #header>

@@ -127,6 +127,8 @@ test('disconnected points stay empty; English narrow layout has no horizontal ov
   await page.goto(`/node-resources/${node}`)
   await expect(page.getByTestId('resource-cores')).toContainText('Not connected')
   await expect(page.getByTestId('resource-cores')).toContainText('—')
+  await expect(page.getByTestId('resource-filesystem-empty')).toHaveText('No filesystem mount data available.')
+  await expect(page.getByTestId('resource-filesystem-table')).toHaveCount(0)
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   state.mode = 'load-active'
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
@@ -380,12 +382,50 @@ test('reports a collection failure without presenting it as zero load or unsuppo
   await page.goto(`/node-resources/${node}?refresh=off`)
   await expect(page.getByTestId('resource-collection-status')).toContainText('采集失败')
   await expect(page.getByTestId('resource-filesystem-capability')).toHaveCount(0)
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('/data')
+  await expect(page.getByTestId('resource-filesystem-table')).toContainText('缺失')
+  await expect(page.getByTestId('resource-filesystem-empty')).toHaveCount(0)
 })
-test('successful restricted source explains uncollected filesystem separately', async ({ page }) => {
-  await resourceBackend(page, { mode: 'filesystem-uncollected' })
+for (const locale of ['zh-cn', 'en']) test(`empty resource sections are compact and restore tables without hiding known missing rows (${locale})`, async ({ page }) => {
+  const state = await resourceBackend(page, { mode: 'filesystem-uncollected', locale })
+  state.diskMode = 'disk-missing'; state.networkMode = 'network-missing'
+  await page.setViewportSize({ width: 620, height: 800 })
   await page.goto(`/node-resources/${node}?refresh=off`)
-  await expect(page.getByTestId('resource-filesystem-capability')).toContainText('未提供文件系统指标')
+  const refresh = page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true })
+  await expect(page.getByTestId('resource-filesystem-capability')).toContainText(locale === 'en' ? 'does not provide filesystem' : '未提供文件系统指标')
   await expect(page.getByTestId('resource-collection-status')).toHaveCount(0)
+  await expect(page.getByTestId('resource-filesystem-empty')).toHaveCount(0)
+  for (const family of ['filesystem', 'disk', 'network']) await expect(page.getByTestId(`resource-${family}-table`)).toHaveCount(0)
+  for (const family of ['disk', 'network']) await expect(page.getByTestId(`resource-${family}-empty`)).toBeVisible()
+  for (const section of ['filesystems', 'disks', 'networks']) {
+    expect((await page.getByTestId(`resource-${section}`).boundingBox()).height).toBeLessThan(160)
+  }
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+  state.mode = ''; state.diskMode = ''; state.networkMode = ''
+  await refresh.click()
+  for (const [family, subject] of [['filesystem', '/data'], ['disk', 'sda'], ['network', 'eth0']]) {
+    await expect(page.getByTestId(`resource-${family}-table`)).toContainText(subject)
+    await expect(page.getByTestId(`resource-${family}-empty`)).toHaveCount(0)
+  }
+  await expect(page.getByTestId('resource-filesystem-capability')).toHaveCount(0)
+  state.filesystemMode = 'collection-failed'; state.inodeMode = 'inode-missing'
+  state.diskMode = 'device-no-data'; state.networkMode = 'device-no-data'
+  await refresh.click()
+  for (const [family, subject] of [['filesystem', '/data'], ['disk', 'sda'], ['network', 'eth0']]) {
+    const table = page.getByTestId(`resource-${family}-table`)
+    await expect(table).toContainText(subject)
+    await expect(table).toContainText(locale === 'en' ? 'Missing' : '缺失')
+    await expect(page.getByTestId(`resource-${family}-empty`)).toHaveCount(0)
+  }
+  state.filesystemMode = 'budget'; state.inodeMode = 'budget'; state.diskMode = 'budget'; state.networkMode = 'budget'
+  await refresh.click()
+  for (const family of ['filesystem', 'disk', 'network']) {
+    await expect(page.getByTestId(`resource-${family}-error`)).toBeVisible()
+    await expect(page.getByTestId(`resource-${family}-empty`)).toHaveCount(0)
+    await expect(page.getByTestId(`resource-${family}-table`)).toHaveCount(0)
+  }
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
 })
 
 
@@ -412,7 +452,8 @@ for (const [family, device, firstMetric, secondMetric, secondLabel, emptyLabel] 
     await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query).toMatchObject({ metrics: secondMetric, device })
     state[`${family}Mode`] = `${family}-missing`
     await page.getByRole('button', { name: '刷新', exact: true }).click()
-    await expect(table).toContainText(emptyLabel)
+    await expect(table).toHaveCount(0)
+    await expect(page.getByTestId(`resource-${family}-empty`)).toContainText(emptyLabel)
     await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
     state[`${family}Mode`] = 'denied'
     await page.getByRole('button', { name: '刷新', exact: true }).click()

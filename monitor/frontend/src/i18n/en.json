@@ -695,7 +695,7 @@
       "filesystem": {
         "title": "Filesystem mounts",
         "hint": "Capacity by mount. Bind mounts, memory and network filesystems are not summed as physical capacity.",
-        "empty": "No filesystem mount evidence",
+        "empty": "No filesystem mount data available.",
         "device": "Device",
         "mountpoint": "Mountpoint",
         "type": "Filesystem type",
