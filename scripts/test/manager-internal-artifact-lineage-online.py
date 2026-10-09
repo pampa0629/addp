@@ -24,6 +24,8 @@ POINTCLOUD_TASK_TYPE = "point_cloud_copc_generation"
 PPTX_TASK_TYPE = "pptx_pdf_generation"
 RASTER_TASK_TYPE = "raster_cog_generation"
 MODEL_TASK_TYPE = "model_3d_glb_generation"
+MAX_SOURCE_SHA256 = "916714595bf7a2953264b8afaafe339fa60bdb4944b4664f6802ccb288190653"
+MAX_OPTIONS = {'source_unit': 'mm', 'texture_files': {'C:\\0ad\\binaries\\data\\mods\\official\\art\\textures\\skins\\skeletal\\horse_chestnut_a.dds': 'texture.png'}}
 LINEAGE_SCHEMA = "addp.lineage-facts/v1"
 REQUIRED_PERMISSIONS = {
     "manager.data_item.read",
@@ -408,9 +410,9 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
         "data_type": "model_3d", "format": format_name, "layout": "single",
     }.items()):
         raise SuiteError(f"{format_name} fixture must be scanned as model_3d/single")
-    if format_name == "skp" and (_object(attributes.get("format_info", {}), "SKP format_info").get("skp") is not None
-            or _object(attributes.get("type_info", {}), "SKP type_info").get("model_3d") is not None):
-        raise SuiteError("SKP identity scan must not invent native metadata before Runtime parsing")
+    if format_name in {"skp", "max"} and (_object(attributes.get("format_info", {}), f"{format_name} format_info").get(format_name) is not None
+            or _object(attributes.get("type_info", {}), f"{format_name} type_info").get("model_3d") is not None):
+        raise SuiteError(f"{format_name.upper()} identity scan must not invent native metadata before Runtime parsing")
     if format_name in {"dae", "3ds", "ifc"}:
         format_info = _object(attributes.get("format_info"), f"{format_name} format_info")
         native = _object(format_info.get(format_name), f"{format_name} native metadata")
@@ -441,8 +443,209 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
     return ArtifactFixture(format_name, item, build_item_locator(engine_id, item))
 
 
+def validate_max_png(raw: bytes) -> None:
+    """Decode the bounded fixture pixels, allowing Blender to re-encode PNG."""
+    import zlib
+    if not raw.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise SuiteError('MAX fixture texture must be PNG')
+    offset, compressed, channels, ended = 8, bytearray(), None, False
+    while offset + 12 <= len(raw):
+        length, kind = struct.unpack_from('>I4s', raw, offset)
+        end = offset + 12 + length
+        if end > len(raw):
+            raise SuiteError('MAX fixture PNG chunk is truncated')
+        data = raw[offset + 8:end - 4]
+        if zlib.crc32(kind + data) != struct.unpack_from('>I', raw, end - 4)[0]:
+            raise SuiteError('MAX fixture PNG checksum differs')
+        if kind == b'IHDR':
+            if channels is not None or length != 13:
+                raise SuiteError('MAX fixture PNG header is invalid')
+            width, height, depth, color, compression, filtering, interlace = struct.unpack('>2I5B', data)
+            if (width, height, depth, compression, filtering, interlace) != (4, 4, 8, 0, 0, 0) or color not in (2, 6):
+                raise SuiteError('MAX fixture PNG must be 4 by 4 RGB or RGBA')
+            channels = 3 if color == 2 else 4
+        elif kind == b'IDAT':
+            compressed.extend(data)
+        elif kind == b'IEND':
+            if length or end != len(raw):
+                raise SuiteError('MAX fixture PNG ending is invalid')
+            ended = True
+            break
+        offset = end
+    if not ended or channels is None:
+        raise SuiteError('MAX fixture PNG is incomplete')
+    decoder = zlib.decompressobj()
+    decoded = decoder.decompress(compressed, 4 * (1 + 4 * channels) + 1)
+    if not decoder.eof or decoder.unused_data or len(decoded) != 4 * (1 + 4 * channels):
+        raise SuiteError('MAX fixture PNG decoded pixels exceed fixture bounds')
+    previous = [0] * (4 * channels)
+    for row in range(4):
+        start = row * (1 + 4 * channels)
+        filtering = decoded[start]
+        if filtering > 4:
+            raise SuiteError('MAX fixture PNG filter is invalid')
+        current = list(decoded[start + 1:start + 1 + 4 * channels])
+        for i in range(len(current)):
+            left = current[i - channels] if i >= channels else 0
+            up = previous[i]
+            corner = previous[i - channels] if i >= channels else 0
+            predictor = left + up - corner
+            distances = [abs(predictor - x) for x in (left, up, corner)]
+            paeth = (left, up, corner)[distances.index(min(distances))]
+            current[i] = (current[i] + (0, left, up, (left + up) // 2, paeth)[filtering]) % 256
+        for i in range(0, len(current), channels):
+            if current[i:i + channels] != [220, 30, 60] + ([255] if channels == 4 else []):
+                raise SuiteError('MAX fixture must preserve the declared red texture pixels')
+        previous = current
+
+
+def validate_max_glb(doc: dict, view_bytes: Callable, size: int) -> dict[str, object]:
+    """Check this licensed static fixture, including real Blender TRS transforms."""
+    if doc.get('animations') or doc.get('skins'):
+        raise SuiteError('MAX fixture must export only static geometry')
+    images = _array(doc.get('images'), 'MAX images')
+    if len(images) != 1:
+        raise SuiteError('MAX fixture must preserve one embedded PNG')
+    image = _object(images[0], 'MAX embedded image')
+    if image.get('mimeType') != 'image/png' or 'uri' in image:
+        raise SuiteError('MAX fixture must preserve one embedded PNG')
+    validate_max_png(view_bytes(image.get('bufferView'))[0])
+    accessors = _array(doc.get('accessors'), 'MAX accessors')
+    def values(index, kind, component):
+        index = non_negative_int(index, 'MAX accessor index')
+        if index >= len(accessors):
+            raise SuiteError('MAX accessor index is out of bounds')
+        item = _object(accessors[index], 'MAX accessor')
+        if item.get('type') != kind or item.get('componentType') != component or 'sparse' in item:
+            raise SuiteError('MAX fixture accessor encoding differs')
+        count = positive_int(item.get('count'), 'MAX accessor count')
+        if count > 4096:
+            raise SuiteError('MAX accessor exceeds fixture budget')
+        encoding = {5126: 'f', 5121: 'B', 5123: 'H', 5125: 'I'}[component]
+        width = {'VEC3': 3, 'VEC2': 2, 'SCALAR': 1}[kind]
+        packed = struct.calcsize(encoding) * width
+        data, view = view_bytes(item.get('bufferView'))
+        offset = non_negative_int(item.get('byteOffset', 0), 'MAX accessor offset')
+        stride = positive_int(view.get('byteStride', packed), 'MAX accessor stride')
+        if stride < packed or offset + (count - 1) * stride + packed > len(data):
+            raise SuiteError('MAX fixture accessor bytes are truncated')
+        result = [struct.unpack_from('<' + str(width) + encoding, data, offset + i * stride) for i in range(count)]
+        if any(not math.isfinite(v) for row in result for v in row):
+            raise SuiteError('MAX fixture coordinates must be finite')
+        return result
+    materials = _array(doc.get('materials'), 'MAX materials')
+    textures = _array(doc.get('textures'), 'MAX textures')
+    meshes = _array(doc.get('meshes'), 'MAX meshes')
+    if len(meshes) != 5:
+        raise SuiteError('MAX fixture must retain five static meshes')
+    mesh_points, counts, index_counts, textured = [], [], [], 0
+    for mesh in meshes:
+        mesh = _object(mesh, 'MAX mesh')
+        points = []
+        for primitive in _array(mesh.get('primitives'), 'MAX primitives'):
+            primitive = _object(primitive, 'MAX primitive')
+            attributes = _object(primitive.get('attributes'), 'MAX attributes')
+            if primitive.get('mode', 4) != 4:
+                raise SuiteError('MAX fixture must retain triangles')
+            positions = values(attributes.get('POSITION'), 'VEC3', 5126)
+            index = non_negative_int(primitive.get('indices'), 'MAX indices accessor')
+            if index >= len(accessors) or _object(accessors[index], 'MAX indices').get('componentType') not in (5121, 5123, 5125):
+                raise SuiteError('MAX indices must be bounded unsigned integers')
+            indices = values(index, 'SCALAR', accessors[index]['componentType'])
+            if any(row[0] >= len(positions) for row in indices):
+                raise SuiteError('MAX triangle index exceeds vertex count')
+            counts.append(len(positions)); index_counts.append(len(indices)); points.extend(positions)
+            if 'material' not in primitive:
+                continue
+            material_index = non_negative_int(primitive['material'], 'MAX material index')
+            if material_index >= len(materials):
+                raise SuiteError('MAX material is out of bounds')
+            pbr = _object(_object(materials[material_index], 'MAX material').get('pbrMetallicRoughness', {}), 'MAX PBR')
+            if 'baseColorTexture' in pbr:
+                texture = _object(pbr['baseColorTexture'], 'MAX diffuse texture')
+                texture_index = non_negative_int(texture.get('index'), 'MAX texture index')
+                if texture_index >= len(textures) or _object(textures[texture_index], 'MAX texture').get('source') != 0 or texture.get('texCoord', 0) != 0:
+                    raise SuiteError('MAX diffuse texture must reference embedded PNG and UV zero')
+                if len(values(attributes.get('TEXCOORD_0'), 'VEC2', 5126)) != len(positions):
+                    raise SuiteError('MAX texture UV count differs')
+                textured += 1
+        mesh_points.append(points)
+    if sorted(map(len, mesh_points)) != [4, 4, 24, 206, 206]:
+        raise SuiteError('MAX fixture must retain geometry in all five meshes')
+    if sorted(counts) != sorted([4] * 8 + [16, 190] * 2) or sorted(index_counts) != sorted([6] * 8 + [24, 912] * 2) or textured != 2:
+        raise SuiteError('MAX fixture static primitive geometry or textured mesh count differs')
+    identity = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.]
+    def vector(value, length):
+        if not isinstance(value, list) or len(value) != length or any(type(v) not in (int, float) or not math.isfinite(v) for v in value):
+            raise SuiteError('MAX transform must contain finite coordinates')
+        return value
+    nodes, scenes = _array(doc.get('nodes'), 'MAX nodes'), _array(doc.get('scenes'), 'MAX scenes')
+    if len(scenes) != 1 or doc.get('scene', 0) != 0:
+        raise SuiteError('MAX fixture must retain one active scene')
+    if len(nodes) > 512:
+        raise SuiteError('MAX nodes exceed fixture budget')
+    roots = _array(_object(scenes[0], 'MAX scene').get('nodes'), 'MAX scene roots')
+    if len(roots) != 1 or type(roots[0]) is not int or not 0 <= roots[0] < len(nodes):
+        raise SuiteError('MAX fixture must retain its unit root')
+    root = _object(nodes[roots[0]], 'MAX unit root')
+    scale = vector(root.get('scale'), 3)
+    if root.get('name') != 'ADDP source unit to meters' or any(not math.isclose(v, .001, rel_tol=1e-6) for v in scale):
+        raise SuiteError('MAX fixture must apply user millimetres to metres')
+    world_points, instances, visited = [], [], set()
+    def visit(index, parent):
+        index = non_negative_int(index, 'MAX node index')
+        if index >= len(nodes) or index in visited:
+            raise SuiteError('MAX scene contains repeated nodes or cycles')
+        visited.add(index)
+        node = _object(nodes[index], 'MAX node')
+        if 'matrix' in node:
+            if any(key in node for key in ('scale', 'rotation', 'translation')):
+                raise SuiteError('MAX node cannot combine matrix and TRS')
+            local = vector(node['matrix'], 16)
+        else:
+            x, y, z, w = vector(node.get('rotation', [0., 0., 0., 1.]), 4)
+            if not math.isclose(x*x + y*y + z*z + w*w, 1., abs_tol=1e-5):
+                raise SuiteError('MAX rotation must be normalized')
+            sx, sy, sz = vector(node.get('scale', [1., 1., 1.]), 3)
+            tx, ty, tz = vector(node.get('translation', [0., 0., 0.]), 3)
+            local = [(1-2*(y*y+z*z))*sx, 2*(x*y+z*w)*sx, 2*(x*z-y*w)*sx, 0.,
+                     2*(x*y-z*w)*sy, (1-2*(x*x+z*z))*sy, 2*(y*z+x*w)*sy, 0.,
+                     2*(x*z+y*w)*sz, 2*(y*z-x*w)*sz, (1-2*(x*x+y*y))*sz, 0., tx, ty, tz, 1.]
+        world = [sum(parent[k*4+row] * local[column*4+k] for k in range(4)) for column in range(4) for row in range(4)]
+        if 'mesh' in node:
+            mesh = non_negative_int(node['mesh'], 'MAX mesh index')
+            if mesh >= len(meshes) or 'skin' in node:
+                raise SuiteError('MAX scene must reference static fixture meshes')
+            instances.append(mesh)
+            world_points.extend(tuple(sum(world[k*4+axis]*p[k] for k in range(3))+world[12+axis] for axis in range(3)) for p in mesh_points[mesh])
+        for child in _array(node.get('children', []), 'MAX children'):
+            visit(child, world)
+    visit(roots[0], identity)
+    if sorted(instances) != list(range(5)):
+        raise SuiteError('MAX scene must render all five meshes once')
+    extent = [max(p[i] for p in world_points)-min(p[i] for p in world_points) for i in range(3)]
+    if any(not math.isclose(a, b, rel_tol=1e-5, abs_tol=1e-7) for a, b in zip(extent, [.007146491023, .004421921513, .006392791685])):
+        raise SuiteError('MAX fixture extent must preserve millimetre conversion and node transforms')
+    return {'vertex_count': sum(counts), 'extent': extent, 'mesh_count': 5, 'primitive_count': 12,
+            'instance_count': 5, 'embedded_images': 1, 'image_mime_type': 'image/png', 'size_bytes': size}
+
+
+def validate_max_conversion(execution: dict) -> dict:
+    metadata = _object(execution.get('metadata'), 'MAX execution metadata')
+    conversion = _object(_object(metadata.get('glb_facts'), 'MAX GLB facts').get('conversion'), 'MAX conversion audit')
+    expected = {'source_unit': 'mm', 'unit_source': 'user', 'scale_to_meters': .001,
+                'importer_version': '1.9.2', 'texture_refs': list(MAX_OPTIONS['texture_files']),
+                'source_sha256': MAX_SOURCE_SHA256, 'meshes': 5, 'scope': 'static'}
+    if any(conversion.get(k) != v for k, v in expected.items()):
+        raise SuiteError('MAX conversion audit must match the declared unit, texture and source')
+    runtime = _object(metadata.get('workflow_runtime'), 'MAX workflow runtime')
+    if any(runtime.get(k) != v for k, v in {'engine_type': 'model3d_workflow', 'operator': 'max_to_glb', 'mode': 'direct'}.items()):
+        raise SuiteError('MAX must use the real direct Model3D operator')
+    return expected
+
+
 def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
-    if format_name not in {"dae", "3ds", "ifc", "osgb", "skp"}:
+    if format_name not in {"dae", "3ds", "ifc", "osgb", "skp", "max"}:
         raise SuiteError("unexpected model fixture format")
     if not 20 <= len(raw) <= 2 * 1024 * 1024:
         raise SuiteError("fixture GLB content must be nonempty and bounded to 2 MiB")
@@ -475,6 +678,8 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         if view.get("buffer") != 0 or start + length > declared_size:
             raise SuiteError("fixture bufferView exceeds embedded bytes")
         return binary[start:start + length], view
+    if format_name == "max":
+        return validate_max_glb(doc, view_bytes, len(raw))
     images = _array(doc.get("images", []), "fixture GLB images")
     mime_type = "image/jpeg" if format_name == "osgb" else "image/png"
     image_count = 0 if format_name == "ifc" else 1
@@ -617,6 +822,7 @@ def generate_model_glb(client: GatewayClient, model: ArtifactFixture, tenant_id:
         raise SuiteError("model capability preferred_mode is missing or invalid")
     started = _object(client.request("POST", "/api/v1/manager/quick-view/actions", (202,), {
         "locator": model.locator, "action": "generate_model_3d_glb",
+        **(MAX_OPTIONS if model.format == "max" else {}),
     }).payload, "model GLB generation")
     model.task_id = positive_int(started.get("task_id"), "model task id")
     execution_id = started.get("execution_id")
@@ -644,7 +850,8 @@ def generate_model_glb(client: GatewayClient, model: ArtifactFixture, tenant_id:
     if not ranged.raw.startswith(b"glTF") or len(ranged.raw) != 64:
         raise SuiteError("model GLB Range response must be a 64-byte GLB prefix")
     content = client.request("GET", expected_url, (200,), headers={"Accept": "model/gltf-binary"})
-    model.artifact = {**validate_model_glb(content.raw, model.format), "range_bytes": len(ranged.raw), "storage_domain": "addp-infra", "preview_url": expected_url}
+    audit = {"conversion": validate_max_conversion(execution)} if model.format == "max" else {}
+    model.artifact = {**audit, **validate_model_glb(content.raw, model.format), "range_bytes": len(ranged.raw), "storage_domain": "addp-infra", "preview_url": expected_url}
     model.mode_changed = True
     client.request("PATCH", "/api/v1/manager/preview-state/preferred-mode", (200,), {"locator": model.locator, "preferred_mode": "map_quick_view"})
 
@@ -843,7 +1050,7 @@ def validate_browser_report(
             "schema_version", "phase", "suite", "run_id", "result",
             "model_generation_requests", "browser_warning_errors", "failed_business_responses",
         )}
-        expected["models"] = [{**model, "generation_entry_visible": True} for model in models]
+        expected["models"] = [{**model, "generation_entry_visible": True, **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in models]
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
         raise SuiteError("Manager lineage browser report contract mismatch: " + ", ".join(mismatches))
@@ -938,7 +1145,7 @@ def run_scenario(
     scan_execution_id = wait_for_meta_scan(client, engine_id, deadline)
     pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
     pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
-    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds", "ifc", "osgb", "skp")]
+    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds", "ifc", "osgb", "skp", "max")]
     raster_item = find_fixture_item(client, engine_id, f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']}", "raster")
     raster = ArtifactFixture("raster", raster_item, build_item_locator(engine_id, raster_item))
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
@@ -1111,7 +1318,7 @@ def run_scenario(
             raster={"locator": raster.locator, "item_id": raster.item["id"], "preview_url": raster.artifact["preview_url"]},
         )
         browser_models = [{"format": model.format, "locator": model.locator,
-                           "item_id": model.item["id"]} for model in model_fixtures]
+                           "item_id": model.item["id"], **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
         entry_evidence: dict[str, object] = {}
         if browser_runner is not None:
             entry_evidence = browser_runner(repository, environment, **browser_arguments,
@@ -1126,6 +1333,7 @@ def run_scenario(
             "format": model.format, "locator": model.locator,
             "item_id": model.item["id"], "result_id": model.result_id,
             "preview_url": model.artifact["preview_url"],
+            **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {}),
         } for model in model_fixtures]
         browser_evidence: dict[str, object] = {}
         if browser_runner is not None:

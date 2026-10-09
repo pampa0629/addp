@@ -451,6 +451,8 @@ Manager 的数据探查和任务创建入口复用同一 MAX 转换选项组件�
 
 确定性单位、路径和发布边界进入 `make test-model3d-workflow`；真实 MAX、贴图和单位换算进入既有 Linux 产品镜像构建的 smoke，macOS 原生预检核对 Blender 和导入器。Manager、Common 的格式和快显契约沿用标准模块门禁。以上不替代真实 Manager 页面和 Hosted T4 验收。
 
+MAX 的 Manager Hosted T4 扩展复用 `manager-internal-artifact-lineage`，从专用 Business MinIO 读取未修改的 CC-BY-SA-3.0 马模型及 ADDP 自建 4 × 4 RGB `(220,30,60)` 贴图。页面验证默认米、手选毫米和显式 bitmap 映射；正式生成声明 `source_unit=mm`，核对转换审计、五个静态网格、十二个 primitive、444 个顶点、米制场景尺寸和实际内嵌贴图像素，不固定跨 Blender 版本的 PNG 编码哈希。Meta 仅识别 MAX 格式身份；六种模型与点云、PPTX、栅格共同核对九项输入／输出血缘、缓存加载和零残留清理。确定性入口仍为 `make test-manager-online-runner` 与 `make test-online-runner`；真实验收仍为现有 Hosted suite，实际运行通过前不计为 T4 通过。
+
 ## SKP
 
 SKP 按 `.skp` 扩展名识别为 `format=skp + data_type=model_3d + layout=single`。Common 只注册静态格式身份，不加载 SketchUp SDK 或重型解析器，不从扩展名推断几何数量、材质、单位或 CRS；没有实际解析事实时省略 `type_info.model_3d` 与 `format_info.skp`。

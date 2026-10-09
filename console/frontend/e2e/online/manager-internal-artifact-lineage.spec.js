@@ -29,7 +29,7 @@ function environment() {
   return Object.fromEntries(requiredNames.map(name => [name, process.env[name]]))
 }
 
-test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP GLB load through Console', async ({ page }) => {
+test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB load through Console', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
   if (!Number.isInteger(itemID) || itemID <= 0) throw new Error('Manager lineage item ID must be positive')
@@ -44,7 +44,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP GLB load
   const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
   expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
-  expect(models.map(model => model.format)).toEqual(['dae', '3ds', 'ifc', 'osgb', 'skp'])
+  expect(models.map(model => model.format)).toEqual(['dae', '3ds', 'ifc', 'osgb', 'skp', 'max'])
   for (const model of models) {
     expect(Number.isInteger(model.item_id) && model.item_id > 0).toBe(true)
     if (phase === 'generation-entry') continue
@@ -132,10 +132,35 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP GLB load
         await expect(generate).toBeVisible()
         await expect(generate).toBeEnabled()
         await expect(modelFrame.locator('.model-preview')).toHaveCount(0)
+        if (model.format === 'max') {
+          expect(model.conversion_options.source_unit).toBe('mm')
+          const options = modelFrame.locator('.max-options')
+          await expect(options).toBeVisible()
+          const unit = options.getByRole('combobox', { name: /MAX 源单位|MAX source unit/ })
+          await expect(options.getByText(/未选择时默认米|Defaults to metres/)).toBeVisible()
+          await unit.click()
+          await modelFrame.getByRole('option', { name: /毫米（mm）|Millimetres \(mm\)/ }).click()
+          await expect(options.getByText(/毫米（mm）|Millimetres \(mm\)/)).toBeVisible()
+          await options.getByRole('button', { name: /外部贴图（0）|External textures \(0\)/ }).click()
+          const dialog = modelFrame.getByRole('dialog', { name: /MAX 外部贴图|MAX external textures/ })
+          await dialog.getByRole('button', { name: /添加贴图|Add texture/ }).click()
+          const entries = Object.entries(model.conversion_options.texture_files)
+          expect(entries).toHaveLength(1)
+          await dialog.getByRole('textbox', { name: /第 1 项贴图引用|Texture reference 1/ }).fill(entries[0][0])
+          await dialog.getByRole('textbox', { name: /第 1 项图片路径|Image path 1/ }).fill(entries[0][1])
+          await dialog.getByRole('button', { name: /保存|Save/, exact: true }).click()
+          await expect(dialog).not.toBeVisible()
+          await expect(options.getByRole('button', { name: /外部贴图（1）|External textures \(1\)/ })).toBeVisible()
+          // Reopen to verify the exact declaration survived component submission.
+          await options.getByRole('button', { name: /外部贴图（1）|External textures \(1\)/ }).click()
+          await expect(dialog.getByRole('textbox', { name: /第 1 项贴图引用|Texture reference 1/ })).toHaveValue(entries[0][0])
+          await expect(dialog.getByRole('textbox', { name: /第 1 项图片路径|Image path 1/ })).toHaveValue(entries[0][1])
+          await dialog.getByRole('button', { name: /取消|Cancel/, exact: true }).click()
+        }
         await modelFrame.locator('.preview-panel').screenshot({
           path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-generation-entry.png`)
         })
-        modelEvidence.push({ ...model, generation_entry_visible: true })
+        modelEvidence.push({ ...model, generation_entry_visible: true, ...(model.format === 'max' ? { conversion_options_verified: true } : {}) })
       }
       expect(modelGenerationRequests).toBe(0)
       expect(failedBusinessResponses).toEqual([])

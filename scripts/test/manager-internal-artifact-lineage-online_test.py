@@ -58,6 +58,39 @@ def fixture_glb(format_name="dae"):
         doc["bufferViews"][2]["byteLength"] = len(texture)
         shift = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 50.8, 0., 0., 1.]
         doc["nodes"] = [{"scale": [0.001] * 3, "children": [1, 2]}, {"mesh": 0}, {"mesh": 0, "matrix": shift}]
+    elif format_name == 'max':
+        binary = b''
+        doc['bufferViews'], doc['accessors'], doc['meshes'] = [], [], []
+        def append_accessor(rows, kind, component, encoding):
+            nonlocal binary
+            binary += b'\0' * (-len(binary) % 4)
+            data = b''.join(struct.pack('<' + str(len(row)) + encoding, *row) for row in rows)
+            view = len(doc['bufferViews'])
+            doc['bufferViews'].append({'buffer': 0, 'byteOffset': len(binary), 'byteLength': len(data)})
+            binary += data
+            index = len(doc['accessors'])
+            doc['accessors'].append({'bufferView': view, 'count': len(rows), 'type': kind, 'componentType': component})
+            return index
+        for mesh_index, counts in enumerate(([4]*6, [4], [4], [16,190], [16,190])):
+            primitives = []
+            for count in counts:
+                points = [(0., 0., 0.), (7.146491023, 4.421921513, 6.392791685)] + [(0., 0., 0.)]*(count-2)
+                position = append_accessor(points, 'VEC3', 5126, 'f')
+                uv = append_accessor([(0., 0.)]*count, 'VEC2', 5126, 'f')
+                index_count = {4: 6, 16: 24, 190: 912}[count]
+                indices = append_accessor([(i % count,) for i in range(index_count)], 'SCALAR', 5123, 'H')
+                primitive = {'attributes': {'POSITION': position, 'TEXCOORD_0': uv}, 'indices': indices}
+                if mesh_index:
+                    primitive['material'] = 0 if mesh_index == 4 else 1
+                primitives.append(primitive)
+            doc['meshes'].append({'primitives': primitives})
+        png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>2I5B', 4, 4, 8, 2, 0, 0, 0))
+               + chunk(b'IDAT', zlib.compress((b'\0' + bytes([220,30,60])*4)*4)) + chunk(b'IEND', b''))
+        doc['images'][0]['bufferView'] = len(doc['bufferViews'])
+        doc['bufferViews'].append({'buffer': 0, 'byteOffset': len(binary), 'byteLength': len(png)})
+        binary += png
+        doc['materials'].append({'pbrMetallicRoughness': {'baseColorFactor': [.7,.7,.7,1.]}})
+        doc['nodes'] = [{'name': 'ADDP source unit to meters', 'scale': [.001]*3, 'children': [1,2,3,4,5]}] + [{'mesh': i} for i in range(5)]
     doc["buffers"][0]["byteLength"] = len(binary)
     encoded = json.dumps(doc).encode()
     encoded += b" " * (-len(encoded) % 4)
@@ -102,7 +135,7 @@ class FakeGatewayClient:
             format_name: {"item_id": item_id, "task_id": item_id + 110, "result_id": item_id + 210,
                           "fingerprint": fingerprint * 64, "task_exists": False, "result_exists": False,
                           "locator": f"addp://engine/27/path/addp-online/model3d/{format_name}/model.{format_name}?type=object&item_id={item_id}"}
-            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"), ("ifc", 96, "f"), ("osgb", 97, "g"), ("skp", 98, "h"))
+            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"), ("ifc", 96, "f"), ("osgb", 97, "g"), ("skp", 98, "h"), ("max", 99, "i"))
         }
         self.raster = {'id': 305, 'item_id': 95, 'task_id': 205, 'result_id': 305, 'fingerprint': 'e'*64,
             'item_fingerprint': 'e'*64, 'task_exists': False, 'result_exists': False,
@@ -139,7 +172,7 @@ class FakeGatewayClient:
                 "addp-infra://minio/manager/tenant_42/point-cloud-copc/91/"
                 "pdal_las12_format0.copc.laz?type=object"
             )
-        return {
+        execution = {
             "status": "success",
             "metadata": {
                 "lineage_facts": {
@@ -160,6 +193,14 @@ class FakeGatewayClient:
                 }
             },
         }
+
+        if format_name == 'max':
+            execution['metadata'].update(glb_facts={'conversion': {
+                'source_unit': 'mm', 'unit_source': 'user', 'scale_to_meters': .001,
+                'importer_version': '1.9.2', 'texture_refs': list(SUITE.MAX_OPTIONS['texture_files']),
+                'source_sha256': SUITE.MAX_SOURCE_SHA256, 'meshes': 5, 'scope': 'static'}},
+                workflow_runtime={'engine_type': 'model3d_workflow', 'operator': 'max_to_glb', 'mode': 'direct'})
+        return execution
 
     def request(self, method, path, expected, body=None, headers=None):
         self.calls.append((method, path))
@@ -261,7 +302,7 @@ class FakeGatewayClient:
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
                 "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": 1024,
                 "attributes": {"item": {"data_type": "model_3d", "format": format_name, "layout": "single"},
-                               "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01, "schema_identifiers": ["IFC4"], "schema_version": "IFC4", "entity_count": 16, "entity_type_counts": {"IFCBUILDINGELEMENTPROXY": 1}}} if format_name not in {"osgb", "skp"} else {}},
+                               "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01, "schema_identifiers": ["IFC4"], "schema_version": "IFC4", "entity_count": 16, "entity_type_counts": {"IFCBUILDINGELEMENTPROXY": 1}}} if format_name not in {"osgb", "skp", "max"} else {}},
             } for format_name, model in self.models.items()])
         parsed = urllib.parse.urlsplit(path)
         query = urllib.parse.parse_qs(parsed.query)
@@ -286,6 +327,8 @@ class FakeGatewayClient:
             if path == "/api/v1/manager/quick-view/actions" and method == "POST" and body.get("locator") == model["locator"]:
                 if body.get("action") != "generate_model_3d_glb":
                     raise AssertionError("model action must be generate_model_3d_glb")
+                if format_name == 'max' and body != {'locator': model['locator'], 'action': 'generate_model_3d_glb', **SUITE.MAX_OPTIONS}:
+                    raise AssertionError('MAX must submit explicit unit and texture mapping')
                 model["task_exists"] = model["result_exists"] = True
                 return response(202, {"task_type": SUITE.MODEL_TASK_TYPE, "task_id": model["task_id"], "execution_id": f"model-{format_name}"})
             if path == f"/api/v1/manager/executions/model-{format_name}":
@@ -463,7 +506,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def browser_models(self):
         client = FakeGatewayClient()
         return [{"format": format_name, "locator": model["locator"], "item_id": model["item_id"],
-                 "result_id": model["result_id"], "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content"}
+                 "result_id": model["result_id"], "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content", **({"conversion_options": SUITE.MAX_OPTIONS} if format_name == "max" else {})}
                 for format_name, model in client.models.items()]
 
     def browser_report(self, environment, evidence):
@@ -471,7 +514,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v4",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
-                    "models": [{**model, "generation_entry_visible": True} for model in evidence["models"]],
+                    "models": [{**model, "generation_entry_visible": True, **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_warnings": 0,
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
@@ -630,8 +673,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                     Path("/repository"), scenario_environment(artifact_dir), browser
                 )
 
-        self.assertEqual(report["lineage"]["inputs"], 8)
-        self.assertEqual(report["lineage"]["outputs"], 8)
+        self.assertEqual(report["lineage"]["inputs"], 9)
+        self.assertEqual(report["lineage"]["outputs"], 9)
         self.assertTrue(report["artifacts"]["pptx_pdf"]["cache_reused"])
         self.assertEqual(report['raster_cog']['mode'], 'direct')
         self.assertTrue(report['raster_cog']['physical']['cog_valid'])
@@ -654,7 +697,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             self.assertFalse(model["result_exists"])
             self.assertEqual(client.model_modes[format_name], "basic_preview")
             self.assertEqual(report["artifacts"][format_name]["embedded_images"], 0 if format_name == "ifc" else 1)
-            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 24 if format_name == "ifc" else 3)
+            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 24 if format_name == "ifc" else 444 if format_name == "max" else 3)
         self.assertFalse(client.pointcloud_task_exists)
         self.assertFalse(client.pointcloud_result_exists)
         self.assertFalse(client.pptx_task_exists)
@@ -841,6 +884,87 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         damaged_texture[28 + json_size + 80] ^= 1
         with self.assertRaisesRegex(SUITE.SuiteError, "four-color PNG"):
             SUITE.validate_model_glb(bytes(damaged_texture), "skp")
+
+    def test_max_static_geometry_units_pixels_and_node_transforms(self):
+        raw = fixture_glb('max')
+        facts = SUITE.validate_model_glb(raw, 'max')
+        self.assertEqual((facts['mesh_count'], facts['primitive_count'], facts['vertex_count']), (5, 12, 444))
+        for change, reason in (
+            (lambda d: d['nodes'][0].update(scale=[1.]*3), 'millimetres'),
+            (lambda d: d['nodes'][0].update(children=[1,2,3,4]), 'all five meshes'),
+            (lambda d: d['meshes'][1].update(primitives=[]), 'all five meshes'),
+            (lambda d: d['nodes'][0].update(rotation=[0,0,.70710678,.70710678]), 'extent'),
+            (lambda d: d['nodes'][1].update(translation=[100,0,0]), 'extent'),
+            (lambda d: d['nodes'][1].update(children=[0]), 'cycles'),
+            (lambda d: d.update(animations=[{}]), 'static geometry'),
+            (lambda d: d['images'][0].update(uri='texture.png'), 'embedded PNG'),
+            (lambda d: d['materials'][0]['pbrMetallicRoughness'].pop('baseColorTexture'), 'textured mesh count'),
+            (lambda d: d['bufferViews'][0].update(byteLength=4), 'truncated'),
+            (lambda d: d['accessors'][2].update(count=9999), 'budget'),
+            (lambda d: d['textures'][0].update(source=1), 'embedded PNG'),
+        ):
+            with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
+                SUITE.validate_model_glb(alter_glb(raw, change), 'max')
+        # The meter conversion root stays positive; child reflections remain legal.
+        transformed = alter_glb(raw, lambda d: d['nodes'][0].update(scale=[-.001]*3, translation=[1,2,3]))
+        with self.assertRaisesRegex(SUITE.SuiteError, 'millimetres'):
+            SUITE.validate_model_glb(transformed, 'max')
+        transformed = alter_glb(raw, lambda d: [n.update(scale=[-1.]*3, rotation=[1.,0.,0.,0.], translation=[1.,2.,3.]) for n in d['nodes'][1:]])
+        self.assertEqual(SUITE.validate_model_glb(transformed, 'max')['instance_count'], 5)
+        json_size = struct.unpack_from('<I', raw, 12)[0]
+        doc = json.loads(raw[20:20+json_size])
+        mutated = bytearray(raw)
+        struct.pack_into('<H', mutated, 28+json_size+doc['bufferViews'][2]['byteOffset'], 999)
+        with self.assertRaisesRegex(SUITE.SuiteError, 'exceeds vertex count'):
+            SUITE.validate_model_glb(bytes(mutated), 'max')
+        uv_index = doc['meshes'][4]['primitives'][0]['attributes']['TEXCOORD_0']
+        uv_view = doc['bufferViews'][doc['accessors'][uv_index]['bufferView']]
+        mutated = bytearray(raw)
+        struct.pack_into('<f', mutated, 28+json_size+uv_view['byteOffset'], float('nan'))
+        with self.assertRaisesRegex(SUITE.SuiteError, 'finite'):
+            SUITE.validate_model_glb(bytes(mutated), 'max')
+        image = doc['bufferViews'][doc['images'][0]['bufferView']]
+        png = raw[28+json_size+image['byteOffset']:28+json_size+image['byteOffset']+image['byteLength']]
+        SUITE.validate_max_png(png)
+        wrong = bytearray(png); wrong[-8] ^= 1
+        with self.assertRaises(SUITE.SuiteError):
+            SUITE.validate_max_png(bytes(wrong))
+        with self.assertRaises(SUITE.SuiteError):
+            SUITE.validate_max_png(png[:-1])
+        def chunk(kind, data):
+            return struct.pack('>I', len(data))+kind+data+struct.pack('>I', zlib.crc32(kind+data))
+        for color in ([219,30,60], [220,30,60,0]):
+            kind = 2 if len(color) == 3 else 6
+            wrong_pixels = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>2I5B',4,4,8,kind,0,0,0))
+                            + chunk(b'IDAT', zlib.compress((b'\0'+bytes(color)*4)*4)) + chunk(b'IEND', b''))
+            with self.assertRaisesRegex(SUITE.SuiteError, 'red texture pixels'):
+                SUITE.validate_max_png(wrong_pixels)
+
+    def test_max_conversion_audit_rejects_wrong_units_texture_and_runtime(self):
+        execution = FakeGatewayClient().lineage_execution(SUITE.MODEL_TASK_TYPE, 'max')
+        self.assertEqual(SUITE.validate_max_conversion(execution)['source_unit'], 'mm')
+        for key, value in [('source_unit','m'), ('unit_source','default'), ('scale_to_meters',1.),
+                           ('texture_refs',[]), ('source_sha256','x'*64), ('meshes',4), ('scope','animated')]:
+            wrong = copy.deepcopy(execution)
+            wrong['metadata']['glb_facts']['conversion'][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(SUITE.SuiteError, 'conversion audit'):
+                SUITE.validate_max_conversion(wrong)
+        execution['metadata']['workflow_runtime']['operator'] = 'mesh_to_glb'
+        with self.assertRaisesRegex(SUITE.SuiteError, 'direct Model3D'):
+            SUITE.validate_max_conversion(execution)
+
+    def test_max_identity_scan_rejects_fabricated_metadata_before_writes(self):
+        client = FakeGatewayClient()
+        original = client._request
+        def changed(method, path, body, headers):
+            result = original(method, path, body, headers)
+            if path == '/api/v1/meta/engines/27/items':
+                item = next(i for i in result.payload if i.get('attributes',{}).get('item',{}).get('format') == 'max')
+                item['attributes']['type_info'] = {'model_3d': {'mesh_count': 5}}
+            return result
+        with mock.patch.object(client, '_request', side_effect=changed), self.assertRaisesRegex(SUITE.SuiteError, 'must not invent'):
+            SUITE.prepare_model_fixture(client, 27, 'addp-online', 'max')
+        self.assertFalse(any(method == 'POST' for method, _ in client.calls))
 
     def test_skp_identity_scan_rejects_invented_parsing_facts_before_writes(self):
         client = FakeGatewayClient()
