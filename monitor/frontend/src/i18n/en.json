@@ -600,6 +600,7 @@
         "waiting": "The latest collection succeeded. Some metrics do not yet have valid samples or a complete measurement window."
       },
       "configure": "Configure collection",
+      "viewCollection": "View collection settings",
       "sampling": "Sampling details",
       "title": "Host monitoring",
       "detailTitle": "Host monitoring details",

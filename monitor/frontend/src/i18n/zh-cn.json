@@ -600,6 +600,7 @@
         "waiting": "当前采集成功；部分指标尚未形成有效样本或完整统计窗口。"
       },
       "configure": "配置采集",
+      "viewCollection": "查看采集配置",
       "sampling": "采样说明",
       "title": "主机监控",
       "detailTitle": "主机资源观测",

@@ -56,8 +56,11 @@
         <el-alert v-if="filesystemErrorKey" :title="t(filesystemErrorKey)" type="error" show-icon :closable="false" data-testid="resource-filesystem-error" />
         <el-alert v-if="inodeErrorKey" :title="`${t('monitor.resources.filesystem.inode')}: ${t(inodeErrorKey)}`" type="error" show-icon :closable="false" data-testid="resource-inode-error" />
         <p v-if="mountRows.length && inodes" class="resource-hint">{{ t('monitor.resources.filesystem.inode') }} · {{ t('monitor.resources.queriedAt') }}: {{ date(inodes.queried_at) }}</p>
-        <el-alert v-if="instant.collection.filesystem === 'not_collected' || instant.collection.filesystem === 'failed'" :title="t(instant.collection.filesystem === 'not_collected' ? 'monitor.resources.collection.not_collected' : 'monitor.resources.collection.filesystem_failed')" type="info" :closable="false" data-testid="resource-filesystem-capability" />
-        <p v-if="!loading && !mountRows.length && !filesystemErrorKey && !inodeErrorKey && !['not_collected', 'failed'].includes(instant.collection.filesystem)" class="resource-hint" role="status" data-testid="resource-filesystem-empty">{{ t('monitor.resources.filesystem.empty') }}</p>
+        <div class="resource-empty-status" data-testid="resource-filesystem-status">
+          <el-alert v-if="instant.collection.filesystem === 'not_collected' || instant.collection.filesystem === 'failed'" :title="t(instant.collection.filesystem === 'not_collected' ? 'monitor.resources.collection.not_collected' : 'monitor.resources.collection.filesystem_failed')" type="info" :closable="false" data-testid="resource-filesystem-capability" />
+          <p v-if="!loading && !mountRows.length && !filesystemErrorKey && !inodeErrorKey && !['not_collected', 'failed'].includes(instant.collection.filesystem)" class="resource-hint" role="status" data-testid="resource-filesystem-empty">{{ t('monitor.resources.filesystem.empty') }}</p>
+          <el-button v-if="!loading && !mountRows.length && !filesystemErrorKey && !inodeErrorKey && canConfigure" text type="primary" @click="configureCollection">{{ t(instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure') }}</el-button>
+        </div>
         <el-table v-if="mountRows.length" :data="mountRows" data-testid="resource-filesystem-table">
           <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
           <el-table-column prop="dimensions.mountpoint" :label="t('monitor.resources.filesystem.mountpoint')" min-width="180" show-overflow-tooltip />
@@ -74,7 +77,10 @@
           <p v-if="family.name === 'network' && family.rows.length" class="resource-hint">{{ t('monitor.resources.network.hint') }}</p>
           <p v-if="family.name === 'disk' && family.rows.length" class="resource-hint">{{ t('monitor.resources.disk.orderHint') }}</p>
           <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
-          <p v-if="!loading && !family.errorKey && !family.rows.length" class="resource-hint" role="status" :data-testid="`resource-${family.name}-empty`">{{ t(`monitor.resources.${family.name}.empty`) }}</p>
+          <div v-if="!loading && !family.errorKey && !family.rows.length" class="resource-empty-status" :data-testid="`resource-${family.name}-status`">
+            <p class="resource-hint" role="status" :data-testid="`resource-${family.name}-empty`">{{ t(`monitor.resources.${family.name}.empty`) }}</p>
+            <el-button v-if="canConfigure" text type="primary" @click="configureCollection">{{ t(instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure') }}</el-button>
+          </div>
           <el-table v-if="!family.errorKey && family.rows.length" :data="family.rows" row-key="key" :data-testid="`resource-${family.name}-table`">
             <el-table-column prop="dimensions.device" :label="t(family.name === 'network' ? 'monitor.resources.network.interface' : 'monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
             <el-table-column v-for="metric in family.metrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
@@ -217,6 +223,7 @@ function visibilityChanged() {
   else if (nodeID.value && state.value.refresh !== 'off' && !refreshBlocked.value) void reload({ automatic: true })
 }
 async function reload({ automatic = false } = {}) {
+  if (disposed || !['NodeResources', 'NodeResourceDetail'].includes(route.name)) { invalidate(); return }
   if (automatic && (loading.value || disposed || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
   invalidate()
   if (!automatic) refreshBlocked.value = false
@@ -317,6 +324,9 @@ onBeforeUnmount(() => { disposed = true; document.removeEventListener('visibilit
 .resource-card { min-width: 0; border: 1px solid var(--addp-border-color); border-radius: 8px; padding: 16px; background: var(--addp-bg-primary); overflow-wrap: anywhere; }
 .resource-card strong { display: block; margin-top: 12px; font-size: 22px; }
 .resource-trend, .resource-filesystems { margin-top: 24px; }
+.resource-empty-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.resource-empty-status > .el-alert { flex: 1; min-width: 0; margin: 0; }
+.resource-empty-status > .resource-hint { margin: 0; }
 .resource-metric-heading { display: flex; align-items: center; gap: 4px; }
 .resource-metric-heading .el-button { flex-shrink: 0; }
 .resource-column-summary { font-weight: 400; line-height: 1.4; margin: 4px 0 0; }

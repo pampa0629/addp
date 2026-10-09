@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { identity, node, resourceBackend, resourcePermissions, secondNode, setIdentity } from './node-resources.fixture'
+import { id as targetID } from './monitoring-targets.fixture'
 
 test('resource quantities use binary capacity and elapsed time while load is not a percent', async ({ page }) => {
   const state = await resourceBackend(page)
@@ -396,6 +397,7 @@ for (const locale of ['zh-cn', 'en']) test(`empty resource sections are compact 
   await expect(page.getByTestId('resource-collection-status')).toHaveCount(0)
   await expect(page.getByTestId('resource-filesystem-empty')).toHaveCount(0)
   for (const family of ['filesystem', 'disk', 'network']) await expect(page.getByTestId(`resource-${family}-table`)).toHaveCount(0)
+  for (const family of ['filesystem', 'disk', 'network']) await expect(page.getByTestId(`resource-${family}-status`).getByRole('button')).toHaveCount(0)
   for (const family of ['disk', 'network']) await expect(page.getByTestId(`resource-${family}-empty`)).toBeVisible()
   for (const section of ['filesystems', 'disks', 'networks']) {
     expect((await page.getByTestId(`resource-${section}`).boundingBox()).height).toBeLessThan(160)
@@ -425,6 +427,60 @@ for (const locale of ['zh-cn', 'en']) test(`empty resource sections are compact 
     await expect(page.getByTestId(`resource-${family}-empty`)).toHaveCount(0)
     await expect(page.getByTestId(`resource-${family}-table`)).toHaveCount(0)
   }
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+})
+
+for (const locale of ['zh-cn', 'en']) test(`local collection entry opens only the current target or a permitted host-prefilled draft (${locale})`, async ({ page }) => {
+  const readPermissions = [...resourcePermissions, 'monitor.monitoring_target.read']
+  const state = await resourceBackend(page, { mode: 'filesystem-uncollected', locale, targetID, identity: identity(readPermissions) })
+  state.diskMode = 'disk-missing'; state.networkMode = 'network-missing'
+  const mutations = []
+  page.on('request', request => { if (request.url().includes('/monitoring_targets') && request.method() !== 'GET') mutations.push(request.method()) })
+  const resourceURL = `/node-resources/${node}?refresh=off`
+  const viewLabel = locale === 'en' ? 'View collection settings' : '查看采集配置'
+  const createLabel = locale === 'en' ? 'Configure collection' : '配置采集'
+  const families = ['filesystem', 'disk', 'network']
+  await page.setViewportSize({ width: 620, height: 800 })
+  for (const [index, family] of families.entries()) {
+    await page.goto(resourceURL)
+    const entry = page.getByTestId(`resource-${family}-status`).getByRole('button', { name: viewLabel, exact: true })
+    await expect(entry).toBeVisible()
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+    if (index === 0) { await entry.focus(); await entry.press('Enter') }
+    else await entry.click()
+    await expect(page).toHaveURL(url => url.pathname === `/monitoring-targets/${targetID}` && !url.search)
+    await expect(page.getByTestId('target-node')).toHaveValue('节点甲')
+    await expect(page.getByTestId('target-endpoint')).toHaveValue('https://node.test:9443/metrics')
+    await expect(page.getByTestId('target-save')).toHaveCount(0)
+    await page.goBack()
+    await expect(page).toHaveURL(url => url.pathname === `/node-resources/${node}` && url.searchParams.get('refresh') === 'off')
+    await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  }
+  await page.goto(resourceURL)
+  state.targetID = undefined
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  for (const family of families) await expect(page.getByTestId(`resource-${family}-status`).getByRole('button')).toHaveCount(0)
+  state.identity = identity([...readPermissions, 'monitor.monitoring_target.create'])
+  await setIdentity(page, state.identity)
+  for (const family of families) {
+    await page.goto(resourceURL)
+    const entry = page.getByTestId(`resource-${family}-status`).getByRole('button', { name: createLabel, exact: true })
+    await expect(entry).toBeVisible()
+    await entry.click()
+    await expect(page).toHaveURL(url => url.pathname === '/monitoring-targets/new' && url.searchParams.get('node_id') === node)
+    await expect(page.getByTestId('target-node')).toContainText('节点甲')
+    await expect(page.getByTestId('target-endpoint')).toHaveValue('')
+    await expect(page.getByTestId('target-save')).toBeVisible()
+    await page.goBack()
+    await expect(page).toHaveURL(url => url.pathname === `/node-resources/${node}` && url.searchParams.get('refresh') === 'off')
+    await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  }
+  expect(mutations).toHaveLength(0)
+  await page.goto(resourceURL)
+  state.identity = identity(resourcePermissions)
+  await setIdentity(page, state.identity)
+  for (const family of families) await expect(page.getByTestId(`resource-${family}-status`).getByRole('button')).toHaveCount(0)
   await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
 })
 

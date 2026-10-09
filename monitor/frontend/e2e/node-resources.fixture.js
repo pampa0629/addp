@@ -20,7 +20,7 @@ export function observations(id, keys, trend = false, mode = '', end = serverEnd
   return { ...(trend ? {} : { collection }), subject: { kind: 'node', node_id: id }, end, start: trend ? new Date(Date.parse(end) - 30000).toISOString() : end, queried_at: end, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, dimensions: key.startsWith('node.filesystem.') && !['disconnected', 'filesystem-uncollected'].includes(mode) ? mount : (key.startsWith('node.disk.') || key.startsWith('node.network.')) && !['disconnected', 'disk-missing', 'network-missing', 'collection-failed'].includes(mode) ? { device: key.startsWith('node.network.') ? 'eth0' : 'sda' } : {}, unit: allResourceMetrics.find(item => item.key === key).unit, window_seconds: allResourceMetrics.find(item => item.key === key).windowSeconds || 0, points: points(key) })) }
 }
 export async function resourceBackend(page, options = {}) {
-  const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', diskDevices: options.diskDevices, serverEnd, identity: options.identity || identity(resourcePermissions) }
+  const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', diskDevices: options.diskDevices, targetID: options.targetID, serverEnd, identity: options.identity || identity(resourcePermissions) }
   let release
   let held = options.holdInstant ? new Promise(resolve => { release = resolve }) : null
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.locale || 'zh-cn')
@@ -36,12 +36,19 @@ export async function resourceBackend(page, options = {}) {
       const nodes = [node, secondNode].map((node_id, index) => ({ node_id, display_name: index ? '节点乙' : '节点甲', addresses: ['127.0.0.1'], enabled: true, version: 1 }))
       if (path.endsWith('/host_nodes')) body = { data: nodes, total: 45, page: Number(url.searchParams.get('page')), page_size: 20 }
       else { body = nodes.find(item => path.endsWith(item.node_id)); if (!body) { status = 404; body = { error: 'not found' } } }
+    } else if (path.startsWith('/api/v1/monitor/platform/monitoring_targets') && req.method() === 'GET') {
+      state.reads.push({ path, method: req.method() })
+      const target = state.targetID ? { id: state.targetID, version: 1, subject: { kind: 'node', node_id: node }, monitor_kind: 'host_resources', source: { type: 'node_exporter', endpoint: 'https://node.test:9443/metrics' }, enabled: true } : null
+      if (path.endsWith('/monitoring_targets')) body = { data: target ? [target] : [], total: target ? 1 : 0, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')), total_pages: target ? 1 : 0 }
+      else if (target && path.endsWith(`/${target.id}`)) body = target
+      else { status = 404; body = { error: 'not found' } }
     } else if (path.startsWith('/api/v1/monitor/platform/resource_')) {
       const trend = path.endsWith('/resource_trends'), mode = trend ? state.trendMode || state.mode : url.searchParams.get('metrics').startsWith('node.network.') ? state.networkMode || state.mode : url.searchParams.get('metrics').startsWith('node.disk.') ? state.diskMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.inodes_') ? state.inodeMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.') ? state.filesystemMode || state.mode : state.mode
       state.reads.push({ path, query: Object.fromEntries(url.searchParams), method: req.method() })
       const id = url.searchParams.get('node_id'), keys = url.searchParams.get('metrics').split(',')
       if (!trend && held && id === node) await held
       body = observations(id, keys, trend, mode, state.serverEnd)
+      if (!trend && state.targetID) body.target_id = state.targetID
       if (state.diskDevices && keys.every(key => key.startsWith('node.disk.'))) {
         const devices = trend ? state.diskDevices.filter(device => device.device === url.searchParams.get('device')) : state.diskDevices
         body.series = body.series.flatMap(series => devices.map(device => ({ ...series, dimensions: { device: device.device }, points: series.points.map(point => {

@@ -203,6 +203,7 @@ watch([() => route.fullPath, identity], async () => {
   invalidate(); resetForm(); nodesTicket++; nodeOptions.value = []; nodeNames.value = {}; nodesError.value = ''; nodesLoading.value = false; nodesTotal = 0; nodesPage = 1
   rows.value = []; total.value = 0; loaded.value = false; loading.value = false; detailLoading.value = false
   listError.value = ''; detailError.value = ''; saveError.value = ''; statusMessage.value = ''; saving.value = false; conflicted.value = false
+  if (!['MonitoringTargets', 'MonitoringTargetNew', 'MonitoringTargetDetail'].includes(route.name)) return
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
   if (creating.value) {
