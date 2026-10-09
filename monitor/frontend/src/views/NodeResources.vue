@@ -30,7 +30,6 @@
         <p>{{ node.node_id }} · {{ t(node.enabled ? 'common.enabled' : 'common.disabled') }}</p>
         <p v-if="instant">{{ t('monitor.resources.queriedAt') }}: {{ date(instant.queried_at) }}</p>
       </section>
-      <p v-if="instant" class="resource-hint">{{ t('monitor.resources.loadHint') }}</p>
       <el-alert v-if="instant && collectionMessage" :title="t(collectionMessage)" :type="instant.collection.state === 'failed' ? 'error' : 'warning'" show-icon :closable="false" data-testid="resource-collection-status" />
       <el-button v-if="canConfigure && instant" @click="configureCollection">{{ t('monitor.resources.configure') }}</el-button>
       <p v-if="loading" role="status">{{ t('common.loading') }}</p>
@@ -38,11 +37,12 @@
         <article v-for="metric in resourceMetrics" :key="metric.key" class="resource-card" :data-testid="`resource-${metric.name}`">
           <h4>{{ t(`monitor.resources.metrics.${metric.name}`) }}</h4>
           <strong>{{ formatValue(point(metric.key), metric) }}</strong>
-
+          <p v-if="metric.unit === 'load'" class="resource-hint">{{ t('monitor.resources.loadSummary') }}</p>
           <p>{{ t(`monitor.resources.states.${point(metric.key).data_state}`) }}</p>
           <el-collapse>
             <el-collapse-item :title="t('monitor.resources.sampling')" name="sampling">
               <p v-if="metric.windowSeconds" class="resource-hint">{{ t('monitor.resources.cpuBusyHint') }}</p>
+              <p v-if="metric.unit === 'load'" class="resource-hint">{{ t('monitor.resources.loadHint') }}</p>
               <p>{{ t('monitor.resources.sampledAt') }}: {{ date(point(metric.key).sampled_at) }}</p>
               <p>{{ t('monitor.resources.evaluatedAt') }}: {{ date(point(metric.key).evaluated_at) }}</p>
             </el-collapse-item>
@@ -149,7 +149,7 @@ const deviceSections = computed(() => deviceFamilies.map(family => ({ name: fami
 const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? state.value.metric.startsWith('node.network.') ? networkMetrics : diskMetrics : [])])
 const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...(trend.value?.series[0].points.map(point => currentResourceValue(point) ?? 0) || []))) : null)
 const chartRows = computed(() => trend.value ? resourceChartRows(trend.value.series[0]).map(row => ({ ...row, value: row.value === null ? null : row.value / (chartScale.value?.divisor || 1) })) : [])
-const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: metric.unit === 'load' ? '' : t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
+const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
 const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { ...presentation(selectedMetric.value), ...(chartScale.value ? { unit: chartScale.value.unit + (selectedMetric.value.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }] }))
 const evidenceRows = computed(() => trend.value?.series[0].points.slice((evidencePage.value - 1) * 20, evidencePage.value * 20) || [])
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
@@ -164,7 +164,8 @@ function formatValue(value, metric) {
   if (numeric === null) return '—'
   if (['bytes', 'bytes_per_second'].includes(metric.unit)) return formatBytes(numeric, 2, locale.value) + (metric.unit === 'bytes_per_second' ? '/s' : '')
   if (metric.unit === 'seconds') return formatDurationSeconds(numeric, locale.value)
-  return formatFieldPresentationValue(numeric, presentation(metric), locale.value)
+  const formatted = formatFieldPresentationValue(numeric, presentation(metric), locale.value)
+  return metric.unit === 'load' ? t('monitor.resources.loadValue', { value: formatted }) : formatted
 }
 function navigate(path, query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
 function configureCollection() {

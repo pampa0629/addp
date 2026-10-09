@@ -667,7 +667,7 @@
         "cores": "cores",
         "bytes": "B",
         "percent": "%",
-        "load": "",
+        "load": "tasks",
         "seconds": "seconds",
         "inodes": "inodes",
         "bytes_per_second": "B/s",
@@ -702,7 +702,9 @@
         "viewTrend": "View trend",
         "inode": "Inode statistics"
       },
-      "loadHint": "System load average counts runnable tasks and tasks in uninterruptible wait (often I/O). It is not a percentage, CPU utilization, or memory usage.",
+      "loadValue": "About {value}",
+      "loadSummary": "Average number of running or waiting tasks, not a percentage.",
+      "loadHint": "Tasks are processes or threads that are running, waiting for CPU, or in uninterruptible wait (often I/O). The 1, 5 and 15 minute values are smoothed averages, so decimals are normal. Interpret them alongside CPU utilization; dividing by core count does not give CPU utilization.",
       "disk": {
         "title": "Disk IO",
         "hint": "Per-device throughput, IO busy time and mean read/write duration over a complete minute. Mean duration includes queueing and processing; no completed requests means no data. Busy time does not prove saturation. Device layers are never summed; incomplete windows and resets remain missing.",
