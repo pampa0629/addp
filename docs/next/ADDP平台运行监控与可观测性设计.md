@@ -1335,3 +1335,8 @@ Desktop 保持 bridge 网络、独立 PID/挂载命名空间、非 root、cap_dr
 
 
 提交与 CI 边界：实现和上述本地证据已提交为 4acd466e7。git push origin main 在 github.com:443 连接约 75 秒后失败；API 域名可访问，但不能据此计为 Git 推送成功。按 GitHub 官方 SSH-over-443 方式，以官方 API 发布的主机公钥写入当次临时 known_hosts 并保持严格校验，服务可达但既有公钥认证被拒绝；未修改永久 Git/SSH/网络配置或添加认证密钥。CI 未触发，Platform CI 与 release-and-t2-gates 的 monitor-metrics/monitor-postgres 仍待成功推送后验证；此状态不改写本地独占 metrics 和 PostgreSQL 的通过，也不将完整本地模块入口计为通过。个人七采集器应用和 Safari 磁盘页面验收仍待用户标准入口操作。
+
+
+2026-10-09 个人来源应用复核：用户经标准节点 up 重建后，来源容器创建时间为 02:55:56 UTC，实际命令包含 diskstats，保留独立 bridge、非 root、四个只读挂载及禁止权限提升。以已有独立查询 mTLS 身份只读核对中心中同一节点 `755953df-488c-410a-88d4-0ecc47eb1351` 的固定主机作业，up=1，七个采集器 success=1，磁盘读取/写入累计计数各 18 个设备。03:01 UTC 活跃设备 vda 的一分钟原生计算结果为读取约 1,638.40 B/s、写入约 577,991.11 B/s、忙碌约 0.97%、读取平均约 0.36 ms、写入平均约 0.94 ms，原始读取样本年龄约 13 秒。这仅证明个人来源至中心的数据到达和活跃计数，不代替 Monitor 完整窗口校验或 Safari 页面验收；Safari 会话已过期，等待用户重新登录，未使用内置浏览器或绕过认证。文件系统/inode/网卡仍不在该来源采集范围。
+
+同轮 GitHub HTTPS 恢复，标准 git push origin main 成功，远端 main 更新到 `51d7a66bfb12fcb8c8363627ef7ca7ee8b450e63`，已包含本批实现 `4acd466e7` 与证据 `feea90bdd`。该完整提交触发 Platform CI（Run 37877201811）和 Release/T2（Run 37877201781），初查均 queued；不将排队或其他工作流的成功计为本批必需门禁通过。此前连接失败和本地完整模块入口失败保留，不改写历史事实。
