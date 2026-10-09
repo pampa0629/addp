@@ -190,12 +190,14 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP GLB load
     const rasterFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const rasterPreview = rasterFrame.locator('.raster-tiff-quick-view')
     await expect(rasterPreview).toBeVisible({ timeout: 60_000 })
-    await expect(rasterPreview.locator('canvas')).toBeVisible()
     const cogRange = await cogResponse
     expect((await cogRange.body()).length).toBeGreaterThan(0)
     expect(cogRange.headers()['content-range']).toMatch(/^bytes [0-9]+-[0-9]+\/[0-9]+$/)
     await expect(rasterPreview.locator('.loading-overlay')).toHaveCount(0, { timeout: 60_000 })
     await expect(rasterPreview.locator('.map-empty')).toHaveCount(0)
+    // OpenLayers puts the layer class on the WebGL canvas, but on the
+    // containing div for the base map's 2D canvas. Check the COG layer itself.
+    await expect(rasterPreview.locator('canvas.ol-layer')).toBeVisible()
     await rasterPreview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'raster-cog-preview.png') })
     expect(rasterGenerationRequests).toBe(0)
 
