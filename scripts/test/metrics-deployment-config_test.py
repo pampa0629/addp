@@ -342,7 +342,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
     def test_native_launch_overrides_untrusted_root_paths_and_profiles(self):
         from unittest.mock import patch
         values = dict(self.env, DOCKER_HOST='unix:///var/run/docker.sock',
-                      ADDP_NODE_METRICS_ROOTFS='/wrong', ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector',
+                      ADDP_NODE_METRICS_ROOTFS='/wrong', ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector',
                       COMPOSE_PROFILES='unexpected')
         info = {'KernelVersion': '6.8.0', 'OperatingSystem': 'Ubuntu', 'OSType': 'linux'}
         with patch.object(node_config, 'docker_json', return_value=info), \
@@ -355,7 +355,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
             env = execute.call_args.kwargs['env']
             self.assertEqual(env['ADDP_NODE_METRICS_ROOTFS'], '/host')
             self.assertEqual(env['ADDP_NODE_METRICS_PROCFS'], '/host/proc')
-            self.assertEqual(env['ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX'], '--collector')
+            self.assertEqual(env['ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX'], '--collector')
             self.assertNotIn('COMPOSE_PROFILES', env)
 
     def test_desktop_launch_overrides_paths_collectors_and_maps_explicit_ipv6_port(self):
@@ -363,7 +363,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
         values = dict(self.env, DOCKER_HOST='unix:///Users/owner/docker.sock',
                       ADDP_NODE_METRICS_LISTEN='[::1]:19100',
                       ADDP_NODE_METRICS_ROOTFS='/host', ADDP_NODE_METRICS_PROCFS='/host/proc',
-                      ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--collector', ADDP_NODE_METRICS_PUBLISH_PORT='9999',
+                      ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--collector', ADDP_NODE_METRICS_PUBLISH_PORT='9999',
                       COMPOSE_PROFILES='unexpected')
         info = {'KernelVersion': '6.10.14-linuxkit', 'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'}
         with patch.object(node_config, 'docker_json', return_value=info), \
@@ -379,7 +379,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
             self.assertEqual(env['ADDP_NODE_METRICS_ROOTFS'], '/')
             self.assertEqual(env['ADDP_NODE_METRICS_PROCFS'], '/proc')
             self.assertEqual(env['ADDP_NODE_METRICS_SYSFS'], '/sys')
-            self.assertEqual(env['ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX'], '--no-collector')
+            self.assertEqual(env['ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX'], '--no-collector')
             self.assertNotIn('COMPOSE_PROFILES', env)
 
     def test_desktop_stop_does_not_require_valid_listen_or_certificates(self):
@@ -412,7 +412,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
         env = dict(os.environ, **self.env)
         env.update(ADDP_NODE_METRICS_OWNER=str(ROOT),
                    ADDP_NODE_METRICS_LISTEN=':9100', ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1',
-                   ADDP_NODE_METRICS_PUBLISH_PORT='19100', ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector',
+                   ADDP_NODE_METRICS_PUBLISH_PORT='19100', ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector',
                    ADDP_NODE_METRICS_ROOTFS='/', ADDP_NODE_METRICS_PROCFS='/proc',
                    ADDP_NODE_METRICS_SYSFS='/sys')
         value = subprocess.run(['docker', 'compose', '--env-file', '/dev/null',
@@ -427,6 +427,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
         self.assertNotEqual(source.get('pid'), 'host')
         self.assertFalse(source.get('privileged', False))
         self.assertEqual(source['cap_drop'], ['ALL'])
+        self.assertEqual(source['security_opt'], ['no-new-privileges:true'])
         self.assertTrue(source['read_only'])
         self.assertEqual(source['user'], '65534:65534')
         self.assertEqual(len(source['ports']), 1)
@@ -435,14 +436,14 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
         self.assertEqual(source['ports'][0]['target'], 9100)
         self.assertEqual(len(source['volumes']), 4)
         self.assertTrue(all(m['read_only'] and m['source'] != '/' for m in source['volumes']))
-        for collector in ('filesystem', 'diskstats', 'netdev', 'netstat'):
+        for collector in ('filesystem', 'netdev', 'netstat'):
             self.assertIn('--no-collector.' + collector, source['command'])
-        for collector in ('cpu', 'meminfo', 'loadavg', 'stat', 'uname', 'time'):
+        for collector in ('cpu', 'meminfo', 'loadavg', 'diskstats', 'stat', 'uname', 'time'):
             self.assertIn('--collector.' + collector, source['command'])
 
     def test_production_compose_has_sole_host_source_and_readonly_mounts(self):
         env = dict(os.environ, **self.env, ADDP_NODE_METRICS_OWNER=str(ROOT),
-                   ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--collector',
+                   ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--collector',
                    ADDP_NODE_METRICS_ROOTFS='/host', ADDP_NODE_METRICS_PROCFS='/host/proc',
                    ADDP_NODE_METRICS_SYSFS='/host/sys')
         value = subprocess.run(['docker', 'compose', '--env-file', '/dev/null',

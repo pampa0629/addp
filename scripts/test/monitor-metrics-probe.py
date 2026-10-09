@@ -301,12 +301,13 @@ eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance +
 # deployment layer. A new projected node identity keeps the prior full-source
 # history out of this limited-view check; this remains a T2 protocol fixture.
 FILES.append(str(Path(__file__).resolve().parents[1] / 'infra/node-metrics-desktop.yml'))
-os.environ.update(ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector',
+os.environ.update(ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector',
                   ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1', ADDP_NODE_METRICS_PUBLISH_PORT=port('node-exporter', 9100))
 compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter')
 limited = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'node-exporter')], text=True))[0]
 assert limited['HostConfig']['NetworkMode'] != 'host' and limited['HostConfig']['PidMode'] != 'host'
 assert limited['HostConfig']['ReadonlyRootfs'] and limited['HostConfig']['CapDrop'] == ['ALL']
+assert limited['HostConfig']['SecurityOpt'] == ['no-new-privileges:true']
 assert not limited['HostConfig']['Privileged'] and limited['Config']['User'] == '65534:65534'
 assert len(limited['Mounts']) == 4 and all(not m['RW'] and m['Source'] != '/' for m in limited['Mounts'])
 assert limited['HostConfig']['Memory'] == 256 * 1024**2
@@ -324,11 +325,51 @@ compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-
 node_base = 'https://localhost:' + port('node-exporter', 9100)
 eventually(lambda: b'node_memory_MemTotal_bytes' in get(node_base + '/metrics', source_context),
            'limited VM exporter serves kernel-global metrics')
+def diskstats_snapshot():
+    # An independent non-root container in the same Engine; no host mounts.
+    text = compose('exec', '-T', 'metrics-source', 'cat', '/proc/diskstats')
+    return {fields[2]: (tuple(fields[:2]), list(map(int, fields[3:])))
+            for fields in (line.split() for line in text.splitlines())}
+
+
+for namespace in ('pid', 'mnt', 'net'):
+    path = '/proc/self/ns/' + namespace
+    assert compose('exec', '-T', 'metrics-source', 'readlink', path) != compose(
+        'exec', '-T', 'node-exporter', 'readlink', path), 'source shares fixture ' + namespace
+before_disks = diskstats_snapshot()
 raw = get(node_base + '/metrics', source_context).decode()
+after_disks = diskstats_snapshot()
 collectors = dict(re.findall(r'^node_scrape_collector_success\{collector="([^"]+)"\} (\S+)$', raw, re.M))
-assert set(collectors) == {'cpu', 'meminfo', 'loadavg', 'stat', 'uname', 'time'}, collectors
+assert set(collectors) == {'cpu', 'meminfo', 'loadavg', 'diskstats', 'stat', 'uname', 'time'}, collectors
 assert all(value == '1' for value in collectors.values()), collectors
-assert not re.search(r'^node_(?:filesystem_|disk_|network_|netstat_)', raw, re.M)
+assert not re.search(r'^node_(?:filesystem_|network_|netstat_)', raw, re.M)
+# ProcDiskstats fields: completions, sectors (512 B), elapsed ticks (ms), busy ticks.
+disk_fields = {'node_disk_reads_completed_total': (0, 1), 'node_disk_read_bytes_total': (2, 512),
+               'node_disk_read_time_seconds_total': (3, .001), 'node_disk_writes_completed_total': (4, 1),
+               'node_disk_written_bytes_total': (6, 512), 'node_disk_write_time_seconds_total': (7, .001),
+               'node_disk_io_time_seconds_total': (9, .001)}
+observed_devices = None
+for metric, (index, scale) in disk_fields.items():
+    samples = dict(re.findall(r'^' + metric + r'\{device="([^"]+)"\} (\S+)$', raw, re.M))
+    assert samples, 'no kernel block-device samples: ' + metric
+    if observed_devices is None:
+        observed_devices = set(samples)
+    assert set(samples) == observed_devices, 'incomplete kernel block-device counters'
+    for device, sample in samples.items():
+        assert device in before_disks and device in after_disks, 'foreign device: ' + device
+        assert before_disks[device][0] == after_disks[device][0], 'device identity changed'
+        value = float(sample)
+        low, high = before_disks[device][1][index] * scale, after_disks[device][1][index] * scale
+        assert math.isfinite(value) and 0 <= low <= high and low - 1e-9 <= value <= high + 1e-9, (
+            metric, device, low, value, high)
+assert any(after_disks[d][1][0] > 0 or after_disks[d][1][4] > 0 for d in observed_devices), 'only unused devices observed'
+disk_identities = {}
+for labels in re.findall(r'^node_disk_info\{([^}]+)\} 1$', raw, re.M):
+    labels = dict(re.findall(r'(\w+)="([^"]*)"', labels))
+    disk_identities[labels['device']] = (labels['major'], labels['minor'])
+assert set(disk_identities) == observed_devices, 'incomplete disk identity evidence'
+assert all(disk_identities[d] == after_disks[d][0] for d in observed_devices), 'foreign disk identity'
+print(f'Metrics T2: {len(observed_devices)} devices and seven disk counters match independent namespace snapshots', flush=True)
 engine = json.loads(subprocess.check_output(['docker', 'info', '--format', '{{json .}}'], text=True))
 cores = re.findall(r'^node_cpu_seconds_total\{cpu="([^"]+)",mode="idle"\} (\S+)$', raw, re.M)
 assert len(cores) == engine['NCPU'], 'collector CPU quota was substituted for Engine capacity'
@@ -360,8 +401,9 @@ discovery_text(json.dumps(projection))
 def limited_samples():
     selector = '{job="addp_nodes",addp_node_id="' + projection[0]['labels']['addp_node_id'] + '"}'
     return (job_is_up('addp_nodes', '1') and len(query('node_memory_MemTotal_bytes' + selector)) == 1
+            and bool(query('node_disk_written_bytes_total' + selector))
             and not query('node_filesystem_size_bytes' + selector))
-eventually(limited_samples, 'limited VM metrics enter the sole HTTP SD job without filesystem samples')
+eventually(limited_samples, 'limited VM disk metrics enter the sole HTTP SD job without filesystem samples')
 query_env.update(MONITOR_PROMETHEUS_URL=base, ADDP_METRICS_QUERY_NODE_ID=projection[0]['labels']['addp_node_id'],
                  ADDP_METRICS_QUERY_INSTANCE=node_instance, ADDP_METRICS_QUERY_RESTRICTED_VM='1')
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
@@ -377,7 +419,10 @@ compose('start', 'node-exporter')
 assert port('node-exporter', 9100) == os.environ['ADDP_NODE_METRICS_PUBLISH_PORT'], 'limited source changed its explicit published port'
 eventually(lambda: limited_samples() and
            float(query('timestamp(node_memory_MemTotal_bytes{job="addp_nodes",addp_node_id="' +
-                       projection[0]['labels']['addp_node_id'] + '"})')[0]['value'][1]) >= restarted_at,
+                       projection[0]['labels']['addp_node_id'] + '"})')[0]['value'][1]) >= restarted_at and
+           all(float(row['value'][1]) >= restarted_at for row in query(
+               'timestamp(node_disk_written_bytes_total{job="addp_nodes",addp_node_id="' +
+               projection[0]['labels']['addp_node_id'] + '"})')),
            'limited VM source recovery with a new sample')
 discovery_text(original_discovery)
 eventually(valid_sample, 'fixture scope restored after real exporter checks')

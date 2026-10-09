@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net/http/httptrace"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +35,13 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer c.Close()
+	queryContext := httptrace.WithClientTrace(context.Background(), &httptrace.ClientTrace{
+		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
+			if err != nil {
+				t.Logf("owned metrics center query TLS handshake failed: %v", err)
+			}
+		},
+	})
 	keys := []string{}
 	for _, d := range Catalog() {
 		if !d.Grouped() {
@@ -52,7 +60,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows, err := c.Query(context.Background(), p, scope, b)
+		rows, err := c.Query(queryContext, p, scope, b)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -104,6 +112,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		{"node.network.receive_bytes_per_second", "node.network.transmit_bytes_per_second"},
 	} {
 		deviceKeys := family
+		notCollected := restricted && strings.HasPrefix(deviceKeys[0], "node.network.")
 		devicePlan, err := NewPlan(deviceKeys, now, now, now, false, nil, b)
 		if err != nil {
 			t.Fatal(err)
@@ -115,7 +124,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 		selectedDevice := Dimensions{}
 		for _, row := range devices {
 			point := row.Points[0]
-			if restricted {
+			if notCollected {
 				if len(row.Dimensions) != 0 || point.DataState != "no_data" || point.Value != nil {
 					t.Fatal("restricted source fabricated device rate data", row)
 				}
@@ -132,7 +141,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 				}
 			}
 		}
-		if !restricted && len(selectedDevice) != 1 {
+		if !notCollected && len(selectedDevice) != 1 {
 			t.Fatal("native source has no valid device rate", devices)
 		}
 		deviceTrend, err := NewPlan(deviceKeys, now.Add(-30*time.Second), now, now, true, selectedDevice, b)
@@ -144,7 +153,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 			t.Fatal("device trend", deviceHistory, err)
 		}
 		for _, row := range deviceHistory {
-			if restricted {
+			if notCollected {
 				for _, point := range row.Points {
 					if point.DataState != "no_data" || point.Value != nil || point.SampledAt != nil {
 						t.Fatal("restricted device history fabricated", row)

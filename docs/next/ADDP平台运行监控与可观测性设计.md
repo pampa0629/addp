@@ -1314,3 +1314,21 @@ Hosted 归档证据：`online-report.json` 的预检和三个后端构建均对�
 控制面、中心查询、来源中断及恢复取得新样本；同一采集主体完成两次正式 grant，节点/目标停用不复用历史，最终删除通过。外层 `summary.txt` 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals；内层 awaiting-hosted-deployment-destruction 只是外层销毁前的记录。下载归档共 36 个文件，无 .env/.pem/.key，私钥、JWT、OTP URI 和 Bearer 值模式扫描无命中。首次失败与默认跨 Owner 预检失败继续单独保留；生产 T5 未执行。个人 Monitor 加载三项新目录仍须用户标准重启，本轮没有重启个人应用或 Infra，Desktop diskstats/netdev 等受限范围保持。
 
 归档后仅追加本节事实、文档状态与 Monitor 模块说明；默认 `make test-changed` 仍因并行其他 Owner 的必需连接输入缺失在预检返回 2，未执行部分不计为通过。证据文档没有改变上述已验证源码输入，最终 `git diff --check` 返回 0；本次证据提交只包含这两份文档。
+
+
+### 10.39 Docker Desktop VM 磁盘采集
+
+2026-10-09 沿已确认的 Desktop VM 纳管继续补齐磁盘观测。此前六采集器部署关闭 diskstats，是个人磁盘区域无数据的配置原因；上述历史验收按当时范围保留。本批 Desktop 来源固定启用 cpu、meminfo、loadavg、diskstats、stat、uname、time 七个采集器，filesystem、netdev、netstat 仍关闭。原生 Linux 十采集器不变，两层共用唯一基础配置与原生 mTLS；不新增开关、Job、端点、权限、数据库或自动登记。
+
+口径依据锁定 [node_exporter v1.12.1 diskstats](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/diskstats_linux.go) 与 [Linux 6.10 块设备统计实现](https://github.com/torvalds/linux/blob/v6.10/block/genhd.c)：ProcDiskstats 从 procfs 的 diskstats 读取内核块设备累计计数，内核遍历 block_class，按设备/分区累计，未按进程、挂载或网络命名空间及容器 cgroup 配额投影。这支持 VM 内核设备的读写吞吐、忙碌时间及平均耗时，不证明 Mac 物理磁盘身份、容器消耗或业务引擎归属。设备名称沿来源提供，不推断宿主路径，不将设备层相加为总 IO；遵从固定 exporter 过滤，原始计数完整窗口和无完成请求空值规则不变。
+
+Desktop 保持 bridge 网络、独立 PID/挂载命名空间、非 root、cap_drop=ALL、no-new-privileges、只读容器根、0.25 CPU/256 MiB 和四个只读配置/证书挂载；不挂载宿主根、设备、Docker Socket，不授予 host 网络/PID。文件系统容量/inode 与网络族仍明确缺失，不用容器挂载/接口冒充 VM 全局数据。仅分离内核全局 diskstats 与命名空间相关采集器的既有部署选择，删除原来一并关闭四族的变量，不保留双轨。
+
+实施前门禁：部署与安全边界归既有 make test-dev-lifecycle；make test-monitor-metrics 复用独占来源，将七采集器输出与另一个独占非 root 容器在不同 PID/挂载/网络命名空间下的 /proc/diskstats 前后快照对照，核验七项原始计数的转换及设备身份，不生成磁盘压力。相同来源通过唯一 HTTP SD 作业验证五项磁盘即时值、精确设备趋势、作用域隔离、来源恢复后的新磁盘样本；文件系统/inode/网络的空值继续断言。标准 owner 入口与既有 Platform CI、Release/T2 输入登记已经覆盖；macOS 本地结果证明当前 Desktop Engine，Linux CI 仅证明受限层，不代替生产 T5。个人采集源须由用户经原标准节点 up 应用，AI 不重启个人应用或 Infra。
+
+
+本批本地验证：最终 make test-monitor-metrics 返回 0，22 项部署配置（含禁止权限提升）、全部原生窗口场景、完整/受限来源查询均通过。实际 Docker Desktop 6.10.14-linuxkit、18 核、67,304,611,840 bytes 与容器配额区分；18 个设备的七项原始计数和 major/minor 身份与独立 PID/挂载/网络命名空间快照一致。七采集器全部成功，受限来源返回 18 个磁盘设备和所选设备五项趋势，网络零设备及文件系统/inode 空值保持。来源恢复取得新磁盘样本，中心 SIGKILL 后历史重放，退出容器/网络/卷/临时文件零残留。make test-monitor-postgres 在已核实的 25432/addp_test 返回 0；未创建其他 database。
+
+标准完整模块入口未通过，不以分项结果代替：首次因整体导入个人 .env 的 metrics=true 触发端口夹具的未隔离输入退出，已在原夹具补充清除指标开关，携带完整个人 .env 的同一标准脚本复验通过；该脚本沿原 Makefile 的 test-dev-lifecycle 和既有 Platform CI，不新增入口。第二次在已有 Infra 生命周期用例的 10 秒超时退出，同一用例原断言/原超时独立复验通过，根因尚未确认。第三次先通过完整平台 T0（含 CI 登记）、Monitor Go T1、47 项前端单测/61 项浏览器回归及构建，随后指标 T2 的首轮资源读取在约 3 秒返回 backend unavailable，Desktop 阶段未运行。增加仅 T2 的中心 TLS 握手失败诊断后，最终独占指标门禁完整通过，没有复现该失败；不将时长当作已确认的 TLS 超时根因，不放宽生产预算或测试断言。默认 make test-changed 仍在跨 Owner 数据库参数预检退出。上述失败分别保留；新的 CI、个人七采集器应用与生产 T5 不计为已通过。
+
+个人运行边界：原生 Safari 已核对重启后同一 VM 主机的九项概览有效，容量为 GiB、时长为经过时间、负载为任务数量，磁盘五项目录正常加载但没有设备数据。只读 inspect 确认个人来源仍为旧六采集器，故新增配置尚未应用；AI 未重启个人来源、Monitor、中心或业务，也未操作内置浏览器。用户在自己的终端导出已有三个节点输入并经 python3 scripts/infra/node-metrics.py up 重建原来源后，再取得完整一分钟窗口，复验真实个人磁盘页；不重建节点或目标身份。

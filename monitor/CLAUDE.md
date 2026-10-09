@@ -10,7 +10,7 @@ Monitor 模块是 ADDP 的统一运行监控中心，负责查询和展示各模
 
 ## 技术栈与端口
 
-Linux node_exporter 的独立受控部署由 `scripts/infra/node-metrics.py` 拥有，中心或业务启动不会自动调用。同一入口支持原生 Linux 完整节点视图及 macOS Docker Desktop VM 的受限内核全局视图；Desktop 仅六采集器，不发布文件系统、磁盘 IO 或网卡/TCP 族，台账使用 `virtual` 且不能代表 Mac 本机或单个容器。生产与独占 T2 复用同一固定镜像、采集器白名单和原生 mTLS 模板；T2 不挂载宿主根、不使用 host 命名空间；手工 Hosted T4 `platform-node-metrics` 已于 2026-10-06 在 Linux VM 首次通过（Run 37463003308），生产宿主权限/物理身份绑定的完整 T5 仍待取得；平台/租户越权、原生发现、生效采样和退出清理由 `make test-node-metrics-online-runner` 及 System Online fixture PostgreSQL 门禁先行覆盖。具体边界见设计第 10.18–10.20 节和 Infra README；不把 exporter 成功响应视为物理节点绑定证据。
+Linux node_exporter 的独立受控部署由 `scripts/infra/node-metrics.py` 拥有，中心或业务启动不会自动调用。同一入口支持原生 Linux 完整节点视图及 macOS Docker Desktop VM 的受限内核全局视图；Desktop 仅七采集器（含 diskstats），不发布文件系统或网卡/TCP 族，台账使用 `virtual` 且不能代表 Mac 本机或单个容器。生产与独占 T2 复用同一固定镜像、采集器白名单和原生 mTLS 模板；T2 不挂载宿主根、不使用 host 命名空间；手工 Hosted T4 `platform-node-metrics` 已于 2026-10-06 在 Linux VM 首次通过（Run 37463003308），生产宿主权限/物理身份绑定的完整 T5 仍待取得；平台/租户越权、原生发现、生效采样和退出清理由 `make test-node-metrics-online-runner` 及 System Online fixture PostgreSQL 门禁先行覆盖。具体边界见设计第 10.18–10.20 节和 Infra README；不把 exporter 成功响应视为物理节点绑定证据。
 
 - 后端：Go + Gin + GORM，默认端口 `8100`，环境变量 `MONITOR_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus + ECharts，开发端口 `5179`，启动脚本环境变量 `MONITOR_FE_PORT`。
@@ -151,7 +151,7 @@ CPU 忙碌率及趋势新增固定 `node.cpu.busy_percent`（percent，60 秒窗
 
 用户入口统一为 System「平台主机管理」、Monitor「运行监控 → 主机监控」与「高级设置 → 采集配置」。内部 HostNode、MonitoringTarget 和既有路由保持唯一职责。采集配置从当前用户有权读取的 System 主机列表选择名称，不复制主机身份；资源详情直接携带该主机进入采集配置。System 的允许服务模块绑定名单放在高级设置，从已有模块定义中选择，不代表实际部署关联。
 
-即时资源查询增加有界 `collection` 证据：未接入、无样本、采集中、失败与陈旧；只有新鲜成功的 up 才判断文件系统采集器是否提供。趋势不附带当前采集状态。固定查询与资源查询复用同一 mTLS Client 和请求期限，不查询全中心目标列表。Desktop VM 的六采集器不提供文件系统、inode、磁盘 IO 或网卡族；不能用容器配额冒充 VM 容量。部署自动登记尚待可信身份和正式调用契约，本批不修改 IAM，也不保存管理员 Token。
+即时资源查询增加有界 `collection` 证据：未接入、无样本、采集中、失败与陈旧；只有新鲜成功的 up 才判断文件系统采集器是否提供。趋势不附带当前采集状态。固定查询与资源查询复用同一 mTLS Client 和请求期限，不查询全中心目标列表。Desktop VM 的七采集器提供内核块设备 IO，不提供文件系统、inode 或网卡族；不能用容器配额冒充 VM 容量。部署自动登记尚待可信身份和正式调用契约，本批不修改 IAM，也不保存管理员 Token。
 
 
 资源展示及磁盘吞吐沿设计 10.35：字节显示 IEC 容量单位，时长显示经过的天/小时/分钟，load average 为系统任务数量平均值，无百分比或“负载”单位后缀。共享 formatBytes/formatDurationSeconds 唯一维护展示换算，API 原始单位不变。目录共 20 项；新增 node.disk.read_bytes_per_second / write_bytes_per_second 为完整一分钟平均 B/s，以 device 单维度查询与展示，文件系统仍为 device/mountpoint/fstype 三维度，不混合选择、不跨设备层叠加。概览、文件系统、inode、磁盘及趋势沿原请求预算分别读取；采集缺失和窗口不足保留空值。Desktop 六采集器仍不启用 diskstats；原生完整来源由既有 diskstats 提供。标准 metrics T2 的 promtool 场景选择及真实完整/受限来源查询同步覆盖磁盘目录。
@@ -163,3 +163,7 @@ CPU 忙碌率及趋势新增固定 `node.cpu.busy_percent`（percent，60 秒窗
 
 
 磁盘 IO 时间沿设计 10.38 实施：固定目录共 25 项，磁盘五项在唯一 device 表与趋势交互中展示。新增 IO 忙碌时间占比（percent）及平均读取/写入耗时（milliseconds，页面 ms）；平均耗时包含排队与处理，不是纯等待，完成次数为零时空值，有完成请求的真实零耗时可显示零。忙碌占比接受有限 0–100，不代表饱和度。磁盘与网络共用唯一完整一分钟计数器校验，平均耗时还要求时间/完成次数同次采样；不跨设备层聚合，不新增权限、API 或请求族。Desktop diskstats 仍关闭。Monitor 47 单测/61 浏览器回归、Console 155 单测/123 浏览器回归及构建、22 模块 Go、Monitor PostgreSQL、32 个 Online runner 测试组和 Swagger 覆盖通过；最终标准 `make test-module MODULE=monitor` 串行完整返回 0，含平台 T0、Monitor Go/前端、独占 metrics 与 PostgreSQL T2；21 个 IO 时间及全部既有原生场景、完整来源 18 设备/五项磁盘趋势、受限来源空值、故障恢复与零残留通过。首次真实 Hosted 在默认选中 EFI 挂载却要求 inode 有效时失败，按真实有效容量/inode 选样修复，生产查询不变；修复提交 `839ef8338e` 的 Hosted T4（Run 37808051558）、Platform CI（Run 37808006295，33 项任务）及 Release/T2 工作流（Run 37808006338）成功。生产实现提交 `88d7ade1d` 的 Monitor PostgreSQL/metrics 实际 CI 门禁（Run 37803604603）成功，修复后路径跳过不计为重跑。下载后同一闭合校验确认 25 项目录、102 个真实响应、七张截图、三条新 IO 时间趋势各 21 点/5 个有效点、%/ms、正式密码/MFA、恢复新采样和停用历史排除；外层销毁零残留，36 个文件无凭据文件或敏感模式命中。首次失败、先前 mTLS 超时和跨 Owner 默认预检失败分别保留；Desktop 磁盘采集仍关闭，生产 T5 未执行。
+
+Desktop 磁盘采集沿设计 10.39：七采集器与五项既有磁盘目录，读取 VM 内核块设备统计，不代表 Mac 物理磁盘或单个容器。原非 root/无特权/无 host 命名空间/四个只读挂载不变，filesystem/netdev/netstat 仍禁用。历史六采集器验收记录不改写；当前部署与 T2 契约按本节执行。
+
+10.39 本地分项验收：最终标准 metrics T2 验证实际 Desktop 七采集器、18 设备/七原始计数及身份的独立命名空间对照、五项精确设备趋势、恢复新样本和零残留，Monitor PostgreSQL 25432/addp_test 通过。模块第三次运行中的平台 T0、Monitor Go、47 单测/61 浏览器回归及构建通过，但整个模块入口在后续资源查询 backend unavailable 时退出；此前个人开关干扰的端口夹具已补输入隔离并复验，10 秒生命周期超时及约 3 秒查询失败未确认根因。T2 握手诊断不改生产预算，最终独占重跑通过；不将分项通过写成完整模块入口通过。个人来源仍待用户标准 up 应用，CI/个人页面和生产 T5 状态各自记录。

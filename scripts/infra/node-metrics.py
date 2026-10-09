@@ -89,7 +89,7 @@ def run(action, env):
                   ADDP_NODE_METRICS_ROOTFS='/' if desktop else '/host',
                   ADDP_NODE_METRICS_PROCFS='/proc' if desktop else '/host/proc',
                   ADDP_NODE_METRICS_SYSFS='/sys' if desktop else '/host/sys',
-                  ADDP_NODE_METRICS_RESOURCE_COLLECTOR_PREFIX='--no-collector' if desktop else '--collector')
+                  ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector' if desktop else '--collector')
     if desktop:
         listen = env['ADDP_NODE_METRICS_LISTEN'] if action == 'up' else '127.0.0.1:9100'
         address, port = listen.rsplit(':', 1)

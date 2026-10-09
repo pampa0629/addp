@@ -969,7 +969,7 @@ python3 scripts/infra/node-metrics.py down
 
 入口只消费当前环境，不自动读取或改写 `.env`。`ADDP_NODE_METRICS_ENABLED=false` 时 `up` 不调用 Docker；选择 `true` 后要求 `ADDP_NODE_METRICS_LISTEN` 为明确本机 IP:端口（IPv6 使用 `[IP]:端口`），不能通配监听、使用 DNS 或自动避让。`ADDP_NODE_METRICS_TLS_DIR` 为仓库外绝对目录，只含 `ca.crt/server.crt/server.key`，不能混入签发私钥或客户端私钥；文件须可由 UID/GID 65534 读取。来源 CA 仅信任独立 Monitor 准入与 Prometheus 采集客户端，不信任中心健康身份；服务器证书包含 Monitor 发现使用的 IP SAN。文件存在不代表证书已通过验证。
 
-同一入口根据本地 Engine 事实选择部署层，不新增 `.env` 开关。原生 Linux 要求内核 5.12+、Docker Engine 与当前宿主内核一致；采用 host 网络/PID 和宿主根目录只读 rslave 挂载，显式从 `/host/proc`、`/host/sys` 读取，启用十个资源采集器。macOS 的 Docker Desktop Linux VM 采用 `node-metrics-desktop.yml`：独立 bridge 网络，按显式 IP:端口发布来源；只启用 cpu、meminfo、loadavg、stat、uname、time 六个内核全局采集器，使用 `/proc`、`/sys`，不挂载宿主根、Docker Socket，不用 host 网络/PID。不发布 filesystem、diskstats、netdev、netstat；当前磁盘字节/inode API 对该来源明确无数据。仍拒绝远程 Docker Endpoint、非 Linux Engine、旧内核和未知环境。两层共用同一固定官方镜像 tag/digest、原生 mTLS、0.25 CPU/256 MiB、非 root、只读容器文件系统与全部 capability 移除。节点源能读取宿主资源属于明确部署权限，不由中心开关授予。证书替换和配置变更通过再次执行节点 `up` 重建生效；密钥文件 inode 替换不会自动更新既有文件 bind mount，不能承诺热轮换。生产宿主子挂载的实际只读状态与传播仍需 Linux 验收；配置声明和内核门槛不能替代运行检查。
+同一入口根据本地 Engine 事实选择部署层，不新增 `.env` 开关。原生 Linux 要求内核 5.12+、Docker Engine 与当前宿主内核一致；采用 host 网络/PID 和宿主根目录只读 rslave 挂载，显式从 `/host/proc`、`/host/sys` 读取，启用十个资源采集器。macOS 的 Docker Desktop Linux VM 采用 `node-metrics-desktop.yml`：独立 bridge 网络，按显式 IP:端口发布来源；只启用 cpu、meminfo、loadavg、diskstats、stat、uname、time 七个内核全局采集器，使用 `/proc`、`/sys`，不挂载宿主根、Docker Socket，不用 host 网络/PID。不发布 filesystem、netdev、netstat；文件系统容量/inode API 对该来源明确无数据。diskstats 读取 Linux VM 内核块设备统计，提供五项磁盘 IO 观测，不代表 Mac 物理磁盘或单个容器的消耗，也不跨设备层求总和。仍拒绝远程 Docker Endpoint、非 Linux Engine、旧内核和未知环境。两层共用同一固定官方镜像 tag/digest、原生 mTLS、0.25 CPU/256 MiB、非 root、只读容器文件系统与全部 capability 移除。节点源能读取宿主资源属于明确部署权限，不由中心开关授予。证书替换和配置变更通过再次执行节点 `up` 重建生效；密钥文件 inode 替换不会自动更新既有文件 bind mount，不能承诺热轮换。生产宿主子挂载的实际只读状态与传播仍需 Linux 验收；配置声明和内核门槛不能替代运行检查。
 
 Docker Desktop 主机登记必须使用 `virtual` 类型并明确命名为 Linux VM；指标反映 VM 中所有工作负载的合计，不能当作 Mac 本机或某个引擎消耗。在 Mac 直接运行的模块不归该节点。`ADDP_NODE_METRICS_LISTEN` 在 Desktop 模式表示宿主发布 IP:端口，来源内部固定监听 9100；正式监测目标必须同时对 Monitor 和 Prometheus 可达，不能把 Mac 回环地址直接当作中心容器的回环地址。服务器 IP SAN 对应正式目标准入解析出的地址，端口不自动避让。
 
@@ -977,7 +977,7 @@ macOS 本地验证需要避免 DHCP 地址变化时，可显式将 `ADDP_NODE_ME
 
 固定项目 `addp-node-metrics` 使用仓库绝对路径 Owner 标签，异工作区同名容器存在时拒绝操作。`down/status` 不校验已失效的来源证书或当前开关，不依赖中心，不删除业务容器、网络或卷。启动成功只说明来源容器运行；部署方仍需通过独立 mTLS 验证来源，再用 Monitor 正式目标接口完成准入，来源部署不会自动创建 System 节点、目标或发现标签。端口与来源错误只影响这个独立入口。
 
-`make test-monitor-metrics` 还以相同基础/Web 模板运行真实 node_exporter，验证客户端认证、资源样本进入唯一原生 HTTP SD 作业、来源中断与恢复。独占 T2 使用 bridge、随机回环端口和临时证书，不挂载宿主根、不使用 host 网络/PID。同一临时来源再部署为 Desktop 受限层，实际对照 Engine 核数、内存和内核，检查仅六采集器、被禁用指标族缺失、mTLS、唯一 HTTP SD 即时/趋势查询及恢复。macOS Docker Desktop 上的执行证明 VM 内核全局基础资源，Linux CI 只证明受限部署层；完整文件系统、cAdvisor、真实 System/Monitor 控制面和生产权限仍按各自验收范围验证，不以 T2 协议夹具替代。
+`make test-monitor-metrics` 还以相同基础/Web 模板运行真实 node_exporter，验证客户端认证、资源样本进入唯一原生 HTTP SD 作业、来源中断与恢复。独占 T2 使用 bridge、随机回环端口和临时证书，不挂载宿主根、不使用 host 网络/PID。同一临时来源再部署为 Desktop 受限层，实际对照 Engine 核数、内存和内核，检查仅七采集器、不同命名空间容器的原始磁盘计数对照、被禁用指标族缺失、mTLS、唯一 HTTP SD 磁盘即时/趋势查询及恢复。macOS Docker Desktop 上的执行证明 VM 内核全局基础资源，Linux CI 只证明受限部署层；完整文件系统、cAdvisor、真实 System/Monitor 控制面和生产权限仍按各自验收范围验证，不以 T2 协议夹具替代。
 
 
 ### Monitor 资源查询身份
