@@ -360,9 +360,29 @@ export const useExplorerStore = defineStore('explorer', {
     },
 
     /**
+     * 重读当前预览，容器索引与当前子项按同一读取流程更新。
+     */
+    async reloadPreview() {
+      if (!this.selectedLocator) return null
+      const selection = {
+        childName: this.selectedChildName,
+        childKey: this.selectedChildKey,
+        refPath: this.selectedRefPath,
+        nestedChildPath: this.selectedNestedChildPath,
+        page: this.pagination.page
+      }
+      return this.loadPreview(
+        this.selectedLocator, selection.page, '',
+        selection.childName ? '' : selection.refPath,
+        selection.childName ? '' : selection.nestedChildPath,
+        '', null, selection
+      )
+    },
+
+    /**
      * 加载预览数据
      */
-    async loadPreview(locator, page = 1, childName = '', refPath = '', nestedChildPath = '', childKey = '', graphSample = null) {
+    async loadPreview(locator, page = 1, childName = '', refPath = '', nestedChildPath = '', childKey = '', graphSample = null, containerSelection = null) {
       const normalizedChildName = childName || ''
       const normalizedChildKey = childKey || normalizedChildName
       const normalizedRefPath = refPath || ''
@@ -447,7 +467,16 @@ export const useExplorerStore = defineStore('explorer', {
         this.previewData = preview
         const defaultChild = this.defaultContainerChildName(preview)
         if (defaultChild) {
-          await this.loadPreview(locator, 1, defaultChild)
+          const children = preview.object.content.json.children || []
+          const retainedChild = containerSelection?.childName && children.some(child => (
+            (child.key || child.name || child.table) === containerSelection.childKey
+          ))
+          if (retainedChild) {
+            await this.loadPreview(locator, containerSelection.page, containerSelection.childName,
+              containerSelection.refPath, containerSelection.nestedChildPath, containerSelection.childKey)
+          } else {
+            await this.loadPreview(locator, 1, defaultChild)
+          }
         }
         return this.previewData
       } catch (error) {

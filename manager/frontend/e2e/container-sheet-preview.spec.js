@@ -1,12 +1,13 @@
 import { expect, test } from '@playwright/test'
 import { managerAuthContext } from './managerAuthContext.js'
 
-test('switches workbook schemas, resets pagination and clears rows for an empty sheet', async ({ page }) => {
+test('switches workbook schemas and refreshes the container while preserving the selected sheet and page', async ({ page }) => {
   const locator = 'addp://engine/2/path/doc/sheets.xlsx?type=file&item_id=8'
   const rootLocator = 'addp://engine/2/path/?type=server&node_id=1'
   const item = { id: locator, locator, label: 'sheets.xlsx', type: 'file', hasChildren: false }
   const root = { id: rootLocator, locator: rootLocator, label: 'Workbook test engine', type: 'server', hasChildren: true, children: [item] }
   const requests = []
+  let refreshCount = 0
   const browserErrors = []
   page.on('pageerror', error => browserErrors.push(error.message))
   page.on('console', message => {
@@ -23,6 +24,10 @@ test('switches workbook schemas, resets pagination and clears rows for an empty 
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 2, name: root.label, engine_type: 'nfs', lifecycle_state: 'active', connection_status: 'online' }] })
     if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ ...root, children: [] }, item] })
     if (path.endsWith('/meta/resource-tree/2') || path.endsWith('/meta/resource-tree/2/node')) return json(route, root)
+    if (path.endsWith('/manager/engines/2/items/refresh')) {
+      refreshCount += 1
+      return json(route, { status: 'completed' })
+    }
     if (path.endsWith('/manager/preview')) {
       const child = url.searchParams.get('child_name') || ''
       const currentPage = Number(url.searchParams.get('page') || 1)
@@ -30,7 +35,7 @@ test('switches workbook schemas, resets pagination and clears rows for an empty 
       requests.push({ child, page: currentPage })
       if (!child) return json(route, { preview_type: 'object', data: { object: { content: { kind: 'container', json: {
         format: 'excel', default_child: 'Cities', active_child: 'Cities',
-        children: ['Cities', 'Readings', 'Empty'].map(name => ({ name, key: name, child_kind: 'sheet', data_type: 'table' })),
+        children: ['Cities', 'Readings', 'Empty'].map(name => ({ name, key: name, child_kind: 'sheet', data_type: 'table', column_count: name === 'Empty' ? (refreshCount >= 2 ? 0 : 1) : 2 })),
         summary: { child_count: 3, sampled_children: 3 }
       } } } } })
       const data = child === 'Cities'
@@ -52,6 +57,9 @@ test('switches workbook schemas, resets pagination and clears rows for an empty 
   await expect(container.getByRole('cell', { name: 'City-21', exact: true })).toBeVisible()
   await expect(container.getByRole('cell', { name: 'City-25', exact: true })).toBeVisible()
   await expect(container.getByRole('button', { name: '下一页', exact: true })).toBeDisabled()
+  await page.getByRole('treeitem', { name: 'sheets.xlsx', exact: true }).locator('[title="深度刷新：重建当前数据项的完整元数据"]').click()
+  await expect.poll(() => requests.slice(-2)).toEqual([{ child: '', page: 2 }, { child: 'Cities', page: 2 }])
+  await expect(container.getByRole('cell', { name: 'City-21', exact: true })).toBeVisible()
   await container.getByRole('button', { name: '上一页', exact: true }).click()
   await expect(container.getByRole('cell', { name: 'City-1', exact: true })).toBeVisible()
 
@@ -69,6 +77,12 @@ test('switches workbook schemas, resets pagination and clears rows for an empty 
   await expect(container.getByRole('columnheader', { name: 'temperature', exact: true })).toHaveCount(0)
   await expect(container.getByRole('button', { name: '下一页', exact: true })).toHaveCount(0)
   expect(requests.at(-1)).toEqual({ child: 'Empty', page: 1 })
+  const emptyColumnCount = container.locator('.child-meta').getByRole('cell', { name: '列数', exact: true }).locator('+ td')
+  await expect(emptyColumnCount).toHaveText('1')
+  await page.getByRole('treeitem', { name: 'sheets.xlsx', exact: true }).locator('[title="深度刷新：重建当前数据项的完整元数据"]').click()
+  await expect.poll(() => requests.slice(-2)).toEqual([{ child: '', page: 1 }, { child: 'Empty', page: 1 }])
+  await expect(container.locator('.child-select')).toContainText('Empty')
+  await expect(emptyColumnCount).toHaveText('0')
 
   await container.locator('.child-select').click()
   await page.getByRole('option', { name: /^Cities/ }).click()

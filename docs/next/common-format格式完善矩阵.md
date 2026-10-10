@@ -1,6 +1,6 @@
 # common/format 格式后续事项
 
-更新时间：2026-10-10
+更新时间：2026-10-11
 
 只保留未决事项。
 
@@ -14,26 +14,30 @@
 
 | 清单格式 | 现有实现与当前验收边界 |
 | --- | --- |
-| GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级提交的 Raster Hosted 已通过计算、产物与执行页面复验；Manager 地图实际渲染复验尚未完成。 |
+| GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级提交的 Raster Hosted 已通过计算、产物与执行页面复验，Manager Hosted 已通过 COG Range 读取和实际地图加载复验；范围限于所用真实夹具。 |
 | JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
-| CSV / XLSX | CSV 表格读取与分页、XLSX 多 sheet 容器预览已有实现，现有 NFS 样例页面已复核；不同 sheet 字段、空 sheet、大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
+| CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；XLSX 已通过真实 NFS 四工作表的不同字段、空表、只有表头、未知总数逐页读取及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
 | JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 空间预览已有实现和本地样例页面复核；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
 | 3DS / DAE / FBX / OBJ | 通过 Model3D 转自包含 GLB 后显示；按已验证的静态几何和基础材质范围支持，DAE / 3DS 的声明 PNG/JPEG 漫反射贴图已有真实转换验收。 |
-| MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。不能声明所有版本、动画或复杂材质均支持；MAX 完整 Hosted 复验仍待通过。 |
+| MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
 | SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。其他样例、复杂材质及 S3 外部贴图仍待验证。 |
 
-1. CSV、XLSX、JSON、GeoJSON 已完成下述现有 Business NFS 样例页面复核；后续扩大样例时核对编码、大文件、不同 sheet 字段与空 sheet。只按现有明确格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
+1. CSV、XLSX、JSON、GeoJSON 已完成下述现有 Business NFS 样例页面复核；XLSX 的不同字段与两种空表已补真实 NFS 验收，后续优先核对编码和大文件。只按现有明确格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
 2. SGM 继续核对厂商样例 `3d/sgm/compass.SGM` 的授权 Runtime 转换与最终 GLB 实际预览。无 SDK 的协议门禁不替代真实 SGM 转换；首期范围遵循内置格式规范，保留 SuperMap → OSGB → Model3D GLB 的唯一路线。
-3. MAX 静态模型页面和正式 Linux Runtime 的格式/几何/贴图验收仍以既有 Hosted 运行结果为准；动画、复杂材质或全部 MAX 版本不计为支持。SKP 同样保留静态网格、实例变换与内嵌基础贴图的范围，不扩展 SketchUp 编辑语义。
-4. 地图依赖升级后的 GeoTIFF/COG 与模型预览要复核既有 Hosted 格式和渲染证据；精确 GPU 性能诊断按已确认规范单列，其余页面警告、错误继续失败。不再扩展 JPEG EXIF 细项作为当前格式覆盖工作的优先任务。
+3. MAX 静态模型页面和正式 Linux Runtime 的格式/几何/贴图验收已通过下述 Hosted 复验；动画、复杂材质或全部 MAX 版本不计为支持。SKP 同样保留静态网格、实例变换与内嵌基础贴图的范围，不扩展 SketchUp 编辑语义。
+4. 地图依赖升级后的 GeoTIFF/COG 与六种模型已核对既有 Hosted 格式和渲染证据；精确 GPU 性能诊断按已确认规范单列，其余页面警告、错误继续失败。不再扩展 JPEG EXIF 细项作为当前格式覆盖工作的优先任务。
 
 2026-10-10 本地页面复核：Business NFS `doc/twosheet.xlsx` 的两个工作表切换正常，均显示 5 行、10 列；`gis-data/sample.csv` 显示与源文件一致的 3 行、5 列；`doc/test.json` 显示普通 JSON 文档；`gis-data/sample.geojson` 的两个点及属性表正常显示。`gis-data/converted-data.json` 的 records array 显示总数 73090，第二、第三页的首条 BSM 分别为 21、41，与独立读取源文件一致；该样例缺少可可靠转换的坐标事实，页面明确跳过地图，不猜坐标系。复核发现窄面板的横向分页滚动区遮挡下一页按钮，已改为共享分页控件分组换行，并删除与真实分页矛盾的固定 50 行提示；新增 Manager 浏览器回归覆盖按钮实际命中、第二页请求与返回第一页。以上只证明这些样例的本地页面行为，不替代 Hosted T4，也不证明所有 XLSX sheet 结构、大文件或轨迹业务语义均已支持。
 
 同日补充 XLSX 容器交互的确定性浏览器回归：复用真实 Data Explorer、容器插件和共享表格组件，通过既有预览协议夹具验证从第二页切换到不同字段的工作表时重新请求第一页、删除旧字段；切到空工作表时清除旧行、旧列与分页，再切回原工作表恢复第一页。Common 另以实际序列化的 XLSX 字节验证四个工作表的容器发现、不同字段结构与指定 sheet 的分页取值，以及完全空白、只有表头两种工作表的零数据行；没有修改解析主线。上述确定性回归分别覆盖源文件解析和前端组合契约，仍未替代这些不同结构样例的真实 NFS 扫描、页面或 Hosted 验收。
 
+2026-10-11 补齐真实 XLSX 开发体验验收：Business NFS `doc/format-validation.xlsx` 经标准资源树发现及 item 深度刷新，四个工作表均可读取。Cities 的 25 行按 20 + 5 分页，总数显示未知，末页禁用下一页；Readings 显示独立的 sensor/temperature/status 三列及 18.5/正常，不残留 Cities 字段；Empty 为零行零列，HeaderOnly 为零数据行并保留 code/label 两列表头。标准下载为完整工作簿，6671 字节，SHA256 为 `298317ef570df925f901a878914018749e506589e9abd81b621fb159f1597854`，与源文件一致。验收发现深度刷新只重读 child，容器索引未更新；现已统一先重读容器再读取仍存在的当前 child，并保留选择、ref 与页码，移除的 child 转到新默认第一页，旧请求不得覆盖新选择。确定性浏览器回归已复现旧问题，再验证列数从 1 更新到 0 及第二页保留；真实页面确认深度刷新后 Cities 仍显示 21–25、Empty 仍选中且零列零行，无需整页刷新。这些记录证明本地开发体验，不替代 XLSX Hosted T4。
+
 2026-10-10 SGM 运行输入核对：按 `scripts/dev/supermap-workflow.sh` 的指纹规则，只读核对全部 C++ 源码与测试、CMake、Dockerfile、算子目录、启动文件、基础镜像 ID 及 `linux/arm64` 平台，当前输入和运行镜像标签均为 `34d46162201a5e56993900c0a54f1b03280afd88`。运行镜像为 `sha256:32f081d72f40e39a5eb1fb70b4e40ea98f26e8479e3e23eac41c2f53f7e6ec03`，健康检查通过；既有 2026-10-07 原生 SGM 转换与本地页面记录见 `docs/next/三维与点云后续路线.md`。本次标准镜像重建在 Ubuntu 软件源 HTTP 下载阶段返回 502，未进入 CTest；容器内访问同一软件源的 HTTPS 地址成功，HTTP 直连及经宿主代理仍失败。没有更换软件源、关闭签名校验、修改全局 Docker 设置或替换运行镜像，不把历史记录或健康检查记为本次 SDK 重建通过。
 
 2026-10-10 栅格 Hosted 复验：地图依赖升级提交 `aa0f725157ccfb10500e897ffba07704cad1f943` 的 [Raster T4 38057200886](https://github.com/pampa0629/addp/actions/runs/38057200886) 通过。已下载并核对正式 artifact：`online-report.json` 与 38 份浏览器报告均为 passed，覆盖波段计算、镶嵌、重采样、裁剪、多波段有效性与插值、重分类、聚合、有效像素更新、概览、COG 转换／校验及统计分析；产物检查包含像素与 NoData、坐标系、概览、COG 合法性及源文件不变。`to-cog` 产物为 212209 字节，保留 EPSG:4326、两波段各 65535 个有效像素和 128×128 概览，COG 校验无警告。标准 Hosted 入口的 summary 确认清理通过、Infra 零残留。此 suite 的浏览器报告验证执行状态和分析结果页面，未打开 Manager 栅格地图；因此不能据此登记地图渲染或模型快显复验通过，二者继续由既有 Manager Hosted 门禁验证。
+
+2026-10-11 核对同一地图依赖升级提交的 [Manager Hosted T4 38057199935](https://github.com/pampa0629/addp/actions/runs/38057199935)：正式 `online-report.json` 与缓存预览浏览器报告均 passed，DAE、3DS、IFC、单 OSGB、SKP、MAX 六种模型的受控内容和模型加载均成功，未重复发起生成请求。MAX 使用 importer 1.9.2，用户选择毫米、换算因子 0.001，产物含五个静态网格、444 个顶点、12 个 primitive 和一张内嵌 PNG；SKP 保留两个实例和米制尺寸。DAE、3DS、OSGB、SKP、MAX 的基础贴图嵌入检查通过，模型截图与 MAX 马模型实际画面已核对。COG 产物 183643 字节，校验合法、131072 个像素核对通过且源文件不变；Manager 的 Range 读取、地图加载和实际栅格截图均通过。浏览器业务请求及通用警告错误为零，四条 Chromium WebGL 性能诊断按规范单列；summary 确认清理通过、Infra 零残留。本轮只登记格式、转换与预览证据，不扩大血缘工作范围，也不据此声明其他模型版本、复杂材质或动画支持。
 
 ## 未决事项
 
@@ -53,7 +57,7 @@
 | JSON / GeoJSON 编码 | GeoJSON 已升格为独立 `format=geojson`，`.json` 文件只有内容前缀严格匹配 `FeatureCollection` 时才升格；代码回归已覆盖普通 `.json` 不升格、`.json` GeoJSON deep scan 写入 `format_info.geojson`、Manager `format=geojson` 使用 map 预览材料。后续还要用真实样例核实大文件分页、复杂嵌套对象数组、GeoJSON 无 geometry / 混合 geometry、WKB / EWKB 空间渲染体验。 |
 | Parquet | MinIO / NFS 真实样例、`part-*` 和分区目录 whole scope Transfer 已验收；Hive-style 分区字段已能进入 schema 和 row。后续继续核实 schema 不兼容提示、大文件 row group 性能，并设计专用 range / footer 读取边界。 |
 | Shapefile | 还要用真实 NFS / MinIO / ZIP 样例核实本地 materialized fallback 也能继续利用 `.shx` 索引分页，嵌套 ZIP 中的 Shapefile 子项能正确归并 `.shp/.shx/.dbf` refs，不支持 shape 类型提示和前端空间表渲染体验；如需地图专用展示，应基于通用 table / spatial 预览 DTO 扩展前端渲染。 |
-| Excel | 还要用真实多 sheet、空 sheet、大文件样例核实 Meta children、container 概览、`child_name` 表格分页和 `ContainerPreview` 切换体验。 |
+| Excel | 真实 NFS 四工作表已核对 Meta children、container 概览、不同字段切换、完全空表/只有表头、未知总数分页、刷新上下文保留和原文件下载；后续核实大文件及复杂工作簿结构，真实开发体验不代替 Hosted T4。 |
 | SQLite | 还要核实真实 SQLite 多表切换、分页、只读打开错误、大库物化成本，以及容器 child 的字段来源不会误用父 item `type_info.table.fields`。 |
 | GeoPackage | 还要核实 Meta children、container 概览、layer 切换、分页样本、geometry column / SRID / extent 展示，以及容器 child 的字段来源不会误用父 item `type_info.table.fields`。 |
 | ZIP | 还要核实扫描、容器概览、entry 列表截断、CSV entry 分页、文本 entry、嵌套 ZIP 逐层展开和动态识别结果只服务本次预览、不写回 Meta，并设计大压缩包和远程 range-aware entry 读取。 |

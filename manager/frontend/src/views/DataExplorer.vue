@@ -297,7 +297,14 @@ const handlePageChange = async (payload) => {
   }
 }
 
-const handlePreviewRefresh = () => handlePageChange({ page: store.pagination.page, pageSize: store.pagination.pageSize })
+const handlePreviewRefresh = async () => {
+  if (!store.selectedLocator || !parseLocator(store.selectedLocator)?.itemId || selectedEngineUnavailable.value) return
+  try {
+    await store.reloadPreview()
+  } catch (error) {
+    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
+  }
+}
 
 const handleItemRefreshed = (locator) => {
   if (locator !== store.selectedLocator) return
