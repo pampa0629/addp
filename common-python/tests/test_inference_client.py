@@ -6,12 +6,58 @@ import httpx
 from addp_common.client import (
     EmbeddingInput,
     InferenceClient,
+    InferenceError,
     Message,
     OAuthServiceTokenSource,
 )
 
 
 class InferenceClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_timeout_is_distinct_from_runtime_discovery_or_network_failure(self):
+        for phase, cause, want in (
+            ("invoke", httpx.ReadTimeout("private-timeout"), "inference_timeout"),
+            ("body", httpx.ReadTimeout("private-body-timeout"), "inference_timeout"),
+            ("invoke", httpx.ConnectTimeout("private-timeout"), "inference_timeout"),
+            ("invoke", httpx.ConnectError("private-network-error"), "inference_runtime_unavailable"),
+            ("discover", httpx.ReadTimeout("private-discovery-error"), "inference_runtime_unavailable"),
+        ):
+            with self.subTest(phase=phase, cause=type(cause).__name__):
+                calls = []
+
+                class TimeoutBody(httpx.AsyncByteStream):
+                    async def __aiter__(self):
+                        yield b"{"
+                        raise cause
+
+                async def handler(request):
+                    calls.append(request.url.path)
+                    if request.url.path.endswith("/engine-descriptors"):
+                        if phase == "discover":
+                            raise cause
+                        return httpx.Response(200, json={
+                            "data": [{"id": 9, "engine_type": "inference_runtime", "is_builtin": True, "lifecycle_state": "active",
+                                      "capabilities": {"schema_version": "engine.capabilities/v1", "compute": {"inference": {"supported": True, "runtime_api": "addp.inference/v1"}}},
+                                      "runtime_endpoint": {"protocol": "http", "host": "inference", "port": 8191}}],
+                            "total": 1,
+                        })
+                    if phase == "body":
+                        return httpx.Response(200, stream=TimeoutBody())
+                    raise cause
+
+                class TokenSource:
+                    async def token(self, tenant_id):
+                        return "addp_at_test-token"
+
+                client = InferenceClient("http://system", TokenSource(), transport=httpx.MockTransport(handler))
+                try:
+                    with self.assertRaises(InferenceError) as caught:
+                        await client.chat(tenant_id=7, model_profile_id="profile-1", messages=[Message(role="user", content="hello")])
+                    self.assertEqual(caught.exception.error_code, want)
+                    self.assertNotIn("private-", str(caught.exception))
+                    self.assertEqual(len(calls), 1 if phase == "discover" else 2)
+                finally:
+                    await client.close()
+
     async def test_uses_tenant_service_token_and_versioned_contract(self):
         token_requests = 0
 

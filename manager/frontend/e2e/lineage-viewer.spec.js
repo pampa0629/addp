@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, toggleLineageTableFields } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
+import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, toggleLineageTableFields, profileLineageFieldFocus } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { managerAuthContext } from './managerAuthContext.js'
 import { FIELD_CARD_WIDTH, FIELD_FONT_SIZE, FIELD_HEADER_HEIGHT, FIELD_ROW_HEIGHT } from '../../../common-frontend/graph/src/lineageFields.js'
 
@@ -84,6 +84,31 @@ for (const status of [200, 403]) {
     expect(previewRequests).toEqual([locator, locator, locator])
   })
 }
+
+test('field focus profiling measures native clicks and delayed paint without the geometry observer', async ({ page }) => {
+  await page.goto('about:blank')
+  await page.setContent('<div class="lineage-field-options"><button>field_0499</button></div><canvas width="400" height="200"></canvas>')
+  await page.evaluate(() => {
+    window.originalFieldPaint = CanvasRenderingContext2D.prototype.fillText
+    document.querySelector('button').onclick = () => requestAnimationFrame(() => requestAnimationFrame(() => {
+      const context = document.querySelector('canvas').getContext('2d')
+      context.font = '18px sans-serif'
+      context.fillText('field_0499', 30, 100)
+    }))
+  })
+  const canvas = page.locator('canvas')
+  const { timing, profile } = await profileLineageFieldFocus(page, canvas, 'field_0499', () => page.getByRole('button').click())
+  expect(timing.eventToFieldPaintMs).toBeGreaterThanOrEqual(0)
+  expect(timing.eventToStablePaintMs).toBeGreaterThanOrEqual(timing.eventToFieldPaintMs)
+  expect(timing.fieldFontPx).toBe(18)
+  expect(timing.drawCalls).toBe(1)
+  expect(profile.samples.length).toBeGreaterThan(0)
+  expect(await page.evaluate(() => !window.__lineageFieldFocusProbe && !window.__lineageCanvasText &&
+    CanvasRenderingContext2D.prototype.fillText === window.originalFieldPaint)).toBe(true)
+  await expect(profileLineageFieldFocus(page, canvas, 'field_0499', () => { throw new Error('click failed') })).rejects.toThrow('click failed')
+  expect(await page.evaluate(() => !window.__lineageFieldFocusProbe &&
+    CanvasRenderingContext2D.prototype.fillText === window.originalFieldPaint)).toBe(true)
+})
 
 test('canvas observations wait for queued text and path repaint', async ({ page }) => {
   await observeLineageCanvas(page)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -105,7 +106,7 @@ func (s *Runtime) DiscoverModels(ctx context.Context, actor Actor, providerID st
 	}
 	response, err := s.client.Do(request)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if upstreamTimedOut(ctx, err) {
 			return nil, ErrTimeout
 		}
 		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
@@ -113,6 +114,9 @@ func (s *Runtime) DiscoverModels(ctx context.Context, actor Actor, providerID st
 	defer response.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 	if err != nil {
+		if upstreamTimedOut(ctx, err) {
+			return nil, ErrTimeout
+		}
 		return nil, ErrUpstreamFailed
 	}
 	if response.StatusCode >= 500 {
@@ -541,13 +545,18 @@ func (s *Runtime) Probe(ctx context.Context, actor Actor, deploymentID string) (
 		}
 		response, requestErr := s.client.Do(request)
 		if requestErr != nil {
-			if errors.Is(requestErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			if upstreamTimedOut(ctx, requestErr) {
 				return nil, ErrTimeout
 			}
 			return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, requestErr)
 		}
 		defer response.Body.Close()
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		if _, err := io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20)); err != nil {
+			if upstreamTimedOut(ctx, err) {
+				return nil, ErrTimeout
+			}
+			return nil, ErrUpstreamFailed
+		}
 		if response.StatusCode >= 500 {
 			return nil, ErrUpstreamUnavailable
 		}
@@ -648,7 +657,7 @@ func (s *Runtime) invokeAt(ctx context.Context, resolved *resolvedModel, endpoin
 	}
 	response, err := s.client.Do(request)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if upstreamTimedOut(ctx, err) {
 			logUpstreamFailure(ctx, resolved, "timeout", 0, nil)
 			return ErrTimeout
 		}
@@ -658,6 +667,10 @@ func (s *Runtime) invokeAt(ctx context.Context, resolved *resolvedModel, endpoin
 	defer response.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(response.Body, 32<<20))
 	if err != nil {
+		if upstreamTimedOut(ctx, err) {
+			logUpstreamFailure(ctx, resolved, "timeout", response.StatusCode, nil)
+			return ErrTimeout
+		}
 		logUpstreamFailure(ctx, resolved, "read_response", response.StatusCode, nil)
 		return fmt.Errorf("%w: read response", ErrUpstreamFailed)
 	}
@@ -678,6 +691,14 @@ func (s *Runtime) invokeAt(ctx context.Context, resolved *resolvedModel, endpoin
 		return fmt.Errorf("%w: decode response", ErrUpstreamFailed)
 	}
 	return nil
+}
+
+func upstreamTimedOut(ctx context.Context, err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return true
+	}
+	var transportError net.Error
+	return errors.As(err, &transportError) && transportError.Timeout()
 }
 
 // Only stable, allowlisted metadata crosses the upstream response/log boundary.

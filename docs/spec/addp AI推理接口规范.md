@@ -209,6 +209,8 @@ Chat Tool Calling 使用厂商无关的结构：`tools[]` 只包含稳定 `name/
 
 不得把 scope、credential、协议或模型未配置错误转换为空结果。只有明确可重试的 `503/504` 可以由调用方按执行策略重试；第一版不自动切换 Deployment。
 
+超时分类覆盖请求发送和响应正文读取，不以收到上游 `200` 响应头作为推理完成。两阶段的 deadline 到期或传输超时均使用既有 `504 inference_timeout`；正文提前结束、解码失败和主动取消不冒充超时。共享 Python 客户端向已发现的 Inference Runtime 发起请求时，传输超时同样表达为 `inference_timeout`；System Runtime 发现阶段的传输失败仍表达为 `inference_runtime_unavailable`。该分类不延长现有 120 秒调用上限、不自动重试，也不切换模型。
+
 上游调用失败时，Inference 记录固定的失败阶段、Provider / Deployment 身份和 HTTP 状态。OpenAI-compatible 错误中的 `code/type/param` 只能以严格允许列表投影到诊断日志，未知值统一为 `unclassified`；不得记录原始错误文案、响应正文、Endpoint、凭据、请求消息或 Tool 参数和结果。诊断不改变公开错误契约，也不触发参数替换、模型切换或额外重试。
 
 当上游没有给出可识别的结构化错误时，可以从错误文案的固定模板生成允许列表内的 `upstream_error_hint`。提示与上游的 `code/type/param` 分开记录，不冒充结构化事实，不自动驱动配置变更。模板只识别稳定的参数名、消息角色、Schema 和接口拒绝类别，不输出文案中的模型名、工具名、参数值或任意子串；未匹配或过长的文案仍为 `unclassified`。

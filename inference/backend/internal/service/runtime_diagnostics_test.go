@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	commoninference "github.com/addp/common/inference"
 	"github.com/addp/common/logger"
@@ -120,6 +123,104 @@ func TestUpstreamErrorHintsOnlyEmitFixedTemplateLabels(t *testing.T) {
 }
 
 type failingDiagnosticTransport struct{ err error }
+
+type failingResponseBody struct{ err error }
+
+func (b failingResponseBody) Read([]byte) (int, error) { return 0, b.err }
+func (b failingResponseBody) Close() error             { return nil }
+
+type failingBodyTransport struct{ err error }
+
+func (t failingBodyTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: failingResponseBody{t.err}}, nil
+}
+
+func TestRuntimeResponseBodyFailuresDistinguishTimeoutFromDisconnect(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		cause, want error
+		stage       string
+	}{
+		{"deadline", context.DeadlineExceeded, ErrTimeout, "timeout"},
+		{"transport_timeout", fmt.Errorf("private-body-error: %w", os.ErrDeadlineExceeded), ErrTimeout, "timeout"},
+		{"disconnect", io.ErrUnexpectedEOF, ErrUpstreamFailed, "read_response"},
+		{"cancelled", context.Canceled, ErrUpstreamFailed, "read_response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			logger.Init(logger.Options{Writer: &output})
+			t.Cleanup(func() { logger.Init(logger.Options{}) })
+			runtime := &Runtime{client: &http.Client{Transport: failingBodyTransport{tc.cause}}}
+			resolved := &resolvedModel{provider: &models.ProviderConnection{ID: "provider-id"}, deployment: &models.ModelDeployment{ID: "deployment-id"}}
+			err := runtime.invokeAt(context.Background(), resolved, "https://private-endpoint.test/v1", nil, nil)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("error=%v, want %v", err, tc.want)
+			}
+			var event map[string]interface{}
+			if err := json.Unmarshal(output.Bytes(), &event); err != nil || event["stage"] != tc.stage || event["upstream_http_status"] != float64(200) {
+				t.Fatalf("unexpected diagnostic: %s, decode=%v", output.String(), err)
+			}
+			if strings.Contains(output.String(), "private-") {
+				t.Fatal("body failure diagnostic exposed raw cause or endpoint")
+			}
+		})
+	}
+}
+
+func TestControlPlaneBodyReadFailuresAreNotReportedAsReachable(t *testing.T) {
+	for _, operation := range []string{"discover", "probe"} {
+		for _, tc := range []struct {
+			name        string
+			cause, want error
+		}{
+			{"deadline", context.DeadlineExceeded, ErrTimeout},
+			{"disconnect", io.ErrUnexpectedEOF, ErrUpstreamFailed},
+			{"cancelled", context.Canceled, ErrUpstreamFailed},
+		} {
+			t.Run(operation+"/"+tc.name, func(t *testing.T) {
+				ctx := context.Background()
+				control := NewControlPlane(newTestStore(t), testEncryptionKey)
+				actor := Actor{ContextType: models.ScopeTenant, TenantID: 7, PrincipalID: 12}
+				provider, err := control.CreateProvider(ctx, actor, ProviderInput{Name: "body-failure", ScopeType: models.ScopeTenant, AdapterType: AdapterOpenAICompatible, Endpoint: "https://private-endpoint.test/v1"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				deployment, err := control.CreateDeployment(ctx, actor, DeploymentInput{ProviderConnectionID: provider.ID, Name: "body-failure", UpstreamModel: "model-a", Operations: []string{"chat"}, Modalities: []string{"text"}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				runtime := NewRuntime(control.store, testEncryptionKey)
+				runtime.client = &http.Client{Transport: failingBodyTransport{tc.cause}}
+				if operation == "discover" {
+					_, err = runtime.DiscoverModels(ctx, actor, provider.ID)
+				} else {
+					_, err = runtime.Probe(ctx, actor, deployment.ID)
+				}
+				if !errors.Is(err, tc.want) {
+					t.Fatalf("error=%v, want %v", err, tc.want)
+				}
+			})
+		}
+	}
+}
+
+func TestRuntimeHTTPClientDeadlineAfterSuccessfulHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer upstream.Close()
+	var output bytes.Buffer
+	logger.Init(logger.Options{Writer: &output})
+	t.Cleanup(func() { logger.Init(logger.Options{}) })
+	runtime := &Runtime{client: upstream.Client()}
+	runtime.client.Timeout = 50 * time.Millisecond
+	resolved := &resolvedModel{provider: &models.ProviderConnection{ID: "provider-id"}, deployment: &models.ModelDeployment{ID: "deployment-id"}}
+	if err := runtime.invokeAt(context.Background(), resolved, upstream.URL, nil, nil); !errors.Is(err, ErrTimeout) {
+		t.Fatalf("error=%v, want timeout after successful response headers", err)
+	}
+}
 
 func (t failingDiagnosticTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, t.err

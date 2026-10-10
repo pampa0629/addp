@@ -1,4 +1,4 @@
-import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
+import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, profileLineageFieldFocus } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { lineageFieldConnections, FIELD_FONT_SIZE } from '../../../../common-frontend/graph/src/lineageFields.js'
 import { lineageNodeId } from '../../../../common-frontend/graph/src/lineageApi.js'
 import { expect, request, test } from '@playwright/test'
@@ -298,6 +298,48 @@ async function verifyManagerLineage(page, api, env, sqlExecution) {
   await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-orchestrated-dwd-field-lineage.png'), fullPage: true })
 }
 
+async function profileWideLineage(page, env, wide) {
+  // addInitScript is page-owned: this page has native Canvas methods rather
+  // than the detailed geometry recorder installed on the verification page.
+  const clean = await page.context().newPage()
+  const errors = []
+  clean.on('pageerror', error => errors.push(error.message))
+  let requests = 0
+  clean.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/v1/meta/lineage/graph' && url.searchParams.get('item_id') === String(wide.target_item_id) && url.searchParams.get('granularity') === 'field') requests++
+  })
+  try {
+    const { graph, frame } = await managerFieldGraph(clean, wide.target_locator, wide.target_item_id, 'field_0000')
+    expect(graph.nodes).toHaveLength(1500)
+    expect(graph.edges).toHaveLength(1000)
+    expect(graph.subject.schema_snapshot_hash).toBe(wide.schema_snapshot_hash)
+    const canvas = frame.locator('.lineage-canvas canvas').first()
+    const search = frame.getByRole('textbox', { name: '搜索字段', exact: true })
+    const samples = []
+    for (const field of ['field_0000', 'field_0249', 'field_0499']) {
+      await search.fill(field.toUpperCase())
+      await expect(frame.locator('.lineage-field-options button')).toHaveCount(2)
+      const { timing, profile } = await profileLineageFieldFocus(clean, canvas, field,
+        () => frame.getByRole('button', { name: field, exact: true }).click())
+      await expect(frame.locator('.lineage-inspector strong')).toHaveText(field)
+      expect(profile.samples.length).toBeGreaterThan(0)
+      expect(profile.nodes.some(node => node.callFrame.url.includes('LineageViewer.vue'))).toBe(true)
+      samples.push({ field, ...timing })
+      writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `transfer-wide-${field}.cpuprofile`), JSON.stringify(profile))
+    }
+    expect(requests).toBe(1)
+    expect(errors).toEqual([])
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-native-focus.json'), JSON.stringify({
+      nodes: graph.nodes.length, edges: graph.edges.length, graphRequests: requests,
+      measurement: 'native button event to readable centered Canvas paint and next stable animation frame; CPU sampling enabled; geometry observer absent',
+      samples
+    }, null, 2))
+  } finally {
+    await clean.close()
+  }
+}
+
 async function verifyWideLineage(page, env) {
   const wide = JSON.parse(env.ADDP_ONLINE_WIDE_FIELD_LINEAGE)
   let requests = 0
@@ -385,6 +427,7 @@ async function verifyWideLineage(page, env) {
     expect(requests).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-field-layout.json'), JSON.stringify({ ...timings, responseBytes, graphRequests: requests, nodes: graph.nodes.length, edges: graph.edges.length, geometry, rows }, null, 2))
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-after-layout-focus.png'), fullPage: true })
+    await profileWideLineage(page, env, wide)
   } finally {
     page.off('request', count)
   }

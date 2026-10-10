@@ -224,16 +224,21 @@ class InferenceClient:
             token = await self._token_source.token(tenant_id)
             try:
                 runtime_url = await self._discover_runtime(token)
-                response = await self._client.post(
-                    runtime_url + path,
-                    json=payload,
-                    headers={"Authorization": f"Bearer {token}"},
-                )
             except _RuntimeDiscoveryUnauthorized:
                 if attempt == 0:
                     self._token_source.invalidate(tenant_id, token)
                     continue
                 raise InferenceError("inference_runtime_unauthorized")
+            except httpx.HTTPError as exc:
+                raise InferenceError("inference_runtime_unavailable") from exc
+            try:
+                response = await self._client.post(
+                    runtime_url + path,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            except httpx.TimeoutException as exc:
+                raise InferenceError("inference_timeout") from exc
             except httpx.HTTPError as exc:
                 raise InferenceError("inference_runtime_unavailable") from exc
             if response.status_code != 401 or attempt == 1:
