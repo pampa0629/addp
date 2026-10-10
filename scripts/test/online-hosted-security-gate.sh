@@ -17,6 +17,7 @@ export ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE=security_fixture
 # Swagger generation requires an explicit workspace in a clean checkout.
 # Discover the same tracked modules as test-go; the Hosted exit trap owns it.
 export GOWORK="$ADDP_ONLINE_SECRET_DIR/go.work"
+export GOMODCACHE="$ROOT_DIR/.gomodcache"
 cp "$ROOT_DIR/go.work.sum" "${GOWORK}.sum"
 go_modules=()
 while IFS= read -r module; do

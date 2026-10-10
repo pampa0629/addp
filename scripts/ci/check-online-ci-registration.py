@@ -596,6 +596,7 @@ def validate_security_mysql_owner_protection_profile(
     for fragment in (
         'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
         'GOWORK="$ADDP_ONLINE_SECRET_DIR/go.work"', 'go work init "${go_modules[@]}"',
+        'GOMODCACHE="$ROOT_DIR/.gomodcache"',
         'cp "$ROOT_DIR/go.work.sum" "${GOWORK}.sum"',
         'for start_target in -meta -security -manager -develop -service -transfer -monitor',
         'playwright install --with-deps chromium',

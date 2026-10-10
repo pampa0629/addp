@@ -33,6 +33,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             if [ "$1 $2" = 'work init' ]; then
               [ "$GOWORK" = "$ADDP_ONLINE_SECRET_DIR/go.work" ] || exit 2
+              [ "$GOMODCACHE" = "$PWD/.gomodcache" ] || exit 2
               [ "$3" = "$PWD/system/backend" ] || exit 2
               [ "$(cat "${GOWORK}.sum")" = fixture-checksums ] || exit 2
               [ "${ADDP_TEST_WORKSPACE_FAIL:-0}" != 1 ] || exit 1
@@ -88,6 +89,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ]
             [ "$ADDP_ONLINE_TEST_USER_PASSWORD" = private-password ]
             [ -f "$GOWORK" ]
+            [ "$GOMODCACHE" = "$PWD/.gomodcache" ]
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
