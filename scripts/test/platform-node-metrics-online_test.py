@@ -41,6 +41,21 @@ class MetricsProtocolTest(unittest.TestCase):
                                     for key, (unit, window) in ONLINE.PROCESS_METRICS.items()]})
         return owners, {"data": data}
 
+    def test_instance_times_preserve_offset_microseconds_and_resource_utc_contract(self):
+        owners, reply = self.process_reply()
+        owners[0]["process_started_at"] = "2026-10-11T08:00:00+08:00"
+        owners[1]["process_started_at"] = "2026-10-10T20:00:00-04:00"
+        ONLINE.assert_process_summaries(reply, owners)
+        self.assertEqual(ONLINE.instance_timestamp("2026-10-11T08:00:00.123456+08:00"),
+                         ONLINE.utc_timestamp("2026-10-11T00:00:00.123456Z"))
+        self.assertGreater(ONLINE.instance_timestamp("2026-10-10T20:00:00.123457-04:00"),
+                           ONLINE.instance_timestamp("2026-10-11T08:00:00.123456+08:00"))
+        for value in (None, "2026-10-11T08:00:00", "2026-10-11", "2026-10-11T08:00:00+25:00", "2026-02-30T08:00:00Z"):
+            with self.subTest(value=value), self.assertRaises(ONLINE.SuiteError): ONLINE.instance_timestamp(value)
+        reply["data"][0]["queried_at"] = "2026-10-11T09:00:00+08:00"
+        with self.assertRaisesRegex(ONLINE.SuiteError, "resource time must be UTC"):
+            ONLINE.assert_process_summaries(reply, owners)
+
     def test_process_proof_rejects_foreign_identity_percent_cpu_missing_windows_and_fabricated_values(self):
         owners, reply = self.process_reply()
         ONLINE.assert_process_summaries(reply, owners)

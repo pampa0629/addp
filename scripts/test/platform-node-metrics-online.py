@@ -231,14 +231,19 @@ def resource_path(node, trend=False, keys=None, dimensions=None):
     return (TRENDS if trend else OBSERVATIONS) + "?" + urllib.parse.urlencode(query)
 
 
+def instance_timestamp(value):
+    require(isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})", value) is not None,
+            "instance time must be ISO 8601 with timezone")
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise SuiteError("invalid instance time") from error
+    return parsed.timestamp()
+
+
 def utc_timestamp(value):
     require(isinstance(value, str) and value.endswith("Z"), "resource time must be UTC")
-    try:
-        parsed = datetime.datetime.fromisoformat(value[:-1]+"+00:00")
-    except ValueError as error:
-        raise SuiteError("invalid resource UTC time") from error
-    require(parsed.tzinfo is not None and parsed.utcoffset() == datetime.timedelta(0), "resource time lacks UTC offset")
-    return parsed.timestamp()
+    return instance_timestamp(value)
 
 
 def assert_resources(value, node, target=None, trend=False, keys=None, disconnected=False, range_seconds=60, require_fresh=True, dimensions=None):
@@ -512,7 +517,7 @@ def assert_process_summaries(value, instances, *, fresh=True, after=0, inactive=
                         and collection.get("state") == "collecting", "process value or freshness invalid")
                 if item["metric_key"] == "process.memory.resident_bytes": require(number > 0, "real RSS missing")
                 if item["metric_key"] == "process.uptime_seconds":
-                    require(abs(number-(at-utc_timestamp(owner["process_started_at"]))) < 0.001, "process uptime not bound to current startup")
+                    require(abs(number-(at-instance_timestamp(owner["process_started_at"]))) < 0.001, "process uptime not bound to current startup")
             else:
                 require(not fresh and point.get("data_state") in {"no_data", "stale"}, "process window not complete")
                 if point["data_state"] == "no_data": require(point.get("value") is None and point.get("sampled_at") is None, "missing process value fabricated")
@@ -561,7 +566,7 @@ def check_process_restart(admin, machine, directory, instances, report):
     current = current_processes(admin)
     new = next(r for r in current if r["module_name"] == "monitor")
     require(new["id"] != old["id"] and new["instance_id"] != old["instance_id"]
-            and utc_timestamp(new["process_started_at"]) > utc_timestamp(old["process_started_at"])
+            and instance_timestamp(new["process_started_at"]) > instance_timestamp(old["process_started_at"])
             and next(r["id"] for r in current if r["module_name"] == "system") == peer["id"], "restart reused identity or restarted peer")
     # Current CPU can be warming up; the stopped instance is already all-null.
     assert_process_summaries(admin.request("GET", process_path([old, new, peer]), (200,)).payload, [old, new, peer], fresh=False, inactive=[old["id"]])
@@ -883,7 +888,7 @@ def run(base, directory, report):
             samples[metric] = float(values[0]["value"][1])
             if metric == "addp_process_identity_info":
                 require(values[0]["metric"].get("runtime_instance_id") == row["instance_id"] and values[0]["metric"].get("operating_system") == "linux", "SDK self identity differs from formal registration")
-        require(samples["process_resident_memory_bytes"] > 0 and abs(samples["process_start_time_seconds"]-utc_timestamp(row["process_started_at"])) <= 0.000001, "real SDK start/RSS invalid")
+        require(samples["process_resident_memory_bytes"] > 0 and abs(samples["process_start_time_seconds"]-instance_timestamp(row["process_started_at"])) <= 0.000001, "real SDK start/RSS invalid")
         report["native_process_samples"].append({"id": row["id"], "samples": samples})
     report["process_identity_isolation"] = True
     report["process_unbound_automatic_discovery"] = True
