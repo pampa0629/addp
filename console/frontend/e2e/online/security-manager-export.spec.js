@@ -78,7 +78,8 @@ test('protected Manager preview retains field search and export provenance in Mo
     await expect(frame.locator('.table-preview .el-table__body tbody tr')).toHaveCount(5)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-protected-preview.png') })
 
-    await page.goto('/manager/data-retrieval')
+    await page.locator('.sidebar').getByText(/^(数据检索|Data Retrieval)$/).click()
+    await expect(page).toHaveURL(/\/manager\/data-retrieval$/)
     await frame.locator('.search-input input').fill('email')
     const searchResponse = page.waitForResponse(response =>
       new URL(response.url()).pathname === '/api/v1/manager/search' && response.request().method() === 'GET'
