@@ -1406,6 +1406,10 @@ def main() -> int:
     )
     source_item = find_item(client, source_engine_id,
                             f"{required_environment('ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE')}.{SOURCE_TABLE}", "table")
+    # Projection changes and owned-resource cleanup queue external index purges.
+    # Require the final protected field to be searchable before browser entry.
+    report["manager_export_search_readiness"] = wait_for_technical_field(
+        client, source_engine_id, source_item, "email", time.monotonic() + min(timeout, 120))
     report["manager_export_browser"] = run_export_browser(
         Path(__file__).resolve().parents[2], dict(os.environ), build_item_locator(source_engine_id, source_item))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))

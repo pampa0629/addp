@@ -624,6 +624,42 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
 
 
 class ManagerExportBrowserTest(unittest.TestCase):
+    def test_main_waits_for_protected_email_search_before_starting_browser(self):
+        environment = {
+            'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_TEST_TENANT_ID': '2',
+            'ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID': '23', 'ADDP_ONLINE_TEST_ENGINE_ID': '17',
+            'ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE': 'security_fixture',
+            'ADDP_ONLINE_TEST_RUN_ID': 'run-42', 'GATEWAY_URL': 'http://127.0.0.1:8000',
+            'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'fixture-token',
+        }
+        for unavailable in (False, True):
+            with (
+                self.subTest(unavailable=unavailable),
+                patch.dict(os.environ, environment, clear=True),
+                patch.object(sys, 'argv', [str(SCRIPT)]),
+                patch.object(ONLINE.signal, 'signal'),
+                patch.object(ONLINE, 'require_hosted_restart'),
+                patch.object(ONLINE, 'run_scenario', return_value={}),
+                patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source'}),
+                patch.object(ONLINE, 'build_item_locator', return_value='source-locator'),
+                patch.object(ONLINE, 'wait_for_technical_field') as readiness,
+                patch.object(ONLINE, 'run_export_browser') as browser,
+                patch('builtins.print'),
+            ):
+                readiness.return_value = {'same_item_verified': True}
+                if unavailable:
+                    readiness.side_effect = ONLINE.SuiteError('protected field not searchable')
+                    with self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.main()
+                    browser.assert_not_called()
+                else:
+                    def launch(*args):
+                        readiness.assert_called_once()
+                        return self.report()
+                    browser.side_effect = launch
+                    self.assertEqual(ONLINE.main(), 0)
+                    self.assertEqual(readiness.call_args.args[1:4], (23, {'fingerprint': 'source'}, 'email'))
+
     def report(self):
         return {
             "schema_version": "addp.security-manager-export-browser/v3", "result": "passed",
