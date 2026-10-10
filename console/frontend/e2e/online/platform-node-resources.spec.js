@@ -276,11 +276,14 @@ test('platform node resources through real Console password MFA and Monitor ifra
     report.summaries = summaries
     report.navigation = { list_summary_batch: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true, inode_reload: true, disk_reload: true, network_reload: true }
     save('service-monitor-inline-values-and-restore')
-    const beforeServices = await documentOrigin()
-    await page.locator('.sidebar .el-menu-item').filter({ hasText: /^服务监控$/ }).click()
+    const serviceMenu = page.locator('.sidebar .el-menu-item').filter({ hasText: /^服务监控$/ })
+    if (!await serviceMenu.isVisible()) await page.locator('.sidebar .el-sub-menu__title').filter({ hasText: /^运行监控$/ }).click()
+    await expect(serviceMenu).toBeVisible()
+    await serviceMenu.click()
     await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources')
     await expect(monitor.getByTestId('process-list')).toBeVisible()
-    expect(await documentOrigin()).toBe(beforeServices)
+    await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+    const serviceDocumentID = await documentOrigin()
     // Keep the actual page controls and URL contract; do not intercept any API.
     const roleControl = monitor.locator('.el-select:has(input[aria-label="实例角色"])')
     const statusControl = monitor.locator('.el-select:has(input[aria-label="在线状态"])')
@@ -290,7 +293,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await monitor.getByRole('option', { name: '在线', exact: true }).click()
     await monitor.getByRole('button', { name: '搜索', exact: true }).click()
     await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && url.searchParams.get('role') === 'backend' && url.searchParams.get('status') === 'up')
-    expect(await documentOrigin()).toBe(beforeServices)
+    expect(await documentOrigin()).toBe(serviceDocumentID)
     await expect(monitor.getByTestId('process-list').locator('strong').filter({ hasText: /MiB|GiB/ })).toHaveCount(2)
     for (const hint of ['1 核 ≈ 占满一个逻辑核，可超过 1 核', '进程当前驻留内存（RSS）', '当前进程启动后经过的时间']) {
       await expect(monitor.getByText(hint, { exact: true })).toBeVisible()

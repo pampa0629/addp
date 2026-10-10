@@ -34,6 +34,33 @@ test('Console service monitoring uses one iframe and restores System filters aft
   await expect(monitor.getByTestId('process-list')).toContainText('1.50 核')
 })
 
+test('reloaded Console opens the collapsed monitoring group and service-page refresh preserves its active iframe', async ({ page }) => {
+  const state = await backend(page)
+  await page.goto('/monitor/service-resources?page=2')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('process-list')).toBeVisible()
+  await expect.poll(() => state.listCalls.at(-1)?.page).toBe('2')
+  await page.reload()
+  await expect(monitor.getByTestId('process-list')).toBeVisible()
+  const serviceMenu = page.locator('.sidebar .el-menu-item').filter({ hasText: /^服务监控$/ })
+  const monitoringGroup = page.locator('.sidebar .el-sub-menu__title').filter({ hasText: /^运行监控$/ })
+  if (await serviceMenu.isVisible()) await monitoringGroup.click()
+  await expect(serviceMenu).not.toBeVisible()
+  await monitoringGroup.click()
+  await expect(serviceMenu).toBeVisible()
+  await serviceMenu.click()
+  await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && !url.searchParams.has('page'))
+  await expect(monitor.getByTestId('process-list')).toContainText('1.50 核')
+  await expect.poll(() => state.listCalls.at(-1)?.page).toBe('1')
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+  const documentID = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  const beforeRefresh = state.calls.length
+  await monitor.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect.poll(() => state.calls.length).toBeGreaterThan(beforeRefresh)
+  await expect(monitor.getByTestId('process-list')).toContainText('1.50 核')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(documentID)
+})
+
 test('Tenant cannot open service monitoring even with platform permission strings', async ({ page }) => {
   const state = await backend(page, { identity: identity(permissions, { type: 'tenant', tenant_id: '7' }) })
   await page.goto('/monitor/service-resources')
