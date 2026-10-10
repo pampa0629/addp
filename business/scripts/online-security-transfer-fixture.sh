@@ -132,26 +132,8 @@ seed_postgresql_targets() {
             _id text PRIMARY KEY,
             "userInfo__phone" text
           );
-          CREATE TABLE IF NOT EXISTS addp_online_security.exemption_source (
-            id bigint PRIMARY KEY,
-            display_name text NOT NULL,
-            phone text
-          );
-          CREATE TABLE IF NOT EXISTS addp_online_security.exemption_transfer (
-            id bigint PRIMARY KEY,
-            phone text
-          );
-          INSERT INTO addp_online_security.exemption_source (id, display_name, phone)
-          VALUES
-            (1, '"'"'Alice'"'"', '"'"'13812345678'"'"'),
-            (2, '"'"'Bob'"'"', '"'"'13987654321'"'"'),
-            (3, '"'"'No phone'"'"', NULL)
-          ON CONFLICT (id) DO UPDATE
-            SET display_name = EXCLUDED.display_name,
-                phone = EXCLUDED.phone;
           TRUNCATE addp_online_security.transfer_excluded,
-                   addp_online_security.transfer_masked,
-                   addp_online_security.exemption_transfer;' >/dev/null
+                   addp_online_security.transfer_masked;' >/dev/null
 }
 
 validate_container_ownership() {

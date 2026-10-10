@@ -1254,18 +1254,7 @@ def handle_termination(signum: int, frame: object) -> None:
     raise SuiteError("Online Security acceptance interrupted; restoring owned resources")
 
 
-def require_hosted_initialization(environment: Mapping[str, str]) -> None:
-    required = {
-        "GITHUB_ACTIONS": "true",
-        "RUNNER_OS": "Linux",
-        "ADDP_ONLINE_HOSTED": "1",
-        "ADDP_ONLINE_HOST": "1",
-        "ADDP_ONLINE_TEST": "1",
-        "POSTGRES_DB": "addp_online",
-    }
-    for key, expected in required.items():
-        if environment.get(key) != expected:
-            raise SuiteError("Security initialization requires disposable Hosted Online: " + key)
+require_hosted_initialization = SUPPORT.require_hosted_initialization
 
 
 def initialize_source_grants(
@@ -1287,43 +1276,12 @@ def initialize_source_grants(
 
 
 def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
-    context = _object(
-        client.request("GET", "/api/v1/system/auth/context", (200,)).payload,
-        "initializer AuthContext",
-    )
-    principal = _object(context.get("principal"), "initializer principal")
-    scope = _object(context.get("context"), "initializer context")
-    if (
-        principal.get("type") != "user"
-        or scope.get("type") != "tenant"
-        or scope.get("tenant_id") != str(tenant_id)
-    ):
-        raise SuiteError("initializer must be a User in the disposable Tenant")
-    # Freshness is checked before any write; never adopt existing governance definitions.
-    for path in ("classifications", "grades", "sensitive-data-types", "detectors"):
-        if definition_array(client, "/api/v1/security/" + path):
-            raise SuiteError("Security initialization refuses existing definitions")
-    classification = _object(client.request("POST", "/api/v1/security/classifications", (201,),
-        {"code": "online_personal", "name": "Online personal information"}).payload, "classification")
-    grade = _object(client.request("POST", "/api/v1/security/grades", (201,),
-        {"code": "online_sensitive", "name": "Online sensitive", "risk_order": 1}).payload, "grade")
-    for code, protection in (
-        ("email", {"effect": "suppress", "invalid_value_effect": "suppress"}),
-        ("phone", {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
-                   "parameters": {"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
-                   "allowed_algorithms": [case[0] for case in ALGORITHM_CASES], "invalid_value_effect": "suppress"}),
-    ):
-        created = _object(client.request("POST", "/api/v1/security/sensitive-data-types", (201,), {
-            "code": code, "name": "Online " + code,
-            "security_classification_id": positive_int(classification["id"], "classification id"),
-            "default_security_grade_id": positive_int(grade["id"], "grade id"),
-            "default_protection": protection,
-        }).payload, "sensitive type")
-        if code == "email":
-            client.request("POST", "/api/v1/security/detectors", (201,), {
-                "capability_key": EMAIL_DETECTOR, "sensitive_data_type_id": positive_int(created["id"], "email id"),
-                "confidence_threshold": 0.8, "enabled": True,
-            })
+    SUPPORT.initialize_fresh_governance(client, tenant_id, [
+        {"code": "email", "protection": {"effect": "suppress", "invalid_value_effect": "suppress"}, "detector": EMAIL_DETECTOR},
+        {"code": "phone", "protection": {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
+            "parameters": {"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
+            "allowed_algorithms": [case[0] for case in ALGORITHM_CASES], "invalid_value_effect": "suppress"}},
+    ])
 
 
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:

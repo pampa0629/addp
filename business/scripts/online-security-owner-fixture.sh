@@ -75,11 +75,15 @@ INSERT INTO addp_online_security.spatial_algorithm_source
   FROM (VALUES (1, '13812345678'), (2, '张三abc'), (3, 'abc'), (4, NULL::text), (5, '')) AS fixture(id, value);
 CREATE TABLE addp_online_security.spatial_algorithm_transfer (id bigint PRIMARY KEY);
 CREATE TABLE addp_online_security.mysql_email_transfer (id bigint PRIMARY KEY);
+CREATE TABLE addp_online_security.exemption_source (id bigint PRIMARY KEY, phone text);
+INSERT INTO addp_online_security.exemption_source VALUES
+  (1, '13812345678'), (2, '13987654321'), (3, NULL);
 CREATE ROLE security_writer LOGIN PASSWORD :'writer_password';
 -- Provider write preparation issues CREATE SCHEMA IF NOT EXISTS, which checks database CREATE first.
 GRANT CONNECT, CREATE ON DATABASE security_fixture TO security_writer;
 GRANT USAGE, CREATE ON SCHEMA addp_online_security TO security_writer;
 GRANT SELECT ON addp_online_security.spatial_algorithm_source TO security_writer;
+GRANT SELECT ON addp_online_security.exemption_source TO security_writer;
 ALTER TABLE addp_online_security.spatial_algorithm_transfer OWNER TO security_writer;
 ALTER TABLE addp_online_security.mysql_email_transfer OWNER TO security_writer;
 SQL

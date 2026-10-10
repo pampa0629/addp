@@ -27,7 +27,7 @@ SOURCE_INITIALIZER_PERMISSIONS = {
 }
 
 
-def initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets):
+def initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets, *, initialize_approval=True):
     """Prepare precise reads with separate Users and the formal System command."""
     def identity(client):
         context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
@@ -59,7 +59,7 @@ def initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets)
                 {'term': namespace_term, 'kind': 'namespace', 'name': namespace},
                 {'term': 'table', 'kind': 'table', 'name': table},
             ]},
-            'requirement_version': '1', 'initialize_approval': True,
+            'requirement_version': '1', 'initialize_approval': initialize_approval,
             'recipient_type': 'user', 'recipient_id': recipient_id,
             'action': 'read', 'expiry_mode': 'until_revoked',
             'reason': 'Disposable Online exact table read acceptance',

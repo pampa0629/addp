@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
@@ -34,6 +35,10 @@ wait_for_scan = SUPPORT.wait_for_scan
 find_item = SUPPORT.find_item
 build_item_locator = SUPPORT.build_item_locator
 preview_rows = SUPPORT.preview_rows
+REGISTRATION_SPEC = importlib.util.spec_from_file_location("plaintext_engine_registration", Path(__file__).with_name("online-engine-registration.py"))
+REGISTRATION = importlib.util.module_from_spec(REGISTRATION_SPEC)
+assert REGISTRATION_SPEC.loader is not None
+REGISTRATION_SPEC.loader.exec_module(REGISTRATION)
 
 
 SOURCE_FULL_NAME = "addp_online_security.exemption_source"
@@ -111,6 +116,8 @@ def validate_user_identity(
             f"{role_name} token is missing required permissions: "
             + ", ".join(sorted(missing))
         )
+    if permissions != required_permissions:
+        raise SuiteError(f"{role_name} token must have only its minimum suite permissions")
     return {
         "principal_id": str(principal_id),
         "principal_type": "user",
@@ -340,72 +347,53 @@ def access_targets(
     ]
 
 
-def reject_stale_pending_requests(
-    approver: GatewayClient, applicant_id: str, assessment_id: str
-) -> None:
-    for request in list_pages(
-        approver, "/api/v1/security/protection-access-requests/review-queue"
-    ):
-        if (
-            request.get("subject_type") == "user"
-            and request.get("subject_id") == applicant_id
-            and request.get("assessment_id") == assessment_id
-            and request.get("consumer_owner") == "manager"
-            and request.get("action") == "preview"
-        ):
-            request_id = request.get("id")
-            if not isinstance(request_id, str):
-                raise SuiteError("stale access request id is missing")
-            approver.request(
-                "POST",
-                f"/api/v1/security/protection-access-requests/{urllib.parse.quote(request_id)}/decisions",
-                (200,),
-                {
-                    "version": positive_int(request.get("version"), "request version"),
-                    "decision": "reject",
-                    "rationale": "Dedicated Online stale request cleanup",
-                },
-            )
+def approve_access_request(applicant: GatewayClient, approver: GatewayClient,
+                           assessment_id: str, authorization_seconds: int) -> tuple[str, str, datetime]:
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=authorization_seconds)
+    created = _object(applicant.request("POST", "/api/v1/security/protection-access-requests", (201,), {
+        "assessment_id": assessment_id, "consumer_owner": "manager", "action": "preview",
+        "requested_expires_at": expires_at.isoformat(), "rationale": "Hosted Online Manager plaintext verification",
+    }).payload, "ProtectionAccessRequest")
+    request_id = created.get("id")
+    if not isinstance(request_id, str) or not request_id or created.get("state") != "pending":
+        raise SuiteError("ProtectionAccessRequest was not created as pending")
+    applicant.request("POST",
+        f"/api/v1/security/protection-access-requests/{urllib.parse.quote(request_id)}/decisions", (403,), {
+            "version": positive_int(created.get("version"), "request version"), "decision": "approve",
+            "expires_at": expires_at.isoformat(), "rationale": "Hosted Online applicant cannot approve",
+        })
+    matches = [item for item in list_pages(approver,
+        "/api/v1/security/protection-access-requests/review-queue?scope=pending") if item.get("id") == request_id]
+    if len(matches) != 1:
+        raise SuiteError("approver cannot find the pending access request")
+    approved = _object(approver.request("POST",
+        f"/api/v1/security/protection-access-requests/{urllib.parse.quote(request_id)}/decisions", (200,), {
+            "version": positive_int(matches[0].get("version"), "request version"), "decision": "approve",
+            "expires_at": expires_at.isoformat(), "rationale": "Hosted Online independent approval",
+        }).payload, "approved ProtectionAccessRequest")
+    exemption_id = approved.get("exemption_id")
+    if approved.get("state") != "approved" or not isinstance(exemption_id, str) or not exemption_id:
+        raise SuiteError("approval did not create a subject-scoped grant")
+    return request_id, exemption_id, expires_at
 
 
-def list_exemptions(
-    client: GatewayClient, enrollment_id: str
-) -> list[dict[str, object]]:
-    return list_pages(
-        client,
-        "/api/v1/security/protection-exemptions?"
-        + urllib.parse.urlencode({"enrollment_id": enrollment_id}),
-    )
+def revoke_exemption(approver: GatewayClient, exemption_id: str) -> None:
+    path = f"/api/v1/security/protection-exemptions/{urllib.parse.quote(exemption_id)}"
+    exemption = _object(approver.request("GET", path, (200,)).payload, "ProtectionExemption")
+    if exemption.get("effective_state") != "active":
+        raise SuiteError("the owned grant is not active before revocation")
+    approver.request("DELETE", path, (200,), {"version": positive_int(exemption.get("version"), "grant version"),
+        "rationale": "Hosted Online revocation verification"})
 
 
-def revoke_active_grants(
-    approver: GatewayClient,
-    enrollment_id: str,
-    assessment_id: str,
-    applicant_id: str,
-    rationale: str,
-) -> None:
-    for exemption in list_exemptions(approver, enrollment_id):
-        if (
-            exemption.get("assessment_id") == assessment_id
-            and exemption.get("consumer_owner") == "manager"
-            and exemption.get("action") == "preview"
-            and exemption.get("subject_type") == "user"
-            and exemption.get("subject_id") == applicant_id
-            and exemption.get("effective_state") == "active"
-        ):
-            exemption_id = exemption.get("id")
-            if not isinstance(exemption_id, str):
-                raise SuiteError("active grant id is missing")
-            approver.request(
-                "DELETE",
-                f"/api/v1/security/protection-exemptions/{urllib.parse.quote(exemption_id)}",
-                (200,),
-                {
-                    "version": positive_int(exemption.get("version"), "grant version"),
-                    "rationale": rationale,
-                },
-            )
+def verify_approval_history(approver: GatewayClient, request_id: str, authorization_state: str) -> dict[str, object]:
+    matches = [item for item in list_pages(approver,
+        "/api/v1/security/protection-access-requests/review-queue?" + urllib.parse.urlencode({
+            "scope": "history", "state": "approved", "authorization_state": authorization_state,
+        })) if item.get("id") == request_id]
+    if len(matches) != 1 or matches[0].get("state") != "approved" or matches[0].get("authorization_state") != authorization_state:
+        raise SuiteError("approval history does not match the current authorization state")
+    return {"state": "approved", "authorization_state": authorization_state, "request_id": request_id}
 
 
 def run_scenario(
@@ -442,16 +430,6 @@ def run_scenario(
     assessment_id = assessment.get("id")
     if not isinstance(enrollment_id, str) or not isinstance(assessment_id, str):
         raise SuiteError("plaintext-access governance identity is missing")
-    applicant_id = str(applicant_identity["principal_id"])
-
-    reject_stale_pending_requests(approver, applicant_id, assessment_id)
-    revoke_active_grants(
-        approver,
-        enrollment_id,
-        assessment_id,
-        applicant_id,
-        "Dedicated Online precondition cleanup",
-    )
     baseline = wait_for_manager_values(
         applicant, source_locator, MASKED_VALUES, "baseline", deadline
     )
@@ -463,51 +441,13 @@ def run_scenario(
     ]
     if len(target) != 1 or target[0].get("requestable") is not True:
         raise SuiteError("formal phone field is not requestable from Manager preview")
-    requested_expires_at = datetime.now(timezone.utc) + timedelta(
-        seconds=authorization_seconds
-    )
-    created = _object(
-        applicant.request(
-            "POST",
-            "/api/v1/security/protection-access-requests",
-            (201,),
-            {
-                "assessment_id": assessment_id,
-                "consumer_owner": "manager",
-                "action": "preview",
-                "requested_expires_at": requested_expires_at.isoformat(),
-                "rationale": "Dedicated Online Manager plaintext verification",
-            },
-        ).payload,
-        "ProtectionAccessRequest",
-    )
-    request_id = created.get("id")
-    if not isinstance(request_id, str) or created.get("state") != "pending":
-        raise SuiteError("ProtectionAccessRequest was not created as pending")
-
-    reviewer_queue = list_pages(
-        approver, "/api/v1/security/protection-access-requests/review-queue"
-    )
-    matches = [item for item in reviewer_queue if item.get("id") == request_id]
-    if len(matches) != 1:
-        raise SuiteError("approver cannot find the pending access request")
-    approved = _object(
-        approver.request(
-            "POST",
-            f"/api/v1/security/protection-access-requests/{urllib.parse.quote(request_id)}/decisions",
-            (200,),
-            {
-                "version": positive_int(matches[0].get("version"), "request version"),
-                "decision": "approve",
-                "expires_at": requested_expires_at.isoformat(),
-                "rationale": "Dedicated Online independent approval",
-            },
-        ).payload,
-        "approved ProtectionAccessRequest",
-    )
-    exemption_id = approved.get("exemption_id")
-    if approved.get("state") != "approved" or not isinstance(exemption_id, str):
-        raise SuiteError("approval did not create a subject-scoped grant")
+    approver.request("POST", "/api/v1/security/protection-access-requests", (403,), {
+        "assessment_id": assessment_id, "consumer_owner": "manager", "action": "preview",
+        "requested_expires_at": (datetime.now(timezone.utc) + timedelta(seconds=authorization_seconds)).isoformat(),
+        "rationale": "Hosted Online approver cannot request",
+    })
+    request_id, exemption_id, requested_expires_at = approve_access_request(
+        applicant, approver, assessment_id, authorization_seconds)
 
     authorized = wait_for_manager_values(
         applicant, source_locator, RAW_VALUES, "authorized", deadline
@@ -519,14 +459,23 @@ def run_scenario(
     remaining = (requested_expires_at - datetime.now(timezone.utc)).total_seconds()
     if remaining > 0:
         time.sleep(remaining + 1)
-    # No Security request is allowed after this point. Manager must evaluate the
-    # embedded subject grant expiry locally and restore the default protection.
+    # No Security request or projection refresh between the wait and preview.
+    # Manager must evaluate the embedded subject grant expiry locally.
     expired = wait_for_manager_values(
         applicant, source_locator, MASKED_VALUES, "expired", deadline
     )
 
+    expired_history = verify_approval_history(approver, request_id, "expired")
+    revoked_request_id, revoked_exemption_id, _ = approve_access_request(
+        applicant, approver, assessment_id, 120)
+    renewed = wait_for_manager_values(applicant, source_locator, RAW_VALUES, "second-approval", deadline)
+    other_subject_again = wait_for_manager_values(approver, source_locator, MASKED_VALUES, "other-subject-second-approval", deadline)
+    revoke_exemption(approver, revoked_exemption_id)
+    revoked = wait_for_manager_values(applicant, source_locator, MASKED_VALUES, "revoked", deadline)
+    revoked_history = verify_approval_history(approver, revoked_request_id, "revoked")
+
     return {
-        "schema_version": "addp.security-plaintext-access-online/v1",
+        "schema_version": "addp.security-plaintext-access-online/v2",
         "result": "passed",
         "identities": {
             "applicant": applicant_identity,
@@ -545,19 +494,56 @@ def run_scenario(
             "action": "preview",
             "subject_type": "user",
             "authorization_seconds": authorization_seconds,
+            "applicant_approval_denied": True,
+            "approver_request_denied": True,
             "baseline": baseline,
             "authorized_applicant": authorized,
             "protected_other_subject": other_subject,
             "expired_without_security_refresh": expired,
+            "expired_approval_history": expired_history,
+            "second_authorized_applicant": renewed,
+            "second_protected_other_subject": other_subject_again,
+            "revoked_applicant": revoked,
+            "revoked_approval_history": revoked_history,
         },
         "created_resources": 0,
         "deleted_resources": 0,
         "residual_resources": 0,
-        "audit_records_retained": 2,
+        "audit_retained": {"access_request_ids": [request_id, revoked_request_id],
+                           "exemption_ids": sorted({exemption_id, revoked_exemption_id})},
     }
 
 
+def initialize_hosted(tenant_id: int, engine_id: int, gateway_url: str) -> None:
+    SUPPORT.require_hosted_initialization(os.environ)
+    applicant = GatewayClient(gateway_url, required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), 30)
+    approver = GatewayClient(gateway_url, required_environment("ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN"), 30)
+    applicant_identity = validate_user_identity(applicant, tenant_id, APPLICANT_PERMISSIONS, "applicant")
+    approver_identity = validate_user_identity(approver, tenant_id, APPROVER_PERMISSIONS, "approver")
+    if applicant_identity["principal_id"] == approver_identity["principal_id"]:
+        raise SuiteError("applicant and approver must be two different Users")
+    SUPPORT.initialize_fresh_governance(GatewayClient(gateway_url,
+        required_environment("ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"), 30), tenant_id, [{
+            "code": "phone", "detector": "addp.detector.phone_metadata/v2", "protection": {
+                "effect": "mask", "algorithm": "addp.mask.keep_prefix_suffix/v2",
+                "parameters": {"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
+                "allowed_algorithms": ["addp.mask.keep_prefix_suffix/v2"], "invalid_value_effect": "suppress",
+            },
+        }])
+    authorizer = GatewayClient(gateway_url, required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), 30)
+    try:
+        for index, consumer in enumerate((applicant, approver)):
+            REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, tenant_id,
+                [(engine_id, "schema", "addp_online_security", "exemption_source")], initialize_approval=index == 0)
+    except REGISTRATION.RegistrationError as error:
+        raise SuiteError(str(error)) from error
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--initialize", action="store_true")
+    arguments = parser.parse_args()
+    SUPPORT.require_hosted_initialization(os.environ)
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")
     tenant_id = positive_int(
@@ -577,6 +563,10 @@ def main() -> int:
         required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"),
         min(timeout, 30),
     )
+    if arguments.initialize:
+        initialize_hosted(tenant_id, engine_id, gateway_url)
+        print("Disposable plaintext governance and two exact table read Grants are ready")
+        return 0
     approver = GatewayClient(
         gateway_url,
         required_environment("ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN"),

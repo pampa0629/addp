@@ -626,3 +626,28 @@ func TestHDFSFixtureUsesPersistedWorkflowConsumerAndSeparateProvisioner(t *testi
 		}
 	}
 }
+
+func TestPlaintextIdentitiesHaveSeparateMinimumPermissions(t *testing.T) {
+	permissions, err := suitePermissions("security-plaintext-access")
+	if err != nil || !needsEngineProvisioner("security-plaintext-access") {
+		t.Fatal("missing Hosted identity registration", err)
+	}
+	for _, key := range []string{"security.protection_access_request.create", "security.protection_access_request.read", "manager.data_item.read"} {
+		if !contains(permissions, key) {
+			t.Fatalf("missing applicant permission %s", key)
+		}
+	}
+	for _, key := range []string{"security.protection_access_request.update", "security.protection_exemption.delete", "security.protection_exemption.read"} {
+		if !contains(plaintextApproverPermissions, key) || contains(permissions, key) {
+			t.Fatalf("approval permission must remain separate: %s", key)
+		}
+	}
+	if contains(plaintextApproverPermissions, "security.protection_access_request.create") {
+		t.Fatal("approver must not request")
+	}
+	for _, preparation := range append(append([]string{}, securityInitializerPermissions...), sourceInitializerPermissions...) {
+		if contains(permissions, preparation) || contains(plaintextApproverPermissions, preparation) {
+			t.Fatalf("preparation permission leaked: %s", preparation)
+		}
+	}
+}

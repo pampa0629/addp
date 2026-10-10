@@ -49,6 +49,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             export ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN=initializer-token
             export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN=source-initializer-token
             export ADDP_ONLINE_TEST_TENANT_ID=2
+            export ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN=approver-token
             export ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
             export ADDP_ONLINE_TEST_USER_USERNAME=external-online-consumer
             export ADDP_ONLINE_TEST_USER_PASSWORD=private-password
@@ -75,6 +76,15 @@ class HostedSecurityGateTest(unittest.TestCase):
             assert os.environ['ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN'] == 'initializer-token'
             assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-initializer-token'
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('initialize\\n')
+            sys.exit(1 if os.environ.get('ADDP_TEST_INITIALIZE_FAIL') == '1' else 0)
+        ''')
+        self.host._write_repository_script('scripts/test/security-plaintext-access-online.py', '''
+            import os, sys
+            assert sys.argv[1:] == ['--initialize']
+            assert os.environ['ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN'] == 'approver-token'
+            assert os.environ['ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN'] == 'initializer-token'
+            assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-initializer-token'
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('initialize-plaintext\\n')
             sys.exit(1 if os.environ.get('ADDP_TEST_INITIALIZE_FAIL') == '1' else 0)
         ''')
         self.host._executable('make', '''
@@ -134,6 +144,27 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertLess(trace.index('application-stop'), trace.index('security-fixture:stop'))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
+
+    def test_plaintext_suite_reuses_hosted_lifecycle_with_two_users_and_no_browser_setup(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='security-plaintext-access')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn('initialize-plaintext', trace)
+        self.assertIn('make:test-online ONLINE_SUITE=security-plaintext-access', trace)
+        self.assertNotIn('chromium', trace)
+        self.assertLess(trace.index('initialize-plaintext'), trace.index('make:'))
+        self.assertFalse(self.host.secrets.exists())
+        self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
+
+    def test_plaintext_initialization_failure_cleans_up_before_scenario(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='security-plaintext-access', ADDP_TEST_INITIALIZE_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertNotIn('make:', trace)
+        self.assertIn('application-stop', trace)
+        self.assertIn('security-fixture:stop', trace)
+        self.assertIn('infra-down', trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_failures_destroy_owned_resources(self):
         for key in ('ADDP_TEST_FIXTURE_FAIL', 'ADDP_TEST_BROWSER_PREPARE_FAIL', 'ADDP_TEST_INITIALIZE_FAIL', 'ADDP_TEST_SUITE_FAIL'):

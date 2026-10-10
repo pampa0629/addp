@@ -51,7 +51,7 @@ permissions:
 jobs:
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'raster-workflow' && inputs.suite != 'hdfs-spark-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'raster-workflow' && inputs.suite != 'hdfs-spark-consumer-flow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -228,17 +228,17 @@ jobs:
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 
   security-hosted-t4:
-    name: Online T4 (security-mysql-owner-protection, Linux x86_64)
-    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'security-mysql-owner-protection'
+    name: Online T4 (${{ inputs.suite }}, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'security-mysql-owner-protection' || inputs.suite == 'security-plaintext-access')
     concurrency:
-      group: online-t4-security-mysql-owner-protection
+      group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
-      ONLINE_SUITE_INPUT: security-mysql-owner-protection
+      ONLINE_SUITE_INPUT: ${{ inputs.suite }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -280,7 +280,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: online-t4-security-mysql-owner-protection-${{ github.run_id }}
+          name: online-t4-${{ inputs.suite }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/
             logs/
@@ -291,7 +291,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Online T4 (security-mysql-owner-protection, Linux x86_64)
+          gate: Online T4 (${{ inputs.suite }}, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 

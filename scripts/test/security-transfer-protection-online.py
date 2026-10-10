@@ -600,6 +600,43 @@ def run_scenario(client: GatewayClient, tenant_id: int, source_engine_id: int, t
     return result
 
 
+def require_hosted_initialization(environment: Mapping[str, str]) -> None:
+    required = {"GITHUB_ACTIONS": "true", "RUNNER_OS": "Linux", "ADDP_ONLINE_HOSTED": "1",
+                "ADDP_ONLINE_HOST": "1", "ADDP_ONLINE_TEST": "1", "POSTGRES_DB": "addp_online"}
+    for key, expected in required.items():
+        if environment.get(key) != expected:
+            raise SuiteError("Security initialization requires disposable Hosted Online: " + key)
+
+
+def initialize_fresh_governance(client: GatewayClient, tenant_id: int,
+                                definitions: Iterable[Mapping[str, object]]) -> None:
+    context = _object(client.request("GET", "/api/v1/system/auth/context", (200,)).payload, "initializer AuthContext")
+    principal = _object(context.get("principal"), "initializer principal")
+    scope = _object(context.get("context"), "initializer context")
+    if principal.get("type") != "user" or scope.get("type") != "tenant" or scope.get("tenant_id") != str(tenant_id):
+        raise SuiteError("initializer must be a User in the disposable Tenant")
+    for path in ("classifications", "grades", "sensitive-data-types", "detectors"):
+        if _array(client.request("GET", "/api/v1/security/" + path, (200,)).payload, path):
+            raise SuiteError("Security initialization refuses existing definitions")
+    classification = _object(client.request("POST", "/api/v1/security/classifications", (201,),
+        {"code": "online_personal", "name": "Online personal information"}).payload, "classification")
+    grade = _object(client.request("POST", "/api/v1/security/grades", (201,),
+        {"code": "online_sensitive", "name": "Online sensitive", "risk_order": 1}).payload, "grade")
+    for definition in definitions:
+        code = definition["code"]
+        created = _object(client.request("POST", "/api/v1/security/sensitive-data-types", (201,), {
+            "code": code, "name": "Online " + str(code),
+            "security_classification_id": positive_int(classification["id"], "classification id"),
+            "default_security_grade_id": positive_int(grade["id"], "grade id"),
+            "default_protection": definition["protection"],
+        }).payload, "sensitive type")
+        if definition.get("detector"):
+            client.request("POST", "/api/v1/security/detectors", (201,), {
+                "capability_key": definition["detector"], "sensitive_data_type_id": positive_int(created["id"], "sensitive type id"),
+                "confidence_threshold": 0.8, "enabled": True,
+            })
+
+
 def main() -> int:
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")

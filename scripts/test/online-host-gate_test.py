@@ -220,7 +220,6 @@ class OnlineHostGateTest(unittest.TestCase):
                 ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN=addp_at_online_platform
                 ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=addp_at_online
                 ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN=addp_at_online_tenant_admin
-                ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN=addp_at_online_approver
                 ADDP_ONLINE_TEST_USER_USERNAME=online-user
                 ADDP_ONLINE_TEST_USER_PASSWORD=online-password
                 ADDP_ONLINE_TEST_ENGINE_ID=7
@@ -663,28 +662,12 @@ class OnlineHostGateTest(unittest.TestCase):
             ],
         )
 
-    def test_runs_security_exemption_suite_with_composite_fixture(self) -> None:
-        result = self._run("security-plaintext-access")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.command_log.read_text(encoding="utf-8").splitlines(),
-            [
-                "stop",
-                "infra-up",
-                "security-transfer-fixture:stop",
-                "security-transfer-fixture:start",
-                "start:-all",
-                "make:test-online:ONLINE_SUITE=security-plaintext-access",
-                "security-transfer-fixture:stop",
-                "stop",
-            ],
-        )
-
     def test_rejects_security_hosted_suite_before_lifecycle(self) -> None:
-        result = self._run("security-mysql-owner-protection")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(self.command_log.exists())
+        for suite in ("security-mysql-owner-protection", "security-plaintext-access"):
+            with self.subTest(suite=suite):
+                result = self._run(suite)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.command_log.exists())
 
     def test_check_only_writes_readiness_without_lifecycle_action(self) -> None:
         result = self._run("module-registry-recovery", "--check-only")

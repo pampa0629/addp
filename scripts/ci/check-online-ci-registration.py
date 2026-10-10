@@ -91,13 +91,13 @@ def load_deployment_profiles(repository: Path) -> dict[str, str]:
     )
     for external_path in external_paths:
         external_text = external_path.read_text(encoding="utf-8")
-        external_suite = re.search(
+        external_suites = re.findall(
             r"(?m)^# ADDP_ONLINE_SUITES=([a-z][a-z0-9-]*)$", external_text
         )
         external_runner = re.search(
             r"(?m)^# ADDP_ONLINE_RUNNER=([a-z][a-z0-9_-]*)$", external_text
         )
-        if external_suite is None or external_runner is None:
+        if not external_suites or external_runner is None:
             profile_kind = (
                 "Hosted"
                 if external_path.name.startswith("online-hosted-")
@@ -106,10 +106,10 @@ def load_deployment_profiles(repository: Path) -> dict[str, str]:
             raise RegistrationError(
                 f"{external_path.relative_to(repository)} is missing {profile_kind} Online metadata"
             )
-        suite = external_suite.group(1)
-        if suite in profiles:
-            raise RegistrationError(f"Online suite {suite} has multiple deployment profiles")
-        profiles[suite] = external_runner.group(1)
+        for suite in external_suites:
+            if suite in profiles:
+                raise RegistrationError(f"Online suite {suite} has multiple deployment profiles")
+            profiles[suite] = external_runner.group(1)
     return profiles
 
 
@@ -398,7 +398,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "model_generation_requests",
         "anonymous_refresh_401",
         "failed_business_responses",
-        "addp.manager-internal-artifact-lineage-browser/v4",
+        "addp.manager-internal-artifact-lineage-browser/v5",
     ):
         if fragment not in browser:
             raise RegistrationError(
@@ -525,60 +525,45 @@ def validate_security_transfer_protection_profile(repository: Path, registered: 
 def validate_security_plaintext_access_profile(repository: Path, registered: set[str]) -> None:
     if "security-plaintext-access" not in registered:
         return
-    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
-    required_fragments = (
-        "security-plaintext-access)",
-        "SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL MANAGER_URL",
-        "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
-        "bash business/scripts/online-security-transfer-fixture.sh start",
-        "bash business/scripts/online-security-transfer-fixture.sh stop",
-        'bash scripts/dev/start.sh "$START_TARGET"',
-    )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
-    if missing:
-        raise RegistrationError(
-            "security-plaintext-access profile is missing: " + ", ".join(missing)
-        )
-    for relative in (
-        "business/scripts/online-security-transfer-fixture.sh",
-        "scripts/test/security-plaintext-access-online.py",
-        "scripts/test/security-transfer-protection-online.py",
-    ):
-        if not (repository / relative).is_file():
+    host = (repository / "scripts/test/online-host-gate.sh").read_text()
+    if "security-plaintext-access" in host:
+        raise RegistrationError("security-plaintext-access must not keep a self-hosted route")
+    requirements = {
+        "scripts/test/online-hosted-security-gate.sh": (
+            "# ADDP_ONLINE_SUITES=security-plaintext-access", "security-plaintext-access-online.py",
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite "$1"',
+            '"scripts/test/$INITIALIZER_SCRIPT" --initialize',
+            'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN',
+        ),
+        "business/scripts/online-security-owner-fixture.sh": ("addp_online_security.exemption_source", "13987654321", "GRANT SELECT ON addp_online_security.exemption_source"),
+        "scripts/test/security-plaintext-access-online.py": (
+            "SUPPORT.require_hosted_initialization(os.environ)", "initialize_fresh_governance(",
+            "initialize_exact_table_read_grants(", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
+            "applicant and approver must be two different Users", "preview_rows = SUPPORT.preview_rows",
+            "/api/v1/security/protection-access-request-targets", "review-queue?scope=pending",
+            '"scope": "history"', "protected_other_subject", "expired_without_security_refresh",
+            "revoked_applicant", "revoked_approval_history", 'addp.security-plaintext-access-online/v2',
+        ),
+        "system/backend/cmd/online-test-fixture/main.go": ("plaintextApplicantPermissions", "plaintextApproverPermissions", "external-online-plaintext-approver", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN"),
+    }
+    for relative, fragments in requirements.items():
+        path = repository / relative
+        if not path.is_file():
             raise RegistrationError(f"security-plaintext-access requires {relative}")
-    fixture = (repository / "business/scripts/online-security-transfer-fixture.sh").read_text(encoding="utf-8")
-    for fragment in (
-        "addp_online_security.exemption_source",
-        "addp_online_security.exemption_transfer",
-        "13812345678",
-    ):
-        if fragment not in fixture:
-            raise RegistrationError(
-                f"security-plaintext-access fixture contract is missing {fragment}"
-            )
-    owner = (repository / "scripts/test/security-plaintext-access-online.py").read_text(encoding="utf-8")
-    for fragment in (
-        "/api/v1/security/protection-access-request-targets",
-        "/api/v1/security/protection-access-requests",
-        "/api/v1/security/protection-access-requests/review-queue",
-        "/api/v1/security/protection-exemptions",
-        "preview_rows = SUPPORT.preview_rows",
-        "applicant and approver must be two different Users",
-        "protected_other_subject",
-        "expired_without_security_refresh",
-        '"residual_resources": 0',
-    ):
-        if fragment not in owner:
-            raise RegistrationError(
-                f"security-plaintext-access owner contract is missing {fragment}"
-            )
-    support = (repository / "scripts/test/security-transfer-protection-online.py").read_text(
-        encoding="utf-8"
-    )
-    if "/api/v1/manager/preview" not in support:
-        raise RegistrationError(
-            "security-plaintext-access preview support is missing /api/v1/manager/preview"
-        )
+        text = path.read_text()
+        for fragment in fragments:
+            if fragment not in text:
+                raise RegistrationError("security-plaintext-access contract is missing " + fragment)
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "runs-on: ubuntu-24.04" not in job.group("body") or "inputs.suite == 'security-plaintext-access'" not in job.group("body"):
+        raise RegistrationError("security-plaintext-access requires a manual Ubuntu Hosted job")
+    if "&& inputs.suite != 'security-plaintext-access'" not in workflow:
+        raise RegistrationError("security-plaintext-access must not also dispatch on self-hosted")
+    aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", (repository / "Makefile").read_text())
+    for test in ("security-plaintext-access-online_test.py", "online-hosted-security-gate_test.py"):
+        if aggregate is None or test not in aggregate.group("body"):
+            raise RegistrationError("security-plaintext-access regression must enter test-online-runner")
 
 
 def validate_security_mysql_owner_protection_profile(
@@ -603,8 +588,8 @@ def validate_security_mysql_owner_protection_profile(
         'MONITOR_URL=', 'CONSOLE_URL=',
         'bash business/scripts/online-security-owner-fixture.sh start',
         'bash business/scripts/online-security-owner-fixture.sh stop',
-        '--suite security-mysql-owner-protection', 'scripts/test/online-engine-registration.py',
-        'scripts/test/security-mysql-owner-protection-online.py --initialize',
+        '--suite "$1"', 'scripts/test/online-engine-registration.py',
+        '"scripts/test/$INITIALIZER_SCRIPT" --initialize',
         'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN',
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     ):
@@ -616,7 +601,7 @@ def validate_security_mysql_owner_protection_profile(
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
     job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
-            or "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'security-mysql-owner-protection'\n" not in job.group("body")):
+            or "inputs.suite == 'security-mysql-owner-protection'" not in job.group("body")):
         raise RegistrationError("security-mysql-owner-protection requires a manual Ubuntu Hosted job")
     if "&& inputs.suite != 'security-mysql-owner-protection'" not in workflow:
         raise RegistrationError("security-mysql-owner-protection must not also dispatch on self-hosted")

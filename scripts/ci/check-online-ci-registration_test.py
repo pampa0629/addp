@@ -664,6 +664,39 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
             CHECK.check_registration(self.repository)
 
+    def test_plaintext_hosted_contract_rejects_drift_and_old_route(self):
+        root = SCRIPT.parents[2]
+        paths = ("scripts/test/online-hosted-security-gate.sh", "scripts/test/online-host-gate.sh",
+                 ".github/workflows/online-t4-gates.yml", "Makefile", "business/scripts/online-security-owner-fixture.sh",
+                 "scripts/test/security-plaintext-access-online.py", "system/backend/cmd/online-test-fixture/main.go")
+        for relative in paths:
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text((root / relative).read_text())
+        registered = {"security-plaintext-access"}
+        CHECK.validate_security_plaintext_access_profile(self.repository, registered)
+        for relative, fragment in ((paths[0], "# ADDP_ONLINE_SUITES=security-plaintext-access"),
+                                   (paths[5], "review-queue?scope=pending"),
+                                   (paths[5], "revoked_applicant"),
+                                   (paths[6], "plaintextApproverPermissions"),
+                                   (paths[2], "&& inputs.suite != 'security-plaintext-access'")):
+            with self.subTest(fragment=fragment):
+                target = self.repository / relative
+                original = target.read_text()
+                target.write_text(original.replace(fragment, "REMOVED"))
+                try:
+                    with self.assertRaises(CHECK.RegistrationError):
+                        CHECK.validate_security_plaintext_access_profile(self.repository, registered)
+                finally:
+                    target.write_text(original)
+        profiles = CHECK.load_deployment_profiles(self.repository)
+        self.assertEqual(profiles['security-plaintext-access'], 'github-hosted-linux-x86_64')
+        self.assertEqual(profiles['security-mysql-owner-protection'], 'github-hosted-linux-x86_64')
+        host = self.repository / paths[1]
+        host.write_text(host.read_text() + "\nsecurity-plaintext-access)\n")
+        with self.assertRaisesRegex(CHECK.RegistrationError, 'self-hosted route'):
+            CHECK.validate_security_plaintext_access_profile(self.repository, registered)
+
     def test_requires_mysql_four_owner_protection_fixtures_and_contract(self) -> None:
         root = SCRIPT.parents[2]
         for relative in (
@@ -878,7 +911,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ".model-preview model_loaded content_loaded .raster-tiff-quick-view raster_generation_requests range_loaded map_loaded "
             "ADDP_ONLINE_MANAGER_BROWSER_PHASE generation-entry cached-preview generation_entry_visible "
             "model_generation_requests anonymous_refresh_401 failed_business_responses "
-            "addp.manager-internal-artifact-lineage-browser/v4\n",
+            "addp.manager-internal-artifact-lineage-browser/v5\n",
             encoding="utf-8",
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
@@ -890,7 +923,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (config, "--enable-unsafe-swiftshader", "software WebGL"),
             (owner, "validate_model_glb", "owner contract"),
             (browser, ".model-preview", "browser contract"),
-            (browser, "addp.manager-internal-artifact-lineage-browser/v4", "browser contract"),
+            (browser, "addp.manager-internal-artifact-lineage-browser/v5", "browser contract"),
             (browser, "ADDP_ONLINE_MANAGER_BROWSER_PHASE", "browser contract"),
             (browser, "generation-entry", "browser contract"),
             (browser, "cached-preview", "browser contract"),

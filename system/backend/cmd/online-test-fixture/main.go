@@ -66,6 +66,18 @@ var sourceInitializerPermissions = []string{
 	"system.engine_access_grant.create",
 }
 
+var plaintextApplicantPermissions = []string{
+	"manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"security.assessment.read", "security.enrollment.create", "security.enrollment.read",
+	"security.finding.read", "security.finding.update", "security.protection_access_request.create",
+	"security.protection_access_request.read",
+}
+
+var plaintextApproverPermissions = []string{
+	"manager.data_item.read", "security.protection_access_request.update",
+	"security.protection_exemption.delete", "security.protection_exemption.read",
+}
+
 var transferLineagePermissions = []string{
 	"monitor.execution.read",
 	"develop.task.create", "develop.task.read", "develop.task.execute", "develop.task.delete",
@@ -140,6 +152,8 @@ func suitePermissions(suite string) ([]string, error) {
 	case "security-mysql-owner-protection":
 		permissions := append(append([]string{}, consumerPermissions...), securityPermissions...)
 		return append(permissions, "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read"), nil
+	case "security-plaintext-access":
+		return plaintextApplicantPermissions, nil
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
 		return consumerPermissions, nil
 	case "elasticsearch-consumer-flow":
@@ -166,7 +180,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	return suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
@@ -432,7 +446,15 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PARENT_USER_PASSWORD"] = password
 		values["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownerAssignmentID)
 	}
-	if *suite == "security-mysql-owner-protection" {
+	if *suite == "security-plaintext-access" {
+		approver, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-plaintext-approver", plaintextApproverPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN"] = approver.AccessToken
+	}
+	if *suite == "security-mysql-owner-protection" || *suite == "security-plaintext-access" {
 		initializer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-security-initializer", securityInitializerPermissions)
 		if err != nil {
@@ -440,7 +462,7 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"] = initializer.AccessToken
 	}
-	if *suite == "security-mysql-owner-protection" || *suite == "hdfs-spark-consumer-flow" {
+	if *suite == "security-mysql-owner-protection" || *suite == "security-plaintext-access" || *suite == "hdfs-spark-consumer-flow" {
 		sourceInitializer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-source-initializer", sourceInitializerPermissions)
 		if err != nil {
