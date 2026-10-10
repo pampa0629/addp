@@ -120,6 +120,47 @@ func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, tim
 // @Router /platform/resource_observations [get]
 func (h *ResourceObservationHandler) Instant(c *gin.Context) { h.query(c, false) }
 
+// Summaries godoc
+// @Summary 读取当前页主机资源概览 | Read current-page host resource summaries
+// @Description 固定 CPU 一分钟忙碌率、内存使用率及采集证据；共享整批预算、超时与并发租约，逐节点由 System 核验当前用户。停用节点或目标不查询历史。| Fixed one-minute CPU busy and memory used percentages with collection evidence; shared batch budget, timeout and concurrency lease, with current-user System authorization for every node. Disabled nodes or targets do not reuse history.
+// @Tags 平台运行监控 | Platform Runtime Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Param node_ids query string true "逗号分隔的 1–100 个不重复节点 UUID；两项指标乘节点数计入预算 | 1–100 distinct comma-separated node UUIDs; two metrics times node count count against budget"
+// @Success 200 {object} service.ResourceSummaryResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 429 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
+// @Failure 504 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.resource_observation.read"]
+// @Router /platform/resource_summaries [get]
+func (h *ResourceObservationHandler) Summaries(c *gin.Context) {
+	q, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil || len(c.Request.URL.RawQuery) > 4096 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 || len(q) != 1 || len(q["node_ids"]) != 1 || q.Get("node_ids") == "" {
+		resourceError(c, resourcequery.ErrInvalid)
+		return
+	}
+	principal, ok := auth.PrincipalIDFromGin(c)
+	if !ok {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+	ids := strings.Split(q.Get("node_ids"), ",")
+	value, err := h.service.Summaries(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids)
+	if err != nil {
+		resourceError(c, err)
+		return
+	}
+	c.Set("resource_query_audit_nodes", ids)
+	c.JSON(http.StatusOK, value)
+}
+
 // Trend godoc
 // @Summary 读取节点资源趋势 | Read node resource trends
 // @Description 固定九项标量、五项字节容量、四项 inode 和两项磁盘读写、三项磁盘 IO 时间及两项网络收发（按 device，一分钟窗口）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零、平均 IO 耗时无完成请求或缺少有效证据返回 no_data | Nine scalar, five byte-capacity, four inode, two disk throughput, three disk IO timing and two network per-device one-minute metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total, no completed IO for mean duration or missing evidence returns no_data

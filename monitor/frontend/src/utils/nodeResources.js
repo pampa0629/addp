@@ -38,6 +38,7 @@ export const networkMetrics = [
   { key: 'node.network.transmit_bytes_per_second', name: 'networkTransmit', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 }
 ]
 export const allResourceMetrics = [...resourceMetrics, ...mountMetrics, ...diskMetrics, ...networkMetrics]
+export const summaryMetrics = resourceMetrics.filter(metric => ['node.cpu.busy_percent', 'node.memory.used_percent'].includes(metric.key))
 const dimensionKeys = ['device', 'mountpoint', 'fstype']
 export function validResourceDimensions(value, allowEmpty = true) {
   return value && typeof value === 'object' && !Array.isArray(value) && ((allowEmpty && Object.keys(value).length === 0) ||
@@ -150,6 +151,27 @@ export function resourceErrorKey(error) {
   }
   const status = error.response?.status
   return `monitor.resources.errors.${names[code] || (status === 404 ? 'notFound' : status === 401 || status === 403 ? 'denied' : error.message === 'invalid_resource_response' ? 'invalidResponse' : 'unavailable')}`
+}
+
+export function validateResourceSummaries(value, nodes) {
+  if (!Array.isArray(value?.data) || !nodes.length || value.data.length !== nodes.length) throw new Error('invalid_resource_response')
+  const expected = new Map(nodes.map(node => [node.node_id, node.version])), result = new Map()
+  if (expected.size !== nodes.length) throw new Error('invalid_resource_response')
+  const anchor = value.data[0]
+  for (const row of value.data) {
+    const id = row?.subject?.node_id
+    if (!expected.has(id) || result.has(id) || !Number.isSafeInteger(row.node_version) || row.node_version < 1 || row.node_version !== expected.get(id) || !Number.isSafeInteger(row.policy_version) || row.policy_version < 0 || row.end !== anchor.end || row.queried_at !== anchor.queried_at || row.policy_version !== anchor.policy_version) throw new Error('invalid_resource_response')
+    validateResourceResponse(row, id, summaryMetrics.map(metric => metric.key))
+    validateCollection(row.collection, row.queried_at)
+    const completed = Date.parse(row.queried_at)
+    if (Date.parse(row.end) > completed) throw new Error('invalid_resource_response')
+    for (const series of row.series) {
+      const point = series.points[0], age = completed - Date.parse(point.sampled_at)
+      if (point.evaluated_at !== row.end || (point.sampled_at !== null && (age < 0 || (point.data_state === 'valid' && age > 60000)))) throw new Error('invalid_resource_response')
+    }
+    result.set(id, row)
+  }
+  return result
 }
 
 export function validateCollection(value, queriedAt) {

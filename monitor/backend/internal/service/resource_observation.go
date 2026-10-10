@@ -16,6 +16,7 @@ type ResourceQueryPolicyStore interface {
 type ResourceBackend interface {
 	Collection(context.Context, resourcequery.Scope, time.Time, resourcequery.Budget) (resourcequery.Collection, error)
 	Query(context.Context, resourcequery.Plan, resourcequery.Scope, resourcequery.Budget) ([]resourcequery.Series, error)
+	Summaries(context.Context, []resourcequery.Scope, time.Time, resourcequery.Budget) (map[string]resourcequery.Summary, error)
 }
 type ResourceQueryPolicyInput struct {
 	Version uint64 `json:"version"`
@@ -190,19 +191,23 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 		return result, resourcequery.ErrUnavailable
 	}
 	if !trend {
-		if result.Collection.SampledAt != nil && result.QueriedAt.Sub(*result.Collection.SampledAt) > time.Duration(resourcequery.FreshnessSeconds)*time.Second {
-			result.Collection.State = "stale"
-			result.Collection.Filesystem = "unknown"
-			result.Collection.Network = "unknown"
-		}
-		for i := range result.Series {
-			for j := range result.Series[i].Points {
-				point := &result.Series[i].Points[j]
-				if point.DataState == "valid" && point.SampledAt != nil && result.QueriedAt.Sub(*point.SampledAt) > time.Duration(resourcequery.FreshnessSeconds)*time.Second {
-					point.DataState = "stale"
-				}
+		markCurrentFreshness(&result)
+	}
+	return result, nil
+}
+
+func markCurrentFreshness(result *ResourceObservationResponse) {
+	if result.Collection.SampledAt != nil && result.QueriedAt.Sub(*result.Collection.SampledAt) > time.Duration(resourcequery.FreshnessSeconds)*time.Second {
+		result.Collection.State = "stale"
+		result.Collection.Filesystem = "unknown"
+		result.Collection.Network = "unknown"
+	}
+	for i := range result.Series {
+		for j := range result.Series[i].Points {
+			point := &result.Series[i].Points[j]
+			if point.DataState == "valid" && point.SampledAt != nil && result.QueriedAt.Sub(*point.SampledAt) > time.Duration(resourcequery.FreshnessSeconds)*time.Second {
+				point.DataState = "stale"
 			}
 		}
 	}
-	return result, nil
 }

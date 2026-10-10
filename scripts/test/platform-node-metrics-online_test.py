@@ -399,8 +399,9 @@ class MetricsProtocolTest(unittest.TestCase):
         rows.append({"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(ONLINE.NETWORK_METRICS)}, "value": self.resource_reply(ONLINE.NETWORK_METRICS)})
         report = {"schema_version": "addp.node-resources-browser/v1", "result": "passed", "stage": "complete", "run_id": "unique-run",
                   "identity": admin, "negative_identity": security, "negative_no_business_reads": True, "resources": rows,
+                  "summaries": [{"path": ONLINE.SUMMARIES, "query": {"node_ids": "node-id"}, "value": {"data": [self.resource_reply(["node.cpu.busy_percent", "node.memory.used_percent"])]}}],
                   "auto_refresh": {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True, "off_restored": True, "off_no_requests": True},
-                  "navigation": {"list_without_fanout": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True},
+                  "navigation": {"list_summary_batch": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True},
                   "presentation": {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
@@ -408,6 +409,10 @@ class MetricsProtocolTest(unittest.TestCase):
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
             mutations = [lambda v: v.update(result="failed"), lambda v: v.update(run_id="other-run"),
+                         lambda v: v.update(summaries=[]), lambda v: v.update(summaries=v["summaries"]*5),
+                         lambda v: v["summaries"][0]["query"].update(node_ids="foreign"),
+                         lambda v: v["summaries"][0]["value"]["data"][0].update(node_version=2),
+                         lambda v: v["summaries"][0]["value"]["data"][0].update(policy_version=1),
                          lambda v: v["identity"]["principal"].update(id="foreign"),
                          lambda v: v["negative_identity"].update(context={"type": "tenant", "tenant_id": "2"}),
                          lambda v: v.update(negative_no_business_reads=False), lambda v: v["navigation"].update(history=False),

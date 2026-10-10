@@ -56,6 +56,9 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 			if node, ok := c.Get("resource_query_audit_node"); ok {
 				request.EntityID = node.(string)
 			}
+			if nodes, ok := c.Get("resource_query_audit_nodes"); ok {
+				request.Details["node_ids"] = nodes.([]string)
+			}
 			if isQueryPolicy {
 				request.EntityType = "resource_query_policy"
 				request.EventName = "platform.resource_query_policy.read"

@@ -1459,3 +1459,20 @@ Desktop 保持 bridge 网络、独立 PID/挂载命名空间、非 root、cap_dr
 原生 macOS Safari 已复核真实 Desktop VM：默认“显示 1 / 18 个设备”，只显示当前活跃 vda；展开后“显示 18 / 18 个设备”，保留 nbd0–15、vdb 的真实零值及缺失耗时，刷新后仍保持展开；收起后恢复 1 / 18，近五分钟负载趋势和每 15 秒刷新保持。文件系统及网络区域的既有受限来源说明不变。Safari 最终留在精简主机详情，未生成 IO 压力、重启服务或操作内置浏览器；本批新的 Hosted T4 尚待调度完成，生产 T5 未运行。
 
 本批实现 `96cb94bda6c13f7e276bd830e8df262c8fb5289f` 已推送，对应 [Platform CI（Run 38029601852）](https://github.com/pampa0629/addp/actions/runs/38029601852)、[Release/T2 工作流（Run 38029601857）](https://github.com/pampa0629/addp/actions/runs/38029601857) 和 Quality frontend smoke（Run 38029601896）均 completed/success；Console、Monitor 前端和平台一致性 Job 成功，按路径跳过的后端门禁不计为重跑。沿同一提交的 [Hosted T4（Run 38029955919）](https://github.com/pampa0629/addp/actions/runs/38029955919) 最终 completed/success；下载归档后复核平台与浏览器报告 result=passed、stage=complete，25 项目录、102 次真实资源响应、七张截图、五项有效磁盘即时值及精确设备趋势恢复闭合，截图确认 sda 的平均写入耗时趋势使用 ms。真实密码/MFA、同一平台身份、无权身份拒绝、导航/范围恢复、自然 15 秒刷新与关闭刷新后无请求、预算 CAS/热生效、三类故障恢复、节点恢复新样本、停用历史排除与对象移除均通过；最终 summary.txt 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals。监看命令曾因 GitHub API 网络读取中断退出 1，最终状态通过独立 run view 和同轮归档确认，不以监看客户端退出值替代门禁结果。该轮原生来源只有一个磁盘设备，多设备收起/展开由本批 T3 和个人 Safari 的 18 个真实设备分别证明；本地默认预检失败与生产 T5 未运行仍单独保留。
+### 10.48 主机列表的即时资源概览
+
+用户继续推进主机列表的 CPU、内存和采集状态概览。主机分页、搜索和登记事实仍来自 System；Monitor 在当前页有主机时读取一次 GET `/platform/resource_summaries?node_ids=...`，不逐行调用详情 API，不查询趋势或其他资源族。固定返回 CPU 一分钟忙碌率、内存使用率和当前采集证据；复用同一目录公式、数据状态、来源核验、采样时间及完成时的新鲜度判断，不建立缓存或新实体。空列表不发资源请求，列表沿现有手动刷新，不增加定时器。
+
+批量请求仅接受 1–100 个不重复的规范节点 UUID；共享一次主体/进程并发租约、预算版本和总超时。两项指标的节点序列总数计入现有 MaxSeries/MaxTotalPoints，超预算返回 422，不静默拆分请求或截断节点。默认 20 条分页在默认预算内；列表提供 10/20/50 条的每页数量选择并重置页码。较大页或收紧预算时就地提示减少每页数量或调整查询预算，主机登记列表仍可使用。Monitor 必须原样转发当前 User Token，逐个由 System 核验当前节点引用及版本，任何拒绝或引用错误都整批失败且不查询历史指标；不能以后台身份投影替代用户授权。目标快照只读一次，停用节点/目标不查历史；所有来源先验证后，再用固定两次 Prometheus 查询取得全批指标及采集证据，按服务端附加的节点标签严格分组、去除该标签后复用原归一化。不接受任意指标、PromQL、来源或时间参数，不跨节点汇总百分比。
+
+列表直接显示“CPU 忙碌率（1 分钟）”“内存使用率”“采集状态”；未知、陈旧、未连接的数值显示空值及原状态，采集成功不等于主机健康。主机名称/地址为主要识别信息，UUID 移入主机名称旁的详情提示，减少固定长列。撤权、身份/页码/筛选变化、刷新失败和迟到响应不得保留旧资源证据；采集中心不可用时保留已授权的 System 列表并显示资源错误，权限或对象不存在错误清空本轮列表。响应必须完整对应本次节点集合及登记版本，否则整批拒绝。
+
+实施前门禁：既有 Go T1 覆盖固定批量公式、标签分组、节点隔离、总预算、授权拒绝、停用历史排除、完成时新鲜度和租约释放；metrics T2 增加同一真实 Prometheus 两节点批量结果与跨节点空值验证。Monitor 前端 T1/T3 与 Console 宿主门禁覆盖一次批量读取、分页搜索、空列表、五态、错误恢复及身份/请求生命周期，Swagger 同步并校验覆盖；既有自动发现覆盖 Monitor/Console 和 runner 路径，无需新增标准入口或 workflow。现有 Hosted suite 的列表无扇出断言同步为一次固定概览请求，真实详情与预算、身份、恢复及零残留断言保持，生产 IAM 不变。默认 make test-changed 单独报告，未执行 T4/T5 不计为通过。
+
+批量公式使用 Prometheus 官方支持的 application/x-www-form-urlencoded POST 查询，避免较长固定公式触及 URI 长度限制；它是查询中心的只读传输方式，不新增 ADDP 写接口或请求授权路径。依据：[Prometheus HTTP API](https://prometheus.io/docs/prometheus/latest/querying/api/#instant-queries)。
+
+2026-10-10 本批最终本地验证：`make test-module MODULE=monitor` 返回 0，平台 T0、Monitor Go T1、50 项前端单测、93 项浏览器回归和构建、独占指标 T2、Monitor PostgreSQL T2 完整执行通过。指标 T2 的真实完整与 Docker Desktop 受限来源分别执行包含新增批量概览的原生查询回归，证明两节点请求中当前节点的 CPU/内存有效，另一个节点始终无样本且不借用数值；来源与中心恢复、mTLS、历史重放及容器/网络/卷/临时文件零残留通过。PostgreSQL 使用已由 infra/status.sh 核实的 addp-postgres:25432/addp_test，没有创建其他 database。独立 make test-go 返回 0，22 个 Go 模块通过；随后调整的批量全停用分支由上述最终 Monitor 模块门禁再次验证。最终独立 make test-monitor-frontend、make test-console-frontend、make test-node-metrics-online-runner 均返回 0，分别为 50/93、155/123 和 33 项协议/生命周期回归及 System fixture；Swagger 生成与 66 个公开路由方法覆盖校验通过。
+
+首轮 Go 在新增批量传输测试夹具失败：将内部 wire DTO 直接编码会生成真实 Prometheus 不会返回的 null histogram 字段，原严格归一化正确拒绝该响应。夹具改为输出官方实际 vector JSON 后，最终 Go 和真实两类来源 T2 均通过；未放宽生产响应校验。默认 make test-changed 识别当时 49 项混合工作区变更及共享规范扩散，在多个必需 T2 的数据库/外部引擎环境参数预检退出 2，后续未执行，不计为全工作区通过；本批已提供实际核实的 PostgreSQL 参数完成自己的 Monitor 全模块入口。
+
+个人 Safari 已只读核对新版列表的 CPU、内存和采集状态列；当前运行中的 Monitor 尚无新路由，直连其实际 8100 端口的无凭据读取仍为 404，列表的对象拒绝逻辑清空观测。已请用户按标准入口 restart.sh -monitor 更新后端，未由 AI 重启或接管个人服务，也未使用内置浏览器或读取个人 Token。本批新概览的个人真实页面、Hosted T4 和生产 T5 尚未执行通过；此前 10.47 的通过证据不替代本批新接口与列表验收。

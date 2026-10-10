@@ -46,7 +46,7 @@ func resourceAPIRouter(t *testing.T, identity authorization.AuthContext) *gin.En
 	return SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, svc)
 }
 func TestResourceRoutesRejectTenantMachineDelegatedAndMissingPermission(t *testing.T) {
-	paths := []string{"/platform/resource_observations", "/platform/resource_trends", "/settings/resource-query-policy"}
+	paths := []string{"/platform/resource_observations", "/platform/resource_summaries", "/platform/resource_trends", "/settings/resource-query-policy"}
 	for _, variant := range []string{"tenant", "service", "delegated", "missing", "anonymous", "user", "oauth"} {
 		for _, path := range paths {
 			t.Run(variant+path, func(t *testing.T) {
@@ -100,6 +100,15 @@ func TestResourceRoutesRejectTenantMachineDelegatedAndMissingPermission(t *testi
 func TestResourceQueryParsingStrictAndPolicyCAS(t *testing.T) {
 	identity := targetAPIIdentity("user", "addp-web", "first_party_access_token", "monitor.resource_observation.read")
 	router := resourceAPIRouter(t, identity)
+	for _, query := range []string{"", "node_ids=x", "node_ids=x&metrics=y", "node_ids=x&node_ids=y", "node_ids=", "node_id=x", "node_ids=11111111-1111-4111-8111-111111111111,11111111-1111-4111-8111-111111111111"} {
+		req := httptest.NewRequest("GET", "/api/v1/monitor/platform/resource_summaries?"+query, nil)
+		req.Header.Set("Authorization", "Bearer addp_at_user")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		if w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_resource_query") {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
 	for _, query := range []string{"node_id=x&metrics=y&query=up", "node_id=x&metrics=y&node_id=z", "node_id=x&metrics=y&step=1", "node_id=x&metrics=y&start=bad", "node_id=x;metrics=y", "node_id=x&metrics=y&device=a", "node_id=x&metrics=y&device=a&mountpoint=relative&fstype=x", "node_id=x&metrics=y&device=a&device=b&mountpoint=%2F&fstype=x"} {
 		req := httptest.NewRequest("GET", "/api/v1/monitor/platform/resource_observations?"+query, nil)
 		req.Header.Set("Authorization", "Bearer addp_at_user")

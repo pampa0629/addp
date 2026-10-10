@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -20,6 +20,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
   const context = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN', viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   const resources = []
+  const summaries = []
   const businessErrors = []
   const pending = []
   page.on('response', response => {
@@ -28,6 +29,9 @@ test('platform node resources through real Console password MFA and Monitor ifra
     if (!response.ok()) businessErrors.push(response.status())
     if (url.pathname.endsWith('resource_observations') || url.pathname.endsWith('resource_trends')) {
       pending.push(response.json().then(value => resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
+    }
+    if (url.pathname.endsWith('resource_summaries')) {
+      pending.push(response.json().then(value => summaries.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
     }
   })
   const login = async (target, prefix, principalID, role) => {
@@ -64,8 +68,15 @@ test('platform node resources through real Console password MFA and Monitor ifra
     const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(monitor.getByTestId('resource-search')).toBeVisible()
     await expect(monitor.getByRole('button', { name: '查看资源' })).toHaveCount(1)
+    await expect(monitor.getByTestId('resource-node-list')).toContainText('正在采集')
+    await expect(monitor.getByTestId('resource-node-list').locator('strong')).toHaveCount(2)
+    for (const value of await monitor.getByTestId('resource-node-list').locator('strong').allTextContents()) expect(value).toMatch(/^\d[\d,]*\.\d{2} %$/)
     await Promise.all(pending)
     expect(resources).toHaveLength(0)
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0].query).toEqual({ node_ids: expected.node.node_id })
+    expect(summaries[0].value.data).toHaveLength(1)
+    expect(summaries[0].value.data[0].series.map(row => row.metric_key).sort()).toEqual(summaryMetrics.map(row => row.key).sort())
     await page.screenshot({ path: resolve(artifact, 'node-resources-list.png'), animations: 'disabled' })
     const frame = page.frames().find(item => item.parentFrame())
     const documentID = await frame.evaluate(() => performance.timeOrigin)
@@ -250,7 +261,8 @@ test('platform node resources through real Console password MFA and Monitor ifra
     }
     expect(businessErrors).toEqual([])
     report.resources = resources
-    report.navigation = { list_without_fanout: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true, inode_reload: true, disk_reload: true, network_reload: true }
+    report.summaries = summaries
+    report.navigation = { list_summary_batch: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true, inode_reload: true, disk_reload: true, network_reload: true }
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     try {

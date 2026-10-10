@@ -1,4 +1,4 @@
-import { allResourceMetrics } from '../src/utils/nodeResources'
+import { allResourceMetrics, summaryMetrics } from '../src/utils/nodeResources'
 import { identity, node, setIdentity } from './monitoring-targets.fixture'
 export { identity, node, setIdentity }
 export const secondNode = '15daeb87-b7bf-434b-a8ea-598c82e266d4'
@@ -20,9 +20,10 @@ export function observations(id, keys, trend = false, mode = '', end = serverEnd
   return { ...(trend ? {} : { collection }), subject: { kind: 'node', node_id: id }, end, start: trend ? new Date(Date.parse(end) - 30000).toISOString() : end, queried_at: end, step_seconds: 15, node_version: 1, policy_version: 1, series: keys.map(key => ({ metric_key: key, dimensions: key.startsWith('node.filesystem.') && !['disconnected', 'filesystem-uncollected'].includes(mode) ? mount : (key.startsWith('node.disk.') || key.startsWith('node.network.')) && !['disconnected', 'disk-missing', 'network-missing', 'network-uncollected', 'network-failed', 'network-unknown', 'collection-failed'].includes(mode) ? { device: key.startsWith('node.network.') ? 'eth0' : 'sda' } : {}, unit: allResourceMetrics.find(item => item.key === key).unit, window_seconds: allResourceMetrics.find(item => item.key === key).windowSeconds || 0, points: points(key) })) }
 }
 export async function resourceBackend(page, options = {}) {
-  const state = { reads: [], mode: options.mode || '', trendMode: options.trendMode || '', diskDevices: options.diskDevices, targetID: options.targetID, serverEnd, identity: options.identity || identity(resourcePermissions) }
+  const state = { reads: [], mode: options.mode || '', summaryMode: options.summaryMode || '', listNodes: options.nodes, trendMode: options.trendMode || '', diskDevices: options.diskDevices, targetID: options.targetID, serverEnd, identity: options.identity || identity(resourcePermissions) }
   let release
   let held = options.holdInstant ? new Promise(resolve => { release = resolve }) : null
+  let releaseSummary, heldSummary = options.holdSummary ? new Promise(resolve => { releaseSummary = resolve }) : null
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.locale || 'zh-cn')
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/**', async route => {
@@ -33,8 +34,8 @@ export async function resourceBackend(page, options = {}) {
     else if (path === '/api/v1/system/auth/context') body = state.identity
     else if (path.startsWith('/api/v1/system/platform/host_nodes')) {
       state.reads.push({ path, query: Object.fromEntries(url.searchParams) })
-      const nodes = [node, secondNode].map((node_id, index) => ({ node_id, display_name: index ? '节点乙' : '节点甲', addresses: ['127.0.0.1'], enabled: true, version: 1 }))
-      if (path.endsWith('/host_nodes')) body = { data: nodes, total: 45, page: Number(url.searchParams.get('page')), page_size: 20 }
+      const nodes = (state.listNodes || [node, secondNode].map((node_id, index) => ({ node_id, display_name: index ? '节点乙' : '节点甲', addresses: ['127.0.0.1'], enabled: true, version: 1 })))
+      if (path.endsWith('/host_nodes')) body = { data: nodes, total: 45, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')) }
       else { body = nodes.find(item => path.endsWith(item.node_id)); if (!body) { status = 404; body = { error: 'not found' } } }
     } else if (path.startsWith('/api/v1/monitor/platform/monitoring_targets') && req.method() === 'GET') {
       state.reads.push({ path, method: req.method() })
@@ -42,6 +43,22 @@ export async function resourceBackend(page, options = {}) {
       if (path.endsWith('/monitoring_targets')) body = { data: target ? [target] : [], total: target ? 1 : 0, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')), total_pages: target ? 1 : 0 }
       else if (target && path.endsWith(`/${target.id}`)) body = target
       else { status = 404; body = { error: 'not found' } }
+    } else if (path.endsWith('/resource_summaries')) {
+      state.reads.push({ path, query: Object.fromEntries(url.searchParams), method: req.method() })
+      const mode = state.summaryMode || state.mode
+      body = { data: url.searchParams.get('node_ids').split(',').map(id => observations(id, summaryMetrics.map(metric => metric.key), false, mode, state.serverEnd)) }
+      if (mode === 'invalid') body.data[0].subject.node_id = secondNode
+      if (mode === 'stale') for (const row of body.data) {
+        const old = new Date(Date.parse(row.end) - 61000).toISOString()
+        row.collection = { state: 'stale', sampled_at: old, filesystem: 'unknown', network: 'unknown' }
+        for (const series of row.series) Object.assign(series.points[0], { sampled_at: old, data_state: 'stale' })
+      }
+      if (mode === 'no-sample') for (const row of body.data) {
+        row.collection = { state: 'no_sample', sampled_at: null, filesystem: 'unknown', network: 'unknown' }
+        for (const series of row.series) Object.assign(series.points[0], { sampled_at: null, value: null, data_state: 'no_data' })
+      }
+      if (mode === 'unavailable' || mode === 'denied' || mode === 'budget') { status = mode === 'denied' ? 403 : mode === 'budget' ? 422 : 503; body = { error_code: mode === 'denied' ? 'permission_denied' : mode === 'budget' ? 'observability_query_budget_exceeded' : 'observability_backend_unavailable', error: mode } }
+      if (heldSummary) await heldSummary
     } else if (path.startsWith('/api/v1/monitor/platform/resource_')) {
       const trend = path.endsWith('/resource_trends'), mode = trend ? state.trendMode || state.mode : url.searchParams.get('metrics').startsWith('node.network.') ? state.networkMode || state.mode : url.searchParams.get('metrics').startsWith('node.disk.') ? state.diskMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.inodes_') ? state.inodeMode || state.mode : url.searchParams.get('metrics').startsWith('node.filesystem.') ? state.filesystemMode || state.mode : state.mode
       state.reads.push({ path, query: Object.fromEntries(url.searchParams), method: req.method() })
@@ -66,5 +83,5 @@ export async function resourceBackend(page, options = {}) {
     } else throw new Error(`Unexpected resource fixture API ${path}`)
     await route.fulfill({ status, json: body })
   })
-  return Object.assign(state, { hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null } })
+  return Object.assign(state, { hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null }, releaseSummary: () => { releaseSummary?.(); heldSummary = null } })
 }

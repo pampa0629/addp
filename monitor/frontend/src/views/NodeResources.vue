@@ -15,14 +15,18 @@
         <el-input v-model="searchText" :placeholder="t('monitor.resources.search')" :aria-label="t('monitor.resources.search')" maxlength="200" clearable data-testid="resource-search" />
         <el-button native-type="submit">{{ t('common.search') }}</el-button>
       </el-form>
-      <el-table :data="nodes" v-loading="loading" :empty-text="t('monitor.resources.empty')">
-        <el-table-column prop="display_name" :label="t('monitor.resources.node')" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="node_id" :label="t('monitor.targets.node')" min-width="280" show-overflow-tooltip />
+      <el-alert v-if="summaryErrorKey" :title="t(summaryErrorKey)" type="warning" show-icon :closable="false" data-testid="resource-summary-error" />
+      <el-table :data="nodes" v-loading="loading" :empty-text="t('monitor.resources.empty')" data-testid="resource-node-list">
+        <el-table-column :label="t('monitor.resources.node')" min-width="180" show-overflow-tooltip><template #default="{ row }"><span :title="row.node_id">{{ row.display_name }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.resources.addresses')" min-width="180"><template #default="{ row }">{{ row.addresses.join(', ') }}</template></el-table-column>
+        <el-table-column v-for="metric in summaryMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="160">
+          <template #default="{ row }"><strong>{{ formatValue(summaryPoint(row, metric), metric) }}</strong><p v-if="summaryPoint(row, metric) && summaryPoint(row, metric).data_state !== 'valid'" class="resource-hint">{{ t(`monitor.resources.states.${summaryPoint(row, metric).data_state}`) }}</p></template>
+        </el-table-column>
+        <el-table-column :label="t('monitor.resources.overview.collectionTitle')" min-width="150"><template #default="{ row }"><span :title="summaries.get(row.node_id) ? t('monitor.resources.sampledAt') + ': ' + date(summaries.get(row.node_id).collection.sampled_at) : ''">{{ t(!row.enabled ? 'monitor.resources.overview.disabled' : summaries.get(row.node_id) ? `monitor.resources.overview.collection.${summaries.get(row.node_id).collection.state}` : loading ? 'common.loading' : 'monitor.resources.overview.unavailable') }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.resources.nodeState')" width="120"><template #default="{ row }">{{ t(row.enabled ? 'common.enabled' : 'common.disabled') }}</template></el-table-column>
         <el-table-column width="150"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/node-resources/${row.node_id}`, state.query)">{{ t('monitor.resources.view') }}</el-button></template></el-table-column>
       </el-table>
-      <div class="resource-pagination"><el-pagination :current-page="state.page" :page-size="state.pageSize" :total="total" layout="total, prev, pager, next" @current-change="changePage" /></div>
+      <div class="resource-pagination"><el-pagination :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
     </template>
     <template v-else-if="node">
       <section class="node-header">
@@ -155,7 +159,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -169,6 +173,7 @@ const listQuery = computed(() => { const { range, metric, refresh, device, mount
 const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const showAllDisks = ref(false)
+const summaries = ref(new Map()), summaryErrorKey = ref('')
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
 const filesystemMissingMessage = computed(() => !filesystemErrorKey.value && !inodeErrorKey.value && (['not_collected', 'failed'].includes(filesystems.value?.collection.filesystem) || !mountRows.value.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(filesystems.value?.collection, 'filesystem') : '')
@@ -192,6 +197,7 @@ const pending = new Set()
 useConsolePageDescriptor(router, 'monitor', { title: computed(() => t('monitor.resources.detailTitle')), subject: computed(() => node.value?.display_name || ''), ready: computed(() => Boolean(node.value)) })
 function date(value) { return formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value) }
 function point(key) { return instant.value.series.find(series => series.metric_key === key).points[0] }
+function summaryPoint(row, metric) { return summaries.value.get(row.node_id)?.series.find(series => series.metric_key === metric.key)?.points[0] }
 function formatValue(value, metric) {
   const numeric = currentResourceValue(value)
   if (numeric === null) return '—'
@@ -205,6 +211,7 @@ function configureCollection() {
   return instant.value.target_id ? navigate(`/monitoring-targets/${instant.value.target_id}`, {}) : navigate('/monitoring-targets/new', { node_id: nodeID.value })
 }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
+function changeSize(size) { return navigate('/node-resources', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
 function search() { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace') }
 function selectTrend(key, value) {
   const query = { ...state.value.query, [key]: value }
@@ -237,6 +244,7 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
+  summaries.value = new Map(); summaryErrorKey.value = ''
   if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null }
   errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = ''; diskErrorKey.value = ''; networkErrorKey.value = '';  evidencePage.value = 1; loading.value = false
   if (!canRead.value) return
@@ -251,6 +259,17 @@ async function reload({ automatic = false } = {}) {
       const value = await request(config => api.nodes({ page: state.value.page, page_size: state.value.pageSize, ...(state.value.search ? { search: state.value.search } : {}) }, config))
       if (ticket !== epoch) return
       nodes.value = value.data; total.value = value.total
+      if (nodes.value.length) {
+        try {
+          const overview = await request(config => api.summaries(nodes.value.map(row => row.node_id), config))
+          if (ticket !== epoch) return
+          summaries.value = validateResourceSummaries(overview, nodes.value)
+        } catch (error) {
+          if (ticket !== epoch) return
+          if ([401, 403, 404].includes(error.response?.status)) throw error
+          summaryErrorKey.value = error.response?.data?.error_code === 'observability_query_budget_exceeded' ? 'monitor.resources.overview.budget' : resourceErrorKey(error)
+        }
+      }
     } else {
       const value = await request(config => api.node(id, config))
       if (ticket !== epoch) return
@@ -315,7 +334,7 @@ async function reload({ automatic = false } = {}) {
     if (ticket !== epoch) return
     instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
     errorKey.value = resourceErrorKey(error)
-    if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null }
+    if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = 0; summaries.value = new Map() }
   } finally { if (ticket === epoch) { loading.value = false; scheduleRefresh() } }
 }
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })

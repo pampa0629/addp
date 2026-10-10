@@ -2873,6 +2873,98 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/resource_summaries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "固定 CPU 一分钟忙碌率、内存使用率及采集证据；共享整批预算、超时与并发租约，逐节点由 System 核验当前用户。停用节点或目标不查询历史。| Fixed one-minute CPU busy and memory used percentages with collection evidence; shared batch budget, timeout and concurrency lease, with current-user System authorization for every node. Disabled nodes or targets do not reuse history.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取当前页主机资源概览 | Read current-page host resource summaries",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "逗号分隔的 1–100 个不重复节点 UUID；两项指标乘节点数计入预算 | 1–100 distinct comma-separated node UUIDs; two metrics times node count count against budget",
+                        "name": "node_ids",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.resource_observation.read"
+                ]
+            }
+        },
         "/platform/resource_trends": {
             "get": {
                 "security": [
@@ -5346,6 +5438,17 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ResourceSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceObservationResponse"
+                    }
                 }
             }
         },

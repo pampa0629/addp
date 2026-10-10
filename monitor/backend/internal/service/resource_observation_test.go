@@ -39,21 +39,49 @@ type resourceNodes struct {
 	enabled bool
 	tokens  []string
 	err     error
+	denyID  string
 }
 
 func (n *resourceNodes) GetHostNodeForUser(_ context.Context, id, token string) (*client.HostNodeReference, error) {
 	n.tokens = append(n.tokens, token)
+	if id == n.denyID {
+		return nil, &client.SystemAPIError{StatusCode: 403}
+	}
 	return &client.HostNodeReference{NodeID: id, Version: 3, Enabled: n.enabled}, n.err
 }
 func (n *resourceNodes) AuthorizeHostNodesForUser(context.Context, string) error { return n.err }
 
 type resourceBackend struct {
-	validAge    *time.Duration
-	evidence    *resourcequery.Collection
-	calls       int
-	collections int
-	scope       resourcequery.Scope
-	err         error
+	validAge      *time.Duration
+	evidence      *resourcequery.Collection
+	calls         int
+	collections   int
+	scope         resourcequery.Scope
+	err           error
+	summaryCalls  int
+	summaryScopes []resourcequery.Scope
+}
+
+func (b *resourceBackend) Summaries(ctx context.Context, scopes []resourcequery.Scope, at time.Time, budget resourcequery.Budget) (map[string]resourcequery.Summary, error) {
+	b.summaryCalls++
+	b.summaryScopes = append([]resourcequery.Scope(nil), scopes...)
+	p, err := resourcequery.NewSummaryPlan(len(scopes), at, budget)
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]resourcequery.Summary{}
+	for _, scope := range scopes {
+		series, err := b.Query(ctx, p, scope, budget)
+		if err != nil {
+			return nil, err
+		}
+		collection, err := b.Collection(ctx, scope, at, budget)
+		if err != nil {
+			return nil, err
+		}
+		result[scope.NodeID] = resourcequery.Summary{Collection: collection, Series: series}
+	}
+	return result, nil
 }
 
 func (b *resourceBackend) Collection(_ context.Context, scope resourcequery.Scope, _ time.Time, _ resourcequery.Budget) (resourcequery.Collection, error) {

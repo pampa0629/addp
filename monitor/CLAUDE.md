@@ -116,7 +116,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 
 ## Platform 节点基础资源查询
 
-- 唯一读取接口 `/platform/resource_observations`、`/platform/resource_trends` 使用 `monitor.resource_observation.read`；System 连续迁移 000193 仅给平台系统管理员发布该权限，采集服务与 Tenant 身份无此能力。当前请求内转发 User Token，由 System 裁决节点；读取当前启用目标及受控解析端点，节点/目标停用返回 `not_connected`，不查历史作为当前值。
+- 资源读取接口 `/platform/resource_observations`、`/platform/resource_trends`、`/platform/resource_summaries` 使用 `monitor.resource_observation.read`；System 连续迁移 000193 仅给平台系统管理员发布该权限，采集服务与 Tenant 身份无此能力。当前请求内转发 User Token，由 System 裁决节点；读取当前启用目标及受控解析端点，节点/目标停用返回 `not_connected`，不查历史作为当前值。
 - `internal/resourcequery/` 唯一维护 9 个标量目录项、PromQL、timestamp 证据、步长与响应预算。CPU 核数、一分钟 CPU 忙碌率、内存总量/可用量/使用率、1/5/15 分钟负载和运行时长支持即时及趋势；负载不是 CPU 利用率。CPU 忙碌率须证明一分钟完整窗口及核集合/启动时间一致，缺样本或计数器重置返回空值；文件系统容量与挂载趋势已沿同一 API 实施（见下文），磁盘读写吞吐按 device 沿同一 API 实施（见下文），网络接口收发速率按 device 沿同一 API 实施（见下文）。每个网格点明确评估/采样时间、单位、状态与空值，缺失不变成零，过期值不算当前有效值。
 - `/settings/resource-query-policy` 沿用模块级 `monitor.configuration.read/update`，仅 Platform User，唯一 `monitor.resource_query_policy` 单例保存 CAS 版本与完整预算。每个查询读一次已提交预算，对新请求热生效；没有环境回退或重启要求。标准平台审计记录安全结果与保存版本，不记录 PromQL、Token 或内部地址。
 - mTLS 查询部署输入独立于节点准入和 collector；关闭或不完整配置不阻断业务。生产只通过标准生命周期的 `metrics-query.yml` 挂载，不增加必需 Infra 依赖。
@@ -131,9 +131,9 @@ bash scripts/swagger/check-route-coverage.sh monitor
 
 ## 平台节点资源前端
 
-- Monitor 唯一拥有 `/node-resources` 和 `/node-resources/:node_id`，Console 集成菜单、搜索与真实 iframe；列表 search/page/page_size、详情 range/metric/refresh 可恢复，默认值省略。System 台账提供节点列表和详情，选中后读取九项即时资源与单项趋势，不批量扇出查询。
+- Monitor 唯一拥有 `/node-resources` 和 `/node-resources/:node_id`，Console 集成菜单、搜索与真实 iframe；列表 search/page/page_size、详情 range/metric/refresh 可恢复，默认值省略。System 主机管理提供节点列表和详情；列表整页一次固定 CPU/内存及采集证据概览，选中后读取九项即时资源与单项趋势。概览逐节点沿当前 User Token 核验，整批共享预算/超时/并发租约，复用原公式和新鲜度，不逐行查询详情。
 - 入口仅接受非委托 Platform User，同时具备 `platform.host_node.read` 和 `monitor.resource_observation.read`；上下文、主体、权限或节点变化同步取消请求并清空旧观测。关闭/未配置/不可用/超时/预算及并发超限分别提示，失败不保留旧观测。
-- 详情默认完成一轮后等待 15 秒自动刷新，可选 10/30/60 秒或关闭，选择通过 URL 恢复；列表不扇出查询。隐藏时取消请求并暂停，可见且开启时立即刷新；身份/路由变化及卸载清理，401/403/404 停止重试，手工刷新重新裁决。时间明确标注；趋势窗口以本轮即时响应的服务端 end 为准。valid 零值有效，stale/no_data/not_connected 不展示为当前数值，曲线保留断点，明细展示原状态与采样/评估时间。不把 Load Average 解释为 CPU 利用率。
+- 详情默认完成一轮后等待 15 秒自动刷新，可选 10/30/60 秒或关闭，选择通过 URL 恢复；列表只手动刷新一次批量概览，不设置计时器。隐藏时取消请求并暂停，可见且开启时立即刷新；身份/路由变化及卸载清理，401/403/404 停止重试，手工刷新重新裁决。时间明确标注；趋势窗口以本轮即时响应的服务端 end 为准。valid 零值有效，stale/no_data/not_connected 不展示为当前数值，曲线保留断点，明细展示原状态与采样/评估时间。不把 Load Average 解释为 CPU 利用率。
 - 图表及数字/时间格式复用 Common Chart 和 Basic 的唯一实现；共享折线最多 1,000 点，null 保留为空点。既有 Workbench 消费者与 Monitor/Console/共享前端标准门禁共同验证，新增测试沿既有自动发现和 CI 登记；确定性页面 T3 不代替真实后端或页面 T4。
 
 - 同一 `platform-node-metrics` Hosted Linux VM 已于 2026-10-07 完成真实 Console/Monitor 节点资源页面 T4（Run 37563564755，代码 `b3a64756c`）：正式密码/MFA、同一非委托 Platform User、八项资源/趋势、单 iframe 历史及刷新恢复、安全管理员入口拒绝与无业务请求、预算及监测故障隔离/恢复、停用后历史排除、退出零残留通过。沿用既有临时身份例外，未增加权限或生产角色；T3 仍独立计量，生产 T5、更多指标及自动刷新未在该次验收范围。细节与失败诊断见设计 10.25。

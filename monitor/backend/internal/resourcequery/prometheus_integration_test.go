@@ -86,6 +86,20 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	}
 	otherScope := scope
 	otherScope.NodeID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+	summaries, err := c.Summaries(queryContext, []Scope{scope, otherScope}, now, b)
+	if err != nil || len(summaries) != 2 || summaries[scope.NodeID].Collection.State != "collecting" || summaries[otherScope.NodeID].Collection.State != "no_sample" {
+		t.Fatalf("native summary scope evidence: %+v %v", summaries, err)
+	}
+	for _, row := range summaries[scope.NodeID].Series {
+		if row.Points[0].DataState != "valid" || row.Points[0].Value == nil {
+			t.Fatal("native summary missing current value", row)
+		}
+	}
+	for _, row := range summaries[otherScope.NodeID].Series {
+		if row.Points[0].DataState != "no_data" || row.Points[0].Value != nil {
+			t.Fatal("native summary crossed node scope", row)
+		}
+	}
 	otherCollection, err := c.Collection(context.Background(), otherScope, now, b)
 	if err != nil || otherCollection.State != "no_sample" || otherCollection.Filesystem != "unknown" || otherCollection.Network != "unknown" {
 		t.Fatalf("collection scope leaked: %+v %v", otherCollection, err)

@@ -125,6 +125,7 @@ func SetupRouter(
 	platform.GET("/platform/metrics_discovery", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMetricsDiscoveryRead), platformObservationIdentity(true), targetHandler.Discovery)
 	resourceHandler := NewResourceObservationHandler(resourceObservations)
 	platform.GET("/platform/resource_observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Instant)
+	platform.GET("/platform/resource_summaries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Summaries)
 	platform.GET("/platform/resource_trends", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorResourceObservationRead), platformObservationIdentity(false), resourceHandler.Trend)
 	platform.GET("/settings/resource-query-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationRead), platformObservationIdentity(false), resourceHandler.Policy)
 	platform.PUT("/settings/resource-query-policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), platformObservationIdentity(false), resourceHandler.UpdatePolicy)

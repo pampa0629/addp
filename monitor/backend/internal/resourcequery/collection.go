@@ -29,6 +29,14 @@ func (c *Client) Collection(ctx context.Context, scope Scope, at time.Time, budg
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(budget.TimeoutSeconds)*time.Second)
 	defer cancel()
+	data, err := c.read(ctx, "/api/v1/query", url.Values{"query": {collectionExpression(scope)}, "time": {at.Format(time.RFC3339)}, "timeout": {strconv.Itoa(budget.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}})
+	if err != nil {
+		return result, err
+	}
+	return normalizeCollection(data, at)
+}
+
+func collectionExpression(scope Scope) string {
 	up := scope.selector("up")
 	expressions := []struct{ key, expression string }{
 		{"up_count", "count(" + up + ") or vector(0)"},
@@ -47,11 +55,7 @@ func (c *Client) Collection(ctx context.Context, scope Scope, at time.Time, budg
 	for _, v := range expressions {
 		parts = append(parts, `label_replace((`+v.expression+`),"signal",`+strconv.Quote(v.key)+`,"","")`)
 	}
-	data, err := c.read(ctx, "/api/v1/query", url.Values{"query": {strings.Join(parts, " or ")}, "time": {at.Format(time.RFC3339)}, "timeout": {strconv.Itoa(budget.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}})
-	if err != nil {
-		return result, err
-	}
-	return normalizeCollection(data, at)
+	return strings.Join(parts, " or ")
 }
 
 func normalizeCollection(data envelope, at time.Time) (Collection, error) {

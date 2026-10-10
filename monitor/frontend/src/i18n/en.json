@@ -767,6 +767,19 @@
         "notCollected": "The current source does not provide network interface metrics. Waiting will not produce throughput data.",
         "collectorFailed": "Network interface collection failed. Check source permissions and runtime status.",
         "unknown": "No network throughput data. Interface collection coverage has not been confirmed."
+      },
+      "overview": {
+        "collectionTitle": "Collection status",
+        "disabled": "Host disabled",
+        "unavailable": "Read failed",
+        "collection": {
+          "collecting": "Collecting",
+          "failed": "Collection failed",
+          "stale": "Sample expired",
+          "no_sample": "Awaiting first sample",
+          "not_connected": "Collection not enabled"
+        },
+        "budget": "This page exceeds the resource query budget. Reduce the page size or ask an administrator to adjust the budget."
       }
     }
   }

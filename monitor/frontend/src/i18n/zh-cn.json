@@ -767,6 +767,19 @@
         "notCollected": "当前采集源未提供网络接口指标，等待不会产生吞吐数据。",
         "collectorFailed": "网络接口采集失败，请检查采集源权限及运行状态。",
         "unknown": "暂无网络吞吐数据，尚不能确认网络接口指标是否已采集。"
+      },
+      "overview": {
+        "collectionTitle": "采集状态",
+        "disabled": "主机已停用",
+        "unavailable": "读取失败",
+        "collection": {
+          "collecting": "正在采集",
+          "failed": "采集失败",
+          "stale": "样本已过期",
+          "no_sample": "等待首次采集",
+          "not_connected": "未启用采集"
+        },
+        "budget": "当前页主机数超出资源查询预算，请减少每页数量或联系管理员调整预算。"
       }
     }
   }

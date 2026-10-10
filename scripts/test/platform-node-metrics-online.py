@@ -27,6 +27,7 @@ NODES = "/api/v1/system/platform/host_nodes"
 TARGETS = "/api/v1/monitor/platform/monitoring_targets"
 DISCOVERY = "/api/v1/monitor/platform/metrics_discovery"
 OBSERVATIONS = "/api/v1/monitor/platform/resource_observations"
+SUMMARIES = "/api/v1/monitor/platform/resource_summaries"
 TRENDS = "/api/v1/monitor/platform/resource_trends"
 QUERY_POLICY = "/api/v1/monitor/settings/resource-query-policy"
 METRICS = {"node.cpu.logical_cores": "cores", "node.cpu.busy_percent": "percent", "node.memory.total_bytes": "bytes",
@@ -427,10 +428,18 @@ def validate_resource_browser(value, expected, artifacts):
         platform_identity(actor, role)
         require(actor["principal"].get("id") == expected[principal], "browser did not use the API phase identity")
     require(value.get("negative_no_business_reads") is True and value.get("navigation") == {
-        "list_without_fanout": True, "iframe_preserved": True, "history": True,
+        "list_summary_batch": True, "iframe_preserved": True, "history": True,
         "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True}, "browser navigation or denial evidence missing")
     require(value.get("auto_refresh") == {"natural_timer": True, "server_end_advanced": True,
             "unchanged_url": True, "off_restored": True, "off_no_requests": True}, "browser automatic refresh evidence missing")
+    summaries = value.get("summaries")
+    require(isinstance(summaries, list) and 1 <= len(summaries) <= 4, "browser list summary missing or unbounded")
+    for row in summaries:
+        require(row.get("path") == SUMMARIES and row.get("query") == {"node_ids": expected["node"]["node_id"]}, "browser summary scope mismatch")
+        data = row.get("value", {}).get("data")
+        require(isinstance(data, list) and len(data) == 1, "browser summary batch incomplete")
+        assert_resources(data[0], expected["node"], expected["target"], keys=["node.cpu.busy_percent", "node.memory.used_percent"])
+        require(data[0]["policy_version"] == expected["policy_version"], "browser summary ignored current budget")
     rows = value.get("resources")
     # Six reads per complete round; 22 navigation/refresh rounds plus four bounded timer rounds.
     require(isinstance(rows, list) and 8 <= len(rows) <= 156, "browser resource evidence missing or unbounded")

@@ -153,11 +153,15 @@ func (c *Client) Query(ctx context.Context, p Plan, s Scope, b Budget) ([]Series
 }
 
 func (c *Client) read(ctx context.Context, endpoint string, q url.Values) (envelope, error) {
-	var data envelope
 	req, err := http.NewRequestWithContext(ctx, "GET", c.origin+endpoint+"?"+q.Encode(), nil)
 	if err != nil {
-		return data, ErrUnavailable
+		return envelope{}, ErrUnavailable
 	}
+	return c.readRequest(ctx, req)
+}
+
+func (c *Client) readRequest(ctx context.Context, req *http.Request) (envelope, error) {
+	var data envelope
 	req.Header.Set("Accept", "application/json")
 	response, err := c.http.Do(req)
 	if err != nil {
