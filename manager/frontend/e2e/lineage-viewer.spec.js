@@ -408,7 +408,13 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
         const row = (await lineageCanvasText(canvas)).find(row => row.text === `field_3.${column}`)
         return row && Math.abs(row.y - (await canvas.boundingBox()).height / 2)
       }).toBeLessThan(3)
-      expect((await lineageCanvasText(canvas)).find(row => row.text === `field_3.${column}`).fontSize).toBeCloseTo(11, 5)
+      const painted = await lineageCanvasText(canvas)
+      const selected = painted.find(row => row.text === `field_3.${column}`)
+      expect(selected.fontSize).toBeCloseTo(11, 5)
+      expect(selected.opacity).toBeCloseTo(1, 5)
+      const sibling = painted.find(row => /^field_3\./.test(row.text) && row.text !== selected.text)
+      expect(sibling).toBeTruthy()
+      expect(sibling.opacity).toBeCloseTo(0.35, 5)
       timings[`locateColumn${column}Ms`] = Date.now() - started
     }
     // Locating after an overview must restore readable text without another query.
@@ -428,6 +434,9 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
     await search.fill('')
     await page.getByRole('button', { name: '全部字段', exact: true }).click()
     await page.getByRole('button', { name: '适应窗口', exact: true }).click()
+    await expect.poll(async () => (await lineageCanvasText(canvas)).filter(row => /^field_3\./.test(row.text)).length).toBe(columnCount)
+    const overview = (await lineageCanvasText(canvas)).filter(row => /^field_3\./.test(row.text))
+    for (const row of overview) expect(row.opacity).toBeCloseTo(1, 5)
     const ports = async () => {
       await expect.poll(async () => {
         const { rows, paths } = await lineageCanvasSnapshot(canvas)

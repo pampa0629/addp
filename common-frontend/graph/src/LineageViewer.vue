@@ -701,7 +701,9 @@ function focusItem(item) {
 
 function focusField(node) {
   if (!graphInstance.value) return
-  const focus = node && lineageFieldConnections(edges.value, nodeId(node))
+  const selectedId = nodeId(node)
+  const focus = node && lineageFieldConnections(edges.value, selectedId)
+  const palette = themePalette()
   for (const item of graphInstance.value.getEdges()) {
     const active = !focus || focus.connections.has(item.getID())
     graphInstance.value.setItemState(item, 'hover', !!focus && active)
@@ -711,13 +713,17 @@ function focusField(node) {
     const model = item.getModel()
     const active = !focus || model._fields.some(field => focus.fields.has(nodeId(field)))
     item.getContainer().attr('opacity', active ? 1 : 0.35)
-    model._fields.forEach((field, index) => {
-      const selected = nodeId(field) === nodeId(node)
-      for (const shape of item.getContainer().get('children').filter(shape => shape.get('name') === `lineage-field:${index}`)) {
-        if (shape.get('type') === 'rect') shape.attr({ fill: selected ? themePalette().primarySoft : model._visual.fill, stroke: selected ? model._visual.accent : model._visual.fill })
-        shape.attr('opacity', !focus || focus.fields.has(nodeId(field)) ? 1 : 0.35)
-      }
+    const fields = model._fields.map(field => {
+      const id = nodeId(field)
+      return { selected: id === selectedId, active: !focus || focus.fields.has(id) }
     })
+    for (const shape of item.getContainer().get('children')) {
+      const name = shape.get('name')
+      if (!name?.startsWith('lineage-field:')) continue
+      const { selected, active } = fields[Number(name.slice('lineage-field:'.length))]
+      if (shape.get('type') === 'rect') shape.attr({ fill: selected ? palette.primarySoft : model._visual.fill, stroke: selected ? model._visual.accent : model._visual.fill })
+      shape.attr('opacity', active ? 1 : 0.35)
+    }
   }
 }
 

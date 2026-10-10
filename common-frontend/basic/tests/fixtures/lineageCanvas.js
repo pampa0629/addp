@@ -79,7 +79,8 @@ export async function observeLineageCanvas(page) {
         const record = { text: String(text), x: (matrix.a * x + matrix.c * y + matrix.e) / ratio,
           y: (matrix.b * x + matrix.d * y + matrix.f) / ratio,
           width: this.measureText(text).width * scale,
-          fontSize: Number(this.font.match(/([\d.]+)px/)?.[1]) * scale }
+          fontSize: Number(this.font.match(/([\d.]+)px/)?.[1]) * scale,
+          opacity: this.globalAlpha }
         const current = records.filter(row => row.text !== record.text || Math.abs(row.x - record.x) > 0.01 || Math.abs(row.y - record.y) > 0.01)
         // G6 may issue draw calls wholly outside the bitmap after zooming.
         // Those calls produce no pixels and must not survive as painted labels.
