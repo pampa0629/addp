@@ -511,14 +511,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v4",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v5",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
                     "models": [{**model, "generation_entry_visible": True, **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
-                    "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_warnings": 0,
+                    "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v4",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v5",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -537,7 +537,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "raster_generation_requests": 0,
             "raster": {**evidence["raster"], "range_loaded": True, "map_loaded": True},
             "models": [{**model, "model_loaded": True, "content_loaded": True} for model in evidence["models"]],
-            "gpu_performance_warnings": 0,
+            "gpu_performance_diagnostics": {"count": 0, "stages": []},
             "browser_warning_errors": 0,
             "failed_business_responses": 0,
             "anonymous_refresh_401": 0,
@@ -1200,6 +1200,26 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 with self.assertRaises(SUITE.SuiteError):
                     SUITE.validate_browser_report(invalid, run_id="run-1", **evidence)
 
+    def test_browser_gpu_diagnostics_validate_source_stage_and_total(self):
+        evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster()}
+        report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
+        report["gpu_performance_diagnostics"] = {"count": 2, "stages": [
+            {"source": "chromium-webgl-driver", "stage": "raster-cog:preview", "count": 2}]}
+        SUITE.validate_browser_report(report, run_id="run-1", **evidence)
+        for mutate in (lambda value: value.pop("gpu_performance_diagnostics"),
+                       lambda value: value["gpu_performance_diagnostics"].update(count=3),
+                       lambda value: value["gpu_performance_diagnostics"]["stages"][0].update(source="page"),
+                       lambda value: value["gpu_performance_diagnostics"]["stages"][0].update(stage="unknown"),
+                       lambda value: value["gpu_performance_diagnostics"]["stages"][0].update(count=0),
+                       lambda value: value["gpu_performance_diagnostics"]["stages"].append(
+                           dict(value["gpu_performance_diagnostics"]["stages"][0])),
+                       lambda value: value.update(browser_warning_errors=1)):
+            invalid = copy.deepcopy(report)
+            mutate(invalid)
+            with self.assertRaises(SUITE.SuiteError):
+                SUITE.validate_browser_report(invalid, run_id="run-1", **evidence)
+
     def test_generation_entry_failure_prevents_model_writes_and_preserves_cleanup(self):
         client = FakeGatewayClient()
         def browser(_repository, environment, **evidence):
@@ -1228,7 +1248,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v4")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v5")
 
 
 if __name__ == "__main__":

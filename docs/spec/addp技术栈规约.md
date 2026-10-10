@@ -154,7 +154,8 @@
 
 #### 地图与可视化
 
-- **OpenLayers** (Manager/Service): `ol@9.2.4`
+- **OpenLayers** (Manager/Service/Agent/Workbench): `ol@10.7.0`
+- **Giro3D** (Manager COPC): `@giro3d/giro3d@1.0.1`，与 OpenLayers 10.7.0 配套；保留 `geotiff@2.1.3` 和 `three@0.172.0`，不得引入第二份地图或三维运行依赖
 - **ECharts** (Monitor): `echarts@5.5.1`
 
 #### 编辑器

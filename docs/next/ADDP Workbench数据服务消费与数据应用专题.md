@@ -882,7 +882,7 @@ renderer 只能消费输出契约，不根据业务名称猜测角色。第一�
 | 空间结果 | `common-frontend/map` | `GeoJSONResultRenderer` | 复用 `MapContainer`、OpenLayers、CRS registry 和底图 profile |
 | 渲染编排 | `workbench/frontend` | `WorkbenchRendererHost` | 选择 renderer、适配 Service 结果、判断完整性并处理 cursor |
 
-`common-frontend/chart` 使用技术栈规约的 `echarts@5.5.1` peer dependency，由消费模块自行声明依赖。地图继续使用 `ol@9.2.4`。不使用与平台技术栈不一致的版本作为 Workbench 基线。
+`common-frontend/chart` 使用技术栈规约的 `echarts@5.5.1` peer dependency，由消费模块自行声明依赖。地图继续使用 `ol@10.7.0`。不使用与平台技术栈不一致的版本作为 Workbench 基线。
 
 共享 renderer primitive：
 

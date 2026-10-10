@@ -1,4 +1,5 @@
 import { expect, request, test } from '@playwright/test'
+import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -57,7 +58,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
     extraHTTPHeaders: { Authorization: `Bearer ${env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN}` }
   })
   const browserMessages = []
-  let gpuPerformanceWarnings = 0
+  const gpuDiagnostics = createBrowserGpuDiagnostics('navigation')
   const failedBusinessResponses = []
   let businessStarted = false
   let anonymousRefresh401 = 0
@@ -82,10 +83,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
   })
   page.on('console', message => {
     if (isAnonymousRefreshConsoleError(message, businessStarted)) return
-    if (message.type() === 'warning' && /^\[\.WebGL-0x[0-9a-f]+\]GL Driver Message \(OpenGL, Performance, GL_CLOSE_PATH_NV, High\): GPU stall due to ReadPixels(?: \(this message will no longer repeat\))?$/.test(message.text())) {
-      gpuPerformanceWarnings += 1
-      return
-    }
+    if (gpuDiagnostics.record(message)) return
     if (['warning', 'error'].includes(message.type())) {
       browserMessages.push({ type: message.type(), text: message.text() })
     }
@@ -126,6 +124,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
     if (phase === 'generation-entry') {
       const modelEvidence = []
       for (const model of models) {
+        gpuDiagnostics.setStage(`generation-${model.format}:preview`)
         await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`)
         const modelFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
         const generate = modelFrame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })
@@ -157,9 +156,11 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
           await expect(dialog.getByRole('textbox', { name: /第 1 项图片路径|Image path 1/ })).toHaveValue(entries[0][1])
           await dialog.getByRole('button', { name: /取消|Cancel/, exact: true }).click()
         }
+        gpuDiagnostics.setStage(`generation-${model.format}:screenshot`)
         await modelFrame.locator('.preview-panel').screenshot({
           path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-generation-entry.png`)
         })
+        gpuDiagnostics.setStage('navigation')
         modelEvidence.push({ ...model, generation_entry_visible: true, ...(model.format === 'max' ? { conversion_options_verified: true } : {}) })
       }
       expect(modelGenerationRequests).toBe(0)
@@ -168,11 +169,11 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v4', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v5', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
-          anonymous_refresh_401: anonymousRefresh401, gpu_performance_warnings: gpuPerformanceWarnings
+          anonymous_refresh_401: anonymousRefresh401, gpu_performance_diagnostics: gpuDiagnostics.snapshot()
         })}\n`, 'utf8')
       return
     }
@@ -193,6 +194,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
     await expect(outputCards.first()).toContainText(/平台内部产物|Platform-internal artifact/)
     await expect(outputCards.first().locator('.execution-lineage__resource-action')).toHaveCount(0)
 
+    gpuDiagnostics.setStage('pptx-preview')
     const dataExplorerPath = `/manager/data-explorer?locator=${encodeURIComponent(env.ADDP_ONLINE_MANAGER_PPTX_ITEM_LOCATOR)}`
     await page.goto(dataExplorerPath)
     const explorerFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
@@ -207,6 +209,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
     await expect(currentPageInput).toHaveValue('2')
     expect(pptxGenerationRequests).toBe(0)
 
+    gpuDiagnostics.setStage('raster-cog:preview')
     const cogResponse = page.waitForResponse(response =>
       new URL(response.url()).pathname === raster.preview_url && response.status() === 206
       && Boolean(response.request().headers().range)
@@ -223,11 +226,13 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
     // OpenLayers puts the layer class on the WebGL canvas, but on the
     // containing div for the base map's 2D canvas. Check the COG layer itself.
     await expect(rasterPreview.locator('canvas.ol-layer')).toBeVisible()
+    gpuDiagnostics.setStage('raster-cog:screenshot')
     await rasterPreview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'raster-cog-preview.png') })
     expect(rasterGenerationRequests).toBe(0)
 
     const modelEvidence = []
     for (const model of models) {
+      gpuDiagnostics.setStage(`model-${model.format}:preview`)
       const contentResponse = page.waitForResponse(response =>
         new URL(response.url()).pathname === model.preview_url && response.status() === 200
       )
@@ -240,7 +245,9 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
       expect((await response.body()).subarray(0, 4).toString('ascii')).toBe('glTF')
       await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
       await expect(modelFrame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })).toHaveCount(0)
+      gpuDiagnostics.setStage(`model-${model.format}:screenshot`)
       await preview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-preview.png`) })
+      gpuDiagnostics.setStage('navigation')
       modelEvidence.push({ ...model, model_loaded: true, content_loaded: true })
     }
     expect(modelGenerationRequests).toBe(0)
@@ -249,7 +256,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v4',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v5',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
@@ -268,7 +275,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
       raster_generation_requests: rasterGenerationRequests,
       raster: { ...raster, range_loaded: true, map_loaded: true },
       models: modelEvidence,
-      gpu_performance_warnings: gpuPerformanceWarnings,
+      gpu_performance_diagnostics: gpuDiagnostics.snapshot(),
       browser_warning_errors: 0,
       failed_business_responses: 0,
       anonymous_refresh_401: anonymousRefresh401

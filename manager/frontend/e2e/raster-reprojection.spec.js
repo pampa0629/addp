@@ -1,8 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { createBrowserGpuDiagnostics } from '../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 
-test('raster data-tile reprojection preserves pixels without Canvas readback warnings', async ({ page }) => {
+test('raster data-tile reprojection preserves pixels without Canvas readback warnings', async ({ page }, testInfo) => {
+  const gpuDiagnostics = createBrowserGpuDiagnostics('raster-reprojection')
   const diagnostics = []
   page.on('console', message => {
+    if (gpuDiagnostics.record(message)) return
     if (['warning', 'error'].includes(message.type())) {
       diagnostics.push({ type: message.type(), text: message.text(), location: message.location() })
     }
@@ -22,7 +25,7 @@ test('raster data-tile reprojection preserves pixels without Canvas readback war
       return original.apply(this, args)
     }
     const source = new DataTileSource({
-      projection: 'EPSG:4326', tileSize: 32, bandCount: 1, maxZoom: 2,
+      projection: 'EPSG:4326', tileSize: 32, bandCount: 1, maxZoom: 8, // The source grid must cover the finer resolution required by reprojection.
       loader: () => new Float32Array(32 * 32).fill(42)
     })
     const tiles = []
@@ -30,16 +33,24 @@ test('raster data-tile reprojection preserves pixels without Canvas readback war
       for (const [z, x, y] of [[1, 0, 0], [1, 1, 0], [1, 0, 1], [1, 1, 1]]) {
         const tile = source.getTile(z, x, y, 1, getProjection('EPSG:3857'))
         await new Promise((resolve, reject) => {
-          const changed = () => {
-            if (tile.getState() === 2) { tile.removeEventListener('change', changed); resolve() }
-            if (tile.getState() === 3) { tile.removeEventListener('change', changed); reject(tile.getError()) }
+          const finish = error => {
+            clearTimeout(timeout)
+            tile.removeEventListener('change', changed)
+            if (error) reject(error)
+            else resolve()
           }
+          const changed = () => {
+            if (tile.getState() === 2) finish()
+            if (tile.getState() === 3) finish(tile.getError())
+            if (tile.getState() === 4) finish(new Error('Reprojected tile is empty'))
+          }
+          const timeout = setTimeout(() => finish(new Error(`Tile loading timed out in state ${tile.getState()}`)), 8000)
           tile.addEventListener('change', changed)
           tile.load()
           changed()
         })
         const data = tile.getData()
-        tiles.push({ length: data.length, hasValue: data.some(value => value === 42) })
+        tiles.push({ length: data.length, hasValue: data.some(value => value === 42), validValues: data.every(value => value === 0 || value === 42) })
       }
     } finally {
       source.dispose()
@@ -47,7 +58,10 @@ test('raster data-tile reprojection preserves pixels without Canvas readback war
     }
     return { tiles, reads }
   })
+  await page.waitForTimeout(500) // Drain Chromium console events before evaluating diagnostics.
+  await testInfo.attach('gpu-performance-diagnostics', { body: JSON.stringify(gpuDiagnostics.snapshot()), contentType: 'application/json' })
+  expect(result.reads).toEqual([])
   expect(result.tiles).toHaveLength(4)
-  expect(result.tiles.every(tile => tile.length > 0 && tile.hasValue)).toBe(true)
+  expect(result.tiles.every(tile => tile.length > 0 && tile.hasValue && tile.validValues)).toBe(true)
   expect(diagnostics, JSON.stringify(result.reads)).toEqual([])
 })

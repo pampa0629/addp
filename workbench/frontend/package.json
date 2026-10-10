@@ -16,7 +16,7 @@
     "axios": "1.7.9",
     "echarts": "5.5.1",
     "element-plus": "2.8.8",
-    "ol": "9.2.4",
+    "ol": "10.7.0",
     "pinia": "2.3.0",
     "proj4": "2.20.8",
     "vue": "3.5.13",
@@ -31,7 +31,7 @@
   },
   "overrides": {
     "vue": "3.5.13",
-    "ol": "9.2.4"
+    "ol": "10.7.0"
   },
   "addpBrowserTest": {
     "fixtures": [

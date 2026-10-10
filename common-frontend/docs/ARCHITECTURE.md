@@ -93,7 +93,7 @@ import { MapContainer, GeoJsonPreview, TablePreview } from '@common-ui-map'
 ```json
 {
   "dependencies": {
-    "ol": "^9.2.4",
+    "ol": "^10.7.0",
     "@amap/amap-jsapi-loader": "^1.0.1"
   }
 }

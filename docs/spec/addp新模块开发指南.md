@@ -660,7 +660,7 @@ const client = createAPIClient(() => useAuthStore(), {
    // package.json - 添加地图依赖
    {
      "dependencies": {
-       "ol": "^9.2.4",
+       "ol": "^10.7.0",
        "@amap/amap-jsapi-loader": "^1.0.1"
      }
    }

@@ -166,7 +166,7 @@ resolve: {
 
 // package.json 依赖
 {
-  "ol": "^9.2.4",
+  "ol": "^10.7.0",
   "@amap/amap-jsapi-loader": "^1.0.1"
 }
 

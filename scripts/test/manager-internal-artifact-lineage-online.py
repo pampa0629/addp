@@ -1023,7 +1023,7 @@ def validate_browser_report(
     if phase not in {"generation-entry", "cached-preview"}:
         raise SuiteError("unknown Manager browser phase")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v4",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v5",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1054,7 +1054,29 @@ def validate_browser_report(
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
         raise SuiteError("Manager lineage browser report contract mismatch: " + ", ".join(mismatches))
-    non_negative_int(payload.get("gpu_performance_warnings"), "browser GPU performance warning count")
+    diagnostics = _object(payload.get("gpu_performance_diagnostics"), "browser GPU performance diagnostics")
+    count = non_negative_int(diagnostics.get("count"), "browser GPU performance diagnostic count")
+    stages = diagnostics.get("stages")
+    if not isinstance(stages, list):
+        raise SuiteError("browser GPU diagnostic stages must be an array")
+    seen = set()
+    total = 0
+    for entry in stages:
+        entry = _object(entry, "browser GPU diagnostic stage")
+        stage = entry.get("stage")
+        allowed = {"navigation", "pptx-preview", "raster-cog:preview", "raster-cog:screenshot"}
+        allowed.update(f"{prefix}-{format_name}:{step}" for prefix in ("generation", "model")
+                       for format_name in ("dae", "3ds", "ifc", "osgb", "skp", "max")
+                       for step in ("preview", "screenshot"))
+        if entry.get("source") != "chromium-webgl-driver" or not isinstance(stage, str) or stage not in allowed or stage in seen:
+            raise SuiteError("browser GPU diagnostic source or stage is invalid")
+        amount = non_negative_int(entry.get("count"), "browser GPU stage diagnostic count")
+        if amount == 0:
+            raise SuiteError("browser GPU diagnostic stage count must be positive")
+        seen.add(stage)
+        total += amount
+    if total != count:
+        raise SuiteError("browser GPU diagnostic count does not match stages")
     if non_negative_int(payload.get("anonymous_refresh_401"), "browser anonymous refresh count") > 1:
         raise SuiteError("Manager lineage browser has repeated anonymous refresh failures")
     return payload
