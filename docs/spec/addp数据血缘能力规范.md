@@ -317,6 +317,14 @@ Transfer 多来源查询扩展沿用 `transfer-relational-sql-etl` 手工 Hosted
 
 同一套验收同时通过 MongoDB 嵌套字段到 ODS 的自动采集与重跑、三轮编排及九个实际子执行、目标结构改名和类型演进、冻结历史取证，以及 CTE / JOIN / UNION ALL 多来源精确映射。Manager 血缘查看未触发隐式样本读取，浏览器未出现非预期失败响应。浏览器及多来源场景完成后，标准 Hosted 生命周期独立核对宽表完整行多重集合、两张目标表各 500 个非空 bigint 列，以及 ODS / DIM / DWD 和多来源目标的物理数据及类型；11 个临时定义全部删除并确认 404，业务容器、平台 Infra 和凭据目录清理通过，零残留。相同源码的 [Platform CI 37953544971](https://github.com/pampa0629/addp/actions/runs/37953544971) 33 个任务通过，Manager 在 Linux 上通过 306 项单元测试、156 项浏览器测试及构建；[Release/T2 37953544949](https://github.com/pampa0629/addp/actions/runs/37953544949) 的 Manager 内容索引首次文档创建门禁失败，不能计为通过，也不由本次血缘 T4 结果代替。 随后独立修复提交 `6dfab1508b544d1ae5c2d3e72825720b154e5f55` 的 [Release/T2 37957037535](https://github.com/pampa0629/addp/actions/runs/37957037535) 复验通过：Manager 内容快照门禁实际执行，两个首次写入场景及索引丢失后的文档恢复均成功；该 workflow 的 9 个任务通过，另 30 个按路径条件跳过，不计为通过。同一修复提交的 [Platform CI 37957037367](https://github.com/pampa0629/addp/actions/runs/37957037367) 33 个任务通过。
 
+#### 本次字段级血缘收口
+
+2026-10-10，在用户已启动并登录的本地 Console 中完成最后的业务链路只读复核。`outdoor.dws_outdoor_person_metric`（Engine 2、Item 7）的整表字段图在 10 层深度下显示 32 个字段节点、25 条关系，按九个数据项表卡展示 MongoDB `Outdoor.Persons` / `Outdoor.Outdoors`、三张 ODS、两张 DIM、DWD 和 DWS。`person_nickname` 高亮其多来源昵称路径，`metric_value` 高亮活动字段经过 ODS、DIM / DWD 到 DWS 的来源路径；字段详情提供根结构快照，关系详情分别显示直接映射或派生转换及对应执行 UUID。
+
+从关系详情进入 Monitor，确认 `userInfo.nickName → ods_outdoor_persons.person_nickname` 对应成功的 Transfer 执行 `a759c83e-aeea-45b2-950b-d226ab84119c`，任务为 `outdoor_ods_persons_refresh`，读取 `Outdoor.Persons` 并替换写入 ODS；确认 `dwd_outdoor_participation.activity_id → dws_outdoor_person_metric.metric_value` 对应成功的 Develop 执行 `ad7da1ec-3718-4aef-8601-e10b4e454327`，任务为 `outdoor_dws_person_metric_from_dwd_refresh`，实际输入为 DIM 人员和 DWD 参与表，替换输出 DWS。两次执行均由 Orchestrator 发起，时间为 2026-10-05；此处核对已有执行证据，不声称在本轮重跑业务写入或重新校验本地完整物理行集合，重跑和完整写入正确性由前述 Hosted T4 证据覆盖。
+
+本地实际九表图的自动布局、曲线、字段聚焦、全屏进入 / 退出、适应窗口、普通视图表卡拖拽及全部字段收起 / 展开均完成复核。拖动 DWD 表卡后曲线仍连接原字段，收起 / 展开保留 32 个节点和 25 条关系；全屏自动布局完整显示九张表卡，没有表卡重叠。至此，本次已确认的字段级采集、任务重跑取证和查看优化需求收口。第 6.1 节明确的 opaque / unresolved、CDC 等支持边界保持不变；超出该边界的能力不作为本次未完成项。
+
 ### 6.2 图数据库评估边界
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。
