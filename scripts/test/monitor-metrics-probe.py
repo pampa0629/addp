@@ -29,6 +29,9 @@ def port(service, internal):
 
 
 state = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'prometheus')], text=True))[0]
+engine = json.loads(subprocess.check_output(['docker', 'info', '--format', '{{json .}}'], text=True))
+desktop_transport = __import__('platform').system() == 'Darwin' and engine['OperatingSystem'] == 'Docker Desktop'
+process_loopback_ports = []
 assert state['Config']['User'] == '65534:65534'
 assert state['HostConfig']['ReadonlyRootfs']
 assert state['HostConfig']['CapDrop'] == ['ALL']
@@ -206,7 +209,8 @@ def discovery_text(text):
     pending.replace(WORK / 'source/discovery.json')
 
 # Two genuine Common SDK processes in the existing owned non-root source
-# container. No business process, port publish, workspace or extra service.
+# container. Loopback-only test ports also exercise Desktop's host transport;
+# there is no business process, workspace mount or extra service.
 source_id = compose('ps', '-q', 'metrics-source').strip()
 source_inspect = json.loads(subprocess.check_output(['docker', 'inspect', source_id], text=True))[0]
 source_ip = next(iter(source_inspect['NetworkSettings']['Networks'].values()))['IPAddress']
@@ -235,12 +239,30 @@ try:
     projection = [{'targets': ['metrics-source:' + str(19440 + index)], 'labels': {
         '__scheme__': 'https', '__metrics_path__': '/metrics', 'addp_monitor_kind': 'process_resources',
         'addp_source': 'application', 'addp_module_name': 'monitor', 'addp_instance_id': f'native-{index}', 'addp_runtime_role': 'worker'}} for index in (1, 2)]
+    if desktop_transport:
+        process_loopback_ports = [port('metrics-source', 19440 + index) for index in (1, 2)]
+        os.environ['ADDP_METRICS_DESKTOP_LOOPBACK_PORTS'] = ','.join(process_loopback_ports)
+        subprocess.run(['python3', str(Path(__file__).resolve().parents[1] / 'infra/generate-metrics-config.py')], check=True)
+        compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90', 'prometheus')
+        base = 'https://localhost:' + port('prometheus', 9090)
+        for group, published in zip(projection, process_loopback_ports):
+            group['targets'] = ['127.0.0.1:' + published]
     discovery_text(json.dumps(projection))
-    for record in records: record['instance'] = 'metrics-source:' + str(19440 + int(record['id']))
+    for record, group in zip(records, projection): record['instance'] = group['targets'][0]
     process_metadata = WORK / 'source' / 'process-records.json'
     process_metadata.write_text(json.dumps(records))
     eventually(lambda: len(query('process_resident_memory_bytes{job="addp_nodes",addp_monitor_kind="process_resources"}')) == 2,
                'two genuine Linux processes enter the sole SD job')
+    if desktop_transport:
+        def desktop_process_targets():
+            active = [t for t in api('targets')['activeTargets'] if t['labels'].get('addp_monitor_kind') == 'process_resources']
+            return (len(active) == 2 and all(t['health'] == 'up' and
+                    t['scrapeUrl'] == 'https://host.docker.internal:' + t['labels']['instance'].rsplit(':', 1)[1] + '/metrics' and
+                    t['labels']['instance'] in {r['instance'] for r in records} and
+                    t['labels']['addp_instance_id'] == 'native-' + str(next(r['id'] for r in records if r['instance'] == t['labels']['instance']))
+                    for t in active))
+        eventually(desktop_process_targets, 'both Desktop SDK endpoints preserve canonical identities through exact host transport')
+        print('Metrics T2: two real SDK sources use distinct Desktop loopback ports in the sole Job, preserving instance identities', flush=True)
     env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1', MONITOR_PROMETHEUS_URL=base,
                MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'), MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
                MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
@@ -433,7 +455,6 @@ for labels in re.findall(r'^node_disk_info\{([^}]+)\} 1$', raw, re.M):
 assert set(disk_identities) == observed_devices, 'incomplete disk identity evidence'
 assert all(disk_identities[d] == after_disks[d][0] for d in observed_devices), 'foreign disk identity'
 print(f'Metrics T2: {len(observed_devices)} devices and seven disk counters match independent namespace snapshots', flush=True)
-engine = json.loads(subprocess.check_output(['docker', 'info', '--format', '{{json .}}'], text=True))
 cores = re.findall(r'^node_cpu_seconds_total\{cpu="([^"]+)",mode="idle"\} (\S+)$', raw, re.M)
 assert len(cores) == engine['NCPU'], 'collector CPU quota was substituted for Engine capacity'
 memory = float(re.search(r'^node_memory_MemTotal_bytes (\S+)$', raw, re.M).group(1))
@@ -449,10 +470,10 @@ print(f'Metrics T2: limited Engine={engine["OperatingSystem"]}, kernel={engine["
       f'cores={len(cores)}, memory_bytes={int(memory)}; container quota=0.25 CPU/256 MiB', flush=True)
 
 node_instance = limited_ip + ':9100'
-if __import__('platform').system() == 'Darwin' and engine['OperatingSystem'] == 'Docker Desktop':
+if desktop_transport:
     # Exercise the production transformation through an actual loopback publish.
     loopback_port = port('node-exporter', 9100)
-    os.environ['ADDP_METRICS_DESKTOP_LOOPBACK_PORT'] = loopback_port
+    os.environ['ADDP_METRICS_DESKTOP_LOOPBACK_PORTS'] = ','.join([loopback_port, *process_loopback_ports])
     subprocess.run(['python3', str(Path(__file__).resolve().parents[1] / 'infra/generate-metrics-config.py')], check=True)
     compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '90', 'prometheus')
     base = 'https://localhost:' + port('prometheus', 9090)

@@ -1570,3 +1570,25 @@ iframe 引用修复后的 `make test-console-frontend` 返回 0（156 项单测�
 本次完整覆盖两个 Go SDK 自动声明/发现、无主机关联仍可观测、CPU 完整窗口、RSS/时长与进程身份绑定、正式 User 批量查询及平台/租户隔离。首次 Monitor 实例记录 3 重启后变为 6，记录 3 三项值均为空且状态为 `not_active`，记录 6 完整窗口有效，System 同伴记录 1 持续有效；缺失私钥时新记录 7 不发布采集声明而业务 Ready，System 同伴继续采集，恢复后当前 Monitor 为记录 8。浏览器沿真实密码/MFA、可见菜单与筛选控件取得两批当前授权页面，摘要恰对应 System 返回的 `8,2,1`，其中未接入的 Meta 不补零；刷新恢复相同筛选，缺权限管理员页面不读取业务资源。中心故障与恢复、主机来源故障时进程观测独立、控制传输故障后保留成功发现、节点/目标停用排除历史与恢复后新鲜样本、查询预算 CAS/热生效以及最终零残留均通过。Delegated 拒绝仍只按前述正式路由 T1 计量，不扩写为 Hosted 已签发委托 Token。
 
 同一冻结提交的 [Platform CI（Run 38073055598）](https://github.com/pampa0629/addp/actions/runs/38073055598)、[Release/T2（Run 38073055615）](https://github.com/pampa0629/addp/actions/runs/38073055615) 与 [Quality CI（Run 38073055670）](https://github.com/pampa0629/addp/actions/runs/38073055670) 成功。Release/T2 实际执行 System IAM PostgreSQL 与 macOS Keychain CLI；跳过的其他 T2 不计作该次执行。本批 10.49 的 Go 服务进程监控及 Hosted T4 验收完成；默认 `make test-changed` 的前述本地 DSN 预检失败不改计通过，个人运行部署、Safari 体验复验、Python 进程来源和生产 T5 尚未执行。后续优先准备本机 Go 来源的显式端点与外部证书配置，再由用户沿标准生命周期重启对应进程，并用 Safari 验证真实部署体验；不将 Hosted 成功等同于个人环境已启用采集。
+
+### 10.50 本机 Go 来源与 Desktop 宿主通道扩展（部署准备完成，待本机验收）
+
+2026-10-11 只读核对：个人指标中心、控制入口和已有 VM 来源均在运行；本机 System/Monitor/Gateway 的 Live 接口可访问。根部署配置未选择 Go 进程采集，Monitor 只允许 `127.0.0.1/32` 和原主机端口 `19091`。当前唯一 Prometheus 配置生成器的 `ADDP_METRICS_DESKTOP_LOOPBACK_PORT` 只把一个明确回环端口转换成 Desktop 宿主通道。Monitor 即使接受 DNS 端点，也按安全策略解析为实际 IP 并向中心发布该固定 IP；直接把 Go 端点写为 `host.docker.internal` 不能绕过此单端口限制。中心容器中的其他 `127.0.0.1:端口` 指向容器自身，不能据此宣称新来源可达。
+
+建议在同一路线中将单端口部署输入替换为 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS`：逗号分隔、最多 64 个不重复的规范端口，不接受空项、空格、零、越界或非规范数字；缺省为空表示未选择转换。只允许 macOS、本地 unix Docker Desktop Linux Engine。生成器为列表内每个 `127.0.0.1:端口` 精确生成同端口 `host.docker.internal` 传输规则，先保留原 `instance`，不转换其他地址/端口、不设置证书名称覆盖。删除旧输入及所有消费路径，同步个人 `.env`、模板、生命周期夹具、真实 metrics T2 和配置/端口文档，不保留旧字段兼容，不增加代理、第二个 Job 或静态目标。
+
+首轮个人部署仅选择 System backend、Monitor backend 两个 Go 来源，与已有 VM 主机共三个来源，不启用所有服务、不放宽现有最多九个启用来源的样本预留。建议两个进程分别显式监听 `127.0.0.1:19101`、`127.0.0.1:19102`；当前只读检查这两个端口无监听，此结论须在应用前重新核对，冲突不自动避让。回环转换和 Monitor 准入分别精确列出 `19091,19101,19102`，CIDR 保持 `127.0.0.1/32`。`ADDP_PROCESS_METRICS_DEPLOYMENTS` 显式包含这两个 module/role、独立 HTTPS `/metrics` 端点和仓库外来源证书目录；沿原来源 CA 签发各自叶子证书，包含 `127.0.0.1` IP SAN 与 `host.docker.internal` DNS SAN，保留现有独立准入/采集/查询客户端及中心/控制面信任根。Mac 原生 Go 进程资源与 Linux VM 整机资源分别表达，不自动建立两者主机关联，不登记第二套进程目标。
+
+实施前门禁范围：生成器已有 `make test-dev-lifecycle` 覆盖 Desktop 平台/本地 Engine 约束、精确端口转换和错误输入原子拒绝；沿 `make test-monitor-metrics` 的现有 Desktop 阶段扩展多个真实来源同一 Job 及身份标签保持，继续覆盖 mTLS、故障恢复和零残留。相关文件已在该 T2 的 `ADDP_T2_INPUT_FILES` 登记，CI 自动发现沿原入口命中；实施时核对无需新增 suite。个人 `.env` 和证书预检不计作 T4/T5。配置与最小充分门禁完成后，再由用户执行标准指标中心应用和 `./scripts/dev/restart.sh -system -monitor`，不由 AI 重启个人服务。确认前不变更生产生成器、个人 `.env`、证书或运行容器；提案仅写入本已有设计文档，`git diff --check` 验证文档格式。
+
+2026-10-11 用户已同意按本节范围继续：唯一多端口宿主通道、删除单端口输入，首轮仅接入本机 System/Monitor 两个 Go 来源。上文“确认前”的限制对应提案阶段；现在进入实施，个人服务重启仍由用户执行，未执行的运行验收不计通过。
+
+本轮实现已将生成器、根模板、生命周期夹具与真实 metrics T2 全部切换至唯一多端口输入；规范和 Infra 操作说明同步更新，现行消费路径检索不再出现旧键。配置回归覆盖三个精确端口、列表次序不影响产物、64 项边界、重复/越界/空项/空格拒绝、非 Desktop 或远程 Engine 拒绝，以及拒绝时保持原有效配置。真实 Desktop T2 仍只使用当次独占容器和随机回环端口，在原非 root 来源容器内运行两个 Common SDK 进程，经同一 HTTP SD Job 转换宿主通道并分别校验采集成功、规范 instance 与当前实例标签；不以直接容器 DNS 采集替代 Desktop 转换证明。
+
+个人部署输入已准备但尚未应用：仅两个 backend 来源，System `127.0.0.1:19101`、Monitor `127.0.0.1:19102`；旧主机端口与来源保留。准入端口和宿主转换列表均精确为 `19091,19101,19102`，CIDR 保持 `127.0.0.1/32`，没有增加来源预算或主机关联。两个仓库外目录分别仅含 CA、独立叶子证书及私钥，目录 0700、私钥 0600；复用既有来源 CA，核对双 SAN、服务器用途、证书与私钥匹配，以及既有准入/采集客户端信任链。叶子证书有效期截至 2026-12-09 23:14:38 UTC；根 CA 和现有客户端未替换。根 `.env` 原子更新并保留其他值及权限，验证 Shell 加载后严格 JSON 和两个声明不变。预检仅检查显式规则，不写个人中心生成配置、不重启个人服务或容器。
+
+首次 `make test-dev-lifecycle` 返回 2（88 项中 5 个 Infra 生命周期用例超过原 10 秒上限，`/tmp/addp-desktop-ports-lifecycle-1.log`），不计通过。单独诊断其中关闭日志用例，原断言和超时不变，2.811 秒通过；完整门禁仍须复跑，未据此把五项超时归因于已证实的产品缺陷或修改超时。`make test-release-runner` 返回 0（33 项及 Release CI 登记核对，`/tmp/addp-desktop-ports-registration-1.log`）。默认 `make test-changed` 在当前混合工作区的跨 Owner 必需 T2 参数预检返回 2（`/tmp/addp-desktop-ports-changed-1.log`）；缺少其他模块的 PostgreSQL DSN 和 MySQL/OceanBase 测试输入，业务门禁未执行，不计通过。本轮专属门禁完成证据另行追加。
+
+最终本地验证：`make test-dev-lifecycle` 第二次返回 0（88 项 Python 用例、Infra 端口及停止安全、完整开发生命周期、Common schema/repository/projectionstore 与四模块命令编译，`/tmp/addp-desktop-ports-lifecycle-2.log`），未修改首次失败用例的断言或超时。`make test-monitor-metrics` 返回 0（23 项配置用例、固定 promtool 场景、两个真实 SDK 经不同 Desktop 回环端口采集、当前实例 CPU/RSS/时长与停止清值、HTTP SD 失败/重定向/空发现/恢复、完整与受限主机即时/趋势查询、来源故障恢复、中心 SIGKILL 后 WAL 旧样本保留及独立路由可用，`/tmp/addp-desktop-ports-metrics-1.log`）；最终确认当次容器、网络、卷和临时文件零残留。T2 CI 登记检查返回 0，现有 22 项 hosted-service、9 项 owned Compose、4 项 hosted-only 与 1 项 owner-managed 登记完整；本轮没有新增 suite。`git diff --check` 通过。以上仅证明本轮实现和独占 T2，个人中心/来源尚未应用新配置、Safari 未验收、生产 T5 未执行；10.49 的 Hosted 成功不追溯作为本轮个人部署证据。
+
+下一步由用户在仓库根目录顺序执行 `bash scripts/infra/up.sh --metrics` 与 `./scripts/dev/restart.sh -system -monitor`，分别应用中心宿主通道及两个本机 Go 进程的部署输入。前者只调和指标中心和控制入口并保留时序卷，后者按标准范围重建并重启所选模块；已有 VM 来源不需重建或重新登记。随后核对当前实例自动声明/发现、来源 mTLS 与完整 CPU 窗口，再通过 Safari 查看「运行监控 → 服务监控」；两个 Mac 原生进程允许显示未关联主机，不能自动归入 Docker Desktop Linux VM。

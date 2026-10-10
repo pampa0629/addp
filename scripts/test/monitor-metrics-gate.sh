@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
 # Test-owned transport starts dynamically, then the probe pins its assigned port.
-export ADDP_METRICS_DESKTOP_LOOPBACK_PORT= ADDP_NODE_METRICS_PUBLISH_PORT=0
+export ADDP_METRICS_DESKTOP_LOOPBACK_PORTS= ADDP_NODE_METRICS_PUBLISH_PORT=0
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-metrics-t2.XXXXXX")
 COMPOSE_PROJECT="addp-metrics-t2-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 COMPOSE_FILE="$ROOT_DIR/scripts/test/docker-compose.monitor-metrics-t2.yml"
@@ -72,7 +72,7 @@ for identity in source-server collector admission; do
   if [[ "$identity" != source-server ]]; then
     printf 'extendedKeyUsage=clientAuth\n' >"$WORK_DIR/source-extensions"
   else
-    printf 'subjectAltName=DNS:localhost,DNS:metrics-source\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/source-extensions"
+    printf 'subjectAltName=DNS:localhost,DNS:metrics-source,DNS:host.docker.internal,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >"$WORK_DIR/source-extensions"
   fi
   openssl x509 -req -in "$WORK_DIR/$identity.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/$identity.crt" >/dev/null 2>&1
 done

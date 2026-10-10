@@ -49,11 +49,13 @@ def origin(value, scheme="https"):
 
 
 def desktop_loopback_rules(env):
-    port = env.get('ADDP_METRICS_DESKTOP_LOOPBACK_PORT', '')
-    if not port:
+    value = env.get('ADDP_METRICS_DESKTOP_LOOPBACK_PORTS', '')
+    if not value:
         return ''
-    if not re.fullmatch(r'[1-9][0-9]{0,4}', port) or int(port) > 65535:
-        raise ValueError('Desktop loopback port must be canonical')
+    ports = value.split(',')
+    if (len(ports) > 64 or len(set(ports)) != len(ports)
+            or any(not re.fullmatch(r'[1-9][0-9]{0,4}', port) or int(port) > 65535 for port in ports)):
+        raise ValueError('Desktop loopback ports must be unique canonical ports')
     if platform.system() != 'Darwin':
         raise ValueError('Desktop loopback transport requires macOS Docker Desktop')
     endpoint = env.get('DOCKER_HOST') if not env.get('DOCKER_CONTEXT') else None
@@ -68,11 +70,12 @@ def desktop_loopback_rules(env):
     # Preserve the canonical Monitor source scope before changing only transport.
     return ('    relabel_configs:\n'
             '      - source_labels: [__address__]\n'
-            '        target_label: instance\n'
-            '      - source_labels: [__address__]\n'
-            '        regex: ' + json.dumps(r'127\.0\.0\.1:' + port) + '\n'
-            '        target_label: __address__\n'
-            '        replacement: ' + json.dumps('host.docker.internal:' + port) + '\n')
+            '        target_label: instance\n' + ''.join(
+                '      - source_labels: [__address__]\n'
+                '        regex: ' + json.dumps(r'127\.0\.0\.1:' + port) + '\n'
+                '        target_label: __address__\n'
+                '        replacement: ' + json.dumps('host.docker.internal:' + port) + '\n'
+                for port in sorted(ports, key=int)))
 
 
 def control_config(env, root):

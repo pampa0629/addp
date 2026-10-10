@@ -331,7 +331,7 @@ make ports-validate
 Elasticsearch Business 首选宿主机端口为 `9200`，仅绑定 `127.0.0.1`，实际端口由 `business/scripts/ports.sh` 解析并保存到 `business/.business-state/ports.env`。容器服务端口为 `9200`；T2 夹具使用 Docker 分配的独占回环端口。
 
 
-可选 Infra 指标控制面 TLS 转发容器内部固定 `9444`，仅 `addp-network` 使用 `https://metrics-control:9444`，不发布宿主端口，不参与宿主端口避让。上游 Gateway 实际 origin 由部署方显式指定。Docker Desktop 来源采用明确 Mac 发布 IP:端口，仍要求 Monitor 和中心同时可达，不自动选择端口。稳定本地访问使用显式回环发布端口和 ADDP_METRICS_DESKTOP_LOOPBACK_PORT 的同端口宿主通道转换；不新增端口或第二个目标。
+可选 Infra 指标控制面 TLS 转发容器内部固定 `9444`，仅 `addp-network` 使用 `https://metrics-control:9444`，不发布宿主端口，不参与宿主端口避让。上游 Gateway 实际 origin 由部署方显式指定。Docker Desktop 来源采用明确 Mac 发布 IP:端口，仍要求 Monitor 和中心同时可达，不自动选择端口。稳定本地访问使用显式回环发布端口和 ADDP_METRICS_DESKTOP_LOOPBACK_PORTS 的同端口宿主通道转换：最多 64 个不重复规范端口，以逗号分隔，不含空项或空格；只转换列表内的精确回环端点。Go 来源显式追加各自采集端口，不自动分配端口或建立第二个目标。
 
 Go 自身进程指标监听端口由 `ADDP_PROCESS_METRICS_DEPLOYMENTS` 为每个模块/role 显式声明；不占用业务 HTTP 端口、不经 Gateway 暴露、没有隐式默认或冲突避让。监听只接受具体本机 IP 与非零端口；部署负责 Monitor/中心可达性和来源证书 SAN。容器内部和宿主发布地址分别由该部署明确决定，不按节点关系推断。
 

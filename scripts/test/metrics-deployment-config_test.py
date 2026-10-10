@@ -77,26 +77,57 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertEqual((self.directory / 'prometheus.yml').read_text(), data)
         self.assertEqual(sorted(p.name for p in self.directory.iterdir()), sorted((*config.FILES, 'prometheus.yml')))
 
-    def test_desktop_loopback_rules_keep_the_original_identity_and_exact_port(self):
-        env = dict(self.env, ADDP_METRICS_DESKTOP_LOOPBACK_PORT='19091')
+    def test_desktop_loopback_rules_keep_the_original_identity_and_exact_ports(self):
+        env = dict(self.env, ADDP_METRICS_DESKTOP_LOOPBACK_PORTS='19102,19091,19101')
         replies = [json.dumps([{'Endpoints': {'docker': {'Host': 'unix:///local/docker.sock'}}}]),
                    json.dumps({'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'})]
         with mock.patch.object(config.platform, 'system', return_value='Darwin'), mock.patch.object(config.subprocess, 'check_output', side_effect=replies):
             config.render(env)
         data = (self.directory / 'prometheus.yml').read_text()
         self.assertIn('target_label: instance', data)
-        self.assertIn('host.docker.internal:19091', data)
-        self.assertIn('127\\\\.0\\\\.0\\\\.1:19091', data)
+        for port in ('19091', '19101', '19102'):
+            self.assertIn('host.docker.internal:' + port, data)
+            self.assertIn('127\\\\.0\\\\.0\\\\.1:' + port, data)
+        self.assertEqual(data.count('target_label: instance'), 1)
+        self.assertEqual(data.count('target_label: __address__'), 3)
+        rules = [json.loads(line.strip().removeprefix('regex: ')) for line in data.splitlines()
+                 if line.strip().startswith('regex: "127')]
+        for address in ('127.0.0.1:19091', '127.0.0.1:19101', '127.0.0.1:19102'):
+            self.assertEqual(sum(re.fullmatch(rule, address) is not None for rule in rules), 1)
+        for address in ('127.0.0.1:19103', '127.0.0.11:19101', '192.168.1.33:19101',
+                        '[::1]:19101', 'host.docker.internal:19101', '127.0.0.1:191010'):
+            self.assertFalse(any(re.fullmatch(rule, address) for rule in rules), address)
         self.assertEqual(data.count('job_name: addp_nodes'), 1)
         self.assertNotIn('server_name:', data)
         before = data
-        for port in ('019091', '0', '65536', '19091\n', '19091:123'):
-            with self.assertRaises(ValueError): config.render(dict(env, ADDP_METRICS_DESKTOP_LOOPBACK_PORT=port))
+        with mock.patch.object(config.platform, 'system', return_value='Darwin'), mock.patch.object(config.subprocess, 'check_output', side_effect=replies):
+            config.render(dict(env, ADDP_METRICS_DESKTOP_LOOPBACK_PORTS='19091,19101,19102'))
+        self.assertEqual((self.directory / 'prometheus.yml').read_text(), before)
+        for ports in ('019091', '0', '65536', '19091\n', '19091:123', '19091,19091',
+                      ',19091', '19091,', '19091,,19101', '19091, 19101',
+                      ','.join(str(i) for i in range(1, 66))):
+            with self.subTest(ports=ports), self.assertRaises(ValueError):
+                config.render(dict(env, ADDP_METRICS_DESKTOP_LOOPBACK_PORTS=ports))
+            self.assertEqual((self.directory / 'prometheus.yml').read_text(), before)
         with mock.patch.object(config.platform, 'system', return_value='Linux'), self.assertRaises(ValueError): config.render(env)
         with mock.patch.object(config.platform, 'system', return_value='Darwin'), self.assertRaises(ValueError): config.render(dict(env, DOCKER_HOST='tcp://remote:2376'))
         self.assertEqual((self.directory / 'prometheus.yml').read_text(), before)
         config.render(self.env)
         self.assertNotIn('relabel_configs:\n      - source_labels: [__address__]', (self.directory / 'prometheus.yml').read_text())
+
+    def test_desktop_transport_accepts_64_ports_and_rejects_non_desktop_engine(self):
+        env = dict(self.env, ADDP_METRICS_DESKTOP_LOOPBACK_PORTS=','.join(str(i) for i in range(1, 65)))
+        replies = [json.dumps([{'Endpoints': {'docker': {'Host': 'unix:///local/docker.sock'}}}]),
+                   json.dumps({'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'})]
+        with mock.patch.object(config.platform, 'system', return_value='Darwin'), mock.patch.object(config.subprocess, 'check_output', side_effect=replies):
+            config.render(env)
+        before = (self.directory / 'prometheus.yml').read_text()
+        self.assertEqual(before.count('target_label: __address__'), 64)
+        for info in ({'OperatingSystem': 'Linux', 'OSType': 'linux'},
+                     {'OperatingSystem': 'Docker Desktop', 'OSType': 'windows'}):
+            with mock.patch.object(config.platform, 'system', return_value='Darwin'), mock.patch.object(config.subprocess, 'check_output', return_value=json.dumps(info)), self.assertRaises(ValueError):
+                config.render(dict(env, DOCKER_HOST='unix:///local/docker.sock'))
+            self.assertEqual((self.directory / 'prometheus.yml').read_text(), before)
 
     def test_rejects_ambiguous_origins_without_replacing_valid_config(self):
         config.render(self.env)

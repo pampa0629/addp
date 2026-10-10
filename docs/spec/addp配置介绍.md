@@ -25,6 +25,8 @@ Go 自身进程采集由唯一启动输入 `ADDP_PROCESS_METRICS_DEPLOYMENTS` �
 
 证书目录仅含部署提供的 `ca.crt/server.crt/server.key`，来源使用独立采集客户端 CA 做 mTLS；来源证书 SAN 必须覆盖声明地址及准入后固定的实际采集 IP，使用 DNS 声明时同时覆盖该 DNS 名称，不以 server_name 覆盖校验。SDK 启动校验声明地址，Monitor 与中心按唯一固定 IP 校验。平台不签发证书、不放宽 TLS、不复用中心健康身份。只有配置和端点实际启动成功才随当前进程登记发布私有采集声明；关闭、配置失败、证书错误或监听冲突只记录封闭诊断码，不阻塞业务登记或 Ready。此输入不是 System 普通配置或 Monitor 采集策略，改变它须重启对应进程生成新实例身份。System 普通实例 DTO 不公开端点或证书位置。
 
+macOS 本地 Docker Desktop 的唯一宿主通道输入为 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS`，空值关闭转换，非空为最多 64 个不重复的规范非零端口，以逗号分隔且不含空项或空格。该输入只改变同一 HTTP SD Job 中已发现来源的传输地址：先保留原 `instance`，将列表内 `127.0.0.1:端口` 精确转换为同端口 `host.docker.internal`；其他地址与端口不转换。它不授权来源、不部署来源、不扩大采集预算、不覆盖 Monitor 的 CIDR/端口准入策略。来源服务器证书同时覆盖回环 IP 与宿主通道 DNS；不覆盖 TLS server_name。配置变更须由标准指标入口重新应用中心。原单端口输入已删除，不保留兼容读取。
+
 ### 当前部署配置说明
 
 共享 Meilisearch 固定使用 `1.54.3` 的多架构镜像摘要与独立命名卷 `meilisearch_data_v1543`。旧版本的 `meilisearch_data` 卷只作为历史回滚材料保留，不再作为当前 Compose 挂载路径；升级必须从已核验 dump 导入空的新卷，不能让新二进制打开旧卷。镜像与卷绑定均由基础设施 Compose 唯一定义，不新增运行时配置或双轨服务。
@@ -716,4 +718,4 @@ Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_
 本地可选指标 TLS 转发由 `ADDP_METRICS_CONTROL_ENABLED=false` 显式选择，仅在指标中心也启用时生效。`ADDP_METRICS_CONTROL_DIR` 为仓库外服务器证书目录，`ADDP_METRICS_CONTROL_GATEWAY_URL` 为明确的规范 HTTP origin（含端口、无路径）；标准预检生成 nginx.conf，不签发证书。选中此入口后两个 `PROMETHEUS_*_URL` 均须为 `https://metrics-control:9444`，中心信任该入口独立 CA。关闭入口时由部署方提供原有 HTTPS 控制面输入，不校验入口专用目录或上游；关闭中心也停止其可选转发服务。入口只转发 Token POST 与指标发现 GET，不发布宿主端口，不参与业务 Ready。HTTP 上游属于受控开发网络部署边界，生产 TLS 和密钥权限须独立验收。
 
 
-macOS 本地 Docker Desktop 的稳定指标访问可显式配置 `ADDP_METRICS_DESKTOP_LOOPBACK_PORT`，其值必须与来源回环发布端口一致。来源监听 `127.0.0.1:<端口>`，Monitor 只准入 `127.0.0.1/32`；中心唯一 HTTP SD Job 将该确切端口的传输地址映射到 `host.docker.internal`，instance 仍保留 Monitor 的规范来源地址。叶子证书须包含两种访问名称，mTLS 身份与信任根不变。缺省不转换，非 macOS、本地 unix Engine 之外或非 Docker Desktop 拒绝；不放宽通配监听、自动改端口或读取任意目标。配置经标准 Infra 生命周期生效，来源与 Monitor 配置分别经原入口生效，不重启业务模块。
+macOS 本地 Docker Desktop 的稳定指标访问由 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS` 显式列出来源回环端口，格式与限制见本文“平台观测配置边界”中的部署契约。中心唯一 HTTP SD Job 只将列出的 `127.0.0.1:端口` 传输地址映射到 `host.docker.internal:端口`，instance 仍保留 Monitor 的规范来源地址。叶子证书须包含两种访问名称，mTLS 身份与信任根不变；不放宽通配监听、自动改端口或读取任意目标。中心配置经标准 Infra 生命周期生效，不隐式重启业务进程；来源及 Monitor 的部署输入有变更时，分别由用户沿对应模块标准入口重启。
