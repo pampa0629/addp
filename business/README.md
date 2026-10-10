@@ -460,9 +460,9 @@ Spark Workflow 的 `load` 通过具体索引 locator 读取，Spark 计算集群
 
 验证入口：`make test-business-config`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`。后者创建独占容器、认证用户及样例索引，验证 Common、Manager、Meta 及真实 Spark Worker 的多分片读取、空索引、数组声明和大整数后删除容器、卷和网络，不使用现有 Business 实例。
 
-正式 T4 使用 `make test-online ONLINE_SUITE=elasticsearch-consumer-flow`，由 `online-hosted-elasticsearch-gate.sh` 在 Hosted Ubuntu 临时部署运行；物理夹具复用官方镜像、只读账号与 25 条文档/空索引初始化。System 独立身份经正式 API 登记引擎，普通用户从 Console 完成 Meta 重扫、Manager 预览和 Develop DSL 查询，并查看通过正式 Develop API 提交的 ES → Spark 工作流结果；该场景使用标准本地 Spark Runtime、独立 Master/Worker，核对四个节点、八次 Runtime 状态查询及实际 Executor 任务，归档同一身份的报告及五张截图。所有退出路径销毁临时业务容器、Infra 和凭据，核对零残留；仅人工触发，不登记 schedule。
+正式 T4 使用 `make test-online ONLINE_SUITE=elasticsearch-consumer-flow`，由 `online-hosted-elasticsearch-gate.sh` 在 Hosted Ubuntu 临时部署运行；物理夹具复用官方镜像、只读账号与 25 条文档/空索引初始化。System 独立身份经正式 API 登记引擎，普通用户从 Console 完成 Meta 重扫、Manager 预览和 Develop DSL 查询，并查看通过正式 Develop API 提交的 ES → Spark 工作流结果；该场景通过根产品构建入口生成 Spark Runtime 镜像，核对实际 image ID 与 `python api_server.py` 默认入口，使用独立 Master/Worker，核对四个节点、八次 Runtime 状态查询及实际 Executor 任务，归档同一身份的报告及五张截图。所有退出路径销毁临时业务容器、Infra 和凭据，核对零残留；仅人工触发，不登记 schedule。
 
-Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169299286](https://github.com/pampa0629/addp/actions/runs/37169299286)，提交 `7398d24d743b96316a338dce4a4b39675b979d7b`。归档报告确认同一租户、普通用户和引擎完成 Meta 页面重扫、Manager 25 条文档/空索引预览、Develop 25 条 DSL 查询结果，并保留四张 Console 截图。该记录只证明对应提交的消费链路，不替代后续变更的重新验收。
+产品容器默认入口已于 2026-10-10（北京时间）复验通过：[ES T4 37954898673](https://github.com/pampa0629/addp/actions/runs/37954898673)，提交 `ddaa982600608c94db56e04ac5ed130765cd77c1`。归档报告确认同一租户与普通用户完成 Meta 页面重扫、Manager 25 条文档/空索引预览、Develop 25 条 DSL 查询及正式 ES → Spark 四节点工作流，保留五张 Console 截图。工作流读取 25 行、金额合计 562.5，大整数 `9007199254740993` 在摘要中保持十进制字符串；实际 Worker 完成 14 个任务，连续八次 Runtime 状态查询一致。产品镜像实际 image ID 与默认入口核验通过，最终 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`。该记录只证明对应提交的 HTTP Basic 只读消费范围，不包含 Spark HTTPS 接入，也不替代后续变更的重新验收。
 
 ## Business Redis
 
@@ -499,4 +499,4 @@ System 中选择独立 `hdfs` 引擎：填写启动输出的 `webhdfs_endpoint` 
 
 Hosted T4 已于 2026-10-05（北京时间）通过：[运行 37217772982](https://github.com/pampa0629/addp/actions/runs/37217772982)，提交 `11bbacfd577cb568f22c47a0a9fe1a39fd3a70bc`。报告确认同一租户与普通用户完成 Meta 目录重扫、四个文件预览和 Develop 正式工作流详情；三格式各 20 行、金额合计 2100，Standalone Application 对应的真实 Worker 完成 37 个 Executor 任务，归档六张 Console 截图。应用、业务夹具和 Infra 清理通过且零残留。该记录证明此提交在标准开发入口下的 Simple 只读消费链路，容器部署入口另须验收；仍只登记手动触发。
 
-产品容器默认入口已于 2026-10-05 完成复验：[HDFS T4 37254858559](https://github.com/pampa0629/addp/actions/runs/37254858559)，提交 `eccfaeeda07a51c471cde67d1fe1d5c624ea3a19`。Spark Workflow 产品镜像自动登记后，普通用户完成扫描、四文件预览及八节点正式工作流；三格式各 20 行、金额 2100，实际 Standalone Worker 完成 37 个任务，连续八次 Runtime 状态查询一致。Business 容器与 Runtime/临时镜像仓库分别按自身所有权清理，最终 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`。该轮覆盖产品镜像默认启动入口，仍只登记手动 T4。
+产品容器默认入口已于 2026-10-10（北京时间）复验通过：[HDFS T4 37954899129](https://github.com/pampa0629/addp/actions/runs/37954899129)，提交 `ddaa982600608c94db56e04ac5ed130765cd77c1`。Spark Workflow 产品镜像自动登记后，同一租户与普通用户完成扫描、四文件预览及八节点正式工作流，保留六张 Console 截图；三格式各 20 行、金额合计各 2100，实际 Standalone Worker 完成 37 个任务，连续八次 Runtime 状态查询一致。产品镜像实际 image ID 与 `python api_server.py` 默认入口核验通过；Business 容器与 Runtime/临时镜像仓库分别按自身所有权清理，最终 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`。该记录只证明对应提交的 Simple 只读消费范围，仍只登记手动 T4。
