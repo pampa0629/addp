@@ -253,7 +253,7 @@ def run_persistence(client, report, target_engine_id, timeout):
     item = support.find_item(client, target_engine_id, 'results.hdfs_totals', 'table')
     preview_locator = target_locator + '&item_id=' + str(item['id'])
     _, rows = support.preview_rows(client, preview_locator)
-    expected_rows = report['final_result']['preview_rows']
+    expected_rows = sorted(report['final_result']['preview_rows'], key=lambda row: row['region'])
     if sorted(rows, key=lambda row: row['region']) != expected_rows:
         raise SuiteError('Manager persisted result differs from the computed totals')
     query = urllib.parse.urlencode({'subject_kind': 'data_item', 'item_id': item['id'], 'direction': 'upstream'})

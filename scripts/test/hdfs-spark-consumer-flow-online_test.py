@@ -128,6 +128,41 @@ class HDFSOnlineTest(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(MODULE.SuiteError):
                 MODULE.validate_persistence(value, locators, target)
 
+    def test_persistence_compares_rows_by_region_and_keeps_original_runtime_order(self):
+        from unittest.mock import Mock
+        expected = final_result()
+        expected['preview_rows'].reverse()
+        report = {'engine_id': 7, 'cluster_id': 8, 'runtime_id': 10,
+                  'locators': {name: 'addp://engine/7/path/orders.' + name + '?type=file' for name in ('csv', 'json', 'parquet')},
+                  'item_ids': {'csv': 1, 'json': 2, 'parquet': 3}, 'final_result': expected}
+        receipt = {'status': 'success', 'rows': 2, 'target': 'results.hdfs_totals'}
+        saved = {'metadata': {'result': {'runtime_execution_id': 'runtime-save'}}}
+        reused = {'metadata': {'result': {'runtime_execution_id': 'runtime-reuse', 'final_result': final_result()}}}
+        graph = {'edges': [{'source': {'item_id': source}, 'target': {'item_id': 5},
+                 'evidence': {'execution_id': 'saved'}, 'status': 'active', 'relation_kind': 'derive'} for source in (1, 2, 3)]}
+        for wrong in ('', 'amount', 'missing', 'duplicate'):
+            rows = final_result()['preview_rows']
+            if wrong == 'amount': rows[0]['csv_amount_sum'] += 1
+            if wrong == 'missing': rows[0].pop('parquet_rows')
+            if wrong == 'duplicate': rows.append(rows[0].copy())
+            client = Mock()
+            client.request.side_effect = [SimpleNamespace(payload={'status': 'success'}), SimpleNamespace(payload=graph)]
+            with self.subTest(wrong=wrong), patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://127.0.0.1:8098'), \
+                 patch.object(MODULE, 'submit_and_wait', side_effect=[('saved', saved), ('reused', reused)]), \
+                 patch.object(MODULE, 'validate_persistence', return_value=(receipt, 'scan')), \
+                 patch.object(MODULE.SPARK, 'runtime_status_evidence', return_value={}), \
+                 patch.object(MODULE.support, 'find_item', return_value={'id': 5}), \
+                 patch.object(MODULE.support, 'preview_rows', return_value=(list(rows[0]), rows)), \
+                 patch.object(MODULE, 'persistence_physical', return_value={}):
+                if wrong:
+                    with self.assertRaisesRegex(MODULE.SuiteError, 'Manager persisted result'):
+                        MODULE.run_persistence(client, report, 9, 30)
+                else:
+                    result = MODULE.run_persistence(client, report, 9, 30)
+                    self.assertEqual(result['lineage_sources'], [1, 2, 3])
+                    self.assertEqual(result['reuse_final_result'], final_result())
+                    self.assertEqual(report['final_result']['preview_rows'][0]['region'], 'west')
+
     def test_persisted_runtime_http_snapshots_require_exact_save_receipt(self):
         import io
         receipt = {'status': 'success', 'rows': 2, 'target': 'results.hdfs_totals'}
