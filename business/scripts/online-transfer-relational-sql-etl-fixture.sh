@@ -61,10 +61,14 @@ mongodb_readiness_diagnostics() {
   python3 - "$ADDP_ONLINE_SECRET_DIR" <<'PY_DIAGNOSTICS'
 import pathlib, sys
 root = pathlib.Path(sys.argv[1])
-for name in ('mongodb-readiness-error.log', 'mongodb-startup.log'):
-    content = (root / name).read_text(errors='replace').lower()
+for name in ('mongodb-readiness-error.log', 'mongodb-fixture-error.log', 'mongodb-startup.log'):
+    path = root / name
+    if not path.exists():
+        continue
+    content = path.read_text(errors='replace').lower()
     categories = [label for label, markers in (
         ('connection-refused', ('econnrefused', 'connection refused')),
+        ('connection-closed', ('econnreset', 'connection closed', 'socket hang up')),
         ('authentication-failed', ('authentication failed', 'fixture authentication failed')),
         ('missing-file', ('enoent', 'no such file or directory')),
         ('permission-denied', ('eacces', 'permission denied', 'operation not permitted')),
@@ -85,7 +89,11 @@ start_mongodb() {
     -e MONGO_INITDB_ROOT_USERNAME=fixture_root -e MONGO_INITDB_ROOT_PASSWORD mongo:7.0 >/dev/null
   ready=0
   for _ in $(seq 1 60); do
-    if mongodb_shell >/dev/null 2>"$ADDP_ONLINE_SECRET_DIR/mongodb-readiness-error.log" <<'JS'
+    # The entrypoint's temporary init server can already authenticate and ping.
+    # Wait for its final exec before probing or writing the one-shot fixture.
+    if docker exec "$mongodb_container" sh -c '[ "$(cat /proc/1/comm)" = mongod ]' \
+      >/dev/null 2>"$ADDP_ONLINE_SECRET_DIR/mongodb-readiness-error.log" &&
+      mongodb_shell >/dev/null 2>"$ADDP_ONLINE_SECRET_DIR/mongodb-readiness-error.log" <<'JS'
 if (db.getSiblingDB('admin').runCommand({ping: 1}).ok !== 1) throw Error('not ready');
 JS
     then ready=1; break; fi
@@ -104,7 +112,10 @@ fixture.activities.insertMany([
 ]);
 fixture.createUser({user: 'transfer_reader', pwd: process.env.TRANSFER_MONGODB_PASSWORD, roles: [{role: 'read', db: 'transfer_fixture'}]});
 JS
-  then fail "MongoDB source permissions could not be initialized"; fi
+  then
+    mongodb_readiness_diagnostics
+    fail "MongoDB source permissions could not be initialized"
+  fi
   python3 - <<'PY_DESCRIPTOR'
 import json, os
 fd = os.open(os.environ['ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE'], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

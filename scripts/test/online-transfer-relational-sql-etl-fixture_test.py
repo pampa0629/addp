@@ -61,13 +61,30 @@ case "$1" in
     [ -f "$state" ] || exit 1
     case " $* " in
       *pg_isready*) exit 0 ;;
+      */proc/1/comm*)
+        printf 'mongodb-process-probe\n' >> "$ADDP_TEST_FIXTURE_LOG"
+        if [ "${ADDP_TEST_MONGODB_BOOTSTRAP_STUCK:-0}" = 1 ]; then exit 1; fi
+        if [ "${ADDP_TEST_MONGODB_BOOTSTRAP_RACE:-0}" = 1 ]; then
+          counter_file="$ADDP_TEST_MONGODB_STATE.probes"
+          count=0
+          [ ! -f "$counter_file" ] || count=$(cat "$counter_file")
+          count=$((count + 1))
+          echo "$count" > "$counter_file"
+          [ "$count" -ge 3 ] || exit 1
+        fi
+        touch "$ADDP_TEST_MONGODB_STATE.final"
+        exit 0 ;;
       *mongosh*) input=$(cat)
         printf 'mongodb-stdin:%s\n' "$input" >> "$ADDP_TEST_FIXTURE_LOG"
         if [[ "$input" == *"ping: 1"* ]] && [ "${ADDP_TEST_MONGODB_READY_FAIL:-0}" = 1 ]; then
           echo 'MongoNetworkError: ECONNREFUSED SECRET_MARKER' >&2; exit 1
         fi
         if [[ "$input" == *"createUser"* ]] && [ "${ADDP_TEST_MONGODB_SEED_FAIL:-0}" = 1 ]; then
-          echo SECRET_MARKER >&2; exit 1
+          echo 'MongoNetworkError: connection closed SECRET_MARKER' >&2; exit 1
+        fi
+        if [[ "$input" == *"createUser"* ]] && [ "${ADDP_TEST_MONGODB_BOOTSTRAP_RACE:-0}" = 1 ] &&
+          [ ! -f "$ADDP_TEST_MONGODB_STATE.final" ]; then
+          echo 'MongoNetworkError: connection closed SECRET_MARKER' >&2; exit 1
         fi
         [[ "$input" != *"countDocuments"* ]] || echo 3
         exit 0 ;;
@@ -261,6 +278,36 @@ esac
     def test_partial_mongodb_initialization_is_redacted_and_cleans_both_containers(self):
         result = self.run_fixture('start', ADDP_TEST_MONGODB_SEED_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('SECRET_MARKER', result.stdout + result.stderr)
+        self.assertIn('mongodb-fixture-error.log: connection-closed', result.stderr)
+        self.assertEqual(self.log.read_text().count('fixture.createUser('), 1)
+        self.assertFalse((self.secrets / 'transfer-mongodb-engine.json').exists())
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+        self.assertFalse(self.postgres_state.exists())
+        self.assertFalse(self.mongodb_state.exists())
+
+    def test_waits_for_final_mongod_before_authentication_and_single_seed(self):
+        result = self.run_fixture('start', ADDP_TEST_MONGODB_BOOTSTRAP_RACE='1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = self.log.read_text()
+        self.assertEqual(commands.count('mongodb-process-probe'), 3)
+        self.assertEqual(commands.count('ping: 1'), 1)
+        self.assertEqual(commands.count('fixture.createUser('), 1)
+        self.assertLess(commands.rindex('mongodb-process-probe'), commands.index('ping: 1'))
+        self.assertTrue((self.secrets / 'transfer-mongodb-engine.json').exists())
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+        self.assertFalse(self.postgres_state.exists())
+        self.assertFalse(self.mongodb_state.exists())
+
+    def test_unfinished_bootstrap_cannot_seed_or_publish_descriptor(self):
+        result = self.run_fixture('start', ADDP_TEST_MONGODB_BOOTSTRAP_STUCK='1')
+        self.assertNotEqual(result.returncode, 0)
+        commands = self.log.read_text()
+        self.assertEqual(commands.count('mongodb-process-probe'), 60)
+        self.assertNotIn('ping: 1', commands)
+        self.assertNotIn('fixture.createUser(', commands)
+        self.assertFalse((self.secrets / 'transfer-mongodb-engine.json').exists())
+        self.assertNotIn('Traceback', result.stderr)
         self.assertNotIn('SECRET_MARKER', result.stdout + result.stderr)
         self.assertEqual(self.run_fixture('stop').returncode, 0)
         self.assertFalse(self.postgres_state.exists())

@@ -277,6 +277,8 @@ PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派�
 
 MongoDB → PostgreSQL ODS 的扩展验收沿用同一 suite 和权限边界：原生集合经透明 MQL `$project` 投影后显式映射六个字段（含嵌套点号字段），冻结源结构保留原始字段而非查询别名，连续执行同一个任务两次，自动扫描目标并自动采集字段血缘，核对当次冻结结构与最新执行证据，验证 Manager 整表字段图和本地字段聚焦。Business Fixture 在 Hosted 临时部署中拥有两个独占 tmpfs 容器与 ODS 完整行集合验证，退出统一检查零残留。该扩展须有新的真实 Hosted 通过证据，不能由前述 PostgreSQL 验收结果代替。
 
+MongoDB 夹具必须等待容器 PID 1 成为正式 `mongod`，再进行认证及 ping 探测；[官方镜像入口](https://github.com/docker-library/mongo/blob/master/7.0/docker-entrypoint.sh) 在初始化阶段会启动临时实例、创建账号，再关闭临时实例并执行正式进程，仅认证及 ping 成功不能证明切换完成。两项就绪条件使用同一个有界等待；数据与最小读取权限只初始化一次，失败时不重试部分写入、不发布引擎描述文件。原始启动及驱动错误只留在退出即清理的凭据目录，CI 日志仅输出固定错误分类和非秘密容器状态。
+
 2026-10-05，MongoDB → PostgreSQL ODS 扩展 Hosted T4 [运行 37214989939](https://github.com/pampa0629/addp/actions/runs/37214989939) 完整通过，验证源码为 `e9d030996f664a7b9e31cd37d76e93f15dfaddaf`。同一最小权限 User / Tenant 下，同一个透明 MQL 投影任务连续执行两次，每次读写 3 条；六条活跃字段关系全部引用第二次成功执行，源结构保留原始嵌套字段名和 path，并与目标冻结结构、Meta 字段图一致。目标 DataItem 由 Transfer 自动扫描产生，字段事实由 Meta 自动采集，测试未手工补扫 ODS 或调用 collect。Console 的 Manager 整表字段图包含 12 个节点、6 条关系，日期与昵称字段在本地切换聚焦且只请求一次整表字段图，元数据刷新后关系仍有效。v3 报告与独立物理夹具验证通过，五个临时任务全部删除并确认 404，两个业务容器、平台 Infra 和凭据目录清理通过，零残留。
 
 编排重跑验收继续扩展同一 suite：Orchestrator 调用真实 Transfer ODS 任务和两个 Develop relation 查询任务，依次完成 ODS → DIM 日期转换 → DWD JOIN 写入；同一个编排连续执行两次。每个子执行通过既有 Monitor 安全投影核对当次父 UUID、模块与任务身份，字段及资源边只引用实际 Transfer / Develop 子执行，不得由编排依赖生成。Develop 冻结 ReadSet 采用不带目录选择器 item_id 的规范资源路径，按同一 Engine 与原生路径核对 relation 参数绑定。Develop 专业执行详情复用安全执行投影，不暴露 operations 和 schema_snapshot；验收从该接口核对资源引用、顶层 outputs 与行数，从 Meta 字段图核对映射及冻结结构哈希，跨字段、跨 owner 和重跑必须保持结构身份一致。分别核对精确字段来源、direct/derived、所有冻结结构、三跳日期追溯、最新活跃入边和稳定 DataItem 身份；Manager 必须展示重跑后的整表字段图，Business Fixture 独立验证 DIM、DWD 完整行集合。此扩展的确定性测试不能代替新的真实 Hosted T4 证据。
