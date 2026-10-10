@@ -141,9 +141,26 @@ test('canvas observations retain every label and curve in a wide graph', async (
   expect(await lineageCanvasSnapshot(canvas)).toEqual({ rows: [], paths: [] })
 })
 
+async function observeLineageThemeReads(page) {
+  await page.addInitScript(() => {
+    window.__lineageThemeReads = 0
+    const computedStyle = window.getComputedStyle.bind(window)
+    window.getComputedStyle = (...args) => {
+      const style = computedStyle(...args)
+      const property = style.getPropertyValue.bind(style)
+      style.getPropertyValue = name => {
+        if (name === '--addp-bg-primary') window.__lineageThemeReads++
+        return property(name)
+      }
+      return style
+    }
+  })
+}
+
 for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
   test(`${columnCount}-column branched lineage preserves every field port in ${theme} theme`, async ({ page }) => {
     await observeLineageCanvas(page)
+    await observeLineageThemeReads(page)
     await page.setViewportSize({ width: 1600, height: 1000 })
     await page.addInitScript(theme => {
       localStorage.setItem('addp-lang', 'zh-cn')
@@ -187,6 +204,7 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
       return json(route, {})
     })
     await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    await page.evaluate(() => { window.__lineageThemeReads = 0 })
     const renderStarted = Date.now()
     await page.getByText('字段级', { exact: true }).click()
     const canvas = page.locator('.lineage-canvas canvas')
@@ -196,6 +214,8 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
     // G6's Float32 viewport matrix introduces sub-millionth-pixel rounding.
     await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => /^field_3\./.test(row.text))?.fontSize).toBeCloseTo(11, 5)
     timings.initialRenderMs = Date.now() - renderStarted
+    timings.themeReads = await page.evaluate(() => window.__lineageThemeReads)
+    expect(timings.themeReads, 'theme palette must be resolved per render, not per field edge').toBeLessThanOrEqual(12)
     await page.getByRole('button', { name: '适应窗口', exact: true }).click()
     const fieldRows = rows => rows.filter(row => /^field_\d+\.\d+$/.test(row.text))
     const headerName = id => id === 3 ? 'current' : `source_${id}`
@@ -330,6 +350,7 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
 for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
   test(`${columnCount}-column target locates last and generated fields in ${theme} theme`, async ({ page }) => {
     await observeLineageCanvas(page)
+    await observeLineageThemeReads(page)
     await page.setViewportSize({ width: 1600, height: 1000 })
     await page.addInitScript(theme => {
       localStorage.setItem('addp-lang', 'zh-cn')
@@ -365,6 +386,7 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
       return json(route, {})
     })
     await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+    await page.evaluate(() => { window.__lineageThemeReads = 0 })
     const renderStarted = Date.now()
     await page.getByText('字段级', { exact: true }).click()
     const canvas = page.locator('.lineage-canvas canvas')
@@ -373,6 +395,8 @@ for (const theme of ['light', 'dark']) for (const columnCount of [100, 500]) {
     await expect(page.locator('.lineage-summary')).toContainText(`${columnCount + 3} 个节点 · 3 条关系`)
     await expect.poll(async () => (await lineageCanvasText(canvas)).find(row => /^field_3\./.test(row.text))?.fontSize).toBeCloseTo(11, 5)
     timings.initialRenderMs = Date.now() - renderStarted
+    timings.themeReads = await page.evaluate(() => window.__lineageThemeReads)
+    expect(timings.themeReads, 'theme palette must be resolved per render, not per field edge').toBeLessThanOrEqual(12)
     const search = page.getByRole('textbox', { name: '搜索字段', exact: true })
     const locate = async column => {
       const started = Date.now()

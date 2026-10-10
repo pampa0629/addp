@@ -587,6 +587,7 @@ function graphData() {
       target: nodeId(edge.target),
       label: relationLabel(edge.relation_kind),
       _edge: edge,
+      _haloColor: palette.canvas,
       style: {
         stroke: palette.textTertiary,
         lineWidth: 1.5,
@@ -673,7 +674,7 @@ function registerLineageEdge() {
     afterDraw(cfg, group) {
       const key = group.get('children')[0]
       const halo = group.addShape('path', {
-        attrs: { path: key.attr('path'), stroke: themePalette().canvas, lineWidth: 7, lineJoin: 'round' },
+        attrs: { path: key.attr('path'), stroke: cfg._haloColor, lineWidth: 7, lineJoin: 'round' },
         name: 'lineage-edge-halo', capture: false
       })
       halo.toBack()
