@@ -155,6 +155,7 @@ def persistence_workflow(locators, target_engine_id):
     definition = workflow(locators)
     definition['tasks'].append({'id': 'save', 'operator': 'save', 'depends_on': ['verify_all_formats'], 'params': {
         'input_df': {'$ref': 'verify_all_formats', 'port': 'default'},
+        'target_type': 'table',
         'target_parent_locator': f'addp://engine/{target_engine_id}/path/results?type=schema',
         'target_name': 'hdfs_totals', 'mode': 'overwrite',
     }})

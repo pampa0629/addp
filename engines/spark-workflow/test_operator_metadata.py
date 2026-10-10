@@ -43,6 +43,21 @@ import api_server
 
 
 class OperatorMetadataTest(unittest.TestCase):
+    def test_hosted_persistence_fixture_satisfies_native_required_parameters(self):
+        import importlib.util
+        fixture_path = Path(__file__).resolve().parents[2] / 'scripts/test/hdfs-spark-consumer-flow-online.py'
+        spec = importlib.util.spec_from_file_location('hdfs_persistence_contract_fixture', fixture_path)
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        locators = {name: f'addp://engine/2/path/orders.{name}?type=file' for name in ('csv', 'json', 'parquet')}
+        definition = fixture.persistence_workflow(locators, 4)
+        native = {operator['id']: operator for operator in get_operator_metadata()}
+        for task in definition['tasks']:
+            required = {parameter['name'] for parameter in native[task['operator']]['parameters'] if parameter['required']}
+            with self.subTest(task=task['id']):
+                self.assertFalse(required - task['params'].keys(), 'Hosted workflow omits native required parameters')
+        self.assertEqual(definition['tasks'][-1]['params']['target_type'], 'table')
+
     def test_save_returns_committed_adapter_count_without_recomputing_source(self):
         from unittest.mock import MagicMock
         from operators.io_operators import save
