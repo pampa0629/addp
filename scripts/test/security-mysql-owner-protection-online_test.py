@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import sys
 import copy
 import struct
@@ -190,6 +191,126 @@ class SpatialClient:
         raise AssertionError(f"unexpected spatial request {method} {path}")
 
 
+class RestartRecoveryTest(unittest.TestCase):
+    def process(self, newer=False):
+        return {"instance_id": "00000000-0000-4000-8000-00000000000" + ("2" if newer else "1"),
+                "started_at": "2026-10-10T00:0" + ("2" if newer else "1") + ":00Z",
+                "build_id": "fixture-build", "git_commit": "fixture-commit", "source_fingerprint": "sha256:fixture"}
+
+    def run_recovery(self, client, restart=None, after=None, identity=None):
+        source = client.request("GET", "/api/v1/meta/engines/17/items", (200,)).payload[0]
+        client.policies = [{"id": str(index), "state": "active", "version": "1"} for index in range(1, 4)]
+        expected = {"value_a": {"1": "###########", "2": "#####", "3": "###", "4": None, "5": None},
+                    "value_b": ONLINE.spatial_expected(ONLINE.CONSTANT_ALGORITHM, {"value": "已脱敏"}),
+                    "value_c": dict(ONLINE.SM3_VALUES)}
+        client.baseline["algorithm"] = ONLINE.SM3_ALGORITHM
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_TENANT_ID": "2"}), \
+             patch.object(ONLINE, "require_hosted_restart"), \
+             patch.object(ONLINE, "validate_user_identity", side_effect=identity or [{"principal_id": "7"}] * 2), \
+             patch.object(ONLINE, "ready_process", side_effect=[self.process(), self.process(), after or self.process(True), self.process(True)]), \
+             patch.object(ONLINE.subprocess, "run", side_effect=restart, return_value=Mock(returncode=0)) as lifecycle, \
+             patch.object(ONLINE, "wait_for_scan", side_effect=AssertionError("restart must not rescan")):
+            result = ONLINE.exercise_restart_recovery(client, 17, source, "enrolled", "41", ["1", "2", "3"], expected, time.monotonic() + 60)
+            self.assertEqual(lifecycle.call_args.args[0], ["bash", "scripts/dev/restart.sh", "-security", "-manager"])
+            return result
+
+    def test_accepts_new_processes_same_identity_and_protected_values_without_rescan(self):
+        result = self.run_recovery(SpatialClient())
+        self.assertTrue(result["same_user_verified"])
+        self.assertTrue(result["definitions_preserved"])
+        self.assertTrue(result["verified_before_rescan"])
+        self.assertEqual(result["protected_preview"]["rows"], 5)
+        self.assertTrue(result["technical_field_search"]["same_item_verified"])
+
+    def test_rejects_noop_restart_stale_start_and_changed_build(self):
+        for field, value in (("instance_id", self.process()["instance_id"]),
+                             ("started_at", self.process()["started_at"]),
+                             ("build_id", "another-build"), ("git_commit", "another-commit"),
+                             ("source_fingerprint", "another-source")):
+            with self.subTest(field=field), self.assertRaises(ONLINE.SuiteError):
+                self.run_recovery(SpatialClient(), after=dict(self.process(True), **{field: value}))
+
+    def test_rejects_lifecycle_failure_and_timeout_without_reporting_recovery(self):
+        for error in (None, ONLINE.subprocess.TimeoutExpired("restart", 60)):
+            with self.subTest(error=error), self.assertRaisesRegex(ONLINE.SuiteError, "lifecycle"):
+                self.run_recovery(SpatialClient(), restart=(
+                    (lambda *args, **kwargs: Mock(returncode=1)) if error is None else error))
+
+    def test_rejects_changed_user_or_definition(self):
+        with self.assertRaisesRegex(ONLINE.SuiteError, "ordinary User"):
+            self.run_recovery(SpatialClient(), identity=[{"principal_id": "7"}, {"principal_id": "8"}])
+        for target in ("baseline", "policy"):
+            client = SpatialClient()
+            def mutate(*args, **kwargs):
+                (client.baseline if target == "baseline" else client.policies[0])["version"] = "999"
+                return Mock(returncode=0)
+            with self.subTest(target=target), self.assertRaisesRegex(ONLINE.SuiteError, "Baseline or field Policies"):
+                self.run_recovery(client, restart=mutate)
+
+    def test_rejects_plaintext_after_restart(self):
+        client = SpatialClient()
+        original = client.rows
+        def leak(owner):
+            rows = original(owner)
+            rows[0]["value_c"] = "13812345678"
+            return rows
+        client.rows = leak
+        with self.assertRaisesRegex(ONLINE.SuiteError, "protected value"):
+            self.run_recovery(client)
+
+    def test_admission_refuses_personal_environment_before_invoking_lifecycle(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(ONLINE.subprocess, "run") as lifecycle:
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.exercise_restart_recovery(Mock(), 17, {}, "enrolled", "41", [], {}, time.monotonic() + 60)
+            lifecycle.assert_not_called()
+
+    def test_admission_requires_hosted_architecture_no_env_and_external_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory) / "repository"
+            repository.mkdir()
+            environment = dict(GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1", ADDP_ONLINE_HOST="1",
+                               ADDP_ONLINE_TEST="1", POSTGRES_DB="addp_online", SECURITY_URL="http://127.0.0.1:8194",
+                               MANAGER_URL="http://127.0.0.1:8081", ADDP_ONLINE_SECRET_DIR=directory + "/secret",
+                               ADDP_ONLINE_ARTIFACT_DIR=directory + "/artifact")
+            with patch.dict(os.environ, environment, clear=True), patch.object(ONLINE.sys, "platform", "linux"), \
+                 patch.object(ONLINE.os, "uname", return_value=Mock(machine="x86_64")):
+                ONLINE.require_hosted_restart(repository)
+                for key, value in (("MANAGER_URL", "http://localhost:8081"),
+                                   ("ADDP_ONLINE_ARTIFACT_DIR", str(repository / "artifacts")),
+                                   ("ADDP_ONLINE_SECRET_DIR", "relative")):
+                    with self.subTest(key=key), patch.dict(os.environ, {key: value}), self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.require_hosted_restart(repository)
+                (repository / ".env").touch()
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.require_hosted_restart(repository)
+                (repository / ".env").unlink()
+                with patch.object(ONLINE.sys, "platform", "darwin"), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.require_hosted_restart(repository)
+
+    def test_ready_requires_registered_backend_and_complete_process_identity(self):
+        payload = dict(self.process(), module="manager", status="ready", role="backend", registration_state="registered")
+        with patch.dict(os.environ, {"MANAGER_URL": "http://127.0.0.1:8081"}), patch.object(ONLINE, "GatewayClient") as health:
+            health.return_value.request.return_value = ONLINE.SUPPORT.Response(200, payload)
+            self.assertEqual(ONLINE.ready_process("manager"), self.process())
+            self.assertEqual(health.call_args.args[1], "")
+            for key, value in (("registration_state", "recovering"), ("instance_id", "invalid"),
+                               ("started_at", "2026-10-10T00:00:00"), ("build_id", ""), ("module", "meta")):
+                health.return_value.request.return_value = ONLINE.SUPPORT.Response(200, dict(payload, **{key: value}))
+                with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.ready_process("manager")
+
+    def test_restart_failure_still_restores_owned_rules(self):
+        client = SpatialClient()
+        with patch.object(ONLINE, "exercise_restart_recovery", side_effect=ONLINE.SuiteError("restart failed")), \
+             patch.object(ONLINE, "cleanup_tasks"):
+            with self.assertRaisesRegex(ONLINE.SuiteError, "restart failed"):
+                ONLINE.exercise_spatial_algorithms(client, 17, "run-1", time.monotonic() + 30, 90)
+        self.assertTrue(client.service_deleted)
+        self.assertTrue(all(policy["state"] == "revoked" for policy in client.policies))
+        self.assertEqual(client.baseline["parameters"], client.original["parameters"])
+
+
 class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
     def spatial_run(self, client):
         def create_task(client, payload, deadline, tasks):
@@ -200,8 +321,12 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
             return tasks[-1], {"records_written": 5}
         with patch.object(ONLINE, "wait_for_scan", return_value="scan"), \
              patch.object(ONLINE, "create_and_run_task", side_effect=create_task), \
+             patch.object(ONLINE, "exercise_restart_recovery", return_value={"verified_before_rescan": True}) as restart, \
              patch.object(ONLINE, "cleanup_tasks", side_effect=lambda client, tasks: client.deleted_tasks.extend(tasks)):
-            return ONLINE.exercise_spatial_algorithms(client, 17, "run-1", time.monotonic() + 30, 90)
+            result = ONLINE.exercise_spatial_algorithms(client, 17, "run-1", time.monotonic() + 30, 90)
+            restart.assert_called_once()
+            self.assertEqual(restart.call_args.args[5], ["1", "2", "3"])
+            return result
 
     def test_spatial_algorithms_cover_four_owners_and_restore_baseline(self):
         client = SpatialClient()
@@ -210,6 +335,7 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.assertEqual({owner for _, owner in client.owner_calls}, set(ONLINE.OWNER_ACTIONS))
         self.assertEqual(len(client.owner_calls), 12)
         self.assertTrue(evidence["cases"][0]["independent_manager_fields"])
+        self.assertTrue(evidence["cases"][0]["owners"]["manager"]["restart_recovery"]["verified_before_rescan"])
         self.assertEqual(client.search_calls, [case[0] for case in ONLINE.ALGORITHM_CASES])
         for case in evidence["cases"]:
             self.assertTrue(case["owners"]["manager"]["technical_field_search"]["same_item_verified"])

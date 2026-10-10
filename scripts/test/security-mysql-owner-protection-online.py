@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import importlib.util
 import json
 import math
@@ -904,6 +905,89 @@ def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mappin
     raise SuiteError("protected technical field was not searchable before the deadline")
 
 
+def require_hosted_restart(repository: Path) -> None:
+    require_hosted_initialization(os.environ)
+    if sys.platform != "linux" or os.uname().machine != "x86_64" or (repository / ".env").exists():
+        raise SuiteError("Security restart requires a disposable Hosted Linux checkout without .env")
+    for key, expected in (("SECURITY_URL", "http://127.0.0.1:8194"),
+                          ("MANAGER_URL", "http://127.0.0.1:8081")):
+        if os.environ.get(key) != expected:
+            raise SuiteError("Security restart refuses a non-Hosted endpoint: " + key)
+    for key in ("ADDP_ONLINE_SECRET_DIR", "ADDP_ONLINE_ARTIFACT_DIR"):
+        path = Path(required_environment(key))
+        if not path.is_absolute() or path.resolve().is_relative_to(repository.resolve()):
+            raise SuiteError("Security restart requires external evidence and credentials: " + key)
+
+
+def ready_process(module: str) -> dict[str, str]:
+    # Health is public; never send the consumer's token to a diagnostic endpoint.
+    payload = _object(GatewayClient(required_environment(module.upper() + "_URL"), "", 30)
+                      .request("GET", "/health/ready", (200,)).payload, module + " Ready")
+    if (payload.get("module") != module or payload.get("status") != "ready"
+            or payload.get("role") != "backend" or payload.get("registration_state") != "registered"):
+        raise SuiteError(module + " is not a registered ready backend")
+    fields = ("instance_id", "started_at", "build_id", "git_commit", "source_fingerprint")
+    if any(not isinstance(payload.get(key), str) or not payload[key] for key in fields):
+        raise SuiteError(module + " Ready has incomplete process or build identity")
+    try:
+        if uuid.UUID(payload["instance_id"]).int == 0 or datetime.fromisoformat(payload["started_at"]).tzinfo is None:
+            raise ValueError("invalid process identity")
+    except ValueError as error:
+        raise SuiteError(module + " Ready has invalid process identity") from error
+    return {key: payload[key] for key in fields}
+
+
+def verify_restarted_process(module: str, before: Mapping[str, str], after: Mapping[str, str]) -> None:
+    if (before["instance_id"] == after["instance_id"]
+            or datetime.fromisoformat(after["started_at"]) <= datetime.fromisoformat(before["started_at"])):
+        raise SuiteError(module + " did not restart with a new process identity and later start")
+    if any(before[key] != after[key] for key in ("build_id", "git_commit", "source_fingerprint")):
+        raise SuiteError(module + " changed build inputs during restart acceptance")
+
+
+def exercise_restart_recovery(client: GatewayClient, engine_id: int, source: Mapping[str, object],
+                              enrollment_id: str, baseline_id: str, policy_ids: list[str],
+                              expected: Mapping[str, Mapping[str, object]], deadline: float) -> dict[str, object]:
+    repository = Path(__file__).resolve().parents[2]
+    require_hosted_restart(repository)
+    tenant_id = positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id")
+    identity = validate_user_identity(client, tenant_id)
+    paths = [f"/api/v1/security/protection-baselines/{baseline_id}"] + [
+        f"/api/v1/security/protection-policies/{policy_id}" for policy_id in policy_ids]
+    definitions = [client.request("GET", path, (200,)).payload for path in paths]
+    before = {module: ready_process(module) for module in ("security", "manager")}
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise SuiteError("Security restart acceptance deadline expired before lifecycle execution")
+    log_path = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "security-restart-lifecycle.log"
+    # A file, rather than a PIPE, lets managed daemons inherit output without
+    # keeping subprocess.run blocked after the lifecycle launcher exits.
+    with log_path.open("w", encoding="utf-8") as log:
+        try:
+            result = subprocess.run(["bash", "scripts/dev/restart.sh", "-security", "-manager"],
+                                    cwd=repository, stdout=log, stderr=subprocess.STDOUT,
+                                    timeout=remaining, check=False)
+        except subprocess.TimeoutExpired as error:
+            raise SuiteError("Security restart lifecycle timed out; Hosted exit cleanup must run") from error
+    if result.returncode != 0:
+        raise SuiteError("Security restart lifecycle failed; see security-restart-lifecycle.log")
+    after = {module: ready_process(module) for module in before}
+    for module in before:
+        verify_restarted_process(module, before[module], after[module])
+    if validate_user_identity(client, tenant_id) != identity:
+        raise SuiteError("Security restart changed the ordinary User or Tenant")
+    if [client.request("GET", path, (200,)).payload for path in paths] != definitions:
+        raise SuiteError("Security restart changed the Baseline or field Policies")
+    wait_for_spatial_projections(client, enrollment_id, deadline)
+    search = wait_for_technical_field(client, engine_id, source, "value_c", min(deadline, time.monotonic() + 60))
+    _, rows = preview_rows(client, build_item_locator(engine_id, source))
+    preview = assert_spatial_rows(rows, "manager after restart", expected)
+    return {"processes": {module: {"before": before[module], "after": after[module]} for module in before},
+            "same_user_verified": True, "definitions_preserved": True,
+            "technical_field_search": search, "protected_preview": preview,
+            "verified_before_rescan": True}
+
+
 def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: str,
                                deadline: float, timeout: float) -> dict[str, object]:
     types = [item for item in definition_array(client, "/api/v1/security/sensitive-data-types") if item.get("code") == "phone"]
@@ -997,6 +1081,9 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
             manager = assert_spatial_rows(manager_rows, "manager", manager_expected)
             # Check immediately after protection changes, before the later target rescan.
             manager["technical_field_search"] = wait_for_technical_field(client, engine_id, source, "value_c", min(deadline, time.monotonic() + 60))
+            if index == 0:
+                manager["restart_recovery"] = exercise_restart_recovery(
+                    client, engine_id, source, enrollment_id, baseline_id, policy_ids, manager_expected, deadline)
             query = "SELECT id, value_a, value_b, value_c, location_point FROM addp_online_security.spatial_algorithm_source ORDER BY id"
             develop = assert_spatial_rows(develop_rows(client, engine_id, locator, deadline, query), "develop", defaults)
             service = assert_spatial_rows(service_rows(client, service_name, SPATIAL_FIELDS), "service", defaults)
@@ -1112,7 +1199,7 @@ def run_scenario(
             raise SuiteError("Transfer target lost non-sensitive customer fields")
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v3",
+            "schema_version": "addp.security-mysql-owner-protection-online/v4",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -1329,6 +1416,7 @@ def main() -> int:
         return 0
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")
+    require_hosted_restart(Path(__file__).resolve().parents[2])
     tenant_id = positive_int(
         required_environment("ADDP_ONLINE_TEST_TENANT_ID"),
         "ADDP_ONLINE_TEST_TENANT_ID",
