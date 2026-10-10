@@ -4,13 +4,15 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 
 ## 已确认的设计与依赖边界
 
-2026-10-03 明确三层：平台能力语义辅助 Agent 选择功能，租户领域语义说明业务概念与规则，运行时业务事实支撑具体对象判断。当前覆盖原生 Tenant 定义、手工假设性试算及首个平台 Transfer 能力定义的部署发布和 PG 消费；平台管理员查看、专业来源引用、本体数据绑定和可信业务事实求值仍未实现。
+2026-10-03 明确三层：平台能力语义辅助 Agent 选择功能，租户领域语义说明业务概念与规则，运行时业务事实支撑具体对象判断。当前覆盖原生 Tenant 定义、手工假设性试算、首个平台 Transfer 能力定义的部署发布和 PG 消费，以及平台用户只读核实；Tenant 专业来源引用、本体数据绑定和可信业务事实求值仍未实现。
 
 Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 System 外，不假定任何业务模块存在或被用户使用。Meta、Standard、Model、Quality、Catalog、Manager、Develop、Service、Agent 等只在使用其能力的请求中经正式 Client SDK/API 协作，不进入启动/Ready 检查。远端不可达、无权限、没有内容和版本变化按 owner 契约明确表达，不自动换源、不把错误当作无数据。
 
 本体数据绑定目标由 Ontology 唯一管理，固定本体修订与类/属性、读取 owner 来源及输出契约、对象身份、类型化路径、转换语义和绑定版本；Catalog 提供可选企业身份、责任与治理关联，不维护第二份可编辑绑定。Catalog StandardMapping 与 Model 概念实现映射仍属于各自 owner。绑定不持有业务凭据、不执行查询、不代表事实已观察；用户业务数据继续由数据读取 owner 授权访问。首个真实切片为单条 Outdoor 活动的有效性判断，正式契约见设计文档 2.3、6.2 与 10 节，不能把当前试算接口当作真实求值入口。
 
 ## 当前交付范围
+
+平台 User 的 Console `/ontology/platform/definitions` 与 `/:capability` 只读核实当前 active 定义，展示概念关系、条件/效果/排除效果、事实入口、选定覆盖范围及逐项冻结依据。目录/详情 API 为 `GET /platform/definitions` 与 `/{capability}`，详情从一次 PG active 读取恢复同一快照的 context/review，不读仓库文件或业务实例。独立 `ontology.platform_definition.read` 仅 Platform Scope、不可委托，System 向前迁移 000203 默认组合进平台系统管理员；不扩张 Tenant 或机器 Runtime。原 Agent 精简消费契约及权限不变。前端直接复用 common-frontend 的 OntologyView 和锁定的 G6 4.8.24，模块仅适配已发布成员；无在线编辑或任意图查询。已有 Go、IAM PostgreSQL、Ontology PostgreSQL、共享前端、Console 和 Ontology 前端标准入口覆盖 API/迁移/鉴权及确定性浏览器；CI 自动发现覆盖同一入口，无新增 Job。个人环境须由用户重启 System/Ontology 才加载权限及 API，不把受控 T3 当作正式 T4。
 
 平台能力目录 `GET /platform/capabilities` / `platform.capabilities.list` 从同一只读 PG 快照列出完整核验的 active 定义，按 capability 升序，最多 32 项和 128 KiB；未激活不列出，空目录为成功空数组，损坏或超限整次失败，不截断/跳过/换源。沿用 `ontology.semantic.read` 和精确委托，拒绝 query、不缓存、不证明业务操作权限。Agent 以目录语义选择能力，再核对 Skill/Tool 装配；当前仅 Transfer 创建，真实短输入验收待重启后执行。门禁沿用 Go、Ontology PostgreSQL、Agent eval、授权与 Swagger 标准入口，无新增依赖或 CI Job。详见设计契约 1.12。
 
@@ -73,12 +75,12 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 
 - 唯一前缀 `/api/v1/ontology`，Backend 端口 `8195`，Swagger `/swagger/index.html`。路由和 DTO 详见 `backend/docs/swagger.json` 及设计契约 10.1。
 - `ontology.revision.read` 读取本体头、确定修订、确定投影；`ontology.revision.update` 创建/保存/提交/退回；`ontology.revision.publish` 发布/撤回，发布与重建另需 `system.execution_authorization.create`。全部由 Tenant 自定义角色显式分配，不自动扩张既有角色。
-- 只接受当前 Tenant 的 User Token。拒绝 Service、Delegated、资源票据以及非 Tenant 作用域的 Permission 候选；身份来自 AuthContext，请求体不能提交 scope、tenant_id 或 Actor。
+- Tenant 管理 API 只接受当前 Tenant 的 User Token。拒绝 Service、Delegated、资源票据以及非 Tenant 作用域的 Permission 候选；身份来自 AuthContext，请求体不能提交 scope、tenant_id 或 Actor。平台核实 API 独立要求 Platform User 和 Platform Scope 的读取权限，不开放 Tenant 管理操作。
 - 发布/重建成功为 202，仅代表已准入。准入失败为 502 `projection_admission_failed`，响应 `intent` 保留已提交 revision/version/generation/execution_id，不能盲重发发布。重新读取确认后显式重建 failed generation；进程中断留下的未准入 pending 不自动补签，可撤回修订。
 - `revision.initial_generation/initial_execution_id` 是首次发布身份；当前激活事实只从本体头读取，具体投影从 generation 读取。不回显执行授权、租约 token、图 key 或底层错误。
 - 修订下 `GET /projection` 沿重建前驱链读取最新尝试，响应丢失时可找回身份；它不表示 active，没有投影返回 404，不依赖墙钟排序。
 - 管理浏览使用 `GET /ontologies` 与 `GET /ontologies/{ontology_id}/revisions`，分别固定按本体 ID 升序和修订号降序。仅接受 page/page_size（默认 1/20，最多 100），拒绝重复、未知、非规范参数及 OFFSET 溢出；沿用 Tenant User 的 `ontology.revision.read`。同一只读 PG 快照内计数和取页，列表只给本体头/修订摘要，不加载定义 payload，不把 published 当作 active。详情仍由确定修订接口提供。T1 覆盖分页与路由拒绝，T2 的 `TestPostgresRevisionLifecycle/management_lists` 覆盖租户隔离、顺序、空页、首次发布身份和取消；现有模块/CI 入口直接覆盖，无新增数据库、迁移或 Job。
-- `INFRA_FALKORDB_ADDRESS` 宿主默认 `127.0.0.1:16479`，容器为 `falkordb:6379`；只读取独立 `INFRA_FALKORDB_PASSWORD`。构建、Compose、`start.sh -ontology`、`restart.sh -ontology` 已登记；前端开发端口 `5192`、Docker `8123:80`，Console 数据治理组入口 `/ontology/ontologies`。
+- `INFRA_FALKORDB_ADDRESS` 宿主默认 `127.0.0.1:16479`，容器为 `falkordb:6379`；只读取独立 `INFRA_FALKORDB_PASSWORD`。构建、Compose、`start.sh -ontology`、`restart.sh -ontology` 已登记；前端开发端口 `5192`、Docker `8123:80`，Console 数据治理组按上下文展示 Tenant `/ontology/ontologies` 或 Platform `/ontology/platform/definitions`。
 - 若本机已有忽略提交的 `go.work`，使用 `go work use ./ontology/backend` 纳入模块后再生成 Swagger/开发构建；T1 同时校验生成文档中的原生定义字段，拒绝只保留路由但请求类型变成空对象的假覆盖。
 - System 向前迁移 `000153` 登记 read/update 与 Platform Runtime，`000201` 仅为 `platform.ontology_runtime` 增加 `ontology.platform_definition.publish`；既有角色绑定触发器推进授权版本，不修改已发布迁移。Ontology owner 使用 schema v6。
 - 平台机器发布核验复用 Common System Client SDK，只接受已编译能力修订摘要；System 固定 `addp-ontology` Platform Service 凭据和发布权限，不接受 User/Tenant/委托凭据，不缓存授权观察。启动发布器已装配该 Authorizer，管理员无发布权限。详见设计契约 1.9、1.11。

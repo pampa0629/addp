@@ -1678,6 +1678,151 @@
                     "ontology.semantic.read"
                 ]
             }
+        },
+        "/platform/definitions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Platform User 的只读核实目录；同一 PG 快照，最多 32 项和 128 KiB，超限或损坏整次失败。拒绝 query，不开放委托或机器身份，不授予执行权。 | Read-only inspection for Platform Users. One PG snapshot, at most 32 items and 128 KiB; corruption or oversize fails the whole read. Rejects query, delegation and machine identities; grants no execution rights.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "列出平台本体能力 | List platform ontology capabilities",
+                "responses": {
+                    "200": {
+                        "description": "已激活能力，允许为空 | Active capabilities, possibly empty",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PlatformCapabilitiesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效请求 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "结果超限 | Result too large",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "尚未就绪 | Not ready",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.platform_definition.read"
+                ]
+            }
+        },
+        "/platform/definitions/{capability}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Platform User。一次 PG active 读取恢复同一不可变快照的 context 与 review；无仓库文件读取、源文件回退或图查询。只描述选定能力，不证明全模块覆盖或当前可执行。拒绝 query、编辑、委托及机器身份。 | Platform Users only. Restores context and review from one immutable active PG release; no repository reads, source fallback or graph queries. Describes selected capabilities, not full-module coverage or current execution rights. Rejects query, editing, delegation and machine identities.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "核实平台本体定义及依据 | Inspect a platform ontology release and evidence",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "平台能力标识 | Platform capability identifier",
+                        "name": "capability",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "定义及冻结依据 | Definition and frozen evidence",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PlatformDefinitionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效请求 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "未提供此能力 | Capability not provided",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "尚未激活 | Not active",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "尚未就绪 | Not ready",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.platform_definition.read"
+                ]
+            }
         }
     },
     "definitions": {
@@ -1792,6 +1937,29 @@
                 }
             }
         },
+        "github_com_addp_ontology_internal_platform.Coverage": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "state": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_addp_ontology_internal_platform.Operation": {
             "type": "object",
             "properties": {
@@ -1849,6 +2017,81 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_platform.Review": {
+            "type": "object",
+            "properties": {
+                "bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_platform.SourceBinding"
+                    }
+                },
+                "coverage": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_platform.Coverage"
+                    }
+                },
+                "method": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_platform.Source"
+                    }
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_platform.Source": {
+            "type": "object",
+            "properties": {
+                "anchor": {
+                    "type": "string"
+                },
+                "commit": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "use": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_platform.SourceBinding": {
+            "type": "object",
+            "properties": {
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "subject": {
+                    "type": "string"
                 }
             }
         },
@@ -2307,6 +2550,17 @@
                 },
                 "schema_version": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.PlatformDefinitionResponse": {
+            "type": "object",
+            "properties": {
+                "context": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_platform.Context"
+                },
+                "review": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_platform.Review"
                 }
             }
         },

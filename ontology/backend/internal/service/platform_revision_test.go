@@ -17,6 +17,39 @@ func platformTestActor() models.PlatformActor {
 	return models.PlatformActor{ContextType: "platform", PrincipalID: 11, PrincipalType: "user", AuthorizationVersion: 7}
 }
 
+func TestPlatformInspectionRestoresOneFrozenRecord(t *testing.T) {
+	snapshot := platformTestSnapshot(t, "transfer.task.other", 9)
+	d, _ := snapshot.Context()
+	wantReview, _ := snapshot.Review()
+	record := models.PlatformRevision{Capability: d.Capability, Revision: d.Revision, Digest: snapshot.Digest(), Payload: string(snapshot.CanonicalJSON())}
+	result, err := restorePlatformDefinition(context.Background(), record)
+	if err != nil || result.Context.Capability != "transfer.task.other" || result.Context.Revision != 9 || result.Context.Digest != record.Digest || result.Review.Coverage[0].ID != wantReview.Coverage[0].ID {
+		t.Fatal("inspection mixed stored and embedded releases", result, err)
+	}
+	result.Review.Sources[0].Path = "mutated"
+	again, err := restorePlatformDefinition(context.Background(), record)
+	if err != nil || again.Review.Sources[0].Path != wantReview.Sources[0].Path {
+		t.Fatal("read mutated release", err)
+	}
+	for _, mutate := range []func(*models.PlatformRevision){
+		func(r *models.PlatformRevision) { r.Revision++ },
+		func(r *models.PlatformRevision) { r.Capability = "other.identity" },
+		func(r *models.PlatformRevision) { r.Payload += " " },
+		func(r *models.PlatformRevision) { r.Digest = strings.Repeat("0", 64) },
+	} {
+		bad := record
+		mutate(&bad)
+		if _, err := restorePlatformDefinition(context.Background(), bad); !errors.Is(err, repository.ErrIntegrity) {
+			t.Fatal("accepted invalid record", err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := restorePlatformDefinition(ctx, record); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
 func TestPlatformCatalogRestoreAndBudgets(t *testing.T) {
 	ctx := context.Background()
 	makeRecord := func(snapshot *platform.Snapshot) models.PlatformRevision {

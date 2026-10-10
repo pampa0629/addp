@@ -1,5 +1,32 @@
 {
   "ontology": {
+    "platform": {
+      "title": "Platform ontology inspection",
+      "notice": "Read-only published capability definitions and frozen evidence. This does not assert live availability, execution permission or processed business data.",
+      "noAccess": "A Platform User session and platform ontology read permission are required.",
+      "capability": "Capability",
+      "owner": "Owner module",
+      "graph": "Concept relationships",
+      "concepts": "Concept definitions",
+      "conditions": "Preconditions",
+      "effects": "Operation effects",
+      "excluded": "Excluded effects",
+      "requirements": "Fact and assistance entry points",
+      "coverage": "Modeling coverage",
+      "coverageNotice": "Selected modeled and unmodeled scopes only; not a full-module inventory or completeness score.",
+      "modeled": "Modeled",
+      "not_modeled": "Not modeled",
+      "summary": "Scope description",
+      "bindings": "Member evidence bindings",
+      "member": "Definition member",
+      "identifier": "Member ID",
+      "allMembers": "Show all members",
+      "sources": "Source evidence",
+      "path": "Repository path",
+      "anchor": "Location anchor",
+      "commit": "Source commit",
+      "kinds": { "normative": "Concepts and standards", "contract": "Public contract", "implementation": "Implementation", "test": "Tests", "procedure": "Procedure" }
+    },
     "trial": {
       "title": "Ontology rule trial",
       "notice": "Evaluate manual hypotheses only. No business data is read and no registration, attendance or count is verified.",

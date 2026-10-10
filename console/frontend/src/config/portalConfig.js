@@ -27,7 +27,7 @@ export const MODULE_GROUPS = [
 // label/desc 值为 i18n key，渲染时通过 t(card.label) / t(card.desc) 翻译
 
 export const ALL_HOME_CARDS = [
-  { module: 'ontology', label: 'console.modules.ontology.label', icon: Connection, cssVar: '--el-color-primary', desc: 'console.modules.ontology.desc', contexts: ['tenant'], permissions: ['ontology.revision.read'] },
+  { module: 'ontology', label: 'console.modules.ontology.label', icon: Connection, cssVar: '--el-color-primary', desc: 'console.modules.ontology.desc', access: [{ context: 'tenant', permissions: ['ontology.revision.read'] }, { context: 'platform', permissions: ['ontology.platform_definition.read'] }] },
   { module: 'transfer',     label: 'console.modules.transfer.label',     icon: Upload,       cssVar: '--addp-module-transfer',     desc: 'console.modules.transfer.desc', access: [
     { context: 'tenant', permissions: ['transfer.task.read'] },
     { context: 'tenant', permissionMode: 'all', permissions: ['transfer.task.create', 'meta.catalog.read'] },
@@ -194,7 +194,10 @@ export const DEFAULT_ROUTES = {
 export const SIDEBAR_MENUS = {
   ontology: {
     label: 'console.menus.ontology.label', icon: Connection,
-    items: [{ index: '/ontology/ontologies', icon: Connection, label: 'console.menus.ontology.list', contexts: ['tenant'], permissions: ['ontology.revision.read'] }],
+    items: [
+      { index: '/ontology/platform/definitions', icon: Connection, label: 'console.menus.ontology.platform', contexts: ['platform'], permissions: ['ontology.platform_definition.read'] },
+      { index: '/ontology/ontologies', icon: Connection, label: 'console.menus.ontology.list', contexts: ['tenant'], permissions: ['ontology.revision.read'] }
+    ],
   },
   transfer: {
     label: 'console.menus.transfer.label', icon: Upload,

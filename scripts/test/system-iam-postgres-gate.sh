@@ -154,7 +154,7 @@ case "$TEST_FILTER" in
             echo "ontology-backend test requires --package migration" >&2
             exit 2
         fi
-        test_pattern='^TestOntology(Runtime|Backend)ForwardMigrationAgainstPostgres$'
+        test_pattern='^Test(Ontology(Runtime|Backend)|PlatformOntologyInspection)ForwardMigrationAgainstPostgres$'
         ;;
     internal-task-authorization)
         if [ "$PACKAGE_FILTER" != "iam" ]; then

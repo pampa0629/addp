@@ -14,8 +14,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 490 {
-		t.Fatalf("descriptor count = %d, want 490", len(descriptors))
+	if len(descriptors) != 491 {
+		t.Fatalf("descriptor count = %d, want 491", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -32,6 +32,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.prometheus_runtime", []string{"monitor.metrics_discovery.read"})
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if key == "ontology.platform_definition.read" && role.Key != "platform.system_administrator" {
+				t.Fatalf("built-in role %q unexpectedly grants platform inspection", role.Key)
+			}
 			if key == PlatformDefinitionPublishPermission && role.Key != "platform.ontology_runtime" {
 				t.Fatalf("built-in role %q unexpectedly grants platform publication", role.Key)
 			}

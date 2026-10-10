@@ -25,8 +25,14 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())
 	api := router.Group("/api/v1/ontology")
-	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}), commonauth.MustNewContextGuard("tenant"))
+	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}))
 	h := &Handler{revisions: revisions, platformDefinitions: platformDefinitions, issuer: issuer}
+	inspection := api.Group("/platform/definitions")
+	inspection.Use(commonauth.MustNewContextGuard("platform"), platformUserBoundary,
+		commonauth.MustNewPermissionGuard(permissions.PermissionOntologyPlatformDefinitionRead), platformReadScope)
+	inspection.GET("", h.PlatformDefinitions)
+	inspection.GET("/:capability", h.PlatformDefinition)
+	api.Use(commonauth.MustNewContextGuard("tenant"))
 	api.GET("/platform/capabilities", semanticBoundary("platform.capabilities.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.PlatformCapabilities)
 	api.GET("/platform/capabilities/:capability", semanticBoundary("platform.capability.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.PlatformCapabilityContext)
 	api.GET("/ontologies/:ontology_id/semantic/classes", semanticBoundary("ontology.classes.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ListClasses)
@@ -74,11 +80,19 @@ func semanticBoundary(tool string) gin.HandlerFunc {
 }
 
 func userBoundary(c *gin.Context) {
+	userTokenBoundary(c, true)
+}
+
+func platformUserBoundary(c *gin.Context) {
+	userTokenBoundary(c, false)
+}
+
+func userTokenBoundary(c *gin.Context, tenant bool) {
 	a, ok := commonauth.AuthContextFromGin(c)
 	fields := strings.Fields(c.GetHeader("Authorization"))
 	validToken := a.Token.Type == "first_party_access_token" ||
 		(a.Token.Type == "oauth_access_token" && slices.Contains(a.Client.Scopes, "addp.api") && slices.Contains(a.Client.Audiences, "addp.api"))
-	if !ok || a.Principal.Type != "user" || a.Context.TenantMembershipID == nil || !validToken ||
+	if !ok || a.Principal.Type != "user" || (tenant && a.Context.TenantMembershipID == nil) || !validToken ||
 		len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") || !strings.HasPrefix(fields[1], "addp_at_") {
 		c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: commoni18n.T(c, commoni18n.MsgForbidden), ErrorCode: "permission_denied"})
 		return
@@ -87,6 +101,16 @@ func userBoundary(c *gin.Context) {
 	defer cancel()
 	c.Request = c.Request.WithContext(ctx)
 	c.Next()
+}
+
+func platformReadScope(c *gin.Context) {
+	for _, scope := range commonauth.RolePermissionScopes(c, permissions.PermissionOntologyPlatformDefinitionRead) {
+		if scope.Type == "platform" {
+			c.Next()
+			return
+		}
+	}
+	c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: commoni18n.T(c, commoni18n.MsgForbidden), ErrorCode: "permission_denied"})
 }
 
 // A Role Permission candidate is not an effective Tenant-wide grant.

@@ -9,10 +9,12 @@ import App from './App.vue'
 import router from './router'
 import zh from './i18n/zh-cn.json'
 import en from './i18n/en.json'
+import graphZh from '../../../common-frontend/graph/src/i18n/zh-cn.json'
+import graphEn from '../../../common-frontend/graph/src/i18n/en.json'
 
 const app = createApp(App)
 const { i18n, init } = createAddpI18n({
-  moduleMessages: { 'zh-cn': zh, en },
+  moduleMessages: { 'zh-cn': { ...graphZh, ...zh }, en: { ...graphEn, ...en } },
   listenToConsole: true
 })
 app.use(createPinia()).use(i18n).use(router)

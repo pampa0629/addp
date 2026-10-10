@@ -17,5 +17,5 @@ const { t } = useI18n(),
   route = useRoute(),
   auth = useAuthStore()
 const authenticated = () =>
-  router.replace(resolveLoginRedirect(route.query.redirect, '/ontologies'))
+  router.replace(resolveLoginRedirect(route.query.redirect, '/'))
 </script>

@@ -88,6 +88,10 @@ export async function installBackend(context, options = {}) {
       head.activation_version++
     }
   }
+  if (options.contextType === 'platform') {
+    state.authContext.context = { type: 'platform' }
+    state.authContext.authorization.role_assignments[0].scope = { type: 'platform' }
+  }
   await context.addInitScript(
     (locale) => localStorage.setItem('addp-lang', locale),
     options.locale || 'zh-cn'

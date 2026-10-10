@@ -32,7 +32,7 @@ console/frontend/
 - 新增前端模块入口时，优先更新 `console/frontend/src/config/portalConfig.js`，并同步健康检查或 Swagger 代理配置。
 - “数据准备”分组及首页卡片按 Transfer、Meta、Security、Manager 排列；“数据治理”分组包含 Standard、Model、Quality、Ontology。分组只表达产品导航，Security 继续独立拥有数据保护控制面，纳管仍由用户显式发起。
 - Transfer 有任务读取权限时，Console 侧栏只显示“传输任务”，创建操作由任务列表的主按钮进入；仅有创建权限且具备 `meta.catalog.read` 时，侧栏以“创建传输任务”作为模块入口。创建页对前者保持任务列表菜单选中，对后者保持创建菜单选中；直接地址仍按各页面 Permission 校验。
-- Ontology 的具体入口为“领域本体 → 领域本体建模”（`/ontology/ontologies`），仅当前 Tenant 且具有 `ontology.revision.read` 时显示；权限过滤后没有可见子项的模块不渲染空父菜单，不自动扩张角色权限。
+- Ontology 入口按互斥上下文分离：Tenant 的“领域本体建模”（`/ontology/ontologies`）要求 `ontology.revision.read`；Platform User 的“平台本体核实”（`/ontology/platform/definitions`）要求 `ontology.platform_definition.read`，只读已发布能力及依据，不提供建模/发布。权限过滤后没有可见子项的模块不渲染空父菜单。
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。
 - 右上角账号菜单只提供一个“个人中心”入口 `/system/account`，由 System 页面分类展示基本信息、组织归属和账号安全。无需 IAM 管理 Permission；分类以 `tab=organization|security` 恢复，默认基本信息省略 query。Console 不复制组织成员事实或个人页面逻辑。
 - AuthContext 刷新期间清空旧候选权限，隐藏并保留当前路由 iframe；加载失败提供重试。同一 Principal、Context 和 Tenant Membership 重新获得当前页权限后恢复原实例，权限撤销、身份或上下文改变、退出及跨页导航卸载旧实例。`make test-console-frontend` 覆盖未保存草稿、故障重试和身份隔离；真实 Nginx T4 必须确认 iframe 实例及内存状态未因刷新丢失。

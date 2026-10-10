@@ -45,6 +45,7 @@ type Handler struct {
 }
 
 type PlatformContextReader interface {
+	PlatformDefinition(context.Context, string) (service.PlatformDefinition, error)
 	PlatformCapabilityContext(context.Context, string) (platform.Context, error)
 	PlatformCapabilities(context.Context) (platform.Catalog, error)
 }

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { createAuthGuard } from '@common-ui'
+import { resolveModuleLandingRoute } from '@common-ui/authorization/consoleRouteAccess'
 import { useAuthStore } from '../store/auth'
 import Layout from '../components/Layout.vue'
 const router = createRouter({
@@ -14,9 +15,20 @@ const router = createRouter({
     {
       path: '/',
       component: Layout,
-      redirect: '/ontologies',
       meta: { requiresAuth: true },
       children: [
+        {
+          path: '',
+          beforeEnter: () => {
+            const auth = useAuthStore()
+            return resolveModuleLandingRoute('/ontology', ['/platform/definitions', '/ontologies'], auth.contextType, auth.permissions)
+          },
+          meta: { handlesForbidden: true }
+        },
+        {
+          path: 'platform/definitions/:capability?',
+          component: () => import('../views/PlatformDefinitions.vue')
+        },
         {
           path: 'ontologies',
           component: () => import('../views/OntologyList.vue')

@@ -3,6 +3,8 @@ export function createOntologyAPI(client) {
   const head = (id) => `/ontologies/${encodeURIComponent(id)}`
   const revision = (id, number) => `${head(id)}/revisions/${number}`
   return {
+    platformDefinitions: (signal) => client.get('/platform/definitions', { signal }).then(payload),
+    platformDefinition: (capability, signal) => client.get(`/platform/definitions/${encodeURIComponent(capability)}`, { signal }).then(payload),
     classes: (id) => client.get(`${head(id)}/semantic/classes`).then(payload),
     classContext: (id, classID, binding) =>
       client

@@ -6,6 +6,7 @@ const anyOf = (context, ...permissions) => ({ context, permissions })
 
 export const CONSOLE_ROUTE_ACCESS = {
   '/ontology/ontologies': [tenant('ontology.revision.read')],
+  '/ontology/platform/definitions': [platform('ontology.platform_definition.read')],
   '/transfer/tasks': [tenant('transfer.task.read')],
   '/transfer/tasks/create': [tenant('transfer.task.create', 'meta.catalog.read')],
   '/meta/scan': [tenant('meta.catalog.read', 'meta.scan_task.read', 'system.engine_catalog.read')],

@@ -84,6 +84,11 @@ func testPlatformPublication(t *testing.T, db *gorm.DB) {
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatal("wrong PG snapshot", got, err)
 		}
+		inspection, err := reader.PlatformDefinition(ctx, capability)
+		review, _ := snapshot.Review()
+		if err != nil || !reflect.DeepEqual(inspection.Context, want) || !reflect.DeepEqual(inspection.Review, review) {
+			t.Fatal("inspection did not restore active release", inspection, err)
+		}
 		catalog, err = reader.PlatformCapabilities(ctx)
 		if err != nil {
 			t.Fatal(err)

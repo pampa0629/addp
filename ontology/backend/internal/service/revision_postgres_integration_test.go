@@ -174,7 +174,7 @@ func cleanupFixture(t *testing.T, db *gorm.DB) {
 		return
 	}
 	if err := cleanup.Raw("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='ontology')").Scan(&present).Error; err != nil || present {
-		t.Error("schema cleanup failed")
+		t.Errorf("schema cleanup failed: present=%t error=%v", present, err)
 	}
 }
 

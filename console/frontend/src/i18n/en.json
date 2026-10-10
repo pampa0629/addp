@@ -454,7 +454,8 @@
     "menus": {
       "ontology": {
         "label": "Domain ontology",
-        "list": "Domain ontology modeling"
+        "list": "Domain ontology modeling",
+        "platform": "Platform ontology inspection"
       },
       "transfer": {
         "label": "Data Transfer",

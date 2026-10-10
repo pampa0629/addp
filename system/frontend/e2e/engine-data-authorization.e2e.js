@@ -637,7 +637,7 @@ test('authorization history page two stays selected while loading', async ({ pag
   expect(new URL(historyReads.at(-1)).searchParams.get('page')).toBe('2')
 })
 
-test('table and recipient filters cover all pages, persist across list modes and reset together', async ({ page }) => {
+test('automatic table and recipient filters cover all pages, persist across list modes and clear independently', async ({ page }) => {
   const history = Array.from({ length: 25 }, (_, index) => ({ ...historicalGrant(), request_id: `filter-${index}`,
     catalog_path: { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: `filter_${index}` }] } }))
   history.push({ ...history[0], request_id: 'other-account', recipient_id: '34' },
@@ -647,10 +647,10 @@ test('table and recipient filters cover all pages, persist across list modes and
   await page.goto('/engines/2?tab=data-authorization')
   const panel = page.getByTestId('engine-source-grants'), list = panel.getByTestId('source-grant-list')
   const search = panel.getByTestId('source-grant-table-filter')
-  const query = panel.getByTestId('source-grant-filter-query')
+  await expect(panel.getByTestId('source-grant-filter-query')).toHaveCount(0)
+  await expect(panel.getByTestId('source-grant-filter-reset')).toHaveCount(0)
   await expect(panel.locator('.el-pagination')).toContainText('27')
   await search.fill(' filter_24 ')
-  await query.click()
   await expect(list.getByRole('row').filter({ hasText: 'filter_24' })).toHaveCount(1)
   await expect(panel.locator('.el-pagination')).toContainText('1')
   await search.fill('filter_')
@@ -659,22 +659,18 @@ test('table and recipient filters cover all pages, persist across list modes and
   await panel.getByTestId('source-grant-recipient-filter').locator('.el-select').click()
   await page.getByRole('option').filter({ hasText: 'Outdoor reader' }).click()
   await search.fill('')
-  await query.click()
   await expect(panel.locator('.el-pagination')).toContainText('25')
   const accountOnly = new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams
   expect(accountOnly.get('recipient_type')).toBe('user')
   expect(accountOnly.get('recipient_id')).toBe('33')
   expect(accountOnly.has('table_search')).toBe(false)
   await search.fill('filter_')
-  await query.click()
+  await expect.poll(() => new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams.get('table_search')).toBe('filter_')
   await expect(panel.locator('.el-pagination')).toContainText('25')
   await expect(list).not.toContainText('Outdoor department')
   await panel.locator('.el-pager').getByText('2', { exact: true }).click()
   await expect(list).toContainText('filter_24')
-  // Unsubmitted text is not applied by refresh or paging.
-  await search.fill('unsubmitted')
-  await panel.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(list).toContainText('filter_24')
+  // Paging retains the automatically applied conditions.
   let last = new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams
   expect(last.get('table_search')).toBe('filter_')
   expect(last.get('recipient_type')).toBe('user')
@@ -687,8 +683,15 @@ test('table and recipient filters cover all pages, persist across list modes and
   expect(last.get('recipient_type')).toBe('user')
   expect(last.get('recipient_id')).toBe('33')
   expect(last.get('page')).toBe('1')
-  await panel.getByTestId('source-grant-filter-reset').click()
-  await expect(search).toHaveValue('')
+  await search.fill('')
+  await expect(panel.locator('.el-pagination')).toContainText('26')
+  const recipient = panel.getByTestId('source-grant-recipient-filter')
+  await recipient.hover()
+  await recipient.locator('.el-select__clear').click()
+  await expect(panel.locator('.el-pagination')).toContainText('27')
+  const type = panel.getByTestId('source-grant-type-filter')
+  await type.hover()
+  await type.locator('.el-select__clear').click()
   await expect(panel.locator('.el-pagination')).toContainText('28')
   last = new URL(reads.filter(url => url.includes('/access_grants/history')).at(-1)).searchParams
   expect(last.has('table_search')).toBe(false)
@@ -696,10 +699,10 @@ test('table and recipient filters cover all pages, persist across list modes and
   expect(last.has('recipient_id')).toBe(false)
   expect(last.get('page')).toBe('1')
   await search.fill('missing-table')
-  await query.click()
   await expect(panel.locator('.el-pagination')).toContainText('0')
   await expect(list.getByRole('row')).toHaveCount(1)
-  await panel.getByTestId('source-grant-filter-reset').click()
+  await search.hover()
+  await search.locator('..').locator('.el-input__clear').click()
   await expect(panel.locator('.el-pagination')).toContainText('28')
   expect(writes).toEqual([])
 })
@@ -711,11 +714,10 @@ test('organization filters use type and searchable identity without expanding me
   const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'iam.department.read', 'iam.project_group.read'], history })
   await page.goto('/engines/2?tab=data-authorization')
   const panel = page.getByTestId('engine-source-grants'), list = panel.getByTestId('source-grant-list')
-  const type = panel.getByTestId('source-grant-type-filter'), query = panel.getByTestId('source-grant-filter-query')
+  const type = panel.getByTestId('source-grant-type-filter')
   for (const [label, kind, name, code] of [['部门', 'department', 'Outdoor department', 'outdoor_dept'], ['项目组', 'project_group', 'Outdoor team', 'outdoor_stat']]) {
     await type.click()
     await page.getByRole('option', { name: label, exact: true }).click()
-    await query.click()
     await expect(panel.locator('.el-pagination')).toContainText(kind === 'department' ? '2' : '1')
     let last = new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams
     expect(last.get('recipient_type')).toBe(kind)
@@ -724,8 +726,9 @@ test('organization filters use type and searchable identity without expanding me
     await recipient.click()
     await recipient.getByRole('combobox').fill(code)
     await page.getByRole('option', { name: `${name} · ${code}`, exact: true }).click()
+    await expect.poll(() => new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams.get('recipient_id')).toBe('33')
     await panel.getByTestId('source-grant-table-filter').fill('activities')
-    await query.click()
+    await expect.poll(() => new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams.get('table_search')).toBe('activities')
     await expect(list.getByRole('row').filter({ hasText: name })).toHaveCount(1)
     await expect(list).not.toContainText('Outdoor reader')
     last = new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams
@@ -737,14 +740,15 @@ test('organization filters use type and searchable identity without expanding me
   await page.getByRole('option', { name: '部门', exact: true }).click()
   await panel.getByTestId('source-grant-recipient-filter').click()
   await page.getByRole('option', { name: 'Outdoor department · outdoor_dept', exact: true }).click()
-  await query.click()
   await panel.getByText('授权历史', { exact: true }).click()
   await expect(panel.locator('.el-pagination')).toContainText('2')
   await expect(list).toContainText('已撤销')
   const last = new URL(reads.filter(url => url.includes('/access_grants/history')).at(-1)).searchParams
   expect(last.get('recipient_type')).toBe('department')
   expect(last.get('recipient_id')).toBe('33')
-  await panel.getByTestId('source-grant-filter-reset').click()
+  await panel.getByTestId('source-grant-table-filter').fill('')
+  await type.hover()
+  await type.locator('.el-select__clear').click()
   await expect(panel.locator('.el-pagination')).toContainText('5')
   expect(writes).toEqual([])
 })
@@ -757,10 +761,53 @@ test('organization filter respects independent identity-read permission', async 
   await page.getByRole('option', { name: '部门', exact: true }).click()
   await expect(panel.getByTestId('source-grant-recipient-filter').locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
   await expect(panel).toContainText('无接收方名称查看权限')
-  await panel.getByTestId('source-grant-filter-query').click()
   await expect(panel.getByTestId('source-grant-list')).toContainText('部门')
   expect(reads.some(url => url.includes('/tenant/departments'))).toBe(false)
   expect(writes).toEqual([])
+})
+
+test('automatic text filtering debounces typing and isolates old responses before the next query', async ({ page }) => {
+  await page.clock.install()
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions, history: [historicalGrant()] })
+  let release, started
+  const blocked = new Promise(resolve => { release = resolve })
+  const requested = new Promise(resolve => { started = resolve })
+  await page.route('**/access_grants?**', async route => {
+    if (new URL(route.request().url()).searchParams.get('table_search') !== 'old') return route.fallback()
+    started(); await blocked
+    await route.fulfill({ json: { data: [{ ...historicalGrant(), grant_count: 1,
+      catalog_path: { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'old_response' }] } }], total: 1 } })
+  })
+  await page.goto('/engines/2?tab=data-authorization')
+  const panel = page.getByTestId('engine-source-grants'), list = panel.getByTestId('source-grant-list')
+  const input = panel.getByTestId('source-grant-table-filter')
+  await expect(list).toContainText('Outdoor reader')
+  await page.clock.pauseAt(new Date())
+  try {
+    await input.fill('old')
+    await page.clock.runFor(300)
+    await requested
+    await input.fill('missing')
+    const finished = page.waitForResponse(response => new URL(response.url()).searchParams.get('table_search') === 'old')
+    release(); await finished
+    await page.clock.runFor(100)
+    await expect(list).not.toContainText('old_response')
+    await input.fill('activities')
+    await page.clock.runFor(299)
+    expect(reads.some(url => new URL(url, browserTestOrigin('system')).searchParams.has('table_search'))).toBe(false)
+    await page.clock.runFor(1)
+    await expect(list).toContainText('activities')
+    expect(reads.filter(url => new URL(url, browserTestOrigin('system')).searchParams.has('table_search'))).toHaveLength(1)
+    // Switching views flushes pending text once instead of querying an old filter.
+    await input.fill('missing')
+    await panel.getByText('授权历史', { exact: true }).click()
+    await expect(panel.locator('.el-pagination')).toContainText('0')
+    await page.clock.runFor(400)
+    const historyReads = reads.filter(url => url.includes('/access_grants/history'))
+    expect(historyReads).toHaveLength(1)
+    expect(new URL(historyReads[0]).searchParams.get('table_search')).toBe('missing')
+    expect(writes).toEqual([])
+  } finally { release() }
 })
 
 test('unauthorized recipient type never loads candidates or issues grants', async ({ page }) => {

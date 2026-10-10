@@ -454,7 +454,8 @@
     "menus": {
       "ontology": {
         "label": "领域本体",
-        "list": "领域本体建模"
+        "list": "领域本体建模",
+        "platform": "平台本体核实"
       },
       "transfer": {
         "label": "数据传输",

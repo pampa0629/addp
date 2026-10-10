@@ -57,23 +57,19 @@
       </el-radio-group>
       <el-form class="grant-filters" label-position="top" data-testid="source-grant-filters" @submit.prevent="applyFilters">
         <el-form-item :label="t('system.engine.dataAuthorization.target')">
-          <el-input v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter" :placeholder="t('system.engine.sourceGrants.tableSearch')" maxlength="200" clearable />
+          <el-input v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter" :placeholder="t('system.engine.sourceGrants.tableSearch')" maxlength="200" clearable @input="scheduleFilters" />
         </el-form-item>
         <el-form-item class="recipient-type-filter" :label="t('system.engine.sourceGrants.recipientType')">
-          <el-select v-model="filterDraft.recipientType" data-testid="source-grant-type-filter" clearable :placeholder="t('system.engine.sourceGrants.allRecipientTypes')" @change="filterDraft.recipientID = ''">
+          <el-select v-model="filterDraft.recipientType" data-testid="source-grant-type-filter" clearable :placeholder="t('system.engine.sourceGrants.allRecipientTypes')" @change="changeRecipientType">
             <el-option v-for="kind in Object.keys(recipientSources)" :key="kind" :value="kind" :label="t(`system.engine.sourceGrants.types.${kind}`)" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('system.engine.sourceGrants.recipient')">
-          <TenantMemberSelect v-if="filterDraft.recipientType === 'user'" v-model="filterDraft.recipientID" data-testid="source-grant-recipient-filter" :members="filterMembers" principal-type="user" value-field="principal_id" stringify-value :disabled="!canReadFilterRecipients || filterRecipientStatus !== 'ready'" :loading="filterRecipientStatus === 'loading'" :placeholder="t('system.engine.sourceGrants.allAccounts')" :current-membership-id="auth.authContext?.context?.tenant_membership_id" />
-          <el-select v-else v-model="filterDraft.recipientID" data-testid="source-grant-recipient-filter" filterable clearable :disabled="!filterDraft.recipientType || !canReadFilterRecipients || filterRecipientStatus !== 'ready'" :loading="filterRecipientStatus === 'loading'" :placeholder="t(filterDraft.recipientType ? 'system.engine.sourceGrants.allRecipients' : 'system.engine.sourceGrants.selectRecipientType')">
+          <TenantMemberSelect v-if="filterDraft.recipientType === 'user'" v-model="filterDraft.recipientID" data-testid="source-grant-recipient-filter" :members="filterMembers" principal-type="user" value-field="principal_id" stringify-value :disabled="!canReadFilterRecipients || filterRecipientStatus !== 'ready'" :loading="filterRecipientStatus === 'loading'" :placeholder="t('system.engine.sourceGrants.allAccounts')" :current-membership-id="auth.authContext?.context?.tenant_membership_id" @change="applyFilters" />
+          <el-select v-else v-model="filterDraft.recipientID" data-testid="source-grant-recipient-filter" filterable clearable :disabled="!filterDraft.recipientType || !canReadFilterRecipients || filterRecipientStatus !== 'ready'" :loading="filterRecipientStatus === 'loading'" :placeholder="t(filterDraft.recipientType ? 'system.engine.sourceGrants.allRecipients' : 'system.engine.sourceGrants.selectRecipientType')" @change="applyFilters">
             <el-option v-for="item in filterOrganizations" :key="item.id" :value="String(item.id)" :label="[item.name, item.code].filter(Boolean).join(' · ')" />
           </el-select>
         </el-form-item>
-        <div class="filter-actions">
-          <el-button type="primary" native-type="submit" data-testid="source-grant-filter-query">{{ t('common.search') }}</el-button>
-          <el-button data-testid="source-grant-filter-reset" @click="resetFilters">{{ t('common.reset') }}</el-button>
-        </div>
       </el-form>
       <p class="filter-hint">{{ t('system.engine.sourceGrants.recipientFilterBoundary') }}</p>
       <el-alert v-if="filterDraft.recipientType && (!canReadFilterRecipients || filterRecipientStatus === 'failed')" type="warning" :closable="false" :title="t(`system.engine.sourceGrants.recipientNames.${canReadFilterRecipients ? 'failed' : 'forbidden'}`)" />
@@ -145,6 +141,7 @@ const candidates = ref([]), members = ref([]), candidateLoading = ref(false), fo
 const outcomes = ref([])
 const revokeVisible = ref(false), revokeRow = ref(null), revokeReason = ref(''), revokeError = ref(''), revoking = ref(false)
 let generation = 0, readSequence = 0, candidateSequence = 0
+let filterTimer = null
 const message = e => e?.response?.data?.error || t('system.engine.sourceGrants.failed')
 const formatTime = value => new Date(value).toLocaleString(locale.value)
 const expiryLabel = row => row.expiry_mode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(row.expires_at)
@@ -200,6 +197,7 @@ async function inspect() {
   finally { if (current()) inspecting.value = false }
 }
 async function load() {
+  if (filterTimer !== null) captureFilters()
   if (!canRead.value) return
   clearInspection()
   const epoch = generation, seq = ++readSequence
@@ -216,15 +214,26 @@ async function load() {
   } catch (e) { if (epoch === generation && seq === readSequence) error.value = message(e) }
   finally { if (epoch === generation && seq === readSequence) loading.value = false }
 }
-function changePage(value) { if (value === page.value) return; page.value = value; load() }
-function changeListMode() { page.value = 1; load() }
-function applyFilters() {
+function changePage(value) { if (filterTimer !== null) return applyFilters(); if (value === page.value) return; page.value = value; load() }
+function changeListMode() { applyFilters() }
+function cancelFilterTimer() { clearTimeout(filterTimer); filterTimer = null }
+function captureFilters() {
+  cancelFilterTimer()
   const tableSearch = filterDraft.tableSearch.trim()
   appliedFilters.value = { ...(tableSearch ? { table_search: tableSearch } : {}),
     ...(filterDraft.recipientType ? { recipient_type: filterDraft.recipientType, ...(filterDraft.recipientID ? { recipient_id: filterDraft.recipientID } : {}) } : {}) }
-  page.value = 1; load()
+  page.value = 1
 }
-function resetFilters() { filterDraft.tableSearch = ''; filterDraft.recipientType = ''; filterDraft.recipientID = ''; applyFilters() }
+function applyFilters() { captureFilters(); load() }
+function changeRecipientType() { filterDraft.recipientID = ''; applyFilters() }
+function scheduleFilters() {
+  cancelFilterTimer()
+  // Invalidate in-flight results as soon as input changes, before the debounce.
+  readSequence++; rows.value = []; error.value = ''; clearInspection()
+  if (!filterDraft.tableSearch.trim()) return applyFilters()
+  loading.value = true
+  filterTimer = setTimeout(applyFilters, 300)
+}
 async function loadCandidates() {
   const epoch = generation, seq = ++candidateSequence, kind = form.recipientType
   candidates.value = []; members.value = []; form.recipientID = ''; candidateLoading.value = false; formError.value = ''
@@ -302,14 +311,14 @@ watch(() => JSON.stringify(props.requirements), () => {
 watch([() => props.engine.id, () => props.engine.lifecycle_state, () => auth.authContext?.principal?.id, () => auth.authContext?.context?.tenant_id,
   () => auth.authContext?.context?.tenant_membership_id, () => auth.authContext?.authorization?.authorization_version, canRead, canCreate, canRevoke,
   ...Object.values(recipientSources).map(source => () => auth.hasPermission(source.permission))], () => {
-  generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; recipientNames.value = {}; total.value = 0; page.value = 1
+  cancelFilterTimer(); generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; recipientNames.value = {}; total.value = 0; page.value = 1
   clearInspection(); inspectionAccount.value = ''
   filterDraft.tableSearch = ''; filterDraft.recipientType = ''; filterDraft.recipientID = ''; appliedFilters.value = {}; filterMembers.value = []
   saving.value = revoking.value = loading.value = false; revokeVisible.value = false; error.value = formError.value = success.value = ''; emit('close'); load()
 }, { immediate: true })
 watch([saving, attempt], () => emit('busy', saving.value || !!attempt.value), { immediate: true })
 watch([() => JSON.stringify(props.inspectionTarget), inspectionAccount], clearInspection, { flush: 'sync' })
-onBeforeUnmount(() => { generation++; clearInspection() })
+onBeforeUnmount(() => { cancelFilterTimer(); generation++; clearInspection() })
 </script>
 
 <style scoped>
@@ -321,7 +330,6 @@ h3 { margin: 0; }
 .grant-filters .el-form-item { flex: 1 1 260px; min-width: 0; margin-bottom: 0; }
 .grant-filters .recipient-type-filter { flex: 0 1 180px; }
 .grant-filters :deep(.iam-member-select) { min-width: 0; }
-.filter-actions { display: flex; padding-bottom: 1px; }
 .filter-hint { margin: 0; color: var(--addp-text-secondary); }
 p { overflow-wrap: anywhere; }
 </style>

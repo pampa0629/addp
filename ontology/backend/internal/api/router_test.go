@@ -36,6 +36,7 @@ type fakeCommands struct {
 	trialFacts      map[string]semantic.Fact
 	platformCalls   int
 	platformContext platform.Context
+	platformReview  platform.Review
 	platformErr     error
 }
 
@@ -60,6 +61,11 @@ func (f *fakeCommands) PlatformCapabilities(_ context.Context) (platform.Catalog
 		items = append(items, f.platformContext)
 	}
 	return platform.Catalog{SchemaVersion: "addp.platform-capability-catalog/v1", Capabilities: items}, f.platformErr
+}
+
+func (f *fakeCommands) PlatformDefinition(ctx context.Context, capability string) (service.PlatformDefinition, error) {
+	d, err := f.PlatformCapabilityContext(ctx, capability)
+	return service.PlatformDefinition{Context: d, Review: f.platformReview}, err
 }
 
 func (f *fakeCommands) record(a models.Actor, s semantic.Scope, version uint64) (*models.Revision, error) {

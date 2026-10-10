@@ -60,8 +60,10 @@ const Host = {
       },
       { acknowledgePending: true }
     )
-    const permissions = new URL(location.href).searchParams.get('access') === 'none' ? [] : ['ontology.revision.read']
-    const menus = filterSidebarMenus(SIDEBAR_MENUS, 'tenant', permissions)
+    const params = new URL(location.href).searchParams
+    const contextType = params.get('context') === 'platform' ? 'platform' : 'tenant'
+    const permissions = params.get('access') === 'none' ? [] : [contextType === 'platform' ? 'ontology.platform_definition.read' : 'ontology.revision.read']
+    const menus = filterSidebarMenus(SIDEBAR_MENUS, contextType, permissions)
     return { src, key, route, guard, menus, navigate: (path) => router.push(path), leave: () => router.push('/other') }
   },
   render() {

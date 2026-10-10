@@ -2,6 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { allowsConsoleRoute, resolveModuleLandingRoute } from '../src/authorization/consoleRouteAccess.js'
 
+test('Ontology platform inspection and Tenant modeling have disjoint entry permissions', () => {
+  const paths = ['/platform/definitions', '/ontologies']
+  assert.equal(resolveModuleLandingRoute('/ontology', paths, 'platform', ['ontology.platform_definition.read']), '/platform/definitions')
+  assert.equal(resolveModuleLandingRoute('/ontology', paths, 'tenant', ['ontology.revision.read']), '/ontologies')
+  assert.equal(resolveModuleLandingRoute('/ontology', paths, 'tenant', ['ontology.platform_definition.read']), '/forbidden')
+  assert.equal(allowsConsoleRoute('/ontology/platform/definitions/transfer.task.create', 'platform', ['ontology.platform_definition.read']), true)
+  assert.equal(allowsConsoleRoute('/ontology/platform/definitions/transfer.task.create', 'platform', ['ontology.platform_definition.publish']), false)
+})
+
 test('Manager artifact consumer reaches Data Explorer with its eight permissions', () => {
   const permissions = [
     'manager.data_item.read', 'manager.derived_artifact.create',

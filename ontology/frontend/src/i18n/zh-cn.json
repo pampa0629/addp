@@ -1,5 +1,32 @@
 {
   "ontology": {
+    "platform": {
+      "title": "平台本体核实",
+      "notice": "只读查看当前已发布的能力定义及冻结依据。不表示模块当前可用、操作已获授权或业务数据已经处理。",
+      "noAccess": "需要平台用户会话及平台本体读取权限。",
+      "capability": "能力标识",
+      "owner": "所属模块",
+      "graph": "概念关系图",
+      "concepts": "概念定义",
+      "conditions": "前置条件",
+      "effects": "操作效果",
+      "excluded": "不产生的效果",
+      "requirements": "事实读取与辅助入口",
+      "coverage": "建模覆盖范围",
+      "coverageNotice": "仅说明选定能力的已建模与未建模范围，不是整个模块的功能清单或完整度评分。",
+      "modeled": "已建模",
+      "not_modeled": "未建模",
+      "summary": "范围说明",
+      "bindings": "成员与依据对应",
+      "member": "定义成员",
+      "identifier": "成员标识",
+      "allMembers": "查看全部成员",
+      "sources": "来源依据",
+      "path": "仓库路径",
+      "anchor": "定位锚点",
+      "commit": "来源提交",
+      "kinds": { "normative": "概念与规范", "contract": "公开契约", "implementation": "实现依据", "test": "测试依据", "procedure": "操作步骤" }
+    },
     "trial": {
       "title": "本体规则试算",
       "notice": "仅对手工假设输入求值，不读取业务数据，也不证明真实报名、到场或人数。",

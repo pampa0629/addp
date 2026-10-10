@@ -10,7 +10,10 @@
     </el-header>
     <el-container>
       <el-aside class="sidebar" width="176px">
-        <el-menu default-active="/ontologies" @select="navigate">
+        <el-menu :default-active="router.currentRoute.value.path.startsWith('/platform/') ? '/platform/definitions' : '/ontologies'" @select="navigate">
+          <el-menu-item v-if="canEnter('/platform/definitions')" index="/platform/definitions">
+            {{ t('ontology.platform.title') }}
+          </el-menu-item>
           <el-menu-item v-if="canEnter('/ontologies')" index="/ontologies">
             {{ t('ontology.list') }}
           </el-menu-item>
@@ -33,7 +36,7 @@ const canEnter = path => allowsConsoleRoute(`/ontology${path}`, auth.contextType
 const navigate = (path) => navigateConsoleModuleRoute(router, 'ontology', path)
 async function logout() {
   // Run the existing editor leave guard before revoking the session.
-  if (router.currentRoute.value.path !== '/ontologies') {
+  if (canEnter('/ontologies') && router.currentRoute.value.path !== '/ontologies') {
     const cancelled = await navigate('/ontologies')
     if (cancelled) return
   }

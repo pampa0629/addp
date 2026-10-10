@@ -3,6 +3,19 @@ import { CONSOLE_ROUTE_ACCESS, consoleRouteAccess } from '@common-ui'
 import { filterSidebarMenus, firstAccessibleModuleRoute, matchesNavigationAccess } from '../src/utils/navigationAccess'
 
 describe('Console page access', () => {
+  it('selects platform inspection without granting Tenant modeling or machine publication', async () => {
+    vi.stubGlobal('window', { location: { origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig')
+      const menus = { ontology: SIDEBAR_MENUS.ontology }
+      const visible = filterSidebarMenus(menus, 'platform', ['ontology.platform_definition.read']).ontology
+      expect(firstAccessibleModuleRoute(visible)).toBe('/ontology/platform/definitions')
+      expect(visible.items).toHaveLength(1)
+      expect(firstAccessibleModuleRoute(filterSidebarMenus(menus, 'tenant', ['ontology.revision.read']).ontology)).toBe('/ontology/ontologies')
+      expect(filterSidebarMenus(menus, 'tenant', ['ontology.platform_definition.read']).ontology.items).toEqual([])
+      expect(filterSidebarMenus(menus, 'platform', ['ontology.platform_definition.publish']).ontology.items).toEqual([])
+    } finally { vi.unstubAllGlobals() }
+  })
   it('offers Data Explorer to item readers without granting other Manager pages', async () => {
     vi.stubGlobal('window', { location: { origin: 'http://localhost' } })
     try {

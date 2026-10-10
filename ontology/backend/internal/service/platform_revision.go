@@ -54,6 +54,39 @@ func (s *PlatformRevisionService) PlatformCapabilityContext(ctx context.Context,
 	return restorePlatformContext(ctx, *record)
 }
 
+// PlatformDefinition is a read-only view of one authoritative frozen release.
+type PlatformDefinition struct {
+	Context platform.Context `json:"context"`
+	Review  platform.Review  `json:"review"`
+}
+
+func (s *PlatformRevisionService) PlatformDefinition(ctx context.Context, capability string) (PlatformDefinition, error) {
+	record, err := s.repo.ActivePlatformDefinition(ctx, capability)
+	if err != nil {
+		return PlatformDefinition{}, err
+	}
+	return restorePlatformDefinition(ctx, *record)
+}
+
+func restorePlatformDefinition(ctx context.Context, record models.PlatformRevision) (PlatformDefinition, error) {
+	snapshot, err := platform.Restore([]byte(record.Payload), record.Digest)
+	if err != nil {
+		return PlatformDefinition{}, repository.ErrIntegrity
+	}
+	definition, err := snapshot.Context()
+	if err != nil || definition.Capability != record.Capability || definition.Revision != record.Revision {
+		return PlatformDefinition{}, repository.ErrIntegrity
+	}
+	review, err := snapshot.Review()
+	if err != nil {
+		return PlatformDefinition{}, repository.ErrIntegrity
+	}
+	if err := ctx.Err(); err != nil {
+		return PlatformDefinition{}, err
+	}
+	return PlatformDefinition{Context: definition, Review: review}, nil
+}
+
 func (s *PlatformRevisionService) PlatformCapabilities(ctx context.Context) (platform.Catalog, error) {
 	records, err := s.repo.ActivePlatformDefinitions(ctx)
 	if errors.Is(err, repository.ErrPlatformCatalogTooLarge) {
