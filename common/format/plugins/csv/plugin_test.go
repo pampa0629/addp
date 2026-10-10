@@ -3,6 +3,7 @@ package csv
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"github.com/addp/common/datatype"
 	"io"
 	"strings"
@@ -441,5 +442,93 @@ func TestCSVPlugin_SampleTableFromPositionedReader(t *testing.T) {
 	}
 	if records[0]["name"] != "D" {
 		t.Fatalf("name = %#v, want D", records[0]["name"])
+	}
+}
+
+func TestDelimitedUTF8BOMHeaders(t *testing.T) {
+	for _, delimiter := range []rune{',', '\t'} {
+		t.Run(fmt.Sprintf("delimiter-%d", delimiter), func(t *testing.T) {
+			plugin := NewPlugin(nil)
+			if delimiter == '\t' {
+				plugin = NewTSVPlugin(nil)
+			}
+			data := fmt.Sprintf("\xef\xbb\xbf\"编号\"%c名称\r\n1%c北京\r\n", delimiter, delimiter)
+			info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Table.Fields[0].Name != "编号" || info.Table.Fields[1].Name != "名称" {
+				t.Fatalf("BOM/quoted headers = %#v", info.Table.Fields)
+			}
+			if info.AccessIndex.HeaderBytes != int64(strings.Index(data, "1")) {
+				t.Fatalf("header offset = %d, want source byte offset %d", info.AccessIndex.HeaderBytes, strings.Index(data, "1"))
+			}
+			rows, err := plugin.SampleTable(context.Background(), strings.NewReader(data), 0, 1, nil)
+			if err != nil || len(rows) != 1 || rows[0]["名称"] != "北京" || rows[0]["编号"] != int64(1) {
+				t.Fatalf("sample = %#v, %v", rows, err)
+			}
+			reader, err := plugin.OpenTableReader(context.Background(), strings.NewReader(data), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close(context.Background())
+			rows, err = reader.ReadRows(context.Background(), 1)
+			if err != nil || len(rows) != 1 || rows[0]["编号"] != int64(1) || rows[0]["名称"] != "北京" {
+				t.Fatalf("streamed row = %#v, %v", rows, err)
+			}
+		})
+	}
+}
+
+func TestCSVLargeUTF8BOMIndexedPages(t *testing.T) {
+	var data strings.Builder
+	data.WriteString("\xef\xbb\xbf\"id\",名称,备注\r\n")
+	for i := 0; i < 100003; i++ {
+		fmt.Fprintf(&data, "%d,城市%d,\"第一行\r\n第二行,含逗号\"\r\n", i, i)
+	}
+	source := data.String()
+	plugin := NewPlugin(nil)
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(source), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *info.Table.RowCount != 100003 || len(info.AccessIndex.Anchors) != 21 {
+		t.Fatalf("count/index = %#v", info.AccessIndex)
+	}
+	for _, offset := range []int64{4999, 5000, 5001, 99999, 100000, 100003} {
+		anchor := info.AccessIndex.Anchors[0]
+		for _, candidate := range info.AccessIndex.Anchors {
+			if candidate.Row <= offset {
+				anchor = candidate
+			}
+		}
+		opts := format.DefaultParseOptions()
+		opts.TableSample = &format.TableSampleOptions{Fields: info.Table.Fields, InputStartsAtRow: anchor.Row, InputIsPositioned: true}
+		rows, err := plugin.SampleTable(context.Background(), strings.NewReader(source[anchor.ByteOffset:]), offset, 20, opts)
+		if err != nil {
+			t.Fatalf("offset %d: %v", offset, err)
+		}
+		wantCount := min(int64(20), 100003-offset)
+		if int64(len(rows)) != wantCount {
+			t.Fatalf("offset %d returned %d rows, want %d", offset, len(rows), wantCount)
+		}
+		for i, row := range rows {
+			id := offset + int64(i)
+			if row["id"] != id || row["名称"] != fmt.Sprintf("城市%d", id) || row["备注"] != "第一行\n第二行,含逗号" {
+				t.Fatalf("offset %d row %d = %#v", offset, i, row)
+			}
+		}
+	}
+}
+
+func TestCSVPositionedInputPreservesBOMInData(t *testing.T) {
+	opts := format.DefaultParseOptions()
+	opts.TableSample = &format.TableSampleOptions{
+		Fields:           []datatype.FieldInfo{{Name: "value", Type: datatype.FieldTypeString}},
+		InputStartsAtRow: 5000, InputIsPositioned: true,
+	}
+	rows, err := NewPlugin(nil).SampleTable(context.Background(), strings.NewReader("\xef\xbb\xbf内容\n"), 5000, 1, opts)
+	if err != nil || len(rows) != 1 || rows[0]["value"] != "\ufeff内容" {
+		t.Fatalf("positioned BOM data = %#v, %v", rows, err)
 	}
 }

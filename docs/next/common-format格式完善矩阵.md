@@ -16,7 +16,7 @@
 | --- | --- |
 | GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级提交的 Raster Hosted 已通过计算、产物与执行页面复验，Manager Hosted 已通过 COG Range 读取和实际地图加载复验；范围限于所用真实夹具。 |
 | JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
-| CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；XLSX 已通过真实 NFS 四工作表的不同字段、空表、只有表头、未知总数逐页读取及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
+| CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；CSV/TSV 已补 UTF-8 BOM 表头与源字节索引处理，十万行索引分页有确定性回归，新增真实样例待重启后页面验收；GBK/UTF-16 转码尚未实现。XLSX 已通过真实 NFS 四工作表的不同字段、空表、只有表头、未知总数逐页读取及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
 | JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 空间预览已有实现和本地样例页面复核；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
 | 3DS / DAE / FBX / OBJ | 通过 Model3D 转自包含 GLB 后显示；按已验证的静态几何和基础材质范围支持，DAE / 3DS 的声明 PNG/JPEG 漫反射贴图已有真实转换验收。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
@@ -32,6 +32,8 @@
 同日补充 XLSX 容器交互的确定性浏览器回归：复用真实 Data Explorer、容器插件和共享表格组件，通过既有预览协议夹具验证从第二页切换到不同字段的工作表时重新请求第一页、删除旧字段；切到空工作表时清除旧行、旧列与分页，再切回原工作表恢复第一页。Common 另以实际序列化的 XLSX 字节验证四个工作表的容器发现、不同字段结构与指定 sheet 的分页取值，以及完全空白、只有表头两种工作表的零数据行；没有修改解析主线。上述确定性回归分别覆盖源文件解析和前端组合契约，仍未替代这些不同结构样例的真实 NFS 扫描、页面或 Hosted 验收。
 
 2026-10-11 补齐真实 XLSX 开发体验验收：Business NFS `doc/format-validation.xlsx` 经标准资源树发现及 item 深度刷新，四个工作表均可读取。Cities 的 25 行按 20 + 5 分页，总数显示未知，末页禁用下一页；Readings 显示独立的 sensor/temperature/status 三列及 18.5/正常，不残留 Cities 字段；Empty 为零行零列，HeaderOnly 为零数据行并保留 code/label 两列表头。标准下载为完整工作簿，6671 字节，SHA256 为 `298317ef570df925f901a878914018749e506589e9abd81b621fb159f1597854`，与源文件一致。验收发现深度刷新只重读 child，容器索引未更新；现已统一先重读容器再读取仍存在的当前 child，并保留选择、ref 与页码，移除的 child 转到新默认第一页，旧请求不得覆盖新选择。确定性浏览器回归已复现旧问题，再验证列数从 1 更新到 0 及第二页保留；真实页面确认深度刷新后 Cities 仍显示 21–25、Empty 仍选中且零列零行，无需整页刷新。这些记录证明本地开发体验，不替代 XLSX Hosted T4。
+
+同日核对 CSV 编码与大文件读取：现有 Encoding 选项没有执行通用字符集转码，不能据此声明 GBK/UTF-16 支持。共享 CSV/TSV 插件现统一在文件起点消费 UTF-8 BOM，避免首列名包含 BOM 或引号，同时将三个源字节计入 header 和稀疏 anchor 偏移；定位到数据行的输入不再消费 BOM。新增回归先复现旧实现失败，再验证 CSV/TSV 中文带引号表头、流式读取，以及 100003 行中文/CRLF/引号内换行样例在 offset 4999、5000、5001、99999、100000、100003 的索引分页和末页/空页。真实自建样例已放入 Business NFS `format-samples/csv/`：`utf8-bom-quoted.csv` 为 25 行/1153 字节，`utf8-bom-100003.csv` 为 100003 行/5177965 字节；独立 Python CSV 读取逐行核对全部字段，后者 SHA256 为 `3aa7759a3dce7481adb2a5511096e5ae88f88d97998181e3fdf547e699faff25`。样例未纳入 Git，页面扫描、分页及下载仍待用户重启共享后端后验收；确定性测试不代替该页面链路或 Hosted T4。
 
 2026-10-10 SGM 运行输入核对：按 `scripts/dev/supermap-workflow.sh` 的指纹规则，只读核对全部 C++ 源码与测试、CMake、Dockerfile、算子目录、启动文件、基础镜像 ID 及 `linux/arm64` 平台，当前输入和运行镜像标签均为 `34d46162201a5e56993900c0a54f1b03280afd88`。运行镜像为 `sha256:32f081d72f40e39a5eb1fb70b4e40ea98f26e8479e3e23eac41c2f53f7e6ec03`，健康检查通过；既有 2026-10-07 原生 SGM 转换与本地页面记录见 `docs/next/三维与点云后续路线.md`。本次标准镜像重建在 Ubuntu 软件源 HTTP 下载阶段返回 502，未进入 CTest；容器内访问同一软件源的 HTTPS 地址成功，HTTP 直连及经宿主代理仍失败。没有更换软件源、关闭签名校验、修改全局 Docker 设置或替换运行镜像，不把历史记录或健康检查记为本次 SDK 重建通过。
 
@@ -53,7 +55,7 @@
 
 | 格式 | 后续事项 |
 |---|---|
-| CSV / TSV | 还要核实大文件分页、编码、表头识别，继续收敛 CSV / TSV 的格式族口径，并补 access index 失效规则验证。 |
+| CSV / TSV | UTF-8 BOM、中文与引号内换行的十万行稀疏索引分页已补确定性回归；新增 NFS 样例待页面扫描、分页与下载验收。GBK/UTF-16 转码、无表头处理及 access index 失效规则仍需完善，不把 Encoding 选项当作已实现转码。 |
 | JSON / GeoJSON 编码 | GeoJSON 已升格为独立 `format=geojson`，`.json` 文件只有内容前缀严格匹配 `FeatureCollection` 时才升格；代码回归已覆盖普通 `.json` 不升格、`.json` GeoJSON deep scan 写入 `format_info.geojson`、Manager `format=geojson` 使用 map 预览材料。后续还要用真实样例核实大文件分页、复杂嵌套对象数组、GeoJSON 无 geometry / 混合 geometry、WKB / EWKB 空间渲染体验。 |
 | Parquet | MinIO / NFS 真实样例、`part-*` 和分区目录 whole scope Transfer 已验收；Hive-style 分区字段已能进入 schema 和 row。后续继续核实 schema 不兼容提示、大文件 row group 性能，并设计专用 range / footer 读取边界。 |
 | Shapefile | 还要用真实 NFS / MinIO / ZIP 样例核实本地 materialized fallback 也能继续利用 `.shx` 索引分页，嵌套 ZIP 中的 Shapefile 子项能正确归并 `.shp/.shx/.dbf` refs，不支持 shape 类型提示和前端空间表渲染体验；如需地图专用展示，应基于通用 table / spatial 预览 DTO 扩展前端渲染。 |

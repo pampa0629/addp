@@ -1,6 +1,7 @@
 package csv
 
 import (
+	"bufio"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -108,8 +109,7 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 		return nil, err
 	}
 	opts := p.effectiveOptions(options)
-	reader := csv.NewReader(input)
-	p.configureReaderWithOptions(reader, opts)
+	reader, _ := p.newReader(input, opts)
 	headers, err := reader.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV headers: %w", err)
@@ -126,15 +126,14 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	opts := p.effectiveOptions(options)
 
-	reader := csv.NewReader(input)
-	p.configureReaderWithOptions(reader, opts)
+	reader, prefixBytes := p.newReader(input, opts)
 
 	// 读取表头
 	headers, err := reader.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV headers: %w", err)
 	}
-	headerBytes := reader.InputOffset()
+	headerBytes := prefixBytes + reader.InputOffset()
 	index := p.newSparseRowIndex(opts, headerBytes)
 
 	// 读取样本数据用于类型推断
@@ -151,7 +150,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		}
 		sampleRows = append(sampleRows, record)
 		rowCount++
-		p.recordSparseRowAnchor(index, rowCount, reader.InputOffset())
+		p.recordSparseRowAnchor(index, rowCount, prefixBytes+reader.InputOffset())
 	}
 
 	// 继续统计剩余行数
@@ -164,7 +163,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			continue
 		}
 		rowCount++
-		p.recordSparseRowAnchor(index, rowCount, reader.InputOffset())
+		p.recordSparseRowAnchor(index, rowCount, prefixBytes+reader.InputOffset())
 	}
 	index.RowCount = rowCount
 
@@ -214,8 +213,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	opts := p.effectiveOptions(options)
 
-	reader := csv.NewReader(input)
-	p.configureReaderWithOptions(reader, opts)
+	reader, _ := p.newReader(input, opts)
 
 	headers, localSkip, err := p.sampleHeadersAndLocalSkip(reader, offset, opts)
 	if err != nil {
@@ -319,8 +317,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, fmt.Errorf("csv table reader requires input")
 	}
 	opts := p.effectiveOptions(options)
-	reader := csv.NewReader(input)
-	p.configureReaderWithOptions(reader, opts)
+	reader, _ := p.newReader(input, opts)
 
 	headers, _, err := p.sampleHeadersAndLocalSkip(reader, 0, opts)
 	if err != nil {
@@ -512,6 +509,23 @@ func csvValue(value interface{}) string {
 // configureReader 配置 CSV reader（使用默认 options）
 func (p *Plugin) configureReader(reader *csv.Reader) {
 	p.configureReaderWithOptions(reader, p.options)
+}
+
+// newReader 只在文件起点消费 BOM，索引仍使用源文件字节偏移。
+func (p *Plugin) newReader(input io.Reader, opts *format.ParseOptions) (*csv.Reader, int64) {
+	var prefixBytes int64
+	if opts.TableSample == nil || !opts.TableSample.InputIsPositioned {
+		buffered := bufio.NewReader(input)
+		prefix, _ := buffered.Peek(3)
+		if string(prefix) == "\xef\xbb\xbf" {
+			_, _ = buffered.Discard(3)
+			prefixBytes = 3
+		}
+		input = buffered
+	}
+	reader := csv.NewReader(input)
+	p.configureReaderWithOptions(reader, opts)
+	return reader, prefixBytes
 }
 
 // configureReaderWithOptions 配置 CSV reader（使用指定 options）
