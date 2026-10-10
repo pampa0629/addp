@@ -129,11 +129,27 @@ func (s *HybridSearchService) fenceContentIndex(ctx context.Context) error {
 
 func (s *HybridSearchService) processContentDelivery(ctx context.Context, op *models.ContentIndexDelivery) error {
 	if op.Status == repository.IndexDeliveryQueued {
-		claimed, err := s.deliveries.ClaimDelete(ctx, s.epoch, op)
+		claimed, err := s.deliveries.ClaimMaintenance(ctx, s.epoch, op)
 		if err != nil || !claimed {
 			return err
 		}
-		task, err := s.client.Index(s.contentIndex).DeleteDocumentsByFilterWithContext(ctx, op.Filter, &meilisearch.DocumentOptions{TaskCustomMetadata: op.TaskCorrelation})
+		var task *meilisearch.TaskInfo
+		if op.Kind == repository.IndexDeliveryPurge {
+			var batch []map[string]interface{}
+			batch, err = s.readContentTechnicalSnapshot(ctx, op)
+			if err != nil {
+				persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				defer cancel()
+				if resetErr := s.deliveries.RequeueUnreadPurge(persistCtx, op); resetErr != nil {
+					return resetErr
+				}
+				return repository.ErrContentIndexIsolated
+			}
+			primaryKey := "id"
+			task, err = s.client.Index(s.contentIndex).AddDocumentsWithContext(ctx, batch, &meilisearch.DocumentOptions{PrimaryKey: &primaryKey, TaskCustomMetadata: op.TaskCorrelation})
+		} else {
+			task, err = s.client.Index(s.contentIndex).DeleteDocumentsByFilterWithContext(ctx, op.Filter, &meilisearch.DocumentOptions{TaskCustomMetadata: op.TaskCorrelation})
+		}
 		if err := s.recordContentReceipt(ctx, op, task, err); err != nil {
 			return err
 		}

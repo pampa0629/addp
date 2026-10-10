@@ -8,6 +8,7 @@ import { resolve } from 'path'
 
 export default defineConfig(withModuleFrontend('security', withFrontendTestIsolation('security', {
   plugins: [vue(), Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })],
+  optimizeDeps: { include: ['element-plus/es'] },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

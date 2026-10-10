@@ -113,10 +113,10 @@ func TestContentDeliveryUnknownNeverExpiresOrReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	ops, err := repo.Recoverable(t.Context())
-	if err != nil || len(ops) != 1 || ops[0].Kind != IndexDeliveryDelete {
+	if err != nil || len(ops) != 1 || ops[0].Kind != IndexDeliveryPurge {
 		t.Fatalf("unknown task recovered for replay: %#v, %v", ops, err)
 	}
-	claimed, err := repo.ClaimDelete(t.Context(), epoch, &ops[0])
+	claimed, err := repo.ClaimMaintenance(t.Context(), epoch, &ops[0])
 	if err != nil || claimed {
 		t.Fatalf("delete preceded uncertain late write: %t, %v", claimed, err)
 	}
@@ -168,20 +168,20 @@ func TestContentDeliveryPurgeRollbackAndLateWriteOrdering(t *testing.T) {
 	}
 	var purge models.ContentIndexDelivery
 	for _, item := range ops {
-		if item.Kind == IndexDeliveryDelete {
+		if item.Kind == IndexDeliveryPurge {
 			purge = item
 		}
 	}
-	if claimed, err := repo.ClaimDelete(t.Context(), epoch, &purge); err != nil || claimed {
+	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, &purge); err != nil || claimed {
 		t.Fatal("purge overtook old write")
 	}
 	if err := repo.Finish(t.Context(), op, IndexDeliverySucceeded); err != nil {
 		t.Fatal(err)
 	}
-	if claimed, err := repo.ClaimDelete(t.Context(), epoch, &purge); err != nil || !claimed {
+	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, &purge); err != nil || !claimed {
 		t.Fatalf("purge claim: %t %v", claimed, err)
 	}
-	if claimed, err := repo.ClaimDelete(t.Context(), epoch, &purge); err != nil || claimed {
+	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, &purge); err != nil || claimed {
 		t.Fatal("purge submitted twice")
 	}
 	if err := repo.Receipt(t.Context(), &purge, 2, time.Now()); err != nil {
@@ -195,7 +195,7 @@ func TestContentDeliveryPurgeRollbackAndLateWriteOrdering(t *testing.T) {
 		t.Fatal("failed task evidence lost")
 	}
 	retries, err := repo.Recoverable(t.Context())
-	if err != nil || len(retries) != 1 || retries[0].ID == purge.ID || retries[0].TaskUID != nil {
+	if err != nil || len(retries) != 1 || retries[0].ID == purge.ID || retries[0].TaskUID != nil || retries[0].Kind != IndexDeliveryPurge {
 		t.Fatal("failed delete did not create new delivery")
 	}
 	if !errors.Is(repo.RequireActive(t.Context(), epoch), ErrContentIndexIsolated) {
@@ -225,5 +225,41 @@ func TestContentDeliveryRequiresTransactionAndValidTerminal(t *testing.T) {
 	}
 	if err := repo.Receipt(t.Context(), op, 1, time.Time{}); !errors.Is(err, ErrContentIndexDeliveryConflict) {
 		t.Fatal("missing enqueue identity accepted")
+	}
+}
+
+func TestContentMaintenanceSerializesPurgeAndResourceDeletion(t *testing.T) {
+	db := newContentDeliveryTestDB(t)
+	repo := NewContentIndexDeliveryRepository(db, "content")
+	epoch := openActiveContentIndex(t, repo)
+	if err := db.Transaction(func(tx *gorm.DB) error { return repo.QueueProtectionPurges(t.Context(), tx, 7, []string{"item"}) }); err != nil {
+		t.Fatal(err)
+	}
+	ops, err := repo.Recoverable(t.Context())
+	if err != nil || len(ops) != 1 {
+		t.Fatal(err)
+	}
+	purge := ops[0]
+	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, &purge); err != nil || !claimed {
+		t.Fatal(err)
+	}
+	deletion, err := repo.QueueDelete(t.Context(), epoch, 7, "tenant_id = 7 AND document_id = 'item'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, deletion); err != nil || claimed {
+		t.Fatal("delete overtook in-flight purge", err)
+	}
+	if err := repo.Receipt(t.Context(), &purge, 1, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, deletion); err != nil || claimed {
+		t.Fatal("delete overtook pending purge task", err)
+	}
+	if err := repo.Finish(t.Context(), &purge, IndexDeliverySucceeded); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := repo.ClaimMaintenance(t.Context(), epoch, deletion); err != nil || !claimed {
+		t.Fatal("settled purge still blocked delete", err)
 	}
 }

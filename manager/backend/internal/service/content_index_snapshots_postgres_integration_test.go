@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -40,7 +41,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ContentIndexOutlet{}, &models.ContentIndexDelivery{}); err != nil {
+	if err := repository.MigrateContentIndexDeliverySchema(db); err != nil {
 		t.Fatal(err)
 	}
 	store, err := projectionstore.Migrate(db, "manager", "manager", nil)
@@ -147,6 +148,103 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			}
 		}
 		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 11, DocumentID: doc.DocumentID}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("protection_purge_preserves_technical_projection", func(t *testing.T) {
+		id := "protected-mixed"
+		technical := commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "collection", Name: "Persons", FullName: "Outdoor.Persons", Fields: []commonClient.ManagerContentField{{Name: "userInfo.phone", DataType: "string"}}, ProjectionTime: time.Now().UTC()}
+		if err := svc.UpsertContentDocument(ctx, 7, technical); err != nil {
+			t.Fatal(err)
+		}
+		content := commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadExtractedContent, EngineID: 9, DataItemType: "collection", Name: "Persons", Content: "sensitive sentinel", Title: "sensitive title", Metadata: map[string]interface{}{"secret": "sensitive metadata"}}
+		if err := svc.UpsertContentDocument(ctx, 7, content); err != nil {
+			t.Fatal(err)
+		}
+		// Unknown historical fields and undeclared nested field values must disappear.
+		task, err := client.Index(index).UpdateDocumentsWithContext(ctx, []map[string]interface{}{{"id": id, "old_unknown": "sensitive old field", "fields": []map[string]interface{}{{"name": "userInfo.phone", "data_type": "string", "sample_value": "sensitive nested value"}}}}, nil)
+		wait(ctx, task, err)
+		before := read(t, id)
+		for range 2 {
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				return repo.QueueProtectionPurges(ctx, tx, 7, []string{id, "missing-protected"})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			// A new startup generation must finish the queued purge without payload storage.
+			svc.epoch, err = repo.Open(ctx, svc.endpointID, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for attempt := 0; attempt < 100; attempt++ {
+				err = svc.reconcileContentDeliveries(ctx)
+				if err == nil {
+					break
+				}
+				if !errors.Is(err, repository.ErrContentIndexIsolated) {
+					t.Fatal(err)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			after := read(t, id)
+			for key := range contentSnapshotPayload(7, technical) {
+				if key == "fields" {
+					continue
+				}
+				if !reflect.DeepEqual(before[key], after[key]) {
+					t.Fatalf("technical field %s changed", key)
+				}
+			}
+			for _, key := range []string{"content", "content_preview", "metadata", "title", "old_unknown", "content_hash", "content_projection_time"} {
+				if _, ok := after[key]; ok {
+					t.Fatalf("purge retained %s", key)
+				}
+			}
+			fields := after["fields"].([]interface{})
+			if len(fields) != 1 || !reflect.DeepEqual(fields[0], map[string]interface{}{"name": "userInfo.phone", "data_type": "string"}) {
+				t.Fatal("nested technical field retained a value")
+			}
+			var absent map[string]interface{}
+			if err := client.Index(index).GetDocumentWithContext(ctx, "missing-protected", nil, &absent); err == nil {
+				t.Fatal("purge created missing-document placeholder")
+			}
+			tenantID := uint(7)
+			result, err := svc.SearchDocuments(ctx, &tenantID, nil, "userInfo.phone", 1, 10)
+			if err != nil || result.Total != 1 || result.Hits[0].DocumentID != id {
+				t.Fatalf("technical search lost after purge: %+v %v", result, err)
+			}
+			result, err = svc.SearchDocuments(ctx, &tenantID, nil, "sensitive", 1, 10)
+			if err != nil || result.Total != 0 {
+				t.Fatalf("body remains searchable after purge: %+v %v", result, err)
+			}
+		}
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentID: id}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("purge_content_only_does_not_invent_technical_facts", func(t *testing.T) {
+		id := "content-only"
+		body := commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadExtractedContent, EngineID: 9, DataItemType: "object", Name: "body context", Content: "sensitive content only"}
+		if err := svc.UpsertContentDocument(ctx, 7, body); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error { return repo.QueueProtectionPurges(ctx, tx, 7, []string{id}) }); err != nil {
+			t.Fatal(err)
+		}
+		for attempt := 0; attempt < 100; attempt++ {
+			if err := svc.reconcileContentDeliveries(ctx); err == nil {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		doc := read(t, id)
+		if !reflect.DeepEqual(doc, map[string]interface{}{"id": id, "document_id": id, "tenant_id": float64(7), "engine_id": float64(9)}) {
+			t.Fatalf("purge invented technical facts: %+v", doc)
+		}
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentID: id}); err != nil {
 			t.Fatal(err)
 		}
 	})

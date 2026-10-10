@@ -19,6 +19,7 @@ var ErrContentIndexDeliveryConflict = errors.New("content index delivery state c
 const (
 	IndexDeliveryWrite      = "write"
 	IndexDeliveryDelete     = "delete"
+	IndexDeliveryPurge      = "purge"
 	IndexDeliveryQueued     = "queued"
 	IndexDeliverySubmitting = "submitting"
 	IndexDeliverySubmitted  = "submitted"
@@ -119,7 +120,7 @@ func (r *ContentIndexDeliveryRepository) Register(ctx context.Context, tx *gorm.
 		return ErrContentIndexIsolated
 	}
 	var pending int64
-	if err := tx.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND status IN ? AND (kind = ? OR status IN ? OR (tenant_id = ? AND document_id = ?))", r.index, unfinishedIndexDeliveries, IndexDeliveryDelete, []string{IndexDeliverySubmitting, IndexDeliveryUnknown}, op.TenantID, op.DocumentID).Count(&pending).Error; err != nil {
+	if err := tx.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND status IN ? AND (kind IN ? OR status IN ? OR (tenant_id = ? AND document_id = ?))", r.index, unfinishedIndexDeliveries, []string{IndexDeliveryDelete, IndexDeliveryPurge}, []string{IndexDeliverySubmitting, IndexDeliveryUnknown}, op.TenantID, op.DocumentID).Count(&pending).Error; err != nil {
 		return err
 	}
 	if pending != 0 {
@@ -150,13 +151,13 @@ func (r *ContentIndexDeliveryRepository) QueueProtectionPurges(ctx context.Conte
 			return errors.New("invalid index purge fingerprint")
 		}
 		var pending int64
-		if err := tx.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND tenant_id = ? AND document_id = ? AND kind = ? AND status IN ?", r.index, tenantID, fingerprint, IndexDeliveryDelete, unfinishedIndexDeliveries).Count(&pending).Error; err != nil {
+		if err := tx.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND tenant_id = ? AND document_id = ? AND kind = ? AND status IN ?", r.index, tenantID, fingerprint, IndexDeliveryPurge, unfinishedIndexDeliveries).Count(&pending).Error; err != nil {
 			return err
 		}
 		if pending > 0 {
 			continue
 		}
-		op := models.ContentIndexDelivery{ID: uuid.NewString(), IndexName: r.index, TenantID: tenantID, DocumentID: fingerprint, Kind: IndexDeliveryDelete, Status: IndexDeliveryQueued,
+		op := models.ContentIndexDelivery{ID: uuid.NewString(), IndexName: r.index, TenantID: tenantID, DocumentID: fingerprint, Kind: IndexDeliveryPurge, Status: IndexDeliveryQueued,
 			Filter: fmt.Sprintf("tenant_id = %d AND document_id = '%s'", tenantID, strings.ReplaceAll(fingerprint, "'", "\\'"))}
 		if err := tx.Create(&op).Error; err != nil {
 			return err
@@ -191,7 +192,7 @@ func (r *ContentIndexDeliveryRepository) Recoverable(ctx context.Context) ([]mod
 	return ops, err
 }
 
-func (r *ContentIndexDeliveryRepository) ClaimDelete(ctx context.Context, epoch string, op *models.ContentIndexDelivery) (bool, error) {
+func (r *ContentIndexDeliveryRepository) ClaimMaintenance(ctx context.Context, epoch string, op *models.ContentIndexDelivery) (bool, error) {
 	claimed := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		state, err := r.lock(tx)
@@ -201,14 +202,14 @@ func (r *ContentIndexDeliveryRepository) ClaimDelete(ctx context.Context, epoch 
 		if state.Epoch != epoch || !state.Configured {
 			return ErrContentIndexIsolated
 		}
-		var writes int64
-		if err := tx.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND kind = ? AND status IN ?", r.index, IndexDeliveryWrite, unfinishedIndexDeliveries).Count(&writes).Error; err != nil {
+		var pending int64
+		if err := tx.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND ((kind = ? AND status IN ?) OR (kind <> ? AND status IN ?))", r.index, IndexDeliveryWrite, unfinishedIndexDeliveries, IndexDeliveryWrite, []string{IndexDeliverySubmitting, IndexDeliverySubmitted, IndexDeliveryUnknown}).Count(&pending).Error; err != nil {
 			return err
 		}
-		if writes > 0 {
+		if pending > 0 {
 			return nil
 		}
-		result := tx.Model(&models.ContentIndexDelivery{}).Where("id = ? AND index_name = ? AND kind = ? AND status = ?", op.ID, r.index, IndexDeliveryDelete, IndexDeliveryQueued).Updates(map[string]any{"status": IndexDeliverySubmitting, "endpoint_id": state.EndpointID, "task_correlation": op.ID})
+		result := tx.Model(&models.ContentIndexDelivery{}).Where("id = ? AND index_name = ? AND kind IN ? AND status = ?", op.ID, r.index, []string{IndexDeliveryDelete, IndexDeliveryPurge}, IndexDeliveryQueued).Updates(map[string]any{"status": IndexDeliverySubmitting, "endpoint_id": state.EndpointID, "task_correlation": op.ID})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -248,7 +249,7 @@ func (r *ContentIndexDeliveryRepository) Unknown(ctx context.Context, op *models
 	return r.db.WithContext(ctx).Model(&models.ContentIndexDelivery{}).Where("id = ? AND index_name = ? AND tenant_id = ? AND status = ? AND task_uid IS NULL", op.ID, r.index, op.TenantID, IndexDeliverySubmitting).Update("status", IndexDeliveryUnknown).Error
 }
 
-// Finish records proven terminal results. A failed deletion is retried as a
+// Finish records proven terminal results. Failed maintenance is retried as a
 // fresh delivery, retaining the previous terminal task as evidence.
 func (r *ContentIndexDeliveryRepository) Finish(ctx context.Context, op *models.ContentIndexDelivery, status string) error {
 	if op == nil || op.TaskUID == nil || (status != IndexDeliverySucceeded && status != IndexDeliveryFailed && status != IndexDeliveryCanceled) {
@@ -272,8 +273,8 @@ func (r *ContentIndexDeliveryRepository) Finish(ctx context.Context, op *models.
 		if result.RowsAffected != 1 {
 			return ErrContentIndexDeliveryConflict
 		}
-		if op.Kind == IndexDeliveryDelete && status != IndexDeliverySucceeded {
-			retry := models.ContentIndexDelivery{ID: uuid.NewString(), IndexName: r.index, TenantID: op.TenantID, DocumentID: op.DocumentID, Kind: IndexDeliveryDelete, Filter: op.Filter, Status: IndexDeliveryQueued}
+		if op.Kind != IndexDeliveryWrite && status != IndexDeliverySucceeded {
+			retry := models.ContentIndexDelivery{ID: uuid.NewString(), IndexName: r.index, TenantID: op.TenantID, DocumentID: op.DocumentID, Kind: op.Kind, Filter: op.Filter, Status: IndexDeliveryQueued}
 			return tx.Create(&retry).Error
 		}
 		return nil
@@ -298,4 +299,19 @@ func (r *ContentIndexDeliveryRepository) ActivateIfSettled(ctx context.Context, 
 		}
 		return tx.Model(state).Updates(map[string]any{"isolated": false, "updated_at": time.Now().UTC()}).Error
 	})
+}
+
+// RequeueUnreadPurge is only called when the preliminary read failed, before
+// any mutation request. Uncertain submissions must use receipt recovery instead.
+func (r *ContentIndexDeliveryRepository) RequeueUnreadPurge(ctx context.Context, op *models.ContentIndexDelivery) error {
+	result := r.db.WithContext(ctx).Model(&models.ContentIndexDelivery{}).
+		Where("id = ? AND index_name = ? AND kind = ? AND status = ? AND task_uid IS NULL", op.ID, r.index, IndexDeliveryPurge, IndexDeliverySubmitting).
+		Updates(map[string]any{"status": IndexDeliveryQueued, "task_correlation": "", "endpoint_id": ""})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrContentIndexDeliveryConflict
+	}
+	return nil
 }

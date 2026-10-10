@@ -28,7 +28,7 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.ContentIndexOutlet{}, &models.ContentIndexDelivery{}); err != nil {
+	if err := MigrateContentIndexDeliverySchema(db); err != nil {
 		t.Fatal(err)
 	}
 	index := "delivery-test-" + uuid.NewString()
@@ -136,14 +136,14 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 		}
 	}
 	purges, err := restarted.Recoverable(t.Context())
-	if err != nil || len(purges) != 1 || purges[0].Kind != IndexDeliveryDelete {
+	if err != nil || len(purges) != 1 || purges[0].Kind != IndexDeliveryPurge {
 		t.Fatalf("concurrent purge was not deduplicated: %#v %v", purges, err)
 	}
 	claims := make(chan bool, 2)
 	for range 2 {
 		copy := purges[0]
 		go func() {
-			claimed, err := restarted.ClaimDelete(t.Context(), next, &copy)
+			claimed, err := restarted.ClaimMaintenance(t.Context(), next, &copy)
 			claims <- claimed
 			results <- err
 		}()

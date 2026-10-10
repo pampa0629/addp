@@ -99,7 +99,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureDataProfileSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure data profile schema: %w", err)
 	}
-	if err := db.AutoMigrate(&models.ContentIndexOutlet{}, &models.ContentIndexDelivery{}); err != nil {
+	if err := MigrateContentIndexDeliverySchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure content index delivery schema: %w", err)
 	}
 	if err := normalizePreviewArtifactSchemaNames(db); err != nil {
@@ -1349,4 +1349,17 @@ func ensureEmbeddingTaskDefinitionSchema(db *gorm.DB) error {
 		return err
 	}
 	return nil
+}
+
+// MigrateContentIndexDeliverySchema installs the current single delivery contract.
+func MigrateContentIndexDeliverySchema(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&models.ContentIndexOutlet{}, &models.ContentIndexDelivery{}); err != nil {
+			return err
+		}
+		if err := tx.Exec("ALTER TABLE manager.content_index_deliveries DROP CONSTRAINT IF EXISTS content_delivery_kind").Error; err != nil {
+			return err
+		}
+		return tx.Migrator().CreateConstraint(&models.ContentIndexDelivery{}, "content_delivery_kind")
+	})
 }

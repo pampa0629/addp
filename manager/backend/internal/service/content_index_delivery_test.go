@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -237,7 +238,7 @@ func TestContentDeliveryCanceledCallerStillPersistsReceipt(t *testing.T) {
 	}
 }
 
-func TestContentDeliveryPurgeWaitsForActualLateWriteAndDeletion(t *testing.T) {
+func TestContentDeliveryPurgeWaitsForActualLateWriteAndTechnicalReplacement(t *testing.T) {
 	var writes, deletes atomic.Int32
 	var complete atomic.Bool
 	var writeCorrelation, deleteCorrelation string
@@ -246,6 +247,16 @@ func TestContentDeliveryPurgeWaitsForActualLateWriteAndDeletion(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch req.URL.Path {
 		case "/indexes/content/documents":
+			if req.Method == http.MethodPost {
+				deletes.Add(1)
+				deleteCorrelation = req.URL.Query().Get("customMetadata")
+				if deleteCorrelation == "" || deleteCorrelation == writeCorrelation {
+					t.Error("purge lacks distinct correlation")
+				}
+				w.WriteHeader(http.StatusAccepted)
+				fmt.Fprintf(w, `{"taskUid":2,"indexUid":"content","type":"documentAdditionOrUpdate","enqueuedAt":%q}`, at)
+				return
+			}
 			writes.Add(1)
 			writeCorrelation = req.URL.Query().Get("customMetadata")
 			w.WriteHeader(http.StatusAccepted)
@@ -256,20 +267,13 @@ func TestContentDeliveryPurgeWaitsForActualLateWriteAndDeletion(t *testing.T) {
 				status = "succeeded"
 			}
 			fmt.Fprintf(w, `{"uid":1,"indexUid":"content","type":"documentAdditionOrUpdate","status":%q,"enqueuedAt":%q,"customMetadata":%q}`, status, at, writeCorrelation)
-		case "/indexes/content/documents/delete":
-			deletes.Add(1)
-			deleteCorrelation = req.URL.Query().Get("customMetadata")
-			if deleteCorrelation == "" || deleteCorrelation == writeCorrelation {
-				t.Error("purge lacks distinct correlation")
+		case "/indexes/content/documents/item":
+			if !complete.Load() {
+				t.Error("technical snapshot read before old write settled")
 			}
-			var body map[string]string
-			if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body["filter"] != "tenant_id = 7 AND document_id = 'item'" {
-				t.Errorf("unsafe purge filter: %#v %v", body, err)
-			}
-			w.WriteHeader(http.StatusAccepted)
-			fmt.Fprintf(w, `{"taskUid":2,"indexUid":"content","type":"documentDeletion","enqueuedAt":%q}`, at)
+			fmt.Fprint(w, `{"id":"item","document_id":"item","tenant_id":7,"engine_id":9,"name":"persons","data_item_type":"table","projection_time":"2026-10-09T00:00:00Z"}`)
 		case "/tasks/2":
-			fmt.Fprintf(w, `{"uid":2,"indexUid":"content","type":"documentDeletion","status":"succeeded","enqueuedAt":%q,"customMetadata":%q}`, at, deleteCorrelation)
+			fmt.Fprintf(w, `{"uid":2,"indexUid":"content","type":"documentAdditionOrUpdate","status":"succeeded","enqueuedAt":%q,"customMetadata":%q}`, at, deleteCorrelation)
 		default:
 			t.Errorf("unexpected request %s", req.URL.Path)
 			w.WriteHeader(500)
@@ -581,5 +585,109 @@ func TestContentDeliveryOldServerIsolatedWithoutSubmitting(t *testing.T) {
 		if !supportsContentTaskCorrelation(version) {
 			t.Fatal("supported version rejected")
 		}
+	}
+}
+
+func TestContentPurgeLostResponseRecoversWithoutResubmitting(t *testing.T) {
+	var replacements atomic.Int32
+	var marker string
+	at := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	svc, db := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/indexes/content/documents/item":
+			requested := r.URL.Query().Get("fields")
+			if strings.Contains(","+requested+",", ",content,") || strings.Contains(","+requested+",", ",metadata,") || requested == "" {
+				t.Errorf("unsafe read fields: %s", requested)
+			}
+			fmt.Fprint(w, `{"id":"item","document_id":"item","tenant_id":7,"engine_id":9,"name":"persons","data_item_type":"table","projection_time":"2026-10-09T00:00:00Z"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/indexes/content/documents":
+			replacements.Add(1)
+			marker = r.URL.Query().Get("customMetadata")
+			var batch []map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&batch); err != nil || len(batch) != 1 || batch[0]["name"] != "persons" {
+				t.Error("technical snapshot lost", err)
+			}
+			if r.URL.Query().Get("primaryKey") != "id" || marker == "" {
+				t.Error("replacement lacks identity")
+			}
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case r.URL.Path == "/tasks" || r.URL.Path == "/tasks/31":
+			task := meilisearch.Task{UID: 31, IndexUID: "content", Type: meilisearch.TaskTypeDocumentAdditionOrUpdate, Status: meilisearch.TaskStatusSucceeded, EnqueuedAt: at, CustomMetadata: marker}
+			if r.URL.Path == "/tasks" {
+				_ = json.NewEncoder(w).Encode(meilisearch.TaskResult{Total: 1, Results: []meilisearch.Task{task}})
+			} else {
+				_ = json.NewEncoder(w).Encode(task)
+			}
+		default:
+			t.Errorf("unexpected operation %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(500)
+		}
+	}))
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return svc.deliveries.QueueProtectionPurges(t.Context(), tx, 7, []string{"item"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ops, err := svc.deliveries.Recoverable(t.Context())
+	if err != nil || len(ops) != 1 {
+		t.Fatal(err)
+	}
+	op := ops[0]
+	if err := svc.processContentDelivery(t.Context(), &op); !errors.Is(err, repository.ErrContentIndexIsolated) {
+		t.Fatal("unknown replacement was accepted", err)
+	}
+	if marker != op.ID {
+		t.Fatal("missing persistent correlation")
+	}
+	svc.epoch, err = svc.deliveries.Open(t.Context(), svc.endpointID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.reconcileContentDeliveries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := svc.deliveries.Get(t.Context(), 7, op.ID)
+	if err != nil || stored.Status != repository.IndexDeliverySucceeded || replacements.Load() != 1 {
+		t.Fatal("uncertain replacement was replayed", err)
+	}
+}
+
+func TestContentPurgeInvalidReadRemainsQueuedAndIsolated(t *testing.T) {
+	for _, response := range []string{`{"id":"item","document_id":"item","tenant_id":8,"engine_id":9}`, `{"id":"item","document_id":"item","tenant_id":7,"engine_id":9,"projection_time":"2026-10-09T00:00:00Z"}`, `unavailable`} {
+		t.Run(response, func(t *testing.T) {
+			svc, db := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Error("invalid technical snapshot caused mutation")
+					w.WriteHeader(500)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if response == "unavailable" {
+					w.WriteHeader(503)
+				} else {
+					fmt.Fprint(w, response)
+				}
+			}))
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				return svc.deliveries.QueueProtectionPurges(t.Context(), tx, 7, []string{"item"})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			ops, err := svc.deliveries.Recoverable(t.Context())
+			if err != nil || len(ops) != 1 {
+				t.Fatal(err)
+			}
+			if err := svc.processContentDelivery(t.Context(), &ops[0]); !errors.Is(err, repository.ErrContentIndexIsolated) {
+				t.Fatal(err)
+			}
+			stored, err := svc.deliveries.Get(t.Context(), 7, ops[0].ID)
+			if err != nil || stored.Status != repository.IndexDeliveryQueued || stored.TaskUID != nil || stored.TaskCorrelation != "" {
+				t.Fatal("unsubmitted read stranded receipt", err)
+			}
+			if err := svc.deliveries.RequireActive(t.Context(), svc.epoch); !errors.Is(err, repository.ErrContentIndexIsolated) {
+				t.Fatal("invalid read reopened outlet", err)
+			}
+		})
 	}
 }

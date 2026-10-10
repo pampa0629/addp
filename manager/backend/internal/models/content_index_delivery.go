@@ -20,7 +20,7 @@ type ContentIndexDelivery struct {
 	IndexName       string `gorm:"not null;size:128;index:idx_content_delivery_pending,priority:1;uniqueIndex:idx_content_delivery_task,priority:1"`
 	TenantID        int64  `gorm:"not null;index;check:content_delivery_tenant,tenant_id > 0"`
 	DocumentID      string `gorm:"not null;size:128"`
-	Kind            string `gorm:"not null;size:16;check:content_delivery_kind,kind IN ('write','delete')"`
+	Kind            string `gorm:"not null;size:16;check:content_delivery_kind,kind IN ('write','delete','purge')"`
 	Filter          string `gorm:"not null;type:text"`
 	EndpointID      string `gorm:"not null;size:64;uniqueIndex:idx_content_delivery_task,priority:2"`
 	TaskCorrelation string `gorm:"not null;default:'';size:36;check:content_delivery_correlation,task_correlation = '' OR task_correlation = id"`
