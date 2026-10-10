@@ -29,6 +29,8 @@
 
 2026-10-10 本地页面复核：Business NFS `doc/twosheet.xlsx` 的两个工作表切换正常，均显示 5 行、10 列；`gis-data/sample.csv` 显示与源文件一致的 3 行、5 列；`doc/test.json` 显示普通 JSON 文档；`gis-data/sample.geojson` 的两个点及属性表正常显示。`gis-data/converted-data.json` 的 records array 显示总数 73090，第二、第三页的首条 BSM 分别为 21、41，与独立读取源文件一致；该样例缺少可可靠转换的坐标事实，页面明确跳过地图，不猜坐标系。复核发现窄面板的横向分页滚动区遮挡下一页按钮，已改为共享分页控件分组换行，并删除与真实分页矛盾的固定 50 行提示；新增 Manager 浏览器回归覆盖按钮实际命中、第二页请求与返回第一页。以上只证明这些样例的本地页面行为，不替代 Hosted T4，也不证明所有 XLSX sheet 结构、大文件或轨迹业务语义均已支持。
 
+同日补充 XLSX 容器交互的确定性浏览器回归：复用真实 Data Explorer、容器插件和共享表格组件，通过既有预览协议夹具验证从第二页切换到不同字段的工作表时重新请求第一页、删除旧字段；切到空工作表时清除旧行、旧列与分页，再切回原工作表恢复第一页。该回归验证前端组合契约，未替代不同结构 XLSX 源文件的真实解析、扫描或 Hosted 验收。
+
 ## 未决事项
 
 1. 需要用真实样例继续核实 CSV / TSV、JSON / GeoJSON、Parquet、Shapefile、Excel、SQLite、GeoPackage、ZIP、text / markdown、image、PDF、DOCX、PPTX、WPS 的扫描、attributes、Manager 预览、分页和异常提示。
