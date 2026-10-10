@@ -18,6 +18,7 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
         self.secrets = self.root / 'secrets'; self.secrets.mkdir(mode=0o700)
         self.state = self.root / 'state'; self.state.mkdir()
         self.sql = self.root / 'postgres.sql'
+        self.mongo = self.root / 'mongo.js'
         self.trace = self.root / 'trace'
         self.passwords = self.root / 'passwords'; self.passwords.mkdir(mode=0o700)
         self.seed = self.root / 'business/mysql'; self.seed.mkdir(parents=True)
@@ -44,6 +45,8 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
                     touch "$ADDP_TEST_STATE/$item"
                     if [ "$item" = addp-security-online-postgres ]; then
                       printf '%s' "$POSTGRES_PASSWORD" > "$ADDP_TEST_PASSWORDS/postgres-root"
+                    elif [ "$item" = addp-security-online-mongodb ]; then
+                      printf '%s' "$MONGO_INITDB_ROOT_PASSWORD" > "$ADDP_TEST_PASSWORDS/mongodb-root"
                     else
                       printf '%s' "$MYSQL_ROOT_PASSWORD" > "$ADDP_TEST_PASSWORDS/mysql-root"
                     fi
@@ -62,6 +65,10 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
                 if [[ "$*" == *pg_isready* ]]; then exit 0; fi
                 if [[ "$*" == *psql* ]]; then cat > "$ADDP_TEST_SQL"; exit 0; fi
                 if [[ "$*" == *'SELECT 1'* ]]; then exit 0; fi
+                if [[ "$*" == *mongosh* ]]; then
+                  if [[ "$*" == *--file* ]]; then cat > "$ADDP_TEST_MONGO"; fi
+                  exit 0
+                fi
                 cat >/dev/null
                 exit 0 ;;
             esac
@@ -69,7 +76,7 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
         ''')
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', GITHUB_ACTIONS='true', RUNNER_OS='Linux',
                         ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_HOST='1', ADDP_ONLINE_SECRET_DIR=str(self.secrets),
-                        ADDP_TEST_STATE=str(self.state), ADDP_TEST_PASSWORDS=str(self.passwords), ADDP_TEST_SQL=str(self.sql), ADDP_TEST_TRACE=str(self.trace))
+                        ADDP_TEST_MONGO=str(self.mongo), ADDP_TEST_STATE=str(self.state), ADDP_TEST_PASSWORDS=str(self.passwords), ADDP_TEST_SQL=str(self.sql), ADDP_TEST_TRACE=str(self.trace))
 
     def executable(self, name, content):
         path = self.bin / name
@@ -87,8 +94,8 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
                          'ST_SetSRID(ST_MakePoint(100 + id, 20 + id), 4326)', 'GRANT SELECT ON addp_online_security.spatial_algorithm_source',
                          'spatial_algorithm_transfer OWNER TO security_writer', 'mysql_email_transfer OWNER TO security_writer'):
             self.assertIn(fragment, sql)
-        for kind, user, port in (('postgresql', 'security_writer', 55433), ('mysql', 'security_reader', 53306)):
-            name = 'postgres' if kind == 'postgresql' else 'mysql'
+        for kind, user, port in (('postgresql', 'security_writer', 55433), ('mysql', 'security_reader', 53306), ('mongodb', 'security_reader', 57017)):
+            name = 'postgres' if kind == 'postgresql' else kind
             path = self.secrets / f'security-{name}.json'
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             data = json.loads(path.read_text())
@@ -97,6 +104,12 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
             self.assertEqual(data['connection_info']['port'], port)
             self.assertNotIn(data['connection_info']['password'], result.stdout + result.stderr)
             self.assertNotEqual(data['connection_info']['password'], (self.passwords / f'{name}-root').read_text())
+        mongo = self.mongo.read_text()
+        for fragment in ('db.getSiblingDB("Outdoor")', 'fixture.Persons.insertMany', 'nickName', '张三abc', 'null', 'roles: [{role: "read", db: "Outdoor"}]', 'countDocuments({}) !== 7'):
+            self.assertIn(fragment, mongo)
+        descriptor = json.loads((self.secrets / 'security-mongodb.json').read_text())
+        self.assertEqual(descriptor['connection_info']['auth_source'], 'Outdoor')
+        self.assertEqual(descriptor['connection_info']['database'], 'Outdoor')
         for path in self.secrets.iterdir():
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         stopped = self.run_fixture('stop')
@@ -120,18 +133,18 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
         self.assertIn('refusing existing fixture resources', result.stderr)
 
     def test_checks_all_container_owners_before_deleting_and_reports_residual(self):
-        for name in ('addp-security-online-postgres', 'addp-security-online-mysql'):
+        for name in ('addp-security-online-postgres', 'addp-security-online-mysql', 'addp-security-online-mongodb'):
             (self.state / name).touch()
         result = self.run_fixture('stop', ADDP_TEST_OWNER='other')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.trace.exists())
-        self.assertEqual(len(list(self.state.iterdir())), 2)
+        self.assertEqual(len(list(self.state.iterdir())), 3)
         result = self.run_fixture('stop', ADDP_TEST_RETAIN='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('remains after cleanup', result.stderr)
 
     def test_partial_start_or_seed_failure_can_be_cleaned_by_hosted_owner(self):
-        for values in ({'ADDP_TEST_RUN_FAIL': 'addp-security-online-mysql'}, {'ADDP_TEST_SEED_FAIL': '1'}):
+        for values in ({'ADDP_TEST_RUN_FAIL': 'addp-security-online-mysql'}, {'ADDP_TEST_RUN_FAIL': 'addp-security-online-mongodb'}, {'ADDP_TEST_SEED_FAIL': '1'}):
             with self.subTest(values=values):
                 for path in self.secrets.iterdir(): path.unlink()
                 result = self.run_fixture('start', **values)

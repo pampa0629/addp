@@ -66,13 +66,14 @@ class HostedSecurityGateTest(unittest.TestCase):
             p.add_argument('--descriptor'); p.add_argument('--output')
             args = p.parse_args()
             assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'engine-token'
-            engine = 17 if 'postgres' in args.descriptor else 23
+            engine = 17 if 'postgres' in args.descriptor else 29 if 'mongodb' in args.descriptor else 23
             with open(args.output, 'w') as out:
                 out.write(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={engine}\\n')
         ''')
         self.host._write_repository_script('scripts/test/security-mysql-owner-protection-online.py', '''
             import os, sys
             assert sys.argv[1:] == ['--initialize']
+            assert os.environ['ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID'] == '29'
             assert os.environ['ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN'] == 'initializer-token'
             assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-initializer-token'
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('initialize\\n')
@@ -95,6 +96,11 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ]
             [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 17 ]
             [ "$ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID" = 23 ]
+            if [ "$ONLINE_SUITE_INPUT" = security-mysql-owner-protection ]; then
+              [ "$ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID" = 29 ]
+            else
+              [ -z "${ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID:-}" ]
+            fi
             [ "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" = consumer-token ]
             [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ]
             [ "$ADDP_ONLINE_TEST_USER_PASSWORD" = private-password ]

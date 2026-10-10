@@ -41,7 +41,7 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
 
     def test_exact_table_grant_uses_separate_preparer_and_checks_denial_then_read(self):
         _, authorizer, consumer = self.grant_clients()
-        receipts = REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
+        receipts = REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
         self.assertEqual(len(receipts), 1)
         writes = [call for call in authorizer.request.call_args_list if call.args[0] == 'POST']
         self.assertEqual(len(writes), 1)
@@ -63,8 +63,25 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
             if invalid == 'extra': permissions.append('system.engine.create')
             if invalid == 'missing': permissions.pop()
             with self.subTest(invalid=invalid), self.assertRaises(REGISTRATION.RegistrationError):
-                REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
+                REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
             self.assertTrue(all(call.args[0] == 'GET' for call in authorizer.request.call_args_list))
+
+    def test_exact_collection_grant_uses_provider_catalog_terms(self):
+        _, authorizer, consumer = self.grant_clients()
+        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2,
+            [(29, 'database', 'Outdoor', 'Persons')], item_term='collection')
+        write = next(call for call in authorizer.request.call_args_list if call.args[0] == 'POST')
+        self.assertEqual(write.args[3]['catalog_path']['segments'][-1],
+                         {'term': 'collection', 'kind': 'collection', 'name': 'Persons'})
+
+    def test_rejects_unknown_item_term_and_collection_schema_before_any_request(self):
+        for term, namespace in (('unknown', 'database'), ('collection', 'schema')):
+            _, authorizer, consumer = self.grant_clients()
+            with self.subTest(term=term, namespace=namespace), self.assertRaises(REGISTRATION.RegistrationError):
+                REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2,
+                    [(29, namespace, 'Outdoor', 'Persons')], item_term=term)
+            authorizer.request.assert_not_called()
+            consumer.request.assert_not_called()
 
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(

@@ -538,7 +538,7 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
         "business/scripts/online-security-owner-fixture.sh": ("addp_online_security.exemption_source", "13987654321", "GRANT SELECT ON addp_online_security.exemption_source"),
         "scripts/test/security-plaintext-access-online.py": (
             "SUPPORT.require_hosted_initialization(os.environ)", "initialize_fresh_governance(",
-            "initialize_exact_table_read_grants(", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
+            "initialize_exact_record_read_grants(", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
             "applicant and approver must be two different Users", "preview_rows = SUPPORT.preview_rows",
             "/api/v1/security/protection-access-request-targets", "review-queue?scope=pending",
             '"scope": "history"', "protected_other_subject", "expired_without_security_refresh",
@@ -589,6 +589,7 @@ def validate_security_mysql_owner_protection_profile(
         'bash business/scripts/online-security-owner-fixture.sh start',
         'bash business/scripts/online-security-owner-fixture.sh stop',
         '--suite "$1"', 'scripts/test/online-engine-registration.py',
+        'security-mongodb.json', 'ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID', 'addp-security-online-mongodb',
         '"scripts/test/$INITIALIZER_SCRIPT" --initialize',
         'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN',
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
@@ -625,6 +626,7 @@ def validate_security_mysql_owner_protection_profile(
         "location_point geometry(Point, 4326)", "addp_online_security.mysql_email_transfer",
         "addp_online_security.spatial_algorithm_source", "addp_online_security.spatial_algorithm_transfer",
         "business/mysql/test-data.sh", "security_reader", "security_writer",
+        "addp-security-online-mongodb", "--tmpfs /data/db", "fixture.Persons.insertMany", "Outdoor",
     ):
         if fragment not in fixture:
             raise RegistrationError("security-mysql-owner-protection fixture contract is missing " + fragment)
@@ -643,7 +645,9 @@ def validate_security_mysql_owner_protection_profile(
         '"invalid_request_status"',
         '"rollback_verified"',
         '"cleanup_verified"',
-        "addp.detector.email_metadata/v1",
+        "addp.detector.email_metadata/v1", "addp.detector.phone_metadata/v2",
+        "exercise_mongodb_algorithms(", "assert_mongodb_rows(", '"mongodb_algorithms"', '"sparse_objects_verified"',
+        "ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID", 'item_term="collection"',
         "/api/v1/security/protection-baselines",
         "/api/v1/security/protection-enrollments",
         "/api/v1/develop/executions",
@@ -662,7 +666,7 @@ def validate_security_mysql_owner_protection_profile(
                      "wait_for_technical_field(", '"technical_field_search"', '"manager.search.execute"',
                      "require_hosted_restart(", "exercise_restart_recovery(", "verify_restarted_process(",
                      '"scripts/dev/restart.sh", "-security", "-manager"', '"verified_before_rescan"',
-                     '"addp.security-mysql-owner-protection-online/v4"'):
+                     '"addp.security-mysql-owner-protection-online/v5"'):
         if fragment not in owner:
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")

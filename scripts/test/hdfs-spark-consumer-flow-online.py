@@ -321,7 +321,7 @@ def main():
         consumer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
         validate_identity(consumer, tenant_id)
         authorizer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
-        REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, tenant_id, [
+        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, [
             (support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL'), 'schema', 'results', 'hdfs_totals')])
         print('Disposable PostgreSQL result exact table read Grant is ready')
         return 0

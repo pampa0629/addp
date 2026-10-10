@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Accept MySQL suppression and PostgreSQL spatial algorithms through four owners."""
+"""Accept relational and nested-document protection on disposable Hosted owners."""
 
 from __future__ import annotations
 
@@ -53,6 +53,9 @@ TARGET_SCHEMA = "addp_online_security"
 TARGET_TABLE = "mysql_email_transfer"
 EMAIL_TYPE_CODE = "email"
 EMAIL_DETECTOR = "addp.detector.email_metadata/v1"
+PHONE_DETECTOR = "addp.detector.phone_metadata/v2"
+MONGODB_SOURCE = "Outdoor.Persons"
+MONGODB_FIELD = "userInfo.phone"
 DEFAULT_PROTECTION_PROBE_CODE = "online_default_protection_probe"
 DEFAULT_PROTECTION_ROLLBACK_CODE = "online_default_protection_rollback_probe"
 STRUCTURED_MASK_ALGORITHM = "addp.mask.keep_prefix_suffix/v2"
@@ -421,7 +424,7 @@ def ensure_enrollment(
         and item["target_snapshot"].get("full_name") == source_full_name
     ]
     if len(matches) > 1:
-        raise SuiteError("the permanent MySQL customers fixture has multiple enrollments")
+        raise SuiteError("the protected fixture has multiple enrollments")
     initialized = False
     if matches:
         enrollment_id = matches[0].get("id")
@@ -442,8 +445,8 @@ def ensure_enrollment(
     return enrollment_id, initialized
 
 
-def ensure_email_assessment(
-    client: GatewayClient, enrollment_id: str, deadline: float
+def ensure_detected_assessment(
+    client: GatewayClient, enrollment_id: str, deadline: float, component_key: str, detector: str,
 ) -> tuple[str, bool, str]:
     while time.monotonic() < deadline:
         findings = list_pages(
@@ -453,15 +456,15 @@ def ensure_email_assessment(
                 {"enrollment_id": enrollment_id, "snapshot_scope": "current"}
             ),
         )
-        email_findings = [
+        matched_findings = [
             item
             for item in findings
-            if item.get("detector_version") == EMAIL_DETECTOR
+            if item.get("detector_version") == detector
             and isinstance(item.get("component"), dict)
-            and item["component"].get("key") == "email"
+            and item["component"].get("key") == component_key
         ]
-        if len(email_findings) > 1:
-            raise SuiteError("the current MySQL snapshot has multiple email findings")
+        if len(matched_findings) > 1:
+            raise SuiteError("the current snapshot has multiple matching findings")
         assessments = list_pages(
             client,
             "/api/v1/security/assessments?"
@@ -473,25 +476,25 @@ def ensure_email_assessment(
             if isinstance(item.get("current"), dict)
             and item["current"].get("conclusion") == "sensitive"
             and isinstance(item["current"].get("component"), dict)
-            and item["current"]["component"].get("key") == "email"
+            and item["current"]["component"].get("key") == component_key
         ]
         if len(current) == 1:
             assessment_id = current[0].get("id")
             if not isinstance(assessment_id, str) or not assessment_id:
-                raise SuiteError("email Assessment id is missing")
-            if email_findings:
-                finding_id = email_findings[0].get("id")
+                raise SuiteError("detected Assessment id is missing")
+            if matched_findings:
+                finding_id = matched_findings[0].get("id")
                 if isinstance(finding_id, str) and finding_id:
                     return assessment_id, False, finding_id
         candidates = [
             item
-            for item in email_findings
+            for item in matched_findings
             if item.get("review") is None
         ]
         if candidates:
             finding_id = candidates[0].get("id")
             if not isinstance(finding_id, str) or not finding_id:
-                raise SuiteError("email SensitiveFinding id is missing")
+                raise SuiteError("detected SensitiveFinding id is missing")
             reviewed = _object(
                 client.request(
                     "POST",
@@ -499,18 +502,18 @@ def ensure_email_assessment(
                     (201,),
                     {
                         "decision": "confirm",
-                        "rationale": "Dedicated Online MySQL email assessment",
+                        "rationale": "Dedicated Online metadata Finding confirmation: " + component_key,
                     },
                 ).payload,
                 "SensitiveFinding review",
             )
-            assessment = _object(reviewed.get("assessment"), "email Assessment")
+            assessment = _object(reviewed.get("assessment"), "detected Assessment")
             assessment_id = assessment.get("id")
             if not isinstance(assessment_id, str) or not assessment_id:
-                raise SuiteError("confirmed email Assessment id is missing")
+                raise SuiteError("confirmed detected Assessment id is missing")
             return assessment_id, True, finding_id
         time.sleep(1)
-    raise SuiteError("email finding or Assessment was not available before the deadline")
+    raise SuiteError("metadata finding or Assessment was not available before the deadline")
 
 
 def wait_for_owner_projections(
@@ -806,10 +809,10 @@ def assert_spatial_item(item: Mapping[str, object]) -> None:
         raise SuiteError("spatial fixture must retain its Point geometry and SRID 4326")
 
 
-def wait_for_spatial_projections(client: GatewayClient, enrollment_id: str, deadline: float) -> None:
+def wait_for_algorithm_projections(client: GatewayClient, enrollment_id: str, deadline: float) -> None:
     while time.monotonic() < deadline:
-        enrollment = _object(client.request("GET", f"/api/v1/security/protection-enrollments/{enrollment_id}", (200,)).payload, "spatial Enrollment")
-        progresses = _array(enrollment.get("owner_progress"), "spatial owner progress")
+        enrollment = _object(client.request("GET", f"/api/v1/security/protection-enrollments/{enrollment_id}", (200,)).payload, "algorithm Enrollment")
+        progresses = _array(enrollment.get("owner_progress"), "algorithm owner progress")
         if enrollment.get("state") == "active" and all(
             len(matches := [progress for progress in progresses if isinstance(progress, dict) and progress.get("consumer_owner") == owner]) == 1
             and matches[0].get("projection_state") == "active" and matches[0].get("acknowledged") is True
@@ -817,7 +820,7 @@ def wait_for_spatial_projections(client: GatewayClient, enrollment_id: str, dead
         ):
             return
         time.sleep(1)
-    raise SuiteError("spatial algorithm projections did not converge before the deadline")
+    raise SuiteError("algorithm projections did not converge before the deadline")
 
 
 def baseline_body(baseline: Mapping[str, object]) -> dict[str, object]:
@@ -827,7 +830,7 @@ def baseline_body(baseline: Mapping[str, object]) -> dict[str, object]:
     return result
 
 
-def restore_spatial_state(client: GatewayClient, baseline_id: str, original: dict[str, object],
+def restore_algorithm_state(client: GatewayClient, baseline_id: str, original: dict[str, object],
                           policies: list[str], service_id: int | None, tasks: list[int],
                           enrollment_id: str, timeout: float, expected_version: int) -> None:
     errors: list[str] = []
@@ -838,7 +841,7 @@ def restore_spatial_state(client: GatewayClient, baseline_id: str, original: dic
             if current.get("state") == "active":
                 client.request("DELETE", path, (200,), {"version": current["version"], "rationale": "Online algorithm acceptance cleanup"})
             if _object(client.request("GET", path, (200,)).payload, "revoked Policy").get("state") != "revoked":
-                raise SuiteError("spatial field Policy is still active")
+                raise SuiteError("algorithm field Policy is still active")
         except BaseException as error:
             errors.append(str(error))
     try:
@@ -851,7 +854,7 @@ def restore_spatial_state(client: GatewayClient, baseline_id: str, original: dic
         restored = baseline_body(_object(client.request("GET", path, (200,)).payload, "restored Baseline"))
         if {k: v for k, v in restored.items() if k != "version"} != {k: v for k, v in original.items() if k != "version"}:
             raise SuiteError("phone Baseline was not restored")
-        wait_for_spatial_projections(client, enrollment_id, time.monotonic() + min(timeout, 120))
+        wait_for_algorithm_projections(client, enrollment_id, time.monotonic() + min(timeout, 120))
     except BaseException as error:
         errors.append(str(error))
     for cleanup in (lambda: cleanup_tasks(client, tasks), lambda: cleanup_service(client, service_id)):
@@ -860,7 +863,7 @@ def restore_spatial_state(client: GatewayClient, baseline_id: str, original: dic
         except BaseException as error:
             errors.append(str(error))
     if errors:
-        raise SuiteError("spatial cleanup failed: " + "; ".join(errors))
+        raise SuiteError("algorithm cleanup failed: " + "; ".join(errors))
 
 
 def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mapping[str, object],
@@ -947,7 +950,8 @@ def verify_restarted_process(module: str, before: Mapping[str, str], after: Mapp
 
 def exercise_restart_recovery(client: GatewayClient, engine_id: int, source: Mapping[str, object],
                               enrollment_id: str, baseline_id: str, policy_ids: list[str],
-                              expected: Mapping[str, Mapping[str, object]], deadline: float) -> dict[str, object]:
+                              expected: Mapping[str, object], deadline: float, *,
+                              field_name: str = "value_c", assert_rows=assert_spatial_rows) -> dict[str, object]:
     repository = Path(__file__).resolve().parents[2]
     require_hosted_restart(repository)
     tenant_id = positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id")
@@ -962,7 +966,7 @@ def exercise_restart_recovery(client: GatewayClient, engine_id: int, source: Map
     log_path = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "security-restart-lifecycle.log"
     # A file, rather than a PIPE, lets managed daemons inherit output without
     # keeping subprocess.run blocked after the lifecycle launcher exits.
-    with log_path.open("w", encoding="utf-8") as log:
+    with log_path.open("a", encoding="utf-8") as log:
         try:
             result = subprocess.run(["bash", "scripts/dev/restart.sh", "-security", "-manager"],
                                     cwd=repository, stdout=log, stderr=subprocess.STDOUT,
@@ -978,10 +982,10 @@ def exercise_restart_recovery(client: GatewayClient, engine_id: int, source: Map
         raise SuiteError("Security restart changed the ordinary User or Tenant")
     if [client.request("GET", path, (200,)).payload for path in paths] != definitions:
         raise SuiteError("Security restart changed the Baseline or field Policies")
-    wait_for_spatial_projections(client, enrollment_id, deadline)
-    search = wait_for_technical_field(client, engine_id, source, "value_c", min(deadline, time.monotonic() + 60))
+    wait_for_algorithm_projections(client, enrollment_id, deadline)
+    search = wait_for_technical_field(client, engine_id, source, field_name, min(deadline, time.monotonic() + 60))
     _, rows = preview_rows(client, build_item_locator(engine_id, source))
-    preview = assert_spatial_rows(rows, "manager after restart", expected)
+    preview = assert_rows(rows, "manager after restart", expected)
     return {"processes": {module: {"before": before[module], "after": after[module]} for module in before},
             "same_user_verified": True, "definitions_preserved": True,
             "technical_field_search": search, "protected_preview": preview,
@@ -1060,7 +1064,7 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
                         allowed_algorithms=[case[0] for case in ALGORITHM_CASES] if index == 0 else [CONSTANT_ALGORITHM, SM3_ALGORITHM], invalid_value_effect="suppress", enabled=True)
             updated = _object(client.request("PUT", f"/api/v1/security/protection-baselines/{baseline_id}", (200,), body).payload, "updated phone Baseline")
             baseline_version = positive_int(updated["version"], "Baseline version")
-            wait_for_spatial_projections(client, enrollment_id, deadline)
+            wait_for_algorithm_projections(client, enrollment_id, deadline)
             defaults = {field: spatial_expected(algorithm, parameters) for field in assessed}
             manager_expected = dict(defaults)
             if index == 0:
@@ -1076,7 +1080,7 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
                         created = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), dict(request, assessment_id=assessed[field], consumer_owner="manager", action="preview")).payload, "field Policy")
                     policy_ids.append(str(created["id"]))
                     manager_expected[field] = spatial_expected(field_algorithm, field_parameters)
-                wait_for_spatial_projections(client, enrollment_id, deadline)
+                wait_for_algorithm_projections(client, enrollment_id, deadline)
             _, manager_rows = preview_rows(client, locator)
             manager = assert_spatial_rows(manager_rows, "manager", manager_expected)
             # Check immediately after protection changes, before the later target rescan.
@@ -1104,7 +1108,7 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
     except BaseException as error:
         scenario_error = error
     try:
-        restore_spatial_state(client, baseline_id, original, policy_ids, service_id, task_ids, enrollment_id, timeout, baseline_version)
+        restore_algorithm_state(client, baseline_id, original, policy_ids, service_id, task_ids, enrollment_id, timeout, baseline_version)
     except BaseException as error:
         if scenario_error:
             raise SuiteError(f"spatial scenario failed: {scenario_error}; {error}") from error
@@ -1114,6 +1118,117 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
     return {"source_table": f"{TARGET_SCHEMA}.{SPATIAL_SOURCE}", "enrollment_initialized": initialized,
             "cases": evidence, "baseline_restored": True, "active_policy_residuals": 0,
             "temporary_resource_residuals": 0}
+
+
+def assert_mongodb_rows(rows: list[dict[str, object]], owner: str,
+                        expected: Mapping[str, object]) -> dict[str, object]:
+    """Validate nested values and sparse objects against independent fixture facts."""
+    if len(rows) != 7 or {row.get("_id") for row in rows} != set("1234567"):
+        raise SuiteError(owner + " must retain all seven MongoDB Persons exactly once")
+    for row in rows:
+        key = str(row["_id"])
+        if MONGODB_FIELD in row or "userInfo__phone" in row:
+            raise SuiteError(owner + " exposed a second flattened MongoDB phone representation")
+        if row.get("displayName") != "person-" + key:
+            raise SuiteError(owner + " changed the unprotected MongoDB displayName")
+        if key == "7":
+            if "userInfo" in row:
+                raise SuiteError(owner + " synthesized the missing MongoDB parent object")
+            continue
+        info = _object(row.get("userInfo"), owner + " userInfo")
+        if info.get("nickName") != "nickname-" + key:
+            raise SuiteError(owner + " changed the sibling MongoDB nickName")
+        value = expected.get(key)
+        if value is None:
+            if "phone" in info:
+                raise SuiteError(owner + " retained a suppressed or missing MongoDB phone")
+        elif info.get("phone") != value:
+            raise SuiteError(owner + " MongoDB nested phone differs from its independent expected value")
+    return {"rows": 7, "nested_field_verified": True, "sparse_objects_verified": True,
+            "sibling_attributes_preserved": True}
+
+
+def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
+                               deadline: float, timeout: float) -> dict[str, object]:
+    scan = wait_for_scan(client, engine_id, deadline)
+    source = find_item(client, engine_id, MONGODB_SOURCE, "collection")
+    locator = build_item_locator(engine_id, source)
+    enrollment_id, initialized = ensure_enrollment(client, engine_id, MONGODB_SOURCE, locator)
+    assessment_id, confirmed, finding_id = ensure_detected_assessment(
+        client, enrollment_id, deadline, MONGODB_FIELD, PHONE_DETECTOR)
+    components = _object(client.request("GET", f"/api/v1/security/protection-enrollments/{enrollment_id}/components", (200,)).payload, "MongoDB components")
+    matches = [item["component"] for item in _array(components.get("data"), "components")
+               if isinstance(item, dict) and isinstance(item.get("component"), dict)
+               and item["component"].get("key") == MONGODB_FIELD]
+    if len(matches) != 1 or matches[0].get("value_type") != "string":
+        raise SuiteError("Meta must expose the actual nested userInfo.phone string component")
+    phones = [item for item in definition_array(client, "/api/v1/security/sensitive-data-types") if item.get("code") == "phone"]
+    if len(phones) != 1:
+        raise SuiteError("MongoDB acceptance requires exactly one phone type")
+    phone = phones[0]
+    baselines = [item for item in definition_array(client, "/api/v1/security/protection-baselines")
+                 if item.get("sensitive_data_type_id") == phone["id"]
+                 and item.get("security_grade_id") == phone["default_security_grade_id"] and item.get("enabled") is True]
+    if len(baselines) != 1:
+        raise SuiteError("MongoDB acceptance requires an enabled phone Baseline")
+    baseline = baselines[0]
+    original, baseline_id = baseline_body(baseline), str(baseline["id"])
+    version = positive_int(baseline["version"], "Baseline version")
+    if any(item.get("assessment_id") == assessment_id and item.get("state") == "active"
+           for item in list_pages(client, "/api/v1/security/protection-policies")):
+        raise SuiteError("MongoDB fixture has a stale active field Policy")
+    policies: list[str] = []
+    evidence: list[dict[str, object]] = []
+    scenario_error: BaseException | None = None
+    try:
+        for index, (algorithm, parameters) in enumerate(ALGORITHM_CASES):
+            path = f"/api/v1/security/protection-baselines/{baseline_id}"
+            current = _object(client.request("GET", path, (200,)).payload, "phone Baseline")
+            if positive_int(current["version"], "Baseline version") != version:
+                raise SuiteError("phone Baseline changed outside this run")
+            body = dict(original, version=version, effect="mask", algorithm=algorithm,
+                        parameters=parameters, allowed_algorithms=[case[0] for case in ALGORITHM_CASES],
+                        invalid_value_effect="suppress", enabled=True)
+            version = positive_int(_object(client.request("PUT", path, (200,), body).payload, "updated Baseline")["version"], "Baseline version")
+            wait_for_algorithm_projections(client, enrollment_id, deadline)
+            expected = spatial_expected(algorithm, parameters)
+            _, rows = preview_rows(client, locator)
+            case = {"algorithm": algorithm, "manager": assert_mongodb_rows(rows, "manager", expected),
+                    "technical_field_search": wait_for_technical_field(client, engine_id, source, MONGODB_FIELD, min(deadline, time.monotonic() + 60))}
+            if index == 0:
+                policy = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), {
+                    "assessment_id": assessment_id, "consumer_owner": "manager", "action": "preview",
+                    "effect": "mask", "algorithm": SM3_ALGORITHM, "parameters": {},
+                    "invalid_value_effect": "suppress", "rationale": "Online nested field independent algorithm acceptance",
+                }).payload, "nested field Policy")
+                policies.append(str(policy["id"]))
+                wait_for_algorithm_projections(client, enrollment_id, deadline)
+                _, rows = preview_rows(client, locator)
+                case["independent_manager_policy"] = assert_mongodb_rows(rows, "manager independent Policy", SM3_VALUES)
+                case["restart_recovery"] = exercise_restart_recovery(client, engine_id, source, enrollment_id,
+                    baseline_id, policies, SM3_VALUES, deadline, field_name=MONGODB_FIELD, assert_rows=assert_mongodb_rows)
+                policy_path = f"/api/v1/security/protection-policies/{policies[0]}"
+                current_policy = _object(client.request("GET", policy_path, (200,)).payload, "nested field Policy")
+                client.request("DELETE", policy_path, (200,), {"version": current_policy["version"], "rationale": "Online nested field case finished"})
+                wait_for_algorithm_projections(client, enrollment_id, deadline)
+                _, rows = preview_rows(client, locator)
+                case["baseline_after_policy_revocation"] = assert_mongodb_rows(rows, "manager after Policy revocation", expected)
+            evidence.append(case)
+    except BaseException as error:
+        scenario_error = error
+    try:
+        restore_algorithm_state(client, baseline_id, original, policies, None, [], enrollment_id, timeout, version)
+    except BaseException as error:
+        if scenario_error:
+            raise SuiteError(f"MongoDB scenario failed: {scenario_error}; {error}") from error
+        raise
+    if scenario_error:
+        raise scenario_error
+    return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD,
+            "scan_execution_id": scan, "enrollment_initialized": initialized,
+            "finding_id": finding_id, "assessment_id": assessment_id, "finding_confirmed": confirmed,
+            "detector": PHONE_DETECTOR, "all_owner_projections_acknowledged": True,
+            "cases": evidence, "baseline_restored": True, "active_policy_residuals": 0}
 
 
 def run_scenario(
@@ -1150,8 +1265,8 @@ def run_scenario(
     enrollment_id, enrollment_initialized = ensure_enrollment(
         client, source_engine_id, source_full_name, source_locator
     )
-    assessment_id, assessment_initialized, finding_id = ensure_email_assessment(
-        client, enrollment_id, deadline
+    assessment_id, assessment_initialized, finding_id = ensure_detected_assessment(
+        client, enrollment_id, deadline, "email", EMAIL_DETECTOR,
     )
     projections = wait_for_owner_projections(client, enrollment_id, deadline)
 
@@ -1199,7 +1314,7 @@ def run_scenario(
             raise SuiteError("Transfer target lost non-sensitive customer fields")
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v4",
+            "schema_version": "addp.security-mysql-owner-protection-online/v5",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -1259,7 +1374,7 @@ require_hosted_initialization = SUPPORT.require_hosted_initialization
 
 def initialize_source_grants(
     authorizer: GatewayClient, consumer: GatewayClient, tenant_id: int,
-    postgres_engine_id: int, mysql_engine_id: int, mysql_database: str,
+    postgres_engine_id: int, mysql_engine_id: int, mysql_database: str, mongodb_engine_id: int,
 ) -> None:
     """Prepare precise reads through System's sole independent Grant command."""
     validate_user_identity(consumer, tenant_id)
@@ -1270,7 +1385,9 @@ def initialize_source_grants(
         (mysql_engine_id, "database", mysql_database, SOURCE_TABLE),
     ]
     try:
-        REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets)
+        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets)
+        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
+            [(mongodb_engine_id, "database", "Outdoor", "Persons")], item_term="collection")
     except REGISTRATION.RegistrationError as error:
         raise SuiteError(str(error)) from error
 
@@ -1278,7 +1395,7 @@ def initialize_source_grants(
 def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
     SUPPORT.initialize_fresh_governance(client, tenant_id, [
         {"code": "email", "protection": {"effect": "suppress", "invalid_value_effect": "suppress"}, "detector": EMAIL_DETECTOR},
-        {"code": "phone", "protection": {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
+        {"code": "phone", "detector": PHONE_DETECTOR, "protection": {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
             "parameters": {"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
             "allowed_algorithms": [case[0] for case in ALGORITHM_CASES], "invalid_value_effect": "suppress"}},
     ])
@@ -1369,8 +1486,9 @@ def main() -> int:
             positive_int(required_environment("ADDP_ONLINE_TEST_ENGINE_ID"), "PostgreSQL Engine id"),
             positive_int(required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID"), "MySQL Engine id"),
             required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE"),
+            positive_int(required_environment("ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID"), "MongoDB Engine id"),
         )
-        print("Disposable Security governance and four exact table read Grants are ready")
+        print("Disposable Security governance and five exact record read Grants are ready")
         return 0
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")
@@ -1387,6 +1505,7 @@ def main() -> int:
         required_environment("ADDP_ONLINE_TEST_ENGINE_ID"),
         "ADDP_ONLINE_TEST_ENGINE_ID",
     )
+    mongodb_engine_id = positive_int(required_environment("ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID"), "MongoDB Engine id")
     timeout = float(os.environ.get("ADDP_ONLINE_TEST_TIMEOUT_SECONDS", "900"))
     if timeout <= 60:
         raise SuiteError("ADDP_ONLINE_TEST_TIMEOUT_SECONDS must be greater than 60")
@@ -1404,6 +1523,8 @@ def main() -> int:
         required_environment("ADDP_ONLINE_TEST_RUN_ID"),
         timeout,
     )
+    report["mongodb_algorithms"] = exercise_mongodb_algorithms(client, mongodb_engine_id,
+        time.monotonic() + timeout, timeout)
     source_item = find_item(client, source_engine_id,
                             f"{required_environment('ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE')}.{SOURCE_TABLE}", "table")
     # Projection changes and owned-resource cleanup queue external index purges.

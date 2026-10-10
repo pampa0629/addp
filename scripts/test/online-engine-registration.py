@@ -27,7 +27,7 @@ SOURCE_INITIALIZER_PERMISSIONS = {
 }
 
 
-def initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets, *, initialize_approval=True):
+def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, initialize_approval=True, item_term="table"):
     """Prepare precise reads with separate Users and the formal System command."""
     def identity(client):
         context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
@@ -39,11 +39,13 @@ def initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets,
             raise RegistrationError('source Grant preparation requires current Users in the disposable Tenant')
         return context, str(principal['id'])
     if not isinstance(tenant_id, int) or tenant_id <= 1 or not targets or len(targets) > 200:
-        raise RegistrationError('source Grant preparation requires a nondefault Tenant and exact tables')
+        raise RegistrationError('source Grant preparation requires a nondefault Tenant and exact record datasets')
+    if item_term not in ("table", "collection"):
+        raise RegistrationError("source Grant requires a table or collection catalog term")
     for engine_id, namespace_term, namespace, table in targets:
-        if (not isinstance(engine_id, int) or engine_id <= 0 or namespace_term not in ('schema', 'database')
+        if (not isinstance(engine_id, int) or engine_id <= 0 or namespace_term not in (('database',) if item_term == 'collection' else ('schema', 'database'))
             or not isinstance(namespace, str) or not namespace or not isinstance(table, str) or not table):
-            raise RegistrationError('source Grant preparation requires an exact ordinary table target')
+            raise RegistrationError('source Grant preparation requires an exact ordinary record target')
     current, initializer_id = identity(authorizer)
     _, recipient_id = identity(consumer)
     permissions = {permission for role in current.get('authorization', {}).get('role_assignments', [])
@@ -57,12 +59,12 @@ def initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets,
             'catalog_path': {'version': 'catalog.path/v1', 'engine_id': engine_id, 'segments': [
                 {'term': 'server', 'kind': 'server', 'name': ''},
                 {'term': namespace_term, 'kind': 'namespace', 'name': namespace},
-                {'term': 'table', 'kind': 'table', 'name': table},
+                {'term': item_term, 'kind': item_term, 'name': table},
             ]},
             'requirement_version': '1', 'initialize_approval': initialize_approval,
             'recipient_type': 'user', 'recipient_id': recipient_id,
             'action': 'read', 'expiry_mode': 'until_revoked',
-            'reason': 'Disposable Online exact table read acceptance',
+            'reason': 'Disposable Online exact record read acceptance',
         }
         check_path = '/api/v1/system/engine-access/read-checks/manager-preview'
         check_body = {'targets': [body['catalog_path']]}
@@ -72,7 +74,7 @@ def initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets,
             'request_id', 'catalog_path', 'requirement_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
         expected.update(engine_id=str(engine_id), approval_mode='independent', revocation=None)
         if not isinstance(issued, dict) or any(issued.get(key) != value for key, value in expected.items()):
-            raise RegistrationError('source Grant receipt differs from its exact consumer and table')
+            raise RegistrationError('source Grant receipt differs from its exact consumer and record dataset')
         observed = consumer.request('POST', check_path, (200,), check_body).payload
         if not isinstance(observed, dict) or not observed.get('observed_at'):
             raise RegistrationError('source Grant did not produce a current read observation')

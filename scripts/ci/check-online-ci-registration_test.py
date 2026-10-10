@@ -733,7 +733,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("console/frontend/e2e/online/security-manager-export.spec.js", "format: 'csv'", "export browser contract is missing"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "csv.DictReader", "export browser contract is missing"),
             ("business/scripts/online-security-owner-fixture.sh", "container ownership mismatch", "fixture contract is missing"),
+            ("business/scripts/online-security-owner-fixture.sh", "fixture.Persons.insertMany", "fixture contract is missing"),
+            ("scripts/test/security-mysql-owner-protection-online.py", "exercise_mongodb_algorithms(", "owner contract is missing"),
+            ("scripts/test/security-mysql-owner-protection-online.py", '"mongodb_algorithms"', "owner contract is missing"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'item_term="collection"', "owner contract is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-security-gate.sh", "security-mongodb.json", "Hosted profile is missing"),
             (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'security-mysql-owner-protection'", "must not also dispatch"),
             ("Makefile", "online-hosted-security-gate_test.py", "regression must enter"),
         ):

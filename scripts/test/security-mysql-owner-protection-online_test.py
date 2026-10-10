@@ -191,6 +191,126 @@ class SpatialClient:
         raise AssertionError(f"unexpected spatial request {method} {path}")
 
 
+class MongoClient(SpatialClient):
+    def __init__(self):
+        super().__init__()
+        self.confirmed = False
+        self.preview_calls = 0
+        self.fail_preview = None
+        self.item = {"id": 19, "node_id": 9, "fingerprint": "sha256:mongo-persons",
+                     "full_name": ONLINE.MONGODB_SOURCE, "item_type": "collection"}
+
+    def rows(self, owner):
+        self.preview_calls += 1
+        if self.preview_calls == self.fail_preview:
+            raise ONLINE.SuiteError("injected MongoDB preview failure")
+        by_algorithm = {
+            ONLINE.STRUCTURED_MASK_ALGORITHM: {"1": "1*********8", "2": "张***c", "3": "a*c", "4": None, "5": None},
+            ONLINE.CONSTANT_ALGORITHM: {"1": "已脱敏", "2": "已脱敏", "3": "已脱敏", "4": None, "5": "已脱敏"},
+            ONLINE.SM3_ALGORITHM: dict(ONLINE.SM3_VALUES),
+        }
+        algorithm = next((policy["algorithm"] for policy in self.policies if policy["state"] == "active"), self.baseline["algorithm"])
+        rows = []
+        for key in "1234567":
+            row = {"_id": key, "displayName": "person-" + key}
+            if key != "7":
+                row["userInfo"] = {"nickName": "nickname-" + key}
+                value = by_algorithm[algorithm].get(key)
+                if value is not None:
+                    row["userInfo"]["phone"] = value
+            rows.append(row)
+        return rows
+
+    def request(self, method, path, expected, body=None):
+        response = ONLINE.SUPPORT.Response
+        if path == "/api/v1/meta/engines/29/items":
+            return response(200, [copy.deepcopy(self.item)])
+        if path.startswith("/api/v1/security/protection-enrollments?"):
+            return response(200, {"data": [{"id": "enrolled", "target_snapshot": {
+                "engine_id": 29, "full_name": ONLINE.MONGODB_SOURCE}}], "total_pages": 1})
+        if path == "/api/v1/security/protection-enrollments/enrolled/components":
+            return response(200, {"data": [{"component": {"key": ONLINE.MONGODB_FIELD, "value_type": "string"}}]})
+        if path.startswith("/api/v1/security/findings?"):
+            return response(200, {"data": [{"id": "phone-finding", "detector_version": ONLINE.PHONE_DETECTOR,
+                "component": {"key": ONLINE.MONGODB_FIELD}, "review": {} if self.confirmed else None}], "total_pages": 1})
+        if path.startswith("/api/v1/security/assessments?"):
+            return response(200, {"data": [{"id": "phone-assessment", "current": {
+                "conclusion": "sensitive", "component": {"key": ONLINE.MONGODB_FIELD}}}] if self.confirmed else [], "total_pages": 1})
+        if path == "/api/v1/security/findings/phone-finding/reviews":
+            assert body["decision"] == "confirm" and method == "POST"
+            self.confirmed = True
+            return response(201, {"assessment": {"id": "phone-assessment"}})
+        if path.startswith("/api/v1/manager/preview?"):
+            return response(200, {"preview_type": "table", "data": {"columns": ["_id", "displayName", "userInfo"], "rows": self.rows("manager")}})
+        if path.startswith("/api/v1/manager/search?"):
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+            assert query["q"] == [ONLINE.MONGODB_FIELD] and query["engine_id"] == ["29"]
+            return response(200, {"data": {"results": [{"document_id": self.item["fingerprint"], "engine_id": 29,
+                "full_name": ONLINE.MONGODB_SOURCE, "locator": ONLINE.build_item_locator(29, self.item),
+                "field_matches": [{"name": ONLINE.MONGODB_FIELD, "data_type": "string",
+                    "highlights": {"name": "userInfo.<mark>phone</mark>"}}]}]}})
+        return super().request(method, path, expected, body)
+
+
+class MongoAlgorithmTest(unittest.TestCase):
+    def run_mongo(self, client):
+        process = RestartRecoveryTest().process
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_TENANT_ID": "2"}), \
+             patch.object(ONLINE, "require_hosted_restart"), \
+             patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "7"}), \
+             patch.object(ONLINE, "ready_process", side_effect=[process(), process(), process(True), process(True)]), \
+             patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=0)), \
+             patch.object(ONLINE, "wait_for_scan", return_value="mongo-scan") as scan:
+            result = ONLINE.exercise_mongodb_algorithms(client, 29, time.monotonic() + 60, 60)
+            scan.assert_called_once()
+            return result
+
+    def test_three_algorithms_nested_policy_and_restart_restore_without_rescan(self):
+        client = MongoClient()
+        report = self.run_mongo(client)
+        self.assertTrue(client.confirmed)
+        self.assertEqual([case["algorithm"] for case in report["cases"]], [case[0] for case in ONLINE.ALGORITHM_CASES])
+        self.assertEqual(report["component_key"], "userInfo.phone")
+        self.assertEqual(report["finding_id"], "phone-finding")
+        self.assertEqual(report["assessment_id"], "phone-assessment")
+        self.assertTrue(report["all_owner_projections_acknowledged"])
+        restart = report["cases"][0]["restart_recovery"]
+        self.assertTrue(restart["verified_before_rescan"])
+        self.assertEqual(restart["technical_field_search"]["document_id"], "sha256:mongo-persons")
+        self.assertEqual(restart["protected_preview"]["rows"], 7)
+        self.assertTrue(report["cases"][0]["baseline_after_policy_revocation"]["sparse_objects_verified"])
+        self.assertEqual(client.policies[0]["state"], "revoked")
+        self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
+                         {k: v for k, v in client.original.items() if k != "version"})
+
+    def test_preview_failures_restore_baseline_and_revoke_created_policy(self):
+        for fail_at in (1, 2, 3, 4, 5, 6):
+            client = MongoClient(); client.fail_preview = fail_at
+            with self.subTest(fail_at=fail_at), self.assertRaisesRegex(ONLINE.SuiteError, "injected MongoDB"):
+                self.run_mongo(client)
+            self.assertFalse(any(policy["state"] == "active" for policy in client.policies))
+            self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
+                             {k: v for k, v in client.original.items() if k != "version"})
+
+    def test_rejects_plaintext_null_leak_flattened_copy_and_sibling_changes(self):
+        for mutation in ("plaintext", "null", "sibling", "parent", "flattened", "flattened_sparse", "missing", "duplicate"):
+            rows = MongoClient().rows("manager")
+            # The client's initial 3/4 Baseline uses the independent 1/1 fake vector;
+            # validate using that explicit expected vector rather than production code.
+            expected = {"1": "1*********8", "2": "张***c", "3": "a*c", "4": None, "5": None}
+            if mutation == "plaintext": rows[0]["userInfo"]["phone"] = "13812345678"
+            if mutation == "null": rows[3]["userInfo"]["phone"] = None
+            if mutation == "sibling": rows[0]["userInfo"]["nickName"] = "changed"
+            if mutation == "parent": rows[6]["userInfo"] = {}
+            if mutation == "flattened": rows[0]["userInfo.phone"] = "13812345678"
+            if mutation == "flattened_sparse": rows[6]["userInfo__phone"] = "13812345678"
+            if mutation == "missing": rows.pop()
+            if mutation == "duplicate": rows[-1] = rows[0]
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_mongodb_rows(rows, "manager", expected)
+
+
 class RestartRecoveryTest(unittest.TestCase):
     def process(self, newer=False):
         return {"instance_id": "00000000-0000-4000-8000-00000000000" + ("2" if newer else "1"),
@@ -396,7 +516,7 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         client.baseline.update(version="99", parameters={"value": "external"})
         with self.assertRaisesRegex(ONLINE.SuiteError, "refusing to overwrite"):
             with patch.object(ONLINE, "cleanup_tasks", side_effect=lambda client, tasks: client.deleted_tasks.extend(tasks)):
-                ONLINE.restore_spatial_state(client, "41", ONLINE.baseline_body(client.original), [], 701, [801], "enrolled", 90, 1)
+                ONLINE.restore_algorithm_state(client, "41", ONLINE.baseline_body(client.original), [], 701, [801], "enrolled", 90, 1)
         self.assertEqual(client.baseline["parameters"], {"value": "external"})
         self.assertTrue(client.service_deleted)
         self.assertEqual(client.deleted_tasks, [801])
@@ -629,6 +749,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
             'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_TEST_TENANT_ID': '2',
             'ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID': '23', 'ADDP_ONLINE_TEST_ENGINE_ID': '17',
             'ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE': 'security_fixture',
+            'ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID': '29',
             'ADDP_ONLINE_TEST_RUN_ID': 'run-42', 'GATEWAY_URL': 'http://127.0.0.1:8000',
             'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'fixture-token',
         }
@@ -640,6 +761,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 patch.object(ONLINE.signal, 'signal'),
                 patch.object(ONLINE, 'require_hosted_restart'),
                 patch.object(ONLINE, 'run_scenario', return_value={}),
+                patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value={'cases': []}),
                 patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source'}),
                 patch.object(ONLINE, 'build_item_locator', return_value='source-locator'),
                 patch.object(ONLINE, 'wait_for_technical_field') as readiness,
@@ -750,12 +872,12 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
         consumer.request.side_effect = lambda method, path, expected, body=None: context if method == 'GET' else ONLINE.SUPPORT.Response(expected[0], {'observed_at': '2026-10-10T00:00:00Z'})
         return authorizer, consumer
 
-    def test_source_grants_cover_only_four_exact_tables_for_the_consumer(self):
+    def test_source_grants_cover_only_five_exact_record_datasets_for_the_consumer(self):
         authorizer, consumer = self.source_clients()
-        ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture")
+        ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
         writes = [call for call in authorizer.request.call_args_list if call.args[0] == "POST"]
-        self.assertEqual(len(writes), 4)
-        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 4)
+        self.assertEqual(len(writes), 5)
+        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 5)
         actual = set()
         for call in writes:
             body = call.args[3]
@@ -766,8 +888,8 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             root, namespace, table = body["catalog_path"]["segments"]
             self.assertEqual(root, {"term": "server", "kind": "server", "name": ""})
             self.assertEqual(namespace["kind"], "namespace")
-            self.assertEqual(table["term"], "table")
-            self.assertEqual(table["kind"], "table")
+            self.assertEqual(table["term"], "collection" if engine == 29 else "table")
+            self.assertEqual(table["kind"], table["term"])
             self.assertEqual(body["recipient_type"], "user")
             self.assertEqual(body["recipient_id"], "7")
             self.assertEqual(body["action"], "read")
@@ -780,6 +902,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             (17, "schema", "addp_online_security", "spatial_algorithm_transfer"),
             (17, "schema", "addp_online_security", "mysql_email_transfer"),
             (23, "database", "security_fixture", "customers"),
+            (29, "database", "Outdoor", "Persons"),
         })
 
     def test_source_preparation_rejects_wrong_tenant_and_self_grant_before_writing(self):
@@ -790,7 +913,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
                 "principal": {"type": "user", "id": principal},
                 "context": {"type": "tenant", "tenant_id": tenant}})
             with self.subTest(tenant=tenant, principal=principal), self.assertRaises(ONLINE.SuiteError):
-                ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture")
+                ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
             self.assertTrue(all(call.args[0] == "GET" for call in authorizer.request.call_args_list))
 
     def test_source_preparation_rejects_a_mismatched_issuance_without_continuing(self):
@@ -799,7 +922,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
         authorizer.reset_mock()
         authorizer.request.side_effect = [context, ONLINE.SUPPORT.Response(201, {"recipient_id": "8"})]
         with self.assertRaises(ONLINE.SuiteError):
-            ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture")
+            ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
         self.assertEqual(sum(call.args[0] == "POST" for call in authorizer.request.call_args_list), 1)
 
     def test_initialization_rejects_personal_environment(self):
@@ -829,15 +952,17 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             *[ONLINE.SUPPORT.Response(200, []) for _ in range(4)],
             ONLINE.SUPPORT.Response(201, {"id": "11"}), ONLINE.SUPPORT.Response(201, {"id": "12"}),
             ONLINE.SUPPORT.Response(201, {"id": "13"}), ONLINE.SUPPORT.Response(201, {"id": "14"}),
-            ONLINE.SUPPORT.Response(201, {"id": "15"}),
+            ONLINE.SUPPORT.Response(201, {"id": "15"}), ONLINE.SUPPORT.Response(201, {"id": "16"}),
         ]
         ONLINE.initialize_governance(client, 2)
         writes = [call for call in client.request.call_args_list if call.args[0] == "POST"]
-        email, detector, phone = [call.args[3] for call in writes[2:]]
+        email, detector, phone, phone_detector = [call.args[3] for call in writes[2:]]
         self.assertEqual(email["default_protection"]["effect"], "suppress")
         self.assertEqual(detector["sensitive_data_type_id"], 13)
         self.assertEqual(detector["capability_key"], ONLINE.EMAIL_DETECTOR)
         self.assertEqual(phone["default_protection"]["allowed_algorithms"], [case[0] for case in ONLINE.ALGORITHM_CASES])
+        self.assertEqual(phone_detector["capability_key"], ONLINE.PHONE_DETECTOR)
+        self.assertEqual(phone_detector["sensitive_data_type_id"], 15)
         self.assertEqual(phone["security_classification_id"], 11)
         self.assertEqual(phone["default_security_grade_id"], 12)
 

@@ -12,7 +12,7 @@ case "$ONLINE_SUITE" in
   security-plaintext-access) INITIALIZER_SCRIPT=security-plaintext-access-online.py ;;
   *) echo 'Unsupported Hosted Security suite' >&2; exit 1 ;;
 esac
-HOSTED_FIXTURE_CONTAINERS=(addp-security-online-postgres addp-security-online-mysql)
+HOSTED_FIXTURE_CONTAINERS=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
 stop_online_fixture() {
   run_logged bash business/scripts/online-security-owner-fixture.sh stop
 }
@@ -52,6 +52,12 @@ run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_SECRET_DIR/security-mysql.json" --output "$ADDP_ONLINE_SECRET_DIR/mysql-engine.env"
 source "$ADDP_ONLINE_SECRET_DIR/mysql-engine.env"
 export ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
+  run_logged python3 scripts/test/online-engine-registration.py \
+    --descriptor "$ADDP_ONLINE_SECRET_DIR/security-mongodb.json" --output "$ADDP_ONLINE_SECRET_DIR/mongodb-engine.env"
+  source "$ADDP_ONLINE_SECRET_DIR/mongodb-engine.env"
+  export ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+fi
 run_logged python3 "scripts/test/$INITIALIZER_SCRIPT" --initialize
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

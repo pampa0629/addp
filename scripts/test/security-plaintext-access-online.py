@@ -533,7 +533,7 @@ def initialize_hosted(tenant_id: int, engine_id: int, gateway_url: str) -> None:
     authorizer = GatewayClient(gateway_url, required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), 30)
     try:
         for index, consumer in enumerate((applicant, approver)):
-            REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, tenant_id,
+            REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
                 [(engine_id, "schema", "addp_online_security", "exemption_source")], initialize_approval=index == 0)
     except REGISTRATION.RegistrationError as error:
         raise SuiteError(str(error)) from error

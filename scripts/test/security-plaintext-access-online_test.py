@@ -156,7 +156,7 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
              patch.object(ONLINE, 'GatewayClient') as clients, \
              patch.object(ONLINE, 'validate_user_identity', side_effect=[{"principal_id": "41"}, {"principal_id": "42"}]), \
              patch.object(ONLINE.SUPPORT, 'initialize_fresh_governance') as governance, \
-             patch.object(ONLINE.REGISTRATION, 'initialize_exact_table_read_grants') as grants:
+             patch.object(ONLINE.REGISTRATION, 'initialize_exact_record_read_grants') as grants:
             ONLINE.initialize_hosted(2, 17, 'http://gateway')
         self.assertEqual(grants.call_count, 2)
         self.assertEqual(grants.call_args_list[0].args[3], [(17, 'schema', 'addp_online_security', 'exemption_source')])
