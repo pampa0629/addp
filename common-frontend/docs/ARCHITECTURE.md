@@ -109,9 +109,9 @@ import { MapContainer, GeoJsonPreview, TablePreview } from '@common-ui-map'
 ## 表格预览组合边界
 
 - `basic/TabularResultRenderer.vue` 是表格预览和有界结果渲染的唯一基础表格实现，负责列描述、标量与结构化值呈现、行选择和结构化值详情。
-- `basic/DataPagination.vue` 是预览场景的唯一受控分页实现，只接收 `currentPage`、`pageSize`、`total` 并发出分页变化；它不请求 API，也不在内部切片数据。
+- `basic/DataPagination.vue` 是预览场景的唯一受控分页实现，只接收 `currentPage`、`pageSize`、`total` 并发出分页变化；它不请求 API，也不在内部切片数据。窄面板下控件分组换行，不能用横向裁剪或滚动条遮挡上一页、下一页及页码控件。
 - `map/TablePreview.vue` 只组合地图、空间字段联动、字段选择、基础表格和分页。地图依赖不得进入 `basic/`。
-- Manager 在分页变化时向后端加载对应页；Develop 对单次执行已经加载的有界结果做客户端切片。两种策略共享相同的表格与分页呈现，不建立两套组件。
+- Manager 在分页变化时向后端加载对应页；Develop 对单次执行已经加载的有界结果做客户端切片。两种策略共享相同的表格与分页呈现，不建立两套组件。表格预览以响应的总数与当前页大小表达记录范围，不显示与实际分页相矛盾的固定 50 行上限。
 - Container Preview、Workbench 和 Agent UI 的协议适配器应复用同一个基础表格，不得重新实现同类单元格格式化和结构化值展示。
 
 ## 迁移指南

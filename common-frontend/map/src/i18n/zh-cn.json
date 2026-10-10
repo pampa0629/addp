@@ -13,7 +13,6 @@
     "fieldType": "类型",
     "fieldLength": "长度",
     "fieldPrecision": "精度",
-    "maxRows": "最多展示前 50 行数据",
     "unknown": "未知",
     "noData": "暂无数据",
     "noFieldData": "暂无可展示字段",

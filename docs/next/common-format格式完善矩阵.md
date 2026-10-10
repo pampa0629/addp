@@ -16,16 +16,18 @@
 | --- | --- |
 | GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级后的 Hosted 渲染复验尚未完成。 |
 | JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
-| CSV / XLSX | CSV 表格读取与分页、XLSX 多 sheet 容器预览已有实现；当前优先补真实页面复验，不把 CSV 坐标列自动解释为设备轨迹。 |
-| JSON / GeoJSON | 普通 JSON 文档及 records array 读取、GeoJSON FeatureCollection 的表格和空间预览已有实现；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
+| CSV / XLSX | CSV 表格读取与分页、XLSX 多 sheet 容器预览已有实现，现有 NFS 样例页面已复核；不同 sheet 字段、空 sheet、大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
+| JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 空间预览已有实现和本地样例页面复核；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
 | 3DS / DAE / FBX / OBJ | 通过 Model3D 转自包含 GLB 后显示；按已验证的静态几何和基础材质范围支持，DAE / 3DS 的声明 PNG/JPEG 漫反射贴图已有真实转换验收。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。不能声明所有版本、动画或复杂材质均支持；MAX 完整 Hosted 复验仍待通过。 |
 | SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。其他样例、复杂材质及 S3 外部贴图仍待验证。 |
 
-1. 优先完成 Business NFS 的 CSV、XLSX、JSON、GeoJSON 页面复验：CSV 的列与分页；XLSX 多 sheet 切换及各 sheet 的独立字段/数据；普通 JSON 文档与 records array 的分流；GeoJSON FeatureCollection 的空间预览。只按现有明确格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
+1. CSV、XLSX、JSON、GeoJSON 已完成下述现有 Business NFS 样例页面复核；后续扩大样例时核对编码、大文件、不同 sheet 字段与空 sheet。只按现有明确格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
 2. SGM 继续核对厂商样例 `3d/sgm/compass.SGM` 的授权 Runtime 转换与最终 GLB 实际预览。无 SDK 的协议门禁不替代真实 SGM 转换；首期范围遵循内置格式规范，保留 SuperMap → OSGB → Model3D GLB 的唯一路线。
 3. MAX 静态模型页面和正式 Linux Runtime 的格式/几何/贴图验收仍以既有 Hosted 运行结果为准；动画、复杂材质或全部 MAX 版本不计为支持。SKP 同样保留静态网格、实例变换与内嵌基础贴图的范围，不扩展 SketchUp 编辑语义。
 4. 地图依赖升级后的 GeoTIFF/COG 与模型预览要复核既有 Hosted 格式和渲染证据；精确 GPU 性能诊断按已确认规范单列，其余页面警告、错误继续失败。不再扩展 JPEG EXIF 细项作为当前格式覆盖工作的优先任务。
+
+2026-10-10 本地页面复核：Business NFS `doc/twosheet.xlsx` 的两个工作表切换正常，均显示 5 行、10 列；`gis-data/sample.csv` 显示与源文件一致的 3 行、5 列；`doc/test.json` 显示普通 JSON 文档；`gis-data/sample.geojson` 的两个点及属性表正常显示。`gis-data/converted-data.json` 的 records array 显示总数 73090，第二、第三页的首条 BSM 分别为 21、41，与独立读取源文件一致；该样例缺少可可靠转换的坐标事实，页面明确跳过地图，不猜坐标系。复核发现窄面板的横向分页滚动区遮挡下一页按钮，已改为共享分页控件分组换行，并删除与真实分页矛盾的固定 50 行提示；新增 Manager 浏览器回归覆盖按钮实际命中、第二页请求与返回第一页。以上只证明这些样例的本地页面行为，不替代 Hosted T4，也不证明所有 XLSX sheet 结构、大文件或轨迹业务语义均已支持。
 
 ## 未决事项
 

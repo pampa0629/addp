@@ -54,8 +54,10 @@ const handlePageSizeChange = (pageSize) => {
 }
 
 .data-pagination :deep(.el-pagination) {
+  min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
 .data-pagination__aside {

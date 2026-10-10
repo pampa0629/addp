@@ -88,9 +88,7 @@
         v-model:page-size="pageSize"
         :total="total"
         @change="handlePaginationChange"
-      >
-        <div class="tip">{{ t('map.maxRows') }}</div>
-      </DataPagination>
+      />
     </div>
 
     <!-- 格式附加属性（可折叠） -->
@@ -890,11 +888,6 @@ body.is-v-resizing .map-splitter::before {
 
 .pagination {
   flex: 0 0 auto;
-}
-
-.pagination .tip {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
 }
 
 .shapefile-meta {
