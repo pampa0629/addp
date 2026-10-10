@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, toggleLineageTableFields, profileLineageFieldFocus } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
+import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, toggleLineageTableFields, profileLineagePaint } from '../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { managerAuthContext } from './managerAuthContext.js'
 import { FIELD_CARD_WIDTH, FIELD_FONT_SIZE, FIELD_HEADER_HEIGHT, FIELD_ROW_HEIGHT } from '../../../common-frontend/graph/src/lineageFields.js'
 
@@ -94,7 +94,7 @@ for (const embedded of [false, true]) test(`field focus profiling measures nativ
     surface = await element.contentFrame()
     await element.dispose()
   }
-  await surface.setContent('<div class="lineage-field-options"><button>field_0499</button></div><canvas width="400" height="200"></canvas>')
+  await surface.setContent('<div class="lineage-viewer"><div class="lineage-field-options"><button>field_0499</button></div><div class="lineage-canvas"><canvas width="400" height="200"></canvas></div></div>')
   await surface.evaluate(() => {
     window.originalFieldPaint = CanvasRenderingContext2D.prototype.fillText
     document.querySelector('button').onclick = () => requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -104,18 +104,81 @@ for (const embedded of [false, true]) test(`field focus profiling measures nativ
     }))
   })
   const canvas = surface.locator('canvas')
-  const { timing, profile } = await profileLineageFieldFocus(page, canvas, 'field_0499', () => surface.getByRole('button').click())
+  const { timing, profile } = await profileLineagePaint(page, surface.locator('.lineage-viewer'), { mode: 'focus', field: 'field_0499' }, () => surface.getByRole('button').click())
   expect(timing.eventToFieldPaintMs).toBeGreaterThanOrEqual(0)
   expect(timing.eventToStablePaintMs).toBeGreaterThanOrEqual(timing.eventToFieldPaintMs)
   expect(timing.fieldFontPx).toBe(18)
   expect(timing.drawCalls).toBe(1)
   expect(profile.samples.length).toBeGreaterThan(0)
-  expect(await surface.evaluate(() => !window.__lineageFieldFocusProbe && !window.__lineageCanvasText &&
+  expect(await surface.evaluate(() => !window.__lineagePaintProbe && !window.__lineageCanvasText &&
     CanvasRenderingContext2D.prototype.fillText === window.originalFieldPaint)).toBe(true)
-  await expect(profileLineageFieldFocus(page, canvas, 'field_0499', () => { throw new Error('click failed') })).rejects.toThrow('click failed')
-  expect(await surface.evaluate(() => !window.__lineageFieldFocusProbe &&
+  await expect(profileLineagePaint(page, surface.locator('.lineage-viewer'), { mode: 'focus', field: 'field_0499' }, () => { throw new Error('click failed') })).rejects.toThrow('click failed')
+  expect(await surface.evaluate(() => !window.__lineagePaintProbe &&
     CanvasRenderingContext2D.prototype.fillText === window.originalFieldPaint)).toBe(true)
 })
+
+for (const embedded of [false, true]) for (const mode of ['initial', 'layout']) {
+  test(`${mode} profiling excludes offscreen measurement and waits for stable paint in ${embedded ? 'a module iframe' : 'a direct page'}`, async ({ page }) => {
+    await page.route('**/lineage-paint-fixture', route => route.fulfill({ contentType: 'text/html', body: '<html><body></body></html>' }))
+    await page.route('**/api/v1/meta/lineage/graph?**', route => json(route, {}))
+    await page.goto('/lineage-paint-fixture')
+    let surface = page
+    if (embedded) {
+      await page.setContent('<iframe src="/lineage-paint-fixture"></iframe>')
+      const element = await page.locator('iframe').elementHandle()
+      surface = await element.contentFrame()
+      await element.dispose()
+      await expect(surface.locator('body')).toBeVisible()
+    }
+    await surface.setContent(`<div class="lineage-viewer"><label class="el-radio-button"><input value="field" type="radio">字段级</label><button aria-label="自动布局">layout</button><div class="lineage-canvas"><canvas width="400" height="200"></canvas></div></div>`)
+    await surface.evaluate(mode => {
+      window.originalFieldPaint = CanvasRenderingContext2D.prototype.fillText
+      const paint = () => {
+        const context = document.querySelector('canvas').getContext('2d')
+        context.font = '18px sans-serif'
+        context.fillText('field_0499', 30, 100)
+      }
+      const run = async () => {
+        const button = document.querySelector('button')
+        button.disabled = true
+        if (mode === 'initial') {
+          await fetch('/api/v1/meta/lineage/graph?item_id=3&granularity=field')
+          // The product replaces the old item canvas when the field graph arrives.
+          document.querySelector('canvas').outerHTML = '<canvas width="400" height="200"></canvas>'
+        }
+        const context = document.querySelector('canvas').getContext('2d')
+        context.font = '18px sans-serif'
+        context.fillText('field_0499', -10000, -10000)
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          paint()
+          if (mode === 'initial') { button.disabled = false; return }
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            paint()
+            button.disabled = false
+          }))
+        }))
+      }
+      document.querySelector(mode === 'initial' ? 'label' : 'button').onclick = run
+    }, mode)
+    const action = mode === 'initial' ? { mode, itemID: 3, fields: ['field_0499'] } : { mode, buttonLabel: '自动布局', fields: ['field_0499'] }
+    const click = () => surface.locator(mode === 'initial' ? 'label' : 'button').click()
+    const { timing, profile } = await profileLineagePaint(page, surface.locator('.lineage-viewer'), action, click)
+    expect(timing.eventToStablePaintMs).toBeGreaterThanOrEqual(timing.eventToFieldPaintMs)
+    expect(timing.fieldFontPx).toBe(18)
+    expect(timing.drawCalls).toBe(mode === 'initial' ? 2 : 3)
+    if (mode === 'initial') {
+      expect(timing.eventToResponseEndMs).toBeGreaterThanOrEqual(0)
+      expect(timing.responseEndToFieldPaintMs).toBeGreaterThanOrEqual(0)
+      expect(timing.responseEndToStablePaintMs).toBeGreaterThanOrEqual(timing.responseEndToFieldPaintMs)
+    }
+    expect(profile.samples.length).toBeGreaterThan(0)
+    expect(await surface.evaluate(() => !window.__lineagePaintProbe && !window.__lineageCanvasText &&
+      CanvasRenderingContext2D.prototype.fillText === window.originalFieldPaint)).toBe(true)
+    await expect(profileLineagePaint(page, surface.locator('.lineage-viewer'), action, () => { throw new Error('click failed') })).rejects.toThrow('click failed')
+    expect(await surface.evaluate(() => !window.__lineagePaintProbe &&
+      CanvasRenderingContext2D.prototype.fillText === window.originalFieldPaint)).toBe(true)
+  })
+}
 
 test('canvas observations wait for queued text and path repaint', async ({ page }) => {
   await observeLineageCanvas(page)
@@ -174,7 +237,12 @@ test('500-column two-hop graph profiles native field focus without geometry reco
     return json(route, {})
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
-  await page.getByText('字段级', { exact: true }).click()
+  const initial = await profileLineagePaint(page, page.locator('.lineage-viewer'), {
+    mode: 'initial', itemID: 3, fields: tables[2].map(field => field.field_name)
+  }, () => page.getByText('字段级', { exact: true }).click())
+  expect(initial.timing.responseEndToStablePaintMs).toBeGreaterThanOrEqual(0)
+  expect(initial.profile.nodes.some(node => node.callFrame.url.includes('LineageViewer.vue'))).toBe(true)
+  await testInfo.attach('initial.cpuprofile', { body: JSON.stringify(initial.profile), contentType: 'application/json' })
   await expect(page.locator('.lineage-summary')).toContainText('1500 个节点 · 1000 条关系')
   const canvas = page.locator('.lineage-canvas canvas')
   const search = page.getByRole('textbox', { name: '搜索字段', exact: true })
@@ -182,7 +250,7 @@ test('500-column two-hop graph profiles native field focus without geometry reco
   for (const field of ['field_0000', 'field_0249', 'field_0499']) {
     await search.fill(field.toUpperCase())
     await expect(page.locator('.lineage-field-options button')).toHaveCount(2)
-    const { timing, profile } = await profileLineageFieldFocus(page, canvas, field,
+    const { timing, profile } = await profileLineagePaint(page, page.locator('.lineage-viewer'), { mode: 'focus', field },
       () => page.getByRole('button', { name: field, exact: true }).click())
     await expect(page.locator('.lineage-inspector strong')).toHaveText(field)
     expect(profile.nodes.some(node => node.callFrame.url.includes('LineageViewer.vue'))).toBe(true)
@@ -190,6 +258,14 @@ test('500-column two-hop graph profiles native field focus without geometry reco
     console.log(JSON.stringify({ measurement: 'native-lineage-focus', field, ...timing }))
     await testInfo.attach(`${field}.cpuprofile`, { body: JSON.stringify(profile), contentType: 'application/json' })
   }
+  const layout = await profileLineagePaint(page, page.locator('.lineage-viewer'), {
+    mode: 'layout', buttonLabel: '自动布局', fields: tables[2].map(field => field.field_name)
+  }, () => page.getByRole('button', { name: '自动布局', exact: true }).click())
+  expect(layout.profile.nodes.some(node => node.callFrame.url.includes('LineageViewer.vue'))).toBe(true)
+  await testInfo.attach('layout.cpuprofile', { body: JSON.stringify(layout.profile), contentType: 'application/json' })
+  const rendering = { initial: initial.timing, layout: layout.timing }
+  console.log(JSON.stringify({ measurement: 'native-lineage-render', ...rendering }))
+  await testInfo.attach('native-render-timings', { body: JSON.stringify(rendering), contentType: 'application/json' })
   await testInfo.attach('native-field-focus-timings', { body: JSON.stringify(samples), contentType: 'application/json' })
   expect(graphRequests).toBe(1)
   expect(errors).toEqual([])

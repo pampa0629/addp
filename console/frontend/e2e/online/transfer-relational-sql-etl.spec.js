@@ -1,4 +1,4 @@
-import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, profileLineageFieldFocus } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
+import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLineageTable, profileLineagePaint } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { lineageFieldConnections, FIELD_FONT_SIZE } from '../../../../common-frontend/graph/src/lineageFields.js'
 import { lineageNodeId } from '../../../../common-frontend/graph/src/lineageApi.js'
 import { expect, request, test } from '@playwright/test'
@@ -310,17 +310,36 @@ async function profileWideLineage(page, env, wide) {
     if (url.pathname === '/api/v1/meta/lineage/graph' && url.searchParams.get('item_id') === String(wide.target_item_id) && url.searchParams.get('granularity') === 'field') requests++
   })
   try {
-    const { graph, frame } = await managerFieldGraph(clean, wide.target_locator, wide.target_item_id, 'field_0000')
+    await clean.goto(`/manager/data-explorer?locator=${encodeURIComponent(wide.target_locator)}&tab=lineage`)
+    const frame = clean.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.getByRole('radio', { name: '字段级', exact: true })).toBeVisible()
+    const responseReady = clean.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/v1/meta/lineage/graph' && url.searchParams.get('granularity') === 'field' &&
+        url.searchParams.get('item_id') === String(wide.target_item_id)
+    })
+    const fields = Array.from({ length: wide.field_count }, (_, index) => `field_${String(index).padStart(4, '0')}`)
+    const viewer = frame.locator('.lineage-viewer')
+    const initial = await profileLineagePaint(clean, viewer, { mode: 'initial', itemID: wide.target_item_id, fields },
+      () => frame.getByText('字段级', { exact: true }).click())
+    const response = await responseReady
+    expect(response.status()).toBe(200)
+    const graph = await response.json()
+    expect(graph.granularity).toBe('field')
+    expect(String(graph.subject.item_id)).toBe(String(wide.target_item_id))
+    expect(graph.truncated).toBe(false)
+    expect(initial.timing.responseEndToStablePaintMs).toBeGreaterThanOrEqual(0)
+    expect(initial.profile.nodes.some(node => node.callFrame.url.includes('LineageViewer.vue'))).toBe(true)
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-initial.cpuprofile'), JSON.stringify(initial.profile))
     expect(graph.nodes).toHaveLength(1500)
     expect(graph.edges).toHaveLength(1000)
     expect(graph.subject.schema_snapshot_hash).toBe(wide.schema_snapshot_hash)
-    const canvas = frame.locator('.lineage-canvas canvas').first()
     const search = frame.getByRole('textbox', { name: '搜索字段', exact: true })
     const samples = []
     for (const field of ['field_0000', 'field_0249', 'field_0499']) {
       await search.fill(field.toUpperCase())
       await expect(frame.locator('.lineage-field-options button')).toHaveCount(2)
-      const { timing, profile } = await profileLineageFieldFocus(clean, canvas, field,
+      const { timing, profile } = await profileLineagePaint(clean, viewer, { mode: 'focus', field },
         () => frame.getByRole('button', { name: field, exact: true }).click())
       await expect(frame.locator('.lineage-inspector strong')).toHaveText(field)
       expect(profile.samples.length).toBeGreaterThan(0)
@@ -328,6 +347,15 @@ async function profileWideLineage(page, env, wide) {
       samples.push({ field, ...timing })
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `transfer-wide-${field}.cpuprofile`), JSON.stringify(profile))
     }
+    const layout = await profileLineagePaint(clean, viewer, { mode: 'layout', buttonLabel: '自动布局', fields },
+      () => frame.getByRole('button', { name: '自动布局', exact: true }).click())
+    expect(layout.profile.nodes.some(node => node.callFrame.url.includes('LineageViewer.vue'))).toBe(true)
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-layout.cpuprofile'), JSON.stringify(layout.profile))
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-native-render.json'), JSON.stringify({
+      nodes: graph.nodes.length, edges: graph.edges.length, graphRequests: requests,
+      measurement: 'native field-mode event and Resource Timing responseEnd to readable stable paint; native layout event to stable overview paint; CPU sampling enabled; geometry observer absent',
+      initial: initial.timing, layout: layout.timing
+    }, null, 2))
     expect(requests).toBe(1)
     expect(errors).toEqual([])
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-wide-native-focus.json'), JSON.stringify({

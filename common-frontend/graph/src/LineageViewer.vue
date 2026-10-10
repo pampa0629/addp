@@ -547,18 +547,28 @@ function registerLineageNode() {
 function graphData() {
   const palette = themePalette()
   const projection = isFieldGraph.value ? fieldProjection.value : null
-  const data = {
-    nodes: nodes.value.map(node => {
-      const isSubject = nodeId(node) === subjectId.value
+  const rendering = projection || {
+    nodes: nodes.value.map(node => ({ id: nodeId(node), node, size: [NODE_WIDTH, NODE_HEIGHT] })),
+    edges: edges.value.map((edge, index) => ({ id: `lineage-edge:${index}`, source: nodeId(edge.source),
+      target: nodeId(edge.target), sourceAnchor: 1, targetAnchor: 0, _edge: edge }))
+  }
+  return {
+    nodes: rendering.nodes.map(group => {
+      const node = group.node
+      const isSubject = projection
+        ? node.item_id === props.graph.subject?.item_id && node.schema_snapshot_hash === props.graph.subject?.schema_snapshot_hash
+        : group.id === subjectId.value
       const accent = node.kind === 'published_service' ? palette.warning : palette.primary
       return {
-        id: nodeId(node),
+        id: group.id,
         type: LINEAGE_NODE_TYPE,
-        size: [NODE_WIDTH, NODE_HEIGHT],
+        size: group.size,
         _node: node,
+        ...(projection ? { _fields: group.fields, _anchors: group.anchors, _collapsed: group.collapsed,
+          _collapsedLabel: t('lineage.collapsedFieldCount', { count: group.fields.length }) } : {}),
         _expandLabels: Object.fromEntries(['upstream', 'downstream'].map(direction => [direction, t(`lineage.expand.${direction}`, { count: node[`hidden_${direction}_count`] })])),
-        _title: truncate(nodeDisplayName(node), isSubject ? 23 : 30),
-        _path: truncate(nodePath(node), 40),
+        _title: truncate(projection ? node.name || node.full_name : nodeDisplayName(node), isSubject ? 23 : 30),
+        _path: truncate(projection ? node.full_name : nodePath(node), 40),
         _engineName: truncate(node.engine_name, 29),
         _engineIdentifier: node.engine_id ? t('lineage.engineIdentifier', { id: node.engine_id }) : '',
         _typeLabel: nodeTypeLabel(node),
@@ -579,14 +589,9 @@ function graphData() {
         }
       }
     }),
-    edges: edges.value.map((edge, index) => ({
-      id: `lineage-edge:${index}`,
-      source: nodeId(edge.source),
-      sourceAnchor: 1,
-      targetAnchor: 0,
-      target: nodeId(edge.target),
-      label: relationLabel(edge.relation_kind),
-      _edge: edge,
+    edges: rendering.edges.map(model => ({
+      ...model,
+      label: projection ? '' : relationLabel(model._edge.relation_kind),
       _haloColor: palette.canvas,
       style: {
         stroke: palette.textTertiary,
@@ -610,19 +615,6 @@ function graphData() {
       }
     }))
   }
-  if (projection) {
-    const visuals = new Map(data.nodes.map(node => [node.id, node]))
-    data.nodes = projection.nodes.map(group => {
-      const visual = visuals.get(nodeId(group.node))
-      const isSubject = group.node.item_id === props.graph.subject?.item_id && group.node.schema_snapshot_hash === props.graph.subject?.schema_snapshot_hash
-      return { ...visual, id: group.id, size: group.size, _fields: group.fields, _anchors: group.anchors,
-        _collapsed: group.collapsed, _collapsedLabel: t('lineage.collapsedFieldCount', { count: group.fields.length }),
-        _title: truncate(group.node.name || group.node.full_name, isSubject ? 23 : 30), _path: truncate(group.node.full_name, 40), _isSubject: isSubject,
-        _visual: { ...visual._visual, fill: isSubject ? palette.primarySoft : palette.background, stroke: isSubject ? palette.primary : palette.border, lineWidth: isSubject ? 2 : 1 } }
-    })
-    data.edges = projection.edges.map(edge => ({ ...data.edges.find(model => model.id === edge.id), ...edge, label: '' }))
-  }
-  return data
 }
 
 function fieldLabel(value, width, fontSize, fontWeight = 400) {

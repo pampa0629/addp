@@ -117,59 +117,95 @@ export async function lineageCanvasPaths(canvas) {
   return (await lineageCanvasSnapshot(canvas)).paths
 }
 
-// Profile a clean page independently of the geometry observer. Start at the
-// actual button event, not at Playwright's scheduling or locator wait.
-export async function profileLineageFieldFocus(page, canvas, field, click) {
-  await canvas.evaluate((element, field) => {
+// One lightweight probe for initial rendering, native layout and field focus.
+// Keep detailed geometry recording on a separate verification page.
+export async function profileLineagePaint(page, viewer, action, click) {
+  await viewer.evaluate((element, action) => {
     const view = element.ownerDocument.defaultView
-    if (view.__lineageCanvasText) throw new Error('Field profiling requires a page without the Canvas geometry observer')
+    if (view.__lineageCanvasText) throw new Error('Lineage profiling requires a page without the Canvas geometry observer')
+    if (view.__lineagePaintProbe) throw new Error('A lineage paint profile is already active')
     const prototype = view.CanvasRenderingContext2D.prototype
     const paint = prototype.fillText
-    const ratio = element.width / element.getBoundingClientRect().width
-    const probe = { start: null, draws: 0, previousDraws: -1, fieldPaint: null }
+    const fields = new Set(action.fields || [action.field])
+    const probe = { start: null, draws: 0, previousDraws: -1, fieldPaint: null, response: null }
     let finish
     probe.ready = new Promise(resolve => { finish = resolve })
     const frame = () => {
-      if (probe.fieldPaint && probe.draws === probe.previousDraws && probe.fontSize >= 11 - 1e-6 &&
-        Math.abs(probe.y - element.clientHeight / 2) < 3) {
-        finish({ eventToFieldPaintMs: probe.fieldPaint - probe.start,
-          eventToStablePaintMs: view.performance.now() - probe.start,
-          fieldFontPx: probe.fontSize, drawCalls: probe.draws })
+      const readable = action.mode !== 'focus' || (probe.fontSize >= 11 - 1e-6 && Math.abs(probe.y - probe.height / 2) < 3)
+      const completed = action.mode !== 'layout' || !element.querySelector(`button[aria-label="${action.buttonLabel}"]`)?.disabled
+      if (probe.fieldPaint !== null && probe.draws === probe.previousDraws && readable && completed &&
+        (action.mode !== 'initial' || probe.response)) {
+        const finished = view.performance.now()
+        const timing = { eventToFieldPaintMs: probe.fieldPaint - probe.start,
+          eventToStablePaintMs: finished - probe.start,
+          fieldFontPx: probe.fontSize, drawCalls: probe.draws }
+        if (probe.response) Object.assign(timing, {
+          eventToResponseEndMs: probe.response.responseEnd - probe.start,
+          responseEndToFieldPaintMs: probe.fieldPaint - probe.response.responseEnd,
+          responseEndToStablePaintMs: finished - probe.response.responseEnd
+        })
+        finish(timing)
       } else {
         probe.previousDraws = probe.draws
         probe.frame = view.requestAnimationFrame(frame)
       }
     }
     const start = event => {
+      if (probe.start !== null || !element.contains(event.target)) return
       const button = event.target.closest('button')
-      if (probe.start !== null || !button?.closest('.lineage-field-options') || button.textContent.trim() !== field) return
+      const radio = event.target.closest('.el-radio-button')?.querySelector('input')
+      const matches = action.mode === 'initial' ? radio?.value === 'field'
+        : action.mode === 'focus' ? button?.closest('.lineage-field-options') && button.textContent.trim() === action.field
+          : button?.getAttribute('aria-label') === action.buttonLabel
+      if (!matches) return
       probe.start = view.performance.now()
       probe.frame = view.requestAnimationFrame(frame)
     }
+    if (action.mode === 'initial') {
+      probe.resources = new view.PerformanceObserver(list => {
+        for (const entry of list.getEntries()) {
+          const url = new URL(entry.name)
+          if (probe.start !== null && entry.startTime >= probe.start &&
+            url.pathname === '/api/v1/meta/lineage/graph' && url.searchParams.get('granularity') === 'field' &&
+            url.searchParams.get('item_id') === String(action.itemID)) probe.response = entry
+        }
+      })
+      probe.resources.observe({ type: 'resource' })
+    }
     prototype.fillText = function (text, x, y, ...args) {
       const result = paint.call(this, text, x, y, ...args)
-      if (this.canvas === element && probe.start !== null) {
-        probe.draws++
-        if (String(text) === field) {
-          const matrix = this.getTransform()
+      // G6 can replace the canvas during initial rendering. Scope to the viewer.
+      if (probe.start === null || !element.contains(this.canvas) || !this.canvas.parentElement.classList.contains('lineage-canvas')) return result
+      probe.draws++
+      if (fields.has(String(text))) {
+        const matrix = this.getTransform()
+        const ratio = this.canvas.width / this.canvas.clientWidth
+        const px = (matrix.a * x + matrix.c * y + matrix.e) / ratio
+        const py = (matrix.b * x + matrix.d * y + matrix.f) / ratio
+        const font = Number(this.font.match(/([\d.]+)px/)?.[1]) * Math.hypot(matrix.a, matrix.b) / ratio
+        // Exclude offscreen measureText fallback draws and pre-fit coordinates.
+        if (px >= 0 && px < this.canvas.clientWidth && py >= 0 && py < this.canvas.clientHeight &&
+          (action.mode !== 'initial' || font >= 11 - 1e-6)) {
           probe.fieldPaint = view.performance.now()
-          probe.fontSize = Number(this.font.match(/([\d.]+)px/)?.[1]) * Math.hypot(matrix.a, matrix.b) / ratio
-          probe.y = (matrix.b * x + matrix.d * y + matrix.f) / ratio
+          probe.fontSize = font
+          probe.y = py
+          probe.height = this.canvas.clientHeight
         }
       }
       return result
     }
     element.ownerDocument.addEventListener('click', start, true)
-    probe.timer = view.setTimeout(() => finish({ error: 'Selected field did not reach a readable, centered paint frame' }), 10_000)
+    probe.timer = view.setTimeout(() => finish({ error: 'Lineage action did not reach a stable visible field paint frame' }), 10_000)
     probe.restore = () => {
       prototype.fillText = paint
       element.ownerDocument.removeEventListener('click', start, true)
       view.cancelAnimationFrame(probe.frame)
       view.clearTimeout(probe.timer)
-      delete view.__lineageFieldFocusProbe
+      probe.resources?.disconnect()
+      delete view.__lineagePaintProbe
     }
-    view.__lineageFieldFocusProbe = probe
-  }, field)
+    view.__lineagePaintProbe = probe
+  }, action)
   let profiler
   try {
     // Console and its module iframe use the same loopback site/renderer.
@@ -178,12 +214,12 @@ export async function profileLineageFieldFocus(page, canvas, field, click) {
     await profiler.send('Profiler.setSamplingInterval', { interval: 100 })
     await profiler.send('Profiler.start')
     await click()
-    const timing = await canvas.evaluate(element => element.ownerDocument.defaultView.__lineageFieldFocusProbe.ready)
+    const timing = await viewer.evaluate(element => element.ownerDocument.defaultView.__lineagePaintProbe.ready)
     if (timing.error) throw new Error(timing.error)
     const { profile } = await profiler.send('Profiler.stop')
     return { timing, profile }
   } finally {
-    await canvas.evaluate(element => element.ownerDocument.defaultView.__lineageFieldFocusProbe?.restore())
+    await viewer.evaluate(element => element.ownerDocument.defaultView.__lineagePaintProbe?.restore())
     if (profiler) {
       try { await profiler.send('Profiler.disable') }
       finally { await profiler.detach() }
