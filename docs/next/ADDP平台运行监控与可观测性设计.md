@@ -1433,3 +1433,7 @@ Desktop 保持 bridge 网络、独立 PID/挂载命名空间、非 root、cap_dr
 默认 make test-changed 在当时 63 项混合工作区变更、21 个受影响模块的 T2 参数预检退出 2，后续未执行，不计为全工作区通过。未修改数据库、目标事务或身份权限，未另行重跑 Monitor PostgreSQL 门禁；既有 Release/T2 owner Job 承担独立复验。不执行个人服务重启，当前开发后端仍需用户重启 Monitor 后才能提供 network 字段，个人 Safari 页面尚未复核；本批没有新 Hosted T4 或生产 T5 通过证据。
 
 本批 make test-platform 最终返回 0，包含现有前端/T2/Release CI 登记、Online runner、授权目录一致性和全部 Swagger 路由覆盖。它证明静态与确定性协议门禁通过，不替代真实 Hosted T4 或个人 Safari 验收。
+
+2026-10-10 追加实际验收：用户重启后，原生 macOS Safari 中同一 Docker Desktop Linux VM 主机正常展示 18 个逻辑核、62.68 GiB 内存、按任务数量解释的系统平均负载和按天/小时/分钟显示的运行时长。查询时间与资源值随 15 秒刷新更新，近五分钟负载曲线存在有效样本。文件系统区域就地显示“当前采集源未提供文件系统指标”，网络区域就地显示“当前采集源未提供网络接口指标，等待不会产生吞吐数据”，没有将未采集解释为等待窗口。磁盘表仍保留有效读写、IO 时间和合法零值。两处“查看采集配置”均打开同一主机目标 `9549b1ed-f0b2-4f3b-9c78-10715d33a405`，配置版本 2、已启用，最近抓取成功；通过 Safari 返回后保留 range=5m、metric=node.load.average_1m 和每 15 秒刷新。未改目标、身份、权限或个人部署，未操作内置浏览器；Safari 最终留在该主机概览。本次证明新 collection 契约已在个人部署运行，Desktop 未提供的两类指标仍不计为实际数据覆盖。
+
+实现提交 `9d4319f9db454a902559ad16e2efb92f12942146` 的 Platform CI（Run 37958412519、38000976557）、Release/T2（Run 37958412478）和 Quality frontend smoke（Run 37958412537）已复核为 completed/success。工作区默认门禁在实施时的退出 2 记录仍保留，不以各 owner CI 成功改写为本地全工作区通过。另通过既有 online-t4-gates.yml 的 platform-node-metrics 入口启动原生 Linux 一次性部署复验（Run 38007579914，调度提交 `0d5183b207cf476368e1916d0cbf229cbb8a31f9`），沿既有节点资源、预算、身份隔离、真实浏览器、故障恢复及零残留范围，且即时响应强制校验 filesystem/network 采集证据；该运行目前待完成，不计为本批 T4 通过，生产 T5 仍未运行。
