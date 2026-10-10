@@ -91,6 +91,7 @@ class HostedHDFSGateTest(unittest.TestCase):
               if [ "$previous" = --output ]; then
                 cat > "$argument" <<'EOF'
             export ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN=provisioner-token
+            export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN=source-token
             export ADDP_ONLINE_TEST_TENANT_ID=2
             export ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
             export ADDP_ONLINE_TEST_USER_USERNAME=external-online-consumer
@@ -113,6 +114,15 @@ class HostedHDFSGateTest(unittest.TestCase):
             identifier = 17 if 'hdfs-engine.json' in sys.argv[-3] else (19 if 'postgres-engine.json' in sys.argv[-3] else 18)
             Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={identifier}\\n')
         ''')
+        self.host._write_repository_script('scripts/test/hdfs-spark-consumer-flow-online.py', '''
+            import os, sys
+            assert sys.argv[1:] == ['--initialize-table-read']
+            assert os.environ['ADDP_ONLINE_POSTGRES_ENGINE_ID'] == '19'
+            assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-token'
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as trace:
+                trace.write('source-grant\\n')
+            sys.exit(1 if os.environ.get('ADDP_TEST_GRANT_FAIL') == '1' else 0)
+        ''')
         self.host._executable('make', '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
@@ -125,6 +135,7 @@ class HostedHDFSGateTest(unittest.TestCase):
               [ "$HADOOP_USER_NAME" = addp_business_reader ] && [ "$SPARK_WORKFLOW_SHARED_HOST" = 127.0.0.1 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] &&
+              [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] &&
               [ -z "${ELASTICSEARCH_PASSWORD:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
@@ -172,7 +183,7 @@ class HostedHDFSGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         sequence = ('infra-up', 'hdfs-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'docker-run:addp-hdfs-online-registry', 'make:build-images', 'docker-run:addp-hdfs-online-runtime',
                     'playwright install --with-deps chromium', '--suite hdfs-spark-consumer-flow',
-                    'engine-register', 'make:test-online ONLINE_SUITE=hdfs-spark-consumer-flow',
+                    'engine-register', 'source-grant', 'make:test-online ONLINE_SUITE=hdfs-spark-consumer-flow',
                     'docker-rm:addp-hdfs-online-runtime', 'application-stop', 'hdfs-fixture:stop', 'docker-rm:addp-hdfs-online-registry', 'infra-down')
         indices = [trace.index(step) for step in sequence]
         self.assertEqual(indices, sorted(indices))
@@ -188,7 +199,7 @@ class HostedHDFSGateTest(unittest.TestCase):
 
     def test_failures_destroy_owned_resources(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL': 'start'}, {'ADDP_TEST_IDENTITY_FAIL': '1'},
-                      {'ADDP_TEST_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_SUITE_FAIL': '1'},
+                      {'ADDP_TEST_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_GRANT_FAIL': '1'}, {'ADDP_TEST_SUITE_FAIL': '1'},
                       {'ADDP_TEST_BUILD_FAIL': '1'}, {'ADDP_TEST_RUNTIME_FAIL': '1'}):
             with self.subTest(flags=flags):
                 self.host.trace.unlink(missing_ok=True)

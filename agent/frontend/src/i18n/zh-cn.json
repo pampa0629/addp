@@ -17,6 +17,8 @@
       "sessionUnavailable": "会话不存在或无权访问",
       "welcome": "你好！我是 ADDP AI 助手。",
       "inputPlaceholder": "输入消息，Ctrl+Enter 发送...",
+      "clarificationPlaceholder": "回答当前问题，或补充你的要求...",
+      "multipleClarifications": "当前有多个待回答的问题，请在对应卡片中选择选项",
       "send": "发送",
       "cancel": "停止",
       "cancelFailed": "停止失败: {msg}",

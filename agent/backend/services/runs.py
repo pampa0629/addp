@@ -145,7 +145,12 @@ async def resume_agent_run(
 
     checkpoint = normalize_checkpoint(run.checkpoint)
     for interaction in interactions:
-        confirm_selection(checkpoint, interaction.answer)
+        if isinstance(interaction.answer, dict) and "text" in interaction.answer:
+            # A changed requirement can never reuse an earlier write approval.
+            checkpoint["observed"]["operation_reviews"].clear()
+            checkpoint["confirmed"]["operation_reviews"].clear()
+        else:
+            confirm_selection(checkpoint, interaction.answer)
     validate_checkpoint_size(checkpoint)
     run.checkpoint = checkpoint
     run.status = "running"

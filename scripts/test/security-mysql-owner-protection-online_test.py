@@ -575,7 +575,8 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
         authorizer = Mock()
         authorizer.request.side_effect = lambda method, path, expected, body=None: ONLINE.SUPPORT.Response(
             200, {"principal": {"type": "user", "id": "8"},
-                  "context": {"type": "tenant", "tenant_id": "2"}}) if method == "GET" else ONLINE.SUPPORT.Response(
+                  "context": {"type": "tenant", "tenant_id": "2"},
+                  "authorization": {"role_assignments": [{"permissions": sorted(ONLINE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)}]}}) if method == "GET" else ONLINE.SUPPORT.Response(
                       201, dict(body, engine_id=str(body["catalog_path"]["engine_id"]), approval_mode="independent", revocation=None))
         consumer = Mock()
         consumer.request.return_value = ONLINE.SUPPORT.Response(200, {
@@ -583,6 +584,8 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             "context": {"type": "tenant", "tenant_id": "2"},
             "token": {"type": "first_party_access_token"},
             "authorization": {"role_assignments": [{"role_key": "online.security", "permissions": sorted(ONLINE.REQUIRED_PERMISSIONS)}]}})
+        context = consumer.request.return_value
+        consumer.request.side_effect = lambda method, path, expected, body=None: context if method == 'GET' else ONLINE.SUPPORT.Response(expected[0], {'observed_at': '2026-10-10T00:00:00Z'})
         return authorizer, consumer
 
     def test_source_grants_cover_only_four_exact_tables_for_the_consumer(self):

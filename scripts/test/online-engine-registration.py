@@ -11,12 +11,73 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Callable, Mapping
 
 
 class RegistrationError(RuntimeError):
     pass
+
+
+SOURCE_INITIALIZER_PERMISSIONS = {
+    'system.engine_access_approval_requirement.initialize',
+    'system.engine_access_delegation.create',
+    'system.engine_access_grant.create',
+}
+
+
+def initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets):
+    """Prepare precise reads with separate Users and the formal System command."""
+    def identity(client):
+        context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
+        if not isinstance(context, dict):
+            raise RegistrationError('source Grant preparation requires a current User AuthContext')
+        principal, scope = context.get('principal', {}), context.get('context', {})
+        if (principal.get('type') != 'user' or scope.get('type') != 'tenant'
+            or scope.get('tenant_id') != str(tenant_id) or not principal.get('id')):
+            raise RegistrationError('source Grant preparation requires current Users in the disposable Tenant')
+        return context, str(principal['id'])
+    if not isinstance(tenant_id, int) or tenant_id <= 1 or not targets or len(targets) > 200:
+        raise RegistrationError('source Grant preparation requires a nondefault Tenant and exact tables')
+    for engine_id, namespace_term, namespace, table in targets:
+        if (not isinstance(engine_id, int) or engine_id <= 0 or namespace_term not in ('schema', 'database')
+            or not isinstance(namespace, str) or not namespace or not isinstance(table, str) or not table):
+            raise RegistrationError('source Grant preparation requires an exact ordinary table target')
+    current, initializer_id = identity(authorizer)
+    _, recipient_id = identity(consumer)
+    permissions = {permission for role in current.get('authorization', {}).get('role_assignments', [])
+                   for permission in role.get('permissions', [])}
+    if initializer_id == recipient_id or permissions != SOURCE_INITIALIZER_PERMISSIONS:
+        raise RegistrationError('source initializer must be separate and have only its three preparation permissions')
+    receipts = []
+    for engine_id, namespace_term, namespace, table in targets:
+        body = {
+            'request_id': str(uuid.uuid4()),
+            'catalog_path': {'version': 'catalog.path/v1', 'engine_id': engine_id, 'segments': [
+                {'term': 'server', 'kind': 'server', 'name': ''},
+                {'term': namespace_term, 'kind': 'namespace', 'name': namespace},
+                {'term': 'table', 'kind': 'table', 'name': table},
+            ]},
+            'requirement_version': '1', 'initialize_approval': True,
+            'recipient_type': 'user', 'recipient_id': recipient_id,
+            'action': 'read', 'expiry_mode': 'until_revoked',
+            'reason': 'Disposable Online exact table read acceptance',
+        }
+        check_path = '/api/v1/system/engine-access/read-checks/manager-preview'
+        check_body = {'targets': [body['catalog_path']]}
+        consumer.request('POST', check_path, (403,), check_body)
+        issued = authorizer.request('POST', f'/api/v1/system/engines/{engine_id}/access_grants', (201,), body).payload
+        expected = {key: body[key] for key in (
+            'request_id', 'catalog_path', 'requirement_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
+        expected.update(engine_id=str(engine_id), approval_mode='independent', revocation=None)
+        if not isinstance(issued, dict) or any(issued.get(key) != value for key, value in expected.items()):
+            raise RegistrationError('source Grant receipt differs from its exact consumer and table')
+        observed = consumer.request('POST', check_path, (200,), check_body).payload
+        if not isinstance(observed, dict) or not observed.get('observed_at'):
+            raise RegistrationError('source Grant did not produce a current read observation')
+        receipts.append(issued)
+    return receipts
 
 
 def require_external_environment(environment: Mapping[str, str]) -> tuple[str, str]:

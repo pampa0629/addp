@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import urllib.parse
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 
@@ -18,6 +19,53 @@ SPEC.loader.exec_module(REGISTRATION)
 
 
 class OnlineEngineRegistrationTest(unittest.TestCase):
+    def grant_clients(self):
+        current = {'principal': {'type': 'user', 'id': '8'},
+                   'context': {'type': 'tenant', 'tenant_id': '2'},
+                   'authorization': {'role_assignments': [{'permissions': sorted(REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)}]}}
+        consumer_current = {'principal': {'type': 'user', 'id': '7'}, 'context': {'type': 'tenant', 'tenant_id': '2'}}
+        authorizer, consumer = Mock(), Mock()
+        def prepare(method, path, expected, body=None):
+            if method == 'GET':
+                return SimpleNamespace(payload=current)
+            self.assertEqual(expected, (201,))
+            return SimpleNamespace(payload=dict(body, engine_id=str(body['catalog_path']['engine_id']), approval_mode='independent', revocation=None))
+        def read(method, path, expected, body=None):
+            if method == 'GET':
+                return SimpleNamespace(payload=consumer_current)
+            self.assertEqual(path, '/api/v1/system/engine-access/read-checks/manager-preview')
+            self.assertEqual(len(body['targets']), 1)
+            return SimpleNamespace(payload={'observed_at': '2026-10-10T00:00:00Z'} if expected == (200,) else {})
+        authorizer.request.side_effect, consumer.request.side_effect = prepare, read
+        return current, authorizer, consumer
+
+    def test_exact_table_grant_uses_separate_preparer_and_checks_denial_then_read(self):
+        _, authorizer, consumer = self.grant_clients()
+        receipts = REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
+        self.assertEqual(len(receipts), 1)
+        writes = [call for call in authorizer.request.call_args_list if call.args[0] == 'POST']
+        self.assertEqual(len(writes), 1)
+        body = writes[0].args[3]
+        self.assertEqual(body['recipient_id'], '7')
+        self.assertEqual(body['action'], 'read')
+        self.assertIs(body['initialize_approval'], True)
+        self.assertEqual(body['catalog_path']['segments'][-1], {'term': 'table', 'kind': 'table', 'name': 'hdfs_totals'})
+        checks = [call for call in consumer.request.call_args_list if call.args[0] == 'POST']
+        self.assertEqual([call.args[2] for call in checks], [(403,), (200,)])
+        self.assertTrue(all(call.args[3]['targets'] == [body['catalog_path']] for call in checks))
+
+    def test_grant_preparation_rejects_self_wrong_tenant_and_extra_permissions_before_writes(self):
+        for invalid in ('self', 'tenant', 'extra', 'missing'):
+            current, authorizer, consumer = self.grant_clients()
+            if invalid == 'self': current['principal']['id'] = '7'
+            if invalid == 'tenant': current['context']['tenant_id'] = '9'
+            permissions = current['authorization']['role_assignments'][0]['permissions']
+            if invalid == 'extra': permissions.append('system.engine.create')
+            if invalid == 'missing': permissions.pop()
+            with self.subTest(invalid=invalid), self.assertRaises(REGISTRATION.RegistrationError):
+                REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
+            self.assertTrue(all(call.args[0] == 'GET' for call in authorizer.request.call_args_list))
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(
             prefix="addp-online-engine-registration-"

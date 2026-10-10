@@ -114,7 +114,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, rasterWorkflowPermissions...)
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
-	allPermissions = append(allPermissions, securitySourceInitializerPermissions...)
+	allPermissions = append(allPermissions, sourceInitializerPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
 		if !exists {
@@ -405,10 +405,10 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 			t.Fatalf("preparation permission leaked into consumer: %s", key)
 		}
 	}
-	if len(securitySourceInitializerPermissions) != 3 {
+	if len(sourceInitializerPermissions) != 3 {
 		t.Fatal("source initializer must have only its three formal command qualifications")
 	}
-	for _, key := range securitySourceInitializerPermissions {
+	for _, key := range sourceInitializerPermissions {
 		if contains(permissions, key) || contains(securityInitializerPermissions, key) || contains(consumerPermissions, key) {
 			t.Fatalf("source preparation permission leaked: %s", key)
 		}

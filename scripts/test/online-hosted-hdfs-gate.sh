@@ -47,5 +47,6 @@ for engine in hdfs spark postgres; do
     export ADDP_ONLINE_SPARK_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
   fi
 done
-unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
+run_logged python3 scripts/test/hdfs-spark-consumer-flow-online.py --initialize-table-read
+unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

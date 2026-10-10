@@ -98,7 +98,8 @@
           v-model="inputText"
           type="textarea"
           :rows="3"
-          :placeholder="t('agent.chat.inputPlaceholder')"
+          :placeholder="t(pendingClarifications.length === 1 ? 'agent.chat.clarificationPlaceholder' : 'agent.chat.inputPlaceholder')"
+          :maxlength="pendingClarifications.length ? 2000 : undefined"
           resize="none"
           :disabled="isLoading || !canRun"
           @keydown.ctrl.enter="handleSend"
@@ -165,6 +166,17 @@ const canRun = computed(() =>
 )
 const sessionsLoaded = ref(false)
 const messages = ref([])
+const pendingClarifications = computed(() => {
+  const interactions = new Map()
+  for (const message of messages.value) {
+    for (const part of message.parts || []) {
+      if (part.type === 'interaction_ref' && part.kind === 'clarification') {
+        interactions.set(part.interaction_id, part)
+      }
+    }
+  }
+  return [...interactions.values()].filter(part => part.status === 'pending')
+})
 const inputText = ref('')
 const isLoading = ref(false)
 const isCancelling = ref(false)
@@ -398,8 +410,10 @@ async function runAgent({ userMessage = null, resume = null } = {}) {
   if (userMessage) agent.addMessage(userMessage)
 
   let replayed = false
+  let succeeded = false
   try {
     await agent.runAgent(resume ? { resume } : {}, createSubscriber())
+    succeeded = true
   } catch (error) {
     try {
       replayed = await replayActiveRun()
@@ -419,6 +433,7 @@ async function runAgent({ userMessage = null, resume = null } = {}) {
     activeRunId.value = null
     await Promise.all([loadSessions(), loadSessionMessages(currentSessionId.value)])
   }
+  return succeeded
 }
 
 async function cancelActiveRun() {
@@ -461,6 +476,18 @@ async function handleSend() {
   const content = inputText.value.trim()
   if (!content || isLoading.value || !canRun.value) return
 
+  if (pendingClarifications.value.length > 1) {
+    ElMessage.warning(t('agent.chat.multipleClarifications'))
+    return
+  }
+  if (pendingClarifications.value.length === 1) {
+    const interactionId = pendingClarifications.value[0].interaction_id
+    inputText.value = ''
+    const succeeded = await resumeInteraction(interactionId, { text: content })
+    if (!succeeded) inputText.value = content
+    return
+  }
+
   if (!currentSessionId.value && !await createSession()) return
 
   retryRunId.value = null
@@ -491,11 +518,15 @@ async function handleA2UIAction(action) {
   if (action.name !== 'interaction.submit' || isLoading.value) return
   const interactionId = action.context?.interactionId
   if (!interactionId) return
-  await runAgent({
+  await resumeInteraction(interactionId, action.context.answer)
+}
+
+function resumeInteraction(interactionId, answer) {
+  return runAgent({
     resume: [{
       interruptId: interactionId,
       status: 'resolved',
-      payload: action.context.answer
+      payload: answer
     }]
   })
 }

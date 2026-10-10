@@ -74,6 +74,8 @@ AG-UI 请求中的 `runId` 是协议调用标识；AgentRun 是服务端逻辑�
 
 Interaction resume 沿用 AgentRun 已记录的 Skill 和 Tool 白名单，不重新执行主路由选择；协议调用 ID 可以变化，但业务运行身份和能力边界不变。
 
+聊天文字在唯一 pending 澄清下也通过 Interaction resume 恢复原 Run。服务端对唯一精确匹配的选项采用规范候选事实，其他文字只进入模型补充上下文，不写入确认事实。创建复核文字使旧复核失效，不能代替确认按钮；owner approval 仍只由 owner 状态检查恢复。完整契约见交互协议规范 5.1。
+
 断线重连只回放同一 AgentRun 的 `run_events`，并以客户端已处理的 sequence 为游标；事件表不保存 Tool 参数或原始结果。取消仅停止 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 内以新的协议调用 ID 追加事件。
 
 消息 parts 支持：

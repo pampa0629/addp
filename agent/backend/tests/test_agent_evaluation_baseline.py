@@ -494,6 +494,44 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == names[1])
             self.assertEqual(result.payload["error_code"], "platform_condition_unsatisfied")
 
+    async def test_text_review_resume_cannot_reuse_approval_even_if_model_calls_create(self):
+        import uuid
+        from models.run import AgentRun
+        from services.interactions import create_clarification, resolve_interaction
+        from services.runs import resume_agent_run
+        from tests.test_interactions import _DB as InteractionDB
+        from tests.test_runs import _DB as RunDB
+
+        definition, _, _, arguments, checkpoint = platform_fixture()
+        identity = prepare_review(arguments, checkpoint)
+        confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
+        run = AgentRun(id=uuid.uuid4(), session_id=12, user_id=3, tenant_id=5,
+                       status="waiting", skill_name="transfer-generation", checkpoint=checkpoint)
+        interaction = await create_clarification(
+            InteractionDB(), session_id=12, user_id=3, tenant_id=5, agent_run_id=run.id,
+            tool_call_id="review", prompt="请复核", candidates=[
+                {"value": identity["fingerprint"], "label": "确认创建", "candidate": {"operation_review": identity}},
+            ],
+        )
+        interaction.id = uuid.uuid4()
+        await resolve_interaction(InteractionDB(interaction), interaction_id=str(interaction.id),
+                                  session_id=12, user_id=3, tenant_id=5, payload={"text": "确认创建"})
+        await resume_agent_run(RunDB(run), interactions=[interaction], session_id=12, user_id=3, tenant_id=5)
+
+        class ForbiddenCreate(_Tool):
+            async def ainvoke(self, _args):
+                raise AssertionError("text approval reached owner")
+
+        events = await self._run_factory(
+            agent_run_id=str(run.id), skill_name=run.skill_name, checkpoint=run.checkpoint,
+            tools=[_Tool("platform.capability.context", definition), ForbiddenCreate("transfer.task.create", {})],
+            allowed_tools=["platform.capability.context", "transfer.task.create"],
+            responses=[_Response(tool_calls=[_tool_call("transfer.task.create", arguments)]), _Response(content="请再次复核")],
+        )
+        result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == "transfer.task.create")
+        self.assertEqual(result.payload["error_code"], "platform_condition_unsatisfied")
+        self.assertIn("user_review", result.payload["content"])
+
     async def test_review_resume_refreshes_context_before_direct_create(self):
         definition, _, _, arguments, checkpoint = platform_fixture()
         identity = prepare_review(arguments, checkpoint)

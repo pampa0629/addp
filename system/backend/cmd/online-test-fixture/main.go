@@ -60,7 +60,7 @@ var securityInitializerPermissions = []string{
 
 // Source authorization is preparation-only; the owner consumer receives exact
 // table read Grants, never the ability to issue Grants or manage delegations.
-var securitySourceInitializerPermissions = []string{
+var sourceInitializerPermissions = []string{
 	"system.engine_access_approval_requirement.initialize",
 	"system.engine_access_delegation.create",
 	"system.engine_access_grant.create",
@@ -439,8 +439,10 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"] = initializer.AccessToken
+	}
+	if *suite == "security-mysql-owner-protection" || *suite == "hdfs-spark-consumer-flow" {
 		sourceInitializer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, "external-online-security-source-initializer", securitySourceInitializerPermissions)
+			tenant.ID, administrator.PrincipalID, "external-online-source-initializer", sourceInitializerPermissions)
 		if err != nil {
 			return err
 		}

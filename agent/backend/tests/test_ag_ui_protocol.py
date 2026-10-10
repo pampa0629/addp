@@ -43,6 +43,11 @@ class AGUIProtocolTests(unittest.TestCase):
             {"text/event-stream": {}},
         )
         self.assertEqual(operation["security"], [{"BearerAuth": []}])
+        self.assertIn("payload={text:string}", operation["description"])
+        self.assertIn("resume", operation["x-ai-hint"])
+        for status_code in ("400", "404", "409", "503"):
+            self.assertEqual(operation["responses"][status_code]["content"]["application/json"]["schema"],
+                             {"$ref": "#/components/schemas/ErrorResponse"})
         self.assertEqual(
             specification["components"]["securitySchemes"]["BearerAuth"]["scheme"],
             "bearer",

@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents.main_agent import stream_agent_response
 from agents.context import HISTORY_MESSAGE_LIMIT, build_context_window
 from agents.events import AgentEvent
+from api.runs import ErrorResponse
 from authorization_permissions_generated import (
     AGENT_RUN_CREATE,
     AGENT_RUN_EXECUTE,
@@ -44,6 +45,7 @@ from authorization_permissions_generated import (
 )
 from database import AsyncSessionLocal, get_db
 from middleware.auth import require_permissions
+from i18n import clarification_text_error
 from models.interaction import Interaction
 from models.message import Message
 from models.run import AgentRun
@@ -58,6 +60,7 @@ from protocol.a2ui import (
 )
 from services.interactions import (
     InteractionAnswerError,
+    InteractionTextAnswerError,
     InteractionNotFoundError,
     InteractionOwnerStateError,
     InteractionOwnerUnavailableError,
@@ -157,6 +160,7 @@ async def _save_user_input(
     user_id: int,
     tenant_id: int,
     source_token: str,
+    accept_language: str = "zh-cn",
 ) -> list[Interaction]:
     if body.resume:
         resolved_interactions: list[Interaction] = []
@@ -177,6 +181,9 @@ async def _save_user_input(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="交互请求不存在") from exc
             except InteractionStateError as exc:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="交互请求已处理") from exc
+            except InteractionTextAnswerError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                    detail=clarification_text_error(str(exc), accept_language)) from exc
             except InteractionAnswerError as exc:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
             except InteractionOwnerStateError as exc:
@@ -317,15 +324,27 @@ async def _save_assistant_message(
 @router.post(
     "/chat",
     summary="运行智能体 | Run Agent",
-    description="接收当前 Tenant 内本人会话的标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
+    description=(
+        "接收本人会话的 AG-UI RunAgentInput，返回 AG-UI SSE。文字回答澄清使用 resume，"
+        "显式携带 interruptId 与 payload={text:字符串}，上限 2000 字符，恢复同一 AgentRun。"
+        "文字不批准创建或 owner 操作。 | Accept owned-session AG-UI input and return SSE. "
+        "Answer a clarification via resume with its interruptId and payload={text:string}, "
+        "at most 2000 characters, to resume the same AgentRun. Text does not approve writes."
+    ),
     dependencies=[Depends(require_permissions(AGENT_RUN_CREATE, AGENT_RUN_EXECUTE))],
     openapi_extra={
-        "x-ai-hint": "使用 threadId 指定已有 ADDP Agent 会话；messages 中最后一条 user 消息是本次新输入。",
+        "x-ai-hint": "threadId 指定已有会话；新目标使用 messages；当前澄清的选项或文字回答使用 resume，不创建新 Run。 | Use messages for a new goal and resume for the current clarification, without creating a new Run.",
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [AGENT_RUN_CREATE, AGENT_RUN_EXECUTE],
     },
     response_class=StreamingResponse,
-    responses={200: {"content": {"text/event-stream": {}}}},
+    responses={
+        200: {"content": {"text/event-stream": {}}},
+        400: {"model": ErrorResponse, "description": "澄清回答或输入无效 | Invalid clarification answer or input"},
+        404: {"model": ErrorResponse, "description": "会话或交互不存在 | Session or interaction not found"},
+        409: {"model": ErrorResponse, "description": "交互或运行状态不可恢复 | Interaction or run cannot be resumed"},
+        503: {"model": ErrorResponse, "description": "Owner 审批状态不可用 | Owner approval state unavailable"},
+    },
 )
 async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends(get_db)):
     try:
@@ -356,6 +375,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 user_id=user_id,
                 tenant_id=tenant_id,
                 source_token=request.state.token,
+                accept_language=request.headers.get("accept-language", "zh-cn"),
             )
             if resolved_interactions:
                 resumed_from_interaction = True

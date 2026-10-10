@@ -28,6 +28,9 @@ SUPPORT = importlib.util.module_from_spec(SUPPORT_SPEC)
 assert SUPPORT_SPEC.loader is not None
 sys.modules[SUPPORT_SPEC.name] = SUPPORT
 SUPPORT_SPEC.loader.exec_module(SUPPORT)
+REGISTRATION_SPEC = importlib.util.spec_from_file_location('security_online_engine_registration', Path(__file__).with_name('online-engine-registration.py'))
+REGISTRATION = importlib.util.module_from_spec(REGISTRATION_SPEC)
+REGISTRATION_SPEC.loader.exec_module(REGISTRATION)
 
 GatewayClient = SUPPORT.GatewayClient
 SuiteError = SUPPORT.SuiteError
@@ -1183,41 +1186,17 @@ def initialize_source_grants(
     postgres_engine_id: int, mysql_engine_id: int, mysql_database: str,
 ) -> None:
     """Prepare precise reads through System's sole independent Grant command."""
-    identity = validate_user_identity(consumer, tenant_id)
-    context = _object(authorizer.request("GET", "/api/v1/system/auth/context", (200,)).payload,
-                      "source initializer AuthContext")
-    principal = _object(context.get("principal"), "source initializer principal")
-    scope = _object(context.get("context"), "source initializer context")
-    if (principal.get("type") != "user" or scope.get("type") != "tenant"
-            or scope.get("tenant_id") != str(tenant_id)
-            or principal.get("id") == identity["principal_id"]):
-        raise SuiteError("source initializer must be a separate User in the disposable Tenant")
+    validate_user_identity(consumer, tenant_id)
     targets = [
         (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_SOURCE),
         (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_TARGET),
         (postgres_engine_id, "schema", TARGET_SCHEMA, TARGET_TABLE),
         (mysql_engine_id, "database", mysql_database, SOURCE_TABLE),
     ]
-    for engine_id, namespace_term, namespace, table in targets:
-        body = {
-            "request_id": str(uuid.uuid4()),
-            "catalog_path": {"version": "catalog.path/v1", "engine_id": engine_id, "segments": [
-                {"term": "server", "kind": "server", "name": ""},
-                {"term": namespace_term, "kind": "namespace", "name": namespace},
-                {"term": "table", "kind": "table", "name": table},
-            ]},
-            "requirement_version": "1", "initialize_approval": True,
-            "recipient_type": "user", "recipient_id": identity["principal_id"],
-            "action": "read", "expiry_mode": "until_revoked",
-            "reason": "Disposable Security four-owner exact table read acceptance",
-        }
-        issued = _object(authorizer.request("POST", f"/api/v1/system/engines/{engine_id}/access_grants",
-                                           (201,), body).payload, "source Grant issuance")
-        expected = {key: body[key] for key in (
-            "request_id", "catalog_path", "requirement_version", "recipient_type", "recipient_id", "action", "expiry_mode")}
-        expected.update(engine_id=str(engine_id), approval_mode="independent", revocation=None)
-        if any(issued.get(key) != value for key, value in expected.items()):
-            raise SuiteError("source Grant issuance does not match its exact consumer and table")
+    try:
+        REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, tenant_id, targets)
+    except REGISTRATION.RegistrationError as error:
+        raise SuiteError(str(error)) from error
 
 
 def initialize_governance(client: GatewayClient, tenant_id: int) -> None:

@@ -17,6 +17,8 @@
       "sessionUnavailable": "This conversation does not exist or is not accessible",
       "welcome": "Hello! I'm the ADDP AI Assistant.",
       "inputPlaceholder": "Type a message, Ctrl+Enter to send...",
+      "clarificationPlaceholder": "Answer the current question or add your requirements...",
+      "multipleClarifications": "There are multiple pending questions. Please choose an option in the relevant card",
       "send": "Send",
       "cancel": "Stop",
       "cancelFailed": "Stop failed: {msg}",

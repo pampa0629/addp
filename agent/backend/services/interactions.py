@@ -23,6 +23,13 @@ class InteractionAnswerError(Exception):
     pass
 
 
+class InteractionTextAnswerError(InteractionAnswerError):
+    """A stable validation reason, translated at the HTTP boundary."""
+
+
+CLARIFICATION_TEXT_MAX_LENGTH = 2000
+
+
 class InteractionOwnerStateError(Exception):
     pass
 
@@ -76,15 +83,25 @@ async def create_clarification(
         owner="agent",
         status="pending",
         prompt=prompt,
-        response_schema={
-            "type": "object",
-            "properties": {
-                "value": {"type": ["string", "number"]},
-                "label": {"type": "string"},
+        response_schema={"oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "value": {"type": ["string", "number"]},
+                    "label": {"type": "string"},
+                },
+                "required": ["value", "label"],
+                "additionalProperties": True,
+                "not": {"required": ["text"]},
             },
-            "required": ["value", "label"],
-            "additionalProperties": True,
-        },
+            {
+                "type": "object",
+                "properties": {"text": {"type": "string", "minLength": 1,
+                                         "maxLength": CLARIFICATION_TEXT_MAX_LENGTH}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        ]},
         options=options,
     )
     db.add(interaction)
@@ -165,7 +182,7 @@ async def resolve_interaction(
             Interaction.session_id == session_id,
             Interaction.user_id == user_id,
             Interaction.tenant_id == tenant_id,
-        )
+        ).with_for_update()
     )
     interaction = result.scalar_one_or_none()
     if interaction is None:
@@ -204,22 +221,46 @@ async def resolve_interaction(
         await db.flush()
         return interaction
 
-    selected = next(
-        (
-            option
-            for option in interaction.options or []
-            if isinstance(option, dict) and option.get("value") == payload.get("value")
-        ),
-        None,
-    )
-    if selected is None:
-        raise InteractionAnswerError("交互回答不在允许的选项中")
+    if "text" in payload:
+        if interaction.kind != "clarification" or set(payload) != {"text"} or not isinstance(payload["text"], str):
+            raise InteractionTextAnswerError("invalid_shape")
+        text = payload["text"].strip()
+        if not text or len(payload["text"]) > CLARIFICATION_TEXT_MAX_LENGTH:
+            raise InteractionTextAnswerError("invalid_length")
+        selected = _match_text_option(interaction.options or [], text) or {"text": text}
+    else:
+        selected = next(
+            (
+                option
+                for option in interaction.options or []
+                if isinstance(option, dict) and option.get("value") == payload.get("value")
+            ),
+            None,
+        )
+        if selected is None:
+            raise InteractionAnswerError("交互回答不在允许的选项中")
 
     interaction.status = "completed"
     interaction.answer = selected
     interaction.completed_at = datetime.now(timezone.utc)
     await db.flush()
     return interaction
+
+
+def _match_text_option(options: list[dict[str, Any]], text: str) -> dict[str, Any] | None:
+    # Review approval must always use the persisted button option, never text.
+    if any(isinstance(option.get("candidate"), dict) and "operation_review" in option["candidate"]
+           for option in options if isinstance(option, dict)):
+        return None
+    matches = []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        candidate = option.get("candidate") if isinstance(option.get("candidate"), dict) else {}
+        names = [option.get("label"), option.get("value"), candidate.get("name"), candidate.get("full_name")]
+        if any(isinstance(name, (str, int)) and not isinstance(name, bool) and text == str(name) for name in names):
+            matches.append(option)
+    return matches[0] if len(matches) == 1 else None
 
 
 async def cancel_pending_interactions(db: AsyncSession, *, agent_run_id: UUID) -> None:
@@ -238,12 +279,21 @@ async def cancel_pending_interactions(db: AsyncSession, *, agent_run_id: UUID) -
 def format_resume_display(interaction: Interaction) -> str:
     """Project a confirmed choice for the UI, not the runtime candidate facts."""
     if interaction.kind == "clarification" and isinstance(interaction.answer, dict):
+        if "text" in interaction.answer:
+            return interaction.answer["text"]
         return str(interaction.answer.get("label") or interaction.answer.get("value") or "")
     return format_resume_message(interaction)
 
 
 def format_resume_message(interaction: Interaction) -> str:
     answer = interaction.answer
+    if interaction.kind == "clarification" and isinstance(answer, dict) and "text" in answer:
+        return (
+            f"用户对当前澄清的文字回答：{answer['text']}\n"
+            "这是补充要求，不是写入批准或新的 owner 资源事实；"
+            "请沿用当前 Skill、已观察事实和必要澄清，修改配置后重新复核。\n"
+            f"原澄清问题：{interaction.prompt}"
+        )
     if interaction.kind == "owner_approval" and isinstance(answer, dict):
         if answer.get("status") == "consumed" and answer.get("execution_id"):
             return (

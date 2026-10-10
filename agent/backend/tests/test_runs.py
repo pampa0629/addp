@@ -89,6 +89,30 @@ class _EntityDB:
 
 
 class AgentRunLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_text_resume_keeps_run_and_skill_but_invalidates_operation_reviews(self):
+        import uuid
+        from agents.checkpoint import new_checkpoint
+        from models.interaction import Interaction
+        from models.run import AgentRun
+
+        checkpoint = new_checkpoint()
+        review = {"tool": "transfer.task.create", "fingerprint": "previous-review"}
+        for section in ("observed", "confirmed"):
+            checkpoint[section]["operation_reviews"]["transfer.task.create"] = review
+        run = AgentRun(id=uuid.uuid4(), session_id=12, user_id=3, tenant_id=5,
+                       initial_protocol_run_id="initial", skill_name="transfer-generation",
+                       status="waiting", checkpoint=checkpoint)
+        interaction = Interaction(agent_run_id=run.id, kind="clarification", status="completed",
+                                  answer={"text": "把目标表名改成 outdoor_new"})
+        resumed = await resume_agent_run(_DB(run), interactions=[interaction],
+                                        session_id=12, user_id=3, tenant_id=5)
+        self.assertIs(resumed, run)
+        self.assertEqual(resumed.skill_name, "transfer-generation")
+        self.assertEqual(resumed.status, "running")
+        self.assertEqual(resumed.checkpoint["observed"]["operation_reviews"], {})
+        self.assertEqual(resumed.checkpoint["confirmed"]["operation_reviews"], {})
+        self.assertEqual(resumed.checkpoint["confirmed"]["resources"], {})
+
     async def test_owner_approval_resumes_the_same_waiting_agent_run(self):
         import uuid
 

@@ -455,7 +455,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Tool Manifest | 工具清单 | 声明 ADDP Tool 名称、版本、输入输出 Schema、owner、权限、风险、错误和审计约束的机器可读契约。 | 是 AI Tool 契约事实源；不替代 Swagger，也不自动开放全部 API。 |
 | Tool Adapter | 工具适配器 | 把同一 Tool Manifest 和 Python SDK 暴露给特定 Agent 宿主的薄协议层。 | ADDP Agent Tool Provider、`addp` CLI 和后续 MCP Server 都是 Adapter；不得包含分叉业务逻辑或第二套 API Client。 |
 | ResultRef | 结果引用 | Agent 消息对 owner 模块业务结果的稳定引用。 | 不建立全局 Artifact 实体，不复制 workflow、execution、数据项或其他 owner 事实。 |
-| Interaction | 交互请求 | 等待用户完成澄清、审批、表单或资源选择的有状态请求。 | 必须有稳定 ID、owner 和状态；写入审批由业务 owner 模块持有，客户端确认不是权威事实。 |
+| Interaction | 交互请求 | 等待用户完成澄清、审批、表单或资源选择的有状态请求。 | 必须有稳定 ID、owner 和状态；澄清可由选项或有界文字恢复同一 AgentRun，补充文字不等于资源身份确认或写入批准；写入审批由业务 owner 模块持有，客户端确认不是权威事实。 |
 | Presentation | 表现描述 | 描述 ResultRef 或 Interaction 如何在客户端显示的可重建投影。 | A2UI Surface、文本摘要和 `open_url` 都属于表现方式，不是业务事实源。 |
 | AG-UI | Agent 用户交互协议 | Agent Runtime 与 Web 前端之间传递 run 生命周期、文本、Tool、状态和 Activity 的标准事件协议。 | ADDP Agent 正式切换后不再使用 `0:`、`dag:` 等私有流前缀。 |
 | A2UI | Agent 到用户界面协议 | 通过版本化 Catalog 和声明式组件消息描述 Agent 界面的表现协议。 | 只允许客户端预注册组件和函数；负责 Presentation，不替代 ResultRef、Interaction、权限或服务端校验。 |

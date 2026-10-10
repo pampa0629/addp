@@ -1,6 +1,6 @@
 # ADDP 智能体交互协议规范
 
-更新日期：2026-07-18
+更新日期：2026-10-10
 
 状态：正式规范。内置 Agent 的 AgentRun、AG-UI、消息 parts、Interaction、ResultRef、Presentation 和 ADDP A2UI Catalog 以本文为准。
 
@@ -106,6 +106,14 @@ GET /api/v1/agent/runs/{agent_run_id}/events?after={sequence}
 
 澄清恢复的模型上下文与用户可见消息分别投影：候选事实和复核身份保留在 Interaction、检查点及受限上下文中，聊天气泡只显示服务端已确认的选项名称。消息历史以同一用户、同一租户内的 Interaction 重建该展示，不解析消息正文来提取候选事实，也不改变原始确认或审计。创建复核的完整参数必须可查看；`ClarificationChoice` 中的围栏代码块默认折叠，展开后按原文显示，折叠不改变确认值、指纹或提交内容。
 
+### 5.1 用文字回答当前澄清
+
+会话只有一个 pending 的 Agent-owned clarification 时，聊天输入框发送文字必须走同一 `/chat` 的 `resume`，显式携带该 Interaction ID 与 `payload={"text":"用户回答"}`，不创建新的 AgentRun。原始文字最多 2000 字符，去除首尾空白后不能为空，不得混入选项值、候选事实或批准字段。存在多个 pending 澄清时，客户端不能猜测回答对象；用户可在对应卡片选择选项。刷新后仍从消息的 InteractionRef 状态识别当前澄清。
+
+服务端只在文字与当前 Interaction 的某个选项名称、值或已观察候选的 `name/full_name` 唯一、区分大小写地精确匹配时，采用持久选项的规范事实，不接受客户端提供候选身份。其余文字作为用户补充要求恢复同一 Run，不写入 `checkpoint.confirmed`；模型必须结合当前问题、已观察事实与原 Skill 继续澄清，不把文字中的 locator 或 ID 当作 owner 事实。消息展示此时只保留用户回答，不输出内部提示或候选事实。
+
+最终创建复核的文字回答无论是否为“确认创建”，都不是批准；只作为补充要求，并使旧操作复核失效。创建仍须重新生成绑定确切参数、平台定义与 owner 事实的复核，由用户显式选择持久化的确认选项。`owner_approval` 不接受文字回答，仍只允许检查 owner 状态。终态、重复提交及用户／租户／会话越界保持拒绝。
+
 ## 六、ResultRef、Interaction 与 Presentation
 
 ### 6.1 ResultRef
@@ -160,7 +168,7 @@ Catalog props 只允许声明式 JSON、稳定引用和受限展示参数。禁�
 | 组件 | 用途 | 硬上限或边界 |
 | --- | --- | --- |
 | `WorkflowDag` | 展示候选 workflow DAG。 | 只展示声明式节点和边，不执行 workflow。 |
-| `ClarificationChoice` | 回答 Agent-owned 澄清。 | 只能提交 Interaction 已声明选项。 |
+| `ClarificationChoice` | 回答 Agent-owned 澄清。 | 卡片只提交已声明选项；聊天文字按 5.1 节恢复同一 Interaction，不产生审批事实。 |
 | `ApprovalRequest` | 展示 owner 审批状态和跳转入口。 | 只能 `open_url` 或触发 `check`，不能作出批准决定。 |
 | `TablePreview` | 展示受限表格投影。 | 最多 50 列、100 行，单元格只允许 JSON 标量。 |
 | `MapView` | 展示受限 WGS84 GeoJSON。 | 最多 200 Feature、5000 个坐标值，不接受 URL。 |

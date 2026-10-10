@@ -8,6 +8,7 @@ from services.interactions import (
     InteractionStateError,
     create_clarification,
     create_owner_approval,
+    format_resume_display,
     format_resume_message,
     resolve_interaction,
 )
@@ -40,6 +41,87 @@ class _DB:
 
 
 class InteractionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_text_answer_resumes_without_inventing_candidate_facts(self):
+        from models.interaction import Interaction
+
+        interaction = Interaction(
+            id=uuid.uuid4(), session_id=12, user_id=3, tenant_id=5,
+            agent_run_id=uuid.uuid4(), kind="clarification", status="pending",
+            prompt="请选择行粒度", options=[{"value": "unwind", "label": "展开数组"}],
+        )
+        resolved = await resolve_interaction(
+            _DB(interaction), interaction_id=str(interaction.id),
+            session_id=12, user_id=3, tenant_id=5,
+            payload={"text": "  一文档一行，只投影标量字段。  "},
+        )
+        self.assertIs(resolved, interaction)
+        self.assertEqual(resolved.answer, {"text": "一文档一行，只投影标量字段。"})
+        self.assertEqual(resolved.status, "completed")
+        self.assertEqual(format_resume_display(resolved), "一文档一行，只投影标量字段。")
+        self.assertIn("请选择行粒度", format_resume_message(resolved))
+
+    async def test_text_only_confirms_a_unique_exact_persisted_candidate(self):
+        from models.interaction import Interaction
+
+        candidates = [
+            {"value": "addp://one", "label": "Outdoor.Outdoors", "candidate": {"name": "Outdoors", "locator": "addp://one"}},
+            {"value": "addp://two", "label": "Outdoor.Photos", "candidate": {"name": "Photos", "locator": "addp://two"}},
+        ]
+        for text, expected in (("Outdoors", candidates[0]), ("outdoors", {"text": "outdoors"}),
+                               ("随便选一个", {"text": "随便选一个"})):
+            with self.subTest(text=text):
+                interaction = Interaction(id=uuid.uuid4(), kind="clarification", status="pending", options=candidates)
+                await resolve_interaction(_DB(interaction), interaction_id=str(interaction.id),
+                                          session_id=12, user_id=3, tenant_id=5, payload={"text": text})
+                self.assertEqual(interaction.answer, expected)
+        candidates[1]["candidate"]["name"] = "Outdoors"
+        interaction = Interaction(id=uuid.uuid4(), kind="clarification", status="pending", options=candidates)
+        await resolve_interaction(_DB(interaction), interaction_id=str(interaction.id),
+                                  session_id=12, user_id=3, tenant_id=5, payload={"text": "Outdoors"})
+        self.assertEqual(interaction.answer, {"text": "Outdoors"})
+
+    async def test_text_cannot_approve_a_review_or_an_owner_operation(self):
+        from models.interaction import Interaction
+
+        review = Interaction(id=uuid.uuid4(), kind="clarification", status="pending", options=[
+            {"value": "fingerprint", "label": "确认创建", "candidate": {"operation_review": {"tool": "transfer.task.create"}}},
+        ])
+        for text in ("确认创建", "fingerprint"):
+            review.status = "pending"
+            await resolve_interaction(_DB(review), interaction_id=str(review.id), session_id=12,
+                                      user_id=3, tenant_id=5, payload={"text": text})
+            self.assertEqual(review.answer, {"text": text})
+        owner = Interaction(id=uuid.uuid4(), kind="owner_approval", status="pending")
+        with self.assertRaises(InteractionAnswerError):
+            await resolve_interaction(_DB(owner), interaction_id=str(owner.id), session_id=12,
+                                      user_id=3, tenant_id=5, payload={"text": "批准"})
+        self.assertEqual(owner.status, "pending")
+
+    async def test_text_shape_and_length_are_strict_and_rejection_does_not_consume(self):
+        from models.interaction import Interaction
+
+        for payload in ({"text": ""}, {"text": "  "}, {"text": 1}, {"text": "x" * 2001},
+                        {"text": "Outdoors", "candidate": {"locator": "addp://invented"}},
+                        {"text": "确认创建", "value": "fingerprint"}):
+            with self.subTest(payload_keys=list(payload)):
+                interaction = Interaction(id=uuid.uuid4(), kind="clarification", status="pending", options=[])
+                with self.assertRaises(InteractionAnswerError):
+                    await resolve_interaction(_DB(interaction), interaction_id=str(interaction.id),
+                                              session_id=12, user_id=3, tenant_id=5, payload=payload)
+                self.assertEqual(interaction.status, "pending")
+
+    async def test_text_at_limit_is_accepted_and_duplicate_submission_is_rejected(self):
+        from models.interaction import Interaction
+
+        interaction = Interaction(id=uuid.uuid4(), kind="clarification", status="pending", options=[])
+        db = _DB(interaction)
+        arguments = dict(interaction_id=str(interaction.id), session_id=12, user_id=3, tenant_id=5,
+                         payload={"text": "字" * 2000})
+        await resolve_interaction(db, **arguments)
+        self.assertEqual(interaction.answer, {"text": "字" * 2000})
+        with self.assertRaises(InteractionStateError):
+            await resolve_interaction(db, **arguments)
+
     async def test_clarification_persists_recoverable_options(self):
         db = _DB()
         agent_run_id = uuid.uuid4()
@@ -59,7 +141,12 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(interaction.agent_run_id, agent_run_id)
         self.assertEqual(interaction.status, "pending")
         self.assertEqual(interaction.options[0]["value"], "locator-1")
-        self.assertEqual(interaction.response_schema["required"], ["value", "label"])
+        choice_schema, text_schema = interaction.response_schema["oneOf"]
+        self.assertEqual(choice_schema["required"], ["value", "label"])
+        self.assertEqual(choice_schema["not"], {"required": ["text"]})
+        self.assertEqual(text_schema["required"], ["text"])
+        self.assertFalse(text_schema["additionalProperties"])
+        self.assertEqual(text_schema["properties"]["text"]["maxLength"], 2000)
 
     async def test_clarification_preserves_runtime_option_value_and_candidate_fact(self):
         db = _DB()
@@ -149,6 +236,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("interactions.session_id", statement_text)
         self.assertIn("interactions.user_id", statement_text)
         self.assertIn("interactions.tenant_id", statement_text)
+        self.assertIn("FOR UPDATE", statement_text)
 
     async def test_completed_interaction_cannot_be_resumed_again(self):
         from models.interaction import Interaction

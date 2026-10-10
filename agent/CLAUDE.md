@@ -144,6 +144,8 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 
 澄清恢复时，`content` 保留模型需要的受限上下文，`parts` 只展示服务端确认的选项名称；消息历史从当前用户/Tenant 的 Interaction 重建同一展示，不把候选事实和复核指纹作为聊天正文输出。共享 `ClarificationChoice` 默认折叠围栏代码块，完整创建参数可展开查看，确认值和 Runtime 校验不变。
 
+唯一 pending 澄清下，聊天框文字通过同一 `/chat` 的 `resume` 与 `payload={"text":...}` 恢复原 AgentRun，不新建 Run。文字上限 2000 字符；唯一精确匹配采用服务端持久选项，否则仅作为补充要求。复核文字不产生批准并使旧复核失效，owner approval 不接受文字。多 pending 澄清不得猜测回答对象。详见交互协议规范 5.1。
+
 ## 协议约束
 
 - `/api/v1/agent/chat` 请求体使用标准 AG-UI `RunAgentInput`。

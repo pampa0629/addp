@@ -23,6 +23,12 @@ def final_result():
 
 
 class HDFSOnlineTest(unittest.TestCase):
+    def test_source_preparation_refuses_personal_environment_before_any_request(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(MODULE.sys, 'argv', ['hdfs', '--initialize-table-read']), patch.object(MODULE.support, 'GatewayClient') as client:
+            with self.assertRaises(MODULE.REGISTRATION.RegistrationError):
+                MODULE.main()
+            client.assert_not_called()
+
     def test_locator_keeps_dot_and_encodes_original_filename_once(self):
         self.assertEqual(MODULE.locator(7, {'full_name': 'samples/orders.parquet', 'id': 91}),
                          'addp://engine/7/path/samples/orders.parquet?type=file&item_id=91')

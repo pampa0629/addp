@@ -1437,7 +1437,7 @@
   "paths": {
     "/api/v1/agent/chat": {
       "post": {
-        "description": "接收当前 Tenant 内本人会话的标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
+        "description": "接收本人会话的 AG-UI RunAgentInput，返回 AG-UI SSE。文字回答澄清使用 resume，显式携带 interruptId 与 payload={text:字符串}，上限 2000 字符，恢复同一 AgentRun。文字不批准创建或 owner 操作。 | Accept owned-session AG-UI input and return SSE. Answer a clarification via resume with its interruptId and payload={text:string}, at most 2000 characters, to resume the same AgentRun. Text does not approve writes.",
         "operationId": "chat_api_v1_agent_chat_post",
         "requestBody": {
           "content": {
@@ -1455,6 +1455,16 @@
               "text/event-stream": {}
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "澄清回答或输入无效 | Invalid clarification answer or input"
           },
           "401": {
             "content": {
@@ -1476,6 +1486,26 @@
             },
             "description": "权限不足 | Permission denied"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "会话或交互不存在 | Session or interaction not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "交互或运行状态不可恢复 | Interaction or run cannot be resumed"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1485,6 +1515,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Owner 审批状态不可用 | Owner approval state unavailable"
           }
         },
         "security": [
@@ -1501,7 +1541,7 @@
           "agent.run.create",
           "agent.run.execute"
         ],
-        "x-ai-hint": "使用 threadId 指定已有 ADDP Agent 会话；messages 中最后一条 user 消息是本次新输入。"
+        "x-ai-hint": "threadId 指定已有会话；新目标使用 messages；当前澄清的选项或文字回答使用 resume，不创建新 Run。 | Use messages for a new goal and resume for the current clarification, without creating a new Run."
       }
     },
     "/api/v1/agent/runs/{agent_run_id}": {

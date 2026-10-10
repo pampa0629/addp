@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """HDFS System -> Meta -> Manager -> formal Develop/Spark -> real Console."""
 from __future__ import annotations
+import argparse
 import importlib.util
 import json
 import os
@@ -20,6 +21,9 @@ SuiteError = support.SuiteError
 spec = importlib.util.spec_from_file_location('hdfs_spark_online_evidence', Path(__file__).with_name('spark-online-evidence.py'))
 SPARK = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(SPARK)
+spec = importlib.util.spec_from_file_location('hdfs_online_registration', Path(__file__).with_name('online-engine-registration.py'))
+REGISTRATION = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(REGISTRATION)
 PERMISSIONS = {'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
                'manager.data_item.read', 'manager.content.read', 'develop.task.read', 'develop.task.execute',
                'develop.data_read.execute', 'develop.data_write.execute', 'develop.data_ddl.execute',
@@ -305,6 +309,22 @@ def run_browser(report):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--initialize-table-read', action='store_true')
+    arguments = parser.parse_args()
+    if arguments.initialize_table_read:
+        REGISTRATION.require_external_environment(os.environ)
+        if os.environ.get('ADDP_ONLINE_HOSTED') != '1':
+            raise SuiteError('HDFS source Grant preparation requires the disposable Hosted profile')
+        require = support.required_environment
+        tenant_id = support.positive_int(require('ADDP_ONLINE_TEST_TENANT_ID'), 'Tenant')
+        consumer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
+        validate_identity(consumer, tenant_id)
+        authorizer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
+        REGISTRATION.initialize_exact_table_read_grants(authorizer, consumer, tenant_id, [
+            (support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL'), 'schema', 'results', 'hdfs_totals')])
+        print('Disposable PostgreSQL result exact table read Grant is ready')
+        return 0
     if os.environ.get('ADDP_ONLINE_TEST') != '1' or os.environ.get('ADDP_ONLINE_HOSTED') != '1':
         raise SuiteError('HDFS suite requires the Hosted Online entry')
     require = support.required_environment
@@ -324,6 +344,6 @@ def main():
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
-    except (SuiteError, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
+    except (SuiteError, REGISTRATION.RegistrationError, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

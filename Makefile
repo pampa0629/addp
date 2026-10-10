@@ -464,7 +464,7 @@ test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生�
 
 .PHONY: test-hdfs-online-runner
 test-hdfs-online-runner: ## 验证 HDFS Spark T4 场景、物理夹具与隔离生命周期
-	@python3 -m unittest scripts/test/hdfs-spark-consumer-flow-online_test.py scripts/test/online-hdfs-spark-fixture_test.py scripts/test/online-hosted-hdfs-gate_test.py
+	@python3 -m unittest scripts/test/hdfs-spark-consumer-flow-online_test.py scripts/test/online-hdfs-spark-fixture_test.py scripts/test/online-hosted-hdfs-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/security-mysql-owner-protection-online_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-elasticsearch-online-runner
