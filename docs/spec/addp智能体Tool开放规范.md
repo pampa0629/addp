@@ -164,6 +164,8 @@ ToolExecutor 已按 Manifest 输出 Schema 和 `max_bytes` 校验的受限结果
 
 `resource.facts.get` 接收具体 data item 的 `locator`，由 Manager 基于当前 Tenant 可访问的 Engine 和 Meta 扫描事实返回受限资源事实投影。结果只包含规范 locator、Source Engine、原生查询名称、schema coverage、字段路径和必要空间事实，不读取或返回原始数据行。
 
+当前 Tool 契约为 `2.0.0`。输入必须是 Owner 返回的业务 ResourceLocator，包含正整数 Engine ID、`type` 与唯一正整数 `item_id`，不含 `node_id`；不得把无身份的路径或目录节点当作数据项。Manifest 输入 Schema 在委托签发和 Owner 调用之前拒绝不满足该身份结构的输入，返回 `invalid_arguments`。`type` 只是原生 Catalog 术语，不以类型名称白名单替代 node/item 身份判断，也不从路径猜测数据类型；通过结构校验仍必须由 Owner 验证真实身份、当前 Tenant 权限及扫描事实。目录发现和父节点确认继续使用 `resource.children.list` / `resource.ancestors.get`，不自动改写 locator 或替换 Tool。
+
 该 Tool 是生成类 Tool 确认具体输入资源的唯一入口。`data.preview` 只用于用户或 Agent 明确请求查看样本数据的场景，不得再用于查询、Workflow、Notebook 或 Transfer 生成前的 Schema 校验。动态 schema 的字段事实来自 Meta 深度扫描；缺少可用扫描事实时明确失败并由用户刷新扫描，不得隐式读取原始行兜底。
 
 ### 4.6 `query.draft.generate`

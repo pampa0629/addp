@@ -41,6 +41,7 @@ common-python/
 - 用户 `user_token` 只能通过 `addp_common.auth.resolve_authorization_context()` 调用 System AuthContext API 解析；Python 模块不自行解析 JWT。
 - 客户端 URL 与 API 路径要以各模块当前 `CLAUDE.md`、路由和 Swagger 为准。
 - `tools/manifest.json` 是 AI Tool 契约事实源，`ToolExecutor` 是 Manifest 到 SDK 的唯一执行映射。
+- `resource.facts.get` 的 `2.0.0` 输入契约只接受 Owner 返回、带 `item_id` 且不含 `node_id` 的业务数据项 locator。Manifest 在签发委托及调用 Manager 前检查身份结构；不以 `type` 白名单猜测 node/item，不改写 locator，真实身份与权限仍由 Owner 判定。
 - `engine.list` 只消费 `SystemClient.list_engine_summaries()` 的五字段投影，all/workflow 共用实现；生命周期来自 `lifecycle_state`，不带连接信息和完整能力声明。System 管理数组仍由 `list_engines()` 原样消费。已删除旧 `get_workflow_engines()` 与 `is_active` 路径。
 - `resource.children.list` 只通过 `MetaClient.get_resource_tree_node()` 枚举已验证父容器的直接子资源；父 locator 是 discovery scope，不是资源事实，具体子资源仍需 `data.preview` 确认。
 - `ToolExecutor` 每次调用必须使用源 User Access Token 向 System 申请绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token；owner SDK Client 只能接收该委托令牌。

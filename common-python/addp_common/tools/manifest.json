@@ -120,8 +120,8 @@
     },
     {
       "name": "resource.facts.get",
-      "version": "1.0.0",
-      "description": "按 locator 返回不含原始数据行的受限资源、Schema 与查询事实。",
+      "version": "2.0.0",
+      "description": "仅按 Owner 返回、含 item_id 且不含 node_id 的具体数据项 locator 读取受限资源、Schema 与查询事实，不含原始数据行；schema、database 等目录节点使用 resource.children.list / resource.ancestors.get 确认。",
       "owner": "manager",
       "risk": "read",
       "approval": {"mode": "none"},
@@ -133,7 +133,14 @@
       "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
       "input_schema": {
         "type": "object",
-        "properties": {"locator": {"type": "string", "minLength": 1}},
+        "properties": {
+          "locator": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Owner 返回的业务数据项 ResourceLocator，携带 type 和唯一正整数 item_id，不含 node_id；目录范围请使用 resource.children.list / resource.ancestors.get，不得自行拼接或补写 ID。",
+            "pattern": "^addp://engine/[1-9][0-9]*/path/[^?#\\s]*\\?(?:type=[^&#?\\s]+&item_id=[1-9][0-9]*|item_id=[1-9][0-9]*&type=[^&#?\\s]+)$(?![\\s\\S])"
+          }
+        },
         "required": ["locator"],
         "additionalProperties": false
       },

@@ -7,6 +7,35 @@ from tools.langchain_tools import create_agent_tools, stable_tool_name
 
 
 class PlatformSkillToolTests(unittest.TestCase):
+    def test_resource_facts_publishes_identity_constraint_and_rejects_container_locally(self):
+        import asyncio
+        import json
+        from addp_common.tools import ToolExecutor, get_tool
+        from jsonschema import Draft202012Validator
+
+        issue = AsyncMock(return_value="addp_dat_fixture")
+        owner = AsyncMock(return_value={})
+        executor = ToolExecutor("http://gateway", "private-user-token")
+        executor._issue_delegated_token = issue
+        executor._handlers["resource.facts.get"] = owner
+        with patch("tools.langchain_tools.ToolExecutor", return_value=executor):
+            tools = create_agent_tools("private-user-token", "run-facts")
+        facts = next(tool for tool in tools if stable_tool_name(tool) == "resource.facts.get")
+        published = convert_to_openai_tool(facts)["function"]["parameters"]
+        expected = get_tool("resource.facts.get").input_schema["properties"]["locator"]
+        actual = {key: value for key, value in published["properties"]["locator"].items() if key != "title"}
+        self.assertEqual(actual, expected)
+        arguments = {"locator": "addp://engine/2/path/outdoor?type=schema&node_id=3"}
+        self.assertTrue(list(Draft202012Validator(published).iter_errors(arguments)))
+
+        async def invoke():
+            return await facts.ainvoke({"name": facts.name, "args": arguments, "id": "facts-call", "type": "tool_call"})
+
+        result = asyncio.run(invoke())
+        self.assertEqual(json.loads(result.content)["error"]["code"], "invalid_arguments")
+        issue.assert_not_awaited()
+        owner.assert_not_awaited()
+
     def test_transfer_skill_uses_platform_semantics_and_only_metadata_write(self):
         registry = _load_skill_registry()
         skill = registry["transfer-generation"]

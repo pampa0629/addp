@@ -1,5 +1,7 @@
 import asyncio
+from unittest.mock import AsyncMock
 
+import pytest
 from jsonschema import Draft202012Validator
 
 from addp_common.tools import ToolExecutionError, ToolExecutor, get_tool, load_manifest
@@ -76,6 +78,77 @@ def test_executor_validates_arguments_before_dispatch():
             raise AssertionError("invalid arguments must fail")
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("locator", [
+    "addp://engine/2/path/outdoor?type=schema&node_id=3",
+    "addp://engine/11/path/Outdoor?type=database&node_id=4",
+    "addp://engine/2/path/?type=server&node_id=1",
+    "addp://engine/3/path/bucket/folder?type=directory&node_id=5",
+    "addp://engine/2/path/outdoor?type=table&node_id=3",
+    "addp://engine/2/path/outdoor/table?type=table",
+    "addp://engine/2/path/outdoor/table?type=table&item_id=0",
+    "addp://engine/0/path/outdoor/table?type=table&item_id=7",
+    "addp://engine/2/path/outdoor/table?type=table&item_id=7&node_id=3",
+    "addp://engine/2/path/outdoor/table?type=table&item_id=7&item_id=8",
+    "addp://engine/2/path/outdoor/table?type=table&item_id=7&type=schema",
+    "addp://engine/2/path/outdoor/table?type=table&%69tem_id=7",
+    "addp://engine/2/path/outdoor/table?type=table&item_id=7#fragment",
+    "addp://engine/2/path/outdoor/table?type=table&item_id=7\n",
+    "https://engine/2/path/outdoor/table?type=table&item_id=7",
+    "addp-infra://minio/manager/file?type=object&item_id=7",
+])
+def test_resource_facts_rejects_non_item_identity_before_delegation(locator):
+    async def run():
+        executor = ToolExecutor("http://gateway", "private-user-token")
+        issue = AsyncMock(return_value="addp_dat_fixture")
+        handler = AsyncMock(return_value={})
+        executor._issue_delegated_token = issue
+        executor._handlers["resource.facts.get"] = handler
+        with pytest.raises(ToolExecutionError) as failure:
+            await executor.call("resource.facts.get", {"locator": locator}, agent_run_id="run", tool_call_id="facts")
+        assert failure.value.code == "invalid_arguments"
+        assert failure.value.details == {"path": "locator"}
+        issue.assert_not_awaited()
+        handler.assert_not_awaited()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("locator", [
+    "addp://engine/2/path/outdoor/table?type=table&item_id=7",
+    "addp://engine/11/path/Outdoor/Outdoors?item_id=111&type=collection",
+    "addp://engine/3/path/bucket/a%20b%2Fc%23d%3F.csv?type=object&item_id=8",
+    "addp://engine/4/path/folder/node_id=9.csv?type=file&item_id=9",
+    "addp://engine/5/path/index?type=index&item_id=10",
+    "addp://engine/6/path/keyspace?type=keyspace&item_id=11",
+    # Identity, not an assumed leaf-type list, distinguishes MetaItem from MetaNode.
+    "addp://engine/7/path/?type=prefix&item_id=12",
+    "addp://engine/8/path/data?type=custom_catalog_term&item_id=13",
+])
+def test_resource_facts_preserves_item_identity_and_owner_authority(locator):
+    async def run():
+        executor = ToolExecutor("http://gateway", "private-user-token")
+        issue = AsyncMock(return_value="addp_dat_fixture")
+        failure = ToolExecutionError("owner_api_error", "Owner rejected the resource")
+        handler = AsyncMock(side_effect=failure)
+        executor._issue_delegated_token = issue
+        executor._handlers["resource.facts.get"] = handler
+        arguments = {"locator": locator}
+        with pytest.raises(ToolExecutionError) as rejected:
+            await executor.call("resource.facts.get", arguments, agent_run_id="run", tool_call_id="facts")
+        assert rejected.value is failure
+        issue.assert_awaited_once_with(get_tool("resource.facts.get"), agent_run_id="run", tool_call_id="facts")
+        handler.assert_awaited_once_with(arguments, "addp_dat_fixture")
+        assert arguments == {"locator": locator}
+
+    asyncio.run(run())
+
+
+def test_resource_facts_contract_requires_data_item_identity():
+    definition = get_tool("resource.facts.get")
+    assert definition.version == "2.0.0"
+    assert "item_id" in definition.input_schema["properties"]["locator"]["description"]
 
 
 def test_query_draft_manifest_allows_current_mql_without_resources():
