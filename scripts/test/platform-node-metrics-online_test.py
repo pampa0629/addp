@@ -26,6 +26,96 @@ def collector_identity():
 
 
 class MetricsProtocolTest(unittest.TestCase):
+    def process_reply(self):
+        owners = [{"id": i, "instance_id": module+"-runtime", "module_name": module, "role": "backend", "node_id": "",
+                   "status": "up", "process_metrics_declared": True, "process_started_at": "2026-10-11T00:00:00Z"}
+                  for i, module in ((7, "system"), (9, "monitor"))]
+        data = []
+        for owner in owners:
+            data.append({"subject": {"kind": "module_instance", **{k: owner[k] for k in ("id", "instance_id", "module_name", "role")}},
+                         "node_id": "", "queried_at": "2026-10-11T01:00:00Z", "policy_version": 4, "lookback_seconds": 300,
+                         "collection": {"state": "collecting", "sampled_at": "2026-10-11T00:59:55Z"},
+                         "series": [{"metric_key": key, "unit": unit, "window_seconds": window, "dimensions": {},
+                                     "points": [{"evaluated_at": "2026-10-11T01:00:00Z", "sampled_at": "2026-10-11T00:59:55Z", "data_state": "valid",
+                                                 "value": 0.25 if unit == "cores" else 100*1024**2 if unit == "bytes" else 3600}]}
+                                    for key, (unit, window) in ONLINE.PROCESS_METRICS.items()]})
+        return owners, {"data": data}
+
+    def test_process_proof_rejects_foreign_identity_percent_cpu_missing_windows_and_fabricated_values(self):
+        owners, reply = self.process_reply()
+        ONLINE.assert_process_summaries(reply, owners)
+        mutations = [lambda v: v["data"][0]["subject"].update(instance_id="foreign"),
+                     lambda v: v["data"][1].update(subject=v["data"][0]["subject"]),
+                     lambda v: v["data"][0]["series"][0].update(unit="percent"),
+                     lambda v: v["data"][0]["series"][0].update(window_seconds=0),
+                     lambda v: v["data"][0]["series"][0]["points"][0].update(data_state="no_data", value=None, sampled_at=None),
+                     lambda v: v["data"][0]["series"][1]["points"][0].update(value=0),
+                     lambda v: v["data"][0]["series"][1]["points"][0].update(value=True),
+                     lambda v: v["data"][0]["series"][1]["points"][0].update(value=float("nan")),
+                     lambda v: v["data"][0]["series"][2]["points"][0].update(value=3601),
+                     lambda v: v["data"][0]["collection"].update(sampled_at="2026-10-11T01:00:01Z"),
+                     lambda v: v["data"][1].update(policy_version=5), lambda v: v["data"].pop()]
+        for change in mutations:
+            bad = copy.deepcopy(reply); change(bad)
+            with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError): ONLINE.assert_process_summaries(bad, owners)
+
+    def test_process_warmup_and_stopped_identity_cannot_borrow_live_peer_values(self):
+        owners, reply = self.process_reply()
+        point = reply["data"][0]["series"][0]["points"][0]
+        point.update(data_state="no_data", value=None, sampled_at=None)
+        ONLINE.assert_process_summaries(reply, owners, fresh=False)
+        client = unittest.mock.Mock(request=unittest.mock.Mock(return_value=ONLINE.API.Response(200, reply)))
+        self.assertFalse(ONLINE.process_query_ready(client, owners))
+        stopped = reply["data"][0]
+        stopped["collection"] = {"state": "not_active", "sampled_at": None}
+        for series in stopped["series"]: series["points"][0].update(data_state="not_active", value=None, sampled_at=None)
+        ONLINE.assert_process_summaries(reply, owners, inactive=[7])
+        self.assertTrue(ONLINE.process_query_ready(client, owners, inactive=[7]))
+        stopped["series"][1]["points"][0] = copy.deepcopy(reply["data"][1]["series"][1]["points"][0])
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.assert_process_summaries(reply, owners, inactive=[7])
+
+    def test_process_browser_binds_actual_owner_page_scope_and_requires_units_screenshot_and_denial(self):
+        owners, reply = self.process_reply()
+        expected = {"processes": owners, "policy_version": 4}
+        batch = {"path": ONLINE.PROCESS_SUMMARIES, "query": {"instance_ids": "7,9"}, "value": reply,
+                 "instance_query": {"page": "1", "page_size": "20", "role": "backend", "status": "up"},
+                 "instances": {"data": owners, "total": 2, "page": 1, "page_size": 20}}
+        report = {"service_batches": [batch, copy.deepcopy(batch)], "service_presentation": dict.fromkeys(
+            ("cpu_cores", "rss_iec", "elapsed_uptime", "inline_hints", "sample_time_visible", "unbound_host", "url_restore", "iframe_preserved", "negative_no_reads"), True)}
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            screenshot = artifacts / "node-resources-services.png"
+            screenshot.write_bytes(b"\x89PNG\r\n\x1a\n"+b"x"*1001)
+            self.assertEqual(ONLINE.validate_process_browser(report, expected, artifacts)["result"], "passed")
+            mutations = [lambda v: v["service_presentation"].update(cpu_cores=False),
+                         lambda v: v["service_presentation"].update(negative_no_reads=False),
+                         lambda v: v["service_batches"][0]["query"].update(instance_ids="7,9,12"),
+                         lambda v: v["service_batches"][0]["instance_query"].pop("status"),
+                         lambda v: v["service_batches"][0]["instances"]["data"][0].update(instance_id="old-runtime"),
+                         lambda v: v["service_batches"][0]["value"]["data"][0].update(policy_version=3),
+                         lambda v: v.update(service_batches=[])]
+            for change in mutations:
+                bad = copy.deepcopy(report); change(bad)
+                with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError): ONLINE.validate_process_browser(bad, expected, artifacts)
+            screenshot.unlink()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_process_browser(report, expected, artifacts)
+
+    def test_process_lifecycle_refuses_personal_host_before_running_standard_scripts(self):
+        with patch.object(ONLINE.FIXTURE, "boundary", side_effect=ValueError("not Hosted")), patch.object(ONLINE.subprocess, "run") as run:
+            with self.assertRaises(ValueError): ONLINE.monitor_lifecycle(Path("/tmp/private-test"), "stop")
+            run.assert_not_called()
+
+    def test_optional_source_failure_restores_private_key_on_assertion_failure(self):
+        owners, _ = self.process_reply()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); (root / "process-monitor").mkdir()
+            key = root / "process-monitor/server.key"; key.write_text("test-only-key")
+            with patch.object(ONLINE, "monitor_lifecycle") as lifecycle, patch.object(ONLINE, "instance_list", side_effect=ONLINE.SuiteError("protocol failure")):
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.check_optional_process_source(None, None, root, owners, [], {})
+                self.assertEqual([call.args[1] for call in lifecycle.call_args_list], ["stop", "start", "stop", "start"])
+            self.assertEqual(key.read_text(), "test-only-key")
+            self.assertFalse((root / "process-monitor-key-withheld").exists())
+
     def test_failure_reason_redacts_credentials_and_opaque_tokens(self):
         with patch.dict(ONLINE.os.environ, ADDP_ONLINE_METRICS_ADMIN_PASSWORD="private-password"):
             message = ONLINE.failure_reason(ONLINE.SuiteError("private-password addp_at_exampleopaquevalue 123456"))
@@ -127,12 +217,12 @@ class MetricsProtocolTest(unittest.TestCase):
         client = unittest.mock.Mock()
         client.request.return_value.payload = [{"targets": ["172.17.0.1:19100"], "labels": labels}]
         with patch.dict(ONLINE.os.environ, ADDP_ONLINE_METRICS_NODE_IP="172.17.0.1"):
-            ONLINE.assert_discovery(client, target, 3)
+            ONLINE.assert_discovery(client, target, 3, [])
             for key in labels:
                 bad = copy.deepcopy(labels); bad[key] = "stale"
                 client.request.return_value.payload[0]["labels"] = bad
                 with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
-                    ONLINE.assert_discovery(client, target, 3)
+                    ONLINE.assert_discovery(client, target, 3, [])
 
     def resource_reply(self, keys=None, trend=False, disconnected=False):
         stamp = "2026-10-06T00:01:00Z"
@@ -448,7 +538,7 @@ class MetricsProtocolTest(unittest.TestCase):
                  patch.object(ONLINE.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout="sensitive", stderr="sensitive")), \
                  patch("sys.stdout", new_callable=io.StringIO) as output:
                 with self.assertRaises(ONLINE.SuiteError):
-                    ONLINE.run_resource_browser({"node_id": "node", "version": 1}, {"id": "target", "version": 2}, {"version": 0}, "node", {"principal": {"id": "admin"}}, {"principal": {"id": "security"}})
+                    ONLINE.run_resource_browser({"node_id": "node", "version": 1}, {"id": "target", "version": 2}, {"version": 0}, "node", {"principal": {"id": "admin"}}, {"principal": {"id": "security"}}, [])
                 self.assertFalse(evidence.exists())
                 self.assertNotIn("sensitive", output.getvalue())
                 value = json.loads((artifacts / "node-resources-browser-input.json").read_text())

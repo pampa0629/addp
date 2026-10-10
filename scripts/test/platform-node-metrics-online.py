@@ -22,6 +22,7 @@ from pathlib import Path
 
 API = import_module("scripts.utils.online-api")
 FIXTURE = import_module("scripts.test.platform-node-metrics-fixture")
+PREFLIGHT = import_module("scripts.test.online-preflight")
 SuiteError = API.SuiteError
 NODES = "/api/v1/system/platform/host_nodes"
 TARGETS = "/api/v1/monitor/platform/monitoring_targets"
@@ -30,6 +31,10 @@ OBSERVATIONS = "/api/v1/monitor/platform/resource_observations"
 SUMMARIES = "/api/v1/monitor/platform/resource_summaries"
 TRENDS = "/api/v1/monitor/platform/resource_trends"
 QUERY_POLICY = "/api/v1/monitor/settings/resource-query-policy"
+INSTANCES = "/api/v1/system/platform/module-instances"
+PROCESS_SUMMARIES = "/api/v1/monitor/platform/process_resource_summaries"
+PROCESS_METRICS = {"process.cpu.core_equivalents": ("cores", 60),
+                   "process.memory.resident_bytes": ("bytes", 0), "process.uptime_seconds": ("seconds", 0)}
 METRICS = {"node.cpu.logical_cores": "cores", "node.cpu.busy_percent": "percent", "node.memory.total_bytes": "bytes",
            "node.memory.available_bytes": "bytes", "node.memory.used_percent": "percent",
            "node.load.average_1m": "load", "node.load.average_5m": "load",
@@ -43,7 +48,7 @@ ALL_METRICS = dict(METRICS, **FILESYSTEM_METRICS, **INODE_METRICS, **DISK_METRIC
 REQUIRED = {"platform.host_node.create", "platform.host_node.read", "platform.host_node.update",
             "monitor.monitoring_target.create", "monitor.monitoring_target.read",
             "monitor.monitoring_target.update", "monitor.monitoring_target.delete",
-            "monitor.resource_observation.read", "monitor.configuration.read", "monitor.configuration.update"}
+            "monitor.resource_observation.read", "monitor.configuration.read", "monitor.configuration.update", "platform.module.read"}
 
 
 def require(ok, message):
@@ -407,16 +412,191 @@ def resource_query_after(admin, node, target, after, keys=None):
     return True
 
 
-def assert_discovery(client, target, node_version):
+def assert_discovery(client, target, node_version, processes):
     groups = client.request("GET", DISCOVERY, (200,), response_type=list).payload
-    require(len(groups) == 1, "discovery must have exactly this enabled node")
-    group = groups[0]
+    assert_process_discovery(groups, processes, host_count=1)
+    hosts = [g for g in groups if g["labels"].get("addp_monitor_kind") == "host_resources"]
+    require(len(hosts) == 1, "exactly one enabled host source required")
+    group = hosts[0]
     require(group["targets"] == [os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":19100"], "discovery endpoint mismatch")
     labels = group["labels"]
     expected = {"addp_node_id": target["subject"]["node_id"], "addp_monitor_kind": "host_resources", "addp_source": "node_exporter",
                 "__meta_addp_target_id": target["id"], "__meta_addp_target_version": str(target["version"]),
                 "__meta_addp_node_version": str(node_version)}
     require(all(labels.get(k) == v for k, v in expected.items()), "discovery is not bound to current identity/config versions")
+
+
+def instance_list(client, **query):
+    value = client.request("GET", INSTANCES+"?"+urllib.parse.urlencode(dict(page=1, page_size=20, **query)), (200,)).payload
+    rows = value.get("data")
+    require(isinstance(rows, list) and len(rows) <= 20 and value.get("total") == len(rows)
+            and value.get("page") == 1 and value.get("page_size") == 20, "instance list incomplete or unbounded")
+    seen = set()
+    for row in rows:
+        require(type(row.get("id")) is int and row["id"] > 0 and row["id"] not in seen
+                and isinstance(row.get("instance_id"), str) and row["instance_id"]
+                and type(row.get("process_metrics_declared")) is bool
+                and row.get("status") in {"up", "down"} and row.get("role") in {"backend", "worker", "scheduler", "ingress"}, "invalid runtime instance")
+        require(not {"process_metrics", "endpoint", "tls_dir"}.intersection(row), "private process source leaked to User")
+        seen.add(row["id"])
+    return rows
+
+
+def current_processes(admin):
+    rows = [row for module in FIXTURE.PROCESS_PORTS for row in instance_list(admin, module_name=module, role="backend", status="up")]
+    require(len(rows) == 2 and {r["module_name"] for r in rows} == set(FIXTURE.PROCESS_PORTS), "expected exactly two current Go processes")
+    require(all(row["process_metrics_declared"] and row.get("node_id") == "" for row in rows), "process declaration or unbound identity missing")
+    selected = instance_list(admin, ids=",".join(str(r["id"]) for r in rows))
+    require({(r["id"], r["instance_id"]) for r in selected} == {(r["id"], r["instance_id"]) for r in rows}, "exact instance filter expanded scope")
+    return rows
+
+
+def assert_process_discovery(groups, processes, host_count=0):
+    require(isinstance(groups, list) and len(groups) == len(processes)+host_count, "discovery contains missing or extra sources")
+    actual = [g for g in groups if g.get("labels", {}).get("addp_monitor_kind") == "process_resources"]
+    require(len(actual) == len(processes), "automatic process discovery missing")
+    for row in processes:
+        owned = [g for g in actual if g["labels"].get("addp_instance_id") == row["instance_id"]]
+        require(len(owned) == 1, "process discovery identity duplicated or absent")
+        group = owned[0]
+        require(group["labels"] == {"__scheme__": "https", "__metrics_path__": "/metrics", "addp_module_name": row["module_name"],
+                "addp_instance_id": row["instance_id"], "addp_runtime_role": row["role"], "addp_monitor_kind": "process_resources", "addp_source": "application"}
+                and group.get("targets") == [os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":"+str(FIXTURE.PROCESS_PORTS[row["module_name"]])], "process discovery is not bound to formal instance/endpoint")
+
+
+def process_path(instances):
+    return PROCESS_SUMMARIES+"?"+urllib.parse.urlencode({"instance_ids": ",".join(str(r["id"]) for r in instances)})
+
+
+def assert_process_summaries(value, instances, *, fresh=True, after=0, inactive=(), disconnected=()):
+    rows = value.get("data")
+    require(isinstance(rows, list) and len(rows) == len(instances), "process summary batch incomplete")
+    owners = {r["id"]: r for r in instances}
+    seen, anchors = set(), set()
+    for row in rows:
+        subject = row.get("subject", {})
+        owner = owners.get(subject.get("id"))
+        require(owner is not None and subject["id"] not in seen and subject == {"kind": "module_instance", "id": owner["id"],
+                "module_name": owner["module_name"], "instance_id": owner["instance_id"], "role": owner["role"]}
+                and row.get("node_id") == owner.get("node_id", ""), "process summary borrowed another identity")
+        seen.add(subject["id"])
+        queried = utc_timestamp(row.get("queried_at"))
+        require(type(row.get("policy_version")) is int and row["policy_version"] >= 0 and row.get("lookback_seconds") == 300, "process policy missing")
+        anchors.add((row["queried_at"], row["policy_version"]))
+        collection = row.get("collection", {})
+        absent = "not_active" if owner["id"] in inactive else "not_connected" if owner["id"] in disconnected else None
+        require(collection.get("state") == absent if absent else collection.get("state") in {"collecting", "failed", "stale", "identity_mismatch", "no_sample"}, "process collection state invalid")
+        if absent:
+            require(collection.get("sampled_at") is None, "inactive process borrowed collection evidence")
+        elif collection.get("state") == "no_sample":
+            require(collection.get("sampled_at") is None and not fresh, "missing collection fabricated")
+        else:
+            sampled = utc_timestamp(collection.get("sampled_at"))
+            require(sampled <= queried and (queried-sampled > 60 if collection["state"] == "stale" else queried-sampled <= 60), "process collection time invalid")
+            if fresh: require(collection["state"] == "collecting" and sampled > after, "process collection not fresh")
+        series = row.get("series")
+        require(isinstance(series, list) and len(series) == 3 and {s.get("metric_key") for s in series} == set(PROCESS_METRICS), "process catalog not closed")
+        for item in series:
+            unit, window = PROCESS_METRICS[item["metric_key"]]
+            require(item.get("unit") == unit and item.get("window_seconds") == window and item.get("dimensions") == {}
+                    and isinstance(item.get("points"), list) and len(item["points"]) == 1, "process units/window/shape invalid")
+            point = item["points"][0]
+            at = utc_timestamp(point.get("evaluated_at"))
+            require(0 <= queried-at <= 6, "process evaluation outside completion window")
+            if absent:
+                require(point.get("data_state") == absent and point.get("value") is None and point.get("sampled_at") is None, "inactive process reused history")
+            elif point.get("data_state") == "valid":
+                number = point.get("value")
+                require(type(number) in {int, float} and math.isfinite(number) and number >= 0
+                        and after < utc_timestamp(point.get("sampled_at")) <= at and queried-utc_timestamp(point["sampled_at"]) <= 60
+                        and collection.get("state") == "collecting", "process value or freshness invalid")
+                if item["metric_key"] == "process.memory.resident_bytes": require(number > 0, "real RSS missing")
+                if item["metric_key"] == "process.uptime_seconds":
+                    require(abs(number-(at-utc_timestamp(owner["process_started_at"]))) < 0.001, "process uptime not bound to current startup")
+            else:
+                require(not fresh and point.get("data_state") in {"no_data", "stale"}, "process window not complete")
+                if point["data_state"] == "no_data": require(point.get("value") is None and point.get("sampled_at") is None, "missing process value fabricated")
+                else:
+                    require(type(point.get("value")) in {int, float} and math.isfinite(point["value"]) and point["value"] >= 0
+                            and utc_timestamp(point.get("sampled_at")) <= at and queried-utc_timestamp(point["sampled_at"]) > 60, "stale process evidence invalid")
+    require(len(anchors) == 1, "process batch anchors differ")
+    return rows
+
+
+def process_query_ready(admin, instances, *, after=0, inactive=(), disconnected=()):
+    value = admin.request("GET", process_path(instances), (200,)).payload
+    assert_process_summaries(value, instances, fresh=False, inactive=inactive, disconnected=disconnected)
+    active = [r for r in value["data"] if r["subject"]["id"] not in {*inactive, *disconnected}]
+    if not all(r["collection"]["state"] == "collecting" and all(p["data_state"] == "valid" and utc_timestamp(p["sampled_at"]) > after for s in r["series"] for p in s["points"]) for r in active): return False
+    assert_process_summaries(value, instances, after=after, inactive=inactive, disconnected=disconnected)
+    return True
+
+
+def monitor_lifecycle(directory, action):
+    require(action in {"stop", "start"}, "invalid process lifecycle action")
+    require(FIXTURE.boundary() == directory, "process lifecycle must use owned Hosted deployment")
+    # File output avoids inheriting a PIPE in the officially launched daemons.
+    with (directory / ("monitor-"+action+".log")).open("a") as output:
+        subprocess.run(["bash", "scripts/dev/"+action+".sh", "-monitor"], cwd=FIXTURE.ROOT,
+                       env=dict(os.environ, SKIP_MODTIDY="1"), stdout=output, stderr=subprocess.STDOUT, check=True, timeout=300)
+    if action == "start":
+        identity = API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/live", (200,)).payload
+        try:
+            PREFLIGHT.validate_health(PREFLIGHT.Service("monitor", os.environ["MONITOR_URL"]), identity,
+                                      FIXTURE.command(["git", "-C", str(FIXTURE.ROOT), "rev-parse", "HEAD"]).strip(), "alive")
+        except PREFLIGHT.PreflightError as error:
+            raise SuiteError("restarted Monitor build identity mismatch") from error
+        API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/ready", (200,))
+
+
+def check_process_restart(admin, machine, directory, instances, report):
+    old = next(r for r in instances if r["module_name"] == "monitor")
+    peer = next(r for r in instances if r["module_name"] == "system")
+    monitor_lifecycle(directory, "stop")
+    try:
+        eventually(lambda: instance_list(admin, ids=str(old["id"]))[0]["status"] == "down", "gracefully stopped process identity")
+        require(instance_list(admin, ids=str(peer["id"]))[0]["status"] == "up", "peer business stopped with monitored process")
+    finally:
+        monitor_lifecycle(directory, "start")
+    current = current_processes(admin)
+    new = next(r for r in current if r["module_name"] == "monitor")
+    require(new["id"] != old["id"] and new["instance_id"] != old["instance_id"]
+            and utc_timestamp(new["process_started_at"]) > utc_timestamp(old["process_started_at"])
+            and next(r["id"] for r in current if r["module_name"] == "system") == peer["id"], "restart reused identity or restarted peer")
+    # Current CPU can be warming up; the stopped instance is already all-null.
+    assert_process_summaries(admin.request("GET", process_path([old, new, peer]), (200,)).payload, [old, new, peer], fresh=False, inactive=[old["id"]])
+    eventually(lambda: process_query_ready(admin, [old, new, peer], inactive=[old["id"]]), "new process full-window resources and old instance exclusion", timeout=150)
+    assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, current, host_count=1)
+    report["process_restart"] = {"old_id": old["id"], "new_id": new["id"], "peer_id": peer["id"], "old_values_null": True, "fresh_window": True}
+    (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "process-restart-query.json").write_text(json.dumps(admin.request("GET", process_path([old, new, peer]), (200,)).payload))
+    return current
+
+
+def check_optional_process_source(admin, machine, directory, instances, tenant_clients, report):
+    peer = next(r for r in instances if r["module_name"] == "system")
+    key = directory / "process-monitor/server.key"
+    backup = directory / "process-monitor-key-withheld"
+    require(key.is_file() and not backup.exists(), "optional source fault requires owned private key")
+    monitor_lifecycle(directory, "stop")
+    key.rename(backup)
+    try:
+        monitor_lifecycle(directory, "start")
+        rows = instance_list(admin, module_name="monitor", role="backend", status="up")
+        require(len(rows) == 1 and not rows[0]["process_metrics_declared"] and rows[0]["node_id"] == "", "failed source still declared")
+        failed = rows[0]
+        assert_process_summaries(admin.request("GET", process_path([failed, peer]), (200,)).payload, [failed, peer], disconnected=[failed["id"]])
+        assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, [peer], host_count=1)
+        API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/ready", (200,))
+        for client in tenant_clients: client.request("GET", "/api/v1/monitor/executions", (200,))
+        report["optional_process_source"] = {"failed_instance_id": failed["id"], "declaration_absent": True, "business_ready": True, "peer_collecting": True}
+    finally:
+        monitor_lifecycle(directory, "stop")
+        backup.rename(key)
+        monitor_lifecycle(directory, "start")
+    current = current_processes(admin)
+    require(next(r["id"] for r in current if r["module_name"] == "system") == peer["id"], "optional source failure restarted peer")
+    eventually(lambda: process_query_ready(admin, current), "source configuration recovery full-window", timeout=150)
+    return current
 
 
 def validate_resource_browser(value, expected, artifacts):
@@ -486,26 +666,65 @@ def validate_resource_browser(value, expected, artifacts):
             "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "disk_timing_trends": True, "quantity_display": True}
 
 
-def run_resource_browser(node, target, policy, display_name, admin, security):
+def validate_process_browser(value, expected, artifacts):
+    require(value.get("service_presentation") == {"cpu_cores": True, "rss_iec": True, "elapsed_uptime": True,
+            "inline_hints": True, "sample_time_visible": True, "unbound_host": True, "url_restore": True,
+            "iframe_preserved": True, "negative_no_reads": True}, "service browser presentation or denial evidence missing")
+    batches = value.get("service_batches")
+    require(isinstance(batches, list) and 2 <= len(batches) <= 6, "service browser batch evidence missing or unbounded")
+    wanted = {r["id"]: r for r in expected["processes"]}
+    observed = set()
+    for batch in batches:
+        require(batch.get("path") == PROCESS_SUMMARIES and set(batch.get("query", {})) == {"instance_ids"}, "service browser used unapproved resource input")
+        instances = batch.get("instances", {})
+        rows = instances.get("data")
+        require(isinstance(rows, list) and 1 <= len(rows) <= 20 and instances.get("page") == 1 and instances.get("page_size") == 20
+                and type(instances.get("total")) is int and instances["total"] >= len(rows), "service browser list is not an authorized page")
+        require(batch.get("instance_query") == {"page": "1", "page_size": "20", "role": "backend", "status": "up"}, "service browser list filters not restored")
+        ids = [r.get("id") for r in rows]
+        require(all(type(i) is int and i > 0 for i in ids) and len(set(ids)) == len(ids)
+                and batch["query"]["instance_ids"] == ",".join(map(str, ids)), "service browser summary expanded owner page")
+        for row in rows:
+            if row["id"] in wanted:
+                owner = wanted[row["id"]]
+                require(all(row.get(key) == owner.get(key) for key in ("module_name", "instance_id", "role", "node_id", "process_started_at")), "browser instance differs from formal API phase")
+                require(row.get("process_metrics_declared") is True, "browser current SDK declaration missing")
+                observed.add(row["id"])
+        inactive = [r["id"] for r in rows if r.get("status") != "up"]
+        disconnected = [r["id"] for r in rows if not r.get("process_metrics_declared")]
+        summaries = assert_process_summaries(batch.get("value", {}), rows, inactive=inactive, disconnected=disconnected)
+        require(all(r["policy_version"] == expected["policy_version"] for r in summaries), "browser process query ignored current policy")
+    require(observed == set(wanted), "browser never observed both current Go instances")
+    screenshot = artifacts / "node-resources-services.png"
+    require(screenshot.is_file() and screenshot.stat().st_size > 1000 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "service browser screenshot missing or invalid")
+    return {"result": "passed", "real_instance_batch_reads": len(batches), "both_current_instances": True, "units_and_inline_hints": True,
+            "url_restore": True, "same_platform_identity": True, "security_administrator_denied": True}
+
+
+def run_resource_browser(node, target, policy, display_name, admin, security, processes):
     artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
     expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node": node, "target": {"id": target["id"], "version": target["version"]},
                 "display_name": display_name, "policy_version": policy["version"],
-                "admin_id": admin["principal"]["id"], "security_id": security["principal"]["id"]}
+                "admin_id": admin["principal"]["id"], "security_id": security["principal"]["id"],
+                "processes": [{k: r[k] for k in ("id", "instance_id", "module_name", "role", "node_id", "process_started_at")} for r in processes]}
     # Store only the subject/version facts needed by the page, never target TLS/credentials.
     expected["node"] = {"node_id": node["node_id"], "version": node["version"]}
     (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
     evidence = artifacts / "node-resources-browser.json"
     evidence.unlink(missing_ok=True)
-    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
+    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "services"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
     result = subprocess.run(["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
                              "e2e/online/platform-node-resources.spec.js",
                              "--output=" + str(Path(os.environ["ADDP_ONLINE_SECRET_DIR"]) / "node-resource-browser-output")], cwd=FIXTURE.ROOT / "console/frontend",
-                            env=dict(os.environ), capture_output=True, text=True, timeout=240)
+                            env=dict(os.environ), capture_output=True, text=True, timeout=300)
     # Playwright may print assertions from login; never forward credential-bearing output.
     require(result.returncode == 0, "resource browser failed; inspect sanitized stage report")
     require(evidence.is_file(), "resource browser report missing")
-    return validate_resource_browser(json.loads(evidence.read_text()), expected, artifacts)
+    value = json.loads(evidence.read_text())
+    result = validate_resource_browser(value, expected, artifacts)
+    result["services"] = validate_process_browser(value, expected, artifacts)
+    return result
 
 
 def run(base, directory, report):
@@ -533,7 +752,8 @@ def run(base, directory, report):
         client.request("GET", TARGETS, expected)
     for client in [admin, security, *tenant_clients]:
         client.request("GET", DISCOVERY, (403,))
-    require(machine.request("GET", DISCOVERY, (200,), response_type=list).payload == [], "initial discovery is not empty")
+    processes = current_processes(admin)
+    assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, processes)
     report["identity_isolation"] = True
     report["stage"] = "node-target-cas-and-discovery"
     node_input = {"display_name": "Online metrics "+os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node_kind": "virtual",
@@ -575,7 +795,7 @@ def run(base, directory, report):
         client.request("PUT", QUERY_POLICY, expected, {key: value for key, value in query_policy.items() if key != "pending_restart"})
     require(admin.request("GET", QUERY_POLICY, (200,)).payload == query_policy, "denied budget writes changed state")
     report["query_identity_isolation"] = True
-    assert_discovery(machine, target, node["version"])
+    assert_discovery(machine, target, node["version"], processes)
     report["stage"] = "native-discovery-and-resource-samples"
     prom = Prometheus(directory)
     expression = '{job="addp_nodes",addp_node_id="'+node["node_id"]+'"}'
@@ -645,13 +865,50 @@ def run(base, directory, report):
         report[name+"_query"] = True
     query_policy = check_query_policy(admin, node)
     report.update(resource_query=True, query_budget_cas_hot_read=True, query_policy_version=query_policy["version"])
+    report["stage"] = "process-resource-identity-and-window"
+    for client in [security, machine, *tenant_clients, API.GatewayClient(base, "", 10)]:
+        expected = (401,) if not client.token else (403,)
+        client.request("GET", process_path(processes), expected)
+        client.request("GET", INSTANCES+"?ids="+str(processes[0]["id"]), expected)
+    for query in ("0", "01", "1,1", "", "-1"):
+        admin.request("GET", PROCESS_SUMMARIES+"?instance_ids="+urllib.parse.quote(query), (400,))
+    eventually(lambda: process_query_ready(admin, processes), "two real SDK process full-window resources", timeout=150)
+    report["native_process_samples"] = []
+    for row in processes:
+        selector = '{job="addp_nodes",addp_monitor_kind="process_resources",addp_source="application",addp_module_name="'+row["module_name"]+'",addp_instance_id="'+row["instance_id"]+'",addp_runtime_role="backend"}'
+        samples = {}
+        for metric in ("addp_process_identity_info", "process_cpu_seconds_total", "process_resident_memory_bytes", "process_start_time_seconds"):
+            values = prom.query(metric+selector)
+            require(len(values) == 1 and math.isfinite(float(values[0]["value"][1])), "real SDK family missing/duplicated")
+            samples[metric] = float(values[0]["value"][1])
+            if metric == "addp_process_identity_info":
+                require(values[0]["metric"].get("runtime_instance_id") == row["instance_id"] and values[0]["metric"].get("operating_system") == "linux", "SDK self identity differs from formal registration")
+        require(samples["process_resident_memory_bytes"] > 0 and abs(samples["process_start_time_seconds"]-utc_timestamp(row["process_started_at"])) <= 0.000001, "real SDK start/RSS invalid")
+        report["native_process_samples"].append({"id": row["id"], "samples": samples})
+    report["process_identity_isolation"] = True
+    report["process_unbound_automatic_discovery"] = True
+    (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "process-resource-query.json").write_text(json.dumps(admin.request("GET", process_path(processes), (200,)).payload))
+    report["stage"] = "process-stop-restart-isolation"
+    processes = check_process_restart(admin, machine, directory, processes, report)
+    report["stage"] = "process-optional-source-business-boundary"
+    processes = check_optional_process_source(admin, machine, directory, processes, tenant_clients, report)
+    report["process_instances"] = [{k: r[k] for k in ("id", "instance_id", "module_name", "role", "process_started_at", "node_id")} for r in processes]
     report["stage"] = "console-resource-browser"
-    report["resource_browser"] = run_resource_browser(node, target, query_policy, node_input["display_name"], admin_identity, security_identity)
+    report["resource_browser"] = run_resource_browser(node, target, query_policy, node_input["display_name"], admin_identity, security_identity, processes)
+    # Fault phases use a new formal password/MFA session for the same principal;
+    # do not extend production TTL or depend on the browser's private session.
+    admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
+    renewed = admin.request("GET", "/api/v1/system/auth/context", (200,)).payload
+    platform_identity(renewed, "platform.system_administrator")
+    require(renewed["principal"]["id"] == admin_identity["principal"]["id"], "fault phase principal changed")
     report["stage"] = "center-query-outage-recovery"
     center_action("stop")
     try:
         failure = admin.request("GET", resource_path(node), (503, 504)).payload
         require(failure.get("error_code") in {"observability_backend_unavailable", "observability_query_timeout"}, "center failure became query success")
+        failure = admin.request("GET", process_path(processes), (503, 504)).payload
+        require(failure.get("error_code") in {"observability_backend_unavailable", "observability_query_timeout"}, "center failure became process query success")
+        require({r["id"] for r in current_processes(admin)} == {r["id"] for r in processes}, "center failure broke service registration")
         API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/ready", (200,))
         for client in tenant_clients:
             client.request("GET", "/api/v1/monitor/executions", (200,))
@@ -663,12 +920,15 @@ def run(base, directory, report):
     eventually(lambda: resource_query_after(admin, node, target, recovery, INODE_METRICS), "new inode evidence after center recovery")
     eventually(lambda: resource_query_after(admin, node, target, recovery, DISK_METRICS), "new disk evidence after center recovery")
     eventually(lambda: resource_query_after(admin, node, target, recovery, NETWORK_METRICS), "new network evidence after center recovery")
+    eventually(lambda: process_query_ready(admin, processes, after=recovery), "new process evidence after center recovery", timeout=150)
+    report["process_center_outage_recovery"] = True
     report["center_query_outage_recovery"] = True
     report["stage"] = "source-outage-recovery"
     source_action("stop")
     try:
         eventually(lambda: bool(prom.query("up"+expression+" == 0")), "source outage")
         require(prom.query('up{job="prometheus"} == 1'), "center failed with source")
+        require(process_query_ready(admin, processes), "host source failure broke independent process resources")
     finally:
         source_action("start")
     eventually(lambda: bool(prom.query("up"+expression+" == 1")), "source recovery")
@@ -683,7 +943,8 @@ def run(base, directory, report):
         owned_action("control-tls", "start")
     report["stage"] = "node-disable-and-resume"
     node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"])).payload
-    require(machine.request("GET", DISCOVERY, (200,), response_type=list).payload == [], "disabled node remains in current discovery")
+    assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, processes)
+    require(process_query_ready(admin, processes), "unbound process incorrectly disabled with host")
     for trend in (False, True):
         assert_resources(admin.request("GET", resource_path(node, trend), (200,)).payload, node, trend=trend, disconnected=True)
         assert_resources(admin.request("GET", resource_path(node, trend, keys=FILESYSTEM_METRICS), (200,)).payload, node, trend=trend, keys=FILESYSTEM_METRICS, disconnected=True)
@@ -693,7 +954,7 @@ def run(base, directory, report):
     eventually(lambda: not prom.targets(node["node_id"]), "disabled node removal after control recovery")
     resumed_at = time.time()
     node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, version=node["version"])).payload
-    assert_discovery(machine, target, node["version"])
+    assert_discovery(machine, target, node["version"], processes)
     eventually(active, "re-enabled node sampling")
     # Require this activation's samples and current versions through the user API.
     eventually(lambda: resource_query_after(admin, node, target, resumed_at), "new API resource evidence after node re-enablement")
@@ -704,7 +965,7 @@ def run(base, directory, report):
     report["node_query_resume_fresh_samples"] = True
     report["stage"] = "target-disable-and-delete"
     target = admin.request("PUT", target_path, (200,), dict(body, enabled=False, version=target["version"])).payload
-    require(machine.request("GET", DISCOVERY, (200,), response_type=list).payload == [], "disabled target remains in discovery")
+    assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, processes)
     for trend in (False, True):
         assert_resources(admin.request("GET", resource_path(node, trend), (200,)).payload, node, trend=trend, disconnected=True)
         assert_resources(admin.request("GET", resource_path(node, trend, keys=FILESYSTEM_METRICS), (200,)).payload, node, trend=trend, keys=FILESYSTEM_METRICS, disconnected=True)

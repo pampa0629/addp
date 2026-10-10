@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = "addp-metrics-online"
+PROCESS_PORTS = {"system": 19101, "monitor": 19102}
 
 
 def boundary():
@@ -54,10 +55,10 @@ def prepare(directory):
     ip = ipaddress.ip_address(address)
     if ip.version != 4 or not ip.is_private or ip.is_loopback or ip.is_link_local:
         raise ValueError("Hosted metrics requires its native private Docker bridge gateway")
-    for port in (9444, 19100):
+    for port in (9444, 19100, *PROCESS_PORTS.values()):
         with socket.socket() as sock:
             sock.bind((address, port))
-    for name in ("center-tls", "node-tls", "deployment", "control", "admission"):
+    for name in ("center-tls", "node-tls", "deployment", "control", "admission", "process-system", "process-monitor"):
         (directory / name).mkdir(mode=0o755)
 
     def ca(name):
@@ -81,7 +82,7 @@ def prepare(directory):
 
     (directory / "query").mkdir(mode=0o700)
     center, control, source = ca("center-ca"), ca("control-ca"), ca("source-ca")
-    for folder, issuer in (("center-tls", center), ("node-tls", source)):
+    for folder, issuer in (("center-tls", center), ("node-tls", source), ("process-system", source), ("process-monitor", source)):
         (directory / folder / "ca.crt").write_bytes(Path(str(issuer)+".crt").read_bytes())
         certificate(issuer, directory / folder, "server", True)
     certificate(center, directory / "center-tls", "health")
@@ -109,7 +110,11 @@ def prepare(directory):
         "MONITOR_PROMETHEUS_CA_FILE": str(directory / "query/ca.crt"),
         "MONITOR_PROMETHEUS_CLIENT_CERT_FILE": str(directory / "query/client.crt"),
         "MONITOR_PROMETHEUS_CLIENT_KEY_FILE": str(directory / "query/client.key"),
-        "MONITOR_METRICS_ALLOWED_CIDRS": address+"/32", "MONITOR_METRICS_ALLOWED_PORTS": "19100",
+        "MONITOR_METRICS_ALLOWED_CIDRS": address+"/32", "MONITOR_METRICS_ALLOWED_PORTS": ",".join(map(str, (19100, *PROCESS_PORTS.values()))),
+        "ADDP_PROCESS_METRICS_DEPLOYMENTS": json.dumps([
+            {"module_name": module, "role": "backend", "listen": address+":"+str(port),
+             "endpoint": "https://"+address+":"+str(port)+"/metrics", "tls_dir": str(directory / ("process-"+module))}
+            for module, port in PROCESS_PORTS.items()], separators=(",", ":")),
         "MONITOR_METRICS_CA_FILE": str(directory / "admission/ca.crt"),
         "MONITOR_METRICS_CLIENT_CERT_FILE": str(directory / "admission/client.crt"),
         "MONITOR_METRICS_CLIENT_KEY_FILE": str(directory / "admission/client.key"),
@@ -206,6 +211,17 @@ def assert_owned(directory):
                 raise ValueError("refusing an unowned metrics container")
 
 
+def assert_process_listeners_closed():
+    # Application shutdown precedes fixture cleanup. Inspect, never kill or
+    # adopt a foreign listener that may have taken a test port.
+    address = str(ipaddress.ip_address(os.environ["ADDP_ONLINE_METRICS_NODE_IP"]))
+    for port in PROCESS_PORTS.values():
+        with socket.socket() as sock:
+            sock.settimeout(1)
+            if sock.connect_ex((address, port)) == 0:
+                raise ValueError("process metrics has a residual listener")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=("prepare", "query", "up", "down"))
@@ -224,6 +240,7 @@ def main():
             for kind, cmd in (("container", ["ps", "-aq"]), ("network", ["network", "ls", "-q"]), ("volume", ["volume", "ls", "-q"])):
                 if command(["docker", *cmd, "--filter", "label=com.docker.compose.project="+PROJECT]).strip():
                     raise ValueError("metrics fixture has residual " + kind)
+            assert_process_listeners_closed()
     elif args.action == "up":
         raise ValueError("metrics fixture has not been prepared")
 

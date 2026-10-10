@@ -52,6 +52,12 @@ class MetricsFixtureTest(unittest.TestCase):
         self.assertNotIn("@@", config)
         self.assertIn("https://172.17.0.1:9444/api/v1/monitor/platform/metrics_discovery", config)
         self.assertEqual({p.name for p in (self.secret / "node-tls").iterdir()}, {"ca.crt", "server.crt", "server.key"})
+        for module in FIXTURE.PROCESS_PORTS:
+            folder = self.secret / ("process-"+module)
+            self.assertEqual({p.name for p in folder.iterdir()}, {"ca.crt", "server.crt", "server.key"})
+            subprocess.run(["openssl", "verify", "-verify_ip", "172.17.0.1", "-purpose", "sslserver",
+                            "-CAfile", str(self.secret / "source-ca.crt"), str(folder / "server.crt")], check=True, capture_output=True)
+            self.assertFalse(any(str(folder) == volume["source"] for volume in spec["services"]["control-tls"]["volumes"]))
         self.assertEqual((self.secret / "query/client.key").stat().st_mode & 0o777, 0o600)
         self.assertEqual((self.secret / "query").stat().st_mode & 0o777, 0o700)
         self.assertNotEqual((self.secret / "query/client.crt").read_bytes(), (self.secret / "center-tls/health.crt").read_bytes())
@@ -63,6 +69,16 @@ class MetricsFixtureTest(unittest.TestCase):
         env = (self.secret / "metrics.env").read_text()
         self.assertEqual((self.secret / "metrics.env").stat().st_mode & 0o777, 0o600)
         self.assertIn(env, (self.secret / "runtime.env").read_text())
+        import shlex
+        values = dict(line.removeprefix("export ").split("=", 1) for line in env.splitlines())
+        deployments = json.loads(shlex.split(values["ADDP_PROCESS_METRICS_DEPLOYMENTS"])[0])
+        self.assertEqual([d["module_name"] for d in deployments], ["system", "monitor"])
+        self.assertEqual(shlex.split(values["MONITOR_METRICS_ALLOWED_PORTS"]), ["19100,19101,19102"])
+        for d in deployments:
+            self.assertEqual(d["role"], "backend")
+            self.assertEqual(d["listen"], "172.17.0.1:"+str(FIXTURE.PROCESS_PORTS[d["module_name"]]))
+            self.assertEqual(d["endpoint"], "https://"+d["listen"]+"/metrics")
+            self.assertEqual(Path(d["tls_dir"]), self.secret / ("process-"+d["module_name"]))
         self.assertFalse(any("up" in args or "run" in args for args in calls))
         with patch.object(FIXTURE, "command") as command:
             with self.assertRaises(ValueError):
@@ -93,6 +109,16 @@ class MetricsFixtureTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 FIXTURE.assert_owned(self.secret)
             self.assertEqual(command.call_count, 2)
+
+    def test_cleanup_rejects_residual_sdk_listener_without_killing_it(self):
+        with patch.dict(os.environ, ADDP_ONLINE_METRICS_NODE_IP="172.17.0.1"), patch.object(FIXTURE.socket, "socket") as socket, patch.object(FIXTURE, "command") as command:
+            sock = socket.return_value.__enter__.return_value
+            sock.connect_ex.return_value = 0
+            with self.assertRaises(ValueError): FIXTURE.assert_process_listeners_closed()
+            command.assert_not_called()
+            sock.connect_ex.return_value = 111
+            FIXTURE.assert_process_listeners_closed()
+            self.assertEqual([call.args for call in sock.connect_ex.call_args_list][-2:], [(('172.17.0.1', 19101),), (('172.17.0.1', 19102),)])
 
 
 if __name__ == "__main__":

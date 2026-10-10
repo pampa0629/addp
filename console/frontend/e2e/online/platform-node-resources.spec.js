@@ -3,12 +3,14 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { processMetrics, validateProcessInstances, validateProcessSummaries } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
 test.use({ screenshot: 'off', trace: 'off' })
 
 test('platform node resources through real Console password MFA and Monitor iframe', async ({ browser }) => {
+  test.setTimeout(240_000)
   const artifact = process.env.ADDP_ONLINE_ARTIFACT_DIR
   const expected = JSON.parse(readFileSync(resolve(artifact, 'node-resources-browser-input.json'), 'utf8'))
   const repository = resolve(process.cwd(), '../..')
@@ -23,8 +25,18 @@ test('platform node resources through real Console password MFA and Monitor ifra
   const summaries = []
   const businessErrors = []
   const pending = []
+  const instancePages = []
+  const serviceBatches = []
   page.on('response', response => {
     const url = new URL(response.url())
+    if (url.pathname === '/api/v1/system/platform/module-instances') {
+      pending.push(response.json().then(value => instancePages.push({ query: Object.fromEntries(url.searchParams), value })))
+      return
+    }
+    if (url.pathname === '/api/v1/monitor/platform/process_resource_summaries') {
+      pending.push(response.json().then(value => serviceBatches.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
+      return
+    }
     if (!/^\/api\/v1\/(system\/platform\/host_nodes|monitor\/platform\/resource_)/.test(url.pathname)) return
     if (!response.ok()) businessErrors.push(response.status())
     if (url.pathname.endsWith('resource_observations') || url.pathname.endsWith('resource_trends')) {
@@ -263,17 +275,75 @@ test('platform node resources through real Console password MFA and Monitor ifra
     report.resources = resources
     report.summaries = summaries
     report.navigation = { list_summary_batch: true, iframe_preserved: true, history: true, metric_reload: true, range_reload: true, server_window: true, filesystem_reload: true, inode_reload: true, disk_reload: true, network_reload: true }
+    save('service-monitor-inline-values-and-restore')
+    const beforeServices = await frame.evaluate(() => performance.timeOrigin)
+    await page.locator('.sidebar .el-menu-item').filter({ hasText: /^服务监控$/ }).click()
+    await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources')
+    await expect(monitor.getByTestId('process-list')).toBeVisible()
+    expect(await frame.evaluate(() => performance.timeOrigin)).toBe(beforeServices)
+    const serviceDocumentID = await frame.evaluate(() => performance.timeOrigin)
+    // Keep the actual page controls and URL contract; do not intercept any API.
+    const roleControl = monitor.locator('.el-select:has(input[aria-label="实例角色"])')
+    const statusControl = monitor.locator('.el-select:has(input[aria-label="在线状态"])')
+    await roleControl.click()
+    await monitor.getByRole('option', { name: '后端服务', exact: true }).click()
+    await statusControl.click()
+    await monitor.getByRole('option', { name: '在线', exact: true }).click()
+    await monitor.getByRole('button', { name: '搜索', exact: true }).click()
+    await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && url.searchParams.get('role') === 'backend' && url.searchParams.get('status') === 'up')
+    expect(await frame.evaluate(() => performance.timeOrigin)).toBe(serviceDocumentID)
+    await expect(monitor.getByTestId('process-list').locator('strong').filter({ hasText: /MiB|GiB/ })).toHaveCount(2)
+    for (const hint of ['1 核 ≈ 占满一个逻辑核，可超过 1 核', '进程当前驻留内存（RSS）', '当前进程启动后经过的时间']) {
+      await expect(monitor.getByText(hint, { exact: true })).toBeVisible()
+    }
+    const checkServices = async () => {
+      await Promise.all(pending)
+      const list = instancePages.filter(item => item.query.role === 'backend' && item.query.status === 'up').at(-1)
+      validateProcessInstances(list.value, 1)
+      const batch = serviceBatches.filter(item => item.query.instance_ids === list.value.data.map(row => row.id).join(',')).at(-1)
+      const summaries = validateProcessSummaries(batch.value, list.value.data)
+      for (const owner of expected.processes) {
+        const index = list.value.data.findIndex(item => item.id === owner.id && item.instance_id === owner.instance_id)
+        expect(index).toBeGreaterThanOrEqual(0)
+        const row = monitor.getByTestId('process-list').locator('.el-table__body tr').nth(index)
+        await expect(row).toContainText('未关联主机')
+        await expect(row).toContainText('正在采集')
+        await expect(row).toContainText('采样时间:')
+        const values = row.locator('strong')
+        await expect(values.nth(0)).toHaveText(/^\d[\d,]*\.\d{2} 核$/)
+        await expect(values.nth(1)).toHaveText(/^\d[\d,.]* (?:MiB|GiB)$/)
+        await expect(values.nth(2)).toHaveText(/\d+(?:天|小时|分钟|秒)/)
+        expect(summaries.get(owner.id).series.map(s => s.metric_key).sort()).toEqual(processMetrics.map(m => m.key).sort())
+        expect(summaries.get(owner.id).series.every(s => s.points[0].data_state === 'valid')).toBe(true)
+      }
+      return { ...batch, instances: list.value, instance_query: list.query }
+    }
+    const firstServices = await checkServices()
+    await page.reload()
+    await expect(roleControl).toContainText('后端服务')
+    await expect(statusControl).toContainText('在线')
+    await expect(monitor.getByTestId('process-list').locator('strong').filter({ hasText: /MiB|GiB/ })).toHaveCount(2)
+    const restoredServices = await checkServices()
+    report.service_batches = [firstServices, restoredServices]
+    report.service_presentation = { cpu_cores: true, rss_iec: true, elapsed_uptime: true, inline_hints: true,
+      sample_time_visible: true, unbound_host: true, url_restore: true, iframe_preserved: true, negative_no_reads: false }
+    await page.screenshot({ path: resolve(artifact, 'node-resources-services.png'), animations: 'disabled' })
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     try {
       const negative = await negativeContext.newPage()
       let nodeReads = 0
-      negative.on('request', request => { if (/\/api\/v1\/(system\/platform\/host_nodes|monitor\/platform\/resource_)/.test(new URL(request.url()).pathname)) nodeReads++ })
+      negative.on('request', request => { if (/\/api\/v1\/(system\/platform\/(host_nodes|module-instances)|monitor\/platform\/(resource_|process_resource_))/.test(new URL(request.url()).pathname)) nodeReads++ })
       report.negative_identity = await login(negative, 'ADDP_ONLINE_METRICS_SECURITY', expected.security_id, 'platform.security_administrator')
       await expect(negative.locator('.el-result')).toBeVisible()
       await expect(negative.locator('iframe[data-testid="module-iframe"]')).toHaveCount(0)
       await expect(negative.locator('.sidebar .el-menu-item').filter({ hasText: '主机监控' })).toHaveCount(0)
+      await negative.goto('/monitor/service-resources')
+      await expect(negative.locator('.el-result')).toBeVisible()
+      await expect(negative.locator('iframe[data-testid="module-iframe"]')).toHaveCount(0)
+      await expect(negative.locator('.sidebar .el-menu-item').filter({ hasText: '服务监控' })).toHaveCount(0)
       expect(nodeReads).toBe(0)
+      report.service_presentation.negative_no_reads = true
       report.negative_no_business_reads = true
     } finally { await negativeContext.close() }
     report.result = 'passed'

@@ -1525,7 +1525,7 @@ System 继续独占实例身份、采集声明与租约事实；采集端点和�
 
 本批代码已接入 Common 唯一自身进程 SDK、System 不可变采集声明与当前身份投影、Monitor 唯一 HTTP SD/共享查询预算、Console「运行监控 → 服务监控」。这一实施状态不追溯改写上文提案阶段的只读结论。普通实例响应只给采集声明布尔值；进程发现保留模块/实例/角色三个 owner 标签，主机关联在 System 中查询，不从来源标签推断。首期列表沿主机概览的手动刷新方式，分页每页 20 项；三项指标释义位于对应表头下方，来源采样时间直接显示在该行采集状态下方。来源未部署、声明失败、离线、身份不匹配和中心故障各自表达；关闭观测不影响业务登记、心跳或 Ready。
 
-待确认的同一 Hosted T4 验收扩展仅涉及：临时平台系统管理员通过真实密码/MFA 读取本轮已有的 System 平台实例列表（含 `ids` 精确过滤）和 Monitor 三项进程资源摘要，以及实际 Console「服务监控」页面。使用隔离部署中两个真实 Go 实例的 SDK，验证自动声明/发现、无主机关联、CPU 完整窗口、RSS/时长单位、实例隔离及停止/重启后旧实例不借用当前值；来源与中心失败时保留业务运行边界，拒绝 Tenant、Service、Delegated 及缺权限访问。不扩展预算配置操作，不读取租户业务数据，不修改生产角色或权限；Prometheus 继续固定独立最小权限身份，退出销毁当次身份、部署、卷和凭据并检查零残留。现行测试规范第 197 行的管理员例外只覆盖节点资源，本轮尚未批准或执行这项服务实例 T4，不能将其计为通过。
+2026-10-10 用户已确认同一 Hosted T4 验收扩展，范围仅涉及：临时平台系统管理员通过真实密码/MFA 读取本轮已有的 System 平台实例列表（含 `ids` 精确过滤）和 Monitor 三项进程资源摘要，以及实际 Console「服务监控」页面。使用隔离部署中两个真实 Go 实例的 SDK，验证自动声明/发现、无主机关联、CPU 完整窗口、RSS/时长单位、实例隔离及停止/重启后旧实例不借用当前值；来源与中心失败时保留业务运行边界，拒绝 Tenant、Service、Delegated 及缺权限访问。不扩展预算配置操作，不读取租户业务数据，不修改生产角色或权限；Prometheus 继续固定独立最小权限身份，退出销毁当次身份、部署、卷和凭据并检查零残留。测试规范已同步扩展同一 suite 的限定身份用途；真实执行和产物复核前，不能将其计为通过。
 
 
 10.49 本轮分项验证（2026-10-10）：`make test-go` 返回 0，覆盖全部 22 个 Go 模块的依赖一致性与测试，以及 Common 原生 macOS 自身采样和关闭 CGO 的同一路线；System Repository 的标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS=--package repository` 与 `make test-monitor-postgres` 返回 0，仅使用标准入口管理的 `addp_iam_test/addp_test`。`make test-common-frontend` 的 168 项共享用例、`make test-monitor-frontend` 的 97 项浏览器回归与构建、`make test-console-frontend` 的 156 项单测、125 项浏览器回归与构建通过。`make test-authorization test-swagger` 返回 0，正式路由权限消费者及双语 Swagger 覆盖通过。验证日志分别位于本轮临时目录 `/tmp/addp-process-current-go-5.log`、`/tmp/addp-process-system-pg-2.log`、`/tmp/addp-process-monitor-pg.log`、`/tmp/addp-process-common-frontend-2.log`、`/tmp/addp-process-frontend-5.log`、`/tmp/addp-process-console-frontend-4.log` 和 `/tmp/addp-process-auth-swagger.log`；临时路径用于本轮复核，不作为永久发布产物。
@@ -1536,3 +1536,11 @@ System 继续独占实例身份、采集声明与租约事实；采集端点和�
 
 
 采样时间改为在每行采集状态下直接显示后，重新运行现有 `make test-monitor-frontend` 与 `make test-console-frontend` 均返回 0，97/125 项浏览器回归及两模块构建通过；CPU 核当量、IEC 内存、时长、就地释义、可见采样时间、权限撤销及迟到响应隔离由新增服务监控用例覆盖。没有自行重启个人服务或启用个人进程采集，工作区改动尚未提交/推送；服务实例 Hosted T4 的测试身份范围仍待确认。
+
+10.49 Hosted 扩展实施前确认：复用现有 `make test-node-metrics-online-runner`、`make test-online-runner`、`make test-platform` 和 `online-t4-gates.yml` 的唯一 `platform-node-metrics` 路径。夹具为 System/Monitor 各部署独立 mTLS SDK 端点，使用当前 Go 正式进程入口；扩展既有真实浏览器文件和安全报告校验，不新增 suite、工作流、测试角色或第二个指标中心。重启故障仅在经准入的一次性 Hosted 环境沿标准局部 stop/start 生命周期执行，不接管个人服务。当前主线 `9abf53cc1` 已包含服务监控实现；前述工作区未提交的记录是此前验证时状态。
+
+本轮验收实现沿原入口扩展：两个 SDK 来源与原节点来源共同进入唯一 `addp_nodes` 作业；System 精确实例查询与 User 资源摘要相互核对，CPU 必须具有完整窗口，RSS/时长与真实启动时间绑定。Monitor 的停止、缺失指标私钥启动、恢复启动均使用标准局部生命周期，并检查每次真实构建身份；System 同伴身份保持不变。Console 用真实控件验证两实例数值、表头就地释义、行内采样时间、未关联主机、筛选及 URL 刷新恢复；没有业务 API 拦截或 Token 注入。Hosted 清理追加两个 SDK 端口无监听断言，不采用杀死或接管外来监听者的旁路。
+
+拒绝矩阵按证据层级计量：Hosted 实际请求覆盖匿名、两个非默认 Tenant、固定 Prometheus Service 与缺权限平台 User；Delegated 拒绝由既有 Monitor 正式路由 T1 `TestResourceRoutesRejectTenantMachineDelegatedAndMissingPermission` 覆盖。当前最小临时身份没有可用于签发该委托 Token 的业务 Tool Permission，不为负例扩大身份权限，不将该 T1 结果宣称为真实 Hosted 委托请求已经执行。
+
+2026-10-11 本轮提交前验证：`make test-node-metrics-online-runner` 返回 0（39 项协议/夹具/隔离生命周期检查及 System Metrics 正式夹具测试，日志 `/tmp/addp-process-hosted-runner-5.log`）；`make test-console-frontend` 返回 0（156 项单测、125 项浏览器回归与构建，日志 `/tmp/addp-process-hosted-console-2.log`）；`make test-platform` 返回 0（包含完整 Online runner、登记/生命周期/授权及 Swagger 门禁，日志 `/tmp/addp-process-hosted-platform-1.log`）。首次 Console 运行在新增下拉选择步骤超时，原因是文本覆盖了内部输入框；改为点击可见选择控件后重跑通过，没有修改产品组件。`git diff --check` 通过。默认 `make test-changed` 在混合工作区将其他 System 前端改动纳入 owner 范围，但因缺少 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 在 T2 参数预检返回 2，未执行项不计通过（日志 `/tmp/addp-process-hosted-changed-1.log`）。本轮没有改动生产 API、IAM 或用户运行配置，也没有重启个人服务；真实服务实例 Hosted T4 仍待派发与产物复核。
