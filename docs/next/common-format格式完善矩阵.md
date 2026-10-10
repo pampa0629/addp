@@ -1,10 +1,31 @@
 # common/format 格式后续事项
 
-更新时间：2026-10-06
+更新时间：2026-10-10
 
 只保留未决事项。
 
 说明：本文只讨论格式事实、扫描、预览和 reader / writer 边界；资源选择入口仍统一走 locator / ResourceTreePicker，不在 common/format 中另起一套选择语义。
+
+## 当前优先范围：遥感、航测与设备轨迹格式
+
+本轮聚焦格式识别、源文件读取、转换和实际预览；血缘由专门会话负责，不在本清单中扩展血缘工作。Images 是图片类别名称，须按实际编码识别，不作为独立文件扩展名或解析器。
+
+用户清单的现有实现范围如下；实现存在不等于所有格式变体或整轮 T4 已通过。
+
+| 清单格式 | 现有实现与当前验收边界 |
+| --- | --- |
+| GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级后的 Hosted 渲染复验尚未完成。 |
+| JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
+| CSV / XLSX | CSV 表格读取与分页、XLSX 多 sheet 容器预览已有实现；当前优先补真实页面复验，不把 CSV 坐标列自动解释为设备轨迹。 |
+| JSON / GeoJSON | 普通 JSON 文档及 records array 读取、GeoJSON FeatureCollection 的表格和空间预览已有实现；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
+| 3DS / DAE / FBX / OBJ | 通过 Model3D 转自包含 GLB 后显示；按已验证的静态几何和基础材质范围支持，DAE / 3DS 的声明 PNG/JPEG 漫反射贴图已有真实转换验收。 |
+| MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。不能声明所有版本、动画或复杂材质均支持；MAX 完整 Hosted 复验仍待通过。 |
+| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。其他样例、复杂材质及 S3 外部贴图仍待验证。 |
+
+1. 优先完成 Business NFS 的 CSV、XLSX、JSON、GeoJSON 页面复验：CSV 的列与分页；XLSX 多 sheet 切换及各 sheet 的独立字段/数据；普通 JSON 文档与 records array 的分流；GeoJSON FeatureCollection 的空间预览。只按现有明确格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
+2. SGM 继续核对厂商样例 `3d/sgm/compass.SGM` 的授权 Runtime 转换与最终 GLB 实际预览。无 SDK 的协议门禁不替代真实 SGM 转换；首期范围遵循内置格式规范，保留 SuperMap → OSGB → Model3D GLB 的唯一路线。
+3. MAX 静态模型页面和正式 Linux Runtime 的格式/几何/贴图验收仍以既有 Hosted 运行结果为准；动画、复杂材质或全部 MAX 版本不计为支持。SKP 同样保留静态网格、实例变换与内嵌基础贴图的范围，不扩展 SketchUp 编辑语义。
+4. 地图依赖升级后的 GeoTIFF/COG 与模型预览要复核既有 Hosted 格式和渲染证据；精确 GPU 性能诊断按已确认规范单列，其余页面警告、错误继续失败。不再扩展 JPEG EXIF 细项作为当前格式覆盖工作的优先任务。
 
 ## 未决事项
 
