@@ -4,7 +4,7 @@ import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { identity, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
-test('protected Manager export retains its verified initiator and opens in Monitor', async ({ page }) => {
+test('protected Manager preview retains field search and export provenance in Monitor', async ({ page }) => {
   const names = [
     'ADDP_ONLINE_ARTIFACT_DIR', 'ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID',
     'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_USER_USERNAME',
@@ -36,7 +36,7 @@ test('protected Manager export retains its verified initiator and opens in Monit
   })
   try {
     const requiredPermissions = [
-      'manager.content.read', 'manager.data_item.read', 'manager.derived_artifact.create',
+      'manager.content.read', 'manager.data_item.read', 'manager.search.execute', 'manager.derived_artifact.create',
       'manager.derived_artifact.read', 'monitor.execution.read'
     ]
     const expected = identity(await json(await api.get('/api/v1/system/auth/context'), 'API AuthContext'))
@@ -45,6 +45,9 @@ test('protected Manager export retains its verified initiator and opens in Monit
     expect(expected.tenantID).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
     for (const permission of requiredPermissions) expect(expected.permissions.has(permission), permission).toBe(true)
     const path = `/manager/data-explorer?locator=${encodeURIComponent(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)}`
+    const previewResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/v1/manager/preview' && response.request().method() === 'GET'
+    )
     const token = await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, path)
     businessStarted = true
     browserAPI = await request.newContext({
@@ -60,7 +63,62 @@ test('protected Manager export retains its verified initiator and opens in Monit
       expect(actual.permissions.has(permission)).toBe(true)
     }
 
+    const preview = await json(await previewResponse, 'protected preview from browser')
+    expect(preview.preview_type).toBe('table')
+    expect(preview.data.columns).toContain('customer_code')
+    expect(preview.data.columns).not.toContain('email')
+    expect(preview.data.rows).toHaveLength(5)
+    for (const row of preview.data.rows) {
+      expect(row).not.toHaveProperty('email')
+      expect(row.customer_code).toBeTruthy()
+    }
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.getByRole('columnheader', { name: 'customer_code', exact: true })).toBeVisible()
+    await expect(frame.getByRole('columnheader', { name: 'email', exact: true })).toHaveCount(0)
+    await expect(frame.locator('.el-table__body tbody tr')).toHaveCount(5)
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-protected-preview.png') })
+
+    await page.goto('/manager/data-retrieval')
+    await frame.locator('.search-input input').fill('email')
+    const searchResponse = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/v1/manager/search' && response.request().method() === 'GET'
+    )
+    await frame.getByRole('button', { name: /^(搜索|Search)$/ }).click()
+    const search = await json(await searchResponse, 'protected field search from browser')
+    const expectedLocator = new URL(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)
+    expectedLocator.searchParams.sort()
+    const hits = search.data.results.filter(hit => {
+      if (!hit.locator) return false
+      const locator = new URL(hit.locator)
+      locator.searchParams.sort()
+      return locator.href === expectedLocator.href
+    })
+    expect(hits).toHaveLength(1)
+    const hit = hits[0]
+    expect(hit.engine_id).toBe(Number(expectedLocator.pathname.split('/')[1]))
+    const email = hit.field_matches.filter(field => field.name === 'email')
+    expect(email).toHaveLength(1)
+    expect(email[0].data_type).toBe('string')
+    expect(email[0].highlights.name).toBe('<mark>email</mark>')
+    const result = frame.locator('.result-item').filter({ hasText: hit.full_name })
+    await expect(result).toHaveCount(1)
+    const field = result.locator('.field-match').filter({ has: frame.locator('.field-name', { hasText: /^email$/ }) })
+    await expect(field.locator('.field-name mark')).toHaveText('email')
+    await expect(field.locator('.field-type')).toHaveText('string')
+    await result.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-field-search.png') })
+    await result.getByRole('button', { name: /^(定位|Locate)$/ }).click()
+    await expect.poll(() => {
+      const current = new URL(page.url())
+      const locator = current.searchParams.get('locator')
+      if (!locator || current.pathname !== '/manager/data-explorer') return false
+      const actual = new URL(locator)
+      actual.searchParams.sort()
+      return actual.href === expectedLocator.href
+    }).toBe(true)
+    await expect(frame.getByRole('columnheader', { name: 'customer_code', exact: true })).toBeVisible()
+    await expect(frame.getByRole('columnheader', { name: 'email', exact: true })).toHaveCount(0)
+
     await frame.getByRole('button', { name: /导出全部结果|Export All Results/i }).click()
     const dialog = frame.getByRole('dialog', { name: /导出全部结果|Export All Results/i })
     await expect(dialog).toBeVisible()
@@ -122,12 +180,14 @@ test('protected Manager export retains its verified initiator and opens in Monit
     expect(browserErrors).toEqual([])
     expect(anonymousRefresh401).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v2', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v3', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
       same_user_verified: true, initiator_verified: true, taskless_execution: true,
       manager_source_verified: true, monitor_detail_visible: true,
+      protected_preview_verified: true, technical_field_search_verified: true,
+      search_to_preview_verified: true,
       browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {

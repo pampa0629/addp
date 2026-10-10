@@ -670,7 +670,8 @@ def validate_security_mysql_owner_protection_profile(
                 + fragment
             )
 
-    for fragment in ("run_export_browser(", "validate_export_browser_report(", "e2e/online/security-manager-export.spec.js"):
+    for fragment in ("run_export_browser(", "validate_export_browser_report(", "e2e/online/security-manager-export.spec.js",
+                     "wait_for_technical_field(", '"technical_field_search"', '"manager.search.execute"'):
         if fragment not in owner:
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")
@@ -679,7 +680,9 @@ def validate_security_mysql_owner_protection_profile(
         "format: 'csv'", "csv.DictReader",
         "transfer_execution_id", "execution.triggered_by", "execution.source_task_id",
         "/api/v1/monitor/executions/by-execution-id/", ".execution-detail-content",
-        "addp.security-manager-export-browser/v2", "anonymous_refresh_401", "download.delete()",
+        "addp.security-manager-export-browser/v3", "anonymous_refresh_401", "download.delete()",
+        "protected_preview_verified", "technical_field_search_verified", "search_to_preview_verified",
+        "security-manager-protected-preview.png", "security-manager-field-search.png", ".field-name mark",
         "expect(browserErrors).toEqual([])", "expect(failedResponses).toEqual([])",
     ):
         if fragment not in browser:

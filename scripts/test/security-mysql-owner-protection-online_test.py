@@ -82,6 +82,7 @@ class SpatialClient:
         self.service_deleted = False
         self.fail_owner = fail_owner
         self.owner_calls = []
+        self.search_calls = []
         self.assessments = [{"id": field, "component_key": field, "current": {
             "conclusion": "sensitive", "sensitive_data_type_id": "11", "security_grade_id": "21"
         }} for field in ONLINE.SPATIAL_FIELDS[1:4]]
@@ -105,6 +106,17 @@ class SpatialClient:
 
     def request(self, method, path, expected, body=None):
         response = ONLINE.SUPPORT.Response
+        if path.startswith("/api/v1/manager/search?"):
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+            assert query["q"] == ["value_c"] and query["engine_id"] == ["17"]
+            self.search_calls.append(self.baseline["algorithm"])
+            item = {"id": 1, "full_name": "addp_online_security." + ONLINE.SPATIAL_SOURCE, "item_type": "table"}
+            return response(200, {"data": {"results": [{
+                "document_id": "sha256:fixture", "engine_id": 17, "full_name": item["full_name"],
+                "locator": ONLINE.build_item_locator(17, item), "field_matches": [
+                    {"name": "value_c", "data_type": "string", "highlights": {"name": "<mark>value_c</mark>"}}
+                ]
+            }]}})
         if method == "GET" and path == "/api/v1/security/sensitive-data-types":
             return response(200, [{"id": "11", "code": "phone", "default_security_grade_id": "21"}])
         if path == "/api/v1/security/protection-baselines":
@@ -198,6 +210,9 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.assertEqual({owner for _, owner in client.owner_calls}, set(ONLINE.OWNER_ACTIONS))
         self.assertEqual(len(client.owner_calls), 12)
         self.assertTrue(evidence["cases"][0]["independent_manager_fields"])
+        self.assertEqual(client.search_calls, [case[0] for case in ONLINE.ALGORITHM_CASES])
+        for case in evidence["cases"]:
+            self.assertTrue(case["owners"]["manager"]["technical_field_search"]["same_item_verified"])
         self.assertTrue(all(policy["state"] == "revoked" for policy in client.policies))
         self.assertTrue(client.service_deleted)
         self.assertEqual(len(client.deleted_tasks), 3)
@@ -435,15 +450,64 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.assertNotIn("stable_key", payload["data_config"])
 
 
+class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
+    def setUp(self):
+        self.item = {"id": 12, "fingerprint": "source-fingerprint", "full_name": "public.protected", "item_type": "table"}
+        self.hit = {"document_id": "source-fingerprint", "engine_id": 17, "full_name": "public.protected",
+                    "locator": "addp://engine/17/path/public/protected?item_id=12&type=table",
+                    "field_matches": [{"name": "value_c", "data_type": "string", "highlights": {"name": "<mark>value_c</mark>"}}]}
+
+    def search(self, hits):
+        client = Mock()
+        client.request.return_value = ONLINE.SUPPORT.Response(200, {"data": {"results": hits}})
+        return ONLINE.wait_for_technical_field(client, 17, self.item, "value_c", time.monotonic() + 5)
+
+    def test_accepts_registered_identity_and_real_field_highlight(self):
+        evidence = self.search([self.hit])
+        self.assertTrue(evidence["same_item_verified"])
+        self.assertEqual(evidence["document_id"], self.item["fingerprint"])
+
+    def test_rejects_cross_engine_duplicate_identity_wrong_locator_and_invented_field_matches(self):
+        for changes in (
+            {"engine_id": 19}, {"full_name": "public.other"},
+            {"locator": "addp://engine/17/path/public/protected?item_id=99&type=table"},
+            {"locator": "addp://engine/17/path/public/protected?type=table"},
+            {"field_matches": []},
+            {"field_matches": [{"name": "value_c", "data_type": "json", "highlights": {"name": "<mark>value_c</mark>"}}]},
+            {"field_matches": [{"name": "value_c", "data_type": "string", "highlights": {"name": "value_c"}}]},
+            {"field_matches": [{"name": "value_c", "data_type": "string", "highlights": {"name": "<mark>other</mark>"}}]},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ONLINE.SuiteError):
+                self.search([dict(self.hit, **changes)])
+        with self.assertRaisesRegex(ONLINE.SuiteError, "duplicated"):
+            self.search([self.hit, self.hit])
+
+    def test_only_transient_isolation_is_retried_and_missing_index_cannot_pass(self):
+        client = Mock()
+        client.request.side_effect = [ONLINE.SUPPORT.Response(503, {"error_code": "manager_search_isolated"}),
+                                     ONLINE.SUPPORT.Response(200, {"data": {"results": [self.hit]}})]
+        with patch.object(ONLINE.time, "sleep"):
+            self.assertTrue(ONLINE.wait_for_technical_field(client, 17, self.item, "value_c", time.monotonic() + 5)["same_item_verified"])
+        client.request.side_effect = None
+        for response in (ONLINE.SUPPORT.Response(503, {"error_code": "search_unconfigured"}),
+                         ONLINE.SUPPORT.Response(200, {"data": {"results": []}})):
+            client.request.return_value = response
+            with patch.object(ONLINE.time, "monotonic", side_effect=[1, 1, 3]), patch.object(ONLINE.time, "sleep"):
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.wait_for_technical_field(client, 17, self.item, "value_c", 2)
+
+
 class ManagerExportBrowserTest(unittest.TestCase):
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v2", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v3", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
             "email_field_present": False, "non_sensitive_fields_preserved": True,
             "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
             "manager_source_verified": True, "monitor_detail_visible": True,
+            "protected_preview_verified": True, "technical_field_search_verified": True,
+            "search_to_preview_verified": True,
             "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
         }
 
@@ -457,9 +521,11 @@ class ManagerExportBrowserTest(unittest.TestCase):
             ("non_sensitive_fields_preserved", False), ("same_user_verified", False),
             ("initiator_verified", False), ("taskless_execution", False),
             ("manager_source_verified", False), ("monitor_detail_visible", False),
+            ("protected_preview_verified", False), ("technical_field_search_verified", False),
+            ("search_to_preview_verified", False),
             ("browser_warning_errors", 1), ("failed_business_responses", 1),
             ("anonymous_refresh_401", 0), ("anonymous_refresh_401", 2), ("anonymous_refresh_401", True),
-            ("schema_version", "addp.security-manager-export-browser/v1"),
+            ("schema_version", "addp.security-manager-export-browser/v2"),
             ("initiator_verified", 1), ("browser_warning_errors", False),
         ):
             with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):
@@ -487,9 +553,21 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 self.assertIn("e2e/online/security-manager-export.spec.js", command)
                 self.assertEqual(kwargs["env"]["ADDP_ONLINE_SECURITY_EXPORT_LOCATOR"], "source")
                 path.write_text(json.dumps(self.report()))
+                for name in ("security-manager-protected-preview.png", "security-manager-field-search.png",
+                             "security-manager-export.png", "security-manager-export-monitor.png"):
+                    (artifact / name).write_bytes(b"test screenshot")
                 return Mock(returncode=0, stdout="", stderr="")
             with patch.object(ONLINE.subprocess, "run", side_effect=browser):
                 self.assertEqual(ONLINE.run_export_browser(artifact, environment, "source"), self.report())
+
+            for missing in ("security-manager-protected-preview.png", "security-manager-field-search.png"):
+                def incomplete_browser(command, **kwargs):
+                    result = browser(command, **kwargs)
+                    (artifact / missing).unlink()
+                    return result
+                with self.subTest(missing=missing), patch.object(ONLINE.subprocess, "run", side_effect=incomplete_browser):
+                    with self.assertRaisesRegex(ONLINE.SuiteError, "screenshots"):
+                        ONLINE.run_export_browser(artifact, environment, "source")
 
 
 class HostedGovernanceInitializationTest(unittest.TestCase):

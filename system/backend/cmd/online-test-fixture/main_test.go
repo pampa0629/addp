@@ -392,10 +392,13 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	if !needsEngineProvisioner("security-mysql-owner-protection") {
 		t.Fatal("missing provisioner")
 	}
-	for _, key := range []string{"security.protection_baseline.update", "security.policy.create", "system.execution_authorization.create", "manager.content.read", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read"} {
+	for _, key := range []string{"security.protection_baseline.update", "security.policy.create", "system.execution_authorization.create", "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read"} {
 		if !contains(permissions, key) {
 			t.Fatalf("missing owner permission %s", key)
 		}
+	}
+	if contains(consumerPermissions, "manager.search.execute") {
+		t.Fatal("Security search acceptance must not expand unrelated consumer permissions")
 	}
 	for _, key := range []string{"security.classification.create", "security.grade.create", "security.detector.create", "system.engine.create"} {
 		if contains(permissions, key) {

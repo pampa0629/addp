@@ -88,6 +88,7 @@ REQUIRED_PERMISSIONS = {
     "develop.task.read",
     "manager.data_item.read",
     "manager.content.read",
+    "manager.search.execute",
     "manager.derived_artifact.create",
     "manager.derived_artifact.read",
     "monitor.execution.read",
@@ -858,6 +859,48 @@ def restore_spatial_state(client: GatewayClient, baseline_id: str, original: dic
         raise SuiteError("spatial cleanup failed: " + "; ".join(errors))
 
 
+def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mapping[str, object],
+                             field_name: str, deadline: float) -> dict[str, object]:
+    query = urllib.parse.urlencode({"q": field_name, "engine_id": engine_id, "page_size": 100})
+    while time.monotonic() < deadline:
+        response = client.request("GET", "/api/v1/manager/search?" + query, (200, 503))
+        payload = _object(response.payload, "Manager field search")
+        if response.status == 503:
+            if payload.get("error_code") != "manager_search_isolated":
+                raise SuiteError("Manager field search is unavailable")
+        else:
+            results = _array(_object(payload.get("data"), "Manager search data").get("results"), "Manager search results")
+            hits = [_object(raw, "Manager search hit") for raw in results]
+            if any(positive_int(hit.get("engine_id"), "search Engine id") != engine_id for hit in hits):
+                raise SuiteError("Manager field search crossed the requested Engine")
+            matches = [hit for hit in hits if hit.get("document_id") == item.get("fingerprint")]
+            if len(matches) > 1:
+                raise SuiteError("Manager field search duplicated the DataItem")
+            if matches:
+                hit = matches[0]
+                locator = urllib.parse.urlsplit(str(hit.get("locator", "")))
+                expected_locator = urllib.parse.urlsplit(build_item_locator(engine_id, item))
+                if (hit.get("full_name") != item.get("full_name")
+                        or locator[:3] != expected_locator[:3]
+                        or sorted(urllib.parse.parse_qsl(locator.query)) != sorted(urllib.parse.parse_qsl(expected_locator.query))
+                        or locator.fragment):
+                    raise SuiteError("Manager field search changed the DataItem identity")
+                fields = _array(hit.get("field_matches"), "Manager matched fields")
+                matched = [_object(raw, "Manager matched field") for raw in fields
+                           if isinstance(raw, dict) and raw.get("name") == field_name]
+                if len(matched) != 1 or matched[0].get("data_type") != "string":
+                    raise SuiteError("Manager field search lost the protected field definition")
+                highlight = _object(matched[0].get("highlights"), "Manager field highlights").get("name")
+                if (not isinstance(highlight, str) or "<mark>" not in highlight or "</mark>" not in highlight
+                        or re.sub(r"</?mark>", "", highlight) != field_name):
+                    raise SuiteError("Manager field search has no actual field-name highlight")
+                return {"document_id": hit["document_id"], "engine_id": str(engine_id),
+                        "field_name": field_name, "field_type": "string", "field_highlight_verified": True,
+                        "same_item_verified": True}
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
+    raise SuiteError("protected technical field was not searchable before the deadline")
+
+
 def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: str,
                                deadline: float, timeout: float) -> dict[str, object]:
     types = [item for item in definition_array(client, "/api/v1/security/sensitive-data-types") if item.get("code") == "phone"]
@@ -949,6 +992,8 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
                 wait_for_spatial_projections(client, enrollment_id, deadline)
             _, manager_rows = preview_rows(client, locator)
             manager = assert_spatial_rows(manager_rows, "manager", manager_expected)
+            # Check immediately after protection changes, before the later target rescan.
+            manager["technical_field_search"] = wait_for_technical_field(client, engine_id, source, "value_c", min(deadline, time.monotonic() + 60))
             query = "SELECT id, value_a, value_b, value_c, location_point FROM addp_online_security.spatial_algorithm_source ORDER BY id"
             develop = assert_spatial_rows(develop_rows(client, engine_id, locator, deadline, query), "develop", defaults)
             service = assert_spatial_rows(service_rows(client, service_name, SPATIAL_FIELDS), "service", defaults)
@@ -1218,11 +1263,13 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v2", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v3", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
         "manager_source_verified": True, "monitor_detail_visible": True,
+        "protected_preview_verified": True, "technical_field_search_verified": True,
+        "search_to_preview_verified": True,
         "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
     }
     mismatches = [key for key, value in expected.items()
@@ -1251,6 +1298,12 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
         raise SuiteError("Manager export browser environment is missing: " + ", ".join(missing))
     report_path = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "security-manager-export-browser.json"
     report_path.unlink(missing_ok=True)
+    screenshots = [report_path.parent / name for name in (
+        "security-manager-protected-preview.png", "security-manager-field-search.png",
+        "security-manager-export.png", "security-manager-export-monitor.png",
+    )]
+    for screenshot in screenshots:
+        screenshot.unlink(missing_ok=True)
     browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator)
     result = subprocess.run(
         ["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
@@ -1265,6 +1318,8 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
         raise SuiteError(f"Manager export Playwright exited with status {result.returncode}")
     if not report_path.is_file():
         raise SuiteError("Playwright did not write security-manager-export-browser.json")
+    if any(not screenshot.is_file() or screenshot.stat().st_size == 0 for screenshot in screenshots):
+        raise SuiteError("Manager protection browser screenshots are missing or empty")
     try:
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
