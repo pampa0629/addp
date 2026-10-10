@@ -3,6 +3,7 @@ package excel
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -159,5 +160,85 @@ func TestExcelTableNativeFiltersUnknownKeys(t *testing.T) {
 	}
 	if _, ok := native["unknown"]; ok {
 		t.Fatalf("unknown native key should be filtered: %#v", native)
+	}
+}
+
+func TestWorkbookReadsSelectedSheetSchemaAndEmptySheets(t *testing.T) {
+	t.Parallel()
+	workbook := excelize.NewFile()
+	defer workbook.Close()
+	if err := workbook.SetSheetName("Sheet1", "Cities"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Readings", "Empty", "HeaderOnly"} {
+		if _, err := workbook.NewSheet(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, row := range []struct {
+		sheet, cell string
+		values      []interface{}
+	}{
+		{"Cities", "A1", []interface{}{"city_id", "city_name"}},
+		{"Cities", "A2", []interface{}{1, "Hangzhou"}},
+		{"Cities", "A3", []interface{}{2, "Shanghai"}},
+		{"Cities", "A4", []interface{}{3, "Beijing"}},
+		{"Readings", "A1", []interface{}{"sensor", "temperature", "status"}},
+		{"Readings", "A2", []interface{}{"Sensor-A", 18.5, "ready"}},
+		{"HeaderOnly", "A1", []interface{}{"code", "label"}},
+	} {
+		if err := workbook.SetSheetRow(row.sheet, row.cell, &row.values); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var data bytes.Buffer
+	if err := workbook.Write(&data); err != nil {
+		t.Fatal(err)
+	}
+	plugin := NewPlugin(nil)
+	container, err := plugin.DescribeContainer(context.Background(), bytes.NewReader(data.Bytes()), format.DefaultParseOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if container.ChildCount != 4 || len(container.Children) != 4 {
+		t.Fatalf("container = %#v, want all four sheets including empty ones", container)
+	}
+	for _, tc := range []struct {
+		name    string
+		fields  []string
+		offset  int64
+		wantRow map[string]interface{}
+	}{
+		{"Cities", []string{"city_id", "city_name"}, 1, map[string]interface{}{"city_id": "2", "city_name": "Shanghai"}},
+		{"Readings", []string{"sensor", "temperature", "status"}, 0, map[string]interface{}{"sensor": "Sensor-A", "temperature": "18.5", "status": "ready"}},
+		{"Empty", []string{}, 0, nil},
+		{"HeaderOnly", []string{"code", "label"}, 0, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := format.DefaultParseOptions()
+			opts.SheetName = tc.name
+			description, err := plugin.DescribeTable(context.Background(), bytes.NewReader(data.Bytes()), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := make([]string, len(description.Table.Fields))
+			for i, field := range description.Table.Fields {
+				fields[i] = field.Name
+			}
+			if description.Table.Name != tc.name || !reflect.DeepEqual(fields, tc.fields) {
+				t.Fatalf("selected table = %s/%v, want %s/%v", description.Table.Name, fields, tc.name, tc.fields)
+			}
+			rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(data.Bytes()), tc.offset, 1, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantRow == nil {
+				if len(rows) != 0 {
+					t.Fatalf("empty sheet rows = %#v", rows)
+				}
+			} else if len(rows) != 1 || !reflect.DeepEqual(rows[0], tc.wantRow) {
+				t.Fatalf("selected sheet rows = %#v, want %#v", rows, tc.wantRow)
+			}
+		})
 	}
 }
