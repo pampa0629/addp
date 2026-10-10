@@ -7,9 +7,9 @@ const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 
 const schemaPath = { ...rootPath, segments: [...rootPath.segments, { term: 'schema', kind: 'namespace', name: 'outdoor' }] }
 const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities' }] }
 function filterGrants(items, query) {
-  const search = query.get('table_search')?.toLowerCase(), account = query.get('account_id')
+  const search = query.get('table_search')?.toLowerCase(), kind = query.get('recipient_type'), recipient = query.get('recipient_id')
   return items.filter(item => (!search || item.catalog_path.segments.map(segment => segment.name).join(' / ').toLowerCase().includes(search)) &&
-    (!account || item.recipient_type === 'user' && String(item.recipient_id) === account))
+    (!kind || item.recipient_type === kind) && (!recipient || String(item.recipient_id) === recipient))
 }
 async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false } = {}) {
   const writes = [], reads = [], inspections = []
@@ -637,7 +637,7 @@ test('authorization history page two stays selected while loading', async ({ pag
   expect(new URL(historyReads.at(-1)).searchParams.get('page')).toBe('2')
 })
 
-test('table and account filters cover all pages, persist across list modes and reset together', async ({ page }) => {
+test('table and recipient filters cover all pages, persist across list modes and reset together', async ({ page }) => {
   const history = Array.from({ length: 25 }, (_, index) => ({ ...historicalGrant(), request_id: `filter-${index}`,
     catalog_path: { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: `filter_${index}` }] } }))
   history.push({ ...history[0], request_id: 'other-account', recipient_id: '34' },
@@ -654,13 +654,16 @@ test('table and account filters cover all pages, persist across list modes and r
   await expect(list.getByRole('row').filter({ hasText: 'filter_24' })).toHaveCount(1)
   await expect(panel.locator('.el-pagination')).toContainText('1')
   await search.fill('filter_')
-  await panel.getByTestId('source-grant-account-filter').locator('.el-select').click()
+  await panel.getByTestId('source-grant-type-filter').click()
+  await page.getByRole('option', { name: '账号', exact: true }).click()
+  await panel.getByTestId('source-grant-recipient-filter').locator('.el-select').click()
   await page.getByRole('option').filter({ hasText: 'Outdoor reader' }).click()
   await search.fill('')
   await query.click()
   await expect(panel.locator('.el-pagination')).toContainText('25')
   const accountOnly = new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams
-  expect(accountOnly.get('account_id')).toBe('33')
+  expect(accountOnly.get('recipient_type')).toBe('user')
+  expect(accountOnly.get('recipient_id')).toBe('33')
   expect(accountOnly.has('table_search')).toBe(false)
   await search.fill('filter_')
   await query.click()
@@ -674,20 +677,23 @@ test('table and account filters cover all pages, persist across list modes and r
   await expect(list).toContainText('filter_24')
   let last = new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams
   expect(last.get('table_search')).toBe('filter_')
-  expect(last.get('account_id')).toBe('33')
+  expect(last.get('recipient_type')).toBe('user')
+  expect(last.get('recipient_id')).toBe('33')
   expect(last.get('page')).toBe('2')
   await panel.getByText('授权历史', { exact: true }).click()
   await expect(panel.locator('.el-pagination')).toContainText('26')
   last = new URL(reads.filter(url => url.includes('/access_grants/history')).at(-1)).searchParams
   expect(last.get('table_search')).toBe('filter_')
-  expect(last.get('account_id')).toBe('33')
+  expect(last.get('recipient_type')).toBe('user')
+  expect(last.get('recipient_id')).toBe('33')
   expect(last.get('page')).toBe('1')
   await panel.getByTestId('source-grant-filter-reset').click()
   await expect(search).toHaveValue('')
   await expect(panel.locator('.el-pagination')).toContainText('28')
   last = new URL(reads.filter(url => url.includes('/access_grants/history')).at(-1)).searchParams
   expect(last.has('table_search')).toBe(false)
-  expect(last.has('account_id')).toBe(false)
+  expect(last.has('recipient_type')).toBe(false)
+  expect(last.has('recipient_id')).toBe(false)
   expect(last.get('page')).toBe('1')
   await search.fill('missing-table')
   await query.click()
@@ -695,6 +701,65 @@ test('table and account filters cover all pages, persist across list modes and r
   await expect(list.getByRole('row')).toHaveCount(1)
   await panel.getByTestId('source-grant-filter-reset').click()
   await expect(panel.locator('.el-pagination')).toContainText('28')
+  expect(writes).toEqual([])
+})
+
+test('organization filters use type and searchable identity without expanding members', async ({ page }) => {
+  const history = ['user', 'department', 'project_group'].map(recipient_type => ({ ...historicalGrant(), recipient_type, request_id: `${recipient_type}-grant` }))
+  history.push({ ...historicalGrant(), recipient_type: 'department', recipient_id: '34', request_id: 'other-department' },
+    { ...history[1], request_id: 'department-revoked', revocation: { revoked_at: '2026-10-08T00:00:00Z' } })
+  const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'iam.department.read', 'iam.project_group.read'], history })
+  await page.goto('/engines/2?tab=data-authorization')
+  const panel = page.getByTestId('engine-source-grants'), list = panel.getByTestId('source-grant-list')
+  const type = panel.getByTestId('source-grant-type-filter'), query = panel.getByTestId('source-grant-filter-query')
+  for (const [label, kind, name, code] of [['部门', 'department', 'Outdoor department', 'outdoor_dept'], ['项目组', 'project_group', 'Outdoor team', 'outdoor_stat']]) {
+    await type.click()
+    await page.getByRole('option', { name: label, exact: true }).click()
+    await query.click()
+    await expect(panel.locator('.el-pagination')).toContainText(kind === 'department' ? '2' : '1')
+    let last = new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams
+    expect(last.get('recipient_type')).toBe(kind)
+    expect(last.has('recipient_id')).toBe(false)
+    const recipient = panel.getByTestId('source-grant-recipient-filter')
+    await recipient.click()
+    await recipient.getByRole('combobox').fill(code)
+    await page.getByRole('option', { name: `${name} · ${code}`, exact: true }).click()
+    await panel.getByTestId('source-grant-table-filter').fill('activities')
+    await query.click()
+    await expect(list.getByRole('row').filter({ hasText: name })).toHaveCount(1)
+    await expect(list).not.toContainText('Outdoor reader')
+    last = new URL(reads.filter(url => /\/access_grants(?:\?|$)/.test(url)).at(-1)).searchParams
+    expect(last.get('recipient_type')).toBe(kind)
+    expect(last.get('recipient_id')).toBe('33')
+    expect(last.get('table_search')).toBe('activities')
+  }
+  await type.click()
+  await page.getByRole('option', { name: '部门', exact: true }).click()
+  await panel.getByTestId('source-grant-recipient-filter').click()
+  await page.getByRole('option', { name: 'Outdoor department · outdoor_dept', exact: true }).click()
+  await query.click()
+  await panel.getByText('授权历史', { exact: true }).click()
+  await expect(panel.locator('.el-pagination')).toContainText('2')
+  await expect(list).toContainText('已撤销')
+  const last = new URL(reads.filter(url => url.includes('/access_grants/history')).at(-1)).searchParams
+  expect(last.get('recipient_type')).toBe('department')
+  expect(last.get('recipient_id')).toBe('33')
+  await panel.getByTestId('source-grant-filter-reset').click()
+  await expect(panel.locator('.el-pagination')).toContainText('5')
+  expect(writes).toEqual([])
+})
+
+test('organization filter respects independent identity-read permission', async ({ page }) => {
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions, history: [{ ...historicalGrant(), recipient_type: 'department' }] })
+  await page.goto('/engines/2?tab=data-authorization')
+  const panel = page.getByTestId('engine-source-grants')
+  await panel.getByTestId('source-grant-type-filter').click()
+  await page.getByRole('option', { name: '部门', exact: true }).click()
+  await expect(panel.getByTestId('source-grant-recipient-filter').locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
+  await expect(panel).toContainText('无接收方名称查看权限')
+  await panel.getByTestId('source-grant-filter-query').click()
+  await expect(panel.getByTestId('source-grant-list')).toContainText('部门')
+  expect(reads.some(url => url.includes('/tenant/departments'))).toBe(false)
   expect(writes).toEqual([])
 })
 

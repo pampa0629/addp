@@ -59,16 +59,24 @@
         <el-form-item :label="t('system.engine.dataAuthorization.target')">
           <el-input v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter" :placeholder="t('system.engine.sourceGrants.tableSearch')" maxlength="200" clearable />
         </el-form-item>
-        <el-form-item :label="t('system.engine.sourceGrants.accountFilter')">
-          <TenantMemberSelect v-model="filterDraft.accountID" data-testid="source-grant-account-filter" :members="filterMembers" principal-type="user" value-field="principal_id" stringify-value :disabled="!canReadAccounts || recipientNames.user?.status !== 'ready'" :loading="recipientNames.user?.status === 'loading'" :placeholder="t('system.engine.sourceGrants.allAccounts')" :current-membership-id="auth.authContext?.context?.tenant_membership_id" />
+        <el-form-item class="recipient-type-filter" :label="t('system.engine.sourceGrants.recipientType')">
+          <el-select v-model="filterDraft.recipientType" data-testid="source-grant-type-filter" clearable :placeholder="t('system.engine.sourceGrants.allRecipientTypes')" @change="filterDraft.recipientID = ''">
+            <el-option v-for="kind in Object.keys(recipientSources)" :key="kind" :value="kind" :label="t(`system.engine.sourceGrants.types.${kind}`)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('system.engine.sourceGrants.recipient')">
+          <TenantMemberSelect v-if="filterDraft.recipientType === 'user'" v-model="filterDraft.recipientID" data-testid="source-grant-recipient-filter" :members="filterMembers" principal-type="user" value-field="principal_id" stringify-value :disabled="!canReadFilterRecipients || filterRecipientStatus !== 'ready'" :loading="filterRecipientStatus === 'loading'" :placeholder="t('system.engine.sourceGrants.allAccounts')" :current-membership-id="auth.authContext?.context?.tenant_membership_id" />
+          <el-select v-else v-model="filterDraft.recipientID" data-testid="source-grant-recipient-filter" filterable clearable :disabled="!filterDraft.recipientType || !canReadFilterRecipients || filterRecipientStatus !== 'ready'" :loading="filterRecipientStatus === 'loading'" :placeholder="t(filterDraft.recipientType ? 'system.engine.sourceGrants.allRecipients' : 'system.engine.sourceGrants.selectRecipientType')">
+            <el-option v-for="item in filterOrganizations" :key="item.id" :value="String(item.id)" :label="[item.name, item.code].filter(Boolean).join(' · ')" />
+          </el-select>
         </el-form-item>
         <div class="filter-actions">
           <el-button type="primary" native-type="submit" data-testid="source-grant-filter-query">{{ t('common.search') }}</el-button>
           <el-button data-testid="source-grant-filter-reset" @click="resetFilters">{{ t('common.reset') }}</el-button>
         </div>
       </el-form>
-      <p class="filter-hint">{{ t('system.engine.sourceGrants.accountFilterBoundary') }}</p>
-      <el-alert v-if="!canReadAccounts || recipientNames.user?.status === 'failed'" type="warning" :closable="false" :title="t(`system.engine.sourceGrants.recipientNames.${canReadAccounts ? 'failed' : 'forbidden'}`)" />
+      <p class="filter-hint">{{ t('system.engine.sourceGrants.recipientFilterBoundary') }}</p>
+      <el-alert v-if="filterDraft.recipientType && (!canReadFilterRecipients || filterRecipientStatus === 'failed')" type="warning" :closable="false" :title="t(`system.engine.sourceGrants.recipientNames.${canReadFilterRecipients ? 'failed' : 'forbidden'}`)" />
       <el-button :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       <el-table :data="rows" v-loading="loading" data-testid="source-grant-list">
         <el-table-column :label="t('system.engine.dataAuthorization.target')" min-width="180"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>
@@ -123,11 +131,14 @@ const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', 
 const canReadCandidates = computed(() => auth.hasPermission(recipientSources[form.recipientType]?.permission))
 const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error = ref(''), success = ref('')
 const listMode = ref('current')
-const filterDraft = reactive({ tableSearch: '', accountID: '' })
+const filterDraft = reactive({ tableSearch: '', recipientType: '', recipientID: '' })
 const appliedFilters = ref({})
 const filterMembers = ref([])
 const canReadAccounts = computed(() => auth.hasPermission(recipientSources.user.permission))
 const recipientNames = ref({})
+const canReadFilterRecipients = computed(() => auth.hasPermission(recipientSources[filterDraft.recipientType]?.permission))
+const filterRecipientStatus = computed(() => recipientNames.value[filterDraft.recipientType]?.status)
+const filterOrganizations = computed(() => filterDraft.recipientType === 'user' ? [] : Object.values(recipientNames.value[filterDraft.recipientType]?.items || {}))
 const inspectionAccount = ref(''), inspection = ref(null), inspectionNames = ref({}), inspectionError = ref(''), inspecting = ref(false)
 let inspectionSequence = 0
 const candidates = ref([]), members = ref([]), candidateLoading = ref(false), formError = ref(''), saving = ref(false), attempt = ref(null)
@@ -151,8 +162,8 @@ async function fetchRecipientNames(kind) {
     return { status: 'ready', items: Object.fromEntries(items.map(item => [String(item[source.id]), item])), members: items }
   } catch { return { status: 'failed' } }
 }
-async function loadRecipientNames(history, epoch, seq) {
-  const kinds = [...new Set(['user', ...history.map(row => row.recipient_type)])]
+async function loadRecipientNames(epoch, seq) {
+  const kinds = Object.keys(recipientSources)
   await Promise.all(kinds.map(async kind => {
     const source = recipientSources[kind]
     if (!source) return
@@ -201,7 +212,7 @@ async function load() {
     if (epoch !== generation || seq !== readSequence) return
     if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total) || result.total < 0) throw new Error('invalidHistory')
     rows.value = result.data; total.value = result.total
-    await loadRecipientNames(result.data, epoch, seq)
+    await loadRecipientNames(epoch, seq)
   } catch (e) { if (epoch === generation && seq === readSequence) error.value = message(e) }
   finally { if (epoch === generation && seq === readSequence) loading.value = false }
 }
@@ -209,10 +220,11 @@ function changePage(value) { if (value === page.value) return; page.value = valu
 function changeListMode() { page.value = 1; load() }
 function applyFilters() {
   const tableSearch = filterDraft.tableSearch.trim()
-  appliedFilters.value = { ...(tableSearch ? { table_search: tableSearch } : {}), ...(filterDraft.accountID ? { account_id: filterDraft.accountID } : {}) }
+  appliedFilters.value = { ...(tableSearch ? { table_search: tableSearch } : {}),
+    ...(filterDraft.recipientType ? { recipient_type: filterDraft.recipientType, ...(filterDraft.recipientID ? { recipient_id: filterDraft.recipientID } : {}) } : {}) }
   page.value = 1; load()
 }
-function resetFilters() { filterDraft.tableSearch = ''; filterDraft.accountID = ''; applyFilters() }
+function resetFilters() { filterDraft.tableSearch = ''; filterDraft.recipientType = ''; filterDraft.recipientID = ''; applyFilters() }
 async function loadCandidates() {
   const epoch = generation, seq = ++candidateSequence, kind = form.recipientType
   candidates.value = []; members.value = []; form.recipientID = ''; candidateLoading.value = false; formError.value = ''
@@ -292,7 +304,7 @@ watch([() => props.engine.id, () => props.engine.lifecycle_state, () => auth.aut
   ...Object.values(recipientSources).map(source => () => auth.hasPermission(source.permission))], () => {
   generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; recipientNames.value = {}; total.value = 0; page.value = 1
   clearInspection(); inspectionAccount.value = ''
-  filterDraft.tableSearch = ''; filterDraft.accountID = ''; appliedFilters.value = {}; filterMembers.value = []
+  filterDraft.tableSearch = ''; filterDraft.recipientType = ''; filterDraft.recipientID = ''; appliedFilters.value = {}; filterMembers.value = []
   saving.value = revoking.value = loading.value = false; revokeVisible.value = false; error.value = formError.value = success.value = ''; emit('close'); load()
 }, { immediate: true })
 watch([saving, attempt], () => emit('busy', saving.value || !!attempt.value), { immediate: true })
@@ -307,6 +319,7 @@ h3 { margin: 0; }
 .grant-form { display: grid; gap: 16px; }
 .grant-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 .grant-filters .el-form-item { flex: 1 1 260px; min-width: 0; margin-bottom: 0; }
+.grant-filters .recipient-type-filter { flex: 0 1 180px; }
 .grant-filters :deep(.iam-member-select) { min-width: 0; }
 .filter-actions { display: flex; padding-bottom: 1px; }
 .filter-hint { margin: 0; color: var(--addp-text-secondary); }

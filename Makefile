@@ -536,6 +536,7 @@ test-build-registration: ## 验证产品镜像构建登记与影响范围选择
 	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-platform-review
 	@$(MAKE) test-dev-lifecycle
 	@$(MAKE) test-infra-backup
 	@$(MAKE) test-business-config
@@ -566,6 +567,10 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-projection-store-ownership
 	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
+
+.PHONY: test-platform-review
+test-platform-review: ## 核验平台能力来源、覆盖与不可变发布快照，拒绝来源漂移
+	@cd ontology/backend && GOWORK=off go test ./internal/platform -count=1
 
 .PHONY: test-python-ci-registration
 test-python-ci-registration: ## 校验 Python 模块与已登记 owner Runtime 的 Make / CI 一致性
@@ -609,8 +614,9 @@ test-security-frontend: ## 运行 Security 前端确定性测试、浏览器回�
 	@cd security/frontend && npm run test:e2e
 	@cd security/frontend && npm run build
 
-test-agent-frontend: ## 运行 Agent 前端确定性测试与构建门禁
+test-agent-frontend: ## 运行 Agent 前端确定性测试、浏览器回归与构建门禁
 	@cd agent/frontend && npm test
+	@cd agent/frontend && npm run test:e2e
 	@cd agent/frontend && npm run build
 
 test-asset-frontend: ## 运行 Asset 前端确定性测试与构建

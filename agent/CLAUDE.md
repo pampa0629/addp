@@ -146,6 +146,8 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 
 唯一 pending 澄清下，聊天框文字通过同一 `/chat` 的 `resume` 与 `payload={"text":...}` 恢复原 AgentRun，不新建 Run。文字上限 2000 字符；唯一精确匹配采用服务端持久选项，否则仅作为补充要求。复核文字不产生批准并使旧复核失效，owner approval 不接受文字。多 pending 澄清不得猜测回答对象。详见交互协议规范 5.1。
 
+`make test-agent-frontend` 包含独立临时端口的 T3 浏览器回归，加载正式聊天页面、AG-UI 客户端和共享 A2UI 组件，以受控 HTTP/SSE 夹具验证短输入、刷新后的文字 resume、配置复核和取消，以及多 pending 不猜测、失败保留输入。后端 `make test-agent-eval` 覆盖真实 Harness、Interaction 服务和 Run 恢复的受控模型链路，验证同一身份和取消后创建条件拒绝；数据库与 owner 是夹具，不计为真实跨模块 T4。CI 的 Agent 前端矩阵安装 Chromium 并保留失败证据，不复用个人服务或登录态。
+
 ## 协议约束
 
 - `/api/v1/agent/chat` 请求体使用标准 AG-UI `RunAgentInput`。

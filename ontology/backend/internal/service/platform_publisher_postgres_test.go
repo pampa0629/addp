@@ -200,7 +200,7 @@ func testPlatformPublication(t *testing.T, db *gorm.DB) {
 		d.Digest = ""
 		d.Operation.Effects = append(d.Operation.Effects, "another.effect")
 		data, _ := json.Marshal(d)
-		different, err := platform.Compile(data)
+		different, err := platform.Compile(data, platformTestReview(t, d))
 		if err != nil {
 			t.Fatal(err)
 		}

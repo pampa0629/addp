@@ -739,6 +739,7 @@ jobs:
           - module: agent
             name: Agent
             target: test-agent-frontend
+            playwright: true
           - module: asset
             name: Asset
             target: test-asset-frontend

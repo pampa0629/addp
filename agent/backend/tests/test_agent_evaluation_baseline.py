@@ -494,6 +494,84 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == names[1])
             self.assertEqual(result.payload["error_code"], "platform_condition_unsatisfied")
 
+    async def test_text_clarification_review_and_cancel_keep_one_run_and_never_create(self):
+        import uuid
+        from ag_ui.core import RunAgentInput
+        from api.chat import _save_user_input
+        from models.message import Message
+        from models.run import AgentRun
+        from models.session import Session
+        from services.interactions import create_clarification
+        from services.runs import create_agent_run, resume_agent_run
+        from tests.test_interactions import _DB
+
+        definition, _, _, arguments, checkpoint = platform_fixture()
+        db = _DB()
+        run = await create_agent_run(db, session_id=12, user_id=1, tenant_id=1, protocol_run_id="initial")
+        run.id, run.skill_name, run.checkpoint = uuid.uuid4(), "transfer-generation", checkpoint
+        original_id = run.id
+        context_tool = _Tool("platform.capability.context", definition)
+
+        class ForbiddenCreate(_Tool):
+            async def ainvoke(self, _args):
+                raise AssertionError("cancelled review reached owner")
+
+        create_tool = ForbiddenCreate("transfer.task.create", {})
+
+        async def pause(events):
+            run.checkpoint = normalize_checkpoint(next(event.payload["checkpoint"] for event in reversed(events) if event.kind == "checkpoint"))
+            required = next(event.payload for event in events if event.kind == "interaction_required")
+            interaction = await create_clarification(db, session_id=12, user_id=1, tenant_id=1,
+                agent_run_id=run.id, tool_call_id=required["tool_call_id"],
+                prompt=required["prompt"], candidates=required["candidates"])
+            interaction.id = uuid.uuid4()
+            run.status = "waiting"
+            return interaction
+
+        async def resume(interaction, payload, protocol_id):
+            db.result = interaction
+            body = RunAgentInput.model_validate({
+                "threadId": "12", "runId": protocol_id, "state": {}, "messages": [], "tools": [], "context": [], "forwardedProps": {},
+                "resume": [{"interruptId": str(interaction.id), "status": "resolved", "payload": payload}],
+            })
+            resolved = await _save_user_input(db, body=body, session=Session(id=12), user_id=1, tenant_id=1, source_token="fixture-token")
+            db.result = run
+            self.assertIs(await resume_agent_run(db, interactions=resolved, session_id=12, user_id=1, tenant_id=1), run)
+            self.assertEqual(run.id, original_id)
+            self.assertEqual(run.skill_name, "transfer-generation")
+            return next(value.content for value in reversed(db.added) if isinstance(value, Message))
+
+        names = ["platform.capability.context", "transfer.task.create"]
+        initial = await self._run_factory(agent_run_id=str(run.id), skill_name=run.skill_name, checkpoint=run.checkpoint,
+            user_request="把 MongoDB 的 outdoor 传到 PostgreSQL 的 outdoor，先建任务，不要运行。",
+            tools=[context_tool, create_tool], allowed_tools=names, responses=[_Response(tool_calls=[_tool_call("request_clarification", {
+                "prompt": "请选择行粒度", "reason": "row_grain", "options": [{"label": "展开数组", "value": "unwind"}],
+            })])])
+        question = await pause(initial)
+        text = "一文档一行，只投影标量字段。"
+        resume_text = await resume(question, {"text": text}, "text-resume")
+        self.assertEqual(question.answer, {"text": text})
+        review = await self._run_factory(agent_run_id=str(run.id), skill_name=run.skill_name, checkpoint=run.checkpoint,
+            user_request=resume_text, tools=[context_tool, create_tool], allowed_tools=names,
+            responses=[_Response(tool_calls=[_tool_call("request_clarification", {
+                "prompt": "请复核", "reason": "transfer_create_review", "operation_review": {"tool": names[1], "arguments": arguments},
+                "options": [{"label": "确认创建", "value": "confirm"}, {"label": "取消", "value": "cancel"}],
+            })])])
+        interaction = await pause(review)
+        cancelled_text = await resume(interaction, {"value": "cancel"}, "cancel-resume")
+        self.assertEqual(interaction.answer["label"], "取消")
+        self.assertEqual(run.checkpoint["confirmed"]["operation_reviews"], {})
+
+        # Even a model that ignores cancellation cannot send the write to owner.
+        events = await self._run_factory(agent_run_id=str(run.id), skill_name=run.skill_name, checkpoint=run.checkpoint,
+            user_request=cancelled_text, tools=[context_tool, create_tool], allowed_tools=names,
+            responses=[_Response(tool_calls=[_tool_call(names[1], arguments)]), _Response(content="已取消")])
+        blocked = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == names[1])
+        self.assertEqual(blocked.payload["error_code"], "platform_condition_unsatisfied")
+        self.assertIn("user_review", blocked.payload["content"])
+        self.assertEqual(len([value for value in db.added if isinstance(value, AgentRun)]), 1)
+        self.assertEqual([question.status, interaction.status], ["completed", "completed"])
+
     async def test_text_review_resume_cannot_reuse_approval_even_if_model_calls_create(self):
         import uuid
         from models.run import AgentRun
@@ -708,10 +786,10 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(acknowledgements), 1)
             self.assertEqual(create.calls, 0 if cancel else 1)
 
-    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis", checkpoint=None, llm=None, checkpoint_consumer=None):
+    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis", checkpoint=None, llm=None, checkpoint_consumer=None, user_request="评测请求"):
         context = {
             "skill_name": skill_name,
-            "user_request": "评测请求",
+            "user_request": user_request,
             "context_summary": "",
             "user_id": 1,
             "tenant_id": 1,

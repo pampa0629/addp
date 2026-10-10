@@ -7,6 +7,9 @@ import _ "embed"
 //go:embed transfer.json
 var transferDefinition []byte
 
+//go:embed transfer.review.json
+var transferReview []byte
+
 type Concept struct {
 	ID   string            `json:"id"`
 	Name map[string]string `json:"name"`
@@ -55,4 +58,4 @@ type Catalog struct {
 
 // CompileTransferRelease is the deployment-only source entry. Runtime semantic
 // reads restore the authoritative active PG revision, never this embedded file.
-func CompileTransferRelease() (*Snapshot, error) { return Compile(transferDefinition) }
+func CompileTransferRelease() (*Snapshot, error) { return Compile(transferDefinition, transferReview) }

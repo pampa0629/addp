@@ -51,7 +51,7 @@ func TestPlatformCatalogRestoreAndBudgets(t *testing.T) {
 		definition.Concepts[i].Name["zh-cn"] = strings.Repeat("x", 512)
 	}
 	encoded, _ := json.Marshal(definition)
-	large, err := platform.Compile(encoded)
+	large, err := platform.Compile(encoded, platformTestReview(t, definition))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,11 +84,33 @@ func platformTestSnapshot(t *testing.T, capability string, revision uint64) *pla
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := platform.Compile(data)
+	snapshot, err := platform.Compile(data, platformTestReview(t, definition))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return snapshot
+}
+
+func platformTestReview(t *testing.T, d platform.Context) []byte {
+	t.Helper()
+	release, err := platform.CompileTransferRelease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := release.Review()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Bindings = nil
+	for _, subject := range platform.ReviewSubjects(d) {
+		r.Bindings = append(r.Bindings, platform.SourceBinding{Subject: subject, Sources: []string{r.Sources[0].ID}})
+	}
+	r.Coverage[0].ID = d.Capability
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestPlatformCommandsRejectBeforeDatabaseAccess(t *testing.T) {

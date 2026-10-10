@@ -31,11 +31,33 @@ func definitionJSON(t *testing.T, definition Context) []byte {
 
 func mustCompile(t *testing.T, data []byte) *Snapshot {
 	t.Helper()
-	snapshot, err := Compile(data)
+	var definition Context
+	_ = json.Unmarshal(data, &definition)
+	snapshot, err := Compile(data, fixtureReview(t, definition))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return snapshot
+}
+
+// Synthetic limit/validation definitions need synthetic member bindings. These
+// are test evidence only; production provenance is checked independently.
+func fixtureReview(t *testing.T, d Context) []byte {
+	t.Helper()
+	var review Review
+	if err := json.Unmarshal(transferReview, &review); err != nil {
+		t.Fatal(err)
+	}
+	review.Bindings = nil
+	for _, subject := range ReviewSubjects(d) {
+		review.Bindings = append(review.Bindings, SourceBinding{Subject: subject, Sources: []string{"config"}})
+	}
+	review.Coverage[0].ID = d.Capability
+	data, err := json.Marshal(review)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestPlatformSnapshotDeterminismAndIsolation(t *testing.T) {
@@ -141,7 +163,7 @@ func TestPlatformCompileRejectsInvalidDefinition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			definition := sourceDefinition(t)
 			tc.mutate(&definition)
-			if snapshot, err := Compile(definitionJSON(t, definition)); err == nil || snapshot != nil {
+			if snapshot, err := Compile(definitionJSON(t, definition), fixtureReview(t, definition)); err == nil || snapshot != nil {
 				t.Fatal("invalid definition compiled")
 			}
 		})
@@ -172,7 +194,7 @@ func TestPlatformCompileRejectsNonStrictJSON(t *testing.T) {
 		"depth_limit":             []byte(strings.Repeat("[", maxJSONDepth+2) + "0" + strings.Repeat("]", maxJSONDepth+2)),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if snapshot, err := Compile(data); err == nil || snapshot != nil {
+			if snapshot, err := Compile(data, transferReview); err == nil || snapshot != nil {
 				t.Fatal("non-strict source compiled")
 			}
 		})
@@ -253,7 +275,7 @@ func TestPlatformDefinitionLimits(t *testing.T) {
 			tc.set(&definition, tc.limit)
 			mustCompile(t, definitionJSON(t, definition))
 			tc.set(&definition, tc.limit+1)
-			if _, err := Compile(definitionJSON(t, definition)); err == nil {
+			if _, err := Compile(definitionJSON(t, definition), fixtureReview(t, definition)); err == nil {
 				t.Fatal("member limit bypassed")
 			}
 		})
@@ -266,7 +288,7 @@ func TestPlatformDefinitionLimits(t *testing.T) {
 			"en": strings.Repeat("x", 512), "zh-cn": strings.Repeat("x", 512),
 		}})
 	}
-	if _, err := Compile(definitionJSON(t, oversize)); err == nil {
+	if _, err := Compile(definitionJSON(t, oversize), fixtureReview(t, oversize)); err == nil {
 		t.Fatal("context byte limit bypassed")
 	}
 }

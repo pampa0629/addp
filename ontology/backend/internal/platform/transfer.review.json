@@ -1,0 +1,557 @@
+{
+  "method": "curated",
+  "scope": "selected_capability",
+  "sources": [
+    {
+      "id": "config",
+      "owner": "transfer",
+      "kind": "normative",
+      "path": "transfer/docs/transfer-基本概念及配置说明.md",
+      "anchor": "## 一、核心对象",
+      "commit": "0600430b8a4500dfdf65e90888bdae62e62c274b",
+      "sha256": "1dffa6723382cb67314b3ad417346c6338be60c19581616771fb80057dacc353",
+      "use": {
+        "zh-cn": "任务、执行、配置与写入策略的正式含义",
+        "en": "Formal task, execution, configuration and apply policy semantics"
+      }
+    },
+    {
+      "id": "handler",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/api/task_handler.go",
+      "anchor": "func validDelegatedTaskCreation(",
+      "commit": "da04a5acc3678f78cd91866716c3649df1331eff",
+      "sha256": "a60cdfa24d8d885b1766c73279ce38152593f3b077a6253d6b9ba38216b10c84",
+      "use": {
+        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束",
+        "en": "Delegated bounded snapshot creation without scheduling or scanning"
+      }
+    },
+    {
+      "id": "service",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/service/task_service.go",
+      "anchor": "Status:       models.TaskStatusIdle,",
+      "commit": "fc3e67a53dff2bf6535f28093d027cfdbb705f61",
+      "sha256": "deb1677fab5068152929a866f14af4a9f1bd8424a16574032580b9aff68ee089",
+      "use": {
+        "zh-cn": "持久化任务定义及初始状态，不启动 execution",
+        "en": "Persist task definition and initial state without starting execution"
+      }
+    },
+    {
+      "id": "owner_test",
+      "owner": "transfer",
+      "kind": "test",
+      "path": "transfer/backend/internal/api/delegated_task_test.go",
+      "anchor": "func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(",
+      "commit": "da04a5acc3678f78cd91866716c3649df1331eff",
+      "sha256": "92504370863336a22ff2ab31fd960ba4573c869cc3d43aa306de83e24d043dbb",
+      "use": {
+        "zh-cn": "验证创建成功、禁止参数及零 execution",
+        "en": "Verify creation, rejected parameters and zero executions"
+      }
+    },
+    {
+      "id": "manifest",
+      "owner": "common-python",
+      "kind": "contract",
+      "path": "common-python/addp_common/tools/manifest.json",
+      "anchor": "\"name\": \"transfer.task.create\"",
+      "commit": "0e042c4f64289b9c5eb0184ed2fd85d958439627",
+      "sha256": "a85dfb00d84dc0d4ee7025408029edf6f5ef88751145dc84fe02d68c0d816bf2",
+      "use": {
+        "zh-cn": "唯一 Tool 的输入输出、owner 及委托契约",
+        "en": "Canonical Tool input, output, owner and delegation contracts"
+      }
+    },
+    {
+      "id": "tool_test",
+      "owner": "common-python",
+      "kind": "test",
+      "path": "common-python/tests/test_platform_transfer_tools.py",
+      "anchor": "def test_transfer_create_schema_rejects_schedules_credentials_and_other_modes(",
+      "commit": "c6315fcc44994eeafe1de28310b4bcd5a7c21782",
+      "sha256": "a7b118cee291b39081bf312ed6bc1e1dc68a008531e6a958a2019354cbdd961e",
+      "use": {
+        "zh-cn": "核验 Tool 引用、创建参数和 owner HTTP 契约",
+        "en": "Verify Tool references, creation arguments and owner HTTP contract"
+      }
+    },
+    {
+      "id": "skill",
+      "owner": "transfer",
+      "kind": "procedure",
+      "path": "skills/transfer-generation/SKILL.md",
+      "anchor": "## 核心流程",
+      "commit": "d3225c49aa2beb37ad50c50a1a5689b4ee3483e4",
+      "sha256": "cd26bfa6cfb9928fab221227774ac9dcd785827bfbb0ac12bef868ffa9d83129",
+      "use": {
+        "zh-cn": "事实获取、用户澄清、确切配置复核与创建步骤",
+        "en": "Fact discovery, clarification, exact configuration review and creation procedure"
+      }
+    },
+    {
+      "id": "conditions",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/agents/platform_conditions.py",
+      "anchor": "def validate_create(",
+      "commit": "2c6028bd757b58b03d6dddd880a3a40f4414603d",
+      "sha256": "d06b357e3c7b53752987d4afa84b1228e346da62961dbe6ab60a2d750b974863",
+      "use": {
+        "zh-cn": "Runtime 条件适配与能力修订、参数和结构事实的复核绑定",
+        "en": "Runtime condition adapters and review binding to revision, arguments and schema facts"
+      }
+    },
+    {
+      "id": "condition_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_platform_conditions.py",
+      "anchor": "class PlatformConditionTests(",
+      "commit": "2c6028bd757b58b03d6dddd880a3a40f4414603d",
+      "sha256": "5e11668b89e9e10d14d381a565a5049d5bbeb677a866dd7c505d7d9b5ea785fa",
+      "use": {
+        "zh-cn": "验证条件拒绝、参数或事实变化后重新确认",
+        "en": "Verify condition refusal and re-review after arguments or facts change"
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "subject": "operation",
+      "sources": [
+        "manifest",
+        "handler",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "concept/transfer_task",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/source",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/target",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/runtime_boundary",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/load_mode",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/apply_policy",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/field_mapping",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/execution",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "concept/confirmed_source",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "condition/confirmed_source",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "concept/confirmed_target_parent_and_name",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "condition/confirmed_target_parent_and_name",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "concept/bounded",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "condition/bounded",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "concept/snapshot",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "condition/snapshot",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "concept/explicit_apply_policy",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "condition/explicit_apply_policy",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "concept/confirmed_row_grain_and_fields",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "condition/confirmed_row_grain_and_fields",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "concept/user_review",
+      "sources": [
+        "manifest",
+        "conditions",
+        "condition_test"
+      ]
+    },
+    {
+      "subject": "condition/user_review",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/reads_from/source",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/writes_to/target",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/has/runtime_boundary",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/has/load_mode",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/target/has/apply_policy",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/has/field_mapping",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/execution/runs/transfer_task",
+      "sources": [
+        "config",
+        "manifest"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/requires/confirmed_source",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/requires/confirmed_target_parent_and_name",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/requires/bounded",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/requires/snapshot",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/requires/explicit_apply_policy",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/requires/confirmed_row_grain_and_fields",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "relation/transfer_task/requires/user_review",
+      "sources": [
+        "conditions",
+        "condition_test",
+        "skill"
+      ]
+    },
+    {
+      "subject": "effect/task_definition.persisted",
+      "sources": [
+        "service",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "effect/status.idle",
+      "sources": [
+        "service",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "effect/desired_state.stopped",
+      "sources": [
+        "service",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/execution.created",
+      "sources": [
+        "handler",
+        "service",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/schedule.enabled",
+      "sources": [
+        "handler",
+        "service",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/business_data.written",
+      "sources": [
+        "handler",
+        "service",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/metadata.scan_started",
+      "sources": [
+        "handler",
+        "service",
+        "owner_test"
+      ]
+    },
+    {
+      "subject": "excluded_effect/permission.granted",
+      "sources": [
+        "manifest",
+        "tool_test"
+      ]
+    },
+    {
+      "subject": "requirement/accessible_engines",
+      "sources": [
+        "manifest",
+        "skill",
+        "tool_test"
+      ]
+    },
+    {
+      "subject": "requirement/source_discovery",
+      "sources": [
+        "manifest",
+        "skill",
+        "tool_test"
+      ]
+    },
+    {
+      "subject": "requirement/target_parent_discovery",
+      "sources": [
+        "manifest",
+        "skill",
+        "tool_test"
+      ]
+    },
+    {
+      "subject": "requirement/optional_draft_assistance",
+      "sources": [
+        "manifest",
+        "skill",
+        "tool_test"
+      ]
+    }
+  ],
+  "coverage": [
+    {
+      "id": "transfer.task.create",
+      "state": "modeled",
+      "summary": {
+        "zh-cn": "只建未启动的 native table 有界快照任务；不是 Transfer 全功能声明",
+        "en": "Create only a stopped native table bounded snapshot task; not a full Transfer capability declaration"
+      },
+      "sources": [
+        "manifest",
+        "handler",
+        "owner_test"
+      ]
+    },
+    {
+      "id": "transfer.continuous",
+      "state": "not_modeled",
+      "summary": {
+        "zh-cn": "Continuous/Kafka 与数据库 CDC尚未纳入本能力定义",
+        "en": "Continuous Kafka and database CDC is not modeled in this capability"
+      },
+      "sources": [
+        "config"
+      ]
+    },
+    {
+      "id": "transfer.incremental",
+      "state": "not_modeled",
+      "summary": {
+        "zh-cn": "Watermark 增量装载尚未纳入本能力定义",
+        "en": "Watermark incremental load is not modeled in this capability"
+      },
+      "sources": [
+        "config"
+      ]
+    },
+    {
+      "id": "transfer.execution",
+      "state": "not_modeled",
+      "summary": {
+        "zh-cn": "执行、重试、调度及运行结果尚未纳入本能力定义",
+        "en": "Execution, retry, scheduling and runtime results is not modeled in this capability"
+      },
+      "sources": [
+        "config"
+      ]
+    },
+    {
+      "id": "transfer.encoded",
+      "state": "not_modeled",
+      "summary": {
+        "zh-cn": "文件、对象与 raw copy 传输尚未纳入本能力定义",
+        "en": "File, object and raw copy transfer is not modeled in this capability"
+      },
+      "sources": [
+        "config"
+      ]
+    }
+  ]
+}

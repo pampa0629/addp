@@ -41,7 +41,13 @@ func maximumPlatformFixture(t *testing.T) *platform.Snapshot {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := platform.Compile(data)
+	r, _ := platformFixture(t).Review()
+	r.Bindings = nil
+	for _, subject := range platform.ReviewSubjects(d) {
+		r.Bindings = append(r.Bindings, platform.SourceBinding{Subject: subject, Sources: []string{r.Sources[0].ID}})
+	}
+	reviewData, _ := json.Marshal(r)
+	snapshot, err := platform.Compile(data, reviewData)
 	if err != nil {
 		t.Fatal(err)
 	}

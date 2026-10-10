@@ -76,7 +76,7 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	for _, suffix := range []string{"?page=0", "?page=01", "?page_size=101", "?page=1&page=2", "?tenant_id=2", "?page=1;page_size=2", "?unknown=1"} {
 		engineDelegationTestRequest(t, grantTestRouter(t, &projection, unused), "GET", path+suffix, nil, 400)
 	}
-	for _, suffix := range []string{"?account_id=0", "?account_id=01", "?account_id=-1", "?account_id=9223372036854775808", "?account_id=33&account_id=34", "?table_search=", "?table_search=%20", "?table_search=a&table_search=b", "?table_search=%00", "?table_search=%FF", "?table_search=" + strings.Repeat("a", 201)} {
+	for _, suffix := range []string{"?account_id=33", "?recipient_type=", "?recipient_type=unknown", "?recipient_type=user&recipient_type=department", "?recipient_id=33", "?recipient_type=user&recipient_id=0", "?recipient_type=user&recipient_id=01", "?recipient_type=user&recipient_id=-1", "?recipient_type=user&recipient_id=9223372036854775808", "?recipient_type=user&recipient_id=33&recipient_id=34", "?table_search=", "?table_search=%20", "?table_search=a&table_search=b", "?table_search=%00", "?table_search=%FF", "?table_search=" + strings.Repeat("a", 201)} {
 		for _, route := range []string{path, path + "/history"} {
 			engineDelegationTestRequest(t, grantTestRouter(t, &projection, unused), "GET", route+suffix, nil, 400)
 		}
@@ -117,10 +117,11 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	if !strings.Contains(relations.Body.String(), `"grant_count":2`) {
 		t.Fatal(relations.Body.String())
 	}
-	for _, query := range []string{"table_search=" + url.QueryEscape(" 户外_% / 表 "), "account_id=9007199254740993", "table_search=orders&account_id=9007199254740993"} {
+	for _, query := range []string{"table_search=" + url.QueryEscape(" 户外_% / 表 "), "recipient_type=user&recipient_id=9007199254740993", "table_search=orders&recipient_type=department&recipient_id=9007199254740993", "recipient_type=project_group", "recipient_type=project_group&recipient_id=9007199254740993", "recipient_type=department"} {
 		assertFilter := func(filter engineaccess.SourceGrantFilter) {
-			if strings.Contains(query, "account_id=") && filter.AccountID != 9007199254740993 {
-				t.Fatalf("lossy account filter: %+v", filter)
+			params, _ := url.ParseQuery(query)
+			if filter.RecipientType != params.Get("recipient_type") || strings.Contains(query, "recipient_id=") && filter.RecipientID != 9007199254740993 {
+				t.Fatalf("lossy recipient filter: %+v", filter)
 			}
 			if strings.Contains(query, "table_search=") && filter.TableSearch != "orders" && filter.TableSearch != "户外_% / 表" {
 				t.Fatalf("lost table filter: %+v", filter)

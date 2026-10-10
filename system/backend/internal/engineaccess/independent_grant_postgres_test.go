@@ -210,7 +210,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			t.Fatalf("issue=%+v %v", issued, err)
 		}
 		assertRead("grant")
-		t.Run("table and account filters precede pagination and preserve history", func(t *testing.T) {
+		t.Run("table and recipient filters precede pagination and preserve history", func(t *testing.T) {
 			other, _ := newUser(t, time.Hour)
 			commands := []CreateIndependentGrantInput{}
 			for _, table := range []string{"filter_%户外", "filter_X户外"} {
@@ -228,15 +228,38 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				t.Fatal(err)
 			}
 			commands = append(commands, command)
+			organizations := iam.NewOrganizationService(iam.NewRepository(db), nil)
+			department, err := organizations.CreateDepartment(ctx, iam.CreateDepartmentInput{TenantID: tenantID, ActorPrincipalID: adminID, Code: "filter_department", Name: "Filter department"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: tenantID, ActorPrincipalID: adminID, Code: "filter_group", Name: "Filter group"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for kind, id := range map[string]int64{"department": department.ID, "project_group": group.ID} {
+				organization := commands[0]
+				organization.RequestID, organization.RecipientType, organization.RecipientID, organization.InitializeApproval = uuid.New(), kind, id, false
+				if _, err := service.CreateIndependentGrant(ctx, organization); err != nil {
+					t.Fatal(err)
+				}
+				commands = append(commands, organization)
+			}
 			for _, test := range []struct {
 				filter SourceGrantFilter
 				count  int64
 			}{
-				{SourceGrantFilter{TableSearch: "FILTER_"}, 3},
-				{SourceGrantFilter{TableSearch: "%户外"}, 2},
-				{SourceGrantFilter{TableSearch: "filter_", AccountID: receiver.PrincipalID}, 2},
-				{SourceGrantFilter{TableSearch: "%户外", AccountID: receiver.PrincipalID}, 1},
-				{SourceGrantFilter{AccountID: other.PrincipalID}, 1},
+				{SourceGrantFilter{TableSearch: "FILTER_"}, 5},
+				{SourceGrantFilter{TableSearch: "%户外"}, 4},
+				{SourceGrantFilter{TableSearch: "filter_", RecipientType: "user", RecipientID: receiver.PrincipalID}, 2},
+				{SourceGrantFilter{TableSearch: "%户外", RecipientType: "user", RecipientID: receiver.PrincipalID}, 1},
+				{SourceGrantFilter{RecipientType: "user", RecipientID: other.PrincipalID}, 1},
+				{SourceGrantFilter{TableSearch: "filter_", RecipientType: "user"}, 3},
+				{SourceGrantFilter{TableSearch: "%户外", RecipientType: "department", RecipientID: department.ID}, 1},
+				{SourceGrantFilter{TableSearch: "filter_", RecipientType: "department"}, 1},
+				{SourceGrantFilter{TableSearch: "%户外", RecipientType: "project_group", RecipientID: group.ID}, 1},
+				{SourceGrantFilter{TableSearch: "filter_", RecipientType: "project_group"}, 1},
+				{SourceGrantFilter{TableSearch: "filter_X", RecipientType: "department", RecipientID: department.ID}, 0},
 				{SourceGrantFilter{TableSearch: "not_present"}, 0},
 			} {
 				for page := 1; page <= int(test.count)+1; page++ {
@@ -256,11 +279,19 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 					t.Fatal(err)
 				}
 			}
-			filter := SourceGrantFilter{TableSearch: "%户外", AccountID: receiver.PrincipalID}
+			filter := SourceGrantFilter{TableSearch: "%户外", RecipientType: "user", RecipientID: receiver.PrincipalID}
 			current, total, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 1, filter)
 			history, historicalTotal, historyErr := service.ListSourceGrants(ctx, actor, input.EngineID, 1, 1, filter)
 			if err != nil || historyErr != nil || total != 0 || len(current) != 0 || historicalTotal != 1 || len(history) != 1 || history[0].Revocation == nil {
 				t.Fatalf("withdrawn filtered relation did not preserve history: %v %v %d/%d %+v", err, historyErr, total, historicalTotal, history)
+			}
+			for kind, id := range map[string]int64{"department": department.ID, "project_group": group.ID} {
+				filter := SourceGrantFilter{TableSearch: "filter_", RecipientType: kind, RecipientID: id}
+				current, total, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 1, filter)
+				history, historicalTotal, historyErr := service.ListSourceGrants(ctx, actor, input.EngineID, 1, 1, filter)
+				if err != nil || historyErr != nil || total != 0 || len(current) != 0 || historicalTotal != 1 || len(history) != 1 || history[0].Revocation == nil {
+					t.Fatalf("withdrawn %s filter: current=%d history=%d %v/%v", kind, total, historicalTotal, err, historyErr)
+				}
 			}
 		})
 		t.Run("relation rejects another command even with changed validity", func(t *testing.T) {
@@ -373,7 +404,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			if !found {
 				t.Fatalf("legacy grouping=%+v", relations)
 			}
-			filter := SourceGrantFilter{TableSearch: "legacy_relation", AccountID: receiver.PrincipalID}
+			filter := SourceGrantFilter{TableSearch: "legacy_relation", RecipientType: "user", RecipientID: receiver.PrincipalID}
 			filtered, relationTotal, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 1, filter)
 			history, historyTotal, historyErr := service.ListSourceGrants(ctx, actor, input.EngineID, 2, 1, filter)
 			if err != nil || historyErr != nil || relationTotal != 1 || len(filtered) != 1 || filtered[0].GrantCount != 2 || historyTotal != 2 || len(history) != 1 {

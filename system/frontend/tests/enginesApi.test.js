@@ -52,7 +52,7 @@ describe('engines API', () => {
   })
 
   it('separates current relations from immutable history and withdraws by an anchor', async () => {
-    const params = { page: 2, page_size: 20 }
+    const params = { page: 2, page_size: 20, table_search: 'outdoor', recipient_type: 'department', recipient_id: '9007199254740993' }
     await enginesAPI.listSourceGrants('2', params)
     await enginesAPI.listSourceGrantHistory('2', params)
     await enginesAPI.revokeSourceGrant('2', 'anchor-id', 'Withdraw the relation')

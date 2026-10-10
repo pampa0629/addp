@@ -2,7 +2,7 @@
   "schema_version": "addp.platform-capability-context/v1",
   "knowledge_kind": "platform_definition",
   "capability": "transfer.task.create",
-  "revision": 3,
+  "revision": 4,
   "digest": "",
   "availability": "not_observed",
   "concepts": [

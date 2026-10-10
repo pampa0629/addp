@@ -1,4 +1,5 @@
 import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
@@ -6,7 +7,7 @@ import { resolve } from 'path'
 const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
 const OUT_BASE = process.env.OUT_DIR
 
-export default defineConfig(withModuleFrontend('agent', {
+export default defineConfig(withModuleFrontend('agent', withFrontendTestIsolation('agent', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -51,4 +52,4 @@ export default defineConfig(withModuleFrontend('agent', {
     minify: BUILD_TYPE !== 'debug',
     emptyOutDir: true,
   }
-}))
+})))

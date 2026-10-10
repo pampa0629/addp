@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const SchemaVersion int64 = 5
+const SchemaVersion int64 = 6
 
 //go:embed migrations/001_revisions.sql
 var initialSchema string
@@ -23,6 +23,9 @@ var platformSchema string
 
 //go:embed migrations/005_platform_publication.sql
 var platformPublicationSchema string
+
+//go:embed migrations/006_platform_review.sql
+var platformReviewSchema string
 
 // Migrate is the Backend's sole owner migration path. Shared schema
 // initialization belongs to System, never to this owner.
@@ -56,7 +59,12 @@ func Migrate(db *gorm.DB) error {
 			}
 		}
 		if current < 5 {
-			return tx.Exec(platformPublicationSchema).Error
+			if err := tx.Exec(platformPublicationSchema).Error; err != nil {
+				return err
+			}
+		}
+		if current < 6 {
+			return tx.Exec(platformReviewSchema).Error
 		}
 		return nil
 	})

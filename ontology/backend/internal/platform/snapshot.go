@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	ContractVersion = "addp.platform-definition/v1"
-	CompilerVersion = "addp.platform-compiler/v1"
+	ContractVersion = "addp.platform-definition/v2"
+	CompilerVersion = "addp.platform-compiler/v2"
 	maxSourceBytes  = 64 << 10
 	maxContextBytes = 32 << 10
 	maxJSONDepth    = 32
@@ -32,6 +32,7 @@ type envelope struct {
 	Contract   string  `json:"contract"`
 	Compiler   string  `json:"compiler"`
 	Definition Context `json:"definition"`
+	Review     Review  `json:"review"`
 }
 
 // Snapshot binds a static definition to the compiler contract. It contains no
@@ -43,21 +44,31 @@ type Snapshot struct {
 
 // Compile validates a single source definition and freezes the release bytes.
 // It does not check live owner capabilities or publish anything.
-func Compile(data []byte) (*Snapshot, error) {
+func Compile(data, reviewData []byte) (*Snapshot, error) {
 	var definition Context
 	if err := decodeStrict(data, &definition); err != nil {
 		return nil, err
 	}
-	return freeze(definition)
+	var review Review
+	if err := decodeStrict(reviewData, &review); err != nil {
+		return nil, err
+	}
+	return freeze(definition, review)
 }
 
-func freeze(definition Context) (*Snapshot, error) {
+func freeze(definition Context, review Review) (*Snapshot, error) {
 	if err := validate(definition); err != nil {
 		return nil, err
 	}
-	canonical, err := json.Marshal(envelope{ContractVersion, CompilerVersion, definition})
+	if err := validateReview(definition, review); err != nil {
+		return nil, err
+	}
+	canonical, err := json.Marshal(envelope{ContractVersion, CompilerVersion, definition, review})
 	if err != nil {
 		return nil, err
+	}
+	if len(canonical) > maxSourceBytes {
+		return nil, fmt.Errorf("platform_snapshot_size_limit")
 	}
 	hash := sha256.Sum256(canonical)
 	digest := hex.EncodeToString(hash[:])
@@ -82,7 +93,7 @@ func Restore(data []byte, digest string) (*Snapshot, error) {
 	if stored.Contract != ContractVersion || stored.Compiler != CompilerVersion {
 		return nil, fmt.Errorf("unsupported_platform_snapshot_version")
 	}
-	snapshot, err := freeze(stored.Definition)
+	snapshot, err := freeze(stored.Definition, stored.Review)
 	if err != nil {
 		return nil, err
 	}

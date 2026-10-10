@@ -139,7 +139,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 
 // List godoc
 // @Summary 查看当前源数据授权关系 | List current source-data authorization relations
-// @Description 表名和账号条件取交集，完整结果筛选后计数及分页；账号只匹配个人授权，不展开组织来源 | Table and account filters intersect before counting and pagination; account matches personal Grants only, not organization sources
+// @Description 表名、接收方类型和编号条件取交集，完整结果筛选后计数及分页；不展开组织成员来源 | Table, recipient type and ID filters intersect before counting and pagination; does not expand organization membership
 // @Description 按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json
@@ -148,7 +148,8 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 // @Param page query int false "页码，默认 1 | Page, default 1"
 // @Param page_size query int false "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100"
 // @Param table_search query string false "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters"
-// @Param account_id query string false "接收账号 Principal ID，规范正整数十进制字符串 | Recipient account Principal ID, canonical positive decimal string"
+// @Param recipient_type query string false "接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all recipients of that type" Enums(user,department,project_group)
+// @Param recipient_id query string false "接收方编号，规范正整数十进制字符串，必须同时指定 recipient_type | Recipient ID, canonical positive decimal string; requires recipient_type"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantRelation,total=int64,page=int,page_size=int,total_pages=int} "当前关系 | Current relations"
 // @Failure 400,401,403,404,500 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
@@ -160,7 +161,7 @@ func (h *EngineAccessGrantHandler) List(c *gin.Context) {
 
 // History godoc
 // @Summary 查看源数据授权历史 | List source-data Grant history
-// @Description 表名和账号条件取交集，完整结果筛选后计数及分页；包含已停用账号的历史个人授权，不展开组织来源 | Table and account filters intersect before counting and pagination; includes inactive-account personal history, not organization sources
+// @Description 表名、接收方类型和编号条件取交集，完整结果筛选后计数及分页；包含已停用接收方的历史授权，不展开组织成员来源 | Table, recipient type and ID filters intersect before counting and pagination; includes inactive-recipient history, not expanded membership sources
 // @Description 当前租户用户需读取权限及管理资格；保留所有原签发、到期与撤销事实，包含直接和业务批准，不代表当前可访问 | Current tenant user needs read permission and management qualification. Preserves original issuance, expiry and revocation for direct and business approvals; not current access Allow
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json
@@ -169,7 +170,8 @@ func (h *EngineAccessGrantHandler) List(c *gin.Context) {
 // @Param page query int false "页码，默认 1 | Page, default 1"
 // @Param page_size query int false "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100"
 // @Param table_search query string false "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters"
-// @Param account_id query string false "接收账号 Principal ID，规范正整数十进制字符串 | Recipient account Principal ID, canonical positive decimal string"
+// @Param recipient_type query string false "接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all recipients of that type" Enums(user,department,project_group)
+// @Param recipient_id query string false "接收方编号，规范正整数十进制字符串，必须同时指定 recipient_type | Recipient ID, canonical positive decimal string; requires recipient_type"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantView,total=int64,page=int,page_size=int,total_pages=int} "签发及撤销历史 | Issuance and revocation history"
 // @Failure 400,401,403,404,500 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
@@ -202,8 +204,16 @@ func (h *EngineAccessGrantHandler) list(c *gin.Context, history bool) {
 			}
 			continue
 		}
-		if key == "account_id" {
-			filter.AccountID, err = parseIAMDecimalID(values[0])
+		if key == "recipient_type" {
+			filter.RecipientType = values[0]
+			if filter.RecipientType == "" {
+				err = commonapi.ErrBadRequest
+				break
+			}
+			continue
+		}
+		if key == "recipient_id" {
+			filter.RecipientID, err = parseIAMDecimalID(values[0])
 			if err != nil {
 				break
 			}
