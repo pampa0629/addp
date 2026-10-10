@@ -318,11 +318,7 @@ def minio_physical(path):
         check=True, capture_output=True, text=True).stdout)
     if marker.get('committer') != 'magic':
         raise SuiteError('MinIO result omitted its Magic Committer marker')
-    pending = subprocess.run(['docker', 'exec', 'addp-hdfs-online-minio', 'mc', 'ls', '--incomplete', '--recursive', '--json', 'owned/result/results/'],
-        check=True, capture_output=True, text=True).stdout.strip()
-    if pending:
-        raise SuiteError('MinIO publication left incomplete multipart uploads')
-    return {'committer': 'magic', 'objects': len(keys), 'multipart_uploads': 0}
+    return {'committer': 'magic', 'objects': len(keys)}
 
 
 def run_browser(report):

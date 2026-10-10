@@ -30,7 +30,7 @@ Spark 保存到 MinIO 时，公开定义保存 `target_parent_locator + target_n
 
 MinIO 连接唯一来自本次已授权的存储 Engine；Spark 集群连接不得携带业务存储凭据。读写配置限制在本次操作的 Hadoop Configuration，并禁用按 bucket 缓存的 S3A FileSystem，防止同名 bucket 的不同端点或凭据互相污染。保存及成果核验要求目标引擎 read + write，不自动新增 Resource Grant。
 
-使用与 Spark/Hadoop 版本匹配的 S3A Magic Committer。成功须核验提交标记、全部 Parquet 分片的 schema 和真实行数，再返回稳定 outputs 并触发异步 Meta 扫描。失败只清理本次独占目录及其中的未完成 multipart uploads；清理失败必须报告，不删除父目录、兄弟成果或 bucket 范围的上传。进程被强制终止时可能残留目录，不承诺自动恢复。普通 Parquet 多对象写入不具备数据集级原子可见性；独立扫描或外部读取仍可能看到提交中的对象，不能宣称 PostgreSQL 式事务发布。自动 Meta 扫描失败不改写已完成的存储提交事实。
+使用与 Spark/Hadoop 版本匹配的 S3A Magic Committer。成功须核验提交标记、全部 Parquet 分片的 schema 和真实行数，再返回稳定 outputs 并触发异步 Meta 扫描。失败清理只读取本次独占目录中的 Magic Committer `.pending` / `.pendingset` 记录，先用 Hadoop 校验全部记录并核对 bucket、目标 key 的目录边界及 upload ID，再精确取消这些上传并删除本次目录。不使用 MinIO 的目录前缀 multipart 列表作为清理证据。没有 pending 记录时，只有有效的 Magic 提交成功标记允许删除已提交成果；记录缺失且没有成功标记、记录损坏或取消失败时，报告“清理未核验”并保留目录和记录。清理只保证已记录上传，不承诺发现崩溃前未落盘的上传；不删除父目录、兄弟成果或 bucket 范围的上传。进程被强制终止时可能残留目录，不承诺自动恢复。普通 Parquet 多对象写入不具备数据集级原子可见性；独立扫描或外部读取仍可能看到提交中的对象，不能宣称 PostgreSQL 式事务发布。自动 Meta 扫描失败不改写已完成的存储提交事实。
 
 ### 1.1 设计理念
 

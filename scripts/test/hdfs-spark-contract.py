@@ -184,26 +184,85 @@ try:
     fs, conf = FileAdapter._s3_filesystem(spark, physical, options)
     try:
         assert not fs.exists(spark.sparkContext._jvm.org.apache.hadoop.fs.Path(failed['path']))
-        assert fs.getWriteOperationHelper().listMultipartUploads('results/').isEmpty()
+        jvm = spark.sparkContext._jvm
         helper = fs.getWriteOperationHelper()
+        # Exact key/ID requests are durable evidence; directory-prefix lists are not.
+        client = fs.getAmazonS3ClientForTesting('owned multipart fault verification')
+        records = jvm.org.apache.hadoop.fs.s3a.commit.files
         owned_prefix = failed['path'].split('/', 3)[3]
         sibling_prefix = owned_prefix + '-sibling'
-        for prefix in (owned_prefix, sibling_prefix):
-            key = prefix + '/pending.parquet'
+        uploads = []
+        def pending(prefix, suffix):
+            key = prefix + '/part-' + suffix + '.parquet'
             upload = helper.initiateMultiPartUpload(key)
-            stream = spark.sparkContext._jvm.java.io.ByteArrayInputStream(bytearray(b'pending'))
-            helper.uploadPart(helper.newUploadPartRequest(key, upload, 1, 7, stream, None, 0))
-            listed = helper.listMultipartUploads(prefix + '/')
-            all_uploads = helper.listMultipartUploads('')
-            print('MULTIPART_SCOPE_CHECK scope=' + prefix + ' count=' + str(listed.size())
-                  + ' all_keys=' + str([value.getKey() for value in all_uploads]), flush=True)
-            assert listed.size() == 1, 'Multipart fixture was not observable before cleanup'
+            uploads.append((key, upload))
+            stream = jvm.java.io.ByteArrayInputStream(bytearray(b'pending'))
+            part = helper.uploadPart(helper.newUploadPartRequest(key, upload, 1, 7, stream, None, 0))
+            record = records.SinglePendingCommit()
+            record.setBucket('result')
+            record.setDestinationKey(key)
+            record.setUri('s3a://result/' + key)
+            record.setUploadId(upload)
+            record.setLength(7)
+            etags = jvm.java.util.ArrayList()
+            etags.add(part.getETag())
+            record.setEtags(etags)
+            record.validate()
+            return record
+        def parts(record):
+            return client.listParts(jvm.com.amazonaws.services.s3.model.ListPartsRequest(
+                'result', record.getDestinationKey(), record.getUploadId()))
+        def absent(record):
+            try:
+                parts(record)
+            except Exception as error:
+                assert error.java_exception.getErrorCode() == 'NoSuchUpload', error
+            else:
+                raise AssertionError('Recorded upload was not aborted')
         try:
-            FileAdapter._cleanup_s3_result(fs, failed['path'])
-            assert helper.listMultipartUploads(owned_prefix + '/').isEmpty()
-            assert helper.listMultipartUploads(sibling_prefix + '/').size() == 1
+            owned = pending(owned_prefix, 'single')
+            task = pending(owned_prefix, 'task')
+            sibling = pending(sibling_prefix, 'sibling')
+            for record in (owned, task, sibling):
+                assert parts(record).getParts().size() == 1
+            owned.save(fs, fs.keyToQualifiedPath(owned_prefix + '/__magic/part.pending'), False)
+            task_set = records.PendingSet()
+            task_set.add(task)
+            task_set.save(fs, fs.keyToQualifiedPath(owned_prefix + '/__magic/task.pendingset'), False)
+            FileAdapter._cleanup_s3_result(spark, fs, failed['path'])
+            absent(owned)
+            absent(task)
+            assert parts(sibling).getParts().size() == 1
+            assert not fs.exists(fs.keyToQualifiedPath(owned_prefix))
+            # A missing record must retain committed evidence and the live upload.
+            missing = pending(owned_prefix, 'missing')
+            evidence = fs.keyToQualifiedPath(owned_prefix + '/evidence')
+            fs.create(evidence).close()
+            try:
+                FileAdapter._cleanup_s3_result(spark, fs, failed['path'])
+            except Exception:
+                pass
+            else:
+                raise AssertionError('Missing pending record was treated as verified cleanup')
+            assert fs.exists(evidence)
+            assert parts(missing).getParts().size() == 1
+            corrupt = fs.keyToQualifiedPath(owned_prefix + '/broken.pending')
+            fs.create(corrupt).close()
+            try:
+                FileAdapter._cleanup_s3_result(spark, fs, failed['path'])
+            except Exception:
+                pass
+            else:
+                raise AssertionError('Corrupt pending record was treated as verified cleanup')
+            assert fs.exists(corrupt) and fs.exists(evidence)
+            assert parts(missing).getParts().size() == 1
         finally:
-            helper.abortMultipartUploadsUnderPath(sibling_prefix + '/')
+            for key, upload in uploads:
+                try:
+                    helper.abortMultipartCommit(key, upload)
+                except Exception as error:
+                    assert error.java_exception.getClass().getName() == 'java.io.FileNotFoundException', error
+            fs.delete(fs.keyToQualifiedPath(owned_prefix), True)
         assert FileAdapter._verify_s3_parquet(spark, fs, conf, physical, options, frame.schema) == 2
     finally:
         fs.close()

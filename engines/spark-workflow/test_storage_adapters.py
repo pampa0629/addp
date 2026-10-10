@@ -86,20 +86,80 @@ class StorageAdapterTest(unittest.TestCase):
             filesystem.exists.return_value = False
             frame.write.options.return_value.format.return_value.mode.return_value.save.side_effect = OSError('write failed')
             with self.assertRaisesRegex(OSError, 'write failed'): FileAdapter.save(frame, params)
-            cleanup.assert_called_once_with(filesystem, params['path'])
+            cleanup.assert_called_once_with(frame.sparkSession, filesystem, params['path'])
             cleanup.side_effect = OSError('cleanup failed')
-            with self.assertRaisesRegex(RuntimeError, 'cleanup also failed'): FileAdapter.save(frame, params)
+            with self.assertRaisesRegex(RuntimeError, 'cleanup unverified'): FileAdapter.save(frame, params)
 
-    def test_minio_cleanup_is_limited_to_owned_prefix_with_slash_boundary(self):
-        filesystem = MagicMock()
+    def cleanup_fixture(self, names, commits):
+        spark, filesystem = MagicMock(), MagicMock()
+        files = filesystem.listFiles.return_value
+        files.hasNext.side_effect = [True] * len(names) + [False]
+        paths = [MagicMock() for _ in names]
+        for path, name in zip(paths, names):
+            path.getName.return_value = name
+        files.next.side_effect = [MagicMock(**{'getPath.return_value': path}) for path in paths]
+        records = spark.sparkContext._jvm.org.apache.hadoop.fs.s3a.commit.files
+        records.SinglePendingCommit.load.side_effect = commits
+        records.PendingSet.load.return_value.getCommits.return_value = commits
+        filesystem.exists.side_effect = [True, True, False]
+        return spark, filesystem, records
+
+    def pending_commit(self, key='results/owned#literal/part.parquet', bucket='bucket', upload='owned-id'):
+        return MagicMock(**{'getDestinationKey.return_value': key,
+                            'getBucket.return_value': bucket, 'getUploadId.return_value': upload})
+
+    def test_minio_cleanup_aborts_recorded_upload_once_and_deletes_owned_directory(self):
+        commit = self.pending_commit()
+        spark, filesystem, _ = self.cleanup_fixture(['part.pending', 'task.pendingset'], [commit])
+        FileAdapter._cleanup_s3_result(spark, filesystem, 's3a://bucket/results/owned#literal')
         helper = filesystem.getWriteOperationHelper.return_value
-        helper.listMultipartUploads.return_value.isEmpty.side_effect = [False, True]
-        helper.abortMultipartUploadsUnderPath.return_value = 1
-        filesystem.exists.side_effect = [True, False]
-        FileAdapter._cleanup_s3_result(filesystem, 's3a://bucket/results/owned#literal')
-        helper.abortMultipartUploadsUnderPath.assert_called_once_with('results/owned#literal/')
+        helper.abortMultipartCommit.assert_called_once_with('results/owned#literal/part.parquet', 'owned-id')
+        helper.listMultipartUploads.assert_not_called()
+        helper.abortMultipartUploadsUnderPath.assert_not_called()
         filesystem.keyToQualifiedPath.assert_called_once_with('results/owned#literal')
         filesystem.delete.assert_called_once_with(filesystem.keyToQualifiedPath.return_value, True)
+
+    def test_minio_cleanup_validates_all_records_before_mutating(self):
+        for invalid in (self.pending_commit(key='results/owned#literal-sibling/part.parquet'),
+                        self.pending_commit(bucket='foreign'), self.pending_commit(upload=''),
+                        self.pending_commit(key='results/owned#literal/../sibling/part.parquet')):
+            spark, filesystem, _ = self.cleanup_fixture(['valid.pending', 'invalid.pending'], [self.pending_commit(), invalid])
+            with self.assertRaisesRegex(ValueError, 'outside'):
+                FileAdapter._cleanup_s3_result(spark, filesystem, 's3a://bucket/results/owned#literal')
+            filesystem.getWriteOperationHelper.assert_not_called()
+            filesystem.delete.assert_not_called()
+
+    def test_minio_cleanup_preserves_evidence_for_corrupt_missing_or_abort_failure(self):
+        for failure in ('corrupt', 'missing', 'abort'):
+            spark, filesystem, records = self.cleanup_fixture([] if failure == 'missing' else ['part.pending'], [self.pending_commit()])
+            if failure == 'corrupt': records.SinglePendingCommit.load.side_effect = ValueError('corrupt record')
+            if failure == 'missing': records.SuccessData.load.side_effect = ValueError('missing completion evidence')
+            if failure == 'abort': filesystem.getWriteOperationHelper.return_value.abortMultipartCommit.side_effect = OSError('abort failed')
+            with self.assertRaises((ValueError, OSError)):
+                FileAdapter._cleanup_s3_result(spark, filesystem, 's3a://bucket/results/owned#literal')
+            filesystem.delete.assert_not_called()
+
+    def test_minio_cleanup_only_accepts_exact_upload_absence(self):
+        for error_class in ('java.io.FileNotFoundException', 'java.io.IOException'):
+            spark, filesystem, _ = self.cleanup_fixture(['part.pending'], [self.pending_commit()])
+            error = RuntimeError('abort response')
+            error.java_exception = MagicMock()
+            error.java_exception.getClass.return_value.getName.return_value = error_class
+            filesystem.getWriteOperationHelper.return_value.abortMultipartCommit.side_effect = error
+            if error_class == 'java.io.FileNotFoundException':
+                FileAdapter._cleanup_s3_result(spark, filesystem, 's3a://bucket/results/owned#literal')
+                filesystem.delete.assert_called_once()
+            else:
+                with self.assertRaisesRegex(RuntimeError, 'abort response'):
+                    FileAdapter._cleanup_s3_result(spark, filesystem, 's3a://bucket/results/owned#literal')
+                filesystem.delete.assert_not_called()
+
+    def test_minio_cleanup_accepts_magic_completion_when_pending_records_are_gone(self):
+        spark, filesystem, records = self.cleanup_fixture([], [])
+        records.SuccessData.load.return_value.getCommitter.return_value = 'magic'
+        FileAdapter._cleanup_s3_result(spark, filesystem, 's3a://bucket/results/owned#literal')
+        filesystem.getWriteOperationHelper.return_value.abortMultipartCommit.assert_not_called()
+        filesystem.delete.assert_called_once()
 
     def test_minio_modes_and_other_formats_fail_before_any_source_action(self):
         for changes in ({'mode': 'overwrite'}, {'mode': 'append'}, {'format': 'geoparquet'}, {'format': 'csv'}):

@@ -501,4 +501,4 @@ Hosted T4 已于 2026-10-05（北京时间）通过：[运行 37217772982](https
 
 产品容器默认入口已于 2026-10-10（北京时间）复验通过：[HDFS T4 37954899129](https://github.com/pampa0629/addp/actions/runs/37954899129)，提交 `ddaa982600608c94db56e04ac5ed130765cd77c1`。Spark Workflow 产品镜像自动登记后，同一租户与普通用户完成扫描、四文件预览及八节点正式工作流，保留六张 Console 截图；三格式各 20 行、金额合计各 2100，实际 Standalone Worker 完成 37 个任务，连续八次 Runtime 状态查询一致。产品镜像实际 image ID 与 `python api_server.py` 默认入口核验通过；Business 容器与 Runtime/临时镜像仓库分别按自身所有权清理，最终 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`。该记录只证明对应提交的 Simple 只读消费范围，仍只登记手动 T4。
 
-MinIO Parquet 成果沿用上述同一 T2/T4 入口。T2 另有两个独占 MinIO endpoint，验证同名 bucket 不串用连接、空成果读取、Magic Committer 提交及失败目录清理；T4 在 System 正式登记当次 MinIO，连续两次发布到独立目录，核对 `table/parquet/whole`、自动扫描、精确血缘、Manager 预览和下游 Spark 读取，并复查第一份成果保持不变。MinIO 凭据不归档，不使用 Infra 的数据或凭据。此处描述验收契约，实际通过记录须对应当前提交的运行证据。
+MinIO Parquet 成果沿用上述同一 T2/T4 入口。T2 另有两个独占 MinIO endpoint，验证同名 bucket 不串用连接、空成果读取、Magic Committer 提交、pending 记录中 upload ID 的精确取消及兄弟上传保留、记录缺失／损坏时保留证据；T4 在 System 正式登记当次 MinIO，连续两次发布到独立目录，核对 `table/parquet/whole`、自动扫描、精确血缘、Manager 预览和下游 Spark 读取，并复查第一份成果保持不变。MinIO 凭据不归档，不使用 Infra 的数据或凭据。此处描述验收契约，实际通过记录须对应当前提交的运行证据。

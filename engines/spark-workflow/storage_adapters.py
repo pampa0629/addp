@@ -705,14 +705,47 @@ class FileAdapter:
         return count
 
     @staticmethod
-    def _cleanup_s3_result(filesystem, path):
-        # This is the decoded Hadoop Path string, not an encoded URI: '#' is literal.
-        prefix = path.split('/', 3)[3] + '/'
+    def _cleanup_s3_result(spark, filesystem, path):
+        # Hadoop Path strings are decoded: '#' is a literal key character.
+        bucket, key = path.split('/', 3)[2:]
+        prefix = key + '/'
+        jvm = spark.sparkContext._jvm
+        records = jvm.org.apache.hadoop.fs.s3a.commit.files
+        jpath = filesystem.keyToQualifiedPath(key)
+        uploads = set()
+        if filesystem.exists(jpath):
+            files = filesystem.listFiles(jpath, True)
+            while files.hasNext():
+                record_path = files.next().getPath()
+                name = record_path.getName()
+                if name.endswith('.pending'):
+                    commits = [records.SinglePendingCommit.load(filesystem, record_path)]
+                elif name.endswith('.pendingset'):
+                    commits = records.PendingSet.load(filesystem, record_path).getCommits()
+                else:
+                    continue
+                # Validate all records before aborting any upload or deleting evidence.
+                for commit in commits:
+                    destination, upload = commit.getDestinationKey(), commit.getUploadId()
+                    if (commit.getBucket() != bucket or not destination.startswith(prefix)
+                            or not destination[len(prefix):] or not upload
+                            or any(part in {'', '.', '..'} for part in destination.split('/'))):
+                        raise ValueError('Pending upload record is outside the owned result directory')
+                    uploads.add((destination, upload))
+        if not uploads:
+            success = records.SuccessData.load(filesystem, jvm.org.apache.hadoop.fs.Path(jpath, '_SUCCESS'))
+            if success.getCommitter() != 'magic':
+                raise ValueError('No pending records or valid Magic completion evidence')
         helper = filesystem.getWriteOperationHelper()
-        while not helper.listMultipartUploads(prefix).isEmpty():
-            if helper.abortMultipartUploadsUnderPath(prefix) <= 0:
-                raise RuntimeError('Unable to abort result multipart uploads')
-        jpath = filesystem.keyToQualifiedPath(prefix.rstrip('/'))
+        for destination, upload in sorted(uploads):
+            try:
+                helper.abortMultipartCommit(destination, upload)
+            except Exception as error:
+                # Hadoop translates exact NoSuchUpload to FileNotFoundException:
+                # already completed/aborted IDs no longer own a pending upload.
+                java_error = getattr(error, 'java_exception', None)
+                if java_error is None or java_error.getClass().getName() != 'java.io.FileNotFoundException':
+                    raise
         if filesystem.exists(jpath) and not filesystem.delete(jpath, True):
             raise RuntimeError('Unable to delete incomplete result directory')
         if filesystem.exists(jpath):
@@ -733,11 +766,11 @@ class FileAdapter:
             try:
                 df.write.options(**options).format('parquet').mode('errorifexists').save(path)
                 return FileAdapter._verify_s3_parquet(spark, filesystem, conf, path, options, df.schema)
-            except Exception as error:
+            except Exception:
                 try:
-                    FileAdapter._cleanup_s3_result(filesystem, path)
-                except Exception:
-                    raise RuntimeError('Parquet publication failed; owned result cleanup also failed') from error
+                    FileAdapter._cleanup_s3_result(spark, filesystem, path)
+                except Exception as cleanup_error:
+                    raise RuntimeError('Parquet publication failed; owned result cleanup unverified') from cleanup_error
                 raise
         finally:
             filesystem.close()

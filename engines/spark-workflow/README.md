@@ -4,7 +4,7 @@ Spark 工作流 Engine 是 ADDP 平台的分布式空间计算引擎,基于 Apac
 
 ## 核心特性
 
-MinIO Parquet 成果按《工作流计算引擎接口规范》的独立目录规则发布：每次执行创建普通 Parquet whole scope，通过实际 ResourceLocator 复用；不提供目录 overwrite/append 或数据集级事务保证。Spark 使用固定 Hadoop 3.3.4 S3A 与 Spark 3.5.0 云提交组件，连接只取自已授权的存储 Engine。成功核验 Magic 提交标记和全部分片 footer 行数；失败仅清理本次目录和上传，清理失败显式返回。GeoParquet 与其他对象输出格式不进入此发布路线。
+MinIO Parquet 成果按《工作流计算引擎接口规范》的独立目录规则发布：每次执行创建普通 Parquet whole scope，通过实际 ResourceLocator 复用；不提供目录 overwrite/append 或数据集级事务保证。Spark 使用固定 Hadoop 3.3.4 S3A 与 Spark 3.5.0 云提交组件，连接只取自已授权的存储 Engine。成功核验 Magic 提交标记和全部分片 footer 行数；失败按 Magic pending 记录精确取消本次已记录上传，再清理独占目录；无记录且无有效成功标记、记录损坏或取消失败时保留证据并报告清理未核验，不用目录前缀 multipart 空列表证明清理成功。GeoParquet 与其他对象输出格式不进入此发布路线。
 
 - **分布式计算**: 支持 TB 级空间数据处理,自动并行化
 - **Sedona 空间算子**: 提供核心空间算子 (buffer, intersection, spatial_join 等)

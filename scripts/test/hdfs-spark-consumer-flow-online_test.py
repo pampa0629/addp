@@ -23,6 +23,18 @@ def final_result():
 
 
 class HDFSOnlineTest(unittest.TestCase):
+    def test_minio_physical_reports_committed_objects_without_claiming_multipart_absence(self):
+        calls = []
+        def run(command, **kwargs):
+            calls.append(command)
+            if 'ls' in command:
+                return SimpleNamespace(stdout='{"key":"part-0.parquet"}\n{"key":"_SUCCESS"}\n')
+            return SimpleNamespace(stdout='{"committer":"magic"}')
+        with patch.object(MODULE.subprocess, 'run', side_effect=run):
+            self.assertEqual(MODULE.minio_physical('result/results/owned'), {'committer': 'magic', 'objects': 2})
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(any('--incomplete' in command for command in calls))
+
     def test_source_preparation_refuses_personal_environment_before_any_request(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(MODULE.sys, 'argv', ['hdfs', '--initialize-table-read']), patch.object(MODULE.support, 'GatewayClient') as client:
             with self.assertRaises(MODULE.REGISTRATION.RegistrationError):
