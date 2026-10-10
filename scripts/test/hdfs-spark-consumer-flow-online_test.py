@@ -128,6 +128,29 @@ class HDFSOnlineTest(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(MODULE.SuiteError):
                 MODULE.validate_persistence(value, locators, target)
 
+    def test_minio_requires_whole_layout_create_identity_and_exact_lineage(self):
+        locators = {name: 'addp://engine/7/path/orders.' + name + '?type=file' for name in ('csv', 'json', 'parquet')}
+        target = 'addp://engine/9/path/result/results/hdfs_totals/unique-result?type=object'
+        definition = MODULE.persistence_workflow(locators, 9, 'file')
+        params = definition['tasks'][-1]['params']
+        self.assertEqual((params['target_type'], params['mode'], params['format']), ('file', 'create', 'parquet'))
+        self.assertEqual(params['target_parent_locator'], 'addp://engine/9/path/result?type=bucket')
+        final = {'status': 'success', 'rows': 2, 'target': 's3a://result/results/hdfs_totals/unique-result'}
+        execution = {'status': 'success', 'outputs': {'save': {'resource': {'locator': target, 'type': 'object', 'write_mode': 'create'}}},
+            'metadata': {'lineage_facts': {'schema_version': 'addp.lineage-facts/v1',
+                'inputs': [{'locator': value} for value in locators.values()], 'outputs': [{'locator': target, 'write_mode': 'create'}]},
+                'result': {'final_result': final, 'produced_targets': [{'locator': target, 'task_id': 'save', 'layout': 'whole'}],
+                    'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'scan'}]}}}
+        self.assertEqual(MODULE.validate_persistence(execution, locators, target, 'file'), (final, 'scan'))
+        for invalid in ('layout', 'target', 'mode', 'scan'):
+            value = json.loads(json.dumps(execution))
+            if invalid == 'layout': value['metadata']['result']['produced_targets'][0]['layout'] = 'single'
+            if invalid == 'target': value['metadata']['result']['final_result']['target'] = 's3a://result/parent'
+            if invalid == 'mode': value['outputs']['save']['resource']['write_mode'] = 'replace'
+            if invalid == 'scan': value['metadata']['result']['meta_scan_runs'] = []
+            with self.subTest(invalid=invalid), self.assertRaises(MODULE.SuiteError):
+                MODULE.validate_persistence(value, locators, target, 'file')
+
     def test_persistence_compares_rows_by_region_and_keeps_original_runtime_order(self):
         from unittest.mock import Mock
         expected = final_result()
@@ -163,6 +186,37 @@ class HDFSOnlineTest(unittest.TestCase):
                     self.assertEqual(result['reuse_final_result'], final_result())
                     self.assertEqual(report['final_result']['preview_rows'][0]['region'], 'west')
 
+    def test_minio_auto_scan_preview_lineage_and_downstream_use_the_real_directory(self):
+        from unittest.mock import Mock
+        report = {'engine_id': 7, 'cluster_id': 8, 'runtime_id': 10,
+                  'locators': {name: 'addp://engine/7/path/orders.' + name + '?type=file' for name in ('csv', 'json', 'parquet')},
+                  'item_ids': {'csv': 1, 'json': 2, 'parquet': 3}, 'final_result': final_result()}
+        saved = {'metadata': {'result': {'runtime_execution_id': 'runtime-save'}}}
+        reused = {'metadata': {'result': {'runtime_execution_id': 'runtime-reuse', 'final_result': final_result()}}}
+        graph = {'edges': [{'source': {'item_id': source}, 'target': {'item_id': 5},
+                 'evidence': {'execution_id': 'saved'}, 'status': 'active', 'relation_kind': 'derive'} for source in (1, 2, 3)]}
+        for layout in ('whole', 'single'):
+            client = Mock()
+            client.request.side_effect = [SimpleNamespace(payload={'status': 'success'}), SimpleNamespace(payload=graph)]
+            item = {'id': 5, 'attributes': {'item': {'data_type': 'table', 'format': 'parquet', 'layout': layout}}}
+            with self.subTest(layout=layout), patch.dict(os.environ, ADDP_ONLINE_SPARK_RUNTIME_URL='http://runtime'), \
+                 patch.object(MODULE, 'submit_and_wait', side_effect=[('saved', saved), ('reused', reused)]) as submit, \
+                 patch.object(MODULE, 'validate_persistence', return_value=({'status': 'success', 'rows': 2}, 'scan')), \
+                 patch.object(MODULE.SPARK, 'runtime_status_evidence', return_value={}), \
+                 patch.object(MODULE.support, 'find_item', return_value=item) as find, \
+                 patch.object(MODULE.support, 'preview_rows', return_value=([], final_result()['preview_rows'])), \
+                 patch.object(MODULE, 'minio_physical', return_value={'committer': 'magic'}):
+                if layout != 'whole':
+                    with self.assertRaisesRegex(MODULE.SuiteError, 'table/parquet/whole'):
+                        MODULE.run_persistence(client, report, 9, 30, 'file')
+                else:
+                    result = MODULE.run_persistence(client, report, 9, 30, 'file')
+                    self.assertIn('/hdfs_totals/saved-', result['target_locator'])
+                    self.assertEqual(result['lineage_sources'], [1, 2, 3])
+                    self.assertEqual(find.call_args.args[-1], 'object')
+                    load = submit.call_args.args[1]['tasks'][0]['params']
+                    self.assertEqual(load, {'locator': result['target_locator'], 'source_type': 'file'})
+
     def test_persisted_runtime_http_snapshots_require_exact_save_receipt(self):
         import io
         receipt = {'status': 'success', 'rows': 2, 'target': 'results.hdfs_totals'}
@@ -181,18 +235,18 @@ class HDFSOnlineTest(unittest.TestCase):
                     self.assertEqual(MODULE.SPARK.runtime_status_evidence('http://runtime', 'runtime-save', receipt, 2, validate, {'load': 'spark_dataframe', 'save': 'save'})['queries'], 8)
 
     def test_browser_requires_matching_identity_execution_and_all_screenshots(self):
-        report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42', 'execution_id': 'execution', 'persistence': {'execution_id': 'save-execution', 'reuse_execution_id': 'reuse-execution'}}
+        report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42', 'execution_id': 'execution', 'persistence': {'execution_id': 'save-execution', 'reuse_execution_id': 'reuse-execution'}, 'minio': {'execution_id': 'minio-save', 'reuse_execution_id': 'minio-reuse'}}
         for failure in ('process', 'missing_report', 'identity', 'execution', 'screenshot', ''):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                evidence = {key: value for key, value in report.items() if key != 'persistence'}
-                evidence.update(run_id='hdfs-run', meta_ui_scan=True, previews=5, develop_result=True,
-                                persist_execution_id='save-execution', reuse_execution_id='reuse-execution')
+                evidence = {key: value for key, value in report.items() if key not in ('persistence', 'minio')}
+                evidence.update(run_id='hdfs-run', meta_ui_scan=True, previews=6, develop_result=True,
+                                persist_execution_id='save-execution', reuse_execution_id='reuse-execution', minio_execution_id='minio-save', minio_reuse_execution_id='minio-reuse')
                 if failure in ('identity', 'execution'): evidence['principal_id' if failure == 'identity' else 'execution_id'] = 'other'
                 def browser(command, cwd, env):
                     self.assertIn('e2e/online/hdfs-spark-consumer-flow.spec.js', command)
                     if failure != 'missing_report': Path(env['ADDP_ONLINE_HDFS_BROWSER_REPORT']).write_text(json.dumps(evidence))
-                    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow', 'persisted', 'save', 'reuse'):
+                    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow', 'persisted', 'save', 'reuse', 'minio', 'minio-save', 'minio-reuse'):
                         if failure != 'screenshot' or name != 'workflow': (root / ('hdfs-' + name + '-console.png')).write_bytes(b'proof')
                     return SimpleNamespace(returncode=int(failure == 'process'))
                 with patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary, ADDP_ONLINE_TEST_RUN_ID='hdfs-run'), patch.object(MODULE.subprocess, 'run', side_effect=browser):

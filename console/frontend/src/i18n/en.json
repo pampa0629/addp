@@ -566,7 +566,8 @@
         "recentNotifications": "Execution Alert Notifications",
         "advanced": "Advanced settings",
         "monitoringTargets": "Collection settings",
-        "nodeResources": "Host monitoring"
+        "nodeResources": "Host monitoring",
+        "serviceResources": "Service monitoring"
       },
       "catalog": {
         "label": "Enterprise Catalog",

@@ -94,4 +94,6 @@ ADDP_TEST_MYSQL_PASSWORD=<disposable-mysql-password> make test-common-mysql-data
 
 `common/schema` 提供 schema 版本发布、模块级迁移互斥与只读校验，不登记业务模块清单。业务模块自行声明版本并由 Backend 执行迁移；Worker 初始化不执行平台 schema DDL。
 
+`common/processmetrics` 是 macOS/Linux Go 进程 CPU 累计时间、当前 RSS 与启动时间的唯一自身采样 SDK，不读取其他进程。`common/config` 解析显式 `ADDP_PROCESS_METRICS_DEPLOYMENTS`；普通注册生命周期与 System Bootstrap 复用 `StartOptional`，仅成功启动的独立 mTLS 来源发布不可变声明，来源失败不阻断业务登记。`common/client` 的当前 User 实例精确读取与后台私有投影分别授权，不以机器身份补读用户请求。设计及验收范围见平台运行监控设计 10.49。
+
 `runtimelog` 接收器将不可变模块／角色／节点／实例身份、首次采集时间和最后观测时间写入受控 status 元数据（UTC 微秒精度）；`DiscoverSources` 独立发现历史来源，扫描上限和错误明确标为不完整，`addp.log-sources/v2` 仅发送封闭原因码和实际发现次数，不发送文件路径或错误原文。`runtime-log observe` 向 System 上报目录，向 Monitor 上报健康，独立发送且不上传正文；不能从 EOF 推断业务退出结果。

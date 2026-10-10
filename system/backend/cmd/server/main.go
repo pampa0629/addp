@@ -13,6 +13,7 @@ import (
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/processmetrics"
 	"github.com/addp/system/internal/api"
 	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/config"
@@ -183,13 +184,24 @@ func startSystemRegistration(ctx context.Context, registry *service.ModuleRegist
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	request.ProcessMetrics = nil
+	source := processmetrics.StartOptional(processmetrics.Identity{ModuleName: request.ModuleName, Role: request.Role, InstanceID: request.InstanceID, StartedAt: request.ProcessStartedAt})
+	if source != nil {
+		request.ProcessMetrics = source.Declaration()
+	}
 	if err := registry.Register(request); err != nil {
+		if source != nil {
+			_ = source.Close()
+		}
 		return nil, err
 	}
 	logger.L().Info("System 模块注册成功", "url", request.ModuleURL)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		if source != nil {
+			defer source.Close()
+		}
 		defer func() {
 			if err := registry.Deregister(request.ModuleName, request.InstanceID); err != nil {
 				logger.L().Error("System 模块注销失败", "error", err)

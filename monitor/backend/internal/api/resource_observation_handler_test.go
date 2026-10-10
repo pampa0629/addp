@@ -42,11 +42,11 @@ func resourceAPIRouter(t *testing.T, identity authorization.AuthContext) *gin.En
 		json.NewEncoder(w).Encode(identity)
 	}))
 	t.Cleanup(system.Close)
-	svc := service.NewResourceObservationService(&apiResourcePolicies{row: monitorModels.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}, nil, nil, nil, false, nil)
+	svc := service.NewResourceObservationService(&apiResourcePolicies{row: monitorModels.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}, nil, nil, nil, false, nil, service.ProcessObservationDependencies{})
 	return SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, svc)
 }
 func TestResourceRoutesRejectTenantMachineDelegatedAndMissingPermission(t *testing.T) {
-	paths := []string{"/platform/resource_observations", "/platform/resource_summaries", "/platform/resource_trends", "/settings/resource-query-policy"}
+	paths := []string{"/platform/process_resource_summaries", "/platform/resource_observations", "/platform/resource_summaries", "/platform/resource_trends", "/settings/resource-query-policy"}
 	for _, variant := range []string{"tenant", "service", "delegated", "missing", "anonymous", "user", "oauth"} {
 		for _, path := range paths {
 			t.Run(variant+path, func(t *testing.T) {
@@ -178,5 +178,30 @@ func TestResourceQueryPolicyAuditHasNoBodyOrQuerySecrets(t *testing.T) {
 	}
 	if received.EventName != "platform.resource_query_policy.update" || received.RiskLevel != "high" || received.Details["saved_version"] != float64(2) || strings.Contains(string(encoded), "secret") {
 		t.Fatalf("audit=%s", encoded)
+	}
+}
+
+func TestProcessResourceAuditRecordsOnlySystemIDs(t *testing.T) {
+	var received models.AuditLogCreateRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Error(err)
+		}
+		w.WriteHeader(201)
+	}))
+	defer server.Close()
+	identity := targetAPIIdentity("user", "addp-web", "first_party_access_token", "monitor.resource_observation.read")
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		if err := auth.SetAuthContextForGin(c, identity); err != nil {
+			t.Fatal(err)
+		}
+		c.Next()
+	}, logPipelineAudit(client.NewSystemServiceClient(server.URL, retryAuditTokens{}, server.Client())))
+	router.GET("/api/v1/monitor/platform/process_resource_summaries", func(c *gin.Context) { c.Set("resource_query_audit_instances", []uint{7, 9}); c.Status(200) })
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/v1/monitor/platform/process_resource_summaries?instance_ids=7,9&private=secret", nil))
+	encoded, _ := json.Marshal(received)
+	if received.EventName != "platform.resource_observation.read" || received.Details["instance_ids"] == nil || strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "private") {
+		t.Fatalf("unsafe process audit %s", encoded)
 	}
 }

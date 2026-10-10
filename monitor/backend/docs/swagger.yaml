@@ -774,6 +774,52 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_addp_monitor_internal_service.ProcessCollection:
+    properties:
+      sampled_at:
+        type: string
+      state:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.ProcessResourceObservation:
+    properties:
+      collection:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.ProcessCollection'
+      lookback_seconds:
+        type: integer
+      node_id:
+        type: string
+      policy_version:
+        type: integer
+      queried_at:
+        type: string
+      series:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Series'
+        type: array
+      subject:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.ProcessResourceSubject'
+    type: object
+  github_com_addp_monitor_internal_service.ProcessResourceSubject:
+    properties:
+      id:
+        type: integer
+      instance_id:
+        type: string
+      kind:
+        type: string
+      module_name:
+        type: string
+      role:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.ProcessResourceSummaryResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ProcessResourceObservation'
+        type: array
+    type: object
   github_com_addp_monitor_internal_service.ProviderBackendHealthStatus:
     properties:
       base_url:
@@ -3479,6 +3525,73 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.monitoring_target.update
+  /platform/process_resource_summaries:
+    get:
+      description: '当前 Platform User 经 System 一次批量授权后读取三项固定进程指标：CPU 核占用、RSS 内存和运行时长；无需关联主机。CPU
+        需要完整一分钟且身份/启动时间一致，未知不补零；私有采集地址不返回浏览器 | Reads three fixed process metrics after
+        one System batch authorization for the current Platform User: CPU core equivalents,
+        RSS memory and uptime; host binding is optional. CPU requires a complete minute
+        with matching identity and start time; unknown values are not zero-filled
+        and private endpoints are not exposed'
+      parameters:
+      - description: 1–100 个不重复的 System 实例记录正整数 ID，以逗号分隔；三指标乘实例数计入预算 | 1–100 unique
+          positive System instance record IDs, comma-separated; three metrics times
+          instance count count against budget
+        in: query
+        name: instance_ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ProcessResourceSummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取服务实例资源摘要 | Read service instance resource summaries
+      tags:
+      - 平台运行监控 | Platform Runtime Monitoring
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.resource_observation.read
   /platform/resource_observations:
     get:
       description: 即时响应附带当前采集状态 collection 及文件系统/网络采集器证据；抓取成功不等于指标或业务健康。| Instant

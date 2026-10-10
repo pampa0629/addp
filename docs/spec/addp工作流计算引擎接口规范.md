@@ -22,6 +22,16 @@
 
 ## 1. 总体架构
 
+### Spark 对象存储 Parquet 成果
+
+Spark 保存到 MinIO 时，公开定义保存 `target_parent_locator + target_name`，执行期由 Develop 按 execution UUID 和算子节点身份派生独占子目录。每次执行创建一份新的普通 Parquet 成果，不覆盖或追加既有目录；公开保存模式为 `create`，拒绝 `overwrite`、`append` 和其他输出格式。多个保存节点不能共用同一个成果目录。
+
+成果复用已有 `table + format=parquet + layout=whole`。ResourceLocator 定位完整 scope 的 data item；Meta 精确扫描另按同一范围的 prefix 定位，prefix 是扫描范围，不是第二份成果身份。Spark 下游文件加载从 Meta 的正式 item facts 派生 format/layout，不从目录名称后缀猜测格式。
+
+MinIO 连接唯一来自本次已授权的存储 Engine；Spark 集群连接不得携带业务存储凭据。读写配置限制在本次操作的 Hadoop Configuration，并禁用按 bucket 缓存的 S3A FileSystem，防止同名 bucket 的不同端点或凭据互相污染。保存及成果核验要求目标引擎 read + write，不自动新增 Resource Grant。
+
+使用与 Spark/Hadoop 版本匹配的 S3A Magic Committer。成功须核验提交标记、全部 Parquet 分片的 schema 和真实行数，再返回稳定 outputs 并触发异步 Meta 扫描。失败只清理本次独占目录及其中的未完成 multipart uploads；清理失败必须报告，不删除父目录、兄弟成果或 bucket 范围的上传。进程被强制终止时可能残留目录，不承诺自动恢复。普通 Parquet 多对象写入不具备数据集级原子可见性；独立扫描或外部读取仍可能看到提交中的对象，不能宣称 PostgreSQL 式事务发布。自动 Meta 扫描失败不改写已完成的存储提交事实。
+
 ### 1.1 设计理念
 
 ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP runtime` 的插件化架构，通过统一 REST 协议提供计算能力。这种设计具有以下优势：

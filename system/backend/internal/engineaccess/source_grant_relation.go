@@ -11,18 +11,20 @@ import (
 )
 
 // SourceGrantRelation is a derived management view, never a second ACL or an
-// effective-access verdict. RequestID locates one current relation for withdrawal.
+// effective-access verdict. Only direct relations have a withdrawal RequestID;
+// account observations expose each source's anchor inside Inspection.Sources.
 type SourceGrantRelation struct {
-	RequestID     uuid.UUID       `json:"request_id"`
-	CatalogPath   json.RawMessage `json:"catalog_path" swaggertype:"object"`
-	RecipientType string          `json:"recipient_type"`
-	RecipientID   int64           `json:"recipient_id,string" swaggertype:"string"`
-	Action        string          `json:"action"`
-	ExpiryMode    string          `json:"expiry_mode"`
-	ExpiresAt     *time.Time      `json:"expires_at"`
-	GrantedAt     time.Time       `json:"granted_at"`
-	GrantCount    int64           `json:"grant_count"`
-	ApprovalMode  string          `json:"approval_mode"`
+	RequestID     *uuid.UUID             `json:"request_id,omitempty" swaggertype:"string"`
+	CatalogPath   json.RawMessage        `json:"catalog_path" swaggertype:"object"`
+	RecipientType string                 `json:"recipient_type"`
+	RecipientID   int64                  `json:"recipient_id,string" swaggertype:"string"`
+	Action        string                 `json:"action"`
+	ExpiryMode    string                 `json:"expiry_mode"`
+	ExpiresAt     *time.Time             `json:"expires_at"`
+	GrantedAt     time.Time              `json:"granted_at"`
+	GrantCount    int64                  `json:"grant_count"`
+	ApprovalMode  string                 `json:"approval_mode"`
+	Inspection    *SourceGrantInspection `json:"inspection,omitempty"`
 }
 
 const currentGrantRelationsSQL = `WITH now AS MATERIALIZED (SELECT clock_timestamp() AS at),
@@ -53,6 +55,14 @@ func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, eng
 	var total int64
 	err := s.withEngineManagementScope(ctx, actor, engineID, authorization.PermissionSystemEngineAccessGrantRead, false,
 		func(tx *Repository, check func() error) error {
+			if filter.RecipientType == "user" && filter.RecipientID > 0 {
+				var err error
+				rows, total, err = tx.listAccountGrantRelations(ctx, actor.TenantID, engineID, filter.RecipientID, page, size, filter.TableSearch)
+				if err != nil {
+					return err
+				}
+				return check()
+			}
 			// One statement captures the wall clock, current rows and total together,
 			// including an empty page. No unbounded history load or in-memory grouping.
 			var result struct {

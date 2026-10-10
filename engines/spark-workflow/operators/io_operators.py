@@ -100,7 +100,7 @@ def save(input_df: DataFrame, engine_id: int, **params) -> Dict[str, Any]:
     return {
         "status": "success",
         "rows": row_count,
-        "target": f"{params.get('schema', '')}.{params.get('table', params.get('path', ''))}"
+        "target": params['path'] if params.get('target_type') == 'file' else f"{params.get('schema', '')}.{params.get('table', '')}"
     }
 
 
@@ -286,10 +286,10 @@ SAVE_METADATA = OperatorMetadata(
     name="save",
     category=OperatorCategory.DATA_IO,
     description="数据保存",
-    brief_description="将 DataFrame 保存到数据库表或文件系统,支持覆盖和追加模式",
+    brief_description="将 DataFrame 保存到数据库表或独立 MinIO Parquet 成果目录",
     execution_modes=["workflow"],
-    effects=["write", "ddl"],
-    overview="save 算子是工作流的终点,将处理后的 DataFrame 保存到目标位置。支持保存到数据库表(PostgreSQL/MySQL/Doris)和文件系统(S3/本地；HDFS 仅支持读取),提供覆盖(overwrite)和追加(append)两种模式。",
+    effects=["read", "write", "ddl"],
+    overview="save 算子是工作流的终点,将处理后的 DataFrame 保存到目标位置。支持保存到数据库表(PostgreSQL/MySQL/Doris)和文件系统(MinIO/本地；HDFS 仅支持读取),数据库表支持覆盖(overwrite)和追加(append)，MinIO 成果目录只支持普通 Parquet 的 create 模式。",
     params=[
         OperatorParam(
             name="input_df",
@@ -315,8 +315,8 @@ SAVE_METADATA = OperatorMetadata(
             name="mode",
             type="str",
             required=False,
-            description="保存模式: overwrite/append",
-            notes="默认 overwrite；PostgreSQL 已有表保留结构、约束和权限，只替换数据"
+            description="保存模式: create/overwrite/append",
+            notes="MinIO 普通 Parquet 仅 create；PostgreSQL 默认 overwrite，保留已有表结构、约束和权限"
         ),
         OperatorParam(
             name="schema",
@@ -354,6 +354,7 @@ SAVE_METADATA = OperatorMetadata(
         "中间结果缓存: 将 200万条空间连接中间结果保存为 Parquet,供下游工作流复用"
     ],
     notes=[
+        "MinIO 普通 Parquet 以每次执行独立目录创建；真实行数取自提交后的分片 footer；不保证目录原子可见性",
         "PostgreSQL overwrite 只替换数据，提交前失败回滚；其他存储不保证事务发布",
         "保存到 PostgreSQL 时,几何列自动转换为 PostGIS geometry 类型",
         "大数据量保存建议使用 Parquet 格式,压缩比高且查询快",

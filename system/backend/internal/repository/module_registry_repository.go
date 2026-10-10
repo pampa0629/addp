@@ -19,6 +19,7 @@ import (
 type ModuleRegistryRepository struct{ db *gorm.DB }
 
 var ErrModuleDefinitionVersionConflict = errors.New("module definition version conflict")
+var ErrProcessMetricsDeclarationImmutable = errors.New("process metrics declaration is immutable")
 
 func NewModuleRegistryRepository(db *gorm.DB) *ModuleRegistryRepository {
 	return &ModuleRegistryRepository{db: db}
@@ -92,6 +93,12 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 		if err := tx.Where("module_name = ?", req.ModuleName).First(&definition).Error; err != nil {
 			return err
 		}
+		// Serialize first registration and re-registration of one definition,
+		// including previously absent instances. An upsert alone cannot prove
+		// the immutable process declaration when two creates race.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", definition.ID).First(&definition).Error; err != nil {
+			return err
+		}
 		definitionUpdates := map[string]interface{}{}
 		routeChanged := false
 		if definition.RoutePrefix != req.RoutePrefix {
@@ -123,6 +130,13 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			Where("module_definition_id = ? AND instance_id = ?", definition.ID, req.InstanceID).
 			First(&previous)
 		instanceChanged := false
+		if instanceQuery.Error == nil {
+			declarationEqual := previous.ProcessMetrics == nil && req.ProcessMetrics == nil ||
+				previous.ProcessMetrics != nil && req.ProcessMetrics != nil && *previous.ProcessMetrics == *req.ProcessMetrics
+			if !declarationEqual || (previous.ProcessMetrics != nil && (previous.Role != req.Role || previous.ProcessStartedAt == nil || !previous.ProcessStartedAt.Truncate(time.Microsecond).Equal(req.ProcessStartedAt.Truncate(time.Microsecond)))) {
+				return ErrProcessMetricsDeclarationImmutable
+			}
+		}
 		switch {
 		case errors.Is(instanceQuery.Error, gorm.ErrRecordNotFound):
 			instanceChanged = true
@@ -147,6 +161,7 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			changed = changed || activeBackendCount > 0
 		}
 		instance := models.ModuleRuntimeInstance{
+			ProcessMetrics:     req.ProcessMetrics,
 			ModuleDefinitionID: definition.ID, InstanceID: req.InstanceID, Role: req.Role,
 			DeclaredNodeID: req.NodeID, RegistrationClientID: req.RegistrationClientID,
 			ModuleURL: req.ModuleURL, HealthCheckURL: req.HealthCheckURL,
@@ -334,6 +349,9 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 		query = query.Where(timeColumn + " IS NOT NULL")
 	}
 	query = query.Joins("JOIN module_definitions ON module_definitions.id = module_runtime_instances.module_definition_id")
+	if len(filter.IDs) > 0 {
+		query = query.Where("module_runtime_instances.id IN ?", filter.IDs)
+	}
 	if filter.ModuleName != "" {
 		query = query.Where("module_definitions.module_name = ?", filter.ModuleName)
 	}

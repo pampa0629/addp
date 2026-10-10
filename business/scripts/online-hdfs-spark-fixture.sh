@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 SUITE=hdfs-spark-consumer-flow
 LABEL=com.addp.online-fixture
-CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-postgres)
+CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-postgres addp-hdfs-online-minio)
 fail() { echo "Online HDFS fixture failed: $*" >&2; exit 1; }
 [ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] &&
   [ "${ADDP_ONLINE_HOST:-}" = 1 ] && [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] &&
@@ -24,7 +24,7 @@ stop() {
       # Archive only State and public service logs; PostgreSQL credentials stay in owner-only files.
       if [ -n "${ADDP_ONLINE_ARTIFACT_DIR:-}" ]; then
         docker container inspect --format '{{json .State}}' "$container" > "$ADDP_ONLINE_ARTIFACT_DIR/$container-state.json" || status=1
-        if [[ "$container" != *-postgres ]]; then
+        if [[ "$container" != *-postgres && "$container" != *-minio ]]; then
           docker logs --tail 80 "$container" > "$ADDP_ONLINE_ARTIFACT_DIR/$container.log" 2>&1 || status=1
         fi
         if [[ "$container" = *-master || "$container" = *-worker ]]; then
@@ -48,7 +48,7 @@ from pathlib import Path
 root = Path(os.environ['ADDP_ONLINE_SECRET_DIR']).resolve(strict=True)
 if stat.S_IMODE(root.stat().st_mode) != 0o700:
     raise SystemExit('secret directory must have mode 0700')
-for name in ('hdfs-engine.json', 'spark-engine.json', 'postgres-engine.json', 'postgres.env', 'postgres-seed.sql', 'postgres-before.json'):
+for name in ('hdfs-engine.json', 'spark-engine.json', 'postgres-engine.json', 'minio-engine.json', 'minio.env', 'postgres.env', 'postgres-seed.sql', 'postgres-before.json'):
     output = root / name
     if output.exists() or output.is_symlink():
         raise SystemExit('descriptors must be new secret files')
@@ -70,10 +70,13 @@ IMAGE_PY
 )
 [[ "$HADOOP_IMAGE" =~ ^ghcr.io/apache/hadoop:3\.5\.0@sha256:[a-f0-9]{64}$ ]] || fail 'Hadoop must use its fixed official digest'
 [[ "$SPARK_IMAGE" =~ ^apache/spark:3\.5\.0-scala2\.12-java11-python3-ubuntu@sha256:[a-f0-9]{64}$ ]] || fail 'Spark must use its fixed official digest'
+# Reuse the freshly built Infra binary image, with independent Business data/credentials.
+MINIO_IMAGE=$(docker container inspect --format '{{.Image}}' addp-minio)
+[[ "$MINIO_IMAGE" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'MinIO must use the current immutable Infra build'
 # Check all fixed ports before claiming any resource.
 python3 - <<'PY'
 import socket
-for port in (8020, 9870, 9864, 9866, 9867, 7077, 10000, 18080, 18081, 15435):
+for port in (8020, 9870, 9864, 9866, 9867, 7077, 10000, 18080, 18081, 15435, 15436, 15437):
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', port))
 PY
@@ -83,7 +86,7 @@ finish_start() {
   trap - EXIT INT TERM
   if [ "$status" -ne 0 ] && [ "$created" -eq 1 ]; then
     stop || status=1
-    rm -f "$ADDP_ONLINE_SECRET_DIR"/{hdfs-engine.json,spark-engine.json,postgres-engine.json,postgres.env,postgres-seed.sql,postgres-before.json}
+    rm -f "$ADDP_ONLINE_SECRET_DIR"/{hdfs-engine.json,spark-engine.json,postgres-engine.json,minio-engine.json,minio.env,postgres.env,postgres-seed.sql,postgres-before.json}
   fi
   exit "$status"
 }
@@ -99,9 +102,15 @@ import json, os, secrets
 from pathlib import Path
 root = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
 admin_password, writer_password = secrets.token_hex(24), secrets.token_hex(24)
+minio_access, minio_secret = 'online_' + secrets.token_hex(12), secrets.token_hex(24)
 columns = ', '.join(f'{name}_{suffix} bigint NOT NULL CHECK ({name}_{suffix} >= 0)'
                     for name in ('csv', 'json', 'parquet') for suffix in ('rows', 'amount_sum'))
 values = {
+ 'minio.env': f'MINIO_ROOT_USER={minio_access}\nMINIO_ROOT_PASSWORD={minio_secret}\n',
+ 'minio-engine.json': json.dumps({'name': 'Hosted MinIO', 'engine_type': 'minio',
+    'engine_origin': 'general', 'description': 'Disposable Spark Parquet results',
+    'connection_info': {'endpoint': '127.0.0.1:15436', 'access_key': minio_access,
+                        'secret_key': minio_secret, 'use_ssl': False, 'bucket': 'result'}}),
  'postgres.env': f'POSTGRES_DB=spark_results\nPOSTGRES_USER=fixture_admin\nPOSTGRES_PASSWORD={admin_password}\n',
  'postgres-seed.sql': f"""CREATE ROLE spark_writer LOGIN PASSWORD '{writer_password}';
 CREATE ROLE result_reader NOLOGIN;
@@ -122,6 +131,15 @@ for name, content in values.items():
     with os.fdopen(os.open(root / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
         stream.write(content)
 POSTGRES_PY
+docker run -d --name addp-hdfs-online-minio --label "$LABEL=$SUITE" --network host --memory 512m \
+  --env-file "$ADDP_ONLINE_SECRET_DIR/minio.env" --tmpfs /data \
+  "$MINIO_IMAGE" server /data --address 127.0.0.1:15436 --console-address 127.0.0.1:15437 >/dev/null
+for attempt in $(seq 1 60); do
+  if docker exec addp-hdfs-online-minio curl -fsS http://127.0.0.1:15436/minio/health/ready >/dev/null; then break; fi
+  [ "$attempt" -lt 60 ] || fail 'MinIO readiness timed out'
+  sleep 1
+done
+docker exec addp-hdfs-online-minio sh -c 'mc alias set owned http://127.0.0.1:15436 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc mb owned/result >/dev/null'
 docker run -d --name addp-hdfs-online-postgres --label "$LABEL=$SUITE" --network host --memory 512m \
   --env-file "$ADDP_ONLINE_SECRET_DIR/postgres.env" --tmpfs /var/lib/postgresql/data \
   "$POSTGRES_IMAGE" postgres -c listen_addresses=127.0.0.1 -p 15435 >/dev/null

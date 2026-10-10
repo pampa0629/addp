@@ -20,6 +20,7 @@ import (
 	"github.com/addp/common/config"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
+	"github.com/addp/common/processmetrics"
 )
 
 // SystemServiceClient is the Bearer-only client used by ADDP service
@@ -553,6 +554,14 @@ func (c *SystemServiceClient) registerAndHeartbeat(
 	go func() {
 		defer close(lifecycle.done)
 		defer close(lifecycle.fatal)
+		// The SDK owns this deployment declaration; request metadata or module
+		// URLs cannot manufacture a collection source. Start once per lease
+		// lifecycle and keep it stable across retry/re-registration.
+		registration.ProcessMetrics = nil
+		if source := processmetrics.StartOptional(processmetrics.Identity{ModuleName: registration.ModuleName, Role: registration.Role, InstanceID: registration.InstanceID, StartedAt: registration.ProcessStartedAt}); source != nil {
+			registration.ProcessMetrics = source.Declaration()
+			defer source.Close()
+		}
 		if initialRetryInterval <= 0 {
 			initialRetryInterval = time.Second
 		}

@@ -560,6 +560,9 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 |---|---|---|---|
 | module definition | 模块定义 | System 按稳定 `module_name` 保存的持久模块身份、路由声明和业务模块的管理员启用意图。 | 进程离线不删除；业务模块的管理员写操作使用聚合根 `version` 做并发控制。System 与 Gateway 定义的 `enabled` 固定为 true。 |
 | module runtime instance | 模块运行实例 | Backend、Worker、Scheduler 或 Ingress 一次具体进程登记及其短期租约。 | 健康由心跳和租约计算；正常注销记录 `graceful`，租约超时记录 `lease_expired`，后者仅表示失联，不能证明进程崩溃。进程运行时长以进程启动时间计算，模块定义更新时间和首次注册时间不得替代。管理员不能手工改成在线，实例也不拥有独立并发版本。 |
+| process metrics declaration | 进程采集声明 | 当前模块运行实例通过部署显式启用的受保护自身进程采集端点声明。 | System 持有私有声明；不进入普通实例 DTO，不从业务 URL 推断。自身资源观测不要求有效主机关联，仍要求当前实例、准入来源与用户授权；主机关系失效不能借历史关系计算宿主占比。 |
+| process CPU core equivalent | 进程 CPU 核占用 | 当前进程 user + system CPU 累计秒数在完整窗口内的每秒增量，单位核当量。 | 多线程可超过 1 核；不是百分比、配额或独占物理核。来源改变、累计重置或窗口不足时没有有效值。 |
+| process resident memory | 进程驻留内存 | 当前进程驻留在内存中的 RSS 字节数。 | 不是 Go 堆、虚拟地址空间、峰值或独占物理内存；不同进程 RSS 不简单求和，也不除以未关联宿主容量。 |
 | instance offline determination time | 实例离线判定时间 | System 对当前实例离线观测采用的时间；正常注销使用注销时间，租约超时使用租约到期时间。 | 对应实例投影 `stopped_at`，不是已确认的进程退出时间。租约已过期但扫描尚未落库时，读取仍按到期时间判定；同一实例恢复后清除该观测。按此时间查询不代表完整的历史离线事件查询。 |
 | registered host | 登记主机 | 从模块运行实例的服务地址（无服务地址时为健康检查地址）解析出的主机名或 IP，不包含端口。 | 用于按登记地址精确筛选实例；域名和 `localhost` 不等于物理节点 IP。无监听端点的 Worker、Scheduler 可以为空，不据此推断其节点地址。 |
 | runtime hostname | 运行环境主机名 | 由进程所在操作系统自动采集的主机名，容器内表示容器运行环境。 | 对应 `runtime_hostname`；用于定位包括无监听端点 Worker 在内的进程，不从登记 URL 或实例 ID 推断宿主节点。 |

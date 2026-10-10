@@ -10,7 +10,8 @@ const (
 )
 
 // ObservabilityIdentitySnapshot is a current, bounded System-owned identity
-// projection for Monitor discovery. It carries neither endpoints nor credentials.
+// private projection for Monitor discovery. Process endpoints are deployment
+// declarations, never browser DTOs. Credentials are never included.
 type ObservabilityIdentitySnapshot struct {
 	ObservedAt      time.Time                     `json:"observed_at"`
 	Nodes           []ObservabilityNodeIdentity   `json:"nodes"`
@@ -23,9 +24,11 @@ type ObservabilityNodeIdentity struct {
 }
 
 type ObservabilityModuleIdentity struct {
-	ModuleName     string    `json:"module_name"`
-	InstanceID     string    `json:"instance_id"`
-	Role           string    `json:"role"`
-	NodeID         string    `json:"node_id"`
-	LeaseExpiresAt time.Time `json:"lease_expires_at"`
+	ProcessMetrics   *ProcessMetricsDeclaration `json:"process_metrics,omitempty"`
+	ProcessStartedAt *time.Time                 `json:"process_started_at,omitempty"`
+	ModuleName       string                     `json:"module_name"`
+	InstanceID       string                     `json:"instance_id"`
+	Role             string                     `json:"role"`
+	NodeID           string                     `json:"node_id"`
+	LeaseExpiresAt   time.Time                  `json:"lease_expires_at"`
 }

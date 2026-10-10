@@ -23,10 +23,11 @@ class StorageAdapterTest(unittest.TestCase):
         for file_format in ('csv', 'json', 'parquet'):
             with self.subTest(file_format=file_format):
                 spark = MagicMock()
+                spark.read.options.return_value = spark.read
                 reader = spark.read.format.return_value
                 reader.option.return_value = reader
                 path = 's3a://bucket/orders.' + file_format
-                with patch.object(FileAdapter, '_configure_s3_access'):
+                with patch.object(FileAdapter, '_s3_access', return_value=(path, {})):
                     result = FileAdapter.load(spark, {'path': path, 'format': file_format})
                 spark.read.format.assert_called_once_with(file_format)
                 reader.load.assert_called_once_with(path)
@@ -34,6 +35,79 @@ class StorageAdapterTest(unittest.TestCase):
                 if file_format == 'csv':
                     reader.option.assert_any_call('header', 'true')
                     reader.option.assert_any_call('inferSchema', 'true')
+
+    def test_minio_configuration_is_per_operation_and_validates_scope(self):
+        connection = {'engine_type': 'minio', 'endpoint': 'store:9000', 'use_ssl': False,
+                      'access_key': 'owned-access', 'secret_key': 'owned-secret', 'bucket': 'result'}
+        params = {'path': 's3a://result/output', 'connection_info': connection}
+        path, options = FileAdapter._s3_access(params)
+        self.assertEqual(path, params['path'])
+        self.assertEqual(options['fs.s3a.endpoint'], 'http://store:9000')
+        self.assertEqual(options['fs.s3a.impl.disable.cache'], 'true')
+        self.assertEqual(options['fs.s3a.bucket.result.secret.key'], 'owned-secret')
+        self.assertEqual(options['fs.s3a.bucket.result.endpoint'], 'http://store:9000')
+        _, default_ssl = FileAdapter._s3_access(dict(params, connection_info={k: v for k, v in connection.items() if k != 'use_ssl'}))
+        self.assertEqual(default_ssl['fs.s3a.connection.ssl.enabled'], 'false')
+        _, other = FileAdapter._s3_access(dict(params, connection_info=dict(connection, endpoint='other:9000', secret_key='other-secret')))
+        self.assertEqual(options['fs.s3a.secret.key'], 'owned-secret')
+        self.assertEqual(other['fs.s3a.secret.key'], 'other-secret')
+        for changed in ({'path': 's3a://foreign/output'}, {'path': 's3://result/output'},
+                        {'path': 's3a://result/a/../b'}, {'path': 's3a://result/a%2F..%2Fb'},
+                        {'path': 's3a://result/output*'}, {'path': 's3a://result/'},
+                        {'connection_info': dict(connection, secret_key='')},
+                        {'connection_info': dict(connection, endpoint='https://store:9000')}):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                FileAdapter._s3_access(dict(params, **changed))
+
+    def test_minio_publication_reports_verified_count_without_source_count(self):
+        frame, filesystem = MagicMock(), MagicMock()
+        filesystem.exists.return_value = False
+        writer = frame.write
+        writer.options.return_value = writer.format.return_value = writer.mode.return_value = writer
+        params = {'path': 's3a://result/owned', 'format': 'parquet', 'mode': 'create',
+                  'connection_info': {'engine_type': 'minio'}}
+        with patch.object(FileAdapter, '_s3_access', return_value=(params['path'], {'fs.s3a.impl.disable.cache': 'true'})), \
+             patch.object(FileAdapter, '_s3_filesystem', return_value=(filesystem, MagicMock())), \
+             patch.object(FileAdapter, '_verify_s3_parquet', return_value=17):
+            self.assertEqual(FileAdapter.save(frame, params), 17)
+        frame.count.assert_not_called()
+        writer.mode.assert_called_once_with('errorifexists')
+        filesystem.close.assert_called_once()
+
+    def test_minio_rejects_existing_results_without_cleanup_and_reports_cleanup_failure(self):
+        frame, filesystem = MagicMock(), MagicMock()
+        params = {'path': 's3a://result/owned', 'mode': 'create', 'connection_info': {'engine_type': 'minio'}}
+        with patch.object(FileAdapter, '_s3_access', return_value=(params['path'], {})), \
+             patch.object(FileAdapter, '_s3_filesystem', return_value=(filesystem, MagicMock())), \
+             patch.object(FileAdapter, '_cleanup_s3_result') as cleanup:
+            filesystem.exists.return_value = True
+            with self.assertRaisesRegex(ValueError, 'already exists'): FileAdapter.save(frame, params)
+            cleanup.assert_not_called()
+            filesystem.exists.return_value = False
+            frame.write.options.return_value.format.return_value.mode.return_value.save.side_effect = OSError('write failed')
+            with self.assertRaisesRegex(OSError, 'write failed'): FileAdapter.save(frame, params)
+            cleanup.assert_called_once_with(filesystem, params['path'])
+            cleanup.side_effect = OSError('cleanup failed')
+            with self.assertRaisesRegex(RuntimeError, 'cleanup also failed'): FileAdapter.save(frame, params)
+
+    def test_minio_cleanup_is_limited_to_owned_prefix_with_slash_boundary(self):
+        filesystem = MagicMock()
+        helper = filesystem.getWriteOperationHelper.return_value
+        helper.listMultipartUploads.return_value.isEmpty.side_effect = [False, True]
+        helper.abortMultipartUploadsUnderPath.return_value = 1
+        filesystem.exists.side_effect = [True, False]
+        FileAdapter._cleanup_s3_result(filesystem, 's3a://bucket/results/owned#literal')
+        helper.abortMultipartUploadsUnderPath.assert_called_once_with('results/owned#literal/')
+        filesystem.keyToQualifiedPath.assert_called_once_with('results/owned#literal')
+        filesystem.delete.assert_called_once_with(filesystem.keyToQualifiedPath.return_value, True)
+
+    def test_minio_modes_and_other_formats_fail_before_any_source_action(self):
+        for changes in ({'mode': 'overwrite'}, {'mode': 'append'}, {'format': 'geoparquet'}, {'format': 'csv'}):
+            frame = MagicMock()
+            with self.assertRaises(ValueError):
+                FileAdapter.save(frame, {'path': 's3a://bucket/result', 'mode': 'create', 'format': 'parquet'} | changes)
+            frame.count.assert_not_called()
+            frame.write.options.assert_not_called()
 
     def test_geometry_columns_are_discovered_from_schema(self):
         class GeometryType:

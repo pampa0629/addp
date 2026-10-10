@@ -781,6 +781,59 @@
         },
         "budget": "This page exceeds the resource query budget. Reduce the page size or ask an administrator to adjust the budget."
       }
+    },
+    "process": {
+      "title": "Service monitoring",
+      "moduleFilter": "Module name (exact match)",
+      "module": "Service module",
+      "role": "Instance role",
+      "roles": {
+        "backend": "Backend",
+        "worker": "Worker",
+        "scheduler": "Scheduler",
+        "ingress": "Gateway"
+      },
+      "instance": "Runtime instance",
+      "online": "Online status",
+      "status": {
+        "up": "Online",
+        "down": "Offline"
+      },
+      "host": "Associated host",
+      "unbound": "No associated host",
+      "collection": "Collection status",
+      "empty": "No matching service instances",
+      "metrics": {
+        "cpu": "CPU core usage (1 minute)",
+        "memory": "Process memory usage",
+        "uptime": "Uptime"
+      },
+      "hints": {
+        "cpu": "1 core ≈ one fully occupied logical core; can exceed 1",
+        "memory": "Current resident process memory (RSS)",
+        "uptime": "Elapsed time since this process started"
+      },
+      "cores": "{value} cores",
+      "waiting": "Waiting for a complete minute of valid samples",
+      "unavailable": "Collection status unavailable",
+      "states": {
+        "valid": "Valid",
+        "stale": "Expired sample",
+        "no_data": "No valid samples",
+        "not_active": "Instance offline",
+        "not_connected": "Collection not connected"
+      },
+      "collectionStates": {
+        "collecting": "Collecting",
+        "failed": "Collection failed",
+        "stale": "Expired samples",
+        "identity_mismatch": "Source identity mismatch",
+        "not_active": "Instance offline",
+        "not_connected": "Collection not connected",
+        "no_sample": "No collection evidence"
+      },
+      "denied": "The current identity cannot view service monitoring.",
+      "notFound": "The service instance was removed. Refresh the list."
     }
   }
 }

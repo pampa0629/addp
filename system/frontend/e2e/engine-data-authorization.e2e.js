@@ -11,8 +11,8 @@ function filterGrants(items, query) {
   return items.filter(item => (!search || item.catalog_path.segments.map(segment => segment.name).join(' / ').toLowerCase().includes(search)) &&
     (!kind || item.recipient_type === kind) && (!recipient || String(item.recipient_id) === recipient))
 }
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false } = {}) {
-  const writes = [], reads = [], inspections = []
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false } = {}) {
+  const writes = [], reads = []
   let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: tablePath }] : []
   let grants = [...history], failedGrant = false, failedChange = false
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
@@ -44,13 +44,6 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       const filtered = filterGrants(grants, query)
       return reply({ data: filtered.slice((page - 1) * size, page * size), total: filtered.length, page, page_size: size, total_pages: Math.ceil(filtered.length / size) })
     }
-    if (path.endsWith('/access_grants/inspection')) {
-      const body = request.postDataJSON(); inspections.push(body)
-      if (typeof body.catalog_path?.engine_id !== 'number' || typeof body.account_id !== 'string') return reply({ error: '无效的请求参数' }, 400)
-      if (inspectionDenied) return reply({ error: '本引擎管理资格不足', error_code: 'forbidden' }, 403)
-      return reply({ account_id: body.account_id, catalog_path: body.catalog_path, observed_at: '2026-10-09T08:00:00Z', rule_covered: inspectionReason === 'grant', reason: inspectionReason,
-        sources: ['grant', 'explicit_deny'].includes(inspectionReason) ? ['user', 'department', 'project_group'].map(recipient_type => ({ recipient_type, recipient_id: '33', expiry_mode: 'until_revoked', expires_at: null, grant_count: 1 })) : [] })
-    }
     if (path.endsWith('/access_grants')) {
       reads.push(request.url())
       if (request.method() === 'GET') {
@@ -61,7 +54,19 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
           grouped.set(key, { ...grant, grant_count: (previous?.grant_count || 0) + 1 })
         }
         const current = [...grouped.values()], query = new URL(request.url()).searchParams, page = Number(query.get('page') || 1), size = Number(query.get('page_size') || 20)
-        const filtered = filterGrants(current, query)
+        let filtered
+        if (query.get('recipient_type') === 'user' && query.get('recipient_id')) {
+          if (inspectionDenied) return reply({ error: '本引擎管理资格不足', error_code: 'forbidden' }, 403)
+          const account = query.get('recipient_id'), expanded = new Map()
+          const candidates = current.filter(item => String(item.recipient_id) === account && (item.recipient_type === 'user' || organizationMember))
+          for (const source of candidates) {
+            const key = JSON.stringify(source.catalog_path), target = expanded.get(key) || { ...source, recipient_type: 'user', recipient_id: account, grant_count: 0, inspection: { account_id: account, catalog_path: source.catalog_path, observed_at: '2026-10-09T08:00:00Z', rule_covered: inspectionReason === 'grant', reason: inspectionReason, sources: [] } }
+            if (['grant', 'explicit_deny', 'target_unavailable'].includes(inspectionReason)) target.inspection.sources.push(source)
+            target.grant_count += source.grant_count; expanded.set(key,target)
+          }
+          const searchQuery = new URLSearchParams(query); searchQuery.delete('recipient_type'); searchQuery.delete('recipient_id')
+          filtered = filterGrants([...expanded.values()], searchQuery)
+        } else filtered = filterGrants(current, query)
         return reply({ data: filtered.slice((page - 1) * size, page * size), total: filtered.length, page, page_size: size, total_pages: Math.ceil(filtered.length / size) })
       }
       const body = request.postDataJSON(); writes.push({ path, body })
@@ -121,83 +126,63 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/engines')) return reply([engine])
     throw new Error(`Unexpected configuration fixture request: ${request.method()} ${path}`)
   })
-  return { writes, reads, inspections }
+  return { writes, reads }
 }
 
-test('account inspection reuses the selected exact table and shows all three sources without granting', async ({ page }) => {
-  const { writes, inspections } = await fixture(page, { allowed: [...permissions, 'system.engine_access_grant.read', 'iam.tenant_membership.read', 'iam.department.read', 'iam.project_group.read'] })
-  await page.goto('/engines/2?tab=data-authorization')
-  const panel = page.getByTestId('source-grant-inspection')
-  await panel.getByTestId('inspection-account').locator('.el-select').click()
+async function selectAccountFilter(page) {
+  await page.getByTestId('source-grant-type-filter').click()
+  await page.getByRole('option', { name: '账号', exact: true }).click()
+  await page.getByTestId('source-grant-recipient-filter').locator('.el-select').click()
   await page.getByRole('option').filter({ hasText: 'Outdoor reader' }).click()
-  await expect(panel.getByTestId('inspection-query')).toBeDisabled()
-  await selectInspectionTable(page)
-  await panel.getByTestId('inspection-query').click()
-  await expect(panel.getByTestId('inspection-result')).toContainText('源规则覆盖')
-  await expect(panel.getByTestId('inspection-sources')).toContainText('Outdoor reader')
-  await expect(panel.getByTestId('inspection-sources')).toContainText('Outdoor department')
-  await expect(panel.getByTestId('inspection-sources')).toContainText('Outdoor team')
-  expect(inspections).toEqual([{ account_id: '33', catalog_path: tablePath }])
-  expect(writes).toEqual([])
-  await panel.screenshot({ path: '/tmp/addp-account-inspection.jpg' })
-  await panel.getByTestId('inspection-account').hover()
-  await panel.getByTestId('inspection-account').locator('.el-select__clear').click()
-  await expect(panel.getByTestId('inspection-result')).toHaveCount(0)
-})
-
-test('changing the selected table discards an in-flight inspection response', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: [...permissions, 'system.engine_access_grant.read', 'iam.tenant_membership.read'], secondTable: true })
-  let resolveStarted, release
-  const started = new Promise(resolve => { resolveStarted = resolve })
-  const response = new Promise(resolve => { release = resolve })
-  await page.route('**/access_grants/inspection', async route => {
-    const body = route.request().postDataJSON()
-    resolveStarted(); await response
-    await route.fulfill({ json: { account_id: body.account_id, catalog_path: body.catalog_path, observed_at: '2026-10-09T08:00:00Z', rule_covered: true, reason: 'grant', sources: [] } })
-  })
+}
+test('current authorization automatically includes personal department and project sources for a selected account', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'iam.department.read', 'iam.project_group.read'], organizationMember: true,
+    history: ['user','department','project_group'].map(kind => historicalGrant(kind)) })
   await page.goto('/engines/2?tab=data-authorization')
-  await selectInspectionTable(page)
-  const panel = page.getByTestId('source-grant-inspection')
-  await panel.getByTestId('inspection-account').locator('.el-select').click()
-  await page.getByRole('option').filter({ hasText: 'Outdoor reader' }).click()
-  await panel.getByTestId('inspection-query').click()
-  await started
-  await selectInspectionTable(page, 'persons')
-  const finished = page.waitForResponse('**/access_grants/inspection')
-  release(); await finished
-  await expect(panel.getByTestId('inspection-target')).toContainText('persons')
-  await expect(panel.getByTestId('inspection-result')).toHaveCount(0)
-  expect(writes).toEqual([])
+  await selectAccountFilter(page)
+  const list = page.getByTestId('source-grant-list')
+  await expect(list.getByTestId('account-grant-status')).toContainText('源规则覆盖')
+  await expect(list.locator('.el-table__body > tbody > tr.el-table__row')).toHaveCount(1)
+  await expect(list.getByTestId('account-grant-expand')).toHaveText('查看来源（3）')
+  await list.getByTestId('account-grant-expand').click()
+  const sources = page.getByTestId('account-grant-sources')
+  await expect(sources).toContainText('Outdoor reader')
+  await expect(sources).toContainText('Outdoor department')
+  await expect(sources).toContainText('Outdoor team')
+  await page.screenshot({ path: '/tmp/addp-unified-current-account-sources.png', fullPage: true })
+  await sources.getByRole('row').filter({ hasText: 'Outdoor department' }).getByTestId('source-grant-revoke').click()
+  const organizationDialog = page.getByRole('dialog', { name: '撤销授权', exact: true })
+  await expect(organizationDialog).toContainText('所有依赖此来源的成员')
+  await organizationDialog.getByRole('button', { name: '取消', exact: true }).click()
+  await sources.getByRole('row').filter({ hasText:'Outdoor reader' }).getByTestId('source-grant-revoke').click()
+  const dialog = page.getByRole('dialog', { name:'撤销授权', exact:true })
+  await dialog.getByTestId('source-grant-revoke-reason').fill('Remove personal source only')
+  await dialog.getByTestId('source-grant-revoke-confirm').click()
+  await expect(dialog).toBeHidden()
+  await expect(list.getByTestId('account-grant-status')).toContainText('源规则覆盖')
+  await list.locator('.el-table__expand-icon').click()
+  await expect(page.getByTestId('account-grant-sources')).not.toContainText('Outdoor reader')
+  await expect(page.getByTestId('account-grant-sources')).toContainText('Outdoor department')
+  await page.getByTestId('source-grant-list-mode').getByText('授权历史', { exact:true }).click()
+  await expect(list).toContainText('已撤销')
+  await expect(list).not.toContainText('Outdoor department')
+  expect(writes).toHaveLength(1)
 })
-
-for (const reason of ['no_grant', 'explicit_deny', 'source_unavailable']) {
-  test(`account inspection reports ${reason} separately from final data access`, async ({ page }) => {
-    const { writes } = await fixture(page, { allowed: [...permissions, 'system.engine_access_grant.read', 'iam.tenant_membership.read'], inspectionReason: reason })
+for (const reason of ['explicit_deny','source_unavailable','target_unavailable']) {
+  test(`current account authorization reports ${reason} without granting access`, async ({page}) => {
+    const {writes} = await fixture(page,{allowed:grantPermissions,history:[historicalGrant()],inspectionReason:reason})
     await page.goto('/engines/2?tab=data-authorization')
-    await selectInspectionTable(page)
-    const panel = page.getByTestId('source-grant-inspection')
-    await panel.getByTestId('inspection-account').locator('.el-select').click()
-    await page.getByRole('option').filter({ hasText: 'Outdoor reader' }).click()
-    await panel.getByTestId('inspection-query').click()
-    await expect(panel.getByTestId('inspection-result')).toContainText(reason === 'no_grant' ? '没有有效' : reason === 'explicit_deny' ? '命中源拒绝规则' : '账号或租户成员关系当前无效')
-    if (reason === 'explicit_deny') {
-      await expect(panel.getByTestId('inspection-sources')).toContainText('无接收方名称查看权限')
-      await expect(panel).not.toContainText('拒绝原因')
-    } else await expect(panel.getByTestId('inspection-sources')).toContainText('没有当前有效的授权来源')
+    await selectAccountFilter(page)
+    await expect(page.getByTestId('account-grant-status')).toContainText(reason==='explicit_deny'?'命中源拒绝规则':reason==='source_unavailable'?'账号或租户成员关系当前无效':'引擎当前不可用')
     expect(writes).toEqual([])
   })
 }
-
-test('inspection denial stays in the authorization window and does not navigate to forbidden', async ({ page }) => {
-  await fixture(page, { allowed: [...permissions, 'system.engine_access_grant.read', 'iam.tenant_membership.read'], inspectionDenied: true })
+test('current account query denial stays in the authorization window', async ({page}) => {
+  await fixture(page,{allowed:grantPermissions,history:[historicalGrant()],inspectionDenied:true})
   await page.goto('/engines/2?tab=data-authorization')
-  await selectInspectionTable(page)
-  const panel = page.getByTestId('source-grant-inspection')
-  await panel.getByTestId('inspection-account').locator('.el-select').click()
-  await page.getByRole('option').filter({ hasText: 'Outdoor reader' }).click()
-  await panel.getByTestId('inspection-query').click()
-  await expect(panel.getByTestId('inspection-error')).toContainText('本引擎管理资格不足')
-  await expect(page).toHaveURL(/\/engines\/2\?tab=data-authorization$/)
+  await selectAccountFilter(page)
+  await expect(page.getByTestId('engine-source-grants')).toContainText('本引擎管理资格不足')
+  await expect(page).toHaveURL(/engines\/2\?tab=data-authorization$/)
 })
 
 test('list authorization action opens a separate window with permission-specific sections and survives reload', async ({ page }) => {
@@ -275,6 +260,7 @@ test('mode administrator explicitly changes existing business approval without i
   await confirmModeChange(page)
   await expect(dialog).toHaveCount(0)
   await expect(page.getByTestId('approval-targets')).toContainText('直接批准')
+  await page.getByTestId('authorization-back').click()
   await expect(page.getByTestId('engine-source-grants')).toContainText('已签发')
   expect(writes).toEqual([{ path: '/api/v1/system/engines/2/access_approval_requirements/cc0a8000-6000-4000-8000-800000000001',
     body: { version: 1, mode: 'independent', reason: '业务流程调整，交接为直接批准' } }])
@@ -396,6 +382,8 @@ test('failed recipient name lookup does not erase grant history or imply deletio
 })
 async function selectData(page, schema = false) {
   const panel = page.getByTestId('engine-data-authorization')
+  await expect(page.getByTestId('authorization-workspace-toolbar')).toBeVisible()
+  if (await page.getByTestId('authorization-new').isVisible()) await page.getByTestId('authorization-new').click()
   await panel.locator('.picker-node-label').filter({ hasText: /^outdoor$/ }).click()
   if (!schema) {
     const namespace = panel.getByRole('treeitem', { name: 'outdoor', exact: true })
@@ -405,12 +393,6 @@ async function selectData(page, schema = false) {
   await page.getByTestId('approval-add-selection').click()
   await expect(page.getByTestId('approval-targets')).toBeVisible()
   return panel
-}
-async function selectInspectionTable(page, name = 'activities') {
-  const panel = page.getByTestId('engine-data-authorization')
-  const namespace = panel.getByRole('treeitem', { name: 'outdoor', exact: true })
-  if (await namespace.getAttribute('aria-expanded') !== 'true') await namespace.locator(':scope > .el-tree-node__content .el-tree-node__expand-icon').click()
-  await panel.locator('.picker-node-label').filter({ hasText: new RegExp(`^${name}$`) }).click()
 }
 async function chooseMode(page, mode = '直接批准') {
   await page.getByTestId('approval-mode').click()
@@ -435,6 +417,59 @@ async function confirmGrant(page, cancel = false) {
 async function refreshSameAuthorization(page) {
   await page.evaluate(async () => (await import('/src/store/auth.js')).useAuthStore().fetchAuthContext())
 }
+test('authorization workspace separates current history and creation without writes on navigation', async ({ page }, testInfo) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent', history: [historicalGrant()] })
+  await page.goto('/engines/2?tab=data-authorization')
+  const list = page.getByTestId('source-grant-list')
+  await expect(list).toContainText('Outdoor reader')
+  await expect(page.getByTestId('source-grant-inspection')).toHaveCount(0)
+  await expect(page.getByTestId('approval-add-selection')).toHaveCount(0)
+  await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
+  await page.getByTestId('source-grant-list-mode').getByText('授权历史', { exact: true }).click()
+  await expect(list).toContainText('history-user')
+  await expect(page.getByTestId('source-grant-revoke')).toHaveCount(0)
+  await expect(page.getByTestId('engine-source-grants')).toContainText('包含已签发、已撤销和已到期')
+  await selectData(page); await grantDraft(page)
+  await expect(list).toHaveCount(0)
+  await expect(page.getByTestId('source-grant-list-mode')).toHaveCount(0)
+  await expect(page.getByTestId('source-grant-inspection')).toHaveCount(0)
+  await page.getByTestId('source-grant-form').getByRole('button', { name: '取消', exact: true }).click()
+  await expect(list).toContainText('Outdoor reader')
+  await expect(page.getByTestId('authorization-new')).toBeFocused()
+  await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('authorization-current.png'), fullPage: true })
+  expect(writes).toEqual([])
+})
+
+test('successful new authorization returns to current grants and locates the issued relation', async ({ page }) => {
+  const { writes, reads } = await fixture(page, { allowed: grantPermissions, existing: 'independent', history: [historicalGrant('department')] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectData(page); await grantDraft(page); await confirmGrant(page)
+  const list = page.getByTestId('source-grant-list')
+  await expect(list).toContainText('Outdoor reader')
+  await expect(list.getByRole('row').filter({ has: page.getByTestId('grant-recipient') })).toHaveCount(1)
+  await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
+  await expect(page.getByTestId('approval-add-selection')).toHaveCount(0)
+  await expect(page.getByTestId('source-grant-table-filter')).toHaveValue('outdoor / activities')
+  const query = new URL(reads.filter(url => url.includes('/access_grants?')).at(-1)).searchParams
+  expect(Object.fromEntries(query)).toMatchObject({ recipient_type: 'user', recipient_id: '33', table_search: 'outdoor / activities' })
+  expect(writes).toHaveLength(1)
+})
+
+test('English authorization workspace actions fit a narrow viewport', async ({ page }, testInfo) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, language: 'en', history: [historicalGrant()] })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/engines/2?tab=data-authorization')
+  const toolbar = page.getByTestId('authorization-workspace-toolbar')
+  await expect(toolbar.getByRole('button', { name: 'New authorization', exact: true })).toBeVisible()
+  for (const action of ['authorization-new']) {
+    const bounds = await page.getByTestId(action).boundingBox()
+    expect(bounds.x).toBeGreaterThanOrEqual(0)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(390)
+  }
+  await page.screenshot({ path: testInfo.outputPath('authorization-workspace-mobile-en.png'), fullPage: true })
+  expect(writes).toEqual([])
+})
 test('first direct approval and read grant use one explicit command without Catalog or a separate configuration write', async ({ page }, testInfo) => {
   const { writes, reads } = await fixture(page, { allowed: grantPermissions })
   await page.goto('/engines/2?tab=data-authorization')
@@ -472,6 +507,8 @@ test('partial batch keeps immutable commands and retries only failed tables', as
   await expect(page.getByTestId('source-grant-outcomes')).toContainText('签发结果未知')
   expect(writes).toHaveLength(2)
   await expect(page.getByTestId('approval-add-selection')).toBeDisabled()
+  await expect(page.getByTestId('authorization-back')).toBeDisabled()
+  await expect(page.getByTestId('source-grant-list')).toHaveCount(0)
   await confirmGrant(page)
   await expect(page.getByTestId('engine-source-grants')).toContainText('已找回原命令的签发历史')
   expect(writes).toHaveLength(3); expect(writes[2].body).toEqual(writes[0].body)
@@ -486,6 +523,7 @@ test('existing direct approval grants and revokes an explicit recipient without 
   await expect(history).toContainText('outdoor')
   await expect(history).not.toContainText('账号 · 33')
   expect(writes).toHaveLength(1); expect(writes[0].body.initialize_approval).toBe(false)
+  await page.getByTestId('source-grant-list').locator('.el-table__expand-icon').click()
   await page.getByTestId('source-grant-revoke').click()
   await expect(page.getByRole('dialog', { name: '撤销授权', exact: true })).toContainText('Outdoor reader')
   await page.getByTestId('source-grant-revoke-reason').fill('Read access no longer needed')
@@ -527,7 +565,8 @@ test('authorization version change clears the selected snapshot', async ({ page 
 test('read-only configuration neither browses sources nor exposes grant controls', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: ['system.engine.read', 'system.engine_access_approval_requirement.read'], existing: true })
   await page.goto('/engines/2?tab=data-authorization')
-  await page.getByText('已配置的批准方式', { exact: true }).click()
+  await page.getByTestId('authorization-configurations').click()
+  await page.locator('.el-collapse-item__header').filter({ hasText: '已配置的批准方式' }).click()
   await expect(page.getByTestId('engine-data-authorization')).toContainText('业务批准')
   await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
   expect(reads.some(path => path.includes('/catalog/'))).toBe(false); expect(writes).toEqual([])
@@ -535,6 +574,7 @@ test('read-only configuration neither browses sources nor exposes grant controls
 test('missing engine catalog permission explains why source selection is unavailable', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: permissions.filter(permission => permission !== 'system.engine_catalog.read') })
   await page.goto('/engines/2?tab=data-authorization')
+  await page.getByTestId('authorization-new').click()
   await expect(page.getByTestId('engine-data-authorization')).toContainText('选择数据表需要引擎目录浏览权限')
   expect(reads.some(path => path.includes('/catalog/'))).toBe(false); expect(writes).toEqual([])
 })

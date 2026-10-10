@@ -26,5 +26,6 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
     recipient_id: decimal(candidate.id), action: 'read', expiry_mode: form.expiryMode, expires_at: expiresAt, reason }
   const encoded = JSON.stringify(fields)
   return Object.freeze({ requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,
-    targetLabel: path.segments.filter(segment => segment.name).map(segment => segment.name).join(' / '), recipientLabel: candidate.name, expiresAt, expiryMode: form.expiryMode })
+    targetLabel: path.segments.filter(segment => segment.name).map(segment => segment.name).join(' / '), recipientLabel: candidate.name,
+    recipientType: fields.recipient_type, recipientID: fields.recipient_id, expiresAt, expiryMode: form.expiryMode })
 }

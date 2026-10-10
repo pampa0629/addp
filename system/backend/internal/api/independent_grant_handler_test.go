@@ -17,14 +17,9 @@ import (
 )
 
 type independentGrantTestService struct {
-	inspect   func(engineaccess.Actor, int64, int64, engineplugin.EngineCatalogPath) (*engineaccess.SourceGrantInspection, error)
 	create    func(engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error)
 	list      func(engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error)
 	relations func(engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error)
-}
-
-func (s independentGrantTestService) InspectSourceGrants(_ context.Context, a engineaccess.Actor, engineID, accountID int64, path engineplugin.EngineCatalogPath) (*engineaccess.SourceGrantInspection, error) {
-	return s.inspect(a, engineID, accountID, path)
 }
 
 func (s independentGrantTestService) CreateIndependentGrant(_ context.Context, input engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
@@ -111,7 +106,7 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 		if a.PrincipalID <= 0 || engineID != 1 || page != 1 || size != 20 {
 			t.Fatal("lost relation list scope")
 		}
-		return []engineaccess.SourceGrantRelation{{RequestID: id, RecipientID: 9007199254740993, GrantCount: 2}}, 1, nil
+		return []engineaccess.SourceGrantRelation{{RequestID: &id, RecipientID: 9007199254740993, GrantCount: 2}}, 1, nil
 	}
 	relations := engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "GET", path, nil, 200)
 	if !strings.Contains(relations.Body.String(), `"grant_count":2`) {

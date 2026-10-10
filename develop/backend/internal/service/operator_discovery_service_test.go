@@ -155,7 +155,7 @@ func TestOperatorDiscoveryPublishesTargetResourceBinding(t *testing.T) {
 	}
 }
 
-func TestSparkSaveResourceBindingUsesRuntimeOverwriteMode(t *testing.T) {
+func TestSparkSaveResourceBindingDoesNotForceDatabaseModeOntoObjectResults(t *testing.T) {
 	operators := publicWorkflowOperators("spark_workflow", []commonModels.OperatorDescriptor{{
 		ID: "save",
 		Parameters: []commonModels.ParameterDescriptor{
@@ -172,9 +172,8 @@ func TestSparkSaveResourceBindingUsesRuntimeOverwriteMode(t *testing.T) {
 		t.Fatalf("save display_name = %q, want 保存目标", picker.DisplayName)
 	}
 	binding := picker.UIConfig["resource_binding"].(map[string]interface{})
-	defaults := binding["default_params"].(map[string]interface{})
-	if defaults["mode"] != "overwrite" {
-		t.Fatalf("Spark save default mode = %#v, want overwrite", defaults["mode"])
+	if defaults, exists := binding["default_params"]; exists {
+		t.Fatalf("save binding must let the target adapter derive its mode: %#v", defaults)
 	}
 }
 

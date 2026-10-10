@@ -78,6 +78,29 @@ test('Tenant cannot enter inspection even with a misplaced read candidate', asyn
   expect(state.reads).toEqual([])
 })
 
+test('module landing waits for the current authority during token rotation', async ({page,context}) => {
+  const state = await fixture(context)
+  await page.goto(detail)
+  await expect(page.getByTestId('platform-release')).toBeVisible()
+  let resolve
+  state.backend.authHold = new Promise(done => { resolve = done })
+  state.expireOnce = true
+  await page.getByRole('button',{name:'重新加载',exact:true}).click()
+  await expect.poll(() => state.backend.refreshCount).toBe(2)
+  await expect(page.getByTestId('platform-source')).toHaveCount(0)
+  await page.evaluate(async () => {
+    // Exercise the real in-document router while the controlled AuthContext read is held.
+    const { default: router } = await import('/ontology/src/router/index.js')
+    void router.push('/')
+    await new Promise(done => setTimeout(done, 0))
+  })
+  state.backend.authHold = null
+  resolve()
+  await expect(page).toHaveURL(new RegExp(`${root}$`))
+  await expect(page.getByTestId('platform-catalog')).toBeVisible()
+  expect(state.backend.writes).toEqual([])
+})
+
 for (const change of ['permission','context','auth_failure']) {
   test(`reauthorization clears frozen evidence on ${change}`, async ({page,context}) => {
     const state = await fixture(context)

@@ -155,18 +155,7 @@ func (d *tableFileItemResolver) extractTableDatasetInfo(
 	}
 	tableInfo, err := describeTableFileScope(ctx, formatName, reader, dirPath)
 	if err != nil {
-		rc, openErr := contentReader.OpenContent(ctx, connInfo, resolveTableFileCatalogPath(engineID, firstReadableFile.Path, catalogPathFor), plugin.ReadOptions{})
-		if openErr != nil {
-			return nil, fmt.Errorf("failed to read table file %s: %w", firstReadableFile.Path, openErr)
-		}
-		tableInfo, err = describeTableFile(ctx, fileFormatName(firstReadableFile.Name), rc)
-		closeErr := rc.Close()
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse table info from %s: %w", firstReadableFile.Path, err)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("failed to close table file %s: %w", firstReadableFile.Path, closeErr)
-		}
+		return nil, fmt.Errorf("failed to describe complete table scope %s: %w", dirPath, err)
 	}
 
 	resolved, _, _ := resolveTableFileDataItem(dirPath, files)

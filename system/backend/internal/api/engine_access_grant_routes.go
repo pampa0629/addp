@@ -33,7 +33,6 @@ func RegisterEngineAccessGrantRoutes(api *gin.RouterGroup, runtime *IAMRuntime, 
 	routes.POST("", create, handler.Create)
 	routes.GET("", read, handler.List)
 	routes.GET("/history", read, handler.History)
-	routes.POST("/inspection", read, handler.Inspect)
 	routes.POST("/:request_id/revoke", revoke, handler.Revoke)
 	return nil
 }

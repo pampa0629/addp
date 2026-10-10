@@ -43,12 +43,12 @@ describe('engines API', () => {
     expect(client.post.mock.calls).toEqual([['/system/engines/2/access_delegations', create], ['/system/engines/2/access_delegations/3/revoke', revoke]])
   })
 
-  it('serializes inspection catalog IDs as lossless JSON numbers while keeping account IDs as strings', async () => {
-    const target = { engine_id: '9007199254740993', version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }, { term: 'table', kind: 'table', name: 'orders' }] }
-    await enginesAPI.inspectSourceGrants('9007199254740993', { account_id: '9007199254740995', catalog_path: target })
-    expect(client.post).toHaveBeenCalledWith('/system/engines/9007199254740993/access_grants/inspection',
-      '{"account_id":"9007199254740995","catalog_path":{"engine_id":9007199254740993,"version":"catalog.path/v1","segments":[{"term":"server","kind":"server","name":""},{"term":"table","kind":"table","name":"orders"}]}}',
-      { headers: { 'Content-Type': 'application/json' } })
+  it('uses the unified current list for account sources without losing large account IDs', async () => {
+    const params = { recipient_type: 'user', recipient_id: '9007199254740995', table_search: 'outdoor', page: 1, page_size: 20 }
+    await enginesAPI.listSourceGrants('9007199254740993', params)
+    expect(client.get).toHaveBeenCalledWith('/system/engines/9007199254740993/access_grants', { params })
+    expect(client.post).not.toHaveBeenCalled()
+    expect(enginesAPI).not.toHaveProperty('inspectSourceGrants')
   })
 
   it('separates current relations from immutable history and withdraws by an anchor', async () => {

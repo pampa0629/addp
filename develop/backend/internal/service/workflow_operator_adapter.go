@@ -427,7 +427,6 @@ func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 						"type_values": map[string]interface{}{
 							"schema": "table", "database": "table", "root": "file", "directory": "file", "dir": "file", "bucket": "file", "prefix": "file",
 						},
-						"default_params": map[string]interface{}{"mode": "overwrite"},
 					},
 				},
 			),

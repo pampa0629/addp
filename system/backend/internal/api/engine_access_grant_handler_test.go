@@ -10,7 +10,6 @@ import (
 	"time"
 
 	shared "github.com/addp/common/authorization"
-	engineplugin "github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
@@ -19,10 +18,6 @@ import (
 )
 
 type grantServiceFunc func(context.Context, engineaccess.RevokeGrantInput) (*engineaccess.GrantRevocation, error)
-
-func (f grantServiceFunc) InspectSourceGrants(context.Context, engineaccess.Actor, int64, int64, engineplugin.EngineCatalogPath) (*engineaccess.SourceGrantInspection, error) {
-	panic("unexpected grant inspection")
-}
 
 func (f grantServiceFunc) RevokeGrant(ctx context.Context, input engineaccess.RevokeGrantInput) (*engineaccess.GrantRevocation, error) {
 	return f(ctx, input)

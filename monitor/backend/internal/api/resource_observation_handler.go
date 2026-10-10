@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/client"
 	auth "github.com/addp/common/middleware/auth"
 	i18n "github.com/addp/common/middleware/i18n"
+	commonmodels "github.com/addp/common/models"
 	monitori18n "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/resourcequery"
@@ -158,6 +159,52 @@ func (h *ResourceObservationHandler) Summaries(c *gin.Context) {
 		return
 	}
 	c.Set("resource_query_audit_nodes", ids)
+	c.JSON(http.StatusOK, value)
+}
+
+// ProcessSummaries godoc
+// @Summary 读取服务实例资源摘要 | Read service instance resource summaries
+// @Description 当前 Platform User 经 System 一次批量授权后读取三项固定进程指标：CPU 核占用、RSS 内存和运行时长；无需关联主机。CPU 需要完整一分钟且身份/启动时间一致，未知不补零；私有采集地址不返回浏览器 | Reads three fixed process metrics after one System batch authorization for the current Platform User: CPU core equivalents, RSS memory and uptime; host binding is optional. CPU requires a complete minute with matching identity and start time; unknown values are not zero-filled and private endpoints are not exposed
+// @Tags 平台运行监控 | Platform Runtime Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Param instance_ids query string true "1–100 个不重复的 System 实例记录正整数 ID，以逗号分隔；三指标乘实例数计入预算 | 1–100 unique positive System instance record IDs, comma-separated; three metrics times instance count count against budget"
+// @Success 200 {object} service.ProcessResourceSummaryResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 429 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
+// @Failure 504 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.resource_observation.read"]
+// @Router /platform/process_resource_summaries [get]
+func (h *ResourceObservationHandler) ProcessSummaries(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	q, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil || len(c.Request.URL.RawQuery) > 4096 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 || len(q) != 1 || len(q["instance_ids"]) != 1 {
+		resourceError(c, resourcequery.ErrInvalid)
+		return
+	}
+	ids, err := commonmodels.ParseRuntimeInstanceIDs(q.Get("instance_ids"))
+	if err != nil {
+		resourceError(c, resourcequery.ErrInvalid)
+		return
+	}
+	principal, ok := auth.PrincipalIDFromGin(c)
+	if !ok {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+	value, err := h.service.ProcessSummaries(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids)
+	if err != nil {
+		resourceError(c, err)
+		return
+	}
+	c.Set("resource_query_audit_instances", ids)
 	c.JSON(http.StatusOK, value)
 }
 

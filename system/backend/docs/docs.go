@@ -2456,7 +2456,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "表名、接收方类型和编号条件取交集，完整结果筛选后计数及分页；不展开组织成员来源 | Table, recipient type and ID filters intersect before counting and pagination; does not expand organization membership\n按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification",
+                "description": "选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination\n按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification",
                 "produces": [
                     "application/json"
                 ],
@@ -2749,86 +2749,6 @@ const docTemplate = `{
                                     "type": "integer"
                                 }
                             }
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_grant.read"
-                ]
-            }
-        },
-        "/engines/{id}/access_grants/inspection": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "当前租户用户须授权读取权限及引擎管理资格；选择同租户账号和精确普通表，使用实际读取的唯一源规则展开当前有效个人、部门及项目组授权。拒绝仅返回固定命中结论，不返回规则正文或编号 | Current Tenant User needs grant-read permission and engine management qualification. Uses the actual-read rule query to inspect current personal, department and project-group sources for a same-tenant account and exact ordinary table. Deny is exposed only as a fixed reason, never its body or ID\n只读观察不连接源库、不授权、不核验接收方实际会话、功能或 Security；rule_covered 不是实际访问许可，响应不可缓存 | Read-only observation never connects to the source or issues access, and does not validate the recipient's real session, function permissions or Security. rule_covered is not actual access; response is not cacheable",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源数据授权 | Source Data Grants"
-                ],
-                "summary": "核查账号的源数据授权来源 | Inspect an account's source-data grant sources",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "账号与精确表 | Account and exact table",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.InspectSourceGrantsRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "当次源规则观察 | Current source-rule observation",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspection"
                         }
                     },
                     "400": {
@@ -5762,6 +5682,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "稳定模块名，精确匹配 | Stable module name, exact match",
                         "name": "module_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "最多 100 个不重复规范正整数实例记录 ID，以逗号分隔，精确过滤 | Up to 100 unique canonical positive instance record IDs, comma-separated, exact filtering",
+                        "name": "ids",
                         "in": "query"
                     },
                     {
@@ -8969,7 +8895,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "固定 Monitor Platform Service Client 读取有界节点及有效实例投影；不含端点、元数据、凭据或租户数据 | The fixed Monitor Platform Service Client reads a bounded projection of nodes and valid instances without endpoints, metadata, credentials or tenant data",
+                "description": "固定 Monitor Platform Service Client 读取有界节点及有效实例投影，包含私有进程采集声明；不含元数据、凭据或租户数据，不供浏览器使用 | The fixed Monitor Platform Service Client reads a bounded node and instance projection including private process metrics declarations; excludes metadata, credentials and tenant data and is not a browser API",
                 "produces": [
                     "application/json"
                 ],
@@ -14465,6 +14391,9 @@ const docTemplate = `{
         "github_com_addp_system_internal_engineaccess.SourceGrantInspectionSource": {
             "type": "object",
             "properties": {
+                "approval_mode": {
+                    "type": "string"
+                },
                 "expires_at": {
                     "type": "string"
                 },
@@ -14479,6 +14408,9 @@ const docTemplate = `{
                     "example": ""
                 },
                 "recipient_type": {
+                    "type": "string"
+                },
+                "request_id": {
                     "type": "string"
                 }
             }
@@ -14506,6 +14438,9 @@ const docTemplate = `{
                 },
                 "granted_at": {
                     "type": "string"
+                },
+                "inspection": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspection"
                 },
                 "recipient_id": {
                     "type": "string",
@@ -16134,6 +16069,9 @@ const docTemplate = `{
                 "node_id": {
                     "type": "string"
                 },
+                "process_metrics": {
+                    "$ref": "#/definitions/models.ProcessMetricsDeclaration"
+                },
                 "process_started_at": {
                     "type": "string"
                 },
@@ -16214,6 +16152,9 @@ const docTemplate = `{
                 "node_id": {
                     "type": "string"
                 },
+                "process_metrics_declared": {
+                    "type": "boolean"
+                },
                 "process_started_at": {
                     "type": "string"
                 },
@@ -16291,6 +16232,9 @@ const docTemplate = `{
                 },
                 "node_id": {
                     "type": "string"
+                },
+                "process_metrics_declared": {
+                    "type": "boolean"
                 },
                 "process_started_at": {
                     "type": "string"
@@ -19126,17 +19070,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.InspectSourceGrantsRequest": {
-            "type": "object",
-            "properties": {
-                "account_id": {
-                    "type": "string"
-                },
-                "catalog_path": {
-                    "$ref": "#/definitions/plugin.EngineCatalogPath"
-                }
-            }
-        },
         "internal_api.RasterPlatformUpdate": {
             "type": "object",
             "required": [
@@ -19370,6 +19303,12 @@ const docTemplate = `{
                 "node_id": {
                     "type": "string"
                 },
+                "process_metrics": {
+                    "$ref": "#/definitions/models.ProcessMetricsDeclaration"
+                },
+                "process_started_at": {
+                    "type": "string"
+                },
                 "role": {
                     "type": "string"
                 }
@@ -19383,6 +19322,17 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "models.ProcessMetricsDeclaration": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
                 }
             }
         },

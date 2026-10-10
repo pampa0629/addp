@@ -35,7 +35,17 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         gate_spec.loader.exec_module(gate_module)
         script = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
         inputs = re.search(r'^# ADDP_T2_INPUT_FILES=(.+)$', script, re.M).group(1).split()
-        for path in ('monitor/backend/internal/resourcequery/client.go',
+        for path in ('common/processmetrics/sample_darwin.go',
+                     'common/processmetrics/sample_linux.go',
+                     'common/config/process_metrics.go',
+                     'common/models/process_metrics.go',
+                     'common/client/system_service.go',
+                     'common/client/system_runtime_instances.go',
+                     'common/client/system_observability_identity.go',
+                     'common/models/module_runtime_query.go',
+                     'monitor/backend/internal/metricsdiscovery/node_projection.go',
+                     'monitor/backend/internal/resourcequery/process.go',
+                     'monitor/backend/internal/resourcequery/client.go',
                      'monitor/backend/internal/resourcequery/device_counter.go',
                      'monitor/backend/internal/resourcequery/disk_test.go',
                      'monitor/backend/internal/resourcequery/disk_io_test.go',
@@ -50,7 +60,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('go-version-file: common/go.mod', job)
         self.assertLess(job.index('uses: actions/setup-go@'), job.index('run: make test-monitor-metrics'))
         probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
-        self.assertIn('CPUWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes', probe)
+        self.assertIn('CPUWindow|ProcessWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes', probe)
 
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):
         config.render(self.env)

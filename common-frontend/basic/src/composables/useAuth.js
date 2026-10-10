@@ -90,7 +90,7 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
     const requiresAuth = to.matched.some((record) => record.meta?.requiresAuth !== false)
     const isPublic = to.name === loginRouteName
 
-    if (authStore.isAuthenticated && checkPageAccess && !isPublic && !to.meta?.handlesForbidden) {
+    if (authStore.isAuthenticated && checkPageAccess && !isPublic) {
       // Token rotation clears candidate permissions; only the current authority may decide access.
       while (authStore.authContextLoadPromise) {
         const token = authStore.token

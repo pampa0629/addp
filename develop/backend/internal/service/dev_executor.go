@@ -914,8 +914,18 @@ func workflowProducedTargetScanOptions(target WorkflowProducedTarget) commonClie
 		Force:       true,
 		TriggerType: commonExecution.TriggerTypeManual,
 		Source:      commonClient.MetaScanSourceDevelopProducedTarget,
+		Targets:     []string{target.Locator},
+	}
+	if target.Layout == "whole" {
+		locator, err := resourcetree.ParseURI(target.Locator)
+		if err == nil {
+			locator.Type = resourcetree.TypePrefix
+			opts.Targets = []string{locator.ToURI()}
+		}
+		return opts
 	}
 	if strings.EqualFold(target.Type, "file") && len(target.Path) > 0 {
+		opts.Targets = nil
 		opts.RefGroups = []commonClient.MetaScanRefGroup{{
 			Primary: strings.Join(target.Path, "/"),
 		}}

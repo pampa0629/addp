@@ -781,6 +781,59 @@
         },
         "budget": "当前页主机数超出资源查询预算，请减少每页数量或联系管理员调整预算。"
       }
+    },
+    "process": {
+      "title": "服务监控",
+      "moduleFilter": "模块名称（精确匹配）",
+      "module": "服务模块",
+      "role": "实例角色",
+      "roles": {
+        "backend": "后端服务",
+        "worker": "任务进程",
+        "scheduler": "调度进程",
+        "ingress": "网关"
+      },
+      "instance": "运行实例",
+      "online": "在线状态",
+      "status": {
+        "up": "在线",
+        "down": "离线"
+      },
+      "host": "关联主机",
+      "unbound": "未关联主机",
+      "collection": "采集状态",
+      "empty": "暂无符合条件的服务实例",
+      "metrics": {
+        "cpu": "CPU 核占用（1 分钟）",
+        "memory": "进程内存占用",
+        "uptime": "运行时长"
+      },
+      "hints": {
+        "cpu": "1 核 ≈ 占满一个逻辑核，可超过 1 核",
+        "memory": "进程当前驻留内存（RSS）",
+        "uptime": "当前进程启动后经过的时间"
+      },
+      "cores": "{value} 核",
+      "waiting": "等待完整一分钟有效采样",
+      "unavailable": "采集状态待确认",
+      "states": {
+        "valid": "有效",
+        "stale": "样本已过期",
+        "no_data": "暂无有效样本",
+        "not_active": "实例已离线",
+        "not_connected": "未接入采集"
+      },
+      "collectionStates": {
+        "collecting": "正在采集",
+        "failed": "采集失败",
+        "stale": "样本已过期",
+        "identity_mismatch": "来源身份不匹配",
+        "not_active": "实例已离线",
+        "not_connected": "未接入采集",
+        "no_sample": "尚无采集证据"
+      },
+      "denied": "当前身份无权查看服务监控。",
+      "notFound": "服务实例已移除，请刷新列表。"
     }
   }
 }

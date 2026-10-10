@@ -54,6 +54,9 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	if req == nil {
 		return fmt.Errorf("%w: request is required", ErrInvalidModuleRegistration)
 	}
+	if req.ProcessMetrics.Validate() != nil {
+		return fmt.Errorf("%w: invalid process metrics declaration", ErrInvalidModuleRegistration)
+	}
 	req.ModuleName = strings.TrimSpace(req.ModuleName)
 	req.InstanceID = strings.TrimSpace(req.InstanceID)
 	req.HostNodeName = strings.TrimSpace(req.HostNodeName)
@@ -118,6 +121,9 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 		return fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
 	}
 	if _, err := s.repo.Register(req, s.leaseDuration); err != nil {
+		if errors.Is(err, repository.ErrProcessMetricsDeclarationImmutable) {
+			return fmt.Errorf("%w: process metrics identity is immutable", ErrInvalidModuleRegistration)
+		}
 		logger.L().Error("模块运行实例注册失败", "module", req.ModuleName, "instance_id", req.InstanceID, "error", err)
 		return err
 	}
@@ -151,6 +157,16 @@ func (s *ModuleRegistryService) ListModules() ([]*models.ModuleInfo, error) {
 func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 	filter models.ModuleRuntimeInstanceFilter,
 ) ([]models.ModuleRuntimeInstanceRecord, int64, error) {
+	if len(filter.IDs) > 100 {
+		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+	}
+	seenIDs := map[uint]bool{}
+	for _, id := range filter.IDs {
+		if id == 0 || seenIDs[id] {
+			return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+		}
+		seenIDs[id] = true
+	}
 	filter.ModuleName = strings.TrimSpace(filter.ModuleName)
 	filter.RegisteredHost = strings.ToLower(strings.TrimSpace(filter.RegisteredHost))
 	filter.NodeName = strings.ToLower(strings.TrimSpace(filter.NodeName))
@@ -412,7 +428,8 @@ func convertRuntimeInstanceInfoWithStatus(instance *models.ModuleRuntimeInstance
 		_ = json.Unmarshal(instance.Metadata, &metadata)
 	}
 	return models.ModuleRuntimeInstanceInfo{
-		ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
+		ProcessMetricsDeclared: instance.ProcessMetrics != nil,
+		ID:                     instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
 		DeclaredNodeID: instance.DeclaredNodeID, NodeID: instance.NodeID,
 		NodeBindingState: instance.NodeBindingState, NodeBindingReason: instance.NodeBindingReason,
 		ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL, RegisteredHost: instance.RegisteredHost,

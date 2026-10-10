@@ -9,8 +9,8 @@ const routeTable = source.slice(source.indexOf('const routes ='), source.indexOf
 
 function createMonitorRouter(permissions, contextType = 'tenant') {
   const authStore = { contextType, permissions }
-  const routes = new Function('useAuthStore', 'resolveModuleLandingRoute', 'Dashboard', 'ExecutionList', 'AlertList', 'NotificationList', 'Login', 'MonitoringTargets', 'NodeResources', `${routeTable}; return routes`)(
-    () => authStore, resolveModuleLandingRoute, {}, {}, {}, {}, {}, {}, {})
+  const routes = new Function('useAuthStore', 'resolveModuleLandingRoute', 'Dashboard', 'ExecutionList', 'AlertList', 'NotificationList', 'Login', 'MonitoringTargets', 'NodeResources', 'ProcessResources', `${routeTable}; return routes`)(
+    () => authStore, resolveModuleLandingRoute, {}, {}, {}, {}, {}, {}, {}, {})
   routes.push({ path: '/forbidden', component: {} })
   return createRouter({ history: createMemoryHistory(), routes })
 }
@@ -47,4 +47,17 @@ test('Platform root prefers resources when both read permissions are granted', a
   const router = createMonitorRouter(['platform.host_node.read', 'monitor.resource_observation.read', 'monitor.monitoring_target.read'], 'platform')
   await router.push('/')
   assert.equal(router.currentRoute.value.path, '/node-resources')
+})
+
+
+test('Platform service entry requires resource and module reads and never requires a host binding', async () => {
+ const keys = ['platform.module.read', 'monitor.resource_observation.read']
+ const router = createMonitorRouter(keys, 'platform')
+ await router.push('/')
+ assert.equal(router.currentRoute.value.path, '/service-resources')
+ for (const [context, permissions] of [['tenant', keys], ['platform', keys.slice(0, 1)], ['platform', keys.slice(1)]]) {
+  const denied = createMonitorRouter(permissions, context)
+  await denied.push('/')
+  assert.equal(denied.currentRoute.value.path, '/forbidden')
+ }
 })

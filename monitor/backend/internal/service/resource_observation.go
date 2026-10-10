@@ -42,6 +42,7 @@ type ResourceObservationResponse struct {
 	Series             []resourcequery.Series       `json:"series"`
 }
 type ResourceObservationService struct {
+	process  ProcessObservationDependencies
 	policies ResourceQueryPolicyStore
 	targets  TargetStore
 	nodes    UserNodeReader
@@ -52,8 +53,8 @@ type ResourceObservationService struct {
 	now      func() time.Time
 }
 
-func NewResourceObservationService(policies ResourceQueryPolicyStore, targets TargetStore, nodes UserNodeReader, backend ResourceBackend, enabled bool, policy *metricsdiscovery.SourcePolicy) *ResourceObservationService {
-	return &ResourceObservationService{policies: policies, targets: targets, nodes: nodes, backend: backend, enabled: enabled, policy: policy, now: time.Now}
+func NewResourceObservationService(policies ResourceQueryPolicyStore, targets TargetStore, nodes UserNodeReader, backend ResourceBackend, enabled bool, policy *metricsdiscovery.SourcePolicy, process ProcessObservationDependencies) *ResourceObservationService {
+	return &ResourceObservationService{policies: policies, targets: targets, nodes: nodes, backend: backend, enabled: enabled, policy: policy, process: process, now: time.Now}
 }
 func (s *ResourceObservationService) Policy(ctx context.Context) (ResourceQueryPolicyResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)

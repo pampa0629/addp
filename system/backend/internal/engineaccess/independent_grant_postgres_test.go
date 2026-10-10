@@ -311,7 +311,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 			found := false
 			for _, relation := range relations {
-				if relation.RequestID == input.RequestID {
+				if relation.RequestID != nil && *relation.RequestID == input.RequestID {
 					found = relation.GrantCount == 1
 				}
 			}
@@ -397,7 +397,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 			found := false
 			for _, relation := range relations {
-				if relation.RequestID == row.RequestID {
+				if relation.RequestID != nil && *relation.RequestID == row.RequestID {
 					found = relation.GrantCount == 2
 				}
 			}
@@ -437,7 +437,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 			found = false
 			for _, relation := range current {
-				if relation.RequestID == fresh.RequestID {
+				if relation.RequestID != nil && *relation.RequestID == fresh.RequestID {
 					found = relation.GrantCount == 1
 				}
 			}

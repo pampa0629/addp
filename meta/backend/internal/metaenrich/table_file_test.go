@@ -54,6 +54,31 @@ func TestTableFileResolverDetectsPartitionedWholeScope(t *testing.T) {
 	}
 }
 
+func TestTableFileResolverRejectsInvalidParquetPartInsteadOfUsingFirstFile(t *testing.T) {
+	valid := buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 1, Name: "Alice"})
+	var mismatch bytes.Buffer
+	writer := parquetgo.NewGenericWriter[struct{ Different int64 }](&mismatch)
+	if _, err := writer.Write([]struct{ Different int64 }{{Different: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for name, invalid := range map[string][]byte{"corrupt": []byte("invalid parquet footer"), "schema": mismatch.Bytes()} {
+		t.Run(name, func(t *testing.T) {
+			reader := mapContentReader{content: map[string][]byte{"dataset/part-000.parquet": valid, "dataset/part-001.parquet": invalid}}
+			files := []metaitem.StorageFileRef{
+				{Name: "part-000.parquet", Path: "dataset/part-000.parquet", Size: int64(len(valid))},
+				{Name: "part-001.parquet", Path: "dataset/part-001.parquet", Size: int64(len(invalid))},
+			}
+			info, err := extractTableFileWholeScopeInfo(context.Background(), reader, nil, 1, "dataset", files, nil)
+			if err == nil || info != nil {
+				t.Fatalf("invalid whole scope was published using a readable first part: info=%v err=%v", info, err)
+			}
+		})
+	}
+}
+
 func TestTableFileResolverWritesParquetPartRowCounts(t *testing.T) {
 	reader := mapContentReader{content: map[string][]byte{
 		"dataset/dt=2026-05-05/part-000.parquet": buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 1, Name: "Alice"}),

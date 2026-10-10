@@ -148,6 +148,7 @@
 </template>
 
 <script setup>
+import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -193,7 +194,7 @@ const evidenceRows = computed(() => trend.value?.series[0].points.slice((evidenc
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'monitor.resources.refreshManual' : refreshBlocked.value ? 'monitor.resources.refreshStopped' : !pageVisible.value ? 'monitor.resources.refreshPaused' : 'monitor.resources.refreshAutomatic')
 let epoch = 0, refreshTimer = null, disposed = false
-const pending = new Set()
+const requestScope = createLatestRequestScope()
 useConsolePageDescriptor(router, 'monitor', { title: computed(() => t('monitor.resources.detailTitle')), subject: computed(() => node.value?.display_name || ''), ready: computed(() => Boolean(node.value)) })
 function date(value) { return formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value) }
 function point(key) { return instant.value.series.find(series => series.metric_key === key).points[0] }
@@ -222,12 +223,8 @@ function selectFilesystem(row) { return navigate(route.path, { ...state.value.qu
 function selectDeviceObservation(row, metric) { const { mountpoint, fstype, ...query } = state.value.query; return navigate(route.path, { ...query, ...row.dimensions, metric }, 'replace') }
 function invalidChart() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 function stopRefresh() { window.clearTimeout(refreshTimer); refreshTimer = null }
-function invalidate() { stopRefresh(); epoch++; for (const controller of pending) controller.abort(); pending.clear() }
-async function request(work) {
-  const controller = new AbortController(); pending.add(controller)
-  try { return await work({ signal: controller.signal }) }
-  finally { pending.delete(controller) }
-}
+function invalidate() { stopRefresh(); epoch = requestScope.invalidate() }
+const request = work => requestScope.request(work)
 function scheduleRefresh() {
   stopRefresh()
   if (disposed || !canRead.value || !pageVisible.value || !nodeID.value || !isTargetUUID(nodeID.value) || state.value.refresh === 'off' || refreshBlocked.value || state.value.changed || loading.value) return
@@ -257,38 +254,38 @@ async function reload({ automatic = false } = {}) {
   try {
     if (!id) {
       const value = await request(config => api.nodes({ page: state.value.page, page_size: state.value.pageSize, ...(state.value.search ? { search: state.value.search } : {}) }, config))
-      if (ticket !== epoch) return
+      if (!requestScope.current(ticket)) return
       nodes.value = value.data; total.value = value.total
       if (nodes.value.length) {
         try {
           const overview = await request(config => api.summaries(nodes.value.map(row => row.node_id), config))
-          if (ticket !== epoch) return
+          if (!requestScope.current(ticket)) return
           summaries.value = validateResourceSummaries(overview, nodes.value)
         } catch (error) {
-          if (ticket !== epoch) return
+          if (!requestScope.current(ticket)) return
           if ([401, 403, 404].includes(error.response?.status)) throw error
           summaryErrorKey.value = error.response?.data?.error_code === 'observability_query_budget_exceeded' ? 'monitor.resources.overview.budget' : resourceErrorKey(error)
         }
       }
     } else {
       const value = await request(config => api.node(id, config))
-      if (ticket !== epoch) return
+      if (!requestScope.current(ticket)) return
       if (value.node_id !== id) throw new Error('invalid_resource_response')
       node.value = value
       const keys = resourceMetrics.map(metric => metric.key)
       const current = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))
-      if (ticket !== epoch) return
+      if (!requestScope.current(ticket)) return
       validateCollection(current.collection, current.queried_at)
       instant.value = validateResourceResponse(current, id, keys)
       filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
       try {
         const filesystemKeys = filesystemMetrics.map(metric => metric.key)
         const mounts = await request(config => api.instant({ node_id: id, metrics: filesystemKeys.join(',') }, config))
-        if (ticket !== epoch) return
+        if (!requestScope.current(ticket)) return
         validateCollection(mounts.collection, mounts.queried_at)
         filesystems.value = validateResourceResponse(mounts, id, filesystemKeys)
       } catch (error) {
-        if (ticket !== epoch) return
+        if (!requestScope.current(ticket)) return
         filesystemErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
@@ -296,11 +293,11 @@ async function reload({ automatic = false } = {}) {
       try {
         const inodeKeys = inodeMetrics.map(metric => metric.key)
         const observed = await request(config => api.instant({ node_id: id, metrics: inodeKeys.join(',') }, config))
-        if (ticket !== epoch) return
+        if (!requestScope.current(ticket)) return
         validateCollection(observed.collection, observed.queried_at)
         inodes.value = validateResourceResponse(observed, id, inodeKeys)
       } catch (error) {
-        if (ticket !== epoch) return
+        if (!requestScope.current(ticket)) return
         inodeErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
@@ -308,11 +305,11 @@ async function reload({ automatic = false } = {}) {
         try {
           const keys = family.metrics.map(metric => metric.key)
           const observed = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))
-          if (ticket !== epoch) return
+          if (!requestScope.current(ticket)) return
           validateCollection(observed.collection, observed.queried_at)
           family.value.value = validateResourceResponse(observed, id, keys)
         } catch (error) {
-          if (ticket !== epoch) return
+          if (!requestScope.current(ticket)) return
           family.error.value = resourceErrorKey(error)
           if ([401, 403, 404].includes(error.response?.status)) throw error
         }
@@ -321,26 +318,26 @@ async function reload({ automatic = false } = {}) {
       try {
         const params = trendParameters(id, state.value.metric, state.value.range, current.end, state.value.dimensions)
         const history = await request(config => api.trend(params, config))
-        if (ticket !== epoch) return
+        if (!requestScope.current(ticket)) return
         trend.value = validateResourceResponse(history, id, [state.value.metric], true, state.value.dimensions)
       } catch (error) {
-        if (ticket !== epoch) return
+        if (!requestScope.current(ticket)) return
         trend.value = null
         trendErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null; errorKey.value = trendErrorKey.value }
       }
     }
   } catch (error) {
-    if (ticket !== epoch) return
+    if (!requestScope.current(ticket)) return
     instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = 0; summaries.value = new Map() }
-  } finally { if (ticket === epoch) { loading.value = false; scheduleRefresh() } }
+  } finally { if (requestScope.current(ticket)) { loading.value = false; scheduleRefresh() } }
 }
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
 onMounted(() => document.addEventListener('visibilitychange', visibilityChanged))
-onBeforeUnmount(() => { disposed = true; document.removeEventListener('visibilitychange', visibilityChanged); invalidate() })
+onBeforeUnmount(() => { disposed = true; document.removeEventListener('visibilitychange', visibilityChanged); invalidate(); requestScope.dispose() })
 </script>
 
 <style scoped>

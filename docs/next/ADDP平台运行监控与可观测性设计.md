@@ -1482,3 +1482,57 @@ Desktop 保持 bridge 网络、独立 PID/挂载命名空间、非 root、cap_dr
 新增概览的 Hosted T4 [38034328309](https://github.com/pampa0629/addp/actions/runs/38034328309) success；workflow_dispatch 只接受命名 ref，提交 SHA 的派发返回 422、未创建运行，随后从 main 派发。实际验收 head 为 `c7952d49e59af7f6629c15c68346751d8ed2817f`，远端 compare 确认其包含本批实现，新增一个后继提交仅修改 HDFS/Spark 验收文件。已下载核对产物：browser/result=passed、stage=complete，列表及返回列表共两次 summaries，每次仅一个当前节点、固定 CPU/内存两项有效百分比，list_summary_batch=true；详情/趋势仍为 102 次资源读取、25 项目录及 7 张截图。平台身份、无权身份拒绝、停用不借历史、预算 CAS/热生效、来源与中心恢复继续通过。最终 summary.txt 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals；suite_report 的 awaiting-hosted-deployment-destruction 是部署销毁前的中间记录，以最终生命周期清理证据为准。个人 Monitor 重启与 Safari 真实概览读取在下述核对中完成；生产 T5 未执行。
 
 2026-10-10 个人运行核对：用户重启后，Monitor 进程于 21:28:46 启动并监听实际 8100 端口；新增 summaries 路由的无凭据请求从先前的 404 改为结构化 401 authentication_required。用户在 Safari 登录后，只读查看当前详情并返回主机列表：共 1 台 Docker Desktop Linux VM（Business / Infra），CPU 一分钟忙碌率 4.43%、内存使用率 23.43%，采集状态“正在采集”、管理状态“已启用”，新概览的个人真实页面核对通过。详情在 21:41:44 的观测为 18 核、CPU 4.71%、内存 62.68 GiB、可用 48.03 GiB、内存使用率 23.37%；三个平均负载在各自卡片中显示约若干个任务及非百分比说明，运行时长显示 5 天 6 小时。列表与详情采样时刻不同，数值差异不视为异常。Docker Desktop 受限来源的文件系统和网络接口仍明确显示未提供指标，磁盘 IO 有真实观测；不将未提供指标计为采集通过。没有由 AI 重启服务、接管后台进程、读取个人 Token 或使用内置浏览器。该核对不替代生产 T5。
+
+### 10.49 服务实例资源监控：已确认范围与实施方案
+
+本节是 2026-10-10 用户继续推进服务实例监控后的实施提案，尚未发布为已实现能力。只读核对证明：System 已有模块定义、进程级实例身份、租约、主机声明及分页实例查询；Common 登记生命周期固定真实进程身份；当前观测身份投影和共享 Client 明确只接受关联到有效纳管节点的实例。当前没有应用进程指标 SDK、独立受保护的应用采集端点或进程资源查询；不能用 System 租约、后台执行槽位或 Docker Desktop VM 的整机指标替代进程消耗。
+
+**以下两项边界已于 2026-10-10 获得用户明确确认；后文的“建议”是本轮已接受的实施方案，验收证据另行记录。**
+
+1. 实例自身的资源观测与主机关联分别表达。建议拥有当前有效实例身份、明确采集声明和受准入保护的来源时，即使尚未关联主机，也可以观测该实例的自身资源；页面显示“未关联主机”，不推断承载关系、不计算占整机比例。显式主机声明失效时移除主机关系，不能沿历史声明继续显示该主机；实例是否继续采集仍由实例自身的采集声明、当前实例状态和授权裁决决定。现有 System 观测投影与 Common 校验当前要求有效节点引用，改变这一准入边界须先由用户确认；不会静默放宽主机来源准入、平台/租户隔离或节点读取权限。
+2. 本批建议首期支持 Go 服务在 macOS 原生进程和 Linux 进程中的自身资源观测。Docker Desktop VM 的主机资源继续单独表达。标准 Prometheus Go ProcessCollector 只支持 Linux 风格 proc 文件系统和 Windows，不能为当前 macOS 原生 ADDP 进程提供 CPU/RSS；不能将 Go 堆内存替换成进程驻留内存，也不能用 VM 数据填充。建议在唯一 Common SDK 内以跨平台自身进程采样实现同一 CPU 时间与 RSS 契约，仍经标准 Prometheus 库暴露同一采集路径；只读当前进程，不枚举其他进程、不读取命令参数/环境变量或申请宿主控制权限。具体依赖版本、macOS/Linux 可用 API 和最小权限实际验证通过后同步技术栈规约；此处不冻结未经依赖验证的版本。Python 服务沿 Common-Python 接入同一实例/指标协议另批实施，本批不把 Go 覆盖宣称为全部应用覆盖。
+
+首批界面建议使用以下明确口径，避免套用主机百分比：
+
+| 展示 | 原始事实与计算 | 就地释义 |
+| --- | --- | --- |
+| CPU 核占用（1 分钟） | 当前进程 user + system CPU 累计秒数在完整一分钟窗口内的每秒增量；单位核当量 | “0.35 核：平均占用约三分之一个逻辑核；多线程时可超过 1 核。”不表示物理独占核或配置配额 |
+| 进程内存占用 | 当前进程 RSS，按 IEC 自动显示 MiB/GiB | “驻留在内存中的进程用量。”不是 Go 堆、虚拟地址空间或整机使用率，也不是进程独占物理内存；不同进程 RSS 不简单求和 |
+| 运行时长 | 真实当前进程启动时间与有效评估时刻之差 | 按天/小时/分钟显示；重启后的新实例不接续旧实例时长 |
+| 在线状态 | System 当前租约事实 | UP/DOWN 与“正在采集/采集失败/样本过期/未接入”分别显示，不互相覆盖 |
+
+只有取得明确容器配额或分配上限后，后续容器视图才计算相应的 CPU/内存配额使用率。首批不拿宿主总内存作为进程内存百分比的分母，不判定内存泄漏，不增加综合健康分数。
+
+建议唯一实施链路：Common SDK 在当前模块进程中采样自身 → 部署显式启用的独立 mTLS 指标端点 → 随现有 System 模块登记发布不可变实例采集声明 → System 专用受认证身份投影 → Monitor 原有唯一 HTTP SD 作业 → Prometheus → Monitor 受控进程资源查询 → Console 中的“运行监控 → 服务监控”。实例 ID、模块和 role 来自既有正式登记；重启产生新实例、自动进入发现，无需用户复制 UUID 或再填写一个监测目标。Worker/Scheduler 不依赖业务 HTTP 地址，也不能通过拼接 module_url 推算采集端点。每个物理端点只采集一次，保留现有主机来源路线。
+
+System 继续独占实例身份、采集声明与租约事实；采集端点和证书不进入普通浏览器实例 DTO。Monitor 不建立第二套实例表、不续租、不改 Ready；当前 User Token 由 System 裁决实例读取，后台身份投影不能代替用户授权。进程来源的端点准入、DNS 重验证、固定路径、拒绝重定向、样本/来源预算、固定身份标签和 mTLS 沿现有唯一发现链路扩展。权限继续引用现有 owner Permission；不改生产 IAM 角色、平台/租户定义或账号。服务端只允许 Platform Context 的有界运维事实，Tenant 不取得共享进程明细。实现前必须明确对应实例授权引用及 Swagger 契约，不能直接把后台快照公开给浏览器。
+
+指标关闭、端点配置失败或中心不可用不能影响业务启动、注册、心跳、Ready 和现有执行查询。来源失败不发布可采集声明，界面明确显示未接入/失败；未知值不补零。进程 CPU 窗口须证明来源身份一致、窗口完整且累计计数未重置，RSS 与运行时长分别校验采样时间和当前实例身份；响应在完成时执行新鲜度与预算校验，停用/离线实例不得借当前其他实例样本显示实时值。前端随身份或筛选变化清空旧证据，迟到响应不能覆盖新范围。列表分页与搜索复用 System 的唯一实例事实，资源一次有界批量读取，不逐行扇出详情；中心故障时有权查看的实例列表仍可使用。
+
+实施门禁已识别：Common SDK、登记 DTO 和实例投影改动由既有 Go T1 自动发现并通过 make test-go 扩散到消费者；System 登记/声明原子性与身份投影由既有 PostgreSQL T2 验证，仍只使用 addp_test/addp_iam_test；Monitor 真实指标 T2 沿既有 make test-monitor-metrics 扩展独占来源，证明两实例隔离、真实 CPU/RSS、重启不借历史、来源与中心故障恢复、mTLS 和零残留。新增页面、共享单位和宿主导航由 make test-monitor-frontend、make test-console-frontend 验证；公开 API 同步双语 Swagger、路由覆盖与权限消费者报告。CI 影响发现、模块入口、现有 Hosted suite 的适配必须同次完成。平台管理员的现行 Hosted T4 例外只覆盖节点链路，本批实例资源验收不得擅自借用；若需扩大该测试用途，先提交具体最小验收范围并按现有规范取得确认，生产权限保持不变。默认 make test-changed 的跨 Owner 失败单独报告；未执行的 Linux/macOS 真实覆盖、T4/T5 均不计为通过。
+
+来源核对：[Prometheus 标准进程指标](https://prometheus.io/docs/instrumenting/writing_clientlibs/#process-metrics)、[client_golang v1.23.2 ProcessCollector 平台限制](https://github.com/prometheus/client_golang/blob/v1.23.2/prometheus/collectors/process_collector.go)、[跨平台采样候选的 macOS 实现](https://github.com/shirou/gopsutil/blob/v4.25.9/process/process_darwin.go)。本节只记录方案与门禁识别，未修改运行服务、身份、权限、采集声明或依赖。
+
+本提案的只读平台核对进一步发现：采样候选 gopsutil v4.25.9 的 Darwin TimesWithContext/MemoryInfoWithContext 没有检查 proc_pidinfo 的实际返回长度；调用失败可能把空结构解释为零值。因此它仍只是调研候选，不直接作为已决定依赖。若实施原生 macOS，须使用能明确区分成功、权限拒绝与采样失败的唯一自身进程采样实现，并以失败反例证明不会生成有效零值；版本及技术栈登记在实现前核定。文档校验 git diff --check 通过。默认 make test-changed 在当前混合工作区的跨 Owner 必需 T2 环境参数预检退出（Make 返回 2），业务门禁尚未执行，不计为通过；本提案未新增代码、公开接口或运行环境变更，因此没有把既有主机门禁结果宣称为进程资源覆盖。
+
+2026-10-10 用户已明确同意本节推荐范围：实例资源观测独立于有效主机关联，主机关系失效不自动停用实例自身观测；首批覆盖 macOS 原生与 Linux Go 进程，CPU 用核当量、内存用 RSS，不混用虚拟机/宿主容量。以上两项不再作为待确认决定。采样选型采用标准 Prometheus 库与唯一自身进程 Collector；Darwin 使用 Apple 系统 SDK 提供的 libproc 接口并严格核对返回长度，CPU 累计时间使用自身 getrusage，Linux 使用自身原生进程接口，采样失败明确拒绝，不借 peak RSS、Go 堆或标准库不支持的平台默认零值替代当前 RSS。实现和门禁证据在完成后追加，不凭本次同意宣称代码已发布。
+
+
+本轮实例读取与查询契约落实为：System 既有 `GET /api/v1/system/platform/module-instances` 增加 `ids` 精确过滤，接受最多 100 个不重复的规范正整数实例记录 ID；仍由原 `platform.module.read` 和 Platform User Context 裁决，不新增 IAM 角色或权限。普通 DTO 仅增加 `process_metrics_declared`，不公开私有来源。Monitor 首批新增 `GET /api/v1/monitor/platform/process_resource_summaries?instance_ids=...`，引用同一 System ID，先携当前 User Token 一次批量读取，再与私有当前身份投影核对模块、实例、role 和进程启动时间；后台快照不代替用户授权。使用原 `monitor.resource_observation.read`，拒绝 Tenant、Service、Delegated 和无读权限请求；结果只包含已授权主体、安全采集状态及三项固定指标，不回传端点或凭据。
+
+查询复用现有固定 Prometheus 传输、样本新鲜度、结果规范化、查询预算和同一并发 limiter；进程指标拥有独立封闭目录，不能经节点 API 请求。批量最多 100 项，实际行数继续受 `max_series` 和 `max_total_points` 限制；默认三指标最多 33 行，页面默认每页 20 行。两次固定只读查询覆盖本页活跃来源，不逐行扇出；CPU 完整窗口、当前来源身份、启动时间与时间戳一致性必须同时成立。UP 租约、指标采集和数据新鲜度分别表达，离线/未接入不能沿历史补零。主机和进程来源沿现有唯一 HTTP SD 作业共同占用样本预留：每来源 20000、中心 20000、总计 200000，当前最多九个启用来源；增加进程来源不隐式扩容、不绕过预算或创建第二个作业。超过预算返回明确失败，不返回截断的成功快照。
+
+
+本批代码已接入 Common 唯一自身进程 SDK、System 不可变采集声明与当前身份投影、Monitor 唯一 HTTP SD/共享查询预算、Console「运行监控 → 服务监控」。这一实施状态不追溯改写上文提案阶段的只读结论。普通实例响应只给采集声明布尔值；进程发现保留模块/实例/角色三个 owner 标签，主机关联在 System 中查询，不从来源标签推断。首期列表沿主机概览的手动刷新方式，分页每页 20 项；三项指标释义位于对应表头下方，来源采样时间直接显示在该行采集状态下方。来源未部署、声明失败、离线、身份不匹配和中心故障各自表达；关闭观测不影响业务登记、心跳或 Ready。
+
+待确认的同一 Hosted T4 验收扩展仅涉及：临时平台系统管理员通过真实密码/MFA 读取本轮已有的 System 平台实例列表（含 `ids` 精确过滤）和 Monitor 三项进程资源摘要，以及实际 Console「服务监控」页面。使用隔离部署中两个真实 Go 实例的 SDK，验证自动声明/发现、无主机关联、CPU 完整窗口、RSS/时长单位、实例隔离及停止/重启后旧实例不借用当前值；来源与中心失败时保留业务运行边界，拒绝 Tenant、Service、Delegated 及缺权限访问。不扩展预算配置操作，不读取租户业务数据，不修改生产角色或权限；Prometheus 继续固定独立最小权限身份，退出销毁当次身份、部署、卷和凭据并检查零残留。现行测试规范第 197 行的管理员例外只覆盖节点资源，本轮尚未批准或执行这项服务实例 T4，不能将其计为通过。
+
+
+10.49 本轮分项验证（2026-10-10）：`make test-go` 返回 0，覆盖全部 22 个 Go 模块的依赖一致性与测试，以及 Common 原生 macOS 自身采样和关闭 CGO 的同一路线；System Repository 的标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS=--package repository` 与 `make test-monitor-postgres` 返回 0，仅使用标准入口管理的 `addp_iam_test/addp_test`。`make test-common-frontend` 的 168 项共享用例、`make test-monitor-frontend` 的 97 项浏览器回归与构建、`make test-console-frontend` 的 156 项单测、125 项浏览器回归与构建通过。`make test-authorization test-swagger` 返回 0，正式路由权限消费者及双语 Swagger 覆盖通过。验证日志分别位于本轮临时目录 `/tmp/addp-process-current-go-5.log`、`/tmp/addp-process-system-pg-2.log`、`/tmp/addp-process-monitor-pg.log`、`/tmp/addp-process-common-frontend-2.log`、`/tmp/addp-process-frontend-5.log`、`/tmp/addp-process-console-frontend-4.log` 和 `/tmp/addp-process-auth-swagger.log`；临时路径用于本轮复核，不作为永久发布产物。
+
+真实 Linux 来源沿标准 metrics T2 构建 Common 测试可执行文件，在已有非 root、无特权的独占来源容器中启动两个真实 SDK 进程，不启动个人业务服务、不发布额外宿主端口。两实例原生 CPU/RSS/运行时长的完整查询窗口通过；停止第一实例后其三项值清空，第二实例继续有效。锁定 promtool 的 13 个进程身份/窗口/重置场景通过。此前两次来源启动失败的根因是测试脚本误复制已重新签发为节点 IP 的证书给 DNS 进程端点；SDK 按名称校验正常拒绝，没有放宽生产 TLS。修正仅复制各自匹配的测试证书；最终标准 `make test-monitor-metrics` 返回 0（`/tmp/addp-process-t2-4.log`）。完整/受限主机固定目录查询、HTTP SD 失败/重定向/空列表及恢复、原生 OAuth 续期、来源停止/恢复、中心 SIGKILL 后恢复与历史样本保留通过，最终清理确认当次容器、网络、卷和临时文件零残留。此 T2 使用测试拥有的 HTTP SD 投影夹具，证明真实 SDK 到中心及资源查询的采样链路，不替代 System 正式注册、真实用户登录或 Console 端到端 T4。
+
+默认 `make test-changed` 在混合工作区的跨 Owner 必需 T2 环境参数预检返回 2，未执行项不计通过。`make test-platform` 返回 2，前序平台、依赖、CI 注册等检查通过，最终 Online runner 在正在修改的 Security MySQL/MongoDB 验收脚本出现九个错误（新增参数缺失、缺失函数、版本契约不一致），未修改这些其他任务文件，也不把总入口计为通过。当前服务实例实现仍在工作区，未提交或推送；真实 System 注册到 Console 的 Hosted T4、个人运行部署与生产 T5 均未执行，既有节点验收不能替代本轮服务实例覆盖。
+
+
+采样时间改为在每行采集状态下直接显示后，重新运行现有 `make test-monitor-frontend` 与 `make test-console-frontend` 均返回 0，97/125 项浏览器回归及两模块构建通过；CPU 核当量、IEC 内存、时长、就地释义、可见采样时间、权限撤销及迟到响应隔离由新增服务监控用例覆盖。没有自行重启个人服务或启用个人进程采集，工作区改动尚未提交/推送；服务实例 Hosted T4 的测试身份范围仍待确认。

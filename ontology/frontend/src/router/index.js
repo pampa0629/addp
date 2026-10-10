@@ -19,6 +19,7 @@ const router = createRouter({
       children: [
         {
           path: '',
+          name: 'OntologyHome',
           beforeEnter: () => {
             const auth = useAuthStore()
             return resolveModuleLandingRoute('/ontology', ['/platform/definitions', '/ontologies'], auth.contextType, auth.permissions)

@@ -5,20 +5,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/hdfs"
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
+	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 )
@@ -27,9 +32,14 @@ import (
 // 通过 Common Engine 的 WorkflowRuntimeProvider 统一调用工作流运行时。
 type WorkflowEngineService struct {
 	systemService  *commonClient.SystemServiceClient
+	metaClient     *commonClient.MetaClient
 	protectionGate interface {
 		BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
 	}
+}
+
+func (s *WorkflowEngineService) SetMetaClient(client *commonClient.MetaClient) {
+	s.metaClient = client
 }
 
 func (s *WorkflowEngineService) SetProtectionGate(gate interface {
@@ -124,6 +134,7 @@ type WorkflowProducedTarget struct {
 	Path      []string `json:"path"`
 	Locator   string   `json:"locator"`
 	WriteMode string   `json:"write_mode,omitempty"`
+	Layout    string   `json:"layout,omitempty"`
 }
 
 // ExecuteWorkflow 执行工作流（支持 JSONB 配置）
@@ -570,8 +581,6 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 		if err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源参数派生失败: %w", i, err)
 		}
-		producedTargets = append(producedTargets, workflowTargetsForTask(taskID, targets)...)
-
 		derivedResource, _ := params["__workflow_resource_derived"].(bool)
 
 		// 检查是否有 engine_id 参数
@@ -613,6 +622,32 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 		if err := requireTenantBusinessEngine(engine, tenantID, "工作流资源引擎"); err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源访问失败: %w", i, err)
 		}
+		if workflowEngineType == "spark_workflow" {
+			if len(adapterSpec.ResourceInputs) > 0 && (stringParam(params, "__workflow_resource_kind") == "file" || stringParam(params, "__workflow_resource_kind") == "object") {
+				if err := s.deriveSparkFileFacts(tenantID, engineID, params); err != nil {
+					return nil, nil, err
+				}
+			}
+			if len(adapterSpec.ResourceOutputs) > 0 && isObjectStorageEngine(engine.EngineType) {
+				if engine.EngineType != "minio" || (stringParam(params, "format") != "" && stringParam(params, "format") != "parquet") || (stringParam(params, "mode") != "" && stringParam(params, "mode") != "create") {
+					return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkObjectResultPolicy))
+				}
+				if len(targets) != 1 || resolver.executionID == uuid.Nil {
+					return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkObjectResultIdentity))
+				}
+				for _, part := range strings.Split(stringParam(params, "path"), "/") {
+					if part == "" || part == "." || part == ".." || strings.ContainsAny(part, "*?[]{}\\\x00") {
+						return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkResultLiteralPath))
+					}
+				}
+				leaf := resolver.executionID.String() + "-" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(taskID)).String()
+				params["path"] = stringParam(params, "path") + "/" + leaf
+				params["format"], params["mode"] = "parquet", "create"
+				targets[0] = workflowProducedTarget(engineID, resourcetree.TypeObject, strings.Split(stringParam(params, "path"), "/"))
+				targets[0].Layout, targets[0].WriteMode = "whole", "create"
+			}
+		}
+		producedTargets = append(producedTargets, workflowTargetsForTask(taskID, targets)...)
 
 		if len(adapterSpec.ResourceOutputs) > 0 {
 			registered, lookupErr := plugin.Get(engine.EngineType)
@@ -647,6 +682,26 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 	}
 
 	return result, producedTargets, nil
+}
+
+func (s *WorkflowEngineService) deriveSparkFileFacts(tenantID, engineID uint, params map[string]interface{}) error {
+	if s.metaClient == nil {
+		return fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkFileFactsRequired))
+	}
+	catalogPath := stringParam(params, "path")
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByCatalogPath(engineID, catalogPath)
+	if err != nil {
+		return fmt.Errorf("%s: %w", commoni18n.ForLanguage("", developi18n.MsgSparkFileFactsReadFailed), err)
+	}
+	if item == nil || item.EngineID != engineID || item.TenantID != tenantID || item.FullName != catalogPath {
+		return fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkFileFactsMismatch))
+	}
+	descriptor := dataitem.DescriptorFromAttributes(item.Attributes)
+	if descriptor.DataType != datatype.Table || descriptor.Format == "" || descriptor.Format == "unknown" || (descriptor.Layout != format.LayoutSingle && descriptor.Layout != format.LayoutMulti && descriptor.Layout != format.LayoutWhole) {
+		return fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgSparkTableItemRequired))
+	}
+	params["format"] = descriptor.Format
+	return nil
 }
 
 func (s *WorkflowEngineService) requireWorkflowResourceInputs(
@@ -1130,7 +1185,7 @@ func normalizeDerivedWorkflowPath(
 		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
 			return fmt.Errorf("object storage path must include bucket and object key")
 		}
-		params["path"] = "s3a://" + parts[0] + "/" + parts[1]
+		params["path"] = (&url.URL{Scheme: "s3a", Host: parts[0], Path: "/" + parts[1]}).String()
 		return nil
 	}
 	return nil

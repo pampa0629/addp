@@ -1,47 +1,61 @@
 <template>
   <section class="data-authorization" data-testid="engine-data-authorization">
-    <el-alert type="info" :closable="false" show-icon :title="t('system.engine.dataAuthorization.boundary')" />
+    <div class="workspace-toolbar" data-testid="authorization-workspace-toolbar">
+      <template v-if="workspaceView === 'list'">
+        <el-button v-if="canInitialize || canGrant || canUpdate" ref="createButton" data-testid="authorization-new" type="primary" :disabled="busy" @click="openWorkspace('create')">{{ t('system.engine.dataAuthorization.newAuthorization') }}</el-button>
+        <el-button v-else-if="canRead" ref="createButton" data-testid="authorization-configurations" :disabled="busy" @click="openWorkspace('create')">{{ t('system.engine.dataAuthorization.configurations') }}</el-button>
+      </template>
+      <template v-else>
+        <el-button ref="backButton" data-testid="authorization-back" :disabled="busy" @click="closeGrant">{{ t('system.engine.dataAuthorization.backToCurrent') }}</el-button>
+        <h3>{{ t(canInitialize || canGrant || canUpdate ? 'system.engine.dataAuthorization.newAuthorization' : 'system.engine.dataAuthorization.configurations') }}</h3>
+      </template>
+    </div>
+    <el-alert v-if="workspaceView === 'create'" type="info" :closable="false" show-icon :title="t('system.engine.dataAuthorization.boundary')" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
     <el-alert v-if="changed" type="success" :closable="false" :title="t('system.engine.dataAuthorization.changed')" />
-    <div class="section-heading"><h3>{{ t('system.engine.dataAuthorization.selectData') }}</h3><el-button :loading="loading" :disabled="busy" @click="load">{{ t('common.refresh') }}</el-button></div>
-    <el-alert v-if="!canRead" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.readRequired')" />
-    <el-alert v-else-if="!canBrowse" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.browseRequired')" />
-    <el-alert v-else-if="!adapter" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.unsupported')" />
-    <template v-else>
-      <div class="picker" :inert="busy || !ready || undefined">
-        <ResourceTreePicker :key="generation" :model-value="selection" :adapter="adapter" :engine-id="engine.id" mode="any"
-          :show-engine-selector="false" :show-search="false" :selectable-filter="isApprovalSelection"
-          :title="t('system.engine.dataAuthorization.pickTable')" tree-height="280px" @update:model-value="selection = $event" @error="catalogError" />
-      </div>
-      <el-button data-testid="approval-add-selection" :loading="selecting" :disabled="busy || !selection || !ready" @click="addSelection">{{ t('system.engine.dataAuthorization.addSelection') }}</el-button>
-      <p class="hint">{{ t('system.engine.dataAuthorization.snapshotOnly') }}</p>
-      <el-table v-if="targets.length" :data="targets" data-testid="approval-targets">
-        <el-table-column :label="t('system.engine.dataAuthorization.target')"><template #default="{ row }">{{ approvalPathLabel(row) }}</template></el-table-column>
-        <el-table-column :label="t('system.engine.dataAuthorization.mode')"><template #default="{ row }">
-          {{ existing(row) ? t(`system.engine.dataAuthorization.modes.${existing(row).mode}`) : t('system.engine.dataAuthorization.newTarget') }}
-          <el-button v-if="canUpdate && existing(row)" data-testid="approval-change" link type="primary" :disabled="busy || !ready" @click="openChange(existing(row))">{{ t('system.engine.dataAuthorization.changeMode') }}</el-button>
-        </template></el-table-column>
-        <el-table-column width="90"><template #default="{ $index }"><el-button link type="danger" :disabled="busy" @click="remove($index)">{{ t('system.engine.dataAuthorization.remove') }}</el-button></template></el-table-column>
-      </el-table>
-      <el-form-item v-if="hasNew" :label="t('system.engine.dataAuthorization.mode')" required>
-        <el-select v-model="mode" data-testid="approval-mode" :disabled="busy || !canInitialize" :placeholder="t('system.engine.dataAuthorization.selectMode')">
-          <el-option value="independent" :label="t('system.engine.dataAuthorization.modes.independent')" />
-          <el-option v-if="catalogAvailable" value="catalog" :label="t('system.engine.dataAuthorization.modes.catalog')" />
-        </el-select>
-      </el-form-item>
-      <p v-if="hasNew && !catalogAvailable" class="hint">{{ t('system.engine.dataAuthorization.catalogUnavailable') }}</p>
-      <p v-if="hasNew && !canInitialize" class="hint">{{ t('system.engine.dataAuthorization.initializeRequired') }}</p>
-      <template v-if="businessTargets.length">
-        <el-alert type="info" :closable="false" :title="t('system.engine.dataAuthorization.businessBoundary')" />
-        <el-form v-if="newBusinessTargets.length" label-position="top" @submit.prevent="initializeBusiness">
-          <el-form-item :label="t('system.engine.dataAuthorization.reason')" required><el-input v-model="reason" data-testid="approval-reason" type="textarea" maxlength="2000" :disabled="busy" /></el-form-item>
-          <el-button data-testid="approval-initialize" :loading="saving" :disabled="busy || !canInitialize || !catalogAvailable" @click="initializeBusiness">{{ t('system.engine.dataAuthorization.prepareBusiness') }}</el-button>
-        </el-form>
-        <el-button v-for="path in businessTargets" :key="JSON.stringify(path)" :disabled="busy || !catalogAvailable || !existing(path)" @click="openBusiness(path)">{{ t('system.engine.dataAuthorization.openBusiness') }} · {{ approvalPathLabel(path) }}</el-button>
+    <template v-if="workspaceView !== 'list'">
+      <div class="section-heading"><h3>{{ t('system.engine.dataAuthorization.selectData') }}</h3><el-button :loading="loading" :disabled="busy" @click="load">{{ t('common.refresh') }}</el-button></div>
+      <el-alert v-if="!canRead" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.readRequired')" />
+      <el-alert v-else-if="!canBrowse" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.browseRequired')" />
+      <el-alert v-else-if="!adapter" type="warning" :closable="false" :title="t('system.engine.dataAuthorization.unsupported')" />
+      <template v-else>
+        <div class="picker" :inert="busy || !ready || undefined">
+          <ResourceTreePicker :key="`${generation}-${workspaceView}`" :model-value="selection" :adapter="adapter" :engine-id="engine.id" mode="any"
+            :show-engine-selector="false" :show-search="false" :selectable-filter="isApprovalSelection"
+            :title="t('system.engine.dataAuthorization.pickTable')" tree-height="280px" @update:model-value="selection = $event" @error="catalogError" />
+        </div>
+        <template v-if="workspaceView === 'create'">
+          <el-button data-testid="approval-add-selection" :loading="selecting" :disabled="busy || !selection || !ready" @click="addSelection">{{ t('system.engine.dataAuthorization.addSelection') }}</el-button>
+          <p class="hint">{{ t('system.engine.dataAuthorization.snapshotOnly') }}</p>
+          <el-table v-if="targets.length" :data="targets" data-testid="approval-targets">
+            <el-table-column :label="t('system.engine.dataAuthorization.target')"><template #default="{ row }">{{ approvalPathLabel(row) }}</template></el-table-column>
+            <el-table-column :label="t('system.engine.dataAuthorization.mode')"><template #default="{ row }">
+              {{ existing(row) ? t(`system.engine.dataAuthorization.modes.${existing(row).mode}`) : t('system.engine.dataAuthorization.newTarget') }}
+              <el-button v-if="canUpdate && existing(row)" data-testid="approval-change" link type="primary" :disabled="busy || !ready" @click="openChange(existing(row))">{{ t('system.engine.dataAuthorization.changeMode') }}</el-button>
+            </template></el-table-column>
+            <el-table-column width="90"><template #default="{ $index }"><el-button link type="danger" :disabled="busy" @click="remove($index)">{{ t('system.engine.dataAuthorization.remove') }}</el-button></template></el-table-column>
+          </el-table>
+          <el-form-item v-if="hasNew" :label="t('system.engine.dataAuthorization.mode')" required>
+            <el-select v-model="mode" data-testid="approval-mode" :disabled="busy || !canInitialize" :placeholder="t('system.engine.dataAuthorization.selectMode')">
+              <el-option value="independent" :label="t('system.engine.dataAuthorization.modes.independent')" />
+              <el-option v-if="catalogAvailable" value="catalog" :label="t('system.engine.dataAuthorization.modes.catalog')" />
+            </el-select>
+          </el-form-item>
+          <p v-if="hasNew && !catalogAvailable" class="hint">{{ t('system.engine.dataAuthorization.catalogUnavailable') }}</p>
+          <p v-if="hasNew && !canInitialize" class="hint">{{ t('system.engine.dataAuthorization.initializeRequired') }}</p>
+          <template v-if="businessTargets.length">
+            <el-alert type="info" :closable="false" :title="t('system.engine.dataAuthorization.businessBoundary')" />
+            <el-form v-if="newBusinessTargets.length" label-position="top" @submit.prevent="initializeBusiness">
+              <el-form-item :label="t('system.engine.dataAuthorization.reason')" required><el-input v-model="reason" data-testid="approval-reason" type="textarea" maxlength="2000" :disabled="busy" /></el-form-item>
+              <el-button data-testid="approval-initialize" :loading="saving" :disabled="busy || !canInitialize || !catalogAvailable" @click="initializeBusiness">{{ t('system.engine.dataAuthorization.prepareBusiness') }}</el-button>
+            </el-form>
+            <el-button v-for="path in businessTargets" :key="JSON.stringify(path)" :disabled="busy || !catalogAvailable || !existing(path)" @click="openBusiness(path)">{{ t('system.engine.dataAuthorization.openBusiness') }} · {{ approvalPathLabel(path) }}</el-button>
+          </template>
+        </template>
       </template>
     </template>
-    <EngineSourceGrants :engine="engine" :requirements="directRequirements" :inspection-target="inspectionTarget" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant" />
-    <el-collapse v-if="canRead"><el-collapse-item :title="t('system.engine.dataAuthorization.configurations')">
+    <EngineSourceGrants :engine="engine" :view="workspaceView" :requirements="directRequirements" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant" />
+    <el-collapse v-if="workspaceView === 'create' && canRead"><el-collapse-item :title="t('system.engine.dataAuthorization.configurations')">
       <el-table :data="rows.slice((page - 1) * 10, page * 10)">
         <el-table-column :label="t('system.engine.dataAuthorization.target')"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>
         <el-table-column :label="t('system.engine.dataAuthorization.mode')"><template #default="{ row }">{{ t(`system.engine.dataAuthorization.modes.${row.mode}`) }}</template></el-table-column>
@@ -87,7 +101,7 @@ import { ResourceTreePicker, serializeEngineApprovalInitialization, openConsoleR
 import { enginesAPI } from '../../api/engines'
 import client from '../../api/client'
 import { useAuthStore } from '../../store/auth'
-import { approvalPathLabel, approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalSelection } from '../../utils/engineApprovalCatalog'
+import { approvalPathLabel, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalSelection } from '../../utils/engineApprovalCatalog'
 import EngineSourceGrants from './EngineSourceGrants.vue'
 
 const props = defineProps({ engine: { type: Object, required: true } })
@@ -96,13 +110,11 @@ const canRead = computed(() => auth.hasPermission('system.engine_access_approval
 const canInitialize = computed(() => auth.hasPermission('system.engine_access_approval_requirement.initialize'))
 const canUpdate = computed(() => auth.hasPermission('system.engine_access_approval_requirement.update'))
 const canGrant = computed(() => auth.hasPermission('system.engine_access_grant.create'))
+const workspaceView = ref('list')
+const createButton = ref(null), backButton = ref(null)
 const canBrowse = computed(() => auth.hasPermission('system.engine_catalog.read'))
 const rows = ref([]), page = ref(1), loading = ref(false), ready = ref(false), error = ref(''), saving = ref(false), selecting = ref(false), grantBusy = ref(false)
 const selection = ref(null), targets = ref([]), mode = ref(''), reason = ref(''), generation = ref(0), catalogAvailable = ref(false)
-const inspectionTarget = computed(() => {
-  if (!ready.value || !canBrowse.value) return null
-  try { return approvalTargetFromSelection(selection.value, props.engine.id) } catch { return null }
-})
 const change = ref(null), changed = ref(false)
 const operating = computed(() => saving.value || selecting.value || grantBusy.value)
 const busy = computed(() => operating.value || !!change.value)
@@ -119,8 +131,22 @@ const directRequirements = computed(() => !ready.value ? [] : targets.value.filt
   existing(path) || { engine_id: String(props.engine.id), catalog_path: path, mode: 'independent', version: '1', initialize_approval: true }))
 const message = e => e?.response?.data?.error || t('system.engine.dataAuthorization.failed')
 let readSequence = 0
-function closeGrant() { targets.value = []; mode.value = '' }
-async function reloadAfterGrant() { await nextTick(); load() }
+function openWorkspace(view) {
+  if (busy.value) return
+  selection.value = null; error.value = ''; changed.value = false
+  workspaceView.value = view
+  nextTick(() => backButton.value?.$el?.focus())
+}
+function closeGrant() {
+  if (busy.value) return
+  workspaceView.value = 'list'; targets.value = []; selection.value = null; mode.value = reason.value = ''
+  nextTick(() => createButton.value?.$el?.focus())
+}
+async function reloadAfterGrant() {
+  // The child has finished its immutable batch before returning to the list.
+  grantBusy.value = false
+  closeGrant(); await nextTick(); load()
+}
 function catalogError(e) { if (!busy.value) error.value = message(e) }
 async function load() {
   if (!canRead.value || busy.value) return
@@ -245,6 +271,7 @@ watch([() => props.engine.id, () => props.engine.lifecycle_state, () => props.en
   () => auth.authContext?.authorization?.authorization_version, canRead, canInitialize, canUpdate, canGrant, canBrowse,
   () => auth.hasPermission('catalog.entry.read')], () => {
   generation.value++; targets.value = []; rows.value = []; selection.value = null; mode.value = reason.value = ''; page.value = 1
+  workspaceView.value = 'list'
   change.value = null; changed.value = false
   ready.value = catalogAvailable.value = loading.value = saving.value = selecting.value = grantBusy.value = false
   load(); observeCatalog()
@@ -255,6 +282,9 @@ onBeforeUnmount(() => { generation.value++ })
 <style scoped>
 .data-authorization { display: grid; gap: 16px; min-width: 0; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.workspace-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.workspace-toolbar .el-button + .el-button { margin-left: 0; }
+.workspace-toolbar h3 { margin: 0; }
 .el-select { width: 100%; }
 .hint { color: var(--addp-text-color-secondary); margin: 0; overflow-wrap: anywhere; }
 </style>

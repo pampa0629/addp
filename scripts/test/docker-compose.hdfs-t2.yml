@@ -1,4 +1,27 @@
 services:
+  minio:
+    image: ${HDFS_MINIO_TEST_IMAGE:?owned MinIO test image required}
+    build:
+      context: ../infra
+      dockerfile: Dockerfile.minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: owned-minio-access
+      MINIO_ROOT_PASSWORD: owned-minio-secret
+    tmpfs: [/data]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  minio-other:
+    extends:
+      file: docker-compose.hdfs-t2.yml
+      service: minio
+    environment:
+      MINIO_ROOT_USER: other-minio-access
+      MINIO_ROOT_PASSWORD: other-minio-secret
   postgres:
     image: imresamu/postgis-arm64:15-3.4@sha256:9a7d12fa44cdc8bd709f9be35e4253a3dc709f673dea84dd12749b91e1740a7e
     platform: linux/arm64

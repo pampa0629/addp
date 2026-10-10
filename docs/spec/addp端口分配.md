@@ -333,6 +333,8 @@ Elasticsearch Business 首选宿主机端口为 `9200`，仅绑定 `127.0.0.1`�
 
 可选 Infra 指标控制面 TLS 转发容器内部固定 `9444`，仅 `addp-network` 使用 `https://metrics-control:9444`，不发布宿主端口，不参与宿主端口避让。上游 Gateway 实际 origin 由部署方显式指定。Docker Desktop 来源采用明确 Mac 发布 IP:端口，仍要求 Monitor 和中心同时可达，不自动选择端口。稳定本地访问使用显式回环发布端口和 ADDP_METRICS_DESKTOP_LOOPBACK_PORT 的同端口宿主通道转换；不新增端口或第二个目标。
 
+Go 自身进程指标监听端口由 `ADDP_PROCESS_METRICS_DEPLOYMENTS` 为每个模块/role 显式声明；不占用业务 HTTP 端口、不经 Gateway 暴露、没有隐式默认或冲突避让。监听只接受具体本机 IP 与非零端口；部署负责 Monitor/中心可达性和来源证书 SAN。容器内部和宿主发布地址分别由该部署明确决定，不按节点关系推断。
+
 ## 确定性浏览器测试
 
 T3 Vite 夹具不占用模块开发端口，也不使用固定的 41xx 端口表。共享浏览器启动器为每轮申请临时回环端口并持有端口租约，统一注入 Console 代理、模块重定向和测试地址；实际绑定冲突直接失败，不复用占用者。退出后释放当轮租约与运行资源。Online T4 的显式部署端口保持其独立约束。

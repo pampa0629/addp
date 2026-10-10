@@ -20,7 +20,7 @@ func TestResourceSummaryAuthorizesWholeBatchAndExcludesStoppedHistory(t *testing
 		targets.rows = append(targets.rows, metricsdiscovery.NodeTarget{ID: uuid.NewString(), Version: 2, Subject: metricsdiscovery.NodeSubject{Kind: "node", NodeID: id}, MonitorKind: "host_resources", Source: metricsdiscovery.NodeSource{Type: "node_exporter", Endpoint: []string{"https://127.0.0.1:9100/metrics", "https://localhost:9100/metrics"}[i]}, Enabled: i == 0})
 	}
 	policies := &resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget(), Version: 1}}
-	svc := NewResourceObservationService(policies, targets, nodes, backend, true, resourceSourcePolicy(t))
+	svc := NewResourceObservationService(policies, targets, nodes, backend, true, resourceSourcePolicy(t), ProcessObservationDependencies{})
 	query := func() (ResourceSummaryResponse, error) {
 		return svc.Summaries(context.Background(), "user", "addp_at_current_user", ids)
 	}

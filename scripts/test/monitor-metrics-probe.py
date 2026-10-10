@@ -134,7 +134,7 @@ rejected(source + '/metrics', source_health)
 print('Metrics T2: anonymous, foreign client CA and plaintext rejected', flush=True)
 # Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
 subprocess.run(['go', 'test', './internal/resourcequery', '-run',
-                '^TestIntegrationMetrics(CPUWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
+                '^TestIntegrationMetrics(CPUWindow|ProcessWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$', '-count=1', '-v'],
                cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
                env=dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1'),
                check=True, timeout=60)
@@ -204,6 +204,69 @@ def discovery_text(text):
     pending = WORK / 'source/discovery.pending'
     pending.write_text(text)
     pending.replace(WORK / 'source/discovery.json')
+
+# Two genuine Common SDK processes in the existing owned non-root source
+# container. No business process, port publish, workspace or extra service.
+source_id = compose('ps', '-q', 'metrics-source').strip()
+source_inspect = json.loads(subprocess.check_output(['docker', 'inspect', source_id], text=True))[0]
+source_ip = next(iter(source_inspect['NetworkSettings']['Networks'].values()))['IPAddress']
+processes, records = [], []
+try:
+    for index in (1, 2):
+        path = WORK / 'source' / f'process-{index}.json'
+        path.write_text('')
+        path.chmod(0o666)
+        address = source_ip + ':' + str(19440 + index)
+        envs = {'ADDP_PROCESS_METRICS_T2_SOURCE': '1', 'ADDP_PROCESS_T2_INSTANCE': f'native-{index}',
+                'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://metrics-source:{19440 + index}/metrics',
+                'ADDP_PROCESS_T2_RECORD': '/source/' + path.name, 'ADDP_PROCESS_T2_ID': str(index)}
+        command = ['docker', 'compose', '--env-file', '/dev/null', '-p', os.environ['METRICS_T2_PROJECT'], '-f', os.environ['METRICS_T2_COMPOSE'], 'exec', '-T']
+        for key, value in envs.items(): command.extend(['-e', key + '=' + value])
+        command.extend(['metrics-source', '/source/process-source.test', '-test.run=^TestIntegrationMetricsSelfSource$', '-test.timeout=9m'])
+        log = (WORK / 'source' / f'process-{index}.log').open('w')
+        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+        processes.append((process, log, path))
+        eventually(lambda: bool(path.read_text()) or process.poll() is not None, 'native process starts')
+        if process.poll() is not None:
+            log.flush()
+            print(path.with_suffix('.log').read_text()[-4000:], flush=True)
+            raise AssertionError('native source failed at startup')
+        records.append(json.loads(path.read_text()))
+    projection = [{'targets': ['metrics-source:' + str(19440 + index)], 'labels': {
+        '__scheme__': 'https', '__metrics_path__': '/metrics', 'addp_monitor_kind': 'process_resources',
+        'addp_source': 'application', 'addp_module_name': 'monitor', 'addp_instance_id': f'native-{index}', 'addp_runtime_role': 'worker'}} for index in (1, 2)]
+    discovery_text(json.dumps(projection))
+    for record in records: record['instance'] = 'metrics-source:' + str(19440 + int(record['id']))
+    process_metadata = WORK / 'source' / 'process-records.json'
+    process_metadata.write_text(json.dumps(records))
+    eventually(lambda: len(query('process_resident_memory_bytes{job="addp_nodes",addp_monitor_kind="process_resources"}')) == 2,
+               'two genuine Linux processes enter the sole SD job')
+    env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1', MONITOR_PROMETHEUS_URL=base,
+               MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'), MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'),
+               MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'), ADDP_PROCESS_T2_RECORDS=str(process_metadata))
+    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
+    process, log, path = processes[0]
+    Path(str(path) + '.stop').touch()
+    assert process.wait(timeout=10) == 0
+    eventually(lambda: bool(query('up{job="addp_nodes",addp_instance_id="native-1"} == 0')),
+               'stopped real process becomes a failed source')
+    assert bool(query('up{job="addp_nodes",addp_instance_id="native-2"} == 1'))
+    assert get('http://127.0.0.1:' + port('metrics-source', 8080) + '/alive') == b'fixture alive\n'
+    env['ADDP_PROCESS_T2_STOPPED'] = '1'
+    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
+    print('Metrics T2: two native Linux SDK processes isolated; stopped source clears values while peer stays live', flush=True)
+finally:
+    for process, log, path in processes:
+        Path(str(path) + '.stop').touch()
+        try:
+            result = process.wait(timeout=10)
+            if result != 0: raise RuntimeError('test-owned process source failed')
+        finally: log.close()
+    discovery_text(original_discovery)
+eventually(valid_sample, 'fixture scope restored after native process checks')
+
 
 def failures():
     return sum(float(row['value'][1]) for row in query('prometheus_sd_http_failures_total'))

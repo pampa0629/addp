@@ -52,8 +52,11 @@ func validateObservabilityIdentities(snapshot models.ObservabilityIdentitySnapsh
 	}
 	for _, instance := range snapshot.ModuleInstances {
 		key := identity{instance.ModuleName, instance.InstanceID}
-		if !validName(instance.ModuleName, 50) || !validName(instance.InstanceID, 100) || !nodes[instance.NodeID] ||
+		if !validName(instance.ModuleName, 50) || !validName(instance.InstanceID, 100) || (instance.NodeID != "" && !nodes[instance.NodeID]) || (instance.NodeID == "" && instance.ProcessMetrics == nil) ||
 			instances[key] || !instance.LeaseExpiresAt.After(snapshot.ObservedAt) {
+			return invalid()
+		}
+		if instance.ProcessMetrics != nil && (instance.ProcessMetrics.Validate() != nil || instance.ProcessStartedAt == nil || instance.ProcessStartedAt.IsZero() || instance.ProcessStartedAt.After(snapshot.ObservedAt)) {
 			return invalid()
 		}
 		switch instance.Role {

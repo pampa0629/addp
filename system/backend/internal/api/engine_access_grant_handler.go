@@ -24,51 +24,6 @@ type engineAccessGrantService interface {
 	CreateIndependentGrant(context.Context, engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error)
 	ListSourceGrants(context.Context, engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error)
 	ListSourceGrantRelations(context.Context, engineaccess.Actor, int64, int, int, engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error)
-	InspectSourceGrants(context.Context, engineaccess.Actor, int64, int64, engineplugin.EngineCatalogPath) (*engineaccess.SourceGrantInspection, error)
-}
-
-type InspectSourceGrantsRequest struct {
-	AccountID   string                         `json:"account_id"`
-	CatalogPath engineplugin.EngineCatalogPath `json:"catalog_path"`
-}
-
-// Inspect godoc
-// @Summary 核查账号的源数据授权来源 | Inspect an account's source-data grant sources
-// @Description 当前租户用户须授权读取权限及引擎管理资格；选择同租户账号和精确普通表，使用实际读取的唯一源规则展开当前有效个人、部门及项目组授权。拒绝仅返回固定命中结论，不返回规则正文或编号 | Current Tenant User needs grant-read permission and engine management qualification. Uses the actual-read rule query to inspect current personal, department and project-group sources for a same-tenant account and exact ordinary table. Deny is exposed only as a fixed reason, never its body or ID
-// @Description 只读观察不连接源库、不授权、不核验接收方实际会话、功能或 Security；rule_covered 不是实际访问许可，响应不可缓存 | Read-only observation never connects to the source or issues access, and does not validate the recipient's real session, function permissions or Security. rule_covered is not actual access; response is not cacheable
-// @Tags 源数据授权 | Source Data Grants
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "引擎 ID | Engine ID"
-// @Param request body InspectSourceGrantsRequest true "账号与精确表 | Account and exact table"
-// @Success 200 {object} engineaccess.SourceGrantInspection "当次源规则观察 | Current source-rule observation"
-// @Failure 400,401,403,404,500 {object} IAMErrorResponse "请求失败 | Request failed"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["system.engine_access_grant.read"]
-// @Router /engines/{id}/access_grants/inspection [post]
-func (h *EngineAccessGrantHandler) Inspect(c *gin.Context) {
-	actor, engineID, ok := approvalRequirementActor(c)
-	if !ok {
-		return
-	}
-	var request InspectSourceGrantsRequest
-	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil {
-		respondIAMError(c, commonapi.ErrBadRequest)
-		return
-	}
-	accountID, err := parseIAMDecimalID(request.AccountID)
-	if err != nil {
-		respondIAMError(c, err)
-		return
-	}
-	result, err := h.service.InspectSourceGrants(c.Request.Context(), actor, engineID, accountID, request.CatalogPath)
-	if err != nil {
-		respondIAMError(c, err)
-		return
-	}
-	c.Header("Cache-Control", "no-store")
-	c.JSON(http.StatusOK, result)
 }
 
 type EngineAccessGrantHandler struct{ service engineAccessGrantService }
@@ -139,7 +94,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 
 // List godoc
 // @Summary 查看当前源数据授权关系 | List current source-data authorization relations
-// @Description 表名、接收方类型和编号条件取交集，完整结果筛选后计数及分页；不展开组织成员来源 | Table, recipient type and ID filters intersect before counting and pagination; does not expand organization membership
+// @Description 选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination
 // @Description 按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json
@@ -255,6 +210,7 @@ func (h *EngineAccessGrantHandler) list(c *gin.Context, history bool) {
 		respondIAMError(c, err)
 		return
 	}
+	c.Header("Cache-Control", "no-store")
 	commonapi.RespondPaginated(c, rows, total, page, size)
 }
 

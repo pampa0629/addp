@@ -14,7 +14,7 @@ import (
 
 // ObservabilityIdentities godoc
 // @Summary 读取当前观测身份 | Read current observability identities
-// @Description 固定 Monitor Platform Service Client 读取有界节点及有效实例投影；不含端点、元数据、凭据或租户数据 | The fixed Monitor Platform Service Client reads a bounded projection of nodes and valid instances without endpoints, metadata, credentials or tenant data
+// @Description 固定 Monitor Platform Service Client 读取有界节点及有效实例投影，包含私有进程采集声明；不含元数据、凭据或租户数据，不供浏览器使用 | The fixed Monitor Platform Service Client reads a bounded node and instance projection including private process metrics declarations; excludes metadata, credentials and tenant data and is not a browser API
 // @Tags 运行登记 | Runtime Registry
 // @Produce json
 // @Security BearerAuth

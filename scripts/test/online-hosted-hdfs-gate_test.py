@@ -75,6 +75,7 @@ class HostedHDFSGateTest(unittest.TestCase):
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/hdfs-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/spark-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/postgres-engine.json"
+              printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/minio-engine.json"
             fi
             if [ "$1" = stop ]; then
               remaining=$(docker ps -aq --filter label=com.addp.online-fixture=hdfs-spark-consumer-flow)
@@ -111,7 +112,7 @@ class HostedHDFSGateTest(unittest.TestCase):
             if os.environ.get('ADDP_TEST_REGISTRATION_FAIL') == '1':
                 sys.exit(1)
             assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'provisioner-token'
-            identifier = 17 if 'hdfs-engine.json' in sys.argv[-3] else (19 if 'postgres-engine.json' in sys.argv[-3] else 18)
+            identifier = 17 if 'hdfs-engine.json' in sys.argv[-3] else (19 if 'postgres-engine.json' in sys.argv[-3] else (20 if 'minio-engine.json' in sys.argv[-3] else 18))
             Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={identifier}\\n')
         ''')
         self.host._write_repository_script('scripts/test/hdfs-spark-consumer-flow-online.py', '''

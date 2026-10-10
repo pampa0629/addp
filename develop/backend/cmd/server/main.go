@@ -132,6 +132,7 @@ func main() {
 
 	// 6. 联邦查询 Runtime 编排服务
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
+	workflowEngine.SetMetaClient(metaClient)
 	federatedQueryService := service.NewFederatedQueryService(systemServiceClient, metaClient)
 	federatedQueryService.SetProtectionGate(protectionGate)
 	log.Printf("✅ FederatedQueryService 初始化完成")

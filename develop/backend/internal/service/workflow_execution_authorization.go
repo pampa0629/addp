@@ -163,6 +163,11 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 			if err := addLocatorEngineEffect(engineEffects, params, output.ParentParam, "write"); err != nil {
 				return nil, fmt.Errorf("任务 %d 输出资源无效: %w", index, err)
 			}
+			if operator.EngineType == "spark_workflow" && operator.ID == "save" {
+				if locator, err := resourcetree.ParseURI(stringParam(params, output.ParentParam)); err == nil && (locator.Type == resourcetree.TypeBucket || locator.Type == resourcetree.TypePrefix) {
+					addEngineEffect(engineEffects, locator.EngineID, "read")
+				}
+			}
 			for _, effect := range operator.Effects {
 				if effect != "ddl" {
 					continue

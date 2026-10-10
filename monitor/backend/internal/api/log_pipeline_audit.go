@@ -26,7 +26,7 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 		route := c.FullPath()
-		isResource := strings.HasPrefix(route, "/api/v1/monitor/platform/resource_")
+		isResource := strings.HasPrefix(route, "/api/v1/monitor/platform/resource_") || route == "/api/v1/monitor/platform/process_resource_summaries"
 		isQueryPolicy := route == "/api/v1/monitor/settings/resource-query-policy"
 		isTarget := strings.HasPrefix(route, "/api/v1/monitor/platform/monitoring_targets")
 		if system == nil || (!isTarget && !isResource && !isQueryPolicy && !strings.HasPrefix(route, "/api/v1/monitor/platform/log-")) || route == "/api/v1/monitor/platform/log-observations" {
@@ -58,6 +58,9 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 			}
 			if nodes, ok := c.Get("resource_query_audit_nodes"); ok {
 				request.Details["node_ids"] = nodes.([]string)
+			}
+			if instances, ok := c.Get("resource_query_audit_instances"); ok {
+				request.Details["instance_ids"] = instances.([]uint)
 			}
 			if isQueryPolicy {
 				request.EntityType = "resource_query_policy"

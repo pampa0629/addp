@@ -260,3 +260,24 @@ other = "读取执行记录失败"
 
 [develop.execution.not_found]
 other = "执行记录不存在或不可见"
+
+[develop.workflow.spark_object_result_policy]
+other = "Spark 对象成果仅支持 MinIO 普通 Parquet create"
+
+[develop.workflow.spark_object_result_identity]
+other = "Spark 对象成果需要唯一目标与执行身份"
+
+[develop.workflow.spark_result_literal_path]
+other = "Spark 成果目录必须为字面资源路径"
+
+[develop.workflow.spark_file_facts_required]
+other = "Spark 文件加载需要 Meta 数据项事实"
+
+[develop.workflow.spark_file_facts_read_failed]
+other = "读取 Spark 数据项事实失败"
+
+[develop.workflow.spark_file_facts_mismatch]
+other = "Spark 数据项事实与资源定位不一致"
+
+[develop.workflow.spark_table_item_required]
+other = "Spark 文件加载需要已识别的表格数据项"

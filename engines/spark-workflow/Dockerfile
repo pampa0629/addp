@@ -71,7 +71,8 @@ try:
     distributed_jars = spark.sparkContext._jsc.sc().listJars().toString()
     for name in ("elasticsearch-spark-30_2.12-9.5.4.jar",
                  "sedona-spark-shaded-3.5_2.12-1.5.3.jar", "geotools-wrapper-1.5.3-28.2.jar",
-                 "postgresql-42.7.4.jar", "mysql-connector-j-8.4.0.jar"):
+                 "postgresql-42.7.4.jar", "mysql-connector-j-8.4.0.jar",
+                 "spark-hadoop-cloud_2.12-3.5.0.jar", "hadoop-aws-3.3.4.jar", "aws-java-sdk-bundle-"):
         assert name in distributed_jars, (name, distributed_jars)
     assert spark.range(3).count() == 3
     assert spark.range(3).selectExpr("sum(id) AS total").first().total == 3

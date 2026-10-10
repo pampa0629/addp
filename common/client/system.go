@@ -246,6 +246,7 @@ type ModuleRegistrationRequest struct {
 	Metadata                map[string]interface{}                     `json:"metadata,omitempty"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
 	TaskProvider            *models.TaskProviderDeclaration            `json:"task_provider,omitempty"`
+	ProcessMetrics          *models.ProcessMetricsDeclaration          `json:"process_metrics,omitempty"`
 }
 
 const (
@@ -275,10 +276,11 @@ type ModuleRoutingSnapshot struct {
 }
 
 type ModuleRuntimeInstanceInfo struct {
-	DeclaredNodeID    string `json:"declared_node_id"`
-	NodeID            string `json:"node_id"`
-	NodeBindingState  string `json:"node_binding_state"`
-	NodeBindingReason string `json:"node_binding_reason"`
+	ProcessMetricsDeclared bool   `json:"process_metrics_declared"`
+	DeclaredNodeID         string `json:"declared_node_id"`
+	NodeID                 string `json:"node_id"`
+	NodeBindingState       string `json:"node_binding_state"`
+	NodeBindingReason      string `json:"node_binding_reason"`
 
 	ID               uint                   `json:"id"`
 	InstanceID       string                 `json:"instance_id"`

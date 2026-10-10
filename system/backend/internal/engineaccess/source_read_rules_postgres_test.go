@@ -2,6 +2,7 @@ package engineaccess
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -93,6 +95,25 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			observation, err := service.InspectSourceGrants(ctx, actor, int64(base.Path.EngineID), user.PrincipalID, base.Path)
 			if err != nil || observation == nil || observation.Reason != reason || observation.RuleCovered != (reason == "grant") || observation.ObservedAt.IsZero() || observation.AccountID != user.PrincipalID || len(observation.Sources) != len(kinds) {
 				t.Fatalf("inspection=%+v want=%s kinds=%v err=%v", observation, reason, kinds, err)
+			}
+			listed, total, listErr := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1,
+				SourceGrantFilter{RecipientType: "user", RecipientID: user.PrincipalID})
+			if listErr != nil {
+				t.Fatal(listErr)
+			}
+			if len(kinds) > 0 {
+				if total != 1 || len(listed) != 1 || listed[0].Inspection == nil || listed[0].Inspection.Reason != reason || len(listed[0].Inspection.Sources) != len(kinds) {
+					t.Fatalf("unified account list=%+v total=%d error=%v", listed, total, listErr)
+				}
+				for _, source := range listed[0].Inspection.Sources {
+					if source.RequestID == uuid.Nil || source.ApprovalMode == "" {
+						t.Fatalf("missing source-specific revoke anchor: %+v", source)
+					}
+				}
+				empty, count, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 2, 1, SourceGrantFilter{RecipientType: "user", RecipientID: user.PrincipalID})
+				if err != nil || count != 1 || len(empty) != 0 {
+					t.Fatalf("pagination after membership expansion: %+v %d %v", empty, count, err)
+				}
 			}
 			for _, kind := range kinds {
 				found := false
@@ -513,4 +534,56 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			assert(t, user, "grant")
 		})
 	})
+}
+
+// Test-only exact observer compares the unified management list with the shared
+// rule predicates; production exposes only the current-list query.
+// The selected account is an object of management, never a borrowed caller.
+// IAM resolution, membership expansion, rules and sources share one statement.
+const sourceGrantInspectionSQL = `WITH input AS MATERIALIZED (
+ SELECT m.tenant_id, p.id AS principal_id, m.id AS membership_id,
+ p.authorization_version, ?::jsonb AS targets, clock_timestamp() AS observed_at
+ FROM system.tenant_memberships m
+ JOIN system.principals p ON p.id = m.principal_id AND p.principal_type = 'user'
+ JOIN system.users u ON u.id = p.id
+ WHERE m.tenant_id = ? AND p.id = ?
+)` + sourceReadRuleCTEs + inspectionSourceCTE + `
+ SELECT rules.*, COALESCE(s.sources, '[]'::jsonb) AS sources FROM rules
+ LEFT JOIN source_sets s USING (position)`
+
+func (s *Service) InspectSourceGrants(ctx context.Context, actor Actor, engineID, accountID int64, path engineplugin.EngineCatalogPath) (*SourceGrantInspection, error) {
+	paths, batch, err := encodeSourceReadTargets([]engineplugin.EngineCatalogPath{path})
+	if err != nil || accountID <= 0 || int64(path.EngineID) != engineID {
+		return nil, commonapi.ErrBadRequest
+	}
+	var result *SourceGrantInspection
+	err = s.withEngineManagementScope(ctx, actor, engineID, authorization.PermissionSystemEngineAccessGrantRead, false,
+		func(tx *Repository, check func() error) error {
+			var rows []struct {
+				Position   int64
+				ObservedAt time.Time
+				Reason     string
+				Sources    json.RawMessage
+			}
+			if err := tx.db.WithContext(ctx).Raw(sourceGrantInspectionSQL, string(batch), actor.TenantID, accountID).Scan(&rows).Error; err != nil {
+				return err
+			}
+			if len(rows) == 0 {
+				return commonapi.ErrNotFound
+			}
+			observation, err := sourceReadObservation(paths, []sourceReadRuleRow{{Position: rows[0].Position, ObservedAt: rows[0].ObservedAt, Reason: rows[0].Reason}})
+			if err != nil || len(rows) != 1 {
+				return errSourceReadRules
+			}
+			result = &SourceGrantInspection{AccountID: accountID, CatalogPath: paths[0], ObservedAt: observation.ObservedAt,
+				RuleCovered: observation.Covered, Reason: observation.Targets[0].Reason, Sources: make([]SourceGrantInspectionSource, 0)}
+			if err := json.Unmarshal(rows[0].Sources, &result.Sources); err != nil {
+				return err
+			}
+			return check()
+		})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

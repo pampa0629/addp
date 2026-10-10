@@ -60,28 +60,70 @@ func collectionExpression(scope Scope) string {
 
 func normalizeCollection(data envelope, at time.Time) (Collection, error) {
 	result := Collection{State: "no_sample", Filesystem: "unknown", Network: "unknown"}
-	if data.Data.ResultType != "vector" || data.Data.Result == nil || len(data.Data.Result) > 9 {
-		return result, ErrUnavailable
+	allowed := map[string]bool{"up_count": true, "up": true, "sampled_at": true, "filesystem_count": true, "filesystem": true, "filesystem_sampled_at": true, "network_count": true, "network": true, "network_sampled_at": true}
+	values, err := normalizeSignals(data, at, allowed)
+	if err != nil {
+		return result, err
+	}
+	result, err = normalizeUpEvidence(values, at)
+	if err != nil || result.State != "collecting" {
+		return result, err
+	}
+	stamp := values["sampled_at"]
+	result.Filesystem, err = collectorEvidence(values, "filesystem", stamp)
+	if err != nil {
+		return result, err
+	}
+	result.Network, err = collectorEvidence(values, "network", stamp)
+	return result, err
+}
+
+func normalizeSignals(data envelope, at time.Time, allowed map[string]bool) (map[string]float64, error) {
+	if data.Data.ResultType != "vector" || data.Data.Result == nil || len(data.Data.Result) > len(allowed) {
+		return nil, ErrUnavailable
 	}
 	values := map[string]float64{}
-	allowed := map[string]bool{"up_count": true, "up": true, "sampled_at": true, "filesystem_count": true, "filesystem": true, "filesystem_sampled_at": true, "network_count": true, "network": true, "network_sampled_at": true}
 	for _, row := range data.Data.Result {
 		key := row.Metric["signal"]
 		_, duplicate := values[key]
 		if len(row.Metric) != 1 || !allowed[key] || duplicate || row.Value == nil || row.Values != nil || len(row.Histogram) > 0 || len(row.Histograms) > 0 {
-			return result, ErrUnavailable
+			return nil, ErrUnavailable
 		}
 		var evaluated float64
 		var raw string
 		if json.Unmarshal(row.Value[0], &evaluated) != nil || evaluated != float64(at.Unix()) || json.Unmarshal(row.Value[1], &raw) != nil {
-			return result, ErrUnavailable
+			return nil, ErrUnavailable
 		}
 		v, err := strconv.ParseFloat(raw, 64)
 		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
-			return result, ErrUnavailable
+			return nil, ErrUnavailable
 		}
 		values[key] = v
 	}
+	return values, nil
+}
+
+func normalizeProcessCollection(data envelope, at time.Time) (Collection, error) {
+	values, err := normalizeSignals(data, at, map[string]bool{"up_count": true, "up": true, "sampled_at": true, "identity_valid": true})
+	if err != nil {
+		return Collection{}, err
+	}
+	result, err := normalizeUpEvidence(values, at)
+	if err != nil || result.State != "collecting" {
+		return result, err
+	}
+	identity, ok := values["identity_valid"]
+	if !ok || (identity != 0 && identity != 1) {
+		return Collection{}, ErrUnavailable
+	}
+	if identity == 0 {
+		result.State = "identity_mismatch"
+	}
+	return result, nil
+}
+
+func normalizeUpEvidence(values map[string]float64, at time.Time) (Collection, error) {
+	result := Collection{State: "no_sample", Filesystem: "unknown", Network: "unknown"}
 	count, hasCount := values["up_count"]
 	if !hasCount || math.Trunc(count) != count {
 		return result, ErrUnavailable
@@ -106,13 +148,7 @@ func normalizeCollection(data envelope, at time.Time) (Collection, error) {
 		return result, nil
 	}
 	result.State = "collecting"
-	var err error
-	result.Filesystem, err = collectorEvidence(values, "filesystem", stamp)
-	if err != nil {
-		return result, err
-	}
-	result.Network, err = collectorEvidence(values, "network", stamp)
-	return result, err
+	return result, nil
 }
 
 func collectorEvidence(values map[string]float64, key string, stamp float64) (string, error) {

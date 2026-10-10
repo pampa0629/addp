@@ -11,6 +11,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	commonauthmiddleware "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	commonmodels "github.com/addp/common/models"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
@@ -286,6 +287,7 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        module_name query string false "稳定模块名，精确匹配 | Stable module name, exact match"
+// @Param        ids query string false "最多 100 个不重复规范正整数实例记录 ID，以逗号分隔，精确过滤 | Up to 100 unique canonical positive instance record IDs, comma-separated, exact filtering"
 // @Param        node_name query string false "宿主节点名或运行环境主机名，不区分大小写的精确匹配 | Host node name or runtime hostname, case-insensitive exact match"
 // @Param        node_ip query string false "宿主节点 IPv4/IPv6，规范化后精确匹配 | Host node IPv4/IPv6, canonical exact match"
 // @Param        registered_host query string false "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match"
@@ -307,6 +309,19 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Router       /platform/module-instances [get]
 func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
+	var ids []uint
+	if values, exists := c.Request.URL.Query()["ids"]; exists {
+		var err error
+		if len(values) != 1 {
+			commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, commoni18n.MsgInvalidParams))
+			return
+		}
+		ids, err = commonmodels.ParseRuntimeInstanceIDs(values[0])
+		if err != nil {
+			commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, commoni18n.MsgInvalidParams))
+			return
+		}
+	}
 	var timeFrom, timeTo time.Time
 	for _, bound := range []struct {
 		value  string
@@ -326,6 +341,7 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 		*bound.target = parsed
 	}
 	instances, total, err := h.service.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
+		IDs:        ids,
 		ModuleName: c.Query("module_name"), RegisteredHost: c.Query("registered_host"), NodeName: c.Query("node_name"),
 		NodeIP: c.Query("node_ip"),
 		Role:   c.Query("role"), Status: c.Query("status"), StopReason: c.Query("stop_reason"),

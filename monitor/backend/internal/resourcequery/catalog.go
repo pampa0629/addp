@@ -97,6 +97,10 @@ type Plan struct {
 }
 
 func NewPlan(keys []string, start, end, now time.Time, trend bool, dimensions Dimensions, b Budget) (Plan, error) {
+	return newPlan(keys, start, end, now, trend, dimensions, b, definitions)
+}
+
+func newPlan(keys []string, start, end, now time.Time, trend bool, dimensions Dimensions, b Budget, catalog []Definition) (Plan, error) {
 	start, end, now = start.UTC(), end.UTC(), now.UTC()
 	p := Plan{Start: start, End: end, Trend: trend, StepSeconds: MinimumStepSeconds, Points: 1}
 	if b.Validate() != nil || len(keys) == 0 || dimensions.Validate() != nil {
@@ -112,7 +116,7 @@ func NewPlan(keys []string, start, end, now time.Time, trend bool, dimensions Di
 		}
 		seen[key] = true
 		found := false
-		for _, d := range definitions {
+		for _, d := range catalog {
 			if d.Key == key {
 				p.Metrics = append(p.Metrics, d)
 				found = true

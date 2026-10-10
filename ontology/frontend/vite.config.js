@@ -35,7 +35,11 @@ export default defineConfig(withModuleFrontend('ontology', withFrontendTestIsola
     // Prebundle the lazy graph and the controlled Console host before serving Vue.
     // Late discovery would mix optimizer generations in the first iframe host.
     entries: testing ? ['index.html', 'e2e/host.html'] : ['index.html'],
-    include: ['vue', 'vue-router', 'pinia', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
+    include: [
+      'vue', 'vue-router', 'pinia', 'vue-i18n', 'element-plus', 'element-plus/es',
+      'element-plus/es/locale/lang/zh-cn', 'element-plus/es/locale/lang/en',
+      '@element-plus/icons-vue', 'axios', '@antv/g6'
+    ]
   },
   server: {
     port: Number(process.env.ONTOLOGY_FE_PORT || 5192),

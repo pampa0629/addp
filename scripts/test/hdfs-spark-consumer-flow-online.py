@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 import urllib.request
 
 path = Path(__file__).with_name('security-transfer-protection-online.py')
@@ -155,7 +156,7 @@ def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evide
             'runtime_status': runtime_status_evidence(execution['metadata']['result']['runtime_execution_id'], final)}
 
 
-def persistence_workflow(locators, target_engine_id):
+def persistence_workflow(locators, target_engine_id, target_type="table"):
     definition = workflow(locators)
     definition['tasks'].append({'id': 'save', 'operator': 'save', 'depends_on': ['verify_all_formats'], 'params': {
         'input_df': {'$ref': 'verify_all_formats', 'port': 'default'},
@@ -163,6 +164,10 @@ def persistence_workflow(locators, target_engine_id):
         'target_parent_locator': f'addp://engine/{target_engine_id}/path/results?type=schema',
         'target_name': 'hdfs_totals', 'mode': 'overwrite',
     }})
+    if target_type == 'file':
+        definition['tasks'][-1]['params'].update(target_type='file',
+            target_parent_locator=f'addp://engine/{target_engine_id}/path/result?type=bucket',
+            target_name='results/hdfs_totals', format='parquet', mode='create')
     return definition
 
 
@@ -185,26 +190,31 @@ def submit_and_wait(client, definition, runtime_id, cluster_id, deadline):
     raise SuiteError('persisted workflow did not converge')
 
 
-def validate_persistence(execution, locators, target_locator):
+def validate_persistence(execution, locators, target_locator, target_type="table"):
     if execution.get('status') != 'success':
         raise SuiteError('Spark persistence execution did not succeed')
     metadata = support._object(execution.get('metadata'), 'persisted metadata')
     result = support._object(metadata.get('result'), 'persisted result')
+    object_result = target_type == 'file'
+    resource_type, write_mode = ('object', 'create') if object_result else ('table', 'replace')
+    physical_target = ('s3a://result/' + urllib.parse.urlsplit(target_locator).path.split('/path/result/', 1)[1]) if object_result else 'results.hdfs_totals'
     resource = execution.get('outputs', {}).get('save', {}).get('resource')
-    if resource != {'locator': target_locator, 'type': 'table', 'write_mode': 'replace'}:
-        raise SuiteError('Spark stable output must bind the exact table and replace mode')
+    if resource != {'locator': target_locator, 'type': resource_type, 'write_mode': write_mode}:
+        raise SuiteError('Spark stable output must bind the exact target and write mode')
     final = result.get('final_result')
-    if final != {'status': 'success', 'rows': 2, 'target': 'results.hdfs_totals'}:
+    if final != {'status': 'success', 'rows': 2, 'target': physical_target}:
         raise SuiteError('Spark save must report exactly two committed rows')
     facts = metadata.get('lineage_facts', {})
     if (facts.get('schema_version') != 'addp.lineage-facts/v1'
         or {value.get('locator') for value in facts.get('inputs', [])} != {locators[name] for name in ('csv', 'json', 'parquet')}
         or len(facts.get('outputs', [])) != 1 or facts['outputs'][0].get('locator') != target_locator
-        or facts['outputs'][0].get('write_mode') != 'replace'):
-        raise SuiteError('Spark save lineage must bind the exact three sources and table target')
+        or facts['outputs'][0].get('write_mode') != write_mode):
+        raise SuiteError('Spark save lineage must bind the exact three sources and result target')
     targets = result.get('produced_targets', [])
     if len(targets) != 1 or targets[0].get('locator') != target_locator or targets[0].get('task_id') != 'save':
         raise SuiteError('Spark save omitted its produced target')
+    if object_result and targets[0].get('layout') != 'whole':
+        raise SuiteError('MinIO result must declare the whole Parquet layout')
     runs = result.get('meta_scan_runs', [])
     if len(runs) != 1 or runs[0].get('status') != 'submitted' or runs[0].get('target_locator') != target_locator or not runs[0].get('execution_id'):
         raise SuiteError('Spark result automatic Meta scan was not submitted')
@@ -223,16 +233,22 @@ def persistence_physical():
     return {'table_oid': before['oid'], 'structure_and_grants_preserved': True, 'staging_tables': 0}
 
 
-def run_persistence(client, report, target_engine_id, timeout):
+def run_persistence(client, report, target_engine_id, timeout, target_type="table"):
     deadline = time.monotonic() + timeout
     if target_engine_id in (report['engine_id'], report['cluster_id'], report['runtime_id']):
         raise SuiteError('PostgreSQL target must be a distinct Engine')
     target_locator = f'addp://engine/{target_engine_id}/path/results/hdfs_totals?type=table'
-    execution_id, execution = submit_and_wait(client, persistence_workflow(report['locators'], target_engine_id),
+    definition = persistence_workflow(report['locators'], target_engine_id, target_type)
+    execution_id, execution = submit_and_wait(client, definition,
                                             report['runtime_id'], report['cluster_id'], deadline)
-    final, scan_id = validate_persistence(execution, report['locators'], target_locator)
+    if target_type == 'file':
+        leaf = execution_id + '-' + str(uuid.uuid5(uuid.NAMESPACE_OID, 'save'))
+        target_locator = f'addp://engine/{target_engine_id}/path/result/results/hdfs_totals/{leaf}?type=object'
+        final, scan_id = validate_persistence(execution, report['locators'], target_locator, target_type)
+    else:
+        final, scan_id = validate_persistence(execution, report['locators'], target_locator)
     def validate_nodes(nodes):
-        if set(nodes) != {task['id'] for task in persistence_workflow(report['locators'], target_engine_id)['tasks']} or nodes['save'] != final:
+        if set(nodes) != {task['id'] for task in definition['tasks']} or nodes['save'] != final:
             raise ValueError('persisted Runtime lost canonical node outputs')
         for name, value in nodes.items():
             if name != 'save' and value.get('type') != 'spark_dataframe':
@@ -240,7 +256,7 @@ def run_persistence(client, report, target_engine_id, timeout):
     runtime = SPARK.runtime_status_evidence(support.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL'),
         execution['metadata']['result']['runtime_execution_id'], final, 9, validate_nodes=validate_nodes,
         node_types={task['id']: ('save' if task['id'] == 'save' else 'spark_dataframe')
-                    for task in persistence_workflow(report['locators'], target_engine_id)['tasks']})
+                    for task in definition['tasks']})
     while time.monotonic() < deadline:
         scan = support._object(client.request('GET', '/api/v1/meta/executions/' + urllib.parse.quote(scan_id), (200,)).payload, 'automatic result scan')
         if scan.get('status') == 'success':
@@ -250,7 +266,12 @@ def run_persistence(client, report, target_engine_id, timeout):
         time.sleep(1)
     else:
         raise SuiteError('Spark result automatic scan did not converge')
-    item = support.find_item(client, target_engine_id, 'results.hdfs_totals', 'table')
+    item_path = 'result/results/hdfs_totals/' + leaf if target_type == 'file' else 'results.hdfs_totals'
+    item = support.find_item(client, target_engine_id, item_path, 'object' if target_type == 'file' else 'table')
+    if target_type == 'file':
+        facts = support._object(item.get('attributes', {}).get('item'), 'Meta result item facts')
+        if (facts.get('data_type') != 'table' or facts.get('format') != 'parquet' or facts.get('layout') != 'whole'):
+            raise SuiteError('Meta did not resolve MinIO result as table/parquet/whole')
     preview_locator = target_locator + '&item_id=' + str(item['id'])
     _, rows = support.preview_rows(client, preview_locator)
     expected_rows = sorted(report['final_result']['preview_rows'], key=lambda row: row['region'])
@@ -271,7 +292,7 @@ def run_persistence(client, report, target_engine_id, timeout):
     else:
         raise SuiteError('Spark persisted lineage did not converge')
     reuse_definition = {'tasks': [{'id': 'load_result', 'operator': 'load', 'depends_on': [],
-                                   'params': {'locator': target_locator, 'source_type': 'table'}}]}
+                                   'params': {'locator': target_locator, 'source_type': target_type}}]}
     reuse_id, reused = submit_and_wait(client, reuse_definition, report['runtime_id'], report['cluster_id'], deadline)
     reused_final = reused['metadata']['result']['final_result']
     if reused_final.get('type') != 'spark_dataframe' or sorted(reused_final.get('preview_rows', []), key=lambda row: row['region']) != expected_rows:
@@ -280,9 +301,28 @@ def run_persistence(client, report, target_engine_id, timeout):
         reused['metadata']['result']['runtime_execution_id'], reused_final, 1)
     return {'engine_id': target_engine_id, 'execution_id': execution_id, 'target_locator': target_locator,
             'preview_locator': preview_locator, 'item_id': item['id'], 'scan_execution_id': scan_id,
-            'final_result': final, 'runtime_status': runtime, 'physical': persistence_physical(),
+            'final_result': final, 'runtime_status': runtime, 'physical': minio_physical(item_path) if target_type == 'file' else persistence_physical(),
             'lineage_sources': sorted(observed), 'reuse_execution_id': reuse_id, 'reuse_final_result': reused_final,
             'reuse_runtime_status': reuse_runtime}
+
+
+def minio_physical(path):
+    command = ['docker', 'exec', 'addp-hdfs-online-minio', 'mc', 'ls', '--recursive', '--json', 'owned/' + path + '/']
+    objects = [json.loads(line) for line in subprocess.run(command, check=True, capture_output=True, text=True).stdout.splitlines() if line]
+    keys = [value.get('key', '') for value in objects]
+    if not keys or not any(key.endswith('_SUCCESS') for key in keys) or not any(key.endswith('.parquet') for key in keys):
+        raise SuiteError('MinIO result has no committed Parquet objects')
+    if any('__magic' in key or '.pending' in key or '_temporary' in key for key in keys):
+        raise SuiteError('MinIO result contains uncommitted objects')
+    marker = json.loads(subprocess.run(['docker', 'exec', 'addp-hdfs-online-minio', 'mc', 'cat', 'owned/' + path + '/_SUCCESS'],
+        check=True, capture_output=True, text=True).stdout)
+    if marker.get('committer') != 'magic':
+        raise SuiteError('MinIO result omitted its Magic Committer marker')
+    pending = subprocess.run(['docker', 'exec', 'addp-hdfs-online-minio', 'mc', 'ls', '--incomplete', '--recursive', '--json', 'owned/result/results/'],
+        check=True, capture_output=True, text=True).stdout.strip()
+    if pending:
+        raise SuiteError('MinIO publication left incomplete multipart uploads')
+    return {'committer': 'magic', 'objects': len(keys), 'multipart_uploads': 0}
 
 
 def run_browser(report):
@@ -297,12 +337,14 @@ def run_browser(report):
     evidence = json.loads(output.read_text())
     expected = {'run_id': support.required_environment('ADDP_ONLINE_TEST_RUN_ID'), 'engine_id': report['engine_id'],
                 'tenant_id': report['tenant_id'], 'principal_id': report['principal_id'], 'execution_id': report['execution_id'],
-                'meta_ui_scan': True, 'previews': 5, 'develop_result': True,
+                'meta_ui_scan': True, 'previews': 6, 'develop_result': True,
                 'persist_execution_id': report['persistence']['execution_id'],
-                'reuse_execution_id': report['persistence']['reuse_execution_id']}
+                'reuse_execution_id': report['persistence']['reuse_execution_id'],
+                'minio_execution_id': report['minio']['execution_id'],
+                'minio_reuse_execution_id': report['minio']['reuse_execution_id']}
     if evidence != expected:
         raise SuiteError('HDFS browser identity or execution evidence differs from API acceptance')
-    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow', 'persisted', 'save', 'reuse'):
+    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow', 'persisted', 'save', 'reuse', 'minio', 'minio-save', 'minio-reuse'):
         if not (artifacts / ('hdfs-' + name + '-console.png')).is_file():
             raise SuiteError('HDFS Console screenshot evidence is missing')
     return evidence
@@ -334,6 +376,14 @@ def main():
                  support.positive_int(require('ADDP_ONLINE_HDFS_ENGINE_ID'), 'HDFS'),
                  support.positive_int(require('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark'), timeout)
     report['persistence'] = run_persistence(client, report, support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL'), timeout)
+    minio_id = support.positive_int(require('ADDP_ONLINE_MINIO_ENGINE_ID'), 'MinIO')
+    report['minio'] = run_persistence(client, report, minio_id, timeout, 'file')
+    report['minio_second'] = run_persistence(client, report, minio_id, timeout, 'file')
+    if report['minio']['target_locator'] == report['minio_second']['target_locator']:
+        raise SuiteError('Independent executions reused the same MinIO result directory')
+    _, old_rows = support.preview_rows(client, report['minio']['preview_locator'])
+    if sorted(old_rows, key=lambda row: row['region']) != sorted(report['final_result']['preview_rows'], key=lambda row: row['region']):
+        raise SuiteError('Second publication changed the first MinIO result')
     report['worker'] = worker_evidence(report['cluster_id'])
     report['browser'] = run_browser(report)
     Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'hdfs-spark-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))

@@ -521,27 +521,28 @@ class FileAdapter:
 
         logger.info(f"Loading from file: {path}, format: {format_type}")
 
-        # 如果是S3路径,配置S3访问
-        if path.startswith('s3://') or path.startswith('s3a://'):
-            FileAdapter._configure_s3_access(spark, params)
+        options = {}
+        if path.startswith(('s3:', 's3a:')):
+            path, options = FileAdapter._s3_access(params)
+        reader = spark.read.options(**options)
 
         # 读取文件
         if format_type in ['parquet', 'geoparquet']:
-            df = spark.read.format("parquet").load(path)
+            df = reader.format("parquet").load(path)
         elif format_type == 'csv':
-            df = spark.read.format("csv") \
+            df = reader.format("csv") \
                 .option("header", "true") \
                 .option("inferSchema", "true") \
                 .load(path)
         elif format_type == 'json':
-            df = spark.read.format("json").load(path)
+            df = reader.format("json").load(path)
         elif format_type == 'shapefile':
             # 使用Sedona读取Shapefile
-            df = spark.read.format("shapefile").load(path)
+            df = reader.format("shapefile").load(path)
         elif format_type == 'delta':
-            df = spark.read.format("delta").load(path)
+            df = reader.format("delta").load(path)
         elif format_type == 'hudi':
-            df = spark.read.format("hudi").load(path)
+            df = reader.format("hudi").load(path)
         else:
             raise ValueError(f"Unsupported file format: {format_type}")
 
@@ -561,6 +562,8 @@ class FileAdapter:
         path = params['path']
         if path.startswith('hdfs:') or params.get('connection_info', {}).get('engine_type') == 'hdfs':
             raise ValueError("HDFS engine supports reading only")
+        if path.startswith(('s3:', 's3a:')):
+            return FileAdapter._save_s3_parquet(df, params)
         format_type = params.get('format', 'parquet')
         mode = params.get('mode', 'overwrite')
 
@@ -609,22 +612,135 @@ class FileAdapter:
         return source.scheme + '://' + source.netloc + physical
 
     @staticmethod
-    def _configure_s3_access(spark: SparkSession, params: Dict[str, Any]):
-        """配置S3访问凭证"""
-        conn_info = params.get('connection_info')
-        if not isinstance(conn_info, dict):
-            return
+    def _s3_access(params):
+        """Operation-local S3A configuration; never mutate a shared Spark session."""
+        conn = params.get('connection_info')
+        source = urlsplit(params['path'])
+        if (not isinstance(conn, dict) or conn.get('engine_type') not in {'minio', 's3'}
+                or source.scheme != 's3a' or not source.netloc or source.username
+                or source.port or source.query or source.fragment):
+            raise ValueError('S3A requires explicit authorized storage connection facts')
+        key = unquote(source.path).lstrip('/')
+        if (not key or any(part in {'', '.', '..'} for part in key.split('/'))
+                or any(char in key for char in '*?[]{}\\\x00')):
+            raise ValueError('S3A resource must be a literal nonempty object or scope')
+        bucket = conn.get('bucket')
+        if bucket and bucket != source.netloc:
+            raise ValueError('S3A resource is outside the engine bucket')
+        endpoint = conn.get('endpoint', '')
+        # MinIO ConnectionSpec declares use_ssl=false as its canonical default.
+        secure = conn.get('use_ssl', False)
+        if not isinstance(secure, bool) or not isinstance(endpoint, str) or not endpoint:
+            raise ValueError('S3A requires endpoint and boolean use_ssl')
+        parsed = urlsplit(endpoint if '://' in endpoint else ('https://' if secure else 'http://') + endpoint)
+        if (parsed.scheme != ('https' if secure else 'http') or not parsed.hostname
+                or parsed.username or parsed.path not in {'', '/'} or parsed.query or parsed.fragment):
+            raise ValueError('S3A endpoint conflicts with storage connection facts')
+        if not all(isinstance(conn.get(name), str) and conn[name] for name in ('access_key', 'secret_key')):
+            raise ValueError('S3A requires explicit access credentials')
+        options = {
+            'fs.s3a.endpoint': parsed.scheme + '://' + parsed.netloc,
+            'fs.s3a.access.key': conn['access_key'], 'fs.s3a.secret.key': conn['secret_key'],
+            'fs.s3a.aws.credentials.provider': 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider',
+            'fs.s3a.connection.ssl.enabled': str(secure).lower(),
+            'fs.s3a.path.style.access': 'true', 'fs.s3a.impl.disable.cache': 'true',
+            'fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
+            'fs.s3a.committer.name': 'magic', 'fs.s3a.committer.magic.enabled': 'true',
+            'fs.s3a.committer.abort.pending.uploads': 'false',
+            'mapreduce.outputcommitter.factory.scheme.s3a': 'org.apache.hadoop.fs.s3a.commit.S3ACommitterFactory',
+        }
+        # Bucket overrides inherited from a cluster must not replace authorized facts.
+        options.update({
+            'fs.s3a.bucket.' + source.netloc + '.' + name[len('fs.s3a.'):]: value
+            for name, value in list(options.items())
+            if name.startswith('fs.s3a.') and not name.startswith('fs.s3a.impl')
+        })
+        return 's3a://' + source.netloc + '/' + key, options
 
+    @staticmethod
+    def _s3_filesystem(spark, path, options):
+        jvm = spark.sparkContext._jvm
+        conf = jvm.org.apache.hadoop.conf.Configuration(spark.sparkContext._jsc.hadoopConfiguration())
+        for name, value in options.items():
+            conf.set(name, value)
+        # newInstance bypasses the bucket-only FileSystem cache as well.
+        filesystem = jvm.org.apache.hadoop.fs.FileSystem.newInstance(jvm.org.apache.hadoop.fs.Path(path).toUri(), conf)
+        return filesystem, conf
+
+    @staticmethod
+    def _verify_s3_parquet(spark, filesystem, conf, path, options, expected_schema):
+        jvm = spark.sparkContext._jvm
+        jpath = jvm.org.apache.hadoop.fs.Path(path)
+        success = jvm.org.apache.hadoop.fs.s3a.commit.files.SuccessData.load(
+            filesystem, jvm.org.apache.hadoop.fs.Path(jpath, '_SUCCESS'))
+        if success.getCommitter() != 'magic':
+            raise ValueError('Parquet result was not committed by the S3A Magic Committer')
+        files = filesystem.listFiles(jpath, True)
+        schema, count, parts = None, 0, 0
+        while files.hasNext():
+            status = files.next()
+            name = status.getPath().getName()
+            if name == '_SUCCESS':
+                continue
+            if not name.startswith('part-') or not name.endswith('.parquet'):
+                raise ValueError('Parquet result contains unexpected or uncommitted content')
+            source = jvm.org.apache.parquet.hadoop.util.HadoopInputFile.fromPath(status.getPath(), conf)
+            reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(source)
+            try:
+                footer = reader.getFooter()
+                current = footer.getFileMetaData().getSchema()
+                if schema is not None and not schema.equals(current):
+                    raise ValueError('Parquet result contains incompatible schemas')
+                schema = current
+                for block in footer.getBlocks():
+                    count += block.getRowCount()
+                parts += 1
+            finally:
+                reader.close()
+        if not parts:
+            raise ValueError('Parquet result contains no data files')
+        actual = spark.read.options(**options).parquet(path).schema
+        if actual.simpleString() != expected_schema.simpleString():
+            raise ValueError('Parquet result schema differs from the submitted DataFrame')
+        return count
+
+    @staticmethod
+    def _cleanup_s3_result(filesystem, path):
+        # This is the decoded Hadoop Path string, not an encoded URI: '#' is literal.
+        prefix = path.split('/', 3)[3] + '/'
+        helper = filesystem.getWriteOperationHelper()
+        while not helper.listMultipartUploads(prefix).isEmpty():
+            if helper.abortMultipartUploadsUnderPath(prefix) <= 0:
+                raise RuntimeError('Unable to abort result multipart uploads')
+        jpath = filesystem.keyToQualifiedPath(prefix.rstrip('/'))
+        if filesystem.exists(jpath) and not filesystem.delete(jpath, True):
+            raise RuntimeError('Unable to delete incomplete result directory')
+        if filesystem.exists(jpath):
+            raise RuntimeError('Incomplete result directory remains')
+
+    @staticmethod
+    def _save_s3_parquet(df, params):
+        if params.get('format', 'parquet') != 'parquet' or params.get('mode') != 'create':
+            raise ValueError('MinIO results require ordinary Parquet and create mode')
+        path, options = FileAdapter._s3_access(params)
+        if params['connection_info']['engine_type'] != 'minio':
+            raise ValueError('Object result publication currently requires a MinIO engine')
+        spark = df.sparkSession
+        filesystem, conf = FileAdapter._s3_filesystem(spark, path, options)
         try:
-            # 配置S3访问
-            spark.conf.set("spark.hadoop.fs.s3a.endpoint", conn_info.get('endpoint', ''))
-            spark.conf.set("spark.hadoop.fs.s3a.access.key", conn_info.get('access_key', 'minioadmin'))
-            spark.conf.set("spark.hadoop.fs.s3a.secret.key", conn_info.get('secret_key', 'minioadmin'))
-            spark.conf.set("spark.hadoop.fs.s3a.path.style.access", "true")
-
-            logger.info(f"Configured S3 access for endpoint: {conn_info.get('endpoint')}")
-        except Exception as e:
-            logger.warning(f"Failed to configure S3 access: {e}")
+            if filesystem.exists(spark.sparkContext._jvm.org.apache.hadoop.fs.Path(path)):
+                raise ValueError('Result directory already exists')
+            try:
+                df.write.options(**options).format('parquet').mode('errorifexists').save(path)
+                return FileAdapter._verify_s3_parquet(spark, filesystem, conf, path, options, df.schema)
+            except Exception as error:
+                try:
+                    FileAdapter._cleanup_s3_result(filesystem, path)
+                except Exception:
+                    raise RuntimeError('Parquet publication failed; owned result cleanup also failed') from error
+                raise
+        finally:
+            filesystem.close()
 
 
 class CatalogAdapter:

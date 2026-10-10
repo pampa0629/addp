@@ -203,6 +203,8 @@ func TestSparkSaveDDLBelongsOnlyToTableTargetAndRuntime(t *testing.T) {
 			targetEffects := []string{"write"}
 			if parentType == "schema" || parentType == "database" {
 				targetEffects = append(targetEffects, "ddl")
+			} else {
+				targetEffects = []string{"read", "write"}
 			}
 			want := map[uint][]string{1: {"read"}, 2: targetEffects, 50: {"read", "write", "ddl"}, 51: {"read"}}
 			if !reflect.DeepEqual(plan.engineEffects, want) {

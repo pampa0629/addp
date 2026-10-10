@@ -83,6 +83,12 @@
 - **环境变量**: `github.com/joho/godotenv@v1.5.1`
 - **Cron 调度**: `github.com/robfig/cron/v3@v3.0.1`
 
+#### 自身进程指标
+
+- **Prometheus 指标协议**: `github.com/prometheus/client_golang@v1.23.2`，Common SDK 使用独立 registry，只注册固定的自身进程身份、CPU 累计时间、当前 RSS 和启动时间；不启用默认全局采集器。
+- **Linux 自身进程读取**: `github.com/prometheus/procfs@v0.16.1`，只读当前 PID，不枚举其他进程。
+- **macOS 自身进程读取**: `github.com/ebitengine/purego@v0.9.0`，调用本机 libproc 的 proc_pidinfo 并校验完整返回长度；CPU 使用 getrusage(RUSAGE_SELF)。采样失败不能产生有效零值，CGO 关闭时仍走同一路线，不使用 peak RSS 或 Go 堆作为替代。
+
 #### API 文档
 
 - **Swagger**: `github.com/swaggo/swag@v1.16.6`

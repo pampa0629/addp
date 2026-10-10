@@ -18,6 +18,7 @@ SPARK_MAVEN_PACKAGES = ",".join([
     "org.datasyslab:geotools-wrapper:1.5.3-28.2",
     "org.postgresql:postgresql:42.7.4",
     "com.mysql:mysql-connector-j:8.4.0",
+    "org.apache.spark:spark-hadoop-cloud_2.12:3.5.0",
 ])
 
 
@@ -64,6 +65,9 @@ def configure_spark_dependencies(builder, directory=None):
             *remaining, '--jars', ','.join(jars), 'pyspark-shell',
         ])
     return (builder.config('spark.jars.packages', SPARK_MAVEN_PACKAGES)
+            .config('spark.jars.excludes', 'com.google.cloud.bigdataoss:gcs-connector,org.apache.hadoop:hadoop-azure,org.apache.hadoop:hadoop-cloud-storage')
+            .config('spark.sql.sources.commitProtocolClass', 'org.apache.spark.internal.io.cloud.PathOutputCommitProtocol')
+            .config('spark.sql.parquet.output.committer.class', 'org.apache.spark.internal.io.cloud.BindingParquetOutputCommitter')
             .config('spark.sql.extensions', 'org.apache.sedona.sql.SedonaSqlExtensions')
             .config('spark.serializer', 'org.apache.spark.serializer.KryoSerializer')
             .config('spark.kryo.registrator', 'org.apache.sedona.core.serde.SedonaKryoRegistrator'))

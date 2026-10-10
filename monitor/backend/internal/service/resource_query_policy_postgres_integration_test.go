@@ -49,7 +49,7 @@ func TestIntegrationPostgresResourceQueryPolicyFirstCASAndHotRead(t *testing.T) 
 		}
 	})
 	repo := repository.NewResourceQueryPolicyRepository(db)
-	service := NewResourceObservationService(repo, nil, nil, nil, false, nil)
+	service := NewResourceObservationService(repo, nil, nil, nil, false, nil, ProcessObservationDependencies{})
 	initial, e := service.Policy(context.Background())
 	if e != nil || initial.Version != 0 || initial.Budget != resourcequery.DefaultBudget() {
 		t.Fatal(initial, e)
@@ -90,7 +90,7 @@ func TestIntegrationPostgresResourceQueryPolicyFirstCASAndHotRead(t *testing.T) 
 		t.Fatal(updated, e)
 	}
 	// A separate service instance immediately reads the committed version, without cache/restart.
-	second := NewResourceObservationService(repo, nil, nil, nil, false, nil)
+	second := NewResourceObservationService(repo, nil, nil, nil, false, nil, ProcessObservationDependencies{})
 	fresh, e := second.Policy(context.Background())
 	if e != nil || fresh.Version != 2 || fresh.MaxMetrics != 1 || fresh.TimeoutSeconds != 1 {
 		t.Fatal(fresh, e)

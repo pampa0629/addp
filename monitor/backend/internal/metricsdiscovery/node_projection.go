@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/addp/common/models"
 	"github.com/google/uuid"
@@ -21,7 +24,8 @@ type NodeSource struct {
 }
 
 // NodeTarget is Monitor-owned configuration input, not another node register.
-// Automatic module-instance and engine sources are outside this first slice.
+// Process sources come exclusively from System's private instance projection,
+// never from this manual node configuration.
 type NodeTarget struct {
 	ID          string      `json:"id"`
 	Version     int64       `json:"version"`
@@ -132,6 +136,38 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 		}
 		nodes[node.NodeID] = node.Version
 	}
+	reservation := SelfSampleReservation
+	for _, target := range targets {
+		if target.Enabled {
+			reservation += EndpointSampleLimit
+		}
+	}
+	processes := map[struct{ module, instance string }]bool{}
+	validName := func(s string, max int) bool {
+		return s != "" && strings.TrimSpace(s) == s && utf8.ValidString(s) && utf8.RuneCountInString(s) <= max && strings.IndexFunc(s, unicode.IsControl) < 0
+	}
+	for _, instance := range snapshot.ModuleInstances {
+		key := struct{ module, instance string }{instance.ModuleName, instance.InstanceID}
+		if !validName(instance.ModuleName, 50) || !validName(instance.InstanceID, 100) || processes[key] || !instance.LeaseExpiresAt.After(snapshot.ObservedAt) || (instance.NodeID != "" && nodes[instance.NodeID] == 0) || (instance.NodeID == "" && instance.ProcessMetrics == nil) {
+			return nil, ErrIdentityUnavailable
+		}
+		processes[key] = true
+		switch instance.Role {
+		case "backend", "worker", "scheduler", "ingress":
+		default:
+			return nil, ErrIdentityUnavailable
+		}
+		if instance.ProcessMetrics == nil {
+			continue
+		}
+		if instance.ProcessMetrics.Validate() != nil || instance.ProcessStartedAt == nil || instance.ProcessStartedAt.IsZero() || instance.ProcessStartedAt.After(snapshot.ObservedAt) {
+			return nil, ErrIdentityUnavailable
+		}
+		reservation += EndpointSampleLimit
+		if reservation > TotalSampleReservation {
+			return nil, ErrBudgetExceeded
+		}
+	}
 	groups := make([]TargetGroup, 0)
 	physical := make(map[string]bool)
 	for _, target := range targets {
@@ -155,6 +191,27 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 				"__meta_addp_node_version": strconv.FormatInt(nodeVersion, 10),
 			},
 		})
+	}
+	for _, instance := range snapshot.ModuleInstances {
+		if instance.ProcessMetrics == nil {
+			continue
+		}
+		resolved, err := p.policy.Admit(ctx, instance.ProcessMetrics.Endpoint)
+		if err != nil {
+			return nil, err
+		}
+		if physical[resolved.Address] {
+			return nil, ErrInvalidTarget
+		}
+		physical[resolved.Address] = true
+		if len(groups) >= TargetLimit {
+			return nil, ErrBudgetExceeded
+		}
+		groups = append(groups, TargetGroup{Targets: []string{resolved.Address}, Labels: map[string]string{
+			"__scheme__": "https", "__metrics_path__": "/metrics",
+			"addp_module_name": instance.ModuleName, "addp_instance_id": instance.InstanceID, "addp_runtime_role": instance.Role,
+			"addp_monitor_kind": "process_resources", "addp_source": "application",
+		}})
 	}
 	if ctx.Err() != nil || snapshot.ObservedAt.Before(p.now().UTC().Add(-Timeout)) {
 		return nil, ErrIdentityUnavailable

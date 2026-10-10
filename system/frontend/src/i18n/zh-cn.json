@@ -1100,15 +1100,19 @@
     },
     "engine": {
       "sourceGrants": {
+        "historyBoundary": "这里是签发记录，包含已签发、已撤销和已到期的授权。查看当前有效授权或撤销权限，请切换到“当前授权”。",
+        "accountSourcesHint": "已合并该账号的个人、当前有效部门及项目组授权。展开一行查看和撤销具体来源；撤销一条来源不影响其他来源。源规则覆盖不等于实际可读取，仍须满足功能权限、会话与安全条件。",
+        "noMatchingSources": "当前筛选下没有授权记录",
+        "source": "授权来源",
+        "viewSources": "查看来源（{count}）",
+        "revokeSource": "撤销此来源",
+        "revokeOrganizationBoundary": "这是组织授权：撤销会影响该部门或项目组所有依赖此来源的成员，不只是当前筛选的账号。",
+        "ruleStatus": "数据授权状态",
         "inspection": {
-          "title": "账号授权核查",
-          "boundary": "选中上方的一张表并选择账号，核查个人、部门及项目组授权来源。源规则覆盖不代表最终可访问，实际读取仍需满足功能权限和安全要求。",
-          "selectTable": "请先在上方资源树选中一张表（不是 schema 或节点）",
-          "query": "核查授权来源",
           "observedAt": "核查时间",
           "noSources": "没有当前有效的授权来源",
           "reasons": {
-            "grant": "源规则覆盖：存在有效授权，未命中源拒绝规则",
+            "grant": "源规则覆盖",
             "no_grant": "源规则未覆盖：没有有效个人、部门或项目组授权",
             "explicit_deny": "命中源拒绝规则：即使有授权来源，源规则仍不允许读取",
             "source_unavailable": "账号或租户成员关系当前无效",
@@ -1121,7 +1125,7 @@
         "allRecipientTypes": "全部类型",
         "allRecipients": "全部接收方（可按名称或编码搜索）",
         "selectRecipientType": "请先选择接收方类型",
-        "recipientFilterBoundary": "表名与接收方条件共同筛选。仅选择类型可查看该类全部授权；选择具体账号、部门或项目组时，仅显示直接授予该接收方的记录，不展开组织成员的授权来源。",
+        "recipientFilterBoundary": "表名与接收方条件共同筛选。仅选类型查看该类全部关系；部门、项目组及授权历史按直接接收方查询。选择具体用户查看当前授权时，同时展开其组织授权来源。",
         "current": "当前授权",
         "history": "授权历史",
         "sourceCount": "有效记录数",
@@ -1168,6 +1172,8 @@
         "revoked": "这条读取授权关系已收回，原签发历史保留；其他个人或组织来源不受影响。"
       },
       "dataAuthorization": {
+        "newAuthorization": "新增授权",
+        "backToCurrent": "返回当前授权",
         "title": "数据授权",
         "boundary": "选择数据与接收方，明确批准方式和读取有效期后确认。授权管理员可以直接办理；委托他人办理不会让其自动获得读取权。",
         "selectData": "1. 选择要授权的数据",

@@ -1,0 +1,28 @@
+import { expect, test } from '@playwright/test'
+import { backend, permissions } from '../../../monitor/frontend/e2e/process-resources.fixture'
+import { identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
+
+test('Console service monitoring uses one iframe and restores System filters after paging and reload', async ({ page }) => {
+  const state = await backend(page)
+  await page.goto('/monitor/service-resources?module_name=monitor&role=worker')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('process-list')).toContainText('1.50 核')
+  await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('服务监控')
+  const frame = page.frames().find(frame => frame.parentFrame())
+  const documentID = await frame.evaluate(() => performance.timeOrigin)
+  await monitor.locator('.el-pagination button.btn-next').click()
+  await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && url.searchParams.get('page') === '2' && url.searchParams.get('module_name') === 'monitor' && url.searchParams.get('role') === 'worker')
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(documentID)
+  await page.reload()
+  await expect.poll(() => state.listCalls.at(-1)?.page).toBe('2')
+  await expect(monitor.getByTestId('process-list')).not.toContainText('mac-process-1')
+})
+
+test('Tenant cannot open service monitoring even with platform permission strings', async ({ page }) => {
+  const state = await backend(page, { identity: identity(permissions, { type: 'tenant', tenant_id: '7' }) })
+  await page.goto('/monitor/service-resources')
+  await expect(page.locator('.el-result')).toBeVisible()
+  await expect(page.locator('iframe.module-iframe')).toHaveCount(0)
+  expect(state.listCalls).toHaveLength(0)
+  expect(state.calls).toHaveLength(0)
+})

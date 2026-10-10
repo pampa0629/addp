@@ -23,6 +23,19 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestWholeParquetOutputScansExactPrefixWithoutChangingItemIdentity(t *testing.T) {
+	item := "addp://engine/4/path/addp/results/run?type=object"
+	target := WorkflowProducedTarget{EngineID: 4, Type: "object", Path: []string{"addp", "results", "run"}, Locator: item, Layout: "whole", WriteMode: "create"}
+	opts := workflowProducedTargetScanOptions(target)
+	if !reflect.DeepEqual(opts.Targets, []string{"addp://engine/4/path/addp/results/run?type=prefix"}) || len(opts.RefGroups) != 0 || target.Locator != item {
+		t.Fatalf("whole result scan options = %#v", opts)
+	}
+	target.Locator = "malformed-locator"
+	if invalid := workflowProducedTargetScanOptions(target); len(invalid.Targets) != 1 || invalid.Targets[0] != target.Locator {
+		t.Fatalf("invalid item must reach Meta validation, never become an engine-wide scan: %#v", invalid)
+	}
+}
+
 func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing.T) {
 	task := &models.DevTask{
 		DevType: commonExecution.TaskTypeWorkflow,

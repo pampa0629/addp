@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -140,6 +141,51 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	}
 	if after.Status != "up" || after.ID != before.ID || after.DeclaredNodeID != before.DeclaredNodeID {
 		t.Fatalf("projection mutated persisted instance %+v", after)
+	}
+	// A native process has no invented VM binding. Re-registration uses the
+	// same nanosecond start identity even though PostgreSQL stores microseconds.
+	process := &models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: "native-process", Role: "worker", RoutePrefix: "/monitor", ProcessStartedAt: time.Now().UTC(), RegistrationClientID: "addp-monitor",
+		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:18100/metrics"}}
+	for i := 0; i < 2; i++ {
+		if err := registry.Register(process); err != nil {
+			t.Fatal("same real process re-registration", err)
+		}
+	}
+	current, err = registry.ObservabilityIdentities(ctx)
+	if err != nil || len(current.ModuleInstances) != 1 || current.ModuleInstances[0].NodeID != "" || current.ModuleInstances[0].ProcessMetrics == nil || current.ModuleInstances[0].ProcessMetrics.Endpoint != process.ProcessMetrics.Endpoint {
+		t.Fatalf("private process projection: %+v %v", current, err)
+	}
+	rows, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{ModuleName: "monitor", Page: 1, PageSize: 100})
+	if err != nil || total != 1 || len(rows) != 1 || !rows[0].ProcessMetricsDeclared {
+		t.Fatalf("public process declaration: %+v %d %v", rows, total, err)
+	}
+	exact, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{IDs: []uint{rows[0].ID}, Page: 1, PageSize: 100})
+	if err != nil || total != 1 || len(exact) != 1 || exact[0].InstanceID != process.InstanceID {
+		t.Fatalf("exact authorized process reference: %+v %d %v", exact, total, err)
+	}
+	for _, update := range []map[string]any{
+		{"process_metrics": nil},
+		{"process_metrics": `{"schema_version":"addp.process-metrics/v1","endpoint":"https://127.0.0.1:18101/metrics"}`},
+		{"role": "scheduler"},
+		{"process_started_at": time.Now().UTC().Add(time.Hour)},
+	} {
+		if err := db.Model(&models.ModuleRuntimeInstance{}).Where("instance_id = ?", "native-process").Updates(update).Error; err == nil {
+			t.Fatal("database allowed immutable process identity mutation")
+		}
+	}
+	if err := db.Model(&models.HostNode{}).Where("node_id = ?", node.NodeID).Update("enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	current, err = registry.ObservabilityIdentities(ctx)
+	if err != nil || len(current.Nodes) != 0 || len(current.ModuleInstances) != 1 {
+		t.Fatalf("host intent disabled independent process: %+v %v", current, err)
+	}
+	if err := registry.Deregister("monitor", "native-process"); err != nil {
+		t.Fatal(err)
+	}
+	current, err = registry.ObservabilityIdentities(ctx)
+	if err != nil || len(current.ModuleInstances) != 0 {
+		t.Fatalf("offline process remains discoverable: %+v %v", current, err)
 	}
 	// A database error returns no snapshot even if the node SELECT already succeeded.
 	if err := db.Exec("ALTER TABLE system.module_runtime_instances RENAME TO unavailable_instances").Error; err != nil {

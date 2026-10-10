@@ -40,31 +40,32 @@ func (ModuleDefinition) TableName() string { return "module_definitions" }
 
 // ModuleRuntimeInstance 是一次具体进程登记；心跳只续租这个实例。
 type ModuleRuntimeInstance struct {
-	DeclaredNodeID       string         `gorm:"size:36;not null;default:''" json:"-"`
-	RegistrationClientID string         `gorm:"size:100;not null;default:''" json:"-"`
-	NodeID               string         `gorm:"-" json:"-"`
-	NodeBindingState     string         `gorm:"-" json:"-"`
-	NodeBindingReason    string         `gorm:"-" json:"-"`
-	ID                   uint           `gorm:"primaryKey" json:"id"`
-	ModuleDefinitionID   uint           `gorm:"not null;uniqueIndex:uq_module_runtime_instance;index" json:"module_definition_id"`
-	InstanceID           string         `gorm:"not null;size:100;uniqueIndex:uq_module_runtime_instance" json:"instance_id"`
-	Role                 string         `gorm:"not null;size:30;index" json:"role"`
-	ModuleURL            string         `gorm:"size:255" json:"module_url"`
-	HealthCheckURL       string         `gorm:"size:255" json:"health_check_url"`
-	HostNodeName         string         `gorm:"size:255;not null;default:''" json:"host_node_name"`
-	HostNodeIPs          []string       `gorm:"serializer:json;type:jsonb;not null;default:'[]'" json:"host_node_ips"`
-	RuntimeHostname      string         `gorm:"size:255;not null;default:''" json:"runtime_hostname"`
-	RegisteredHost       string         `gorm:"size:255;index" json:"registered_host"`
-	Status               string         `gorm:"not null;default:'up';size:20;index" json:"status"`
-	LastHeartbeat        time.Time      `gorm:"not null;index" json:"last_heartbeat"`
-	LeaseExpiresAt       time.Time      `gorm:"not null;index" json:"lease_expires_at"`
-	ProcessStartedAt     *time.Time     `json:"process_started_at"`
-	StoppedAt            *time.Time     `json:"stopped_at"`
-	StopReason           string         `gorm:"size:30" json:"stop_reason"`
-	Metadata             datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
-	RegisteredAt         time.Time      `gorm:"not null" json:"registered_at"`
-	CreatedAt            time.Time      `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt            time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
+	ProcessMetrics       *commonmodels.ProcessMetricsDeclaration `gorm:"serializer:json;type:jsonb" json:"-"`
+	DeclaredNodeID       string                                  `gorm:"size:36;not null;default:''" json:"-"`
+	RegistrationClientID string                                  `gorm:"size:100;not null;default:''" json:"-"`
+	NodeID               string                                  `gorm:"-" json:"-"`
+	NodeBindingState     string                                  `gorm:"-" json:"-"`
+	NodeBindingReason    string                                  `gorm:"-" json:"-"`
+	ID                   uint                                    `gorm:"primaryKey" json:"id"`
+	ModuleDefinitionID   uint                                    `gorm:"not null;uniqueIndex:uq_module_runtime_instance;index" json:"module_definition_id"`
+	InstanceID           string                                  `gorm:"not null;size:100;uniqueIndex:uq_module_runtime_instance" json:"instance_id"`
+	Role                 string                                  `gorm:"not null;size:30;index" json:"role"`
+	ModuleURL            string                                  `gorm:"size:255" json:"module_url"`
+	HealthCheckURL       string                                  `gorm:"size:255" json:"health_check_url"`
+	HostNodeName         string                                  `gorm:"size:255;not null;default:''" json:"host_node_name"`
+	HostNodeIPs          []string                                `gorm:"serializer:json;type:jsonb;not null;default:'[]'" json:"host_node_ips"`
+	RuntimeHostname      string                                  `gorm:"size:255;not null;default:''" json:"runtime_hostname"`
+	RegisteredHost       string                                  `gorm:"size:255;index" json:"registered_host"`
+	Status               string                                  `gorm:"not null;default:'up';size:20;index" json:"status"`
+	LastHeartbeat        time.Time                               `gorm:"not null;index" json:"last_heartbeat"`
+	LeaseExpiresAt       time.Time                               `gorm:"not null;index" json:"lease_expires_at"`
+	ProcessStartedAt     *time.Time                              `json:"process_started_at"`
+	StoppedAt            *time.Time                              `json:"stopped_at"`
+	StopReason           string                                  `gorm:"size:30" json:"stop_reason"`
+	Metadata             datatypes.JSON                          `gorm:"type:jsonb" json:"metadata"`
+	RegisteredAt         time.Time                               `gorm:"not null" json:"registered_at"`
+	CreatedAt            time.Time                               `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt            time.Time                               `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 func (ModuleRuntimeInstance) TableName() string { return "module_runtime_instances" }
@@ -96,6 +97,7 @@ type ModuleRegistrationRequest struct {
 	Metadata                map[string]interface{}                     `json:"metadata"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management"`
 	TaskProvider            *commonmodels.TaskProviderDeclaration      `json:"task_provider"`
+	ProcessMetrics          *commonmodels.ProcessMetricsDeclaration    `json:"process_metrics,omitempty"`
 }
 
 type HeartbeatRequest struct {
@@ -115,10 +117,11 @@ type ModuleDefinitionUpdateRequest struct {
 }
 
 type ModuleRuntimeInstanceInfo struct {
-	DeclaredNodeID    string `json:"declared_node_id"`
-	NodeID            string `json:"node_id"`
-	NodeBindingState  string `json:"node_binding_state"`
-	NodeBindingReason string `json:"node_binding_reason"`
+	ProcessMetricsDeclared bool   `json:"process_metrics_declared"`
+	DeclaredNodeID         string `json:"declared_node_id"`
+	NodeID                 string `json:"node_id"`
+	NodeBindingState       string `json:"node_binding_state"`
+	NodeBindingReason      string `json:"node_binding_reason"`
 
 	ID               uint                   `json:"id"`
 	InstanceID       string                 `json:"instance_id"`
@@ -141,6 +144,7 @@ type ModuleRuntimeInstanceInfo struct {
 }
 
 type ModuleRuntimeInstanceFilter struct {
+	IDs            []uint
 	ModuleName     string
 	RegisteredHost string
 	NodeName       string

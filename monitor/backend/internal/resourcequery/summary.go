@@ -59,18 +59,7 @@ func (c *Client) Summaries(ctx context.Context, scopes []Scope, at time.Time, b 
 		collections = append(collections, label(collectionExpression(scope)))
 	}
 	read := func(parts []string, bound int) (map[string]envelope, error) {
-		form := url.Values{"query": {strings.Join(parts, " or ")}, "time": {at.Format(time.RFC3339)}, "timeout": {strconv.Itoa(b.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}}
-		// Prometheus accepts read-only queries as form POST, avoiding URI limits.
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.origin+"/api/v1/query", strings.NewReader(form.Encode()))
-		if err != nil {
-			return nil, ErrUnavailable
-		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		data, err := c.readRequest(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		return splitSummaryEvidence(data, ids, bound)
+		return c.readSummaryGroups(ctx, parts, at, b, ids, bound, "addp_summary_node")
 	}
 	data, err := read(metrics, len(p.Metrics)*2)
 	if err != nil {
@@ -95,7 +84,22 @@ func (c *Client) Summaries(ctx context.Context, scopes []Scope, at time.Time, b 
 	return result, nil
 }
 
-func splitSummaryEvidence(data envelope, ids map[string]bool, bound int) (map[string]envelope, error) {
+func (c *Client) readSummaryGroups(ctx context.Context, parts []string, at time.Time, b Budget, ids map[string]bool, bound int, label string) (map[string]envelope, error) {
+	form := url.Values{"query": {strings.Join(parts, " or ")}, "time": {at.Format(time.RFC3339)}, "timeout": {strconv.Itoa(b.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}}
+	// Prometheus accepts read-only queries as form POST, avoiding URI limits.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.origin+"/api/v1/query", strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	data, err := c.readRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return splitSummaryEvidence(data, ids, bound, label)
+}
+
+func splitSummaryEvidence(data envelope, ids map[string]bool, bound int, label string) (map[string]envelope, error) {
 	if data.Data.ResultType != "vector" || data.Data.Result == nil {
 		return nil, ErrUnavailable
 	}
@@ -110,13 +114,13 @@ func splitSummaryEvidence(data envelope, ids map[string]bool, bound int) (map[st
 		groups[id] = group
 	}
 	for _, row := range data.Data.Result {
-		id := row.Metric["addp_summary_node"]
+		id := row.Metric[label]
 		if !ids[id] {
 			return nil, ErrUnavailable
 		}
 		labels := make(map[string]string, len(row.Metric)-1)
 		for key, value := range row.Metric {
-			if key != "addp_summary_node" {
+			if key != label {
 				labels[key] = value
 			}
 		}

@@ -58,6 +58,8 @@ Develop 模块按具体工作流运行时实例聚合算子定义，用于工作
 
 Spark 保存表结果时，Develop 根据目标 schema/database locator 和算子的 ddl 声明，将 write + ddl 授权绑定到目标引擎，源引擎与 Spark 集群仍只读。保存摘要的行数由 Runtime 发布事务返回；命名 outputs、Meta 异步扫描与 lineage_facts 继续复用既有工作流结果主线。
 
+Spark MinIO 保存固定普通 Parquet + create，由执行 UUID 和节点身份派生独占目录，目标引擎需要 read + write 以核验实际成果。稳定输出定位 whole scope item，Meta 扫描使用同范围 prefix；后续 Spark 文件加载从正式 Meta item facts 取得 format/layout，不从扩展名推断。失败与可见性边界见工作流计算引擎接口规范。
+
 文件、对象或目录型持久化转换算子使用 `addp.workflow.access-plan/v1`。工作流定义只保存 `locator`、`target_parent_locator + target_name`、`write_mode` 和公开转换选项；Develop 必须分别解析源、目标存储引擎并构造执行期访问计划，不能用一个共享 `engine_id/connection_info` 覆盖两端资源。转换成功后由 Develop 根据目标生成 `produced_targets` 并提交 Meta 深度扫描。
 
 **注意**：Meta、Transfer、Manager 模块提供的是**任务**（Tasks），不是算子，它们主要用于 Orchestrator 工作流编排。

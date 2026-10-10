@@ -291,6 +291,20 @@ func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *
 		t.Fatalf("history page = %#v, total=%d", page, total)
 	}
 
+	exact, exactTotal, exactErr := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{IDs: []uint{page[0].ID}, Page: 1, PageSize: 100})
+	if exactErr != nil || exactTotal != 1 || len(exact) != 1 || exact[0].ID != page[0].ID {
+		t.Fatalf("exact IDs include foreign records: %+v %d %v", exact, exactTotal, exactErr)
+	}
+	missing, missingTotal, missingErr := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{IDs: []uint{999999}, Page: 1, PageSize: 100})
+	if missingErr != nil || missingTotal != 0 || len(missing) != 0 {
+		t.Fatal("missing IDs projected fallback", missing, missingTotal, missingErr)
+	}
+	for _, ids := range [][]uint{{0}, {page[0].ID, page[0].ID}} {
+		if _, _, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{IDs: ids, Page: 1, PageSize: 100}); !errors.Is(err, ErrInvalidModuleRuntimeInstanceQuery) {
+			t.Fatal("invalid IDs accepted", ids, err)
+		}
+	}
+
 	up, upTotal, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
 		ModuleName: "manager", Status: models.ModuleRuntimeStatusUp, Page: 1, PageSize: 10,
 	})

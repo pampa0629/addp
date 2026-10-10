@@ -18,7 +18,7 @@ scrape_configs:
       min_version: TLS12
     static_configs:
       - targets: [localhost:9090]
-  # Node targets and identity labels belong exclusively to Monitor HTTP SD.
+  # Node and process sources share the sole Monitor HTTP SD job and its budget.
   - job_name: addp_nodes
     scheme: https
     metrics_path: /metrics
@@ -54,13 +54,31 @@ scrape_configs:
             ca_file: /etc/prometheus/deployment/control-ca.crt
             min_version: TLS12
 @@DESKTOP_LOOPBACK@@    metric_relabel_configs:
-      # Save the three owner labels, remove every source identity, then restore only these.
-      - source_labels: [addp_node_id]
+      # Remove exporter-owned temporary labels before saving controlled identities.
+      - action: labeldrop
+        regex: '__tmp_.*|__meta_.*'
+      # Node ownership belongs to host/container targets; process-host relations
+      # are read from System, never inferred from exporter labels.
+      - source_labels: [addp_monitor_kind, addp_node_id]
+        regex: '(host_resources|container_resources);(.+)'
+        replacement: '$2'
         target_label: __tmp_addp_node_id
       - source_labels: [addp_monitor_kind]
         target_label: __tmp_addp_monitor_kind
       - source_labels: [addp_source]
         target_label: __tmp_addp_source
+      - source_labels: [addp_monitor_kind, addp_module_name]
+        regex: 'process_resources;(.+)'
+        replacement: '$1'
+        target_label: __tmp_addp_module_name
+      - source_labels: [addp_monitor_kind, addp_instance_id]
+        regex: 'process_resources;(.+)'
+        replacement: '$1'
+        target_label: __tmp_addp_instance_id
+      - source_labels: [addp_monitor_kind, addp_runtime_role]
+        regex: 'process_resources;(.+)'
+        replacement: '$1'
+        target_label: __tmp_addp_runtime_role
       - action: labeldrop
         regex: '(exported_)*addp_.*'
       - source_labels: [__tmp_addp_node_id]
@@ -69,5 +87,11 @@ scrape_configs:
         target_label: addp_monitor_kind
       - source_labels: [__tmp_addp_source]
         target_label: addp_source
+      - source_labels: [__tmp_addp_module_name]
+        target_label: addp_module_name
+      - source_labels: [__tmp_addp_instance_id]
+        target_label: addp_instance_id
+      - source_labels: [__tmp_addp_runtime_role]
+        target_label: addp_runtime_role
       - action: labeldrop
         regex: '__tmp_addp_.*'

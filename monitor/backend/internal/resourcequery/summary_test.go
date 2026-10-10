@@ -88,16 +88,16 @@ func TestSummaryBudgetsAndWireLabelsAreClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := collectionWire(t, map[string]string{"up_count": "0"})
-	if _, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 9); err == nil {
+	if _, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 9, "addp_summary_node"); err == nil {
 		t.Fatal("missing scope label accepted")
 	}
 	data.Data.Result[0].Metric["addp_summary_node"] = "foreign"
-	if _, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 9); err == nil {
+	if _, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 9, "addp_summary_node"); err == nil {
 		t.Fatal("foreign node accepted")
 	}
 	data.Data.Result[0].Metric["addp_summary_node"] = testNode
 	data.Data.Result[0].Metric["private_address"] = "unexpected"
-	groups, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 9)
+	groups, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 9, "addp_summary_node")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestSummaryBudgetsAndWireLabelsAreClosed(t *testing.T) {
 		t.Fatal("extra labels accepted")
 	}
 	data.Data.Result = append(data.Data.Result, data.Data.Result[0])
-	if _, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 1); !errors.Is(err, ErrBudget) {
+	if _, err := splitSummaryEvidence(data, map[string]bool{testNode: true}, 1, "addp_summary_node"); !errors.Is(err, ErrBudget) {
 		t.Fatal("per-node wire bound bypass", err)
 	}
 }

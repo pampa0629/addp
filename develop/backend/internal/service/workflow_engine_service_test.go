@@ -7,12 +7,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
@@ -318,8 +321,9 @@ func TestPreprocessWorkflowParamsDerivesObjectTargetFromBucketLocator(t *testing
 	}
 
 	params := firstTaskParams(t, got)
-	if params["path"] != "s3a://addp/result/output.parquet" {
-		t.Fatalf("path = %v, want s3a://addp/result/output.parquet", params["path"])
+	wantPath := "s3a://addp/result/output.parquet/" + svc.resolver.executionID.String() + "-" + uuid.NewSHA1(uuid.NameSpaceOID, []byte("save_object")).String()
+	if params["path"] != wantPath || params["mode"] != "create" || params["format"] != "parquet" {
+		t.Fatalf("unexpected MinIO result params: %#v", params)
 	}
 	assertConnectionInfo(t, params, "minio")
 }
@@ -341,6 +345,43 @@ func TestPreprocessWorkflowParamsRequiresTargetNameWithParentLocator(t *testing.
 
 	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow); err == nil {
 		t.Fatal("preprocessWorkflowParams() error = nil, want target_name error")
+	}
+}
+
+func TestSparkWholeScopeUsesMetaFormatAndIndependentExecutionDirectories(t *testing.T) {
+	svc := newWorkflowEngineServiceForTest(t, 4, "minio")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer addp_at_develop" || r.URL.Query().Get("catalog_path") != "addp/results/orders" {
+			t.Errorf("unexpected Meta facts request: %s", r.URL)
+		}
+		_ = json.NewEncoder(w).Encode(commonModels.MetaItem{EngineID: 4, TenantID: 7, FullName: "addp/results/orders",
+			Attributes: map[string]interface{}{"item": map[string]interface{}{"data_type": "table", "format": "parquet", "layout": "whole"}}})
+	}))
+	defer server.Close()
+	svc.service.SetMetaClient(commonClient.NewMetaClient(server.URL, staticServiceTokenSource("addp_at_develop")))
+	definition := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "load", "operator": "load", "params": map[string]interface{}{"source_type": "file", "locator": "addp://engine/4/path/addp/results/orders?type=object"}}}}
+	prepared, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", definition)
+	if err != nil || firstTaskParams(t, prepared)["format"] != "parquet" {
+		t.Fatalf("whole scope preparation = %#v, %v", prepared, err)
+	}
+	definition = map[string]interface{}{"tasks": []interface{}{
+		map[string]interface{}{"id": "first", "operator": "save", "params": map[string]interface{}{"target_parent_locator": "addp://engine/4/path/addp/results?type=prefix", "target_name": "orders"}},
+		map[string]interface{}{"id": "second", "operator": "save", "params": map[string]interface{}{"target_parent_locator": "addp://engine/4/path/addp/results?type=prefix", "target_name": "orders"}},
+	}}
+	_, first, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", definition)
+	if err != nil || len(first) != 2 || first[0].Locator == first[1].Locator || first[0].Layout != "whole" || first[0].WriteMode != "create" {
+		t.Fatalf("independent node outputs = %#v, %v", first, err)
+	}
+	svc.resolver.executionID = uuid.New()
+	_, second, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", definition)
+	if err != nil || first[0].Locator == second[0].Locator {
+		t.Fatalf("successive execution outputs = %#v, %v", second, err)
+	}
+	for _, mode := range []string{"overwrite", "append"} {
+		firstTaskParams(t, definition)["mode"] = mode
+		if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", definition); err == nil {
+			t.Fatalf("MinIO mode %s was accepted", mode)
+		}
 	}
 }
 
@@ -1092,6 +1133,18 @@ func newWorkflowEngineServiceWithRawEnginesForTest(t *testing.T, engines map[uin
 	}
 	authorization := &IssuedWorkflowExecutionAuthorization{AuthorizationID: 1, ExpiresAt: time.Now().Add(time.Hour)}
 	workflowService := NewWorkflowEngineService(nil)
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/meta/items/by-catalog-path" {
+			http.NotFound(w, r)
+			return
+		}
+		id, _ := strconv.ParseUint(r.URL.Query().Get("engine_id"), 10, 32)
+		name := r.URL.Query().Get("catalog_path")
+		_ = json.NewEncoder(w).Encode(commonModels.MetaItem{EngineID: uint(id), TenantID: 7, FullName: name,
+			Attributes: map[string]interface{}{"item": map[string]interface{}{"data_type": "table", "format": string(format.DetectFormat(name, nil)), "layout": "single"}}})
+	}))
+	t.Cleanup(metaServer.Close)
+	workflowService.SetMetaClient(commonClient.NewMetaClient(metaServer.URL, staticServiceTokenSource("addp_at_develop")))
 	workflowService.SetProtectionGate(allowDevelopProtectionGate{})
 	return &workflowEngineServiceTestHarness{
 		service: workflowService,

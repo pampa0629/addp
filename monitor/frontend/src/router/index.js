@@ -9,6 +9,7 @@ import NotificationList from '../views/NotificationList.vue'
 import Login from '../views/Login.vue'
 import MonitoringTargets from '../views/MonitoringTargets.vue'
 import NodeResources from '../views/NodeResources.vue'
+import ProcessResources from '../views/ProcessResources.vue'
 
 const routes = [
   {
@@ -23,8 +24,11 @@ const routes = [
     meta: { handlesForbidden: true },
     beforeEnter: () => {
       const authStore = useAuthStore()
-      return resolveModuleLandingRoute('/monitor', ['/node-resources', '/monitoring-targets', '/dashboard', '/executions', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
+      return resolveModuleLandingRoute('/monitor', ['/node-resources', '/service-resources', '/monitoring-targets', '/dashboard', '/executions', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
     }
+  },
+  {
+    path: '/service-resources', name: 'ProcessResources', component: ProcessResources
   },
   {
     path: '/node-resources', name: 'NodeResources', component: NodeResources

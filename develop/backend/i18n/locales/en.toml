@@ -260,3 +260,24 @@ other = "Failed to read execution records"
 
 [develop.execution.not_found]
 other = "Execution not found or not visible"
+
+[develop.workflow.spark_object_result_policy]
+other = "Spark object results require MinIO ordinary Parquet in create mode"
+
+[develop.workflow.spark_object_result_identity]
+other = "Spark object results require one target and an execution identity"
+
+[develop.workflow.spark_result_literal_path]
+other = "Spark result directories require literal resource paths"
+
+[develop.workflow.spark_file_facts_required]
+other = "Spark file loading requires Meta data item facts"
+
+[develop.workflow.spark_file_facts_read_failed]
+other = "Failed to read Spark data item facts"
+
+[develop.workflow.spark_file_facts_mismatch]
+other = "Spark data item facts differ from the resource locator"
+
+[develop.workflow.spark_table_item_required]
+other = "Spark file loading requires a recognized table data item"

@@ -125,6 +125,8 @@ await syncConsoleRoute('/manager/data-explorer?locator=...', { history: 'replace
 
 执行详情中的 `addp.lineage-facts/v1` 统一通过 `buildExecutionLineageSummary(metadata)` 归一化。业务 ResourceLocator 可以进入 Manager 数据探查；`addp-infra://` 只表示平台内部产物，不是业务数据项，也不能据其存储位置推断临时或长期生命周期。
 
+`createLatestRequestScope()` 单点维护资源页面请求取消与迟到响应隔离。每轮先 `invalidate()` 获取 ticket，写回状态前检查 `current(ticket)`；卸载调用 `dispose()`。主机与服务监控复用此能力，领域分页、授权与展示仍由 Monitor 维护。
+
 ### Console 页面描述与最近访问
 
 数据元冻结引用使用 `buildStandardElementRevisionRoute(elementId, revisionId)` 构造唯一公开地址，再调用 `openConsoleRoute()`。Standard 页内历史选择使用同一契约的 `buildStandardElementRevisionLocation()`；两个 ID 必须为正整数，禁止跳到默认当前修订替代历史引用。

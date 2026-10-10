@@ -9,6 +9,8 @@ from urllib.parse import quote
 
 spark = (SparkSession.builder.appName('ADDP-HDFS-distributed-contract')
          .config('spark.sql.extensions', 'org.apache.sedona.sql.SedonaSqlExtensions')
+         .config('spark.sql.sources.commitProtocolClass', 'org.apache.spark.internal.io.cloud.PathOutputCommitProtocol')
+         .config('spark.sql.parquet.output.committer.class', 'org.apache.spark.internal.io.cloud.BindingParquetOutputCommitter')
          .config('spark.driver.host', 'spark-master')
          .config('spark.driver.bindAddress', '0.0.0.0')
          .config('spark.cores.max', '2')
@@ -143,5 +145,68 @@ try:
     assert query("SELECT count(*) FROM pg_tables WHERE schemaname='results' AND tablename LIKE '__addp_spark_stage_%'") == [('0',)]
     print('HDFS_SPARK_POSTGRES_PASS preserved=true rollback=true rows=2 spatial=true reuse=true staging=0', flush=True)
     print('HDFS_SPARK_PASS formats=csv,json,parquet distributed=true', flush=True)
+    from unittest.mock import patch
+    from uuid import uuid4
+    store = {'engine_type': 'minio', 'endpoint': 'minio:9000', 'access_key': 'owned-minio-access',
+             'secret_key': 'owned-minio-secret', 'use_ssl': False, 'bucket': 'result'}
+    def result_params(connection=store):
+        return {'path': 's3a://result/results/' + str(uuid4()), 'mode': 'create',
+                'format': 'parquet', 'connection_info': connection}
+    first = result_params()
+    assert FileAdapter.save(frame, first) == 2
+    assert FileAdapter.load(spark, first).orderBy('id').collect() == frame.orderBy('id').collect()
+    second = result_params()
+    assert FileAdapter.save(frame.limit(0), second) == 0
+    assert FileAdapter.load(spark, second).schema.simpleString() == frame.schema.simpleString()
+    assert FileAdapter.load(spark, first).count() == 2
+    # Identical bucket + key on a different endpoint with different credentials.
+    other_store = dict(store, endpoint='minio-other:9000', access_key='other-minio-access', secret_key='other-minio-secret')
+    other = dict(first, connection_info=other_store)
+    other_frame = spark.createDataFrame([(8, 80)], frame.schema)
+    assert FileAdapter.save(other_frame, other) == 1
+    assert FileAdapter.load(spark, other).first().id == 8
+    assert FileAdapter.load(spark, first).count() == 2
+    try:
+        FileAdapter.save(frame, first)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('Existing result was overwritten')
+    failed = result_params()
+    with patch.object(FileAdapter, '_verify_s3_parquet', side_effect=ValueError('injected post-commit failure')):
+        try:
+            FileAdapter.save(frame, failed)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Invalid publication was reported as successful')
+    physical, options = FileAdapter._s3_access(first)
+    fs, conf = FileAdapter._s3_filesystem(spark, physical, options)
+    try:
+        assert not fs.exists(spark.sparkContext._jvm.org.apache.hadoop.fs.Path(failed['path']))
+        assert fs.getWriteOperationHelper().listMultipartUploads('results/').isEmpty()
+        helper = fs.getWriteOperationHelper()
+        owned_prefix = failed['path'].split('/', 3)[3]
+        sibling_prefix = owned_prefix + '-sibling'
+        for prefix in (owned_prefix, sibling_prefix):
+            key = prefix + '/pending.parquet'
+            upload = helper.initiateMultiPartUpload(key)
+            stream = spark.sparkContext._jvm.java.io.ByteArrayInputStream(bytearray(b'pending'))
+            helper.uploadPart(helper.newUploadPartRequest(key, upload, 1, 7, stream, None, 0))
+            listed = helper.listMultipartUploads(prefix + '/')
+            all_uploads = helper.listMultipartUploads('')
+            print('MULTIPART_SCOPE_CHECK scope=' + prefix + ' count=' + str(listed.size())
+                  + ' all_keys=' + str([value.getKey() for value in all_uploads]), flush=True)
+            assert listed.size() == 1, 'Multipart fixture was not observable before cleanup'
+        try:
+            FileAdapter._cleanup_s3_result(fs, failed['path'])
+            assert helper.listMultipartUploads(owned_prefix + '/').isEmpty()
+            assert helper.listMultipartUploads(sibling_prefix + '/').size() == 1
+        finally:
+            helper.abortMultipartUploadsUnderPath(sibling_prefix + '/')
+        assert FileAdapter._verify_s3_parquet(spark, fs, conf, physical, options, frame.schema) == 2
+    finally:
+        fs.close()
+    print('SPARK_MINIO_PARQUET_PASS distributed=true rows=2 empty=0 endpoint_isolation=true failure_cleanup=true', flush=True)
 finally:
     spark.stop()

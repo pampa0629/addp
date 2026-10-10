@@ -184,7 +184,7 @@ class OperatorMetadataTest(unittest.TestCase):
         assert_operator_metadata_contract(operators, expected_engine_type="spark_workflow")
         by_name = {operator["name"]: operator for operator in operators}
         self.assertEqual(["read"], by_name["load"]["effects"])
-        self.assertEqual(["write", "ddl"], by_name["save"]["effects"])
+        self.assertEqual(["read", "write", "ddl"], by_name["save"]["effects"])
 
     def test_parameter_types_use_standard_contract_names(self):
         operators = {operator["name"]: operator for operator in get_operator_metadata()}

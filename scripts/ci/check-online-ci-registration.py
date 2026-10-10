@@ -1625,7 +1625,7 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
             'start_online_spark_runtime online-hdfs hdfs', 'RUNTIME_IMAGE', 'RUNTIME_CONTAINER',
             'scripts/test/online-engine-registration.py',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'SPARK_MODE override is forbidden',
-            'run_logged make test-online', 'online-hdfs-spark-fixture.sh stop',
+            'run_logged make test-online', 'online-hdfs-spark-fixture.sh stop', 'ADDP_ONLINE_MINIO_ENGINE_ID',
         ),
         "scripts/utils/hosted-online.sh": (
             "make build-images", "Runtime image identity mismatch", "Runtime default entry mismatch",
@@ -1634,7 +1634,7 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         ),
         "business/scripts/online-hdfs-spark-fixture.sh": (
             'com.addp.online-fixture', '--network host', '--tmpfs /data', '/addp/hdfs/init.py',
-            'refusing to delete a foreign container', 'fixture containers remain',
+            'refusing to delete a foreign container', 'fixture containers remain', 'addp-hdfs-online-minio', 'minio-engine.json',
         ),
         "scripts/test/spark-online-evidence.py": (
             'Finished task', 'ADDP-Workflow-Engine-', 'com.addp.online-fixture',
@@ -1642,7 +1642,7 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         ),
         "scripts/test/hdfs-spark-consumer-flow-online.py": (
             '/api/v1/develop/executions', 'spark_cluster_id', 'SPARK.worker_evidence', 'SPARK.runtime_status_evidence',
-            'e2e/online/hdfs-spark-consumer-flow.spec.js', 'evidence != expected',
+            'e2e/online/hdfs-spark-consumer-flow.spec.js', 'evidence != expected', 'minio_physical', 'minio_second',
         ),
         "console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js": (
             'login(', 'auth.principalID', 'meta/scan/run/manual', '.workflow-final-result-json',

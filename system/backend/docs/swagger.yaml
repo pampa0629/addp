@@ -823,6 +823,8 @@ definitions:
     type: object
   github_com_addp_system_internal_engineaccess.SourceGrantInspectionSource:
     properties:
+      approval_mode:
+        type: string
       expires_at:
         type: string
       expiry_mode:
@@ -833,6 +835,8 @@ definitions:
         example: ""
         type: string
       recipient_type:
+        type: string
+      request_id:
         type: string
     type: object
   github_com_addp_system_internal_engineaccess.SourceGrantRelation:
@@ -851,6 +855,8 @@ definitions:
         type: integer
       granted_at:
         type: string
+      inspection:
+        $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspection'
       recipient_id:
         example: ""
         type: string
@@ -1969,6 +1975,8 @@ definitions:
         type: string
       node_id:
         type: string
+      process_metrics:
+        $ref: '#/definitions/models.ProcessMetricsDeclaration'
       process_started_at:
         type: string
       role:
@@ -2027,6 +2035,8 @@ definitions:
         type: string
       node_id:
         type: string
+      process_metrics_declared:
+        type: boolean
       process_started_at:
         type: string
       registered_at:
@@ -2079,6 +2089,8 @@ definitions:
         type: string
       node_id:
         type: string
+      process_metrics_declared:
+        type: boolean
       process_started_at:
         type: string
       registered_at:
@@ -3937,13 +3949,6 @@ definitions:
     - mode
     - reason
     type: object
-  internal_api.InspectSourceGrantsRequest:
-    properties:
-      account_id:
-        type: string
-      catalog_path:
-        $ref: '#/definitions/plugin.EngineCatalogPath'
-    type: object
   internal_api.RasterPlatformUpdate:
     properties:
       cache_mib:
@@ -4103,6 +4108,10 @@ definitions:
         type: string
       node_id:
         type: string
+      process_metrics:
+        $ref: '#/definitions/models.ProcessMetricsDeclaration'
+      process_started_at:
+        type: string
       role:
         type: string
     type: object
@@ -4112,6 +4121,13 @@ definitions:
         type: string
       version:
         type: integer
+    type: object
+  models.ProcessMetricsDeclaration:
+    properties:
+      endpoint:
+        type: string
+      schema_version:
+        type: string
     type: object
   models.TaskProvider:
     properties:
@@ -6503,7 +6519,7 @@ paths:
   /engines/{id}/access_grants:
     get:
       description: |-
-        表名、接收方类型和编号条件取交集，完整结果筛选后计数及分页；不展开组织成员来源 | Table, recipient type and ID filters intersect before counting and pagination; does not expand organization membership
+        选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination
         按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
       parameters:
       - description: 引擎 ID | Engine ID
@@ -6797,60 +6813,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 查看源数据授权历史 | List source-data Grant history
-      tags:
-      - 源数据授权 | Source Data Grants
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.engine_access_grant.read
-  /engines/{id}/access_grants/inspection:
-    post:
-      consumes:
-      - application/json
-      description: |-
-        当前租户用户须授权读取权限及引擎管理资格；选择同租户账号和精确普通表，使用实际读取的唯一源规则展开当前有效个人、部门及项目组授权。拒绝仅返回固定命中结论，不返回规则正文或编号 | Current Tenant User needs grant-read permission and engine management qualification. Uses the actual-read rule query to inspect current personal, department and project-group sources for a same-tenant account and exact ordinary table. Deny is exposed only as a fixed reason, never its body or ID
-        只读观察不连接源库、不授权、不核验接收方实际会话、功能或 Security；rule_covered 不是实际访问许可，响应不可缓存 | Read-only observation never connects to the source or issues access, and does not validate the recipient's real session, function permissions or Security. rule_covered is not actual access; response is not cacheable
-      parameters:
-      - description: 引擎 ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: 账号与精确表 | Account and exact table
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.InspectSourceGrantsRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 当次源规则观察 | Current source-rule observation
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspection'
-        "400":
-          description: 请求失败 | Request failed
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "401":
-          description: 请求失败 | Request failed
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "403":
-          description: 请求失败 | Request failed
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "404":
-          description: 请求失败 | Request failed
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-        "500":
-          description: 请求失败 | Request failed
-          schema:
-            $ref: '#/definitions/internal_api.IAMErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 核查账号的源数据授权来源 | Inspect an account's source-data grant sources
       tags:
       - 源数据授权 | Source Data Grants
       x-addp-auth-mode: permission
@@ -8754,6 +8716,11 @@ paths:
       - description: 稳定模块名，精确匹配 | Stable module name, exact match
         in: query
         name: module_name
+        type: string
+      - description: 最多 100 个不重复规范正整数实例记录 ID，以逗号分隔，精确过滤 | Up to 100 unique canonical
+          positive instance record IDs, comma-separated, exact filtering
+        in: query
+        name: ids
         type: string
       - description: 宿主节点名或运行环境主机名，不区分大小写的精确匹配 | Host node name or runtime hostname,
           case-insensitive exact match
@@ -10919,10 +10886,10 @@ paths:
       - system.runtime_registry.read
   /runtime/observability-identities:
     get:
-      description: 固定 Monitor Platform Service Client 读取有界节点及有效实例投影；不含端点、元数据、凭据或租户数据
-        | The fixed Monitor Platform Service Client reads a bounded projection of
-        nodes and valid instances without endpoints, metadata, credentials or tenant
-        data
+      description: 固定 Monitor Platform Service Client 读取有界节点及有效实例投影，包含私有进程采集声明；不含元数据、凭据或租户数据，不供浏览器使用
+        | The fixed Monitor Platform Service Client reads a bounded node and instance
+        projection including private process metrics declarations; excludes metadata,
+        credentials and tenant data and is not a browser API
       produces:
       - application/json
       responses:

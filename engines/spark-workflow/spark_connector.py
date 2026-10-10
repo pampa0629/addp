@@ -82,15 +82,6 @@ class SparkConnector:
                     .config("spark.driver.host", shared_host) \
                     .config("spark.driver.bindAddress", "0.0.0.0")
 
-        # S3/MinIO配置 (从资源中读取)
-        if 's3_endpoint' in conn_info:
-            builder = builder \
-                .config("spark.hadoop.fs.s3a.endpoint", conn_info['s3_endpoint']) \
-                .config("spark.hadoop.fs.s3a.access.key", conn_info.get('s3_access_key', 'minioadmin')) \
-                .config("spark.hadoop.fs.s3a.secret.key", conn_info.get('s3_secret_key', 'minioadmin')) \
-                .config("spark.hadoop.fs.s3a.path.style.access", "true") \
-                .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-
         # 创建会话
         spark = builder.getOrCreate()
 

@@ -1100,15 +1100,19 @@
     },
     "engine": {
       "sourceGrants": {
+        "historyBoundary": "Issuance history includes issued, revoked and expired authorizations. Switch to Current authorizations to review active grants or revoke access.",
+        "accountSourcesHint": "Personal grants and current organization sources are grouped per table. Expand to inspect or revoke one source; other sources remain. Coverage is not actual access: function, session and security checks still apply.",
+        "noMatchingSources": "No authorization records match these filters",
+        "source": "Authorization source",
+        "viewSources": "View sources ({count})",
+        "revokeSource": "Revoke source",
+        "revokeOrganizationBoundary": "This is an organization grant. Revocation affects every member relying on this source, not only the filtered account.",
+        "ruleStatus": "Data rule status",
         "inspection": {
-          "title": "Account grant inspection",
-          "boundary": "Select one table above and an account to inspect personal, department and project-group sources. Rule coverage is not final access; actual reads still require function permissions and security checks.",
-          "selectTable": "Select one table in the resource tree above, not a schema or node",
-          "query": "Inspect grant sources",
           "observedAt": "Observed at",
           "noSources": "No currently effective grant sources",
           "reasons": {
-            "grant": "Source rules covered: effective grants exist with no matching source Deny",
+            "grant": "Source rules cover this table",
             "no_grant": "Source rules not covered: no effective personal or organization grant",
             "explicit_deny": "Source Deny matched: grants do not override this restriction",
             "source_unavailable": "Account or tenant membership is currently invalid",
@@ -1121,7 +1125,7 @@
         "allRecipientTypes": "All types",
         "allRecipients": "All recipients (search name or code)",
         "selectRecipientType": "Select a recipient type first",
-        "recipientFilterBoundary": "Table and recipient filters intersect. Type alone shows all Grants of that type; a specific account, department or project group shows only direct Grants to that recipient, without expanding organization membership sources.",
+        "recipientFilterBoundary": "Filters intersect. A type lists its direct relations. Departments, project groups and history match direct recipients. A selected user in current grants also expands current organization sources.",
         "current": "Current authorizations",
         "history": "Authorization history",
         "sourceCount": "Active records",
@@ -1168,6 +1172,8 @@
         "revoked": "This read authorization relation is withdrawn; history is retained. Other personal or organization sources are unchanged."
       },
       "dataAuthorization": {
+        "newAuthorization": "New authorization",
+        "backToCurrent": "Back to current authorizations",
         "title": "Data authorization",
         "boundary": "Choose data and recipients, an approval mode and read validity, then confirm. Authorization administrators may handle grants directly; delegating handling does not grant reading.",
         "selectData": "1. Choose data to authorize",

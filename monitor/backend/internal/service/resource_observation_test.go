@@ -109,6 +109,9 @@ func (b *resourceBackend) Query(_ context.Context, p resourcequery.Plan, s resou
 	return rows, nil
 }
 func resourceSourcePolicy(t *testing.T) *metricsdiscovery.SourcePolicy {
+	return resourceSourcePolicyWithNetwork(t, []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, []uint16{9100})
+}
+func resourceSourcePolicyWithNetwork(t *testing.T, prefixes []netip.Prefix, ports []uint16) *metricsdiscovery.SourcePolicy {
 	t.Helper()
 	key, e := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if e != nil {
@@ -119,7 +122,7 @@ func resourceSourcePolicy(t *testing.T) *metricsdiscovery.SourcePolicy {
 	if e != nil {
 		t.Fatal(e)
 	}
-	p, e := metricsdiscovery.NewSourcePolicy([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, []uint16{9100}, x509.NewCertPool(), tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key})
+	p, e := metricsdiscovery.NewSourcePolicy(prefixes, ports, x509.NewCertPool(), tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -131,7 +134,7 @@ func TestResourceQueryCurrentUserScopeStoppedTargetsAndHotBudget(t *testing.T) {
 	backend := &resourceBackend{}
 	targets := &targetTestStore{rows: []metricsdiscovery.NodeTarget{{ID: uuid.NewString(), Version: 2, Subject: metricsdiscovery.NodeSubject{Kind: "node", NodeID: node}, MonitorKind: "host_resources", Source: metricsdiscovery.NodeSource{Type: "node_exporter", Endpoint: "https://127.0.0.1:9100/metrics"}, Enabled: true}}}
 	policies := &resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}
-	svc := NewResourceObservationService(policies, targets, nodes, backend, true, resourceSourcePolicy(t))
+	svc := NewResourceObservationService(policies, targets, nodes, backend, true, resourceSourcePolicy(t), ProcessObservationDependencies{})
 	query := func() (ResourceObservationResponse, error) {
 		return svc.Query(context.Background(), "user-1", node, "addp_at_current_user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false, nil)
 	}
@@ -234,7 +237,7 @@ func (p *blockingResourcePolicies) Save(context.Context, models.ResourceQueryPol
 }
 func TestResourceConcurrencyAdmissionPrecedesConfigurationRead(t *testing.T) {
 	policies := &blockingResourcePolicies{entered: make(chan struct{}, 8), wait: make(chan struct{})}
-	service := NewResourceObservationService(policies, nil, nil, nil, false, nil)
+	service := NewResourceObservationService(policies, nil, nil, nil, false, nil, ProcessObservationDependencies{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 8)
@@ -270,7 +273,7 @@ func TestResourceQueryExpiryClearsAllCollectorEvidence(t *testing.T) {
 	sampled := now.Add(-59 * time.Second)
 	backend := &resourceBackend{evidence: &resourcequery.Collection{State: "collecting", SampledAt: &sampled, Filesystem: "available", Network: "available"}}
 	targets := &targetTestStore{rows: []metricsdiscovery.NodeTarget{{ID: uuid.NewString(), Version: 1, Subject: metricsdiscovery.NodeSubject{Kind: "node", NodeID: node}, MonitorKind: "host_resources", Source: metricsdiscovery.NodeSource{Type: "node_exporter", Endpoint: "https://127.0.0.1:9100/metrics"}, Enabled: true}}}
-	svc := NewResourceObservationService(&resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}, targets, &resourceNodes{enabled: true}, backend, true, resourceSourcePolicy(t))
+	svc := NewResourceObservationService(&resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}, targets, &resourceNodes{enabled: true}, backend, true, resourceSourcePolicy(t), ProcessObservationDependencies{})
 	calls := 0
 	svc.now = func() time.Time {
 		calls++
