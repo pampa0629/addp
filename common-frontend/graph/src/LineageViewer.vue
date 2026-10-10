@@ -691,7 +691,8 @@ function focusItem(item) {
   if (isFieldGraph.value && selectedNode.value?.kind === 'field_ref') { focusField(selectedNode.value); return }
   const focused = focusDAGConnections(graphInstance.value, item)
   for (const edge of graphInstance.value.getEdges()) {
-    graphInstance.value.setItemState(edge, 'hover', focused.includes(edge))
+    const hovered = focused.includes(edge)
+    if (edge.hasState('hover') !== hovered) graphInstance.value.setItemState(edge, 'hover', hovered)
   }
   for (const edge of focused) {
     edge.getSource().toFront()
@@ -706,7 +707,8 @@ function focusField(node) {
   const palette = themePalette()
   for (const item of graphInstance.value.getEdges()) {
     const active = !focus || focus.connections.has(item.getID())
-    graphInstance.value.setItemState(item, 'hover', !!focus && active)
+    const hovered = !!focus && active
+    if (item.hasState('hover') !== hovered) graphInstance.value.setItemState(item, 'hover', hovered)
     item.getContainer().attr('opacity', active ? 1 : 0.15)
   }
   for (const item of graphInstance.value.getNodes()) {
@@ -777,8 +779,9 @@ function zoomBy(ratio) {
 }
 
 function clearSelection() {
-  graphInstance.value?.getNodes().forEach(item => graphInstance.value.setItemState(item, 'selected', false))
-  graphInstance.value?.getEdges().forEach(item => graphInstance.value.setItemState(item, 'selected', false))
+  for (const item of [...(graphInstance.value?.getNodes() || []), ...(graphInstance.value?.getEdges() || [])]) {
+    if (item.hasState('selected')) graphInstance.value.setItemState(item, 'selected', false)
+  }
   selectedNode.value = null
   selectedEdge.value = null
   if (isFieldGraph.value) focusField(null)
