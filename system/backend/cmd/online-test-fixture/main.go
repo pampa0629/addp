@@ -142,8 +142,10 @@ func suitePermissions(suite string) ([]string, error) {
 		return append(permissions, "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read"), nil
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
 		return consumerPermissions, nil
-	case "elasticsearch-consumer-flow", "hdfs-spark-consumer-flow":
+	case "elasticsearch-consumer-flow":
 		return readWorkflowConsumerPermissions, nil
+	case "hdfs-spark-consumer-flow":
+		return append(append([]string{}, readWorkflowConsumerPermissions...), "develop.data_write.execute", "develop.data_ddl.execute", "meta.lineage.read"), nil
 	case "redis-consumer-flow":
 		return redisConsumerPermissions, nil
 	case "transfer-relational-sql-etl":

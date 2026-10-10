@@ -610,17 +610,17 @@ func TestElasticsearchFixtureUsesOnlyReadConsumerAndSeparateProvisioner(t *testi
 	}
 }
 
-func TestHDFSFixtureUsesReadWorkflowConsumerAndSeparateProvisioner(t *testing.T) {
+func TestHDFSFixtureUsesPersistedWorkflowConsumerAndSeparateProvisioner(t *testing.T) {
 	permissions, err := suitePermissions("hdfs-spark-consumer-flow")
-	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("hdfs-spark-consumer-flow") {
+	if err != nil || len(permissions) != 13 || !needsEngineProvisioner("hdfs-spark-consumer-flow") {
 		t.Fatalf("unexpected HDFS fixture: %v %v", permissions, err)
 	}
 	for _, key := range permissions {
-		if strings.HasPrefix(key, "system.engine.") || strings.Contains(key, "write") || strings.HasPrefix(key, "iam.") {
+		if strings.HasPrefix(key, "system.engine.") || strings.HasPrefix(key, "iam.") {
 			t.Fatalf("unnecessary permission %s", key)
 		}
 	}
-	for _, key := range []string{"system.engine_catalog.read", "meta.scan_task.execute", "manager.content.read", "develop.data_read.execute", "develop.task.execute", "system.execution_authorization.create"} {
+	for _, key := range []string{"system.engine_catalog.read", "meta.scan_task.execute", "manager.content.read", "develop.data_read.execute", "develop.task.execute", "system.execution_authorization.create", "develop.data_write.execute", "develop.data_ddl.execute", "meta.lineage.read"} {
 		if !contains(permissions, key) {
 			t.Fatalf("missing %s", key)
 		}

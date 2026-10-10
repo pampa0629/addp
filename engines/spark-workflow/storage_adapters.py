@@ -203,26 +203,30 @@ class DatabaseAdapter:
                     mode: str) -> None:
         writer = df.write.format("jdbc") \
             .option("url", jdbc_url) \
-            .option("dbtable", f"{schema}.{table}") \
+            .option("dbtable", DatabaseAdapter._postgresql_table(schema, table)
+                    if driver == "org.postgresql.Driver" else f"{schema}.{table}") \
             .option("user", conn_info.get('user', conn_info.get('username', ''))) \
             .option("password", conn_info.get('password', '')) \
             .option("driver", driver)
         writer.mode(mode).save()
 
     @staticmethod
-    def _open_jdbc_connection(df: DataFrame, jdbc_url: str,
+    def _open_jdbc_connection(spark: SparkSession, jdbc_url: str,
                               conn_info: Dict[str, Any]):
-        jvm = df.sparkSession.sparkContext._jvm
+        jvm = spark.sparkContext._jvm
         properties = jvm.java.util.Properties()
         properties.setProperty("user", conn_info.get('user', conn_info.get('username', '')))
         properties.setProperty("password", conn_info.get('password', ''))
-        return jvm.java.sql.DriverManager.getConnection(jdbc_url, properties)
+        _, driver = DatabaseAdapter._jdbc_config(conn_info['engine_type'], conn_info)
+        registry = jvm.org.apache.spark.sql.execution.datasources.jdbc.DriverRegistry
+        registry.register(driver)
+        return registry.get(driver).connect(jdbc_url, properties)
 
     @staticmethod
     def _prepare_doris_table(df: DataFrame, jdbc_url: str,
                              conn_info: Dict[str, Any], schema: str,
                              table: str, mode: str) -> None:
-        connection = DatabaseAdapter._open_jdbc_connection(df, jdbc_url, conn_info)
+        connection = DatabaseAdapter._open_jdbc_connection(df.sparkSession, jdbc_url, conn_info)
         statement = connection.createStatement()
         qualified_table = (
             f"{DatabaseAdapter._spark_identifier(schema)}."
@@ -248,7 +252,7 @@ class DatabaseAdapter:
         connection = None
         statement = None
         try:
-            connection = DatabaseAdapter._open_jdbc_connection(df, jdbc_url, conn_info)
+            connection = DatabaseAdapter._open_jdbc_connection(df.sparkSession, jdbc_url, conn_info)
             statement = connection.createStatement()
             statement.execute(
                 f"DROP TABLE IF EXISTS {DatabaseAdapter._postgresql_table(schema, table)}"
@@ -262,107 +266,154 @@ class DatabaseAdapter:
                 connection.close()
 
     @staticmethod
-    def _finalize_postgresql_geometry_table(
-        df: DataFrame,
-        jdbc_url: str,
-        conn_info: Dict[str, Any],
-        schema: str,
-        stage_table: str,
-        target_table: str,
-        geometry_columns: list[str],
-        mode: str,
-    ) -> None:
-        connection = DatabaseAdapter._open_jdbc_connection(df, jdbc_url, conn_info)
-        statement = connection.createStatement()
+    def _postgresql_query(connection, sql: str, params=()) -> list[tuple]:
+        statement = connection.prepareStatement(sql)
+        try:
+            for index, value in enumerate(params, 1):
+                statement.setString(index, value)
+            rows = statement.executeQuery()
+            try:
+                width = rows.getMetaData().getColumnCount()
+                result = []
+                while rows.next():
+                    result.append(tuple(rows.getString(index) for index in range(1, width + 1)))
+                return result
+            finally:
+                rows.close()
+        finally:
+            statement.close()
+
+    @staticmethod
+    def _validate_postgresql_columns(connection, stage_ref: str, target_ref: str,
+                                     geometry_columns: list[str]) -> None:
+        query = (
+            "SELECT attname, atttypid::text, atttypmod::text, attgenerated, attidentity "
+            "FROM pg_attribute WHERE attrelid = to_regclass(?) "
+            "AND attnum > 0 AND NOT attisdropped"
+        )
+        stage = {row[0]: row[1:] for row in DatabaseAdapter._postgresql_query(connection, query, (stage_ref,))}
+        target = {row[0]: row[1:] for row in DatabaseAdapter._postgresql_query(connection, query, (target_ref,))}
+        if stage.keys() != target.keys():
+            raise ValueError("PostgreSQL target column set differs from the saved result")
+        for name, (type_id, modifier, generated, identity) in target.items():
+            source_type, source_modifier, _, _ = stage[name]
+            if generated or identity:
+                raise ValueError("PostgreSQL save does not support generated or identity target columns")
+            if (type_id != source_type or
+                    (name not in geometry_columns and modifier not in ('-1', source_modifier))):
+                raise ValueError(f"PostgreSQL target column type differs from the saved result: {name}")
+
+    @staticmethod
+    def _finalize_postgresql_table(
+        df: DataFrame, jdbc_url: str, conn_info: Dict[str, Any], schema: str,
+        stage_table: str, target_table: str, geometry_columns: list[str], mode: str, stage_columns: list[str],
+    ) -> int:
+        connection = DatabaseAdapter._open_jdbc_connection(df.sparkSession, jdbc_url, conn_info)
+        statement = None
         stage_ref = DatabaseAdapter._postgresql_table(schema, stage_table)
         target_ref = DatabaseAdapter._postgresql_table(schema, target_table)
-        stage_renamed = False
         try:
             connection.setAutoCommit(False)
-            conversions = ", ".join(
-                f"ALTER COLUMN {DatabaseAdapter._postgresql_identifier(column)} "
-                f"TYPE geometry USING ST_GeomFromEWKT({DatabaseAdapter._postgresql_identifier(column)})"
-                for column in geometry_columns
-            )
-            statement.execute(f"ALTER TABLE {stage_ref} {conversions}")
-
-            if mode == 'overwrite':
-                statement.execute(f"DROP TABLE IF EXISTS {target_ref}")
+            statement = connection.createStatement()
+            for original, staged in zip(df.columns, stage_columns):
                 statement.execute(
-                    f"ALTER TABLE {stage_ref} RENAME TO "
-                    f"{DatabaseAdapter._postgresql_identifier(target_table)}"
+                    f"ALTER TABLE {stage_ref} RENAME COLUMN {DatabaseAdapter._postgresql_identifier(staged)} "
+                    f"TO {DatabaseAdapter._postgresql_identifier(original)}"
                 )
-                stage_renamed = True
+            if geometry_columns:
+                conversions = ", ".join(
+                    f"ALTER COLUMN {DatabaseAdapter._postgresql_identifier(column)} "
+                    f"TYPE geometry USING ST_GeomFromEWKT({DatabaseAdapter._postgresql_identifier(column)})"
+                    for column in geometry_columns
+                )
+                statement.execute(f"ALTER TABLE {stage_ref} {conversions}")
+            # Serialize publications even before a target exists. The lock is
+            # transaction scoped; Spark's distributed stage write holds no target lock.
+            DatabaseAdapter._postgresql_query(
+                connection, "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", (target_ref,)
+            )
+            target = DatabaseAdapter._postgresql_query(
+                connection, "SELECT relkind FROM pg_class WHERE oid = to_regclass(?)", (target_ref,)
+            )
+            if target:
+                if target[0][0] != 'r':
+                    raise ValueError("PostgreSQL save requires an ordinary table target")
+                # Blocks other writers and DDL while allowing MVCC readers.
+                statement.execute(f"LOCK TABLE {target_ref} IN SHARE ROW EXCLUSIVE MODE")
+                DatabaseAdapter._validate_postgresql_columns(connection, stage_ref, target_ref, geometry_columns)
+            staged_rows = int(DatabaseAdapter._postgresql_query(
+                connection, f"SELECT COUNT(*) FROM {stage_ref}"
+            )[0][0])
+            if target:
+                columns = ", ".join(DatabaseAdapter._postgresql_identifier(column) for column in df.columns)
+                existing_rows = int(DatabaseAdapter._postgresql_query(
+                    connection, f"SELECT COUNT(*) FROM {target_ref}"
+                )[0][0])
+                if mode == 'overwrite':
+                    deleted_rows = int(statement.executeLargeUpdate(f"DELETE FROM {target_ref}"))
+                    if deleted_rows != existing_rows:
+                        raise ValueError("PostgreSQL deleted row count differs from target row count")
+                written_rows = int(statement.executeLargeUpdate(
+                    f"INSERT INTO {target_ref} ({columns}) SELECT {columns} FROM {stage_ref}"
+                ))
+                if written_rows != staged_rows:
+                    raise ValueError("PostgreSQL inserted row count differs from staging row count")
+                expected_rows = written_rows + (existing_rows if mode == 'append' else 0)
+                published_rows = int(DatabaseAdapter._postgresql_query(
+                    connection, f"SELECT COUNT(*) FROM {target_ref}"
+                )[0][0])
+                if published_rows != expected_rows:
+                    raise ValueError("PostgreSQL published row count differs from expected row count")
+                statement.execute(f"DROP TABLE {stage_ref}")
             else:
-                metadata = connection.getMetaData()
-                tables = metadata.getTables(None, schema, target_table, None)
-                target_exists = tables.next()
-                tables.close()
-                if target_exists:
-                    columns = ", ".join(
-                        DatabaseAdapter._postgresql_identifier(column)
-                        for column in df.columns
-                    )
-                    statement.execute(
-                        f"INSERT INTO {target_ref} ({columns}) "
-                        f"SELECT {columns} FROM {stage_ref}"
-                    )
-                    statement.execute(f"DROP TABLE {stage_ref}")
-                else:
-                    statement.execute(
-                        f"ALTER TABLE {stage_ref} RENAME TO "
-                        f"{DatabaseAdapter._postgresql_identifier(target_table)}"
-                    )
-                    stage_renamed = True
+                statement.execute(
+                    f"ALTER TABLE {stage_ref} RENAME TO {DatabaseAdapter._postgresql_identifier(target_table)}"
+                )
+                written_rows = staged_rows
             connection.commit()
+            return written_rows
         except Exception:
             connection.rollback()
             raise
         finally:
-            statement.close()
+            if statement is not None:
+                statement.close()
             connection.close()
 
-        if not stage_renamed and mode == 'append':
-            logger.info("Appended spatial rows through staging table %s.%s", schema, stage_table)
-
     @staticmethod
-    def _save_postgresql_geometry(
-        df: DataFrame,
-        params: Dict[str, Any],
-        jdbc_url: str,
-        driver: str,
-        conn_info: Dict[str, Any],
-        geometry_columns: list[str],
-    ) -> None:
-        from pyspark.sql.functions import expr
-
+    def _save_postgresql(
+        df: DataFrame, params: Dict[str, Any], jdbc_url: str, driver: str,
+        conn_info: Dict[str, Any], geometry_columns: list[str],
+    ) -> int:
         schema = params.get('schema', 'public')
         target_table = params['table']
-        mode = params.get('mode', 'overwrite')
+        names = [schema, target_table, *df.columns]
+        if any(not isinstance(name, str) or not name or '\x00' in name or
+               len(name.encode('utf-8')) > 63 for name in names) or len(set(df.columns)) != len(df.columns) or not df.columns:
+            raise ValueError("PostgreSQL save requires unique nonempty column names and identifiers of at most 63 bytes")
         stage_table = f"__addp_spark_stage_{uuid.uuid4().hex[:24]}"
         stage_df = df
-        for column in geometry_columns:
-            quoted = DatabaseAdapter._spark_identifier(column)
-            stage_df = stage_df.withColumn(column, expr(f"ST_AsEWKT({quoted})"))
-
+        if geometry_columns:
+            from pyspark.sql.functions import expr
+            for column in geometry_columns:
+                quoted = DatabaseAdapter._spark_identifier(column)
+                stage_df = stage_df.withColumn(column, expr(f"ST_AsEWKT({quoted})"))
+        # Spark 3.5's PostgreSQL JDBC dialect does not escape embedded quotes
+        # in column names. Use private stage aliases, then restore physical names
+        # with PostgreSQL identifier quoting before type/constraint validation.
+        while True:
+            prefix = '__addp_col_' + uuid.uuid4().hex[:16]
+            stage_columns = [f'{prefix}_{index}' for index in range(len(df.columns))]
+            if not set(stage_columns).intersection(df.columns):
+                break
         try:
-            DatabaseAdapter._write_jdbc(
-                stage_df, jdbc_url, driver, conn_info, schema, stage_table, 'error'
-            )
-            DatabaseAdapter._finalize_postgresql_geometry_table(
-                stage_df,
-                jdbc_url,
-                conn_info,
-                schema,
-                stage_table,
-                target_table,
-                geometry_columns,
-                mode,
+            DatabaseAdapter._write_jdbc(stage_df.toDF(*stage_columns), jdbc_url, driver, conn_info, schema, stage_table, 'error')
+            return DatabaseAdapter._finalize_postgresql_table(
+                stage_df, jdbc_url, conn_info, schema, stage_table, target_table,
+                geometry_columns, params.get('mode', 'overwrite'), stage_columns,
             )
         except Exception:
-            DatabaseAdapter._drop_postgresql_table(
-                stage_df, jdbc_url, conn_info, schema, stage_table
-            )
+            DatabaseAdapter._drop_postgresql_table(stage_df, jdbc_url, conn_info, schema, stage_table)
             raise
 
     @staticmethod
@@ -376,21 +427,40 @@ class DatabaseAdapter:
 
         logger.info(f"Loading from database: {jdbc_url}, table: {schema}.{table}")
 
-        # 读取表
+        table_ref = f"{schema}.{table}"
+        columns = []
+        if engine_type.lower() == 'postgresql':
+            table_ref = DatabaseAdapter._postgresql_table(schema, table)
+            connection = DatabaseAdapter._open_jdbc_connection(spark, jdbc_url, conn_info)
+            try:
+                columns = [row[0] for row in DatabaseAdapter._postgresql_query(connection,
+                    "SELECT attname FROM pg_attribute WHERE attrelid = to_regclass(?) "
+                    "AND attnum > 0 AND NOT attisdropped ORDER BY attnum", (table_ref,))]
+            finally:
+                connection.close()
+            if not columns:
+                raise ValueError("PostgreSQL source table has no readable columns")
+            projection = ", ".join(
+                f"{DatabaseAdapter._postgresql_identifier(name)} AS \"__addp_col_{index}\""
+                for index, name in enumerate(columns)
+            )
+            table_ref = f'(SELECT {projection} FROM {table_ref}) AS addp_source'
         df = spark.read.format("jdbc") \
             .option("url", jdbc_url) \
-            .option("dbtable", f"{schema}.{table}") \
-            .option("user", conn_info.get('user', '')) \
+            .option("dbtable", table_ref) \
+            .option("user", conn_info.get('user', conn_info.get('username', ''))) \
             .option("password", conn_info.get('password', '')) \
             .option("driver", driver) \
             .load()
+        if columns:
+            df = df.toDF(*columns)
 
         # 如果有几何列,转换为Sedona几何类型
         geom_column = params.get('geom_column')
         if geom_column and geom_column in df.columns:
             # PostGIS的几何列通常是WKB格式
             from pyspark.sql.functions import expr
-            df = df.withColumn(geom_column, expr(f"ST_GeomFromWKB({geom_column})"))
+            df = df.withColumn(geom_column, expr(f"ST_GeomFromWKB({DatabaseAdapter._spark_identifier(geom_column)})"))
             logger.info(f"Converted geometry column: {geom_column}")
 
         return df
@@ -410,12 +480,12 @@ class DatabaseAdapter:
         logger.info(f"Saving to database: {jdbc_url}, table: {schema}.{table}, mode: {mode}")
 
         geometry_columns = DatabaseAdapter._geometry_column_names(df)
-        if engine_type.lower() == 'postgresql' and geometry_columns:
-            DatabaseAdapter._save_postgresql_geometry(
+        if engine_type.lower() == 'postgresql':
+            return DatabaseAdapter._save_postgresql(
                 df, params, jdbc_url, driver, conn_info, geometry_columns
             )
-            return
 
+        row_count = df.count()
         if engine_type.lower() == 'doris':
             DatabaseAdapter._prepare_doris_table(
                 df, jdbc_url, conn_info, schema, table, mode
@@ -423,7 +493,7 @@ class DatabaseAdapter:
             DatabaseAdapter._write_jdbc(
                 df, jdbc_url, driver, conn_info, schema, table, 'append'
             )
-            return
+            return row_count
 
         DatabaseAdapter._write_jdbc(
             df,
@@ -434,6 +504,7 @@ class DatabaseAdapter:
             table,
             mode,
         )
+        return row_count
 
 
 class FileAdapter:
@@ -495,6 +566,9 @@ class FileAdapter:
 
         logger.info(f"Saving to file: {path}, format: {format_type}, mode: {mode}")
 
+        if format_type not in {'parquet', 'geoparquet', 'csv', 'json', 'delta'}:
+            raise ValueError(f"Unsupported file format: {format_type}")
+        row_count = df.count()
         # 写入文件
         if format_type in ['parquet', 'geoparquet']:
             df.write.format("parquet").mode(mode).save(path)
@@ -507,8 +581,7 @@ class FileAdapter:
             df.write.format("json").mode(mode).save(path)
         elif format_type == 'delta':
             df.write.format("delta").mode(mode).save(path)
-        else:
-            raise ValueError(f"Unsupported file format: {format_type}")
+        return row_count
 
     @staticmethod
     def _validate_hdfs_access(spark: SparkSession, params: Dict[str, Any]):

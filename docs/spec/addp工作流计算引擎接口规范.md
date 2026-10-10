@@ -262,6 +262,12 @@ Content-Type: application/json
 
 `final_result` 和 `all_results` 必须可 JSON 序列化。对于 Spark DataFrame 等大规模运行时对象，工作流引擎不得把完整数据集塞入响应；应返回轻量结果摘要，例如类型、schema、少量预览行和预览上限。需要持久化或跨模块消费完整数据时，必须通过 `save` 等算子写入目标资源，并在结果中返回目标资源引用或保存摘要。
 
+Spark `save` 保存 PostgreSQL 结果时，普通列与 Sedona Geometry 列统一走同 schema 唯一暂存表。Worker 完成 JDBC 写入后，Driver 在一个 PostgreSQL 事务中转换空间列、核对暂存行数并发布结果。目标不存在时将暂存表改名；目标已存在时锁表，校验字段和类型，`overwrite` 使用 DELETE + INSERT，`append` 只 INSERT。不得删除或重建已有目标表，表结构、约束、索引、权限、注释及依赖保持不变；约束失败或提交前异常回滚数据发布，随后清理本次暂存表。Spark JDBC 的 Worker 重试不承诺暂存记录去重；发布事务之外的外部触发器副作用和提交响应丢失也不提供恰好一次保证，不得自动重试发布。
+
+已有目标必须与结果拥有相同字段集合和 PostgreSQL 基础类型；目标类型修饰符须相同或不设限。PostGIS geometry 的子类型与 SRID 由目标约束验证；自动生成列、identity 列和非普通表目标拒绝写入。DELETE 影响行数须等于覆盖前的目标行数，INSERT 影响行数须与暂存行数相同，发布后总行数还须符合覆盖或追加预期，否则回滚，避免触发器忽略记录后仍报告完整成功。`rows` 返回已提交的实际发布行数，不能在提交后重新计算源 DataFrame。其他存储适配器的 `rows` 仍仅表示写入前的输入行数，不提供 PostgreSQL 的事务发布保证。
+
+Spark `save` 声明 `write` 和 `ddl` 效果，因为暂存表和新目标涉及 DDL。Develop 按资源分别签发授权：输入引擎与 Spark 集群只读；表目标引擎要求 write + ddl；文件或对象目标引擎只要求 write。执行 Runtime 获得算子声明的效果全集。正式输出继续使用节点命名的 `metadata.outputs` 与 `produced_targets`，由 Develop 触发 Meta 异步扫描和血缘采集，扫描失败不得改写已提交的保存事实。
+
 **错误响应**：
 ```json
 {

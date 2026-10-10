@@ -62,10 +62,34 @@ test('HDFS 扫描、四个文件预览及正式 Spark 结果通过 Console 收�
     const result = detail.locator('.workflow-final-result-json')
     await expect.poll(async () => JSON.parse(await result.innerText())).toEqual(expected.final_result)
     await screenshot('workflow')
+    const persistence = expected.persistence
+    const savedPreview = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/manager/preview' &&
+      new URL(response.url()).searchParams.get('locator') === persistence.preview_locator)
+    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(persistence.preview_locator)}`)
+    const persisted = await json(await savedPreview, 'persisted table preview')
+    expect(persisted.preview_type).toBe('table')
+    expect(persisted.data.rows.slice().sort((a, b) => a.region.localeCompare(b.region))).toEqual(expected.final_result.preview_rows)
+    await expect(page.frameLocator('iframe[data-testid="module-iframe"]').locator('.table-preview .el-table__body-wrapper tr')).toHaveCount(2)
+    await screenshot('persisted')
+    for (const [name, id, final] of [
+      ['save', persistence.execution_id, persistence.final_result],
+      ['reuse', persistence.reuse_execution_id, persistence.reuse_final_result]
+    ]) {
+      const received = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/develop/executions/${id}` && response.request().method() === 'GET')
+      await page.goto(`/develop/executions/${id}`)
+      const value = await json(await received, name + ' execution')
+      expect(value.status).toBe('success')
+      expect(value.metadata.result.final_result).toEqual(final)
+      if (name === 'save') expect(value.outputs.save.resource).toEqual({ locator: persistence.target_locator, type: 'table', write_mode: 'replace' })
+      const result = page.frameLocator('iframe[data-testid="module-iframe"]').locator('.workflow-final-result-json')
+      await expect.poll(async () => JSON.parse(await result.innerText())).toEqual(final)
+      await screenshot(name)
+    }
     writeFileSync(process.env.ADDP_ONLINE_HDFS_BROWSER_REPORT, JSON.stringify({
       run_id: process.env.ADDP_ONLINE_TEST_RUN_ID, engine_id: expected.engine_id, tenant_id: expected.tenant_id,
       principal_id: auth.principalID, execution_id: expected.execution_id,
-      meta_ui_scan: true, previews: 4, develop_result: true
+      meta_ui_scan: true, previews: 5, develop_result: true,
+      persist_execution_id: persistence.execution_id, reuse_execution_id: persistence.reuse_execution_id
     }))
   } finally {
     await api.dispose()

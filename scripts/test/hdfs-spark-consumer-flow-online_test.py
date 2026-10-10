@@ -59,7 +59,7 @@ class HDFSOnlineTest(unittest.TestCase):
                    'authorization': {'role_assignments': [{'role_key': 'tenant.hdfs-reader', 'permissions': sorted(MODULE.PERMISSIONS)}]}}
         client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload=context))
         self.assertEqual(MODULE.validate_identity(client, 2), '42')
-        context['authorization']['role_assignments'][0]['permissions'].append('develop.data_write.execute')
+        context['authorization']['role_assignments'][0]['permissions'].append('develop.task.create')
         with self.assertRaises(MODULE.SuiteError): MODULE.validate_identity(client, 2)
 
     def test_physical_evidence_requires_exact_application_owned_worker_and_finished_tasks(self):
@@ -97,17 +97,61 @@ class HDFSOnlineTest(unittest.TestCase):
                     self.assertEqual(request.call_count, 8)
                     self.assertEqual(request.call_args.args[0], 'http://127.0.0.1:8098/api/executions/runtime-id')
 
+    def test_persistence_requires_commit_scan_stable_output_and_exact_lineage(self):
+        locators = {name: 'addp://engine/7/path/orders.' + name + '?type=file' for name in ('csv', 'json', 'parquet')}
+        target = 'addp://engine/9/path/results/hdfs_totals?type=table'
+        definition = MODULE.persistence_workflow(locators, 9)
+        self.assertEqual(len(definition['tasks']), 9)
+        self.assertEqual(definition['tasks'][-1]['params']['target_parent_locator'], 'addp://engine/9/path/results?type=schema')
+        final = {'status': 'success', 'rows': 2, 'target': 'results.hdfs_totals'}
+        execution = {'status': 'success', 'outputs': {'save': {'resource': {'locator': target, 'type': 'table', 'write_mode': 'replace'}}},
+            'metadata': {'lineage_facts': {'schema_version': 'addp.lineage-facts/v1',
+                'inputs': [{'locator': value} for value in locators.values()],
+                'outputs': [{'locator': target, 'write_mode': 'replace'}]},
+                'result': {'final_result': final, 'produced_targets': [{'locator': target, 'task_id': 'save'}],
+                    'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'scan'}]}}}
+        self.assertEqual(MODULE.validate_persistence(execution, locators, target), (final, 'scan'))
+        for invalid in ('rows', 'output', 'source', 'mode', 'target', 'scan'):
+            value = json.loads(json.dumps(execution))
+            if invalid == 'rows': value['metadata']['result']['final_result']['rows'] = 1
+            if invalid == 'output': value['outputs']['save']['resource']['locator'] = target + '&other=1'
+            if invalid == 'source': value['metadata']['lineage_facts']['inputs'].pop()
+            if invalid == 'mode': value['metadata']['lineage_facts']['outputs'][0]['write_mode'] = 'append'
+            if invalid == 'target': value['metadata']['result']['produced_targets'] = []
+            if invalid == 'scan': value['metadata']['result']['meta_scan_runs'][0]['status'] = 'failed'
+            with self.subTest(invalid=invalid), self.assertRaises(MODULE.SuiteError):
+                MODULE.validate_persistence(value, locators, target)
+
+    def test_persisted_runtime_http_snapshots_require_exact_save_receipt(self):
+        import io
+        receipt = {'status': 'success', 'rows': 2, 'target': 'results.hdfs_totals'}
+        for invalid in ('lost_save', 'wrong_rows', ''):
+            snapshot = {'execution_id': 'runtime-save', 'status': 'success', 'progress': 100,
+                'result': receipt, 'task_order': ['load', 'save'], 'all_results': {'load': final_result(), 'save': receipt.copy()}}
+            if invalid == 'lost_save': snapshot['all_results']['save'] = {'type': 'spark_dataframe'}
+            if invalid == 'wrong_rows': snapshot['all_results']['save']['rows'] = 1
+            def validate(nodes):
+                if nodes['save'] != receipt: raise ValueError('save receipt changed')
+            with self.subTest(invalid=invalid), patch.object(MODULE.urllib.request, 'urlopen', side_effect=lambda *a, **k: io.BytesIO(json.dumps(snapshot).encode())):
+                if invalid:
+                    with self.assertRaises(ValueError):
+                        MODULE.SPARK.runtime_status_evidence('http://runtime', 'runtime-save', receipt, 2, validate, {'load': 'spark_dataframe', 'save': 'save'})
+                else:
+                    self.assertEqual(MODULE.SPARK.runtime_status_evidence('http://runtime', 'runtime-save', receipt, 2, validate, {'load': 'spark_dataframe', 'save': 'save'})['queries'], 8)
+
     def test_browser_requires_matching_identity_execution_and_all_screenshots(self):
-        report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42', 'execution_id': 'execution'}
+        report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42', 'execution_id': 'execution', 'persistence': {'execution_id': 'save-execution', 'reuse_execution_id': 'reuse-execution'}}
         for failure in ('process', 'missing_report', 'identity', 'execution', 'screenshot', ''):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                evidence = dict(report, run_id='hdfs-run', meta_ui_scan=True, previews=4, develop_result=True)
+                evidence = {key: value for key, value in report.items() if key != 'persistence'}
+                evidence.update(run_id='hdfs-run', meta_ui_scan=True, previews=5, develop_result=True,
+                                persist_execution_id='save-execution', reuse_execution_id='reuse-execution')
                 if failure in ('identity', 'execution'): evidence['principal_id' if failure == 'identity' else 'execution_id'] = 'other'
                 def browser(command, cwd, env):
                     self.assertIn('e2e/online/hdfs-spark-consumer-flow.spec.js', command)
                     if failure != 'missing_report': Path(env['ADDP_ONLINE_HDFS_BROWSER_REPORT']).write_text(json.dumps(evidence))
-                    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow'):
+                    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow', 'persisted', 'save', 'reuse'):
                         if failure != 'screenshot' or name != 'workflow': (root / ('hdfs-' + name + '-console.png')).write_bytes(b'proof')
                     return SimpleNamespace(returncode=int(failure == 'process'))
                 with patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary, ADDP_ONLINE_TEST_RUN_ID='hdfs-run'), patch.object(MODULE.subprocess, 'run', side_effect=browser):

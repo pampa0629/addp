@@ -73,7 +73,7 @@ Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop �
 
 最小验证：`make test-spark-workflow`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`；正式消费验收使用既有 Hosted T4 `elasticsearch-consumer-flow`，同时核对 Console、Runtime 状态和真实 Worker。
 
-保存到 PostgreSQL 时，Runtime 按 DataFrame schema 识别 Sedona Geometry 列，不依赖固定列名。空间结果先以 EWKT 写入同 schema 的唯一暂存表，再在 PostgreSQL 事务中转换为 PostGIS `geometry` 并替换或追加目标表；暂存表不作为工作流产物暴露。
+保存到 PostgreSQL 时，普通表和空间表统一通过 Worker JDBC 写入同 schema 的唯一暂存表。Runtime 按 DataFrame schema 识别 Geometry 列并以 EWKT 暂存，在发布事务中恢复 PostGIS geometry。已有目标的覆盖保存只 DELETE + INSERT，保留结构、约束、索引、权限和注释；追加只 INSERT。字段、类型或约束不匹配时回滚并清理暂存表，返回实际提交行数；暂存表不作为工作流产物暴露。表目标需要 write + ddl 授权；详细类型与事务边界见工作流计算引擎接口规范。
 
 ### 1. 配置与启动
 

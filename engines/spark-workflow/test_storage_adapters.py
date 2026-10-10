@@ -6,6 +6,13 @@ from unittest.mock import MagicMock
 
 
 class StorageAdapterTest(unittest.TestCase):
+    def test_unsupported_file_write_rejected_before_source_action(self):
+        frame = MagicMock()
+        with self.assertRaisesRegex(ValueError, 'Unsupported file format'):
+            FileAdapter.save(frame, {'path': '/result', 'format': 'invalid'})
+        frame.count.assert_not_called()
+        frame.write.format.assert_not_called()
+
     def test_file_reads_require_derived_format(self):
         spark = MagicMock()
         with self.assertRaisesRegex(KeyError, 'format'):
@@ -181,10 +188,8 @@ class StorageAdapterTest(unittest.TestCase):
         )
 
     def test_doris_save_prepares_table_then_appends(self):
-        class DataFrame:
-            pass
-
-        df = DataFrame()
+        df = MagicMock()
+        df.count.return_value = 3
         params = {
             "connection_info": {"engine_type": "doris"},
             "schema": "addp_acceptance",
@@ -228,6 +233,107 @@ class StorageAdapterTest(unittest.TestCase):
             "customers_copy",
             "append",
         )
+
+
+class PostgreSQLSaveTest(unittest.TestCase):
+    def setUp(self):
+        self.df = MagicMock()
+        self.df.columns = ['id', 'value']
+        self.conn = MagicMock()
+        self.statement = self.conn.createStatement.return_value
+        self.params = dict(connection_info={'engine_type': 'postgresql', 'host': 'pg',
+                          'port': 5432, 'database': 'business'}, schema='results', table='target')
+
+    def finalize(self, queries, mode='overwrite'):
+        if len(queries) == 3 and queries[1] == [('r',)]:
+            staged = int(queries[2][0][0])
+            queries = [*queries, [('99',)], [(str(staged + (99 if mode == 'append' else 0)),)]]
+        with patch.object(DatabaseAdapter, '_open_jdbc_connection', return_value=self.conn), \
+                patch.object(DatabaseAdapter, '_postgresql_query', side_effect=queries), \
+                patch.object(DatabaseAdapter, '_validate_postgresql_columns'):
+            return DatabaseAdapter._finalize_postgresql_table(
+                self.df, 'jdbc', {}, 'results', 'stage', 'target', [], mode, ['staged_id', 'staged_value'])
+
+    def test_existing_target_is_preserved_and_count_comes_from_insert(self):
+        self.statement.executeLargeUpdate.side_effect = [99, 2]
+        self.assertEqual(self.finalize([[], [('r',)], [('2',)]]), 2)
+        calls = [call.args[0] for call in self.statement.execute.call_args_list]
+        self.assertIn('LOCK TABLE "results"."target" IN SHARE ROW EXCLUSIVE MODE', calls)
+        self.assertIn('DROP TABLE "results"."stage"', calls)
+        self.assertFalse(any('DROP TABLE "results"."target"' in sql for sql in calls))
+        self.conn.commit.assert_called_once()
+        self.df.count.assert_not_called()
+
+    def test_trigger_skipped_rows_roll_back_before_commit(self):
+        self.statement.executeLargeUpdate.side_effect = [99, 1]
+        with self.assertRaisesRegex(ValueError, 'row count'):
+            self.finalize([[], [('r',)], [('2',)]])
+        self.conn.rollback.assert_called_once()
+        self.conn.commit.assert_not_called()
+        self.conn.close.assert_called_once()
+
+    def test_delete_trigger_suppression_rolls_back_before_insert(self):
+        self.statement.executeLargeUpdate.return_value = 98
+        with self.assertRaisesRegex(ValueError, 'deleted row count'):
+            self.finalize([[], [('r',)], [('2',)]])
+        self.conn.rollback.assert_called_once()
+        self.conn.commit.assert_not_called()
+        self.statement.executeLargeUpdate.assert_called_once_with('DELETE FROM "results"."target"')
+
+    def test_insert_failure_rolls_back_delete(self):
+        self.statement.executeLargeUpdate.side_effect = [99, RuntimeError('constraint violation')]
+        with self.assertRaisesRegex(RuntimeError, 'constraint'):
+            self.finalize([[], [('r',)], [('2',)]])
+        self.conn.rollback.assert_called_once()
+        self.conn.commit.assert_not_called()
+
+    def test_append_never_deletes_target(self):
+        self.statement.executeLargeUpdate.return_value = 2
+        self.assertEqual(self.finalize([[], [('r',)], [('2',)]], 'append'), 2)
+        self.statement.executeLargeUpdate.assert_called_once_with(
+            'INSERT INTO "results"."target" ("id", "value") SELECT "id", "value" FROM "results"."stage"')
+
+    def test_new_target_uses_staging_count_including_empty_results(self):
+        self.assertEqual(self.finalize([[], [], [('0',)]]), 0)
+        self.statement.execute.assert_any_call('ALTER TABLE "results"."stage" RENAME TO "target"')
+        self.statement.executeLargeUpdate.assert_not_called()
+
+    def test_view_target_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'ordinary table'):
+            self.finalize([[], [('v',)]])
+        self.statement.executeLargeUpdate.assert_not_called()
+        self.conn.rollback.assert_called_once()
+
+    def test_validation_rejects_missing_types_and_generated_columns(self):
+        stage = [('id', '20', '-1', '', ''), ('value', '25', '-1', '', '')]
+        for target in (stage[:1], [('id', '23', '-1', '', ''), stage[1]],
+                       [('id', '20', '-1', '', 'a'), stage[1]],
+                       [stage[0], ('value', '25', '10', '', '')]):
+            with self.subTest(target=target), patch.object(DatabaseAdapter, '_postgresql_query', side_effect=[stage, target]):
+                with self.assertRaises(ValueError):
+                    DatabaseAdapter._validate_postgresql_columns(self.conn, 'stage', 'target', [])
+
+    def test_plain_postgresql_save_uses_single_staging_path_and_cleans_failures(self):
+        with patch.object(DatabaseAdapter, '_geometry_column_names', return_value=[]), \
+                patch.object(DatabaseAdapter, '_write_jdbc') as write, \
+                patch.object(DatabaseAdapter, '_finalize_postgresql_table', side_effect=RuntimeError('publish failed')), \
+                patch.object(DatabaseAdapter, '_drop_postgresql_table') as cleanup:
+            with self.assertRaisesRegex(RuntimeError, 'publish failed'):
+                DatabaseAdapter.save(self.df, self.params)
+            stage = write.call_args.args[5]
+            self.assertTrue(stage.startswith('__addp_spark_stage_'))
+            self.assertEqual(cleanup.call_args.args[-1], stage)
+            self.assertNotEqual(stage, 'target')
+            self.df.count.assert_not_called()
+
+    def test_postgresql_identifier_quoting_and_duplicate_names(self):
+        self.assertEqual(DatabaseAdapter._postgresql_table('mixed.schema', 'ta"ble'), '"mixed.schema"."ta""ble"')
+        self.df.columns = ['id', 'id']
+        with patch.object(DatabaseAdapter, '_geometry_column_names', return_value=[]), \
+                patch.object(DatabaseAdapter, '_write_jdbc') as write:
+            with self.assertRaisesRegex(ValueError, 'unique'):
+                DatabaseAdapter.save(self.df, self.params)
+            write.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -936,7 +936,7 @@ jobs:
           status: ${{ job.status }}
 
   common-hdfs:
-    name: HDFS WebHDFS and distributed Spark contracts
+    name: HDFS WebHDFS, Spark and PostgreSQL publication contracts
     needs: selection
     if: needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.meta == 'true'
     runs-on: ubuntu-24.04
@@ -957,7 +957,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: HDFS WebHDFS and distributed Spark contracts
+          gate: HDFS WebHDFS, Spark and PostgreSQL publication contracts
           status: ${{ job.status }}
 
   common-elasticsearch:

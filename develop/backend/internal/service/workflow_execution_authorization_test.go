@@ -171,3 +171,43 @@ func TestRasterAuthorizationSeparatesSourceReadAndTargetWrite(t *testing.T) {
 		t.Fatalf("effects = %#v, want %#v", plan.engineEffects, want)
 	}
 }
+
+func TestSparkSaveDDLBelongsOnlyToTableTargetAndRuntime(t *testing.T) {
+	for _, parentType := range []string{"schema", "database", "bucket", "prefix"} {
+		t.Run(parentType, func(t *testing.T) {
+			discovery := newWorkflowValidationTestService(t)
+			getDescriptor := discovery.getRuntimeDescriptor
+			discovery.getRuntimeDescriptor = func(ctx context.Context, tenantID, engineID uint) (*commonModels.EngineRuntimeDescriptor, error) {
+				descriptor, err := getDescriptor(ctx, tenantID, engineID)
+				descriptor.ID = engineID
+				descriptor.EngineType = "spark_workflow"
+				return descriptor, err
+			}
+			discovery.listWorkflowOperators = func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
+				return []commonModels.OperatorDescriptor{
+					{ID: "load", Name: "load", EngineType: "spark_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "format"}, {Name: "index"}}},
+					{ID: "save", Name: "save", EngineType: "spark_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"write", "ddl"}, Parameters: []commonModels.ParameterDescriptor{{Name: "connection_info"}, {Name: "schema"}, {Name: "table"}, {Name: "path"}, {Name: "mode"}}},
+				}, nil
+			}
+			executor := &DevExecutor{operatorDiscovery: discovery}
+			plan, err := executor.buildWorkflowExecutionAuthorizationPlan(context.Background(), &models.DevTask{
+				DevType: "workflow", ExecutionConfig: models.DevTaskContent{"engine_id": float64(50), "engine_specific": map[string]interface{}{"spark_cluster_id": float64(51)}},
+				Content: models.DevTaskContent{"workflow_definition": map[string]interface{}{"tasks": []interface{}{
+					map[string]interface{}{"id": "load", "operator": "load", "params": map[string]interface{}{"locator": "addp://engine/1/path/orders.parquet?type=file"}},
+					map[string]interface{}{"id": "save", "operator": "save", "params": map[string]interface{}{"target_parent_locator": "addp://engine/2/path/results?type=" + parentType, "target_name": "totals"}},
+				}}},
+			}, 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			targetEffects := []string{"write"}
+			if parentType == "schema" || parentType == "database" {
+				targetEffects = append(targetEffects, "ddl")
+			}
+			want := map[uint][]string{1: {"read"}, 2: targetEffects, 50: {"read", "write", "ddl"}, 51: {"read"}}
+			if !reflect.DeepEqual(plan.engineEffects, want) {
+				t.Fatalf("effects = %#v, want %#v", plan.engineEffects, want)
+			}
+		})
+	}
+}

@@ -16,6 +16,8 @@ class HDFSOnlineFixtureTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix='addp-hdfs-fixture-')
         self.root = Path(self.temporary.name)
         (self.root / 'business/scripts').mkdir(parents=True)
+        (self.root / 'scripts/test').mkdir(parents=True)
+        shutil.copy2(SCRIPT.parents[2] / 'scripts/test/docker-compose.hdfs-t2.yml', self.root / 'scripts/test/docker-compose.hdfs-t2.yml')
         shutil.copy2(SCRIPT, self.root / 'business/scripts' / SCRIPT.name)
         self.bin = self.root / 'bin'; self.bin.mkdir()
         self.secret = self.root / 'secret'; self.secret.mkdir(mode=0o700)
@@ -40,7 +42,7 @@ elif a[0] == 'run':
         os.kill(os.getppid(), signal.SIGTERM)
     if os.environ.get('FAIL_RUN') == container: sys.exit(1)
 elif a[0] == 'exec':
-    if os.environ.get('FAIL_SEED') == '1': sys.exit(1)
+    if os.environ.get('FAIL_SEED') == '1' and 'pg_isready' not in a: sys.exit(1)
     print('HDFS_SAMPLE_PASS rows=20 amount_sum=2100 formats=csv,json,parquet')
 elif a[0] == 'logs':
     if os.environ.get('FAIL_LOGS') == '1': sys.exit(1)
@@ -84,16 +86,22 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
     def test_shared_images_samples_host_network_and_distinct_owner_only_descriptors(self):
         result = self.run_fixture('start')
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        for engine in ('hdfs', 'spark'):
+        for engine in ('hdfs', 'spark', 'postgres'):
             descriptor = self.secret / (engine + '-engine.json')
             self.assertEqual(stat.S_IMODE(descriptor.stat().st_mode), 0o600)
-            self.assertEqual(json.loads(descriptor.read_text())['engine_type'], engine)
+            self.assertEqual(json.loads(descriptor.read_text())['engine_type'], 'postgresql' if engine == 'postgres' else engine)
         hdfs = json.loads((self.secret / 'hdfs-engine.json').read_text())['connection_info']
         self.assertEqual((hdfs['authentication'], hdfs['user'], hdfs['root_path']), ('simple', 'addp_business_reader', '/addp'))
         spark = json.loads((self.secret / 'spark-engine.json').read_text())['connection_info']
         self.assertEqual(spark['username'], 'spark')
         self.assertNotIn('user', spark)
-        self.assertEqual(len(list(self.state.iterdir())), 4)
+        postgres = json.loads((self.secret / 'postgres-engine.json').read_text())['connection_info']
+        self.assertEqual(postgres['user'], 'spark_writer')
+        self.assertEqual(postgres['port'], 15435)
+        for name in ('postgres.env', 'postgres-seed.sql', 'postgres-before.json'):
+            self.assertEqual(stat.S_IMODE((self.secret / name).stat().st_mode), 0o600)
+        self.assertNotIn(postgres['password'], result.stdout + result.stderr)
+        self.assertEqual(len(list(self.state.iterdir())), 5)
         commands = [json.loads(line) for line in self.trace.read_text().splitlines()]
         for command in commands:
             if command[0] == 'run': self.assertIn('host', command)
@@ -114,7 +122,7 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
             self.assertEqual(foreign.read_text(), 'foreign')
 
     def test_partial_creation_or_seed_failure_cleans_all_owned_containers(self):
-        for flags in ({'FAIL_RUN': 'addp-hdfs-online-namenode'}, {'FAIL_RUN': 'addp-hdfs-online-worker'},
+        for flags in ({'FAIL_RUN': 'addp-hdfs-online-postgres'}, {'FAIL_RUN': 'addp-hdfs-online-namenode'}, {'FAIL_RUN': 'addp-hdfs-online-worker'},
                       {'FAIL_SEED': '1'}, {'FAIL_SIGNAL': 'addp-hdfs-online-worker'}):
             with self.subTest(flags=flags):
                 result = self.run_fixture('start', **flags)

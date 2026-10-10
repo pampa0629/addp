@@ -43,6 +43,15 @@ import api_server
 
 
 class OperatorMetadataTest(unittest.TestCase):
+    def test_save_returns_committed_adapter_count_without_recomputing_source(self):
+        from unittest.mock import MagicMock
+        from operators.io_operators import save
+        frame = MagicMock()
+        with patch('storage_adapters.StorageAdapter.save', return_value=7):
+            result = save(frame, engine_id=34, target_type='table', schema='public', table='result')
+        self.assertEqual(result['rows'], 7)
+        frame.count.assert_not_called()
+
     def test_recursive_json_summary_preserves_bigint_precision_and_booleans(self):
         self.assertEqual(serialize_json_value({'safe': 9007199254740991,
             'values': [9007199254740993, {'negative': -9007199254740993, 'boolean': True}]}),
@@ -160,7 +169,7 @@ class OperatorMetadataTest(unittest.TestCase):
         assert_operator_metadata_contract(operators, expected_engine_type="spark_workflow")
         by_name = {operator["name"]: operator for operator in operators}
         self.assertEqual(["read"], by_name["load"]["effects"])
-        self.assertEqual(["write"], by_name["save"]["effects"])
+        self.assertEqual(["write", "ddl"], by_name["save"]["effects"])
 
     def test_parameter_types_use_standard_contract_names(self):
         operators = {operator["name"]: operator for operator in get_operator_metadata()}

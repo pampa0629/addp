@@ -163,6 +163,22 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 			if err := addLocatorEngineEffect(engineEffects, params, output.ParentParam, "write"); err != nil {
 				return nil, fmt.Errorf("任务 %d 输出资源无效: %w", index, err)
 			}
+			for _, effect := range operator.Effects {
+				if effect != "ddl" {
+					continue
+				}
+				value := strings.TrimSpace(stringParam(params, output.ParentParam))
+				if value == "" {
+					continue
+				}
+				locator, err := resourcetree.ParseURI(value)
+				if err != nil {
+					return nil, fmt.Errorf("任务 %d 输出资源无效: %w", index, err)
+				}
+				if locator.Type == resourcetree.TypeSchema || locator.Type == resourcetree.TypeDatabase {
+					addEngineEffect(engineEffects, locator.EngineID, "ddl")
+				}
+			}
 		}
 	}
 	if len(allEffects) == 0 {

@@ -33,7 +33,7 @@ def load(engine_id: int, tenant_id: int, **params) -> DataFrame:
             - source_type: "table" | "index" | "file" | "sql" | "catalog"
             - schema: 数据库schema (table类型)
             - table: 表名 (table类型)
-            - geom_column: 几何列名 (默认"geom")
+            - geom_column: 显式选择的几何列名
             - path: 文件路径 (file类型,由 Develop Adapter 注入)
             - format: 文件格式 (file类型)
             - sql: SQL查询 (sql类型)
@@ -94,9 +94,7 @@ def save(input_df: DataFrame, engine_id: int, **params) -> Dict[str, Any]:
     from storage_adapters import StorageAdapter
 
     # 使用StorageAdapter保存
-    StorageAdapter.save(input_df, params)
-
-    row_count = input_df.count()
+    row_count = StorageAdapter.save(input_df, params)
     logger.info(f"Saved {row_count} rows to {params.get('target_type')}")
 
     return {
@@ -187,7 +185,7 @@ LOAD_METADATA = OperatorMetadata(
     brief_description="从多种数据源加载数据,支持数据库表、ES索引、文件、SQL查询和数据目录",
     execution_modes=["workflow"],
     effects=["read"],
-    overview="load 算子是工作流的起点,支持从数据库(PostgreSQL/MySQL/Doris)、文件系统(S3/HDFS/本地)、SQL查询和数据目录(Iceberg/Delta)加载数据到 Spark DataFrame。支持多种格式:Parquet/GeoParquet/CSV/Shapefile/Delta/Hudi。",
+    overview="load 算子是工作流的起点,支持从数据库(PostgreSQL/MySQL/Doris)、文件系统(S3/本地；HDFS 仅支持读取)、SQL查询和数据目录(Iceberg/Delta)加载数据到 Spark DataFrame。支持多种格式:Parquet/GeoParquet/CSV/Shapefile/Delta/Hudi。",
     params=[
         OperatorParam(
             name="source_type",
@@ -249,7 +247,7 @@ LOAD_METADATA = OperatorMetadata(
             type="str",
             required=False,
             description="几何列名",
-            notes="默认\"geom\",加载空间数据时使用"
+            notes="加载空间数据时显式选择实际几何列，不按固定列名猜测"
         )
     ],
     use_cases=[
@@ -290,8 +288,8 @@ SAVE_METADATA = OperatorMetadata(
     description="数据保存",
     brief_description="将 DataFrame 保存到数据库表或文件系统,支持覆盖和追加模式",
     execution_modes=["workflow"],
-    effects=["write"],
-    overview="save 算子是工作流的终点,将处理后的 DataFrame 保存到目标位置。支持保存到数据库表(PostgreSQL/MySQL/Doris)和文件系统(S3/HDFS/本地),提供覆盖(overwrite)和追加(append)两种模式。",
+    effects=["write", "ddl"],
+    overview="save 算子是工作流的终点,将处理后的 DataFrame 保存到目标位置。支持保存到数据库表(PostgreSQL/MySQL/Doris)和文件系统(S3/本地；HDFS 仅支持读取),提供覆盖(overwrite)和追加(append)两种模式。",
     params=[
         OperatorParam(
             name="input_df",
@@ -318,7 +316,7 @@ SAVE_METADATA = OperatorMetadata(
             type="str",
             required=False,
             description="保存模式: overwrite/append",
-            notes="默认 overwrite,谨慎使用以免丢失数据"
+            notes="默认 overwrite；PostgreSQL 已有表保留结构、约束和权限，只替换数据"
         ),
         OperatorParam(
             name="schema",
@@ -356,7 +354,7 @@ SAVE_METADATA = OperatorMetadata(
         "中间结果缓存: 将 200万条空间连接中间结果保存为 Parquet,供下游工作流复用"
     ],
     notes=[
-        "overwrite 模式会完全替换目标表,无法回滚",
+        "PostgreSQL overwrite 只替换数据，提交前失败回滚；其他存储不保证事务发布",
         "保存到 PostgreSQL 时,几何列自动转换为 PostGIS geometry 类型",
         "大数据量保存建议使用 Parquet 格式,压缩比高且查询快",
         "append 模式不检查重复,需自行去重",

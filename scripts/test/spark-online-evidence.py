@@ -28,7 +28,7 @@ def worker_evidence(engine_id, suite, container, master_url):
             'worker_container': container, 'completed_tasks': len(tasks), 'cores': applications[0]['cores']}
 
 
-def runtime_status_evidence(base, execution_id, final_result, tasks, validate_nodes=None):
+def runtime_status_evidence(base, execution_id, final_result, tasks, validate_nodes=None, node_types=None):
     snapshots = []
     for _ in range(8):
         with urllib.request.urlopen(base.rstrip('/') + '/api/executions/' + urllib.parse.quote(execution_id), timeout=10) as response:
@@ -37,7 +37,10 @@ def runtime_status_evidence(base, execution_id, final_result, tasks, validate_no
         if (snapshot.get('execution_id') != execution_id or snapshot.get('status') != 'success'
                 or snapshot.get('progress') != 100 or snapshot.get('result') != final_result
                 or len(snapshot.get('task_order', [])) != tasks or len(snapshot.get('all_results', {})) != tasks
-                or any(value.get('type') != 'spark_dataframe' for value in snapshot['all_results'].values())):
+                or (node_types is None and any(value.get('type') != 'spark_dataframe' for value in snapshot['all_results'].values()))
+                or (node_types is not None and (set(snapshot['all_results']) != set(node_types)
+                    or any((value.get('status') != 'success' if node_types[name] == 'save' else value.get('type') != node_types[name])
+                           for name, value in snapshot['all_results'].items())))):
             raise ValueError('Runtime status must preserve the exact formal execution and node summaries across HTTP requests')
         if validate_nodes is not None:
             validate_nodes(snapshot['all_results'])

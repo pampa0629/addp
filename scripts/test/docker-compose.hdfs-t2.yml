@@ -1,4 +1,28 @@
 services:
+  postgres:
+    image: imresamu/postgis-arm64:15-3.4@sha256:9a7d12fa44cdc8bd709f9be35e4253a3dc709f673dea84dd12749b91e1740a7e
+    platform: linux/arm64
+    environment:
+      POSTGRES_DB: spark_results
+      POSTGRES_USER: fixture_admin
+      POSTGRES_PASSWORD: owned-test-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fixture_admin -d spark_results"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    tmpfs:
+      - /var/lib/postgresql/data
+    mem_limit: 512m
+  postgres-amd64:
+    extends:
+      file: docker-compose.hdfs-t2.yml
+      service: postgres
+    image: postgis/postgis:15-3.4@sha256:3f4a5d48e0be9580ed70ed618cd039ce57bbb2dd113053d3836e28513f1f87cd
+    platform: linux/amd64
+    networks:
+      default:
+        aliases: [postgres]
   hdfs-namenode:
     image: ghcr.io/apache/hadoop:3.5.0@sha256:389d4c48dcfdc34815d5ad1c4d2aa6ca85714c9c40e34d01ba5acb55b62f2d72
     user: root

@@ -803,7 +803,7 @@ test-common-hdfs-unit: ## HDFS 管理根边界、WebHDFS 协议和只读能力�
 	@cd common && GOWORK=off go test ./resourcetree ./engine/plugins/hdfs ./engine/plugins ./engine/plugin -count=1
 	@cd develop/backend && GOWORK=off go test ./internal/service -count=1
 
-test-common-hdfs: ## 独占 HDFS 集群及真实 Spark Worker 三格式读取门禁
+test-common-hdfs: ## 独占 HDFS/PostGIS 及真实 Spark Worker 读取和事务保存门禁
 	@bash scripts/test/common-hdfs-gate.sh
 
 test-common-elasticsearch-unit: ## ES 插件、通用文档预览和单层目录扫描确定性测试

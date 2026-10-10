@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ADDP_T2_OWNED_SERVICES=hdfs-namenode,hdfs-datanode,spark-master,spark-worker
+# ADDP_T2_OWNED_SERVICES=hdfs-namenode,hdfs-datanode,spark-master,spark-worker,postgres,postgres-amd64
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.hdfs-t2.yml
-# ADDP_T2_INPUT_FILES=business/hdfs/ business/docker-compose.yml engines/spark-workflow/ develop/backend/internal/service/workflow_engine_service.go develop/backend/internal/service/workflow_operator_adapter.go scripts/test/hdfs-spark-contract.py
+# ADDP_T2_INPUT_FILES=business/hdfs/ business/docker-compose.yml engines/spark-workflow/ develop/backend/internal/service/workflow_engine_service.go develop/backend/internal/service/workflow_operator_adapter.go develop/backend/internal/service/workflow_execution_authorization.go scripts/test/hdfs-spark-contract.py
 # Own disposable containers, volumes and network; never reuse Business services.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -24,10 +24,10 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 arch=$(docker info --format '{{.Architecture}}')
-case "$arch" in aarch64|arm64) arch=arm64;; x86_64|amd64) arch=amd64;; *) echo "Unsupported Docker architecture" >&2; exit 1;; esac
+case "$arch" in aarch64|arm64) arch=arm64; POSTGRES_SERVICE=postgres;; x86_64|amd64) arch=amd64; POSTGRES_SERVICE=postgres-amd64;; *) echo "Unsupported Docker architecture" >&2; exit 1;; esac
 (cd "$ROOT_DIR/common" && GOWORK=off GOOS=linux GOARCH="$arch" CGO_ENABLED=0 go test -c ./engine/plugins/hdfs -o "$HDFS_T2_WORK_DIR/hdfs.test")
 mkdir "$HDFS_T2_WORK_DIR/samples"
-compose up -d
+compose up -d --wait --wait-timeout 180 "$POSTGRES_SERVICE" hdfs-namenode hdfs-datanode spark-master spark-worker
 # Readiness is checked by the shared initializer; two invocations prove idempotence.
 for iteration in 1 2; do
     compose exec -T -e HADOOP_USER_NAME=root spark-master /opt/spark/bin/spark-submit /addp/hdfs/init.py 2>&1 | tee "$HDFS_T2_WORK_DIR/sample-$iteration.log"
@@ -40,6 +40,8 @@ grep -q -- '--- PASS: TestIntegrationHDFS' "$HDFS_T2_WORK_DIR/go.log"
 if grep -q -- '--- SKIP:' "$HDFS_T2_WORK_DIR/formats.log"; then echo "HDFS T2 refuses skipped format consumers" >&2; exit 1; fi
 grep -q -- '--- PASS: TestIntegrationHDFSFormats' "$HDFS_T2_WORK_DIR/formats.log"
 
-compose exec -T -e HADOOP_USER_NAME=addp_business_reader spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 /addp/hdfs-spark-contract.py 2>&1 | tee "$HDFS_T2_WORK_DIR/spark.log"
+compose exec -T spark-master pip install --disable-pip-version-check apache-sedona==1.5.3
+compose exec -T -e HADOOP_USER_NAME=addp_business_reader spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 --packages org.postgresql:postgresql:42.7.4,org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.3,org.datasyslab:geotools-wrapper:1.5.3-28.2 /addp/hdfs-spark-contract.py 2>&1 | tee "$HDFS_T2_WORK_DIR/spark.log"
 grep -q '^HDFS_SPARK_PASS formats=csv,json,parquet distributed=true$' "$HDFS_T2_WORK_DIR/spark.log"
-echo "HDFS_T2_PASS WebHDFS and distributed Spark contracts"
+grep -q '^HDFS_SPARK_POSTGRES_PASS ' "$HDFS_T2_WORK_DIR/spark.log"
+echo "HDFS_T2_PASS WebHDFS, distributed Spark and PostgreSQL publication contracts"

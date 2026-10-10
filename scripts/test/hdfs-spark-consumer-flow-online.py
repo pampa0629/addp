@@ -22,7 +22,8 @@ SPARK = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(SPARK)
 PERMISSIONS = {'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
                'manager.data_item.read', 'manager.content.read', 'develop.task.read', 'develop.task.execute',
-               'develop.data_read.execute', 'system.execution_authorization.create'}
+               'develop.data_read.execute', 'develop.data_write.execute', 'develop.data_ddl.execute',
+               'meta.lineage.read', 'system.execution_authorization.create'}
 FILES = {'csv': 'samples/orders.csv', 'json': 'samples/orders.json', 'parquet': 'samples/orders.parquet',
          'original': '订单 100%.csv'}
 
@@ -41,7 +42,7 @@ def validate_identity(client, tenant_id):
     if (tenant_id <= 1 or principal.get('type') != 'user' or tenant.get('type') != 'tenant'
         or tenant.get('tenant_id') != str(tenant_id) or permissions != PERMISSIONS
         or any(role.get('role_key') in support.FORBIDDEN_ADMIN_ROLES for role in assignments)):
-        raise SuiteError('HDFS acceptance requires exactly the read workflow scene permissions of a dedicated Tenant User')
+        raise SuiteError('HDFS acceptance requires exactly the persisted workflow scene permissions of a dedicated Tenant User')
     return str(support.positive_int(principal['id'], 'principal'))
 
 
@@ -150,6 +151,135 @@ def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evide
             'runtime_status': runtime_status_evidence(execution['metadata']['result']['runtime_execution_id'], final)}
 
 
+def persistence_workflow(locators, target_engine_id):
+    definition = workflow(locators)
+    definition['tasks'].append({'id': 'save', 'operator': 'save', 'depends_on': ['verify_all_formats'], 'params': {
+        'input_df': {'$ref': 'verify_all_formats', 'port': 'default'},
+        'target_parent_locator': f'addp://engine/{target_engine_id}/path/results?type=schema',
+        'target_name': 'hdfs_totals', 'mode': 'overwrite',
+    }})
+    return definition
+
+
+def submit_and_wait(client, definition, runtime_id, cluster_id, deadline):
+    started = support._object(client.request('POST', '/api/v1/develop/executions', (200,), {
+        'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 300,
+        'content': {'workflow_definition': definition},
+        'execution_config': {'engine_id': runtime_id, 'engine_specific': {'spark_cluster_id': cluster_id}},
+    }).payload, 'persisted workflow submission')
+    identifier = started.get('execution_id')
+    if not isinstance(identifier, str) or not identifier:
+        raise SuiteError('persisted workflow omitted execution ID')
+    while time.monotonic() < deadline:
+        execution = support._object(client.request('GET', '/api/v1/develop/executions/' + urllib.parse.quote(identifier), (200,)).payload, 'persisted execution')
+        if execution.get('status') in support.TERMINAL_STATUSES:
+            if execution.get('status') != 'success':
+                raise SuiteError('persisted workflow failed: ' + str(support.execution_failure_diagnostics(execution)))
+            return identifier, execution
+        time.sleep(1)
+    raise SuiteError('persisted workflow did not converge')
+
+
+def validate_persistence(execution, locators, target_locator):
+    if execution.get('status') != 'success':
+        raise SuiteError('Spark persistence execution did not succeed')
+    metadata = support._object(execution.get('metadata'), 'persisted metadata')
+    result = support._object(metadata.get('result'), 'persisted result')
+    resource = execution.get('outputs', {}).get('save', {}).get('resource')
+    if resource != {'locator': target_locator, 'type': 'table', 'write_mode': 'replace'}:
+        raise SuiteError('Spark stable output must bind the exact table and replace mode')
+    final = result.get('final_result')
+    if final != {'status': 'success', 'rows': 2, 'target': 'results.hdfs_totals'}:
+        raise SuiteError('Spark save must report exactly two committed rows')
+    facts = metadata.get('lineage_facts', {})
+    if (facts.get('schema_version') != 'addp.lineage-facts/v1'
+        or {value.get('locator') for value in facts.get('inputs', [])} != {locators[name] for name in ('csv', 'json', 'parquet')}
+        or len(facts.get('outputs', [])) != 1 or facts['outputs'][0].get('locator') != target_locator
+        or facts['outputs'][0].get('write_mode') != 'replace'):
+        raise SuiteError('Spark save lineage must bind the exact three sources and table target')
+    targets = result.get('produced_targets', [])
+    if len(targets) != 1 or targets[0].get('locator') != target_locator or targets[0].get('task_id') != 'save':
+        raise SuiteError('Spark save omitted its produced target')
+    runs = result.get('meta_scan_runs', [])
+    if len(runs) != 1 or runs[0].get('status') != 'submitted' or runs[0].get('target_locator') != target_locator or not runs[0].get('execution_id'):
+        raise SuiteError('Spark result automatic Meta scan was not submitted')
+    return final, runs[0]['execution_id']
+
+
+def persistence_physical():
+    root = Path(support.required_environment('ADDP_ONLINE_SECRET_DIR'))
+    before = json.loads((root / 'postgres-before.json').read_text())
+    prefix = ['docker', 'exec', 'addp-hdfs-online-postgres', 'psql', '-XAt', '-p', '15435', '-U', 'fixture_admin', '-d', 'spark_results', '-c']
+    def query(sql):
+        return subprocess.run(prefix + [sql], check=True, capture_output=True, text=True).stdout.strip()
+    after = json.loads(query("SELECT json_build_object('oid',oid::text,'acl',relacl::text,'comment',obj_description(oid)) FROM pg_class WHERE oid='results.hdfs_totals'::regclass"))
+    if before != after or query("SELECT count(*) FROM pg_tables WHERE schemaname='results' AND tablename LIKE '__addp_spark_stage_%'") != '0':
+        raise SuiteError('Spark overwrite replaced target structure/grants or left staging tables')
+    return {'table_oid': before['oid'], 'structure_and_grants_preserved': True, 'staging_tables': 0}
+
+
+def run_persistence(client, report, target_engine_id, timeout):
+    deadline = time.monotonic() + timeout
+    if target_engine_id in (report['engine_id'], report['cluster_id'], report['runtime_id']):
+        raise SuiteError('PostgreSQL target must be a distinct Engine')
+    target_locator = f'addp://engine/{target_engine_id}/path/results/hdfs_totals?type=table'
+    execution_id, execution = submit_and_wait(client, persistence_workflow(report['locators'], target_engine_id),
+                                            report['runtime_id'], report['cluster_id'], deadline)
+    final, scan_id = validate_persistence(execution, report['locators'], target_locator)
+    def validate_nodes(nodes):
+        if set(nodes) != {task['id'] for task in persistence_workflow(report['locators'], target_engine_id)['tasks']} or nodes['save'] != final:
+            raise ValueError('persisted Runtime lost canonical node outputs')
+        for name, value in nodes.items():
+            if name != 'save' and value.get('type') != 'spark_dataframe':
+                raise ValueError('persisted Runtime lost DataFrame summary')
+    runtime = SPARK.runtime_status_evidence(support.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL'),
+        execution['metadata']['result']['runtime_execution_id'], final, 9, validate_nodes=validate_nodes,
+        node_types={task['id']: ('save' if task['id'] == 'save' else 'spark_dataframe')
+                    for task in persistence_workflow(report['locators'], target_engine_id)['tasks']})
+    while time.monotonic() < deadline:
+        scan = support._object(client.request('GET', '/api/v1/meta/executions/' + urllib.parse.quote(scan_id), (200,)).payload, 'automatic result scan')
+        if scan.get('status') == 'success':
+            break
+        if scan.get('status') in support.TERMINAL_STATUSES:
+            raise SuiteError('Spark result automatic scan failed')
+        time.sleep(1)
+    else:
+        raise SuiteError('Spark result automatic scan did not converge')
+    item = support.find_item(client, target_engine_id, 'results.hdfs_totals', 'table')
+    preview_locator = target_locator + '&item_id=' + str(item['id'])
+    _, rows = support.preview_rows(client, preview_locator)
+    expected_rows = report['final_result']['preview_rows']
+    if sorted(rows, key=lambda row: row['region']) != expected_rows:
+        raise SuiteError('Manager persisted result differs from the computed totals')
+    query = urllib.parse.urlencode({'subject_kind': 'data_item', 'item_id': item['id'], 'direction': 'upstream'})
+    expected_sources = {report['item_ids'][name] for name in ('csv', 'json', 'parquet')}
+    while time.monotonic() < deadline:
+        graph = support._object(client.request('GET', '/api/v1/meta/lineage/graph?' + query, (200,)).payload, 'persisted lineage')
+        if graph.get('truncated'):
+            raise SuiteError('Spark persisted lineage graph is truncated')
+        observed = {edge.get('source', {}).get('item_id') for edge in graph.get('edges', [])
+            if edge.get('target', {}).get('item_id') == item['id'] and edge.get('evidence', {}).get('execution_id') == execution_id
+            and edge.get('status') == 'active' and edge.get('relation_kind') == 'derive'}
+        if observed == expected_sources:
+            break
+        time.sleep(1)
+    else:
+        raise SuiteError('Spark persisted lineage did not converge')
+    reuse_definition = {'tasks': [{'id': 'load_result', 'operator': 'load', 'depends_on': [],
+                                   'params': {'locator': target_locator, 'source_type': 'table'}}]}
+    reuse_id, reused = submit_and_wait(client, reuse_definition, report['runtime_id'], report['cluster_id'], deadline)
+    reused_final = reused['metadata']['result']['final_result']
+    if reused_final.get('type') != 'spark_dataframe' or sorted(reused_final.get('preview_rows', []), key=lambda row: row['region']) != expected_rows:
+        raise SuiteError('Downstream Spark could not reuse the stable table output')
+    reuse_runtime = SPARK.runtime_status_evidence(support.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL'),
+        reused['metadata']['result']['runtime_execution_id'], reused_final, 1)
+    return {'engine_id': target_engine_id, 'execution_id': execution_id, 'target_locator': target_locator,
+            'preview_locator': preview_locator, 'item_id': item['id'], 'scan_execution_id': scan_id,
+            'final_result': final, 'runtime_status': runtime, 'physical': persistence_physical(),
+            'lineage_sources': sorted(observed), 'reuse_execution_id': reuse_id, 'reuse_final_result': reused_final,
+            'reuse_runtime_status': reuse_runtime}
+
+
 def run_browser(report):
     artifacts = Path(support.required_environment('ADDP_ONLINE_ARTIFACT_DIR')).resolve()
     output = artifacts / 'hdfs-console.json'
@@ -162,10 +292,12 @@ def run_browser(report):
     evidence = json.loads(output.read_text())
     expected = {'run_id': support.required_environment('ADDP_ONLINE_TEST_RUN_ID'), 'engine_id': report['engine_id'],
                 'tenant_id': report['tenant_id'], 'principal_id': report['principal_id'], 'execution_id': report['execution_id'],
-                'meta_ui_scan': True, 'previews': 4, 'develop_result': True}
+                'meta_ui_scan': True, 'previews': 5, 'develop_result': True,
+                'persist_execution_id': report['persistence']['execution_id'],
+                'reuse_execution_id': report['persistence']['reuse_execution_id']}
     if evidence != expected:
         raise SuiteError('HDFS browser identity or execution evidence differs from API acceptance')
-    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow'):
+    for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow', 'persisted', 'save', 'reuse'):
         if not (artifacts / ('hdfs-' + name + '-console.png')).is_file():
             raise SuiteError('HDFS Console screenshot evidence is missing')
     return evidence
@@ -180,6 +312,8 @@ def main():
     report = run(client, support.positive_int(require('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant'),
                  support.positive_int(require('ADDP_ONLINE_HDFS_ENGINE_ID'), 'HDFS'),
                  support.positive_int(require('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark'), timeout)
+    report['persistence'] = run_persistence(client, report, support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL'), timeout)
+    report['worker'] = worker_evidence(report['cluster_id'])
     report['browser'] = run_browser(report)
     Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'hdfs-spark-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
