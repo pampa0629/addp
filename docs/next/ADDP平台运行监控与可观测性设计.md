@@ -1475,4 +1475,8 @@ Desktop 保持 bridge 网络、独立 PID/挂载命名空间、非 root、cap_dr
 
 首轮 Go 在新增批量传输测试夹具失败：将内部 wire DTO 直接编码会生成真实 Prometheus 不会返回的 null histogram 字段，原严格归一化正确拒绝该响应。夹具改为输出官方实际 vector JSON 后，最终 Go 和真实两类来源 T2 均通过；未放宽生产响应校验。默认 make test-changed 识别当时 49 项混合工作区变更及共享规范扩散，在多个必需 T2 的数据库/外部引擎环境参数预检退出 2，后续未执行，不计为全工作区通过；本批已提供实际核实的 PostgreSQL 参数完成自己的 Monitor 全模块入口。
 
-个人 Safari 已只读核对新版列表的 CPU、内存和采集状态列；当前运行中的 Monitor 尚无新路由，直连其实际 8100 端口的无凭据读取仍为 404，列表的对象拒绝逻辑清空观测。已请用户按标准入口 restart.sh -monitor 更新后端，未由 AI 重启或接管个人服务，也未使用内置浏览器或读取个人 Token。本批新概览的个人真实页面、Hosted T4 和生产 T5 尚未执行通过；此前 10.47 的通过证据不替代本批新接口与列表验收。
+个人 Safari 已只读核对新版列表的 CPU、内存和采集状态列；当前运行中的 Monitor 尚无新路由，直连其实际 8100 端口的无凭据读取仍为 404，列表的对象拒绝逻辑清空观测。已请用户按标准入口 restart.sh -monitor 更新后端，未由 AI 重启或接管个人服务，也未使用内置浏览器或读取个人 Token。提交时本批新概览的个人真实页面、Hosted T4 和生产 T5 尚未执行通过；此前 10.47 的通过证据不替代本批新接口与列表验收。
+
+本批实现提交 `3d93e1da4591796650cd8ce965b456710a23b3a3` 已推送 main。对应 Platform CI [38034264312](https://github.com/pampa0629/addp/actions/runs/38034264312)、Release and T2 [38034264320](https://github.com/pampa0629/addp/actions/runs/38034264320) 和 Quality frontend smoke [38034264338](https://github.com/pampa0629/addp/actions/runs/38034264338) 均 success，实际执行的 Monitor 前端、PostgreSQL 集成及原生指标门禁通过，未将其他路径跳过计为通过。
+
+新增概览的 Hosted T4 [38034328309](https://github.com/pampa0629/addp/actions/runs/38034328309) success；workflow_dispatch 只接受命名 ref，提交 SHA 的派发返回 422、未创建运行，随后从 main 派发。实际验收 head 为 `c7952d49e59af7f6629c15c68346751d8ed2817f`，远端 compare 确认其包含本批实现，新增一个后继提交仅修改 HDFS/Spark 验收文件。已下载核对产物：browser/result=passed、stage=complete，列表及返回列表共两次 summaries，每次仅一个当前节点、固定 CPU/内存两项有效百分比，list_summary_batch=true；详情/趋势仍为 102 次资源读取、25 项目录及 7 张截图。平台身份、无权身份拒绝、停用不借历史、预算 CAS/热生效、来源与中心恢复继续通过。最终 summary.txt 为 result=passed、cleanup=passed、infra_cleanup=zero_residuals；suite_report 的 awaiting-hosted-deployment-destruction 是部署销毁前的中间记录，以最终生命周期清理证据为准。个人 Monitor 重启与 Safari 真实概览读取仍待完成，生产 T5 未执行。
