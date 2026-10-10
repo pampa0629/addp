@@ -545,13 +545,14 @@ def monitor_lifecycle(directory, action):
         subprocess.run(["bash", "scripts/dev/"+action+".sh", "-monitor"], cwd=FIXTURE.ROOT,
                        env=dict(os.environ, SKIP_MODTIDY="1"), stdout=output, stderr=subprocess.STDOUT, check=True, timeout=300)
     if action == "start":
-        identity = API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/live", (200,)).payload
+        service = PREFLIGHT.Service("monitor", os.environ["MONITOR_URL"])
         try:
-            PREFLIGHT.validate_health(PREFLIGHT.Service("monitor", os.environ["MONITOR_URL"]), identity,
-                                      FIXTURE.command(["git", "-C", str(FIXTURE.ROOT), "rev-parse", "HEAD"]).strip(), "alive")
+            identity = PREFLIGHT.load_health(service, "/health/live", 10)
+            PREFLIGHT.validate_health(service, identity,
+                                      FIXTURE.command(["git", "-C", str(FIXTURE.ROOT), "rev-parse", "HEAD"]).strip(), "live")
+            require(PREFLIGHT.load_health(service, "/health/ready", 10).get("status") == "ready", "restarted Monitor is not ready")
         except PREFLIGHT.PreflightError as error:
-            raise SuiteError("restarted Monitor build identity mismatch") from error
-        API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/ready", (200,))
+            raise SuiteError("restarted Monitor health validation failed: "+str(error)) from error
 
 
 def check_process_restart(admin, machine, directory, instances, report):

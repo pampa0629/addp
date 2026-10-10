@@ -120,6 +120,30 @@ class MetricsProtocolTest(unittest.TestCase):
             with self.assertRaises(ValueError): ONLINE.monitor_lifecycle(Path("/tmp/private-test"), "stop")
             run.assert_not_called()
 
+    def test_restart_validates_standard_live_build_identity_and_ready_status(self):
+        live = {"status": "live", "module": "monitor", "git_commit": "test-commit", "build_id": "test-build",
+                "source_fingerprint": "sha256:test-source", "built_at": "2026-10-11T00:00:00Z", "started_at": "2026-10-11T01:00:00Z"}
+        cases = [(live, {"status": "ready"}, False),
+                 (dict(live, status="alive"), {"status": "ready"}, True),
+                 (dict(live, git_commit="foreign-commit"), {"status": "ready"}, True),
+                 (dict(live, source_fingerprint="unknown"), {"status": "ready"}, True),
+                 (live, {"status": "not_ready"}, True)]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for identity, readiness, fails in cases:
+                with self.subTest(identity=identity, readiness=readiness), \
+                     patch.object(ONLINE.FIXTURE, "boundary", return_value=root), \
+                     patch.object(ONLINE.FIXTURE, "command", return_value="test-commit\n"), \
+                     patch.object(ONLINE.subprocess, "run") as launch, \
+                     patch.object(ONLINE.PREFLIGHT, "load_health", side_effect=[identity, readiness]) as health, \
+                     patch.dict(ONLINE.os.environ, MONITOR_URL="http://127.0.0.1:8100"):
+                    if fails:
+                        with self.assertRaises(ONLINE.SuiteError): ONLINE.monitor_lifecycle(root, "start")
+                    else:
+                        ONLINE.monitor_lifecycle(root, "start")
+                        self.assertEqual([call.args[1] for call in health.call_args_list], ["/health/live", "/health/ready"])
+                    self.assertEqual(launch.call_args.args[0], ["bash", "scripts/dev/start.sh", "-monitor"])
+
     def test_optional_source_failure_restores_private_key_on_assertion_failure(self):
         owners, _ = self.process_reply()
         with tempfile.TemporaryDirectory() as directory:
