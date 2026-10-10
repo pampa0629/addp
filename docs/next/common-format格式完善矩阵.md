@@ -14,7 +14,7 @@
 
 | 清单格式 | 现有实现与当前验收边界 |
 | --- | --- |
-| GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级后的 Hosted 渲染复验尚未完成。 |
+| GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级提交的 Raster Hosted 已通过计算、产物与执行页面复验；Manager 地图实际渲染复验尚未完成。 |
 | JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
 | CSV / XLSX | CSV 表格读取与分页、XLSX 多 sheet 容器预览已有实现，现有 NFS 样例页面已复核；不同 sheet 字段、空 sheet、大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
 | JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 空间预览已有实现和本地样例页面复核；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
@@ -30,6 +30,10 @@
 2026-10-10 本地页面复核：Business NFS `doc/twosheet.xlsx` 的两个工作表切换正常，均显示 5 行、10 列；`gis-data/sample.csv` 显示与源文件一致的 3 行、5 列；`doc/test.json` 显示普通 JSON 文档；`gis-data/sample.geojson` 的两个点及属性表正常显示。`gis-data/converted-data.json` 的 records array 显示总数 73090，第二、第三页的首条 BSM 分别为 21、41，与独立读取源文件一致；该样例缺少可可靠转换的坐标事实，页面明确跳过地图，不猜坐标系。复核发现窄面板的横向分页滚动区遮挡下一页按钮，已改为共享分页控件分组换行，并删除与真实分页矛盾的固定 50 行提示；新增 Manager 浏览器回归覆盖按钮实际命中、第二页请求与返回第一页。以上只证明这些样例的本地页面行为，不替代 Hosted T4，也不证明所有 XLSX sheet 结构、大文件或轨迹业务语义均已支持。
 
 同日补充 XLSX 容器交互的确定性浏览器回归：复用真实 Data Explorer、容器插件和共享表格组件，通过既有预览协议夹具验证从第二页切换到不同字段的工作表时重新请求第一页、删除旧字段；切到空工作表时清除旧行、旧列与分页，再切回原工作表恢复第一页。Common 另以实际序列化的 XLSX 字节验证四个工作表的容器发现、不同字段结构与指定 sheet 的分页取值，以及完全空白、只有表头两种工作表的零数据行；没有修改解析主线。上述确定性回归分别覆盖源文件解析和前端组合契约，仍未替代这些不同结构样例的真实 NFS 扫描、页面或 Hosted 验收。
+
+2026-10-10 SGM 运行输入核对：按 `scripts/dev/supermap-workflow.sh` 的指纹规则，只读核对全部 C++ 源码与测试、CMake、Dockerfile、算子目录、启动文件、基础镜像 ID 及 `linux/arm64` 平台，当前输入和运行镜像标签均为 `34d46162201a5e56993900c0a54f1b03280afd88`。运行镜像为 `sha256:32f081d72f40e39a5eb1fb70b4e40ea98f26e8479e3e23eac41c2f53f7e6ec03`，健康检查通过；既有 2026-10-07 原生 SGM 转换与本地页面记录见 `docs/next/三维与点云后续路线.md`。本次标准镜像重建在 Ubuntu 软件源 HTTP 下载阶段返回 502，未进入 CTest；容器内访问同一软件源的 HTTPS 地址成功，HTTP 直连及经宿主代理仍失败。没有更换软件源、关闭签名校验、修改全局 Docker 设置或替换运行镜像，不把历史记录或健康检查记为本次 SDK 重建通过。
+
+2026-10-10 栅格 Hosted 复验：地图依赖升级提交 `aa0f725157ccfb10500e897ffba07704cad1f943` 的 [Raster T4 38057200886](https://github.com/pampa0629/addp/actions/runs/38057200886) 通过。已下载并核对正式 artifact：`online-report.json` 与 38 份浏览器报告均为 passed，覆盖波段计算、镶嵌、重采样、裁剪、多波段有效性与插值、重分类、聚合、有效像素更新、概览、COG 转换／校验及统计分析；产物检查包含像素与 NoData、坐标系、概览、COG 合法性及源文件不变。`to-cog` 产物为 212209 字节，保留 EPSG:4326、两波段各 65535 个有效像素和 128×128 概览，COG 校验无警告。标准 Hosted 入口的 summary 确认清理通过、Infra 零残留。此 suite 的浏览器报告验证执行状态和分析结果页面，未打开 Manager 栅格地图；因此不能据此登记地图渲染或模型快显复验通过，二者继续由既有 Manager Hosted 门禁验证。
 
 ## 未决事项
 
