@@ -548,7 +548,7 @@ test('disk IO timing uses percent and ms and restores all three exact device tre
 })
 
 for (const locale of ['zh-cn', 'en']) {
-  test(`disk activity order retains every device and the selected trend after refresh (${locale})`, async ({ page }) => {
+  test(`disk compact view expands all devices and retains the selected trend after refresh (${locale})`, async ({ page }) => {
     const point = (value, data_state = 'valid') => ({ value, data_state })
     const device = (name, read, write, busy) => ({ device: name, points: { diskRead: read, diskWrite: write, diskBusy: busy } })
     const state = await resourceBackend(page, { locale, diskDevices: [
@@ -562,8 +562,18 @@ for (const locale of ['zh-cn', 'en']) {
     const table = page.getByTestId('resource-disk-table')
     const rows = table.locator('.el-table__body-wrapper tbody tr')
     const names = rows.locator('td:first-child .cell')
+    const toggle = page.getByTestId('resource-disk-toggle')
+    await expect(names).toHaveText(['z-active', 'a-stale', 'b-missing'])
+    await expect(page.getByTestId('resource-disk-display')).toContainText(locale === 'en' ? 'Showing 3 / 5 devices' : '显示 3 / 5 个设备')
+    await expect(toggle).toHaveText(locale === 'en' ? 'Show all devices (5)' : '显示全部设备（5）')
+    const beforeToggle = state.reads.length, beforeURL = page.url()
+    await toggle.focus()
+    await toggle.press('Space')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(names).toHaveText(['z-active', 'nbd2', 'nbd10', 'a-stale', 'b-missing'])
-    await expect(page.getByTestId('resource-disks')).toContainText(locale === 'en' ? 'Devices with IO activity appear first; all devices remain listed.' : '有 IO 活动的设备优先显示，全部设备均保留。')
+    expect(state.reads).toHaveLength(beforeToggle)
+    expect(page.url()).toBe(beforeURL)
+    await expect(page.getByTestId('resource-disks')).toContainText(locale === 'en' ? 'Missing or stale data remains visible.' : '缺失或陈旧数据仍显示。')
     const descriptions = locale === 'en' ? [
       ['Disk read throughput', 'Data read per second', 'Average data read per second over the last complete minute'],
       ['Disk write throughput', 'Data written per second', 'Average data written per second over the last complete minute'],
@@ -598,8 +608,14 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(names).toHaveText(['nbd2', 'nbd10', 'z-active', 'a-stale', 'b-missing'])
     await expect(page.getByTestId('resource-selected-device')).toHaveText('z-active')
     await expect.poll(() => state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1)?.query.device).toBe('z-active')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await toggle.click()
+    await expect(names).toHaveText(['nbd2', 'z-active', 'a-stale', 'b-missing'])
+    await expect(page.getByTestId('resource-selected-device')).toHaveText('z-active')
+    await toggle.click()
     await page.reload()
-    await expect(names).toHaveText(['nbd2', 'nbd10', 'z-active', 'a-stale', 'b-missing'])
+    await expect(names).toHaveText(['nbd2', 'z-active', 'a-stale', 'b-missing'])
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(page.getByTestId('resource-selected-device')).toHaveText('z-active')
     await page.setViewportSize({ width: 620, height: 800 })
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
@@ -608,6 +624,46 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(page.getByRole('tooltip').filter({ hasText: locale === 'en' ? 'No completed writes' : '没有完成写入请求' })).toBeVisible()
   })
 }
+
+for (const locale of ['zh-cn', 'en']) test(`idle disks remain available through expansion and reset at identity and node boundaries (${locale})`, async ({ page }) => {
+  const zero = { value: 0, data_state: 'valid' }
+  const state = await resourceBackend(page, { locale, diskDevices: ['nbd0', 'sda'].map(device => ({ device, points: { diskRead: zero, diskWrite: zero, diskBusy: zero } })) })
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  const toggle = page.getByTestId('resource-disk-toggle')
+  const table = page.getByTestId('resource-disk-table')
+  await expect(table).toHaveCount(0)
+  await expect(page.getByTestId('resource-disk-display')).toContainText(locale === 'en' ? 'Showing 0 / 2 devices' : '显示 0 / 2 个设备')
+  await expect(page.getByTestId('resource-disk-idle')).toContainText(locale === 'en' ? 'No devices currently have IO activity.' : '当前设备均无 IO 活动')
+  await expect(page.getByTestId('resource-disk-empty')).toHaveCount(0)
+  await expect(page.getByTestId('resource-network-table')).toContainText('eth0')
+  await toggle.click()
+  await expect(table.locator('.el-table__body-wrapper tbody tr')).toHaveCount(2)
+  await expect(table).toContainText('0.00 B/s')
+  await expect(page.getByTestId('resource-disk-idle')).toHaveCount(0)
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(table.locator('.el-table__body-wrapper tbody tr')).toHaveCount(2)
+  await setIdentity(page, identity(resourcePermissions, { type: 'tenant', tenant_id: '8' }))
+  await expect(table).toHaveCount(0)
+  await setIdentity(page, identity(resourcePermissions))
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(table).toHaveCount(0)
+  await toggle.click()
+  await page.getByRole('button', { name: locale === 'en' ? 'Back to hosts' : '返回主机列表' }).click()
+  await page.getByRole('button', { name: locale === 'en' ? 'View resources' : '查看资源' }).nth(1).click()
+  await expect(page).toHaveURL(new RegExp(`/node-resources/${secondNode}`))
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(table).toHaveCount(0)
+  await page.goto(`/node-resources/${node}?refresh=off&metric=node.disk.read_bytes_per_second&device=sda`)
+  await expect(table.locator('.el-table__body-wrapper tbody tr')).toHaveCount(1)
+  await expect(table).toContainText('sda')
+  await page.reload()
+  await expect(table.locator('.el-table__body-wrapper tbody tr')).toHaveCount(1)
+  await expect(page.getByTestId('resource-selected-device')).toHaveText('sda')
+  await page.goto(`/node-resources/${node}?refresh=off&metric=node.network.receive_bytes_per_second&device=nbd0`)
+  await expect(table).toHaveCount(0)
+  await expect(page.getByTestId('resource-selected-device')).toHaveText('nbd0')
+})
 
 for (const locale of ['zh-cn', 'en']) test(`network explains collector evidence locally and recovers without treating zero as missing (${locale})`, async ({ page }) => {
   const state = await resourceBackend(page, { locale })

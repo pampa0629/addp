@@ -76,12 +76,17 @@
           <h3>{{ t(`monitor.resources.${family.name}.title`) }}</h3>
           <p v-if="family.name === 'network' && family.rows.length" class="resource-hint">{{ t('monitor.resources.network.hint') }}</p>
           <p v-if="family.name === 'disk' && family.rows.length" class="resource-hint">{{ t('monitor.resources.disk.orderHint') }}</p>
+          <div v-if="family.name === 'disk' && family.rows.length" class="resource-toolbar" data-testid="resource-disk-display">
+            <span class="resource-hint" role="status">{{ t('monitor.resources.disk.deviceCount', { shown: family.visibleRows.length, total: family.rows.length }) }}</span>
+            <el-button v-if="family.collapsedCount" :aria-expanded="showAllDisks" data-testid="resource-disk-toggle" @click="showAllDisks = !showAllDisks">{{ t(showAllDisks ? 'monitor.resources.disk.collapseIdle' : 'monitor.resources.disk.showAll', { total: family.rows.length }) }}</el-button>
+          </div>
+          <p v-if="family.name === 'disk' && family.rows.length && !family.visibleRows.length" class="resource-hint" role="status" data-testid="resource-disk-idle">{{ t('monitor.resources.disk.allIdle') }}</p>
           <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
           <div v-if="!loading && !family.errorKey && family.missingMessage" class="resource-empty-status" :data-testid="`resource-${family.name}-status`">
             <p class="resource-hint" role="status" :data-testid="`resource-${family.name}-empty`">{{ t(family.missingMessage) }}</p>
             <el-button v-if="!family.rows.length && canConfigure" text type="primary" @click="configureCollection">{{ t(instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure') }}</el-button>
           </div>
-          <el-table v-if="!family.errorKey && family.rows.length" :data="family.rows" row-key="key" :data-testid="`resource-${family.name}-table`">
+          <el-table v-if="!family.errorKey && family.visibleRows.length" :data="family.visibleRows" row-key="key" :data-testid="`resource-${family.name}-table`">
             <el-table-column prop="dimensions.device" :label="t(family.name === 'network' ? 'monitor.resources.network.interface' : 'monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
             <el-table-column v-for="metric in family.metrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
               <template #header>
@@ -150,7 +155,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -163,13 +168,16 @@ const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.va
 const listQuery = computed(() => { const { range, metric, refresh, device, mountpoint, fstype, ...query } = state.value.query; return query })
 const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
+const showAllDisks = ref(false)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
 const filesystemMissingMessage = computed(() => !filesystemErrorKey.value && !inodeErrorKey.value && (['not_collected', 'failed'].includes(filesystems.value?.collection.filesystem) || !mountRows.value.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(filesystems.value?.collection, 'filesystem') : '')
 const deviceFamilies = [{ name: 'disk', metrics: diskMetrics, value: disks, error: diskErrorKey }, { name: 'network', metrics: networkMetrics, value: networks, error: networkErrorKey }]
 const deviceSections = computed(() => deviceFamilies.map(family => {
-  const rows = resourceDimensionRows(family.value.value)
-  return { name: family.name, metrics: family.metrics, rows: family.name === 'disk' ? sortDiskResourceRows(rows) : rows, errorKey: family.error.value, missingMessage: (['not_collected', 'failed'].includes(family.value.value?.collection[family.name]) || !rows.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(family.value.value?.collection, family.name) : '' }
+  const sourceRows = resourceDimensionRows(family.value.value)
+  const rows = family.name === 'disk' ? sortDiskResourceRows(sourceRows) : sourceRows
+  const compactRows = family.name === 'disk' ? visibleDiskResourceRows(rows, state.value.metric.startsWith('node.disk.') ? state.value.dimensions.device : '') : rows
+  return { name: family.name, metrics: family.metrics, rows, visibleRows: family.name === 'disk' && showAllDisks.value ? rows : compactRows, collapsedCount: rows.length - compactRows.length, errorKey: family.error.value, missingMessage: (['not_collected', 'failed'].includes(family.value.value?.collection[family.name]) || !rows.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(family.value.value?.collection, family.name) : '' }
 }))
 const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? state.value.metric.startsWith('node.network.') ? networkMetrics : diskMetrics : [])])
 const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...(trend.value?.series[0].points.map(point => currentResourceValue(point) ?? 0) || []))) : null)
@@ -310,6 +318,7 @@ async function reload({ automatic = false } = {}) {
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null }
   } finally { if (ticket === epoch) { loading.value = false; scheduleRefresh() } }
 }
+watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
 onMounted(() => document.addEventListener('visibilitychange', visibilityChanged))
 onBeforeUnmount(() => { disposed = true; document.removeEventListener('visibilitychange', visibilityChanged); invalidate() })

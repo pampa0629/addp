@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows } from '../src/utils/nodeResources.js'
+import { validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
 
 test('node resource trends delegate chart rendering and formatting to the shared owners', () => {
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
@@ -144,7 +144,7 @@ test('disk selectors use only device and reject foreign dimensions or incomplete
   }
 })
 
-test('disk order prioritizes current IO evidence without hiding unknown devices or changing source rows', () => {
+test('disk activity orders and collapses only proven idle devices while retaining unknown and selected rows', () => {
   const point = (value, data_state = 'valid') => ({ value, data_state })
   const row = (device, read, write, busy, duration = point(999)) => ({ key: device, dimensions: { device }, metrics: Object.fromEntries(diskMetrics.map((metric, index) => [metric.key, [read, write, busy, duration, duration][index]])) })
   const rows = [
@@ -161,6 +161,12 @@ test('disk order prioritizes current IO evidence without hiding unknown devices 
   const expected = ['z-busy', 'z-read', 'z-write', 'nbd2', 'nbd10', 'a-stale', 'b-partial', 'c-missing']
   assert.deepEqual(sortDiskResourceRows(rows).map(item => item.dimensions.device), expected)
   assert.deepEqual(sortDiskResourceRows([...rows].reverse()).map(item => item.dimensions.device), expected)
+  const sorted = sortDiskResourceRows(rows)
+  assert.deepEqual(visibleDiskResourceRows(sorted).map(item => item.dimensions.device), ['z-busy', 'z-read', 'z-write', 'a-stale', 'b-partial', 'c-missing'])
+  assert.deepEqual(visibleDiskResourceRows(sorted, 'nbd2').map(item => item.dimensions.device), ['z-busy', 'z-read', 'z-write', 'nbd2', 'a-stale', 'b-partial', 'c-missing'])
+  assert.deepEqual(visibleDiskResourceRows(sorted, 'not-present'), visibleDiskResourceRows(sorted))
+  assert.deepEqual(visibleDiskResourceRows([rows[0], rows[3]]), [])
+  assert.deepEqual(visibleDiskResourceRows([]), [])
   assert.deepEqual(rows, snapshot)
   rows[2].metrics[diskMetrics[1].key] = point(9999)
   assert.deepEqual(sortDiskResourceRows(rows).map(item => item.dimensions.device), expected)

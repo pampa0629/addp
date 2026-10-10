@@ -729,7 +729,11 @@
       "loadHint": "Tasks are processes or threads that are running, waiting for CPU, or in uninterruptible wait (often I/O). The 1, 5 and 15 minute values are smoothed averages, so decimals are normal. Interpret them alongside CPU utilization; dividing by core count does not give CPU utilization.",
       "disk": {
         "title": "Disk IO",
-        "orderHint": "Devices with IO activity appear first; all devices remain listed.",
+        "orderHint": "Devices with IO activity appear first; idle devices are collapsed by default. Missing or stale data remains visible.",
+        "deviceCount": "Showing {shown} / {total} devices",
+        "showAll": "Show all devices ({total})",
+        "collapseIdle": "Collapse idle devices",
+        "allIdle": "No devices currently have IO activity. Expand to view all devices.",
         "columns": {
           "diskRead": {
             "summary": "Data read per second",

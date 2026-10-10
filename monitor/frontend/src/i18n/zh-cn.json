@@ -729,7 +729,11 @@
       "loadHint": "任务指进程或线程；计入正在运行、等待 CPU，以及不可中断等待（常见于 I/O）的任务。1、5、15 分钟表示不同时间尺度的平滑平均，因此可以有小数。需结合 CPU 忙碌率判断压力，不能按核数换算为使用率。",
       "disk": {
         "title": "磁盘 IO",
-        "orderHint": "有 IO 活动的设备优先显示，全部设备均保留。",
+        "orderHint": "有 IO 活动的设备优先显示，无活动设备默认收起；缺失或陈旧数据仍显示。",
+        "deviceCount": "显示 {shown} / {total} 个设备",
+        "showAll": "显示全部设备（{total}）",
+        "collapseIdle": "收起无活动设备",
+        "allIdle": "当前设备均无 IO 活动，可展开查看全部设备。",
         "columns": {
           "diskRead": {
             "summary": "每秒读取的数据量",

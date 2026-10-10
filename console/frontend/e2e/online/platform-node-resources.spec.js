@@ -197,6 +197,14 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await page.screenshot({ path: resolve(artifact, 'node-resources-inodes.png'), animations: 'disabled' })
     for (const [family, metrics] of [['disk', diskMetrics], ['network', networkMetrics]]) {
       save(`${family}-device-trend-restore`)
+      if (family === 'disk') {
+        const expand = monitor.getByTestId('resource-disk-toggle')
+        if (await expand.count()) {
+          await expect(expand).toHaveAttribute('aria-expanded', 'false')
+          await expand.click()
+          await expect(expand).toHaveAttribute('aria-expanded', 'true')
+        }
+      }
       const table = monitor.getByTestId(`resource-${family}-table`)
       await expect(table.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
       await Promise.all(pending)
