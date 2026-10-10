@@ -683,6 +683,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment, message in (
             ("scripts/test/security-mysql-owner-protection-online.py", '"rollback_verified"', "owner contract is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "playwright install --with-deps chromium", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-security-gate.sh", 'go work init "${go_modules[@]}"', "Hosted profile is missing"),
+            ("scripts/test/online-hosted-security-gate.sh", 'cp "$ROOT_DIR/go.work.sum" "${GOWORK}.sum"', "Hosted profile is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "-transfer -monitor", "Hosted profile is missing"),
             ("scripts/test/online-gate.py", '("monitor", "MONITOR_URL"),', "must preflight Monitor"),
             ("scripts/test/security-mysql-owner-protection-online.py", "run_export_browser(", "must dispatch and validate"),

@@ -15,6 +15,8 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.host.setUp()
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
+        (self.host.repository / 'system/backend/go.mod').write_text('module fixture/system\n')
+        (self.host.repository / 'go.work.sum').write_text('fixture-checksums\n')
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test/online-hosted-security-gate.sh')
         self.host._executable('npm', '''
             #!/usr/bin/env bash
@@ -29,6 +31,15 @@ class HostedSecurityGateTest(unittest.TestCase):
         ''')
         self.host._executable('go', '''
             #!/usr/bin/env bash
+            if [ "$1 $2" = 'work init' ]; then
+              [ "$GOWORK" = "$ADDP_ONLINE_SECRET_DIR/go.work" ] || exit 2
+              [ "$3" = "$PWD/system/backend" ] || exit 2
+              [ "$(cat "${GOWORK}.sum")" = fixture-checksums ] || exit 2
+              [ "${ADDP_TEST_WORKSPACE_FAIL:-0}" != 1 ] || exit 1
+              echo workspace > "$GOWORK"
+              echo go-workspace >> "$ADDP_TEST_GATE_TRACE"
+              exit 0
+            fi
             previous=
             for argument in "$@"; do
               if [ "$previous" = --output ]; then
@@ -76,6 +87,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" = consumer-token ]
             [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ]
             [ "$ADDP_ONLINE_TEST_USER_PASSWORD" = private-password ]
+            [ -f "$GOWORK" ]
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
@@ -111,6 +123,8 @@ class HostedSecurityGateTest(unittest.TestCase):
         for target in ('-meta', '-security', '-manager', '-develop', '-service', '-transfer', '-monitor'):
             self.assertIn('start:' + target, trace)
         self.assertIn('initialize', trace)
+        self.assertLess(trace.index('go-workspace'), trace.index('start:-meta'))
+        self.assertFalse((self.host.repository / 'go.work').exists())
         self.assertIn('chromium', trace)
         self.assertIn('make:test-online ONLINE_SUITE=security-mysql-owner-protection', trace)
         self.assertLess(trace.index('initialize'), trace.index('make:'))
@@ -136,6 +150,15 @@ class HostedSecurityGateTest(unittest.TestCase):
                 else:
                     self.assertIn('application-stop', trace)
                 self.assertIn('result=failed', (self.host.artifacts / 'summary.txt').read_text())
+
+    def test_workspace_failure_does_not_start_infra_or_application_and_removes_credentials(self):
+        result = self.run_gate(ADDP_TEST_WORKSPACE_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.host.trace.exists())
+        self.assertFalse(self.host.secrets.exists())
+        summary = (self.host.artifacts / 'summary.txt').read_text()
+        self.assertIn('cleanup=passed', summary)
+        self.assertIn('infra_cleanup=not_started', summary)
 
 
 if __name__ == '__main__':

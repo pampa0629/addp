@@ -14,6 +14,16 @@ source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export SECURITY_URL=http://127.0.0.1:8194
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE=security_fixture
+# Swagger generation requires an explicit workspace in a clean checkout.
+# Discover the same tracked modules as test-go; the Hosted exit trap owns it.
+export GOWORK="$ADDP_ONLINE_SECRET_DIR/go.work"
+cp "$ROOT_DIR/go.work.sum" "${GOWORK}.sum"
+go_modules=()
+while IFS= read -r module; do
+  go_modules+=("$ROOT_DIR/$(dirname "$module")")
+done < <(git ls-files -- 'go.mod' '**/go.mod')
+[ "${#go_modules[@]}" -gt 0 ] || fail 'Security Hosted checkout has no tracked Go modules'
+run_logged go work init "${go_modules[@]}"
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 fixture_owned=1
