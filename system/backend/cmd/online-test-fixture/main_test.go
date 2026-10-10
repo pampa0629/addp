@@ -227,6 +227,7 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_READ_USER_USERNAME":            "external-online-public-reader",
 		"ADDP_ONLINE_READ_USER_PASSWORD":            "reader'quoted-password",
 		"ADDP_ONLINE_TEST_TENANT_ID":                "42",
+		"ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN":    "addp_at_approver'quoted",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":        "addp_at_user'quoted",
 		"UNREGISTERED_PASSWORD":                     "must-not-export-this-password",
 	}
@@ -252,6 +253,9 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	}
 	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='addp_at_source_initializer'\n") {
 		t.Fatal("fixture environment omitted the separate source initialization token")
+	}
+	if !strings.Contains(string(content), "export ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN='addp_at_approver'\"'\"'quoted'\n") {
+		t.Fatal("fixture environment omitted the shell-quoted plaintext approver token")
 	}
 	for _, value := range []string{"addp_at_admin", "addp_at_creator", "addp_at_reader", "addp_at_foreign", "84", "86", "external-online-public-reader", "reader'\"'\"'quoted-password"} {
 		if !strings.Contains(string(content), value) {
