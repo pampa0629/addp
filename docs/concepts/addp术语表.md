@@ -498,7 +498,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Authentication Assurance Level (AAL) | 认证保证等级 | 当前 User 会话基于已完成认证方式得出的认证可信程度。 | 属于当前 Token Family 的不可变认证事实，不是 Tenant 配置、User 的永久等级或权限大小；当前产品签发 AAL1 和 AAL2，AAL3 仅为协议预留。 |
 | Permission | 权限 | ADDP 产品定义的稳定、最小功能动作。 | Tenant 可以组合 Permission 创建 Role，但不能创造任意 Permission 字符串。 |
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
-| Source Data Authorizer | 源数据授权办理员 | 配置精确表批准方式、办理直接只读授权、查询签发历史并撤销授权的内置功能角色。 | 使用 `tenant.source_data_authorizer`，仅 Tenant Scope 的 User；办理须另有目标引擎的有效委托或显式授权管理员资格。角色不自动赋予数据访问、创建委托或绕过 Catalog 业务批准。可以由现有管理员兼任，不要求新建账号。 |
+| Source Data Authorizer | 源数据授权办理员 | 配置精确源目标（普通表或集合）的批准方式、办理直接只读授权、查询签发历史并撤销授权的内置功能角色。 | 使用 `tenant.source_data_authorizer`，仅 Tenant Scope 的 User；办理须另有目标引擎的有效委托或显式授权管理员资格。角色不自动赋予数据访问、创建委托或绕过 Catalog 业务批准。可以由现有管理员兼任，不要求新建账号。 |
 | Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层与命名规范。质量执行策略由 Quality 管理。 |
 | Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |

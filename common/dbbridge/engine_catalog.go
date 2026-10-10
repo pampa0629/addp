@@ -40,6 +40,20 @@ func ListEngineCatalogChildren(ctx context.Context, engine *models.Engine, paren
 	return catalogProvider.ListChildren(ctx, pluginEngine.ConnectionInfo, parent, opts)
 }
 
+// ResolveEngineCatalogPath 精确解析实时目录节点，不读取样本或详情。
+func ResolveEngineCatalogPath(ctx context.Context, engine *models.Engine, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	p, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	provider, ok := p.(plugin.EngineCatalogProvider)
+	if !ok {
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported,
+			fmt.Errorf("plugin %s does not implement EngineCatalogProvider", engine.EngineType))
+	}
+	return provider.ResolvePath(ctx, toPluginEngine(engine).ConnectionInfo, path)
+}
+
 // DescribeEngineCatalogFacts 描述 catalog leaf 的 engine-native facts。
 func DescribeEngineCatalogFacts(ctx context.Context, engine *models.Engine, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	return plugin.DescribeEngineCatalogFacts(ctx, toPluginEngine(engine), path, opts)

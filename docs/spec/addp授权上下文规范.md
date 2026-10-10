@@ -397,7 +397,9 @@ Catalog 后台仅消费已提交且未核清的原请求，逐项调用该主路
 
 #### 5.5.6 无 Catalog 的独立授权首版产品范围
 
-独立只读授予的正式契约为 `POST /api/v1/system/engines/:id/access_grants`：当前 Tenant User 同时满足 `system.engine_access_grant.create` 和管理资格（当前租户授权管理员或该引擎有效受托办理人）。正文明确提交命令 `request_id`、完整 `catalog_path`、十进制字符串 `requirement_version`、`recipient_type`、十进制字符串 `recipient_id`、`action=read`、显式 `expiry_mode`、可空 `expires_at` 与非空 `reason`；Tenant、操作者、批准来源和签发时刻均由 System 派生，拒绝额外字段或 Query。首次签发在源端只读验证普通表结构后，重新核验当前 IAM、委派、精确目标的 `independent` 批准方式与原预期版本；不读取样本、不请求企业 Catalog。源端验证期间不持有数据库事实锁，引擎管理员编辑版本变化则拒绝提交并要求重新选择。Grant 与高风险审计同事务落地，返回 201 才表示签发事实已提交。未明确首次初始化时，缺少要求不能签发；已有 Catalog 模式或版本变化均不能独立签发。首次初始化遵循下述原子命令契约。
+独立只读授予的正式契约为 `POST /api/v1/system/engines/:id/access_grants`：当前 Tenant User 同时满足 `system.engine_access_grant.create` 和管理资格（当前租户授权管理员或该引擎有效受托办理人）。正文明确提交命令 `request_id`、完整 `catalog_path`、十进制字符串 `requirement_version`、`recipient_type`、十进制字符串 `recipient_id`、`action=read`、显式 `expiry_mode`、可空 `expires_at` 与非空 `reason`；Tenant、操作者、批准来源和签发时刻均由 System 派生，拒绝额外字段或 Query。首次签发通过 Engine Catalog Provider 的 `ResolvePath` 在源端精确确认普通表或集合叶子存在后，重新核验当前 IAM、委派、精确目标的 `independent` 批准方式与原预期版本；不读取样本、不请求企业 Catalog。源端验证期间不持有数据库事实锁，引擎管理员编辑版本变化则拒绝提交并要求重新选择。Grant 与高风险审计同事务落地，返回 201 才表示签发事实已提交。未明确首次初始化时，缺少要求不能签发；已有 Catalog 模式或版本变化均不能独立签发。首次初始化遵循下述原子命令契约。
+
+2026-10-11 已确认：独立读取 Grant 接受精确普通表与 `collection` 叶子，沿用同一签发、批准要求、身份、委派、到期和撤销主路径。MongoDB 集合通过原生 `listCollections` 名称谓词及类型确认，只接受普通 `collection`，不接受视图、时序集合、命名空间或未来新增集合；核验不查询文档、统计、索引或字段。Provider 返回的完整路径须与请求完全一致。该范围首先由 MongoDB Hosted 验收验证；现有 Console 批量选表交互仍保持普通表范围，不把目录分支解释为递归 Grant。
 
 同一个命令 UUID 仅允许原操作者、同引擎、同目标、同接收方、同动作、同期限、同批准版本及同原因重试；当前授予 Permission 和管理委派仍须有效。同参返回原签发事实，不续期、不撤销或恢复，不要求历史接收方或源表仍有效；不同参返回 409，跨 Tenant 或引擎隐藏为 404。历史恢复不以操作者当前授权版本等于签发时版本为条件，但当前请求身份必须有效。首次签发提交前按数据库墙钟复核期限与接收主体。
 

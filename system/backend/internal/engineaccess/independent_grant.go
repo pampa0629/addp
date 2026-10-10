@@ -26,7 +26,7 @@ var (
 // The verifier reads structure only, outside IAM locks, and returns the Engine
 // aggregate version used for discovery. No sample read, Catalog or Meta RPC.
 type IndependentTargetVerifier interface {
-	VerifyIndependentTable(context.Context, int64, engineplugin.EngineCatalogPath) (int64, error)
+	VerifyIndependentReadTarget(context.Context, int64, engineplugin.EngineCatalogPath) (int64, error)
 }
 
 func (s *Service) WithIndependentTargetVerifier(verifier IndependentTargetVerifier) *Service {
@@ -83,7 +83,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 	segments := input.CatalogPath.Segments
 	if err != nil || expiryErr != nil || input.RequestID == uuid.Nil || input.RequirementVersion <= 0 || (input.InitializeApproval && input.RequirementVersion != 1) ||
 		input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || len(segments) < 2 ||
-		segments[len(segments)-1].Term != "table" || segments[len(segments)-1].Kind != "table" ||
+		!independentReadTargetSegment(segments[len(segments)-1]) ||
 		input.RecipientID <= 0 || !oneOfRecipient(input.RecipientType) || input.Action != "read" || !validReason(input.Reason) {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -94,6 +94,10 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 		ExpiryMode: input.ExpiryMode, ExpiresAt: expires, RequirementVersion: input.RequirementVersion,
 		OperatorPrincipalID: input.Actor.PrincipalID, OperatorMembershipID: input.Actor.MembershipID,
 		OperatorAuthorizationVersion: input.Actor.AuthorizationVersion, Reason: &reason, InitializedApproval: input.InitializeApproval}, nil
+}
+
+func independentReadTargetSegment(segment engineplugin.EngineCatalogSegment) bool {
+	return segment.Term == segment.Kind && (segment.Kind == engineplugin.EngineCatalogKindTable || segment.Kind == engineplugin.EngineCatalogKindCollection)
 }
 
 func sameIndependentGrant(a, b *sourceGrant) bool {
@@ -168,7 +172,7 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 	if s.independentTarget == nil {
 		return nil, ErrIndependentGrantSourceUnavailable
 	}
-	engineVersion, err := s.independentTarget.VerifyIndependentTable(ctx, input.Actor.TenantID, input.CatalogPath)
+	engineVersion, err := s.independentTarget.VerifyIndependentReadTarget(ctx, input.Actor.TenantID, input.CatalogPath)
 	if err != nil {
 		return nil, err
 	}

@@ -17,7 +17,7 @@ import (
 
 type independentVerifierFunc func(context.Context, int64, engineplugin.EngineCatalogPath) (int64, error)
 
-func (f independentVerifierFunc) VerifyIndependentTable(c context.Context, id int64, p engineplugin.EngineCatalogPath) (int64, error) {
+func (f independentVerifierFunc) VerifyIndependentReadTarget(c context.Context, id int64, p engineplugin.EngineCatalogPath) (int64, error) {
 	return f(c, id, p)
 }
 
@@ -210,6 +210,35 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			t.Fatalf("issue=%+v %v", issued, err)
 		}
 		assertRead("grant")
+		t.Run("exact collection uses the same grant lifecycle", func(t *testing.T) {
+			collection := engineplugin.EngineCatalogPath{Version: engineplugin.EngineCatalogPathVersion, EngineID: base.EngineID,
+				Segments: []engineplugin.EngineCatalogSegment{{Term: "server", Kind: "server"}, {Term: "database", Kind: "namespace", Name: "Outdoor"}, {Term: "collection", Kind: "collection", Name: "Persons"}}}
+			command := input
+			command.RequestID, command.CatalogPath = uuid.New(), collection
+			command.RequirementVersion, command.InitializeApproval = 1, true
+			grant, err := service.CreateIndependentGrant(ctx, command)
+			if err != nil || grant == nil {
+				t.Fatalf("collection grant: %+v %v", grant, err)
+			}
+			check := func(want string) {
+				t.Helper()
+				result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{collection}})
+				if err != nil || result == nil || len(result.Targets) != 1 || result.Targets[0].Reason != want {
+					t.Fatalf("collection read want %s: %+v %v", want, result, err)
+				}
+			}
+			check("grant")
+			if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: command.EngineID, RequestID: command.RequestID, Reason: "End collection fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			check("no_grant")
+			before := calls
+			replayed, err := service.CreateIndependentGrant(ctx, command)
+			if err != nil || replayed == nil || replayed.Revocation == nil || calls != before {
+				t.Fatalf("collection retry must preserve revocation without source reads: %+v %v", replayed, err)
+			}
+			check("no_grant")
+		})
 		t.Run("table and recipient filters precede pagination and preserve history", func(t *testing.T) {
 			other, _ := newUser(t, time.Hour)
 			commands := []CreateIndependentGrantInput{}

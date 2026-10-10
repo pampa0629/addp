@@ -100,7 +100,18 @@ func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.Connec
 }
 
 func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
-	return plugin.ResolveDynamicSchemaCatalogPath(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path)
+	if len(path.Segments) <= 2 {
+		return plugin.ResolveDynamicSchemaCatalogPath(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path)
+	}
+	if err := validateCollectionCatalogPath(path); err != nil {
+		return nil, err
+	}
+	client, err := p.createClient(ctx, connInfo)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Disconnect(ctx)
+	return resolveCollectionCatalogEntry(ctx, client.Database(path.Segments[1].Name), path)
 }
 
 func (p *MongoDBPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {

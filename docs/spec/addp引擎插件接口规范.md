@@ -162,6 +162,8 @@ type EngineCatalogProvider interface {
 
 表格型 Provider 的 `ResolvePath` 对明确的 table leaf 路径必须按命名空间和目标名称精确查询，只返回该目标的轻量摘要，不读取字段，也不得通过 `ListChildren`／`ListTables` 枚举父级后寻找目标。`DescribeEngineCatalogFacts` 使用相同的精确目标查找，再按选项读取该目标的详情；目标不存在或源账号不可见时返回 `not_found`，查询失败直接返回错误，禁止退回父级枚举。公共表格适配器的 `GetTable` 回调是必需能力，关系型插件必须实现带目标名称谓词的原生查询，并保留系统目录隐藏与源账号权限过滤。显式 branch 列表仍由 `ListTables` 承担。
 
+MongoDB 精确 `collection` 叶子的 `ResolvePath` 使用带名称谓词的原生 `listCollections` 并确认原生类型为普通集合；返回轻量摘要和原路径，不读取文档样本、字段、索引或统计，不回退到父目录枚举。不存在、不可见或非普通集合不能成为独立读取 Grant 的目标；视图和时序集合不在当前独立授权范围。详情与采样仍由原有事实读取协议承担。
+
 ### EngineCatalogFactsProvider
 
 描述 catalog entry 或 leaf 的字段、统计、索引、约束、分区、空间信息和原生属性。

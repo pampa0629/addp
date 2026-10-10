@@ -47,7 +47,7 @@ type CreateIndependentEngineAccessGrantRequest struct {
 
 // Create godoc
 // @Summary 显式签发独立只读授权 | Issue explicit independent read access
-// @Description 当前 Tenant User 需独立授予权限及管理资格（当前租户授权管理员或本引擎受托办理人）；精确普通表的批准要求必须为 independent 且与原版本匹配。不要求企业 Catalog 或 Meta 编目，结构核验只读且不读取样本 | Current Tenant User needs creation permission and management qualification (current-tenant authorization administrator or delegated engine handler). Exact ordinary table approval must be independent at the expected version. No enterprise Catalog or Meta cataloging; structure verification is read-only without sampling
+// @Description 当前 Tenant User 需独立授予权限及管理资格（当前租户授权管理员或本引擎受托办理人）；精确普通表或集合的批准要求必须为 independent 且与原版本匹配。不要求企业 Catalog 或 Meta 编目，结构核验只读且不读取样本 | Current Tenant User needs creation permission and management qualification (current-tenant authorization administrator or delegated engine handler). Exact ordinary table or collection approval must be independent at the expected version. No enterprise Catalog or Meta cataloging; structure verification is read-only without sampling
 // @Description 同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy
 // @Description 同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change
 // @Description 授权管理员不需委托自己，受托办理员需有效引擎委托。initialize_approval=true 须额外具有首次配置权限且版本为 1；首次配置与 Grant 原子提交，不覆盖已有要求 | Authorization administrators need no self-delegation; handlers need an effective engine delegation. initialize_approval=true additionally requires initialization permission and version 1; configuration and Grant commit atomically without overwriting an existing basis
@@ -56,7 +56,7 @@ type CreateIndependentEngineAccessGrantRequest struct {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "引擎 ID | Engine ID"
-// @Param request body CreateIndependentEngineAccessGrantRequest true "显式命令、精确表、批准版本、接收方、只读动作、期限与原因 | Explicit command, exact table, approval version, recipient, read action, expiry and reason"
+// @Param request body CreateIndependentEngineAccessGrantRequest true "显式命令、精确普通表或集合、批准版本、接收方、只读动作、期限与原因 | Explicit command, exact ordinary table or collection, approval version, recipient, read action, expiry and reason"
 // @Success 201 {object} engineaccess.SourceGrantView "已提交的签发历史，不是访问凭据 | Committed issuance history, not an access credential"
 // @Failure 400,401,403,404,409,500,503 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
