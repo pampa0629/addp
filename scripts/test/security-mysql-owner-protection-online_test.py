@@ -199,6 +199,10 @@ class MongoClient(SpatialClient):
         self.fail_preview = None
         self.item = {"id": 19, "node_id": 9, "fingerprint": "sha256:mongo-persons",
                      "full_name": ONLINE.MONGODB_SOURCE, "item_type": "collection"}
+        self.component = {"key": ONLINE.MONGODB_FIELD, "value_type": "string",
+                          "path": [{"name": "userInfo", "container": "object"}, {"name": "phone", "container": "scalar"}],
+                          "schema_fingerprint": "sha256:phone-schema"}
+        self.assessment_reads = 0
 
     def rows(self, owner):
         self.preview_calls += 1
@@ -229,7 +233,12 @@ class MongoClient(SpatialClient):
             return response(200, {"data": [{"id": "enrolled", "target_snapshot": {
                 "engine_id": 29, "full_name": ONLINE.MONGODB_SOURCE}}], "total_pages": 1})
         if path == "/api/v1/security/protection-enrollments/enrolled/components":
-            return response(200, {"data": [{"component": {"key": ONLINE.MONGODB_FIELD, "value_type": "string"}}]})
+            return response(200, {"data": [] if self.confirmed else [{"component": copy.deepcopy(self.component)}]})
+        if path == "/api/v1/security/assessments/phone-assessment":
+            assert method == "GET" and self.confirmed
+            self.assessment_reads += 1
+            return response(200, {"id": "phone-assessment", "enrollment_id": "enrolled", "current": {
+                "conclusion": "sensitive", "component": copy.deepcopy(self.component)}})
         if path.startswith("/api/v1/security/findings?"):
             return response(200, {"data": [{"id": "phone-finding", "detector_version": ONLINE.PHONE_DETECTOR,
                 "component": {"key": ONLINE.MONGODB_FIELD}, "review": {} if self.confirmed else None}], "total_pages": 1})
@@ -270,6 +279,9 @@ class MongoAlgorithmTest(unittest.TestCase):
         client = MongoClient()
         report = self.run_mongo(client)
         self.assertTrue(client.confirmed)
+        self.assertEqual(client.assessment_reads, 1)
+        self.assertEqual(client.request("GET", "/api/v1/security/protection-enrollments/enrolled/components", (200,)).payload["data"], [])
+        self.assertEqual(report["component"], client.component)
         self.assertEqual([case["algorithm"] for case in report["cases"]], [case[0] for case in ONLINE.ALGORITHM_CASES])
         self.assertEqual(report["component_key"], "userInfo.phone")
         self.assertEqual(report["finding_id"], "phone-finding")
@@ -283,6 +295,16 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertEqual(client.policies[0]["state"], "revoked")
         self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
                          {k: v for k, v in client.original.items() if k != "version"})
+
+    def test_confirmed_assessment_structure_must_match_before_protection_changes(self):
+        for mutation in ("key", "value_type", "path", "schema_fingerprint"):
+            client = MongoClient()
+            client.component[mutation] = {"key": "other.phone", "value_type": "json", "path": [{"name": "userInfo.phone", "container": "scalar"}], "schema_fingerprint": "missing"}[mutation]
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ONLINE.SuiteError, "Meta-derived Assessment"):
+                self.run_mongo(client)
+            self.assertEqual(client.preview_calls, 0)
+            self.assertEqual(client.policies, [])
+            self.assertEqual(client.baseline, client.original)
 
     def test_preview_failures_restore_baseline_and_revoke_created_policy(self):
         for fail_at in (1, 2, 3, 4, 5, 6):

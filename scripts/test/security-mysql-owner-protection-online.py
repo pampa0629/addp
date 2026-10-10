@@ -1156,12 +1156,18 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
     enrollment_id, initialized = ensure_enrollment(client, engine_id, MONGODB_SOURCE, locator)
     assessment_id, confirmed, finding_id = ensure_detected_assessment(
         client, enrollment_id, deadline, MONGODB_FIELD, PHONE_DETECTOR)
-    components = _object(client.request("GET", f"/api/v1/security/protection-enrollments/{enrollment_id}/components", (200,)).payload, "MongoDB components")
-    matches = [item["component"] for item in _array(components.get("data"), "components")
-               if isinstance(item, dict) and isinstance(item.get("component"), dict)
-               and item["component"].get("key") == MONGODB_FIELD]
-    if len(matches) != 1 or matches[0].get("value_type") != "string":
-        raise SuiteError("Meta must expose the actual nested userInfo.phone string component")
+    # Confirmed fields leave the manual-assessment candidate list. Validate the
+    # Meta-derived structure frozen by the formal Assessment instead.
+    assessment = _object(client.request("GET", f"/api/v1/security/assessments/{assessment_id}", (200,)).payload, "MongoDB Assessment")
+    current = _object(assessment.get("current"), "MongoDB Assessment current revision")
+    component = _object(current.get("component"), "MongoDB assessed component")
+    if (assessment.get("id") != assessment_id or assessment.get("enrollment_id") != enrollment_id
+            or current.get("conclusion") != "sensitive" or component.get("key") != MONGODB_FIELD
+            or component.get("value_type") != "string"
+            or component.get("path") != [{"name": "userInfo", "container": "object"}, {"name": "phone", "container": "scalar"}]
+            or not isinstance(component.get("schema_fingerprint"), str)
+            or not component["schema_fingerprint"].startswith("sha256:")):
+        raise SuiteError("Meta-derived Assessment must bind the actual nested userInfo.phone string component")
     phones = [item for item in definition_array(client, "/api/v1/security/sensitive-data-types") if item.get("code") == "phone"]
     if len(phones) != 1:
         raise SuiteError("MongoDB acceptance requires exactly one phone type")
@@ -1225,6 +1231,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
     if scenario_error:
         raise scenario_error
     return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD,
+            "component": component,
             "scan_execution_id": scan, "enrollment_initialized": initialized,
             "finding_id": finding_id, "assessment_id": assessment_id, "finding_confirmed": confirmed,
             "detector": PHONE_DETECTOR, "all_owner_projections_acknowledged": True,
