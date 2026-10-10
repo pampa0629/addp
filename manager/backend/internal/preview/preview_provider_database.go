@@ -185,7 +185,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		Fields:              profileFields,
 		ColumnMetadata:      columnMetadata,
 		Rows:                rows,
-		Total:               int(totalCount),
+		Total:               models.ExactPreviewTotal(int(totalCount)),
 		Page:                page,
 		PageSize:            pageSize,
 		GeometryColumns:     geometryColumns,

@@ -100,7 +100,7 @@ func (*documentRecordSetPreviewProvider) Preview(ctx context.Context, req *Previ
 	} else if table.EstimatedRowCount != nil {
 		total = *table.EstimatedRowCount
 	}
-	return &models.TablePreview{Mode: PreviewModeTable, PreviewKind: "dynamic_schema_record_set", Columns: columns, Fields: table.Fields, ColumnMetadata: buildDynamicSchemaColumnMetadata(table.Fields), Rows: rows, Total: int(total), Page: page, PageSize: pageSize, EngineID: req.Engine.ID, Schema: req.Schema, Table: req.Table, EngineType: req.Engine.EngineType}, nil
+	return &models.TablePreview{Mode: PreviewModeTable, PreviewKind: "dynamic_schema_record_set", Columns: columns, Fields: table.Fields, ColumnMetadata: buildDynamicSchemaColumnMetadata(table.Fields), Rows: rows, Total: models.ExactPreviewTotal(int(total)), Page: page, PageSize: pageSize, EngineID: req.Engine.ID, Schema: req.Schema, Table: req.Table, EngineType: req.Engine.EngineType}, nil
 }
 
 func buildDynamicSchemaColumnMetadata(fields []datatype.FieldInfo) []models.ColumnMetadata {

@@ -255,7 +255,7 @@ func TestScopeTablePreviewReadsRuntimeContainerChildWithSpatialMetadata(t *testi
 	if len(preview.Rows) != 2 || preview.Rows[0]["OBJECTID"] != int64(3) || preview.Rows[1]["OBJECTID"] != int64(4) {
 		t.Fatalf("rows = %#v, want second page OBJECTID 3 and 4", preview.Rows)
 	}
-	if preview.Total != 265 || preview.GeometryColumn != "SHAPE" || preview.SourceSRID != 4326 || preview.SourceCRS != "EPSG:4326" {
+	if (preview.Total == nil || *preview.Total != 265) || preview.GeometryColumn != "SHAPE" || preview.SourceSRID != 4326 || preview.SourceCRS != "EPSG:4326" {
 		t.Fatalf("preview spatial/total = %#v", preview)
 	}
 	if len(preview.Extent) != 4 || preview.Extent[0] != 100 || preview.Extent[3] != 24 {

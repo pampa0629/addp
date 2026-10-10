@@ -82,11 +82,12 @@
     </div>
 
     <!-- 分页 -->
-    <div v-if="total > 0" ref="paginationRef" class="pagination">
+    <div v-if="showPagination" ref="paginationRef" class="pagination">
       <DataPagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
         :total="total"
+        :has-more="data.has_more"
         @change="handlePaginationChange"
       />
     </div>
@@ -273,7 +274,7 @@ const getVisibleSectionCount = () => {
   let count = 1
   if (hasGeometry.value) count += 1
   if (hasGeometry.value && showMap.value) count += 2
-  if (total.value > 0) count += 1
+  if (showPagination.value) count += 1
   if (shapefileMetaItems.value.length > 0) count += 1
   return count
 }
@@ -284,7 +285,7 @@ const getMaxMapHeight = () => {
   const base = containerH > 0 ? containerH : viewportH
   const controlsH = hasGeometry.value ? getSectionHeight(mapControlsRef, 44) : 0
   const splitterH = hasGeometry.value && showMap.value ? getSectionHeight(splitterRef, 14) : 0
-  const paginationH = total.value > 0 ? getSectionHeight(paginationRef, 40) : 0
+  const paginationH = showPagination.value ? getSectionHeight(paginationRef, 40) : 0
   const metaH = shapefileMetaItems.value.length > 0 ? getSectionHeight(shapefileMetaRef) : 0
   const gapTotal = Math.max(0, getVisibleSectionCount() - 1) * CONTAINER_GAP
   const available = base - controlsH - splitterH - paginationH - metaH - gapTotal - MIN_TABLE_HEIGHT
@@ -366,7 +367,8 @@ const startMapResize = (event) => {
 const columns = computed(() => props.data?.columns || [])
 const columnMetadata = computed(() => props.data?.column_metadata || [])
 const rows = computed(() => props.data?.rows || [])
-const total = computed(() => props.data?.total || 0)
+const total = computed(() => props.data?.total ?? null)
+const showPagination = computed(() => total.value > 0 || (total.value === null && (rows.value.length > 0 || currentPage.value > 1)))
 const geometryColumns = computed(() => props.data?.geometry_columns || [])
 const crsTransform = computed(() => getPreviewCRSTransform(props.data))
 const isDynamicSchemaRecordSet = computed(() => props.data?.preview_kind === 'dynamic_schema_record_set')

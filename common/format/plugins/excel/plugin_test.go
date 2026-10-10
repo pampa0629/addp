@@ -242,3 +242,31 @@ func TestWorkbookReadsSelectedSheetSchemaAndEmptySheets(t *testing.T) {
 		})
 	}
 }
+
+func TestEmptyWorksheetDimensionDoesNotInventColumns(t *testing.T) {
+	workbook := excelize.NewFile()
+	defer workbook.Close()
+	if err := workbook.SetSheetDimension("Sheet1", "A1:A1"); err != nil {
+		t.Fatal(err)
+	}
+	var data bytes.Buffer
+	if err := workbook.Write(&data); err != nil {
+		t.Fatal(err)
+	}
+	plugin := NewPlugin(nil)
+	info, err := plugin.DescribeContainer(context.Background(), bytes.NewReader(data.Bytes()), format.DefaultParseOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := info.Children[0]
+	if child.ColumnCount == nil || *child.ColumnCount != 0 || child.EstimatedRowCount == nil || *child.EstimatedRowCount != 0 {
+		t.Fatalf("empty dimension created facts: %#v", child)
+	}
+	description, err := plugin.DescribeTable(context.Background(), bytes.NewReader(data.Bytes()), format.DefaultParseOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(description.Table.Fields) != 0 {
+		t.Fatalf("empty fields: %#v", description.Table.Fields)
+	}
+}

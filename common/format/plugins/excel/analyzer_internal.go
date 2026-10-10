@@ -209,6 +209,11 @@ func analyzeSheet(workbook *excelize.File, sheetName string, index int, opts Opt
 		rawRows = append(rawRows, trimmed)
 	}
 
+	// A declared worksheet range is only an estimate; no rows means no columns.
+	if rowIndex == 0 {
+		dimCols, dimRows, maxColumns = 0, 0, 0
+	}
+
 	hasHeader := looksLikeHeaderRow(headerCandidate)
 	if !hasHeader && len(headerCandidate) > 0 {
 		rawRows = append([][]string{headerCandidate}, rawRows...)

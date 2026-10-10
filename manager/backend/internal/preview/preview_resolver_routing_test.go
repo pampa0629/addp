@@ -98,7 +98,7 @@ func (p namedPreviewProvider) Preview(context.Context, *PreviewRequest) (*models
 		Mode:     PreviewModeTable,
 		Columns:  []string{"id"},
 		Rows:     []map[string]interface{}{{"id": 1}},
-		Total:    1,
+		Total:    models.ExactPreviewTotal(1),
 		Page:     1,
 		PageSize: 20,
 	}, nil

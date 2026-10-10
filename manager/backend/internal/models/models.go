@@ -121,7 +121,8 @@ type TablePreview struct {
 	Fields              []datatype.FieldInfo           `json:"-"`                         // Manager 内部使用的标准字段事实；不得从展示类型反推
 	ColumnMetadata      []ColumnMetadata               `json:"column_metadata,omitempty"` // 列元数据（类型、是否可空、主键等）
 	Rows                []map[string]interface{}       `json:"rows"`
-	Total               int                            `json:"total"`
+	Total               *int                           `json:"total"`    // 精确总数；nil 表示未知
+	HasMore             bool                           `json:"has_more"` // 总数未知时用于逐页读取
 	Page                int                            `json:"page"`
 	PageSize            int                            `json:"page_size"`
 	PreviewKind         string                         `json:"preview_kind,omitempty"` // 细分预览语义，如 graph_overview
@@ -358,3 +359,6 @@ type MetaExtractionScanStats struct {
 	Indexed     int `json:"indexed"`
 	IndexFailed int `json:"index_failed"`
 }
+
+// ExactPreviewTotal preserves an exact zero independently of an unknown count.
+func ExactPreviewTotal(total int) *int { return &total }

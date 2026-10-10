@@ -255,9 +255,9 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}
 
 	// 获取总行数
-	totalCount := int64(0)
+	var totalCount *int
 	if tableInfo.RowCount != nil {
-		totalCount = *tableInfo.RowCount
+		totalCount = models.ExactPreviewTotal(int(*tableInfo.RowCount))
 	}
 
 	// 计算分页参数
@@ -270,22 +270,27 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		page = 1
 	}
 	offset := (page - 1) * pageSize
+	readLimit := pageSize
+	if totalCount == nil {
+		readLimit++
+	}
 
-	object, sampleOpts, usedAccessIndex, err := p.openSampleReader(ctx, contentReader, fullPath, tableInfo, opts, req, offset, pageSize)
+	object, sampleOpts, usedAccessIndex, err := p.openSampleReader(ctx, contentReader, fullPath, tableInfo, opts, req, offset, readLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reopen object for data: %w", err)
 	}
 	defer object.Close()
 
 	// 读取分页数据
-	rows, err := sampleReader.SampleTable(ctx, object, int64(offset), int64(pageSize), sampleOpts)
+	rows, err := sampleReader.SampleTable(ctx, object, int64(offset), int64(readLimit), sampleOpts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
 
-	// 如果未获取到总行数，使用返回的行数
-	if totalCount == 0 {
-		totalCount = int64(len(rows))
+	// 探测行只用于后续页判断，不进入预览响应或数据保护。
+	hasMore := totalCount == nil && len(rows) > pageSize
+	if hasMore {
+		rows = rows[:pageSize]
 	}
 
 	// 检测几何列（用于空间数据）
@@ -306,7 +311,8 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		Columns:             columns,
 		Fields:              append([]datatype.FieldInfo(nil), tableInfo.Fields...),
 		Rows:                rows,
-		Total:               int(totalCount),
+		Total:               totalCount,
+		HasMore:             hasMore,
 		Page:                page,
 		PageSize:            pageSize,
 		GeometryColumns:     geometryColumns,
@@ -575,9 +581,9 @@ func (p *FileTablePreviewProvider) previewRefs(
 	}
 
 	// 获取总行数
-	totalCount := int64(0)
+	var totalCount *int
 	if tableInfo.RowCount != nil {
-		totalCount = *tableInfo.RowCount
+		totalCount = models.ExactPreviewTotal(int(*tableInfo.RowCount))
 	}
 
 	// 计算分页参数
@@ -590,11 +596,20 @@ func (p *FileTablePreviewProvider) previewRefs(
 		page = 1
 	}
 	offset := (page - 1) * pageSize
+	readLimit := pageSize
+	if totalCount == nil {
+		readLimit++
+	}
 
 	// 读取分页数据
-	rows, err := sampleReader.SampleMultiTable(ctx, reader, refs, int64(offset), int64(pageSize), opts)
+	rows, err := sampleReader.SampleMultiTable(ctx, reader, refs, int64(offset), int64(readLimit), opts)
 	if err != nil && len(rows) == 0 {
 		return nil, fmt.Errorf("failed to read %s ref table data: %w", formatType, err)
+	}
+
+	hasMore := totalCount == nil && len(rows) > pageSize
+	if hasMore {
+		rows = rows[:pageSize]
 	}
 
 	// 检测几何列
@@ -621,7 +636,8 @@ func (p *FileTablePreviewProvider) previewRefs(
 		Columns:             columns,
 		Fields:              append([]datatype.FieldInfo(nil), tableInfo.Fields...),
 		Rows:                rows,
-		Total:               int(totalCount),
+		Total:               totalCount,
+		HasMore:             hasMore,
 		Page:                page,
 		PageSize:            pageSize,
 		GeometryColumns:     geometryColumns,

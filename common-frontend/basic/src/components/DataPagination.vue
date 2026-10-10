@@ -3,8 +3,9 @@
     <el-pagination
       :background="background"
       :size="size || undefined"
-      :layout="layout"
-      :total="total"
+      :layout="total === null ? 'sizes, prev, next' : layout"
+      :total="total === null ? undefined : total"
+      :page-count="total === null ? currentPage + (hasMore ? 1 : 0) : undefined"
       :page-size="pageSize"
       :current-page="currentPage"
       :page-sizes="pageSizes"
@@ -21,6 +22,7 @@
 <script setup>
 const props = defineProps({
   total: { type: Number, default: 0 },
+  hasMore: { type: Boolean, default: false },
   currentPage: { type: Number, default: 1 },
   pageSize: { type: Number, default: 20 },
   pageSizes: { type: Array, default: () => [10, 20, 50, 100] },

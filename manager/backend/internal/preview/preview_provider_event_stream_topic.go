@@ -85,7 +85,7 @@ func (p *EventStreamTopicPreviewProvider) Preview(ctx context.Context, req *Prev
 		PreviewKind:     eventStreamTopicPreviewKind,
 		Columns:         append([]string(nil), eventStreamTopicPreviewColumns...),
 		Rows:            rows,
-		Total:           len(rows),
+		Total:           models.ExactPreviewTotal(len(rows)),
 		Page:            1,
 		PageSize:        pageSize,
 		GeometryColumns: []string{},

@@ -89,7 +89,7 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 		Mode:            PreviewModeNode,
 		Columns:         []string{},
 		Rows:            []map[string]interface{}{},
-		Total:           0,
+		Total:           models.ExactPreviewTotal(0),
 		Page:            1,
 		PageSize:        1,
 		GeometryColumns: []string{},

@@ -1563,6 +1563,7 @@ func quickViewFeatureCollection(result *preview.PreviewResult, tablePreview *mod
 			"page":      tablePreview.Page,
 			"page_size": tablePreview.PageSize,
 			"total":     tablePreview.Total,
+			"has_more":  tablePreview.HasMore,
 		},
 	}, nil
 }

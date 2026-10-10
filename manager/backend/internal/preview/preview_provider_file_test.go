@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"reflect"
@@ -538,8 +540,8 @@ func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
 	if tableProvider.describeCalls != 0 {
 		t.Fatalf("DescribeTable calls = %d, want 0", tableProvider.describeCalls)
 	}
-	if preview.Total != 5 {
-		t.Fatalf("Total = %d, want 5", preview.Total)
+	if preview.Total == nil || *preview.Total != 5 {
+		t.Fatalf("Total = %v, want 5", preview.Total)
 	}
 	if tableProvider.sampleOffset != 2 {
 		t.Fatalf("sample offset = %d, want second page offset 2", tableProvider.sampleOffset)
@@ -596,8 +598,8 @@ func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t
 	if tableProvider.sampleOptions == nil || tableProvider.sampleOptions.ExtraParams[format.ChildTableParam] != "city_table" {
 		t.Fatalf("sqlite sample table option = %#v, want city_table", tableProvider.sampleOptions)
 	}
-	if preview.Total != 3 {
-		t.Fatalf("Total = %d, want 3 from DescribeTable", preview.Total)
+	if preview.Total == nil || *preview.Total != 3 {
+		t.Fatalf("Total = %v, want 3 from DescribeTable", preview.Total)
 	}
 	if len(preview.Columns) != 1 || preview.Columns[0] != "name" {
 		t.Fatalf("Columns = %#v, want described columns", preview.Columns)
@@ -656,8 +658,8 @@ func TestFileTablePreviewProviderDoesNotUseGeoPackageChildAttributesAsTableInfo(
 	if tableProvider.sampleOptions == nil || tableProvider.sampleOptions.ExtraParams[format.ChildTableParam] != "roads" {
 		t.Fatalf("geopackage sample table option = %#v, want roads", tableProvider.sampleOptions)
 	}
-	if preview.Total != 3 {
-		t.Fatalf("Total = %d, want 3 from DescribeTable", preview.Total)
+	if preview.Total == nil || *preview.Total != 3 {
+		t.Fatalf("Total = %v, want 3 from DescribeTable", preview.Total)
 	}
 	if len(preview.Columns) != 1 || preview.Columns[0] != "name" {
 		t.Fatalf("Columns = %#v, want described columns", preview.Columns)
@@ -1837,8 +1839,8 @@ func TestFileTablePreviewProviderPreviewRefsUsesAttributesTableInfo(t *testing.T
 	if refProvider.sampleOffset != 3 {
 		t.Fatalf("sample offset = %d, want 3", refProvider.sampleOffset)
 	}
-	if preview.Total != 9 {
-		t.Fatalf("Total = %d, want 9", preview.Total)
+	if preview.Total == nil || *preview.Total != 9 {
+		t.Fatalf("Total = %v, want 9", preview.Total)
 	}
 }
 
@@ -2306,6 +2308,8 @@ type recordingMultiTableProvider struct {
 	describeCalls int
 	lastRefs      []format.RelatedRef
 	spatialInfo   *datatype.SpatialInfo
+	sampleRows    []map[string]interface{}
+	sampleLimit   int64
 }
 
 func (p *recordingMultiTableProvider) Format() format.FormatType {
@@ -2346,8 +2350,14 @@ func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ co
 	return result, nil
 }
 
-func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.Reader, _ []format.RelatedRef, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
+func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.Reader, _ []format.RelatedRef, offset, limit int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleOffset = offset
+	p.sampleLimit = limit
+	if p.sampleRows != nil {
+		start := min(int(offset), len(p.sampleRows))
+		end := min(start+int(limit), len(p.sampleRows))
+		return p.sampleRows[start:end], nil
+	}
 	return []map[string]interface{}{{"name": "first"}}, nil
 }
 
@@ -2662,5 +2672,107 @@ func TestShouldRecommendAccessIndexRefreshOnlyForSupportedMissingIndex(t *testin
 	}
 	if shouldRecommendAccessIndexRefresh(withIndex, format.FormatCSV, false) {
 		t.Fatal("usable access index should not recommend refresh")
+	}
+}
+
+func TestExcelPreviewUnknownTotalReadsBeyondFirstPage(t *testing.T) {
+	workbook := excelize.NewFile()
+	defer workbook.Close()
+	if err := workbook.SetSheetRow("Sheet1", "A1", &[]interface{}{"id", "name"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 25; i++ {
+		if err := workbook.SetSheetRow("Sheet1", fmt.Sprintf("A%d", i+1), &[]interface{}{i, fmt.Sprintf("City-%d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var data bytes.Buffer
+	if err := workbook.Write(&data); err != nil {
+		t.Fatal(err)
+	}
+	info, err := format.GetTableInfoProvider(format.FormatExcel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := format.GetTableSampleReader(format.FormatExcel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		page, size, count int
+		more              bool
+		first             string
+	}{
+		{1, 20, 20, true, "1"}, {2, 20, 5, false, "21"}, {3, 20, 0, false, ""},
+		{1, 25, 25, false, "1"}, {1, 24, 24, true, "1"},
+	} {
+		t.Run(fmt.Sprintf("page%d-size%d", tc.page, tc.size), func(t *testing.T) {
+			req := &PreviewRequest{Page: tc.page, PageSize: tc.size, ChildName: "Sheet1", Table: "sheet.xlsx", Attributes: map[string]interface{}{
+				"type_info": map[string]interface{}{"table": map[string]interface{}{
+					"estimated_row_count": int64(1), "fields": []interface{}{map[string]interface{}{"name": "id", "type": "string"}, map[string]interface{}{"name": "name", "type": "string"}},
+				}},
+			}}
+			provider := &FileTablePreviewProvider{}
+			result, err := provider.previewStreamable(context.Background(), staticContentReader{content: data.Bytes()}, "", "sheet.xlsx", format.FormatExcel, info, reader, provider.buildParseOptions(format.FormatExcel, req), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Total != nil || result.HasMore != tc.more || len(result.Rows) != tc.count {
+				t.Fatalf("pagination = total %v, more %v, rows %d", result.Total, result.HasMore, len(result.Rows))
+			}
+			if tc.count > 0 && result.Rows[0]["id"] != tc.first {
+				t.Fatalf("offset rows = %#v", result.Rows)
+			}
+			raw, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(raw, []byte(`"total":null`)) {
+				t.Fatalf("unknown count contract = %s", raw)
+			}
+		})
+	}
+}
+
+func TestExcelPreviewPreservesExactZero(t *testing.T) {
+	workbook := excelize.NewFile()
+	defer workbook.Close()
+	if err := workbook.SetSheetRow("Sheet1", "A1", &[]interface{}{"id", "name"}); err != nil {
+		t.Fatal(err)
+	}
+	var data bytes.Buffer
+	if err := workbook.Write(&data); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := format.GetTableSampleReader(format.FormatExcel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &PreviewRequest{Page: 1, PageSize: 20, ChildName: "Sheet1", Attributes: map[string]interface{}{
+		"type_info": map[string]interface{}{"table": map[string]interface{}{"row_count": int64(0), "fields": []interface{}{map[string]interface{}{"name": "id", "type": "string"}, map[string]interface{}{"name": "name", "type": "string"}}}},
+	}}
+	provider := &FileTablePreviewProvider{}
+	result, err := provider.previewStreamable(context.Background(), staticContentReader{content: data.Bytes()}, "", "header-only.xlsx", format.FormatExcel, nil, reader, provider.buildParseOptions(format.FormatExcel, req), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total == nil || *result.Total != 0 || result.HasMore || len(result.Rows) != 0 {
+		t.Fatalf("exact empty result: %#v", result)
+	}
+}
+
+func TestMultiRefUnknownTotalUsesLookahead(t *testing.T) {
+	reader := &recordingMultiTableProvider{sampleRows: []map[string]interface{}{{"name": "first"}, {"name": "second"}, {"name": "third"}}}
+	for page := 1; page <= 2; page++ {
+		req := &PreviewRequest{Page: page, PageSize: 2, Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{"table": map[string]interface{}{"estimated_row_count": int64(1), "fields": []interface{}{map[string]interface{}{"name": "name", "type": "string"}}}},
+		}}
+		result, err := (&FileTablePreviewProvider{}).previewRefs(context.Background(), staticContentReader{}, nil, "sample.shp", "", format.FormatShapefile, reader, reader, format.DefaultParseOptions(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Total != nil || result.HasMore != (page == 1) || reader.sampleLimit != 3 || reader.sampleOffset != int64((page-1)*2) || len(result.Rows) != 3-page {
+			t.Fatalf("multi pagination: %#v, limit %d offset %d", result, reader.sampleLimit, reader.sampleOffset)
+		}
 	}
 }

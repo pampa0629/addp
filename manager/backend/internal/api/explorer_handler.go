@@ -96,6 +96,7 @@ func bearerToken(c *gin.Context) string {
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Description 表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20，最大2000 | Page size, default 20, max 2000"
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"

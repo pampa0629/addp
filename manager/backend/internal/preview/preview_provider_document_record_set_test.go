@@ -52,7 +52,7 @@ func TestDocumentRecordSetPreviewPaginationAndCleanup(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result.Total != 2383 || len(result.Rows) != 1 || result.Rows[0]["id"].(json.Number).String() != "9007199254740993" {
+		if (result.Total == nil || *result.Total != 2383) || len(result.Rows) != 1 || result.Rows[0]["id"].(json.Number).String() != "9007199254740993" {
 			t.Fatal(result)
 		}
 		if _, exists := result.Rows[0]["missing"]; exists {
@@ -74,7 +74,7 @@ func TestIntegrationElasticsearchPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 25 || len(result.Rows) != 5 || len(result.Fields) == 0 || result.Table != "addp_orders.v1" {
+	if (result.Total == nil || *result.Total != 25) || len(result.Rows) != 5 || len(result.Fields) == 0 || result.Table != "addp_orders.v1" {
 		t.Fatal(result)
 	}
 	if _, ok := result.Rows[0]["customer"].(map[string]interface{}); !ok {

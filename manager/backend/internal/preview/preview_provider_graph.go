@@ -40,7 +40,7 @@ func (p *GraphPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 		PreviewKind:     "graph_overview",
 		Columns:         columns,
 		Rows:            rows,
-		Total:           len(rows),
+		Total:           models.ExactPreviewTotal(len(rows)),
 		Page:            maxInt(req.Page, 1),
 		PageSize:        normalizePageSize(req.PageSize),
 		GeometryColumns: []string{},

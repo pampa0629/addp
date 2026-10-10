@@ -61,7 +61,7 @@
           <el-descriptions border size="small" :column="3">
             <el-descriptions-item :label="t('containerPreview.childName')">{{ activeChild.name || activeChild.label || activeChild.key }}</el-descriptions-item>
             <el-descriptions-item :label="t('containerPreview.currentPageRows')">{{ formatNumber(activeRows.length || 0) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('containerPreview.totalRows')">{{ activeTotal ? formatNumber(activeTotal) : '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('containerPreview.totalRows')">{{ formatNumber(activeTotal) }}</el-descriptions-item>
             <el-descriptions-item :label="t('containerPreview.columns')">{{ formatNumber(activeColumnCount) }}</el-descriptions-item>
             <el-descriptions-item v-if="activeChild.hasHeader !== undefined" :label="t('containerPreview.hasHeader')">
               {{ activeChild.hasHeader ? t('common.yes') : t('common.no') }}
@@ -107,6 +107,7 @@
           <div v-if="showTablePagination" class="child-pagination">
             <DataPagination
               :total="activeTotal"
+              :has-more="activeChildPreview?.has_more"
               :page-size="activePageSize"
               :current-page="activePage"
               layout="prev, pager, next"
@@ -274,11 +275,11 @@ const activeColumns = computed(() => {
   return Array.isArray(columns) ? columns : []
 })
 
-const activeTotal = computed(() => Number(props.activeChildPreview?.total || activeChild.value?.rowCount || 0))
+const activeTotal = computed(() => props.activeChildPreview ? props.activeChildPreview.total : (activeChild.value?.rowCount ?? null))
 const activePage = computed(() => Number(props.activeChildPreview?.page || 1))
 const activePageSize = computed(() => Number(props.activeChildPreview?.page_size || 20))
 const activeColumnCount = computed(() => Number(activeChild.value?.columnCount || activeColumns.value.length || 0))
-const showTablePagination = computed(() => !activePreviewComponent.value && activeTotal.value > 0)
+const showTablePagination = computed(() => !activePreviewComponent.value && (activeTotal.value > 0 || (activeTotal.value === null && (activeRows.value.length > 0 || activePage.value > 1))))
 
 const activeColumnPairs = computed(() => {
   const child = activeChild.value
@@ -303,10 +304,10 @@ const formatNumber = (value) => {
 
 const displayedChildRowCount = (child) => {
   if (!child) return undefined
-  if (activeChild.value?.key === child.key && Number(props.activeChildPreview?.total) > 0) {
-    return Number(props.activeChildPreview.total)
+  if (activeChild.value?.key === child.key && props.activeChildPreview) {
+    return props.activeChildPreview.total ?? undefined
   }
-  return typeof child.rowCount === 'number' && child.rowCount > 0 ? child.rowCount : undefined
+  return typeof child.rowCount === 'number' ? child.rowCount : undefined
 }
 
 const childLabel = (child) => {

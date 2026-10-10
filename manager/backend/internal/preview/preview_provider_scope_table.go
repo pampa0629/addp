@@ -114,7 +114,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		Rows:           rows,
 		Page:           page,
 		PageSize:       pageSize,
-		Total:          int(total),
+		Total:          models.ExactPreviewTotal(int(total)),
 	}, nil
 }
 
@@ -179,7 +179,7 @@ func previewRuntimeScopeTable(ctx context.Context, req *PreviewRequest, formatTy
 	}
 	return &models.TablePreview{
 		Mode: PreviewModeTable, Columns: columns, Fields: append([]datatype.FieldInfo(nil), fields...), ColumnMetadata: columnMeta,
-		Rows: rows, Total: int(total), Page: page, PageSize: pageSize,
+		Rows: rows, Total: models.ExactPreviewTotal(int(total)), Page: page, PageSize: pageSize,
 		GeometryColumns: geometryColumns, GeometryColumn: spatialContract.GeometryColumn,
 		SourceSRID: spatialContract.SourceSRID, SourceCRS: spatialContract.SourceCRS,
 		SourceCRSDefinition: spatialContract.SourceCRSDefinition, TransformStatus: spatialContract.TransformStatus,

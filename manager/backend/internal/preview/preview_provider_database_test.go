@@ -221,8 +221,8 @@ func TestDatabaseTablePreviewProviderPreviewUsesPreparedQueryAndAttributeRowCoun
 		t.Fatalf("Preview() error = %v", err)
 	}
 
-	if preview.Total != 321 {
-		t.Fatalf("Total = %d, want 321 from request attributes", preview.Total)
+	if preview.Total == nil || *preview.Total != 321 {
+		t.Fatalf("Total = %v, want 321 from request attributes", preview.Total)
 	}
 	if len(enginePlugin.readBatchCalls) != 0 || len(enginePlugin.prepareCalls) != 1 || enginePlugin.executeCalls != 1 {
 		t.Fatalf("reads=%d prepare=%d execute=%d", len(enginePlugin.readBatchCalls), len(enginePlugin.prepareCalls), enginePlugin.executeCalls)
@@ -339,8 +339,8 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 		t.Fatalf("Preview() error = %v", err)
 	}
 
-	if preview.Total != 999 {
-		t.Fatalf("Total = %d, want 999 from catalog facts", preview.Total)
+	if preview.Total == nil || *preview.Total != 999 {
+		t.Fatalf("Total = %v, want 999 from catalog facts", preview.Total)
 	}
 	if len(enginePlugin.readBatchCalls) != 0 || len(enginePlugin.prepareCalls) != 1 || enginePlugin.executeCalls != 1 {
 		t.Fatalf("reads=%d prepare=%d execute=%d", len(enginePlugin.readBatchCalls), len(enginePlugin.prepareCalls), enginePlugin.executeCalls)

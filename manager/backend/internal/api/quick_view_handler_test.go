@@ -262,7 +262,7 @@ func TestQuickViewFeatureCollectionConvertsWKTToGeoJSON(t *testing.T) {
 		Rows: []map[string]interface{}{
 			{"id": 1, "name": "alpha", "geometry": "POINT (120 30)"},
 		},
-		Total:           1,
+		Total:           models.ExactPreviewTotal(1),
 		Page:            1,
 		PageSize:        1,
 		GeometryColumn:  "geometry",
@@ -314,7 +314,7 @@ func TestQuickViewFeatureCollectionUsesRequestedGeometryColumn(t *testing.T) {
 				},
 			},
 		},
-		Total:           1,
+		Total:           models.ExactPreviewTotal(1),
 		Page:            1,
 		PageSize:        1,
 		GeometryColumns: []string{"geom"},

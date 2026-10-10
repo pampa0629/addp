@@ -34,7 +34,7 @@ test('switches workbook schemas, resets pagination and clears rows for an empty 
         summary: { child_count: 3, sampled_children: 3 }
       } } } } })
       const data = child === 'Cities'
-        ? { columns: ['city_id', 'city_name'], total: 25, rows: Array.from({ length: Math.min(pageSize, 25 - (currentPage - 1) * pageSize) }, (_, i) => ({ city_id: (currentPage - 1) * pageSize + i + 1, city_name: `City-${(currentPage - 1) * pageSize + i + 1}` })) }
+        ? { columns: ['city_id', 'city_name'], total: null, has_more: currentPage * pageSize < 25, rows: Array.from({ length: Math.min(pageSize, 25 - (currentPage - 1) * pageSize) }, (_, i) => ({ city_id: (currentPage - 1) * pageSize + i + 1, city_name: `City-${(currentPage - 1) * pageSize + i + 1}` })) }
         : child === 'Readings'
           ? { columns: ['sensor', 'temperature'], total: 1, rows: [{ sensor: 'Sensor-A', temperature: 18.5 }] }
           : { columns: [], total: 0, rows: [] }
@@ -46,8 +46,14 @@ test('switches workbook schemas, resets pagination and clears rows for an empty 
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
   const container = page.locator('.container-preview')
   await expect(container.getByRole('cell', { name: 'City-1', exact: true })).toBeVisible()
+  await expect(container.locator('.el-pagination__total')).toHaveCount(0)
+  await expect(container.locator('.el-pager')).toHaveCount(0)
   await container.getByRole('button', { name: '下一页', exact: true }).click()
   await expect(container.getByRole('cell', { name: 'City-21', exact: true })).toBeVisible()
+  await expect(container.getByRole('cell', { name: 'City-25', exact: true })).toBeVisible()
+  await expect(container.getByRole('button', { name: '下一页', exact: true })).toBeDisabled()
+  await container.getByRole('button', { name: '上一页', exact: true }).click()
+  await expect(container.getByRole('cell', { name: 'City-1', exact: true })).toBeVisible()
 
   await container.locator('.child-select').click()
   await page.getByRole('option', { name: 'Readings', exact: true }).click()
