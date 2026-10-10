@@ -90,9 +90,10 @@ test('platform node resources through real Console password MFA and Monitor ifra
     }
     await expect(monitor.getByTestId('resource-uptime').locator('strong')).toHaveText(/\d+(?:天|小时|分钟|秒)/)
     for (const name of ['load1m', 'load5m', 'load15m']) {
-      await expect(monitor.getByTestId(`resource-${name}`).locator('strong')).toHaveText(/^[\d,.]+$/)
+      const card = monitor.getByTestId(`resource-${name}`)
+      await expect(card.locator('strong')).toHaveText(/^约 [\d,]+\.\d{2} 个任务$/)
+      await expect(card.getByText('平均正在运行或等待的任务数，非百分比。', { exact: true })).toBeVisible()
     }
-    await expect(monitor.getByText(/系统平均负载：.*不是百分比/)).toBeVisible()
     report.presentation = { iec_capacity: true, elapsed_uptime: true, system_load_count: true, disk_rate_units: false, network_rate_units: false }
     await page.screenshot({ path: resolve(artifact, 'node-resources-detail.png'), animations: 'disabled' })
     save('history-and-trend-restore')
