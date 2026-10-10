@@ -75,7 +75,7 @@ test('protected Manager preview retains field search and export provenance in Mo
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(frame.getByRole('columnheader', { name: 'customer_code', exact: true })).toBeVisible()
     await expect(frame.getByRole('columnheader', { name: 'email', exact: true })).toHaveCount(0)
-    await expect(frame.locator('.el-table__body tbody tr')).toHaveCount(5)
+    await expect(frame.locator('.table-preview .el-table__body tbody tr')).toHaveCount(5)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-protected-preview.png') })
 
     await page.goto('/manager/data-retrieval')
