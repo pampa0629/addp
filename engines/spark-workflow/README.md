@@ -89,7 +89,7 @@ bash scripts/dev/start.sh -spark-workflow
 ./scripts/dev/restart.sh -spark-workflow
 ```
 
-原生开发与产品默认入口 `python api_server.py` 使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。HTTP worker 与远端 Spark Worker 是不同职责；实际计算由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
+原生开发与产品默认入口 `python api_server.py` 使用一个 Gunicorn HTTP worker、四个请求线程及公共 `ExecutionRegistry`。健康检查成功后后台持续退避自注册，System 暂不可用不会阻塞监听。依赖版本只在进程加载时读取；健康请求直接读取算子注册表的数量，不重建元数据或重复查询安装包。请求日志记录方法、路径、状态和耗时，不记录 query、请求体或认证头；真实 HTTP 回归同时验证执行任务和等待注册期间仍可查询健康状态与执行快照。HTTP worker 与远端 Spark Worker 是不同职责；实际计算由注册集群的 Executor 执行。执行快照在 Runtime 重启后丢失，正式业务历史由平台保存。
 
 工作流的 DAG、引用和 `$input` 使用公共 `WorkflowRunner`。算子输出按元数据声明的端口适配，`all_results` 的单端口节点直接返回结果，多端口节点返回端口对象，DataFrame 对外只返回最多五行的摘要。
 

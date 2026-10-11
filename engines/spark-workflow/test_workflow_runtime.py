@@ -25,6 +25,16 @@ class WorkflowRuntimeTest(unittest.TestCase):
     def setUp(self):
         api_server.executions.clear()
 
+    def test_health_does_not_inspect_packages_or_rebuild_operator_metadata_per_request(self):
+        with patch('api_server.package_version', side_effect=AssertionError('package inspection in health request')), \
+             patch('operator_metadata.get_operator_metadata', side_effect=AssertionError('operator metadata rebuild in health request')), \
+             api_server.app.test_client() as client:
+            response = client.get('/health')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['status'], 'healthy')
+        self.assertEqual(response.json['operators_count'], len(api_server.OPERATOR_REGISTRY))
+        self.assertEqual(response.json['dependencies'], {'pyspark': api_server.SPARK_VERSION, 'sedona': api_server.SEDONA_VERSION})
+
     def test_domain_runner_uses_common_core_and_declared_ports_with_nested_inputs(self):
         self.assertTrue(issubclass(SparkWorkflowRunner, WorkflowRunner))
         captured = []

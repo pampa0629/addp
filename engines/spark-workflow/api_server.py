@@ -23,6 +23,13 @@ from addp_common.workflow_runtime import (
 )
 from operators import list_operators
 from operators import OPERATORS as OPERATOR_REGISTRY
+from pyspark import __version__ as SPARK_VERSION
+from importlib.metadata import version as package_version
+
+try:
+    SEDONA_VERSION = package_version('apache-sedona')
+except Exception:
+    SEDONA_VERSION = "unknown"
 
 try:
     from pyspark.sql import DataFrame
@@ -149,30 +156,17 @@ def health_check():
         }
     """
     try:
-        from pyspark import __version__ as spark_version
-        from importlib.metadata import version as get_version
-
         uptime = int((datetime.now() - start_time).total_seconds())
-
-        # 获取算子数量
-        from operator_metadata import get_operator_metadata
-        operators = get_operator_metadata()
-
-        # 获取 Sedona 版本（使用 importlib.metadata）
-        try:
-            sedona_version = get_version('apache-sedona')
-        except Exception:
-            sedona_version = "unknown"
 
         return jsonify({
             "status": "healthy",
             "service": "spark-workflow-engine",
             "version": "1.0.0",
             "uptime": uptime,
-            "operators_count": len(operators),
+            "operators_count": len(OPERATOR_REGISTRY),
             "dependencies": {
-                "pyspark": spark_version,
-                "sedona": sedona_version
+                "pyspark": SPARK_VERSION,
+                "sedona": SEDONA_VERSION
             }
         }), 200
     except Exception as e:
