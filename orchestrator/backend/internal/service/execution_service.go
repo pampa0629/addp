@@ -109,7 +109,7 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 	}
 
 	// 验证是否为 orchestrator 模块的执行
-	if execution.Module != commonExecution.ModuleOrchestrator {
+	if execution.Module != commonExecution.ModuleOrchestrator || execution.TaskType != commonExecution.TaskTypeOrchestration {
 		return nil, fmt.Errorf("execution not found or access denied")
 	}
 
@@ -128,7 +128,7 @@ func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, execut
 		}
 		return nil, err
 	}
-	if execution.Module != commonExecution.ModuleOrchestrator {
+	if execution.Module != commonExecution.ModuleOrchestrator || execution.TaskType != commonExecution.TaskTypeOrchestration {
 		return nil, fmt.Errorf("execution not found or access denied")
 	}
 	return execution, nil

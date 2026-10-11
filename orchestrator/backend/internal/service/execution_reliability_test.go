@@ -507,3 +507,31 @@ func TestFrozenTaskIdentityPreservesIntegerPrecisionAfterStorage(t *testing.T) {
 		t.Fatalf("frozen reference changed: %s", path)
 	}
 }
+
+func TestExecutionReadersRestrictOrchestrationOwnership(t *testing.T) {
+	service, item, _ := reliabilityFixture(t, testSteps())
+	for _, target := range []struct {
+		module, kind string
+		tenant       uint
+		readable     bool
+	}{
+		{"orchestrator", "orchestration", 7, true},
+		{"orchestrator", "cleanup_executor", 7, false},
+		{"orchestrator", "scan", 7, false},
+		{"meta", "scan", 7, false},
+		{"orchestrator", "orchestration", 8, false},
+	} {
+		if err := service.db.Model(&execution.TaskExecution{}).Where("id = ?", item.ID).Updates(map[string]interface{}{"module": target.module, "task_type": target.kind, "tenant_id": target.tenant}).Error; err != nil {
+			t.Fatal(err)
+		}
+		byID, idErr := service.GetExecution(t.Context(), uint(item.ID), 7)
+		byUUID, uuidErr := service.GetExecutionByExecutionID(t.Context(), item.ExecutionID, 7)
+		if target.readable {
+			if idErr != nil || uuidErr != nil || byID.ExecutionID != item.ExecutionID || byUUID.ID != item.ID {
+				t.Fatalf("valid history lost: %v %v", idErr, uuidErr)
+			}
+		} else if idErr == nil || uuidErr == nil {
+			t.Fatalf("foreign Owner execution exposed (%s/%s tenant %d)", target.module, target.kind, target.tenant)
+		}
+	}
+}

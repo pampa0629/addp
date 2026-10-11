@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 from importlib import import_module
 from pathlib import Path
 
@@ -54,6 +55,33 @@ def assert_safe(value):
             assert_safe(child)
 
 
+
+def assert_owner_projection(value):
+    fields = set("id execution_id module task_type source source_task_id source_task_name parent_execution_id status progress current_step execution_boundary retry_of_execution_id attempt max_attempts trigger_type triggered_by started_at completed_at created_at updated_at execution_time_ms rows_affected records_read records_written bytes_read bytes_written metadata error_details steps steps_attempt_unverified steps_truncated diagnostics_truncated".split())
+    require(isinstance(value, dict) and set(value) <= fields, "Orchestrator exposed internal execution fields")
+    assert_safe({key: item for key, item in value.items() if key != "metadata"})
+    errors = value.get("error_details", {})
+    require(isinstance(errors, dict) and set(errors) <= {"category", "code", "error_code", "message", "failed_targets_count"},
+            "Orchestrator exposed private failure details")
+    metadata = value.get("metadata", {})
+    require(isinstance(metadata, dict) and set(metadata) <= {"step_results"}, "Orchestrator exposed arbitrary metadata")
+    steps = metadata.get("step_results", {})
+    require(isinstance(steps, dict) and len(steps) <= 200, "Orchestrator step projection is unbounded")
+    allowed = {"id", "status", "phase", "started_at", "ended_at", "duration", "error_code", "error", "result"}
+    for step in steps.values():
+        require(isinstance(step, dict) and set(step) <= allowed, "Orchestrator exposed arbitrary step fields")
+        assert_safe({key: item for key, item in step.items() if key != "result"})
+        child = step.get("result")
+        if child is not None:
+            require(isinstance(child, dict) and set(child) == {"execution_id"}, "Orchestrator exposed child business results")
+            identity = child["execution_id"]
+            try:
+                parsed = uuid.UUID(identity)
+            except (ValueError, TypeError, AttributeError):
+                raise SuiteError("Orchestrator child execution reference is invalid") from None
+            require(parsed.int != 0 and str(parsed) == identity, "Orchestrator child execution reference is not canonical")
+
+
 def source_action(action):
     require(action in {"stop", "start"}, "invalid source lifecycle action")
     result = subprocess.run(["docker", "inspect", SOURCE], check=True, capture_output=True, text=True, timeout=15)
@@ -76,6 +104,8 @@ def wait_execution(client, execution_id, timeout=120, module=ORCH):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         item = client.request("GET", f"{module}/executions/{execution_id}", (200,)).payload
+        if module == ORCH:
+            assert_owner_projection(item)
         require(item.get("execution_id") == execution_id, "execution identity changed")
         if item.get("status") in TERMINAL:
             return item
@@ -157,6 +187,7 @@ def history_snapshot(client, execution_id, visible):
                     "Meta historical execution identity or status changed")
             meta_details[identity] = professional
     owner = client.request("GET", f"{ORCH}/executions/{execution_id}", (200,)).payload
+    assert_owner_projection(owner)
     require(owner.get("execution_id") == execution_id and owner.get("status") == visible[execution_id]["status"],
             "historical Owner execution identity or status changed")
     terminal = {"success": "completed", "failed": "failed", "cancelled": "cancelled", "timeout": "timeout"}
@@ -188,6 +219,7 @@ def run_fault_case(client, launch, task_id, scan_id, case_id, mode, faults, repo
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 item = client.request("GET", f"{ORCH}/executions/{identity}", (200,)).payload
+                assert_owner_projection(item)
                 recorded = item.get("metadata", {}).get("step_results", {}).get("probe", {})
                 witness = faults.witness()
                 if (recorded.get("phase") == "waiting" and witness.get("child_execution_ids")

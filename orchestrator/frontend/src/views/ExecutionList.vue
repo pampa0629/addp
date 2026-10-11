@@ -125,6 +125,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import orchestrationAPI from '../api/orchestration'
+import { executionFailureMessage } from '../utils/executionPresentation'
 import { navigateOrchestratorRoute, orchestrationListLocation } from '@/utils/moduleNavigation'
 import { MonitorExecutionsButton, openMonitorExecution, useConsolePageDescriptor } from '@common-ui'
 
@@ -238,7 +239,7 @@ function formatTime(time) {
 }
 
 function getErrorMessage(execution) {
-  return execution?.error_details?.message || '-'
+  return executionFailureMessage(execution, t) || '-'
 }
 
 function getStepResults(execution) {

@@ -50,6 +50,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "当前租户授权 User 的编排任务历史与本人一次性执行，查询与总数使用相同 Owner 范围；不返回子任务业务结果或执行授权信息。| Authorized Tenant Users only: orchestration history and own ad-hoc executions share the same Owner scope for queries and totals; child business results and execution authorization facts are excluded.",
                 "produces": [
                     "application/json"
                 ],
@@ -77,8 +78,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.orchestrationExecutionListResponse"
                         }
                     },
                     "403": {
@@ -101,7 +101,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 execution_id 查询 Orchestrator 编排统一执行记录。| Get an Orchestrator execution record by execution_id.",
+                "description": "限定当前租户的 orchestration 执行，返回安全步骤投影，不返回子任务业务结果或执行授权事实。| Scope to current-Tenant orchestration executions and return safe step projections without child business results or execution authorization facts.\n当前租户授权 User 的编排任务历史与本人一次性执行，查询与总数使用相同 Owner 范围；不返回子任务业务结果或执行授权信息。| Authorized Tenant Users only: orchestration history and own ad-hoc executions share the same Owner scope for queries and totals; child business results and execution authorization facts are excluded.",
                 "produces": [
                     "application/json"
                 ],
@@ -122,7 +122,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/execution.TaskExecution"
+                            "$ref": "#/definitions/internal_api.orchestrationExecutionResponse"
                         }
                     },
                     "403": {
@@ -152,7 +152,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回编排当前执行状态、当前步骤和逐步更新的 metadata.step_results；步骤结束后即可查询结果，无需等待整个编排结束。| Return the current orchestration status, current step, and incrementally updated metadata.step_results; completed step results are available before the orchestration finishes.",
+                "description": "返回编排当前执行状态、当前步骤和逐步更新的 metadata.step_results；步骤结束后即可查询安全状态与规范子执行引用；不包含子任务业务结果或执行授权事实，无需等待整个编排结束。| Return the current orchestration status, current step, and incrementally updated metadata.step_results; completed step status and canonical child execution references are available before the orchestration finishes; arbitrary child results and authorization facts are excluded.",
                 "produces": [
                     "application/json"
                 ],
@@ -164,8 +164,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.orchestrationExecutionResponse"
                         }
                     },
                     "403": {
@@ -477,6 +476,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "当前租户授权 User 的编排任务历史与本人一次性执行，查询与总数使用相同 Owner 范围；不返回子任务业务结果或执行授权信息。| Authorized Tenant Users only: orchestration history and own ad-hoc executions share the same Owner scope for queries and totals; child business results and execution authorization facts are excluded.",
                 "produces": [
                     "application/json"
                 ],
@@ -488,8 +488,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.orchestrationExecutionListResponse"
                         }
                     },
                     "403": {
@@ -518,6 +517,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅当前租户 orchestrator/orchestration 执行，使用独立安全状态契约。| Current-Tenant orchestrator/orchestration executions only, using the independent safe status contract.",
                 "produces": [
                     "application/json"
                 ],
@@ -1042,155 +1042,6 @@
                 }
             }
         },
-        "execution.TaskExecution": {
-            "type": "object",
-            "properties": {
-                "actor_principal_id": {
-                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
-                    "type": "integer"
-                },
-                "actor_tenant_membership_id": {
-                    "type": "integer"
-                },
-                "attempt": {
-                    "type": "integer"
-                },
-                "authorization_expires_at": {
-                    "type": "string"
-                },
-                "bytes_read": {
-                    "description": "Transfer 读取字节数",
-                    "type": "integer"
-                },
-                "bytes_written": {
-                    "description": "Transfer 写入字节数",
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "current_step": {
-                    "description": "当前步骤（Orchestrator/Workflow）",
-                    "type": "string"
-                },
-                "error_details": {
-                    "description": "错误详情（仅失败时有值）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_authorization_id": {
-                    "type": "integer"
-                },
-                "execution_boundary": {
-                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
-                    "type": "string"
-                },
-                "execution_config": {
-                    "description": "JSONB 字段",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_id": {
-                    "description": "执行标识",
-                    "type": "string"
-                },
-                "execution_time_ms": {
-                    "description": "性能指标",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "issued_authorization_version": {
-                    "type": "integer"
-                },
-                "max_attempts": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "module": {
-                    "description": "模块标识",
-                    "type": "string"
-                },
-                "parent_execution_id": {
-                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
-                    "type": "string"
-                },
-                "progress": {
-                    "description": "0-100",
-                    "type": "integer"
-                },
-                "records_read": {
-                    "description": "Transfer 读取记录数",
-                    "type": "integer"
-                },
-                "records_written": {
-                    "description": "Transfer 写入记录数",
-                    "type": "integer"
-                },
-                "retry_of_execution_id": {
-                    "type": "string"
-                },
-                "rows_affected": {
-                    "description": "SQL 影响行数",
-                    "type": "integer"
-                },
-                "source": {
-                    "description": "触发来源模块",
-                    "type": "string"
-                },
-                "source_task_id": {
-                    "description": "关联原始任务",
-                    "type": "string"
-                },
-                "source_task_name": {
-                    "description": "任务名称（冗余，便于查询）",
-                    "type": "string"
-                },
-                "started_at": {
-                    "description": "时间戳",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "执行状态",
-                    "type": "string"
-                },
-                "task_type": {
-                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "trigger_type": {
-                    "description": "触发信息",
-                    "type": "string"
-                },
-                "triggered_by": {
-                    "description": "触发用户ID",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_orchestrator_internal_models.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -1343,6 +1194,187 @@
                 "timeout": {
                     "description": "超时秒数",
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.orchestrationChildReference": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.orchestrationExecutionListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.orchestrationExecutionResponse"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.orchestrationExecutionMetadata": {
+            "type": "object",
+            "properties": {
+                "step_results": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/internal_api.orchestrationStepResponse"
+                    }
+                }
+            }
+        },
+        "internal_api.orchestrationExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "bytes_read": {
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
+                "error_details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/internal_api.orchestrationExecutionMetadata"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "records_read": {
+                    "type": "integer"
+                },
+                "records_written": {
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.orchestrationStepResponse": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "result": {
+                    "$ref": "#/definitions/internal_api.orchestrationChildReference"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },

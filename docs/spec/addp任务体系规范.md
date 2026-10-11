@@ -1026,6 +1026,8 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 
 ### 租户执行诊断（2026-10-01 已确认）
 
+Orchestrator 用户与 TaskProvider 执行读取必须同时限定可信 Tenant、`module=orchestrator` 与 `task_type=orchestration`，编排权限不得读取同模块的 cleanup 执行。用户专业查询在 SQL 中复用 Owner 的任务历史与本人一次性执行范围，缺少发起主体或归属不完整的无定义执行拒绝，列表总数采用相同过滤；合法第一方与普通 OAuth User 沿用现有 workflow.read 权限，TaskProvider 不套用用户本人条件。专业执行详情与单编排历史也必须使用显式安全读取 DTO，不得直接序列化内部 `TaskExecution`。保留执行概览及 `metadata.step_results` 的步骤状态、阶段、时间、耗时、闭合错误码和本地化消息；步骤 `result` 仅投影已记录且规范的子 execution UUID，不传递子任务 outputs、业务结果或完整运行时响应。读取父执行不授予子结果权限，子详情仍经 Monitor/Owner 独立裁决。原始配置、任意 metadata、执行授权事实及自由文本错误不出现在这些响应中；列表与详情采用同一投影，TaskProvider 保持独立安全状态契约。
+
 1. `common.task_executions` 是 execution 状态、错误与结果摘要的唯一事实源。Monitor 只提供显式安全 DTO，禁止序列化整个 TaskExecution；执行配置、原始 metadata、原始查询和参数值、业务样本、Notebook 输出、完整运行时响应、lease/fencing token 和执行授权引用不得进入通用诊断响应。专业结果通过 Owner 页面及其既有授权入口读取。缺少受控消息契约的旧错误只用于归类失败原因，不回显自由文本；稳定错误码及失败目标计数可保留，未知原因明确指向 Owner 领域诊断。
 2. Monitor 使用同步 BFF 授权：Tenant Context 和自身 Permission 只是入口条件，Owner 在同一 User 请求内重新核验 AuthContext 并通过唯一 `GET /execution-read-scope` 返回强类型读取范围。规则声明只存在于 Owner；Common 提供范围类型和匹配，不维护任务类型到 Permission 的中央清单。第一版仅接受 Tenant Scope，不声称支持无可信资源归属的 Department/Project Group 隔离。
 3. 第一版的 Owner 任务读取 Permission 明确包含本租户该任务类型的执行历史（包括已删除任务定义的历史），不隐含数据结果读取。一次性 execution 仅在 Owner 明确允许且当前发起主体匹配时可读；无主体证据拒绝。父 execution 可读不授予子 execution 读取权。Owner 不可用或授权响应非法时失败关闭；列表、详情、树和执行统计采用相同读取范围。

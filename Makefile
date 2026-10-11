@@ -404,6 +404,10 @@ test-develop-postgres: ## 使用测试 PostgreSQL 数据库运行 Develop schema
 test-model-postgres: ## 使用一次性 PostgreSQL 数据库运行 Model 物化与事务集成门禁
 	@bash scripts/test/model-postgres-gate.sh
 
+.PHONY: test-orchestrator-backend
+test-orchestrator-backend: ## 运行 Orchestrator 后端单元与契约测试（不依赖平台 T0）
+	@cd orchestrator/backend && go test ./...
+
 .PHONY: test-quality-backend
 test-quality-backend: ## 运行 Quality 后端单元与契约测试（不依赖平台 T0）
 	@cd quality/backend && go test ./...

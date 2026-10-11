@@ -61,7 +61,7 @@
         <el-button size="small" @click="openMonitorExecution(execution.execution_id)">{{ t('orchestrator.liveExecution.viewMonitor') }}</el-button>
         <el-button v-if="!activeExecution" size="small" text @click="clearExecution">{{ t('orchestrator.liveExecution.dismiss') }}</el-button>
       </div>
-      <p v-if="execution.error_details?.message" class="execution-error">{{ execution.error_details.message }}</p>
+      <p v-if="executionErrorMessage" class="execution-error">{{ executionErrorMessage }}</p>
       <p v-if="executionMatchesDefinition && Object.values(executionStates).some(step => step.observationStopped)" class="execution-step-observation-ended" role="status">{{ t('common.executionSteps.observationStopped') }}</p>
       <p v-if="!executionMatchesDefinition">{{ t('orchestrator.liveExecution.definitionChanged') }}</p>
       <div v-if="executionRefreshFailed" class="execution-refresh-error" role="alert">
@@ -204,7 +204,7 @@ import { Check, Clock, Close, Document, Edit } from '@element-plus/icons-vue'
 import { useAuthStore } from '../store/auth'
 import { useUnsavedChangesGuard, openMonitorExecution } from '@common-ui'
 import { useExecutionTracking } from '../composables/useExecutionTracking'
-import { executionStepStates, executionStatusType } from '../utils/executionPresentation'
+import { executionStepStates, executionStatusType, executionFailureMessage } from '../utils/executionPresentation'
 import DAGEditor from '../components/DAGEditor.vue'
 import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
@@ -231,6 +231,7 @@ const {
   execution, active: activeExecution, refreshFailed: executionRefreshFailed,
   refreshing: executionRefreshing, start: trackExecution, clear: clearExecution, refresh: refreshExecution
 } = useExecutionTracking(orchestrationAPI)
+const executionErrorMessage = computed(() => executionFailureMessage(execution.value, t))
 const executionStates = computed(() => executionStepStates(execution.value, executionSteps.value))
 const completedSteps = computed(() => Object.values(executionStates.value).filter(step => ['success', 'failed', 'timeout', 'cancelled'].includes(step.status)).length)
 const executionMatchesDefinition = computed(() => executedDefinition.value === definitionSignature())

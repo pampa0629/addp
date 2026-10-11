@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { executionStepStates } from '../src/utils/executionPresentation.js'
+import { executionStepStates, executionFailureMessage } from '../src/utils/executionPresentation.js'
 const steps = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
 
 test('completed results, the running step, and pending successors have distinct states', () => {
@@ -34,4 +34,12 @@ test('a terminal parent preserves the recorded child state without presenting it
   }
   const active = executionStepStates({ status: 'running', metadata: { step_results: { a: { status: 'running' } } } }, steps)
   assert.equal(active.a.observationStopped, false)
+})
+
+test('safe failures retain their category when there is no closed owner message', () => {
+  const t = key => `translated:${key}`
+  assert.equal(executionFailureMessage({ error_details: { category: 'connection_failed' } }, t), 'translated:common.executionFailure.connection_failed')
+  assert.equal(executionFailureMessage({ error_details: { category: 'execution_failed', message: 'closed owner message' } }, t), 'closed owner message')
+  assert.equal(executionFailureMessage(null, t), '')
+  assert.equal(executionFailureMessage({ status: 'success' }, t), '')
 })

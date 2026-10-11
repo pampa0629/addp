@@ -14,6 +14,29 @@ def execution_id(n):
     return f"00000000-0000-0000-0000-{n:012d}"
 
 
+class OwnerProjectionTest(unittest.TestCase):
+    def test_owner_keeps_only_canonical_child_reference(self):
+        safe = {"execution_id": execution_id(1), "status": "failed", "metadata": {"step_results": {
+            "step": {"status": "failed", "phase": "terminal", "error_code": "orchestrator.execution.child_failed",
+                     "result": {"execution_id": execution_id(2)}}}}, "steps": []}
+        ONLINE.assert_owner_projection(safe)
+        changes = [
+            lambda v: v.update(execution_authorization_id=7),
+            lambda v: v.update(execution_config={"password": "private"}),
+            lambda v: v["metadata"].update(outputs={"rows": "private"}),
+            lambda v: v["metadata"]["step_results"]["step"].update(parameters="private"),
+            lambda v: v["metadata"]["step_results"]["step"]["result"].update(outputs="private"),
+            lambda v: v["metadata"]["step_results"]["step"]["result"].update(execution_id="private-invalid"),
+            lambda v: v["metadata"]["step_results"]["step"]["result"].update(execution_id=execution_id(0)),
+            lambda v: v.update(error_details={"runtime_response": "private"}),
+        ]
+        for change in changes:
+            value = copy.deepcopy(safe)
+            change(value)
+            with self.subTest(value=value), self.assertRaises(API.SuiteError):
+                ONLINE.assert_owner_projection(value)
+
+
 class FakeOwner:
     def __init__(self, fault=None):
         self.calls = []

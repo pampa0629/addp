@@ -383,9 +383,10 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 
 // ListExecutions 列出编排的执行记录
 // @Summary 获取执行列表 | List executions
+// @Description 当前租户授权 User 的编排任务历史与本人一次性执行，查询与总数使用相同 Owner 范围；不返回子任务业务结果或执行授权信息。| Authorized Tenant Users only: orchestration history and own ad-hoc executions share the same Owner scope for queries and totals; child business results and execution authorization facts are excluded.
 // @Tags Orchestrator
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} orchestrationExecutionListResponse
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
 // @x-addp-auth-mode "permission"
@@ -393,6 +394,9 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 // @Router /orchestrations/{id}/executions [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
+	if !installOrchestrationUserReadScope(c) {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
@@ -433,17 +437,21 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 
 // ListAllExecutions 列出所有执行记录
 // @Summary 获取所有执行列表 | List all executions
+// @Description 当前租户授权 User 的编排任务历史与本人一次性执行，查询与总数使用相同 Owner 范围；不返回子任务业务结果或执行授权信息。| Authorized Tenant Users only: orchestration history and own ad-hoc executions share the same Owner scope for queries and totals; child business results and execution authorization facts are excluded.
 // @Tags Orchestrator
 // @Produce json
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} orchestrationExecutionListResponse
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["orchestrator.workflow.read"]
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
+	if !installOrchestrationUserReadScope(c) {
+		return
+	}
 	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
@@ -473,11 +481,11 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 }
 
 // GetExecution 获取执行详情
-// @Description 返回编排当前执行状态、当前步骤和逐步更新的 metadata.step_results；步骤结束后即可查询结果，无需等待整个编排结束。| Return the current orchestration status, current step, and incrementally updated metadata.step_results; completed step results are available before the orchestration finishes.
+// @Description 返回编排当前执行状态、当前步骤和逐步更新的 metadata.step_results；步骤结束后即可查询安全状态与规范子执行引用；不包含子任务业务结果或执行授权事实，无需等待整个编排结束。| Return the current orchestration status, current step, and incrementally updated metadata.step_results; completed step status and canonical child execution references are available before the orchestration finishes; arbitrary child results and authorization facts are excluded.
 // @Summary 获取执行详情 | Get execution detail
 // @Tags Orchestrator
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} orchestrationExecutionResponse
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} models.ErrorResponse "执行不存在 | Execution not found"
 // @x-addp-auth-mode "permission"
@@ -485,6 +493,9 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 // @Router /orch-executions/{id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
+	if !installOrchestrationUserReadScope(c) {
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
@@ -890,11 +901,12 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 
 // GetProviderExecution 获取 Orchestrator 编排执行状态。
 // @Summary 获取 Orchestrator 编排执行状态 | Get Orchestrator execution status
-// @Description 按 execution_id 查询 Orchestrator 编排统一执行记录。| Get an Orchestrator execution record by execution_id.
+// @Description 限定当前租户的 orchestration 执行，返回安全步骤投影，不返回子任务业务结果或执行授权事实。| Scope to current-Tenant orchestration executions and return safe step projections without child business results or execution authorization facts.
+// @Description 当前租户授权 User 的编排任务历史与本人一次性执行，查询与总数使用相同 Owner 范围；不返回子任务业务结果或执行授权信息。| Authorized Tenant Users only: orchestration history and own ad-hoc executions share the same Owner scope for queries and totals; child business results and execution authorization facts are excluded.
 // @Tags Orchestrator
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"
-// @Success 200 {object} commonExecution.TaskExecution
+// @Success 200 {object} orchestrationExecutionResponse
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
 // @x-addp-auth-mode "permission"
@@ -902,6 +914,9 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetProviderExecution(c *gin.Context) {
+	if !installOrchestrationUserReadScope(c) {
+		return
+	}
 	tenantID, ok := requireTenantID(c)
 	if !ok {
 		return
@@ -915,6 +930,7 @@ func (h *OrchestrationHandler) GetProviderExecution(c *gin.Context) {
 }
 
 // GetTaskProviderExecution 获取 TaskProvider 编排执行状态。
+// @Description 仅当前租户 orchestrator/orchestration 执行，使用独立安全状态契约。| Current-Tenant orchestrator/orchestration executions only, using the independent safe status contract.
 // @Summary 获取 TaskProvider 编排执行状态 | Get TaskProvider orchestration execution status
 // @Tags Orchestrator
 // @Produce json

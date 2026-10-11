@@ -23,3 +23,9 @@ export function executionStepStates(execution, steps) {
 export function executionStatusType(status) {
   return ({ running: 'warning', success: 'success', failed: 'danger', timeout: 'danger' })[status] || 'info'
 }
+
+export function executionFailureMessage(execution, t) {
+  const error = execution?.error_details
+  if (error?.message) return error.message
+  return error?.category ? t(`common.executionFailure.${error.category}`) : ''
+}

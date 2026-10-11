@@ -1,61 +1,86 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	execution "github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
-	commonModels "github.com/addp/common/models"
 	orchi18n "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"net/http"
 )
 
-// Localize only the closed failure catalog, leaving private outputs and stored facts intact.
-func localizeExecutionFailure(c *gin.Context, item *execution.TaskExecution) *execution.TaskExecution {
+// Orchestrator owns step orchestration facts, not child business results.
+type orchestrationExecutionResponse struct {
+	*execution.Observation
+	Metadata orchestrationExecutionMetadata `json:"metadata"`
+}
+
+type orchestrationExecutionMetadata struct {
+	StepResults map[string]orchestrationStepResponse `json:"step_results"`
+}
+
+type orchestrationStepResponse struct {
+	execution.DiagnosticStep
+	Error  string                       `json:"error,omitempty"`
+	Result *orchestrationChildReference `json:"result,omitempty"`
+}
+
+type orchestrationChildReference struct {
+	ExecutionID string `json:"execution_id"`
+}
+
+type orchestrationExecutionListResponse struct {
+	Data       []*orchestrationExecutionResponse `json:"data"`
+	Total      int64                             `json:"total"`
+	Page       int                               `json:"page"`
+	PageSize   int                               `json:"page_size"`
+	TotalPages int                               `json:"total_pages"`
+}
+
+// Project first, then localize closed errors; never copy internal JSON maps.
+func localizeExecutionFailure(c *gin.Context, item *execution.TaskExecution) *orchestrationExecutionResponse {
 	if item == nil {
 		return nil
 	}
-	copyItem := *item
-	copyItem.ErrorDetails = localizedFailureObject(c, item.ErrorDetails, "code", "message")
-	if steps, ok := item.Metadata["step_results"].(map[string]interface{}); ok {
-		metadata := commonModels.JSONMap{}
-		for key, value := range item.Metadata {
-			metadata[key] = value
+	response := &orchestrationExecutionResponse{Observation: execution.Observe(item),
+		Metadata: orchestrationExecutionMetadata{StepResults: map[string]orchestrationStepResponse{}}}
+	if code, ok := response.ErrorDetails["code"].(string); ok {
+		if message, known := orchi18n.ExecutionFailureMessage(commoni18n.GetLang(c), code); known {
+			response.ErrorDetails["message"] = message
 		}
-		results := map[string]interface{}{}
-		for id, value := range steps {
-			if step, ok := value.(map[string]interface{}); ok {
-				results[id] = localizedFailureObject(c, step, "error_code", "error")
-			} else {
-				results[id] = value
+	}
+	// RawMessage is confined to reading stored evidence, never serialized out.
+	recorded := map[string]json.RawMessage{}
+	if data, err := json.Marshal(item.Metadata["step_results"]); err == nil {
+		_ = json.Unmarshal(data, &recorded)
+	}
+	for _, safe := range response.Steps {
+		step := orchestrationStepResponse{DiagnosticStep: safe}
+		var facts struct {
+			ErrorCode string `json:"error_code"`
+			Result    struct {
+				ExecutionID string `json:"execution_id"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(recorded[safe.ID], &facts) == nil {
+			if message, known := orchi18n.ExecutionFailureMessage(commoni18n.GetLang(c), facts.ErrorCode); known {
+				step.ErrorCode, step.Error = facts.ErrorCode, message
+			}
+			if id, err := uuid.Parse(facts.Result.ExecutionID); err == nil && id != uuid.Nil && id.String() == facts.Result.ExecutionID {
+				step.Result = &orchestrationChildReference{ExecutionID: id.String()}
 			}
 		}
-		metadata["step_results"] = results
-		copyItem.Metadata = metadata
+		response.Metadata.StepResults[safe.ID] = step
 	}
-	return &copyItem
+	return response
 }
 
-func localizedFailureObject(c *gin.Context, value map[string]interface{}, codeKey, messageKey string) commonModels.JSONMap {
-	if value == nil {
-		return nil
-	}
-	copyValue := commonModels.JSONMap{}
-	for key, item := range value {
-		copyValue[key] = item
-	}
-	if code, ok := value[codeKey].(string); ok {
-		if message, known := orchi18n.ExecutionFailureMessage(commoni18n.GetLang(c), code); known {
-			copyValue[messageKey] = message
-		}
-	}
-	return copyValue
-}
-
-func localizedExecutionList(c *gin.Context, items []*execution.TaskExecution) []*execution.TaskExecution {
-	result := make([]*execution.TaskExecution, len(items))
+func localizedExecutionList(c *gin.Context, items []*execution.TaskExecution) []*orchestrationExecutionResponse {
+	result := make([]*orchestrationExecutionResponse, len(items))
 	for i, item := range items {
 		result[i] = localizeExecutionFailure(c, item)
 	}
