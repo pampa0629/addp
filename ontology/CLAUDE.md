@@ -142,3 +142,5 @@ Outdoor 合成示例用于测试夹具及用户显式创建的本地演示本体
 场景复用 `internal/semantic/testdata/beijing_outdoor_online.json` 的北京 Outdoor 合成本体；语义内核 T1 同时验证此定义可编译，并区分明确北京、明确其他与未知地点。Hosted helper 只给 User 分配本体 read/update/publish 与执行授权派生四项权限，不创建 Engine Provisioner 或业务 Engine。所有本体操作通过 Gateway，核对两次发布的不可变快照、generation/execution、ready 与 active 指针、旧版本冲突、最新尝试发现，以及撤回第二修订不自动回退第一修订。
 
 没有业务实例查询或分类 API 的验收。修订、审计和图历史在场景中保留，退出时停止当次应用、销毁整个独占 Infra 及数据卷和临时凭据；生命周期另查容器/网络/卷零残留。发现旧 Infra 容器或卷时必须在启动前拒绝，不能误用或删除既有环境。确定性脚本验证由 `make test-online-runner` 纳入 T0，实际执行由 `.github/workflows/online-t4-gates.yml` 的 `ontology-hosted-t4` Job 完成。
+
+平台 Transfer 修订 10 仅同步 CSV / TSV 编码读取消费调整后的 Planner 来源审查：本次任务未显式指定编码时，Planner 复用 Meta 已扫描编码；显式任务读取参数保持原契约。已重新审查 `validateTableTransferSpec` 的快照目标约束，仍只接受 replace/append。创建条件、效果、权限和选定覆盖范围不扩张，读取能力回归不表示创建切片或真实执行均已验证；来源提交与文件摘要一起冻结，标准 T0 检查漂移。

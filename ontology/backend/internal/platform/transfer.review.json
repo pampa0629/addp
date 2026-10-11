@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "0665f56ef035b117ad00771a81ffd7b639bd2ed7",
-      "sha256": "ca8471c40428aa4d1ff2a6593d983f4d3febe6346fab392bc12c7b3fcdcbd9bf",
+      "commit": "69bc839ca0c9f2f94d9661a0904cafd5c2c58b78",
+      "sha256": "8656d331fec7cba24592beefe14701ea2f528098c57f410f562e72a7e595af9b",
       "use": {
-        "zh-cn": "Transfer Planner 对快照目标 apply_mode 仅接受 replace/append，拒绝其他组合",
-        "en": "Transfer Planner admits only replace/append as snapshot target apply modes"
+        "zh-cn": "Transfer Planner 对快照目标 apply_mode 仅接受 replace/append，拒绝其他组合；已复核 CSV/TSV 的 Meta 编码消费调整，写入模式约束不变",
+        "en": "Transfer Planner admits only replace/append as snapshot target apply modes; reviewed CSV/TSV consumption of Meta encoding facts without changing apply mode constraints"
       }
     }
   ],
