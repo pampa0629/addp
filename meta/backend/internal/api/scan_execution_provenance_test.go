@@ -27,6 +27,8 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 	const fileLocator = "addp://engine/9/path/results/dem.tif?type=file"
 	const tableLocator = "addp://engine/9/path/public/result?type=table"
 	const objectLocator = "addp://engine/9/path/results/object.tif?type=object"
+	const wholeLocator = "addp://engine/9/path/result/results/parquet-run?type=object"
+	const wholePrefix = "addp://engine/9/path/result/results/parquet-run?type=prefix"
 	parent := execution.TaskExecution{
 		TenantID: scanReadTenant, ExecutionID: parentID, Module: "develop", TaskType: "workflow", Source: "develop",
 		Status: "running", TriggerType: "manual", TriggeredBy: &by,
@@ -36,6 +38,7 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 			"file":   map[string]interface{}{"resource": map[string]interface{}{"locator": fileLocator}},
 			"table":  map[string]interface{}{"resource": map[string]interface{}{"locator": tableLocator}},
 			"object": map[string]interface{}{"resource": map[string]interface{}{"locator": objectLocator}},
+			"whole":  map[string]interface{}{"resource": map[string]interface{}{"locator": wholeLocator}},
 		}},
 	}
 	if err := db.Create(&parent).Error; err != nil {
@@ -156,6 +159,44 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 		req.ParentExecutionID = p.ExecutionID
 		post("develop-machine", req, 404)
 	}
+	wholeRequest := request
+	wholeRequest.RefGroups = nil
+	wholeRequest.Targets = []string{wholePrefix}
+	post("develop-machine", wholeRequest, 404) // An output alone does not prove whole layout.
+	singlePrefix := wholeRequest
+	singlePrefix.Targets = []string{"addp://engine/9/path/results/object.tif?type=prefix"}
+	post("develop-machine", singlePrefix, 404)
+	wholeTarget := map[string]interface{}{"task_id": "whole", "engine_id": 9, "type": "object", "layout": "whole",
+		"locator": wholeLocator, "path": []string{"result", "results", "parquet-run"}}
+	persistTarget := func(target map[string]interface{}) {
+		t.Helper()
+		parent.Metadata["result"] = map[string]interface{}{"produced_targets": []interface{}{target}}
+		if err := db.Model(&execution.TaskExecution{}).Where("id = ?", parent.ID).Update("metadata", parent.Metadata).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for field, wrong := range map[string]interface{}{"task_id": "other", "engine_id": 10, "type": "file", "layout": "single",
+		"locator": objectLocator, "path": []string{"result", "results", "other"}} {
+		mutated := make(map[string]interface{}, len(wholeTarget))
+		for key, value := range wholeTarget {
+			mutated[key] = value
+		}
+		mutated[field] = wrong
+		persistTarget(mutated)
+		post("develop-machine", wholeRequest, 404)
+	}
+	persistTarget(wholeTarget)
+	for _, targets := range [][]string{
+		{"addp://engine/9/path/result/results?type=prefix"},
+		{"addp://engine/9/path/result/results/parquet-run-other?type=prefix"},
+		{"addp://engine/9/path/result/results/parquet-run/private?type=prefix"},
+		{wholePrefix, objectLocator},
+	} {
+		req := wholeRequest
+		req.Targets = targets
+		post("develop-machine", req, 404)
+	}
+	post("owner", wholeRequest, 403)
 	var ids []string
 	ids = append(ids, post("develop-machine", request, 201))
 	for _, target := range []string{tableLocator, objectLocator} {
@@ -164,6 +205,7 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 		req.Targets = []string{target}
 		ids = append(ids, post("develop-machine", req, 201))
 	}
+	ids = append(ids, post("develop-machine", wholeRequest, 201))
 	for _, id := range ids {
 		var child execution.TaskExecution
 		if err := db.Where("execution_id = ?", id).First(&child).Error; err != nil {
@@ -183,6 +225,9 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 			if id == ids[2] {
 				want = objectLocator
 			}
+			if id == ids[3] {
+				want = wholePrefix
+			}
 			if config.Targets[0] != want {
 				t.Fatal("execution configuration lost the produced target")
 			}
@@ -195,11 +240,11 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 	if read("peer", "/scan/runs", 200)["total"] != beforePeer {
 		t.Fatal("peer list count leaked derived scans")
 	}
-	if read("owner", "/scan/runs", 200)["total"] != float64(5) {
+	if read("owner", "/scan/runs", 200)["total"] != float64(6) {
 		t.Fatal("initiator list missing derived scans")
 	}
 	var children int64
-	if err := db.Model(&execution.TaskExecution{}).Where("parent_execution_id = ?", parentID).Count(&children).Error; err != nil || children != 3 {
+	if err := db.Model(&execution.TaskExecution{}).Where("parent_execution_id = ?", parentID).Count(&children).Error; err != nil || children != 4 {
 		t.Fatalf("denied request persisted a child: %d %v", children, err)
 	}
 }

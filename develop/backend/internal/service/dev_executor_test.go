@@ -536,11 +536,11 @@ func TestProducedScanFreezesOutputsBeforeSubmittingParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := commonExecution.NewTaskExecutionRepository(db)
-	parent := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: uuid.New().String(), Module: "develop", TaskType: "workflow", Status: "running", TriggerType: "manual", Metadata: commonModels.JSONMap{"preserved": true}}
+	parent := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: uuid.New().String(), Module: "develop", TaskType: "workflow", Status: "running", TriggerType: "manual", Metadata: commonModels.JSONMap{"preserved": true, "result": map[string]interface{}{"preserved_result": true}}}
 	if err := repo.Create(context.Background(), parent); err != nil {
 		t.Fatal(err)
 	}
-	locator := "addp://engine/9/path/results/dem.tif?type=file"
+	locator := "addp://engine/9/path/result/results/parquet-run?type=object"
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -560,12 +560,18 @@ func TestProducedScanFreezesOutputsBeforeSubmittingParent(t *testing.T) {
 		if !strings.Contains(string(encoded), locator) || stored.Metadata["preserved"] != true {
 			t.Error("outputs not durable before scan submission")
 		}
+		result := stored.Metadata["result"].(map[string]interface{})
+		targets, targetsExist := result["produced_targets"].([]interface{})
+		if result["preserved_result"] != true || !targetsExist || len(targets) != 1 || targets[0].(map[string]interface{})["layout"] != "whole" ||
+			!reflect.DeepEqual(request["targets"], []interface{}{"addp://engine/9/path/result/results/parquet-run?type=prefix"}) {
+			t.Error("whole layout provenance must be durable before submitting the exact prefix scan")
+		}
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte(`{"execution_id":"scan-child","status":"pending"}`))
 	}))
 	defer server.Close()
 	executor := &DevExecutor{taskExecutionRepo: repo, metaClient: commonClient.NewMetaClient(server.URL, staticServiceTokenSource("test-scan-service"))}
-	targets := []WorkflowProducedTarget{{TaskID: "save", EngineID: 9, Type: "file", Path: []string{"results", "dem.tif"}, Locator: locator}}
+	targets := []WorkflowProducedTarget{{TaskID: "save", EngineID: 9, Type: "object", Path: []string{"result", "results", "parquet-run"}, Locator: locator, Layout: "whole", WriteMode: "create"}}
 	runs := executor.createWorkflowProducedTargetScanRuns(context.Background(), 7, parent.ExecutionID, targets)
 	if calls != 1 || len(runs) != 1 || runs[0]["execution_id"] != "scan-child" {
 		t.Fatalf("scan submissions: %d %#v", calls, runs)

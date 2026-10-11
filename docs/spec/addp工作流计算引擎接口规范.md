@@ -26,7 +26,7 @@
 
 Spark 保存到 MinIO 时，公开定义保存 `target_parent_locator + target_name`，执行期由 Develop 按 execution UUID 和算子节点身份派生独占子目录。每次执行创建一份新的普通 Parquet 成果，不覆盖或追加既有目录；公开保存模式为 `create`，拒绝 `overwrite`、`append` 和其他输出格式。多个保存节点不能共用同一个成果目录。
 
-成果复用已有 `table + format=parquet + layout=whole`。ResourceLocator 定位完整 scope 的 data item；Meta 精确扫描另按同一范围的 prefix 定位，prefix 是扫描范围，不是第二份成果身份。Spark 下游文件加载从 Meta 的正式 item facts 派生 format/layout，不从目录名称后缀猜测格式。
+成果复用已有 `table + format=parquet + layout=whole`。ResourceLocator 定位完整 scope 的 data item；Meta 精确扫描另按同一范围的 prefix 定位，prefix 是扫描范围，不是第二份成果身份。Develop 在请求自动扫描前，必须同时持久化现有 `metadata.outputs` 和 `metadata.result.produced_targets`；Meta 只有在同一输出节点的产物摘要声明 `layout=whole`，且 Engine、对象 Locator 和完整路径均与稳定输出一致时，才允许将该对象身份转换为同一路径的 prefix 扫描范围。普通单对象不得借此扫描其同名前缀，父目录、兄弟目录及多目标范围均不接受。Spark 下游文件加载从 Meta 的正式 item facts 派生 format/layout，不从目录名称后缀猜测格式。
 
 MinIO 连接唯一来自本次已授权的存储 Engine；Spark 集群连接不得携带业务存储凭据。读写配置限制在本次操作的 Hadoop Configuration，并禁用按 bucket 缓存的 S3A FileSystem，防止同名 bucket 的不同端点或凭据互相污染。保存及成果核验要求目标引擎 read + write，不自动新增 Resource Grant。
 

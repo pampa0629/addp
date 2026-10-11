@@ -874,6 +874,15 @@ func (e *DevExecutor) createWorkflowProducedTargetScanRuns(
 			parent.Metadata = commonModels.JSONMap{}
 		}
 		parent.Metadata["outputs"] = workflowExecutionOutputs(targets)
+		result := map[string]interface{}{}
+		if existing, exists := parent.Metadata["result"]; exists {
+			encoded, encodeErr := json.Marshal(existing)
+			if encodeErr != nil || json.Unmarshal(encoded, &result) != nil || result == nil {
+				return []map[string]interface{}{{"status": "failed", "error_code": "develop.workflow.scan_provenance_unavailable"}}
+			}
+		}
+		result["produced_targets"] = targets
+		parent.Metadata["result"] = result
 		err = e.taskExecutionRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{"metadata": parent.Metadata})
 	} else if err == nil {
 		err = fmt.Errorf("workflow output provenance is unavailable")

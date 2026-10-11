@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 
 	commonapi "github.com/addp/common/api"
@@ -74,7 +75,7 @@ func matchesDevelopProducedTarget(parent execution.TaskExecution, req *models.Sc
 	if err != nil || json.Unmarshal(encoded, &outputs) != nil {
 		return false
 	}
-	for _, output := range outputs {
+	for taskID, output := range outputs {
 		locator, err := resourcetree.ParseURI(output.Resource.Locator)
 		if err != nil || locator.EngineID != req.EngineID || len(locator.Path) == 0 {
 			continue
@@ -85,6 +86,31 @@ func matchesDevelopProducedTarget(parent execution.TaskExecution, req *models.Sc
 			}
 		} else if len(req.RefGroups) == 0 && len(req.Targets) == 1 && req.Targets[0] == output.Resource.Locator {
 			return true
+		} else if locator.Type == resourcetree.TypeObject && len(req.RefGroups) == 0 && len(req.Targets) == 1 {
+			var result struct {
+				ProducedTargets []struct {
+					TaskID   string   `json:"task_id"`
+					EngineID uint     `json:"engine_id"`
+					Type     string   `json:"type"`
+					Path     []string `json:"path"`
+					Locator  string   `json:"locator"`
+					Layout   string   `json:"layout"`
+				} `json:"produced_targets"`
+			}
+			encoded, err := json.Marshal(parent.Metadata["result"])
+			if err != nil || json.Unmarshal(encoded, &result) != nil {
+				continue
+			}
+			for _, target := range result.ProducedTargets {
+				if target.TaskID != taskID || target.EngineID != locator.EngineID || target.Type != "object" || target.Layout != "whole" ||
+					target.Locator != output.Resource.Locator || !slices.Equal(target.Path, locator.Path) {
+					continue
+				}
+				locator.Type = resourcetree.TypePrefix
+				if req.Targets[0] == locator.ToURI() {
+					return true
+				}
+			}
 		}
 	}
 	return false
