@@ -98,14 +98,15 @@ type ProtectionAccessRequestListResponse struct {
 }
 
 type ProtectionAccessTarget struct {
-	AssessmentID       string                          `json:"assessment_id"`
-	AssessmentRevision int64                           `json:"assessment_revision,string"`
-	Component          dataprotection.Component        `json:"component"`
-	Requestable        bool                            `json:"requestable"`
-	UnavailableReason  string                          `json:"unavailable_reason,omitempty"`
-	AccessRequest      *ProtectionAccessRequestSummary `json:"access_request,omitempty"`
-	ActiveExemptionID  string                          `json:"active_exemption_id,omitempty"`
-	AuthorizedUntil    *time.Time                      `json:"authorized_until,omitempty"`
+	AssessmentID           string                          `json:"assessment_id"`
+	AssessmentRevision     int64                           `json:"assessment_revision,string"`
+	Component              dataprotection.Component        `json:"component"`
+	Requestable            bool                            `json:"requestable"`
+	UnavailableReason      string                          `json:"unavailable_reason,omitempty"`
+	AccessRequest          *ProtectionAccessRequestSummary `json:"access_request,omitempty"`
+	ActiveExemptionID      string                          `json:"active_exemption_id,omitempty"`
+	AuthorizedUntil        *time.Time                      `json:"authorized_until,omitempty"`
+	ProjectionAcknowledged bool                            `json:"projection_acknowledged"`
 }
 
 type ProtectionAccessRequestSummary struct {

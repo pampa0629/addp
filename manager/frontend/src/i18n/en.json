@@ -1034,7 +1034,8 @@
       "openDataProtection": "View / configure",
       "plaintextAccess": {
         "loading": "Loading request status",
-        "active": "Plaintext granted for {count} fields",
+        "active": "{count} plaintext grants synchronized",
+        "synchronizing": "{count} fields approved, awaiting synchronization",
         "pending": "{count} requests pending",
         "expired": "{count} requests expired",
         "rejected": "{count} requests rejected",
@@ -1052,7 +1053,7 @@
         "submit": "Submit request",
         "cancel": "Cancel",
         "created": "Request submitted for Security review",
-        "activated": "Plaintext access approved; reloading the preview",
+        "activated": "Plaintext grant synchronized; reloading the preview",
         "failed": "Failed to submit plaintext access request"
       },
       "catalogGovernance": {

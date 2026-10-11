@@ -20,6 +20,8 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 
 独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/classification-grading`、`/sensitive-data-definitions`、`/protection-enrollments` 选择第一个符合页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径，显式业务地址仍按自身权限判断。
 
+Manager 原值申请目标的 `projection_acknowledged` 复用现有 Owner 回执，表示当前资源投影已同步；不改变 `approved` 审批结论或当前主体授权语义。申请目标从同一只读一致性快照读取投影、审批、Assessment、授权和回执。页面在已批准但待同步时继续轮询，确认后刷新预览；数据面仍仅消费本地投影。
+
 ## 数据库
 
 使用 PostgreSQL `security` schema。当前事实表为：

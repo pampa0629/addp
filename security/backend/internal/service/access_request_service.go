@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -102,14 +103,24 @@ func (s *AccessRequestService) Targets(ctx context.Context, tenantID, userID int
 	if tenantID <= 0 || userID <= 0 || targetIdentity == "" || owner != managerProtectionOwner || action != managerPreviewAction {
 		return nil, commonapi.ErrBadRequest
 	}
+	var result *models.ProtectionAccessTargetListResponse
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		result, err = s.targets(tx, tenantID, userID, targetIdentity, owner, action)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return result, err
+}
+
+func (s *AccessRequestService) targets(db *gorm.DB, tenantID, userID int64, targetIdentity, owner, action string) (*models.ProtectionAccessTargetListResponse, error) {
 	var enrollment models.ProtectionEnrollment
-	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND target_identity = ? AND state <> ?", tenantID, targetIdentity, models.EnrollmentStateReleased).First(&enrollment).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := db.Where("tenant_id = ? AND target_identity = ? AND state <> ?", tenantID, targetIdentity, models.EnrollmentStateReleased).First(&enrollment).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return &models.ProtectionAccessTargetListResponse{Data: []models.ProtectionAccessTarget{}}, nil
 	} else if err != nil {
 		return nil, err
 	}
 	var projectionRecord models.ProtectionProjectionRecord
-	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND enrollment_id = ? AND consumer_owner = ?", tenantID, enrollment.ID, owner).First(&projectionRecord).Error; err != nil {
+	if err := db.Where("tenant_id = ? AND enrollment_id = ? AND consumer_owner = ?", tenantID, enrollment.ID, owner).First(&projectionRecord).Error; err != nil {
 		return nil, err
 	}
 	var projection dataprotection.Projection
@@ -120,8 +131,14 @@ func (s *AccessRequestService) Targets(ctx context.Context, tenantID, userID int
 	if err := projection.Validate(now); err != nil {
 		return nil, err
 	}
+	var acknowledgement models.ProtectionProjectionAcknowledgement
+	ackErr := db.Where("tenant_id = ? AND consumer_owner = ?", tenantID, owner).First(&acknowledgement).Error
+	if ackErr != nil && !errors.Is(ackErr, gorm.ErrRecordNotFound) {
+		return nil, ackErr
+	}
+	acknowledged := ackErr == nil && acknowledgement.Sequence >= projectionRecord.PublishedSequence
 	var assessments []models.ResourceSecurityAssessment
-	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND enrollment_id = ?", tenantID, enrollment.ID).Find(&assessments).Error; err != nil {
+	if err := db.Where("tenant_id = ? AND enrollment_id = ?", tenantID, enrollment.ID).Find(&assessments).Error; err != nil {
 		return nil, err
 	}
 	assessmentByComponent := make(map[string]models.ResourceSecurityAssessment, len(assessments))
@@ -133,14 +150,14 @@ func (s *AccessRequestService) Targets(ctx context.Context, tenantID, userID int
 		if rule.Action != action {
 			continue
 		}
-		target := models.ProtectionAccessTarget{Component: rule.Component, UnavailableReason: "formal_assessment_required"}
+		target := models.ProtectionAccessTarget{Component: rule.Component, UnavailableReason: "formal_assessment_required", ProjectionAcknowledged: acknowledged}
 		assessment, exists := assessmentByComponent[rule.Component.Key]
 		if !exists {
 			result = append(result, target)
 			continue
 		}
 		var revision models.ResourceSecurityAssessmentRevision
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND assessment_id = ? AND revision = ? AND conclusion = ?", tenantID, assessment.ID, assessment.CurrentRevision, models.AssessmentConclusionSensitive).First(&revision).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := db.Where("tenant_id = ? AND assessment_id = ? AND revision = ? AND conclusion = ?", tenantID, assessment.ID, assessment.CurrentRevision, models.AssessmentConclusionSensitive).First(&revision).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			result = append(result, target)
 			continue
 		} else if err != nil {
@@ -148,7 +165,7 @@ func (s *AccessRequestService) Targets(ctx context.Context, tenantID, userID int
 		}
 		target.AssessmentID, target.AssessmentRevision, target.Requestable, target.UnavailableReason = assessment.ID, revision.Revision, true, ""
 		var latestRequest models.ProtectionAccessRequest
-		if err := s.db.WithContext(ctx).
+		if err := db.
 			Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?", tenantID, assessment.ID, owner, action, "user", userIDString(userID)).
 			Order("created_at DESC, id DESC").
 			First(&latestRequest).Error; err == nil {
@@ -160,9 +177,9 @@ func (s *AccessRequestService) Targets(ctx context.Context, tenantID, userID int
 			return nil, err
 		}
 		var exemption models.ProtectionExemption
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ? AND state = ?", tenantID, assessment.ID, owner, action, "user", userIDString(userID), models.ProtectionExemptionStateActive).First(&exemption).Error; err == nil {
+		if err := db.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ? AND state = ?", tenantID, assessment.ID, owner, action, "user", userIDString(userID), models.ProtectionExemptionStateActive).First(&exemption).Error; err == nil {
 			var current models.ProtectionExemptionRevision
-			if err := s.db.WithContext(ctx).Where("tenant_id = ? AND exemption_id = ? AND revision = ?", tenantID, exemption.ID, exemption.CurrentRevision).First(&current).Error; err != nil {
+			if err := db.Where("tenant_id = ? AND exemption_id = ? AND revision = ?", tenantID, exemption.ID, exemption.CurrentRevision).First(&current).Error; err != nil {
 				return nil, err
 			}
 			if current.AssessmentRevision == revision.Revision && now.Before(current.ExpiresAt) {

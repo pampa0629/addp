@@ -1034,7 +1034,8 @@
       "openDataProtection": "查看/配置",
       "plaintextAccess": {
         "loading": "读取申请状态",
-        "active": "{count} 个字段已获原值权限",
+        "active": "{count} 个字段原值授权已同步",
+        "synchronizing": "{count} 个字段已批准，等待同步",
         "pending": "{count} 个申请待审批",
         "expired": "{count} 个申请已过期",
         "rejected": "{count} 个申请未通过",
@@ -1052,7 +1053,7 @@
         "submit": "提交申请",
         "cancel": "取消",
         "created": "申请已提交，请等待 Security 审批",
-        "activated": "原值访问已获批准，正在重新加载预览",
+        "activated": "原值授权已同步，正在重新加载预览",
         "failed": "提交原值访问申请失败"
       },
       "catalogGovernance": {

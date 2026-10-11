@@ -195,8 +195,11 @@ test('two users request, approve, expire and revoke plaintext access through Con
     expect(first.requester.type).toBe('user')
     expect(first.requester.id).toBe(applicantIdentity.principalID)
     await applicant.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-plaintext-pending.png') })
-    const activated = applicant.waitForResponse(r => endpoint(r) === '/api/v1/manager/preview')
+    const synchronized = applicant.waitForResponse(async r => endpoint(r) === '/api/v1/security/protection-access-request-targets' &&
+      (await r.json()).data.some(target => target.access_request?.id === first.id && target.active_exemption_id && target.projection_acknowledged === true), { timeout: 60_000 })
+    const activated = applicant.waitForResponse(r => endpoint(r) === '/api/v1/manager/preview', { timeout: 60_000 })
     await approve(approver, securityPath, first, firstRationale, approverIdentity.principalID)
+    await synchronized
     assertPreview(await json(await activated, 'automatically refreshed approved preview'), true)
     await renderedPreview(applicant, true)
     await reloadPreview(approver, managerPath, false)
@@ -210,8 +213,11 @@ test('two users request, approve, expire and revoke plaintext access through Con
     const second = await submitRequest(applicant, 120, secondRationale)
     expect(second.requester.id).toBe(applicantIdentity.principalID)
     expect(second.id === first.id).toBe(false)
-    const secondActivated = applicant.waitForResponse(r => endpoint(r) === '/api/v1/manager/preview')
+    const secondSynchronized = applicant.waitForResponse(async r => endpoint(r) === '/api/v1/security/protection-access-request-targets' &&
+      (await r.json()).data.some(target => target.access_request?.id === second.id && target.active_exemption_id && target.projection_acknowledged === true), { timeout: 60_000 })
+    const secondActivated = applicant.waitForResponse(r => endpoint(r) === '/api/v1/manager/preview', { timeout: 60_000 })
     const approved = await approve(approver, securityPath, second, secondRationale, approverIdentity.principalID)
+    await secondSynchronized
     assertPreview(await json(await secondActivated, 'second approved preview'), true)
     await renderedPreview(applicant, true)
     await reloadPreview(approver, managerPath, false)

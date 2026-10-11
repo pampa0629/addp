@@ -10,6 +10,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/security/internal/models"
+	"gorm.io/gorm"
 )
 
 func TestProtectionAccessTargetsExposeAutomaticallyProtectedFieldsAsReviewRequired(t *testing.T) {
@@ -130,6 +131,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if approved.State != models.ProtectionAccessRequestStateApproved || approved.EnrollmentID != reviewed.Assessment.EnrollmentID || approved.ExemptionID == "" || approved.AuthorizationState != models.ProtectionExemptionStateActive || approved.AuthorizedUntil == nil || !approved.AuthorizedUntil.Equal(now.Add(time.Hour)) {
 		t.Fatalf("approved request = %#v", approved)
 	}
+	assertAccessTargetSynchronization(t, db, requests, approved)
 	approvedDetail, err := requests.GetForReview(context.Background(), 7, 42, created.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -201,6 +203,65 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	}
 	if revokedOnly.Total != 1 || len(revokedOnly.Data) != 1 || revokedOnly.Data[0].ID != approved.ID {
 		t.Fatalf("revoked authorization filter = %#v", revokedOnly)
+	}
+}
+
+// Exercise the same checkpoint contract with SQLite and the standard PostgreSQL gate.
+func assertAccessTargetSynchronization(t *testing.T, db *gorm.DB, requests *AccessRequestService, approved *models.ProtectionAccessRequestResponse) {
+	t.Helper()
+	ctx := context.Background()
+	var projection models.ProtectionProjectionRecord
+	if err := db.Where("tenant_id = ? AND enrollment_id = ? AND consumer_owner = ?", 7, approved.EnrollmentID, managerProtectionOwner).First(&projection).Error; err != nil {
+		t.Fatal(err)
+	}
+	var enrollment models.ProtectionEnrollment
+	if err := db.First(&enrollment, "tenant_id = ? AND id = ?", 7, approved.EnrollmentID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("tenant_id = ? AND consumer_owner = ?", 7, managerProtectionOwner).Delete(&models.ProtectionProjectionAcknowledgement{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	check := func(want bool) {
+		t.Helper()
+		result, err := requests.Targets(ctx, 7, 41, enrollment.TargetIdentity, managerProtectionOwner, managerPreviewAction)
+		if err != nil || result == nil || len(result.Data) != 1 {
+			t.Fatalf("access targets: result=%#v error=%v", result, err)
+		}
+		target := result.Data[0]
+		if target.ActiveExemptionID != approved.ExemptionID || target.AccessRequest == nil || target.AccessRequest.State != models.ProtectionAccessRequestStateApproved || target.ProjectionAcknowledged != want {
+			t.Fatalf("approved target synchronization (want %v) = %#v", want, target)
+		}
+	}
+	check(false)
+	for _, ack := range []models.ProtectionProjectionAcknowledgement{
+		{TenantID: 8, ConsumerOwner: managerProtectionOwner, Sequence: projection.PublishedSequence, AppliedCursor: encodeProjectionCursor(projection.PublishedSequence), UpdatedAt: time.Now()},
+		{TenantID: 7, ConsumerOwner: "develop", Sequence: projection.PublishedSequence, AppliedCursor: encodeProjectionCursor(projection.PublishedSequence), UpdatedAt: time.Now()},
+		{TenantID: 7, ConsumerOwner: managerProtectionOwner, Sequence: projection.PublishedSequence - 1, AppliedCursor: encodeProjectionCursor(projection.PublishedSequence - 1), UpdatedAt: time.Now()},
+	} {
+		if err := db.Save(&ack).Error; err != nil {
+			t.Fatal(err)
+		}
+		check(false)
+	}
+	enrollments := NewEnrollmentService(db)
+	changes, err := enrollments.ListChanges(ctx, 7, managerProtectionOwner, "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enrollments.Acknowledge(ctx, 7, managerProtectionOwner, changes.NextCursor); err != nil {
+		t.Fatal(err)
+	}
+	check(true)
+	other, err := requests.Targets(ctx, 7, 42, enrollment.TargetIdentity, managerProtectionOwner, managerPreviewAction)
+	if err != nil || len(other.Data) != 1 || other.Data[0].ActiveExemptionID != "" || !other.Data[0].ProjectionAcknowledged {
+		t.Fatalf("checkpoint must not grant another subject plaintext: result=%#v error=%v", other, err)
+	}
+	originalNow := requests.now
+	defer func() { requests.now = originalNow }()
+	requests.now = func() time.Time { return approved.AuthorizedUntil.Add(time.Second) }
+	expired, err := requests.Targets(ctx, 7, 41, enrollment.TargetIdentity, managerProtectionOwner, managerPreviewAction)
+	if err != nil || len(expired.Data) != 1 || expired.Data[0].ActiveExemptionID != "" {
+		t.Fatalf("checkpoint must not keep an expired grant active: result=%#v error=%v", expired, err)
 	}
 }
 

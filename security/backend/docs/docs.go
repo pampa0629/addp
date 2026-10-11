@@ -2339,7 +2339,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按当前用户和数据出口返回正式敏感字段及其申请或授权状态，不返回业务值 | Return formal sensitive fields and the current user's request or grant state for one outlet without business values",
+                "description": "按当前用户和数据出口返回正式敏感字段、申请或授权状态和当前 Owner 投影同步确认；审批通过不表示投影已同步，不返回业务值 | Return formal sensitive fields, the current user's request or grant state and current Owner projection acknowledgement; approval does not mean synchronization, and no business values are returned",
                 "produces": [
                     "application/json"
                 ],
@@ -6083,6 +6083,9 @@ const docTemplate = `{
                 },
                 "component": {
                     "$ref": "#/definitions/dataprotection.Component"
+                },
+                "projection_acknowledged": {
+                    "type": "boolean"
                 },
                 "requestable": {
                     "type": "boolean"

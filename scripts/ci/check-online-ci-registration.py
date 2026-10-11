@@ -548,6 +548,7 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
         "console/frontend/e2e/online/security-plaintext-access.spec.js": (
             "addp.security-plaintext-access-browser/v1", "browser.newContext(", "browserIdentity(",
             "submitRequest(", "approve(", "history(", "revocation_from_security_ui",
+            "target.projection_acknowledged === true", "await synchronized", "await secondSynchronized",
             "Date.now() >= Date.parse(first.requested_expires_at) + 1000", "expired_history_verified",
             "revoked_history_verified", "isAnonymousRefreshResponse", "state.started = true",
             "expect(applicantState.failures.concat(approverState.failures)).toEqual([])",

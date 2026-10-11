@@ -51,6 +51,9 @@
           <el-tag v-if="activeAccessCount > 0" size="small" type="success" effect="plain">
             {{ t('manager.explorer.plaintextAccess.active', { count: activeAccessCount }) }}
           </el-tag>
+          <el-tag v-if="synchronizingAccessCount > 0" size="small" type="warning" effect="plain">
+            {{ t('manager.explorer.plaintextAccess.synchronizing', { count: synchronizingAccessCount }) }}
+          </el-tag>
           <el-tag v-if="pendingAccessCount > 0" size="small" type="warning" effect="plain">
             {{ t('manager.explorer.plaintextAccess.pending', { count: pendingAccessCount }) }}
           </el-tag>
@@ -390,7 +393,7 @@ import { getCatalogEntryBySourceIdentity } from '@/api/catalog'
 import { useAuthStore } from '@/store/auth'
 import { buildSecurityProtectionRoute } from '@/utils/securityNavigation'
 import { normalizeMetaItemMetadata } from '@/utils/itemMetadata'
-import { hasAccessGrantActivated } from '@/utils/plaintextAccess'
+import { hasAccessGrantSynchronized, isAccessGrantSynchronized, isAccessGrantSynchronizing } from '@/utils/plaintextAccess'
 import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph'
 
 const DataProfilePanel = defineAsyncComponent(() => import('@/components/explorer/DataProfilePanel.vue'))
@@ -532,7 +535,8 @@ const accessRequestForm = reactive({ assessmentId: '', expiresAt: null, rational
 let accessTargetsRequestSeq = 0
 let accessStatusTimer = null
 const ACCESS_REQUEST_MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000
-const activeAccessCount = computed(() => accessTargets.value.filter(target => target.active_exemption_id).length)
+const activeAccessCount = computed(() => accessTargets.value.filter(isAccessGrantSynchronized).length)
+const synchronizingAccessCount = computed(() => accessTargets.value.filter(isAccessGrantSynchronizing).length)
 const pendingAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'pending').length)
 const expiredAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'expired').length)
 const rejectedAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'rejected').length)
@@ -546,7 +550,7 @@ const clearAccessStatusPoll = () => {
 
 const scheduleAccessStatusPoll = () => {
   clearAccessStatusPoll()
-  if (pendingAccessCount.value > 0) accessStatusTimer = setTimeout(loadAccessTargets, 5000)
+  if (pendingAccessCount.value > 0 || synchronizingAccessCount.value > 0) accessStatusTimer = setTimeout(loadAccessTargets, 5000)
 }
 
 const loadAccessTargets = async () => {
@@ -563,9 +567,9 @@ const loadAccessTargets = async () => {
     const response = await client.get('/security/protection-access-request-targets', { params: { target_identity: fingerprint, consumer_owner: 'manager', action: 'preview' } })
     if (requestSeq === accessTargetsRequestSeq) {
       const nextTargets = Array.isArray(response?.data) ? response.data : []
-      const accessGrantActivated = hasAccessGrantActivated(previousTargets, nextTargets)
+      const accessGrantSynchronized = hasAccessGrantSynchronized(previousTargets, nextTargets)
       accessTargets.value = nextTargets
-      if (accessGrantActivated) {
+      if (accessGrantSynchronized) {
         ElMessage.success(t('manager.explorer.plaintextAccess.activated'))
         emit('refresh-preview')
       }

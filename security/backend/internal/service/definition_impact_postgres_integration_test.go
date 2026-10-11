@@ -275,6 +275,7 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertAccessTargetSynchronization(t, tx, accessRequests, approved)
 	createdFrom, createdTo := now.Add(-time.Minute), now.Add(time.Minute)
 	history, err := accessRequests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewFilter{
 		Scope: models.ProtectionAccessRequestReviewScopeHistory, State: models.ProtectionAccessRequestStateApproved,

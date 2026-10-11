@@ -684,6 +684,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[5], 'report["browser"] = run_plaintext_browser('),
                                    (paths[7], "revocation_from_security_ui"),
                                    (paths[7], "expired_history_verified"),
+                                   (paths[7], "target.projection_acknowledged === true"),
+                                   (paths[7], "await synchronized"),
+                                   (paths[7], "await secondSynchronized"),
                                    (paths[7], "state.started = true"),
                                    (paths[2], "&& inputs.suite != 'security-plaintext-access'")):
             with self.subTest(fragment=fragment):
