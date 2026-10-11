@@ -57,6 +57,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Quality Owner 限定本租户方案历史（含已删除方案）及本人一次性执行；分页总数使用相同范围。| Quality Owner scopes Tenant plan history (including deleted plans) and own ad-hoc executions; totals use the same scope.",
                 "produces": [
                     "application/json"
                 ],
@@ -94,6 +95,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_api.qualityExecutionListResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -103,7 +110,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.execution.read"
+                    "monitor.execution.read",
+                    "quality.plan.read"
                 ]
             }
         },
@@ -114,6 +122,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅当前租户获授权 User；按方案历史或本人一次性执行裁决，不可读执行返回 404。| Authorized Tenant Users only; plan history or own ad-hoc scope applies, and unreadable executions return 404.",
                 "produces": [
                     "application/json"
                 ],
@@ -134,7 +143,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
+                            "$ref": "#/definitions/internal_api.qualityExecutionResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
                     },
                     "404": {
@@ -152,7 +167,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.execution.read"
+                    "monitor.execution.read",
+                    "quality.plan.read"
                 ]
             }
         },
@@ -1756,6 +1772,113 @@ const docTemplate = `{
                 }
             }
         },
+        "execution.Observation": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "bytes_read": {
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
+                "error_details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "records_read": {
+                    "type": "integer"
+                },
+                "records_written": {
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.ReadGrant": {
             "type": "object",
             "properties": {
@@ -1787,155 +1910,6 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
-                }
-            }
-        },
-        "execution.TaskExecution": {
-            "type": "object",
-            "properties": {
-                "actor_principal_id": {
-                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
-                    "type": "integer"
-                },
-                "actor_tenant_membership_id": {
-                    "type": "integer"
-                },
-                "attempt": {
-                    "type": "integer"
-                },
-                "authorization_expires_at": {
-                    "type": "string"
-                },
-                "bytes_read": {
-                    "description": "Transfer 读取字节数",
-                    "type": "integer"
-                },
-                "bytes_written": {
-                    "description": "Transfer 写入字节数",
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "current_step": {
-                    "description": "当前步骤（Orchestrator/Workflow）",
-                    "type": "string"
-                },
-                "error_details": {
-                    "description": "错误详情（仅失败时有值）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_authorization_id": {
-                    "type": "integer"
-                },
-                "execution_boundary": {
-                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
-                    "type": "string"
-                },
-                "execution_config": {
-                    "description": "JSONB 字段",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_id": {
-                    "description": "执行标识",
-                    "type": "string"
-                },
-                "execution_time_ms": {
-                    "description": "性能指标",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "issued_authorization_version": {
-                    "type": "integer"
-                },
-                "max_attempts": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "module": {
-                    "description": "模块标识",
-                    "type": "string"
-                },
-                "parent_execution_id": {
-                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
-                    "type": "string"
-                },
-                "progress": {
-                    "description": "0-100",
-                    "type": "integer"
-                },
-                "records_read": {
-                    "description": "Transfer 读取记录数",
-                    "type": "integer"
-                },
-                "records_written": {
-                    "description": "Transfer 写入记录数",
-                    "type": "integer"
-                },
-                "retry_of_execution_id": {
-                    "type": "string"
-                },
-                "rows_affected": {
-                    "description": "SQL 影响行数",
-                    "type": "integer"
-                },
-                "source": {
-                    "description": "触发来源模块",
-                    "type": "string"
-                },
-                "source_task_id": {
-                    "description": "关联原始任务",
-                    "type": "string"
-                },
-                "source_task_name": {
-                    "description": "任务名称（冗余，便于查询）",
-                    "type": "string"
-                },
-                "started_at": {
-                    "description": "时间戳",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "执行状态",
-                    "type": "string"
-                },
-                "task_type": {
-                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "trigger_type": {
-                    "description": "触发信息",
-                    "type": "string"
-                },
-                "triggered_by": {
-                    "description": "触发用户ID",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
                 }
             }
         },
@@ -2196,6 +2170,23 @@ const docTemplate = `{
                 "table_bindings": {
                     "type": "object",
                     "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.PlanTableBinding": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "record_key": {
+                    "type": "array",
+                    "items": {
                         "type": "string"
                     }
                 }
@@ -2750,13 +2741,34 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.qualityExecutionConfigResponse": {
+            "type": "object",
+            "properties": {
+                "owner_domain_id": {
+                    "description": "RawMessage preserves absent versus explicit null historical ownership.",
+                    "type": "integer"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.PlanTableBinding"
+                    }
+                },
+                "target_key": {
+                    "type": "string"
+                },
+                "task_version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.qualityExecutionListResponse": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/execution.TaskExecution"
+                        "$ref": "#/definitions/execution.Observation"
                     }
                 },
                 "page": {
@@ -2770,6 +2782,150 @@ const docTemplate = `{
                 },
                 "total_pages": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityExecutionMetadata": {
+            "type": "object",
+            "properties": {
+                "outputs": {
+                    "$ref": "#/definitions/internal_api.qualityExecutionOutputs"
+                },
+                "passed": {
+                    "type": "boolean"
+                },
+                "quality_score": {
+                    "type": "number"
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.qualityRuleResultResponse"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.qualityExecutionOutputs": {
+            "type": "object",
+            "properties": {
+                "passed": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.qualityExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "bytes_read": {
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
+                "error_details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "execution_config": {
+                    "$ref": "#/definitions/internal_api.qualityExecutionConfigResponse"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/internal_api.qualityExecutionMetadata"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "outputs": {
+                    "$ref": "#/definitions/internal_api.qualityExecutionOutputs"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "records_read": {
+                    "type": "integer"
+                },
+                "records_written": {
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -3018,6 +3174,17 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.qualityRuleObserved": {
+            "type": "object",
+            "properties": {
+                "row_count": {
+                    "type": "integer"
+                },
+                "total_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.qualityRuleResponse": {
             "type": "object",
             "properties": {
@@ -3080,6 +3247,50 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityRuleResultResponse": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "failed_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "observed": {
+                    "$ref": "#/definitions/internal_api.qualityRuleObserved"
+                },
+                "passed": {
+                    "type": "boolean"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "rule_id": {
+                    "type": "integer"
+                },
+                "rule_key": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "table": {
+                    "type": "string"
+                },
+                "total_count": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         },

@@ -47,15 +47,17 @@ func NewExecutionHandler(executionRepo *commonExecution.TaskExecutionRepository)
 }
 
 // @Summary 获取执行记录列表 | List execution records
+// @Description Quality Owner 限定本租户方案历史（含已删除方案）及本人一次性执行；分页总数使用相同范围。| Quality Owner scopes Tenant plan history (including deleted plans) and own ad-hoc executions; totals use the same scope.
 // @Tags Execution
 // @Produce json
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20) maximum(100)
 // @Param status query string false "执行状态：pending|running|success|failed|timeout|cancelled | Execution status"
 // @Success 200 {object} qualityExecutionListResponse
+// @Failure 403 {object} qualityErrorResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["monitor.execution.read"]
+// @x-addp-required-permissions ["monitor.execution.read","quality.plan.read"]
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) List(c *gin.Context) {
@@ -68,6 +70,9 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 		respondInvalidRequest(c, err.Error())
 		return
 	}
+	if !installQualityUserReadScope(c) {
+		return
+	}
 
 	filter := qualityExecutionFilter(int(tenantID), page, pageSize)
 	filter.Status = status
@@ -76,9 +81,13 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 		respondQualityError(c, http.StatusInternalServerError, "execution_list_failed", commoni18n.T(c, qualityi18n.MsgExecutionListFailed))
 		return
 	}
+	observations := make([]*commonExecution.Observation, 0, len(items))
+	for _, item := range items {
+		observations = append(observations, commonExecution.Observe(item))
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":        items,
+		"data":        observations,
 		"total":       total,
 		"page":        page,
 		"page_size":   pageSize,
@@ -87,18 +96,32 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 }
 
 // @Summary 获取执行记录详情 | Get execution record detail
+// @Description 仅当前租户获授权 User；按方案历史或本人一次性执行裁决，不可读执行返回 404。| Authorized Tenant Users only; plan history or own ad-hoc scope applies, and unreadable executions return 404.
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} taskprovider.ExecutionStatusResponse
+// @Success 200 {object} qualityExecutionResponse
+// @Failure 403 {object} qualityErrorResponse
 // @Failure 404 {object} qualityErrorResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["monitor.execution.read"]
+// @x-addp-required-permissions ["monitor.execution.read","quality.plan.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) Get(c *gin.Context) {
-	h.respondExecution(c)
+	if !installQualityUserReadScope(c) {
+		return
+	}
+	item, ok := h.loadExecution(c)
+	if !ok {
+		return
+	}
+	response, err := newQualityExecutionResponse(item)
+	if err != nil {
+		respondQualityServiceError(c, err, qualityi18n.MsgExecutionNotFound, qualityi18n.MsgExecutionListFailed)
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // ProviderGet 返回 TaskProvider 内部调用的执行状态。
@@ -114,22 +137,24 @@ func (h *ExecutionHandler) Get(c *gin.Context) {
 // @Router /task-provider/executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) ProviderGet(c *gin.Context) {
-	h.respondExecution(c)
+	item, ok := h.loadExecution(c)
+	if ok {
+		c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(item))
+	}
 }
 
-func (h *ExecutionHandler) respondExecution(c *gin.Context) {
+func (h *ExecutionHandler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution, bool) {
 	tenantID := getTenantID(c)
 	executionID := c.Param("execution_id")
 
 	item, err := h.executionRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		respondQualityServiceError(c, err, qualityi18n.MsgExecutionNotFound, qualityi18n.MsgExecutionListFailed)
-		return
+		return nil, false
 	}
 	if !isQualityExecution(item) {
 		respondQualityError(c, http.StatusNotFound, "execution_not_found", commoni18n.T(c, qualityi18n.MsgExecutionNotFound))
-		return
+		return nil, false
 	}
-
-	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(item))
+	return item, true
 }

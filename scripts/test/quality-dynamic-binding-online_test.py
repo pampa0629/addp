@@ -235,6 +235,32 @@ class QualityOnlineTest(unittest.TestCase):
             generated = root / module / "backend/internal/authorization/permissions_generated.go"
             self.assertIn(f'"{permission}"', generated.read_text())
 
+    def test_monitor_permission_does_not_bypass_quality_owner(self):
+        paths = {
+            SUITE.QUALITY + "/executions": 403,
+            SUITE.QUALITY + "/executions/execution-id": 403,
+            "/api/v1/monitor/executions/by-execution-id/execution-id": 404,
+            "/api/v1/monitor/executions/by-execution-id/execution-id/events": 404,
+        }
+
+        class Reader:
+            def __init__(self, leak=None):
+                self.leak, self.seen = leak, set()
+
+            def request(self, method, path, expected):
+                self.seen.add(path)
+                status = 200 if path == self.leak else paths[path]
+                if status not in expected:
+                    raise SUITE.SuiteError("Owner access unexpectedly allowed")
+                return SUITE.API.Response(status, {})
+
+        reader = Reader()
+        SUITE.assert_quality_owner_denied(reader, "execution-id")
+        self.assertEqual(reader.seen, set(paths))
+        for path in paths:
+            with self.subTest(leak=path), self.assertRaises(SUITE.SuiteError):
+                SUITE.assert_quality_owner_denied(Reader(path), "execution-id")
+
     def test_monitor_is_declared_as_an_online_dependency(self):
         gate = import_module("scripts.test.online-gate")
         self.assertIn(("monitor", "MONITOR_URL"), gate.SUITES[SUITE.SUITE].services)

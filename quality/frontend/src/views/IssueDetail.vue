@@ -104,13 +104,14 @@ import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { issueExecutionRoute } from '../utils/issueNavigation'
 import { resolveIssueListRouteState } from '../utils/issueListRouteState'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import { domainOwnershipLabel } from '../utils/domainOwnership'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const canViewExecutions = computed(() => authStore.hasPermission('monitor.execution.read'))
+const canViewExecutions = computed(() => allowsConsoleRoute('/quality/executions', authStore.contextType, authStore.permissions))
 const issue = ref(null)
 useConsolePageDescriptor(router, 'quality', {
   title: computed(() => t('quality.issue.recentVisitTitle')),

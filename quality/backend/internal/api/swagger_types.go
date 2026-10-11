@@ -24,11 +24,11 @@ type qualityIssueListResponse struct {
 }
 
 type qualityExecutionListResponse struct {
-	Data       []commonExecution.TaskExecution `json:"data"`
-	Total      int64                           `json:"total"`
-	Page       int                             `json:"page"`
-	PageSize   int                             `json:"page_size"`
-	TotalPages int                             `json:"total_pages"`
+	Data       []*commonExecution.Observation `json:"data"`
+	Total      int64                          `json:"total"`
+	Page       int                            `json:"page"`
+	PageSize   int                            `json:"page_size"`
+	TotalPages int                            `json:"total_pages"`
 }
 
 type qualityPlanResponse struct {
@@ -52,7 +52,6 @@ type qualityPlanListResponse struct {
 	TotalPages int                  `json:"total_pages"`
 }
 type qualityIssueResponse models.Issue
-type qualityExecutionResponse commonExecution.TaskExecution
 
 type issueStatusRequest struct {
 	Version int64  `json:"version" binding:"required,min=1" example:"1"`

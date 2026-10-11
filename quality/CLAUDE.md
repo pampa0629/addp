@@ -29,6 +29,7 @@ Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为�
 - RuleList 的数据元导入支持空关键词分页浏览和名称/编码搜索，保留已选来源；RuleSourceDetails 通过当前用户读取 Standard 精确修订详情，展示数据元、码值集修订及码项含义。无 Standard 读取权限或查询失败时仍保留冻结来源身份和约束，不影响执行。手工规则不推断来源。
 - 无可导入规则的数据元仍可选中预览来源，但不能确认导入；根据精确修订区分未配置值约束与缺少编译规则，读取失败时不猜测原因。历史发布修订缺少编译规则时，应在 Standard 创建并审核发布新修订，不改写历史快照、不在 Quality 重新推导约束。
 - authorization/permissions.yaml：quality.rule.* 与 quality.plan.* 分离；方案写入还要求 rule.read，方案运行不要求规则管理权限。
+- 专业执行列表和详情同时要求 monitor.execution.read 与 quality.plan.read；Quality 在 SQL 中限定当前租户 quality_plan 的任务历史及本人一次性执行，已删除方案的历史不回查当前定义，缺少发起主体的一次性执行拒绝。分页总数与详情共用 Owner 范围；TaskProvider 保持独立机器认证。前端详情深链和工单执行链接同步这两项权限；专业详情通过显式 Quality DTO 保留冻结版本、目标及规则结果，列表只输出安全概览，不序列化内部执行授权字段。Monitor 与 TaskProvider 不返回专业配置和结果。
 - cmd/server、cmd/worker：独立控制面和执行进程。
 
 error 规则失败使执行 failed，同时保存完整结果和问题；warning/info 不阻断。运行异常和超时不对账部分问题。终态、最近摘要、问题必须在有效 lease 下原子提交。规则通过率不等于数据行去重合格率。
@@ -55,7 +56,7 @@ Quality migration 14 增加问题目标范围，使用最后观测执行的完�
 - make test-quality-backend：同一后端单元/契约测试集的独立入口，可在无关 T0 失败时定位本模块；Platform CI 的 Go 自动发现及模块门禁已覆盖该测试集。
 - make test-quality-postgres：真实 PG 规则、来源/执行/问题闭环、迁移、租约、域引用屏障及仅修改归属不产生内容修订；同时验证 Orchestrator 的方案引用迁移。
 - make test-quality-frontend：路由、页面端到端、构建。
-- make test-online ONLINE_SUITE=quality-dynamic-binding：GitHub Hosted 一次性 T4 部署的 Model → Quality 上游表绑定、失败阻断、工单去重、跨目标隔离及 Monitor 安全事件验收。准备和退出由 scripts/test/online-hosted-quality-gate.sh 统一负责；使用独立的普通执行身份、夹具准备身份及引擎注册身份，通过正式 API 创建和审批两个 Model 逻辑表并物化目标，再在当次 PostgreSQL 写入固定数据。套件运行期间只读取这些夹具；退出销毁本轮应用、业务源、Infra 和凭据，清理失败即门禁失败。配置及证据边界见 scripts/README.md；不得复用个人管理员会话。只登记手工 CI，首次真实通过前不加入夜间调度。
+- make test-online ONLINE_SUITE=quality-dynamic-binding：GitHub Hosted 一次性 T4 部署的 Model → Quality 上游表绑定、失败阻断、工单去重、跨目标隔离及 Monitor 安全事件验收，并验证 Monitor-only 用户无法直读 Quality 或 Monitor 事件、删除方案后授权历史仍可读。准备和退出由 scripts/test/online-hosted-quality-gate.sh 统一负责；使用独立的普通执行身份、夹具准备身份及引擎注册身份，通过正式 API 创建和审批两个 Model 逻辑表并物化目标，再在当次 PostgreSQL 写入固定数据。套件运行期间只读取这些夹具；退出销毁本轮应用、业务源、Infra 和凭据，清理失败即门禁失败。配置及证据边界见 scripts/README.md；不得复用个人管理员会话。只登记手工 CI，首次真实通过前不加入夜间调度。
 - make test-online-runner：上述 T4 脚本的确定性反例、宿主部署 profile 和 CI 登记检查；不能代替真实在线验收。
 - System IAM migration 测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现；单测筛选 --test quality-plans（含规则、方案及 Standard/Quality 域引用服务身份授权刷新）。
 - release-and-t2-gates.yml 注册 Quality PG 门禁，changed-gate 将 Orchestrator 变更映射到该门禁。

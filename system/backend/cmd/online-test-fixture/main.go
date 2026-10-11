@@ -482,6 +482,12 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN"] = preparer.AccessToken
+		reader, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-quality-monitor-only", []string{"monitor.execution.read"})
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
 	}
 	if needsEngineProvisioner(*suite) {
 		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")

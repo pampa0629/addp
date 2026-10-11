@@ -64,4 +64,11 @@ test('task pages only link to execution detail for users allowed to read executi
 	assert.match(planSource, /v-if="can\('monitor\.execution\.read'\)"\s+link\s+type="primary"/)
 	assert.match(issueListSource, /v-if="canViewExecutions && issueExecutionRoute\(row\.execution_id\)"/)
 	assert.match(issueDetailSource, /v-if="canViewExecutions && issueExecutionRoute\(issue\.execution_id\)"/)
+	for (const source of [issueListSource, issueDetailSource]) {
+		assert.match(source, /allowsConsoleRoute\('\/quality\/executions', authStore.contextType, authStore.permissions\)/)
+	}
+	for (const permissions of [[], ['monitor.execution.read'], ['quality.plan.read']]) {
+		assert.equal(allowsConsoleRoute('/quality/executions/execution-id', 'tenant', permissions), false)
+	}
+	assert.equal(allowsConsoleRoute('/quality/executions/execution-id', 'tenant', ['monitor.execution.read', 'quality.plan.read']), true)
 })

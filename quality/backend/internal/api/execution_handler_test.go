@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/addp/common/authorization/authtest"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
+	commonauth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -59,7 +62,7 @@ func TestExecutionListUsesQualityAndTenantFilters(t *testing.T) {
 	insertExecutionHandlerRow(t, db, 5, 7, "cleanup-7", commonExecution.ModuleQuality, commonExecution.TaskTypeCleanupExecutor, commonExecution.ExecutionStatusSuccess)
 	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
-	router.GET("/executions", withIssueHandlerAuth(7, 11), handler.List)
+	router.GET("/executions", withExecutionHandlerAuth(7, 11), handler.List)
 
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/executions?page=0&page_size=999&status=success", nil))
@@ -89,7 +92,7 @@ func TestExecutionGetExposesPlanOutputs(t *testing.T) {
 
 	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
-	router.GET("/executions/:execution_id", withIssueHandlerAuth(7, 11), handler.Get)
+	router.GET("/executions/:execution_id", withExecutionHandlerAuth(7, 11), handler.Get)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/executions/gate-7", nil))
 	if response.Code != http.StatusOK {
@@ -114,7 +117,7 @@ func TestExecutionGetRejectsCrossTenantAndNonQualityExecution(t *testing.T) {
 	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 
 	crossTenantRouter := gin.New()
-	crossTenantRouter.GET("/executions/:execution_id", withIssueHandlerAuth(8, 22), handler.Get)
+	crossTenantRouter.GET("/executions/:execution_id", withExecutionHandlerAuth(8, 22), handler.Get)
 	crossTenantResponse := httptest.NewRecorder()
 	crossTenantRouter.ServeHTTP(crossTenantResponse, httptest.NewRequest(http.MethodGet, "/executions/quality-7", nil))
 	if crossTenantResponse.Code != http.StatusNotFound {
@@ -122,11 +125,68 @@ func TestExecutionGetRejectsCrossTenantAndNonQualityExecution(t *testing.T) {
 	}
 
 	nonQualityRouter := gin.New()
-	nonQualityRouter.GET("/executions/:execution_id", withIssueHandlerAuth(7, 11), handler.Get)
+	nonQualityRouter.GET("/executions/:execution_id", withExecutionHandlerAuth(7, 11), handler.Get)
 	nonQualityResponse := httptest.NewRecorder()
 	nonQualityRouter.ServeHTTP(nonQualityResponse, httptest.NewRequest(http.MethodGet, "/executions/system-7", nil))
 	if nonQualityResponse.Code != http.StatusNotFound {
 		t.Fatalf("non-quality status = %d, want %d, body=%s", nonQualityResponse.Code, http.StatusNotFound, nonQualityResponse.Body.String())
+	}
+}
+
+func TestQualityProfessionalExecutionProjectionKeepsDomainFactsOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newExecutionHandlerTestDB(t)
+	insertExecutionHandlerRow(t, db, 1, 7, "professional", "quality", "quality_plan", "failed")
+	if err := db.Exec(`UPDATE common.task_executions SET execution_config = ?, metadata = ?, error_details = ?, execution_authorization_id = ? WHERE execution_id = ?`,
+		`{"task_version":3,"owner_domain_id":null,"target_key":"target","table_bindings":[{"alias":"target","locator":"addp://engine/1/path/public/a?type=table","private":"private-binding"}],"private":"private-config"}`,
+		`{"passed":false,"quality_score":0,"rules":[{"rule_key":"rule","revision_no":2,"total_count":2,"observed":{"row_count":2,"private":"private-observation"},"private":"private-rule"}],"outputs":{"passed":false},"private":"private-metadata"}`,
+		`{"code":"quality.plan.rule_failed","message":"private-error"}`, 17, "professional").Error; err != nil {
+		t.Fatal(err)
+	}
+	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
+	router := gin.New()
+	router.GET("/executions", withExecutionHandlerAuth(7, 11), handler.List)
+	router.GET("/executions/:execution_id", withExecutionHandlerAuth(7, 11), handler.Get)
+	router.GET("/provider/:execution_id", withExecutionHandlerAuth(7, 11), handler.ProviderGet)
+	for _, path := range []string{"/executions", "/executions/professional", "/provider/professional"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", path, response.Code, response.Body.String())
+		}
+		if strings.Contains(response.Body.String(), "private-") || strings.Contains(response.Body.String(), "execution_authorization_id") {
+			t.Fatalf("%s leaked private facts: %s", path, response.Body.String())
+		}
+		if path == "/executions/professional" {
+			var body qualityExecutionResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.ExecutionConfig.TaskVersion != 3 || string(body.ExecutionConfig.OwnerDomainID) != "null" || len(body.ExecutionConfig.TableBindings) != 1 ||
+				len(body.Metadata.Rules) != 1 || body.Metadata.Rules[0].TotalCount != 2 || body.Outputs.Passed == nil || *body.Outputs.Passed {
+				t.Fatalf("professional domain projection lost facts: %s", response.Body.String())
+			}
+		} else if strings.Contains(response.Body.String(), "execution_config") || strings.Contains(response.Body.String(), "row_count") {
+			t.Fatalf("%s exposed professional results: %s", path, response.Body.String())
+		}
+	}
+}
+
+func TestQualityExecutionProjectionPreservesUnrecordedDomain(t *testing.T) {
+	item := &commonExecution.TaskExecution{}
+	response, err := newQualityExecutionResponse(item)
+	if err != nil || len(response.ExecutionConfig.OwnerDomainID) != 0 || response.Metadata.Passed != nil {
+		t.Fatalf("unrecorded facts were manufactured: %#v, %v", response, err)
+	}
+}
+
+func withExecutionHandlerAuth(tenantID, principalID int) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		facts := authtest.NewTenantUserAuthContext(strconv.Itoa(tenantID), strconv.Itoa(principalID), []string{"quality.plan.read", "monitor.execution.read"})
+		if err := commonauth.SetAuthContextForGin(c, facts); err != nil {
+			panic(err)
+		}
+		c.Next()
 	}
 }
 
@@ -145,9 +205,9 @@ func newExecutionHandlerTestDB(t *testing.T) *gorm.DB {
 func insertExecutionHandlerRow(t *testing.T, db *gorm.DB, id, tenantID int, executionID, module, taskType, status string) {
 	t.Helper()
 	if err := db.Exec(`INSERT INTO common.task_executions (
-		id, tenant_id, execution_id, module, task_type, source, status, progress, trigger_type, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		id, tenantID, executionID, module, taskType, module, status, 100, commonExecution.TriggerTypeManual).Error; err != nil {
+		id, tenant_id, execution_id, module, task_type, source, source_task_id, status, progress, trigger_type, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		id, tenantID, executionID, module, taskType, module, strconv.Itoa(id), status, 100, commonExecution.TriggerTypeManual).Error; err != nil {
 		t.Fatalf("insert task execution: %v", err)
 	}
 }

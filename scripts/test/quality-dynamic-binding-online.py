@@ -333,6 +333,14 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
     return report
 
 
+def assert_quality_owner_denied(client, execution_id):
+    client.request("GET", QUALITY + "/executions", (403,))
+    client.request("GET", f"{QUALITY}/executions/{execution_id}", (403,))
+    monitor = f"/api/v1/monitor/executions/by-execution-id/{execution_id}"
+    client.request("GET", monitor, (404,))
+    client.request("GET", monitor + "/events", (404,))
+
+
 def main():
     report, evidence = {}, None
 
@@ -365,10 +373,22 @@ def main():
         validate_fixtures(fixtures)
         report["identity"] = API.validate_user_identity(API.GatewayClient(os.environ["SYSTEM_URL"], token, timeout),
                                                        tenant, REQUIRED_PERMISSIONS)
+        reader_token = os.environ["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"]
+        require(bool(reader_token), "dedicated Monitor-only User token required")
+        report["denied_identity"] = API.validate_user_identity(API.GatewayClient(os.environ["SYSTEM_URL"], reader_token, timeout),
+                                                              tenant, {"monitor.execution.read"})
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
             signal.signal(signum, interrupted)
         signal.alarm(600)
-        run_suite(API.GatewayClient(os.environ["GATEWAY_URL"], token, timeout), tenant, run_id, fixtures, report, checkpoint)
+        owner = API.GatewayClient(os.environ["GATEWAY_URL"], token, timeout)
+        run_suite(owner, tenant, run_id, fixtures, report, checkpoint)
+        reader = API.GatewayClient(os.environ["GATEWAY_URL"], reader_token, timeout)
+        for item in report["observations"]:
+            history = owner.request("GET", f"{QUALITY}/executions/{item['execution_id']}", (200,)).payload
+            require(history.get("execution_id") == item["execution_id"], "deleted plan execution history changed")
+            assert_quality_owner_denied(reader, item["execution_id"])
+        report["checks"].append("quality_owner_denies_monitor_only_user")
+        report["checks"].append("deleted_quality_plan_history_remains_readable")
     except (KeyError, ValueError, SuiteError) as error:
         report["result"] = "failed"
         message = str(error) if isinstance(error, SuiteError) else "invalid or missing Online fixture configuration"

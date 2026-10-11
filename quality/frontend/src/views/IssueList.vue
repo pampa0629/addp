@@ -130,6 +130,7 @@ import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { issueDetailRoute, issueExecutionRoute } from '../utils/issueNavigation'
 import { buildIssueListRouteQuery, resolveIssueListRouteState } from '../utils/issueListRouteState'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import DomainOwnershipSelect from '../components/DomainOwnershipSelect.vue'
 import { domainOwnershipLabel } from '../utils/domainOwnership'
 const domains = ref([])
@@ -138,7 +139,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const canViewExecutions = computed(() => authStore.hasPermission('monitor.execution.read'))
+const canViewExecutions = computed(() => allowsConsoleRoute('/quality/executions', authStore.contextType, authStore.permissions))
 
 const list = ref([])
 const loading = ref(false)

@@ -31,7 +31,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/quality/overview': [tenant('quality.plan.read', 'quality.issue.read', 'monitor.execution.read')],
   '/quality/rules': [tenant('quality.rule.read')],
   '/quality/plans': [tenant('quality.plan.read')],
-  '/quality/executions': [tenant('monitor.execution.read')],
+  '/quality/executions': [tenant('monitor.execution.read', 'quality.plan.read')],
   '/quality/issues': [tenant('quality.issue.read')],
   '/security/classification-grading': [tenant('security.classification.read', 'security.grade.read')],
   '/security/sensitive-data-definitions': [tenant('security.sensitive_data_type.read', 'security.detector.read', 'security.protection_baseline.read', 'security.classification.read', 'security.grade.read')],
