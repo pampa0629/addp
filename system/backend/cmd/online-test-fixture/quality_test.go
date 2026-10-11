@@ -1,6 +1,36 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+func TestQualityPreparationCredentialReachesPrivateEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identity.env")
+	values := map[string]string{
+		"ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN": "private-preparer'quoted",
+		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":       "private-executor",
+		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN":       "private-monitor-reader",
+		"ADDP_ONLINE_TEST_TENANT_ID":               "2",
+	}
+	if err := writeEnvironmentFile(path, values); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("identity environment must remain owner-only: %v", err)
+	}
+	// Exercise the shell handoff, including quoting and export, rather than only
+	// checking that the preparer credential was created in the in-memory map.
+	command := exec.Command("bash", "-c", `source "$1"; shift; exec bash -c 'test "$ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN" = "$1" && test "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" = "$2" && test "$ADDP_ONLINE_READ_USER_ACCESS_TOKEN" = "$3" && test "$ADDP_ONLINE_TEST_TENANT_ID" = 2' _ "$@"`, "_", path,
+		values["ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN"], values["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"], values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"])
+	command.Env = []string{"PATH=" + os.Getenv("PATH")}
+	if err := command.Run(); err != nil {
+		t.Fatal("Quality identities did not survive the private shell environment handoff")
+	}
+}
 
 func TestQualityIdentitySeparatesPreparationFromExecution(t *testing.T) {
 	permissions, err := suitePermissions("quality-dynamic-binding")
