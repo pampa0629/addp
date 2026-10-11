@@ -74,6 +74,7 @@ var plaintextApplicantPermissions = []string{
 }
 
 var plaintextApproverPermissions = []string{
+	"security.enrollment.read", "meta.catalog.read",
 	"manager.data_item.read", "security.protection_access_request.update",
 	"security.protection_exemption.delete", "security.protection_exemption.read",
 }
@@ -194,7 +195,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
-	case "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "security-mysql-owner-protection":
+	case "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "security-mysql-owner-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	}
@@ -452,12 +453,14 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownerAssignmentID)
 	}
 	if *suite == "security-plaintext-access" {
-		approver, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		approver, _, approverPassword, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-plaintext-approver", plaintextApproverPermissions)
 		if err != nil {
 			return err
 		}
 		values["ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN"] = approver.AccessToken
+		values["ADDP_ONLINE_TEST_APPROVER_USERNAME"] = "external-online-plaintext-approver"
+		values["ADDP_ONLINE_TEST_APPROVER_PASSWORD"] = approverPassword
 	}
 	if *suite == "security-mysql-owner-protection" || *suite == "security-plaintext-access" {
 		initializer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
@@ -772,6 +775,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_READ_USER_PASSWORD",
 		"ADDP_ONLINE_TEST_TENANT_ID",
 		"ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
+		"ADDP_ONLINE_TEST_APPROVER_USERNAME",
+		"ADDP_ONLINE_TEST_APPROVER_PASSWORD",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_USER_USERNAME",
 		"ADDP_ONLINE_TEST_USER_PASSWORD",

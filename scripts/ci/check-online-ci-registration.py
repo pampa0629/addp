@@ -531,7 +531,7 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
     requirements = {
         "scripts/test/online-hosted-security-gate.sh": (
             "# ADDP_ONLINE_SUITES=security-plaintext-access", "security-plaintext-access-online.py",
-            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite "$1"',
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite "$1"', 'playwright install --with-deps chromium',
             '"scripts/test/$INITIALIZER_SCRIPT" --initialize',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN',
         ),
@@ -542,9 +542,18 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
             "applicant and approver must be two different Users", "preview_rows = SUPPORT.preview_rows",
             "/api/v1/security/protection-access-request-targets", "review-queue?scope=pending",
             '"scope": "history"', "protected_other_subject", "expired_without_security_refresh",
-            "revoked_applicant", "revoked_approval_history", 'addp.security-plaintext-access-online/v2',
+            "revoked_applicant", "revoked_approval_history", 'addp.security-plaintext-access-online/v3', 'validate_plaintext_browser_report(', 'run_plaintext_browser(', 'report["browser"] = run_plaintext_browser(',
         ),
-        "system/backend/cmd/online-test-fixture/main.go": ("plaintextApplicantPermissions", "plaintextApproverPermissions", "external-online-plaintext-approver", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN"),
+        "system/backend/cmd/online-test-fixture/main.go": ("plaintextApplicantPermissions", "plaintextApproverPermissions", "external-online-plaintext-approver", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN", "ADDP_ONLINE_TEST_APPROVER_USERNAME", "ADDP_ONLINE_TEST_APPROVER_PASSWORD"),
+        "console/frontend/e2e/online/security-plaintext-access.spec.js": (
+            "addp.security-plaintext-access-browser/v1", "browser.newContext(", "browserIdentity(",
+            "submitRequest(", "approve(", "history(", "revocation_from_security_ui",
+            "Date.now() >= Date.parse(first.requested_expires_at) + 1000", "expired_history_verified",
+            "revoked_history_verified", "isAnonymousRefreshResponse", "state.started = true",
+            "expect(applicantState.failures.concat(approverState.failures)).toEqual([])",
+            "expect(applicantState.errors.concat(approverState.errors)).toEqual([])",
+            "screenshot: 'off'", "for (const context of contexts) await context.close()",
+        ),
     }
     for relative, fragments in requirements.items():
         path = repository / relative

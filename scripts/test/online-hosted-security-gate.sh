@@ -39,9 +39,7 @@ application_owned=1
 for start_target in -meta -security -manager -develop -service -transfer -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
-if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
-  run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-fi
+run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2"' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \

@@ -420,7 +420,7 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 }
 
 func TestConsumerEnvironmentPublishesOnlyRequiredBrowserCredentials(t *testing.T) {
-	for _, suite := range []string{"security-mysql-owner-protection", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl"} {
+	for _, suite := range []string{"security-plaintext-access", "security-mysql-owner-protection", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl"} {
 		t.Run(suite, func(t *testing.T) {
 			values := consumerEnvironment(suite, 2, "consumer-token", "private'password")
 			if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private'password" || values["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"] != "consumer-token" || values["ADDP_ONLINE_TEST_TENANT_ID"] != "2" || len(values) != 4 {
@@ -652,6 +652,35 @@ func TestPlaintextIdentitiesHaveSeparateMinimumPermissions(t *testing.T) {
 	for _, preparation := range append(append([]string{}, securityInitializerPermissions...), sourceInitializerPermissions...) {
 		if contains(permissions, preparation) || contains(plaintextApproverPermissions, preparation) {
 			t.Fatalf("preparation permission leaked: %s", preparation)
+		}
+	}
+}
+
+func TestPlaintextBrowserApproverCredentialsRemainPrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identity.env")
+	values := map[string]string{
+		"ADDP_ONLINE_TEST_APPROVER_USERNAME": "external-online-plaintext-approver",
+		"ADDP_ONLINE_TEST_APPROVER_PASSWORD": "private'password",
+	}
+	if err := writeEnvironmentFile(path, values); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "export ADDP_ONLINE_TEST_APPROVER_USERNAME=") ||
+		!strings.Contains(string(data), "export ADDP_ONLINE_TEST_APPROVER_PASSWORD=") ||
+		strings.Contains(string(data), "export ADDP_ONLINE_TEST_USER_PASSWORD=") {
+		t.Fatal("approver credentials are missing or mixed with applicant")
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatal("approver credentials must be owner-only")
+	}
+	for _, key := range []string{"meta.catalog.read", "security.enrollment.read"} {
+		if !contains(plaintextApproverPermissions, key) {
+			t.Fatalf("missing UI prerequisite %s", key)
 		}
 	}
 }

@@ -668,7 +668,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         root = SCRIPT.parents[2]
         paths = ("scripts/test/online-hosted-security-gate.sh", "scripts/test/online-host-gate.sh",
                  ".github/workflows/online-t4-gates.yml", "Makefile", "business/scripts/online-security-owner-fixture.sh",
-                 "scripts/test/security-plaintext-access-online.py", "system/backend/cmd/online-test-fixture/main.go")
+                 "scripts/test/security-plaintext-access-online.py", "system/backend/cmd/online-test-fixture/main.go",
+                 "console/frontend/e2e/online/security-plaintext-access.spec.js")
         for relative in paths:
             target = self.repository / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -679,6 +680,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[5], "review-queue?scope=pending"),
                                    (paths[5], "revoked_applicant"),
                                    (paths[6], "plaintextApproverPermissions"),
+                                   (paths[6], "ADDP_ONLINE_TEST_APPROVER_PASSWORD"),
+                                   (paths[5], 'report["browser"] = run_plaintext_browser('),
+                                   (paths[7], "revocation_from_security_ui"),
+                                   (paths[7], "expired_history_verified"),
+                                   (paths[7], "state.started = true"),
                                    (paths[2], "&& inputs.suite != 'security-plaintext-access'")):
             with self.subTest(fragment=fragment):
                 target = self.repository / relative

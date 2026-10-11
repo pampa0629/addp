@@ -151,13 +151,13 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
 
-    def test_plaintext_suite_reuses_hosted_lifecycle_with_two_users_and_no_browser_setup(self):
+    def test_plaintext_suite_reuses_hosted_lifecycle_with_two_users_and_browser_setup(self):
         result = self.run_gate(ONLINE_SUITE_INPUT='security-plaintext-access')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         self.assertIn('initialize-plaintext', trace)
         self.assertIn('make:test-online ONLINE_SUITE=security-plaintext-access', trace)
-        self.assertNotIn('chromium', trace)
+        self.assertIn('chromium', trace)
         self.assertLess(trace.index('initialize-plaintext'), trace.index('make:'))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())

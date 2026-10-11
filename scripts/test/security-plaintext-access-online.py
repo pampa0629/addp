@@ -7,6 +7,7 @@ import argparse
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -59,6 +60,8 @@ APPLICANT_PERMISSIONS = {
     "security.protection_access_request.read",
 }
 APPROVER_PERMISSIONS = {
+    "security.enrollment.read",
+    "meta.catalog.read",
     "manager.data_item.read",
     "security.protection_access_request.update",
     "security.protection_exemption.delete",
@@ -475,7 +478,7 @@ def run_scenario(
     revoked_history = verify_approval_history(approver, revoked_request_id, "revoked")
 
     return {
-        "schema_version": "addp.security-plaintext-access-online/v2",
+        "schema_version": "addp.security-plaintext-access-online/v3",
         "result": "passed",
         "identities": {
             "applicant": applicant_identity,
@@ -483,6 +486,7 @@ def run_scenario(
         },
         "fixture": {
             "engine_id": str(engine_id),
+            "source_locator": source_locator,
             "scan_execution_id": scan_execution_id,
             "security_enrollment_id": enrollment_id,
             "security_assessment_id": assessment_id,
@@ -512,6 +516,74 @@ def run_scenario(
         "audit_retained": {"access_request_ids": [request_id, revoked_request_id],
                            "exemption_ids": sorted({exemption_id, revoked_exemption_id})},
     }
+
+
+def validate_plaintext_browser_report(payload: object, environment: Mapping[str, str],
+                                      api_report: Mapping[str, object]) -> dict[str, object]:
+    report = _object(payload, "plaintext browser report")
+    expected = {
+        "schema_version": "addp.security-plaintext-access-browser/v1", "result": "passed",
+        "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
+        "tenant_id": environment["ADDP_ONLINE_TEST_TENANT_ID"],
+        "applicant_id": api_report["identities"]["applicant"]["principal_id"],
+        "approver_id": api_report["identities"]["approver"]["principal_id"],
+        "records": 3, "isolated_browser_contexts": True, "same_users_verified": True,
+        "request_from_manager_ui": True, "approval_from_security_ui": True,
+        "authorized_applicant_verified": True, "other_subject_protected": True,
+        "expired_preview_protected": True, "expired_history_verified": True,
+        "revocation_from_security_ui": True, "revoked_preview_protected": True,
+        "revoked_history_verified": True, "null_preserved": True,
+        "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 2,
+    }
+    if set(report) != set(expected) | {"request_ids"}:
+        raise SuiteError("plaintext browser report fields are incomplete or unexpected")
+    for key, value in expected.items():
+        if type(report.get(key)) is not type(value) or report.get(key) != value:
+            raise SuiteError("plaintext browser report mismatch: " + key)
+    ids = report.get("request_ids")
+    if (not isinstance(ids, list) or len(ids) != 2 or
+            not all(isinstance(value, str) and value for value in ids) or len(set(ids)) != 2 or
+            set(ids) & set(api_report["audit_retained"]["access_request_ids"])):
+        raise SuiteError("plaintext browser must create two distinct requests through the UI")
+    return report
+
+
+def run_plaintext_browser(repository: Path, environment: Mapping[str, str],
+                          api_report: Mapping[str, object]) -> dict[str, object]:
+    required = ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_TEST_TENANT_ID",
+                "ADDP_ONLINE_TEST_USER_USERNAME", "ADDP_ONLINE_TEST_USER_PASSWORD",
+                "ADDP_ONLINE_TEST_APPROVER_USERNAME", "ADDP_ONLINE_TEST_APPROVER_PASSWORD",
+                "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
+                "GATEWAY_URL", "CONSOLE_URL")
+    missing = [key for key in required if not environment.get(key)]
+    if missing:
+        raise SuiteError("plaintext browser environment is missing: " + ", ".join(missing))
+    artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
+    report_path = artifact_dir / "security-plaintext-access-browser.json"
+    screenshots = [artifact_dir / ("security-plaintext-" + name + ".png")
+                   for name in ("pending", "expired", "revoked")]
+    for path in [report_path, *screenshots]:
+        path.unlink(missing_ok=True)
+    browser_environment = dict(environment,
+        ADDP_ONLINE_SECURITY_PLAINTEXT_LOCATOR=api_report["fixture"]["source_locator"],
+        ADDP_ONLINE_SECURITY_ASSESSMENT_ID=api_report["fixture"]["security_assessment_id"])
+    result = subprocess.run(
+        ["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
+         "e2e/online/security-plaintext-access.spec.js"],
+        cwd=repository / "console/frontend", env=browser_environment, text=True, capture_output=True)
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
+    if result.returncode:
+        raise SuiteError(f"plaintext Playwright exited with status {result.returncode}")
+    if not report_path.is_file() or any(not path.is_file() or path.stat().st_size == 0 for path in screenshots):
+        raise SuiteError("plaintext browser report or protected screenshots are missing")
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SuiteError("plaintext browser report is not valid JSON") from error
+    return validate_plaintext_browser_report(payload, environment, api_report)
 
 
 def initialize_hosted(tenant_id: int, engine_id: int, gateway_url: str) -> None:
@@ -573,6 +645,7 @@ def main() -> int:
         min(timeout, 30),
     )
     report = run_scenario(applicant, approver, tenant_id, engine_id, timeout)
+    report["browser"] = run_plaintext_browser(Path(__file__).resolve().parents[2], os.environ, report)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     return 0
 
