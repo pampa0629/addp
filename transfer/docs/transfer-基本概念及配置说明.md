@@ -221,7 +221,7 @@ HTTP 200 返回 `addp.transfer_task_config_check/v1` 报告，`status` 为 `supp
 
 规范 JSON 使用对象键递归排序、保留数组顺序和数字 token、不增加空白的 UTF-8 JSON（与 Go encoding/json 的字符转义一致）。`config_hash` 是完整提交请求的规范 JSON SHA-256；`facts` 摘要绑定引擎版本、已登记能力和完整 Meta 结构（含字段顺序、原生／元素类型、精度、默认表达式、空间事实、身份与扫描时刻）；`binding_hash` 是将自身置空后对完整报告规范 JSON 求 SHA-256。它们是内容绑定，**不是签名或执行授权凭据**。报告不回传配置、SQL、默认值正文、凭据或样本，响应禁止缓存。结构快照时效、实时连接／结构、数据库权限、Security、源读取 Grant 和逐值转换均须运行时重新验证；replace 的目标副作用也不由此报告证明安全。
 
-Agent 正式 Tool Manifest 和 SDK 由其 Owner 接入此唯一 HTTP 契约。本模块不增加 Tool 或权限、不转发委托 token 给 Meta/System；完成当前主体三项权限检查后，由 Transfer 使用已有 Tenant Service 客户端读取租户绑定的控制面事实。现有 Tool Catalog 的 `required_permissions` 只接受 audience Owner 权限；跨 Owner 的 Meta/System 前置要求需由原会话按平台正式契约接入，不能仅把新 Scope 加入 Tool 就宣称 Agent 已可使用。
+Agent 正式 Tool Manifest 和 SDK 接入此唯一 HTTP 契约，不增加权限、不转发委托 token 给 Meta/System；完成当前主体三项权限检查后，由 Transfer 使用已有 Tenant Service 客户端读取租户绑定的控制面事实。`transfer.task.config.check` 的 `required_permissions` 显式声明上述三项 Permission 交集，System 签发与 Transfer 委托路由都按 all-of 校验；audience 仍唯一 `transfer`，Scope 仍唯一 `transfer.task.config.check`。Tool 开放不等于 Agent 已消费报告：Runtime 复核与创建前置条件尚未装配预检，不能将当前配置复核称为预检通过。
 
 
 | 引擎 | 当前写侧 |
