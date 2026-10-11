@@ -593,7 +593,10 @@ def physical(repository, env, action):
     result = subprocess.run([sys.executable, 'business/scripts/online-raster-minio-fixture.py', action],
                             cwd=repository, env=env, capture_output=True, text=True, timeout=300)
     if result.returncode:
-        raise SuiteError(f'physical raster {action} failed ({result.returncode})')
+        # Forward only named fixture diagnostics; never SDK stderr or private paths.
+        reason = next((code for code in ('cleanup_event_permission_denied', 'cleanup_event_missing', 'physical_worker_failed')
+            if f'Raster physical fixture failed: {code}' in result.stderr.splitlines()), None)
+        raise SuiteError(f'physical raster {action} failed ({result.returncode})' + (f': {reason}' if reason else ''))
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
     if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure') + fixture.CLEANUP_ACTIONS:
         prefix = action.removeprefix('verify-')

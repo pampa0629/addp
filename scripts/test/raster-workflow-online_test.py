@@ -497,6 +497,18 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                               lambda repo, env, identifier, timeout: {'execution_id': identifier,
                                   'cause': 'target_already_exists', 'source': 'develop_runtime_log'})
 
+    def test_physical_failure_propagates_only_named_private_event_diagnostics(self):
+        import json
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        for reason in ('cleanup_event_permission_denied','cleanup_event_missing','physical_worker_failed','PermissionError: /private/secret'):
+            stderr = 'Raster physical fixture failed: '+reason
+            with patch.object(m.subprocess, 'run', return_value=CompletedProcess([],1,'',stderr)):
+                with self.assertRaises(m.SuiteError) as error: m.physical(Path('.'),{},'verify-tiles-cleanup-mid')
+                self.assertNotIn('/private', str(error.exception))
+                if reason != 'PermissionError: /private/secret': self.assertIn(reason, str(error.exception))
+                else: self.assertNotIn('PermissionError', str(error.exception))
+
     def test_cleanup_failures_keep_confirmed_one_or_four_resources_and_fresh_scans(self):
         report = self.run_scene()
         scans = {scan['execution_id'] for scan in report['tiling_automatic_scan_runs'] + report['tiling_replace_automatic_scan_runs'] + report['tiling_failed_publication']['automatic_scan_runs']}

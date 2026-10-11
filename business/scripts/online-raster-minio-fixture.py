@@ -451,6 +451,12 @@ def stop():
         raise FixtureError('; '.join(errors))
 
 
+def cleanup_proxy_identity():
+    # Producer and host reader must share the UID for owner-only event files.
+    # Use the socket's group so the proxy can reach the owned Runtime without root.
+    return f'{os.getuid()}:{os.stat("/var/run/docker.sock").st_gid}'
+
+
 def start(root):
     for name in CONTAINERS:
         if owned(name):
@@ -491,7 +497,7 @@ def start(root):
                 'connection_info': {'endpoint': '127.0.0.1:59014' if role == 'target' else entry['endpoint'],
                     **(entry['writer'] if role == 'target' else {key: entry[key] for key in ('access_key', 'secret_key')}), 'use_ssl': False},
             })
-        command(['docker', 'run', '-d', '--name', CONTAINERS[3],
+        command(['docker', 'run', '-d', '--name', CONTAINERS[3], '--user', cleanup_proxy_identity(),
                  '--label', f'com.addp.online-fixture={SUITE}',
                  '--label', f'com.addp.online-run-id={os.environ["ADDP_ONLINE_TEST_RUN_ID"]}',
                  '--network', 'host', '-v', f'{Path(__file__).resolve()}:/fixture.py:ro',
@@ -640,7 +646,12 @@ def cleanup_proxy(root, address=('127.0.0.1', 59014), inject=cleanup_obstacle):
 
 
 def cleanup_evidence(root, prefix):
-    event = json.loads((root / (prefix + '-event.json')).read_text())
+    try:
+        event = json.loads((root / (prefix + '-event.json')).read_text())
+    except PermissionError as error:
+        raise FixtureError('cleanup_event_permission_denied') from error
+    except FileNotFoundError as error:
+        raise FixtureError('cleanup_event_missing') from error
     workspace = event.pop('workspace')
     if (Path(workspace).parent != Path('/tmp') or not Path(workspace).name.startswith('addp-raster-')
         or event.get('prefix') != prefix or event.get('tile_key') != TILE_CLEANUP_CASES[prefix][0]
@@ -656,12 +667,15 @@ def physical_worker(action, root):
     image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '').strip()
     if not image:
         raise FixtureError('product Runtime image is required for raster physical verification')
-    result = json.loads(command([
-        'docker', 'run', '--rm', '--name', CONTAINERS[2], '--label', f'com.addp.online-fixture={SUITE}',
-        '--network', 'host', '--entrypoint', 'python',
-        '-v', f'{Path(__file__).resolve()}:/fixture.py:ro', '-v', f'{root}:/secrets:ro',
-        image, '/fixture.py', 'worker-' + action, '/secrets/raster-fixture.json',
-    ]))
+    try:
+        result = json.loads(command([
+            'docker', 'run', '--rm', '--name', CONTAINERS[2], '--label', f'com.addp.online-fixture={SUITE}',
+            '--network', 'host', '--entrypoint', 'python',
+            '-v', f'{Path(__file__).resolve()}:/fixture.py:ro', '-v', f'{root}:/secrets:ro',
+            image, '/fixture.py', 'worker-' + action, '/secrets/raster-fixture.json',
+        ]))
+    except FixtureError as error:
+        raise FixtureError('physical_worker_failed') from error
     if action == 'seed':
         private_json(root / 'raster-source-sha256.json', result['source_sha256'])
     if action in CLEANUP_ACTIONS:

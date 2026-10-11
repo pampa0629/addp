@@ -155,9 +155,26 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
             self.root.chmod(0o755)
             with self.assertRaises(m.FixtureError): m.environment()
 
+    def test_cleanup_proxy_identity_uses_host_uid_and_actual_docker_socket_group(self):
+        with patch.object(m.os, 'getuid', return_value=1001), patch.object(m.os, 'stat', return_value=SimpleNamespace(st_gid=987)) as stat_socket:
+            self.assertEqual(m.cleanup_proxy_identity(), '1001:987')
+            stat_socket.assert_called_once_with('/var/run/docker.sock')
+
+    def test_worker_failure_identifies_stage_without_private_command_diagnostic(self):
+        with patch.dict(os.environ, {'ADDP_ONLINE_RASTER_RUNTIME_IMAGE':'verified-image'}), patch.object(m, 'command', side_effect=m.FixtureError('private command text')):
+            with self.assertRaisesRegex(m.FixtureError, '^physical_worker_failed$'):
+                m.physical_worker('verify-tiles-cleanup-mid', self.root)
+
+    def test_cleanup_event_permission_failure_is_named_without_private_path(self):
+        with patch.object(m.Path, 'read_text', side_effect=PermissionError('/private/secret/event.json')):
+            with self.assertRaisesRegex(m.FixtureError, '^cleanup_event_permission_denied$'):
+                m.cleanup_evidence(self.root, 'tiles-cleanup-mid')
+        with self.assertRaisesRegex(m.FixtureError, '^cleanup_event_missing$'):
+            m.cleanup_evidence(self.root, 'tiles-cleanup-mid')
+
     def test_start_keeps_distinct_credentials_owner_only_and_uses_tmpfs_without_platform_api(self):
         with patch.dict(os.environ, self.env), patch.object(m, 'owned', return_value=False), patch.object(m, 'command', self.command), \
-             patch.object(m.urllib.request, 'urlopen') as request:
+             patch.object(m.urllib.request, 'urlopen') as request, patch.object(m, 'cleanup_proxy_identity', create=True, return_value='1001:121'):
             request.return_value.__enter__.return_value.status = 200
             m.start(self.root)
         config = json.loads((self.root / 'raster-fixture.json').read_text())
@@ -177,6 +194,7 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
         self.assertEqual(len(self.commands), 3)
         proxy = self.commands[-1]
         self.assertIn(m.CONTAINERS[3], proxy)
+        self.assertEqual(proxy[proxy.index('--user')+1], '1001:121')
         self.assertIn("/var/run/docker.sock:/var/run/docker.sock", proxy)
         self.assertEqual(json.loads((self.root / "raster-target-engine.json").read_text())["connection_info"]["endpoint"], "127.0.0.1:59014")
         for args in self.commands[:2]:
