@@ -11,7 +11,7 @@ func TestPlatformDefinitionIsBoundedAndIndependentOfTenant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.KnowledgeKind != "platform_definition" || a.Availability != "not_observed" || a.Revision != 4 || len(a.Digest) != 64 || a.Operation.Tool != a.Capability {
+	if a.KnowledgeKind != "platform_definition" || a.Availability != "not_observed" || a.Revision != 5 || len(a.Digest) != 64 || a.Operation.Tool != a.Capability {
 		t.Fatalf("invalid platform binding: %+v", a)
 	}
 	ids := map[string]bool{}

@@ -60,11 +60,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "0e042c4f64289b9c5eb0184ed2fd85d958439627",
-      "sha256": "a85dfb00d84dc0d4ee7025408029edf6f5ef88751145dc84fe02d68c0d816bf2",
+      "commit": "1e8a86d136944799791d199a28ab9d5714a197f1",
+      "sha256": "237bf790fab9a2b77517f634100a85997f0c9053e46013e5967389a2b9c42988",
       "use": {
-        "zh-cn": "唯一 Tool 的输入输出、owner 及委托契约",
-        "en": "Canonical Tool input, output, owner and delegation contracts"
+        "zh-cn": "唯一 Tool 的输入输出、owner 及委托契约；创建 v2 只接受标准字段类型标识",
+        "en": "Canonical Tool input, output, owner and delegation contracts; create v2 accepts standard field type identifiers only"
       }
     },
     {
@@ -73,11 +73,11 @@
       "kind": "test",
       "path": "common-python/tests/test_platform_transfer_tools.py",
       "anchor": "def test_transfer_create_schema_rejects_schedules_credentials_and_other_modes(",
-      "commit": "c6315fcc44994eeafe1de28310b4bcd5a7c21782",
-      "sha256": "a7b118cee291b39081bf312ed6bc1e1dc68a008531e6a958a2019354cbdd961e",
+      "commit": "1e8a86d136944799791d199a28ab9d5714a197f1",
+      "sha256": "5dbdb6fb05a0385d784d9d9dd19c88575008d2cfce91b4448d818f9df50154f4",
       "use": {
-        "zh-cn": "核验 Tool 引用、创建参数和 owner HTTP 契约",
-        "en": "Verify Tool references, creation arguments and owner HTTP contract"
+        "zh-cn": "核验 Tool 引用、创建参数和 owner HTTP 契约；标准类型与 Common 一致，非标准类型在委托前拒绝",
+        "en": "Verify Tool references, creation arguments and owner HTTP contract; types match Common and nonstandard types fail before delegation"
       }
     },
     {
@@ -500,8 +500,8 @@
       "id": "transfer.task.create",
       "state": "modeled",
       "summary": {
-        "zh-cn": "只建未启动的 native table 有界快照任务；不是 Transfer 全功能声明",
-        "en": "Create only a stopped native table bounded snapshot task; not a full Transfer capability declaration"
+        "zh-cn": "只建未启动的 native table 有界快照任务；标准类型及配置校验不证明实际值可转换或执行成功，不是 Transfer 全功能声明",
+        "en": "Create only a stopped native table bounded snapshot task; standard type and configuration checks do not prove value conversion or execution success, nor full Transfer coverage"
       },
       "sources": [
         "manifest",
