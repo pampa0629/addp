@@ -669,6 +669,7 @@ func (h *TaskProviderHandler) ProviderTaskExecute(c *gin.Context) {
 
 // ProviderExecutionStatus 获取 TaskProvider Manager 执行状态。
 // @Summary 获取 TaskProvider Manager 执行状态 | Get TaskProvider Manager execution status
+// @Description 仅查询当前租户的 Manager 派生产物及向量化任务执行，沿用独立的 TaskProvider 机器授权。| Read only Manager derived artifact and embedding executions in the current tenant using the dedicated TaskProvider machine authorization.
 // @Tags TaskProvider
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
@@ -682,7 +683,7 @@ func (h *TaskProviderHandler) ProviderExecutionStatus(c *gin.Context) {
 	tenantID := tenantIDValue(c)
 	executionID := c.Param("execution_id")
 
-	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
+	exec, err := h.loadDerivedTaskExecution(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
@@ -1778,21 +1779,25 @@ func managerTaskRequiresExistingResultAction(taskType string) bool {
 
 // ExecutionStatus GET /api/v1/manager/executions/:execution_id
 // @Summary 获取执行状态 | Get execution status
-// @Description 获取任务执行记录的状态信息 | Get status information of a task execution record
+// @Description 仅查询当前租户的 Manager 派生产物及向量化任务；有定义的历史按 Owner 权限读取，无定义执行仅发起用户可读。| Read Manager derived artifact and embedding execution history with Owner permission; ad-hoc executions are visible only to their initiating User.
 // @Tags Manager
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} execution.TaskExecution "执行状态 | Execution status"
+// @Failure 403 {object} map[string]interface{} "没有读取权限 | Read permission denied"
 // @Failure 404 {object} map[string]interface{} "执行记录不存在 | Execution not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
+	if !installManagerUserExecutionReadScope(c) {
+		return
+	}
 	tenantID := tenantIDValue(c)
 	executionID := c.Param("execution_id")
 
-	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
+	exec, err := h.loadDerivedTaskExecution(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
@@ -1803,6 +1808,17 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, exec)
+}
+
+func (h *TaskProviderHandler) loadDerivedTaskExecution(ctx context.Context, executionID string, tenantID int) (*commonExecution.TaskExecution, error) {
+	item, err := h.taskExecRepo.GetByExecutionID(ctx, executionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if item.Module != commonExecution.ModuleManager || !isManagerDerivedExecutionType(item.TaskType) {
+		return nil, commonapi.ErrNotFound
+	}
+	return item, nil
 }
 
 // ===== EmbeddingTask CRUD =====

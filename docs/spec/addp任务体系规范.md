@@ -1026,6 +1026,8 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 
 ### 租户执行诊断（2026-10-01 已确认）
 
+Manager 用户执行状态查询复用 Owner 已声明的 `manager.derived_artifact.read` 读取范围：可信 Tenant、`module=manager`，类型仅限派生产物及向量化任务；有定义的历史（含已删除定义）可读，一次性执行仅当前发起 User 可读，无主体证据拒绝。`data_profiling` 与 `cleanup_executor` 使用各自的专业或维护入口，不通过派生产物状态入口读取。TaskProvider 状态查询仍由 `addp-orchestrator` Service Client 和 `manager.task_provider.read` 独立授权，同时限定 Manager 已声明的任务类型，不套用用户本人条件。专业血缘与转换事实的响应投影另行确认，不借本次归属修复扩大领域结果读取权限。
+
 Orchestrator 用户与 TaskProvider 执行读取必须同时限定可信 Tenant、`module=orchestrator` 与 `task_type=orchestration`，编排权限不得读取同模块的 cleanup 执行。用户专业查询在 SQL 中复用 Owner 的任务历史与本人一次性执行范围，缺少发起主体或归属不完整的无定义执行拒绝，列表总数采用相同过滤；合法第一方与普通 OAuth User 沿用现有 workflow.read 权限，TaskProvider 不套用用户本人条件。专业执行详情与单编排历史也必须使用显式安全读取 DTO，不得直接序列化内部 `TaskExecution`。保留执行概览及 `metadata.step_results` 的步骤状态、阶段、时间、耗时、闭合错误码和本地化消息；步骤 `result` 仅投影已记录且规范的子 execution UUID，不传递子任务 outputs、业务结果或完整运行时响应。读取父执行不授予子结果权限，子详情仍经 Monitor/Owner 独立裁决。原始配置、任意 metadata、执行授权事实及自由文本错误不出现在这些响应中；列表与详情采用同一投影，TaskProvider 保持独立安全状态契约。
 
 1. `common.task_executions` 是 execution 状态、错误与结果摘要的唯一事实源。Monitor 只提供显式安全 DTO，禁止序列化整个 TaskExecution；执行配置、原始 metadata、原始查询和参数值、业务样本、Notebook 输出、完整运行时响应、lease/fencing token 和执行授权引用不得进入通用诊断响应。专业结果通过 Owner 页面及其既有授权入口读取。缺少受控消息契约的旧错误只用于归类失败原因，不回显自由文本；稳定错误码及失败目标计数可保留，未知原因明确指向 Owner 领域诊断。

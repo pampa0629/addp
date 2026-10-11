@@ -1073,7 +1073,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取任务执行记录的状态信息 | Get status information of a task execution record",
+                "description": "仅查询当前租户的 Manager 派生产物及向量化任务；有定义的历史按 Owner 权限读取，无定义执行仅发起用户可读。| Read Manager derived artifact and embedding execution history with Owner permission; ad-hoc executions are visible only to their initiating User.",
                 "produces": [
                     "application/json"
                 ],
@@ -1095,6 +1095,13 @@ const docTemplate = `{
                         "description": "执行状态 | Execution status",
                         "schema": {
                             "$ref": "#/definitions/execution.TaskExecution"
+                        }
+                    },
+                    "403": {
+                        "description": "没有读取权限 | Read permission denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "404": {
@@ -4594,6 +4601,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅查询当前租户的 Manager 派生产物及向量化任务执行，沿用独立的 TaskProvider 机器授权。| Read only Manager derived artifact and embedding executions in the current tenant using the dedicated TaskProvider machine authorization.",
                 "produces": [
                     "application/json"
                 ],

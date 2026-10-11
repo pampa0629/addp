@@ -96,6 +96,7 @@ manager/
 - CAD 预览：`data_type=cad + format=dwg|dxf + layout=single` 的源文件由普通 Preview API 返回受控 `storage-stream` URL；Manager 前端仅在进入 CAD 预览时加载 LibreDWG Worker/WASM 和 WebGL renderer，在浏览器内解析并绘制，不创建 Manager 快显任务或派生产物。
 - 分块三维模型瓦片：`GET /model3d_tiles` 查询 Manager 受管结果，`GET /model3d_tiles/:id/assets/*asset_path` 返回 ready 3D Tiles / S3M 目录资源；生成入口统一由 Quick View action 驱动，独立管理页只负责任务、结果、监控与预览入口。
 - 用户任务管理：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`POST /tasks/:task_type/:id/rebind`（仅失效受管快显任务的来源驱动重绑，不自动执行）、`GET /executions/:execution_id`，继续使用 `manager.derived_artifact.*`。
+- 用户执行状态读取在 SQL 中限定可信 Tenant、Manager 派生产物或向量化任务；Owner 读取权限包含已删除定义的执行历史，无定义执行仅发起 User 可读，缺少主体拒绝。TaskProvider 独立保留机器认证，不套用本人条件，但同样拒绝跨模块、data_profiling、cleanup 与未声明任务类型。专业血缘和转换事实的显式响应范围待单独确认，本次归属修复不改变该响应契约。权限回归由 `make test-manager-backend` 的 T1 和 `make test-manager-postgres` 的真实 PostgreSQL API 测试验证，模块门禁和 CI 沿用自动发现。
 - TaskProvider：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`；整组路由只允许 `addp-orchestrator` Service Client，并使用 `manager.task_provider.read|execute`，不得向 Manager 前端暴露。
 - 数据进出与向量化：`POST /uploads`、`POST /imports`、`POST /exports`、`GET /exports/:id/file`、`POST /embedding_executions`、`GET /embeddings`、`GET /items/:item_id/embedding`。
 - 平台配置管理：`GET /settings/embedding`、`PUT /settings/embedding`；只接受 Platform Context 和 `manager.configuration.read/update`。

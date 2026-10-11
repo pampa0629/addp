@@ -75,6 +75,10 @@ ADDP_POSTGRES_INTEGRATION=1 \
     -run '^TestIntegrationPostgresManager' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/manager-postgres.log"
 
+ADDP_POSTGRES_INTEGRATION=1 \
+    go test ./internal/api -run '^TestIntegrationPostgresManagerExecutionReadIsolation$' \
+    -count=1 -v 2>&1 | tee -a "$WORK_DIR/manager-postgres.log"
+
 if grep -q -- '--- SKIP:' "$WORK_DIR/manager-postgres.log"; then
     echo "Manager PostgreSQL gate refuses skipped tests" >&2
     exit 1

@@ -204,8 +204,9 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	}
 }
 
-func TestTaskProviderExecutionStatusUsesDirectObjectShape(t *testing.T) {
+func TestUserExecutionStatusUsesDirectObjectShape(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
+	actor := 1
 	exec := commonExecution.TaskExecution{
 		TenantID:    1,
 		ExecutionID: "manager-exec-1",
@@ -214,6 +215,7 @@ func TestTaskProviderExecutionStatusUsesDirectObjectShape(t *testing.T) {
 		Source:      commonExecution.ModuleManager,
 		Status:      commonExecution.ExecutionStatusRunning,
 		TriggerType: commonExecution.TriggerTypeManual,
+		TriggeredBy: &actor,
 	}
 	if err := db.Create(&exec).Error; err != nil {
 		t.Fatalf("create task execution: %v", err)
@@ -222,7 +224,7 @@ func TestTaskProviderExecutionStatusUsesDirectObjectShape(t *testing.T) {
 	handler := NewTaskProviderHandler(nil, nil, nil, nil, commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		setTenantAuthContextForTest(c, 1, 1)
+		setManagerExecutionReadTestUser(c, 1, 1)
 		c.Next()
 	})
 	router.GET("/executions/:execution_id", handler.ExecutionStatus)

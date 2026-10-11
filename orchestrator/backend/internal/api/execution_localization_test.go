@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
 	execution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
@@ -170,10 +171,7 @@ func TestOrchestratorDirectExecutionReadsUseOwnerScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err = db.Exec(`CREATE TABLE common.task_executions (id INTEGER PRIMARY KEY,execution_id TEXT UNIQUE,tenant_id INTEGER,module TEXT,task_type TEXT,source_task_id TEXT,triggered_by INTEGER,status TEXT,created_at DATETIME)`).Error; err != nil {
+	if err = executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
 	history, empty := "999", ""
@@ -199,7 +197,8 @@ func TestOrchestratorDirectExecutionReadsUseOwnerScope(t *testing.T) {
 			row.TaskType = "orchestration"
 		}
 		row.Status = "success"
-		if err = db.Exec("INSERT INTO common.task_executions (id,execution_id,tenant_id,module,task_type,source_task_id,triggered_by,status) VALUES (?,?,?,?,?,?,?,?)", row.ID, row.ExecutionID, row.TenantID, row.Module, row.TaskType, row.SourceTaskID, row.TriggeredBy, row.Status).Error; err != nil {
+		row.TriggerType = execution.TriggerTypeManual
+		if err = db.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
