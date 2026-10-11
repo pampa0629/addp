@@ -1560,6 +1560,45 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
         raise RegistrationError("orchestrator-execution must not also dispatch on the self-hosted deployment")
 
 
+def validate_quality_dynamic_binding_profile(repository: Path, registered: set[str]) -> None:
+    if "quality-dynamic-binding" not in registered:
+        return
+    host = (repository / "scripts/test/online-host-gate.sh").read_text()
+    if re.search(r"(?m)^  quality-dynamic-binding\)", host):
+        raise RegistrationError("Quality must have one Hosted profile, without the removed self-hosted route")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  quality-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "runs-on: ubuntu-24.04" not in job.group("body") or (
+        "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'quality-dynamic-binding'\n" not in job.group("body")
+    ):
+        raise RegistrationError("Quality requires a manual Ubuntu Hosted T4 job")
+    if "&& inputs.suite != 'quality-dynamic-binding'" not in workflow:
+        raise RegistrationError("Quality must not also dispatch on self-hosted")
+    required = {
+        "scripts/test/online-hosted-quality-gate.sh": (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', "--suite quality-dynamic-binding",
+            "-model -meta -quality -orchestrator -monitor", "online-quality-postgres-fixture.py stop",
+            "online-quality-postgres-fixture.py seed", "online-quality-postgres-fixture.py verify",
+            "-m scripts.test.quality-online-fixture prepare", "-m scripts.test.quality-online-fixture scan",
+            "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "unset ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN",
+            'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
+        ),
+        "business/scripts/online-quality-postgres-fixture.py": (
+            "container ownership mismatch", "container remains after cleanup", "source data changed",
+            "type=tmpfs,destination=/var/lib/postgresql/data",
+        ),
+        "scripts/test/quality-online-fixture.py": ("/materialized-target", "different Users", "uncertain_mutation"),
+        "system/backend/cmd/online-test-fixture/main.go": ('case "quality-dynamic-binding":', 'values["ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN"]'),
+        "Makefile": ("$(MAKE) test-quality-online-runner", "scripts/test/quality-online-fixture_test.py",
+                     "scripts/test/online-quality-postgres-fixture_test.py", "scripts/test/online-hosted-quality-gate_test.py",
+                     "scripts/ci/check-quality-online-ci-registration_test.py"),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f"Quality Hosted owner contract is incomplete: {relative}")
+
+
 def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> None:
     if "raster-workflow" not in registered:
         return
@@ -1739,6 +1778,7 @@ def check_registration(repository: Path) -> None:
     validate_hdfs_spark_profile(repository, registered)
     validate_elasticsearch_spark_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)
+    validate_quality_dynamic_binding_profile(repository, registered)
     validate_platform_node_metrics_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)

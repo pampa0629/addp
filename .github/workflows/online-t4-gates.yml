@@ -51,7 +51,7 @@ permissions:
 jobs:
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'raster-workflow' && inputs.suite != 'hdfs-spark-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'raster-workflow' && inputs.suite != 'hdfs-spark-consumer-flow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -642,6 +642,69 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Online T4 (orchestrator-execution, Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+  quality-hosted-t4:
+    name: Online T4 (quality-dynamic-binding, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'quality-dynamic-binding'
+    concurrency:
+      group: online-t4-quality-dynamic-binding
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: quality-dynamic-binding
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Validate Hosted Quality readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-quality-gate.sh --check-only
+
+      - name: Run Hosted Quality Online gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-quality-gate.sh
+
+      - name: Upload Hosted Quality evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-quality-dynamic-binding-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize Hosted Quality T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (quality-dynamic-binding, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 

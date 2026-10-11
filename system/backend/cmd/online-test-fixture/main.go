@@ -166,6 +166,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return transferLineagePermissions, nil
 	case "metric-service-revision-lifecycle":
 		return metricPermissions, nil
+	case "quality-dynamic-binding":
+		return qualityPermissions, nil
 	case "ontology-revision-lifecycle":
 		return ontologyPermissions, nil
 	case "orchestrator-execution":
@@ -180,6 +182,9 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
+	if suite == "quality-dynamic-binding" {
+		return true
+	}
 	return suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
@@ -469,6 +474,14 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = sourceInitializer.AccessToken
+	}
+	if *suite == "quality-dynamic-binding" {
+		preparer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-quality-preparer", qualityPreparationPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN"] = preparer.AccessToken
 	}
 	if needsEngineProvisioner(*suite) {
 		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")

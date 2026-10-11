@@ -478,6 +478,11 @@ test-node-metrics-online-runner: ## 验证节点指标 Online 身份边界、浏
 	@python3 -m unittest scripts/test/platform-node-metrics-online_test.py scripts/test/platform-node-metrics-fixture_test.py scripts/test/online-hosted-node-metrics-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run Metrics -count=1
 
+.PHONY: test-quality-online-runner
+test-quality-online-runner: ## 验证 Quality Hosted 准备、身份、事件及退出清理契约
+	@python3 -m unittest scripts/test/quality-dynamic-binding-online_test.py scripts/test/quality-online-fixture_test.py scripts/test/online-quality-postgres-fixture_test.py scripts/test/online-hosted-quality-gate_test.py scripts/ci/check-quality-online-ci-registration_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-node-metrics-online-runner
 	@$(MAKE) test-hdfs-online-runner
@@ -489,7 +494,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-manager-online-runner
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
 	@python3 -m unittest scripts/test/ontology-revision-lifecycle-online_test.py scripts/test/online-hosted-ontology-gate_test.py
-	@python3 -m unittest scripts/test/quality-dynamic-binding-online_test.py
+	@$(MAKE) test-quality-online-runner
 	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-hosted-transfer-gate_test.py scripts/test/online-hosted-security-gate_test.py scripts/test/online-security-owner-fixture_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/transfer-relational-sql-etl-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 

@@ -55,7 +55,7 @@ Quality migration 14 增加问题目标范围，使用最后观测执行的完�
 - make test-quality-backend：同一后端单元/契约测试集的独立入口，可在无关 T0 失败时定位本模块；Platform CI 的 Go 自动发现及模块门禁已覆盖该测试集。
 - make test-quality-postgres：真实 PG 规则、来源/执行/问题闭环、迁移、租约、域引用屏障及仅修改归属不产生内容修订；同时验证 Orchestrator 的方案引用迁移。
 - make test-quality-frontend：路由、页面端到端、构建。
-- make test-online ONLINE_SUITE=quality-dynamic-binding：专用 T4 环境的 Model → Quality 上游表绑定、失败阻断、工单去重及跨目标隔离验收。两个永久 Model/PG 夹具的配置及清理边界见 scripts/README.md；不得复用个人管理员会话。只登记手工 CI，首次真实通过前不加入夜间调度。
+- make test-online ONLINE_SUITE=quality-dynamic-binding：GitHub Hosted 一次性 T4 部署的 Model → Quality 上游表绑定、失败阻断、工单去重、跨目标隔离及 Monitor 安全事件验收。准备和退出由 scripts/test/online-hosted-quality-gate.sh 统一负责；使用独立的普通执行身份、夹具准备身份及引擎注册身份，通过正式 API 创建和审批两个 Model 逻辑表并物化目标，再在当次 PostgreSQL 写入固定数据。套件运行期间只读取这些夹具；退出销毁本轮应用、业务源、Infra 和凭据，清理失败即门禁失败。配置及证据边界见 scripts/README.md；不得复用个人管理员会话。只登记手工 CI，首次真实通过前不加入夜间调度。
 - make test-online-runner：上述 T4 脚本的确定性反例、宿主部署 profile 和 CI 登记检查；不能代替真实在线验收。
 - System IAM migration 测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现；单测筛选 --test quality-plans（含规则、方案及 Standard/Quality 域引用服务身份授权刷新）。
 - release-and-t2-gates.yml 注册 Quality PG 门禁，changed-gate 将 Orchestrator 变更映射到该门禁。
