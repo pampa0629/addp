@@ -1139,13 +1139,16 @@ def assert_mongodb_rows(rows: list[dict[str, object]], owner: str,
         if info.get("nickName") != "nickname-" + key:
             raise SuiteError(owner + " changed the sibling MongoDB nickName")
         value = expected.get(key)
-        if value is None:
+        if key in SOURCE_VALUES and SOURCE_VALUES[key] is None:
+            if "phone" not in info or info["phone"] is not None:
+                raise SuiteError(owner + " did not preserve the null MongoDB phone at row " + key)
+        elif value is None:
             if "phone" in info:
-                raise SuiteError(owner + " retained a suppressed or missing MongoDB phone")
+                raise SuiteError(owner + " retained a suppressed or missing MongoDB phone at row " + key)
         elif info.get("phone") != value:
             raise SuiteError(owner + " MongoDB nested phone differs from its independent expected value")
     return {"rows": 7, "nested_field_verified": True, "sparse_objects_verified": True,
-            "sibling_attributes_preserved": True}
+            "null_values_preserved": True, "sibling_attributes_preserved": True}
 
 
 def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,

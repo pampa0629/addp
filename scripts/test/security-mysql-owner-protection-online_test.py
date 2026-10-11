@@ -220,7 +220,9 @@ class MongoClient(SpatialClient):
             if key != "7":
                 row["userInfo"] = {"nickName": "nickname-" + key}
                 value = by_algorithm[algorithm].get(key)
-                if value is not None:
+                if key == "4":
+                    row["userInfo"]["phone"] = None
+                elif value is not None:
                     row["userInfo"]["phone"] = value
             rows.append(row)
         return rows
@@ -292,6 +294,7 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertEqual(restart["technical_field_search"]["document_id"], "sha256:mongo-persons")
         self.assertEqual(restart["protected_preview"]["rows"], 7)
         self.assertTrue(report["cases"][0]["baseline_after_policy_revocation"]["sparse_objects_verified"])
+        self.assertTrue(all(case["manager"]["null_values_preserved"] for case in report["cases"]))
         self.assertEqual(client.policies[0]["state"], "revoked")
         self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
                          {k: v for k, v in client.original.items() if k != "version"})
@@ -315,14 +318,17 @@ class MongoAlgorithmTest(unittest.TestCase):
             self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
                              {k: v for k, v in client.original.items() if k != "version"})
 
-    def test_rejects_plaintext_null_leak_flattened_copy_and_sibling_changes(self):
-        for mutation in ("plaintext", "null", "sibling", "parent", "flattened", "flattened_sparse", "missing", "duplicate"):
+    def test_rejects_plaintext_null_changes_missing_field_fabrication_and_sibling_changes(self):
+        for mutation in ("plaintext", "null_removed", "null_replaced", "suppressed_empty_null", "missing_field_null", "sibling", "parent", "flattened", "flattened_sparse", "missing", "duplicate"):
             rows = MongoClient().rows("manager")
             # The client's initial 3/4 Baseline uses the independent 1/1 fake vector;
             # validate using that explicit expected vector rather than production code.
             expected = {"1": "1*********8", "2": "张***c", "3": "a*c", "4": None, "5": None}
             if mutation == "plaintext": rows[0]["userInfo"]["phone"] = "13812345678"
-            if mutation == "null": rows[3]["userInfo"]["phone"] = None
+            if mutation == "null_removed": del rows[3]["userInfo"]["phone"]
+            if mutation == "null_replaced": rows[3]["userInfo"]["phone"] = "changed"
+            if mutation == "suppressed_empty_null": rows[4]["userInfo"]["phone"] = None
+            if mutation == "missing_field_null": rows[5]["userInfo"]["phone"] = None
             if mutation == "sibling": rows[0]["userInfo"]["nickName"] = "changed"
             if mutation == "parent": rows[6]["userInfo"] = {}
             if mutation == "flattened": rows[0]["userInfo.phone"] = "13812345678"
