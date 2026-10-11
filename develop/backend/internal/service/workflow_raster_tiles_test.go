@@ -48,16 +48,16 @@ func encodeRasterTileManifest(t *testing.T, manifest map[string]interface{}) str
 
 func TestRasterTileActualTargetsAndStableOutputs(t *testing.T) {
 	for _, kind := range []string{"directory", "prefix"} {
-		for _, completed := range []int{2, 4} {
-			t.Run(fmt.Sprintf("%s/%d", kind, completed), func(t *testing.T) {
+		for _, outcome := range []struct {
+			completed int
+			status    string
+		}{{2, "failed"}, {4, "success"}, {4, "failed"}} {
+			t.Run(fmt.Sprintf("%s/%d/%s", kind, outcome.completed, outcome.status), func(t *testing.T) {
+				completed := outcome.completed
 				scope := workflowProducedTarget(2, resourcetree.ResourceType(kind), []string{"business", "tiles"})
 				scope.BatchScope, scope.TaskID, scope.WriteMode = true, "save", "create"
-				status := "success"
-				if completed < 4 {
-					status = "failed"
-				}
 				targets, err := resolveWorkflowRasterTileTargets([]WorkflowProducedTarget{scope}, &WorkflowResponse{
-					Status: status, AllResults: map[string]string{"save": encodeRasterTileManifest(t, rasterTileManifestFixture(completed))}})
+					Status: outcome.status, AllResults: map[string]string{"save": encodeRasterTileManifest(t, rasterTileManifestFixture(completed))}})
 				if err != nil || len(targets) != completed {
 					t.Fatalf("targets=%#v err=%v", targets, err)
 				}

@@ -912,6 +912,8 @@ GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 Res
 
 Runtime 成功或部分发布失败的结果包含 `artifact_type=raster_tiles`、`total_tiles`、`completed_tiles` 及以切片键索引的 `tiles`，每个条目含文件名、像素窗口和单片成果摘要。切片或编码失败不发布该片；写入调用失败时，该片的发布结果标为未知，不能把它计为确认成功，也不能假定远端没有写入。整批失败保留此前确认发布的切片，并返回 `failed_tile` 与 `publication` 事实。公共 Python DAG 核心通过既有 `result/all_results/task_order` 保留显式部分成果，GeoPython 投影后才进入 execution；失败仍为 `failed`，不转换为成功。
 
+发布已确认后发生的临时文件清理错误不能撤销该片的确认事实。若仍有未发布切片，`failed_tile` 指向下一片、`publication=not_attempted`；若全部切片均已确认，保留完整清单并省略这两个未发布事实字段，execution 仍为 `failed`。Develop 必须保留完整或部分已确认资源，不能把完整发布清单等同于执行成功；后续扫描和血缘继续遵守既有执行状态规则。
+
 Develop 根据派发前授权的目标范围和经过校验的逐片清单生成实际 `produced_targets`；Runtime 提供的路径或 locator 不作为资源身份。批量节点稳定输出为 `outputs.<节点>.tiles.<切片键>.resource`，每片包含已有 `locator/type/write_mode`。执行输出 Schema 的 `tiles` 为同一资源 Schema 的命名映射；不为未知片数虚构静态输出端口。确认写入的部分成果进入执行专业结果与资源输出，整批状态仍失败；不能依赖整批成功才保留事实。每片自动扫描复用既有 Meta 链路，不扫描父 prefix 来代替逐片成果，不修改字段级血缘规则。失败发布的资源级派生关系遵循 Meta 的既有终态采集规则，不能将失败 execution 宣称为成功血缘验收。
 
 Meta 对批量产物只读取已持久化的 `outputs.<节点>.tiles.<切片键>.resource.locator`，逐片匹配精确 file/object 请求。只有确认发布且进入稳定输出的切片可以继承父执行主体；任意嵌套字段、批量目标目录、兄弟文件和未确认切片都不能作为扫描依据。继续在创建事务中校验同租户 running Develop workflow、完整主体事实及调用方身份，不新增扫描入口或授权凭据继承，也不将切片解释为 whole scope。

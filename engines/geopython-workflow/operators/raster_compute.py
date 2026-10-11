@@ -430,7 +430,13 @@ def raster_save_tiles(input_tiles, access_plan, profile='geotiff', compression='
                             Path(str(raster.path) + '.aux.xml').unlink(missing_ok=True)
         return result
     except Exception as exc:
-        result.update({'failed_tile': key, 'publication': publication})
+        if key in result['tiles']:
+            # Cleanup cannot revoke a confirmed write or make it unknown.
+            next_index = result['completed_tiles']
+            key = f'r{next_index // facts["columns"] * input_tiles.tile_height}_c{next_index % facts["columns"] * input_tiles.tile_width}'
+            publication = 'not_attempted'
+        if result['completed_tiles'] < facts['total_tiles']:
+            result.update({'failed_tile': key, 'publication': publication})
         raise WorkflowExecutionError('Raster tile batch save failed', partial_result=result) from exc
 
 

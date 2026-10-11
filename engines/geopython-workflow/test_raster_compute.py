@@ -3172,7 +3172,7 @@ def test_raster_tiles_reject_invalid_grid_and_public_forgery(tmp_path, size):
         with pytest.raises(ValueError): raster_save_tiles({'runtime_type':'raster_tiles'},tile_target_plan(tmp_path/'tiles'))
 
 
-@pytest.mark.parametrize('failure', ['before_publish', 'unknown_publish', 'later_node'])
+@pytest.mark.parametrize('failure', ['before_publish', 'unknown_publish', 'later_node', 'cleanup_mid', 'cleanup_final'])
 def test_raster_tiles_async_partial_failure_preserves_files_ledger_and_cleans_workspace(tmp_path, monkeypatch, failure):
     import api_server
     import operators.raster_compute as compute
@@ -3180,14 +3180,23 @@ def test_raster_tiles_async_partial_failure_preserves_files_ledger_and_cleans_wo
     source = create_raster(tmp_path/'source.tif', np.arange(35,dtype=float).reshape(5,7))
     target = tmp_path/'tiles'
     original = compute.publish_target_file
-    calls, workspaces = [], []
+    calls, workspaces, published_paths, cleanup_failures = [], [], [], []
     def publish(path, plan):
         calls.append(plan['target']['name'])
         if len(calls) == 3 and failure == 'before_publish': raise OSError('private endpoint must not leak')
         result = original(path, plan)
+        published_paths.append(path)
         if len(calls) == 3 and failure == 'unknown_publish': raise OSError('private endpoint must not leak')
         return result
     monkeypatch.setattr(compute, 'publish_target_file', publish)
+    unlink = Path.unlink
+    def fail_cleanup(path, *args, **kwargs):
+        limit = {'cleanup_mid': 2, 'cleanup_final': 4}.get(failure)
+        if limit and len(published_paths) == limit and path in published_paths and not cleanup_failures:
+            cleanup_failures.append(path)
+            raise OSError('private cleanup path must not leak')
+        return unlink(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'unlink', fail_cleanup)
     execute = workflow_engine._execute_operator
     def tracked(name, params):
         if name == 'raster_tile': workspaces.append(params['input_raster'].workspace)
@@ -3209,11 +3218,20 @@ def test_raster_tiles_async_partial_failure_preserves_files_ledger_and_cleans_wo
         time.sleep(.01)
     assert status['status'] == 'failed',status
     saved = json.loads(status['all_results']['save'])
-    assert saved['completed_tiles'] == (4 if failure == 'later_node' else 2)
-    assert len(list(target.glob('*.tif'))) == {'before_publish':2,'unknown_publish':3,'later_node':4}[failure]
-    if failure != 'later_node':
+    assert saved['completed_tiles'] == (4 if failure in ('later_node', 'cleanup_final') else 2)
+    assert len(saved['tiles']) == saved['completed_tiles']
+    for fact in saved['tiles'].values():
+        assert (target / fact['name']).stat().st_size == fact['size_bytes'] > 0
+    assert len(list(target.glob('*.tif'))) == {'before_publish':2,'unknown_publish':3,'later_node':4,'cleanup_mid':2,'cleanup_final':4}[failure]
+    if failure in ('before_publish', 'unknown_publish'):
         assert saved['failed_tile'] == 'r3_c0' and saved['publication'] == 'unknown'
-    assert 'private endpoint' not in json.dumps(status)
+    elif failure == 'cleanup_mid':
+        assert saved['failed_tile'] == 'r3_c0' and saved['publication'] == 'not_attempted'
+    else:
+        assert 'failed_tile' not in saved and 'publication' not in saved
+    if failure.startswith('cleanup_'):
+        assert len(cleanup_failures) == 1
+    assert 'private endpoint' not in json.dumps(status) and 'private cleanup' not in json.dumps(status)
     assert all(not path.exists() for path in workspaces)
     assert client.post('/api/operators/raster_tile/invoke',json={'params':{}}).status_code == 403
     assert client.post('/api/operators/raster_save_tiles/invoke',json={'params':{}}).status_code == 403
