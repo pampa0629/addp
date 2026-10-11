@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "0600430b8a4500dfdf65e90888bdae62e62c274b",
-      "sha256": "1dffa6723382cb67314b3ad417346c6338be60c19581616771fb80057dacc353",
+      "commit": "099072fd118f5529d57f3f5ce3583028e59791e6",
+      "sha256": "eb72018c46e8bd5cdcaa2fbaa899ee6a213ff69400fd7f1d821f79d42d85a202",
       "use": {
-        "zh-cn": "任务、执行、配置与写入策略的正式含义",
-        "en": "Formal task, execution, configuration and apply policy semantics"
+        "zh-cn": "任务、执行、配置与写入策略的正式含义，以及只读预检的三权限交集和未装配 Runtime 的边界",
+        "en": "Formal task, execution, configuration and apply policy semantics, including the read-only precheck permission intersection and pending Runtime integration"
       }
     },
     {
@@ -21,8 +21,8 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "da04a5acc3678f78cd91866716c3649df1331eff",
-      "sha256": "a60cdfa24d8d885b1766c73279ce38152593f3b077a6253d6b9ba38216b10c84",
+      "commit": "6e30cd0d5cbcffb362cdc240ba75aba9401a56d8",
+      "sha256": "b8c3b72b87f8754d890c76b523df434575dfa50f669d20a6854fa3a5ef57e691",
       "use": {
         "zh-cn": "委托创建的有界快照、禁用调度及扫描约束",
         "en": "Delegated bounded snapshot creation without scheduling or scanning"
@@ -34,8 +34,8 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "fc3e67a53dff2bf6535f28093d027cfdbb705f61",
-      "sha256": "deb1677fab5068152929a866f14af4a9f1bd8424a16574032580b9aff68ee089",
+      "commit": "6e30cd0d5cbcffb362cdc240ba75aba9401a56d8",
+      "sha256": "18cda9a7ac7f84639537157ede432f90e815dc67dd7cc697616ab60c39fb8741",
       "use": {
         "zh-cn": "持久化任务定义及初始状态，不启动 execution",
         "en": "Persist task definition and initial state without starting execution"
@@ -60,11 +60,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
-      "sha256": "a64c8a67ecf17a857c393668a730d0d09998d06b9a35bfc4f136b596aea89c76",
+      "commit": "5a2c2f8bd114663ae6f5cfaf82d4f61468600264",
+      "sha256": "800590c54a504820849d05ffcfdd3e00bbb62c7f3d1437a25e7d49fa4493f197",
       "use": {
-        "zh-cn": "唯一 Tool 的输入输出、owner 及委托契约；创建 v3 只接受标准字段类型和快照 replace/append，不接受 keys",
-        "en": "Canonical Tool input, output, owner and delegation contracts; create v3 accepts standard field types and snapshot replace/append only, without keys"
+        "zh-cn": "创建与预检共用唯一输入定义；创建 v3 保持标准字段类型及快照 replace/append，不接受 keys；预检声明独立只读 Tool 和三项权限交集，尚未装配进 Agent 复核",
+        "en": "Create and precheck share one input definition; create v3 retains standard field types and snapshot replace/append without keys; precheck declares a separate read-only Tool and three-permission intersection, not yet integrated into Agent review"
       }
     },
     {
@@ -552,6 +552,15 @@
         "policy_spec",
         "planner"
       ]
+    },
+    {
+      "id": "transfer.task.config.check",
+      "state": "not_modeled",
+      "summary": {
+        "zh-cn": "正式只读配置预检 API、SDK 和 Tool 已存在；尚未装配进平台创建条件与 Agent 复核，当前配置复核不能称为预检通过",
+        "en": "The formal read-only config check API, SDK and Tool exist; platform creation conditions and Agent review do not yet consume them, so current configuration review is not a passed precheck"
+      },
+      "sources": ["config", "manifest"]
     },
     {
       "id": "transfer.continuous",

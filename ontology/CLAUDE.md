@@ -47,6 +47,8 @@ Console `/ontology/ontologies/:ontology_id/trial` 提供当前激活规则试算
 
 ## PG 修订与发布
 
+平台 Transfer 修订 9 审核正式只读配置预检引起的来源漂移；原创建条件和效果不变。API、共享 SDK 与正式 `transfer.task.config.check` Tool 已接通，输入与创建共用唯一 Schema 及请求构造；权限交集由 System 签发及 Transfer 委托路由双重校验。平台创建条件与 Transfer Skill/Runtime 尚未装配预检，覆盖仍为 `not_modeled`，不能将当前复核称为预检通过。下一切片按已确认策略把报告与配置/事实绑定：unsupported 阻止创建，unknown 明确限制后知情确认，只保存未运行任务；不将报告摘要视为授权或执行保证。
+
 - `CreateDraft` 只接受同一本体的下一修订号；同一时刻最多一个 draft / in_review。
 - `SaveDraft` 和 `Transition` 必须携带精确 version，状态沿 draft → in_review → published → withdrawn，允许审核退回草稿。错误版本不自动重试。
 - `semantic.Restore` 严格核对规范化内容、摘要、内核契约和编译器版本；读取异常快照失败关闭，不隐式升级历史定义。

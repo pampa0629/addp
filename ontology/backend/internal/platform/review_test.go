@@ -59,6 +59,34 @@ func TestSourceDriftCheckRejectsMutation(t *testing.T) {
 	}
 }
 
+func TestTransferConfigCheckIsNotAdvertisedBeforeAgentIntegration(t *testing.T) {
+	snapshot, err := CompileTransferRelease()
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, _ := snapshot.Review()
+	found := false
+	for _, coverage := range review.Coverage {
+		if coverage.ID == "transfer.task.config.check" {
+			found = true
+			if coverage.State != "not_modeled" {
+				t.Fatal("owner API availability was advertised as modeled Agent capability")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing config check coverage limitation")
+	}
+	context, _ := snapshot.Context()
+	for _, requirement := range context.Requirements {
+		for _, tool := range requirement.Tools {
+			if tool == "transfer.task.config.check" {
+				t.Fatal("config check required before Runtime review integration")
+			}
+		}
+	}
+}
+
 func TestReviewBoundToSnapshotAndNotAgentContext(t *testing.T) {
 	s, err := CompileTransferRelease()
 	if err != nil {

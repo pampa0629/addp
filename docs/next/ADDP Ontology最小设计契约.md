@@ -198,6 +198,10 @@ Transfer 修订 6 将当前创建切片的显式写入策略收敛为 `replace|a
 
 沿已有 Agent eval、平台定义 Go T1 与授权契约门禁验证源/目标伪造、未知条件、未复核、变更后复核失效、同一确认重复写入及非 Transfer 路径不受影响；沿既有 Ontology T2 验证新修订发布。没有新增外部依赖、标准入口或 CI Job，个人环境需用户重启后另做真实短输入联调。
 
+Transfer 修订 8 审核已捕获来源中新增加的正式只读配置预检：创建接口及原条件、效果未变，仅更新三个来源的提交和内容摘要，并将预检明确列为尚未建模的覆盖范围。共享 `TransferClient.check_task_config()` 与 `create_task()` 使用同一完整请求组装；预检返回 owner 原始报告，不把 HTTP 200、`unknown` 或内容摘要解释为通过或执行授权。此切片不开放新 Tool，不增加创建前置条件；跨 owner 权限声明与 `unknown` 下的保存策略须先确认再接入 Agent。沿已有平台来源门禁、common-python 全量测试和 Agent eval 自动发现验证，不新增依赖、测试入口或 CI Job。
+
+Transfer 修订 9 在上述基础上捕获正式预检 Tool 开放。Tool Manifest 通过根 `$defs` 保持预检/创建输入唯一，ToolExecutor 只调用共享 SDK；System 生成 Catalog 与 Transfer 精确委托路由均核对三项 Permission all-of，audience 和 Scope 不扩张。API/SDK/Tool 可用不等于平台创建流程已消费：本切片不新增创建前置条件或 Skill 装配，继续在覆盖声明中明确 `not_modeled`。后续 Runtime 复核按已确认的唯一策略接入：unsupported 阻止创建，unknown 展示未检查项及运行时核验要求后取得知情确认，只保存未运行定义；supported 也不代表执行保证。必须绑定本次正式 Tool 观察及完整提交参数，创建前重新检查稳定配置/事实；时间戳自然前进不能单独触发无限重复确认。报告不进入平台静态本体图，也不是授权票据。新增 Tool、授权聚合和测试沿现有 common-python、Agent eval、授权/Swagger、Go、System IAM 与 Ontology PG/FalkorDB 门禁发现，无新增依赖、入口或 CI Job。
+
 ## 2. 术语与唯一事实所有权
 
 新增术语见[术语表](../concepts/addp术语表.md)的“领域本体（目标设计）”。以下职责是目标边界，不表示现有接口已经支持。
