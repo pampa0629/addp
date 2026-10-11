@@ -2,7 +2,7 @@
   "schema_version": "addp.platform-capability-context/v1",
   "knowledge_kind": "platform_definition",
   "capability": "transfer.task.create",
-  "revision": 5,
+  "revision": 6,
   "digest": "",
   "availability": "not_observed",
   "concepts": [
@@ -18,7 +18,7 @@
     {"id": "confirmed_target_parent_and_name", "name": {"zh-cn": "真实目标父节点和明确的目标名称", "en": "Observed target parent and explicit target name"}},
     {"id": "bounded", "name": {"zh-cn": "有界的一次性执行边界", "en": "Bounded one-time runtime boundary"}},
     {"id": "snapshot", "name": {"zh-cn": "快照装载模式", "en": "Snapshot load mode"}},
-    {"id": "explicit_apply_policy", "name": {"zh-cn": "明确目标写入策略，upsert 键必须属于映射后的目标字段", "en": "Explicit apply policy; upsert keys must be mapped target fields"}},
+    {"id": "explicit_apply_policy", "name": {"zh-cn": "快照写入明确选择 replace（清理后写入）或 append（仅追加），不支持 upsert", "en": "Explicit snapshot policy: replace (clear then write) or append (insert only); upsert is not supported"}},
     {"id": "confirmed_row_grain_and_fields", "name": {"zh-cn": "按真实结构直接映射字段，查询与行粒度随完整配置复核", "en": "Schema-grounded direct field mapping; review query and row grain with the full configuration"}},
     {"id": "user_review", "name": {"zh-cn": "用户确认确切配置；参数、能力修订或结构事实变化后重新确认", "en": "User reviews exact configuration; changed arguments, capability revision or schema facts require a new review"}}
   ],

@@ -60,11 +60,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "1e8a86d136944799791d199a28ab9d5714a197f1",
-      "sha256": "237bf790fab9a2b77517f634100a85997f0c9053e46013e5967389a2b9c42988",
+      "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
+      "sha256": "a64c8a67ecf17a857c393668a730d0d09998d06b9a35bfc4f136b596aea89c76",
       "use": {
-        "zh-cn": "唯一 Tool 的输入输出、owner 及委托契约；创建 v2 只接受标准字段类型标识",
-        "en": "Canonical Tool input, output, owner and delegation contracts; create v2 accepts standard field type identifiers only"
+        "zh-cn": "唯一 Tool 的输入输出、owner 及委托契约；创建 v3 只接受标准字段类型和快照 replace/append，不接受 keys",
+        "en": "Canonical Tool input, output, owner and delegation contracts; create v3 accepts standard field types and snapshot replace/append only, without keys"
       }
     },
     {
@@ -73,11 +73,11 @@
       "kind": "test",
       "path": "common-python/tests/test_platform_transfer_tools.py",
       "anchor": "def test_transfer_create_schema_rejects_schedules_credentials_and_other_modes(",
-      "commit": "1e8a86d136944799791d199a28ab9d5714a197f1",
-      "sha256": "5dbdb6fb05a0385d784d9d9dd19c88575008d2cfce91b4448d818f9df50154f4",
+      "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
+      "sha256": "ca26073079be88c193dfc6f8286611932b1a5fc27ab452c36d2edc5174a12a6c",
       "use": {
-        "zh-cn": "核验 Tool 引用、创建参数和 owner HTTP 契约；标准类型与 Common 一致，非标准类型在委托前拒绝",
-        "en": "Verify Tool references, creation arguments and owner HTTP contract; types match Common and nonstandard types fail before delegation"
+        "zh-cn": "核验 Tool 引用、创建参数和 owner HTTP 契约；标准类型与 Common 一致，非标准类型、快照 upsert 及 keys 在委托前拒绝",
+        "en": "Verify Tool references, creation arguments and owner HTTP contract; types match Common; nonstandard types, snapshot upsert and keys fail before delegation"
       }
     },
     {
@@ -99,8 +99,8 @@
       "kind": "implementation",
       "path": "agent/backend/agents/platform_conditions.py",
       "anchor": "def validate_create(",
-      "commit": "2c6028bd757b58b03d6dddd880a3a40f4414603d",
-      "sha256": "d06b357e3c7b53752987d4afa84b1228e346da62961dbe6ab60a2d750b974863",
+      "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
+      "sha256": "554d863d2077c293f07d08340f6f7f01f53c1a707a07acd1402a99d50a7c0ffd",
       "use": {
         "zh-cn": "Runtime 条件适配与能力修订、参数和结构事实的复核绑定",
         "en": "Runtime condition adapters and review binding to revision, arguments and schema facts"
@@ -112,11 +112,37 @@
       "kind": "test",
       "path": "agent/backend/tests/test_platform_conditions.py",
       "anchor": "class PlatformConditionTests(",
-      "commit": "2c6028bd757b58b03d6dddd880a3a40f4414603d",
-      "sha256": "5e11668b89e9e10d14d381a565a5049d5bbeb677a866dd7c505d7d9b5ea785fa",
+      "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
+      "sha256": "70a19f3d6bd7fa15fd2a413e89188cb98b6decf169d72843f88b0c962970c8d9",
       "use": {
         "zh-cn": "验证条件拒绝、参数或事实变化后重新确认",
         "en": "Verify condition refusal and re-review after arguments or facts change"
+      }
+    },
+    {
+      "id": "policy_spec",
+      "owner": "transfer",
+      "kind": "normative",
+      "path": "transfer/docs/transfer-任务语义与同步模式.md",
+      "anchor": "## 三、当前支持矩阵",
+      "commit": "e098da99a0cdb691b311962aaee6e006b2d0ce3a",
+      "sha256": "3ef63fcc860d7a9f9e2fe1ea7bcc73d814b905139c304c7b3f5da5999717d214",
+      "use": {
+        "zh-cn": "正式支持矩阵区分快照 replace/append 与增量 upsert，不混用装载和写入方式",
+        "en": "Formal matrix distinguishes snapshot replace/append from incremental upsert"
+      }
+    },
+    {
+      "id": "planner",
+      "owner": "transfer",
+      "kind": "implementation",
+      "path": "transfer/backend/internal/planner/table_export.go",
+      "anchor": "func validateTableTransferSpec(",
+      "commit": "0665f56ef035b117ad00771a81ffd7b639bd2ed7",
+      "sha256": "ca8471c40428aa4d1ff2a6593d983f4d3febe6346fab392bc12c7b3fcdcbd9bf",
+      "use": {
+        "zh-cn": "Transfer Planner 对快照目标 apply_mode 仅接受 replace/append，拒绝其他组合",
+        "en": "Transfer Planner admits only replace/append as snapshot target apply modes"
       }
     }
   ],
@@ -254,7 +280,9 @@
       "sources": [
         "manifest",
         "conditions",
-        "condition_test"
+        "condition_test",
+        "policy_spec",
+        "planner"
       ]
     },
     {
@@ -262,7 +290,9 @@
       "sources": [
         "conditions",
         "condition_test",
-        "skill"
+        "skill",
+        "policy_spec",
+        "planner"
       ]
     },
     {
@@ -500,13 +530,15 @@
       "id": "transfer.task.create",
       "state": "modeled",
       "summary": {
-        "zh-cn": "只建未启动的 native table 有界快照任务；标准类型及配置校验不证明实际值可转换或执行成功，不是 Transfer 全功能声明",
-        "en": "Create only a stopped native table bounded snapshot task; standard type and configuration checks do not prove value conversion or execution success, nor full Transfer coverage"
+        "zh-cn": "只建未启动的 native table 有界快照任务，目标仅 replace/append；标准类型及配置校验不证明实际值可转换或执行成功，不是 Transfer 全功能声明",
+        "en": "Create only a stopped native table bounded snapshot task with replace/append; standard type and configuration checks do not prove value conversion or execution success, nor full Transfer coverage"
       },
       "sources": [
         "manifest",
         "handler",
-        "owner_test"
+        "owner_test",
+        "policy_spec",
+        "planner"
       ]
     },
     {

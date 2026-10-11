@@ -113,7 +113,13 @@ func TestCompileRejectsInvalidReview(t *testing.T) {
 		{"invalid_commit", func(r *Review) { r.Sources[0].Commit = "main" }},
 		{"invalid_kind", func(r *Review) { r.Sources[0].Kind = "live_data" }},
 		{"invalid_owner", func(r *Review) { r.Sources[0].Owner = "common_python" }},
-		{"missing_kind", func(r *Review) { r.Sources[0].Kind = "procedure" }},
+		{"missing_kind", func(r *Review) {
+			for i := range r.Sources {
+				if r.Sources[i].Kind == "normative" {
+					r.Sources[i].Kind = "procedure"
+				}
+			}
+		}},
 		{"missing_binding", func(r *Review) { r.Bindings = r.Bindings[1:] }},
 		{"duplicate_binding", func(r *Review) { r.Bindings = append(r.Bindings, r.Bindings[0]) }},
 		{"unknown_subject", func(r *Review) { r.Bindings[0].Subject = "operation/other" }},

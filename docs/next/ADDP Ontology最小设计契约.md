@@ -190,6 +190,8 @@ Agent 在当前 Harness 调用内成功读取 `platform.capability.context` 后�
 
 Transfer 创建 Tool 的目标字段类型由 Manifest 限定为 ADDP 标准标识；Runtime 复核与提交复用该契约，Ontology 不复制类型枚举或数据库 DDL 映射。标准词汇校验、结构事实校验和用户复核均不等于实际值转换或写入可执行性验证，创建成功也不等于执行成功。收紧 Tool 契约时同步人工核实相关来源并发布 Transfer 修订 5；不通过禁用 `json` 类型掩盖具体 Provider 的编码缺陷。
 
+Transfer 修订 6 将当前创建切片的显式写入策略收敛为 `replace|append`，对应 Tool v3；删除此前将 `upsert` 及稳定键要求混入有界快照的错误声明。策略输入由 Manifest 唯一约束，Runtime 复用 Schema，不保留旧键校验旁路。来源证据补充 Transfer 正式支持矩阵及 Planner 的快照校验，并绑定相关概念、条件与覆盖说明；增量 upsert 仍在未建模范围。本次不扩展 Transfer 能力、不修改 Provider，不将配置校验称为无副作用预检或执行成功证明。
+
 沿已有 Agent eval、平台定义 Go T1 与授权契约门禁验证源/目标伪造、未知条件、未复核、变更后复核失效、同一确认重复写入及非 Transfer 路径不受影响；沿既有 Ontology T2 验证新修订发布。没有新增外部依赖、标准入口或 CI Job，个人环境需用户重启后另做真实短输入联调。
 
 ## 2. 术语与唯一事实所有权
