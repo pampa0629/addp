@@ -116,7 +116,7 @@ fixture.Persons.insertMany(values.map((phone, index) => ({
 })).concat([
   {_id: "6", displayName: "person-6", userInfo: {nickName: "nickname-6"}},
   {_id: "7", displayName: "person-7"}
-]));
+]).map(document => ({...document, sourceVersion: NumberLong("9007199254740993")})));
 fixture.createUser({user: "security_reader", pwd: process.env.SECURITY_MONGODB_READER_PASSWORD,
   roles: [{role: "read", db: "Outdoor"}]});
 if (fixture.Persons.countDocuments({}) !== 7) throw new Error("MongoDB fixture row count mismatch");

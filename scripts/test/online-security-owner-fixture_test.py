@@ -105,7 +105,7 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
             self.assertNotIn(data['connection_info']['password'], result.stdout + result.stderr)
             self.assertNotEqual(data['connection_info']['password'], (self.passwords / f'{name}-root').read_text())
         mongo = self.mongo.read_text()
-        for fragment in ('db.getSiblingDB("Outdoor")', 'fixture.Persons.insertMany', 'nickName', '张三abc', 'null', 'roles: [{role: "read", db: "Outdoor"}]', 'countDocuments({}) !== 7'):
+        for fragment in ('db.getSiblingDB("Outdoor")', 'fixture.Persons.insertMany', 'nickName', '张三abc', 'null', 'roles: [{role: "read", db: "Outdoor"}]', 'countDocuments({}) !== 7', 'sourceVersion: NumberLong("9007199254740993")'):
             self.assertIn(fragment, mongo)
         descriptor = json.loads((self.secrets / 'security-mongodb.json').read_text())
         self.assertEqual(descriptor['connection_info']['auth_source'], 'Outdoor')

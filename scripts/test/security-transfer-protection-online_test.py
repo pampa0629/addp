@@ -14,6 +14,31 @@ sys.modules[SPEC.name] = ONLINE
 SPEC.loader.exec_module(ONLINE)
 
 
+class GatewayDownloadTest(unittest.TestCase):
+    def test_raw_download_reuses_authenticated_transport(self):
+        raw = b'{"_id":"1"}\n{"_id":"2"}\n'
+        reply = Mock(status=200)
+        reply.read.return_value = raw
+        reply.__enter__ = Mock(return_value=reply)
+        reply.__exit__ = Mock(return_value=False)
+        with patch.object(ONLINE.urllib.request, "urlopen", return_value=reply) as opened:
+            result = ONLINE.GatewayClient("http://localhost:8000", "fixture-token", 30).request(
+                "GET", "/api/v1/manager/exports/1/file", (200,), raw_response=True)
+        self.assertEqual(result.payload, raw)
+        self.assertEqual(opened.call_args.args[0].get_header("Authorization"), "Bearer fixture-token")
+
+    def test_raw_download_does_not_accept_error_payload_as_file(self):
+        reply = Mock(status=403)
+        reply.read.return_value = b'{"error_code":"access_denied","error":"sensitive details"}'
+        reply.__enter__ = Mock(return_value=reply)
+        reply.__exit__ = Mock(return_value=False)
+        with patch.object(ONLINE.urllib.request, "urlopen", return_value=reply), self.assertRaisesRegex(
+                ONLINE.SuiteError, "HTTP 403 \(access_denied\)") as caught:
+            ONLINE.GatewayClient("http://localhost:8000", "fixture-token", 30).request(
+                "GET", "/api/v1/manager/exports/1/file", (200,), raw_response=True)
+        self.assertNotIn("sensitive details", str(caught.exception))
+
+
 class SecurityTransferProtectionOnlineTest(unittest.TestCase):
     def test_enrollment_lookup_reads_every_page_before_reusing_fixture(self) -> None:
         client = Mock()

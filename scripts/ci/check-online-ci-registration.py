@@ -627,6 +627,7 @@ def validate_security_mysql_owner_protection_profile(
         "addp_online_security.spatial_algorithm_source", "addp_online_security.spatial_algorithm_transfer",
         "business/mysql/test-data.sh", "security_reader", "security_writer",
         "addp-security-online-mongodb", "--tmpfs /data/db", "fixture.Persons.insertMany", "Outdoor",
+        'sourceVersion: NumberLong("9007199254740993")',
     ):
         if fragment not in fixture:
             raise RegistrationError("security-mysql-owner-protection fixture contract is missing " + fragment)
@@ -668,7 +669,9 @@ def validate_security_mysql_owner_protection_profile(
                      '"scripts/dev/restart.sh", "-security", "-manager"', '"verified_before_rescan"',
                      "prepare_mongodb_source(", '"initial_technical_field_search"',
                      "verify_unprotected_mongodb_derived_query(", "verify_mongodb_query_boundaries(",
-                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v6"'):
+                     "verify_mongodb_raw_export(", '"raw_record_export"', '"export_during_manager_policy"',
+                     "canonical_int64_preserved=True",
+                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v7"'):
         if fragment not in owner:
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")

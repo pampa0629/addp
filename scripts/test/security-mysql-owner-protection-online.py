@@ -1188,6 +1188,78 @@ def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
     return {"count": 7, "derived_output_denied": True, "denied_result_absent": True}
 
 
+def verify_mongodb_raw_export(client: GatewayClient, locator: str, identity: Mapping[str, object],
+                              expected: Mapping[str, object], deadline: float) -> dict[str, object]:
+    """Validate the actual Canonical Extended JSONL artifact, never preview substitutes."""
+    created = _object(client.request("POST", "/api/v1/manager/exports", (202,), {
+        "source_item_locator": locator, "format": "mongodb_extended_jsonl",
+        "file_name": "security-mongodb-" + uuid.uuid4().hex,
+    }).payload, "MongoDB export session")
+    session_id = positive_int(created.get("id"), "export session id")
+    execution_id = created.get("transfer_execution_id")
+    try:
+        if not isinstance(execution_id, str) or str(uuid.UUID(execution_id)) != execution_id:
+            raise ValueError("not a canonical UUID")
+    except ValueError as error:
+        raise SuiteError("MongoDB export requires a canonical Transfer execution UUID") from error
+    session_path = f"/api/v1/manager/exports/{session_id}"
+    while time.monotonic() < deadline:
+        session = _object(client.request("GET", session_path, (200,)).payload, "MongoDB export session")
+        if any(session.get(key) != value for key, value in {
+            "id": session_id, "source_item_locator": locator, "format": "mongodb_extended_jsonl",
+            "transfer_execution_id": execution_id,
+        }.items()):
+            raise SuiteError("MongoDB export session identity or source changed")
+        if session.get("status") == "success":
+            break
+        if session.get("status") not in {"pending", "running"}:
+            raise SuiteError("MongoDB raw record export did not succeed")
+        time.sleep(1)
+    else:
+        raise SuiteError("MongoDB raw record export exceeded its deadline")
+    file_path = session_path + "/file"
+    if session.get("download_url") != file_path:
+        raise SuiteError("MongoDB export download URL must be its authenticated session file path")
+    raw = client.request("GET", file_path, (200,), raw_response=True).payload
+    if not isinstance(raw, bytes) or not raw:
+        raise SuiteError("MongoDB raw record export returned no file bytes")
+
+    def unique_fields(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON field")
+            result[key] = value
+        return result
+
+    try:
+        rows = [json.loads(line, object_pairs_hook=unique_fields) for line in raw.decode("utf-8").splitlines()]
+    except (ValueError, UnicodeError) as error:
+        # Do not include document values or decoder exception context in reports.
+        raise SuiteError("MongoDB export is not unambiguous UTF-8 JSONL") from None
+    evidence = assert_mongodb_rows(rows, "transfer raw record export", expected)
+    for row in rows:
+        keys = {"_id", "displayName", "sourceVersion"} | ({"userInfo"} if row["_id"] != "7" else set())
+        if set(row) != keys or row.get("sourceVersion") != {"$numberLong": "9007199254740993"}:
+            raise SuiteError("MongoDB export changed unprotected fields or canonical BSON int64")
+        if "userInfo" in row:
+            expected_keys = {"nickName"} | ({"phone"} if row["_id"] == "4" or expected.get(row["_id"]) is not None else set())
+            if set(row["userInfo"]) != expected_keys:
+                raise SuiteError("MongoDB export introduced unexpected nested fields")
+    execution = _object(client.request("GET", "/api/v1/monitor/executions/by-execution-id/" + execution_id,
+                                       (200,)).payload, "MongoDB export Monitor execution")
+    if (any(execution.get(key) != value for key, value in {
+            "execution_id": execution_id, "module": "transfer", "source": "manager", "status": "success",
+        }.items()) or execution.get("source_task_id") is not None
+            or str(execution.get("triggered_by")) != str(identity["principal_id"])
+            or nonnegative_int(execution.get("records_read"), "MongoDB records read") != 7
+            or nonnegative_int(execution.get("records_written"), "MongoDB records written") != 7):
+        raise SuiteError("MongoDB export provenance or actual record counts differ from the ordinary user execution")
+    return dict(evidence, session_id=session_id, execution_id=execution_id, downloaded_bytes=len(raw),
+                canonical_int64_preserved=True, same_user_verified=True, taskless_execution=True,
+                manager_source_verified=True, actual_record_counts_verified=True)
+
+
 def prepare_mongodb_source(client: GatewayClient, engine_id: int, deadline: float) -> dict[str, object]:
     scan = wait_for_scan(client, engine_id, deadline)
     source = find_item(client, engine_id, MONGODB_SOURCE, "collection")
@@ -1197,6 +1269,7 @@ def prepare_mongodb_source(client: GatewayClient, engine_id: int, deadline: floa
 
 def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared: Mapping[str, object],
                                deadline: float, timeout: float) -> dict[str, object]:
+    identity = validate_user_identity(client, positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"))
     scan = prepared["scan_execution_id"]
     source = _object(prepared.get("item"), "prepared MongoDB item")
     locator = build_item_locator(engine_id, source)
@@ -1252,6 +1325,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
             case["query_boundaries"] = verify_mongodb_query_boundaries(client, engine_id, locator, deadline)
             case["develop"] = assert_mongodb_rows(
                 develop_rows(client, engine_id, locator, deadline, MONGODB_FIND_QUERY, "mql"), "develop", expected)
+            case["raw_record_export"] = verify_mongodb_raw_export(client, locator, identity, expected, deadline)
             if index == 0:
                 policy = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), {
                     "assessment_id": assessment_id, "consumer_owner": "manager", "action": "preview",
@@ -1265,6 +1339,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
                 case["develop_during_manager_policy"] = assert_mongodb_rows(
                     develop_rows(client, engine_id, locator, deadline, MONGODB_FIND_QUERY, "mql"),
                     "develop during Manager Policy", expected)
+                case["export_during_manager_policy"] = verify_mongodb_raw_export(client, locator, identity, expected, deadline)
                 case["restart_recovery"] = exercise_restart_recovery(client, engine_id, source, enrollment_id,
                     baseline_id, policies, SM3_VALUES, deadline, field_name=MONGODB_FIELD, assert_rows=assert_mongodb_rows)
                 policy_path = f"/api/v1/security/protection-policies/{policies[0]}"
@@ -1377,7 +1452,7 @@ def run_scenario(
             raise SuiteError("Transfer target lost non-sensitive customer fields")
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v6",
+            "schema_version": "addp.security-mysql-owner-protection-online/v7",
             "result": "passed",
             "identity": identity,
             "governance": governance,

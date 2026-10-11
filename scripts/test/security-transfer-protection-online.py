@@ -66,6 +66,7 @@ class GatewayClient:
         path: str,
         expected: Iterable[int],
         body: dict[str, object] | None = None,
+        *, raw_response: bool = False,
     ) -> Response:
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(
@@ -73,7 +74,7 @@ class GatewayClient:
             data=data,
             method=method,
             headers={
-                "Accept": "application/json",
+                "Accept": "application/octet-stream" if raw_response else "application/json",
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.token}",
             },
@@ -87,11 +88,14 @@ class GatewayClient:
             raw = error.read()
         except (urllib.error.URLError, TimeoutError) as error:
             raise SuiteError(f"{method} {path} transport failed: {error}") from error
+        expected_statuses = set(expected)
+        if raw_response and status in expected_statuses:
+            return Response(status=status, payload=raw)
         try:
             payload = json.loads(raw) if raw else {}
         except json.JSONDecodeError as error:
             raise SuiteError(f"{method} {path} returned invalid JSON") from error
-        if status not in set(expected):
+        if status not in expected_statuses:
             code = payload.get("error_code", "unknown") if isinstance(payload, dict) else "unknown"
             raise SuiteError(f"{method} {path} returned HTTP {status} ({code})")
         return Response(status=status, payload=payload)

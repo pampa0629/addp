@@ -8,6 +8,7 @@ import time
 import tempfile
 import urllib.parse
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -212,6 +213,10 @@ class MongoClient(SpatialClient):
         self.query_executions = {}
         self.allow_protected_derived = False
         self.fail_unprotected_derived = False
+        self.exports = {}
+        self.export_requests = []
+        self.export_mutation = None
+        self.fail_export_at = None
 
     def rows(self, owner):
         self.preview_calls += 1
@@ -238,8 +243,45 @@ class MongoClient(SpatialClient):
             rows.append(row)
         return rows
 
-    def request(self, method, path, expected, body=None):
+    def request(self, method, path, expected, body=None, *, raw_response=False):
         response = ONLINE.SUPPORT.Response
+        if method == "POST" and path == "/api/v1/manager/exports":
+            self.export_requests.append(copy.deepcopy(body))
+            assert body["format"] == "mongodb_extended_jsonl"
+            assert "/path/Outdoor/Persons?" in body["source_item_locator"]
+            session_id = len(self.exports) + 1
+            self.exports[session_id] = {"id": session_id, "source_item_locator": body["source_item_locator"],
+                "format": body["format"], "transfer_execution_id": str(uuid.UUID(int=session_id)),
+                "status": "success", "download_url": f"/api/v1/manager/exports/{session_id}/file"}
+            return response(202, copy.deepcopy(self.exports[session_id]))
+        if path.startswith("/api/v1/manager/exports/"):
+            session = copy.deepcopy(self.exports[int(path.split("/")[5])])
+            if path.endswith("/file"):
+                assert raw_response
+                rows = self.rows("transfer")
+                for row in rows:
+                    row["sourceVersion"] = {"$numberLong": "9007199254740993"}
+                if len(self.exports) == self.fail_export_at:
+                    raise ONLINE.SuiteError("injected export download failure")
+                if self.export_mutation == "plaintext": rows[0]["userInfo"]["phone"] = "13812345678"
+                if self.export_mutation == "rounded_int64": rows[0]["sourceVersion"] = 9007199254740992
+                if self.export_mutation == "extra_field": rows[0]["originalPhone"] = "13812345678"
+                raw = ("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n").encode()
+                if self.export_mutation == "invalid_json": raw = b"not JSON"
+                if self.export_mutation == "duplicate_key": raw = raw.replace(b'"_id": "1"', b'"_id": "1", "_id": "1"')
+                return response(200, raw)
+            if self.export_mutation == "failed": session["status"] = "failed"
+            if self.export_mutation == "wrong_session": session["id"] = 999
+            if self.export_mutation == "wrong_url": session["download_url"] = "https://elsewhere.invalid/file"
+            return response(200, session)
+        if path.startswith("/api/v1/monitor/executions/by-execution-id/"):
+            execution = {"execution_id": path.rsplit("/", 1)[1], "module": "transfer", "source": "manager",
+                "source_task_id": None, "status": "success", "triggered_by": 7, "records_read": 7, "records_written": 7}
+            if self.export_mutation == "wrong_initiator": execution["triggered_by"] = 8
+            if self.export_mutation == "wrong_count": execution["records_written"] = 6
+            if self.export_mutation == "task_defined": execution["source_task_id"] = 12
+            if self.export_mutation == "wrong_owner": execution["source"] = "develop"
+            return response(200, execution)
         if method == "POST" and path == "/api/v1/develop/executions":
             assert body["content"]["query_type"] == "mql"
             assert body["execution_config"]["engine_id"] == 29
@@ -299,6 +341,40 @@ class MongoClient(SpatialClient):
         return super().request(method, path, expected, body)
 
 
+class MongoExportTest(unittest.TestCase):
+    def export(self, client):
+        locator = ONLINE.build_item_locator(29, client.item)
+        expected = {"1": "1*********8", "2": "张***c", "3": "a*c", "4": None, "5": None}
+        return ONLINE.verify_mongodb_raw_export(client, locator, {"principal_id": "7"}, expected, time.monotonic() + 60)
+
+    def test_downloaded_records_require_canonical_int64_and_exact_nested_values(self):
+        client = MongoClient()
+        report = self.export(client)
+        self.assertEqual(report["rows"], 7)
+        self.assertTrue(report["canonical_int64_preserved"])
+        self.assertTrue(report["taskless_execution"])
+        self.assertTrue(report["same_user_verified"])
+        self.assertNotIn("13812345678", json.dumps(report))
+
+    def test_rejects_bad_files_and_wrong_execution_provenance(self):
+        for mutation in ("plaintext", "rounded_int64", "extra_field", "invalid_json", "duplicate_key",
+                         "failed", "wrong_session", "wrong_url", "wrong_initiator", "wrong_count", "task_defined", "wrong_owner"):
+            client = MongoClient()
+            client.export_mutation = mutation
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                self.export(client)
+
+    def test_export_failure_still_restores_baseline(self):
+        for fail_at in (1, 2, 3, 4):
+            client = MongoClient()
+            client.fail_export_at = fail_at
+            with self.subTest(fail_at=fail_at), self.assertRaisesRegex(ONLINE.SuiteError, "injected export download"):
+                MongoAlgorithmTest().run_mongo(client)
+            self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
+                             {k: v for k, v in client.original.items() if k != "version"})
+            self.assertFalse(any(p["state"] == "active" for p in client.policies))
+
+
 class MongoAlgorithmTest(unittest.TestCase):
     def run_mongo(self, client):
         process = RestartRecoveryTest().process
@@ -335,6 +411,9 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertTrue(report["unprotected_derived_query"]["source_values_verified"])
         self.assertTrue(report["initial_technical_field_search"]["same_item_verified"])
         self.assertTrue(all(case["develop"]["sparse_objects_verified"] for case in report["cases"]))
+        self.assertEqual(len(client.export_requests), 4)
+        self.assertTrue(all(case["raw_record_export"]["canonical_int64_preserved"] for case in report["cases"]))
+        self.assertTrue(report["cases"][0]["export_during_manager_policy"]["same_user_verified"])
         self.assertEqual([case["query_boundaries"]["count"] for case in report["cases"]], [7, 7, 7])
         self.assertTrue(all(case["query_boundaries"]["derived_output_denied"] for case in report["cases"]))
         self.assertTrue(report["cases"][0]["develop_during_manager_policy"]["null_values_preserved"])
