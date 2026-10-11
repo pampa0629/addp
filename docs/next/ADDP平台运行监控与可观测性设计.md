@@ -1635,7 +1635,7 @@ System 既有 `GET /platform/module-instances` 增加可选 `process_metrics_dec
 
 本次验收记录仅修改现有设计文档，`git diff --check` 返回 0；默认 `make test-changed` 再次因当前混合工作区缺少多模块测试连接条件在预检返回 2（`/tmp/addp-service-scope-acceptance-changed-1.log`），业务门禁未执行，不计为通过。
 
-### 10.52 Manager、Meta、Transfer 后端进程来源扩展（部署准备及门禁完成，待应用）
+### 10.52 Manager、Meta、Transfer 后端进程来源扩展（本机运行复验完成）
 
 2026-10-11 用户确认继续接入主要数据操作链路。本批选择 Manager、Meta、Transfer 三个 backend，沿既有 Common `RegisterAndHeartbeat → StartOptional` 发布当前实例的私有进程采集声明，无需修改业务 Handler、登记第二个目标或新增 IAM 权限。三者均在 macOS 原生运行，不关联到 Docker Desktop Linux VM；整机与自身进程指标继续分别表达。
 
@@ -1651,4 +1651,12 @@ Worker 尚未包含在本批来源中。Meta worker 与 backend 的 role 不同�
 
 完整 `make test-dev-lifecycle` 串行复验返回 0（`/tmp/addp-three-backend-lifecycle-2.log`），88 项 Python、Infra 端口与停止安全、开发生命周期、共享 schema/repository/projectionstore 及 Security/Meta/Quality/Transfer 命令编译均通过。复验未修改原用例或超时；首次超时本轮未复现，根因尚未确定，不据此宣称已修复。`git diff --check` 通过。本批无产品代码、API 或 CI 编排变更，沿既有门禁验证；同步修正 Monitor 模块入口中此前仍写“Hosted T4 待验收”的过时状态，未扩大已完成的运行覆盖。
 
-下一步由用户在仓库根目录依次执行 `bash scripts/infra/up.sh --metrics` 与 `./scripts/dev/restart.sh -manager -meta -transfer -monitor`：前者应用中心六端口宿主通道，后者加载三个 backend 的来源声明和 Monitor 准入集合，按标准生命周期处理所选模块及所属 Worker。Worker 未获得本批采集声明，System 与已有 VM 来源保持现有部署。由用户操作个人服务生命周期，AI 不执行重启或 keepalive。应用后还须核对六来源实际发现与 mTLS、三个当前实例身份、完整一分钟 CPU 窗口及 Safari 默认五条服务首屏，未执行前均不计为通过。
+准备完成时建议用户在仓库根目录依次执行 `bash scripts/infra/up.sh --metrics` 与 `./scripts/dev/restart.sh -manager -meta -transfer -monitor`：前者应用中心六端口宿主通道，后者加载三个 backend 的来源声明和 Monitor 准入集合，按标准生命周期处理所选模块及所属 Worker。Worker 未获得本批采集声明。个人服务生命周期由用户操作，AI 未执行重启或 keepalive；准备阶段的待验收状态由以下实际运行结果更新。
+
+2026-10-11 用户确认已重启后进行只读复验。标准 `bash scripts/infra/status.sh` 显示中心健康，实际五个业务后端 `/health/ready` 均 ready，构建提交均为 `6e30cd0d5cbcffb362cdc240ba75aba9401a56d8`，已包含默认服务范围实现。中心唯一 `addp_nodes` Job 实际发现六个来源且全部 up、无采集错误：原 VM 加 System、Monitor、Manager、Meta、Transfer 五个 backend。五个进程的规范 `instance` 保持 `127.0.0.1:19101–19105`，实际 Desktop 传输地址逐一对应 `host.docker.internal:同端口`，没有把宿主转换地址当成实例身份。
+
+直接以既有准入客户端读取各来源，并以独立查询客户端读取中心结果，身份、操作系统 darwin、role backend 及启动时间相符；三个新增来源的实例 ID 与对应 Ready 中的当前注册实例一致：Manager `1f205345-354d-425f-b3d7-4ea256df677c`、Meta `f978d273-7bc9-4cd9-918e-05fb3848e3f4`、Transfer `b53994ed-259c-495b-a61e-ac6a2d7477fa`。三个新增端点均拒绝无客户端证书的请求（TLS certificate required）。2026-10-11 10:10:44 UTC 快照中，每个进程的完整一分钟窗口均有四个样本；Manager/Meta/Transfer CPU 核占用约为 0.00228/0.00716/0.00100，RSS 约为 89.27/141.16/77.56 MiB，运行时长约为 386/385/384 秒，数值及身份断言通过。临时只读证据为 `/tmp/addp-three-backend-runtime-acceptance.log`；这是个人部署运行复验，不替代标准测试入口或 Hosted T4。
+
+Safari 使用用户已登录的平台管理员会话实际查看 `/monitor/service-resources`，默认“在线、已启用采集”范围共五条，五者均为“正在采集”并展示各自采样时间、CPU 核占用、MiB 内存和自然时间格式的运行时长；页面实例 ID 与来源一致。已查看实际截图，当前窗口可见全部指标列及就地释义。小于 0.005 核的 CPU 值按现有两位小数显示为 `0.00 核`，底层值有真实样本，不能解释为缺失或停止采集。五个 macOS 进程均显示“未关联主机”，未错误关联 Linux VM。本次未读取浏览器 Token、未修改 IAM、未注入个人来源故障，也未扩大 Worker、进程趋势或生产 T5 的完成范围。
+
+运行复验收尾只更新本节与 Monitor 文档入口，没有修改产品实现或 CI 编排。`git diff --check` 通过；再次执行默认 `make test-changed`，当前混合工作区扩散至多个 Owner，因缺少 PostgreSQL DSN、MySQL/OceanBase 等既有测试输入而在预检返回 2（`/tmp/addp-three-backend-runtime-changed.log`），业务门禁未执行，不计通过。此前与本批部署输入匹配的两项完整标准门禁结果仍保留在上文；相应自动化门禁已由 Platform CI / Release T2 登记，本轮不将个人运行结果或文档提交计为新的 Hosted 验收。
