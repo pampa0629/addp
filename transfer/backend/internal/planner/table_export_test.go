@@ -1,9 +1,13 @@
 package planner
 
 import (
+	"bytes"
+	"context"
+	"encoding/binary"
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -1311,6 +1315,90 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	}
 	if result.Plan.Target.TableWrite.Method != "" {
 		t.Fatalf("write method = %q, want planner to leave native writer default", result.Plan.Target.TableWrite.Method)
+	}
+}
+
+func TestBuildTableTransferPlanConsumesDelimitedEncodingFact(t *testing.T) {
+	for _, formatType := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
+		for _, encoding := range []string{"gbk", "utf-16le", "utf-16be"} {
+			t.Run(string(formatType)+"/"+encoding, func(t *testing.T) {
+				delimiter := ","
+				if formatType == format.FormatTSV {
+					delimiter = "\t"
+				}
+				path := "imports/source." + string(formatType)
+				spec := minimalEncodedToNativeSpec()
+				spec.Source.Format = ""
+				spec.Source.Locator = fileLocator(1, path)
+				spec.Source.Options = map[string]interface{}{"header": true}
+				spec.Source.Attributes = tableSourceAttributes("single", string(formatType), path, nil, []map[string]interface{}{
+					{"name": "id", "type": "bigint"}, {"name": "名称", "type": "string"},
+				}, nil)
+				spec.Source.Attributes["format_info"] = map[string]interface{}{string(formatType): map[string]interface{}{"encoding": encoding}}
+				result, err := BuildTableTransferPlan(spec, StaticEngineResolver{1: {Type: "nfs"}, 2: {Type: "postgresql"}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				opts := result.Plan.Source.ParseOptions
+				if opts == nil || opts.Encoding != encoding || !opts.HasHeader || opts.Delimiter != []rune(delimiter)[0] {
+					t.Fatalf("source parse options = %+v", opts)
+				}
+				if _, exists := spec.Source.Options["encoding"]; exists {
+					t.Fatal("planner changed the task options")
+				}
+				// Fixed GBK bytes and independent UTF-16 encoding; no BOM can hide a missing plan encoding.
+				data := []byte("id" + delimiter + "\xc3\xfb\xb3\xc6\r\n1" + delimiter + "\xb3\xc7\xca\xd0\r\n")
+				if encoding != "gbk" {
+					var encoded bytes.Buffer
+					var order binary.ByteOrder = binary.BigEndian
+					if encoding == "utf-16le" {
+						order = binary.LittleEndian
+					}
+					for _, unit := range utf16.Encode([]rune("id" + delimiter + "名称\r\n1" + delimiter + "城市\r\n")) {
+						_ = binary.Write(&encoded, order, unit)
+					}
+					data = encoded.Bytes()
+				}
+				provider, err := format.GetTableReaderProvider(formatType)
+				if err != nil {
+					t.Fatal(err)
+				}
+				reader, err := provider.OpenTableReader(context.Background(), bytes.NewReader(data), opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reader.Close(context.Background())
+				rows, err := reader.ReadRows(context.Background(), 10)
+				if err != nil || len(rows) != 1 || rows[0]["id"] != int64(1) || rows[0]["名称"] != "城市" {
+					t.Fatalf("planned source rows = %v, %v", rows, err)
+				}
+			})
+		}
+	}
+}
+
+func TestBuildTableTransferPlanEncodingDefaultsAndExplicitOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name, metaEncoding, explicitEncoding, want string
+	}{
+		{"no-fact", "", "", "utf-8"},
+		{"explicit", "gbk", "utf-8", "utf-8"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := minimalEncodedToNativeSpec()
+			spec.Source.Attributes = tableSourceAttributes("single", "csv", "imports/roads.csv", nil, []map[string]interface{}{{"name": "id", "type": "bigint"}}, nil)
+			spec.Source.Attributes["format_info"] = map[string]interface{}{"csv": map[string]interface{}{"encoding": tc.metaEncoding}}
+			if tc.explicitEncoding != "" {
+				spec.Source.Options = map[string]interface{}{"encoding": tc.explicitEncoding}
+			}
+			result, err := BuildTableTransferPlan(spec, StaticEngineResolver{1: {Type: "nfs"}, 2: {Type: "postgresql"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if opts := result.Plan.Source.ParseOptions; opts == nil || opts.Encoding != tc.want {
+				t.Fatalf("source options = %+v, want %s", opts, tc.want)
+			}
+		})
 	}
 }
 

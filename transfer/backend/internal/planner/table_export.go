@@ -1025,6 +1025,11 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			return executor.TableSourcePlan{}, err
 		}
 		parseOptions := tableParseOptions(endpoint.Options, sourceFormat)
+		if (sourceFormat == format.FormatCSV || sourceFormat == format.FormatTSV) && stringValue(endpoint.Options, "encoding") == "" {
+			if encoding := commonJSON.String(endpoint.Attributes, "format_info."+string(sourceFormat), "encoding"); encoding != "" {
+				parseOptions.Encoding = encoding
+			}
+		}
 		if err := applyContainerChildParseOptions(endpoint, itemDescriptor, parseOptions); err != nil {
 			return executor.TableSourcePlan{}, err
 		}
