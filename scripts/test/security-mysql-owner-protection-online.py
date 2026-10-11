@@ -916,7 +916,7 @@ def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mappin
                         "field_name": field_name, "field_type": "string", "field_highlight_verified": True,
                         "same_item_verified": True}
         time.sleep(min(1, max(0, deadline - time.monotonic())))
-    raise SuiteError("protected technical field was not searchable before the deadline")
+    raise SuiteError(f"protected technical field was not searchable before the deadline: Engine {engine_id}, {item.get('full_name')}, {field_name}")
 
 
 def require_hosted_restart(repository: Path) -> None:
@@ -1188,10 +1188,17 @@ def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
     return {"count": 7, "derived_output_denied": True, "denied_result_absent": True}
 
 
-def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
-                               deadline: float, timeout: float) -> dict[str, object]:
+def prepare_mongodb_source(client: GatewayClient, engine_id: int, deadline: float) -> dict[str, object]:
     scan = wait_for_scan(client, engine_id, deadline)
     source = find_item(client, engine_id, MONGODB_SOURCE, "collection")
+    search = wait_for_technical_field(client, engine_id, source, MONGODB_FIELD, deadline)
+    return {"scan_execution_id": scan, "item": source, "technical_field_search": search}
+
+
+def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared: Mapping[str, object],
+                               deadline: float, timeout: float) -> dict[str, object]:
+    scan = prepared["scan_execution_id"]
+    source = _object(prepared.get("item"), "prepared MongoDB item")
     locator = build_item_locator(engine_id, source)
     unprotected_derived = verify_unprotected_mongodb_derived_query(client, engine_id, locator, deadline)
     enrollment_id, initialized = ensure_enrollment(client, engine_id, MONGODB_SOURCE, locator)
@@ -1279,6 +1286,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
         raise scenario_error
     return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD,
             "unprotected_derived_query": unprotected_derived,
+            "initial_technical_field_search": prepared["technical_field_search"],
             "component": component,
             "scan_execution_id": scan, "enrollment_initialized": initialized,
             "finding_id": finding_id, "assessment_id": assessment_id, "finding_confirmed": confirmed,
@@ -1569,6 +1577,10 @@ def main() -> int:
         required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"),
         min(timeout, 30),
     )
+    # Submit the initial technical snapshot while no protection mutation can
+    # isolate Manager's index. A successful Meta scan alone is not index proof.
+    validate_user_identity(client, tenant_id)
+    mongodb_source = prepare_mongodb_source(client, mongodb_engine_id, time.monotonic() + timeout)
     report = run_scenario(
         client,
         tenant_id,
@@ -1578,7 +1590,7 @@ def main() -> int:
         required_environment("ADDP_ONLINE_TEST_RUN_ID"),
         timeout,
     )
-    report["mongodb_algorithms"] = exercise_mongodb_algorithms(client, mongodb_engine_id,
+    report["mongodb_algorithms"] = exercise_mongodb_algorithms(client, mongodb_engine_id, mongodb_source,
         time.monotonic() + timeout, timeout)
     source_item = find_item(client, source_engine_id,
                             f"{required_environment('ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE')}.{SOURCE_TABLE}", "table")

@@ -309,7 +309,8 @@ class MongoAlgorithmTest(unittest.TestCase):
              patch.object(ONLINE, "ready_process", side_effect=[process(), process(), process(True), process(True)]), \
              patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=0)), \
              patch.object(ONLINE, "wait_for_scan", return_value="mongo-scan") as scan:
-            result = ONLINE.exercise_mongodb_algorithms(client, 29, time.monotonic() + 60, 60)
+            prepared = ONLINE.prepare_mongodb_source(client, 29, time.monotonic() + 60)
+            result = ONLINE.exercise_mongodb_algorithms(client, 29, prepared, time.monotonic() + 60, 60)
             scan.assert_called_once()
             return result
 
@@ -332,6 +333,7 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertTrue(report["cases"][0]["baseline_after_policy_revocation"]["sparse_objects_verified"])
         self.assertTrue(all(case["manager"]["null_values_preserved"] for case in report["cases"]))
         self.assertTrue(report["unprotected_derived_query"]["source_values_verified"])
+        self.assertTrue(report["initial_technical_field_search"]["same_item_verified"])
         self.assertTrue(all(case["develop"]["sparse_objects_verified"] for case in report["cases"]))
         self.assertEqual([case["query_boundaries"]["count"] for case in report["cases"]], [7, 7, 7])
         self.assertTrue(all(case["query_boundaries"]["derived_output_denied"] for case in report["cases"]))
@@ -855,7 +857,9 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 patch.object(sys, 'argv', [str(SCRIPT)]),
                 patch.object(ONLINE.signal, 'signal'),
                 patch.object(ONLINE, 'require_hosted_restart'),
-                patch.object(ONLINE, 'run_scenario', return_value={}),
+                patch.object(ONLINE, 'validate_user_identity', return_value={}) as identity,
+                patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared'}) as prepare,
+                patch.object(ONLINE, 'run_scenario', return_value={}) as scenario,
                 patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value={'cases': []}),
                 patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source'}),
                 patch.object(ONLINE, 'build_item_locator', return_value='source-locator'),
@@ -863,6 +867,10 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 patch.object(ONLINE, 'run_export_browser') as browser,
                 patch('builtins.print'),
             ):
+                order = Mock()
+                order.attach_mock(identity, 'identity')
+                order.attach_mock(prepare, 'prepare')
+                order.attach_mock(scenario, 'scenario')
                 readiness.return_value = {'same_item_verified': True}
                 if unavailable:
                     readiness.side_effect = ONLINE.SuiteError('protected field not searchable')
@@ -875,6 +883,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
                         return self.report()
                     browser.side_effect = launch
                     self.assertEqual(ONLINE.main(), 0)
+                    self.assertEqual([call[0] for call in order.mock_calls], ['identity', 'prepare', 'scenario'])
                     self.assertEqual(readiness.call_args.args[1:4], (23, {'fingerprint': 'source'}, 'email'))
 
     def report(self):
