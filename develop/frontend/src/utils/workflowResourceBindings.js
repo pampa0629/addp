@@ -104,3 +104,8 @@ export function collectResourceBindingParams(parameters, formData) {
   }
   return result
 }
+
+export function isResourceEngineSupported(parameter, engine) {
+  const engineTypes = parameter?.ui_config?.engine_types
+  return !Array.isArray(engineTypes) || engineTypes.includes(engine?.engine_type)
+}

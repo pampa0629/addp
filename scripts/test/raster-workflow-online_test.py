@@ -65,6 +65,14 @@ class Client:
             item['attributes']['type_info']['media'] = {'width': expected['width'], 'height': expected['height']}
             item['attributes']['capabilities']['spatial'] = {'srid':4326, 'extent':expected['extent']}
             self.targets[item_id] = item
+        for item_id, key in enumerate(m.fixture.TILE_WINDOWS, 46):
+            item = copy.deepcopy(self.target); expectation = m.fixture.tile_expectation(key)
+            item.update(id=item_id, full_name=f'raster-target/tiles-basic/{key}.tif', fingerprint=key, size_bytes=1024)
+            item['attributes']['type_info']['media'] = {'width': expectation['width'], 'height': expectation['height']}
+            item['attributes']['capabilities']['spatial'] = {'srid':4326, 'extent':expectation['extent']}
+            overviews = key != 'r160_c160'
+            item['attributes']['format_info']['tiff'] = {'profile': 'cog' if overviews else 'geotiff', 'is_tiled': True, 'has_overviews':overviews}
+            self.targets[item_id] = item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
                             {'role_key': 'online.raster_workflow', 'permissions': sorted(m.PERMISSIONS)}]}}
@@ -124,6 +132,27 @@ class Client:
                     'metadata': {'result': {'summary': {'has_result': True},
                         'final_result': final_result}}})
                 return m.support.Response(200, {'execution_id': identifier}, {})
+            if definition['tasks'][-1]['operator'] == 'raster_save_tiles':
+                identifier = f'run-{len(self.executions)+1}'
+                source = definition['tasks'][0]['params']['locator']
+                tiles, resources, targets, scans = {}, {}, [], []
+                for key, window in m.fixture.TILE_WINDOWS.items():
+                    expectation = m.fixture.tile_expectation(key)
+                    levels = [[window[2]//2,window[3]//2]] if key != 'r160_c160' else []
+                    tiles[key] = {**{k:v for k,v in expectation.items() if k not in ('band_nodata','valid_pixels')},
+                        'name':key+'.tif','window':list(window),'artifact_type':'raster','format':'tiff','profile':'cog','size_bytes':1024,'uploaded_files':1,
+                        'bands':[{'dtype':'Float64','nodata':-9999.,'nodata_is_nan':False,'overviews':levels}]*2}
+                    locator = f'addp://engine/2/path/raster-target/tiles-basic/{key}.tif?type=object'
+                    resources[key] = {'resource':{'locator':locator,'type':'object','write_mode':'create'}}
+                    targets.append({'task_id':'save_tiles','tile_key':key,'locator':locator,'type':'object'})
+                    scans.append({'status':'submitted','target_locator':locator,'execution_id':'auto-'+identifier+'-'+key})
+                self.executions[identifier] = self.mutate({'execution_id':identifier,'module':'develop','status':'success','metadata':{
+                    'outputs':{'save_tiles':{'tiles':resources}},
+                    'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'locator':source}],
+                        'outputs':[{'locator':item['locator'],'write_mode':'create'} for item in targets]},
+                    'result':{'final_result':{'artifact_type':'raster_tiles','source_width':256,'source_height':256,'tile_size':[160,160],
+                        'columns':2,'rows':2,'total_tiles':4,'completed_tiles':4,'tiles':tiles},'produced_targets':targets,'meta_scan_runs':scans}}})
+                return m.support.Response(200, {'execution_id':identifier}, {})
             mode = definition['tasks'][-1]['params']['write_mode']
             identifier = f'run-{len(self.executions) + 1}'
             status = 'failed' if identifier == 'run-2' else 'success'
@@ -158,6 +187,7 @@ class Client:
         elif path.startswith('/api/v1/meta/lineage/graph?'):
             target_id = int(urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)['item_id'][0])
             source_id, identifier = (10, 'run-3') if target_id == 20 else (11, 'run-' + str(target_id - (17 if target_id <= 22 else 13)))
+            if target_id >= 46: source_id, identifier = 10, 'run-38'
             if target_id == 26: source_id = 12
             if target_id == 27: source_id = 26
             if target_id == 28: source_id = 13
@@ -306,7 +336,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             self.assertEqual(case['browser']['expected_result'], case['json_result'])
             self.assertEqual(len(case['physical']['preserved_sha256']), 25)
         definitions = [body['content']['workflow_definition'] for method, path, body in self.client.calls
-            if method == 'POST' and path == '/api/v1/develop/executions'][-2:]
+            if method == 'POST' and path == '/api/v1/develop/executions'
+            and body['content']['workflow_definition']['tasks'][-1]['operator'] == 'raster_footprint']
         self.assertNotIn('validity', definitions[0]['tasks'][-1]['params'])
         self.assertEqual(definitions[1]['tasks'][-1]['params']['validity'], 'all')
 
@@ -361,7 +392,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def setUp(self):
         self.client = Client()
         self.env = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID': '1',
-                    'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID': '2', 'ADDP_ONLINE_TEST_RUN_ID': 'raster-test'}
+                    'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID': '2', 'ADDP_ONLINE_TEST_RUN_ID': 'raster-test',
+                    'ADDP_ONLINE_TEST_TIMEOUT_SECONDS': '.01'}
         self.physical_actions = []
 
     def physical(self, repo, env, action):
@@ -408,6 +440,15 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             return {**extra, 'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
                     'cog_valid': True, 'has_overviews': case_name=='clip-polygon' or 'bilinear' in case_name or 'fractional' in case_name or 'finite' in case_name,
                     'source_unchanged': True, 'valid_pixels': m.fixture.computed_expectation(case_name)['valid_pixels']}
+        if action == 'verify-tiles':
+            preserved = {'result.cog.tif':'new','mosaic-first.cog.tif':'spatial-first','mosaic-last.cog.tif':'spatial-last'}
+            for prior in m.fixture.GRID_CASES+m.fixture.MULTIBAND_CASES+m.fixture.UTILITY_CASES+m.fixture.FOUNDATION_CASES+m.fixture.RECLASS_CASES+m.fixture.AGGREGATE_CASES+m.fixture.OUTSIDE_CASES+m.fixture.UPDATE_CASES:
+                preserved[prior+'.cog.tif'] = prior
+            return {'source_unchanged':True,'preserved_sha256':preserved,'tiles':{key:{
+                'cog_valid':True,'source_unchanged':True,'size_bytes':1024,'sha256':key,
+                'has_overviews':key!='r160_c160','overview_sizes':[[window[2]//2,window[3]//2]] if key!='r160_c160' else [],
+                'valid_pixels':m.fixture.tile_expectation(key)['valid_pixels']}
+                for key,window in m.fixture.TILE_WINDOWS.items()}}
         if action == 'verify-analysis':
             return {'sha256': 'new', 'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 65535,
                     'first_sha256': 'spatial-first', 'last_sha256': 'spatial-last'}
@@ -420,11 +461,60 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                               lambda repo, env, identifier, timeout: {'execution_id': identifier,
                                   'cause': 'target_already_exists', 'source': 'develop_runtime_log'})
 
+    def test_tiles_publish_four_individual_outputs_with_strict_sizes_and_prior_hashes(self):
+        report = self.run_scene()
+        cases = report['tiling_cases']
+        self.assertEqual([case['tile_key'] for case in cases], list(m.fixture.TILE_WINDOWS))
+        self.assertEqual(len(report['tiling_automatic_scan_runs']),4)
+        self.assertEqual(len(report['tiling_preserved_sha256']),26)
+        for case in cases:
+            self.assertEqual(case['artifact']['size_bytes'],case['physical']['size_bytes'])
+            self.assertEqual(case['lineage']['source_item_id'],10)
+            self.assertEqual(len(case['browser']['target_locators']),4)
+
+    def test_tiles_reject_wrong_grid_partial_manifest_scope_locator_and_missing_scan(self):
+        for fault in ('grid','partial','locator','scan','private','lineage','window','produced'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def mutate(execution):
+                    if execution['execution_id']=='run-38':
+                        data=execution['metadata']; result=data['result']; manifest=result['final_result']
+                        if fault=='grid': manifest['tile_size']=[128,128]
+                        if fault=='partial': manifest['completed_tiles']=3
+                        if fault=='locator': data['outputs']['save_tiles']['tiles']['r0_c0']['resource']['locator']='addp://engine/2/path/raster-target?type=bucket'
+                        if fault=='scan': result['meta_scan_runs'].pop()
+                        if fault=='private': manifest['tiles']['r0_c0']['workspace']='/private/runtime'
+                        if fault=='lineage': data['lineage_facts']['outputs'].pop()
+                        if fault=='window': manifest['tiles']['r0_c0']['window']=[0,0,128,128]
+                        if fault=='produced': result['produced_targets'].pop()
+                    return execution
+                self.client.mutate=mutate
+                with self.assertRaises(m.SuiteError): self.run_scene()
+
+    def test_tiles_keep_strict_positive_triple_size_and_preservation_guards(self):
+        for fault in ('zero','physical-size','meta-size','validity','prior','missing','overview','layout'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                if fault=='meta-size': self.client.targets[46]['size_bytes']=1025
+                def physical(repo,env,action):
+                    result=self.physical(repo,env,action)
+                    if action=='verify-tiles':
+                        fact=result['tiles']['r0_c0']
+                        if fault=='zero': fact['size_bytes']=0
+                        if fault=='physical-size': fact['size_bytes']=1025
+                        if fault=='validity': fact['valid_pixels']-=1
+                        if fault=='prior': result['preserved_sha256']['update-valid.cog.tif']='changed'
+                        if fault=='missing': result['tiles'].pop('r160_c160')
+                        if fault=='overview': fact['overview_sizes']=[]
+                        if fault=='layout': fact['cog_valid']=False
+                    return result
+                with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
     def test_complete_chain_only_uses_source_manual_scan_and_owner_automatic_target_scan(self):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES] + ['verify-update-valid'] * 2)
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES] + ['verify-update-valid'] * 2 + ['verify-tiles'])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -452,9 +542,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual({task['operator'] for definition in submitted for task in definition['tasks']}, {
             'raster_load', 'raster_save', 'raster_info', 'validate_cog', 'raster_to_cog', 'raster_build_overviews',
             'raster_reproject', 'raster_resample', 'raster_clip', 'raster_mosaic', 'raster_band_math',
-            'raster_statistics', 'raster_histogram', 'raster_align', 'raster_stack', 'raster_select_bands', 'raster_reclassify', 'raster_aggregate', 'raster_footprint', 'raster_update'})
+            'raster_statistics', 'raster_histogram', 'raster_align', 'raster_stack', 'raster_select_bands', 'raster_reclassify', 'raster_aggregate', 'raster_footprint', 'raster_update', 'raster_tile', 'raster_save_tiles'})
         tail = len(m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES)
-        submitted = submitted[:-len(m.fixture.FOOTPRINT_CASES)]
+        submitted = submitted[:-(len(m.fixture.FOOTPRINT_CASES)+1)]
         submitted = submitted[-(len(m.fixture.UTILITY_CASES + m.fixture.UTILITY_JSON_CASES) + tail):-tail]
         self.assertEqual([task['operator'] for task in submitted[0]['tasks']],
             ['raster_load', 'raster_build_overviews', 'raster_save'])

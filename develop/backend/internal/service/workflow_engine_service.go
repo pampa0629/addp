@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -128,13 +129,15 @@ type WorkflowResponse struct {
 }
 
 type WorkflowProducedTarget struct {
-	TaskID    string   `json:"task_id"`
-	EngineID  uint     `json:"engine_id"`
-	Type      string   `json:"type"`
-	Path      []string `json:"path"`
-	Locator   string   `json:"locator"`
-	WriteMode string   `json:"write_mode,omitempty"`
-	Layout    string   `json:"layout,omitempty"`
+	TileKey    string   `json:"tile_key,omitempty"`
+	BatchScope bool     `json:"-"`
+	TaskID     string   `json:"task_id"`
+	EngineID   uint     `json:"engine_id"`
+	Type       string   `json:"type"`
+	Path       []string `json:"path"`
+	Locator    string   `json:"locator"`
+	WriteMode  string   `json:"write_mode,omitempty"`
+	Layout     string   `json:"layout,omitempty"`
 }
 
 // ExecuteWorkflow 执行工作流（支持 JSONB 配置）
@@ -227,12 +230,16 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 		return nil, fmt.Errorf("工作流运行时未返回 execution_id")
 	}
 	runtimeStatus, err := s.waitWorkflowRuntimeTerminalStatus(ctx, engine, resp.ExecutionID)
-	if err != nil {
+	if runtimeStatus == nil {
 		return nil, err
 	}
 	applyWorkflowRuntimeStatus(resp, runtimeStatus)
-	resp.ProducedTargets = producedTargets
-	return resp, nil
+	actualTargets, targetErr := resolveWorkflowRasterTileTargets(producedTargets, resp)
+	if targetErr != nil {
+		return nil, targetErr
+	}
+	resp.ProducedTargets = actualTargets
+	return resp, err
 }
 
 func (s *WorkflowEngineService) waitWorkflowRuntimeTerminalStatus(
@@ -658,6 +665,27 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			if capabilities.EngineFamily == "file" && (capabilities.Storage == nil || capabilities.Storage.Store == nil || !capabilities.Storage.Store.StreamWrite) {
 				return nil, nil, fmt.Errorf("任务 %d 目标引擎不支持文件写入", i)
 			}
+			for _, output := range adapterSpec.ResourceOutputs {
+				if output.EngineTypes == nil {
+					continue
+				}
+				if !slices.Contains(output.EngineTypes, engine.EngineType) {
+					return nil, nil, fmt.Errorf("%s: %s", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetEngineUnsupported), engine.EngineType)
+				}
+				catalog, ok := registered.(plugin.EngineCatalogModelProvider)
+				if !ok {
+					return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetLocatorInvalid))
+				}
+				for _, target := range targets {
+					locator, err := resourcetree.ParseURI(target.Locator)
+					if err == nil {
+						_, err = resourcetree.EngineCatalogPathFromLocator(catalog.EngineCatalogModel(), locator)
+					}
+					if err != nil {
+						return nil, nil, fmt.Errorf("%s: %w", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetLocatorInvalid), err)
+					}
+				}
+			}
 		}
 		if err := normalizeDerivedWorkflowPath(params, engine.EngineType, plugin.ConnectionInfo(engine.ConnectionInfo)); err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源路径规范化失败: %w", i, err)
@@ -681,6 +709,9 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			i, engineID, engine.EngineType)
 	}
 
+	if err := rejectWorkflowBatchTargetOverlap(producedTargets); err != nil {
+		return nil, nil, err
+	}
 	return result, producedTargets, nil
 }
 
@@ -837,8 +868,11 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		if spec.TargetExtension != "" && !strings.HasSuffix(strings.ToLower(name), strings.ToLower(spec.TargetExtension)) {
 			return nil, fmt.Errorf("target_name must end with %s", spec.TargetExtension)
 		}
-		if spec.TargetFormat == "tiff" && format.DetectFormat(name, nil) != format.FormatTIFF {
+		if spec.TargetFormat == "tiff" && spec.TargetKind == "file" && format.DetectFormat(name, nil) != format.FormatTIFF {
 			return nil, fmt.Errorf("target_name must be a TIFF file")
+		}
+		if spec.BatchOutput && (name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00")) {
+			return nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgRasterTileTargetNameInvalid))
 		}
 		parent, err := resourcetree.ParseURI(parentURI)
 		if err != nil {
@@ -905,6 +939,11 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 	}
 	produced := workflowProducedTarget(targetLocator.EngineID, targetLocator.Type, targetLocator.Path)
 	produced.WriteMode = target.WriteMode
+	produced.BatchScope = spec.BatchOutput
+	if spec.BatchOutput && target.Access.Method == workflowaccess.MethodObjectStore {
+		produced.Type = string(resourcetree.TypePrefix)
+		produced.Locator = (&resourcetree.ResourceLocator{EngineID: produced.EngineID, Type: resourcetree.TypePrefix, Path: produced.Path}).ToURI()
+	}
 	return []WorkflowProducedTarget{produced}, nil
 }
 

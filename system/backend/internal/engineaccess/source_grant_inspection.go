@@ -56,7 +56,7 @@ const inspectionSourceCTE = `, sources AS (
 // One committed statement observes IAM, rules, source relations and pagination.
 // Only current grant-bearing targets are listed; an empty list is not an Allow
 // or a denial verdict for all other engine data. No source database is queried.
-const accountGrantRelationsSQL = `WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS at),
+const accountGrantRelationsPrefixSQL = `WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS at),
  account AS MATERIALIZED (
  SELECT m.tenant_id, p.id AS principal_id, m.id AS membership_id, p.authorization_version
  FROM system.tenant_memberships m
@@ -66,9 +66,9 @@ const accountGrantRelationsSQL = `WITH clock AS MATERIALIZED (SELECT clock_times
  SELECT g.* FROM system.engine_access_grants g CROSS JOIN clock
  WHERE g.tenant_id = ? AND g.engine_id = ? AND g.granted_at <= clock.at
  AND (g.expires_at IS NULL OR g.expires_at > clock.at)
- AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations r WHERE r.request_id = g.request_id)
- AND strpos(lower(array_to_string(ARRAY(SELECT x->>'name' FROM jsonb_array_elements(g.catalog_path->'segments') x), ' / ')), lower(?)) > 0
-), input AS MATERIALIZED (
+ AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations r WHERE r.request_id = g.request_id)`
+
+const accountGrantRelationsSuffixSQL = `), input AS MATERIALIZED (
  SELECT account.*, COALESCE((SELECT jsonb_agg(path ORDER BY path::text)
  FROM (SELECT DISTINCT catalog_path AS path FROM active) paths), '[]'::jsonb) AS targets,
  clock.at AS observed_at FROM account CROSS JOIN clock
@@ -91,13 +91,17 @@ const accountGrantRelationsSQL = `WITH clock AS MATERIALIZED (SELECT clock_times
  ORDER BY p.catalog_path::text) FROM page p), '[]'::jsonb) AS items,
  (SELECT count(*) FROM applicable) AS total`
 
-func (r *Repository) listAccountGrantRelations(ctx context.Context, tenantID, engineID, accountID int64, page, size int, search string) ([]SourceGrantRelation, int64, error) {
+func (r *Repository) listAccountGrantRelations(ctx context.Context, tenantID, engineID, accountID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantRelation, int64, error) {
 	var result struct {
 		AccountExists bool
 		Items         json.RawMessage
 		Total         int64
 	}
-	if err := r.db.WithContext(ctx).Raw(accountGrantRelationsSQL, tenantID, accountID, tenantID, engineID, search, size, (page-1)*size).Scan(&result).Error; err != nil {
+	predicate, args := filter.targetPredicate()
+	parameters := append([]any{tenantID, accountID, tenantID, engineID}, args...)
+	parameters = append(parameters, size, (page-1)*size)
+	query := accountGrantRelationsPrefixSQL + " AND " + predicate + accountGrantRelationsSuffixSQL
+	if err := r.db.WithContext(ctx).Raw(query, parameters...).Scan(&result).Error; err != nil {
 		return nil, 0, err
 	}
 	if !result.AccountExists {

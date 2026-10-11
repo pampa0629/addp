@@ -97,7 +97,7 @@ func run() error {
 		return err
 	}
 	issuer := client.NewSystemExecutionAuthorizationClient(cfg.SystemURL, &http.Client{Timeout: 20 * time.Second})
-	router := api.SetupRouter(cfg.SystemURL, lifecycle, service.NewRevisionService(repo), service.NewPlatformRevisionService(platformRepo), issuer)
+	router := api.SetupRouter(cfg.SystemURL, lifecycle, service.NewRevisionService(repo), service.NewPlatformRevisionService(platformRepo, graph), issuer)
 	listener, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		return errors.New("ontology listener failed")

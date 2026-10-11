@@ -11,13 +11,18 @@ var localeFS embed.FS
 
 // Develop 模块消息 key 常量
 const (
-	MsgSparkObjectResultPolicy   = "develop.workflow.spark_object_result_policy"
-	MsgSparkObjectResultIdentity = "develop.workflow.spark_object_result_identity"
-	MsgSparkResultLiteralPath    = "develop.workflow.spark_result_literal_path"
-	MsgSparkFileFactsRequired    = "develop.workflow.spark_file_facts_required"
-	MsgSparkFileFactsReadFailed  = "develop.workflow.spark_file_facts_read_failed"
-	MsgSparkFileFactsMismatch    = "develop.workflow.spark_file_facts_mismatch"
-	MsgSparkTableItemRequired    = "develop.workflow.spark_table_item_required"
+	MsgRasterTileManifestInvalid       = "develop.workflow.raster_tile_manifest_invalid"
+	MsgRasterTileTargetOverlap         = "develop.workflow.raster_tile_target_overlap"
+	MsgRasterTileTargetNameInvalid     = "develop.workflow.raster_tile_target_name_invalid"
+	MsgWorkflowTargetLocatorInvalid    = "develop.workflow.target_locator_invalid"
+	MsgWorkflowTargetEngineUnsupported = "develop.workflow.target_engine_unsupported"
+	MsgSparkObjectResultPolicy         = "develop.workflow.spark_object_result_policy"
+	MsgSparkObjectResultIdentity       = "develop.workflow.spark_object_result_identity"
+	MsgSparkResultLiteralPath          = "develop.workflow.spark_result_literal_path"
+	MsgSparkFileFactsRequired          = "develop.workflow.spark_file_facts_required"
+	MsgSparkFileFactsReadFailed        = "develop.workflow.spark_file_facts_read_failed"
+	MsgSparkFileFactsMismatch          = "develop.workflow.spark_file_facts_mismatch"
+	MsgSparkTableItemRequired          = "develop.workflow.spark_table_item_required"
 
 	MsgExecutionNotFound                      = "develop.execution.not_found"
 	MsgExecutionReadFailed                    = "develop.execution.read_failed"

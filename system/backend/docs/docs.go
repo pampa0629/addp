@@ -2491,6 +2491,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine",
+                        "name": "catalog_path",
+                        "in": "query"
+                    },
+                    {
                         "enum": [
                             "user",
                             "department",
@@ -2704,6 +2710,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters",
                         "name": "table_search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine",
+                        "name": "catalog_path",
                         "in": "query"
                     },
                     {

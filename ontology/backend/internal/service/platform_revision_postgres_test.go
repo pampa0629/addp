@@ -18,7 +18,7 @@ import (
 )
 
 func testPlatformRevisionStorage(t *testing.T, db *gorm.DB) {
-	s := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(db))
+	s := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(db), testPlatformGraph{})
 	ctx, actor := context.Background(), platformTestActor()
 	var executionsBefore, projectionsBefore int64
 	if err := db.Table("common.task_executions").Count(&executionsBefore).Error; err != nil {

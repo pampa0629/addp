@@ -1,14 +1,8 @@
 <template>
   <section class="data-authorization" data-testid="engine-data-authorization">
-    <div class="workspace-toolbar" data-testid="authorization-workspace-toolbar">
-      <template v-if="workspaceView === 'list'">
-        <el-button v-if="canInitialize || canGrant || canUpdate" ref="createButton" data-testid="authorization-new" type="primary" :disabled="busy" @click="openWorkspace('create')">{{ t('system.engine.dataAuthorization.newAuthorization') }}</el-button>
-        <el-button v-else-if="canRead" ref="createButton" data-testid="authorization-configurations" :disabled="busy" @click="openWorkspace('create')">{{ t('system.engine.dataAuthorization.configurations') }}</el-button>
-      </template>
-      <template v-else>
-        <el-button ref="backButton" data-testid="authorization-back" :disabled="busy" @click="closeGrant">{{ t('system.engine.dataAuthorization.backToCurrent') }}</el-button>
-        <h3>{{ t(canInitialize || canGrant || canUpdate ? 'system.engine.dataAuthorization.newAuthorization' : 'system.engine.dataAuthorization.configurations') }}</h3>
-      </template>
+    <div v-if="workspaceView !== 'list'" class="workspace-toolbar" data-testid="authorization-workspace-toolbar">
+      <el-button ref="backButton" data-testid="authorization-back" :disabled="busy" @click="closeGrant">{{ t('system.engine.dataAuthorization.backToCurrent') }}</el-button>
+      <h3>{{ t(canInitialize || canGrant || canUpdate ? 'system.engine.dataAuthorization.newAuthorization' : 'system.engine.dataAuthorization.configurations') }}</h3>
     </div>
     <el-alert v-if="workspaceView === 'create'" type="info" :closable="false" show-icon :title="t('system.engine.dataAuthorization.boundary')" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
@@ -54,7 +48,12 @@
         </template>
       </template>
     </template>
-    <EngineSourceGrants :engine="engine" :view="workspaceView" :requirements="directRequirements" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant" />
+    <EngineSourceGrants :engine="engine" :view="workspaceView" :requirements="directRequirements" :catalog-adapter="adapter" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant">
+      <template #list-actions>
+        <el-button v-if="canInitialize || canGrant || canUpdate" ref="createButton" data-testid="authorization-new" type="primary" :disabled="busy" @click="openWorkspace('create')">{{ t('system.engine.dataAuthorization.newAuthorization') }}</el-button>
+        <el-button v-else-if="canRead" ref="createButton" data-testid="authorization-configurations" :disabled="busy" @click="openWorkspace('create')">{{ t('system.engine.dataAuthorization.configurations') }}</el-button>
+      </template>
+    </EngineSourceGrants>
     <el-collapse v-if="workspaceView === 'create' && canRead"><el-collapse-item :title="t('system.engine.dataAuthorization.configurations')">
       <el-table :data="rows.slice((page - 1) * 10, page * 10)">
         <el-table-column :label="t('system.engine.dataAuthorization.target')"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>

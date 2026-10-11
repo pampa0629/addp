@@ -48,7 +48,7 @@ func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, eng
 	if page <= 0 || size <= 0 || size > 100 || page > int(^uint(0)>>1)/size {
 		return nil, 0, commonapi.ErrBadRequest
 	}
-	if err := filter.Validate(); err != nil {
+	if err := filter.ValidateForEngine(engineID); err != nil {
 		return nil, 0, err
 	}
 	rows := make([]SourceGrantRelation, 0)
@@ -57,7 +57,7 @@ func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, eng
 		func(tx *Repository, check func() error) error {
 			if filter.RecipientType == "user" && filter.RecipientID > 0 {
 				var err error
-				rows, total, err = tx.listAccountGrantRelations(ctx, actor.TenantID, engineID, filter.RecipientID, page, size, filter.TableSearch)
+				rows, total, err = tx.listAccountGrantRelations(ctx, actor.TenantID, engineID, filter.RecipientID, page, size, filter)
 				if err != nil {
 					return err
 				}

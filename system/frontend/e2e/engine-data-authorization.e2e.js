@@ -8,7 +8,8 @@ const schemaPath = { ...rootPath, segments: [...rootPath.segments, { term: 'sche
 const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities' }] }
 function filterGrants(items, query) {
   const search = query.get('table_search')?.toLowerCase(), kind = query.get('recipient_type'), recipient = query.get('recipient_id')
-  return items.filter(item => (!search || item.catalog_path.segments.map(segment => segment.name).join(' / ').toLowerCase().includes(search)) &&
+  const exact = query.get('catalog_path') && JSON.parse(query.get('catalog_path'))
+  return items.filter(item => (!exact || JSON.stringify(item.catalog_path) === JSON.stringify(exact)) && (!search || item.catalog_path.segments.map(segment => segment.name).join(' / ').toLowerCase().includes(search)) &&
     (!kind || item.recipient_type === kind) && (!recipient || String(item.recipient_id) === recipient))
 }
 async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false } = {}) {
@@ -135,6 +136,50 @@ async function selectAccountFilter(page) {
   await page.getByTestId('source-grant-recipient-filter').locator('.el-select').click()
   await page.getByRole('option').filter({ hasText: 'Outdoor reader' }).click()
 }
+test('authorization actions share one row and resource tree precisely filters current and history', async ({ page }) => {
+  const similarPath = { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities_copy' }] }
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions, history: [historicalGrant(), { ...historicalGrant(), request_id: 'similar', catalog_path: similarPath }] })
+  await page.goto('/engines/2?tab=data-authorization')
+  const toolbar = page.getByTestId('authorization-workspace-toolbar')
+  await expect.poll(async () => {
+    const positions = await Promise.all([toolbar.getByTestId('authorization-new'), ...['当前授权', '授权历史'].map(name => toolbar.locator('.el-radio-button__inner').filter({ hasText: name }))].map(control => control.boundingBox()))
+    return Math.max(...positions.map(box => box.y + box.height / 2)) - Math.min(...positions.map(box => box.y + box.height / 2))
+  }).toBeLessThan(3)
+  await selectAccountFilter(page)
+  await page.getByTestId('source-grant-tree-filter').click()
+  const dialog = page.getByRole('dialog', { name: '资源树选择', exact: true })
+  const namespace = dialog.getByRole('treeitem', { name: 'outdoor', exact: true })
+  await namespace.locator('.el-tree-node__expand-icon').first().click()
+  await dialog.getByRole('treeitem', { name: 'activities', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByTestId('source-grant-exact-filter')).toBeVisible()
+  await expect(page.getByTestId('source-grant-table-filter')).toHaveValue('outdoor / activities')
+  await expect(page.getByTestId('source-grant-list').getByTestId('account-grant-expand')).toHaveCount(1)
+  await expect(page.getByTestId('source-grant-tree-filter')).toBeFocused()
+  await page.getByTestId('source-grant-list-mode').getByText('授权历史', { exact: true }).click()
+  await expect(page.getByTestId('source-grant-list')).not.toContainText('similar')
+  const query = new URL(reads.filter(url => url.includes('/access_grants/history')).at(-1)).searchParams
+  expect(JSON.parse(query.get('catalog_path'))).toEqual(tablePath)
+  expect(query.get('recipient_id')).toBe('33')
+  expect(query.has('table_search')).toBe(false)
+  await page.getByTestId('source-grant-table-filter').fill('activities')
+  await expect(page.getByTestId('source-grant-exact-filter')).toHaveCount(0)
+  await expect(page.getByTestId('source-grant-list')).toContainText('similar')
+  expect(new URL(reads.filter(url => url.includes('/access_grants/history')).at(-1)).searchParams.has('catalog_path')).toBe(false)
+  await page.getByTestId('source-grant-table-filter').fill('')
+  await expect.poll(() => new URL(reads.filter(url => url.includes('/access_grants/history')).at(-1)).searchParams.has('table_search')).toBe(false)
+  expect(writes).toHaveLength(0)
+})
+
+test('table text filtering remains available without resource tree permission', async ({ page }) => {
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions.filter(key => key !== 'system.engine_catalog.read'), history: [historicalGrant()] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await expect(page.getByTestId('source-grant-tree-filter')).toBeDisabled()
+  await page.getByTestId('source-grant-table-filter').fill('not-found')
+  await expect.poll(() => reads.some(url => url.includes('table_search=not-found'))).toBe(true)
+  expect(reads.some(url => url.endsWith('/catalog/children'))).toBe(false)
+  expect(writes).toHaveLength(0)
+})
 test('current authorization automatically includes personal department and project sources for a selected account', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: [...grantPermissions, 'iam.department.read', 'iam.project_group.read'], organizationMember: true,
     history: ['user','department','project_group'].map(kind => historicalGrant(kind)) })

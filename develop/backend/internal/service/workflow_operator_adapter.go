@@ -12,6 +12,7 @@ type workflowResourceInputSpec struct {
 }
 
 type workflowResourceOutputSpec struct {
+	EngineTypes   []string
 	ParentParam   string
 	NameParam     string
 	RuntimeParams []string
@@ -36,16 +37,18 @@ type workflowAccessPlanSpec struct {
 	TargetKind        string
 	TargetExtension   string
 	TargetContentType string
+	BatchOutput       bool
 	OptionParams      []string
 }
 
 var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapterSpec{
 	"geopython_workflow": {
-		"load":          workflowPythonLoadAdapterSpec(),
-		"raster_load":   workflowRasterAdapterSpec("raster_load"),
-		"raster_save":   workflowRasterAdapterSpec("raster_save"),
-		"raster_to_cog": workflowRasterAdapterSpec("raster_to_cog"),
-		"save":          workflowPythonSaveAdapterSpec(),
+		"load":              workflowPythonLoadAdapterSpec(),
+		"raster_load":       workflowRasterAdapterSpec("raster_load"),
+		"raster_save":       workflowRasterAdapterSpec("raster_save"),
+		"raster_save_tiles": workflowRasterAdapterSpec("raster_save_tiles"),
+		"raster_to_cog":     workflowRasterAdapterSpec("raster_to_cog"),
+		"save":              workflowPythonSaveAdapterSpec(),
 	},
 	"spark_workflow": {
 		"load": workflowLoadAdapterSpec("load"),
@@ -86,9 +89,19 @@ func workflowRasterAdapterSpec(id string) workflowOperatorAdapterSpec {
 	if id == "raster_load" {
 		spec.AccessPlan.TargetKind = ""
 		spec.PublicParameters = spec.PublicParameters[:2]
-	} else if id == "raster_save" {
+	} else if id == "raster_save" || id == "raster_save_tiles" {
 		spec.AccessPlan.SourceKind = ""
 		spec.PublicParameters = spec.PublicParameters[2:]
+	}
+	if id == "raster_save_tiles" {
+		spec.AccessPlan.TargetKind = "directory"
+		spec.AccessPlan.BatchOutput = true
+		for i := range spec.PublicParameters {
+			if spec.PublicParameters[i].Name == "target_resource" {
+				spec.PublicParameters[i].UIConfig["target_name_kind"] = "directory"
+				spec.PublicParameters[i].UIConfig["target_name_extension"] = ""
+			}
+		}
 	}
 	if id != "raster_to_cog" {
 		spec.RuntimeParams = []string{"access_plan"}
@@ -406,6 +419,7 @@ func workflowLoadAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 }
 
 func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
+	engineTypes := []string{"postgresql", "mysql", "doris", "nfs", "minio"}
 	return workflowOperatorAdapterSpec{
 		OperatorID: operatorID,
 		PublicParameters: []commonModels.ParameterDescriptor{
@@ -419,6 +433,7 @@ func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 					"engine_families":              []string{"tabular", "dynamic_schema", "file", "object"},
 					"selectable_parent_node_types": []string{"schema", "database", "root", "directory", "dir", "bucket", "prefix"},
 					"allow_create_table":           true,
+					"engine_types":                 engineTypes,
 					"resource_binding": map[string]interface{}{
 						"mode":                 "target",
 						"parent_locator_param": "target_parent_locator",
@@ -434,6 +449,7 @@ func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 			resourceIdentityParameter("target_name", "目标名称"),
 		},
 		ResourceOutputs: []workflowResourceOutputSpec{{
+			EngineTypes:   engineTypes,
 			ParentParam:   "target_parent_locator",
 			NameParam:     "target_name",
 			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table", "path"},

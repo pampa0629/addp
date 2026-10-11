@@ -133,7 +133,7 @@ func testProjectionMigrationUpgrade(t *testing.T, from int64) {
 		}
 	}
 	if from >= 4 {
-		s := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(db))
+		s := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(db), testPlatformGraph{})
 		head, err := s.Head(context.Background(), platformTestActor(), "transfer.task.migration")
 		if err != nil || head.LastRevision != 2 || head.ActivationVersion != 0 || head.ActiveRevision != nil || head.ActiveGeneration != nil || head.PublishGeneration != nil {
 			t.Fatal("migration inferred activation", head, err)

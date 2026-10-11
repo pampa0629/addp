@@ -279,6 +279,10 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				count  int64
 			}{
 				{SourceGrantFilter{TableSearch: "FILTER_"}, 5},
+				{SourceGrantFilter{CatalogPath: &commands[0].CatalogPath}, 4},
+				{SourceGrantFilter{CatalogPath: &commands[1].CatalogPath}, 1},
+				{SourceGrantFilter{CatalogPath: &commands[0].CatalogPath, RecipientType: "user", RecipientID: receiver.PrincipalID}, 1},
+				{SourceGrantFilter{CatalogPath: &commands[0].CatalogPath, RecipientType: "department", RecipientID: department.ID}, 1},
 				{SourceGrantFilter{TableSearch: "%户外"}, 4},
 				{SourceGrantFilter{TableSearch: "filter_", RecipientType: "user", RecipientID: receiver.PrincipalID}, 2},
 				{SourceGrantFilter{TableSearch: "%户外", RecipientType: "user", RecipientID: receiver.PrincipalID}, 1},
@@ -308,7 +312,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 					t.Fatal(err)
 				}
 			}
-			filter := SourceGrantFilter{TableSearch: "%户外", RecipientType: "user", RecipientID: receiver.PrincipalID}
+			filter := SourceGrantFilter{CatalogPath: &commands[0].CatalogPath, RecipientType: "user", RecipientID: receiver.PrincipalID}
 			current, total, err := service.ListSourceGrantRelations(ctx, actor, input.EngineID, 1, 1, filter)
 			history, historicalTotal, historyErr := service.ListSourceGrants(ctx, actor, input.EngineID, 1, 1, filter)
 			if err != nil || historyErr != nil || total != 0 || len(current) != 0 || historicalTotal != 1 || len(history) != 1 || history[0].Revocation == nil {

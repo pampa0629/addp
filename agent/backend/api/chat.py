@@ -469,6 +469,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 session_summary=session_summary,
                 checkpoint=run_checkpoint,
                 forced_skill_name=(agent_run.skill_name if resumed_from_interaction else None),
+                accept_language=request.headers.get("accept-language", "zh-cn"),
             ):
                 if await request.is_disconnected():
                     if event.checkpoint_committed is not None and not event.checkpoint_committed.done():

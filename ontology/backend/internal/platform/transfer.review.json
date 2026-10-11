@@ -147,6 +147,18 @@
     }
   ],
   "bindings": [
+    {"subject": "concept/source_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
+    {"subject": "concept/target_parent_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
+    {"subject": "concept/user_confirmation", "sources": ["skill", "conditions", "condition_test"]},
+    {"subject": "relation/confirmed_source/reads_via/source_discovery", "sources": ["skill", "conditions", "condition_test"]},
+    {"subject": "relation/confirmed_target_parent_and_name/reads_via/target_parent_discovery", "sources": ["skill", "conditions", "condition_test"]},
+    {"subject": "relation/confirmed_target_parent_and_name/configured_by/target", "sources": ["skill", "conditions", "manifest"]},
+    {"subject": "relation/confirmed_row_grain_and_fields/reads_via/source_discovery", "sources": ["skill", "conditions", "condition_test"]},
+    {"subject": "relation/confirmed_row_grain_and_fields/configured_by/field_mapping", "sources": ["skill", "conditions", "manifest"]},
+    {"subject": "relation/bounded/configured_by/runtime_boundary", "sources": ["manifest", "conditions", "condition_test"]},
+    {"subject": "relation/snapshot/configured_by/load_mode", "sources": ["manifest", "conditions", "condition_test", "planner"]},
+    {"subject": "relation/explicit_apply_policy/configured_by/apply_policy", "sources": ["manifest", "conditions", "policy_spec", "planner"]},
+    {"subject": "relation/user_review/confirmed_by/user_confirmation", "sources": ["skill", "conditions", "condition_test"]},
     {
       "subject": "operation",
       "sources": [

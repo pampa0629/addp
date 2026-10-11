@@ -1541,7 +1541,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "同一 PG 只读快照中核验已激活定义，按能力身份升序。最多 32 项和 128 KiB，超限或损坏整次失败，不截断、不换源；不证明可执行，不读取业务数据，拒绝 query。 | Verifies active definitions in one read-only PG snapshot, ordered by capability. At most 32 entries and 128 KiB; oversized or corrupt results fail as a whole without truncation or source fallback. No execution permission or business facts are asserted; query parameters are rejected.",
+                "description": "同一 PG 只读快照选择已激活定义，按确定 generation 查询 FalkorDB 依赖，再从同版冻结内容补全。按能力升序，最多 32 项、128 KiB、5 秒；超限、损坏或图不可用整次失败，不截断、不换源。不证明可执行，不读取业务数据，拒绝 query。 | Selects active definitions in one read-only PG snapshot, expands FalkorDB dependencies at the exact generation, and hydrates the same frozen release. Ordered by capability, bounded to 32 entries, 128 KiB and 5 seconds. Oversize, corruption or graph failure rejects the whole read without truncation or fallback. No execution rights or business facts are asserted; query parameters are rejected.",
                 "produces": [
                     "application/json"
                 ],
@@ -1606,7 +1606,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "从 PG 当前 active 平台修订读取；首个能力为 Transfer 任务创建。没有记录返回 404，尚未激活返回 409，损坏返回 500；不回退源文件，不表示模块可用、用户可执行或已经执行，不读取租户定义或业务数据。 | Reads the current active platform PG revision; the first capability is Transfer task creation. Missing records return 404, inactive records 409, and corruption 500. There is no source-file fallback or assertion of availability, execution permission or completed execution; no Tenant definitions or business data are read.",
+                "description": "PG 选择 active 修订、摘要和 ready generation，FalkorDB 展开同版能力依赖，PG 冻结内容补全；总预算 5 秒。首个能力为 Transfer 创建。没有记录 404，未激活 409，损坏或图读取失败 500；不回退源文件或 PG 图遍历，不证明可执行，不读取业务数据。 | PG selects the active revision, digest and ready generation; FalkorDB expands its dependencies and the same frozen release supplies descriptions, within 5 seconds. The first capability is Transfer creation. Missing records return 404, inactive records 409, corruption or graph read failure 500. No source-file or PG graph-traversal fallback, execution assertion or business data reads.",
                 "produces": [
                     "application/json"
                 ],
@@ -1686,7 +1686,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 Platform User 的只读核实目录；同一 PG 快照，最多 32 项和 128 KiB，超限或损坏整次失败。拒绝 query，不开放委托或机器身份，不授予执行权。 | Read-only inspection for Platform Users. One PG snapshot, at most 32 items and 128 KiB; corruption or oversize fails the whole read. Rejects query, delegation and machine identities; grants no execution rights.",
+                "description": "仅 Platform User 的只读核实目录；PG 选择同版 active，FalkorDB 展开依赖，最多 32 项、128 KiB、5 秒，超限、损坏或图失败整次拒绝。拒绝 query、委托及机器身份，不授予执行权。 | Read-only inspection for Platform Users. PG selects active releases and FalkorDB expands same-generation dependencies, bounded to 32 items, 128 KiB and 5 seconds; oversize, corruption or graph failure rejects the whole read. Rejects query, delegation and machine identities; grants no execution rights.",
                 "produces": [
                     "application/json"
                 ],

@@ -18,12 +18,14 @@ import (
 // Its identity must come from the trusted publication owner, never a user key.
 // Build/Verify do not authorize, publish, activate, or certify business facts.
 type Projection struct {
-	key      string
-	digest   string
-	nodes    []any
-	edges    []any
-	nodeRows [][]any
-	edgeRows [][]any
+	key            string
+	digest         string
+	nodes          []any
+	edges          []any
+	nodeRows       [][]any
+	edgeRows       [][]any
+	dependencyRows [][]any
+	conditionRows  [][]any
 }
 
 func (p *Projection) node(id, kind, name string) {
@@ -97,8 +99,8 @@ func sortRows(rows [][]any) {
 	})
 }
 
-// PlanPlatform projects only concepts, localized names and explicit relations.
-// The complete operation contract remains in its authoritative PG snapshot.
+// PlanPlatform projects the frozen capability and its declared dependencies.
+// No condition/fact correspondence or observed execution is inferred.
 func PlanPlatform(snapshot *platform.Snapshot, generation string) (*Projection, error) {
 	d, err := snapshot.Context()
 	if err != nil {
@@ -108,7 +110,7 @@ func PlanPlatform(snapshot *platform.Snapshot, generation string) (*Projection, 
 	if err != nil || id == uuid.Nil || id.String() != generation {
 		return nil, ErrInvalid
 	}
-	p := &Projection{key: fmt.Sprintf("ontology:p:%s:r%d:g%s", d.Capability, d.Revision, strings.ReplaceAll(generation, "-", "")), digest: snapshot.Digest()}
+	p := &Projection{key: fmt.Sprintf("ontology:p:%s:r%d:g%s", d.Capability, d.Revision, strings.ReplaceAll(generation, "-", "")), digest: snapshot.Digest(), conditionRows: make([][]any, 0)}
 	if !graphKeyPattern.MatchString(p.key) {
 		return nil, ErrInvalid
 	}
@@ -125,8 +127,75 @@ func PlanPlatform(snapshot *platform.Snapshot, generation string) (*Projection, 
 	for _, relation := range d.Relations {
 		edge("concept:"+relation.From, "concept:"+relation.To, relation.Kind)
 	}
+	root := "capability:" + d.Capability
+	node(root, "capability", d.Capability)
+	for _, concept := range d.Concepts {
+		edge(root, "concept:"+concept.ID, "defines")
+	}
+	seen := map[string]bool{}
+	dependency := func(kind, memberKind, name string) string {
+		memberID := memberKind + ":" + name
+		if !seen[memberID] {
+			node(memberID, memberKind, name)
+			seen[memberID] = true
+		}
+		edge(root, memberID, kind)
+		if memberKind != "requirement" {
+			p.dependencyRows = append(p.dependencyRows, []any{kind, memberKind, name, ""})
+		}
+		return memberID
+	}
+	dependency("owned_by", "owner", d.Operation.Owner)
+	dependency("implemented_by", "skill", d.Operation.Skill)
+	dependency("invokes", "tool", d.Operation.Tool)
+	for _, condition := range d.Operation.InputsRequired {
+		conditionID := dependency("requires", "condition", condition)
+		for _, concept := range d.Concepts {
+			if concept.ID == condition {
+				edge(conditionID, "concept:"+concept.ID, "described_by")
+			}
+		}
+	}
+	for _, effect := range d.Operation.Effects {
+		dependency("produces", "effect", effect)
+	}
+	for _, effect := range d.Operation.ExcludedEffects {
+		dependency("excludes", "effect", effect)
+	}
+	for _, requirement := range d.Requirements {
+		requirementID := dependency("has_requirement", "requirement", requirement.ID)
+		for _, concept := range d.Concepts {
+			if concept.ID == requirement.ID {
+				edge(requirementID, "concept:"+concept.ID, "described_by")
+			}
+		}
+		for _, tool := range requirement.Tools {
+			toolID := "tool:" + tool
+			if !seen[toolID] {
+				node(toolID, "tool", tool)
+				seen[toolID] = true
+			}
+			edge(requirementID, toolID, "uses_tool")
+			p.dependencyRows = append(p.dependencyRows, []any{"has_requirement", "requirement", requirement.ID, tool})
+		}
+	}
+	for _, relation := range d.Relations {
+		if relation.Kind != "reads_via" {
+			continue
+		}
+		edge("condition:"+relation.From, "requirement:"+relation.To, "reads_via")
+		for _, requirement := range d.Requirements {
+			if requirement.ID == relation.To {
+				for _, tool := range requirement.Tools {
+					p.conditionRows = append(p.conditionRows, []any{relation.From, requirement.ID, tool})
+				}
+			}
+		}
+	}
 	sortRows(p.nodeRows)
 	sortRows(p.edgeRows)
+	sortRows(p.dependencyRows)
+	sortRows(p.conditionRows)
 	return p, nil
 }
 

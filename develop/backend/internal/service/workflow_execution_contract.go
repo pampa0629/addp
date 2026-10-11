@@ -130,7 +130,12 @@ func buildWorkflowExecutionContract(
 			inputOrder++
 		}
 		if workflowOperatorHasStableResourceOutput(operator) {
-			outputProperties[taskID] = workflowResourceOutputSchema(operator.DisplayName)
+			adapter, _ := workflowOperatorAdapterSpecFor(operator.EngineType, operator.ID)
+			if adapter.AccessPlan != nil && adapter.AccessPlan.BatchOutput {
+				outputProperties[taskID] = workflowRasterTilesOutputSchema(operator.DisplayName)
+			} else {
+				outputProperties[taskID] = workflowResourceOutputSchema(operator.DisplayName)
+			}
 		}
 	}
 

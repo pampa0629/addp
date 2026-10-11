@@ -340,7 +340,7 @@ func (s *Service) ListSourceGrants(ctx context.Context, actor Actor, engineID in
 	if page <= 0 || size <= 0 || size > 100 || page > int(^uint(0)>>1)/size {
 		return nil, 0, commonapi.ErrBadRequest
 	}
-	if err := filter.Validate(); err != nil {
+	if err := filter.ValidateForEngine(engineID); err != nil {
 		return nil, 0, err
 	}
 	var rows []SourceGrantView

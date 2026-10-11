@@ -97,7 +97,8 @@ func TestFalkorIntegration(t *testing.T) {
 		}
 	})
 	t.Run("platform_projection_round_trip_and_full_verification", func(t *testing.T) {
-		p, err := PlanPlatform(platformFixture(t), uuid.NewString())
+		snapshot, generation := platformFixture(t), uuid.NewString()
+		p, err := PlanPlatform(snapshot, generation)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,13 +112,25 @@ func TestFalkorIntegration(t *testing.T) {
 		if err := c.Build(ctx, p); !errors.Is(err, ErrRejected) {
 			t.Fatal(err)
 		}
+		got, err := c.PlatformContext(ctx, snapshot, generation)
+		want, _ := snapshot.Context()
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("graph dependency expansion changed frozen context", got, err)
+		}
 		if _, err := c.query(ctx, p.key, "CREATE (:Definition {id:'extra',kind:'name',name:'多余'}) RETURN 1", nil, false, MaxQueryTime); err != nil {
 			t.Fatal(err)
 		}
 		if err := c.Verify(ctx, p); !errors.Is(err, ErrProtocol) {
 			t.Fatal("extra node accepted", err)
 		}
-		maximum, err := PlanPlatform(maximumPlatformFixture(t), uuid.NewString())
+		if _, err := c.PlatformContext(ctx, snapshot, generation); !errors.Is(err, ErrProtocol) {
+			t.Fatal("corrupt graph fell back to definition", err)
+		}
+		if _, err := c.PlatformContext(ctx, snapshot, uuid.NewString()); err == nil {
+			t.Fatal("absent generation fell back to definition")
+		}
+		maximumSnapshot, maximumGeneration := maximumPlatformFixture(t), uuid.NewString()
+		maximum, err := PlanPlatform(maximumSnapshot, maximumGeneration)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,6 +140,47 @@ func TestFalkorIntegration(t *testing.T) {
 		}
 		if err := c.Verify(ctx, maximum); err != nil {
 			t.Fatal("maximum platform verification", err)
+		}
+		got, err = c.PlatformContext(ctx, maximumSnapshot, maximumGeneration)
+		want, _ = maximumSnapshot.Context()
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("maximum dependency expansion", err)
+		}
+		evidenceSnapshot, evidenceGeneration := maximumEvidenceFixture(t), uuid.NewString()
+		evidence, err := PlanPlatform(evidenceSnapshot, evidenceGeneration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, evidence.key)
+		if err := c.Build(ctx, evidence); err != nil {
+			t.Fatal("maximum evidence graph", err)
+		}
+		got, err = c.PlatformContext(ctx, evidenceSnapshot, evidenceGeneration)
+		want, _ = evidenceSnapshot.Context()
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatal("maximum three-hop evidence expansion", err)
+		}
+	})
+	t.Run("platform_dependency_tampering_fails_closed", func(t *testing.T) {
+		for _, mutate := range []string{
+			"MATCH (a:Definition {kind:'capability'})-[r:Link {kind:'requires'}]->() DELETE r RETURN count(*)",
+			"MATCH (a:Definition {id:'requirement:source_discovery'})-[r:Link {kind:'uses_tool'}]->() DELETE r RETURN count(*)",
+			"MATCH (n:Definition {kind:'effect'}) SET n.name='incorrect.effect' RETURN count(*)",
+			"MATCH (:Definition {kind:'condition'})-[r:Link {kind:'reads_via'}]->() DELETE r RETURN count(*)",
+			"MATCH (c:Definition {id:'condition:user_review'}),(r:Definition {id:'requirement:optional_draft_assistance'}) CREATE (c)-[:Link {kind:'reads_via'}]->(r) RETURN count(*)",
+		} {
+			snapshot, generation := platformFixture(t), uuid.NewString()
+			p, _ := PlanPlatform(snapshot, generation)
+			keys = append(keys, p.key)
+			if err := c.Build(ctx, p); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.query(ctx, p.key, mutate, nil, false, MaxQueryTime); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.PlatformContext(ctx, snapshot, generation); !errors.Is(err, ErrProtocol) {
+				t.Fatal("mutated dependency accepted", err)
+			}
 		}
 	})
 	t.Run("maximum_definition_size", func(t *testing.T) {

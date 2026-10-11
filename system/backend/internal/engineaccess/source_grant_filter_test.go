@@ -1,10 +1,45 @@
 package engineaccess
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
+
+	engineplugin "github.com/addp/common/engine/plugin"
 )
+
+func TestSourceGrantFilterExactTarget(t *testing.T) {
+	path := engineplugin.TabularItemPath(2, "schema", "outdoor", "events_%")
+	filter := SourceGrantFilter{CatalogPath: &path, RecipientType: "department", RecipientID: 33}
+	if err := filter.ValidateForEngine(2); err != nil {
+		t.Fatal(err)
+	}
+	predicate, args := filter.predicate()
+	var decoded engineplugin.EngineCatalogPath
+	if len(args) != 3 || !strings.Contains(predicate, "catalog_path = ?::jsonb") || strings.Contains(predicate, "strpos") {
+		t.Fatalf("exact filter lost: %s %+v", predicate, args)
+	}
+	if err := json.Unmarshal([]byte(args[0].(string)), &decoded); err != nil || !reflect.DeepEqual(decoded, path) {
+		t.Fatalf("path lost: %+v %v", decoded, err)
+	}
+	if filter.ValidateForEngine(3) == nil {
+		t.Fatal("cross-engine target accepted")
+	}
+	filter.TableSearch = "events"
+	if filter.ValidateForEngine(2) == nil {
+		t.Fatal("ambiguous target filters accepted")
+	}
+	filter.TableSearch = ""
+	path.Segments = path.Segments[:2]
+	if filter.ValidateForEngine(2) == nil {
+		t.Fatal("branch target accepted")
+	}
+	path = engineplugin.TabularItemPath(2, "schema", "outdoor", strings.Repeat("a", 4096))
+	if filter.ValidateForEngine(2) == nil {
+		t.Fatal("oversized target accepted")
+	}
+}
 
 func TestSourceGrantFilterValidation(t *testing.T) {
 	for _, filter := range []SourceGrantFilter{{}, {TableSearch: "表_%", RecipientType: "user", RecipientID: 9007199254740993}, {RecipientType: "department"}, {RecipientType: "project_group", RecipientID: 33}, {TableSearch: strings.Repeat("表", 200)}} {

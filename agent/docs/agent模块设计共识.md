@@ -76,6 +76,10 @@ Interaction resume 沿用 AgentRun 已记录的 Skill 和 Tool 白名单，不�
 
 聊天文字在唯一 pending 澄清下也通过 Interaction resume 恢复原 Run。服务端对唯一精确匹配的选项采用规范候选事实，其他文字只进入模型补充上下文，不写入确认事实。创建复核文字使旧复核失效，不能代替确认按钮；owner approval 仍只由 owner 状态检查恢复。完整契约见交互协议规范 5.1。
 
+Transfer 的配置草稿展示与创建前最终复核分开。用户只要求查看草稿、确认配置且明确不要创建时，模型仍可取证和澄清配置缺口，但应以普通回复展示草稿并结束本轮，不发出 `transfer_create_review` 或“确认创建”选项。只有用户明确要求创建任务，才进入绑定确切参数的最终创建复核。该规则是模型交互指令，不是确定性的自然语言授权解析器；实际创建仍受既有 Runtime 复核指纹、Tool 契约及 owner 权限校验约束。
+
+最终创建复核的提示和确认／取消按钮由 Runtime 统一生成，不采用模型填写的展示文案。提示区分当前条件适配器与 Tool 契约已完成的检查，以及尚未完成的目标类型适配、实际值转换和写入可执行性验证；不把源结构事实当作完整业务值保证。确认仅尝试创建未启动任务，仍由 Transfer 校验权限与配置，不运行任务。展示词条由 Agent i18n 持有，按当前 HTTP `Accept-Language` 传入 Harness；语言与按钮文案不参与参数指纹。普通草稿仍由模型生成，不得宣称未经 owner 证实的可执行性。
+
 断线重连只回放同一 AgentRun 的 `run_events`，并以客户端已处理的 sequence 为游标；事件表不保存 Tool 参数或原始结果。取消仅停止 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 内以新的协议调用 ID 追加事件。
 
 消息 parts 支持：

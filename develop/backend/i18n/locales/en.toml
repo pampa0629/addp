@@ -281,3 +281,17 @@ other = "Spark data item facts differ from the resource locator"
 
 [develop.workflow.spark_table_item_required]
 other = "Spark file loading requires a recognized table data item"
+
+[develop.workflow.target_engine_unsupported]
+other = "The operator does not support the target engine type"
+
+[develop.workflow.target_locator_invalid]
+other = "The target locator does not match the engine catalog structure"
+[develop.workflow.raster_tile_manifest_invalid]
+other = "Invalid raster tile publication manifest"
+
+[develop.workflow.raster_tile_target_overlap]
+other = "The raster tile batch output scope overlaps another output"
+
+[develop.workflow.raster_tile_target_name_invalid]
+other = "The raster tile target directory name must be one path segment"

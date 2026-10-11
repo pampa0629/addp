@@ -440,6 +440,20 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("可执行方案", prompt)
         self.assertIn("不能退化为常识计算", prompt)
 
+    async def test_runtime_prompt_separates_transfer_preview_from_creation_review(self):
+        # Only verifies the instructions delivered through the real Harness;
+        # scripted responses do not prove that a live model obeys them.
+        responses = [_ScriptedResponse(content="以下仅为配置草稿，未创建任务。")]
+        llm = _ScriptedLLM(responses)
+        await self._run_workflow_events(
+            tools=[], responses=responses, allowed_tool_names=[], llm=llm,
+        )
+        prompt = "\n".join(message.content for message in llm.messages[0] if message.type == "system")
+        self.assertIn("只要求展示草稿或确认配置、明确不要创建", prompt)
+        self.assertIn("不调用 transfer_create_review，不提供“确认创建”选项", prompt)
+        self.assertIn("用户明确要求创建任务后", prompt)
+        self.assertNotIn("- Transfer 配置复核必须使用", prompt)
+
     async def test_runtime_clarification_uses_observed_engine_fact(self):
         context = {
             "skill_name": "workflow-analysis",

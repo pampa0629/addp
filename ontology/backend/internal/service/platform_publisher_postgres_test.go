@@ -54,9 +54,9 @@ func testPlatformPublication(t *testing.T, db *gorm.DB) {
 	if err := db.Model(&models.Projection{}).Count(&tenantProjectionsBefore).Error; err != nil {
 		t.Fatal(err)
 	}
-	t.Run("runtime_reads_only_active_pg_snapshot", func(t *testing.T) {
+	t.Run("runtime_reads_pg_selected_graph_dependencies", func(t *testing.T) {
 		capability := "transfer.task.runtime_read"
-		reader := NewPlatformRevisionService(repo)
+		reader := NewPlatformRevisionService(repo, testPlatformGraph{})
 		if _, err := reader.PlatformCapabilityContext(ctx, capability); !errors.Is(err, repository.ErrNotFound) {
 			t.Fatal(err)
 		}
@@ -134,6 +134,38 @@ func testPlatformPublication(t *testing.T, db *gorm.DB) {
 			t.Fatal("new active invisible", got, err)
 		}
 	})
+	t.Run("runtime_pins_generation_across_concurrent_activation", func(t *testing.T) {
+		capability := "transfer.task.read_generation"
+		first := platformTestSnapshot(t, capability, 7)
+		active, err := publisher(testPlatformGraph{}, auth).Publish(ctx, first)
+		if err != nil {
+			t.Fatal(err)
+		}
+		calls := 0
+		graph := testPlatformGraph{read: func(c context.Context, snapshot *platform.Snapshot, generation string) (platform.Context, error) {
+			calls++
+			if snapshot.Digest() != first.Digest() || generation != active.Generation {
+				t.Fatal("version mixed across stores")
+			}
+			if _, ok := c.Deadline(); !ok {
+				t.Fatal("unbounded semantic read")
+			}
+			// A graph call must not hold the PG read transaction/owner locks.
+			if _, err := publisher(testPlatformGraph{}, auth).Publish(c, platformTestSnapshot(t, capability, 8)); err != nil {
+				t.Fatal(err)
+			}
+			return snapshot.Context()
+		}}
+		reader := NewPlatformRevisionService(repo, graph)
+		got, err := reader.PlatformCapabilityContext(ctx, capability)
+		if err != nil || got.Revision != 7 || calls != 1 {
+			t.Fatal("in-flight read did not preserve selection point", got, err, calls)
+		}
+		got, err = NewPlatformRevisionService(repo, testPlatformGraph{}).PlatformCapabilityContext(ctx, capability)
+		if err != nil || got.Revision != 8 {
+			t.Fatal("next request did not observe activation", got, err)
+		}
+	})
 	t.Run("runtime_rejects_corrupt_active_snapshot_without_source_fallback", func(t *testing.T) {
 		// A privileged fixture installs a valid-hash but noncanonical record.
 		// No triggers or integrity constraints are bypassed.
@@ -161,10 +193,10 @@ func testPlatformPublication(t *testing.T, db *gorm.DB) {
 		if err := db.Model(&models.PlatformCapability{}).Where("capability=?", capability).Updates(map[string]any{"active_revision": 2, "active_generation": generation, "activation_version": 1}).Error; err != nil {
 			t.Fatal(err)
 		}
-		if _, err := NewPlatformRevisionService(repo).PlatformCapabilityContext(ctx, capability); !errors.Is(err, repository.ErrIntegrity) {
+		if _, err := NewPlatformRevisionService(repo, testPlatformGraph{}).PlatformCapabilityContext(ctx, capability); !errors.Is(err, repository.ErrIntegrity) {
 			t.Fatal("corrupt active exposed", err)
 		}
-		if _, err := NewPlatformRevisionService(repo).PlatformCapabilities(ctx); !errors.Is(err, repository.ErrIntegrity) {
+		if _, err := NewPlatformRevisionService(repo, testPlatformGraph{}).PlatformCapabilities(ctx); !errors.Is(err, repository.ErrIntegrity) {
 			t.Fatal("corrupt active skipped in catalog", err)
 		}
 	})

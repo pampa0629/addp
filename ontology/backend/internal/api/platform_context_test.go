@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/ontology/internal/falkor"
 	"github.com/addp/ontology/internal/platform"
 	"github.com/addp/ontology/internal/repository"
 	"github.com/addp/ontology/internal/service"
@@ -98,6 +99,7 @@ func TestPlatformCatalogBoundaryAndErrors(t *testing.T) {
 		}, "", nil, true, 403},
 		{"query", nil, "?capability=transfer.task.create", nil, true, 400},
 		{"corrupt", nil, "", repository.ErrIntegrity, true, 500},
+		{"graph_unavailable", nil, "", falkor.ErrTransport, true, 500},
 		{"oversize", nil, "", service.ErrResultTooLarge, true, 413},
 		{"not_ready", nil, "", nil, false, 503},
 	} {
@@ -140,6 +142,8 @@ func TestPlatformContextReaderErrorsRemainExplicit(t *testing.T) {
 		{"absent", repository.ErrNotFound, 404},
 		{"unpublished", repository.ErrNotActive, 409},
 		{"corrupt", repository.ErrIntegrity, 500},
+		{"graph_unavailable", falkor.ErrTransport, 500},
+		{"graph_corrupt", falkor.ErrProtocol, 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := authtest.NewTenantUserAuthContext("101", "9", []string{"ontology.semantic.read"})

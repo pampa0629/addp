@@ -67,8 +67,8 @@ test('readonly inspection restores a selected release, graph, coverage and all e
   await expect(page).toHaveURL(new RegExp(`${detail}$`))
   await expect(page.getByTestId('platform-release')).toContainText('e'.repeat(64))
   await expect(page.getByTestId('platform-graph').locator('canvas')).toHaveCount(1)
-  await expect(page.getByTestId('platform-bindings').locator('tbody tr')).toHaveCount(49)
-  await expect(page.getByTestId('platform-source')).toHaveCount(9)
+  await expect(page.getByTestId('platform-bindings').locator('tbody tr')).toHaveCount(review.bindings.length)
+  await expect(page.getByTestId('platform-source')).toHaveCount(review.sources.length)
   await expect(page.getByText('未建模',{exact:true})).toHaveCount(4)
   await page.reload()
   await expect(page.getByTestId('platform-release')).toContainText('transfer-generation')
@@ -85,7 +85,7 @@ test('English and dark theme reuse translated evidence and the shared graph', as
   await expect(page.getByRole('heading',{name:'Platform ontology inspection',exact:true})).toBeVisible()
   await expect(page.getByText('Not modeled',{exact:true})).toHaveCount(4)
   await expect(page.getByTestId('platform-graph').locator('canvas')).toHaveCount(1)
-  await expect(page.getByTestId('platform-source')).toHaveCount(9)
+  await expect(page.getByTestId('platform-source')).toHaveCount(review.sources.length)
   expect(state.backend.writes).toEqual([])
 })
 
@@ -141,7 +141,7 @@ for (const change of ['permission','context','auth_failure']) {
   test(`reauthorization clears frozen evidence on ${change}`, async ({page,context}) => {
     const state = await fixture(context)
     await page.goto(detail)
-    await expect(page.getByTestId('platform-source')).toHaveCount(9)
+    await expect(page.getByTestId('platform-source')).toHaveCount(review.sources.length)
     if (change === 'permission') state.backend.authContext.authorization.role_assignments = []
     if (change === 'context') state.backend.authContext.context.type = 'tenant'
     if (change === 'auth_failure') state.backend.authFailure = true

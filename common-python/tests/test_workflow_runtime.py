@@ -1,4 +1,5 @@
 import threading
+import json
 
 import pytest
 
@@ -6,8 +7,36 @@ from addp_common.workflow_runtime import (
     ExecutionRegistry,
     WorkflowRunner,
     WorkflowValidationError,
+    WorkflowExecutionError,
     validate_execution_authorization,
 )
+
+
+@pytest.mark.parametrize('explicit_partial', [False, True])
+def test_projected_failure_retains_safe_completed_results_atomically(explicit_partial):
+    secret = object()
+    def execute(operator, params):
+        if operator == 'private': return secret
+        if explicit_partial:
+            raise WorkflowExecutionError('batch failed', partial_result={'completed_tiles': 2})
+        raise ValueError('later task failed')
+    def project(value):
+        return json.dumps({'private': True} if value is secret else value)
+    runner = WorkflowRunner({'private', 'fail'}, execute, result_projector=project)
+    class InlineThread:
+        def __init__(self, target, args, daemon): self.run = lambda: target(*args)
+        def start(self): self.run()
+    registry = ExecutionRegistry()
+    accepted = registry.submit(runner, {'tasks': [
+        {'id': 'a', 'operator': 'private', 'params': {}, 'depends_on': []},
+        {'id': 'b', 'operator': 'fail', 'params': {}, 'depends_on': ['a']},
+    ]}, thread_factory=InlineThread)
+    snapshot = registry.get(accepted.execution_id)
+    assert snapshot.status == 'failed' and snapshot.error_code == 'EXECUTION_FAILED'
+    assert json.loads(snapshot.all_results['a']) == {'private': True}
+    assert snapshot.task_order == ['a', 'b']
+    assert snapshot.result == (json.dumps({'completed_tiles': 2}) if explicit_partial else None)
+    json.dumps(snapshot.to_dict())
 
 
 def test_runner_executes_dag_and_resolves_ports():
@@ -103,3 +132,20 @@ def test_execution_authorization_rejects_missing_tenant_context():
             operator_effects={"load": ["read"]},
             runtime={"execution_authorization": {"id": 71, "effects": ["read"]}},
         )
+
+
+@pytest.mark.parametrize('failure', ['input', 'port', 'projection'])
+def test_projected_runner_keeps_completed_results_when_later_node_preparation_fails(failure):
+    import json
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    params = {'value': {'$input':'missing'}} if failure == 'input' else {'value': {'$ref':'a','port':'missing'}} if failure == 'port' else {}
+    def execute(operator, params):
+        return {'saved':True} if operator == 'save' else object()
+    runner = WorkflowRunner({'save','later'},execute,result_projector=json.dumps)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        runner.execute({'tasks':[
+            {'id':'a','operator':'save','params':{},'depends_on':[]},
+            {'id':'b','operator':'later','params':params,'depends_on':['a']},
+        ]})
+    assert caught.value.all_results == {'a':json.dumps({'saved':True})}
+    assert caught.value.task_order == ['a','b']

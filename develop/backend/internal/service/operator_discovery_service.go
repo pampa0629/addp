@@ -167,7 +167,7 @@ func (s *OperatorDiscoveryService) validateWorkflow(
 				})
 				continue
 			}
-			if parameter.Type == "raster" && !isWorkflowReference(params[name]) {
+			if (parameter.Type == "raster" || parameter.Type == "raster_tiles") && !isWorkflowReference(params[name]) {
 				result.Errors = append(result.Errors, WorkflowValidationIssue{
 					Code:    "raster_reference_required",
 					Path:    fmt.Sprintf("workflow_definition.tasks[%d].params.%s", index, name),

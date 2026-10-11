@@ -1143,3 +1143,37 @@ def test_async_update_local_aligned_patch_and_independent_pixel_oracle(outside_a
         LocalMinio.objects[key]=corrupt.read_bytes()
         with pytest.raises(fixture.FixtureError): fixture.worker('verify-'+case,outside_artifacts)
         LocalMinio.objects[key]=original
+
+
+def test_batch_tiles_public_dag_matches_independent_hosted_window_oracle(tmp_path):
+    from workflow_engine import execute_workflow
+    source = tmp_path/'source.tif'
+    fixture.write_source_raster(source, 'source.tif', False, -9999.)
+    original = source.read_bytes()
+    output = tmp_path/'tiles'
+    result = execute_workflow({'tasks':[
+        {'id':'load','operator':'raster_load','depends_on':[],'params':{'access_plan':{
+            'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(source)}}}}},
+        {'id':'tile','operator':'raster_tile','depends_on':['load'],'params':{'input_raster':{'$ref':'load'},'tile_size':[160,160]}},
+        {'id':'save','operator':'raster_save_tiles','depends_on':['tile'],'params':{'input_tiles':{'$ref':'tile'},'profile':'cog','blocksize':128,
+            'access_plan':{'schema_version':'addp.workflow.access-plan/v1','target':{'kind':'directory','format':'tiff','name':'tiles','write_mode':'create','access':{'method':'mounted_path','path':str(output)}}}}},
+    ]})
+    assert result['status']=='success',result
+    manifest = json.loads(result['final_result'])
+    assert manifest['completed_tiles']==4
+    for key in fixture.TILE_WINDOWS:
+        evidence = fixture.verify_tile_file(output/(key+'.tif'),key)
+        assert evidence['size_bytes']==manifest['tiles'][key]['size_bytes']>0
+    assert source.read_bytes()==original
+    assert set(path.name for path in output.iterdir())=={key+'.tif' for key in fixture.TILE_WINDOWS}
+    assert 'workspace' not in json.dumps(result) and str(tmp_path) not in json.dumps(result)
+    # A structurally valid COG with one changed edge value must fail the independent oracle.
+    bad = tmp_path/'bad.tif'
+    edited = gdal.Translate(str(bad),str(output/'r160_c160.tif'),format='GTiff')
+    edited.GetRasterBand(2).WriteRaster(95,95,1,1,struct.pack('<d',-5),buf_type=gdal.GDT_Float64)
+    edited = None
+    cog = tmp_path/'bad-cog.tif'
+    edited = gdal.Translate(str(cog),str(bad),format='COG',creationOptions=['BLOCKSIZE=128'])
+    edited = None
+    with pytest.raises(fixture.FixtureError,match='pixels'):
+        fixture.verify_tile_file(cog,'r160_c160')

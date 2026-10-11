@@ -233,10 +233,11 @@
         ref="resourcePickerRef"
         :api-base-url="resourcePickerDialogParam.ui_config?.api_base_url || '/api/v1/meta'"
         :engine-families="resourcePickerEngineFamilies(resourcePickerDialogParam)"
+        :engine-filter="engine => isResourceEngineSupported(resourcePickerDialogParam, engine)"
         :engine-id="resourcePickerEngineId(resourcePickerDialogParam)"
         :mode="resourcePickerMode(resourcePickerDialogParam)"
         :node-filter="node => isResourcePickerVisibleNode(node, resourcePickerDialogParam)"
-        :selectable-filter="node => isResourcePickerNodeSelectable(node, resourcePickerDialogParam)"
+        :selectable-filter="(node, { engine }) => isResourcePickerNodeSelectable(node, resourcePickerDialogParam, engine)"
         :show-selection-summary="true"
         :engine-multiple="!isTargetResourcePicker(resourcePickerDialogParam)"
         :select-all-engines-by-default="!isTargetResourcePicker(resourcePickerDialogParam)"
@@ -272,6 +273,7 @@ import {
   collectResourceBindingParams,
   getResourceBinding,
   isResourceDataTypeSupported,
+  isResourceEngineSupported,
   isResourceFormatSupported,
   isTargetResourceBinding,
   resourceBindingInitialLocator,
@@ -541,7 +543,8 @@ const resourcePickerEngineId = (param) => {
   return null
 }
 
-const isResourcePickerNodeSelectable = (node, param) => {
+const isResourcePickerNodeSelectable = (node, param, engine) => {
+  if (!isResourceEngineSupported(param, engine)) return false
   if (isTargetResourcePicker(param)) {
     const selectableTypes = param.ui_config?.selectable_parent_node_types || ['schema', 'database']
     return selectableTypes.includes(node?.type)
@@ -561,9 +564,12 @@ const isResourcePickerVisibleNode = (node, param) => {
 
 const targetNameLabel = (param) => resourceBindingTargetNameKind(param) === 'dataset'
   ? t('develop.operatorParams.targetDatasetName')
-  : t('develop.operatorParams.targetFileName')
+  : resourceBindingTargetNameKind(param) === 'directory'
+    ? t('develop.operatorParams.targetDirectoryName')
+    : t('develop.operatorParams.targetFileName')
 
 const targetNamePlaceholder = (param) => {
+  if (resourceBindingTargetNameKind(param) === 'directory') return t('develop.operatorParams.targetDirectoryNamePlaceholder')
   const extension = resourceBindingTargetExtension(param)
   return extension
     ? t('develop.operatorParams.targetFileNameWithExtensionPlaceholder', { extension })

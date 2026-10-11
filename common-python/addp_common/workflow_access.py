@@ -164,6 +164,39 @@ def publish_target_file(path: Path, plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def target_child_file_plan(plan: dict[str, Any], name: str) -> dict[str, Any]:
+    """Constrain a generated file to one direct child of an authorized target scope."""
+    target = require_target_plan({'access_plan': plan})['target']
+    if target['kind'] != 'directory':
+        raise WorkflowAccessError('child files require a directory target')
+    if not isinstance(name, str) or not name or name in {'.', '..'} or '/' in name or '\\' in name or '\x00' in name:
+        raise WorkflowAccessError('child file name must be one path segment')
+    access = dict(target['access'])
+    if access['method'] == 'mounted_path':
+        access['path'] = str(Path(access['path']) / name)
+    else:
+        access['object'] = access.pop('prefix').strip('/') + '/' + name
+    return {'schema_version': plan['schema_version'], 'target': {
+        **target, 'kind': 'file', 'name': name, 'access': access}}
+
+
+def require_empty_target_directory(plan: dict[str, Any]) -> None:
+    """Read-only preflight for a create batch; individual writes still enforce create."""
+    target = require_target_plan({'access_plan': plan})['target']
+    if target['kind'] != 'directory':
+        raise WorkflowAccessError('batch files require a directory target')
+    access = target['access']
+    if access['method'] == 'mounted_path':
+        root = Path(access['path'])
+        if root.exists() and (not root.is_dir() or next(root.iterdir(), None) is not None):
+            raise WorkflowAccessError('target batch directory is not empty')
+    else:
+        client = _object_store_client(access)
+        prefix = access['prefix'].strip('/')
+        if next(iter(client.list_objects(access['bucket'], prefix=prefix + '/', recursive=True)), None) is not None:
+            raise WorkflowAccessError('target batch prefix is not empty')
+
+
 def publish_target_directory(root: Path, plan: dict[str, Any], *, completion_marker: str) -> dict[str, Any]:
     if not root.is_dir():
         raise WorkflowAccessError(f"output directory not found: {root}")

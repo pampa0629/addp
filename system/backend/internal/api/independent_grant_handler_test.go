@@ -76,6 +76,18 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 			engineDelegationTestRequest(t, grantTestRouter(t, &projection, unused), "GET", route+suffix, nil, 400)
 		}
 	}
+	exactPath, _ := json.Marshal(engineplugin.TabularItemPath(1, "schema", "public", "orders"))
+	otherEngine, _ := json.Marshal(engineplugin.TabularItemPath(2, "schema", "public", "orders"))
+	for _, raw := range []string{"", "null", "{}", "[]", "{", string(otherEngine), string(exactPath) + "{}", strings.TrimSuffix(string(exactPath), "}") + `,"unknown":true}`, strings.Repeat("a", 4097)} {
+		for _, route := range []string{path, path + "/history"} {
+			engineDelegationTestRequest(t, grantTestRouter(t, &projection, unused), "GET", route+"?catalog_path="+url.QueryEscape(raw), nil, 400)
+		}
+	}
+	for _, suffix := range []string{"&table_search=orders", "&catalog_path=" + url.QueryEscape(string(exactPath))} {
+		for _, route := range []string{path, path + "/history"} {
+			engineDelegationTestRequest(t, grantTestRouter(t, &projection, unused), "GET", route+"?catalog_path="+url.QueryEscape(string(exactPath))+suffix, nil, 400)
+		}
+	}
 	qualified := independentGrantTestService{create: func(input engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
 		if input.RecipientID != 9007199254740993 || input.EngineID != 1 || input.RequestID != id || input.Actor.PrincipalID <= 0 || input.Actor.MembershipID <= 0 || input.RequirementVersion != 1 {
 			t.Fatalf("lost provenance: %+v", input)
@@ -135,6 +147,25 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 		for _, route := range []string{path, path + "/history"} {
 			engineDelegationTestRequest(t, grantTestRouter(t, &projection, filtered), "GET", route+"?"+query, nil, 200)
 		}
+	}
+	exact := independentGrantTestService{
+		list: func(_ engineaccess.Actor, _ int64, _, _ int, f engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error) {
+			encoded, _ := json.Marshal(f.CatalogPath)
+			if string(encoded) != string(exactPath) {
+				t.Fatalf("lost exact path: %+v", f)
+			}
+			return []engineaccess.SourceGrantView{}, 0, nil
+		},
+		relations: func(_ engineaccess.Actor, _ int64, _, _ int, f engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantRelation, int64, error) {
+			encoded, _ := json.Marshal(f.CatalogPath)
+			if string(encoded) != string(exactPath) || f.RecipientID != 33 {
+				t.Fatalf("lost exact account filter: %+v", f)
+			}
+			return []engineaccess.SourceGrantRelation{}, 0, nil
+		},
+	}
+	for _, route := range []string{path, path + "/history"} {
+		engineDelegationTestRequest(t, grantTestRouter(t, &projection, exact), "GET", route+"?catalog_path="+url.QueryEscape(string(exactPath))+"&recipient_type=user&recipient_id=33", nil, 200)
 	}
 	for _, failure := range []struct {
 		err    error

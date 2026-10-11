@@ -13,7 +13,7 @@ type PlatformDefinitionResponse = service.PlatformDefinition
 
 // PlatformDefinitions lists frozen releases for platform User inspection.
 // @Summary 列出平台本体能力 | List platform ontology capabilities
-// @Description 仅 Platform User 的只读核实目录；同一 PG 快照，最多 32 项和 128 KiB，超限或损坏整次失败。拒绝 query，不开放委托或机器身份，不授予执行权。 | Read-only inspection for Platform Users. One PG snapshot, at most 32 items and 128 KiB; corruption or oversize fails the whole read. Rejects query, delegation and machine identities; grants no execution rights.
+// @Description 仅 Platform User 的只读核实目录；PG 选择同版 active，FalkorDB 展开依赖，最多 32 项、128 KiB、5 秒，超限、损坏或图失败整次拒绝。拒绝 query、委托及机器身份，不授予执行权。 | Read-only inspection for Platform Users. PG selects active releases and FalkorDB expands same-generation dependencies, bounded to 32 items, 128 KiB and 5 seconds; oversize, corruption or graph failure rejects the whole read. Rejects query, delegation and machine identities; grants no execution rights.
 // @Tags Ontology
 // @Produce json
 // @Security BearerAuth

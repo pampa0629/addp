@@ -323,6 +323,7 @@ async def stream_agent_response(
     session_summary: Optional[str] = None,
     checkpoint: Optional[Dict[str, Any]] = None,
     forced_skill_name: Optional[str] = None,
+    accept_language: str = "zh-cn",
 ) -> AsyncIterator[AgentEvent]:
     """
     流式输出 Agent 回复。yield (msg_type, content) 元组。
@@ -393,6 +394,7 @@ async def stream_agent_response(
             "token": token,
             "agent_run_id": agent_run_id,
             "checkpoint": checkpoint or {},
+            "accept_language": accept_language,
         }
 
         yield AgentEvent(kind="run_state", payload={"skill_name": skill_name})

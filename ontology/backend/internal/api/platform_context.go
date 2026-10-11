@@ -14,7 +14,7 @@ type PlatformCapabilitiesResponse = platform.Catalog
 
 // PlatformCapabilities lists active definitions for semantic operation selection.
 // @Summary 获取平台能力目录 | List platform capability semantics
-// @Description 同一 PG 只读快照中核验已激活定义，按能力身份升序。最多 32 项和 128 KiB，超限或损坏整次失败，不截断、不换源；不证明可执行，不读取业务数据，拒绝 query。 | Verifies active definitions in one read-only PG snapshot, ordered by capability. At most 32 entries and 128 KiB; oversized or corrupt results fail as a whole without truncation or source fallback. No execution permission or business facts are asserted; query parameters are rejected.
+// @Description 同一 PG 只读快照选择已激活定义，按确定 generation 查询 FalkorDB 依赖，再从同版冻结内容补全。按能力升序，最多 32 项、128 KiB、5 秒；超限、损坏或图不可用整次失败，不截断、不换源。不证明可执行，不读取业务数据，拒绝 query。 | Selects active definitions in one read-only PG snapshot, expands FalkorDB dependencies at the exact generation, and hydrates the same frozen release. Ordered by capability, bounded to 32 entries, 128 KiB and 5 seconds. Oversize, corruption or graph failure rejects the whole read without truncation or fallback. No execution rights or business facts are asserted; query parameters are rejected.
 // @Tags Ontology
 // @Produce json
 // @Security BearerAuth
@@ -42,9 +42,9 @@ func (h *Handler) PlatformCapabilities(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// PlatformCapabilityContext reads the current active platform PG definition.
+// PlatformCapabilityContext expands the PG-selected active graph dependencies.
 // @Summary 获取平台能力语义 | Get platform capability semantics
-// @Description 从 PG 当前 active 平台修订读取；首个能力为 Transfer 任务创建。没有记录返回 404，尚未激活返回 409，损坏返回 500；不回退源文件，不表示模块可用、用户可执行或已经执行，不读取租户定义或业务数据。 | Reads the current active platform PG revision; the first capability is Transfer task creation. Missing records return 404, inactive records 409, and corruption 500. There is no source-file fallback or assertion of availability, execution permission or completed execution; no Tenant definitions or business data are read.
+// @Description PG 选择 active 修订、摘要和 ready generation，FalkorDB 展开同版能力依赖，PG 冻结内容补全；总预算 5 秒。首个能力为 Transfer 创建。没有记录 404，未激活 409，损坏或图读取失败 500；不回退源文件或 PG 图遍历，不证明可执行，不读取业务数据。 | PG selects the active revision, digest and ready generation; FalkorDB expands its dependencies and the same frozen release supplies descriptions, within 5 seconds. The first capability is Transfer creation. Missing records return 404, inactive records 409, corruption or graph read failure 500. No source-file or PG graph-traversal fallback, execution assertion or business data reads.
 // @Tags Ontology
 // @Produce json
 // @Security BearerAuth

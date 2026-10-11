@@ -718,11 +718,15 @@ func (e *DevExecutor) executeWorkflow(
 	)
 	if err != nil {
 		log.Printf("❌ [DevExecutor] 工作流引擎调用失败: execution_id=%s err=%v", executionID, err)
-		return nil, nil, fmt.Sprintf("工作流执行失败: %v", err)
+		if resp == nil {
+			return nil, nil, fmt.Sprintf("工作流执行失败: %v", err)
+		}
 	}
 
-	log.Printf("🔵 [DevExecutor] 工作流引擎返回成功: execution_id=%s", executionID)
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "工作流执行成功")
+	if err == nil {
+		log.Printf("🔵 [DevExecutor] 工作流引擎返回成功: execution_id=%s", executionID)
+		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "工作流执行成功")
+	}
 
 	// 构造结果摘要
 	result := commonModels.JSONMap{
@@ -752,6 +756,9 @@ func (e *DevExecutor) executeWorkflow(
 	}
 
 	log.Printf("🔵 [DevExecutor] executeWorkflow 结束: execution_id=%s", executionID)
+	if err != nil {
+		return result, outputs, fmt.Sprintf("工作流执行失败: %v", err)
+	}
 	return result, outputs, ""
 }
 
@@ -782,7 +789,16 @@ func workflowExecutionOutputs(targets []WorkflowProducedTarget) commonModels.JSO
 		if target.WriteMode != "" {
 			resource["write_mode"] = target.WriteMode
 		}
-		outputs[target.TaskID] = map[string]interface{}{"resource": resource}
+		if target.TileKey != "" {
+			node, ok := outputs[target.TaskID].(map[string]interface{})
+			if !ok {
+				node = map[string]interface{}{"tiles": map[string]interface{}{}}
+				outputs[target.TaskID] = node
+			}
+			node["tiles"].(map[string]interface{})[target.TileKey] = map[string]interface{}{"resource": resource}
+		} else {
+			outputs[target.TaskID] = map[string]interface{}{"resource": resource}
+		}
 	}
 	return outputs
 }

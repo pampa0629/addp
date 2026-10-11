@@ -6540,6 +6540,12 @@ paths:
         in: query
         name: table_search
         type: string
+      - description: 精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎
+          | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive
+          with table_search, must belong to this engine
+        in: query
+        name: catalog_path
+        type: string
       - description: 接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all
           recipients of that type
         enum:
@@ -6756,6 +6762,12 @@ paths:
           path-name substring, trimmed, up to 200 characters
         in: query
         name: table_search
+        type: string
+      - description: 精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎
+          | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive
+          with table_search, must belong to this engine
+        in: query
+        name: catalog_path
         type: string
       - description: 接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all
           recipients of that type

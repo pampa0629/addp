@@ -68,6 +68,7 @@ class PlatformRoutingTests(unittest.IsolatedAsyncioTestCase):
         async def domain_run(**kwargs):
             trace.append(kwargs["task_context"]["skill_name"])
             self.assertEqual(kwargs["task_context"]["user_request"], SHORT_REQUEST)
+            self.assertEqual(kwargs["task_context"]["accept_language"], "en-US")
             self.assertEqual(kwargs["allowed_tool_names"], ["transfer.task.create"])
             yield text_event("等待真实资源发现与配置确认")
 
@@ -79,6 +80,7 @@ class PlatformRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             events = [event async for event in stream_agent_response(
                 [{"role": "user", "content": SHORT_REQUEST}], 3, 5, "user-token", "run-short",
+                accept_language="en-US",
             )]
         self.assertEqual(trace, ["platform.capabilities.list", "transfer-generation"])
         self.assertEqual(model.schemas, [RouteDecision, PlatformRouteDecision])

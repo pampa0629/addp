@@ -139,6 +139,18 @@ func TestPlatformCompileRejectsInvalidDefinition(t *testing.T) {
 		{"dangling_relation", func(d *Context) { d.Relations[0].To = "absent" }},
 		{"invalid_relation_kind", func(d *Context) { d.Relations[0].Kind = "" }},
 		{"duplicate_relation", func(d *Context) { d.Relations = append(d.Relations, d.Relations[0]) }},
+		{"evidence_from_noncondition", func(d *Context) {
+			d.Relations = append(d.Relations, Relation{From: "source", Kind: "reads_via", To: "source_discovery"})
+		}},
+		{"evidence_to_nonentry", func(d *Context) {
+			d.Relations = append(d.Relations, Relation{From: "confirmed_source", Kind: "reads_via", To: "source"})
+		}},
+		{"config_from_noncondition", func(d *Context) {
+			d.Relations = append(d.Relations, Relation{From: "source", Kind: "configured_by", To: "target"})
+		}},
+		{"confirmation_from_noncondition", func(d *Context) {
+			d.Relations = append(d.Relations, Relation{From: "source", Kind: "confirmed_by", To: "user_confirmation"})
+		}},
 		{"owner", func(d *Context) { d.Operation.Owner = "" }},
 		{"skill", func(d *Context) { d.Operation.Skill = "../transfer" }},
 		{"tool_binding", func(d *Context) { d.Operation.Tool = "transfer.task.run" }},
@@ -261,11 +273,15 @@ func TestPlatformDefinitionLimits(t *testing.T) {
 		}},
 		{"requirements", 16, func(d *Context, n int) {
 			d.Requirements = nil
+			d.Relations = []Relation{}
 			for i := 0; i < n; i++ {
 				d.Requirements = append(d.Requirements, Requirement{fmt.Sprintf("q_%d", i), []string{"engine.list"}})
 			}
 		}},
-		{"inputs", 32, func(d *Context, n int) { d.Operation.InputsRequired = ids(n, "input_") }},
+		{"inputs", 32, func(d *Context, n int) {
+			d.Relations = []Relation{}
+			d.Operation.InputsRequired = ids(n, "input_")
+		}},
 		{"effects", 32, func(d *Context, n int) { d.Operation.Effects = ids(n, "effect.e_") }},
 		{"exclusions", 32, func(d *Context, n int) { d.Operation.ExcludedEffects = ids(n, "excluded.e_") }},
 		{"tools", 32, func(d *Context, n int) { d.Requirements[0].Tools = ids(n, "engine.t_") }},

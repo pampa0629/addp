@@ -126,6 +126,85 @@ test.describe('responsive workflow dialogs', () => {
   })
 })
 
+test('batch raster target uses a subdirectory name and preserves the public target binding', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    includeResourcePicker: true,
+    resourcePickerConfig: {
+      target_name_kind: 'directory',
+      resource_binding: { mode: 'target', parent_locator_param: 'target_parent_locator', name_param: 'target_name' }
+    }
+  })
+  await openSavedWorkflow(page)
+  const canvasBox = await requiredBoundingBox(page.locator('#workflow-dag-container canvas'))
+  await page.mouse.click(canvasBox.x + 220, canvasBox.y + 180)
+  const field = page.locator('.target-name-field')
+  await expect(field).toContainText('目标子目录名称')
+  await expect(field.getByPlaceholder('请输入保存本批切片的子目录名称')).toBeVisible()
+  await field.locator('input').fill('tiles-basic')
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  expect(backend.updates[0].payload.content.workflow_definition.tasks[0].params.target_name).toBe('tiles-basic')
+})
+
+test('target picker excludes unsupported engines even within an allowed family', async ({ page }) => {
+  const resourceEngines = [
+    RESOURCE_ENGINE,
+    ...[['nfs', 'file'], ['minio', 'object'], ['hdfs', 'file'], ['oracle', 'tabular'], ['mongodb', 'dynamic_schema'], ['elasticsearch', 'dynamic_schema']].map(([engine_type, engine_family], index) => ({
+      id: 20 + index, name: `Fixture ${engine_type}`, engine_type,
+      capabilities: { engine_family, storage: {} },
+      lifecycle_state: 'active', connection_status: 'online'
+    }))
+  ]
+  await installMockBackend(page, {
+    includeResourcePicker: true,
+    resourceEngines,
+    resourcePickerConfig: {
+      engine_families: ['tabular', 'dynamic_schema', 'file', 'object'],
+      engine_types: ['postgresql', 'mysql', 'doris', 'nfs', 'minio'],
+      selectable_parent_node_types: ['schema', 'database', 'directory', 'bucket', 'prefix'],
+      resource_binding: { mode: 'target', parent_locator_param: 'target_parent_locator', name_param: 'target_name' }
+    }
+  })
+  await openSavedWorkflow(page)
+  await primaryExecuteButton(page).click()
+  const validation = page.locator('.header-validation')
+  await expect(validation).toContainText('target_parent_locator')
+  await validation.getByRole('button').click()
+  await page.locator('.validation-item').filter({ hasText: 'target_parent_locator' }).click()
+  await page.locator('.resource-selection-card').getByRole('button').click()
+  const dialog = page.locator('.workflow-resource-picker-dialog:visible')
+  await dialog.locator('.el-select__wrapper').click()
+  for (const name of [RESOURCE_ENGINE.name, 'Fixture nfs', 'Fixture minio']) {
+    await expect(page.getByRole('option', { name: new RegExp(name) })).toBeVisible()
+  }
+  for (const name of ['Fixture hdfs', 'Fixture oracle', 'Fixture mongodb', 'Fixture elasticsearch']) {
+    await expect(page.getByRole('option', { name: new RegExp(name) })).toHaveCount(0)
+  }
+})
+
+test('restoring a saved locator cannot select an engine excluded by the operator', async ({ page }) => {
+  const validationError = {
+    code: 'REQUIRED_PARAMETER', path: 'tasks[0].params.source_locator', message: 'Source locator is required'
+  }
+  await installMockBackend(page, {
+    includeResourcePicker: true,
+    validationErrors: [validationError],
+    resourcePickerConfig: { engine_types: ['nfs'] }
+  })
+  await openSavedWorkflow(page)
+  await primaryExecuteButton(page).click()
+  const validation = page.locator('.header-validation')
+  await expect(validation).toContainText(validationError.message)
+  await validation.getByRole('button').click()
+  await page.locator('.validation-item').filter({ hasText: validationError.message }).click()
+  const ancestors = page.waitForResponse(response => response.url().includes('/ancestors'))
+  await page.getByRole('button', { name: '更换资源', exact: true }).click()
+  await ancestors
+  const dialog = page.getByRole('dialog', { name: '选择数据源', exact: true })
+  await expect(dialog.getByText('roads', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '确定', exact: true })).toBeDisabled()
+})
+
 test('cancel keeps the current engine and workflow', async ({ page }) => {
   const backend = await installMockBackend(page)
   await openSavedWorkflow(page)
@@ -253,7 +332,7 @@ test('renders a visible gap where workflow edges cross', async ({ page }) => {
   expect(edgeRendering.some(edge => edge.pathChanged)).toBe(true)
 })
 
-for (const portType of ['number', 'raster']) {
+for (const portType of ['number', 'raster', 'raster_tiles']) {
 test(`edits ${portType} port bindings and persists every input reference`, async ({ page }) => {
   const backend = await installMockBackend(page, { includeInputConnections: true, portType })
   const inputNames = portType === 'raster' ? ['input_raster', 'other_raster'] : ['left_value', 'right_value']
@@ -674,6 +753,8 @@ async function installMockBackend(page, {
   createError = '',
   deferGeneration = false,
   includeResourcePicker = false,
+  resourcePickerConfig = {},
+  resourceEngines = [RESOURCE_ENGINE],
   includeInputConnections = false,
   includeConnectedEdge = false,
   includeCrossingEdges = false,
@@ -727,7 +808,8 @@ async function installMockBackend(page, {
         resource_binding: {
           mode: 'existing',
           locator_param: 'source_locator'
-        }
+        },
+        ...resourcePickerConfig
       }
     })
   }
@@ -774,7 +856,7 @@ async function installMockBackend(page, {
       return fulfillJSON(route, [ENGINE_A, ENGINE_B])
     }
     if (path === '/api/v1/meta/engines') {
-      return fulfillJSON(route, [RESOURCE_ENGINE])
+      return fulfillJSON(route, resourceEngines)
     }
     if (path === `/api/v1/meta/resource-tree/${RESOURCE_ENGINE.id}`) {
       return fulfillJSON(route, {

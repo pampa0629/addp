@@ -478,6 +478,42 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(creations[1].payload["is_error"])
         self.assertEqual(creations[1].payload["error_code"], "platform_condition_unsatisfied")
 
+    async def test_transfer_review_copy_is_runtime_owned_and_language_does_not_change_identity(self):
+        identities = []
+        for language, checked, unverified, confirm, cancel in (
+            ("zh-CN", "已检查", "未验证", "确认仅创建任务", "取消"),
+            ("en-US", "Checked", "Not verified", "Confirm task creation only", "Cancel"),
+        ):
+            with self.subTest(language=language):
+                definition, _, _, arguments, checkpoint = platform_fixture()
+                events = await self._run_factory(
+                    agent_run_id="review-copy", checkpoint=checkpoint, accept_language=language,
+                    tools=[_Tool("platform.capability.context", definition), _Tool("transfer.task.create", {})],
+                    allowed_tools=["platform.capability.context", "transfer.task.create"], responses=[
+                        _Response(tool_calls=[_tool_call("platform.capability.context")]),
+                        _Response(tool_calls=[_tool_call("request_clarification", {
+                            "prompt": "模型声称已验证可执行，确认将立即运行任务",
+                            "reason": "transfer_create_review",
+                            "operation_review": {"tool": "transfer.task.create", "arguments": arguments},
+                            "options": [{"label": "立即运行", "value": "confirm"},
+                                        {"label": "仍然执行", "value": "cancel"}],
+                        })]),
+                    ],
+                )
+                interaction = next(event.payload for event in events if event.kind == "interaction_required")
+                self.assertIn(checked, interaction["prompt"])
+                self.assertIn(unverified, interaction["prompt"])
+                self.assertNotIn("模型声称", interaction["prompt"])
+                self.assertEqual([candidate["label"] for candidate in interaction["candidates"]], [confirm, cancel])
+                displayed_arguments = interaction["prompt"].split("```json\n", 1)[1].split("\n```", 1)[0]
+                self.assertEqual(json.loads(displayed_arguments), arguments)
+                identity = interaction["candidates"][0]["candidate"]["operation_review"]
+                self.assertEqual(interaction["candidates"][0]["value"], identity["fingerprint"])
+                self.assertEqual(interaction["candidates"][1]["value"], "cancel")
+                identities.append(identity)
+                self.assertFalse(any(event.kind == "tool_start" and event.payload["tool_name"] == "transfer.task.create" for event in events))
+        self.assertEqual(identities[0], identities[1])
+
     async def test_transfer_creation_without_current_context_or_review_never_reaches_owner(self):
         definition, _, _, arguments, checkpoint = platform_fixture()
         names = ["platform.capability.context", "transfer.task.create"]
@@ -833,7 +869,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(acknowledgements), 1)
             self.assertEqual(create.calls, 0 if cancel else 1)
 
-    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis", checkpoint=None, llm=None, checkpoint_consumer=None, user_request="评测请求"):
+    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis", checkpoint=None, llm=None, checkpoint_consumer=None, user_request="评测请求", accept_language="zh-cn"):
         context = {
             "skill_name": skill_name,
             "user_request": user_request,
@@ -843,6 +879,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             "token": "runtime-token",
             "agent_run_id": agent_run_id,
             "checkpoint": checkpoint,
+            "accept_language": accept_language,
         }
         with (
             patch("graph.factory.create_agent_tools", return_value=harness_tools(tools)),

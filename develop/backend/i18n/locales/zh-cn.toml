@@ -281,3 +281,17 @@ other = "Spark 数据项事实与资源定位不一致"
 
 [develop.workflow.spark_table_item_required]
 other = "Spark 文件加载需要已识别的表格数据项"
+
+[develop.workflow.target_engine_unsupported]
+other = "该算子不支持目标引擎类型"
+
+[develop.workflow.target_locator_invalid]
+other = "目标定位与引擎目录结构不一致"
+[develop.workflow.raster_tile_manifest_invalid]
+other = "栅格切片发布清单无效"
+
+[develop.workflow.raster_tile_target_overlap]
+other = "栅格切片批量输出范围与其他输出重叠"
+
+[develop.workflow.raster_tile_target_name_invalid]
+other = "栅格切片目标子目录名称必须是单一路径段"

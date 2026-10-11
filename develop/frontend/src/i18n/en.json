@@ -454,6 +454,8 @@
       "targetTableNamePlaceholder": "Enter the table name, file name, or relative path to create or overwrite",
       "targetFileName": "Target file name",
       "targetDatasetName": "Target dataset name",
+      "targetDirectoryName": "Target subdirectory name",
+      "targetDirectoryNamePlaceholder": "Enter the subdirectory name for this tile batch",
       "targetFileNameWithExtensionPlaceholder": "Enter a file name ending in {extension}",
       "targetDatasetNamePlaceholder": "Enter target dataset name",
       "targetExtensionRequired": "Target file name must end in {extension}"

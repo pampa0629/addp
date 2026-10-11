@@ -18,6 +18,7 @@ class MainAgentResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_interaction_resume_reuses_recorded_skill_without_rerouting(self):
         async def fake_factory_run(**kwargs):
             self.assertEqual(kwargs["allowed_tool_names"], ["workflow.run"])
+            self.assertEqual(kwargs["task_context"]["accept_language"], "en-GB")
             yield text_event("resumed")
 
         route = AsyncMock(side_effect=AssertionError("resume must not reroute"))
@@ -37,6 +38,7 @@ class MainAgentResumeTests(unittest.IsolatedAsyncioTestCase):
                     agent_run_id="run-1",
                     checkpoint={},
                     forced_skill_name="workflow-analysis",
+                    accept_language="en-GB",
                 )
             ]
 

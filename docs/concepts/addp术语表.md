@@ -419,6 +419,8 @@
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
 | RasterDataset | 栅格数据集对象 | 当前工作流执行目录内的私有、文件支撑栅格对象。 | 只通过 `raster` 端口在当前 DAG 内流转；成功或失败时清理，不返回路径、句柄或像元数组。 |
+| raster tiling | 栅格切片 | 按像素窗口将一幅栅格划分为多幅较小栅格的处理操作。 | 保留各片对应的原始像元和空间位置；不表示 AI 语义分割或实例分割，也不表示在线地图瓦片生成。不新增数据类型或公开资源身份。 |
+| RasterTiles | 栅格切片集合 | 当前工作流执行内，由私有源栅格和像素切片网格定义的多片对象。 | 使用 `raster_tiles` 端口；按需生成，不能用 JSON 或跨 execution 对象伪造。仅用于计算与批量保存，不是公开数据类型、whole scope 数据项或通用 foreach。 |
 | RasterArtifact | 栅格成果 | 已保存到目标存储的栅格及其事实摘要。 | Develop 业务成果使用稳定 ResourceLocator；Manager 私有快显成果仍由 Manager 管理，不新增成果状态 owner。 |
 | RasterRef | 栅格引用 | 对栅格输入或成果的引用语义。 | 公开资源身份仍统一使用 ResourceLocator，不建立第二套身份或持久状态；临时摘要不能重建内部数据集。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
@@ -665,10 +667,11 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | domain ontology | 领域本体 | Tenant 对领域类、属性、关系特征和分类条件形成的显式语义体系。 | 目标由 Ontology 管理自有事实并引用 Standard、Model 权威定义；不要求 RDF/OWL，不复制业务数据。 |
-| platform capability semantics | 平台能力语义 | ADDP 平台概念、功能、操作及其关联的语义说明，用于将用户意图对应到 Skill、Tool 和模块能力。 | 已有随代码发布的 Transfer 创建能力定义、内部 PG 修订、FalkorDB 安全发布与启动自动发布；运行消费唯一读取 PG active，Agent 经平台能力目录选择相应 Skill/Tool。定义中的能力必须结合当前模块可用性和用户权限判断，不能据此认定可执行；真实短输入链路待验收。 |
-| platform ontology | 平台本体 | 对 ADDP 平台概念、关系、操作条件、效果与限制进行显式组织并版本化发布的语义定义。 | 由 Ontology 管理；平台开发者在 Git 中维护，PG 管理运行时权威修订与激活，FalkorDB 保存派生投影。独立于 Tenant 本体，不使用 Tenant=0，也不保存具体业务任务或执行实例。当前有 Transfer 最小定义、启动部署发布及唯一 PG active 消费；平台用户只读核实入口已实现，真实部署及 Agent 发布消费链路待验收。 |
+| platform capability semantics | 平台能力语义 | ADDP 平台概念、功能、操作及其关联的语义说明，用于将用户意图对应到 Skill、Tool 和模块能力。 | Transfer 创建能力由 PG 管理完整修订和唯一 active；正式目录/上下文沿确定 generation 查询 FalkorDB 的条件、入口组、Tool 和效果依赖，再用同版冻结内容补全。Agent 据此选择 Skill/Tool；图不可用不退回 PG 关系遍历。定义不能证明模块在线、有权限或事实已取得；真实部署消费另行验收。 |
+| platform ontology | 平台本体 | 对 ADDP 平台概念、关系、操作条件、效果与限制进行显式组织并版本化发布的语义定义。 | 平台开发者在 Git 中维护，PG 管理完整权威修订与唯一激活指针，FalkorDB 管理可重建的依赖查询投影。独立于 Tenant 本体，不使用 Tenant=0，不保存具体业务任务或执行实例。当前 Transfer 创建切片接入同版 PG/图消费及平台用户只读核实；跨能力检索、自动规划和真实部署验收尚待开展。 |
 | platform capability catalog | 平台能力目录 | 从同一运行时读取快照中列出的已激活平台能力语义集合，用于理解用户目标与选择操作。 | Ontology 提供已核验定义，Agent 根据语义选择能力并校验其 Skill/Tool 引用；不是 HTTP 接口清单、授权目录或运行时可用性证明。只纳入已发布能力，不能据未匹配判断整个模块不存在。 |
 | semantic source reference | 语义来源引用 | 将语义定义成员与其正式规范、公开契约或实现依据连接起来的可追溯引用，记录来源 owner、身份、用途及确定版本或内容摘要。 | 不等于本体数据绑定，不授予数据访问权；表结构是实现依据而非自动生成本体的充分条件，来源副本不可独立编辑。Transfer 创建切片已将成员来源与选定覆盖范围纳入同一不可变发布快照，标准门禁检查内容漂移；平台用户只读查看从同一 PG active 快照恢复定义和依据，不在运行时读取仓库文件。见 Ontology 最小设计契约 1.4–1.6。 |
+| condition evidence path | 条件取证路径 | 平台本体显式声明的条件到读取入口组及其 Tool 的关联，用于说明缺口可以向何处取证。 | `reads_via` 连接条件与正式读取入口；`configured_by` 和 `confirmed_by` 分别表达配置与用户确认来源。入口不代表已取得事实或条件满足，不自动调用 Tool；搜索候选、草稿与正式结构事实不能互换。见 Ontology 最小设计契约 5.1.3。 |
 | tenant domain semantics | 租户领域语义 | Tenant 明确建设或从专业 owner 引用的业务概念、关系、口径和规则。 | 可在 Ontology 自有建模，也可引用 Standard、Model 等 owner；Meta 结构、Quality 结果和 Catalog 责任是相关专业事实，不自动成为本体定义。其他业务模块均不是领域本体建模的前置。 |
 | runtime business fact | 运行时业务事实 | 在确定授权、读取时点和观察范围内，由数据读取 owner 提供的具体对象值、状态或关系观察。 | 必须保留对象身份、来源与覆盖范围；动态事实不属于本体定义修订，不要求复制到 Infra 图库。未读取、无权限和未完整观察不能当作不存在。 |
 | ontology class | 本体类 | 本体中可被属性、关系和分类规则引用的类型概念。 | 基础定义只能为本体自有或来自明确 owner 的引用；地点实例“北京”不是本体类。 |

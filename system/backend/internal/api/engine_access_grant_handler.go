@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -103,6 +105,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 // @Param page query int false "页码，默认 1 | Page, default 1"
 // @Param page_size query int false "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100"
 // @Param table_search query string false "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters"
+// @Param catalog_path query string false "精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine"
 // @Param recipient_type query string false "接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all recipients of that type" Enums(user,department,project_group)
 // @Param recipient_id query string false "接收方编号，规范正整数十进制字符串，必须同时指定 recipient_type | Recipient ID, canonical positive decimal string; requires recipient_type"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantRelation,total=int64,page=int,page_size=int,total_pages=int} "当前关系 | Current relations"
@@ -125,6 +128,7 @@ func (h *EngineAccessGrantHandler) List(c *gin.Context) {
 // @Param page query int false "页码，默认 1 | Page, default 1"
 // @Param page_size query int false "每页条数，默认 20，最多 100 | Page size, default 20, maximum 100"
 // @Param table_search query string false "路径名称的字面量子串，不区分大小写，去掉首尾空白，最多 200 字 | Case-insensitive literal path-name substring, trimmed, up to 200 characters"
+// @Param catalog_path query string false "精确叶子 EngineCatalogPath JSON，最多 4096 字节，与 table_search 互斥，须属于本引擎 | Exact leaf EngineCatalogPath JSON, up to 4096 bytes, mutually exclusive with table_search, must belong to this engine"
 // @Param recipient_type query string false "接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all recipients of that type" Enums(user,department,project_group)
 // @Param recipient_id query string false "接收方编号，规范正整数十进制字符串，必须同时指定 recipient_type | Recipient ID, canonical positive decimal string; requires recipient_type"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantView,total=int64,page=int,page_size=int,total_pages=int} "签发及撤销历史 | Issuance and revocation history"
@@ -167,6 +171,15 @@ func (h *EngineAccessGrantHandler) list(c *gin.Context, history bool) {
 			}
 			continue
 		}
+		if key == "catalog_path" {
+			decoder := json.NewDecoder(strings.NewReader(values[0]))
+			decoder.DisallowUnknownFields()
+			if len(values[0]) > 4096 || decoder.Decode(&filter.CatalogPath) != nil || filter.CatalogPath == nil || decoder.Decode(&struct{}{}) != io.EOF {
+				err = commonapi.ErrBadRequest
+				break
+			}
+			continue
+		}
 		if key == "recipient_id" {
 			filter.RecipientID, err = parseIAMDecimalID(values[0])
 			if err != nil {
@@ -192,7 +205,7 @@ func (h *EngineAccessGrantHandler) list(c *gin.Context, history bool) {
 	if size > 100 || page > int(^uint(0)>>1)/size {
 		err = commonapi.ErrBadRequest
 	}
-	if validationErr := filter.Validate(); validationErr != nil {
+	if validationErr := filter.ValidateForEngine(engineID); validationErr != nil {
 		err = validationErr
 	}
 	if err != nil {

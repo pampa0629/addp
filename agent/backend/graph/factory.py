@@ -24,6 +24,7 @@ from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
 from agents.platform_conditions import CREATE_TOOL, REVIEW_REASON, prepare_review, review_json, validate_create
 from graph.state import TaskContext
+from i18n import transfer_create_review_messages
 from protocol.a2ui import preview_presentations
 from tools.langchain_tools import create_agent_tools, stable_tool_name
 from utils.llm import get_llm
@@ -68,8 +69,10 @@ def _runtime_instructions() -> str:
 - `workflow.run` 返回 `approval_required` 时当前 run 必须暂停，不能重试或把客户端确认当作批准。
 - 恢复消息提供 approval_id 和 request_fingerprint 时，再次调用 `workflow.run` 且只提交这两个字段。
 - `data.search` 的服务、委托或响应失败终止当前运行，不是零召回，不能重复搜索或切换目录枚举、样本读取、扫描；不解除保护隔离。
-- Transfer 配置复核必须使用 reason=transfer_create_review、operation_review={tool:"transfer.task.create",arguments:<完整创建参数>} 和 confirm/cancel 两个选项。Runtime 展示确切参数并绑定指纹；普通文字或其他澄清不构成配置复核。
+- 用户对 Transfer 只要求展示草稿或确认配置、明确不要创建时，可以取证及澄清配置缺口，但应以普通回复展示配置草稿并结束本轮；不调用 transfer_create_review，不提供“确认创建”选项，也不调用 transfer.task.create。选择源、目标或补充配置不代表改为要求创建。
+- 用户明确要求创建任务后，Transfer 创建前的最终配置复核必须使用 reason=transfer_create_review、operation_review={tool:"transfer.task.create",arguments:<完整创建参数>} 和 confirm/cancel 两个选项。Runtime 展示确切参数并绑定指纹；普通文字或其他澄清不构成创建复核。
 - 提交创建时参数必须与复核完全一致；参数或本体/结构事实变化后重新复核。平台条件错误先补齐缺口，不反复尝试写 Tool。
+- Transfer 普通草稿应说明尚未完成 owner 的类型适配及写入可执行性验证，不把结构事实或配置复核称为已验证可执行。最终创建复核的提示和按钮由 Runtime 生成，不使用模型提供的展示文案。
 """
 
 
@@ -80,11 +83,12 @@ def _emit(event_kind: str, **payload: Any) -> None:
 class _PlatformBoundary(AgentMiddleware):
     """平台边界中间件，不实现模型／工具执行循环，不持久化框架状态。"""
 
-    def __init__(self, tools: list[StructuredTool], checkpoint: dict, max_iterations: int):
+    def __init__(self, tools: list[StructuredTool], checkpoint: dict, max_iterations: int, accept_language: str):
         super().__init__()
         self.names = {tool.name: stable_tool_name(tool) for tool in tools}
         self.checkpoint = checkpoint
         self.max_iterations = max_iterations
+        self.accept_language = accept_language
         self.model_calls = 0
         self.paused = False
         # LangGraph 默认并发调度同批工具；owner 暂停必须先于后续副作用。
@@ -188,12 +192,13 @@ class _PlatformBoundary(AgentMiddleware):
                 if len(args.options) != 2 or set(supplied) != {"confirm", "cancel"}:
                     raise ValueError("invalid_operation_review_choices")
                 identity = prepare_review(review["arguments"], self.checkpoint)
+                messages = transfer_create_review_messages(self.accept_language)
                 options = [
-                    {"label": supplied[key].label, "value": identity["fingerprint"] if key == "confirm" else "cancel",
+                    {"label": messages[key], "value": identity["fingerprint"] if key == "confirm" else "cancel",
                      "candidate": {"operation_review": identity}}
                     for key in ("confirm", "cancel")
                 ]
-                args.prompt += review_json(review["arguments"])
+                args.prompt = messages["prompt"] + review_json(review["arguments"])
                 _emit("checkpoint", tool_call_id=call["id"], checkpoint=copy.deepcopy(self.checkpoint), facts={})
             else:
                 if args.operation_review is not None:
@@ -309,7 +314,7 @@ class AgentFactory:
         if persisted:
             human_input = f"{human_input}\n\n{persisted}"
         tools = [tool_map[name] for name in allowed_tool_names] + [_clarification_tool()]
-        boundary = _PlatformBoundary(tools, checkpoint, max_iterations)
+        boundary = _PlatformBoundary(tools, checkpoint, max_iterations, task_context.get("accept_language", "zh-cn"))
         loop_detection = LoopDetectionMiddleware()
         graph = create_deerflow_agent(
             model=llm or get_llm(task_context["tenant_id"], "reasoning"), tools=tools,

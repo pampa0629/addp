@@ -5,9 +5,9 @@ import json
 import logging
 import geopandas as gpd
 import pandas as pd
-from addp_common.workflow_runtime import WorkflowRunner, WorkflowRunResult, WorkflowValidationError
+from addp_common.workflow_runtime import WorkflowRunner, WorkflowExecutionError, WorkflowValidationError
 from operators import OPERATORS, get_operator
-from operators.raster_compute import RasterDataset, raster_info, raster_workspace
+from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,8 @@ def _execute_operator(operator, params):
 
 
 def _project(value):
+    if isinstance(value, RasterTiles):
+        return {'runtime_type': 'raster_tiles', **raster_tiles_info(value)}
     if isinstance(value, RasterDataset):
         return {'runtime_type': 'raster', **raster_info(value)}
     if isinstance(value, gpd.GeoDataFrame):
@@ -58,15 +60,13 @@ def _execute_workflow_operator(operator, params):
 
 class GeoPythonWorkflowRunner(WorkflowRunner):
     def __init__(self):
-        super().__init__({name for name, meta in OPERATORS.items() if 'workflow' in meta['execution_modes']}, _execute_workflow_operator)
+        super().__init__({name for name, meta in OPERATORS.items() if 'workflow' in meta['execution_modes']},
+                         _execute_workflow_operator,
+                         result_projector=lambda value: json.dumps(_project(value), ensure_ascii=False, allow_nan=False))
 
     def execute(self, workflow_def, input_data=None, progress=None):
         with raster_workspace():
-            result = super().execute(workflow_def, input_data, progress)
-            # Preserve the canonical GeoPython JSON-string result contract.
-            results = {key: json.dumps(_project(value), ensure_ascii=False, allow_nan=False)
-                       for key, value in result.all_results.items()}
-            return WorkflowRunResult(results[result.task_order[-1]], results, result.task_order)
+            return super().execute(workflow_def, input_data, progress)
 
 
 def execute_workflow(workflow_def, input_data=None):
@@ -76,6 +76,10 @@ def execute_workflow(workflow_def, input_data=None):
         return {'status': 'success', 'final_result': result.final_result, 'all_results': result.all_results, 'logs': logs}
     except WorkflowValidationError as exc:
         return {'status': 'failed', 'error_code': 'WORKFLOW_INVALID', 'error': str(exc), 'logs': logs}
+    except WorkflowExecutionError as exc:
+        logger.exception('Workflow execution failed')
+        return {'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'error': str(exc),
+                'all_results': exc.all_results or {}, 'logs': logs}
     except Exception as exc:
         logger.exception('Workflow execution failed')
         return {'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'error': str(exc), 'logs': logs}

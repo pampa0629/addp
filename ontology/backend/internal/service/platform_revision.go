@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/addp/ontology/internal/models"
 	"github.com/addp/ontology/internal/platform"
@@ -13,11 +14,16 @@ import (
 // PlatformRevisionService is an internal immutable recording service, not an
 // authorization boundary or a publication/activation interface.
 type PlatformRevisionService struct {
-	repo *repository.PlatformRevisionRepository
+	repo  *repository.PlatformRevisionRepository
+	graph PlatformContextGraph
 }
 
-func NewPlatformRevisionService(repo *repository.PlatformRevisionRepository) *PlatformRevisionService {
-	return &PlatformRevisionService{repo: repo}
+type PlatformContextGraph interface {
+	PlatformContext(context.Context, *platform.Snapshot, string) (platform.Context, error)
+}
+
+func NewPlatformRevisionService(repo *repository.PlatformRevisionRepository, graph PlatformContextGraph) *PlatformRevisionService {
+	return &PlatformRevisionService{repo: repo, graph: graph}
 }
 
 func (s *PlatformRevisionService) Store(ctx context.Context, actor models.PlatformActor, snapshot *platform.Snapshot, expectedLastRevision uint64) (*models.PlatformRevision, error) {
@@ -44,14 +50,16 @@ func (s *PlatformRevisionService) Get(ctx context.Context, actor models.Platform
 	return record, nil
 }
 
-// PlatformCapabilityContext consumes only the PG active publication. Revision
+// PlatformCapabilityContext expands dependencies from the PG active graph. Revision
 // and digest identify this read; they do not grant permission to execute Tools.
 func (s *PlatformRevisionService) PlatformCapabilityContext(ctx context.Context, capability string) (platform.Context, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	record, err := s.repo.ActivePlatformDefinition(ctx, capability)
 	if err != nil {
 		return platform.Context{}, err
 	}
-	return restorePlatformContext(ctx, *record)
+	return s.readPlatformContext(ctx, *record)
 }
 
 // PlatformDefinition is a read-only view of one authoritative frozen release.
@@ -65,7 +73,7 @@ func (s *PlatformRevisionService) PlatformDefinition(ctx context.Context, capabi
 	if err != nil {
 		return PlatformDefinition{}, err
 	}
-	return restorePlatformDefinition(ctx, *record)
+	return restorePlatformDefinition(ctx, record.PlatformRevision)
 }
 
 func restorePlatformDefinition(ctx context.Context, record models.PlatformRevision) (PlatformDefinition, error) {
@@ -88,6 +96,8 @@ func restorePlatformDefinition(ctx context.Context, record models.PlatformRevisi
 }
 
 func (s *PlatformRevisionService) PlatformCapabilities(ctx context.Context) (platform.Catalog, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	records, err := s.repo.ActivePlatformDefinitions(ctx)
 	if errors.Is(err, repository.ErrPlatformCatalogTooLarge) {
 		return platform.Catalog{}, ErrResultTooLarge
@@ -95,16 +105,16 @@ func (s *PlatformRevisionService) PlatformCapabilities(ctx context.Context) (pla
 	if err != nil {
 		return platform.Catalog{}, err
 	}
-	return platformCatalog(ctx, records)
+	return s.platformCatalog(ctx, records)
 }
 
-func platformCatalog(ctx context.Context, records []models.PlatformRevision) (platform.Catalog, error) {
+func (s *PlatformRevisionService) platformCatalog(ctx context.Context, records []repository.ActivePlatformRecord) (platform.Catalog, error) {
 	if len(records) > platform.CatalogMaxItems {
 		return platform.Catalog{}, ErrResultTooLarge
 	}
 	catalog := platform.Catalog{SchemaVersion: "addp.platform-capability-catalog/v1", Capabilities: make([]platform.Context, 0, len(records))}
 	for _, record := range records {
-		definition, err := restorePlatformContext(ctx, record)
+		definition, err := s.readPlatformContext(ctx, record)
 		if err != nil {
 			return platform.Catalog{}, err
 		}
@@ -120,7 +130,7 @@ func platformCatalog(ctx context.Context, records []models.PlatformRevision) (pl
 	return catalog, ctx.Err()
 }
 
-func restorePlatformContext(ctx context.Context, record models.PlatformRevision) (platform.Context, error) {
+func (s *PlatformRevisionService) readPlatformContext(ctx context.Context, record repository.ActivePlatformRecord) (platform.Context, error) {
 	snapshot, err := platform.Restore([]byte(record.Payload), record.Digest)
 	if err != nil {
 		return platform.Context{}, repository.ErrIntegrity
@@ -132,5 +142,8 @@ func restorePlatformContext(ctx context.Context, record models.PlatformRevision)
 	if err := ctx.Err(); err != nil {
 		return platform.Context{}, err
 	}
-	return result, nil
+	if s.graph == nil || record.Generation == "" || record.ActivationVersion == 0 {
+		return platform.Context{}, repository.ErrIntegrity
+	}
+	return s.graph.PlatformContext(ctx, snapshot, record.Generation)
 }

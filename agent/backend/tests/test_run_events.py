@@ -165,7 +165,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         entry_db = SimpleNamespace(commit=AsyncMock())
         request = SimpleNamespace(
             state=SimpleNamespace(principal_id=1, tenant_id=1, token="fixture"),
-            headers={}, is_disconnected=AsyncMock(return_value=False),
+            headers={"accept-language": "en-US"}, is_disconnected=AsyncMock(return_value=False),
         )
         body = RunAgentInput.model_validate({
             "threadId": "12", "runId": "protocol-1", "state": {}, "tools": [], "context": [], "forwardedProps": {},
@@ -173,6 +173,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         })
 
         async def failed_stream(*_args, **_kwargs):
+            self.assertEqual(_kwargs["accept_language"], "en-US")
             yield AgentEvent(kind="tool_start", payload={"tool_call_id": "search", "tool_name": "data.search", "args": {"query": "Outdoor"}})
             yield AgentEvent(kind="tool_result", payload={
                 "tool_call_id": "search", "tool_name": "data.search", "is_error": True,

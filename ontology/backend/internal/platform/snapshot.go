@@ -10,6 +10,7 @@ import (
 	"math"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -171,6 +172,17 @@ func validate(d Context) error {
 			return fmt.Errorf("invalid_platform_requirement")
 		}
 		requirements[requirement.ID] = true
+	}
+	for _, relation := range d.Relations {
+		switch relation.Kind {
+		case "reads_via", "configured_by", "confirmed_by":
+			if !slices.Contains(operation.InputsRequired, relation.From) {
+				return fmt.Errorf("invalid_platform_condition_relation")
+			}
+			if relation.Kind == "reads_via" && !requirements[relation.To] {
+				return fmt.Errorf("invalid_platform_evidence_requirement")
+			}
+		}
 	}
 	return nil
 }

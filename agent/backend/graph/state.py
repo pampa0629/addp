@@ -40,6 +40,7 @@ class TaskContext(TypedDict):
     token: str               # User Access Token，仅用于解析身份和申请委托令牌
     agent_run_id: str        # 持久 AgentRun UUID，用于委托令牌审计绑定
     checkpoint: NotRequired[Dict[str, Any]]  # addp.agent-checkpoint/v1 语义检查点
+    accept_language: NotRequired[str]  # 当前 HTTP 请求语言，只用于 Runtime 展示，不参与复核身份
 
 
 class RouteDecision(BaseModel):

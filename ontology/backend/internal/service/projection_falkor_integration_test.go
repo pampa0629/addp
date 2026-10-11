@@ -149,7 +149,7 @@ func TestPostgresProjectionRuntime(t *testing.T) {
 		if err := newPublisher(graph).PublishOnReady(ctx, func() bool { return true }, func() (*platform.Snapshot, error) { return firstSnapshot, nil }); err != nil {
 			t.Fatal(err)
 		}
-		reader := NewPlatformRevisionService(platformRepo)
+		reader := NewPlatformRevisionService(platformRepo, graph)
 		got, err := reader.PlatformCapabilityContext(ctx, capability)
 		if err != nil || got.Revision != 2 || got.Digest != firstSnapshot.Digest() {
 			t.Fatal("startup publication not readable", got, err)

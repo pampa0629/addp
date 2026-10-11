@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -287,18 +288,22 @@ func TestPreprocessWorkflowParamsDerivesFileTargetFromParentLocator(t *testing.T
 		},
 	}
 
-	got, err := svc.preprocessWorkflowParams(context.Background(), 7, "geopython_workflow", workflow)
-	if err != nil {
-		t.Fatalf("preprocessWorkflowParams() error = %v", err)
-	}
+	for _, workflowEngineType := range []string{"geopython_workflow", "spark_workflow"} {
+		t.Run(workflowEngineType, func(t *testing.T) {
+			got, err := svc.preprocessWorkflowParams(context.Background(), 7, workflowEngineType, workflow)
+			if err != nil {
+				t.Fatalf("preprocessWorkflowParams() error = %v", err)
+			}
 
-	params := firstTaskParams(t, got)
-	if params["path"] != "output/reports/result.csv" {
-		t.Fatalf("path = %v, want output/reports/result.csv", params["path"])
+			params := firstTaskParams(t, got)
+			if params["path"] != "output/reports/result.csv" {
+				t.Fatalf("path = %v, want output/reports/result.csv", params["path"])
+			}
+			assertConnectionInfo(t, params, "nfs")
+
+		})
 	}
-	assertConnectionInfo(t, params, "nfs")
 }
-
 func TestPreprocessWorkflowParamsDerivesObjectTargetFromBucketLocator(t *testing.T) {
 	svc := newWorkflowEngineServiceForTest(t, 4, "minio")
 	workflow := map[string]interface{}{
@@ -1401,5 +1406,93 @@ func TestPreprocessWorkflowElasticsearchIndexLocator(t *testing.T) {
 	firstTaskParams(t, workflow)["index"] = "private"
 	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow); err == nil {
 		t.Fatal("direct runtime index accepted")
+	}
+}
+
+func TestSparkSaveTargetEngineConstraintMatchesPublicPicker(t *testing.T) {
+	spec := workflowSaveAdapterSpec("save")
+	expected := []string{"postgresql", "mysql", "doris", "nfs", "minio"}
+	if len(spec.ResourceOutputs) != 1 || !slices.Equal(spec.ResourceOutputs[0].EngineTypes, expected) {
+		t.Fatalf("output constraints = %#v", spec.ResourceOutputs)
+	}
+	for _, parameter := range spec.PublicParameters {
+		if parameter.Name == "target_resource" {
+			types, ok := parameter.UIConfig["engine_types"].([]string)
+			if !ok || !slices.Equal(types, spec.ResourceOutputs[0].EngineTypes) {
+				t.Fatalf("public picker types = %#v, want output constraint", parameter.UIConfig["engine_types"])
+			}
+			return
+		}
+	}
+	t.Fatal("missing target picker")
+}
+
+func TestSparkSaveRejectsUnsupportedTargetBeforeRuntimeDispatch(t *testing.T) {
+	for _, engineType := range []string{"oracle", "mongodb", "elasticsearch"} {
+		t.Run(engineType, func(t *testing.T) {
+			svc := newWorkflowEngineServiceForTest(t, 7, engineType)
+			workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+				"id": "save_result", "operator": "save", "params": map[string]interface{}{
+					"target_parent_locator": "addp://engine/7/path/output?type=database",
+					"target_name":           "result_table",
+				},
+			}}}
+			_, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", workflow)
+			if err == nil || !strings.Contains(err.Error(), "该算子不支持目标引擎类型: "+engineType) {
+				t.Fatalf("unsupported target error = %v", err)
+			}
+			if len(targets) != 0 {
+				t.Fatalf("rejected target produced outputs: %#v", targets)
+			}
+			original := firstTaskParams(t, workflow)
+			if original["target_parent_locator"] == nil || original["connection_info"] != nil {
+				t.Fatalf("saved definition mutated: %#v", original)
+			}
+		})
+	}
+}
+
+func TestSparkSaveAcceptsSupportedTableTargets(t *testing.T) {
+	for _, engineType := range []string{"postgresql", "mysql", "doris"} {
+		t.Run(engineType, func(t *testing.T) {
+			svc := newWorkflowEngineServiceForTest(t, 7, engineType)
+			workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+				"id": "save_result", "operator": "save", "params": map[string]interface{}{
+					"target_parent_locator": "addp://engine/7/path/output?type=database",
+					"target_name":           "result_table",
+				},
+			}}}
+			got, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", workflow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertConnectionInfo(t, firstTaskParams(t, got), engineType)
+			if len(targets) != 1 {
+				t.Fatalf("targets = %#v", targets)
+			}
+		})
+	}
+}
+
+func TestSparkSaveRejectsTargetOutsideNativeCatalogModel(t *testing.T) {
+	for _, tc := range []struct{ engineType, parent, targetType string }{
+		{"postgresql", "addp://engine/7/path/output?type=directory", "file"},
+		{"nfs", "addp://engine/7/path/output?type=database", "table"},
+	} {
+		t.Run(tc.engineType, func(t *testing.T) {
+			svc := newWorkflowEngineServiceForTest(t, 7, tc.engineType)
+			workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
+				"id": "save_result", "operator": "save", "params": map[string]interface{}{
+					"target_parent_locator": tc.parent, "target_name": "result", "target_type": tc.targetType,
+				},
+			}}}
+			_, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", workflow)
+			if err == nil || !strings.Contains(err.Error(), "目标定位与引擎目录结构不一致") {
+				t.Fatalf("invalid catalog target accepted: %v", err)
+			}
+			if len(targets) != 0 {
+				t.Fatalf("invalid target produced outputs: %#v", targets)
+			}
+		})
 	}
 }

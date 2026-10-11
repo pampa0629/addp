@@ -21,9 +21,13 @@ class WorkflowRunResult:
 
 
 class WorkflowRunner:
-    def __init__(self, operator_ids: set[str], executor: OperatorExecutor) -> None:
+    def __init__(self, operator_ids: set[str], executor: OperatorExecutor, *, result_projector=None) -> None:
         self._operator_ids = set(operator_ids)
         self._executor = executor
+        self._result_projector = result_projector
+
+    def _project_result(self, result):
+        return self._result_projector(result) if self._result_projector is not None else result
 
     def execute(
         self,
@@ -41,15 +45,25 @@ class WorkflowRunner:
             task = by_id[task_id]
             if progress:
                 progress("running", int(index * 100 / total), task_id)
-            params = resolve_references(task["params"], port_results)
-            params = _resolve_input_data(params, input_data or {})
             try:
+                params = resolve_references(task["params"], port_results)
+                params = _resolve_input_data(params, input_data or {})
                 raw_result = self._executor(task["operator"], params)
+                ports = _normalize_ports(raw_result)
+                public_results[task_id] = self._project_result(_public_result(ports))
+                port_results[task_id] = ports
             except Exception as exc:
+                partial = exc.partial_result if isinstance(exc, WorkflowExecutionError) else None
+                if self._result_projector is not None or partial is not None:
+                    failed_results = dict(public_results)
+                    if partial is not None:
+                        failed_results[task_id] = self._project_result(partial)
+                    raise WorkflowExecutionError(
+                        f"任务 {task_id} 执行失败: {exc}",
+                        all_results=failed_results,
+                        task_order=order[:index + 1],
+                    ) from exc
                 raise WorkflowExecutionError(f"任务 {task_id} 执行失败: {exc}") from exc
-            ports = _normalize_ports(raw_result)
-            port_results[task_id] = ports
-            public_results[task_id] = _public_result(ports)
             if progress:
                 progress("running", int((index + 1) * 100 / total), task_id)
         final_result = public_results[order[-1]] if order else None

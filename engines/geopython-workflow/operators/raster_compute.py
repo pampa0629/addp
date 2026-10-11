@@ -23,6 +23,8 @@ from addp_common.workflow_access import (
     require_access_plan, require_source_plan, require_target_plan,
     stage_source_file, publish_target_file,
 )
+from addp_common.workflow_runtime import WorkflowExecutionError
+from addp_common.workflow_access import require_empty_target_directory, target_child_file_plan
 from .base import OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, OutputPort, register_operator
 
 gdal.UseExceptions()
@@ -51,6 +53,30 @@ def _path(suffix='.tif'):
 class RasterDataset:
     path: Path
     workspace: Path
+
+
+@dataclass(frozen=True)
+class RasterTiles:
+    source: RasterDataset
+    tile_width: int
+    tile_height: int
+
+
+def raster_tile(input_raster, tile_size):
+    _open(input_raster)
+    width, height = _pair(tile_size, 'tile_size', integer=True)
+    return RasterTiles(input_raster, width, height)
+
+
+def raster_tiles_info(input_tiles):
+    if not isinstance(input_tiles, RasterTiles):
+        raise ValueError('input_tiles must come from a raster_tiles port in this execution')
+    dataset = _open(input_tiles.source)
+    columns = (dataset.RasterXSize + input_tiles.tile_width - 1) // input_tiles.tile_width
+    rows = (dataset.RasterYSize + input_tiles.tile_height - 1) // input_tiles.tile_height
+    return {'source_width': dataset.RasterXSize, 'source_height': dataset.RasterYSize,
+            'tile_size': [input_tiles.tile_width, input_tiles.tile_height],
+            'columns': columns, 'rows': rows, 'total_tiles': columns * rows}
 
 
 def _raster(path):
@@ -330,10 +356,7 @@ def _cog(dataset, compression='DEFLATE', blocksize=512, overview_resampling='nea
     return result
 
 
-def raster_save(input_raster, access_plan, profile='geotiff', compression='DEFLATE', blocksize=512, overview_resampling='nearest'):
-    plan = require_target_plan({'access_plan': access_plan})
-    if plan['target']['format'] != 'tiff' or not plan['target']['name'].lower().endswith(('.tif', '.tiff')):
-        raise ValueError('Raster target must be a TIFF file')
+def _encode_raster(input_raster, profile, compression, blocksize, overview_resampling):
     dataset = _open(input_raster)
     if profile == 'cog':
         output = _cog(dataset, compression, blocksize, overview_resampling)
@@ -343,12 +366,72 @@ def raster_save(input_raster, access_plan, profile='geotiff', compression='DEFLA
         output = _translated(dataset, format='GTiff', creationOptions=['TILED=YES', f'COMPRESS={compression}', 'COPY_SRC_OVERVIEWS=YES'])
     else:
         raise ValueError('profile must be geotiff or cog')
+    return output
+
+
+def raster_save(input_raster, access_plan, profile='geotiff', compression='DEFLATE', blocksize=512, overview_resampling='nearest'):
+    plan = require_target_plan({'access_plan': access_plan})
+    if plan['target']['format'] != 'tiff' or not plan['target']['name'].lower().endswith(('.tif', '.tiff')):
+        raise ValueError('Raster target must be a TIFF file')
+    output = _encode_raster(input_raster, profile, compression, blocksize, overview_resampling)
     facts = raster_info(output)
     size = output.path.stat().st_size
     published = publish_target_file(output.path, plan)
     # Location and credentials are caller-owned. Return output facts only.
     return {'artifact_type': 'raster', 'format': 'tiff', 'profile': profile,
             'size_bytes': size, 'uploaded_files': published['uploaded_files'], **facts}
+
+
+def raster_save_tiles(input_tiles, access_plan, profile='geotiff', compression='DEFLATE', blocksize=512, overview_resampling='nearest'):
+    facts = raster_tiles_info(input_tiles)
+    plan = require_target_plan({'access_plan': access_plan})
+    if plan['target']['kind'] != 'directory' or plan['target']['format'] != 'tiff':
+        raise ValueError('Raster tiles require a TIFF directory target')
+    if profile not in ('geotiff', 'cog') or compression not in ('DEFLATE', 'LZW', 'ZSTD', 'NONE'):
+        raise ValueError('Unsupported raster tile profile or compression')
+    if profile == 'cog':
+        if isinstance(blocksize, bool) or not isinstance(blocksize, int) or not 128 <= blocksize <= 4096 or blocksize % 16:
+            raise ValueError('blocksize must be a multiple of 16 between 128 and 4096')
+        _algorithm(overview_resampling)
+    result = {'artifact_type': 'raster_tiles', **facts, 'completed_tiles': 0, 'tiles': {}}
+    key, publication = '', 'not_attempted'
+    try:
+        if plan['target']['write_mode'] == 'create':
+            require_empty_target_directory(plan)
+        dataset = _open(input_tiles.source)
+        for row in range(0, facts['source_height'], input_tiles.tile_height):
+            for column in range(0, facts['source_width'], input_tiles.tile_width):
+                key, publication = f'r{row}_c{column}', 'not_attempted'
+                window = [column, row, min(input_tiles.tile_width, facts['source_width'] - column),
+                          min(input_tiles.tile_height, facts['source_height'] - row)]
+                tile = encoded = encoded_dataset = None
+                try:
+                    # Per-thread GDAL config keeps the file self-contained on Linux as well.
+                    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'):
+                        tile = _translated(dataset, format='GTiff', srcWin=window, overviewLevel='NONE')
+                        encoded = _encode_raster(tile, profile, compression, blocksize, overview_resampling)
+                    saved = {'artifact_type': 'raster', 'format': 'tiff', 'profile': profile,
+                             'size_bytes': encoded.path.stat().st_size, **raster_info(encoded)}
+                    encoded_dataset = _open(encoded)
+                    if any(Path(path).resolve() != encoded.path.resolve() for path in encoded_dataset.GetFileList() or []):
+                        raise ValueError('Raster tile must be self-contained')
+                    encoded_dataset = None
+                    publication = 'unknown'
+                    published = publish_target_file(encoded.path, target_child_file_plan(plan, key + '.tif'))
+                    result['tiles'][key] = {'name': key + '.tif', 'window': window,
+                                            'uploaded_files': published['uploaded_files'], **saved}
+                    result['completed_tiles'] += 1
+                finally:
+                    encoded_dataset = None
+                    for raster in (tile, encoded):
+                        if raster is not None:
+                            raster.path.unlink(missing_ok=True)
+                            Path(str(raster.path) + '.msk').unlink(missing_ok=True)
+                            Path(str(raster.path) + '.aux.xml').unlink(missing_ok=True)
+        return result
+    except Exception as exc:
+        result.update({'failed_tile': key, 'publication': publication})
+        raise WorkflowExecutionError('Raster tile batch save failed', partial_result=result) from exc
 
 
 def raster_to_cog(access_plan, options=None):
@@ -1047,6 +1130,8 @@ _COG_OPTIONS = [
 _SPECS = [
     (raster_load, '栅格加载', [_param('access_plan', 'object', '源访问计划'), _param('source_crs', 'str', '缺失时补充源 CRS', '', False)], 'raster', ['read']),
     (raster_save, '栅格保存', [_INPUT(), _param('access_plan', 'object', '目标访问计划'), _param('profile', 'str', '目标布局', 'geotiff', False, enum=['geotiff', 'cog']), *_COG_OPTIONS], 'object', ['write']),
+    (raster_tile, '栅格切片', [_INPUT(), _param('tile_size', 'list[int]', '每片像素宽高；边缘保留实际尺寸')], 'raster_tiles', ['read']),
+    (raster_save_tiles, '栅格切片批量保存', [_param('input_tiles', 'raster_tiles', '当前执行内的栅格切片集合', role='input'), _param('access_plan', 'object', '目标子目录访问计划'), _param('profile', 'str', '目标布局', 'geotiff', False, enum=['geotiff', 'cog']), *_COG_OPTIONS], 'object', ['read', 'write']),
     (raster_info, '栅格信息', [_INPUT()], 'object', ['read']),
     (validate_cog, 'COG 合规校验', [_INPUT()], 'object', ['read']),
     (raster_to_cog, '栅格转 COG', [_param('access_plan', 'object', '源和目标访问计划'), _param('options', 'object', 'COG 转换选项', {}, False)], 'object', ['read', 'write']),
@@ -1086,6 +1171,13 @@ for function, label, params, output, effects in _SPECS:
         examples.update({'validity': 'any'})
     if name == 'raster_aggregate':
         examples.update({'factors': [2, 2], 'method': 'mean'})
+    if name == 'raster_tile':
+        examples.update({'tile_size': [1024, 1024]})
+    if name == 'raster_save_tiles':
+        examples = {'input_tiles': {'$ref': 'tiles'}, 'access_plan': {
+            'schema_version': 'addp.workflow.access-plan/v1', 'target': {
+                'kind': 'directory', 'format': 'tiff', 'name': 'scene_tiles', 'write_mode': 'create',
+                'access': {'method': 'mounted_path', 'path': '/mnt/scene_tiles'}}}}
     metadata = OperatorMetadata(name=name, type=OperatorType.SPATIAL, category=OperatorCategory.RASTER,
         description=label, brief_description=label, overview=label + '，复用受控访问计划与当前执行内栅格对象。',
         params=params, output_ports=[OutputPort(name='default', type=output, description=label + '结果')],

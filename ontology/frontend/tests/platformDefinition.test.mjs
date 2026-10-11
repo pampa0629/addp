@@ -7,11 +7,14 @@ import { createOntologyAPI } from '../src/api/ontology.mjs'
 test('platform graph adapts every declared concept and relation without instance inference', () => {
   const definition = JSON.parse(readFileSync(new URL('../../backend/internal/platform/transfer.json', import.meta.url)))
   const graph = platformGraph(definition, 'en', { node: 'primary', edge: 'secondary' })
-  assert.equal(graph.entityTypes.length, 15)
-  assert.equal(graph.relationTypes.length, 14)
+  assert.equal(graph.entityTypes.length, definition.concepts.length)
+  assert.equal(graph.relationTypes.length, definition.relations.length)
   assert.equal(graph.entityTypes[0].id, definition.concepts[0].id)
   assert.equal(graph.entityTypes[0].label, definition.concepts[0].name.en)
-  assert.equal(new Set(graph.relationTypes.map(item => item.id)).size, 14)
+  assert.equal(new Set(graph.relationTypes.map(item => item.id)).size, definition.relations.length)
+  for (const kind of ['reads_via', 'configured_by', 'confirmed_by']) {
+    assert.ok(graph.relationTypes.some(item => item.name === kind))
+  }
   assert.equal(graph.relationTypes[0].source_type_id, definition.relations[0].from)
   const page = readFileSync(new URL('../src/views/PlatformDefinitions.vue', import.meta.url), 'utf8')
   assert.match(page, /common-frontend\/graph\/src\/OntologyView\.vue/)

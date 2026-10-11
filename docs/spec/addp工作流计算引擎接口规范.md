@@ -125,6 +125,8 @@ engines/<engine-name>/
 
 Develop Backend 不得仅因任意算子的参数中出现 `locator`、`target_parent_locator` 等固定名称就触发派生。每个需要资源适配的算子都必须存在显式 Develop Adapter Spec；未声明的算子携带公开资源参数时必须拒绝执行，不得回退到隐式派生路径。
 
+资源选择器同时遵守 Public Operator Spec 的 `ui_config.engine_families` 与 `ui_config.engine_types`，两者取交集；未声明 `engine_types` 时不额外限制引擎类型，不能由前端按引擎家族推断某个算子具备写入支持。Spark 保存算子的目标引擎类型由 Develop Adapter 的输出约束声明，同一声明用于生成选择器配置与派发前校验；现存任务或直接提交的目标不能绕过该约束。目标数据项同时必须通过该引擎的原生目录模型校验，不能通过更改 locator 节点类型切换写入路径。Spark `save` 当前只支持 PostgreSQL、MySQL、Doris、NFS 和 MinIO；HDFS、ES、MongoDB 及其他尚未实现的目标不作为保存候选，其中 MinIO 仍遵守普通 Parquet `create` 成果契约。
+
 Develop 的算子发现 API 必须为前端提供独立的 `public_parameters`。前端工作流编辑器、参数面板、输入连线和任务保存只允许消费 `public_parameters`，不得读取 Workflow Runtime 返回的 `parameters`。`parameters` 保留为 Runtime Operator Spec；在 Runtime 元数据完成净化前，即使其中仍存在历史 UI 或公开资源字段，也不得再作为前端契约使用。
 
 Public Operator Spec 由 Develop Adapter Spec registry 统一维护。Workflow Runtime 的 `parameters[]` 禁止出现 `ui_type=resource_tree_picker`，禁止出现 `locator`、`target_parent_locator`、`target_name` 等 ADDP 公开资源身份参数；runtime 必须直接声明自身真实消费的 `connection_info/schema/table/path` 等执行参数。
@@ -903,6 +905,14 @@ Copilot 在生成工作流前做数据源理解时也必须遵守同一资源契
 GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 ResourceLocator，`raster_load` 派生 source-only 访问计划，`raster_save` 派生 target-only 访问计划，`raster_to_cog` 使用 source/target 计划；访问协议固定 `addp.workflow.access-plan/v1`。源、目标分别授权，凭据只在执行期传递。输出文件限定 `.tif/.tiff`，COG 是 TIFF 的 profile，不是另一种格式身份。
 
 `RasterDataset` 是执行工作目录内的私有、文件支撑对象，栅格输入/输出端口类型为 `raster`，不得通过 JSON 对象伪造或跨任务保存。公开参数仅经当前 DAG `$ref` 接收该对象。Runtime 对外只投影 width、height、band、CRS、transform、extent、nodata 和 overview 等摘要，不返回像元、临时路径或打开的 GDAL 句柄。成功和失败均清理工作目录；当前公共执行协议没有取消接口，不宣称具备主动取消能力。
+
+栅格切片使用 `raster_tile(input_raster, tile_size=[像素宽,像素高]) → raster_tiles` 和 `raster_save_tiles(input_tiles, access_plan, profile, ...) → object` 两个节点。`RasterTiles` 是当前 execution 的私有源快照与切片网格描述，保存时逐片生成和编码，不同时物化整批中间文件。切片从左上角按行、列递增，不重叠、不重采样；保留边缘实际宽高和全无效切片。保留源数据类型、原始像元、NoData、mask、alpha、颜色解释与色表；有定位时平移完整仿射网格原点，缺失定位继续缺失，不复制源整幅金字塔作为切片金字塔。公开集合摘要只含源与切片尺寸、行列数和总片数，不能据此重建私有输入。
+
+批量保存的公开目标仍为 `target_parent_locator + target_name`，其中 `target_name` 表示本批文件所在的子目录或 prefix，不表示一个 TIFF 数据项。切片键固定 `r<零基像素行偏移>_c<零基像素列偏移>`，文件名为 `<切片键>.tif`；不使用数组下标作为成果身份。每片沿用独立 TIFF/COG 文件、ResourceLocator 和大小事实，不新增整目录数据类型或 whole scope 解释。`create` 在写入前核验目标子目录/prefix 为空；`replace` 仅替换此次网格生成的同名切片，不清理其他文件。目标存储的读写授权分别覆盖存在性核验与发布，Runtime 不得自行扩大到目标范围之外。单幅与批量目标重叠的 DAG 必须在派发前拒绝。
+
+Runtime 成功或部分发布失败的结果包含 `artifact_type=raster_tiles`、`total_tiles`、`completed_tiles` 及以切片键索引的 `tiles`，每个条目含文件名、像素窗口和单片成果摘要。切片或编码失败不发布该片；写入调用失败时，该片的发布结果标为未知，不能把它计为确认成功，也不能假定远端没有写入。整批失败保留此前确认发布的切片，并返回 `failed_tile` 与 `publication` 事实。公共 Python DAG 核心通过既有 `result/all_results/task_order` 保留显式部分成果，GeoPython 投影后才进入 execution；失败仍为 `failed`，不转换为成功。
+
+Develop 根据派发前授权的目标范围和经过校验的逐片清单生成实际 `produced_targets`；Runtime 提供的路径或 locator 不作为资源身份。批量节点稳定输出为 `outputs.<节点>.tiles.<切片键>.resource`，每片包含已有 `locator/type/write_mode`。执行输出 Schema 的 `tiles` 为同一资源 Schema 的命名映射；不为未知片数虚构静态输出端口。确认写入的部分成果进入执行专业结果与资源输出，整批状态仍失败；不能依赖整批成功才保留事实。每片自动扫描复用既有 Meta 链路，不扫描父 prefix 来代替逐片成果，不修改字段级血缘规则。失败发布的资源级派生关系遵循 Meta 的既有终态采集规则，不能将失败 execution 宣称为成功血缘验收。
 
 加载、信息、COG 校验、重投影、重采样、裁剪、计算镶嵌、波段计算、统计和直方图在工作流中执行。统计与直方图按块全量读取；波段表达式仅允许 band 引用、数值常量和受限数组函数，传播无效像元，不执行任意 Python。空间变换要求可信 CRS 和 geotransform，缺失 CRS 时须明确补充；加载与信息读取保留缺失事实，不按坐标范围猜测。重采样尺寸和分辨率互斥；裁剪必须明确边界 CRS；计算镶嵌指定目标 CRS、分辨率及 first/last 重叠策略，可通过成对镶嵌节点组合多个栅格，输出 Float64，空白区域使用 NaN；复数波段拒绝进入数值分析及计算镶嵌。数值分析不承诺大整数逐位精度。
 

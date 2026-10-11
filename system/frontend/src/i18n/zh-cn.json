@@ -1120,6 +1120,9 @@
           }
         },
         "tableSearch": "搜索表名或 schema / 节点路径",
+        "selectFromTree": "资源树选择",
+        "exactTableFilter": "按所选数据表精确筛选；修改输入可切换为文字搜索。",
+        "treeFilterFailed": "无法选择此数据表，请刷新资源树后重试；也可使用文字搜索。",
         "accountFilter": "接收账号",
         "allAccounts": "全部账号（可按名称或用户名搜索）",
         "allRecipientTypes": "全部类型",

@@ -337,6 +337,8 @@ Manager 剖析结果读取另使用固定同步入口 `POST /api/v1/system/engin
 
 账号授权核查合并到当前授权的唯一 `GET /engines/:id/access_grants`：指定 `recipient_type=user` 和 `recipient_id` 时，按表返回该账号的个人及当前有效部门、项目组授权来源；其他筛选仍按直接接收方返回授权关系。操作人仍须当前 Tenant User、`system.engine_access_grant.read` 与本引擎管理资格。选中账号只用于定位同租户对象，不作为可信调用来源；主体、成员关系和授权版本由 System 权威库取得。其他租户或不存在的账号返回 404。不保留独立 inspection HTTP 入口。
 
+授权查询的数据表条件支持两种互斥方式：`table_search` 为路径名称的字面量子串；`catalog_path` 为完整 EngineCatalogPath 的 JSON 字符串，最多 4096 字节，必须属于 URL 中的引擎且为规范叶子目标，按完整结构精确匹配。空值、未知字段、重复参数、非法目标或同时提交两种表条件返回 400。当前授权及历史共用条件，在来源展开、计数和分页前筛选；不访问源表或变更授权。前端保留文本输入，并通过既有 ResourceTreePicker 与 System 实时 Engine Catalog 适配器选择普通表，不依赖 Meta 或企业 Catalog；无目录读取权限或引擎不可用时仍可文本查询历史，树入口不可用。树选择立即查询、清空恢复全部表，重新输入切回文字筛选。新增授权、当前授权、授权历史在同一工具栏并列，新增仍进入独立办理视图。
+
 核查与实际读取复用唯一源规则查询，在同一个已提交快照和数据库观察时刻展开账号当前有效的个人、部门、项目组来源，排除已撤销和已到期 Grant，并按接收主体合并重复来源，显示有效期及记录数量。每张表携带 `inspection`，包含 `account_id`、规范目标、`observed_at`、`rule_covered`、固定 `reason`（`grant|no_grant|explicit_deny|source_unavailable|target_unavailable`）及 `sources`；每个来源独立携带撤销定位编号、批准方式、期限及记录数量。筛选后按表计数和分页，不能先分页直接授权再补组织来源。拒绝优先，但仍可展示命中的有效 Grant 来源供管理员排查；不返回拒绝规则正文、编号、原因或操作者。名称解析仍须既有独立 IAM 读取权限。
 
 核查不读取源表、不持久化授权、不产生凭据或可缓存 Allow；返回 `Cache-Control: no-store`。`rule_covered=true` 只说明本表源规则覆盖，不能替代接收账号实际会话、功能权限、Client 条件、Provider 完整读取集合或 Security 检查。普通数据使用者不因此取得核查他人的资格。页面条件变化自动查询并隔离旧响应；无匹配记录只表示当前筛选没有授权来源，不是逐表访问裁决。撤销必须定位具体个人／部门／项目组来源，不对账号聚合行整体撤销。授权历史保留全部签发、到期及撤销事实，账号条件只匹配直接个人记录，不按当前组织成员关系改写历史。

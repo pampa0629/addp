@@ -19,6 +19,7 @@ from operators.raster_compute import (
     raster_band_math, raster_statistics, raster_histogram, raster_build_overviews, validate_cog,
     raster_align, raster_stack, raster_select_bands, raster_update,
     _classification_rules, raster_reclassify, raster_aggregate, raster_footprint,
+    raster_tile, raster_save_tiles, raster_tiles_info,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -3084,3 +3085,188 @@ def test_update_all_invalid_patch_keeps_base_validity(tmp_path,base_valid):
         ds=gdal.Open(str(result.path)); band=ds.GetRasterBand(1)
         np.testing.assert_allclose(read_band_values(band),np.full((2,3),7. if base_valid else np.nan),equal_nan=True)
         band=ds=None
+
+
+def tile_target_plan(path, mode='create'):
+    plan = target_plan(path, mode)
+    plan['target']['kind'] = 'directory'
+    return plan
+
+
+@pytest.mark.parametrize('profile', ['geotiff', 'cog'])
+@pytest.mark.parametrize('kind', ['uint64', 'rgba', 'palette', 'mask', 'nan', 'complex'])
+def test_raster_tiles_exact_windows_dtype_masks_colors_and_source_immutable(tmp_path, profile, kind):
+    source = tmp_path/'source.tif'
+    dtype = {'uint64': gdal.GDT_UInt64, 'nan': gdal.GDT_Float64, 'complex': gdal.GDT_CFloat64}.get(kind, gdal.GDT_Byte)
+    count = 4 if kind == 'rgba' else 1
+    ds = gdal.GetDriverByName('GTiff').Create(str(source), 7, 5, count, dtype)
+    transform = (110., 2., .5, 20., -.25, -3.) if kind != 'uint64' else None
+    if transform:
+        ds.SetGeoTransform(transform)
+        crs = osr.SpatialReference(); crs.ImportFromEPSG(4326); ds.SetProjection(crs.ExportToWkt())
+    if kind == 'palette':
+        palette = gdal.ColorTable()
+        for value in range(256): palette.SetColorEntry(value, (value, 255-value, 0, 255))
+        ds.GetRasterBand(1).SetRasterColorTable(palette)
+    for index in range(1, count+1):
+        values = np.arange(35, dtype=np.uint64 if kind == 'uint64' else np.float64).reshape(5,7) + index
+        if kind == 'uint64': values += 2**53
+        if kind == 'nan':
+            values[:3,:4] = np.nan
+            ds.GetRasterBand(index).SetNoDataValue(float('nan'))
+        if kind == 'complex': values = values + 1j*(values+2)
+        if kind == 'rgba':
+            ds.GetRasterBand(index).SetColorInterpretation([gdal.GCI_RedBand,gdal.GCI_GreenBand,gdal.GCI_BlueBand,gdal.GCI_AlphaBand][index-1])
+            if index == 4: values.fill(255); values[0,0] = 0; values[4,6] = 128
+        ds.GetRasterBand(index).WriteArray(values)
+    if kind == 'mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'):
+            ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask = np.full((5,7),255,dtype=np.uint8); mask[:3,:4] = 0
+        ds.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+    ds = None
+    original = source.read_bytes()
+    with raster_workspace():
+        loaded = raster_load(source_plan(source))
+        tiles = raster_tile(loaded, [4,3])
+        assert raster_tiles_info(tiles)['total_tiles'] == 4
+        target = tmp_path/'tiles'
+        result = raster_save_tiles(tiles, tile_target_plan(target), profile=profile, blocksize=128)
+        assert result['total_tiles'] == result['completed_tiles'] == 4
+        assert set(path.name for path in target.iterdir()) == {'r0_c0.tif','r0_c4.tif','r3_c0.tif','r3_c4.tif'}
+        coverage = np.zeros((5,7),dtype=np.uint8)
+        original_ds = gdal.Open(str(source))
+        for key, fact in result['tiles'].items():
+            x,y,w,h = fact['window']; output = gdal.Open(str(target/fact['name']))
+            assert fact['size_bytes'] == (target/fact['name']).stat().st_size > 0
+            expected = (transform[0]+x*transform[1]+y*transform[2],transform[1],transform[2],transform[3]+x*transform[4]+y*transform[5],transform[4],transform[5]) if transform else None
+            assert output.GetGeoTransform(can_return_null=True) == expected
+            assert output.GetProjection() == original_ds.GetProjection()
+            assert len(output.GetFileList()) == 1
+            for index in range(1,count+1):
+                actual, wanted = output.GetRasterBand(index), original_ds.GetRasterBand(index)
+                assert actual.DataType == wanted.DataType
+                assert actual.ReadRaster() == wanted.ReadRaster(x,y,w,h)
+                assert actual.GetMaskBand().ReadRaster() == wanted.GetMaskBand().ReadRaster(x,y,w,h)
+                assert actual.GetColorInterpretation() == wanted.GetColorInterpretation()
+                if kind == 'palette': assert actual.GetRasterColorTable().GetColorEntry(19) == (19,236,0,255)
+                actual = wanted = None
+            coverage[y:y+h,x:x+w] += 1
+            output = None
+            reloaded = raster_load(source_plan(target/fact['name']))
+            if profile == 'cog': assert validate_cog(reloaded)['valid']
+        original_ds = None
+        assert np.all(coverage == 1)
+        # Materialized intermediates are reclaimed per tile; only source snapshots remain.
+        assert len(list(loaded.workspace.glob('*.tif'))) == 5  # source plus four verification reloads
+    assert source.read_bytes() == original
+    with raster_workspace():
+        with pytest.raises(ValueError): raster_tiles_info(tiles)
+
+
+@pytest.mark.parametrize('size', [[0,2],[True,2],[1.5,2],[2**31,2],[2],[],None])
+def test_raster_tiles_reject_invalid_grid_and_public_forgery(tmp_path, size):
+    source = create_raster(tmp_path/'source.tif', np.ones((2,3)))
+    with raster_workspace():
+        with pytest.raises(ValueError): raster_tile(raster_load(source_plan(source)), size)
+        with pytest.raises(ValueError): raster_save_tiles({'runtime_type':'raster_tiles'},tile_target_plan(tmp_path/'tiles'))
+
+
+@pytest.mark.parametrize('failure', ['before_publish', 'unknown_publish', 'later_node'])
+def test_raster_tiles_async_partial_failure_preserves_files_ledger_and_cleans_workspace(tmp_path, monkeypatch, failure):
+    import api_server
+    import operators.raster_compute as compute
+    import workflow_engine
+    source = create_raster(tmp_path/'source.tif', np.arange(35,dtype=float).reshape(5,7))
+    target = tmp_path/'tiles'
+    original = compute.publish_target_file
+    calls, workspaces = [], []
+    def publish(path, plan):
+        calls.append(plan['target']['name'])
+        if len(calls) == 3 and failure == 'before_publish': raise OSError('private endpoint must not leak')
+        result = original(path, plan)
+        if len(calls) == 3 and failure == 'unknown_publish': raise OSError('private endpoint must not leak')
+        return result
+    monkeypatch.setattr(compute, 'publish_target_file', publish)
+    execute = workflow_engine._execute_operator
+    def tracked(name, params):
+        if name == 'raster_tile': workspaces.append(params['input_raster'].workspace)
+        return execute(name, params)
+    monkeypatch.setattr(workflow_engine, '_execute_operator', tracked)
+    tasks = [
+        {'id':'load','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+        {'id':'tile','operator':'raster_tile','depends_on':['load'],'params':{'input_raster':{'$ref':'load'},'tile_size':[4,3]}},
+        {'id':'save','operator':'raster_save_tiles','depends_on':['tile'],'params':{'input_tiles':{'$ref':'tile'},'access_plan':tile_target_plan(target),'profile':'cog','blocksize':128}},
+    ]
+    if failure == 'later_node': tasks.append({'id':'fail','operator':'raster_statistics','depends_on':['load','save'],'params':{'input_raster':{'$ref':'load'},'band':99}})
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code == 202
+    deadline = time.monotonic()+10
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'): break
+        time.sleep(.01)
+    assert status['status'] == 'failed',status
+    saved = json.loads(status['all_results']['save'])
+    assert saved['completed_tiles'] == (4 if failure == 'later_node' else 2)
+    assert len(list(target.glob('*.tif'))) == {'before_publish':2,'unknown_publish':3,'later_node':4}[failure]
+    if failure != 'later_node':
+        assert saved['failed_tile'] == 'r3_c0' and saved['publication'] == 'unknown'
+    assert 'private endpoint' not in json.dumps(status)
+    assert all(not path.exists() for path in workspaces)
+    assert client.post('/api/operators/raster_tile/invoke',json={'params':{}}).status_code == 403
+    assert client.post('/api/operators/raster_save_tiles/invoke',json={'params':{}}).status_code == 403
+
+
+@pytest.mark.parametrize('size,windows', [([20,20], [[0,0,7,5]]), ([1,1], [[x,y,1,1] for y in range(5) for x in range(7)])])
+def test_raster_tiles_single_and_pixel_tiles_are_reusable(tmp_path, size, windows):
+    source = create_raster(tmp_path/'source.tif', np.arange(35,dtype=float).reshape(5,7))
+    with raster_workspace():
+        collection = raster_tile(raster_load(source_plan(source)), size)
+        first = raster_save_tiles(collection, tile_target_plan(tmp_path/'first'))
+        second = raster_save_tiles(collection, tile_target_plan(tmp_path/'second'))
+        assert first == second
+        assert [fact['window'] for fact in first['tiles'].values()] == windows
+        assert first['completed_tiles'] == len(windows)
+
+
+def test_raster_tiles_create_refuses_nonempty_scope_replace_preserves_other_files(tmp_path):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source = create_raster(tmp_path/'source.tif', np.arange(35,dtype=float).reshape(5,7))
+    target = tmp_path/'tiles'; target.mkdir()
+    unrelated = target/'keep.txt'; unrelated.write_text('retain')
+    with raster_workspace():
+        collection = raster_tile(raster_load(source_plan(source)), [4,3])
+        with pytest.raises(WorkflowExecutionError) as failure:
+            raster_save_tiles(collection, tile_target_plan(target))
+        manifest = failure.value.partial_result
+        assert manifest['completed_tiles'] == 0 and manifest['tiles'] == {}
+        assert manifest['failed_tile'] == '' and manifest['publication'] == 'not_attempted'
+        assert list(target.iterdir()) == [unrelated]
+        result = raster_save_tiles(collection, tile_target_plan(target, 'replace'))
+        assert result['completed_tiles'] == 4 and unrelated.read_text() == 'retain'
+        for fact in result['tiles'].values():
+            assert (target/fact['name']).stat().st_size == fact['size_bytes'] > 0
+
+
+def test_raster_tiles_encoding_failure_retains_confirmed_prefix_without_attempting_next_publish(tmp_path, monkeypatch):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    import operators.raster_compute as compute
+    source = create_raster(tmp_path/'source.tif', np.arange(35,dtype=float).reshape(5,7))
+    target = tmp_path/'tiles'
+    encode, calls = compute._encode_raster, []
+    def fail_third(*args):
+        calls.append(args[0])
+        if len(calls) == 3: raise OSError('private encoding failure')
+        return encode(*args)
+    monkeypatch.setattr(compute, '_encode_raster', fail_third)
+    with raster_workspace():
+        collection = raster_tile(raster_load(source_plan(source)), [4,3])
+        with pytest.raises(WorkflowExecutionError) as failure:
+            raster_save_tiles(collection, tile_target_plan(target))
+        manifest = failure.value.partial_result
+        assert manifest['completed_tiles'] == 2 and manifest['failed_tile'] == 'r3_c0'
+        assert manifest['publication'] == 'not_attempted'
+        assert {p.name for p in target.iterdir()} == {'r0_c0.tif','r0_c4.tif'}
+        assert all(not raster.path.exists() for raster in calls)

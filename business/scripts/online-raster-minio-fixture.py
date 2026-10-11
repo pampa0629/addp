@@ -36,12 +36,14 @@ AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum')
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
 FOOTPRINT_CASES = ('footprint-any', 'footprint-all')
+TILE_WINDOWS = {'r0_c0': (0, 0, 160, 160), 'r0_c160': (160, 0, 96, 160),
+                'r160_c0': (0, 160, 160, 96), 'r160_c160': (160, 160, 96, 96)}
 UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
 NON_COG_SOURCE = 'non-cog.tif'
 SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
                 ('multiband-average-finite.tif', False, -9999.))
-ACTIONS = ('seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
+ACTIONS = ('verify-tiles', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -506,6 +508,48 @@ def write_source_raster(path, name, spatial, source_nodata):
     return crs
 
 
+
+def tile_expectation(key):
+    x, y, width, height = TILE_WINDOWS[key]
+    transform = [110+x*.01, .01, 0, 20.32-y*.01, 0, -.01]
+    return {'width': width, 'height': height, 'band_count': 2, 'band_nodata': -9999.,
+            'source_crs': 'EPSG:4326', 'extent_srid': 4326, 'transform': transform,
+            'extent': [transform[0], transform[3]-height*.01, transform[0]+width*.01, transform[3]],
+            'valid_pixels': width*height-(key == 'r0_c0')}
+
+
+def verify_tile_file(path, key):
+    """Independent pixel/validity oracle for the four fixed Hosted windows."""
+    from osgeo import gdal, osr
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    dataset = gdal.Open(str(path))
+    warnings, errors, _ = validate(dataset, full_check=True)
+    expected = tile_expectation(key)
+    x, y, width, height = TILE_WINDOWS[key]
+    reference = osr.SpatialReference(); reference.ImportFromEPSG(4326)
+    if (errors or dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') != 'COG'
+        or (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (width, height, 2)
+        or not osr.SpatialReference(dataset.GetProjection()).IsSame(reference)
+        or any(not math.isclose(a, b, rel_tol=0, abs_tol=1e-12) for a, b in zip(dataset.GetGeoTransform(), expected['transform']))
+        or any(Path(file).resolve() != Path(path).resolve() for file in dataset.GetFileList())):
+        raise FixtureError('tile layout, window, georeferencing or self-contained structure differs')
+    levels = [[width//2, height//2]] if max(width, height) > 128 else []
+    for index in (1, 2):
+        band = dataset.GetRasterBand(index)
+        pixels = tuple(-9999. if row == column == 0 else float(index*(row*256+column+1))
+            for row in range(y, y+height) for column in range(x, x+width))
+        actual = struct.unpack(f'<{width*height}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+        mask = band.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte)
+        if (band.DataType != gdal.GDT_Float64 or band.GetNoDataValue() != -9999.
+            or gdal.GetColorInterpretationName(band.GetColorInterpretation()) != ('Gray' if index == 1 else 'Undefined')
+            or actual != pixels or any(value != (0 if wanted == -9999. else 255) for value, wanted in zip(mask, pixels))
+            or [[band.GetOverview(i).XSize, band.GetOverview(i).YSize] for i in range(band.GetOverviewCount())] != levels):
+            raise FixtureError('tile pixels, dtype, validity, colour or overview grid differs')
+    return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': bool(levels),
+            'overview_sizes': levels, 'valid_pixels': expected['valid_pixels'],
+            'source_unchanged': True, 'size_bytes': Path(path).stat().st_size,
+            'sha256': hashlib.sha256(Path(path).read_bytes()).hexdigest()}
+
 def worker(action, path):
     # GDAL stays in the Runtime image; the verifier never imports production operators.
     from minio import Minio
@@ -571,6 +615,7 @@ def worker(action, path):
 
         def verify(name, spatial=False, overlap=None, factor=1, grid_case=None, utility_case=None):
             path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
             clients['target'].fget_object(config['target']['bucket'], name, str(path))
             dataset = gdal.Open(str(path))
             warnings, errors, _ = validate(dataset, full_check=True)
@@ -716,6 +761,25 @@ def worker(action, path):
                     'valid_pixels': expectation['valid_pixels'],
                     'invalid_pixels': len(invalid), 'source_unchanged': True,
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+
+        if action == 'verify-tiles':
+            preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
+                'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
+                'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
+            for prior in GRID_CASES + MULTIBAND_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES:
+                preserved[prior+'.cog.tif'] = verify(prior+'.cog.tif', grid_case=prior)['sha256']
+            for prior in UTILITY_CASES:
+                preserved[prior+'.cog.tif'] = verify(prior+'.cog.tif', utility_case=prior)['sha256']
+            tiles = {}
+            for key in TILE_WINDOWS:
+                name = 'tiles-basic/'+key+'.tif'
+                path = root/name; path.parent.mkdir(parents=True, exist_ok=True)
+                clients['target'].fget_object(config['target']['bucket'], name, str(path))
+                tiles[key] = verify_tile_file(path, key)
+            names = set(preserved) | {'tiles-basic/'+key+'.tif' for key in TILE_WINDOWS}
+            if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
+                raise FixtureError('tiling target contains unexpected or partial artifacts')
+            return {'tiles': tiles, 'preserved_sha256': preserved, 'source_unchanged': True}
 
         grid_case = action.removeprefix('verify-')
         if grid_case in UTILITY_CASES or action == 'verify-utility-queries':

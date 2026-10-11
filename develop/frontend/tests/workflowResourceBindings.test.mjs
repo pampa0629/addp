@@ -120,4 +120,17 @@ assert.equal(cleared.destination_name, null)
 assert.equal(cleared.destination_kind, null)
 assert.equal(cleared.write_mode, 'replace')
 
+const savePicker = { ui_config: { engine_types: ['postgresql', 'mysql', 'doris', 'nfs', 'minio'] } }
+for (const engine_type of savePicker.ui_config.engine_types) {
+  assert.equal(mod.isResourceEngineSupported(savePicker, { engine_type }), true)
+}
+for (const engine_type of ['hdfs', 'elasticsearch', 'mongodb', 'oracle', undefined]) {
+  assert.equal(mod.isResourceEngineSupported(savePicker, { engine_type }), false)
+}
+assert.equal(mod.isResourceEngineSupported({ ui_config: { engine_types: [] } }, { engine_type: 'nfs' }), false)
+assert.equal(mod.isResourceEngineSupported({}, { engine_type: 'hdfs' }), true)
+const nfsPicker = { ui_config: { engine_types: ['nfs'] } }
+assert.equal(mod.isResourceEngineSupported(nfsPicker, { engine_type: 'nfs' }), true)
+assert.equal(mod.isResourceEngineSupported(nfsPicker, { engine_type: 'minio' }), false)
+
 console.log('workflowResourceBindings tests passed')

@@ -11,6 +11,7 @@ import (
 	"github.com/addp/ontology/internal/models"
 	"github.com/addp/ontology/internal/platform"
 	"github.com/addp/ontology/internal/repository"
+	"github.com/google/uuid"
 )
 
 func platformTestActor() models.PlatformActor {
@@ -52,29 +53,30 @@ func TestPlatformInspectionRestoresOneFrozenRecord(t *testing.T) {
 
 func TestPlatformCatalogRestoreAndBudgets(t *testing.T) {
 	ctx := context.Background()
-	makeRecord := func(snapshot *platform.Snapshot) models.PlatformRevision {
+	s := NewPlatformRevisionService(nil, testPlatformGraph{})
+	makeRecord := func(snapshot *platform.Snapshot) repository.ActivePlatformRecord {
 		t.Helper()
 		definition, err := snapshot.Context()
 		if err != nil {
 			t.Fatal(err)
 		}
-		return models.PlatformRevision{Capability: definition.Capability, Revision: definition.Revision, Digest: snapshot.Digest(), Payload: string(snapshot.CanonicalJSON())}
+		return repository.ActivePlatformRecord{PlatformRevision: models.PlatformRevision{Capability: definition.Capability, Revision: definition.Revision, Digest: snapshot.Digest(), Payload: string(snapshot.CanonicalJSON())}, Generation: uuid.NewString(), ActivationVersion: 1}
 	}
 	base := makeRecord(platformTestSnapshot(t, "transfer.task.create", 2))
-	empty, err := platformCatalog(ctx, nil)
+	empty, err := s.platformCatalog(ctx, nil)
 	if err != nil || empty.Capabilities == nil || len(empty.Capabilities) != 0 {
 		t.Fatal(empty, err)
 	}
-	got, err := platformCatalog(ctx, []models.PlatformRevision{base})
+	got, err := s.platformCatalog(ctx, []repository.ActivePlatformRecord{base})
 	if err != nil || len(got.Capabilities) != 1 || got.Capabilities[0].Digest != base.Digest {
 		t.Fatal(got, err)
 	}
 	bad := base
 	bad.Payload = " " + bad.Payload
-	if _, err := platformCatalog(ctx, []models.PlatformRevision{base, bad}); !errors.Is(err, repository.ErrIntegrity) {
+	if _, err := s.platformCatalog(ctx, []repository.ActivePlatformRecord{base, bad}); !errors.Is(err, repository.ErrIntegrity) {
 		t.Fatal("corruption produced partial success", err)
 	}
-	if _, err := platformCatalog(ctx, make([]models.PlatformRevision, platform.CatalogMaxItems+1)); !errors.Is(err, ErrResultTooLarge) {
+	if _, err := s.platformCatalog(ctx, make([]repository.ActivePlatformRecord, platform.CatalogMaxItems+1)); !errors.Is(err, ErrResultTooLarge) {
 		t.Fatal(err)
 	}
 	definition, _ := platformTestSnapshot(t, "transfer.task.large", 3).Context()
@@ -88,17 +90,56 @@ func TestPlatformCatalogRestoreAndBudgets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	records := make([]models.PlatformRevision, platform.CatalogMaxItems)
+	records := make([]repository.ActivePlatformRecord, platform.CatalogMaxItems)
 	for i := range records {
 		records[i] = makeRecord(large)
 	}
-	if _, err := platformCatalog(ctx, records); !errors.Is(err, ErrResultTooLarge) {
+	if _, err := s.platformCatalog(ctx, records); !errors.Is(err, ErrResultTooLarge) {
 		t.Fatal("byte budget not enforced", err)
 	}
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(nil)).PlatformCapabilities(canceled); !errors.Is(err, context.Canceled) {
+	if _, err := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(nil), testPlatformGraph{}).PlatformCapabilities(canceled); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+}
+
+func TestPlatformSemanticReadsRequireGraphWithoutFallback(t *testing.T) {
+	ctx := context.Background()
+	snapshot := platformTestSnapshot(t, "transfer.task.create", 6)
+	d, _ := snapshot.Context()
+	record := repository.ActivePlatformRecord{
+		PlatformRevision: models.PlatformRevision{Capability: d.Capability, Revision: d.Revision, Digest: d.Digest, Payload: string(snapshot.CanonicalJSON())},
+		Generation:       uuid.NewString(), ActivationVersion: 3,
+	}
+	calls := 0
+	denied := errors.New("graph unavailable")
+	graph := testPlatformGraph{read: func(c context.Context, got *platform.Snapshot, generation string) (platform.Context, error) {
+		calls++
+		if generation != record.Generation || got.Digest() != record.Digest {
+			t.Fatal("mixed active binding")
+		}
+		return platform.Context{}, denied
+	}}
+	s := NewPlatformRevisionService(nil, graph)
+	if got, err := s.readPlatformContext(ctx, record); !errors.Is(err, denied) || got.Capability != "" || calls != 1 {
+		t.Fatal("graph failure fell back to PG", got, err, calls)
+	}
+	if got, err := s.platformCatalog(ctx, []repository.ActivePlatformRecord{record}); !errors.Is(err, denied) || got.Capabilities != nil || calls != 2 {
+		t.Fatal("catalog hid graph failure", got, err, calls)
+	}
+	if _, err := NewPlatformRevisionService(nil, nil).readPlatformContext(ctx, record); !errors.Is(err, repository.ErrIntegrity) {
+		t.Fatal("missing graph accepted", err)
+	}
+	bad := record
+	bad.Payload += " "
+	if _, err := s.readPlatformContext(ctx, bad); !errors.Is(err, repository.ErrIntegrity) || calls != 2 {
+		t.Fatal("invalid release reached graph", err, calls)
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := s.readPlatformContext(canceled, record); !errors.Is(err, context.Canceled) || calls != 2 {
+		t.Fatal("canceled read reached graph", err, calls)
 	}
 }
 
@@ -147,7 +188,7 @@ func platformTestReview(t *testing.T, d platform.Context) []byte {
 }
 
 func TestPlatformCommandsRejectBeforeDatabaseAccess(t *testing.T) {
-	s := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(nil))
+	s := NewPlatformRevisionService(repository.NewPlatformRevisionRepository(nil), testPlatformGraph{})
 	ctx, actor := context.Background(), platformTestActor()
 	snapshot := platformTestSnapshot(t, "transfer.task.create", 2)
 	for _, bad := range []models.PlatformActor{{},

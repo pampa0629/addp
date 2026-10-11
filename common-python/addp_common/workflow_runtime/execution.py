@@ -115,11 +115,13 @@ class ExecutionRegistry:
         except WorkflowValidationError as exc:
             self._fail(execution_id, "WORKFLOW_INVALID", str(exc), started)
         except WorkflowExecutionError as exc:
-            self._fail(execution_id, "EXECUTION_FAILED", str(exc), started)
+            self._fail(execution_id, "EXECUTION_FAILED", str(exc), started,
+                       all_results=exc.all_results, task_order=exc.task_order)
         except Exception as exc:
             self._fail(execution_id, "INTERNAL_ERROR", "工作流运行时内部错误", started, details=str(exc))
 
-    def _fail(self, execution_id: str, code: str, error: str, started: float, *, details: str = "") -> None:
+    def _fail(self, execution_id: str, code: str, error: str, started: float, *, details: str = "",
+              all_results=None, task_order=None) -> None:
         self._update(
             execution_id,
             status="failed",
@@ -127,6 +129,9 @@ class ExecutionRegistry:
             error=error,
             error_code=code,
             details=details,
+            all_results=all_results,
+            task_order=task_order or [],
+            result=all_results.get(task_order[-1]) if all_results is not None and task_order else None,
             execution_time_ms=(time.monotonic() - started) * 1000,
         )
 

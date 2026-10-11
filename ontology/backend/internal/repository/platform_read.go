@@ -10,17 +10,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// ActivePlatformRecord carries the exact graph binding selected with the record.
+type ActivePlatformRecord struct {
+	models.PlatformRevision
+	Generation        string
+	ActivationVersion uint64
+}
+
 // ActivePlatformDefinition reads global platform content, not Tenant content.
 // The public boundary authorizes semantic reads; no synthetic actor is needed.
 // Only one PG read snapshot is used, without remote calls or mutation.
-func (r *PlatformRevisionRepository) ActivePlatformDefinition(ctx context.Context, capability string) (*models.PlatformRevision, error) {
+func (r *PlatformRevisionRepository) ActivePlatformDefinition(ctx context.Context, capability string) (*ActivePlatformRecord, error) {
 	if platform.ValidateIdentity(capability, 1) != nil {
 		return nil, ErrInvalid
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	var record models.PlatformRevision
+	var record ActivePlatformRecord
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var head models.PlatformCapability
 		if err := tx.Where("capability = ?", capability).First(&head).Error; err != nil {
@@ -41,11 +48,11 @@ func (r *PlatformRevisionRepository) ActivePlatformDefinition(ctx context.Contex
 
 // ActivePlatformDefinitions never drops a broken active pointer. Selection and
 // every referenced revision/projection share one read-only PG snapshot.
-func (r *PlatformRevisionRepository) ActivePlatformDefinitions(ctx context.Context) ([]models.PlatformRevision, error) {
+func (r *PlatformRevisionRepository) ActivePlatformDefinitions(ctx context.Context) ([]ActivePlatformRecord, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	records := make([]models.PlatformRevision, 0)
+	records := make([]ActivePlatformRecord, 0)
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var heads []models.PlatformCapability
 		if err := tx.Where("active_revision IS NOT NULL OR active_generation IS NOT NULL OR activation_version <> 0").Order("capability ASC").Limit(platform.CatalogMaxItems + 1).Find(&heads).Error; err != nil {
@@ -71,15 +78,15 @@ func (r *PlatformRevisionRepository) ActivePlatformDefinitions(ctx context.Conte
 
 var ErrPlatformCatalogTooLarge = errors.New("platform catalog too large")
 
-func readActivePlatformRecord(tx *gorm.DB, head models.PlatformCapability) (models.PlatformRevision, error) {
-	var record models.PlatformRevision
+func readActivePlatformRecord(tx *gorm.DB, head models.PlatformCapability) (ActivePlatformRecord, error) {
+	var record ActivePlatformRecord
 	if head.ActiveRevision == nil && head.ActiveGeneration == nil && head.ActivationVersion == 0 {
 		return record, ErrNotActive
 	}
 	if head.ActiveRevision == nil || head.ActiveGeneration == nil || head.ActivationVersion == 0 {
 		return record, ErrIntegrity
 	}
-	if err := tx.Where("capability = ? AND revision = ?", head.Capability, *head.ActiveRevision).First(&record).Error; err != nil {
+	if err := tx.Where("capability = ? AND revision = ?", head.Capability, *head.ActiveRevision).First(&record.PlatformRevision).Error; err != nil {
 		return record, platformReferenceError(err)
 	}
 	var projection models.PlatformProjection
@@ -89,6 +96,7 @@ func readActivePlatformRecord(tx *gorm.DB, head models.PlatformCapability) (mode
 	if projection.Status != "ready" || projection.Revision != record.Revision || projection.Digest != record.Digest || projection.BaselineActivationVersion != head.ActivationVersion-1 {
 		return record, ErrIntegrity
 	}
+	record.Generation, record.ActivationVersion = *head.ActiveGeneration, head.ActivationVersion
 	return record, nil
 }
 

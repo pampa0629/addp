@@ -151,6 +151,11 @@ func (e *DevExecutor) buildWorkflowExecutionAuthorizationPlan(
 				if err := addLocatorEngineEffect(engineEffects, params, "target_parent_locator", "write"); err != nil {
 					return nil, fmt.Errorf("任务 %d 目标资源无效: %w", index, err)
 				}
+				if adapter.AccessPlan.BatchOutput {
+					if err := addLocatorEngineEffect(engineEffects, params, "target_parent_locator", "read"); err != nil {
+						return nil, err
+					}
+				}
 			}
 			continue
 		}

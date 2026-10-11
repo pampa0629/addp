@@ -20,6 +20,20 @@ func (f testPlatformAuthorizer) Check(ctx context.Context, s *platform.Snapshot)
 type testPlatformGraph struct {
 	build  func(context.Context, *falkor.Projection) error
 	verify func(context.Context, *falkor.Projection) error
+	read   func(context.Context, *platform.Snapshot, string) (platform.Context, error)
+}
+
+func (g testPlatformGraph) PlatformContext(ctx context.Context, snapshot *platform.Snapshot, generation string) (platform.Context, error) {
+	if g.read != nil {
+		return g.read(ctx, snapshot, generation)
+	}
+	if _, err := falkor.PlanPlatform(snapshot, generation); err != nil {
+		return platform.Context{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return platform.Context{}, err
+	}
+	return snapshot.Context()
 }
 
 func (g testPlatformGraph) Build(ctx context.Context, p *falkor.Projection) error {

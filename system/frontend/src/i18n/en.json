@@ -1120,6 +1120,9 @@
           }
         },
         "tableSearch": "Search table name or schema / node path",
+        "selectFromTree": "Select from tree",
+        "exactTableFilter": "Exact selected-table filter. Edit the input to switch to text search.",
+        "treeFilterFailed": "Unable to select this table. Refresh the resource tree and retry, or use text search.",
         "accountFilter": "Recipient account",
         "allAccounts": "All accounts (search name or username)",
         "allRecipientTypes": "All types",

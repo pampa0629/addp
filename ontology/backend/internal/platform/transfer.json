@@ -2,7 +2,7 @@
   "schema_version": "addp.platform-capability-context/v1",
   "knowledge_kind": "platform_definition",
   "capability": "transfer.task.create",
-  "revision": 6,
+  "revision": 7,
   "digest": "",
   "availability": "not_observed",
   "concepts": [
@@ -20,7 +20,10 @@
     {"id": "snapshot", "name": {"zh-cn": "快照装载模式", "en": "Snapshot load mode"}},
     {"id": "explicit_apply_policy", "name": {"zh-cn": "快照写入明确选择 replace（清理后写入）或 append（仅追加），不支持 upsert", "en": "Explicit snapshot policy: replace (clear then write) or append (insert only); upsert is not supported"}},
     {"id": "confirmed_row_grain_and_fields", "name": {"zh-cn": "按真实结构直接映射字段，查询与行粒度随完整配置复核", "en": "Schema-grounded direct field mapping; review query and row grain with the full configuration"}},
-    {"id": "user_review", "name": {"zh-cn": "用户确认确切配置；参数、能力修订或结构事实变化后重新确认", "en": "User reviews exact configuration; changed arguments, capability revision or schema facts require a new review"}}
+    {"id": "user_review", "name": {"zh-cn": "用户确认确切配置；参数、能力修订或结构事实变化后重新确认", "en": "User reviews exact configuration; changed arguments, capability revision or schema facts require a new review"}},
+    {"id": "source_discovery", "name": {"zh-cn": "源身份与结构取证入口：搜索定位后读取正式结构事实，不以候选代替事实", "en": "Source evidence entry: discover identity, then read formal schema facts; candidates are not facts"}},
+    {"id": "target_parent_discovery", "name": {"zh-cn": "目标父节点取证入口：读取真实目录与祖先，不读取尚未创建的目标", "en": "Target parent evidence entry: read actual children and ancestors, not a nonexistent target"}},
+    {"id": "user_confirmation", "name": {"zh-cn": "用户对 Runtime 绑定的确切参数与当前事实进行确认，不能由读取 Tool 代替", "en": "User confirmation of Runtime-bound exact arguments and current facts; no read Tool can replace it"}}
   ],
   "relations": [
     {"from": "transfer_task", "kind": "reads_from", "to": "source"},
@@ -36,7 +39,16 @@
     {"from": "transfer_task", "kind": "requires", "to": "snapshot"},
     {"from": "transfer_task", "kind": "requires", "to": "explicit_apply_policy"},
     {"from": "transfer_task", "kind": "requires", "to": "confirmed_row_grain_and_fields"},
-    {"from": "transfer_task", "kind": "requires", "to": "user_review"}
+    {"from": "transfer_task", "kind": "requires", "to": "user_review"},
+    {"from": "confirmed_source", "kind": "reads_via", "to": "source_discovery"},
+    {"from": "confirmed_target_parent_and_name", "kind": "reads_via", "to": "target_parent_discovery"},
+    {"from": "confirmed_target_parent_and_name", "kind": "configured_by", "to": "target"},
+    {"from": "confirmed_row_grain_and_fields", "kind": "reads_via", "to": "source_discovery"},
+    {"from": "confirmed_row_grain_and_fields", "kind": "configured_by", "to": "field_mapping"},
+    {"from": "bounded", "kind": "configured_by", "to": "runtime_boundary"},
+    {"from": "snapshot", "kind": "configured_by", "to": "load_mode"},
+    {"from": "explicit_apply_policy", "kind": "configured_by", "to": "apply_policy"},
+    {"from": "user_review", "kind": "confirmed_by", "to": "user_confirmation"}
   ],
   "operation": {
     "owner": "transfer",
