@@ -1601,7 +1601,7 @@ Safari 使用当前已登录平台用户，在独立验收标签页通过模块�
 
 本次仅追加运行及 CI 复核事实，未修改功能代码或 API。`git diff --check` 通过；默认 `make test-changed` 在当前混合工作区因 Ontology 的 `ONTOLOGY_POSTGRES_TEST_DSN` 缺失而于预检返回 2（`/tmp/addp-desktop-local-acceptance-changed-1.log`），其业务门禁未执行，不计通过。个人复验没有创建测试 database 或替代其他 owner 的必需门禁。
 
-### 10.51 服务监控首屏范围与全部实例入口（实现完成，待本机复验）
+### 10.51 服务监控首屏范围与全部实例入口（本机复验及 Hosted T4 通过）
 
 采集状态及采样时间放在在线状态旁，先展示可用性，再展示资源值；桌面窗口优先看见故障原因，较窄窗口仍使用表格内横向滚动查看完整指标。
 
@@ -1615,10 +1615,22 @@ System 既有 `GET /platform/module-instances` 增加可选 `process_metrics_dec
 
 最终 `make test-monitor-frontend` 返回 0，99 项浏览器回归与构建通过（`/tmp/addp-service-scope-monitor-3.log`）；`make test-console-frontend` 返回 0，156 项单测、127 项浏览器回归与构建通过（`/tmp/addp-service-scope-console-1.log`），最终列顺序的 Console 服务页标准浏览器入口再验证四项通过（`/tmp/addp-service-scope-console-focused-2.log`）。27 行混合夹具证明默认只显示两个在线已启用来源，故障行保留；全部入口能分页找到历史与未接入实例，刷新恢复范围，中英文控件和空范围入口有效。人工检查最终 1280/375 像素截图：采集状态已移到在线状态旁，筛选控件在窄屏可用、页面无整体水平溢出；较窄窗口仍需表格内部横向滚动，未宣称所有列同屏可见。
 
-既有 Hosted 浏览器与报告校验同步采用新 canonical URL 和实际 `process_metrics_declared=true` 请求，拒绝缺少该条件的报告；`make test-node-metrics-online-runner` 返回 0（41 项协议/报告回归及真实 fixture 命令校验，`/tmp/addp-service-scope-online-runner-1.log`）。本轮未执行新的 Hosted T4 或个人 Safari 运行验收，不借用 10.49/10.50 的历史证据。默认 `make test-changed` 因当前混合工作区缺少多模块测试连接条件，在执行前预检返回 2（`/tmp/addp-service-scope-changed-1.log`），不能计为通过。
+既有 Hosted 浏览器与报告校验同步采用新 canonical URL 和实际 `process_metrics_declared=true` 请求，拒绝缺少该条件的报告；`make test-node-metrics-online-runner` 返回 0（41 项协议/报告回归及真实 fixture 命令校验，`/tmp/addp-service-scope-online-runner-1.log`）。实现提交时尚未执行新的 Hosted T4 或个人 Safari 运行验收，不借用 10.49/10.50 的历史证据。默认 `make test-changed` 因当前混合工作区缺少多模块测试连接条件，在执行前预检返回 2（`/tmp/addp-service-scope-changed-1.log`），不能计为通过。
 
 平台聚合 `make test-platform` 返回 2（`/tmp/addp-service-scope-platform-1.log`）：执行夹具门禁的两个模拟命令超过测试原有 10 秒限制，随后同一用例发现临时目录残留；聚合在该处中断。未修改这两个门禁脚本或放宽超时。独立 `make test-execution-fixtures` 返回 0，九项回归及实际仓库扫描通过（`/tmp/addp-service-scope-fixtures-2.log`）；该次复跑未复现超时，根因尚未确定，不据此把原聚合计为通过。原聚合未到的 `make test-projection-store-ownership` 与 `make test-authorization` 分别返回 0（`/tmp/addp-service-scope-projection-1.log`、`/tmp/addp-service-scope-authorization-1.log`）。现有 `.github/workflows/platform-ci.yml` 仍完整执行平台聚合，无跳过或放宽门禁。
 
 原聚合未到的 `make test-online-runner` 亦返回 0（`/tmp/addp-service-scope-online-all-1.log`），包括本轮节点指标协议、其余既有 Online 分发/夹具回归及 CI 登记检查。这些是确定性 runner 检查，不计作真实 Hosted T4。
 
-本轮没有修改 IAM、Source 启用配置或个人服务生命周期；下一步由用户执行 `./scripts/dev/restart.sh -system` 应用查询条件，再通过 Safari 核对默认范围、全部入口及故障说明。
+2026-10-11 用户重启后的个人运行复验：System 的实际 `8180/health/ready` 为 ready，启动于本地 16:46:31，构建提交为 `473ebf9480d24f161ec280f4ad60a3a659135ded`，已确认包含实现 `f561df48105d384b137e7bc28e2e06246af37ec4`。Safari 使用已登录平台用户访问服务监控，默认无 query 的首屏共两条：Monitor 实例 `3106f804-e3b6-41b2-8c40-cfd124810268` 与 System 实例 `0d4518de-2408-4929-96b7-4e92dad57c9f`，均在线且正在采集。16:55 的页面快照分别为约 `0.00 核 / 60.34 MiB / 8分钟45秒钟`、`0.02 核 / 88.59 MiB / 9分钟11秒钟`；数值只代表当时观测，不作为固定断言。两者未关联主机，仍能显示自身进程资源。人工查看默认首屏截图，确认采集状态紧邻在线状态，CPU、RSS、运行时长说明均在相应列下。
+
+点击“全部实例”后范围 URL 为 `status=all&process_metrics_declared=all`，共 3042 条，当前未接入实例明确显示“未接入采集”；翻到第 2 页可查看离线历史，状态为“实例已离线”，不借用当前进程值。整页刷新保留全部范围及 `page=2`。输入 System 模块后查询回第 1 页，共 122 条；恢复“在线且已启用采集”保留 `module_name=system`，只有当前一个来源；清除模块条件后恢复默认两条首屏。个人环境未注入故障、修改身份或更改采集配置，采集失败行保留仍由本节确定性回归证明。
+
+同轮独立 Safari 标签页通过真实采集配置下拉选择“未启用采集”，页面 URL 为 `process_metrics_declared=false`，默认在线条件保留，返回 25 条当前未接入来源，资源值显示缺失原因而非零。恢复默认范围后仍只有两个来源；17:05 再次读取取得新的采样时间和资源值。本操作只切换查询范围，没有启停任何采集来源。
+
+实现提交的 [Platform CI（38114411760）](https://github.com/pampa0629/addp/actions/runs/38114411760)、[Release/T2（38114411768）](https://github.com/pampa0629/addp/actions/runs/38114411768) 与 [Quality frontend smoke（38114411782）](https://github.com/pampa0629/addp/actions/runs/38114411782) 均 completed/success，已核对平台一致性、Monitor/Console 前端、System IAM PostgreSQL、Monitor PostgreSQL 及 metrics infrastructure 对应 Job 成功。云端平台聚合通过不改写此前本机超时的结果，Linux metrics 门禁不扩大为 Desktop 宿主通道覆盖。
+
+沿既有 `platform-node-metrics` suite 执行的 [Hosted T4（38126637152）](https://github.com/pampa0629/addp/actions/runs/38126637152) 于本地 17:22:49 completed/success，实际 head 为上述 `473ebf948`。下载本轮 artifact 至 `/tmp/addp-service-scope-hosted-38126637152`，核对业务报告与浏览器报告均为 `passed / complete`：25 项节点指标目录、102 次真实资源响应、8 张截图；服务页两次批量查询均携带 `page=1&page_size=20&role=backend&status=up&process_metrics_declared=true`，System 授权页、请求及结果的实例 ID 顺序一致，为 `[8, 1]`，未启用来源没有混入默认范围。服务页 URL 恢复、iframe 保留、单位及就地提示、未关联主机的资源读取均通过；人工查看本轮服务页截图，确认首屏两条真实来源与采集状态，完整指标仍通过表格内横向滚动查看。
+
+同轮业务报告确认来源、中心及控制面故障恢复、进程重启后的新采样窗口与旧实例空值、查询预算 CAS 和热生效、节点及目标删除通过。可选进程来源未启用时业务仍 ready，其他来源继续采集；安全管理员的拒绝读取检查通过。业务报告中的 `cleanup=awaiting-hosted-deployment-destruction` 是销毁前的中间状态；最终生命周期 `summary.txt` 明确 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`，临时身份、部署及凭据按既有 Hosted 流程销毁。其余未选 suite 为 skipped，不计入本轮验收。本轮未修改 IAM 或个人采集配置。
+
+本次验收记录仅修改现有设计文档，`git diff --check` 返回 0；默认 `make test-changed` 再次因当前混合工作区缺少多模块测试连接条件在预检返回 2（`/tmp/addp-service-scope-acceptance-changed-1.log`），业务门禁未执行，不计为通过。
