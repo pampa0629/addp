@@ -493,7 +493,7 @@ Owner Projection 按已实现执行器逐项升级：Manager 生成 `preview|pro
 
 ### 阶段 6：结构化数据出口收敛
 
-**状态：推进中；已实现 Develop、Service 字段级查询与 Transfer 已支持形态的导出保护。MySQL 四出口、PostgreSQL 空间表三算法、MongoDB Manager/Develop 三算法已通过 Hosted T4；MongoDB 原始记录导出三算法的 Hosted 覆盖仍待补齐。**
+**状态：推进中；已实现 Develop、Service 字段级查询与 Transfer 已支持形态的导出保护。MySQL 四出口、PostgreSQL 空间表三算法、MongoDB Manager/Develop 与原始记录导出三算法均已通过 Hosted T4。**
 
 - Transfer 导出与静态脱敏；
 - Develop 查询、工作流与 Notebook；
@@ -511,7 +511,9 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 
 2026-09-06 建立 `security-mysql-owner-protection` 隔离 T4：复用已有 MySQL `customers.email` 和 PostgreSQL 目标 Fixture，强制校验邮箱类型、检测绑定与 `suppress` 默认规则，再要求 Manager、Develop、Service、Transfer 四个 Owner 全部返回 5 条非敏感记录且结构中不存在 `email`。它不把整请求拒绝或邮箱置空视为正确抑制，每轮临时 Service/Transfer 资源均经正式 API 清理；初期仅完成登记与确定性协议门禁；现行验收已迁至从零建立和销毁隔离部署的 GitHub Hosted Linux profile，真实通过证据见下文。
 
-2026-10-11，`b4161f5a5` 的 [Security Hosted T4 38113570834](https://github.com/pampa0629/addp/actions/runs/38113570834) 通过 v6 验收：保留 MySQL 四出口、Console 检索到预览及 CSV/Monitor 链路和 PostgreSQL 空间表三算法、坐标保持检查；MongoDB 同时验证 Manager 与 Develop 的三算法独立预期、null/缺失结构与相邻属性保持、正常 count、敏感派生输出拒绝，以及 Manager 独立 SM3 Policy 不影响 Develop 默认 Baseline。初始 MongoDB 技术字段在保护变更前完成真实检索；Security、Manager 重启后，同一普通用户无需重扫即可恢复检索与保护预览。Baseline 还原、临时 Policy 撤销，4 个临时资源和当次业务容器、Infra 清理通过。Service 当前只接受 SQL Runtime，不把 MongoDB 的四 Owner ack 记为 MongoDB 查询服务已验收；MongoDB 原始记录导出的三算法 Hosted 覆盖仍是后续验收项。
+2026-10-11，`b4161f5a5` 的 [Security Hosted T4 38113570834](https://github.com/pampa0629/addp/actions/runs/38113570834) 通过 v6 验收：保留 MySQL 四出口、Console 检索到预览及 CSV/Monitor 链路和 PostgreSQL 空间表三算法、坐标保持检查；MongoDB 同时验证 Manager 与 Develop 的三算法独立预期、null/缺失结构与相邻属性保持、正常 count、敏感派生输出拒绝，以及 Manager 独立 SM3 Policy 不影响 Develop 默认 Baseline。初始 MongoDB 技术字段在保护变更前完成真实检索；Security、Manager 重启后，同一普通用户无需重扫即可恢复检索与保护预览。Baseline 还原、临时 Policy 撤销，4 个临时资源和当次业务容器、Infra 清理通过。Service 当前只接受 SQL Runtime，不把 MongoDB 的四 Owner ack 记为 MongoDB 查询服务已验收；当时 MongoDB 原始记录导出的三算法 Hosted 覆盖仍是后续验收项。
+
+2026-10-11，`4196a84c4` 的 [Security Hosted T4 38127430328](https://github.com/pampa0629/addp/actions/runs/38127430328) 通过 v7 验收，补齐 MongoDB 原始记录导出的掩码、固定值替换和 SM3 三算法。普通用户经 Manager 导出会话调用 Transfer，并真实下载 Canonical Extended JSONL；三算法及 Manager 独立 SM3 预览 Policy 生效时共 4 次下载，各 7 条记录的嵌套值、null、缺失字段／父对象、相邻属性与超过 JavaScript 安全整数范围的 BSON int64 均正确。独立预览策略不改变 Transfer 默认 Baseline，Monitor 确认同一用户发起、Manager 来源、无任务定义及每次 7 条真实读写计数。原有四出口、空间表、MongoDB Manager／Develop、重启恢复和 Console 链路同时通过；基线、临时策略、资源、导出暂存文件及当次 Infra 的清理按既有 Hosted 生命周期完成。该项只增加验收覆盖，不改变产品 API、服务形态或本地运行环境。
 
 2026-09-06 继续收敛 Security 内部 Owner 契约：必要 Owner 集合与各 Owner 可豁免主动作改由同一事实源派生，Enrollment 初始门禁、Assessment/Definition 影响重编译、变化流校验及历史投影升级不再分别维护四份 Owner 列表。这一收敛不把 Workbench 或 Asset 新增为投影 Owner：Workbench 继续消费 Service 已保护结果，Asset 只交付资源引用与授权事实。
 
