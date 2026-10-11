@@ -701,6 +701,7 @@ test-system-frontend: ## 运行 System 前端确定性测试与构建
 
 test-transfer-frontend: ## 运行 Transfer 前端确定性测试与构建
 	@cd transfer/frontend && npm test
+	@cd transfer/frontend && npm run test:e2e
 	@cd transfer/frontend && npm run build
 
 .PHONY: test-ontology-frontend

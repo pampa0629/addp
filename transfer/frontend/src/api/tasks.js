@@ -17,6 +17,10 @@ export const taskAPI = {
     return client.post('/transfer/task-definitions', data)
   },
 
+  checkConfig(data) {
+    return client.post('/transfer/task-config-checks', data)
+  },
+
   // 更新任务
   update(id, data) {
     return client.put(`/transfer/task-definitions/${id}`, data)

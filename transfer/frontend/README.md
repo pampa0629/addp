@@ -110,6 +110,12 @@ transfer/frontend/
 
 前端通过共享 API Client 使用统一 `/api/v1` 路径，不维护模块级 `.env` 或 `.env.local`。开发和部署参数统一由仓库根 `.env` 与标准启动脚本注入。
 
+### 向导配置检查
+
+任务向导最后一步提供手动“检查配置”，以保存时同一份完整请求调用 `POST /api/v1/transfer/task-config-checks`。检查需要当前租户的 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 三项权限；只展示已有结构和引擎事实的报告，不保存、执行任务或扫描数据。报告分别展示 supported、unsupported、unknown、字段配置位置、未检查项和运行时仍需校验项；请求失败独立显示错误。定义受支持不代表配置可执行，检查不改变现有保存行为。配置、用户、租户或所需权限变化后清除报告，并丢弃迟到的旧响应。
+
+标准验证为 `make test-transfer-frontend`，包含单测、受控 API 夹具的浏览器交互和构建。浏览器通过共享启动器分配独立回环端口，使用合成配置，不访问个人登录态或业务服务；Platform CI 的 Transfer 前端矩阵执行同一入口并收集失败证据。
+
 ## 主要页面
 
 ### 任务列表（TaskList.vue）

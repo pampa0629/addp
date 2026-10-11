@@ -802,6 +802,7 @@ jobs:
           - module: transfer
             name: Transfer
             target: test-transfer-frontend
+            playwright: true
           - module: workbench
             name: Workbench
             target: test-workbench-frontend

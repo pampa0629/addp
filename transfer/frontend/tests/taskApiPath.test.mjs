@@ -8,3 +8,7 @@ test('Transfer task management lists canonical task definitions', () => {
   assert.match(taskApiSource, /client\.get\('\/transfer\/task-definitions', \{ params \}\)/)
   assert.doesNotMatch(taskApiSource, /client\.get\('\/transfer\/tasks'/)
 })
+
+test('configuration check uses the canonical read-only endpoint', () => {
+  assert.match(taskApiSource, /checkConfig\(data\)\s*\{\s*return client\.post\('\/transfer\/task-config-checks', data\)/)
+})

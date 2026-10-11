@@ -1,12 +1,13 @@
 import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
 import { defineConfig } from 'vite'
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import vue from '@vitejs/plugin-vue'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-export default defineConfig(withModuleFrontend('transfer', {
+export default defineConfig(withModuleFrontend('transfer', withFrontendTestIsolation('transfer', {
   plugins: [vue()],
   server: {
     port: Number(process.env.TRANSFER_FE_PORT || 5176),
@@ -36,4 +37,4 @@ export default defineConfig(withModuleFrontend('transfer', {
     },
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
-}))
+})))
