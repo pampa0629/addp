@@ -5,15 +5,20 @@ import os
 from pathlib import Path
 import stat
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 PATH = Path(__file__).parents[2] / 'business/scripts/online-raster-minio-fixture.py'
 spec = importlib.util.spec_from_file_location('raster_physical_fixture', PATH)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+
+
+class FakeS3Error(Exception):
+    def __init__(self, code): self.code = code
 
 
 class RasterPhysicalFixtureTest(unittest.TestCase):
@@ -160,12 +165,65 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
             descriptor = json.loads((self.root / f'raster-{role}-engine.json').read_text())
             self.assertEqual(descriptor['engine_type'], 'minio')
             self.assertIn('raster-test', descriptor['name'])
+            credentials = config[role]['writer'] if role == 'target' else config[role]
+            for key in ('access_key', 'secret_key'):
+                self.assertEqual(descriptor['connection_info'][key], credentials[key])
+                if role == 'target':
+                    self.assertNotEqual(credentials[key], config[role][key])
         self.assertEqual(len(self.commands), 2)
         for args in self.commands:
             self.assertIn('type=tmpfs,destination=/data', args)
             self.assertIn('com.addp.online-fixture=raster-workflow', args)
             self.assertIn('--env-file', args)
             for entry in config.values(): self.assertNotIn(entry['secret_key'], ' '.join(args))
+
+    def provision_writer(self, fault=None):
+        entry = {'endpoint': 'target:9000', 'bucket': 'raster-target',
+            'access_key': 'fixture-root', 'secret_key': 'private-root',
+            'writer': {'access_key': 'fixture-writer', 'secret_key': 'private-writer'}}
+        if fault == 'root': entry['writer']['access_key'] = entry['access_key']
+        denied = m.TILE_FAILURE_PREFIX + '/' + m.TILE_FAILURE_KEY + '.tif'
+        client, admin, provider = Mock(), Mock(), Mock()
+        def upload(bucket, key, path):
+            if key == '_writer_probe' and fault == 'allowed': raise FakeS3Error('AccessDenied')
+            if key == denied and fault != 'ignored':
+                raise FakeS3Error('NoSuchBucket' if fault == 'wrong-error' else 'AccessDenied')
+        client.fput_object.side_effect = upload
+        client.list_objects.return_value = [object()] if fault == 'residual' else []
+        minio = Mock(return_value=client)
+        minio_admin = Mock(return_value=admin)
+        modules = {'minio': SimpleNamespace(Minio=minio),
+            'minio.credentials': SimpleNamespace(StaticProvider=provider),
+            'minio.error': SimpleNamespace(S3Error=FakeS3Error),
+            'minio.minioadmin': SimpleNamespace(MinioAdmin=minio_admin)}
+        with patch.dict(sys.modules, modules):
+            result = m.provision_target_writer(entry, self.root)
+        return result, entry, client, admin, provider, minio
+
+    def test_target_writer_policy_denies_only_the_second_failure_tile_and_proves_it(self):
+        result, entry, client, admin, provider, minio = self.provision_writer()
+        self.assertEqual(result, {'writer_is_root': False,
+            'denied_object': 'tiles-write-failure/r0_c160.tif', 'error_code': 'AccessDenied'})
+        provider.assert_called_once_with(entry['access_key'], entry['secret_key'])
+        minio.assert_called_once_with(entry['endpoint'], **entry['writer'], secure=False)
+        admin.user_add.assert_called_once_with(entry['writer']['access_key'], entry['writer']['secret_key'])
+        policy_name, policy_path = admin.policy_add.call_args.args
+        policy = json.loads(Path(policy_path).read_text())
+        self.assertEqual([item for item in policy['Statement'] if item['Effect'] == 'Deny'], [{
+            'Effect': 'Deny', 'Action': ['s3:PutObject'],
+            'Resource': ['arn:aws:s3:::raster-target/tiles-write-failure/r0_c160.tif']}])
+        admin.policy_set.assert_called_once_with(policy_name, user=entry['writer']['access_key'])
+        self.assertEqual([call.args[1] for call in client.fput_object.call_args_list],
+            ['_writer_probe', 'tiles-write-failure/r0_c160.tif'])
+        client.remove_object.assert_called_once_with('raster-target', '_writer_probe')
+        client.list_objects.assert_called_once_with('raster-target', recursive=True)
+        self.assertNotIn('private', json.dumps(result))
+
+    def test_target_writer_refuses_ineffective_fault_or_unusable_or_dirty_storage(self):
+        for fault in ('root', 'ignored', 'wrong-error', 'residual', 'allowed'):
+            expected = FakeS3Error if fault == 'allowed' else m.FixtureError
+            with self.subTest(fault=fault), self.assertRaises(expected):
+                self.provision_writer(fault)
 
     def test_seed_retains_source_fingerprints_in_private_directory(self):
         evidence = {'seeded': True, 'source_sha256': {'source.tif': 'source-hash', 'spatial.tif': 'spatial-hash'}}

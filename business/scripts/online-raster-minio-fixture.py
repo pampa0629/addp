@@ -44,9 +44,11 @@ NON_COG_SOURCE = 'non-cog.tif'
 SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
                 ('multiband-average-finite.tif', False, -9999.))
+TILE_FAILURE_PREFIX = 'tiles-write-failure'
+TILE_FAILURE_KEY = 'r0_c160'
 TILE_KEEP_NAME = 'tiles-basic/keep.txt'
 TILE_KEEP_BYTES = b'Unrelated raster fixture file; replace must preserve these bytes.\n'
-ACTIONS = ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
+ACTIONS = ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -453,6 +455,7 @@ def start(root):
             'endpoint': f'127.0.0.1:{59012 + index}', 'access_key': f'online-raster-{role}',
             'secret_key': secrets.token_hex(32), 'bucket': f'raster-{role}',
         }
+    config['target']['writer'] = {'access_key': 'online-raster-writer', 'secret_key': secrets.token_hex(32)}
     private_json(root / 'raster-fixture.json', config)
     try:
         for index, role in enumerate(('source', 'target')):
@@ -479,7 +482,8 @@ def start(root):
             private_json(root / f'raster-{role}-engine.json', {
                 'name': f'Hosted Raster {role} {os.environ["ADDP_ONLINE_TEST_RUN_ID"]}', 'description': 'Disposable raster T4 physical fixture',
                 'engine_type': 'minio', 'engine_origin': 'general',
-                'connection_info': {**{key: entry[key] for key in ('endpoint', 'access_key', 'secret_key')}, 'use_ssl': False},
+                'connection_info': {'endpoint': entry['endpoint'],
+                    **(entry['writer'] if role == 'target' else {key: entry[key] for key in ('access_key', 'secret_key')}), 'use_ssl': False},
             })
     except BaseException:
         stop()
@@ -499,6 +503,45 @@ def physical_worker(action, root):
     if action == 'seed':
         private_json(root / 'raster-source-sha256.json', result['source_sha256'])
     return result
+
+
+def provision_target_writer(entry, root):
+    """Use non-root writes so an exact object Deny is effective in Hosted T4."""
+    from minio import Minio
+    from minio.credentials import StaticProvider
+    from minio.error import S3Error
+    from minio.minioadmin import MinioAdmin
+    writer = entry['writer']
+    if writer['access_key'] == entry['access_key']:
+        raise FixtureError('target writer must not be MinIO root')
+    denied = TILE_FAILURE_PREFIX + '/' + TILE_FAILURE_KEY + '.tif'
+    policy = {'Version': '2012-10-17', 'Statement': [
+        {'Effect': 'Allow', 'Action': ['s3:ListAllMyBuckets'], 'Resource': ['arn:aws:s3:::*']},
+        {'Effect': 'Allow', 'Action': ['s3:*'], 'Resource': [
+            'arn:aws:s3:::' + entry['bucket'], 'arn:aws:s3:::' + entry['bucket'] + '/*']},
+        {'Effect': 'Deny', 'Action': ['s3:PutObject'], 'Resource': ['arn:aws:s3:::' + entry['bucket'] + '/' + denied]},
+    ]}
+    policy_file = root / 'target-writer-policy.json'
+    policy_file.write_text(json.dumps(policy))
+    admin = MinioAdmin(entry['endpoint'], StaticProvider(entry['access_key'], entry['secret_key']), secure=False)
+    admin.user_add(writer['access_key'], writer['secret_key'])
+    admin.policy_add('raster-fixture-writer', str(policy_file))
+    admin.policy_set('raster-fixture-writer', user=writer['access_key'])
+    client = Minio(entry['endpoint'], **writer, secure=False)
+    probe = root / 'write-probe'
+    probe.write_bytes(b'fixture write permission probe')
+    client.fput_object(entry['bucket'], '_writer_probe', str(probe))
+    client.remove_object(entry['bucket'], '_writer_probe')
+    try:
+        client.fput_object(entry['bucket'], denied, str(probe))
+    except S3Error as error:
+        if error.code != 'AccessDenied':
+            raise FixtureError('target failure probe did not return AccessDenied') from None
+    else:
+        raise FixtureError('target failure probe unexpectedly wrote the denied tile')
+    if list(client.list_objects(entry['bucket'], recursive=True)):
+        raise FixtureError('target permission probe left residual objects')
+    return {'writer_is_root': False, 'denied_object': denied, 'error_code': 'AccessDenied'}
 
 
 def write_source_raster(path, name, spatial, source_nodata):
@@ -581,6 +624,7 @@ def worker(action, path):
         if action == 'seed':
             for role, client in clients.items():
                 client.make_bucket(config[role]['bucket'])
+            writer_probe = provision_target_writer(config['target'], root)
             fingerprints = {}
             for name, spatial, source_nodata in SOURCE_FILES:
                 path = root / name
@@ -597,7 +641,7 @@ def worker(action, path):
             dataset = None
             clients['source'].fput_object(config['source']['bucket'], NON_COG_SOURCE, str(path), content_type='image/tiff')
             fingerprints[NON_COG_SOURCE] = hashlib.sha256(path.read_bytes()).hexdigest()
-            return {'seeded': True, 'source_pixels': SIZE * SIZE, 'spatial_source_pixels': SIZE * SIZE, 'target_objects': 0, 'source_sha256': fingerprints}
+            return {'seeded': True, 'source_pixels': SIZE * SIZE, 'spatial_source_pixels': SIZE * SIZE, 'target_objects': 0, 'source_sha256': fingerprints, 'writer_probe': writer_probe}
         if not fingerprint_path.is_file():
             raise FixtureError('source fingerprints are missing')
         fingerprints = json.loads(fingerprint_path.read_text())
@@ -776,7 +820,7 @@ def worker(action, path):
                     'invalid_pixels': len(invalid), 'source_unchanged': True,
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
-        if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace'):
+        if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure'):
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                 'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                 'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
@@ -789,22 +833,31 @@ def worker(action, path):
                 name = 'tiles-basic/'+key+'.tif'
                 path = root/name; path.parent.mkdir(parents=True, exist_ok=True)
                 clients['target'].fget_object(config['target']['bucket'], name, str(path))
-                tiles[key] = verify_tile_file(path, key, 'NONE' if action == 'verify-tiles-replace' else 'DEFLATE')
+                tiles[key] = verify_tile_file(path, key, 'NONE' if action in ('verify-tiles-replace', 'verify-tiles-failure') else 'DEFLATE')
             names = set(preserved) | {'tiles-basic/'+key+'.tif' for key in TILE_WINDOWS}
             sentinel = root/'keep.txt'
             sentinel_sha = hashlib.sha256(TILE_KEEP_BYTES).hexdigest()
-            if action == 'verify-tiles-replace':
+            if action in ('verify-tiles-replace', 'verify-tiles-failure'):
                 names.add(TILE_KEEP_NAME)
                 clients['target'].fget_object(config['target']['bucket'], TILE_KEEP_NAME, str(sentinel))
                 if sentinel.read_bytes() != TILE_KEEP_BYTES:
                     raise FixtureError('batch replace modified the unrelated file')
+            accepted_tiles = tiles
+            if action == 'verify-tiles-failure':
+                name = TILE_FAILURE_PREFIX + '/r0_c0.tif'
+                path = root/'confirmed-first.tif'
+                clients['target'].fget_object(config['target']['bucket'], name, str(path))
+                tiles = {'r0_c0': verify_tile_file(path, 'r0_c0')}
+                names.add(name)
             if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
                 raise FixtureError('tiling target contains unexpected or partial artifacts')
             if action == 'prepare-tiles-replace':
                 sentinel.write_bytes(TILE_KEEP_BYTES)
                 clients['target'].fput_object(config['target']['bucket'], TILE_KEEP_NAME, str(sentinel))
             return {'tiles': tiles, 'preserved_sha256': preserved, 'source_unchanged': True,
-                **({'unrelated_sha256': sentinel_sha} if action != 'verify-tiles' else {})}
+                **({'unrelated_sha256': sentinel_sha} if action != 'verify-tiles' else {}),
+                **({'preserved_tiles_sha256': {key: fact['sha256'] for key, fact in accepted_tiles.items()}}
+                   if action == 'verify-tiles-failure' else {})}
 
         grid_case = action.removeprefix('verify-')
         if grid_case in UTILITY_CASES or action == 'verify-utility-queries':

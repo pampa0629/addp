@@ -522,7 +522,7 @@ def duplicate_create_diagnostic(repository, env, execution_id, timeout):
 
 
 
-def tiling_workflow(source_locator, target_engine, write_mode='create', compression='DEFLATE'):
+def tiling_workflow(source_locator, target_engine, write_mode='create', compression='DEFLATE', target_name='tiles-basic'):
     return {'tasks': [
         {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
         {'id': 'tile', 'operator': 'raster_tile', 'depends_on': ['load'], 'params': {
@@ -530,25 +530,31 @@ def tiling_workflow(source_locator, target_engine, write_mode='create', compress
         {'id': 'save_tiles', 'operator': 'raster_save_tiles', 'depends_on': ['tile'], 'params': {
             'input_tiles': {'$ref': 'tile', 'port': 'default'},
             'target_parent_locator': f'addp://engine/{target_engine}/path/raster-target?type=bucket',
-            'target_name': 'tiles-basic', 'write_mode': write_mode, 'profile': 'cog', 'blocksize': 128,
+            'target_name': target_name, 'write_mode': write_mode, 'profile': 'cog', 'blocksize': 128,
             'compression': compression}},
     ]}
 
 
-def validate_tiles_success(execution, source_locator, target_engine, write_mode='create'):
+def validate_tiles_publication(execution, source_locator, target_engine, write_mode='create', failed=False):
+    prefix = fixture.TILE_FAILURE_PREFIX if failed else 'tiles-basic'
+    keys = {'r0_c0'} if failed else set(fixture.TILE_WINDOWS)
+    if execution.get('status') != ('failed' if failed else 'success'):
+        raise SuiteError('tiling execution status differs from publication scenario')
     metadata = obj(execution.get('metadata'), 'tiling metadata')
     result = obj(metadata.get('result'), 'tiling result')
     manifest = obj(result.get('final_result'), 'tile manifest')
     expected = {'artifact_type': 'raster_tiles', 'source_width': 256, 'source_height': 256,
-        'tile_size': [160,160], 'columns': 2, 'rows': 2, 'total_tiles': 4, 'completed_tiles': 4}
+        'tile_size': [160,160], 'columns': 2, 'rows': 2, 'total_tiles': 4, 'completed_tiles': 1 if failed else 4}
+    if failed:
+        expected.update(failed_tile=fixture.TILE_FAILURE_KEY, publication='unknown')
     if any(manifest.get(key) != value for key, value in expected.items()) or set(manifest) != set(expected) | {'tiles'}:
         raise SuiteError('tiling manifest grid/count/completion differs')
     tiles = obj(manifest.get('tiles'), 'tiles')
     outputs = obj(execution.get('outputs'), 'tiling outputs')
     resources = obj(obj(outputs.get('save_tiles'), 'save tiles output').get('tiles'), 'tile resources')
-    if set(outputs) != {'save_tiles'} or set(tiles) != set(fixture.TILE_WINDOWS) or set(resources) != set(tiles):
+    if set(outputs) != {'save_tiles'} or set(tiles) != keys or set(resources) != set(tiles):
         raise SuiteError('tiling outputs must identify every individual tile and no directory resource')
-    locators = {key: f'addp://engine/{target_engine}/path/raster-target/tiles-basic/{key}.tif?type=object' for key in tiles}
+    locators = {key: f'addp://engine/{target_engine}/path/raster-target/{prefix}/{key}.tif?type=object' for key in tiles}
     for key, fact in tiles.items():
         if fact.get('name') != key+'.tif' or fact.get('window') != list(fixture.TILE_WINDOWS[key]) or fact.get('uploaded_files') != 1:
             raise SuiteError('tiling names/windows/publication facts differ')
@@ -557,23 +563,27 @@ def validate_tiles_success(execution, source_locator, target_engine, write_mode=
         validate_raster_artifact(fact, fixture.tile_expectation(key))
         if resources[key] != {'resource': {'locator': locators[key], 'type': 'object', 'write_mode': write_mode}}:
             raise SuiteError('tile resource locator/type/write mode differs')
-    facts = obj(metadata.get('lineage_facts'), 'tiling lineage facts')
-    if (facts.get('schema_version') != 'addp.lineage-facts/v1'
-        or [item.get('locator') for item in array(facts.get('inputs'), 'tile inputs')] != [source_locator]):
-        raise SuiteError('tiling lineage source differs')
-    lineage_outputs = array(facts.get('outputs'), 'tile lineage outputs')
-    if (len(lineage_outputs) != 4 or {item.get('locator') for item in lineage_outputs} != set(locators.values())
-        or any(item.get('write_mode') != write_mode for item in lineage_outputs)):
-        raise SuiteError('tiling lineage does not identify the four actual writes')
+    if failed:
+        if metadata.get('lineage_facts'):
+            raise SuiteError('failed tiling must not claim successful lineage facts')
+    else:
+        facts = obj(metadata.get('lineage_facts'), 'tiling lineage facts')
+        if (facts.get('schema_version') != 'addp.lineage-facts/v1'
+            or [item.get('locator') for item in array(facts.get('inputs'), 'tile inputs')] != [source_locator]):
+            raise SuiteError('tiling lineage source differs')
+        lineage_outputs = array(facts.get('outputs'), 'tile lineage outputs')
+        if (len(lineage_outputs) != 4 or {item.get('locator') for item in lineage_outputs} != set(locators.values())
+            or any(item.get('write_mode') != write_mode for item in lineage_outputs)):
+            raise SuiteError('tiling lineage does not identify the four actual writes')
     targets = array(result.get('produced_targets'), 'tiling produced targets')
-    if (len(targets) != 4 or {item.get('locator') for item in targets} != set(locators.values())
+    if (len(targets) != len(keys) or {item.get('locator') for item in targets} != set(locators.values())
         or any(item.get('task_id') != 'save_tiles' or item.get('tile_key') not in tiles or item.get('type') != 'object' for item in targets)):
         raise SuiteError('tiling produced targets differ from actual individual resources')
     scans = array(result.get('meta_scan_runs'), 'tile scans')
-    if (len(scans) != 4 or {item.get('target_locator') for item in scans} != set(locators.values())
+    if (len(scans) != len(keys) or {item.get('target_locator') for item in scans} != set(locators.values())
         or any(item.get('status') != 'submitted' or not item.get('execution_id') for item in scans)
-        or len({item['execution_id'] for item in scans}) != 4):
-        raise SuiteError('tiling did not automatically submit four distinct Meta scans')
+        or len({item['execution_id'] for item in scans}) != len(keys)):
+        raise SuiteError('tiling did not automatically submit one distinct Meta scan per confirmed tile')
     return manifest, locators, scans
 
 def physical(repository, env, action):
@@ -582,8 +592,8 @@ def physical(repository, env, action):
     if result.returncode:
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
-    if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace'):
-        if payload.get('source_unchanged') is not True or set(obj(payload.get('tiles'), 'physical tiles')) != set(fixture.TILE_WINDOWS):
+    if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure'):
+        if payload.get('source_unchanged') is not True or set(obj(payload.get('tiles'), 'physical tiles')) != ({'r0_c0'} if action == 'verify-tiles-failure' else set(fixture.TILE_WINDOWS)):
             raise SuiteError('physical tiling evidence is incomplete')
         return payload
     case_name = action.removeprefix('verify-')
@@ -937,7 +947,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 raise SuiteError('batch replace preparation changed accepted tiles or omitted the unrelated file')
         identifier = submit(client, engine_id, tiling_workflow(source_locator, target_engine, mode, compression))
         execution = wait_execution(client, 'develop', identifier, timeout)
-        manifest, locators, scans = validate_tiles_success(execution, source_locator, target_engine, mode)
+        manifest, locators, scans = validate_tiles_publication(execution, source_locator, target_engine, mode)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'tiling Monitor')
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
             or monitor.get('metadata', {}).get('lineage_facts') != execution['metadata']['lineage_facts']):
@@ -979,6 +989,42 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 or {scan['execution_id'] for scan in scans} & {scan['execution_id'] for scan in tiling_results['create']['scans']}):
                 raise SuiteError('batch replace lost the unrelated file or reused an earlier automatic scan')
     finish_output_inspections(pending_outputs, repository, env, client, timeout)
+    identifier = submit(client, engine_id, tiling_workflow(source_locator, target_engine,
+        target_name=fixture.TILE_FAILURE_PREFIX))
+    execution = wait_execution(client, 'develop', identifier, timeout, expected='failed')
+    manifest, locators, scans = validate_tiles_publication(execution, source_locator, target_engine, failed=True)
+    monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'failed tiling Monitor')
+    if (monitor.get('status') != 'failed' or monitor.get('module') != 'develop'
+        or monitor.get('metadata', {}).get('lineage_facts')):
+        raise SuiteError('Monitor failed tiling status/owner or lineage differs')
+    previous_scans = {scan['execution_id'] for mode in tiling_results.values() for scan in mode['scans']}
+    if scans[0]['execution_id'] in previous_scans:
+        raise SuiteError('failed tiling reused an earlier automatic scan')
+    wait_execution(client, 'meta', scans[0]['execution_id'], timeout)
+    native = physical_runner(repository, env, 'verify-tiles-failure')
+    if (native.get('source_unchanged') is not True or native.get('preserved_sha256') != preserved
+        or native.get('preserved_tiles_sha256') != {key: fact['sha256'] for key, fact in tiling_results['replace']['physical']['tiles'].items()}
+        or native.get('unrelated_sha256') != tiling_results['replace']['physical']['unrelated_sha256']
+        or set(native.get('tiles', {})) != {'r0_c0'}):
+        raise SuiteError('failed tiling lost its confirmed prefix or changed accepted bytes')
+    tile = obj(native['tiles']['r0_c0'], 'confirmed physical tile')
+    fact = manifest['tiles']['r0_c0']
+    if (tile.get('cog_valid') is not True or tile.get('compression') != 'DEFLATE'
+        or positive(tile.get('size_bytes'), 'confirmed physical tile size') != fact['size_bytes']
+        or tile.get('valid_pixels') != fixture.tile_expectation('r0_c0')['valid_pixels']
+        or [band.get('overviews') for band in fact['bands']] != [tile.get('overview_sizes')]*2):
+        raise SuiteError('confirmed partial tile physical facts differ')
+    target = support.find_fixture_item(client, target_engine,
+        'raster-target/'+fixture.TILE_FAILURE_PREFIX+'/r0_c0.tif', 'confirmed partial tile')
+    if positive(target.get('size_bytes'), 'partial tile DataItem size') != fact['size_bytes']:
+        raise SuiteError('partial tile DataItem size differs from artifact and physical size')
+    items = array(client.request('GET', f'/api/v1/meta/engines/{target_engine}/items', (200,)).payload, 'target items')
+    partial_names = [item['full_name'] for item in items if item.get('full_name', '').startswith('raster-target/'+fixture.TILE_FAILURE_PREFIX+'/') and item.get('item_type') == 'object']
+    if partial_names != ['raster-target/'+fixture.TILE_FAILURE_PREFIX+'/r0_c0.tif']:
+        raise SuiteError('unconfirmed failed tiles entered the Meta catalog')
+    partial = {'execution_id': identifier, 'status': 'failed', 'manifest': manifest,
+        'outputs': execution['outputs'], 'automatic_scan_runs': scans,
+        'target_item_id': target['id'], 'data_item_size_bytes': target['size_bytes'], 'physical': native}
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
@@ -990,6 +1036,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'tiling_automatic_scan_runs': tiling_results['create']['scans'], 'tiling_preserved_sha256': preserved,
             'tiling_replace_automatic_scan_runs': tiling_results['replace']['scans'],
             'tiling_replace_unrelated_sha256': tiling_results['replace']['physical']['unrelated_sha256'],
+            'tiling_failed_publication': partial,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

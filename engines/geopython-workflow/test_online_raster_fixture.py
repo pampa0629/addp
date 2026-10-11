@@ -34,7 +34,7 @@ def physical(tmp_path):
     config = tmp_path / 'fixture.json'
     config.write_text(json.dumps({role: {'endpoint': role, 'bucket': 'raster-' + role, 'access_key': 'test', 'secret_key': 'test'} for role in ('source', 'target')}))
     LocalMinio.objects = {}
-    with patch('minio.Minio', LocalMinio):
+    with patch('minio.Minio', LocalMinio), patch.object(fixture, 'provision_target_writer', return_value={'writer_is_root': False, 'error_code': 'AccessDenied'}):
         seeded = fixture.worker('seed', config)
         assert seeded['seeded']
         fixture.private_json(config.with_name('raster-source-sha256.json'), seeded['source_sha256'])
@@ -1213,6 +1213,7 @@ def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old
     for key in fixture.TILE_WINDOWS:
         LocalMinio.objects['target', 'raster-target', 'tiles-basic/'+key+'.tif'] = (output/(key+'.tif')).read_bytes()
     initial = fixture.worker('verify-tiles', outside_artifacts)
+    first_create = LocalMinio.objects['target', 'raster-target', 'tiles-basic/r0_c0.tif']
     prepared = fixture.worker('prepare-tiles-replace', outside_artifacts)
     assert prepared['tiles'] == initial['tiles']
     assert LocalMinio.objects['target', 'raster-target', fixture.TILE_KEEP_NAME] == fixture.TILE_KEEP_BYTES
@@ -1242,3 +1243,61 @@ def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old
         finally:
             LocalMinio.objects.clear()
             LocalMinio.objects.update(baseline)
+
+    confirmed_key = ('target', 'raster-target', fixture.TILE_FAILURE_PREFIX+'/r0_c0.tif')
+    LocalMinio.objects[confirmed_key] = first_create
+    partial = fixture.worker('verify-tiles-failure', outside_artifacts)
+    assert partial['tiles'] == {'r0_c0': initial['tiles']['r0_c0']}
+    assert partial['preserved_sha256'] == replaced['preserved_sha256']
+    assert partial['preserved_tiles_sha256'] == {key: fact['sha256'] for key, fact in replaced['tiles'].items()}
+    assert partial['unrelated_sha256'] == prepared['unrelated_sha256']
+    baseline = dict(LocalMinio.objects)
+    for fault in ('missing-confirmed', 'unconfirmed-object', 'changed-confirmed'):
+        try:
+            if fault == 'missing-confirmed':
+                del LocalMinio.objects[confirmed_key]
+            elif fault == 'unconfirmed-object':
+                LocalMinio.objects['target', 'raster-target', fixture.TILE_FAILURE_PREFIX+'/r0_c160.tif'] = old
+            else:
+                LocalMinio.objects[confirmed_key] = old
+            with pytest.raises((fixture.FixtureError, KeyError)):
+                fixture.worker('verify-tiles-failure', outside_artifacts)
+        finally:
+            LocalMinio.objects.clear()
+            LocalMinio.objects.update(baseline)
+
+
+def test_batch_failure_public_dag_and_physical_oracle_preserve_confirmed_prefix(tmp_path, monkeypatch):
+    from workflow_engine import execute_workflow
+    import operators.raster_compute as compute
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    source = tmp_path/'source.tif'
+    fixture.write_source_raster(source, 'source.tif', False, -9999.)
+    original = source.read_bytes()
+    output = tmp_path/'tiles'
+    definition = scene.tiling_workflow('source-locator', 2, target_name=fixture.TILE_FAILURE_PREFIX)
+    definition['tasks'][0]['params'] = {'access_plan': {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
+        'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(source)}}}}
+    params = definition['tasks'][-1]['params']
+    for key in ('target_parent_locator','target_name','write_mode'): params.pop(key)
+    params['access_plan'] = {'schema_version':'addp.workflow.access-plan/v1','target': {
+        'kind':'directory','format':'tiff','name':'tiles','write_mode':'create',
+        'access':{'method':'mounted_path','path':str(output)}}}
+    publish = compute.publish_target_file
+    attempted = []
+    def deny_second(path, plan):
+        attempted.append(plan['target']['name'])
+        if len(attempted) == 2: raise OSError('AccessDenied: private storage diagnostic')
+        return publish(path, plan)
+    monkeypatch.setattr(compute, 'publish_target_file', deny_second)
+    result = execute_workflow(definition)
+    assert result['status'] == 'failed'
+    manifest = json.loads(result['all_results']['save_tiles'])
+    assert manifest['completed_tiles'] == 1 and manifest['publication'] == 'unknown'
+    assert manifest['failed_tile'] == fixture.TILE_FAILURE_KEY
+    assert set(manifest['tiles']) == {'r0_c0'}
+    assert [path.name for path in output.iterdir()] == ['r0_c0.tif']
+    evidence = fixture.verify_tile_file(output/'r0_c0.tif','r0_c0')
+    assert evidence['size_bytes'] == manifest['tiles']['r0_c0']['size_bytes'] > 0
+    assert source.read_bytes() == original
+    assert 'private storage diagnostic' not in json.dumps(result)
