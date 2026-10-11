@@ -830,6 +830,12 @@ def baseline_body(baseline: Mapping[str, object]) -> dict[str, object]:
     return result
 
 
+def permitted_algorithms(default_algorithm: str) -> list[str]:
+    # Prefix policies need retention limits from a prefix Baseline.
+    return [algorithm for algorithm, _ in ALGORITHM_CASES
+            if algorithm != STRUCTURED_MASK_ALGORITHM or default_algorithm == algorithm]
+
+
 def restore_algorithm_state(client: GatewayClient, baseline_id: str, original: dict[str, object],
                           policies: list[str], service_id: int | None, tasks: list[int],
                           enrollment_id: str, timeout: float, expected_version: int) -> None:
@@ -1061,7 +1067,7 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
             if positive_int(current["version"], "Baseline version") != baseline_version:
                 raise SuiteError("phone Baseline changed outside this run")
             body = dict(original, version=positive_int(current["version"], "Baseline version"), effect="mask", algorithm=algorithm, parameters=parameters,
-                        allowed_algorithms=[case[0] for case in ALGORITHM_CASES] if index == 0 else [CONSTANT_ALGORITHM, SM3_ALGORITHM], invalid_value_effect="suppress", enabled=True)
+                        allowed_algorithms=permitted_algorithms(algorithm), invalid_value_effect="suppress", enabled=True)
             updated = _object(client.request("PUT", f"/api/v1/security/protection-baselines/{baseline_id}", (200,), body).payload, "updated phone Baseline")
             baseline_version = positive_int(updated["version"], "Baseline version")
             wait_for_algorithm_projections(client, enrollment_id, deadline)
@@ -1196,7 +1202,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
             if positive_int(current["version"], "Baseline version") != version:
                 raise SuiteError("phone Baseline changed outside this run")
             body = dict(original, version=version, effect="mask", algorithm=algorithm,
-                        parameters=parameters, allowed_algorithms=[case[0] for case in ALGORITHM_CASES],
+                        parameters=parameters, allowed_algorithms=permitted_algorithms(algorithm),
                         invalid_value_effect="suppress", enabled=True)
             version = positive_int(_object(client.request("PUT", path, (200,), body).payload, "updated Baseline")["version"], "Baseline version")
             wait_for_algorithm_projections(client, enrollment_id, deadline)

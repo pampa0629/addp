@@ -84,6 +84,7 @@ class SpatialClient:
         self.fail_owner = fail_owner
         self.owner_calls = []
         self.search_calls = []
+        self.baseline_updates = []
         self.assessments = [{"id": field, "component_key": field, "current": {
             "conclusion": "sensitive", "sensitive_data_type_id": "11", "security_grade_id": "21"
         }} for field in ONLINE.SPATIAL_FIELDS[1:4]]
@@ -125,6 +126,10 @@ class SpatialClient:
         if path == "/api/v1/security/protection-baselines/41":
             if method == "PUT":
                 assert body["version"] == int(self.baseline["version"])
+                if (ONLINE.STRUCTURED_MASK_ALGORITHM in body["allowed_algorithms"]
+                        and body["algorithm"] != ONLINE.STRUCTURED_MASK_ALGORITHM):
+                    raise ONLINE.SuiteError("prefix limits require prefix baseline")
+                self.baseline_updates.append(copy.deepcopy(body))
                 self.baseline.update(copy.deepcopy(body), version=str(body["version"] + 1))
                 for key in ("sensitive_data_type_id", "security_grade_id"):
                     self.baseline[key] = str(self.baseline[key])
@@ -295,6 +300,12 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertEqual(restart["protected_preview"]["rows"], 7)
         self.assertTrue(report["cases"][0]["baseline_after_policy_revocation"]["sparse_objects_verified"])
         self.assertTrue(all(case["manager"]["null_values_preserved"] for case in report["cases"]))
+        self.assertEqual([body["allowed_algorithms"] for body in client.baseline_updates], [
+            [ONLINE.STRUCTURED_MASK_ALGORITHM, ONLINE.CONSTANT_ALGORITHM, ONLINE.SM3_ALGORITHM],
+            [ONLINE.CONSTANT_ALGORITHM, ONLINE.SM3_ALGORITHM],
+            [ONLINE.CONSTANT_ALGORITHM, ONLINE.SM3_ALGORITHM],
+            client.original["allowed_algorithms"],
+        ])
         self.assertEqual(client.policies[0]["state"], "revoked")
         self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
                          {k: v for k, v in client.original.items() if k != "version"})
