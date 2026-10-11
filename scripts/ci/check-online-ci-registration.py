@@ -666,7 +666,8 @@ def validate_security_mysql_owner_protection_profile(
                      "wait_for_technical_field(", '"technical_field_search"', '"manager.search.execute"',
                      "require_hosted_restart(", "exercise_restart_recovery(", "verify_restarted_process(",
                      '"scripts/dev/restart.sh", "-security", "-manager"', '"verified_before_rescan"',
-                     '"addp.security-mysql-owner-protection-online/v5"'):
+                     "verify_unprotected_mongodb_derived_query(", "verify_mongodb_query_boundaries(",
+                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v6"'):
         if fragment not in owner:
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")

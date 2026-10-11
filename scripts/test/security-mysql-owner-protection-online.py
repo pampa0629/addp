@@ -581,10 +581,10 @@ def assert_email_suppressed(
     return {"rows": len(rows), "email_field_present": False}
 
 
-def develop_rows(
+def develop_execution(
     client: GatewayClient, engine_id: int, source_locator: str, deadline: float,
-    query: str = "SELECT id, customer_code, email FROM customers ORDER BY id",
-) -> list[dict[str, object]]:
+    query: str, query_type: str,
+) -> dict[str, object]:
     started = _object(
         client.request(
             "POST",
@@ -595,7 +595,7 @@ def develop_rows(
                 "trigger_type": "manual",
                 "content": {
                     "query": query,
-                    "query_type": "sql",
+                    "query_type": query_type,
                     "target_locator": source_locator,
                     "query_parameters": [],
                 },
@@ -619,19 +619,24 @@ def develop_rows(
             "Develop execution",
         )
         status = execution.get("status")
-        if status == "success":
-            metadata = _object(execution.get("metadata"), "Develop execution metadata")
-            result = _object(metadata.get("result"), "Develop query result")
-            summary = _object(result.get("summary"), "Develop query result summary")
-            return [
-                row
-                for row in _array(summary.get("preview_rows"), "Develop preview rows")
-                if isinstance(row, dict)
-            ]
         if status in TERMINAL_STATUSES:
-            raise SuiteError(f"Develop execution ended with status {status}")
+            return execution
         time.sleep(1)
     raise SuiteError("Develop execution did not finish before the deadline")
+
+
+def develop_rows(
+    client: GatewayClient, engine_id: int, source_locator: str, deadline: float,
+    query: str = "SELECT id, customer_code, email FROM customers ORDER BY id",
+    query_type: str = "sql",
+) -> list[dict[str, object]]:
+    execution = develop_execution(client, engine_id, source_locator, deadline, query, query_type)
+    if execution.get("status") != "success":
+        raise SuiteError(f"Develop execution ended with status {execution.get('status')}")
+    metadata = _object(execution.get("metadata"), "Develop execution metadata")
+    result = _object(metadata.get("result"), "Develop query result")
+    summary = _object(result.get("summary"), "Develop query result summary")
+    return [row for row in _array(summary.get("preview_rows"), "Develop preview rows") if isinstance(row, dict)]
 
 
 def service_payload(name: str, engine_id: int, locator: str, fields: list[str] | None = None) -> dict[str, object]:
@@ -1157,11 +1162,38 @@ def assert_mongodb_rows(rows: list[dict[str, object]], owner: str,
             "null_values_preserved": True, "sibling_attributes_preserved": True}
 
 
+MONGODB_FIND_QUERY = '{"find":"Persons","filter":{}}'
+MONGODB_COUNT_QUERY = '{"count":"Persons","query":{}}'
+MONGODB_DERIVED_QUERY = '{"aggregate":"Persons","pipeline":[{"$project":{"_id":1,"phone":{"$concat":["$userInfo.phone",""]}}}]}'
+
+
+def verify_unprotected_mongodb_derived_query(client: GatewayClient, engine_id: int,
+                                            locator: str, deadline: float) -> dict[str, object]:
+    rows = develop_rows(client, engine_id, locator, deadline, MONGODB_DERIVED_QUERY, "mql")
+    expected = [{"_id": key, "phone": SOURCE_VALUES.get(key)} for key in "1234567"]
+    if sorted(rows, key=lambda row: str(row.get("_id"))) != expected:
+        raise SuiteError("unprotected MongoDB derived query differs from fixture source values")
+    return {"rows": 7, "source_values_verified": True}
+
+
+def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
+                                   locator: str, deadline: float) -> dict[str, object]:
+    rows = develop_rows(client, engine_id, locator, deadline, MONGODB_COUNT_QUERY, "mql")
+    if rows != [{"count": 7}]:
+        raise SuiteError("MongoDB count must return seven without field values")
+    execution = develop_execution(client, engine_id, locator, deadline, MONGODB_DERIVED_QUERY, "mql")
+    metadata = _object(execution.get("metadata") or {}, "denied Develop metadata")
+    if execution.get("status") != "failed" or "result" in metadata:
+        raise SuiteError("protected MongoDB derived output must fail without returning a result")
+    return {"count": 7, "derived_output_denied": True, "denied_result_absent": True}
+
+
 def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
                                deadline: float, timeout: float) -> dict[str, object]:
     scan = wait_for_scan(client, engine_id, deadline)
     source = find_item(client, engine_id, MONGODB_SOURCE, "collection")
     locator = build_item_locator(engine_id, source)
+    unprotected_derived = verify_unprotected_mongodb_derived_query(client, engine_id, locator, deadline)
     enrollment_id, initialized = ensure_enrollment(client, engine_id, MONGODB_SOURCE, locator)
     assessment_id, confirmed, finding_id = ensure_detected_assessment(
         client, enrollment_id, deadline, MONGODB_FIELD, PHONE_DETECTOR)
@@ -1210,6 +1242,9 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
             _, rows = preview_rows(client, locator)
             case = {"algorithm": algorithm, "manager": assert_mongodb_rows(rows, "manager", expected),
                     "technical_field_search": wait_for_technical_field(client, engine_id, source, MONGODB_FIELD, min(deadline, time.monotonic() + 60))}
+            case["query_boundaries"] = verify_mongodb_query_boundaries(client, engine_id, locator, deadline)
+            case["develop"] = assert_mongodb_rows(
+                develop_rows(client, engine_id, locator, deadline, MONGODB_FIND_QUERY, "mql"), "develop", expected)
             if index == 0:
                 policy = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), {
                     "assessment_id": assessment_id, "consumer_owner": "manager", "action": "preview",
@@ -1220,6 +1255,9 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
                 wait_for_algorithm_projections(client, enrollment_id, deadline)
                 _, rows = preview_rows(client, locator)
                 case["independent_manager_policy"] = assert_mongodb_rows(rows, "manager independent Policy", SM3_VALUES)
+                case["develop_during_manager_policy"] = assert_mongodb_rows(
+                    develop_rows(client, engine_id, locator, deadline, MONGODB_FIND_QUERY, "mql"),
+                    "develop during Manager Policy", expected)
                 case["restart_recovery"] = exercise_restart_recovery(client, engine_id, source, enrollment_id,
                     baseline_id, policies, SM3_VALUES, deadline, field_name=MONGODB_FIELD, assert_rows=assert_mongodb_rows)
                 policy_path = f"/api/v1/security/protection-policies/{policies[0]}"
@@ -1240,6 +1278,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int,
     if scenario_error:
         raise scenario_error
     return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD,
+            "unprotected_derived_query": unprotected_derived,
             "component": component,
             "scan_execution_id": scan, "enrollment_initialized": initialized,
             "finding_id": finding_id, "assessment_id": assessment_id, "finding_confirmed": confirmed,
@@ -1330,7 +1369,7 @@ def run_scenario(
             raise SuiteError("Transfer target lost non-sensitive customer fields")
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v5",
+            "schema_version": "addp.security-mysql-owner-protection-online/v6",
             "result": "passed",
             "identity": identity,
             "governance": governance,

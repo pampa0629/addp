@@ -208,6 +208,10 @@ class MongoClient(SpatialClient):
                           "path": [{"name": "userInfo", "container": "object"}, {"name": "phone", "container": "scalar"}],
                           "schema_fingerprint": "sha256:phone-schema"}
         self.assessment_reads = 0
+        self.query_requests = []
+        self.query_executions = {}
+        self.allow_protected_derived = False
+        self.fail_unprotected_derived = False
 
     def rows(self, owner):
         self.preview_calls += 1
@@ -218,7 +222,9 @@ class MongoClient(SpatialClient):
             ONLINE.CONSTANT_ALGORITHM: {"1": "已脱敏", "2": "已脱敏", "3": "已脱敏", "4": None, "5": "已脱敏"},
             ONLINE.SM3_ALGORITHM: dict(ONLINE.SM3_VALUES),
         }
-        algorithm = next((policy["algorithm"] for policy in self.policies if policy["state"] == "active"), self.baseline["algorithm"])
+        algorithm = next((policy["algorithm"] for policy in self.policies
+                          if policy["state"] == "active" and policy["consumer_owner"] == owner),
+                         self.baseline["algorithm"])
         rows = []
         for key in "1234567":
             row = {"_id": key, "displayName": "person-" + key}
@@ -234,6 +240,31 @@ class MongoClient(SpatialClient):
 
     def request(self, method, path, expected, body=None):
         response = ONLINE.SUPPORT.Response
+        if method == "POST" and path == "/api/v1/develop/executions":
+            assert body["content"]["query_type"] == "mql"
+            assert body["execution_config"]["engine_id"] == 29
+            assert "/path/Outdoor/Persons?" in body["content"]["target_locator"]
+            query = json.loads(body["content"]["query"])
+            self.query_requests.append(query)
+            execution_id = "mongo-query-" + str(len(self.query_requests))
+            denied = "aggregate" in query and ((self.confirmed and not self.allow_protected_derived)
+                                               or (not self.confirmed and self.fail_unprotected_derived))
+            if denied:
+                execution = {"status": "failed", "metadata": {}}
+            else:
+                if "find" in query:
+                    rows = self.rows("develop")
+                elif "count" in query:
+                    rows = [{"count": 7}]
+                else:
+                    assert query == {"aggregate": "Persons", "pipeline": [{"$project": {
+                        "_id": 1, "phone": {"$concat": ["$userInfo.phone", ""]}}}]}
+                    rows = [{"_id": key, "phone": ONLINE.SOURCE_VALUES.get(key)} for key in "1234567"]
+                execution = {"status": "success", "metadata": {"result": {"summary": {"preview_rows": rows}}}}
+            self.query_executions[execution_id] = execution
+            return response(200, {"execution_id": execution_id})
+        if path.startswith("/api/v1/develop/executions/mongo-query-"):
+            return response(200, self.query_executions[path.rsplit("/", 1)[1]])
         if path == "/api/v1/meta/engines/29/items":
             return response(200, [copy.deepcopy(self.item)])
         if path.startswith("/api/v1/security/protection-enrollments?"):
@@ -300,6 +331,14 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertEqual(restart["protected_preview"]["rows"], 7)
         self.assertTrue(report["cases"][0]["baseline_after_policy_revocation"]["sparse_objects_verified"])
         self.assertTrue(all(case["manager"]["null_values_preserved"] for case in report["cases"]))
+        self.assertTrue(report["unprotected_derived_query"]["source_values_verified"])
+        self.assertTrue(all(case["develop"]["sparse_objects_verified"] for case in report["cases"]))
+        self.assertEqual([case["query_boundaries"]["count"] for case in report["cases"]], [7, 7, 7])
+        self.assertTrue(all(case["query_boundaries"]["derived_output_denied"] for case in report["cases"]))
+        self.assertTrue(report["cases"][0]["develop_during_manager_policy"]["null_values_preserved"])
+        self.assertEqual(sum("find" in query for query in client.query_requests), 4)
+        self.assertEqual(sum("count" in query for query in client.query_requests), 3)
+        self.assertEqual(sum("aggregate" in query for query in client.query_requests), 4)
         self.assertEqual([body["allowed_algorithms"] for body in client.baseline_updates], [
             [ONLINE.STRUCTURED_MASK_ALGORITHM, ONLINE.CONSTANT_ALGORITHM, ONLINE.SM3_ALGORITHM],
             [ONLINE.CONSTANT_ALGORITHM, ONLINE.SM3_ALGORITHM],
@@ -307,6 +346,23 @@ class MongoAlgorithmTest(unittest.TestCase):
             client.original["allowed_algorithms"],
         ])
         self.assertEqual(client.policies[0]["state"], "revoked")
+        self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
+                         {k: v for k, v in client.original.items() if k != "version"})
+
+    def test_invalid_unprotected_control_cannot_count_as_protection_denial(self):
+        client = MongoClient()
+        client.fail_unprotected_derived = True
+        with self.assertRaisesRegex(ONLINE.SuiteError, "Develop execution ended"):
+            self.run_mongo(client)
+        self.assertFalse(client.confirmed)
+        self.assertEqual(client.baseline, client.original)
+
+    def test_protected_derived_output_must_be_denied_and_state_restored(self):
+        client = MongoClient()
+        client.allow_protected_derived = True
+        with self.assertRaisesRegex(ONLINE.SuiteError, "derived output"):
+            self.run_mongo(client)
+        self.assertFalse(any(policy["state"] == "active" for policy in client.policies))
         self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
                          {k: v for k, v in client.original.items() if k != "version"})
 
