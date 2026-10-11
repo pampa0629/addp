@@ -2,6 +2,7 @@
 
 import copy
 import hashlib
+import re
 import unittest
 import uuid
 from importlib import import_module
@@ -54,6 +55,9 @@ class Gateway:
         if method == "POST":
             if self.fault == "lost_create":
                 raise SUITE.SuiteError("transport failed")
+            if path in {SUITE.QUALITY + "/rules", SUITE.QUALITY + "/plans"}:
+                if not re.fullmatch(r"[a-z][a-z0-9_]{0,99}", body["code"]):
+                    raise SUITE.SuiteError("quality definition returned HTTP 400 (invalid_request)")
             self.next_id += 1
             item = {**copy.deepcopy(body), "id": self.next_id, "tenant_id": 2, "version": 1}
             self.objects[f"{path}/{self.next_id}"] = item
@@ -85,7 +89,7 @@ class Gateway:
         after = self.objects[f"{SUITE.QUALITY}/plans/{after_step['task_id']}"]
         check = plan["check_items"][0]
         passed = check["revision_no"] == 2
-        parent_id, child_id = str(uuid.uuid4()), str(uuid.uuid4())
+        parent_id, child_id, upstream_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
         status = "success" if passed else "failed"
         key = hashlib.sha256(fixture["locator"].encode()).hexdigest()
         rule_result = {"rule_key": check["rule_key"], "revision_no": check["revision_no"], "passed": passed,
@@ -138,8 +142,17 @@ class Gateway:
         if self.fault == "overview_mixed" and passed:
             for scope in self.scopes.values():
                 scope["status"] = "success"
-        steps = {"upstream": {"status": "success", "result": {"outputs": {"target_locator": fixture["locator"]}}},
-                 "quality": {"status": status}}
+        self.history[f"/api/v1/monitor/executions/by-execution-id/{upstream_id}"] = {
+            "execution_id": upstream_id, "module": "model", "task_type": "logical_table_materialization",
+            "source_task_id": str(fixture["logical_table_id"]), "parent_execution_id": parent_id, "status": "success"}
+        if self.fault == "wrong_model_child":
+            self.history[f"/api/v1/monitor/executions/by-execution-id/{upstream_id}"]["source_task_id"] = "999"
+        steps = {"upstream": {"status": "success", "result": {"execution_id": upstream_id}},
+                 "quality": {"status": status, "result": {"execution_id": child_id}}}
+        if self.fault == "private_parent_output":
+            steps["upstream"]["result"]["outputs"] = {"target_locator": fixture["locator"]}
+        if self.fault == "wrong_quality_child":
+            steps["quality"]["result"]["execution_id"] = str(uuid.uuid4())
         if passed or self.fault == "no_block":
             steps["after"] = {"status": "success"}
             after["last_execution_id"] = str(uuid.uuid4())
@@ -166,10 +179,37 @@ class QualityOnlineTest(unittest.TestCase):
         self.assertEqual(client.issues, {})
         self.assertEqual([p for m, p, _ in client.calls if m == "DELETE"], list(reversed(report["resources"])))
 
+    def test_hosted_run_ids_produce_valid_distinct_quality_codes(self):
+        codes = []
+        for run_id in ("run-6043e1a748a9429f84a2ef1eeb294b42", "Run.Test_2", "a" * 64):
+            client, report = Gateway(), {}
+            SUITE.run_suite(client, 2, run_id, FIXTURES, report)
+            self.assertEqual(report["run_id"], run_id)
+            created = [body["code"] for method, path, body in client.calls
+                       if method == "POST" and path in {SUITE.QUALITY + "/rules", SUITE.QUALITY + "/plans"}]
+            self.assertEqual(len(set(created)), 4)
+            codes.extend(created)
+        self.assertEqual(len(set(codes)), 12)
+
+    def test_cleanup_does_not_hide_the_primary_request_failure(self):
+        class Rejected(Gateway):
+            def dispatch(self, method, path, body):
+                if method == "POST":
+                    raise SUITE.SuiteError("POST /api/v1/quality/rules returned HTTP 400 (invalid_request)")
+                return super().dispatch(method, path, body)
+
+        report = {}
+        with self.assertRaisesRegex(SUITE.SuiteError, "HTTP 400"):
+            SUITE.run_suite(Rejected(), 2, "valid_run", FIXTURES, report)
+        self.assertTrue(report["uncertain_mutation"])
+        self.assertEqual(report["cleanup"], "failed")
+        self.assertNotIn("temporary_residual_resources", report)
+
     def test_regressions_fail_closed_and_cleanup(self):
         for fault in ("wrong_count", "default_fallback", "runtime_error", "lineage", "mutated_defaults",
                       "cross_resolve", "overview_mixed", "duplicate_issue", "no_block",
-                      "missing_event", "private_event", "business_event", "wrong_attempt"):
+                      "missing_event", "private_event", "business_event", "wrong_attempt",
+                      "wrong_model_child", "wrong_quality_child"):
             with self.subTest(fault=fault):
                 client, report = Gateway(fault), {}
                 with self.assertRaises(SUITE.SuiteError):
@@ -190,7 +230,7 @@ class QualityOnlineTest(unittest.TestCase):
     def test_uncertain_mutations_do_not_race_cleanup_or_claim_zero_residue(self):
         for fault in ("lost_create", "lost_enqueue"):
             client, report = Gateway(fault), {}
-            with self.subTest(fault=fault), self.assertRaisesRegex(SUITE.SuiteError, "uncertain"):
+            with self.subTest(fault=fault), self.assertRaisesRegex(SUITE.SuiteError, "transport failed"):
                 SUITE.run_suite(client, 2, "run-unit", FIXTURES, report)
             self.assertTrue(report["uncertain_mutation"])
             self.assertEqual(report["cleanup"], "failed")
@@ -210,11 +250,20 @@ class QualityOnlineTest(unittest.TestCase):
 
     def test_active_child_prevents_definition_deletion(self):
         client, report = Gateway("active_child"), {}
-        with self.assertRaisesRegex(SUITE.SuiteError, "child still active"):
+        with self.assertRaisesRegex(SUITE.SuiteError, "quality status") as caught:
             SUITE.run_suite(client, 2, "run-unit", FIXTURES, report)
+        self.assertIn("child still active", str(caught.exception.__cause__))
         self.assertEqual(report["cleanup"], "failed")
         self.assertFalse(any(m == "DELETE" for m, _, _ in client.calls))
         self.assertNotIn("temporary_residual_resources", report)
+
+    def test_parent_business_output_is_rejected_before_result_consumption(self):
+        client, report = Gateway("private_parent_output"), {}
+        with self.assertRaisesRegex(SUITE.SuiteError, "child business results"):
+            SUITE.run_suite(client, 2, "run-unit", FIXTURES, report)
+        self.assertEqual(report["cleanup"], "failed")
+        self.assertEqual(report["observations"], [])
+        self.assertFalse(any(method == "DELETE" for method, _, _ in client.calls))
 
     def test_polling_has_deadline_and_rejects_unknown_status(self):
         client = Gateway()

@@ -58,6 +58,7 @@ Quality migration 14 增加问题目标范围，使用最后观测执行的完�
 - make test-quality-frontend：路由、页面端到端、构建。
 - make test-online ONLINE_SUITE=quality-dynamic-binding：GitHub Hosted 一次性 T4 部署的 Model → Quality 上游表绑定、失败阻断、工单去重、跨目标隔离及 Monitor 安全事件验收，并验证 Monitor-only 用户无法直读 Quality 或 Monitor 事件、删除方案后授权历史仍可读。准备和退出由 scripts/test/online-hosted-quality-gate.sh 统一负责；使用独立的普通执行身份、夹具准备身份及引擎注册身份，通过正式 API 创建和审批两个 Model 逻辑表并物化目标，再在当次 PostgreSQL 写入固定数据。套件运行期间只读取这些夹具；退出销毁本轮应用、业务源、Infra 和凭据，清理失败即门禁失败。配置及证据边界见 scripts/README.md；不得复用个人管理员会话。只登记手工 CI，首次真实通过前不加入夜间调度。
 - make test-quality-online-runner：上述 T4 脚本的确定性反例、宿主部署 profile、CI 登记和身份夹具检查；验证准备、执行及 Monitor-only 三类身份通过权限为 0600 的私有环境文件正确导出给子进程，不能代替真实在线验收。该入口也由 make test-online-runner 聚合执行。
+- T4 的 Run ID 保留在报告与资源名称，规则和方案编码使用其 SHA-256 摘要，遵守 Quality 的小写字母、数字及下划线契约。父编排只读取安全步骤及子 execution UUID；Model 子执行经 Monitor/Model Owner 独立裁决，实际动态目标由 Quality 专业入口的冻结绑定和结果校验，不从父步骤读取子任务 outputs。清理失败保留首个请求或断言错误，未知提交仍禁止竞态删除。提交 `c001f8814` 的 [Hosted T4 38131938772](https://github.com/pampa0629/addp/actions/runs/38131938772) 夹具准备通过，首次创建规则因编码非法返回 400，业务检查未运行；整套部署最终销毁并确认 Infra 零残留，该轮不计为业务验收通过。
 - System IAM migration 测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现；单测筛选 --test quality-plans（含规则、方案及 Standard/Quality 域引用服务身份授权刷新）。
 - release-and-t2-gates.yml 注册 Quality PG 门禁，changed-gate 将 Orchestrator 变更映射到该门禁。
 - 本地仅用 addp_test 和 addp_iam_test；不为测试创建单次 database。

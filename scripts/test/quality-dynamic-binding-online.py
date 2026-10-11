@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -15,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, unquote
 
 API = import_module("scripts.utils.online-api")
+ORCHESTRATOR = import_module("scripts.test.orchestrator-execution-online")
 SuiteError = API.SuiteError
 SUITE = "quality-dynamic-binding"
 QUALITY = "/api/v1/quality"
@@ -70,6 +72,7 @@ def wait_execution(client, execution_id, timeout=120):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         item = client.request("GET", f"{ORCH}/executions/{execution_id}", (200,)).payload
+        ORCHESTRATOR.assert_owner_projection(item)
         require(item.get("execution_id") == execution_id, "execution identity changed")
         if item.get("status") in TERMINAL:
             return item
@@ -141,6 +144,8 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
                   checks=[], observations=[], cleanup="not_needed", uncertain_mutation=False)
     resources, executions = report["resources"], report["executions"]
     baselines = []
+    # Run IDs permit punctuation and capitals; Quality definition codes do not.
+    code_suffix = hashlib.sha256(run_id.encode()).hexdigest()
     for fixture in fixtures:
         table_id = fixture["logical_table_id"]
         table = client.request("GET", f"{MODEL}/{table_id}", (200,)).payload
@@ -172,10 +177,10 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
         return item
 
     try:
-        rule_body = {"code": f"online_quality_{run_id}", "name": f"Online gate {run_id}",
+        rule_body = {"code": f"online_quality_{code_suffix}", "name": f"Online gate {run_id}",
                      "type": "row_count", "params": {"min": 0, "max": 0}}
         rule = create(QUALITY + "/rules", rule_body)
-        passing_rule = create(QUALITY + "/rules", {**rule_body, "code": f"online_after_{run_id}",
+        passing_rule = create(QUALITY + "/rules", {**rule_body, "code": f"online_after_{code_suffix}",
                                                    "params": {"min": 1}})
         rule_key = str(uuid.uuid4())
 
@@ -185,9 +190,9 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
                     "check_items": [{"rule_key": key, "rule_id": rule_id, "revision_no": 1,
                                      "bindings": {"table": "target"}, "severity": "error", "disabled": False}]}
 
-        body = plan_body(f"online_gate_{run_id}", rule["id"], rule_key)
+        body = plan_body(f"online_gate_{code_suffix}", rule["id"], rule_key)
         plan = create(QUALITY + "/plans", body)
-        after = create(QUALITY + "/plans", plan_body(f"online_after_{run_id}", passing_rule["id"], str(uuid.uuid4())))
+        after = create(QUALITY + "/plans", plan_body(f"online_after_plan_{code_suffix}", passing_rule["id"], str(uuid.uuid4())))
         plan_path, after_path = f"{QUALITY}/plans/{plan['id']}", f"{QUALITY}/plans/{after['id']}"
         orchestrations = []
         for index, fixture in enumerate(fixtures):
@@ -219,15 +224,24 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
             steps = parent.get("metadata", {}).get("step_results", {})
             require(set(steps) == ({"upstream", "quality", "after"} if passed else {"upstream", "quality"}),
                     "downstream step ran despite failed gate or was missing after recovery")
-            require(steps["upstream"].get("status") == "success"
-                    and steps["upstream"].get("result", {}).get("outputs", {}).get("target_locator") == fixtures[index]["locator"],
-                    "Model output did not provide the expected table")
+            require(steps["upstream"].get("status") == "success", "Model step did not succeed")
+            upstream_id = steps["upstream"].get("result", {}).get("execution_id")
+            require(bool(upstream_id), "Model step has no child execution reference")
+            upstream = client.request("GET", f"/api/v1/monitor/executions/by-execution-id/{upstream_id}", (200,)).payload
+            ORCHESTRATOR.assert_safe(upstream)
+            require(upstream.get("execution_id") == upstream_id and upstream.get("module") == "model"
+                    and upstream.get("task_type") == "logical_table_materialization"
+                    and upstream.get("source_task_id") == str(fixtures[index]["logical_table_id"])
+                    and upstream.get("parent_execution_id") == execution_id and upstream.get("status") == "success",
+                    "Model child execution identity, lineage or status mismatch")
             require(steps["quality"].get("status") == expected_status, "quality step status mismatch")
             current = client.request("GET", plan_path, (200,)).payload
             require(current.get("table_bindings") == body["table_bindings"] and current.get("version") == plan["version"],
                     "runtime binding changed the saved plan")
             child_id = current.get("last_execution_id")
             require(isinstance(child_id, str) and child_id, "quality execution was not recorded")
+            require(steps["quality"].get("result", {}).get("execution_id") == child_id,
+                    "Quality step reference does not match its Owner execution")
             child = client.request("GET", f"{QUALITY}/executions/{child_id}", (200,)).payload
             key = assert_quality(child, fixtures[index], execution_id, passed, revision, plan["version"], rule_key)
             event_count = assert_quality_events(client, child_id, passed)
@@ -294,6 +308,7 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
         report["checks"].extend(["explicit_revision_upgrade", "independent_recovery", "fixture_and_defaults_unchanged"])
         report["result"] = "passed"
     finally:
+        primary_error = sys.exception()
         # A pending/lost enqueue could still own these definitions: do not race deletion.
         try:
             require(not report["uncertain_mutation"], "mutation outcome uncertain; inspect Run ID resources")
@@ -324,9 +339,11 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
                     "deleted plan left residual issues")
             report["cleanup"] = "passed"
             report["temporary_residual_resources"] = 0
-        except Exception:
+        except Exception as cleanup_error:
             report["cleanup"] = "failed"
             report["result"] = "failed"
+            if primary_error is not None:
+                raise primary_error from cleanup_error
             raise
         finally:
             checkpoint()
