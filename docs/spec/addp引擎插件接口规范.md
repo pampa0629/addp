@@ -309,6 +309,8 @@ type StoreProvider interface {
 
 统一编码由 `common/engine/plugins/shared` 独占实现。PostgreSQL（含协议复用 Provider）、MySQL、TiDB、OceanBase、Oracle 与 Doris 的表格写入使用该入口；Oracle 的 INSERT session 与分区变更 MERGE 共用此编码，编码后的 SQL NULL 仍须遵守字段非空约束。Doris 的 `json` 沿用现有 `STRING` 映射，结构校验依据同一建表映射比较物理类型，不拿逻辑 `json` 与物理 `string` 直接比较；session 与批量 INSERT 在当前批次第一条 SQL 前完成全部值编码与校验。其 chunk 自动提交，`Abort` 不撤销此前提交的 chunk 或批次，数据库执行失败也不保证整批回滚。其他已有 Provider 必须按同一契约收敛，不能以仅接受预编码字符串作为最终实现。
 
+PostgreSQL 原生 `array` 沿用 `TEXT[]` 物理映射，仅承诺一维字符串及 NULL 元素，不自动转换为 JSON。输入允许 Go 字符串切片／数组、只含字符串与 nil 的 `[]interface{}`，以及读取链路返回的 PostgreSQL 数组文本（`string`／`[]byte`）；数组文本必须先解析并校验，再绑定原文以保留 PostgreSQL 对未引用空白、转义和 NULL token 的原生语义，拒绝多维、显式维度／下界前缀和非法文本。nil 容器为 SQL NULL，非 nil 空容器为非 NULL 空数组；NULL 元素与字符串 `"NULL"`、空字符串分别保留。文本必须是合法 UTF-8 且不含 NUL。对象、嵌套容器、数字、布尔和其他元素不得隐式字符串化，错误须定位到字段及可确定的元素下标。`FieldInfo.ElementType` 允许省略或为 `string`；省略表示运行时逐值校验，不证明来源元素类型已知，明确的其他元素类型在 DDL 前拒绝。PG Catalog 声明的原生数组元素类型必须保留到现有 `FieldInfo.ElementType`，避免原生数组文本掩盖数字或对象元素；不能把带长度／精度修饰的数组误认为标量。已有目标列必须为 `text[]`，不能仅因都属于 `array` 就接受其他元素类型。需要保存对象数组完整结构时必须由配置明确选择 `json`，Provider 不替用户改类型。此边界不声明其他原生数组元素类型或维度支持。
+
 动态记录读取的强类型契约为：
 
 ```go

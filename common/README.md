@@ -16,7 +16,9 @@ Doris session 与批量 INSERT 使用共享 JSON 编码，JSON 字段沿用现�
 
 MySQL 可通过相同测试连接条件运行 `bash scripts/test/common-mysql-data-protection-gate.sh --test typed-write`，仅验证类型感知写入；默认入口仍运行完整门禁。
 
-只复验 PostgreSQL 类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。
+PostgreSQL 原生 `array` 保持 `TEXT[]`，支持一维字符串／NULL 元素，nil 容器为 SQL NULL、非 nil 空容器为空数组。Go 切片／数组及 PG 读取返回的数组文本在 Provider 内统一校验和编码；拒绝对象、嵌套数组、数字、布尔、非法 UTF-8／NUL，不隐式字符串化或改成 JSON。明确的非字符串 `ElementType` 在 DDL 前拒绝；未声明时逐值检查，不能据此证明源结构已知。PG 原生读取保留声明的数组元素类型，包含带长度／精度的数组，防止数组文本丢失类型证据；已有目标列严格匹配 `text[]`。
+
+只复验 PostgreSQL 类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`，同时验证真实 JSONB 与 TEXT[] 的 COPY session、批量 COPY、INSERT、upsert。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。
 
 ### client
 提供与其他服务交互的客户端：

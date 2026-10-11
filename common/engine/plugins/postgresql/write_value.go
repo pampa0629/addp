@@ -28,6 +28,9 @@ func postgresWriteValue(value interface{}, fieldType datatype.FieldType) (interf
 	if value == nil {
 		return nil, nil
 	}
+	if fieldType == datatype.FieldTypeArray {
+		return postgresArrayWriteValue(value)
+	}
 	if isPostgresGeometryField(fieldType) {
 		if v, ok := value.([]byte); ok {
 			if len(v) == 0 {

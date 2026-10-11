@@ -45,10 +45,10 @@ test_pattern='^(TestIntegrationPostgresCatalogPreciseReadOnly|TestIntegrationPos
 if [ "$test_group" = query-read-set ]; then
     test_pattern='^TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)'
 else
-    test_pattern="$test_pattern|^TestIntegrationPostgresTypedJSONWrites$"
+    test_pattern="$test_pattern|^TestIntegrationPostgresTyped(JSON|Array)Writes$"
 fi
 if [ "$test_group" = typed-write ]; then
-    test_pattern='^TestIntegrationPostgresTypedJSONWrites$'
+    test_pattern='^TestIntegrationPostgresTyped(JSON|Array)Writes$'
 fi
 ADDP_POSTGRES_INTEGRATION=1 \
     go test ./engine/plugins/postgresql \

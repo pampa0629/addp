@@ -158,6 +158,9 @@ func upsertPostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string,
 }
 
 func validatePostgresUpsertOptions(opts plugin.TableUpsertOptions) ([]string, error) {
+	if err := validatePostgresArrayFields(opts.Fields); err != nil {
+		return nil, err
+	}
 	keys := make([]string, 0, len(opts.Keys))
 	seen := map[string]bool{}
 	fieldSet := map[string]bool{}

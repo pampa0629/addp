@@ -20,6 +20,9 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
+	if err := validatePostgresArrayFields(batch.Fields); err != nil {
+		return err
+	}
 
 	schema, table, err := tablePathParts(path)
 	if err != nil {

@@ -25,7 +25,6 @@ func TestPostgresWriteValuePreservesOtherTypes(t *testing.T) {
 		{datatype.FieldTypeBytes, bytes, bytes},
 		{datatype.FieldTypeBytes, []byte{}, []byte{}},
 		{datatype.FieldTypeString, `{"a":1}`, `{"a":1}`},
-		{datatype.FieldTypeArray, []string{"a"}, []string{"a"}},
 		{datatype.FieldTypeUnknown, []interface{}{1}, []interface{}{1}},
 		{datatype.FieldTypeGeometry, bytes, "0001ff"},
 		{datatype.FieldTypeGeometry, []byte{}, nil},

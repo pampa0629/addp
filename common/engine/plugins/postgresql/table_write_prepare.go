@@ -12,6 +12,9 @@ import (
 )
 
 func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
+	if err := validatePostgresArrayFields(opts.Fields); err != nil {
+		return err
+	}
 	schema, table, err := tablePathParts(path)
 	if err != nil {
 		return err
@@ -179,6 +182,9 @@ func postgresMissingColumnCanBeAdded(field datatype.FieldInfo) bool {
 func postgresColumnCompatibleWithField(column postgresColumnInfo, field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
 	expected := datatype.ParseFieldType(string(field.Type))
 	existing := postgresCommonFieldType(column, postgresColumnNativeType(column))
+	if expected == datatype.FieldTypeArray {
+		return validatePostgresArrayFields([]datatype.FieldInfo{field}) == nil && strings.EqualFold(column.UDTName, "_text")
+	}
 	if expected == datatype.FieldTypeUnknown || expected == datatype.FieldTypeMixed {
 		return existing == datatype.FieldTypeString || existing == datatype.FieldTypeUnknown
 	}
@@ -255,6 +261,9 @@ func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.C
 }
 
 func postgresSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (string, error) {
+	if err := validatePostgresArrayFields([]datatype.FieldInfo{field}); err != nil {
+		return "", err
+	}
 	if sqlType := postgresSpatialTypeForField(field, spatialInfo); sqlType != "" {
 		return sqlType, nil
 	}

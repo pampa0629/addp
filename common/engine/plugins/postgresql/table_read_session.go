@@ -453,6 +453,14 @@ func postgresFieldInfoFromColumn(column postgresColumnInfo) datatype.FieldInfo {
 		PrimaryKey: column.PrimaryKey,
 		Comment:    column.Comment,
 	}
+	if field.Type == datatype.FieldTypeArray {
+		// Native catalog declarations are authoritative element facts. Preserve
+		// them even though lib/pq returns the row value as array text.
+		field.ElementType = datatype.FieldTypeUnknown
+		if mapper := format.GetTypeMapper("postgresql"); mapper != nil && strings.HasSuffix(nativeType, "[]") {
+			field.ElementType = mapper.ToCommon(strings.TrimSuffix(nativeType, "[]"))
+		}
+	}
 	if field.Type == datatype.FieldTypeDecimal && column.NumericPrecision.Valid && column.NumericPrecision.Int64 > 0 {
 		field.Precision = int(column.NumericPrecision.Int64)
 		if column.NumericScale.Valid && column.NumericScale.Int64 >= 0 {
@@ -481,6 +489,11 @@ func postgresColumnNativeType(column postgresColumnInfo) string {
 func postgresCommonFieldType(column postgresColumnInfo, nativeType string) datatype.FieldType {
 	if column.IsSpatial() {
 		return datatype.FieldTypeGeometry
+	}
+	// Check the array suffix before the scalar mapper strips modifiers such as
+	// varchar(20) or numeric(8,2); these remain arrays, not scalar fields.
+	if strings.HasSuffix(nativeType, "[]") {
+		return datatype.FieldTypeArray
 	}
 	if mapper := format.GetTypeMapper("postgresql"); mapper != nil {
 		if fieldType := mapper.ToCommon(nativeType); fieldType != "" && fieldType != datatype.FieldTypeUnknown {
