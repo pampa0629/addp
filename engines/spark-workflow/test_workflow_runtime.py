@@ -103,7 +103,7 @@ class WorkflowRuntimeTest(unittest.TestCase):
 
 
 class RuntimeEntryTest(unittest.TestCase):
-    def test_real_gunicorn_listener_serves_status_while_registration_waits(self):
+    def test_real_gunicorn_serves_health_and_status_during_workflow_and_registration(self):
         with socket.socket() as socket_fixture:
             socket_fixture.bind(('127.0.0.1', 0))
             port = socket_fixture.getsockname()[1]
@@ -123,9 +123,15 @@ def register():
         time.sleep(0.01)
     root.joinpath('registered').touch()
 api_server.register_to_system_with_retry = register
-api_server.execute_workflow = lambda *args: {
-    'status': 'success', 'final_result': {'rows': 20},
-    'all_results': {'a': {'rows': 20}}, 'task_order': ['a']}
+api_server.uuid.uuid4 = lambda: '00000000-0000-4000-8000-000000000008'
+def execute(*args):
+    root = Path(os.environ['ADDP_HTTP_TEST_ROOT'])
+    root.joinpath('workflow-started').touch()
+    while not root.joinpath('workflow-release').exists():
+        time.sleep(0.01)
+    return {'status': 'success', 'final_result': {'rows': 20},
+            'all_results': {'a': {'rows': 20}}, 'task_order': ['a']}
+api_server.execute_workflow = execute
 run()
 ''')
             environment = dict(os.environ, PORT=str(port), WORKFLOW_BIND_HOST='127.0.0.1', ADDP_HTTP_TEST_ROOT=directory,
@@ -153,8 +159,31 @@ run()
                             'runtime': {'tenant_id': 2, 'execution_authorization': {'id': 1, 'effects': ['read']}}}
                     request = Request(base + '/api/workflow', data=json.dumps(body).encode(),
                                       headers={'Content-Type': 'application/json'})
-                    with urlopen(request, timeout=3) as response:
-                        submitted = json.load(response)
+                    submissions, errors = [], []
+                    def submit():
+                        try:
+                            with urlopen(request, timeout=10) as response:
+                                submissions.append(json.load(response))
+                        except Exception as error:
+                            errors.append(error)
+                    submission = threading.Thread(target=submit)
+                    submission.start()
+                    while not (root / 'workflow-started').exists():
+                        self.assertLess(time.monotonic(), deadline, errors)
+                        time.sleep(0.01)
+                    for _ in range(8):
+                        with urlopen(base + '/health', timeout=1) as response:
+                            self.assertEqual(json.load(response)['status'], 'healthy')
+                        with urlopen(base + '/api/executions/00000000-0000-4000-8000-000000000008', timeout=1) as response:
+                            self.assertEqual(json.load(response)['status'], 'running')
+                    self.assertTrue(submission.is_alive())
+                    self.assertFalse((root / 'registered').exists())
+                    (root / 'workflow-release').touch()
+                    submission.join(timeout=3)
+                    self.assertFalse(submission.is_alive())
+                    self.assertEqual(errors, [])
+                    self.assertEqual(len(submissions), 1)
+                    submitted = submissions[0]
                     for _ in range(8):
                         with urlopen(base + '/api/executions/' + submitted['execution_id'], timeout=3) as response:
                             snapshot = json.load(response)
@@ -165,6 +194,7 @@ run()
                         self.assertLess(time.monotonic(), deadline)
                         time.sleep(0.01)
                 finally:
+                    (root / 'workflow-release').touch()
                     process.terminate()
                     try:
                         process.wait(timeout=5)
