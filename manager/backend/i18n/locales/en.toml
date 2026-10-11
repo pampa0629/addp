@@ -296,3 +296,6 @@ other = "The preview resource no longer exists"
 
 [manager.error.preview_unsupported]
 other = "This resource does not support preview"
+
+[manager.error.scan_encoding_invalid]
+other = "Encoding must be utf-8, gbk, utf-16le or utf-16be and is only supported for deep refresh of a single CSV/TSV item"

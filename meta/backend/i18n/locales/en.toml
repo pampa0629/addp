@@ -55,3 +55,6 @@ other = "Invalid scan request"
 other = "Metadata item snapshot not found"
 [meta.item_snapshot.read_failed]
 other = "Failed to read metadata item snapshot"
+
+[meta.scan.encoding_invalid]
+other = "Encoding must be UTF-8, GBK, UTF-16LE or UTF-16BE and is only allowed for a single CSV/TSV item deep refresh."

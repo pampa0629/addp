@@ -258,7 +258,7 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	tenantID := uint(8)
 	client = client.WithTenantID(tenantID)
 
-	result, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true})
+	result, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true, Encoding: "gbk"})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -270,6 +270,9 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	}
 	if gotHeader != "Bearer test-token" || gotLegacyHeaders {
 		t.Fatalf("auth headers = authorization:%q legacy:%t", gotHeader, gotLegacyHeaders)
+	}
+	if gotPayload["encoding"] != "gbk" {
+		t.Fatalf("encoding missing: %#v", gotPayload)
 	}
 	if gotPayload["engine_id"] != float64(26) || gotPayload["force"] != true {
 		t.Fatalf("payload = %#v", gotPayload)
@@ -337,5 +340,37 @@ func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
 	}
 	if item.Fingerprint != fingerprint {
 		t.Fatalf("Fingerprint = %q, want %q", item.Fingerprint, fingerprint)
+	}
+}
+
+func TestMetaClientRefreshItemPreservesErrorContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"localized message","error_code":"scan_encoding_invalid"}`))
+	}))
+	defer server.Close()
+	_, err := newTestMetaClient(server.URL).WithTenantID(8).RefreshItem(1, MetaScanOptions{Encoding: "bad"})
+	if status, ok := TenantAPIStatusCode(err); !ok || status != 400 {
+		t.Fatalf("status: %v", err)
+	}
+	if code, ok := TenantAPIErrorCode(err); !ok || code != "scan_encoding_invalid" {
+		t.Fatalf("code: %v", err)
+	}
+}
+func TestMetaClientManualItemRunCarriesEncoding(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if payload["encoding"] != "gbk" || payload["item_id"] != float64(1) {
+			t.Errorf("payload = %#v", payload)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"execution_id":"run-1"}`))
+	}))
+	defer server.Close()
+	if _, err := newTestMetaClient(server.URL).WithTenantID(8).CreateManualScanRun(MetaScanOptions{ItemID: 1, Encoding: "gbk"}); err != nil {
+		t.Fatal(err)
 	}
 }

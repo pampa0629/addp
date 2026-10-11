@@ -59,7 +59,7 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	metaClient := newServiceTestMetaClient(metaServer.URL)
 	service := &MetadataService{metaClient: metaClient, systemClient: newTestSystemClient(systemServer.URL)}
 	tenantID := uint(11)
-	resp, err := service.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831})
+	resp, err := service.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831, Encoding: "gbk"})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -72,7 +72,7 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	if gotAuthorization != "Bearer test-token" || gotLegacyHeaders {
 		t.Fatalf("auth headers = authorization:%q legacy:%t", gotAuthorization, gotLegacyHeaders)
 	}
-	if gotPayload["engine_id"] != float64(26) {
+	if gotPayload["engine_id"] != float64(26) || gotPayload["encoding"] != "gbk" {
 		t.Fatalf("payload = %#v", gotPayload)
 	}
 	if _, ok := gotPayload["item_id"]; ok {

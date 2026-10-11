@@ -538,6 +538,8 @@ engine 目标表示从该存储引擎的显性结构 root 开始扫描。node �
 
 ### 已入库 item 的刷新输入
 
+CSV / TSV 的单个已知 item 深度刷新允许请求体显式提交 `encoding`（`utf-8`、`gbk`、`utf-16le`、`utf-16be`）；此参数只适用于 `layout=single + data_type=table`，不接受目录、其他格式或 basic 扫描。编码随同一条 manual execution 冻结，Worker 通过共享格式 reader 解析，Unicode BOM 仍优先。只有解析与 item 持久化成功后，实际编码、表结构和索引摘要一起替换；失败保留旧摘要，不提前把用户输入写成技术事实。未提交编码的 item 刷新和目录重扫复用该 item 已成功扫描的 `format_info.<format>.encoding`；没有已知编码时保持 UTF-8 默认。Manager 在原有 item 刷新入口提供选择并重读成功后的事实，Transfer 复用同一摘要，不另设配置表、预览参数或持久配置路线。
+
 item 已入库后的 refresh 不等同于 catalog scan。它的输入必须来自已入库 data item 的标准事实，而不是只根据 `meta_item.item_type + full_name` 做路径猜测，也不得重新枚举同级资源来改变 item 边界。
 
 刷新输入规则：

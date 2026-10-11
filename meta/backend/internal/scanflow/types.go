@@ -28,6 +28,7 @@ type ProgressReporter interface {
 }
 
 type Options struct {
+	Encoding     string
 	Context      context.Context
 	EngineID     uint
 	TenantID     uint

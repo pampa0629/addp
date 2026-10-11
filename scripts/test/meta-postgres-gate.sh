@@ -25,6 +25,7 @@ cd "$ROOT_DIR/meta/backend"
 go test ./internal/repository -run '^(TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres|TestNodeStatisticsMigrationAgainstPostgres|TestNodeScanTimeMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
 go test ./internal/service -run '^(TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollectorRetriesUnresolvedTargetAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 go test ./internal/scanadapter -run '^(TestPrecise(Catalog|NativePostgres)ScanAgainstPostgres|TestPreciseContentStorageFactsAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
+go test ./internal/scanprocessor -run '^TestDelimitedEncodingRefreshAgainstPostgres$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 go test ./internal/api -run '^TestMetaScanExecutionReadAgainstPostgres$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/meta.log"; then
     echo "Meta PostgreSQL gate refuses skipped tests" >&2

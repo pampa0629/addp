@@ -30,6 +30,7 @@ type MetaClient struct {
 const MetaScanSourceDevelopProducedTarget = "develop.workflow.produced_target"
 
 type MetaScanOptions struct {
+	Encoding          string
 	ParentExecutionID string
 	EngineID          uint
 	NodeID            uint
@@ -673,6 +674,9 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 	} else {
 		scanReq["scan_depth"] = "deep"
 	}
+	if opts.Encoding != "" {
+		scanReq["encoding"] = opts.Encoding
+	}
 	if opts.Force {
 		scanReq["force"] = true
 	}
@@ -777,6 +781,10 @@ func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanRe
 		reqPayload["source"] = source
 	}
 
+	if opts.Encoding != "" {
+		reqPayload["encoding"] = opts.Encoding
+	}
+
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal refresh request: %w", err)
@@ -798,7 +806,11 @@ func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanRe
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		var response struct {
+			ErrorCode string `json:"error_code"`
+		}
+		_ = json.Unmarshal(bodyBytes, &response)
+		return nil, &TenantAPIError{Method: req.Method, Path: req.URL.Path, StatusCode: resp.StatusCode, ErrorCode: response.ErrorCode}
 	}
 
 	var result MetaScanResponse

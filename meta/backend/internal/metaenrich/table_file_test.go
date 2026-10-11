@@ -363,6 +363,7 @@ func TestEnrichSingleTableFileItemKeepsPlainJSONObjectAsDocument(t *testing.T) {
 		"plain.json",
 		size,
 		false,
+		"",
 		func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
@@ -401,6 +402,7 @@ func TestEnrichSingleTableFileItemRejectsMalformedJSONRecordCollection(t *testin
 		"broken.json",
 		size,
 		false,
+		"",
 		func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},

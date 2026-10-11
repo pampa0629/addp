@@ -58,6 +58,26 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		return nil, fmt.Errorf("解析扫描范围失败: %w", err)
 	}
 
+	req.Encoding = strings.ToLower(strings.TrimSpace(req.Encoding))
+	if req.Encoding != "" {
+		if req.ItemID == 0 || scope.ScanDepth != scanflow.ScanDepthDeep {
+			return nil, metaErrors.ErrInvalidScanEncoding
+		}
+		switch req.Encoding {
+		case "utf-8", "gbk", "utf-16le", "utf-16be":
+		default:
+			return nil, metaErrors.ErrInvalidScanEncoding
+		}
+		item, err := s.scanService.repo.GetItemByID(tenantID, req.ItemID)
+		if err != nil {
+			return nil, err
+		}
+		descriptor := scanflow.KnownItemDescriptorFromAttributes(item.Attributes)
+		if descriptor.Layout != "single" || descriptor.DataType != "table" || (descriptor.Format != "csv" && descriptor.Format != "tsv") {
+			return nil, metaErrors.ErrInvalidScanEncoding
+		}
+	}
+
 	resource, err := s.engineService.GetResourceByID(scope.EngineID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("验证资源失败: %w", err)
@@ -77,6 +97,10 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		scope.Source,
 		time.Now(),
 	)
+
+	if req.Encoding != "" {
+		execution.ExecutionConfig["encoding"] = req.Encoding
+	}
 
 	lockKey := ""
 	lockAcquired := false

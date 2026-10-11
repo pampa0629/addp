@@ -7,12 +7,14 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
 
 type ResourceAttributesInput struct {
+	Encoding             string
 	ContentReader        plugin.ContentReadableProvider
 	ConnInfo             plugin.ConnectionInfo
 	EngineID             uint
@@ -39,6 +41,9 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		return item, nil, err
 	}
 
+	if input.Encoding != "" && (item.Layout != format.LayoutSingle || item.DataType != datatype.Table || (item.Format != "csv" && item.Format != "tsv")) {
+		return item, nil, metaErrors.ErrInvalidScanEncoding
+	}
 	canReadContent := input.ContentReader != nil && input.EngineCatalogPathFor != nil && input.PhysicalPath != ""
 	if item.Layout == format.LayoutSingle && canReadContent {
 		beforeDataType := item.DataType
@@ -52,6 +57,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 			input.PhysicalPath,
 			input.SizeBytes,
 			input.IncludeAccessIndex,
+			input.Encoding,
 			input.EngineCatalogPathFor,
 		)
 		if err != nil {
@@ -59,6 +65,9 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		}
 		if ok && enriched != nil {
 			item = enriched
+			if item.Format == "csv" || item.Format == "tsv" {
+				metaattr.RemoveAccessIndexTable(attrs)
+			}
 			metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(enriched))
 		} else if item.DataType != beforeDataType || item.Format != beforeFormat {
 			metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(item))

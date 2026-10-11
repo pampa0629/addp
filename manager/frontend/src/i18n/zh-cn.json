@@ -1016,6 +1016,8 @@
       "engineUnavailableAction": "引擎当前不可用，实时操作已禁用",
       "countText": "共 {count} 个",
       "refresh": "深度扫描",
+      "fileEncoding": "文件编码",
+      "applyEncodingRefresh": "应用编码并刷新",
       "refreshItem": "刷新数据项",
       "lineageTab": "血缘",
       "lineageLoadFailed": "加载数据项血缘失败",

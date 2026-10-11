@@ -828,6 +828,8 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 
 UTF-8 输入允许文件起点的 BOM；BOM 不属于首列字段名，也不影响带引号表头的解析。稀疏行索引中的 `header_bytes` 和 anchor 偏移仍按源文件字节计算，包含被跳过的 BOM；从 anchor 定位的数据行不得再次执行文件头 BOM 处理。带 BOM 的 UTF-16LE / UTF-16BE 在同一 CSV / TSV 读取入口解码，实际编码写入 `format_info.<format>.encoding`（`utf-16le` / `utf-16be`）；已知端序可通过同名 `ParseOptions.Encoding` 明确指定。UTF-16 解码后的偏移不是源文件字节偏移，因此不生成 `access_index`，分页从文件起点按逻辑数据行读取。Manager 消费已识别编码，不提示这类文件刷新创建索引。Transfer 的 CSV / TSV encoded source 在本次任务未显式声明 `source.options.encoding` 时，复用 Meta `format_info.<format>.encoding`，再交给同一共享 table reader；任务的显式读取参数仍按现有执行契约生效，不回写 Meta，不根据 MIME 或字段内容猜测编码。无 BOM 且未声明编码时按 UTF-8 读取，不自动猜测 GBK。已有明确编码声明的输入可通过 `ParseOptions.Encoding=gbk` 解码 CSV / TSV，实际编码写入 `format_info.<format>.encoding=gbk`；编码名称忽略首尾空格和大小写，文件起点的 Unicode BOM 优先于参数声明。GBK 同样不生成 `access_index`，分页从起点按逻辑数据行读取。UTF-32 与 GB18030 不支持。写出仍为 UTF-8，不据此声明 UTF-16 或 GBK 写出能力。
 
+CSV / TSV 编码选择通过已知 item 的深度刷新提交，编码与新表结构在成功后同时生效；失败保留上次成功摘要。后续单项刷新和目录重扫复用已扫描编码，具体执行与请求约束见元数据扫描机制规范。
+
 ### attributes 写入
 
 | 分区 | 写入内容 |

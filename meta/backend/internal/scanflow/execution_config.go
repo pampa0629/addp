@@ -8,6 +8,7 @@ import (
 )
 
 type ExecutionConfig struct {
+	Encoding     string
 	Targets      []string
 	EngineID     uint
 	ItemID       uint
@@ -76,6 +77,7 @@ func ParseExecutionConfig(config commonModels.JSONMap) ExecutionConfig {
 	}
 	parsed.EngineID = uintFromInterface(config["engine_id"])
 	parsed.ItemID = uintFromInterface(config["item_id"])
+	parsed.Encoding, _ = config["encoding"].(string)
 	parsed.StorageType, _ = config["storage_type"].(string)
 	parsed.ScanDepth, _ = config["scan_depth"].(string)
 	parsed.Force = boolFromInterface(config["force"])

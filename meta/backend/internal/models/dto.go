@@ -12,17 +12,18 @@ type JSONMap = commonModels.JSONMap
 
 // ScanRequest 扫描请求
 type ScanRequest struct {
-	ParentExecutionID string         `json:"parent_execution_id"` // Develop 产物扫描的直接父执行 UUID
-	EngineID          uint           `json:"engine_id"`           // 存储引擎 ID
-	CatalogPaths      []string       `json:"catalog_paths"`       // 要扫描的 catalog 路径列表（空则全部）
-	RefGroups         []ScanRefGroup `json:"ref_groups"`          // 内容引用组
-	NodeID            uint           `json:"node_id"`             // 要扫描的节点 ID
-	ItemID            uint           `json:"item_id"`             // 要扫描的数据项 ID
-	Targets           []string       `json:"targets"`             // 完整且同引擎的 locator；叶子不展开父范围 | Complete same-engine locators; leaves never expand to parents
-	ScanDepth         string         `json:"scan_depth"`          // basic/deep
-	TriggerType       string         `json:"trigger_type"`        // manual；空值按 manual 处理
-	Source            string         `json:"source"`              // 扫描来源
-	Force             bool           `json:"force"`               // 是否强制重新扫描
+	Encoding          string         `json:"encoding,omitempty" enums:"utf-8,gbk,utf-16le,utf-16be"` // 单个 CSV/TSV item 深度刷新编码 | Encoding for a single CSV/TSV item deep refresh
+	ParentExecutionID string         `json:"parent_execution_id"`                                    // Develop 产物扫描的直接父执行 UUID
+	EngineID          uint           `json:"engine_id"`                                              // 存储引擎 ID
+	CatalogPaths      []string       `json:"catalog_paths"`                                          // 要扫描的 catalog 路径列表（空则全部）
+	RefGroups         []ScanRefGroup `json:"ref_groups"`                                             // 内容引用组
+	NodeID            uint           `json:"node_id"`                                                // 要扫描的节点 ID
+	ItemID            uint           `json:"item_id"`                                                // 要扫描的数据项 ID
+	Targets           []string       `json:"targets"`                                                // 完整且同引擎的 locator；叶子不展开父范围 | Complete same-engine locators; leaves never expand to parents
+	ScanDepth         string         `json:"scan_depth"`                                             // basic/deep
+	TriggerType       string         `json:"trigger_type"`                                           // manual；空值按 manual 处理
+	Source            string         `json:"source"`                                                 // 扫描来源
+	Force             bool           `json:"force"`                                                  // 是否强制重新扫描
 }
 
 // ScanRefGroup 一组共同参与数据项识别的内容引用

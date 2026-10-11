@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
@@ -112,7 +113,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByID(
 	tenantID uint,
 	itemID uint,
 ) (scanprocessor.Result, error) {
-	return r.RefreshKnownItemByIDWithPlugin(ctx, nil, resource, tenantID, itemID)
+	return r.RefreshKnownItemByIDWithPlugin(ctx, nil, resource, tenantID, itemID, "")
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
@@ -121,6 +122,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
 	resource *commonModels.Engine,
 	tenantID uint,
 	itemID uint,
+	encoding string,
 ) (scanprocessor.Result, error) {
 	if itemID == 0 {
 		return scanprocessor.Result{}, fmt.Errorf("item_id is required")
@@ -136,7 +138,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
 	if err != nil {
 		return scanprocessor.Result{}, fmt.Errorf("item parent node not found: %w", err)
 	}
-	return r.RefreshKnownItemWithPlugin(ctx, p, resource, tenantID, *item, *parentNode)
+	return r.RefreshKnownItemWithPlugin(ctx, p, resource, tenantID, *item, *parentNode, encoding)
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItem(
@@ -146,7 +148,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItem(
 	item models.MetaItem,
 	parentNode models.MetaNode,
 ) (scanprocessor.Result, error) {
-	return r.RefreshKnownItemWithPlugin(ctx, nil, resource, tenantID, item, parentNode)
+	return r.RefreshKnownItemWithPlugin(ctx, nil, resource, tenantID, item, parentNode, "")
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
@@ -156,7 +158,14 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 	tenantID uint,
 	item models.MetaItem,
 	parentNode models.MetaNode,
+	encoding string,
 ) (scanprocessor.Result, error) {
+	if encoding != "" {
+		descriptor := scanflow.KnownItemDescriptorFromAttributes(item.Attributes)
+		if descriptor.Layout != format.LayoutSingle || descriptor.DataType != datatype.Table || (descriptor.Format != "csv" && descriptor.Format != "tsv") {
+			return scanprocessor.Result{}, metaErrors.ErrInvalidScanEncoding
+		}
+	}
 	if p == nil {
 		var err error
 		p, err = plugin.Get(resource.EngineType)
@@ -204,7 +213,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 		indexPath = scanflow.KnownItemObjectPath(descriptor, physicalPath)
 	}
 
-	return scanprocessor.New(r.repo, r.indexer, r.log).WithContainerInspector(r.containerInspector).Process(ctx, scanprocessor.KnownItemInput(
+	input := scanprocessor.KnownItemInput(
 		resource,
 		tenantID,
 		&parentNode,
@@ -218,7 +227,9 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 		descriptor.StorageBucket,
 		indexPath,
 		scanflow.KnownItemSize(descriptor, &item),
-	))
+	)
+	input.Encoding = encoding
+	return scanprocessor.New(r.repo, r.indexer, r.log).WithContainerInspector(r.containerInspector).Process(ctx, input)
 }
 
 func (r *ItemRefreshRuntime) refreshKnownDynamicSchemaItem(

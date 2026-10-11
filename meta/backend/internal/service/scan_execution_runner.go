@@ -62,6 +62,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 		Targets:      execConfig.Targets,
 		RefGroups:    execConfig.RefGroups,
 		ItemID:       execConfig.ItemID,
+		Encoding:     execConfig.Encoding,
 		ScanDepth:    execConfig.ScanDepth,
 		Force:        execConfig.Force,
 		Source:       execConfig.Source,

@@ -1016,6 +1016,8 @@
       "engineUnavailableAction": "The engine is unavailable, so live operations are disabled",
       "countText": "{count} items",
       "refresh": "Deep Scan",
+      "fileEncoding": "File encoding",
+      "applyEncodingRefresh": "Apply encoding and refresh",
       "refreshItem": "Refresh Item",
       "lineageTab": "Lineage",
       "lineageLoadFailed": "Failed to load item lineage",

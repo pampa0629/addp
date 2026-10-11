@@ -125,6 +125,7 @@
         <PreviewPanel
           :selected-node="selectedNode"
           :preview-data="previewData"
+          :item-meta="itemMeta"
           :loading="loading"
           @page-change="$emit('page-change', $event)"
           @navigate="$emit('navigate', $event)"

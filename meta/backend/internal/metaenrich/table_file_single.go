@@ -23,7 +23,7 @@ func ExtractSingleTableFileItem(
 	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
-	return extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, formatName, catalogPathFor...)
+	return extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, formatName, nil, catalogPathFor...)
 }
 
 func extractSingleTableFileItemWithFormat(
@@ -35,11 +35,15 @@ func extractSingleTableFileItemWithFormat(
 	fileSize int64,
 	includeAccessIndex bool,
 	formatName string,
+	parseOptions *format.ParseOptions,
 	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatType := format.NormalizeFormat(formatName)
 	provider, providerErr := format.GetTableInfoProvider(formatType)
 	if providerErr != nil {
+		if parseOptions != nil {
+			return nil, providerErr
+		}
 		return &metaitem.CompositeItemInfo{
 			Layout:             format.LayoutSingle,
 			DataType:           datatype.Table,
@@ -57,9 +61,9 @@ func extractSingleTableFileItemWithFormat(
 	}
 	defer rc.Close()
 
-	tableInfo, err := provider.DescribeTable(ctx, rc, nil)
+	tableInfo, err := provider.DescribeTable(ctx, rc, parseOptions)
 	if err != nil {
-		if format.IsDefinitiveParseError(err) {
+		if parseOptions != nil || format.IsDefinitiveParseError(err) {
 			return nil, err
 		}
 		// Schema 解析失败时返回基础信息，不阻断扫描
@@ -84,7 +88,7 @@ func extractSingleTableFileItemWithFormat(
 		PrimaryContentPath: filePath,
 		RefFiles:           []string{filePath},
 		SizeBytes:          &fileSize,
-		Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType, nil)),
+		Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType, parseOptions)),
 	}, nil
 }
 
@@ -146,6 +150,7 @@ func EnrichSingleTableFileItem(
 	filePath string,
 	fileSize int64,
 	includeAccessIndex bool,
+	encoding string,
 	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.DetectedItem, bool, error) {
 	if item == nil || item.Layout != format.LayoutSingle {
@@ -168,7 +173,15 @@ func EnrichSingleTableFileItem(
 		}
 		return metaitem.DetectedItemFromCompositeInfo(info, filePath, fileSize), true, nil
 	}
-	info, err := extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, item.Format, firstCatalogPathResolver(catalogPathFor))
+	var parseOptions *format.ParseOptions
+	if encoding != "" {
+		parseOptions = format.DefaultParseOptions()
+		parseOptions.Encoding = encoding
+		if item.Format == "tsv" {
+			parseOptions.Delimiter = '\t'
+		}
+	}
+	info, err := extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, item.Format, parseOptions, firstCatalogPathResolver(catalogPathFor))
 	if err != nil || info == nil {
 		return item, false, err
 	}

@@ -54,6 +54,17 @@
           </div>
         </div>
         <div class="panel-actions">
+          <template v-if="showDelimitedEncoding">
+            <el-select v-model="csvEncoding" size="small" class="csv-encoding-select"
+              :aria-label="t('manager.explorer.fileEncoding')" :disabled="refreshingPreviewItem">
+              <el-option v-for="encoding in ['utf-8', 'gbk', 'utf-16le', 'utf-16be']"
+                :key="encoding" :value="encoding" :label="encoding.toUpperCase()" />
+            </el-select>
+            <el-button size="small" :loading="refreshingPreviewItem"
+              @click="handlePreviewAdvisoryRefresh(csvEncoding)">
+              {{ t('manager.explorer.applyEncodingRefresh') }}
+            </el-button>
+          </template>
           <!-- Markdown 渲染/原文切换按钮 -->
           <el-button
             v-if="isMarkdownContent"
@@ -353,7 +364,7 @@
               type="primary"
               :loading="refreshingPreviewItem"
               :disabled="!props.selectedNode?.locator"
-              @click="handlePreviewAdvisoryRefresh"
+              @click="handlePreviewAdvisoryRefresh()"
             >
               <el-icon><Refresh /></el-icon>
               {{ t('manager.explorer.refreshItem') }}
@@ -577,6 +588,10 @@ const loadKeyValue = async selection => {
 
 const props = defineProps({
   selectedNode: {
+    type: Object,
+    default: null
+  },
+  itemMeta: {
     type: Object,
     default: null
   },
@@ -1138,17 +1153,18 @@ const previewRefreshAdvisoryText = computed(() => {
   return t('manager.explorer.itemRefreshRecommendedText')
 })
 
-const handlePreviewAdvisoryRefresh = async () => {
+const handlePreviewAdvisoryRefresh = async (encoding = '') => {
   if (!props.selectedNode?.locator || refreshingPreviewItem.value) {
     return
   }
   refreshingPreviewItem.value = true
   const locator = props.selectedNode.locator
   try {
-    await store.refreshItem(locator)
+    await store.refreshItem(locator, encoding)
     emit('item-refreshed', locator)
     ElMessage.success(t('manager.explorer.refreshSuccess'))
   } catch (error) {
+    if (props.selectedNode?.locator === locator) csvEncoding.value = scannedEncoding.value
     ElMessage.error(t('manager.explorer.refreshFailed', { error: error?.message || error }))
   } finally {
     refreshingPreviewItem.value = false
@@ -2461,14 +2477,25 @@ const model3DTaskPromptPath = computed(() => {
 
 watch(() => props.selectedNode?.locator, () => { model3DOptions.value = {} })
 
+const scannedItemFacts = computed(() => Object.fromEntries(
+  (props.itemMeta?.attributes || []).map(attribute => [attribute.key, attribute.value])
+))
+
 const objectCanonicalFormat = computed(() => {
   return String(
     objectContentMetadata.value?.format ||
     objectData.value?.attributes?.item?.format ||
+    scannedItemFacts.value?.item?.format ||
     props.previewData?.format ||
+    props.selectedNode?.format ||
     ''
   ).trim()
 })
+const showDelimitedEncoding = computed(() => ['csv', 'tsv'].includes(objectCanonicalFormat.value) && !store.selectedRefPath && !store.selectedChildName)
+const scannedEncoding = computed(() => scannedItemFacts.value?.format_info?.[objectCanonicalFormat.value]?.encoding || objectData.value?.attributes?.format_info?.[objectCanonicalFormat.value]?.encoding || 'utf-8')
+const csvEncoding = ref('utf-8')
+watch([() => props.selectedNode?.locator, scannedEncoding], () => { csvEncoding.value = scannedEncoding.value }, { immediate: true })
+
 const currentItemFormatLabel = computed(() => {
   const format = objectCanonicalFormat.value || String(
     props.selectedNode?.format ||
@@ -3027,6 +3054,10 @@ const handleNavigate = (path) => {
 
 .info-badge .el-icon {
   font-size: 14px;
+}
+
+.csv-encoding-select {
+  width: 125px;
 }
 
 .panel-actions {

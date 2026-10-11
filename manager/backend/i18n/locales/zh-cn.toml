@@ -296,3 +296,6 @@ other = "预览资源已不存在"
 
 [manager.error.preview_unsupported]
 other = "此资源不支持预览"
+
+[manager.error.scan_encoding_invalid]
+other = "编码仅支持 utf-8、gbk、utf-16le、utf-16be，且只能用于单个 CSV/TSV 数据项的深度刷新"

@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // Manager 模块消息 key 常量（目前 manager 后端错误消息均通过 commonAPI 返回英文，此处预留扩展）
 const (
+	MsgScanEncodingInvalid                   = "manager.error.scan_encoding_invalid"
 	MsgCacheCleared                          = "manager.cache.cleared"
 	MsgCacheClearedAll                       = "manager.cache.cleared_all"
 	MsgCacheRefreshed                        = "manager.cache.refreshed"

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -14,6 +15,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
+	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scantask"
@@ -666,5 +668,58 @@ func jsonMapStringSlice(m commonModels.JSONMap, key string) []string {
 		return result
 	default:
 		return nil
+	}
+}
+
+func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createTaskExecutionTable(t, db)
+	tenantID := uint(1)
+	engineSvc := NewEngineService(db, nil)
+	engineSvc.cacheEngine(tenantID, &commonModels.Engine{ID: 9, TenantID: &tenantID, Name: "encoding test", EngineType: "s3", LifecycleState: "active"})
+	item := models.MetaItem{TenantID: tenantID, EngineID: 9, NodeID: 1, ItemType: "object", Name: "sample.csv", FullName: "bucket/sample.csv", Fingerprint: "encoding-item", Attributes: models.JSONMap{
+		"item":    map[string]interface{}{"layout": "single", "data_type": "table", "format": "csv"},
+		"storage": map[string]interface{}{"bucket": "bucket", "physical_path": "bucket/sample.csv"},
+	}}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
+	for _, req := range []models.ScanRequest{
+		{EngineID: 9, ItemID: item.ID, Encoding: "latin1", ScanDepth: "deep"},
+		{EngineID: 9, ItemID: item.ID, Encoding: "gbk", ScanDepth: "basic"},
+		{EngineID: 9, CatalogPaths: []string{"bucket"}, Encoding: "gbk", ScanDepth: "deep"},
+	} {
+		if _, err := svc.CreateManualRun(t.Context(), tenantID, 7, &req); !errors.Is(err, metaErrors.ErrInvalidScanEncoding) {
+			t.Fatalf("invalid request %#v: %v", req, err)
+		}
+	}
+	var count int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("invalid encoding created an execution")
+	}
+	run, err := svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: " GBK ", ScanDepth: "deep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted commonExecution.TaskExecution
+	if err := db.First(&persisted, run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	config := scanflow.ParseExecutionConfig(persisted.ExecutionConfig)
+	if config.Encoding != "gbk" || config.ItemID != item.ID {
+		t.Fatalf("worker config=%#v", config)
+	}
+	// A structured document must not accept the delimited-file setting.
+	item.Attributes["item"] = map[string]interface{}{"layout": "single", "data_type": "document", "format": "json"}
+	if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: "gbk", ScanDepth: "deep"})
+	if !errors.Is(err, metaErrors.ErrInvalidScanEncoding) {
+		t.Fatalf("JSON encoding accepted: %v", err)
 	}
 }

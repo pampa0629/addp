@@ -809,7 +809,7 @@
                         "in": "query"
                     },
                     {
-                        "description": "扫描定位（可选，仅支持 item_id）| Scan target (optional, item_id only)",
+                        "description": "扫描定位及 CSV/TSV 深度刷新编码（可选）| Item target and CSV/TSV deep refresh encoding (optional)",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -6560,6 +6560,15 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "encoding": {
+                    "type": "string",
+                    "enum": [
+                        "utf-8",
+                        "gbk",
+                        "utf-16le",
+                        "utf-16be"
+                    ]
                 },
                 "engine_id": {
                     "type": "integer"

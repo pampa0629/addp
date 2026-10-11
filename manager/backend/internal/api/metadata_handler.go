@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/resourcetree"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/engineaccess"
@@ -37,7 +39,7 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param locator query string false "资源定位符 URI | Resource locator URI"
-// @Param body body models.MetaManualScanRequest false "扫描定位（可选，仅支持 item_id）| Scan target (optional, item_id only)"
+// @Param body body models.MetaManualScanRequest false "扫描定位及 CSV/TSV 深度刷新编码（可选）| Item target and CSV/TSV deep refresh encoding (optional)"
 // @Success 200 {object} models.MetaScanResponse "同步扫描结果 | Synchronous scan result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
@@ -89,6 +91,10 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 		}
 		if errors.Is(err, service.ErrEngineAccessDenied) {
 			accessDeniedToEngine(c)
+			return
+		}
+		if code, ok := client.TenantAPIErrorCode(err); ok && code == "scan_encoding_invalid" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgScanEncodingInvalid), "error_code": code})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

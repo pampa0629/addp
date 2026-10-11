@@ -55,3 +55,6 @@ other = "扫描请求参数无效"
 other = "元数据项快照不存在"
 [meta.item_snapshot.read_failed]
 other = "元数据项快照读取失败"
+
+[meta.scan.encoding_invalid]
+other = "编码只支持 UTF-8、GBK、UTF-16LE 或 UTF-16BE，且只能用于单个 CSV/TSV 数据项的深度刷新。"

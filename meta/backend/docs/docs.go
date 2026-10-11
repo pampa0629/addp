@@ -640,7 +640,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一次手动扫描执行并等待已落库 item 的元数据刷新完成 | Create a manual scan execution and wait until the known item metadata refresh completes",
+                "description": "创建手动扫描执行并等待刷新完成；单个 CSV/TSV 表格可指定 encoding，成功后实际编码和结构一起生效，失败保留旧摘要 | Create a manual execution and wait for refresh; a single CSV/TSV table may specify encoding, applied with its schema only on success; failure preserves the prior snapshot",
                 "consumes": [
                     "application/json"
                 ],
@@ -3872,6 +3872,16 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "encoding": {
+                    "description": "单个 CSV/TSV item 深度刷新编码 | Encoding for a single CSV/TSV item deep refresh",
+                    "type": "string",
+                    "enum": [
+                        "utf-8",
+                        "gbk",
+                        "utf-16le",
+                        "utf-16be"
+                    ]
                 },
                 "engine_id": {
                     "description": "存储引擎 ID",

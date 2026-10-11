@@ -330,6 +330,7 @@ func IsKnownPreviewMaterial(material string) bool {
 
 // MetaManualScanRequest 发起即时扫描的请求体
 type MetaManualScanRequest struct {
+	Encoding     string   `json:"encoding,omitempty" enums:"utf-8,gbk,utf-16le,utf-16be"`
 	EngineID     uint     `json:"engine_id"`
 	NodeID       uint     `json:"node_id,omitempty"`
 	ItemID       uint     `json:"item_id,omitempty"`

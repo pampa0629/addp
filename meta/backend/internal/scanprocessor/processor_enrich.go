@@ -5,6 +5,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
@@ -12,6 +13,18 @@ import (
 )
 
 func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JSONMap) (models.JSONMap, error) {
+	if input.Encoding == "" && input.Detected.Layout == format.LayoutSingle && (input.Detected.Format == "csv" || input.Detected.Format == "tsv") {
+		input.Encoding = commonJSON.String(attrs, "format_info."+input.Detected.Format, "encoding")
+		if input.Encoding == "" {
+			existing, found, err := p.repo.FindItemByFullName(input.TenantID, input.EngineID, input.FullName)
+			if err != nil {
+				return nil, err
+			}
+			if found && commonJSON.String(existing.Attributes, "item", "format") == input.Detected.Format {
+				input.Encoding = commonJSON.String(existing.Attributes, "format_info."+input.Detected.Format, "encoding")
+			}
+		}
+	}
 	enrichedAttrs, err := p.enrichKnownMultiTable(ctx, input, attrs)
 	if err != nil {
 		return nil, err
@@ -19,6 +32,7 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 	attrs = enrichedAttrs
 
 	enriched, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
+		Encoding:             input.Encoding,
 		ContentReader:        input.ContentReader,
 		ConnInfo:             input.ConnInfo,
 		EngineID:             input.EngineID,
@@ -33,7 +47,7 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 		TenantID:             input.TenantID,
 	})
 	if err != nil {
-		if input.StrictDeepEnrich {
+		if input.StrictDeepEnrich || input.Encoding != "" {
 			return nil, err
 		}
 		p.warn("提取资源深度属性失败，保留基础属性", input, err)

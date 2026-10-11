@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // Meta 模块消息 key 常量
 const (
+	MsgScanEncodingInvalid       = "meta.scan.encoding_invalid"
 	MsgItemSnapshotNotFound      = "meta.item_snapshot.not_found"
 	MsgItemSnapshotReadFailed    = "meta.item_snapshot.read_failed"
 	MsgScanRequestInvalid        = "meta.scan.request_invalid"
