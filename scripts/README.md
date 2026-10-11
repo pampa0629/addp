@@ -582,9 +582,9 @@ bash scripts/test/online-host-gate.sh --check-only
 
 预检通过后去掉 `--check-only` 即执行正式生命周期和唯一 `make test-online` 入口。验收必须同时保留 `readiness.txt`、`summary.txt`、`online-report.json`、`enterprise-catalog-publishing-browser.json`、`online-gate.log`、Playwright 失败截图（如有）和服务日志；任何缺失、Skip、清理失败或证据中的构建身份不一致都按失败处理。
 
-`quality-dynamic-binding` 通过专用 Runner 的 `-all` 部署，需显式配置 `SYSTEM_URL`、`GATEWAY_URL`、`MODEL_URL`、`META_URL`、`QUALITY_URL`、`ORCHESTRATOR_URL` 和非管理员 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`。`ADDP_ONLINE_QUALITY_FIXTURES_JSON` 是恰好两个对象的 JSON 数组，每项仅含正整数 `logical_table_id`、规范表 `locator`、正整数 `row_count`。两个 Model 逻辑表必须已审批，绑定不同的已存在 PostgreSQL 物理表，结构相同且数据稳定；Model 必须拥有目标表标记，Meta 结构已扫描，执行身份具有相应 Engine DDL 与读取授权。夹具由专用环境维护，不从个人 Outdoor 业务环境复制凭据或注册信息。
+`quality-dynamic-binding` 通过专用 Runner 的 `-all` 部署，需显式配置 `SYSTEM_URL`、`GATEWAY_URL`、`MODEL_URL`、`META_URL`、`QUALITY_URL`、`ORCHESTRATOR_URL`、`MONITOR_URL`、非管理员 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN` 和专用租户 `ADDP_ONLINE_TEST_TENANT_ID`。`ADDP_ONLINE_QUALITY_FIXTURES_JSON` 是恰好两个对象的 JSON 数组，每项仅含正整数 `logical_table_id`、规范表 `locator`、正整数 `row_count`。两个 Model 逻辑表必须已审批，绑定不同的已存在 PostgreSQL 物理表，结构相同且数据稳定；Model 必须拥有目标表标记，Meta 结构已扫描，执行身份具有相应 Engine DDL 与读取授权。夹具由专用环境维护，不从个人 Outdoor 业务环境复制凭据或注册信息。
 
-入口为 `make test-online ONLINE_SUITE=quality-dynamic-binding`；在 `Online T4 gates` 手工选择同名 suite，首次真实通过前不加入 schedule。确定性回归及注册一致性检查使用 `make test-online-runner`，并由 `make test-platform` 和 Platform CI 覆盖。脚本使用正式 owner API 创建带 Run ID 的两条规则、两个方案、两个编排；依次验证失败、重复失败、另一目标失败、显式 R2 升级后逐目标恢复，以及默认绑定、工单和质量概览隔离。只读取物理数据，不执行 ETL；Model 任务只校验预置目标结构。
+入口为 `make test-online ONLINE_SUITE=quality-dynamic-binding`；在 `Online T4 gates` 手工选择同名 suite，首次真实通过前不加入 schedule。确定性回归及注册一致性检查使用 `make test-online-runner`，并由 `make test-platform` 和 Platform CI 覆盖。脚本使用正式 owner API 创建带 Run ID 的两条规则、两个方案、两个编排；依次验证失败、重复失败、另一目标失败、显式 R2 升级后逐目标恢复，以及默认绑定、工单和质量概览隔离。通过 Monitor 校验 Quality 的开始、进度和终态事件，限制响应字段且不输出专业结果或执行授权信息。只读取物理数据，不执行 ETL；Model 任务只校验预置目标结构。
 
 仓库外 `quality-dynamic-binding.json` 逐步记录创建资源 ID、父执行 ID、断言和清理状态，不记录 Token 或数据正文。执行终结后按逆序删除临时编排、方案和规则并逐一验证 404；方案工单由正式删除事务清理，已完成执行审计保留。HTTP 最多 30 秒、单次编排等待 120 秒、场景 600 秒，清理等待每个已知执行最多 60 秒。若创建或执行请求丢失响应、执行未终结、强制终止或删除失败，门禁失败且不能声称零残留；须依据 Run ID 与证据 ID 经正式 API 核查处理，禁止直接 SQL 清理或删除永久夹具。
 
