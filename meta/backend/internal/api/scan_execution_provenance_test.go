@@ -29,6 +29,9 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 	const objectLocator = "addp://engine/9/path/results/object.tif?type=object"
 	const wholeLocator = "addp://engine/9/path/result/results/parquet-run?type=object"
 	const wholePrefix = "addp://engine/9/path/result/results/parquet-run?type=prefix"
+	const tileFile = "addp://engine/9/path/results/tiles/r0_c0.tif?type=file"
+	const tileObject = "addp://engine/9/path/results/tiles/r0_c160.tif?type=object"
+	const unconfirmedTile = "addp://engine/9/path/results/tiles/r160_c0.tif?type=object"
 	parent := execution.TaskExecution{
 		TenantID: scanReadTenant, ExecutionID: parentID, Module: "develop", TaskType: "workflow", Source: "develop",
 		Status: "running", TriggerType: "manual", TriggeredBy: &by,
@@ -39,6 +42,13 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 			"table":  map[string]interface{}{"resource": map[string]interface{}{"locator": tableLocator}},
 			"object": map[string]interface{}{"resource": map[string]interface{}{"locator": objectLocator}},
 			"whole":  map[string]interface{}{"resource": map[string]interface{}{"locator": wholeLocator}},
+			"batch": map[string]interface{}{"tiles": map[string]interface{}{
+				"r0_c0":          map[string]interface{}{"resource": map[string]interface{}{"locator": tileFile}},
+				"r0_c160":        map[string]interface{}{"resource": map[string]interface{}{"locator": tileObject}},
+				"invalid_prefix": map[string]interface{}{"resource": map[string]interface{}{"locator": "addp://engine/9/path/results/invalid?type=prefix"}},
+				"invalid_table":  map[string]interface{}{"resource": map[string]interface{}{"locator": "addp://engine/9/path/public/not-a-tile?type=table"}},
+				"unconfirmed":    map[string]interface{}{"diagnostic": map[string]interface{}{"resource": map[string]interface{}{"locator": unconfirmedTile}}},
+			}},
 		}},
 	}
 	if err := db.Create(&parent).Error; err != nil {
@@ -158,6 +168,10 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 		req := request
 		req.ParentExecutionID = p.ExecutionID
 		post("develop-machine", req, 404)
+		// Batch leaves must pass the same parent / tenant / actor checks.
+		req.RefGroups = nil
+		req.Targets = []string{tileObject}
+		post("develop-machine", req, 404)
 	}
 	wholeRequest := request
 	wholeRequest.RefGroups = nil
@@ -197,6 +211,48 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 		post("develop-machine", req, 404)
 	}
 	post("owner", wholeRequest, 403)
+	// Only exact, confirmed tile leaves qualify. A result summary or arbitrary
+	// nested diagnostic is not authority; neither is a batch directory scope.
+	persistTarget(map[string]interface{}{"task_id": "batch", "tile_key": "r160_c0", "engine_id": 9,
+		"type": "object", "layout": "whole", "locator": unconfirmedTile,
+		"path": []string{"results", "tiles", "r160_c0.tif"}})
+	for _, targets := range [][]string{
+		{unconfirmedTile},
+		{"addp://engine/9/path/results/tiles?type=prefix"},
+		{"addp://engine/9/path/results/tiles/r0_c160.tif?type=prefix"},
+		{"addp://engine/9/path/results/tiles/sibling.tif?type=object"},
+		{"addp://engine/9/path/results/invalid?type=prefix"},
+		{"addp://engine/9/path/public/not-a-tile?type=table"},
+		{tileObject, objectLocator},
+	} {
+		req := wholeRequest
+		req.Targets = targets
+		post("develop-machine", req, 404)
+	}
+	// Even a whole-layout summary cannot turn a confirmed tile into a prefix.
+	persistTarget(map[string]interface{}{"task_id": "batch", "tile_key": "r0_c160", "engine_id": 9,
+		"type": "object", "layout": "whole", "locator": tileObject,
+		"path": []string{"results", "tiles", "r0_c160.tif"}})
+	tilePrefixRequest := wholeRequest
+	tilePrefixRequest.Targets = []string{"addp://engine/9/path/results/tiles/r0_c160.tif?type=prefix"}
+	post("develop-machine", tilePrefixRequest, 404)
+	persistTarget(wholeTarget)
+	tileFileRequest := request
+	tileFileRequest.RefGroups = []models.ScanRefGroup{{Primary: "results/tiles/r0_c0.tif"}}
+	tileObjectRequest := wholeRequest
+	tileObjectRequest.Targets = []string{tileObject}
+	for _, token := range []string{"owner", "wrong-machine", "develop-machine-denied"} {
+		post(token, tileObjectRequest, 403)
+	}
+	for _, groups := range [][]models.ScanRefGroup{
+		{{Primary: "results/tiles"}},
+		{{Primary: "results/tiles/r160_c0.tif"}},
+		{{Primary: "results/tiles/r0_c0.tif", Refs: []models.ScanRef{{Path: "results/private.tif"}}}},
+	} {
+		req := tileFileRequest
+		req.RefGroups = groups
+		post("develop-machine", req, 404)
+	}
 	var ids []string
 	ids = append(ids, post("develop-machine", request, 201))
 	for _, target := range []string{tableLocator, objectLocator} {
@@ -206,6 +262,10 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 		ids = append(ids, post("develop-machine", req, 201))
 	}
 	ids = append(ids, post("develop-machine", wholeRequest, 201))
+	ids = append(ids, post("develop-machine", tileFileRequest, 201))
+	ids = append(ids, post("develop-machine", tileObjectRequest, 201))
+	wantTargets := map[string]string{ids[1]: tableLocator, ids[2]: objectLocator, ids[3]: wholePrefix, ids[5]: tileObject}
+	wantPrimaries := map[string]string{ids[0]: "results/dem.tif", ids[4]: "results/tiles/r0_c0.tif"}
 	for _, id := range ids {
 		var child execution.TaskExecution
 		if err := db.Where("execution_id = ?", id).First(&child).Error; err != nil {
@@ -217,20 +277,13 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 			t.Fatal("scan provenance / authorization boundary changed")
 		}
 		config := scanflow.ParseExecutionConfig(child.ExecutionConfig)
-		if id != ids[0] {
-			if len(config.Targets) != 1 || len(config.CatalogPaths) != 0 || len(config.RefGroups) != 0 {
-				t.Fatal("produced leaf expanded before Worker dispatch")
+		if want, ok := wantTargets[id]; ok {
+			if len(config.Targets) != 1 || config.Targets[0] != want || len(config.CatalogPaths) != 0 || len(config.RefGroups) != 0 {
+				t.Fatal("execution configuration lost or expanded the produced target")
 			}
-			want := tableLocator
-			if id == ids[2] {
-				want = objectLocator
-			}
-			if id == ids[3] {
-				want = wholePrefix
-			}
-			if config.Targets[0] != want {
-				t.Fatal("execution configuration lost the produced target")
-			}
+		} else if len(config.Targets) != 0 || len(config.CatalogPaths) != 0 || len(config.RefGroups) != 1 ||
+			config.RefGroups[0].Primary != wantPrimaries[id] || len(config.RefGroups[0].Refs) != 0 {
+			t.Fatal("execution configuration lost or expanded the produced file")
 		}
 		read("owner", "/executions/"+id, 200)
 		read("peer", "/executions/"+id, 404)
@@ -240,11 +293,11 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 	if read("peer", "/scan/runs", 200)["total"] != beforePeer {
 		t.Fatal("peer list count leaked derived scans")
 	}
-	if read("owner", "/scan/runs", 200)["total"] != float64(6) {
+	if read("owner", "/scan/runs", 200)["total"] != float64(8) {
 		t.Fatal("initiator list missing derived scans")
 	}
 	var children int64
-	if err := db.Model(&execution.TaskExecution{}).Where("parent_execution_id = ?", parentID).Count(&children).Error; err != nil || children != 4 {
+	if err := db.Model(&execution.TaskExecution{}).Where("parent_execution_id = ?", parentID).Count(&children).Error; err != nil || children != 6 {
 		t.Fatalf("denied request persisted a child: %d %v", children, err)
 	}
 }

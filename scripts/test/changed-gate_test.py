@@ -73,6 +73,16 @@ class ChangedGateTest(unittest.TestCase):
         package.write_text('{"scripts":{"test:e2e":"node ../../scripts/test/frontend-browser-gate.mjs"}}')
         self.assertEqual(['other'], MODULE.affected_modules(self.repository, ['scripts/test/frontend-browser-gate.mjs']))
 
+    def test_raster_physical_fixture_and_scene_changes_select_native_engine_gate(self) -> None:
+        module = self.repository / 'engines/duckdb/go.mod'
+        module.parent.mkdir(parents=True)
+        module.write_text('module example.com/duckdb\n')
+        subprocess.run(['git', 'add', '.'], cwd=self.repository, check=True)
+        for path in ('business/scripts/online-raster-minio-fixture.py', 'scripts/test/raster-workflow-online.py'):
+            with self.subTest(path=path):
+                self.assertEqual(['engines'], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual([], MODULE.affected_modules(self.repository, ['business/scripts/unrelated.py']))
+
     def test_changed_platform_uses_the_same_t2_environment_isolation(self) -> None:
         step = MODULE.plan_changed(self.repository, ["sample/backend/example.go"])[0]
         self.assertEqual(MODULE.MODULE_GATE.platform_step(self.repository), step)

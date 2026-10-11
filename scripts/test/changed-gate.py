@@ -98,6 +98,14 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if "scripts/test/frontend-browser-gate.mjs" in files:
         affected.update(file_consumers(repository, "*/frontend/package.json", "frontend-browser-gate.mjs"))
 
+    # GeoPython's Native tests import the same independent physical fixture and
+    # scene definitions as Raster T4; changing only those must still run GDAL.
+    if any(path in {
+        "business/scripts/online-raster-minio-fixture.py",
+        "scripts/test/raster-workflow-online.py",
+    } for path in files):
+        affected.add("engines")
+
     # Owned disposable service definitions are gate inputs, regardless of their
     # filename. Resolve their owner from the gate declaration, not a DB list.
     for script in MODULE_GATE.repository_files(repository, "scripts/test/*-gate.sh"):

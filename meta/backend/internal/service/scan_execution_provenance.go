@@ -66,27 +66,37 @@ func matchesDevelopProducedTarget(parent execution.TaskExecution, req *models.Sc
 	}
 	// outputs is the existing stable result contract, rather than free-form
 	// source strings or client-declared user / authorization fields.
-	var outputs map[string]struct {
+	type resourceOutput struct {
 		Resource struct {
 			Locator string `json:"locator"`
 		} `json:"resource"`
+	}
+	var outputs map[string]struct {
+		resourceOutput
+		Tiles map[string]resourceOutput `json:"tiles"`
 	}
 	encoded, err := json.Marshal(parent.Metadata["outputs"])
 	if err != nil || json.Unmarshal(encoded, &outputs) != nil {
 		return false
 	}
 	for taskID, output := range outputs {
+		// Only the named tiles contract carries batch leaves. Do not traverse
+		// arbitrary result JSON or infer a prefix scope from a tile object.
+		for _, tile := range output.Tiles {
+			locator, err := resourcetree.ParseURI(tile.Resource.Locator)
+			if err == nil && (locator.Type == resourcetree.TypeFile || locator.Type == resourcetree.TypeObject) &&
+				matchesDevelopProducedLeaf(tile.Resource.Locator, req) {
+				return true
+			}
+		}
+		if matchesDevelopProducedLeaf(output.Resource.Locator, req) {
+			return true
+		}
 		locator, err := resourcetree.ParseURI(output.Resource.Locator)
 		if err != nil || locator.EngineID != req.EngineID || len(locator.Path) == 0 {
 			continue
 		}
-		if locator.Type == resourcetree.TypeFile {
-			if len(req.Targets) == 0 && len(req.RefGroups) == 1 && len(req.RefGroups[0].Refs) == 0 && req.RefGroups[0].Primary == strings.Join(locator.Path, "/") {
-				return true
-			}
-		} else if len(req.RefGroups) == 0 && len(req.Targets) == 1 && req.Targets[0] == output.Resource.Locator {
-			return true
-		} else if locator.Type == resourcetree.TypeObject && len(req.RefGroups) == 0 && len(req.Targets) == 1 {
+		if locator.Type == resourcetree.TypeObject && len(req.RefGroups) == 0 && len(req.Targets) == 1 {
 			var result struct {
 				ProducedTargets []struct {
 					TaskID   string   `json:"task_id"`
@@ -114,4 +124,18 @@ func matchesDevelopProducedTarget(parent execution.TaskExecution, req *models.Sc
 		}
 	}
 	return false
+}
+
+// matchesDevelopProducedLeaf matches one exact persisted resource. Files keep
+// their existing single-primary scan contract; objects never expand to prefixes.
+func matchesDevelopProducedLeaf(raw string, req *models.ScanRequest) bool {
+	locator, err := resourcetree.ParseURI(raw)
+	if err != nil || locator.EngineID != req.EngineID || len(locator.Path) == 0 {
+		return false
+	}
+	if locator.Type == resourcetree.TypeFile {
+		return len(req.Targets) == 0 && len(req.RefGroups) == 1 && len(req.RefGroups[0].Refs) == 0 &&
+			req.RefGroups[0].Primary == strings.Join(locator.Path, "/")
+	}
+	return len(req.RefGroups) == 0 && len(req.Targets) == 1 && req.Targets[0] == raw
 }

@@ -937,7 +937,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'tiles-basic/'+key+'.tif', identifier, 'tiles-'+key, identity, timeout, tile_browser,
             fixture.tile_expectation(key), physical_tile, [source_locator])
         tiling_cases.append({'tile_key': key, 'execution_id': identifier, 'artifact': fact,
-            'physical': physical_tile, 'lineage': graph, 'browser': report})
+            'physical': physical_tile, 'data_item_size_bytes': target['size_bytes'],
+            'lineage': graph, 'browser': report})
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,

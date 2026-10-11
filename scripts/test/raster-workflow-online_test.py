@@ -469,6 +469,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual(len(report['tiling_preserved_sha256']),26)
         for case in cases:
             self.assertEqual(case['artifact']['size_bytes'],case['physical']['size_bytes'])
+            self.assertEqual(case['artifact']['size_bytes'],case['data_item_size_bytes'])
             self.assertEqual(case['lineage']['source_item_id'],10)
             self.assertEqual(len(case['browser']['target_locators']),4)
 

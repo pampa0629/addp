@@ -17,6 +17,21 @@ spec.loader.exec_module(m)
 
 
 class RasterPhysicalFixtureTest(unittest.TestCase):
+    def test_fixed_expected_pixels_are_immutable_and_reused_without_recomputing_formulas(self):
+        for oracle, calculation, kwargs in (
+            (m.average_pixels, 'area_average', {'width': 171}),
+            (m.bilinear_pixels, 'bilinear_value', {}),
+        ):
+            with self.subTest(oracle=oracle.__name__):
+                expected = oracle(1, **kwargs)
+                self.assertIsInstance(expected, tuple)
+                self.assertGreater(len(expected), 0)
+                with patch.object(m, calculation, side_effect=AssertionError('fixed oracle recomputed')):
+                    self.assertEqual(oracle(1, **kwargs), expected)
+                    self.assertEqual(tuple(iter(oracle(1, **kwargs))), expected)
+                with self.assertRaises(TypeError):
+                    expected[0] = 123.
+
     def test_manager_physical_refuses_non_hosted_owner_or_unknown_action_before_mutation(self):
         for values, action in (({}, 'seed'),
                 ({'ADDP_ONLINE_HOSTED': '1', 'ONLINE_SUITE': 'manager-internal-artifact-lineage'}, 'unknown')):

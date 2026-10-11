@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from bisect import bisect_right
+from functools import lru_cache
 import json
 import math
 import os
@@ -185,21 +186,26 @@ def area_average(band, row, column, width=SIZE // 2):
             if contributions else None)
 
 
+@lru_cache(maxsize=16)
 def average_pixels(band, *, source=False, joint=False, width=SIZE // 2):
+    # Only fixed independent expectations are reused. Actual object bytes,
+    # GDAL reads, hashes and verification verdicts are checked on every call.
     width = SIZE if source else width
-    for row in range(width):
-        for column in range(width):
-            if source:
-                yield average_source_pixel(band, row, column)
-            elif band == 3 or joint:
-                first, second = area_average(1, row, column, width), area_average(2, row, column, width)
-                if band == 3:
-                    # GDAL average generates coverage; source opacity is not copied.
-                    yield 255. if first is not None or second is not None else 0.
+    def values():
+        for row in range(width):
+            for column in range(width):
+                if source:
+                    yield average_source_pixel(band, row, column)
+                elif band == 3 or joint:
+                    first, second = area_average(1, row, column, width), area_average(2, row, column, width)
+                    if band == 3:
+                        # GDAL average generates coverage; source opacity is not copied.
+                        yield 255. if first is not None or second is not None else 0.
+                    else:
+                        yield first + second if first is not None and second is not None else None
                 else:
-                    yield first + second if first is not None and second is not None else None
-            else:
-                yield area_average(band, row, column, width)
+                    yield area_average(band, row, column, width)
+    return tuple(values())
 
 
 def bilinear_value(band, row, column):
@@ -219,17 +225,22 @@ def bilinear_value(band, row, column):
     return math.fsum(value * weight for value, weight in contributions) / math.fsum(weight for _, weight in contributions)
 
 
+@lru_cache(maxsize=8)
 def bilinear_pixels(band, *, joint=False):
-    for row in range(SIZE * 2):
-        for column in range(SIZE * 2):
-            if band == 3:
-                # This Warp kernel generates alpha from the covered containing source cell.
-                yield average_source_pixel(3, row // 2, column // 2)
-            elif joint:
-                first, second = bilinear_value(1, row, column), bilinear_value(2, row, column)
-                yield first + second if first is not None and second is not None else None
-            else:
-                yield bilinear_value(band, row, column)
+    # Only fixed independent expectations are reused. Actual object bytes,
+    # GDAL reads, hashes and verification verdicts are checked on every call.
+    def values():
+        for row in range(SIZE * 2):
+            for column in range(SIZE * 2):
+                if band == 3:
+                    # This Warp kernel generates alpha from the covered containing source cell.
+                    yield average_source_pixel(3, row // 2, column // 2)
+                elif joint:
+                    first, second = bilinear_value(1, row, column), bilinear_value(2, row, column)
+                    yield first + second if first is not None and second is not None else None
+                else:
+                    yield bilinear_value(band, row, column)
+    return tuple(values())
 
 
 def multiband_source_name(case_name):
