@@ -2,13 +2,13 @@ package api
 
 import (
 	"io"
-	"mime"
 	"net/http"
 	"path"
 	"strconv"
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/mimetype"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -107,7 +107,7 @@ func model3DTilesAssetContentType(name string) string {
 	case ".glb":
 		return "model/gltf-binary"
 	}
-	if value := mime.TypeByExtension(path.Ext(name)); value != "" {
+	if value := mimetype.ByExtension(path.Ext(name)); value != "" {
 		return value
 	}
 	return "application/octet-stream"

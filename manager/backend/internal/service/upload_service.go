@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"path"
 	"sort"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/mimetype"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/engineaccess"
@@ -130,7 +130,7 @@ func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest) (*U
 		targetPath := uploadLeafPath(parentPath, cleanName, loc.Type)
 		contentType := strings.TrimSpace(file.ContentType)
 		if contentType == "" {
-			contentType = mime.TypeByExtension(path.Ext(cleanName))
+			contentType = mimetype.ByExtension(path.Ext(cleanName))
 		}
 		if contentType == "" {
 			contentType = "application/octet-stream"

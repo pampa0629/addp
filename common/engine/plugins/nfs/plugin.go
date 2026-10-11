@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"mime"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/mimetype"
 )
 
 // NFSPlugin NFS 文件系统存储引擎插件
@@ -510,7 +510,7 @@ func joinPath(dir, name string) string {
 // inferContentType 根据文件名推断 MIME 类型
 func inferContentType(name string) string {
 	ext := strings.ToLower(filepath.Ext(name))
-	if mimeType := mime.TypeByExtension(ext); mimeType != "" {
+	if mimeType := mimetype.ByExtension(ext); mimeType != "" {
 		return mimeType
 	}
 	customTypes := map[string]string{

@@ -1,9 +1,10 @@
 package format
 
 import (
-	"mime"
 	"path/filepath"
 	"strings"
+
+	"github.com/addp/common/mimetype"
 )
 
 // MIMEToFormat 将 MIME 类型转换为标准格式类型。
@@ -71,7 +72,7 @@ func GuessContentType(filename string, peek []byte) string {
 	ext := filepath.Ext(filename)
 	descriptorFormat := descriptorFormatByExtension(ext)
 	descriptorMIME := descriptorMIMEByExtension(ext)
-	if mimeType := mime.TypeByExtension(ext); mimeType != "" && !IsGenericMIME(mimeType) {
+	if mimeType := mimetype.ByExtension(ext); mimeType != "" && !IsGenericMIME(mimeType) {
 		if descriptorFormat == FormatUnknown || MIMEToFormat(mimeType) == descriptorFormat {
 			return mimeType
 		}
@@ -79,7 +80,7 @@ func GuessContentType(filename string, peek []byte) string {
 	if descriptorMIME != "" {
 		return descriptorMIME
 	}
-	if mimeType := mime.TypeByExtension(ext); mimeType != "" {
+	if mimeType := mimetype.ByExtension(ext); mimeType != "" {
 		return mimeType
 	}
 	return FormatToMIME(DetectFormat(filename, peek))

@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"mime"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/mimetype"
 	miniogo "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -130,7 +130,7 @@ func TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo, default
 
 func InferContentType(objectKey string) string {
 	ext := strings.ToLower(filepath.Ext(objectKey))
-	if mimeType := mime.TypeByExtension(ext); mimeType != "" {
+	if mimeType := mimetype.ByExtension(ext); mimeType != "" {
 		return mimeType
 	}
 

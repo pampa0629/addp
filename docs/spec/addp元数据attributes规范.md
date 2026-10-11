@@ -113,6 +113,8 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 | `access_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | engine / format provider、扫描采样事实提供方、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、constraints、partitioning、indexing 等横切能力 |
 
+仅根据扩展名推断 `storage.content_type` 时，只能声明基础 MIME 类型，不得把扩展名注册表默认附加的 `charset` 当作实际字符编码。该推断由 `common/mimetype.ByExtension` 统一执行；引擎或上传请求显式提供的 Content-Type 保留其原始声明。CSV/TSV 的实测编码由格式 parser 写入 `format_info.<format>.encoding`，两者不得混为一项事实。
+
 `common/datatype` 是 type info、field type、空间横切事实和访问索引结构的代码事实源；attributes 是这些事实的落库模型。Meta normalizer 负责将 provider 返回的 `datatype.*` 结构写入对应 attributes 分区。
 
 `common/datatype` 只处理自身结构和 JSON payload 的相互转换，不承载 `attributes` 分区路径语义，也不提供从完整 `meta_item.attributes` 读取标准分区的入口。读取或写入 `type_info.*`、`capabilities.*`、`access_index.*` 等路径是 Meta normalizer、MetaClient 消费方或上层模块的职责；它们取出对应分区后，才可调用 `datatype.*FromPayload` 等通用转换函数。

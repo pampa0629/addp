@@ -8,7 +8,7 @@
 
 `common/format` 负责：
 
-- 根据文件名、MIME、magic bytes 识别 `FormatType`。
+- 根据文件名、MIME、magic bytes 识别 `FormatType`。扩展名 MIME 查询统一复用 `common/mimetype.ByExtension`，只推断基础媒体类型，不把注册表默认 charset 当作实际编码。
 - 维护 `FormatDescriptor` 静态事实，例如 data type、layout 和识别事实。
 - 提供 format identity、FormatPlugin、provider / reader 动态查询；通用 `DataType`、`FieldType`、`TableInfo`、`Model3DInfo`、`PointCloudInfo`、`GaussianSplatInfo` 等结构化语义模型归属 `common/datatype`。
 - 注册 format plugin，并通过同一个 plugin 的接口断言获取 info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、`Model3DInfoProvider`、`ScopeModel3DInfoProvider`、`PointCloudInfoProvider`、`ScopePointCloudInfoProvider`、`GaussianSplatInfoProvider`。

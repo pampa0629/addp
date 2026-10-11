@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"path"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	"github.com/addp/common/mimetype"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
@@ -386,7 +386,7 @@ func (s *Service) Open(ctx context.Context, id, tenantID, userID uint) (*File, e
 		_ = object.Close()
 		return nil, err
 	}
-	contentType := mime.TypeByExtension(path.Ext(session.FileName))
+	contentType := mimetype.ByExtension(path.Ext(session.FileName))
 	if contentType == "" {
 		contentType = format.FormatToMIME(format.FormatType(session.Format))
 	}

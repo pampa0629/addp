@@ -607,7 +607,13 @@ func TestGuessContentType(t *testing.T) {
 			name:     "CSV file",
 			filename: "data.csv",
 			peek:     nil,
-			want:     []string{"text/csv", "text/csv; charset=utf-8"},
+			want:     []string{"text/csv"},
+		},
+		{
+			name:     "UTF-16 CSV must not be labeled UTF-8",
+			filename: "data.csv",
+			peek:     []byte{0xff, 0xfe, 'i', 0, 'd', 0},
+			want:     []string{"text/csv"},
 		},
 		{
 			name:     "Shapefile (custom MIME)",
@@ -631,7 +637,7 @@ func TestGuessContentType(t *testing.T) {
 			name:     "Markdown file",
 			filename: "README.md",
 			peek:     nil,
-			want:     []string{"text/markdown", "text/markdown; charset=utf-8"},
+			want:     []string{"text/markdown"},
 		},
 		{
 			name:     "Avro descriptor MIME",

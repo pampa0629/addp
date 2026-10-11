@@ -102,3 +102,9 @@ func TestNFSFileReadCloserSupportsSeekEndWithKnownSize(t *testing.T) {
 		t.Fatalf("Read after SeekEnd = n:%d data:%q, want ef", n, string(buf))
 	}
 }
+
+func TestInferredCSVContentTypeDoesNotClaimEncoding(t *testing.T) {
+	if got := inferContentType("utf-16le-bom-quoted.csv"); got != "text/csv" {
+		t.Fatalf("extension-only content type = %q, want text/csv without a guessed charset", got)
+	}
+}

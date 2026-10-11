@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"mime"
 	"path"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/mimetype"
 )
 
 type HDFSPlugin struct{}
@@ -58,7 +58,7 @@ func (*HDFSPlugin) TestConnection(ctx context.Context, info plugin.ConnectionInf
 }
 
 func facts(relative string, s fileStatus) plugin.StorageObjectFacts {
-	contentType := mime.TypeByExtension(path.Ext(relative))
+	contentType := mimetype.ByExtension(path.Ext(relative))
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
