@@ -1,8 +1,8 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
-	"github.com/gin-gonic/gin"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -18,6 +18,7 @@ import (
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
 	managerprotection "github.com/addp/manager/internal/protection"
+	"github.com/gin-gonic/gin"
 )
 
 func TestPreviewAuthorizationErrorsAreStableAndDoNotExposeUpstreamDetails(t *testing.T) {
@@ -44,6 +45,7 @@ func TestPreparedPreviewProtectionIsAppliedWithoutLeafRulesAndFiltersSpatialMeta
 	for _, empty := range []bool{false, true} {
 		calls := 0
 		table := &models.TablePreview{
+			Mode:    preview.PreviewModeTable,
 			Columns: []string{"id", "shape"}, Rows: []map[string]interface{}{{"id": 1, "shape": "private"}},
 			Fields:          []datatype.FieldInfo{{Name: "id"}, {Name: "shape"}},
 			ColumnMetadata:  []models.ColumnMetadata{{ColumnName: "id"}, {ColumnName: "shape"}},
@@ -62,8 +64,24 @@ func TestPreparedPreviewProtectionIsAppliedWithoutLeafRulesAndFiltersSpatialMeta
 		if empty {
 			table.Rows = nil
 		}
-		if err := applyPreviewProtection(&preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}); err != nil || calls != 1 {
-			t.Fatalf("prepared protection skipped or applied twice: %v calls=%d", err, calls)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/preview", nil)
+		writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{})
+		if w.Code != 200 || calls != 1 {
+			t.Fatalf("prepared protection skipped or applied twice: status=%d calls=%d", w.Code, calls)
+		}
+		var response struct {
+			Data struct {
+				Rows    json.RawMessage `json:"rows"`
+				Columns []string        `json:"columns"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || !reflect.DeepEqual(response.Data.Columns, []string{"id"}) {
+			t.Fatalf("unexpected protected response: %s err=%v", w.Body.String(), err)
+		}
+		if empty && string(response.Data.Rows) != "[]" {
+			t.Fatalf("empty protected rows must serialize as an array: %s", response.Data.Rows)
 		}
 		if len(table.Columns) != 1 || len(table.Fields) != 1 || len(table.ColumnMetadata) != 1 || len(table.GeometryColumns) != 0 || table.GeometryColumn != "" || table.SRID != 0 || table.SourceSRID != 0 || table.SourceCRS != "" || table.Extent != nil || table.TransformStatus != "" || table.PreviewHint != "" {
 			t.Fatalf("suppressed spatial metadata was retained: %#v", table)
@@ -82,6 +100,43 @@ func TestPreparedPreviewProtectionFailureDoesNotFallbackToUnmanagedRows(t *testi
 		if !errors.Is(applyPreviewProtection(&preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}), managerprotection.ErrRequired) {
 			t.Fatal("prepared protection failure was ignored")
 		}
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/preview", nil)
+		writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{})
+		if w.Code != 403 || strings.Contains(w.Body.String(), `"rows"`) {
+			t.Fatalf("failed protection serialized preview data: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestPreviewResponseRowsArrayPreservesCellsAndNonTableMaterials(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mode string
+		rows []map[string]interface{}
+		want string
+	}{
+		{name: "empty table", mode: preview.PreviewModeTable, want: "[]"},
+		{name: "empty page", mode: preview.PreviewModeTable, rows: []map[string]interface{}{}, want: "[]"},
+		{name: "null cell", mode: preview.PreviewModeTable, rows: []map[string]interface{}{{"phone": nil, "name": "retained"}}, want: `[{"name":"retained","phone":null}]`},
+		{name: "non table", mode: "key_value", want: "null"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			table := &models.TablePreview{Mode: test.mode, Columns: []string{"name", "phone"}, Rows: test.rows}
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("GET", "/preview", nil)
+			writePreviewResult(c, &preview.PreviewResult{PreviewType: test.mode, Data: table}, nil, dataprotection.SubjectReference{})
+			var response struct {
+				Data struct {
+					Rows json.RawMessage `json:"rows"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != 200 || string(response.Data.Rows) != test.want {
+				t.Fatalf("unexpected preview response: %d %s err=%v", w.Code, w.Body.String(), err)
+			}
+		})
 	}
 }
 

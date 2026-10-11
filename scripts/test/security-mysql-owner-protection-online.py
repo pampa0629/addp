@@ -1343,13 +1343,16 @@ def verify_mongodb_query_transfer(client: GatewayClient, locator: str, targets: 
             raise SuiteError("MongoDB query execution identity or terminal status differs")
         written = nonnegative_int(execution.get("records_written"), "query records written")
         if denied:
+            failure_message = execution.get("error_msg")
             if (written != 0 or nonnegative_int(execution.get("bytes_written"), "query bytes written") != 0
-                    or "protected data action denied" not in str(execution.get("error_msg", ""))):
-                raise SuiteError("MongoDB derived query must fail for protection with zero writes")
+                    or not isinstance(failure_message, str)
+                    or "prepare query source protection: query output lineage unresolved:" not in failure_message):
+                raise SuiteError("MongoDB derived query must fail at the protection lineage gate with zero writes")
             columns, rows = preview_rows(client, target_locator)
             if columns != list(MONGODB_TRANSFER_FIELDS) or rows:
                 raise SuiteError("MongoDB denied query wrote target rows")
-            evidence = {"derived_output_denied": True, "target_empty_before_and_after": True, "bytes_written": 0}
+            evidence = {"derived_output_denied": True, "protection_failure": "query_output_lineage_unresolved",
+                        "target_empty_before_and_after": True, "bytes_written": 0}
         else:
             if written != 7 or nonnegative_int(execution.get("records_read"), "query records read") != 7:
                 raise SuiteError("MongoDB query execution must read and write all seven rows")
@@ -1744,7 +1747,7 @@ def main() -> int:
             required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE"),
             positive_int(required_environment("ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID"), "MongoDB Engine id"),
         )
-        print("Disposable Security governance and five exact record read Grants are ready")
+        print("Disposable Security governance and exact record read Grants are ready")
         return 0
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")

@@ -739,6 +739,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/security-mysql-owner-protection-online.py", "verify_mongodb_raw_export(", "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", "verify_mongodb_query_transfer(", "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"target_empty_before_and_after"', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", '"query_output_lineage_unresolved"', "must dispatch and validate"),
             ("business/scripts/online-security-owner-fixture.sh", "addp_online_security.mongodb_query_denied", "fixture contract is missing"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"addp.security-mysql-owner-protection-online/v8"', "must dispatch and validate"),
             ("business/scripts/online-security-owner-fixture.sh", 'sourceVersion: NumberLong("9007199254740993")', "fixture contract is missing"),

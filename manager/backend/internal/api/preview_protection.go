@@ -1,12 +1,29 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
 	managerprotection "github.com/addp/manager/internal/protection"
+	"github.com/gin-gonic/gin"
 )
+
+// writePreviewResult applies protection before serializing the public preview.
+func writePreviewResult(c *gin.Context, result *preview.PreviewResult, rules []dataprotection.Rule, subject dataprotection.SubjectReference) {
+	if err := applyPreviewProtection(result, rules, subject); err != nil {
+		protectionRequired(c)
+		return
+	}
+	if table, ok := result.Data.(*models.TablePreview); ok && table.Mode == preview.PreviewModeTable && table.Rows == nil {
+		table.Rows = []map[string]interface{}{}
+	}
+	logger.L().Info("数据预览成功", "locator", c.Query("locator"), "preview_type", result.PreviewType)
+	c.JSON(http.StatusOK, result)
+}
 
 // applyPreviewProtection is the Manager response-boundary executor. Providers
 // continue returning native decoded rows; protected rows are transformed only

@@ -280,7 +280,7 @@ class MongoClient(SpatialClient):
                 execution = {"execution_id": execution_id, "task_id": task_id, "trigger_by": 7,
                     "status": "failed" if denied else "success", "records_read": 0 if denied else 7,
                     "records_written": 0 if denied else 7, "bytes_written": 0 if denied else 500,
-                    "error_msg": "protected data action denied" if denied else ""}
+                    "error_msg": "prepare query source protection: query output lineage unresolved: MongoDB aggregate stage 0: MongoDB $project expression is not transparent" if denied else ""}
                 target = config["target"]["name"]
                 if not denied:
                     values = {key: {"_id": key, "userInfo": {"phone": ONLINE.SOURCE_VALUES.get(key)}} for key in "1234567"} if derived else {row["_id"]: row for row in self.rows("transfer")}
@@ -294,6 +294,9 @@ class MongoClient(SpatialClient):
                 if self.transfer_mutation == "denied_writes" and denied: execution["records_written"] = 1
                 if self.transfer_mutation == "denied_bytes" and denied: execution["bytes_written"] = 1
                 if self.transfer_mutation == "unrelated_failure" and denied: execution["error_msg"] = "source connection unavailable"
+                if self.transfer_mutation == "generic_denial" and denied: execution["error_msg"] = "protected data action denied"
+                if self.transfer_mutation == "reason_shape" and denied: execution["error_msg"] = {"message": execution["error_msg"]}
+                if self.transfer_mutation == "wrong_gate" and denied: execution["error_msg"] = "open query read session: query output lineage unresolved: source unavailable"
                 if self.transfer_mutation == "denied_target" and denied: self.transfer_targets[target] = [{"_id": "unexpected"}]
                 if self.transfer_mutation == "actor": execution["trigger_by"] = 8
                 if self.transfer_mutation == "task": execution["task_id"] = 999
@@ -500,6 +503,7 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertEqual(report["unprotected_derived_transfer"]["records_written"], 7)
         self.assertTrue(all(case["query_transfer"]["algorithm_values_verified"] for case in report["cases"]))
         self.assertTrue(all(case["derived_transfer_denied"]["target_empty_before_and_after"] for case in report["cases"]))
+        self.assertTrue(all(case["derived_transfer_denied"]["protection_failure"] == "query_output_lineage_unresolved" for case in report["cases"]))
         self.assertTrue(report["cases"][0]["transfer_during_manager_policy"]["same_user_verified"])
         self.assertTrue(all(case["raw_record_export"]["canonical_int64_preserved"] for case in report["cases"]))
         self.assertTrue(report["cases"][0]["export_during_manager_policy"]["same_user_verified"])
@@ -548,13 +552,13 @@ class MongoAlgorithmTest(unittest.TestCase):
 
     def test_query_transfer_rejects_leaks_wrong_identity_and_false_zero_write_evidence(self):
         for mutation in ("plaintext", "adjacent", "extra", "missing", "duplicate", "actor", "task", "uuid", "count",
-                         "allow_derived", "denied_writes", "denied_bytes", "unrelated_failure", "denied_target"):
+                         "allow_derived", "denied_writes", "denied_bytes", "unrelated_failure", "generic_denial", "wrong_gate", "reason_shape", "denied_target"):
             client = MongoClient()
             client.confirmed = True
             with patch.object(ONLINE, "wait_for_scan", return_value="target-scan"):
                 targets = ONLINE.prepare_mongodb_transfer_targets(client, 17, time.monotonic() + 60)
             client.transfer_mutation = mutation
-            denied = mutation in {"allow_derived", "denied_writes", "denied_bytes", "unrelated_failure", "denied_target"}
+            denied = mutation in {"allow_derived", "denied_writes", "denied_bytes", "unrelated_failure", "generic_denial", "wrong_gate", "reason_shape", "denied_target"}
             expected = None if denied else {"1": "1*********8", "2": "张***c", "3": "a*c", "4": None, "5": None}
             with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.verify_mongodb_query_transfer(client, ONLINE.build_item_locator(29, client.item), targets,

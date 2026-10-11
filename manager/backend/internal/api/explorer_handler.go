@@ -97,6 +97,7 @@ func bearerToken(c *gin.Context) string {
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
 // @Description 表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response
+// @Description 表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20，最大2000 | Page size, default 20, max 2000"
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"
@@ -184,13 +185,6 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		}
 		execute := managerprotection.PreviewQueryExecutor(h.previewSourceChecker, store, tenant, req.Engine.ID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), protectionSubject)
 		result, err = h.previewResolver.PreviewWithQueryExecutor(c.Request.Context(), req, execute)
-		if err == nil {
-			err = applyPreviewProtection(result, protectionRules, protectionSubject)
-			if err != nil {
-				protectionRequired(c)
-				return
-			}
-		}
 	}
 	if err != nil {
 		if writePreviewAuthorizationError(c, err) {
@@ -225,10 +219,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		return
 	}
 
-	logger.L().Info("数据预览成功", "locator", locatorURI, "preview_type", result.PreviewType)
-
-	// 根据 API 设计规范：查询单个资源直接返回对象
-	c.JSON(http.StatusOK, result)
+	writePreviewResult(c, result, protectionRules, protectionSubject)
 }
 
 func writePreviewAuthorizationError(c *gin.Context, err error) bool {
