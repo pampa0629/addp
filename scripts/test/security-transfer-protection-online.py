@@ -425,7 +425,10 @@ def create_and_run_task(
     payload: dict[str, object],
     deadline: float,
     owned_task_ids: list[int],
+    *, expected_status: str = "success",
 ) -> tuple[int, dict[str, object]]:
+    if expected_status not in {"success", "failed"}:
+        raise SuiteError("unsupported expected Transfer terminal status")
     created = _object(client.request("POST", "/api/v1/transfer/task-definitions", (201,), payload).payload, "Transfer task")
     task_id = positive_int(created.get("id"), "Transfer task id")
     owned_task_ids.append(task_id)
@@ -442,7 +445,7 @@ def create_and_run_task(
             "Transfer execution",
         )
         status = current.get("status")
-        if status == "success":
+        if status == expected_status:
             return task_id, current
         if status in TERMINAL_STATUSES:
             raise SuiteError(f"Transfer execution ended with status {status}")

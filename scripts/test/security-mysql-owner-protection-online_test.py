@@ -217,6 +217,12 @@ class MongoClient(SpatialClient):
         self.export_requests = []
         self.export_mutation = None
         self.fail_export_at = None
+        self.transfer_requests = []
+        self.transfer_executions = {}
+        self.transfer_deleted = set()
+        self.transfer_targets = {name: [] for name in ONLINE.MONGODB_TRANSFER_TARGETS}
+        self.transfer_mutation = None
+        self.fail_transfer_at = None
 
     def rows(self, owner):
         self.preview_calls += 1
@@ -245,6 +251,77 @@ class MongoClient(SpatialClient):
 
     def request(self, method, path, expected, body=None, *, raw_response=False):
         response = ONLINE.SUPPORT.Response
+        if method == "POST" and path == "/api/v1/transfer/task-definitions":
+            self.transfer_requests.append(copy.deepcopy(body))
+            return response(201, {"id": 100 + len(self.transfer_requests)})
+        if path.startswith("/api/v1/transfer/task-definitions/"):
+            task_id = int(path.split("/")[5])
+            if path.endswith("/start"):
+                payload = self.transfer_requests[task_id - 101]
+                config = payload["config"]
+                assert payload["task_type"] == "sync" and not payload["auto_scan_metadata"]
+                assert config["runtime"] == {"boundary": "bounded"} and config["load"] == {"mode": "snapshot"}
+                assert config["target"]["policy"] == {"apply_mode": "replace"}
+                query = json.loads(config["source"]["query"]["statement"])
+                assert config["source"]["query"]["language"] == "mql"
+                assert "/path/Outdoor/Persons?" in config["source"]["locator"]
+                project = query["pipeline"][0]["$project"]
+                derived = "$concat" in project["userInfo__phone"]
+                assert query == {"aggregate": "Persons", "pipeline": [{"$project": {
+                    "_id": "$_id", "display_name": {"$ifNull": ["$displayName", None]},
+                    "userInfo__phone": {"$concat": ["$userInfo.phone", ""]} if derived else {"$ifNull": ["$userInfo.phone", None]},
+                    "nick_name": {"$ifNull": ["$userInfo.nickName", None]},
+                }}]}
+                assert config["transforms"] == [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": [
+                    {"source": field, "target": field, "target_type": "string", "nullable": field in {"userInfo__phone", "nick_name"}}
+                    for field in ONLINE.MONGODB_TRANSFER_FIELDS]}]
+                denied = derived and self.confirmed
+                execution_id = str(uuid.UUID(int=task_id))
+                execution = {"execution_id": execution_id, "task_id": task_id, "trigger_by": 7,
+                    "status": "failed" if denied else "success", "records_read": 0 if denied else 7,
+                    "records_written": 0 if denied else 7, "bytes_written": 0 if denied else 500,
+                    "error_msg": "protected data action denied" if denied else ""}
+                target = config["target"]["name"]
+                if not denied:
+                    values = {key: {"_id": key, "userInfo": {"phone": ONLINE.SOURCE_VALUES.get(key)}} for key in "1234567"} if derived else {row["_id"]: row for row in self.rows("transfer")}
+                    self.transfer_targets[target] = [{"_id": key, "display_name": "person-" + key,
+                        "userInfo__phone": values[key].get("userInfo", {}).get("phone"),
+                        "nick_name": "nickname-" + key if key != "7" else None} for key in "1234567"]
+                if self.transfer_mutation == "fail_start" or len(self.transfer_requests) == self.fail_transfer_at:
+                    raise ONLINE.SuiteError("injected transfer start failure")
+                if self.transfer_mutation == "failed_control" and not self.confirmed: execution["status"] = "failed"
+                if self.transfer_mutation == "allow_derived" and denied: execution["status"] = "success"
+                if self.transfer_mutation == "denied_writes" and denied: execution["records_written"] = 1
+                if self.transfer_mutation == "denied_bytes" and denied: execution["bytes_written"] = 1
+                if self.transfer_mutation == "unrelated_failure" and denied: execution["error_msg"] = "source connection unavailable"
+                if self.transfer_mutation == "denied_target" and denied: self.transfer_targets[target] = [{"_id": "unexpected"}]
+                if self.transfer_mutation == "actor": execution["trigger_by"] = 8
+                if self.transfer_mutation == "task": execution["task_id"] = 999
+                if self.transfer_mutation == "count": execution["records_written"] = 6
+                if self.transfer_mutation == "uuid": execution["execution_id"] = "other"
+                rows = self.transfer_targets[target]
+                if rows and self.transfer_mutation == "plaintext": rows[0]["userInfo__phone"] = "13812345678"
+                if rows and self.transfer_mutation == "adjacent": rows[0]["nick_name"] = "changed"
+                if rows and self.transfer_mutation == "extra": rows[0]["original_phone"] = "13812345678"
+                if rows and self.transfer_mutation == "missing": rows.pop()
+                if rows and self.transfer_mutation == "duplicate": rows[-1] = copy.deepcopy(rows[0])
+                self.transfer_executions[execution_id] = execution
+                return response(200, {"execution_id": execution_id})
+            if method == "DELETE": self.transfer_deleted.add(task_id)
+            assert method == "DELETE" or task_id in self.transfer_deleted
+            return response(404 if method == "GET" else 200, {})
+        if path.startswith("/api/v1/transfer/executions/"):
+            return response(200, copy.deepcopy(self.transfer_executions[path.rsplit("/", 1)[1]]))
+        if path == "/api/v1/meta/engines/17/items":
+            return response(200, [{"id": 30 + index, "node_id": 9, "fingerprint": "sha256:" + name,
+                "full_name": ONLINE.TARGET_SCHEMA + "." + name, "item_type": "table"}
+                for index, name in enumerate(ONLINE.MONGODB_TRANSFER_TARGETS)])
+        if path.startswith("/api/v1/manager/preview?"):
+            locator = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["locator"][0]
+            for target in ONLINE.MONGODB_TRANSFER_TARGETS:
+                if "/" + target + "?" in locator:
+                    return response(200, {"preview_type": "table", "data": {
+                        "columns": list(ONLINE.MONGODB_TRANSFER_FIELDS), "rows": copy.deepcopy(self.transfer_targets[target])}})
         if method == "POST" and path == "/api/v1/manager/exports":
             self.export_requests.append(copy.deepcopy(body))
             assert body["format"] == "mongodb_extended_jsonl"
@@ -386,8 +463,9 @@ class MongoAlgorithmTest(unittest.TestCase):
              patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=0)), \
              patch.object(ONLINE, "wait_for_scan", return_value="mongo-scan") as scan:
             prepared = ONLINE.prepare_mongodb_source(client, 29, time.monotonic() + 60)
-            result = ONLINE.exercise_mongodb_algorithms(client, 29, prepared, time.monotonic() + 60, 60)
-            scan.assert_called_once()
+            targets = ONLINE.prepare_mongodb_transfer_targets(client, 17, time.monotonic() + 60)
+            result = ONLINE.exercise_mongodb_algorithms(client, 29, prepared, targets, time.monotonic() + 60, 60)
+            self.assertEqual(scan.call_count, 2)
             return result
 
     def test_three_algorithms_nested_policy_and_restart_restore_without_rescan(self):
@@ -412,6 +490,17 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertTrue(report["initial_technical_field_search"]["same_item_verified"])
         self.assertTrue(all(case["develop"]["sparse_objects_verified"] for case in report["cases"]))
         self.assertEqual(len(client.export_requests), 4)
+        self.assertEqual(len(client.transfer_requests), 8)
+        self.assertEqual(client.transfer_deleted, set(range(101, 109)))
+        self.assertEqual(report["query_transfer_cleanup"], {"created_tasks": 8, "deleted_tasks": 8, "residual_tasks": 0})
+        control_query = client.transfer_requests[0]["config"]["source"]["query"]
+        for payload in client.transfer_requests:
+            if payload["config"]["target"]["name"] == ONLINE.MONGODB_TRANSFER_TARGETS[2]:
+                self.assertEqual(payload["config"]["source"]["query"], control_query)
+        self.assertEqual(report["unprotected_derived_transfer"]["records_written"], 7)
+        self.assertTrue(all(case["query_transfer"]["algorithm_values_verified"] for case in report["cases"]))
+        self.assertTrue(all(case["derived_transfer_denied"]["target_empty_before_and_after"] for case in report["cases"]))
+        self.assertTrue(report["cases"][0]["transfer_during_manager_policy"]["same_user_verified"])
         self.assertTrue(all(case["raw_record_export"]["canonical_int64_preserved"] for case in report["cases"]))
         self.assertTrue(report["cases"][0]["export_during_manager_policy"]["same_user_verified"])
         self.assertEqual([case["query_boundaries"]["count"] for case in report["cases"]], [7, 7, 7])
@@ -437,6 +526,52 @@ class MongoAlgorithmTest(unittest.TestCase):
             self.run_mongo(client)
         self.assertFalse(client.confirmed)
         self.assertEqual(client.baseline, client.original)
+
+    def test_transfer_failures_clean_tasks_and_restore_baseline_and_policy(self):
+        for fail_at in range(1, 9):
+            client = MongoClient()
+            client.fail_transfer_at = fail_at
+            with self.subTest(fail_at=fail_at), self.assertRaisesRegex(ONLINE.SuiteError, "injected transfer start"):
+                self.run_mongo(client)
+            self.assertEqual(client.transfer_deleted, set(range(101, 101 + fail_at)))
+            self.assertFalse(any(policy["state"] == "active" for policy in client.policies))
+            self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
+                             {k: v for k, v in client.original.items() if k != "version"})
+
+    def test_failed_transfer_control_cannot_count_as_protection_denial(self):
+        client = MongoClient()
+        client.transfer_mutation = "failed_control"
+        with self.assertRaisesRegex(ONLINE.SuiteError, "ended with status failed"):
+            self.run_mongo(client)
+        self.assertFalse(client.confirmed)
+        self.assertEqual(client.transfer_deleted, {101})
+
+    def test_query_transfer_rejects_leaks_wrong_identity_and_false_zero_write_evidence(self):
+        for mutation in ("plaintext", "adjacent", "extra", "missing", "duplicate", "actor", "task", "uuid", "count",
+                         "allow_derived", "denied_writes", "denied_bytes", "unrelated_failure", "denied_target"):
+            client = MongoClient()
+            client.confirmed = True
+            with patch.object(ONLINE, "wait_for_scan", return_value="target-scan"):
+                targets = ONLINE.prepare_mongodb_transfer_targets(client, 17, time.monotonic() + 60)
+            client.transfer_mutation = mutation
+            denied = mutation in {"allow_derived", "denied_writes", "denied_bytes", "unrelated_failure", "denied_target"}
+            expected = None if denied else {"1": "1*********8", "2": "张***c", "3": "a*c", "4": None, "5": None}
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.verify_mongodb_query_transfer(client, ONLINE.build_item_locator(29, client.item), targets,
+                    {"principal_id": "7"}, expected, time.monotonic() + 60)
+            self.assertEqual(client.transfer_deleted, {101})
+
+    def test_targets_must_start_empty_and_denied_target_must_be_empty_before_execution(self):
+        client = MongoClient()
+        client.transfer_targets[ONLINE.MONGODB_TRANSFER_TARGETS[2]] = [{"_id": "stale"}]
+        with patch.object(ONLINE, "wait_for_scan", return_value="target-scan"), \
+             self.assertRaisesRegex(ONLINE.SuiteError, "exact empty fixture"):
+            ONLINE.prepare_mongodb_transfer_targets(client, 17, time.monotonic() + 60)
+        target = ONLINE.MONGODB_TRANSFER_TARGETS[2]
+        targets = {"locators": {target: f"addp://engine/17/path/addp_online_security/{target}?type=table&item_id=32"}}
+        with self.assertRaisesRegex(ONLINE.SuiteError, "not empty before"):
+            ONLINE.verify_mongodb_query_transfer(client, "source", targets, {"principal_id": "7"}, None, time.monotonic() + 60)
+        self.assertEqual(client.transfer_requests, [])
 
     def test_protected_derived_output_must_be_denied_and_state_restored(self):
         client = MongoClient()
@@ -938,6 +1073,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 patch.object(ONLINE, 'require_hosted_restart'),
                 patch.object(ONLINE, 'validate_user_identity', return_value={}) as identity,
                 patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared'}) as prepare,
+                patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}) as targets,
                 patch.object(ONLINE, 'run_scenario', return_value={}) as scenario,
                 patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value={'cases': []}),
                 patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source'}),
@@ -949,6 +1085,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 order = Mock()
                 order.attach_mock(identity, 'identity')
                 order.attach_mock(prepare, 'prepare')
+                order.attach_mock(targets, 'targets')
                 order.attach_mock(scenario, 'scenario')
                 readiness.return_value = {'same_item_verified': True}
                 if unavailable:
@@ -962,7 +1099,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
                         return self.report()
                     browser.side_effect = launch
                     self.assertEqual(ONLINE.main(), 0)
-                    self.assertEqual([call[0] for call in order.mock_calls], ['identity', 'prepare', 'scenario'])
+                    self.assertEqual([call[0] for call in order.mock_calls], ['identity', 'prepare', 'targets', 'scenario'])
                     self.assertEqual(readiness.call_args.args[1:4], (23, {'fingerprint': 'source'}, 'email'))
 
     def report(self):
@@ -1055,12 +1192,12 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
         consumer.request.side_effect = lambda method, path, expected, body=None: context if method == 'GET' else ONLINE.SUPPORT.Response(expected[0], {'observed_at': '2026-10-10T00:00:00Z'})
         return authorizer, consumer
 
-    def test_source_grants_cover_only_five_exact_record_datasets_for_the_consumer(self):
+    def test_source_grants_cover_only_eight_exact_record_datasets_for_the_consumer(self):
         authorizer, consumer = self.source_clients()
         ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
         writes = [call for call in authorizer.request.call_args_list if call.args[0] == "POST"]
-        self.assertEqual(len(writes), 5)
-        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 5)
+        self.assertEqual(len(writes), 8)
+        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 8)
         actual = set()
         for call in writes:
             body = call.args[3]
@@ -1084,6 +1221,9 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             (17, "schema", "addp_online_security", "spatial_algorithm_source"),
             (17, "schema", "addp_online_security", "spatial_algorithm_transfer"),
             (17, "schema", "addp_online_security", "mysql_email_transfer"),
+            (17, "schema", "addp_online_security", "mongodb_query_transfer"),
+            (17, "schema", "addp_online_security", "mongodb_query_control"),
+            (17, "schema", "addp_online_security", "mongodb_query_denied"),
             (23, "database", "security_fixture", "customers"),
             (29, "database", "Outdoor", "Persons"),
         })

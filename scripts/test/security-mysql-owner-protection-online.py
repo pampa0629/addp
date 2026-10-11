@@ -56,6 +56,8 @@ EMAIL_DETECTOR = "addp.detector.email_metadata/v1"
 PHONE_DETECTOR = "addp.detector.phone_metadata/v2"
 MONGODB_SOURCE = "Outdoor.Persons"
 MONGODB_FIELD = "userInfo.phone"
+MONGODB_TRANSFER_TARGETS = ("mongodb_query_transfer", "mongodb_query_control", "mongodb_query_denied")
+MONGODB_TRANSFER_FIELDS = ("_id", "display_name", "userInfo__phone", "nick_name")
 DEFAULT_PROTECTION_PROBE_CODE = "online_default_protection_probe"
 DEFAULT_PROTECTION_ROLLBACK_CODE = "online_default_protection_rollback_probe"
 STRUCTURED_MASK_ALGORITHM = "addp.mask.keep_prefix_suffix/v2"
@@ -1267,13 +1269,116 @@ def prepare_mongodb_source(client: GatewayClient, engine_id: int, deadline: floa
     return {"scan_execution_id": scan, "item": source, "technical_field_search": search}
 
 
+def prepare_mongodb_transfer_targets(client: GatewayClient, engine_id: int, deadline: float) -> dict[str, object]:
+    scan = wait_for_scan(client, engine_id, deadline)
+    items = {name: find_item(client, engine_id, TARGET_SCHEMA + "." + name, "table")
+             for name in MONGODB_TRANSFER_TARGETS}
+    locators = {name: build_item_locator(engine_id, item) for name, item in items.items()}
+    for locator in locators.values():
+        columns, rows = preview_rows(client, locator)
+        if columns != list(MONGODB_TRANSFER_FIELDS) or rows:
+            raise SuiteError("MongoDB query targets must start with the exact empty fixture structure")
+    return {"scan_execution_id": scan, "parent_locator": build_schema_locator(engine_id, items[MONGODB_TRANSFER_TARGETS[0]]),
+            "locators": locators}
+
+
+def mongodb_transfer_payload(locator: str, targets: Mapping[str, object], target: str, derived: bool) -> dict[str, object]:
+    phone = {"$concat": ["$userInfo.phone", ""]} if derived else {"$ifNull": ["$userInfo.phone", None]}
+    query = {"aggregate": "Persons", "pipeline": [{"$project": {
+        "_id": "$_id", "display_name": {"$ifNull": ["$displayName", None]},
+        "userInfo__phone": phone, "nick_name": {"$ifNull": ["$userInfo.nickName", None]},
+    }}]}
+    payload = SUPPORT.task_payload("addp_online_security_mongo_" + uuid.uuid4().hex, locator,
+        str(targets["parent_locator"]), target, json.dumps(query, ensure_ascii=False, separators=(",", ":")),
+        [{"source": name, "target": name, "target_type": "string", "nullable": name in {"userInfo__phone", "nick_name"}}
+         for name in MONGODB_TRANSFER_FIELDS])
+    payload["auto_scan_metadata"] = False  # Seeded and scanned targets keep their structure.
+    return payload
+
+
+def assert_mongodb_transfer_rows(preview: tuple[list[str], list[dict[str, object]]],
+                                 expected: Mapping[str, object]) -> dict[str, object]:
+    columns, rows = preview
+    if columns != list(MONGODB_TRANSFER_FIELDS) or len(rows) != 7:
+        raise SuiteError("MongoDB query target has unexpected columns or row count")
+    observed = {}
+    for row in rows:
+        key = row.get("_id")
+        if (key not in set("1234567") or key in observed or set(row) != set(MONGODB_TRANSFER_FIELDS)
+                or row["display_name"] != "person-" + key
+                or row["nick_name"] != ("nickname-" + key if key != "7" else None)):
+            raise SuiteError("MongoDB query target changed row identity or adjacent fields")
+        observed[key] = row["userInfo__phone"]
+    if observed != {key: expected.get(key) for key in "1234567"}:
+        raise SuiteError("MongoDB query target differs from the independent algorithm values")
+    return {"rows": 7, "algorithm_values_verified": True, "null_and_missing_as_sql_null": True,
+            "adjacent_fields_preserved": True}
+
+
+def verify_mongodb_query_transfer(client: GatewayClient, locator: str, targets: Mapping[str, object],
+                                  identity: Mapping[str, object], expected: Mapping[str, object] | None,
+                                  deadline: float, *, control: bool = False) -> dict[str, object]:
+    denied = expected is None
+    target = MONGODB_TRANSFER_TARGETS[1 if control else 2 if denied else 0]
+    target_locator = str(_object(targets["locators"], "MongoDB transfer targets")[target])
+    if denied:
+        columns, rows = preview_rows(client, target_locator)
+        if columns != list(MONGODB_TRANSFER_FIELDS) or rows:
+            raise SuiteError("MongoDB denied query target is not empty before execution")
+    tasks: list[int] = []
+    error: BaseException | None = None
+    evidence: dict[str, object] = {}
+    try:
+        task_id, execution = create_and_run_task(client, mongodb_transfer_payload(locator, targets, target, control or denied),
+            deadline, tasks, expected_status="failed" if denied else "success")
+        execution_id = execution.get("execution_id")
+        try:
+            if str(uuid.UUID(str(execution_id))) != execution_id:
+                raise ValueError
+        except (ValueError, TypeError, AttributeError) as invalid:
+            raise SuiteError("MongoDB query Transfer execution UUID is invalid") from invalid
+        if (positive_int(execution.get("task_id"), "query task id") != task_id
+                or positive_int(execution.get("trigger_by"), "query initiator") != positive_int(identity["principal_id"], "ordinary user")
+                or execution.get("status") != ("failed" if denied else "success")):
+            raise SuiteError("MongoDB query execution identity or terminal status differs")
+        written = nonnegative_int(execution.get("records_written"), "query records written")
+        if denied:
+            if (written != 0 or nonnegative_int(execution.get("bytes_written"), "query bytes written") != 0
+                    or "protected data action denied" not in str(execution.get("error_msg", ""))):
+                raise SuiteError("MongoDB derived query must fail for protection with zero writes")
+            columns, rows = preview_rows(client, target_locator)
+            if columns != list(MONGODB_TRANSFER_FIELDS) or rows:
+                raise SuiteError("MongoDB denied query wrote target rows")
+            evidence = {"derived_output_denied": True, "target_empty_before_and_after": True, "bytes_written": 0}
+        else:
+            if written != 7 or nonnegative_int(execution.get("records_read"), "query records read") != 7:
+                raise SuiteError("MongoDB query execution must read and write all seven rows")
+            evidence = assert_mongodb_transfer_rows(preview_rows(client, target_locator), expected)
+            if control:
+                evidence["source_values_verified"] = True
+        evidence.update(execution_id=execution_id, task_id=task_id, records_written=written, same_user_verified=True)
+    except BaseException as failure:
+        error = failure
+    try:
+        cleanup_tasks(client, tasks)
+    except BaseException as cleanup_error:
+        raise SuiteError(f"MongoDB query task cleanup failed after {type(error).__name__ if error else 'execution'}") from cleanup_error
+    if error:
+        raise error
+    evidence["task_deleted"] = True
+    return evidence
+
+
 def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared: Mapping[str, object],
+                               transfer_targets: Mapping[str, object],
                                deadline: float, timeout: float) -> dict[str, object]:
     identity = validate_user_identity(client, positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"))
     scan = prepared["scan_execution_id"]
     source = _object(prepared.get("item"), "prepared MongoDB item")
     locator = build_item_locator(engine_id, source)
     unprotected_derived = verify_unprotected_mongodb_derived_query(client, engine_id, locator, deadline)
+    unprotected_transfer = verify_mongodb_query_transfer(client, locator, transfer_targets, identity,
+        SOURCE_VALUES, deadline, control=True)
     enrollment_id, initialized = ensure_enrollment(client, engine_id, MONGODB_SOURCE, locator)
     assessment_id, confirmed, finding_id = ensure_detected_assessment(
         client, enrollment_id, deadline, MONGODB_FIELD, PHONE_DETECTOR)
@@ -1326,6 +1431,8 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
             case["develop"] = assert_mongodb_rows(
                 develop_rows(client, engine_id, locator, deadline, MONGODB_FIND_QUERY, "mql"), "develop", expected)
             case["raw_record_export"] = verify_mongodb_raw_export(client, locator, identity, expected, deadline)
+            case["query_transfer"] = verify_mongodb_query_transfer(client, locator, transfer_targets, identity, expected, deadline)
+            case["derived_transfer_denied"] = verify_mongodb_query_transfer(client, locator, transfer_targets, identity, None, deadline)
             if index == 0:
                 policy = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), {
                     "assessment_id": assessment_id, "consumer_owner": "manager", "action": "preview",
@@ -1340,6 +1447,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
                     develop_rows(client, engine_id, locator, deadline, MONGODB_FIND_QUERY, "mql"),
                     "develop during Manager Policy", expected)
                 case["export_during_manager_policy"] = verify_mongodb_raw_export(client, locator, identity, expected, deadline)
+                case["transfer_during_manager_policy"] = verify_mongodb_query_transfer(client, locator, transfer_targets, identity, expected, deadline)
                 case["restart_recovery"] = exercise_restart_recovery(client, engine_id, source, enrollment_id,
                     baseline_id, policies, SM3_VALUES, deadline, field_name=MONGODB_FIELD, assert_rows=assert_mongodb_rows)
                 policy_path = f"/api/v1/security/protection-policies/{policies[0]}"
@@ -1359,8 +1467,18 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
         raise
     if scenario_error:
         raise scenario_error
+    transfers = [unprotected_transfer] + [case[key] for case in evidence
+        for key in ("query_transfer", "derived_transfer_denied")]
+    transfers.append(evidence[0]["transfer_during_manager_policy"])
+    if (len(transfers) != 8 or len({entry["task_id"] for entry in transfers}) != 8
+            or len({entry["execution_id"] for entry in transfers}) != 8
+            or not all(entry["task_deleted"] for entry in transfers)):
+        raise SuiteError("MongoDB query transfers require eight distinct cleaned tasks and executions")
     return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD,
             "unprotected_derived_query": unprotected_derived,
+            "unprotected_derived_transfer": unprotected_transfer,
+            "target_scan_execution_id": transfer_targets["scan_execution_id"],
+            "query_transfer_cleanup": {"created_tasks": 8, "deleted_tasks": 8, "residual_tasks": 0},
             "initial_technical_field_search": prepared["technical_field_search"],
             "component": component,
             "scan_execution_id": scan, "enrollment_initialized": initialized,
@@ -1452,7 +1570,7 @@ def run_scenario(
             raise SuiteError("Transfer target lost non-sensitive customer fields")
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v7",
+            "schema_version": "addp.security-mysql-owner-protection-online/v8",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -1516,7 +1634,7 @@ def initialize_source_grants(
 ) -> None:
     """Prepare precise reads through System's sole independent Grant command."""
     validate_user_identity(consumer, tenant_id)
-    targets = [
+    targets = [(postgres_engine_id, "schema", TARGET_SCHEMA, name) for name in MONGODB_TRANSFER_TARGETS] + [
         (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_SOURCE),
         (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_TARGET),
         (postgres_engine_id, "schema", TARGET_SCHEMA, TARGET_TABLE),
@@ -1656,6 +1774,7 @@ def main() -> int:
     # isolate Manager's index. A successful Meta scan alone is not index proof.
     validate_user_identity(client, tenant_id)
     mongodb_source = prepare_mongodb_source(client, mongodb_engine_id, time.monotonic() + timeout)
+    mongodb_transfer_targets = prepare_mongodb_transfer_targets(client, target_engine_id, time.monotonic() + timeout)
     report = run_scenario(
         client,
         tenant_id,
@@ -1666,7 +1785,7 @@ def main() -> int:
         timeout,
     )
     report["mongodb_algorithms"] = exercise_mongodb_algorithms(client, mongodb_engine_id, mongodb_source,
-        time.monotonic() + timeout, timeout)
+        mongodb_transfer_targets, time.monotonic() + timeout, timeout)
     source_item = find_item(client, source_engine_id,
                             f"{required_environment('ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE')}.{SOURCE_TABLE}", "table")
     # Projection changes and owned-resource cleanup queue external index purges.

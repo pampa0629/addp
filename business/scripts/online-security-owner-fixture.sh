@@ -84,6 +84,15 @@ INSERT INTO addp_online_security.spatial_algorithm_source
   FROM (VALUES (1, '13812345678'), (2, '张三abc'), (3, 'abc'), (4, NULL::text), (5, '')) AS fixture(id, value);
 CREATE TABLE addp_online_security.spatial_algorithm_transfer (id bigint PRIMARY KEY);
 CREATE TABLE addp_online_security.mysql_email_transfer (id bigint PRIMARY KEY);
+CREATE TABLE addp_online_security.mongodb_query_transfer (
+  _id text PRIMARY KEY, display_name text NOT NULL, "userInfo__phone" text, nick_name text
+);
+CREATE TABLE addp_online_security.mongodb_query_control (
+  _id text PRIMARY KEY, display_name text NOT NULL, "userInfo__phone" text, nick_name text
+);
+CREATE TABLE addp_online_security.mongodb_query_denied (
+  _id text PRIMARY KEY, display_name text NOT NULL, "userInfo__phone" text, nick_name text
+);
 CREATE TABLE addp_online_security.exemption_source (id bigint PRIMARY KEY, phone text);
 INSERT INTO addp_online_security.exemption_source VALUES
   (1, '13812345678'), (2, '13987654321'), (3, NULL);
@@ -95,6 +104,9 @@ GRANT SELECT ON addp_online_security.spatial_algorithm_source TO security_writer
 GRANT SELECT ON addp_online_security.exemption_source TO security_writer;
 ALTER TABLE addp_online_security.spatial_algorithm_transfer OWNER TO security_writer;
 ALTER TABLE addp_online_security.mysql_email_transfer OWNER TO security_writer;
+ALTER TABLE addp_online_security.mongodb_query_transfer OWNER TO security_writer;
+ALTER TABLE addp_online_security.mongodb_query_control OWNER TO security_writer;
+ALTER TABLE addp_online_security.mongodb_query_denied OWNER TO security_writer;
 SQL
 then fail "PostgreSQL seed failed"; fi
 if ! MYSQL_CONTAINER="${containers[1]}" MYSQL_USER=root MYSQL_DATABASE=security_fixture \

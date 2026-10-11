@@ -90,7 +90,8 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
         result = self.run_fixture('start')
         self.assertEqual(result.returncode, 0, result.stderr)
         sql = self.sql.read_text()
-        for fragment in ('GRANT CONNECT, CREATE ON DATABASE security_fixture TO security_writer', 'CREATE EXTENSION postgis', 'CREATE TABLE addp_online_security.exemption_source', 'GRANT SELECT ON addp_online_security.exemption_source', 'location_point geometry(Point, 4326)', 'NULL::text', '张三abc',
+        for fragment in ('GRANT CONNECT, CREATE ON DATABASE security_fixture TO security_writer', 'CREATE TABLE addp_online_security.mongodb_query_transfer', 'CREATE TABLE addp_online_security.mongodb_query_control', 'CREATE TABLE addp_online_security.mongodb_query_denied',
+                         'ALTER TABLE addp_online_security.mongodb_query_transfer OWNER TO security_writer', 'ALTER TABLE addp_online_security.mongodb_query_control OWNER TO security_writer', 'ALTER TABLE addp_online_security.mongodb_query_denied OWNER TO security_writer', 'CREATE EXTENSION postgis', 'CREATE TABLE addp_online_security.exemption_source', 'GRANT SELECT ON addp_online_security.exemption_source', 'location_point geometry(Point, 4326)', 'NULL::text', '张三abc',
                          'ST_SetSRID(ST_MakePoint(100 + id, 20 + id), 4326)', 'GRANT SELECT ON addp_online_security.spatial_algorithm_source',
                          'spatial_algorithm_transfer OWNER TO security_writer', 'mysql_email_transfer OWNER TO security_writer'):
             self.assertIn(fragment, sql)

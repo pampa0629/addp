@@ -15,6 +15,29 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class GatewayDownloadTest(unittest.TestCase):
+    def test_expected_failure_reuses_task_lifecycle_and_keeps_default_success_strict(self):
+        for status, expected_status, raises in (("failed", "failed", False), ("failed", "success", True), ("success", "failed", True)):
+            client = Mock()
+            client.request.side_effect = [ONLINE.Response(201, {"id": 11}),
+                ONLINE.Response(200, {"execution_id": "one"}),
+                ONLINE.Response(200, {"status": status})]
+            owned = []
+            with self.subTest(status=status, expected_status=expected_status):
+                if raises:
+                    with self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.create_and_run_task(client, {}, float("inf"), owned, expected_status=expected_status)
+                else:
+                    self.assertEqual(ONLINE.create_and_run_task(client, {}, float("inf"), owned,
+                        expected_status=expected_status), (11, {"status": status}))
+            self.assertEqual(owned, [11])
+            self.assertEqual(client.request.call_count, 3)
+
+    def test_invalid_terminal_expectation_fails_before_creating_task(self):
+        client = Mock()
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.create_and_run_task(client, {}, float("inf"), [], expected_status="cancelled")
+        client.request.assert_not_called()
+
     def test_raw_download_reuses_authenticated_transport(self):
         raw = b'{"_id":"1"}\n{"_id":"2"}\n'
         reply = Mock(status=200)
