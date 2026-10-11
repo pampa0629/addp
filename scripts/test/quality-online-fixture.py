@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import signal
 import sys
@@ -20,6 +21,16 @@ PREPARATION_PERMISSIONS = {
     "meta.scan_task.execute", "meta.scan_task.read", "meta.catalog.read",
     "system.execution_authorization.create", "develop.data_read.execute", "develop.data_ddl.execute",
 }
+
+
+def validate_identity(client, tenant_id, permissions):
+    identity = API.validate_user_identity(client, tenant_id, permissions)
+    context = client.request("GET", "/api/v1/system/auth/context", (200,)).payload
+    principal = context.get("principal")
+    identifier = principal.get("id") if isinstance(principal, dict) else None
+    if not isinstance(identifier, str) or not re.fullmatch(r"[1-9][0-9]*", identifier):
+        raise API.SuiteError("fixture User principal identity is invalid")
+    return dict(identity, principal_id=identifier)
 
 
 def execution_id(item):
@@ -116,8 +127,8 @@ def main(action):
         raise API.SuiteError("fixture preparation requires explicit Tenant and Engine")
     token = os.environ["ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN"]
     consumer_token = os.environ["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"]
-    identity = API.validate_user_identity(API.GatewayClient(os.environ["SYSTEM_URL"], token, 30), tenant_id, PREPARATION_PERMISSIONS)
-    consumer = API.validate_user_identity(API.GatewayClient(os.environ["SYSTEM_URL"], consumer_token, 30), tenant_id,
+    identity = validate_identity(API.GatewayClient(os.environ["SYSTEM_URL"], token, 30), tenant_id, PREPARATION_PERMISSIONS)
+    consumer = validate_identity(API.GatewayClient(os.environ["SYSTEM_URL"], consumer_token, 30), tenant_id,
                                          QUALITY.REQUIRED_PERMISSIONS | {"system.execution_authorization.create",
                                                                           "develop.data_read.execute", "develop.data_ddl.execute"})
     if identity["principal_id"] == consumer["principal_id"]:

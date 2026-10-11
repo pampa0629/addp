@@ -10,6 +10,21 @@ from unittest.mock import patch
 FIXTURE = import_module("scripts.test.quality-online-fixture")
 
 
+class UserGateway:
+    def __init__(self, principal_id):
+        self.principal_id = principal_id
+
+    def request(self, method, path, statuses):
+        assert (method, path) == ("GET", "/api/v1/system/auth/context")
+        permissions = FIXTURE.PREPARATION_PERMISSIONS | FIXTURE.QUALITY.REQUIRED_PERMISSIONS
+        return FIXTURE.API.Response(200, {
+            "principal": {"type": "user", "id": self.principal_id},
+            "context": {"type": "tenant", "tenant_id": "2"},
+            "token": {"type": "first_party_access_token"},
+            "authorization": {"role_assignments": [{"role_key": "online.fixture", "permissions": sorted(permissions)}]},
+        })
+
+
 class Gateway:
     def __init__(self, fault=None):
         self.fault, self.calls, self.tables, self.physical = fault, [], {}, []
@@ -82,8 +97,8 @@ class QualityOwnerFixtureTest(unittest.TestCase):
     def test_private_environment_and_safe_evidence_use_distinct_users(self):
         with tempfile.TemporaryDirectory(prefix="addp-quality-fixture-") as temporary:
             root, client = Path(temporary), Gateway()
-            with patch.dict(os.environ, self.environment(root), clear=True), patch.object(FIXTURE.API, "GatewayClient", return_value=client), \
-                    patch.object(FIXTURE.API, "validate_user_identity", side_effect=[{"principal_id": "4"}, {"principal_id": "5"}]):
+            with patch.dict(os.environ, self.environment(root), clear=True), \
+                    patch.object(FIXTURE.API, "GatewayClient", side_effect=[UserGateway("4"), UserGateway("5"), client]):
                 FIXTURE.main("prepare")
             destination = root / "quality-fixtures.env"
             self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
@@ -95,10 +110,15 @@ class QualityOwnerFixtureTest(unittest.TestCase):
     def test_same_user_is_rejected_before_preparation(self):
         with tempfile.TemporaryDirectory(prefix="addp-quality-fixture-") as temporary:
             root = Path(temporary)
-            with patch.dict(os.environ, self.environment(root), clear=True), patch.object(FIXTURE.API, "GatewayClient"), \
-                    patch.object(FIXTURE.API, "validate_user_identity", return_value={"principal_id": "4"}), self.assertRaises(FIXTURE.API.SuiteError):
+            with patch.dict(os.environ, self.environment(root), clear=True), \
+                    patch.object(FIXTURE.API, "GatewayClient", return_value=UserGateway("4")), self.assertRaises(FIXTURE.API.SuiteError):
                 FIXTURE.main("prepare")
             self.assertFalse((root / "quality-fixtures.env").exists())
+
+    def test_invalid_principal_identity_is_rejected(self):
+        for identifier in (None, "", "0", "-1", "04", 4):
+            with self.subTest(identifier=identifier), self.assertRaises(FIXTURE.API.SuiteError):
+                FIXTURE.validate_identity(UserGateway(identifier), 2, FIXTURE.PREPARATION_PERMISSIONS)
 
 
 if __name__ == "__main__":
