@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import sys
 import unittest
@@ -493,6 +494,42 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             )
             result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == names[1])
             self.assertEqual(result.payload["error_code"], "platform_condition_unsatisfied")
+
+    async def test_transfer_nonstandard_target_types_cannot_be_reviewed_or_created(self):
+        definition, _, _, valid_arguments, checkpoint = platform_fixture()
+        names = ["platform.capability.context", "transfer.task.create"]
+        owner_calls = []
+
+        class RecordingCreate(_Tool):
+            async def ainvoke(self, args):
+                owner_calls.append(args)
+                return await super().ainvoke(args)
+
+        for value in ("text", "boolean", "jsonb", "JSON", "json ", "stringg"):
+            with self.subTest(target_type=value):
+                arguments = copy.deepcopy(valid_arguments)
+                arguments["config"]["transforms"][0]["fields"][0]["target_type"] = value
+                events = await self._run_factory(
+                    agent_run_id="invalid-target-type", allowed_tools=names,
+                    tools=[_Tool(names[0], definition), RecordingCreate(names[1], {})],
+                    checkpoint=copy.deepcopy(checkpoint), responses=[
+                        _Response(tool_calls=[_tool_call("request_clarification", {
+                            "prompt": "请复核", "reason": "transfer_create_review",
+                            "operation_review": {"tool": names[1], "arguments": arguments},
+                            "options": [{"label": "确认", "value": "confirm"}, {"label": "取消", "value": "cancel"}],
+                        })]),
+                        _Response(tool_calls=[_tool_call(names[1], arguments, "create-invalid")]),
+                        _Response(content="blocked"),
+                    ],
+                )
+                self.assertFalse(any(event.kind == "interaction_required" for event in events))
+                rejected = [event for event in events if event.kind == "tool_result"
+                            and event.payload["tool_name"] in {"request_clarification", names[1]}]
+                self.assertEqual(len(rejected), 2)
+                self.assertTrue(all(event.payload["is_error"] for event in rejected))
+                self.assertTrue(all("platform_condition_unsatisfied:arguments" in event.payload["content"]
+                                    for event in rejected))
+        self.assertEqual(owner_calls, [])
 
     async def test_text_clarification_review_and_cancel_keep_one_run_and_never_create(self):
         import uuid

@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+import re
 from pathlib import Path
 
 import httpx
@@ -135,6 +136,47 @@ def test_transfer_draft_schema_matches_resource_fact_contract():
         return value
 
     assert validation_rules(resource_schema) == validation_rules(ResourceFact.model_json_schema())
+
+
+def test_transfer_create_target_types_match_common_standard_vocabulary():
+    definition = get_tool("transfer.task.create")
+    schema = definition.input_schema
+    fields = schema["properties"]["config"]["properties"]["transforms"]["items"]["properties"]["fields"]
+    target_type = fields["items"]["properties"]["target_type"]
+    common_types = set(re.findall(
+        r'FieldType\w+\s+FieldType\s*=\s*"([a-z]+)"',
+        (ROOT / "common/datatype/field_type.go").read_text(),
+    ))
+    assert common_types and set(target_type["enum"]) == common_types
+    assert len(target_type["enum"]) == len(common_types)
+    assert definition.version == "2.0.0"
+    validator = Draft202012Validator(schema)
+    for value in common_types:
+        arguments = task_arguments()
+        arguments["config"]["transforms"][0]["fields"][0]["target_type"] = value
+        assert not list(validator.iter_errors(arguments)), value
+
+
+def test_transfer_create_rejects_nonstandard_types_before_delegation_or_owner():
+    async def run():
+        executor = ToolExecutor("http://gateway", "private")
+
+        async def forbidden(*_args, **_kwargs):
+            raise AssertionError("nonstandard target type reached delegation or owner")
+
+        executor._issue_delegated_token = forbidden
+        executor._handlers["transfer.task.create"] = forbidden
+        for value in ("text", "boolean", "jsonb", "integer", "varchar", "JSON", "json ", "stringg", ""):
+            arguments = task_arguments()
+            arguments["config"]["transforms"][0]["fields"][0]["target_type"] = value
+            try:
+                await executor.call("transfer.task.create", arguments, agent_run_id="run", tool_call_id="call")
+            except ToolExecutionError as exc:
+                assert exc.code == "invalid_arguments", value
+            else:
+                raise AssertionError(f"nonstandard target type accepted: {value!r}")
+
+    asyncio.run(run())
 
 
 def test_transfer_draft_rejects_bad_context_before_delegation_or_http():
