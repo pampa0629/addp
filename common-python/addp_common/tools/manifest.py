@@ -1,4 +1,6 @@
 import json
+import re
+from copy import deepcopy
 from functools import lru_cache
 from importlib.resources import files
 from typing import Any, Literal
@@ -34,9 +36,9 @@ class ToolDefinition(BaseModel):
             raise ValueError(f"tool {self.name} required_permissions must not be empty")
         if len(self.auth.required_permissions) != len(set(self.auth.required_permissions)):
             raise ValueError(f"tool {self.name} required_permissions must be unique")
-        owner_prefix = f"{self.owner}."
-        if any(not permission.startswith(owner_prefix) for permission in self.auth.required_permissions):
-            raise ValueError(f"tool {self.name} required_permissions must belong to owner {self.owner}")
+        if any(not re.fullmatch(r"[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*", permission)
+               for permission in self.auth.required_permissions):
+            raise ValueError(f"tool {self.name} required_permissions must be Permission keys")
         return self
 
 
@@ -54,7 +56,25 @@ class ToolManifest(BaseModel):
 
     schema_id: Literal["addp.tool-manifest/v1"] = Field(alias="schema")
     version: str
+    definitions: dict[str, dict[str, Any]] = Field(default_factory=dict, alias="$defs")
     tools: list[ToolDefinition]
+
+    @model_validator(mode="after")
+    def expand_input_references(self):
+        for tool in self.tools:
+            schema = tool.input_schema
+            if "$ref" not in schema:
+                continue
+            reference = schema["$ref"]
+            prefix = "#/$defs/"
+            if (set(schema) != {"$ref"} or not isinstance(reference, str)
+                    or not reference.startswith(prefix) or reference[len(prefix):] not in self.definitions):
+                raise ValueError("input_schema must reference a known local $defs entry without siblings")
+            resolved = self.definitions[reference[len(prefix):]]
+            if "$ref" in resolved:
+                raise ValueError("shared input Schema must be a complete definition")
+            tool.input_schema = deepcopy(resolved)
+        return self
 
     @model_validator(mode="after")
     def validate_unique_names(self):

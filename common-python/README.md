@@ -83,6 +83,9 @@ results = await manager.search("城市", page_size=10)
 - `ManagerClient` - Manager 模块 (数据管理、预览)
 - `ServiceConsumerClient` - Service Consumer Catalog、Descriptor 和发布查询服务执行
 - `CopilotClient` - Copilot 模块（结构化生成）
+- `TransferClient` - Transfer 未启动任务定义及只读配置预检
+
+`TransferClient.check_task_config()` 与 `create_task()` 接收相同参数并提交相同的完整创建请求（无计划、未启用、不自动扫描）。检查方法只调用 `/api/v1/transfer/task-config-checks`，保留完整 owner 报告的三态、诊断、事实摘要及未检查项，不自动创建、重试或执行任务。HTTP 200 不等于 `supported`，`supported` 也不证明全部值可写入。正式 `transfer.task.config.check` Tool 已接入 ToolExecutor；它与创建 Tool 共用 Manifest 根 `$defs` 中唯一输入定义，SDK 共用完整请求构造。委托 audience 唯一为 `transfer`、Scope 唯一为 Tool 名，System 签发与 Transfer 路由均要求 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 三项权限交集。CLI 经同一 ToolExecutor 使用，不能绕过正式委托链。当前 Transfer Skill/平台定义尚未装配该 Tool，Agent 的最终复核仍不能冒充正式预检。
 
 ## Service Consumer SDK
 

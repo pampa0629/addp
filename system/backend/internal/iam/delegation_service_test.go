@@ -93,3 +93,39 @@ func TestContainsAllDelegationPermissions(t *testing.T) {
 		t.Fatal("incomplete all-of Permission set was accepted")
 	}
 }
+
+func TestDelegationCrossOwnerPermissionsDoNotExpandAudienceOrScope(t *testing.T) {
+	tool := commonauth.ToolAuthorization{
+		Name: "transfer.task.config.check", Owner: "transfer",
+		RequiredScopes:      []string{"transfer.task.config.check"},
+		RequiredPermissions: []string{"transfer.task.create", "meta.catalog.read", "system.engine.read"},
+	}
+	service, err := NewDelegationService(NewRepository(nil), staticDelegationCatalog{tool.Name: tool}, DelegationServiceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := IssueDelegatedAccessTokenInput{SourceAccessToken: "addp_at_source", Audience: "transfer", Scopes: []string{tool.Name}, AgentRunID: "run", ToolCallID: "check"}
+	if actual, err := service.validateRequest(input); err != nil || len(actual.RequiredPermissions) != 3 {
+		t.Fatalf("cross-owner intersection rejected: %+v %v", actual, err)
+	}
+	rows := []RoleAssignmentPermissionProjection{{PermissionKey: tool.RequiredPermissions[0]}, {PermissionKey: tool.RequiredPermissions[1]}, {PermissionKey: tool.RequiredPermissions[2]}}
+	if !containsAllDelegationPermissions(rows, tool.RequiredPermissions) {
+		t.Fatal("complete intersection rejected")
+	}
+	for missing := range rows {
+		partial := append([]RoleAssignmentPermissionProjection(nil), rows[:missing]...)
+		partial = append(partial, rows[missing+1:]...)
+		if containsAllDelegationPermissions(partial, tool.RequiredPermissions) {
+			t.Fatalf("missing cross-owner permission %s accepted", rows[missing].PermissionKey)
+		}
+	}
+	input.Audience = "meta"
+	if _, err := service.validateRequest(input); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("cross-owner audience accepted: %v", err)
+	}
+	input.Audience = "transfer"
+	input.Scopes = append(input.Scopes, "transfer.task.create")
+	if _, err := service.validateRequest(input); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("scope expansion accepted: %v", err)
+	}
+}

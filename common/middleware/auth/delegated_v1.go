@@ -92,12 +92,6 @@ func NewDelegatedRouteGuard(config DelegatedRouteGuardConfig) (gin.HandlerFunc, 
 	if err != nil {
 		return nil, err
 	}
-	ownerPrefix := config.Audience + "."
-	for _, permission := range requiredPermissions {
-		if !strings.HasPrefix(permission, ownerPrefix) {
-			return nil, fmt.Errorf("%w: delegated permissions must belong to the audience owner", commonapi.ErrBadRequest)
-		}
-	}
 	now := config.Now
 	if now == nil {
 		now = time.Now
@@ -127,8 +121,8 @@ func NewDelegatedRouteGuard(config DelegatedRouteGuardConfig) (gin.HandlerFunc, 
 }
 
 func normalizeDelegatedScopes(scopes []string) ([]string, error) {
-	if len(scopes) == 0 {
-		return nil, fmt.Errorf("%w: delegated Tool scopes are required", commonapi.ErrBadRequest)
+	if len(scopes) != 1 {
+		return nil, fmt.Errorf("%w: exactly one delegated Tool scope is required", commonapi.ErrBadRequest)
 	}
 	normalized := append([]string(nil), scopes...)
 	sort.Strings(normalized)

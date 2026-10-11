@@ -136,3 +136,16 @@ func TestTaskConfigCheckRoutePermissionsAndDelegatedIsolation(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskConfigCheckDelegatedPolicyDeclaresCompletePermissionIntersection(t *testing.T) {
+	policy := transferDelegatedToolPolicies()["POST /api/v1/transfer/task-config-checks"]
+	if len(policy.RequiredScopes) != 1 || policy.RequiredScopes[0] != "transfer.task.config.check" {
+		t.Fatalf("unexpected scopes: %v", policy.RequiredScopes)
+	}
+	want := []string{"meta.catalog.read", "system.engine.read", "transfer.task.create"}
+	actual := append([]string(nil), policy.RequiredPermissions...)
+	sort.Strings(actual)
+	if strings.Join(actual, ",") != strings.Join(want, ",") {
+		t.Fatalf("delegated guard does not declare complete all-of: %v", actual)
+	}
+}

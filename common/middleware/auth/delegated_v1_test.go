@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -106,12 +107,59 @@ func TestDelegatedRouteGuardValidatesConfiguration(t *testing.T) {
 		{Audience: "develop", RequiredPermissions: []string{"develop.task.execute"}},
 		{Audience: "develop", RequiredScopes: []string{"workflow"}, RequiredPermissions: []string{"develop.task.execute"}},
 		{Audience: "develop", RequiredScopes: []string{"workflow.run", "workflow.run"}, RequiredPermissions: []string{"develop.task.execute"}},
+		{Audience: "develop", RequiredScopes: []string{"workflow.run", "workflow.validate"}, RequiredPermissions: []string{"develop.task.execute"}},
 		{Audience: "develop", RequiredScopes: []string{"workflow.run"}},
-		{Audience: "develop", RequiredScopes: []string{"workflow.run"}, RequiredPermissions: []string{"manager.data_item.read"}},
+		{Audience: "develop", RequiredScopes: []string{"workflow.run"}, RequiredPermissions: []string{"meta.*.read"}},
+		{Audience: "develop", RequiredScopes: []string{"workflow.run"}, RequiredPermissions: []string{"meta.catalog.read", "meta.catalog.read"}},
 	} {
 		if _, err := NewDelegatedRouteGuard(config); !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("NewDelegatedRouteGuard(%#v) error = %v, want bad request", config, err)
 		}
+	}
+}
+
+func TestDelegatedRouteGuardChecksCrossOwnerIntersectionWithoutExpandingToken(t *testing.T) {
+	permissions := []string{"meta.catalog.read", "system.engine.read", "transfer.task.create"}
+	now := time.Date(2026, 7, 24, 8, 1, 0, 0, time.UTC)
+	guard, err := NewDelegatedRouteGuard(DelegatedRouteGuardConfig{
+		Audience: "transfer", RequiredScopes: []string{"transfer.task.config.check"}, RequiredPermissions: permissions,
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scenario := range []string{"valid", "meta.catalog.read", "system.engine.read", "transfer.task.create", "wrong_audience", "extra_scope"} {
+		t.Run(scenario, func(t *testing.T) {
+			subject := testDelegatedAuthContext()
+			subject.Client.Audiences = []string{"transfer"}
+			subject.Client.Scopes = []string{"transfer.task.config.check"}
+			keys := make([]string, 0, len(permissions))
+			for _, permission := range permissions {
+				if permission != scenario {
+					keys = append(keys, permission)
+				}
+			}
+			sort.Strings(keys)
+			subject.Authorization.RoleAssignments[0].Permissions = keys
+			if scenario == "wrong_audience" {
+				subject.Client.Audiences = []string{"meta"}
+			}
+			if scenario == "extra_scope" {
+				subject.Client.Scopes = append(subject.Client.Scopes, "transfer.task.create")
+			}
+			router := gin.New()
+			router.Use(func(c *gin.Context) { setCanonicalAuthContext(c, subject); c.Next() })
+			router.POST("/check", guard, func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/check", nil))
+			want := http.StatusForbidden
+			if scenario == "valid" {
+				want = http.StatusNoContent
+			}
+			if response.Code != want {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, want, response.Body)
+			}
+		})
 	}
 }
 

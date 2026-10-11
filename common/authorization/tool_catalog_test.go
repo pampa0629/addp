@@ -2,6 +2,7 @@ package authorization
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,5 +92,63 @@ func TestGenerateSystemToolAuthorizationCatalogRejectsInvalidMapping(t *testing.
 	if _, err := GenerateSystemToolAuthorizationCatalog(root, report); err == nil ||
 		!strings.Contains(err.Error(), "tool_audience_owner_mismatch") {
 		t.Fatalf("GenerateSystemToolAuthorizationCatalog() error = %v", err)
+	}
+}
+
+func TestCrossOwnerToolPermissionsRemainAnExplicitValidatedIntersection(t *testing.T) {
+	for _, scenario := range []string{"valid", "missing_permission", "inactive", "non_delegable", "duplicate", "wrong_audience", "extra_scope"} {
+		t.Run(scenario, func(t *testing.T) {
+			root := t.TempDir()
+			keys := []string{"transfer.task.create", "meta.catalog.read", "system.engine.read"}
+			permissions := []PermissionDescriptor{
+				{Key: keys[0], OwnerModule: "transfer", Status: "active", Delegable: true},
+				{Key: keys[1], OwnerModule: "meta", Status: "active", Delegable: true},
+				{Key: keys[2], OwnerModule: "system", Status: "active", Delegable: true},
+			}
+			audience := "transfer"
+			scopes := []string{"transfer.task.config.check"}
+			switch scenario {
+			case "missing_permission":
+				permissions = permissions[:2]
+			case "inactive":
+				permissions[1].Status = "disabled"
+			case "non_delegable":
+				permissions[2].Delegable = false
+			case "duplicate":
+				keys = append(keys, keys[1])
+			case "wrong_audience":
+				audience = "meta"
+			case "extra_scope":
+				scopes = append(scopes, "transfer.task.create")
+			}
+			data, err := json.Marshal(map[string]any{"tools": []any{map[string]any{
+				"name": "transfer.task.config.check", "owner": "transfer",
+				"auth": map[string]any{"audience": audience, "required_scopes": scopes, "required_permissions": keys},
+			}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeCoverageFixture(t, root, "common-python/addp_common/tools/manifest.json", string(data))
+			report := AuthorizationCatalogReport{
+				SchemaVersion:       AuthorizationCatalogReportSchemaVersion,
+				PermissionManifests: []PermissionManifestReference{{OwnerModule: "transfer"}, {OwnerModule: "meta"}, {OwnerModule: "system"}},
+				Permissions:         permissions,
+			}
+			generated, err := GenerateSystemToolAuthorizationCatalog(root, report)
+			if scenario != "valid" {
+				if err == nil {
+					t.Fatal("invalid cross-owner mapping accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(generated), `RequiredPermissions: []string{"meta.catalog.read", "system.engine.read", "transfer.task.create"}`) ||
+				!strings.Contains(string(generated), `RequiredScopes:      []string{"transfer.task.config.check"}`) ||
+				!strings.Contains(string(generated), `Owner:               "transfer"`) {
+				t.Fatalf("intersection or exact delegation boundary lost: %s", generated)
+			}
+		})
 	}
 }

@@ -90,6 +90,12 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		RequiredScopes:      []string{"transfer.draft.generate"},
 		RequiredPermissions: []string{"copilot.transfer.execute"},
 	},
+	"transfer.task.config.check": {
+		Name:                "transfer.task.config.check",
+		Owner:               "transfer",
+		RequiredScopes:      []string{"transfer.task.config.check"},
+		RequiredPermissions: []string{"meta.catalog.read", "system.engine.read", "transfer.task.create"},
+	},
 	"transfer.task.create": {
 		Name:                "transfer.task.create",
 		Owner:               "transfer",

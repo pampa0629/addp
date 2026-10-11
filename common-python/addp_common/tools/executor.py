@@ -52,6 +52,7 @@ class ToolExecutor:
             "platform.capability.context": self._platform_capability_context,
             "platform.capabilities.list": self._platform_capabilities_list,
             "transfer.task.create": self._transfer_task_create,
+            "transfer.task.config.check": self._transfer_task_config_check,
         }
 
     async def call(
@@ -180,6 +181,10 @@ class ToolExecutor:
     async def _transfer_task_create(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(TransferClient, delegated_token) as client:
             return await client.create_task(**arguments)
+
+    async def _transfer_task_config_check(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(TransferClient, delegated_token) as client:
+            return await client.check_task_config(**arguments)
 
     async def _ontology_classes_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(OntologyClient, delegated_token) as client:

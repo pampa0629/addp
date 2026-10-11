@@ -319,7 +319,7 @@ func inspectToolManifest(
 			issues = append(issues, toolIssue("invalid_tool_scope", tool, relativePath, "required_scopes must contain only the stable Tool name"))
 		}
 		if len(tool.Auth.RequiredPermissions) == 0 {
-			issues = append(issues, toolIssue("missing_tool_permission_mapping", tool, relativePath, "delegated Tool must explicitly map to owner Permission keys"))
+			issues = append(issues, toolIssue("missing_tool_permission_mapping", tool, relativePath, "delegated Tool must explicitly map to registered Permission keys"))
 			continue
 		}
 		source.MappedToolCount++
@@ -334,9 +334,6 @@ func inspectToolManifest(
 			if !exists {
 				issues = append(issues, toolIssue("unknown_tool_permission", tool, relativePath, fmt.Sprintf("tool references unknown Permission %q", key)))
 				continue
-			}
-			if permission.OwnerModule != tool.Owner {
-				issues = append(issues, toolIssue("cross_owner_tool_permission", tool, relativePath, fmt.Sprintf("Permission %q is owned by %q", key, permission.OwnerModule)))
 			}
 			if permission.Status != "active" {
 				issues = append(issues, toolIssue("disabled_tool_permission", tool, relativePath, fmt.Sprintf("Permission %q is not active", key)))

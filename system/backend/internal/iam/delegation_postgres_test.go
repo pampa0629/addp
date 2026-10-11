@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonauth "github.com/addp/common/authorization"
 	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
@@ -249,5 +250,69 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 		Where("event_name = ? AND details::text LIKE ?", "iam.delegation.issued", "%addp_dat_%").
 		Count(&leakedSecretCount).Error; err != nil || leakedSecretCount != 0 {
 		t.Fatalf("delegation audit leaked token: count=%d error=%v", leakedSecretCount, err)
+	}
+
+	// Exercise the generated production Catalog and real IAM transaction, not a
+	// substitute owner-prefix or mocked Permission calculation.
+	for _, missing := range []string{"none", "transfer.task.create", "meta.catalog.read", "system.engine.read"} {
+		t.Run("config check missing "+missing, func(t *testing.T) {
+			permissions := []string{"transfer.task.create", "meta.catalog.read", "system.engine.read"}
+			keys := make([]string, 0, len(permissions))
+			for _, key := range permissions {
+				if key != missing && key != "system.engine.read" {
+					keys = append(keys, key)
+				}
+			}
+			suffix := strings.ReplaceAll(missing, ".", "_")
+			checkUser := createContextSelectionUser(t, ctx, identityService, "precheck-"+suffix, audit)
+			establishContextSelectionMembership(t, ctx, membershipService, tenant.ID, checkUser.PrincipalID, audit)
+			role, err := NewTenantRoleService(repository, time.Now).CreateRole(ctx, CreateTenantRoleInput{
+				TenantID: tenant.ID, RoleKey: "tenant.precheck_" + suffix, Name: "Precheck fixture",
+				ScopeTypes: []string{"tenant"}, PermissionKeys: keys, ActorPrincipalID: checkUser.PrincipalID, Audit: audit,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			insertRoleAssignment(t, db, checkUser.PrincipalID, role.RoleKey, "tenant", &tenant.ID, nil, nil, time.Now().UTC().Add(-time.Minute), nil, "manual")
+			// engine.read is intentionally not tenant-customizable. Use its
+			// existing built-in role, which supplies neither Meta nor Transfer.
+			if missing != "system.engine.read" {
+				insertRoleAssignment(t, db, checkUser.PrincipalID, "tenant.infrastructure_administrator", "tenant", &tenant.ID, nil, nil, time.Now().UTC().Add(-time.Minute), nil, "manual")
+			}
+			now, err := repository.CurrentDatabaseTime(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := selectionService.BeginContextSelection(ctx, BeginContextSelectionInput{
+				PrincipalID:    checkUser.PrincipalID,
+				Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: now.Add(-time.Second)}, Audit: audit,
+			})
+			if err != nil || session.Session == nil {
+				t.Fatalf("issue precheck session: %v", err)
+			}
+			issued, err := delegationService.IssueDelegatedAccessToken(ctx, IssueDelegatedAccessTokenInput{
+				SourceAccessToken: session.Session.AccessToken, Audience: "transfer", Scopes: []string{"transfer.task.config.check"},
+				AgentRunID: "run-precheck-" + suffix, ToolCallID: "call-precheck", Audit: audit,
+			})
+			if missing != "none" {
+				if !errors.Is(err, ErrDelegationPermissionDenied) {
+					t.Fatalf("missing %s was not denied: %v", missing, err)
+				}
+				var count int64
+				if err := db.Model(&DelegatedAccessToken{}).Where("agent_run_id = ?", "run-precheck-"+suffix).Count(&count).Error; err != nil || count != 0 {
+					t.Fatalf("denied delegation persisted: %d %v", count, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual, err := resolved.ResolveDelegatedAccessToken(ctx, issued.AccessToken)
+			if err != nil || !commonauth.HasContextPermissions(*actual, permissions...) ||
+				len(actual.Client.Audiences) != 1 || actual.Client.Audiences[0] != "transfer" ||
+				len(actual.Client.Scopes) != 1 || actual.Client.Scopes[0] != "transfer.task.config.check" {
+				t.Fatalf("delegated intersection or boundary lost: %+v %v", actual, err)
+			}
+		})
 	}
 }

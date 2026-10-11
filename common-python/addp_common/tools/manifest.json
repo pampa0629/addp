@@ -1,6 +1,73 @@
 {
   "schema": "addp.tool-manifest/v1",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "$defs": {
+    "transfer_task_input": {
+      "type": "object",
+      "required": ["name", "config"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 200},
+        "description": {"type": "string", "maxLength": 4000},
+        "batch_size": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "config": {
+          "type": "object",
+          "required": ["runtime", "load", "source", "target"],
+          "properties": {
+            "runtime": {"type": "object", "required": ["boundary"], "properties": {"boundary": {"const": "bounded"}}, "additionalProperties": false},
+            "load": {"type": "object", "required": ["mode"], "properties": {"mode": {"const": "snapshot"}}, "additionalProperties": false},
+            "source": {
+              "type": "object", "required": ["locator", "data_type", "representation"],
+              "properties": {
+                "locator": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "data_type": {"const": "table"}, "representation": {"const": "native"},
+                "query": {
+                  "type": "object", "required": ["language", "statement"],
+                  "properties": {"language": {"const": "mql"}, "statement": {"type": "string", "minLength": 1, "maxLength": 32768}},
+                  "additionalProperties": false
+                }
+              }, "additionalProperties": false
+            },
+            "target": {
+              "type": "object", "required": ["parent_locator", "name", "data_type", "representation", "policy"],
+              "properties": {
+                "parent_locator": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                "data_type": {"const": "table"}, "representation": {"const": "native"},
+                "policy": {
+                  "type": "object", "required": ["apply_mode"],
+                  "properties": {"apply_mode": {"type": "string", "enum": ["replace", "append"]}},
+                  "additionalProperties": false
+                }
+              }, "additionalProperties": false
+            },
+            "transforms": {
+              "type": "array", "maxItems": 1,
+              "items": {
+                "type": "object", "required": ["type", "version", "mode", "fields"],
+                "properties": {
+                  "type": {"const": "field_mapping"}, "version": {"const": "v1"}, "mode": {"const": "project"},
+                  "fields": {"type": "array", "minItems": 1, "maxItems": 128, "items": {
+                    "type": "object", "required": ["source", "target", "target_type"],
+                    "properties": {
+                      "source": {"type": "string", "minLength": 1}, "target": {"type": "string", "minLength": 1},
+                      "target_type": {
+                        "type": "string",
+                        "enum": ["unknown", "string", "bool", "bytes", "mixed", "int", "bigint", "float", "double", "decimal", "date", "time", "timestamp", "json", "array", "uuid", "geometry"],
+                        "description": "ADDP 标准字段类型标识，不是目标数据库 DDL 类型名；具体类型可写性和实际值转换仍由 Transfer/Provider 校验。"
+                      },
+                      "nullable": {"type": "boolean"}, "precision": {"type": "integer", "minimum": 1}, "scale": {"type": "integer", "minimum": 0}
+                    }, "additionalProperties": false
+                  }}
+                }, "additionalProperties": false
+              }
+            }
+          },
+          "allOf": [{"if": {"properties": {"source": {"required": ["query"]}}, "required": ["source"]}, "then": {"required": ["transforms"], "properties": {"transforms": {"minItems": 1}}}}],
+          "additionalProperties": false
+        }
+      }, "additionalProperties": false
+    }
+  },
   "tools": [
     {
       "name": "engine.list",
@@ -1081,77 +1148,256 @@
       "result_ref": {"mode": "none"},
       "limits": {"max_bytes": 262144},
       "errors": ["invalid_arguments", "delegation_rejected", "delegation_unavailable", "invalid_delegation_response", "owner_api_error", "owner_api_unavailable", "invalid_owner_response", "result_too_large"],
-      "input_schema": {
-        "type": "object",
-        "required": ["name", "config"],
-        "properties": {
-          "name": {"type": "string", "minLength": 1, "maxLength": 200},
-          "description": {"type": "string", "maxLength": 4000},
-          "batch_size": {"type": "integer", "minimum": 1, "maximum": 10000},
-          "config": {
-            "type": "object",
-            "required": ["runtime", "load", "source", "target"],
-            "properties": {
-              "runtime": {"type": "object", "required": ["boundary"], "properties": {"boundary": {"const": "bounded"}}, "additionalProperties": false},
-              "load": {"type": "object", "required": ["mode"], "properties": {"mode": {"const": "snapshot"}}, "additionalProperties": false},
-              "source": {
-                "type": "object", "required": ["locator", "data_type", "representation"],
-                "properties": {
-                  "locator": {"type": "string", "minLength": 1, "maxLength": 4096},
-                  "data_type": {"const": "table"}, "representation": {"const": "native"},
-                  "query": {
-                    "type": "object", "required": ["language", "statement"],
-                    "properties": {"language": {"const": "mql"}, "statement": {"type": "string", "minLength": 1, "maxLength": 32768}},
-                    "additionalProperties": false
-                  }
-                }, "additionalProperties": false
-              },
-              "target": {
-                "type": "object", "required": ["parent_locator", "name", "data_type", "representation", "policy"],
-                "properties": {
-                  "parent_locator": {"type": "string", "minLength": 1, "maxLength": 4096},
-                  "name": {"type": "string", "minLength": 1, "maxLength": 200},
-                  "data_type": {"const": "table"}, "representation": {"const": "native"},
-                  "policy": {
-                    "type": "object", "required": ["apply_mode"],
-                    "properties": {"apply_mode": {"type": "string", "enum": ["replace", "append"]}},
-                    "additionalProperties": false
-                  }
-                }, "additionalProperties": false
-              },
-              "transforms": {
-                "type": "array", "maxItems": 1,
-                "items": {
-                  "type": "object", "required": ["type", "version", "mode", "fields"],
-                  "properties": {
-                    "type": {"const": "field_mapping"}, "version": {"const": "v1"}, "mode": {"const": "project"},
-                    "fields": {"type": "array", "minItems": 1, "maxItems": 128, "items": {
-                      "type": "object", "required": ["source", "target", "target_type"],
-                      "properties": {
-                        "source": {"type": "string", "minLength": 1}, "target": {"type": "string", "minLength": 1},
-                        "target_type": {
-                          "type": "string",
-                          "enum": ["unknown", "string", "bool", "bytes", "mixed", "int", "bigint", "float", "double", "decimal", "date", "time", "timestamp", "json", "array", "uuid", "geometry"],
-                          "description": "ADDP 标准字段类型标识，不是目标数据库 DDL 类型名；具体类型可写性和实际值转换仍由 Transfer/Provider 校验。"
-                        },
-                        "nullable": {"type": "boolean"}, "precision": {"type": "integer", "minimum": 1}, "scale": {"type": "integer", "minimum": 0}
-                      }, "additionalProperties": false
-                    }}
-                  }, "additionalProperties": false
-                }
-              }
-            },
-            "allOf": [{"if": {"properties": {"source": {"required": ["query"]}}, "required": ["source"]}, "then": {"required": ["transforms"], "properties": {"transforms": {"minItems": 1}}}}],
-            "additionalProperties": false
-          }
-        }, "additionalProperties": false
-      },
+      "input_schema": {"$ref": "#/$defs/transfer_task_input"},
       "output_schema": {
         "type": "object", "required": ["id", "name", "task_type", "status", "desired_state", "enabled", "schedule"],
         "properties": {
           "id": {"type": "integer", "minimum": 1}, "name": {"type": "string"}, "task_type": {"const": "sync"},
           "status": {"const": "idle"}, "desired_state": {"const": "stopped"}, "enabled": {"const": false}, "schedule": {"const": ""}
         }
+      }
+    },
+    {
+      "name": "transfer.task.config.check",
+      "version": "1.0.0",
+      "description": "只读核对 bounded snapshot native-table Transfer 配置。仅控制面快照，不读业务行、不创建或运行任务、不扫描。完整返回 supported/unsupported/unknown 与未检查项，HTTP 200 或 supported 均不保证运行成功；unknown 不是通过，依赖或权限失败不得降级。",
+      "owner": "transfer",
+      "risk": "read",
+      "approval": {
+        "mode": "none"
+      },
+      "auth": {
+        "type": "delegated_access_token",
+        "audience": "transfer",
+        "required_scopes": [
+          "transfer.task.config.check"
+        ],
+        "required_permissions": [
+          "transfer.task.create",
+          "meta.catalog.read",
+          "system.engine.read"
+        ]
+      },
+      "permission_enforced_by": "owner",
+      "audit": {
+        "mode": "owner"
+      },
+      "result_ref": {
+        "mode": "none"
+      },
+      "limits": {
+        "max_bytes": 131072
+      },
+      "errors": [
+        "invalid_arguments",
+        "delegation_rejected",
+        "delegation_unavailable",
+        "invalid_delegation_response",
+        "owner_api_error",
+        "owner_api_unavailable",
+        "invalid_owner_response",
+        "result_too_large"
+      ],
+      "input_schema": {
+        "$ref": "#/$defs/transfer_task_input"
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "tenant_id",
+          "principal_id",
+          "config_hash",
+          "binding_hash",
+          "observed_at",
+          "status",
+          "checked",
+          "not_checked",
+          "runtime_checks_required",
+          "facts",
+          "diagnostics"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "addp.transfer_task_config_check/v1"
+          },
+          "tenant_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "principal_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "config_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "binding_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "observed_at": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ]
+          },
+          "checked": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "not_checked": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "runtime_checks_required": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "facts": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "required": [
+                "role",
+                "engine_id",
+                "engine_version",
+                "engine_type",
+                "engine_facts_hash",
+                "snapshot_hash",
+                "schema_coverage",
+                "native_access"
+              ],
+              "properties": {
+                "role": {
+                  "enum": [
+                    "source",
+                    "target"
+                  ]
+                },
+                "engine_id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "engine_version": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "engine_type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "engine_facts_hash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "snapshot_hash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "schema_coverage": {
+                  "enum": [
+                    "complete",
+                    "sampled",
+                  "unknown"
+                  ]
+                },
+                "native_access": {
+                  "enum": [
+                    "supported",
+                    "unsupported",
+                    "unknown"
+                  ]
+                },
+                "meta_item_id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "scanned_at": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "diagnostics": {
+            "type": "array",
+            "maxItems": 512,
+            "items": {
+              "type": "object",
+              "required": [
+                "status",
+                "code",
+                "check",
+                "config_path"
+              ],
+              "properties": {
+                "status": {
+                  "enum": [
+                    "supported",
+                    "unsupported",
+                    "unknown"
+                  ]
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "check": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "config_path": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "target_field": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "source_field": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "physical_type": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
       }
     }
   ]

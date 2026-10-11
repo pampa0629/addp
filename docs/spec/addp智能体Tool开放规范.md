@@ -59,7 +59,7 @@ common-python/addp_common/tools/manifest.json
 system/backend/internal/authorization/tools_generated.go
 ```
 
-该文件是供 System Runtime 注入的只读、确定性 Go 投影，不是第二事实源。生成内容只包含已通过以下校验的 Tool：`audience == owner`、`required_scopes == [tool.name]`、`required_permissions` 非空且全部属于 owner、处于 active 状态并允许委托。CI 必须以同一聚合器的只读检查模式进行字节漂移校验；任何差异都必须先修改唯一 Manifest，再重新生成，不得手工编辑生成文件。
+该文件是供 System Runtime 注入的只读、确定性 Go 投影，不是第二事实源。生成内容只包含已通过以下校验的 Tool：`audience == owner`、`required_scopes == [tool.name]`、`required_permissions` 非空、无重复，且每项均由正式 Permission Manifest 登记、处于 active 状态并允许委托。Tool 可以显式引用其他 owner 的 Permission 作为调用资格交集；System 签发与目标 owner 路由均须校验完整 all-of 集合，不允许按 owner 前缀过滤或按 any-of 放行。这不增加 audience、Scope 或权限，不允许委托链，也不替代资源 owner 的最终授权。CI 必须以同一聚合器的只读检查模式进行字节漂移校验；任何差异都必须先修改唯一 Manifest，再重新生成，不得手工编辑生成文件。
 
 ### 3.3 Tool 字段
 
@@ -73,7 +73,7 @@ system/backend/internal/authorization/tools_generated.go
 | `owner` | 业务事实和权限校验归属模块。 |
 | `risk` | 只允许 `read`、`propose`、`write`。 |
 | `approval.mode` | 当前只使用 `none` 或 `owner_policy`。 |
-| `auth` | 必须是 `delegated_access_token`；`audience` 必须等于 `owner`；`required_scopes` 必须且只能包含 Tool 稳定名称；`required_permissions` 必须是非空、无重复的 owner Permission Key 列表，且对应 Permission 必须 `delegable=true`。 |
+| `auth` | 必须是 `delegated_access_token`；`audience` 必须等于 `owner`；`required_scopes` 必须且只能包含 Tool 稳定名称；`required_permissions` 必须是非空、无重复、已登记且 active 的 Permission Key 列表，对应 Permission 必须 `delegable=true`，可显式引用其他 owner 的权限取交集。 |
 | `permission_enforced_by` | 固定为 `owner`。 |
 | `audit` | `owner` 表示 owner 记录调用；`required` 表示必须具备完整审计绑定。 |
 | `result_ref` | 只允许 `none`、`locator` 或当前已实现的 `execution + addp.result-ref/v1`。 |
@@ -83,6 +83,8 @@ system/backend/internal/authorization/tools_generated.go
 | `output_schema` | JSON Schema Draft 2020-12；只声明智能体可消费的受限投影。 |
 
 Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK 方法完成映射，owner API 仍由对应客户端实现和 Swagger 持有。
+
+根 `$defs` 可持有共用的完整输入 Schema。Tool 的 `input_schema` 可以是唯一的 `{"$ref":"#/$defs/<name>"}`；加载器只解析这种本地完整输入引用，拒绝未知定义、附加兄弟字段或外部引用，并向所有消费者提供展开后的独立 Schema。不另存预检与提交两份相同输入定义。
 
 ### 3.4 当前 Tool 集合
 
@@ -107,8 +109,11 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `platform.capability.context` | Ontology | `ontology.semantic.read` | read | none | none | 32 KiB |
 | `platform.capabilities.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `transfer.task.create` | Transfer | `transfer.task.create` | write | none | none | 256 KiB |
+| `transfer.task.config.check` | Transfer | `transfer.task.create` ∩ `meta.catalog.read` ∩ `system.engine.read` | read | none | none | 128 KiB |
 
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
+
+`transfer.task.config.check` 与 `transfer.task.create` 共用输入 Schema 和 SDK 请求构造，固定未启用、无调度、无自动扫描。它只读取控制面快照，不创建任务、读取业务行或执行 DDL。返回完整 `addp.transfer_task_config_check/v1` 报告；HTTP 200 不代表 `supported`。`unsupported` 阻止 Agent 创建，`unknown` 必须向用户明确未检查项与运行时检查要求，取得知情确认后才可只保存未运行任务；`supported` 也不是执行保证。委托失败、依赖错误或损坏报告不能转换为 `unknown`。报告摘要不是授权票据，创建前仍须 owner 当前授权与 Runtime 的配置/事实复核；观察时间变化本身不表示配置变化。
 
 `platform.capabilities.list` 无输入参数，返回同一只读 PG 快照中完整核验的已激活平台定义目录，最多 32 项、128 KiB；未激活不列出，空数组不等于运行模块不存在或用户无业务权限。超限和损坏明确失败，不截断、换源或跳过成员。Agent 先用其语义选择能力，再经定义引用和当前 Manifest 校验 Skill/Tool 装配；HTTP 地址和权限仍属于 Manifest/SDK/owner，不复制进本体。目录调用必须有 AgentRun/ToolCall 委托及步骤审计；失败不能退回静态 Skill 描述选择平台能力。
 

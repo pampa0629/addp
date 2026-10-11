@@ -1,10 +1,14 @@
 import asyncio
+import copy
+import json
+from importlib.resources import files
 from unittest.mock import AsyncMock
 
 import pytest
 from jsonschema import Draft202012Validator
 
 from addp_common.tools import ToolExecutionError, ToolExecutor, get_tool, load_manifest
+from addp_common.tools.manifest import ToolManifest
 
 
 def test_manifest_has_unique_stage_two_tools():
@@ -31,6 +35,7 @@ def test_manifest_has_unique_stage_two_tools():
         "platform.capability.context",
         "platform.capabilities.list",
         "transfer.task.create",
+        "transfer.task.config.check",
     ]
     assert get_tool("workflow.run").risk == "write"
     for tool in manifest.tools:
@@ -57,9 +62,47 @@ def test_manifest_has_unique_stage_two_tools():
         "platform.capability.context": ["ontology.semantic.read"],
         "platform.capabilities.list": ["ontology.semantic.read"],
         "transfer.task.create": ["transfer.task.create"],
+        "transfer.task.config.check": ["transfer.task.create", "meta.catalog.read", "system.engine.read"],
     }
     for tool in manifest.tools:
         assert tool.auth.required_permissions == expected_permissions[tool.name]
+
+
+@pytest.mark.parametrize("permissions", [[], ["meta.catalog.read", "meta.catalog.read"],
+                                       ["meta.*.read"], ["meta.catalog"], [" meta.catalog.read"],
+                                       ["meta.catalog.read.extra"]])
+def test_permission_intersection_rejects_invalid_or_duplicate_keys(permissions):
+    tool = get_tool("transfer.task.config.check").model_dump()
+    tool["auth"]["required_permissions"] = permissions
+    with pytest.raises(ValueError):
+        type(get_tool("transfer.task.config.check")).model_validate(tool)
+
+
+def test_shared_input_definition_is_expanded_once_without_mutating_source():
+    raw = json.loads(files("addp_common.tools").joinpath("manifest.json").read_text())
+    original = copy.deepcopy(raw)
+    parsed = ToolManifest.model_validate(raw)
+    tools = {tool.name: tool for tool in parsed.tools}
+    check = tools["transfer.task.config.check"]
+    create = tools["transfer.task.create"]
+    assert check.input_schema == create.input_schema == raw["$defs"]["transfer_task_input"]
+    assert "$ref" not in check.input_schema
+    Draft202012Validator.check_schema(check.input_schema)
+    check.input_schema["properties"]["name"]["maxLength"] = 1
+    assert create.input_schema["properties"]["name"]["maxLength"] == 200
+    assert raw == original
+
+
+@pytest.mark.parametrize("schema", [
+    {"$ref": "https://example.invalid/schema"},
+    {"$ref": "#/$defs/missing"},
+    {"$ref": "#/$defs/transfer_task_input", "additionalProperties": True},
+])
+def test_shared_input_rejects_unresolved_or_external_references(schema):
+    raw = json.loads(files("addp_common.tools").joinpath("manifest.json").read_text())
+    raw["tools"][-1]["input_schema"] = schema
+    with pytest.raises(ValueError):
+        ToolManifest.model_validate(raw)
 
 
 def test_executor_validates_arguments_before_dispatch():

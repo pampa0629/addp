@@ -144,7 +144,7 @@ func transferDelegatedToolPolicies() map[string]commonAuth.DelegatedRoutePolicyE
 	return map[string]commonAuth.DelegatedRoutePolicyEntry{
 		"POST /api/v1/transfer/task-config-checks": {
 			RequiredScopes:      []string{"transfer.task.config.check"},
-			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskCreate},
+			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskCreate, "meta.catalog.read", "system.engine.read"},
 		},
 		"POST /api/v1/transfer/task-definitions": {
 			RequiredScopes:      []string{"transfer.task.create"},

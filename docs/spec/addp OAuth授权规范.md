@@ -305,7 +305,7 @@ Authorization: Bearer <current_user_access_token>
 7. Delegated Access Token 不创建 Refresh Token Family、不可刷新、不可兑换，只用于一次短期 Tool 调用边界。
 8. System 解析委托令牌时必须同时校验令牌、源 Access Token、源 Family、Principal、会话模式、当前 Tenant Membership 和授权事实仍然有效。
 9. 请求必须且只能包含一个 Tool Scope；Catalog 中的 `audience` 必须等于请求 audience，`required_scopes` 必须精确等于请求 Scope，不能合并多个 Tool 或接受额外 Scope。
-10. System 在同一个数据库事务中锁定并复核 Principal、源 Access Token 和源 Family，按当前有效 Role Assignment 校验 Tool `required_permissions` all-of，创建委托记录并追加 `iam.delegation.issued` 安全审计。任一事实失效或写入失败时整体回滚。
+10. System 在同一个数据库事务中锁定并复核 Principal、源 Access Token 和源 Family，按当前有效 Role Assignment 校验 Tool `required_permissions` all-of，创建委托记录并追加 `iam.delegation.issued` 安全审计。显式跨 owner 的 Permission 同样必须全部满足，不按 audience 前缀过滤，也不因此增加 audience、Scope 或新权限。目标 owner 路由再次检查同一完整交集；跨模块控制面读取仍用目标 owner 自己的 Service 身份，禁止转发委托令牌。任一事实失效或写入失败时整体回滚。
 11. `(agent_run_id, tool_call_id)` 是一次 Tool Call 的幂等冲突边界；已存在时返回 HTTP 409，不返回或复用之前的明文 Token。
 12. owner 模块对委托令牌默认拒绝，只在挂载 Delegated Route Guard 的 Tool Manifest 精确路由校验唯一 audience、required scopes 精确集合和 Role Permission all-of 后进入 Handler；额外 Scope 也拒绝。必要审批继续由 owner Handler 校验，审批闭环尚未启用的 write Tool 必须返回 403。非委托的第一方 Web 和 OAuth API 调用继续执行原 Principal 的 Role Permission 与 owner 资源授权路径。
 
