@@ -1571,7 +1571,7 @@ iframe 引用修复后的 `make test-console-frontend` 返回 0（156 项单测�
 
 同一冻结提交的 [Platform CI（Run 38073055598）](https://github.com/pampa0629/addp/actions/runs/38073055598)、[Release/T2（Run 38073055615）](https://github.com/pampa0629/addp/actions/runs/38073055615) 与 [Quality CI（Run 38073055670）](https://github.com/pampa0629/addp/actions/runs/38073055670) 成功。Release/T2 实际执行 System IAM PostgreSQL 与 macOS Keychain CLI；跳过的其他 T2 不计作该次执行。本批 10.49 的 Go 服务进程监控及 Hosted T4 验收完成；默认 `make test-changed` 的前述本地 DSN 预检失败不改计通过，个人运行部署、Safari 体验复验、Python 进程来源和生产 T5 尚未执行。后续优先准备本机 Go 来源的显式端点与外部证书配置，再由用户沿标准生命周期重启对应进程，并用 Safari 验证真实部署体验；不将 Hosted 成功等同于个人环境已启用采集。
 
-### 10.50 本机 Go 来源与 Desktop 宿主通道扩展（部署准备完成，待本机验收）
+### 10.50 本机 Go 来源与 Desktop 宿主通道扩展（本机运行复验完成）
 
 2026-10-11 只读核对：个人指标中心、控制入口和已有 VM 来源均在运行；本机 System/Monitor/Gateway 的 Live 接口可访问。根部署配置未选择 Go 进程采集，Monitor 只允许 `127.0.0.1/32` 和原主机端口 `19091`。当前唯一 Prometheus 配置生成器的 `ADDP_METRICS_DESKTOP_LOOPBACK_PORT` 只把一个明确回环端口转换成 Desktop 宿主通道。Monitor 即使接受 DNS 端点，也按安全策略解析为实际 IP 并向中心发布该固定 IP；直接把 Go 端点写为 `host.docker.internal` 不能绕过此单端口限制。中心容器中的其他 `127.0.0.1:端口` 指向容器自身，不能据此宣称新来源可达。
 
@@ -1592,3 +1592,11 @@ iframe 引用修复后的 `make test-console-frontend` 返回 0（156 项单测�
 最终本地验证：`make test-dev-lifecycle` 第二次返回 0（88 项 Python 用例、Infra 端口及停止安全、完整开发生命周期、Common schema/repository/projectionstore 与四模块命令编译，`/tmp/addp-desktop-ports-lifecycle-2.log`），未修改首次失败用例的断言或超时。`make test-monitor-metrics` 返回 0（23 项配置用例、固定 promtool 场景、两个真实 SDK 经不同 Desktop 回环端口采集、当前实例 CPU/RSS/时长与停止清值、HTTP SD 失败/重定向/空发现/恢复、完整与受限主机即时/趋势查询、来源故障恢复、中心 SIGKILL 后 WAL 旧样本保留及独立路由可用，`/tmp/addp-desktop-ports-metrics-1.log`）；最终确认当次容器、网络、卷和临时文件零残留。T2 CI 登记检查返回 0，现有 22 项 hosted-service、9 项 owned Compose、4 项 hosted-only 与 1 项 owner-managed 登记完整；本轮没有新增 suite。`git diff --check` 通过。以上仅证明本轮实现和独占 T2，个人中心/来源尚未应用新配置、Safari 未验收、生产 T5 未执行；10.49 的 Hosted 成功不追溯作为本轮个人部署证据。
 
 下一步由用户在仓库根目录顺序执行 `bash scripts/infra/up.sh --metrics` 与 `./scripts/dev/restart.sh -system -monitor`，分别应用中心宿主通道及两个本机 Go 进程的部署输入。前者只调和指标中心和控制入口并保留时序卷，后者按标准范围重建并重启所选模块；已有 VM 来源不需重建或重新登记。随后核对当前实例自动声明/发现、来源 mTLS 与完整 CPU 窗口，再通过 Safari 查看「运行监控 → 服务监控」；两个 Mac 原生进程允许显示未关联主机，不能自动归入 Docker Desktop Linux VM。
+
+2026-10-11 用户完成标准应用及重启后的本机只读复验：实际 System/Monitor 分别监听 `127.0.0.1:19101/19102`，业务 Live/Ready 均正常。运行构建提交为 `5efd285aaceb2dc648cb42a12bfe4f5264ae8b65`，经 Git 核对包含本节实现提交 `4c97209d72d882e85d5dc7fb3eaee74db11283f3`。两个 mTLS 来源直接读取成功、匿名客户端被拒绝，SDK 上报 `darwin`；System 当前实例 `2d9aa463-589b-4d1e-8e18-5661faf9321a`、Monitor 当前实例 `31f91726-3042-4a34-ac40-27480c7bb3ee` 分别与 Live 身份一致。中心唯一 `addp_nodes` Job 实际发现三个来源，全部 `up` 且无采集错误；传输使用 `host.docker.internal:19091/19101/19102`，instance 保留各自规范 `127.0.0.1:端口`，没有手工新增进程目标或主机关联。
+
+Safari 使用当前已登录平台用户，在独立验收标签页通过模块名称与在线状态筛选分别读取两个服务：均只有一个当前在线实例，CPU 一分钟窗口、RSS、自然运行时长与采样时间有效，采集状态为“正在采集”。System 读取时约 `0.04 核 / 96.30 MiB`，Monitor 约 `0.00 核 / 74.58 MiB`，数值为当时页面快照并持续变化；实例 ID 与上文实际来源一致，两者均显示“未关联主机”。System 筛选 URL 整页刷新后保留，采样时间更新。人工截图查看了对应列下的就地说明；当前窗口右侧列仍需横向滚动，未把 AX 可读取状态扩大宣称为所有列同屏可见。通过真实菜单查看原 VM 主机，18 核、62.68 GiB、CPU/内存/负载/自然时长及磁盘 IO 有数据；文件系统与网络栏明确说明来源未提供，不计作这两类指标已接入。该复验为个人运行验证，不替代 Hosted suite 或生产 T5；本轮 AI 仅只读核对，未注入故障、重启个人服务或修改权限。
+
+本节实现提交的 [Platform CI（Run 38094818098）](https://github.com/pampa0629/addp/actions/runs/38094818098)、[Release/T2（Run 38094818063）](https://github.com/pampa0629/addp/actions/runs/38094818063) 与 [Quality CI（Run 38094818099）](https://github.com/pampa0629/addp/actions/runs/38094818099) 均成功。已核对 Release/T2 的实际执行步骤，包含 Monitor metrics infrastructure、System IAM PostgreSQL 与 Monitor PostgreSQL；Linux CI 不计作 Desktop 宿主通道覆盖，后者沿上文 macOS 独占 T2 与本机复验计量，其他跳过项不计通过。服务列表未筛选时共 3013 条，混有历史及未接入实例，首屏未直接显露本轮两个有效来源；后续优先讨论首屏如何突出当前有效观测，保留历史和未接入对象的检索入口，不擅自改变登记或查询权限。
+
+本次仅追加运行及 CI 复核事实，未修改功能代码或 API。`git diff --check` 通过；默认 `make test-changed` 在当前混合工作区因 Ontology 的 `ONTOLOGY_POSTGRES_TEST_DSN` 缺失而于预检返回 2（`/tmp/addp-desktop-local-acceptance-changed-1.log`），其业务门禁未执行，不计通过。个人复验没有创建测试 database 或替代其他 owner 的必需门禁。
