@@ -92,6 +92,7 @@ func SetupRouter(
 	fieldDefinitionRecommendationHandler := NewFieldDefinitionRecommendationHandler(fieldDefinitionRecommendationService)
 
 	protected.GET("/capabilities", capabilityHandler.Get)
+	protected.POST("/task-config-checks", permission(transferauthorization.PermissionTransferTaskCreate, "meta.catalog.read", "system.engine.read"), taskHandler.CheckTaskConfig)
 	protected.POST("/field-definition-recommendations", permission(transferauthorization.PermissionTransferTaskCreate), fieldDefinitionRecommendationHandler.Create)
 	// TaskProvider 只允许 Orchestrator Runtime 使用专用最小权限访问。
 	taskProvider := protected.Group("/task-provider")
@@ -141,6 +142,10 @@ func SetupRouter(
 
 func transferDelegatedToolPolicies() map[string]commonAuth.DelegatedRoutePolicyEntry {
 	return map[string]commonAuth.DelegatedRoutePolicyEntry{
+		"POST /api/v1/transfer/task-config-checks": {
+			RequiredScopes:      []string{"transfer.task.config.check"},
+			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskCreate},
+		},
 		"POST /api/v1/transfer/task-definitions": {
 			RequiredScopes:      []string{"transfer.task.create"},
 			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskCreate},

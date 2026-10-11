@@ -725,6 +725,87 @@ const docTemplate = `{
                 ]
             }
         },
+        "/task-config-checks": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "首期检查 bounded/snapshot/native table 的 replace/append 定义。要求当前租户三项权限交集；委托必须使用 transfer audience 和唯一 transfer.task.config.check Scope。报告 supported 仅表示已检查的定义，不能证明逐值转换、实时结构或运行授权成功。不会创建任务、读业务行、执行源查询或 DDL。binding_hash 是内容摘要，不是授权凭据。| Initially checks bounded snapshot native table replace/append definitions using persisted facts. Requires all three current-tenant permissions; delegation requires the transfer audience and only transfer.task.config.check. Supported applies only to checked definitions, not every value, live schema or runtime authorization. Does not create tasks, read business rows, execute source queries or DDL. binding_hash is a content digest, not an authorization credential.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "只读检查传输任务配置 | Check transfer task configuration read-only",
+                "parameters": [
+                    {
+                        "description": "完整任务创建请求 | Complete task creation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.CreateTaskRequestDoc"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "定义检查报告 | Definition check report",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_service.TaskConfigCheckReport"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "结构事实服务不可用 | Structure fact dependency unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "delegated_tool",
+                "x-addp-required-permissions": [
+                    "transfer.task.create",
+                    "meta.catalog.read",
+                    "system.engine.read"
+                ]
+            }
+        },
         "/task-definitions": {
             "get": {
                 "security": [
@@ -3652,6 +3733,123 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_transfer_internal_service.TaskConfigCheckDiagnostic": {
+            "type": "object",
+            "properties": {
+                "check": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "config_path": {
+                    "type": "string"
+                },
+                "physical_type": {
+                    "type": "string"
+                },
+                "source_field": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/plugin.DefinitionCheckStatus"
+                },
+                "target_field": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.TaskConfigCheckFact": {
+            "type": "object",
+            "properties": {
+                "engine_facts_hash": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "engine_version": {
+                    "type": "integer"
+                },
+                "meta_item_id": {
+                    "type": "integer"
+                },
+                "native_access": {
+                    "$ref": "#/definitions/plugin.DefinitionCheckStatus"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "schema_coverage": {
+                    "type": "string"
+                },
+                "snapshot_hash": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_service.TaskConfigCheckReport": {
+            "type": "object",
+            "properties": {
+                "binding_hash": {
+                    "type": "string"
+                },
+                "checked": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "config_hash": {
+                    "type": "string"
+                },
+                "diagnostics": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_service.TaskConfigCheckDiagnostic"
+                    }
+                },
+                "facts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_service.TaskConfigCheckFact"
+                    }
+                },
+                "not_checked": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "runtime_checks_required": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/plugin.DefinitionCheckStatus"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_service.UpdateContinuousPolicyInput": {
             "type": "object",
             "required": [
@@ -3959,6 +4157,19 @@ const docTemplate = `{
                     "type": "boolean"
                 }
             }
+        },
+        "plugin.DefinitionCheckStatus": {
+            "type": "string",
+            "enum": [
+                "supported",
+                "unsupported",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "DefinitionSupported",
+                "DefinitionUnsupported",
+                "DefinitionUnknown"
+            ]
         },
         "taskprovider.ExecutionContract": {
             "type": "object",

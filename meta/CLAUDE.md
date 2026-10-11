@@ -245,3 +245,5 @@ cd meta/frontend && npm test && npm run build
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
 
 Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服务可提交 `source=develop.workflow.produced_target` 与父执行 UUID；Meta 在子记录创建事务中验证同租户 running workflow、完整主体事实和请求目标与已保存产物的精确匹配，再继承发起人。没有父执行不得借用此来源，不能附加未声明的请求目标或放宽读取权限。完整叶子 locator 必须冻结到执行配置并传给 Worker，复用 Provider 的精确解析和既有处理器；禁止展开到所属 schema／database、清理兄弟项或标记父范围完成。System 数据访问授权闭环是后续阶段，发起人归属不能替代授权。
+
+`GET /items/:item_id` 与 `GET /items/by-catalog-path` 是已落库结构快照读取：只有 `gorm.ErrRecordNotFound` 返回 404，数据库查询故障返回 500，不能让 Transfer 等消费方把故障当作“缺少快照”。按路径查询遇到非 NotFound 错误立即停止，不继续路径候选掩盖错误；响应不透出原始数据库错误。T1 的 `TestItemSnapshotReadSeparatesMissingAndDatabaseFailure` 验证身份绑定、完整字段与错误分类；不触发扫描或业务数据读取。

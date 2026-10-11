@@ -1378,6 +1378,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "500":
+          description: 结构事实查询失败 | Structure facts query failed
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 获取数据项详情 | Get item detail
@@ -1566,6 +1571,11 @@ paths:
             type: object
         "404":
           description: 数据项不存在 | Item not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 结构事实查询失败 | Structure facts query failed
           schema:
             additionalProperties: true
             type: object

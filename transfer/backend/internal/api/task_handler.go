@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -845,4 +846,49 @@ func respondSchemaChangeError(c *gin.Context, err error) {
 		return
 	}
 	commonAPI.InternalServerError(c, i18nmiddleware.T(c, transferI18n.MsgSchemaChangeInternal))
+}
+
+// CheckTaskConfig checks persisted structure facts without accessing business data.
+// @Summary 只读检查传输任务配置 | Check transfer task configuration read-only
+// @Description 首期检查 bounded/snapshot/native table 的 replace/append 定义。要求当前租户三项权限交集；委托必须使用 transfer audience 和唯一 transfer.task.config.check Scope。报告 supported 仅表示已检查的定义，不能证明逐值转换、实时结构或运行授权成功。不会创建任务、读业务行、执行源查询或 DDL。binding_hash 是内容摘要，不是授权凭据。| Initially checks bounded snapshot native table replace/append definitions using persisted facts. Requires all three current-tenant permissions; delegation requires the transfer audience and only transfer.task.config.check. Supported applies only to checked definitions, not every value, live schema or runtime authorization. Does not create tasks, read business rows, execute source queries or DDL. binding_hash is a content digest, not an authorization credential.
+// @Tags 任务管理 | Task Management
+// @Accept json
+// @Produce json
+// @Param request body models.CreateTaskRequestDoc true "完整任务创建请求 | Complete task creation request"
+// @Success 200 {object} service.TaskConfigCheckReport "定义检查报告 | Definition check report"
+// @Failure 400 {object} map[string]string "请求无效 | Invalid request"
+// @Failure 401 {object} map[string]string "未认证 | Authentication required"
+// @Failure 403 {object} map[string]string "无权限 | Access denied"
+// @Failure 502 {object} map[string]string "结构事实服务不可用 | Structure fact dependency unavailable"
+// @x-addp-auth-mode "delegated_tool"
+// @x-addp-required-permissions ["transfer.task.create","meta.catalog.read","system.engine.read"]
+// @Router /task-config-checks [post]
+// @Security BearerAuth
+func (h *TaskHandler) CheckTaskConfig(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	subject, exists := commonAuth.AuthContextFromGin(c)
+	if !exists {
+		commonAPI.UnauthorizedError(c, i18nmiddleware.T(c, i18nmiddleware.MsgUnauthorized))
+		return
+	}
+	if c.Request.URL.RawQuery != "" {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgConfigCheckInvalid))
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, (512<<10)+1))
+	if err != nil {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgConfigCheckInvalid))
+		return
+	}
+	result, err := h.taskService.CheckTaskConfig(c.Request.Context(), subject, body)
+	switch {
+	case errors.Is(err, service.ErrConfigCheckForbidden):
+		commonAPI.ForbiddenError(c, i18nmiddleware.T(c, i18nmiddleware.MsgForbidden))
+	case errors.Is(err, service.ErrInvalidTaskConfig):
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgConfigCheckInvalid))
+	case err != nil:
+		c.JSON(http.StatusBadGateway, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgConfigCheckUnavailable)})
+	default:
+		c.JSON(http.StatusOK, result)
+	}
 }

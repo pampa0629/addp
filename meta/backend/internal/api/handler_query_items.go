@@ -1,6 +1,10 @@
 package api
 
 import (
+	"errors"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	metai18n "github.com/addp/meta/i18n"
+	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 
@@ -53,6 +57,7 @@ func (h *Handler) GetNodeItems(c *gin.Context) {
 // @Success 200 {object} models.MetaItemLite "数据项详情 | Item detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @Failure 500 {object} map[string]interface{} "结构事实查询失败 | Structure facts query failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /items/by-catalog-path [get]
@@ -75,7 +80,7 @@ func (h *Handler) QueryItemByCatalogPath(c *gin.Context) {
 
 	item, err := h.metadataQueryService.GetItemByCatalogPath(tenantID, uint(engineID), catalogPath)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondItemSnapshotReadError(c, err)
 		return
 	}
 
@@ -91,6 +96,7 @@ func (h *Handler) QueryItemByCatalogPath(c *gin.Context) {
 // @Success 200 {object} models.MetaItemLite "数据项详情 | Item detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @Failure 500 {object} map[string]interface{} "结构事实查询失败 | Structure facts query failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /items/{item_id} [get]
@@ -107,7 +113,7 @@ func (h *Handler) GetItemByID(c *gin.Context) {
 
 	item, err := h.metadataQueryService.GetItemByID(tenantID, uint(itemID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondItemSnapshotReadError(c, err)
 		return
 	}
 
@@ -144,4 +150,12 @@ func (h *Handler) GetItemAncestors(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+func respondItemSnapshotReadError(c *gin.Context, err error) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, metai18n.MsgItemSnapshotNotFound)})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, metai18n.MsgItemSnapshotReadFailed)})
 }

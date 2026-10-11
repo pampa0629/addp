@@ -50,3 +50,8 @@ other = "Scan parent or output provenance is unavailable"
 
 [meta.scan.request_invalid]
 other = "Invalid scan request"
+
+[meta.item_snapshot.not_found]
+other = "Metadata item snapshot not found"
+[meta.item_snapshot.read_failed]
+other = "Failed to read metadata item snapshot"

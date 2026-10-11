@@ -153,6 +153,7 @@ func main() {
 	}))
 	taskService := service.NewTaskService(db, executionEngineService, cfg)
 	taskService.SetEngineResolver(planner.NewSystemEngineResolver(systemClient))
+	taskService.SetTaskConfigChecker(service.NewTaskConfigCheckService(systemClient, commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)))
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
 	taskService.SetExportExecutionSourceResolver(commonClient.NewExportExecutionSourceClient(systemRuntimeClient, serviceTokenSource))
 	cleanupService := service.NewTransferCleanupService(db, redisClient, taskExecutionRepo, service.TaskOwnedCleanupConfig{

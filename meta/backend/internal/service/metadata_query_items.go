@@ -123,6 +123,9 @@ func (s *MetadataQueryService) GetItemByCatalogPath(tenantID, engineID uint, cat
 			result := metaquery.ToMetaItemLite(item)
 			return &result, nil
 		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("query metadata item: %w", err)
+		}
 		lastErr = err
 	}
 

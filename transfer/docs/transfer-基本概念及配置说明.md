@@ -213,6 +213,17 @@ Parquet writer 的列式压缩通过 `target.options.compression` 配置，该�
 
 ### 3.3 Native table target
 
+执行器在删除／准备目标之前调用 Provider 可选的纯定义检查，拒绝确定不支持的字段声明。PostgreSQL 已复用实际类型映射和结构兼容规则；缺少事实或需要读取实际值才能判断的情况为 `unknown`。这不是行值预检或执行授权，不能据此证明整个 replace 无副作用，仍须通过运行期授权、Security、实时结构及逐值编码检查。
+
+`POST /api/v1/transfer/task-config-checks` 接收与创建任务相同的**完整请求**，供 Console 与 Agent 共用。首期支持 bounded + snapshot、native table、replace/append；不检查 upsert。当前租户用户必须同时具备 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`，委托还须使用精确 transfer audience 和唯一 `transfer.task.config.check` Scope。Service Principal 和 Resource Access Ticket 不能调用此用户入口。此接口不会保存任务、安装调度、扫描、执行查询、读取业务行、建表或删除目标；原创建／更新接口的权限和行为不因此改变。
+
+HTTP 200 返回 `addp.transfer_task_config_check/v1` 报告，`status` 为 `supported / unsupported / unknown`；字段诊断含 `code`、`check`、`config_path`、`source_field / target_field` 及 Provider 物理类型。`checked` 记录实际检查，`not_checked` 与 `runtime_checks_required` 列出剩余门禁。`facts[].schema_coverage` 是完整／采样／未知的**已落库快照**覆盖度，不是实时结构保证。查询输出不执行或推断；采样、缺失快照、无 Provider Checker 均为 unknown。Meta 404 不能证明物理目标不存在。已知数字默认值经过运行期 float64 配置解析的精度未证明，明确返回 unknown。依赖服务的权限、网络或无效响应返回 502，不作为 unknown 吞掉。
+
+规范 JSON 使用对象键递归排序、保留数组顺序和数字 token、不增加空白的 UTF-8 JSON（与 Go encoding/json 的字符转义一致）。`config_hash` 是完整提交请求的规范 JSON SHA-256；`facts` 摘要绑定引擎版本、已登记能力和完整 Meta 结构（含字段顺序、原生／元素类型、精度、默认表达式、空间事实、身份与扫描时刻）；`binding_hash` 是将自身置空后对完整报告规范 JSON 求 SHA-256。它们是内容绑定，**不是签名或执行授权凭据**。报告不回传配置、SQL、默认值正文、凭据或样本，响应禁止缓存。结构快照时效、实时连接／结构、数据库权限、Security、源读取 Grant 和逐值转换均须运行时重新验证；replace 的目标副作用也不由此报告证明安全。
+
+Agent 正式 Tool Manifest 和 SDK 由其 Owner 接入此唯一 HTTP 契约。本模块不增加 Tool 或权限、不转发委托 token 给 Meta/System；完成当前主体三项权限检查后，由 Transfer 使用已有 Tenant Service 客户端读取租户绑定的控制面事实。现有 Tool Catalog 的 `required_permissions` 只接受 audience Owner 权限；跨 Owner 的 Meta/System 前置要求需由原会话按平台正式契约接入，不能仅把新 Scope 加入 Tool 就宣称 Agent 已可使用。
+
+
 | 引擎 | 当前写侧 |
 |---|---|
 | PostgreSQL | create / ensure table、schema evolution、COPY session、batch insert、空间字段写入。 |

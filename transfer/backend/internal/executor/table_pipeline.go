@@ -833,6 +833,7 @@ func (s *encodedContentTableSource) refReader(specs []format.RelatedRefSpec) (co
 }
 
 type nativeTableBatchTarget struct {
+	definitionChecker    engineplugin.TableWriteDefinitionChecker
 	deleter              *engineTargetResourceDeleter
 	preparer             engineplugin.TableWritePreparer
 	writer               engineplugin.BatchWritableProvider
@@ -847,6 +848,12 @@ type nativeTableBatchTarget struct {
 }
 
 func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
+	if t.definitionChecker != nil {
+		definition := engineplugin.TableWriteDefinitionFromOptions(engineplugin.TableWriteOptions{Fields: tableInfoFields(tableInfo), SpatialInfo: spatialInfo})
+		if err := t.definitionChecker.CheckTableWriteDefinition(definition).UnsupportedError(); err != nil {
+			return nil, fmt.Errorf("check native table write definition before target effects: %w", err)
+		}
+	}
 	if t.managedExisting && t.deleter != nil {
 		return nil, fmt.Errorf("managed existing table target must not delete the target")
 	}

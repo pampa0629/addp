@@ -454,6 +454,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "500": {
+                        "description": "结构事实查询失败 | Structure facts query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -502,6 +509,13 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "数据项不存在 | Item not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "结构事实查询失败 | Structure facts query failed",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

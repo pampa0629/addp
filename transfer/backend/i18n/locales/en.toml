@@ -109,3 +109,8 @@ other = "Continuous task configuration was updated by another administrator"
 other = "Execution process events are temporarily unavailable"
 [transfer.task.delegated_invalid]
 other = "An agent may only create an unscheduled, stopped bounded snapshot native-table task; scheduling and automatic scanning are not allowed."
+
+[transfer.config_check.invalid]
+other = "Invalid complete task configuration check request"
+[transfer.config_check.unavailable]
+other = "Structure facts are temporarily unavailable"

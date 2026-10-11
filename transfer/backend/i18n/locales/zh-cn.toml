@@ -110,3 +110,8 @@ other = "持续任务配置已被其他管理员更新"
 other = "执行过程事件暂不可用"
 [transfer.task.delegated_invalid]
 other = "智能体只能创建无计划、未启动的 bounded snapshot 原生表任务；不允许启用调度或自动扫描。"
+
+[transfer.config_check.invalid]
+other = "完整任务配置检查请求无效"
+[transfer.config_check.unavailable]
+other = "结构事实服务暂时不可用"

@@ -90,6 +90,7 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 - Shapefile 等 multi 文件格式通过 `contentio.Reader` / `contentio.Writer` + `[]format.RelatedRef` 与 `common/format` multi table provider 接入。
 - FileGDB/PGeo 等 container table 源只接受通用 `source.options.child_name`；planner 必须从 Meta `type_info.container.children` 校验 child 并解析 `native.table`，任务配置不得直接保存 `layer` 或 `child_table` 等 provider 私有入口。
 - overwrite / append 是 Transfer policy；删除指定资源由 `common/engine` ResourceDeleteProvider 提供。
+- native target 在删除／准备之前消费 Provider 可选的纯 `TableWriteDefinitionChecker`，拒绝已知不支持的字段声明；PostgreSQL 已实现。没有检查接口或实际值未知不能当作通过，逐值编码、现有授权／Security 和执行时结构校验继续生效。合成 PostgreSQL 数组源到 replace 目标的拒绝及既有目标 OID／哨兵保留，由 `make test-transfer-postgres` 自动覆盖；不意味着 replace 全流程原子回滚。
 - checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - bounded Worker 不使用消息载荷；以 `common.task_executions` 中冻结的执行配置为唯一输入，并通过 `lease_token` 条件写入。
@@ -152,3 +153,5 @@ curl http://localhost:8083/health/ready
 ## 数据库启动所有权
 
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
+
+正式只读配置预检为 `POST /api/v1/transfer/task-config-checks`：完整创建请求、三项当前租户用户权限交集（`transfer.task.create`、`meta.catalog.read`、`system.engine.read`），精确委托 Scope `transfer.task.config.check`。只读取 System 引擎事实及 Meta 已落库快照，先授权后用 Tenant Service 读取；不得调用业务行、查询执行／描述、实时 Catalog Facts、Prepare、任务保存或执行。支持边界、摘要及 unknown 语义见 `docs/transfer-基本概念及配置说明.md`。T1 覆盖授权隔离、零任务副作用、完整配置／结构摘要及缺失／采样／依赖错误；已有 `make test-transfer-postgres` 覆盖非法数组在 replace 删除前拒绝。

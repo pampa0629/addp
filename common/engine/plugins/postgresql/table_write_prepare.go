@@ -12,7 +12,7 @@ import (
 )
 
 func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
-	if err := validatePostgresArrayFields(opts.Fields); err != nil {
+	if err := p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(opts)).UnsupportedError(); err != nil {
 		return err
 	}
 	schema, table, err := tablePathParts(path)

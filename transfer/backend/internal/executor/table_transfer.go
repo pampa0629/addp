@@ -354,6 +354,7 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			return nil, fmt.Errorf("target engine does not implement table write prepare")
 		}
 		return &nativeTableBatchTarget{
+			definitionChecker:    tableWriteDefinitionChecker(e.TargetNativePreparer, e.TargetTableSessionProvider, e.TargetNativeWriter),
 			deleter:              deleter,
 			preparer:             e.TargetNativePreparer,
 			writer:               e.TargetNativeWriter,
@@ -369,6 +370,15 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 	default:
 		return nil, fmt.Errorf("unsupported table target kind %q", plan.Kind)
 	}
+}
+
+func tableWriteDefinitionChecker(providers ...interface{}) engineplugin.TableWriteDefinitionChecker {
+	for _, provider := range providers {
+		if checker, ok := provider.(engineplugin.TableWriteDefinitionChecker); ok {
+			return checker
+		}
+	}
+	return nil
 }
 
 func encodedTargetRelatedRefMapping(path engineplugin.EngineCatalogPath) (string, contentadapter.RefCatalogPathMapper) {

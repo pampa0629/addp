@@ -59,6 +59,7 @@ type TaskExecutionEngine interface {
 
 // TaskService 任务服务
 type TaskService struct {
+	configChecker    *TaskConfigCheckService
 	db               *gorm.DB
 	taskRepo         *repository.TaskRepository
 	deadLetterRepo   *repository.DeadLetterRepository
