@@ -102,6 +102,8 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 
 ## 资源观测的身份投影
 
+平台实例列表 `GET /platform/module-instances` 可按 `process_metrics_declared` 查询正式进程采集声明是否存在。只接受单个规范 `true` 或 `false`，省略不限制；空值、重复及其他值返回 400。与模块、角色、有效在线状态、ID 等条件取交集，在计数与分页之前执行；声明存在不表示采集成功。仍使用原 Platform User 与 `platform.module.read`，不向普通 DTO 暴露来源端点，不更改登记、租约或后台发现。现有 System PostgreSQL repository 门禁覆盖筛选、计数、分页及离线交集。
+
 - `GET /api/v1/system/runtime/observability-identities` 只允许固定 `addp-monitor` 的非委托 Platform Service Access Token 与 `system.observability_identity.read`，不允许 User、Gateway、日志观测器或 Tenant Context。该 Permission 只授予 `platform.monitor_runtime`。
 - 只读可重复读事务返回启用节点的 UUID/版本与有效节点绑定、启用模块、UP 且未过期的 Backend/Worker/Scheduler/Ingress 实例身份和租约时间；不含台账地址、业务 URL、Metadata、Engine Connection 或凭据。不持久化新副本，不续租，不参与业务 Ready。
 - 节点上限 1,000、带节点声明的当前候选实例上限 10,000、响应上限 4 MiB、总超时 5 秒。超限/控制面失败返回 503，超时 504；无成功空快照兜底或截断。真实空数组为 200，所有投影响应禁止缓存。Common 的唯一服务 Client 校验完整性、时间、重复身份、节点引用与响应体预算。

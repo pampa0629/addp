@@ -8,17 +8,20 @@ export function resolveProcessRoute(input = {}) {
   const page = typeof input.page === 'string' && /^[1-9]\d{0,6}$/.test(input.page) ? Number(input.page) : 1
   const module = typeof input.module_name === 'string' && /^[a-z][a-z0-9_-]{0,49}$/.test(input.module_name) ? input.module_name : ''
   const role = processRoles.includes(input.role) ? input.role : ''
-  const status = ['up', 'down'].includes(input.status) ? input.status : ''
-  const query = { ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(role ? { role } : {}), ...(status ? { status } : {}) }
-  return { page, module, role, status, query, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
+  const status = ['up', 'down', 'all'].includes(input.status) ? input.status : 'up'
+  const declared = ['true', 'false', 'all'].includes(input.process_metrics_declared) ? input.process_metrics_declared : 'true'
+  const query = { ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(role ? { role } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}) }
+  const params = { page, page_size: 20, ...(module ? { module_name: module } : {}), ...(role ? { role } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
+  return { page, module, role, status, declared, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
 }
 const invalid = () => { throw new Error('invalid_resource_response') }
-export function validateProcessInstances(value, page) {
+export function validateProcessInstances(value, page, filters = {}) {
   if (!Array.isArray(value?.data) || value.data.length > 20 || !Number.isSafeInteger(value.total) || value.total < value.data.length || value.page !== page || value.page_size !== 20) invalid()
   const ids = new Set(), names = new Set()
   for (const row of value.data) {
     const identity = JSON.stringify([row.module_name, row.instance_id])
     if (!Number.isSafeInteger(row.id) || row.id < 1 || ids.has(row.id) || names.has(identity) || typeof row.module_name !== 'string' || !row.module_name || typeof row.instance_id !== 'string' || !row.instance_id || !processRoles.includes(row.role) || !['up', 'down'].includes(row.status) || typeof row.node_id !== 'string' || typeof row.process_metrics_declared !== 'boolean') invalid()
+    if ((filters.status && row.status !== filters.status) || (filters.process_metrics_declared !== undefined && String(row.process_metrics_declared) !== filters.process_metrics_declared)) invalid()
     ids.add(row.id); names.add(identity)
   }
   return value

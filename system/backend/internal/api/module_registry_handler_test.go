@@ -12,6 +12,7 @@ import (
 
 	sharedauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
@@ -224,6 +225,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "meta", InstanceID: "meta-a", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://meta.local:8082", RoutePrefix: "/meta",
+		ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:19101/metrics"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -270,6 +272,37 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	}
 	if payload.Total != 3 {
 		t.Fatalf("cross-module total = %d", payload.Total)
+	}
+	for _, tc := range []struct {
+		query    string
+		total    int64
+		declared bool
+	}{
+		{"process_metrics_declared=true", 1, true},
+		{"process_metrics_declared=false", 2, false},
+		{"process_metrics_declared=true&module_name=manager", 0, true},
+	} {
+		response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?page_size=1&"+tc.query, "")
+		if response.Code != http.StatusOK {
+			t.Fatalf("declaration query %s: %d %s", tc.query, response.Code, response.Body.String())
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Total != tc.total || len(payload.Data) > 1 {
+			t.Fatalf("declaration pagination %s: %#v", tc.query, payload)
+		}
+		for _, row := range payload.Data {
+			if row.ProcessMetricsDeclared != tc.declared {
+				t.Fatalf("declaration mismatch: %#v", row)
+			}
+		}
+	}
+	for _, invalid := range []string{"", "1", "TRUE", "all", "null", "true&process_metrics_declared=false", "true&process_metrics_declared=true"} {
+		response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?process_metrics_declared="+invalid, "")
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("declaration value %q returned %d", invalid, response.Code)
+		}
 	}
 	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?node_ip=not-an-IP", "")
 	if response.Code != http.StatusBadRequest {

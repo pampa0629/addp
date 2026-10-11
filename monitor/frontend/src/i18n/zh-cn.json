@@ -795,6 +795,16 @@
       },
       "instance": "运行实例",
       "online": "在线状态",
+      "allStatuses": "全部在线状态",
+      "collectionConfig": "采集配置",
+      "declarations": {
+        "true": "已启用采集",
+        "false": "未启用采集",
+        "all": "全部采集配置"
+      },
+      "declarationHint": "已启用不代表采集成功，请查看采集状态。",
+      "allInstances": "全部实例",
+      "currentInstances": "在线且已启用采集",
       "status": {
         "up": "在线",
         "down": "离线"

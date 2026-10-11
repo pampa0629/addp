@@ -11,10 +11,19 @@
         <el-select v-model="role" :placeholder="t('monitor.process.role')" :aria-label="t('monitor.process.role')" clearable>
           <el-option v-for="item in processRoles" :key="item" :value="item" :label="t(`monitor.process.roles.${item}`)" />
         </el-select>
-        <el-select v-model="status" :placeholder="t('monitor.process.online')" :aria-label="t('monitor.process.online')" clearable>
+        <el-select v-model="status" :aria-label="t('monitor.process.online')">
+          <el-option value="all" :label="t('monitor.process.allStatuses')" />
           <el-option v-for="item in ['up', 'down']" :key="item" :value="item" :label="t(`monitor.process.status.${item}`)" />
         </el-select>
+        <div class="collection-filter">
+          <el-select v-model="declared" :aria-label="t('monitor.process.collectionConfig')" aria-describedby="collection-config-hint">
+            <el-option v-for="item in ['true', 'false', 'all']" :key="item" :value="item" :label="t(`monitor.process.declarations.${item}`)" />
+          </el-select>
+          <p id="collection-config-hint" class="process-hint">{{ t('monitor.process.declarationHint') }}</p>
+        </div>
         <el-button native-type="submit">{{ t('common.search') }}</el-button>
+        <el-button @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
+        <el-button v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
       <el-alert v-if="errorKey || summaryErrorKey" :title="t(errorKey || summaryErrorKey)" type="warning" :closable="false" data-testid="process-error" />
       <el-table :data="instances" v-loading="loading" :empty-text="t('monitor.process.empty')" data-testid="process-list">
@@ -23,12 +32,12 @@
           <template #default="{ row }">{{ row.runtime_hostname || row.registered_host || row.instance_id }}<p class="process-hint" :title="row.instance_id">{{ t(`monitor.process.roles.${row.role}`) }}</p></template>
         </el-table-column>
         <el-table-column :label="t('monitor.process.online')" min-width="100"><template #default="{ row }">{{ t(`monitor.process.status.${row.status}`) }}</template></el-table-column>
+        <el-table-column :label="t('monitor.process.collection')" min-width="175"><template #default="{ row }"><span>{{ collectionState(row) }}</span><p v-if="sampledAt(row)" class="process-hint">{{ sampledAt(row) }}</p></template></el-table-column>
         <el-table-column :label="t('monitor.process.host')" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.node_id ? row.host_node_name || row.node_id : t('monitor.process.unbound') }}</template></el-table-column>
         <el-table-column v-for="metric in processMetrics" :key="metric.key" min-width="200">
           <template #header><span>{{ t(`monitor.process.metrics.${metric.name}`) }}</span><p class="process-hint">{{ t(`monitor.process.hints.${metric.name}`) }}</p></template>
           <template #default="{ row }"><strong>{{ value(row, metric) }}</strong><p v-if="point(row, metric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, metric) }}</p></template>
         </el-table-column>
-        <el-table-column :label="t('monitor.process.collection')" min-width="175"><template #default="{ row }"><span>{{ collectionState(row) }}</span><p v-if="sampledAt(row)" class="process-hint">{{ sampledAt(row) }}</p></template></el-table-column>
       </el-table>
       <el-pagination v-if="!loading && !errorKey" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
     </template>
@@ -53,7 +62,7 @@ const canRead = computed(() => auth.contextType === 'platform' && auth.authConte
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
-const moduleName = ref(''), role = ref(''), status = ref(''), requests = createLatestRequestScope()
+const moduleName = ref(''), role = ref(''), status = ref('up'), declared = ref('true'), requests = createLatestRequestScope()
 const point = (row, metric) => summaries.value.get(row.id)?.series.find(item => item.metric_key === metric.key)?.points[0]
 function value(row, metric) {
   const numeric = currentResourceValue(point(row, metric))
@@ -75,7 +84,8 @@ function sampledAt(row) {
   return stamp ? `${t('monitor.resources.sampledAt')}: ${formatFieldPresentationValue(stamp, { temporal_format: 'datetime' }, locale.value)}` : ''
 }
 const navigate = query => navigateMonitorRoute(router, { path: '/service-resources', query }, { history: 'replace' })
-function filter() { return navigate({ ...(moduleName.value.trim() ? { module_name: moduleName.value.trim() } : {}), ...(role.value ? { role: role.value } : {}), ...(status.value ? { status: status.value } : {}) }) }
+function filter() { return navigate(resolveProcessRoute({ module_name: moduleName.value.trim(), role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
+function setScope(scope) { return navigate(resolveProcessRoute({ module_name: moduleName.value.trim(), role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
 function changePage(page) { if (loading.value || page === state.value.page) return; return navigate({ ...state.value.query, page: page === 1 ? undefined : String(page) }) }
 function processErrorKey(error) {
  const key = resourceErrorKey(error)
@@ -86,12 +96,12 @@ async function reload() {
   instances.value = []; summaries.value = new Map(); total.value = 0; errorKey.value = ''; summaryErrorKey.value = ''; loading.value = false
   if (!canRead.value || route.name !== 'ProcessResources') return
   if (state.value.changed) { await navigate(state.value.query); return }
-  moduleName.value = state.value.module; role.value = state.value.role; status.value = state.value.status
+  moduleName.value = state.value.module; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared
   loading.value = true
   try {
-    const list = await requests.request(config => api.instances({ ...state.value.query, page: state.value.page, page_size: 20 }, config))
+    const list = await requests.request(config => api.instances(state.value.params, config))
     if (!requests.current(ticket)) return
-    validateProcessInstances(list, state.value.page)
+    validateProcessInstances(list, state.value.page, state.value.params)
     instances.value = list.data; total.value = list.total
     if (list.data.length) {
       try {
@@ -119,6 +129,7 @@ onBeforeUnmount(() => requests.dispose())
 .process-toolbar, .process-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .process-toolbar h2 { flex: 1; }
 .process-filters .el-input, .process-filters .el-select { width: 200px; max-width: 100%; }
+.collection-filter { max-width: 100%; }
 .process-hint { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--addp-text-secondary); }
 .el-pagination { margin-top: 16px; }
 </style>

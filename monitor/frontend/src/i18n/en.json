@@ -795,6 +795,16 @@
       },
       "instance": "Runtime instance",
       "online": "Online status",
+      "allStatuses": "All online statuses",
+      "collectionConfig": "Collection configuration",
+      "declarations": {
+        "true": "Collection enabled",
+        "false": "Collection not enabled",
+        "all": "All collection configurations"
+      },
+      "declarationHint": "Enabled does not mean collection succeeded. Check collection status.",
+      "allInstances": "All instances",
+      "currentInstances": "Online with collection enabled",
       "status": {
         "up": "Online",
         "down": "Offline"

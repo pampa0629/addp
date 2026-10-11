@@ -293,6 +293,7 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Param        registered_host query string false "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match"
 // @Param        role query string false "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress"
 // @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
+// @Param        process_metrics_declared query boolean false "是否已声明进程采集；只接受单个 true/false，省略不限制，不表示采集成功 | Process collection declaration; one canonical true/false only, omitted means unrestricted, does not indicate successful collection"
 // @Param        stop_reason query string false "当前下线原因：graceful 正常退出、lease_expired 租约超时；未扫描的过期租约同样匹配，恢复实例不匹配 | Current stop reason; expired leases match before scanning, recovered instances do not match" Enums(graceful,lease_expired)
 // @Param        time_basis query string false "时间依据：registered 登记、offline 离线判定 | Time basis: registered or offline determination" Enums(registered,offline) default(registered)
 // @Param        time_from query string false "选定时间依据的下界，RFC3339，含 | Lower bound of the selected time basis, RFC3339, inclusive"
@@ -309,6 +310,15 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Router       /platform/module-instances [get]
 func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
+	var processMetricsDeclared *bool
+	if values, exists := c.Request.URL.Query()["process_metrics_declared"]; exists {
+		if len(values) != 1 || (values[0] != "true" && values[0] != "false") {
+			commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, commoni18n.MsgInvalidParams))
+			return
+		}
+		declared := values[0] == "true"
+		processMetricsDeclared = &declared
+	}
 	var ids []uint
 	if values, exists := c.Request.URL.Query()["ids"]; exists {
 		var err error
@@ -341,8 +351,9 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 		*bound.target = parsed
 	}
 	instances, total, err := h.service.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
-		IDs:        ids,
-		ModuleName: c.Query("module_name"), RegisteredHost: c.Query("registered_host"), NodeName: c.Query("node_name"),
+		ProcessMetricsDeclared: processMetricsDeclared,
+		IDs:                    ids,
+		ModuleName:             c.Query("module_name"), RegisteredHost: c.Query("registered_host"), NodeName: c.Query("node_name"),
 		NodeIP: c.Query("node_ip"),
 		Role:   c.Query("role"), Status: c.Query("status"), StopReason: c.Query("stop_reason"),
 		TimeBasis: c.Query("time_basis"), TimeFrom: timeFrom, TimeTo: timeTo,

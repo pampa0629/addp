@@ -5721,6 +5721,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "description": "是否已声明进程采集；只接受单个 true/false，省略不限制，不表示采集成功 | Process collection declaration; one canonical true/false only, omitted means unrestricted, does not indicate successful collection",
+                        "name": "process_metrics_declared",
+                        "in": "query"
+                    },
+                    {
                         "enum": [
                             "graceful",
                             "lease_expired"

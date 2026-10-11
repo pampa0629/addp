@@ -349,6 +349,13 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 		query = query.Where(timeColumn + " IS NOT NULL")
 	}
 	query = query.Joins("JOIN module_definitions ON module_definitions.id = module_runtime_instances.module_definition_id")
+	if filter.ProcessMetricsDeclared != nil {
+		if *filter.ProcessMetricsDeclared {
+			query = query.Where("module_runtime_instances.process_metrics IS NOT NULL")
+		} else {
+			query = query.Where("module_runtime_instances.process_metrics IS NULL")
+		}
+	}
 	if len(filter.IDs) > 0 {
 		query = query.Where("module_runtime_instances.id IN ?", filter.IDs)
 	}

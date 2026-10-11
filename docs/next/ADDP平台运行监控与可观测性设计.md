@@ -1600,3 +1600,25 @@ Safari 使用当前已登录平台用户，在独立验收标签页通过模块�
 本节实现提交的 [Platform CI（Run 38094818098）](https://github.com/pampa0629/addp/actions/runs/38094818098)、[Release/T2（Run 38094818063）](https://github.com/pampa0629/addp/actions/runs/38094818063) 与 [Quality CI（Run 38094818099）](https://github.com/pampa0629/addp/actions/runs/38094818099) 均成功。已核对 Release/T2 的实际执行步骤，包含 Monitor metrics infrastructure、System IAM PostgreSQL 与 Monitor PostgreSQL；Linux CI 不计作 Desktop 宿主通道覆盖，后者沿上文 macOS 独占 T2 与本机复验计量，其他跳过项不计通过。服务列表未筛选时共 3013 条，混有历史及未接入实例，首屏未直接显露本轮两个有效来源；后续优先讨论首屏如何突出当前有效观测，保留历史和未接入对象的检索入口，不擅自改变登记或查询权限。
 
 本次仅追加运行及 CI 复核事实，未修改功能代码或 API。`git diff --check` 通过；默认 `make test-changed` 在当前混合工作区因 Ontology 的 `ONTOLOGY_POSTGRES_TEST_DSN` 缺失而于预检返回 2（`/tmp/addp-desktop-local-acceptance-changed-1.log`），其业务门禁未执行，不计通过。个人复验没有创建测试 database 或替代其他 owner 的必需门禁。
+
+### 10.51 服务监控首屏范围与全部实例入口（实现完成，待本机复验）
+
+采集状态及采样时间放在在线状态旁，先展示可用性，再展示资源值；桌面窗口优先看见故障原因，较窄窗口仍使用表格内横向滚动查看完整指标。
+
+2026-10-11 用户确认继续推荐方案：首屏默认查询在线且已启用进程采集的实例，保留其中采集失败、样本过期、身份不匹配或尚无样本的行；“全部实例”入口允许查看离线历史及未接入服务，不删除历史记录。在线来自 System 的当前有效租约；已启用采集仅指正式登记包含 `process_metrics` 声明，不等同于实际正在采集。范围筛选在 System 查询计数及分页前执行，禁止前端仅过滤当前页、遍历全部实例再拼接或按 Monitor 样本是否有效隐藏故障行。System 仍独占实例事实，Monitor 仍独占采集结果，权限、登记、发现和指标预算保持原契约。
+
+System 既有 `GET /platform/module-instances` 增加可选 `process_metrics_declared=true|false`，省略表示不限制；只接受单个规范小写布尔值，空值、重复及其他值返回 400。筛选与现有模块、角色、状态、ID 条件取交集，分页总数反映同一条件；普通响应不增加来源端点。Monitor 页面继续唯一 `/monitor/service-resources`，`status` 默认 `up`，`process_metrics_declared` 默认 `true`，默认值从页面 URL 省略；显式 `status=all` 或 `process_metrics_declared=all` 仅表达页面不限制对应条件，调用 API 时省略该参数。两项筛选各自保留 `down` 和 `false`；“全部实例”同时取消这两项限制，保留模块及角色，回到第 1 页；恢复默认范围也回到第 1 页。筛选、分页、刷新及 Console iframe 继续使用原导航和迟到响应隔离能力。采集配置的说明放在对应控件旁，空范围提供直接查看全部实例的入口。
+
+实施前门禁确认：System Handler/Repository 契约由既有 Go T1 自动发现，真实 PostgreSQL 筛选与计数扩展现有 `observability_identity_postgres_test.go`，沿 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository"` 执行；Monitor 与 Console 确定性浏览器、URL 恢复及构建沿 `make test-monitor-frontend`、`make test-console-frontend`。System Swagger 同步生成及路由覆盖校验；现有 Platform CI、Release/T2 和前端自动发现覆盖这些路径，不新增 suite、基础设施或测试身份。默认 `make test-changed` 单独记录混合工作区结果，不能用其他 owner 的预检失败替代本轮针对性验证。仅需用户重启 System 应用新查询；不自行重启，未完成真实部署复验前不计个人运行已验收。
+
+实现与针对性验证：System 在原查询条件中加入声明是否存在的交集，严格解析布尔参数；Monitor 原列表直接请求该范围，并校验返回行符合已请求的在线/声明条件，防止后端忽略条件时继续显示错误范围。没有前端遍历或裁剪全部实例。`make test-go` 返回 0（`/tmp/addp-service-scope-go-1.log`）；System repository PostgreSQL 标准入口返回 0（`/tmp/addp-service-scope-postgres-1.log`），覆盖新近未接入实例排在来源之前时的声明过滤、总数、分页、ID 交集及离线历史，仍使用实际映射 `25432` 上的 `addp_iam_test`。System Swagger 生成与 216 个公开路由方法覆盖校验返回 0（`/tmp/addp-service-scope-swagger-1.log`）。
+
+最终 `make test-monitor-frontend` 返回 0，99 项浏览器回归与构建通过（`/tmp/addp-service-scope-monitor-3.log`）；`make test-console-frontend` 返回 0，156 项单测、127 项浏览器回归与构建通过（`/tmp/addp-service-scope-console-1.log`），最终列顺序的 Console 服务页标准浏览器入口再验证四项通过（`/tmp/addp-service-scope-console-focused-2.log`）。27 行混合夹具证明默认只显示两个在线已启用来源，故障行保留；全部入口能分页找到历史与未接入实例，刷新恢复范围，中英文控件和空范围入口有效。人工检查最终 1280/375 像素截图：采集状态已移到在线状态旁，筛选控件在窄屏可用、页面无整体水平溢出；较窄窗口仍需表格内部横向滚动，未宣称所有列同屏可见。
+
+既有 Hosted 浏览器与报告校验同步采用新 canonical URL 和实际 `process_metrics_declared=true` 请求，拒绝缺少该条件的报告；`make test-node-metrics-online-runner` 返回 0（41 项协议/报告回归及真实 fixture 命令校验，`/tmp/addp-service-scope-online-runner-1.log`）。本轮未执行新的 Hosted T4 或个人 Safari 运行验收，不借用 10.49/10.50 的历史证据。默认 `make test-changed` 因当前混合工作区缺少多模块测试连接条件，在执行前预检返回 2（`/tmp/addp-service-scope-changed-1.log`），不能计为通过。
+
+平台聚合 `make test-platform` 返回 2（`/tmp/addp-service-scope-platform-1.log`）：执行夹具门禁的两个模拟命令超过测试原有 10 秒限制，随后同一用例发现临时目录残留；聚合在该处中断。未修改这两个门禁脚本或放宽超时。独立 `make test-execution-fixtures` 返回 0，九项回归及实际仓库扫描通过（`/tmp/addp-service-scope-fixtures-2.log`）；该次复跑未复现超时，根因尚未确定，不据此把原聚合计为通过。原聚合未到的 `make test-projection-store-ownership` 与 `make test-authorization` 分别返回 0（`/tmp/addp-service-scope-projection-1.log`、`/tmp/addp-service-scope-authorization-1.log`）。现有 `.github/workflows/platform-ci.yml` 仍完整执行平台聚合，无跳过或放宽门禁。
+
+原聚合未到的 `make test-online-runner` 亦返回 0（`/tmp/addp-service-scope-online-all-1.log`），包括本轮节点指标协议、其余既有 Online 分发/夹具回归及 CI 登记检查。这些是确定性 runner 检查，不计作真实 Hosted T4。
+
+本轮没有修改 IAM、Source 启用配置或个人服务生命周期；下一步由用户执行 `./scripts/dev/restart.sh -system` 应用查询条件，再通过 Safari 核对默认范围、全部入口及故障说明。

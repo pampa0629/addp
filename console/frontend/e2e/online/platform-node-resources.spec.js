@@ -292,7 +292,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await statusControl.click()
     await monitor.getByRole('option', { name: '在线', exact: true }).click()
     await monitor.getByRole('button', { name: '搜索', exact: true }).click()
-    await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && url.searchParams.get('role') === 'backend' && url.searchParams.get('status') === 'up')
+    await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && url.searchParams.get('role') === 'backend' && !url.searchParams.has('status') && !url.searchParams.has('process_metrics_declared'))
     expect(await documentOrigin()).toBe(serviceDocumentID)
     await expect(monitor.getByTestId('process-list').locator('strong').filter({ hasText: /MiB|GiB/ })).toHaveCount(2)
     for (const hint of ['1 核 ≈ 占满一个逻辑核，可超过 1 核', '进程当前驻留内存（RSS）', '当前进程启动后经过的时间']) {
@@ -300,8 +300,8 @@ test('platform node resources through real Console password MFA and Monitor ifra
     }
     const checkServices = async () => {
       await Promise.all(pending)
-      const list = instancePages.filter(item => item.query.role === 'backend' && item.query.status === 'up').at(-1)
-      validateProcessInstances(list.value, 1)
+      const list = instancePages.filter(item => item.query.role === 'backend' && item.query.status === 'up' && item.query.process_metrics_declared === 'true').at(-1)
+      validateProcessInstances(list.value, 1, list.query)
       const batch = serviceBatches.filter(item => item.query.instance_ids === list.value.data.map(row => row.id).join(',')).at(-1)
       const summaries = validateProcessSummaries(batch.value, list.value.data)
       for (const owner of expected.processes) {

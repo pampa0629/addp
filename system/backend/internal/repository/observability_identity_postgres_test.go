@@ -163,6 +163,30 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	if err != nil || total != 1 || len(exact) != 1 || exact[0].InstanceID != process.InstanceID {
 		t.Fatalf("exact authorized process reference: %+v %d %v", exact, total, err)
 	}
+	// Newer undeclared instances must not bury the declared source after paging.
+	for _, id := range []string{"unobserved-a", "unobserved-b", "unobserved-c"} {
+		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "monitor", InstanceID: id, Role: "worker", RoutePrefix: "/monitor", ProcessStartedAt: time.Now().UTC()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	declared, undeclared := true, false
+	for _, tc := range []struct {
+		filter *bool
+		page   int
+		total  int64
+	}{{&declared, 1, 1}, {&declared, 2, 1}, {&undeclared, 1, 3}, {&undeclared, 3, 3}, {nil, 1, 4}} {
+		page, count, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{ModuleName: "monitor", Role: "worker", Status: "up", ProcessMetricsDeclared: tc.filter, Page: tc.page, PageSize: 1})
+		if err != nil || count != tc.total || (int64(tc.page) > tc.total && len(page) != 0) || (int64(tc.page) <= tc.total && len(page) != 1) {
+			t.Fatalf("declaration count/page: %+v %d %v", page, count, err)
+		}
+		if tc.filter != nil && len(page) > 0 && page[0].ProcessMetricsDeclared != *tc.filter {
+			t.Fatalf("declaration filter: %+v", page)
+		}
+	}
+	intersection, count, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{IDs: []uint{rows[0].ID}, ProcessMetricsDeclared: &undeclared, Page: 1, PageSize: 1})
+	if err != nil || count != 0 || len(intersection) != 0 {
+		t.Fatalf("ID/declaration intersection: %+v %d %v", intersection, count, err)
+	}
 	for _, update := range []map[string]any{
 		{"process_metrics": nil},
 		{"process_metrics": `{"schema_version":"addp.process-metrics/v1","endpoint":"https://127.0.0.1:18101/metrics"}`},
@@ -182,6 +206,12 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	}
 	if err := registry.Deregister("monitor", "native-process"); err != nil {
 		t.Fatal(err)
+	}
+	for _, status := range []string{"up", "down"} {
+		page, count, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{ModuleName: "monitor", Status: status, ProcessMetricsDeclared: &declared, Page: 1, PageSize: 1})
+		if err != nil || (status == "up" && (count != 0 || len(page) != 0)) || (status == "down" && (count != 1 || len(page) != 1 || page[0].InstanceID != process.InstanceID)) {
+			t.Fatalf("declared offline scope: %+v %d %v", page, count, err)
+		}
 	}
 	current, err = registry.ObservabilityIdentities(ctx)
 	if err != nil || len(current.ModuleInstances) != 0 {

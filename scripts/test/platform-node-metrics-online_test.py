@@ -93,7 +93,7 @@ class MetricsProtocolTest(unittest.TestCase):
         owners, reply = self.process_reply()
         expected = {"processes": owners, "policy_version": 4}
         batch = {"path": ONLINE.PROCESS_SUMMARIES, "query": {"instance_ids": "7,9"}, "value": reply,
-                 "instance_query": {"page": "1", "page_size": "20", "role": "backend", "status": "up"},
+                 "instance_query": {"page": "1", "page_size": "20", "role": "backend", "status": "up", "process_metrics_declared": "true"},
                  "instances": {"data": owners, "total": 2, "page": 1, "page_size": 20}}
         report = {"service_batches": [batch, copy.deepcopy(batch)], "service_presentation": dict.fromkeys(
             ("cpu_cores", "rss_iec", "elapsed_uptime", "inline_hints", "sample_time_visible", "unbound_host", "url_restore", "iframe_preserved", "negative_no_reads"), True)}
@@ -106,6 +106,7 @@ class MetricsProtocolTest(unittest.TestCase):
                          lambda v: v["service_presentation"].update(negative_no_reads=False),
                          lambda v: v["service_batches"][0]["query"].update(instance_ids="7,9,12"),
                          lambda v: v["service_batches"][0]["instance_query"].pop("status"),
+                         lambda v: v["service_batches"][0]["instance_query"].pop("process_metrics_declared"),
                          lambda v: v["service_batches"][0]["instances"]["data"][0].update(instance_id="old-runtime"),
                          lambda v: v["service_batches"][0]["value"]["data"][0].update(policy_version=3),
                          lambda v: v.update(service_batches=[])]

@@ -8747,6 +8747,12 @@ paths:
         in: query
         name: status
         type: string
+      - description: 是否已声明进程采集；只接受单个 true/false，省略不限制，不表示采集成功 | Process collection
+          declaration; one canonical true/false only, omitted means unrestricted,
+          does not indicate successful collection
+        in: query
+        name: process_metrics_declared
+        type: boolean
       - description: 当前下线原因：graceful 正常退出、lease_expired 租约超时；未扫描的过期租约同样匹配，恢复实例不匹配
           | Current stop reason; expired leases match before scanning, recovered instances
           do not match

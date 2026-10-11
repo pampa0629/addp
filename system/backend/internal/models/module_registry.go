@@ -144,19 +144,20 @@ type ModuleRuntimeInstanceInfo struct {
 }
 
 type ModuleRuntimeInstanceFilter struct {
-	IDs            []uint
-	ModuleName     string
-	RegisteredHost string
-	NodeName       string
-	NodeIP         string
-	Role           string
-	Status         string
-	StopReason     string
-	TimeBasis      string
-	TimeFrom       time.Time
-	TimeTo         time.Time
-	Page           int
-	PageSize       int
+	ProcessMetricsDeclared *bool
+	IDs                    []uint
+	ModuleName             string
+	RegisteredHost         string
+	NodeName               string
+	NodeIP                 string
+	Role                   string
+	Status                 string
+	StopReason             string
+	TimeBasis              string
+	TimeFrom               time.Time
+	TimeTo                 time.Time
+	Page                   int
+	PageSize               int
 }
 
 type ModuleRuntimeInstanceRecord struct {

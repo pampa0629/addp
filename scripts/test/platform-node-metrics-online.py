@@ -686,7 +686,7 @@ def validate_process_browser(value, expected, artifacts):
         rows = instances.get("data")
         require(isinstance(rows, list) and 1 <= len(rows) <= 20 and instances.get("page") == 1 and instances.get("page_size") == 20
                 and type(instances.get("total")) is int and instances["total"] >= len(rows), "service browser list is not an authorized page")
-        require(batch.get("instance_query") == {"page": "1", "page_size": "20", "role": "backend", "status": "up"}, "service browser list filters not restored")
+        require(batch.get("instance_query") == {"page": "1", "page_size": "20", "role": "backend", "status": "up", "process_metrics_declared": "true"}, "service browser list filters not restored")
         ids = [r.get("id") for r in rows]
         require(all(type(i) is int and i > 0 for i in ids) and len(set(ids)) == len(ids)
                 and batch["query"]["instance_ids"] == ",".join(map(str, ids)), "service browser summary expanded owner page")

@@ -87,6 +87,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Monitor | 平台监测目标管理 | 列表 `/monitor/monitoring-targets`、新建 `/monitor/monitoring-targets/new`、详情 `/monitor/monitoring-targets/:id`；query 为 `page/page_size`，默认第 1 页及每页 20 条省略；新建成功 replace 为详情，关闭详情 replace 回列表并保留分页；未保存来源端点不进入 URL |
 | Monitor | 平台节点资源 | 列表 `/monitor/node-resources`、详情 `/monitor/node-resources/:node_id`；query 为 `search/page/page_size` 与详情 `range/metric/refresh`；文件系统趋势使用完整 `device/mountpoint/fstype` 精确挂载维度，只与 `node.filesystem.*` 指标同时出现，不完整或非法挂载参数显示错误，不回落到另一个资源；默认第 1 页、每页 20 条、近 1 小时、内存使用率、15 秒刷新省略；`refresh` 非默认值只允许 `10/30/60/off`，列表不保留；详情返回保留列表上下文，趋势及刷新选择 replace，后台刷新不改变历史，节点切换 push |
 | Monitor | 统一执行列表筛选与分页 | `module`、`task_type`、`source_task_id`、`execution_id`、`status`、`trigger_type`、`start_date`、`end_date`、`page`、`page_size`；业务模块不得复制同构列表状态 |
+| Monitor | 服务监控列表 | `/monitor/service-resources`；`module_name/role/status/process_metrics_declared/page`；默认在线 `status=up`、已启用采集 `process_metrics_declared=true`、第 1 页省略；`all` 表示页面不限制对应状态或采集声明，调用 System API 时省略该条件；其他值为 `status=down`、`process_metrics_declared=false`；切换范围重置分页，模块及角色保留 |
 | Orchestrator | 编排列表任务引用筛选 | `module`、`task_type`、`task_id` 同时提供，三者精确匹配步骤；编辑与执行历史返回保留筛选 |
 | Orchestrator | 编排创建与编辑 | path `/orchestrations/new`、`/orchestrations/:id/edit` |
 | Graph | 本体/审核稳定 Tab、知识服务当前图谱 | `tab`、`graph_id` |
