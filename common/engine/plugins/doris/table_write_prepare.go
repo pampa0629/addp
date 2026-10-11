@@ -272,6 +272,9 @@ func dorisColumnCompatibleWithField(column dorisColumnInfo, field datatype.Field
 	if expected == datatype.FieldTypeUnknown {
 		return existing == datatype.FieldTypeString || existing == datatype.FieldTypeUnknown
 	}
+	// Catalog facts describe physical storage, so compare against the same
+	// mapping used to create the column (JSON/bytes, for example, use STRING).
+	expected = dorisCommonFieldType(dorisColumnInfo{NativeType: dorisSQLTypeForField(field)})
 	if expected == datatype.FieldTypeDecimal && existing == datatype.FieldTypeDecimal {
 		return column.NumericPrecision.Valid && column.NumericScale.Valid &&
 			int(column.NumericPrecision.Int64) == field.Precision && int(column.NumericScale.Int64) == field.Scale

@@ -231,12 +231,16 @@ func TestBuildDorisInsertSQL(t *testing.T) {
 		{"id": 2, "city`name": "Shanghai"},
 	}
 
-	sql, args := buildDorisInsertSQL("analytics", "target table", []string{"id", "city`name"}, rows)
+	sql := buildDorisInsertSQL("analytics", "target table", []string{"id", "city`name"}, nil, len(rows))
 	wantSQL := "INSERT INTO `analytics`.`target table` (`id`, `city``name`) VALUES (?, ?), (?, ?)"
 	if sql != wantSQL {
 		t.Fatalf("sql = %q, want %q", sql, wantSQL)
 	}
 	wantArgs := []interface{}{1, "Hangzhou", 2, "Shanghai"}
+	args, err := dorisTableWriteArgs(context.Background(), []string{"id", "city`name"}, nil, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", args, wantArgs)
 	}

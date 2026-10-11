@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# common-doris-decimal-gate.sh - Verify Doris decimal table-write precision against a disposable database.
+# common-doris-decimal-gate.sh - Verify Doris decimal and typed JSON writes against a disposable database.
 # ADDP_T2_HOSTED_ONLY=doris
 
 set -euo pipefail
@@ -20,7 +20,11 @@ cleanup() {
             docker logs "$CONTAINER_NAME" > "$WORK_DIR/doris-container.log" 2>&1
             tail -n 200 "$WORK_DIR/doris-container.log" >&2
         fi
-        docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || status=1
+        docker rm --force --volumes "$CONTAINER_NAME" >/dev/null 2>&1 || status=1
+        if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+            echo "Doris gate left its owned container behind: $CONTAINER_NAME" >&2
+            status=1
+        fi
     fi
     case "$WORK_DIR" in
         "${TMPDIR:-/tmp}"/addp-common-doris-decimal.*) rm -rf "$WORK_DIR" ;;
@@ -104,7 +108,7 @@ ADDP_TEST_DORIS_PORT="$host_port" \
 ADDP_TEST_DORIS_DATABASE="$DATABASE_NAME" \
 ADDP_TEST_DORIS_USER=root \
     go test ./engine/plugins/doris \
-    -run '^TestIntegrationDorisDecimalTableWriteDefinition$' \
+    -run '^TestIntegrationDoris(DecimalTableWriteDefinition|TypedJSONWrites)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-doris-decimal.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-doris-decimal.log"; then

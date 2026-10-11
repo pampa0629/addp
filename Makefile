@@ -370,7 +370,7 @@ test-common-dameng: ## 在本机 Linux ARM64 Docker 使用 Business 试用实例
 test-common-oracle-decimal: ## 使用一次性 Oracle database 验证 Decimal、JSON 与标量写入 Provider 契约
 	@bash scripts/test/common-oracle-decimal-gate.sh
 
-test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal Provider 契约
+test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal 与 JSON 写入 Provider 契约
 	@bash scripts/test/common-doris-decimal-gate.sh
 
 test-common-clickhouse-decimal: ## 使用一次性 ClickHouse database 验证 Decimal Provider 契约

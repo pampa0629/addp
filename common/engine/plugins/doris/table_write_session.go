@@ -3,12 +3,14 @@ package doris
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	pluginshared "github.com/addp/common/engine/plugins/shared"
 	"github.com/addp/common/resume"
 )
 
@@ -66,11 +68,12 @@ func (p *DorisPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin
 	}
 
 	return &dorisTableWriteSession{
-		db:        db,
-		database:  database,
-		table:     table,
-		columns:   columns,
-		chunkSize: effectiveDorisInsertChunkSize(len(columns), dorisDefaultInsertChunkSize),
+		db:         db,
+		database:   database,
+		table:      table,
+		columns:    columns,
+		fieldTypes: pluginshared.TableWriteFieldTypes(opts.Fields),
+		chunkSize:  effectiveDorisInsertChunkSize(len(columns), dorisDefaultInsertChunkSize),
 	}, nil
 }
 
@@ -155,7 +158,7 @@ func effectiveDorisInsertChunkSize(columnCount, requested int) int {
 	return requested
 }
 
-func buildDorisInsertSQL(database, table string, columns []string, rows []map[string]interface{}) (string, []interface{}) {
+func buildDorisInsertSQL(database, table string, columns []string, fieldTypes map[string]datatype.FieldType, rowCount int) string {
 	dialect := dorisDialect()
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
@@ -169,18 +172,49 @@ func buildDorisInsertSQL(database, table string, columns []string, rows []map[st
 	sb.WriteString(strings.Join(quotedColumns, ", "))
 	sb.WriteString(") VALUES ")
 
-	args := make([]interface{}, 0, len(rows)*len(columns))
-	valueGroups := make([]string, 0, len(rows))
-	for _, row := range rows {
+	valueGroups := make([]string, 0, rowCount)
+	for rowIndex := 0; rowIndex < rowCount; rowIndex++ {
 		group := make([]string, len(columns))
 		for i, column := range columns {
 			group[i] = "?"
-			args = append(args, row[column])
+			if fieldTypes[column] == datatype.FieldTypeBytes {
+				group[i] = "UNHEX(?)"
+			}
 		}
 		valueGroups = append(valueGroups, "("+strings.Join(group, ", ")+")")
 	}
 	sb.WriteString(strings.Join(valueGroups, ", "))
-	return sb.String(), args
+	return sb.String()
+}
+
+func dorisTableWriteArgs(ctx context.Context, columns []string, fieldTypes map[string]datatype.FieldType, rows []map[string]interface{}) ([]interface{}, error) {
+	args := make([]interface{}, 0, len(rows)*len(columns))
+	for rowIndex, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		for _, column := range columns {
+			value, err := pluginshared.EncodeTableWriteValue(row[column], fieldTypes[column])
+			if err != nil {
+				return nil, fmt.Errorf("encode doris row %d field %q: %w", rowIndex, column, err)
+			}
+			// Doris rejects the MySQL driver's _binary literal. Bind ASCII hex
+			// and let UNHEX restore bytes without any character conversion.
+			if fieldTypes[column] == datatype.FieldTypeBytes && value != nil {
+				binary, ok := value.([]byte)
+				if !ok {
+					return nil, fmt.Errorf("encode doris row %d field %q: bytes requires []byte, got %T", rowIndex, column, value)
+				}
+				if binary == nil {
+					value = nil
+				} else {
+					value = hex.EncodeToString(binary)
+				}
+			}
+			args = append(args, value)
+		}
+	}
+	return args, nil
 }
 
 type dorisTableWriteSession struct {
@@ -188,6 +222,7 @@ type dorisTableWriteSession struct {
 	database       string
 	table          string
 	columns        []string
+	fieldTypes     map[string]datatype.FieldType
 	chunkSize      int
 	batchesWritten int64
 	rowsWritten    int64
@@ -209,6 +244,12 @@ func (s *dorisTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.B
 	if chunkSize <= 0 {
 		return fmt.Errorf("doris table write session has too many columns for insert bind parameters")
 	}
+	// Doris INSERT chunks commit independently. Validate the entire batch before
+	// issuing SQL so an encoding error cannot leave earlier chunks committed.
+	args, err := dorisTableWriteArgs(ctx, s.columns, s.fieldTypes, batch.Rows)
+	if err != nil {
+		return err
+	}
 
 	for start := 0; start < len(batch.Rows); start += chunkSize {
 		if err := ctx.Err(); err != nil {
@@ -218,8 +259,8 @@ func (s *dorisTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.B
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		insertSQL, args := buildDorisInsertSQL(s.database, s.table, s.columns, batch.Rows[start:end])
-		if _, err := s.db.ExecContext(ctx, insertSQL, args...); err != nil {
+		insertSQL := buildDorisInsertSQL(s.database, s.table, s.columns, s.fieldTypes, end-start)
+		if _, err := s.db.ExecContext(ctx, insertSQL, args[start*len(s.columns):end*len(s.columns)]...); err != nil {
 			return fmt.Errorf("execute doris table write session rows %d-%d: %w", start, end, err)
 		}
 	}

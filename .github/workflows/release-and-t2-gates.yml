@@ -756,7 +756,7 @@ jobs:
           status: ${{ job.status }}
 
   common-doris-decimal:
-    name: Common Decimal Provider integration (Doris 2.1.0)
+    name: Common typed-write Provider integration (Doris 2.1.0)
     needs: selection
     if: needs.selection.outputs.common == 'true' || needs.selection.outputs.transfer == 'true'
     runs-on: ubuntu-24.04
@@ -773,14 +773,14 @@ jobs:
           go-version-file: common/go.mod
           cache: false
 
-      - name: Run Common Doris decimal gate
+      - name: Run Common Doris typed-write gate
         run: make test-common-doris-decimal
 
-      - name: Summarize Common Doris decimal gate
+      - name: Summarize Common Doris typed-write gate
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Common Decimal Provider integration (Doris 2.1.0)
+          gate: Common typed-write Provider integration (Doris 2.1.0)
           status: ${{ job.status }}
 
   common-clickhouse-decimal:

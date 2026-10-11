@@ -12,6 +12,8 @@ ADDP 平台的共享代码模块，提供各个微服务模块通用的工具和
 
 Oracle INSERT session 与分区变更 MERGE 同样使用共享 JSON 编码，保留原生 JSON、BLOB 与 SDO_GEOMETRY 语义。`make test-common-oracle-decimal` 沿用已有一次性 Oracle Free 23 门禁及 CI 登记，覆盖 Decimal、两条 JSON 写入路径、SQL NULL／JSON null、非法输入回滚和分区位点原子性，并运行既有标量回归；容器使用随机回环端口，退出时清理全部 owned 资源。此入口不声明真实空间验收，空间转换由 `make test-go` 验证。
 
+Doris session 与批量 INSERT 使用共享 JSON 编码，JSON 字段沿用现有 `STRING` 建表映射，普通文本与 bytes 不解释为 JSON。声明为 `bytes` 的值要求 `[]byte`，在 Provider 内绑定十六进制文本并通过 [UNHEX](https://doris.apache.org/docs/2.1/sql-manual/sql-functions/scalar-functions/string-functions/unhex/) 还原原始字节，避免 MySQL 驱动生成 Doris 不支持的 `_binary` 字面量；NULL、空 bytes 与非 UTF-8 字节分别保留。当前批次在第一条 SQL 前完成全部编码，避免后续 chunk 的非法 JSON 导致前半批先提交；chunk 仍自动提交，`Abort` 不撤销已有写入，数据库执行失败不保证整批原子性。编码失败不新增当前批次数据，也不代表此前建表或 replace 已回滚。`make test-common-doris-decimal` 沿用已有一次性 Doris 门禁与 CI 登记，验证 Decimal、两条 JSON 写入入口、NULL、已编码内容与 bytes 保真、字段类型固定及跨 chunk 的编码失败无新增行。
+
 MySQL 可通过相同测试连接条件运行 `bash scripts/test/common-mysql-data-protection-gate.sh --test typed-write`，仅验证类型感知写入；默认入口仍运行完整门禁。
 
 只复验 PostgreSQL 类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。
