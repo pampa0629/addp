@@ -687,6 +687,9 @@ func oracleApplyValueExpression(field datatype.FieldInfo, value interface{}, spa
 	if err != nil {
 		return "", nil, err
 	}
+	if converted == nil {
+		return "CAST(NULL AS " + oracleExpectedType(field) + ")", nil, nil
+	}
 	return fmt.Sprintf(":%d", bindIndex), []interface{}{converted}, nil
 }
 
@@ -733,11 +736,14 @@ func oracleScalarWriteValue(field datatype.FieldInfo, value interface{}) (interf
 		}
 		return *number, nil
 	case datatype.FieldTypeJSON:
-		text, ok := value.(string)
-		if !ok {
-			return nil, fmt.Errorf("oracle JSON field %q requires JSON text", field.Name)
+		encoded, err := pluginshared.EncodeTableWriteValue(value, field.Type)
+		if err != nil {
+			return nil, fmt.Errorf("oracle JSON field %q: %w", field.Name, err)
 		}
-		return text, nil
+		if encoded == nil && !field.Nullable {
+			return nil, fmt.Errorf("oracle JSON field %q is NOT NULL", field.Name)
+		}
+		return encoded, nil
 	case datatype.FieldTypeBytes:
 		bytes, ok := value.([]byte)
 		if !ok {

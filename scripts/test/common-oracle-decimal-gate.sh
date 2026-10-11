@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# common-oracle-decimal-gate.sh - Verify Oracle decimal table-write precision against a disposable database.
+# common-oracle-decimal-gate.sh - Verify Oracle typed JSON/decimal writes against a disposable database.
 # ADDP_T2_HOSTED_ONLY=oracle
 
 set -euo pipefail
@@ -22,7 +22,11 @@ cleanup() {
             docker logs "$CONTAINER_NAME" > "$WORK_DIR/oracle-container.log" 2>&1
             tail -n 200 "$WORK_DIR/oracle-container.log" >&2
         fi
-        docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || status=1
+        docker rm --force --volumes "$CONTAINER_NAME" >/dev/null 2>&1 || status=1
+        if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+            echo "Oracle gate left its owned container behind: $CONTAINER_NAME" >&2
+            status=1
+        fi
     fi
     case "$WORK_DIR" in
         "${TMPDIR:-/tmp}"/addp-common-oracle-decimal.*) rm -rf "$WORK_DIR" ;;
@@ -81,13 +85,15 @@ esac
 
 cd "$ROOT_DIR/common"
 ADDP_ORACLE_DECIMAL_INTEGRATION=1 \
+ADDP_ORACLE_JSON_INTEGRATION=1 \
+ADDP_ORACLE_INTEGRATION=1 \
 ADDP_TEST_ORACLE_HOST=127.0.0.1 \
 ADDP_TEST_ORACLE_PORT="$host_port" \
 ADDP_TEST_ORACLE_SERVICE_NAME=FREEPDB1 \
 ADDP_TEST_ORACLE_USER="$ORACLE_USER" \
 ADDP_TEST_ORACLE_PASSWORD="$ORACLE_APP_PASSWORD" \
     go test ./engine/plugins/oracle \
-    -run '^TestIntegrationOracleDecimalTableWriteDefinition$' \
+    -run '^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites|PartitionedApplyScalarTypeMatrix)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-oracle-decimal.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-oracle-decimal.log"; then

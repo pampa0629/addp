@@ -728,7 +728,7 @@ jobs:
           status: ${{ job.status }}
 
   common-oracle-decimal:
-    name: Common Decimal Provider integration (Oracle Free 23)
+    name: Common typed-write Provider integration (Oracle Free 23)
     needs: selection
     if: needs.selection.outputs.common == 'true' || needs.selection.outputs.transfer == 'true'
     runs-on: ubuntu-24.04
@@ -745,14 +745,14 @@ jobs:
           go-version-file: common/go.mod
           cache: false
 
-      - name: Run Common Oracle decimal gate
+      - name: Run Common Oracle typed-write gate
         run: make test-common-oracle-decimal
 
-      - name: Summarize Common Oracle decimal gate
+      - name: Summarize Common Oracle typed-write gate
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Common Decimal Provider integration (Oracle Free 23)
+          gate: Common typed-write Provider integration (Oracle Free 23)
           status: ${{ job.status }}
 
   common-doris-decimal:

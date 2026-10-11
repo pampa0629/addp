@@ -10,6 +10,8 @@ ADDP 平台的共享代码模块，提供各个微服务模块通用的工具和
 
 编码只由声明的字段类型决定，不把普通文本、`bytes` 或原生 `array` 自动解释为 JSON。PostgreSQL 空间 `[]byte` 继续使用十六进制 EWKB，MySQL 空间值继续使用 WKB 与显式 SRID；普通 `bytes` 保持各引擎原生二进制语义。Session 的类型来自打开时的字段定义，upsert 类型来自 options，不由后续批次覆盖。验证入口为 `make test-go`、`make test-common-postgres`；真实 JSONB 回归由现有 Common PostgreSQL T2 门禁和 Release/T2 CI 执行；MySQL、OceanBase、TiDB 的 JSON、NULL、二进制及失败回滚回归分别由 `make test-common-mysql-data-protection`、`make test-common-oceanbase`、`make test-common-tidb` 自动发现，MySQL 同时验证空间混合表。
 
+Oracle INSERT session 与分区变更 MERGE 同样使用共享 JSON 编码，保留原生 JSON、BLOB 与 SDO_GEOMETRY 语义。`make test-common-oracle-decimal` 沿用已有一次性 Oracle Free 23 门禁及 CI 登记，覆盖 Decimal、两条 JSON 写入路径、SQL NULL／JSON null、非法输入回滚和分区位点原子性，并运行既有标量回归；容器使用随机回环端口，退出时清理全部 owned 资源。此入口不声明真实空间验收，空间转换由 `make test-go` 验证。
+
 MySQL 可通过相同测试连接条件运行 `bash scripts/test/common-mysql-data-protection-gate.sh --test typed-write`，仅验证类型感知写入；默认入口仍运行完整门禁。
 
 只复验 PostgreSQL 类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。

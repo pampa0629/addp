@@ -307,7 +307,7 @@ type StoreProvider interface {
 
 `json` 字段的统一输入契约为：Go 数组、对象、数字和布尔值编码为 JSON 文本；`nil`、nil `[]byte` 和 nil `json.RawMessage` 表达 SQL NULL，typed nil 数组／对象表达 JSON `null`，非 nil 空数组／对象表达 `[]`／`{}`。`string`、`[]byte` 和 `json.RawMessage` 表达已编码 JSON，必须是完整合法文档，不能再次编码或先解码为浮点数；JSON 字符串标量必须带 JSON 引号。非法 JSON 或不可编码的 Go 值必须返回带字段定位的错误，不得用普通字符串格式化兜底。该契约不把普通文本、`bytes`、原生 `array` 或空间字段解释成 JSON；空间与二进制转换仍归引擎 Provider。
 
-统一编码由 `common/engine/plugins/shared` 独占实现。PostgreSQL（含协议复用 Provider）、MySQL、TiDB 与 OceanBase 的表格写入使用该入口；其他已有 Provider 必须按同一契约收敛，不能以仅接受预编码字符串作为最终实现。
+统一编码由 `common/engine/plugins/shared` 独占实现。PostgreSQL（含协议复用 Provider）、MySQL、TiDB、OceanBase 与 Oracle 的表格写入使用该入口；Oracle 的 INSERT session 与分区变更 MERGE 共用此编码，编码后的 SQL NULL 仍须遵守字段非空约束。其他已有 Provider 必须按同一契约收敛，不能以仅接受预编码字符串作为最终实现。
 
 动态记录读取的强类型契约为：
 

@@ -367,7 +367,7 @@ test-common-kingbase: ## 在 owner 受控 Linux x86_64 主机使用正规 Licens
 test-common-dameng: ## 在本机 Linux ARM64 Docker 使用 Business 试用实例验证 DM8 Provider 契约
 	@bash scripts/test/common-dameng-gate.sh
 
-test-common-oracle-decimal: ## 使用一次性 Oracle database 验证 Decimal Provider 契约
+test-common-oracle-decimal: ## 使用一次性 Oracle database 验证 Decimal、JSON 与标量写入 Provider 契约
 	@bash scripts/test/common-oracle-decimal-gate.sh
 
 test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal Provider 契约
