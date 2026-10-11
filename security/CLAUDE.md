@@ -68,7 +68,9 @@ Standard 的旧分类分级 ID 和数据不迁移、不映射，也不提供兼�
 
 ## 前端验证与失败取证
 
-Hosted T4 `security-mysql-owner-protection` 使用独立的准备身份，通过 System 正式 `access_grants` 命令原子初始化独立批准要求并给普通消费账号签发精确表的只读 Grant。范围仅包括 MySQL `customers`、PostgreSQL `spatial_algorithm_source`、`spatial_algorithm_transfer` 和 `mysql_email_transfer`；不授予目录、未来表或消费者的授权管理权限。准备令牌在进入四 Owner 场景前移除，普通账号继续同时受功能权限、源数据授权和 Security 规则约束；整套夹具随 Hosted Job 清理。夹具身份、精确授权请求和准备令牌隔离回归由既有 `make test-online-runner` 自动发现，真实链路由 `online-t4-gates.yml` 的同名套件验证。
+Hosted T4 `security-mysql-owner-protection` 使用独立的准备身份，通过 System 正式 `access_grants` 命令原子初始化独立批准要求并给普通消费账号签发精确表的只读 Grant。范围仅包括 MySQL `customers`、MongoDB `Outdoor.Persons` 集合，以及 PostgreSQL `spatial_algorithm_source`、`spatial_algorithm_transfer`、`mysql_email_transfer`、`mongodb_query_transfer`、`mongodb_query_control`、`mongodb_query_denied` 六张表，共八个精确读取 Grant；不授予目录、未来表或消费者的授权管理权限。准备令牌在进入四 Owner 场景前移除，普通账号继续同时受功能权限、源数据授权和 Security 规则约束；整套夹具随 Hosted Job 清理。夹具身份、精确授权请求和准备令牌隔离回归由既有 `make test-online-runner` 自动发现，真实链路由 `online-t4-gates.yml` 的同名套件验证。
+
+MongoDB 查询搬运验收复用上述 suite、普通 User 和标准 `bounded + snapshot` 链路：未纳管时先验证派生查询能落表，纳管后三算法分别验证透明 aggregate 的嵌套字段别名、`$ifNull`、SQL NULL 和相邻字段；不可证明输出血缘的派生查询必须在保护准备阶段拒绝，写入条数、字节数为零且独立拒绝目标前后为空。Manager 独立预览 Policy 不改变 Transfer 默认 Baseline。提交 `41bd12252` 的 [Hosted T4 38133692022](https://github.com/pampa0629/addp/actions/runs/38133692022) 已真实通过 v8：8 个任务及执行逐一核对、任务全部删除并确认 404，Baseline／Policy 恢复及 Hosted 清理零残留；不把该 suite 结果扩大为全仓 CI 通过。
 
 空间标量算法验收按当前 Owner 输出协议解析 Manager 表格预览的 WKT，以及其他 Owner 查询输出的 GeoJSON 或原生十六进制 EWKB，并逐行比较二维 Point 坐标；非法类型、维度及改变后的坐标均失败。源表与结果表的 geometry 类型、主几何列及 SRID 4326 另由 Meta 空间事实核验；空间解析错误须标明 Owner 和行 ID，不能被算法校验或清理日志掩盖。
 
