@@ -607,22 +607,33 @@ def browser(repository, env, evidence):
     return report
 
 
-def inspect_output(repository, env, client, source, source_locator, target_engine, target_name,
-                   execution_id, case_name, identity, timeout, browser_runner, expectation, physical_evidence, source_locators):
+def queue_output_inspection(pending, client, run_id, source, source_locator, target_engine, target_name,
+                            execution_id, case_name, identity, browser_runner, expectation, physical_evidence, source_locators):
     target = support.find_fixture_item(client, target_engine, 'raster-target/' + target_name, 'COG target')
     # No manual target scan or collect: both facts must converge automatically.
     target = obj(client.request('GET', f'/api/v1/meta/items/{target["id"]}', (200,)).payload, 'target DataItem')
     validate_target_item(target, expectation, physical_evidence)
-    lineage = wait_lineage(client, source['id'], target['id'], execution_id, timeout)
     target_locator = f'addp://engine/{target_engine}/path/raster-target/{target_name}?type=object'
-    evidence = browser_runner(repository, env, {
-        'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'principal_id': identity['principal_id'],
+    evidence = {
+        'run_id': run_id, 'principal_id': identity['principal_id'],
         'tenant_id': identity['tenant_id'], 'execution_id': execution_id,
         'source_item_id': source['id'], 'target_item_id': target['id'],
         'source_locator': source_locator, 'source_locators': source_locators, 'target_locator': target_locator,
         'case_name': case_name, 'source_name': source['full_name'].rsplit('/', 1)[-1], 'target_name': target_name.rsplit('/', 1)[-1],
-    })
-    return lineage, evidence
+    }
+    lineage, report = {}, {}
+    pending.append((source['id'], target['id'], execution_id, evidence, browser_runner, lineage, report))
+    return lineage, report
+
+
+def finish_output_inspections(pending, repository, env, client, timeout):
+    # Check every exact source/target pair after all writes, allowing the ordinary
+    # collector to converge without serializing a one-minute tick per artifact.
+    # The result dictionaries are filled only with actual checks, before returning
+    # the suite report. Any missing relation or browser failure still fails it.
+    for source_id, target_id, execution_id, evidence, browser_runner, lineage, report in pending:
+        lineage.update(wait_lineage(client, source_id, target_id, execution_id, timeout))
+        report.update(browser_runner(repository, env, evidence))
 
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser, diagnostic_runner=duplicate_create_diagnostic):
@@ -635,6 +646,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         raise SuiteError('raster fixture requires distinct source and target Engines')
     timeout = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '180'))
     identity = validate_identity(client, tenant)
+    pending_outputs = []
     engines = array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'workflow engines')
     runtime = [item for item in engines if item.get('engine_type') == 'geopython_workflow' and item.get('connection_status') == 'online']
     if len(runtime) != 1:
@@ -674,9 +686,9 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('replace did not change the target pixels')
         physical_evidence.append(native)
         executions.append({'execution_id': identifier, 'write_mode': mode, 'status': status})
-    lineage, browser_evidence = inspect_output(repository, env, client, source, source_locator,
+    lineage, browser_evidence = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator,
         target_engine, 'result.cog.tif', executions[-1]['execution_id'], 'band-math', identity,
-        timeout, browser_runner, fixture.artifact_expectation(), physical_evidence[-1], [source_locator])
+        browser_runner, fixture.artifact_expectation(), physical_evidence[-1], [source_locator])
     spatial_source = support.find_fixture_item(client, source_engine, 'raster-source/spatial.tif', 'spatial source')
     spatial_locator = support.build_item_locator(source_engine, spatial_source)
     spatial_cases = []
@@ -697,8 +709,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if overlap == 'last' and (native.get('first_sha256') != spatial_cases[0]['physical']['sha256']
                                   or native.get('sha256') == spatial_cases[0]['physical']['sha256']):
             raise SuiteError('last mosaic modified the first artifact or did not change overlap pixels')
-        graph, browser_report = inspect_output(repository, env, client, spatial_source, spatial_locator,
-            target_engine, name, identifier, 'mosaic-' + overlap, identity, timeout,
+        graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], spatial_source, spatial_locator,
+            target_engine, name, identifier, 'mosaic-' + overlap, identity,
             browser_runner, fixture.artifact_expectation(True), native, [spatial_locator])
         spatial_cases.append({'case_name': 'mosaic-' + overlap, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
@@ -761,8 +773,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 or native.get('band_nodata') != expectation['band_nodata']
                 or native.get('band_nodata_is_nan') is not (expectation['band_nodata'] is None)):
                 raise SuiteError('multiband independent validity/partial alpha evidence is incomplete')
-        graph, browser_report = inspect_output(repository, env, client, case_source, case_locator,
-            target_engine, name, identifier, case_name, identity, timeout, browser_runner, expectation, native, [case_locator])
+        graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], case_source, case_locator,
+            target_engine, name, identifier, case_name, identity, browser_runner, expectation, native, [case_locator])
         cases = multiband_cases if case_name in fixture.MULTIBAND_CASES else grid_cases
         cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
@@ -791,8 +803,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             or positive(native.get('size_bytes'), 'physical utility size') != artifact.get('size_bytes')
             or any(band.get('overviews') != expected_levels for band in artifact['bands'])):
             raise SuiteError('utility workflow lost physical size, band validity, explicit levels or existing artifacts')
-        graph, browser_report = inspect_output(repository, env, client, source, source_locator,
-            target_engine, name, identifier, case_name, identity, timeout, browser_runner, fixture.utility_expectation(), native, [source_locator])
+        graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator,
+            target_engine, name, identifier, case_name, identity, browser_runner, fixture.utility_expectation(), native, [source_locator])
         utility_sources[case_name] = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'utility source')
         if positive(utility_sources[case_name].get('size_bytes'), 'utility DataItem size') != native['size_bytes']:
             raise SuiteError('utility DataItem size differs from the physical artifact')
@@ -875,8 +887,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('multi-raster DataItem size differs from the physical artifact')
         graphs, browsers = [], []
         for case_source, case_locator, suffix in case_sources:
-            graph, report = inspect_output(repository, env, client, case_source, case_locator, target_engine,
-                name, identifier, case_name + suffix, identity, timeout, browser_runner, expectation, native, source_locators)
+            graph, report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], case_source, case_locator, target_engine,
+                name, identifier, case_name + suffix, identity, browser_runner, expectation, native, source_locators)
             graphs.append(graph)
             browsers.append(report)
         cases = update_cases if case_name in fixture.UPDATE_CASES else outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
@@ -933,12 +945,13 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('tile DataItem size differs from artifact and physical size')
         def tile_browser(repo, browser_env, evidence):
             return browser_runner(repo, browser_env, {**evidence, 'target_locators': list(locators.values())})
-        graph, report = inspect_output(repository, env, client, source, source_locator, target_engine,
-            'tiles-basic/'+key+'.tif', identifier, 'tiles-'+key, identity, timeout, tile_browser,
+        graph, report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator, target_engine,
+            'tiles-basic/'+key+'.tif', identifier, 'tiles-'+key, identity, tile_browser,
             fixture.tile_expectation(key), physical_tile, [source_locator])
         tiling_cases.append({'tile_key': key, 'execution_id': identifier, 'artifact': fact,
             'physical': physical_tile, 'data_item_size_bytes': target['size_bytes'],
             'lineage': graph, 'browser': report})
+    finish_output_inspections(pending_outputs, repository, env, client, timeout)
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,

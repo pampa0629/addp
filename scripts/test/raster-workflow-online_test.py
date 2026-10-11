@@ -473,6 +473,79 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             self.assertEqual(case['lineage']['source_item_id'],10)
             self.assertEqual(len(case['browser']['target_locators']),4)
 
+    def test_persistent_lineage_and_all_browsers_finish_after_physical_writes(self):
+        request = self.client.request
+        browsers = []
+        graphs = []
+
+        def converged_request(method, path, expected, body=None):
+            if path.startswith('/api/v1/meta/lineage/graph'):
+                self.assertIn('verify-tiles', self.physical_actions)
+                self.assertEqual(len(self.client.executions), 38)
+                graphs.append(path)
+            return request(method, path, expected, body)
+
+        def browser(repo, env, evidence):
+            if evidence.get('result_kind') != 'json':
+                self.assertIn('verify-tiles', self.physical_actions)
+                self.assertEqual(len(self.client.executions), 38)
+            browsers.append(evidence['case_name'])
+            return evidence
+
+        self.client.request = converged_request
+        report = m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
+            lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'})
+        self.assertEqual(report['result'], 'passed')
+        self.assertEqual(len(browsers), 42)
+        self.assertEqual(len(set(browsers)), 42)
+        self.assertEqual(len(graphs), 33)
+        self.assertEqual(report['browser']['case_name'], 'band-math')
+        for case in report['tiling_cases']:
+            self.assertTrue(case['lineage'])
+            self.assertEqual(case['browser']['case_name'], 'tiles-' + case['tile_key'])
+
+    def test_deferred_truncated_lineage_still_fails_the_whole_suite(self):
+        self.client.no_graph = True
+        with self.assertRaises(m.SuiteError):
+            self.run_scene()
+        self.assertIn('verify-tiles', self.physical_actions)
+
+    def test_last_tile_missing_or_wrong_execution_lineage_still_fails(self):
+        for fault in ('missing', 'execution'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                request = self.client.request
+
+                def last_tile_request(method, path, expected, body=None):
+                    response = request(method, path, expected, body)
+                    if (path.startswith('/api/v1/meta/lineage/graph')
+                        and urllib.parse.parse_qs(urllib.parse.urlparse(path).query)['item_id'] == ['49']):
+                        if fault == 'missing':
+                            response.payload['edges'] = []
+                        else:
+                            response.payload['edges'][0]['evidence']['execution_id'] = 'another-execution'
+                    return response
+
+                self.client.request = last_tile_request
+                with self.assertRaisesRegex(m.SuiteError, 'automatic raster lineage did not converge'):
+                    self.run_scene()
+                self.assertIn('verify-tiles', self.physical_actions)
+
+    def test_last_deferred_browser_failure_cannot_return_a_passed_report(self):
+        checked = []
+
+        def browser(repo, env, evidence):
+            checked.append(evidence['case_name'])
+            if evidence['case_name'] == 'tiles-r160_c160':
+                raise m.SuiteError('last tile browser failed')
+            return evidence
+
+        with self.assertRaisesRegex(m.SuiteError, 'last tile browser failed'):
+            m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
+                lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'})
+        self.assertEqual(len(checked), 42)
+        self.assertIn('verify-tiles', self.physical_actions)
+
     def test_tiles_reject_wrong_grid_partial_manifest_scope_locator_and_missing_scan(self):
         for fault in ('grid','partial','locator','scan','private','lineage','window','produced'):
             with self.subTest(fault=fault):
