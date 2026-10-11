@@ -2866,7 +2866,9 @@ const pollTaskStatus = async (executionId, notification, targetName, maxAttempts
         notification.close()
         ElNotification({
           title: t('manager.explorer.vectorizeFailed2'),
-          message: data.error_details?.message || data.error || data.message || t('manager.explorer.vectorizeUnknownError'),
+          message: data.error_details?.category
+            ? t(`common.executionFailure.${data.error_details.category}`)
+            : t('manager.explorer.vectorizeUnknownError'),
           type: 'error',
           duration: 8000,
           position: 'bottom-right'

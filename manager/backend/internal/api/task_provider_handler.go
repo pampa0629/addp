@@ -675,6 +675,7 @@ func (h *TaskProviderHandler) ProviderTaskExecute(c *gin.Context) {
 // @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} taskprovider.ExecutionStatusResponse
 // @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.task_provider.read"]
 // @Router /task-provider/executions/{execution_id} [get]
@@ -689,7 +690,7 @@ func (h *TaskProviderHandler) ProviderExecutionStatus(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
 		return
 	}
 
@@ -1779,13 +1780,14 @@ func managerTaskRequiresExistingResultAction(taskType string) bool {
 
 // ExecutionStatus GET /api/v1/manager/executions/:execution_id
 // @Summary 获取执行状态 | Get execution status
-// @Description 仅查询当前租户的 Manager 派生产物及向量化任务；有定义的历史按 Owner 权限读取，无定义执行仅发起用户可读。| Read Manager derived artifact and embedding execution history with Owner permission; ad-hoc executions are visible only to their initiating User.
+// @Description 当前租户获授权的任务历史或本人一次性执行；显式返回安全概览、计数、血缘及转换证据，不含配置、访问计划或原始运行时响应。| Authorized Tenant history or own ad-hoc executions; explicitly projects safe observation, counters, lineage and conversion evidence without config, access plans or raw runtime responses.
 // @Tags Manager
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} execution.TaskExecution "执行状态 | Execution status"
+// @Success 200 {object} ManagerExecutionResponse "安全概览及明确的专业事实 | Safe observation and declared professional facts"
 // @Failure 403 {object} map[string]interface{} "没有读取权限 | Read permission denied"
 // @Failure 404 {object} map[string]interface{} "执行记录不存在 | Execution not found"
+// @Failure 500 {object} map[string]interface{} "查询失败 | Query failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /executions/{execution_id} [get]
@@ -1803,11 +1805,16 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
 		return
 	}
 
-	c.JSON(http.StatusOK, exec)
+	response, err := newManagerExecutionResponse(exec)
+	if err != nil {
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *TaskProviderHandler) loadDerivedTaskExecution(ctx context.Context, executionID string, tenantID int) (*commonExecution.TaskExecution, error) {

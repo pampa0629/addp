@@ -280,6 +280,8 @@ class FakeGatewayClient:
             return response(201, {"execution_id": "meta-execution-1"})
         if path == "/api/v1/meta/executions/meta-execution-1":
             return response(200, {"status": "success"})
+        if path == "/api/v1/manager/executions/meta-execution-1":
+            return response(404, {"error": "not found"})
         if path == "/api/v1/meta/engines/27/items":
             return response(200, [
                 {
@@ -1035,6 +1037,56 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertEqual(facts["schema_version"], SUITE.LINEAGE_SCHEMA)
         self.assertEqual(facts["inputs"][0]["port"], "source")
         self.assertEqual(facts["outputs"][0]["port"], "result")
+
+    def test_owner_execution_projection_preserves_professional_facts_and_rejects_leaks(self) -> None:
+        execution = self.execution()
+        execution["metadata"].update(
+            total=0, generated=2, failed=0,
+            workflow_runtime={"engine_type": "model3d_workflow", "operator": "max_to_glb", "mode": "direct"},
+            glb_facts={"conversion": {"source_unit": "mm", "unit_source": "user", "scale_to_meters": .001,
+                                     "importer_version": "1.9.2", "texture_refs": list(SUITE.MAX_OPTIONS["texture_files"]),
+                                     "source_sha256": SUITE.MAX_SOURCE_SHA256, "meshes": 5, "scope": "static"}})
+        before = copy.deepcopy(execution)
+        SUITE.assert_manager_execution_projection(execution)
+        SUITE.validate_max_conversion(execution)
+        self.assertEqual(execution, before)
+        poisoned = []
+        for field in ("execution_config", "actor_principal_id", "execution_authorization_id", "lease_token"):
+            value = copy.deepcopy(execution)
+            value[field] = "private-sentinel"
+            poisoned.append(value)
+        value = copy.deepcopy(execution)
+        value["steps"] = [{"id": "step", "result": "private-sentinel"}]
+        poisoned.append(value)
+        for path, field in (((), "access_plan"), ((), "unknown"), (("workflow_runtime",), "raw_response"),
+                            (("glb_facts",), "stdout"), (("glb_facts",), "stderr"), (("glb_facts",), "command"),
+                            (("glb_facts",), "publish"), (("glb_facts", "conversion"), "unknown"),
+                            (("lineage_facts", "inputs", 0), "schema_snapshot"),
+                            (("lineage_facts", "operations", 0), "field_mappings")):
+            value = copy.deepcopy(execution)
+            node = value["metadata"]
+            for key in path:
+                node = node[key]
+            node[field] = "private-sentinel"
+            poisoned.append(value)
+        for value in poisoned:
+            with self.subTest(value=value), self.assertRaisesRegex(SUITE.SuiteError, "exposed"):
+                SUITE.assert_manager_execution_projection(value)
+
+    def test_manager_cross_module_rejection_requires_404_without_execution_data(self) -> None:
+        class Reader:
+            def __init__(self, status, payload):
+                self.status, self.payload = status, payload
+
+            def request(self, method, path, expected):
+                if method != "GET" or path != "/api/v1/manager/executions/meta-execution-1" or self.status not in expected:
+                    raise SUITE.SuiteError("Manager cross-module execution was readable")
+                return response(self.status, self.payload)
+
+        SUITE.assert_manager_cross_module_hidden(Reader(404, {"error": "not found"}), "meta-execution-1")
+        for status, payload in ((200, {"execution_id": "meta-execution-1"}), (404, {"metadata": {"private": True}})):
+            with self.subTest(status=status), self.assertRaises(SUITE.SuiteError):
+                SUITE.assert_manager_cross_module_hidden(Reader(status, payload), "meta-execution-1")
 
     def test_monitor_accepts_safe_projection_without_changing_owner_or_response(self) -> None:
         owner = self.execution()["metadata"]["lineage_facts"]

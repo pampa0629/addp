@@ -288,18 +288,58 @@ def assert_no_existing_resources(client: GatewayClient, fingerprint: str) -> Non
         raise SuiteError("a stale PointCloud result exists for the dedicated fixture")
 
 
+def assert_manager_cross_module_hidden(client: GatewayClient, execution_id: str) -> None:
+    payload = _object(client.request("GET", f"/api/v1/manager/executions/{urllib.parse.quote(execution_id)}", (404,)).payload,
+                      "Manager cross-module rejection")
+    if set(payload) - {"error", "error_code"}:
+        raise SuiteError("Manager cross-module rejection exposed execution data")
+
+
+def assert_manager_execution_projection(execution: dict[str, object]) -> None:
+    """Owner facts are explicit; raw runtime bodies and execution internals are not results."""
+    allowed_root = set("id execution_id module task_type source source_task_id source_task_name parent_execution_id status progress current_step execution_boundary retry_of_execution_id attempt max_attempts trigger_type triggered_by started_at completed_at created_at updated_at execution_time_ms rows_affected records_read records_written bytes_read bytes_written metadata error_details steps steps_attempt_unverified steps_truncated diagnostics_truncated".split())
+    if set(execution) - allowed_root:
+        raise SuiteError("Manager execution exposed internal fields")
+
+    def fields(value, allowed, label):
+        item = _object(value, label)
+        if set(item) - set(allowed.split()):
+            raise SuiteError(f"{label} exposed undeclared fields")
+        return item
+
+    fields(execution.get("error_details", {}), "category code error_code failed_targets_count", "Manager failure")
+    for step in _array(execution.get("steps", []), "Manager diagnostic steps"):
+        fields(step, "id status phase started_at ended_at duration error_code", "Manager diagnostic step")
+    metadata = fields(execution.get("metadata", {}),
+        "total ready_skipped generated rebuilt unsupported failed missing_source tiles_processed tiles_total_estimate total_tiles generated_tiles cached_tiles empty_tiles skipped_tiles oversized_skipped_tiles failed_tiles total_size_bytes max_tile_size_bytes actual_max_zoom current_zoom min_zoom max_zoom lineage_facts workflow_runtime glb_facts", "Manager execution metadata")
+    if "workflow_runtime" in metadata:
+        fields(metadata["workflow_runtime"], "engine_type operator mode execution_time_ms", "Manager runtime summary")
+    if "glb_facts" in metadata:
+        glb = fields(metadata["glb_facts"], "size_bytes source_format conversion", "Manager GLB facts")
+        if "conversion" in glb:
+            fields(glb["conversion"], "source_unit unit_source scale_to_meters importer_version texture_refs source_sha256 meshes scope", "Manager conversion facts")
+    if "lineage_facts" in metadata:
+        lineage = fields(metadata["lineage_facts"], "schema_version inputs outputs operations runtime_execution_id meta_scan_refs", "Manager lineage")
+        for direction in ("inputs", "outputs"):
+            for resource in _array(lineage.get(direction), "Manager lineage resources"):
+                fields(resource, "port locator item_id item_fingerprint write_mode", "Manager lineage resource")
+        for operation in _array(lineage.get("operations"), "Manager lineage operations"):
+            fields(operation, "kind operator input_ports output_ports", "Manager lineage operation")
+
+
 def wait_for_manager_execution(client: GatewayClient, execution_id: str, deadline: float, label: str) -> dict[str, object]:
     while time.monotonic() < deadline:
         execution = _object(
             client.request("GET", f"/api/v1/manager/executions/{urllib.parse.quote(execution_id)}", (200,)).payload,
             "Manager execution",
         )
+        assert_manager_execution_projection(execution)
         status = execution.get("status")
         if status == "success":
             return execution
         if status in TERMINAL_STATUSES:
-            details = execution.get("error_details") or execution.get("metadata")
-            raise SuiteError(f"Manager {label} execution ended with status {status}: {details!r}")
+            details = execution.get("error_details", {})
+            raise SuiteError(f"Manager {label} execution ended with status {status}: category={details.get('category', 'unknown')} code={details.get('code', 'unknown')}")
         time.sleep(1)
     raise SuiteError(f"Manager {label} execution did not finish before the convergence timeout")
 
@@ -1165,6 +1205,7 @@ def run_scenario(
     pptx_full_name = f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT'].strip('/')}"
     deadline = time.monotonic() + timeout
     scan_execution_id = wait_for_meta_scan(client, engine_id, deadline)
+    assert_manager_cross_module_hidden(client, scan_execution_id)
     pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
     pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
     model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds", "ifc", "osgb", "skp", "max")]
@@ -1372,6 +1413,7 @@ def run_scenario(
             "identity": identity,
             "engine_id": engine_id,
             "meta_scan_execution_id": scan_execution_id,
+            "execution_read_checks": ["cross_module_execution_hidden", "explicit_professional_projection"],
             "sources": {
                 "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
                 "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},

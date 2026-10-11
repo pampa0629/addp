@@ -135,6 +135,15 @@ func testManagerExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 			row.TaskType = execution.TaskTypeEmbedding
 		}
 		row.Source, row.Status, row.TriggerType = "manager", "success", "manual"
+		projection := managerResponseFixture(t)
+		row.Metadata, row.ExecutionConfig = projection.Metadata, projection.ExecutionConfig
+		// Each authorization can back only one execution in the canonical store.
+		authorizationID := int64(tenant)*1000 + int64(len(ids)) + 1
+		row.ExecutionAuthorizationID = &authorizationID
+		row.ActorPrincipalID = projection.ActorPrincipalID
+		row.ActorTenantMembershipID = projection.ActorTenantMembershipID
+		row.IssuedAuthorizationVersion = projection.IssuedAuthorizationVersion
+		row.AuthorizationExpiresAt = projection.AuthorizationExpiresAt
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -163,6 +172,13 @@ func testManagerExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 		}
 		if expected == 404 && strings.Contains(response.Body.String(), id) {
 			t.Fatal("denied response leaked execution identity")
+		}
+		if expected == 200 {
+			for _, private := range []string{"private-sentinel", "execution_config", "execution_authorization_id", "actor_principal_id", "actor_tenant_membership_id", "issued_authorization_version", "authorization_expires_at", "schema_snapshot", "field_mappings", "stdout", "stderr", "access_plan"} {
+				if strings.Contains(response.Body.String(), private) {
+					t.Fatalf("authorized execution response exposed %s", private)
+				}
+			}
 		}
 	}
 	for _, token := range []string{"owner", "oauth", "peer"} {

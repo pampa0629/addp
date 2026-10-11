@@ -1073,7 +1073,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅查询当前租户的 Manager 派生产物及向量化任务；有定义的历史按 Owner 权限读取，无定义执行仅发起用户可读。| Read Manager derived artifact and embedding execution history with Owner permission; ad-hoc executions are visible only to their initiating User.",
+                "description": "当前租户获授权的任务历史或本人一次性执行；显式返回安全概览、计数、血缘及转换证据，不含配置、访问计划或原始运行时响应。| Authorized Tenant history or own ad-hoc executions; explicitly projects safe observation, counters, lineage and conversion evidence without config, access plans or raw runtime responses.",
                 "produces": [
                     "application/json"
                 ],
@@ -1092,9 +1092,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "执行状态 | Execution status",
+                        "description": "安全概览及明确的专业事实 | Safe observation and declared professional facts",
                         "schema": {
-                            "$ref": "#/definitions/execution.TaskExecution"
+                            "$ref": "#/definitions/internal_api.ManagerExecutionResponse"
                         }
                     },
                     "403": {
@@ -1106,6 +1106,13 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "执行记录不存在 | Execution not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4627,6 +4634,13 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8968,6 +8982,334 @@ const docTemplate = `{
                 },
                 "source_size_bytes": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.ManagerExecutionConversion": {
+            "type": "object",
+            "properties": {
+                "importer_version": {
+                    "type": "string"
+                },
+                "meshes": {
+                    "type": "integer"
+                },
+                "scale_to_meters": {
+                    "type": "number"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "source_sha256": {
+                    "type": "string"
+                },
+                "source_unit": {
+                    "type": "string"
+                },
+                "texture_refs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unit_source": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ManagerExecutionGLBFacts": {
+            "type": "object",
+            "properties": {
+                "conversion": {
+                    "$ref": "#/definitions/internal_api.ManagerExecutionConversion"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "source_format": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ManagerExecutionLineage": {
+            "type": "object",
+            "properties": {
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ManagerExecutionResource"
+                    }
+                },
+                "meta_scan_refs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ManagerExecutionOperation"
+                    }
+                },
+                "outputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.ManagerExecutionResource"
+                    }
+                },
+                "runtime_execution_id": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ManagerExecutionMetadata": {
+            "type": "object",
+            "properties": {
+                "actual_max_zoom": {
+                    "type": "integer"
+                },
+                "cached_tiles": {
+                    "type": "integer"
+                },
+                "current_zoom": {
+                    "type": "integer"
+                },
+                "empty_tiles": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "failed_tiles": {
+                    "type": "integer"
+                },
+                "generated": {
+                    "type": "integer"
+                },
+                "generated_tiles": {
+                    "type": "integer"
+                },
+                "glb_facts": {
+                    "$ref": "#/definitions/internal_api.ManagerExecutionGLBFacts"
+                },
+                "lineage_facts": {
+                    "$ref": "#/definitions/internal_api.ManagerExecutionLineage"
+                },
+                "max_tile_size_bytes": {
+                    "type": "integer"
+                },
+                "max_zoom": {
+                    "type": "integer"
+                },
+                "min_zoom": {
+                    "type": "integer"
+                },
+                "missing_source": {
+                    "type": "integer"
+                },
+                "oversized_skipped_tiles": {
+                    "type": "integer"
+                },
+                "ready_skipped": {
+                    "type": "integer"
+                },
+                "rebuilt": {
+                    "type": "integer"
+                },
+                "skipped_tiles": {
+                    "type": "integer"
+                },
+                "tiles_processed": {
+                    "type": "integer"
+                },
+                "tiles_total_estimate": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_size_bytes": {
+                    "type": "integer"
+                },
+                "total_tiles": {
+                    "type": "integer"
+                },
+                "unsupported": {
+                    "type": "integer"
+                },
+                "workflow_runtime": {
+                    "$ref": "#/definitions/internal_api.ManagerExecutionRuntime"
+                }
+            }
+        },
+        "internal_api.ManagerExecutionOperation": {
+            "type": "object",
+            "properties": {
+                "input_ports": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "output_ports": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.ManagerExecutionResource": {
+            "type": "object",
+            "properties": {
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "string"
+                },
+                "write_mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ManagerExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "bytes_read": {
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
+                "error_details": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/internal_api.ManagerExecutionMetadata"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "records_read": {
+                    "type": "integer"
+                },
+                "records_written": {
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ManagerExecutionRuntime": {
+            "type": "object",
+            "properties": {
+                "engine_type": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
                 }
             }
         },

@@ -1026,7 +1026,9 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 
 ### 租户执行诊断（2026-10-01 已确认）
 
-Manager 用户执行状态查询复用 Owner 已声明的 `manager.derived_artifact.read` 读取范围：可信 Tenant、`module=manager`，类型仅限派生产物及向量化任务；有定义的历史（含已删除定义）可读，一次性执行仅当前发起 User 可读，无主体证据拒绝。`data_profiling` 与 `cleanup_executor` 使用各自的专业或维护入口，不通过派生产物状态入口读取。TaskProvider 状态查询仍由 `addp-orchestrator` Service Client 和 `manager.task_provider.read` 独立授权，同时限定 Manager 已声明的任务类型，不套用用户本人条件。专业血缘与转换事实的响应投影另行确认，不借本次归属修复扩大领域结果读取权限。
+Manager 用户执行状态查询复用 Owner 已声明的 `manager.derived_artifact.read` 读取范围：可信 Tenant、`module=manager`，类型仅限派生产物及向量化任务；有定义的历史（含已删除定义）可读，一次性执行仅当前发起 User 可读，无主体证据拒绝。`data_profiling` 与 `cleanup_executor` 使用各自的专业或维护入口，不通过派生产物状态入口读取。TaskProvider 状态查询仍由 `addp-orchestrator` Service Client 和 `manager.task_provider.read` 独立授权，同时限定 Manager 已声明的任务类型，不套用用户本人条件。
+
+Manager 专业执行响应使用显式 DTO：执行概览和失败分类复用 Common 安全投影；专业 metadata 只保留向量化和瓦片生成计数、血缘资源身份及操作、Workflow 引擎类型／算子／模式／耗时，以及 GLB 大小、来源格式和 MAX 转换证据（源单位、单位来源、米制比例、导入器版本、贴图引用、源摘要、网格数及静态范围）。血缘保留输入输出端口、Locator、item ID、fingerprint、写入模式、操作 kind/operator 与端口，以及 runtime execution 和 Meta scan 引用；不返回 schema snapshot、字段映射或任意附加字段。不得返回执行配置、访问计划、授权引用、原始 Runtime 响应、command、stdout/stderr、publish 对象、`storage_refs` 等内部存储描述或自由文本错误。专业结果内容仍走已有 Manager 领域结果入口，Monitor 的血缘安全投影不增加 operations 或专业转换证据。此收敛不改变 Owner 权限、持久执行事实、机器 TaskProvider 契约或结果生命周期。
 
 Orchestrator 用户与 TaskProvider 执行读取必须同时限定可信 Tenant、`module=orchestrator` 与 `task_type=orchestration`，编排权限不得读取同模块的 cleanup 执行。用户专业查询在 SQL 中复用 Owner 的任务历史与本人一次性执行范围，缺少发起主体或归属不完整的无定义执行拒绝，列表总数采用相同过滤；合法第一方与普通 OAuth User 沿用现有 workflow.read 权限，TaskProvider 不套用用户本人条件。专业执行详情与单编排历史也必须使用显式安全读取 DTO，不得直接序列化内部 `TaskExecution`。保留执行概览及 `metadata.step_results` 的步骤状态、阶段、时间、耗时、闭合错误码和本地化消息；步骤 `result` 仅投影已记录且规范的子 execution UUID，不传递子任务 outputs、业务结果或完整运行时响应。读取父执行不授予子结果权限，子详情仍经 Monitor/Owner 独立裁决。原始配置、任意 metadata、执行授权事实及自由文本错误不出现在这些响应中；列表与详情采用同一投影，TaskProvider 保持独立安全状态契约。
 
