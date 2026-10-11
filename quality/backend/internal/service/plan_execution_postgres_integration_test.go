@@ -107,6 +107,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 	if execution == nil || execution.Status != commonExecution.ExecutionStatusFailed {
 		t.Fatalf("execution = %#v, want failed with rule evidence", execution)
 	}
+	assertQualityWorkerEvents(t, db, execution, 100, "started", "progress", "failed")
 
 	var details []PlanRuleResult
 	rawDetails, err := json.Marshal(execution.Metadata["rules"])
@@ -141,6 +142,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 	if other.Status != "success" || other.ExecutionConfig["target_key"] == execution.ExecutionConfig["target_key"] {
 		t.Fatalf("region execution=%+v", other)
 	}
+	assertQualityWorkerEvents(t, db, other, 100, "started", "progress", "completed")
 	if err := db.First(&issue, issue.ID).Error; err != nil || issue.Status != "open" {
 		t.Fatalf("another region closed issue: %+v %v", issue, err)
 	}
@@ -155,6 +157,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 	if invalid.Status != "failed" || invalid.ErrorDetails["code"] != planCompileFailedCode {
 		t.Fatalf("wrong shape=%+v", invalid)
 	}
+	assertQualityWorkerEvents(t, db, invalid, 0, "started", "failed")
 	if err := db.First(&issue, issue.ID).Error; err != nil || issue.LastExecutionID != executionID {
 		t.Fatal("invalid schema reconciled prior issue")
 	}
@@ -190,6 +193,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 	if timeoutExecution.ErrorDetails["code"] != qualityExecutionTimeout {
 		t.Fatalf("timeout error details = %#v", timeoutExecution.ErrorDetails)
 	}
+	assertQualityWorkerEvents(t, db, timeoutExecution, 0, "started", "timeout")
 	var unchangedIssue models.Issue
 	if err := db.First(&unchangedIssue, issue.ID).Error; err != nil {
 		t.Fatalf("reload issue after timeout: %v", err)
@@ -506,3 +510,27 @@ func newQualityExecutionContractServer(t *testing.T, engineID, elementID, tenant
 }
 
 func uintPtr(value uint) *uint { return &value }
+
+func assertQualityWorkerEvents(t *testing.T, db *gorm.DB, item *commonExecution.TaskExecution, progress int, kinds ...string) {
+	t.Helper()
+	if item.Progress != progress {
+		t.Fatalf("worker terminal progress=%d, want %d", item.Progress, progress)
+	}
+	readerContext := commonExecution.WithReadScopes(t.Context(), []commonExecution.ReadScope{{
+		Module: "quality", TenantID: item.TenantID, PrincipalID: 42,
+		Grants: []commonExecution.ReadGrant{{TaskType: "quality_plan", TaskHistory: true}},
+	}})
+	page, err := commonExecution.NewTaskExecutionRepository(db).ListEvents(readerContext, item.ExecutionID, item.TenantID, 0, 100)
+	if err != nil || len(page.Items) != len(kinds) {
+		t.Fatalf("worker events count=%v err=%v", page, err)
+	}
+	for index, kind := range kinds {
+		event := page.Items[index]
+		if event.Kind != kind || event.Attempt != item.Attempt || event.StepID != "" {
+			t.Fatalf("worker event %d does not match execution facts", index)
+		}
+		if kind == "progress" && (len(event.Counters) != 1 || event.Counters["progress"] != float64(progress)) {
+			t.Fatalf("worker event counters=%v", event.Counters)
+		}
+	}
+}

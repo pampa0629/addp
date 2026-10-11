@@ -33,6 +33,8 @@ Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为�
 
 error 规则失败使执行 failed，同时保存完整结果和问题；warning/info 不阻断。运行异常和超时不对账部分问题。终态、最近摘要、问题必须在有效 lease 下原子提交。规则通过率不等于数据行去重合格率。
 
+方案执行复用 `common.execution_events`：领取开始、逐条启用规则完成后的实际检查百分比、终态及租约耗尽失败均受 Common 租约裁决并与相应事实同事务提交。提前失败和超时保留已记录进度，新 attempt 领取时归零；检查完成度不等于规则通过率或问题已提交。事件不含规则、SQL、业务证据和授权信息，不凭当前方案补造步骤历史。Monitor 使用已有安全事件展示，专业结果仍由 Quality 授权入口读取。租约重试、回滚、读取隔离与事件生命周期由 Quality 后端及 PostgreSQL 标准门禁自动发现；真实 Gateway/Monitor 事件验收扩展既有 quality-dynamic-binding T4，未运行时不计为通过。
+
 ## 迁移与运行
 
 Quality migration 10 一次性合并旧定义和问题身份，删除旧表。旧 check ID 转为 2×ID，data_validation ID 转为 2×ID+1；无检查任务的规则应用也转换为方案。旧执行历史保留在 Monitor，不通过新版 Quality 详情解释旧契约。空规则方案必须补齐规则后执行。

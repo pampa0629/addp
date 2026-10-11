@@ -18,7 +18,7 @@ import (
 
 // executePostgreSQLPlan is the first engine adapter. Authorization and execution
 // lifecycle stay in the worker; physical paths, SQL and snapshots belong here.
-func executePostgreSQLPlan(ctx context.Context, engine *commonModels.Engine, config *planExecutionConfig) (*PlanResult, error) {
+func executePostgreSQLPlan(ctx context.Context, engine *commonModels.Engine, config *planExecutionConfig, reportProgress func(int) error) (*PlanResult, error) {
 	if engine == nil || !strings.EqualFold(engine.EngineType, "postgresql") {
 		return nil, failExecution(planUnsupportedEngineCode, fmt.Errorf("quality plan only supports PostgreSQL"))
 	}
@@ -29,7 +29,7 @@ func executePostgreSQLPlan(ctx context.Context, engine *commonModels.Engine, con
 	var result *PlanResult
 	err = targetDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var runErr error
-		result, runErr = runPlan(ctx, tx, config)
+		result, runErr = runPlan(ctx, tx, config, reportProgress)
 		return runErr
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return result, err
@@ -50,7 +50,7 @@ type planCounts struct {
 	FailedCount int64 `gorm:"column:failed_count"`
 }
 
-func runPlan(ctx context.Context, targetDB *gorm.DB, config *planExecutionConfig) (*PlanResult, error) {
+func runPlan(ctx context.Context, targetDB *gorm.DB, config *planExecutionConfig, reportProgress func(int) error) (*PlanResult, error) {
 	readContext, err := readValidationTables(targetDB.WithContext(ctx), config.TableBindings)
 	if err != nil {
 		return nil, failExecution(planReadContextFailedCode, err)
@@ -89,6 +89,11 @@ func runPlan(ctx context.Context, targetDB *gorm.DB, config *planExecutionConfig
 		result.Rules = append(result.Rules, PlanRuleResult{Evidence: evidence, RuleKey: item.Rule.RuleKey, RuleID: item.Rule.RuleID, RevisionNo: item.Rule.RevisionNo, Name: item.Rule.Name, TotalCount: counts.TotalCount, Table: ruleTarget(item.Rule).Table, Columns: ruleTarget(item.Rule).Columns, Type: item.Rule.Type, Severity: item.Rule.Severity, Passed: passed, FailedCount: counts.FailedCount, Observed: observed})
 		if !passed && item.Rule.Severity == "error" {
 			result.Passed = false
+		}
+		if reportProgress != nil {
+			if err := reportProgress(100 * len(result.Rules) / len(compiled)); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if !result.Passed {

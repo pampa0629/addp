@@ -98,6 +98,7 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 	if storedTask.LastExecutionID != executions[0].ExecutionID || storedTask.LastExecutionStatus != commonExecution.ExecutionStatusRunning {
 		t.Fatalf("started task summary = %s/%s", storedTask.LastExecutionID, storedTask.LastExecutionStatus)
 	}
+	assertQualityEventKinds(t, db, executions[0].ExecutionID, "started")
 }
 
 func TestIntegrationPostgresIssueConcurrentFirstObservation(t *testing.T) {

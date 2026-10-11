@@ -427,6 +427,18 @@ class OnlineHostGateTest(unittest.TestCase):
         self.assertIn("requires ADDP_ONLINE_QUALITY_FIXTURES_JSON", result.stderr)
         self.assertFalse(self.command_log.exists())
 
+    def test_quality_monitor_is_required_before_lifecycle_action(self) -> None:
+        self.env_file.write_text(
+            "\n".join(line for line in self.env_file.read_text(encoding="utf-8").splitlines()
+                      if not line.startswith("MONITOR_URL=")) + "\n",
+            encoding="utf-8",
+        )
+        result = self._run("quality-dynamic-binding")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires MONITOR_URL", result.stderr)
+        self.assertFalse(self.command_log.exists())
+
     def test_runs_consumer_engine_fixture_and_verifies_process_stability(self) -> None:
         result = self._run("consumer-engine-recovery")
 

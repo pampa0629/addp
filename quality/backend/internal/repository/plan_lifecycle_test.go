@@ -62,6 +62,7 @@ func TestPlanExecutionLifecycleIsAtomic(t *testing.T) {
 	if runningTask.LastExecutionStatus != commonExecution.ExecutionStatusRunning || runningTask.LastRunAt == nil || !runningTask.LastRunAt.Equal(startedAt) {
 		t.Fatalf("running task summary status=%s last_run_at=%v", runningTask.LastExecutionStatus, runningTask.LastRunAt)
 	}
+	assertQualityEventKinds(t, db, exec.ExecutionID, "started")
 
 	completedAt := startedAt.Add(2 * time.Minute)
 	lease, err := commonExecution.LeaseFromExecution(*runningExecution)
@@ -86,6 +87,7 @@ func TestPlanExecutionLifecycleIsAtomic(t *testing.T) {
 	if runningTask.LastExecutionStatus != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("completed task status = %s, want success", runningTask.LastExecutionStatus)
 	}
+	assertQualityEventKinds(t, db, exec.ExecutionID, "started", "completed")
 }
 
 func TestPlanStartRollsBackWhenOwnerSummaryCannotAdvance(t *testing.T) {
@@ -194,7 +196,7 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	db := newPlanRepositoryTestDB(t)
 	repo := NewPlanRepository(db)
 	task := createPlanRepositoryTestTask(t, db, 10)
-	createdAt := time.Date(2026, 7, 16, 11, 0, 0, 0, time.UTC)
+	createdAt := time.Now().UTC()
 	exec := newQualityRepositoryTestExecution("quality-worker-recovery", 10, createdAt)
 	exec.MaxAttempts = 2
 	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec, models.PlanRunRequest{}); err != nil {
@@ -244,6 +246,23 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	}
 	if storedTask.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
 		t.Fatalf("task status = %s, want failed", storedTask.LastExecutionStatus)
+	}
+	assertQualityEventKinds(t, db, exec.ExecutionID, "started", "started", "failed")
+}
+
+func assertQualityEventKinds(t *testing.T, db *gorm.DB, executionID string, want ...string) {
+	t.Helper()
+	var events []commonExecution.Event
+	if err := db.Where("execution_id = ?", executionID).Order("id").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != len(want) {
+		t.Fatalf("event count = %d, want %d", len(events), len(want))
+	}
+	for i, event := range events {
+		if event.Kind != want[i] || event.Module != commonExecution.ModuleQuality || event.TaskType != commonExecution.TaskTypeQualityPlan || event.Attempt < 1 {
+			t.Fatalf("event %d has invalid identity, kind or attempt", i)
+		}
 	}
 }
 

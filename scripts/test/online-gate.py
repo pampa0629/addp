@@ -218,6 +218,7 @@ SUITES: Mapping[str, Suite] = {
             ("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
             ("model", "MODEL_URL"), ("meta", "META_URL"),
             ("quality", "QUALITY_URL"), ("orchestrator", "ORCHESTRATOR_URL"),
+            ("monitor", "MONITOR_URL"),
         ),
     ),
     "standard-model-reference-deletion": Suite(

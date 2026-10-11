@@ -110,6 +110,20 @@ class Gateway:
             plan["table_bindings"] = []
         plan["last_execution_id"] = child_id
         self.history[f"{SUITE.QUALITY}/executions/{child_id}"] = child
+        events = [{"id": number, "execution_id": child_id, "attempt": 1,
+                   "occurred_at": "2026-10-11T00:00:00Z", "kind": kind,
+                   "counters": {"progress": 100} if kind == "progress" else {}}
+                  for number, kind in enumerate(["started", "progress", "completed" if passed else "failed"], 1)]
+        if self.fault == "missing_event":
+            events.pop()
+        if self.fault == "private_event":
+            events[1]["lease_token"] = "private-lease"
+        if self.fault == "business_event":
+            events[1]["counters"]["row_value"] = 123
+        if self.fault == "wrong_attempt":
+            events[1]["attempt"] = 2
+        self.history[f"/api/v1/monitor/executions/by-execution-id/{child_id}/events?limit=100"] = {
+            "items": events, "next_cursor": 3, "has_more": False, "retained_after": "2026-09-11T00:00:00Z"}
         if key not in self.issues:
             self.issues[key] = {"id": len(self.issues) + 1, "target_key": key, "plan_id": plan["id"]}
         self.issues[key].update(status="resolved" if passed else "open", last_execution_id=child_id)
@@ -147,13 +161,15 @@ class QualityOnlineTest(unittest.TestCase):
         self.assertEqual(report["cleanup"], "passed")
         self.assertEqual(report["temporary_residual_resources"], 0)
         self.assertEqual(len(report["executions"]), 5)
+        self.assertTrue(all(item["event_count"] == 3 for item in report["observations"]))
         self.assertEqual(len(client.objects), 2)  # Only permanent Model fixtures survive.
         self.assertEqual(client.issues, {})
         self.assertEqual([p for m, p, _ in client.calls if m == "DELETE"], list(reversed(report["resources"])))
 
     def test_regressions_fail_closed_and_cleanup(self):
         for fault in ("wrong_count", "default_fallback", "runtime_error", "lineage", "mutated_defaults",
-                      "cross_resolve", "overview_mixed", "duplicate_issue", "no_block"):
+                      "cross_resolve", "overview_mixed", "duplicate_issue", "no_block",
+                      "missing_event", "private_event", "business_event", "wrong_attempt"):
             with self.subTest(fault=fault):
                 client, report = Gateway(fault), {}
                 with self.assertRaises(SUITE.SuiteError):
@@ -218,6 +234,10 @@ class QualityOnlineTest(unittest.TestCase):
             module = permission.split(".")[0]
             generated = root / module / "backend/internal/authorization/permissions_generated.go"
             self.assertIn(f'"{permission}"', generated.read_text())
+
+    def test_monitor_is_declared_as_an_online_dependency(self):
+        gate = import_module("scripts.test.online-gate")
+        self.assertIn(("monitor", "MONITOR_URL"), gate.SUITES[SUITE.SUITE].services)
 
     def test_no_dedicated_environment_fails_before_network(self):
         with patch.dict(SUITE.os.environ, {}, clear=True), patch.object(SUITE.API, "GatewayClient") as client:

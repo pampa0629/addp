@@ -102,6 +102,38 @@ def assert_quality(child, fixture, parent_id, passed, revision, plan_version, ru
     return config["target_key"]
 
 
+def assert_quality_events(client, execution_id, passed):
+    """The fixture has one enabled rule; only its progress percentage is public."""
+    path = f"/api/v1/monitor/executions/by-execution-id/{execution_id}/events?limit=100"
+    page = client.request("GET", path, (200,)).payload
+    require(isinstance(page, dict) and set(page) == {"items", "next_cursor", "has_more", "retained_after"},
+            "invalid quality event page contract")
+    events = page["items"]
+    require(isinstance(events, list) and len(events) == 3 and page["has_more"] is False
+            and isinstance(page["retained_after"], str) and page["retained_after"],
+            "quality events are missing or unexpectedly truncated")
+    kinds = ["started", "progress", "completed" if passed else "failed"]
+    previous_id = 0
+    for event, kind in zip(events, kinds):
+        require(isinstance(event, dict)
+                and set(event) <= {"id", "execution_id", "attempt", "occurred_at", "kind", "step_id", "counters"},
+                "quality event exposed a non-public field")
+        identifier = event.get("id")
+        require(type(identifier) is int and identifier > previous_id
+                and event.get("execution_id") == execution_id and type(event.get("attempt")) is int
+                and event["attempt"] == 1 and event.get("kind") == kind and not event.get("step_id")
+                and isinstance(event.get("occurred_at"), str) and event["occurred_at"],
+                "quality event identity, attempt, ordering or kind mismatch")
+        counters = event.get("counters")
+        require(counters == ({"progress": 100} if kind == "progress" else {})
+                and (kind != "progress" or type(counters["progress"]) is int),
+                "quality event contains unexpected counters or business values")
+        previous_id = identifier
+    require(type(page["next_cursor"]) is int and page["next_cursor"] == previous_id,
+            "quality event cursor mismatch")
+    return len(events)
+
+
 def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: None):
     validate_fixtures(fixtures)
     report.update(schema_version="addp.online-suite/v1", suite=SUITE, run_id=run_id,
@@ -198,9 +230,11 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
             require(isinstance(child_id, str) and child_id, "quality execution was not recorded")
             child = client.request("GET", f"{QUALITY}/executions/{child_id}", (200,)).payload
             key = assert_quality(child, fixtures[index], execution_id, passed, revision, plan["version"], rule_key)
+            event_count = assert_quality_events(client, child_id, passed)
             report["observations"].append({"parent_execution_id": execution_id, "execution_id": child_id,
                                            "target_key": key, "revision_no": revision,
-                                           "row_count": fixtures[index]["row_count"], "passed": passed})
+                                           "row_count": fixtures[index]["row_count"], "passed": passed,
+                                           "event_count": event_count})
             after_current = client.request("GET", after_path, (200,)).payload
             if passed:
                 require(steps["after"].get("status") == "success"
@@ -208,6 +242,7 @@ def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: No
             else:
                 require(after_current.get("last_execution_id") == before, "failed gate triggered downstream plan")
             report["checks"].append(f"target_{index}_{expected_status}_r{revision}")
+            report["checks"].append(f"quality_events_{index}_{expected_status}_r{revision}")
             checkpoint()
             return key, child_id
 

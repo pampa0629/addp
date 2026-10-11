@@ -73,6 +73,10 @@ func TestIntegrationPostgresPlanRules(t *testing.T) {
 			{RuleKey: "00000000-0000-4000-8000-000000000006", Type: "row_count", Severity: "error", Params: json.RawMessage(`{"table":"participations","exact":4}`)},
 		}},
 	}
+	disabled := config.Rules.Rules[0]
+	disabled.RuleKey = "00000000-0000-4000-8000-000000000007"
+	disabled.Disabled = true
+	config.Rules.Rules = append(config.Rules.Rules, disabled)
 	readContext := &validationReadContext{Items: []validationReadItem{
 		{EngineID: 1, Locator: fmt.Sprintf("addp://engine/1/path/%s/persons?type=table", schemaName), Columns: []validationColumn{{Name: "person_id"}}},
 		{EngineID: 1, Locator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName), Columns: []validationColumn{{Name: "person_id"}, {Name: "activity_id"}, {Name: "member_status"}, {Name: "is_actual"}, {Name: "is_signup"}}},
@@ -95,9 +99,25 @@ func TestIntegrationPostgresPlanRules(t *testing.T) {
 		}
 	}
 	config.TableBindings[1].RecordKey = []string{"id"}
-	result, runErr := runPlan(context.Background(), db, config)
+	var progress []int
+	result, runErr := runPlan(context.Background(), db, config, func(value int) error {
+		progress = append(progress, value)
+		return nil
+	})
 	if result == nil || executionFailureCode(runErr) != planRuleFailedCode || result.Passed {
 		t.Fatalf("acceptance evidence changed raw blocking: %v", runErr)
+	}
+	if fmt.Sprint(progress) != "[16 33 50 66 83 100]" {
+		t.Fatalf("checked-rule progress = %v", progress)
+	}
+	progressFailure := errors.New("progress lease lost")
+	updates := 0
+	stopped, stoppedErr := runPlan(context.Background(), db, config, func(int) error {
+		updates++
+		return progressFailure
+	})
+	if stopped != nil || !errors.Is(stoppedErr, progressFailure) || updates != 1 {
+		t.Fatalf("progress failure did not stop rule execution: result=%v err=%v updates=%d", stopped, stoppedErr, updates)
 	}
 	for i, rule := range result.Rules {
 		if i == 5 {
@@ -112,7 +132,7 @@ func TestIntegrationPostgresPlanRules(t *testing.T) {
 	}
 	for _, key := range []string{"person_id", "is_actual"} {
 		config.TableBindings[1].RecordKey = []string{key}
-		result, _ = runPlan(context.Background(), db, config)
+		result, _ = runPlan(context.Background(), db, config, nil)
 		if result == nil || result.Rules[0].Evidence.Reason != "key_not_unique_or_null" {
 			t.Fatalf("invalid key accepted: %s", key)
 		}

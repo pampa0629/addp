@@ -157,7 +157,9 @@ func (e *CheckExecutor) doPlan(ctx context.Context, task *models.QualityPlan, ex
 	if err != nil {
 		return nil, failExecution(planAuthorizationFailedCode, err)
 	}
-	return executePostgreSQLPlan(ctx, engineAccess.Engine, config)
+	return executePostgreSQLPlan(ctx, engineAccess.Engine, config, func(progress int) error {
+		return e.planRepo.UpdateExecutionProgress(ctx, lease, progress)
+	})
 }
 
 func (e *CheckExecutor) renewPlanLease(ctx context.Context, cancel context.CancelFunc, lease commonExecution.Lease, done chan<- error) {
@@ -185,7 +187,10 @@ func (e *CheckExecutor) renewPlanLease(ctx context.Context, cancel context.Cance
 func (e *CheckExecutor) completePlan(ctx context.Context, task *models.QualityPlan, execution *commonExecution.TaskExecution, lease commonExecution.Lease, result *PlanResult, execErr error, timedOut bool) {
 	completedAt := time.Now().UTC()
 	status := commonExecution.ExecutionStatusSuccess
-	fields := map[string]interface{}{"progress": 100}
+	fields := map[string]interface{}{}
+	if execErr == nil && !timedOut {
+		fields["progress"] = 100
+	}
 	if execution.StartedAt != nil {
 		fields["execution_time_ms"] = completedAt.Sub(*execution.StartedAt).Milliseconds()
 	}

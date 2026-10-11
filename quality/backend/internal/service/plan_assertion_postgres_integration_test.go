@@ -85,7 +85,7 @@ func TestIntegrationPostgresRelationalAssertions(t *testing.T) {
 				t.Fatal(err)
 			}
 			config := &planExecutionConfig{TableBindings: bindings, Rules: PlanRuleDocument{Rules: []PlanRule{rule}}}
-			result, err := runPlan(context.Background(), db, config)
+			result, err := runPlan(context.Background(), db, config, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,7 +97,7 @@ func TestIntegrationPostgresRelationalAssertions(t *testing.T) {
 			}
 			if tc.failed > 0 {
 				config.Rules.Rules[0].Severity = "error"
-				result, err = runPlan(context.Background(), db, config)
+				result, err = runPlan(context.Background(), db, config, nil)
 				if err == nil || result == nil || result.Passed || result.Rules[0].FailedCount != tc.failed {
 					t.Fatalf("missing error evidence: %#v %v", result, err)
 				}
@@ -107,7 +107,7 @@ func TestIntegrationPostgresRelationalAssertions(t *testing.T) {
 	if err = db.Exec(`TRUNCATE "` + schema + `".people`).Error; err != nil {
 		t.Fatal(err)
 	}
-	result, err := runPlan(context.Background(), db, &planExecutionConfig{TableBindings: bindings, Rules: PlanRuleDocument{Rules: []PlanRule{assertionPlanRule(t, countAssertion)}}})
+	result, err := runPlan(context.Background(), db, &planExecutionConfig{TableBindings: bindings, Rules: PlanRuleDocument{Rules: []PlanRule{assertionPlanRule(t, countAssertion)}}}, nil)
 	if err != nil || !result.Passed || result.Rules[0].TotalCount != 0 {
 		t.Fatalf("empty table: %#v %v", result, err)
 	}

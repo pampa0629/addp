@@ -226,21 +226,30 @@ func (r *PlanRepository) CreateExecution(ctx context.Context, taskID, tenantID i
 	return &task, commonRepository.WrapDBError(err)
 }
 
-func (r *PlanRepository) ClaimPendingExecution(ctx context.Context, workerID string, now time.Time, lease time.Duration) (*commonExecution.TaskExecution, *models.QualityPlan, error) {
+func (r *PlanRepository) ClaimPendingExecution(ctx context.Context, workerID string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *models.QualityPlan, error) {
 	var execution *commonExecution.TaskExecution
+	var lease *commonExecution.Lease
 	var task models.QualityPlan
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		execution, _, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
+		execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleQuality,
-			WorkerID: workerID, Now: now, LeaseDuration: lease, RequireAuthorization: true,
+			WorkerID: workerID, Now: now, LeaseDuration: leaseDuration, RequireAuthorization: true,
 		})
 		if err == nil && execution == nil {
-			execution, _, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleOrchestrator, WorkerID: workerID, Now: now, LeaseDuration: lease})
+			execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleOrchestrator, WorkerID: workerID, Now: now, LeaseDuration: leaseDuration})
 		}
 		if err != nil || execution == nil {
 			return err
 		}
+		if err := commonExecution.UpdateWithLease(ctx, tx, *lease, map[string]interface{}{"progress": 0, "current_step": nil}); err != nil {
+			return err
+		}
+		if err := commonExecution.AppendBoundedEvent(ctx, tx, *lease, commonExecution.EventInput{Kind: "started"}); err != nil {
+			return err
+		}
+		execution.Progress = 0
+		execution.CurrentStep = nil
 		if execution.SourceTaskID == nil {
 			return fmt.Errorf("quality plan execution %s has no source_task_id", execution.ExecutionID)
 		}
@@ -287,7 +296,7 @@ func (r *PlanRepository) CompleteExecutionWithLease(ctx context.Context, taskID,
 		copied[key] = value
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := commonExecution.CompleteWithLease(ctx, tx, lease, status, completedAt, copied); err != nil {
+		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, copied); err != nil {
 			return err
 		}
 		if len(observations) > 0 {
@@ -305,6 +314,14 @@ func (r *PlanRepository) CompleteExecutionWithLease(ctx context.Context, taskID,
 		// Lease fencing, not this latest-attempt projection, determines completion.
 		return nil
 	})
+}
+
+func (r *PlanRepository) UpdateExecutionProgress(ctx context.Context, lease commonExecution.Lease, progress int) error {
+	if progress < 0 || progress > 100 {
+		return fmt.Errorf("quality execution progress is outside 0..100")
+	}
+	return commonExecution.UpdateWithEvent(ctx, r.db, lease, map[string]interface{}{"progress": progress},
+		commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{"progress": int64(progress)}})
 }
 
 func (r *PlanRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
@@ -333,7 +350,7 @@ func (r *PlanRepository) RecoverExpiredExecutions(ctx context.Context, now time.
 				if execution.StartedAt != nil {
 					fields["execution_time_ms"] = now.Sub(*execution.StartedAt).Milliseconds()
 				}
-				if err := commonExecution.FailExpired(ctx, tx, lease, now, fields); err != nil {
+				if err := commonExecution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
 					return err
 				}
 			} else if err := commonExecution.RetryExpired(ctx, tx, lease, now, "worker lease expired; retry pending"); err != nil {
