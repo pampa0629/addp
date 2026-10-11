@@ -495,7 +495,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == names[1])
             self.assertEqual(result.payload["error_code"], "platform_condition_unsatisfied")
 
-    async def test_transfer_nonstandard_target_types_cannot_be_reviewed_or_created(self):
+    async def test_transfer_invalid_types_or_snapshot_policies_cannot_be_reviewed_or_created(self):
         definition, _, _, valid_arguments, checkpoint = platform_fixture()
         names = ["platform.capability.context", "transfer.task.create"]
         owner_calls = []
@@ -505,12 +505,22 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
                 owner_calls.append(args)
                 return await super().ainvoke(args)
 
+        invalid_cases = []
         for value in ("text", "boolean", "jsonb", "JSON", "json ", "stringg"):
-            with self.subTest(target_type=value):
-                arguments = copy.deepcopy(valid_arguments)
-                arguments["config"]["transforms"][0]["fields"][0]["target_type"] = value
+            arguments = copy.deepcopy(valid_arguments)
+            arguments["config"]["transforms"][0]["fields"][0]["target_type"] = value
+            invalid_cases.append((f"target_type={value}", arguments))
+        for policy in (
+            {"apply_mode": "upsert"}, {"apply_mode": "upsert", "keys": ["id"]},
+            {"apply_mode": "replace", "keys": ["id"]}, {"apply_mode": "append", "keys": ["id"]},
+        ):
+            arguments = copy.deepcopy(valid_arguments)
+            arguments["config"]["target"]["policy"] = policy
+            invalid_cases.append((f"policy={policy}", arguments))
+        for case, arguments in invalid_cases:
+            with self.subTest(case=case):
                 events = await self._run_factory(
-                    agent_run_id="invalid-target-type", allowed_tools=names,
+                    agent_run_id="invalid-transfer-config", allowed_tools=names,
                     tools=[_Tool(names[0], definition), RecordingCreate(names[1], {})],
                     checkpoint=copy.deepcopy(checkpoint), responses=[
                         _Response(tool_calls=[_tool_call("request_clarification", {

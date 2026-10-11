@@ -148,12 +148,7 @@ def validate_create(arguments: dict, checkpoint: dict, *, require_review: bool =
             if config["load"]["mode"] != "snapshot":
                 _fail(condition)
         elif condition == "explicit_apply_policy":
-            policy = config["target"]["policy"]
-            if policy["apply_mode"] == "upsert":
-                targets = {field["target"] for field in _mapping(arguments, checkpoint)}
-                keys = policy.get("keys", [])
-                if not keys or len(keys) != len(set(keys)) or not set(keys) <= targets:
-                    _fail(condition)
+            pass  # The canonical Manifest validates the explicit snapshot policy.
         elif condition == "confirmed_row_grain_and_fields":
             _mapping(arguments, checkpoint)
         elif condition == "user_review":

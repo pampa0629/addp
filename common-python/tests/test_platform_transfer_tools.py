@@ -116,11 +116,16 @@ def test_transfer_create_schema_rejects_schedules_credentials_and_other_modes():
     assert list(validator.iter_errors(missing_mapping))
     missing_mapping["config"]["transforms"] = []
     assert list(validator.iter_errors(missing_mapping))
-    upsert = copy.deepcopy(valid)
-    upsert["config"]["target"]["policy"] = {"apply_mode": "upsert"}
-    assert list(validator.iter_errors(upsert))
-    upsert["config"]["target"]["policy"]["keys"] = ["activity_id"]
-    assert not list(validator.iter_errors(upsert))
+    for mode in ("replace", "append"):
+        snapshot = copy.deepcopy(valid)
+        snapshot["config"]["target"]["policy"] = {"apply_mode": mode}
+        assert not list(validator.iter_errors(snapshot)), mode
+        snapshot["config"]["target"]["policy"]["keys"] = ["activity_id"]
+        assert list(validator.iter_errors(snapshot)), mode
+    for policy in ({"apply_mode": "upsert"}, {"apply_mode": "upsert", "keys": ["activity_id"]}):
+        invalid = copy.deepcopy(valid)
+        invalid["config"]["target"]["policy"] = policy
+        assert list(validator.iter_errors(invalid)), policy
 
 
 def test_transfer_draft_schema_matches_resource_fact_contract():
@@ -149,7 +154,7 @@ def test_transfer_create_target_types_match_common_standard_vocabulary():
     ))
     assert common_types and set(target_type["enum"]) == common_types
     assert len(target_type["enum"]) == len(common_types)
-    assert definition.version == "2.0.0"
+    assert definition.version == "3.0.0"
     validator = Draft202012Validator(schema)
     for value in common_types:
         arguments = task_arguments()
@@ -175,6 +180,32 @@ def test_transfer_create_rejects_nonstandard_types_before_delegation_or_owner():
                 assert exc.code == "invalid_arguments", value
             else:
                 raise AssertionError(f"nonstandard target type accepted: {value!r}")
+
+    asyncio.run(run())
+
+
+def test_transfer_snapshot_rejects_upsert_and_keys_before_delegation_or_owner():
+    async def run():
+        executor = ToolExecutor("http://gateway", "private")
+
+        async def forbidden(*_args, **_kwargs):
+            raise AssertionError("invalid snapshot policy reached delegation or owner")
+
+        executor._issue_delegated_token = forbidden
+        executor._handlers["transfer.task.create"] = forbidden
+        for policy in (
+            {"apply_mode": "upsert"}, {"apply_mode": "upsert", "keys": ["activity_id"]},
+            {"apply_mode": "replace", "keys": ["activity_id"]},
+            {"apply_mode": "append", "keys": ["activity_id"]},
+        ):
+            arguments = task_arguments()
+            arguments["config"]["target"]["policy"] = policy
+            try:
+                await executor.call("transfer.task.create", arguments, agent_run_id="run", tool_call_id="call")
+            except ToolExecutionError as exc:
+                assert exc.code == "invalid_arguments", policy
+            else:
+                raise AssertionError(f"invalid snapshot policy accepted: {policy!r}")
 
     asyncio.run(run())
 

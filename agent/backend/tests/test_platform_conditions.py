@@ -135,16 +135,24 @@ class PlatformConditionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "confirmed_source"):
             validate_create(arguments, checkpoint)
 
-    def test_upsert_keys_are_unique_mapped_target_fields(self):
+    def test_snapshot_policies_are_manifest_owned_and_reject_incremental_keys(self):
         _, _, _, arguments, checkpoint = platform_fixture()
-        for keys in ([], ["invented"], ["id", "id"]):
+        for mode in ("replace", "append"):
             changed = copy.deepcopy(arguments)
-            changed["config"]["target"]["policy"] = {"apply_mode": "upsert", "keys": keys}
-            with self.subTest(keys=keys), self.assertRaises(ValueError):
+            changed["config"]["target"]["policy"] = {"apply_mode": mode}
+            with self.subTest(mode=mode):
                 validate_create(changed, checkpoint, require_review=False)
-        changed = copy.deepcopy(arguments)
-        changed["config"]["target"]["policy"] = {"apply_mode": "upsert", "keys": ["id"]}
-        validate_create(changed, checkpoint, require_review=False)
+        for policy in (
+            {"apply_mode": "upsert"}, {"apply_mode": "upsert", "keys": ["id"]},
+            {"apply_mode": "replace", "keys": ["id"]}, {"apply_mode": "append", "keys": ["id"]},
+        ):
+            changed = copy.deepcopy(arguments)
+            changed["config"]["target"]["policy"] = policy
+            with self.subTest(policy=policy):
+                with self.assertRaisesRegex(ValueError, "platform_condition_unsatisfied:arguments"):
+                    prepare_review(changed, checkpoint)
+                with self.assertRaisesRegex(ValueError, "platform_condition_unsatisfied:arguments"):
+                    validate_create(changed, checkpoint, require_review=False)
 
     def test_preview_cannot_change_or_fill_formal_schema_evidence(self):
         _, source, _, arguments, checkpoint = platform_fixture()

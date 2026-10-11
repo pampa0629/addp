@@ -192,7 +192,9 @@ Copilot 校验上下文的结构与源定位符、引擎、数据类型一致性
 
 `transfer.task.create` 复用 Transfer 的唯一 `POST /task-definitions`，只保存 `bounded + snapshot + native table` 的无计划、未启动任务。SDK 固定发送空 schedule、enabled=false、auto_scan_metadata=false；owner 对 Delegated 请求再次执行同一限制，Manifest 不是唯一安全边界。目标策略与字段映射需显式确定；既不授予 `transfer.task.execute`，也不自动启动、调度、扫描或写入业务库。此元数据创建不要求执行审批，返回实际 task ID、status、desired_state；没有 execution ResultRef。结果不确定时禁止自动重发，必须人工到 Transfer 核对。
 
-该创建 Tool 的契约为 `2.0.0`。`field_mapping.fields[].target_type` 只接受 ADDP 标准字段类型标识，枚举由 Manifest 唯一声明，并与 Common 字段类型契约核对；不接受 `text`、`boolean`、`jsonb` 等数据库 DDL 类型名或大小写、空白变体。Runtime 在配置复核和创建前消费同一 Schema，SDK 在委托及 owner 调用前再次校验，不由 Skill 提示词承担唯一约束。该枚举只限定标准词汇，不声明每种类型都可作为目标列，也不证明实际值可转换、Provider 编码正确或任务执行成功；这些仍由 Transfer 与具体 Provider 校验。Ontology 不复制枚举或维护另一套数据库类型映射。
+该创建 Tool 的契约为 `3.0.0`。当前有界快照切片的 `target.policy` 只接受显式 `apply_mode=replace|append`，不接受 `upsert` 或 `keys`；这与 Transfer 任务语义支持矩阵及 Planner 一致，不把增量装载能力混入快照创建。Manifest 是唯一输入 Schema，Runtime 在配置复核和创建前、SDK 在委托及 owner 调用前消费同一契约，不保留旧 upsert 分支或在 Agent 复制另一套策略枚举。
+
+`field_mapping.fields[].target_type` 只接受 ADDP 标准字段类型标识，枚举由 Manifest 唯一声明，并与 Common 字段类型契约核对；不接受 `text`、`boolean`、`jsonb` 等数据库 DDL 类型名或大小写、空白变体。该枚举只限定标准词汇，不声明每种类型都可作为目标列，也不证明实际值可转换、Provider 编码正确或任务执行成功；这些仍由 Transfer 与具体 Provider 校验。Ontology 不复制枚举或维护另一套数据库类型映射。
 
 ## 五、Adapter 边界
 

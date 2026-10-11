@@ -1070,8 +1070,8 @@
     },
     {
       "name": "transfer.task.create",
-      "version": "2.0.0",
-      "description": "在用户确认完整配置后创建 bounded snapshot native-table Transfer 任务，返回真实任务身份。只保存定义，不启动、调度、扫描或写业务数据；结果不确定时禁止自动重试。",
+      "version": "3.0.0",
+      "description": "在用户确认完整配置后创建 bounded snapshot native-table Transfer 任务，目标策略仅 replace/append，返回真实任务身份。只保存定义，不启动、调度、扫描或写业务数据；结果不确定时禁止自动重试。",
       "owner": "transfer",
       "risk": "write",
       "approval": {"mode": "none"},
@@ -1114,8 +1114,7 @@
                   "data_type": {"const": "table"}, "representation": {"const": "native"},
                   "policy": {
                     "type": "object", "required": ["apply_mode"],
-                    "properties": {"apply_mode": {"type": "string", "enum": ["replace", "append", "upsert"]}, "keys": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}},
-                    "allOf": [{"if": {"properties": {"apply_mode": {"const": "upsert"}}, "required": ["apply_mode"]}, "then": {"required": ["keys"]}}],
+                    "properties": {"apply_mode": {"type": "string", "enum": ["replace", "append"]}},
                     "additionalProperties": false
                   }
                 }, "additionalProperties": false
