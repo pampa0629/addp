@@ -1,10 +1,12 @@
 import importlib.util
+import copy
 import io
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -680,6 +682,35 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             with self.subTest(item=item), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.merge_graph_snapshots({"nodes": [{"item_id": item, "schema_snapshot_hash": snapshot}]}, hashes, allowed)
 
+    def test_parent_safe_projection_requires_identity_and_only_child_uuid_references(self):
+        parent = {"execution_id": str(uuid.uuid4()), "module": "orchestrator", "task_type": "orchestration",
+                  "source_task_id": "10", "status": "success", "metadata": {"step_results": {
+                      key: {"status": "success", "result": {"execution_id": str(uuid.uuid4())}}
+                      for key in ("ods", "dim", "dwd")}}}
+        before = copy.deepcopy(parent)
+        ONLINE.validate_orchestrated_parent(parent, parent["execution_id"], 10)
+        self.assertEqual(parent, before)
+        broken = [dict(parent, **{key: value}) for key, value in {
+            "execution_id": "other", "module": "transfer", "task_type": "sync", "source_task_id": "11",
+            "status": "failed", "tenant_id": 2, "execution_config": {"private": "secret"},
+            "execution_authorization_id": 9}.items()]
+        for field in ("lineage_facts", "unknown"):
+            value = copy.deepcopy(parent)
+            value["metadata"][field] = {}
+            broken.append(value)
+        for identifier in (None, 2, "not-a-uuid", str(uuid.UUID(int=0)), str(uuid.uuid4()).upper()):
+            value = copy.deepcopy(parent)
+            value["metadata"]["step_results"]["ods"]["result"]["execution_id"] = identifier
+            broken.append(value)
+        for section, field in (("result", "outputs"), (None, "raw_response")):
+            value = copy.deepcopy(parent)
+            step = value["metadata"]["step_results"]["ods"]
+            (step[section] if section else step)[field] = {"private": "secret"}
+            broken.append(value)
+        for value in broken:
+            with self.subTest(parent=value), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_orchestrated_parent(value, parent["execution_id"], 10)
+
     def test_chain_reruns_same_definition_and_only_observes_latest_owner_proofs(self):
         items = {"public." + ONLINE.MONGODB_TARGET: {"id": 22, "full_name": "public." + ONLINE.MONGODB_TARGET, "item_type": "table"},
                  "public." + ONLINE.DIM_TARGET: {"id": 23, "full_name": "public." + ONLINE.DIM_TARGET, "item_type": "table"},
@@ -689,6 +720,9 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         mongodb = {"target_locator": ods, "target_item_id": 22, "task_id": 7, "source_item_id": 20, "source_engine_id": 4,
                    "source_locator": self.mongodb_execution()["metadata"]["lineage_facts"]["inputs"][0]["locator"], "source_schema_snapshot_hash": "sha256:mongo"}
         created, starts, proofs, paths = [], [], [], []
+        identifiers = {(key, str(round_id)): str(uuid.uuid5(uuid.NAMESPACE_URL, f"etl-{key}-{round_id}"))
+                       for key in ("root", "ods", "dim", "dwd") for round_id in range(1, 4)}
+        identities = {identifier: identity for identity, identifier in identifiers.items()}
         def request(method, path, status, body=None):
             if method == "GET":
                 if status == (404,):
@@ -696,27 +730,29 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     return SimpleNamespace(payload={})
                 self.assertTrue(path.startswith("/api/v1/monitor/executions/by-execution-id/"))
                 identifier = path.rsplit("/", 1)[1]
-                key, round_id = identifier.split("-")
+                key, round_id = identities[identifier]
                 module, task = {"ods": ("transfer", 7), "dim": ("develop", 8), "dwd": ("develop", 9)}[key]
-                return SimpleNamespace(payload={"execution_id": identifier, "module": module, "source_task_id": str(task), "source": "orchestrator", "parent_execution_id": "root-" + round_id, "status": "success", "task_type": "sync" if key == "ods" else "query"})
+                return SimpleNamespace(payload={"execution_id": identifier, "module": module, "source_task_id": str(task), "source": "orchestrator", "parent_execution_id": identifiers["root", round_id], "status": "success", "task_type": "sync" if key == "ods" else "query"})
             if method == "POST" and path.endswith("/execute"):
                 starts.append(path)
-                return SimpleNamespace(payload={"execution_id": "root-" + str(len(starts)), "status": "pending"})
+                return SimpleNamespace(payload={"execution_id": identifiers["root", str(len(starts))], "status": "pending"})
             self.assertEqual(method, "POST")
             created.append((path, body))
             return SimpleNamespace(payload={"id": 7 + len(created), "tenant_id": 2})
         def owner(client, module, identifier, timeout):
-            round_id = identifier.rsplit("-", 1)[1]
+            key, round_id = identities[identifier]
             if module == "orchestrator":
-                return {"source_task_id": "10", "tenant_id": 2, "completed_at": "2026-10-05T00:00:0" + round_id + "Z", "metadata": {"step_results": {key: {"status": "success", "result": {"execution_id": key + "-" + round_id}} for key in ("ods", "dim", "dwd")}}}
+                return {"execution_id": identifier, "module": "orchestrator", "task_type": "orchestration", "status": "success",
+                        "source_task_id": "10", "completed_at": "2026-10-05T00:00:0" + round_id + "Z",
+                        "metadata": {"step_results": {key: {"status": "success", "result": {"execution_id": identifiers[key, round_id]}} for key in ("ods", "dim", "dwd")}}}
             if module == "transfer":
                 execution, task = self.mongodb_execution(identifier), 7
             else:
-                is_dim = identifier.startswith("dim")
+                is_dim = key == "dim"
                 bindings = {"ods": ods} if is_dim else {"ods": ods, "dim": dim}
                 execution = self.query_execution(identifier, bindings, dim if is_dim else dwd, 3 if is_dim else 2)
                 task = 8 if is_dim else 9
-            execution.update(module=module, parent_execution_id="root-" + round_id, source="orchestrator", source_task_id=str(task), tenant_id=2, status="success", task_type="sync" if module == "transfer" else "query")
+            execution.update(module=module, parent_execution_id=identifiers["root", round_id], source="orchestrator", source_task_id=str(task), tenant_id=2, status="success", task_type="sync" if module == "transfer" else "query")
             if module == "transfer":
                 return {key: value for key, value in dict(execution, task_id=task).items() if key in {"execution_id", "task_id", "status", "records_read", "records_written", "metadata"}}
             return execution
@@ -741,14 +777,14 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertTrue(all(call.args[2][24] == "sha256:dwd" for call in history.call_args_list))
         self.assertEqual(len(proofs), 36)
         date = next(expected for field, expected in reversed(proofs) if field == "activity_date")
-        self.assertEqual({edge[5] for edge in date}, {"ods-3", "dim-3", "dwd-3"})
+        self.assertEqual({edge[5] for edge in date}, {identifiers[key, "3"] for key in ("ods", "dim", "dwd")})
         self.assertEqual(len(date), 3)
-        self.assertIn((23, "activity_date", 24, "activity_date", "derived", "dwd-3"), date)
+        self.assertIn((23, "activity_date", 24, "activity_date", "derived", identifiers["dwd", "3"]), date)
         self.assertTrue(any(field == "person_display_name" for field, _ in proofs))
-        self.assertEqual(mongodb["latest_execution_id"], "ods-3")
+        self.assertEqual(mongodb["latest_execution_id"], identifiers["ods", "3"])
         self.assertEqual(report["schema_evolution"]["old_hash"], "sha256:dwd")
         self.assertEqual(report["schema_evolution"]["new_hash"], "sha256:evolved")
-        self.assertEqual([value["parent_execution_id"] for value in report["rounds"]], ["root-1", "root-2", "root-3"])
+        self.assertEqual([value["parent_execution_id"] for value in report["rounds"]], [identifiers["root", str(round_id)] for round_id in range(1, 4)])
         steps = created[2][1]["steps"]
         self.assertEqual([(step["provider"], step["task_type"], step["depends_on"]) for step in steps], [("transfer", "sync", []), ("develop", "query", ["ods"]), ("develop", "query", ["dim"])])
 

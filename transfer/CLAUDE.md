@@ -125,6 +125,8 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 ## 开发与验证
 
+关系型 SQL ETL 的真实 T4 `transfer-relational-sql-etl` 消费 Orchestrator 专业安全 DTO：父执行只核对执行／编排身份、成功步骤和规范的子 execution UUID，不要求 `tenant_id`、配置或子任务 outputs。Transfer／Develop 子执行分别经所属模块读取专业字段事实，并经 Monitor 独立核对 Owner、任务和父子关联；三轮执行及结构演进不能靠父步骤复制结果。确定性专用入口为 `python3 scripts/test/transfer-relational-sql-etl-online_test.py`，同一测试文件已由根 `make test-online-runner`、Platform T0／CI 聚合；专用回归不能替代真实 Hosted T4。
+
 `make test-transfer-postgres` 使用普通 PostgreSQL 验证 schema、受保护导出和非空间既有表目标覆盖，不依赖 PostGIS。Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。
 
 ```bash

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from pathlib import Path
 from typing import Mapping
 
@@ -502,6 +503,37 @@ def validate_orchestrated_child(execution, parent_id, module, task_id):
         raise SuiteError("orchestrated child owner, task or parent identity mismatch")
 
 
+def validate_orchestrated_parent(parent, execution_id, task_id):
+    expected = {"execution_id": execution_id, "module": "orchestrator", "task_type": "orchestration",
+                "source_task_id": str(task_id), "status": "success"}
+    if any(parent.get(key) != value for key, value in expected.items()):
+        raise SuiteError("Orchestrator parent identity mismatch")
+    if set(parent) & {"tenant_id", "execution_config", "actor_principal_id", "actor_tenant_membership_id",
+                      "issued_authorization_version", "execution_authorization_id", "authorization_expires_at", "lease_token"}:
+        raise SuiteError("Orchestrator parent exposed execution internals")
+    metadata = _object(parent.get("metadata"), "parent metadata")
+    if set(metadata) != {"step_results"}:
+        raise SuiteError("Orchestrator must only own the parent context")
+    steps = _object(metadata["step_results"], "parent steps")
+    if set(steps) != {"ods", "dim", "dwd"}:
+        raise SuiteError("chain must complete all three real steps")
+    for step in steps.values():
+        step = _object(step, "parent step")
+        if step.get("status") != "success" or set(step) - {"id", "status", "phase", "started_at", "ended_at", "duration", "error_code", "error", "result"}:
+            raise SuiteError("parent step must contain only successful safe orchestration facts")
+        result = _object(step.get("result"), "child execution reference")
+        if set(result) != {"execution_id"}:
+            raise SuiteError("parent step must expose only a child execution reference")
+        identifier = result["execution_id"]
+        try:
+            valid = isinstance(identifier, str) and str(uuid.UUID(identifier)) == identifier and uuid.UUID(identifier).int != 0
+        except ValueError:
+            valid = False
+        if not valid:
+            raise SuiteError("child execution reference must be a canonical nonzero UUID")
+    return steps
+
+
 def canonical_table_locator(locator):
     """ReadSet identity is the native table path, independent of catalog selection IDs."""
     parsed = urllib.parse.urlparse(locator)
@@ -685,11 +717,7 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
         if not isinstance(parent_id, str) or not parent_id or parent_id in seen or started.get("status") != "pending":
             raise SuiteError("chain rerun must admit a distinct pending execution")
         parent = wait_owner_execution(client, "orchestrator", parent_id, timeout)
-        if parent.get("source_task_id") != str(root) or parent.get("tenant_id") != tenant_id or parent.get("metadata", {}).get("lineage_facts"):
-            raise SuiteError("Orchestrator must only own the parent context")
-        steps = parent.get("metadata", {}).get("step_results", {})
-        if set(steps) != {"ods", "dim", "dwd"} or any(value.get("status") != "success" for value in steps.values()):
-            raise SuiteError("chain must complete all three real steps")
+        steps = validate_orchestrated_parent(parent, parent_id, root)
         ids, executions = {}, {}
         for key, module, task_id in (("ods", "transfer", mongodb["task_id"]), ("dim", "develop", dim_task), ("dwd", "develop", dwd_task)):
             identifier = steps[key].get("result", {}).get("execution_id")
