@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/format"
 	"github.com/addp/common/resume"
+	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/encoding/unicode"
 )
 
@@ -554,7 +555,7 @@ func (p *Plugin) newReader(input io.Reader, opts *format.ParseOptions) (*csv.Rea
 	switch encoding {
 	case "":
 		encoding = "utf-8"
-	case "utf-8", "utf-16le", "utf-16be":
+	case "utf-8", "utf-16le", "utf-16be", "gbk":
 	default:
 		return nil, 0, "", fmt.Errorf("unsupported CSV encoding %q", opts.Encoding)
 	}
@@ -581,6 +582,8 @@ func (p *Plugin) newReader(input io.Reader, opts *format.ParseOptions) (*csv.Rea
 			order = unicode.LittleEndian
 		}
 		input = unicode.UTF16(order, unicode.IgnoreBOM).NewDecoder().Reader(input)
+	} else if encoding == "gbk" {
+		input = simplifiedchinese.GBK.NewDecoder().Reader(input)
 	}
 	reader := csv.NewReader(input)
 	p.configureReaderWithOptions(reader, opts)

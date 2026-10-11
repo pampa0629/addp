@@ -2782,16 +2782,18 @@ func TestMultiRefUnknownTotalUsesLookahead(t *testing.T) {
 func TestFileTablePreviewProviderConsumesEncodingFact(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 	for _, formatType := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
-		req := &PreviewRequest{Attributes: map[string]interface{}{
-			"format_info": map[string]interface{}{string(formatType): map[string]interface{}{"encoding": "utf-16be"}},
-		}}
-		if opts := provider.buildParseOptions(formatType, req); opts.Encoding != "utf-16be" {
-			t.Fatalf("encoding = %s", opts.Encoding)
+		for _, encoding := range []string{"utf-16be", "gbk"} {
+			req := &PreviewRequest{Attributes: map[string]interface{}{
+				"format_info": map[string]interface{}{string(formatType): map[string]interface{}{"encoding": encoding}},
+			}}
+			if opts := provider.buildParseOptions(formatType, req); opts.Encoding != encoding {
+				t.Fatalf("encoding = %s, want %s", opts.Encoding, encoding)
+			}
 		}
 	}
 }
 
-func TestCSVUTF16PreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
+func TestCSVEncodedPreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 	info, err := format.GetTableInfoProvider(format.FormatCSV)
 	if err != nil {
 		t.Fatal(err)
@@ -2800,7 +2802,7 @@ func TestCSVUTF16PreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, encoding := range []string{"utf-16le", "utf-16be"} {
+	for _, encoding := range []string{"utf-16le", "utf-16be", "gbk"} {
 		var order binary.ByteOrder = binary.BigEndian
 		if encoding == "utf-16le" {
 			order = binary.LittleEndian
@@ -2814,15 +2816,28 @@ func TestCSVUTF16PreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 		for _, unit := range utf16.Encode([]rune(source)) {
 			_ = binary.Write(&data, order, unit)
 		}
-		description, err := info.DescribeTable(context.Background(), bytes.NewReader(data.Bytes()), nil)
+		city := "城市😀"
+		describeOptions := format.DefaultParseOptions()
+		if encoding == "gbk" {
+			city = "城市"
+			data.Reset()
+			data.WriteString("\"id\",\xc3\xfb\xb3\xc6,\xb1\xb8\xd7\xa2\r\n")
+			for i := 0; i < 25; i++ {
+				fmt.Fprintf(&data, "%d,\xb3\xc7\xca\xd0%d,\"\xb5\xda\xd2\xbb\xd0\xd0\r\n\xb5\xda\xb6\xfe\xd0\xd0,\xba\xac\xb6\xba\xba\xc5\"\r\n", i, i)
+			}
+			describeOptions.Encoding = encoding
+		}
+		description, err := info.DescribeTable(context.Background(), bytes.NewReader(data.Bytes()), describeOptions)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, withMeta := range []bool{true, false} {
 			for page := 1; page <= 3; page++ {
 				req := &PreviewRequest{Page: page, PageSize: 20, ItemType: "file", ScannedDepth: "deep", Table: "sample.csv", Attributes: map[string]interface{}{}}
-				if withMeta {
+				if withMeta || encoding == "gbk" {
 					req.Attributes["format_info"] = map[string]interface{}{"csv": description.FormatInfo}
+				}
+				if withMeta {
 					req.Attributes["type_info"] = map[string]interface{}{"table": map[string]interface{}{
 						"row_count": int64(25), "fields": []interface{}{map[string]interface{}{"name": "id", "type": "int"}, map[string]interface{}{"name": "名称", "type": "string"}, map[string]interface{}{"name": "备注", "type": "string"}},
 					}}
@@ -2845,7 +2860,7 @@ func TestCSVUTF16PreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 				}
 				for i, row := range result.Rows {
 					id := int64((page-1)*20 + i)
-					if row["id"] != id || row["名称"] != fmt.Sprintf("城市😀%d", id) || row["备注"] != "第一行\n第二行,含逗号" {
+					if row["id"] != id || row["名称"] != fmt.Sprintf("%s%d", city, id) || row["备注"] != "第一行\n第二行,含逗号" {
 						t.Fatalf("row = %v", row)
 					}
 				}
@@ -2854,7 +2869,7 @@ func TestCSVUTF16PreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 					t.Fatal(err)
 				}
 				if bytes.Contains(raw, []byte("access_index_refresh_recommended")) {
-					t.Fatalf("unexpected UTF-16 index advice: %s", raw)
+					t.Fatalf("unexpected decoded input index advice: %s", raw)
 				}
 			}
 		}

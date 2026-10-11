@@ -16,7 +16,7 @@
 | --- | --- |
 | GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级提交的 Raster Hosted 已通过计算、产物与执行页面复验，Manager Hosted 已通过 COG Range 读取和实际地图加载复验；范围限于所用真实夹具。 |
 | JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
-| CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；CSV/TSV 已补 UTF-8 BOM 表头与源字节索引处理，十万行索引分页有确定性回归，新增真实 NFS 样例已通过扫描、索引边界分页、末页和原文件下载验收；带 BOM 的 UTF-16LE / UTF-16BE 读取已实现，真实 NFS 已通过重启后的扫描、20＋5 行分页与原文件下载验收；GBK 尚未实现。XLSX 已通过真实 NFS 四工作表的不同字段、空表、只有表头、未知总数逐页读取及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
+| CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；CSV/TSV 已补 UTF-8 BOM 表头与源字节索引处理，十万行索引分页有确定性回归，新增真实 NFS 样例已通过扫描、索引边界分页、末页和原文件下载验收；带 BOM 的 UTF-16LE / UTF-16BE 读取已实现，真实 NFS 已通过重启后的扫描、20＋5 行分页与原文件下载验收；显式 GBK 共享读取已实现，用户设置入口与端到端验收未完成。XLSX 已通过真实 NFS 四工作表的不同字段、空表、只有表头、未知总数逐页读取及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
 | JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 空间预览已有实现和本地样例页面复核；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
 | 3DS / DAE / FBX / OBJ | 通过 Model3D 转自包含 GLB 后显示；按已验证的静态几何和基础材质范围支持，DAE / 3DS 的声明 PNG/JPEG 漫反射贴图已有真实转换验收。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
@@ -40,6 +40,8 @@
 
 同次 UTF-16 页面验收发现 NFS 的 `storage.content_type` 错带 `charset=utf-8`，根因为 `mime.TypeByExtension` 注册表默认参数被当成文件事实。先补元数据规范，再由 `common/mimetype.ByExtension` 唯一提供不带参数的扩展名 MIME 推断，NFS、对象存储、HDFS、通用格式识别、导出下载及 Manager 的上传缺省值和瓦片文件读取统一消费；显式源 Content-Type 不改写。UTF-16 实际编码仍只由 parser 写入格式摘要。已移除这些入口对标准库扩展名查询的直接调用，未增加依赖版本、HTTP 结构或独立服务；新共享包及回归由已有 Common / Manager Go 自动发现、Platform CI 全 Go 和产品镜像构建覆盖。2026-10-11 重启后运行复核通过：System、Manager、Meta 健康响应及 Meta Worker 构建身份均为包含修复 `829d9073a` 的 `6e30cd0d5cbcffb362cdc240ba75aba9401a56d8`，进程于北京时间 18:03–18:04 启动。单文件深度刷新按已有已知 item 契约保留存储快照，因此先刷新 `format-samples/csv` 目录的基础信息，再重新打开两个文件；两者扫描时间均为 `2026-10-11T11:46:46Z`，`storage.content_type=text/csv`，不再错误声明 UTF-8，实际编码仍分别为 `utf-16le` / `utf-16be`，25 行及内容哈希均保留。没有重新扫描 NFS 根目录或改变已知 item refresh 边界。本次补齐本地 MIME 页面验收，不代替 Hosted T4。 本轮以 `473ebf9480d24f161ec280f4ad60a3a659135ded` 加本轮改动的隔离副本运行 `make test-go`，22 个 Go 模块全部通过；11 个实现和回归 Go 文件与工作区逐字节一致。`make test-execution-fixtures` 顺序复跑通过（9 项回归、1456 个已跟踪 Go 测试文件）；并发运行时首次发生 10 秒子进程超时，不计为通过。`make test-changed` 因消费者 T2 连接参数缺失在预检中止，T2 与产品镜像构建仍由既有 CI 继续验证，不登记未执行项通过。
 
+2026-10-11 补齐显式 GBK 读取：CSV / TSV 通过现有 `ParseOptions.Encoding=gbk` 在同一入口解码，覆盖格式摘要、表结构、逻辑行分页和连续读取；实际编码记录为 `gbk`，不把解码偏移发布为源字节访问索引。无声明输入仍按 UTF-8 处理，不自动猜测 GBK；Unicode BOM 优先，GB18030 与 GBK 写出不计为支持。复用已有 `golang.org/x/text`，未变更依赖版本、HTTP 契约、模块或 CI 入口。回归使用独立固定 GBK 字节，核对 CSV / TSV 中文字段、多行引号、25 行的跨页／末页／空页、连续读取、参数规范化与源错误传播；Manager 复用编码事实，覆盖已有／缺失 Meta 表结构时的 20＋5 行预览和不推荐错误索引。用户编码设置入口、Meta 持久配置边界和真实页面验收尚未完成，不登记为 GBK 端到端支持。 验证基线为 `e934624aa16f75d66c4fb29a6783f47f1943c77d` 加本轮改动的隔离副本：`make test-go` 的 22 个模块全部通过，`make test-execution-fixtures` 通过（9 项回归、1466 个已跟踪 Go 测试文件），三个实现／回归 Go 文件与工作区逐字节一致。首次全量 Go 因基线中的 Ontology 来源摘要过期中止，不计为通过；同步另一会话已提交的来源审查更新后重跑通过。`make test-changed` 缺少消费者 T2 测试连接参数，在预检中止；T2 和产品镜像构建继续由既有 Release/T2、Platform CI 验证，未返回结果前不登记通过。
+
 2026-10-10 SGM 运行输入核对：按 `scripts/dev/supermap-workflow.sh` 的指纹规则，只读核对全部 C++ 源码与测试、CMake、Dockerfile、算子目录、启动文件、基础镜像 ID 及 `linux/arm64` 平台，当前输入和运行镜像标签均为 `34d46162201a5e56993900c0a54f1b03280afd88`。运行镜像为 `sha256:32f081d72f40e39a5eb1fb70b4e40ea98f26e8479e3e23eac41c2f53f7e6ec03`，健康检查通过；既有 2026-10-07 原生 SGM 转换与本地页面记录见 `docs/next/三维与点云后续路线.md`。本次标准镜像重建在 Ubuntu 软件源 HTTP 下载阶段返回 502，未进入 CTest；容器内访问同一软件源的 HTTPS 地址成功，HTTP 直连及经宿主代理仍失败。没有更换软件源、关闭签名校验、修改全局 Docker 设置或替换运行镜像，不把历史记录或健康检查记为本次 SDK 重建通过。
 
 2026-10-10 栅格 Hosted 复验：地图依赖升级提交 `aa0f725157ccfb10500e897ffba07704cad1f943` 的 [Raster T4 38057200886](https://github.com/pampa0629/addp/actions/runs/38057200886) 通过。已下载并核对正式 artifact：`online-report.json` 与 38 份浏览器报告均为 passed，覆盖波段计算、镶嵌、重采样、裁剪、多波段有效性与插值、重分类、聚合、有效像素更新、概览、COG 转换／校验及统计分析；产物检查包含像素与 NoData、坐标系、概览、COG 合法性及源文件不变。`to-cog` 产物为 212209 字节，保留 EPSG:4326、两波段各 65535 个有效像素和 128×128 概览，COG 校验无警告。标准 Hosted 入口的 summary 确认清理通过、Infra 零残留。此 suite 的浏览器报告验证执行状态和分析结果页面，未打开 Manager 栅格地图；因此不能据此登记地图渲染或模型快显复验通过，二者继续由既有 Manager Hosted 门禁验证。
@@ -62,7 +64,7 @@
 
 | 格式 | 后续事项 |
 |---|---|
-| CSV / TSV | UTF-8 BOM、中文与引号内换行的十万行稀疏索引分页已补确定性回归；新增 NFS 两份样例已通过指定目录深度扫描、页面索引边界与末页、下载逐字节核对。UTF-16 已补读取实现，NFS 大小端样例扫描、分页和下载均已验收；GBK 转码、无表头处理及 access index 失效规则仍需完善，不把 Encoding 选项当作已实现转码。 |
+| CSV / TSV | UTF-8 BOM、中文与引号内换行的十万行稀疏索引分页已补确定性回归；新增 NFS 两份样例已通过指定目录深度扫描、页面索引边界与末页、下载逐字节核对。UTF-16 已补读取实现，NFS 大小端样例扫描、分页和下载均已验收；显式 GBK 共享读取已实现，用户设置入口及端到端验收未完成；无表头处理及 access index 失效规则仍需完善。 |
 | JSON / GeoJSON 编码 | GeoJSON 已升格为独立 `format=geojson`，`.json` 文件只有内容前缀严格匹配 `FeatureCollection` 时才升格；代码回归已覆盖普通 `.json` 不升格、`.json` GeoJSON deep scan 写入 `format_info.geojson`、Manager `format=geojson` 使用 map 预览材料。后续还要用真实样例核实大文件分页、复杂嵌套对象数组、GeoJSON 无 geometry / 混合 geometry、WKB / EWKB 空间渲染体验。 |
 | Parquet | MinIO / NFS 真实样例、`part-*` 和分区目录 whole scope Transfer 已验收；Hive-style 分区字段已能进入 schema 和 row。后续继续核实 schema 不兼容提示、大文件 row group 性能，并设计专用 range / footer 读取边界。 |
 | Shapefile | 还要用真实 NFS / MinIO / ZIP 样例核实本地 materialized fallback 也能继续利用 `.shx` 索引分页，嵌套 ZIP 中的 Shapefile 子项能正确归并 `.shp/.shx/.dbf` refs，不支持 shape 类型提示和前端空间表渲染体验；如需地图专用展示，应基于通用 table / spatial 预览 DTO 扩展前端渲染。 |
