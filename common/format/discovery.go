@@ -107,7 +107,7 @@ func implementationSnapshotForFormat(formatType FormatType) FormatImplementation
 	_, status.ContainerInfoProvider = plugin.(ContainerInfoProvider)
 	_, status.ContainerChildResolver = plugin.(ContainerChildResolver)
 	if provider, ok := plugin.(AccessIndexProvider); ok {
-		status.AccessIndexProvider = provider.SupportsAccessIndex()
+		status.AccessIndexProvider = provider.SupportsAccessIndex(nil)
 	}
 	return status
 }

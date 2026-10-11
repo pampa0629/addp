@@ -245,6 +245,11 @@ func (p *FileTablePreviewProvider) previewStreamable(
 			return nil, fmt.Errorf("failed to parse table info: %w", err)
 		}
 		tableInfo = format.TableInfoFromDescribeResult(result)
+		if encoding := commonJSON.InterfaceString(result.FormatInfo["encoding"]); encoding != "" {
+			copied := *opts
+			copied.Encoding = encoding
+			opts = &copied
+		}
 		spatialInfo = result.Spatial.Clone()
 	}
 
@@ -336,7 +341,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 			},
 		},
 	}
-	if shouldRecommendAccessIndexRefresh(req, formatType, usedAccessIndex) {
+	if shouldRecommendAccessIndexRefresh(req, formatType, opts, usedAccessIndex) {
 		appendPreviewAdvisory(preview, &models.PreviewAdvisory{
 			Code:     "access_index_refresh_recommended",
 			Severity: "info",
@@ -372,14 +377,14 @@ func (p *FileTablePreviewProvider) openSampleReader(
 	return reader, opts, false, err
 }
 
-func shouldRecommendAccessIndexRefresh(req *PreviewRequest, formatType format.FormatType, usedAccessIndex bool) bool {
+func shouldRecommendAccessIndexRefresh(req *PreviewRequest, formatType format.FormatType, opts *format.ParseOptions, usedAccessIndex bool) bool {
 	if req == nil || usedAccessIndex || !isContentFileItemType(req.ItemType) {
 		return false
 	}
 	if !strings.EqualFold(strings.TrimSpace(req.ScannedDepth), "deep") {
 		return false
 	}
-	if formatType == "" || formatType == format.FormatUnknown || !format.SupportsAccessIndex(formatType) {
+	if formatType == "" || formatType == format.FormatUnknown || !format.SupportsAccessIndex(formatType, opts) {
 		return false
 	}
 	return !usableTableAccessIndex(tableAccessIndexFromMetaAttributes(req.Attributes))
@@ -407,7 +412,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 		return nil, nil, false
 	}
 	index := tableAccessIndexFromMetaAttributes(req.Attributes)
-	if !usableTableAccessIndex(index) {
+	if !usableTableAccessIndex(index) || !format.SupportsAccessIndex(p.resolveFormat(req), opts) {
 		return nil, nil, false
 	}
 	anchor, length := rangeForTableWindow(index, int64(offset), int64(pageSize), resourceutil.Int64Attribute(req.Attributes, "total_size"))
@@ -867,6 +872,9 @@ func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatTyp
 	}
 	if len(req) > 0 && req[0] != nil && strings.TrimSpace(req[0].ChildName) != "" {
 		return format.ChildTableParseOptions(req[0].ChildName, containerChildInputForRequest(req[0].Attributes, req[0].ChildName))
+	}
+	if len(req) > 0 && req[0] != nil {
+		opts.Encoding = commonJSON.String(req[0].Attributes, "format_info."+string(formatType), "encoding")
 	}
 	return opts
 }

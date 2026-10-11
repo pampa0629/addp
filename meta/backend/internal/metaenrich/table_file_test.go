@@ -3,11 +3,13 @@ package metaenrich
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
@@ -707,4 +709,42 @@ func buildMetaitemGeoParquetRowsWithMetadata(t *testing.T, metadata map[string]i
 		t.Fatalf("close geoparquet writer: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func TestExtractUTF16DelimitedTableEncodingWithoutByteIndex(t *testing.T) {
+	for _, ext := range []string{"csv", "tsv"} {
+		delim := ","
+		if ext == "tsv" {
+			delim = "\t"
+		}
+		for _, littleEndian := range []bool{true, false} {
+			var order binary.ByteOrder = binary.BigEndian
+			encoding := "utf-16be"
+			if littleEndian {
+				order, encoding = binary.LittleEndian, "utf-16le"
+			}
+			source := "\"id\"" + delim + "名称\r\n1" + delim + "城市😀\r\n"
+			var data bytes.Buffer
+			_ = binary.Write(&data, order, uint16(0xfeff))
+			for _, unit := range utf16.Encode([]rune(source)) {
+				_ = binary.Write(&data, order, unit)
+			}
+			info, err := ExtractSingleTableFileItem(context.Background(), staticContentReader{content: data.String()}, nil, 1, "sample."+ext, int64(data.Len()), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := commonJSON.String(info.Attributes, "format_info."+ext, "encoding"); got != encoding {
+				t.Fatalf("encoding = %s, want %s", got, encoding)
+			}
+			if got := commonJSON.Int64(info.Attributes, "type_info.table", "row_count"); got != 1 {
+				t.Fatalf("row count = %d", got)
+			}
+			if _, ok := info.Attributes["access_index"]; ok {
+				t.Fatalf("UTF-16 cannot publish a byte index: %#v", info.Attributes)
+			}
+			if len(info.Fields) != 2 || info.Fields[1].Name != "名称" {
+				t.Fatalf("fields = %#v", info.Fields)
+			}
+		}
+	}
 }

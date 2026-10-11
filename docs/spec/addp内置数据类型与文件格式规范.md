@@ -826,7 +826,7 @@ Manager 需要按 `data_type` 分别选择快显路线：
 
 CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 parser 生成稳定列名。字段类型来自采样推断。
 
-UTF-8 输入允许文件起点的 BOM；BOM 不属于首列字段名，也不影响带引号表头的解析。稀疏行索引中的 `header_bytes` 和 anchor 偏移仍按源文件字节计算，包含被跳过的 BOM；从 anchor 定位的数据行不得再次执行文件头 BOM 处理。UTF-8 BOM 不代表支持其他字符集，当前不声明 GBK 或 UTF-16 的自动识别及转码。
+UTF-8 输入允许文件起点的 BOM；BOM 不属于首列字段名，也不影响带引号表头的解析。稀疏行索引中的 `header_bytes` 和 anchor 偏移仍按源文件字节计算，包含被跳过的 BOM；从 anchor 定位的数据行不得再次执行文件头 BOM 处理。带 BOM 的 UTF-16LE / UTF-16BE 在同一 CSV / TSV 读取入口解码，实际编码写入 `format_info.<format>.encoding`（`utf-16le` / `utf-16be`）；已知端序可通过同名 `ParseOptions.Encoding` 明确指定。UTF-16 解码后的偏移不是源文件字节偏移，因此不生成 `access_index`，分页从文件起点按逻辑数据行读取。Manager 消费已识别编码，不提示这类文件刷新创建索引。无 BOM 且未声明编码时按 UTF-8 读取，不自动猜测 GBK；UTF-32 不支持。写出仍为 UTF-8，不据此声明 UTF-16 写出能力。
 
 ### attributes 写入
 

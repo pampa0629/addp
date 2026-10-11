@@ -153,16 +153,23 @@ func TestRegisterFormatDescriptorStoresDescriptor(t *testing.T) {
 }
 
 func TestSupportsAccessIndexUsesDynamicProviderCapability(t *testing.T) {
-	if !SupportsAccessIndex(FormatCSV) {
+	for _, formatType := range []FormatType{FormatCSV, FormatTSV} {
+		for _, encoding := range []string{"utf-16le", "utf-16be"} {
+			if SupportsAccessIndex(formatType, &ParseOptions{Encoding: encoding}) {
+				t.Fatalf("%s/%s cannot provide source byte index", formatType, encoding)
+			}
+		}
+	}
+	if !SupportsAccessIndex(FormatCSV, nil) {
 		t.Fatalf("SupportsAccessIndex(csv) = false, want true")
 	}
-	if !SupportsAccessIndex(FormatTSV) {
+	if !SupportsAccessIndex(FormatTSV, nil) {
 		t.Fatalf("SupportsAccessIndex(tsv) = false, want true")
 	}
-	if !SupportsAccessIndex(FormatJSON) {
+	if !SupportsAccessIndex(FormatJSON, nil) {
 		t.Fatalf("SupportsAccessIndex(json) = false, want true")
 	}
-	if SupportsAccessIndex(FormatParquet) {
+	if SupportsAccessIndex(FormatParquet, nil) {
 		t.Fatalf("SupportsAccessIndex(parquet) = true, want false")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
@@ -2642,16 +2644,16 @@ func TestTableAccessIndexFromMetaAttributesNormalizesFormat(t *testing.T) {
 
 func TestShouldRecommendAccessIndexRefreshOnlyForSupportedMissingIndex(t *testing.T) {
 	req := &PreviewRequest{ItemType: "object", ScannedDepth: "deep", Attributes: map[string]interface{}{}}
-	if !shouldRecommendAccessIndexRefresh(req, format.FormatCSV, false) {
+	if !shouldRecommendAccessIndexRefresh(req, format.FormatCSV, nil, false) {
 		t.Fatal("expected CSV object preview without usable access index to recommend item refresh")
 	}
-	if shouldRecommendAccessIndexRefresh(&PreviewRequest{ItemType: "object", ScannedDepth: "basic"}, format.FormatCSV, false) {
+	if shouldRecommendAccessIndexRefresh(&PreviewRequest{ItemType: "object", ScannedDepth: "basic"}, format.FormatCSV, nil, false) {
 		t.Fatal("basic item should use the general item refresh recommendation")
 	}
-	if shouldRecommendAccessIndexRefresh(req, format.FormatParquet, false) {
+	if shouldRecommendAccessIndexRefresh(req, format.FormatParquet, nil, false) {
 		t.Fatal("parquet should not recommend access index refresh")
 	}
-	if shouldRecommendAccessIndexRefresh(req, format.FormatCSV, true) {
+	if shouldRecommendAccessIndexRefresh(req, format.FormatCSV, nil, true) {
 		t.Fatal("used access index should not recommend refresh")
 	}
 	withIndex := &PreviewRequest{
@@ -2670,7 +2672,7 @@ func TestShouldRecommendAccessIndexRefreshOnlyForSupportedMissingIndex(t *testin
 			},
 		},
 	}
-	if shouldRecommendAccessIndexRefresh(withIndex, format.FormatCSV, false) {
+	if shouldRecommendAccessIndexRefresh(withIndex, format.FormatCSV, nil, false) {
 		t.Fatal("usable access index should not recommend refresh")
 	}
 }
@@ -2773,6 +2775,88 @@ func TestMultiRefUnknownTotalUsesLookahead(t *testing.T) {
 		}
 		if result.Total != nil || result.HasMore != (page == 1) || reader.sampleLimit != 3 || reader.sampleOffset != int64((page-1)*2) || len(result.Rows) != 3-page {
 			t.Fatalf("multi pagination: %#v, limit %d offset %d", result, reader.sampleLimit, reader.sampleOffset)
+		}
+	}
+}
+
+func TestFileTablePreviewProviderConsumesEncodingFact(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+	for _, formatType := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
+		req := &PreviewRequest{Attributes: map[string]interface{}{
+			"format_info": map[string]interface{}{string(formatType): map[string]interface{}{"encoding": "utf-16be"}},
+		}}
+		if opts := provider.buildParseOptions(formatType, req); opts.Encoding != "utf-16be" {
+			t.Fatalf("encoding = %s", opts.Encoding)
+		}
+	}
+}
+
+func TestCSVUTF16PreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
+	info, err := format.GetTableInfoProvider(format.FormatCSV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sample, err := format.GetTableSampleReader(format.FormatCSV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, encoding := range []string{"utf-16le", "utf-16be"} {
+		var order binary.ByteOrder = binary.BigEndian
+		if encoding == "utf-16le" {
+			order = binary.LittleEndian
+		}
+		source := "\"id\",名称,备注\r\n"
+		for i := 0; i < 25; i++ {
+			source += fmt.Sprintf("%d,城市😀%d,\"第一行\r\n第二行,含逗号\"\r\n", i, i)
+		}
+		var data bytes.Buffer
+		_ = binary.Write(&data, order, uint16(0xfeff))
+		for _, unit := range utf16.Encode([]rune(source)) {
+			_ = binary.Write(&data, order, unit)
+		}
+		description, err := info.DescribeTable(context.Background(), bytes.NewReader(data.Bytes()), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, withMeta := range []bool{true, false} {
+			for page := 1; page <= 3; page++ {
+				req := &PreviewRequest{Page: page, PageSize: 20, ItemType: "file", ScannedDepth: "deep", Table: "sample.csv", Attributes: map[string]interface{}{}}
+				if withMeta {
+					req.Attributes["format_info"] = map[string]interface{}{"csv": description.FormatInfo}
+					req.Attributes["type_info"] = map[string]interface{}{"table": map[string]interface{}{
+						"row_count": int64(25), "fields": []interface{}{map[string]interface{}{"name": "id", "type": "int"}, map[string]interface{}{"name": "名称", "type": "string"}, map[string]interface{}{"name": "备注", "type": "string"}},
+					}}
+				}
+				provider := &FileTablePreviewProvider{}
+				opts := provider.buildParseOptions(format.FormatCSV, req)
+				result, err := provider.previewStreamable(context.Background(), staticContentReader{content: data.Bytes()}, "", "sample.csv", format.FormatCSV, info, sample, opts, req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantCount := 0
+				if page == 1 {
+					wantCount = 20
+				}
+				if page == 2 {
+					wantCount = 5
+				}
+				if result.Total == nil || *result.Total != 25 || len(result.Rows) != wantCount {
+					t.Fatalf("%s/meta=%t/page=%d: %+v", encoding, withMeta, page, result)
+				}
+				for i, row := range result.Rows {
+					id := int64((page-1)*20 + i)
+					if row["id"] != id || row["名称"] != fmt.Sprintf("城市😀%d", id) || row["备注"] != "第一行\n第二行,含逗号" {
+						t.Fatalf("row = %v", row)
+					}
+				}
+				raw, err := json.Marshal(result)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if bytes.Contains(raw, []byte("access_index_refresh_recommended")) {
+					t.Fatalf("unexpected UTF-16 index advice: %s", raw)
+				}
+			}
 		}
 	}
 }

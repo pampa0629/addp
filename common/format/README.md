@@ -379,6 +379,7 @@ rows, err := reader.SampleTable(ctx, input, 0, 50, nil)
 - 单文件 provider 接收 `io.Reader`。
 - multi provider 接收 `contentio.Reader` / `contentio.Writer` 与显式 `[]RelatedRef`；`RelatedRef` 中的 `Ref` 是底层定位器，`Required` / `Primary` 是 ref 集合标注。
 - 目录 scope provider 接收 `contentio.Reader` 和 `contentio.Ref`。
+- `AccessIndexProvider.SupportsAccessIndex(options)` 按解析选项声明可生成的源字节索引；`nil` 表达默认能力，不保证所有编码变体都有索引。CSV / TSV 的 UTF-16 读取不生成字节索引，使用从文件起点按逻辑行读取的分页。
 - `SampleTable` 的 `offset` / `limit` 是逻辑数据行窗口，不是字节偏移。行号从数据区第 0 行开始；CSV 等有表头的格式不把表头计入数据行。
 - `SampleTable` 的 `input` 默认表示 content 起点。调用方也可以传入从某个 record boundary 开始的局部流，但必须通过 `ParseOptions.TableSample` 提供 `InputStartsAtRow`、`Fields` 等上下文，让格式 plugin 在内部完成剩余行跳过和解析。
 - `access_index` 是上层 attributes 中的通用访问索引，可用于帮助 engine range reader 打开局部流；`common/format` 只定义索引结构和 reader 选项，不直接调用 engine。

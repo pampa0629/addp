@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"github.com/addp/common/datatype"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/addp/common/format"
 	"github.com/addp/common/resume"
+	"golang.org/x/text/encoding/unicode"
 )
 
 // Plugin 实现分隔文本表格格式。
@@ -49,8 +51,9 @@ func (p *Plugin) Format() format.FormatType {
 	return p.formatType
 }
 
-func (p *Plugin) SupportsAccessIndex() bool {
-	return true
+func (p *Plugin) SupportsAccessIndex(options *format.ParseOptions) bool {
+	encoding := strings.ToLower(strings.TrimSpace(p.effectiveOptions(options).Encoding))
+	return encoding == "" || encoding == "utf-8"
 }
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
@@ -109,13 +112,16 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 		return nil, err
 	}
 	opts := p.effectiveOptions(options)
-	reader, _ := p.newReader(input, opts)
+	reader, _, encoding, err := p.newReader(input, opts)
+	if err != nil {
+		return nil, err
+	}
 	headers, err := reader.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV headers: %w", err)
 	}
 	attrs := (&Info{
-		Encoding:   opts.Encoding,
+		Encoding:   encoding,
 		LineEnding: "\n",
 	}).FormatAttributes()
 	attrs["column_count"] = len(headers)
@@ -126,7 +132,10 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	opts := p.effectiveOptions(options)
 
-	reader, prefixBytes := p.newReader(input, opts)
+	reader, prefixBytes, encoding, err := p.newReader(input, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// 读取表头
 	headers, err := reader.Read()
@@ -134,7 +143,10 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		return nil, fmt.Errorf("failed to read CSV headers: %w", err)
 	}
 	headerBytes := prefixBytes + reader.InputOffset()
-	index := p.newSparseRowIndex(opts, headerBytes)
+	var index *datatype.AccessIndex
+	if encoding == "utf-8" {
+		index = p.newSparseRowIndex(opts, headerBytes)
+	}
 
 	// 读取样本数据用于类型推断
 	sampleRows := make([][]string, 0, opts.SampleSize)
@@ -145,7 +157,11 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			break
 		}
 		if err != nil {
-			// 容错：跳过损坏的行
+			var parseErr *csv.ParseError
+			if !errors.As(err, &parseErr) {
+				return nil, err
+			}
+			// 容错：跳过损坏的 CSV 记录
 			continue
 		}
 		sampleRows = append(sampleRows, record)
@@ -160,12 +176,18 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			break
 		}
 		if err != nil {
+			var parseErr *csv.ParseError
+			if !errors.As(err, &parseErr) {
+				return nil, err
+			}
 			continue
 		}
 		rowCount++
 		p.recordSparseRowAnchor(index, rowCount, prefixBytes+reader.InputOffset())
 	}
-	index.RowCount = rowCount
+	if index != nil {
+		index.RowCount = rowCount
+	}
 
 	// 构建 FieldInfo 列表
 	fields := make([]datatype.FieldInfo, len(headers))
@@ -181,7 +203,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	// 构建 CSV 格式私有信息
 	csvInfo := &Info{
 		Delimiter:  opts.Delimiter,
-		Encoding:   opts.Encoding,
+		Encoding:   encoding,
 		HasHeader:  opts.HasHeader,
 		QuoteChar:  '"',
 		EscapeChar: '"',
@@ -198,7 +220,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		},
 		FormatInfo: csvInfo.FormatAttributes(),
 	}
-	if len(index.Anchors) > 0 {
+	if index != nil && len(index.Anchors) > 0 {
 		result.AccessIndex = index
 	}
 
@@ -213,7 +235,10 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	opts := p.effectiveOptions(options)
 
-	reader, _ := p.newReader(input, opts)
+	reader, _, _, err := p.newReader(input, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	headers, localSkip, err := p.sampleHeadersAndLocalSkip(reader, offset, opts)
 	if err != nil {
@@ -243,7 +268,11 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 			break
 		}
 		if err != nil {
-			// 容错：跳过损坏的行
+			var parseErr *csv.ParseError
+			if !errors.As(err, &parseErr) {
+				return nil, err
+			}
+			// 容错：跳过损坏的 CSV 记录
 			continue
 		}
 
@@ -317,7 +346,10 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, fmt.Errorf("csv table reader requires input")
 	}
 	opts := p.effectiveOptions(options)
-	reader, _ := p.newReader(input, opts)
+	reader, _, _, err := p.newReader(input, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	headers, _, err := p.sampleHeadersAndLocalSkip(reader, 0, opts)
 	if err != nil {
@@ -391,6 +423,10 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			break
 		}
 		if err != nil {
+			var parseErr *csv.ParseError
+			if !errors.As(err, &parseErr) {
+				return nil, err
+			}
 			continue
 		}
 		row := make(map[string]interface{}, len(r.headers))
@@ -511,21 +547,44 @@ func (p *Plugin) configureReader(reader *csv.Reader) {
 	p.configureReaderWithOptions(reader, p.options)
 }
 
-// newReader 只在文件起点消费 BOM，索引仍使用源文件字节偏移。
-func (p *Plugin) newReader(input io.Reader, opts *format.ParseOptions) (*csv.Reader, int64) {
+// newReader 在文件起点识别 BOM，所有读取路径共用同一解码器和 CSV parser。
+// UTF-16 解码后的 InputOffset 不可用作源文件字节索引。
+func (p *Plugin) newReader(input io.Reader, opts *format.ParseOptions) (*csv.Reader, int64, string, error) {
+	encoding := strings.ToLower(strings.TrimSpace(opts.Encoding))
+	switch encoding {
+	case "":
+		encoding = "utf-8"
+	case "utf-8", "utf-16le", "utf-16be":
+	default:
+		return nil, 0, "", fmt.Errorf("unsupported CSV encoding %q", opts.Encoding)
+	}
 	var prefixBytes int64
 	if opts.TableSample == nil || !opts.TableSample.InputIsPositioned {
 		buffered := bufio.NewReader(input)
-		prefix, _ := buffered.Peek(3)
-		if string(prefix) == "\xef\xbb\xbf" {
-			_, _ = buffered.Discard(3)
-			prefixBytes = 3
+		prefix, _ := buffered.Peek(4)
+		switch {
+		case strings.HasPrefix(string(prefix), "\xff\xfe\x00\x00"), strings.HasPrefix(string(prefix), "\x00\x00\xfe\xff"):
+			return nil, 0, "", fmt.Errorf("unsupported CSV encoding UTF-32")
+		case strings.HasPrefix(string(prefix), "\xef\xbb\xbf"):
+			encoding, prefixBytes = "utf-8", 3
+		case strings.HasPrefix(string(prefix), "\xff\xfe"):
+			encoding, prefixBytes = "utf-16le", 2
+		case strings.HasPrefix(string(prefix), "\xfe\xff"):
+			encoding, prefixBytes = "utf-16be", 2
 		}
+		_, _ = buffered.Discard(int(prefixBytes))
 		input = buffered
+	}
+	if encoding == "utf-16le" || encoding == "utf-16be" {
+		order := unicode.BigEndian
+		if encoding == "utf-16le" {
+			order = unicode.LittleEndian
+		}
+		input = unicode.UTF16(order, unicode.IgnoreBOM).NewDecoder().Reader(input)
 	}
 	reader := csv.NewReader(input)
 	p.configureReaderWithOptions(reader, opts)
-	return reader, prefixBytes
+	return reader, prefixBytes, encoding, nil
 }
 
 // configureReaderWithOptions 配置 CSV reader（使用指定 options）

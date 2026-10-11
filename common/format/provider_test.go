@@ -49,7 +49,7 @@ func (p providerTestPlugin) SampleTable(ctx context.Context, input io.Reader, of
 	return providerTestSample(ctx, input, offset, limit, options)
 }
 
-func (p providerTestPlugin) SupportsAccessIndex() bool {
+func (p providerTestPlugin) SupportsAccessIndex(options *ParseOptions) bool {
 	return true
 }
 
@@ -75,7 +75,7 @@ func TestRegisterFormatPluginRegistersDescriptorAndDynamicCapabilities(t *testin
 	if _, err := registry.GetTableSampleReader(formatType); err != nil {
 		t.Fatalf("GetTableSampleReader() error = %v", err)
 	}
-	if provider, err := registry.GetTableInfoProvider(formatType); err != nil || !provider.(AccessIndexProvider).SupportsAccessIndex() {
+	if provider, err := registry.GetTableInfoProvider(formatType); err != nil || !provider.(AccessIndexProvider).SupportsAccessIndex(nil) {
 		t.Fatalf("AccessIndexProvider = %#v, %v; want supported", provider, err)
 	}
 }

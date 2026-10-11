@@ -87,13 +87,13 @@ func (r *descriptorRegistry) GetFormatDescriptor(formatType FormatType) (FormatD
 	return cloneFormatDescriptor(descriptor), true
 }
 
-func SupportsAccessIndex(formatType FormatType) bool {
+func SupportsAccessIndex(formatType FormatType, options *ParseOptions) bool {
 	provider, err := GetTableInfoProvider(formatType)
 	if err != nil {
 		return false
 	}
 	accessProvider, ok := provider.(AccessIndexProvider)
-	return ok && accessProvider.SupportsAccessIndex()
+	return ok && accessProvider.SupportsAccessIndex(options)
 }
 
 func RegisterFormatDescriptor(descriptor FormatDescriptor) error {

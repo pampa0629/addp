@@ -3,11 +3,14 @@ package csv
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/addp/common/datatype"
 	"io"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/addp/common/format"
 	"github.com/addp/common/resume"
@@ -171,7 +174,7 @@ func TestCSVPlugin_ImplementsTargetInterfaces(t *testing.T) {
 	var _ format.TableSampleReader = plugin
 	var _ format.TableReaderProvider = plugin
 	var _ format.TableWriterProvider = plugin
-	if !format.SupportsAccessIndex(plugin.Format()) {
+	if !format.SupportsAccessIndex(plugin.Format(), nil) {
 		t.Fatalf("SupportsAccessIndex(%q) = false, want true", plugin.Format())
 	}
 }
@@ -530,5 +533,167 @@ func TestCSVPositionedInputPreservesBOMInData(t *testing.T) {
 	rows, err := NewPlugin(nil).SampleTable(context.Background(), strings.NewReader("\xef\xbb\xbf内容\n"), 5000, 1, opts)
 	if err != nil || len(rows) != 1 || rows[0]["value"] != "\ufeff内容" {
 		t.Fatalf("positioned BOM data = %#v, %v", rows, err)
+	}
+}
+
+// Fixture encoding is independent of the production decoder.
+func utf16Fixture(text string, littleEndian, bom bool) []byte {
+	var order binary.ByteOrder = binary.BigEndian
+	if littleEndian {
+		order = binary.LittleEndian
+	}
+	var output bytes.Buffer
+	if bom {
+		_ = binary.Write(&output, order, uint16(0xfeff))
+	}
+	for _, unit := range utf16.Encode([]rune(text)) {
+		_ = binary.Write(&output, order, unit)
+	}
+	return output.Bytes()
+}
+
+func TestDelimitedUTF16ReadPaths(t *testing.T) {
+	for _, delim := range []string{",", "\t"} {
+		for _, littleEndian := range []bool{false, true} {
+			encoding := "utf-16be"
+			if littleEndian {
+				encoding = "utf-16le"
+			}
+			for _, bom := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%q/%s/bom=%t", delim, encoding, bom), func(t *testing.T) {
+					plugin := NewPlugin(nil)
+					if delim == "\t" {
+						plugin = NewTSVPlugin(nil)
+					}
+					source := "\"id\"" + delim + "名称" + delim + "备注\r\n"
+					for i := 0; i < 25; i++ {
+						source += fmt.Sprintf("%d%s城市😀%d%s\"第一行\r\n第二行,含逗号\"\r\n", i, delim, i, delim)
+					}
+					data := utf16Fixture(source, littleEndian, bom)
+					opts := format.DefaultParseOptions()
+					opts.Delimiter = 0 // The format plugin owns its default delimiter.
+					if !bom {
+						opts.Encoding = encoding
+					}
+					originalEncoding := opts.Encoding
+					description, err := plugin.DescribeTable(context.Background(), bytes.NewReader(data), opts)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if *description.Table.RowCount != 25 || description.Table.Fields[0].Name != "id" || description.Table.Fields[1].Name != "名称" {
+						t.Fatalf("wrong description: %+v", description.Table)
+					}
+					if description.FormatInfo["encoding"] != encoding || description.AccessIndex != nil {
+						t.Fatalf("encoding/index = %v/%+v", description.FormatInfo, description.AccessIndex)
+					}
+					attrs, err := plugin.DescribeFormat(context.Background(), bytes.NewReader(data), opts)
+					if err != nil || attrs["encoding"] != encoding {
+						t.Fatalf("format = %v, %v", attrs, err)
+					}
+					for _, offset := range []int64{0, 19, 20, 24, 25} {
+						rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(data), offset, 20, opts)
+						if err != nil {
+							t.Fatal(err)
+						}
+						want := int64(25) - offset
+						if want > 20 {
+							want = 20
+						}
+						if int64(len(rows)) != want {
+							t.Fatalf("offset %d: rows=%d, want %d", offset, len(rows), want)
+						}
+						for i, row := range rows {
+							id := offset + int64(i)
+							if row["id"] != id || row["名称"] != fmt.Sprintf("城市😀%d", id) || row["备注"] != "第一行\n第二行,含逗号" {
+								t.Fatalf("row = %v", row)
+							}
+						}
+					}
+					stream, err := plugin.OpenTableReader(context.Background(), bytes.NewReader(data), opts)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer stream.Close(context.Background())
+					count := 0
+					for {
+						rows, err := stream.ReadRows(context.Background(), 7)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if len(rows) == 0 {
+							break
+						}
+						for _, row := range rows {
+							if row["id"] != int64(count) || row["名称"] != fmt.Sprintf("城市😀%d", count) {
+								t.Fatalf("stream row = %v", row)
+							}
+							count++
+						}
+					}
+					if count != 25 || opts.Encoding != originalEncoding {
+						t.Fatalf("count/options = %d/%s", count, opts.Encoding)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestCSVUnsupportedEncodingReadPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		data     []byte
+		encoding string
+	}{
+		{"utf32le", []byte{0xff, 0xfe, 0, 0, 0x69, 0, 0, 0}, ""},
+		{"utf32be", []byte{0, 0, 0xfe, 0xff, 0, 0, 0, 0x69}, ""},
+		{"unsupported", []byte("id,name\n1,city\n"), "unsupported-encoding"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plugin := NewPlugin(nil)
+			opts := format.DefaultParseOptions()
+			opts.Encoding = tc.encoding
+			if _, err := plugin.DescribeFormat(context.Background(), bytes.NewReader(tc.data), opts); err == nil {
+				t.Fatal("DescribeFormat accepted unsupported encoding")
+			}
+			if _, err := plugin.DescribeTable(context.Background(), bytes.NewReader(tc.data), opts); err == nil {
+				t.Fatal("DescribeTable accepted unsupported encoding")
+			}
+			if _, err := plugin.SampleTable(context.Background(), bytes.NewReader(tc.data), 0, 20, opts); err == nil {
+				t.Fatal("SampleTable accepted unsupported encoding")
+			}
+			if _, err := plugin.OpenTableReader(context.Background(), bytes.NewReader(tc.data), opts); err == nil {
+				t.Fatal("OpenTableReader accepted unsupported encoding")
+			}
+		})
+	}
+}
+
+type csvSourceErrorReader struct{}
+
+func (csvSourceErrorReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+func TestCSVReadPathsReturnSourceError(t *testing.T) {
+	plugin := NewPlugin(nil)
+	for _, utf16Source := range []bool{false, true} {
+		source := []byte("id,name\n1,city\n")
+		if utf16Source {
+			source = utf16Fixture(string(source), true, true)
+		}
+		input := func() io.Reader { return io.MultiReader(bytes.NewReader(source), csvSourceErrorReader{}) }
+		if _, err := plugin.DescribeTable(context.Background(), input(), nil); !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("DescribeTable error = %v", err)
+		}
+		if _, err := plugin.SampleTable(context.Background(), input(), 0, 20, nil); !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("SampleTable error = %v", err)
+		}
+		stream, err := plugin.OpenTableReader(context.Background(), input(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stream.Close(context.Background())
+		if _, err := stream.ReadRows(context.Background(), 20); !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("ReadRows error = %v", err)
+		}
 	}
 }

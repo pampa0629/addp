@@ -84,7 +84,7 @@ func extractSingleTableFileItemWithFormat(
 		PrimaryContentPath: filePath,
 		RefFiles:           []string{filePath},
 		SizeBytes:          &fileSize,
-		Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType)),
+		Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType, nil)),
 	}, nil
 }
 
@@ -133,7 +133,7 @@ func ExtractSingleTableFileItemStrict(
 		PrimaryContentPath: filePath,
 		RefFiles:           []string{filePath},
 		SizeBytes:          &fileSize,
-		Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType)),
+		Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType, nil)),
 	}, nil
 }
 

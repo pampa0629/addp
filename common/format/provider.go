@@ -50,9 +50,10 @@ type TableInfoProvider interface {
 	DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableDescribeResult, error)
 }
 
-// AccessIndexProvider 表示 table info provider 可生成访问定位索引。
+// AccessIndexProvider 按解析选项声明 table info provider 可生成的源字节定位索引。
+// options 为 nil 时查询默认能力；具体输入变体仍以 DescribeTable 返回的索引为准。
 type AccessIndexProvider interface {
-	SupportsAccessIndex() bool
+	SupportsAccessIndex(options *ParseOptions) bool
 }
 
 // SpatialEncodingCapability 描述空间 table reader / writer 对 geometry row value 编码的支持。

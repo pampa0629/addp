@@ -42,7 +42,7 @@ func (p *Plugin) Format() format.FormatType {
 	return format.FormatGeoJSON
 }
 
-func (p *Plugin) SupportsAccessIndex() bool {
+func (p *Plugin) SupportsAccessIndex(options *format.ParseOptions) bool {
 	return true
 }
 
