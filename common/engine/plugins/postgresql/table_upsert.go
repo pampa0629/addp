@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	commonquery "github.com/addp/common/query"
 )
 
@@ -112,7 +113,7 @@ func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.Conn
 		return err
 	}
 	defer tx.Rollback()
-	if err := upsertPostgresRowsTx(ctx, tx, schema, table, batch, keys); err != nil {
+	if err := upsertPostgresRowsTx(ctx, tx, schema, table, batch, keys, shared.TableWriteFieldTypes(opts.Fields)); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -121,7 +122,7 @@ func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.Conn
 	return nil
 }
 
-func upsertPostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string, batch *plugin.BatchData, keys []string) error {
+func upsertPostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string, batch *plugin.BatchData, keys []string, fieldTypes map[string]datatype.FieldType) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -139,7 +140,6 @@ func upsertPostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string,
 		}
 	}
 	chunkSize := effectivePostgresInsertChunkSize(len(columns), postgresDefaultInsertChunkSize)
-	fieldTypes := postgresWriteFieldTypes(batch.Fields)
 	for start := 0; start < len(batch.Rows); start += chunkSize {
 		end := start + chunkSize
 		if end > len(batch.Rows) {

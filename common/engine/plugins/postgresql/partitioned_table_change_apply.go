@@ -117,7 +117,7 @@ func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, con
 		}
 		if len(upsertRows) > 0 {
 			data := &plugin.BatchData{Fields: opts.Fields, Spatial: opts.SpatialInfo, Rows: upsertRows}
-			if err := upsertPostgresRowsTx(ctx, tx, schema, table, data, keys); err != nil {
+			if err := upsertPostgresRowsTx(ctx, tx, schema, table, data, keys, pluginshared.TableWriteFieldTypes(opts.Fields)); err != nil {
 				return nil, err
 			}
 		}

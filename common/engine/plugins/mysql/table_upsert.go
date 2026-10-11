@@ -126,6 +126,7 @@ func upsertMySQLRowsTx(ctx context.Context, tx *sql.Tx, database, table string, 
 		return fmt.Errorf("mysql upsert has too many columns for insert bind parameters")
 	}
 	geometrySRIDs := mysqlGeometrySRIDs(opts.Fields, opts.SpatialInfo)
+	fieldTypes := shared.TableWriteFieldTypes(opts.Fields)
 	for start := 0; start < len(batch.Rows); start += chunkSize {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -134,7 +135,7 @@ func upsertMySQLRowsTx(ctx context.Context, tx *sql.Tx, database, table string, 
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		statement, args, err := buildMySQLInsertSQL(database, table, columns, batch.Rows[start:end], geometrySRIDs)
+		statement, args, err := buildMySQLInsertSQL(database, table, columns, batch.Rows[start:end], geometrySRIDs, fieldTypes)
 		if err != nil {
 			return fmt.Errorf("build mysql upsert rows %d-%d: %w", start, end, err)
 		}

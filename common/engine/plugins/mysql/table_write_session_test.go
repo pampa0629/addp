@@ -62,7 +62,7 @@ func TestBuildMySQLInsertSQL(t *testing.T) {
 		{"id": 2, "city`name": "Shanghai"},
 	}
 
-	sql, args, err := buildMySQLInsertSQL("analytics", "target table", []string{"id", "city`name"}, rows, nil)
+	sql, args, err := buildMySQLInsertSQL("analytics", "target table", []string{"id", "city`name"}, rows, nil, nil)
 	if err != nil {
 		t.Fatalf("buildMySQLInsertSQL() error = %v", err)
 	}
@@ -89,6 +89,7 @@ func TestBuildMySQLInsertSQLConvertsEWKBGeometryToMySQLWKB(t *testing.T) {
 		[]string{"id", "shape"},
 		[]map[string]interface{}{{"id": 1, "shape": ewkbValue}},
 		map[string]int{"shape": 4326},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildMySQLInsertSQL() error = %v", err)

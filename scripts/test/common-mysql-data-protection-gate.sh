@@ -5,6 +5,17 @@
 
 set -euo pipefail
 
+test_group=all
+if [ "$#" -gt 0 ]; then
+    if [ "$#" -ne 2 ] || [ "$1" != --test ]; then
+        echo "usage: $0 [--test all|typed-write]" >&2; exit 2
+    fi
+    case "$2" in
+        all|typed-write) test_group="$2" ;;
+        *) echo "usage: $0 [--test all|typed-write]" >&2; exit 2 ;;
+    esac
+fi
+
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-mysql-data-protection.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT
@@ -23,15 +34,25 @@ if [ -z "${ADDP_TEST_MYSQL_PASSWORD:-}" ]; then
     exit 1
 fi
 
+test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts)$'
+if [ "$test_group" = typed-write ]; then
+    test_pattern='^TestIntegrationMySQLTypedJSONWrites$'
+fi
+
 cd "$ROOT_DIR/common"
 ADDP_MYSQL_INTEGRATION=1 \
     go test ./engine/plugins/mysql \
-    -run '^TestIntegrationMySQL(AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts)$' \
+    -run "$test_pattern" \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-mysql-data-protection.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-mysql-data-protection.log"; then
     echo "MySQL data protection provider gate refuses skipped tests" >&2
     exit 1
+fi
+
+if [ "$test_group" != all ]; then
+    echo "Common MySQL $test_group group passed (not the full gate)"
+    exit 0
 fi
 
 cd "$ROOT_DIR/manager/backend"

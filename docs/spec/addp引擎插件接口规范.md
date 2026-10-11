@@ -303,6 +303,12 @@ type StoreProvider interface {
 - `ChangeStreamReaderProvider.OpenChangeStream()`：打开 partitioned change stream，按 provider position seek、poll 原始记录并支持受控 pause/resume/close。Kafka topic 不能伪装成 `BatchReadableProvider` 或 content `stream_read`。
 - `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。PostgreSQL 与 MySQL 当前真实实现 `upsert|delete|skip`；`skip` 只推进 ledger，不修改业务行。同一 key 在批内只保留最高 position 的最终数据操作，目标行变化和对应 Provider 的 apply ledger 必须原子提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
 
+表格写入的值编码必须依据请求中已声明的 `FieldInfo.Type`，不能只完成建表类型映射后把容器原样交给数据库驱动。Table write session 固定使用打开时的字段类型；upsert 使用 `TableUpsertOptions.Fields`，不能由后续批次覆盖。批量写入使用 `BatchData.Fields`。
+
+`json` 字段的统一输入契约为：Go 数组、对象、数字和布尔值编码为 JSON 文本；`nil`、nil `[]byte` 和 nil `json.RawMessage` 表达 SQL NULL，typed nil 数组／对象表达 JSON `null`，非 nil 空数组／对象表达 `[]`／`{}`。`string`、`[]byte` 和 `json.RawMessage` 表达已编码 JSON，必须是完整合法文档，不能再次编码或先解码为浮点数；JSON 字符串标量必须带 JSON 引号。非法 JSON 或不可编码的 Go 值必须返回带字段定位的错误，不得用普通字符串格式化兜底。该契约不把普通文本、`bytes`、原生 `array` 或空间字段解释成 JSON；空间与二进制转换仍归引擎 Provider。
+
+统一编码由 `common/engine/plugins/shared` 独占实现。PostgreSQL（含协议复用 Provider）、MySQL、TiDB 与 OceanBase 的表格写入使用该入口；其他已有 Provider 必须按同一契约收敛，不能以仅接受预编码字符串作为最终实现。
+
 动态记录读取的强类型契约为：
 
 ```go

@@ -85,6 +85,7 @@ func (p *MySQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin
 		table:         table,
 		columns:       columns,
 		geometrySRIDs: mysqlGeometrySRIDs(opts.Fields, opts.SpatialInfo),
+		fieldTypes:    shared.TableWriteFieldTypes(opts.Fields),
 		chunkSize:     effectiveMySQLInsertChunkSize(len(columns), mysqlDefaultInsertChunkSize),
 	}, nil
 }
@@ -177,7 +178,7 @@ func effectiveMySQLInsertChunkSize(columnCount, requested int) int {
 	return requested
 }
 
-func buildMySQLInsertSQL(database, table string, columns []string, rows []map[string]interface{}, geometrySRIDs map[string]int) (string, []interface{}, error) {
+func buildMySQLInsertSQL(database, table string, columns []string, rows []map[string]interface{}, geometrySRIDs map[string]int, fieldTypes map[string]datatype.FieldType) (string, []interface{}, error) {
 	dialect := mysqlDialect()
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
@@ -193,14 +194,18 @@ func buildMySQLInsertSQL(database, table string, columns []string, rows []map[st
 
 	args := make([]interface{}, 0, len(rows)*len(columns))
 	valueGroups := make([]string, 0, len(rows))
-	for _, row := range rows {
+	for rowIndex, row := range rows {
 		group := make([]string, len(columns))
 		for i, column := range columns {
 			value := row[column]
 			expectedSRID, isGeometry := geometrySRIDs[column]
 			if !isGeometry || value == nil {
 				group[i] = "?"
-				args = append(args, value)
+				encoded, err := shared.EncodeTableWriteValue(value, fieldTypes[column])
+				if err != nil {
+					return "", nil, fmt.Errorf("mysql write row %d column %q: %w", rowIndex, column, err)
+				}
+				args = append(args, encoded)
 				continue
 			}
 			wkbValue, srid, err := mysqlGeometryWriteValue(value, expectedSRID)
@@ -268,6 +273,7 @@ type mysqlTableWriteSession struct {
 	table          string
 	columns        []string
 	geometrySRIDs  map[string]int
+	fieldTypes     map[string]datatype.FieldType
 	chunkSize      int
 	batchesWritten int64
 	rowsWritten    int64
@@ -298,7 +304,7 @@ func (s *mysqlTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.B
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		insertSQL, args, err := buildMySQLInsertSQL(s.database, s.table, s.columns, batch.Rows[start:end], s.geometrySRIDs)
+		insertSQL, args, err := buildMySQLInsertSQL(s.database, s.table, s.columns, batch.Rows[start:end], s.geometrySRIDs, s.fieldTypes)
 		if err != nil {
 			return fmt.Errorf("build mysql table write session rows %d-%d: %w", start, end, err)
 		}

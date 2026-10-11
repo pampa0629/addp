@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	commonquery "github.com/addp/common/query"
 )
 
@@ -49,7 +50,7 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 			chunkSize = value
 		}
 	}
-	fieldTypes := postgresWriteFieldTypes(batch.Fields)
+	fieldTypes := shared.TableWriteFieldTypes(batch.Fields)
 	if shouldUseCopyBatchWrite(opts, batch) {
 		return p.writeBatchWithCopy(ctx, db, schema, table, columns, batch.Rows, chunkSize, fieldTypes)
 	}

@@ -82,6 +82,7 @@ func TestIntegrationPostgresTypedJSONWrites(t *testing.T) {
 					return session.Close(ctx)
 				}
 				if method == "upsert" {
+					batch.Fields = nil
 					return pg.UpsertBatch(ctx, connInfo, path, batch, plugin.TableUpsertOptions{Fields: fields, Keys: []string{"id"}})
 				}
 				return pg.WriteBatch(ctx, connInfo, path, batch, plugin.BatchWriteOptions{Method: method})

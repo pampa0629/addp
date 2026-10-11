@@ -138,6 +138,7 @@ func (w MySQLCompatibleTableWriter) OpenTableWriteSession(ctx context.Context, c
 		database:        database,
 		table:           table,
 		columns:         columns,
+		fieldTypes:      TableWriteFieldTypes(opts.Fields),
 		chunkSize:       mysqlCompatibleInsertChunkSize(len(columns), mysqlCompatibleDefaultInsertChunkSize),
 	}, nil
 }
@@ -503,7 +504,7 @@ func mysqlCompatibleInsertChunkSize(columnCount, requested int) int {
 	return requested
 }
 
-func mysqlCompatibleInsertSQL(database, table string, columns []string, rows []map[string]interface{}) (string, []interface{}) {
+func mysqlCompatibleInsertSQL(database, table string, columns []string, rows []map[string]interface{}, fieldTypes map[string]datatype.FieldType) (string, []interface{}, error) {
 	dialect := mysqlCompatibleDialect()
 	quotedColumns := make([]string, len(columns))
 	for index, column := range columns {
@@ -516,11 +517,15 @@ func mysqlCompatibleInsertSQL(database, table string, columns []string, rows []m
 	for rowIndex, row := range rows {
 		valueGroups[rowIndex] = valueGroup
 		for _, column := range columns {
-			args = append(args, row[column])
+			value, err := EncodeTableWriteValue(row[column], fieldTypes[column])
+			if err != nil {
+				return "", nil, fmt.Errorf("write row %d column %q: %w", rowIndex, column, err)
+			}
+			args = append(args, value)
 		}
 	}
 	statement := "INSERT INTO " + dialect.QualifiedTable(database, table) + " (" + strings.Join(quotedColumns, ", ") + ") VALUES " + strings.Join(valueGroups, ", ")
-	return statement, args
+	return statement, args, nil
 }
 
 func mysqlCompatibleDialect() commonquery.Dialect {
@@ -535,6 +540,7 @@ type mysqlCompatibleTableWriteSession struct {
 	database        string
 	table           string
 	columns         []string
+	fieldTypes      map[string]datatype.FieldType
 	chunkSize       int
 	batchesWritten  int64
 	rowsWritten     int64
@@ -565,7 +571,10 @@ func (s *mysqlCompatibleTableWriteSession) WriteBatch(ctx context.Context, batch
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		statement, args := mysqlCompatibleInsertSQL(s.database, s.table, s.columns, batch.Rows[start:end])
+		statement, args, err := mysqlCompatibleInsertSQL(s.database, s.table, s.columns, batch.Rows[start:end], s.fieldTypes)
+		if err != nil {
+			return fmt.Errorf("encode %s table write rows %d-%d: %w", s.engineType, start, end, err)
+		}
 		if _, err := s.tx.ExecContext(ctx, statement, args...); err != nil {
 			return fmt.Errorf("execute %s table write session rows %d-%d: %w", s.engineType, start, end, err)
 		}

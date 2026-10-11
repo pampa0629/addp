@@ -4,13 +4,15 @@ ADDP 平台的共享代码模块，提供各个微服务模块通用的工具和
 
 ## 包说明
 
-### PostgreSQL 表格写入
+### 类型感知的表格写入
 
-PostgreSQL COPY session、批量 COPY 与 INSERT（含 upsert）按 `FieldInfo.Type` 使用同一值编码入口。`json` 字段中的 Go 数组、对象、数字和布尔值编码为 JSON 文本；`nil`、nil 字节切片和 nil `RawMessage` 为 SQL NULL，非 nil 的空数组／对象分别为 `[]`／`{}`，typed nil 数组／对象编码为 JSON `null`。`string`、`[]byte` 和 `json.RawMessage` 表达已编码 JSON，必须是完整合法的 JSON，不重复编码；JSON 字符串标量应包含 JSON 引号。非法 JSON 或不可 JSON 编码的 Go 值返回带字段定位的错误，不转换为普通字符串兜底。
+`engine/plugins/shared.EncodeTableWriteValue` 独占 JSON 值编码。PostgreSQL COPY session、批量 COPY、INSERT（含 upsert），以及 MySQL／TiDB／OceanBase 的 INSERT session 和 upsert，按 `FieldInfo.Type` 使用同一入口；MySQL 空间表中的非空间 JSON 列也使用该入口。`json` 字段中的 Go 数组、对象、数字和布尔值编码为 JSON 文本；`nil`、nil 字节切片和 nil `RawMessage` 为 SQL NULL，非 nil 的空数组／对象分别为 `[]`／`{}`，typed nil 数组／对象编码为 JSON `null`。`string`、`[]byte` 和 `json.RawMessage` 表达已编码 JSON，必须是完整合法的 JSON，不重复编码；JSON 字符串标量应包含 JSON 引号。非法 JSON 或不可 JSON 编码的 Go 值返回带字段定位的错误，不转换为普通字符串兜底。
 
-编码只由声明的字段类型决定，不把普通文本、`bytes` 或原生 `array` 自动解释为 JSON。空间 `[]byte` 继续使用十六进制 EWKB，普通 `bytes` 保持 BYTEA 语义。COPY session 的类型来自打开时的字段定义，不由后续批次覆盖。验证入口为 `make test-go`、`make test-common-postgres`；真实 JSONB 回归由现有 Common PostgreSQL T2 门禁和 Release/T2 CI 执行。
+编码只由声明的字段类型决定，不把普通文本、`bytes` 或原生 `array` 自动解释为 JSON。PostgreSQL 空间 `[]byte` 继续使用十六进制 EWKB，MySQL 空间值继续使用 WKB 与显式 SRID；普通 `bytes` 保持各引擎原生二进制语义。Session 的类型来自打开时的字段定义，upsert 类型来自 options，不由后续批次覆盖。验证入口为 `make test-go`、`make test-common-postgres`；真实 JSONB 回归由现有 Common PostgreSQL T2 门禁和 Release/T2 CI 执行；MySQL、OceanBase、TiDB 的 JSON、NULL、二进制及失败回滚回归分别由 `make test-common-mysql-data-protection`、`make test-common-oceanbase`、`make test-common-tidb` 自动发现，MySQL 同时验证空间混合表。
 
-只复验类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。
+MySQL 可通过相同测试连接条件运行 `bash scripts/test/common-mysql-data-protection-gate.sh --test typed-write`，仅验证类型感知写入；默认入口仍运行完整门禁。
+
+只复验 PostgreSQL 类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。
 
 ### client
 提供与其他服务交互的客户端：

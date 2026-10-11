@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	"github.com/addp/common/resume"
 	"github.com/lib/pq"
 )
@@ -59,7 +60,7 @@ func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 		schema:     schema,
 		table:      table,
 		columns:    columns,
-		fieldTypes: postgresWriteFieldTypes(opts.Fields),
+		fieldTypes: shared.TableWriteFieldTypes(opts.Fields),
 	}, nil
 }
 

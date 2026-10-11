@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 )
 
 func TestBatchColumnsUsesFieldOrder(t *testing.T) {
@@ -108,7 +109,7 @@ func TestPostgresWriteFieldTypes(t *testing.T) {
 		{Name: "geom", Type: "geometry"},
 	}
 
-	got := postgresWriteFieldTypes(fields)
+	got := shared.TableWriteFieldTypes(fields)
 	if got["geom"] != datatype.FieldTypeGeometry {
 		t.Fatal("geom was not detected as geometry")
 	}

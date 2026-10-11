@@ -125,7 +125,7 @@ func (w MySQLCompatibleTableWriter) UpsertBatch(ctx context.Context, connInfo pl
 		return fmt.Errorf("begin %s upsert: %w", w.engineType(), err)
 	}
 	defer tx.Rollback()
-	if err := w.upsertRowsTx(ctx, tx, database, table, batch, keys); err != nil {
+	if err := w.upsertRowsTx(ctx, tx, database, table, batch, keys, TableWriteFieldTypes(opts.Fields)); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -134,7 +134,7 @@ func (w MySQLCompatibleTableWriter) UpsertBatch(ctx context.Context, connInfo pl
 	return nil
 }
 
-func (w MySQLCompatibleTableWriter) upsertRowsTx(ctx context.Context, tx *sql.Tx, database, table string, batch *plugin.BatchData, keys []string) error {
+func (w MySQLCompatibleTableWriter) upsertRowsTx(ctx context.Context, tx *sql.Tx, database, table string, batch *plugin.BatchData, keys []string, fieldTypes map[string]datatype.FieldType) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -177,7 +177,10 @@ func (w MySQLCompatibleTableWriter) upsertRowsTx(ctx context.Context, tx *sql.Tx
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		statement, args := mysqlCompatibleInsertSQL(database, table, columns, batch.Rows[start:end])
+		statement, args, err := mysqlCompatibleInsertSQL(database, table, columns, batch.Rows[start:end], fieldTypes)
+		if err != nil {
+			return fmt.Errorf("encode %s upsert rows %d-%d: %w", w.engineType(), start, end, err)
+		}
 		upsertClause, err := mysqlCompatibleOnDuplicateKeyClause(columns, keys, w.UpsertValueReference)
 		if err != nil {
 			return fmt.Errorf("build %s upsert clause: %w", w.engineType(), err)

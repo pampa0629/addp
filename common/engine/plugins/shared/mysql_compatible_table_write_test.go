@@ -63,12 +63,16 @@ func TestMySQLCompatibleTableWriterBuildsSafeAdditiveEvolution(t *testing.T) {
 }
 
 func TestMySQLCompatibleTableWriterBuildsDeterministicInsert(t *testing.T) {
-	statement, args := mysqlCompatibleInsertSQL(
+	statement, args, err := mysqlCompatibleInsertSQL(
 		"business",
 		"orders",
 		[]string{"id", "name"},
 		[]map[string]interface{}{{"id": int64(1), "name": "王小丽"}, {"id": int64(2), "name": "OceanBase"}},
+		nil,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if want := "INSERT INTO `business`.`orders` (`id`, `name`) VALUES (?, ?), (?, ?)"; statement != want {
 		t.Fatalf("mysqlCompatibleInsertSQL() = %q, want %q", statement, want)
 	}
