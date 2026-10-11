@@ -180,7 +180,10 @@ func (s *PointCloudCOPCTaskService) DeleteResult(ctx context.Context, id uint, t
 	if result == nil {
 		return errors.New("point cloud COPC result not found")
 	}
-	if strings.TrimSpace(result.StorageRef) != "" && s.cleaner != nil {
+	if strings.TrimSpace(result.StorageRef) != "" {
+		if s.cleaner == nil {
+			return errors.New("point cloud COPC cleaner is not configured")
+		}
 		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
 			return err
 		}

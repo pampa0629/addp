@@ -182,7 +182,10 @@ func (s *GaussianSplatKSplatTaskService) DeleteResult(ctx context.Context, id ui
 	if result == nil {
 		return errors.New("gaussian splat KSplat result not found")
 	}
-	if strings.TrimSpace(result.StorageRef) != "" && s.cleaner != nil {
+	if strings.TrimSpace(result.StorageRef) != "" {
+		if s.cleaner == nil {
+			return errors.New("gaussian splat KSplat cleaner is not configured")
+		}
 		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
 			return err
 		}

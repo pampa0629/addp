@@ -288,12 +288,12 @@ func main() {
 	rasterCOGTaskSvc.SetBucket(minioBucket)
 	rasterCOGTaskSvc.SetCleaner(managedObjectCleaner)
 	model3DGLBTaskSvc.SetBucket(minioBucket)
-	model3DGLBTaskSvc.SetCleaner(service.NewMinIOModel3DGLBCleaner(minioClient, minioBucket))
+	model3DGLBTaskSvc.SetCleaner(managedObjectCleaner)
 	gaussianSplatKSplatTaskSvc.SetBucket(minioBucket)
-	gaussianSplatKSplatTaskSvc.SetCleaner(service.NewMinIOGaussianSplatKSplatCleaner(minioClient, minioBucket))
+	gaussianSplatKSplatTaskSvc.SetCleaner(managedObjectCleaner)
 	gaussianSplatKSplatTaskSvc.SetMetaClient(metaClient)
 	pointCloudCOPCTaskSvc.SetBucket(minioBucket)
-	pointCloudCOPCTaskSvc.SetCleaner(service.NewMinIOPointCloudCOPCCleaner(minioClient, minioBucket))
+	pointCloudCOPCTaskSvc.SetCleaner(managedObjectCleaner)
 	var postGISTileGenerator *mvt.PMTilesGenerator
 	if systemClient != nil {
 		tileCacheTaskSvc.SetSourceEngineResolver(func(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error) {

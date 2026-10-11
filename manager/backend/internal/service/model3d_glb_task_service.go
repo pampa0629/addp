@@ -167,7 +167,10 @@ func (s *Model3DGLBTaskService) DeleteResult(ctx context.Context, id uint, tenan
 	if result == nil {
 		return errors.New("model 3d GLB result not found")
 	}
-	if strings.TrimSpace(result.StorageRef) != "" && s.cleaner != nil {
+	if strings.TrimSpace(result.StorageRef) != "" {
+		if s.cleaner == nil {
+			return errors.New("model3d GLB cleaner is not configured")
+		}
 		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
 			return err
 		}
