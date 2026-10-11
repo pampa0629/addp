@@ -35,6 +35,8 @@ class RuntimeApplication(BaseApplication):
             'bind': f"{os.getenv('WORKFLOW_BIND_HOST', '0.0.0.0')}:{int(os.getenv('PORT', '8098'))}",
             'workers': 1, 'worker_class': 'gthread', 'threads': 4,
             'timeout': 300, 'preload_app': False,
+            'accesslog': '-',
+            'access_log_format': '%(t)s %(m)s %(U)s %(s)s %(L)s',
             'post_worker_init': post_worker_init,
         }.items():
             self.cfg.set(key, value)

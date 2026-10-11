@@ -5,6 +5,8 @@ Spark Connector - 动态连接到用户注册的Spark集群
 
 import os
 import logging
+import faulthandler
+import threading
 from typing import Dict, Tuple
 from pyspark.sql import SparkSession
 from system_client import get_engine
@@ -83,7 +85,20 @@ class SparkConnector:
                     .config("spark.driver.bindAddress", "0.0.0.0")
 
         # 创建会话
-        spark = builder.getOrCreate()
+        # Temporary Hosted cold-start diagnosis: capture request threads while
+        # the first JVM is starting, without changing scheduling or readiness.
+        startup_finished = threading.Event()
+        def trace_startup():
+            while not startup_finished.wait(2):
+                logger.warning("Spark startup thread snapshot")
+                faulthandler.dump_traceback(all_threads=True)
+        startup_trace = threading.Thread(target=trace_startup, daemon=True)
+        startup_trace.start()
+        try:
+            spark = builder.getOrCreate()
+        finally:
+            startup_finished.set()
+            startup_trace.join()
 
         # 注册Sedona函数 (如果需要)
         try:
