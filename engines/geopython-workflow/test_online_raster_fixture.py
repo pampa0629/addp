@@ -1213,7 +1213,8 @@ def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old
     for key in fixture.TILE_WINDOWS:
         LocalMinio.objects['target', 'raster-target', 'tiles-basic/'+key+'.tif'] = (output/(key+'.tif')).read_bytes()
     initial = fixture.worker('verify-tiles', outside_artifacts)
-    first_create = LocalMinio.objects['target', 'raster-target', 'tiles-basic/r0_c0.tif']
+    create_bytes = {key: LocalMinio.objects['target', 'raster-target', 'tiles-basic/'+key+'.tif'] for key in fixture.TILE_WINDOWS}
+    first_create = create_bytes['r0_c0']
     prepared = fixture.worker('prepare-tiles-replace', outside_artifacts)
     assert prepared['tiles'] == initial['tiles']
     assert LocalMinio.objects['target', 'raster-target', fixture.TILE_KEEP_NAME] == fixture.TILE_KEEP_BYTES
@@ -1266,8 +1267,30 @@ def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old
             LocalMinio.objects.clear()
             LocalMinio.objects.update(baseline)
 
+    for prefix, (_, count) in fixture.TILE_CLEANUP_CASES.items():
+        for key in list(fixture.TILE_WINDOWS)[:count]:
+            LocalMinio.objects['target','raster-target',prefix+'/'+key+'.tif'] = create_bytes[key]
+        evidence = fixture.worker('verify-'+prefix, outside_artifacts)
+        assert evidence['tiles'] == {key: initial['tiles'][key] for key in list(fixture.TILE_WINDOWS)[:count]}
+        assert evidence['preserved_tiles_sha256'] == partial['preserved_tiles_sha256']
+        assert evidence['preserved_failure_sha256'][fixture.TILE_FAILURE_PREFIX] == {'r0_c0': initial['tiles']['r0_c0']['sha256']}
+        if count == 4:
+            assert evidence['preserved_failure_sha256']['tiles-cleanup-mid'] == {'r0_c0': initial['tiles']['r0_c0']['sha256']}
+        baseline = dict(LocalMinio.objects)
+        for fault in ('missing-confirmed', 'unconfirmed-object', 'changed-confirmed', 'changed-prior'):
+            try:
+                key = ('target', 'raster-target', prefix+'/r0_c0.tif')
+                if fault == 'missing-confirmed': del LocalMinio.objects[key]
+                elif fault == 'unconfirmed-object': LocalMinio.objects['target','raster-target',prefix+'/extra.tif'] = old
+                elif fault == 'changed-prior': LocalMinio.objects[confirmed_key] = old
+                else: LocalMinio.objects[key] = old
+                with pytest.raises((fixture.FixtureError, KeyError)): fixture.worker('verify-'+prefix, outside_artifacts)
+            finally:
+                LocalMinio.objects.clear(); LocalMinio.objects.update(baseline)
 
-def test_batch_failure_public_dag_and_physical_oracle_preserve_confirmed_prefix(tmp_path, monkeypatch):
+
+@pytest.mark.parametrize('failure', ['write', 'cleanup-mid', 'cleanup-final'])
+def test_batch_failure_public_dag_and_physical_oracle_preserve_confirmed_prefix(tmp_path, monkeypatch, failure):
     from workflow_engine import execute_workflow
     import operators.raster_compute as compute
     scene = importlib.import_module('scripts.test.raster-workflow-online')
@@ -1284,20 +1307,36 @@ def test_batch_failure_public_dag_and_physical_oracle_preserve_confirmed_prefix(
         'kind':'directory','format':'tiff','name':'tiles','write_mode':'create',
         'access':{'method':'mounted_path','path':str(output)}}}
     publish = compute.publish_target_file
-    attempted = []
+    attempted, events = [], []
     def deny_second(path, plan):
         attempted.append(plan['target']['name'])
-        if len(attempted) == 2: raise OSError('AccessDenied: private storage diagnostic')
-        return publish(path, plan)
+        if failure == 'write' and len(attempted) == 2: raise OSError('AccessDenied: private storage diagnostic')
+        result = publish(path, plan)
+        if (failure == 'cleanup-mid' and len(attempted) == 1) or (failure == 'cleanup-final' and len(attempted) == 4):
+            import subprocess, sys, hashlib
+            events.append(json.loads(subprocess.check_output([sys.executable, '-c', fixture.CLEANUP_OBSTACLE_SCRIPT,
+                str(path.parent.parent), hashlib.sha256(path.read_bytes()).hexdigest(), str(path.stat().st_size)], text=True)))
+        return result
     monkeypatch.setattr(compute, 'publish_target_file', deny_second)
     result = execute_workflow(definition)
     assert result['status'] == 'failed'
     manifest = json.loads(result['all_results']['save_tiles'])
-    assert manifest['completed_tiles'] == 1 and manifest['publication'] == 'unknown'
-    assert manifest['failed_tile'] == fixture.TILE_FAILURE_KEY
-    assert set(manifest['tiles']) == {'r0_c0'}
-    assert [path.name for path in output.iterdir()] == ['r0_c0.tif']
-    evidence = fixture.verify_tile_file(output/'r0_c0.tif','r0_c0')
-    assert evidence['size_bytes'] == manifest['tiles']['r0_c0']['size_bytes'] > 0
+    count = 4 if failure == 'cleanup-final' else 1
+    assert manifest['completed_tiles'] == count
+    if count < 4:
+        assert manifest['publication'] == ('unknown' if failure == 'write' else 'not_attempted')
+        assert manifest['failed_tile'] == fixture.TILE_FAILURE_KEY
+    else:
+        assert 'publication' not in manifest and 'failed_tile' not in manifest
+    assert set(manifest['tiles']) == set(list(fixture.TILE_WINDOWS)[:count])
+    assert set(path.name for path in output.iterdir()) == {key+'.tif' for key in manifest['tiles']}
+    for key, fact in manifest['tiles'].items():
+        evidence = fixture.verify_tile_file(output/(key+'.tif'), key)
+        assert type(evidence['size_bytes']) is int
+        assert evidence['size_bytes'] == fact['size_bytes'] > 0
+    if failure != 'write':
+        assert len(events) == 1 and events[0]['obstacle_created'] is True
+        assert not Path(events[0]['workspace']).exists()
+        assert events[0]['workspace'] not in json.dumps(result)
     assert source.read_bytes() == original
     assert 'private storage diagnostic' not in json.dumps(result)

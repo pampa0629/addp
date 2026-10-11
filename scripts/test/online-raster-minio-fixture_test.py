@@ -1,3 +1,7 @@
+import http.client
+import http.server
+import hashlib
+import threading
 import importlib.util
 import json
 import math
@@ -170,12 +174,103 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
                 self.assertEqual(descriptor['connection_info'][key], credentials[key])
                 if role == 'target':
                     self.assertNotEqual(credentials[key], config[role][key])
-        self.assertEqual(len(self.commands), 2)
-        for args in self.commands:
+        self.assertEqual(len(self.commands), 3)
+        proxy = self.commands[-1]
+        self.assertIn(m.CONTAINERS[3], proxy)
+        self.assertIn("/var/run/docker.sock:/var/run/docker.sock", proxy)
+        self.assertEqual(json.loads((self.root / "raster-target-engine.json").read_text())["connection_info"]["endpoint"], "127.0.0.1:59014")
+        for args in self.commands[:2]:
             self.assertIn('type=tmpfs,destination=/data', args)
             self.assertIn('com.addp.online-fixture=raster-workflow', args)
             self.assertIn('--env-file', args)
             for entry in config.values(): self.assertNotIn(entry['secret_key'], ' '.join(args))
+
+    def test_cleanup_proxy_preserves_signed_request_and_confirms_backend_before_fault_and_reply(self):
+        received, injected = [], []
+        class Backend(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_PUT(inner):
+                body = inner.rfile.read(int(inner.headers['Content-Length']))
+                received.append((inner.path, body, inner.headers['Host'], inner.headers['Authorization']))
+                status = 403 if 'denied' in body.decode() else 200
+                inner.send_response(status); inner.send_header('ETag', 'fixture-etag'); inner.end_headers()
+                inner.wfile.write(b'backend-body')
+        backend = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Backend)
+        self.addCleanup(backend.server_close)
+        thread = threading.Thread(target=backend.serve_forever, daemon=True); thread.start()
+        self.addCleanup(backend.shutdown)
+        m.private_json(self.root/'raster-fixture.json', {'target':{'endpoint':'127.0.0.1:'+str(backend.server_port),'bucket':'raster-target'}})
+        def inject(root, prefix, key, body, status):
+            self.assertEqual(received[-1][1], body)
+            self.assertEqual(status, 200)
+            injected.append((prefix, key, body))
+        proxy = m.cleanup_proxy(self.root, ('127.0.0.1',0), inject)
+        self.addCleanup(proxy.server_close)
+        threading.Thread(target=proxy.serve_forever, daemon=True).start()
+        self.addCleanup(proxy.shutdown)
+        for path, body, expected in (
+            ('/raster-target/ordinary.tif', b'normal', 200),
+            ('/raster-target/tiles-cleanup-mid/r0_c0.tif', b'denied', 403),
+            ('/raster-target/tiles-cleanup-mid/r0_c0.tif', b'confirmed-first', 200),
+            ('/raster-target/tiles-cleanup-final/r160_c160.tif', b'confirmed-last', 200),
+            ('/raster-target/tiles-cleanup-mid/r0_c0.tif', b'repeated', 502)):
+            connection = http.client.HTTPConnection('127.0.0.1', proxy.server_port, timeout=5)
+            connection.request('PUT', path, body, {'Host':'signed-host:59014','Authorization':'private-signature'})
+            response = connection.getresponse(); data = response.read(); connection.close()
+            self.assertEqual(response.status, expected)
+            if expected != 502: self.assertEqual(data, b'backend-body')
+        self.assertEqual(len(injected), 2)
+        self.assertTrue(all(host == 'signed-host:59014' and auth == 'private-signature' for _,_,host,auth in received))
+
+    def test_obstacle_requires_one_exact_regular_file_and_keeps_uploaded_bytes(self):
+        body = b'confirmed COG bytes'
+        digest = hashlib.sha256(body).hexdigest()
+        workspace = self.root/'addp-raster-test'; workspace.mkdir()
+        path = workspace/'encoded.tif'; path.write_bytes(body)
+        args = [sys.executable, '-c', m.CLEANUP_OBSTACLE_SCRIPT, str(self.root), digest, str(len(body))]
+        for fault in ('wrong-hash', 'duplicate', 'symlink'):
+            with self.subTest(fault=fault):
+                other = workspace/'other.tif'
+                if fault == 'duplicate': other.write_bytes(body)
+                if fault == 'symlink':
+                    path.unlink(); path.symlink_to(self.root/'outside.tif'); (self.root/'outside.tif').write_bytes(body)
+                result = subprocess.run(args if fault != 'wrong-hash' else args[:-2]+['0'*64,args[-1]], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(Path(str(path)+'.msk').exists())
+                if other.exists(): other.unlink()
+                if path.is_symlink(): path.unlink(); path.write_bytes(body)
+        event = json.loads(subprocess.check_output(args, text=True))
+        self.assertEqual(event['sha256'], digest)
+        self.assertEqual(event['size_bytes'], len(body))
+        self.assertEqual(path.read_bytes(), body)
+        self.assertTrue(Path(str(path)+'.msk').is_dir())
+        with self.assertRaises(OSError): Path(str(path)+'.msk').unlink()
+        self.assertNotEqual(subprocess.run(args, capture_output=True).returncode, 0)
+
+    def test_runtime_exec_checks_exit_and_parses_only_complete_stdout_frames(self):
+        container = {'Config':{'Labels':{'com.addp.online-runtime':m.SUITE}},'State':{'Running':True}}
+        body = b'{"obstacle_created":true}'
+        frame = lambda stream, data: bytes([stream,0,0,0])+len(data).to_bytes(4,'big')+data
+        valid = frame(2,b'private stderr')+frame(1,body)
+        for output, status, accepted in (
+            (valid, {'Running':False,'ExitCode':0}, True),
+            (valid, {'Running':False,'ExitCode':1}, False),
+            (valid, {'Running':True,'ExitCode':0}, False),
+            (valid[:-1], {'Running':False,'ExitCode':0}, False),
+            (frame(3,body), {'Running':False,'ExitCode':0}, False)):
+            with self.subTest(accepted=accepted, status=status), patch.object(m,'docker_request',side_effect=[
+                json.dumps(container).encode(), b'{"Id":"owned-exec"}', output, json.dumps(status).encode()]) as request:
+                if accepted: self.assertEqual(m.runtime_exec(['script','arg']), {'obstacle_created':True})
+                else:
+                    with self.assertRaises(m.FixtureError): m.runtime_exec(['script','arg'])
+                self.assertEqual(request.call_args_list[1].args[2]['Cmd'], ['python','-c','script','arg'])
+
+    def test_runtime_exec_rejects_unowned_container_before_exec_and_redacts_private_errors(self):
+        for container in ({'Config':{'Labels':{}},'State':{'Running':True}},
+                          {'Config':{'Labels':{'com.addp.online-runtime':m.SUITE}},'State':{'Running':False}}):
+            with patch.object(m, 'docker_request', return_value=json.dumps(container).encode()) as request:
+                with self.assertRaises(m.FixtureError): m.runtime_exec(['private script'])
+                self.assertEqual(request.call_count, 1)
 
     def provision_writer(self, fault=None):
         entry = {'endpoint': 'target:9000', 'bucket': 'raster-target',

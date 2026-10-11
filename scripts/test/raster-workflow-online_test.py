@@ -137,11 +137,12 @@ class Client:
                 source = definition['tasks'][0]['params']['locator']
                 mode = definition['tasks'][-1]['params']['write_mode']
                 prefix = definition['tasks'][-1]['params']['target_name']
-                failed = prefix == m.fixture.TILE_FAILURE_PREFIX
+                failed = prefix == m.fixture.TILE_FAILURE_PREFIX or prefix in m.fixture.TILE_CLEANUP_CASES
+                count = m.fixture.TILE_CLEANUP_CASES[prefix][1] if prefix in m.fixture.TILE_CLEANUP_CASES else 1 if failed else 4
                 size = 2048 if mode == 'replace' else 1024
                 tiles, resources, targets, scans = {}, {}, [], []
                 for key, window in m.fixture.TILE_WINDOWS.items():
-                    if failed and key != 'r0_c0': continue
+                    if list(m.fixture.TILE_WINDOWS).index(key) >= count: continue
                     expectation = m.fixture.tile_expectation(key)
                     levels = [[window[2]//2,window[3]//2]] if key != 'r160_c160' else []
                     tiles[key] = {**{k:v for k,v in expectation.items() if k not in ('band_nodata','valid_pixels')},
@@ -153,17 +154,20 @@ class Client:
                     scans.append({'status':'submitted','target_locator':locator,'execution_id':'auto-'+identifier+'-'+key})
                     if mode == 'replace': self.targets[46 + list(m.fixture.TILE_WINDOWS).index(key)]['size_bytes'] = size
                 if failed:
-                    self.targets[50] = copy.deepcopy(self.targets[46])
-                    self.targets[50].update(id=50, full_name='raster-target/'+prefix+'/r0_c0.tif', size_bytes=1024)
+                    base_id = 50 if prefix == m.fixture.TILE_FAILURE_PREFIX else 51 if prefix == 'tiles-cleanup-mid' else 52
+                    for index, key in enumerate(tiles):
+                        self.targets[base_id+index] = copy.deepcopy(self.targets[46+index])
+                        self.targets[base_id+index].update(id=base_id+index, full_name='raster-target/'+prefix+'/'+key+'.tif', size_bytes=1024)
                 execution = {'execution_id':identifier,'module':'develop','status':'failed' if failed else 'success','metadata':{
                     'outputs':{'save_tiles':{'tiles':resources}},
                     'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'locator':source}],
                         'outputs':[{'locator':item['locator'],'write_mode':mode} for item in targets]},
                     'result':{'final_result':{'artifact_type':'raster_tiles','source_width':256,'source_height':256,'tile_size':[160,160],
-                        'columns':2,'rows':2,'total_tiles':4,'completed_tiles':1 if failed else 4,'tiles':tiles},'produced_targets':targets,'meta_scan_runs':scans}}}
+                        'columns':2,'rows':2,'total_tiles':4,'completed_tiles':count,'tiles':tiles},'produced_targets':targets,'meta_scan_runs':scans}}}
                 if failed:
                     execution['metadata'].pop('lineage_facts')
-                    execution['metadata']['result']['final_result'].update(failed_tile=m.fixture.TILE_FAILURE_KEY, publication='unknown')
+                    if count < 4:
+                        execution['metadata']['result']['final_result'].update(failed_tile=m.fixture.TILE_FAILURE_KEY, publication='not_attempted' if prefix in m.fixture.TILE_CLEANUP_CASES else 'unknown')
                 self.executions[identifier] = self.mutate(execution)
                 return m.support.Response(200, {'execution_id':identifier}, {})
             mode = definition['tasks'][-1]['params']['write_mode']
@@ -453,10 +457,20 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             return {**extra, 'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
                     'cog_valid': True, 'has_overviews': case_name=='clip-polygon' or 'bilinear' in case_name or 'fractional' in case_name or 'finite' in case_name,
                     'source_unchanged': True, 'valid_pixels': m.fixture.computed_expectation(case_name)['valid_pixels']}
-        if action == 'verify-tiles-failure':
+        if action == 'verify-tiles-failure' or action in m.fixture.CLEANUP_ACTIONS:
+            prefix = action.removeprefix('verify-')
+            count = m.fixture.TILE_CLEANUP_CASES[prefix][1] if prefix in m.fixture.TILE_CLEANUP_CASES else 1
             initial = self.physical(repo, env, 'verify-tiles')
             replaced = self.physical(repo, env, 'verify-tiles-replace')
-            return {**initial, 'tiles': {'r0_c0': initial['tiles']['r0_c0']},
+            cleanup = {}
+            if prefix in m.fixture.TILE_CLEANUP_CASES:
+                key = m.fixture.TILE_CLEANUP_CASES[prefix][0]
+                prior = {m.fixture.TILE_FAILURE_PREFIX: {'r0_c0': 'r0_c0'}}
+                if prefix == 'tiles-cleanup-final': prior['tiles-cleanup-mid'] = {'r0_c0':'r0_c0'}
+                cleanup = {'preserved_failure_sha256': prior, 'cleanup_fault': {'prefix':prefix,'tile_key':key,
+                    'backend_status':200,'obstacle_created':True,'workspace_removed':True,
+                    'sha256':key,'size_bytes':1024}}
+            return {**initial, **cleanup, 'tiles': {key: initial['tiles'][key] for key in list(m.fixture.TILE_WINDOWS)[:count]},
                 'unrelated_sha256': replaced['unrelated_sha256'],
                 'preserved_tiles_sha256': {key: tile['sha256'] for key, tile in replaced['tiles'].items()}}
         if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace'):
@@ -483,6 +497,56 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                               lambda repo, env, identifier, timeout: {'execution_id': identifier,
                                   'cause': 'target_already_exists', 'source': 'develop_runtime_log'})
 
+    def test_cleanup_failures_keep_confirmed_one_or_four_resources_and_fresh_scans(self):
+        report = self.run_scene()
+        scans = {scan['execution_id'] for scan in report['tiling_automatic_scan_runs'] + report['tiling_replace_automatic_scan_runs'] + report['tiling_failed_publication']['automatic_scan_runs']}
+        for prefix, (_, count) in m.fixture.TILE_CLEANUP_CASES.items():
+            case = report['tiling_cleanup_failures'][prefix]
+            manifest = case['manifest']
+            self.assertEqual(case['status'], 'failed')
+            self.assertEqual(manifest['completed_tiles'], count)
+            self.assertEqual(len(case['confirmed_items']), count)
+            self.assertEqual(len(case['automatic_scan_runs']), count)
+            if count < 4:
+                self.assertEqual(manifest['failed_tile'], 'r0_c160')
+                self.assertEqual(manifest['publication'], 'not_attempted')
+            else:
+                self.assertNotIn('failed_tile', manifest)
+                self.assertNotIn('publication', manifest)
+            current = {scan['execution_id'] for scan in case['automatic_scan_runs']}
+            self.assertFalse(scans & current)
+            scans.update(current)
+            self.assertTrue(case['physical']['cleanup_fault']['workspace_removed'])
+            self.assertNotIn('workspace', case['physical']['cleanup_fault'])
+
+    def test_cleanup_failures_reject_wrong_boundary_missing_confirmation_residuals_and_prior_mutation(self):
+        for prefix in m.fixture.TILE_CLEANUP_CASES:
+            for fault in ('publication','count','missing','backend','obstacle','workspace','hash','size','prior','private-path'):
+                with self.subTest(prefix=prefix, fault=fault):
+                    self.setUp()
+                    def mutate(execution):
+                        result = execution.get('metadata', {}).get('result', {})
+                        if any('/'+prefix+'/' in scan.get('target_locator','') for scan in result.get('meta_scan_runs', [])):
+                            manifest = result['final_result']
+                            if fault == 'publication': manifest['publication'] = 'unknown'
+                            if fault == 'count': manifest['completed_tiles'] = 0
+                            if fault == 'missing': manifest['tiles'].pop('r0_c0')
+                        return execution
+                    self.client.mutate = mutate
+                    def physical(repo, env, action):
+                        evidence = self.physical(repo, env, action)
+                        if action == 'verify-'+prefix:
+                            event = evidence['cleanup_fault']
+                            if fault == 'backend': event['backend_status'] = 403
+                            if fault == 'obstacle': event['obstacle_created'] = False
+                            if fault == 'workspace': event['workspace_removed'] = False
+                            if fault == 'hash': event['sha256'] = 'wrong'
+                            if fault == 'size': event['size_bytes'] = 1024.0
+                            if fault == 'prior': evidence['preserved_failure_sha256'] = {}
+                            if fault == 'private-path': event['workspace'] = '/tmp/private'
+                        return evidence
+                    with self.assertRaises(m.SuiteError): self.run_scene(physical)
+
     def test_failed_batch_retains_one_confirmed_resource_and_fresh_scan_without_success_lineage(self):
         report = self.run_scene()
         partial = report['tiling_failed_publication']
@@ -491,8 +555,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual(partial['manifest']['failed_tile'], 'r0_c160')
         self.assertEqual(partial['manifest']['publication'], 'unknown')
         self.assertEqual(set(partial['manifest']['tiles']), {'r0_c0'})
-        self.assertEqual(partial['manifest']['tiles']['r0_c0']['size_bytes'], partial['data_item_size_bytes'])
-        self.assertEqual(partial['data_item_size_bytes'], partial['physical']['tiles']['r0_c0']['size_bytes'])
+        self.assertEqual(partial['manifest']['tiles']['r0_c0']['size_bytes'], partial['confirmed_items']['r0_c0']['data_item_size_bytes'])
+        self.assertEqual(partial['confirmed_items']['r0_c0']['data_item_size_bytes'], partial['physical']['tiles']['r0_c0']['size_bytes'])
         self.assertEqual(len(partial['automatic_scan_runs']), 1)
         self.assertIn('/tiles-write-failure/r0_c0.tif?', partial['outputs']['save_tiles']['tiles']['r0_c0']['resource']['locator'])
         self.assertNotIn('lineage_facts', self.client.executions[partial['execution_id']]['metadata'])
@@ -763,7 +827,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES] + ['verify-update-valid'] * 2 + ['verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure', 'verify-tiles', 'verify-tiles-replace'])
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES] + ['verify-update-valid'] * 2 + ['verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-mid', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-final', 'verify-tiles', 'verify-tiles-replace'])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])

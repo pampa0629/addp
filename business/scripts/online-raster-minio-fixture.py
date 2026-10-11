@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
+import http.server
+import socket
+import threading
 from bisect import bisect_right
 from functools import lru_cache
 import json
@@ -20,7 +24,7 @@ import time
 import urllib.request
 
 SUITE = 'raster-workflow'
-CONTAINERS = ('addp-raster-source', 'addp-raster-target', 'addp-raster-fixture-worker')
+CONTAINERS = ('addp-raster-source', 'addp-raster-target', 'addp-raster-fixture-worker', 'addp-raster-cleanup-proxy')
 MINIO_IMAGE = 'addp-minio:RELEASE.2025-10-15T17-29-55Z'
 TRANSFORM = (110, .01, 0, 20.32, 0, -.01)
 SIZE = 256
@@ -46,9 +50,11 @@ SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband-average-finite.tif', False, -9999.))
 TILE_FAILURE_PREFIX = 'tiles-write-failure'
 TILE_FAILURE_KEY = 'r0_c160'
+TILE_CLEANUP_CASES = {'tiles-cleanup-mid': ('r0_c0', 1), 'tiles-cleanup-final': ('r160_c160', 4)}
+CLEANUP_ACTIONS = tuple('verify-' + prefix for prefix in TILE_CLEANUP_CASES)
 TILE_KEEP_NAME = 'tiles-basic/keep.txt'
 TILE_KEEP_BYTES = b'Unrelated raster fixture file; replace must preserve these bytes.\n'
-ACTIONS = ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
+ACTIONS = CLEANUP_ACTIONS + ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -482,12 +488,168 @@ def start(root):
             private_json(root / f'raster-{role}-engine.json', {
                 'name': f'Hosted Raster {role} {os.environ["ADDP_ONLINE_TEST_RUN_ID"]}', 'description': 'Disposable raster T4 physical fixture',
                 'engine_type': 'minio', 'engine_origin': 'general',
-                'connection_info': {'endpoint': entry['endpoint'],
+                'connection_info': {'endpoint': '127.0.0.1:59014' if role == 'target' else entry['endpoint'],
                     **(entry['writer'] if role == 'target' else {key: entry[key] for key in ('access_key', 'secret_key')}), 'use_ssl': False},
             })
+        command(['docker', 'run', '-d', '--name', CONTAINERS[3],
+                 '--label', f'com.addp.online-fixture={SUITE}',
+                 '--label', f'com.addp.online-run-id={os.environ["ADDP_ONLINE_TEST_RUN_ID"]}',
+                 '--network', 'host', '-v', f'{Path(__file__).resolve()}:/fixture.py:ro',
+                 '-v', f'{root}:/secrets', '-v', '/var/run/docker.sock:/var/run/docker.sock',
+                 'localhost:5001/python:3.11-slim', 'python', '/fixture.py', 'worker-cleanup-proxy', '/secrets'])
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                with urllib.request.urlopen('http://127.0.0.1:59014/minio/health/ready', timeout=3) as response:
+                    if response.status == 200: break
+            except OSError: pass
+            if time.monotonic() >= deadline: raise FixtureError('cleanup proxy readiness timed out')
+            time.sleep(1)
     except BaseException:
         stop()
         raise
+
+
+# Runs only inside the owned Runtime, with the actual PUT bytes as its oracle.
+# Keep the COG intact: publish_target_file still reads its size after fput_object.
+CLEANUP_OBSTACLE_SCRIPT = r"""
+import hashlib, json, re, sys
+from pathlib import Path
+root, digest, size = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+if not root.is_dir() or not re.fullmatch(r'[0-9a-f]{64}', digest) or not 0 < size <= 32 * 1024 * 1024:
+    raise RuntimeError('invalid cleanup fixture input')
+matches = []
+for workspace in root.glob('addp-raster-*'):
+    if workspace.is_symlink() or not workspace.is_dir(): continue
+    for path in workspace.glob('*.tif'):
+        if path.is_symlink() or not path.is_file() or path.stat().st_size != size: continue
+        if hashlib.sha256(path.read_bytes()).hexdigest() == digest: matches.append(path)
+if len(matches) != 1: raise RuntimeError('cleanup fixture needs exactly one matching COG')
+path = matches[0]
+Path(str(path) + '.msk').mkdir()  # Path.unlink must fail after publication is recorded.
+print(json.dumps({'workspace': str(path.parent), 'size_bytes': size, 'sha256': digest, 'obstacle_created': True}))
+"""
+
+
+class DockerConnection(http.client.HTTPConnection):
+    def __init__(self):
+        super().__init__('localhost', timeout=30)
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect('/var/run/docker.sock')
+
+
+def docker_request(method, path, payload=None):
+    connection = DockerConnection()
+    try:
+        connection.request(method, path, json.dumps(payload) if payload is not None else None,
+                           {'Content-Type': 'application/json'})
+        response = connection.getresponse()
+        data = response.read()
+        if response.status not in (200, 201): raise FixtureError('cleanup fixture Docker request failed')
+        return data
+    finally:
+        connection.close()
+
+
+def runtime_exec(arguments):
+    name = 'addp-raster-online-runtime'
+    container = json.loads(docker_request('GET', f'/containers/{name}/json'))
+    if (container.get('Config', {}).get('Labels', {}).get('com.addp.online-runtime') != SUITE
+        or container.get('State', {}).get('Running') is not True):
+        raise FixtureError('cleanup fixture refuses an unowned or stopped Runtime')
+    execution = json.loads(docker_request('POST', f'/containers/{name}/exec', {
+        'AttachStdout': True, 'AttachStderr': True, 'Cmd': ['python', '-c', *arguments]}))['Id']
+    output = docker_request('POST', f'/exec/{execution}/start', {'Detach': False, 'Tty': False})
+    status = json.loads(docker_request('GET', f'/exec/{execution}/json'))
+    if status.get('ExitCode') != 0 or status.get('Running') is not False:
+        raise FixtureError('cleanup fixture Runtime command failed')
+    stdout = bytearray()
+    while output:
+        if len(output) < 8: raise FixtureError('invalid Docker output framing')
+        stream, length = output[0], int.from_bytes(output[4:8], 'big')
+        if stream not in (1, 2) or len(output) < 8 + length: raise FixtureError('invalid Docker output framing')
+        if stream == 1: stdout.extend(output[8:8+length])
+        output = output[8+length:]
+    return json.loads(stdout)
+
+
+def cleanup_obstacle(root, prefix, key, body, backend_status):
+    event = runtime_exec([CLEANUP_OBSTACLE_SCRIPT, '/tmp', hashlib.sha256(body).hexdigest(), str(len(body))])
+    if (event.get('sha256') != hashlib.sha256(body).hexdigest() or event.get('size_bytes') != len(body)
+        or event.get('obstacle_created') is not True):
+        raise FixtureError('cleanup obstacle evidence differs from confirmed upload')
+    private_json(root / (prefix + '-event.json'), {**event, 'prefix': prefix, 'tile_key': key,
+                                                'backend_status': backend_status})
+
+
+def cleanup_proxy(root, address=('127.0.0.1', 59014), inject=cleanup_obstacle):
+    config = json.loads((root / 'raster-fixture.json').read_text())
+    endpoint = config['target']['endpoint']
+    triggers = {'/' + config['target']['bucket'] + '/' + prefix + '/' + key + '.tif': (prefix, key)
+                for prefix, (key, _) in TILE_CLEANUP_CASES.items()}
+    lock = threading.Lock()
+    fired = set()
+    hop_headers = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.1'
+
+        def log_message(self, *args): pass  # S3 diagnostics/headers are private.
+
+        def forward(self):
+            connection = http.client.HTTPConnection(endpoint, timeout=60)
+            try:
+                if self.headers.get('Transfer-Encoding'): raise FixtureError('chunked fixture request is unsupported')
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 <= length <= 32 * 1024 * 1024: raise FixtureError('fixture request body exceeds bound')
+                body = self.rfile.read(length)
+                if len(body) != length: raise FixtureError('incomplete fixture request body')
+                headers = {key: value for key, value in self.headers.items() if key.lower() not in hop_headers}
+                # Preserve the signed Host and body exactly while changing the TCP destination.
+                connection.request(self.command, self.path, body, headers)
+                response = connection.getresponse()
+                data = response.read()
+                if self.command == 'PUT' and self.path in triggers and 200 <= response.status < 300:
+                    with lock:
+                        if self.path in fired: raise FixtureError('cleanup trigger repeated')
+                        prefix, key = triggers[self.path]
+                        inject(root, prefix, key, body, response.status)
+                        fired.add(self.path)
+                self.send_response_only(response.status)
+                for key, value in response.getheaders():
+                    if key.lower() not in hop_headers | {'content-length'}: self.send_header(key, value)
+                self.send_header('Content-Length', str(int(response.getheader('Content-Length', '0')) if self.command == 'HEAD' else len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except Exception:
+                # Never return native error text, paths, credentials, or a false storage confirmation.
+                self.send_response_only(502)
+                self.send_header('Content-Length', '0')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                self.close_connection = True
+            finally:
+                connection.close()
+
+        do_GET = do_HEAD = do_PUT = do_POST = do_DELETE = forward
+
+    return http.server.ThreadingHTTPServer(address, Handler)
+
+
+def cleanup_evidence(root, prefix):
+    event = json.loads((root / (prefix + '-event.json')).read_text())
+    workspace = event.pop('workspace')
+    if (Path(workspace).parent != Path('/tmp') or not Path(workspace).name.startswith('addp-raster-')
+        or event.get('prefix') != prefix or event.get('tile_key') != TILE_CLEANUP_CASES[prefix][0]
+        or event.get('backend_status') not in (200, 201) or event.get('obstacle_created') is not True):
+        raise FixtureError('cleanup fault evidence is invalid')
+    result = json.loads(command(['docker', 'exec', 'addp-raster-online-runtime', 'python', '-c',
+        "import json,sys; from pathlib import Path; print(json.dumps({'workspace_removed': not Path(sys.argv[1]).exists()}))", workspace]))
+    if result.get('workspace_removed') is not True: raise FixtureError('failed execution workspace has residuals')
+    return {**event, **result}
 
 
 def physical_worker(action, root):
@@ -502,6 +664,8 @@ def physical_worker(action, root):
     ]))
     if action == 'seed':
         private_json(root / 'raster-source-sha256.json', result['source_sha256'])
+    if action in CLEANUP_ACTIONS:
+        result['cleanup_fault'] = cleanup_evidence(root, action.removeprefix('verify-'))
     return result
 
 
@@ -820,7 +984,7 @@ def worker(action, path):
                     'invalid_pixels': len(invalid), 'source_unchanged': True,
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
-        if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure'):
+        if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure') + CLEANUP_ACTIONS:
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                 'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                 'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
@@ -833,22 +997,33 @@ def worker(action, path):
                 name = 'tiles-basic/'+key+'.tif'
                 path = root/name; path.parent.mkdir(parents=True, exist_ok=True)
                 clients['target'].fget_object(config['target']['bucket'], name, str(path))
-                tiles[key] = verify_tile_file(path, key, 'NONE' if action in ('verify-tiles-replace', 'verify-tiles-failure') else 'DEFLATE')
+                tiles[key] = verify_tile_file(path, key, 'DEFLATE' if action in ('verify-tiles', 'prepare-tiles-replace') else 'NONE')
             names = set(preserved) | {'tiles-basic/'+key+'.tif' for key in TILE_WINDOWS}
             sentinel = root/'keep.txt'
             sentinel_sha = hashlib.sha256(TILE_KEEP_BYTES).hexdigest()
-            if action in ('verify-tiles-replace', 'verify-tiles-failure'):
+            if action in ('verify-tiles-replace', 'verify-tiles-failure') + CLEANUP_ACTIONS:
                 names.add(TILE_KEEP_NAME)
                 clients['target'].fget_object(config['target']['bucket'], TILE_KEEP_NAME, str(sentinel))
                 if sentinel.read_bytes() != TILE_KEEP_BYTES:
                     raise FixtureError('batch replace modified the unrelated file')
             accepted_tiles = tiles
-            if action == 'verify-tiles-failure':
-                name = TILE_FAILURE_PREFIX + '/r0_c0.tif'
-                path = root/'confirmed-first.tif'
-                clients['target'].fget_object(config['target']['bucket'], name, str(path))
-                tiles = {'r0_c0': verify_tile_file(path, 'r0_c0')}
-                names.add(name)
+            preserved_failures = {}
+            if action == 'verify-tiles-failure' or action in CLEANUP_ACTIONS:
+                prefixes = [(TILE_FAILURE_PREFIX, 1)]
+                if action in CLEANUP_ACTIONS:
+                    for prefix, (_, count) in TILE_CLEANUP_CASES.items():
+                        prefixes.append((prefix, count))
+                        if action == 'verify-' + prefix: break
+                for prefix, count in prefixes:
+                    confirmed = {}
+                    for key in list(TILE_WINDOWS)[:count]:
+                        name = prefix + '/' + key + '.tif'
+                        path = root / (prefix + '-' + key + '.tif')
+                        clients['target'].fget_object(config['target']['bucket'], name, str(path))
+                        confirmed[key] = verify_tile_file(path, key)
+                        names.add(name)
+                    if prefix == prefixes[-1][0]: tiles = confirmed
+                    else: preserved_failures[prefix] = {key: fact['sha256'] for key, fact in confirmed.items()}
             if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
                 raise FixtureError('tiling target contains unexpected or partial artifacts')
             if action == 'prepare-tiles-replace':
@@ -857,7 +1032,8 @@ def worker(action, path):
             return {'tiles': tiles, 'preserved_sha256': preserved, 'source_unchanged': True,
                 **({'unrelated_sha256': sentinel_sha} if action != 'verify-tiles' else {}),
                 **({'preserved_tiles_sha256': {key: fact['sha256'] for key, fact in accepted_tiles.items()}}
-                   if action == 'verify-tiles-failure' else {})}
+                   if action == 'verify-tiles-failure' or action in CLEANUP_ACTIONS else {}),
+                **({'preserved_failure_sha256': preserved_failures} if action in CLEANUP_ACTIONS else {})}
 
         grid_case = action.removeprefix('verify-')
         if grid_case in UTILITY_CASES or action == 'verify-utility-queries':
@@ -1102,6 +1278,9 @@ def main():
     elif action.startswith('manager-'):
         request = json.loads(Path(sys.argv[2]).read_text()) if len(sys.argv) == 3 else None
         result = manager_physical(action.removeprefix('manager-'), request)
+    elif action == 'worker-cleanup-proxy':
+        cleanup_proxy(Path(sys.argv[2])).serve_forever()
+        return
     elif action.startswith('worker-'):
         if action.removeprefix('worker-') not in ACTIONS:
             raise FixtureError('unknown worker action')

@@ -123,7 +123,7 @@ business/
 │   ├── online-tidb-consumer-fixture.sh # TiDB 消费链路 T4 专用三组件 Fixture
 │   ├── online-kingbase-consumer-fixture.sh # KingbaseES 消费链路 T4 专用许可受控 Fixture
 │   ├── online-manager-minio-fixture.sh # Manager 血缘与文档快显 T4 专用 MinIO Fixture
-│   ├── online-raster-minio-fixture.py # 栅格 T4 两套隔离 MinIO、原生像元与 COG 校验
+│   ├── online-raster-minio-fixture.py # 栅格 T4 隔离 MinIO、发布后清理故障代理、原生像元与 COG 校验
 │   └── online-security-transfer-fixture.sh # Security/Transfer T4 复合 Fixture
 │
 ├── postgres/                       # PostgreSQL 配置

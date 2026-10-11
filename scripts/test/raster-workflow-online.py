@@ -535,18 +535,21 @@ def tiling_workflow(source_locator, target_engine, write_mode='create', compress
     ]}
 
 
-def validate_tiles_publication(execution, source_locator, target_engine, write_mode='create', failed=False):
-    prefix = fixture.TILE_FAILURE_PREFIX if failed else 'tiles-basic'
-    keys = {'r0_c0'} if failed else set(fixture.TILE_WINDOWS)
+def validate_tiles_publication(execution, source_locator, target_engine, write_mode='create', failure_prefix=None):
+    failed = failure_prefix is not None
+    prefix = failure_prefix or 'tiles-basic'
+    count = fixture.TILE_CLEANUP_CASES[prefix][1] if prefix in fixture.TILE_CLEANUP_CASES else 1 if failed else 4
+    keys = set(list(fixture.TILE_WINDOWS)[:count])
     if execution.get('status') != ('failed' if failed else 'success'):
         raise SuiteError('tiling execution status differs from publication scenario')
     metadata = obj(execution.get('metadata'), 'tiling metadata')
     result = obj(metadata.get('result'), 'tiling result')
     manifest = obj(result.get('final_result'), 'tile manifest')
     expected = {'artifact_type': 'raster_tiles', 'source_width': 256, 'source_height': 256,
-        'tile_size': [160,160], 'columns': 2, 'rows': 2, 'total_tiles': 4, 'completed_tiles': 1 if failed else 4}
-    if failed:
-        expected.update(failed_tile=fixture.TILE_FAILURE_KEY, publication='unknown')
+        'tile_size': [160,160], 'columns': 2, 'rows': 2, 'total_tiles': 4, 'completed_tiles': count}
+    if failed and count < 4:
+        expected.update(failed_tile=list(fixture.TILE_WINDOWS)[count],
+                        publication='not_attempted' if prefix in fixture.TILE_CLEANUP_CASES else 'unknown')
     if any(manifest.get(key) != value for key, value in expected.items()) or set(manifest) != set(expected) | {'tiles'}:
         raise SuiteError('tiling manifest grid/count/completion differs')
     tiles = obj(manifest.get('tiles'), 'tiles')
@@ -592,8 +595,10 @@ def physical(repository, env, action):
     if result.returncode:
         raise SuiteError(f'physical raster {action} failed ({result.returncode})')
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
-    if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure'):
-        if payload.get('source_unchanged') is not True or set(obj(payload.get('tiles'), 'physical tiles')) != ({'r0_c0'} if action == 'verify-tiles-failure' else set(fixture.TILE_WINDOWS)):
+    if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure') + fixture.CLEANUP_ACTIONS:
+        prefix = action.removeprefix('verify-')
+        count = fixture.TILE_CLEANUP_CASES[prefix][1] if prefix in fixture.TILE_CLEANUP_CASES else 1 if action == 'verify-tiles-failure' else 4
+        if payload.get('source_unchanged') is not True or set(obj(payload.get('tiles'), 'physical tiles')) != set(list(fixture.TILE_WINDOWS)[:count]):
             raise SuiteError('physical tiling evidence is incomplete')
         return payload
     case_name = action.removeprefix('verify-')
@@ -989,42 +994,58 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 or {scan['execution_id'] for scan in scans} & {scan['execution_id'] for scan in tiling_results['create']['scans']}):
                 raise SuiteError('batch replace lost the unrelated file or reused an earlier automatic scan')
     finish_output_inspections(pending_outputs, repository, env, client, timeout)
-    identifier = submit(client, engine_id, tiling_workflow(source_locator, target_engine,
-        target_name=fixture.TILE_FAILURE_PREFIX))
-    execution = wait_execution(client, 'develop', identifier, timeout, expected='failed')
-    manifest, locators, scans = validate_tiles_publication(execution, source_locator, target_engine, failed=True)
-    monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'failed tiling Monitor')
-    if (monitor.get('status') != 'failed' or monitor.get('module') != 'develop'
-        or monitor.get('metadata', {}).get('lineage_facts')):
-        raise SuiteError('Monitor failed tiling status/owner or lineage differs')
+    failures = {}
     previous_scans = {scan['execution_id'] for mode in tiling_results.values() for scan in mode['scans']}
-    if scans[0]['execution_id'] in previous_scans:
-        raise SuiteError('failed tiling reused an earlier automatic scan')
-    wait_execution(client, 'meta', scans[0]['execution_id'], timeout)
-    native = physical_runner(repository, env, 'verify-tiles-failure')
-    if (native.get('source_unchanged') is not True or native.get('preserved_sha256') != preserved
-        or native.get('preserved_tiles_sha256') != {key: fact['sha256'] for key, fact in tiling_results['replace']['physical']['tiles'].items()}
-        or native.get('unrelated_sha256') != tiling_results['replace']['physical']['unrelated_sha256']
-        or set(native.get('tiles', {})) != {'r0_c0'}):
-        raise SuiteError('failed tiling lost its confirmed prefix or changed accepted bytes')
-    tile = obj(native['tiles']['r0_c0'], 'confirmed physical tile')
-    fact = manifest['tiles']['r0_c0']
-    if (tile.get('cog_valid') is not True or tile.get('compression') != 'DEFLATE'
-        or positive(tile.get('size_bytes'), 'confirmed physical tile size') != fact['size_bytes']
-        or tile.get('valid_pixels') != fixture.tile_expectation('r0_c0')['valid_pixels']
-        or [band.get('overviews') for band in fact['bands']] != [tile.get('overview_sizes')]*2):
-        raise SuiteError('confirmed partial tile physical facts differ')
-    target = support.find_fixture_item(client, target_engine,
-        'raster-target/'+fixture.TILE_FAILURE_PREFIX+'/r0_c0.tif', 'confirmed partial tile')
-    if positive(target.get('size_bytes'), 'partial tile DataItem size') != fact['size_bytes']:
-        raise SuiteError('partial tile DataItem size differs from artifact and physical size')
-    items = array(client.request('GET', f'/api/v1/meta/engines/{target_engine}/items', (200,)).payload, 'target items')
-    partial_names = [item['full_name'] for item in items if item.get('full_name', '').startswith('raster-target/'+fixture.TILE_FAILURE_PREFIX+'/') and item.get('item_type') == 'object']
-    if partial_names != ['raster-target/'+fixture.TILE_FAILURE_PREFIX+'/r0_c0.tif']:
-        raise SuiteError('unconfirmed failed tiles entered the Meta catalog')
-    partial = {'execution_id': identifier, 'status': 'failed', 'manifest': manifest,
-        'outputs': execution['outputs'], 'automatic_scan_runs': scans,
-        'target_item_id': target['id'], 'data_item_size_bytes': target['size_bytes'], 'physical': native}
+    prior_failure_hashes = {}
+    for prefix, action in [(fixture.TILE_FAILURE_PREFIX, 'verify-tiles-failure')] + [(prefix, 'verify-' + prefix) for prefix in fixture.TILE_CLEANUP_CASES]:
+        identifier = submit(client, engine_id, tiling_workflow(source_locator, target_engine, target_name=prefix))
+        execution = wait_execution(client, 'develop', identifier, timeout, expected='failed')
+        manifest, locators, scans = validate_tiles_publication(execution, source_locator, target_engine, failure_prefix=prefix)
+        monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'failed tiling Monitor')
+        if (monitor.get('status') != 'failed' or monitor.get('module') != 'develop'
+            or monitor.get('metadata', {}).get('lineage_facts')):
+            raise SuiteError('Monitor failed tiling status/owner or lineage differs')
+        if {scan['execution_id'] for scan in scans} & previous_scans:
+            raise SuiteError('failed tiling reused an earlier automatic scan')
+        previous_scans.update(scan['execution_id'] for scan in scans)
+        for scan in scans: wait_execution(client, 'meta', scan['execution_id'], timeout)
+        native = physical_runner(repository, env, action)
+        if (native.get('source_unchanged') is not True or native.get('preserved_sha256') != preserved
+            or native.get('preserved_tiles_sha256') != {key: fact['sha256'] for key, fact in tiling_results['replace']['physical']['tiles'].items()}
+            or native.get('unrelated_sha256') != tiling_results['replace']['physical']['unrelated_sha256']
+            or set(native.get('tiles', {})) != set(manifest['tiles'])):
+            raise SuiteError('failed tiling lost its confirmed prefix or changed accepted bytes')
+        if prefix in fixture.TILE_CLEANUP_CASES:
+            trigger_key = fixture.TILE_CLEANUP_CASES[prefix][0]
+            trigger = native['tiles'][trigger_key]
+            if (native.get('cleanup_fault', {}).get('obstacle_created') is not True
+                or native.get('cleanup_fault', {}).get('workspace_removed') is not True
+                or type(native.get('cleanup_fault', {}).get('size_bytes')) is not int
+                or type(native.get('cleanup_fault', {}).get('backend_status')) is not int
+                or native.get('preserved_failure_sha256') != prior_failure_hashes
+                or native.get('cleanup_fault') != {'prefix': prefix, 'tile_key': trigger_key,
+                    'backend_status': 200, 'obstacle_created': True, 'workspace_removed': True,
+                    'sha256': trigger['sha256'], 'size_bytes': trigger['size_bytes']}):
+                raise SuiteError('cleanup failure lacks confirmed storage/fault/workspace evidence or changed earlier failures')
+        confirmed_items = {}
+        for key, fact in manifest['tiles'].items():
+            tile = obj(native['tiles'][key], 'confirmed physical tile')
+            if (tile.get('cog_valid') is not True or tile.get('compression') != 'DEFLATE'
+                or type(tile.get('size_bytes')) is not int or tile['size_bytes'] != fact['size_bytes']
+                or tile.get('valid_pixels') != fixture.tile_expectation(key)['valid_pixels']
+                or [band.get('overviews') for band in fact['bands']] != [tile.get('overview_sizes')]*2):
+                raise SuiteError('confirmed partial tile physical facts differ')
+            target = support.find_fixture_item(client, target_engine, 'raster-target/'+prefix+'/'+key+'.tif', 'confirmed partial tile')
+            if type(target.get('size_bytes')) is not int or target['size_bytes'] != fact['size_bytes']:
+                raise SuiteError('partial tile DataItem size differs from artifact and physical size')
+            confirmed_items[key] = {'target_item_id': target['id'], 'data_item_size_bytes': target['size_bytes']}
+        items = array(client.request('GET', f'/api/v1/meta/engines/{target_engine}/items', (200,)).payload, 'target items')
+        partial_names = [item['full_name'] for item in items if item.get('full_name', '').startswith('raster-target/'+prefix+'/') and item.get('item_type') == 'object']
+        if set(partial_names) != {'raster-target/'+prefix+'/'+key+'.tif' for key in manifest['tiles']} or len(partial_names) != len(manifest['tiles']):
+            raise SuiteError('unconfirmed failed tiles entered the Meta catalog')
+        failures[prefix] = {'execution_id': identifier, 'status': 'failed', 'manifest': manifest,
+            'outputs': execution['outputs'], 'automatic_scan_runs': scans, 'confirmed_items': confirmed_items, 'physical': native}
+        prior_failure_hashes[prefix] = {key: fact['sha256'] for key, fact in native['tiles'].items()}
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
@@ -1036,7 +1057,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'tiling_automatic_scan_runs': tiling_results['create']['scans'], 'tiling_preserved_sha256': preserved,
             'tiling_replace_automatic_scan_runs': tiling_results['replace']['scans'],
             'tiling_replace_unrelated_sha256': tiling_results['replace']['physical']['unrelated_sha256'],
-            'tiling_failed_publication': partial,
+            'tiling_failed_publication': failures[fixture.TILE_FAILURE_PREFIX],
+            'tiling_cleanup_failures': {prefix: failures[prefix] for prefix in fixture.TILE_CLEANUP_CASES},
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 

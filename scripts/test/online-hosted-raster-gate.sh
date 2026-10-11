@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=raster-workflow
-HOSTED_FIXTURE_CONTAINERS=(addp-raster-source addp-raster-target addp-raster-fixture-worker addp-raster-registry addp-raster-online-runtime)
+HOSTED_FIXTURE_CONTAINERS=(addp-raster-source addp-raster-target addp-raster-fixture-worker addp-raster-cleanup-proxy addp-raster-registry addp-raster-online-runtime)
 RUNTIME_CONTAINER=addp-raster-online-runtime
 RUNTIME_TAG=raster-online
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
