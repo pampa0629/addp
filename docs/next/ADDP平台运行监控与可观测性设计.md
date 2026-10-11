@@ -1634,3 +1634,21 @@ System 既有 `GET /platform/module-instances` 增加可选 `process_metrics_dec
 同轮业务报告确认来源、中心及控制面故障恢复、进程重启后的新采样窗口与旧实例空值、查询预算 CAS 和热生效、节点及目标删除通过。可选进程来源未启用时业务仍 ready，其他来源继续采集；安全管理员的拒绝读取检查通过。业务报告中的 `cleanup=awaiting-hosted-deployment-destruction` 是销毁前的中间状态；最终生命周期 `summary.txt` 明确 `result=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals`，临时身份、部署及凭据按既有 Hosted 流程销毁。其余未选 suite 为 skipped，不计入本轮验收。本轮未修改 IAM 或个人采集配置。
 
 本次验收记录仅修改现有设计文档，`git diff --check` 返回 0；默认 `make test-changed` 再次因当前混合工作区缺少多模块测试连接条件在预检返回 2（`/tmp/addp-service-scope-acceptance-changed-1.log`），业务门禁未执行，不计为通过。
+
+### 10.52 Manager、Meta、Transfer 后端进程来源扩展（部署准备及门禁完成，待应用）
+
+2026-10-11 用户确认继续接入主要数据操作链路。本批选择 Manager、Meta、Transfer 三个 backend，沿既有 Common `RegisterAndHeartbeat → StartOptional` 发布当前实例的私有进程采集声明，无需修改业务 Handler、登记第二个目标或新增 IAM 权限。三者均在 macOS 原生运行，不关联到 Docker Desktop Linux VM；整机与自身进程指标继续分别表达。
+
+个人部署在原 System/Monitor 声明之后追加 `manager/backend`、`meta/backend`、`transfer/backend`，显式端口分别为 `127.0.0.1:19103/19104/19105`，HTTPS 路径均为 `/metrics`，沿现有来源 CA 提供各自仓库外独立叶子证书和私钥，包含回环 IP 与 `host.docker.internal` 双 SAN。Monitor 准入与中心 Desktop 宿主通道只追加这三个精确端口，CIDR 保持 `127.0.0.1/32`；含已有 VM、System、Monitor 共六个来源，仍在既有九来源预算内。端口应用前须重新核对，冲突不得自动换端口。
+
+实施前识别：没有产品代码、API、依赖或新的部署路线变更；根 `.env` 为未跟踪的个人部署输入，证书保留仓库外，不提交 Secret。配置与来源隔离由既有 `make test-dev-lifecycle` 和 `make test-monitor-metrics` 覆盖，两者已登记 Platform CI / Release T2；本批另检查完整部署 JSON、证书链/用途/SAN/密钥匹配、精确六端口转换及原配置未变部分。默认仍执行 `make test-changed`，与当前混合工作区的其他 Owner 门禁结果分别记录。个人运行验收必须在用户沿标准入口应用中心配置并重启三个后端与 Monitor 后进行，准备成功不计作实际采集成功或新的 Hosted T4。
+
+Worker 尚未包含在本批来源中。Meta worker 与 backend 的 role 不同；Transfer bounded/continuous worker 均正式登记为 `transfer/worker`，当前开发入口继承同一部署数组，直接配置一个 worker 项会争用同一监听端口。规范已有“不同部署或副本分别注入”的边界，后续须先明确标准启动入口如何向这两个独立进程注入各自值；不得改业务 role、按监听冲突自动避让，或把两个进程伪装成同一来源。本批仅准备三个 backend，不修改上述进程身份与启动行为。
+
+个人部署准备已完成：应用前确认三个端口未占用，分别签发来源叶子证书，核对服务器用途、双 SAN、CA 信任链和私钥匹配；三个目录为 0700，私钥为 0600。新叶子证书有效期截至 2026-12-10 09:36:59–09:37:00 UTC，沿原来源 CA，准入/采集客户端和既有叶子证书均未替换。根 `.env` 只原子修改上述三个部署键，保留其余字节及权限；Shell 重载后确认五条唯一进程声明及六个精确端口一致。唯一中心生成器在临时部署目录对实际新输入渲染成功，仍只有一个 `addp_nodes` Job、六条精确宿主转换和 `target_limit: 9`，未写入个人中心生成配置。只读查询个人中心仍为原三个来源且全部 up，准备不代表新增来源已采集。
+
+本轮 `make test-monitor-metrics` 返回 0（`/tmp/addp-three-backend-metrics-1.log`），包含配置检查、独立进程经两个 Desktop 精确宿主端口采集、停止来源清值且对端继续、发现失败/重定向/空发现/恢复、完整及受限主机即时/趋势查询、来源恢复后新样本、中心 SIGKILL 后 WAL 样本保留与退出零残留。该门禁使用独占临时来源，不宣称三个个人 backend 已启用或已完成本轮 T4。首次 `make test-dev-lifecycle` 在 88 项 Python 用例中一项 `test_control_input_failure_keeps_core_and_does_not_start_center` 超过原 10 秒限制而返回 2（`/tmp/addp-three-backend-lifecycle-1.log`）；原用例单独诊断复跑约 5.2 秒通过（`/tmp/addp-three-backend-lifecycle-focused-1.log`），未修改断言或超时，原失败不计通过，完整入口串行复验结果另行记录。默认 `make test-changed` 因当前混合工作区缺少多 Owner 的 PostgreSQL/外部服务测试输入在预检返回 2（`/tmp/addp-three-backend-changed-1.log`），业务门禁未执行，不计为通过。
+
+完整 `make test-dev-lifecycle` 串行复验返回 0（`/tmp/addp-three-backend-lifecycle-2.log`），88 项 Python、Infra 端口与停止安全、开发生命周期、共享 schema/repository/projectionstore 及 Security/Meta/Quality/Transfer 命令编译均通过。复验未修改原用例或超时；首次超时本轮未复现，根因尚未确定，不据此宣称已修复。`git diff --check` 通过。本批无产品代码、API 或 CI 编排变更，沿既有门禁验证；同步修正 Monitor 模块入口中此前仍写“Hosted T4 待验收”的过时状态，未扩大已完成的运行覆盖。
+
+下一步由用户在仓库根目录依次执行 `bash scripts/infra/up.sh --metrics` 与 `./scripts/dev/restart.sh -manager -meta -transfer -monitor`：前者应用中心六端口宿主通道，后者加载三个 backend 的来源声明和 Monitor 准入集合，按标准生命周期处理所选模块及所属 Worker。Worker 未获得本批采集声明，System 与已有 VM 来源保持现有部署。由用户操作个人服务生命周期，AI 不执行重启或 keepalive。应用后还须核对六来源实际发现与 mTLS、三个当前实例身份、完整一分钟 CPU 窗口及 Safari 默认五条服务首屏，未执行前均不计为通过。

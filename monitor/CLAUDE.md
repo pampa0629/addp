@@ -4,7 +4,7 @@
 
 Monitor 模块是 ADDP 的统一运行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 日志链路健康与告警域。
 
-平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 平台主机管理、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，macOS/Linux Go 自身进程指标与服务监控已接入（设计 10.49），真实 Hosted 实例链路仍待验收；节点基础资源查询首批已接入（见文末范围），统一告警域收敛仍待明确确认。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
+平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 平台主机管理、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，macOS/Linux Go 自身进程指标与服务监控已接入，真实 Hosted 实例链路及默认服务范围已验收（设计 10.49、10.51）；节点基础资源查询首批已接入（见文末范围），统一告警域收敛仍待明确确认。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
 
 节点来源准入和发现投影内核位于 `backend/internal/metricsdiscovery/`，由 Monitor 唯一维护。已实现受控 CIDR/端口、固定 HTTPS 指标路径、每次发现重新解析 DNS 并固定单一 IP、来源 mTLS 准入、节点当前身份筛选和端点预留预算；只支持 node_exporter 主机来源与通过既定 mTLS 入口的 cAdvisor 节点容器来源。目标持久化、公开 HTTP SD 和独立 Prometheus OAuth 身份已消费此内核：管理请求转发当前 User Token，由 System 对节点再次裁决；目标写事务串行化预算和 CAS，发现读取当前身份而不复制 System 台账。启用目标必须通过 mTLS 准入，停用配置保存和撤除采集意图不依赖指标设施或来源在线。Prometheus 生产模板和正式节点来源已完成真实 Hosted T4，包含权限隔离、发现版本、真实采样及故障恢复；资源查询的生效状态查询、后续指标与生产纳管覆盖仍须交付，不能以一次测试部署宣称生产覆盖。T1 归 `make test-go`，目标事务与 IAM/OAuth 使用现有 PostgreSQL T2 自动发现；设计第 10.15–10.20 节记录边界与接线门禁。
 
@@ -153,7 +153,7 @@ CPU 忙碌率及趋势新增固定 `node.cpu.busy_percent`（percent，60 秒窗
 
 Console「运行监控 → 服务监控」读取 System 唯一平台实例列表，再用当前 User Token 一次批量读取三项固定进程指标：一分钟 CPU 核占用、当前 RSS 和运行时长。CPU 用核当量，RSS 用 IEC 容量单位，时长用天/小时/分钟；释义放在对应表头。角色、租约和当前主机关系仍由 System 裁决，未绑定主机也可独立观测实例，不从整机容量计算进程百分比。
 
-Common Go SDK 支持 macOS/Linux 自身进程，部署显式启用独立 mTLS 端点后随正式注册发布不可变声明；重启自动发现新实例，无需手工复制实例 ID 或登记第二个目标。进程与主机共用原 HTTP SD 作业、来源预算、查询传输和并发 limiter；私有端点不公开给浏览器，后台投影不替代用户授权。关闭或采集失败不影响业务注册、心跳和 Ready；未接入、离线、窗口不足、失败及过期保留空值。当前列表手动刷新，每页 20 项；Python、进程趋势、Hosted T4 和生产 T5 尚未完成，分层证据见设计 10.49。
+Common Go SDK 支持 macOS/Linux 自身进程，部署显式启用独立 mTLS 端点后随正式注册发布不可变声明；重启自动发现新实例，无需手工复制实例 ID 或登记第二个目标。进程与主机共用原 HTTP SD 作业、来源预算、查询传输和并发 limiter；私有端点不公开给浏览器，后台投影不替代用户授权。关闭或采集失败不影响业务注册、心跳和 Ready；未接入、离线、窗口不足、失败及过期保留空值。当前列表手动刷新，每页 20 项；进程来源及默认服务范围的 Hosted T4 已通过；Python、进程趋势和生产 T5 尚未完成，分层证据见设计 10.49、10.51。本机 Manager/Meta/Transfer backend 来源的部署准备与待应用范围见设计 10.52。
 
 ## 主机接入与采集状态（2026-10-08）
 
