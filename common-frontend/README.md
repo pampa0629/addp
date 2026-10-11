@@ -166,6 +166,10 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 ## 组件列表
 
+### 本体关系查看器
+
+`common-frontend/graph` 的 `OntologyView` 是 Graph 与平台 Ontology 的唯一关系图渲染实现。默认使用层级布局；平台能力核实通过 `layout="grid"` 使用紧凑总览，避免大量并列条件将图拉长。标签分行，详情保留完整名称；共享工具栏提供缩放、原始大小和适应窗口。画布只按可测量的实际容器尺寸初始化，紧凑布局在窗口变化后重新布局并适应边界。共享契约由 `make test-common-frontend` 自动发现，实际 G6 浏览器交互由 `make test-ontology-frontend` 验证，Graph 消费通过 `make test-graph-frontend` 复验；沿用现有 CI，无后端/API 或 Infra 变化。
+
 ### 数据血缘组件
 
 `@addp/common-frontend/graph` 提供 `LineageViewer`、`createLineageApi` 和 `normalizeLineageGraph`，消费 Meta `GET /api/v1/meta/lineage/graph` 返回的 `{ nodes, edges }`，可在 Service、Manager、Asset 页面内嵌展示。请求函数由宿主注入，组件不处理 Token。`LineageViewer` 填满宿主容器，宿主须提供有界的 flex 高度；宿主通过 `v-model:depth` 接收层数变化，以同一层数重查 API。未传入层数时组件显示 2 层，宿主可显式指定初始层数。共享组件负责交叉连线隔离、悬停/选中高亮和截断提示。

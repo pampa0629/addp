@@ -168,6 +168,35 @@ test('current authorization automatically includes personal department and proje
   await expect(list).not.toContainText('Outdoor department')
   expect(writes).toHaveLength(1)
 })
+test('authorization table keeps current account sources and history isolated across round trips', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => {
+    if (message.text().includes('system.engine.dataAuthorization.modes.undefined')) errors.push(message.text())
+  })
+  const { writes } = await fixture(page, { allowed: grantPermissions, history: [
+    historicalGrant(),
+    { ...historicalGrant(), request_id: 'expired-history', expires_at: '2020-01-01T00:00:00Z' }
+  ] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectAccountFilter(page)
+  const list = page.getByTestId('source-grant-list')
+  const mode = page.getByTestId('source-grant-list-mode')
+  for (let round = 0; round < 2; round++) {
+    await expect(list.getByTestId('account-grant-expand')).toHaveText('查看来源（1）')
+    await list.getByTestId('account-grant-expand').click()
+    await expect(page.getByTestId('account-grant-sources')).toContainText('Outdoor reader')
+    await mode.getByText('授权历史', { exact: true }).click()
+    await expect(list).toContainText('expired-history')
+    await expect(list).toContainText('已到期')
+    await expect(list.getByTestId('account-grant-expand')).toHaveCount(0)
+    await mode.getByText('当前授权', { exact: true }).click()
+    await expect(list.getByTestId('account-grant-expand')).toHaveText('查看来源（1）')
+    await expect(list).not.toContainText('expired-history')
+  }
+  expect(errors).toEqual([])
+  expect(writes).toEqual([])
+})
 for (const reason of ['explicit_deny','source_unavailable','target_unavailable']) {
   test(`current account authorization reports ${reason} without granting access`, async ({page}) => {
     const {writes} = await fixture(page,{allowed:grantPermissions,history:[historicalGrant()],inspectionReason:reason})

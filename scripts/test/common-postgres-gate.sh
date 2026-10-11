@@ -10,11 +10,11 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|query-read-set) test_group="$2"; shift 2 ;;
-                *) echo "usage: $0 [--test all|query-read-set]" >&2; exit 2 ;;
+                all|query-read-set|typed-write) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|query-read-set|typed-write]" >&2; exit 2 ;;
             esac
             ;;
-        *) echo "usage: $0 [--test all|query-read-set]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--test all|query-read-set|typed-write]" >&2; exit 2 ;;
     esac
 done
 
@@ -44,6 +44,11 @@ cd "$ROOT_DIR/common"
 test_pattern='^(TestIntegrationPostgresCatalogPreciseReadOnly|TestIntegrationPostgresPrepareTableWrite|TestIntegrationPostgresTableResult|TestIntegrationPostgresAnalyticalInstance|TestIntegrationPostgresAnalyticalText|TestIntegrationPostgresAnalyticalDateBuckets|TestIntegrationPostgresAnalyticalScan|TestIntegrationPostgresAnalyticalRelations|TestIntegrationPostgresAnalyticalCalendar|TestIntegrationPostgresAnalyticalExpressions|TestIntegrationPostgresAnalyticalArithmetic|TestIntegrationPostgresLosslessAnalyticalInteger|TestIntegrationPostgresAnalyticalResultAssertions|TestIntegrationPostgresBoundedWatermarkResumeAndIdempotentUpsert|TestIntegrationPostgresReadBatchHonorsSpatialEncoding|TestIntegrationPostgresQueryReadSessionBindsExactNumericText|TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage))'
 if [ "$test_group" = query-read-set ]; then
     test_pattern='^TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)'
+else
+    test_pattern="$test_pattern|^TestIntegrationPostgresTypedJSONWrites$"
+fi
+if [ "$test_group" = typed-write ]; then
+    test_pattern='^TestIntegrationPostgresTypedJSONWrites$'
 fi
 ADDP_POSTGRES_INTEGRATION=1 \
     go test ./engine/plugins/postgresql \
@@ -55,8 +60,8 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-postgres.log"; then
     exit 1
 fi
 
-if [ "$test_group" = query-read-set ]; then
-    echo "Common PostgreSQL query-read-set group passed (not the full gate)"
+if [ "$test_group" != all ]; then
+    echo "Common PostgreSQL $test_group group passed (not the full gate)"
     exit 0
 fi
 

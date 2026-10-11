@@ -337,6 +337,7 @@
       "recentVisitTitle": "Transfer Execution",
       "back": "Back",
       "executionDetailTitle": "Execution Detail #{id}",
+      "errorMessage": "Error message",
       "executionId": "Execution ID",
       "taskId": "Task ID",
       "status": "Status",

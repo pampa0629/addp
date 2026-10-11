@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/addp/common/datatype"
 	"github.com/lib/pq"
 )
 
-func (p *PostgreSQLPlugin) writeBatchWithCopy(ctx context.Context, db *sql.DB, schema, table string, columns []string, rows []map[string]interface{}, chunkSize int, geometryColumns map[string]struct{}) error {
+func (p *PostgreSQLPlugin) writeBatchWithCopy(ctx context.Context, db *sql.DB, schema, table string, columns []string, rows []map[string]interface{}, chunkSize int, fieldTypes map[string]datatype.FieldType) error {
 	if chunkSize <= 0 {
 		chunkSize = postgresDefaultInsertChunkSize
 	}
@@ -17,14 +18,14 @@ func (p *PostgreSQLPlugin) writeBatchWithCopy(ctx context.Context, db *sql.DB, s
 		if end > len(rows) {
 			end = len(rows)
 		}
-		if err := writePostgresCopyChunk(ctx, db, schema, table, columns, rows[start:end], geometryColumns); err != nil {
+		if err := writePostgresCopyChunk(ctx, db, schema, table, columns, rows[start:end], fieldTypes); err != nil {
 			return fmt.Errorf("execute postgresql copy rows %d-%d: %w", start, end, err)
 		}
 	}
 	return nil
 }
 
-func writePostgresCopyChunk(ctx context.Context, db *sql.DB, schema, table string, columns []string, rows []map[string]interface{}, geometryColumns map[string]struct{}) error {
+func writePostgresCopyChunk(ctx context.Context, db *sql.DB, schema, table string, columns []string, rows []map[string]interface{}, fieldTypes map[string]datatype.FieldType) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin postgresql copy transaction: %w", err)
@@ -37,11 +38,10 @@ func writePostgresCopyChunk(ctx context.Context, db *sql.DB, schema, table strin
 	}
 	defer stmt.Close()
 
-	values := make([]interface{}, len(columns))
-	for _, row := range rows {
-		for i, column := range columns {
-			_, isGeometry := geometryColumns[column]
-			values[i] = postgresWriteValue(row[column], isGeometry)
+	for rowIndex, row := range rows {
+		values, err := postgresWriteRow(row, columns, fieldTypes)
+		if err != nil {
+			return fmt.Errorf("copy postgresql row %d: %w", rowIndex, err)
 		}
 		if _, err := stmt.ExecContext(ctx, values...); err != nil {
 			return fmt.Errorf("copy postgresql row: %w", err)

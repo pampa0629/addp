@@ -337,6 +337,7 @@
       "recentVisitTitle": "传输执行",
       "back": "返回",
       "executionDetailTitle": "执行详情 #{id}",
+      "errorMessage": "错误信息",
       "executionId": "执行ID",
       "taskId": "任务ID",
       "status": "状态",

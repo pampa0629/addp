@@ -7,6 +7,42 @@ const detail = `${root}/transfer.task.create`
 const definition = JSON.parse(readFileSync(new URL('../../backend/internal/platform/transfer.json', import.meta.url)))
 const review = JSON.parse(readFileSync(new URL('../../backend/internal/platform/transfer.review.json', import.meta.url)))
 const release = { context:{...definition,digest:'e'.repeat(64)}, review }
+
+test('platform graph fits all concepts inside its canvas', async ({ page, context }) => {
+  await fixture(context)
+  await page.goto(detail)
+  await expect(page.getByTestId('platform-graph').locator('canvas')).toHaveCount(1)
+  const metrics = await page.locator('.ontology-view').evaluate(element => {
+    const state = element.__vueParentComponent.setupState
+    const graph = state.graphInstance
+    return { bounds: graph?.get('group').getCanvasBBox(), width:graph?.get('width'), height:graph?.get('height'), fontSize:graph?.getNodes()[0].getModel().labelCfg.style.fontSize * graph?.getZoom() }
+  })
+  expect(metrics.bounds).toBeTruthy()
+  expect(metrics.bounds.minX).toBeGreaterThanOrEqual(16)
+  expect(metrics.bounds.minY).toBeGreaterThanOrEqual(16)
+  expect(metrics.bounds.maxX).toBeLessThanOrEqual(metrics.width - 16)
+  expect(metrics.bounds.maxY).toBeLessThanOrEqual(metrics.height - 16)
+  expect(metrics.fontSize).toBeGreaterThanOrEqual(12)
+  const graph = page.getByTestId('platform-graph')
+  await graph.getByRole('button', { name:'放大', exact:true }).click()
+  await graph.getByRole('button', { name:'原始大小', exact:true }).click()
+  expect(await page.locator('.ontology-view').evaluate(element => element.__vueParentComponent.setupState.graphInstance.getZoom())).toBe(1)
+  await graph.getByRole('button', { name:'适应窗口', exact:true }).click()
+  const point = await page.locator('.ontology-view').evaluate(element => {
+    const graph = element.__vueParentComponent.setupState.graphInstance
+    const node = graph.findById('confirmed_source').getModel()
+    return graph.getCanvasByPoint(node.x, node.y)
+  })
+  await graph.locator('canvas').click({ position: point })
+  await expect(page.locator('.node-detail')).toContainText(definition.concepts.find(item => item.id === 'confirmed_source').name['zh-cn'])
+  await expect(page.getByTestId('platform-bindings').locator('tbody tr')).toHaveCount(1)
+  await page.setViewportSize({ width:640, height:900 })
+  await expect.poll(() => page.locator('.ontology-view').evaluate(element => {
+    const graph = element.__vueParentComponent.setupState.graphInstance
+    const box = graph.get('group').getCanvasBBox()
+    return box.minX >= 16 && box.minY >= 16 && box.maxX <= graph.get('width') - 16 && box.maxY <= graph.get('height') - 16
+  })).toBe(true)
+})
 async function fixture(context, options = {}) {
   const backend = await installBackend(context, { contextType:'platform', permissions:['ontology.platform_definition.read'], ...options })
   const state = { backend, reads:[], hold:null, expireOnce:false, fail:false }

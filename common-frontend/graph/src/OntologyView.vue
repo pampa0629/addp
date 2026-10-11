@@ -1,14 +1,21 @@
 <template>
   <div ref="containerRef" class="ontology-view">
+    <div v-if="!isEmpty" class="graph-toolbar">
+      <el-button size="small" @click="zoomBy(1.25)">{{ t('graph.zoomIn') }}</el-button>
+      <el-button size="small" @click="zoomBy(0.8)">{{ t('graph.zoomOut') }}</el-button>
+      <el-button size="small" @click="actualSize">{{ t('graph.actualSize') }}</el-button>
+      <el-button size="small" @click="fitView">{{ t('graph.fitView') }}</el-button>
+    </div>
+    <div ref="canvasRef" class="graph-canvas" />
     <div v-if="isEmpty" class="empty-hint">
       <el-empty :description="t('graph.noEntities')" :image-size="60" />
     </div>
     <!-- 右侧属性面板 -->
     <div v-if="selectedNode" class="node-detail">
       <div class="node-detail-header">
-        <span :style="{ color: selectedNode.color || '#6366f1' }">● </span>
+        <span class="node-marker" :style="{ color: selectedNode.color }">● </span>
         <strong>{{ selectedNode.label }}</strong>
-        <el-button text size="small" style="margin-left:auto" @click="selectedNode = null">×</el-button>
+        <el-button class="detail-close" text size="small" :aria-label="t('common.close')" @click="selectedNode = null">×</el-button>
       </div>
       <div class="node-detail-body">
         <div class="detail-row"><span class="detail-key">{{ t('graph.identifier') }}</span><span>{{ selectedNode.name }}</span></div>
@@ -35,12 +42,14 @@ const { t } = useI18n()
 const props = defineProps({
   entityTypes: { type: Array, default: () => [] },
   relationTypes: { type: Array, default: () => [] },
-  readonly: { type: Boolean, default: false }
+  readonly: { type: Boolean, default: false },
+  layout: { type: String, default: 'dagre', validator: value => ['dagre', 'grid'].includes(value) }
 })
 
 const emit = defineEmits(['node-click', 'edge-click', 'canvas-click', 'edge-create'])
 
 const containerRef = ref(null)
+const canvasRef = ref(null)
 const selectedNode = ref(null)
 let graphInstance = null
 
@@ -60,15 +69,15 @@ function buildG6Data() {
 
   const nodes = props.entityTypes.map(et => ({
     id: String(et.id),
-    label: (et.label || et.name).substring(0, 16),
+    label: wrapLabel(et.label || et.name),
     _meta: et,
     style: {
-      fill: et.color || '#6366f1',
-      stroke: '#fff',
+      fill: et.color || getThemeColor('--el-color-primary'),
+      stroke: getThemeColor('--addp-border-color'),
       lineWidth: 2,
-      r: 30
+      radius: 8
     },
-    labelCfg: { style: { fill: '#fff', fontSize: 12, fontWeight: 'bold' } }
+    labelCfg: { style: { fill: getThemeColor('--el-color-white'), fontSize: 14, lineHeight: 18, fontWeight: 'bold' } }
   }))
 
   const edges = [
@@ -90,7 +99,7 @@ function buildG6Data() {
         id: `inherit_${et.id}`,
         source: String(et.parent_id),
         target: String(et.id),
-        label: '继承',
+        label: t('graph.inherits'),
         style: { lineDash: [4, 4], stroke: inheritColor, lineWidth: 1.5, endArrow: { path: G6.Arrow.triangle(6, 4, 0), fill: inheritColor } },
         labelCfg: { style: { fill: inheritColor, fontSize: 10 }, autoRotate: true }
       }))
@@ -99,30 +108,65 @@ function buildG6Data() {
   return { nodes, edges }
 }
 
-function initGraph() {
-  if (!containerRef.value || isEmpty.value || graphInstance) return
+function wrapLabel(value) {
+  const lines = ['']
+  let width = 0
+  for (const character of String(value)) {
+    const size = /[\u0000-\u007f]/.test(character) ? 0.6 : 1
+    if (width + size > 11) {
+      if (lines.length === 3) return `${lines.join('\n')}…`
+      lines.push('')
+      width = 0
+    }
+    lines[lines.length - 1] += character
+    width += size
+  }
+  return lines.join('\n')
+}
 
-  const width = containerRef.value.offsetWidth || 800
-  const height = containerRef.value.offsetHeight || 500
+function layoutOptions(width, height) {
+  return props.layout === 'grid'
+    ? { type: 'grid', width: width - 64, height: height - 64, begin: [32, 32], preventOverlap: true, nodeSize: [168, 88], nodeSpacing: 24 }
+    : { type: 'dagre', rankdir: 'LR', nodesep: 32, ranksep: 100 }
+}
+
+function fitView() {
+  graphInstance?.fitView(32)
+}
+
+function zoomBy(factor) {
+  if (!graphInstance) return
+  graphInstance.zoomTo(Math.min(2, Math.max(0.02, graphInstance.getZoom() * factor)), { x: graphInstance.get('width') / 2, y: graphInstance.get('height') / 2 })
+}
+
+function actualSize() {
+  if (!graphInstance) return
+  graphInstance.zoomTo(1)
+  graphInstance.fitCenter()
+}
+
+function initGraph() {
+  if (!canvasRef.value || isEmpty.value || graphInstance) return
+
+  const width = canvasRef.value.offsetWidth
+  const height = canvasRef.value.offsetHeight
+  if (width < 50 || height < 50) return
 
   graphInstance = new G6.Graph({
-    container: containerRef.value,
+    container: canvasRef.value,
     width,
     height,
     fitView: true,
-    fitViewPadding: 40,
+    fitViewPadding: 32,
+    minZoom: 0.02,
+    maxZoom: 2,
     modes: {
       default: props.readonly
         ? ['drag-canvas', 'zoom-canvas']
         : ['drag-canvas', 'zoom-canvas', 'drag-node']
     },
-    layout: {
-      type: 'dagre',
-      rankdir: 'LR',
-      nodesep: 60,
-      ranksep: 100
-    },
-    defaultNode: { type: 'circle', size: 60 },
+    layout: layoutOptions(width, height),
+    defaultNode: { type: 'rect', size: [168, 72] },
     defaultEdge: { type: 'quadratic' }
   })
 
@@ -166,16 +210,21 @@ onMounted(async () => {
   await nextTick()
   if (!isEmpty.value) initGraph()
   resizeObserver = new ResizeObserver(() => {
-    if (graphInstance && containerRef.value) {
-      const w = containerRef.value.offsetWidth
-      const h = containerRef.value.offsetHeight
+    if (!graphInstance) { initGraph(); return }
+    if (canvasRef.value) {
+      const w = canvasRef.value.offsetWidth
+      const h = canvasRef.value.offsetHeight
       if (w > 50 && h > 50) {
+        if (w === graphInstance.get('width') && h === graphInstance.get('height')) return
         graphInstance.changeSize(w, h)
-        try { graphInstance.fitView(40) } catch (_) {}
+        if (props.layout === 'grid') {
+          graphInstance.once('afterlayout', fitView)
+          graphInstance.updateLayout(layoutOptions(w, h))
+        } else fitView()
       }
     }
   })
-  if (containerRef.value) resizeObserver.observe(containerRef.value)
+  if (canvasRef.value) resizeObserver.observe(canvasRef.value)
 })
 
 onBeforeUnmount(() => {
@@ -184,7 +233,7 @@ onBeforeUnmount(() => {
   graphInstance = null
 })
 
-watch(() => [props.entityTypes, props.relationTypes], rerender, { deep: true })
+watch(() => [props.entityTypes, props.relationTypes, props.layout], rerender, { deep: true })
 </script>
 
 <style scoped>
@@ -193,10 +242,19 @@ watch(() => [props.entityTypes, props.relationTypes], rerender, { deep: true })
   height: 100%;
   min-height: 400px;
   position: relative;
+  display: flex;
+  flex-direction: column;
   background: var(--addp-bg-primary, #fafbfc);
   border-radius: 4px;
   overflow: hidden;
 }
+
+.graph-toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; flex-shrink: 0; }
+.graph-toolbar .el-button + .el-button { margin-left: 0; }
+.graph-canvas { flex: 1; min-height: 0; }
+.node-marker { color: var(--el-color-primary); }
+.detail-close { margin-left: auto; }
+.node-detail-body { overflow-wrap: anywhere; }
 
 .empty-hint {
   position: absolute;
@@ -207,7 +265,7 @@ watch(() => [props.entityTypes, props.relationTypes], rerender, { deep: true })
 
 .node-detail {
   position: absolute;
-  top: 12px;
+  top: 56px;
   right: 12px;
   width: 220px;
   background: var(--addp-bg-primary, #fff);

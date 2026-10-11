@@ -54,14 +54,15 @@
         <p class="filter-hint">{{ t(accountScope ? 'system.engine.sourceGrants.accountSourcesHint' : 'system.engine.sourceGrants.recipientFilterBoundary') }}</p>
         <el-alert v-if="filterDraft.recipientType && (!canReadFilterRecipients || filterRecipientStatus === 'failed')" type="warning" :closable="false" :title="t(`system.engine.sourceGrants.recipientNames.${canReadFilterRecipients ? 'failed' : 'forbidden'}`)" />
         <el-button :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
-        <el-table ref="grantTable" :data="rows" v-loading="loading" data-testid="source-grant-list" :empty-text="t('system.engine.sourceGrants.noMatchingSources')">
+        <el-table :key="listProjection" ref="grantTable" :data="rows" v-loading="loading" data-testid="source-grant-list" :empty-text="t('system.engine.sourceGrants.noMatchingSources')">
           <el-table-column v-if="accountScope" type="expand">
             <template #default="{ row: target }">
               <div class="source-details" data-testid="account-grant-sources">
                 <p>{{ t('system.engine.sourceGrants.inspection.observedAt') }}：{{ formatTime(target.inspection.observed_at) }}</p>
                 <el-table :data="target.inspection.sources" :empty-text="t('system.engine.sourceGrants.inspection.noSources')">
                   <el-table-column :label="t('system.engine.sourceGrants.source')" min-width="220"><template #default="{ row }"><EngineGrantRecipient :type="row.recipient_type" :id="row.recipient_id" v-bind="recipientPresentation(row)" /></template></el-table-column>
-                  <el-table-column :label="t('system.engine.dataAuthorization.mode')" min-width="150"><template #default="{ row }">{{ t(`system.engine.dataAuthorization.modes.${row.approval_mode}`) }}</template></el-table-column>
+                  <!-- Element Plus probes column slots with an empty row and $index -1. -->
+                  <el-table-column :label="t('system.engine.dataAuthorization.mode')" min-width="150"><template #default="{ row, $index }"><span v-if="$index >= 0">{{ t(`system.engine.dataAuthorization.modes.${row.approval_mode}`) }}</span></template></el-table-column>
                   <el-table-column :label="t('system.engine.sourceGrants.expiry')" min-width="180"><template #default="{ row }">{{ expiryLabel(row) }}</template></el-table-column>
                   <el-table-column :label="t('system.engine.sourceGrants.sourceCount')" prop="grant_count" min-width="100" />
                   <el-table-column v-if="canRevoke" width="100" fixed="right"><template #default="{ row }"><el-button data-testid="source-grant-revoke" link type="danger" @click="openRevoke({ ...row, catalog_path: target.catalog_path })">{{ t('system.engine.sourceGrants.revokeSource') }}</el-button></template></el-table-column>
@@ -125,6 +126,9 @@ const canReadCandidates = computed(() => auth.hasPermission(recipientSources[for
 const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error = ref(''), success = ref('')
 const listMode = ref('current')
 const accountScope = computed(() => listMode.value === 'current' && appliedFilters.value.recipient_type === 'user' && !!appliedFilters.value.recipient_id)
+// Different projections have different row contracts and columns. Do not reuse
+// Element Plus's previous row store when switching to account source details.
+const listProjection = computed(() => listMode.value === 'history' ? 'history' : accountScope.value ? 'account' : 'relations')
 const filterDraft = reactive({ tableSearch: '', recipientType: '', recipientID: '' })
 const appliedFilters = ref({})
 const filterMembers = ref([])

@@ -53,13 +53,13 @@ func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 	}
 
 	return &postgresTableWriteSession{
-		db:              db,
-		tx:              tx,
-		stmt:            stmt,
-		schema:          schema,
-		table:           table,
-		columns:         columns,
-		geometryColumns: postgresGeometryColumns(opts.Fields),
+		db:         db,
+		tx:         tx,
+		stmt:       stmt,
+		schema:     schema,
+		table:      table,
+		columns:    columns,
+		fieldTypes: postgresWriteFieldTypes(opts.Fields),
 	}, nil
 }
 
@@ -90,17 +90,17 @@ func fieldColumns(fields []datatype.FieldInfo) []string {
 }
 
 type postgresTableWriteSession struct {
-	db              *sql.DB
-	tx              *sql.Tx
-	stmt            *sql.Stmt
-	schema          string
-	table           string
-	columns         []string
-	geometryColumns map[string]struct{}
-	batchesWritten  int64
-	rowsWritten     int64
-	commitMarker    *resume.Marker
-	closed          bool
+	db             *sql.DB
+	tx             *sql.Tx
+	stmt           *sql.Stmt
+	schema         string
+	table          string
+	columns        []string
+	fieldTypes     map[string]datatype.FieldType
+	batchesWritten int64
+	rowsWritten    int64
+	commitMarker   *resume.Marker
+	closed         bool
 }
 
 func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) error {
@@ -110,14 +110,13 @@ func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugi
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
-	values := make([]interface{}, len(s.columns))
-	for _, row := range batch.Rows {
+	for rowIndex, row := range batch.Rows {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		for i, column := range s.columns {
-			_, isGeometry := s.geometryColumns[column]
-			values[i] = postgresWriteValue(row[column], isGeometry)
+		values, err := postgresWriteRow(row, s.columns, s.fieldTypes)
+		if err != nil {
+			return fmt.Errorf("copy postgresql row %d: %w", rowIndex, err)
 		}
 		if _, err := s.stmt.ExecContext(ctx, values...); err != nil {
 			return fmt.Errorf("copy postgresql row: %w", err)

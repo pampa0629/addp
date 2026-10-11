@@ -60,7 +60,10 @@ func TestBuildPostgresInsertSQL(t *testing.T) {
 		{"id": 2, `city"name`: "Shanghai"},
 	}
 
-	sql, args := buildPostgresInsertSQL("public", "target table", []string{"id", `city"name`}, rows, nil)
+	sql, args, err := buildPostgresInsertSQL("public", "target table", []string{"id", `city"name`}, rows, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	wantSQL := `INSERT INTO "public"."target table" ("id", "city""name") VALUES ($1, $2), ($3, $4)`
 	if sql != wantSQL {
 		t.Fatalf("sql = %q, want %q", sql, wantSQL)
@@ -83,9 +86,12 @@ func TestBuildPostgresInsertSQLNormalizesGeometryBytes(t *testing.T) {
 	rows := []map[string]interface{}{
 		{"id": 1, "geom": []byte{0x01, 0x02, 0x0f}},
 	}
-	geometryColumns := map[string]struct{}{"geom": {}}
+	fieldTypes := map[string]datatype.FieldType{"geom": datatype.FieldTypeGeometry}
 
-	sql, args := buildPostgresInsertSQL("public", "roads", []string{"id", "geom"}, rows, geometryColumns)
+	sql, args, err := buildPostgresInsertSQL("public", "roads", []string{"id", "geom"}, rows, fieldTypes)
+	if err != nil {
+		t.Fatal(err)
+	}
 	wantSQL := `INSERT INTO "public"."roads" ("id", "geom") VALUES ($1, $2)`
 	if sql != wantSQL {
 		t.Fatalf("sql = %q, want %q", sql, wantSQL)
@@ -96,18 +102,18 @@ func TestBuildPostgresInsertSQLNormalizesGeometryBytes(t *testing.T) {
 	}
 }
 
-func TestPostgresGeometryColumns(t *testing.T) {
+func TestPostgresWriteFieldTypes(t *testing.T) {
 	fields := []datatype.FieldInfo{
 		{Name: "id", Type: "int"},
 		{Name: "geom", Type: "geometry"},
 	}
 
-	got := postgresGeometryColumns(fields)
-	if _, ok := got["geom"]; !ok {
+	got := postgresWriteFieldTypes(fields)
+	if got["geom"] != datatype.FieldTypeGeometry {
 		t.Fatal("geom was not detected as geometry")
 	}
-	if _, ok := got["id"]; ok {
-		t.Fatal("id was detected as geometry")
+	if got["id"] != datatype.FieldTypeInt {
+		t.Fatal("id type was not retained")
 	}
 }
 

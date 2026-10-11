@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 )
@@ -48,9 +49,9 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 			chunkSize = value
 		}
 	}
-	geometryColumns := postgresGeometryColumns(batch.Fields)
+	fieldTypes := postgresWriteFieldTypes(batch.Fields)
 	if shouldUseCopyBatchWrite(opts, batch) {
-		return p.writeBatchWithCopy(ctx, db, schema, table, columns, batch.Rows, chunkSize, geometryColumns)
+		return p.writeBatchWithCopy(ctx, db, schema, table, columns, batch.Rows, chunkSize, fieldTypes)
 	}
 	chunkSize = effectivePostgresInsertChunkSize(len(columns), chunkSize)
 
@@ -65,7 +66,10 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		insertSQL, args := buildPostgresInsertSQL(schema, table, columns, batch.Rows[start:end], geometryColumns)
+		insertSQL, args, err := buildPostgresInsertSQL(schema, table, columns, batch.Rows[start:end], fieldTypes)
+		if err != nil {
+			return fmt.Errorf("encode postgresql batch insert rows %d-%d: %w", start, end, err)
+		}
 		if _, err := tx.ExecContext(ctx, insertSQL, args...); err != nil {
 			return fmt.Errorf("execute postgresql batch insert rows %d-%d: %w", start, end, err)
 		}
@@ -150,7 +154,7 @@ func effectivePostgresInsertChunkSize(columnCount, requested int) int {
 	return requested
 }
 
-func buildPostgresInsertSQL(schema, table string, columns []string, rows []map[string]interface{}, geometryColumns map[string]struct{}) (string, []interface{}) {
+func buildPostgresInsertSQL(schema, table string, columns []string, rows []map[string]interface{}, fieldTypes map[string]datatype.FieldType) (string, []interface{}, error) {
 	dialect := commonquery.ForDialect("postgresql")
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
@@ -167,16 +171,19 @@ func buildPostgresInsertSQL(schema, table string, columns []string, rows []map[s
 	args := make([]interface{}, 0, len(rows)*len(columns))
 	placeholder := 1
 	valueGroups := make([]string, 0, len(rows))
-	for _, row := range rows {
+	for rowIndex, row := range rows {
+		values, err := postgresWriteRow(row, columns, fieldTypes)
+		if err != nil {
+			return "", nil, fmt.Errorf("row %d: %w", rowIndex, err)
+		}
+		args = append(args, values...)
 		group := make([]string, 0, len(columns))
-		for _, column := range columns {
+		for range columns {
 			group = append(group, fmt.Sprintf("$%d", placeholder))
-			_, isGeometry := geometryColumns[column]
-			args = append(args, postgresWriteValue(row[column], isGeometry))
 			placeholder++
 		}
 		valueGroups = append(valueGroups, "("+strings.Join(group, ", ")+")")
 	}
 	sb.WriteString(strings.Join(valueGroups, ", "))
-	return sb.String(), args
+	return sb.String(), args, nil
 }

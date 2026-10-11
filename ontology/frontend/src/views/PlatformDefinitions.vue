@@ -27,7 +27,7 @@
         </el-descriptions>
         <h3>{{ t('ontology.platform.graph') }}</h3>
         <div ref="graphContainer" class="graph-frame" data-testid="platform-graph">
-          <OntologyView :entity-types="graph.entityTypes" :relation-types="graph.relationTypes" readonly @node-click="selectConcept" />
+          <OntologyView :entity-types="graph.entityTypes" :relation-types="graph.relationTypes" layout="grid" readonly @node-click="selectConcept" />
         </div>
         <h3>{{ t('ontology.platform.concepts') }}</h3>
         <el-table :data="definition.concepts">

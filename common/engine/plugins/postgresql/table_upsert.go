@@ -139,13 +139,16 @@ func upsertPostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string,
 		}
 	}
 	chunkSize := effectivePostgresInsertChunkSize(len(columns), postgresDefaultInsertChunkSize)
-	geometryColumns := postgresGeometryColumns(batch.Fields)
+	fieldTypes := postgresWriteFieldTypes(batch.Fields)
 	for start := 0; start < len(batch.Rows); start += chunkSize {
 		end := start + chunkSize
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		statement, args := buildPostgresInsertSQL(schema, table, columns, batch.Rows[start:end], geometryColumns)
+		statement, args, err := buildPostgresInsertSQL(schema, table, columns, batch.Rows[start:end], fieldTypes)
+		if err != nil {
+			return fmt.Errorf("encode postgresql upsert rows %d-%d: %w", start, end, err)
+		}
 		statement += postgresOnConflictClause(columns, keys)
 		if _, err := tx.ExecContext(ctx, statement, args...); err != nil {
 			return fmt.Errorf("execute postgresql upsert rows %d-%d: %w", start, end, err)
