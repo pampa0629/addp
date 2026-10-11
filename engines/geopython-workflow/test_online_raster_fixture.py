@@ -1145,35 +1145,100 @@ def test_async_update_local_aligned_patch_and_independent_pixel_oracle(outside_a
         LocalMinio.objects[key]=original
 
 
-def test_batch_tiles_public_dag_matches_independent_hosted_window_oracle(tmp_path):
+def mounted_tiles(source, output, mode, compression):
     from workflow_engine import execute_workflow
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    definition = scene.tiling_workflow('source-locator', 2, mode, compression)
+    definition['tasks'][0]['params'] = {'access_plan': {
+        'schema_version': 'addp.workflow.access-plan/v1', 'source': {
+            'kind': 'file', 'format': 'tiff', 'access': {'method': 'mounted_path', 'path': str(source)}}}}
+    params = definition['tasks'][-1]['params']
+    for name in ('target_parent_locator', 'target_name', 'write_mode'):
+        params.pop(name)
+    params['access_plan'] = {'schema_version': 'addp.workflow.access-plan/v1', 'target': {
+        'kind': 'directory', 'format': 'tiff', 'name': 'tiles', 'write_mode': mode,
+        'access': {'method': 'mounted_path', 'path': str(output)}}}
+    result = execute_workflow(definition)
+    assert result['status'] == 'success', result
+    assert 'workspace' not in json.dumps(result) and str(output.parent) not in json.dumps(result)
+    return json.loads(result['final_result'])
+
+
+def test_batch_tiles_public_dag_matches_independent_hosted_window_oracle(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT))
     source = tmp_path/'source.tif'
     fixture.write_source_raster(source, 'source.tif', False, -9999.)
     original = source.read_bytes()
     output = tmp_path/'tiles'
-    result = execute_workflow({'tasks':[
-        {'id':'load','operator':'raster_load','depends_on':[],'params':{'access_plan':{
-            'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(source)}}}}},
-        {'id':'tile','operator':'raster_tile','depends_on':['load'],'params':{'input_raster':{'$ref':'load'},'tile_size':[160,160]}},
-        {'id':'save','operator':'raster_save_tiles','depends_on':['tile'],'params':{'input_tiles':{'$ref':'tile'},'profile':'cog','blocksize':128,
-            'access_plan':{'schema_version':'addp.workflow.access-plan/v1','target':{'kind':'directory','format':'tiff','name':'tiles','write_mode':'create','access':{'method':'mounted_path','path':str(output)}}}}},
-    ]})
-    assert result['status']=='success',result
-    manifest = json.loads(result['final_result'])
-    assert manifest['completed_tiles']==4
-    for key in fixture.TILE_WINDOWS:
-        evidence = fixture.verify_tile_file(output/(key+'.tif'),key)
-        assert evidence['size_bytes']==manifest['tiles'][key]['size_bytes']>0
-    assert source.read_bytes()==original
-    assert set(path.name for path in output.iterdir())=={key+'.tif' for key in fixture.TILE_WINDOWS}
-    assert 'workspace' not in json.dumps(result) and str(tmp_path) not in json.dumps(result)
+    initial = {}
+    for mode, compression in (('create', 'DEFLATE'), ('replace', 'NONE')):
+        if mode == 'replace':
+            (output/'keep.txt').write_bytes(fixture.TILE_KEEP_BYTES)
+        manifest = mounted_tiles(source, output, mode, compression)
+        assert manifest['completed_tiles'] == 4
+        for key in fixture.TILE_WINDOWS:
+            evidence = fixture.verify_tile_file(output/(key+'.tif'), key, compression)
+            assert evidence['size_bytes'] == manifest['tiles'][key]['size_bytes'] > 0
+            if mode == 'create':
+                initial[key] = evidence
+            else:
+                assert evidence['sha256'] != initial[key]['sha256']
+                assert evidence['size_bytes'] != initial[key]['size_bytes']
+        assert source.read_bytes() == original
+        assert set(path.name for path in output.iterdir()) == {key+'.tif' for key in fixture.TILE_WINDOWS} | ({'keep.txt'} if mode == 'replace' else set())
+    assert (output/'keep.txt').read_bytes() == fixture.TILE_KEEP_BYTES
     # A structurally valid COG with one changed edge value must fail the independent oracle.
     bad = tmp_path/'bad.tif'
     edited = gdal.Translate(str(bad),str(output/'r160_c160.tif'),format='GTiff')
     edited.GetRasterBand(2).WriteRaster(95,95,1,1,struct.pack('<d',-5),buf_type=gdal.GDT_Float64)
     edited = None
     cog = tmp_path/'bad-cog.tif'
-    edited = gdal.Translate(str(cog),str(bad),format='COG',creationOptions=['BLOCKSIZE=128'])
+    edited = gdal.Translate(str(cog),str(bad),format='COG',creationOptions=['BLOCKSIZE=128', 'COMPRESS=NONE'])
     edited = None
     with pytest.raises(fixture.FixtureError,match='pixels'):
-        fixture.verify_tile_file(cog,'r160_c160')
+        fixture.verify_tile_file(cog,'r160_c160', 'NONE')
+
+
+
+def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old_tiles(outside_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    multisource_execution(tmp_path, api_server, 'update-valid',
+        scene.update_workflow('base-locator', 'patch-locator', 2, 'update-valid'),
+        [('source', 'source.tif'), ('source', 'multiband.tif')])
+    source = tmp_path/'tiling-source.tif'
+    source.write_bytes(LocalMinio.objects['source', 'raster-source', 'source.tif'])
+    output = tmp_path/'tiles'
+    mounted_tiles(source, output, 'create', 'DEFLATE')
+    for key in fixture.TILE_WINDOWS:
+        LocalMinio.objects['target', 'raster-target', 'tiles-basic/'+key+'.tif'] = (output/(key+'.tif')).read_bytes()
+    initial = fixture.worker('verify-tiles', outside_artifacts)
+    prepared = fixture.worker('prepare-tiles-replace', outside_artifacts)
+    assert prepared['tiles'] == initial['tiles']
+    assert LocalMinio.objects['target', 'raster-target', fixture.TILE_KEEP_NAME] == fixture.TILE_KEEP_BYTES
+    old = LocalMinio.objects['target', 'raster-target', 'tiles-basic/r160_c160.tif']
+    manifest = mounted_tiles(source, output, 'replace', 'NONE')
+    for key in fixture.TILE_WINDOWS:
+        LocalMinio.objects['target', 'raster-target', 'tiles-basic/'+key+'.tif'] = (output/(key+'.tif')).read_bytes()
+    replaced = fixture.worker('verify-tiles-replace', outside_artifacts)
+    assert replaced['preserved_sha256'] == initial['preserved_sha256']
+    assert replaced['unrelated_sha256'] == prepared['unrelated_sha256']
+    for key in fixture.TILE_WINDOWS:
+        assert replaced['tiles'][key]['sha256'] != initial['tiles'][key]['sha256']
+        assert replaced['tiles'][key]['size_bytes'] == manifest['tiles'][key]['size_bytes'] > 0
+    baseline = dict(LocalMinio.objects)
+    for fault in ('missing-unrelated', 'changed-unrelated', 'old-compression', 'extra-object'):
+        try:
+            if fault == 'missing-unrelated':
+                del LocalMinio.objects['target', 'raster-target', fixture.TILE_KEEP_NAME]
+            elif fault == 'changed-unrelated':
+                LocalMinio.objects['target', 'raster-target', fixture.TILE_KEEP_NAME] = b'changed'
+            elif fault == 'old-compression':
+                LocalMinio.objects['target', 'raster-target', 'tiles-basic/r160_c160.tif'] = old
+            else:
+                LocalMinio.objects['target', 'raster-target', 'tiles-basic/extra.txt'] = b'extra'
+            with pytest.raises((fixture.FixtureError, KeyError)):
+                fixture.worker('verify-tiles-replace', outside_artifacts)
+        finally:
+            LocalMinio.objects.clear()
+            LocalMinio.objects.update(baseline)

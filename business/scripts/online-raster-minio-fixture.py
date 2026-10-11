@@ -44,7 +44,9 @@ NON_COG_SOURCE = 'non-cog.tif'
 SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
                 ('multiband-average-finite.tif', False, -9999.))
-ACTIONS = ('verify-tiles', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
+TILE_KEEP_NAME = 'tiles-basic/keep.txt'
+TILE_KEEP_BYTES = b'Unrelated raster fixture file; replace must preserve these bytes.\n'
+ACTIONS = ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -529,7 +531,7 @@ def tile_expectation(key):
             'valid_pixels': width*height-(key == 'r0_c0')}
 
 
-def verify_tile_file(path, key):
+def verify_tile_file(path, key, compression='DEFLATE'):
     """Independent pixel/validity oracle for the four fixed Hosted windows."""
     from osgeo import gdal, osr
     from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
@@ -553,12 +555,13 @@ def verify_tile_file(path, key):
         mask = band.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte)
         if (band.DataType != gdal.GDT_Float64 or band.GetNoDataValue() != -9999.
             or gdal.GetColorInterpretationName(band.GetColorInterpretation()) != ('Gray' if index == 1 else 'Undefined')
+            or (dataset.GetMetadataItem('COMPRESSION', 'IMAGE_STRUCTURE') or 'NONE') != compression
             or actual != pixels or any(value != (0 if wanted == -9999. else 255) for value, wanted in zip(mask, pixels))
             or [[band.GetOverview(i).XSize, band.GetOverview(i).YSize] for i in range(band.GetOverviewCount())] != levels):
             raise FixtureError('tile pixels, dtype, validity, colour or overview grid differs')
     return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': bool(levels),
             'overview_sizes': levels, 'valid_pixels': expected['valid_pixels'],
-            'source_unchanged': True, 'size_bytes': Path(path).stat().st_size,
+            'source_unchanged': True, 'compression': compression, 'size_bytes': Path(path).stat().st_size,
             'sha256': hashlib.sha256(Path(path).read_bytes()).hexdigest()}
 
 def worker(action, path):
@@ -773,7 +776,7 @@ def worker(action, path):
                     'invalid_pixels': len(invalid), 'source_unchanged': True,
                     'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
-        if action == 'verify-tiles':
+        if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace'):
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                 'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                 'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
@@ -786,11 +789,22 @@ def worker(action, path):
                 name = 'tiles-basic/'+key+'.tif'
                 path = root/name; path.parent.mkdir(parents=True, exist_ok=True)
                 clients['target'].fget_object(config['target']['bucket'], name, str(path))
-                tiles[key] = verify_tile_file(path, key)
+                tiles[key] = verify_tile_file(path, key, 'NONE' if action == 'verify-tiles-replace' else 'DEFLATE')
             names = set(preserved) | {'tiles-basic/'+key+'.tif' for key in TILE_WINDOWS}
+            sentinel = root/'keep.txt'
+            sentinel_sha = hashlib.sha256(TILE_KEEP_BYTES).hexdigest()
+            if action == 'verify-tiles-replace':
+                names.add(TILE_KEEP_NAME)
+                clients['target'].fget_object(config['target']['bucket'], TILE_KEEP_NAME, str(sentinel))
+                if sentinel.read_bytes() != TILE_KEEP_BYTES:
+                    raise FixtureError('batch replace modified the unrelated file')
             if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
                 raise FixtureError('tiling target contains unexpected or partial artifacts')
-            return {'tiles': tiles, 'preserved_sha256': preserved, 'source_unchanged': True}
+            if action == 'prepare-tiles-replace':
+                sentinel.write_bytes(TILE_KEEP_BYTES)
+                clients['target'].fput_object(config['target']['bucket'], TILE_KEEP_NAME, str(sentinel))
+            return {'tiles': tiles, 'preserved_sha256': preserved, 'source_unchanged': True,
+                **({'unrelated_sha256': sentinel_sha} if action != 'verify-tiles' else {})}
 
         grid_case = action.removeprefix('verify-')
         if grid_case in UTILITY_CASES or action == 'verify-utility-queries':
