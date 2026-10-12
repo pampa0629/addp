@@ -1124,7 +1124,7 @@ def verify_native_footprints(physical,tmp_path,last_case):
         result, _ = single_source_execution(tmp_path, scene, api_server, case)
         execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
         assert scene.validate_footprint(execution, case) == result
-        assert sum(fixture.footprint_pixels(case)) == (65532 if case == 'footprint-any' else 65524)
+        assert sum(fixture.footprint_pixels(case)) == {'footprint-any':65532, 'footprint-all':65524, 'footprint-band-2':65528}[case]
         assert fixture.worker('verify-'+last_case, physical)['valid_pixels'] == fixture.computed_expectation(last_case)['valid_pixels']
         assert LocalMinio.objects == baseline
 

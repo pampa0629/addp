@@ -282,6 +282,8 @@ def footprint_workflow(source_locator, case_name):
     params = {'input_raster': {'$ref': 'load', 'port': 'default'}}
     if case_name == 'footprint-all':
         params['validity'] = 'all'
+    elif case_name == 'footprint-band-2':
+        params['bands'] = [2]
     return {'tasks': [
         {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
         {'id': 'analysis', 'operator': 'raster_footprint', 'depends_on': ['load'], 'params': params},

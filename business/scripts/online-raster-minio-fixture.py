@@ -40,7 +40,7 @@ RECLASS_CASES = ('reclassify-nodata', 'reclassify-keep')
 AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum', 'aggregate-min', 'aggregate-max')
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
-FOOTPRINT_CASES = ('footprint-any', 'footprint-all')
+FOOTPRINT_CASES = ('footprint-any', 'footprint-all', 'footprint-band-2')
 TILE_WINDOWS = {'r0_c0': (0, 0, 160, 160), 'r0_c160': (160, 0, 96, 160),
                 'r160_c0': (0, 160, 160, 96), 'r160_c160': (160, 160, 96, 96)}
 UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
@@ -340,10 +340,11 @@ def footprint_pixels(case_name):
     """Independent source cell indices: separate missing bands and transparent cell."""
     if case_name not in FOOTPRINT_CASES:
         raise FixtureError('unknown footprint case')
+    invalid_cells = {'footprint-any': (2,), 'footprint-all': (0, 1, 2), 'footprint-band-2': (1, 2)}[case_name]
     for row in range(SIZE):
         for column in range(SIZE):
             cell = (row // 2) * (SIZE // 2) + column // 2
-            yield cell != 2 and (case_name == 'footprint-any' or cell not in (0, 1))
+            yield cell not in invalid_cells
 
 
 def outside_pixels(case_name, band=1, level=1):

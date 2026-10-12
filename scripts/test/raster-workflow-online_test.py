@@ -10,8 +10,11 @@ m = importlib.import_module('scripts.test.raster-workflow-online')
 
 def footprint_result(case_name):
     # Hand-written expected boundary for independent missing/transparent source cells.
-    ring = ([(0, 0), (4, 0), (4, 2), (6, 2), (6, 0), (256, 0), (256, 256), (0, 256), (0, 0)]
-        if case_name == 'footprint-any' else [(6, 0), (256, 0), (256, 256), (0, 256), (0, 2), (6, 2), (6, 0)])
+    ring = {
+        'footprint-any': [(0, 0), (4, 0), (4, 2), (6, 2), (6, 0), (256, 0), (256, 256), (0, 256), (0, 0)],
+        'footprint-all': [(6, 0), (256, 0), (256, 256), (0, 256), (0, 2), (6, 2), (6, 0)],
+        'footprint-band-2': [(0, 0), (2, 0), (2, 2), (6, 2), (6, 0), (256, 0), (256, 256), (0, 256), (0, 0)],
+    }[case_name]
     coordinates = [[110 + x*.01, 20.32-y*.01] for x, y in ring]
     return {'type': 'FeatureCollection', 'features': [{'id': '0', 'type': 'Feature', 'properties': {},
         'geometry': {'type': 'MultiPolygon', 'coordinates': [[coordinates]]}}]}
@@ -119,7 +122,9 @@ class Client:
                 if operator == 'raster_info':
                     final_result = m.fixture.utility_info_expectation('physical-wkt')
                 elif operator == 'raster_footprint':
-                    case_name = 'footprint-all' if definition['tasks'][-1]['params'].get('validity') == 'all' else 'footprint-any'
+                    params = definition['tasks'][-1]['params']
+                    case_name = ('footprint-band-2' if params.get('bands') == [2] else
+                        'footprint-all' if params.get('validity') == 'all' else 'footprint-any')
                     final_result = footprint_result(case_name)
                 elif operator == 'validate_cog':
                     valid = 'to-cog.cog.tif' in definition['tasks'][0]['params']['locator']
@@ -204,7 +209,7 @@ class Client:
         elif path.startswith('/api/v1/meta/lineage/graph?'):
             target_id = int(urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)['item_id'][0])
             source_id, identifier = (10, 'run-3') if target_id == 20 else (11, 'run-' + str(target_id - (17 if target_id <= 22 else 13)))
-            if target_id >= 48: source_id, identifier = 10, 'run-41' if 'run-41' in self.executions else 'run-40'
+            if target_id >= 48: source_id, identifier = 10, 'run-42' if 'run-42' in self.executions else 'run-41'
             if target_id == 26: source_id = 12
             if target_id == 27: source_id = 26
             if target_id == 28: source_id = 13
@@ -346,7 +351,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
 
     def test_footprint_default_union_explicit_intersection_and_readonly_browser(self):
         cases = self.run_scene()['footprint_cases']
-        self.assertEqual([item['case_name'] for item in cases], ['footprint-any', 'footprint-all'])
+        self.assertEqual([item['case_name'] for item in cases], ['footprint-any', 'footprint-all', 'footprint-band-2'])
         for case in cases:
             self.assertEqual(case['browser']['source_item_id'], 12)
             self.assertEqual(case['browser']['result_kind'], 'json')
@@ -357,6 +362,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             and body['content']['workflow_definition']['tasks'][-1]['operator'] == 'raster_footprint']
         self.assertNotIn('validity', definitions[0]['tasks'][-1]['params'])
         self.assertEqual(definitions[1]['tasks'][-1]['params']['validity'], 'all')
+        self.assertEqual(definitions[2]['tasks'][-1]['params']['bands'], [2])
+        self.assertNotIn('validity', definitions[2]['tasks'][-1]['params'])
+        self.assertEqual([sum(m.fixture.footprint_pixels(c['case_name'])) for c in cases], [65532, 65524, 65528])
 
     def test_footprint_oracle_accepts_equivalent_ring_start_and_orientation(self):
         for case in m.fixture.FOOTPRINT_CASES:
@@ -393,6 +401,16 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 if fault == 'output': execution['outputs'] = {'unexpected': {}}
                 if fault == 'lineage': execution['metadata']['lineage_facts'] = {'inputs': []}
                 with self.assertRaises(m.SuiteError): m.validate_footprint(execution, 'footprint-any')
+
+    def test_selected_band_footprint_rejects_union_intersection_and_same_area_wrong_band(self):
+        wrong_band = footprint_result('footprint-band-2')
+        # Band 1 loses cell 0 instead of cell 1. Its area is the same as band 2,
+        # so only the independent per-pixel coverage check can reject it.
+        ring = [(2, 0), (4, 0), (4, 2), (6, 2), (6, 0), (256, 0), (256, 256), (0, 256), (0, 2), (2, 2), (2, 0)]
+        wrong_band['features'][0]['geometry']['coordinates'] = [[[[110+x*.01, 20.32-y*.01] for x, y in ring]]]
+        for result in (footprint_result('footprint-any'), footprint_result('footprint-all'), wrong_band):
+            execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
+            with self.assertRaises(m.SuiteError): m.validate_footprint(execution, 'footprint-band-2')
 
     def test_footprint_rejects_changes_to_last_and_prior_cog(self):
         for fault in ('last', 'prior'):
@@ -589,7 +607,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                         if fault == 'locator': metadata['outputs']['save_tiles']['tiles']['r0_c0']['resource']['locator'] = 'wrong'
                         if fault == 'unconfirmed': metadata['outputs']['save_tiles']['tiles']['r0_c160'] = metadata['outputs']['save_tiles']['tiles']['r0_c0']
                         if fault == 'no-scan': result['meta_scan_runs'] = []
-                        if fault == 'old-scan': result['meta_scan_runs'][0]['execution_id'] = 'auto-run-41-r0_c0'
+                        if fault == 'old-scan': result['meta_scan_runs'][0]['execution_id'] = 'auto-run-42-r0_c0'
                         if fault == 'lineage': metadata['lineage_facts'] = {'outputs': []}
                         if fault in ('size', 'float-size', 'bool-size'): manifest['tiles']['r0_c0']['size_bytes'] = {'size':1025, 'float-size':1024., 'bool-size':True}[fault]
                         if fault == 'meta-size': self.client.targets[52]['size_bytes'] = 1025
@@ -643,7 +661,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             self.assertEqual(after['artifact']['size_bytes'], after['physical']['size_bytes'])
             self.assertEqual(after['artifact']['size_bytes'], after['data_item_size_bytes'])
             self.assertEqual(after['physical']['compression'], 'NONE')
-            self.assertEqual(after['lineage']['execution_id'], 'run-41')
+            self.assertEqual(after['lineage']['execution_id'], 'run-42')
             self.assertEqual(after['browser']['case_name'], 'tiles-replace-' + after['tile_key'])
         self.assertEqual(report['tiling_replace_unrelated_sha256'], m.hashlib.sha256(m.fixture.TILE_KEEP_BYTES).hexdigest())
         self.assertFalse({x['execution_id'] for x in report['tiling_automatic_scan_runs']} &
@@ -659,7 +677,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 self.setUp()
 
                 def mutate(execution):
-                    if fault == 'same-size' and execution['execution_id'] == 'run-41':
+                    if fault == 'same-size' and execution['execution_id'] == 'run-42':
                         execution['metadata']['result']['final_result']['tiles']['r0_c0']['size_bytes'] = 1024
                         self.client.targets[48]['size_bytes'] = 1024
                     return execution
@@ -690,20 +708,20 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 request = self.client.request
 
                 def mutate(execution):
-                    if execution['execution_id'] == 'run-41':
+                    if execution['execution_id'] == 'run-42':
                         if fault == 'meta-size': self.client.targets[48]['size_bytes'] = 2049
-                        if fault == 'scan': execution['metadata']['result']['meta_scan_runs'][0]['execution_id'] = 'auto-run-40-r0_c0'
+                        if fault == 'scan': execution['metadata']['result']['meta_scan_runs'][0]['execution_id'] = 'auto-run-41-r0_c0'
                         if fault == 'mode': execution['metadata']['outputs']['save_tiles']['tiles']['r0_c0']['resource']['write_mode'] = 'create'
                     return execution
 
                 def checked_request(method, path, expected, body=None):
                     response = request(method, path, expected, body)
-                    if 'run-41' in self.client.executions:
+                    if 'run-42' in self.client.executions:
                         if fault == 'identity' and path == '/api/v1/meta/engines/2/items':
                             response.payload = copy.deepcopy(response.payload)
                             next(item for item in response.payload if item['id'] == 48)['id'] = 999
                         if fault == 'lineage' and path.startswith('/api/v1/meta/lineage/graph'):
-                            response.payload['edges'][0]['evidence']['execution_id'] = 'run-40'
+                            response.payload['edges'][0]['evidence']['execution_id'] = 'run-41'
                     return response
 
                 self.client.mutate = mutate
@@ -722,7 +740,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError, 'replacement browser failed'):
             m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
                 lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'})
-        self.assertEqual(len(checked), 48)
+        self.assertEqual(len(checked), 49)
 
     def test_persistent_lineage_and_all_browsers_finish_after_physical_writes(self):
         request = self.client.request
@@ -732,14 +750,14 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         def converged_request(method, path, expected, body=None):
             if path.startswith('/api/v1/meta/lineage/graph'):
                 self.assertIn('verify-tiles', self.physical_actions)
-                self.assertEqual(len(self.client.executions), 41 if 'verify-tiles-replace' in self.physical_actions else 40)
+                self.assertEqual(len(self.client.executions), 42 if 'verify-tiles-replace' in self.physical_actions else 41)
                 graphs.append(path)
             return request(method, path, expected, body)
 
         def browser(repo, env, evidence):
             if evidence.get('result_kind') != 'json':
                 self.assertIn('verify-tiles', self.physical_actions)
-                self.assertEqual(len(self.client.executions), 41 if evidence['case_name'].startswith('tiles-replace-') else 40)
+                self.assertEqual(len(self.client.executions), 42 if evidence['case_name'].startswith('tiles-replace-') else 41)
             browsers.append(evidence['case_name'])
             return evidence
 
@@ -747,8 +765,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
             lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'})
         self.assertEqual(report['result'], 'passed')
-        self.assertEqual(len(browsers), 48)
-        self.assertEqual(len(set(browsers)), 48)
+        self.assertEqual(len(browsers), 49)
+        self.assertEqual(len(set(browsers)), 49)
         self.assertEqual(len(graphs), 39)
         self.assertEqual(report['browser']['case_name'], 'band-math')
         for case in report['tiling_cases']:
@@ -794,7 +812,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError, 'last tile browser failed'):
             m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
                 lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'})
-        self.assertEqual(len(checked), 44)
+        self.assertEqual(len(checked), 45)
         self.assertIn('verify-tiles', self.physical_actions)
 
     def test_tiles_reject_wrong_grid_partial_manifest_scope_locator_and_missing_scan(self):
@@ -802,7 +820,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             with self.subTest(fault=fault):
                 self.setUp()
                 def mutate(execution):
-                    if execution['execution_id']=='run-40':
+                    if execution['execution_id']=='run-41':
                         data=execution['metadata']; result=data['result']; manifest=result['final_result']
                         if fault=='grid': manifest['tile_size']=[128,128]
                         if fault=='partial': manifest['completed_tiles']=3
@@ -839,7 +857,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES] + ['verify-update-valid'] * 2 + ['verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-mid', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-final', 'verify-tiles', 'verify-tiles-replace'])
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES] + ['verify-update-valid'] * len(m.fixture.FOOTPRINT_CASES) + ['verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-mid', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-final', 'verify-tiles', 'verify-tiles-replace'])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
