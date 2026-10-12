@@ -37,7 +37,7 @@ MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'm
 UTILITY_CASES = ('build-overviews', 'to-cog')
 FOUNDATION_CASES = ('multiraster-weighted', 'multiraster-rgb')
 RECLASS_CASES = ('reclassify-nodata', 'reclassify-keep')
-AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum')
+AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum', 'aggregate-min', 'aggregate-max')
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
 FOOTPRINT_CASES = ('footprint-any', 'footprint-all')
@@ -325,12 +325,15 @@ def aggregate_expectation(case_name):
 
 def aggregate_pixels(case_name, band=1, level=1):
     """Independent integer groups of source band 2, including incomplete right/bottom groups."""
+    if case_name not in AGGREGATE_CASES:
+        raise FixtureError('unknown aggregation case')
+    method = case_name.removeprefix('aggregate-')
     for row in range(0, 52, level):
         for column in range(0, 86, level):
             values = [2.*(y*SIZE+x+1) for y in range(row*5, min((row+1)*5, SIZE))
                       for x in range(column*3, min((column+1)*3, SIZE)) if y*SIZE+x != 0]
             total = math.fsum(values)
-            yield total/len(values) if case_name == 'aggregate-mean' else total
+            yield total/len(values) if method == 'mean' else total if method == 'sum' else min(values) if method == 'min' else max(values)
 
 
 def footprint_pixels(case_name):

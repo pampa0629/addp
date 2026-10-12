@@ -26,6 +26,22 @@ class FakeS3Error(Exception):
 
 
 class RasterPhysicalFixtureTest(unittest.TestCase):
+    def test_aggregate_min_max_oracle_uses_selected_band_valid_cells_and_partial_edges(self):
+        for case, first, right, bottom, interior in (
+            ('aggregate-min', 4., 512., 130562., 2568.),
+            ('aggregate-max', 2054., 2560., 130566., 4620.)):
+            with self.subTest(case=case):
+                pixels = list(m.aggregate_pixels(case))
+                self.assertEqual(len(pixels), 86*52)
+                self.assertEqual(pixels[0], first)
+                self.assertEqual(pixels[85], right)
+                self.assertEqual(pixels[51*86], bottom)
+                self.assertEqual(pixels[87], interior)
+                self.assertEqual(pixels[-1], 131072.)
+                self.assertEqual(list(m.aggregate_pixels(case, level=2)), [pixels[y*86+x] for y in range(0,52,2) for x in range(0,86,2)])
+                self.assertIn('verify-'+case, m.ACTIONS)
+        with self.assertRaises(m.FixtureError): list(m.aggregate_pixels('aggregate-median'))
+
     def test_fixed_expected_pixels_are_immutable_and_reused_without_recomputing_formulas(self):
         for oracle, calculation, kwargs in (
             (m.average_pixels, 'area_average', {'width': 171}),

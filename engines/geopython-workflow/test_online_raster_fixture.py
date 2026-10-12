@@ -781,8 +781,8 @@ def aggregate_artifacts(reclass_artifacts,tmp_path):
 
 
 def test_async_aggregation_partial_groups_and_source_nodata_match_physical_oracle(aggregate_artifacts):
-    evidence = fixture.worker('verify-aggregate-sum',aggregate_artifacts)
-    assert len(evidence['preserved_sha256'])==23
+    evidence = fixture.worker('verify-aggregate-max',aggregate_artifacts)
+    assert len(evidence['preserved_sha256'])==25
     assert evidence['valid_pixels']==4472
     assert list(fixture.aggregate_pixels('aggregate-sum'))[-1]==131072.
     assert list(fixture.aggregate_pixels('aggregate-mean'))[-1]==131072.
@@ -824,12 +824,12 @@ def test_aggregation_physical_oracle_rejects_pixels_edge_validity_and_preservati
                 output = None
                 LocalMinio.objects['target','raster-target',name]=original.read_bytes()
             if fault=='prior':
-                evidence=fixture.worker('verify-aggregate-sum',aggregate_artifacts)
+                evidence=fixture.worker('verify-aggregate-max',aggregate_artifacts)
                 assert evidence['preserved_sha256']['reclassify-keep.cog.tif'] != hashlib.sha256(
                     baseline['target','raster-target','reclassify-keep.cog.tif']).hexdigest()
             else:
                 try:
-                    fixture.worker('verify-aggregate-sum',aggregate_artifacts)
+                    fixture.worker('verify-aggregate-max',aggregate_artifacts)
                 except fixture.FixtureError:
                     pass
                 else:
@@ -838,6 +838,34 @@ def test_aggregation_physical_oracle_rejects_pixels_edge_validity_and_preservati
     finally:
         LocalMinio.objects.clear()
         LocalMinio.objects.update(baseline)
+
+
+def test_min_max_public_dag_artifacts_reject_method_group_edge_nodata_and_overview_mutation(aggregate_artifacts, tmp_path):
+    baseline = dict(LocalMinio.objects)
+    for method in ('min','max'):
+        name = 'aggregate-'+method+'.cog.tif'
+        for fault in ('wrong-method','interior','edge','nodata','overview'):
+            try:
+                LocalMinio.objects.clear(); LocalMinio.objects.update(baseline)
+                target_key = ('target','raster-target',name)
+                if fault == 'wrong-method':
+                    opposite = 'aggregate-'+('max' if method == 'min' else 'min')+'.cog.tif'
+                    LocalMinio.objects[target_key] = baseline['target','raster-target',opposite]
+                else:
+                    original, edited = tmp_path/'original.tif', tmp_path/'edited.tif'
+                    original.write_bytes(baseline[target_key])
+                    dataset = gdal.Translate(str(edited),str(original),format='GTiff')
+                    band = dataset.GetRasterBand(1)
+                    x,y = (85,51) if fault == 'edge' else (0,0) if fault == 'nodata' else (1,1)
+                    if fault != 'overview': band.WriteRaster(x,y,1,1,struct.pack('<d',-9999. if fault == 'nodata' else 123.),buf_type=gdal.GDT_Float64)
+                    dataset.BuildOverviews('NEAREST',[2])
+                    if fault == 'overview': band.GetOverview(0).WriteRaster(1,0,1,1,struct.pack('<d',123.),buf_type=gdal.GDT_Float64)
+                    band = dataset = None
+                    output = gdal.Translate(str(original),str(edited),format='COG',creationOptions=['BLOCKSIZE=128']); output = None
+                    LocalMinio.objects[target_key] = original.read_bytes()
+                with pytest.raises(fixture.FixtureError): fixture.worker('verify-aggregate-max',aggregate_artifacts)
+            finally:
+                LocalMinio.objects.clear(); LocalMinio.objects.update(baseline)
 
 
 @pytest.mark.parametrize('fault', ['gap', 'zero-class', 'source-nodata', 'kept-value', 'overview', 'nodata', 'extra', 'source'])
@@ -1017,14 +1045,14 @@ def outside_artifacts(aggregate_artifacts, tmp_path):
     result, output = single_source_execution(tmp_path, scene, api_server, 'clip-outside')
     evidence = fixture.worker('verify-clip-outside', aggregate_artifacts)
     assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
-    assert evidence['preserved_sha256'] == preserved and len(preserved) == 24
+    assert evidence['preserved_sha256'] == preserved and len(preserved) == 26
     assert evidence['band_valid_pixels'] == [53247, 53247]
     assert evidence['invalid_pixels'] == 12289
     assert evidence['color_interpretations'] == ['Gray', 'Undefined', 'Alpha']
     assert evidence['overview_sizes'] == [[128, 128]]
     assert result['width'] == result['height'] == 256 and result['band_count'] == 3
     assert result['transform'] == list(fixture.TRANSFORM)
-    assert len([key for key in LocalMinio.objects if key[0] == 'target']) == 25
+    assert len([key for key in LocalMinio.objects if key[0] == 'target']) == 27
     return aggregate_artifacts
 
 
@@ -1118,12 +1146,12 @@ def test_async_update_local_aligned_patch_and_independent_pixel_oracle(outside_a
     assert evidence['band_valid_pixels']==[65535,65536]
     assert evidence['color_interpretations']==['Gray','Undefined']
     assert evidence['overview_sizes']==[[128,128]]
-    assert len(evidence['preserved_sha256'])==25
+    assert len(evidence['preserved_sha256'])==27
     assert evidence['size_bytes']==result['size_bytes']==output.stat().st_size>0
     assert result['width']==result['height']==256 and result['band_count']==2
     assert result['transform']==list(fixture.TRANSFORM)
     assert all(LocalMinio.objects[key]==value for key,value in baseline.items())
-    assert len([key for key in LocalMinio.objects if key[0]=='target'])==26
+    assert len([key for key in LocalMinio.objects if key[0]=='target'])==28
     verify_native_footprints(outside_artifacts,tmp_path,case)
     # Reject removal of valid base data at a transparent/independently missing
     # update cell and wrong overview values using the same real byte verifier.

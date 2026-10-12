@@ -900,10 +900,12 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             or native.get('invalid_pixels') != expectation['width'] * expectation['height'] - expectation['valid_pixels']
             or native.get('band_valid_pixels') != expectation.get('band_valid_pixels', [expectation['valid_pixels']] * (expectation['band_count'] - (case_name in fixture.OUTSIDE_CASES)))
             or type(artifact.get('size_bytes')) is not int
-            or positive(native.get('size_bytes'), 'physical multi-raster size') != artifact['size_bytes']):
+            or type(native.get('size_bytes')) is not int
+            or native['size_bytes'] <= 0
+            or native['size_bytes'] != artifact['size_bytes']):
             raise SuiteError('multi-raster physical size, bands, colour, validity or preservation evidence differs')
         target = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'multi-raster target')
-        if positive(target.get('size_bytes'), 'multi-raster DataItem size') != native['size_bytes']:
+        if type(target.get('size_bytes')) is not int or target['size_bytes'] != native['size_bytes']:
             raise SuiteError('multi-raster DataItem size differs from the physical artifact')
         graphs, browsers = [], []
         for case_source, case_locator, suffix in case_sources:
@@ -913,6 +915,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             browsers.append(report)
         cases = update_cases if case_name in fixture.UPDATE_CASES else outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
         cases.append({'case_name': case_name, 'execution_id': identifier,
+            'artifact': artifact, 'data_item_size_bytes': target['size_bytes'],
             'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if single else graphs,
             'physical': native, 'browser': browsers[0] if single else browsers})
         preserved[name] = native['sha256']
