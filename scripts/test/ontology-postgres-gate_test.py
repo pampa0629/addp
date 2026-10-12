@@ -30,7 +30,7 @@ class OntologyGateTest(unittest.TestCase):
         fake_bin.mkdir()
         fake_go = fake_bin / "go"
         fake_go.write_text('''#!/bin/bash
-echo "$*" >> "$TEST_INVOCATIONS"
+echo "$* run=$ONTOLOGY_POSTGRES_TEST_RUN_ID" >> "$TEST_INVOCATIONS"
 if [[ "$*" == *TestPostgresGateCleanup* ]]; then
     exit "${TEST_CLEANUP_EXIT:-0}"
 fi
@@ -46,8 +46,8 @@ exit "${TEST_MAIN_EXIT:-0}"
                         ONTOLOGY_POSTGRES_TEST_DSN="postgres://fixture@127.0.0.1/addp_test",
                         GITHUB_ACTIONS="true")
 
-    def run_gate(self, **extra):
-        return subprocess.run(self.command, env=dict(self.env, **extra), capture_output=True, text=True, timeout=10)
+    def run_gate(self, args=(), **extra):
+        return subprocess.run(self.command + list(args), env=dict(self.env, **extra), capture_output=True, text=True, timeout=10)
 
     def assert_cleanup(self):
         self.assertIn("TestPostgresGateCleanup", self.log.read_text())
@@ -56,6 +56,42 @@ exit "${TEST_MAIN_EXIT:-0}"
         result = self.run_gate(ONTOLOGY_POSTGRES_TEST_DSN="")
         self.assertNotEqual(0, result.returncode)
         self.assertFalse(self.log.exists())
+
+    def test_cleanup_requires_exact_explicit_run(self):
+        run_id = "301447df-31e5-441b-ad38-b7ce28f445a0"
+        for args in (("--cleanup-run",), ("--cleanup-run", ""), ("--cleanup-run", "invalid"),
+                     ("--cleanup-run", run_id.upper()), ("--cleanup-run", run_id, "extra"),
+                     ("--unknown", run_id)):
+            with self.subTest(args=args):
+                result = self.run_gate(args=args)
+                self.assertNotEqual(0, result.returncode)
+                self.assertFalse(self.log.exists(), "invalid arguments reached Go")
+
+    def test_cleanup_only_runs_owner_cleanup_once(self):
+        run_id = "301447df-31e5-441b-ad38-b7ce28f445a0"
+        for code in ("0", "1"):
+            with self.subTest(code=code):
+                result = self.run_gate(args=("--cleanup-run", run_id), TEST_CLEANUP_EXIT=code)
+                self.assertEqual(int(code), result.returncode, result.stdout + result.stderr)
+                calls = self.log.read_text().splitlines()
+                self.assertEqual(1, len(calls))
+                self.assertIn("TestPostgresGateCleanup", calls[0])
+                self.assertIn("run=" + run_id, calls[0])
+                self.log.unlink()
+
+    def test_normal_gate_never_adopts_inherited_run(self):
+        run_id = "301447df-31e5-441b-ad38-b7ce28f445a0"
+        result = self.run_gate(ONTOLOGY_POSTGRES_TEST_RUN_ID=run_id)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertNotIn("run=" + run_id, self.log.read_text())
+
+    def test_cleanup_rejects_missing_dsn_and_unsafe_target(self):
+        args = ("--cleanup-run", "301447df-31e5-441b-ad38-b7ce28f445a0")
+        for dsn in ("", "postgres://fixture@127.0.0.1/addp"):
+            with self.subTest(dsn=dsn):
+                result = self.run_gate(args=args, ONTOLOGY_POSTGRES_TEST_DSN=dsn)
+                self.assertNotEqual(0, result.returncode)
+                self.assertFalse(self.log.exists())
 
     def test_success_failure_and_skip_always_cleanup(self):
         for extra, success in (({}, True), ({"TEST_MAIN_EXIT": "1"}, False),

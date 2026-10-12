@@ -118,6 +118,8 @@ GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 15 Service
 
 Ontology 修订/发布门禁使用 `ONTOLOGY_POSTGRES_TEST_DSN` 连接本地 `addp_test`，标准入口为 `make test-ontology-postgres`，并已纳入 `make test-module MODULE=ontology`、串行 `test-integration` 和辅助 macOS 巡检。门禁仅接管此前不存在的 ontology schema，用随机 Run ID 标记所有权；退出时核对标记并删除本轮执行记录和 schema，验证零残留，不删除或重建 common。CI 对应独占 `addp_ontology_test`，不访问开发库。具体语义范围见 [Ontology 模块说明](../../ontology/CLAUDE.md)。
 
+不可捕获的中断若遗留测试 schema，先只读核对 `ontology` 的 schema comment 为 `addp.ontology-test:<Run ID>`，再显式运行 `make test-ontology-postgres-cleanup ONTOLOGY_POSTGRES_CLEANUP_RUN_ID=<已核实的 UUID>`，同时提供上述安全测试 DSN。恢复入口复用正常退出的唯一 owner 清理函数，取得同一 PostgreSQL advisory lock 后才检查标记；锁占用、标记不符、无标记或非测试库均拒绝。仅删除指定轮次 schema 及其引用的 Ontology 执行记录，保留 common 和其他 owner 的数据；已无 schema 时不执行删除。恢复命令不运行集成测试，成功后另行运行正常门禁；正常门禁仍拒绝接管任何既有 schema，不自动恢复旧轮次。CLI 拒绝策略由 `make test-ontology-postgres-policy`（平台 T0 聚合）覆盖，真实锁与标记拒绝由既有 Ontology PG T2/CI 覆盖，无新增服务或 CI Job。
+
 Ontology 的 FalkorDB 已纳入 `docker-compose.infra.yml`，使用独立 `falkordb_data` 卷、RDB 快照与 `INFRA_FALKORDB_PASSWORD`。已有开发环境须在根 `.env` 补充独立密码，再通过标准 `up.sh` 启动；生产 `setup-env.sh` 为新环境生成随机 Secret，对已有环境只校验不轮换。宿主机仅绑定 `127.0.0.1`，首选端口为 `16479`，冲突时自动选择空闲端口；不开放 Browser、不复用 `addp-redis`、不注册为业务 Engine。该单机部署不等于生产 HA/TLS 已认证，也不代表 Ontology 发布运行时已接通。
 
 正式部署与 `make test-ontology-falkor` 共用 `scripts/infra/falkordb.yml` 的固定镜像、非零超时、资源限制和带认证图健康检查。T2 使用独占 Compose Project、随机密码、动态回环端口及可销毁卷，验证保存快照并重建容器后的图恢复；不接受个人图数据库地址、不读取 `.env`，退出时删除并核验自有容器/卷/网络。该入口还要求 `ONTOLOGY_POSTGRES_TEST_DSN`，复用上述 PG owner 夹具验证首次投影执行、激活与失败保留旧版本，并清理本轮 schema/执行记录。PG 与 FalkorDB 门禁均被标准模块门禁自动发现及串行集成聚合；已有 `ontology-falkor` CI Job 同时提供独占 PostgreSQL Service，执行同一入口。

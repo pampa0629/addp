@@ -16,6 +16,7 @@ from addp_common.tools import get_tool
 
 REVIEW_REASON = "transfer_create_review"
 CREATE_TOOL = "transfer.task.create"
+CHECK_TOOL = "transfer.task.config.check"
 
 
 def _fail(condition: str) -> None:
@@ -24,6 +25,27 @@ def _fail(condition: str) -> None:
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def capture_config_check(arguments: dict, report: dict, checkpoint: dict) -> dict:
+    """Only the formal Tool adapter calls this with its actual arguments/result."""
+    if list(Draft202012Validator(get_tool(CHECK_TOOL).output_schema).iter_errors(report)):
+        _fail("invalid_config_check")
+    evidence = {"arguments_digest": hashlib.sha256(_json(arguments).encode()).hexdigest(), "report": copy.deepcopy(report)}
+    checkpoint["observed"]["config_checks"][CREATE_TOOL] = evidence
+    return {"config_checks": [copy.deepcopy(evidence)]}
+
+
+def config_check_report(arguments: dict, checkpoint: dict) -> dict:
+    evidence = checkpoint["observed"]["config_checks"].get(CREATE_TOOL, {})
+    if evidence.get("arguments_digest") != hashlib.sha256(_json(arguments).encode()).hexdigest():
+        _fail("readonly_config_check")
+    report = evidence.get("report")
+    if not isinstance(report, dict) or list(Draft202012Validator(get_tool(CHECK_TOOL).output_schema).iter_errors(report)):
+        _fail("readonly_config_check")
+    if report["status"] == "unsupported":
+        _fail("config_check_unsupported")
+    return report
 
 
 def _source(arguments: dict, checkpoint: dict) -> dict:
@@ -121,7 +143,11 @@ def review_identity(arguments: dict, checkpoint: dict) -> dict:
     if not isinstance(context, dict):
         _fail("platform_context")
     identity = {"tool": CREATE_TOOL, "revision": context["revision"], "digest": context["digest"]}
-    evidence = {"arguments": arguments, "capability": identity, "source": _source(arguments, checkpoint), "target": _target(arguments, checkpoint)}
+    report = config_check_report(arguments, checkpoint)
+    # Owner timestamps naturally advance on every call; its binding_hash includes
+    # that timestamp. Keep every other fact, including scanned_at, in the review.
+    stable_report = {key: value for key, value in report.items() if key not in {"observed_at", "binding_hash"}}
+    evidence = {"arguments": arguments, "capability": identity, "source": _source(arguments, checkpoint), "target": _target(arguments, checkpoint), "config_check": stable_report}
     identity["fingerprint"] = hashlib.sha256(_json(evidence).encode("utf-8")).hexdigest()
     return identity
 
@@ -153,6 +179,8 @@ def validate_create(arguments: dict, checkpoint: dict, *, require_review: bool =
             _mapping(arguments, checkpoint)
         elif condition == "user_review":
             pass  # Checked below against the full arguments and current facts.
+        elif condition == "readonly_config_check":
+            config_check_report(arguments, checkpoint)
         else:
             _fail(f"unsupported:{condition}")
     identity = review_identity(arguments, checkpoint)

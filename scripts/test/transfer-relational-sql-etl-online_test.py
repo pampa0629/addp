@@ -21,6 +21,28 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
+    def test_transfer_professional_response_rejects_private_facts_at_each_boundary(self):
+        execution, _, _ = self.multi_source_execution()
+        ONLINE.assert_transfer_execution_projection(execution)
+        mutations = [
+            lambda value: value.update(execution_config={"sql": "private"}),
+            lambda value: value.update(checkpoint_state={"cursor": "private"}),
+            lambda value: value.update(error_msg="private"),
+            lambda value: value["metadata"].update(fencing_token="private"),
+            lambda value: value["metadata"].update(execution_inputs={"sql": "private"}),
+            lambda value: value["metadata"]["lineage_facts"].update(runtime_response="private"),
+            lambda value: value["metadata"]["lineage_facts"]["inputs"][0].update(storage_refs=[]),
+            lambda value: value["metadata"]["lineage_facts"]["inputs"][0]["schema_snapshot"]["fields"][0].update(default_expression="private"),
+            lambda value: value["metadata"]["lineage_facts"]["inputs"][0]["schema_snapshot"]["fields"][0].update(comment="private"),
+            lambda value: value["metadata"]["lineage_facts"]["operations"][0]["field_mappings"][0].update(sql="private"),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                changed = copy.deepcopy(execution)
+                mutate(changed)
+                with self.assertRaisesRegex(ONLINE.SuiteError, "undeclared fields"):
+                    ONLINE.assert_transfer_execution_projection(changed)
+
     def test_physical_verification_has_one_owner_after_all_scenarios(self):
         repository = SCRIPT.parents[2]
         browser = (repository / "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js").read_text()

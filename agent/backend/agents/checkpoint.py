@@ -19,7 +19,7 @@ def validate_checkpoint_size(checkpoint: dict[str, Any]) -> None:
 def new_checkpoint() -> dict[str, Any]:
     return {
         "schema": CHECKPOINT_SCHEMA,
-        "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}},
+        "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}},
         "confirmed": {"workflow_engine": None, "resources": {}, "operation_reviews": {}},
     }
 
@@ -42,7 +42,7 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
         checkpoint["confirmed"]["workflow_engine"] = copy.deepcopy(confirmed["workflow_engine"])
     if isinstance(confirmed_resources, dict):
         checkpoint["confirmed"]["resources"] = copy.deepcopy(confirmed_resources)
-    for key in ("platform_capabilities", "operation_reviews"):
+    for key in ("platform_capabilities", "operation_reviews", "config_checks"):
         if isinstance(observed.get(key), dict):
             checkpoint["observed"][key] = copy.deepcopy(observed[key])
     if isinstance(confirmed.get("operation_reviews"), dict):

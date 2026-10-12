@@ -10,5 +10,6 @@ required_tools:
   - resource.ancestors.get
   - resource.facts.get
   - transfer.draft.generate
+  - transfer.task.config.check
   - transfer.task.create
 max_iterations: 14

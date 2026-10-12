@@ -125,6 +125,10 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 ## 开发与验证
 
+专业执行读取使用 `transfer.task.read` 与 SQL Owner 范围：仅当前租户的 transfer/sync，有定义历史（含删除定义）与本人一次性执行分别过滤。第一方和普通 OAuth User 可读，机器不进入用户入口；模块导出结果按 Service Client/source 独立授权，TaskProvider 按固定 Orchestrator Client 独立授权。详情、进度、事件、列表总数及统计保持一致。专业响应采用显式 DTO；连续运行时和冻结字段血缘只输出声明的诊断事实，不回显原始 metadata、checkpoint、参数或授权／租约信息。对应 T1 HTTP 隔离／投影回归和 T2 PostgreSQL 回归均由现有 Transfer 门禁承接，新增 T2 必须登记到 `scripts/test/transfer-postgres-gate.sh`；前端继续由 `make test-transfer-frontend` 验证，Swagger 生成及覆盖检查同步执行。
+
+2026-10-11 真实 Hosted T4 [38139520110](https://github.com/pampa0629/addp/actions/runs/38139520110) 在提交 `25ec6e336574de8d99956eeb6aae290a93297c51` 通过：8 个服务构建身份一致，三轮 Orchestrator 父子执行及结构演进、MongoDB／关系型字段血缘和浏览器图均通过；11 个临时资源全部删除，基础设施清理零残留。此结果验证安全父执行引用适配，不代替后续 Transfer 专业接口权限收敛的验收。
+
 关系型 SQL ETL 的真实 T4 `transfer-relational-sql-etl` 消费 Orchestrator 专业安全 DTO：父执行只核对执行／编排身份、成功步骤和规范的子 execution UUID，不要求 `tenant_id`、配置或子任务 outputs。Transfer／Develop 子执行分别经所属模块读取专业字段事实，并经 Monitor 独立核对 Owner、任务和父子关联；三轮执行及结构演进不能靠父步骤复制结果。确定性专用入口为 `python3 scripts/test/transfer-relational-sql-etl-online_test.py`，同一测试文件已由根 `make test-online-runner`、Platform T0／CI 聚合；专用回归不能替代真实 Hosted T4。
 
 `make test-transfer-postgres` 使用普通 PostgreSQL 验证 schema、受保护导出和非空间既有表目标覆盖，不依赖 PostGIS。Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。

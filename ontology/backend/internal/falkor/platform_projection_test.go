@@ -100,7 +100,7 @@ func TestPlatformPlan(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(p, q) || !strings.HasPrefix(p.key, prefix) || strings.Contains(p.key, "t0:") {
 		t.Fatal("unstable or unscoped plan", p, err)
 	}
-	if len(p.nodes) != 83 || len(p.edges) != 118 || len(p.dependencyRows) != 25 || len(p.conditionRows) != 8 {
+	if len(p.nodes) != 92 || len(p.edges) != 132 || len(p.dependencyRows) != 27 || len(p.conditionRows) != 9 {
 		t.Fatal("missing capability dependencies", len(p.nodes), len(p.edges), len(p.dependencyRows), len(p.conditionRows))
 	}
 	for _, want := range [][]any{
@@ -110,6 +110,11 @@ func TestPlatformPlan(t *testing.T) {
 		{"condition:confirmed_source", "concept:confirmed_source", "described_by"},
 		{"condition:confirmed_source", "requirement:source_discovery", "reads_via"},
 		{"requirement:source_discovery", "concept:source_discovery", "described_by"},
+		{"capability:transfer.task.create", "condition:readonly_config_check", "requires"},
+		{"condition:readonly_config_check", "concept:readonly_config_check", "described_by"},
+		{"condition:readonly_config_check", "requirement:config_precheck", "reads_via"},
+		{"requirement:config_precheck", "concept:config_precheck", "described_by"},
+		{"requirement:config_precheck", "tool:transfer.task.config.check", "uses_tool"},
 		{"concept:user_review", "concept:user_confirmation", "confirmed_by"},
 	} {
 		if !slices.ContainsFunc(p.edgeRows, func(row []any) bool { return reflect.DeepEqual(row, want) }) {
@@ -125,6 +130,7 @@ func TestPlatformPlan(t *testing.T) {
 		{"confirmed_source", "source_discovery", "resource.facts.get"},
 		{"confirmed_target_parent_and_name", "target_parent_discovery", "resource.ancestors.get"},
 		{"confirmed_target_parent_and_name", "target_parent_discovery", "resource.children.list"},
+		{"readonly_config_check", "config_precheck", "transfer.task.config.check"},
 	}) {
 		t.Fatal("incorrect condition evidence paths", p.conditionRows)
 	}
@@ -154,8 +160,11 @@ func TestPlatformPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	maximum, err := PlanPlatform(maximumPlatformFixture(t), uuid.NewString())
-	if err != nil || len(maximum.nodeRows) != 573 || len(maximum.edgeRows) != 637 {
-		t.Fatal("platform plan limit", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(maximum.nodeRows) != 576 || len(maximum.edgeRows) != 640 {
+		t.Fatal("platform plan maximum fixture", len(maximum.nodeRows), len(maximum.edgeRows), err)
 	}
 	if len(maximum.conditionRows) != 0 {
 		t.Fatal("undeclared evidence paths inferred", maximum.conditionRows)

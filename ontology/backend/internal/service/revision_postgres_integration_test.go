@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -28,7 +29,8 @@ func openTestDatabase(t *testing.T) *gorm.DB {
 	if dsn == "" {
 		t.Skip("ONTOLOGY_POSTGRES_TEST_DSN not set (T2 only)")
 	}
-	if _, err := uuid.Parse(os.Getenv("ONTOLOGY_POSTGRES_TEST_RUN_ID")); err != nil {
+	runID := os.Getenv("ONTOLOGY_POSTGRES_TEST_RUN_ID")
+	if parsed, err := uuid.Parse(runID); err != nil || parsed.String() != runID {
 		t.Fatal("use the standard ontology-postgres gate to allocate a run ID")
 	}
 	config, err := pgx.ParseConfig(dsn)
@@ -117,69 +119,132 @@ func postgresFixtureMigration(t *testing.T, migrate func(*gorm.DB) error) *gorm.
 
 func cleanupFixture(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	if err := cleanupOwnedFixture(db); err != nil {
+		t.Error(err)
+	}
+}
+
+// All normal exit and explicit recovery calls share this owner cleanup path.
+// The caller must hold the fixture advisory lock obtained by openTestDatabase.
+func cleanupOwnedFixture(db *gorm.DB) error {
 	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cleanupCancel()
 	cleanup := db.WithContext(cleanupCtx)
 	var marker string
 	result := cleanup.Raw("SELECT COALESCE(obj_description(oid,'pg_namespace'),'') FROM pg_namespace WHERE nspname='ontology'").Scan(&marker)
 	if result.Error != nil {
-		t.Error(result.Error)
-		return
+		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return
+		return nil
 	}
 	if marker != fixtureMarker() {
-		t.Error("refusing cleanup of another owner or run's ontology schema")
-		return
+		return errors.New("refusing cleanup of another owner or run's ontology schema")
 	}
 	var present bool
 	if err := cleanup.Raw("SELECT to_regclass('ontology.revisions') IS NOT NULL").Scan(&present).Error; err != nil {
-		t.Error(err)
-		return
+		return err
 	}
 	if present {
 		var ids []string
 		if err := cleanup.Model(&models.Revision{}).Where("build_execution_id IS NOT NULL").Pluck("build_execution_id::text", &ids).Error; err != nil {
-			t.Error(err)
-			return
+			return err
 		}
 		var hasProjections bool
 		if err := cleanup.Raw("SELECT to_regclass('ontology.projections') IS NOT NULL").Scan(&hasProjections).Error; err != nil {
-			t.Error(err)
-			return
+			return err
 		}
 		if hasProjections {
 			var projectionIDs []string
 			if err := cleanup.Model(&models.Projection{}).Pluck("execution_id::text", &projectionIDs).Error; err != nil {
-				t.Error(err)
-				return
+				return err
 			}
 			ids = append(ids, projectionIDs...)
 		}
 		if len(ids) > 0 {
 			if err := cleanup.Where("module = ? AND execution_id IN ?", models.Module, ids).Delete(&execution.TaskExecution{}).Error; err != nil {
-				t.Error(err)
-				return
+				return err
 			}
 			var remaining int64
 			if err := cleanup.Model(&execution.TaskExecution{}).Where("execution_id IN ?", ids).Count(&remaining).Error; err != nil || remaining != 0 {
-				t.Error("execution cleanup failed")
-				return
+				return errors.New("execution cleanup failed")
 			}
 		}
 	}
 	if err := cleanup.Exec("DROP SCHEMA IF EXISTS ontology CASCADE").Error; err != nil {
-		t.Error(err)
-		return
+		return err
 	}
 	if err := cleanup.Raw("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='ontology')").Scan(&present).Error; err != nil || present {
-		t.Errorf("schema cleanup failed: present=%t error=%v", present, err)
+		return errors.New("schema cleanup failed")
 	}
+	return nil
 }
 
 func TestPostgresGateCleanup(t *testing.T) {
 	cleanupFixture(t, openTestDatabase(t))
+}
+
+func TestPostgresCleanupSafety(t *testing.T) {
+	db := postgresFixture(t)
+	originalRun := os.Getenv("ONTOLOGY_POSTGRES_TEST_RUN_ID")
+	assertRetained := func(t *testing.T) {
+		t.Helper()
+		var marker string
+		if err := db.Raw("SELECT obj_description(oid,'pg_namespace') FROM pg_namespace WHERE nspname='ontology'").Scan(&marker).Error; err != nil || marker != "addp.ontology-test:"+originalRun {
+			t.Fatalf("fixture changed after rejected recovery: %q %v", marker, err)
+		}
+	}
+	t.Run("wrong_run_and_unmarked_schema_are_retained", func(t *testing.T) {
+		t.Setenv("ONTOLOGY_POSTGRES_TEST_RUN_ID", uuid.NewString())
+		if err := cleanupOwnedFixture(db); err == nil || !strings.Contains(err.Error(), "another owner or run") {
+			t.Fatalf("wrong run cleanup: %v", err)
+		}
+		assertRetained(t)
+		if err := db.Exec("COMMENT ON SCHEMA ontology IS NULL").Error; err != nil {
+			t.Fatal(err)
+		}
+		// Restore our own fixture marker even if the assertion fails.
+		t.Cleanup(func() {
+			if err := db.Exec("COMMENT ON SCHEMA ontology IS 'addp.ontology-test:" + originalRun + "'").Error; err != nil {
+				t.Error(err)
+			}
+		})
+		if err := cleanupOwnedFixture(db); err == nil || !strings.Contains(err.Error(), "another owner or run") {
+			t.Fatalf("unmarked cleanup: %v", err)
+		}
+		var present bool
+		if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='ontology')").Scan(&present).Error; err != nil || !present {
+			t.Fatalf("unmarked fixture deleted: %v", err)
+		}
+	})
+	t.Run("concurrent_recovery_cannot_acquire_gate_lock", func(t *testing.T) {
+		binary, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		// Run the exact recovery test in a second process while this fixture
+		// holds the real session advisory lock; no mocked lock result.
+		command := exec.CommandContext(ctx, binary, "-test.run=^TestPostgresGateCleanup$", "-test.v")
+		output, err := command.CombinedOutput()
+		if err == nil || ctx.Err() != nil || !strings.Contains(string(output), "another Ontology test gate is running") {
+			t.Fatalf("concurrent recovery was not refused: %v %s", err, output)
+		}
+		assertRetained(t)
+	})
+	t.Run("matching_run_cleanup_is_idempotent", func(t *testing.T) {
+		if err := cleanupOwnedFixture(db); err != nil {
+			t.Fatal(err)
+		}
+		if err := cleanupOwnedFixture(db); err != nil {
+			t.Fatal(err)
+		}
+		var present bool
+		if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='ontology')").Scan(&present).Error; err != nil || present {
+			t.Fatalf("matching run cleanup left schema: %t %v", present, err)
+		}
+	})
 }
 
 func TestPostgresRevisionLifecycle(t *testing.T) {

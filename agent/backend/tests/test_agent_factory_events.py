@@ -344,9 +344,9 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                 ]
                 llm = _ScriptedLLM(responses)
                 events = await self._run_workflow_events(
-                    tools=[ContextTool(), SearchTool(), ForbiddenTool("resource.children.list"), ForbiddenTool("transfer.task.create")],
+                    tools=[ContextTool(), SearchTool(), ForbiddenTool("resource.children.list"), ForbiddenTool("transfer.task.create"), ForbiddenTool("transfer.task.config.check")],
                     responses=responses, llm=llm,
-                    allowed_tool_names=["platform.capability.context", "data.search", "resource.children.list", "transfer.task.create"],
+                    allowed_tool_names=["platform.capability.context", "data.search", "resource.children.list", "transfer.task.create", "transfer.task.config.check"],
                 )
                 self.assertEqual(calls, [])
                 self.assertEqual(len(llm.messages), 1)

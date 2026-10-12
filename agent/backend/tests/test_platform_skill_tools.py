@@ -39,7 +39,7 @@ class PlatformSkillToolTests(unittest.TestCase):
     def test_transfer_skill_uses_platform_semantics_and_only_metadata_write(self):
         registry = _load_skill_registry()
         skill = registry["transfer-generation"]
-        self.assertEqual(skill.tools, ["platform.capability.context", "engine.list", "data.search", "resource.children.list", "resource.ancestors.get", "resource.facts.get", "transfer.draft.generate", "transfer.task.create"])
+        self.assertEqual(skill.tools, ["platform.capability.context", "engine.list", "data.search", "resource.children.list", "resource.ancestors.get", "resource.facts.get", "transfer.draft.generate", "transfer.task.config.check", "transfer.task.create"])
         self.assertNotIn("data.preview", skill.tools)
         self.assertNotIn("workflow.run", skill.tools)
         self.assertIn("尚未运行", skill.load_body(registry))

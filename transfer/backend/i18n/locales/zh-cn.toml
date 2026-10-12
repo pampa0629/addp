@@ -115,3 +115,15 @@ other = "智能体只能创建无计划、未启动的 bounded snapshot 原生�
 other = "完整任务配置检查请求无效"
 [transfer.config_check.unavailable]
 other = "结构事实服务暂时不可用"
+
+[transfer.execution.not_found]
+other = "执行记录不存在或无权读取"
+
+[transfer.execution.read_unavailable]
+other = "执行记录暂时无法读取"
+
+[transfer.execution.failed]
+other = "任务执行失败，请查看所属模块的执行诊断"
+
+[transfer.execution.diagnostics_unavailable]
+other = "运行诊断暂时不可用"

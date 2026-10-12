@@ -8,7 +8,8 @@ const questionId = '17e2125a-03b6-4495-aef5-bdb0f63bfa3a'
 const reviewId = '803536f2-eb7c-43f1-bb6a-a1641a3cb416'
 const goal = '把 MongoDB 的 outdoor 传到 PostgreSQL 的 outdoor，先建任务，不要运行。'
 const answer = '一文档一行，只投影标量字段。'
-const reviewOptions = [{ label: '确认创建', value: 'review-fingerprint' }, { label: '取消', value: 'cancel' }]
+const reviewOptions = [{ label: '知悉未核验项，仅创建任务', value: 'review-fingerprint' }, { label: '取消', value: 'cancel' }]
+const unknownWarning = '预检结果为无法确定（unknown），并非通过。请核对未检查项和运行时核验要求；确认表示知情接受这些限制，仅保存未运行任务。'
 
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', error => { throw error })
@@ -33,7 +34,7 @@ function completed(message) {
 
 async function installBackend(page, { multiple = false, rejectResume = false } = {}) {
   const question = clarification(questionId, '请选择行粒度', [{ label: '展开数组', value: 'unwind' }])
-  const review = clarification(reviewId, '仅创建，不运行。请复核配置。\n```json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n```', reviewOptions)
+  const review = clarification(reviewId, `仅创建，不运行。请复核配置。\n\n${unknownWarning}\n\n\`\`\`json\n{"status":"unknown","not_checked":["business_rows"],"runtime_checks_required":["per_value_encoding"]}\n\`\`\`\n\n\`\`\`json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n\`\`\``, reviewOptions)
   const messages = multiple ? [question, clarification(reviewId, '请选择目标', reviewOptions)] : []
   const requests = []
   const unexpected = []
@@ -105,19 +106,24 @@ test('short goal → reloaded text resume → reloaded review → cancel, with t
   await expect(page.getByRole('textbox')).toHaveAttribute('maxlength', '2000')
   await page.getByRole('textbox').fill(answer)
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(page.getByRole('button', { name: '确认创建', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: reviewOptions[0].label, exact: true })).toBeVisible()
+  await expect(page.getByText(unknownWarning)).toBeVisible()
   await expect(page.getByRole('button', { name: '展开数组', exact: true })).toHaveCount(0)
   await page.reload()
-  const detail = page.locator('details')
-  await expect(detail).not.toHaveAttribute('open', '')
-  await page.getByText('查看配置详情', { exact: true }).click()
-  await expect(detail.locator('pre')).toContainText('outdoor_copy')
+  const details = page.locator('details')
+  await expect(details).toHaveCount(2)
+  for (const detail of await details.all()) await expect(detail).not.toHaveAttribute('open', '')
+  await expect(page.getByText(unknownWarning)).toBeVisible()
+  await page.getByText('查看配置详情', { exact: true }).nth(0).click()
+  await expect(details.nth(0).locator('pre')).toContainText('business_rows')
+  await page.getByText('查看配置详情', { exact: true }).nth(1).click()
+  await expect(details.nth(1).locator('pre')).toContainText('outdoor_copy')
   await page.setViewportSize({ width: 620, height: 800 })
   await page.getByRole('button', { name: '取消', exact: true }).click()
   await expect(page.getByText('已取消，不创建任务，不运行。', { exact: true })).toBeVisible()
   await page.reload()
   await expect(page.getByText('已取消，不创建任务，不运行。', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '确认创建', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: reviewOptions[0].label, exact: true })).toHaveCount(0)
   expect(backend.requests).toHaveLength(3)
   expect(new Set(backend.requests.map(input => input.runId)).size).toBe(3) // protocol IDs, not business Run IDs
   expect(backend.unexpected).toEqual([])

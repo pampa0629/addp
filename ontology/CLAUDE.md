@@ -47,7 +47,7 @@ Console `/ontology/ontologies/:ontology_id/trial` 提供当前激活规则试算
 
 ## PG 修订与发布
 
-平台 Transfer 修订 9 审核正式只读配置预检引起的来源漂移；原创建条件和效果不变。API、共享 SDK 与正式 `transfer.task.config.check` Tool 已接通，输入与创建共用唯一 Schema 及请求构造；权限交集由 System 签发及 Transfer 委托路由双重校验。平台创建条件与 Transfer Skill/Runtime 尚未装配预检，覆盖仍为 `not_modeled`，不能将当前复核称为预检通过。下一切片按已确认策略把报告与配置/事实绑定：unsupported 阻止创建，unknown 明确限制后知情确认，只保存未运行任务；不将报告摘要视为授权或执行保证。
+平台 Transfer 修订 11 将正式只读预检纳入创建条件，图通过 `readonly_config_check → config_precheck → transfer.task.config.check` 暴露读取入口。API、共享 SDK 与 Tool 的唯一输入及三权限交集不变，Runtime 在最终复核和创建前通过正式 Adapter 自动预检：unsupported 阻止创建，unknown 明确限制后知情确认，仅保存未运行定义；supported 也不保证执行成功。确认绑定完整参数、能力版本、结构及稳定报告事实；仅顶层报告时间及含时间的 binding_hash 不进入确认指纹，结构扫描时间仍绑定。报告保存在运行 checkpoint，不写入平台静态本体，不作为授权凭据。创建前失败清除旧报告且不能自动重试或创建；部署后的真实消费须重启 Agent/Ontology 另验。
 
 - `CreateDraft` 只接受同一本体的下一修订号；同一时刻最多一个 draft / in_review。
 - `SaveDraft` 和 `Transition` 必须携带精确 version，状态沿 draft → in_review → published → withdrawn，允许审核退回草稿。错误版本不自动重试。
@@ -93,7 +93,7 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 
 ### 标准门禁
 
-`make test-platform-review` 是不依赖外部服务的平台来源漂移门禁，已纳入 `test-platform`，因此其他 owner 的标准模块门禁同样检查已捕获文件 SHA-256 与锚点。Go T1 另核验完整成员绑定、覆盖状态、摘要绑定、来源隔离和拒绝旧格式；来源变化须审查后更新依据及新发布修订，不能盲目刷新摘要。现有 Go/PG/Falkor CI 自动发现覆盖新增测试，未增加运行依赖或另起 CI 路线。
+`make test-platform-review` 是不依赖外部服务的平台来源漂移门禁，已纳入 `test-platform`，因此其他 owner 的标准模块门禁同样检查已捕获文件 SHA-256 与锚点，并读取来源固定 Git 提交核对同一文件内容；缺失提交或摘要/锚点不符均拒绝，不联网补取或跳过。先提交来源代码，再冻结实际提交与摘要；旧提交配工作区新摘要不能通过。Git 只属于开发/CI 门禁，不进入生产编译、发布或消费路径。现有相关 CI checkout 均提供完整历史，原 Go T1 自动发现临时 Git 夹具对错误提交、文件缺失及伪造摘要的拒绝测试。Go T1 另核验完整成员绑定、覆盖状态、摘要绑定、来源隔离和拒绝旧格式；来源变化须审查后更新依据及新发布修订，不能盲目刷新摘要。现有 Go/PG/Falkor CI 自动发现覆盖新增测试，未增加运行依赖或另起 CI 路线。
 
 平台 Transfer 切片另用 `ADDP_SYSTEM_POSTGRES_TEST_DSN=<已核实端口的 addp_iam_test PostgreSQL URL> bash scripts/test/system-iam-postgres-gate.sh --package migration --test transfer-task-create` 精确验证迁移 181；默认 System IAM 门禁仍由 `AgainstPostgres$` 自动发现此测试，不将精确选择器视为全量通过。`make test-system-iam-runner` 验证选择器、默认发现和跨进程测试库互斥。
 
@@ -125,7 +125,7 @@ make test-go
 
 FalkorDB T2 固定 4.20.6 多架构镜像 digest，每轮独立 Compose Project、随机密码、动态回环端口、资源上限与非零服务端超时；不读取根 `.env`，不使用个人 Redis 或图实例。正常退出、失败和可捕获中断都删除自有容器/卷/网络并核验零残留。T2 覆盖投影往返/防覆盖/篡改检测/最大定义、参数转义与大整数、服务端读写超时/回滚、重复取消后的客户端关闭和服务端回收、并发结果隔离；同一门禁再连接 PG 验证发布、真实图构建、激活、失败保留旧版本及新 generation 重建恢复，使用可控授权夹具，不宣称正式 HTTP/IAM 端到端验收。PG owner 状态门禁另覆盖并发激活、ABA、授权失效、撤回、租约恢复、重建去重/祖先分叉拒绝、新主体授权、旧授权拒绝、审计回滚与 v1/v2 向前迁移。清理核对本轮修订及全部投影的 execution，不遗漏重建任务。服务端 TCP FIN 回收允许有界异步收敛，不以一次 CLIENT LIST 快照冒充泄漏判断。
 
-本地只允许回环地址的 `addp_test`，CI 只允许 Job 独占的 `addp_ontology_test`。门禁拒绝清空已存在的 ontology schema；当次新建 schema 带随机 Run ID 所有权标记，正常退出、失败及可捕获中断都通过同一 owner 清理函数删除本轮 execution 与 schema 并检查残留，不清空 common。强制 SIGKILL 无法运行退出钩子，若残留需核对原 Run ID 后由 owner 门禁处理，不能直接删除未知 schema。
+本地只允许回环地址的 `addp_test`，CI 只允许 Job 独占的 `addp_ontology_test`。门禁拒绝清空已存在的 ontology schema；当次新建 schema 带随机 Run ID 所有权标记，正常退出、失败及可捕获中断都通过同一 owner 清理函数删除本轮 execution 与 schema 并检查残留，不清空 common。强制 SIGKILL 无法运行退出钩子；若残留，核对原 Run ID 后显式使用 `make test-ontology-postgres-cleanup ONTOLOGY_POSTGRES_CLEANUP_RUN_ID=<UUID>`，并提供安全测试 DSN。此入口只恢复指定轮次，复用同一清理函数及 advisory lock，标记不符或锁占用均拒绝；不能直接删除未知 schema，也不放宽正常门禁的拒绝规则。CLI 策略归平台 T0，真实标记和并发锁拒绝归原 PG T2/CI，无新增依赖。
 
 新增 CEL 依赖同时由 T0 的 `make test-go-dependency-policy` 检查；该入口覆盖单行/块状 `require`、错误版本拒绝和注释/排除声明不误识别，不能靠固定 go.mod 排版才能识别依赖。
 

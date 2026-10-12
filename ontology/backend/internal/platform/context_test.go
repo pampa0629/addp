@@ -8,6 +8,7 @@ import (
 func TestTransferConditionEvidenceAndDecisionSources(t *testing.T) {
 	d := sourceDefinition(t)
 	want := map[Relation]bool{
+		{From: "readonly_config_check", Kind: "reads_via", To: "config_precheck"}:                    true,
 		{From: "confirmed_source", Kind: "reads_via", To: "source_discovery"}:                        true,
 		{From: "confirmed_target_parent_and_name", Kind: "reads_via", To: "target_parent_discovery"}: true,
 		{From: "confirmed_target_parent_and_name", Kind: "configured_by", To: "target"}:              true,
@@ -43,7 +44,7 @@ func TestPlatformDefinitionIsBoundedAndIndependentOfTenant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.KnowledgeKind != "platform_definition" || a.Availability != "not_observed" || a.Revision != 10 || len(a.Digest) != 64 || a.Operation.Tool != a.Capability {
+	if a.KnowledgeKind != "platform_definition" || a.Availability != "not_observed" || a.Revision != 11 || len(a.Digest) != 64 || a.Operation.Tool != a.Capability {
 		t.Fatalf("invalid platform binding: %+v", a)
 	}
 	ids := map[string]bool{}

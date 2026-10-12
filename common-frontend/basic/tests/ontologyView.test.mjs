@@ -73,6 +73,27 @@ test('compact ontology layout has explicit spacing and refits only after resized
   assert.equal(graph.padding, 32)
 })
 
+test('compact layout sizes columns from rectangular nodes and recomputes both axes on resize', async () => {
+  const state = fixture('grid')
+  state.props.entityTypes = Array.from({ length:20 }, (_, id) => ({ id, name:`concept-${id}` }))
+  Object.assign(state.canvas, { offsetWidth:1056, offsetHeight:600 })
+  await state.callbacks.mount()
+  const graph = state.instances[0]
+  assert.equal(graph.options.layout.cols, 5)
+  assert.equal(graph.options.layout.rows, 4)
+  const minimumCellWidth = graph.options.layout.nodeSize[0] + graph.options.layout.nodeSpacing
+  assert.ok(graph.options.layout.cols * minimumCellWidth <= graph.options.layout.width)
+  Object.assign(state.canvas, { offsetWidth:600, offsetHeight:400 })
+  state.callbacks.resize()
+  assert.equal(graph.options.layout.cols, 2)
+  assert.equal(graph.options.layout.rows, 10)
+  state.props.entityTypes = state.props.entityTypes.slice(0, 1)
+  state.canvas.offsetWidth = 1000
+  state.callbacks.resize()
+  assert.equal(graph.options.layout.cols, 1)
+  assert.equal(graph.options.layout.rows, 1)
+})
+
 test('hidden ontology canvas waits for its first measurable size', async () => {
   const state = fixture()
   state.canvas.offsetWidth = 0

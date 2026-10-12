@@ -412,6 +412,10 @@ test-manager-backend: ## 运行 Manager 后端单元与契约测试（不依赖�
 test-orchestrator-backend: ## 运行 Orchestrator 后端单元与契约测试（不依赖平台 T0）
 	@cd orchestrator/backend && go test ./...
 
+.PHONY: test-transfer-backend
+test-transfer-backend: ## 运行 Transfer 后端单元与契约测试（不依赖平台 T0）
+	@cd transfer/backend && GOWORK=off go test ./...
+
 .PHONY: test-quality-backend
 test-quality-backend: ## 运行 Quality 后端单元与契约测试（不依赖平台 T0）
 	@cd quality/backend && go test ./...
@@ -432,6 +436,13 @@ test-standard-postgres: ## 使用测试 PostgreSQL 与独立临时 MinIO 运行 
 .PHONY: test-ontology-postgres
 test-ontology-postgres: ## 验证 Ontology 修订、发布事务、并发与撤回
 	@bash scripts/test/ontology-postgres-gate.sh
+
+.PHONY: test-ontology-postgres-cleanup test-ontology-postgres-policy
+test-ontology-postgres-cleanup: ## 持锁恢复显式指定 Run ID 的 Ontology 测试资源（仅安全测试库）
+	@bash scripts/test/ontology-postgres-gate.sh --cleanup-run "$(ONTOLOGY_POSTGRES_CLEANUP_RUN_ID)"
+
+test-ontology-postgres-policy: ## 验证 Ontology PostgreSQL 门禁参数、退出及恢复拒绝策略
+	@python3 scripts/test/ontology-postgres-gate_test.py
 
 .PHONY: test-ontology-infra-config
 test-ontology-infra-config: ## 验证 FalkorDB 部署、独立 Secret、持久化契约与门禁清理
@@ -559,7 +570,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-node-dependencies
 	@$(MAKE) test-infra-postgresql-init
 	@$(MAKE) test-system-iam-runner
-	@python3 scripts/test/ontology-postgres-gate_test.py
+	@$(MAKE) test-ontology-postgres-policy
 	@$(MAKE) test-ontology-infra-config
 	@$(MAKE) test-go-dependency-policy
 	@$(MAKE) test-build-registration

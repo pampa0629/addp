@@ -4,7 +4,19 @@ import unittest
 from pathlib import Path
 
 from agents.checkpoint import capture_owner_facts, confirm_selection, new_checkpoint, normalize_checkpoint, canonicalize_clarification_options
-from agents.platform_conditions import CREATE_TOOL, prepare_review, validate_create
+from agents.platform_conditions import CREATE_TOOL, capture_config_check, config_check_report, prepare_review, validate_create
+
+
+def precheck_fixture(arguments, checkpoint, status="unknown"):
+    report = {
+        "schema_version": "addp.transfer_task_config_check/v1", "tenant_id": 1, "principal_id": "fixture-user",
+        "config_hash": "c" * 64, "binding_hash": "b" * 64, "observed_at": "2026-10-11T00:00:00Z",
+        "status": status, "checked": ["request_shape"], "not_checked": ["business_rows"],
+        "runtime_checks_required": ["per_value_encoding"], "facts": [],
+        "diagnostics": [{"status": status, "code": "source_query_not_checked", "check": "schema", "config_path": "/config/source"}],
+    }
+    capture_config_check(arguments, report, checkpoint)
+    return report
 
 
 def platform_fixture():
@@ -32,10 +44,55 @@ def platform_fixture():
     checkpoint = new_checkpoint()
     for name, result in [("platform.capability.context", definition), ("resource.facts.get", source), ("resource.children.list", target)]:
         capture_owner_facts(name, result, checkpoint)
+    precheck_fixture(arguments, checkpoint)
     return definition, source, target, arguments, checkpoint
 
 
 class PlatformConditionTests(unittest.TestCase):
+    def test_formal_check_is_bound_to_complete_arguments_and_rejects_unsupported(self):
+        _, _, _, arguments, checkpoint = platform_fixture()
+        checkpoint["observed"]["config_checks"].clear()
+        with self.assertRaisesRegex(ValueError, "readonly_config_check"):
+            prepare_review(arguments, checkpoint)
+        for status in ("supported", "unknown", "unsupported"):
+            precheck_fixture(arguments, checkpoint, status)
+            with self.subTest(status=status):
+                if status == "unsupported":
+                    with self.assertRaisesRegex(ValueError, "config_check_unsupported"):
+                        prepare_review(arguments, checkpoint)
+                else:
+                    prepare_review(arguments, checkpoint)
+        precheck_fixture(arguments, checkpoint)
+        with self.assertRaisesRegex(ValueError, "readonly_config_check"):
+            config_check_report({**arguments, "description": "not checked"}, checkpoint)
+        with self.assertRaisesRegex(ValueError, "invalid_config_check"):
+            capture_config_check(arguments, {"status": "supported"}, checkpoint)
+
+    def test_report_time_does_not_invalidate_confirmation_but_all_stable_evidence_does(self):
+        _, _, _, arguments, checkpoint = platform_fixture()
+        report = precheck_fixture(arguments, checkpoint)
+        report["facts"] = [{
+            "role": "source", "engine_id": 11, "engine_version": 1, "engine_type": "mongodb",
+            "engine_facts_hash": "d" * 64, "snapshot_hash": "e" * 64,
+            "schema_coverage": "sampled", "native_access": "supported", "scanned_at": "2026-10-10T00:00:00Z",
+        }]
+        capture_config_check(arguments, report, checkpoint)
+        identity = prepare_review(arguments, checkpoint)
+        confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
+        refreshed = {**report, "observed_at": "2026-10-11T00:01:00Z", "binding_hash": "f" * 64}
+        capture_config_check(arguments, refreshed, checkpoint)
+        self.assertEqual(validate_create(arguments, checkpoint), identity)
+        changes = {
+            "tenant_id": 2, "principal_id": "other-user", "config_hash": "f" * 64,
+            "status": "supported", "checked": ["request_shape", "mapping"],
+            "not_checked": ["live_schema"], "runtime_checks_required": ["security"],
+            "diagnostics": [], "facts": [{**report["facts"][0], "scanned_at": "2026-10-11T00:00:00Z"}],
+        }
+        for key, value in changes.items():
+            capture_config_check(arguments, {**refreshed, key: value}, checkpoint)
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "user_review"):
+                validate_create(arguments, checkpoint)
+
     def test_published_conditions_have_semantic_concepts_and_adapters(self):
         definition, _, _, arguments, checkpoint = platform_fixture()
         ids = {concept["id"] for concept in definition["concepts"]}
@@ -54,9 +111,12 @@ class PlatformConditionTests(unittest.TestCase):
         self.assertEqual(validate_create(arguments, normalize_checkpoint(checkpoint)), identity)
         for path, value in [("name", "different"), ("batch_size", 500), ("description", "changed")]:
             changed = {**arguments, path: value}
+            precheck_fixture(changed, checkpoint)
             with self.subTest(path=path), self.assertRaisesRegex(ValueError, "user_review"):
                 validate_create(changed, checkpoint)
+        precheck_fixture(arguments, checkpoint)
         changed = copy.deepcopy(checkpoint)
+        precheck_fixture(arguments, changed)
         changed["observed"]["platform_capabilities"][CREATE_TOOL]["digest"] = "b" * 64
         with self.assertRaisesRegex(ValueError, "user_review"):
             validate_create(arguments, changed)
@@ -67,10 +127,12 @@ class PlatformConditionTests(unittest.TestCase):
         for key, value in (("name", "another_table"), ("policy", {"apply_mode": "append"})):
             changed = copy.deepcopy(arguments)
             changed["config"]["target"][key] = value
+            precheck_fixture(changed, checkpoint)
             with self.subTest(target=key), self.assertRaisesRegex(ValueError, "user_review"):
                 validate_create(changed, checkpoint)
         changed = copy.deepcopy(arguments)
         changed["config"]["source"]["query"]["statement"] = json.dumps({"aggregate": "events", "pipeline": [{"$project": {"id": "$_id", "status": "$status", "_id": 0}}]})
+        precheck_fixture(changed, checkpoint)
         with self.assertRaisesRegex(ValueError, "user_review"):
             validate_create(changed, checkpoint)
 
@@ -106,6 +168,7 @@ class PlatformConditionTests(unittest.TestCase):
                 validate_create(changed, checkpoint, require_review=False)
         good = copy.deepcopy(arguments)
         good["config"]["source"]["query"]["statement"] = json.dumps({"aggregate": "events", "pipeline": [{"$unwind": "$members"}, {"$project": {"id": "$members.id", "status": 1, "_id": 0}}]})
+        precheck_fixture(good, checkpoint)
         validate_create(good, checkpoint, require_review=False)
         changed = copy.deepcopy(arguments)
         changed["config"]["transforms"][0]["fields"][0]["source"] = "invented_output"
@@ -140,6 +203,7 @@ class PlatformConditionTests(unittest.TestCase):
         for mode in ("replace", "append"):
             changed = copy.deepcopy(arguments)
             changed["config"]["target"]["policy"] = {"apply_mode": mode}
+            precheck_fixture(changed, checkpoint)
             with self.subTest(mode=mode):
                 validate_create(changed, checkpoint, require_review=False)
         for policy in (

@@ -12,7 +12,8 @@ from graph.factory import AgentFactory
 from tests.harness_fixtures import HarnessTestModel, harness_tools
 from agents.checkpoint import confirm_selection, normalize_checkpoint
 from agents.platform_conditions import prepare_review
-from tests.test_platform_conditions import platform_fixture
+from tests.test_platform_conditions import platform_fixture, precheck_fixture
+from agents.checkpoint import new_checkpoint
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -481,8 +482,8 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
     async def test_transfer_review_copy_is_runtime_owned_and_language_does_not_change_identity(self):
         identities = []
         for language, checked, unverified, confirm, cancel in (
-            ("zh-CN", "已检查", "未验证", "确认仅创建任务", "取消"),
-            ("en-US", "Checked", "Not verified", "Confirm task creation only", "Cancel"),
+            ("zh-CN", "已检查", "未检查项", "知悉未核验项，仅创建任务", "取消"),
+            ("en-US", "Checked", "unchecked", "Accept unchecked items; create only", "Cancel"),
         ):
             with self.subTest(language=language):
                 definition, _, _, arguments, checkpoint = platform_fixture()
@@ -505,7 +506,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(unverified, interaction["prompt"])
                 self.assertNotIn("模型声称", interaction["prompt"])
                 self.assertEqual([candidate["label"] for candidate in interaction["candidates"]], [confirm, cancel])
-                displayed_arguments = interaction["prompt"].split("```json\n", 1)[1].split("\n```", 1)[0]
+                displayed_arguments = interaction["prompt"].rsplit("```json\n", 1)[1].split("\n```", 1)[0]
                 self.assertEqual(json.loads(displayed_arguments), arguments)
                 identity = interaction["candidates"][0]["candidate"]["operation_review"]
                 self.assertEqual(interaction["candidates"][0]["value"], identity["fingerprint"])
@@ -708,7 +709,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             responses=[], llm=model,
         )
         starts = [event.payload for event in events if event.kind == "tool_start"]
-        self.assertEqual([event["tool_name"] for event in starts], ["platform.capability.context", "transfer.task.create"])
+        self.assertEqual([event["tool_name"] for event in starts], ["platform.capability.context", "transfer.task.create", "transfer.task.config.check"])
         self.assertEqual(starts[0]["args"], {"capability": "transfer.task.create"})
         self.assertNotEqual(starts[0]["tool_call_id"], starts[1]["tool_call_id"])
         result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == "transfer.task.create")
@@ -870,6 +871,15 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(create.calls, 0 if cancel else 1)
 
     async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis", checkpoint=None, llm=None, checkpoint_consumer=None, user_request="评测请求", accept_language="zh-cn"):
+        # Existing scenario fixtures now explicitly include the mandatory
+        # readonly Tool; this is test preparation, never a Runtime fallback.
+        tools, allowed_tools = list(tools), list(allowed_tools)
+        if "transfer.task.create" in allowed_tools:
+            class ConfigCheck(_Tool):
+                async def ainvoke(self, arguments):
+                    return json.dumps(precheck_fixture(arguments, new_checkpoint()))
+            tools.append(ConfigCheck("transfer.task.config.check", {}))
+            allowed_tools.append("transfer.task.config.check")
         context = {
             "skill_name": skill_name,
             "user_request": user_request,

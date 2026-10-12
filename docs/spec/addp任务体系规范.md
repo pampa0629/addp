@@ -1026,6 +1026,10 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 
 ### 租户执行诊断（2026-10-01 已确认）
 
+Transfer 专业执行读取同时限定可信 Tenant、`module=transfer` 与 `task_type=sync`。第一方和普通 OAuth User 使用现有 `transfer.task.read`：有定义的历史（含已删除定义）可读，无定义的一次性执行仅发起 User 可读，无主体证据拒绝；详情、进度、事件、任务历史、全局列表及其总数和统计采用同一 SQL 范围。用户读取父执行不授予子执行读取权。模块导出结果仍独立使用已认证 Service Client 与 execution 的 source 精确匹配，且只允许无定义执行；TaskProvider 仍独立使用 `addp-orchestrator` 和 `transfer.task_provider.read`，不套用用户本人规则，两者也必须限定 sync 归属。
+
+Transfer 专业响应采用显式 DTO，保留执行身份、状态、时间和传输计数、Common 安全错误分类、冻结血缘资源与字段映射及结构快照，以及连续同步的分区位点、延迟、检查点健康、捕获恢复观测、恢复退避和结构变化诊断。结构快照不包含字段注释、默认表达式或生成表达式。只展示已声明的专业事实，不返回任意 metadata、原始 checkpoint、SQL／参数／业务样本、完整运行时响应、执行授权引用、fencing／租约或自由文本错误。启动、恢复、回放和重试响应也使用同一投影；模块导出结果另用显式结果 DTO，仅保留身份、状态、安全错误和导出会话所需的 typed `target_refs`。原始持久事实与运行时恢复逻辑不变，专业结果仍由所属模块的授权入口读取。
+
 Manager 用户执行状态查询复用 Owner 已声明的 `manager.derived_artifact.read` 读取范围：可信 Tenant、`module=manager`，类型仅限派生产物及向量化任务；有定义的历史（含已删除定义）可读，一次性执行仅当前发起 User 可读，无主体证据拒绝。`data_profiling` 与 `cleanup_executor` 使用各自的专业或维护入口，不通过派生产物状态入口读取。TaskProvider 状态查询仍由 `addp-orchestrator` Service Client 和 `manager.task_provider.read` 独立授权，同时限定 Manager 已声明的任务类型，不套用用户本人条件。
 
 Manager 专业执行响应使用显式 DTO：执行概览和失败分类复用 Common 安全投影；专业 metadata 只保留向量化和瓦片生成计数、血缘资源身份及操作、Workflow 引擎类型／算子／模式／耗时，以及 GLB 大小、来源格式和 MAX 转换证据（源单位、单位来源、米制比例、导入器版本、贴图引用、源摘要、网格数及静态范围）。血缘保留输入输出端口、Locator、item ID、fingerprint、写入模式、操作 kind/operator 与端口，以及 runtime execution 和 Meta scan 引用；不返回 schema snapshot、字段映射或任意附加字段。不得返回执行配置、访问计划、授权引用、原始 Runtime 响应、command、stdout/stderr、publish 对象、`storage_refs` 等内部存储描述或自由文本错误。专业结果内容仍走已有 Manager 领域结果入口，Monitor 的血缘安全投影不增加 operations 或专业转换证据。此收敛不改变 Owner 权限、持久执行事实、机器 TaskProvider 契约或结果生命周期。

@@ -563,41 +563,6 @@ definitions:
     - TaskDesiredStateRunning
     - TaskDesiredStatePaused
     - TaskDesiredStateStopped
-  github_com_addp_transfer_internal_models.TaskExecution:
-    properties:
-      bytes_read:
-        type: integer
-      bytes_written:
-        type: integer
-      checkpoint_offset:
-        type: integer
-      checkpoint_state:
-        $ref: '#/definitions/github_com_addp_transfer_internal_models.JSONMap'
-      end_time:
-        $ref: '#/definitions/github_com_addp_transfer_internal_models.LocalTime'
-      error_msg:
-        type: string
-      execution_id:
-        type: string
-      id:
-        type: integer
-      metadata:
-        $ref: '#/definitions/github_com_addp_transfer_internal_models.JSONMap'
-      records_read:
-        type: integer
-      records_written:
-        type: integer
-      start_time:
-        $ref: '#/definitions/github_com_addp_transfer_internal_models.LocalTime'
-      status:
-        $ref: '#/definitions/github_com_addp_transfer_internal_models.ExecutionStatus'
-      task_id:
-        type: integer
-      trigger_by:
-        type: integer
-      trigger_type:
-        type: string
-    type: object
   github_com_addp_transfer_internal_models.TaskStatistics:
     properties:
       failed_tasks:
@@ -1134,6 +1099,102 @@ definitions:
         description: Valid is true if Time is not NULL
         type: boolean
     type: object
+  internal_api.ExecutionCapture:
+    properties:
+      generation:
+        type: integer
+      source_recovery:
+        $ref: '#/definitions/internal_api.ExecutionCaptureRecovery'
+      source_transactions:
+        $ref: '#/definitions/internal_api.ExecutionCaptureTransactions'
+    type: object
+  internal_api.ExecutionCaptureRecovery:
+    properties:
+      capture_position:
+        type: string
+      current_position:
+        type: string
+      earliest_available_at:
+        type: string
+      earliest_available_position:
+        type: string
+      fra_reclaimable_percent:
+        type: number
+      fra_used_percent:
+        type: number
+      health:
+        type: string
+      position_headroom:
+        type: string
+      provider:
+        type: string
+      sampled_at:
+        type: string
+      schema_version:
+        type: string
+      window_seconds:
+        type: integer
+    type: object
+  internal_api.ExecutionCaptureTransactions:
+    properties:
+      active_count:
+        type: integer
+      oldest_duration_seconds:
+        type: integer
+      oldest_start_position:
+        type: string
+      provider:
+        type: string
+      sampled_at:
+        type: string
+      schema_version:
+        type: string
+      status:
+        type: string
+      used_undo_blocks:
+        type: string
+      used_undo_records:
+        type: string
+    type: object
+  internal_api.ExecutionContinuous:
+    properties:
+      capture:
+        $ref: '#/definitions/internal_api.ExecutionCapture'
+      diagnostics:
+        $ref: '#/definitions/internal_api.ExecutionDiagnostics'
+      last_committed_at:
+        type: string
+      last_event_at:
+        type: string
+      partitions:
+        additionalProperties:
+          $ref: '#/definitions/internal_api.ExecutionPartition'
+        type: object
+      schema_change:
+        $ref: '#/definitions/internal_api.ExecutionSchemaChange'
+    type: object
+  internal_api.ExecutionDiagnostics:
+    properties:
+      checkpoint_health:
+        type: string
+      checkpoint_stale_after_seconds:
+        type: number
+      critical_horizon_seconds:
+        type: number
+      degraded_horizon_seconds:
+        type: number
+      error:
+        description: Replaced with a fixed localized message before serializing.
+        type: string
+      health:
+        type: string
+      partitions:
+        additionalProperties:
+          $ref: '#/definitions/internal_api.ExecutionPartitionDiagnostics'
+        type: object
+      sampled_at:
+        type: string
+    type: object
   internal_api.ExecutionEventPage:
     properties:
       has_more:
@@ -1146,6 +1207,332 @@ definitions:
         type: integer
       retained_after:
         type: string
+    type: object
+  internal_api.ExecutionFieldMapping:
+    properties:
+      input_port:
+        type: string
+      output_port:
+        type: string
+      source_field:
+        type: string
+      target_field:
+        type: string
+      transformation:
+        type: string
+    type: object
+  internal_api.ExecutionLineageFacts:
+    properties:
+      inputs:
+        items:
+          $ref: '#/definitions/internal_api.ExecutionLineageResource'
+        type: array
+      meta_scan_refs:
+        items:
+          type: string
+        type: array
+      operations:
+        items:
+          $ref: '#/definitions/internal_api.ExecutionLineageOperation'
+        type: array
+      outputs:
+        items:
+          $ref: '#/definitions/internal_api.ExecutionLineageResource'
+        type: array
+      runtime_execution_id:
+        type: string
+      schema_version:
+        type: string
+    type: object
+  internal_api.ExecutionLineageOperation:
+    properties:
+      field_lineage_status:
+        type: string
+      field_mappings:
+        items:
+          $ref: '#/definitions/internal_api.ExecutionFieldMapping'
+        type: array
+      input_ports:
+        items:
+          type: string
+        type: array
+      kind:
+        type: string
+      operator:
+        type: string
+      output_ports:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.ExecutionLineageResource:
+    properties:
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
+      locator:
+        type: string
+      port:
+        type: string
+      schema_snapshot:
+        $ref: '#/definitions/internal_api.ExecutionSchemaSnapshot'
+      write_mode:
+        type: string
+    type: object
+  internal_api.ExecutionListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_api.ExecutionResponse'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.ExecutionMetadata:
+    properties:
+      continuous:
+        $ref: '#/definitions/internal_api.ExecutionContinuous'
+      lineage_facts:
+        $ref: '#/definitions/internal_api.ExecutionLineageFacts'
+      recovered_from_execution_id:
+        type: string
+      recovery_attempt:
+        type: integer
+      recovery_backoff_seconds:
+        type: number
+      recovery_circuit_state:
+        type: string
+      recovery_consecutive_failures:
+        type: integer
+      recovery_not_before:
+        type: string
+      recovery_reason:
+        type: string
+      stop_reason:
+        type: string
+    type: object
+  internal_api.ExecutionMetadataScan:
+    properties:
+      attempt:
+        type: integer
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_api.ExecutionPartition:
+    properties:
+      type:
+        type: string
+      values:
+        $ref: '#/definitions/internal_api.ExecutionPartitionValue'
+      version:
+        type: string
+    type: object
+  internal_api.ExecutionPartitionDiagnostics:
+    properties:
+      checkpoint_age_seconds:
+        type: number
+      checkpoint_health:
+        type: string
+      earliest_offset:
+        type: integer
+      health:
+        type: string
+      lag_records:
+        type: integer
+      latest_offset:
+        type: integer
+      next_offset:
+        type: integer
+      partition:
+        type: string
+      recovery_headroom_records:
+        type: integer
+      retention_horizon_seconds:
+        type: number
+      source_rate_records_per_second:
+        type: number
+    type: object
+  internal_api.ExecutionPartitionValue:
+    properties:
+      next_offset:
+        type: integer
+    type: object
+  internal_api.ExecutionProgressResponse:
+    properties:
+      bytes_read:
+        type: integer
+      bytes_written:
+        type: integer
+      duration:
+        type: number
+      end_time:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.LocalTime'
+      error_details:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.JSONMap'
+      execution_id:
+        type: string
+      qps:
+        type: number
+      records_read:
+        type: integer
+      records_written:
+        type: integer
+      start_time:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.LocalTime'
+      status:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.ExecutionStatus'
+      task_id:
+        type: integer
+    type: object
+  internal_api.ExecutionResponse:
+    properties:
+      bytes_read:
+        type: integer
+      bytes_written:
+        type: integer
+      end_time:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.LocalTime'
+      error_details:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.JSONMap'
+      execution_id:
+        type: string
+      id:
+        type: integer
+      metadata:
+        $ref: '#/definitions/internal_api.ExecutionMetadata'
+      records_read:
+        type: integer
+      records_written:
+        type: integer
+      start_time:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.LocalTime'
+      status:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.ExecutionStatus'
+      task_id:
+        type: integer
+      trigger_by:
+        type: integer
+      trigger_type:
+        type: string
+    type: object
+  internal_api.ExecutionSchemaChange:
+    properties:
+      detected_at:
+        type: string
+      from_revision:
+        type: integer
+      generation:
+        type: integer
+      incompatible_fields:
+        items:
+          type: string
+        type: array
+      metadata_scan:
+        $ref: '#/definitions/internal_api.ExecutionMetadataScan'
+      missing_fields:
+        items:
+          type: string
+        type: array
+      request_id:
+        type: integer
+      scope:
+        type: string
+      source_offset:
+        type: integer
+      source_partition:
+        type: string
+      status:
+        type: string
+      stopped_at:
+        type: string
+      to_revision:
+        type: integer
+      unexpected_fields:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.ExecutionSchemaField:
+    properties:
+      element_type:
+        type: string
+      generated:
+        type: boolean
+      name:
+        type: string
+      native_type:
+        type: string
+      nullable:
+        type: boolean
+      ordinal_position:
+        type: integer
+      path:
+        items:
+          type: string
+        type: array
+      precision:
+        type: integer
+      primary_key:
+        type: boolean
+      scale:
+        type: integer
+      size:
+        type: integer
+      type:
+        type: string
+    type: object
+  internal_api.ExecutionSchemaSnapshot:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/internal_api.ExecutionSchemaField'
+        type: array
+      hash:
+        type: string
+    type: object
+  internal_api.ExecutionTargetRef:
+    properties:
+      entry:
+        type: string
+      extension:
+        type: string
+      path:
+        type: string
+      primary:
+        type: boolean
+      required:
+        type: boolean
+      role:
+        type: string
+    type: object
+  internal_api.ModuleExecutionMetadata:
+    properties:
+      target_refs:
+        items:
+          $ref: '#/definitions/internal_api.ExecutionTargetRef'
+        type: array
+    type: object
+  internal_api.ModuleExecutionResult:
+    properties:
+      error_msg:
+        type: string
+      execution_id:
+        type: string
+      metadata:
+        $ref: '#/definitions/internal_api.ModuleExecutionMetadata'
+      status:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.ExecutionStatus'
+      task_id:
+        type: integer
     type: object
   internal_api.ProviderExecuteRequest:
     properties:
@@ -1473,7 +1860,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/internal_api.ExecutionListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "500":
           description: Internal Server Error
@@ -1539,6 +1937,11 @@ paths:
       - transfer.execution.create
   /executions/{execution_id}:
     get:
+      description: 第一方或普通 OAuth User；当前租户 transfer/sync 的任务历史（含已删除定义），无定义执行仅发起人可读。返回声明的专业诊断事实，不包含原始配置、checkpoint
+        或任意 metadata。| First-party or ordinary OAuth Users may read tenant transfer/sync
+        task history, including deleted definitions, and their own ad-hoc executions.
+        Only declared professional diagnostic facts are returned; raw configuration,
+        checkpoints and arbitrary metadata are excluded.
       parameters:
       - description: 执行ID | Execution ID
         in: path
@@ -1551,9 +1954,21 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskExecution'
+            $ref: '#/definitions/internal_api.ExecutionResponse'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "404":
           description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
           schema:
             additionalProperties:
               type: string
@@ -1635,7 +2050,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/internal_api.ExecutionProgressResponse'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "500":
           description: Internal Server Error
@@ -1668,7 +2094,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskExecution'
+            $ref: '#/definitions/internal_api.ModuleExecutionResult'
         "403":
           description: Forbidden
           schema:
@@ -1677,6 +2103,12 @@ paths:
             type: object
         "404":
           description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
           schema:
             additionalProperties:
               type: string
@@ -1707,8 +2139,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.ExecutionResponse'
         "409":
           description: CDC 被结构变化阻塞 | CDC blocked by schema change
           schema:
@@ -1751,6 +2182,18 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "500":
           description: Internal Server Error
@@ -2337,7 +2780,18 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/internal_api.ExecutionListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "500":
           description: Internal Server Error
@@ -2432,7 +2886,7 @@ paths:
         "202":
           description: 已创建独立回放执行 | Independent replay execution created
           schema:
-            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskExecution'
+            $ref: '#/definitions/internal_api.ExecutionResponse'
         "400":
           description: 请求不符合 bounded replay v1 契约 | Request violates the bounded replay
             v1 contract
@@ -2654,7 +3108,7 @@ paths:
         "200":
           description: 启动成功，返回执行记录 | Started successfully, returns execution record
           schema:
-            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskExecution'
+            $ref: '#/definitions/internal_api.ExecutionResponse'
         "400":
           description: 参数错误或任务已在运行 | Bad request or task already running
           schema:

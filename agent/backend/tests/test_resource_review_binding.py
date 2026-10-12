@@ -6,7 +6,7 @@ import unittest
 
 from agents.checkpoint import capture_owner_facts, confirm_selection, normalize_checkpoint
 from agents.platform_conditions import CREATE_TOOL, prepare_review, validate_create
-from tests.test_platform_conditions import platform_fixture
+from tests.test_platform_conditions import platform_fixture, precheck_fixture
 
 
 def array_review_fixture():
@@ -21,6 +21,7 @@ def array_review_fixture():
         {"source": "members", "target": "members", "target_type": "json"},
     ]
     capture_owner_facts("resource.facts.get", source, checkpoint)
+    precheck_fixture(arguments, checkpoint)
     identity = prepare_review(arguments, checkpoint)
     confirm_selection(checkpoint, {
         "value": identity["fingerprint"], "candidate": {"operation_review": identity},

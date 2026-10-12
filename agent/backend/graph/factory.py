@@ -22,9 +22,9 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.checkpoint import canonicalize_clarification_options, capture_owner_facts, checkpoint_prompt, normalize_checkpoint
 from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
-from agents.platform_conditions import CREATE_TOOL, REVIEW_REASON, prepare_review, review_json, validate_create
+from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, capture_config_check, config_check_report, prepare_review, review_json, validate_create
 from graph.state import TaskContext
-from i18n import transfer_create_review_messages
+from i18n import transfer_config_check_error, transfer_create_review_messages
 from protocol.a2ui import preview_presentations
 from tools.langchain_tools import create_agent_tools, stable_tool_name
 from utils.llm import get_llm
@@ -72,7 +72,7 @@ def _runtime_instructions() -> str:
 - 用户对 Transfer 只要求展示草稿或确认配置、明确不要创建时，可以取证及澄清配置缺口，但应以普通回复展示配置草稿并结束本轮；不调用 transfer_create_review，不提供“确认创建”选项，也不调用 transfer.task.create。选择源、目标或补充配置不代表改为要求创建。
 - 用户明确要求创建任务后，Transfer 创建前的最终配置复核必须使用 reason=transfer_create_review、operation_review={tool:"transfer.task.create",arguments:<完整创建参数>} 和 confirm/cancel 两个选项。Runtime 展示确切参数并绑定指纹；普通文字或其他澄清不构成创建复核。
 - 提交创建时参数必须与复核完全一致；参数或本体/结构事实变化后重新复核。平台条件错误先补齐缺口，不反复尝试写 Tool。
-- Transfer 普通草稿应说明尚未完成 owner 的类型适配及写入可执行性验证，不把结构事实或配置复核称为已验证可执行。最终创建复核的提示和按钮由 Runtime 生成，不使用模型提供的展示文案。
+- Transfer 普通草稿不能称为已预检通过。最终复核前与创建前，Runtime 自动调用正式只读预检 Tool；unsupported 必须修正配置，unknown 需要用户知情确认未检查项。模型不得自报预检成功。预检与配置复核均不保证执行成功；最终提示和按钮由 Runtime 生成。
 """
 
 
@@ -86,6 +86,7 @@ class _PlatformBoundary(AgentMiddleware):
     def __init__(self, tools: list[StructuredTool], checkpoint: dict, max_iterations: int, accept_language: str):
         super().__init__()
         self.names = {tool.name: stable_tool_name(tool) for tool in tools}
+        self.platform_tools = {stable_tool_name(tool): tool for tool in tools}
         self.checkpoint = checkpoint
         self.max_iterations = max_iterations
         self.accept_language = accept_language
@@ -123,14 +124,20 @@ class _PlatformBoundary(AgentMiddleware):
             name = self.names.get(call["name"], call["name"])
             _emit("tool_start", tool_call_id=call["id"], tool_name=name, args=call["args"])
             if name == "request_clarification":
-                return self._clarify(call)
+                return await self._clarify(call)
             if call["name"] not in self.names:
                 return self._error(call, name, "tool_not_allowed", "错误：工具不在该 Skill 的白名单内")
             if name == "platform.capability.context":
                 self.checkpoint["observed"]["platform_capabilities"] = {}
                 _emit("checkpoint", tool_call_id=call["id"], checkpoint=copy.deepcopy(self.checkpoint), facts={})
+            if name == CHECK_TOOL:
+                self._clear_config_check(call["id"])
             if name == CREATE_TOOL:
                 try:
+                    validate_create(call["args"], self.checkpoint)
+                    stopped = await self._run_config_check(call["args"], call)
+                    if stopped is not None:
+                        return stopped
                     validate_create(call["args"], self.checkpoint)
                 except ValueError as exc:
                     return self._error(call, name, "platform_condition_unsatisfied", str(exc))
@@ -163,36 +170,74 @@ class _PlatformBoundary(AgentMiddleware):
                 return Command(update={"messages": [message]}, goto=END)
             return message
 
-    def _error(self, call, name, code, message):
+    def _error(self, call, name, code, message, parent_call=None):
         content = json.dumps({"error": {"code": code, "message": message}}, ensure_ascii=False)
         _emit("tool_result", tool_call_id=call["id"], tool_name=name, content=content,
               is_error=True, error_source="runtime", error_code=code)
-        halted = self._halt_failed_search(call, name, "runtime", code, message, content)
+        halted = self._halt_failed_evidence(call, name, "runtime", code, message, content, parent_call)
         if halted is not None:
             return halted
+        if parent_call is not None:
+            return self._finish_config_parent(parent_call)
         return ToolMessage(content=content, tool_call_id=call["id"], name=call["name"], status="error")
 
-    def _halt_failed_search(self, call, name, source, code, message, content):
-        if name != "data.search" or not code or code in {"invalid_arguments", "invalid_tool_arguments", "tool_not_allowed"}:
+    def _finish_config_parent(self, call):
+        content = json.dumps({"error": {"code": "readonly_config_check_failed", "message": transfer_config_check_error(self.accept_language)}}, ensure_ascii=False)
+        _emit("tool_result", tool_call_id=call["id"], tool_name=self.names[call["name"]], content=content,
+              is_error=True, error_source="runtime", error_code="readonly_config_check_failed")
+        return ToolMessage(content=content, tool_call_id=call["id"], name=call["name"], status="error")
+
+    def _halt_failed_evidence(self, call, name, source, code, message, content, parent_call=None):
+        if name not in {"data.search", CHECK_TOOL} or not code or code in {"invalid_arguments", "invalid_tool_arguments", "tool_not_allowed"}:
             return None
         self.paused = True
-        _emit("run_failed", error_source=source, error_code=code, message=str(message)[:1000])
-        return Command(update={"messages": [ToolMessage(
+        # Close both audited steps before run_failed: the AG-UI consumer ends
+        # immediately on that event and must not retain a running parent step.
+        message_result = self._finish_config_parent(parent_call) if parent_call is not None else ToolMessage(
             content=content, tool_call_id=call["id"], name=call["name"], status="error",
-        )]}, goto=END)
+        )
+        _emit("run_failed", error_source=source, error_code=code, message=str(message)[:1000])
+        return Command(update={"messages": [message_result]}, goto=END)
 
-    def _clarify(self, call):
+    def _clear_config_check(self, call_id):
+        self.checkpoint["observed"]["config_checks"].pop(CREATE_TOOL, None)
+        _emit("checkpoint", tool_call_id=call_id, checkpoint=copy.deepcopy(self.checkpoint), facts={})
+
+    async def _run_config_check(self, arguments, parent_call):
+        """Use the same Manifest adapter, delegation and audit path as model tools."""
+        call = {"id": str(uuid.uuid4()), "name": self.platform_tools[CHECK_TOOL].name, "args": arguments}
+        self._clear_config_check(call["id"])
+        _emit("tool_start", tool_call_id=call["id"], tool_name=CHECK_TOOL, args=arguments)
+        try:
+            message = await self.platform_tools[CHECK_TOOL].ainvoke({**call, "type": "tool_call"})
+            if not isinstance(message, ToolMessage):
+                raise RuntimeError("invalid_tool_adapter_result")
+            if message.status == "error":
+                return self._error(call, CHECK_TOOL, "invalid_tool_arguments", transfer_config_check_error(self.accept_language), parent_call)
+            return self._owner_result(call, CHECK_TOOL, message.content, parent_call)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Config check adapter failed: error_type=%s", type(exc).__name__)
+            return self._error(call, CHECK_TOOL, "invalid_owner_response", transfer_config_check_error(self.accept_language), parent_call)
+
+    async def _clarify(self, call):
         try:
             args = ClarificationRequest.model_validate(call["args"])
             if args.reason == REVIEW_REASON:
                 review = args.operation_review
                 if not isinstance(review, dict) or set(review) != {"tool", "arguments"} or review["tool"] != CREATE_TOOL:
                     raise ValueError("invalid_operation_review")
+                if CREATE_TOOL not in self.platform_tools or CHECK_TOOL not in self.platform_tools:
+                    raise ValueError("operation_review_tool_not_allowed")
                 supplied = {option.value: option for option in args.options}
                 if len(args.options) != 2 or set(supplied) != {"confirm", "cancel"}:
                     raise ValueError("invalid_operation_review_choices")
+                stopped = await self._run_config_check(review["arguments"], call)
+                if stopped is not None:
+                    return stopped
                 identity = prepare_review(review["arguments"], self.checkpoint)
-                messages = transfer_create_review_messages(self.accept_language)
+                messages = transfer_create_review_messages(self.accept_language, config_check_report(review["arguments"], self.checkpoint))
                 options = [
                     {"label": messages[key], "value": identity["fingerprint"] if key == "confirm" else "cancel",
                      "candidate": {"operation_review": identity}}
@@ -216,7 +261,7 @@ class _PlatformBoundary(AgentMiddleware):
         _emit("interaction_required", tool_call_id=call["id"], prompt=args.prompt, reason=args.reason, candidates=options)
         return Command(update={"messages": [ToolMessage(content=content, tool_call_id=call["id"])]}, goto=END)
 
-    def _owner_result(self, call, name, content):
+    def _owner_result(self, call, name, content, parent_call=None):
         if not isinstance(content, str):
             raise RuntimeError("invalid_tool_adapter_result")
         try:
@@ -232,6 +277,8 @@ class _PlatformBoundary(AgentMiddleware):
             } else "tool"
         if result is not None:
             facts = capture_owner_facts(name, result, self.checkpoint)
+            if name == CHECK_TOOL and not code:
+                facts.update(capture_config_check(call["args"], result, self.checkpoint))
             if facts:
                 _emit("checkpoint", tool_call_id=call["id"], checkpoint=copy.deepcopy(self.checkpoint), facts=facts)
             result_ref = build_result_ref(name, result)
@@ -246,11 +293,13 @@ class _PlatformBoundary(AgentMiddleware):
                     _emit("presentation", kind="workflow_dag", workflow=definition)
         _emit("tool_result", tool_call_id=call["id"], tool_name=name, content=content,
               is_error=code is not None, error_source=source, error_code=code)
-        halted = self._halt_failed_search(
-            call, name, source, code, error.get("message", code) if isinstance(error, dict) else None, content,
+        halted = self._halt_failed_evidence(
+            call, name, source, code, error.get("message", code) if isinstance(error, dict) else None, content, parent_call,
         )
         if halted is not None:
             return halted
+        if code and parent_call is not None:
+            return self._finish_config_parent(parent_call)
         if name == "workflow.run" and isinstance(result, dict) and result.get("status") == "approval_required":
             return {
                 "interaction_kind": "owner_approval", "owner": "develop",
@@ -279,7 +328,7 @@ class AgentFactory:
             raise ValueError("agent_skill_tool_not_found")
         if CREATE_TOOL in allowed_tool_names:
             name = "platform.capability.context"
-            if name not in allowed_tool_names:
+            if name not in allowed_tool_names or CHECK_TOOL not in allowed_tool_names:
                 raise ValueError("agent_skill_tool_not_found")
             # Fresh semantics are a Runtime precondition, not an LLM reminder.
             # Use the same scoped adapter and audited events as model calls.

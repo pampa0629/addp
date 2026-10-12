@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -45,7 +46,8 @@ func NewExecutionService(db *gorm.DB, taskExecutionRepo *commonExecution.TaskExe
 	}
 }
 
-// convertToTransferExecution 将统一执行记录转换为 Transfer API 的执行记录 DTO。
+// convertToTransferExecution retains runtime facts for internal callers. It is
+// not an HTTP projection; handlers use their explicit response types.
 func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.TaskExecution) *models.TaskExecution {
 	if exec == nil {
 		return nil
@@ -56,11 +58,12 @@ func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.Task
 	}
 
 	transferExec := &models.TaskExecution{
-		ID:          uint(exec.ID),
-		ExecutionID: exec.ExecutionID,
-		TaskID:      taskID,
-		Status:      models.ExecutionStatus(exec.Status),
-		TriggerType: exec.TriggerType,
+		ID:           uint(exec.ID),
+		ExecutionID:  exec.ExecutionID,
+		TaskID:       taskID,
+		Status:       models.ExecutionStatus(exec.Status),
+		TriggerType:  exec.TriggerType,
+		ErrorDetails: commonExecution.Observe(exec).ErrorDetails,
 	}
 
 	// 安全转换指针字段
@@ -117,30 +120,12 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 	// 从统一表获取执行记录
 	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), int(tenantID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("execution not found")
-		}
 		return nil, err
 	}
 
 	// 验证是否为 transfer 模块的执行
-	if execution.Module != commonExecution.ModuleTransfer {
-		return nil, fmt.Errorf("execution not found or access denied")
-	}
-
-	// 检查租户权限（通过 task）
-	if execution.SourceTaskID != nil {
-		taskID, parseErr := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		task, err := s.taskRepo.GetByID(taskID)
-		if err != nil {
-			return nil, err
-		}
-		if task.TenantID != tenantID {
-			return nil, fmt.Errorf("execution not found or access denied")
-		}
+	if execution.Module != commonExecution.ModuleTransfer || execution.TaskType != commonExecution.TaskTypeSync {
+		return nil, commonAPI.ErrNotFound
 	}
 
 	return s.convertToTransferExecution(execution), nil
@@ -164,8 +149,8 @@ func (s *ExecutionService) GetOwnedExecutionByExecutionID(ctx context.Context, e
 	if err != nil {
 		return nil, err
 	}
-	if execution.SourceTaskID != nil || strings.TrimSpace(execution.Source) != strings.TrimSpace(sourceModule) {
-		return nil, fmt.Errorf("execution not found or access denied")
+	if execution.SourceTaskID != nil || execution.Source != sourceModule {
+		return nil, commonAPI.ErrNotFound
 	}
 	return s.convertToTransferExecution(execution), nil
 }
@@ -174,28 +159,16 @@ func (s *ExecutionService) GetOwnedExecutionByExecutionID(ctx context.Context, e
 func (s *ExecutionService) GetTaskProviderExecutionByExecutionID(ctx context.Context, executionID string, tenantID uint) (*commonExecution.TaskExecution, error) {
 	execution, err := s.taskExecutionRepo.GetByExecutionID(ctx, executionID, int(tenantID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("execution not found")
-		}
 		return nil, err
 	}
-	if execution.Module != commonExecution.ModuleTransfer {
-		return nil, fmt.Errorf("execution not found or access denied")
+	if execution.Module != commonExecution.ModuleTransfer || execution.TaskType != commonExecution.TaskTypeSync {
+		return nil, commonAPI.ErrNotFound
 	}
 	return execution, nil
 }
 
 // ListExecutions 列出任务的执行记录
 func (s *ExecutionService) ListExecutions(ctx context.Context, taskID, tenantID uint, page, pageSize int) ([]models.TaskExecution, int64, error) {
-	// 检查任务权限
-	task, err := s.taskRepo.GetByID(taskID)
-	if err != nil {
-		return nil, 0, err
-	}
-	if task.TenantID != tenantID {
-		return nil, 0, fmt.Errorf("task not found or access denied")
-	}
-
 	if page == 0 {
 		page = 1
 	}
@@ -634,39 +607,6 @@ func taskApplyMode(task *models.TransferTask) string {
 	return strings.ToLower(strings.TrimSpace(mode))
 }
 
-// GetExecutionProgress 获取执行进度（实时）
-func (s *ExecutionService) GetExecutionProgress(ctx context.Context, id, tenantID uint) (map[string]interface{}, error) {
-	execution, err := s.GetExecution(ctx, id, tenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	progress := map[string]interface{}{
-		"execution_id":    execution.ExecutionID,
-		"task_id":         execution.TaskID,
-		"status":          execution.Status,
-		"start_time":      execution.StartTime,
-		"end_time":        execution.EndTime,
-		"records_read":    execution.RecordsRead,
-		"records_written": execution.RecordsWritten,
-		"bytes_read":      execution.BytesRead,
-		"bytes_written":   execution.BytesWritten,
-		"error_msg":       execution.ErrorMsg,
-	}
-
-	// 计算时长
-	progress["duration"] = execution.Duration().Seconds()
-
-	// 计算 QPS
-	if duration := execution.Duration(); duration.Seconds() > 0 {
-		progress["qps"] = float64(execution.RecordsWritten) / duration.Seconds()
-	} else {
-		progress["qps"] = 0.0
-	}
-
-	return progress, nil
-}
-
 // GetExecutionEvents reuses the execution authorization scope.
 func (s *ExecutionService) GetExecutionEvents(ctx context.Context, executionID string, tenantID uint, after int64, limit int) (*commonExecution.EventPage, error) {
 	return s.taskExecutionRepo.ListEvents(ctx, executionID, int(tenantID), after, limit)
@@ -674,11 +614,21 @@ func (s *ExecutionService) GetExecutionEvents(ctx context.Context, executionID s
 
 // GetExecutionStatistics 获取执行统计信息
 func (s *ExecutionService) GetExecutionStatistics(ctx context.Context, tenantID uint, filters map[string]interface{}) (map[string]interface{}, error) {
-	// 使用统一仓库的统计功能
-	stats, err := s.taskExecutionRepo.GetStatistics(ctx, commonExecution.TaskExecutionFilter{
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID: int(tenantID),
 		Module:   commonExecution.ModuleTransfer,
-	})
+		TaskType: commonExecution.TaskTypeSync,
+	}
+	if taskID, ok := filters["task_id"].(uint); ok {
+		filter.SourceTaskID = commonExecution.NewSourceTaskIDFromUint(taskID)
+	}
+	if start, ok := filters["start_time"].(time.Time); ok {
+		filter.StartDate = &start
+	}
+	if end, ok := filters["end_time"].(time.Time); ok {
+		filter.EndDate = &end
+	}
+	stats, err := s.taskExecutionRepo.GetStatistics(ctx, filter)
 	if err != nil {
 		return nil, err
 	}

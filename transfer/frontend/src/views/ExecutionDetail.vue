@@ -21,8 +21,8 @@
         <el-descriptions-item :label="t('transfer.executionDetail.recordsWritten')">{{ execution.records_written }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.executionDetail.startTime')">{{ execution.start_time }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.executionDetail.endTime')">{{ execution.end_time || '-' }}</el-descriptions-item>
-        <el-descriptions-item v-if="execution.error_msg" :label="t('transfer.executionDetail.errorMessage')" :span="2">
-          <div class="execution-error-message" data-testid="execution-error-message">{{ execution.error_msg }}</div>
+        <el-descriptions-item v-if="execution.error_details?.category" :label="t('transfer.executionDetail.errorMessage')" :span="2">
+          <div class="execution-error-message" data-testid="execution-error-message">{{ t(`common.executionFailure.${execution.error_details.category}`) }}</div>
         </el-descriptions-item>
       </el-descriptions>
 

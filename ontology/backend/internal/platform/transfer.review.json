@@ -9,10 +9,10 @@
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
       "commit": "099072fd118f5529d57f3f5ce3583028e59791e6",
-      "sha256": "eb72018c46e8bd5cdcaa2fbaa899ee6a213ff69400fd7f1d821f79d42d85a202",
+      "sha256": "a55056b020fe3c22f15b2311fef801e79fbb470e7dbb5c0802bce55a4a303018",
       "use": {
-        "zh-cn": "任务、执行、配置与写入策略的正式含义，以及只读预检的三权限交集和未装配 Runtime 的边界",
-        "en": "Formal task, execution, configuration and apply policy semantics, including the read-only precheck permission intersection and pending Runtime integration"
+        "zh-cn": "任务、执行、配置与写入策略的正式含义，以及只读预检的三权限交集、Runtime 两次预检和三态限制",
+        "en": "Formal task, execution, configuration and apply policy semantics, including the precheck permission intersection, two Runtime checks and tri-state limitations"
       }
     },
     {
@@ -22,10 +22,10 @@
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
       "commit": "6e30cd0d5cbcffb362cdc240ba75aba9401a56d8",
-      "sha256": "b8c3b72b87f8754d890c76b523df434575dfa50f669d20a6854fa3a5ef57e691",
+      "sha256": "738e115b67c1fe0b77a81e059710ced5992ad6a5b253f8b810e272f7134232af",
       "use": {
-        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束",
-        "en": "Delegated bounded snapshot creation without scheduling or scanning"
+        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；已复核 execution 响应投影调整，创建约束不变",
+        "en": "Delegated bounded snapshot creation without scheduling or scanning; reviewed execution response projection without changing creation constraints"
       }
     },
     {
@@ -63,8 +63,8 @@
       "commit": "5a2c2f8bd114663ae6f5cfaf82d4f61468600264",
       "sha256": "800590c54a504820849d05ffcfdd3e00bbb62c7f3d1437a25e7d49fa4493f197",
       "use": {
-        "zh-cn": "创建与预检共用唯一输入定义；创建 v3 保持标准字段类型及快照 replace/append，不接受 keys；预检声明独立只读 Tool 和三项权限交集，尚未装配进 Agent 复核",
-        "en": "Create and precheck share one input definition; create v3 retains standard field types and snapshot replace/append without keys; precheck declares a separate read-only Tool and three-permission intersection, not yet integrated into Agent review"
+        "zh-cn": "创建与预检共用唯一输入定义；创建 v3 保持标准字段类型及快照 replace/append，不接受 keys；预检声明独立只读 Tool、三项权限交集及受限三态报告",
+        "en": "Create and precheck share one input definition; create v3 retains standard field types and snapshot replace/append without keys; precheck declares a separate read-only Tool, three-permission intersection and limited tri-state report"
       }
     },
     {
@@ -87,7 +87,7 @@
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
       "commit": "d3225c49aa2beb37ad50c50a1a5689b4ee3483e4",
-      "sha256": "cd26bfa6cfb9928fab221227774ac9dcd785827bfbb0ac12bef868ffa9d83129",
+      "sha256": "a26e03611d8e6b27a0e1359c96312acfba86e2649ea43e92e99bd388009b868f",
       "use": {
         "zh-cn": "事实获取、用户澄清、确切配置复核与创建步骤",
         "en": "Fact discovery, clarification, exact configuration review and creation procedure"
@@ -100,7 +100,7 @@
       "path": "agent/backend/agents/platform_conditions.py",
       "anchor": "def validate_create(",
       "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
-      "sha256": "554d863d2077c293f07d08340f6f7f01f53c1a707a07acd1402a99d50a7c0ffd",
+      "sha256": "4ee288f066fef89a750257b6acd53ba3ca9d6ba3efc37ec080487d471d920acf",
       "use": {
         "zh-cn": "Runtime 条件适配与能力修订、参数和结构事实的复核绑定",
         "en": "Runtime condition adapters and review binding to revision, arguments and schema facts"
@@ -113,7 +113,7 @@
       "path": "agent/backend/tests/test_platform_conditions.py",
       "anchor": "class PlatformConditionTests(",
       "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
-      "sha256": "70a19f3d6bd7fa15fd2a413e89188cb98b6decf169d72843f88b0c962970c8d9",
+      "sha256": "43a88b4252fa79c8fddd70efd3cc8fcec31c91c1bedb5e18c74b88d6633eacb7",
       "use": {
         "zh-cn": "验证条件拒绝、参数或事实变化后重新确认",
         "en": "Verify condition refusal and re-review after arguments or facts change"
@@ -133,6 +133,32 @@
       }
     },
     {
+      "id": "runtime",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/graph/factory.py",
+      "anchor": "async def _run_config_check(",
+      "commit": "a2899f326ba758844eabfc6a6c18ed75adda824e",
+      "sha256": "19e11e90ac5a6e666bd1dfaea5b70a72b98e1cc702ca4946eecc84fd1c9482d9",
+      "use": {
+        "zh-cn": "最终复核和创建前经正式 Manifest Adapter 自动预检；清除旧报告、绑定审计身份，失败终止、不重试或创建",
+        "en": "Automatic formal Manifest checks before final review and creation; clear stale reports, bind audit identity and stop failures without retry or creation"
+      }
+    },
+    {
+      "id": "runtime_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
+      "anchor": "class TransferPrecheckRuntimeTests(",
+      "commit": "a2899f326ba758844eabfc6a6c18ed75adda824e",
+      "sha256": "7153f6a417dc62ffca98985d03e48b9c71e287ee57c49189f86a3090bd62c68f",
+      "use": {
+        "zh-cn": "真实 Harness、Manifest、SDK 下验证知情确认、两次完整请求一致、时间与稳定事实变化、错误清旧证据、取消及无业务副作用",
+        "en": "Real Harness, Manifest and SDK checks for informed confirmation, identical request bodies, clock versus stable changes, stale evidence removal, cancellation and no business effects"
+      }
+    },
+    {
       "id": "planner",
       "owner": "transfer",
       "kind": "implementation",
@@ -147,6 +173,12 @@
     }
   ],
   "bindings": [
+    {"subject": "concept/readonly_config_check", "sources": ["config", "manifest", "conditions", "condition_test", "skill", "runtime", "runtime_test"]},
+    {"subject": "concept/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
+    {"subject": "condition/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
+    {"subject": "relation/transfer_task/requires/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
+    {"subject": "relation/readonly_config_check/reads_via/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
+    {"subject": "requirement/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
     {"subject": "concept/source_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
     {"subject": "concept/target_parent_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
     {"subject": "concept/user_confirmation", "sources": ["skill", "conditions", "condition_test"]},
@@ -542,25 +574,16 @@
       "id": "transfer.task.create",
       "state": "modeled",
       "summary": {
-        "zh-cn": "只建未启动的 native table 有界快照任务，目标仅 replace/append；标准类型及配置校验不证明实际值可转换或执行成功，不是 Transfer 全功能声明",
-        "en": "Create only a stopped native table bounded snapshot task with replace/append; standard type and configuration checks do not prove value conversion or execution success, nor full Transfer coverage"
+        "zh-cn": "只建未启动的 native table 有界快照任务，目标仅 replace/append；复核和创建前正式只读预检，unsupported 阻止创建，unknown 明示限制后知情确认；不保证实际值转换或执行成功，不是 Transfer 全功能声明",
+        "en": "Create only a stopped native table bounded snapshot task with replace/append; formal read-only checks precede review and creation, unsupported blocks creation and unknown requires informed confirmation; no guarantee of value conversion, execution success or full Transfer coverage"
       },
       "sources": [
         "manifest",
         "handler",
         "owner_test",
         "policy_spec",
-        "planner"
+        "planner", "conditions", "condition_test", "skill"
       ]
-    },
-    {
-      "id": "transfer.task.config.check",
-      "state": "not_modeled",
-      "summary": {
-        "zh-cn": "正式只读配置预检 API、SDK 和 Tool 已存在；尚未装配进平台创建条件与 Agent 复核，当前配置复核不能称为预检通过",
-        "en": "The formal read-only config check API, SDK and Tool exist; platform creation conditions and Agent review do not yet consume them, so current configuration review is not a passed precheck"
-      },
-      "sources": ["config", "manifest"]
     },
     {
       "id": "transfer.continuous",

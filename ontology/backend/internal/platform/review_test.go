@@ -2,14 +2,17 @@ package platform
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTransferReviewSourceDrift(t *testing.T) {
@@ -27,6 +30,71 @@ func TestTransferReviewSourceDrift(t *testing.T) {
 			}
 			if err := checkSource(data, source); err != nil {
 				t.Fatalf("%v; review semantics and update provenance/revision, do not regenerate blindly", err)
+			}
+			if err := checkSourceAtRevision(root, source); err != nil {
+				t.Fatalf("%v; commit reviewed sources before freezing provenance", err)
+			}
+		})
+	}
+}
+
+// Git proves publication provenance only in the repository gate, not at runtime.
+func checkSourceAtRevision(root string, source Source) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	data, err := exec.CommandContext(ctx, "git", "-C", root, "show", source.Commit+":"+source.Path).Output()
+	if err != nil {
+		return fmt.Errorf("unavailable committed source: %s at %s: %w", source.Path, source.Commit, err)
+	}
+	if err := checkSource(data, source); err != nil {
+		return fmt.Errorf("committed source at %s: %w", source.Commit, err)
+	}
+	return nil
+}
+
+func TestSourceRevisionRejectsUnfrozenProvenance(t *testing.T) {
+	// Bare objects avoid hooks, user worktrees and incidental file ownership.
+	root := t.TempDir()
+	git := func(input string, args ...string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", root, "-c", "commit.gpgsign=false", "-c", "user.name=Ontology test", "-c", "user.email=ontology-test@example.invalid"}, args...)...)
+		cmd.Stdin = strings.NewReader(input)
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("fixture git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("", "init", "--bare", "--quiet")
+	data := []byte("reviewed function anchor")
+	blob := git(string(data), "hash-object", "-w", "--stdin")
+	tree := git("100644 blob "+blob+"\tfile.go\n", "mktree")
+	commit := git("reviewed source\n", "commit-tree", tree)
+	hash := sha256.Sum256(data)
+	source := Source{Path: "file.go", Commit: commit, Anchor: "function anchor", SHA256: hex.EncodeToString(hash[:])}
+	if err := checkSourceAtRevision(root, source); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Source)
+	}{
+		{"missing_commit", func(s *Source) { s.Commit = strings.Repeat("0", 40) }},
+		{"missing_file", func(s *Source) { s.Path = "missing.go" }},
+		{"old_commit_new_hash", func(s *Source) {
+			changed := sha256.Sum256(append(bytes.Clone(data), 'x'))
+			s.SHA256 = hex.EncodeToString(changed[:])
+		}},
+		{"missing_anchor", func(s *Source) { s.Anchor = "deleted function" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalid := source
+			tc.mutate(&invalid)
+			if err := checkSourceAtRevision(root, invalid); err == nil {
+				t.Fatal("unfrozen provenance accepted")
 			}
 		})
 	}
@@ -59,7 +127,7 @@ func TestSourceDriftCheckRejectsMutation(t *testing.T) {
 	}
 }
 
-func TestTransferConfigCheckIsNotAdvertisedBeforeAgentIntegration(t *testing.T) {
+func TestTransferConfigCheckIsRequiredButNotAnExecutionGuarantee(t *testing.T) {
 	snapshot, err := CompileTransferRelease()
 	if err != nil {
 		t.Fatal(err)
@@ -67,23 +135,34 @@ func TestTransferConfigCheckIsNotAdvertisedBeforeAgentIntegration(t *testing.T) 
 	review, _ := snapshot.Review()
 	found := false
 	for _, coverage := range review.Coverage {
+		if coverage.ID == "transfer.task.create" {
+			found = coverage.State == "modeled" && strings.Contains(coverage.Summary["en"], "unknown") && strings.Contains(coverage.Summary["en"], "execution")
+		}
 		if coverage.ID == "transfer.task.config.check" {
-			found = true
-			if coverage.State != "not_modeled" {
-				t.Fatal("owner API availability was advertised as modeled Agent capability")
+			t.Fatal("precheck is a creation condition, not a separate modeled capability")
+		}
+	}
+	if !found {
+		t.Fatal("missing precheck coverage and execution limitation")
+	}
+	context, _ := snapshot.Context()
+	found = false
+	for _, requirement := range context.Requirements {
+		for _, tool := range requirement.Tools {
+			if tool == "transfer.task.config.check" {
+				found = requirement.ID == "config_precheck"
 			}
 		}
 	}
 	if !found {
-		t.Fatal("missing config check coverage limitation")
+		t.Fatal("missing formal precheck tool requirement")
 	}
-	context, _ := snapshot.Context()
-	for _, requirement := range context.Requirements {
-		for _, tool := range requirement.Tools {
-			if tool == "transfer.task.config.check" {
-				t.Fatal("config check required before Runtime review integration")
-			}
-		}
+	found = false
+	for _, condition := range context.Operation.InputsRequired {
+		found = found || condition == "readonly_config_check"
+	}
+	if !found {
+		t.Fatal("missing readonly config check creation condition")
 	}
 }
 

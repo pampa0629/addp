@@ -96,7 +96,7 @@ Ontology 不假设除 System 之外的任何业务模块已经部署或被用户
 
 2026-10-10 实施切片：先落实来源追溯与覆盖声明，再提供平台主体只读核实页面；不开放在线修订。`transfer.json` 仍是人工整理的精简语义定义，不从数据库或 Swagger 自动生成；同目录 `transfer.review.json` 只记录依据，不是第二份语义定义。依据包含 owner、类别、仓库路径、稳定定位锚点、Git 提交及文件 SHA-256，逐项绑定概念、关系、条件、效果、排除效果和事实入口。覆盖声明明确已建模能力及选定的未建模范围，不宣称枚举了 Transfer 的全部功能。
 
-编译器将定义和依据共同冻结到 `addp.platform-definition/v2` 快照；摘要绑定两者，PG 仍只保存同一不可变 payload，没有第二张来源权威表或运行时仓库文件读取。Agent 上下文契约保持 v1，不附加来源全文。来源内容变化由平台公共 T0 门禁及 Ontology T1 检测文件摘要及锚点漂移，须核实后更新依据和发布修订；测试只能证明引用完整、版本一致及已测试行为，不能自动证明本体含义完整或正确。来源引用不授予权限，也不证明当前模块在线。
+编译器将定义和依据共同冻结到 `addp.platform-definition/v2` 快照；摘要绑定两者，PG 仍只保存同一不可变 payload，没有第二张来源权威表或运行时仓库文件读取。Agent 上下文契约保持 v1，不附加来源全文。来源内容变化由平台公共 T0 门禁及 Ontology T1 检测文件摘要及锚点漂移，并核对所引用 Git 提交中的文件是否具有同一摘要与锚点；工作区文件匹配不能代替提交证据，缺失提交或内容不符必须拒绝，不联网补取或跳过。此核验只在开发与 CI 门禁读取 Git，本体服务的编译、发布与运行消费不依赖 Git。来源代码先提交，再以真实提交身份冻结依据，不能以旧提交配新摘要。来源变化须核实后更新依据和发布修订；测试只能证明引用完整、版本一致及已测试行为，不能自动证明本体含义完整或正确。来源引用不授予权限，也不证明当前模块在线。
 
 平台核实入口为 Console `/ontology/platform/definitions` 及 `/:capability`，只查看当前 active 定义，不编辑或发布。平台 User 持有独立、不可委托的 `ontology.platform_definition.read` Permission（Platform Scope）；默认组合进平台系统管理员，不授予 Tenant 角色或机器 Runtime。公开 `GET /platform/definitions` 沿用有界目录，详情 `GET /platform/definitions/{capability}` 从一次 PG active 读取恢复同一快照的 `context` 和 `review`，不分别读取导致版本混合。语义消费 API 保持原 Tenant/精确 Tool 委托边界。页面复用共享本体图组件，只将已发布概念和关系可视化，不查询业务实例或任意 Cypher；所有条件、效果、事实入口和成员依据均可查看，覆盖范围不是整个模块的完整度分数。认证重取期间隐藏内容、取消请求；身份变化、撤权或失败清空，不接受迟到响应。
 
@@ -201,6 +201,8 @@ Transfer 修订 6 将当前创建切片的显式写入策略收敛为 `replace|a
 Transfer 修订 8 审核已捕获来源中新增加的正式只读配置预检：创建接口及原条件、效果未变，仅更新三个来源的提交和内容摘要，并将预检明确列为尚未建模的覆盖范围。共享 `TransferClient.check_task_config()` 与 `create_task()` 使用同一完整请求组装；预检返回 owner 原始报告，不把 HTTP 200、`unknown` 或内容摘要解释为通过或执行授权。此切片不开放新 Tool，不增加创建前置条件；跨 owner 权限声明与 `unknown` 下的保存策略须先确认再接入 Agent。沿已有平台来源门禁、common-python 全量测试和 Agent eval 自动发现验证，不新增依赖、测试入口或 CI Job。
 
 Transfer 修订 9 在上述基础上捕获正式预检 Tool 开放。Tool Manifest 通过根 `$defs` 保持预检/创建输入唯一，ToolExecutor 只调用共享 SDK；System 生成 Catalog 与 Transfer 精确委托路由均核对三项 Permission all-of，audience 和 Scope 不扩张。API/SDK/Tool 可用不等于平台创建流程已消费：本切片不新增创建前置条件或 Skill 装配，继续在覆盖声明中明确 `not_modeled`。后续 Runtime 复核按已确认的唯一策略接入：unsupported 阻止创建，unknown 展示未检查项及运行时核验要求后取得知情确认，只保存未运行定义；supported 也不代表执行保证。必须绑定本次正式 Tool 观察及完整提交参数，创建前重新检查稳定配置/事实；时间戳自然前进不能单独触发无限重复确认。报告不进入平台静态本体图，也不是授权票据。新增 Tool、授权聚合和测试沿现有 common-python、Agent eval、授权/Swagger、Go、System IAM 与 Ontology PG/FalkorDB 门禁发现，无新增依赖、入口或 CI Job。
+
+Transfer 修订 11 将正式只读预检装配到创建条件及 Skill。Runtime 在最终复核前和创建前，经同一白名单 Tool Adapter 调用 `transfer.task.config.check`，不依赖模型主动调用、不直接访问 SDK 或数据库；每次调用先清空旧报告并记录正式 Tool 审计。报告只绑定本次完整 Tool 参数摘要，owner 的 `config_hash` / `binding_hash` 原样保留，不在 Python 复制 Go JSON 哈希规则。复核指纹纳入报告稳定内容（含身份、配置摘要、结构事实、诊断及未检查项），仅排除报告的 `observed_at` 和包含该时间的 `binding_hash`；结构快照时刻变化仍属于事实变化。创建前重新预检，稳定内容变化使确认失效。unsupported 拒绝复核和创建；unknown 用 Runtime 固定本地化提示明确未检查项及运行时要求，取得绑定该报告的知情确认后才能保存未运行定义；supported 也不承诺执行成功。服务、授权或无效响应失败终止当前运行，不转换成 unknown 或自动重试。报告是当前 AgentRun 的受限观察，不进入平台静态图；不新增协议、权限、数据表或执行能力。沿现有 Agent eval、平台来源、Ontology PG/FalkorDB 与前端门禁验证，真实个人环境联调另行记录。
 
 ## 2. 术语与唯一事实所有权
 

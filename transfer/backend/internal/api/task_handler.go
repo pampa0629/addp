@@ -298,7 +298,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
-// @Success 200 {object} models.TaskExecution "启动成功，返回执行记录 | Started successfully, returns execution record"
+// @Success 200 {object} ExecutionResponse "启动成功，返回执行记录 | Started successfully, returns execution record"
 // @Failure 400 {object} map[string]string "参数错误或任务已在运行 | Bad request or task already running"
 // @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
@@ -322,7 +322,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, execution)
+	respondExecution(c, http.StatusOK, execution)
 }
 
 // ReplayTask 创建业务 Kafka bounded replay execution。
@@ -333,7 +333,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Param request body models.ReplayTaskRequest true "回放范围与新目标 | Replay ranges and new target"
-// @Success 202 {object} models.TaskExecution "已创建独立回放执行 | Independent replay execution created"
+// @Success 202 {object} ExecutionResponse "已创建独立回放执行 | Independent replay execution created"
 // @Failure 400 {object} map[string]string "请求不符合 bounded replay v1 契约 | Request violates the bounded replay v1 contract"
 // @Failure 404 {object} map[string]string "任务不存在 | Task not found"
 // @Failure 409 {object} map[string]string "范围超出保留边界或目标已存在 | Range is outside retention or target already exists"
@@ -358,7 +358,7 @@ func (h *TaskHandler) ReplayTask(c *gin.Context) {
 		respondReplayTaskError(c, err)
 		return
 	}
-	c.JSON(http.StatusAccepted, execution)
+	respondExecution(c, http.StatusAccepted, execution)
 }
 
 // GetSchemaChange 获取当前数据库 CDC schema change request。
@@ -679,7 +679,12 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 	}
 	response := gin.H{"message": i18nmiddleware.T(c, "transfer.task.resumed")}
 	if execution != nil {
-		response["execution"] = execution
+		projected, err := projectExecution(c, execution)
+		if err != nil {
+			respondExecutionReadError(c, err)
+			return
+		}
+		response["execution"] = projected
 	}
 	c.JSON(http.StatusOK, response)
 }

@@ -10,6 +10,10 @@ import (
 var localeFS embed.FS
 
 const (
+	MsgExecutionNotFound               = "transfer.execution.not_found"
+	MsgExecutionReadUnavailable        = "transfer.execution.read_unavailable"
+	MsgExecutionFailed                 = "transfer.execution.failed"
+	MsgExecutionDiagnosticsUnavailable = "transfer.execution.diagnostics_unavailable"
 	MsgConfigCheckInvalid             = "transfer.config_check.invalid"
 	MsgConfigCheckUnavailable         = "transfer.config_check.unavailable"
 	MsgDelegatedTaskInvalid           = "transfer.task.delegated_invalid"

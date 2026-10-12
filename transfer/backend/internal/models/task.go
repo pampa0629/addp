@@ -453,7 +453,8 @@ const (
 	ExecutionStatusCancelled ExecutionStatus = "cancelled" // 已取消
 )
 
-// TaskExecution Transfer 执行记录 DTO（仅用于 API 响应，数据来自 common.task_executions）
+// TaskExecution is an internal Transfer runtime view of common.task_executions.
+// HTTP handlers must project it through ExecutionResponse.
 type TaskExecution struct {
 	ID               uint            `json:"id"`
 	ExecutionID      string          `json:"execution_id"`
@@ -466,6 +467,7 @@ type TaskExecution struct {
 	BytesRead        int64           `json:"bytes_read"`
 	BytesWritten     int64           `json:"bytes_written"`
 	ErrorMsg         string          `json:"error_msg,omitempty"`
+	ErrorDetails     JSONMap         `json:"-"`
 	CheckpointOffset int64           `json:"checkpoint_offset"`
 	CheckpointState  JSONMap         `json:"checkpoint_state,omitempty"`
 	Metadata         JSONMap         `json:"metadata,omitempty"`

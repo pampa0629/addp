@@ -13,6 +13,7 @@ const render = new Function('Vue', code)(Vue)
 
 // Render the actual page template with API-shaped data. No live task or API is invoked.
 async function renderExecution(execution, language) {
+  const commonMessages = JSON.parse(readFileSync(new URL(`../../../common-frontend/basic/src/i18n/${language}.json`, import.meta.url), 'utf8'))
   const messages = JSON.parse(readFileSync(new URL(`../src/i18n/${language}.json`, import.meta.url), 'utf8'))
   const app = Vue.createSSRApp({
     render,
@@ -21,7 +22,7 @@ async function renderExecution(execution, language) {
       authStore: { hasPermission: () => false },
       executionAPI: { events: () => {} },
       getStatusType: () => 'danger',
-      t: key => key.split('.').reduce((value, part) => value?.[part], messages)
+      t: key => key.split('.').reduce((value, part) => value?.[part], key.startsWith('common.') ? commonMessages : messages)
     })
   })
   const container = { setup: (_, { slots }) => () => Vue.h('div', slots.default?.()) }
@@ -32,18 +33,18 @@ async function renderExecution(execution, language) {
   return renderToString(app)
 }
 
-test('execution detail renders backend error_msg as escaped text in both languages', async () => {
-  const error = 'sql: converting argument $3 type: unsupported type []interface {}\n<script>alert(1)</script>'
+test('execution detail renders safe failure categories in both languages without raw errors', async () => {
   for (const language of ['zh-cn', 'en']) {
-    const html = await renderExecution({ execution_id: 'fixture', status: 'failed', error_msg: error }, language)
+    const html = await renderExecution({ execution_id: 'fixture', status: 'failed', error_details: { category: 'execution_failed' }, error_msg: 'private-sentinel<script>alert(1)</script>' }, language)
     assert.match(html, /data-testid="execution-error-message"/)
-    assert.match(html, /unsupported type \[\]interface \{\}\n&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
-    assert.doesNotMatch(html, /<script>/)
+    const messages = JSON.parse(readFileSync(new URL(`../../../common-frontend/basic/src/i18n/${language}.json`, import.meta.url), 'utf8'))
+    assert.ok(html.includes(messages.common.executionFailure.execution_failed))
+    assert.doesNotMatch(html, /private-sentinel|<script>/)
   }
 })
 
 test('execution detail omits the error section when no backend error is present', async () => {
-  for (const execution of [{ status: 'running' }, { status: 'success', error_msg: '' }]) {
+  for (const execution of [{ status: 'running' }, { status: 'success', error_details: {} }]) {
     assert.doesNotMatch(await renderExecution(execution, 'zh-cn'), /data-testid="execution-error-message"/)
   }
 })

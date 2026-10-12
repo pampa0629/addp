@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	commonAPI "github.com/addp/common/api"
 	commonAuthorization "github.com/addp/common/authorization"
@@ -78,7 +79,7 @@ func (h *ExecutionHandler) CreateExecution(c *gin.Context) {
 			commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
 			return
 		}
-		commonAPI.InternalServerError(c, err.Error())
+		respondExecutionReadError(c, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, result)
@@ -99,11 +100,14 @@ func transferExecutionSourceModule(c *gin.Context) (string, bool) {
 
 // GetExecution 获取执行记录详情
 // @Summary 获取执行详情 | Get execution detail
+// @Description 第一方或普通 OAuth User；当前租户 transfer/sync 的任务历史（含已删除定义），无定义执行仅发起人可读。返回声明的专业诊断事实，不包含原始配置、checkpoint 或任意 metadata。| First-party or ordinary OAuth Users may read tenant transfer/sync task history, including deleted definitions, and their own ad-hoc executions. Only declared professional diagnostic facts are returned; raw configuration, checkpoints and arbitrary metadata are excluded.
 // @Tags 执行管理 | Execution Management
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} models.TaskExecution
+// @Success 200 {object} ExecutionResponse
+// @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions/{execution_id} [get]
@@ -118,9 +122,10 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Tags 执行管理 | Execution Management
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} models.TaskExecution
+// @Success 200 {object} ModuleExecutionResult
 // @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.execution.read"]
 // @Router /executions/{execution_id}/result [get]
@@ -139,10 +144,15 @@ func (h *ExecutionHandler) GetOwnedExecutionResult(c *gin.Context) {
 		c.Request.Context(), c.Param("execution_id"), commonAuth.GetTenantID(c), sourceModule,
 	)
 	if err != nil {
-		commonAPI.NotFoundError(c, "Execution not found")
+		respondExecutionReadError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, execution)
+	result, err := projectModuleExecution(c, execution)
+	if err != nil {
+		respondExecutionReadError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // ProviderGetExecution 获取 TaskProvider 执行状态。
@@ -162,7 +172,7 @@ func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
 
 	execution, err := h.executionService.GetTaskProviderExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
 	if err != nil {
-		commonAPI.NotFoundError(c, "Execution not found")
+		respondExecutionReadError(c, err)
 		return
 	}
 
@@ -170,16 +180,19 @@ func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
 }
 
 func (h *ExecutionHandler) getExecution(c *gin.Context) {
+	if !installTransferUserReadScope(c) {
+		return
+	}
 	tenantID := commonAuth.GetTenantID(c)
 	executionID := c.Param("execution_id")
 
 	execution, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
 	if err != nil {
-		commonAPI.NotFoundError(c, "Execution not found")
+		respondExecutionReadError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, execution)
+	respondExecution(c, http.StatusOK, execution)
 }
 
 // ListExecutions 获取执行记录列表
@@ -190,13 +203,18 @@ func (h *ExecutionHandler) getExecution(c *gin.Context) {
 // @Param status query string false "执行状态 | Status"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} ExecutionListResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
+	if !installTransferUserReadScope(c) {
+		return
+	}
 	tenantID := commonAuth.GetTenantID(c)
 
 	// 分页参数
@@ -204,16 +222,18 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 
 	// 如果指定了 task_id，调用单任务执行记录查询
 	if taskIDStr := c.Query("task_id"); taskIDStr != "" {
-		if taskID, err := strconv.ParseUint(taskIDStr, 10, 32); err == nil {
+		if taskID, err := strconv.ParseUint(taskIDStr, 10, 32); err == nil && taskID > 0 {
 			executions, total, err := h.executionService.ListExecutions(c.Request.Context(), uint(taskID), tenantID, page, pageSize)
 			if err != nil {
-				commonAPI.InternalServerError(c, err.Error())
+				respondExecutionReadError(c, err)
 				return
 			}
 
-			commonAPI.SendPaginatedResponse(c, executions, total, page, pageSize)
+			respondExecutions(c, executions, total, page, pageSize)
 			return
 		}
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
+		return
 	}
 
 	// 全局执行列表（所有任务的执行记录）
@@ -224,11 +244,11 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 
 	executions, total, err := h.executionService.ListAllExecutions(c.Request.Context(), tenantID, filters, page, pageSize)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondExecutionReadError(c, err)
 		return
 	}
 
-	commonAPI.SendPaginatedResponse(c, executions, total, page, pageSize)
+	respondExecutions(c, executions, total, page, pageSize)
 }
 
 // GetTaskExecutions 获取指定任务的执行记录
@@ -238,13 +258,18 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} ExecutionListResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.read"]
 // @Router /task-definitions/{id}/executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
+	if !installTransferUserReadScope(c) {
+		return
+	}
 	taskID, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
@@ -258,11 +283,11 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 	// 使用 ListExecutions 方法
 	executions, total, err := h.executionService.ListExecutions(c.Request.Context(), taskID, tenantID, page, pageSize)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondExecutionReadError(c, err)
 		return
 	}
 
-	commonAPI.SendPaginatedResponse(c, executions, total, page, pageSize)
+	respondExecutions(c, executions, total, page, pageSize)
 }
 
 // RetryExecution 重试失败的执行
@@ -271,7 +296,7 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 // @Tags 执行管理 | Execution Management
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} ExecutionResponse
 // @Failure 409 {object} map[string]string "CDC 被结构变化阻塞 | CDC blocked by schema change"
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
@@ -292,11 +317,11 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": i18nmiddleware.T(c, "transfer.cdc.schema_change_blocked")})
 			return
 		}
-		commonAPI.InternalServerError(c, err.Error())
+		respondExecutionReadError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, newExecution)
+	respondExecution(c, http.StatusOK, newExecution)
 }
 
 // GetExecutionProgress 获取执行进度
@@ -304,23 +329,35 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 // @Tags 执行管理 | Execution Management
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} ExecutionProgressResponse
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions/{execution_id}/progress [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
+	if !installTransferUserReadScope(c) {
+		return
+	}
 	tenantID := commonAuth.GetTenantID(c)
 	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
 	}
 
-	progress, err := h.executionService.GetExecutionProgress(c.Request.Context(), execution.ID, tenantID)
-	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
-		return
+	progress := ExecutionProgressResponse{
+		ExecutionID: execution.ExecutionID, TaskID: execution.TaskID, Status: execution.Status,
+		StartTime: execution.StartTime, EndTime: execution.EndTime,
+		RecordsRead: execution.RecordsRead, RecordsWritten: execution.RecordsWritten,
+		BytesRead: execution.BytesRead, BytesWritten: execution.BytesWritten, ErrorDetails: execution.ErrorDetails,
+	}
+	if !execution.StartTime.IsZero() {
+		if duration := execution.Duration().Seconds(); duration > 0 {
+			progress.Duration = duration
+			progress.QPS = float64(execution.RecordsWritten) / duration
+		}
 	}
 
 	c.JSON(http.StatusOK, progress)
@@ -346,12 +383,9 @@ type ExecutionEventPage = commonExecution.EventPage
 // @Router /executions/{execution_id}/events [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionEvents(c *gin.Context) {
-	scope, authorized := commonExecution.OwnerReadScopeFromGin(c, commonExecution.ModuleTransfer, executionReadPermissions)
-	if !authorized {
-		commonAPI.ForbiddenError(c, i18nmiddleware.T(c, i18nmiddleware.MsgForbidden))
+	if !installTransferUserReadScope(c) {
 		return
 	}
-	c.Request = c.Request.WithContext(commonExecution.WithReadScopes(c.Request.Context(), []commonExecution.ReadScope{*scope}))
 
 	tenantID := commonAuth.GetTenantID(c)
 	execution, ok := h.getExecutionByExecutionID(c, tenantID)
@@ -376,7 +410,7 @@ func (h *ExecutionHandler) getExecutionByExecutionID(c *gin.Context, tenantID ui
 	executionID := c.Param("execution_id")
 	execution, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
 	if err != nil {
-		commonAPI.NotFoundError(c, "Execution not found")
+		respondExecutionReadError(c, err)
 		return nil, false
 	}
 	return execution, true
@@ -390,30 +424,48 @@ func (h *ExecutionHandler) getExecutionByExecutionID(c *gin.Context, tenantID ui
 // @Param start_time query string false "开始时间 | Start time"
 // @Param end_time query string false "结束时间 | End time"
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.read"]
 // @Router /executions/statistics [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
+	if !installTransferUserReadScope(c) {
+		return
+	}
 	tenantID := commonAuth.GetTenantID(c)
 
 	filters := make(map[string]interface{})
 	if taskID := c.Query("task_id"); taskID != "" {
-		if id, err := strconv.ParseUint(taskID, 10, 32); err == nil {
-			filters["task_id"] = uint(id)
+		id, err := strconv.ParseUint(taskID, 10, 32)
+		if err != nil || id == 0 {
+			commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
+			return
+		}
+		filters["task_id"] = uint(id)
+	}
+	for _, key := range []string{"start_time", "end_time"} {
+		if value := c.Query(key); value != "" {
+			parsed, err := time.Parse(time.RFC3339Nano, value)
+			if err != nil {
+				commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
+				return
+			}
+			filters[key] = parsed
 		}
 	}
-	if startTime := c.Query("start_time"); startTime != "" {
-		filters["start_time"] = startTime
-	}
-	if endTime := c.Query("end_time"); endTime != "" {
-		filters["end_time"] = endTime
+	if start, ok := filters["start_time"].(time.Time); ok {
+		if end, ok := filters["end_time"].(time.Time); ok && start.After(end) {
+			commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
+			return
+		}
 	}
 
 	stats, err := h.executionService.GetExecutionStatistics(c.Request.Context(), tenantID, filters)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondExecutionReadError(c, err)
 		return
 	}
 

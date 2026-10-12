@@ -243,7 +243,8 @@ func TestExecutionHandlerSeparatesTaskProviderOutputsFromUserDTO(t *testing.T) {
 	execution := commonExecution.TaskExecution{
 		TenantID: 7, ExecutionID: "transfer-output-execution", Module: commonExecution.ModuleTransfer,
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleOrchestrator,
-		Status: commonExecution.ExecutionStatusSuccess, TriggerType: commonExecution.TriggerTypeManual,
+		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(1),
+		Status:       commonExecution.ExecutionStatusSuccess, TriggerType: commonExecution.TriggerTypeManual,
 		Metadata: map[string]interface{}{
 			"outputs": map[string]interface{}{"target_locator": "addp://engine/2/path/public/result?type=table"},
 			"result":  map[string]interface{}{"outputs": map[string]interface{}{"legacy": "ignored"}},
@@ -285,7 +286,7 @@ func TestExecutionHandlerSeparatesTaskProviderOutputsFromUserDTO(t *testing.T) {
 	if err := json.Unmarshal(user.Body.Bytes(), &userBody); err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := userBody["outputs"]; exists {
+	if _, exists := userBody["outputs"]; exists || strings.Contains(user.Body.String(), "target_locator") || strings.Contains(user.Body.String(), "legacy") {
 		t.Fatalf("user DTO exposed TaskProvider outputs: %s", user.Body.String())
 	}
 }

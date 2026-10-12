@@ -16,6 +16,8 @@ Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话�
 
 Transfer 创建条件以运行时 `platform.capability.context` 返回的定义为准，`agents/platform_conditions.py` 只实现有限条件适配，不读取代码 JSON 或复制另一套条件清单。每次具有创建 Tool 的 Harness 调用（包括澄清恢复），Runtime 先通过白名单内的正式 Tool 读取当前能力并保存调用审计与检查点，再交给模型；读取失败终止，不依赖模型记住刷新。模型后续主动刷新也先清空旧上下文，失败不能沿用旧结果。正式 ResourceFacts 刷新替换原结构快照，不保留新响应缺失的旧字段。完整配置复核通过 Runtime 私有 `request_clarification` 的 `transfer_create_review` 完成，指纹绑定确切参数、本体修订/摘要与 owner 事实；变化后重新确认。创建前消费确认，checkpoint 经 AG-UI 消费者事务提交并内部回执后才调用 owner；提交失败或回执前取消不调用 owner，已经发出的调用不承诺撤销。仍只创建 idle/stopped 任务，不执行。详见设计契约 1.13；脚本化门禁覆盖条件、复核绑定和提交屏障，不代替真实对话验收。
 
+Transfer 创建的正式只读预检由 Runtime 在最终复核前及创建前自动通过白名单 `transfer.task.config.check` 执行，使用唯一 Manifest Adapter/SDK，记录同一 Run 的审计。unsupported 阻止创建，unknown 的未检查项与运行要求由固定本地化提示展示并绑定知情确认；supported 不保证执行成功。报告绑定完整 Tool 参数与当前能力/结构事实；仅排除报告自然前进的 observed_at 及其 binding_hash，其他事实变化要求重新确认。失败先清除旧报告、终止当前运行，不吞成 unknown。运行报告保存在受限 checkpoint，不进入平台静态本体图。Copilot 仍只通过可选的 `transfer.draft.generate` 提供草稿，不承担预检、确认或创建职责。
+
 ## 目录结构
 
 ```

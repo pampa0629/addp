@@ -125,9 +125,14 @@ function wrapLabel(value) {
 }
 
 function layoutOptions(width, height) {
-  return props.layout === 'grid'
-    ? { type: 'grid', width: width - 64, height: height - 64, begin: [32, 32], preventOverlap: true, nodeSize: [168, 88], nodeSpacing: 24 }
-    : { type: 'dagre', rankdir: 'LR', nodesep: 32, ranksep: 100 }
+  if (props.layout !== 'grid') return { type: 'dagre', rankdir: 'LR', nodesep: 32, ranksep: 100 }
+  const nodeSize = [168, 88], nodeSpacing = 24, padding = 32
+  const availableWidth = width - padding * 2
+  // G6's automatic grid assumes square cells; wide labels otherwise create
+  // too many columns and force fitView to shrink otherwise readable text.
+  const cols = Math.max(1, Math.min(props.entityTypes.length, Math.floor(availableWidth / (nodeSize[0] + nodeSpacing))))
+  const rows = Math.max(1, Math.ceil(props.entityTypes.length / cols))
+  return { type: 'grid', width: availableWidth, height: height - padding * 2, begin: [padding, padding], cols, rows, preventOverlap: true, nodeSize, nodeSpacing }
 }
 
 function fitView() {

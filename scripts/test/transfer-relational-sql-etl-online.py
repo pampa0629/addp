@@ -159,7 +159,33 @@ def wait_transfer_target(client: GatewayClient, engine_id: int, full_name: str, 
     raise SuiteError(f"{full_name} did not appear through automatic metadata scanning")
 
 
+def assert_transfer_execution_projection(execution):
+    def fields(value, allowed, label):
+        item = _object(value, label)
+        if set(item) - set(allowed.split()):
+            raise SuiteError(f"{label} exposed undeclared fields")
+        return item
+
+    fields(execution, "id execution_id task_id status start_time end_time records_read records_written bytes_read bytes_written error_details metadata trigger_type trigger_by", "Transfer execution")
+    fields(execution.get("error_details", {}), "category code error_code failed_targets_count", "Transfer failure")
+    metadata = fields(execution.get("metadata", {}), "lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state", "Transfer professional metadata")
+    if "lineage_facts" in metadata:
+        facts = fields(metadata["lineage_facts"], "schema_version inputs outputs operations runtime_execution_id meta_scan_refs", "Transfer lineage")
+        for direction in ("inputs", "outputs"):
+            for value in _array(facts.get(direction, []), "Transfer lineage resources"):
+                resource = fields(value, "port locator item_id item_fingerprint write_mode schema_snapshot", "Transfer lineage resource")
+                if "schema_snapshot" in resource:
+                    snapshot = fields(resource["schema_snapshot"], "hash fields", "Transfer frozen schema")
+                    for field in _array(snapshot.get("fields"), "Transfer frozen fields"):
+                        fields(field, "name path type element_type native_type nullable primary_key size precision scale ordinal_position generated", "Transfer frozen field")
+        for value in _array(facts.get("operations", []), "Transfer lineage operations"):
+            operation = fields(value, "kind operator input_ports output_ports field_lineage_status field_mappings", "Transfer lineage operation")
+            for mapping in _array(operation.get("field_mappings", []), "Transfer field mappings"):
+                fields(mapping, "input_port output_port source_field target_field transformation", "Transfer field mapping")
+
+
 def execution_schema_hashes(execution: dict[str, object]) -> tuple[str, str]:
+    assert_transfer_execution_projection(execution)
     facts = _object(_object(execution.get("metadata"), "native execution metadata").get("lineage_facts"), "native lineage facts")
     inputs, outputs, operations = (_array(facts.get(key), key) for key in ("inputs", "outputs", "operations"))
     if facts.get("schema_version") != "addp.lineage-facts/v1" or len(inputs) != 1 or len(outputs) != 1 or len(operations) != 1:
@@ -183,6 +209,7 @@ def validate_graph_snapshots(graph: dict[str, object], expected: dict[int, str])
 
 
 def validate_multi_source_execution(execution, bindings, target_locator):
+    assert_transfer_execution_projection(execution)
     facts = _object(_object(execution.get("metadata"), "multi-source metadata").get("lineage_facts"), "multi-source facts")
     inputs, outputs, operations = (_array(facts.get(key), key) for key in ("inputs", "outputs", "operations"))
     if (facts.get("schema_version") != "addp.lineage-facts/v1" or len(inputs) != 2 or len(outputs) != 1 or len(operations) != 1
@@ -485,6 +512,8 @@ def wait_owner_execution(client, module, identifier, timeout):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         execution = _object(client.request("GET", f"/api/v1/{module}/executions/{urllib.parse.quote(identifier)}", (200,)).payload, "owner execution")
+        if module == "transfer":
+            assert_transfer_execution_projection(execution)
         if execution.get("execution_id") != identifier:
             raise SuiteError("owner execution identity changed")
         if execution.get("status") == "success":
