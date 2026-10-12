@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	pluginshared "github.com/addp/common/engine/plugins/shared"
 	"github.com/addp/common/resume"
 )
 
@@ -66,11 +67,12 @@ func (p *ClickHousePlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 	}
 
 	return &clickhouseTableWriteSession{
-		db:        db,
-		database:  database,
-		table:     table,
-		columns:   columns,
-		chunkSize: effectiveClickHouseInsertChunkSize(len(columns), clickhouseDefaultInsertChunkSize),
+		db:         db,
+		database:   database,
+		table:      table,
+		columns:    columns,
+		fieldTypes: pluginshared.TableWriteFieldTypes(opts.Fields),
+		chunkSize:  effectiveClickHouseInsertChunkSize(len(columns), clickhouseDefaultInsertChunkSize),
 	}, nil
 }
 
@@ -155,7 +157,7 @@ func effectiveClickHouseInsertChunkSize(columnCount, requested int) int {
 	return requested
 }
 
-func buildClickHouseInsertSQL(database, table string, columns []string, rows []map[string]interface{}) (string, []interface{}) {
+func buildClickHouseInsertSQL(database, table string, columns []string, rowCount int) string {
 	dialect := clickhouseDialect()
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
@@ -169,18 +171,42 @@ func buildClickHouseInsertSQL(database, table string, columns []string, rows []m
 	sb.WriteString(strings.Join(quotedColumns, ", "))
 	sb.WriteString(") VALUES ")
 
-	args := make([]interface{}, 0, len(rows)*len(columns))
-	valueGroups := make([]string, 0, len(rows))
-	for _, row := range rows {
+	valueGroups := make([]string, 0, rowCount)
+	for row := 0; row < rowCount; row++ {
 		group := make([]string, len(columns))
-		for i, column := range columns {
+		for i := range columns {
 			group[i] = "?"
-			args = append(args, row[column])
 		}
 		valueGroups = append(valueGroups, "("+strings.Join(group, ", ")+")")
 	}
 	sb.WriteString(strings.Join(valueGroups, ", "))
-	return sb.String(), args
+	return sb.String()
+}
+
+func clickhouseTableWriteArgs(ctx context.Context, columns []string, fieldTypes map[string]datatype.FieldType, rows []map[string]interface{}) ([]interface{}, error) {
+	args := make([]interface{}, 0, len(rows)*len(columns))
+	for rowIndex, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		for _, column := range columns {
+			value, err := pluginshared.EncodeTableWriteValue(row[column], fieldTypes[column])
+			if err != nil {
+				return nil, fmt.Errorf("encode clickhouse row %d field %q: %w", rowIndex, column, err)
+			}
+			// The native SQL driver binds []byte as Array(UInt8), but our bytes
+			// columns use binary String storage. Preserve the original bytes.
+			if binary, ok := value.([]byte); ok && fieldTypes[column] == datatype.FieldTypeBytes {
+				if binary == nil {
+					value = nil
+				} else {
+					value = string(binary)
+				}
+			}
+			args = append(args, value)
+		}
+	}
+	return args, nil
 }
 
 type clickhouseTableWriteSession struct {
@@ -188,6 +214,7 @@ type clickhouseTableWriteSession struct {
 	database       string
 	table          string
 	columns        []string
+	fieldTypes     map[string]datatype.FieldType
 	chunkSize      int
 	batchesWritten int64
 	rowsWritten    int64
@@ -209,6 +236,12 @@ func (s *clickhouseTableWriteSession) WriteBatch(ctx context.Context, batch *plu
 	if chunkSize <= 0 {
 		return fmt.Errorf("clickhouse table write session has too many columns for insert bind parameters")
 	}
+	// ClickHouse commits each INSERT independently. Validate the complete batch
+	// before executing its first chunk, so a later encoding error writes no rows.
+	args, err := clickhouseTableWriteArgs(ctx, s.columns, s.fieldTypes, batch.Rows)
+	if err != nil {
+		return err
+	}
 
 	for start := 0; start < len(batch.Rows); start += chunkSize {
 		if err := ctx.Err(); err != nil {
@@ -218,8 +251,9 @@ func (s *clickhouseTableWriteSession) WriteBatch(ctx context.Context, batch *plu
 		if end > len(batch.Rows) {
 			end = len(batch.Rows)
 		}
-		insertSQL, args := buildClickHouseInsertSQL(s.database, s.table, s.columns, batch.Rows[start:end])
-		if _, err := s.db.ExecContext(ctx, insertSQL, args...); err != nil {
+		insertSQL := buildClickHouseInsertSQL(s.database, s.table, s.columns, end-start)
+		chunkArgs := args[start*len(s.columns) : end*len(s.columns)]
+		if _, err := s.db.ExecContext(ctx, insertSQL, chunkArgs...); err != nil {
 			return fmt.Errorf("execute clickhouse table write session rows %d-%d: %w", start, end, err)
 		}
 	}

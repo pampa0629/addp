@@ -374,7 +374,7 @@ test-common-oracle-decimal: ## 使用一次性 Oracle database 验证 Decimal、
 test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal 与 JSON 写入 Provider 契约
 	@bash scripts/test/common-doris-decimal-gate.sh
 
-test-common-clickhouse-decimal: ## 使用一次性 ClickHouse database 验证 Decimal Provider 契约
+test-common-clickhouse-decimal: ## 使用一次性 ClickHouse database 验证 Decimal 和类型感知 JSON 写入
 	@bash scripts/test/common-clickhouse-decimal-gate.sh
 
 test-manager-postgres: ## 使用测试 PostGIS 数据库运行 Manager 统一任务、几何声明与清理集成门禁

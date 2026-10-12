@@ -14,6 +14,8 @@ Oracle INSERT session 与分区变更 MERGE 同样使用共享 JSON 编码，保
 
 Doris session 与批量 INSERT 使用共享 JSON 编码，JSON 字段沿用现有 `STRING` 建表映射，普通文本与 bytes 不解释为 JSON。声明为 `bytes` 的值要求 `[]byte`，在 Provider 内绑定十六进制文本并通过 [UNHEX](https://doris.apache.org/docs/2.1/sql-manual/sql-functions/scalar-functions/string-functions/unhex/) 还原原始字节，避免 MySQL 驱动生成 Doris 不支持的 `_binary` 字面量；NULL、空 bytes 与非 UTF-8 字节分别保留。当前批次在第一条 SQL 前完成全部编码，避免后续 chunk 的非法 JSON 导致前半批先提交；chunk 仍自动提交，`Abort` 不撤销已有写入，数据库执行失败不保证整批原子性。编码失败不新增当前批次数据，也不代表此前建表或 replace 已回滚。`make test-common-doris-decimal` 沿用已有一次性 Doris 门禁与 CI 登记，验证 Decimal、两条 JSON 写入入口、NULL、已编码内容与 bytes 保真、字段类型固定及跨 chunk 的编码失败无新增行。
 
+ClickHouse session 与批量 INSERT 使用同一共享 JSON 编码，按打开时的字段类型写入现有 `String`／`Nullable(String)` 列；这不声明原生 JSON 列写入。bytes 的 `[]byte` 按原始二进制字符串绑定，避免驱动把字节切片解释为 SQL 数组；NULL、空 bytes 与非 UTF-8 字节分别保留。整个当前批次在第一条 SQL 前完成编码校验，非法 JSON 不新增本批数据；chunk 自动提交，数据库执行错误或 `Abort` 不保证撤销已有写入，也不撤销建表／replace。`make test-common-clickhouse-decimal` 沿用已有 Hosted 一次性容器与 CI 登记，覆盖 Decimal、session／batch 的 JSON 和 bytes 保真、既有目标结构复核、字段类型固定及跨 chunk 编码失败无新增行。本地 T1 的 SQLite 夹具只观测参数绑定，真实 ClickHouse 验证由该 Hosted T2 入口完成。
+
 MySQL 可通过相同测试连接条件运行 `bash scripts/test/common-mysql-data-protection-gate.sh --test typed-write`，仅验证类型感知写入；默认入口仍运行完整门禁。
 
 PostgreSQL 原生 `array` 保持 `TEXT[]`，支持一维字符串／NULL 元素，nil 容器为 SQL NULL、非 nil 空容器为空数组。Go 切片／数组及 PG 读取返回的数组文本在 Provider 内统一校验和编码；拒绝对象、嵌套数组、数字、布尔、非法 UTF-8／NUL，不隐式字符串化或改成 JSON。明确的非字符串 `ElementType` 在 DDL 前拒绝；未声明时逐值检查，不能据此证明源结构已知。PG 原生读取保留声明的数组元素类型，包含带长度／精度的数组，防止数组文本丢失类型证据；已有目标列严格匹配 `text[]`。

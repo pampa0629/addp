@@ -252,19 +252,10 @@ func TestClickHouseTablePathPartsRequiresDatabaseAndTable(t *testing.T) {
 }
 
 func TestBuildClickHouseInsertSQL(t *testing.T) {
-	rows := []map[string]interface{}{
-		{"id": 1, "city`name": "Hangzhou"},
-		{"id": 2, "city`name": "Shanghai"},
-	}
-
-	sql, args := buildClickHouseInsertSQL("analytics", "target table", []string{"id", "city`name"}, rows)
+	sql := buildClickHouseInsertSQL("analytics", "target table", []string{"id", "city`name"}, 2)
 	wantSQL := "INSERT INTO `analytics`.`target table` (`id`, `city``name`) VALUES (?, ?), (?, ?)"
 	if sql != wantSQL {
 		t.Fatalf("sql = %q, want %q", sql, wantSQL)
-	}
-	wantArgs := []interface{}{1, "Hangzhou", 2, "Shanghai"}
-	if !reflect.DeepEqual(args, wantArgs) {
-		t.Fatalf("args = %#v, want %#v", args, wantArgs)
 	}
 }
 

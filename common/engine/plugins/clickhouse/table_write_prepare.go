@@ -216,6 +216,12 @@ func clickhouseColumnCompatibleWithField(column clickhouseWriteColumnInfo, field
 	if expected == datatype.FieldTypeUnknown {
 		return existing == datatype.FieldTypeString || existing == datatype.FieldTypeUnknown
 	}
+	// These logical types use binary String storage. Require that physical
+	// mapping: native JSON/Array and padded FixedString are different contracts.
+	switch expected {
+	case datatype.FieldTypeJSON, datatype.FieldTypeBytes, datatype.FieldTypeTime:
+		return clickhouseNormalizeTypeName(column.NativeType) == clickhouseNormalizeTypeName(clickhouseSQLTypeForField(field))
+	}
 	if expected == datatype.FieldTypeDecimal && existing == datatype.FieldTypeDecimal {
 		precision, scale, ok := clickhouseDecimalPrecisionScale(column.NativeType)
 		return ok && precision == field.Precision && scale == field.Scale

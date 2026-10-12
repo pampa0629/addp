@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# common-clickhouse-decimal-gate.sh - Verify ClickHouse decimal table-write precision against a disposable database.
+# common-clickhouse-decimal-gate.sh - Verify ClickHouse decimal and typed JSON/bytes writes against a disposable database.
 # ADDP_T2_HOSTED_ONLY=clickhouse
 
 set -euo pipefail
@@ -21,7 +21,11 @@ cleanup() {
             docker logs "$CONTAINER_NAME" > "$WORK_DIR/clickhouse-container.log" 2>&1
             tail -n 200 "$WORK_DIR/clickhouse-container.log" >&2
         fi
-        docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || status=1
+        docker rm --force --volumes "$CONTAINER_NAME" >/dev/null 2>&1 || status=1
+        if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+            echo "ClickHouse gate left its owned container behind: $CONTAINER_NAME" >&2
+            status=1
+        fi
     fi
     case "$WORK_DIR" in
         "${TMPDIR:-/tmp}"/addp-common-clickhouse-decimal.*) rm -rf "$WORK_DIR" ;;
@@ -87,7 +91,7 @@ ADDP_TEST_CLICKHOUSE_DATABASE="$DATABASE_NAME" \
 ADDP_TEST_CLICKHOUSE_USER=default \
 ADDP_TEST_CLICKHOUSE_PASSWORD="$DATABASE_PASSWORD" \
     go test ./engine/plugins/clickhouse \
-    -run '^TestIntegrationClickHouseDecimalTableWriteDefinition$' \
+    -run '^TestIntegrationClickHouse(DecimalTableWriteDefinition|TypedJSONWrites)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-clickhouse-decimal.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-clickhouse-decimal.log"; then

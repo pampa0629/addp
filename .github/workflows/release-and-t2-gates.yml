@@ -784,7 +784,7 @@ jobs:
           status: ${{ job.status }}
 
   common-clickhouse-decimal:
-    name: Common Decimal Provider integration (ClickHouse 25.12.1.649)
+    name: Common typed-write Provider integration (ClickHouse 25.12.1.649)
     needs: selection
     if: needs.selection.outputs.common == 'true' || needs.selection.outputs.transfer == 'true'
     runs-on: ubuntu-24.04
@@ -801,14 +801,14 @@ jobs:
           go-version-file: common/go.mod
           cache: false
 
-      - name: Run Common ClickHouse decimal gate
+      - name: Run Common ClickHouse typed-write gate
         run: make test-common-clickhouse-decimal
 
-      - name: Summarize Common ClickHouse decimal gate
+      - name: Summarize Common ClickHouse typed-write gate
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Common Decimal Provider integration (ClickHouse 25.12.1.649)
+          gate: Common typed-write Provider integration (ClickHouse 25.12.1.649)
           status: ${{ job.status }}
 
   common-oceanbase:

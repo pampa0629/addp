@@ -1,0 +1,186 @@
+package clickhouse
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"math"
+	"os"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
+	"github.com/google/uuid"
+)
+
+func TestIntegrationClickHouseTypedJSONWrites(t *testing.T) {
+	if os.Getenv("ADDP_CLICKHOUSE_INTEGRATION") != "1" {
+		t.Skip("set ADDP_CLICKHOUSE_INTEGRATION=1 to run ClickHouse integration test")
+	}
+	for _, method := range []string{"session", "batch"} {
+		t.Run(method, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+			defer cancel()
+			connInfo := clickhouseIntegrationConnInfo(t)
+			p := &ClickHousePlugin{}
+			database := plugin.GetString(connInfo, "database")
+			table := "addp_json_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+			path := plugin.TabularItemPath(93003, plugin.EngineCatalogTermDatabase, database, table)
+			dsn, err := p.serverDSN(connInfo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			db, err := sql.Open("clickhouse", dsn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cleanupCancel()
+				defer db.Close()
+				if err := p.DeleteResource(cleanupCtx, connInfo, path); err != nil {
+					t.Errorf("cleanup JSON table: %v", err)
+				}
+				var remaining uint64
+				if err := db.QueryRowContext(cleanupCtx, "SELECT count() FROM system.tables WHERE database=? AND name=?", database, table).Scan(&remaining); err != nil || remaining != 0 {
+					t.Errorf("JSON fixture cleanup not proven: tables=%d error=%v", remaining, err)
+				}
+			}()
+			fields := []datatype.FieldInfo{
+				{Name: "id", Type: datatype.FieldTypeBigInt},
+				{Name: "document", Type: datatype.FieldTypeJSON, Nullable: true},
+				{Name: "payload", Type: datatype.FieldTypeBytes, Nullable: true},
+				{Name: "label", Type: datatype.FieldTypeString, Nullable: true},
+			}
+			if err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+				t.Fatal(err)
+			}
+			var physical string
+			if err := db.QueryRowContext(ctx, "SELECT type FROM system.columns WHERE database=? AND table=? AND name='document'", database, table).Scan(&physical); err != nil || physical != "Nullable(String)" {
+				t.Fatalf("JSON storage type=%q want Nullable(String) error=%v", physical, err)
+			}
+			cases := []struct {
+				value interface{}
+				text  string // Empty means SQL NULL; a JSON document is never empty.
+			}{
+				{[]interface{}{map[string]interface{}{"ok": true}, "中文", nil}, `[{"ok":true},"中文",null]`},
+				{map[string]interface{}{"items": []interface{}{true, nil}}, `{"items":[true,null]}`},
+				{[]interface{}{}, "[]"}, {map[string]interface{}{}, "{}"},
+				{[]interface{}(nil), "null"}, {map[string]interface{}(nil), "null"},
+				{nil, ""}, {[]byte(nil), ""}, {json.RawMessage(nil), ""},
+				{false, "false"}, {int64(9007199254740993), "9007199254740993"}, {1.25, "1.25"},
+				{json.Number("12345678901234567890.123456789"), "12345678901234567890.123456789"},
+				{` {"n":9007199254740993} `, ` {"n":9007199254740993} `},
+				{[]byte(`[1,null]`), `[1,null]`}, {json.RawMessage(`{"raw":true}`), `{"raw":true}`},
+				{`"中文\n字符串"`, `"中文\n字符串"`}, {`""`, `""`}, {"null", "null"},
+				{map[string]interface{}{"large": strings.Repeat("x", 8192)}, `{"large":"` + strings.Repeat("x", 8192) + `"}`},
+			}
+			binaries := [][]byte{{0, 1, 255}, {}, nil, {39, 92, 10, 255}}
+			rows := make([]map[string]interface{}, len(cases))
+			for i, tc := range cases {
+				rows[i] = map[string]interface{}{"id": int64(i + 1), "document": tc.value, "payload": binaries[i%len(binaries)], "label": "plain text {"}
+			}
+			write := func(rows []map[string]interface{}) error {
+				if method == "batch" {
+					return p.WriteBatch(ctx, connInfo, path, &plugin.BatchData{Fields: fields, Rows: rows}, plugin.BatchWriteOptions{})
+				}
+				openingFields := append([]datatype.FieldInfo(nil), fields...)
+				session, err := p.OpenTableWriteSession(ctx, connInfo, path, plugin.TableWriteSessionOptions{Fields: openingFields})
+				if err != nil {
+					return err
+				}
+				defer session.Abort(ctx)
+				openingFields[1].Type = datatype.FieldTypeString
+				if err := session.WriteBatch(ctx, &plugin.BatchData{Fields: []datatype.FieldInfo{{Name: "document", Type: datatype.FieldTypeString}}, Rows: rows}); err != nil {
+					return err
+				}
+				return session.Close(ctx)
+			}
+			if err := write(rows); err != nil {
+				t.Fatalf("write JSON matrix: %v", err)
+			}
+			if err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+				t.Fatalf("revalidate JSON/bytes storage: %v", err)
+			}
+			qualified := clickhouseDialect().QualifiedTable(database, table)
+			stored, err := db.QueryContext(ctx, "SELECT id, document, payload, isNull(payload), label FROM "+qualified+" ORDER BY id")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stored.Close()
+			index := 0
+			for stored.Next() {
+				var id int64
+				var document sql.NullString
+				var payload []byte
+				var payloadNull bool
+				var label string
+				if err := stored.Scan(&id, &document, &payload, &payloadNull, &label); err != nil {
+					t.Fatal(err)
+				}
+				if index >= len(cases) || id != int64(index+1) {
+					t.Fatalf("unexpected row id=%d index=%d", id, index)
+				}
+				want := cases[index].text
+				if document.Valid != (want != "") || document.String != want {
+					t.Fatalf("row %d JSON=%#v want=%q", id, document, want)
+				}
+				wantBinary := binaries[index%len(binaries)]
+				if !bytes.Equal(payload, wantBinary) || payloadNull != (wantBinary == nil) || label != "plain text {" {
+					t.Fatalf("row %d bytes=%v null=%v label=%q", id, payload, payloadNull, label)
+				}
+				index++
+			}
+			if err := stored.Err(); err != nil || index != len(cases) {
+				t.Fatalf("read %d/%d rows error=%v", index, len(cases), err)
+			}
+			stored.Close()
+			for _, invalid := range []interface{}{"{", []byte{}, json.RawMessage("{} []"), math.NaN(), make(chan int)} {
+				invalidRows := make([]map[string]interface{}, clickhouseDefaultInsertChunkSize+1)
+				for i := range invalidRows {
+					invalidRows[i] = map[string]interface{}{"id": int64(100 + i), "document": map[string]interface{}{"valid": true}}
+				}
+				invalidRows[len(invalidRows)-1]["document"] = invalid
+				writeErr := write(invalidRows)
+				if writeErr == nil || !strings.Contains(writeErr.Error(), `row 1000 field "document"`) {
+					t.Fatalf("invalid %T expected row/field error, got %v", invalid, writeErr)
+				}
+				var count uint64
+				if err := db.QueryRowContext(ctx, "SELECT count() FROM "+qualified).Scan(&count); err != nil || count != uint64(len(cases)) {
+					t.Fatalf("invalid batch changed rows: count=%d want=%d error=%v", count, len(cases), err)
+				}
+			}
+			chunkRows := make([]map[string]interface{}, clickhouseDefaultInsertChunkSize+1)
+			for i := range chunkRows {
+				chunkRows[i] = map[string]interface{}{"id": int64(100 + i), "document": map[string]interface{}{"row": i}}
+			}
+			if err := write(chunkRows); err != nil {
+				t.Fatalf("valid cross-chunk JSON: %v", err)
+			}
+			chunkStored, err := db.QueryContext(ctx, "SELECT id, document FROM "+qualified+" WHERE id >= 100 ORDER BY id")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer chunkStored.Close()
+			chunkIndex := 0
+			for chunkStored.Next() {
+				var id int64
+				var document string
+				if err := chunkStored.Scan(&id, &document); err != nil {
+					t.Fatal(err)
+				}
+				if id != int64(100+chunkIndex) || document != `{"row":`+strconv.Itoa(chunkIndex)+`}` {
+					t.Fatalf("cross-chunk row %d JSON=%q", id, document)
+				}
+				chunkIndex++
+			}
+			if err := chunkStored.Err(); err != nil || chunkIndex != len(chunkRows) {
+				t.Fatalf("cross-chunk read %d/%d rows error=%v", chunkIndex, len(chunkRows), err)
+			}
+		})
+	}
+}
