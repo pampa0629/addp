@@ -23,6 +23,7 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_BROWSER_PHASE',
   'ADDP_ONLINE_MANAGER_RASTER_JSON',
   'ADDP_ONLINE_MANAGER_DELIMITED_JSON',
+  'ADDP_ONLINE_MANAGER_WORKBOOK_JSON',
   'GATEWAY_URL'
 ]
 
@@ -30,6 +31,19 @@ function environment() {
   const missing = requiredNames.filter(name => !process.env[name])
   if (missing.length > 0) throw new Error(`missing Online environment: ${missing.join(', ')}`)
   return Object.fromEntries(requiredNames.map(name => [name, process.env[name]]))
+}
+
+async function verifyOriginalDownload(page, frame, source) {
+  const downloaded = page.waitForEvent('download')
+  await frame.getByRole('button', { name: /下载|Download/, exact: true }).click()
+  const download = await downloaded
+  const path = await download.path()
+  expect(path).not.toBeNull()
+  const bytes = readFileSync(path)
+  expect(bytes.length).toBe(source.size_bytes)
+  const checksum = createHash('sha256').update(bytes).digest('hex')
+  expect(checksum).toBe(source.sha256)
+  return { bytes, checksum }
 }
 
 async function verifyDelimitedTable(page, api, source, artifactDir) {
@@ -83,15 +97,7 @@ async function verifyDelimitedTable(page, api, source, artifactDir) {
   await expect(next).toBeDisabled()
   await verifyMetadata()
   await frame.locator('.preview-panel').screenshot({ path: resolve(artifactDir, `gbk-${source.format}-preview.png`) })
-  const downloaded = page.waitForEvent('download')
-  await frame.getByRole('button', { name: /下载|Download/, exact: true }).click()
-  const download = await downloaded
-  const path = await download.path()
-  expect(path).not.toBeNull()
-  const bytes = readFileSync(path)
-  expect(bytes.length).toBe(source.size_bytes)
-  const checksum = createHash('sha256').update(bytes).digest('hex')
-  expect(checksum).toBe(source.sha256)
+  const { checksum } = await verifyOriginalDownload(page, frame, source)
 
   const ordinary = refresh()
   await frame.getByRole('treeitem', { name: `gbk-quoted.${source.format}`, exact: true }).locator('.node-action').click()
@@ -107,7 +113,141 @@ async function verifyDelimitedTable(page, api, source, artifactDir) {
     reopened: true, download_sha256: checksum, encoding_request_verified: true }
 }
 
-test('Manager lineage, cached previews and GBK CSV/TSV refresh through Console', async ({ page }) => {
+async function verifyWorkbook(page, api, source, artifactDir) {
+  const previews = []
+  const pending = []
+  const readErrors = []
+  const receive = response => {
+    const url = new URL(response.url())
+    if (url.pathname !== '/api/v1/manager/preview' || url.searchParams.get('locator') !== source.locator) return
+    pending.push(response.json().then(body => previews.push({
+      child: url.searchParams.get('child_name') || '', page: Number(url.searchParams.get('page') || 1),
+      status: response.status(), data: body.data
+    })).catch(error => readErrors.push(error.message)))
+  }
+  page.on('response', receive)
+  try {
+    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const container = frame.locator('.container-preview')
+    const content = container.locator('.child-preview')
+    const next = container.getByRole('button', { name: /下一页|Go to next page/, exact: true })
+    const sheets = [
+      { name: 'Cities', columns: ['city_id', 'city_name'], verified_rows: 25 },
+      { name: 'Readings', columns: ['sensor', 'temperature', 'status'], verified_rows: 1 },
+      { name: 'Empty', columns: [], verified_rows: 0 },
+      { name: 'HeaderOnly', columns: ['code', 'label'], verified_rows: 0 }
+    ]
+    const verifyRows = async (columns, rows) => {
+      await expect(content.getByRole('columnheader')).toHaveText(columns)
+      await expect(content.getByRole('cell')).toHaveCount(rows.length * columns.length)
+      expect((await content.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(rows.flat())
+    }
+    const cities = (first, count) => Array.from({ length: count }, (_, index) => [String(first + index), `杭州${first + index}`])
+    const select = async name => {
+      await container.locator('.child-select').click()
+      await frame.getByRole('option', { name: new RegExp(`^${name}(?: \\(|$)`) }).click()
+      await expect(container.locator('.child-select')).toContainText(name)
+    }
+    const verifyPreview = async (child, pageNumber, hasMore) => {
+      await expect.poll(() => {
+        const preview = previews.filter(value => value.child === child && value.page === pageNumber).at(-1)
+        return preview && { status: preview.status, total: preview.data?.total, has_more: preview.data?.has_more }
+      }).toEqual({ status: 200, total: null, has_more: hasMore })
+    }
+    const verifyMetadata = async () => {
+      const item = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'read workbook facts')
+      expect(item.id).toBe(source.item_id)
+      expect(item.fingerprint).toBe(source.fingerprint)
+      expect(item.size_bytes).toBe(source.size_bytes)
+      expect(item.attributes.item).toMatchObject({ format: 'excel', data_type: 'container', layout: 'single' })
+      expect(item.attributes.storage.content_hash).toBe(source.sha256)
+      expect(item.attributes.format_info.excel).toMatchObject({ sheet_count: 4, default_sheet: 'Cities' })
+      const facts = item.attributes.type_info.container
+      expect(facts.child_count).toBe(4)
+      expect(facts.default_child).toBe('Cities')
+      expect(facts.children.map(child => child.name)).toEqual(source.sheet_names)
+      expect(facts.children.map(child => child.column_count)).toEqual([2, 3, 0, 2])
+      for (const child of facts.children) {
+        expect(child).toMatchObject({ data_type: 'table', child_kind: 'sheet' })
+        expect(child.row_count).toBeUndefined()
+      }
+    }
+    const refreshSelection = async (child, pageNumber) => {
+      const before = previews.length
+      const refreshed = page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().method() === 'POST'
+          && /\/api\/v1\/manager\/engines\/[1-9][0-9]*\/items\/refresh$/.test(url.pathname)
+          && url.searchParams.get('locator') === source.locator
+      })
+      await frame.getByRole('treeitem', { name: 'format-validation.xlsx', exact: true }).locator('.node-action').click()
+      const response = await refreshed
+      expect(response.status()).toBe(200)
+      expect(response.request().postData()).toBeNull()
+      for (const name of ['', child]) {
+        await expect.poll(() => previews.slice(before).some(value => value.child === name && value.page === pageNumber && value.status === 200)).toBe(true)
+      }
+      await expect(container.locator('.child-select')).toContainText(child)
+      await verifyMetadata()
+    }
+
+    await verifyRows(sheets[0].columns, cities(1, 20))
+    await verifyPreview('Cities', 1, true)
+    await expect(container.locator('.el-pagination__total')).toHaveCount(0)
+    await expect(container.locator('.el-pager')).toHaveCount(0)
+    await expect(next).toBeEnabled()
+    await next.click()
+    await verifyRows(sheets[0].columns, cities(21, 5))
+    await verifyPreview('Cities', 2, false)
+    await expect(next).toBeDisabled()
+    await refreshSelection('Cities', 2)
+    await verifyRows(sheets[0].columns, cities(21, 5))
+    await expect(next).toBeDisabled()
+    await frame.locator('.preview-panel').screenshot({ path: resolve(artifactDir, 'xlsx-cities-preview.png') })
+
+    await select('Readings')
+    await verifyRows(sheets[1].columns, [['Sensor-A', '18.5', '正常']])
+    await verifyPreview('Readings', 1, false)
+    await expect(next).toBeDisabled()
+    await frame.locator('.preview-panel').screenshot({ path: resolve(artifactDir, 'xlsx-readings-preview.png') })
+
+    await select('Empty')
+    await verifyRows([], [])
+    await expect(content.locator('.el-table__empty-block')).toBeVisible()
+    await expect(container.locator('.data-pagination')).toHaveCount(0)
+    await refreshSelection('Empty', 1)
+    await verifyRows([], [])
+    await expect(content.locator('.el-table__empty-block')).toBeVisible()
+    await expect(container.locator('.data-pagination')).toHaveCount(0)
+    await frame.locator('.preview-panel').screenshot({ path: resolve(artifactDir, 'xlsx-empty-preview.png') })
+
+    await select('HeaderOnly')
+    await verifyRows(sheets[3].columns, [])
+    await expect(content.locator('.el-table__empty-block')).toBeVisible()
+    await expect(container.locator('.data-pagination')).toHaveCount(0)
+    await frame.locator('.preview-panel').screenshot({ path: resolve(artifactDir, 'xlsx-headeronly-preview.png') })
+    await select('Cities')
+    await verifyRows(sheets[0].columns, cities(1, 20))
+    await expect(next).toBeEnabled()
+
+    const { bytes, checksum } = await verifyOriginalDownload(page, frame, source)
+    expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
+    await page.reload()
+    await expect(container.locator('.child-select')).toContainText('Cities')
+    await verifyRows(sheets[0].columns, cities(1, 20))
+    await verifyMetadata()
+    await Promise.all(pending)
+    expect(readErrors).toEqual([])
+    return { ...source, sheets, first_page_rows: 20, last_page_rows: 5, last_page_disabled: true,
+      unknown_total_verified: true, sheet_switch_reset: true, refresh_preserved_page: true,
+      refresh_preserved_empty_sheet: true, metadata_verified: true, reopened: true, download_sha256: checksum }
+  } finally {
+    page.off('response', receive)
+  }
+}
+
+test('Manager lineage, cached previews, GBK tables and XLSX sheets through Console', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
   if (!Number.isInteger(itemID) || itemID <= 0) throw new Error('Manager lineage item ID must be positive')
@@ -121,6 +261,9 @@ test('Manager lineage, cached previews and GBK CSV/TSV refresh through Console',
   expect(raster.preview_url).toMatch(/^\/api\/v1\/manager\/raster_cog\/[1-9][0-9]*\/content$/)
   const delimited = JSON.parse(env.ADDP_ONLINE_MANAGER_DELIMITED_JSON)
   expect(delimited.map(source => source.format)).toEqual(['csv', 'tsv'])
+  const workbook = JSON.parse(env.ADDP_ONLINE_MANAGER_WORKBOOK_JSON)
+  expect(workbook.format).toBe('excel')
+  expect(workbook.sheet_names).toEqual(['Cities', 'Readings', 'Empty', 'HeaderOnly'])
   const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
   expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
@@ -248,7 +391,7 @@ test('Manager lineage, cached previews and GBK CSV/TSV refresh through Console',
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v6', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v7', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -334,13 +477,14 @@ test('Manager lineage, cached previews and GBK CSV/TSV refresh through Console',
     for (const source of delimited) {
       delimitedEvidence.push(await verifyDelimitedTable(page, api, source, env.ADDP_ONLINE_ARTIFACT_DIR))
     }
+    const workbookEvidence = await verifyWorkbook(page, api, workbook, env.ADDP_ONLINE_ARTIFACT_DIR)
     expect(modelGenerationRequests).toBe(0)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v6',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v7',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
@@ -360,6 +504,7 @@ test('Manager lineage, cached previews and GBK CSV/TSV refresh through Console',
       raster: { ...raster, range_loaded: true, map_loaded: true },
       models: modelEvidence,
       delimited_tables: delimitedEvidence,
+      workbook: workbookEvidence,
       gpu_performance_diagnostics: gpuDiagnostics.snapshot(),
       browser_warning_errors: 0,
       failed_business_responses: 0,

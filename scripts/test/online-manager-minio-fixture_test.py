@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest import mock
 import xml.etree.ElementTree as ET
 import zlib
+import zipfile
 from pathlib import Path
 
 
@@ -234,6 +235,38 @@ esac
                     raw.decode("utf-8")
                 rows = list(csv.reader(io.StringIO(raw.decode("gbk"), newline=""), delimiter=delimiter))
                 self.assertEqual(rows, [["id", "姓名", "备注"]] + [[str(i), f"张三{i}", f"北京,第{i}项\n第二行"] for i in range(25)])
+
+    def test_generated_workbook_preserves_all_four_sheet_structures_and_source_bytes(self):
+        baseline = None
+        ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        for attempt in range(2):
+            started = self.run_fixture("start")
+            self.assertEqual(started.returncode, 0, started.stderr)
+            raw = (self.root / "model-fixtures/format-samples/format-validation.xlsx").read_bytes()
+            self.assertEqual(len(raw), 7087)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), "317ad1292f7e21861a85607cb2423b10f554ef418b787b9d2d28222106d9b18b")
+            if baseline is not None:
+                self.assertEqual(raw, baseline)
+            baseline = raw
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                workbook = ET.fromstring(archive.read('xl/workbook.xml'))
+                self.assertEqual([sheet.attrib['name'] for sheet in workbook.findall('s:sheets/s:sheet', ns)],
+                                 ['Cities', 'Readings', 'Empty', 'HeaderOnly'])
+                actual = []
+                for index in range(1, 5):
+                    sheet = ET.fromstring(archive.read(f'xl/worksheets/sheet{index}.xml'))
+                    actual.append([[cell.findtext('s:is/s:t', namespaces=ns) if cell.attrib.get('t') == 'inlineStr'
+                                    else cell.findtext('s:v', namespaces=ns)
+                                    for cell in row.findall('s:c', ns)]
+                                   for row in sheet.findall('s:sheetData/s:row', ns)])
+                self.assertEqual(actual, [
+                    [['city_id', 'city_name']] + [[str(i), f'杭州{i}'] for i in range(1, 26)],
+                    [['sensor', 'temperature', 'status'], ['Sensor-A', '18.5', '正常']],
+                    [], [['code', 'label']],
+                ])
+            commands = self.log.read_text()
+            self.assertIn('cp --quiet /fixture/format-samples/format-validation.xlsx fixture/addp-online/format-samples/format-validation.xlsx', commands)
+            self.assertIn('stat fixture/addp-online/format-samples/format-validation.xlsx', commands)
 
     def test_generated_models_and_png_are_deterministic_valid_source_files(self) -> None:
         first = self.run_fixture("start")

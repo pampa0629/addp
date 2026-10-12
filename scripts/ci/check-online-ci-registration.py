@@ -344,6 +344,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "texture.png",
         "format-samples/gbk-quoted.csv",
         "format-samples/gbk-quoted.tsv",
+        "format-samples/format-validation.xlsx",
     ):
         if fragment not in fixture:
             raise RegistrationError(
@@ -371,6 +372,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "raster_physical",
         "DELIMITED_SHA256",
         "delimited_sources",
+        "WORKBOOK_SHA256",
+        "WORKBOOK_SHEETS",
+        "workbook_source",
+        "addp.manager-internal-artifact-lineage/v5",
     ):
         if fragment not in owner:
             raise RegistrationError(
@@ -402,12 +407,19 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "model_generation_requests",
         "anonymous_refresh_401",
         "failed_business_responses",
-        "addp.manager-internal-artifact-lineage-browser/v6",
+        "addp.manager-internal-artifact-lineage-browser/v7",
         "ADDP_ONLINE_MANAGER_DELIMITED_JSON",
         "verifyDelimitedTable",
         "delimited_tables",
         "encoding_request_verified",
         "download_sha256",
+        "ADDP_ONLINE_MANAGER_WORKBOOK_JSON",
+        "verifyWorkbook",
+        ".container-preview",
+        "workbook: workbookEvidence",
+        "unknown_total_verified",
+        "refresh_preserved_page",
+        "refresh_preserved_empty_sheet",
     ):
         if fragment not in browser:
             raise RegistrationError(

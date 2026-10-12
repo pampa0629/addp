@@ -60,6 +60,9 @@
 
 
 
+
+2026-10-12 XLSX Hosted 扩展范围：复用现有 `manager-internal-artifact-lineage`、Business MinIO、普通 User 的十项权限与既有清理主线，新增一个固定四工作表的完整 XLSX 源文件（Cities 25 行两列、Readings 一行三列、Empty 零行零列、HeaderOnly 零行两列）。真实 Console 入口核对工作表切换后页码归一与字段替换、Cities 未知总数的 20＋5 分页及末页禁用、普通深度刷新保留当前工作表和页码、空表刷新、整页重开，以及完整工作簿下载的大小与 SHA256。格式事实沿用 `format=excel`、`data_type=container`、`layout=single`，worksheet dimension 仍仅是估算行数，不写成精确总数。只增加 owner 夹具和验收断言，不修改产品 API、权限定义、服务、Job 或血缘实现。规范报告统一升级为 browser/v7 与 Owner/v5，缺少 XLSX 完整证据必须失败；此前 browser/v6、Owner/v4 的 CSV / TSV 通过记录仍保留历史范围，不计为 XLSX 通过。受影响门禁为既有 `make test-manager-online-runner`、`make test-online-runner`、CI 登记检查及原 Hosted Job；现有入口自动覆盖本轮脚本和测试，无需新增 Makefile 或 workflow 路径。实施前登记范围，本扩展尚未运行真实 Hosted，不提前登记通过。 本轮确定性验证：新增夹具测试先复现源 XLSX 缺失，再独立解包核对四个工作表和全部源值；最终固定文件为 7087 字节，SHA256 `317ad1292f7e21861a85607cb2423b10f554ef418b787b9d2d28222106d9b18b`。隔离副本以基线 `f060635fb2a94d9e33e6a1765cb01d7dcac278fb` 加本项改动执行标准 `make test-go`，22 模块全部通过；其中临时 Go 验证用实际 Excel 插件读取这份同一源文件，核对四个 child 的列数／估算语义、不同表结构及 Cities 21–25 行和 Readings 值，临时验证代码不纳入项目。中英文两项标准隔离浏览器探针通过，复用 Hosted 同一工作簿 helper 和原文件下载校验，实际 Manager 组件在受控 iframe/API 中验证切表、未知总数分页、刷新保留页码和空表、完整附件哈希及重新打开；附件由标准测试服务器的同一路径提供，不调用或重启个人开发服务，夹具不代替真实 Hosted。`make test-changed` 因受影响 T2 的连接参数缺失在预检中止，未连接数据库，不计为通过；相应门禁沿用已有 Platform CI、Release/T2 和 Hosted Job。 本轮最终 `make test-manager-online-runner` 的 68 项 Python 回归及 Go 用户工具通过，包含工作簿证据缺失／变更必须拒绝、失败后九类产物清理和 CI 登记字段缺失回归；隔离副本完整 `make test-online-runner` 的 916 项 Python 回归（13 批）、Go 用户工具及 CI 登记核对全部通过。CSV / TSV 和 XLSX 原文件下载现在复用同一测试校验函数，校验大小和源 SHA256；工作簿另核对 ZIP 签名，无新增产品下载路径。
+
 ## 未决事项
 
 1. 需要用真实样例继续核实 CSV / TSV、JSON / GeoJSON、Parquet、Shapefile、Excel、SQLite、GeoPackage、ZIP、text / markdown、image、PDF、DOCX、PPTX、WPS 的扫描、attributes、Manager 预览、分页和异常提示。

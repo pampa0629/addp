@@ -31,6 +31,15 @@ DELIMITED_SHA256 = {
     "csv": "b2d4a39906f6b5b37cb28d3a8222e93a67c73b09df8dc7a00b5050ffe50a4728",
     "tsv": "2df6d5a2666d0a8ff2a50b917643a6d7430921fdc4454b925de15736c66798e0",
 }
+WORKBOOK_OBJECT = "format-samples/format-validation.xlsx"
+WORKBOOK_SHA256 = "317ad1292f7e21861a85607cb2423b10f554ef418b787b9d2d28222106d9b18b"
+WORKBOOK_SIZE_BYTES = 7087
+WORKBOOK_SHEETS = [
+    {"name": "Cities", "columns": ["city_id", "city_name"], "verified_rows": 25},
+    {"name": "Readings", "columns": ["sensor", "temperature", "status"], "verified_rows": 1},
+    {"name": "Empty", "columns": [], "verified_rows": 0},
+    {"name": "HeaderOnly", "columns": ["code", "label"], "verified_rows": 0},
+]
 REQUIRED_PERMISSIONS = {
     "manager.content.read",
     "manager.data_item.read",
@@ -1067,6 +1076,7 @@ def validate_browser_report(
     models: list[dict[str, object]],
     raster: dict[str, object],
     delimited: list[dict[str, object]],
+    workbook: dict[str, object],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
@@ -1074,8 +1084,10 @@ def validate_browser_report(
         raise SuiteError("unknown Manager browser phase")
     if [source.get("format") for source in delimited] != ["csv", "tsv"]:
         raise SuiteError("browser delimited sources must contain CSV and TSV in order")
+    if workbook.get("format") != "excel" or workbook.get("sheet_names") != [sheet["name"] for sheet in WORKBOOK_SHEETS]:
+        raise SuiteError("browser workbook source must be the four-sheet Excel fixture")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v6",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v7",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1098,6 +1110,11 @@ def validate_browser_report(
             "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
             "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
             "encoding_request_verified": True} for source in delimited],
+        "workbook": {**workbook, "sheets": WORKBOOK_SHEETS, "first_page_rows": 20,
+            "last_page_rows": 5, "last_page_disabled": True, "unknown_total_verified": True,
+            "sheet_switch_reset": True, "refresh_preserved_page": True,
+            "refresh_preserved_empty_sheet": True, "metadata_verified": True,
+            "reopened": True, "download_sha256": workbook["sha256"]},
         "browser_warning_errors": 0,
         "failed_business_responses": 0,
     }
@@ -1152,6 +1169,7 @@ def run_browser(
     models: list[dict[str, object]],
     raster: dict[str, object],
     delimited: list[dict[str, object]],
+    workbook: dict[str, object],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
@@ -1171,6 +1189,7 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_BROWSER_PHASE": phase,
             "ADDP_ONLINE_MANAGER_RASTER_JSON": json.dumps(raster),
             "ADDP_ONLINE_MANAGER_DELIMITED_JSON": json.dumps(delimited),
+            "ADDP_ONLINE_MANAGER_WORKBOOK_JSON": json.dumps(workbook),
         }
     )
     result = subprocess.run(
@@ -1202,6 +1221,7 @@ def run_browser(
         models=models,
         raster=raster,
         delimited=delimited,
+        workbook=workbook,
         phase=phase,
     )
 
@@ -1238,6 +1258,13 @@ def run_scenario(
         delimited.append({"format": format_name, "locator": build_item_locator(engine_id, item),
             "item_id": item["id"], "fingerprint": item["fingerprint"], "sha256": checksum,
             "size_bytes": 784, "rows": 25})
+    workbook_item = find_fixture_item(client, engine_id, f"{bucket}/{WORKBOOK_OBJECT}", "Excel workbook")
+    if workbook_item.get("size_bytes") != WORKBOOK_SIZE_BYTES:
+        raise SuiteError("Excel workbook fixture source byte count differs from the fixed source")
+    workbook = {"format": "excel", "locator": build_item_locator(engine_id, workbook_item),
+        "item_id": workbook_item["id"], "fingerprint": workbook_item["fingerprint"],
+        "sha256": WORKBOOK_SHA256, "size_bytes": WORKBOOK_SIZE_BYTES,
+        "sheet_names": [sheet["name"] for sheet in WORKBOOK_SHEETS]}
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
     pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
     pointcloud_fingerprint = str(pointcloud_item["fingerprint"])
@@ -1407,6 +1434,7 @@ def run_scenario(
             pptx_item_id=pptx_item_id, pptx_page_count=pptx_page_count,
             raster={"locator": raster.locator, "item_id": raster.item["id"], "preview_url": raster.artifact["preview_url"]},
             delimited=delimited,
+            workbook=workbook,
         )
         browser_models = [{"format": model.format, "locator": model.locator,
                            "item_id": model.item["id"], **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
@@ -1436,7 +1464,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v4",
+            "schema_version": "addp.manager-internal-artifact-lineage/v5",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -1447,6 +1475,7 @@ def run_scenario(
             "meta_scan_execution_id": scan_execution_id,
             "execution_read_checks": ["cross_module_execution_hidden", "explicit_professional_projection"],
             "delimited_sources": delimited,
+            "workbook_source": workbook,
             "sources": {
                 "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
                 "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},
