@@ -141,7 +141,11 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
 
     def test_source_declarations_keep_finite_and_nan_sentinels_on_the_same_grid(self):
         sources = {name: (spatial, nodata) for name, spatial, nodata in m.SOURCE_FILES}
-        self.assertEqual(len(sources), 5)
+        self.assertEqual(len(sources), 6)
+        self.assertFalse(sources[m.ROTATED_SOURCE][0])
+        self.assertTrue(math.isnan(sources[m.ROTATED_SOURCE][1]))
+        self.assertEqual(m.footprint_source_name('footprint-rotated'), m.ROTATED_SOURCE)
+        self.assertEqual(m.footprint_transform('footprint-rotated'), (110,.01,.004,20.32,.002,-.02))
         self.assertEqual(sources['multiband-average-finite.tif'], (False, -9999.))
         self.assertTrue(math.isnan(sources['multiband-average.tif'][1]))
         self.assertEqual(m.multiband_source_name('multiband-average-finite'), 'multiband-average-finite.tif')

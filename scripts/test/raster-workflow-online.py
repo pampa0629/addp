@@ -298,6 +298,8 @@ def validate_footprint(execution, case_name):
     geometry = obj(feature.get('geometry'), 'footprint geometry')
     if feature.get('type') != 'Feature' or feature.get('properties') != {} or geometry.get('type') != 'MultiPolygon':
         raise SuiteError('footprint lost its geometry-only MultiPolygon contract')
+    origin_x, column_x, row_x, origin_y, column_y, row_y = fixture.footprint_transform(case_name)
+    determinant = column_x*row_y-row_x*column_y
     polygons = []
     area = 0
     for polygon in array(geometry.get('coordinates'), 'footprint polygons'):
@@ -308,7 +310,8 @@ def validate_footprint(execution, case_name):
                 if (not isinstance(point, list) or len(point) != 2 or
                     any(type(value) not in (int, float) or not math.isfinite(value) for value in point)):
                     raise SuiteError('footprint coordinates must be finite pairs')
-                pixel = [(point[0]-110)/.01, (20.32-point[1])/.01]
+                dx, dy = point[0]-origin_x, point[1]-origin_y
+                pixel = [(row_y*dx-row_x*dy)/determinant, (column_x*dy-column_y*dx)/determinant]
                 if any(not math.isclose(value, round(value), rel_tol=0, abs_tol=1e-8) or
                        not 0 <= round(value) <= fixture.SIZE for value in pixel):
                     raise SuiteError('footprint boundary left the source pixel grid')
@@ -925,6 +928,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         preserved[name] = native['sha256']
     footprint_cases = []
     footprint_sources = {
+        fixture.ROTATED_SOURCE: (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/' + fixture.ROTATED_SOURCE, 'rotated footprint source')),
         'multiband.tif': (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'footprint source')),
         'clip-outside.cog.tif': (target_engine, support.find_fixture_item(client, target_engine, 'raster-target/clip-outside.cog.tif', 'footprint holes source')),
     }

@@ -1124,8 +1124,13 @@ def verify_native_footprints(physical,tmp_path,last_case):
         result, _ = single_source_execution(tmp_path, scene, api_server, case)
         execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
         assert scene.validate_footprint(execution, case) == result
-        assert sum(fixture.footprint_pixels(case)) == {'footprint-any':65532, 'footprint-all':65524, 'footprint-band-2':65528, 'footprint-holes':53247}[case]
+        assert sum(fixture.footprint_pixels(case)) == {'footprint-any':65532, 'footprint-all':65524, 'footprint-band-2':65528, 'footprint-holes':53247, 'footprint-rotated':65532}[case]
         assert fixture.worker('verify-'+last_case, physical)['valid_pixels'] == fixture.computed_expectation(last_case)['valid_pixels']
+        if case == 'footprint-rotated':
+            source = gdal.Open(str(tmp_path / ('utility-source-' + fixture.ROTATED_SOURCE)))
+            assert source.GetGeoTransform() == (110,.01,.004,20.32,.002,-.02)
+            assert source.RasterCount == 3 and source.GetRasterBand(3).GetColorInterpretation() == gdal.GCI_AlphaBand
+            source = None
         if case == 'footprint-holes':
             polygons = result['features'][0]['geometry']['coordinates']
             assert len(polygons) == 2 and sum(len(polygon)-1 for polygon in polygons) == 1

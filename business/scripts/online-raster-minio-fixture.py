@@ -27,6 +27,8 @@ SUITE = 'raster-workflow'
 CONTAINERS = ('addp-raster-source', 'addp-raster-target', 'addp-raster-fixture-worker', 'addp-raster-cleanup-proxy')
 MINIO_IMAGE = 'addp-minio:RELEASE.2025-10-15T17-29-55Z'
 TRANSFORM = (110, .01, 0, 20.32, 0, -.01)
+ROTATED_TRANSFORM = (110, .01, .004, 20.32, .002, -.02)
+ROTATED_SOURCE = 'multiband-rotated.tif'
 SIZE = 256
 ANGULAR_METRE = math.degrees(1 / 6378137)
 SPATIAL_SOURCE_TRANSFORM = (0, ANGULAR_METRE, 0, SIZE * ANGULAR_METRE, 0, -ANGULAR_METRE)
@@ -40,14 +42,14 @@ RECLASS_CASES = ('reclassify-nodata', 'reclassify-keep')
 AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum', 'aggregate-min', 'aggregate-max')
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
-FOOTPRINT_CASES = ('footprint-any', 'footprint-all', 'footprint-band-2', 'footprint-holes')
+FOOTPRINT_CASES = ('footprint-any', 'footprint-all', 'footprint-band-2', 'footprint-holes', 'footprint-rotated')
 TILE_WINDOWS = {'r0_c0': (0, 0, 160, 160), 'r0_c160': (160, 0, 96, 160),
                 'r160_c0': (0, 160, 160, 96), 'r160_c160': (160, 160, 96, 96)}
 UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
 NON_COG_SOURCE = 'non-cog.tif'
 SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
-                ('multiband-average-finite.tif', False, -9999.))
+                ('multiband-average-finite.tif', False, -9999.), (ROTATED_SOURCE, False, float('nan')))
 TILE_FAILURE_PREFIX = 'tiles-write-failure'
 TILE_FAILURE_KEY = 'r0_c160'
 TILE_CLEANUP_CASES = {'tiles-cleanup-mid': ('r0_c0', 1), 'tiles-cleanup-final': ('r160_c160', 4)}
@@ -339,7 +341,16 @@ def aggregate_pixels(case_name, band=1, level=1):
 def footprint_source_name(case_name):
     if case_name not in FOOTPRINT_CASES:
         raise FixtureError('unknown footprint case')
-    return 'clip-outside.cog.tif' if case_name == 'footprint-holes' else 'multiband.tif'
+    return (ROTATED_SOURCE if case_name == 'footprint-rotated' else
+            'clip-outside.cog.tif' if case_name == 'footprint-holes' else 'multiband.tif')
+
+
+def footprint_transform(case_name):
+    return source_transform(footprint_source_name(case_name), False)
+
+
+def source_transform(name, spatial):
+    return ROTATED_TRANSFORM if name == ROTATED_SOURCE else SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM
 
 
 def footprint_pixels(case_name):
@@ -350,7 +361,7 @@ def footprint_pixels(case_name):
         # The accepted outside-clip COG contains a hole and its valid central island.
         yield from (value is not None for value in outside_pixels('clip-outside'))
         return
-    invalid_cells = {'footprint-any': (2,), 'footprint-all': (0, 1, 2), 'footprint-band-2': (1, 2)}[case_name]
+    invalid_cells = {'footprint-any': (2,), 'footprint-all': (0, 1, 2), 'footprint-band-2': (1, 2), 'footprint-rotated': (2,)}[case_name]
     for row in range(SIZE):
         for column in range(SIZE):
             cell = (row // 2) * (SIZE // 2) + column // 2
@@ -742,7 +753,7 @@ def write_source_raster(path, name, spatial, source_nodata):
     pixel_formula = average_pixels if name.startswith('multiband-average') else multiband_pixels
     band_count = 3 if multiband else 2
     dataset = gdal.GetDriverByName('GTiff').Create(str(path), SIZE, SIZE, band_count, gdal.GDT_Float64)
-    dataset.SetGeoTransform(SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
+    dataset.SetGeoTransform(source_transform(name, spatial))
     crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
     dataset.SetProjection(crs.ExportToWkt())
     for index in range(1, band_count + 1):
@@ -856,7 +867,7 @@ def worker(action, path):
                     or (multiband and index == 3 and band.GetColorInterpretation() != gdal.GCI_AlphaBand)):
                     raise FixtureError('workflow modified its source pixels/NoData')
             reference = osr.SpatialReference(); reference.ImportFromEPSG(4326)
-            if (source.GetGeoTransform() != (SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM)
+            if (source.GetGeoTransform() != source_transform(name, spatial)
                 or source.RasterCount != (3 if multiband else 2) or not osr.SpatialReference(source.GetProjection()).IsSame(reference)):
                 raise FixtureError('workflow modified source georeferencing/bands')
         spatial = action.startswith('verify-mosaic-')
