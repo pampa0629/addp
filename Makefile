@@ -205,7 +205,8 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
 	@bash -n business/hdfs/start.sh scripts/test/common-hdfs-gate.sh
-	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; services=json.load(sys.stdin)["services"]; nn=services["hdfs-namenode"]; dn=services["hdfs-datanode"]; assert "@sha256:" in nn["image"] and nn["image"] == dn["image"]; assert nn["ports"][0]["host_ip"] == "127.0.0.1"; assert all(str(p["target"]) == p["published"] for p in dn["ports"]); assert nn["volumes"][1]["source"] != dn["volumes"][1]["source"]'
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; services=json.load(sys.stdin)["services"]; nn=services["hdfs-namenode"]; dn=services["hdfs-datanode"]; assert "@sha256:" in nn["image"] and nn["image"] == dn["image"]; assert all(p["host_ip"] == "127.0.0.1" for s in (nn,dn) for p in s["ports"]); assert all(s["environment"]["HDFS_DATANODE_HOST"] == "host.docker.internal" for s in (nn,dn)); assert all(str(p["target"]) == p["published"] for p in dn["ports"]); assert nn["volumes"][1]["source"] != dn["volumes"][1]["source"]'
+	@! rg -q 'HDFS_SHARED_HOST|ipconfig getifaddr|ip route get' business/docker-compose.yml business/scripts/start.sh business/.env.example
 	@sh -n business/redis/start.sh business/redis/init.sh
 	@bash -n scripts/test/business-redis-gate.sh scripts/test/common-redis-gate.sh scripts/test/redis-owned-fixture.sh scripts/test/common-redis-contract.sh
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["redis"]; assert s["ports"][0]["host_ip"] == "127.0.0.1"; assert "@sha256:" in s["image"]; assert "redis_data" == s["volumes"][0]["source"]'

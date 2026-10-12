@@ -33,12 +33,12 @@ services:
     entrypoint: ["bash", "/addp/hdfs/start.sh", "namenode"]
     environment:
       HDFS_RPC_URI: hdfs://hdfs-namenode:8020
-      HDFS_DATANODE_HOST: ${HDFS_SHARED_HOST:-127.0.0.1}
+      HDFS_DATANODE_HOST: host.docker.internal
       HDFS_DATA_PORT: ${HDFS_DATA_PORT:-9866}
       HDFS_DATA_HTTP_PORT: ${HDFS_DATA_HTTP_PORT:-9864}
     ports:
       - "127.0.0.1:${HDFS_WEB_PORT:-9870}:9870"
-      - "${HDFS_SHARED_HOST:-127.0.0.1}:${HDFS_RPC_PORT:-8020}:8020"
+      - "127.0.0.1:${HDFS_RPC_PORT:-8020}:8020"
     volumes:
       - ./hdfs:/addp/hdfs:ro
       - hdfs_name:/data/name
@@ -52,12 +52,12 @@ services:
     entrypoint: ["bash", "/addp/hdfs/start.sh", "datanode"]
     environment:
       HDFS_RPC_URI: hdfs://hdfs-namenode:8020
-      HDFS_DATANODE_HOST: ${HDFS_SHARED_HOST:-127.0.0.1}
+      HDFS_DATANODE_HOST: host.docker.internal
       HDFS_DATA_PORT: ${HDFS_DATA_PORT:-9866}
       HDFS_DATA_HTTP_PORT: ${HDFS_DATA_HTTP_PORT:-9864}
     ports:
-      - "${HDFS_SHARED_HOST:-127.0.0.1}:${HDFS_DATA_PORT:-9866}:${HDFS_DATA_PORT:-9866}"
-      - "${HDFS_SHARED_HOST:-127.0.0.1}:${HDFS_DATA_HTTP_PORT:-9864}:${HDFS_DATA_HTTP_PORT:-9864}"
+      - "127.0.0.1:${HDFS_DATA_PORT:-9866}:${HDFS_DATA_PORT:-9866}"
+      - "127.0.0.1:${HDFS_DATA_HTTP_PORT:-9864}:${HDFS_DATA_HTTP_PORT:-9864}"
     volumes:
       - ./hdfs:/addp/hdfs:ro
       - hdfs_data:/data/data

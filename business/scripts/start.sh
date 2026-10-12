@@ -310,6 +310,18 @@ if [ -f .env ]; then
 fi
 
 # 3. 检测 CPU 架构
+if [ "$ENABLE_HDFS" = true ]; then
+    python3 - <<'PY'
+import socket
+try:
+    address = socket.gethostbyname('host.docker.internal')
+except OSError:
+    raise SystemExit('HDFS 本机部署需要 /etc/hosts 映射: 127.0.0.1 host.docker.internal')
+if address != '127.0.0.1':
+    raise SystemExit('HDFS 本机部署的 host.docker.internal 必须解析为 127.0.0.1')
+PY
+fi
+
 ARCH=$(uname -m)
 echo -e "${YELLOW}🔍 检测 CPU 架构: ${ARCH}${NC}"
 
@@ -533,21 +545,11 @@ if [ "$ENABLE_CLICKHOUSE" = true ]; then
     fi
 fi
 
-# HDFS requires one host reachable by both host Driver and container Executors.
+# Docker Desktop resolves the same stable hostname in both host and containers.
 if [ "$ENABLE_HDFS" = true ]; then
-    if [ -z "${HDFS_SHARED_HOST:-}" ]; then
-        if command -v route >/dev/null 2>&1 && command -v ipconfig >/dev/null 2>&1; then
-            hdfs_interface=$(route -n get default 2>/dev/null | awk '/interface:/ {print $2; exit}')
-            HDFS_SHARED_HOST=$(ipconfig getifaddr "$hdfs_interface" 2>/dev/null || true)
-        elif command -v ip >/dev/null 2>&1; then
-            HDFS_SHARED_HOST=$(ip route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1);exit}}')
-        fi
-    fi
-    [ -n "${HDFS_SHARED_HOST:-}" ] && [ "$HDFS_SHARED_HOST" != 127.0.0.1 ] || { echo "HDFS_SHARED_HOST 必须是 Driver 与 Worker 均可达的宿主机地址" >&2; exit 1; }
-    export HDFS_SHARED_HOST
     docker compose up -d hdfs-namenode hdfs-datanode
     docker compose run --rm --no-deps hdfs-samples
-    echo "✓ HDFS Simple 样例已就绪: WebHDFS=http://127.0.0.1:${HDFS_WEB_PORT:-9870}, RPC=hdfs://${HDFS_SHARED_HOST}:${HDFS_RPC_PORT:-8020}, root=/addp, user=addp_business_reader"
+    echo "✓ HDFS Simple 样例已就绪: WebHDFS=http://127.0.0.1:${HDFS_WEB_PORT:-9870}, RPC=hdfs://host.docker.internal:${HDFS_RPC_PORT:-8020}, root=/addp, user=addp_business_reader"
 fi
 
 # Redis

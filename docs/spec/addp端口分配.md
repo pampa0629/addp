@@ -43,7 +43,7 @@ Spark Workflow 本地开发使用原生进程，HTTP 以 `WORKFLOW_BIND_HOST=127
 
 ## Business (业务库)
 
-HDFS Simple 实验实例通过 `business/scripts/start.sh -hdfs` 启动：NameNode WebHDFS 首选 `9870`（只绑定回环），原生 RPC 首选 `8020`；DataNode 数据传输 `9866` 和 HTTP `9864`。RPC 和两个 DataNode 端口只绑定 `HDFS_SHARED_HOST` 指定的宿主机可达 IP，供宿主机 Driver 与容器 Worker 共用；DataNode 两个端口在容器内外必须一致，不能仅发布 NameNode。四个端口由 `business/.env` 显式配置，冲突失败。System 登记 `webhdfs_endpoint=http://127.0.0.1:<实际 Web 端口>`、`rpc_uri=hdfs://<共享宿主地址>:<实际 RPC 端口>`、`root_path=/addp`、`authentication=simple`、`user=addp_business_reader`；容器部署须使用容器实际可达的 Web 端点。T2 的独占集群没有宿主端口，Go 测试与 Spark Driver 在同一门禁网络内运行，不复用个人 Business 集群。
+HDFS Simple 本机 Docker Desktop 实验实例通过 `business/scripts/start.sh -hdfs` 启动：NameNode WebHDFS 首选 `9870`，原生 RPC 首选 `8020`；DataNode 数据传输 `9866` 和 HTTP `9864`。四个宿主端口均只绑定 `127.0.0.1`；DataNode 公布稳定主机名 `host.docker.internal`，宿主机须配置 `127.0.0.1 host.docker.internal`，容器使用 Docker Desktop 内置解析。启动入口先验证本机映射，不检测或保存笔记本局域网 IP。DataNode 两个端口在容器内外必须一致，不能仅发布 NameNode。四个端口由 `business/.env` 显式配置，冲突失败。System 登记 `webhdfs_endpoint=http://127.0.0.1:<实际 Web 端口>`、`rpc_uri=hdfs://host.docker.internal:<实际 RPC 端口>`、`root_path=/addp`、`authentication=simple`、`user=addp_business_reader`，换网无需修改连接。其他部署由部署方提供实际可达地址；T2 的独占集群没有宿主端口，Go 测试与 Spark Driver 在同一门禁网络内运行，不复用个人 Business 集群。
 
 - Redis: `6380`（容器端口 `6379`，独立 Business 实例，只开放 DB 0）
 - PostgreSQL: `5433`

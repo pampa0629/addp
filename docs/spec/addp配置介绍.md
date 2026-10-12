@@ -35,7 +35,7 @@ macOS 本地 Docker Desktop 的唯一宿主通道输入为 `ADDP_METRICS_DESKTOP
 
 共享 Meilisearch 固定使用 `1.54.3` 的多架构镜像摘要与独立命名卷 `meilisearch_data_v1543`。旧版本的 `meilisearch_data` 卷只作为历史回滚材料保留，不再作为当前 Compose 挂载路径；升级必须从已核验 dump 导入空的新卷，不能让新二进制打开旧卷。镜像与卷绑定均由基础设施 Compose 唯一定义，不新增运行时配置或双轨服务。
 
-HDFS 首版固定 Simple 开发实验模式。引擎连接的 `webhdfs_endpoint`、`rpc_uri`、`root_path`、`authentication`、`user` 由插件 `ConnectionSpec` 唯一定义；首版 RPC 必须为具体 `hdfs://host:port`，不支持 HA nameservice。Spark 应用部署以 `HADOOP_USER_NAME` 固定 Hadoop 用户，不能按资源切换共享会话的身份；读取前验证当前 Java UGI 用户与引擎 `user` 一致。Business 的 `HDFS_SHARED_HOST` 和四个监听端口归 `business/.env`，不进入平台普通配置，也不保存到工作流任务。Simple 的用户名声明不构成安全认证。
+HDFS 首版固定 Simple 开发实验模式。引擎连接的 `webhdfs_endpoint`、`rpc_uri`、`root_path`、`authentication`、`user` 由插件 `ConnectionSpec` 唯一定义；首版 RPC 必须为具体 `hdfs://host:port`，不支持 HA nameservice。Spark 应用部署以 `HADOOP_USER_NAME` 固定 Hadoop 用户，不能按资源切换共享会话的身份；读取前验证当前 Java UGI 用户与引擎 `user` 一致。Business 本机 Docker Desktop 实例的四个监听端口归 `business/.env`，均发布到 `127.0.0.1`；DataNode 公布 `host.docker.internal`，宿主机通过 `/etc/hosts` 的回环映射消费同一主机名，容器使用 Docker 内置解析。删除 `HDFS_SHARED_HOST` 与局域网 IP 自动检测，不保存随换网变化的地址；启动前验证宿主机映射。部署地址不进入平台普通配置，也不保存到工作流任务。Simple 的用户名声明不构成安全认证。
 
 PointCloud、Document 的 HTTP 监听地址由部署入口通过 `WORKFLOW_BIND_HOST` 注入，默认 `0.0.0.0`，用于普通 bridge/Compose 容器内监听。Hosted Online 原生 Linux 使用宿主网络时，标准开发入口固定注入 `127.0.0.1`，并以 `PORT` 指定实际开发端口；`RUNTIME_HOST` 与 `RUNTIME_PUBLIC_PORT` 仍只负责自注册地址，不用于控制监听。该配置随进程启动生效，不保存到业务配置或根 `.env`。
 

@@ -491,7 +491,7 @@ Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169297656]
 
 在仓库根运行 `bash business/scripts/start.sh -hdfs`，启动固定官方 Hadoop 3.5.0 NameNode 与 DataNode，并使用固定 Spark 3.5.0 容器幂等生成样例。数据保留在两个独立 volume；`stop.sh -hdfs`、`restart.sh -hdfs` 沿用同一标准生命周期，不重新格式化已有 NameNode。初始化只更新 `/addp/samples/orders.csv`、`orders.json`、`orders.parquet` 和根文件 `/addp/订单 100%.csv`；每份 20 条订单，金额总和 2100，其他业务文件不变。
 
-WebHDFS 首选回环端口 9870，原生 RPC 首选 8020。DataNode 数据端口 9866 与 HTTP 端口 9864 在容器内外保持一致，并广播 `HDFS_SHARED_HOST` 指定的宿主机地址；RPC 与 DataNode 只绑定该地址，不能只开放 NameNode。该地址必须由宿主机 Go 服务、Spark Driver 和容器 Worker 同时访问；标准入口在配置留空时检测宿主机可达 IPv4，配置四个端口发生冲突时直接失败。换网后检查地址，并在 System 编辑同一引擎实例的连接事实。
+本机 Docker Desktop 部署的 WebHDFS 首选端口 9870，原生 RPC 首选 8020；DataNode 数据端口 9866 与 HTTP 端口 9864 在容器内外保持一致。四个宿主端口均只绑定 `127.0.0.1`，DataNode 广播稳定主机名 `host.docker.internal`。宿主机需在 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，容器继续使用 Docker Desktop 内置解析；标准入口在启动前验证宿主机映射。宿主机 Go 服务、Spark Driver 和容器 Worker 使用同一主机名访问 RPC 与 DataNode，换 Wi-Fi、VPN 或局域网 IP 后无需重绑端口或修改 System 连接。删除 `HDFS_SHARED_HOST` 和自动检测局域网 IP 的旧逻辑；四个端口冲突直接失败。其他部署由部署方提供实际可达的地址，不复用此本机部署的地址假设。
 
 System 中选择独立 `hdfs` 引擎：填写启动输出的 `webhdfs_endpoint` 和 `rpc_uri`，`root_path=/addp`、`authentication=simple`、`user=addp_business_reader`。根目录不进入 locator；例如 `samples/orders.parquet` 保持 `type=file`。Spark 计算集群单独选择，源文件通过已授权 locator 在执行时派生原生 HDFS URI；任务不保存连接参数。Spark Workflow 部署设置 `HADOOP_USER_NAME=addp_business_reader`，Worker 使用同一应用用户；身份不符或 HDFS 保存请求会被拒绝。Simple 是开发实验的主体声明，首版不提供 Kerberos、HA、YARN、MapReduce 或 HDFS 写回。
 
