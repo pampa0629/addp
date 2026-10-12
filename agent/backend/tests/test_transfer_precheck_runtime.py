@@ -16,6 +16,7 @@ import httpx
 from addp_common.client import Message
 
 from agents.checkpoint import confirm_selection
+from agents.main_agent import _load_skill_registry
 from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, prepare_review
 from graph.factory import AgentFactory
 from tests.test_deerflow_runtime import _InferenceFixture, _call, _model
@@ -61,7 +62,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "desired_state": "stopped", "schedule": "", "enabled": False,
         })
 
-    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行"):
+    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行", skill_body="fixture"):
         client = _InferenceFixture(responses)
         events = []
         async def transport(owner, method, path, **kwargs):
@@ -72,7 +73,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     "skill_name": "transfer-generation", "user_request": user_request, "context_summary": "",
                     "user_id": 1, "tenant_id": 1, "token": "private-user-token", "agent_run_id": "precheck-run",
                     "checkpoint": self.checkpoint, "accept_language": accept_language,
-                }, skill_body="fixture", allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],
+                }, skill_body=skill_body, allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],
                 max_iterations=3, llm=_model(client),
             ):
                 events.append(event)
@@ -214,6 +215,8 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.checkpoint["confirmed"]["operation_reviews"], {})
 
     async def test_explicit_draft_check_preserves_array_field_without_review_or_write(self):
+        registry = _load_skill_registry()
+        skill_body = registry["transfer-generation"].load_body(registry)
         arguments = copy.deepcopy(self.arguments)
         arguments["config"]["source"]["query"]["statement"] = json.dumps({
             "aggregate": "events", "pipeline": [{"$project": {"id": "$_id", "status": 1, "members": 1, "_id": 0}}],
@@ -225,8 +228,15 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             events, client = await self.run_factory([
                 Message(role="assistant", tool_calls=[_call(CHECK_TOOL, arguments)]),
                 Message(role="assistant", content="正式检查已返回，仍只展示草稿"),
-            ], user_request="检查配置，只给草稿，不创建、不运行")
+            ], user_request="检查配置，只给草稿，不创建、不运行", skill_body=skill_body)
             with self.subTest(status=status):
+                # Check production Skill composition reaches the actual Harness model.
+                # Scripted replies do not prove a free model will stay concise.
+                prompt = "\n".join(m.content for m in client.calls[1]["messages"] if m.role == "system")
+                self.assertEqual(prompt.count("默认只给草稿概要和检查解释"), 1)
+                self.assertIn("不逐项重列检查范围、未检查项、运行时要求或字段诊断", prompt)
+                self.assertIn("用户明确要求详细说明", prompt)
+                self.assertNotIn("按正式报告解释 supported、unsupported、unknown、字段诊断、未检查项及运行要求", prompt)
                 checks = [r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks"]
                 self.assertEqual(len(checks), 1)
                 source = checks[0][2]["json"]["config"]["source"]
@@ -234,6 +244,8 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(project["members"], 1)
                 feedback = json.loads(next(m.content for m in client.calls[1]["messages"] if m.role == "tool"))
                 self.assertEqual(feedback["status"], status)
+                for key in ("checked", "not_checked", "runtime_checks_required", "diagnostics"):
+                    self.assertEqual(feedback[key], self.check_result[key])
                 self.assertEqual(self.writes(), [])
                 self.assertFalse(any(e.kind == "interaction_required" for e in events))
                 presentations = [e.payload for e in events if e.kind == "presentation"]

@@ -26,6 +26,8 @@ Transfer 的行粒度和字段保留范围分开处理：不展开数组不授�
 
 正式 Transfer 配置预检的固定报告由 Runtime 从已验证 owner 响应产生 `TransferConfigCheckReport` Presentation，显式草稿检查与自动检查共用路径。只投影状态、检查时间、范围和完整诊断，不带主体、绑定哈希或业务数据，不发 action。消息 parts 与安全回放保存同一快照；历史报告不代表当前权限或执行成功。LLM 只解释/修正，服务失败不能生成 unknown 卡片。共享实现与 Transfer 向导共用，现有 Agent eval、共享组件、Agent/Transfer 浏览器与构建门禁覆盖；本次非破坏性 Catalog 扩充不改变既有 props、创建条件或权限。
 
+报告后的默认短答方法只由 `transfer-generation` Skill 维护，Runtime 仅说明卡片来源并引用该方法；不要求模型另列完整检查范围。默认草稿概要加关键检查解释，用户明确要求详解时可展开；完整 Tool 诊断仍提供给模型，创建条件、修正流程与固定报告不变。预检 Harness 回归加载生产 Skill 组合，核对短答指导进入模型和三态下诊断完整，但不把脚本化模型输出当作真实简洁性验收。
+
 ```
 agent/
 ├── authorization/
