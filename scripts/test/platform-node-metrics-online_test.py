@@ -630,6 +630,26 @@ class MetricsProtocolTest(unittest.TestCase):
             for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
+            for family in ONLINE.DEVICE_RATE_FAMILIES:
+                with self.subTest(counter_family=list(family)):
+                    gap = copy.deepcopy(next(row for row in rows if row["path"] == ONLINE.OBSERVATIONS and set(row["query"]["metrics"].split(",")) == set(family)))
+                    for series in gap["value"]["series"]:
+                        series["points"][0].update(data_state="no_data", value=None, sampled_at=None)
+                    intermittent = copy.deepcopy(report)
+                    intermittent["resources"].append(gap)
+                    self.assertEqual(ONLINE.validate_resource_browser(intermittent, expected, artifacts)["result"], "passed")
+                    unavailable = copy.deepcopy(intermittent)
+                    for row in unavailable["resources"]:
+                        if row["path"] == ONLINE.OBSERVATIONS and set(row["query"]["metrics"].split(",")) == set(family):
+                            for series in row["value"]["series"]:
+                                series["points"][0].update(data_state="no_data", value=None, sampled_at=None)
+                    with self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.validate_resource_browser(unavailable, expected, artifacts)
+                    for field, value in (("value", 0), ("sampled_at", gap["value"]["end"])):
+                        invalid = copy.deepcopy(intermittent)
+                        invalid["resources"][-1]["value"]["series"][0]["points"][0][field] = value
+                        with self.subTest(invalid_gap_field=field), self.assertRaises(ONLINE.SuiteError):
+                            ONLINE.validate_resource_browser(invalid, expected, artifacts)
             mutations = [lambda v: v.update(result="failed"), lambda v: v.update(run_id="other-run"),
                          lambda v: v.update(summaries=[]), lambda v: v.update(summaries=v["summaries"]*5),
                          lambda v: v["summaries"][0]["query"].update(node_ids="foreign"),

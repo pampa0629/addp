@@ -656,8 +656,6 @@ def validate_resource_browser(value, expected, artifacts):
         require(set(dims) == required_dimensions, "browser selector mismatch")
         assert_resources(resource, expected["node"], expected["target"], trend, keys, range_seconds=duration, dimensions=dims, require_fresh=trend or set(keys) not in (set(INODE_METRICS), set(DISK_METRICS), set(NETWORK_METRICS)))
         if not trend and set(keys) == set(INODE_METRICS): require(fresh_resource_groups(resource, INODE_METRICS), "browser inode table has no supported fresh mount")
-        if not trend and set(keys) == set(DISK_METRICS): require(fresh_resource_groups(resource, DISK_METRICS), "browser disk table has no fresh device")
-        if not trend and set(keys) == set(NETWORK_METRICS): require(fresh_resource_groups(resource, NETWORK_METRICS), "browser network table has no fresh interface")
         require(resource["policy_version"] == expected["policy_version"], "browser ignored current query budget")
         if trend:
             end = utc_timestamp(query.get("end"))
@@ -666,6 +664,10 @@ def validate_resource_browser(value, expected, artifacts):
             trends.append((keys[0], duration))
         else:
             instants.append(resource)
+    # Each counter frame retains strict state validation; the run must witness a complete device for each family.
+    for family in DEVICE_RATE_FAMILIES:
+        require(any(set(row["metric_key"] for row in item["series"]) == set(family)
+                    and fresh_resource_groups(item, family) for item in instants), "browser counter family has no fresh device: " + ",".join(family))
     require(any(set(row["metric_key"] for row in item["series"]) == set(FILESYSTEM_METRICS) for item in instants), "browser mount table evidence missing")
     require(any(set(row["metric_key"] for row in item["series"]) == set(INODE_METRICS) for item in instants), "browser inode table evidence missing")
     require(any(set(row["metric_key"] for row in item["series"]) == set(DISK_METRICS) for item in instants), "browser disk table evidence missing")
