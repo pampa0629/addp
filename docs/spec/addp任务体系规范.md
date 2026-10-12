@@ -1047,6 +1047,8 @@ Orchestrator 用户与 TaskProvider 执行读取必须同时限定可信 Tenant�
 
 过程事件首个实现切片使用闭合结构：`kind` 为 `started|progress|completed|failed|cancelled|timeout|truncated`，`step_id` 只保存已有步骤身份，`counters` 只接受非负整数进度计数；不接受自由文本消息、参数、业务值、checkpoint 或授权引用。事件时间由写入端生成，Tenant、module、task type 和 attempt 从锁定的 execution 派生。bounded 写入必须在同一事务锁定并验证当前有效 lease（含 owner）；每个 execution + attempt 每 UTC 日最多 1000 条，最后一条为截断标记。读取使用 ID 游标，每页最多 100 条，复用 execution 的 Owner 读取裁决，并返回 30 天保留窗口。事件按写入时间滚动清理；System 的公共存储维护循环分批执行，不删除 execution 概览、步骤结果、专业结果或操作审计。Orchestrator lease 收敛已于 2026-10-02 确认；概览引用裁决的范围尚待确认，不能借此增加无 lease 写入或直接删除概览的路径。
 
+Transfer continuous 的事件与对应 execution 状态／进展在同一 Infra PostgreSQL 事务提交。Common 只负责锁定 execution、闭合输入、事件时间、每日预算和存储；Transfer 必须先锁定任务、execution 和 Runtime lease，再以 Owner 裁决回调校验 Tenant、transfer/sync、continuous、任务与 execution 归属、owner、fencing token 和锁等待后的有效期，不能套用 bounded lease 或无裁决追加。PostgreSQL 使用锁定后取得的 `clock_timestamp()` 校验有效期，不使用事务开始时间。首次 claim 统一写入 attempt 1，并记录 started；已有 started_at 且 attempt 为 0 的 continuous 记录通过标准 execution store 迁移规范化为 1；每次恢复创建新的 execution，只有实际 claim 后才记录其 started。提交进展只记录累计 records_read / records_written，不复制 partition、position、业务值或心跳。worker 的 completed / failed / cancelled / timeout 只允许当前有效 Runtime lease；暂停／停止允许当前 owner 完成 cancelled，但禁止继续提交进展。过期或不存在 lease 的遗留 running execution 由持有任务与 execution 锁的 supervisor 记录 failed；错误详情保存稳定 `lease_expired` 码用于安全失败归类，结构阻塞保存 `schema_change_blocked` 码；未领取的 pending 取消仅保留取消概览（attempt 0，没有运行过程）；暂停／停止后的遗留 running 执行由任务 Owner 裁决 cancelled（不自动恢复，任务回到 idle，保留 desired_state），不授权过期 worker 写入。已终止执行不重复追加终态，schema-change 的终态投影修订仍沿既有领域事实，不制造第二次运行。预算耗尽不阻断状态或进展提交，事件存储失败则回滚同事务事实；心跳和诊断采样不追加事件。仍复用同一读取授权与 30 天维护清理，专业结果与操作审计生命周期不变。
+
 Monitor 不拥有任务定义。Monitor 聚合观察：
 
 | 层级 | 来源 | 监控内容 |

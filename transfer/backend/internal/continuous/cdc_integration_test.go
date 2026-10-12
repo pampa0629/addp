@@ -223,7 +223,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(700000+suffix%90000), 700001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, cdcDataTaskConfig(schema, sourceTable, target))
-	defer cleanupCDCDataInfraRows(infraDB, task.ID)
+	defer cleanupCDCDataInfraRows(t, infraDB, task.ID)
 
 	execution := cdcDataStartTaskViaAPI(t, apiRouter, task.ID)
 	resource, err := captureRepo.GetLatest(ctx, task.ID, task.TenantID)
@@ -882,7 +882,9 @@ func waitCDCDataRow(t *testing.T, ctx context.Context, runnerDone <-chan error, 
 	}
 }
 
-func cleanupCDCDataInfraRows(db *gorm.DB, taskID uint) {
+func cleanupCDCDataInfraRows(t *testing.T, db *gorm.DB, taskID uint) {
+	t.Helper()
+	cleanupContinuousEventFacts(t, db, taskID)
 	var task models.TransferTask
 	_ = db.First(&task, taskID).Error
 	_ = db.Where("task_id = ?", taskID).Delete(&models.RuntimeLease{}).Error

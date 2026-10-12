@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func TestExecutionEventsAgainstPostgres(t *testing.T) {
@@ -32,6 +33,91 @@ func TestExecutionEventsAgainstPostgres(t *testing.T) {
 	if err := EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("continuous_attempt_migration_and_owner_event_budget", func(t *testing.T) {
+		content, err := migrationFiles.ReadFile("migrations/014_continuous_execution_attempt.sql")
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC()
+		items := []TaskExecution{
+			{TenantID: 7, ExecutionID: uuid.NewString(), Module: ModuleTransfer, TaskType: TaskTypeSync, Source: ModuleTransfer, Status: ExecutionStatusRunning, TriggerType: TriggerTypeManual, ExecutionBoundary: ExecutionBoundaryContinuous, StartedAt: &now},
+			{TenantID: 7, ExecutionID: uuid.NewString(), Module: ModuleTransfer, TaskType: TaskTypeSync, Source: ModuleTransfer, Status: ExecutionStatusPending, TriggerType: TriggerTypeManual, ExecutionBoundary: ExecutionBoundaryContinuous},
+			{TenantID: 7, ExecutionID: uuid.NewString(), Module: ModuleMeta, TaskType: TaskTypeScan, Source: ModuleMeta, Status: ExecutionStatusRunning, TriggerType: TriggerTypeManual, ExecutionBoundary: ExecutionBoundaryBounded, StartedAt: &now},
+		}
+		if err := db.Create(&items).Error; err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{items[0].ExecutionID, items[1].ExecutionID, items[2].ExecutionID}
+		t.Cleanup(func() {
+			for _, model := range []interface{}{&Event{}, &TaskExecution{}} {
+				if err := db.Where("execution_id IN ?", ids).Delete(model).Error; err != nil {
+					t.Error(err)
+				}
+				var count int64
+				if err := db.Model(model).Where("execution_id IN ?", ids).Count(&count).Error; err != nil || count != 0 {
+					t.Errorf("continuous fixture remaining=%d err=%v", count, err)
+				}
+			}
+		})
+		if err := db.Exec(string(content)).Error; err != nil {
+			t.Fatal(err)
+		}
+		for i := range items {
+			if err := db.First(&items[i], items[i].ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			if i == 0 {
+				want = 1
+			}
+			if items[i].Attempt != want {
+				t.Fatalf("migration item %d attempt=%d want=%d", i, items[i].Attempt, want)
+			}
+		}
+		seed := make([]Event, MaxDailyAttemptEvents-1)
+		for i := range seed {
+			seed[i] = Event{ExecutionID: items[0].ExecutionID, TenantID: 7, Module: ModuleTransfer, TaskType: TaskTypeSync, Attempt: 1, OccurredAt: now, Kind: "progress", Counters: models.JSONMap{}}
+		}
+		if err := db.CreateInBatches(seed, 100).Error; err != nil {
+			t.Fatal(err)
+		}
+		admit := func(item TaskExecution, writeTime time.Time) error {
+			if item.ExecutionID != items[0].ExecutionID || item.Attempt != 1 || writeTime.Before(now) {
+				return errors.New("owner rejected locked identity")
+			}
+			return nil
+		}
+		var wg sync.WaitGroup
+		results := make(chan error, 8)
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results <- db.Transaction(func(tx *gorm.DB) error {
+					var locked TaskExecution
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&locked, items[0].ID).Error; err != nil {
+						return err
+					}
+					return AppendContinuousEvent(t.Context(), tx, locked.ExecutionID, EventInput{Kind: "progress", Counters: map[string]int64{"records_written": 5}}, admit)
+				})
+			}()
+		}
+		wg.Wait()
+		close(results)
+		for err := range results {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		var count int64
+		if err := db.Model(&Event{}).Where("execution_id = ?", items[0].ExecutionID).Count(&count).Error; err != nil || count != MaxDailyAttemptEvents {
+			t.Fatalf("continuous budget=%d err=%v", count, err)
+		}
+		denied := errors.New("owner revoked fencing")
+		if err := AppendContinuousEvent(t.Context(), db, items[0].ExecutionID, EventInput{Kind: "progress"}, func(TaskExecution, time.Time) error { return denied }); !errors.Is(err, denied) {
+			t.Fatalf("budget bypassed admission=%v", err)
+		}
+	})
 	item := TaskExecution{TenantID: 7, ExecutionID: uuid.NewString(), Module: ModuleMeta, TaskType: TaskTypeScan, Source: ModuleMeta,
 		Status: ExecutionStatusPending, TriggerType: TriggerTypeManual, ExecutionBoundary: ExecutionBoundaryBounded, SourceTaskID: NewSourceTaskIDFromUint(42)}
 	if err := db.Create(&item).Error; err != nil {

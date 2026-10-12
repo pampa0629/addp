@@ -274,3 +274,61 @@ func TestEventStepIdentityIsIndependentOfDisplayBudget(t *testing.T) {
 		t.Fatal("unsafe event identity was not omitted")
 	}
 }
+
+func TestContinuousEventsRequireOwnerAdmissionAndShareClosedStorage(t *testing.T) {
+	db := newLeaseTestDB(t)
+	item := execution.TaskExecution{TenantID: 7, ExecutionID: "continuous-event", Module: "transfer", TaskType: "sync", Source: "transfer", Status: "running", TriggerType: "manual", ExecutionBoundary: "continuous", Attempt: 1,
+		Metadata: commonModels.JSONMap{"checkpoint": "private-position", "lease_token": "private-token"}}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	denied := errors.New("owner fencing rejected")
+	for _, input := range []execution.EventInput{{Kind: "progress", Counters: map[string]int64{"records_written": 3}}, {Kind: "progress", Counters: map[string]int64{"position": 3}}, {Kind: "progress", Counters: map[string]int64{"records_read": -1}}, {Kind: "progress", StepID: "unknown"}} {
+		if err := execution.AppendContinuousEvent(t.Context(), db, item.ExecutionID, input, func(execution.TaskExecution, time.Time) error { return denied }); err == nil {
+			t.Fatalf("invalid admission accepted: %#v", input)
+		}
+	}
+	if err := execution.AppendContinuousEvent(t.Context(), db, item.ExecutionID, execution.EventInput{Kind: "progress"}, nil); err == nil {
+		t.Fatal("missing owner accepted")
+	}
+	admitted := func(locked execution.TaskExecution, now time.Time) error {
+		if locked.TenantID != 7 || locked.Attempt != 1 || locked.ExecutionID != item.ExecutionID || now.IsZero() || now.Location() != time.UTC {
+			t.Fatalf("invalid locked facts: %#v %v", locked, now)
+		}
+		return nil
+	}
+	rollback := errors.New("owner progress failed")
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := execution.AppendContinuousEvent(t.Context(), tx, item.ExecutionID, execution.EventInput{Kind: "progress", Counters: map[string]int64{"records_written": 3}}, admitted); err != nil {
+			return err
+		}
+		return rollback
+	}); !errors.Is(err, rollback) {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Model(&execution.Event{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("rollback count=%d err=%v", count, err)
+	}
+	if err := execution.AppendContinuousEvent(t.Context(), db, item.ExecutionID, execution.EventInput{Kind: "progress", Counters: map[string]int64{"records_written": 3}}, admitted); err != nil {
+		t.Fatal(err)
+	}
+	var events []execution.Event
+	if err := db.Find(&events).Error; err != nil || len(events) != 1 {
+		t.Fatalf("events=%#v err=%v", events, err)
+	}
+	if events[0].TenantID != 7 || events[0].Module != "transfer" || events[0].TaskType != "sync" || len(events[0].Counters) != 1 || events[0].Counters["records_written"] == nil {
+		t.Fatalf("event=%#v", events[0])
+	}
+	for _, state := range []struct {
+		boundary, status string
+		attempt          int
+	}{{"bounded", "running", 1}, {"continuous", "success", 1}, {"continuous", "running", 0}} {
+		if err := db.Model(&item).Updates(map[string]interface{}{"execution_boundary": state.boundary, "status": state.status, "attempt": state.attempt}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := execution.AppendContinuousEvent(t.Context(), db, item.ExecutionID, execution.EventInput{Kind: "progress"}, admitted); err == nil {
+			t.Fatalf("invalid active identity accepted: %#v", state)
+		}
+	}
+}

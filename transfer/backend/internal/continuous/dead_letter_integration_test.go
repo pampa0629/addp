@@ -104,6 +104,7 @@ func TestIntegrationContinuousKafkaDeadLetterSkipAndCAS(t *testing.T) {
 	}
 	defer admin.DeleteTopics(context.Background(), dlqTopic)
 	defer func() {
+		cleanupContinuousEventFacts(t, infraDB, task.ID)
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.DeadLetter{}).Error
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.SyncState{}).Error

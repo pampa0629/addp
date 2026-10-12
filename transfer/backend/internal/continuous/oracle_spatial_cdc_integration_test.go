@@ -186,7 +186,7 @@ func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(910000+suffix%80000), 910001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, oracleSpatialCDCDataTaskConfig(tableName, target))
-	defer cleanupCDCDataInfraRows(infraDB, task.ID)
+	defer cleanupCDCDataInfraRows(t, infraDB, task.ID)
 	if err := infraDB.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("auto_scan_metadata", false).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +401,7 @@ func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(930000+suffix%60000), 930001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, oracleCDCNativeTypeTaskConfig(tableName, target))
-	defer cleanupCDCDataInfraRows(infraDB, task.ID)
+	defer cleanupCDCDataInfraRows(t, infraDB, task.ID)
 	if err := infraDB.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("auto_scan_metadata", false).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +615,7 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(900000+suffix%90000), 900001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, oracleSpatialCDCDataTaskConfig(tableName, target))
-	defer cleanupCDCDataInfraRows(infraDB, task.ID)
+	defer cleanupCDCDataInfraRows(t, infraDB, task.ID)
 
 	execution := cdcDataStartTaskViaAPI(t, apiRouter, task.ID)
 	resource, err := captureRepo.GetLatest(ctx, task.ID, task.TenantID)

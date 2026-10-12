@@ -16,7 +16,7 @@ import (
 const EventRetention = 30 * 24 * time.Hour
 const MaxDailyAttemptEvents = 1000
 
-// Event contains only bounded diagnostic facts. Identity comes from the locked execution.
+// Event contains only closed diagnostic facts. Identity comes from the locked execution.
 type Event struct {
 	ID          int64          `json:"id" gorm:"primaryKey;autoIncrement"`
 	ExecutionID string         `json:"execution_id" gorm:"not null"`
@@ -161,8 +161,43 @@ func AppendBoundedEvent(ctx context.Context, db *gorm.DB, lease Lease, input Eve
 	})
 }
 
-// The caller holds the execution row lock and has checked its active or expired lease.
-// Admission, daily budget and closed event storage are shared by both transitions.
+// AppendContinuousEvent shares event storage with runtimes whose fencing belongs to an owner.
+// The owner must hold its task, execution and runtime ownership locks in an outer
+// transaction. authorize checks those locked facts against the fresh write clock;
+// associated state/progress changes must use that same transaction. Common never
+// reads an owner's private lease tables or accepts a writer without admission.
+func AppendContinuousEvent(ctx context.Context, db *gorm.DB, executionID string, input EventInput, authorize func(TaskExecution, time.Time) error) error {
+	if err := validateEvent(input); err != nil {
+		return err
+	}
+	if db == nil || executionID == "" || authorize == nil {
+		return fmt.Errorf("continuous event requires a database, execution and owner admission")
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var item TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("execution_id = ? AND execution_boundary = ?", executionID, ExecutionBoundaryContinuous).First(&item).Error; err != nil {
+			return err
+		}
+		if item.TenantID <= 0 || item.Module == "" || item.TaskType == "" ||
+			item.Status != ExecutionStatusRunning || item.Attempt <= 0 {
+			return fmt.Errorf("continuous event requires an active execution identity")
+		}
+		now := time.Now().UTC()
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+				return err
+			}
+			now = now.UTC()
+		}
+		if err := authorize(item, now); err != nil {
+			return err
+		}
+		return appendLockedEvent(tx, item, input, now)
+	})
+}
+
+// The caller holds the execution row lock and has checked runtime ownership.
+// Admission, daily budget and closed storage are shared by both execution boundaries.
 func appendLockedEvent(tx *gorm.DB, item TaskExecution, input EventInput, now time.Time) error {
 	if input.StepID != "" {
 		steps, _ := asDiagnosticObject(item.Metadata["step_results"])
@@ -172,7 +207,7 @@ func appendLockedEvent(tx *gorm.DB, item TaskExecution, input EventInput, now ti
 	}
 	var count int64
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	if err := tx.Model(&Event{}).Where("execution_id = ? AND attempt = ? AND occurred_at >= ?", item.ExecutionID, item.Attempt, dayStart).Count(&count).Error; err != nil {
+	if err := tx.Model(&Event{}).Where("execution_id = ? AND attempt = ? AND occurred_at >= ? AND occurred_at < ?", item.ExecutionID, item.Attempt, dayStart, dayStart.Add(24*time.Hour)).Count(&count).Error; err != nil {
 		return err
 	}
 	if count >= MaxDailyAttemptEvents {

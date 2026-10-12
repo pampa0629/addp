@@ -74,9 +74,9 @@ Transfer 将 checkpoint 观测信息写入 `metadata`：
 
 ## 四、执行过程事件和错误
 
-bounded 执行的开始、批次计数和终态写入共享 `common.execution_events`，按 execution + attempt 关联，并在当前有效租约下写入。事件只保存闭合类型和非负整数计数，不保存 source offset、checkpoint marker、自由文本或业务数据。每个 attempt 每 UTC 日最多 1000 条（含截断标记）；接口使用 ID 游标，每页最多 100 条。Monitor 和 Transfer 复用共享运行过程组件，不从日志文字推断后处理结果。
+bounded 执行的开始、批次计数和终态，以及 continuous 的实际 claim、累计提交计数和终态，写入共享 `common.execution_events`，按 execution + attempt 关联，bounded 在当前有效 execution lease 下写入，continuous 由 Transfer 的 Runtime lease/fencing 同事务裁决；过期终态由 Owner supervisor 收敛，未开始的 pending 取消只保留概览。事件只保存闭合类型和非负整数计数，不保存 source offset、checkpoint marker、自由文本或业务数据。每个 attempt 每 UTC 日最多 1000 条（含截断标记）；接口使用 ID 游标，每页最多 100 条。Monitor 和 Transfer 复用共享运行过程组件，不从日志文字推断后处理结果。
 
-过程事件保留 30 天，由 System 的公共存储维护循环分批清理。概览和步骤暂不自动删除；180 天概览目标仍待 Owner 引用裁决落地。连续执行暂未接入事件，不允许绕过既有 fencing 写入。错误事实继续位于 `error_details`，Monitor 只提供安全投影，领域诊断由 Transfer 负责。
+过程事件保留 30 天，由 System 的公共存储维护循环分批清理。概览和步骤暂不自动删除；180 天概览目标仍待 Owner 引用裁决落地。连续执行复用相同事件与保留规则，不允许绕过既有 fencing 写入。错误事实继续位于 `error_details`，Monitor 只提供安全投影，领域诊断由 Transfer 负责。
 
 Backend schema 版本 2 单向删除历史 `metadata.execution_logs` 和 `error_details.logs`，保留其他字段。旧文本不转换为结构化事实，不再保留日志 API 或追加路径。
 

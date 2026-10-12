@@ -135,7 +135,7 @@ func runIntegrationDatabaseCDCToOracleTargetLifecycle(t *testing.T, sourceType s
 	taskService.SetSchemaChangeInspector(capturePlanResolver)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(940000+suffix%50000), 940001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, databaseCDCToOracleTargetTaskConfig(sourceNamespace, sourceTable, target))
-	defer cleanupCDCDataInfraRows(infraDB, task.ID)
+	defer cleanupCDCDataInfraRows(t, infraDB, task.ID)
 	if err := infraDB.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("auto_scan_metadata", false).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -256,6 +256,11 @@ func (r *TaskRepository) FinalizeContinuousStop(ctx context.Context, taskID, ten
 				return err
 			}
 			if err == nil && (execution.Status == commonExecution.ExecutionStatusPending || execution.Status == commonExecution.ExecutionStatusRunning) {
+				if execution.Status == commonExecution.ExecutionStatusRunning {
+					if err := appendContinuousUnownedEvent(tx, task, execution, "cancelled", true); err != nil {
+						return err
+					}
+				}
 				metadata := execution.Metadata
 				if metadata == nil {
 					metadata = commonModels.JSONMap{}

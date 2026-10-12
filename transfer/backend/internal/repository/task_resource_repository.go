@@ -75,7 +75,7 @@ func (r *TaskResourceRepository) DeleteTaskAndPrivateState(
 		if activeLeases > 0 {
 			return ErrTaskDeletionRuntimeActive
 		}
-		cancelled, err := cancelTaskExecutionsForCleanup(tx, tenantID, taskID, now)
+		cancelled, err := cancelTaskExecutionsForCleanup(tx, task, now)
 		if err != nil {
 			return err
 		}
@@ -107,7 +107,8 @@ func (r *TaskResourceRepository) DeleteTaskAndPrivateState(
 	return stats, err
 }
 
-func cancelTaskExecutionsForCleanup(tx *gorm.DB, tenantID, taskID uint, now time.Time) (int64, error) {
+func cancelTaskExecutionsForCleanup(tx *gorm.DB, task models.TransferTask, now time.Time) (int64, error) {
+	tenantID, taskID := task.TenantID, task.ID
 	var executions []commonExecution.TaskExecution
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ?",
@@ -118,6 +119,11 @@ func cancelTaskExecutionsForCleanup(tx *gorm.DB, tenantID, taskID uint, now time
 	}
 	var cancelled int64
 	for _, execution := range executions {
+		if execution.ExecutionBoundary == commonExecution.ExecutionBoundaryContinuous && execution.Status == commonExecution.ExecutionStatusRunning {
+			if err := appendContinuousUnownedEvent(tx, task, execution, "cancelled", true); err != nil {
+				return cancelled, err
+			}
+		}
 		metadata := execution.Metadata
 		if metadata == nil {
 			metadata = commonModels.JSONMap{}

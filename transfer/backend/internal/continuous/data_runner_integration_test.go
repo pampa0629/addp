@@ -95,6 +95,7 @@ func TestIntegrationContinuousKafkaToPostgresMultiWorkerFailoverPauseResumeStop(
 		t.Fatalf("create continuous task: %v", err)
 	}
 	defer func() {
+		cleanupContinuousEventFacts(t, infraDB, task.ID)
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.SyncState{}).Error
 		_ = infraDB.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error
@@ -429,4 +430,18 @@ func integrationEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// Execution summaries are retained by production cleanup. Test fixtures explicitly
+// remove their own process events before deleting their execution summaries.
+func cleanupContinuousEventFacts(t *testing.T, db *gorm.DB, taskID uint) {
+	t.Helper()
+	ids := db.Model(&commonExecution.TaskExecution{}).Select("execution_id").Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(taskID))
+	if err := db.Where("execution_id IN (?)", ids).Delete(&commonExecution.Event{}).Error; err != nil {
+		t.Error(err)
+	}
+	var count int64
+	if err := db.Model(&commonExecution.Event{}).Where("execution_id IN (?)", ids).Count(&count).Error; err != nil || count != 0 {
+		t.Errorf("continuous event fixture residual=%d err=%v", count, err)
+	}
 }

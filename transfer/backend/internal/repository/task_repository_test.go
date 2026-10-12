@@ -229,6 +229,8 @@ func TestFinalizeContinuousStopCancelsExecutionAfterLeaseExpiry(t *testing.T) {
 	repo := NewTaskRepository(db)
 	task := createTaskRepositoryTestTask(t, db, 7, "expired-stop")
 	execution := claimTestExecution(task, "expired-stop-execution")
+	execution.ExecutionBoundary = commonExecution.ExecutionBoundaryContinuous
+	execution.Attempt = 1
 	execution.Status = commonExecution.ExecutionStatusRunning
 	if err := db.Create(&execution).Error; err != nil {
 		t.Fatal(err)
@@ -421,12 +423,16 @@ func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 }
 
 func claimTestExecution(task models.TransferTask, executionID string) commonExecution.TaskExecution {
+	boundary := commonExecution.ExecutionBoundaryBounded
+	if runtime, ok := task.Config["runtime"].(map[string]interface{}); ok && runtime["boundary"] == commonExecution.ExecutionBoundaryContinuous {
+		boundary = commonExecution.ExecutionBoundaryContinuous
+	}
 	now := time.Now()
 	return commonExecution.TaskExecution{
 		TenantID: int(task.TenantID), ExecutionID: executionID, Module: commonExecution.ModuleTransfer,
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), Status: commonExecution.ExecutionStatusPending,
-		TriggerType: commonExecution.TriggerTypeManual, CreatedAt: now, UpdatedAt: now,
+		TriggerType: commonExecution.TriggerTypeManual, ExecutionBoundary: boundary, CreatedAt: now, UpdatedAt: now,
 	}
 }
 
