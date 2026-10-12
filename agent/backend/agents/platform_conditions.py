@@ -35,18 +35,22 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def config_arguments_digest(arguments: dict) -> str:
+    return hashlib.sha256(_json(arguments).encode()).hexdigest()
+
+
 def capture_config_check(arguments: dict, report: dict, checkpoint: dict) -> dict:
     """Only the formal Tool adapter calls this with its actual arguments/result."""
     if list(Draft202012Validator(get_tool(CHECK_TOOL).output_schema).iter_errors(report)):
         _fail("invalid_config_check")
-    evidence = {"arguments_digest": hashlib.sha256(_json(arguments).encode()).hexdigest(), "report": copy.deepcopy(report)}
+    evidence = {"arguments_digest": config_arguments_digest(arguments), "report": copy.deepcopy(report)}
     checkpoint["observed"]["config_checks"][CREATE_TOOL] = evidence
     return {"config_checks": [copy.deepcopy(evidence)]}
 
 
 def config_check_report(arguments: dict, checkpoint: dict) -> dict:
     evidence = checkpoint["observed"]["config_checks"].get(CREATE_TOOL, {})
-    if evidence.get("arguments_digest") != hashlib.sha256(_json(arguments).encode()).hexdigest():
+    if evidence.get("arguments_digest") != config_arguments_digest(arguments):
         _fail("readonly_config_check")
     report = evidence.get("report")
     if not isinstance(report, dict) or list(Draft202012Validator(get_tool(CHECK_TOOL).output_schema).iter_errors(report)):

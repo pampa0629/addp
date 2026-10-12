@@ -61,6 +61,12 @@ def transfer_config_check_surface(surface_id: str, presentation: dict[str, Any])
     return _surface(surface_id, {"component": "TransferConfigCheckReport", "report": presentation["report"]})
 
 
+def transfer_draft_snapshot_surface(surface_id: str, presentation: dict[str, Any]) -> list[dict[str, Any]]:
+    return _surface(surface_id, {"component": "TransferDraftSnapshot", **{
+        key: presentation[key] for key in ("reference", "name", "parameters", "mappings")
+    }})
+
+
 def clarification_surface(
     surface_id: str,
     *,

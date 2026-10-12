@@ -27,6 +27,9 @@ class AgentState(TypedDict):
     routed_skill: Optional[str]   # 技能名称；None 表示无需技能
     direct_reply: Optional[str]   # 无需技能时的直接回复内容（来自同一次 LLM 调用）
     needs_platform_semantics: NotRequired[bool]
+    draft_catalog: NotRequired[List[Dict[str, str]]]
+    inspect_draft: NotRequired[bool]
+    draft_ref: NotRequired[Optional[str]]
 
 
 class TaskContext(TypedDict):
@@ -46,6 +49,8 @@ class TaskContext(TypedDict):
 class RouteDecision(BaseModel):
     """路由 + 直接回复的结构化输出 Schema（单次 LLM 调用）"""
 
+    inspect_draft: bool = Field(default=False, description="用户只解释已有草稿时为 true，不修改、创建或运行；与其他路线互斥；无唯一可读引用时仍为 true，但 draft_ref 为 null。")
+    draft_ref: Optional[str] = Field(default=None, description="只选近期受信任草稿目录的确切 reference；缺失或有歧义时为 null，不能从正文推测。")
     skill: Optional[str] = Field(
         default=None,
         description=(

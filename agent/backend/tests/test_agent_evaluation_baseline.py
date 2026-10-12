@@ -61,6 +61,18 @@ def _tool_call(stable_name, arguments=None, call_id="call-1"):
 
 
 class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
+    def test_checked_draft_presentation_is_classified_without_fake_business_effects(self):
+        from agents.events import AgentEvent
+        from services.drafts import draft_snapshot, draft_presentation
+        from tests.test_drafts import checked_step
+
+        phase = phase_from_events("draft_snapshot", "fixture", "completed", [
+            AgentEvent(kind="presentation", payload=draft_presentation(draft_snapshot(checked_step())))
+        ], owner_effects={"tasks_created": 0, "business_rows_written": 0}, persisted_state={})
+        self.assertEqual(phase["presentations"], ["TransferDraftSnapshot"])
+        self.assertEqual(phase["tools"], [])
+        self.assertEqual(phase["owner_effects"]["tasks_created"], 0)
+
     def test_all_scenarios_use_the_single_versioned_contract(self):
         scenario_paths = sorted(SCENARIOS_ROOT.glob("*/scenario.yaml"))
         scenario_names = {path.parent.name for path in scenario_paths}

@@ -8,6 +8,7 @@ import ResourcePicker from './components/ResourcePicker.vue'
 import TablePreview from './components/TablePreview.vue'
 import WorkflowDag from './components/WorkflowDag.vue'
 import TransferConfigCheckReport from './components/TransferConfigCheckReport.vue'
+import TransferDraftSnapshot from './components/TransferDraftSnapshot.vue'
 import { isTransferConfigCheckReport } from '../../../basic/src/utils/transferConfigCheckReport.mjs'
 
 export const ADDP_A2UI_CATALOG_ID = 'addp.catalog/v1'
@@ -28,6 +29,22 @@ const TransferConfigCheckReportApi = {
     message: 'configuration check report must be a bounded readonly projection'
   }) }).strict(),
   render: TransferConfigCheckReport
+}
+
+const TransferDraftSnapshotApi = {
+  name: 'TransferDraftSnapshot',
+  schema: z.object({
+    reference: z.string().regex(/^draft:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{64}$/),
+    name: z.string().min(1).max(200),
+    parameters: z.string().refine(value => new TextEncoder().encode(value).length <= 128 * 1024).refine(value => {
+      try { const parsed = JSON.parse(value); return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) } catch { return false }
+    }),
+    mappings: z.array(z.object({
+      source: z.string(), target: z.string(), target_type: z.string(),
+      nullable: z.boolean().nullable(), precision: z.number().int().nullable(), scale: z.number().int().nullable()
+    }).strict()).max(512)
+  }).strict().refine(value => new TextEncoder().encode(JSON.stringify(value)).length <= 256 * 1024),
+  render: TransferDraftSnapshot
 }
 
 const ClarificationChoiceApi = {
@@ -160,6 +177,7 @@ export function createAddpCatalog() {
     MapViewApi,
     TablePreviewApi,
     ResourcePickerApi,
-    TransferConfigCheckReportApi
+    TransferConfigCheckReportApi,
+    TransferDraftSnapshotApi
   ])
 }

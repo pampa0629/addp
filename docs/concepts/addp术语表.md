@@ -451,6 +451,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | AgentRun | 智能体运行 | Agent Runtime 为完成一次用户目标而持有的可暂停、恢复和审计的逻辑运行。 | 可以跨多个 AG-UI 请求或连接存在；不等同于 owner 模块 execution，也不以某个内存中的 LLM 调用为生命周期边界。 |
 | AgentCheckpoint | 智能体检查点 | AgentRun 在可恢复边界保存的语义状态快照。 | 只保存 owner Tool 已观察事实、用户已确认选择、待处理 Interaction 和恢复所需控制状态；不保存模型隐藏推理、完整大结果或框架私有内存对象。 |
 | AgentRunStep | 智能体运行步骤 | AgentRun 中一次可审计的 Tool 调用或 Runtime 控制动作记录。 | 保存稳定 Tool 名称、输入、状态、受限输出摘要、事实投影和时间；不是 owner 模块 execution step。 |
+| AgentDraftRef | 智能体草稿引用 | 对已完成正式预检步骤中精确配置参数及绑定报告的受限、带版本引用。 | 由 Agent Runtime 从持久步骤身份与参数摘要构造；仅同一 User、Tenant 和 Session 内可读取历史快照，不是任务、创建确认、当前能力或运行授权，不写入静态本体。 |
 | AgentRunEvent | 智能体运行事件 | AgentRun 向客户端输出的、可按序重放的安全协议事件记录。 | 以 run 内单调 sequence 排序；仅保存文本、状态、Tool 进度和 Presentation 等可重建投影，不保存 Tool 原始参数、原始结果、模型隐藏推理或框架私有状态。 |
 | Agent Evaluation Scenario | 智能体评测场景 | 以版本化输入、运行轨迹和结构化断言验证 Agent Runtime 行为的可重复评测契约。 | 黄金场景位于 `evals/agent-scenarios/`；断言 Skill、Tool、Interaction、稳定错误、AgentRun/owner 副作用和数据安全边界，不按自然语言逐字匹配。 |
 | Agent Evaluation Report | 智能体评测报告 | 统一门禁或报告比较生成的版本化、安全审计输出。 | 只保存稳定状态、源码身份、契约/证据审计绑定和受限差异，不复制在线 trace、审批上下文、原始 Tool 结果或 Token。 |

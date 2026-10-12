@@ -189,6 +189,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
             patch("api.chat.create_agent_run", new=AsyncMock(return_value=SimpleNamespace(id=run_id, checkpoint={}))),
             patch("api.chat._load_agent_history", new=AsyncMock(return_value=([{"role": "user", "content": "Outdoor"}], 1))),
+            patch("api.chat.list_session_drafts", new=AsyncMock(return_value=[])),
             patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(db)),
             patch("api.chat.set_run_context_metrics", new=AsyncMock()),
             patch("api.chat.create_run_step", new=AsyncMock(return_value=SimpleNamespace(id=42))),
@@ -367,6 +368,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
               patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
               patch("api.chat.create_agent_run", new=AsyncMock(return_value=SimpleNamespace(id=run_id, checkpoint={}))),
               patch("api.chat._load_agent_history", new=AsyncMock(return_value=([{"role": "user", "content": "只检查草稿"}], 1))),
+              patch("api.chat.list_session_drafts", new=AsyncMock(return_value=[])),
               patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(db)),
               patch("api.chat.set_run_context_metrics", new=AsyncMock()),
               patch("api.chat.set_run_status", new=AsyncMock()) as status,
@@ -382,6 +384,57 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(part["content"], activity["content"])
         self.assertEqual(part["content"]["operations"][1]["updateComponents"]["components"][0]["report"]["status"], "unknown")
         self.assertEqual(status.await_args.kwargs["status"], "completed")
+
+    async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(self):
+        from ag_ui.core import RunAgentInput
+        from agents.events import AgentEvent
+        from api.chat import chat
+        from services.drafts import draft_snapshot
+        from tests.test_drafts import checked_step
+
+        step = checked_step()
+        snapshot = draft_snapshot(step)
+        db = _MessageDB()
+        request = SimpleNamespace(state=SimpleNamespace(principal_id=1, tenant_id=1, token="fixture"),
+                                  headers={}, is_disconnected=AsyncMock(return_value=False))
+        body = RunAgentInput.model_validate({"threadId": "12", "runId": "snapshot-protocol", "state": {}, "tools": [],
+            "context": [], "forwardedProps": {}, "messages": [{"id": "input", "role": "user", "content": "检查草稿"}]})
+
+        async def stream(*_args, **kwargs):
+            self.assertEqual(kwargs["draft_catalog"], [])
+            yield AgentEvent(kind="tool_start", payload={"tool_call_id": "check", "tool_name": step.tool_name, "args": step.input_data})
+            yield AgentEvent(kind="tool_result", payload={"tool_call_id": "check", "tool_name": step.tool_name, "content": "{}", "is_error": False})
+
+        with (patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary=""))),
+              patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
+              patch("api.chat.create_agent_run", new=AsyncMock(return_value=SimpleNamespace(id=uuid.uuid4(), checkpoint={}))),
+              patch("api.chat._load_agent_history", new=AsyncMock(return_value=([{"role": "user", "content": "检查草稿"}], 1))),
+              patch("api.chat.list_session_drafts", new=AsyncMock(return_value=[])),
+              patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(db)),
+              patch("api.chat.set_run_context_metrics", new=AsyncMock()),
+              patch("api.chat.set_run_status", new=AsyncMock()),
+              patch("api.chat.create_run_step", new=AsyncMock(return_value=step)),
+              patch("api.chat.complete_run_step", new=AsyncMock()) as complete,
+              patch("api.chat.read_checked_draft_step", new=AsyncMock(return_value=snapshot)) as restore,
+              patch("api.chat.append_run_event", new=AsyncMock(return_value=None)),
+              patch("api.chat.refresh_run_metrics", new=AsyncMock()),
+              patch("api.chat.maybe_update_summary", new=AsyncMock()),
+              patch("api.chat.stream_agent_response", new=stream)):
+            response = await chat(request, body, db=SimpleNamespace(commit=AsyncMock()))
+            chunks = [chunk async for chunk in response.body_iterator]
+        self.assertEqual(complete.await_args.kwargs["status"], "completed")
+        self.assertEqual(restore.await_args.kwargs, dict(session_id=12, user_id=1, tenant_id=1))
+        self.assertEqual(restore.await_args.args[1], step.id)
+        events = [json.loads(line[6:]) for chunk in chunks for line in chunk.splitlines() if line.startswith("data: ")]
+        activity = next(event for event in events if event["type"] == "ACTIVITY_SNAPSHOT")
+        part = next(part for part in db.added[0].parts if part["type"] == "presentation_ref")
+        self.assertEqual(part["content"], activity["content"])
+        self.assertEqual(replay_payload(activity)["content"], activity["content"])
+        component = activity["content"]["operations"][1]["updateComponents"]["components"][0]
+        self.assertEqual(component["reference"], snapshot["reference"])
+        self.assertEqual(json.loads(component["parameters"]), step.input_data)
+        self.assertEqual(component["mappings"][-1]["target_type"], "json")
+        self.assertNotIn("fixture-user", json.dumps(part))
 
     def test_replay_event_rejects_payload_over_total_byte_limit(self):
         with self.assertRaisesRegex(ValueError, "run event exceeds"):

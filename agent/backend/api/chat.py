@@ -57,6 +57,7 @@ from protocol.a2ui import (
     resource_picker_surface,
     table_preview_surface,
     transfer_config_check_surface,
+    transfer_draft_snapshot_surface,
     workflow_dag_surface,
 )
 from services.interactions import (
@@ -91,6 +92,8 @@ from services.runs import (
     update_run_checkpoint,
 )
 from services.runtime import run_cancellation_registry
+from services.drafts import DRAFT_INSPECT, list_session_drafts, read_session_draft, read_checked_draft_step, draft_presentation
+from agents.platform_conditions import CHECK_TOOL
 from utils.summary import maybe_update_summary
 
 router = APIRouter(prefix="", tags=["对话 | Chat"])
@@ -408,6 +411,14 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
     )
     agent_run_id = agent_run.id
     run_checkpoint = copy.deepcopy(agent_run.checkpoint)
+    draft_catalog = [] if resumed_from_interaction else await list_session_drafts(
+        db, session_id=session_id, user_id=user_id, tenant_id=tenant_id,
+    )
+
+    async def draft_reader(reference):
+        async with AsyncSessionLocal() as draft_db:
+            return await read_session_draft(draft_db, reference, session_id=session_id, user_id=user_id, tenant_id=tenant_id)
+
     encoder = EventEncoder(request.headers.get("accept"))
     async with AsyncSessionLocal() as metrics_db:
         async with metrics_db.begin():
@@ -424,6 +435,22 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
         text_started = False
         tool_steps: dict[str, Any] = {}
         cancellation_signal = run_cancellation_registry.activate(agent_run_id)
+
+        def present(presentation):
+            surface_id = f"surface:{uuid.uuid4()}"
+            builder = {
+                "workflow_dag": lambda: workflow_dag_surface(surface_id, presentation["workflow"]),
+                "table_preview": lambda: table_preview_surface(surface_id, presentation),
+                "map_view": lambda: map_view_surface(surface_id, presentation),
+                "transfer_config_check": lambda: transfer_config_check_surface(surface_id, presentation),
+                "transfer_draft_snapshot": lambda: transfer_draft_snapshot_surface(surface_id, presentation),
+            }.get(presentation.get("kind"))
+            if builder is None:
+                return None
+            content = {"operations": builder()}
+            parts.append({"type": "presentation_ref", "protocol": "a2ui", "catalog_id": "addp.catalog/v1",
+                          "surface_id": surface_id, "activity_type": _A2UI_ACTIVITY_TYPE, "content": content})
+            return ActivitySnapshotEvent(message_id=f"activity:{uuid.uuid4()}", activity_type=_A2UI_ACTIVITY_TYPE, content=content)
 
         async def emit(protocol_event: Any) -> str:
             event_payload = protocol_event.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -471,6 +498,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 checkpoint=run_checkpoint,
                 forced_skill_name=(agent_run.skill_name if resumed_from_interaction else None),
                 accept_language=request.headers.get("accept-language", "zh-cn"),
+                draft_catalog=draft_catalog, draft_reader=draft_reader,
             ):
                 if await request.is_disconnected():
                     if event.checkpoint_committed is not None and not event.checkpoint_committed.done():
@@ -573,7 +601,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                                 run_db,
                                 agent_run_id=agent_run_id,
                                 protocol_invocation_id=body.run_id,
-                                step_type="tool_call",
+                                step_type="runtime" if event.payload["tool_name"] == DRAFT_INSPECT else "tool_call",
                                 tool_call_id=tool_call_id,
                                 tool_name=str(event.payload["tool_name"]),
                                 input_data=_tool_input_projection(
@@ -637,39 +665,17 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                             role="tool",
                         )
                     )
+                    if event.payload.get("tool_name") == CHECK_TOOL and not event.payload.get("is_error") and tool_call_id in tool_steps:
+                        async with AsyncSessionLocal() as draft_db:
+                            snapshot = await read_checked_draft_step(draft_db, tool_steps[tool_call_id],
+                                session_id=session_id, user_id=user_id, tenant_id=tenant_id)
+                        yield await emit(present(draft_presentation(snapshot)))
                     continue
 
                 if event.kind == "presentation":
-                    surface_id = f"surface:{uuid.uuid4()}"
-                    presentation_kind = event.payload.get("kind")
-                    if presentation_kind == "workflow_dag":
-                        operations = workflow_dag_surface(surface_id, event.payload["workflow"])
-                    elif presentation_kind == "table_preview":
-                        operations = table_preview_surface(surface_id, event.payload)
-                    elif presentation_kind == "map_view":
-                        operations = map_view_surface(surface_id, event.payload)
-                    elif presentation_kind == "transfer_config_check":
-                        operations = transfer_config_check_surface(surface_id, event.payload)
-                    else:
-                        continue
-                    content = {"operations": operations}
-                    parts.append(
-                        {
-                            "type": "presentation_ref",
-                            "protocol": "a2ui",
-                            "catalog_id": "addp.catalog/v1",
-                            "surface_id": surface_id,
-                            "activity_type": _A2UI_ACTIVITY_TYPE,
-                            "content": content,
-                        }
-                    )
-                    yield await emit(
-                        ActivitySnapshotEvent(
-                            message_id=f"activity:{uuid.uuid4()}",
-                            activity_type=_A2UI_ACTIVITY_TYPE,
-                            content=content,
-                        )
-                    )
+                    activity = present(event.payload)
+                    if activity is not None:
+                        yield await emit(activity)
                     continue
 
                 if event.kind == "interaction_required":

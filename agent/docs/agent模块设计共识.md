@@ -62,6 +62,8 @@ PostgreSQL `agent` schema 当前包含：
 
 AgentRun 使用唯一语义恢复路线：
 
+已完成预检的草稿由 Runtime 以 AgentDraftRef 引用既有 `run_steps.input` 与同参 `facts.config_checks`，不新增数据库表或第二份可编辑配置。后续纯解释作为新 Run 按需读取同一 User/Tenant/Session 的历史快照，不复制旧 checkpoint 或创建确认。路由模型选择受信任近期引用，Runtime 单独审计只读 `draft.inspect` 并固定展示原参数／映射；缺失、错版、损坏和越界引用不从正文重建。修改配置仍进入原平台语义与 Skill 路径；完整契约见交互协议规范 3.4。
+
 1. 新用户目标创建 `agent.runs`，状态进入 `running`。
 2. owner Tool 返回的引擎和 locator 等紧凑事实写入 `checkpoint.observed`，Tool 调用写入 `run_steps`。
 3. 创建澄清或 owner approval 投影时，Interaction 通过 `agent_run_id` 关联 AgentRun，run 状态进入 `waiting`。
@@ -76,11 +78,11 @@ Interaction resume 沿用 AgentRun 已记录的 Skill 和 Tool 白名单，不�
 
 聊天文字在唯一 pending 澄清下也通过 Interaction resume 恢复原 Run。服务端对唯一精确匹配的选项采用规范候选事实，其他文字只进入模型补充上下文，不写入确认事实。创建复核文字使旧复核失效，不能代替确认按钮；owner approval 仍只由 owner 状态检查恢复。完整契约见交互协议规范 5.1。
 
-Transfer 的配置草稿展示与创建前最终复核分开。用户只要求查看草稿、确认配置且明确不要创建时，模型仍可取证和澄清配置缺口，但应以普通回复展示草稿并结束本轮，不发出 `transfer_create_review` 或“确认创建”选项。只有用户明确要求创建任务，才进入绑定确切参数的最终创建复核。该规则是模型交互指令，不是确定性的自然语言授权解析器；实际创建仍受既有 Runtime 复核指纹、Tool 契约及 owner 权限校验约束。
+Transfer 的配置草稿展示与创建前最终复核分开。用户只要求查看草稿、确认配置且明确不要创建时，模型仍可取证和澄清配置缺口；正式预检完成后的精确参数由 Runtime 固定展示，模型补充解释并结束本轮，不发出 `transfer_create_review` 或“确认创建”选项。未经正式预检的候选仍由模型提出，不能伪装成已预检快照。只有用户明确要求创建任务，才进入绑定确切参数的最终创建复核。该规则是模型交互指令，不是确定性的自然语言授权解析器；实际创建仍受既有 Runtime 复核指纹、Tool 契约及 owner 权限校验约束。
 
 最终创建复核的提示和确认／取消按钮由 Runtime 统一生成，不采用模型填写的展示文案。提示区分当前条件适配器与 Tool 契约已完成的检查，以及尚未完成的目标类型适配、实际值转换和写入可执行性验证；不把源结构事实当作完整业务值保证。确认仅尝试创建未启动任务，仍由 Transfer 校验权限与配置，不运行任务。展示词条由 Agent i18n 持有，按当前 HTTP `Accept-Language` 传入 Harness；语言与按钮文案不参与参数指纹。普通草稿仍由模型生成，不得宣称未经 owner 证实的可执行性。
 
-断线重连只回放同一 AgentRun 的 `run_events`，并以客户端已处理的 sequence 为游标；事件表不保存 Tool 参数或原始结果。取消仅停止 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 内以新的协议调用 ID 追加事件。
+断线重连只回放同一 AgentRun 的 `run_events`，并以客户端已处理的 sequence 为游标；事件表不保存通用 Tool 参数事件或原始结果。已预检草稿仅通过受限 `TransferDraftSnapshot` Presentation 保存可展示的精确参数与映射，权限和上限以交互协议规范为准。取消仅停止 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 内以新的协议调用 ID 追加事件。
 
 消息 parts 支持：
 

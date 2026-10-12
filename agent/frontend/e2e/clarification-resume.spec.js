@@ -24,6 +24,19 @@ function checkReport(status) {
     ] } }] }
 }
 
+function checkedDraftPart() {
+  const surface = 'surface:checked-draft'
+  return { type: 'presentation_ref', protocol: 'a2ui', catalog_id: 'addp.catalog/v1', surface_id: surface,
+    content: { operations: [
+      { version: 'v0.9', createSurface: { surfaceId: surface, catalogId: 'addp.catalog/v1' } },
+      { version: 'v0.9', updateComponents: { surfaceId: surface, components: [{ id: 'root', component: 'TransferDraftSnapshot',
+        reference: `draft:cccccccc-cccc-cccc-cccc-cccccccccccc:${'a'.repeat(64)}`, name: 'readonly_persons',
+        parameters: JSON.stringify({ name: 'readonly_persons', config: { target: { name: 'persons_check', apply_policy: 'replace' } } }, null, 2),
+        mappings: [{ source: 'members', target: 'members', target_type: 'json', nullable: null, precision: null, scale: null }]
+      }] } }
+    ] } }
+}
+
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', error => { throw error })
 })
@@ -45,7 +58,7 @@ function completed(message) {
   message.parts.find(part => part.type === 'interaction_ref').status = 'completed'
 }
 
-async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null } = {}) {
+async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false } = {}) {
   const question = clarification(questionId, '请选择行粒度', [{ label: '展开数组', value: 'unwind' }])
   const review = clarification(reviewId, `仅创建，不运行。请复核配置。\n\n${unknownWarning}\n\n\`\`\`json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n\`\`\``, reviewOptions)
   review.parts.splice(1, 0, checkReport('unknown').parts[0])
@@ -78,6 +91,7 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
         const expectedGoal = draftReportStatus ? draftGoal : goal
         expect(input.messages[0]).toMatchObject({ role: 'user', content: expectedGoal })
         current = draftReportStatus ? checkReport(draftReportStatus) : question
+        if (checkedDraft) current.parts.unshift(checkedDraftPart())
         messages.push({ id: 'goal', role: 'user', parts: [{ type: 'text', text: expectedGoal }] }, current)
       } else if (requests.length === 2) {
         expect(input.messages).toEqual([])
@@ -143,6 +157,32 @@ test('short goal → reloaded text resume → reloaded review → cancel, with t
   await expect(page.getByRole('button', { name: reviewOptions[0].label, exact: true })).toHaveCount(0)
   expect(backend.requests).toHaveLength(3)
   expect(new Set(backend.requests.map(input => input.runId)).size).toBe(3) // protocol IDs, not business Run IDs
+  expect(backend.unexpected).toEqual([])
+})
+
+test('exact checked draft streams and reloads without rebuilding parameters or sending owner requests', async ({ page }) => {
+  const backend = await installBackend(page, { draftReportStatus: 'unknown', checkedDraft: true })
+  await page.setViewportSize({ width: 620, height: 900 })
+  await page.goto(`/module-ui/agent/sessions/${sessionId}`)
+  await page.getByRole('textbox').fill(draftGoal)
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  const panel = page.getByTestId('transfer-draft-snapshot')
+  await expect(panel).toContainText('readonly_persons')
+  await expect(panel).toContainText('不代表已保存任务、已创建目标表或当前运行授权')
+  await expect(panel.locator('button')).toHaveCount(0)
+  await panel.locator('summary').filter({ hasText: '精确字段映射' }).click()
+  await expect(panel.getByText('json', { exact: true })).toBeVisible()
+  await panel.locator('summary').filter({ hasText: '完整预检参数' }).click()
+  await expect(panel.locator('pre')).toContainText('"apply_policy": "replace"')
+  const parameters = await panel.locator('pre').textContent()
+  const reference = await panel.locator('.draft-reference').textContent()
+  expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.reload()
+  await expect(panel.locator('.draft-reference')).toHaveText(reference)
+  await panel.locator('summary').filter({ hasText: '完整预检参数' }).click()
+  await expect(panel.locator('pre')).toHaveText(parameters)
+  await expect(panel.locator('button')).toHaveCount(0)
+  expect(backend.requests).toHaveLength(1)
   expect(backend.unexpected).toEqual([])
 })
 

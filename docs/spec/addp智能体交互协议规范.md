@@ -52,6 +52,14 @@ running|waiting -> cancelled
 
 AgentRunStep 记录稳定 Tool 或 Runtime 动作、协议调用 ID、ToolCall ID、受限输入投影、输出摘要、事实投影、错误归因和时间。step facts 最大 128 KiB；输出摘要最大 2000 字符。
 
+### 3.4 草稿的稳定引用与只读解释
+
+AgentDraftRef 使用 `draft:<已完成步骤 UUID>:<参数 SHA-256>`，来源只允许正式 `transfer.task.config.check` 成功完成步骤的请求参数及 `facts.config_checks` 中的同参报告。恢复时重新核对当前 Manifest、完整参数摘要和报告契约；损坏、错版或未知引用拒绝，不从聊天文字、旧模型回复或当前资源结构重建原配置。它是 Agent Runtime 对历史输入的引用，不是 owner ResultRef、可编辑业务实体或新的平台 Tool。
+
+新 Run 只获得同一 User、Tenant、Session 已完成 Run 中最近八个已完成预检步骤的引用目录（不是全量目录）；路由模型只能选择目录中的确切引用。存在多个候选且指代不清时须询问，不自动选首项。具体快照按需经同一身份范围读取，既不复活终态 Run，也不复制其 checkpoint、确认或权限。查询引用不依赖业务模块当前可用，不调用 Owner API、重新预检、查询业务数据或创建任务；参数变化进入原 Skill 和正式预检路径，产生新引用。
+
+历史解释单独记录 Runtime `draft.inspect` 审计，只提供完整且有界的参数和去身份化报告给本次模型；不自动将旧事实注入其他业务执行。快照总量最多 128 KiB，超限拒绝而非截断。固定草稿 Presentation 从同一参数生成精确字段映射和完整参数展示，明确预检／保存任务定义不代表目标建表或实际执行。模型只补充解释，不重新推测已有映射。历史展示不保证当前结构、权限或能力仍有效，创建仍须重新读取事实、预检并绑定用户复核。
+
 ## 四、AG-UI 事件流
 
 ### 4.1 唯一入口
@@ -180,6 +188,7 @@ Catalog props 只允许声明式 JSON、稳定引用和受限展示参数。禁�
 | `MapView` | 展示受限 WGS84 GeoJSON。 | 最多 200 Feature、5000 个坐标值，不接受 URL。 |
 | `ResourcePicker` | 从持久化候选中选择 locator。 | 最多 50 个候选，只能提交当前 Interaction 中已有值。 |
 | `TransferConfigCheckReport` | 展示 Runtime 投影的正式只读配置预检快照。 | 每个范围数组最多 128 项、诊断最多 512 项、报告投影最多 128 KiB；不接受主体、绑定摘要、URL 或 action。Agent wrapper 与 Transfer 向导复用唯一共享报告组件。 |
+| `TransferDraftSnapshot` | 展示已预检草稿引用、精确字段映射与完整参数。 | 只读、无 action；最多 512 条映射、128 KiB 参数文本及 256 KiB 组件投影，复用共享表格与 JSON 展示；引用不表示确认或授权。 |
 
 `GraphView` 不在当前 Catalog 中。新增组件必须由评测场景证明需求，并同步升级 Catalog 契约和安全测试。
 

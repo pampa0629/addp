@@ -354,13 +354,15 @@ Manager 表格预览、容器内表格预览、Develop 查询结果、Workbench 
 
 - 使用官方 `@a2ui/web_core/v0_9` 处理 A2UI Surface；
 - 使用 `addp.catalog/v1` 注册受信任 Vue 组件；
-- 当前包含 `WorkflowDag`、`ClarificationChoice`、`ApprovalRequest`、`MapView`、`TablePreview`、`ResourcePicker` 和 `TransferConfigCheckReport`；
+- 当前包含 `WorkflowDag`、`ClarificationChoice`、`ApprovalRequest`、`MapView`、`TablePreview`、`ResourcePicker`、`TransferConfigCheckReport` 和 `TransferDraftSnapshot`；
 - 未注册组件会被拒绝，不执行 Agent 生成的任意前端代码；
 - A2UI wrapper 只映射声明式 props 和 action，业务事实仍通过 ResultRef / Interaction 访问 owner API。
 
 `MapView` 只渲染最多 200 个 WGS84 GeoJSON Feature，不接受 URL；`TablePreview` 只渲染最多 50 列、100 行 JSON 标量；`ResourcePicker` 只允许提交当前 Interaction 已持久化的 locator 候选，不等同于实时 `ResourceTreePicker`。
 
 组件扩展必须由 `docs/spec/addp智能体评测规范.md` 中的稳定场景驱动；当前未开放 `GraphView`，不得只为展示愿景注册空组件。
+
+`TransferDraftSnapshot` 对应既有 `platform-transfer-draft-check` 场景中的精确参数展示和后续只读解释，组合唯一 `TabularResultRenderer` 与 `JsonPreview`，不复制表格／JSON 渲染、不发 action 或请求。Runtime 提供绑定历史步骤和完整参数摘要的引用；组件只校验受限投影、展示映射及完整参数。Agent 既有前端门禁自动发现协议、双语、越界拒绝及真实 ChatView 的 SSE／刷新回放测试；后端引用身份隔离与损坏拒绝由 Agent eval 门禁覆盖。历史快照不等于 owner 当前事实或运行授权。
 
 消费模块必须在自己的 `package.json` 中声明 `@a2ui/web_core`、Vue、Element Plus 和 Zod 依赖，`common-frontend` 不保存独立 `node_modules`。
 

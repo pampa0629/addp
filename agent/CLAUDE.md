@@ -28,6 +28,8 @@ Transfer 的行粒度和字段保留范围分开处理：不展开数组不授�
 
 报告后的默认短答方法只由 `transfer-generation` Skill 维护，Runtime 仅说明卡片来源并引用该方法；不要求模型另列完整检查范围。默认草稿概要加关键检查解释，用户明确要求详解时可展开；完整 Tool 诊断仍提供给模型，创建条件、修正流程与固定报告不变。预检 Harness 回归加载生产 Skill 组合，核对短答指导进入模型和三态下诊断完整，但不把脚本化模型输出当作真实简洁性验收。
 
+正式预检步骤完成并持久化后，Runtime 从其精确输入与同参报告生成 `AgentDraftRef` 和只读 `TransferDraftSnapshot`，复用共享表格／JSON 展示。新 Run 纯解释已有草稿时，路由只选同用户／租户／会话近期受信任目录中的引用，由私有 Runtime `draft.inspect` 读取历史输入；不装配业务 Tool 或进入领域 Harness，不复制旧确认、checkpoint 或授权。缺失、损坏、参数摘要不符及越界引用失败关闭。候选生成／修改／创建仍走原平台语义、Skill 和 owner 路径。本轮后端 SQL 隔离测试使用内存 SQLite，仅属 T1；前端由既有 Agent Vitest、浏览器及构建门禁自动发现，不声称真实模型或 Hosted T4 已通过。
+
 ```
 agent/
 ├── authorization/

@@ -30,6 +30,16 @@
       "workflowGenerated": "Workflow generated",
       "presentationFailed": "Failed to render interface content",
       "presentation": {
+        "draft": {
+          "title": "Checked configuration snapshot",
+          "notice": "These exact historical check arguments do not establish a saved task, created table, or current execution permission.",
+          "reference": "Draft reference",
+          "mappings": "Exact field mappings",
+          "parameters": "Complete check arguments",
+          "unspecified": "Not specified",
+          "source": "Source field", "target": "Target field", "target_type": "Target standard type",
+          "nullable": "Nullable", "precision": "Precision", "scale": "Scale"
+        },
         "mapTruncated": "Map shows a bounded feature sample",
         "tableSummary": "Showing {visible} / {total} rows",
         "truncated": "Bounded sample only",
