@@ -43,6 +43,8 @@ GeoPython 原生开发入口固定 HTTP 监听回环与实际 `PORT`，不注入
 
 Spark Workflow 原生开发启动固定注入 `WORKFLOW_BIND_HOST=127.0.0.1` 与实际 `PORT`，Java 11 只注入 Spark 子进程。`SPARK_WORKFLOW_SHARED_HOST` 声明 Driver/Executor 共用的地址：macOS 默认为 `host.docker.internal`，需在本机 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，容器继续使用 Docker 内置解析；Hosted Linux 为 `127.0.0.1`，普通 Linux 使用路由接口地址。远程部署按实际拓扑显式配置。开发启动不构建镜像，不依赖 Docker Desktop host networking；生产 Compose 按自身网络部署。
 
+本机 Business 的回环地址与 `host.docker.internal` 必须直连。Spark 原生启动入口读取所选 Java 11 的有效 `http.nonProxyHosts`，保留现有条目并补齐 `localhost`、`127.*`、`[::1]` 和 `host.docker.internal`，仅在该 Runtime 子进程的 `_JAVA_OPTIONS` 中设置合并值；Python 的 `NO_PROXY` / `no_proxy` 同样合并本机地址。外部下载仍使用既有代理，不修改 macOS 全局代理或 System 中的引擎连接。配置在 Runtime 重启后生效；远程引擎不自动加入直连名单。
+
 
 | 类别 | 典型内容 | 事实来源 | 维护者 |
 | --- | --- | --- | --- |

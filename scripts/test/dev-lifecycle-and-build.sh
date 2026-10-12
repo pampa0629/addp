@@ -1277,7 +1277,13 @@ runtime = work / 'engines/spark-workflow'
 (runtime / 'venv/bin').mkdir(parents=True)
 java = work / 'jdk/bin'
 java.mkdir(parents=True)
-(java / 'java').write_text('#!/bin/bash\necho \'openjdk version "11.0.32"\' >&2\n')
+(java / 'java').write_text('''#!/bin/bash
+if [ "${1:-}" = -XshowSettings:properties ]; then
+  [ "${FAIL_JAVA_PROXY_PROBE:-0}" = 0 ] || exit 1
+  echo "    http.nonProxyHosts = ${TEST_JAVA_NON_PROXY-external.internal|*.existing.example}" >&2
+fi
+echo 'openjdk version "11.0.32"' >&2
+''')
 (java / 'java').chmod(0o755)
 python = runtime / 'venv/bin/python'
 python.write_text('#!' + sys.executable + '''
@@ -1289,10 +1295,17 @@ os.execv(sys.executable, [sys.executable]+sys.argv[1:])
 ''')
 python.chmod(0o755)
 (runtime / 'api_server.py').write_text('''
-import http.server, os, sys
+import http.server, os, shlex, sys
 assert os.environ['WORKFLOW_BIND_HOST']=='127.0.0.1'
 assert os.environ['SPARK_WORKFLOW_SHARED_HOST']=='127.0.0.1'
 assert os.environ['JAVA_HOME']==os.environ['EXPECTED_JAVA']
+options = shlex.split(os.environ['_JAVA_OPTIONS'])
+non_proxy = [v.split('=',1)[1] for v in options if v.startswith('-Dhttp.nonProxyHosts=')]
+assert len(non_proxy)==1
+assert set(non_proxy[0].split('|')) == {'external.internal', '*.existing.example', 'localhost', '127.*', '[::1]', 'host.docker.internal'}
+assert '-Daddp.test=preserved value' in options
+for name in ('NO_PROXY', 'no_proxy'):
+    assert set(os.environ[name].split(',')) == {'prior.example', 'lower.example', 'localhost', '127.0.0.1', '::1', 'host.docker.internal'}
 if os.environ.get('FAIL_START')=='1': sys.exit(1)
 http.server.HTTPServer(('127.0.0.1',int(os.environ['PORT'])), http.server.SimpleHTTPRequestHandler).serve_forever()
 ''')
@@ -1315,17 +1328,32 @@ trap 'kill -TERM "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EX
 addp_dev_owned_listener spark-workflow-engine "$SPARK_WORKFLOW_PORT"
 '''
 env = dict(os.environ, SOURCE_ROOT=str(root), ROOT_DIR=str(work), JAVA_HOME=str(java.parent),
-           EXPECTED_JAVA=str(java.parent), SPARK_WORKFLOW_SHARED_HOST='127.0.0.1', SPARK_WORKFLOW_PORT=port, SPARK_MODE='')
+           EXPECTED_JAVA=str(java.parent), SPARK_WORKFLOW_SHARED_HOST='127.0.0.1', SPARK_WORKFLOW_PORT=port, SPARK_MODE='',
+           _JAVA_OPTIONS='"-Daddp.test=preserved value" -Dhttp.nonProxyHosts=old.example',
+           NO_PROXY='prior.example,localhost', no_proxy='lower.example')
 result = subprocess.run(['bash', '-c', launcher], env=env, capture_output=True, text=True, timeout=15)
 assert result.returncode == 0, (result.stdout,result.stderr)
 assert (work / 'trace').read_text().splitlines()==['sync']
 assert (work / '.dev-pids/spark-workflow-engine.pid').read_text().strip().isdigit()
 for flags in ({'FAIL_SYNC':'1'}, {'FAIL_PYTHON':'1'}, {'FAIL_IMPORT':'1'}, {'SPARK_MODE':'local'},
-              {'SPARK_WORKFLOW_SHARED_HOST':'invalid.addp.example'}, {'FAIL_START':'1'}):
+              {'SPARK_WORKFLOW_SHARED_HOST':'invalid.addp.example'}, {'FAIL_START':'1'}, {'FAIL_JAVA_PROXY_PROBE':'1'}):
     (work / '.dev-pids/spark-workflow-engine.pid').unlink(missing_ok=True)
     result=subprocess.run(['bash','-c',launcher],env=dict(env,**flags),capture_output=True,text=True,timeout=15)
     assert result.returncode != 0, (flags,result)
     assert not (work / '.dev-pids/spark-workflow-engine.pid').exists(), flags
+# Repeated preparation must keep one JVM property and preserve existing options.
+network_script = '''
+set -euo pipefail
+source "$SOURCE_ROOT/scripts/dev/spark-workflow.sh"
+addp_spark_configure_network
+first=$_JAVA_OPTIONS
+addp_spark_configure_network
+[ "$first" = "$_JAVA_OPTIONS" ]
+"$ROOT_DIR/engines/spark-workflow/venv/bin/python" -c 'import os, shlex; v=shlex.split(os.environ["_JAVA_OPTIONS"]); assert len([o for o in v if o.startswith("-Dhttp.nonProxyHosts=")])==1; assert "-Daddp.test=preserved value" in v'
+'''
+for inherited in ('external.internal|*.existing.example', 'localhost|host.docker.internal', ''):
+    result=subprocess.run(['bash','-c',network_script],env=dict(env,TEST_JAVA_NON_PROXY=inherited),capture_output=True,text=True,timeout=15)
+    assert result.returncode==0,(inherited,result.stdout,result.stderr)
 # An unrelated HTTP listener must fail before launching a replacement.
 with socket.socket() as sock:
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

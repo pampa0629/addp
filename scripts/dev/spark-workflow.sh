@@ -36,6 +36,46 @@ addp_spark_configure_java() {
   return 1
 }
 
+addp_spark_configure_network() {
+  local exports
+  exports=$("$ROOT_DIR/engines/spark-workflow/venv/bin/python" - "$JAVA_HOME/bin/java" <<'PY_PROXY'
+import os, shlex, subprocess, sys
+
+try:
+    # Read the same JDK's effective list, including macOS system proxy settings
+    # and inherited JVM options. Never emit the full settings or proxy secrets.
+    settings = subprocess.run(
+        [sys.argv[1], *shlex.split(os.environ.get('SPARK_SUBMIT_OPTS', '')),
+         '-XshowSettings:properties', '-version'],
+        capture_output=True, text=True, timeout=15, check=True,
+    )
+    existing = next((line.split('=', 1)[1].strip()
+                     for line in settings.stderr.splitlines()
+                     if line.strip().startswith('http.nonProxyHosts =')), '')
+    hosts = list(dict.fromkeys([*filter(None, existing.split('|')),
+                              'localhost', '127.*', '[::1]', 'host.docker.internal']))
+    options = [option for option in shlex.split(os.environ.get('_JAVA_OPTIONS', ''))
+               if not option.startswith('-Dhttp.nonProxyHosts=')]
+    # HotSpot applies _JAVA_OPTIONS last, so an inherited Spark submission
+    # property cannot replace the merged list. Other JVM options stay intact.
+    options.append('-Dhttp.nonProxyHosts=' + '|'.join(hosts))
+    no_proxy = list(dict.fromkeys([
+        *filter(None, (value.strip() for name in ('NO_PROXY', 'no_proxy')
+                       for value in os.environ.get(name, '').split(','))),
+        'localhost', '127.0.0.1', '::1', 'host.docker.internal',
+    ]))
+    values = {'_JAVA_OPTIONS': shlex.join(options),
+              'NO_PROXY': ','.join(no_proxy), 'no_proxy': ','.join(no_proxy)}
+except (OSError, ValueError, subprocess.SubprocessError):
+    print('✗ Spark Workflow 无法读取并合并 Java 本机直连配置', file=sys.stderr)
+    sys.exit(1)
+for name, value in values.items():
+    print('export ' + name + '=' + shlex.quote(value))
+PY_PROXY
+  ) || return 1
+  eval "$exports"
+}
+
 addp_prepare_spark_workflow() {
   local runtime_dir="$ROOT_DIR/engines/spark-workflow" python_bin candidate shared_host
   [ -z "${SPARK_MODE:-}" ] || { echo '✗ 开发生命周期不接受 SPARK_MODE，计算必须使用已登记集群' >&2; return 1; }
@@ -85,6 +125,7 @@ addp_launch_spark_workflow() {
   (
     cd "$runtime_dir" || exit 1
     export PORT="$port" WORKFLOW_BIND_HOST=127.0.0.1 RUNTIME_HOST="${RUNTIME_HOST:-localhost}" SPARK_WORKFLOW_SHARED_HOST="$shared_host"
+    addp_spark_configure_network || exit 1
     exec "$runtime_dir/venv/bin/python" api_server.py
   ) > "$ROOT_DIR/logs/spark-workflow-engine.log" 2>&1 &
   pid=$!

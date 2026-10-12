@@ -71,6 +71,8 @@ Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境�
 
 Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 executor，因此两端必须使用同一个可达地址。JDBC、ES 和 S3A 统一将回环主机派生为 `SPARK_WORKFLOW_SHARED_HOST`；System 中保存的连接配置不变，远程主机地址不会被改写。S3A 保留协议和显式端口，并将同一派生端点用于操作配置、bucket 配置、成果核验与失败清理。缺少或非法的共享主机配置在存储访问前拒绝。PostgreSQL JDBC URL 同时继承 System `connection_info.sslmode`。
 
+原生开发启动将本机回环地址与 `host.docker.internal` 加入 Java 和 Python 的代理绕过名单，保留已有条目和外部下载代理。Java 名单取自所选 Java 11 的有效 `http.nonProxyHosts`，覆盖 Driver 的 S3A 客户端；不依赖 Python `NO_PROXY` 间接影响 Java。该规则仅注入 Spark Runtime 子进程，需重启生效，不修改全局代理或远程引擎策略。`make test-dev-lifecycle` 验证合并、重复准备、其他 JVM 参数保留和启动失败边界。
+
 Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop 按当前用户授权派生连接与单段索引名，任务不保存连接或 `index`。首版仅普通具体索引的 HTTP Basic 只读批量访问，HTTPS 显式拒绝。Driver 和 Executor 均直接访问源端点，不继承系统 HTTP/SOCKS 代理；必须能访问同一端点，回环地址使用 `SPARK_WORKFLOW_SHARED_HOST`。公开 `array_fields` 显式声明 Mapping 无法区分的数组字段，nested 无需重复声明。不支持别名、data stream、隐藏索引、DSL、流式、写回，也不承诺各次 action 共享同一个 PIT。Spark 内部保留 bigint，JSON 摘要超出 JavaScript 安全整数范围时转成十进制字符串。固定官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR 校验 SHA256，构建时缓存，通过 `PYSPARK_SUBMIT_ARGS --jars` 在 Spark 提交阶段与 Sedona/JDBC Maven 依赖合并分发，避免该制品 POM 引入另一版 Spark。Python Session 不设置 `spark.jars`，以免覆盖提交阶段已解析的完整依赖列表。生产 Runtime、镜像构建和分布式 T2 共用同一个依赖配置入口；T2 必须同时核对实际 JAR 分发列表和 Worker 上的 Sedona/ES 计算。
 
 最小验证：`make test-spark-workflow`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`；正式消费验收使用既有 Hosted T4 `elasticsearch-consumer-flow`，同时核对 Console、Runtime 状态和真实 Worker。
