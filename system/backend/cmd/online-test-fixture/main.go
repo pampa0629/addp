@@ -388,7 +388,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME"] = username
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD"] = password
 	}
-	if *(suite == "raster-workflow" || suite == "raster-workflow-capacity") {
+	if *suite == "raster-workflow" || *suite == "raster-workflow-capacity" {
 		policyValues, err := rasterPolicyIdentities(ctx, repository, identity, selectionService, administrator.PrincipalID)
 		if err != nil {
 			return err

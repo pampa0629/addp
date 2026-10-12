@@ -208,6 +208,10 @@ curl http://localhost:8081/health/ready
 
 Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-manager-gate.sh` 从零建立最小权限身份、Business MinIO 与真实 Runtime，复用 `make test-online` 业务断言并在退出时销毁环境；无需永久账号或自备 Runner。首次真实运行成功前只登记手工触发，不计为 T4 通过。
 
+Manager Hosted 在启动 Runtime 前明确设置 `ADDP_ONLINE_TEST_RUN_ID=manager-<GITHUB_RUN_ID>-<GITHUB_RUN_ATTEMPT>`，共享 Runtime 的运行标签和后续业务报告使用同一 ID。生命周期模拟须保留 suite 标签，并忽略其他标签对 suite 归属判断的影响；标准 `make test-manager-online-runner` 和 `make test-online-runner` 覆盖启动、失败退出与清理，不新增入口或 workflow。
+
+2026-10-12 此启动修正的隔离副本通过 `make test-manager-online-runner`：69 项 Python 回归和 Go 身份工具测试，包含缺少 GitHub 运行 ID／attempt 时显式失败、启动前无服务变更及凭据清理。一次性身份工具同步修正 `suite` 字符串指针比较的编译错误，不修改权限或会话策略。完整 `make test-online-runner` 首轮已通过 HDFS 的 95 项、栅格的 110 项及 Manager 的 68 项，但随后公共入口模拟生命周期超过 20 秒；最终 Manager 专项增加上述负向用例后通过 69 项，完整入口串行复验又在 HDFS 夹具清理模拟超过 15 秒。两次完整入口均不计为通过，不改这些其他 suite 的超时上限；后续整轮由已有 Platform CI 验证。`make test-changed` 因 Common／Manager／System 的 T2 连接参数缺失在预检中止，未执行数据库测试；对应门禁仍由既有 Release/T2 编排验证。此记录不代替仍在执行的 XLSX Hosted 页面、下载及最终清理验收。
+
 CSV / TSV 编码选择和 XLSX 多工作表的 Hosted 验收复用上述 Manager suite、Business MinIO、普通 User 和原有两阶段浏览器入口。Business 夹具生成两份固定 GBK 小表（各 25 行、784 字节）和一份四工作表 XLSX（7087 字节）。普通消费身份使用原八项权限，再补现有 `manager.content.read`（原文件下载）与 `manager.data_item.update`（应用编码和普通 item 刷新），共十项；Owner 验收必须拒绝缺少或多出的权限及管理员角色。2026-10-12 用户已明确允许仅本次一次性验收用户使用十项权限，不修改个人或生产账号、不增加管理员权限；不新增权限定义、服务或 Job。
 
 浏览器在 cached-preview 阶段通过真实编码选择与 item 刷新请求核对 GBK、三列中文结构、20＋5 分页、末页、原文件 SHA256、无编码参数的再次刷新及整页重开；Meta 编码、源指纹和内容哈希须保持一致，GBK 不得发布源字节索引。当前报告只有 browser/v7、Owner/v5 一条规范路径，缺少 CSV / TSV 或 XLSX 任一完整证据必须失败；原八权限基线的 browser/v5、Owner/v3 不计为本扩展通过。沿用 `make test-manager-online-runner`、`make test-online-runner` 和已有 Hosted Job；Manager 专项入口覆盖场景、夹具、CI 登记及一次性用户 Go 工具。

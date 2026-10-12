@@ -25,7 +25,7 @@ def install_spark_container_fixture(host, suite, runtime):
               previous= name= label=
               for argument in "$@"; do
                 [ "$previous" != --name ] || name=$argument
-                [ "$previous" != --label ] || label=$argument
+                [ "$previous" != --label ] || { case "$argument" in com.addp.online-runtime=*) label=$argument ;; esac; }
                 previous=$argument
               done
               echo "docker-run:$name" >> "$ADDP_TEST_GATE_TRACE"

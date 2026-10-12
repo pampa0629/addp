@@ -83,6 +83,7 @@ class HostedManagerGateTest(unittest.TestCase):
             import os, sys
             assert sys.argv[1] == 'manager-seed'
             assert os.environ['ADDP_ONLINE_RASTER_RUNTIME_IMAGE'].endswith(':manager-raster-online')
+            assert os.environ['ADDP_ONLINE_TEST_RUN_ID'] == 'manager-4242-1'
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as stream: stream.write('raster-seed\\n')
             if os.environ.get('ADDP_TEST_RASTER_SEED_FAIL') == '1': sys.exit(1)
         """)
@@ -101,6 +102,7 @@ class HostedManagerGateTest(unittest.TestCase):
 
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}", GITHUB_ACTIONS="true", RUNNER_OS="Linux",
+                   GITHUB_RUN_ID="4242", GITHUB_RUN_ATTEMPT="1",
                    RUNNER_TEMP=str(self.host.root), ADDP_ONLINE_HOST="1", ADDP_ONLINE_HOSTED="1",
                    ONLINE_SUITE_INPUT="manager-internal-artifact-lineage", ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts),
                    ADDP_ONLINE_SECRET_DIR=str(self.host.secrets), ADDP_TEST_GATE_TRACE=str(self.host.trace),
@@ -128,6 +130,15 @@ class HostedManagerGateTest(unittest.TestCase):
         self.assertIn("docker-rm:addp-manager-model3d-runtime", trace)
         self.assertIn("infra-down", trace)
         self.assertFalse(self.host.secrets.exists())
+
+    def test_run_identity_is_required_before_starting_runtime(self):
+        for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"):
+            with self.subTest(key=key):
+                result = self.run_gate(**{key: ""})
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(self.host.trace.exists())
+                self.assertFalse(self.host.secrets.exists())
+                self.assertIn("result=failed", (self.host.artifacts / "summary.txt").read_text())
 
     def test_readiness_does_not_start_any_service(self):
         result = self.run_gate(check=True)
