@@ -60,8 +60,8 @@ import json,os
 from pathlib import Path
 root=Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
 descriptors={
- 'pg':{'name':'Hosted continuous PostgreSQL','engine_type':'postgresql','engine_origin':'general','connection_info':{'host':os.environ['CONTINUOUS_PG_HOST'],'port':5432,'database':'continuous_fixture','user':'postgres','password':os.environ['POSTGRES_PASSWORD'],'sslmode':'disable'}},
- 'kafka':{'name':'Hosted business Kafka','engine_type':'kafka','engine_origin':'general','connection_info':{'bootstrap_servers':'127.0.0.1:29094'}},
+ 'pg':{'name':'Hosted continuous PostgreSQL','description':'Disposable PostgreSQL CDC source and target','engine_type':'postgresql','engine_origin':'general','connection_info':{'host':os.environ['CONTINUOUS_PG_HOST'],'port':5432,'database':'continuous_fixture','user':'postgres','password':os.environ['POSTGRES_PASSWORD'],'sslmode':'disable'}},
+ 'kafka':{'name':'Hosted business Kafka','description':'Disposable business Kafka continuous source','engine_type':'kafka','engine_origin':'general','connection_info':{'bootstrap_servers':'127.0.0.1:29094'}},
 }
 for kind,value in descriptors.items():
  fd=os.open(root/f'continuous-{kind}.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)

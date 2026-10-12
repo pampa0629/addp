@@ -27,12 +27,16 @@ class HostedContinuousGateTest(unittest.TestCase):
         self.host._write_repository_script('scripts/test/online-engine-registration.py', '''
             import os,sys
             from pathlib import Path
-            name=Path(sys.argv[2]).name
-            with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace: trace.write('engine-register:'+name+'\\n')
-            if os.environ.get('ADDP_TEST_REGISTRATION_FAIL') == name: raise SystemExit(1)
-            assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'provisioner-token'
-            engine=17 if name=='continuous-pg.json' else 18
-            Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={engine}\\n')
+            def load_descriptor(path):
+                if os.environ.get('ADDP_TEST_DESCRIPTOR_FAIL') == '1': raise ValueError('bad descriptor')
+            def main():
+                name=Path(sys.argv[2]).name
+                with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace: trace.write('engine-register:'+name+'\\n')
+                if os.environ.get('ADDP_TEST_REGISTRATION_FAIL') == name: raise SystemExit(1)
+                assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'provisioner-token'
+                engine=17 if name=='continuous-pg.json' else 18
+                Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={engine}\\n')
+            if __name__ == '__main__': main()
         ''')
         self.host._executable('go', '''
             #!/usr/bin/env bash
@@ -106,6 +110,16 @@ class HostedContinuousGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         self.assertNotIn('make:test-online', trace)
         self.assertIn('continuous-fixture:stop', trace)
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_invalid_descriptor_fails_before_application_build_and_cleans_fixture(self):
+        result = self.gate(ADDP_TEST_DESCRIPTOR_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertNotIn('start:-transfer', trace)
+        self.assertNotIn('make:test-online', trace)
+        self.assertIn('continuous-fixture:stop', trace)
+        self.assertIn('infra-down', trace)
         self.assertFalse(self.host.secrets.exists())
 
     def test_local_profile_refused_before_infra_start(self):

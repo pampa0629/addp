@@ -1,4 +1,5 @@
 import json
+from importlib import import_module
 import os
 from pathlib import Path
 import shutil
@@ -69,6 +70,10 @@ elif args[0]=='exec' and 'produce' in args:
         self.assertEqual(result.returncode, 0, result.stderr)
         pg = json.loads((self.secret / 'continuous-pg.json').read_text())
         kafka = json.loads((self.secret / 'continuous-kafka.json').read_text())
+        registration = import_module('scripts.test.online-engine-registration')
+        for kind in ('pg', 'kafka'):
+            descriptor = registration.load_descriptor(self.secret / f'continuous-{kind}.json')
+            self.assertTrue(descriptor['description'])
         self.assertEqual(pg['connection_info']['host'], '172.22.0.8')
         self.assertEqual(kafka['connection_info'], {'bootstrap_servers': '127.0.0.1:29094'})
         self.assertNotIn(pg['connection_info']['password'], result.stdout + result.stderr)
