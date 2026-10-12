@@ -210,6 +210,8 @@ Ontology 修订、审计与历史图在验收期间保留，不增加测试删�
 
 同一 `platform-node-metrics` Hosted 隔离验收的身份例外于 2026-10-10 经用户确认扩展到服务实例监控：临时平台系统管理员可沿真实密码/MFA 读取当次 System 平台实例列表（含 `ids` 精确过滤）、Monitor 三项进程资源摘要，并验收 Console「服务监控」页面。两个真实 Go SDK 实例须证明自动声明/发现、未关联主机时的自身资源、CPU 完整窗口、RSS/时长单位、实例隔离及停止/重启后旧实例不借用当前值；来源或中心失效不得破坏其他业务运行边界，Tenant、Service、Delegated 和缺权限主体仍须拒绝。此扩展不增加预算配置操作、不读取 Tenant 业务数据、不修改生产 IAM；沿用原最小权限 Prometheus 身份和全退出路径销毁/零残留要求。具体实施与证据见上述设计文档 10.49 节，未执行项不计通过。
 
+同一 suite 的进程趋势限定测试用途于 2026-10-12 经用户明确确认：上述临时平台系统管理员可新增读取当次当前运行实例的 `GET /api/v1/monitor/platform/process_resource_trends`，请求仅含 `instance_id/start/end`，只验收 CPU 核占用与 RSS 两条趋势，以及 Console 服务趋势的单位、缺值断点、启动边界、当前实例绑定和刷新恢复。沿用真实密码/MFA、原授权与采集身份链路，不读取已退出实例历史，不新增预算配置操作，不读取 Tenant 业务数据，不修改生产 IAM 或 Prometheus 权限；所有退出路径继续销毁当次部署、临时身份及凭据并核验零残留。具体实现、个人复验与 Hosted 状态见设计文档 10.55 节，未实际执行的 Hosted 不计通过。
+
 API 消费方数据面边界由 `workbench-service-consumption` 复用同一 Business MySQL Fixture 和临时 Query Service 验收，不另建平行 suite。该场景必须分离两个真实 User Token：非管理员 Token 只负责 Service / Workbench 发布与消费，专用 Tenant Administrator Token 只负责 API 消费方与凭据生命周期。suite 通过正式 API 创建一个只授权主 Query Service 的 API 消费方，并必须同时证明：已授权服务返回 200；同 Tenant 未授权 Query Service 返回 `403 api_consumer_service_denied`；任一 `/api/v1/*` 控制面路由返回 `401 api_consumer_control_plane_denied`；删除 API 消费方后，旧凭据在 Gateway 30 秒正缓存对应的 45 秒有界收敛窗口内返回 `401 api_consumer_credential_invalid`。报告、日志和错误不得包含完整 API Key，每轮必须按捕获 ID 删除 API 消费方、其级联凭据、Data Application 和两个临时 Query Service，并验证零残留。
 
 模块注册与恢复类 T4 必须使用正式进程入口至少证明：
