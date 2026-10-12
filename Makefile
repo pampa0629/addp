@@ -852,6 +852,13 @@ test-system-runtime-log: ## 隔离验证模块运行日志采集、授权、持�
 	@bash scripts/test/system-runtime-log-gate.sh
 
 .PHONY: test-common-hdfs-unit test-common-hdfs
+.PHONY: test-common-parquet
+test-common-parquet: ## Parquet/GeoParquet 格式读写、数据项组织与 Decimal 精确读取回归
+	@cd common && GOWORK=off go test ./format/... ./dataitem/... -count=1
+	@cd manager/backend && GOWORK=off go test ./internal/preview -count=1
+	@cd meta/backend && GOWORK=off go test ./internal/scanprocessor -count=1
+	@cd transfer/backend && GOWORK=off go test ./internal/executor ./internal/planner -count=1
+
 test-common-hdfs-unit: ## HDFS 管理根边界、WebHDFS 协议和只读能力确定性验证
 	@cd common && GOWORK=off go test ./resourcetree ./engine/plugins/hdfs ./engine/plugins ./engine/plugin -count=1
 	@cd develop/backend && GOWORK=off go test ./internal/service -count=1

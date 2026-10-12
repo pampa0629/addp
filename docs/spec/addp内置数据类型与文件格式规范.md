@@ -1094,6 +1094,8 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 GeoParquet 不是独立 format。GeoParquet 文件继续使用 `format=parquet + data_type=table`；Parquet footer 中 `geo` key 的原生标准字段写入 `format_info.parquet.geo`，归一化后的主几何列、几何列、拓扑类型、CRS 和文件范围写入 `capabilities.spatial`。几何列在 `type_info.table.fields` 中统一映射为 `geometry`，不得同时保留为 `string` 或 `bytes`。
 
+普通 Parquet 的 Decimal 读取按 footer 的 `DECIMAL(precision, scale)` 解释底层有符号整数，`FieldInfo` 保留 `type=decimal`、原始类型、`precision` 和 `scale`。样本、分页与连续读取统一返回保留 scale 的定点十进制字符串，不经过浮点转换；null 保持 null。现有 parquet-go 0.25.1 支持的物理编码为 `INT32`、`INT64` 和大端补码 `FIXED_LEN_BYTE_ARRAY`；标准允许的 Decimal `BYTE_ARRAY` 尚受该依赖限制，本轮不宣称支持。whole scope 中 Decimal precision 或 scale 不一致时拒绝归并，不按首个文件解释后续值。[编码定义](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#decimal)。该规则修正读取语义，不扩大现有 writer 的精确 Decimal 写出能力。
+
 当前内置 GeoParquet 能力以稳定的 GeoParquet 1.0 / 1.1 为边界：
 
 - reader 支持文件侧 `encoding=WKB`，默认以 WKB 二进制值向通用 table 消费链路输出，并可按调用方契约归一为 EWKB 或 WKT；遇到 GeoArrow 单几何类型编码、GeoParquet 2.x 或其他未知编码必须明确报不支持，不得按普通 Parquet 字符串列降级。

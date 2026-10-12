@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -523,6 +524,14 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 }
 
 func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, geometryFields map[string]bool, geometrySRIDs map[string]int, geometryEncoding format.GeometryEncoding, limit int64, result *[]map[string]interface{}) error {
+	decimalFields := make(map[string]*parquetfmt.DecimalType)
+	for _, name := range fieldNames {
+		if leaf, ok := rows.Schema().Lookup(name); ok && leaf.Node.Type() != nil {
+			if logical := leaf.Node.Type().LogicalType(); logical != nil && logical.Decimal != nil {
+				decimalFields[name] = logical.Decimal
+			}
+		}
+	}
 	const maxBatchSize = 128
 	for int64(len(*result)) < limit {
 		if err := contextErr(ctx); err != nil {
@@ -544,7 +553,7 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, g
 				for j, val := range parquetRow {
 					if j < len(fieldNames) {
 						name := fieldNames[j]
-						value, err := valueToInterface(val, geometryFields[name], geometrySRIDs[name], geometryEncoding)
+						value, err := valueToInterface(val, decimalFields[name], geometryFields[name], geometrySRIDs[name], geometryEncoding)
 						if err != nil {
 							return fmt.Errorf("decode parquet field %q: %w", name, err)
 						}
@@ -1676,7 +1685,8 @@ func sameFieldInfoList(left, right []datatype.FieldInfo) bool {
 	for i := range left {
 		if left[i].Name != right[i].Name ||
 			left[i].Type != right[i].Type ||
-			left[i].Nullable != right[i].Nullable {
+			left[i].Nullable != right[i].Nullable ||
+			(left[i].Type == datatype.FieldTypeDecimal && (left[i].Precision != right[i].Precision || left[i].Scale != right[i].Scale)) {
 			return false
 		}
 	}
@@ -1684,7 +1694,7 @@ func sameFieldInfoList(left, right []datatype.FieldInfo) bool {
 }
 
 // valueToInterface 将 parquet.Value 转换为 Go 原生类型
-func valueToInterface(v parquetgo.Value, geometry bool, srid int, geometryEncoding format.GeometryEncoding) (interface{}, error) {
+func valueToInterface(v parquetgo.Value, decimal *parquetfmt.DecimalType, geometry bool, srid int, geometryEncoding format.GeometryEncoding) (interface{}, error) {
 	if v.IsNull() {
 		return nil, nil
 	}
@@ -1701,6 +1711,9 @@ func valueToInterface(v parquetgo.Value, geometry bool, srid int, geometryEncodi
 			return nil, err
 		}
 		return commonSpatial.EncodeGeometryValue(geometry, string(geometryEncoding), srid)
+	}
+	if decimal != nil {
+		return decimalValueString(v, decimal)
 	}
 	switch v.Kind() {
 	case parquetgo.Boolean:
@@ -1724,6 +1737,54 @@ func valueToInterface(v parquetgo.Value, geometry bool, srid int, geometryEncodi
 	}
 }
 
+// DECIMAL stores an unscaled signed integer; byte encodings use big-endian
+// two's complement. Keep the declared scale and never round through float64.
+func decimalValueString(value parquetgo.Value, decimal *parquetfmt.DecimalType) (string, error) {
+	precision, scale := int(decimal.Precision), int(decimal.Scale)
+	if precision <= 0 || scale < 0 || scale > precision {
+		return "", fmt.Errorf("invalid parquet DECIMAL precision/scale: %d/%d", precision, scale)
+	}
+	unscaled := new(big.Int)
+	var maxPrecision int
+	switch value.Kind() {
+	case parquetgo.Int32:
+		unscaled.SetInt64(int64(value.Int32()))
+		maxPrecision = 9
+	case parquetgo.Int64:
+		unscaled.SetInt64(value.Int64())
+		maxPrecision = 18
+	case parquetgo.FixedLenByteArray:
+		data := value.ByteArray()
+		if len(data) == 0 {
+			return "", fmt.Errorf("empty parquet DECIMAL byte encoding")
+		}
+		modulus := new(big.Int).Lsh(big.NewInt(1), uint(8*len(data)))
+		bound := new(big.Int).Rsh(new(big.Int).Set(modulus), 1)
+		bound.Sub(bound, big.NewInt(1))
+		maxPrecision = len(bound.String()) - 1
+		unscaled.SetBytes(data)
+		if data[0]&0x80 != 0 {
+			unscaled.Sub(unscaled, modulus)
+		}
+	default:
+		return "", fmt.Errorf("unsupported parquet DECIMAL physical encoding: %s", value.Kind())
+	}
+	digits := strings.TrimPrefix(unscaled.String(), "-")
+	if precision > maxPrecision || len(digits) > precision {
+		return "", fmt.Errorf("parquet DECIMAL exceeds declared or physical precision")
+	}
+	if scale > 0 {
+		if len(digits) <= scale {
+			digits = strings.Repeat("0", scale-len(digits)+1) + digits
+		}
+		digits = digits[:len(digits)-scale] + "." + digits[len(digits)-scale:]
+	}
+	if unscaled.Sign() < 0 {
+		digits = "-" + digits
+	}
+	return digits, nil
+}
+
 // extractFields 从 Parquet Schema 提取 FieldInfo 列表
 func extractFields(schema *parquetgo.Schema) []datatype.FieldInfo {
 	if schema == nil {
@@ -1738,6 +1799,12 @@ func extractFields(schema *parquetgo.Schema) []datatype.FieldInfo {
 			Name:     f.Name(),
 			Nullable: f.Optional(),
 			Type:     mapParquetType(f),
+		}
+		if fieldInfo.Type == datatype.FieldTypeDecimal {
+			decimal := f.Type().LogicalType().Decimal
+			fieldInfo.NativeType = parquetTypeString(f)
+			fieldInfo.Precision = int(decimal.Precision)
+			fieldInfo.Scale = int(decimal.Scale)
 		}
 		result = append(result, fieldInfo)
 	}
