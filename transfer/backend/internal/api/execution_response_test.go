@@ -34,7 +34,7 @@ func transferResponseFixture() *models.TaskExecution {
 				"meta_scan_refs": []string{"scan-execution"}, "runtime_execution_id": "runtime-execution", "private": "private-sentinel",
 			},
 			"continuous": map[string]interface{}{
-				"partitions":    map[string]interface{}{"0": map[string]interface{}{"type": "kafka_offset", "version": "v1", "values": map[string]interface{}{"next_offset": 42, "value": "private-sentinel"}, "fencing_token": "private-sentinel"}},
+				"partitions":    map[string]interface{}{"0": map[string]interface{}{"type": "kafka_offset", "version": "v1", "values": map[string]interface{}{"next_offset": "42", "value": "private-sentinel"}, "fencing_token": "private-sentinel"}},
 				"diagnostics":   map[string]interface{}{"health": "degraded", "checkpoint_health": "healthy", "error": "private-sentinel", "partitions": map[string]interface{}{"0": map[string]interface{}{"partition": "0", "earliest_offset": 10, "latest_offset": 45, "next_offset": 42, "lag_records": 3, "recovery_headroom_records": 32, "health": "degraded", "checkpoint_health": "healthy", "private": "private-sentinel"}}, "private": "private-sentinel"},
 				"capture":       map[string]interface{}{"generation": 2, "source_recovery": map[string]interface{}{"schema_version": "capture.source_recovery/v1", "provider": "oracle", "health": "healthy", "capture_position": "42", "private": "private-sentinel"}, "source_transactions": map[string]interface{}{"schema_version": "capture.source_transactions/v1", "provider": "oracle", "status": "available", "active_count": 1, "private": "private-sentinel"}},
 				"schema_change": map[string]interface{}{"request_id": 9, "status": "pending", "missing_fields": []string{"removed"}, "unexpected_fields": []string{"added"}, "metadata_scan": map[string]interface{}{"status": "succeeded", "execution_id": "scan-execution", "lease_until": time.Now(), "claim_token": "private-sentinel"}},
@@ -123,5 +123,28 @@ func TestTransferMalformedProfessionalFactsFailClosedWithoutRawDetails(t *testin
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/execution", nil))
 	if response.Code != 500 || strings.Contains(response.Body.String(), "private-sentinel") {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTransferCommittedOffsetUsesCanonicalDecimalString(t *testing.T) {
+	for _, offset := range []string{"0", "42", "9223372036854775807"} {
+		t.Run(offset, func(t *testing.T) {
+			item := transferResponseFixture()
+			item.Metadata["continuous"] = map[string]interface{}{"partitions": map[string]interface{}{"0": map[string]interface{}{
+				"type": "kafka_offset", "version": "v1", "values": map[string]string{"next_offset": offset, "private": "private-sentinel"},
+			}}}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			response, err := projectExecution(c, item)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := json.Marshal(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), `"next_offset":"`+offset+`"`) || strings.Contains(string(data), "private-sentinel") {
+				t.Fatalf("committed position changed or leaked: %s", data)
+			}
+		})
 	}
 }

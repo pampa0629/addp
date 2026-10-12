@@ -48,3 +48,15 @@ test('execution detail omits the error section when no backend error is present'
     assert.doesNotMatch(await renderExecution(execution, 'zh-cn'), /data-testid="execution-error-message"/)
   }
 })
+
+test('professional diagnostics have no worker identity, lease or fencing controls', () => {
+  for (const field of ['owner_instance_id', 'fencing_token', 'heartbeat_at', 'lease_until']) {
+    assert.ok(!descriptor.template.content.includes(field), `private runtime field remains: ${field}`)
+  }
+  for (const language of ['zh-cn', 'en']) {
+    const messages = JSON.parse(readFileSync(new URL(`../src/i18n/${language}.json`, import.meta.url), 'utf8'))
+    for (const key of ['workerInstance', 'fencingToken', 'heartbeatAt', 'leaseUntil']) {
+      assert.equal(messages.transfer.executionDetail[key], undefined)
+    }
+  }
+})

@@ -4355,7 +4355,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "next_offset": {
-                    "type": "integer"
+                    "description": "ChangeStreamPosition.Values stores decimal strings, including Kafka offsets.",
+                    "type": "string",
+                    "example": "42"
                 }
             }
         },

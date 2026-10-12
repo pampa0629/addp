@@ -125,6 +125,10 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 ## 开发与验证
 
+连续执行的分区位点沿 `ChangeStreamPosition.Values` 的既有十进制字符串契约输出 `values.next_offset`，不接受另一套数字表示；专业页面只展示业务运行诊断，不展示 Worker 身份、租约或 fencing。创建、委托创建和任务配置预检约束不因执行响应收敛改变。
+
+2026-10-12 执行响应收敛已由 `c1f993b1fa7c5d5e403e463c371c46b2adf4ae80` 纳入 main；`task_handler.go` 的创建、委托创建及配置预检逻辑没有变化。位点字符串修正补充了 0、普通位点、int64 最大值和真实 PostgreSQL 详情读取回归；后端 `make test-transfer-backend`、`make test-transfer-postgres`、前端 `make test-transfer-frontend`（130 项单元、16 项浏览器及构建）、Swagger 35 个路由覆盖、执行夹具和 ETL runner 37 项均通过。模块聚合 `make test-module MODULE=transfer` 在 Platform T0 的 Ontology 来源冻结校验失败：当前 handler 与 `transfer.review.json` 引用的旧提交不一致，Agent/Skill 等来源亦有差异；来源清单由 Ontology owner 审查同步，本模块不放宽门禁。上述确定性验证不代替本轮专业读取契约的真实 T4。
+
 专业执行读取使用 `transfer.task.read` 与 SQL Owner 范围：仅当前租户的 transfer/sync，有定义历史（含删除定义）与本人一次性执行分别过滤。第一方和普通 OAuth User 可读，机器不进入用户入口；模块导出结果按 Service Client/source 独立授权，TaskProvider 按固定 Orchestrator Client 独立授权。详情、进度、事件、列表总数及统计保持一致。专业响应采用显式 DTO；连续运行时和冻结字段血缘只输出声明的诊断事实，不回显原始 metadata、checkpoint、参数或授权／租约信息。对应 T1 HTTP 隔离／投影回归和 T2 PostgreSQL 回归均由现有 Transfer 门禁承接，新增 T2 必须登记到 `scripts/test/transfer-postgres-gate.sh`；前端继续由 `make test-transfer-frontend` 验证，Swagger 生成及覆盖检查同步执行。
 
 2026-10-11 真实 Hosted T4 [38139520110](https://github.com/pampa0629/addp/actions/runs/38139520110) 在提交 `25ec6e336574de8d99956eeb6aae290a93297c51` 通过：8 个服务构建身份一致，三轮 Orchestrator 父子执行及结构演进、MongoDB／关系型字段血缘和浏览器图均通过；11 个临时资源全部删除，基础设施清理零残留。此结果验证安全父执行引用适配，不代替后续 Transfer 专业接口权限收敛的验收。

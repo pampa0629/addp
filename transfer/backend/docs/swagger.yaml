@@ -1364,7 +1364,10 @@ definitions:
   internal_api.ExecutionPartitionValue:
     properties:
       next_offset:
-        type: integer
+        description: ChangeStreamPosition.Values stores decimal strings, including
+          Kafka offsets.
+        example: "42"
+        type: string
     type: object
   internal_api.ExecutionProgressResponse:
     properties:

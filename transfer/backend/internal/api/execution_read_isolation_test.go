@@ -137,6 +137,9 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 		row.StartedAt, row.CompletedAt = &now, &now
 		row.CreatedAt, row.UpdatedAt = now, now
 		row.Metadata = models.JSONMap{"private": "private-sentinel", "checkpoint_state": map[string]interface{}{"cursor": "private-sentinel"}, "fencing_token": "private-sentinel", "target_refs": []interface{}{map[string]interface{}{"path": "tenant/export/result.csv", "primary": true, "private": "private-sentinel"}}}
+		row.Metadata["continuous"] = map[string]interface{}{"partitions": map[string]interface{}{"0": map[string]interface{}{
+			"type": "kafka_offset", "version": "v1", "values": map[string]string{"next_offset": "42", "private": "private-sentinel"},
+		}}}
 		row.ExecutionConfig = models.JSONMap{"sql": "private-sentinel"}
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
@@ -189,7 +192,14 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 		}
 		for _, suffix := range []string{"", "/progress", "/events"} {
 			for _, name := range []string{"history", ownName} {
-				request(token, "/executions/"+ids[name]+suffix, 200)
+				body := request(token, "/executions/"+ids[name]+suffix, 200)
+				if suffix == "" {
+					partitions := body["metadata"].(map[string]interface{})["continuous"].(map[string]interface{})["partitions"].(map[string]interface{})
+					values := partitions["0"].(map[string]interface{})["values"].(map[string]interface{})
+					if values["next_offset"] != "42" {
+						t.Fatalf("stored committed offset changed: %#v", values)
+					}
+				}
 			}
 			for _, name := range []string{peerName, "missing-actor", "zero-actor", "empty-source", "other-module", "cleanup", "foreign", "export"} {
 				request(token, "/executions/"+ids[name]+suffix, 404)

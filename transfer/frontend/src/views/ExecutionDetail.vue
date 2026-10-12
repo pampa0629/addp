@@ -40,18 +40,6 @@
         />
 
         <el-descriptions :column="3" border>
-          <el-descriptions-item :label="t('transfer.executionDetail.workerInstance')">
-            {{ continuousMetadata.owner_instance_id || '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('transfer.executionDetail.fencingToken')">
-            {{ continuousMetadata.fencing_token ?? '-' }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('transfer.executionDetail.heartbeatAt')">
-            {{ formatTimestamp(continuousMetadata.heartbeat_at) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('transfer.executionDetail.leaseUntil')">
-            {{ formatTimestamp(continuousMetadata.lease_until) }}
-          </el-descriptions-item>
           <el-descriptions-item :label="t('transfer.executionDetail.partitionCount')">
             {{ continuousPartitions.length }}
           </el-descriptions-item>

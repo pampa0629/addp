@@ -140,7 +140,8 @@ type ExecutionPartition struct {
 }
 
 type ExecutionPartitionValue struct {
-	NextOffset *int64 `json:"next_offset,omitempty"`
+	// ChangeStreamPosition.Values stores decimal strings, including Kafka offsets.
+	NextOffset *int64 `json:"next_offset,omitempty,string" swaggertype:"string" example:"42"`
 }
 
 type ExecutionPartitionDiagnostics struct {
