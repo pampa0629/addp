@@ -139,9 +139,22 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
         self.assertEqual(sum(value is not None for value in m.average_pixels(1, joint=True, width=171)), 29238)
         self.assertEqual(sum(0 < value < 255 for value in alpha), 0)
 
+    def test_topology_source_has_independent_valid_zero_bands(self):
+        sources = {name: (spatial, nodata) for name, spatial, nodata in m.SOURCE_FILES}
+        self.assertEqual(sources[m.TOPOLOGY_SOURCE], (False, -9999.))
+        for case, band in m.TOPOLOGY_BANDS.items():
+            self.assertEqual(m.footprint_source_name(case), m.TOPOLOGY_SOURCE)
+            values = m.source_pixels(m.TOPOLOGY_SOURCE, band, False, -9999.)
+            positions = {index for index, value in enumerate(values) if value == 0.}
+            expected = ({i*m.SIZE+i for i in range(64, 68)} if band == 1 else
+                        {row*m.SIZE+column for row in range(64, 68) for column in range(64, 68)} -
+                        {65*m.SIZE+65, 66*m.SIZE+66})
+            self.assertEqual(positions, expected)
+            self.assertTrue(all(value == -9999. for index, value in enumerate(values) if index not in expected))
+
     def test_source_declarations_keep_finite_and_nan_sentinels_on_the_same_grid(self):
         sources = {name: (spatial, nodata) for name, spatial, nodata in m.SOURCE_FILES}
-        self.assertEqual(len(sources), 6)
+        self.assertEqual(len(sources), 7)
         self.assertFalse(sources[m.ROTATED_SOURCE][0])
         self.assertTrue(math.isnan(sources[m.ROTATED_SOURCE][1]))
         self.assertEqual(m.footprint_source_name('footprint-rotated'), m.ROTATED_SOURCE)

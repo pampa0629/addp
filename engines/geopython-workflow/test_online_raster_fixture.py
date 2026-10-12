@@ -1124,8 +1124,17 @@ def verify_native_footprints(physical,tmp_path,last_case):
         result, _ = single_source_execution(tmp_path, scene, api_server, case)
         execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
         assert scene.validate_footprint(execution, case) == result
-        assert sum(fixture.footprint_pixels(case)) == {'footprint-any':65532, 'footprint-all':65524, 'footprint-band-2':65528, 'footprint-holes':53247, 'footprint-rotated':65532}[case]
+        assert sum(fixture.footprint_pixels(case)) == {'footprint-any':65532, 'footprint-all':65524, 'footprint-band-2':65528, 'footprint-holes':53247, 'footprint-rotated':65532, 'footprint-diagonal':4, 'footprint-pinch':14}[case]
         assert fixture.worker('verify-'+last_case, physical)['valid_pixels'] == fixture.computed_expectation(last_case)['valid_pixels']
+        from shapely.geometry import shape
+        geometry = shape(result['features'][0]['geometry'])
+        assert geometry.is_valid
+        if case in fixture.TOPOLOGY_BANDS:
+            assert (len(geometry.geoms), sum(len(part.interiors) for part in geometry.geoms)) == ((4, 0) if case == 'footprint-diagonal' else (1, 2))
+            source = gdal.Open(str(tmp_path / ('utility-source-' + fixture.TOPOLOGY_SOURCE)))
+            assert source.RasterCount == 2 and source.GetGeoTransform() == fixture.TRANSFORM
+            assert source.GetRasterBand(fixture.TOPOLOGY_BANDS[case]).GetNoDataValue() == -9999.
+            source = None
         if case == 'footprint-rotated':
             source = gdal.Open(str(tmp_path / ('utility-source-' + fixture.ROTATED_SOURCE)))
             assert source.GetGeoTransform() == (110,.01,.004,20.32,.002,-.02)

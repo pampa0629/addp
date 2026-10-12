@@ -284,6 +284,8 @@ def footprint_workflow(source_locator, case_name):
         params['validity'] = 'all'
     elif case_name == 'footprint-band-2':
         params['bands'] = [2]
+    elif case_name in fixture.TOPOLOGY_BANDS:
+        params['bands'] = [fixture.TOPOLOGY_BANDS[case_name]]
     return {'tasks': [
         {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
         {'id': 'analysis', 'operator': 'raster_footprint', 'depends_on': ['load'], 'params': params},
@@ -320,6 +322,18 @@ def validate_footprint(execution, case_name):
                 raise SuiteError('footprint ring must be closed')
             if any(a[0] != b[0] and a[1] != b[1] for a, b in zip(vertices, vertices[1:])):
                 raise SuiteError('footprint boundary cut through source cells')
+            if case_name in fixture.TOPOLOGY_BANDS:
+                if len(set(vertices[:-1])) != len(vertices)-1:
+                    raise SuiteError('footprint ring contains a self-touch or zero-length edge')
+                segments = list(zip(vertices, vertices[1:]))
+                for index, (a, b) in enumerate(segments):
+                    for other, (c, d) in enumerate(segments[index+1:], index+1):
+                        if other == index+1 or (index == 0 and other == len(segments)-1):
+                            continue
+                        # Grid-aligned segments intersect iff their closed boxes intersect.
+                        if (max(min(a[0], b[0]), min(c[0], d[0])) <= min(max(a[0], b[0]), max(c[0], d[0])) and
+                            max(min(a[1], b[1]), min(c[1], d[1])) <= min(max(a[1], b[1]), max(c[1], d[1]))):
+                            raise SuiteError('footprint ring has intersecting nonadjacent edges')
             rings.append(vertices)
         if not rings:
             raise SuiteError('footprint polygon has no exterior')
@@ -328,6 +342,10 @@ def validate_footprint(execution, case_name):
         polygons.append(rings)
     if case_name == 'footprint-holes' and (len(polygons) != 2 or sum(len(rings)-1 for rings in polygons) != 1):
         raise SuiteError('footprint hole/island topology differs from the independent source pattern')
+    if case_name in fixture.TOPOLOGY_BANDS:
+        wanted = (4, 0) if case_name == 'footprint-diagonal' else (1, 2)
+        if (len(polygons), sum(len(rings)-1 for rings in polygons)) != wanted:
+            raise SuiteError('footprint four-connected/pinch topology differs from the source pattern')
     def inside(x, y, ring):
         covered = False
         for a, b in zip(ring, ring[1:]):
@@ -928,6 +946,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         preserved[name] = native['sha256']
     footprint_cases = []
     footprint_sources = {
+        fixture.TOPOLOGY_SOURCE: (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/' + fixture.TOPOLOGY_SOURCE, 'topology footprint source')),
         fixture.ROTATED_SOURCE: (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/' + fixture.ROTATED_SOURCE, 'rotated footprint source')),
         'multiband.tif': (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'footprint source')),
         'clip-outside.cog.tif': (target_engine, support.find_fixture_item(client, target_engine, 'raster-target/clip-outside.cog.tif', 'footprint holes source')),
