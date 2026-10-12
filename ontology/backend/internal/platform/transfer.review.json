@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "88329610a6685d68f66b40cf42906c4d76e3f014",
-      "sha256": "c4a4fb95bf29249d2c3e75334baba4b657b07a97327fa9009ab604cea230c718",
+      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
+      "sha256": "ca36bd5d886f5c47188995417dda83e766af69eaa45e70084158ee27daa85304",
       "use": {
-        "zh-cn": "事实获取、用户澄清、确切配置复核与创建步骤；分别确认行粒度和字段范围，草稿检查不进入创建复核；Runtime 固定报告展示事实，Skill 单点维护默认业务概要及关键解释，用户明确要求时详解，不裁剪完整诊断",
-        "en": "Fact discovery, clarification, exact configuration review and creation; separate row grain from retained fields and keep draft checks out of creation review; Runtime displays report facts, while Skill alone owns concise business summaries and key explanations with explicit requested detail, without pruning diagnostics"
+        "zh-cn": "事实获取、用户澄清、确切配置复核与创建；分别确认行粒度和字段范围，草稿检查不进入创建复核。Runtime 固定展示已预检参数和映射，历史解释读取同参引用；Skill 维护业务概要与解释方法，不重建历史映射或把定义保存说成目标建表，修改仍须重新预检和复核",
+        "en": "Fact discovery, clarification, exact review and creation with separate row grain and retained fields; draft checks do not approve creation. Runtime displays checked parameters and mappings and historical inspection reads the exact reference. Skill owns business summaries and explanation guidance without rebuilding mappings or confusing saved definitions with table creation; changes require fresh checks and review"
       }
     },
     {
@@ -99,11 +99,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/platform_conditions.py",
       "anchor": "def validate_create(",
-      "commit": "00d6da240197047afe41e030c63430c3ee7b37de",
-      "sha256": "805fb2a6844536f953489332a1fe7b9b698a1f30718d2888037b5932aa29a7c7",
+      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
+      "sha256": "126216054ba9cafaf08d25e92b7952bd3e64c3d18a36870c2522da51b266bf0c",
       "use": {
-        "zh-cn": "Runtime 条件适配与能力修订、参数和结构事实的复核绑定",
-        "en": "Runtime condition adapters and review binding to revision, arguments and schema facts"
+        "zh-cn": "Runtime 条件适配与能力修订、参数和结构事实的复核绑定；历史草稿复用同一完整参数摘要算法，创建条件和确认裁决不变",
+        "en": "Runtime condition adapters and review binding to revision, arguments and schema facts; historical drafts reuse the exact argument digest algorithm without changing creation conditions or confirmation decisions"
       }
     },
     {
@@ -170,10 +170,75 @@
         "zh-cn": "Transfer Planner 对快照目标 apply_mode 仅接受 replace/append，拒绝其他组合；已复核 CSV/TSV 的 Meta 编码消费调整，写入模式约束不变",
         "en": "Transfer Planner admits only replace/append as snapshot target apply modes; reviewed CSV/TSV consumption of Meta encoding facts without changing apply mode constraints"
       }
+    },
+    {
+      "id": "draft_snapshot",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/services/drafts.py",
+      "anchor": "def draft_snapshot(",
+      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
+      "sha256": "ac5fd884b2115e7ad42af0188f185494766593cb6d7abd7d2c901e8c57904ac5",
+      "use": {
+        "zh-cn": "只引用已完成正式预检步骤的原参数及同参报告，恢复时核验 Manifest、摘要和字节上限；按用户、租户、会话隔离，不复制业务实体、确认或授权，也不写入平台静态本体",
+        "en": "Reference only completed formal check inputs and same-argument reports, verifying Manifest, digest and byte bounds on restore; isolate user, tenant and session without copying business entities, confirmation or authorization into platform definitions"
+      }
+    },
+    {
+      "id": "draft_routing",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/agents/main_agent.py",
+      "anchor": "async def _route_node(",
+      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
+      "sha256": "a420f278c60fa38acf488bd0c3a0097702eaaefc72a3f29154acfb915a8f7b88",
+      "use": {
+        "zh-cn": "纯历史解释只选受信任近期目录的确切引用，不装配业务 Tool 或重读 Owner；歧义不自动选首项，错版或损坏拒绝，修改与创建仍走原平台语义路径",
+        "en": "Pure historical explanation selects exact references from the trusted recent catalog without business tools or owner reads; ambiguity never selects the first item, invalid snapshots fail closed, and changes and creation retain the platform semantic path"
+      }
+    },
+    {
+      "id": "draft_protocol",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/api/chat.py",
+      "anchor": "async def draft_reader(",
+      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
+      "sha256": "684a6116c53b381692dbbad3fce373383af7dabd9562a767389d6d347e70d453",
+      "use": {
+        "zh-cn": "完成步骤事务后按相同身份范围读取原输入，固定映射与完整参数通过唯一 A2UI 路径持久化和回放；历史读取记为 Runtime 审计，不注册业务 Tool、授予权限或创建任务",
+        "en": "Read original inputs within the same identity scope after step commit and persist exact mappings and arguments through one A2UI path; historical reads are runtime audit actions, not business tools, permission grants or task creation"
+      }
+    },
+    {
+      "id": "draft_snapshot_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_drafts.py",
+      "anchor": "class DraftScopeTests(",
+      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
+      "sha256": "70082b5a5c18eba59124f503a15c59ebaea47874bab4c1f7689d8196c018fde6",
+      "use": {
+        "zh-cn": "T1 用实际内存 SQL 谓词验证用户、租户和会话隔离、近期窗口及完整版本；受控路由验证精确 json 映射、无业务工具、歧义和损坏拒绝，不宣称 PG 集成或自由模型验收",
+        "en": "T1 actual in-memory SQL predicates verify user, tenant and session scope, recent bounds and exact versions; controlled routing verifies exact json mappings, zero business tools, ambiguity and invalid snapshot refusal, not PostgreSQL integration or free-model acceptance"
+      }
+    },
+    {
+      "id": "draft_protocol_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_run_events.py",
+      "anchor": "async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(",
+      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
+      "sha256": "e5a17fbfdb1ccb415ed74bcbf2ff5864f3cbd0ba075c1f808509c2386a365d1a",
+      "use": {
+        "zh-cn": "受控持久层消费真实 Chat 流验证完成预检步骤的身份范围、原参数和引用在 SSE、消息 parts 与安全回放中一致；不作为真实数据库或部署验收",
+        "en": "Controlled persistence consuming the real Chat stream verifies completed step scope and exact arguments and references across SSE, message parts and safe replay; not a live database or deployment acceptance claim"
+      }
     }
   ],
   "bindings": [
-    {"subject": "concept/readonly_config_check", "sources": ["config", "manifest", "conditions", "condition_test", "skill", "runtime", "runtime_test"]},
+    {"subject": "concept/readonly_config_check", "sources": ["config", "manifest", "conditions", "condition_test", "skill", "runtime", "runtime_test", "draft_snapshot", "draft_routing", "draft_protocol", "draft_snapshot_test", "draft_protocol_test"]},
     {"subject": "concept/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
     {"subject": "condition/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
     {"subject": "relation/transfer_task/requires/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
