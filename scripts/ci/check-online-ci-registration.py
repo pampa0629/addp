@@ -342,6 +342,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "dae/model.dae",
         "3ds/model.3ds",
         "texture.png",
+        "format-samples/gbk-quoted.csv",
+        "format-samples/gbk-quoted.tsv",
     ):
         if fragment not in fixture:
             raise RegistrationError(
@@ -367,6 +369,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "generate_raster_cog",
         "raster_to_cog",
         "raster_physical",
+        "DELIMITED_SHA256",
+        "delimited_sources",
     ):
         if fragment not in owner:
             raise RegistrationError(
@@ -398,7 +402,12 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "model_generation_requests",
         "anonymous_refresh_401",
         "failed_business_responses",
-        "addp.manager-internal-artifact-lineage-browser/v5",
+        "addp.manager-internal-artifact-lineage-browser/v6",
+        "ADDP_ONLINE_MANAGER_DELIMITED_JSON",
+        "verifyDelimitedTable",
+        "delimited_tables",
+        "encoding_request_verified",
+        "download_sha256",
     ):
         if fragment not in browser:
             raise RegistrationError(

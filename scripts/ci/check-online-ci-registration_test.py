@@ -922,7 +922,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         fixture.write_text(
             "ADDP_ONLINE_HOST --env-file /dev/null business-minio "
             "pdal_las12_format0.las addp_online_preview_fixture.pptx MC_HOST_fixture "
-            "dae/model.dae 3ds/model.3ds texture.png\n",
+            "dae/model.dae 3ds/model.3ds texture.png format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv\n",
             encoding="utf-8",
         )
         owner = self.repository / "scripts/test/manager-internal-artifact-lineage-online.py"
@@ -933,7 +933,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
-            'validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical\n',
+            'validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -945,7 +945,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ".model-preview model_loaded content_loaded .raster-tiff-quick-view raster_generation_requests range_loaded map_loaded "
             "ADDP_ONLINE_MANAGER_BROWSER_PHASE generation-entry cached-preview generation_entry_visible "
             "model_generation_requests anonymous_refresh_401 failed_business_responses "
-            "addp.manager-internal-artifact-lineage-browser/v5\n",
+            "addp.manager-internal-artifact-lineage-browser/v6 ADDP_ONLINE_MANAGER_DELIMITED_JSON "
+            "verifyDelimitedTable delimited_tables encoding_request_verified download_sha256\n",
             encoding="utf-8",
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
@@ -954,11 +955,20 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for file, fragment, reason in (
             (hosted, "start_online_model3d_runtime", "Hosted profile"),
             (fixture, "texture.png", "fixture contract"),
+            (fixture, "format-samples/gbk-quoted.csv", "fixture contract"),
+            (fixture, "format-samples/gbk-quoted.tsv", "fixture contract"),
             (config, "--enable-unsafe-swiftshader", "software WebGL"),
             (owner, "validate_model_glb", "owner contract"),
+            (owner, "DELIMITED_SHA256", "owner contract"),
+            (owner, "delimited_sources", "owner contract"),
             (browser, ".model-preview", "browser contract"),
-            (browser, "addp.manager-internal-artifact-lineage-browser/v5", "browser contract"),
+            (browser, "addp.manager-internal-artifact-lineage-browser/v6", "browser contract"),
             (browser, "ADDP_ONLINE_MANAGER_BROWSER_PHASE", "browser contract"),
+            (browser, "ADDP_ONLINE_MANAGER_DELIMITED_JSON", "browser contract"),
+            (browser, "verifyDelimitedTable", "browser contract"),
+            (browser, "delimited_tables", "browser contract"),
+            (browser, "encoding_request_verified", "browser contract"),
+            (browser, "download_sha256", "browser contract"),
             (browser, "generation-entry", "browser contract"),
             (browser, "cached-preview", "browser contract"),
             (browser, "anonymous_refresh_401", "browser contract"),
