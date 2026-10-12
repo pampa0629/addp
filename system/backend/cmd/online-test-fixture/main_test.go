@@ -388,6 +388,80 @@ func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
 	}
 }
 
+type fakeTransferConfigCheckRoles struct {
+	fault    string
+	assigned bool
+}
+
+func (r *fakeTransferConfigCheckRoles) GetAssignment(_ context.Context, _ int64, id int64) (*iam.ManagedTenantRoleAssignment, error) {
+	assignment := &iam.ManagedTenantRoleAssignment{RoleAssignment: iam.RoleAssignment{ID: id, PrincipalID: 7},
+		MembershipID: 8, PrincipalType: iam.PrincipalTypeUser, RoleKey: "online.external_online_transfer_precheck"}
+	switch r.fault {
+	case "consumer":
+		assignment.RoleKey = "online.transfer_relational_sql_etl"
+	case "foreign_membership":
+		assignment.MembershipID = 99
+	case "service":
+		assignment.PrincipalType = iam.PrincipalTypeServicePrincipal
+	}
+	return assignment, nil
+}
+
+func (r *fakeTransferConfigCheckRoles) CreateAssignments(_ context.Context, input iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error) {
+	if input.TenantID != 42 || input.MembershipID != 8 || len(input.RoleIDs) != 1 || input.RoleIDs[0] != 12 || input.ScopeType != "tenant" {
+		return nil, errors.New("precheck assignment is not scoped to the dedicated fixture user")
+	}
+	if r.fault == "assignment_failure" {
+		return nil, errors.New("assignment failed")
+	}
+	r.assigned = true
+	id := int64(13)
+	if r.fault == "same_assignment" {
+		id = 11
+	}
+	return []iam.ManagedTenantRoleAssignment{{RoleAssignment: iam.RoleAssignment{ID: id, PrincipalID: 7}, MembershipID: 8}}, nil
+}
+
+func TestTransferPrecheckFixtureKeepsConsumerSeparateAndReissuesSession(t *testing.T) {
+	if len(transferConfigCheckPermissions) != 2 || !contains(transferConfigCheckPermissions, "transfer.task.create") || !contains(transferConfigCheckPermissions, "meta.catalog.read") || contains(transferLineagePermissions, "system.engine.read") {
+		t.Fatal("precheck custom permissions and original execution consumer must stay separate")
+	}
+	for _, fault := range []string{"", "consumer", "foreign_membership", "service", "invalid_tenant", "same_assignment", "assignment_failure"} {
+		t.Run(fault, func(t *testing.T) {
+			tenant, membership := int64(42), int64(8)
+			if fault == "invalid_tenant" {
+				tenant = 99
+			}
+			original := &iam.IssuedBrowserSession{AccessToken: "old-token", Context: iam.ResolvedSessionContext{Type: iam.ContextTypeTenant, TenantID: &tenant, TenantMembershipID: &membership}}
+			roles := &fakeTransferConfigCheckRoles{fault: fault}
+			issued := 0
+			current := &iam.IssuedBrowserSession{AccessToken: "current-token"}
+			result, err := grantTransferConfigCheckEngineReader(t.Context(), roles, func(principalID int64) (*iam.IssuedBrowserSession, error) {
+				issued++
+				if principalID != 7 || !roles.assigned {
+					t.Fatal("fresh session issued before role assignment or for another user")
+				}
+				return current, nil
+			}, original, 42, 1, 11, 12)
+			if fault == "" {
+				if err != nil || result != current || issued != 1 {
+					t.Fatalf("fresh dedicated session missing: %v", err)
+				}
+			} else if err == nil || result != nil || issued != 0 {
+				t.Fatalf("invalid role scope issued a session: %v", err)
+			}
+		})
+	}
+	path := filepath.Join(t.TempDir(), "precheck.env")
+	if err := writeEnvironmentFile(path, map[string]string{"ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME": "external-online-transfer-precheck", "ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD": "fixture-password"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD='fixture-password'") {
+		t.Fatal("dedicated browser credentials were not preserved in the owner-only file")
+	}
+}
+
 func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	permissions, err := suitePermissions("security-mysql-owner-protection")
 	if err != nil {

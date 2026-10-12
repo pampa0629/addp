@@ -216,7 +216,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
     @staticmethod
     def browser_report(name: str) -> dict[str, object]:
         return {
-            "schema_version": "addp.transfer-relational-sql-etl-browser/v6",
+            "schema_version": "addp.transfer-relational-sql-etl-browser/v7",
             "suite": "transfer-relational-sql-etl",
             "run_id": "run-123",
             "result": "passed",
@@ -230,6 +230,12 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "records_written": 2,
             "target_row_count": 2,
             "task_deleted": True,
+            "config_checks": {
+                "statuses": ["supported", "unknown", "unsupported"], "requests": 3,
+                "config_changed_report_cleared": True, "definitions_unchanged": True,
+                "executions_unchanged": True, "forbidden_requests": 0, "draft_cancelled": True,
+            "separate_identity_verified": True,
+            },
             "manager_field_graph_verified": True,
             "query_field_lineage_verified": True,
             "manager_mongodb_field_graph_verified": True,
@@ -250,6 +256,26 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         report["schema_version"] = "addp.transfer-relational-sql-etl-browser/v2"
         with self.assertRaisesRegex(ONLINE.SuiteError, "schema_version"):
             ONLINE.validate_browser_report(report, "run-123", "42", name)
+
+    def test_readonly_config_checks_require_complete_proofs_and_zero_side_effects(self):
+        name = ONLINE.task_name("run-123")
+        original = self.browser_report(name)
+        mutations = {
+            "statuses": ["supported", "supported", "supported"], "requests": 2,
+            "config_changed_report_cleared": False, "definitions_unchanged": False,
+            "executions_unchanged": False, "forbidden_requests": 1, "draft_cancelled": False,
+            "separate_identity_verified": False,
+        }
+        for key, value in mutations.items():
+            with self.subTest(key=key):
+                report = copy.deepcopy(original)
+                report["config_checks"][key] = value
+                with self.assertRaisesRegex(ONLINE.SuiteError, "config_checks"):
+                    ONLINE.validate_browser_report(report, "run-123", "42", name)
+        for checks in (None, {}, {**original["config_checks"], "unknown": True}):
+            report = dict(original, config_checks=checks)
+            with self.assertRaisesRegex(ONLINE.SuiteError, "config_checks"):
+                ONLINE.validate_browser_report(report, "run-123", "42", name)
 
     @staticmethod
     def field_graph():
@@ -415,7 +441,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v7")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v8")
         self.assertEqual(report["created_resources"], 11)
         self.assertEqual(report["deleted_resources"], 11)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])

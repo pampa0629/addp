@@ -9,6 +9,8 @@ import {
   json,
   login,
   selectSearchResult,
+  executionItems,
+  isReadonlyTaskConfigCheckRequest,
   waitForExecution
 } from './transfer-browser-support.js'
 
@@ -23,6 +25,8 @@ const requiredNames = [
   'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',
   'ADDP_ONLINE_TEST_USER_USERNAME',
   'ADDP_ONLINE_TEST_USER_PASSWORD',
+  'ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME',
+  'ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD',
   'ADDP_ONLINE_TEST_ENGINE_NAME',
   'ADDP_ONLINE_TEST_ENGINE_ID',
   'ADDP_ONLINE_TRANSFER_SQL_ETL_TASK_NAME',
@@ -461,7 +465,143 @@ async function verifyWideLineage(page, env) {
   }
 }
 
-test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page }) => {
+async function taskExecutionIdentities(api) {
+  const listing = await json(await api.get('/api/v1/transfer/task-definitions?page=1&page_size=100'), 'read definitions before/after checks')
+  expect(listing.total).toBe(listing.items.length)
+  const tasks = listing.items.map(task => Number(task.id)).sort((left, right) => left - right)
+  const executions = []
+  for (const id of tasks) {
+    const payload = await json(await api.get(`/api/v1/transfer/task-definitions/${id}/executions?page=1&page_size=100`), 'read execution identities')
+    const items = executionItems(payload)
+    if (payload.total !== undefined) expect(payload.total).toBe(items.length)
+    executions.push([id, items.map(item => item.execution_id).sort()])
+  }
+  return { tasks, executions }
+}
+
+async function verifyTaskConfigChecks(page, api, env, browserIdentity) {
+  const before = await taskExecutionIdentities(api)
+  const forbiddenRequests = []
+  const checkRequests = []
+  // A transparent safety guard: checks reach the real Gateway and owner.
+  // No save/run/scan or business preview may escape this unsaved draft.
+  const guard = async route => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (request.method() === 'POST' && path === '/api/v1/transfer/task-config-checks') {
+      checkRequests.push(request.postDataJSON())
+    } else if (!isReadonlyTaskConfigCheckRequest(request.method(), path)) {
+      forbiddenRequests.push({ method: request.method(), path })
+      return route.abort('blockedbyclient')
+    }
+    return route.continue()
+  }
+  await page.route('**/api/v1/**', guard)
+  try {
+    await page.goto('/transfer/tasks/create')
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const wizard = frame.getByTestId('transfer-task-wizard')
+    await expect(wizard).toHaveAttribute('data-step', '0')
+    await selectSearchResult(frame.getByTestId('task-source-picker'), env.ADDP_ONLINE_TRANSFER_SQL_ETL_SOURCE_TABLE, env.ADDP_ONLINE_TEST_ENGINE_NAME)
+    await expect(frame.getByTestId('task-query-source-toggle').getByRole('switch')).not.toBeChecked()
+    await frame.getByTestId('task-wizard-next').click()
+    await expect(wizard).toHaveAttribute('data-step', '1')
+    await chooseSelectOption(frame, frame.getByTestId('task-target-engine'), env.ADDP_ONLINE_TEST_ENGINE_NAME)
+    await selectSearchResult(frame.getByTestId('task-target-parent'), 'public', 'public')
+    await frame.getByTestId('task-target-table').fill('addp_online_transfer_config_check')
+    await frame.getByTestId('task-wizard-next').click()
+    await expect(wizard).toHaveAttribute('data-step', '2')
+    const mappings = frame.getByTestId('task-field-mappings')
+    // Keep only the fixture's string field. Other scalar casts are outside this check.
+    for (const field of ['id', 'status', 'amount', 'internal_note']) {
+      const row = mappings.locator('.el-table__row').filter({ hasText: new RegExp(`^\\s*${field}\\s*\\(`) })
+      await expect(row).toHaveCount(1)
+      await row.getByRole('button', { name: '删除', exact: true }).click()
+    }
+    await expect(mappings.locator('.el-table__row')).toHaveCount(1)
+    await expect(mappings).toContainText('region')
+    await frame.getByTestId('task-wizard-next').click()
+    await expect(wizard).toHaveAttribute('data-step', '3')
+    await frame.getByTestId('task-name').fill(`${env.ADDP_ONLINE_TRANSFER_SQL_ETL_TASK_NAME}_check`)
+    await frame.getByTestId('task-wizard-next').click()
+    await expect(wizard).toHaveAttribute('data-step', '4')
+
+    async function check(status, code, physical) {
+      const panel = frame.getByTestId('task-config-check-report')
+      await expect(panel).toHaveCount(0)
+      await frame.getByRole('button', { name: '查看详情', exact: true }).click()
+      const submitted = JSON.parse(await frame.locator('.json-preview').innerText())
+      expect(submitted.config.source).not.toHaveProperty('query')
+      expect(submitted.config.target.name).toBe('addp_online_transfer_config_check')
+      const responsePromise = page.waitForResponse(response => response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/v1/transfer/task-config-checks')
+      await frame.getByTestId('task-config-check').click()
+      const response = await responsePromise
+      expect(response.status()).toBe(200)
+      expect(response.headers()['cache-control']).toBe('no-store')
+      expect(response.request().postDataJSON()).toEqual(submitted)
+      const report = await response.json()
+      expect(report.schema_version).toBe('addp.transfer_task_config_check/v1')
+      expect(String(report.tenant_id)).toBe(browserIdentity.tenantID)
+      expect(report.principal_id).toBe(browserIdentity.principalID)
+      expect(report.status).toBe(status)
+      expect(report.config_hash).toMatch(/^[a-f0-9]{64}$/)
+      expect(report.binding_hash).toMatch(/^[a-f0-9]{64}$/)
+      expect(report.checked).toContain('provider_write_definition')
+      expect(report.facts).toContainEqual(expect.objectContaining({ role: 'source', engine_id: Number(env.ADDP_ONLINE_TEST_ENGINE_ID), schema_coverage: 'complete' }))
+      expect(report.facts).toContainEqual(expect.objectContaining({ role: 'target', engine_id: Number(env.ADDP_ONLINE_TEST_ENGINE_ID) }))
+      const sourceFact = report.facts.find(fact => fact.role === 'source')
+      expect(sourceFact.meta_item_id).toBeGreaterThan(0)
+      expect(sourceFact.snapshot_hash).toMatch(/^[a-f0-9]{64}$/)
+      expect(sourceFact.engine_facts_hash).toMatch(/^[a-f0-9]{64}$/)
+      expect(Number.isFinite(Date.parse(report.observed_at))).toBe(true)
+      expect(report.diagnostics).toContainEqual(expect.objectContaining({ status, code, config_path: '/config/transforms/0/fields/0', target_field: 'region', physical_type: physical }))
+      expect(report.not_checked).toEqual(expect.arrayContaining(['business_rows', 'source_query', 'replace_target_side_effects']))
+      expect(report.runtime_checks_required).toContain('per_value_encoding')
+      await expect(panel).toBeVisible()
+      await expect(panel).toContainText('/config/transforms/0/fields/0')
+      await expect(panel).toContainText(physical)
+      await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `transfer-config-check-${status}.png`), fullPage: true })
+    }
+    await check('supported', 'source_assignment_supported', 'TEXT')
+    async function editMapping() {
+      await frame.getByRole('button', { name: '上一步', exact: true }).click()
+      await expect(wizard).toHaveAttribute('data-step', '3')
+      await frame.getByRole('button', { name: '上一步', exact: true }).click()
+      await expect(wizard).toHaveAttribute('data-step', '2')
+      return frame.getByTestId('task-field-mappings').locator('.el-table__row')
+    }
+    async function review() {
+      await frame.getByTestId('task-wizard-next').click()
+      await expect(wizard).toHaveAttribute('data-step', '3')
+      await frame.getByTestId('task-wizard-next').click()
+      await expect(wizard).toHaveAttribute('data-step', '4')
+    }
+    const row = await editMapping()
+    await chooseSelectOption(frame, row.locator('.el-select').nth(2), 'JSON')
+    await review()
+    await check('unknown', 'json_representation_not_proven', 'JSONB')
+    await editMapping()
+    await frame.getByRole('textbox', { name: '默认值', exact: true }).fill('not-valid-json')
+    await review()
+    await check('unsupported', 'constant_encoding_invalid', 'JSONB')
+    expect(checkRequests).toHaveLength(3)
+    expect(forbiddenRequests).toEqual([])
+    await frame.getByRole('button', { name: '取消', exact: true }).click()
+    await frame.getByRole('dialog').getByRole('button', { name: '确定', exact: true }).click()
+    await expect(wizard).toHaveAttribute('data-step', '0')
+    expect(await taskExecutionIdentities(api)).toEqual(before)
+    return {
+      statuses: ['supported', 'unknown', 'unsupported'], requests: 3,
+      config_changed_report_cleared: true, definitions_unchanged: true,
+      executions_unchanged: true, forbidden_requests: 0, draft_cancelled: true
+    }
+  } finally {
+    await page.unroute('**/api/v1/**', guard)
+  }
+}
+
+test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page, browser }) => {
   test.setTimeout(360_000)
   await observeLineageCanvas(page)
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
@@ -516,6 +656,42 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     page.on('console', message => {
       if (message.type() === 'error') consoleErrors.push(message.text())
     })
+    // Separate browser context and User: the execution consumer keeps its exact minimum role.
+    expect(apiIdentity.permissions.has('system.engine.read')).toBe(false)
+    const checkContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL || 'http://127.0.0.1:5170' })
+    let configChecks
+    try {
+      const checkPage = await checkContext.newPage()
+      await checkPage.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+      const checkToken = await login(checkPage, env.ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME, env.ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD, '/transfer/tasks/create')
+      checkPage.on('pageerror', error => consoleErrors.push(error.message))
+      checkPage.on('response', response => {
+        const pathname = new URL(response.url()).pathname
+        if (pathname.startsWith('/api/v1/') && response.status() >= 400) failedResponses.push({ pathname, status: response.status() })
+      })
+      checkPage.on('console', message => {
+        if (message.type() === 'error') consoleErrors.push(message.text())
+      })
+      const checkAPI = await request.newContext({ baseURL: env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${checkToken}` } })
+      let checker
+      try {
+        const subject = await json(await checkAPI.get('/api/v1/system/auth/context'), 'read dedicated precheck AuthContext')
+        checker = identity(subject)
+        expect(checker.principalType).toBe('user')
+        expect(checker.contextType).toBe('tenant')
+        expect(checker.tenantID).toBe(apiIdentity.tenantID)
+        expect(checker.principalID).not.toBe(apiIdentity.principalID)
+        expect(subject.authorization.role_assignments.map(role => role.role_key).sort()).toEqual(['online.external_online_transfer_precheck', 'tenant.infrastructure_administrator'])
+        for (const permission of ['transfer.task.create', 'meta.catalog.read', 'system.engine.read']) expect(checker.permissions.has(permission)).toBe(true)
+        expect(checker.permissions.has('transfer.task.execute')).toBe(false)
+        expect(checker.permissions.has('transfer.task.read')).toBe(false)
+      } finally {
+        await checkAPI.dispose()
+      }
+      configChecks = { ...await verifyTaskConfigChecks(checkPage, api, env, checker), separate_identity_verified: true }
+    } finally {
+      await checkContext.close()
+    }
     await page.goto('/transfer/tasks/create')
 
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
@@ -618,7 +794,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-relational-sql-etl-browser.json'),
       `${JSON.stringify({
-        schema_version: 'addp.transfer-relational-sql-etl-browser/v6',
+        schema_version: 'addp.transfer-relational-sql-etl-browser/v7',
         suite: 'transfer-relational-sql-etl',
         run_id: env.ADDP_ONLINE_TEST_RUN_ID,
         result: 'passed',
@@ -632,6 +808,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
         records_written: 2,
         target_row_count: 2,
         task_deleted: true,
+        config_checks: configChecks,
         manager_field_graph_verified: true,
         query_field_lineage_verified: true,
         manager_mongodb_field_graph_verified: true,

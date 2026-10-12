@@ -925,7 +925,7 @@ def suite_task_ids(client: GatewayClient, exact_name: str | None = None) -> list
 def validate_browser_report(report: object, run_id: str, tenant_id: str, expected_task_name: str) -> dict[str, object]:
     payload = _object(report, "Transfer relational SQL ETL browser report")
     expected = {
-        "schema_version": "addp.transfer-relational-sql-etl-browser/v6",
+        "schema_version": "addp.transfer-relational-sql-etl-browser/v7",
         "suite": "transfer-relational-sql-etl",
         "run_id": run_id,
         "result": "passed",
@@ -939,6 +939,12 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
         "records_written": 2,
         "target_row_count": 2,
         "task_deleted": True,
+        "config_checks": {
+            "statuses": ["supported", "unknown", "unsupported"], "requests": 3,
+            "config_changed_report_cleared": True, "definitions_unchanged": True,
+            "executions_unchanged": True, "forbidden_requests": 0, "draft_cancelled": True,
+            "separate_identity_verified": True,
+        },
         "manager_field_graph_verified": True,
         "query_field_lineage_verified": True,
         "manager_mongodb_field_graph_verified": True,
@@ -1058,7 +1064,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v7",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v8",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",

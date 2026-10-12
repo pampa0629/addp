@@ -1,8 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { isAnonymousRefreshConsoleError, matchesRedirectURL } from '../../e2e/online/transfer-browser-support.js'
+import { isAnonymousRefreshConsoleError, matchesRedirectURL, isReadonlyTaskConfigCheckRequest } from '../../e2e/online/transfer-browser-support.js'
 
 const base = 'http://addp.invalid'
+
+describe('read-only task configuration check safety guard', () => {
+  it('allows only real checks, session refresh and declared persisted facts', () => {
+    for (const [method, path] of [
+      ['POST', '/api/v1/transfer/task-config-checks'], ['POST', '/api/v1/system/refresh'],
+      ['GET', '/api/v1/system/auth/context'], ['GET', '/api/v1/meta/engines'],
+      ['GET', '/api/v1/meta/resource-tree/7/search'], ['GET', '/api/v1/meta/items/9/fields'],
+      ['GET', '/api/v1/transfer/capabilities'], ['GET', '/api/v1/transfer/task-definitions'],
+      ['GET', '/api/v1/transfer/task-definitions/8/executions']
+    ]) expect(isReadonlyTaskConfigCheckRequest(method, path), `${method} ${path}`).toBe(true)
+  })
+  it('rejects task mutations, execution, scanning and business reads', () => {
+    for (const [method, path] of [
+      ['POST', '/api/v1/transfer/task-definitions'], ['PUT', '/api/v1/transfer/task-definitions/8'],
+      ['DELETE', '/api/v1/transfer/task-definitions/8'], ['POST', '/api/v1/transfer/task-definitions/8/start'],
+      ['POST', '/api/v1/meta/scan/run/manual'], ['POST', '/api/v1/develop/queries'],
+      ['GET', '/api/v1/manager/preview'], ['GET', '/api/v1/manager/items/7/preview'],
+      ['GET', '/api/v1/manager/data-items/7/content'], ['GET', '/api/v1/meta/items/7/rows'],
+      ['GET', '/api/v1/transfer/task-config-checks'], ['POST', '/api/v1/meta/engines']
+    ]) expect(isReadonlyTaskConfigCheckRequest(method, path), `${method} ${path}`).toBe(false)
+  })
+})
 
 describe('Online login target route', () => {
   it('accepts the same full locator after Vue Router serializes its query', () => {

@@ -108,3 +108,12 @@ export async function selectSearchResult(picker, keyword, expectedText) {
   await expect(result).toBeVisible()
   await result.click()
 }
+
+export function isReadonlyTaskConfigCheckRequest(method, path) {
+  if (method === 'POST') return ['/api/v1/transfer/task-config-checks', '/api/v1/system/refresh'].includes(path)
+  if (method !== 'GET') return false
+  return path.startsWith('/api/v1/system/') || path === '/api/v1/transfer/capabilities' ||
+    /^\/api\/v1\/transfer\/task-definitions(?:\/statistics|\/\d+(?:\/executions)?)?$/.test(path) ||
+    path === '/api/v1/meta/engines' || /^\/api\/v1\/meta\/resource-tree\/\d+(?:\/(?:node|ancestors|search))?$/.test(path) ||
+    /^\/api\/v1\/meta\/items\/\d+(?:\/fields)?$/.test(path)
+}

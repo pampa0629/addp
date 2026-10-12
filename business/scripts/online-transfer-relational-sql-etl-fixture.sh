@@ -277,6 +277,7 @@ SQL_EVOLVE
     assert_owned
     postgres_running || fail "source PostgreSQL is not running"
     assert_owned "$mongodb_container"
+    postgres_sql -Atc "SELECT to_regclass('public.addp_online_transfer_config_check') IS NULL" | grep -qx 't' || fail "read-only configuration check created a target table"
     verify_fixture
     echo "Online Transfer relational SQL ETL target is verified"
     ;;

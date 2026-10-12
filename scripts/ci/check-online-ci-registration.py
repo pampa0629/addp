@@ -1247,22 +1247,24 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         raise RegistrationError("transfer-relational-sql-etl must not also dispatch on self-hosted")
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
-    if aggregate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in aggregate.group("body"):
+    owner_gate = re.search(r"(?ms)^test-transfer-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)", makefile)
+    if (aggregate is None or "$(MAKE) test-transfer-online-runner" not in aggregate.group("body")
+            or owner_gate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in owner_gate.group("body")):
         raise RegistrationError("transfer-relational-sql-etl Hosted regression must enter test-online-runner")
     contracts = {
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
-            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v7",
-            "run_wide_lineage", "validate_wide_graph", "WIDE_FIELDS", "manager_wide_field_graph_verified",
+            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v8",
+            "run_wide_lineage", "validate_wide_graph", "WIDE_FIELDS", "manager_wide_field_graph_verified", "config_checks",
             "run_multi_source_lineage", "validate_multi_source_execution", "multiple_origins_verified", "cte_join_union_verified",
             "run_orchestrated_lineage", "validate_orchestrated_child", "canonical_table_locator", "validate_query_facts", "wait_resource_chain", "cleanup_definitions", "three_hop_verified",
             "run_mongodb_lineage", "validate_mongodb_execution", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID", "automatic_collection_verified", "rerun_verified",
             "run_native_lineage", "wait_field_graph", "execution_schema_hashes", "validate_graph_snapshots", "generated_label", '"_replace"', '"_hop"',
             '"residual_resources": 0', "cleanup_tasks(client", "owned_task_names", "schema_snapshot_hash",
-            "addp.transfer-relational-sql-etl-browser/v6",
+            "addp.transfer-relational-sql-etl-browser/v7",
         ),
         "business/scripts/online-transfer-relational-sql-etl-fixture.sh": (
-            "ADDP_ONLINE_HOSTED", "GITHUB_ACTIONS", "NATIVE_TARGET", "NATIVE_DOWNSTREAM", "DROP TABLE IF EXISTS public.${NATIVE_TARGET}",
+            "ADDP_ONLINE_HOSTED", "GITHUB_ACTIONS", "NATIVE_TARGET", "NATIVE_DOWNSTREAM", "DROP TABLE IF EXISTS public.${NATIVE_TARGET}", "read-only configuration check created a target table",
             "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}", "numeric_precision, numeric_scale", "generated_label",
             "WIDE_SOURCE", "WIDE_DOWNSTREAM", "generate_series(0,499)", "EXCEPT ALL", "wide target complete row multiset differs",
             "MULTI_TARGET", "multi-source CTE/JOIN/UNION rows differ", "DROP TABLE IF EXISTS public.${MULTI_TARGET}",
@@ -1273,16 +1275,19 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         ),
         "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js": (
             "/manager/data-explorer", "field_ref", "schema_snapshot_hash", "lineage-fields", "lineage-canvas", "lineageFieldConnections",
+            "verifyTaskConfigChecks", "taskExecutionIdentities", "/api/v1/transfer/task-config-checks", "json_representation_not_proven", "constant_encoding_invalid", "forbiddenRequests", "config_checks: configChecks",
             "verifyWideLineage", "manager_wide_field_graph_verified: true", "expect(graph.nodes).toHaveLength(1500)", "expect(graph.edges).toHaveLength(1000)", "expect(requests).toBe(1)",
             "manager_evolved_schema_verified: true", "schema_evolution.history_verified", "expect(chain.rounds).toHaveLength(3)",
             "manager_orchestrated_field_graph_verified: true", "ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE", "transfer-orchestrated-dwd-field-lineage.png",
             "manager_mongodb_field_graph_verified: true", "ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE", "transfer-mongodb-ods-field-lineage.png", "expect(mongodbGraphRequests).toBe(1)",
             "manager_field_graph_verified: true", "query_field_lineage_verified: true", "expect(query.graph.field_lineage_status).toBe('complete')", "expect(query.focused.edges).toHaveLength(1)",
-            "addp.transfer-relational-sql-etl-browser/v6",
+            "addp.transfer-relational-sql-etl-browser/v7",
         ),
-        "scripts/test/transfer-relational-sql-etl-online_test.py": ("test_multi_source_frozen_evidence_rejects_partial_or_guessed_origins", "test_multi_source_scenario_preserves_inputs_parameters_and_exact_graph_origins", "test_rejects_wrong_fields_versions_and_execution_proofs", "test_mongodb_reruns_one_task_and_requires_all_latest_automatic_proofs", "test_chain_reruns_same_definition_and_only_observes_latest_owner_proofs"),
-        "scripts/test/online-hosted-transfer-gate_test.py": ("test_failures_destroy_owned_resources",),
-        "scripts/test/online-transfer-relational-sql-etl-fixture_test.py": ("test_rejects_incorrect_multi_source_query_rows", "test_rejects_native_rows", "test_partial_mongodb_initialization_is_redacted_and_cleans_both_containers"),
+        "scripts/test/transfer-relational-sql-etl-online_test.py": ("test_readonly_config_checks_require_complete_proofs_and_zero_side_effects", "test_multi_source_frozen_evidence_rejects_partial_or_guessed_origins", "test_multi_source_scenario_preserves_inputs_parameters_and_exact_graph_origins", "test_rejects_wrong_fields_versions_and_execution_proofs", "test_mongodb_reruns_one_task_and_requires_all_latest_automatic_proofs", "test_chain_reruns_same_definition_and_only_observes_latest_owner_proofs"),
+        "scripts/test/online-hosted-transfer-gate_test.py": ("test_failures_destroy_owned_resources", "ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME"),
+        "system/backend/cmd/online-test-fixture/main.go": ("grantTransferConfigCheckEngineReader", "ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD"),
+        "system/backend/cmd/online-test-fixture/main_test.go": ("TestTransferPrecheckFixtureKeepsConsumerSeparateAndReissuesSession",),
+        "scripts/test/online-transfer-relational-sql-etl-fixture_test.py": ("test_readonly_config_check_target_must_remain_absent", "test_rejects_incorrect_multi_source_query_rows", "test_rejects_native_rows", "test_partial_mongodb_initialization_is_redacted_and_cleans_both_containers"),
     }
     for relative, fragments in contracts.items():
         path = repository / relative

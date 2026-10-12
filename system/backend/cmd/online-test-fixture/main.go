@@ -89,6 +89,8 @@ var transferLineagePermissions = []string{
 	"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read",
 }
 
+var transferConfigCheckPermissions = []string{"transfer.task.create", "meta.catalog.read"}
+
 var metricPermissions = []string{
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"standard.metric.create", "standard.metric.read", "standard.metric.update", "standard.metric.publish",
@@ -357,6 +359,25 @@ func run(args []string, environment []string) error {
 		return err
 	}
 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
+	if *suite == "transfer-relational-sql-etl" {
+		const username = "external-online-transfer-precheck"
+		original, assignmentID, password, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, username, transferConfigCheckPermissions)
+		if err != nil {
+			return err
+		}
+		builtin, err := repository.GetActiveBuiltinRoleByKey(ctx, engineProvisionerRoleKey)
+		if err != nil {
+			return fmt.Errorf("resolve precheck infrastructure role: %w", err)
+		}
+		if _, err := grantTransferConfigCheckEngineReader(ctx, roleService, func(principalID int64) (*iam.IssuedBrowserSession, error) {
+			return issueSession(ctx, selectionService, principalID, username+"-current-session")
+		}, original, tenant.ID, administrator.PrincipalID, assignmentID, builtin.ID); err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME"] = username
+		values["ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD"] = password
+	}
 	if *suite == "raster-workflow" {
 		policyValues, err := rasterPolicyIdentities(ctx, repository, identity, selectionService, administrator.PrincipalID)
 		if err != nil {
@@ -672,6 +693,39 @@ type orchestratorReaderRoles interface {
 	CreateAssignments(context.Context, iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error)
 }
 
+type transferConfigCheckRoles interface {
+	GetAssignment(context.Context, int64, int64) (*iam.ManagedTenantRoleAssignment, error)
+	CreateAssignments(context.Context, iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error)
+}
+
+func grantTransferConfigCheckEngineReader(ctx context.Context, roles transferConfigCheckRoles, issue func(int64) (*iam.IssuedBrowserSession, error), original *iam.IssuedBrowserSession, tenantID, actorID, assignmentID, builtinRoleID int64) (*iam.IssuedBrowserSession, error) {
+	if original == nil || original.Context.Type != iam.ContextTypeTenant || original.Context.TenantID == nil || *original.Context.TenantID != tenantID ||
+		original.Context.TenantMembershipID == nil || *original.Context.TenantMembershipID <= 0 || tenantID <= 1 || assignmentID <= 0 || builtinRoleID <= 0 {
+		return nil, errors.New("precheck reader requires its dedicated Tenant session and role")
+	}
+	assignment, err := roles.GetAssignment(ctx, tenantID, assignmentID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve precheck role assignment: %w", err)
+	}
+	if assignment == nil || assignment.ID != assignmentID || assignment.PrincipalID <= 0 || assignment.MembershipID != *original.Context.TenantMembershipID ||
+		assignment.RoleKey != "online.external_online_transfer_precheck" || assignment.PrincipalType != iam.PrincipalTypeUser {
+		return nil, errors.New("precheck role assignment does not match its dedicated user")
+	}
+	grants, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+		TenantID: tenantID, MembershipID: assignment.MembershipID, RoleIDs: []int64{builtinRoleID}, ScopeType: "tenant",
+		Reason: "Disposable Online read-only configuration check", ActorPrincipalID: actorID,
+		Audit: audit("external-online-precheck-engine-reader-assignment"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("assign precheck infrastructure role: %w", err)
+	}
+	if len(grants) != 1 || grants[0].ID <= 0 || grants[0].ID == assignmentID || grants[0].PrincipalID != assignment.PrincipalID || grants[0].MembershipID != assignment.MembershipID {
+		return nil, errors.New("precheck infrastructure assignment was not persisted separately")
+	}
+	// The additional role changes authorization_version; never reuse the old token.
+	return issue(assignment.PrincipalID)
+}
+
 func grantOrchestratorMonitorReader(ctx context.Context, roles orchestratorReaderRoles, issue func(int64) (*iam.IssuedBrowserSession, error), original *iam.IssuedBrowserSession, tenantID, actorID, ownerAssignmentID int64) (*iam.IssuedBrowserSession, error) {
 	if original == nil || original.Context.Type != iam.ContextTypeTenant || original.Context.TenantID == nil || *original.Context.TenantID != tenantID ||
 		original.Context.TenantMembershipID == nil || *original.Context.TenantMembershipID <= 0 || tenantID <= 1 || ownerAssignmentID <= 0 {
@@ -780,6 +834,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_USER_USERNAME",
 		"ADDP_ONLINE_TEST_USER_PASSWORD",
+		"ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME",
+		"ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD",
 	} {
 		raw, exists := values[key]
 		if !exists {

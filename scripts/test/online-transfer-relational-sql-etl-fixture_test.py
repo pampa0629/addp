@@ -101,6 +101,7 @@ case "$1" in
          fi ;;
     esac
     case " $* " in
+      *"to_regclass('public.addp_online_transfer_config_check')"*) echo "${ADDP_TEST_PRECHECK_TARGET_ABSENT:-t}" ;;
       *"information_schema.columns"*"addp_wide"*) echo "${ADDP_TEST_WIDE_COLUMNS:-500}" ;;
       *"differences"*) echo "${ADDP_TEST_WIDE_DIFFERENCES:-0}" ;;
       *"string_agg(column_name"*"addp_online_transfer_multi_query_target"*) echo 'id,combined_label,combined_amount' ;;
@@ -158,6 +159,13 @@ esac
             result = self.run_fixture('verify', **override)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('wide target', result.stderr)
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+
+    def test_readonly_config_check_target_must_remain_absent(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        result = self.run_fixture('verify', ADDP_TEST_PRECHECK_TARGET_ABSENT='f')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('read-only configuration check created a target table', result.stderr)
         self.assertEqual(self.run_fixture('stop').returncode, 0)
 
     def test_owns_projection_filter_verification_and_cleanup(self):

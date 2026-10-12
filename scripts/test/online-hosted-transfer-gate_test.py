@@ -37,6 +37,8 @@ class HostedTransferGateTest(unittest.TestCase):
             export ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
             export ADDP_ONLINE_TEST_USER_USERNAME=external-online-consumer
             export ADDP_ONLINE_TEST_USER_PASSWORD=consumer-password
+            export ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME=external-online-transfer-precheck
+            export ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD=check-password
             EOF
                 exit 0
               fi
@@ -67,6 +69,8 @@ class HostedTransferGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME" = 'Hosted Transfer MongoDB' ] &&
               [ -z "${TRANSFER_MONGODB_PASSWORD:-}" ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
+              [ "$ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME" = external-online-transfer-precheck ] &&
+              [ "$ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD" = check-password ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] &&
               [ -z "${TRANSFER_FIXTURE_PASSWORD:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]

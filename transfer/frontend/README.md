@@ -116,6 +116,8 @@ transfer/frontend/
 
 标准验证为 `make test-transfer-frontend`，包含单测、受控 API 夹具的浏览器交互和构建。浏览器通过共享启动器分配独立回环端口，使用合成配置，不访问个人登录态或业务服务；Platform CI 的 Transfer 前端矩阵执行同一入口并收集失败证据。
 
+真实只读链路复用手动 Hosted `transfer-relational-sql-etl` suite：普通用户经 Console 登录，在未保存的创建向导中验证 string→string 受支持、string→json 尚无法确定、非法 JSON 默认值不支持。预检段使用当次夹具的已保存源结构，目标为专用合成表名；拦截除预检和正常认证刷新外的修改请求及业务预览，核对任务与执行身份集合不变，取消草稿，并由夹具核对目标表未创建。`system.engine.read` 不允许租户自定义角色持有；预检由独立临时用户通过已有租户基础设施管理员内置角色取得该权限，另赋 `transfer.task.create`、`meta.catalog.read`，仅引用当次合成夹具。原传输用户权限不扩张，不修改生产权限规范。确定性门禁为 `make test-transfer-online-runner`，由现有 `make test-online-runner` 与 Platform CI 聚合；此扩展首次 Hosted 实际通过前，不计为 T4 通过。
+
 ## 主要页面
 
 ### 任务列表（TaskList.vue）
