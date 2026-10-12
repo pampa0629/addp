@@ -1705,7 +1705,7 @@ func (s *EngineService) CreateEngine(engine *models.Engine) (*models.Engine, boo
 		return nil, false, err
 	}
 	if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, identityKey); findErr == nil {
-		return s.resolveIdempotentRegistration(existing)
+		return s.refreshRuntimeRegistration(existing, engine)
 	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
 		return nil, false, findErr
 	}
@@ -1721,11 +1721,40 @@ func (s *EngineService) CreateEngine(engine *models.Engine) (*models.Engine, boo
 	}
 	if err := s.repo.Create(engine); err != nil {
 		if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, identityKey); findErr == nil {
-			return s.resolveIdempotentRegistration(existing)
+			return s.refreshRuntimeRegistration(existing, engine)
 		}
 		return nil, false, err
 	}
 	return engine, true, nil
+}
+
+// refreshRuntimeRegistration updates the runtime-owned declaration, not administrator-owned settings.
+func (s *EngineService) refreshRuntimeRegistration(existing, submitted *models.Engine) (*models.Engine, bool, error) {
+	if _, _, err := s.resolveIdempotentRegistration(existing); err != nil {
+		return nil, false, err
+	}
+	candidate := *existing
+	candidate.Capabilities = submitted.Capabilities
+	if err := s.prepareEngineCapabilities(&candidate); err != nil {
+		return nil, false, err
+	}
+	current := ""
+	if existing.Capabilities != nil {
+		current = string(*existing.Capabilities)
+	}
+	if capabilitiesJSONEqual(current, string(*candidate.Capabilities)) {
+		return s.sanitizeResource(existing), false, nil
+	}
+	if err := s.repo.UpdateCapabilities(&candidate); err != nil {
+		if errors.Is(err, repository.ErrEngineVersionConflict) {
+			return nil, false, ErrEngineVersionConflict
+		}
+		return nil, false, err
+	}
+	if s.eventPublisher != nil {
+		_ = s.eventPublisher.PublishEngineChange(context.Background(), existing.ID, events.ActionUpdate)
+	}
+	return s.sanitizeResource(&candidate), false, nil
 }
 
 func (s *EngineService) prepareEngineCapabilities(engine *models.Engine) error {

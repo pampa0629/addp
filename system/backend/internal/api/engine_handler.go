@@ -921,7 +921,7 @@ type RuntimeEngineRegistrationRequest struct {
 
 // RegisterRuntimeEngine godoc
 // @Summary      注册内置 Engine Runtime | Register built-in engine runtime
-// @Description  平台 Service Principal 创建或更新与自身身份对应的内置 Runtime，并异步触发连接检查 | A platform service principal creates or updates its owned built-in runtime and asynchronously starts a connection check
+// @Description  平台 Service Principal 注册自身内置 Runtime；同地址重复注册沿用原 ID 并刷新经过校验的能力声明，保留管理员设置及最新连接观测，再异步检测连接 | A platform service principal registers its runtime; repeat registration keeps the ID and refreshes validated capabilities while preserving administrator settings and connectivity observations, then checks connectivity asynchronously
 // @Tags         运行时注册 | Runtime Registry
 // @Accept       json
 // @Produce      json
@@ -931,6 +931,7 @@ type RuntimeEngineRegistrationRequest struct {
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      401 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.runtime_registry.update"]

@@ -1456,3 +1456,80 @@ func createDeletionTestEngine(t *testing.T, repo *repository.EngineRepository, t
 	}
 	return engine
 }
+
+func TestRuntimeReregistrationRefreshesCapabilitiesWithoutReplacingManagedFacts(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&models.Engine{}); err != nil {
+		t.Fatal(err)
+	}
+	repo := repository.NewEngineRepository(db)
+	svc := NewEngineService(repo, nil, nil)
+	makeRequest := func(writeTypes []string) *models.Engine {
+		caps := engineplugin.NewWorkflowCapabilities("custom_runtime", "addp.workflow/v1")
+		if writeTypes != nil {
+			caps.Compute.Workflow.StorageAccess = &engineplugin.WorkflowStorageAccessCapability{ReadEngineTypes: []string{"minio"}, WriteEngineTypes: writeTypes}
+		}
+		raw, err := engineplugin.MarshalEngineCapabilities(caps)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &models.Engine{Name: "runtime", Description: "runtime description", EngineType: "custom_runtime", IsBuiltin: true, EngineOrigin: "extension", ConnectionInfo: models.ConnectionInfo{"protocol": "http", "host": "localhost", "port": 18098}, Capabilities: toJSONStringPtr(raw), LifecycleState: models.EngineLifecycleActive}
+	}
+	first, created, err := svc.CreateEngine(makeRequest(nil))
+	if err != nil || !created {
+		t.Fatalf("create: %v created=%v", err, created)
+	}
+	if err := db.Model(&models.Engine{}).Where("id = ?", first.ID).Updates(map[string]interface{}{"name": "managed name", "description": "managed description", "lifecycle_state": models.EngineLifecycleDisabled, "connection_status": models.EngineConnectionOffline}).Error; err != nil {
+		t.Fatal(err)
+	}
+	second, created, err := svc.CreateEngine(makeRequest([]string{"postgresql", "minio"}))
+	if err != nil || created || second.ID != first.ID {
+		t.Fatalf("refresh: %v created=%v id=%d", err, created, second.ID)
+	}
+	stored, err := repo.GetByID(first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "managed name" || stored.Description != "managed description" || stored.LifecycleState != models.EngineLifecycleDisabled || stored.ConnectionStatus != models.EngineConnectionOffline {
+		t.Fatalf("managed facts changed: %+v", stored)
+	}
+	parsed, err := engineplugin.ParseEngineCapabilities(string(*stored.Capabilities))
+	if err != nil || !parsed.Compute.Workflow.StorageAccess.Supports("postgresql", "write") {
+		t.Fatalf("new declaration missing: %v %v", err, stored.Capabilities)
+	}
+	version := stored.Version
+	repeated, created, err := svc.CreateEngine(makeRequest([]string{"postgresql", "minio"}))
+	if err != nil || created || repeated.Version != version {
+		t.Fatalf("unchanged declaration changed version: %v", err)
+	}
+	removed, _, err := svc.CreateEngine(makeRequest([]string{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, _ = engineplugin.ParseEngineCapabilities(string(*removed.Capabilities))
+	if parsed.Compute.Workflow.StorageAccess.Supports("postgresql", "write") || removed.ID != first.ID {
+		t.Fatal("removed connector survived refresh")
+	}
+	malformed := makeRequest([]string{"minio"})
+	malformed.Capabilities = toJSONStringPtr(`{"schema_version":"engine.capabilities/v1","engine_type":"custom_runtime","engine_family":"workflow","compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","storage_access":{"read_engine_types":[]}}}}`)
+	if _, _, err := svc.CreateEngine(malformed); err == nil {
+		t.Fatal("invalid declaration accepted during reregistration")
+	}
+	afterInvalid, _ := repo.GetByID(first.ID)
+	if afterInvalid.Version != removed.Version {
+		t.Fatal("rejected declaration changed instance")
+	}
+	// A stale capabilities writer cannot undo concurrent administrator changes.
+	stale := *afterInvalid
+	if err := repo.Update(afterInvalid); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateCapabilities(&stale); !errors.Is(err, repository.ErrEngineVersionConflict) {
+		t.Fatalf("stale write accepted: %v", err)
+	}
+}

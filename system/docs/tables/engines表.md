@@ -703,7 +703,7 @@ curl -X POST http://localhost:8180/api/v1/system/engines \
   }'
 ```
 
-**注意**：这是用户自研扩展引擎创建示例，必须提交或由 System 注册表单生成标准 `engine.capabilities/v1`，且其中的 `engine_type` 必须与资源 `engine_type` 一致。声明 `compute.workflow.supported=true` 且 `runtime_api="addp.workflow/v1"` 时，System 保存前会按 `/health` 和 `/api/operators` 执行只读协议探测。生产内置运行时启动自注册不走该示例，可以不提交 `capabilities`，由 System 按已注册插件声明生成；Math Workflow 作为参考实现可随开发环境启动服务，但仍按手动注册路径处理。
+**注意**：这是用户自研扩展引擎创建示例，必须提交或由 System 注册表单生成标准 `engine.capabilities/v1`，且其中的 `engine_type` 必须与资源 `engine_type` 一致。声明 `compute.workflow.supported=true` 且 `runtime_api="addp.workflow/v1"` 时，System 保存前会按 `/health` 和 `/api/operators` 执行只读协议探测。生产内置运行时启动自注册不走该示例，但没有独立编译期插件的 Workflow Runtime 同样必须提交完整 `engine.capabilities/v1`，由 System 校验保存；Math Workflow 作为参考实现可随开发环境启动服务，但仍按手动注册路径处理。
 
 ### 9.3 测试连接
 
@@ -770,3 +770,5 @@ curl -H "Authorization: Bearer ${TENANT_SERVICE_ACCESS_TOKEN}" \
 - **数据引擎扩展指南**：[docs/spec/addp数据引擎扩展指南.md](../../../docs/spec/addp数据引擎扩展指南.md)
 - **各模块简要介绍**：[docs/concepts/addp各模块功能介绍.md](../../../docs/concepts/addp各模块功能介绍.md)
 - **System模块说明**：[system/CLAUDE.md](../../CLAUDE.md)
+
+同一物理地址的 Workflow Runtime 重复自注册必须沿用永久 Engine ID，并校验、刷新其完整能力声明。刷新不能覆盖管理员维护的名称、描述、启用状态、地址、凭据和最新连接观测。相同能力不推进版本；能力变化通过实例版本的乐观锁局部更新并发布 Engine update 事件，删除中的实例仍拒绝注册。声明中的接入类型删除也必须完整生效，不能合并保留旧能力。

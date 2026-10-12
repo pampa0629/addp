@@ -732,3 +732,5 @@ Kafka 示例（插件实现完成后才允许落库声明）：
 ## Elasticsearch 首版能力边界
 
 独立 `engine_type=elasticsearch`，粗分类为 dynamic_schema，但 Catalog Model 必须是 `service -> index`，不得套用 MongoDB database/collection 模型。首版只声明经真实验证的目录、Mapping 字段 Facts、精确计数（显式请求）、RecordReadSession 与 `es_dsl` 查询；不声明写入、CDC、查询结果搬运、空间服务或动态采样。Mapping native 的 `schema_type=mapping`、`is_sampled=false` 表达字段来源，不证明 `_source` 结构完整。
+
+同一物理地址的 Workflow Runtime 重复自注册必须沿用永久 Engine ID，并校验、刷新其完整能力声明。刷新不能覆盖管理员维护的名称、描述、启用状态、地址、凭据和最新连接观测。相同能力不推进版本；能力变化通过实例版本的乐观锁局部更新并发布 Engine update 事件，删除中的实例仍拒绝注册。声明中的接入类型删除也必须完整生效，不能合并保留旧能力。

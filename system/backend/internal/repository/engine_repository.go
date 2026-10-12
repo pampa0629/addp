@@ -133,6 +133,25 @@ func (r *EngineRepository) Update(engine *models.Engine) error {
 	return nil
 }
 
+// UpdateCapabilities uses the aggregate version without overwriting concurrent connectivity observations.
+func (r *EngineRepository) UpdateCapabilities(engine *models.Engine) error {
+	if engine == nil || engine.ID == 0 || engine.Version < 1 {
+		return ErrEngineVersionConflict
+	}
+	updatedAt := time.Now()
+	result := r.db.Model(&models.Engine{}).Where("id = ? AND version = ?", engine.ID, engine.Version).
+		Updates(map[string]interface{}{"capabilities": engine.Capabilities, "version": gorm.Expr("version + 1"), "updated_at": updatedAt})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrEngineVersionConflict
+	}
+	engine.Version++
+	engine.UpdatedAt = updatedAt
+	return nil
+}
+
 // UpdateConnectionObservation persists the latest runtime connectivity facts
 // without changing the Engine Instance aggregate version. Connectivity is an
 // observation cache, not an administrator edit baseline.
