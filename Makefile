@@ -493,7 +493,7 @@ test-elasticsearch-online-runner: ## 验证 ES Spark T4 场景、物理夹具与
 
 .PHONY: test-node-metrics-online-runner
 test-node-metrics-online-runner: ## 验证节点指标 Online 身份边界、浏览器证据与 Hosted 清理
-	@node --check console/frontend/e2e/online/platform-node-resources.spec.js
+	@node --check --input-type=module < console/frontend/e2e/online/platform-node-resources.spec.js
 	@bash -n scripts/test/online-hosted-node-metrics-gate.sh
 	@python3 -m unittest scripts/test/platform-node-metrics-online_test.py scripts/test/platform-node-metrics-fixture_test.py scripts/test/online-hosted-node-metrics-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run Metrics -count=1
@@ -505,7 +505,7 @@ test-quality-online-runner: ## 验证 Quality Hosted 准备、身份、事件及
 
 .PHONY: test-transfer-online-runner
 test-transfer-online-runner: ## 验证 Transfer Hosted 身份、只读预检、场景与清理契约
-	@node --check console/frontend/e2e/online/transfer-relational-sql-etl.spec.js
+	@node --check --input-type=module < console/frontend/e2e/online/transfer-relational-sql-etl.spec.js
 	@bash -n business/scripts/online-transfer-relational-sql-etl-fixture.sh
 	@python3 -m unittest scripts/test/online-hosted-transfer-gate_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/transfer-relational-sql-etl-online_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_transfer_field_lineage_services_proofs_and_cleanup
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
@@ -898,7 +898,7 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 
 .PHONY: test-manager-online-runner
 test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
-	@node --check console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js
+	@node --check --input-type=module < console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js
 	@bash -n scripts/test/online-hosted-manager-gate.sh
 	@python3 -m unittest scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-hosted-manager-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture

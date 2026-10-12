@@ -367,16 +367,16 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await expect(monitor.getByTestId('process-trend-refresh')).toContainText('每 15 秒')
     await expect(monitor.getByTestId('process-trend').getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
     await Promise.all(pending)
-    const beforeAuto = serviceTrends.at(-1), beforeAutoBatch = await checkServices()
+    const beforeServiceAuto = serviceTrends.at(-1), beforeAutoBatch = await checkServices()
     const autoURL = page.url(), autoDocumentID = await documentOrigin(), beforeAutoCount = serviceTrends.length
     // Real wall-clock timer; no fake clock, manual reload or intercepted business API.
     await expect.poll(() => serviceTrends.length, { timeout: 25_000 }).toBe(beforeAutoCount + 1)
     await expect(monitor.getByTestId('process-trend').getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
     const afterAutoBatch = await checkServices(), afterAuto = serviceTrends.at(-1)
-    expect(Date.parse(afterAuto.value.end)).toBeGreaterThan(Date.parse(beforeAuto.value.end))
+    expect(Date.parse(afterAuto.value.end)).toBeGreaterThan(Date.parse(beforeServiceAuto.value.end))
     expect(page.url()).toBe(autoURL)
     expect(await documentOrigin()).toBe(autoDocumentID)
-    for (const entry of [beforeAuto, afterAuto]) validateProcessTrend(entry.value, trendOwner, entry.query)
+    for (const entry of [beforeServiceAuto, afterAuto]) validateProcessTrend(entry.value, trendOwner, entry.query)
     await monitor.getByTestId('process-trend-refresh').click()
     await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()
     await expect(page).toHaveURL(url => url.searchParams.get('refresh') === 'off')
@@ -392,7 +392,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await Promise.all(pending)
     expect([instancePages.length, serviceBatches.length, serviceTrends.length]).toEqual(offCounts)
     report.service_auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true,
-      iframe_preserved: true, off_restored: true, off_no_requests: true, batches: [beforeAutoBatch, afterAutoBatch], trends: [beforeAuto, afterAuto] }
+      iframe_preserved: true, off_restored: true, off_no_requests: true, batches: [beforeAutoBatch, afterAutoBatch], trends: [beforeServiceAuto, afterAuto] }
     await monitor.locator('.el-dialog__headerbtn').click()
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })

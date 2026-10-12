@@ -26,6 +26,32 @@ def collector_identity():
 
 
 class MetricsProtocolTest(unittest.TestCase):
+    def test_online_module_syntax_rejects_duplicate_callback_before_other_gate_stages(self):
+        root = Path(__file__).resolve().parents[2]
+        for name, target, separated in (("platform-node-resources", "test-node-metrics-online-runner", False),
+                                        ("transfer-relational-sql-etl", "test-transfer-online-runner", False),
+                                        ("manager-internal-artifact-lineage", "test-manager-online-runner", False),
+                                        ("platform-node-resources", "test-node-metrics-online-runner", True)):
+            with self.subTest(source=name, separated=separated), tempfile.TemporaryDirectory() as directory:
+                source = root / "console/frontend/e2e/online" / (name+".spec.js")
+                original = source.read_text()
+                self.assertIn("try {", original)
+                if separated:
+                    self.assertIn("const beforeServiceAuto =", original)
+                    invalid = original.replace("const beforeServiceAuto =", "const beforeAuto =", 1)
+                else:
+                    invalid = original.replace("try {", "try { const addpInvalidSyntax = 1; const addpInvalidSyntax = 2;", 1)
+                copied = Path(directory) / source.relative_to(root)
+                copied.parent.mkdir(parents=True)
+                copied.write_text(invalid)
+                (Path(directory) / "console/frontend/package.json").write_text((root / "console/frontend/package.json").read_text())
+                result = ONLINE.subprocess.run(["make", "-f", str(root / "Makefile"), target], cwd=directory,
+                                               capture_output=True, text=True, timeout=20)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("SyntaxError", result.stderr)
+                self.assertIn("already been declared", result.stderr)
+                self.assertNotIn("ModuleNotFoundError", result.stderr)
+
     def process_reply(self):
         owners = [{"id": i, "instance_id": module+"-runtime", "module_name": module, "role": "backend", "node_id": "",
                    "status": "up", "process_metrics_declared": True, "process_started_at": "2026-10-11T00:00:00Z"}
