@@ -2103,7 +2103,8 @@ root, fixture = Path(__import__('sys').argv[1]), Path(__import__('sys').argv[2])
 fixture.mkdir()
 source=(root/'scripts/dev/start.sh').read_text()
 helper=source[source.index('start_module_workers() ('):source.index('BACKEND_STARTS=()')]
-for directory in ('.dev-bins','.dev-pids','logs'):(fixture/directory).mkdir()
+for directory in ('.dev-bins','.dev-pids','logs','scripts/dev'):(fixture/directory).mkdir(parents=True)
+__import__('shutil').copyfile(root/'scripts/dev/process-metrics-launch.py', fixture/'scripts/dev/process-metrics-launch.py')
 for name in ('fast-worker','slow-worker','failed-worker'):
  path=fixture/'.dev-bins'/('addp-'+name)
  path.write_text('#!/bin/bash\ntouch "'+name+'-started"\n')
@@ -2141,7 +2142,8 @@ sleep() { :; }
 if start_module_workers failed alive 3333 failed-worker; then exit 8; fi
 [ ! -f failed-worker-started ]
 '''
-result=subprocess.run(['bash','-c',body],cwd=fixture,text=True,capture_output=True,timeout=30)
+environment = dict(os.environ, ADDP_DEV_PROCESS_METRICS_PLAN='', ADDP_PROCESS_METRICS_DEPLOYMENTS='')
+result=subprocess.run(['bash','-c',body],cwd=fixture,env=environment,text=True,capture_output=True,timeout=30)
 assert result.returncode==0,(result.returncode,result.stdout,result.stderr,
  {path.name:path.read_text() for path in (fixture/'logs').glob('*.log')})
 # Guard ownership and indirect initialization paths at the production entry points.

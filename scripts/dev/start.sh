@@ -955,7 +955,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
   # 检查服务是否已在运行
   if check_service_running "system" "$SYSTEM_PORT"; then
     build_service "system" "system/backend"
-    "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module system --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-system" &
+    python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" system system backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-system" &
     SYSTEM_PID=$!
     echo $SYSTEM_PID > .dev-pids/system.pid
 
@@ -1153,7 +1153,7 @@ start_module_workers() (
   done
   for worker in "$@"; do
     if check_service_running "$worker" ""; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module "$module" --role worker -- "${PROJECT_ROOT}/.dev-bins/addp-${worker}" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" "$worker" "$module" worker "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-${worker}" &
       pid=$!
       echo "$pid" > ".dev-pids/${worker}.pid"
       echo "  ✓ ${worker} 已启动，所属 Backend 已就绪 (PID: $pid)"
@@ -1180,7 +1180,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Manager Backend（带检查）
   if [ "$START_MANAGER_BACKEND" = true ]; then
     if check_service_running "manager" "$MANAGER_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module manager --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-manager" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" manager manager backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-manager" &
       MANAGER_PID=$!
       echo $MANAGER_PID > .dev-pids/manager.pid
       BACKEND_STARTS+=("manager:$MANAGER_PID")
@@ -1192,7 +1192,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Meta Backend（带检查）
   if [ "$START_META_BACKEND" = true ]; then
     if check_service_running "meta" "$META_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module meta --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-meta" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" meta meta backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-meta" &
       META_PID=$!
       echo $META_PID > .dev-pids/meta.pid
       BACKEND_STARTS+=("meta:$META_PID")
@@ -1204,7 +1204,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Transfer Backend（带检查）
   if [ "$START_TRANSFER_BACKEND" = true ]; then
     if check_service_running "transfer" "$TRANSFER_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module transfer --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-transfer" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" transfer transfer backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-transfer" &
       TRANSFER_PID=$!
       echo $TRANSFER_PID > .dev-pids/transfer.pid
       BACKEND_STARTS+=("transfer:$TRANSFER_PID")
@@ -1216,7 +1216,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Orchestrator Backend（带检查）
   if [ "$START_ORCHESTRATOR_BACKEND" = true ]; then
     if check_service_running "orchestrator" "$ORCHESTRATOR_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module orchestrator --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-orchestrator" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" orchestrator orchestrator backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-orchestrator" &
       ORCHESTRATOR_PID=$!
       echo $ORCHESTRATOR_PID > .dev-pids/orchestrator.pid
       BACKEND_STARTS+=("orchestrator:$ORCHESTRATOR_PID")
@@ -1228,7 +1228,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Develop Backend（带检查）
   if [ "$START_DEVELOP_BACKEND" = true ]; then
     if check_service_running "develop" "$DEVELOP_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module develop --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-develop" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" develop develop backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-develop" &
       DEVELOP_PID=$!
       echo $DEVELOP_PID > .dev-pids/develop.pid
       BACKEND_STARTS+=("develop:$DEVELOP_PID")
@@ -1240,7 +1240,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Service Backend（带检查）
   if [ "$START_SERVICE_BACKEND" = true ]; then
     if check_service_running "service" "$SERVICE_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module service --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-service" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" service service backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-service" &
       SERVICE_PID=$!
       echo $SERVICE_PID > .dev-pids/service.pid
       BACKEND_STARTS+=("service:$SERVICE_PID")
@@ -1252,7 +1252,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Monitor Backend（带检查）
   if [ "$START_MONITOR_BACKEND" = true ]; then
     if check_service_running "monitor" "$MONITOR_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module monitor --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-monitor" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" monitor monitor backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-monitor" &
       MONITOR_PID=$!
       echo $MONITOR_PID > .dev-pids/monitor.pid
       BACKEND_STARTS+=("monitor:$MONITOR_PID")
@@ -1264,7 +1264,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Standard Backend（带检查）
   if [ "$START_STANDARD_BACKEND" = true ]; then
     if check_service_running "standard" "$STANDARD_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module standard --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-standard" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" standard standard backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-standard" &
       STANDARD_PID=$!
       echo $STANDARD_PID > .dev-pids/standard.pid
       BACKEND_STARTS+=("standard:$STANDARD_PID")
@@ -1276,7 +1276,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Model Backend（带检查）
   if [ "$START_MODEL_BACKEND" = true ]; then
     if check_service_running "model" "$MODEL_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module model --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-model" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" model model backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-model" &
       MODEL_PID=$!
       echo $MODEL_PID > .dev-pids/model.pid
       BACKEND_STARTS+=("model:$MODEL_PID")
@@ -1288,7 +1288,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Quality Backend（带检查）
   if [ "$START_QUALITY_BACKEND" = true ]; then
     if check_service_running "quality" "$QUALITY_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module quality --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-quality" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" quality quality backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-quality" &
       QUALITY_PID=$!
       echo $QUALITY_PID > .dev-pids/quality.pid
       BACKEND_STARTS+=("quality:$QUALITY_PID")
@@ -1299,7 +1299,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   if [ "$START_SECURITY_BACKEND" = true ]; then
     if check_service_running "security" "$SECURITY_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module security --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-security" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" security security backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-security" &
       SECURITY_PID=$!
       echo $SECURITY_PID > .dev-pids/security.pid
       BACKEND_STARTS+=("security:$SECURITY_PID")
@@ -1311,7 +1311,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Asset Backend（带检查）
   if [ "$START_ASSET_BACKEND" = true ]; then
     if check_service_running "asset" "$ASSET_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module asset --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-asset" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" asset asset backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-asset" &
       ASSET_PID=$!
       echo $ASSET_PID > .dev-pids/asset.pid
       BACKEND_STARTS+=("asset:$ASSET_PID")
@@ -1323,7 +1323,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Catalog Backend（Meta / Model 同步由进程后台重试，不是启动依赖）
   if [ "$START_CATALOG_BACKEND" = true ]; then
     if check_service_running "catalog" "$CATALOG_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module catalog --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-catalog" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" catalog catalog backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-catalog" &
       CATALOG_PID=$!
       echo $CATALOG_PID > .dev-pids/catalog.pid
       BACKEND_STARTS+=("catalog:$CATALOG_PID")
@@ -1335,7 +1335,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Ontology Backend；只消费私有 Infra 和 System 授权。
   if [ "$START_ONTOLOGY_BACKEND" = true ]; then
     if check_service_running "ontology" "$ONTOLOGY_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module ontology --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-ontology" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" ontology ontology backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-ontology" &
       ONTOLOGY_PID=$!
       echo $ONTOLOGY_PID > .dev-pids/ontology.pid
       BACKEND_STARTS+=("ontology:$ONTOLOGY_PID")
@@ -1347,7 +1347,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Workbench Backend；Service 可暂时离线，不影响 Workbench Ready。
   if [ "$START_WORKBENCH_BACKEND" = true ]; then
     if check_service_running "workbench" "$WORKBENCH_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module workbench --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-workbench" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" workbench workbench backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-workbench" &
       WORKBENCH_PID=$!
       echo $WORKBENCH_PID > .dev-pids/workbench.pid
       BACKEND_STARTS+=("workbench:$WORKBENCH_PID")
@@ -1359,7 +1359,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Portal Backend（带检查）
   if [ "$START_PORTAL_BACKEND" = true ]; then
     if check_service_running "portal" "$PORTAL_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module portal --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-portal" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" portal portal backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-portal" &
       PORTAL_PID=$!
       echo $PORTAL_PID > .dev-pids/portal.pid
       BACKEND_STARTS+=("portal:$PORTAL_PID")
@@ -1371,7 +1371,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Graph Backend（带检查）
   if [ "$START_GRAPH_BACKEND" = true ]; then
     if check_service_running "graph" "$GRAPH_BACKEND_PORT"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module graph --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-graph" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" graph graph backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-graph" &
       GRAPH_PID=$!
       echo $GRAPH_PID > .dev-pids/graph.pid
       BACKEND_STARTS+=("graph:$GRAPH_PID")
@@ -1382,7 +1382,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   if [ "$START_INFERENCE_BACKEND" = true ]; then
     if check_service_running "inference" "${INFERENCE_BACKEND_PORT:-8191}"; then
-      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module inference --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-inference" &
+      python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" inference inference backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-inference" &
       INFERENCE_PID=$!
       echo $INFERENCE_PID > .dev-pids/inference.pid
       BACKEND_STARTS+=("inference:$INFERENCE_PID")
@@ -2179,7 +2179,7 @@ if [ "$START_GATEWAY" = true ]; then
   build_gateway
   # 重置 PORT 环境变量为 Gateway 的端口
   export PORT=$GATEWAY_PORT
-  "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module gateway --role ingress -- "${PROJECT_ROOT}/.dev-bins/addp-gateway" &
+  python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" gateway gateway ingress "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" "${PROJECT_ROOT}/.dev-bins/addp-gateway" &
   GATEWAY_PID=$!
   echo $GATEWAY_PID > .dev-pids/gateway.pid
 

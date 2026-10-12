@@ -23,6 +23,10 @@ ADDP 的配置按事实来源和生命周期分层管理，不建立由 System �
 
 Go 自身进程采集由唯一启动输入 `ADDP_PROCESS_METRICS_DEPLOYMENTS` 选择。空值表示未选择；非空值是最多 1000 项、256 KiB 的严格 JSON 数组，每项包含 `module_name`、`role`、明确本机 IP:端口 `listen`、同时对 Monitor 和中心可达的 HTTPS `/metrics` 地址 `endpoint`、仓库外绝对证书目录 `tls_dir`。同一模块/role 只能出现一次，各监听地址和采集端点不得重复。每个进程只消费匹配自身正式登记模块/role 的一项；不同部署或副本由部署方注入各自值。不能从业务 URL 拼接采集地址，不自动寻找端口，也不新增每模块默认端口表。
 
+标准开发入口使用唯一 `ADDP_DEV_PROCESS_METRICS_PLAN` 编排上述输入，开发根 `.env` 不直接填写 `ADDP_PROCESS_METRICS_DEPLOYMENTS`。计划为空表示未选择，非空为最多 1000 个启动单元、256 KiB 的严格 JSON 对象；键是具体启动单元名称，每个值是上述五字段部署对象。当前单副本启动单元沿已有生命周期名称，例如 `meta-worker`、`transfer-bounded-worker`、`transfer-continuous-worker`；两个 Transfer Worker 的正式 role 仍均为 worker。不同启动单元可有相同 module/role，监听地址、采集端点和证书目录须各自独立。完整计划拒绝重复键、未知字段、非字符串或空字段以及重复来源；启动时校验选中项与正式 module/role 一致。SDK 继续拥有端点、IP、端口及 TLS 的完整校验，不复制到启动编排层。
+
+标准入口在真正创建每个 Go 子进程时，将选中项派生为单项 SDK 数组；未选择时显式注入空字符串。SDK 的根环境补齐不得覆盖该值。旧根 SDK 输入非空与新计划冲突、计划结构错误或选中身份不符时，只关闭本次可选采集并输出封闭诊断码，业务照常启动；不读取旧输入作为 fallback，不自动换端口。产品容器及其他部署系统继续直接注入各自进程的 SDK 输入，不消费开发计划。开发计划不自动增加副本；以后同类型多副本必须分别声明启动单元，由部署入口向各进程注入独立值，运行实例 ID 仍在每次启动时自动生成。标准 Hosted 开发部署同样使用该计划，不保留第二种开发启动路线。
+
 证书目录仅含部署提供的 `ca.crt/server.crt/server.key`，来源使用独立采集客户端 CA 做 mTLS；来源证书 SAN 必须覆盖声明地址及准入后固定的实际采集 IP，使用 DNS 声明时同时覆盖该 DNS 名称，不以 server_name 覆盖校验。SDK 启动校验声明地址，Monitor 与中心按唯一固定 IP 校验。平台不签发证书、不放宽 TLS、不复用中心健康身份。只有配置和端点实际启动成功才随当前进程登记发布私有采集声明；关闭、配置失败、证书错误或监听冲突只记录封闭诊断码，不阻塞业务登记或 Ready。此输入不是 System 普通配置或 Monitor 采集策略，改变它须重启对应进程生成新实例身份。System 普通实例 DTO 不公开端点或证书位置。
 
 macOS 本地 Docker Desktop 的唯一宿主通道输入为 `ADDP_METRICS_DESKTOP_LOOPBACK_PORTS`，空值关闭转换，非空为最多 64 个不重复的规范非零端口，以逗号分隔且不含空项或空格。该输入只改变同一 HTTP SD Job 中已发现来源的传输地址：先保留原 `instance`，将列表内 `127.0.0.1:端口` 精确转换为同端口 `host.docker.internal`；其他地址与端口不转换。它不授权来源、不部署来源、不扩大采集预算、不覆盖 Monitor 的 CIDR/端口准入策略。来源服务器证书同时覆盖回环 IP 与宿主通道 DNS；不覆盖 TLS server_name。配置变更须由标准指标入口重新应用中心。原单端口输入已删除，不保留兼容读取。

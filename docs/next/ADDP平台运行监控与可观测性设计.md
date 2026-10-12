@@ -1660,3 +1660,27 @@ Worker 尚未包含在本批来源中。Meta worker 与 backend 的 role 不同�
 Safari 使用用户已登录的平台管理员会话实际查看 `/monitor/service-resources`，默认“在线、已启用采集”范围共五条，五者均为“正在采集”并展示各自采样时间、CPU 核占用、MiB 内存和自然时间格式的运行时长；页面实例 ID 与来源一致。已查看实际截图，当前窗口可见全部指标列及就地释义。小于 0.005 核的 CPU 值按现有两位小数显示为 `0.00 核`，底层值有真实样本，不能解释为缺失或停止采集。五个 macOS 进程均显示“未关联主机”，未错误关联 Linux VM。本次未读取浏览器 Token、未修改 IAM、未注入个人来源故障，也未扩大 Worker、进程趋势或生产 T5 的完成范围。
 
 运行复验收尾只更新本节与 Monitor 文档入口，没有修改产品实现或 CI 编排。`git diff --check` 通过；再次执行默认 `make test-changed`，当前混合工作区扩散至多个 Owner，因缺少 PostgreSQL DSN、MySQL/OceanBase 等既有测试输入而在预检返回 2（`/tmp/addp-three-backend-runtime-changed.log`），业务门禁未执行，不计通过。此前与本批部署输入匹配的两项完整标准门禁结果仍保留在上文；相应自动化门禁已由 Platform CI / Release T2 登记，本轮不将个人运行结果或文档提交计为新的 Hosted 验收。
+
+### 10.53 Worker 独立进程采集输入（实现及部署准备，待运行复验）
+
+2026-10-12 继续调查标准开发入口。Meta Worker 与两个 Transfer Worker 已通过正式 `RegisterAndHeartbeat` 复用 Go 自身进程采集 SDK，业务代码无需另接一条采集路线。`scripts/dev/start.sh` 的 `start_module_workers` 在所属 Backend Ready 后，按已有进程名称启动独立二进制；两个 Transfer Worker 都登记为 `transfer/worker`，继承同一根环境数组时不能消费不同来源。现有 SDK 对同一数组内重复 module/role 的拒绝是正确的单进程部署约束，不能通过放宽该校验解决。根环境在启动期间会重新加载，必须在真正创建子进程时显式注入最终输入，且未选择时显式注入空值，避免 Go 的根环境补齐重新引入其他进程配置。
+
+用户已确认标准开发入口采用唯一 `ADDP_DEV_PROCESS_METRICS_PLAN`：严格 JSON 对象，以具体启动单元为键，每个值是一项现有 SDK 部署对象；当前单副本入口使用已有 PID 和生命周期进程名称。例如 `meta-worker`、`transfer-bounded-worker`、`transfer-continuous-worker` 分别配置独立 listen、endpoint 和 tls_dir；五个已接入 Backend 同样按 `system`、`monitor`、`manager`、`meta`、`transfer` 分配。该名称仅用于部署选择，不新增业务 role、运行实例身份或 API 字段。完整计划须拒绝重复键、重复监听/采集地址/证书目录及结构错误，启动时校验选中项与正式模块/role 一致；不按二进制名称推断端口或证书，不遇到冲突自动避让。
+
+开发根 `.env` 以该计划为唯一填写来源，删除此前直接填写的 `ADDP_PROCESS_METRICS_DEPLOYMENTS` 数组；不保留旧根输入的读取或 fallback。标准启动入口在每个子进程创建时，将选中项转换为单项 `ADDP_PROCESS_METRICS_DEPLOYMENTS` 数组注入当前子进程，未选择则注入空字符串。SDK 的五字段数组契约保持不变，容器及其他部署系统继续按自身部署单元直接注入该 SDK 输入；开发计划和 SDK 输入分别是部署编排事实及其派生进程输入，不作为两个并行可编辑来源。计划错误只关闭可选采集并报告封闭诊断，不阻断业务启动；不把可选采集加入 Worker Ready。现有中心发现、mTLS、来源预算、查询授权和 UI 不另建路径。
+
+2026-10-12 用户确认按具体启动实例分配。先同步配置规范、环境示例及相关术语，再修改标准启动入口。计划不提供多副本启动，未来同类型副本须分别拥有启动单元及独立部署值，不能让多个进程共享同一项。首批计划接入 Meta Worker 与 Transfer 两类 Worker，各自独立证书和监听；已有六来源加三 Worker 为九来源，不扩大当前预算。部署准备只修改明确的个人观测输入，不改业务配置或 IAM；个人应用仍由用户执行标准生命周期命令。
+
+实施前门禁范围：入口注入、无计划/未选择时清除父环境、两类 Transfer 同 role 分离、后端隔离、错误计划不阻断业务、端口重复拒绝及 Worker 的 Backend Ready 顺序归既有 `make test-dev-lifecycle`。现有根 Make 和 Platform CI 已执行该入口；增加的测试须接入该入口及登记检查，不只孤立运行。SDK 不变时复用既有 mTLS/指标契约验证；如修改指标设施输入或来源隔离夹具，再执行 `make test-monitor-metrics`。默认运行 `make test-changed` 并分别报告预检阻断和已执行结果。本节按后续证据更新完成状态；未完成标准门禁及实际应用前，不计 Worker 接入完成，也不计新的 T4/T5。
+
+实现使用标准入口唯一 `scripts/dev/process-metrics-launch.py` 适配器，读取计划并选择当前启动单元，显式设置 SDK 环境后 exec 原 `addp-runtime-log launch`；PID、原业务命令、module/role 和其他业务环境保持相同契约。标准入口的所有原生 Go Backend、Worker、Gateway 均通过该适配器，旧 Go 直启接收器路径已替换。空计划/未选择时注入空值；旧 SDK 根输入非空、计划结构错误或当前绑定不符时只输出 `dev_process_metrics_plan_invalid`，清空本次 SDK 输入后仍执行业务接收器。完整计划的来源端点、监听字符串及证书目录不得重复；地址/TLS 的完整验证仍归 SDK，没有复制采样实现或加入业务 Ready。非 Go Runtime 不接入本批采集。
+
+新增十二项计划及真实 exec 回归纳入 `make test-dev-lifecycle`，覆盖两种同角色 Transfer Worker、未来同类型独立单元选择、完整结构拒绝、来源重复拒绝、边界、当前绑定、旧输入拒绝、未选择清空、业务继续、原命令及同 PID；原 Backend Ready 顺序用例改用正式适配器并继续验证独立进展与失败拒启。Hosted `platform-node-metrics` 夹具同次改为计划输入，既有 `make test-node-metrics-online-runner` 覆盖；T2 声明同次登记新适配器和用例文件，不新增平行门禁或产品构建单元。Go SDK、API、IAM、实例角色及产品容器的 SDK 输入均未改变。
+
+`make test-dev-lifecycle` 返回 0（`/tmp/addp-worker-plan-lifecycle-1.log`）：100 项 Python、端口/停止安全、生命周期与 Worker 顺序、共享 schema/repository/projectionstore 及 Security/Meta/Quality/Transfer 命令编译通过。`make test-node-metrics-online-runner` 返回 0（`/tmp/addp-worker-plan-online-runner-1.log`），41 项确定性协议/TLS/清理测试与正式 System 测试夹具编译通过，不计本轮真实 Hosted T4。`make test-platform-review` 返回 0（`/tmp/addp-worker-plan-platform-review-1.log`）。默认 `make test-changed` 在多 Owner PostgreSQL、MySQL/OceanBase 等输入预检返回 2（`/tmp/addp-worker-plan-changed-1.log`），业务门禁未执行，不计通过。
+
+个人部署准备完成：原五个 Backend 配置逐项迁入计划，新增 `meta-worker`、`transfer-bounded-worker`、`transfer-continuous-worker`，端口为 `127.0.0.1:19106/19107/19108`；根环境只替换旧 SDK 输入为计划，并向原 Desktop 精确端口集合和 Monitor 端口集合追加这三项，CIDR 与其他业务配置保持原值。新增三个仓库外独立来源目录，沿原 CA 签发 serverAuth 叶子，核验回环 IP / Desktop DNS 双 SAN、私钥匹配、目录 0700 / 私钥 0600；有效期截至 2026-12-11 00:32:59 UTC。既有五个来源和准入/采集/查询身份文件未改。证据为 `/tmp/addp-worker-plan-preparation.log`。Shell 重载后的八单元逐进程投影及唯一中心生成器临时渲染通过：九个精确 Desktop 通道、一个 `addp_nodes` Job、原 `target_limit: 9`、无 TLS server_name 覆盖（`/tmp/addp-worker-plan-render-check.log`）。未写入正在运行的中心配置，未启动新来源；准备后只读中心仍为原六来源且全部 up，不能据此计 Worker 已采集。
+
+实际应用由用户在根目录依次执行 `bash scripts/infra/up.sh --metrics` 与 `./scripts/dev/restart.sh -meta -transfer -monitor`：前者应用新增三个精确宿主通道，后者让 Meta/Transfer Backend 与所属三个 Worker 加载各自输入，并使 Monitor 加载新的准入端口。System、Manager 既有端点配置没有变化，无 Common 实现修改，不要求全套重启；AI 未执行个人重启或 keepalive。应用后核对九来源实际发现、三个当前 Worker 实例身份与正式元数据、独立 mTLS、完整一分钟 CPU 窗口，以及 Safari 默认八条进程结果。该运行复验尚未执行，多副本启动、业务任务分配、进程趋势和生产 T5 不在本批完成范围。
+
+本批完整 `make test-monitor-metrics` 返回 0（`/tmp/addp-worker-plan-metrics-1.log`），验证当前 SDK 两个实际进程经不同 Desktop 精确端口进入唯一 Job、身份保留、停止单源清值且另一来源继续；HTTP SD 失败/重定向/空集合/恢复、独立 OAuth、真实主机即时/趋势与受限 VM 口径、恢复后的新样本、中心 SIGKILL 后 WAL 样本保留均通过。退出确认当次容器、网络、卷和临时文件零残留。该 T2 使用自己的独占来源，不将三个尚未启动的个人 Worker 计为采集成功；本轮没有执行新的真实 Hosted T4。最终 `git diff --check` 通过。

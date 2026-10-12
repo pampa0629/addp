@@ -111,10 +111,10 @@ def prepare(directory):
         "MONITOR_PROMETHEUS_CLIENT_CERT_FILE": str(directory / "query/client.crt"),
         "MONITOR_PROMETHEUS_CLIENT_KEY_FILE": str(directory / "query/client.key"),
         "MONITOR_METRICS_ALLOWED_CIDRS": address+"/32", "MONITOR_METRICS_ALLOWED_PORTS": ",".join(map(str, (19100, *PROCESS_PORTS.values()))),
-        "ADDP_PROCESS_METRICS_DEPLOYMENTS": json.dumps([
-            {"module_name": module, "role": "backend", "listen": address+":"+str(port),
+        "ADDP_DEV_PROCESS_METRICS_PLAN": json.dumps({
+            module: {"module_name": module, "role": "backend", "listen": address+":"+str(port),
              "endpoint": "https://"+address+":"+str(port)+"/metrics", "tls_dir": str(directory / ("process-"+module))}
-            for module, port in PROCESS_PORTS.items()], separators=(",", ":")),
+            for module, port in PROCESS_PORTS.items()}, separators=(",", ":")),
         "MONITOR_METRICS_CA_FILE": str(directory / "admission/ca.crt"),
         "MONITOR_METRICS_CLIENT_CERT_FILE": str(directory / "admission/client.crt"),
         "MONITOR_METRICS_CLIENT_KEY_FILE": str(directory / "admission/client.key"),

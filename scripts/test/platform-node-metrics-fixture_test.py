@@ -71,8 +71,10 @@ class MetricsFixtureTest(unittest.TestCase):
         self.assertIn(env, (self.secret / "runtime.env").read_text())
         import shlex
         values = dict(line.removeprefix("export ").split("=", 1) for line in env.splitlines())
-        deployments = json.loads(shlex.split(values["ADDP_PROCESS_METRICS_DEPLOYMENTS"])[0])
-        self.assertEqual([d["module_name"] for d in deployments], ["system", "monitor"])
+        self.assertNotIn("ADDP_PROCESS_METRICS_DEPLOYMENTS", values)
+        plan = json.loads(shlex.split(values["ADDP_DEV_PROCESS_METRICS_PLAN"])[0])
+        self.assertEqual(list(plan), ["system", "monitor"])
+        deployments = list(plan.values())
         self.assertEqual(shlex.split(values["MONITOR_METRICS_ALLOWED_PORTS"]), ["19100,19101,19102"])
         for d in deployments:
             self.assertEqual(d["role"], "backend")
