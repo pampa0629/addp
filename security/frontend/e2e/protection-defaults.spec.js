@@ -137,7 +137,14 @@ test('marks and validates the required enrollment resource inline', async ({ pag
 })
 
 test('opens the protected resource and focuses the approved grant from review history', async ({ page }) => {
-  const backend = await installMockBackend(page)
+  const backend = await installMockBackend(page, { permissions: [
+    'security.enrollment.read', 'meta.catalog.read', 'security.protection_access_request.update',
+    'security.protection_exemption.read', 'security.protection_exemption.delete'
+  ] })
+  const assessmentRequests = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/security/assessments')) assessmentRequests.push(request.url())
+  })
   const browserErrors = []
   page.on('pageerror', error => browserErrors.push(error.message))
   Object.assign(backend.accessRequests[0], {
@@ -168,6 +175,7 @@ test('opens the protected resource and focuses the approved grant from review hi
   await expect(focusedGrant).toContainText('customer.phone')
   await expect(focusedGrant).toContainText('客户核验期间临时查看原值')
   await expect.poll(() => backend.enrollmentDetailRequests).toBe(1)
+  expect(assessmentRequests).toEqual([])
   expect(backend.unhandledRequests).toEqual([])
   expect(browserErrors).toEqual([])
 })
@@ -1153,6 +1161,7 @@ async function installMockBackend(page, options = {}) {
     exemptions: [{
       id: exemptionID,
       assessment_id: assessmentID,
+      component_key: 'customer.phone',
       consumer_owner: 'manager',
       action: 'preview',
       subject_type: 'user',

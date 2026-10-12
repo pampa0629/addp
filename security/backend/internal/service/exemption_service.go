@@ -83,12 +83,11 @@ func (s *ExemptionService) appendRevocation(ctx context.Context, tenantID, userI
 		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{exemption.ConsumerOwner}); err != nil {
 			return err
 		}
-		_ = assessment
 		var history []models.ProtectionExemptionRevision
 		if err := tx.Where("tenant_id = ? AND exemption_id = ?", tenantID, exemption.ID).Order("revision DESC").Find(&history).Error; err != nil {
 			return err
 		}
-		result = buildExemptionResponse(exemption, revision, history, current.Revision, now)
+		result = buildExemptionResponse(exemption, revision, history, assessment, now)
 		return nil
 	})
 	return result, err
@@ -149,20 +148,20 @@ func loadExemptionResponse(db *gorm.DB, exemption models.ProtectionExemption, hi
 	if err := db.Where("tenant_id = ? AND id = ?", exemption.TenantID, exemption.AssessmentID).First(&assessment).Error; err != nil {
 		return nil, err
 	}
-	return buildExemptionResponse(exemption, current, revisions, assessment.CurrentRevision, now), nil
+	return buildExemptionResponse(exemption, current, revisions, assessment, now), nil
 }
 
-func buildExemptionResponse(exemption models.ProtectionExemption, current models.ProtectionExemptionRevision, history []models.ProtectionExemptionRevision, assessmentRevision int64, now time.Time) *models.ProtectionExemptionResponse {
+func buildExemptionResponse(exemption models.ProtectionExemption, current models.ProtectionExemptionRevision, history []models.ProtectionExemptionRevision, assessment models.ResourceSecurityAssessment, now time.Time) *models.ProtectionExemptionResponse {
 	effectiveState := exemption.State
 	if effectiveState == models.ProtectionExemptionStateActive {
 		switch {
-		case current.AssessmentRevision != assessmentRevision:
+		case current.AssessmentRevision != assessment.CurrentRevision:
 			effectiveState = models.ProtectionExemptionStateSuperseded
 		case !now.Before(current.ExpiresAt):
 			effectiveState = models.ProtectionExemptionStateExpired
 		}
 	}
-	return &models.ProtectionExemptionResponse{ProtectionExemption: exemption, EffectiveState: effectiveState, Current: current, History: history}
+	return &models.ProtectionExemptionResponse{ProtectionExemption: exemption, ComponentKey: assessment.ComponentKey, EffectiveState: effectiveState, Current: current, History: history}
 }
 
 func validExemptionDeadline(now, expiresAt time.Time) bool {

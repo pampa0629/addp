@@ -55,6 +55,7 @@ type RevokeProtectionExemptionRequest struct {
 
 type ProtectionExemptionResponse struct {
 	ProtectionExemption
+	ComponentKey   string                        `json:"component_key"`
 	EffectiveState string                        `json:"effective_state"`
 	Current        ProtectionExemptionRevision   `json:"current"`
 	History        []ProtectionExemptionRevision `json:"history,omitempty"`

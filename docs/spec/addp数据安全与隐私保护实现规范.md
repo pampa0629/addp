@@ -262,6 +262,8 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 13. ProtectionExemption 只能在“受保护资源”详情中提前撤销，并必须使用正式表单对话框收集撤销依据。版本冲突时保持对话框和撤销依据、禁用旧版本再次提交；只有用户显式放弃当前输入后才重新读取该 ProtectionExemption。若最新 `effective_state` 已不是 `active`，则关闭对话框并告知无需重复撤销；仍然生效时以最新版本建立空白撤销依据，由用户重新确认，不得自动重试、自动合并或沿用旧依据提交。
 14. 批准和驳回必须共用“受保护资源”审批工作区中的正式表单对话框，完整展示资源、字段、申请人、申请期限和业务依据，并另行收集审批依据。审批版本冲突时保持对话框、审批动作和审批依据，禁用旧版本再次提交；只有用户显式放弃当前输入后才调用 `GET /protection-access-requests/{id}` 读取最新申请。若最新申请已不是未过期的 `pending`、当前审批人已不可审批，则关闭对话框并刷新审批工作区；仍可审批时以最新版本建立空白审批依据，由用户重新确认。不得自动重试、自动合并或沿用旧依据提交。服务端明确返回 `protection_access_request_expired` 时，前端直接关闭对话框、刷新工作区并告知申请已过期。
 
+临时授权的列表、详情和撤销写响应必须直接返回必填 `component_key`，由 Security 从同一 Tenant 下绑定的 Assessment 读取真实组件键；它是授权对象自身的字段绑定展示，不复制 Assessment 事实或返回其完整治理详情。读取授权只要求既有 `security.protection_exemption.read`，不额外要求 Assessment 读取权限。授权卡片只消费授权响应中的组件键，不从可选的 Assessment 列表拼接字段名；审批用户没有 Assessment 读取权限时也能明确识别要撤销的字段。
+
 ### 7.3 保护定义变化的影响传播
 
 保护定义变更不能等待下一次人工复核或重新发现才偶然生效，也不能把每次变更扩大为全租户重编译。Security 必须按事实依赖精确定位受影响 Enrollment，并继续调用同一个投影编译器：

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"testing"
@@ -132,6 +133,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 		t.Fatalf("approved request = %#v", approved)
 	}
 	assertAccessTargetSynchronization(t, db, requests, approved)
+	assertExemptionResponseComponent(t, db, approved, reviewed.Assessment.ComponentKey)
 	approvedDetail, err := requests.GetForReview(context.Background(), 7, 42, created.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -182,11 +184,13 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = exemptions.Revoke(context.Background(), 7, 42, approved.ExemptionID, models.RevokeProtectionExemptionRequest{
+	revoked, err := exemptions.Revoke(context.Background(), 7, 42, approved.ExemptionID, models.RevokeProtectionExemptionRequest{
 		Version: currentExemption.Version, Rationale: "提前撤销原值访问授权",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	assertExemptionComponentJSON(t, revoked, reviewed.Assessment.ComponentKey)
 	requests.now = func() time.Time { return now.Add(30 * time.Minute) }
 	revokedHistory, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory), 1, 20)
 	if err != nil {
@@ -204,6 +208,36 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if revokedOnly.Total != 1 || len(revokedOnly.Data) != 1 || revokedOnly.Data[0].ID != approved.ID {
 		t.Fatalf("revoked authorization filter = %#v", revokedOnly)
 	}
+}
+
+func assertExemptionComponentJSON(t *testing.T, response *models.ProtectionExemptionResponse, want string) {
+	t.Helper()
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["component_key"] != want {
+		t.Fatalf("grant component_key = %v, want %q", fields["component_key"], want)
+	}
+}
+
+func assertExemptionResponseComponent(t *testing.T, db *gorm.DB, approved *models.ProtectionAccessRequestResponse, want string) {
+	t.Helper()
+	exemptions := NewExemptionService(db)
+	detail, err := exemptions.Get(context.Background(), 7, approved.ExemptionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertExemptionComponentJSON(t, detail, want)
+	list, err := exemptions.List(context.Background(), 7, approved.EnrollmentID, 1, 100)
+	if err != nil || list == nil || len(list.Data) != 1 {
+		t.Fatalf("grant list = %#v, error=%v", list, err)
+	}
+	assertExemptionComponentJSON(t, &list.Data[0], want)
 }
 
 // Exercise the same checkpoint contract with SQLite and the standard PostgreSQL gate.

@@ -20,7 +20,7 @@ func NewExemptionHandler(exemptions *service.ExemptionService) *ExemptionHandler
 }
 
 // @Summary 临时原值授权列表 | List temporary plaintext grants
-// @Description 分页返回经申请和审批形成的按用户、字段、出口、时限约束的原值授权；可按受保护资源聚合筛选 | Return approved plaintext grants scoped by user, field, outlet, and deadline, optionally filtered by protection enrollment
+// @Description 分页返回经审批形成的限时原值授权及绑定字段 component_key；可按受保护资源筛选，读取字段绑定不额外要求 Assessment 权限 | Return approved temporary plaintext grants with their bound component_key, optionally filtered by enrollment; reading the field binding requires no additional Assessment permission
 // @Tags Protection Access Grant
 // @Produce json
 // @Param enrollment_id query string false "受保护资源 ID | Protection enrollment ID"
@@ -46,7 +46,7 @@ func (h *ExemptionHandler) List(c *gin.Context) {
 }
 
 // @Summary 临时原值授权详情 | Get temporary plaintext grant
-// @Description 返回当前有效状态、当前修订和不可变历史 | Return effective state, current revision, and immutable history
+// @Description 返回绑定字段 component_key、当前有效状态、当前修订和不可变历史；不额外要求 Assessment 读取权限 | Return bound component_key, effective state, current revision, and immutable history without requiring additional Assessment read permission
 // @Tags Protection Access Grant
 // @Produce json
 // @Param id path string true "授权 ID | Grant ID"

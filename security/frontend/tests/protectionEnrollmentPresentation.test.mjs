@@ -702,6 +702,7 @@ describe('protected-resource presentation model', () => {
     const exemption = {
       id: 'exemption-1',
       assessment_id: 'assessment-1',
+      component_key: 'phone',
       subject_id: 'user-8',
       consumer_owner: 'manager',
       action: 'preview',
@@ -730,6 +731,7 @@ describe('protected-resource presentation model', () => {
       {
         id: 'exemption-1',
         assessment_id: 'assessment-1',
+        component_key: 'phone',
         subject_id: 'user-8',
         consumer_owner: 'manager',
         action: 'preview',
@@ -763,5 +765,11 @@ describe('protected-resource presentation model', () => {
       rows: [],
       canRevoke: false
     })
+  })
+
+  it('identifies a grant field without permission to load the assessment list', () => {
+    const { presentation } = createPresentation({ assessments: ref([]) })
+    const grant = { id: 'grant-1', assessment_id: 'assessment-1', component_key: 'userInfo.phone', effective_state: 'active' }
+    expect(presentation.exemptionRowView(grant).componentKey).toBe('userInfo.phone')
   })
 })

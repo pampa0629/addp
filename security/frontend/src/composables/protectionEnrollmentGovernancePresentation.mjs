@@ -267,10 +267,6 @@ export function createProtectionEnrollmentGovernancePresentation({
     return t('security.finding.baselineEffect', { effect: effectLabel(baseline.effect) })
   }
 
-  function assessmentComponent(assessmentID) {
-    return assessments.value.find(item => item.id === assessmentID)?.component_key || t('security.exemption.unknownField')
-  }
-
   function exemptionStatePresentation(exemption) {
     const state = String(exemption?.effective_state || 'expired')
     const types = { active: 'warning', expired: 'info', revoked: 'info' }
@@ -281,7 +277,7 @@ export function createProtectionEnrollmentGovernancePresentation({
     return {
       id: exemption?.id,
       exemption,
-      componentKey: assessmentComponent(exemption?.assessment_id),
+      componentKey: exemption?.component_key || t('security.exemption.unknownField'),
       state: exemptionStatePresentation(exemption),
       subjectId: exemption?.subject_id,
       outlet: `${ownerLabel(exemption?.consumer_owner)} · ${actionLabel(exemption?.action)}`,

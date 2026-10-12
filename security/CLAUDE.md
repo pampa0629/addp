@@ -22,6 +22,8 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 
 Manager 原值申请目标的 `projection_acknowledged` 复用现有 Owner 回执，表示当前资源投影已同步；不改变 `approved` 审批结论或当前主体授权语义。申请目标从同一只读一致性快照读取投影、审批、Assessment、授权和回执。页面在已批准但待同步时继续轮询，确认后刷新预览；数据面仍仅消费本地投影。
 
+临时授权列表、详情和撤销响应直接返回由同租户绑定 Assessment 派生的 `component_key`。授权卡片仅消费该字段，不依赖可选 Assessment 列表；持有授权读取权限的审批用户无需取得 Assessment 读取权限即可识别授权字段。组件键只存在于响应 DTO，不新增持久事实或权限。
+
 ## 数据库
 
 使用 PostgreSQL `security` schema。当前事实表为：
