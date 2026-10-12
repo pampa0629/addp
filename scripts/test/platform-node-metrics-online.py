@@ -528,9 +528,18 @@ def assert_process_summaries(value, instances, *, fresh=True, after=0, inactive=
     return rows
 
 
-def process_query_ready(admin, instances, *, after=0, inactive=(), disconnected=()):
+def process_query_ready(admin, instances, *, after=0, inactive=(), disconnected=(), evidence=None):
     value = admin.request("GET", process_path(instances), (200,)).payload
     assert_process_summaries(value, instances, fresh=False, inactive=inactive, disconnected=disconnected)
+    if evidence is not None:
+        # Retain only the already-validated public resource facts, never unknown fields.
+        evidence["data"] = [{
+            **{key: row[key] for key in ("subject", "node_id", "queried_at", "policy_version", "lookback_seconds")},
+            "collection": {key: row["collection"].get(key) for key in ("state", "sampled_at")},
+            "series": [{**{key: series[key] for key in ("metric_key", "unit", "window_seconds", "dimensions")},
+                        "points": [{key: point.get(key) for key in ("evaluated_at", "sampled_at", "data_state", "value")} for point in series["points"]]}
+                       for series in row["series"]]
+        } for row in value["data"]]
     active = [r for r in value["data"] if r["subject"]["id"] not in {*inactive, *disconnected}]
     if not all(r["collection"]["state"] == "collecting" and all(p["data_state"] == "valid" and utc_timestamp(p["sampled_at"]) > after for s in r["series"] for p in s["points"]) for r in active): return False
     assert_process_summaries(value, instances, after=after, inactive=inactive, disconnected=disconnected)
@@ -971,7 +980,8 @@ def run(base, directory, report):
     try:
         eventually(lambda: bool(prom.query("up"+expression+" == 0")), "source outage")
         require(prom.query('up{job="prometheus"} == 1'), "center failed with source")
-        require(process_query_ready(admin, processes), "host source failure broke independent process resources")
+        report["source_outage_process_summaries"] = {}
+        require(process_query_ready(admin, processes, evidence=report["source_outage_process_summaries"]), "host source failure broke independent process resources")
     finally:
         source_action("start")
     eventually(lambda: bool(prom.query("up"+expression+" == 1")), "source recovery")

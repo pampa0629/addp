@@ -89,6 +89,34 @@ class MetricsProtocolTest(unittest.TestCase):
         stopped["series"][1]["points"][0] = copy.deepcopy(reply["data"][1]["series"][1]["points"][0])
         with self.assertRaises(ONLINE.SuiteError): ONLINE.assert_process_summaries(reply, owners, inactive=[7])
 
+    def test_outage_probe_retains_safe_diagnostics_without_retrying_or_relaxing_readiness(self):
+        for mode in ("ready", "warmup", "failed"):
+            with self.subTest(mode=mode):
+                owners, reply = self.process_reply()
+                row = reply["data"][0]
+                if mode == "warmup":
+                    row["series"][0]["points"][0].update(data_state="no_data", value=None, sampled_at=None)
+                elif mode == "failed":
+                    row["collection"]["state"] = "failed"
+                    for series in row["series"]:
+                        series["points"][0].update(data_state="no_data", value=None, sampled_at=None)
+                for target in (reply, row, row["collection"], row["series"][0], row["series"][0]["points"][0]):
+                    target["unexpected_credential"] = "must-never-retain"
+                before = copy.deepcopy(reply)
+                client = unittest.mock.Mock(request=unittest.mock.Mock(return_value=ONLINE.API.Response(200, reply)))
+                evidence = {}
+                self.assertEqual(ONLINE.process_query_ready(client, owners, evidence=evidence), mode == "ready")
+                client.request.assert_called_once_with("GET", ONLINE.process_path(owners), (200,))
+                self.assertEqual(reply, before)
+                self.assertNotIn("must-never-retain", json.dumps(evidence))
+                self.assertEqual(len(evidence["data"]), 2)
+                captured = evidence["data"][0]
+                self.assertEqual(captured["subject"], row["subject"])
+                self.assertEqual(captured["queried_at"], row["queried_at"])
+                self.assertEqual(captured["collection"]["state"], row["collection"]["state"])
+                self.assertEqual(captured["series"][0]["points"][0], {key: row["series"][0]["points"][0][key]
+                    for key in ("value", "sampled_at", "evaluated_at", "data_state")})
+
     def test_process_browser_binds_actual_owner_page_scope_and_requires_units_screenshot_and_denial(self):
         owners, reply = self.process_reply()
         expected = {"processes": owners, "policy_version": 4}
