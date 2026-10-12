@@ -49,6 +49,8 @@ Console `/ontology/ontologies/:ontology_id/trial` 提供当前激活规则试算
 
 修订 14 复核并冻结已提交的 `a049fc71d` 配置预检说明与 Handler 双语注释：可选 Provider 纯查询定义分析只消费已保存结构快照，不执行查询；源输出仍未知时继续校验显式目标约束及常量，unsupported 优先于 unknown。完整覆盖、实时结构、业务数据、Security、源读取 Grant 和逐值转换仍须运行时验证。创建切片的条件、效果、权限与选定覆盖不扩张；只有配置与 Handler 两项来源的依据、提交和摘要改变，形成新的不可变发布修订，不覆盖旧快照。该来源审阅不代替真实查询、写入或部署后平台语义消费验收。
 
+修订 15 明确行粒度与字段保留范围分开确认，不展开数组不授权删除数组字段；草稿明确要求检查时使用已有正式只读预检入口，不进入创建复核或批准创建。Skill、Runtime 指导及受控 Harness 回归冻结到 `ac57feb3f`，不新增操作条件、效果、权限或 Provider 规则。这是语义与交互指导，不声称自然语言意图被确定性解析；部署后的自由模型复验需重启 Agent/Ontology，仍只检查草稿、不创建、不运行。
+
 ## PG 修订与发布
 
 平台 Transfer 修订 11 将正式只读预检纳入创建条件，图通过 `readonly_config_check → config_precheck → transfer.task.config.check` 暴露读取入口。API、共享 SDK 与 Tool 的唯一输入及三权限交集不变，Runtime 在最终复核和创建前通过正式 Adapter 自动预检：unsupported 阻止创建，unknown 明确限制后知情确认，仅保存未运行定义；supported 也不保证执行成功。确认绑定完整参数、能力版本、结构及稳定报告事实；仅顶层报告时间及含时间的 binding_hash 不进入确认指纹，结构扫描时间仍绑定。报告保存在运行 checkpoint，不写入平台静态本体，不作为授权凭据。创建前失败清除旧报告且不能自动重试或创建；部署后的真实消费须重启 Agent/Ontology 另验。修订 12 仅将其中 7 项来源的 Git 引用冻结到实际包含已审查内容的 `c1f993b1fa7c5d5e403e463c371c46b2adf4ae80`，文件摘要及操作语义不变；来源引用改变仍形成新不可变快照，不重写修订 11，也不宣称其他 owner 的全量改造已验收。

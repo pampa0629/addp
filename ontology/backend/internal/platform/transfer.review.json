@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
-      "sha256": "a26e03611d8e6b27a0e1359c96312acfba86e2649ea43e92e99bd388009b868f",
+      "commit": "ac57feb3fefbf20cea8c1cc4671b4ca1a22fabbc",
+      "sha256": "92e187d5f4376f4792094fa06645a62f92c61bd2a233dade7fd996e727752867",
       "use": {
-        "zh-cn": "事实获取、用户澄清、确切配置复核与创建步骤",
-        "en": "Fact discovery, clarification, exact configuration review and creation procedure"
+        "zh-cn": "事实获取、用户澄清、确切配置复核与创建步骤；分别确认行粒度和字段范围，草稿明确要求检查时主动正式预检而不创建复核",
+        "en": "Fact discovery, clarification, exact configuration review and creation procedure; separate row grain from retained fields and formally check explicitly requested drafts without creation review"
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "00d6da240197047afe41e030c63430c3ee7b37de",
-      "sha256": "49a75f261d312b19f9b6d7906f8d3a90709186e20f797634a227e4bf056b8db0",
+      "commit": "ac57feb3fefbf20cea8c1cc4671b4ca1a22fabbc",
+      "sha256": "daa679a007d35ecf9c019edf72c7e525de74e60003200afe200e147b316707a2",
       "use": {
-        "zh-cn": "最终复核和创建前经正式 Adapter 自动预检；定义拒绝反馈 owner 诊断供修正且不创建，服务失败清旧报告并终止、不重试",
-        "en": "Automatic formal Adapter checks before review and creation; rejected definitions return owner diagnostics without creation; service failures clear stale reports and stop without retry"
+        "zh-cn": "最终复核和创建前经正式 Adapter 自动预检；定义拒绝反馈 owner 诊断供修正且不创建，服务失败清旧报告并终止、不重试；运行指导区分草稿检查与创建复核，不声称确定性解析自然语言",
+        "en": "Automatic formal Adapter checks before review and creation; rejected definitions return owner diagnostics without creation; service failures clear stale reports and stop without retry; guidance distinguishes draft checks from creation review without claiming deterministic natural-language parsing"
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "00d6da240197047afe41e030c63430c3ee7b37de",
-      "sha256": "5cd61fc21df29be87f3f8f24b48aa4e00e81df8189328aa5fd5530e3b6b080a3",
+      "commit": "ac57feb3fefbf20cea8c1cc4671b4ca1a22fabbc",
+      "sha256": "38bd051192bbbaae916c78d08c2c79189f9d14969679d710c994f6f7e3ca96a7",
       "use": {
-        "zh-cn": "真实 Harness、Manifest、SDK 下验证知情确认、完整请求绑定、稳定事实变化、拒绝诊断进入模型、新草稿重新预检复核、失败和取消无业务副作用",
-        "en": "Real Harness, Manifest and SDK verify informed confirmation, request binding, stable changes, model-visible rejection diagnostics, fresh draft checks/review, failure and cancellation without business effects"
+        "zh-cn": "真实 Harness、Manifest、SDK 下验证知情确认、完整请求绑定、稳定事实变化、拒绝诊断进入模型、新草稿重新预检复核、失败和取消无业务副作用；受控模型调用下，草稿预检保留数组字段且不创建复核，不代替自由模型验收",
+        "en": "Real Harness, Manifest and SDK verify informed confirmation, request binding, stable changes, model-visible rejection diagnostics, fresh draft checks/review, failure and cancellation without business effects; controlled model calls preserve array fields during draft checks without creation review, not a free-model acceptance test"
       }
     },
     {
@@ -344,7 +344,8 @@
       "sources": [
         "manifest",
         "conditions",
-        "condition_test"
+        "condition_test",
+        "skill"
       ]
     },
     {
