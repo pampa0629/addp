@@ -3,13 +3,15 @@ import { identity } from './monitoring-targets.fixture'
 export const permissions = ['platform.module.read', 'monitor.resource_observation.read']
 const stamp = '2026-10-10T00:00:00Z'
 export async function backend(page, options = {}) {
-  const rows = [1, 2].map(id => ({ id, module_name: 'monitor', instance_id: `native-${id}`, role: 'worker', node_id: '', host_node_name: '', runtime_hostname: `mac-process-${id}`, status: 'up', process_metrics_declared: true }))
+  const rows = [1, 2].map(id => ({ id, module_name: 'monitor', instance_id: `native-${id}`, role: 'worker', node_id: '', host_node_name: '', runtime_hostname: `mac-process-${id}`, status: 'up', process_metrics_declared: true, process_started_at: '2026-10-09T23:58:00Z' }))
   if (options.workerTypes) rows.splice(0, rows.length, ...[
     ['meta', 'worker', 'scan'], ['transfer', 'worker', 'sync'], ['transfer', 'worker', 'continuous_sync'],
     ['transfer', 'worker', undefined], ['meta', 'worker', 'future_worker'], ['transfer', 'backend', 'continuous_sync']
   ].map(([module, role, runtime], index) => ({ ...rows[0], id: index + 1, module_name: module, role, instance_id: `typed-${index + 1}`, runtime_hostname: 'shared-host', metadata: runtime === undefined ? {} : { runtime_name: runtime } })))
   if (options.scopes) rows.unshift(...Array.from({ length: 24 }, (_, i) => ({ ...rows[0], id: i + 3, instance_id: `history-${i}`, runtime_hostname: `history-${i}`, status: 'down' })), { ...rows[0], id: 27, instance_id: 'not-connected', runtime_hostname: 'not-connected', process_metrics_declared: false })
   let mode = 'valid', resolve, calls = [], listCalls = []
+  let trendMode = 'valid', trendResolve
+  const trendCalls = [], trendHeld = options.trendHeld ? new Promise(yes => { trendResolve = yes }) : null
   const held = options.held ? new Promise(yes => { resolve = yes }) : null
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.locale || 'zh-cn')
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -40,8 +42,18 @@ export async function backend(page, options = {}) {
       }
       if (mode === 'unavailable' || mode === 'denied') { status = mode === 'denied' ? 403 : 503; body = { error_code: mode === 'denied' ? 'permission_denied' : 'observability_backend_unavailable' } }
       if (held) await held
+    } else if (path === '/api/v1/monitor/platform/process_resource_trends') {
+      const params = Object.fromEntries(url.searchParams), row = rows.find(row => row.id === Number(params.instance_id))
+      trendCalls.push(params)
+      const end = Date.parse(params.end), start = Math.max(Date.parse(params.start), end - 120000), step = 15
+      body = { subject: { kind: 'module_instance', id: row.id, module_name: row.module_name, instance_id: row.instance_id, role: row.role }, node_id: '', policy_version: 1, lookback_seconds: 300, queried_at: stamp, start: new Date(start).toISOString(), end: params.end, step_seconds: step, series: [
+        ['process.cpu.core_equivalents', 'cores', 60, 1.5], ['process.memory.resident_bytes', 'bytes', 0, 1024 ** 3]
+      ].map(([key, unit, window, value]) => ({ metric_key: key, unit, window_seconds: window, dimensions: {}, points: Array.from({ length: Math.floor((end - start) / (step * 1000)) + 1 }, (_, index) => ({ evaluated_at: new Date(start + index * step * 1000).toISOString(), sampled_at: index === 2 ? null : new Date(start + index * step * 1000).toISOString(), value: index === 2 ? null : value, data_state: index === 2 ? 'no_data' : 'valid' })) })) }
+      if (trendMode === 'wrong-owner') body.subject.instance_id = 'previous-start'
+      if (trendMode === 'unavailable' || trendMode === 'denied') { status = trendMode === 'denied' ? 403 : 503; body = { error_code: trendMode === 'denied' ? 'permission_denied' : 'observability_backend_unavailable' } }
+      if (trendHeld && row.id === 1) await trendHeld
     } else throw new Error(`unexpected process fixture API ${path}`)
     await route.fulfill({ status, json: body })
   })
-  return { calls, listCalls, setMode: value => { mode = value }, setRuntimeName: (id, value) => { rows.find(row => row.id === id).metadata = { runtime_name: value } }, release: () => resolve?.() }
+  return { calls, listCalls, trendCalls, setMode: value => { mode = value }, setTrendMode: value => { trendMode = value }, setRuntimeName: (id, value) => { rows.find(row => row.id === id).metadata = { runtime_name: value } }, release: () => { resolve?.(); trendResolve?.() } }
 }

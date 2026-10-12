@@ -41,6 +41,15 @@ type processBackend struct {
 	omit     bool
 }
 
+func (b *processBackend) ProcessTrend(_ context.Context, p resourcequery.Plan, scope resourcequery.ProcessScope, _ resourcequery.Budget) ([]resourcequery.Series, error) {
+	b.calls++
+	b.scopes = []resourcequery.ProcessScope{scope}
+	if b.complete != nil {
+		b.complete()
+	}
+	return resourcequery.Empty(p, "no_data"), nil
+}
+
 func (b *processBackend) ProcessSummaries(_ context.Context, scopes []resourcequery.ProcessScope, at time.Time, budget resourcequery.Budget) (map[uint]resourcequery.Summary, error) {
 	b.calls++
 	b.scopes = append([]resourcequery.ProcessScope(nil), scopes...)
@@ -134,5 +143,41 @@ func TestProcessSummaryAuthorizesBeforePrivateReadsAndNeedsNoHost(t *testing.T) 
 	backend.complete = func() { now = now.Add(61 * time.Second) }
 	if _, err = query(); !errors.Is(err, resourcequery.ErrUnavailable) {
 		t.Fatal("stale identity snapshot accepted", err)
+	}
+}
+
+func TestProcessTrendAuthorizesCurrentInstanceClipsStartupAndClearsExpiredLease(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	started := now.Add(-2*time.Minute + 123*time.Millisecond)
+	requested := now.Add(-time.Hour)
+	declared := true
+	users := &processUsers{rows: []client.RuntimeInstanceReference{{ID: 7, ModuleName: "meta", InstanceID: "this-start", Role: "worker", Status: "up", LeaseExpiresAt: now.Add(time.Second), ProcessStartedAt: &started, ProcessMetricsDeclared: &declared}}}
+	identities := &processIdentities{snapshot: &commonmodels.ObservabilityIdentitySnapshot{ObservedAt: now, ModuleInstances: []commonmodels.ObservabilityModuleIdentity{{ModuleName: "meta", InstanceID: "this-start", Role: "worker", LeaseExpiresAt: now.Add(time.Second), ProcessStartedAt: &started, ProcessMetrics: &commonmodels.ProcessMetricsDeclaration{SchemaVersion: commonmodels.ProcessMetricsSchema, Endpoint: "https://127.0.0.1:9100/metrics"}}}}}
+	backend := &processBackend{}
+	policies := &resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget(), Version: 2}}
+	svc := NewResourceObservationService(policies, nil, nil, nil, true, resourceSourcePolicyWithNetwork(t, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, []uint16{9100}), ProcessObservationDependencies{Users: users, Identities: identities, Backend: backend})
+	svc.now = func() time.Time { return now }
+	query := func() (ProcessResourceTrendResponse, error) {
+		return svc.ProcessTrend(context.Background(), "human", "current-user", 7, requested, now)
+	}
+	users.err = &client.SystemAPIError{StatusCode: 403}
+	if _, err := query(); err == nil || identities.calls != 0 || backend.calls != 0 {
+		t.Fatal("unauthorized private trend read", err)
+	}
+	users.err = nil
+	result, err := query()
+	if err != nil || !result.Start.Equal(started.Truncate(time.Second).Add(time.Second)) || len(result.Series) != 2 || backend.scopes[0].InstanceID != "this-start" || result.NodeID != "" {
+		t.Fatalf("startup trend scope %+v %v", result, err)
+	}
+	users.rows[0].Status = "down"
+	result, err = query()
+	if err != nil || backend.calls != 1 || result.Series[0].Points[0].DataState != "not_active" {
+		t.Fatal("stopped history queried", err)
+	}
+	users.rows[0].Status = "up"
+	backend.complete = func() { now = now.Add(2 * time.Second) }
+	result, err = query()
+	if err != nil || result.Series[0].Points[0].DataState != "not_active" || result.Series[0].Points[0].Value != nil {
+		t.Fatal("expired lease returned history", err)
 	}
 }

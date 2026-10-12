@@ -2848,6 +2848,112 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/process_resource_trends": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅当前有效运行实例；当前用户经 System 授权后读取本次启动后的 CPU 核占用及 RSS。固定两条序列，完整一分钟 CPU 窗口，缺值为断点；退出实例不查询历史，重启不拼接实例，私有端点不公开。范围与步长受共享预算限制。| Current active instances only, authorized by System for the current user. Reads CPU core equivalents and RSS since this process started, using two fixed series and a complete one-minute CPU window. Missing samples remain gaps; stopped-instance history and cross-restart joins are excluded, private endpoints are not exposed, and shared budgets bound range and step.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取当前服务进程趋势 | Read current service process trends",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "System 实例记录正整数 ID | Positive System instance record ID",
+                        "name": "instance_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "整秒 RFC3339 开始时间 | Whole-second RFC3339 start",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "整秒 RFC3339 结束时间 | Whole-second RFC3339 end",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessResourceTrendResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.resource_observation.read"
+                ]
+            }
+        },
         "/platform/resource_observations": {
             "get": {
                 "security": [
@@ -5375,6 +5481,41 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessResourceObservation"
                     }
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ProcessResourceTrendResponse": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "type": "string"
+                },
+                "lookback_seconds": {
+                    "type": "integer"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "policy_version": {
+                    "type": "integer"
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Series"
+                    }
+                },
+                "start": {
+                    "type": "string"
+                },
+                "step_seconds": {
+                    "type": "integer"
+                },
+                "subject": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProcessResourceSubject"
                 }
             }
         },

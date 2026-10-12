@@ -97,12 +97,31 @@ class MetricsProtocolTest(unittest.TestCase):
                  "instances": {"data": owners, "total": 2, "page": 1, "page_size": 20}}
         report = {"service_batches": [batch, copy.deepcopy(batch)], "service_presentation": dict.fromkeys(
             ("cpu_cores", "rss_iec", "elapsed_uptime", "inline_hints", "sample_time_visible", "unbound_host", "url_restore", "iframe_preserved", "negative_no_reads"), True)}
+        trend = {k: copy.deepcopy(v) for k, v in reply["data"][0].items() if k != "collection"}
+        trend.update(start="2026-10-11T00:55:00Z", end="2026-10-11T01:00:00Z", step_seconds=15)
+        trend["series"] = trend["series"][:2]
+        for line in trend["series"]:
+            point = line["points"][0]
+            line["points"] = []
+            for index in range(21):
+                at = datetime.datetime(2026, 10, 11, 0, 55, tzinfo=datetime.timezone.utc) + datetime.timedelta(seconds=15*index)
+                stamp = at.isoformat().replace("+00:00", "Z")
+                line["points"].append({**point, "evaluated_at": stamp, "sampled_at": stamp})
+        entry = {"path": "/api/v1/monitor/platform/process_resource_trends", "query": {"instance_id": "7", "start": trend["start"], "end": trend["end"]}, "value": trend}
+        report["service_trends"] = [entry, copy.deepcopy(entry)]
+        report["process_trend_presentation"] = dict.fromkeys(("cpu_cores", "rss_iec", "same_current_instance", "startup_bound", "url_restore"), True)
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             screenshot = artifacts / "node-resources-services.png"
             screenshot.write_bytes(b"\x89PNG\r\n\x1a\n"+b"x"*1001)
+            (artifacts / "node-resources-process-trends.png").write_bytes(screenshot.read_bytes())
+            (artifacts / "node-resources-process-trends-memory.png").write_bytes(screenshot.read_bytes())
             self.assertEqual(ONLINE.validate_process_browser(report, expected, artifacts)["result"], "passed")
-            mutations = [lambda v: v["service_presentation"].update(cpu_cores=False),
+            mutations = [lambda v: v["process_trend_presentation"].update(startup_bound=False),
+                         lambda v: v["service_trends"][0]["value"]["subject"].update(instance_id="previous"),
+                         lambda v: v["service_trends"][0]["value"]["series"][0]["points"][0].update(value=-1),
+                         lambda v: v["service_trends"][0]["value"].update(start="2026-10-10T00:00:00Z"),
+                         lambda v: v["service_presentation"].update(cpu_cores=False),
                          lambda v: v["service_presentation"].update(negative_no_reads=False),
                          lambda v: v["service_batches"][0]["query"].update(instance_ids="7,9,12"),
                          lambda v: v["service_batches"][0]["instance_query"].pop("status"),

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows } from '../../../../monitor/frontend/src/utils/nodeResources.js'
-import { processMetrics, validateProcessInstances, validateProcessSummaries } from '../../../../monitor/frontend/src/utils/processResources.js'
+import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -27,6 +27,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
   const pending = []
   const instancePages = []
   const serviceBatches = []
+  const serviceTrends = []
   page.on('response', response => {
     const url = new URL(response.url())
     if (url.pathname === '/api/v1/system/platform/module-instances') {
@@ -35,6 +36,10 @@ test('platform node resources through real Console password MFA and Monitor ifra
     }
     if (url.pathname === '/api/v1/monitor/platform/process_resource_summaries') {
       pending.push(response.json().then(value => serviceBatches.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
+      return
+    }
+    if (url.pathname === '/api/v1/monitor/platform/process_resource_trends') {
+      pending.push(response.json().then(value => serviceTrends.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
       return
     }
     if (!/^\/api\/v1\/(system\/platform\/host_nodes|monitor\/platform\/resource_)/.test(url.pathname)) return
@@ -330,6 +335,28 @@ test('platform node resources through real Console password MFA and Monitor ifra
     report.service_presentation = { cpu_cores: true, rss_iec: true, elapsed_uptime: true, inline_hints: true,
       sample_time_visible: true, unbound_host: true, url_restore: true, iframe_preserved: true, negative_no_reads: false }
     await page.screenshot({ path: resolve(artifact, 'node-resources-services.png'), animations: 'disabled' })
+    save('current-process-trends-and-restore')
+    const trendOwner = restoredServices.instances.data.find(row => row.id === expected.processes[0].id)
+    const trendIndex = restoredServices.instances.data.findIndex(row => row.id === trendOwner.id)
+    await monitor.getByTestId('process-list').locator('.el-table__body tr').nth(trendIndex).getByRole('button', { name: '查看趋势', exact: true }).click()
+    for (const metric of ['cpu', 'memory']) await expect(monitor.getByTestId(`process-trend-${metric}`).locator('canvas')).toBeVisible()
+    await page.reload()
+    for (const metric of ['cpu', 'memory']) await expect(monitor.getByTestId(`process-trend-${metric}`).locator('canvas')).toBeVisible()
+    await expect(page).toHaveURL(url => url.searchParams.get('instance_id') === String(trendOwner.id))
+    await Promise.all(pending)
+    expect(serviceTrends.length).toBe(2)
+    for (const item of serviceTrends) {
+      const observed = validateProcessTrend(item.value, trendOwner, item.query)
+      expect(observed.series.every(line => line.points.some(point => point.data_state === 'valid'))).toBe(true)
+    }
+    report.service_trends = serviceTrends
+    report.process_trend_presentation = { cpu_cores: true, rss_iec: true, same_current_instance: true, startup_bound: true, url_restore: true }
+    await page.screenshot({ path: resolve(artifact, 'node-resources-process-trends.png'), animations: 'disabled' })
+    const memoryTrend = monitor.getByTestId('process-trend-memory').locator('canvas')
+    await memoryTrend.scrollIntoViewIfNeeded()
+    await expect(memoryTrend).toBeInViewport()
+    await page.screenshot({ path: resolve(artifact, 'node-resources-process-trends-memory.png'), animations: 'disabled' })
+    await monitor.locator('.el-dialog__headerbtn').click()
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     try {

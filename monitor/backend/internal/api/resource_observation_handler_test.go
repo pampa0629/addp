@@ -24,6 +24,20 @@ type apiResourcePolicies struct {
 	row monitorModels.ResourceQueryPolicy
 }
 
+func TestProcessTrendRejectsUnboundedAndDuplicateInputs(t *testing.T) {
+	router := resourceAPIRouter(t, targetAPIIdentity("user", "addp-web", "first_party_access_token", "monitor.resource_observation.read"))
+	valid := "instance_id=7&start=2026-10-11T00:00:00Z&end=2026-10-11T00:05:00Z"
+	for _, query := range []string{valid + "&metrics=process.uptime_seconds", valid + "&instance_id=9", strings.Replace(valid, "instance_id=7", "instance_id=7,9", 1), strings.Replace(valid, "instance_id=7", "instance_id=01", 1), strings.Replace(valid, "00:00:00Z", "00:00:00.1Z", 1), strings.Replace(valid, "00:05:00Z", "00:00:00Z", 1)} {
+		req := httptest.NewRequest("GET", "/api/v1/monitor/platform/process_resource_trends?"+query, nil)
+		req.Header.Set("Authorization", "Bearer addp_at_user")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		if response.Code != 400 || !strings.Contains(response.Body.String(), "invalid_resource_query") || response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal(response.Code, response.Body.String())
+		}
+	}
+}
+
 func (s *apiResourcePolicies) Get(context.Context) (monitorModels.ResourceQueryPolicy, error) {
 	return s.row, nil
 }
@@ -46,7 +60,7 @@ func resourceAPIRouter(t *testing.T, identity authorization.AuthContext) *gin.En
 	return SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, svc)
 }
 func TestResourceRoutesRejectTenantMachineDelegatedAndMissingPermission(t *testing.T) {
-	paths := []string{"/platform/process_resource_summaries", "/platform/resource_observations", "/platform/resource_summaries", "/platform/resource_trends", "/settings/resource-query-policy"}
+	paths := []string{"/platform/process_resource_summaries", "/platform/process_resource_trends", "/platform/resource_observations", "/platform/resource_summaries", "/platform/resource_trends", "/settings/resource-query-policy"}
 	for _, variant := range []string{"tenant", "service", "delegated", "missing", "anonymous", "user", "oauth"} {
 		for _, path := range paths {
 			t.Run(variant+path, func(t *testing.T) {

@@ -1706,3 +1706,30 @@ Safari 沿用户原平台管理员会话刷新 `/monitor/service-resources`，�
 Safari 沿用户既有平台管理员会话刷新服务页，09:30 时的当前八条实例中，Meta Worker 显示“扫描任务进程”，两个 Transfer Worker 分别显示“单次同步任务进程”和“持续同步任务进程”，五个 Backend 保持“后端服务”。实例 ID 提示保留，八者均正在采集且 CPU/RSS/经过时长有值；已检查实际截图，三类用途位于各自行内。没有重启后端或变更个人语言偏好。默认 `make test-changed` 因当前混合工作区缺少多个 Owner 的数据库测试连接输入在预检返回 2（`/tmp/addp-worker-label-changed-1.log`），后续门禁未执行、不计通过。本次前端展示验收不计新的 Hosted T4、进程趋势或生产 T5 完成。
 
 最终 `make test-console-frontend` 返回 0（`/tmp/addp-worker-label-console-1.log`），168 项单测、128 项浏览器测试及构建通过。新增用例通过 Console 正式语言控件在当前 iframe 内切换中英文，三类用途同步更新，未重建 iframe、未重取实例列表；原筛选、分页、刷新及范围恢复继续通过。交付前 `git diff --check` 通过，本批只提交上述前端展示及相关文档，不夹带其他 Owner 的工作区改动。
+
+包含本轮实现的 `3bba7b5ea` 在 Platform CI（run 38192829540）中的 Monitor 与 Console 前端 Job 均 completed/success；后续 main 提交的完整工作流当时仍在排队或运行，未将整套 CI 写成通过。
+
+### 10.55 当前服务进程 CPU 与内存趋势（已实现，实际运行待验收）
+
+2026-10-12 用户明确选择“只看当前运行实例”：只查询当前有效租约、明确声明采集的运行实例，在本次启动之后读取 CPU 和 RSS 趋势。重启后的实例 ID 独立，不能拼接旧进程；离线、声明失效及完成时租约到期继续返回空值，不查询退出实例历史。System 身份、普通用户授权、私有身份投影与来源准入沿 10.49 原链路；不增加身份权限、历史存储或后台续租。
+
+Monitor 新增唯一 `GET /platform/process_resource_trends`，请求仅接受正整数 `instance_id` 与整秒 RFC3339 `start/end`，固定返回 `process.cpu.core_equivalents`、`process.memory.resident_bytes` 两条无维度序列。未知/重复/空参数及正文拒绝，原错误映射、`no-store` 与最小操作审计复用；不得接受任意指标或 PromQL。查询范围、步长、总点数、超时与并发沿现有共享预算。返回原进程 subject、node_id、policy_version、queried_at、lookback_seconds 以及实际 start/end/step_seconds 与 series；趋势不附带“当前采集成功”的判断。开始时间裁剪到当前进程启动后的首个整秒，刚启动尚未形成区间时保留一个无有效样本的评估点。每个历史评估点使用原身份/启动时间/同次采样 guard，CPU 仍要求完整一分钟；缺值形成断点，不补零、不插值。
+
+前端沿唯一 `/service-resources` 页面，通过对应实例的“查看趋势”打开对话框；`instance_id/range` 与原筛选、分页同一公开 URL 恢复，默认 5m，范围复用主机已有选项。对话框就地显示模块、用途与本次实例，分别绘制 CPU 核占用和 IEC 内存曲线，复用 `common-frontend/chart` 的唯一 ChartRenderer。只允许从当前授权页的在线已声明采集实例打开；范围变化、关闭、权限/身份变化清除旧趋势并取消请求，迟到响应不得覆盖新实例。未知或不在当前页的选择明确要求重新选择，不按名称匹配或自动切换到新实例。
+
+实施前门禁：Monitor Go T1 验证解析、预算、授权优先、启动边界、租约失效与历史禁用；既有 `make test-monitor-metrics` 的独占 SDK 来源 T2 覆盖真实 range、值/时间成对归一、CPU 完整窗口、实例重启隔离和来源恢复。Monitor/Console 前端 T1/T3/构建覆盖 URL 恢复、中英文、两条曲线、断点、刷新、错误与迟到响应；Swagger 与授权消费者报告同次同步。现有 Make、Platform CI 与 metrics T2 自动发现已覆盖这些路径，不新增 suite 或工作流。默认 `make test-changed` 单独记录其他 Owner 的环境预检；新的 Hosted T4 与个人实际运行必须分别取得证据，未执行时不计通过。后端仅 Monitor 需应用重启，由用户执行；本轮按用户要求只提交、不推送。
+
+
+本批沿原 ProcessSummaries 抽出唯一 observeProcesses 授权/身份/准入/完成检查，同时沿原 Prometheus Client 抽出唯一 queryExpression 传输与归一；摘要和趋势分别使用固定三项/两项目录，没有复制授权链或旁路查询。开始裁剪后步长重新收敛在原已批准点数内，微秒启动时间向下一整秒裁剪；前端检查实际窗口、精确实例、两条目录、完整网格、样本时效与空值，不接收其他实例、任意指标或伪造缺值。公开 URL 对重复 range 形成的数组严格规范化，范围仍只进入趋势请求、不进入 System 实例筛选。
+
+最终 make test-monitor-frontend 返回 0（/tmp/addp-process-trend-monitor-4.log），55 项单测、106 项浏览器测试及构建通过。make test-console-frontend 返回 0（/tmp/addp-process-trend-console-1.log），170 项单测、129 项浏览器测试及构建通过；最后的 range 类型检查由 Console 原标准浏览器入口对 process-resource-navigation.spec.js 再验证六项通过（/tmp/addp-process-trend-console-focused-1.log）。Monitor 同一浏览器入口对 process-resources.spec.js 再验证十三项通过（/tmp/addp-process-trend-focused-3.log），包括中英文、关闭/换实例/权限撤销隔离、恢复、失败清值、窄屏和内存图滚动可见。已检查关闭转场动画后的中英文实际截图，CPU 缺失点形成断点，容量曲线按 IEC 单位展示；窄屏需要在对话框内纵向滚动查看第二条曲线，不宣称两图在手机首屏同屏显示。
+
+make test-monitor-metrics 最终返回 0（/tmp/addp-process-trend-metrics-3.log）：真实两来源 CPU/RSS range、其他实例 ID 拒绝借值、单源停止后清值且对端继续、原主机目录/窗口/故障恢复和中心 SIGKILL/WAL 保留通过，退出确认零当次容器、网络、卷及临时文件。前两轮失败分别保留在 /tmp/addp-process-trend-metrics-1.log 和 -2.log：用例只等待即时 CPU 就绪便立即断言趋势有效；诊断证明最后趋势网格点 02:17:17 比即时评估 02:17:27 早十秒，同一公式在该历史时刻的即时查询也只有内存，CPU 缺值是合法窗口不足。验收等待改为原一百秒期限内同时等待即时和趋势完整，增加网格不得凭空补末端点的确定性用例，没有改生产公式、放宽窗口、延长超时或补零。
+
+全量入口分别计量：首次 make test-go 发现时长与整数类型混用而失败，修正后第二轮返回 0；最终工作区复验第三轮因其他 Owner 的 Develop 用例失败而中断（/tmp/addp-process-trend-go-3.log），不计完整通过。make test-module MODULE=monitor 在平台 T0 的 Transfer review source drift 失败，后续步骤未执行（/tmp/addp-process-trend-module-1.log）；未修改其他 Owner 的审查记录。以已提交 main a049fc71dd51118f44f53306cea066f0ae3bad97 加本批文件的临时隔离快照，仍运行根 make test-go：Monitor 全部 API/config/identity/repository/resourcequery/service 包通过，但全量入口随后在 Ontology 的 Transfer review drift 失败（/tmp/addp-process-trend-go-snapshot-2.log），只计 Monitor 分项，快照退出自动删除。其后 main 到本次核对的 e524cb44804e83554a2255a212e6f787102c5ca4 在 Common、Monitor 和相关前端依赖上无变更，不将其他 Owner 的未提交改动计入该隔离证据。默认 make test-changed 因多 Owner 数据库输入缺失在预检返回 2（/tmp/addp-process-trend-changed-1.log），不计通过。
+
+Swagger 同步生成与 Monitor 六十八个公开路由覆盖校验通过；make test-authorization 返回 0（/tmp/addp-process-trend-auth-1.log），没有修改 IAM；make test-node-metrics-online-runner 最终返回 0（/tmp/addp-process-trend-online-runner-2.log），四十一项回归与正式 System 测试夹具编译通过。原 Hosted suite 同次准备当前实例两条曲线、刷新恢复、启动裁剪、空值/网格/单位/实例校验和 CPU/内存截图；没有执行新的真实 Hosted T4，也没有使用临时平台身份。执行该 Hosted 扩展前须核对现行身份例外的接口用途，本次准备不自动授予新增测试用途。
+
+本轮未自行重启或接管个人服务。现有 SDK、个人采集部署、System、Common 和权限实现无需变更；由用户执行 ./scripts/dev/restart.sh -monitor 应用新趋势接口后，再进行 Safari 当前实例实际曲线与完整窗口复验。未重启、未执行的个人验收和生产 T5 不计为通过。按用户要求只提交本批文件，推送交给用户。
+
+独立 `make test-monitor-postgres` 返回 0（`/tmp/addp-process-trend-postgres-1.log`），沿标准入口验证实际 `addp-postgres:25432/addp_test` 的 Monitor Repository/Service 与资源预算 CAS/热生效等既有集成；没有创建其他 database，没有借用 System IAM 库。该结果不改写被平台 T0 阻断的完整模块入口状态。最终源码与本批文件的 `git diff --check` 通过。

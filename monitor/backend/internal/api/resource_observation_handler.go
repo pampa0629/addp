@@ -236,6 +236,56 @@ func (h *ResourceObservationHandler) ProcessSummaries(c *gin.Context) {
 // @Router /platform/resource_trends [get]
 func (h *ResourceObservationHandler) Trend(c *gin.Context) { h.query(c, true) }
 
+// ProcessTrend godoc
+// @Summary 读取当前服务进程趋势 | Read current service process trends
+// @Description 仅当前有效运行实例；当前用户经 System 授权后读取本次启动后的 CPU 核占用及 RSS。固定两条序列，完整一分钟 CPU 窗口，缺值为断点；退出实例不查询历史，重启不拼接实例，私有端点不公开。范围与步长受共享预算限制。| Current active instances only, authorized by System for the current user. Reads CPU core equivalents and RSS since this process started, using two fixed series and a complete one-minute CPU window. Missing samples remain gaps; stopped-instance history and cross-restart joins are excluded, private endpoints are not exposed, and shared budgets bound range and step.
+// @Tags 平台运行监控 | Platform Runtime Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Param instance_id query int true "System 实例记录正整数 ID | Positive System instance record ID"
+// @Param start query string true "整秒 RFC3339 开始时间 | Whole-second RFC3339 start"
+// @Param end query string true "整秒 RFC3339 结束时间 | Whole-second RFC3339 end"
+// @Success 200 {object} service.ProcessResourceTrendResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 429 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
+// @Failure 504 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.resource_observation.read"]
+// @Router /platform/process_resource_trends [get]
+func (h *ResourceObservationHandler) ProcessTrend(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	q, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil || len(c.Request.URL.RawQuery) > 4096 || c.Request.ContentLength != 0 || len(c.Request.TransferEncoding) != 0 || len(q) != 3 || len(q["instance_id"]) != 1 || len(q["start"]) != 1 || len(q["end"]) != 1 {
+		resourceError(c, resourcequery.ErrInvalid)
+		return
+	}
+	ids, idErr := commonmodels.ParseRuntimeInstanceIDs(q.Get("instance_id"))
+	start, startErr := time.Parse(time.RFC3339, q.Get("start"))
+	end, endErr := time.Parse(time.RFC3339, q.Get("end"))
+	if idErr != nil || len(ids) != 1 || startErr != nil || endErr != nil || start.Nanosecond() != 0 || end.Nanosecond() != 0 || !start.Before(end) {
+		resourceError(c, resourcequery.ErrInvalid)
+		return
+	}
+	principal, ok := auth.PrincipalIDFromGin(c)
+	if !ok {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+	value, err := h.service.ProcessTrend(c.Request.Context(), strconv.FormatUint(uint64(principal), 10), targetToken(c), ids[0], start, end)
+	if err != nil {
+		resourceError(c, err)
+		return
+	}
+	c.Set("resource_query_audit_instances", ids)
+	c.JSON(http.StatusOK, value)
+}
+
 func (h *ResourceObservationHandler) query(c *gin.Context, trend bool) {
 	node, keys, start, end, dimensions, ok := resourceQuery(c, trend)
 	if !ok {

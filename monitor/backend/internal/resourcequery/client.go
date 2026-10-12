@@ -135,6 +135,12 @@ func (c *Client) Query(ctx context.Context, p Plan, s Scope, b Budget) ([]Series
 	if err != nil {
 		return nil, err
 	}
+	return c.queryExpression(ctx, p, expression, b)
+}
+
+// queryExpression is the single instant/range transport and normalizer for
+// catalog expressions built by the host or process scope.
+func (c *Client) queryExpression(ctx context.Context, p Plan, expression string, b Budget) ([]Series, error) {
 	endpoint := "/api/v1/query"
 	q := url.Values{"query": {expression}, "timeout": {strconv.Itoa(b.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}}
 	if p.Trend {

@@ -75,8 +75,49 @@ func TestIntegrationMetricsProcessSources(t *testing.T) {
 			}
 		}
 		if ready {
-			t.Log("genuine Linux CPU/RSS/uptime and stopped-source exclusion passed")
-			return
+			if !stopped {
+				at := time.Now().UTC().Truncate(time.Second)
+				for _, scope := range scopes {
+					p, err := NewProcessTrendPlan(at.Add(-3*time.Minute), at, at, DefaultBudget())
+					if err != nil {
+						t.Fatal(err)
+					}
+					p = LimitProcessTrendStart(p, scope.StartedAt)
+					series, err := c.ProcessTrend(context.Background(), p, scope, DefaultBudget())
+					if err != nil || len(series) != 2 {
+						t.Fatal("native process trend", series, err)
+					}
+					for _, line := range series {
+						valid := false
+						for _, point := range line.Points {
+							valid = valid || point.DataState == "valid" && point.Value != nil && *point.Value > 0
+						}
+						if !valid {
+							// The last range grid point can precede the instant
+							// evaluation by almost one step. Wait for both windows
+							// inside the existing deadline; never relax CPU guards.
+							ready = false
+						}
+					}
+					foreign := scope
+					foreign.InstanceID = "previous-start"
+					old, err := c.ProcessTrend(context.Background(), p, foreign, DefaultBudget())
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, line := range old {
+						for _, point := range line.Points {
+							if point.Value != nil {
+								t.Fatal("another instance trend leaked")
+							}
+						}
+					}
+				}
+			}
+			if ready {
+				t.Log("genuine Linux CPU/RSS/uptime, range trends and stopped-source exclusion passed")
+				return
+			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("native process observation not ready: %+v %v", values, err)

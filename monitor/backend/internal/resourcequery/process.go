@@ -16,6 +16,37 @@ var processDefinitions = []Definition{{"process.cpu.core_equivalents", "cores", 
 
 func ProcessCatalog() []Definition { return append([]Definition(nil), processDefinitions...) }
 
+func NewProcessTrendPlan(start, end, now time.Time, b Budget) (Plan, error) {
+	return newPlan([]string{processDefinitions[0].Key, processDefinitions[1].Key}, start, end, now, true, nil, b, processDefinitions)
+}
+
+// LimitProcessTrendStart preserves the validated budget and excludes the time
+// before this process started. A brand-new process can have one empty point.
+func LimitProcessTrendStart(p Plan, started time.Time) Plan {
+	first := started.UTC().Truncate(time.Second)
+	if first.Before(started) {
+		first = first.Add(time.Second)
+	}
+	if first.After(p.Start) {
+		p.Start = first
+		if p.Start.After(p.End) {
+			p.Start = p.End
+		}
+		limit := p.Points
+		if limit < 2 {
+			limit = 2
+		}
+		span := int64(p.End.Sub(p.Start) / time.Second)
+		step := (span + int64(limit) - 2) / int64(limit-1)
+		if step < MinimumStepSeconds {
+			step = MinimumStepSeconds
+		}
+		p.StepSeconds = (step + MinimumStepSeconds - 1) / MinimumStepSeconds * MinimumStepSeconds
+		p.Points = int(p.End.Sub(p.Start)/(time.Duration(p.StepSeconds)*time.Second)) + 1
+	}
+	return p
+}
+
 func NewProcessSummaryPlan(count int, at time.Time, b Budget) (Plan, error) {
 	if count < 1 || count > 100 {
 		return Plan{}, ErrInvalid
@@ -73,7 +104,7 @@ func (s ProcessScope) identityGuard(offset string) string {
 }
 
 func (s ProcessScope) expression(p Plan) (string, error) {
-	if s.Validate() != nil || p.Trend || len(p.Metrics) != len(processDefinitions) {
+	if s.Validate() != nil || len(p.Metrics) < 1 || len(p.Metrics) > len(processDefinitions) {
 		return "", ErrInvalid
 	}
 	info, start, up := s.identitySelector(), s.selector("process_start_time_seconds"), s.selector("up")
@@ -109,6 +140,22 @@ func (s ProcessScope) expression(p Plan) (string, error) {
 		}
 	}
 	return strings.Join(parts, " or "), nil
+}
+
+func (c *Client) ProcessTrend(ctx context.Context, p Plan, scope ProcessScope, b Budget) ([]Series, error) {
+	if !p.Trend || b.Validate() != nil {
+		return nil, ErrInvalid
+	}
+	if c == nil {
+		return nil, ErrUnavailable
+	}
+	expression, err := scope.expression(p)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(b.TimeoutSeconds)*time.Second)
+	defer cancel()
+	return c.queryExpression(ctx, p, expression, b)
 }
 
 func (s ProcessScope) collectionExpression() string {

@@ -38,8 +38,29 @@
           <template #header><span>{{ t(`monitor.process.metrics.${metric.name}`) }}</span><p class="process-hint">{{ t(`monitor.process.hints.${metric.name}`) }}</p></template>
           <template #default="{ row }"><strong>{{ value(row, metric) }}</strong><p v-if="point(row, metric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, metric) }}</p></template>
         </el-table-column>
+        <el-table-column :label="t('monitor.resources.trend')" width="130"><template #default="{ row }"><el-button text type="primary" :disabled="row.status !== 'up' || !row.process_metrics_declared || loading" @click="selectTrend(row.id)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
       </el-table>
       <el-pagination v-if="!loading && !errorKey" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
+      <el-dialog :model-value="Boolean(state.instanceID)" :title="t('monitor.process.trend.title')" width="min(960px, calc(100vw - 32px))" destroy-on-close @close="closeTrend">
+        <div v-loading="loading" data-testid="process-trend">
+          <p v-if="selectedInstance" class="process-trend-subject">{{ selectedInstance.module_name }} · {{ t(processRoleLabelKey(selectedInstance)) }} · {{ selectedInstance.instance_id }}</p>
+          <div class="process-toolbar">
+            <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" @update:model-value="range => selectTrend(state.instanceID, range)"><el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" /></el-select>
+            <el-button :disabled="loading" @click="reload">{{ t('common.refresh') }}</el-button>
+          </div>
+          <p class="process-hint">{{ t('monitor.process.trend.scope') }}</p>
+          <el-alert v-if="trendErrorKey" :title="t(trendErrorKey)" type="warning" :closable="false" data-testid="process-trend-error" />
+          <template v-if="trend">
+            <p class="process-hint">{{ t('monitor.resources.window', { start: date(trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
+            <p class="process-hint">{{ t('monitor.resources.gaps') }}</p>
+            <section v-for="chart in trendCharts" :key="chart.metric.key">
+              <h3>{{ t(`monitor.process.metrics.${chart.metric.name}`) }}</h3>
+              <p class="process-hint">{{ t(`monitor.process.hints.${chart.metric.name}`) }}</p>
+              <div class="process-trend-chart" role="img" :aria-label="t(`monitor.process.metrics.${chart.metric.name}`)" :data-testid="`process-trend-${chart.metric.name}`"><ChartRenderer :rows="chart.rows" :config="chart.config" @invalid="invalidTrend" /></div>
+            </section>
+          </template>
+        </div>
+      </el-dialog>
     </template>
   </section>
 </template>
@@ -49,12 +70,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
-import { formatBytes, formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
+import { formatBytes, formatDurationSeconds, scaleByteValue } from '../../../../common-frontend/basic/src/utils/formatters.js'
+import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { processResourcesAPI as api } from '../api/processResources'
-import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, validateProcessInstances, validateProcessSummaries } from '../utils/processResources'
-import { currentResourceValue, resourceErrorKey } from '../utils/nodeResources'
+import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, validateProcessInstances, validateProcessSummaries, processTrendParameters, validateProcessTrend } from '../utils/processResources'
+import { currentResourceValue, resourceErrorKey, resourceRanges, resourceChartRows } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -62,6 +84,15 @@ const canRead = computed(() => auth.contextType === 'platform' && auth.authConte
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
+const trend = ref(null), trendErrorKey = ref('')
+const selectedInstance = computed(() => instances.value.find(row => row.id === state.value.instanceID))
+const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
+const trendCharts = computed(() => !trend.value ? [] : processMetrics.slice(0, 2).map(metric => {
+  const series = trend.value.series.find(item => item.metric_key === metric.key)
+  const scale = metric.unit === 'bytes' ? scaleByteValue(Math.max(0, ...series.points.map(point => currentResourceValue(point) ?? 0))) : null
+  return { metric, rows: resourceChartRows(series).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.process.metrics.${metric.name}`), unit: scale?.unit || t('monitor.resources.units.cores'), precision: 2 }] } }
+}))
+function invalidTrend() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 const moduleName = ref(''), role = ref(''), status = ref('up'), declared = ref('true'), requests = createLatestRequestScope()
 const point = (row, metric) => summaries.value.get(row.id)?.series.find(item => item.metric_key === metric.key)?.points[0]
 function value(row, metric) {
@@ -84,9 +115,11 @@ function sampledAt(row) {
   return stamp ? `${t('monitor.resources.sampledAt')}: ${formatFieldPresentationValue(stamp, { temporal_format: 'datetime' }, locale.value)}` : ''
 }
 const navigate = query => navigateMonitorRoute(router, { path: '/service-resources', query }, { history: 'replace' })
+function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, instance_id: String(instanceID), range }).query) }
+function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, ...query } = state.value.query; return navigate(query) }
 function filter() { return navigate(resolveProcessRoute({ module_name: moduleName.value.trim(), role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
 function setScope(scope) { return navigate(resolveProcessRoute({ module_name: moduleName.value.trim(), role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
-function changePage(page) { if (loading.value || page === state.value.page) return; return navigate({ ...state.value.query, page: page === 1 ? undefined : String(page) }) }
+function changePage(page) { if (loading.value || page === state.value.page) return; const { instance_id, range, ...query } = state.value.query; return navigate({ ...query, page: page === 1 ? undefined : String(page) }) }
 function processErrorKey(error) {
  const key = resourceErrorKey(error)
  return key.endsWith('.denied') ? 'monitor.process.denied' : key.endsWith('.notFound') ? 'monitor.process.notFound' : key
@@ -94,6 +127,7 @@ function processErrorKey(error) {
 async function reload() {
   const ticket = requests.invalidate()
   instances.value = []; summaries.value = new Map(); total.value = 0; errorKey.value = ''; summaryErrorKey.value = ''; loading.value = false
+  trend.value = null; trendErrorKey.value = ''
   if (!canRead.value || route.name !== 'ProcessResources') return
   if (state.value.changed) { await navigate(state.value.query); return }
   moduleName.value = state.value.module; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared
@@ -114,9 +148,27 @@ async function reload() {
         summaryErrorKey.value = processErrorKey(error)
       }
     }
+    if (state.value.instanceID) {
+      const owner = selectedInstance.value, observed = summaries.value.get(owner?.id)
+      if (!owner || owner.status !== 'up' || !owner.process_metrics_declared) trendErrorKey.value = 'monitor.process.trend.reselect'
+      else if (!observed) trendErrorKey.value = summaryErrorKey.value || 'monitor.resources.errors.unavailable'
+      else {
+        try {
+          const params = processTrendParameters(owner.id, state.value.range, observed.queried_at)
+          const history = await requests.request(config => api.trend(params, config))
+          if (!requests.current(ticket)) return
+          trend.value = validateProcessTrend(history, owner, params)
+        } catch (error) {
+          if (!requests.current(ticket)) return
+          trendErrorKey.value = processErrorKey(error)
+          if ([401, 403, 404].includes(error.response?.status)) throw error
+        }
+      }
+    }
   } catch (error) {
     if (!requests.current(ticket)) return
     errorKey.value = processErrorKey(error)
+    trend.value = null; trendErrorKey.value = errorKey.value
     instances.value = []; summaries.value = new Map(); total.value = 0
   } finally { if (requests.current(ticket)) loading.value = false }
 }
@@ -132,4 +184,6 @@ onBeforeUnmount(() => requests.dispose())
 .collection-filter { max-width: 100%; }
 .process-hint { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--addp-text-secondary); }
 .el-pagination { margin-top: 16px; }
+.process-trend-chart { height: 280px; min-width: 0; }
+.process-trend-subject { overflow-wrap: anywhere; color: var(--addp-text-primary); }
 </style>

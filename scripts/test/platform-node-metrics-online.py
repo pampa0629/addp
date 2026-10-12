@@ -701,6 +701,43 @@ def validate_process_browser(value, expected, artifacts):
         summaries = assert_process_summaries(batch.get("value", {}), rows, inactive=inactive, disconnected=disconnected)
         require(all(r["policy_version"] == expected["policy_version"] for r in summaries), "browser process query ignored current policy")
     require(observed == set(wanted), "browser never observed both current Go instances")
+    require(value.get("process_trend_presentation") == {"cpu_cores": True, "rss_iec": True, "same_current_instance": True, "startup_bound": True, "url_restore": True}, "process trend presentation missing")
+    trends = value.get("service_trends")
+    require(isinstance(trends, list) and len(trends) == 2, "process trend restore evidence missing or unbounded")
+    for trend in trends:
+        query, reply = trend.get("query", {}), trend.get("value", {})
+        require(trend.get("path") == "/api/v1/monitor/platform/process_resource_trends" and set(query) == {"instance_id", "start", "end"}, "process trend used unapproved input")
+        subject = reply.get("subject", {})
+        owner = wanted.get(subject.get("id"))
+        require(owner is not None and query["instance_id"] == str(owner["id"]) and subject == {"kind": "module_instance", **{k: owner[k] for k in ("id", "module_name", "instance_id", "role")}}, "process trend owner mismatch")
+        start, end = utc_timestamp(reply.get("start")), utc_timestamp(reply.get("end"))
+        step = reply.get("step_seconds")
+        require(reply.get("node_id") == owner["node_id"] and reply.get("policy_version") == expected["policy_version"] and reply.get("lookback_seconds") == 300 and end == utc_timestamp(query["end"]) and utc_timestamp(query["start"]) <= start <= end <= utc_timestamp(reply.get("queried_at")), "process trend window mismatch")
+        require(start == min(end, max(utc_timestamp(query["start"]), math.ceil(instance_timestamp(owner["process_started_at"])))) and type(step) is int and step >= 15 and step % 15 == 0 and "collection" not in reply, "process trend crossed startup/budget boundary")
+        lines = reply.get("series")
+        require(isinstance(lines, list) and {s.get("metric_key") for s in lines} == {"process.cpu.core_equivalents", "process.memory.resident_bytes"} and len(lines) == 2, "process trend metric scope changed")
+        count = int((end-start)//step) + 1
+        require(1 <= count <= 1000, "process trend point budget bypass")
+        for line in lines:
+            unit, window = PROCESS_METRICS[line["metric_key"]]
+            require(line.get("unit") == unit and line.get("window_seconds") == window and line.get("dimensions") == {} and len(line.get("points", [])) == count, "process trend series contract changed")
+            valid = False
+            for index, point in enumerate(line["points"]):
+                at = utc_timestamp(point.get("evaluated_at"))
+                require(at == start + index*step, "process trend grid mismatch")
+                state = point.get("data_state")
+                require(state in {"valid", "stale", "no_data", "not_active", "not_connected"}, "process trend state unknown")
+                if state in {"valid", "stale"}:
+                    sample = utc_timestamp(point.get("sampled_at"))
+                    number = point.get("value")
+                    require(type(number) in {int, float} and math.isfinite(number) and number >= 0 and sample <= at and ((at-sample <= 60) == (state == "valid")), "process trend sample invalid")
+                    valid |= state == "valid"
+                else:
+                    require(point.get("value") is None and point.get("sampled_at") is None, "process trend fabricated missing sample")
+            require(valid, "real process trend has no valid samples")
+    for name in ("node-resources-process-trends.png", "node-resources-process-trends-memory.png"):
+        trend_screenshot = artifacts / name
+        require(trend_screenshot.is_file() and trend_screenshot.stat().st_size > 1000 and trend_screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "process trend screenshot missing")
     screenshot = artifacts / "node-resources-services.png"
     require(screenshot.is_file() and screenshot.stat().st_size > 1000 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "service browser screenshot missing or invalid")
     return {"result": "passed", "real_instance_batch_reads": len(batches), "both_current_instances": True, "units_and_inline_hints": True,

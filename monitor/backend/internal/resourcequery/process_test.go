@@ -98,6 +98,78 @@ func TestProcessCatalogAndBudgetStayDistinctFromHosts(t *testing.T) {
 	}
 }
 
+func TestProcessTrendRangeUsesFixedCatalogGridAndBudget(t *testing.T) {
+	b := DefaultBudget()
+	p, err := NewProcessTrendPlan(testTime.Add(-2*time.Minute), testTime, testTime, b)
+	if err != nil || p.Points != 9 || len(p.Metrics) != 2 {
+		t.Fatal("trend budget", p, err)
+	}
+	// An instant can have its first complete minute while the range's last
+	// grid point is still earlier. Current readiness cannot imply range readiness.
+	warm, err := NewProcessTrendPlan(time.Unix(0, 0), time.Unix(60, 0), time.Unix(60, 0), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warm = LimitProcessTrendStart(warm, time.Unix(1, 0))
+	if last := warm.Start.Add(time.Duration(int64(warm.Points-1)*warm.StepSeconds) * time.Second); last.Unix() != 46 || !last.Before(warm.End) {
+		t.Fatal("range grid must not invent an end point", warm)
+	}
+	started := testTime.Add(-time.Minute + 500*time.Millisecond)
+	limited := LimitProcessTrendStart(p, started)
+	if !limited.Start.Equal(testTime.Add(-59*time.Second)) || limited.Points != 4 {
+		t.Fatal("start clamp", limited)
+	}
+	b.MaxSeries = 1
+	if _, err := NewProcessTrendPlan(p.Start, p.End, testTime, b); err != ErrBudget {
+		t.Fatal("series budget bypass", err)
+	}
+	b = DefaultBudget()
+	if _, err := NewProcessTrendPlan(testTime.Add(-8*24*time.Hour), testTime, testTime, b); err != ErrBudget {
+		t.Fatal("range budget bypass", err)
+	}
+	foreign := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if r.URL.Path != "/api/v1/query_range" || q.Get("step") != "15s" || !strings.Contains(q.Get("query"), `addp_instance_id="current"`) || strings.Contains(q.Get("query"), "process.uptime_seconds") {
+			t.Error("invalid trend transport")
+		}
+		rows := []map[string]any{}
+		for _, metric := range p.Metrics {
+			for _, component := range []string{"value", "sampled_at"} {
+				points := []any{}
+				for i := 0; i < p.Points; i++ {
+					if i == 2 {
+						continue
+					}
+					at := p.Start.Add(time.Duration(int64(i)*p.StepSeconds) * time.Second).Unix()
+					value := "0"
+					if component == "sampled_at" {
+						value = fmt.Sprint(at)
+					}
+					points = append(points, []any{at, value})
+				}
+				key := metric.Key
+				if foreign {
+					key = "node.memory.total_bytes"
+				}
+				rows = append(rows, map[string]any{"metric": map[string]string{"addp_metric": key, "addp_component": component}, "values": points})
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"resultType": "matrix", "result": rows}})
+	}))
+	defer server.Close()
+	c := &Client{origin: server.URL, http: server.Client()}
+	scope := ProcessScope{ID: 7, ModuleName: "meta", InstanceID: "current", Role: "worker", Instance: "fixture:9445", StartedAt: testTime.Add(-time.Hour)}
+	result, err := c.ProcessTrend(context.Background(), p, scope, b)
+	if err != nil || len(result) != 2 || result[0].Points[0].DataState != "valid" || *result[0].Points[0].Value != 0 || result[0].Points[2].DataState != "no_data" || result[0].Points[2].Value != nil {
+		t.Fatal("zero/gap trend normalization", result, err)
+	}
+	foreign = true
+	if _, err := c.ProcessTrend(context.Background(), p, scope, b); err != ErrUnavailable {
+		t.Fatal("foreign trend accepted", err)
+	}
+}
+
 func TestIntegrationMetricsProcessWindow(t *testing.T) {
 	if os.Getenv("ADDP_METRICS_QUERY_INTEGRATION") != "1" {
 		t.Skip("requires standard Monitor metrics T2 gate")

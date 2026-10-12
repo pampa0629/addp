@@ -2,6 +2,25 @@ import { expect, test } from '@playwright/test'
 import { backend, permissions } from '../../../monitor/frontend/e2e/process-resources.fixture'
 import { identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 
+test('Console restores the current instance trend dialog and updates its chart language in the same iframe', async ({ page }) => {
+  const state = await backend(page)
+  await page.goto('/monitor/service-resources?instance_id=2&range=1h')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('process-trend')).toContainText('native-2')
+  await expect(monitor.getByTestId('process-trend-cpu').locator('canvas')).toBeVisible()
+  expect(state.trendCalls.at(-1).instance_id).toBe('2')
+  const documentID = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await expect(monitor.getByTestId('process-trend')).toContainText('CPU and memory since this process started')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(documentID)
+  await page.reload()
+  await expect(monitor.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+  expect(state.trendCalls.at(-1).start).toBe('2026-10-09T23:00:00Z')
+  await monitor.locator('.el-dialog__headerbtn').click()
+  await expect(page).toHaveURL(url => !url.searchParams.has('instance_id') && !url.searchParams.has('range'))
+})
+
 test('Console language switching updates worker purposes in the active service iframe without fetching new instances', async ({ page }) => {
   const state = await backend(page, { workerTypes: true })
   await page.goto('/monitor/service-resources')

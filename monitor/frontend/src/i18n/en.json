@@ -798,6 +798,11 @@
         "sync": "One-shot sync worker",
         "continuous_sync": "Continuous sync worker"
       },
+      "trend": {
+        "title": "Service process trends",
+        "scope": "CPU and memory since this process started. CPU shows one-minute average core usage; missing valid samples remain gaps.",
+        "reselect": "The selected instance is offline, collection is not enabled, or it is outside the current page. Select an instance from the list."
+      },
       "instance": "Runtime instance",
       "online": "Online status",
       "allStatuses": "All online statuses",

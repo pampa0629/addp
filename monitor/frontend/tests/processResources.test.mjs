@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveProcessRoute, validateProcessInstances, validateProcessSummaries, processMetrics, processRoleLabelKey } from '../src/utils/processResources.js'
+import { resolveProcessRoute, validateProcessInstances, validateProcessSummaries, processMetrics, processRoleLabelKey, processTrendParameters, validateProcessTrend } from '../src/utils/processResources.js'
 
 const owner = { id: 7, module_name: 'monitor', instance_id: 'native-a', role: 'worker', status: 'up', node_id: '', process_metrics_declared: true }
 const stamp = '2026-10-10T00:00:00Z'
@@ -13,6 +13,24 @@ test('worker purpose comes only from known runtime metadata and never replaces a
   for (const metadata of [undefined, null, {}, 'scan', { runtime_name: null }, { runtime_name: ['scan'] }, { runtime_name: 1 }, { runtime_name: 'future_worker' }, { runtime_name: ' scan' }, { runtime_name: '__proto__' }]) {
     assert.equal(processRoleLabelKey({ ...owner, module_name: 'meta', instance_id: 'continuous_sync', runtime_hostname: 'scan', metadata }), 'monitor.process.roles.worker')
   }
+})
+test('process trend scope stays separate from System list filters and rejects foreign, off-grid or invented samples', () => {
+  const route = resolveProcessRoute({ instance_id: '7', range: '1h', role: 'worker' })
+  assert.deepEqual(route.query, { role: 'worker', instance_id: '7', range: '1h' })
+  assert.equal(route.params.instance_id, undefined)
+  assert.deepEqual(resolveProcessRoute({ instance_id: '01', range: '7d' }).query, {})
+  assert.deepEqual(resolveProcessRoute({ instance_id: '7', range: ['1h'] }).query, { instance_id: '7' })
+  assert.throws(() => processTrendParameters(7, ['5m'], stamp), /invalid_resource_response/)
+  const params = processTrendParameters(7, '5m', stamp)
+  const start = '2026-10-09T23:59:45Z'
+  const trendOwner = { ...owner, process_started_at: start }
+  const history = () => ({ subject: response().data[0].subject, node_id: '', policy_version: 1, lookback_seconds: 300, queried_at: stamp, start, end: stamp, step_seconds: 15, series: processMetrics.slice(0, 2).map(metric => ({ metric_key: metric.key, unit: metric.unit, window_seconds: metric.windowSeconds, dimensions: {}, points: [{ evaluated_at: start, sampled_at: start, value: 0, data_state: 'valid' }, { evaluated_at: stamp, sampled_at: null, value: null, data_state: 'no_data' }] })) })
+  assert.equal(validateProcessTrend(history(), trendOwner, params).series[0].points[0].value, 0)
+  for (const change of [v => { v.subject.instance_id = 'previous' }, v => { v.series[0].points[1].value = 0 }, v => { v.start = '2026-10-08T23:59:45Z' }, v => { v.series[0].points[1].evaluated_at = start }, v => { v.series[1].metric_key = v.series[0].metric_key }, v => { v.series[0].unit = 'percent' }]) {
+    const invalid = history(); change(invalid); assert.throws(() => validateProcessTrend(invalid, trendOwner, params), /invalid_resource_response/)
+  }
+  const submillisecond = { ...owner, process_started_at: '2026-10-09T23:59:44.000001Z' }
+  assert.equal(validateProcessTrend(history(), submillisecond, params).start, start)
 })
 test('service route has bounded, canonical System filters', () => {
   assert.deepEqual(resolveProcessRoute({ page: '2', module_name: 'monitor', role: 'worker' }).query, { page: '2', module_name: 'monitor', role: 'worker' })
