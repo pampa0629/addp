@@ -1,3 +1,4 @@
+import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { resourceRanges } from './nodeResources.js'
 
 export const processMetrics = [
@@ -20,9 +21,10 @@ export function resolveProcessRoute(input = {}) {
   const declared = ['true', 'false', 'all'].includes(input.process_metrics_declared) ? input.process_metrics_declared : 'true'
   const instanceID = typeof input.instance_id === 'string' && /^[1-9]\d{0,15}$/.test(input.instance_id) && Number.isSafeInteger(Number(input.instance_id)) ? Number(input.instance_id) : 0
   const range = typeof input.range === 'string' && Object.hasOwn(resourceRanges, input.range) ? input.range : '5m'
-  const query = { ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(role ? { role } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(range !== '5m' ? { range } : {}) } : {}) }
+  const refresh = typeof input.refresh === 'string' && autoRefreshOptions.includes(input.refresh) ? input.refresh : '15'
+  const query = { ...(refresh !== '15' ? { refresh } : {}), ...(page !== 1 ? { page: String(page) } : {}), ...(module ? { module_name: module } : {}), ...(role ? { role } : {}), ...(status !== 'up' ? { status } : {}), ...(declared !== 'true' ? { process_metrics_declared: declared } : {}), ...(instanceID ? { instance_id: String(instanceID), ...(range !== '5m' ? { range } : {}) } : {}) }
   const params = { page, page_size: 20, ...(module ? { module_name: module } : {}), ...(role ? { role } : {}), ...(status !== 'all' ? { status } : {}), ...(declared !== 'all' ? { process_metrics_declared: declared } : {}) }
-  return { page, module, role, status, declared, instanceID, range, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
+  return { page, module, role, status, declared, instanceID, range, refresh, query, params, changed: Object.keys(input).length !== Object.keys(query).length || Object.keys(query).some(key => input[key] !== query[key]) }
 }
 const invalid = () => { throw new Error('invalid_resource_response') }
 export function processTrendParameters(instanceID, range, queriedAt) {

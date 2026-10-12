@@ -2,6 +2,9 @@
 // 已移至 ./previews 单独入口，避免不需要预览的模块引入这些依赖。
 // 如需预览组件，请从 '@common-ui/previews' 导入。
 
+export { default as AutoRefreshControl } from './components/AutoRefreshControl.vue'
+export { createAutoRefresh, autoRefreshOptions } from './utils/autoRefresh.mjs'
+
 // Basic UI Components (no map dependencies)
 export { default as BusinessDomainSelect } from './components/BusinessDomainSelect.vue'
 export { buildBusinessDomainOptions, businessDomainReferenceOptions } from './utils/businessDomainOptions.mjs'

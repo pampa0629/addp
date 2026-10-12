@@ -3,10 +3,7 @@
     <header class="resource-toolbar">
       <h2>{{ t('monitor.resources.title') }}</h2>
       <el-button v-if="nodeID" @click="navigate('/node-resources', listQuery)">{{ t('monitor.resources.back') }}</el-button>
-      <el-select v-if="nodeID" :model-value="state.refresh" :aria-label="t('monitor.resources.refreshInterval')" data-testid="resource-refresh" @update:model-value="value => selectTrend('refresh', value)">
-        <el-option v-for="value in resourceRefreshOptions" :key="value" :value="value" :label="value === 'off' ? t('monitor.resources.refreshOff') : t('monitor.resources.refreshSeconds', { seconds: value })" />
-      </el-select>
-      <span v-if="nodeID" class="resource-hint" data-testid="resource-refresh-status">{{ t(refreshStatus) }}</span>
+      <AutoRefreshControl v-if="nodeID" :model-value="state.refresh" :status="refreshStatus" test-id="resource-refresh" @update:model-value="value => selectTrend('refresh', value)" />
       <el-button :loading="loading" @click="reload()">{{ t('common.refresh') }}</el-button>
     </header>
     <el-alert v-if="errorKey" :title="t(errorKey)" type="error" show-icon :closable="false" data-testid="resource-error" />
@@ -148,8 +145,10 @@
 </template>
 
 <script setup>
+import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
+import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { InfoFilled } from '@element-plus/icons-vue'
@@ -160,7 +159,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resourceRefreshOptions, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -192,8 +191,8 @@ const presentation = metric => ({ field: 'value', label: t(`monitor.resources.me
 const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { ...presentation(selectedMetric.value), ...(chartScale.value ? { unit: chartScale.value.unit + (selectedMetric.value.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }] }))
 const evidenceRows = computed(() => trend.value?.series[0].points.slice((evidencePage.value - 1) * 20, evidencePage.value * 20) || [])
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
-const refreshStatus = computed(() => state.value.refresh === 'off' ? 'monitor.resources.refreshManual' : refreshBlocked.value ? 'monitor.resources.refreshStopped' : !pageVisible.value ? 'monitor.resources.refreshPaused' : 'monitor.resources.refreshAutomatic')
-let epoch = 0, refreshTimer = null, disposed = false
+const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
+let epoch = 0, disposed = false
 const requestScope = createLatestRequestScope()
 useConsolePageDescriptor(router, 'monitor', { title: computed(() => t('monitor.resources.detailTitle')), subject: computed(() => node.value?.display_name || ''), ready: computed(() => Boolean(node.value)) })
 function date(value) { return formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value) }
@@ -222,19 +221,15 @@ function selectTrend(key, value) {
 function selectFilesystem(row) { return navigate(route.path, { ...state.value.query, ...row.dimensions, metric: 'node.filesystem.used_percent' }, 'replace') }
 function selectDeviceObservation(row, metric) { const { mountpoint, fstype, ...query } = state.value.query; return navigate(route.path, { ...query, ...row.dimensions, metric }, 'replace') }
 function invalidChart() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
-function stopRefresh() { window.clearTimeout(refreshTimer); refreshTimer = null }
-function invalidate() { stopRefresh(); epoch = requestScope.invalidate() }
+const refreshCycle = createAutoRefresh({
+  interval: () => state.value.refresh,
+  enabled: () => canRead.value && Boolean(nodeID.value) && isTargetUUID(nodeID.value) && !refreshBlocked.value && !state.value.changed && !loading.value,
+  refresh: () => reload({ automatic: true }),
+  pause: () => { if (nodeID.value) { invalidate(); loading.value = false } },
+  visibilityChanged: visible => { pageVisible.value = visible }
+})
+function invalidate() { refreshCycle.stop(); epoch = requestScope.invalidate() }
 const request = work => requestScope.request(work)
-function scheduleRefresh() {
-  stopRefresh()
-  if (disposed || !canRead.value || !pageVisible.value || !nodeID.value || !isTargetUUID(nodeID.value) || state.value.refresh === 'off' || refreshBlocked.value || state.value.changed || loading.value) return
-  refreshTimer = window.setTimeout(() => { refreshTimer = null; void reload({ automatic: true }) }, Number(state.value.refresh) * 1000)
-}
-function visibilityChanged() {
-  pageVisible.value = !document.hidden
-  if (!pageVisible.value && nodeID.value) { invalidate(); loading.value = false }
-  else if (nodeID.value && state.value.refresh !== 'off' && !refreshBlocked.value) void reload({ automatic: true })
-}
 async function reload({ automatic = false } = {}) {
   if (disposed || !['NodeResources', 'NodeResourceDetail'].includes(route.name)) { invalidate(); return }
   if (automatic && (loading.value || disposed || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
@@ -332,12 +327,11 @@ async function reload({ automatic = false } = {}) {
     instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
     errorKey.value = resourceErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = 0; summaries.value = new Map() }
-  } finally { if (requestScope.current(ticket)) { loading.value = false; scheduleRefresh() } }
+  } finally { if (requestScope.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
-onMounted(() => document.addEventListener('visibilitychange', visibilityChanged))
-onBeforeUnmount(() => { disposed = true; document.removeEventListener('visibilitychange', visibilityChanged); invalidate(); requestScope.dispose() })
+onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); requestScope.dispose() })
 </script>
 
 <style scoped>

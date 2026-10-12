@@ -1767,3 +1767,23 @@ Swagger 同步生成与 Monitor 六十八个公开路由覆盖校验通过；mak
 同一提交 [Platform CI（Run 38227044030）](https://github.com/pampa0629/addp/actions/runs/38227044030) completed/success，已核对平台一致性、Go 工作区、Monitor/Console 前端与产品构建 Job 成功。此次完整 T4 通过不改写上一轮失败：原失败未复现且旧报告缺少该次摘要，具体原因仍未确证，不宣称安全诊断修复了生产故障。保留故障现场记录供后续复现使用；生产 T5、Python 来源、多副本启动与已退出实例历史仍不在本轮完成范围。
 
 本轮收尾只更新现有设计与 Monitor 文档入口，`git diff --check` 返回 0；默认 `make test-changed` 在当前混合工作区因多个 Owner 缺少 PostgreSQL、MySQL/OceanBase 等测试连接输入而在预检返回 2（`/tmp/addp-process-trend-hosted-acceptance-changed-38227755626.log`），后续本地业务门禁未执行，不计通过。未变化的安全诊断仍沿用上述 42 项 runner 及正式身份夹具证据；实际执行提交的 Platform CI 和完整 Hosted T4 分别已有通过证据。本次文档提交的 CI 尚未执行，将由既有 Platform consistency 与文档自动发现覆盖；推送由用户操作。
+
+### 10.56 服务列表与当前进程趋势自动刷新
+
+沿用户确认继续的易用性范围，服务页复用主机详情的单轮刷新契约：默认 15 秒，允许 10/30/60 秒与 off；唯一公开 query 为 refresh，默认值省略。筛选、分页、当前实例和时间范围保持原 URL 契约，刷新间隔不传给 System 或 Monitor API。一次周期先取当前授权实例页，再批量摘要；仅当前已选择且仍在线、已声明的实例继续读取两条趋势，趋势窗口由本轮摘要的 queried_at 推进。关闭弹窗后只刷新列表，不再读取趋势；重启后不自动选择新实例。
+
+同一周期不重叠，自动读取期间保留上轮已校验内容，收到失败后清空对应资源值；手工操作、身份和路由变化仍立即取消旧请求并清理旧状态。页面隐藏时取消待定时器与在途请求，返回可见且自动刷新启用时立即读取一次；401/403/404 停止自动循环，显式刷新可重新核对身份。刷新设置在列表与弹窗中为同一值，关闭及切换范围保持设置；不新增持久化偏好或后台轮询。
+
+主机页与服务页的刷新选择/状态控件、选项和定时/可见性生命周期统一提取到 common-frontend/basic，主机旧内联控件与定时路径删除；模块只保留请求、授权、当前实例和错误处理适配。共享词条统一迁入共享国际化，不保留原模块刷新词条双轨。现有 shared Node tests 自动发现新增生命周期与唯一所有权回归；Monitor/Console 浏览器门禁覆盖自然定时、URL 恢复、服务端窗口推进、慢请求、隐藏/恢复、错误与权限停止、弹窗关闭及身份撤销，保留原主机行为。
+
+实施前确认 T0/T1/T3 为 make test-common-frontend、make test-monitor-frontend、make test-console-frontend 和前端 CI 登记检查；既有 shared 路径扩散和 Platform CI 已覆盖全部消费者，无新依赖、测试入口或 workflow。只改变前端，后端 API、IAM、采集部署与 Hosted 身份用途不变。默认 make test-changed 的混合工作区结果另行记录；本批浏览器夹具结果不替代新版本真实 Hosted T4，个人服务不由 AI 重启。
+
+既有 platform-node-metrics Hosted 浏览器用例同次补入服务自然 15 秒周期、同一实例及摘要锚点推进、URL/iframe 不变、关闭设置的整页恢复和真实等待后的零新增请求。原手工两次趋势证据仍分别保留，新增两次自动证据使用同一响应校验，不扩展请求字段、身份用途或生产权限。既有 make test-node-metrics-online-runner 增加缺失生命周期标志、窗口不推进、实例漂移、摘要锚点/策略/查询页扩张的拒绝验证；编排与权限不变。此次实现的真实 Hosted 尚待用户推送后执行，不沿用上一版通过作为本版自动刷新验收。
+
+交付前复核发现自动 reload 会重置尚未提交的筛选草稿；先沿 scripts/test/frontend-browser-gate.mjs 的标准过滤入口复现，输入 meta 在定时周期后变空，单项返回 1（`/tmp/addp-service-auto-refresh-draft-red.log`）。唯一 reload 路径改为仅手工/路由读取时回填筛选，定时请求继续使用已提交的 URL 条件；完整 Monitor 门禁中的该回归随后通过。Console 首轮 129 项通过、1 项失败，是 Process browser fixture 每次加载强制写中文覆盖语言切换所致；夹具现在只在偏好不存在时初始化，保持真实偏好恢复契约，不修改生产语言实现。
+
+最终 `make test-common-frontend` 返回 0，179 项共享契约/生命周期/唯一所有权测试通过（`/tmp/addp-service-auto-refresh-common.log`）；`make test-monitor-frontend` 返回 0，56 项单测、112 项浏览器回归和构建通过（`/tmp/addp-service-auto-refresh-monitor-final.log`）；`make test-console-frontend` 返回 0，170 项单测、130 项浏览器回归和构建通过（`/tmp/addp-service-auto-refresh-console-final.log`）。Monitor 中英文 375 像素图表边界及页面无整体横向溢出断言通过；Console 验证自然定时、同一 iframe、英文切换和关闭设置恢复。`make test-frontend-ci-registration` 返回 0，20 项检查及 21 个前端登记通过（`/tmp/addp-service-auto-refresh-registration.log`）；`make test-node-metrics-online-runner` 返回 0，42 项回归、Online JS/Shell 语法和正式 System Metrics 身份夹具检查通过（`/tmp/addp-service-auto-refresh-runner-final-2.log`）。
+
+Safari 沿用户现有平台管理员会话只读复核：首次进入的旧实例 4991 提示重新选择，关闭后从当前列表选择 Monitor 记录 5016 / a617d113-8ee0-4df0-8324-81b45e18f4d6。实际截图显示列表及弹窗的共享刷新控件、真实 CPU 与 RSS 曲线；无手工刷新时窗口由 21:40:36–21:45:36 自然推进到 21:41:52–21:46:52，本次实例和公开 URL 不变。通过弹窗选择 off 后，列表与弹窗均显示手工刷新，URL 保留 refresh=off；整页重新加载后窗口固定为 21:43:38–21:48:38，后续观察未推进。最后恢复默认 15 秒，URL 去除 refresh，仍为同一实例并显示两图及新窗口。个人验证未读取浏览器 Token、未改 IAM 或重启服务；只计刷新交互及当前真实数据展示，不作为采集长期稳定性或新版 Hosted 的替代。
+
+交付前 scoped git diff --check 通过；最终默认 make test-changed 仍在混合工作区因多个 Owner 的 PostgreSQL/MySQL/OceanBase 等连接输入缺失而预检返回 2（`/tmp/addp-service-auto-refresh-changed-final.log`），后续业务门禁未执行、不计通过。共享代码仅新增本轮刷新能力，实际消费它的 Monitor/Console 及共享 owner 已完成上述标准门禁；其余依赖消费者由既有 Platform CI 自动扩散复验，本轮不计其 CI 已运行。新版真实 Hosted 与生产 T5 未执行；本批只提交刷新实现、回归和现有文档，推送仍由用户操作。

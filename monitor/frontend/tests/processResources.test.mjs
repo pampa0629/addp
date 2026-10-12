@@ -51,3 +51,17 @@ test('process resource evidence binds exact owner and accepts multi-core and tru
     const invalid = response(); change(invalid.data[0]); assert.throws(() => validateProcessSummaries(invalid, [owner]), /invalid_resource_response/)
   }
 })
+
+test('refresh is bounded, canonical, retained with trend scope and never sent to System', () => {
+  for (const refresh of ['10', '30', '60', 'off']) {
+    const resolved = resolveProcessRoute({ refresh, role: 'worker', instance_id: '7', range: '1h' })
+    assert.equal(resolved.refresh, refresh)
+    assert.equal(resolved.query.refresh, refresh)
+    assert.equal(resolved.params.refresh, undefined)
+    assert.equal(resolved.params.instance_id, undefined)
+  }
+  for (const refresh of [undefined, '15', '1', '0', '-1', ['10'], 'OFF', '60.0']) {
+    assert.equal(resolveProcessRoute({ refresh }).refresh, '15')
+    assert.deepEqual(resolveProcessRoute({ refresh }).query, {})
+  }
+})

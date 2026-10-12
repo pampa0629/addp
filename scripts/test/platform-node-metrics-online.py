@@ -687,6 +687,13 @@ def validate_process_browser(value, expected, artifacts):
             "iframe_preserved": True, "negative_no_reads": True}, "service browser presentation or denial evidence missing")
     batches = value.get("service_batches")
     require(isinstance(batches, list) and 2 <= len(batches) <= 6, "service browser batch evidence missing or unbounded")
+    automatic = value.get("service_auto_refresh", {})
+    flags = {key: automatic.get(key) for key in ("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests")}
+    require(all(flag is True for flag in flags.values()), "service auto refresh lifecycle evidence missing")
+    auto_batches, auto_trends = automatic.get("batches"), automatic.get("trends")
+    require(isinstance(auto_batches, list) and len(auto_batches) == 2 and isinstance(auto_trends, list) and len(auto_trends) == 2,
+            "service auto refresh responses missing or unbounded")
+    batches = batches + auto_batches
     wanted = {r["id"]: r for r in expected["processes"]}
     observed = set()
     for batch in batches:
@@ -713,7 +720,7 @@ def validate_process_browser(value, expected, artifacts):
     require(value.get("process_trend_presentation") == {"cpu_cores": True, "rss_iec": True, "same_current_instance": True, "startup_bound": True, "url_restore": True}, "process trend presentation missing")
     trends = value.get("service_trends")
     require(isinstance(trends, list) and len(trends) == 2, "process trend restore evidence missing or unbounded")
-    for trend in trends:
+    for trend in trends + auto_trends:
         query, reply = trend.get("query", {}), trend.get("value", {})
         require(trend.get("path") == "/api/v1/monitor/platform/process_resource_trends" and set(query) == {"instance_id", "start", "end"}, "process trend used unapproved input")
         subject = reply.get("subject", {})
@@ -744,12 +751,17 @@ def validate_process_browser(value, expected, artifacts):
                 else:
                     require(point.get("value") is None and point.get("sampled_at") is None, "process trend fabricated missing sample")
             require(valid, "real process trend has no valid samples")
+    require(utc_timestamp(auto_trends[1]["value"]["end"]) > utc_timestamp(auto_trends[0]["value"]["end"])
+            and auto_trends[0]["value"].get("subject") == auto_trends[1]["value"].get("subject"), "service auto refresh did not advance the same instance")
+    for batch, trend in zip(auto_batches, auto_trends):
+        require(utc_timestamp(trend["value"]["end"]) == math.floor(utc_timestamp(batch["value"]["data"][0]["queried_at"])),
+                "service auto refresh trend not anchored to its summary")
     for name in ("node-resources-process-trends.png", "node-resources-process-trends-memory.png"):
         trend_screenshot = artifacts / name
         require(trend_screenshot.is_file() and trend_screenshot.stat().st_size > 1000 and trend_screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "process trend screenshot missing")
     screenshot = artifacts / "node-resources-services.png"
     require(screenshot.is_file() and screenshot.stat().st_size > 1000 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "service browser screenshot missing or invalid")
-    return {"result": "passed", "real_instance_batch_reads": len(batches), "both_current_instances": True, "units_and_inline_hints": True,
+    return {"result": "passed", "real_instance_batch_reads": len(batches), "both_current_instances": True, "units_and_inline_hints": True, "auto_refresh": True,
             "url_restore": True, "same_platform_identity": True, "security_administrator_denied": True}
 
 

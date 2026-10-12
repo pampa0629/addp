@@ -2,6 +2,34 @@ import { expect, test } from '@playwright/test'
 import { backend, permissions } from '../../../monitor/frontend/e2e/process-resources.fixture'
 import { identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 
+test('Console service auto refresh preserves one iframe and restores the shared interval after reload', async ({ page }) => {
+  const state = await backend(page)
+  await page.clock.install()
+  await page.goto('/monitor/service-resources?instance_id=2&refresh=10')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+  const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin), url = page.url()
+  state.setEnd('2026-10-10T00:00:15Z')
+  await page.clock.fastForward(10001)
+  await expect.poll(() => state.trendCalls.length).toBe(2)
+  expect(state.trendCalls.at(-1).end).toBe('2026-10-10T00:00:15Z')
+  expect(page.url()).toBe(url)
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await expect(monitor.getByTestId('process-trend-refresh')).toContainText('Every 10 seconds')
+  await monitor.getByTestId('process-trend-refresh').click()
+  await monitor.getByRole('option', { name: 'Turn off auto refresh', exact: true }).click()
+  await expect(page).toHaveURL(/refresh=off/)
+  await page.reload()
+  await expect(monitor.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+  await expect(monitor.getByTestId('process-trend-refresh-status')).toContainText('Manual refresh')
+  const count = state.trendCalls.length
+  await page.clock.fastForward(60001)
+  expect(state.trendCalls).toHaveLength(count)
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+})
+
 test('Console restores the current instance trend dialog and updates its chart language in the same iframe', async ({ page }) => {
   const state = await backend(page)
   await page.goto('/monitor/service-resources?instance_id=2&range=1h')

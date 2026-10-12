@@ -289,6 +289,10 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await expect(monitor.getByTestId('process-list')).toBeVisible()
     await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
     const serviceDocumentID = await documentOrigin()
+    await monitor.getByTestId('process-refresh').click()
+    await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.get('refresh') === 'off')
+    await expect(monitor.getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
     // Keep the actual page controls and URL contract; do not intercept any API.
     const roleControl = monitor.locator('.el-select:has(input[aria-label="实例角色"])')
     const statusControl = monitor.locator('.el-select:has(input[aria-label="在线状态"])')
@@ -349,13 +353,46 @@ test('platform node resources through real Console password MFA and Monitor ifra
       const observed = validateProcessTrend(item.value, trendOwner, item.query)
       expect(observed.series.every(line => line.points.some(point => point.data_state === 'valid'))).toBe(true)
     }
-    report.service_trends = serviceTrends
+    report.service_trends = serviceTrends.slice()
     report.process_trend_presentation = { cpu_cores: true, rss_iec: true, same_current_instance: true, startup_bound: true, url_restore: true }
     await page.screenshot({ path: resolve(artifact, 'node-resources-process-trends.png'), animations: 'disabled' })
     const memoryTrend = monitor.getByTestId('process-trend-memory').locator('canvas')
     await memoryTrend.scrollIntoViewIfNeeded()
     await expect(memoryTrend).toBeInViewport()
     await page.screenshot({ path: resolve(artifact, 'node-resources-process-trends-memory.png'), animations: 'disabled' })
+    save('service-natural-auto-refresh-and-off-restore')
+    await monitor.getByTestId('process-trend-refresh').click()
+    await monitor.getByRole('option', { name: '每 15 秒', exact: true }).click()
+    await expect(page).toHaveURL(url => !url.searchParams.has('refresh'))
+    await expect(monitor.getByTestId('process-trend-refresh')).toContainText('每 15 秒')
+    await expect(monitor.getByTestId('process-trend').getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
+    await Promise.all(pending)
+    const beforeAuto = serviceTrends.at(-1), beforeAutoBatch = await checkServices()
+    const autoURL = page.url(), autoDocumentID = await documentOrigin(), beforeAutoCount = serviceTrends.length
+    // Real wall-clock timer; no fake clock, manual reload or intercepted business API.
+    await expect.poll(() => serviceTrends.length, { timeout: 25_000 }).toBe(beforeAutoCount + 1)
+    await expect(monitor.getByTestId('process-trend').getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
+    const afterAutoBatch = await checkServices(), afterAuto = serviceTrends.at(-1)
+    expect(Date.parse(afterAuto.value.end)).toBeGreaterThan(Date.parse(beforeAuto.value.end))
+    expect(page.url()).toBe(autoURL)
+    expect(await documentOrigin()).toBe(autoDocumentID)
+    for (const entry of [beforeAuto, afterAuto]) validateProcessTrend(entry.value, trendOwner, entry.query)
+    await monitor.getByTestId('process-trend-refresh').click()
+    await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()
+    await expect(page).toHaveURL(url => url.searchParams.get('refresh') === 'off')
+    await expect(monitor.getByTestId('process-trend-refresh')).toContainText('关闭自动刷新')
+    await expect(monitor.getByTestId('process-trend').getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
+    await Promise.all(pending)
+    await page.reload()
+    await expect(monitor.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
+    await expect(monitor.getByTestId('process-trend-refresh-status')).toContainText('手工刷新')
+    await Promise.all(pending)
+    const offCounts = [instancePages.length, serviceBatches.length, serviceTrends.length]
+    await new Promise(resolve => setTimeout(resolve, 16_000))
+    await Promise.all(pending)
+    expect([instancePages.length, serviceBatches.length, serviceTrends.length]).toEqual(offCounts)
+    report.service_auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true,
+      iframe_preserved: true, off_restored: true, off_no_requests: true, batches: [beforeAutoBatch, afterAutoBatch], trends: [beforeAuto, afterAuto] }
     await monitor.locator('.el-dialog__headerbtn').click()
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })

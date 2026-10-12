@@ -2,6 +2,7 @@
   <section class="process-resources">
     <div class="process-toolbar">
       <h2>{{ t('monitor.process.title') }}</h2>
+      <AutoRefreshControl v-if="canRead" :model-value="state.refresh" :status="refreshStatus" test-id="process-refresh" @update:model-value="selectRefresh" />
       <el-button :disabled="!canRead || loading" @click="reload">{{ t('common.refresh') }}</el-button>
     </div>
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
@@ -46,6 +47,7 @@
           <p v-if="selectedInstance" class="process-trend-subject">{{ selectedInstance.module_name }} · {{ t(processRoleLabelKey(selectedInstance)) }} · {{ selectedInstance.instance_id }}</p>
           <div class="process-toolbar">
             <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" @update:model-value="range => selectTrend(state.instanceID, range)"><el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" /></el-select>
+            <AutoRefreshControl :model-value="state.refresh" :status="refreshStatus" test-id="process-trend-refresh" @update:model-value="selectRefresh" />
             <el-button :disabled="loading" @click="reload">{{ t('common.refresh') }}</el-button>
           </div>
           <p class="process-hint">{{ t('monitor.process.trend.scope') }}</p>
@@ -69,6 +71,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
+import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { formatBytes, formatDurationSeconds, scaleByteValue } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
@@ -85,6 +89,9 @@ const identity = computed(() => JSON.stringify([auth.authContext?.principal, aut
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
 const trend = ref(null), trendErrorKey = ref('')
+const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
+const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
+let disposed = false
 const selectedInstance = computed(() => instances.value.find(row => row.id === state.value.instanceID))
 const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
 const trendCharts = computed(() => !trend.value ? [] : processMetrics.slice(0, 2).map(metric => {
@@ -115,33 +122,45 @@ function sampledAt(row) {
   return stamp ? `${t('monitor.resources.sampledAt')}: ${formatFieldPresentationValue(stamp, { temporal_format: 'datetime' }, locale.value)}` : ''
 }
 const navigate = query => navigateMonitorRoute(router, { path: '/service-resources', query }, { history: 'replace' })
+function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state.value.query, refresh }).query) }
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, instance_id: String(instanceID), range }).query) }
 function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, ...query } = state.value.query; return navigate(query) }
-function filter() { return navigate(resolveProcessRoute({ module_name: moduleName.value.trim(), role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
-function setScope(scope) { return navigate(resolveProcessRoute({ module_name: moduleName.value.trim(), role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+function filter() { return navigate(resolveProcessRoute({ refresh: state.value.refresh, module_name: moduleName.value.trim(), role: role.value, status: status.value, process_metrics_declared: declared.value }).query) }
+function setScope(scope) { return navigate(resolveProcessRoute({ refresh: state.value.refresh, module_name: moduleName.value.trim(), role: role.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
 function changePage(page) { if (loading.value || page === state.value.page) return; const { instance_id, range, ...query } = state.value.query; return navigate({ ...query, page: page === 1 ? undefined : String(page) }) }
 function processErrorKey(error) {
  const key = resourceErrorKey(error)
  return key.endsWith('.denied') ? 'monitor.process.denied' : key.endsWith('.notFound') ? 'monitor.process.notFound' : key
 }
-async function reload() {
+const refreshCycle = createAutoRefresh({
+  interval: () => state.value.refresh,
+  enabled: () => canRead.value && route.name === 'ProcessResources' && !state.value.changed && !refreshBlocked.value && !loading.value,
+  refresh: () => reload({ automatic: true }),
+  pause: () => { requests.invalidate(); loading.value = false },
+  visibilityChanged: visible => { pageVisible.value = visible }
+})
+async function reload({ automatic = false } = {}) {
+  if (disposed || route.name !== 'ProcessResources') { refreshCycle.stop(); requests.invalidate(); return }
+  if (automatic && (loading.value || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
+  refreshCycle.stop()
   const ticket = requests.invalidate()
-  instances.value = []; summaries.value = new Map(); total.value = 0; errorKey.value = ''; summaryErrorKey.value = ''; loading.value = false
-  trend.value = null; trendErrorKey.value = ''
-  if (!canRead.value || route.name !== 'ProcessResources') return
+  if (!automatic) { instances.value = []; summaries.value = new Map(); total.value = 0; trend.value = null; refreshBlocked.value = false }
+  errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
+  if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
-  moduleName.value = state.value.module; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared
+  if (!automatic) { moduleName.value = state.value.module; role.value = state.value.role; status.value = state.value.status; declared.value = state.value.declared }
   loading.value = true
   try {
     const list = await requests.request(config => api.instances(state.value.params, config))
     if (!requests.current(ticket)) return
     validateProcessInstances(list, state.value.page, state.value.params)
-    instances.value = list.data; total.value = list.total
+    if (!automatic) { instances.value = list.data; total.value = list.total }
+    let currentSummaries = new Map(), currentTrend = null
     if (list.data.length) {
       try {
         const observed = await requests.request(config => api.summaries(list.data.map(row => row.id), config))
         if (!requests.current(ticket)) return
-        summaries.value = validateProcessSummaries(observed, list.data)
+        currentSummaries = validateProcessSummaries(observed, list.data)
       } catch (error) {
         if (!requests.current(ticket)) return
         if ([401, 403, 404].includes(error.response?.status)) throw error
@@ -149,7 +168,7 @@ async function reload() {
       }
     }
     if (state.value.instanceID) {
-      const owner = selectedInstance.value, observed = summaries.value.get(owner?.id)
+      const owner = list.data.find(row => row.id === state.value.instanceID), observed = currentSummaries.get(owner?.id)
       if (!owner || owner.status !== 'up' || !owner.process_metrics_declared) trendErrorKey.value = 'monitor.process.trend.reselect'
       else if (!observed) trendErrorKey.value = summaryErrorKey.value || 'monitor.resources.errors.unavailable'
       else {
@@ -157,7 +176,7 @@ async function reload() {
           const params = processTrendParameters(owner.id, state.value.range, observed.queried_at)
           const history = await requests.request(config => api.trend(params, config))
           if (!requests.current(ticket)) return
-          trend.value = validateProcessTrend(history, owner, params)
+          currentTrend = validateProcessTrend(history, owner, params)
         } catch (error) {
           if (!requests.current(ticket)) return
           trendErrorKey.value = processErrorKey(error)
@@ -165,15 +184,17 @@ async function reload() {
         }
       }
     }
+    instances.value = list.data; total.value = list.total; summaries.value = currentSummaries; trend.value = currentTrend
   } catch (error) {
     if (!requests.current(ticket)) return
     errorKey.value = processErrorKey(error)
+    if ([401, 403, 404].includes(error.response?.status)) refreshBlocked.value = true
     trend.value = null; trendErrorKey.value = errorKey.value
     instances.value = []; summaries.value = new Map(); total.value = 0
-  } finally { if (requests.current(ticket)) loading.value = false }
+  } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
-onBeforeUnmount(() => requests.dispose())
+onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.dispose() })
 </script>
 
 <style scoped>

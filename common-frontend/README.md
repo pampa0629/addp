@@ -2,6 +2,12 @@
 
 ADDP 平台前端共享组件库，提供跨模块复用的 Vue 3 组件、工具函数和类型定义。
 
+## 可见页面自动刷新
+
+`basic/src/components/AutoRefreshControl.vue` 唯一维护刷新选择及状态的中英文展示；`basic/src/utils/autoRefresh.mjs` 提供 `createAutoRefresh` 和 15/10/30/60 秒、off 的固定选项。主机详情和服务资源页面直接组合这两个共享实现，不复制定时器或可见性监听。
+
+Owner 通过 interval/enabled 提供当前刷新设置及请求/授权状态，refresh 负责一轮查询，pause 负责取消在途请求，visibilityChanged 同步显示状态。每轮请求完成后才调用 schedule；路由或手工操作前调用 stop，卸载时调用 dispose。共享能力不读取业务 API、Token 或 Router，不自动重试一个未完成请求。标准验证为 `make test-common-frontend`，实际页面组合由 Monitor/Console 前端门禁覆盖。
+
 ## 安装
 
 ```bash

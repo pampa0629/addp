@@ -1,4 +1,13 @@
 {
+  "autoRefresh": {
+    "interval": "Refresh interval",
+    "off": "Turn off auto refresh",
+    "seconds": "Every {seconds} seconds",
+    "manual": "Manual refresh",
+    "automatic": "Auto refresh enabled",
+    "paused": "Page hidden; auto refresh paused",
+    "stopped": "Auto refresh stopped; reload to retry"
+  },
   "transferConfigCheck": {
     "observedAt": "Observed at",
     "conclusion": "Conclusion",

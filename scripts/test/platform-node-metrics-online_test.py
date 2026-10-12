@@ -138,6 +138,18 @@ class MetricsProtocolTest(unittest.TestCase):
         entry = {"path": "/api/v1/monitor/platform/process_resource_trends", "query": {"instance_id": "7", "start": trend["start"], "end": trend["end"]}, "value": trend}
         report["service_trends"] = [entry, copy.deepcopy(entry)]
         report["process_trend_presentation"] = dict.fromkeys(("cpu_cores", "rss_iec", "same_current_instance", "startup_bound", "url_restore"), True)
+        def advance(value):
+            if isinstance(value, dict): return {key: advance(item) for key, item in value.items()}
+            if isinstance(value, list): return [advance(item) for item in value]
+            if isinstance(value, str) and value.startswith("2026-") and value.endswith("Z"):
+                return (datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))+datetime.timedelta(seconds=15)).isoformat().replace("+00:00", "Z")
+            return value
+        next_batch = copy.deepcopy(batch)
+        next_batch["value"] = advance(batch["value"])
+        for row in next_batch["value"]["data"]:
+            next(line for line in row["series"] if line["metric_key"] == "process.uptime_seconds")["points"][0]["value"] += 15
+        report["service_auto_refresh"] = {**dict.fromkeys(("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests"), True),
+            "batches": [copy.deepcopy(batch), next_batch], "trends": [copy.deepcopy(entry), advance(entry)]}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             screenshot = artifacts / "node-resources-services.png"
@@ -145,7 +157,14 @@ class MetricsProtocolTest(unittest.TestCase):
             (artifacts / "node-resources-process-trends.png").write_bytes(screenshot.read_bytes())
             (artifacts / "node-resources-process-trends-memory.png").write_bytes(screenshot.read_bytes())
             self.assertEqual(ONLINE.validate_process_browser(report, expected, artifacts)["result"], "passed")
-            mutations = [lambda v: v["process_trend_presentation"].update(startup_bound=False),
+            mutations = [lambda v: v.pop("service_auto_refresh"),
+                         lambda v: v["service_auto_refresh"].update(off_no_requests=False),
+                         lambda v: v["service_auto_refresh"].update(trends=[]),
+                         lambda v: v["service_auto_refresh"]["trends"][1].update(value=copy.deepcopy(v["service_auto_refresh"]["trends"][0]["value"]), query=copy.deepcopy(v["service_auto_refresh"]["trends"][0]["query"])),
+                         lambda v: v["service_auto_refresh"]["batches"][1]["query"].update(instance_ids="7,9,12"),
+                         lambda v: v["service_auto_refresh"]["trends"][1]["value"]["subject"].update(instance_id="new-runtime"),
+                         lambda v: v["service_auto_refresh"]["batches"][1]["value"]["data"][0].update(policy_version=0),
+                         lambda v: v["process_trend_presentation"].update(startup_bound=False),
                          lambda v: v["service_trends"][0]["value"]["subject"].update(instance_id="previous"),
                          lambda v: v["service_trends"][0]["value"]["series"][0]["points"][0].update(value=-1),
                          lambda v: v["service_trends"][0]["value"].update(start="2026-10-10T00:00:00Z"),

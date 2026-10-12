@@ -1,3 +1,4 @@
+import { autoRefreshOptions } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { resolveTargetRoute } from './monitoringTargets.js'
 
 // Domain adaptation of Monitor's fixed scalar catalog, never arbitrary PromQL.
@@ -59,7 +60,6 @@ export function resourceDimensionRows(...values) {
   }
   return [...rows.values()]
 }
-export const resourceRefreshOptions = ['15', '10', '30', '60', 'off']
 export const resourceRanges = { '5m': 300, '1h': 3600, '24h': 86400, '7d': 604800 }
 const defaultMetric = 'node.memory.used_percent'
 export function resolveResourceRoute(query = {}, detail = false) {
@@ -81,7 +81,7 @@ export function resolveResourceRoute(query = {}, detail = false) {
   }
   if (hasDimensions && !metric.startsWith('node.filesystem.') && !metric.startsWith('node.disk.') && !metric.startsWith('node.network.')) invalidDimensions = true
   const canonicalDimensions = invalidDimensions ? Object.fromEntries(dimensionKeys.filter(key => Object.hasOwn(query, key)).map(key => [key, query[key]])) : dimensions
-  const refresh = detail && typeof query.refresh === 'string' && resourceRefreshOptions.includes(query.refresh) ? query.refresh : '15'
+  const refresh = detail && typeof query.refresh === 'string' && autoRefreshOptions.includes(query.refresh) ? query.refresh : '15'
   const canonical = { ...pagination.query, ...canonicalDimensions, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(detail && refresh !== '15' ? { refresh } : {}) }
   return { page: pagination.page, pageSize: pagination.pageSize, search, range, metric, refresh, dimensions, invalidDimensions, query: canonical,
     changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
