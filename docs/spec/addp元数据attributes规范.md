@@ -273,6 +273,8 @@ MongoDB collection 等动态 schema 记录集合在当前 ADDP 能力中按记�
 
 `type_info.table.row_count` 只表示精确行数，0 是有效值；`type_info.table.estimated_row_count` 只表示 catalog / system statistics、格式结构元数据或有限分析提供的近似值。两者可以同时存在，但不得用估算值填充 `row_count`。`meta_item.row_count` 是精确 `type_info.table.row_count` 的列表查询投影，不投影估算值。估算值不得用于分页终点、完整性校验、传输完成判断或其他需要精确基数的决策。
 
+`layout=whole` 的表格数据项在深度扫描和已知数据项刷新时，统一通过格式的 `ScopeTableInfoProvider` 描述完整范围；对象存储与文件系统均复用 Engine Catalog 内容适配器。Parquet 必须校验所有分片的字段结构一致性，保存完整范围的字段与精确行数，Decimal 字段保留 Provider 返回的 `precision` 和 `scale`。不得只取首个分片或把缺少表结构的刷新计为成功；严格刷新失败时保留原持久化快照。
+
 索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。动态 schema 记录集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；扫描或结构推断过程的采样规模、是否采样、dynamic schema 类型、平均记录大小、索引数量等紧凑过程事实进入 `capabilities.statistics`。字段空值率、基数、值域、分位数、直方图和高频值等数据剖析结果归 Manager，不进入 Meta attributes。
 
 Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`，字段主键标记只写 `primary_key`；不得再写 `is_nullable`、`is_primary_key`。历史 Meta 数据如果不符合本规范，应删除后重新扫描，不在运行期做迁移或兼容读取。

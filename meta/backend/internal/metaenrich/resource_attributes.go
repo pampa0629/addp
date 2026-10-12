@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/contentadapter"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -72,6 +73,19 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		} else if item.DataType != beforeDataType || item.Format != beforeFormat {
 			metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(item))
 		}
+	}
+	if item.Layout == format.LayoutWhole && item.DataType == datatype.Table && canReadContent {
+		reader := contentadapter.NewMappedReader(input.ContentReader, input.ConnInfo,
+			contentadapter.ScopePathMapper(input.EngineCatalogPathFor(input.PhysicalPath)), plugin.ReadOptions{})
+		info, err := describeTableFileScope(ctx, item.Format, reader, input.PhysicalPath)
+		if err != nil {
+			return item, nil, err
+		}
+		item.Fields = tableFieldsFromDescribeResult(info)
+		metaattr.MergeStandardAttributes(attrs, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{
+			FormatName: item.Format, Table: info.Table, FormatInfo: info.FormatInfo,
+			Spatial: info.Spatial, AccessIndex: info.AccessIndex, IncludeAccessIndex: input.IncludeAccessIndex,
+		}))
 	}
 	if len(item.Fields) > 0 {
 		metaattr.SetTableFields(attrs, item.Fields)
