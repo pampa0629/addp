@@ -1661,7 +1661,7 @@ Safari 使用用户已登录的平台管理员会话实际查看 `/monitor/servi
 
 运行复验收尾只更新本节与 Monitor 文档入口，没有修改产品实现或 CI 编排。`git diff --check` 通过；再次执行默认 `make test-changed`，当前混合工作区扩散至多个 Owner，因缺少 PostgreSQL DSN、MySQL/OceanBase 等既有测试输入而在预检返回 2（`/tmp/addp-three-backend-runtime-changed.log`），业务门禁未执行，不计通过。此前与本批部署输入匹配的两项完整标准门禁结果仍保留在上文；相应自动化门禁已由 Platform CI / Release T2 登记，本轮不将个人运行结果或文档提交计为新的 Hosted 验收。
 
-### 10.53 Worker 独立进程采集输入（实现及部署准备，待运行复验）
+### 10.53 Worker 独立进程采集输入（本机运行复验完成）
 
 2026-10-12 继续调查标准开发入口。Meta Worker 与两个 Transfer Worker 已通过正式 `RegisterAndHeartbeat` 复用 Go 自身进程采集 SDK，业务代码无需另接一条采集路线。`scripts/dev/start.sh` 的 `start_module_workers` 在所属 Backend Ready 后，按已有进程名称启动独立二进制；两个 Transfer Worker 都登记为 `transfer/worker`，继承同一根环境数组时不能消费不同来源。现有 SDK 对同一数组内重复 module/role 的拒绝是正确的单进程部署约束，不能通过放宽该校验解决。根环境在启动期间会重新加载，必须在真正创建子进程时显式注入最终输入，且未选择时显式注入空值，避免 Go 的根环境补齐重新引入其他进程配置。
 
@@ -1681,6 +1681,16 @@ Safari 使用用户已登录的平台管理员会话实际查看 `/monitor/servi
 
 个人部署准备完成：原五个 Backend 配置逐项迁入计划，新增 `meta-worker`、`transfer-bounded-worker`、`transfer-continuous-worker`，端口为 `127.0.0.1:19106/19107/19108`；根环境只替换旧 SDK 输入为计划，并向原 Desktop 精确端口集合和 Monitor 端口集合追加这三项，CIDR 与其他业务配置保持原值。新增三个仓库外独立来源目录，沿原 CA 签发 serverAuth 叶子，核验回环 IP / Desktop DNS 双 SAN、私钥匹配、目录 0700 / 私钥 0600；有效期截至 2026-12-11 00:32:59 UTC。既有五个来源和准入/采集/查询身份文件未改。证据为 `/tmp/addp-worker-plan-preparation.log`。Shell 重载后的八单元逐进程投影及唯一中心生成器临时渲染通过：九个精确 Desktop 通道、一个 `addp_nodes` Job、原 `target_limit: 9`、无 TLS server_name 覆盖（`/tmp/addp-worker-plan-render-check.log`）。未写入正在运行的中心配置，未启动新来源；准备后只读中心仍为原六来源且全部 up，不能据此计 Worker 已采集。
 
-实际应用由用户在根目录依次执行 `bash scripts/infra/up.sh --metrics` 与 `./scripts/dev/restart.sh -meta -transfer -monitor`：前者应用新增三个精确宿主通道，后者让 Meta/Transfer Backend 与所属三个 Worker 加载各自输入，并使 Monitor 加载新的准入端口。System、Manager 既有端点配置没有变化，无 Common 实现修改，不要求全套重启；AI 未执行个人重启或 keepalive。应用后核对九来源实际发现、三个当前 Worker 实例身份与正式元数据、独立 mTLS、完整一分钟 CPU 窗口，以及 Safari 默认八条进程结果。该运行复验尚未执行，多副本启动、业务任务分配、进程趋势和生产 T5 不在本批完成范围。
+准备完成时由用户执行标准指标应用入口与所选模块重启：前者应用新增三个精确宿主通道，后者让 Meta/Transfer Backend 与所属三个 Worker 加载各自输入，并使 Monitor 加载新的准入端口。System、Manager 既有端点配置没有变化，无 Common 实现修改，不要求全套重启；AI 未执行个人重启或 keepalive。准备阶段要求应用后核对九来源实际发现、三个当前 Worker 实例身份与正式运行状态、独立 mTLS、完整一分钟 CPU 窗口，以及 Safari 默认八条进程结果；执行结果由以下运行证据更新。多副本启动、业务任务分配、进程趋势和生产 T5 不在本批完成范围。
 
 本批完整 `make test-monitor-metrics` 返回 0（`/tmp/addp-worker-plan-metrics-1.log`），验证当前 SDK 两个实际进程经不同 Desktop 精确端口进入唯一 Job、身份保留、停止单源清值且另一来源继续；HTTP SD 失败/重定向/空集合/恢复、独立 OAuth、真实主机即时/趋势与受限 VM 口径、恢复后的新样本、中心 SIGKILL 后 WAL 样本保留均通过。退出确认当次容器、网络、卷和临时文件零残留。该 T2 使用自己的独占来源，不将三个尚未启动的个人 Worker 计为采集成功；本轮没有执行新的真实 Hosted T4。最终 `git diff --check` 通过。
+
+2026-10-12 用户确认已重启后完成只读运行复验。标准 Infra 状态显示中心健康，五个 Backend Ready 均为 ready；中心唯一 `addp_nodes` Job 实际有九个来源，全部 up 且当前 lastError 为空：一个既有 VM、五个 Backend、三个 Worker。八个进程均保留规范 `127.0.0.1:19101–19108` 身份，逐一经对应 `host.docker.internal:同端口` 采集。实现 `73cedceafc48dfcf3a3fdcee67f8628bb24213ec` 已包含在只读核实的远端 main `22e48a2bae93908ef20845601301c5c73f3d2980` 中，上一轮推送超时不再作为未推送状态；本批运行验收没有变更 API 或身份权限。
+
+三个 Worker 的正式运行状态文件、独立监听 PID、二进制类型、直接 mTLS 来源身份、中心受控标签与 Safari 当前实例 ID 逐一一致：Meta Worker 为 PID 18391 / `c79a8adf-b273-4bb8-b83d-e0a1f7624330`，Transfer bounded Worker 为 PID 18498 / `f1c607c1-1f7a-4843-80bf-1db6babcbcb9`，Transfer continuous Worker 为 PID 18499 / `f496b2d1-31ba-4e9b-9c66-1434ee3f5ba4`。三个监听分别为 19106/19107/19108，两个 Transfer 进程的正式 role 仍均为 worker，没有共用监听、实例或来源。三个端点均拒绝无客户端证书的请求（TLS certificate required）。五个 Backend 的直接来源启动时间与 Ready 一致，普通 Backend 的注册实例 ID 亦一致；八个来源均为 darwin 自身进程，不关联 Linux VM。
+
+2026-10-12 01:17:12 UTC 的固定评估快照中，八个进程的当前一分钟窗口各有四个样本、无累计重置，当前与窗口起点的采样时效满足既有完整窗口要求。三个 Worker 按 Meta/bounded/continuous 顺序，CPU 约为 0.01670/0.01707/0.00099 核，RSS 约为 51.28/51.89/47.14 MiB，运行时长约为 965/962/962 秒。逐项身份、数值、PID 和 TLS 断言通过，临时只读证据为 `/tmp/addp-worker-runtime-verification.log`。该证据是个人部署的当前运行复验，不替代 Hosted T4，也不证明新增多副本执行能力。
+
+Safari 沿用户原平台管理员会话刷新 `/monitor/service-resources`，默认在线且已声明采集范围共八条，三个 Worker 均显示“任务进程”；09:11:59 刷新后八者均为“正在采集”，CPU、MiB 内存和自然经过时长都有有效值。已查看完整实际截图，各行 ID 与来源一致，仍明确显示未关联主机。首次看到的 09:01 页面为此前未刷新的数据；09:09 刷新时部分 CPU 仍显示窗口等待。只读历史查询证实该窗口边界存在 Transfer bounded 来源 up=0，以及 System/Monitor 旧样本距评估时刻约 85 秒、不满足原 76 秒边界；中心日志记录 09:08:48 启动与 WAL 恢复。随后完整窗口已恢复，八者均有效。未放宽窗口、补零或修改实现，也不据本次快照宣称长期稳定性；首次失败样本的具体原因未单独确证。当前两类 Transfer Worker 都显示“任务进程”，更明确的任务类型标识是后续易用性优化点。
+
+本轮收尾仅更新本节及 Monitor 文档入口，`git diff --check` 通过。默认 `make test-changed` 再次因当前混合工作区缺少多个 Owner 的 PostgreSQL/MySQL/OceanBase 等测试输入，在预检返回 2（`/tmp/addp-worker-runtime-changed.log`），后续业务门禁未执行、不计通过；不重跑未变更实现对应的上述四项已完成标准门禁。远端 `22e48a2` 的 Release/T2 工作流已完成成功，但其中 Monitor metrics 与 Monitor PostgreSQL Job 按路径跳过，不能计为本批重跑；该提交的 Platform CI 在本次查询时仍运行中。个人运行复验与远端编排状态分别记录，没有把跳过或未完成项计作通过。
