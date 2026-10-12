@@ -270,7 +270,10 @@ watch(
   { flush: 'post' }
 )
 
-watch(selectedSourceQueryCapability, capability => {
+watch([selectedEngine, selectedSourceQueryCapability], ([engine, capability]) => {
+  // Restoring the picker briefly has no engine facts (or only its identity).
+  // Missing facts cannot establish that a saved query is unsupported.
+  if (!engine?.capabilities) return
   if (!capability) {
     querySourceEnabled.value = false
     queryLanguage.value = ''

@@ -14,10 +14,16 @@ function report(status = 'supported') {
   }
 }
 
-async function setup(page, handler = route => route.fulfill({ json: report() })) {
+async function setup(page, handler = route => route.fulfill({ json: report() }), metadata = {}) {
   const writes = []
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
+    const requestURL = new URL(request.url())
+    const path = requestURL.pathname
+    if (request.method() === 'GET' && Object.hasOwn(metadata, path)) {
+      const response = metadata[path]
+      return route.fulfill({ json: typeof response === 'function' ? response(requestURL) : response })
+    }
     if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/v1/meta/engines') {
       return route.fulfill({ json: [] })
     }
@@ -172,3 +178,61 @@ test('check controls and report remain within the narrow review layout', async (
   await expect(page.getByTestId('task-config-check-report')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
+
+for (const language of ['mql', 'sql']) {
+  test(`returning to source preserves the ${language} definition and parameters while engine facts are unavailable`, async ({ page }) => {
+    const writes = await setup(page)
+    await page.getByTestId(`query-draft-${language}`).click()
+    const original = JSON.parse(await page.getByTestId('fixture-request').textContent())
+    expect(original.config.source.query.parameters).toEqual({ needle: 'synthetic-value' })
+    await page.getByTestId('source-step').click()
+    await expect(page.getByRole('heading', { name: '选择数据源', exact: true })).toBeVisible()
+    await expect.poll(async () => JSON.parse(await page.getByTestId('fixture-request').textContent()).config.source.query).toEqual(original.config.source.query)
+    await page.getByTestId('review-step').click()
+    await page.getByTestId('task-config-check').click()
+    await expect(page.getByTestId('task-config-check-report')).toBeVisible()
+    expect(writes.filter(request => request.method === 'POST')).toEqual([
+      { method: 'POST', path: '/api/v1/transfer/task-config-checks', body: original }
+    ])
+    await expect(page.getByTestId('fixture-submits')).toHaveText('0')
+  })
+}
+
+for (const querySupported of [true, false]) {
+  test(`restored declared MongoDB query support ${querySupported} is applied without treating loading as unsupported`, async ({ page }) => {
+    const locator = 'addp://engine/9000001/path/synthetic/source?type=collection&item_id=90000199'
+    const leaf = { id: locator, locator, label: 'source', type: 'collection', hasChildren: false,
+      metadata: { item_id: 90000199, full_name: 'synthetic.source', data_type: 'table', representation: 'native' } }
+    const branchLocator = 'addp://engine/9000001/path/synthetic?type=database'
+    const branch = { id: branchLocator, locator: branchLocator, label: 'synthetic', type: 'database', hasChildren: true, children: [leaf] }
+    const rootLocator = 'addp://engine/9000001?type=engine'
+    const root = { id: rootLocator, locator: rootLocator, label: 'Synthetic MongoDB', type: 'engine', hasChildren: true, children: [branch] }
+    const engine = { id: 9000001, name: 'Synthetic MongoDB', engine_type: 'mongodb', lifecycle_state: 'active', connection_status: 'online',
+      capabilities: { engine_family: 'dynamic_schema', storage: { store: { record_read_session: true } },
+        compute: { query: { supported: querySupported, read_session: querySupported, languages: ['mql'], default_language: 'mql' } } } }
+    const writes = await setup(page, undefined, {
+      '/api/v1/meta/engines': [engine],
+      '/api/v1/meta/resource-tree/9000001': root,
+      '/api/v1/meta/resource-tree/9000001/node': url =>
+        [root, branch, leaf].find(node => node.locator === url.searchParams.get('locator')),
+      '/api/v1/meta/resource-tree/9000001/ancestors': { ancestors: [root, branch, leaf] },
+      '/api/v1/meta/items/90000199/fields': { data: [{ name: '_id', type: 'string', nullable: false }, { name: 'payload', type: 'string', nullable: true }] },
+      '/api/v1/transfer/capabilities': { table_formats: [], raw_copy_formats: [] }
+    })
+    await page.getByTestId('query-draft-mql').click()
+    const original = JSON.parse(await page.getByTestId('fixture-request').textContent())
+    await page.getByTestId('source-step').click()
+    await expect(page.getByText('已选数据项', { exact: true })).toBeVisible()
+    await expect.poll(async () => JSON.parse(await page.getByTestId('fixture-request').textContent()).config.source.query)
+      .toEqual(querySupported ? original.config.source.query : undefined)
+    await page.getByTestId('review-step').click()
+    const visible = JSON.parse(await page.getByTestId('fixture-request').textContent())
+    expect(visible.config.target).toEqual(original.config.target)
+    await page.getByTestId('task-config-check').click()
+    await expect(page.getByTestId('task-config-check-report')).toBeVisible()
+    expect(writes.filter(request => request.method === 'POST')).toEqual([
+      { method: 'POST', path: '/api/v1/transfer/task-config-checks', body: visible }
+    ])
+    await expect(page.getByTestId('fixture-submits')).toHaveText('0')
+  })
+}
