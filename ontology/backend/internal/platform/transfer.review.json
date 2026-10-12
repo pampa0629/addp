@@ -8,7 +8,7 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "099072fd118f5529d57f3f5ce3583028e59791e6",
+      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
       "sha256": "a55056b020fe3c22f15b2311fef801e79fbb470e7dbb5c0802bce55a4a303018",
       "use": {
         "zh-cn": "任务、执行、配置与写入策略的正式含义，以及只读预检的三权限交集、Runtime 两次预检和三态限制",
@@ -21,7 +21,7 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "6e30cd0d5cbcffb362cdc240ba75aba9401a56d8",
+      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
       "sha256": "738e115b67c1fe0b77a81e059710ced5992ad6a5b253f8b810e272f7134232af",
       "use": {
         "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；已复核 execution 响应投影调整，创建约束不变",
@@ -86,7 +86,7 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "d3225c49aa2beb37ad50c50a1a5689b4ee3483e4",
+      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
       "sha256": "a26e03611d8e6b27a0e1359c96312acfba86e2649ea43e92e99bd388009b868f",
       "use": {
         "zh-cn": "事实获取、用户澄清、确切配置复核与创建步骤",
@@ -99,7 +99,7 @@
       "kind": "implementation",
       "path": "agent/backend/agents/platform_conditions.py",
       "anchor": "def validate_create(",
-      "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
+      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
       "sha256": "4ee288f066fef89a750257b6acd53ba3ca9d6ba3efc37ec080487d471d920acf",
       "use": {
         "zh-cn": "Runtime 条件适配与能力修订、参数和结构事实的复核绑定",
@@ -112,7 +112,7 @@
       "kind": "test",
       "path": "agent/backend/tests/test_platform_conditions.py",
       "anchor": "class PlatformConditionTests(",
-      "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
+      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
       "sha256": "43a88b4252fa79c8fddd70efd3cc8fcec31c91c1bedb5e18c74b88d6633eacb7",
       "use": {
         "zh-cn": "验证条件拒绝、参数或事实变化后重新确认",
@@ -138,7 +138,7 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "a2899f326ba758844eabfc6a6c18ed75adda824e",
+      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
       "sha256": "19e11e90ac5a6e666bd1dfaea5b70a72b98e1cc702ca4946eecc84fd1c9482d9",
       "use": {
         "zh-cn": "最终复核和创建前经正式 Manifest Adapter 自动预检；清除旧报告、绑定审计身份，失败终止、不重试或创建",
@@ -151,7 +151,7 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "a2899f326ba758844eabfc6a6c18ed75adda824e",
+      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
       "sha256": "7153f6a417dc62ffca98985d03e48b9c71e287ee57c49189f86a3090bd62c68f",
       "use": {
         "zh-cn": "真实 Harness、Manifest、SDK 下验证知情确认、两次完整请求一致、时间与稳定事实变化、错误清旧证据、取消及无业务副作用",

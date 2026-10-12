@@ -47,7 +47,7 @@ Console `/ontology/ontologies/:ontology_id/trial` 提供当前激活规则试算
 
 ## PG 修订与发布
 
-平台 Transfer 修订 11 将正式只读预检纳入创建条件，图通过 `readonly_config_check → config_precheck → transfer.task.config.check` 暴露读取入口。API、共享 SDK 与 Tool 的唯一输入及三权限交集不变，Runtime 在最终复核和创建前通过正式 Adapter 自动预检：unsupported 阻止创建，unknown 明确限制后知情确认，仅保存未运行定义；supported 也不保证执行成功。确认绑定完整参数、能力版本、结构及稳定报告事实；仅顶层报告时间及含时间的 binding_hash 不进入确认指纹，结构扫描时间仍绑定。报告保存在运行 checkpoint，不写入平台静态本体，不作为授权凭据。创建前失败清除旧报告且不能自动重试或创建；部署后的真实消费须重启 Agent/Ontology 另验。
+平台 Transfer 修订 11 将正式只读预检纳入创建条件，图通过 `readonly_config_check → config_precheck → transfer.task.config.check` 暴露读取入口。API、共享 SDK 与 Tool 的唯一输入及三权限交集不变，Runtime 在最终复核和创建前通过正式 Adapter 自动预检：unsupported 阻止创建，unknown 明确限制后知情确认，仅保存未运行定义；supported 也不保证执行成功。确认绑定完整参数、能力版本、结构及稳定报告事实；仅顶层报告时间及含时间的 binding_hash 不进入确认指纹，结构扫描时间仍绑定。报告保存在运行 checkpoint，不写入平台静态本体，不作为授权凭据。创建前失败清除旧报告且不能自动重试或创建；部署后的真实消费须重启 Agent/Ontology 另验。修订 12 仅将其中 7 项来源的 Git 引用冻结到实际包含已审查内容的 `c1f993b1fa7c5d5e403e463c371c46b2adf4ae80`，文件摘要及操作语义不变；来源引用改变仍形成新不可变快照，不重写修订 11，也不宣称其他 owner 的全量改造已验收。
 
 - `CreateDraft` 只接受同一本体的下一修订号；同一时刻最多一个 draft / in_review。
 - `SaveDraft` 和 `Transition` 必须携带精确 version，状态沿 draft → in_review → published → withdrawn，允许审核退回草稿。错误版本不自动重试。
