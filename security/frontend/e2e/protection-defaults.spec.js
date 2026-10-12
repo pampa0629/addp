@@ -142,8 +142,15 @@ test('opens the protected resource and focuses the approved grant from review hi
     'security.protection_exemption.read', 'security.protection_exemption.delete'
   ] })
   const assessmentRequests = []
+  const definitionRequests = []
+  const browserWarnings = []
+  const definitionPaths = new Set(['/api/v1/security/sensitive-data-types', '/api/v1/security/classifications', '/api/v1/security/grades', '/api/v1/security/protection-baselines'])
   page.on('request', request => {
     if (new URL(request.url()).pathname.startsWith('/api/v1/security/assessments')) assessmentRequests.push(request.url())
+    if (definitionPaths.has(new URL(request.url()).pathname)) definitionRequests.push(request.url())
+  })
+  page.on('console', message => {
+    if (['warning', 'error'].includes(message.type())) browserWarnings.push(message.text())
   })
   const browserErrors = []
   page.on('pageerror', error => browserErrors.push(error.message))
@@ -176,6 +183,8 @@ test('opens the protected resource and focuses the approved grant from review hi
   await expect(focusedGrant).toContainText('客户核验期间临时查看原值')
   await expect.poll(() => backend.enrollmentDetailRequests).toBe(1)
   expect(assessmentRequests).toEqual([])
+  expect(definitionRequests).toEqual([])
+  expect(browserWarnings).toEqual([])
   expect(backend.unhandledRequests).toEqual([])
   expect(browserErrors).toEqual([])
 })

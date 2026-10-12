@@ -359,6 +359,7 @@ const {
   setProtectionBaselines,
   dispose: disposeProtectionReferenceCatalog
 } = useProtectionReferenceCatalog({
+  hasPermission: permission => auth.hasPermission(permission),
   listSensitiveTypes: () => sensitiveDataTypeAPI.list(),
   listClassifications: () => classificationAPI.list(),
   listGrades: () => gradeAPI.list(),

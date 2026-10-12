@@ -42,6 +42,15 @@ describe('Security standalone landing', () => {
 })
 
 describe('Security product information architecture', () => {
+  it('translates every plaintext request state in both supported languages', () => {
+    for (const language of ['zh-cn', 'en']) {
+      const messages = JSON.parse(readSource(`../src/i18n/${language}.json`))
+      for (const state of ['pending', 'approved', 'rejected', 'expired']) {
+        expect(messages.security.accessRequest.states[state], `${language}: ${state}`).toEqual(expect.any(String))
+        expect(messages.security.accessRequest.states[state].trim()).not.toBe('')
+      }
+    }
+  })
   it('separates low-change classification foundations from sensitive data definitions', () => {
     const router = readSource('../src/router/index.js')
     const layout = readSource('../src/components/Layout.vue')
@@ -365,7 +374,6 @@ describe('Security product information architecture', () => {
     expect(catalog).toContain('let definitionsPromise = null')
     expect(catalog).toContain('let detectorCapabilitiesPromise = null')
     expect(catalog).toContain('let enginesPromise = null')
-    expect(catalog).toContain('let definitionsLoaded = false')
     expect(catalog).toContain('requestedBaselineRevision === baselineRevision')
   })
 

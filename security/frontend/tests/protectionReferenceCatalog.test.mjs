@@ -13,6 +13,7 @@ function deferred() {
 
 function createCatalog(overrides = {}) {
   const dependencies = {
+    hasPermission: vi.fn(() => true),
     listSensitiveTypes: vi.fn().mockResolvedValue([{ id: 1, name: 'Phone' }]),
     listClassifications: vi.fn().mockResolvedValue([{ id: 2, name: 'Personal' }]),
     listGrades: vi.fn().mockResolvedValue([{ id: 3, name: 'High' }]),
@@ -28,6 +29,66 @@ function createCatalog(overrides = {}) {
 }
 
 describe('protected-resource reference catalog', () => {
+  it('does not request definitions without their read permissions', async () => {
+    const { catalog, dependencies } = createCatalog({ hasPermission: vi.fn(() => false) })
+    await expect(catalog.loadDefinitions()).resolves.toBe(true)
+    for (const fetch of [dependencies.listSensitiveTypes, dependencies.listClassifications, dependencies.listGrades, dependencies.listBaselines]) {
+      expect(fetch).not.toHaveBeenCalled()
+    }
+    expect(catalog.sensitiveTypes.value).toEqual([])
+    expect(catalog.protectionBaselines.value).toEqual([])
+  })
+
+  it('loads only readable definitions and reloads after the permission scope changes', async () => {
+    const permissions = new Set(['security.grade.read'])
+    const { catalog, dependencies } = createCatalog({ hasPermission: permission => permissions.has(permission) })
+    await catalog.loadDefinitions()
+    expect(dependencies.listGrades).toHaveBeenCalledOnce()
+    expect(dependencies.listSensitiveTypes).not.toHaveBeenCalled()
+    expect(dependencies.listClassifications).not.toHaveBeenCalled()
+    expect(dependencies.listBaselines).not.toHaveBeenCalled()
+    permissions.clear()
+    permissions.add('security.sensitive_data_type.read')
+    await catalog.loadDefinitions()
+    expect(dependencies.listSensitiveTypes).toHaveBeenCalledOnce()
+    expect(dependencies.listGrades).toHaveBeenCalledOnce()
+    expect(catalog.securityGrades.value).toEqual([])
+    expect(catalog.sensitiveTypes.value).toEqual([{ id: 1, name: 'Phone' }])
+  })
+
+  it('ignores definition responses after their read permission is revoked', async () => {
+    const types = deferred()
+    let readable = true
+    const { catalog } = createCatalog({ hasPermission: () => readable, listSensitiveTypes: () => types.promise })
+    const pending = catalog.loadDefinitions()
+    readable = false
+    types.resolve([{ id: 1 }])
+    await expect(pending).resolves.toBe(false)
+    expect(catalog.sensitiveTypes.value).toEqual([])
+  })
+
+  it('reloads a cleared snapshot when permissions return during another in-flight scope', async () => {
+    const types = deferred()
+    const permissions = new Set(['security.grade.read'])
+    const { catalog, dependencies } = createCatalog({
+      hasPermission: permission => permissions.has(permission),
+      listSensitiveTypes: () => types.promise
+    })
+    await catalog.loadDefinitions()
+    permissions.clear()
+    permissions.add('security.sensitive_data_type.read')
+    const pending = catalog.loadDefinitions()
+    expect(catalog.securityGrades.value).toEqual([])
+    permissions.clear()
+    permissions.add('security.grade.read')
+    await catalog.loadDefinitions()
+    expect(dependencies.listGrades).toHaveBeenCalledTimes(2)
+    expect(catalog.securityGrades.value).toEqual([{ id: 3, name: 'High' }])
+    types.resolve([{ id: 1 }])
+    await expect(pending).resolves.toBe(false)
+    expect(catalog.sensitiveTypes.value).toEqual([])
+  })
+
   it('deduplicates concurrent definition loads and caches valid empty results', async () => {
     const types = deferred()
     const { catalog, dependencies } = createCatalog({

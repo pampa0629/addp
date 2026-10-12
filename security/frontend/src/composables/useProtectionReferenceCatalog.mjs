@@ -5,6 +5,7 @@ function normalizeList(value) {
 }
 
 export function useProtectionReferenceCatalog({
+  hasPermission,
   listSensitiveTypes,
   listClassifications,
   listGrades,
@@ -22,7 +23,9 @@ export function useProtectionReferenceCatalog({
   let disposed = false
   let lifecycleRevision = 0
   let baselineRevision = 0
-  let definitionsLoaded = false
+  let definitionsLoadedScope = null
+  let definitionsPendingScope = null
+  let definitionsRevision = 0
   let detectorCapabilitiesLoaded = false
   let enginesLoaded = false
   let definitionsPromise = null
@@ -33,27 +36,39 @@ export function useProtectionReferenceCatalog({
     return !disposed && request === lifecycleRevision
   }
 
+  function definitionAccess() {
+    return ['security.sensitive_data_type.read', 'security.classification.read', 'security.grade.read', 'security.protection_baseline.read']
+      .map(permission => Boolean(hasPermission(permission)))
+  }
+
   function loadDefinitions() {
     if (disposed) return Promise.resolve(false)
-    if (definitionsLoaded) return Promise.resolve(true)
-    if (definitionsPromise) return definitionsPromise
+    const access = definitionAccess()
+    const scope = access.join(',')
+    if (definitionsLoadedScope === scope) return Promise.resolve(true)
+    if (definitionsPromise && definitionsPendingScope === scope) return definitionsPromise
 
     const request = lifecycleRevision
+    const definitionRequest = ++definitionsRevision
+    definitionsLoadedScope = null
+    definitionsPendingScope = scope
     const requestedBaselineRevision = baselineRevision
+    const collections = [sensitiveTypes, securityClassifications, securityGrades, protectionBaselines]
+    collections.forEach((collection, index) => { if (!access[index]) collection.value = [] })
     const pending = Promise.all([
-      listSensitiveTypes(),
-      listClassifications(),
-      listGrades(),
-      listBaselines()
+      access[0] ? listSensitiveTypes() : [],
+      access[1] ? listClassifications() : [],
+      access[2] ? listGrades() : [],
+      access[3] ? listBaselines() : []
     ]).then(([types, classifications, grades, baselines]) => {
-      if (!isCurrent(request)) return false
+      if (!isCurrent(request) || definitionRequest !== definitionsRevision || definitionAccess().join(',') !== scope) return false
       sensitiveTypes.value = normalizeList(types)
       securityClassifications.value = normalizeList(classifications)
       securityGrades.value = normalizeList(grades)
       if (requestedBaselineRevision === baselineRevision) {
         protectionBaselines.value = normalizeList(baselines)
       }
-      definitionsLoaded = true
+      definitionsLoadedScope = scope
       return true
     })
     const tracked = pending.finally(() => {
