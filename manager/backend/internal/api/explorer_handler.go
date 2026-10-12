@@ -164,6 +164,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	}
 	var result *preview.PreviewResult
 	var protectionRules []dataprotection.Rule
+	var protectionProjections []dataprotection.Projection
 	var protectionSubject dataprotection.SubjectReference
 	if principal, ok := commonauth.PrincipalFromGin(c); ok {
 		protectionSubject = dataprotection.SubjectReference{Type: principal.Type, ID: principal.ID}
@@ -171,6 +172,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	if err == nil && h.protectionStore != nil && tenantID != nil {
 		now := time.Now().UTC()
 		gate := managerprotection.DataItemGate(h.protectionStore, *tenantID, req.ItemFingerprint, now)
+		protectionProjections = gate.Projections
 		protectionRules, err = managerprotection.TableRules(req.ItemFingerprint, req.TableFields(), gate, managerprotection.ActionPreview, now)
 		if err != nil {
 			protectionRequired(c)
@@ -219,7 +221,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		return
 	}
 
-	writePreviewResult(c, result, protectionRules, protectionSubject)
+	writePreviewResult(c, result, protectionRules, protectionSubject, protectionProjections)
 }
 
 func writePreviewAuthorizationError(c *gin.Context, err error) bool {

@@ -366,6 +366,7 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 10. `state=enrolling` 是激活屏障专用的资源级 `deny` 投影：`source_snapshot_hash` 必须为空且 `rules` 必须为空；Owner 命中后直接拒绝目标资源的相关动作，不尝试字段遍历。Security 不得在读取 Owner 技术事实之前伪造结构快照或字段规则。其有效期不能被解释为解除纳管；即使安装时已过有效期，Owner 仍安装纳管标记并按资源级 `deny` 处理，直到收到明确 `release`。
 11. `state=active` 必须携带 `sha256:` 格式的 `source_snapshot_hash` 和至少一条可执行规则；Owner 必须校验 Schema、revision、checksum、有效期、target 和结构指纹后才原子切换。
 12. 投影缺失、无法解析、checksum 错误、结构冲突或过期时，已纳管资源使用资源级 `deny`；不取消纳管标记。
+13. 有效期校验必须同时覆盖读取准入和实际输出边界。查询结果、预览响应、Transfer 每批记录及编码前的原始记录在变换或输出前，必须以当前服务端时间重新校验本次读取绑定的全部投影；即使结果为空，也不能输出已过期投影的字段结构。读取开始时有效不代表输出时仍有效，任一投影到期都拒绝本次输出，不回退旧规则或明文。本规则不改变当前编译器的 365 天有效期和显式续期路径。
 
 结构化表数据的 `source_snapshot_hash` 与 `component.schema_fingerprint` 只能由
 `common/dataprotection` 的规范算法生成，Security 和 Owner 不得各自拼装 JSON：

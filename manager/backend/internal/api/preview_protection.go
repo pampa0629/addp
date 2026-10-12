@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
@@ -13,7 +14,16 @@ import (
 )
 
 // writePreviewResult applies protection before serializing the public preview.
-func writePreviewResult(c *gin.Context, result *preview.PreviewResult, rules []dataprotection.Rule, subject dataprotection.SubjectReference) {
+func writePreviewResult(c *gin.Context, result *preview.PreviewResult, rules []dataprotection.Rule, subject dataprotection.SubjectReference, projections []dataprotection.Projection) {
+	// Native MongoDB and other non-query previews also retain their original
+	// projection contract through the final response boundary.
+	now := time.Now().UTC()
+	for _, projection := range projections {
+		if err := projection.Validate(now); err != nil {
+			protectionRequired(c)
+			return
+		}
+	}
 	if err := applyPreviewProtection(result, rules, subject); err != nil {
 		protectionRequired(c)
 		return

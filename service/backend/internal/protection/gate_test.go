@@ -216,7 +216,11 @@ func installServiceProjection(t *testing.T, store *projectionstore.Store, identi
 
 func installActiveServiceProjection(t *testing.T, store *projectionstore.Store, identity string, fields []datatype.FieldInfo) {
 	t.Helper()
-	now := time.Now().UTC()
+	installActiveServiceProjectionAt(t, store, identity, fields, time.Now().UTC())
+}
+
+func installActiveServiceProjectionAt(t *testing.T, store *projectionstore.Store, identity string, fields []datatype.FieldInfo, now time.Time) {
+	t.Helper()
 	component := dataprotection.Component{
 		Key:       "userInfo.phone",
 		Path:      []dataprotection.PathSegment{{Name: "userInfo", Container: "object"}, {Name: "phone", Container: "scalar"}},
@@ -251,5 +255,37 @@ func installActiveServiceProjection(t *testing.T, store *projectionstore.Store, 
 		NextCursor:    "cursor-service-active",
 	}, now); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGateRejectsExpiredActiveProjectionBeforeQueryExecution(t *testing.T) {
+	store := serviceProjectionStore(t)
+	model := plugin.DynamicSchemaCatalogModel()
+	path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
+	fields := []datatype.FieldInfo{{Name: "userInfo", Path: []string{"userInfo"}, Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "phone", Path: []string{"userInfo", "phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+	installActiveServiceProjectionAt(t, store, models.GenerateItemFingerprint(11, "Outdoor.Persons"), fields, time.Now().UTC().Add(-2*time.Hour))
+	executions := 0
+	prepared, err := plugin.NewPreparedQuery(
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
+		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
+			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, IdentityOutput: true}}}, nil
+		},
+		func(context.Context) (*plugin.QueryResult, error) { executions++; return &plugin.QueryResult{}, nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := plugin.Get("mongodb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := NewGate(store)
+	protect, end, err := gate.BeginPreparedQuery(t.Context(), 7, provider, prepared)
+	if !errors.Is(err, dataprotection.ErrDenied) || protect != nil || end != nil || executions != 0 || gate.HasActiveExecutionsForTenant(7) {
+		t.Fatalf("expired query admission: error=%v, protector=%t, end=%t, executions=%d, active=%t", err, protect != nil, end != nil, executions, gate.HasActiveExecutionsForTenant(7))
+	}
+	if !store.Gate(7, dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: models.GenerateItemFingerprint(11, "Outdoor.Persons")}, time.Now().UTC()).Managed {
+		t.Fatal("expired resource was released")
 	}
 }

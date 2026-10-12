@@ -108,6 +108,34 @@ func TestProjectionStoreSchemaContractAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestProjectionStoreResultExpiryAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	for owner, action := range map[string]string{"manager": "preview", "develop": "query", "service": "service_execute", "transfer": "export"} {
+		t.Run(owner, func(t *testing.T) {
+			schema := "projection_expiry_" + owner + "_it"
+			dropProjectionStoreTestSchema(t, db, schema)
+			t.Cleanup(func() { dropProjectionStoreTestSchema(t, db, schema) })
+			store, err := Migrate(db, schema, owner, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertPreparedOutputExpiry(t, store, owner, action)
+		})
+	}
+}
+
 func postgresLegacyStructuredMaskProjection(t *testing.T) dataprotection.Projection {
 	t.Helper()
 	now := time.Now().UTC()

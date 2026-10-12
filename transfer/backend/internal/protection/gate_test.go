@@ -193,6 +193,11 @@ func installActiveTransferProjection(t *testing.T, store *projectionstore.Store,
 
 func installActiveTransferProjectionForComponent(t *testing.T, store *projectionstore.Store, model plugin.EngineCatalogModelSpec, path plugin.EngineCatalogPath, fields []datatype.FieldInfo, component dataprotection.Component) {
 	t.Helper()
+	installActiveTransferProjectionForComponentAt(t, store, model, path, fields, component, time.Now().UTC())
+}
+
+func installActiveTransferProjectionForComponentAt(t *testing.T, store *projectionstore.Store, model plugin.EngineCatalogModelSpec, path plugin.EngineCatalogPath, fields []datatype.FieldInfo, component dataprotection.Component, now time.Time) {
+	t.Helper()
 	target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +210,6 @@ func installActiveTransferProjectionForComponent(t *testing.T, store *projection
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
 	projection := dataprotection.Projection{
 		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
 		ConsumerOwner: "transfer", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,

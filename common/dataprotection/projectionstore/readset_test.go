@@ -31,6 +31,134 @@ func TestPrepareQueryProtectionKeepsUnmanagedTenantOffReadSetPath(t *testing.T) 
 	}
 }
 
+func TestPreparedOutputRejectsExpiredProjection(t *testing.T) {
+	for owner, action := range map[string]string{"manager": "preview", "develop": "query", "service": "service_execute", "transfer": "export"} {
+		t.Run(owner, func(t *testing.T) {
+			store, err := Migrate(openProjectionStoreDB(t), "manager", owner, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertPreparedOutputExpiry(t, store, owner, action)
+		})
+	}
+}
+
+// Reused by the real PostgreSQL gate. Historical protocol times avoid sleeps,
+// clock overrides and direct writes to projection storage.
+func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string) {
+	t.Helper()
+	model := plugin.DynamicSchemaCatalogModel()
+	path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
+	fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+	projection := activeTableProjection(t, owner, action, model, path, fields)
+	projection.ValidFrom = time.Now().UTC().Add(-366 * 24 * time.Hour)
+	projection.ExpiresAt = projection.ValidFrom.Add(365 * 24 * time.Hour)
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{
+		SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
+		Changes:       []dataprotection.ProjectionChange{{ChangeID: "expiry-" + owner, Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}},
+		NextCursor:    "expiry-" + owner,
+	}, projection.ValidFrom); err != nil {
+		t.Fatal(err)
+	}
+	validAt := projection.ExpiresAt.Add(-time.Nanosecond)
+	for _, at := range []time.Time{validAt, projection.ExpiresAt, projection.ExpiresAt.Add(time.Nanosecond)} {
+		gate := store.Gate(7, projection.Target, at)
+		if !gate.Managed || gate.State != dataprotection.ProjectionStateActive || (gate.Err != nil) != !at.Before(projection.ExpiresAt) {
+			t.Fatalf("expiry gate at %s: managed=%t, state=%s, error=%v", at, gate.Managed, gate.State, gate.Err)
+		}
+	}
+	prepared, err := plugin.NewPreparedQuery(
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
+		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
+			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, IdentityOutput: true}}}, nil
+		},
+		func(context.Context) (*plugin.QueryResult, error) { return nil, nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []bool{false, true} {
+		prepare := func(at time.Time) (*dataprotection.PreparedTableProtection, error) {
+			if query {
+				return store.PrepareQueryProtection(t.Context(), 7, model, prepared, action, dataprotection.SubjectReference{}, at)
+			}
+			return store.PrepareTableProtection(t.Context(), 7, model, path, fields, action, at)
+		}
+		protect, err := prepare(validAt)
+		if err != nil {
+			t.Fatalf("prepare query=%t before expiry: %v", query, err)
+		}
+		if _, err := prepare(projection.ExpiresAt); !errors.Is(err, dataprotection.ErrDenied) {
+			t.Fatalf("prepare query=%t at expiry: %v", query, err)
+		}
+		for _, empty := range []bool{false, true} {
+			result := &plugin.QueryResult{Columns: []string{"phone"}}
+			if !empty {
+				result.Rows = []map[string]interface{}{{"phone": "13661384499"}}
+			}
+			if err := protect.Apply(result); !errors.Is(err, dataprotection.ErrDenied) {
+				t.Fatalf("output query=%t empty=%t after expiry: %v", query, empty, err)
+			}
+			if len(result.Columns) != 1 || result.Columns[0] != "phone" || !empty && result.Rows[0]["phone"] != "13661384499" {
+				t.Fatal("expired output must be rejected before changing any rows or columns")
+			}
+		}
+	}
+	if cursor, err := store.CurrentCursor(t.Context(), 7); err != nil || cursor != "expiry-"+owner {
+		t.Fatalf("expiry changed the installed cursor: %q, %v", cursor, err)
+	}
+	if !store.Gate(7, projection.Target, time.Now().UTC()).Managed {
+		t.Fatal("expiry must not release the managed-resource marker")
+	}
+
+	// A later-expiring neighbor must not be transformed before the expired
+	// source is checked; this matters for joins and multi-source queries.
+	neighborPath := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Groups")
+	neighbor := activeTableProjection(t, owner, action, model, neighborPath, fields)
+	neighbor.ProjectionID = "neighbor-projection"
+	neighbor.ValidFrom = projection.ValidFrom.Add(2 * 24 * time.Hour)
+	neighbor.ExpiresAt = neighbor.ValidFrom.Add(365 * 24 * time.Hour)
+	if err := neighbor.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(t.Context(), 7, "expiry-"+owner, &dataprotection.ProjectionChangesResponse{
+		SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
+		Changes:       []dataprotection.ProjectionChange{{ChangeID: "neighbor-" + owner, Operation: dataprotection.ChangeOperationUpsert, Projection: &neighbor}},
+		NextCursor:    "neighbor-" + owner,
+	}, validAt); err != nil {
+		t.Fatal(err)
+	}
+	joined, err := plugin.NewPreparedQuery(
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(neighborPath, path) },
+		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
+			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{
+				{Path: neighborPath, Fields: fields, Bindings: []plugin.QueryOutputBinding{{SourcePath: []string{"phone"}, OutputPath: []string{"neighbor_phone"}, Transformation: plugin.QueryOutputTransformationDirect}}},
+				{Path: path, Fields: fields, IdentityOutput: true},
+			}}, nil
+		},
+		func(context.Context) (*plugin.QueryResult, error) { return nil, nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joinedProtect, err := store.PrepareQueryProtection(t.Context(), 7, model, joined, action, dataprotection.SubjectReference{}, validAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joinedResult := &plugin.QueryResult{Columns: []string{"phone", "neighbor_phone"}, Rows: []map[string]interface{}{{"phone": "13661384499", "neighbor_phone": "13501206490"}}}
+	if err := joinedProtect.Apply(joinedResult); !errors.Is(err, dataprotection.ErrDenied) {
+		t.Fatalf("multi-source expiry output: %v", err)
+	}
+	if joinedResult.Rows[0]["phone"] != "13661384499" || joinedResult.Rows[0]["neighbor_phone"] != "13501206490" {
+		t.Fatal("all projections must be checked before changing the first source's output")
+	}
+}
+
 func TestPrepareQueryProtectionDeniesEnrollingManagedReadSet(t *testing.T) {
 	db := openProjectionStoreDB(t)
 	store, err := Migrate(db, "manager", "manager", nil)

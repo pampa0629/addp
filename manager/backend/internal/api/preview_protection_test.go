@@ -67,7 +67,7 @@ func TestPreparedPreviewProtectionIsAppliedWithoutLeafRulesAndFiltersSpatialMeta
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("GET", "/preview", nil)
-		writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{})
+		writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}, nil)
 		if w.Code != 200 || calls != 1 {
 			t.Fatalf("prepared protection skipped or applied twice: status=%d calls=%d", w.Code, calls)
 		}
@@ -103,7 +103,7 @@ func TestPreparedPreviewProtectionFailureDoesNotFallbackToUnmanagedRows(t *testi
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("GET", "/preview", nil)
-		writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{})
+		writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}, nil)
 		if w.Code != 403 || strings.Contains(w.Body.String(), `"rows"`) {
 			t.Fatalf("failed protection serialized preview data: %d %s", w.Code, w.Body.String())
 		}
@@ -127,7 +127,7 @@ func TestPreviewResponseRowsArrayPreservesCellsAndNonTableMaterials(t *testing.T
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 			c.Request = httptest.NewRequest("GET", "/preview", nil)
-			writePreviewResult(c, &preview.PreviewResult{PreviewType: test.mode, Data: table}, nil, dataprotection.SubjectReference{})
+			writePreviewResult(c, &preview.PreviewResult{PreviewType: test.mode, Data: table}, nil, dataprotection.SubjectReference{}, nil)
 			var response struct {
 				Data struct {
 					Rows json.RawMessage `json:"rows"`
@@ -251,6 +251,34 @@ func TestPreviewProtectionMasksOutdoorPhoneAtResponseBoundary(t *testing.T) {
 	}
 	if got := userInfo["nickName"]; got != "daydayup" {
 		t.Fatalf("unmanaged field changed: %#v", got)
+	}
+}
+
+func TestPreviewResponseRejectsProjectionExpiredAfterAdmission(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		now := time.Now().UTC()
+		req := outdoorPersonsPreviewRequest()
+		projection := activeOutdoorPhoneProjection(t, req, now.Add(-2*time.Hour))
+		rules, err := managerprotection.TableRules(req.ItemFingerprint, req.TableFields(), projectionstore.GateResult{
+			Managed: true, State: dataprotection.ProjectionStateActive, Projections: []dataprotection.Projection{projection},
+		}, managerprotection.ActionPreview, projection.ExpiresAt.Add(-time.Nanosecond))
+		if err != nil {
+			t.Fatal(err)
+		}
+		table := &models.TablePreview{Columns: []string{"userInfo"}, Rows: []map[string]interface{}{{"userInfo": map[string]interface{}{"phone": "13661384499"}}}}
+		if empty {
+			table.Rows = nil
+		}
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/preview", nil)
+		writePreviewResult(c, &preview.PreviewResult{Data: table}, rules, dataprotection.SubjectReference{}, []dataprotection.Projection{projection})
+		if w.Code != 403 || strings.Contains(w.Body.String(), "13661384499") || strings.Contains(w.Body.String(), `"rows"`) || strings.Contains(w.Body.String(), `"columns"`) {
+			t.Fatalf("expired preview serialized data: status=%d", w.Code)
+		}
+		if !empty && table.Rows[0]["userInfo"].(map[string]interface{})["phone"] != "13661384499" {
+			t.Fatal("expiry must reject before transforming preview rows")
+		}
 	}
 }
 

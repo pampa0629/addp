@@ -47,6 +47,7 @@ func (s *Store) PrepareQueryProtection(
 		return nil, err
 	}
 	managed := make(map[string]GateResult)
+	projections := []dataprotection.Projection{}
 	for _, target := range targets {
 		gate := s.Gate(tenantID, target, now)
 		if !gate.Managed {
@@ -56,6 +57,7 @@ func (s *Store) PrepareQueryProtection(
 			return nil, dataprotection.ErrDenied
 		}
 		managed[target.ResourceIdentity] = gate
+		projections = append(projections, gate.Projections...)
 	}
 	if len(managed) == 0 {
 		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
@@ -98,6 +100,9 @@ func (s *Store) PrepareQueryProtection(
 		return nil, errors.New("protected query lineage is incomplete")
 	}
 	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: func(result *plugin.QueryResult) error {
+		if err := validateOutputProjections(projections); err != nil {
+			return err
+		}
 		for _, plan := range plans {
 			if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules, subject); err != nil {
 				return fmt.Errorf("protect query result: %w", err)
@@ -155,11 +160,26 @@ func (s *Store) PrepareTableProtection(
 	derived := dataprotection.QueryOutputDerivedFields(source, action, rules, dataprotection.SubjectReference{}, now)
 
 	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: func(result *plugin.QueryResult) error {
+		if err := validateOutputProjections(gate.Projections); err != nil {
+			return err
+		}
 		if err := dataprotection.ProtectQueryResultSource(result, source, action, rules, dataprotection.SubjectReference{}); err != nil {
 			return fmt.Errorf("protect table result: %w", err)
 		}
 		return nil
 	}}, nil
+}
+
+// A successful read admission does not extend a projection's lifetime. Check
+// every bound source before transforming any output, including empty pages.
+func validateOutputProjections(projections []dataprotection.Projection) error {
+	now := time.Now().UTC()
+	for _, projection := range projections {
+		if err := projection.Validate(now); err != nil {
+			return fmt.Errorf("%w: %w", dataprotection.ErrDenied, err)
+		}
+	}
+	return nil
 }
 
 // RequireCatalogPathUnmanaged gates one concrete provider-owned DataItem leaf.

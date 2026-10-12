@@ -3,11 +3,13 @@ package protection
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
@@ -145,5 +147,57 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 	}
 	if phone != "136****4499" {
 		t.Fatalf("query-exported phone = %q, want masked value", phone)
+	}
+
+	for _, querySource := range []bool{false, true} {
+		t.Run(fmt.Sprintf("expired_query_%t", querySource), func(t *testing.T) {
+			expiredStore := transferProjectionStore(t)
+			installActiveTransferProjectionForComponentAt(t, expiredStore, model, sourcePath, fields, dataprotection.Component{
+				Key: "phone", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}, ValueType: string(datatype.FieldTypeString),
+			}, time.Now().UTC().Add(-2*time.Hour))
+			bound, err := NewGate(expiredStore, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "postgresql"}}).PrepareBoundedTableProtection(ctx, 7, map[string]interface{}{
+				"source": map[string]interface{}{"locator": fmt.Sprintf("addp://engine/11/path/%s/%s?type=table", schema, sourceTable)},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			export, err := executor.NewTableTransferExecutor("postgresql", "postgresql", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			export.SourceProtector = bound
+			plan := executor.TableTransferPlan{
+				Source: executor.TableSourcePlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: sourcePath, TableInfo: &datatype.TableInfo{Name: sourceTable, Fields: fields}},
+				Target: executor.TableTargetPlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: targetPath}, BatchSize: 10,
+			}
+			if querySource {
+				plan.Source = executor.TableSourcePlan{
+					Kind: executor.TableEndpointQuery, ConnInfo: connInfo,
+					RuntimeQuery:         &plugin.QueryRequest{EngineID: 11, Language: "sql", Query: query, TargetPath: &sourcePath, Options: plugin.QueryOptions{ReadOnly: true, Parameters: map[string]interface{}{"p1": 1}}},
+					ExpectedQueryReadSet: expectedQueryReadSet, QueryInputs: []executor.TableQueryInput{{Port: "source", Path: sourcePath}},
+					TableInfo: &datatype.TableInfo{Name: sourceTable, Fields: queryFields},
+				}
+				plan.Target.Path = queryTargetPath
+			}
+			metrics, err := export.Execute(ctx, plan)
+			if !errors.Is(err, dataprotection.ErrDenied) || metrics != nil && metrics.RecordsWritten != 0 {
+				t.Fatalf("expired export must deny with zero writes: error=%v, metrics=%+v", err, metrics)
+			}
+			target := targetTable
+			column := "phone"
+			if querySource {
+				target, column = queryTargetTable, "contact_phone"
+			}
+			var count int
+			if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM "%s"."%s"`, schema, target)).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 1 {
+				t.Fatalf("expired export changed physical target row count: %d", count)
+			}
+			if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT "%s" FROM "%s"."%s" WHERE id = 1`, column, schema, target)).Scan(&phone); err != nil || phone != "136****4499" {
+				t.Fatalf("expired export changed previously protected target data: error=%v", err)
+			}
+		})
 	}
 }
