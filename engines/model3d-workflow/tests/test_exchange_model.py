@@ -44,6 +44,34 @@ def test_static_exchange_operator_uses_mesh_converter_and_publishes(tmp_path, so
 
 
 @pytest.mark.parametrize("source_format", ["dae", "3ds"])
+def test_invalid_mesh_output_keeps_converter_diagnostics_and_previous_artifact(tmp_path, caplog, source_format):
+    from .glb_fixture import triangle_doc
+    source = tmp_path / f"model.{source_format}"
+    source.write_bytes(dae() if source_format == "dae" else three_ds())
+    (tmp_path / "texture.png").write_bytes(b"texture")
+    target = tmp_path / "previous.glb"
+    target.write_bytes(b"previous valid artifact")
+    plan = directory_plan(tmp_path, target, source_format, "glb", entrypoint=source.name)
+    plan["target"]["write_mode"] = "replace"
+
+    def runner(command, timeout_seconds):
+        doc, binary = triangle_doc("PNG")
+        doc["images"][0]["uri"] = "texture.png"
+        Path(command[-2]).write_bytes(glb_bytes(doc, binary))
+        return CommandResult(0, stdout="x" * 6000 + "embed diagnostic", stderr="texture diagnostic")
+
+    with pytest.raises(ConverterError) as error:
+        invoke_operator(f"{source_format}_to_glb", {"access_plan": plan}, runner=runner)
+    assert error.value.error_code == "INVALID_GLB"
+    assert target.read_bytes() == b"previous valid artifact"
+    assert "Mesh GLB validation failed" in caplog.text
+    assert f"source_format={source_format}" in caplog.text
+    assert "embed diagnostic" in caplog.text
+    assert "texture diagnostic" in caplog.text
+    assert "x" * 4097 not in caplog.text
+
+
+@pytest.mark.parametrize("source_format", ["dae", "3ds"])
 @pytest.mark.parametrize("ref", ["missing.png", "Texture.PNG", "../texture.png", "/texture.png", "https://example.test/a.png", "texture.tga"])
 def test_references_are_exact_local_and_supported(tmp_path, source_format, ref):
     source = tmp_path / f"model.{source_format}"

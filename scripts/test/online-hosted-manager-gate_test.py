@@ -78,7 +78,15 @@ class HostedManagerGateTest(unittest.TestCase):
         docker = self.host.bin / 'docker'
         docker.write_text(docker.read_text().replace('["python","api_server.py"]', '["sh","container_entrypoint.sh"]')
                           .replace('ADDP_TEST_PREEXIST_CONTAINER', 'ADDP_TEST_EXISTING_CONTAINER')
-                          .replace("echo '[\"sh\",\"container_entrypoint.sh\"]'", "if [ \"$4\" = addp-manager-model3d-runtime ]; then echo '[\"python\",\"api_server.py\"]'; else echo '[\"sh\",\"container_entrypoint.sh\"]'; fi"))
+                          .replace("echo '[\"sh\",\"container_entrypoint.sh\"]'", "if [ \"$4\" = addp-manager-model3d-runtime ]; then echo '[\"python\",\"api_server.py\"]'; else echo '[\"sh\",\"container_entrypoint.sh\"]'; fi")
+                          .replace('case "$1 $2" in', '''
+            if [ "$1" = logs ]; then
+              echo "runtime-logs:$2" >> "$ADDP_TEST_GATE_TRACE"
+              echo "runtime diagnostic for $2"
+              [ "$2" != addp-manager-model3d-runtime ] || [ "${ADDP_TEST_MODEL3D_LOG_FAIL:-0}" != 1 ] || exit 1
+              exit 0
+            fi
+            case "$1 $2" in''', 1))
         self.host._write_repository_script('business/scripts/online-raster-minio-fixture.py', """
             import os, sys
             assert sys.argv[1] == 'manager-seed'
@@ -130,6 +138,17 @@ class HostedManagerGateTest(unittest.TestCase):
         self.assertIn("docker-rm:addp-manager-model3d-runtime", trace)
         self.assertIn("infra-down", trace)
         self.assertFalse(self.host.secrets.exists())
+        self.assertIn("runtime diagnostic for addp-manager-model3d-runtime",
+                      (self.host.artifacts / "model3d-runtime.log").read_text())
+
+    def test_model3d_log_failure_still_cleans_all_owned_resources(self):
+        result = self.run_gate(ADDP_TEST_MODEL3D_LOG_FAIL="1")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        for item in ("docker-rm:addp-manager-model3d-runtime", "source-fixture:stop", "infra-down"):
+            self.assertIn(item, trace)
+        self.assertFalse(self.host.secrets.exists())
+        self.assertIn("cleanup=failed", (self.host.artifacts / "summary.txt").read_text())
 
     def test_run_identity_is_required_before_starting_runtime(self):
         for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"):
@@ -157,6 +176,10 @@ class HostedManagerGateTest(unittest.TestCase):
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
         self.assertFalse((self.host.repository / ".env").exists())
+        self.assertIn("runtime diagnostic for addp-manager-model3d-runtime",
+                      (self.host.artifacts / "model3d-runtime.log").read_text())
+        self.assertLess(trace.index("runtime-logs:addp-manager-model3d-runtime"),
+                        trace.index("docker-rm:addp-manager-model3d-runtime"))
         witness = (self.host.root / "runtime-secret-witness.env").read_text()
         evidence = result.stdout + result.stderr + "".join(
             path.read_text() for path in self.host.artifacts.rglob("*") if path.is_file()

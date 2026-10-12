@@ -170,7 +170,9 @@ engines/model3d-workflow/.venv/bin/python -m pip install -r engines/model3d-work
 make test-model3d-workflow
 ```
 
-DAE / 3DS 的源引用必须是模型目录内大小写一致的相对路径，缺失贴图、动画及复杂贴图明确拒绝。全部单体 GLB 快显转换产物发布前统一校验容器结构、自包含资源、PNG/JPEG 实际解码，以及网格索引编码、对齐、范围和绘制数量；稀疏索引按替换后的有效值校验。转换器退出码为零不代表校验通过，校验失败时保留已有快显文件。该确定性门禁通过根 `make test-model3d-workflow`、`make test-module MODULE=engines` 和 Platform CI 注册；真实转换器及整个平台快显验收属于另行执行的集成验证。
+DAE / 3DS 的源引用必须是模型目录内大小写一致的相对路径，缺失贴图、动画及复杂贴图明确拒绝。全部单体 GLB 快显转换产物发布前统一校验容器结构、自包含资源、PNG/JPEG 实际解码，以及网格索引编码、对齐、范围和绘制数量；稀疏索引按替换后的有效值校验。转换器退出码为零不代表校验通过，校验失败时保留已有快显文件。 图片 URI 校验失败的诊断仅记录图片索引、URI 类型／长度及是否存在 bufferView，不输出 URI 内容；mesh 输出校验失败时在 Runtime 日志保留有界的转换器 stdout／stderr。Manager Hosted 退出前收集属于该 suite 的 Model3D Runtime 日志，再销毁容器；日志收集失败仍执行其余清理并使验收失败。受影响门禁为现有 `make test-model3d-workflow`、`make test-manager-online-runner` 及产品构建／Manager Hosted 编排，现有路径登记覆盖这些改动，无新增依赖或入口。该确定性门禁通过根 `make test-model3d-workflow`、`make test-module MODULE=engines` 和 Platform CI 注册；真实转换器及整个平台快显验收属于另行执行的集成验证。
+
+2026-10-13 失败诊断门禁：`make test-model3d-workflow` 的 278 项测试通过（实际使用现有 Python 3.12 `venv`；标准入口覆盖新增测试），新增六项先复现 URI 诊断缺失和转换器输出未记录，再验证非法产物继续拒绝、旧文件保留、URI 内容不进入诊断以及日志长度有界。`make test-manager-online-runner` 的 70 项 Python 测试及 Go 身份工具通过；新用例先复现 Model3D 日志丢失及日志收集失败未导致验收失败，再核对成功／失败出口均收集日志、日志早于容器删除、日志失败仍完成其余清理。`make test-changed` 因 `MANAGER_POSTGRES_TEST_DSN` 缺失在 T2 预检中止，未执行数据库测试；完整 Linux 产品镜像和 Hosted 复验沿用已有 CI 门禁，尚未验证的结果不计为通过。以上为诊断能力验证，不宣称已解决 Hosted 的 DAE 非自包含产物问题。
 
 DAE / 3DS 的基础颜色贴图还必须关联到网格实际使用的材质和有效 `TEXCOORD_n`：仅嵌入图片、未绑定材质、UV 缺失、顶点数不匹配或越界，都不能发布为成功产物。发布失败保留之前有效的目标文件。
 

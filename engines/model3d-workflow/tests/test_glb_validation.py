@@ -410,6 +410,23 @@ def test_real_embedded_image_is_decoded(tmp_path, encoding):
     validate_glb(path)
 
 
+@pytest.mark.parametrize("uri", ["", "private-texture.png", "https://example.test/image?token=private", None])
+def test_image_uri_failure_reports_shape_without_uri_content(tmp_path, uri):
+    doc, binary = triangle_doc("PNG")
+    doc["images"][0]["uri"] = uri
+    path = tmp_path / "invalid.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError, match="GLB images must be embedded without URI") as error:
+        validate_glb(path)
+    message = str(error.value)
+    assert "image_index=0" in message
+    assert f"uri_type={type(uri).__name__}" in message
+    assert f"uri_length={len(uri) if isinstance(uri, str) else 'n/a'}" in message
+    assert "buffer_view_present=True" in message
+    if uri:
+        assert uri not in message
+
+
 @pytest.mark.parametrize("failure", ["external_buffer", "external_image", "mime_mismatch", "tga",
                                      "corrupt_image", "out_of_bounds_view", "empty_mesh", "bad_accessor"])
 def test_invalid_artifact_never_replaces_published_target(tmp_path, failure):

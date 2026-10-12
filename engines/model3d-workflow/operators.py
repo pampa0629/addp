@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import copy
 import json
+import logging
 import shutil
 import struct
 import subprocess
@@ -798,7 +799,14 @@ def _mesh_model_to_glb(
                 http_status=500,
             )
 
-        doc = _validate_glb_artifact(target_file, basic_static=source_label.lower() in {"dae", "3ds"})
+        try:
+            doc = _validate_glb_artifact(target_file, basic_static=source_label.lower() in {"dae", "3ds"})
+        except ConverterError:
+            logging.getLogger(__name__).error(
+                "Mesh GLB validation failed: source_format=%s stdout=%s stderr=%s",
+                source_label.lower(), result.stdout[-4096:], result.stderr[-4096:],
+            )
+            raise
         if source_texture_refs:
             uses_color_texture = any(
                 "material" in primitive and doc["materials"][primitive["material"]].get("pbrMetallicRoughness", {}).get("baseColorTexture")

@@ -32,6 +32,10 @@ stop_online_fixture() {
       cleanup_status=1
     fi
   fi
+  if docker container inspect addp-manager-model3d-runtime >/dev/null 2>&1 &&
+    [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-runtime" }}' addp-manager-model3d-runtime)" = "$ONLINE_SUITE" ]; then
+    run_logged docker logs addp-manager-model3d-runtime > "$ADDP_ONLINE_ARTIFACT_DIR/model3d-runtime.log" || cleanup_status=1
+  fi
   remove_online_product_container addp-manager-model3d-runtime || cleanup_status=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh stop || cleanup_status=1
   run_logged docker rm -fv addp-manager-online-registry || cleanup_status=1

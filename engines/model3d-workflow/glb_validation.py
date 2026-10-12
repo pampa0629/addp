@@ -274,9 +274,15 @@ def validate_glb(path: Path, *, basic_static: bool = False) -> dict[str, Any]:
         if offset + length > size:
             raise ValueError("bufferView exceeds embedded buffer")
     images = _entries(doc, "images")
-    for image in images:
+    for image_index, image in enumerate(images):
         if "uri" in image:
-            raise ValueError("GLB images must be embedded without URI")
+            uri = image["uri"]
+            raise ValueError(
+                "GLB images must be embedded without URI: "
+                f"image_index={image_index}, uri_type={type(uri).__name__}, "
+                f"uri_length={len(uri) if isinstance(uri, str) else 'n/a'}, "
+                f"buffer_view_present={'bufferView' in image}"
+            )
         view = _index(image.get("bufferView"), views, "image.bufferView")
         mime = image.get("mimeType")
         expected = {"image/png": "PNG", "image/jpeg": "JPEG"}.get(mime)
