@@ -758,7 +758,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/security-mysql-owner-protection-online.py", '"target_empty_before_and_after"', "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"query_output_lineage_unresolved"', "must dispatch and validate"),
             ("business/scripts/online-security-owner-fixture.sh", "addp_online_security.mongodb_query_denied", "fixture contract is missing"),
-            ("scripts/test/security-mysql-owner-protection-online.py", '"addp.security-mysql-owner-protection-online/v8"', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", '"addp.security-mysql-owner-protection-online/v9"', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'outage = exercise_owner_unavailability(', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'case["security_unavailability"] = exercise_owner_unavailability(', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'owner_processes_unchanged', "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", 'SUPPORT.run_security_lifecycle(repository, "stop", deadline)', "must dispatch and validate"),
+
             ("business/scripts/online-security-owner-fixture.sh", 'sourceVersion: NumberLong("9007199254740993")', "fixture contract is missing"),
             ("scripts/test/security-mysql-owner-protection-online.py", 'item_term="collection"', "owner contract is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN", "Hosted profile is missing"),

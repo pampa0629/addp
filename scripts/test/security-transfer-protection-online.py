@@ -6,9 +6,11 @@ from __future__ import annotations
 import json
 import os
 import sys
+import subprocess
+import socket
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -629,6 +631,42 @@ def require_hosted_security_lifecycle(repository: Path) -> None:
         path = Path(required_environment(key))
         if not path.is_absolute() or path.resolve().is_relative_to(repository.resolve()):
             raise SuiteError("Security lifecycle requires external evidence and credentials: " + key)
+
+
+def run_security_lifecycle(repository: Path, operation: str, deadline: float) -> None:
+    require_hosted_security_lifecycle(repository)
+    if operation not in {"stop", "start"}:
+        raise SuiteError("Security outage only permits the standard stop/start lifecycle")
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise SuiteError("Security outage lifecycle exceeded the Online deadline")
+    # Restored daemons must not inherit fixture Users' login credentials.
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(("ADDP_ONLINE_TEST_USER_", "ADDP_ONLINE_TEST_APPROVER_", "ADDP_ONLINE_FIXTURE_"))}
+    environment["SKIP_MODTIDY"] = "1"
+    log_path = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "security-unavailability-lifecycle.log"
+    with log_path.open("a", encoding="utf-8") as log:
+        log_path.chmod(0o600)
+        try:
+            result = subprocess.run(["bash", f"scripts/dev/{operation}.sh", "-security"],
+                cwd=repository, env=environment, stdout=log, stderr=subprocess.STDOUT,
+                timeout=remaining, check=False)
+        except subprocess.TimeoutExpired as error:
+            raise SuiteError("Security outage lifecycle timed out; Hosted exit cleanup must run") from error
+    if result.returncode != 0:
+        raise SuiteError("Security outage lifecycle failed; see security-unavailability-lifecycle.log")
+
+
+def security_listener_refused() -> str:
+    # Admission fixes SECURITY_URL to this Hosted-only loopback listener.
+    try:
+        with socket.create_connection(("127.0.0.1", 8194), timeout=3):
+            pass
+    except ConnectionRefusedError:
+        return datetime.now(timezone.utc).isoformat()
+    except OSError as error:
+        raise SuiteError("Security outage probe did not prove a refused listener") from error
+    raise SuiteError("Security Backend is still listening during the outage")
 
 
 def ready_process(module: str) -> dict[str, str]:

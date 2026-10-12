@@ -553,12 +553,13 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
             '"scope": "history"', "protected_other_subject", "expired_without_security_refresh",
             "revoked_applicant", "revoked_approval_history", 'addp.security-plaintext-access-online/v4', 'validate_plaintext_browser_report(', 'run_plaintext_browser(', 'report["browser"] = run_plaintext_browser(',
             'outage = exercise_security_unavailability(', 'SUPPORT.require_hosted_security_lifecycle(repository)',
-            'run_security_lifecycle(repository, "stop", deadline)', 'run_security_lifecycle(repository, "start", deadline)',
-            'finally:', 'security_listener_refused()', 'connection_refusals', 'manager_process_unchanged',
-            'ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_TEST_APPROVER_', 'ADDP_ONLINE_FIXTURE_',
+            'SUPPORT.run_security_lifecycle(repository, "stop", deadline)', 'SUPPORT.run_security_lifecycle(repository, "start", deadline)',
+            'finally:', 'SUPPORT.security_listener_refused()', 'connection_refusals', 'manager_process_unchanged',
         ),
         "scripts/test/security-transfer-protection-online.py": (
             'def require_hosted_security_lifecycle(', 'def ready_process(', 'def verify_restarted_process(',
+            'def run_security_lifecycle(', 'def security_listener_refused(',
+            'ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_TEST_APPROVER_', 'ADDP_ONLINE_FIXTURE_',
             'a disposable Hosted Linux checkout without .env', 'registration_state', 'source_fingerprint',
         ),
         "system/backend/cmd/online-test-fixture/main.go": ("plaintextApplicantPermissions", "plaintextApproverPermissions", "external-online-plaintext-approver", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN", "ADDP_ONLINE_TEST_APPROVER_USERNAME", "ADDP_ONLINE_TEST_APPROVER_PASSWORD"),
@@ -702,7 +703,12 @@ def validate_security_mysql_owner_protection_profile(
                      '"target_empty_before_and_after"', '"query_output_lineage_unresolved"',
                      "verify_mongodb_raw_export(", '"raw_record_export"', '"export_during_manager_policy"',
                      "canonical_int64_preserved=True",
-                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v8"'):
+                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v9"',
+                     'outage = exercise_owner_unavailability(', 'case["security_unavailability"] = exercise_owner_unavailability(',
+                     'verify_mysql_outage_transfer(', 'SUPPORT.run_security_lifecycle(repository, "stop", deadline)',
+                     'SUPPORT.run_security_lifecycle(repository, "start", deadline)', 'finally:',
+                     'SUPPORT.security_listener_refused()', 'owner_processes_unchanged', 'target_empty_before',
+                     'same_user_verified', 'target_output_verified'):
         if fragment not in owner:
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")

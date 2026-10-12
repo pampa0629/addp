@@ -8,7 +8,6 @@ import importlib.util
 import json
 import os
 import subprocess
-import socket
 import sys
 import time
 import urllib.parse
@@ -404,42 +403,6 @@ def verify_approval_history(approver: GatewayClient, request_id: str, authorizat
 
 
 
-def run_security_lifecycle(repository: Path, operation: str, deadline: float) -> None:
-    SUPPORT.require_hosted_security_lifecycle(repository)
-    if operation not in {"stop", "start"}:
-        raise SuiteError("Security outage only permits the standard stop/start lifecycle")
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        raise SuiteError("Security outage lifecycle exceeded the Online deadline")
-    # Restored daemons must not inherit fixture Users' login credentials.
-    environment = {key: value for key, value in os.environ.items()
-                   if not key.startswith(("ADDP_ONLINE_TEST_USER_", "ADDP_ONLINE_TEST_APPROVER_", "ADDP_ONLINE_FIXTURE_"))}
-    environment["SKIP_MODTIDY"] = "1"
-    log_path = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "security-unavailability-lifecycle.log"
-    with log_path.open("a", encoding="utf-8") as log:
-        log_path.chmod(0o600)
-        try:
-            result = subprocess.run(["bash", f"scripts/dev/{operation}.sh", "-security"],
-                cwd=repository, env=environment, stdout=log, stderr=subprocess.STDOUT,
-                timeout=remaining, check=False)
-        except subprocess.TimeoutExpired as error:
-            raise SuiteError("Security outage lifecycle timed out; Hosted exit cleanup must run") from error
-    if result.returncode != 0:
-        raise SuiteError("Security outage lifecycle failed; see security-unavailability-lifecycle.log")
-
-
-def security_listener_refused() -> str:
-    # Admission fixes SECURITY_URL to this Hosted-only loopback listener.
-    try:
-        with socket.create_connection(("127.0.0.1", 8194), timeout=3):
-            pass
-    except ConnectionRefusedError:
-        return datetime.now(timezone.utc).isoformat()
-    except OSError as error:
-        raise SuiteError("Security outage probe did not prove a refused listener") from error
-    raise SuiteError("Security Backend is still listening during the outage")
-
-
 def wait_for_grant_expiry(expires_at: datetime, deadline: float) -> None:
     while datetime.now(timezone.utc) <= expires_at + timedelta(seconds=1):
         remaining = deadline - time.monotonic()
@@ -474,7 +437,7 @@ def exercise_security_unavailability(applicant: GatewayClient, approver: Gateway
     refusals: list[dict[str, str]] = []
     previews: dict[str, object] = {}
     try:
-        run_security_lifecycle(repository, "stop", deadline)
+        SUPPORT.run_security_lifecycle(repository, "stop", deadline)
         for phase, consumer, expected in (
             ("authorized_applicant", applicant, RAW_VALUES),
             ("protected_other_subject", approver, MASKED_VALUES),
@@ -488,17 +451,17 @@ def exercise_security_unavailability(applicant: GatewayClient, approver: Gateway
                 raise SuiteError("Security outage previews exceeded the Online deadline")
             if active and datetime.now(timezone.utc) >= expires_at:
                 raise SuiteError("outage grant expired before its active preview was verified")
-            refusals.append({"phase": phase, "boundary": "before", "observed_at": security_listener_refused()})
+            refusals.append({"phase": phase, "boundary": "before", "observed_at": SUPPORT.security_listener_refused()})
             # One real request: retries could hide an incorrect protected output.
             previews[phase] = manager_evidence(consumer, locator, expected, phase)
-            refusals.append({"phase": phase, "boundary": "after", "observed_at": security_listener_refused()})
+            refusals.append({"phase": phase, "boundary": "after", "observed_at": SUPPORT.security_listener_refused()})
             if active and datetime.now(timezone.utc) >= expires_at:
                 raise SuiteError("outage grant expired during its active preview")
             if SUPPORT.ready_process("manager") != manager_before:
                 raise SuiteError("Manager process changed during the Security outage")
     finally:
         # A partially failed stop still needs recovery; outer cleanup remains mandatory.
-        run_security_lifecycle(repository, "start", deadline)
+        SUPPORT.run_security_lifecycle(repository, "start", deadline)
     security_after = SUPPORT.ready_process("security")
     SUPPORT.verify_restarted_process("security", security_before, security_after)
     if SUPPORT.ready_process("manager") != manager_before:

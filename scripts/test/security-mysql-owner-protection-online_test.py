@@ -464,11 +464,15 @@ class MongoAlgorithmTest(unittest.TestCase):
              patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "7"}), \
              patch.object(ONLINE.SUPPORT, "ready_process", side_effect=[process(), process(), process(True), process(True)]), \
              patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=0)), \
+             patch.object(ONLINE, "exercise_owner_unavailability", side_effect=lambda client, tenant, probes, deadline:
+                 {"outputs": {name: probe() for name, probe in probes.items()}}) as outage, \
              patch.object(ONLINE, "wait_for_scan", return_value="mongo-scan") as scan:
             prepared = ONLINE.prepare_mongodb_source(client, 29, time.monotonic() + 60)
             targets = ONLINE.prepare_mongodb_transfer_targets(client, 17, time.monotonic() + 60)
             result = ONLINE.exercise_mongodb_algorithms(client, 29, prepared, targets, time.monotonic() + 60, 60)
             self.assertEqual(scan.call_count, 2)
+            outage.assert_called_once()
+            self.assertEqual(set(outage.call_args.args[2]), {"develop", "develop_query_boundaries", "transfer", "derived_transfer_denied"})
             return result
 
     def test_three_algorithms_nested_policy_and_restart_restore_without_rescan(self):
@@ -493,9 +497,9 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertTrue(report["initial_technical_field_search"]["same_item_verified"])
         self.assertTrue(all(case["develop"]["sparse_objects_verified"] for case in report["cases"]))
         self.assertEqual(len(client.export_requests), 4)
-        self.assertEqual(len(client.transfer_requests), 8)
-        self.assertEqual(client.transfer_deleted, set(range(101, 109)))
-        self.assertEqual(report["query_transfer_cleanup"], {"created_tasks": 8, "deleted_tasks": 8, "residual_tasks": 0})
+        self.assertEqual(len(client.transfer_requests), 10)
+        self.assertEqual(client.transfer_deleted, set(range(101, 111)))
+        self.assertEqual(report["query_transfer_cleanup"], {"created_tasks": 10, "deleted_tasks": 10, "residual_tasks": 0})
         control_query = client.transfer_requests[0]["config"]["source"]["query"]
         for payload in client.transfer_requests:
             if payload["config"]["target"]["name"] == ONLINE.MONGODB_TRANSFER_TARGETS[2]:
@@ -510,9 +514,9 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertEqual([case["query_boundaries"]["count"] for case in report["cases"]], [7, 7, 7])
         self.assertTrue(all(case["query_boundaries"]["derived_output_denied"] for case in report["cases"]))
         self.assertTrue(report["cases"][0]["develop_during_manager_policy"]["null_values_preserved"])
-        self.assertEqual(sum("find" in query for query in client.query_requests), 4)
-        self.assertEqual(sum("count" in query for query in client.query_requests), 3)
-        self.assertEqual(sum("aggregate" in query for query in client.query_requests), 4)
+        self.assertEqual(sum("find" in query for query in client.query_requests), 5)
+        self.assertEqual(sum("count" in query for query in client.query_requests), 4)
+        self.assertEqual(sum("aggregate" in query for query in client.query_requests), 5)
         self.assertEqual([body["allowed_algorithms"] for body in client.baseline_updates], [
             [ONLINE.STRUCTURED_MASK_ALGORITHM, ONLINE.CONSTANT_ALGORITHM, ONLINE.SM3_ALGORITHM],
             [ONLINE.CONSTANT_ALGORITHM, ONLINE.SM3_ALGORITHM],
@@ -624,6 +628,104 @@ class MongoAlgorithmTest(unittest.TestCase):
             if mutation == "duplicate": rows[-1] = rows[0]
             with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.assert_mongodb_rows(rows, "manager", expected)
+
+
+
+class OwnerUnavailabilityTest(unittest.TestCase):
+    def exercise(self, fail=None):
+        events = []
+        self.events = events
+        process = {"instance_id": "00000000-0000-4000-8000-000000000001",
+                   "started_at": "2026-10-12T00:00:00Z", "build_id": "build",
+                   "git_commit": "commit", "source_fingerprint": "source"}
+        newer = dict(process, instance_id="00000000-0000-4000-8000-000000000002",
+                     started_at="2026-10-12T00:02:00Z")
+        stopped = [False]
+        def lifecycle(repo, operation, deadline):
+            events.append(operation)
+            stopped[0] = operation == "stop"
+            if fail == operation:
+                raise ONLINE.SuiteError(operation + " failure")
+        def ready(module):
+            if module == "security" and events:
+                return newer if fail != "build" else dict(newer, build_id="other")
+            if fail == "process" and stopped[0] and module == "develop":
+                return newer
+            return process
+        def refusal():
+            events.append("refused")
+            if fail == "probe":
+                raise ONLINE.SuiteError("listener reachable")
+            return "2026-10-12T00:01:00Z"
+        def output(name):
+            events.append(name)
+            self.assertTrue(stopped[0])
+            if fail == name:
+                raise ONLINE.SuiteError("incorrect protected output")
+            return {"rows": 5, "email_field_present": False}
+        identity = {"principal_id": "7", "tenant_id": "2"}
+        with patch.object(ONLINE.SUPPORT, "require_hosted_security_lifecycle"), \
+             patch.object(ONLINE.SUPPORT, "run_security_lifecycle", side_effect=lifecycle), \
+             patch.object(ONLINE.SUPPORT, "security_listener_refused", side_effect=refusal), \
+             patch.object(ONLINE.SUPPORT, "ready_process", side_effect=ready), \
+             patch.object(ONLINE, "validate_user_identity", side_effect=[identity, {} if fail == "identity" else identity]):
+            return ONLINE.exercise_owner_unavailability(Mock(), 2,
+                {name: lambda name=name: output(name) for name in ("develop", "service", "transfer")},
+                time.monotonic() + 60)
+
+    def test_real_outputs_are_bracketed_by_refusals_and_restored_without_owner_restart(self):
+        result = self.exercise()
+        self.assertEqual(self.events, ["stop", "refused", "develop", "refused",
+            "refused", "service", "refused", "refused", "transfer", "refused", "start"])
+        self.assertEqual(len(result["connection_refusals"]), 6)
+        self.assertEqual(set(result["outputs"]), {"develop", "service", "transfer"})
+        self.assertEqual(set(result["owner_processes"]), set(ONLINE.OWNER_ACTIONS))
+        self.assertTrue(result["owner_processes_unchanged"])
+        self.assertTrue(result["same_user_verified"])
+
+    def test_failure_never_skips_recovery_or_becomes_success(self):
+        for failure in ("stop", "probe", "develop", "service", "transfer", "process", "start", "build", "identity"):
+            with self.subTest(failure=failure), self.assertRaises(ONLINE.SuiteError):
+                self.exercise(failure)
+            self.assertEqual(self.events[-1], "start")
+
+
+
+class MySQLOutageTransferTest(unittest.TestCase):
+    def transfer(self, mutation=None):
+        execution = {"execution_id": str(uuid.uuid4()), "task_id": 81, "trigger_by": 7,
+                     "status": "success", "records_read": 5, "records_written": 5}
+        mutations = {"uuid": ("execution_id", "invalid"), "task": ("task_id", 82),
+                     "user": ("trigger_by", 9), "status": ("status", "failed"),
+                     "read": ("records_read", 0), "written": ("records_written", 0)}
+        if mutation in mutations:
+            key, value = mutations[mutation]
+            execution[key] = value
+        rows = [{"id": i, "customer_code": "CUST-1000" + str(i)} for i in range(1, 6)]
+        if mutation == "plaintext": rows[0]["email"] = "fixture@example.test"
+        if mutation == "duplicate": rows.append(dict(rows[0]))
+        if mutation == "neighbor": rows[0]["customer_code"] = "wrong"
+        before = (["id"], [] if mutation != "stale" else [{"id": 1}])
+        with patch.object(ONLINE, "preview_rows", side_effect=[before, (["id", "customer_code"], rows)]), \
+             patch.object(ONLINE, "create_and_run_task", return_value=(81, execution)) as run, \
+             patch.object(ONLINE, "wait_for_scan", return_value="scan"), \
+             patch.object(ONLINE, "find_item", return_value={"id": 1, "full_name": "addp_online_security.mysql_email_transfer", "item_type": "table"}):
+            result = ONLINE.verify_mysql_outage_transfer(Mock(), 17, "source", "parent", "target",
+                "outage", {"principal_id": "7"}, time.monotonic() + 60, [])
+            self.assertEqual(run.call_args.args[1]["config"]["transforms"], [])
+            return result
+
+    def test_requires_real_execution_and_new_target_output_without_field_dropping(self):
+        result = self.transfer()
+        self.assertEqual(result["records_written"], 5)
+        self.assertTrue(result["target_empty_before"])
+        self.assertTrue(result["target_output_verified"])
+        self.assertTrue(result["same_user_verified"])
+
+    def test_stale_target_plaintext_or_wrong_provenance_cannot_pass(self):
+        for mutation in ("uuid", "task", "user", "status", "read", "written", "plaintext", "duplicate", "neighbor", "stale"):
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                self.transfer(mutation)
 
 
 class RestartRecoveryTest(unittest.TestCase):

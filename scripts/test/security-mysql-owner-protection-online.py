@@ -18,7 +18,7 @@ import time
 import urllib.parse
 import uuid
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 
 SUPPORT_PATH = Path(__file__).with_name("security-transfer-protection-online.py")
@@ -578,7 +578,7 @@ def assert_email_suppressed(
     if "email" in column_list or any("email" in row for row in rows):
         raise SuiteError(f"{owner} exposed the suppressed email field")
     ids = {normalize_id(row.get("id")) for row in rows if row.get("id") is not None}
-    if ids != EXPECTED_IDS:
+    if len(rows) != 5 or ids != EXPECTED_IDS:
         raise SuiteError(f"{owner} did not return the five expected non-sensitive rows")
     return {"rows": len(rows), "email_field_present": False}
 
@@ -919,6 +919,75 @@ def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mappin
                         "same_item_verified": True}
         time.sleep(min(1, max(0, deadline - time.monotonic())))
     raise SuiteError(f"protected technical field was not searchable before the deadline: Engine {engine_id}, {item.get('full_name')}, {field_name}")
+
+
+def exercise_owner_unavailability(client: GatewayClient, tenant_id: int,
+                                  probes: Mapping[str, Callable[[], dict[str, object]]], deadline: float) -> dict[str, object]:
+    repository = Path(__file__).resolve().parents[2]
+    SUPPORT.require_hosted_security_lifecycle(repository)
+    identity = validate_user_identity(client, tenant_id)
+    security_before = SUPPORT.ready_process("security")
+    owners_before = {owner: SUPPORT.ready_process(owner) for owner in OWNER_ACTIONS}
+    outputs: dict[str, object] = {}
+    refusals: list[dict[str, str]] = []
+    try:
+        SUPPORT.run_security_lifecycle(repository, "stop", deadline)
+        for name, probe in probes.items():
+            if time.monotonic() >= deadline:
+                raise SuiteError("Owner outage output exceeded the Online deadline")
+            refusals.append({"phase": name, "boundary": "before", "observed_at": SUPPORT.security_listener_refused()})
+            # Never retry an incorrect output or a failed execution.
+            outputs[name] = probe()
+            refusals.append({"phase": name, "boundary": "after", "observed_at": SUPPORT.security_listener_refused()})
+            if time.monotonic() >= deadline:
+                raise SuiteError("Owner outage output exceeded the Online deadline")
+            if any(SUPPORT.ready_process(owner) != before for owner, before in owners_before.items()):
+                raise SuiteError("Data Owner process changed during the Security outage")
+    finally:
+        SUPPORT.run_security_lifecycle(repository, "start", deadline)
+    security_after = SUPPORT.ready_process("security")
+    SUPPORT.verify_restarted_process("security", security_before, security_after)
+    if any(SUPPORT.ready_process(owner) != before for owner, before in owners_before.items()):
+        raise SuiteError("Data Owner process changed during Security restoration")
+    if validate_user_identity(client, tenant_id) != identity:
+        raise SuiteError("Security outage changed the ordinary User, Tenant or permissions")
+    return {"outputs": outputs, "connection_refusals": refusals,
+            "owner_processes": owners_before, "owner_processes_unchanged": True,
+            "security_process": {"before": security_before, "after": security_after},
+            "same_user_verified": True}
+
+
+def verify_mysql_outage_transfer(client: GatewayClient, engine_id: int, locator: str,
+                                 parent_locator: str, target_locator: str, name: str,
+                                 identity: Mapping[str, object], deadline: float,
+                                 tasks: list[int]) -> dict[str, object]:
+    columns, rows = preview_rows(client, target_locator)
+    if columns != ["id"] or rows:
+        raise SuiteError("MySQL outage Transfer target must start empty with its fixture schema")
+    task_id, execution = create_and_run_task(client,
+        transfer_payload(name, locator, parent_locator), deadline, tasks)
+    execution_id = execution.get("execution_id")
+    try:
+        if str(uuid.UUID(str(execution_id))) != execution_id:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as error:
+        raise SuiteError("MySQL outage Transfer execution UUID is invalid") from error
+    if (positive_int(execution.get("task_id"), "outage task id") != task_id
+            or positive_int(execution.get("trigger_by"), "outage initiator") != positive_int(identity["principal_id"], "ordinary User")
+            or execution.get("status") != "success"
+            or nonnegative_int(execution.get("records_read"), "outage rows read") != 5
+            or nonnegative_int(execution.get("records_written"), "outage rows written") != 5):
+        raise SuiteError("MySQL outage Transfer execution provenance or counts differ")
+    scan = wait_for_scan(client, engine_id, deadline)
+    target = find_item(client, engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table")
+    columns, rows = preview_rows(client, build_item_locator(engine_id, target))
+    evidence = assert_email_suppressed(rows, "Transfer during Security outage", columns)
+    if "customer_code" not in columns or any(row.get("customer_code") != "CUST-1000" + normalize_id(row["id"]) for row in rows):
+        raise SuiteError("MySQL outage Transfer target changed non-sensitive customer fields")
+    return {**evidence, "task_id": task_id, "execution_id": execution_id,
+            "records_read": 5, "records_written": 5, "same_user_verified": True,
+            "target_empty_before": True, "target_rescan_execution_id": scan,
+            "target_output_verified": True}
 
 
 def exercise_restart_recovery(client: GatewayClient, engine_id: int, source: Mapping[str, object],
@@ -1394,6 +1463,15 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
             case["develop"] = assert_mongodb_rows(
                 develop_rows(client, engine_id, locator, deadline, MONGODB_FIND_QUERY, "mql"), "develop", expected)
             case["raw_record_export"] = verify_mongodb_raw_export(client, locator, identity, expected, deadline)
+            if algorithm == SM3_ALGORITHM:
+                case["security_unavailability"] = exercise_owner_unavailability(client,
+                    positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"), {
+                    "develop": lambda: assert_mongodb_rows(develop_rows(client, engine_id, locator, deadline,
+                        MONGODB_FIND_QUERY, "mql"), "Develop during Security outage", expected),
+                    "develop_query_boundaries": lambda: verify_mongodb_query_boundaries(client, engine_id, locator, deadline),
+                    "transfer": lambda: verify_mongodb_query_transfer(client, locator, transfer_targets, identity, expected, deadline),
+                    "derived_transfer_denied": lambda: verify_mongodb_query_transfer(client, locator, transfer_targets, identity, None, deadline),
+                }, deadline)
             case["query_transfer"] = verify_mongodb_query_transfer(client, locator, transfer_targets, identity, expected, deadline)
             case["derived_transfer_denied"] = verify_mongodb_query_transfer(client, locator, transfer_targets, identity, None, deadline)
             if index == 0:
@@ -1433,15 +1511,17 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
     transfers = [unprotected_transfer] + [case[key] for case in evidence
         for key in ("query_transfer", "derived_transfer_denied")]
     transfers.append(evidence[0]["transfer_during_manager_policy"])
-    if (len(transfers) != 8 or len({entry["task_id"] for entry in transfers}) != 8
-            or len({entry["execution_id"] for entry in transfers}) != 8
+    transfers.extend(evidence[2]["security_unavailability"]["outputs"][key]
+                     for key in ("transfer", "derived_transfer_denied"))
+    if (len(transfers) != 10 or len({entry["task_id"] for entry in transfers}) != 10
+            or len({entry["execution_id"] for entry in transfers}) != 10
             or not all(entry["task_deleted"] for entry in transfers)):
-        raise SuiteError("MongoDB query transfers require eight distinct cleaned tasks and executions")
+        raise SuiteError("MongoDB query transfers require ten distinct cleaned tasks and executions")
     return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD,
             "unprotected_derived_query": unprotected_derived,
             "unprotected_derived_transfer": unprotected_transfer,
             "target_scan_execution_id": transfer_targets["scan_execution_id"],
-            "query_transfer_cleanup": {"created_tasks": 8, "deleted_tasks": 8, "residual_tasks": 0},
+            "query_transfer_cleanup": {"created_tasks": 10, "deleted_tasks": 10, "residual_tasks": 0},
             "initial_technical_field_search": prepared["technical_field_search"],
             "component": component,
             "scan_execution_id": scan, "enrollment_initialized": initialized,
@@ -1515,6 +1595,14 @@ def run_scenario(
         service_id = positive_int(created_service.get("id"), "Query Service id")
         service = assert_email_suppressed(service_rows(client, service_name), "service")
 
+        outage = exercise_owner_unavailability(client, tenant_id, {
+            "develop": lambda: assert_email_suppressed(
+                develop_rows(client, source_engine_id, source_locator, deadline), "Develop during Security outage"),
+            "service": lambda: assert_email_suppressed(service_rows(client, service_name), "Service during Security outage"),
+            "transfer": lambda: verify_mysql_outage_transfer(client, target_engine_id, source_locator,
+                target_parent_locator, target_locator, task_name + "_outage", identity, deadline, task_ids),
+        }, deadline)
+
         _, transfer_execution = create_and_run_task(
             client,
             transfer_payload(task_name, source_locator, target_parent_locator),
@@ -1533,7 +1621,7 @@ def run_scenario(
             raise SuiteError("Transfer target lost non-sensitive customer fields")
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v8",
+            "schema_version": "addp.security-mysql-owner-protection-online/v9",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -1552,6 +1640,7 @@ def run_scenario(
                 "assessment_initialized": assessment_initialized,
             },
             "projections": projections,
+            "security_unavailability": outage,
             "owners": {
                 "manager": manager,
                 "develop": develop,

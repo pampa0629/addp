@@ -234,7 +234,7 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
             for phase in ('pending', 'expired', 'revoked'):
                 (root / f'security-plaintext-{phase}.png').write_bytes(b'old')
             result = Mock(returncode=0, stdout='', stderr='')
-            with patch.object(ONLINE.subprocess, 'run', return_value=result):
+            with patch.object(ONLINE.SUPPORT.subprocess, 'run', return_value=result):
                 with self.assertRaisesRegex(ONLINE.SuiteError, 'missing'):
                     ONLINE.run_plaintext_browser(Path('/repo'), env, api)
             self.assertFalse(report_path.exists())
@@ -247,21 +247,21 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
                 for phase in ('pending', 'expired', 'revoked'):
                     (root / f'security-plaintext-{phase}.png').write_bytes(b'protected')
                 return result
-            with patch.object(ONLINE.subprocess, 'run', side_effect=execute):
+            with patch.object(ONLINE.SUPPORT.subprocess, 'run', side_effect=execute):
                 self.assertEqual(ONLINE.run_plaintext_browser(Path('/repo'), env, api), report)
             for phase in ('pending', 'expired', 'revoked'):
                 def missing(*args, **kwargs):
                     value = execute(*args, **kwargs)
                     (root / f'security-plaintext-{phase}.png').unlink()
                     return value
-                with patch.object(ONLINE.subprocess, 'run', side_effect=missing):
+                with patch.object(ONLINE.SUPPORT.subprocess, 'run', side_effect=missing):
                     with self.assertRaisesRegex(ONLINE.SuiteError, 'missing'):
                         ONLINE.run_plaintext_browser(Path('/repo'), env, api)
-            with patch.object(ONLINE.subprocess, 'run', return_value=Mock(returncode=1, stdout='', stderr='')):
+            with patch.object(ONLINE.SUPPORT.subprocess, 'run', return_value=Mock(returncode=1, stdout='', stderr='')):
                 with self.assertRaisesRegex(ONLINE.SuiteError, 'status 1'):
                     ONLINE.run_plaintext_browser(Path('/repo'), env, api)
             del env['ADDP_ONLINE_TEST_APPROVER_PASSWORD']
-            with patch.object(ONLINE.subprocess, 'run') as process:
+            with patch.object(ONLINE.SUPPORT.subprocess, 'run') as process:
                 with self.assertRaisesRegex(ONLINE.SuiteError, 'APPROVER_PASSWORD'):
                     ONLINE.run_plaintext_browser(Path('/repo'), env, api)
                 process.assert_not_called()
@@ -308,8 +308,8 @@ class SecurityUnavailabilityTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, 'approve_access_request', return_value=('outage-request', 'outage-grant', expiry)))
             stack.enter_context(patch.object(ONLINE, 'wait_for_manager_values', return_value={"rows": 3, "plaintext": True}))
             stack.enter_context(patch.object(ONLINE, 'wait_for_current_grant'))
-            stack.enter_context(patch.object(ONLINE, 'run_security_lifecycle', side_effect=lifecycle))
-            stack.enter_context(patch.object(ONLINE, 'security_listener_refused', side_effect=probe))
+            stack.enter_context(patch.object(ONLINE.SUPPORT, 'run_security_lifecycle', side_effect=lifecycle))
+            stack.enter_context(patch.object(ONLINE.SUPPORT, 'security_listener_refused', side_effect=probe))
             stack.enter_context(patch.object(ONLINE, 'manager_evidence', side_effect=preview))
             stack.enter_context(patch.object(ONLINE, 'wait_for_grant_expiry', side_effect=wait))
             stack.enter_context(patch.object(ONLINE, 'validate_user_identity', side_effect=[{"principal_id": "different"} if identity_changed else identities[0], identities[1]]))
@@ -336,12 +336,12 @@ class SecurityUnavailabilityTest(unittest.TestCase):
 
     def test_unavailable_probe_accepts_only_refused_listener(self):
         for error in (ConnectionRefusedError(), TimeoutError(), OSError('other transport failure'), None):
-            with self.subTest(error=error), patch.object(ONLINE.socket, 'create_connection', side_effect=error):
+            with self.subTest(error=error), patch.object(ONLINE.SUPPORT.socket, 'create_connection', side_effect=error):
                 if isinstance(error, ConnectionRefusedError):
-                    self.assertIsInstance(ONLINE.security_listener_refused(), str)
+                    self.assertIsInstance(ONLINE.SUPPORT.security_listener_refused(), str)
                 else:
                     with self.assertRaises(ONLINE.SuiteError):
-                        ONLINE.security_listener_refused()
+                        ONLINE.SUPPORT.security_listener_refused()
 
     def test_each_outage_failure_always_attempts_restoration(self):
         for options in ({'preview_error': 'authorized_applicant'}, {'preview_error': 'expired_applicant'},
@@ -355,17 +355,17 @@ class SecurityUnavailabilityTest(unittest.TestCase):
                 self.exercise(**options)
 
     def test_lifecycle_is_hosted_only_and_does_not_export_user_credentials(self):
-        with patch.dict(ONLINE.os.environ, {}, clear=True), patch.object(ONLINE.subprocess, 'run') as process:
+        with patch.dict(ONLINE.os.environ, {}, clear=True), patch.object(ONLINE.SUPPORT.subprocess, 'run') as process:
             with self.assertRaises(ONLINE.SuiteError):
-                ONLINE.run_security_lifecycle(Path('/personal'), 'stop', time.monotonic() + 60)
+                ONLINE.SUPPORT.run_security_lifecycle(Path('/personal'), 'stop', time.monotonic() + 60)
             process.assert_not_called()
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(ONLINE.os.environ, {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'SYSTEM_URL': 'http://system',
                 'ADDP_ONLINE_TEST_USER_PASSWORD': 'private', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'token',
                 'ADDP_ONLINE_TEST_APPROVER_PASSWORD': 'private', 'ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN': 'prep'}), \
              patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle'), \
-             patch.object(ONLINE.subprocess, 'run', return_value=Mock(returncode=0)) as process:
-            ONLINE.run_security_lifecycle(Path('/repo'), 'start', time.monotonic() + 60)
+             patch.object(ONLINE.SUPPORT.subprocess, 'run', return_value=Mock(returncode=0)) as process:
+            ONLINE.SUPPORT.run_security_lifecycle(Path('/repo'), 'start', time.monotonic() + 60)
             self.assertEqual(process.call_args.args[0], ['bash', 'scripts/dev/start.sh', '-security'])
             env = process.call_args.kwargs['env']
             self.assertEqual(env['SYSTEM_URL'], 'http://system')
@@ -373,13 +373,13 @@ class SecurityUnavailabilityTest(unittest.TestCase):
             for key in ('ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',
                         'ADDP_ONLINE_TEST_APPROVER_PASSWORD', 'ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN'):
                 self.assertNotIn(key, env)
-            for result in (Mock(returncode=1), ONLINE.subprocess.TimeoutExpired('start', 60)):
-                with patch.object(ONLINE.subprocess, 'run', side_effect=result if isinstance(result, BaseException) else None,
+            for result in (Mock(returncode=1), ONLINE.SUPPORT.subprocess.TimeoutExpired('start', 60)):
+                with patch.object(ONLINE.SUPPORT.subprocess, 'run', side_effect=result if isinstance(result, BaseException) else None,
                                   return_value=result), self.assertRaises(ONLINE.SuiteError):
-                    ONLINE.run_security_lifecycle(Path('/repo'), 'start', time.monotonic() + 60)
+                    ONLINE.SUPPORT.run_security_lifecycle(Path('/repo'), 'start', time.monotonic() + 60)
             process.reset_mock()
             with self.assertRaises(ONLINE.SuiteError):
-                ONLINE.run_security_lifecycle(Path('/repo'), 'stop', time.monotonic() - 1)
+                ONLINE.SUPPORT.run_security_lifecycle(Path('/repo'), 'stop', time.monotonic() - 1)
             process.assert_not_called()
 
     def test_missing_null_field_and_duplicate_row_do_not_count_as_preserved(self):
