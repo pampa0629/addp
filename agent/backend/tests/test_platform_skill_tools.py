@@ -64,6 +64,19 @@ class PlatformSkillToolTests(unittest.TestCase):
         expected_config = {key: value for key, value in schema["properties"]["config"].items() if key != "title"}
         self.assertEqual(published["properties"]["config"], expected_config)
 
+    def test_transfer_draft_checks_and_row_grain_are_separate_from_creation(self):
+        from graph.factory import _runtime_instructions
+
+        registry = _load_skill_registry()
+        body = registry["transfer-generation"].load_body(registry)
+        self.assertIn("不展开数组不等于删除数组字段", body)
+        self.assertIn("不得为规避类型检查而静默删字段", body)
+        self.assertIn("草稿阶段的只读检查", body)
+        self.assertIn("主动调用 `transfer.task.config.check`", body)
+        self.assertIn("不调用 `transfer_create_review`", body)
+        self.assertIn("用户明确要求检查配置时", _runtime_instructions())
+        self.assertIn("不提供“确认创建”选项", _runtime_instructions())
+
     def test_transfer_draft_publishes_strict_context_to_harness(self):
         from addp_common.tools import get_tool
 

@@ -55,7 +55,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "desired_state": "stopped", "schedule": "", "enabled": False,
         })
 
-    async def run_factory(self, responses, allowed=None, accept_language="zh-cn"):
+    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行"):
         client = _InferenceFixture(responses)
         events = []
         async def transport(owner, method, path, **kwargs):
@@ -63,7 +63,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         with patch("addp_common.client.base.BaseClient._request", new=transport):
             async for event in AgentFactory.run(
                 task_context={
-                    "skill_name": "transfer-generation", "user_request": "先建任务，不要运行", "context_summary": "",
+                    "skill_name": "transfer-generation", "user_request": user_request, "context_summary": "",
                     "user_id": 1, "tenant_id": 1, "token": "private-user-token", "agent_run_id": "precheck-run",
                     "checkpoint": self.checkpoint, "accept_language": accept_language,
                 }, skill_body="fixture", allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],
@@ -204,6 +204,30 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.calls), 2)
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.checkpoint["confirmed"]["operation_reviews"], {})
+
+    async def test_explicit_draft_check_preserves_array_field_without_review_or_write(self):
+        arguments = copy.deepcopy(self.arguments)
+        arguments["config"]["source"]["query"]["statement"] = json.dumps({
+            "aggregate": "events", "pipeline": [{"$project": {"id": "$_id", "status": 1, "members": 1, "_id": 0}}],
+        })
+        arguments["config"]["transforms"][0]["fields"].append({"source": "members", "target": "members", "target_type": "json"})
+        for status in ("unknown", "unsupported"):
+            self.requests.clear()
+            self.check_result = {**self.report, "status": status}
+            events, client = await self.run_factory([
+                Message(role="assistant", tool_calls=[_call(CHECK_TOOL, arguments)]),
+                Message(role="assistant", content="正式检查已返回，仍只展示草稿"),
+            ], user_request="检查配置，只给草稿，不创建、不运行")
+            with self.subTest(status=status):
+                checks = [r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks"]
+                self.assertEqual(len(checks), 1)
+                source = checks[0][2]["json"]["config"]["source"]
+                project = json.loads(source["query"]["statement"])["pipeline"][0]["$project"]
+                self.assertEqual(project["members"], 1)
+                feedback = json.loads(next(m.content for m in client.calls[1]["messages"] if m.role == "tool"))
+                self.assertEqual(feedback["status"], status)
+                self.assertEqual(self.writes(), [])
+                self.assertFalse(any(e.kind == "interaction_required" for e in events))
 
     async def test_formal_check_failure_clears_old_report_and_stops_sibling_create(self):
         self.confirm()
