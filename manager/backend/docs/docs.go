@@ -9312,7 +9312,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "execution_time_ms": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "mode": {
                     "type": "string"

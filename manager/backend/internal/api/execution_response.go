@@ -71,10 +71,10 @@ type ManagerExecutionOperation struct {
 }
 
 type ManagerExecutionRuntime struct {
-	EngineType      string `json:"engine_type,omitempty"`
-	Operator        string `json:"operator,omitempty"`
-	Mode            string `json:"mode,omitempty"`
-	ExecutionTimeMs *int64 `json:"execution_time_ms,omitempty"`
+	EngineType      string   `json:"engine_type,omitempty"`
+	Operator        string   `json:"operator,omitempty"`
+	Mode            string   `json:"mode,omitempty"`
+	ExecutionTimeMs *float64 `json:"execution_time_ms,omitempty"`
 }
 
 type ManagerExecutionGLBFacts struct {

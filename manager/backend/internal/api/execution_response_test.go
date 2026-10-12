@@ -22,7 +22,7 @@ func managerResponseFixture(t *testing.T) *execution.TaskExecution {
 		"total":0,"generated":2,"rebuilt":0,"ready_skipped":0,"failed":0,"unsupported":0,"missing_source":0,
 		"tiles_processed":2,"generated_tiles":2,"total_size_bytes":1024,
 		"private":"private-sentinel","access_plan":{"token":"private-sentinel"},
-		"workflow_runtime":{"engine_type":"model3d_workflow","operator":"max_to_glb","mode":"direct","execution_time_ms":15,"execution_id":"private-sentinel","raw_response":"private-sentinel"},
+		"workflow_runtime":{"engine_type":"model3d_workflow","operator":"max_to_glb","mode":"direct","execution_time_ms":2014.4383907318115,"execution_id":"private-sentinel","raw_response":"private-sentinel"},
 		"glb_facts":{"size_bytes":1024,"source_format":"max","stdout":"private-sentinel","stderr":"private-sentinel","command":"private-sentinel","publish":{"token":"private-sentinel"},
 			"conversion":{"source_unit":"mm","unit_source":"user","scale_to_meters":0.001,"importer_version":"1.9.2","texture_refs":["horse.dds"],"source_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","meshes":5,"scope":"static","private":"private-sentinel"}},
 		"lineage_facts":{"schema_version":"addp.lineage-facts/v1",
@@ -70,6 +70,9 @@ func assertManagerResponseProjection(t *testing.T, raw []byte) {
 	if metadata.WorkflowRuntime == nil || metadata.WorkflowRuntime.Operator != "max_to_glb" || payload.ErrorDetails["code"] != "conversion_failed" || payload.ErrorDetails["category"] == nil {
 		t.Fatalf("runtime summary or safe failure lost: %s", raw)
 	}
+	if duration := metadata.WorkflowRuntime.ExecutionTimeMs; duration == nil || *duration != 2014.4383907318115 {
+		t.Fatalf("fractional Runtime duration lost: %s", raw)
+	}
 }
 
 func TestManagerExecutionResponsePreservesFactsWithoutMutatingHistory(t *testing.T) {
@@ -90,6 +93,47 @@ func TestManagerExecutionResponsePreservesFactsWithoutMutatingHistory(t *testing
 	}
 }
 
+func TestManagerExecutionRuntimeDurationPreservesOptionalNumbers(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		metadata string
+		present  bool
+		want     float64
+	}{
+		{name: "missing", metadata: `{"workflow_runtime":{}}`},
+		{name: "null", metadata: `{"workflow_runtime":{"execution_time_ms":null}}`},
+		{name: "zero", metadata: `{"workflow_runtime":{"execution_time_ms":0}}`, present: true},
+		{name: "integer", metadata: `{"workflow_runtime":{"execution_time_ms":15}}`, present: true, want: 15},
+		{name: "Hosted fractional", metadata: `{"workflow_runtime":{"execution_time_ms":2014.4383907318115}}`, present: true, want: 2014.4383907318115},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			item := &execution.TaskExecution{}
+			if err := json.Unmarshal([]byte(tc.metadata), &item.Metadata); err != nil {
+				t.Fatal(err)
+			}
+			response, err := newManagerExecutionResponse(item)
+			if err != nil {
+				t.Fatal(err)
+			}
+			duration := response.Metadata.WorkflowRuntime.ExecutionTimeMs
+			if (duration != nil) != tc.present || duration != nil && *duration != tc.want {
+				t.Fatalf("duration=%v want present=%v value=%v", duration, tc.present, tc.want)
+			}
+			raw, err := json.Marshal(response.Metadata.WorkflowRuntime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if _, present := fields["execution_time_ms"]; present != tc.present {
+				t.Fatalf("optional duration changed in response: %s", raw)
+			}
+		})
+	}
+}
+
 func TestManagerExecutionHTTPUsesExplicitResponse(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	item := managerResponseFixture(t)
@@ -101,14 +145,27 @@ func TestManagerExecutionHTTPUsesExplicitResponse(t *testing.T) {
 	router.Use(func(c *gin.Context) { setManagerExecutionReadTestUser(c, 1, 1) })
 	router.GET("/executions/:execution_id", handler.ExecutionStatus)
 	router.GET("/provider/executions/:execution_id", handler.ProviderExecutionStatus)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/executions/"+item.ExecutionID, nil))
-	if response.Code != 200 {
-		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	for _, prefix := range []string{"/executions/", "/provider/executions/"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", prefix+item.ExecutionID, nil))
+		if response.Code != 200 {
+			t.Fatalf("path=%s status=%d body=%s", prefix, response.Code, response.Body.String())
+		}
+		if prefix == "/executions/" {
+			assertManagerResponseProjection(t, response.Body.Bytes())
+		} else {
+			var observation execution.Observation
+			if err := json.Unmarshal(response.Body.Bytes(), &observation); err != nil {
+				t.Fatal(err)
+			}
+			if observation.ExecutionID != item.ExecutionID || observation.Status != item.Status || strings.Contains(response.Body.String(), "workflow_runtime") || strings.Contains(response.Body.String(), "private-sentinel") {
+				t.Fatalf("provider observation changed: %s", response.Body.String())
+			}
+		}
 	}
-	assertManagerResponseProjection(t, response.Body.Bytes())
 	for _, invalid := range []commonModels.JSONMap{
 		{"total": "private-sentinel"},
+		{"workflow_runtime": commonModels.JSONMap{"execution_time_ms": "private-sentinel"}},
 		{"glb_facts": commonModels.JSONMap{"conversion": commonModels.JSONMap{"meshes": "private-sentinel"}}},
 		{"lineage_facts": commonModels.JSONMap{"schema_version": "private-sentinel"}},
 	} {
