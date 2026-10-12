@@ -9,6 +9,7 @@ REPOSITORY_DIR=$(cd "${BUSINESS_DIR}/.." && pwd -P)
 PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_preview_fixture.pptx"
 HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
 MC_IMAGE=addp-minio:RELEASE.2025-10-15T17-29-55Z
+DELIMITED_OBJECTS=(format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv)
 MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp max/model.max max/texture.png)
 
 fail() {
@@ -136,12 +137,20 @@ mc() {
 
 generate_fixtures() {
   python3 - "$1" <<'PY'
+import csv
+import io
 import struct
 import sys
 import zlib
 from pathlib import Path
 
 root = Path(sys.argv[1])
+(root / "format-samples").mkdir()
+rows = [["id", "姓名", "备注"]] + [[str(i), "张三" + str(i), f"北京,第{i}项\n第二行"] for i in range(25)]
+for extension, delimiter in (("csv", ","), ("tsv", "\t")):
+    text = io.StringIO(newline="")
+    csv.writer(text, delimiter=delimiter, lineterminator="\r\n").writerows(rows)
+    (root / "format-samples" / f"gbk-quoted.{extension}").write_bytes(text.getvalue().encode("gbk"))
 # LAS 1.2, point format 0: three first-return points in EPSG:3857.
 keys = struct.pack("<16H", 1, 1, 0, 3, 1024, 0, 1, 1, 3072, 0, 1, 3857, 3076, 0, 1, 9001)
 vlr = struct.pack("<H16sHH32s", 0, b"LASF_Projection", 34735, len(keys), b"ADDP test projection") + keys
@@ -252,6 +261,17 @@ seed_fixture() {
   if [ "${ADDP_ONLINE_HOSTED:-0}" != "1" ]; then
     mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT" >/dev/null
   fi
+  local table_object
+  for table_object in "${DELIMITED_OBJECTS[@]}"; do
+    docker_fixture run --rm \
+      --entrypoint mc \
+      --network "$network" \
+      -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
+      -v "$MODEL_FIXTURE_DIR:/fixture:ro" \
+      "$MC_IMAGE" cp --quiet "/fixture/$table_object" \
+      "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$table_object"
+    mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$table_object" >/dev/null
+  done
   local model_object
   for model_object in "${MODEL_OBJECTS[@]}"; do
     docker_fixture run --rm \
@@ -327,6 +347,10 @@ PYDESCRIPTOR
       mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT" >/dev/null ||
         fail "hybrid-search image fixture object is missing"
     fi
+    for table_object in "${DELIMITED_OBJECTS[@]}"; do
+      mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$table_object" >/dev/null ||
+        fail "delimited fixture object is missing: $table_object"
+    done
     for model_object in "${MODEL_OBJECTS[@]}"; do
       mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/model3d/$model_object" >/dev/null ||
         fail "model fixture object is missing: $model_object"

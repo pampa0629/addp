@@ -1,6 +1,7 @@
 import { expect, request, test } from '@playwright/test'
 import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
@@ -21,6 +22,7 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_MODELS_JSON',
   'ADDP_ONLINE_MANAGER_BROWSER_PHASE',
   'ADDP_ONLINE_MANAGER_RASTER_JSON',
+  'ADDP_ONLINE_MANAGER_DELIMITED_JSON',
   'GATEWAY_URL'
 ]
 
@@ -30,7 +32,82 @@ function environment() {
   return Object.fromEntries(requiredNames.map(name => [name, process.env[name]]))
 }
 
-test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB load through Console', async ({ page }) => {
+async function verifyDelimitedTable(page, api, source, artifactDir) {
+  const route = `/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`
+  await page.goto(route)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const selector = frame.locator('.csv-encoding-select')
+  await expect(selector).toContainText('UTF-8')
+  await selector.click()
+  await frame.getByRole('option', { name: 'GBK', exact: true }).click()
+  const refresh = () => page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return response.request().method() === 'POST'
+      && /\/api\/v1\/manager\/engines\/[1-9][0-9]*\/items\/refresh$/.test(url.pathname)
+      && url.searchParams.get('locator') === source.locator
+  })
+  const applied = refresh()
+  await frame.getByRole('button', { name: /应用编码并刷新|Apply encoding and refresh/ }).click()
+  const applyResponse = await applied
+  expect(applyResponse.status()).toBe(200)
+  expect(applyResponse.request().postDataJSON()).toEqual({ encoding: 'gbk' })
+  await expect(frame.getByRole('columnheader', { name: '姓名', exact: true })).toBeVisible()
+  await expect(selector).toContainText('GBK')
+
+  const verifyPage = async (offset, count) => {
+    await expect(frame.getByRole('cell', { name: `张三${offset}`, exact: true })).toBeVisible()
+    await expect(frame.getByRole('columnheader')).toHaveText(['id', '姓名', '备注'])
+    await expect(frame.getByRole('cell')).toHaveCount(count * 3)
+    const expected = Array.from({ length: count }, (_, index) => {
+      const id = offset + index
+      return [String(id), `张三${id}`, `北京,第${id}项\n第二行`]
+    }).flat()
+    expect((await frame.getByRole('cell').allTextContents()).map(text => text.trim())).toEqual(expected)
+  }
+  const verifyMetadata = async () => {
+    const item = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'read delimited item facts')
+    expect(item.id).toBe(source.item_id)
+    expect(item.fingerprint).toBe(source.fingerprint)
+    expect(item.row_count).toBe(25)
+    expect(item.attributes.item).toMatchObject({ format: source.format, data_type: 'table', layout: 'single' })
+    expect(item.attributes.format_info[source.format].encoding).toBe('gbk')
+    expect(item.attributes.type_info.table.fields.map(field => field.name)).toEqual(['id', '姓名', '备注'])
+    expect(item.attributes.storage.content_hash).toBe(source.sha256)
+    expect(item.attributes.access_index?.table).toBeUndefined()
+  }
+  await verifyPage(0, 20)
+  const next = frame.getByRole('button', { name: /下一页|Next page/, exact: true })
+  await expect(next).toBeEnabled()
+  await next.click()
+  await verifyPage(20, 5)
+  await expect(next).toBeDisabled()
+  await verifyMetadata()
+  await frame.locator('.preview-panel').screenshot({ path: resolve(artifactDir, `gbk-${source.format}-preview.png`) })
+  const downloaded = page.waitForEvent('download')
+  await frame.getByRole('button', { name: /下载|Download/, exact: true }).click()
+  const download = await downloaded
+  const path = await download.path()
+  expect(path).not.toBeNull()
+  const bytes = readFileSync(path)
+  expect(bytes.length).toBe(source.size_bytes)
+  const checksum = createHash('sha256').update(bytes).digest('hex')
+  expect(checksum).toBe(source.sha256)
+
+  const ordinary = refresh()
+  await frame.getByRole('treeitem', { name: `gbk-quoted.${source.format}`, exact: true }).locator('.node-action').click()
+  const ordinaryResponse = await ordinary
+  expect(ordinaryResponse.status()).toBe(200)
+  expect(ordinaryResponse.request().postData()).toBeNull()
+  await verifyMetadata()
+  await page.reload()
+  await expect(selector).toContainText('GBK')
+  await verifyPage(0, 20)
+  return { ...source, encoding: 'gbk', first_page_rows: 20, last_page_rows: 5,
+    last_page_disabled: true, metadata_verified: true, ordinary_refresh: true,
+    reopened: true, download_sha256: checksum, encoding_request_verified: true }
+}
+
+test('Manager lineage, cached previews and GBK CSV/TSV refresh through Console', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
   if (!Number.isInteger(itemID) || itemID <= 0) throw new Error('Manager lineage item ID must be positive')
@@ -42,6 +119,8 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
   const raster = JSON.parse(env.ADDP_ONLINE_MANAGER_RASTER_JSON)
   expect(Number.isInteger(raster.item_id) && raster.item_id > 0).toBe(true)
   expect(raster.preview_url).toMatch(/^\/api\/v1\/manager\/raster_cog\/[1-9][0-9]*\/content$/)
+  const delimited = JSON.parse(env.ADDP_ONLINE_MANAGER_DELIMITED_JSON)
+  expect(delimited.map(source => source.format)).toEqual(['csv', 'tsv'])
   const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
   expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
@@ -169,7 +248,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v5', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v6', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -250,13 +329,18 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
       gpuDiagnostics.setStage('navigation')
       modelEvidence.push({ ...model, model_loaded: true, content_loaded: true })
     }
+    const delimitedEvidence = []
+    gpuDiagnostics.setStage('navigation')
+    for (const source of delimited) {
+      delimitedEvidence.push(await verifyDelimitedTable(page, api, source, env.ADDP_ONLINE_ARTIFACT_DIR))
+    }
     expect(modelGenerationRequests).toBe(0)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v5',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v6',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
@@ -275,6 +359,7 @@ test('Manager lineage, cached PPTX, direct COG and DAE/3DS/IFC/OSGB/SKP/MAX GLB 
       raster_generation_requests: rasterGenerationRequests,
       raster: { ...raster, range_loaded: true, map_loaded: true },
       models: modelEvidence,
+      delimited_tables: delimitedEvidence,
       gpu_performance_diagnostics: gpuDiagnostics.snapshot(),
       browser_warning_errors: 0,
       failed_business_responses: 0,

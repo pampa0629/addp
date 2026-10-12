@@ -27,7 +27,12 @@ MODEL_TASK_TYPE = "model_3d_glb_generation"
 MAX_SOURCE_SHA256 = "916714595bf7a2953264b8afaafe339fa60bdb4944b4664f6802ccb288190653"
 MAX_OPTIONS = {'source_unit': 'mm', 'texture_files': {'C:\\0ad\\binaries\\data\\mods\\official\\art\\textures\\skins\\skeletal\\horse_chestnut_a.dds': 'texture.png'}}
 LINEAGE_SCHEMA = "addp.lineage-facts/v1"
+DELIMITED_SHA256 = {
+    "csv": "b2d4a39906f6b5b37cb28d3a8222e93a67c73b09df8dc7a00b5050ffe50a4728",
+    "tsv": "2df6d5a2666d0a8ff2a50b917643a6d7430921fdc4454b925de15736c66798e0",
+}
 REQUIRED_PERMISSIONS = {
+    "manager.content.read",
     "manager.data_item.read",
     "manager.derived_artifact.create",
     "manager.derived_artifact.delete",
@@ -1057,13 +1062,16 @@ def validate_browser_report(
     pptx_page_count: int,
     models: list[dict[str, object]],
     raster: dict[str, object],
+    delimited: list[dict[str, object]],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
     if phase not in {"generation-entry", "cached-preview"}:
         raise SuiteError("unknown Manager browser phase")
+    if [source.get("format") for source in delimited] != ["csv", "tsv"]:
+        raise SuiteError("browser delimited sources must contain CSV and TSV in order")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v5",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v6",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1082,6 +1090,10 @@ def validate_browser_report(
         "raster_generation_requests": 0,
         "raster": {**raster, "range_loaded": True, "map_loaded": True},
         "models": [{**model, "model_loaded": True, "content_loaded": True} for model in models],
+        "delimited_tables": [{**source, "encoding": "gbk", "first_page_rows": 20,
+            "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
+            "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
+            "encoding_request_verified": True} for source in delimited],
         "browser_warning_errors": 0,
         "failed_business_responses": 0,
     }
@@ -1135,6 +1147,7 @@ def run_browser(
     pptx_page_count: int,
     models: list[dict[str, object]],
     raster: dict[str, object],
+    delimited: list[dict[str, object]],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
@@ -1153,6 +1166,7 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_MODELS_JSON": json.dumps(models),
             "ADDP_ONLINE_MANAGER_BROWSER_PHASE": phase,
             "ADDP_ONLINE_MANAGER_RASTER_JSON": json.dumps(raster),
+            "ADDP_ONLINE_MANAGER_DELIMITED_JSON": json.dumps(delimited),
         }
     )
     result = subprocess.run(
@@ -1183,6 +1197,7 @@ def run_browser(
         pptx_page_count=pptx_page_count,
         models=models,
         raster=raster,
+        delimited=delimited,
         phase=phase,
     )
 
@@ -1211,6 +1226,14 @@ def run_scenario(
     model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds", "ifc", "osgb", "skp", "max")]
     raster_item = find_fixture_item(client, engine_id, f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']}", "raster")
     raster = ArtifactFixture("raster", raster_item, build_item_locator(engine_id, raster_item))
+    delimited = []
+    for format_name, checksum in DELIMITED_SHA256.items():
+        item = find_fixture_item(client, engine_id, f"{bucket}/format-samples/gbk-quoted.{format_name}", format_name)
+        if item.get("size_bytes") != 784:
+            raise SuiteError(f"{format_name} fixture source byte count must be 784")
+        delimited.append({"format": format_name, "locator": build_item_locator(engine_id, item),
+            "item_id": item["id"], "fingerprint": item["fingerprint"], "sha256": checksum,
+            "size_bytes": 784, "rows": 25})
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
     pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
     pointcloud_fingerprint = str(pointcloud_item["fingerprint"])
@@ -1379,6 +1402,7 @@ def run_scenario(
             output_name=pointcloud_output_name, pptx_item_locator=pptx_locator,
             pptx_item_id=pptx_item_id, pptx_page_count=pptx_page_count,
             raster={"locator": raster.locator, "item_id": raster.item["id"], "preview_url": raster.artifact["preview_url"]},
+            delimited=delimited,
         )
         browser_models = [{"format": model.format, "locator": model.locator,
                            "item_id": model.item["id"], **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
@@ -1402,9 +1426,13 @@ def run_scenario(
         if browser_runner is not None:
             browser_evidence = browser_runner(repository, environment, **browser_arguments,
                                              models=browser_models, phase="cached-preview")
+            validate_browser_report(browser_evidence, run_id=environment["ADDP_ONLINE_TEST_RUN_ID"],
+                                    **{key: value for key, value in browser_arguments.items()
+                                       if key not in {"source_name", "pptx_item_locator"}},
+                                    models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v3",
+            "schema_version": "addp.manager-internal-artifact-lineage/v4",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -1414,6 +1442,7 @@ def run_scenario(
             "engine_id": engine_id,
             "meta_scan_execution_id": scan_execution_id,
             "execution_read_checks": ["cross_module_execution_hidden", "explicit_professional_projection"],
+            "delimited_sources": delimited,
             "sources": {
                 "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
                 "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},

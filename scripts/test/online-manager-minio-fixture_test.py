@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import importlib.util
 import io
@@ -131,13 +132,13 @@ case "$1" in
           esac
         done
         ;;
-      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*|*" cp --quiet /fixture/ifc/"*|*" cp --quiet /fixture/osgb/"*|*" cp --quiet /fixture/skp/"*|*" cp --quiet /fixture/max/"*)
+      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*|*" cp --quiet /fixture/ifc/"*|*" cp --quiet /fixture/osgb/"*|*" cp --quiet /fixture/skp/"*|*" cp --quiet /fixture/max/"*|*" cp --quiet /fixture/format-samples/"*)
         mount=""
         source=""
         for argument in "$@"; do
           case "$argument" in
             *:/fixture:ro) mount="${argument%:/fixture:ro}" ;;
-            /fixture/dae/*|/fixture/3ds/*|/fixture/ifc/*|/fixture/osgb/*|/fixture/skp/*|/fixture/max/*) source="${argument#/fixture/}" ;;
+            /fixture/dae/*|/fixture/3ds/*|/fixture/ifc/*|/fixture/osgb/*|/fixture/skp/*|/fixture/max/*|/fixture/format-samples/*) source="${argument#/fixture/}" ;;
           esac
         done
         mkdir -p "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/$(dirname "$source")"
@@ -209,12 +210,30 @@ esac
         for model_object in ("dae/model.dae", "dae/texture.png", "3ds/model.3ds", "3ds/texture.png", "ifc/model.ifc", "osgb/model.osgb", "skp/model.skp", "max/model.max", "max/texture.png"):
             self.assertIn(f"cp --quiet /fixture/{model_object} fixture/addp-online/model3d/{model_object}", commands)
             self.assertIn(f"stat fixture/addp-online/model3d/{model_object}", commands)
+        for suffix in ("csv", "tsv"):
+            self.assertIn(f"cp --quiet /fixture/format-samples/gbk-quoted.{suffix} fixture/addp-online/format-samples/gbk-quoted.{suffix}", commands)
+            self.assertIn(f"stat fixture/addp-online/format-samples/gbk-quoted.{suffix}", commands)
         for directory in re.findall(r"-v (\S+):/fixture:ro", commands):
             self.assertFalse(Path(directory).exists(), "temporary generated source directory must be removed")
         self.assertIn("|59002|online-manager|manager-secret-1234", commands)
         self.assertNotIn("|9002|personal|personal-secret", commands)
         self.assertFalse((self.business / ".env").exists())
         self.assertFalse(self.state.exists())
+
+    def test_generated_gbk_tables_preserve_exact_source_bytes_and_quoted_rows(self):
+        checksums = {"csv": "b2d4a39906f6b5b37cb28d3a8222e93a67c73b09df8dc7a00b5050ffe50a4728",
+                     "tsv": "2df6d5a2666d0a8ff2a50b917643a6d7430921fdc4454b925de15736c66798e0"}
+        for attempt in range(2):
+            started = self.run_fixture("start")
+            self.assertEqual(started.returncode, 0, started.stderr)
+            for suffix, delimiter in (("csv", ","), ("tsv", "\t")):
+                raw = (self.root / f"model-fixtures/format-samples/gbk-quoted.{suffix}").read_bytes()
+                self.assertEqual(len(raw), 784)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), checksums[suffix])
+                with self.assertRaises(UnicodeDecodeError):
+                    raw.decode("utf-8")
+                rows = list(csv.reader(io.StringIO(raw.decode("gbk"), newline=""), delimiter=delimiter))
+                self.assertEqual(rows, [["id", "姓名", "备注"]] + [[str(i), f"张三{i}", f"北京,第{i}项\n第二行"] for i in range(25)])
 
     def test_generated_models_and_png_are_deterministic_valid_source_files(self) -> None:
         first = self.run_fixture("start")

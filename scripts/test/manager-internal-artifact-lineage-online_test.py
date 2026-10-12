@@ -300,6 +300,9 @@ class FakeGatewayClient:
                 },
                 {'id': 95, 'full_name': 'addp-online/raster/source.tif', 'item_type': 'object',
                  'fingerprint': 'e'*64, 'size_bytes': 1000},
+                *[{"id": 201 + i, "full_name": f"addp-online/format-samples/gbk-quoted.{format_name}",
+                    "item_type": "object", "fingerprint": checksum, "size_bytes": 784}
+                  for i, (format_name, checksum) in enumerate(SUITE.DELIMITED_SHA256.items())],
             ] + [{
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
                 "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": 1024,
@@ -511,16 +514,22 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                  "result_id": model["result_id"], "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content", **({"conversion_options": SUITE.MAX_OPTIONS} if format_name == "max" else {})}
                 for format_name, model in client.models.items()]
 
+    def browser_delimited(self):
+        return [{"format": format_name, "item_id": 201 + i, "fingerprint": checksum,
+                 "locator": f"addp://engine/27/path/addp-online/format-samples/gbk-quoted.{format_name}?type=object&item_id={201+i}",
+                 "sha256": checksum, "size_bytes": 784, "rows": 25}
+                for i, (format_name, checksum) in enumerate(SUITE.DELIMITED_SHA256.items())]
+
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v5",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v6",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
                     "models": [{**model, "generation_entry_visible": True, **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v5",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v6",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -539,6 +548,10 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "raster_generation_requests": 0,
             "raster": {**evidence["raster"], "range_loaded": True, "map_loaded": True},
             "models": [{**model, "model_loaded": True, "content_loaded": True} for model in evidence["models"]],
+            "delimited_tables": [{**source, "encoding": "gbk", "first_page_rows": 20,
+                "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
+                "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
+                "encoding_request_verified": True} for source in evidence["delimited"]],
             "gpu_performance_diagnostics": {"count": 0, "stages": []},
             "browser_warning_errors": 0,
             "failed_business_responses": 0,
@@ -651,7 +664,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_raster_browser_evidence_is_mandatory(self):
         evidence = {'execution_id': 'execution-1', 'item_id': 91, 'output_name': 'source.copc.laz',
-                    'pptx_item_id': 92, 'pptx_page_count': 3, 'models': self.browser_models(), 'raster': self.browser_raster()}
+                    'pptx_item_id': 92, 'pptx_page_count': 3, 'models': self.browser_models(), 'raster': self.browser_raster(),
+                    'delimited': self.browser_delimited()}
         for field in ('range_loaded', 'map_loaded'):
             report = self.browser_report({'ADDP_ONLINE_TEST_RUN_ID': 'run-1'}, evidence)
             report['raster'][field] = False
@@ -1165,7 +1179,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
-            "models": self.browser_models(), "raster": self.browser_raster(),
+            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         validated = SUITE.validate_browser_report(
@@ -1177,7 +1191,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             pptx_item_id=92,
             pptx_page_count=3,
             models=evidence["models"],
-            raster=evidence["raster"],
+            raster=evidence["raster"], delimited=evidence["delimited"],
         )
         self.assertEqual(validated, report)
 
@@ -1188,7 +1202,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
-            "models": self.browser_models(), "raster": self.browser_raster(),
+            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         report["pptx_page_after_engine_refresh"] = 1
@@ -1202,12 +1216,12 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 pptx_item_id=92,
                 pptx_page_count=3,
                 models=evidence["models"],
-            raster=evidence["raster"],
+            raster=evidence["raster"], delimited=evidence["delimited"],
             )
 
     def test_browser_model_report_must_match_both_artifacts_and_loaded_content(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited()}
         for change in (
             lambda report: report.pop("models"),
             lambda report: report["models"][0].update(result_id=999),
@@ -1223,7 +1237,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         models = [{key: model[key] for key in ("format", "locator", "item_id")} for model in self.browser_models()]
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
-                    "raster": self.browser_raster(), "phase": "generation-entry"}
+                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "phase": "generation-entry"}
         for mutate in (lambda report: report["models"][0].update(generation_entry_visible=False),
                        lambda report: report["models"].pop(),
                        lambda report: report["models"][1].update(item_id=999),
@@ -1240,7 +1254,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 models = [{key: model[key] for key in ("format", "locator", "item_id")} for model in models]
             evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                         "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
-                        "raster": self.browser_raster(), "phase": phase}
+                        "raster": self.browser_raster(), "delimited": self.browser_delimited(), "phase": phase}
             report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
             report["anonymous_refresh_401"] = 1
             SUITE.validate_browser_report(report, run_id="run-1", **evidence)
@@ -1254,7 +1268,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_browser_gpu_diagnostics_validate_source_stage_and_total(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited()}
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         report["gpu_performance_diagnostics"] = {"count": 2, "stages": [
             {"source": "chromium-webgl-driver", "stage": "raster-cog:preview", "count": 2}]}
@@ -1272,6 +1286,48 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with self.assertRaises(SUITE.SuiteError):
                 SUITE.validate_browser_report(invalid, run_id="run-1", **evidence)
 
+    def test_delimited_browser_proof_is_mandatory_and_exact(self):
+        evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
+                    "raster": self.browser_raster(), "delimited": self.browser_delimited()}
+        for mutate in (
+            lambda report: report.pop("delimited_tables"),
+            lambda report: report["delimited_tables"].pop(),
+            lambda report: report["delimited_tables"][0].update(encoding="utf-8"),
+            lambda report: report["delimited_tables"][1].update(download_sha256="corrupt"),
+            lambda report: report["delimited_tables"][0].update(first_page_rows=19),
+            lambda report: report["delimited_tables"][1].update(last_page_rows=20),
+            lambda report: report["delimited_tables"][0].update(last_page_disabled=False),
+            lambda report: report["delimited_tables"][0].update(metadata_verified=False),
+            lambda report: report["delimited_tables"][0].update(ordinary_refresh=False),
+            lambda report: report["delimited_tables"][1].update(reopened=False),
+            lambda report: report["delimited_tables"][0].update(encoding_request_verified=False),
+            lambda report: report["delimited_tables"][1].update(item_id=999),
+            lambda report: report.update(schema_version="addp.manager-internal-artifact-lineage-browser/v5"),
+        ):
+            report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
+            mutate(report)
+            with self.assertRaisesRegex(SUITE.SuiteError, "report contract mismatch"):
+                SUITE.validate_browser_report(report, run_id="run-1", **evidence)
+        with self.assertRaisesRegex(SUITE.SuiteError, "CSV and TSV"):
+            SUITE.validate_browser_report(self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence),
+                                         run_id="run-1", **{**evidence, "delimited": []})
+
+    def test_failed_delimited_proof_still_cleans_all_managed_artifacts(self):
+        client = FakeGatewayClient()
+        def browser(_repository, environment, **evidence):
+            report = self.browser_report(environment, evidence)
+            if evidence["phase"] == "cached-preview":
+                report["delimited_tables"][0]["download_sha256"] = "corrupt"
+            return report
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(SUITE, "GatewayClient", return_value=client):
+            with self.assertRaisesRegex(SUITE.SuiteError, "delimited_tables"):
+                SUITE.run_scenario(Path("/repository"), scenario_environment(directory), browser)
+        self.assertFalse(client.pptx_result_exists or client.pptx_task_exists)
+        self.assertFalse(client.pointcloud_result_exists or client.pointcloud_task_exists)
+        self.assertFalse(client.raster["result_exists"] or client.raster["task_exists"])
+        self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
+
     def test_generation_entry_failure_prevents_model_writes_and_preserves_cleanup(self):
         client = FakeGatewayClient()
         def browser(_repository, environment, **evidence):
@@ -1287,7 +1343,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_browser_runner_uses_frontend_working_directory_and_current_report_contract(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited()}
         with tempfile.TemporaryDirectory() as directory:
             environment = {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "run-1"}
             def browser(*args, **kwargs):
@@ -1295,12 +1351,13 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 self.assertEqual(args[0][:4], ["npm", "exec", "--", "playwright"])
                 self.assertIn("--config=playwright.online.config.js", args[0])
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_MODELS_JSON"]), evidence["models"])
+                self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_DELIMITED_JSON"]), evidence["delimited"])
                 Path(directory, "manager-internal-artifact-lineage-browser-cached-preview.json").write_text(json.dumps(self.browser_report(environment, evidence)))
                 return mock.Mock(returncode=0)
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v5")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v6")
 
 
 if __name__ == "__main__":

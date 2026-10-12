@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -347,8 +348,11 @@ func TestOrchestratorFixtureHasOnlyRequiredOwnerPermissions(t *testing.T) {
 
 func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *testing.T) {
 	permissions, err := suitePermissions("manager-internal-artifact-lineage")
-	if err != nil || len(permissions) != 8 || !needsEngineProvisioner("manager-internal-artifact-lineage") {
+	if err != nil || len(permissions) != 9 || !needsEngineProvisioner("manager-internal-artifact-lineage") {
 		t.Fatalf("Manager fixture contract: %v, %v", permissions, err)
+	}
+	if !slices.Contains(permissions, "manager.content.read") {
+		t.Fatal("Manager source download requires its existing content read permission")
 	}
 	for _, key := range permissions {
 		if strings.HasPrefix(key, "system.") || strings.HasPrefix(key, "iam.") {
