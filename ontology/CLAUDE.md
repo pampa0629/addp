@@ -45,6 +45,8 @@ Console `/ontology/ontologies/:ontology_id/trial` 提供当前激活规则试算
 
 平台 Transfer 修订 7 在已有概念关系中显式区分 `reads_via`（条件到读取入口组）、`configured_by`（配置）与 `confirmed_by`（用户确认）。编译校验条件和入口身份；图从 PG 选定 generation 查询固定三跳“能力 → 条件 → 入口组 → Tool”，全量比较后补全同版上下文的取证关系。入口不是充分事实或执行计划；搜索候选不能代替正式结构，草稿辅助不充当事实来源，Runtime 条件裁决和确认指纹不变。复用上下文 v1、快照 v2 和现有前端图，无新增迁移、接口或 CI Job，详见设计契约 5.1.3。部署新修订的真实消费须重启后另验，不把 T1/T2/T3 当作正式 T4。
 
+修订 13 审核并冻结 Agent 对正式预检拒绝的反馈改进：unsupported 仍阻断复核和创建，但 owner 的范围及字段诊断进入当前模型 ToolMessage，修正草稿后重新预检与复核；服务故障仍终止。仅更新来源依据及发布修订，不改变操作条件、效果、图结构或 Provider 支持范围，不将 MongoDB 查询输出的纯检查声明为已实现。
+
 ## PG 修订与发布
 
 平台 Transfer 修订 11 将正式只读预检纳入创建条件，图通过 `readonly_config_check → config_precheck → transfer.task.config.check` 暴露读取入口。API、共享 SDK 与 Tool 的唯一输入及三权限交集不变，Runtime 在最终复核和创建前通过正式 Adapter 自动预检：unsupported 阻止创建，unknown 明确限制后知情确认，仅保存未运行定义；supported 也不保证执行成功。确认绑定完整参数、能力版本、结构及稳定报告事实；仅顶层报告时间及含时间的 binding_hash 不进入确认指纹，结构扫描时间仍绑定。报告保存在运行 checkpoint，不写入平台静态本体，不作为授权凭据。创建前失败清除旧报告且不能自动重试或创建；部署后的真实消费须重启 Agent/Ontology 另验。修订 12 仅将其中 7 项来源的 Git 引用冻结到实际包含已审查内容的 `c1f993b1fa7c5d5e403e463c371c46b2adf4ae80`，文件摘要及操作语义不变；来源引用改变仍形成新不可变快照，不重写修订 11，也不宣称其他 owner 的全量改造已验收。

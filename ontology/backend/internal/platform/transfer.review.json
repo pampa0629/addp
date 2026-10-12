@@ -99,8 +99,8 @@
       "kind": "implementation",
       "path": "agent/backend/agents/platform_conditions.py",
       "anchor": "def validate_create(",
-      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
-      "sha256": "4ee288f066fef89a750257b6acd53ba3ca9d6ba3efc37ec080487d471d920acf",
+      "commit": "00d6da240197047afe41e030c63430c3ee7b37de",
+      "sha256": "805fb2a6844536f953489332a1fe7b9b698a1f30718d2888037b5932aa29a7c7",
       "use": {
         "zh-cn": "Runtime 条件适配与能力修订、参数和结构事实的复核绑定",
         "en": "Runtime condition adapters and review binding to revision, arguments and schema facts"
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
-      "sha256": "19e11e90ac5a6e666bd1dfaea5b70a72b98e1cc702ca4946eecc84fd1c9482d9",
+      "commit": "00d6da240197047afe41e030c63430c3ee7b37de",
+      "sha256": "49a75f261d312b19f9b6d7906f8d3a90709186e20f797634a227e4bf056b8db0",
       "use": {
-        "zh-cn": "最终复核和创建前经正式 Manifest Adapter 自动预检；清除旧报告、绑定审计身份，失败终止、不重试或创建",
-        "en": "Automatic formal Manifest checks before final review and creation; clear stale reports, bind audit identity and stop failures without retry or creation"
+        "zh-cn": "最终复核和创建前经正式 Adapter 自动预检；定义拒绝反馈 owner 诊断供修正且不创建，服务失败清旧报告并终止、不重试",
+        "en": "Automatic formal Adapter checks before review and creation; rejected definitions return owner diagnostics without creation; service failures clear stale reports and stop without retry"
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
-      "sha256": "7153f6a417dc62ffca98985d03e48b9c71e287ee57c49189f86a3090bd62c68f",
+      "commit": "00d6da240197047afe41e030c63430c3ee7b37de",
+      "sha256": "5cd61fc21df29be87f3f8f24b48aa4e00e81df8189328aa5fd5530e3b6b080a3",
       "use": {
-        "zh-cn": "真实 Harness、Manifest、SDK 下验证知情确认、两次完整请求一致、时间与稳定事实变化、错误清旧证据、取消及无业务副作用",
-        "en": "Real Harness, Manifest and SDK checks for informed confirmation, identical request bodies, clock versus stable changes, stale evidence removal, cancellation and no business effects"
+        "zh-cn": "真实 Harness、Manifest、SDK 下验证知情确认、完整请求绑定、稳定事实变化、拒绝诊断进入模型、新草稿重新预检复核、失败和取消无业务副作用",
+        "en": "Real Harness, Manifest and SDK verify informed confirmation, request binding, stable changes, model-visible rejection diagnostics, fresh draft checks/review, failure and cancellation without business effects"
       }
     },
     {
