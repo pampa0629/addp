@@ -306,6 +306,21 @@ func (r *Repository) listSourceGrants(ctx context.Context, tenantID, engineID in
 	query := r.db.WithContext(ctx).Model(&sourceGrant{}).Where("tenant_id = ? AND engine_id = ?", tenantID, engineID)
 	predicate, args := filter.predicate()
 	query = query.Where(predicate, args...)
+	if filter.State != "" {
+		now, err := r.wallClock(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		revoked := `EXISTS (SELECT 1 FROM system.engine_access_grant_revocations rev WHERE rev.request_id = system.engine_access_grants.request_id)`
+		switch filter.State {
+		case "revoked":
+			query = query.Where(revoked)
+		case "expired":
+			query = query.Where("NOT "+revoked).Where("expires_at <= ?", now)
+		case "active":
+			query = query.Where("NOT "+revoked).Where("granted_at <= ? AND (expires_at IS NULL OR expires_at > ?)", now, now)
+		}
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

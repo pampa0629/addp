@@ -17,9 +17,15 @@ type SourceGrantFilter struct {
 	CatalogPath   *engineplugin.EngineCatalogPath
 	RecipientType string
 	RecipientID   int64
+	State         string
 }
 
 func (f SourceGrantFilter) Validate() error {
+	switch f.State {
+	case "", "active", "revoked", "expired":
+	default:
+		return commonapi.ErrBadRequest
+	}
 	if f.CatalogPath != nil {
 		encoded, err := authorization.EncodeSharingTarget(*f.CatalogPath)
 		if err != nil || len(encoded) > 4096 || f.TableSearch != "" {

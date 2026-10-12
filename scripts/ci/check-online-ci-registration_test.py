@@ -864,6 +864,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         files = (
             "scripts/test/online-gate.py", "scripts/test/online-hosted-raster-gate.sh", "scripts/utils/hosted-online.sh",
             "business/scripts/online-raster-minio-fixture.py", "scripts/test/raster-workflow-online.py",
+            "scripts/utils/hosted-product-runtime.sh",
             "console/frontend/e2e/online/raster-workflow.spec.js", "Makefile",
             ".github/workflows/online-t4-gates.yml",
         )

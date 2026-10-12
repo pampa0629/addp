@@ -1,12 +1,5 @@
 <template>
   <section class="source-grants" data-testid="engine-source-grants">
-    <div v-if="view === 'list'" class="list-toolbar" data-testid="authorization-workspace-toolbar">
-      <slot name="list-actions" />
-      <el-radio-group v-if="canRead" v-model="listMode" data-testid="source-grant-list-mode" :disabled="revoking" @change="changeListMode">
-        <el-radio-button value="current">{{ t('system.engine.sourceGrants.current') }}</el-radio-button>
-        <el-radio-button value="history">{{ t('system.engine.sourceGrants.history') }}</el-radio-button>
-      </el-radio-group>
-    </div>
     <el-alert v-if="view === 'list'" type="info" :closable="false" :title="t(listMode === 'history' ? 'system.engine.sourceGrants.historyBoundary' : 'system.engine.sourceGrants.boundary')" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
     <StatusAnnouncer :message="success" />
@@ -39,11 +32,24 @@
     <template v-if="canRead">
       <template v-if="view === 'list'">
         <el-form class="grant-filters" label-position="top" data-testid="source-grant-filters" @submit.prevent="applyFilters">
+          <el-form-item v-if="listMode === 'history'" class="record-state-filter" :label="t('system.engine.sourceGrants.state')">
+            <el-select v-model="filterDraft.state" :placeholder="t('system.engine.sourceGrants.allStates')" data-testid="source-grant-state-filter" @change="applyFilters">
+              <el-option value="" :label="t('system.engine.sourceGrants.allStates')" />
+              <el-option v-for="value in ['active', 'revoked', 'expired']" :key="value" :value="value" :label="t(`system.engine.sourceGrants.recordStates.${value}`)" />
+            </el-select>
+          </el-form-item>
           <el-form-item :label="t('system.engine.dataAuthorization.target')">
-            <div class="table-filter">
-              <el-input v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter" :placeholder="t('system.engine.sourceGrants.tableSearch')" :maxlength="filterPath ? undefined : 200" clearable @input="scheduleFilters" />
-              <el-button ref="treeFilterButton" data-testid="source-grant-tree-filter" :disabled="!catalogAdapter || revoking" @click="openTreeFilter">{{ t('system.engine.sourceGrants.selectFromTree') }}</el-button>
-            </div>
+            <el-popover :visible="treeFilterVisible" placement="bottom-start" :trigger="[]" :trigger-keys="[]" :width="560" popper-class="source-grant-tree-popover" :popper-style="{ maxWidth: 'calc(100vw - 48px)' }" @update:visible="treeFilterVisible = $event">
+              <template #reference>
+                <el-input ref="tableFilterInput" v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter" :prefix-icon="Search" :placeholder="t('system.engine.sourceGrants.tableSearch')" :maxlength="filterPath ? undefined : 200" clearable @input="scheduleFilters" @keydown.esc.stop="treeFilterVisible = false" @keydown.down.prevent="openTreeFilter">
+                  <template #append><el-button data-testid="source-grant-tree-filter" :icon="ArrowDown" :aria-label="t('system.engine.sourceGrants.selectFromTree')" :aria-expanded="treeFilterVisible" :disabled="!catalogAdapter || revoking" @click.stop="openTreeFilter" /></template>
+                </el-input>
+              </template>
+              <div v-if="treeFilterVisible && catalogAdapter" data-testid="source-grant-tree-panel">
+                <el-alert v-if="treeFilterError" type="error" :closable="false" :title="treeFilterError" />
+                <ResourceTreePicker :adapter="catalogAdapter" :engine-id="engine.id" mode="any" :show-engine-selector="false" :show-search="false" :show-selection-summary="false" :selectable-filter="isApprovalTable" :title="t('system.engine.dataAuthorization.target')" tree-height="320px" @update:model-value="selectFilterTarget" @error="treeFilterError = t('system.engine.sourceGrants.treeFilterFailed')" />
+              </div>
+            </el-popover>
             <span v-if="filterPath" class="filter-hint" data-testid="source-grant-exact-filter">{{ t('system.engine.sourceGrants.exactTableFilter') }}</span>
           </el-form-item>
           <el-form-item class="recipient-type-filter" :label="t('system.engine.sourceGrants.recipientType')">
@@ -91,11 +97,6 @@
       </template>
     </template>
     <el-alert v-else-if="view !== 'create'" type="info" :closable="false" :title="t('system.engine.sourceGrants.readRequired')" />
-    <el-dialog v-if="catalogAdapter && canRead && view === 'list'" v-model="treeFilterVisible" destroy-on-close class="addp-dialog" append-to-body width="min(680px, calc(100vw - 24px))" :title="t('system.engine.sourceGrants.selectFromTree')" @opened="treeFilterClose?.$el?.focus()" @closed="treeFilterButton?.$el?.focus()">
-      <el-alert v-if="treeFilterError" type="error" :closable="false" :title="treeFilterError" />
-      <ResourceTreePicker :adapter="catalogAdapter" :engine-id="engine.id" mode="any" :show-engine-selector="false" :show-search="false" :selectable-filter="isApprovalTable" :title="t('system.engine.dataAuthorization.target')" tree-height="320px" @update:model-value="selectFilterTarget" @error="treeFilterError = t('system.engine.sourceGrants.treeFilterFailed')" />
-      <template #footer><el-button ref="treeFilterClose" @click="treeFilterVisible = false">{{ t('common.close') }}</el-button></template>
-    </el-dialog>
     <el-dialog v-model="revokeVisible" class="addp-dialog" append-to-body width="min(600px, calc(100vw - 24px))" :title="t('system.engine.sourceGrants.revoke')" :close-on-click-modal="!revoking" :close-on-press-escape="!revoking" :show-close="!revoking" @opened="revokeCancel?.$el?.focus()">
       <p>{{ approvalPathLabel(revokeRow?.catalog_path) }}</p>
       <EngineGrantRecipient v-if="revokeRow" :type="revokeRow.recipient_type" :id="revokeRow.recipient_id" v-bind="recipientPresentation(revokeRow)" />
@@ -110,7 +111,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { ArrowDown, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
 import { ResourceTreePicker, StatusAnnouncer, serializeEngineCatalogTarget } from '@common-ui'
@@ -122,7 +124,7 @@ import { captureIndependentGrant } from '../../utils/independentGrant'
 import TenantMemberSelect from '../iam/TenantMemberSelect.vue'
 import EngineGrantRecipient from './EngineGrantRecipient.vue'
 
-const props = defineProps({ engine: { type: Object, required: true }, view: { type: String, required: true, validator: value => ['list', 'create'].includes(value) }, requirements: { type: Array, default: () => [] }, catalogAdapter: { type: Object, default: null } })
+const props = defineProps({ engine: { type: Object, required: true }, view: { type: String, required: true, validator: value => ['list', 'create'].includes(value) }, listMode: { type: String, required: true, validator: value => ['current', 'history'].includes(value) }, requirements: { type: Array, default: () => [] }, catalogAdapter: { type: Object, default: null } })
 const recipientTypeSelect = ref(null), revokeCancel = ref(null), grantTable = ref(null)
 const emit = defineEmits(['close', 'busy', 'issued']), auth = useAuthStore(), { t, locale } = useI18n()
 const canCreate = computed(() => auth.hasPermission('system.engine_access_grant.create'))
@@ -136,14 +138,14 @@ const recipientSources = {
 const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
 const canReadCandidates = computed(() => auth.hasPermission(recipientSources[form.recipientType]?.permission))
 const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error = ref(''), success = ref('')
-const listMode = ref('current')
+const listMode = computed(() => props.listMode)
 const accountScope = computed(() => listMode.value === 'current' && appliedFilters.value.recipient_type === 'user' && !!appliedFilters.value.recipient_id)
 // Different projections have different row contracts and columns. Do not reuse
 // Element Plus's previous row store when switching to account source details.
 const listProjection = computed(() => listMode.value === 'history' ? 'history' : accountScope.value ? 'account' : 'relations')
-const filterDraft = reactive({ tableSearch: '', recipientType: '', recipientID: '' })
+const filterDraft = reactive({ tableSearch: '', recipientType: '', recipientID: '', state: '' })
 const filterPath = ref(null), treeFilterVisible = ref(false), treeFilterError = ref('')
-const treeFilterButton = ref(null), treeFilterClose = ref(null)
+const tableFilterInput = ref(null)
 const appliedFilters = ref({})
 const filterMembers = ref([])
 const recipientNames = ref({})
@@ -212,18 +214,19 @@ async function load() {
   finally { if (epoch === generation && seq === readSequence) loading.value = false }
 }
 function changePage(value) { if (filterTimer !== null) return applyFilters(); if (value === page.value) return; page.value = value; load() }
-function changeListMode() { applyFilters() }
 function cancelFilterTimer() { clearTimeout(filterTimer); filterTimer = null }
 function captureFilters() {
   cancelFilterTimer()
   const tableSearch = filterDraft.tableSearch.trim()
   appliedFilters.value = { ...(filterPath.value ? { catalog_path: serializeEngineCatalogTarget(filterPath.value) } : tableSearch ? { table_search: tableSearch } : {}),
+    ...(listMode.value === 'history' && filterDraft.state ? { state: filterDraft.state } : {}),
     ...(filterDraft.recipientType ? { recipient_type: filterDraft.recipientType, ...(filterDraft.recipientID ? { recipient_id: filterDraft.recipientID } : {}) } : {}) }
   page.value = 1
 }
 function applyFilters() { captureFilters(); load() }
 function changeRecipientType() { filterDraft.recipientID = ''; applyFilters() }
 function scheduleFilters() {
+  treeFilterVisible.value = false
   filterPath.value = null
   cancelFilterTimer()
   // Invalidate in-flight results as soon as input changes, before the debounce.
@@ -234,7 +237,7 @@ function scheduleFilters() {
 }
 function openTreeFilter() {
   if (!props.catalogAdapter || !canRead.value || revoking.value) return
-  treeFilterError.value = ''; treeFilterVisible.value = true
+  treeFilterError.value = ''; treeFilterVisible.value = !treeFilterVisible.value
 }
 function selectFilterTarget(selection) {
   if (!selection) return
@@ -243,6 +246,7 @@ function selectFilterTarget(selection) {
     if (new TextEncoder().encode(serializeEngineCatalogTarget(path)).length > 4096) throw new Error('invalidCatalogTarget')
     filterPath.value = path; filterDraft.tableSearch = approvalPathLabel(path)
     treeFilterVisible.value = false; applyFilters()
+    nextTick(() => tableFilterInput.value?.focus())
   } catch { treeFilterError.value = t('system.engine.sourceGrants.treeFilterFailed') }
 }
 async function loadCandidates() {
@@ -298,7 +302,7 @@ async function create() {
       filterDraft.recipientID = first.recipientID
       filterDraft.tableSearch = captured.length === 1 ? first.targetLabel : ''
       filterPath.value = null
-      captureFilters(); listMode.value = 'current'
+      captureFilters()
       saving.value = false; attempt.value = null; emit('busy', false); emit('issued')
     } else {
       formError.value = t('system.engine.sourceGrants.partialFailure')
@@ -333,15 +337,15 @@ watch([() => props.engine.id, () => props.engine.lifecycle_state, () => auth.aut
   ...Object.values(recipientSources).map(source => () => auth.hasPermission(source.permission))], () => {
   cancelFilterTimer(); generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; recipientNames.value = {}; total.value = 0; page.value = 1
 
-  filterDraft.tableSearch = ''; filterDraft.recipientType = ''; filterDraft.recipientID = ''; appliedFilters.value = {}; filterMembers.value = []
+  filterDraft.tableSearch = ''; filterDraft.recipientType = ''; filterDraft.recipientID = ''; filterDraft.state = ''; appliedFilters.value = {}; filterMembers.value = []
   filterPath.value = null; treeFilterVisible.value = false; treeFilterError.value = ''
   saving.value = revoking.value = loading.value = false; revokeVisible.value = false; error.value = formError.value = success.value = ''; load()
 }, { immediate: true })
-watch(() => props.view, view => {
+watch([() => props.view, () => props.listMode], ([view]) => {
   treeFilterVisible.value = false
   cancelFilterTimer(); readSequence++; error.value = ''; loading.value = false
   if (view !== 'list') success.value = ''
-  if (view === 'list') { listMode.value = 'current'; captureFilters() }
+  if (view === 'list') captureFilters()
   load()
 })
 watch(() => props.catalogAdapter, adapter => { if (!adapter) treeFilterVisible.value = false })
@@ -351,16 +355,13 @@ onBeforeUnmount(() => { cancelFilterTimer(); generation++ })
 
 <style scoped>
 .source-grants { display: grid; gap: 16px; min-width: 0; }
-.list-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.table-filter { display: flex; gap: 8px; width: 100%; min-width: 0; }
-.table-filter .el-input { flex: 1; min-width: 0; }
-.table-filter .el-button { flex: none; }
 h3 { margin: 0; }
 .el-select { width: 100%; }
 .grant-form { display: grid; gap: 16px; }
-.grant-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.grant-filters { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
 .grant-filters .el-form-item { flex: 1 1 260px; min-width: 0; margin-bottom: 0; }
 .grant-filters .recipient-type-filter { flex: 0 1 180px; }
+.grant-filters .record-state-filter { flex: 0 1 150px; }
 .grant-filters :deep(.iam-member-select) { min-width: 0; }
 .source-details { padding: 12px; display: grid; gap: 12px; }
 .filter-hint { margin: 0; color: var(--addp-text-secondary); }

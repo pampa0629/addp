@@ -572,7 +572,7 @@
           </el-tab-pane>
 
         </el-tabs>
-        <el-tabs v-else-if="selectedEngine" v-model="detailTab" type="border-card" @tab-change="selectDetailTab">
+        <el-tabs v-else-if="selectedEngine" v-model="detailTab" class="engine-authorization-tabs" type="border-card" @tab-change="selectDetailTab">
           <el-tab-pane v-if="availableAuthorizationTabs.includes('data-authorization')" :label="t('system.engine.dataAuthorization.title')" name="data-authorization">
             <EngineDataAuthorization v-if="detailTab === 'data-authorization'" :key="selectedEngine.id" :engine="selectedEngine" />
           </el-tab-pane>
@@ -2220,6 +2220,10 @@ onUnmounted(() => {
   border: 1px solid var(--addp-border-color-light);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.engine-authorization-tabs :deep(.el-tabs__content) {
+  overflow: visible;
 }
 
 .spatial-workspace-title {

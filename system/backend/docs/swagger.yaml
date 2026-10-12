@@ -6796,6 +6796,15 @@ paths:
         in: query
         name: recipient_id
         type: string
+      - description: 记录状态，省略为全部；撤销优先于到期，有效不代表实际读取许可 | Record state; omitted means
+          all, revocation precedes expiry, active does not imply effective access
+        enum:
+        - active
+        - revoked
+        - expired
+        in: query
+        name: state
+        type: string
       produces:
       - application/json
       responses:

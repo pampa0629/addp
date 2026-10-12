@@ -42,6 +42,16 @@ func TestSourceGrantFilterExactTarget(t *testing.T) {
 }
 
 func TestSourceGrantFilterValidation(t *testing.T) {
+	for _, state := range []string{"", "active", "revoked", "expired"} {
+		if err := (SourceGrantFilter{State: state}).Validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, state := range []string{"all", "issued", " active", "ACTIVE"} {
+		if (SourceGrantFilter{State: state}).Validate() == nil {
+			t.Fatalf("invalid state %q", state)
+		}
+	}
 	for _, filter := range []SourceGrantFilter{{}, {TableSearch: "表_%", RecipientType: "user", RecipientID: 9007199254740993}, {RecipientType: "department"}, {RecipientType: "project_group", RecipientID: 33}, {TableSearch: strings.Repeat("表", 200)}} {
 		if err := filter.Validate(); err != nil {
 			t.Fatalf("valid filter rejected: %+v %v", filter, err)

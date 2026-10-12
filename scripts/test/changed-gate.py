@@ -102,7 +102,9 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     # scene definitions as Raster T4; changing only those must still run GDAL.
     if any(path in {
         "business/scripts/online-raster-minio-fixture.py",
+        "business/scripts/online-raster-capacity-fixture.py",
         "scripts/test/raster-workflow-online.py",
+        "scripts/test/raster-workflow-capacity-online.py",
     } for path in files):
         affected.add("engines")
 

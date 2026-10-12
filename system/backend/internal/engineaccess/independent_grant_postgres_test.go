@@ -327,6 +327,51 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				}
 			}
 		})
+		t.Run("record states combine with exact target before pagination and revocation precedes expiry", func(t *testing.T) {
+			command := input
+			command.RequestID, command.CatalogPath = uuid.New(), engineplugin.TabularItemPath(base.EngineID, "schema", "public", "record_states")
+			command.RequirementVersion, command.InitializeApproval = 1, true
+			expires := time.Now().Add(5 * time.Second)
+			command.ExpiryMode, command.ExpiresAt = shared.SharingExpiryAtTime, &expires
+			if _, err := service.CreateIndependentGrant(ctx, command); err != nil {
+				t.Fatal(err)
+			}
+			other, _ := newUser(t, time.Hour)
+			revoked := command
+			revoked.RequestID, revoked.RecipientID, revoked.InitializeApproval = uuid.New(), other.PrincipalID, false
+			if _, err := service.CreateIndependentGrant(ctx, revoked); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: command.EngineID, RequestID: revoked.RequestID, Reason: "State fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			check := func(state string, recipient int64, count int64) {
+				t.Helper()
+				filter := SourceGrantFilter{CatalogPath: &command.CatalogPath, RecipientType: "user", RecipientID: recipient, State: state}
+				for page := 1; page <= int(count)+1; page++ {
+					rows, total, err := service.ListSourceGrants(ctx, actor, command.EngineID, page, 1, filter)
+					want := 0
+					if int64(page) <= count {
+						want = 1
+					}
+					if err != nil || total != count || len(rows) != want {
+						t.Fatalf("state=%s page=%d total=%d rows=%+v err=%v", state, page, total, rows, err)
+					}
+				}
+			}
+			check("active", receiver.PrincipalID, 1)
+			check("revoked", other.PrincipalID, 1)
+			check("expired", receiver.PrincipalID, 0)
+			time.Sleep(time.Until(expires) + 50*time.Millisecond)
+			check("active", receiver.PrincipalID, 0)
+			check("expired", receiver.PrincipalID, 1)
+			check("expired", other.PrincipalID, 0)
+			check("revoked", other.PrincipalID, 1)
+			check("", 0, 2)
+			if _, _, err := service.ListSourceGrantRelations(ctx, actor, command.EngineID, 1, 1, SourceGrantFilter{State: "active"}); err == nil {
+				t.Fatal("current relations accepted a record state")
+			}
+		})
 		t.Run("relation rejects another command even with changed validity", func(t *testing.T) {
 			duplicate := input
 			duplicate.RequestID = uuid.New()

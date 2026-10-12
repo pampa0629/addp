@@ -433,8 +433,8 @@ class FixtureError(RuntimeError):
     pass
 
 
-def command(args, **kwargs):
-    result = subprocess.run(args, capture_output=True, text=True, timeout=300, **kwargs)
+def command(args, *, timeout=300, **kwargs):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, **kwargs)
     if result.returncode:
         # Docker/GDAL/S3 exceptions can embed passwords or signed URLs.
         raise FixtureError(f'physical fixture command failed: {args[0]} ({result.returncode})')
@@ -460,14 +460,14 @@ def environment():
     return root
 
 
-def owned(name):
+def owned(name, suite=SUITE):
     result = subprocess.run(['docker', 'container', 'inspect', name], capture_output=True, text=True, timeout=30)
     if result.returncode:
         # Distinguish absent containers from an unavailable Docker daemon.
         command(['docker', 'info', '--format', '{{.ServerVersion}}'])
         return False
     payload = json.loads(result.stdout)[0]
-    if payload.get('Config', {}).get('Labels', {}).get('com.addp.online-fixture') != SUITE:
+    if payload.get('Config', {}).get('Labels', {}).get('com.addp.online-fixture') != suite:
         raise FixtureError(f'refusing container owned by another task: {name}')
     return True
 
@@ -492,6 +492,32 @@ def cleanup_proxy_identity():
     return f'{os.getuid()}:{os.stat("/var/run/docker.sock").st_gid}'
 
 
+def start_minio(root, entry, name, suite, *, data_directory=None):
+    """Shared disposable MinIO startup; large capacity data belongs on owned disk."""
+    env_path = root / f'{entry["bucket"]}.env'
+    with os.fdopen(os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
+        stream.write(f'MINIO_ROOT_USER={entry["access_key"]}\nMINIO_ROOT_PASSWORD={entry["secret_key"]}\n')
+    mount = ['--mount', 'type=tmpfs,destination=/data']
+    if data_directory is not None:
+        data_directory.mkdir(mode=0o700)
+        mount = ['--user', f'{os.getuid()}:{os.getgid()}', '--mount', f'type=bind,source={data_directory},destination=/data']
+    command(['docker', 'run', '-d', '--name', name,
+             '--label', f'com.addp.online-fixture={suite}',
+             '--label', f'com.addp.online-run-id={os.environ["ADDP_ONLINE_TEST_RUN_ID"]}',
+             '--env-file', str(env_path), *mount, '-p', entry['endpoint'] + ':9000', MINIO_IMAGE, 'server', '/data'])
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            with urllib.request.urlopen(f'http://{entry["endpoint"]}/minio/health/ready', timeout=3) as response:
+                if response.status == 200:
+                    return
+        except OSError:
+            pass
+        if time.monotonic() >= deadline:
+            raise FixtureError('MinIO readiness timed out')
+        time.sleep(1)
+
+
 def start(root):
     for name in CONTAINERS:
         if owned(name):
@@ -507,25 +533,7 @@ def start(root):
     try:
         for index, role in enumerate(('source', 'target')):
             entry = config[role]
-            env_path = root / f'raster-{role}.env'
-            with os.fdopen(os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
-                stream.write(f'MINIO_ROOT_USER={entry["access_key"]}\nMINIO_ROOT_PASSWORD={entry["secret_key"]}\n')
-            command(['docker', 'run', '-d', '--name', CONTAINERS[index],
-                     '--label', f'com.addp.online-fixture={SUITE}',
-                     '--label', f'com.addp.online-run-id={os.environ["ADDP_ONLINE_TEST_RUN_ID"]}',
-                     '--env-file', str(env_path), '--mount', 'type=tmpfs,destination=/data',
-                     '-p', f'127.0.0.1:{59012 + index}:9000', MINIO_IMAGE, 'server', '/data'])
-            deadline = time.monotonic() + 60
-            while True:
-                try:
-                    with urllib.request.urlopen(f'http://{entry["endpoint"]}/minio/health/ready', timeout=3) as response:
-                        if response.status == 200:
-                            break
-                except OSError:
-                    pass
-                if time.monotonic() >= deadline:
-                    raise FixtureError(f'{role} MinIO readiness timed out')
-                time.sleep(1)
+            start_minio(root, entry, CONTAINERS[index], SUITE)
             private_json(root / f'raster-{role}-engine.json', {
                 'name': f'Hosted Raster {role} {os.environ["ADDP_ONLINE_TEST_RUN_ID"]}', 'description': 'Disposable raster T4 physical fixture',
                 'engine_type': 'minio', 'engine_origin': 'general',

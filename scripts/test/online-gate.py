@@ -54,6 +54,12 @@ SUITES: Mapping[str, Suite] = {
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"),
                   ("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL")),
     ),
+    "raster-workflow-capacity": Suite(
+        command=(sys.executable, "-m", "scripts.test.raster-workflow-capacity-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL")),
+    ),
     "raster-workflow": Suite(
         command=(sys.executable, "-m", "scripts.test.raster-workflow-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

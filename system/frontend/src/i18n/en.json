@@ -1100,7 +1100,7 @@
     },
     "engine": {
       "sourceGrants": {
-        "historyBoundary": "Issuance history includes issued, revoked and expired authorizations. Switch to Current authorizations to review active grants or revoke access.",
+        "historyBoundary": "All issuance records include currently active, revoked and expired grants. Switch to Current authorizations to review merged active relations or revoke access.",
         "accountSourcesHint": "Personal grants and current organization sources are grouped per table. Expand to inspect or revoke one source; other sources remain. Coverage is not actual access: function, session and security checks still apply.",
         "noMatchingSources": "No authorization records match these filters",
         "source": "Authorization source",
@@ -1130,7 +1130,9 @@
         "selectRecipientType": "Select a recipient type first",
         "recipientFilterBoundary": "Filters intersect. A type lists its direct relations. Departments, project groups and history match direct recipients. A selected user in current grants also expands current organization sources.",
         "current": "Current authorizations",
-        "history": "Authorization history",
+        "history": "All authorization records",
+        "allStates": "All states",
+        "recordStates": { "active": "Active", "revoked": "Revoked", "expired": "Expired" },
         "sourceCount": "Active records",
         "revokeCount": "Withdraw all active Grants in this relation (currently {count} records), not just one record.",
         "boundary": "Current authorizations group data and recipients; history is retained separately. Personal, department and project-group Grants are distinct sources. Actual reading still requires function permission, current membership, validity and Deny checks.",
@@ -1155,7 +1157,7 @@
         "reason": "Reason",
         "state": "Record status",
         "states": {
-          "issued": "Issued",
+          "issued": "Active (issued)",
           "expired": "Expired",
           "revoked": "Revoked"
         },
@@ -1176,7 +1178,6 @@
       },
       "dataAuthorization": {
         "newAuthorization": "New authorization",
-        "backToCurrent": "Back to current authorizations",
         "title": "Data authorization",
         "boundary": "Choose data and recipients, an approval mode and read validity, then confirm. Authorization administrators may handle grants directly; delegating handling does not grant reading.",
         "selectData": "1. Choose data to authorize",

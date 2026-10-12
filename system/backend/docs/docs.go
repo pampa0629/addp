@@ -2734,6 +2734,17 @@ const docTemplate = `{
                         "description": "接收方编号，规范正整数十进制字符串，必须同时指定 recipient_type | Recipient ID, canonical positive decimal string; requires recipient_type",
                         "name": "recipient_id",
                         "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "revoked",
+                            "expired"
+                        ],
+                        "type": "string",
+                        "description": "记录状态，省略为全部；撤销优先于到期，有效不代表实际读取许可 | Record state; omitted means all, revocation precedes expiry, active does not imply effective access",
+                        "name": "state",
+                        "in": "query"
                     }
                 ],
                 "responses": {

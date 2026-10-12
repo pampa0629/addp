@@ -1675,10 +1675,14 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
             'online-raster-minio-fixture.py stop',
         ),
         "scripts/utils/hosted-online.sh": (
+            'source "$ROOT_DIR/scripts/utils/hosted-product-runtime.sh"',
+            'com.addp.online-runtime', 'stop_online_product_runtime || status=1',
+        ),
+        "scripts/utils/hosted-product-runtime.sh": (
             'start_online_geopython_runtime', 'verify_online_product_runtime',
             '--services geopython-workflow-engine --tag $tag --verify --jobs 1',
             'Runtime image identity mismatch', 'Runtime default entry mismatch',
-            'com.addp.online-runtime', 'stop_online_product_runtime || status=1',
+            'com.addp.online-runtime',
         ),
         "business/scripts/online-raster-minio-fixture.py": (
             "full_check=True", "type=tmpfs,destination=/data", "source_unchanged", "com.addp.online-fixture",

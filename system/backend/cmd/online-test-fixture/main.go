@@ -158,7 +158,7 @@ func suitePermissions(suite string) ([]string, error) {
 	switch suite {
 	case "platform-node-metrics":
 		return nil, nil
-	case "raster-workflow":
+	case "raster-workflow", "raster-workflow-capacity":
 		return rasterWorkflowPermissions, nil
 	case "security-mysql-owner-protection":
 		permissions := append(append([]string{}, consumerPermissions...), securityPermissions...)
@@ -198,7 +198,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "quality-dynamic-binding" {
 		return true
 	}
-	return suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity") || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
@@ -207,7 +207,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
-	case "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
+	case "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	}
@@ -388,7 +388,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_USERNAME"] = username
 		values["ADDP_ONLINE_TRANSFER_CHECK_USER_PASSWORD"] = password
 	}
-	if *suite == "raster-workflow" {
+	if *(suite == "raster-workflow" || suite == "raster-workflow-capacity") {
 		policyValues, err := rasterPolicyIdentities(ctx, repository, identity, selectionService, administrator.PrincipalID)
 		if err != nil {
 			return err

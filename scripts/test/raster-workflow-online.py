@@ -413,9 +413,9 @@ def validate_utility_json(execution, case_name, physical_evidence):
     return actual
 
 
-def submit(client, engine_id, definition):
+def submit(client, engine_id, definition, *, execution_timeout=180):
     response = obj(client.request('POST', '/api/v1/develop/executions', (200,), {
-        'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': 180,
+        'dev_type': 'workflow', 'trigger_type': 'manual', 'timeout': execution_timeout,
         'content': {'workflow_definition': definition}, 'execution_config': {'engine_id': engine_id},
     }).payload, 'execution submission')
     value = response.get('execution_id')

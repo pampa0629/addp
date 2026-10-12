@@ -167,6 +167,19 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	for _, route := range []string{path, path + "/history"} {
 		engineDelegationTestRequest(t, grantTestRouter(t, &projection, exact), "GET", route+"?catalog_path="+url.QueryEscape(string(exactPath))+"&recipient_type=user&recipient_id=33", nil, 200)
 	}
+	for _, state := range []string{"active", "revoked", "expired"} {
+		filtered := independentGrantTestService{list: func(_ engineaccess.Actor, _ int64, _, _ int, f engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error) {
+			if f.State != state || f.RecipientType != "user" || f.RecipientID != 33 || f.TableSearch != "events" {
+				t.Fatalf("lost state combination: %+v", f)
+			}
+			return []engineaccess.SourceGrantView{}, 0, nil
+		}}
+		engineDelegationTestRequest(t, grantTestRouter(t, &projection, filtered), "GET", path+"/history?state="+state+"&table_search=events&recipient_type=user&recipient_id=33", nil, 200)
+		engineDelegationTestRequest(t, grantTestRouter(t, &projection, filtered), "GET", path+"?state="+state, nil, 400)
+	}
+	for _, query := range []string{"state=", "state=all", "state=issued", "state=active&state=expired", "state=ACTIVE"} {
+		engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "GET", path+"/history?"+query, nil, 400)
+	}
 	for _, failure := range []struct {
 		err    error
 		status int

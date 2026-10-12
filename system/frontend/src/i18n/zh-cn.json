@@ -1100,7 +1100,7 @@
     },
     "engine": {
       "sourceGrants": {
-        "historyBoundary": "这里是签发记录，包含已签发、已撤销和已到期的授权。查看当前有效授权或撤销权限，请切换到“当前授权”。",
+        "historyBoundary": "这里包含全部签发记录：当前有效（已签发）、已撤销和已到期。查看合并后的当前授权或撤销权限，请切换到“当前授权”。",
         "accountSourcesHint": "已合并该账号的个人、当前有效部门及项目组授权。展开一行查看和撤销具体来源；撤销一条来源不影响其他来源。源规则覆盖不等于实际可读取，仍须满足功能权限、会话与安全条件。",
         "noMatchingSources": "当前筛选下没有授权记录",
         "source": "授权来源",
@@ -1128,9 +1128,11 @@
         "allRecipientTypes": "全部类型",
         "allRecipients": "全部接收方（可按名称或编码搜索）",
         "selectRecipientType": "请先选择接收方类型",
-        "recipientFilterBoundary": "表名与接收方条件共同筛选。仅选类型查看该类全部关系；部门、项目组及授权历史按直接接收方查询。选择具体用户查看当前授权时，同时展开其组织授权来源。",
+        "recipientFilterBoundary": "表名与接收方条件共同筛选。仅选类型查看该类全部关系；部门、项目组及全部授权记录按直接接收方查询。选择具体用户查看当前授权时，同时展开其组织授权来源。",
         "current": "当前授权",
-        "history": "授权历史",
+        "history": "全部授权记录",
+        "allStates": "全部状态",
+        "recordStates": { "active": "有效", "revoked": "已撤销", "expired": "已到期" },
         "sourceCount": "有效记录数",
         "revokeCount": "将收回这条关系的全部有效授权（当前显示 {count} 份），不只撤销某一份记录。",
         "boundary": "当前授权按数据与接收方合并展示，历史单独保留。个人、部门和项目组是不同授权来源；实际读取仍须通过功能权限、当前成员关系、期限和拒绝规则核验。",
@@ -1155,7 +1157,7 @@
         "reason": "原因",
         "state": "记录状态",
         "states": {
-          "issued": "已签发",
+          "issued": "有效（已签发）",
           "expired": "已到期",
           "revoked": "已撤销"
         },
@@ -1176,7 +1178,6 @@
       },
       "dataAuthorization": {
         "newAuthorization": "新增授权",
-        "backToCurrent": "返回当前授权",
         "title": "数据授权",
         "boundary": "选择数据与接收方，明确批准方式和读取有效期后确认。授权管理员可以直接办理；委托他人办理不会让其自动获得读取权。",
         "selectData": "1. 选择要授权的数据",

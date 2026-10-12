@@ -1,8 +1,11 @@
 <template>
   <section class="data-authorization" data-testid="engine-data-authorization">
-    <div v-if="workspaceView !== 'list'" class="workspace-toolbar" data-testid="authorization-workspace-toolbar">
-      <el-button ref="backButton" data-testid="authorization-back" :disabled="busy" @click="closeGrant">{{ t('system.engine.dataAuthorization.backToCurrent') }}</el-button>
-      <h3>{{ t(canInitialize || canGrant || canUpdate ? 'system.engine.dataAuthorization.newAuthorization' : 'system.engine.dataAuthorization.configurations') }}</h3>
+    <div class="workspace-toolbar" data-testid="authorization-workspace-toolbar">
+      <el-radio-group v-model="workspaceTab" data-testid="authorization-workspace-tabs" :disabled="busy" @change="changeWorkspace">
+        <el-radio-button v-if="canInitialize || canGrant || canUpdate || canRead" value="create" data-testid="authorization-new">{{ t(canInitialize || canGrant || canUpdate ? 'system.engine.dataAuthorization.newAuthorization' : 'system.engine.dataAuthorization.configurations') }}</el-radio-button>
+        <el-radio-button ref="currentTab" value="current" :disabled="!canReadGrants">{{ t('system.engine.sourceGrants.current') }}</el-radio-button>
+        <el-radio-button value="history" :disabled="!canReadGrants">{{ t('system.engine.sourceGrants.history') }}</el-radio-button>
+      </el-radio-group>
     </div>
     <el-alert v-if="workspaceView === 'create'" type="info" :closable="false" show-icon :title="t('system.engine.dataAuthorization.boundary')" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
@@ -48,12 +51,7 @@
         </template>
       </template>
     </template>
-    <EngineSourceGrants :engine="engine" :view="workspaceView" :requirements="directRequirements" :catalog-adapter="adapter" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant">
-      <template #list-actions>
-        <el-button v-if="canInitialize || canGrant || canUpdate" ref="createButton" data-testid="authorization-new" type="primary" :disabled="busy" @click="openWorkspace('create')">{{ t('system.engine.dataAuthorization.newAuthorization') }}</el-button>
-        <el-button v-else-if="canRead" ref="createButton" data-testid="authorization-configurations" :disabled="busy" @click="openWorkspace('create')">{{ t('system.engine.dataAuthorization.configurations') }}</el-button>
-      </template>
-    </EngineSourceGrants>
+    <EngineSourceGrants :engine="engine" :view="workspaceView" :list-mode="workspaceTab === 'history' ? 'history' : 'current'" :requirements="directRequirements" :catalog-adapter="adapter" @busy="grantBusy = $event" @close="closeGrant" @issued="reloadAfterGrant" />
     <el-collapse v-if="workspaceView === 'create' && canRead"><el-collapse-item :title="t('system.engine.dataAuthorization.configurations')">
       <el-table :data="rows.slice((page - 1) * 10, page * 10)">
         <el-table-column :label="t('system.engine.dataAuthorization.target')"><template #default="{ row }">{{ approvalPathLabel(row.catalog_path) }}</template></el-table-column>
@@ -109,8 +107,10 @@ const canRead = computed(() => auth.hasPermission('system.engine_access_approval
 const canInitialize = computed(() => auth.hasPermission('system.engine_access_approval_requirement.initialize'))
 const canUpdate = computed(() => auth.hasPermission('system.engine_access_approval_requirement.update'))
 const canGrant = computed(() => auth.hasPermission('system.engine_access_grant.create'))
-const workspaceView = ref('list')
-const createButton = ref(null), backButton = ref(null)
+const canReadGrants = computed(() => auth.hasPermission('system.engine_access_grant.read'))
+const workspaceTab = ref('current')
+const workspaceView = computed(() => workspaceTab.value === 'create' ? 'create' : 'list')
+const currentTab = ref(null)
 const canBrowse = computed(() => auth.hasPermission('system.engine_catalog.read'))
 const rows = ref([]), page = ref(1), loading = ref(false), ready = ref(false), error = ref(''), saving = ref(false), selecting = ref(false), grantBusy = ref(false)
 const selection = ref(null), targets = ref([]), mode = ref(''), reason = ref(''), generation = ref(0), catalogAvailable = ref(false)
@@ -130,16 +130,14 @@ const directRequirements = computed(() => !ready.value ? [] : targets.value.filt
   existing(path) || { engine_id: String(props.engine.id), catalog_path: path, mode: 'independent', version: '1', initialize_approval: true }))
 const message = e => e?.response?.data?.error || t('system.engine.dataAuthorization.failed')
 let readSequence = 0
-function openWorkspace(view) {
-  if (busy.value) return
-  selection.value = null; error.value = ''; changed.value = false
-  workspaceView.value = view
-  nextTick(() => backButton.value?.$el?.focus())
+function changeWorkspace(tab) {
+  error.value = ''; changed.value = false
+  if (tab !== 'create') { targets.value = []; selection.value = null; mode.value = reason.value = '' }
 }
 function closeGrant() {
   if (busy.value) return
-  workspaceView.value = 'list'; targets.value = []; selection.value = null; mode.value = reason.value = ''
-  nextTick(() => createButton.value?.$el?.focus())
+  workspaceTab.value = 'current'; changeWorkspace('current')
+  nextTick(() => currentTab.value?.$el?.querySelector('input')?.focus())
 }
 async function reloadAfterGrant() {
   // The child has finished its immutable batch before returning to the list.
@@ -270,7 +268,7 @@ watch([() => props.engine.id, () => props.engine.lifecycle_state, () => props.en
   () => auth.authContext?.authorization?.authorization_version, canRead, canInitialize, canUpdate, canGrant, canBrowse,
   () => auth.hasPermission('catalog.entry.read')], () => {
   generation.value++; targets.value = []; rows.value = []; selection.value = null; mode.value = reason.value = ''; page.value = 1
-  workspaceView.value = 'list'
+  workspaceTab.value = 'current'
   change.value = null; changed.value = false
   ready.value = catalogAvailable.value = loading.value = saving.value = selecting.value = grantBusy.value = false
   load(); observeCatalog()
@@ -281,9 +279,9 @@ onBeforeUnmount(() => { generation.value++ })
 <style scoped>
 .data-authorization { display: grid; gap: 16px; min-width: 0; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.workspace-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.workspace-toolbar .el-button + .el-button { margin-left: 0; }
-.workspace-toolbar h3 { margin: 0; }
+.workspace-toolbar { position: sticky; top: 0; z-index: 2; align-self: start; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 0; background: var(--addp-bg-primary); }
+.workspace-toolbar :deep(.el-radio-group) { display: flex; flex-wrap: wrap; max-width: 100%; }
+.workspace-toolbar :deep(.el-radio-button__inner) { white-space: normal; }
 .el-select { width: 100%; }
 .hint { color: var(--addp-text-color-secondary); margin: 0; overflow-wrap: anywhere; }
 </style>

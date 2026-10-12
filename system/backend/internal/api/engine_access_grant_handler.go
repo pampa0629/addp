@@ -132,6 +132,7 @@ func (h *EngineAccessGrantHandler) List(c *gin.Context) {
 // @Param recipient_type query string false "接收方类型；仅指定类型时查看该类全部接收方 | Recipient type; type alone selects all recipients of that type" Enums(user,department,project_group)
 // @Param recipient_id query string false "接收方编号，规范正整数十进制字符串，必须同时指定 recipient_type | Recipient ID, canonical positive decimal string; requires recipient_type"
 // @Success 200 {object} object{data=[]engineaccess.SourceGrantView,total=int64,page=int,page_size=int,total_pages=int} "签发及撤销历史 | Issuance and revocation history"
+// @Param state query string false "记录状态，省略为全部；撤销优先于到期，有效不代表实际读取许可 | Record state; omitted means all, revocation precedes expiry, active does not imply effective access" Enums(active,revoked,expired)
 // @Failure 400,401,403,404,500 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_grant.read"]
@@ -154,6 +155,14 @@ func (h *EngineAccessGrantHandler) list(c *gin.Context, history bool) {
 		if len(values) != 1 {
 			err = commonapi.ErrBadRequest
 			break
+		}
+		if key == "state" {
+			if !history || values[0] == "" {
+				err = commonapi.ErrBadRequest
+				break
+			}
+			filter.State = values[0]
+			continue
 		}
 		if key == "table_search" {
 			filter.TableSearch = strings.TrimSpace(values[0])

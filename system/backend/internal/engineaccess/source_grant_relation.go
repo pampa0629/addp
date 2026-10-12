@@ -45,7 +45,7 @@ active AS MATERIALIZED (
  SELECT * FROM relations`
 
 func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, engineID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantRelation, int64, error) {
-	if page <= 0 || size <= 0 || size > 100 || page > int(^uint(0)>>1)/size {
+	if filter.State != "" || page <= 0 || size <= 0 || size > 100 || page > int(^uint(0)>>1)/size {
 		return nil, 0, commonapi.ErrBadRequest
 	}
 	if err := filter.ValidateForEngine(engineID); err != nil {
