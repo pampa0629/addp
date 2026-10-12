@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import socket
 import sys
 import time
 import urllib.parse
@@ -295,6 +296,9 @@ def normalize_key(value: object) -> str:
 def assert_phone_values(
     rows: Iterable[Mapping[str, object]], expected: Mapping[str, object], phase: str
 ) -> dict[str, object]:
+    rows = list(rows)
+    if len(rows) != len(expected) or any("id" not in row or "phone" not in row for row in rows):
+        raise SuiteError(f"Manager rows or phone field are missing in {phase} phase")
     values = {
         normalize_key(row.get("id")): row.get("phone")
         for row in rows
@@ -399,6 +403,119 @@ def verify_approval_history(approver: GatewayClient, request_id: str, authorizat
     return {"state": "approved", "authorization_state": authorization_state, "request_id": request_id}
 
 
+
+def run_security_lifecycle(repository: Path, operation: str, deadline: float) -> None:
+    SUPPORT.require_hosted_security_lifecycle(repository)
+    if operation not in {"stop", "start"}:
+        raise SuiteError("Security outage only permits the standard stop/start lifecycle")
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise SuiteError("Security outage lifecycle exceeded the Online deadline")
+    # Restored daemons must not inherit fixture Users' login credentials.
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(("ADDP_ONLINE_TEST_USER_", "ADDP_ONLINE_TEST_APPROVER_", "ADDP_ONLINE_FIXTURE_"))}
+    environment["SKIP_MODTIDY"] = "1"
+    log_path = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "security-unavailability-lifecycle.log"
+    with log_path.open("a", encoding="utf-8") as log:
+        log_path.chmod(0o600)
+        try:
+            result = subprocess.run(["bash", f"scripts/dev/{operation}.sh", "-security"],
+                cwd=repository, env=environment, stdout=log, stderr=subprocess.STDOUT,
+                timeout=remaining, check=False)
+        except subprocess.TimeoutExpired as error:
+            raise SuiteError("Security outage lifecycle timed out; Hosted exit cleanup must run") from error
+    if result.returncode != 0:
+        raise SuiteError("Security outage lifecycle failed; see security-unavailability-lifecycle.log")
+
+
+def security_listener_refused() -> str:
+    # Admission fixes SECURITY_URL to this Hosted-only loopback listener.
+    try:
+        with socket.create_connection(("127.0.0.1", 8194), timeout=3):
+            pass
+    except ConnectionRefusedError:
+        return datetime.now(timezone.utc).isoformat()
+    except OSError as error:
+        raise SuiteError("Security outage probe did not prove a refused listener") from error
+    raise SuiteError("Security Backend is still listening during the outage")
+
+
+def wait_for_grant_expiry(expires_at: datetime, deadline: float) -> None:
+    while datetime.now(timezone.utc) <= expires_at + timedelta(seconds=1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise SuiteError("grant did not expire before the Online deadline")
+        time.sleep(min(1, remaining))
+
+
+def wait_for_current_grant(applicant: GatewayClient, target_identity: str,
+                           assessment_id: str, exemption_id: str, deadline: float) -> None:
+    while time.monotonic() < deadline:
+        matches = [target for target in access_targets(applicant, target_identity)
+                   if target.get("assessment_id") == assessment_id]
+        if (len(matches) == 1 and matches[0].get("active_exemption_id") == exemption_id
+                and matches[0].get("projection_acknowledged") is True):
+            return
+        time.sleep(1)
+    raise SuiteError("outage grant projection was not acknowledged before the Online deadline")
+
+
+def exercise_security_unavailability(applicant: GatewayClient, approver: GatewayClient,
+                                     tenant_id: int, locator: str, target_identity: str,
+                                     assessment_id: str, identities: list[dict[str, object]],
+                                     deadline: float) -> dict[str, object]:
+    repository = Path(__file__).resolve().parents[2]
+    SUPPORT.require_hosted_security_lifecycle(repository)
+    security_before = SUPPORT.ready_process("security")
+    manager_before = SUPPORT.ready_process("manager")
+    request_id, exemption_id, expires_at = approve_access_request(applicant, approver, assessment_id, 90)
+    wait_for_manager_values(applicant, locator, RAW_VALUES, "before-outage", deadline)
+    wait_for_current_grant(applicant, target_identity, assessment_id, exemption_id, deadline)
+    refusals: list[dict[str, str]] = []
+    previews: dict[str, object] = {}
+    try:
+        run_security_lifecycle(repository, "stop", deadline)
+        for phase, consumer, expected in (
+            ("authorized_applicant", applicant, RAW_VALUES),
+            ("protected_other_subject", approver, MASKED_VALUES),
+            ("expired_applicant", applicant, MASKED_VALUES),
+            ("expired_other_subject", approver, MASKED_VALUES),
+        ):
+            active = phase in {"authorized_applicant", "protected_other_subject"}
+            if phase == "expired_applicant":
+                wait_for_grant_expiry(expires_at, deadline)
+            if time.monotonic() >= deadline:
+                raise SuiteError("Security outage previews exceeded the Online deadline")
+            if active and datetime.now(timezone.utc) >= expires_at:
+                raise SuiteError("outage grant expired before its active preview was verified")
+            refusals.append({"phase": phase, "boundary": "before", "observed_at": security_listener_refused()})
+            # One real request: retries could hide an incorrect protected output.
+            previews[phase] = manager_evidence(consumer, locator, expected, phase)
+            refusals.append({"phase": phase, "boundary": "after", "observed_at": security_listener_refused()})
+            if active and datetime.now(timezone.utc) >= expires_at:
+                raise SuiteError("outage grant expired during its active preview")
+            if SUPPORT.ready_process("manager") != manager_before:
+                raise SuiteError("Manager process changed during the Security outage")
+    finally:
+        # A partially failed stop still needs recovery; outer cleanup remains mandatory.
+        run_security_lifecycle(repository, "start", deadline)
+    security_after = SUPPORT.ready_process("security")
+    SUPPORT.verify_restarted_process("security", security_before, security_after)
+    if SUPPORT.ready_process("manager") != manager_before:
+        raise SuiteError("Manager process changed during Security restoration")
+    after_identities = [validate_user_identity(applicant, tenant_id, APPLICANT_PERMISSIONS, "applicant"),
+                        validate_user_identity(approver, tenant_id, APPROVER_PERMISSIONS, "approver")]
+    if after_identities != identities:
+        raise SuiteError("Security outage changed the two ordinary Users or Tenant")
+    history = verify_approval_history(approver, request_id, "expired")
+    return {"request_id": request_id, "exemption_id": exemption_id,
+            "authorization_seconds": 90, "expires_at": expires_at.isoformat(),
+            "connection_refusals": refusals, **previews,
+            "manager_process_unchanged": True, "manager_process": manager_before,
+            "security_process": {"before": security_before, "after": security_after},
+            "same_users_verified": True, "expired_approval_history": history}
+
+
 def run_scenario(
     applicant: GatewayClient,
     approver: GatewayClient,
@@ -477,8 +594,11 @@ def run_scenario(
     revoked = wait_for_manager_values(applicant, source_locator, MASKED_VALUES, "revoked", deadline)
     revoked_history = verify_approval_history(approver, revoked_request_id, "revoked")
 
+    outage = exercise_security_unavailability(applicant, approver, tenant_id, source_locator,
+        target_identity, assessment_id, [applicant_identity, approver_identity], deadline)
+
     return {
-        "schema_version": "addp.security-plaintext-access-online/v3",
+        "schema_version": "addp.security-plaintext-access-online/v4",
         "result": "passed",
         "identities": {
             "applicant": applicant_identity,
@@ -510,11 +630,12 @@ def run_scenario(
             "revoked_applicant": revoked,
             "revoked_approval_history": revoked_history,
         },
+        "security_unavailability": outage,
         "created_resources": 0,
         "deleted_resources": 0,
         "residual_resources": 0,
-        "audit_retained": {"access_request_ids": [request_id, revoked_request_id],
-                           "exemption_ids": sorted({exemption_id, revoked_exemption_id})},
+        "audit_retained": {"access_request_ids": [request_id, revoked_request_id, outage["request_id"]],
+                           "exemption_ids": sorted({exemption_id, revoked_exemption_id, outage["exemption_id"]})},
     }
 
 

@@ -460,9 +460,9 @@ class MongoAlgorithmTest(unittest.TestCase):
         process = RestartRecoveryTest().process
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_TENANT_ID": "2"}), \
-             patch.object(ONLINE, "require_hosted_restart"), \
+             patch.object(ONLINE.SUPPORT, "require_hosted_security_lifecycle"), \
              patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "7"}), \
-             patch.object(ONLINE, "ready_process", side_effect=[process(), process(), process(True), process(True)]), \
+             patch.object(ONLINE.SUPPORT, "ready_process", side_effect=[process(), process(), process(True), process(True)]), \
              patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=0)), \
              patch.object(ONLINE, "wait_for_scan", return_value="mongo-scan") as scan:
             prepared = ONLINE.prepare_mongodb_source(client, 29, time.monotonic() + 60)
@@ -641,9 +641,9 @@ class RestartRecoveryTest(unittest.TestCase):
         client.baseline["algorithm"] = ONLINE.SM3_ALGORITHM
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_TENANT_ID": "2"}), \
-             patch.object(ONLINE, "require_hosted_restart"), \
+             patch.object(ONLINE.SUPPORT, "require_hosted_security_lifecycle"), \
              patch.object(ONLINE, "validate_user_identity", side_effect=identity or [{"principal_id": "7"}] * 2), \
-             patch.object(ONLINE, "ready_process", side_effect=[self.process(), self.process(), after or self.process(True), self.process(True)]), \
+             patch.object(ONLINE.SUPPORT, "ready_process", side_effect=[self.process(), self.process(), after or self.process(True), self.process(True)]), \
              patch.object(ONLINE.subprocess, "run", side_effect=restart, return_value=Mock(returncode=0)) as lifecycle, \
              patch.object(ONLINE, "wait_for_scan", side_effect=AssertionError("restart must not rescan")):
             result = ONLINE.exercise_restart_recovery(client, 17, source, "enrolled", "41", ["1", "2", "3"], expected, time.monotonic() + 60)
@@ -710,30 +710,30 @@ class RestartRecoveryTest(unittest.TestCase):
                                ADDP_ONLINE_ARTIFACT_DIR=directory + "/artifact")
             with patch.dict(os.environ, environment, clear=True), patch.object(ONLINE.sys, "platform", "linux"), \
                  patch.object(ONLINE.os, "uname", return_value=Mock(machine="x86_64")):
-                ONLINE.require_hosted_restart(repository)
+                ONLINE.SUPPORT.require_hosted_security_lifecycle(repository)
                 for key, value in (("MANAGER_URL", "http://localhost:8081"),
                                    ("ADDP_ONLINE_ARTIFACT_DIR", str(repository / "artifacts")),
                                    ("ADDP_ONLINE_SECRET_DIR", "relative")):
                     with self.subTest(key=key), patch.dict(os.environ, {key: value}), self.assertRaises(ONLINE.SuiteError):
-                        ONLINE.require_hosted_restart(repository)
+                        ONLINE.SUPPORT.require_hosted_security_lifecycle(repository)
                 (repository / ".env").touch()
                 with self.assertRaises(ONLINE.SuiteError):
-                    ONLINE.require_hosted_restart(repository)
+                    ONLINE.SUPPORT.require_hosted_security_lifecycle(repository)
                 (repository / ".env").unlink()
                 with patch.object(ONLINE.sys, "platform", "darwin"), self.assertRaises(ONLINE.SuiteError):
-                    ONLINE.require_hosted_restart(repository)
+                    ONLINE.SUPPORT.require_hosted_security_lifecycle(repository)
 
     def test_ready_requires_registered_backend_and_complete_process_identity(self):
         payload = dict(self.process(), module="manager", status="ready", role="backend", registration_state="registered")
-        with patch.dict(os.environ, {"MANAGER_URL": "http://127.0.0.1:8081"}), patch.object(ONLINE, "GatewayClient") as health:
+        with patch.dict(os.environ, {"MANAGER_URL": "http://127.0.0.1:8081"}), patch.object(ONLINE.SUPPORT, "GatewayClient") as health:
             health.return_value.request.return_value = ONLINE.SUPPORT.Response(200, payload)
-            self.assertEqual(ONLINE.ready_process("manager"), self.process())
+            self.assertEqual(ONLINE.SUPPORT.ready_process("manager"), self.process())
             self.assertEqual(health.call_args.args[1], "")
             for key, value in (("registration_state", "recovering"), ("instance_id", "invalid"),
                                ("started_at", "2026-10-10T00:00:00"), ("build_id", ""), ("module", "meta")):
                 health.return_value.request.return_value = ONLINE.SUPPORT.Response(200, dict(payload, **{key: value}))
                 with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
-                    ONLINE.ready_process("manager")
+                    ONLINE.SUPPORT.ready_process("manager")
 
     def test_restart_failure_still_restores_owned_rules(self):
         client = SpatialClient()
@@ -1074,7 +1074,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 patch.dict(os.environ, environment, clear=True),
                 patch.object(sys, 'argv', [str(SCRIPT)]),
                 patch.object(ONLINE.signal, 'signal'),
-                patch.object(ONLINE, 'require_hosted_restart'),
+                patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle'),
                 patch.object(ONLINE, 'validate_user_identity', return_value={}) as identity,
                 patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared'}) as prepare,
                 patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}) as targets,

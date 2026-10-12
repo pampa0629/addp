@@ -7,6 +7,8 @@ import json
 import os
 import sys
 import time
+import uuid
+from datetime import datetime
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -613,6 +615,47 @@ def require_hosted_initialization(environment: Mapping[str, str]) -> None:
     for key, expected in required.items():
         if environment.get(key) != expected:
             raise SuiteError("Security initialization requires disposable Hosted Online: " + key)
+
+
+def require_hosted_security_lifecycle(repository: Path) -> None:
+    require_hosted_initialization(os.environ)
+    if sys.platform != "linux" or os.uname().machine != "x86_64" or (repository / ".env").exists():
+        raise SuiteError("Security lifecycle requires a disposable Hosted Linux checkout without .env")
+    for key, expected in (("SECURITY_URL", "http://127.0.0.1:8194"),
+                          ("MANAGER_URL", "http://127.0.0.1:8081")):
+        if os.environ.get(key) != expected:
+            raise SuiteError("Security lifecycle refuses a non-Hosted endpoint: " + key)
+    for key in ("ADDP_ONLINE_SECRET_DIR", "ADDP_ONLINE_ARTIFACT_DIR"):
+        path = Path(required_environment(key))
+        if not path.is_absolute() or path.resolve().is_relative_to(repository.resolve()):
+            raise SuiteError("Security lifecycle requires external evidence and credentials: " + key)
+
+
+def ready_process(module: str) -> dict[str, str]:
+    # Health is public; never send the consumer's token to a diagnostic endpoint.
+    payload = _object(GatewayClient(required_environment(module.upper() + "_URL"), "", 30)
+                      .request("GET", "/health/ready", (200,)).payload, module + " Ready")
+    if (payload.get("module") != module or payload.get("status") != "ready"
+            or payload.get("role") != "backend" or payload.get("registration_state") != "registered"):
+        raise SuiteError(module + " is not a registered ready backend")
+    fields = ("instance_id", "started_at", "build_id", "git_commit", "source_fingerprint")
+    if any(not isinstance(payload.get(key), str) or not payload[key] for key in fields):
+        raise SuiteError(module + " Ready has incomplete process or build identity")
+    try:
+        if uuid.UUID(payload["instance_id"]).int == 0 or datetime.fromisoformat(payload["started_at"]).tzinfo is None:
+            raise ValueError("invalid process identity")
+    except ValueError as error:
+        raise SuiteError(module + " Ready has invalid process identity") from error
+    return {key: payload[key] for key in fields}
+
+
+def verify_restarted_process(module: str, before: Mapping[str, str], after: Mapping[str, str]) -> None:
+    if (before["instance_id"] == after["instance_id"]
+            or datetime.fromisoformat(after["started_at"]) <= datetime.fromisoformat(before["started_at"])):
+        raise SuiteError(module + " did not restart with a new process identity and later start")
+    if any(before[key] != after[key] for key in ("build_id", "git_commit", "source_fingerprint")):
+        raise SuiteError(module + " changed build inputs during restart acceptance")
+
 
 
 def initialize_fresh_governance(client: GatewayClient, tenant_id: int,

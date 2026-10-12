@@ -669,7 +669,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         paths = ("scripts/test/online-hosted-security-gate.sh", "scripts/test/online-host-gate.sh",
                  ".github/workflows/online-t4-gates.yml", "Makefile", "business/scripts/online-security-owner-fixture.sh",
                  "scripts/test/security-plaintext-access-online.py", "system/backend/cmd/online-test-fixture/main.go",
-                 "console/frontend/e2e/online/security-plaintext-access.spec.js")
+                 "console/frontend/e2e/online/security-plaintext-access.spec.js",
+                 "scripts/test/security-transfer-protection-online.py")
         for relative in paths:
             target = self.repository / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -679,6 +680,13 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in ((paths[0], "# ADDP_ONLINE_SUITES=security-plaintext-access"),
                                    (paths[5], "review-queue?scope=pending"),
                                    (paths[5], "revoked_applicant"),
+                                   (paths[5], 'addp.security-plaintext-access-online/v4'),
+                                   (paths[5], 'outage = exercise_security_unavailability('),
+                                   (paths[5], 'run_security_lifecycle(repository, "stop", deadline)'),
+                                   (paths[5], 'run_security_lifecycle(repository, "start", deadline)'),
+                                   (paths[5], 'connection_refusals'),
+                                   (paths[8], 'def require_hosted_security_lifecycle('),
+
                                    (paths[6], "plaintextApproverPermissions"),
                                    (paths[6], "ADDP_ONLINE_TEST_APPROVER_PASSWORD"),
                                    (paths[5], 'report["browser"] = run_plaintext_browser('),
@@ -732,7 +740,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/online-gate.py", '("monitor", "MONITOR_URL"),', "must preflight Monitor"),
             ("scripts/test/security-mysql-owner-protection-online.py", "run_export_browser(", "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", "wait_for_technical_field(", "must dispatch and validate"),
-            ("scripts/test/security-mysql-owner-protection-online.py", "require_hosted_restart(", "must dispatch and validate"),
+            ("scripts/test/security-mysql-owner-protection-online.py", "SUPPORT.require_hosted_security_lifecycle(", "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", "exercise_restart_recovery(", "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", '"verified_before_rescan"', "must dispatch and validate"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "technical_field_search_verified", "export browser contract is missing"),

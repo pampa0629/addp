@@ -542,7 +542,15 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
             "applicant and approver must be two different Users", "preview_rows = SUPPORT.preview_rows",
             "/api/v1/security/protection-access-request-targets", "review-queue?scope=pending",
             '"scope": "history"', "protected_other_subject", "expired_without_security_refresh",
-            "revoked_applicant", "revoked_approval_history", 'addp.security-plaintext-access-online/v3', 'validate_plaintext_browser_report(', 'run_plaintext_browser(', 'report["browser"] = run_plaintext_browser(',
+            "revoked_applicant", "revoked_approval_history", 'addp.security-plaintext-access-online/v4', 'validate_plaintext_browser_report(', 'run_plaintext_browser(', 'report["browser"] = run_plaintext_browser(',
+            'outage = exercise_security_unavailability(', 'SUPPORT.require_hosted_security_lifecycle(repository)',
+            'run_security_lifecycle(repository, "stop", deadline)', 'run_security_lifecycle(repository, "start", deadline)',
+            'finally:', 'security_listener_refused()', 'connection_refusals', 'manager_process_unchanged',
+            'ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_TEST_APPROVER_', 'ADDP_ONLINE_FIXTURE_',
+        ),
+        "scripts/test/security-transfer-protection-online.py": (
+            'def require_hosted_security_lifecycle(', 'def ready_process(', 'def verify_restarted_process(',
+            'a disposable Hosted Linux checkout without .env', 'registration_state', 'source_fingerprint',
         ),
         "system/backend/cmd/online-test-fixture/main.go": ("plaintextApplicantPermissions", "plaintextApproverPermissions", "external-online-plaintext-approver", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN", "ADDP_ONLINE_TEST_APPROVER_USERNAME", "ADDP_ONLINE_TEST_APPROVER_PASSWORD"),
         "console/frontend/e2e/online/security-plaintext-access.spec.js": (
@@ -676,7 +684,7 @@ def validate_security_mysql_owner_protection_profile(
 
     for fragment in ("run_export_browser(", "validate_export_browser_report(", "e2e/online/security-manager-export.spec.js",
                      "wait_for_technical_field(", '"technical_field_search"', '"manager.search.execute"',
-                     "require_hosted_restart(", "exercise_restart_recovery(", "verify_restarted_process(",
+                     "SUPPORT.require_hosted_security_lifecycle(", "exercise_restart_recovery(", "verify_restarted_process(",
                      '"scripts/dev/restart.sh", "-security", "-manager"', '"verified_before_rescan"',
                      "prepare_mongodb_source(", '"initial_technical_field_search"',
                      "verify_unprotected_mongodb_derived_query(", "verify_mongodb_query_boundaries(",

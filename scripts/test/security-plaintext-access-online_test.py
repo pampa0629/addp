@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from contextlib import ExitStack
+import time
 
 
 SCRIPT = Path(__file__).with_name("security-plaintext-access-online.py")
@@ -140,11 +142,15 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
              patch.object(ONLINE, 'approve_access_request', side_effect=approve), \
              patch.object(ONLINE, 'wait_for_manager_values', side_effect=preview), \
              patch.object(ONLINE, 'verify_approval_history', side_effect=lambda *args: events.append('history-' + args[-1]) or {}), \
-             patch.object(ONLINE, 'revoke_exemption', side_effect=lambda *args: events.append('revoke')):
+             patch.object(ONLINE, 'revoke_exemption', side_effect=lambda *args: events.append('revoke')), \
+             patch.object(ONLINE, 'exercise_security_unavailability', side_effect=lambda *args: events.append('outage') or {'request_id': 'outage-request', 'exemption_id': 'outage-grant'}):
             report = ONLINE.run_scenario(applicant, approver, 2, 17, 120)
         self.assertEqual(events, ['baseline', 'approve', 'authorized', 'other-subject', 'expired', 'history-expired',
-                                  'approve', 'second-approval', 'other-subject-second-approval', 'revoke', 'revoked', 'history-revoked'])
-        self.assertEqual(report['schema_version'], 'addp.security-plaintext-access-online/v3')
+                                  'approve', 'second-approval', 'other-subject-second-approval', 'revoke', 'revoked', 'history-revoked', 'outage'])
+        self.assertEqual(report['schema_version'], 'addp.security-plaintext-access-online/v4')
+        self.assertIn('outage-request', report['audit_retained']['access_request_ids'])
+        self.assertIn('outage-grant', report['audit_retained']['exemption_ids'])
+        self.assertEqual(report['security_unavailability']['request_id'], 'outage-request')
         self.assertFalse(report['lifecycle']['expired_without_security_refresh']['plaintext'])
         self.assertFalse(report['lifecycle']['revoked_applicant']['plaintext'])
         self.assertTrue(report['lifecycle']['second_authorized_applicant']['plaintext'])
@@ -259,6 +265,128 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
                 with self.assertRaisesRegex(ONLINE.SuiteError, 'APPROVER_PASSWORD'):
                     ONLINE.run_plaintext_browser(Path('/repo'), env, api)
                 process.assert_not_called()
+
+
+class SecurityUnavailabilityTest(unittest.TestCase):
+    def process(self, newer=False):
+        return {"instance_id": "old" if not newer else "new",
+                "started_at": "2026-10-12T00:00:00Z" if not newer else "2026-10-12T00:01:00Z",
+                "build_id": "build", "git_commit": "commit", "source_fingerprint": "sha256:source"}
+
+    def exercise(self, *, preview_error=None, probe_error=None, manager_changed=False,
+                 recovery_error=None, identity_changed=False):
+        events = []
+        self.last_events = events
+        applicant, approver = Mock(), Mock()
+        now = [datetime(2026, 10, 12, tzinfo=timezone.utc)]
+        expiry = now[0] + timedelta(seconds=90)
+        def lifecycle(repository, operation, deadline):
+            events.append(operation)
+            if operation == 'start' and recovery_error:
+                raise ONLINE.SuiteError('recovery failed')
+        def preview(client, locator, expected, phase):
+            events.append(phase)
+            if preview_error and phase == preview_error:
+                raise ONLINE.SuiteError('unexpected preview')
+            return {"rows": 3, "plaintext": expected == ONLINE.RAW_VALUES}
+        def probe():
+            events.append('refused')
+            if probe_error:
+                raise ONLINE.SuiteError('Security still listening')
+            return now[0].isoformat()
+        def wait(expires_at, deadline):
+            events.append('wait-expiry')
+            now[0] = expires_at + timedelta(seconds=1)
+        def ready(module):
+            if module == 'security':
+                return self.process('start' in events)
+            return self.process(manager_changed and 'stop' in events)
+        identities = [{"principal_id": "41"}, {"principal_id": "42"}]
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle'))
+            stack.enter_context(patch.object(ONLINE.SUPPORT, 'ready_process', side_effect=ready))
+            stack.enter_context(patch.object(ONLINE, 'approve_access_request', return_value=('outage-request', 'outage-grant', expiry)))
+            stack.enter_context(patch.object(ONLINE, 'wait_for_manager_values', return_value={"rows": 3, "plaintext": True}))
+            stack.enter_context(patch.object(ONLINE, 'wait_for_current_grant'))
+            stack.enter_context(patch.object(ONLINE, 'run_security_lifecycle', side_effect=lifecycle))
+            stack.enter_context(patch.object(ONLINE, 'security_listener_refused', side_effect=probe))
+            stack.enter_context(patch.object(ONLINE, 'manager_evidence', side_effect=preview))
+            stack.enter_context(patch.object(ONLINE, 'wait_for_grant_expiry', side_effect=wait))
+            stack.enter_context(patch.object(ONLINE, 'validate_user_identity', side_effect=[{"principal_id": "different"} if identity_changed else identities[0], identities[1]]))
+            stack.enter_context(patch.object(ONLINE, 'verify_approval_history', return_value={"state": "approved", "authorization_state": "expired"}))
+            wall = stack.enter_context(patch.object(ONLINE, 'datetime', wraps=datetime))
+            wall.now.side_effect = lambda *args: now[0]
+            report = ONLINE.exercise_security_unavailability(applicant, approver, 2, 'locator', 'target',
+                'assessment', identities, time.monotonic() + 120)
+        return report, events
+
+    def test_outage_proves_both_subjects_before_and_after_real_expiry_then_recovers(self):
+        report, events = self.exercise()
+        self.assertEqual(events, ['stop', 'refused', 'authorized_applicant', 'refused',
+            'refused', 'protected_other_subject', 'refused', 'wait-expiry',
+            'refused', 'expired_applicant', 'refused', 'refused', 'expired_other_subject', 'refused', 'start'])
+        self.assertEqual(len(report['connection_refusals']), 8)
+        self.assertTrue(report['authorized_applicant']['plaintext'])
+        for key in ('protected_other_subject', 'expired_applicant', 'expired_other_subject'):
+            self.assertEqual(report[key], {"rows": 3, "plaintext": False})
+        self.assertTrue(report['manager_process_unchanged'])
+        self.assertTrue(report['same_users_verified'])
+        self.assertEqual(report['security_process']['after'], self.process(True))
+        self.assertEqual(report['authorization_seconds'], 90)
+
+    def test_unavailable_probe_accepts_only_refused_listener(self):
+        for error in (ConnectionRefusedError(), TimeoutError(), OSError('other transport failure'), None):
+            with self.subTest(error=error), patch.object(ONLINE.socket, 'create_connection', side_effect=error):
+                if isinstance(error, ConnectionRefusedError):
+                    self.assertIsInstance(ONLINE.security_listener_refused(), str)
+                else:
+                    with self.assertRaises(ONLINE.SuiteError):
+                        ONLINE.security_listener_refused()
+
+    def test_each_outage_failure_always_attempts_restoration(self):
+        for options in ({'preview_error': 'authorized_applicant'}, {'preview_error': 'expired_applicant'},
+                        {'probe_error': True}, {'manager_changed': True}):
+            with self.subTest(options=options):
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.exercise(**options)
+                self.assertEqual(self.last_events[-1], 'start')
+        for options in ({'recovery_error': True}, {'identity_changed': True}):
+            with self.subTest(options=options), self.assertRaises(ONLINE.SuiteError):
+                self.exercise(**options)
+
+    def test_lifecycle_is_hosted_only_and_does_not_export_user_credentials(self):
+        with patch.dict(ONLINE.os.environ, {}, clear=True), patch.object(ONLINE.subprocess, 'run') as process:
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.run_security_lifecycle(Path('/personal'), 'stop', time.monotonic() + 60)
+            process.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(ONLINE.os.environ, {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'SYSTEM_URL': 'http://system',
+                'ADDP_ONLINE_TEST_USER_PASSWORD': 'private', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'token',
+                'ADDP_ONLINE_TEST_APPROVER_PASSWORD': 'private', 'ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN': 'prep'}), \
+             patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle'), \
+             patch.object(ONLINE.subprocess, 'run', return_value=Mock(returncode=0)) as process:
+            ONLINE.run_security_lifecycle(Path('/repo'), 'start', time.monotonic() + 60)
+            self.assertEqual(process.call_args.args[0], ['bash', 'scripts/dev/start.sh', '-security'])
+            env = process.call_args.kwargs['env']
+            self.assertEqual(env['SYSTEM_URL'], 'http://system')
+            self.assertEqual(env['SKIP_MODTIDY'], '1')
+            for key in ('ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',
+                        'ADDP_ONLINE_TEST_APPROVER_PASSWORD', 'ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN'):
+                self.assertNotIn(key, env)
+            for result in (Mock(returncode=1), ONLINE.subprocess.TimeoutExpired('start', 60)):
+                with patch.object(ONLINE.subprocess, 'run', side_effect=result if isinstance(result, BaseException) else None,
+                                  return_value=result), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.run_security_lifecycle(Path('/repo'), 'start', time.monotonic() + 60)
+            process.reset_mock()
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.run_security_lifecycle(Path('/repo'), 'stop', time.monotonic() - 1)
+            process.assert_not_called()
+
+    def test_missing_null_field_and_duplicate_row_do_not_count_as_preserved(self):
+        rows = [{'id': int(k), 'phone': v} for k, v in ONLINE.MASKED_VALUES.items()]
+        for invalid in (rows[:2] + [{'id': 3}], rows + [rows[0]]):
+            with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_phone_values(invalid, ONLINE.MASKED_VALUES, 'outage')
 
 
 if __name__ == "__main__":

@@ -921,58 +921,18 @@ def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mappin
     raise SuiteError(f"protected technical field was not searchable before the deadline: Engine {engine_id}, {item.get('full_name')}, {field_name}")
 
 
-def require_hosted_restart(repository: Path) -> None:
-    require_hosted_initialization(os.environ)
-    if sys.platform != "linux" or os.uname().machine != "x86_64" or (repository / ".env").exists():
-        raise SuiteError("Security restart requires a disposable Hosted Linux checkout without .env")
-    for key, expected in (("SECURITY_URL", "http://127.0.0.1:8194"),
-                          ("MANAGER_URL", "http://127.0.0.1:8081")):
-        if os.environ.get(key) != expected:
-            raise SuiteError("Security restart refuses a non-Hosted endpoint: " + key)
-    for key in ("ADDP_ONLINE_SECRET_DIR", "ADDP_ONLINE_ARTIFACT_DIR"):
-        path = Path(required_environment(key))
-        if not path.is_absolute() or path.resolve().is_relative_to(repository.resolve()):
-            raise SuiteError("Security restart requires external evidence and credentials: " + key)
-
-
-def ready_process(module: str) -> dict[str, str]:
-    # Health is public; never send the consumer's token to a diagnostic endpoint.
-    payload = _object(GatewayClient(required_environment(module.upper() + "_URL"), "", 30)
-                      .request("GET", "/health/ready", (200,)).payload, module + " Ready")
-    if (payload.get("module") != module or payload.get("status") != "ready"
-            or payload.get("role") != "backend" or payload.get("registration_state") != "registered"):
-        raise SuiteError(module + " is not a registered ready backend")
-    fields = ("instance_id", "started_at", "build_id", "git_commit", "source_fingerprint")
-    if any(not isinstance(payload.get(key), str) or not payload[key] for key in fields):
-        raise SuiteError(module + " Ready has incomplete process or build identity")
-    try:
-        if uuid.UUID(payload["instance_id"]).int == 0 or datetime.fromisoformat(payload["started_at"]).tzinfo is None:
-            raise ValueError("invalid process identity")
-    except ValueError as error:
-        raise SuiteError(module + " Ready has invalid process identity") from error
-    return {key: payload[key] for key in fields}
-
-
-def verify_restarted_process(module: str, before: Mapping[str, str], after: Mapping[str, str]) -> None:
-    if (before["instance_id"] == after["instance_id"]
-            or datetime.fromisoformat(after["started_at"]) <= datetime.fromisoformat(before["started_at"])):
-        raise SuiteError(module + " did not restart with a new process identity and later start")
-    if any(before[key] != after[key] for key in ("build_id", "git_commit", "source_fingerprint")):
-        raise SuiteError(module + " changed build inputs during restart acceptance")
-
-
 def exercise_restart_recovery(client: GatewayClient, engine_id: int, source: Mapping[str, object],
                               enrollment_id: str, baseline_id: str, policy_ids: list[str],
                               expected: Mapping[str, object], deadline: float, *,
                               field_name: str = "value_c", assert_rows=assert_spatial_rows) -> dict[str, object]:
     repository = Path(__file__).resolve().parents[2]
-    require_hosted_restart(repository)
+    SUPPORT.require_hosted_security_lifecycle(repository)
     tenant_id = positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id")
     identity = validate_user_identity(client, tenant_id)
     paths = [f"/api/v1/security/protection-baselines/{baseline_id}"] + [
         f"/api/v1/security/protection-policies/{policy_id}" for policy_id in policy_ids]
     definitions = [client.request("GET", path, (200,)).payload for path in paths]
-    before = {module: ready_process(module) for module in ("security", "manager")}
+    before = {module: SUPPORT.ready_process(module) for module in ("security", "manager")}
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise SuiteError("Security restart acceptance deadline expired before lifecycle execution")
@@ -988,9 +948,9 @@ def exercise_restart_recovery(client: GatewayClient, engine_id: int, source: Map
             raise SuiteError("Security restart lifecycle timed out; Hosted exit cleanup must run") from error
     if result.returncode != 0:
         raise SuiteError("Security restart lifecycle failed; see security-restart-lifecycle.log")
-    after = {module: ready_process(module) for module in before}
+    after = {module: SUPPORT.ready_process(module) for module in before}
     for module in before:
-        verify_restarted_process(module, before[module], after[module])
+        SUPPORT.verify_restarted_process(module, before[module], after[module])
     if validate_user_identity(client, tenant_id) != identity:
         raise SuiteError("Security restart changed the ordinary User or Tenant")
     if [client.request("GET", path, (200,)).payload for path in paths] != definitions:
@@ -1751,7 +1711,7 @@ def main() -> int:
         return 0
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")
-    require_hosted_restart(Path(__file__).resolve().parents[2])
+    SUPPORT.require_hosted_security_lifecycle(Path(__file__).resolve().parents[2])
     tenant_id = positive_int(
         required_environment("ADDP_ONLINE_TEST_TENANT_ID"),
         "ADDP_ONLINE_TEST_TENANT_ID",
