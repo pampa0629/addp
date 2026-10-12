@@ -122,6 +122,7 @@ var orchestratorPeerPermissions = []string{"monitor.execution.read", "meta.scan_
 
 var managerArtifactPermissions = []string{
 	"manager.content.read",
+	"manager.data_item.update",
 	"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.delete", "manager.derived_artifact.read",
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
 }

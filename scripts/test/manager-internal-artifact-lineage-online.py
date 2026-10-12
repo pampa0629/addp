@@ -34,6 +34,7 @@ DELIMITED_SHA256 = {
 REQUIRED_PERMISSIONS = {
     "manager.content.read",
     "manager.data_item.read",
+    "manager.data_item.update",
     "manager.derived_artifact.create",
     "manager.derived_artifact.delete",
     "manager.derived_artifact.read",
@@ -206,6 +207,9 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     missing = REQUIRED_PERMISSIONS - permissions
     if missing:
         raise SuiteError("Online Manager lineage token is missing required permissions: " + ", ".join(sorted(missing)))
+    unexpected = permissions - REQUIRED_PERMISSIONS
+    if unexpected:
+        raise SuiteError("Online Manager lineage token has unexpected permissions: " + ", ".join(sorted(unexpected)))
     return {
         "principal_id": str(principal_id),
         "principal_type": "user",

@@ -508,6 +508,24 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         return {'locator': FakeGatewayClient().raster['locator'], 'item_id': 95,
                 'preview_url': '/api/v1/manager/raster_cog/305/content'}
 
+    def test_user_identity_rejects_missing_refresh_or_download_and_extra_permissions(self):
+        for missing, extra in (("manager.data_item.update", ""),
+                               ("manager.content.read", ""),
+                               ("", "manager.data_item.delete")):
+            client = FakeGatewayClient()
+            original = client._request
+            def changed(method, path, body, headers):
+                response = original(method, path, body, headers)
+                if path == "/api/v1/system/auth/context":
+                    granted = response.payload["authorization"]["role_assignments"][0]["permissions"]
+                    granted[:] = [key for key in granted if key != missing]
+                    if extra:
+                        granted.append(extra)
+                return response
+            with self.subTest(missing=missing, extra=extra), mock.patch.object(client, '_request', side_effect=changed):
+                with self.assertRaisesRegex(SUITE.SuiteError, missing or extra):
+                    SUITE.validate_user_identity(client, 42)
+
     def browser_models(self):
         client = FakeGatewayClient()
         return [{"format": format_name, "locator": model["locator"], "item_id": model["item_id"],

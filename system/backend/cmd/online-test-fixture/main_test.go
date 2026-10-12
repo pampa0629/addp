@@ -348,11 +348,14 @@ func TestOrchestratorFixtureHasOnlyRequiredOwnerPermissions(t *testing.T) {
 
 func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *testing.T) {
 	permissions, err := suitePermissions("manager-internal-artifact-lineage")
-	if err != nil || len(permissions) != 9 || !needsEngineProvisioner("manager-internal-artifact-lineage") {
+	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("manager-internal-artifact-lineage") {
 		t.Fatalf("Manager fixture contract: %v, %v", permissions, err)
 	}
 	if !slices.Contains(permissions, "manager.content.read") {
 		t.Fatal("Manager source download requires its existing content read permission")
+	}
+	if !slices.Contains(permissions, "manager.data_item.update") {
+		t.Fatal("Manager encoding and ordinary item refresh require its existing update permission")
 	}
 	for _, key := range permissions {
 		if strings.HasPrefix(key, "system.") || strings.HasPrefix(key, "iam.") {
