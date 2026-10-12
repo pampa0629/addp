@@ -688,7 +688,8 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 
 	taskRepo := NewTaskRepository(db)
 	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
-	now := time.Now()
+	// PostgreSQL binds timestamps at microsecond precision; JSON RFC3339 must share that clock.
+	now := time.Now().Truncate(time.Microsecond)
 	firstExecution := claimTestExecution(task, uuid.NewString())
 	firstExecution.ExecutionConfig = task.Config
 	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &firstExecution); err != nil {
@@ -828,7 +829,8 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 
 	taskRepo := NewTaskRepository(db)
 	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
-	now := time.Now()
+	// PostgreSQL binds timestamps at microsecond precision; JSON RFC3339 must share that clock.
+	now := time.Now().Truncate(time.Microsecond)
 	initial := claimTestExecution(task, uuid.NewString())
 	initial.ExecutionConfig = task.Config
 	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &initial); err != nil {

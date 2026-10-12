@@ -558,7 +558,7 @@ func (r *fakeOrchestratorReaderRoles) GetAssignment(ctx context.Context, tenantI
 
 func (r *fakeOrchestratorReaderRoles) CreateRole(ctx context.Context, input iam.CreateTenantRoleInput) (*iam.TenantRole, error) {
 	r.calls = append(r.calls, "role")
-	if input.TenantID != 42 || input.RoleKey != "online.orchestrator_monitor_reader" || len(input.PermissionKeys) != 1 || input.PermissionKeys[0] != "monitor.execution.read" {
+	if input.TenantID != 42 || input.RoleKey != "online.execution_monitor_reader" || len(input.PermissionKeys) != 1 || input.PermissionKeys[0] != "monitor.execution.read" {
 		return nil, errors.New("Monitor role is not independent and minimal")
 	}
 	return &iam.TenantRole{Role: iam.Role{ID: 12}}, nil
@@ -592,13 +592,13 @@ func TestOrchestratorParentReaderKeepsMonitorAssignmentIndependentAndIssuesCurre
 			roles := &fakeOrchestratorReaderRoles{fault: fault}
 			issued := 0
 			current := &iam.IssuedBrowserSession{AccessToken: "current-token"}
-			session, err := grantOrchestratorMonitorReader(t.Context(), roles, func(principalID int64) (*iam.IssuedBrowserSession, error) {
+			session, err := grantExecutionMonitorReader(t.Context(), roles, func(principalID int64) (*iam.IssuedBrowserSession, error) {
 				issued++
 				if principalID != 7 || strings.Join(roles.calls, ",") != "get,role,assign" {
 					t.Fatal("session issued before the independent grant completed for this reader")
 				}
 				return current, nil
-			}, original, 42, 9, 11)
+			}, original, 42, 9, 11, "online.external_online_parent_reader")
 			if fault == "" {
 				if err != nil || session != current || issued != 1 {
 					t.Fatalf("current reader session was not issued: %v", err)
@@ -756,5 +756,16 @@ func TestPlaintextBrowserApproverCredentialsRemainPrivate(t *testing.T) {
 		if !contains(plaintextApproverPermissions, key) {
 			t.Fatalf("missing UI prerequisite %s", key)
 		}
+	}
+}
+
+func TestContinuousEventFixtureUsesMinimalTenantPermissions(t *testing.T) {
+	permissions, err := suitePermissions("transfer-continuous-events")
+	if err != nil || !needsEngineProvisioner("transfer-continuous-events") {
+		t.Fatalf("permissions=%v err=%v", permissions, err)
+	}
+	want := []string{"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "transfer.task.update", "monitor.execution.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "system.execution_authorization.create"}
+	if strings.Join(permissions, ",") != strings.Join(want, ",") {
+		t.Fatalf("expanded continuous permissions=%v", permissions)
 	}
 }

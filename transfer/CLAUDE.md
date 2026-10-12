@@ -125,6 +125,8 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 ## 开发与验证
 
+真实 continuous 事件验收登记为手工 Hosted suite `transfer-continuous-events`，复用独占生命周期、System IAM 测试身份与正式 Gateway／Owner／Worker。业务 Kafka 与 PostgreSQL CDC 均由独立 Business 物理夹具验证目标事实；事件只沿已授权的 Transfer／Monitor 接口读取。新入口的确定性回归归 `make test-transfer-continuous-online-runner` 和 `make test-online-runner`，CI／T0 登记同次完成；实际 Hosted 运行成功前不得计为 T4，通过 API 不代表浏览器已验收。通用诊断投影同时排除连续执行内部 `owner_instance_id`，保留已有安全恢复、分区和延迟事实；共享 Go 消费者及 Common／Monitor PostgreSQL 门禁按 Common 改动扩散。
+
 continuous 的 claim、累计提交计数与终态复用 `common.execution_events`；Transfer 在同一事务持有任务、execution、Runtime lease 锁并校验当前 owner/fencing、执行归属及锁等待后的有效期，Common 不读取 Transfer 私有表。每个 session 新建 execution，实际 claim 写入 attempt 1；已有已开始的 attempt 0 记录由 execution store 标准迁移规范化，pending 取消只保留概览。过期 worker 不得续租或写入，supervisor 收敛过期 running；暂停／停止的过期运行会取消而不自动恢复。事件仅包含闭合状态和累计记录数，不含业务位点、partition、错误自由文本、Worker 或 lease 信息，心跳／诊断不追加。每日预算及 30 天维护沿共享实现，不改变 System 平台日志或操作审计。新增回归由现有 Common execution PostgreSQL 事件组及 `make test-transfer-postgres` 的 continuous 事件、fencing、恢复／结构阻塞组承接，Go T1 自动发现，Common 消费者沿 `make test-changed` 扩散；不新增 API、事件字段或基础设施。
 
 2026-10-12 continuous 过程事件本地门禁通过：`make test-module MODULE=transfer` 完成平台 T0、后端 T1、前端 130 项单元／16 项浏览器及构建、PostgreSQL T2；`make test-go` 全仓 Go 消费者、`make test-common-postgres`、`make test-monitor-postgres` 和执行夹具门禁均通过。真实 PostgreSQL 覆盖 claim／进展／终态、错误码、错配 Tenant／模块／execution、过期及锁等待后的进展／终态／续租拒绝、事务回滚、并发每日预算、暂停过期收敛、恢复的新 execution 和唯一终态、清理保留概览与事件，并清除测试自有事实。`make test-changed` 因未配置隔离 MySQL／OceanBase 测试连接在环境预检退出，Common MySQL／OceanBase 与 Model MySQL 等聚合消费者 T2 未运行，不计为通过；由现有 Release and T2 gates 的 Hosted 门禁复验。真实 Kafka／CDC 认证及 continuous 事件 T4 本轮未运行，既有 T4 收据不覆盖本次事件接入；已同步现有 continuous 集成夹具的事件清理，未以编译通过代替真实数据面验收。

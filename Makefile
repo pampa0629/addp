@@ -509,7 +509,14 @@ test-transfer-online-runner: ## 验证 Transfer Hosted 身份、只读预检、�
 	@python3 -m unittest scripts/test/online-hosted-transfer-gate_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/transfer-relational-sql-etl-online_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_transfer_field_lineage_services_proofs_and_cleanup
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
+.PHONY: test-transfer-continuous-online-runner
+test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周期、业务事实、事件与故障安全契约
+	@bash -n business/scripts/online-continuous-fixture.sh scripts/test/online-hosted-continuous-gate.sh
+	@python3 -m unittest scripts/test/transfer-continuous-events-online_test.py scripts/test/continuous-execution-faults_test.py scripts/test/online-continuous-fixture_test.py scripts/test/online-hosted-continuous-gate_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-transfer-continuous-online-runner
 	@$(MAKE) test-transfer-online-runner
 	@$(MAKE) test-node-metrics-online-runner
 	@$(MAKE) test-hdfs-online-runner

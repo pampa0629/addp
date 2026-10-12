@@ -101,6 +101,7 @@ class OnlineGateTest(unittest.TestCase):
                 "tidb-consumer-flow",
                 "transfer-insert-only-mysql",
                 "transfer-relational-sql-etl",
+                "transfer-continuous-events",
                 "workbench-service-consumption",
             },
         )

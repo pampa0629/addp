@@ -105,14 +105,15 @@ func TestObservationExcludesPayloadsAndSanitizesErrors(t *testing.T) {
 	item := &execution.TaskExecution{ExecutionID: "observed", Status: "failed", ExecutionConfig: map[string]interface{}{"password": secret}, Metadata: map[string]interface{}{
 		"execution_logs": secret, "result": map[string]interface{}{"final_result": secret, "traceback": secret, "runtime_status": map[string]interface{}{"error_code": "EXECUTION_FAILED", "details": secret}},
 		"step_results": map[string]interface{}{"read": map[string]interface{}{"status": "failed", "error": "password=" + secret, "result": map[string]interface{}{"row": secret}, "duration": int64(12)}},
-		"continuous":   map[string]interface{}{"diagnostics": map[string]interface{}{"health": "healthy", "credentials": secret}},
+		"continuous": map[string]interface{}{"owner_instance_id": secret, "fencing_token": 7, "lease_until": secret,
+			"diagnostics": map[string]interface{}{"health": "healthy", "credentials": secret}},
 	}, ErrorDetails: map[string]interface{}{"message": "connect failed password=" + secret, "stack": secret, "failed_target_samples": []string{secret}}}
 	observation := execution.Observe(item)
 	payload, err := json.Marshal(observation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, denied := range []string{secret, "execution_config", "final_result", "traceback", "failed_target_samples"} {
+	for _, denied := range []string{secret, "execution_config", "final_result", "traceback", "failed_target_samples", "owner_instance_id", "fencing_token", "lease_until"} {
 		if strings.Contains(string(payload), denied) {
 			t.Fatalf("exposed %s: %s", denied, payload)
 		}

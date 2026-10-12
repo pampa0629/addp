@@ -68,6 +68,11 @@ SUITES: Mapping[str, Suite] = {
         command=(sys.executable, "scripts/test/elasticsearch-consumer-flow-online.py"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL")),
     ),
+    "transfer-continuous-events": Suite(
+        command=(sys.executable, "-m", "scripts.test.transfer-continuous-events-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("meta", "META_URL"), ("transfer", "TRANSFER_URL"), ("monitor", "MONITOR_URL")),
+    ),
     "orchestrator-execution": Suite(
         command=(sys.executable, "-m", "scripts.test.orchestrator-execution-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

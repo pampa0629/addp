@@ -89,6 +89,12 @@ var transferLineagePermissions = []string{
 	"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read",
 }
 
+var transferContinuousPermissions = []string{
+	"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "transfer.task.update",
+	"monitor.execution.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"system.execution_authorization.create",
+}
+
 var transferConfigCheckPermissions = []string{"transfer.task.create", "meta.catalog.read"}
 
 var metricPermissions = []string{
@@ -167,6 +173,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return redisConsumerPermissions, nil
 	case "transfer-relational-sql-etl":
 		return transferLineagePermissions, nil
+	case "transfer-continuous-events":
+		return transferContinuousPermissions, nil
 	case "metric-service-revision-lifecycle":
 		return metricPermissions, nil
 	case "quality-dynamic-binding":
@@ -188,7 +196,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "quality-dynamic-binding" {
 		return true
 	}
-	return suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
@@ -197,7 +205,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
-	case "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "security-mysql-owner-protection":
+	case "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	}
@@ -428,7 +436,19 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_OWN_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownAssignmentID)
 		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignmentID)
 	}
-	if *suite == "orchestrator-execution" {
+	if *suite == "orchestrator-execution" || *suite == "transfer-continuous-events" {
+		ownerPermission := "orchestrator.workflow.read"
+		readerName := "external-online-parent-reader"
+		peerName := "external-online-meta-peer"
+		peerPermissions := orchestratorPeerPermissions
+		foreignPermissions := []string{"monitor.execution.read", "orchestrator.workflow.read", "meta.scan_task.read"}
+		if *suite == "transfer-continuous-events" {
+			ownerPermission = "transfer.task.read"
+			readerName = "external-online-transfer-reader"
+			peerName = "external-online-transfer-peer"
+			peerPermissions = []string{"monitor.execution.read", "transfer.task.read"}
+			foreignPermissions = peerPermissions
+		}
 		foreignTenant, err := createOrchestratorForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
 		if err != nil {
 			return err
@@ -440,12 +460,12 @@ func run(args []string, environment []string) error {
 		}
 		foreign, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
 			foreignTenant.ID, reserve.PrincipalID, "external-online-foreign-reader",
-			[]string{"monitor.execution.read", "orchestrator.workflow.read", "meta.scan_task.read"})
+			foreignPermissions)
 		if err != nil {
 			return err
 		}
 		peer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, "external-online-meta-peer", orchestratorPeerPermissions)
+			tenant.ID, administrator.PrincipalID, peerName, peerPermissions)
 		if err != nil {
 			return err
 		}
@@ -453,13 +473,13 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
 		values["ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN"] = foreign.AccessToken
 		parentReader, ownerAssignmentID, password, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, "external-online-parent-reader", []string{"orchestrator.workflow.read"})
+			tenant.ID, administrator.PrincipalID, readerName, []string{ownerPermission})
 		if err != nil {
 			return err
 		}
-		parentReader, err = grantOrchestratorMonitorReader(ctx, roleService, func(principalID int64) (*iam.IssuedBrowserSession, error) {
+		parentReader, err = grantExecutionMonitorReader(ctx, roleService, func(principalID int64) (*iam.IssuedBrowserSession, error) {
 			return issueSession(ctx, selectionService, principalID, "external-online-parent-reader-complete-session")
-		}, parentReader, tenant.ID, administrator.PrincipalID, ownerAssignmentID)
+		}, parentReader, tenant.ID, administrator.PrincipalID, ownerAssignmentID, "online."+strings.ReplaceAll(readerName, "-", "_"))
 		if err != nil {
 			return err
 		}
@@ -469,7 +489,7 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"] = administratorSession.AccessToken
 		values["ADDP_ONLINE_PARENT_USER_ACCESS_TOKEN"] = parentReader.AccessToken
-		values["ADDP_ONLINE_PARENT_USER_USERNAME"] = "external-online-parent-reader"
+		values["ADDP_ONLINE_PARENT_USER_USERNAME"] = readerName
 		values["ADDP_ONLINE_PARENT_USER_PASSWORD"] = password
 		values["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownerAssignmentID)
 	}
@@ -687,7 +707,7 @@ func createPermissionFixture(
 
 // Keep Monitor access in a separate assignment so revoking Owner access still
 // exercises Monitor's per-execution authorization with a newly logged-in User.
-type orchestratorReaderRoles interface {
+type executionReaderRoles interface {
 	GetAssignment(context.Context, int64, int64) (*iam.ManagedTenantRoleAssignment, error)
 	CreateRole(context.Context, iam.CreateTenantRoleInput) (*iam.TenantRole, error)
 	CreateAssignments(context.Context, iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error)
@@ -726,29 +746,29 @@ func grantTransferConfigCheckEngineReader(ctx context.Context, roles transferCon
 	return issue(assignment.PrincipalID)
 }
 
-func grantOrchestratorMonitorReader(ctx context.Context, roles orchestratorReaderRoles, issue func(int64) (*iam.IssuedBrowserSession, error), original *iam.IssuedBrowserSession, tenantID, actorID, ownerAssignmentID int64) (*iam.IssuedBrowserSession, error) {
+func grantExecutionMonitorReader(ctx context.Context, roles executionReaderRoles, issue func(int64) (*iam.IssuedBrowserSession, error), original *iam.IssuedBrowserSession, tenantID, actorID, ownerAssignmentID int64, ownerRoleKey string) (*iam.IssuedBrowserSession, error) {
 	if original == nil || original.Context.Type != iam.ContextTypeTenant || original.Context.TenantID == nil || *original.Context.TenantID != tenantID ||
 		original.Context.TenantMembershipID == nil || *original.Context.TenantMembershipID <= 0 || tenantID <= 1 || ownerAssignmentID <= 0 {
-		return nil, errors.New("parent reader requires its dedicated Tenant session and Owner assignment")
+		return nil, errors.New("execution reader requires its dedicated Tenant session and Owner assignment")
 	}
 	assignment, err := roles.GetAssignment(ctx, tenantID, ownerAssignmentID)
 	if err != nil {
-		return nil, fmt.Errorf("resolve parent reader Owner assignment: %w", err)
+		return nil, fmt.Errorf("resolve execution reader Owner assignment: %w", err)
 	}
 	if assignment == nil || assignment.ID != ownerAssignmentID || assignment.PrincipalID <= 0 || assignment.MembershipID != *original.Context.TenantMembershipID ||
-		assignment.RoleKey != "online.external_online_parent_reader" || assignment.PrincipalType != iam.PrincipalTypeUser {
-		return nil, errors.New("parent reader Owner assignment does not match the session")
+		assignment.RoleKey != ownerRoleKey || assignment.PrincipalType != iam.PrincipalTypeUser {
+		return nil, errors.New("execution reader Owner assignment does not match the session")
 	}
 	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
-		TenantID: tenantID, RoleKey: "online.orchestrator_monitor_reader", Name: "Orchestrator Monitor reader",
+		TenantID: tenantID, RoleKey: "online.execution_monitor_reader", Name: "Execution Monitor reader",
 		ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"monitor.execution.read"},
 		ActorPrincipalID: actorID, Audit: audit("external-online-parent-monitor-role"),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create parent reader Monitor role: %w", err)
+		return nil, fmt.Errorf("create execution reader Monitor role: %w", err)
 	}
 	if role == nil || role.ID <= 0 {
-		return nil, errors.New("parent reader Monitor role was not persisted")
+		return nil, errors.New("execution reader Monitor role was not persisted")
 	}
 	assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenantID, MembershipID: assignment.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant",
@@ -756,10 +776,10 @@ func grantOrchestratorMonitorReader(ctx context.Context, roles orchestratorReade
 		Audit: audit("external-online-parent-monitor-assignment"),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("assign parent reader Monitor role: %w", err)
+		return nil, fmt.Errorf("assign execution reader Monitor role: %w", err)
 	}
 	if len(assignments) != 1 || assignments[0].ID <= 0 || assignments[0].ID == ownerAssignmentID || assignments[0].PrincipalID != assignment.PrincipalID || assignments[0].MembershipID != assignment.MembershipID {
-		return nil, errors.New("parent reader Monitor assignment was not persisted separately")
+		return nil, errors.New("execution reader Monitor assignment was not persisted separately")
 	}
 	// Role changes invalidate the previous authorization-version-bound session.
 	return issue(assignment.PrincipalID)
