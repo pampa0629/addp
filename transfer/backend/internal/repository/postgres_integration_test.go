@@ -347,7 +347,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if err := syncRepo.CommitContinuousPosition(context.Background(), partitionState.ID, task.ID, 1, 1, "worker-a", position5, execution.ExecutionID); !errors.Is(err, ErrSyncStateFenced) {
 		t.Fatalf("stale continuous position commit error = %v, want ErrSyncStateFenced", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "paused", "", now.Add(2*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "paused", "", "", now.Add(2*time.Second)); err != nil {
 		t.Fatalf("Finish() error = %v", err)
 	}
 
@@ -387,7 +387,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, now.Add(4*time.Second), 30*time.Second); !errors.Is(err, ErrRuntimeLeaseLost) {
 		t.Fatalf("stale worker renew error = %v, want ErrRuntimeLeaseLost", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema changed", now.Add(5*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", "schema changed", now.Add(5*time.Second)); err != nil {
 		t.Fatalf("finish schema-blocked execution: %v", err)
 	}
 	var blockedTask models.TransferTask
@@ -497,7 +497,7 @@ func TestIntegrationPostgresSchemaChangeStopWinsWorkerFinishRace(t *testing.T) {
 	task.DesiredState = models.TaskDesiredStateStopped
 	claim := RuntimeLeaseClaim{Task: task, Execution: execution, Lease: lease}
 	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
-	if err := leaseRepo.Finish(context.Background(), claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema changed", now.Add(time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", "schema changed", now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.First(&task, task.ID).Error; err != nil {
@@ -699,7 +699,7 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	if err != nil || firstClaim == nil {
 		t.Fatalf("first ClaimNext() claim=%#v error=%v", firstClaim, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *firstClaim, commonExecution.ExecutionStatusCancelled, "worker_shutdown", "", now.Add(time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *firstClaim, commonExecution.ExecutionStatusCancelled, "worker_shutdown", "", "", now.Add(time.Second)); err != nil {
 		t.Fatalf("finish worker shutdown execution: %v", err)
 	}
 
@@ -840,7 +840,7 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 	if err != nil || first == nil {
 		t.Fatalf("first ClaimNext() claim=%#v error=%v", first, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *first, commonExecution.ExecutionStatusFailed, "", "source failed", now.Add(time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *first, commonExecution.ExecutionStatusFailed, "", "", "source failed", now.Add(time.Second)); err != nil {
 		t.Fatalf("finish first failure: %v", err)
 	}
 	assertPendingRecoveryMetadata(t, db, task.ID, 1, recoveryCircuitClosed, now.Add(2*time.Second))
@@ -851,7 +851,7 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 	if err != nil || second == nil {
 		t.Fatalf("second ClaimNext() claim=%#v error=%v", second, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *second, commonExecution.ExecutionStatusFailed, "", "target failed", now.Add(3*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *second, commonExecution.ExecutionStatusFailed, "", "", "target failed", now.Add(3*time.Second)); err != nil {
 		t.Fatalf("finish second failure: %v", err)
 	}
 	assertPendingRecoveryMetadata(t, db, task.ID, 2, recoveryCircuitClosed, now.Add(5*time.Second))
@@ -862,7 +862,7 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 	if err != nil || third == nil {
 		t.Fatalf("third ClaimNext() claim=%#v error=%v", third, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *third, commonExecution.ExecutionStatusFailed, "", "apply failed", now.Add(6*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *third, commonExecution.ExecutionStatusFailed, "", "", "apply failed", now.Add(6*time.Second)); err != nil {
 		t.Fatalf("finish third failure: %v", err)
 	}
 	assertPendingRecoveryMetadata(t, db, task.ID, 3, recoveryCircuitOpen, now.Add(16*time.Second))
@@ -876,7 +876,7 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 	if halfOpen.Execution.Metadata["recovery_circuit_state"] != recoveryCircuitHalfOpen {
 		t.Fatalf("half-open execution metadata=%#v", halfOpen.Execution.Metadata)
 	}
-	if err := leaseRepo.Finish(context.Background(), *halfOpen, commonExecution.ExecutionStatusFailed, "", "half-open failed", now.Add(17*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *halfOpen, commonExecution.ExecutionStatusFailed, "", "", "half-open failed", now.Add(17*time.Second)); err != nil {
 		t.Fatalf("finish half-open failure: %v", err)
 	}
 	assertPendingRecoveryMetadata(t, db, task.ID, 3, recoveryCircuitOpen, now.Add(27*time.Second))
@@ -902,7 +902,7 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 		progressedProbe.Metadata["recovery_circuit_state"] != recoveryCircuitClosed {
 		t.Fatalf("progressed probe recovery metadata=%#v", progressedProbe.Metadata)
 	}
-	if err := leaseRepo.Finish(context.Background(), *probe, commonExecution.ExecutionStatusFailed, "", "failure after progress", now.Add(28*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *probe, commonExecution.ExecutionStatusFailed, "", "", "failure after progress", now.Add(28*time.Second)); err != nil {
 		t.Fatalf("finish failure after progress: %v", err)
 	}
 	assertPendingRecoveryMetadata(t, db, task.ID, 1, recoveryCircuitClosed, now.Add(29*time.Second))

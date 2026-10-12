@@ -267,7 +267,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	if pauseErr == nil {
 		t.Fatal("paused MySQL CDC runner exited without fencing error")
 	}
-	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusCancelled, "paused", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusCancelled, "paused", "", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := rootDB.ExecContext(ctx, "INSERT INTO "+mysqlCDCQuoteIdentifier(sourceDatabase)+"."+mysqlCDCQuoteIdentifier(sourceTable)+` VALUES (
@@ -311,7 +311,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 		t.Fatalf("schema drift advanced committed position: before=%d after=%d", committedBeforeDrift, got)
 	}
 	target.AssertRowAbsent(t, ctx, 4)
-	if err := leaseRepo.Finish(context.Background(), *thirdClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *thirdClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -358,7 +358,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	if err := <-fourthDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("MySQL additive runner error=%v", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *fourthClaim, commonExecution.ExecutionStatusCancelled, "paused", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *fourthClaim, commonExecution.ExecutionStatusCancelled, "paused", "", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	committedAfterAdditive := mysqlCDCCommittedOffset(t, ctx, stateRepo, task.ID, resource.SourceIdentity)
@@ -386,7 +386,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 		t.Fatalf("expired MySQL CDC committed position error=%v", retentionErr)
 	}
 	mysqlCDCPauseTaskViaAPI(t, apiRouter, task.ID)
-	if err := leaseRepo.Finish(context.Background(), *fifthClaim, commonExecution.ExecutionStatusFailed, "retention_unavailable", retentionErr.Error(), time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *fifthClaim, commonExecution.ExecutionStatusFailed, "retention_unavailable", "", retentionErr.Error(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 

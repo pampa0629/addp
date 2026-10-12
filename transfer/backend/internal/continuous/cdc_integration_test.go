@@ -359,7 +359,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 		t.Fatalf("schema drift advanced committed position: before=%d after=%d err=%v", committed, afterDriftCommitted, err)
 	}
 	target.AssertRowAbsent(t, ctx, 2)
-	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	var blockedTask models.TransferTask
@@ -589,7 +589,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	if err := <-resumeDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("schema resumed runner error=%v", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *resumeClaim, commonExecution.ExecutionStatusCancelled, "paused", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *resumeClaim, commonExecution.ExecutionStatusCancelled, "paused", "", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 

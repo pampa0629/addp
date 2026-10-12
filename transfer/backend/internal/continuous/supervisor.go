@@ -26,7 +26,7 @@ func (f SessionRunnerFunc) Run(ctx context.Context, claim repository.RuntimeLeas
 type LeaseStore interface {
 	ClaimNext(ctx context.Context, owner string, now time.Time, duration time.Duration) (*repository.RuntimeLeaseClaim, error)
 	Renew(ctx context.Context, taskID uint, owner string, token uint64, now time.Time, duration time.Duration) error
-	Finish(ctx context.Context, claim repository.RuntimeLeaseClaim, status, stopReason, errorMessage string, now time.Time) error
+	Finish(ctx context.Context, claim repository.RuntimeLeaseClaim, status, stopReason, errorCode, errorMessage string, now time.Time) error
 	DesiredState(ctx context.Context, taskID uint) (models.TaskDesiredState, error)
 }
 
@@ -144,6 +144,7 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 	defer ticker.Stop()
 	status := commonExecution.ExecutionStatusFailed
 	stopReason := ""
+	errorCode := ""
 	errorMessage := ""
 	for {
 		select {
@@ -159,6 +160,11 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 				var schemaErr *SchemaChangeError
 				if errors.As(err, &schemaErr) {
 					stopReason = "schema_change_blocked"
+					errorCode = "schema_change_blocked"
+				}
+				var recordErr *RecordDataError
+				if errors.As(err, &recordErr) {
+					errorCode, errorMessage = recordErr.Code, recordErr.Message
 				}
 			}
 			goto finish
@@ -183,7 +189,7 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 	}
 
 finish:
-	if err := s.repo.Finish(context.Background(), claim, status, stopReason, errorMessage, time.Now()); err != nil && !errors.Is(err, repository.ErrRuntimeLeaseLost) {
+	if err := s.repo.Finish(context.Background(), claim, status, stopReason, errorCode, errorMessage, time.Now()); err != nil && !errors.Is(err, repository.ErrRuntimeLeaseLost) {
 		s.logger.Error("continuous session finish failed", "task_id", claim.Task.ID, "error", err)
 	}
 }

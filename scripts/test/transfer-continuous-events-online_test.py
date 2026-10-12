@@ -71,11 +71,32 @@ class ContinuousRunnerTest(unittest.TestCase):
             M.assert_safe({'error_details': {'message': 'business-value-sentinel-unknown'}})
         M.assert_safe({'continuous': {'partitions': {'0': {'values': {'next_offset': '12'}}}}})
         item = {'execution_id': UUID, 'module': 'transfer', 'task_type': 'sync',
-                'execution_boundary': 'continuous', 'metadata': {'continuous': {'diagnostics': {'health': 'healthy'}}}}
+                'execution_boundary': 'continuous', 'queue_duration_ms': 10, 'run_duration_ms': 20,
+                'lease_state': 'none', 'metadata': {'continuous': {'diagnostics': {'health': 'healthy'}}}}
         M.assert_projection(item, UUID, monitor=True, tenant=2)
         item['metadata']['arbitrary_response'] = {}
         with self.assertRaises(M.SuiteError):
             M.assert_projection(item, UUID, monitor=True, tenant=2)
+
+    def test_monitor_continuous_projection_accepts_observation_not_private_runtime(self):
+        item = {'execution_id': UUID, 'module': 'transfer', 'task_type': 'sync',
+                'execution_boundary': 'continuous', 'queue_duration_ms': 12, 'run_duration_ms': 340,
+                'lease_state': 'none', 'recovery_reason': 'lease_expired', 'metadata': {}}
+        M.assert_projection(item, UUID, monitor=True, tenant=2)
+        mutations = [lambda p: p.update(queue_duration_ms=-1),
+                     lambda p: p.update(run_duration_ms=True),
+                     lambda p: p.pop('queue_duration_ms'),
+                     lambda p: p.update(lease_state='active'),
+                     lambda p: p.update(lease_owner='private-worker'),
+                     lambda p: p.update(lease_expires_at='2026-10-12T01:00:00Z'),
+                     lambda p: p.update(fencing_token=1),
+                     lambda p: p.update(runtime_response={}),
+                     lambda p: p.update(unreviewed_field='private')]
+        for mutate in mutations:
+            projection = deepcopy(item)
+            mutate(projection)
+            with self.subTest(mutation=mutate), self.assertRaises(M.SuiteError):
+                M.assert_projection(projection, UUID, monitor=True, tenant=2)
 
     def test_source_configs_preserve_distinct_business_kafka_and_cdc_contracts(self):
         kafka = M.task_config('kafka', 10, 11)

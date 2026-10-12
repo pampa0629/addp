@@ -37,7 +37,8 @@ MONITOR_FIELDS = set('id execution_id module task_type source source_task_id sou
                      'parent_execution_id status progress current_step execution_boundary retry_of_execution_id '
                      'attempt max_attempts trigger_type triggered_by started_at completed_at created_at updated_at '
                      'execution_time_ms rows_affected records_read records_written bytes_read bytes_written '
-                     'metadata error_details steps steps_attempt_unverified steps_truncated diagnostics_truncated'.split())
+                     'metadata error_details steps steps_attempt_unverified steps_truncated diagnostics_truncated '
+                     'queue_duration_ms run_duration_ms lease_state recovery_reason'.split())
 OWNER_FIELDS = set('id execution_id task_id status start_time end_time records_read records_written bytes_read '
                    'bytes_written error_details metadata trigger_type trigger_by'.split())
 OWNER_METADATA = set('lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt '
@@ -81,6 +82,10 @@ def assert_projection(item, execution_id, *, monitor=False, tenant=None):
     if monitor:
         require(item.get('module') == 'transfer' and item.get('task_type') == 'sync'
                 and item.get('execution_boundary') == 'continuous', 'Monitor changed execution ownership/boundary')
+        require(all(isinstance(item.get(key), int) and not isinstance(item[key], bool) and item[key] >= 0
+                    for key in ('queue_duration_ms', 'run_duration_ms')),
+                'Monitor durations must be nonnegative integers')
+        require(item.get('lease_state') == 'none', 'Monitor continuous projection used a bounded lease state')
         metadata = item.get('metadata')
         require(isinstance(metadata, dict) and set(metadata) <= {
             'continuous', 'lineage_facts', 'stop_reason', 'recovery_reason', 'recovered_from_execution_id',
@@ -374,6 +379,9 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         compare(resumed, 'failed')
         require(failed.get('error_details', {}).get('category') in {'execution_failed', 'invalid_input'},
                 'record failure lost its safe cause category')
+        require(failed.get('error_details', {}).get('code') == 'missing_source_key'
+                and client.request('GET', f'{MONITOR}/{resumed}', (200,)).payload.get('error_details', {}).get('code') == 'missing_source_key',
+                'record failure lost its stable code in Owner or Monitor')
         report['checks'].append('kafka_pause_resume_and_record_failure_without_samples')
         # A hung owner must not cause Monitor to release previously readable facts.
         def owner_unavailable():

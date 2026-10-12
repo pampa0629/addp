@@ -248,7 +248,7 @@ func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
 		t.Fatalf("Oracle schema drift advanced offset: before=%d after=%d err=%v", committed, after, err)
 	}
 	target.AssertRowAbsent(t, ctx, 2)
-	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	var blockedTask models.TransferTask
@@ -491,7 +491,7 @@ func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
 	if err := <-runnerDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("ordinary Oracle final runner error=%v", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)
@@ -763,7 +763,7 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 	if err := <-runnerDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Oracle Spatial final runner error=%v", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *activeClaim, commonExecution.ExecutionStatusCancelled, "test_complete", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *activeClaim, commonExecution.ExecutionStatusCancelled, "test_complete", "", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)

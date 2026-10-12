@@ -2,6 +2,9 @@ package continuous
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -146,11 +149,51 @@ func TestSupervisorMarksSchemaChangeBlocked(t *testing.T) {
 	go func() { _ = supervisor.Run(ctx) }()
 	select {
 	case finished := <-store.finished:
-		if finished.status != commonExecution.ExecutionStatusFailed || finished.reason != "schema_change_blocked" {
+		if finished.status != commonExecution.ExecutionStatusFailed || finished.reason != "schema_change_blocked" || finished.code != "schema_change_blocked" {
 			t.Fatalf("finish = %#v, want schema_change_blocked failure", finished)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("supervisor did not finish schema-blocked session")
+	}
+}
+
+func TestSupervisorPreservesRecordFailureCodeWithoutRawCause(t *testing.T) {
+	for _, code := range []string{"invalid_json_object", "multiple_json_values", "unknown_source_field", "missing_source_key", "missing_required_field", "incompatible_field_type", "null_target_key"} {
+		t.Run(code, func(t *testing.T) {
+			store := &fakeLeaseStore{
+				claim:        &repository.RuntimeLeaseClaim{Task: models.TransferTask{ID: 47}},
+				desiredState: models.TaskDesiredStateRunning,
+				finished:     make(chan finishCall, 1),
+			}
+			runner := SessionRunnerFunc(func(context.Context, repository.RuntimeLeaseClaim) error {
+				return fmt.Errorf("business-value-sentinel-wrapper: %w", newRecordDataError(code, recordErrorCategoryDecode, "record validation failed", errors.New("business-value-sentinel-cause")))
+			})
+			supervisor, err := NewSupervisor(store, runner, Config{
+				OwnerInstanceID: "worker-a", Capacity: 1, LeaseDuration: time.Second,
+				HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 5 * time.Millisecond,
+			}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan struct{})
+			go func() { defer close(done); _ = supervisor.Run(ctx) }()
+			select {
+			case finished := <-store.finished:
+				if finished.status != commonExecution.ExecutionStatusFailed || finished.code != code || finished.message != "record validation failed" || strings.Contains(finished.message, "business-value-sentinel") {
+					t.Fatalf("finish = %#v", finished)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("supervisor did not preserve the typed record failure")
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("supervisor did not stop")
+			}
+		})
 	}
 }
 
@@ -202,8 +245,10 @@ func TestSupervisorMarksActiveSessionCancelledOnWorkerShutdown(t *testing.T) {
 }
 
 type finishCall struct {
-	status string
-	reason string
+	status  string
+	reason  string
+	code    string
+	message string
 }
 
 type fakeLeaseStore struct {
@@ -232,8 +277,8 @@ func (f *fakeLeaseStore) Renew(context.Context, uint, string, uint64, time.Time,
 	return repository.ErrRuntimeLeaseLost
 }
 
-func (f *fakeLeaseStore) Finish(_ context.Context, _ repository.RuntimeLeaseClaim, status, reason, _ string, _ time.Time) error {
-	f.finished <- finishCall{status: status, reason: reason}
+func (f *fakeLeaseStore) Finish(_ context.Context, _ repository.RuntimeLeaseClaim, status, reason, code, message string, _ time.Time) error {
+	f.finished <- finishCall{status: status, reason: reason, code: code, message: message}
 	return nil
 }
 

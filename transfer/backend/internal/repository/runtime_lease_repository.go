@@ -469,7 +469,7 @@ func mergeContinuousRuntimeMetadata(metadata commonModels.JSONMap, owner string,
 	return metadata
 }
 
-func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseClaim, status, stopReason, errorMessage string, now time.Time) error {
+func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseClaim, status, stopReason, errorCode, errorMessage string, now time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		task, execution, lease, err := lockContinuousClaim(tx, claim)
 		if err != nil {
@@ -509,10 +509,10 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 		updates := map[string]interface{}{
 			"status": status, "metadata": metadata, "completed_at": now, "updated_at": now,
 		}
-		if errorMessage != "" {
+		if errorMessage != "" || errorCode != "" {
 			details := commonModels.JSONMap{"message": errorMessage}
-			if stopReason == "schema_change_blocked" {
-				details["code"] = "schema_change_blocked"
+			if errorCode != "" {
+				details["code"] = errorCode
 			}
 			updates["error_details"] = details
 		}

@@ -198,7 +198,7 @@ func runIntegrationDatabaseCDCToOracleTargetLifecycle(t *testing.T, sourceType s
 	if err := <-runnerDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("%s CDC Oracle target runner error=%v", sourceType, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)
